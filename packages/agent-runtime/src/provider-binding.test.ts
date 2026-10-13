@@ -1480,3 +1480,36 @@ describe("DeepSeek-family relay reasoning replay (#296)", () => {
     );
   });
 });
+
+describe("Minih Router rows", () => {
+  const router: RuntimeProviderConfig = {
+    ...keyedProvider,
+    id: "router-1",
+    name: "Minih Router",
+    vendorKey: "minih-router",
+    baseUrl: "https://router.hmini.org/v1",
+    apiStyle: "chat_completions",
+    apiKey: "sk-gl-test",
+  };
+
+  it("send chat traffic to the configured gateway over Chat Completions", () => {
+    const model = buildProviderModel({ ...router, modelId: "gpt-4.1" });
+    expect(model.api).toBe("openai-completions");
+    expect(model.baseUrl).toBe("https://router.hmini.org/v1");
+  });
+
+  it("keep the gateway protocol when a borrowed catalog record names another wire API", () => {
+    const anthropicRecord = {
+      ...genericModelConfig("claude-sonnet-4-5", "https://api.anthropic.com"),
+      api: "anthropic-messages",
+    } as ModelConfig;
+    const model = buildProviderModel({
+      ...router,
+      baseUrl: "https://self-hosted.example/router/v1",
+      modelId: "claude-sonnet-4-5",
+      modelConfig: anthropicRecord,
+    });
+    expect(model.api).toBe("openai-completions");
+    expect(model.baseUrl).toBe("https://self-hosted.example/router/v1");
+  });
+});

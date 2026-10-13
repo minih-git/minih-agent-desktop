@@ -17234,6 +17234,34 @@ renderer's durable transcript reads. No real model or provider is contacted.
 - **Milestone:** M6+
 - **Status:** Unit and source-contract covered (`update-cache.test.mjs`, `auto-update.test.mjs`); Windows installer/E2E validation remains required.
 
+## E2E-PROVIDER-minih-router-primary-gateway
+
+- **Preconditions:** Isolated Electron/Chromium, production provider dialog and
+  Minih Router panel, synthetic IPC answers for discovery, provider creation,
+  account and model plaza; no live Router, token, or paid service.
+- **Steps:** Open Add Service and pick Minih Router from the Recommended group.
+  Paste a token, replace the Base URL with a console address, save. Open the
+  row's panel: read the balance, page forward through the model plaza, search,
+  then make the model read fail and Retry.
+- **Expected:** Minih Router is the first tile and is not repeated among API-key
+  services; the Base URL starts at `https://router.hmini.org/v1` and saves as
+  the typed host's `/v1` address with `vendorKey: "minih-router"`. The balance
+  headline is the quota closest to running out; totals, 30-day spend and
+  requests, multiplier and expiry are shown. Cards show per-1M input/output
+  prices, "from", cache price, context and Added; paging and search request the
+  right page; a failure keeps the last page and Retry recovers. Renderer calls
+  carry only the provider id, never the token.
+- **Specs:** 03-runtime/12 Minih Router preset and account channels; 04-ux/06
+  Minih Router panel.
+- **Acceptance:** `minih-router-settings-user-path.test.mjs`,
+  `minih-router-client.test.mjs` (gateway DTO contract, redirect guard,
+  redaction, vendor-key refusal), `minih-router-format.test.mjs`, and shared
+  `minih-router.test.ts`.
+- **Milestone:** Provider configuration maintenance.
+- **Status:** Covered by the isolated UI fixture and main-process contract
+  tests. Host/SQLite persistence of the row uses the unchanged provider path;
+  a live Router deployment is not exercised.
+
 ## E2E-OAUTH-pi-installation-identity-and-standalone-load
 
 - **Preconditions**: Pi 1.1.0; temporary Host secrets and account fixtures;

@@ -18,7 +18,9 @@ import { ServiceMonogram } from "./ServiceMonogram";
 import {
   CUSTOM_SERVICE,
   customServiceOption,
+  featuredServiceOptions,
   filterServiceOptions,
+  isFeaturedService,
   jevServiceOption,
   namedServiceOptions,
   type PluginProviderServiceOption,
@@ -59,8 +61,13 @@ export function ServiceChooser({
   const searchRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
+  // The featured gateway has its own group, so it is not listed twice.
+  const featuredOptions = useMemo(() => featuredServiceOptions(t), [t]);
   const serviceOptions = useMemo(
-    () => [customServiceOption(t), ...namedServiceOptions(t)],
+    () => [
+      customServiceOption(t),
+      ...namedServiceOptions(t).filter((option) => !isFeaturedService(option.id)),
+    ],
     [t],
   );
   const subscriptionOptions = useMemo<SubscriptionOption[]>(
@@ -82,6 +89,10 @@ export function ServiceChooser({
     [showClassifiers, t],
   );
 
+  const visibleFeatured = useMemo(
+    () => filterServiceOptions(featuredOptions, query),
+    [featuredOptions, query],
+  );
   const visibleServices = useMemo(
     () => filterServiceOptions(serviceOptions, query),
     [query, serviceOptions],
@@ -108,6 +119,7 @@ export function ServiceChooser({
     return [...groups].map(([category, options]) => ({ category, options }));
   }, [visiblePluginProviders]);
   const nothingMatches =
+    visibleFeatured.length === 0 &&
     visibleServices.length === 0 &&
     visibleSubscriptions.length === 0 &&
     visibleClassifiers.length === 0 &&
@@ -116,7 +128,9 @@ export function ServiceChooser({
   // Enter prefers a service the pick only moves to the key field for: the
   // classifier keeps the same dialog, while a subscription leaves it.
   const enterTarget = query.trim()
-    ? visibleServices[0]
+    ? visibleFeatured[0]
+      ? `service:${visibleFeatured[0].id}`
+      : visibleServices[0]
       ? `service:${visibleServices[0].id}`
       : visiblePluginProviders[0]
         ? `plugin:${visiblePluginProviders[0].id}`
@@ -139,7 +153,8 @@ export function ServiceChooser({
   };
 
   const pickEnterTarget = () => {
-    if (visibleServices[0]) pickService(visibleServices[0].id);
+    if (visibleFeatured[0]) pickService(visibleFeatured[0].id);
+    else if (visibleServices[0]) pickService(visibleServices[0].id);
     else if (visiblePluginProviders[0]) pickPluginProvider(visiblePluginProviders[0].id);
     else if (visibleClassifiers[0]) pickService(visibleClassifiers[0].id);
     else if (visibleSubscriptions[0]) pickSubscription(visibleSubscriptions[0].vendor);
@@ -226,6 +241,39 @@ export function ServiceChooser({
               {t("settings.useCustomEndpoint")}
             </button>
           </div>
+        ) : null}
+
+        {visibleFeatured.length > 0 ? (
+          <section className="service-chooser-group" aria-labelledby="service-chooser-featured">
+            <h4 id="service-chooser-featured" className="service-chooser-group-title">
+              {t("settings.chooserFeatured")}
+            </h4>
+            <div className="service-chooser-grid">
+              {visibleFeatured.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  data-service-tile
+                  data-service-id={option.id}
+                  className={cx(
+                    "service-chooser-tile",
+                    "is-featured",
+                    enterTarget === `service:${option.id}` && "is-active",
+                  )}
+                  aria-current={option.id === current ? "true" : undefined}
+                  disabled={disabled}
+                  onKeyDown={onTileKeyDown}
+                  onClick={() => pickService(option.id)}
+                >
+                  <ServiceMonogram name={option.label} />
+                  <span className="service-chooser-tile-copy">
+                    <span className="service-chooser-tile-name">{option.label}</span>
+                    <span className="service-chooser-tile-detail">{option.endpoint}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
         ) : null}
 
         {visibleSubscriptions.length > 0 ? (

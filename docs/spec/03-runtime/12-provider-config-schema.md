@@ -401,6 +401,30 @@ Presets only prefill form defaults; they are not a closed world.
 |---|---|---|---|---|
 | `opencode_go` | `openai_compatible` | `api_key_and_base_url` | `OpenCode Go` | `https://opencode.ai/zen/go/v1` |
 
+### Minih Router (primary gateway preset)
+
+Minih Router is the first-party model gateway and the first named preset. It
+is a normal `type: "openai_compatible"` row with `vendorKey: "minih-router"`,
+`apiStyle: "chat_completions"`, and an AccessKey ("token") stored like any API
+key under `secret:provider:<id>:api_key`. Unlike the other named presets its
+address is only a default (`customBaseUrl: true`):
+
+- Base URL defaults to `https://router.hmini.org/v1` and stays editable, so a
+  self-hosted Router can be used. A console address
+  (`https://router.example.com`) is saved as its API address
+  (`https://router.example.com/v1`); a path mount before `/v1` is kept.
+- `matchNamedPreset` identifies the row by `vendorKey` wherever it points; the
+  default address alone also matches the preset.
+- The Add Service chooser shows it alone in a leading **Recommended** group,
+  and the empty model-configuration page offers **Connect Minih Router** as
+  its primary action. Adding it follows the ordinary default-provider rule: it
+  becomes the default only when no runnable default exists.
+- `vendorKey` is not a models.dev provider, so model metadata resolves through
+  the relay rule in "Which publisher a row is read against" below.
+
+The same token also reads the gateway's key-scoped control plane, which
+Settings uses for the balance and model plaza (§6, Minih Router account).
+
 ### Named endpoint presets
 
 These rows are created from the add-provider **Service** select, not from a
@@ -522,6 +546,29 @@ change for the raw snapshot.
 - `providers.refreshModels`
 - `providers.upsertUserModel`
 - `providers.deleteUserModel`
+
+### Minih Router account (Electron main only)
+
+Two renderer invoke channels read a saved `minih-router` row's gateway account.
+Electron main loads the row (`providers.get`) and its key
+(`providers.getSecret`) itself; the renderer sends only the row id and never
+receives the key. A row whose `vendorKey` is not `minih-router` is refused with
+`INVALID_ARGUMENT` before its secret is read, a row without a key fails with
+`PROVIDER_SECRET_MISSING`, and both channels are on the MCP control-surface
+blocklist because they spend a stored credential.
+
+| Channel | Input | Gateway reads | Result |
+|---|---|---|---|
+| `providers/minihRouter/account` | `{ providerId }` | `GET <root>/api/home`, plus best-effort `GET <root>/api/usage` for the last 30 days | `MinihRouterAccount`: key name/mask, status, expiry, price multiplier, RPM limit, `allowed` + `nextAvailableAtMs`, cost-limit quotas (USD decimals), usage summary or `null` |
+| `providers/minihRouter/models` | `{ providerId, page, pageSize ≤ 100, query? }` | `GET <root>/api/models?group_status=enabled&page&page_size[&q]` | `MinihRouterModelPage`: models with vendor, category, protocols, lowest input/output/cache price in USD per 1M tokens, starting-price and tiered flags, context/output limits; pagination |
+
+`<root>` is the row's base URL without its trailing `/v1`. Requests carry the
+key as `Authorization: Bearer`, use a 15 s timeout, follow redirects only
+within the same origin, and redact the key from every error. HTTP 401/403 map
+to `PROVIDER_UNAUTHORIZED`, 429 to `PROVIDER_RATE_LIMITED`, and other failures
+to `PROVIDER_ERROR`. A usage read failure leaves `usage: null` and still
+returns the balance. A response without `current_access_key` (an
+administrator key) is refused.
 
 ## 6. Security constraints
 

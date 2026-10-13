@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 import {
   NAMED_ENDPOINT_PRESETS,
   OPENCODE_GO_API_STYLE,
+  minihRouterApiBaseUrl,
   normalizeApiStyle,
   type PluginProviderCatalogMeta,
   type CatalogApiStyle,
@@ -65,7 +66,15 @@ function initialName(provider?: ProviderPublic | null): string {
 }
 
 function initialBaseUrl(provider?: ProviderPublic | null): string {
-  return providerSetupPreset(provider)?.baseUrl ?? provider?.baseUrl ?? "";
+  const preset = providerSetupPreset(provider);
+  // A relocatable preset's own address is only its default; the row's wins.
+  if (preset?.customBaseUrl) return provider?.baseUrl || preset.baseUrl;
+  return preset?.baseUrl ?? provider?.baseUrl ?? "";
+}
+
+/** The address a relocatable named preset (Minih Router) saves and probes. */
+function relocatableBaseUrl(value: string, fallback: string): string {
+  return minihRouterApiBaseUrl(value.trim() ? value : fallback);
 }
 
 /**
@@ -174,8 +183,12 @@ export function ProviderSetupDialog({
   const custom = service === CUSTOM_SERVICE;
   /** Jev never becomes a provider row, so it is a view of its own. */
   const jevService = service === JEV_SERVICE;
+  /** A named service whose address the user may change (a self-hosted gateway). */
+  const relocatable = Boolean(namedPreset?.customBaseUrl);
   const resolvedName = namedPreset ? name.trim() || namedPreset.name : name;
-  const resolvedBaseUrl = namedPreset?.baseUrl ?? baseUrl;
+  const resolvedBaseUrl = namedPreset
+    ? relocatable ? relocatableBaseUrl(baseUrl, namedPreset.baseUrl) : namedPreset.baseUrl
+    : baseUrl;
   /*
     Endpoint resolution decides the format when the endpoint itself names one:
     a pasted operation, a published service address, or a known host. A format
@@ -311,7 +324,9 @@ export function ProviderSetupDialog({
 
   const commitBaseUrl = () => {
     setBaseUrlTouched(true);
-    const normalized = normalizeBaseUrlInput(baseUrl, resolvedApiStyle);
+    const normalized = relocatable && namedPreset
+      ? relocatableBaseUrl(baseUrl, namedPreset.baseUrl)
+      : normalizeBaseUrlInput(baseUrl, resolvedApiStyle);
     if (normalized !== baseUrl) setBaseUrl(normalized);
   };
 
@@ -501,7 +516,9 @@ export function ProviderSetupDialog({
             editing={editing}
             saving={saving}
             serviceLabel={namedPreset ? t(namedPreset.labelKey) : t("settings.presetCustomEndpoint")}
-            serviceBaseUrl={namedPreset?.baseUrl ?? ""}
+            serviceBaseUrl={namedPreset ? resolvedBaseUrl : ""}
+            relocatable={relocatable}
+            defaultBaseUrl={namedPreset?.baseUrl}
             onChangeService={() => setChoosing(true)}
             apiKeyRef={apiKeyRef}
             nameRef={nameRef}

@@ -6,6 +6,7 @@
  * "kimi", "moonshot" and "api.moonshot.cn" all land on the same entry.
  */
 import {
+  MINIH_ROUTER_PRESET_ID,
   NAMED_ENDPOINT_PRESETS,
   TYPESAFE_SYSTEM_ONE_URL,
   type PluginProviderCatalogMeta,
@@ -64,6 +65,23 @@ function presetOption(preset: NamedEndpointPreset, translate: Translate): Servic
 /** Every named endpoint preset, in the order the shared table lists them. */
 export function namedServiceOptions(translate: Translate): ServiceOption[] {
   return NAMED_ENDPOINT_PRESETS.map((preset) => presetOption(preset, translate));
+}
+
+/** Whether a chooser option is the featured first-party gateway. */
+export function isFeaturedService(id: string): boolean {
+  return id === MINIH_ROUTER_PRESET_ID;
+}
+
+/**
+ * Minih Router, the primary gateway, leads the chooser in its own group. Its
+ * detail line describes the service rather than an address, because the
+ * address is only a default the user may change.
+ */
+export function featuredServiceOptions(translate: Translate): ServiceOption[] {
+  return NAMED_ENDPOINT_PRESETS.filter((preset) => isFeaturedService(preset.id)).map((preset) => {
+    const option = presetOption(preset, translate);
+    return { ...option, endpoint: translate("settings.minihRouterServiceDesc") };
+  });
 }
 
 /** Any OpenAI- or Anthropic-compatible address the presets do not cover. */

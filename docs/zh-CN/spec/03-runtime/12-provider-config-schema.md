@@ -242,6 +242,24 @@ OpenCode Go（以及任何 `opencode.ai` 主机）的 LLM 请求必须带稳定�
 
 同一条规则在三个边界上以三种**有意不同**的失败方式生效：**编辑器保存**时对无法发送的行报 `HEADERS_INVALID` 并指出字符与下标，因为此时有用户在场可以改；**读取已存映射**时做半角化并丢弃无法发送的行，规则生效前写入的数据不会让回合失败；**收到同步 bundle** 时在反序列化成写入输入之前先做半角化与丢弃，因此旧版本对端（或规则前的备份）仍带着的某一行不会让整个 revision 失败。也就是说读取路径与同步路径一致，只有交互式写入会报错。
 
+### Minih Router（主网关预设）
+
+Minih Router 是自有的模型网关，排在命名预设的第一位。它是普通的
+`type: "openai_compatible"` 行，`vendorKey: "minih-router"`、
+`apiStyle: "chat_completions"`，访问密钥（“令牌”）与其他 API 密钥一样存放在
+`secret:provider:<id>:api_key`。与其他命名预设不同，它的地址只是默认值
+（`customBaseUrl: true`）：
+
+- Base URL 默认为 `https://router.hmini.org/v1`，可修改以使用自建 Router。
+  填写控制台地址（`https://router.example.com`）时保存为其 API 地址
+  （`https://router.example.com/v1`），`/v1` 之前的路径前缀会保留。
+- `matchNamedPreset` 无论地址指向哪里，都按 `vendorKey` 识别该行；仅凭默认地址也能匹配。
+- 添加服务的选择器把它单独放在最前面的**推荐**分组；模型配置页为空时，
+  **接入 Minih Router** 是主操作。默认模型规则不变：只有当前没有可用默认值时才设为默认。
+- `vendorKey` 不是 models.dev 的提供商，模型元数据按下文“按哪个发布方读取元数据”的中继规则解析。
+
+同一令牌还用于读取网关中按密钥隔离的控制面，设置页据此显示余额和模型广场（§5，Minih Router 账户）。
+
 ### 命名端点预设
 
 这些行由添加提供商对话框的**服务**下拉框创建。命名服务的常见路径是服务 +
@@ -318,6 +336,25 @@ Copilot 的上下文相关请求标头；已保存的同名自定义 header 会�
 - `providers.refreshModels`
 - `providers.upsertUserModel`
 - `providers.deleteUserModel`
+
+### Minih Router 账户（仅 Electron main）
+
+两个渲染层 invoke 通道读取已保存 `minih-router` 行的网关账户。Electron main
+自行读取该行（`providers.get`）及其密钥（`providers.getSecret`）；渲染层只发送行 id，
+永远拿不到密钥。`vendorKey` 不是 `minih-router` 的行在读取密钥之前即以
+`INVALID_ARGUMENT` 拒绝；没有密钥的行返回 `PROVIDER_SECRET_MISSING`。两个通道都在
+MCP 控制面的屏蔽列表中，因为它们会使用已存储的凭据。
+
+| 通道 | 输入 | 网关请求 | 结果 |
+|---|---|---|---|
+| `providers/minihRouter/account` | `{ providerId }` | `GET <root>/api/home`，另尽力读取近 30 天的 `GET <root>/api/usage` | `MinihRouterAccount`：密钥名称/掩码、状态、到期、计价倍率、RPM 限制、`allowed` 与 `nextAvailableAtMs`、费用额度（USD 十进制）、用量汇总或 `null` |
+| `providers/minihRouter/models` | `{ providerId, page, pageSize ≤ 100, query? }` | `GET <root>/api/models?group_status=enabled&page&page_size[&q]` | `MinihRouterModelPage`：模型的厂商、分类、协议、每百万 Token 的最低输入/输出/缓存价格（USD）、“起”与阶梯计费标记、上下文/输出上限，以及分页 |
+
+`<root>` 是该行 Base URL 去掉末尾 `/v1`。请求以 `Authorization: Bearer` 携带密钥，
+超时 15 秒，仅跟随同源重定向，所有错误信息都会脱敏密钥。HTTP 401/403 映射为
+`PROVIDER_UNAUTHORIZED`，429 映射为 `PROVIDER_RATE_LIMITED`，其他失败为
+`PROVIDER_ERROR`。用量读取失败时 `usage` 为 `null`，余额照常返回。响应中没有
+`current_access_key`（管理员密钥）时拒绝。
 
 ## 6. 安全限制
 
