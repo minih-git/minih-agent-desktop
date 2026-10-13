@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="docs/image/readme/logo.png" alt="Minih-Agent-Desktop" width="108" />
-
 # Minih-Agent-Desktop
 
 ### 长期可用的 AI Agent 桌面工作台
@@ -24,9 +22,6 @@
 [English](README.md)
 
 <br />
-
-<img src="docs/image/readme/home_zh.webp" alt="Minih-Agent-Desktop" width="94%" />
-
 </div>
 
 ---
@@ -161,7 +156,6 @@ Agent → Tool Request → Permission Layer → Allow / Ask / Deny → Execution
 <div align="center">
 
 ### [开发你的第一个插件 →](docs/plugin-development.md)
-
 </div>
 
 ---
@@ -186,28 +180,6 @@ Main Session
 ```
 
 Worker 是完整的会话：独立上下文、独立执行、完整记录、可复用。
-
-<table>
-<tr>
-
-<td width="50%">
-
-<img src="docs/image/readme/session-orchestrator-overview.png" alt="Session Orchestrator" />
-
-<p align="center"><sub>从一个父会话协调多个 Worker 会话</sub></p>
-
-</td>
-
-<td width="50%">
-
-<img src="docs/image/readme/session-orchestrator-worker.png" alt="Worker Session" />
-
-<p align="center"><sub>每个 Worker 都是完整、可检查的会话</sub></p>
-
-</td>
-
-</tr>
-</table>
 
 ---
 
@@ -253,49 +225,8 @@ Private Task → Local Model
 
 ## 界面预览
 
-<table>
-<tr>
-
-<td width="50%">
-
-<img src="docs/image/readme/chat_zh.png" alt="会话" />
-
-<p align="center"><sub>持久会话，而非一次性聊天</sub></p>
-
-</td>
-
-<td width="50%">
-
-<img src="docs/image/readme/model_zh.png" alt="模型选择" />
-
-<p align="center"><sub>在会话内切换模型和推理强度</sub></p>
-
-</td>
-
-</tr>
-
-<tr>
-
-<td width="50%">
-
-<img src="docs/image/readme/plugins_zh.png" alt="插件" />
-
-<p align="center"><sub>插件同时扩展 Agent 和桌面</sub></p>
-
-</td>
-
-<td width="50%">
-
-<img src="docs/image/readme/addmodel_zh.png" alt="Provider" />
-
-<p align="center"><sub>接入你自己的 Provider、网关或本地模型</sub></p>
-
-</td>
-
-</tr>
-</table>
-
-**[查看更多截图 →](docs/guide/screenshots.md)**
+会话、Composer、模型选择与插件市场的截图见
+[docs/guide/screenshots.md](docs/guide/screenshots.md)。
 
 ---
 
@@ -405,12 +336,9 @@ Minih-Agent-Desktop 以 **GNU Lesser General Public License v3.0** 许可。
 
 <div align="center">
 
-<img src="docs/image/readme/logo.png" alt="Minih-Agent-Desktop" width="72" />
-
 ## Minih-Agent-Desktop
 
 ### 组装你自己的 Agent 工作台。
 
 **你的模型 · 你的 Agent · 你的插件 · 你的工作台**
-
 </div>

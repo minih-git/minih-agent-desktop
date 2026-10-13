@@ -1,0 +1,26 @@
+<svg width="1440" height="880" viewBox="0 0 1440 880" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1440" y2="880" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#101014"/>
+      <stop offset="1" stop-color="#1B1B24"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5B4BFF"/>
+      <stop offset="1" stop-color="#2DD4BF"/>
+    </linearGradient>
+  </defs>
+  <rect width="1440" height="880" fill="url(#bg)"/>
+  <!-- App drop target (right) and /Applications shortcut (left), matching the
+       upstream DMG layout convention. -->
+  <circle cx="480" cy="560" r="150" fill="#FFFFFF" fill-opacity="0.06"/>
+  <circle cx="960" cy="560" r="150" fill="#FFFFFF" fill-opacity="0.06"/>
+  <g transform="translate(386,466) scale(0.1875)">
+    <rect width="1024" height="1024" rx="224" fill="url(#mark)"/>
+    <path d="M256 768V384l128 192 128-192 128 192 128-192v384h-96V577l-64 95-64-95v191h-96V577l-64 95-64-95v191z" fill="white"/>
+  </g>
+  <g transform="translate(866,466) scale(0.1875)">
+    <rect width="1024" height="1024" rx="224" fill="#FFFFFF" fill-opacity="0.12"/>
+    <path d="M512 288l224 256h-128v192H416V544H288z" fill="#FFFFFF" fill-opacity="0.85"/>
+    <rect x="416" y="800" width="192" height="64" rx="16" fill="#FFFFFF" fill-opacity="0.85"/>
+  </g>
+</svg>

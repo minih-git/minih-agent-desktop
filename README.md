@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="docs/image/readme/logo.png" alt="Minih-Agent-Desktop" width="108" />
-
 # Minih-Agent-Desktop
 
 ### A persistent desktop workspace for AI agents
@@ -24,9 +22,6 @@ Local-first · Model-agnostic · Plugin-powered · macOS / Windows / Linux
 [简体中文](README.zh-CN.md)
 
 <br />
-
-<img src="docs/image/readme/home.webp" alt="Minih-Agent-Desktop" width="94%" />
-
 </div>
 
 ---
@@ -168,7 +163,6 @@ plugins while you build them.
 <div align="center">
 
 ### [Build your first plugin →](docs/plugin-development.md)
-
 </div>
 
 ---
@@ -194,28 +188,6 @@ Main Session
 
 Workers are complete sessions: independent context, independent execution, full
 transcript, reusable.
-
-<table>
-<tr>
-
-<td width="50%">
-
-<img src="docs/image/readme/session-orchestrator-overview.png" alt="Session Orchestrator" />
-
-<p align="center"><sub>Coordinate multiple worker sessions from one parent session</sub></p>
-
-</td>
-
-<td width="50%">
-
-<img src="docs/image/readme/session-orchestrator-worker.png" alt="Worker Session" />
-
-<p align="center"><sub>Each worker remains a full, inspectable session</sub></p>
-
-</td>
-
-</tr>
-</table>
 
 ---
 
@@ -263,49 +235,8 @@ that provider.
 
 ## See it in action
 
-<table>
-<tr>
-
-<td width="50%">
-
-<img src="docs/image/readme/chat_en.png" alt="Session" />
-
-<p align="center"><sub>Persistent sessions instead of disposable chats</sub></p>
-
-</td>
-
-<td width="50%">
-
-<img src="docs/image/readme/model_en.png" alt="Model selection" />
-
-<p align="center"><sub>Switch models and reasoning levels inside a session</sub></p>
-
-</td>
-
-</tr>
-
-<tr>
-
-<td width="50%">
-
-<img src="docs/image/readme/plugins_en.png" alt="Plugins" />
-
-<p align="center"><sub>Plugins extend both the agent and the desktop</sub></p>
-
-</td>
-
-<td width="50%">
-
-<img src="docs/image/readme/addmodel_en.png" alt="Providers" />
-
-<p align="center"><sub>Connect your own provider, gateway, or local model</sub></p>
-
-</td>
-
-</tr>
-</table>
-
-**[Explore more screenshots →](docs/guide/screenshots.md)**
+Screenshots of sessions, the composer, model selection, and the plugin
+marketplace live in [docs/guide/screenshots.md](docs/guide/screenshots.md).
 
 ---
 
@@ -418,12 +349,9 @@ v3.0**. See [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-<img src="docs/image/readme/logo.png" alt="Minih-Agent-Desktop" width="72" />
-
 ## Minih-Agent-Desktop
 
 ### Build your own agent workspace.
 
 **Your models · Your agents · Your plugins · Your workspace**
-
 </div>
