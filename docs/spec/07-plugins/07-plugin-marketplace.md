@@ -30,8 +30,8 @@ The host is responsible for:
 
 ### Phase B ✅
 - Browse/search + download install are implemented against the official provider
-- Official provider: the plugin center, `github.com/minih-git/minih-agent-plugins` (Phase B originally pointed at the GitHub repository `minih-git/minih-agent-plugins`; see "Catalog source" below and [ADR 0276](../../adr/0276-official-plugin-channel-and-backup-channels.md))
-- Default catalog URL: `https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json`
+- Official provider: the upstream PI-Desktop plugin center, `plugins.aiuo.net` (Phase B originally pointed at a GitHub repository; see "Catalog source" below and [ADR 0276](../../adr/0276-official-plugin-channel-and-backup-channels.md))
+- Default catalog URL: `https://plugins.aiuo.net/catalog.json`
 - Package URLs may be absolute `https://` / `http://` / `file://`, or a relative path resolved against the catalog's `artifactBaseUrl` when it declares one, and otherwise against the catalog URL
 - HTTPS fetch uses `curl` in host-core
 - curl diagnostics are decoded as UTF-8 first and as the active Windows ANSI
@@ -41,7 +41,7 @@ The host is responsible for:
 ### Catalog source
 
 Plugins → Marketplace always uses the official plugin center catalog at
-`https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json`. The page has no source selector.
+`https://plugins.aiuo.net/catalog.json`. The page has no source selector.
 Persisted `pluginMarketSource` and `pluginMarketCustomUrl` values from older
 versions are retained for settings compatibility but ignored; no data migration
 is needed. `MINIH_AGENT_PLUGIN_MARKET_URL` remains available to development and
@@ -372,7 +372,7 @@ Before publishing or diagnosing a release, run the repository preflight:
 
 ```bash
 pnpm check:marketplace -- \
-  --url https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json \
+  --url https://plugins.aiuo.net/catalog.json \
   --plugin <plugin-id>
 ```
 
@@ -617,8 +617,8 @@ Installs always pass through checksum verification and permission review before 
 
 ## 13. Official marketplace repository
 
-The distribution repository
-([minih-git/minih-agent-plugins](https://github.com/minih-git/minih-agent-plugins)) holds the published
+The upstream distribution repository
+([AIUO-Net/pi-desktop-plugins](https://github.com/AIUO-Net/pi-desktop-plugins)) holds the published
 `catalog.json` and the `packages/*.piplug` artifacts it references. Plugin sources are neither
 hosted nor reviewed there: the center packs, audits, records the SHA-256 and publishes from each
 publisher's own repository, then publishes the official catalog and package references
@@ -689,6 +689,6 @@ relative to the installed version, so an upgrade cannot silently widen access
 Authoring documentation lives with the host, and publishing happens on the center:
 
 - Host guide: `docs/plugin-development.md`
-- Publishing: [github.com/minih-git/minih-agent-plugins](https://github.com/minih-git/minih-agent-plugins) — console, or the publish skill over MCP
+- Publishing: [plugins.aiuo.net](https://plugins.aiuo.net) — console, or the publish skill over MCP
 - Built-in templates: `panel-basic`, `agent-tool-basic`, `skill-pack`, `full-demo`
-- Distribution-side contribution guide: `minih-git/minih-agent-plugins` `CONTRIBUTING.md`
+- Distribution-side contribution guide: the upstream plugin center's `CONTRIBUTING.md`

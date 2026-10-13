@@ -8,8 +8,12 @@ pub(crate) use catalog::{built_in_catalog_at, bundled_package_bytes};
 /// The catalog it serves is the client's listing contract, and an install asks
 /// the same host where the package is (`plugins::resolve`) instead of resolving
 /// a relative package URL against a git host.
-pub const OFFICIAL_CHANNEL_CATALOG_URL: &str =
-    "https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json";
+///
+/// This is the upstream PI-Desktop plugin center: its catalog carries the same
+/// manifest and package contracts this fork accepts (the `engines.piDesktop`
+/// manifest key and the `minPiDesktop` catalog version field are accepted as
+/// aliases of their fork-side names).
+pub const OFFICIAL_CHANNEL_CATALOG_URL: &str = "https://plugins.aiuo.net/catalog.json";
 
 /// The catalog source used by the plugin manager.
 ///

@@ -470,8 +470,68 @@ fn resolve_relative_package_urls_against_catalog() {
     );
     assert_eq!(
         resolved,
-        "https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/packages/demo.hello-0.2.0.piplug"
+        "https://plugins.aiuo.net/packages/demo.hello-0.2.0.piplug"
     );
+}
+
+/// The upstream PI-Desktop plugin center catalogs its minimum host version as
+/// `minPiDesktop`; the alias must parse into the fork-side field.
+#[test]
+fn upstream_catalog_min_pi_desktop_key_parses() {
+    let upstream = serde_json::json!({
+        "version": "1.2.0",
+        "publishedAt": "2026-10-10T06:34:20Z",
+        "minPiDesktop": ">=0.1.0",
+        "shasum": "ef97",
+        "url": "packages/x-1.2.0.piplug",
+        "permissions": []
+    });
+    let parsed: MarketVersion =
+        serde_json::from_value(upstream).expect("upstream version key parses");
+    assert_eq!(parsed.min_minih_agent.as_deref(), Some(">=0.1.0"));
+
+    let fork = serde_json::json!({
+        "version": "1.2.0",
+        "publishedAt": "2026-10-10T06:34:20Z",
+        "minMinihAgent": ">=0.1.0",
+        "shasum": "ef97",
+        "url": "packages/x-1.2.0.piplug",
+        "permissions": []
+    });
+    let parsed: MarketVersion = serde_json::from_value(fork).expect("fork version key parses");
+    assert_eq!(parsed.min_minih_agent.as_deref(), Some(">=0.1.0"));
+}
+
+/// The upstream plugin center's live catalog, snapshotted during development,
+/// must parse into the fork's catalog models with the alias handling above.
+/// The snapshot path comes from the environment; the test is skipped when it
+/// is absent so a clean checkout stays offline.
+#[test]
+fn upstream_live_catalog_snapshot_parses() {
+    let path = std::env::var("MINIH_UPSTREAM_CATALOG_SNAPSHOT").ok();
+    let Some(path) = path.filter(|p| std::path::Path::new(p).exists()) else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("snapshot readable");
+    let catalog: MarketCatalogFile =
+        serde_json::from_slice(&bytes).expect("live upstream catalog parses");
+    assert!(
+        !catalog.plugins.is_empty(),
+        "upstream catalog carries plugins"
+    );
+    for plugin in &catalog.plugins {
+        for version in &plugin.versions {
+            if version.shasum.trim().is_empty() {
+                continue;
+            }
+            assert!(
+                !version.url.trim().is_empty(),
+                "{} {} has a checksum but no url",
+                plugin.id,
+                version.version
+            );
+        }
+    }
 }
 
 /// The official channel's install path, against the live deployment.
@@ -1656,7 +1716,8 @@ fn v2_catalog(entry: MarketCatalogEntry) -> MarketCatalogFile {
 
 #[test]
 fn package_downloads_are_restricted_to_distribution_hosts() {
-    let catalog = "https://raw.githubusercontent.com/minih-git/minih-plugin-center/main/catalog.json";
+    let catalog =
+        "https://raw.githubusercontent.com/minih-git/minih-plugin-center/main/catalog.json";
     // GitHub release entry point and the storage hosts it redirects to.
     for url in [
             "https://github.com/minih-git/minih-plugin-center/releases/download/acme.todo@1.0.0/acme.todo-1.0.0.piplug",
@@ -1690,7 +1751,8 @@ fn a_private_catalog_is_trusted_only_for_its_own_host() {
 
 #[test]
 fn package_urls_reject_credentials_and_plain_http() {
-    let catalog = "https://raw.githubusercontent.com/minih-git/minih-plugin-center/main/catalog.json";
+    let catalog =
+        "https://raw.githubusercontent.com/minih-git/minih-plugin-center/main/catalog.json";
     let err = package_host_allowed("https://user:pass@github.com/a.piplug", catalog)
         .unwrap_err()
         .to_string();
@@ -1707,7 +1769,8 @@ fn package_urls_reject_credentials_and_plain_http() {
 
 #[test]
 fn relative_package_urls_resolve_against_the_declared_artifact_base() {
-    let catalog = "https://raw.githubusercontent.com/minih-git/minih-plugin-center/main/catalog.json";
+    let catalog =
+        "https://raw.githubusercontent.com/minih-git/minih-plugin-center/main/catalog.json";
     // v2: the declared base wins, so a release asset is reachable even
     // though it does not live under the catalog directory.
     assert_eq!(
@@ -1742,28 +1805,28 @@ fn official_catalog_package_bases_resolve_to_approved_mirror_hosts() {
 
     let github = PluginManager::resolve_package_url(
         OFFICIAL_CHANNEL_CATALOG_URL,
-        Some("https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main"),
+        Some("https://raw.githubusercontent.com/AIUO-Net/pi-desktop-plugins/main"),
         relative,
     );
     assert_eq!(
         github,
-        "https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/packages/acme.todo-1.0.0.piplug"
+        "https://raw.githubusercontent.com/AIUO-Net/pi-desktop-plugins/main/packages/acme.todo-1.0.0.piplug"
     );
 
     let mirror = PluginManager::resolve_package_url(
         OFFICIAL_CHANNEL_CATALOG_URL,
-        Some("https://cnb.cool/mirror/minih-agent-desktop-plugins/-/git/raw/main"),
+        Some("https://cnb.cool/mirror/pi-desktop-plugins/-/git/raw/main"),
         relative,
     );
     assert_eq!(
         mirror,
-        "https://cnb.cool/mirror/minih-agent-desktop-plugins/-/git/raw/main/packages/acme.todo-1.0.0.piplug"
+        "https://cnb.cool/mirror/pi-desktop-plugins/-/git/raw/main/packages/acme.todo-1.0.0.piplug"
     );
 
     // Both package hosts are accepted while the catalog stays official.
     package_host_allowed(&github, OFFICIAL_CHANNEL_CATALOG_URL).unwrap();
     package_host_allowed(&mirror, OFFICIAL_CHANNEL_CATALOG_URL).unwrap();
-    assert!(github.starts_with("https://raw.githubusercontent.com/minih-git/"));
+    assert!(github.starts_with("https://raw.githubusercontent.com/"));
     assert!(mirror.starts_with("https://cnb.cool/"));
 }
 

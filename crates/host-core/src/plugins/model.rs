@@ -322,7 +322,15 @@ pub struct MarketVersion {
     pub published_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub changelog: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Minimum host version. The upstream PI-Desktop plugin center catalogs
+    /// spell this `minPiDesktop`; that key is accepted as an alias so the
+    /// upstream catalog parses unchanged. The fork-side field stays the
+    /// canonical name on serialization.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "minPiDesktop"
+    )]
     pub min_minih_agent: Option<String>,
     /// Package metadata is optional while a publisher is preparing a release.
     /// Such a version can be displayed and used for update discovery, but it
