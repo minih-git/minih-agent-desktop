@@ -63,6 +63,7 @@ type PluginManifestV1 = {
  net?: { domains?: string[] }; // egress allowlist (§5.3)
  engines?: {
  minihAgent?: string; // semver range
+ piDesktop?: string; // upstream PI-Desktop alias; normalized into minihAgent by validateManifest
  };
  entrypoints?: {
  onInstall?: string;

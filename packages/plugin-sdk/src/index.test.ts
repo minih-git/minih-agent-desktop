@@ -18,6 +18,41 @@ import {
 
 const base = { schemaVersion: 1, id: "demo.x", name: "X", version: "0.1.0", main: "main.js" };
 
+describe("validateManifest engines (upstream PI-Desktop compat)", () => {
+  it("normalizes engines.piDesktop into minihAgent when the alias is absent", () => {
+    const result = validateManifest({
+      ...base,
+      engines: { piDesktop: ">=0.19.0" },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.manifest?.engines?.minihAgent).toBe(">=0.19.0");
+  });
+
+  it("keeps an explicit minihAgent over piDesktop", () => {
+    const result = validateManifest({
+      ...base,
+      engines: { minihAgent: ">=0.1.0", piDesktop: ">=0.19.0" },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.manifest?.engines?.minihAgent).toBe(">=0.1.0");
+  });
+
+  it("rejects non-object engines blocks", () => {
+    expect(validateManifest({ ...base, engines: ">=0.19.0" }).error).toMatch(
+      /manifest\.engines must be an object/,
+    );
+  });
+
+  it("rejects empty or non-string engine ranges", () => {
+    expect(
+      validateManifest({ ...base, engines: { piDesktop: "  " } }).error,
+    ).toMatch(/manifest\.engines\.piDesktop/);
+    expect(
+      validateManifest({ ...base, engines: { minihAgent: 1 } }).error,
+    ).toMatch(/manifest\.engines\.minihAgent/);
+  });
+});
+
 describe("validateManifest", () => {
   it("accepts and resolves English/Chinese panel titles", () => {
     const result = validateManifest({

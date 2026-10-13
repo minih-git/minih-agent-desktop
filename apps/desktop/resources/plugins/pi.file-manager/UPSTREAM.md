@@ -52,8 +52,10 @@ Four, so a re-sync stays a copy:
   plugin carries its license, and the upstream manifest predates that
   convention.
 - `manifest.json` renames the engines key `"piDesktop"` to `"minihAgent"`.
-  The host contract (plugin SDK `engines?: { minihAgent?: string }`) uses the
-  fork's name, and this vendored copy must satisfy the host it ships with.
+  Keeping the fork's name here is now optional — `validateManifest` accepts
+  either key and normalizes `"piDesktop"` into `"minihAgent"` — but the
+  vendored copy stays on `"minihAgent"` so re-sync diffs against upstream
+  stay the only four documented local changes.
 - Brand strings are rebranded: the header comment in `main.js`, three
   prose mentions in `README.md`, and three user-facing strings in
   `views/assets/index.js` say "Minih-Agent-Desktop" where the tag says

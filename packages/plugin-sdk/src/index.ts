@@ -200,7 +200,13 @@ export type PluginManifest = {
    * Omitted or empty means no egress, whatever `net.fetch` says.
    */
   net?: { domains?: PluginNetDomain[] };
-  engines?: { minihAgent?: string };
+  /**
+   * Host engine semver range. `piDesktop` is the upstream PI-Desktop field;
+   * `minihAgent` is the fork's alias. Both are accepted so upstream-native
+   * plugins install unchanged; validateManifest normalizes `piDesktop` into
+   * `minihAgent` when the alias is absent.
+   */
+  engines?: { minihAgent?: string; piDesktop?: string };
   activationEvents?: string[];
 };
 
@@ -1613,6 +1619,28 @@ export function validateManifest(raw: unknown): {
         ok: false,
         error: `manifest.fs.${mode} needs the fs.${mode} permission`,
       };
+    }
+  }
+  // Upstream PI-Desktop manifests declare `engines.piDesktop`; normalize it
+  // into `minihAgent` (unless already declared) so downstream consumers only
+  // ever read one field. An explicit `minihAgent` wins over `piDesktop`.
+  const rawEngines = (m as Record<string, unknown>).engines;
+  if (rawEngines !== undefined) {
+    if (!rawEngines || typeof rawEngines !== "object" || Array.isArray(rawEngines)) {
+      return { ok: false, error: "manifest.engines must be an object" };
+    }
+    const engines = rawEngines as Record<string, unknown>;
+    for (const key of ["minihAgent", "piDesktop"] as const) {
+      const value = engines[key];
+      if (value !== undefined && (typeof value !== "string" || !value.trim())) {
+        return {
+          ok: false,
+          error: `manifest.engines.${key} must be a non-empty string`,
+        };
+      }
+    }
+    if (engines.minihAgent === undefined && engines.piDesktop !== undefined) {
+      engines.minihAgent = engines.piDesktop as string;
     }
   }
   return { ok: true, manifest: m as PluginManifest };
