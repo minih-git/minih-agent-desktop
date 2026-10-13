@@ -1512,4 +1512,21 @@ describe("Minih Router rows", () => {
     expect(model.api).toBe("openai-completions");
     expect(model.baseUrl).toBe("https://self-hosted.example/router/v1");
   });
+
+  it("keep the saved format even when a borrowed record names a sibling OpenAI route", () => {
+    const responsesRecord = {
+      ...genericModelConfig("gpt-5", "https://api.openai.com/v1"),
+      api: "openai-responses",
+    } as ModelConfig;
+    const chat = buildProviderModel({ ...router, modelId: "gpt-5", modelConfig: responsesRecord });
+    expect(chat.api).toBe("openai-completions");
+    const responses = buildProviderModel({
+      ...router,
+      apiStyle: "responses",
+      baseUrl: "http://11.11.11.10:3001/v1",
+      modelId: "gpt-5",
+    });
+    expect(responses.api).toBe("openai-responses");
+    expect(responses.baseUrl).toBe("http://11.11.11.10:3001/v1");
+  });
 });

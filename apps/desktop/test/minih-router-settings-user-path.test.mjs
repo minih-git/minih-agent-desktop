@@ -37,6 +37,7 @@ import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 window.addEventListener("error", (event) => console.error("FIXTURE_ERROR " + (event.error?.stack ?? event.message)));
 const apiCalls = [];
 let created = null;
+let updated = null;
 let failModels = false;
 const allModels = Array.from({ length: 30 }, (_, index) => ({
   id: index === 0 ? "gpt-4.1" : "model-" + String(index).padStart(2, "0"),
@@ -66,6 +67,9 @@ window.minihAgent = {
           models: input?.source === "cache" ? [] : [{ modelId: "gpt-4.1", displayName: "gpt-4.1", providerId: "minih-router", capabilities: ["chat", "tools"], contextWindow: 1047576, maxOutputTokens: 32768 }],
           source: input?.source === "cache" ? "cache" : "remote",
         } };
+      case "minih-agent-desktop/providers/update":
+        updated = input;
+        return { ok: true, data: { provider: { ...input, hasSecret: true, enabled: true } } };
       case "minih-agent-desktop/providers/create":
         created = input;
         return { ok: true, data: { provider: { id: "router-1", ...input, hasSecret: true, enabled: true } } };
@@ -183,6 +187,46 @@ window.minihRouterProbe = async () => {
     secretValue: created.secretValue,
   };
 
+  // 2b) An existing custom row that already reaches a Router is switched to
+  //     the Minih Router service and keeps its own address and format.
+  mount(null);
+  let resaved = null;
+  mount(React.createElement(ProviderSetupDialog, {
+    provider: {
+      id: "legacy-router", name: "Minih-Router", vendorKey: "custom", type: "openai_compatible",
+      protocol: "openai_compatible", authKind: "api_key_and_base_url", apiStyle: "responses",
+      baseUrl: "http://11.11.11.10:3001/v1", hasSecret: true, enabled: true,
+      models: [{ id: "gpt-4.1", contextWindow: 128000, maxTokens: 8192, thinkingLevels: [], defaultThinkingLevel: null }],
+    },
+    onClose: () => {},
+    onSaved: (provider) => { resaved = provider; },
+  }));
+  const change = await waitFor(() => button("Change"), "the service chip has no Change action");
+  flushSync(() => change.click());
+  const routerTile = await waitFor(
+    () => document.querySelector('[data-service-id="minih-router"]'),
+    "editing does not offer Minih Router",
+  );
+  flushSync(() => routerTile.click());
+  const keptAddress = await waitFor(() => fieldInput("Base URL")?.value, "no Base URL after switching");
+  // The saved format is shown in the Router form's own API format picker.
+  const formatShown = document.querySelector(".provider-setup-relocatable-row")
+    ?.innerText.includes("OpenAI Responses") ?? false;
+  const resave = await waitFor(() => {
+    const candidate = button("Save provider");
+    return candidate && !candidate.disabled ? candidate : null;
+  }, "Save never became available when converting");
+  flushSync(() => resave.click());
+  await waitFor(() => updated && resaved, "the converted row was not saved");
+  const convertedRow = {
+    keptAddress,
+    formatShown,
+    vendorKey: updated.vendorKey,
+    baseUrl: updated.baseUrl,
+    apiStyle: updated.apiStyle,
+    tokenUntouched: !("secretValue" in updated),
+  };
+
   // 3) The panel: balance first, then the priced plaza.
   mount(null);
   const provider = {
@@ -245,6 +289,7 @@ window.minihRouterProbe = async () => {
     baseUrlPrefilled,
     tokenFieldShown,
     createdRow,
+    convertedRow,
     balance,
     firstPageCount: firstPage.length,
     prices,
@@ -351,6 +396,14 @@ app.whenReady().then(async () => {
         baseUrl: "https://router.example.com/v1",
         apiStyle: "chat_completions",
         secretValue: "sk-gl-user-token",
+      },
+      convertedRow: {
+        keptAddress: "http://11.11.11.10:3001/v1",
+        formatShown: true,
+        vendorKey: "minih-router",
+        baseUrl: "http://11.11.11.10:3001/v1",
+        apiStyle: "responses",
+        tokenUntouched: true,
       },
       balance: {
         headlineIsLowestShare: true,

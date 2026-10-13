@@ -1415,6 +1415,7 @@ sklm: {
     "minihRouterToken": "Token",
     "minihRouterTokenHint": "Erstelle in der Minih-Router-Konsole einen Zugriffsschlüssel und füge ihn hier ein.",
     "minihRouterBaseUrlHint": "Standard ist router.hmini.org. Für einen selbst gehosteten Router hier ändern.",
+    "minihRouterApiStyleHint": "Die Route, die dieses Token am Router aufruft. Standard ist Chat Completions.",
     "minihRouterConnect": "Minih Router verbinden",
     "minihRouterEmptyDesc": "Füge ein Minih-Router-Token ein, um alle Modelle des Gateways zu nutzen.",
     "minihRouterPanelDesc": "Guthaben und verfügbare Modelle dieses Tokens",

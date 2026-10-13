@@ -253,7 +253,10 @@ Minih Router 是自有的模型网关，排在命名预设的第一位。它是�
 - Base URL 默认为 `https://router.hmini.org/v1`，可修改以使用自建 Router。
   填写控制台地址（`https://router.example.com`）时保存为其 API 地址
   （`https://router.example.com/v1`），`/v1` 之前的路径前缀会保留。
-- `matchNamedPreset` 无论地址指向哪里，都按 `vendorKey` 识别该行；仅凭默认地址也能匹配。
+- 接口格式默认 Chat Completions，可改为 OpenAI Responses 或 Anthropic Messages（Router 在 `/v1`
+  下提供的格式）。与自定义端点一样，运行时以保存的格式为准，借用的目录记录不会把 Router 行改到其他接口。
+- `matchNamedPreset` 无论地址指向哪里，都按 `vendorKey` 识别该行；仅凭默认地址也能匹配。已指向 Router
+  的自定义行不会被自动改类型；通过「编辑 → 更换服务 → Minih Router」转换，地址、格式、模型和密钥都保留。
 - 添加服务的选择器把它单独放在最前面的**推荐**分组；模型配置页为空时，
   **接入 Minih Router** 是主操作。默认模型规则不变：只有当前没有可用默认值时才设为默认。
 - `vendorKey` 不是 models.dev 的提供商，模型元数据按下文“按哪个发布方读取元数据”的中继规则解析。

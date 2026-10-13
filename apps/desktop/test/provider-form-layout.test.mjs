@@ -79,11 +79,18 @@ test("custom API format sits beside the key, not in a disclosure", () => {
   assert.match(fieldsSource, /CUSTOM_PROVIDER_API_STYLES\.map/);
   assert.doesNotMatch(fieldsSource, /settings\.apiStyleDerived/);
   assert.match(fieldsSource, /provider-service-chip/);
-  // The format choice belongs to the custom rows only.
-  assert.ok(
-    fieldsSource.indexOf("{custom ? (") < fieldsSource.indexOf("settings.apiStyle\""),
-    "API format must sit inside the custom rows",
-  );
+  // The format choice belongs to the custom rows and to the one named service
+  // whose address and format are the user's own (Minih Router); ordinary
+  // named services keep their published format.
+  const routerRowAt = fieldsSource.indexOf("{named && relocatable ? (");
+  const customRowsAt = fieldsSource.indexOf("{custom ? (");
+  const formatAt = [...fieldsSource.matchAll(/label=\{t\("settings\.apiStyle"\)\}\s*\n?\s*hint=/g)]
+    .map((match) => match.index);
+  assert.ok(routerRowAt > 0 && customRowsAt > routerRowAt, "Router row precedes the custom rows");
+  assert.ok(formatAt.length === 2, "one format field for the Router row, one for custom rows");
+  assert.ok(formatAt[0] > routerRowAt && formatAt[0] < customRowsAt, "Router format sits in its row");
+  assert.ok(formatAt[1] > customRowsAt, "API format must sit inside the custom rows");
+  assert.match(fieldsSource, /MINIH_ROUTER_API_STYLES\.map/);
   assert.match(pickerSource, /provider-chosen-advanced-toggle/);
 });
 

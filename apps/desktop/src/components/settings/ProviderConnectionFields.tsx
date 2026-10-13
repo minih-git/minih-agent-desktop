@@ -14,7 +14,11 @@ import { Field, Input } from "../ui";
 import { SettingsMenuSelect } from "./SettingsMenuSelect";
 import { ServiceMonogram } from "./ServiceMonogram";
 import { endpointLabel } from "./service-catalog";
-import { API_STYLE_LABEL_KEYS, CUSTOM_PROVIDER_API_STYLES } from "./provider-api-style";
+import {
+  API_STYLE_LABEL_KEYS,
+  CUSTOM_PROVIDER_API_STYLES,
+  MINIH_ROUTER_API_STYLES,
+} from "./provider-api-style";
 
 export type ProviderConnectionFieldsProps = {
   named: boolean;
@@ -35,6 +39,8 @@ export type ProviderConnectionFieldsProps = {
    */
   relocatable?: boolean;
   defaultBaseUrl?: string;
+  /** The wire format a relocatable gateway row speaks; the gateway serves several. */
+  onRelocatableApiStyleChange?: (value: CatalogApiStyle) => void;
   onChangeService: () => void;
   apiKeyRef: RefObject<HTMLInputElement | null>;
   nameRef: RefObject<HTMLInputElement | null>;
@@ -65,6 +71,7 @@ export function ProviderConnectionFields({
   lockedService = false,
   relocatable = false,
   defaultBaseUrl,
+  onRelocatableApiStyleChange,
   onChangeService,
   apiKeyRef,
   nameRef,
@@ -159,6 +166,19 @@ export function ProviderConnectionFields({
                 {baseUrlError}
               </div>
             ) : null}
+          </Field>
+          <Field label={t("settings.apiStyle")} hint={t("settings.minihRouterApiStyleHint")}>
+            <SettingsMenuSelect
+              fullWidth
+              label={t("settings.apiStyle")}
+              value={apiStyle}
+              disabled={saving}
+              onChange={(id) => onRelocatableApiStyleChange?.(id as CatalogApiStyle)}
+              options={MINIH_ROUTER_API_STYLES.map((style) => ({
+                id: style,
+                label: t(API_STYLE_LABEL_KEYS[style]),
+              }))}
+            />
           </Field>
         </div>
       ) : null}

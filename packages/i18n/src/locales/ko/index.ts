@@ -1428,6 +1428,7 @@ sklm: {
     minihRouterToken: "토큰",
     minihRouterTokenHint: "Minih Router 콘솔에서 액세스 키를 만든 뒤 여기에 붙여넣으세요.",
     minihRouterBaseUrlHint: "기본값은 router.hmini.org입니다. 직접 운영하는 Router를 쓰려면 바꾸세요.",
+    minihRouterApiStyleHint: "이 토큰이 Router에서 호출하는 경로입니다. 기본값은 Chat Completions입니다.",
     minihRouterConnect: "Minih Router 연결",
     minihRouterEmptyDesc: "Minih Router 토큰을 붙여넣으면 게이트웨이의 모든 모델을 쓸 수 있습니다.",
     minihRouterPanelDesc: "이 토큰의 잔액과 사용 가능한 모델",

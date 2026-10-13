@@ -1415,6 +1415,7 @@ sklm: {
     "minihRouterToken": "Jeton",
     "minihRouterTokenHint": "Créez une clé d'accès dans la console Minih Router et collez-la ici.",
     "minihRouterBaseUrlHint": "Par défaut router.hmini.org. Modifiez-la pour un Router auto-hébergé.",
+    "minihRouterApiStyleHint": "La route appelée par ce jeton sur le Router. Chat Completions par défaut.",
     "minihRouterConnect": "Connecter Minih Router",
     "minihRouterEmptyDesc": "Collez un jeton Minih Router pour utiliser tous les modèles de la passerelle.",
     "minihRouterPanelDesc": "Solde et modèles disponibles pour ce jeton",

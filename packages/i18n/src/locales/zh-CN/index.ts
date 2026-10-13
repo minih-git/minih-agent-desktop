@@ -1410,6 +1410,7 @@ sklm: {
     minihRouterToken: "令牌",
     minihRouterTokenHint: "在 Minih Router 控制台创建访问密钥后粘贴到这里。",
     minihRouterBaseUrlHint: "默认为 router.hmini.org，使用自建 Router 时改为自己的地址。",
+    minihRouterApiStyleHint: "该令牌在 Router 上调用的接口，默认为 Chat Completions。",
     minihRouterConnect: "接入 Minih Router",
     minihRouterEmptyDesc: "粘贴 Minih Router 令牌，即可使用网关提供的全部模型。",
     minihRouterPanelDesc: "当前令牌的余额与可用模型",

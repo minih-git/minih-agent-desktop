@@ -1432,6 +1432,7 @@ sklm: {
     minihRouterToken: "Token",
     minihRouterTokenHint: "Create an access key in the Minih Router console and paste it here.",
     minihRouterBaseUrlHint: "Defaults to router.hmini.org. Change it to use a self-hosted Router.",
+    minihRouterApiStyleHint: "The route this token calls on the Router. Chat Completions is the default.",
     minihRouterConnect: "Connect Minih Router",
     minihRouterEmptyDesc: "Paste a Minih Router token to use every model the gateway offers.",
     minihRouterPanelDesc: "Balance and models available to this token",

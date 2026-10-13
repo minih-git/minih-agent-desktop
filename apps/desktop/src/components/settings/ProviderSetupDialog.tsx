@@ -198,7 +198,7 @@ export function ProviderSetupDialog({
   */
   const endpointDraft = resolveEndpointDraft(
     resolvedBaseUrl,
-    namedPreset?.apiStyle ?? apiStyle,
+    namedPreset && !relocatable ? namedPreset.apiStyle : apiStyle,
     named || editing || Boolean(initialDraft) || apiStyleTouched,
   );
   const resolvedApiStyle: CatalogApiStyle = endpointDraft.apiStyle;
@@ -306,8 +306,16 @@ export function ProviderSetupDialog({
     }
     const currentName = name.trim();
     if (!currentName || currentName === previous?.name) setName(preset.name);
-    setBaseUrl(preset.baseUrl);
-    setApiStyle(preset.apiStyle);
+    // An existing row moved onto a relocatable gateway keeps its own address
+    // and wire format: it already reaches that gateway, and the default
+    // address would silently point it at another deployment.
+    if (preset.customBaseUrl && provider?.baseUrl) {
+      setBaseUrl(minihRouterApiBaseUrl(provider.baseUrl));
+      setApiStyle(provider.apiStyle ? normalizeApiStyle(provider.apiStyle) : preset.apiStyle);
+    } else {
+      setBaseUrl(preset.baseUrl);
+      setApiStyle(preset.apiStyle);
+    }
     focusAfterServiceChange(next);
   };
 
@@ -518,6 +526,10 @@ export function ProviderSetupDialog({
             serviceLabel={namedPreset ? t(namedPreset.labelKey) : t("settings.presetCustomEndpoint")}
             serviceBaseUrl={namedPreset ? resolvedBaseUrl : ""}
             relocatable={relocatable}
+            onRelocatableApiStyleChange={(value) => {
+              setApiStyleTouched(true);
+              setApiStyle(value);
+            }}
             defaultBaseUrl={namedPreset?.baseUrl}
             onChangeService={() => setChoosing(true)}
             apiKeyRef={apiKeyRef}

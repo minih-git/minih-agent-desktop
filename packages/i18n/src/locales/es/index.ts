@@ -1415,6 +1415,7 @@ sklm: {
     "minihRouterToken": "Token",
     "minihRouterTokenHint": "Crea una clave de acceso en la consola de Minih Router y pégala aquí.",
     "minihRouterBaseUrlHint": "Por defecto es router.hmini.org. Cámbiala para usar un Router propio.",
+    "minihRouterApiStyleHint": "La ruta que este token usa en el Router. Chat Completions es la predeterminada.",
     "minihRouterConnect": "Conectar Minih Router",
     "minihRouterEmptyDesc": "Pega un token de Minih Router para usar todos los modelos de la pasarela.",
     "minihRouterPanelDesc": "Saldo y modelos disponibles para este token",

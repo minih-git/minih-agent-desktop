@@ -1422,6 +1422,7 @@ sklm: {
     minihRouterToken: "Token",
     minihRouterTokenHint: "Minih Router konsolunda bir erişim anahtarı oluşturup buraya yapıştırın.",
     minihRouterBaseUrlHint: "Varsayılan router.hmini.org. Kendi barındırdığınız Router için değiştirin.",
+    minihRouterApiStyleHint: "Bu token'ın Router'da çağırdığı yol. Varsayılan Chat Completions.",
     minihRouterConnect: "Minih Router'a bağlan",
     minihRouterEmptyDesc: "Ağ geçidinin tüm modellerini kullanmak için bir Minih Router token'ı yapıştırın.",
     minihRouterPanelDesc: "Bu token'ın bakiyesi ve kullanılabilir modelleri",

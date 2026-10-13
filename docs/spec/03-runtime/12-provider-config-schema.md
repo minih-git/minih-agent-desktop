@@ -413,8 +413,14 @@ address is only a default (`customBaseUrl: true`):
   self-hosted Router can be used. A console address
   (`https://router.example.com`) is saved as its API address
   (`https://router.example.com/v1`); a path mount before `/v1` is kept.
+- API format defaults to Chat Completions and may be set to OpenAI Responses or
+  Anthropic Messages (the formats a Router serves under `/v1`). Like a custom
+  endpoint, the saved format is authoritative at runtime: a borrowed catalog
+  record never retargets a Router row to another wire API.
 - `matchNamedPreset` identifies the row by `vendorKey` wherever it points; the
-  default address alone also matches the preset.
+  default address alone also matches the preset. A custom row that already
+  points at a Router is not reclassified automatically; Edit → Change service
+  → Minih Router converts it and keeps its address, format, models and key.
 - The Add Service chooser shows it alone in a leading **Recommended** group,
   and the empty model-configuration page offers **Connect Minih Router** as
   its primary action. Adding it follows the ordinary default-provider rule: it

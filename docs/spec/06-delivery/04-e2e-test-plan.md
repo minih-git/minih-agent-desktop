@@ -17242,7 +17242,9 @@ renderer's durable transcript reads. No real model or provider is contacted.
 - **Steps:** Open Add Service and pick Minih Router from the Recommended group.
   Paste a token, replace the Base URL with a console address, save. Open the
   row's panel: read the balance, page forward through the model plaza, search,
-  then make the model read fail and Retry.
+  then make the model read fail and Retry. Separately, edit an existing custom
+  row that points at a Router (Responses format) and change its service to
+  Minih Router.
 - **Expected:** Minih Router is the first tile and is not repeated among API-key
   services; the Base URL starts at `https://router.hmini.org/v1` and saves as
   the typed host's `/v1` address with `vendorKey: "minih-router"`. The balance
@@ -17250,7 +17252,9 @@ renderer's durable transcript reads. No real model or provider is contacted.
   requests, multiplier and expiry are shown. Cards show per-1M input/output
   prices, "from", cache price, context and Added; paging and search request the
   right page; a failure keeps the last page and Retry recovers. Renderer calls
-  carry only the provider id, never the token.
+  carry only the provider id, never the token. The converted row saves
+  `vendorKey: "minih-router"` with its own address and Responses format and
+  without rewriting the stored key.
 - **Specs:** 03-runtime/12 Minih Router preset and account channels; 04-ux/06
   Minih Router panel.
 - **Acceptance:** `minih-router-settings-user-path.test.mjs`,

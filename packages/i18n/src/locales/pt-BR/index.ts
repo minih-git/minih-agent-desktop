@@ -1387,6 +1387,7 @@ export const ptBR = {
     minihRouterToken: "Token",
     minihRouterTokenHint: "Crie uma chave de acesso no console do Minih Router e cole aqui.",
     minihRouterBaseUrlHint: "O padrão é router.hmini.org. Altere para usar um Router próprio.",
+    minihRouterApiStyleHint: "A rota que este token chama no Router. O padrão é Chat Completions.",
     minihRouterConnect: "Conectar Minih Router",
     minihRouterEmptyDesc: "Cole um token do Minih Router para usar todos os modelos do gateway.",
     minihRouterPanelDesc: "Saldo e modelos disponíveis para este token",

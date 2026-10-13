@@ -1410,6 +1410,7 @@ sklm: {
     minihRouterToken: "權杖",
     minihRouterTokenHint: "在 Minih Router 主控台建立存取金鑰後貼到這裡。",
     minihRouterBaseUrlHint: "預設為 router.hmini.org，使用自建 Router 時改為自己的位址。",
+    minihRouterApiStyleHint: "此權杖在 Router 上呼叫的介面，預設為 Chat Completions。",
     minihRouterConnect: "接入 Minih Router",
     minihRouterEmptyDesc: "貼上 Minih Router 權杖，即可使用閘道提供的全部模型。",
     minihRouterPanelDesc: "目前權杖的餘額與可用模型",
