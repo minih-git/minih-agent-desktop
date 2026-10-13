@@ -1,0 +1,159 @@
+#!/usr/bin/env node
+/**
+ * Electron boot smoke: launches the built desktop app with a throwaway
+ * profile and asserts the sandboxed preload bridge, IPC round-trips, and
+ * E2E-SESSION-list-refresh-keeps-desktop-responsive against 800 synthetic
+ * sessions (BOOT_PROBE emitted by electron/main/bootstrap/startup.ts).
+ *
+ * Prereqs: `pnpm --filter @minih-agent/desktop build` and a host-core binary
+ * (target/debug or target/release, or MINIH_AGENT_HOST_BIN).
+ */
+import { spawn } from "node:child_process";
+import { rmSync, existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  createTempDataDir,
+  repositoryRoot,
+  resolveElectronBinary,
+} from "./e2e/boot.mjs";
+
+const root = repositoryRoot();
+const { appDir, electronBinary: electronBin } = resolveElectronBinary(root);
+
+if (!existsSync(join(appDir, "out/main/index.js"))) {
+  console.error("desktop app not built. Run: pnpm --filter @minih-agent/desktop build");
+  process.exit(1);
+}
+if (!existsSync(electronBin)) {
+  console.error("Electron binary missing:", electronBin);
+  process.exit(1);
+}
+
+for (const preloadPath of [
+  join(appDir, "out/preload/index.cjs"),
+  join(appDir, "out/preload/plugin-panel.js"),
+]) {
+  let source;
+  try {
+    source = readFileSync(preloadPath, "utf8");
+  } catch {
+    console.error("preload output missing or unreadable:", preloadPath);
+    process.exit(1);
+  }
+  if (/require\(["']\.\//.test(source)) {
+    console.error("sandbox preload must not require a local runtime chunk:", preloadPath);
+    process.exit(1);
+  }
+}
+
+const dataDir = createTempDataDir("minih-agent-desktop-boot-");
+const env = { ...process.env };
+delete env.ELECTRON_RUN_AS_NODE;
+const child = spawn(electronBin, ["."], {
+  cwd: appDir,
+  env: {
+    ...env,
+    MINIH_AGENT_DATA_DIR: dataDir,
+    MINIH_AGENT_BOOT_PROBE: "1",
+    MINIH_AGENT_START_MAXIMIZED: process.platform === "darwin" ? "0" : "1",
+    // never inherit a dev-server URL: probe the packaged renderer path
+    ELECTRON_RENDERER_URL: "",
+  },
+  stdio: ["ignore", "pipe", "pipe"],
+});
+
+let probe = null;
+let out = "";
+const pendingLines = new Map();
+
+const timeout = setTimeout(() => {
+  console.error("FAIL boot-probe — timeout after 45s");
+  console.error(out.slice(-2000));
+  child.kill("SIGKILL");
+  cleanup(1);
+}, 45_000);
+
+function cleanup(code) {
+  clearTimeout(timeout);
+  try {
+    rmSync(dataDir, { recursive: true, force: true });
+  } catch {}
+  process.exit(code);
+}
+
+for (const stream of [child.stdout, child.stderr]) {
+  stream.on("data", (buf) => {
+    const text = String(buf);
+    out += text;
+    const lines = `${pendingLines.get(stream) ?? ""}${text}`.split(/\r?\n/);
+    pendingLines.set(stream, lines.pop());
+    for (const line of lines) {
+      if (!line.startsWith("BOOT_PROBE ")) continue;
+      try { probe = JSON.parse(line.slice("BOOT_PROBE ".length)); } catch {}
+    }
+  });
+}
+
+child.on("close", (code) => {
+  const menuContractOk =
+    process.platform === "darwin" ? probe?.menuCount >= 6 : probe?.menuCount === 0;
+  const sessions = probe?.sessionList;
+  // Each condition is able to fail. The probe's own construction guarantees the
+  // seeded count, fixture-model count, refresh rounds and main-loop ticks, so
+  // those are not asserted; the per-read list duration and the Main-thread
+  // heartbeat gap are the live responsiveness observations that can fail.
+  const listDurations = Array.isArray(sessions?.listDurationsMs)
+    ? sessions.listDurationsMs
+    : [];
+  const sessionListOk =
+    sessions !== undefined &&
+    sessions.returnedCount >= 800 &&
+    sessions.complete === true &&
+    sessions.capabilitiesConsistent === true &&
+    listDurations.length === 8 &&
+    Math.max(...listDurations) < 1000 &&
+    sessions.maxMainGapMs < 1000 &&
+    Array.isArray(sessions.heartbeatDurationsMs) &&
+    sessions.heartbeatDurationsMs.length > 0 &&
+    sessions.heartbeatDurationsMs.every((duration) => duration < 1000);
+  const projectRemove = probe?.projectRemove;
+  const projectRemoveOk =
+    projectRemove?.ok === true &&
+    projectRemove.removed === false &&
+    projectRemove.sessionsRemoved === 0;
+  const ctrlRBlocked = probe?.ctrlRBlocked === true;
+  if (
+    code === 0 &&
+    probe?.ok &&
+    probe.appName === "Minih-Agent-Desktop" &&
+    probe.platform === process.platform &&
+    (process.platform === "darwin" || probe.maximized === true) &&
+    menuContractOk &&
+    sessionListOk &&
+    projectRemoveOk &&
+    ctrlRBlocked
+  ) {
+    const menuDetail =
+      process.platform === "darwin"
+        ? `${probe.menuCount} native menu groups`
+        : "menu-free frameless chrome";
+    console.log(
+      `PASS boot-probe — app v${probe.version}, host protocol ${probe.hostProtocol}, ` +
+        `${menuDetail} on ${probe.platform}`,
+    );
+    console.log(
+      "PASS E2E-SESSION-list-refresh-keeps-desktop-responsive — " + JSON.stringify(sessions),
+    );
+    console.log(
+      "PASS E2E-PROJECT-delete-removes-project-and-owned-sessions — " +
+        "projectRemove IPC round-trip through the sandboxed preload " +
+        `{removed:${probe.projectRemove.removed}, sessionsRemoved:${probe.projectRemove.sessionsRemoved}}`,
+    );
+    console.log("PASS E2E-072-main-window-ctrl-r-blocked");
+    cleanup(0);
+  } else {
+    console.error("FAIL boot-probe —", JSON.stringify(probe));
+    console.error(out.slice(-2000));
+    cleanup(1);
+  }
+});

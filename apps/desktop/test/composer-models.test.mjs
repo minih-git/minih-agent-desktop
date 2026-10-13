@@ -1,0 +1,410 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  composerModelBadges,
+  composerModelBinding,
+  composerModelDisplayName,
+  composerModelMatchesQuery,
+  composerModelsForProvider,
+  sameComposerModelId,
+} from "../src/lib/composer-models.ts";
+import { thinkingProviderForModel } from "../src/features/chat/composer/model.ts";
+
+const binding = (id) => ({
+  id,
+  contextWindow: 128_000,
+  maxTokens: 8_192,
+  thinkingLevels: [],
+  defaultThinkingLevel: null,
+});
+
+const model = (modelId, displayName = modelId) => ({
+  modelId,
+  displayName,
+  providerId: "mimo",
+  capabilities: ["text"],
+  source: "discovered",
+});
+
+test("Composer only lists models configured for the provider", () => {
+  const models = composerModelsForProvider(
+    {
+      id: "mimo",
+      models: [binding("claude-opus-4-6"), binding("x-ai/grok-4.6")],
+    },
+    [
+      model("aws/claude-fable-5-006"),
+      model("claude-opus-4-6", "Claude Opus 4.6"),
+      model("x-ai/grok-4.6", "Grok 4.6"),
+    ],
+  );
+
+  assert.deepEqual(
+    models.map(({ modelId, displayName }) => ({ modelId, displayName })),
+    [
+      { modelId: "claude-opus-4-6", displayName: "claude-opus-4-6" },
+      { modelId: "x-ai/grok-4.6", displayName: "x-ai/grok-4.6" },
+    ],
+  );
+});
+
+test("configured models remain selectable when discovery is unavailable", () => {
+  const models = composerModelsForProvider(
+    {
+      id: "custom",
+      models: [binding("my-model-v2")],
+    },
+    undefined,
+  );
+
+  assert.equal(models.length, 1);
+  assert.equal(models[0].modelId, "my-model-v2");
+  assert.equal(models[0].displayName, "my-model-v2");
+});
+
+test("Composer context labels use configured limits and retain them without discovery", () => {
+  const provider = {
+    id: "space-bunny",
+    models: [
+      {
+        ...binding("claude-opus-5-5"),
+        contextWindow: 500_000,
+        contextWindowSource: "user",
+      },
+    ],
+  };
+  const [discovered] = composerModelsForProvider(provider, [
+    { ...model("claude-opus-5-5"), contextWindow: 1_000_000 },
+  ]);
+
+  assert.equal(discovered.contextWindow, 500_000);
+
+  const [catalogOwned] = composerModelsForProvider(
+    {
+      id: "space-bunny",
+      models: [
+        {
+          ...binding("catalog-model"),
+          contextWindow: 128_000,
+          contextWindowSource: "catalog",
+        },
+      ],
+    },
+    [{ ...model("catalog-model"), contextWindow: 1_000_000 }],
+  );
+
+  assert.equal(catalogOwned.contextWindow, 1_000_000);
+
+  const [undiscovered] = composerModelsForProvider(
+    {
+      id: "space-bunny",
+      models: [
+        {
+          ...binding("custom-model"),
+          contextWindow: 333_333,
+          contextWindowSource: "user",
+        },
+      ],
+    },
+    undefined,
+  );
+
+  assert.equal(undiscovered.contextWindow, 333_333);
+});
+
+test("unmatched models expose the full thinking ladder unless a binding overrides it", () => {
+  const provider = {
+    id: "custom",
+    models: [],
+    supportsReasoning: false,
+    supportedThinkingLevels: ["off"],
+  };
+  const unmatched = thinkingProviderForModel(provider, "route/model", undefined);
+
+  assert.deepEqual(unmatched?.supportedThinkingLevels, [
+    "off",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ]);
+  assert.equal(unmatched?.supportsReasoning, true);
+
+  const emptyBinding = thinkingProviderForModel(
+    {
+      ...provider,
+      models: [binding("route/model")],
+    },
+    "route/model",
+    undefined,
+  );
+  assert.deepEqual(emptyBinding?.supportedThinkingLevels, [
+    "off",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ]);
+  assert.equal(emptyBinding?.supportsReasoning, true);
+
+  const constrained = thinkingProviderForModel(
+    {
+      ...provider,
+      models: [{ ...binding("route/model"), thinkingLevels: ["off"] }],
+    },
+    "route/model",
+    undefined,
+  );
+  assert.deepEqual(constrained?.supportedThinkingLevels, ["off"]);
+  assert.equal(constrained?.supportsReasoning, false);
+});
+
+test("Composer preserves configured order even when discovery returns another order", () => {
+  const configured = ["z-custom", "gpt-6-astra", "claude-opus-4-6"];
+  const models = composerModelsForProvider(
+    { id: "custom", models: configured.map(binding) },
+    [model("claude-opus-4-6"), model("gpt-6-astra")],
+  );
+  assert.deepEqual(models.map(({ modelId }) => modelId), configured);
+});
+
+test("legacy providers fall back to their default model binding", () => {
+  const models = composerModelsForProvider(
+    { id: "legacy", models: [], defaultModelId: "legacy-model" },
+    [model("legacy-model", "Legacy model")],
+  );
+
+  assert.deepEqual(models.map((item) => item.modelId), ["legacy-model"]);
+  assert.equal(models[0].displayName, "legacy-model");
+});
+
+test("a configured alias labels its row while displayName shows the wire id", () => {
+  const provider = {
+    id: "deepseek",
+    models: [{ ...binding("deepseek-v4-pro"), alias: "  pro  " }],
+  };
+  const models = composerModelsForProvider(
+    provider,
+    [model("deepseek-v4-pro", "DeepSeek V4 Pro")],
+  );
+
+  assert.equal(models[0].modelId, "deepseek-v4-pro");
+  assert.equal(models[0].displayName, "deepseek-v4-pro");
+  assert.equal(composerModelDisplayName(provider, "deepseek-v4-pro"), "pro");
+  assert.equal(composerModelMatchesQuery(models[0], "provider", "PRO", "pro"), true);
+  assert.equal(composerModelMatchesQuery(models[0], "provider", "DeepSeek V4 Pro", "pro"), false);
+});
+
+test("a catalog friendly name never replaces the selected wire id without an alias", () => {
+  assert.equal(
+    composerModelDisplayName(
+      { id: "custom", models: [binding("ag/claude-sonnet-4-6")] },
+      "ag/claude-sonnet-4-6",
+    ),
+    "ag/claude-sonnet-4-6",
+  );
+});
+test("a configured alias is visible before discovery data is available", () => {
+  const provider = {
+    id: "openai",
+    models: [{ ...binding("gpt-5.3-codex-spark"), alias: "  Spark  " }],
+  };
+  const models = composerModelsForProvider(provider, undefined);
+
+  assert.equal(models[0].displayName, "gpt-5.3-codex-spark");
+  assert.equal(
+    composerModelDisplayName(provider, models[0].modelId),
+    "Spark",
+  );
+});
+
+
+test("the display name prefers a configured alias while preserving model identity", () => {
+  assert.equal(
+    composerModelDisplayName(
+      { id: "openai", models: [{ ...binding("openai/gpt-5.3-codex-spark"), alias: "Spark" }] },
+      "openai/gpt-5.3-codex-spark",
+    ),
+    "Spark",
+  );
+});
+
+test("an exact binding alias wins over a broader equivalent id match", () => {
+  assert.equal(
+    composerModelDisplayName(
+      {
+        id: "openai",
+        models: [
+          { ...binding("gpt-5.3-codex-spark"), alias: "Base" },
+          { ...binding("openai/gpt-5.3-codex-spark"), alias: "Namespaced" },
+        ],
+      },
+      "openai/gpt-5.3-codex-spark",
+    ),
+    "Namespaced",
+  );
+});
+
+test("a blank alias leaves the wire id as display name", () => {
+  const models = composerModelsForProvider(
+    {
+      id: "deepseek",
+      models: [{ ...binding("deepseek-v4-pro"), alias: "   " }],
+    },
+    [model("deepseek-v4-pro", "DeepSeek V4 Pro")],
+  );
+
+  assert.equal(models[0].displayName, "deepseek-v4-pro");
+  assert.equal(
+    composerModelDisplayName(
+      { id: "deepseek", models: [{ ...binding("deepseek-v4-pro"), alias: "   " }] },
+      "deepseek-v4-pro",
+    ),
+    "deepseek-v4-pro",
+  );
+});
+
+test("composer model rows expose published reasoning and vision markers", () => {
+  assert.deepEqual(
+    composerModelBadges({
+      modelId: "claude-opus-4-6",
+      displayName: "Claude Opus 4.6",
+      providerId: "anthropic",
+      capabilities: ["text", "reasoning", "vision"],
+      reasoning: true,
+      modalities: { input: ["text", "image"], output: ["text"] },
+    }),
+    ["reasoning", "vision"],
+  );
+  assert.deepEqual(
+    composerModelBadges({
+      modelId: "text-only",
+      displayName: "Text only",
+      providerId: "acme",
+      capabilities: ["text"],
+    }),
+    [],
+  );
+});
+
+test("composer vision marker follows the binding's image-input override (#214)", () => {
+  const textOnly = {
+    modelId: "grok-auto",
+    displayName: "grok-auto",
+    providerId: "relay",
+    capabilities: ["text"],
+  };
+  const visionModel = {
+    modelId: "grok-4.5",
+    displayName: "Grok 4.5",
+    providerId: "relay",
+    capabilities: ["text", "vision"],
+    modalities: { input: ["text", "image"], output: ["text"] },
+  };
+  const provider = {
+    id: "relay",
+    models: [
+      { ...binding("grok-auto"), supportsImages: true },
+      { ...binding("grok-4.5"), supportsImages: false },
+    ],
+  };
+  // Settings → model → Advanced → Image input checked on a model discovered as text-only.
+  assert.deepEqual(composerModelBadges(textOnly, provider), ["vision"]);
+  // ...and unchecked on a model published as vision-capable.
+  assert.deepEqual(composerModelBadges(visionModel, provider), []);
+  // No override (or no binding at all): the published capability decides, as before.
+  assert.deepEqual(
+    composerModelBadges(visionModel, { id: "relay", models: [binding("grok-4.5")] }),
+    ["vision"],
+  );
+  assert.deepEqual(composerModelBadges(textOnly, { id: "relay", models: [] }), []);
+  assert.deepEqual(composerModelBadges(visionModel), ["vision"]);
+});
+
+test("composer model search matches id, name, family and provider", () => {
+  const model = {
+    modelId: "claude-opus-4-6",
+    displayName: "Claude Opus 4.6",
+    providerId: "anthropic",
+    family: "claude-4",
+    capabilities: ["text"],
+  };
+  for (const query of ["opus", "CLAUDE-4", "Anthropic", "  "]) {
+    assert.equal(
+      composerModelMatchesQuery(model, "Anthropic", query),
+      true,
+      `expected ${JSON.stringify(query)} to match`,
+    );
+  }
+  assert.equal(composerModelMatchesQuery(model, "Anthropic", "gemini"), false);
+});
+
+test("prefixed and unprefixed wire ids remain separate even with one catalog name", () => {
+  const provider = {
+    id: "relay",
+    models: [
+      { ...binding("proxy/model"), alias: "Short", supportsImages: false },
+      { ...binding("model"), supportsImages: true },
+    ],
+  };
+  const rows = composerModelsForProvider(provider, [
+    { ...model("model", "Friendly"), reasoning: true, capabilities: ["text", "reasoning"] },
+    { ...model("proxy/model", "Friendly"), capabilities: ["text", "vision"] },
+  ]);
+  assert.deepEqual(rows.map(({ modelId, displayName }) => [modelId, displayName]), [
+    ["proxy/model", "proxy/model"],
+    ["model", "model"],
+  ]);
+  assert.equal(composerModelDisplayName(provider, "proxy/model"), "Short");
+  assert.equal(composerModelMatchesQuery(rows[0], "relay", "Short", "Short"), true);
+  assert.deepEqual(composerModelBadges(rows[0], provider), []);
+  assert.deepEqual(composerModelBadges(rows[1], provider), ["reasoning", "vision"]);
+  assert.equal(composerModelBinding(provider, "proxy/model"), provider.models[0]);
+  assert.equal(composerModelBinding(provider, "model"), provider.models[1]);
+  assert.equal(sameComposerModelId("proxy/model", "model"), false);
+  assert.equal(sameComposerModelId("proxy/model", "PROXY/MODEL"), true);
+});
+
+test("legacy unprefixed selection does not borrow a prefixed route's metadata", () => {
+  const provider = { id: "relay", models: [binding("proxy/model")] };
+  const rows = composerModelsForProvider(provider, [model("model", "Friendly")]);
+  assert.equal(rows[0].displayName, "proxy/model");
+  assert.deepEqual(rows[0].capabilities, ["text"]);
+  assert.equal(composerModelBinding(provider, "model"), undefined);
+  assert.equal(composerModelDisplayName(provider, "model"), "model");
+});
+
+test("discovery rows without a trusted match keep the full ladder after loading", () => {
+  const levels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+  for (const source of ["discovered", "user", "bundled"]) {
+    const row = { ...model("route/model"), source, reasoning: false, supportedThinkingLevels: [] };
+    for (const models of [[], [binding("route/model")]]) {
+      const provider = { id: "custom", models, supportsReasoning: false, supportedThinkingLevels: ["off"] };
+      const before = thinkingProviderForModel(provider, "route/model", undefined);
+      const after = thinkingProviderForModel(provider, "route/model", [row]);
+      assert.deepEqual(after, before);
+      assert.deepEqual(after.supportedThinkingLevels, levels);
+      assert.equal(after.supportsReasoning, true);
+    }
+    for (const thinkingLevels of [["off"], ["low", "high"]]) {
+      const provider = { id: "custom", models: [{ ...binding("route/model"), thinkingLevels }] };
+      const result = thinkingProviderForModel(provider, "route/model", [row]);
+      assert.deepEqual(result.supportedThinkingLevels, thinkingLevels);
+      assert.equal(result.supportsReasoning, thinkingLevels.includes("high"));
+    }
+  }
+});
+
+test("trusted matches retain published capabilities and explicit empty bindings", () => {
+  const row = { ...model("route/model"), catalogSource: "models.dev", reasoning: false, supportedThinkingLevels: [] };
+  const provider = { id: "custom", models: [] };
+  assert.equal(thinkingProviderForModel(provider, "route/model", [row]).supportsReasoning, false);
+  const reasoning = { ...row, reasoning: true, supportedThinkingLevels: ["low", "high"] };
+  assert.deepEqual(thinkingProviderForModel(provider, "route/model", [reasoning]).supportedThinkingLevels, ["low", "high"]);
+  assert.equal(thinkingProviderForModel({ ...provider, models: [binding("route/model")] }, "route/model", [reasoning]).supportsReasoning, false);
+});

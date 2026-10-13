@@ -1,0 +1,179 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  modelListRequest,
+  normalizeModelList,
+} from "../electron/main/model-discovery.ts";
+
+test("openai-style lists normalize, dedupe, and sort", () => {
+  const models = normalizeModelList("chat_completions", {
+    object: "list",
+    data: [
+      { id: "gpt-4.1", object: "model" },
+      { id: "deepseek-chat" },
+      { id: "gpt-4.1" },
+      { object: "model" },
+    ],
+  });
+  assert.deepEqual(models, [
+    { modelId: "deepseek-chat", displayName: "deepseek-chat" },
+    { modelId: "gpt-4.1", displayName: "gpt-4.1" },
+  ]);
+  // Bare-array gateways parse the same way.
+  assert.equal(normalizeModelList("responses", [{ id: "o4-mini" }]).length, 1);
+});
+
+test("a models[] response with slug rows is read as a list too", () => {
+  /*
+    Zhipu publishes three model-list shapes on one host: OpenAI Responses serves
+    `{ models: [{ slug }] }`, Anthropic and the coding plan serve `{ data: [{ id }] }`.
+    Reading only `data[].id` left the Responses row with an empty list, and the
+    larger sweep then looked for the models somewhere else entirely.
+  */
+  assert.deepEqual(
+    normalizeModelList("responses", {
+      models: [
+        { slug: "glm-5.3", display_name: "glm-5.3", context_window: 1_048_576, supported_in_api: true },
+        { slug: "glm-5.3" },
+      ],
+    }),
+    [{ modelId: "glm-5.3", displayName: "glm-5.3", contextWindow: 1_048_576 }],
+  );
+  // The two id keys are mutually exclusive; `id` wins if a gateway publishes both.
+  assert.deepEqual(normalizeModelList("chat_completions", { models: [{ id: "m", slug: "s" }] }), [
+    { modelId: "m", displayName: "m" },
+  ]);
+  // A Google list still takes its own branch and keeps the `models/` prefix off.
+  assert.deepEqual(normalizeModelList("google_generative_ai", { models: [{ name: "models/gemini-3" }] }), [
+    { modelId: "gemini-3", displayName: "gemini-3" },
+  ]);
+  // A data list still wins over a models wrapper when both are present.
+  assert.deepEqual(normalizeModelList("responses", { data: [{ id: "a" }], models: [{ slug: "b" }] }), [
+    { modelId: "a", displayName: "a" },
+  ]);
+});
+test("anthropic lists keep display names", () => {
+  const models = normalizeModelList("anthropic_messages", {
+    data: [{ id: "claude-sonnet-5", display_name: "Claude Sonnet 5" }],
+  });
+  assert.deepEqual(models, [
+    { modelId: "claude-sonnet-5", displayName: "Claude Sonnet 5" },
+  ]);
+});
+
+test("google lists strip the models/ prefix", () => {
+  const models = normalizeModelList("google_generative_ai", {
+    models: [
+      {
+        name: "models/gemini-2.5-pro",
+        displayName: "Gemini 2.5 Pro",
+        inputTokenLimit: 1_048_576,
+        outputTokenLimit: 65_536,
+      },
+      { name: "models/gemini-2.5-flash" },
+    ],
+  });
+  assert.deepEqual(models, [
+    { modelId: "gemini-2.5-flash", displayName: "gemini-2.5-flash" },
+    {
+      modelId: "gemini-2.5-pro",
+      displayName: "Gemini 2.5 Pro",
+      contextWindow: 1_048_576,
+      maxTokens: 65_536,
+    },
+  ]);
+});
+
+test("a model list's own capacity report is kept, nothing is guessed when absent", () => {
+  const models = normalizeModelList("chat_completions", {
+    data: [
+      { id: "with-capacity", context_window: 1_000_000, max_output_tokens: 64_000 },
+      { id: "openrouter-style", context_length: 200_000, max_tokens: 8_192 },
+      { id: "gemini-style", inputTokenLimit: 1_048_576, outputTokenLimit: 65_536 },
+      { id: "camel-style", contextWindow: 32_000, maxTokens: 4_096 },
+      { id: "silent" },
+      { id: "zero", context_window: 0 },
+      { id: "unsafe", context_window: Number.MAX_SAFE_INTEGER + 1 },
+    ],
+  });
+  const byId = new Map(models.map((model) => [model.modelId, model]));
+  assert.equal(byId.get("with-capacity").contextWindow, 1_000_000);
+  assert.equal(byId.get("with-capacity").maxTokens, 64_000);
+  assert.equal(byId.get("openrouter-style").contextWindow, 200_000);
+  assert.equal(byId.get("openrouter-style").maxTokens, 8_192);
+  assert.equal(byId.get("gemini-style").contextWindow, 1_048_576);
+  assert.equal(byId.get("gemini-style").maxTokens, 65_536);
+  assert.equal(byId.get("camel-style").contextWindow, 32_000);
+  // An omitted or non-positive capacity states nothing: no guessed default.
+  assert.equal(byId.get("silent").contextWindow, undefined);
+  assert.equal(byId.get("silent").maxTokens, undefined);
+  assert.equal(byId.get("zero").contextWindow, undefined);
+  assert.equal(byId.get("unsafe").contextWindow, undefined);
+});
+
+test("requests use per-style endpoints and auth headers", () => {
+  const openai = modelListRequest({
+    baseUrl: "https://api.example.com/v1/",
+    apiKey: "sk-x",
+    apiStyle: "chat_completions",
+  });
+  assert.equal(openai.url, "https://api.example.com/v1/models");
+  assert.equal(openai.headers.Authorization, "Bearer sk-x");
+
+  const anthropic = modelListRequest({
+    baseUrl: "https://api.anthropic.com",
+    apiKey: "sk-a",
+    apiStyle: "anthropic_messages",
+  });
+  assert.equal(anthropic.url, "https://api.anthropic.com/v1/models?limit=1000");
+  assert.equal(anthropic.headers["x-api-key"], "sk-a");
+  assert.ok(anthropic.headers["anthropic-version"]);
+  // A base already ending in /v1 is not doubled.
+  assert.match(
+    modelListRequest({ baseUrl: "https://gw.example/v1", apiStyle: "anthropic_messages" }).url,
+    /^https:\/\/gw\.example\/v1\/models/,
+  );
+
+  const google = modelListRequest({
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    apiKey: "g-key",
+    apiStyle: "google_generative_ai",
+  });
+  assert.match(google.url, /\/v1beta\/models\?/);
+  assert.match(google.url, /key=g-key/);
+  assert.deepEqual(google.headers, {});
+});
+
+test("OpenCode Go uses its fixed OpenAI-compatible model endpoint", () => {
+  const request = modelListRequest({
+    baseUrl: "https://opencode.ai/zen/go/v1",
+    apiKey: "go-key",
+    apiStyle: "opencode_go",
+  });
+  assert.equal(request.url, "https://opencode.ai/zen/go/v1/models");
+  assert.equal(request.headers.Authorization, "Bearer go-key");
+});
+
+test("optional custom headers are attached to discovery requests", () => {
+  const request = modelListRequest({
+    baseUrl: "https://api.example.com/v1",
+    apiKey: "sk-x",
+    apiStyle: "chat_completions",
+    headers: { "User-Agent": "Custom/1.0", "X-Gateway": "1" },
+  });
+  assert.equal(request.headers.Authorization, "Bearer sk-x");
+  assert.equal(request.headers["User-Agent"], "Custom/1.0");
+  assert.equal(request.headers["X-Gateway"], "1");
+  const smashed = modelListRequest({
+    baseUrl: "https://api.example.com/v1",
+    apiKey: "sk-x",
+    apiStyle: "chat_completions",
+    headers: { Authorization: "Bearer other" },
+  });
+  assert.equal(smashed.headers.Authorization, "Bearer sk-x");
+  const google = modelListRequest({
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    apiStyle: "google_generative_ai",
+  });
+  assert.equal(google.headers["User-Agent"], undefined);
+});

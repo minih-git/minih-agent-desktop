@@ -1,0 +1,37 @@
+{
+  "name": "@minih-agent/agent-host-cli",
+  "version": "0.19.1",
+  "private": true,
+  "type": "module",
+  "description": "Headless PI Agent Host: RACP-WS server over the Agent Host module, the pi sidecar, and host-core",
+  "bin": {
+    "agent-host-cli": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "bundle": "node scripts/bundle.mjs",
+    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('dist-bundle',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@minih-agent/agent-host": "workspace:*",
+    "@minih-agent/agent-runtime": "workspace:*",
+    "@minih-agent/host-runtime": "workspace:*",
+    "@minih-agent/racp": "workspace:*",
+    "@minih-agent/shared": "workspace:*",
+    "ws": "8.21.1"
+  },
+  "optionalDependencies": {
+    "node-pty": "1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

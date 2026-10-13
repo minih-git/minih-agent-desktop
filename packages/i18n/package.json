@@ -1,0 +1,36 @@
+{
+  "name": "@minih-agent/i18n",
+  "version": "0.19.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./locale-info": {
+      "types": "./dist/locale-info.d.ts",
+      "import": "./dist/locale-info.js"
+    },
+    "./locales/*": {
+      "types": "./dist/locales/*/index.d.ts",
+      "import": "./dist/locales/*/index.js"
+    },
+    "./locales/en": {
+      "types": "./dist/locales/en/index.d.ts",
+      "import": "./dist/locales/en/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

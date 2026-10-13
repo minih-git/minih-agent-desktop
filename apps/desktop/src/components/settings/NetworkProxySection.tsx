@@ -1,0 +1,277 @@
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type {
+  AppSettings,
+  NetworkPolicyMode,
+  NetworkPolicySettings,
+  NetworkProxyMode,
+  NetworkProxySettings,
+} from "@minih-agent/shared";
+import {
+  DEFAULT_NETWORK_PROXY_BYPASS,
+  isRelaxedNetworkPolicy,
+  parseProxyUrl,
+  resolveCustomProxyUrl,
+  settingsForInactiveProxyMode,
+  validateNetworkProxy,
+} from "@minih-agent/shared";
+import { api } from "../../lib/api";
+import { Button, Input, SegmentedControl, SettingsToggle, cx } from "../ui";
+import { SettingsRow } from "../../features/settings/primitives";
+import { useAppStore } from "../../stores/app-store";
+
+const MODES: NetworkProxyMode[] = ["system", "direct", "custom"];
+
+function currentProxy(settings: AppSettings): NetworkProxySettings {
+  return settings.networkProxy ?? { mode: "system" };
+}
+
+export function NetworkProxySection({
+  settings,
+  saveSettings,
+}: {
+  settings: AppSettings;
+  saveSettings: (patch: Partial<AppSettings>) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const saved = currentProxy(settings);
+  const [urlDraft, setUrlDraft] = useState(saved.url ?? "");
+  const [bypassDraft, setBypassDraft] = useState(
+    saved.bypass ?? DEFAULT_NETWORK_PROXY_BYPASS,
+  );
+  const [urlError, setUrlError] = useState(false);
+  const showToast = useAppStore((state) => state.showToast);
+  const [testState, setTestState] = useState<"idle" | "busy" | "ok" | "fail">(
+    "idle",
+  );
+  const [testMessage, setTestMessage] = useState("");
+
+  useEffect(() => {
+    setUrlDraft(saved.url ?? "");
+    setBypassDraft(saved.bypass ?? DEFAULT_NETWORK_PROXY_BYPASS);
+    setUrlError(false);
+  }, [saved.url, saved.bypass]);
+
+  const persist = async (next: NetworkProxySettings) => {
+    const validated = validateNetworkProxy(next);
+    if (!validated.ok) {
+      setUrlError(true);
+      return;
+    }
+    setUrlError(false);
+    try {
+      await saveSettings({ networkProxy: validated.value });
+    } catch {
+      showToast(t("settings.proxySaveError"), { variant: "error" });
+    }
+  };
+
+  const chooseMode = (mode: NetworkProxyMode) => {
+    if (mode === saved.mode) return;
+    setTestState("idle");
+    if (mode !== "custom") {
+      // Blur can start an async save, so read the current drafts here instead
+      // of relying on `saved` to have refreshed before this click completes.
+      void persist(
+        settingsForInactiveProxyMode(mode, saved, urlDraft, bypassDraft),
+      );
+      return;
+    }
+    // A stale invalid draft loses to the remembered proxy: restoring the
+    // user's own URL on re-entry is the whole point of remembering it.
+    const resolved = resolveCustomProxyUrl(urlDraft, saved.url);
+    if (!resolved.fromDraft) setUrlDraft(resolved.url);
+    void persist({
+      mode: "custom",
+      url: resolved.url,
+      bypass: bypassDraft.trim() || undefined,
+    });
+  };
+
+  const commitUrl = () => {
+    if (saved.mode !== "custom") return;
+    const parsed = parseProxyUrl(urlDraft);
+    if (!parsed.ok) {
+      setUrlError(true);
+      return;
+    }
+    if (parsed.value.href === saved.url) {
+      setUrlError(false);
+      return;
+    }
+    void persist({
+      mode: "custom",
+      url: parsed.value.href,
+      bypass: bypassDraft.trim() || undefined,
+    });
+  };
+
+  const commitBypass = () => {
+    if (saved.mode !== "custom") return;
+    const next = bypassDraft.trim() || DEFAULT_NETWORK_PROXY_BYPASS;
+    setBypassDraft(next);
+    if (next === (saved.bypass ?? DEFAULT_NETWORK_PROXY_BYPASS)) return;
+    if (!saved.url) return;
+    void persist({ mode: "custom", url: saved.url, bypass: next });
+  };
+
+  const runTest = async () => {
+    setTestState("busy");
+    setTestMessage("");
+    const payload: NetworkProxySettings =
+      saved.mode === "custom"
+        ? {
+            mode: "custom",
+            url: urlDraft.trim() || saved.url,
+            bypass: bypassDraft.trim() || undefined,
+          }
+        : { mode: saved.mode };
+    try {
+      const result = await api.testNetworkProxy(payload);
+      if (result.ok) {
+        setTestState("ok");
+        setTestMessage(t("settings.proxyTestOk"));
+      } else {
+        setTestState("fail");
+        setTestMessage(
+          t("settings.proxyTestFail", { message: result.error ?? "" }),
+        );
+      }
+    } catch (error) {
+      setTestState("fail");
+      setTestMessage(
+        t("settings.proxyTestFail", {
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  };
+
+  const relaxed = isRelaxedNetworkPolicy(settings);
+
+  /**
+   * Only the `networkPolicy` field is written: the settings write merges this
+   * patch into the stored settings, so every other preference is carried over
+   * untouched. A notice the user already acknowledged stays acknowledged: the
+   * mode is the only thing this switch changes.
+   */
+  const persistNetworkPolicy = async (mode: NetworkPolicyMode) => {
+    const next: NetworkPolicySettings = { mode };
+    if (settings.networkPolicy?.insecureNoticeAcknowledged === true) {
+      next.insecureNoticeAcknowledged = true;
+    }
+    try {
+      await saveSettings({ networkPolicy: next });
+    } catch {
+      showToast(t("settings.proxySaveError"), { variant: "error" });
+    }
+  };
+
+  return (
+    <section className="settings-card-block">
+      <h3 className="settings-card-heading">{t("settings.network")}</h3>
+      <div className="settings-panel">
+        <SettingsRow
+          title={t("settings.proxy")}
+          description={t("settings.proxyDesc")}
+        >
+          <SegmentedControl
+            value={saved.mode}
+            onChange={(mode) => chooseMode(mode)}
+            options={MODES.map((mode) => ({
+              value: mode,
+              label: t(`settings.proxy${mode[0]!.toUpperCase()}${mode.slice(1)}`),
+            }))}
+            label={t("settings.proxy")}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title={t("settings.networkRelaxedMode")}
+          description={
+            relaxed
+              ? t("settings.networkRelaxedModeDesc")
+              : t("settings.networkRelaxedModeStrictDesc")
+          }
+        >
+          <SettingsToggle
+            checked={relaxed}
+            label={t("settings.networkRelaxedMode")}
+            onChange={() => void persistNetworkPolicy(relaxed ? "strict" : "relaxed")}
+          />
+        </SettingsRow>
+
+        {saved.mode === "custom" ? (
+          <>
+            <SettingsRow title={t("settings.proxyUrl")}>
+              <div className="settings-proxy-control">
+                <Input
+                  value={urlDraft}
+                  placeholder={t("settings.proxyUrlPlaceholder")}
+                  aria-label={t("settings.proxyUrl")}
+                  aria-invalid={urlError}
+                  onChange={(event) => {
+                    setUrlDraft(event.target.value);
+                    setUrlError(false);
+                    setTestState("idle");
+                  }}
+                  onBlur={commitUrl}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                />
+                {urlError ? (
+                  <span className="settings-command-shell-state error" role="status">
+                    {t("settings.proxyInvalid")}
+                  </span>
+                ) : null}
+              </div>
+            </SettingsRow>
+            <SettingsRow
+              title={t("settings.proxyBypass")}
+              description={t("settings.proxyBypassDesc")}
+            >
+              <Input
+                value={bypassDraft}
+                aria-label={t("settings.proxyBypass")}
+                onChange={(event) => setBypassDraft(event.target.value)}
+                onBlur={commitBypass}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  }
+                }}
+              />
+            </SettingsRow>
+            <SettingsRow title={t("settings.proxyTest")}>
+              <div className="settings-proxy-control">
+                <Button
+                  variant="secondary"
+                  disabled={testState === "busy"}
+                  onClick={() => void runTest()}
+                >
+                  {testState === "busy" ? t("settings.proxyTesting") : t("settings.proxyTest")}
+                </Button>
+                {testState === "ok" || testState === "fail" ? (
+                  <span
+                    className={cx(
+                      "settings-command-shell-state",
+                      testState === "fail" && "error",
+                    )}
+                    role="status"
+                  >
+                    {testMessage}
+                  </span>
+                ) : null}
+              </div>
+            </SettingsRow>
+          </>
+        ) : null}
+
+      </div>
+    </section>
+  );
+}
