@@ -17,6 +17,9 @@ export const MINIH_ROUTER_DEFAULT_BASE_URL = "https://router.hmini.org/v1";
 
 /** Page size bounds accepted by the model plaza IPC channel. */
 export const MINIH_ROUTER_MODEL_PAGE_SIZE_MAX = 100;
+/** Ceiling on the ids one price lookup may ask about, and on what it scans. */
+export const MINIH_ROUTER_LOOKUP_MAX_IDS = 200;
+export const MINIH_ROUTER_LOOKUP_MAX_MODELS = 5000;
 
 export function isMinihRouterVendorKey(vendorKey: string | null | undefined): boolean {
   return (vendorKey ?? "").trim().toLowerCase() === MINIH_ROUTER_VENDOR_KEY;
@@ -118,6 +121,8 @@ export type MinihRouterModelPrice = {
 export type MinihRouterModel = {
   /** The model id a client sends. */
   id: string;
+  /** Upstream model ids behind this route, when the gateway reports them. */
+  upstreamIds: string[];
   /** Display vendor, e.g. `OpenAI`; empty when unknown. */
   vendor: string;
   category: MinihRouterModelCategory;
@@ -141,6 +146,12 @@ export type MinihRouterModelPage = {
 };
 
 export type MinihRouterAccountInput = { providerId: string };
+
+export type MinihRouterModelDetailsInput = {
+  providerId: string;
+  /** Model ids the row sends; the gateway's prices for them are returned. */
+  modelIds: string[];
+};
 
 export type MinihRouterModelsInput = {
   providerId: string;

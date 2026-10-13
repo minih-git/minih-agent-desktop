@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  MAX_DISCOVERED_MODELS,
   modelListRequest,
   normalizeModelList,
 } from "../electron/main/model-discovery.ts";
@@ -176,4 +177,16 @@ test("optional custom headers are attached to discovery requests", () => {
     apiStyle: "google_generative_ai",
   });
   assert.equal(google.headers["User-Agent"], undefined);
+});
+
+test("a large gateway list is not silently truncated at 500 models", () => {
+  const data = Array.from({ length: 1300 }, (_, index) => ({
+    id: `model-${String(index).padStart(4, "0")}`,
+  }));
+  const models = normalizeModelList("chat_completions", { object: "list", data });
+  assert.equal(models.length, 1300);
+  // The cut is a runaway guard, well above any real gateway catalog.
+  assert.ok(MAX_DISCOVERED_MODELS >= 5000);
+  assert.equal(models[0].modelId, "model-0000");
+  assert.equal(models.at(-1).modelId, "model-1299");
 });

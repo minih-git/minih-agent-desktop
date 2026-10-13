@@ -12,6 +12,8 @@
  */
 import {
   ErrorCodes,
+  MINIH_ROUTER_LOOKUP_MAX_IDS,
+  MINIH_ROUTER_LOOKUP_MAX_MODELS,
   MINIH_ROUTER_MODEL_PAGE_SIZE_MAX,
   minihRouterControlRoot,
   type MinihRouterAccount,
@@ -311,6 +313,9 @@ function parseModel(value: unknown): MinihRouterModel | null {
   };
   return {
     id,
+    upstreamIds: sources
+      .map((source) => text(source.model_id).trim())
+      .filter((upstream) => Boolean(upstream && upstream !== id)),
     vendor: vendorFor(
       id,
       sources.map((source) => text(record(source.catalog_reference).provider_name)),
@@ -373,6 +378,65 @@ export function clampMinihRouterPage(page: unknown, pageSize: unknown): {
       ? Math.min(pageSize, MINIH_ROUTER_MODEL_PAGE_SIZE_MAX)
       : 12;
   return { page: safePage, pageSize: safeSize };
+}
+
+/**
+ * Prices for the models a row sends.
+ *
+ * A Router names its routes freely (aliases, auto models), so a plaza entry is
+ * matched by the id the client sends or by any upstream id behind it, both
+ * case-insensitively, and by the plaza id's own last path segment so a
+ * `vendor/model` entry answers for a bare `model`. The plaza is read in pages
+ * until every wanted id is answered or the scan budget runs out; an id the
+ * gateway does not price is simply absent from the result.
+ */
+export async function fetchMinihRouterModelDetails(
+  baseUrl: string,
+  apiKey: string,
+  modelIds: readonly string[],
+  options: MinihRouterFetchOptions = {},
+): Promise<MinihRouterModel[]> {
+  const wanted = new Map<string, string>();
+  for (const id of modelIds.slice(0, MINIH_ROUTER_LOOKUP_MAX_IDS)) {
+    const key = id.trim().toLowerCase();
+    if (key) wanted.set(key, id.trim());
+  }
+  if (wanted.size === 0) return [];
+  const found = new Map<string, MinihRouterModel>();
+  let scanned = 0;
+  let page = 1;
+  let totalPages = 1;
+  do {
+    const result = await fetchMinihRouterModels(
+      baseUrl,
+      apiKey,
+      { page, pageSize: MINIH_ROUTER_MODEL_PAGE_SIZE_MAX },
+      options,
+    );
+    scanned += result.items.length;
+    totalPages = result.totalPages;
+    for (const model of result.items) {
+      for (const candidate of idsOf(model)) {
+        const original = wanted.get(candidate);
+        if (original && !found.has(original)) found.set(original, model);
+      }
+    }
+    page += 1;
+  } while (
+    page <= totalPages &&
+    scanned < MINIH_ROUTER_LOOKUP_MAX_MODELS &&
+    wanted.size > found.size
+  );
+  return [...found.values()];
+}
+
+/** Every id a plaza entry can answer for: its own and the upstream ids behind it. */
+function idsOf(model: MinihRouterModel): string[] {
+  const ids = new Set<string>([model.id.toLowerCase()]);
+  const leaf = model.id.split("/").at(-1);
+  if (leaf && leaf !== model.id) ids.add(leaf.toLowerCase());
+  for (const upstream of model.upstreamIds) ids.add(upstream.toLowerCase());
+  return [...ids];
 }
 
 /** Read one page of the model plaza visible to the key. */

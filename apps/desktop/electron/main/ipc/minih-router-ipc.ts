@@ -12,6 +12,8 @@ import {
   isMinihRouterVendorKey,
   type MinihRouterAccount,
   type MinihRouterAccountInput,
+  type MinihRouterModel,
+  type MinihRouterModelDetailsInput,
   type MinihRouterModelPage,
   type MinihRouterModelsInput,
 } from "@minih-agent/shared";
@@ -19,6 +21,7 @@ import type { HostProcess } from "../host-process";
 import type { Logger } from "../logger";
 import {
   fetchMinihRouterAccount,
+  fetchMinihRouterModelDetails,
   fetchMinihRouterModels,
   type MinihRouterFetchOptions,
 } from "../minih-router-client";
@@ -93,6 +96,19 @@ export function createMinihRouterHandlers({
         throw error;
       }
     },
+    async modelDetails(input: MinihRouterModelDetailsInput): Promise<MinihRouterModel[]> {
+      const providerId = providerIdOf(input);
+      const modelIds = Array.isArray(input?.modelIds)
+        ? input.modelIds.filter((id): id is string => typeof id === "string")
+        : [];
+      const { baseUrl, apiKey } = await loadMinihRouterConnection(getHost(), providerId);
+      try {
+        return await fetchMinihRouterModelDetails(baseUrl, apiKey, modelIds, options);
+      } catch (error) {
+        report("model price lookup", providerId, error);
+        throw error;
+      }
+    },
     async models(input: MinihRouterModelsInput): Promise<MinihRouterModelPage> {
       const providerId = providerIdOf(input);
       const query = typeof input?.query === "string" ? input.query : undefined;
@@ -119,5 +135,8 @@ export function registerMinihRouterIpc(dependencies: MinihRouterIpcDependencies)
   );
   dependencies.registrar.handle(IPC.invoke.providersMinihRouterModels, (input) =>
     handlers.models(input),
+  );
+  dependencies.registrar.handle(IPC.invoke.providersMinihRouterModelDetails, (input) =>
+    handlers.modelDetails(input),
   );
 }

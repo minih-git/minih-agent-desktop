@@ -6,7 +6,7 @@
  * reads go through Electron main, which holds the token; this component only
  * renders what main parsed. Refresh re-reads both halves.
  */
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   minihRouterHeadlineQuota,
@@ -27,7 +27,11 @@ import {
   quotaLabel,
   quotaRemainingShare,
 } from "./minih-router-format";
-import { useMinihRouterAccount, useMinihRouterModels } from "./useMinihRouter";
+import {
+  useMinihRouterAccount,
+  useMinihRouterModels,
+  useMinihRouterSelectedModels,
+} from "./useMinihRouter";
 
 export const MINIH_ROUTER_MODEL_PAGE_SIZE = 12;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -64,12 +68,20 @@ export function MinihRouterPanel({ provider }: MinihRouterPanelProps) {
   }, [search, query]);
 
   const account = useMinihRouterAccount(provider.id, revision);
+  // The row's own choices, in the row's own order: the panel leads with what
+  // this service sends, then shows what else the gateway would price.
+  const chosenIds = useMemo(
+    () => provider.models.map((model) => model.id),
+    [provider.models],
+  );
+  const selected = useMinihRouterSelectedModels(provider, chosenIds, revision);
   const models = useMinihRouterModels(
     provider.id,
     { page, pageSize: MINIH_ROUTER_MODEL_PAGE_SIZE, query },
     revision,
   );
-  const refreshing = account.state === "loading" || models.state === "loading";
+  const refreshing =
+    account.state === "loading" || models.state === "loading" || selected.state === "loading";
 
   return (
     <section className="settings-card-block minih-router-panel" aria-labelledby={headingId}>
@@ -108,7 +120,38 @@ export function MinihRouterPanel({ provider }: MinihRouterPanelProps) {
 
         <div className="minih-router-models">
           <div className="minih-router-models-head">
-            <h4 className="minih-router-models-title">{t("settings.minihRouterModels")}</h4>
+            <h4 className="minih-router-models-title">{t("settings.minihRouterSelectedModels")}</h4>
+          </div>
+          <p className="minih-router-price-hint">{t("settings.minihRouterSelectedHint")}</p>
+          {chosenIds.length === 0 ? (
+            <p className="minih-router-status">{t("settings.minihRouterSelectedNone")}</p>
+          ) : null}
+          {chosenIds.length > 0 && selected.data.length === 0 ? (
+            <p className="minih-router-status">{t("settings.minihRouterLoading")}</p>
+          ) : null}
+          {selected.state === "error" ? (
+            <p className="minih-router-status is-error" role="alert">
+              <span className="minih-router-status-detail">{selected.message}</span>
+            </p>
+          ) : null}
+          <ul
+            className="minih-router-model-grid"
+            data-model-section="chosen"
+            hidden={selected.data.length === 0}
+          >
+            {selected.data.map((model) => (
+              <ModelCard
+                key={model.model.id}
+                model={model.model}
+                locale={locale}
+                configured
+                unpricedLabel={model.priced ? undefined : t("settings.minihRouterSelectedUnpriced")}
+              />
+            ))}
+          </ul>
+
+          <div className="minih-router-models-head">
+            <h4 className="minih-router-models-title">{t("settings.minihRouterAllModels")}</h4>
             <div className="minih-router-search">
               <IconSearch size={13} aria-hidden />
               <Input
@@ -139,6 +182,7 @@ export function MinihRouterPanel({ provider }: MinihRouterPanelProps) {
           {models.data && models.data.items.length > 0 ? (
             <ul
               className="minih-router-model-grid"
+              data-model-section="plaza"
               aria-busy={models.state === "loading" ? "true" : undefined}
             >
               {models.data.items.map((model) => (
@@ -301,10 +345,13 @@ function ModelCard({
   model,
   locale,
   configured,
+  unpricedLabel,
 }: {
   model: MinihRouterModel;
   locale: string;
   configured: boolean;
+  /** Shown instead of the price pair when the gateway prices nothing for it. */
+  unpricedLabel?: string;
 }) {
   const { t } = useTranslation();
   const showToast = useAppStore((state) => state.showToast);
@@ -348,6 +395,7 @@ function ModelCard({
           <IconCopy size={12} />
         </button>
       </div>
+      {unpricedLabel ? <div className="minih-router-model-meta">{unpricedLabel}</div> : null}
       <dl className="minih-router-model-prices">
         <div>
           <dt>{t("settings.minihRouterInputPrice")}</dt>

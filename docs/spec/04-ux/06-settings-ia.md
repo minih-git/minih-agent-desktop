@@ -576,7 +576,11 @@ contract modes are intent boundaries, not strict read-only security profiles.
   30 days, and expiry (or Never) with the key name and mask. Further limits are
   listed below; a blocked token states when requests resume; a non-1 price
   multiplier is called out.
-- **Available models** (below): the gateway's model plaza, 12 cards per page,
+- **My models** (first): the models this service sends, in the row's own order,
+  each with the gateway's prices. A model the gateway lists no price for is
+  still shown, with its configured limits and a line saying no price was
+  returned — the row sends it, so it is never hidden.
+- **All models** (below): the gateway's model plaza, 12 cards per page,
   with search (debounced, restarting at page one) and previous/next paging that
   keeps the current page visible while the next loads. A card shows vendor,
   category, the copyable model id, input and output price per 1M tokens (USD,
@@ -584,8 +588,9 @@ contract modes are intent boundaries, not strict read-only security profiles.
   prices, context window, tiered pricing, and **Added** when the model is
   already configured on the row. Prices are list prices before the token's
   multiplier, as the hint under the title says.
-- A failed read is shown in place with the gateway's message; the models half
-  offers Retry and keeps the previous page. Nothing on the panel stores or
+- A failed read is shown in place with the gateway's message; the plaza half
+  offers Retry and keeps the previous page. A price-lookup failure leaves the
+  chosen models listed without prices. Nothing on the panel stores or
   shows the token itself.
 
 ### Jev classifier

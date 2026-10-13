@@ -566,6 +566,7 @@ blocklist because they spend a stored credential.
 | Channel | Input | Gateway reads | Result |
 |---|---|---|---|
 | `providers/minihRouter/account` | `{ providerId }` | `GET <root>/api/home`, plus best-effort `GET <root>/api/usage` for the last 30 days | `MinihRouterAccount`: key name/mask, status, expiry, price multiplier, RPM limit, `allowed` + `nextAvailableAtMs`, cost-limit quotas (USD decimals), usage summary or `null` |
+| `providers/minihRouter/modelDetails` | `{ providerId, modelIds ≤ 200 }` | the plaza, read in pages until each id is answered (≤ 5000 models scanned) | `MinihRouterModel[]` for the ids the gateway prices; ids it does not list are absent |
 | `providers/minihRouter/models` | `{ providerId, page, pageSize ≤ 100, query? }` | `GET <root>/api/models?group_status=enabled&page&page_size[&q]` | `MinihRouterModelPage`: models with vendor, category, protocols, lowest input/output/cache price in USD per 1M tokens, starting-price and tiered flags, context/output limits; pagination |
 
 `<root>` is the row's base URL without its trailing `/v1`. Requests carry the

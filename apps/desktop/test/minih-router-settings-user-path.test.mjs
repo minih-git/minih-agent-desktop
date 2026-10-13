@@ -85,6 +85,10 @@ window.minihAgent = {
           usage: { days: 30, requestCount: 321, totalTokens: 987654, costUsd: "12.5" },
           observedAtMs: 1760000000000,
         } };
+      case "minih-agent-desktop/providers/minihRouter/modelDetails": {
+        const wanted = new Set(input.modelIds.map((id) => id.toLowerCase()));
+        return { ok: true, data: allModels.filter((model) => wanted.has(model.id.toLowerCase())) };
+      }
       case "minih-agent-desktop/providers/minihRouter/models": {
         if (failModels) {
           return { ok: false, error: { code: "PROVIDER_ERROR", message: "gateway unavailable" } };
@@ -138,8 +142,9 @@ function fieldInput(label) {
     node.textContent.trim().startsWith(label));
   return field?.querySelector("input");
 }
-function modelIds() {
-  return [...document.querySelectorAll("[data-model-id]")].map((node) => node.getAttribute("data-model-id"));
+function modelIds(section = "plaza") {
+  return [...document.querySelectorAll('[data-model-section="' + section + '"] [data-model-id]')]
+    .map((node) => node.getAttribute("data-model-id"));
 }
 
 const rootNode = createRoot(document.getElementById("root"));
@@ -232,9 +237,10 @@ window.minihRouterProbe = async () => {
   const provider = {
     id: "router-1", name: "Minih Router", vendorKey: "minih-router",
     baseUrl: "https://router.example.com/v1", hasSecret: true, enabled: true,
-    models: [{ id: "gpt-4.1" }],
+    models: [{ id: "gpt-4.1" }, { id: "local-only", contextWindow: 32000, maxTokens: 4096 }],
   };
   mount(React.createElement(MinihRouterPanel, { provider }));
+  await waitFor(() => document.body.innerText.includes("My models"), "the chosen-models section is missing");
   await waitFor(() => document.body.innerText.includes("$1.00"), "the balance did not render");
   const text = document.body.innerText;
   const balance = {
@@ -246,7 +252,26 @@ window.minihRouterProbe = async () => {
     multiplier: text.includes("Prices ×1.2 for this token"),
     neverExpires: text.includes("Never"),
   };
-  await waitFor(() => modelIds().length === 12, "the first model page did not render");
+  await waitFor(
+    () => modelIds("chosen").length === 2 && modelIds().length === 12,
+    "the chosen models and the first page did not render",
+  );
+  const unpricedChosen = document
+    .querySelector('[data-model-section="chosen"] [data-model-id="local-only"]')
+    ?.innerText ?? "";
+  const unpricedHandled =
+    unpricedChosen.includes("The gateway lists no price for this model.") &&
+    unpricedChosen.includes("32K context");
+  const chosenSection = document.querySelectorAll(".minih-router-models-head");
+  const sections = {
+    myModelsFirst: chosenSection[0]?.textContent?.trim() === "My models",
+    allModelsSecond: chosenSection[1]?.textContent?.includes("All models") ?? false,
+    chosenListedWithPrice: document
+      .querySelector('[data-model-section="chosen"] [data-model-id="gpt-4.1"] .minih-router-model-prices')
+      ?.textContent?.includes("$2") ?? false,
+    chosenCountedOnce: document.querySelectorAll('[data-model-section="chosen"] [data-model-id]').length === 2,
+    unpricedHandled,
+  };
   const firstPage = modelIds();
   const gptCard = document.querySelector('[data-model-id="gpt-4.1"]').innerText;
   const prices = {
@@ -260,14 +285,18 @@ window.minihRouterProbe = async () => {
   const pageStatus1 = document.querySelector(".minih-router-page-status")?.textContent;
 
   flushSync(() => button("Next page").click());
-  await waitFor(() => modelIds()[0] === "model-12", "page two did not load");
+  const pageTwo = () => modelIds();
+  await waitFor(() => pageTwo()[0] === "model-12", "page two did not load");
   const pageStatus2 = document.querySelector(".minih-router-page-status")?.textContent;
   const prevEnabled = !button("Previous page").disabled;
 
   // Search settles, then starts on page one.
   const search = document.querySelector('input[aria-label="Search models, vendors or groups"]');
   flushSync(() => setValue(search, "gpt"));
-  await waitFor(() => modelIds().length === 1 && modelIds()[0] === "gpt-4.1", "search did not filter");
+  await waitFor(
+    () => pageTwo().length === 1 && pageTwo()[0] === "gpt-4.1",
+    "search did not filter the plaza",
+  );
   const searchSentPageOne = apiCalls.some((call) =>
     call.channel === "minih-agent-desktop/providers/minihRouter/models" && call.input.query === "gpt" && call.input.page === 1);
   const paginationHiddenForOnePage = !document.querySelector(".minih-router-pagination");
@@ -277,7 +306,7 @@ window.minihRouterProbe = async () => {
   flushSync(() => button("Refresh").click());
   await waitFor(() => document.body.innerText.includes("Couldn't load models"), "the failure was not shown");
   const failureDetail = document.body.innerText.includes("gateway unavailable");
-  const keptPreviousPage = modelIds().length === 1;
+  const keptPreviousPage = pageTwo().length === 1;
   failModels = false;
   flushSync(() => button("Retry").click());
   await waitFor(() => !document.body.innerText.includes("Couldn't load models"), "Retry did not recover");
@@ -292,6 +321,7 @@ window.minihRouterProbe = async () => {
     convertedRow,
     balance,
     firstPageCount: firstPage.length,
+    sections,
     prices,
     pageStatus1,
     pageStatus2,
@@ -415,6 +445,13 @@ app.whenReady().then(async () => {
         neverExpires: true,
       },
       firstPageCount: 12,
+      sections: {
+        myModelsFirst: true,
+        allModelsSecond: true,
+        chosenListedWithPrice: true,
+        chosenCountedOnce: true,
+        unpricedHandled: true,
+      },
       prices: {
         input: true,
         output: true,

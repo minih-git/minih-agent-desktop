@@ -16,6 +16,7 @@ import * as client from "../electron/main/minih-router-client.ts";
 const { IPC } = shared;
 const {
   fetchMinihRouterAccount,
+  fetchMinihRouterModelDetails,
   fetchMinihRouterModels,
   minihRouterGet,
   nanoUsdToUsd,
@@ -303,6 +304,63 @@ test("the model read sends paging and search, and clamps the page size", async (
   assert.equal(url.searchParams.get("group_status"), "enabled");
 });
 
+test("the price lookup answers configured ids and their aliases across plaza pages", async () => {
+  const pageOne = {
+    ...MODELS,
+    items: [
+      { client_model: "openai/gpt-4.1", protocols: ["openai-completions"], upstream_models: [source({ input: "2", output: "8" })] },
+      { client_model: "unrelated", protocols: [], upstream_models: [] },
+    ],
+    pagination: { page: 1, page_size: 100, total_items: 3, total_pages: 2 },
+  };
+  const pageTwo = {
+    ...MODELS,
+    items: [
+      { client_model: "auto", protocols: ["openai-completions"], upstream_models: [
+        { ...source({ input: "1", output: "3" }), model_id: "claude-sonnet-4-5" },
+      ] },
+    ],
+    pagination: { page: 2, page_size: 100, total_items: 3, total_pages: 2 },
+  };
+  const fetch = recordingFetch((url) =>
+    response(200, envelope(new URL(url).searchParams.get("page") === "1" ? pageOne : pageTwo)),
+  );
+  const details = await fetchMinihRouterModelDetails(
+    "https://router.hmini.org/v1",
+    KEY,
+    ["gpt-4.1", "claude-sonnet-4-5", "not-offered"],
+    { fetchImpl: fetch.fetchImpl },
+  );
+  assert.deepEqual(details.map((model) => model.id), ["openai/gpt-4.1", "auto"]);
+  assert.deepEqual(details[0].price, { input: "2", output: "8", cacheRead: null, cacheWrite: null });
+  assert.equal(fetch.calls.length, 2);
+});
+
+test("the price lookup stops as soon as every id is answered", async () => {
+  const fetch = recordingFetch(() => response(200, envelope(MODELS)));
+  const details = await fetchMinihRouterModelDetails(
+    "https://router.hmini.org/v1",
+    KEY,
+    ["gpt-4.1"],
+    { fetchImpl: fetch.fetchImpl },
+  );
+  assert.deepEqual(details.map((model) => model.id), ["gpt-4.1"]);
+  assert.equal(fetch.calls.length, 1);
+});
+
+test("the price lookup asks nothing for an empty list", async () => {
+  let called = false;
+  const fetchImpl = async () => {
+    called = true;
+    return response(200, envelope(MODELS));
+  };
+  assert.deepEqual(
+    await fetchMinihRouterModelDetails("https://router.hmini.org/v1", KEY, [], { fetchImpl }),
+    [],
+  );
+  assert.equal(called, false);
+});
+
 test("an invalid key is reported as unauthorized without echoing the key", async () => {
   const fetch = recordingFetch(() =>
     response(401, { code: "UNAUTHORIZED", message: `invalid key ${KEY}` }),
@@ -416,6 +474,8 @@ test("the IPC handlers read the saved row's own address and key", async () => {
   });
   const page = await handlers.models({ providerId: "router", page: 2, pageSize: 3 });
   assert.equal(page.items.length, 3);
+  const details = await handlers.modelDetails({ providerId: "router", modelIds: ["gpt-4.1"] });
+  assert.deepEqual(details.map((model) => model.id), ["gpt-4.1"]);
   const account = await handlers.account({ providerId: "router" });
   assert.equal(account.keyName, "desktop");
   assert(fetch.calls.every((call) => call.url.startsWith("https://self.example/api/")));
@@ -447,7 +507,7 @@ test("the IPC handlers never send another vendor's key to a Router address", asy
   assert.equal(host.calls.some((call) => call.method === "providers.getSecret" && call.params.id === "openai"), false);
 });
 
-test("registration exposes exactly the two Minih Router channels", () => {
+test("registration exposes exactly the three Minih Router channels", () => {
   const channels = [];
   registerMinihRouterIpc({
     registrar: { handle: (channel) => channels.push(channel) },
@@ -457,5 +517,6 @@ test("registration exposes exactly the two Minih Router channels", () => {
   assert.deepEqual(channels, [
     IPC.invoke.providersMinihRouterAccount,
     IPC.invoke.providersMinihRouterModels,
+    IPC.invoke.providersMinihRouterModelDetails,
   ]);
 });

@@ -172,6 +172,7 @@
 
 .minih-router-models-head {
   display: flex;
+  margin-top: 6px;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
@@ -213,6 +214,10 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.minih-router-model-grid[hidden] {
+  display: none;
 }
 
 .minih-router-model-grid[aria-busy="true"] {

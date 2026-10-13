@@ -37,7 +37,13 @@ export type DiscoveredModel = {
 export const DISCOVERY_TIMEOUT_MS = 10_000;
 /** Total budget for one endpoint-resolution sweep; its candidates share it. */
 export const DISCOVERY_TOTAL_BUDGET_MS = 12_000;
-const MAX_MODELS = 500;
+/**
+ * Guard against a runaway list, not a product limit. Gateways such as Minih
+ * Router routinely serve more than a thousand models; the list is sorted
+ * before it is cut, so a low cap silently hid everything late in the
+ * alphabet.
+ */
+export const MAX_DISCOVERED_MODELS = 5000;
 const MAX_REDIRECTS = 3;
 const RESERVED_DISCOVERY_HEADERS = new Set([
   "authorization",
@@ -89,7 +95,7 @@ function dedupeSort(models: DiscoveredModel[]): DiscoveredModel[] {
   }
   return [...seen.values()]
     .sort((a, b) => a.modelId.localeCompare(b.modelId))
-    .slice(0, MAX_MODELS);
+    .slice(0, MAX_DISCOVERED_MODELS);
 }
 
 /**

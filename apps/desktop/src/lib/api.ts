@@ -139,6 +139,8 @@ import type {
   SessionTodoSnapshot,
   StorageInfo,
   MinihRouterAccount,
+  MinihRouterModel,
+  MinihRouterModelDetailsInput,
   MinihRouterModelPage,
   MinihRouterModelsInput,
 } from "@minih-agent/shared";
@@ -753,6 +755,9 @@ export const api = {
   /** One page of the Minih Router model plaza visible to that row's key. */
   minihRouterModels: (input: MinihRouterModelsInput) =>
     invoke<MinihRouterModelPage>(IPC.invoke.providersMinihRouterModels, input),
+  /** Gateway prices for the models this row already sends. */
+  minihRouterModelDetails: (input: MinihRouterModelDetailsInput) =>
+    invoke<MinihRouterModel[]>(IPC.invoke.providersMinihRouterModelDetails, input),
   /**
    * Discover models from the provider's own endpoint. Saved providers pass
    * providerId (stored secret is reused); the setup form may pass raw config

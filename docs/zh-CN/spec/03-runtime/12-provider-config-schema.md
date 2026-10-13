@@ -351,6 +351,7 @@ MCP 控制面的屏蔽列表中，因为它们会使用已存储的凭据。
 | 通道 | 输入 | 网关请求 | 结果 |
 |---|---|---|---|
 | `providers/minihRouter/account` | `{ providerId }` | `GET <root>/api/home`，另尽力读取近 30 天的 `GET <root>/api/usage` | `MinihRouterAccount`：密钥名称/掩码、状态、到期、计价倍率、RPM 限制、`allowed` 与 `nextAvailableAtMs`、费用额度（USD 十进制）、用量汇总或 `null` |
+| `providers/minihRouter/modelDetails` | `{ providerId, modelIds ≤ 200 }` | 分页读取模型广场，直到每个 id 都有结果（最多扫描 5000 个模型） | 网关有定价的 id 对应的 `MinihRouterModel[]`；未列出的 id 不会出现 |
 | `providers/minihRouter/models` | `{ providerId, page, pageSize ≤ 100, query? }` | `GET <root>/api/models?group_status=enabled&page&page_size[&q]` | `MinihRouterModelPage`：模型的厂商、分类、协议、每百万 Token 的最低输入/输出/缓存价格（USD）、“起”与阶梯计费标记、上下文/输出上限，以及分页 |
 
 `<root>` 是该行 Base URL 去掉末尾 `/v1`。请求以 `Authorization: Bearer` 携带密钥，

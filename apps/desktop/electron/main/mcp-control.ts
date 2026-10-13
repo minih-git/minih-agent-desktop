@@ -473,6 +473,7 @@ export const MCP_CONTROL_BLOCKED_CHANNEL_KEYS = [
   // Gateway account reads spend the stored Minih Router key.
   "providersMinihRouterAccount",
   "providersMinihRouterModels",
+  "providersMinihRouterModelDetails",
   "providersOauthStart",
   "providersOauthRespond",
   "providersOauthCancel",
