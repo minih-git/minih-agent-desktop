@@ -1,0 +1,4 @@
+provider: github
+owner: minih-git
+repo: minih-agent-desktop
+updaterCacheDirName: '@minih-agentdesktop-updater'

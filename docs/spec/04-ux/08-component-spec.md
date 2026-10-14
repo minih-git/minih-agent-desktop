@@ -1080,17 +1080,19 @@ entirely inside the plugin's isolated page:
   reveals the page without waiting for images or subframes; those continue to
   drive the loading/stop control. A failed switch or one exceeding the 15-second
   main-frame wait shows a retryable error, with the old guest hidden. Superseded
-  and cancelled requests cannot publish over the new navigation. A local file
-  address or absolute path that does not resolve to an existing file inside
-  the session workspace is rejected before loading and shows a specific
-  workspace-boundary message in the browser chrome, including on a blank tab.
-  Existing files inside the workspace remain previewable by absolute path.
+  and cancelled requests cannot publish over the new navigation. The address
+  bar accepts `file:` URLs and absolute paths to existing local files anywhere
+  on the machine; a local file page may also navigate to other existing local
+  files. Missing files, directories, remote file authorities, and unsupported
+  schemes are rejected before loading. Relative paths remain rooted in the
+  session workspace. BrowserPreview remains workspace-scoped.
 
 - Browser address input accepts HTTP(S) URLs and scheme-less web hosts. A
   `localhost` or dotted hostname followed by a numeric port (for example,
   `localhost:3000/index.html` or `example.com:8080`) is treated as an HTTP
   address rather than a custom URL scheme. Unsupported schemes remain blocked;
-  workspace file previews continue to use the in-root file path gate.
+  explicit local-file navigation is not limited to the workspace. BrowserPreview
+  continues to use the in-root file path gate.
 
 - Opening an HTTP(S) link in the work panel creates an additional Browser
   resource tab instead of replacing the previous URL. Each tab owns a host-retained WebContents, address, title and navigation
@@ -1912,8 +1914,14 @@ Single message render — either user (plaintext) or assistant (markdown streami
   regardless of display mode, without making color the only signal.
   Clicking the trigger (or activating it from the keyboard) toggles a
   non-modal panel whose heading follows the same display-mode figure,
-  followed by used/window counts and two
-  unboxed turn/speed summary values. Model usage is compressed into one
+  followed by used/window counts, unboxed turn/speed summary values, and the
+  elapsed session time. Three compact timing rows show request-to-first-response
+  wait, streamed model response time (thinking plus answer), and top-level tool
+  execution time, each with its share of the session span. Network/provider wait
+  and streamed response are separate; parallel top-level tools count overlapping
+  time once, and nested delegate timing is excluded. Older messages retain the
+  existing response duration for the model row but cannot contribute request
+  wait. Model usage is compressed into one
   inline summary row that retains exact last-request
   input/output/cache/reasoning values
   and the provider-reported cache hit rate when available. Tool usage is
@@ -2413,6 +2421,12 @@ to two lines, its description is clamped to two readable lines, and its step
 summary can wrap rather than forcing the user to resize the divider. Complete
 descriptions remain available through the node's accessible name/hover title;
 the node and its live process never create horizontal overflow.
+
+An accepted steering message creates a new visual reply without ending the
+parent runtime turn. Earlier delegation cards in that running turn keep their
+live status and Stop controls across steering replies and compaction dividers.
+A new ordinary user turn, parent settlement, or history reading ends that live
+projection; terminal Task snapshots still take precedence.
 
 The lifecycle rows (`TaskWait`/`TaskList`/`TaskStop`) stay compact tool rows —
 they are not topology nodes and must not inflate the subagent counts — but they
@@ -3001,20 +3015,20 @@ reasoning-level control.
   after an app restart, when that in-memory draft is unavailable, restore the
   Host-stored content and image/file attachments without rewriting the content;
   while the input is non-empty (or holds attachments) the action is refused with
-  a toast and nothing changes. Remove drops the row immediately.
+  a toast and nothing changes. Remove drops the row after Host acknowledgement.
 - Send now: promotes the row to the end of the session's priority block, so a
   second Send now leaves behind the first instead of replacing it at the head.
-  It then requests `agent/stop`, and the promoted block is released after the
-  current reply/tool batch completes normally, before every waiting row. The
-  first promoted row starts the turn and the rest join it as adjacent user
-  messages, so the block is answered once. When idle it starts immediately.
+  The Host delivers promoted input into the current turn through steering;
+  it does not request `agent/stop`. `TaskWait` yields without canceling delegates.
+  Refused input or an input with a different effective permission mode retains
+  its durable queue entry until the next turn. When idle it starts immediately.
 - A pending queue row is locked until Host admission returns its durable id: move
   up/down, Send now, edit, and remove are disabled. All five tooltips explain
   that it is saving; Send now also displays the localized Saving label. Direct edit/remove actions leave the pending row and draft
   unchanged; after admission, ordinary waiting-row actions become available.
 - A promoted row fixes order: move up/down and edit are disabled with
   their tooltip and `aria-disabled` state intact, and the Send now button reads
-  as waiting for the current task (`chat.sendNowPending`). Remove remains
+  Waiting to send (`chat.sendNowPending`). Remove remains
   available until delivery and waits for Host acknowledgement. If delivery
   already started, show a conflict message directing the user to Stop.
   The row carries a distinct

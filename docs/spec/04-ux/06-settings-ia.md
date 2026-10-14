@@ -453,7 +453,11 @@ a usage tab.
     and model IDs. A selection opens the Host-owned API-key form; after saving,
     that provider remains in the service list and leaves the chooser.
   - the add/edit dialog configures connection identity (name, endpoint, API
-    style, and secret). It shrinks to the overlay on a narrow window, and a
+    style, and authentication). Custom endpoints default to API-key mode and
+    offer a **No API key required** checkbox; choosing it stores `authKind:
+    "none"` and removes any saved API key when editing. Named service presets
+    continue to use API-key authentication. The dialog shrinks to the overlay
+    on a narrow window, and a
     focused credential field keeps its 2px accent ring inside the dialog
     instead of clipping against the scrolling body. It then selects one or
     more models from a searchable multi-select catalog. The discovered-list

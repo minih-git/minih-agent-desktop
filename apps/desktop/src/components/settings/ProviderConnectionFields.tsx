@@ -10,7 +10,7 @@
 import type { RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import type { CatalogApiStyle } from "@minih-agent/shared";
-import { Field, Input } from "../ui";
+import { Field, Input, SettingsToggle } from "../ui";
 import { SettingsMenuSelect } from "./SettingsMenuSelect";
 import { ServiceMonogram } from "./ServiceMonogram";
 import { endpointLabel } from "./service-catalog";
@@ -46,6 +46,8 @@ export type ProviderConnectionFieldsProps = {
   nameRef: RefObject<HTMLInputElement | null>;
   apiKey: string;
   onApiKeyChange: (value: string) => void;
+  noApiKeyRequired: boolean;
+  onNoApiKeyRequiredChange: (required: boolean) => void;
   name: string;
   onNameChange: (value: string) => void;
   baseUrl: string;
@@ -77,6 +79,8 @@ export function ProviderConnectionFields({
   nameRef,
   apiKey,
   onApiKeyChange,
+  noApiKeyRequired,
+  onNoApiKeyRequiredChange,
   name,
   onNameChange,
   baseUrl,
@@ -221,17 +225,36 @@ export function ProviderConnectionFields({
             </div>
           </div>
           <div className="provider-setup-field-row provider-setup-custom-auth-row">
-            <Field label={t("settings.apiKey")} hint={keyHint}>
-              <Input
-                ref={apiKeyRef}
-                type="password"
-                value={apiKey}
-                placeholder="sk-…"
-                className="font-mono text-sm-plus"
-                autoComplete="off"
-                onChange={(event) => onApiKeyChange(event.target.value)}
-              />
-            </Field>
+            <div className="provider-setup-key">
+              <Field label={t("settings.apiKey")} hint={keyHint}>
+                <Input
+                  ref={apiKeyRef}
+                  type="password"
+                  value={apiKey}
+                  placeholder="sk-…"
+                  className="font-mono text-sm-plus"
+                  autoComplete="off"
+                  disabled={saving || noApiKeyRequired}
+                  onChange={(event) => onApiKeyChange(event.target.value)}
+                />
+              </Field>
+              <div className="provider-setup-no-api-key-option">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-text-secondary">
+                    {t("settings.noApiKeyRequired")}
+                  </span>
+                  <SettingsToggle
+                    checked={noApiKeyRequired}
+                    label={t("settings.noApiKeyRequired")}
+                    disabled={saving}
+                    onChange={() => onNoApiKeyRequiredChange(!noApiKeyRequired)}
+                  />
+                </div>
+                <p className="text-xs text-text-muted">
+                  {t("settings.noApiKeyHint")}
+                </p>
+              </div>
+            </div>
             <Field
               label={t("settings.apiStyle")}
               hint={apiStyleNote ?? (accountOnlyApiStyle ? t(requiresApiStyleChoice

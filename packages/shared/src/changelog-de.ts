@@ -2,6 +2,22 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    "version": "0.20.1",
+    "date": "2026-10-13",
+    "highlights": [
+      "Konfigurieren Sie benutzerdefinierte Endpunkte ohne API-Schlüssel; in diesem Modus werden keine Anmeldedaten gesendet.",
+      "Öffnen Sie lokale Dateien außerhalb eines Projektordners im integrierten Browser; Webseiten bleiben auf Projektdateien beschränkt.",
+      "Die Kontextübersicht trennt Wartezeit beim Anbieter, gestreamte Modellantworten und Ausführung der obersten Tools und zeigt Gesamtdauer sowie Anteil.",
+      "Nach dem Stoppen wartet der nächste Durchlauf, bis der vorherige abgeschlossen ist, damit sich Aufgaben nicht überschneiden.",
+      "Das Windows-Portable-ZIP enthält jetzt den Update-Feed, damit installierte Kopien Updates finden und herunterladen können.",
+      "Plugins können abfragen, welche Umleitungsmodi fetch unterstützt, und Umleitungen prüfen oder ablehnen, ohne ihnen zu folgen; bestehende Fetch-Aufrufe folgen ihnen weiterhin standardmäßig.",
+      "Schätzungen für die Kompaktierung langer Texte und die Modellantwortzeit sind genauer; abgebrochene Streams behalten den bisherigen Ersatzwert.",
+      "Die Textauswahl bleibt durchgehend erhalten, wenn sie über Popup-Overlays hinweg gezogen wird.",
+      "Projektmenüs bleiben sichtbar, wenn sie über Zeilen am unteren Rand der Seitenleiste geöffnet werden.",
+      "Windows hält die Installationssperre, während alte Sicherungen entfernt werden.",
+    ],
+  },
+  {
     "version": "0.19.1",
     "date": "2026-10-13",
     "highlights": [

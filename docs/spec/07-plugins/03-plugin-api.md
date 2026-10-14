@@ -824,6 +824,10 @@ redirects; it does not wait for slow images or subframes. `browser:state` report
 loading immediately and optionally includes `loadError` for failed navigation.
 Optional `sessionId` and `tabId` identify the host-owned work-panel destination;
 plugins do not select these identities through navigation arguments.
+With the high-risk `browser.cdp` permission, `navigate` may open an existing
+local file through an absolute path or `file:` URL. Relative paths remain
+workspace-scoped. A local file page may navigate to other existing local files;
+web pages retain only the prior in-workspace file-navigation allowance.
 
 The current guest page is a host-owned `WebContentsView` (`persist:work-browser`).
 Each resource tab retains its own page. A navigation for a background session is

@@ -1,4 +1,4 @@
-import { memo, type MouseEvent as ReactMouseEvent } from "react";
+import { memo, useMemo, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { PlanningState, UiMessage } from "@minih-agent/shared";
 import { proposalKindForMode } from "@minih-agent/shared";
@@ -16,6 +16,8 @@ import {
   WorkingIndicator,
 } from "./ActivityGroup";
 import { TranscriptHistory, TranscriptTail } from "./AssistantTurn";
+import { collectLiveDelegationEntries } from "../../../lib/live-delegation-entries";
+import { reuseReadonlyMap } from "../../../lib/assistant-turns";
 import { useTranscriptScroll } from "./hooks/useTranscriptScroll";
 import type { TranscriptSearchTarget } from "../../../lib/transcript-reading";
 import { TranscriptSearchContext } from "../../../lib/transcript-search-context";
@@ -153,6 +155,13 @@ function TranscriptBody({
   });
 
   const specializedActivity = agentActivity;
+  const rawLiveDelegations = useMemo(
+    () => collectLiveDelegationEntries(historyEntries, tailEntry, transcriptRunning),
+    [historyEntries, tailEntry, transcriptRunning],
+  );
+  const liveDelegationsRef = useRef(rawLiveDelegations);
+  const liveDelegations = reuseReadonlyMap(liveDelegationsRef.current, rawLiveDelegations);
+  liveDelegationsRef.current = liveDelegations;
   const hasSpecializedActivity = specializedActivity !== undefined;
   // Existing output does not mean the turn has finished: a text stream can
   // pause, and completed tool rows can outlive their activity. Keep one tail
@@ -271,7 +280,7 @@ function TranscriptBody({
             // view, which is exactly the jitter this avoids.
             <div className="transcript-hydration-spacer" aria-hidden />
           ) : null}
-          <TranscriptHistory entries={historyEntries} isRunning={isRunning} />
+          <TranscriptHistory entries={historyEntries} isRunning={isRunning} liveDelegations={liveDelegations} />
           {tailEntry ? (
             <TranscriptTail
               entry={tailEntry}

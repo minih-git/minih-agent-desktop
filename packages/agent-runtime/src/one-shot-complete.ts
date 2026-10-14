@@ -118,6 +118,7 @@ export async function completeOneShot(
             providerHeaders = response?.headers;
             providerFailure = failure;
           }),
+          provider.authKind,
         ),
       },
       {

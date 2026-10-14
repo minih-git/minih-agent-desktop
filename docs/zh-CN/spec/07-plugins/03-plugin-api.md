@@ -675,6 +675,8 @@ pi.browser.cdp(input: { method: string; params?: unknown }): Promise<unknown>
 `navigate` 在当前主框架导航提交（含重定向）时返回，不等待慢图片或子框架。
 `browser:state` 立即报告加载状态，导航失败时可带 `loadError`。
 可选的 `sessionId`、`tabId` 标识宿主管理的工作面板目标；插件不能通过导航参数指定这些身份。
+拥有高风险 `browser.cdp` 权限后，`navigate` 可以通过绝对路径或 `file:` URL 打开任意已存在的本地文件。
+相对路径仍以工作区为根。本地文件页面可导航到其他已存在的本地文件；网页仍只能通过文件链接访问工作区内文件。
 
 ### 服务（需要 `background.service`）
 ```ts

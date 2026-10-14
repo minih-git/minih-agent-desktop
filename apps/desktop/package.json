@@ -1,6 +1,6 @@
 {
   "name": "@minih-agent/desktop",
-  "version": "0.19.1",
+  "version": "0.20.1",
   "desktopName": "minih-agent-desktop.desktop",
   "private": true,
   "description": "Minih-Agent-Desktop Electron application",
@@ -224,6 +224,10 @@
       ],
       "icon": "build/icon.ico",
       "extraResources": [
+        {
+          "from": "resources/app-update.yml",
+          "to": "app-update.yml"
+        },
         {
           "from": "../../target/release/minih-agent-desktop-host-core.exe",
           "to": "bin/minih-agent-desktop-host-core.exe"

@@ -637,6 +637,18 @@ may be retained while exactly one workspace supplies the visible shell context.
   macOS, Windows NSIS, and Linux AppImage use the in-app lane; Linux deb/rpm
   and Windows ZIP remain notify-and-link delivery modes.
 
+### 1.10 Modal backdrop and native text selection
+
+- Click-dismissable modal backdrops close only when a primary pointer press
+  starts and ends on that same backdrop. A drag from content to backdrop, or
+  from backdrop into content, never dismisses the modal. Cancelled presses and
+  window blur reset the pending interaction; a later deliberate backdrop click
+  still closes normally.
+- Click-dismissable overlays use the shared `OverlayBackdrop` primitive. Nested
+  backdrops dismiss only their own layer. Existing busy/saving guards, Escape,
+  close buttons, and focus handling remain authoritative; native selection is
+  not prevented and no pointer capture is added for dismissal.
+
 ## 2. Streaming message behavior
 
 ### 2.1 Token rendering
@@ -788,13 +800,13 @@ may be retained while exactly one workspace supplies the visible shell context.
   returns a durable id. While admission is pending, row actions are disabled
   with Saving tooltips and a Saving label on Send now; edit/remove leave both
   the queue and composer draft unchanged.
-- Send now moves its row to the head and requests the new `agent/stop` channel.
-  The current assistant response and completed tool batch finish normally;
-  after `agent_end` and durable turn finalization, the promoted row is
-  dispatched through the normal `agent/prompt` flow before the remaining rows.
-  An idle Send now dispatches immediately. While waiting, promoted rows retain
-  Remove and explain that the current task must finish. A refused or failed
-  graceful stop reports an error without losing the queued message. Removal
+- Send now promotes its row in click order and asks the Host to deliver it as
+  steering input into the active turn. It does not request a stop. An active
+  `TaskWait` returns early so the parent handles the new input while its
+  delegates keep working. Other started tools retain their normal boundaries.
+  An idle Send now dispatches immediately. Refused input or an input admitted
+  under a different permission mode stays queued for the next turn. Promoted
+  rows retain Remove until delivery and show Waiting to send. Removal
   waits for Host acknowledgement; if delivery wins the race, report that the
   message has already started and direct the user to Stop.
 - Without Send now, the next FIFO row starts automatically after the active
@@ -860,12 +872,14 @@ may be retained while exactly one workspace supplies the visible shell context.
 - The context usage inspector keeps one muted line for the newest checkpoint,
   shown while its panel is open — the count and summary cost sit below the
   compact model/tool usage summaries without adding explanatory copy.
-- The open context usage inspector also shows the session's elapsed wall time
-  and the cumulative duration of its top-level model responses. The response
-  percentage compares those recorded request-to-completion durations with the
-  session span; nested delegate responses are excluded because they may overlap.
-  Long transcripts load earlier response timings in bounded pages only while
-  the inspector is open.
+- The open context usage inspector shows elapsed session wall time plus three
+  cumulative timing rows: request-to-first-response wait, streamed model
+  response time (thinking and answer), and top-level tool execution time.
+  Each row shows its share of the elapsed session span. Nested delegate timing
+  is excluded, and overlapping top-level tool calls count once. Long transcripts
+  load earlier timing metadata in bounded pages only while the inspector is open.
+  Older messages use their existing response duration for the model row; their
+  request-wait time is unavailable.
 
 ## 4. Long content collapse / expand
 
@@ -1514,8 +1528,17 @@ Project drag/drop follows these patterns:
 - The session row does not set a native `title` attribute. The hover card is
   the only full-title surface, so the browser tooltip never stacks on the
   card.
-- The card cancels on pointer leave, focus blur, scroll (any scroll
-  container), resize, and the moment a context menu opens.
+- Card text is natively selectable and copyable; navigation buttons remain
+  controls, not selectable text. The ordinary pointer-leave/focus-blur grace
+  period is 160ms. A primary drag started inside the card suspends dismissal,
+  even after crossing its boundary. A noncollapsed card-local text selection
+  retains the card after release for native Copy; clearing the selection resumes
+  delayed dismissal when neither pointer nor focus is inside. Row-leave timers
+  cannot override this retention.
+- Pointer release/cancel and window blur end the active drag; unmount removes
+  its listeners and dismissal guard. Escape, an outside press, scroll (any
+  scroll container), resize, visibility loss, and opening a context menu still
+  dismiss the card, including while text is selected.
 
 ### 9.1c Session row hover and row actions
 
@@ -1633,8 +1656,9 @@ This does not prevent state changes — it makes them instant.
 1. All keyboard shortcuts in §1 are functional and do not conflict with system shortcuts
 2. Enter sends when Enter-to-send is on; when it is off, Cmd/Ctrl+Enter sends and Enter/Shift+Enter insert a newline
 3. Abort immediately cancels running turn and pending permissions without confirmation dialog
-3a. Send stays enabled while running, queues prompts per session, and Send now
-    finishes the current boundary before releasing its prioritized prompt
+3a. Send stays enabled while running and queues prompts per session. Send now
+    delivers promoted input into the current turn and wakes `TaskWait` without
+    canceling delegates; refused input stays queued.
 4. Long content (>50 lines for messages, >10 for args, >20 for results) is collapsed by default with expand link
 5. Tool results that were cut short show a truncation marker or chip per D306; a filled Read window of a longer file does not
 6. Permission interrupt inserts an inline card, disables the composer, and

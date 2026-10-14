@@ -10,7 +10,14 @@ import { STORAGE_PREFERENCE_FILE, type StorageRoots } from "./preferences";
 const OWNER_FILE = ".pi-storage-owner.json";
 export const DATA_CACHE_PATHS = ["cache", "plugins/cache/download", "plugins/cache/backup", "openable-attachments"];
 const BROWSER_CACHE_PATHS = ["Cache", "Code Cache", "GPUCache", "DawnCache", "ShaderCache", "GrShaderCache", "GraphiteDawnCache"];
-const excluded = (name: string) => name === STORAGE_PREFERENCE_FILE || name.startsWith("Singleton") || /^\.storage-.*\.tmp$/.test(name);
+// Chromium names the single-instance lock `SingletonLock` on Linux and macOS
+// but `lockfile` on Windows. Backup cleanup runs while this process still holds
+// that lock, and Windows refuses to unlink a file this process opened without
+// delete sharing, so an omitted Windows name aborts the whole maintenance run
+// with EBUSY instead of skipping one regenerated file. The migration inventory
+// skips the same names: the lock belongs to the installation anchor, not to the
+// copied `browser/` root.
+const excluded = (name: string) => name === STORAGE_PREFERENCE_FILE || name.startsWith("Singleton") || name === "lockfile" || /^\.storage-.*\.tmp$/.test(name);
 export function contains(parent: string, child: string): boolean {
   const part = relative(parent, child);
   return !part || (!part.startsWith(`..${sep}`) && part !== ".." && !isAbsolute(part));

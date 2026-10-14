@@ -26,7 +26,10 @@ entitled to it.
 
 - **Name**, **Base URL** and **API Key** are all on screen at once. An empty key
   when editing means “keep the stored one”; `secretValue` is only sent when the
-  user typed something.
+  user typed something. Custom endpoints also offer an explicit **No API key
+  required** switch, defaulting off for new rows. When enabled, the key field is
+  disabled and cleared, and the row saves with `authKind: "none"` and no
+  secret. Named cloud services keep their existing authentication defaults.
 - The models section lists what the service returned. `useProviderModels`
   debounces edits by 600 ms, guards against out-of-order replies with a
   monotonic request sequence, and needs no API key so local and no-auth

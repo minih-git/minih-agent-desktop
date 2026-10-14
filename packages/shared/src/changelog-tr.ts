@@ -2,6 +2,22 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    "version": "0.20.1",
+    "date": "2026-10-13",
+    "highlights": [
+      "Özel uç noktaları API anahtarı olmadan yapılandırın; bu modda isteklerle kimlik doğrulama bilgisi gönderilmez.",
+      "Yerleşik tarayıcıda proje klasörünün dışındaki yerel dosyaları açın; web sayfaları proje dosyalarıyla sınırlı kalır.",
+      "Bağlam kullanım panelinde sağlayıcı bekleme, akışlı model yanıtı ve üst düzey araç sürelerini ayrı ayrı, toplam süre ve oranlarıyla görün.",
+      "Durdurulan tur tamamen sonuçlanana kadar sonraki tur bekler; böylece işler üst üste binmez.",
+      "Windows taşınabilir ZIP'i artık güncelleme akışını içeriyor; kurulu kopyalar güncellemeleri bulup indirebilir.",
+      "Eklentiler fetch'in desteklediği yönlendirme modlarını sorgulayabilir ve yönlendirmeyi izlemeden incelemeyi veya reddetmeyi seçebilir; mevcut fetch çağrıları varsayılan olarak yönlendirmeleri izlemeyi sürdürür.",
+      "Uzun metin sıkıştırma ve model yanıt hızı tahminleri daha doğrudur; kesilen akışlarda mevcut yedek yöntem korunur.",
+      "Metin seçimi açılır katmanların üzerinden sürüklerken kesintisiz kalır.",
+      "Kenar çubuğunun altındaki satırlardan açılan proje menüleri görünür kalır.",
+      "Windows eski yedekleri kaldırırken yükleme kilidini korur.",
+    ],
+  },
+  {
     "version": "0.19.1",
     "date": "2026-10-13",
     "highlights": [

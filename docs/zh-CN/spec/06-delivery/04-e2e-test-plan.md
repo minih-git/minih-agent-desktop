@@ -1219,6 +1219,16 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
 - **状态**：单元测试覆盖（`sidebar-floating-menu.test.mjs`、
   `sidebar-navigation.test.mjs`）；视口交互场景仍为草案
 
+#### E2E-021c：底部项目菜单贴近锚点显示
+
+- **先决条件**：展开的侧边栏中，最底部可见项目行下方空间不足以容纳项目菜单。
+- **步骤**：1) 右键该项目行并查看菜单。2) 关闭菜单，再打开该行的溢出按钮菜单。3) 确认所有操作都处于视口内。
+- **预期**：两种入口在下方空间不足时，都会按菜单实际高度紧贴项目行上方显示；空间足够时则显示在锚点下方。菜单不会跳到远离项目的位置或被裁切。
+- **链接规格**：`04-ux/08-component-spec.md`、`04-ux/09-interaction-patterns.md`
+- **接受**：品质（侧边栏交互）
+- **里程碑**：M2
+- **状态**：自动化（`node scripts/e2e-three-column-layout.mjs --sidebar-only`、`sidebar-floating-menu.test.mjs`、`sidebar-navigation.test.mjs`）
+
 #### E2E-036：设置会话导入目的地已移除
 
 - **预期**：设置中没有会话导入选项卡或扫描面板。插件仍可通过宿主拥有的会话 API 导入会话，相关边界由 E2E-214 / E2E-215 / E2E-216 覆盖。旧本地会话扫描器只由导入器单元测试覆盖。
@@ -2433,7 +2443,7 @@ MainChat 弥补了缺口。 Maximized/fullscreen 调用保留最新的
 
 #### E2E-059：嵌入式浏览器预览隔离和覆盖
 
-- **前提条件**：本地开发服务器正在运行；存在 URL 或 BrowserPreview 工件。
+- **前提条件**：本地开发服务器正在运行；存在 URL 或 BrowserPreview 工件；工作区内外均有 HTML 测试文件。
 - **步骤**： 1) 激活工件，依次输入不带协议的 `localhost:<port>` 和
   `localhost:<port>/index.html` 并提交；再输入带端口的点分主机名
   （如 `example.com:8080`），验证显式 HTTP(S) 地址及被拒绝的 `javascript:` 地址。
@@ -2441,26 +2451,30 @@ MainChat 弥补了缺口。 Maximized/fullscreen 调用保留最新的
   `window.open` 弹出窗口和权限请求页面（例如通知
   提示）。 4) 打开全局搜索，然后打开设置。返回聊天
   并触发内联工具权限卡。 5) 切换到另一个面板选项卡
-  然后回来；关闭面板。 6) 使用开放式外部。7) 分别从已有页面和空白浏览器标签页，
-  使用 `file:` 地址和绝对路径打开工作区内已存在的 HTML 文件；再输入指向工作区外
-  已存在文件的 `file:///tmp/demo.html` 和 `/tmp/demo.html`。
+  然后回来；关闭面板。 6) 使用“在外部打开”。7) 分别从已有页面和空白浏览器标签页，
+  使用平台对应的 `file:` 地址和绝对路径打开工作区内已存在的 HTML 文件；再使用平台对应的
+  URL 和绝对路径打开工作区外已存在文件（Unix 如 `file:///tmp/demo.html` 和
+  `/tmp/demo.html`；Windows 如 `file:///D:/demo.html` 和 `D:\demo.html`）。接着从已加载的
+  本地 HTML 页面点击链接，打开另一个工作区外文件；从 HTTP 页面尝试同一链接，并输入缺失的本地文件路径。
 - **预期**：无方案输入标准化为 http；导航状态（URL 栏，
   back/forward 启用、加载微调器）镜像页面。弹出窗口仅在 URL 解析为
   http(s) 或 mailto 时打开默认浏览器（绝不在应用程序内）；
-  `file:`、`javascript:` 和自定义 scheme 被拒绝。许可请求被拒绝；
-  非 http(s) 导航被阻止，根内 `file:` 同级文件除外。预览隐藏在每个遮挡下
+  弹出的 `file:`、`javascript:` 和自定义 scheme 被拒绝。许可请求被拒绝；
+  顶层导航允许 HTTP(S)、工作区内文件链接，以及从本地文件页面发起的已有本地文件链接。
+  HTTP 页面不能导航到工作区外文件；缺失文件、目录、远程文件 authority 和其他 scheme 均被阻止。
+  预览隐藏在每个遮挡下
   覆盖并卸载时，随后以正确的边界重新出现。
   内嵌权限卡不会隐藏或重新挂载预览；resize/drag 期间原生视图保持可见，
   并与占位符矩形对齐，不再闪出黑色面板底色。打开工作面板上下文下拉框时，
   原生视图在不透明菜单边界下方保持可见，菜单关闭后恢复完整表面矩形。
-  Open-external 对 http(s) 页走系统浏览器，对根内文件预览走 `openPath`。
-  视图使用隔离的持久分区（应用程序外壳中没有会话流失）。工作区内的两种地址
-  都能打开；工作区外的两种地址都不会进入 guest 加载，地址栏保留提交的地址，
-  浏览器用当前语言说明只能打开工作区内已存在的文件。
-- **链接规格**：`03-runtime/01-ipc-protocol.md` §13a、ADR 0019、ADR 0168
+  Open-external 对 http(s) 页走系统浏览器，对任意已加载本地文件走 `openPath`。
+  视图使用隔离的持久分区（应用程序外壳中没有会话流失）。工作区内外的地址都能加载；
+  HTTP 页面发起的工作区外链接与缺失路径不会进入 guest。失败时地址栏保留输入，
+  浏览器用当前语言说明只能打开已存在的本地文件。
+- **链接规格**：`03-runtime/01-ipc-protocol.md` §13a、`04-ux/08-component-spec.md`、`05-security/01-security.md`、ADR 0019、ADR 0168、ADR 0328
 - **验收**：质量、安全
 - **里程碑**：M5
-- **状态**：草案（手动）
+- **状态**：部分自动化：`scripts/e2e-browser-local-file-access.mjs` 覆盖原生本地文件导航；地址栏与遮挡层交互仍需手动验证。
 
 #### E2E-BROWSER-capture-resize：截图期间保持预览位置并恢复最新视口
 
@@ -3937,7 +3951,7 @@ IPC 请求无法关闭。
 #### E2E-196c：macOS 标签工件通过 Gatekeeper 且无需移除隔离属性
 
 - **先决条件**：推送与 `apps/desktop/package.json` 匹配的 `vX.Y.Z` 标签，或手动运行 Release 工作流并保持 `sign_macos: true`（默认）；GitHub Actions 已配置 `CSC_LINK`、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD` 和 `APPLE_TEAM_ID` 密钥；两个本机 macOS 运行器均可用。
-- **步骤**：1) 运行标签工作流。2) 对每个 macOS 架构检查解压后的应用，使用 `codesign -dv --verbose=4` 确认权限为 `Developer ID Application: XingYu Liu (DUV63RKYTW)`。3) 对应用运行 `codesign --verify --deep --strict --verbose=2`、`spctl --assess --type execute --verbose=4` 和 `xcrun stapler validate`，并检查 `Contents/Resources/bin/minih-agent-desktop-host-core`。4) 确认工作流的 DMG 步骤报告 Apple 公证状态为 `Accepted`，然后对对应的 DMG 运行 `xcrun stapler validate`。5) 在干净的 macOS 配置文件中下载 DMG，将应用移到 `/Applications` 后不清除 `com.apple.quarantine` 直接打开。
+- **步骤**：1) 运行标签工作流。2) 对每个 macOS 架构检查解压后的应用，使用 `codesign -dv --verbose=4` 确认权限为 `Developer ID Application: XingYu Liu (DUV63RKYTW)`。3) 对应用运行 `codesign --verify --deep --strict --verbose=2`、`spctl --assess --type execute --verbose=4` 和 `xcrun stapler validate`，并检查 `Contents/Resources/bin/minih-agent-desktop-host-core`。4) 确认 app stapler shim 只在 app 公证提交被接受后重试 `xcrun stapler staple`，最多六次；再确认工作流的 DMG 步骤报告 Apple 公证状态为 `Accepted`，并对对应的 DMG 运行 `xcrun stapler validate`。5) 在干净的 macOS 配置文件中下载 DMG，将应用移到 `/Applications` 后不清除 `com.apple.quarantine` 直接打开。
 - **预期**：每个 macOS 应用通过签名完整性检查，Gatekeeper 报告 `source=Notarized Developer ID`，应用和 DMG 都包含有效的装订票据。DMG 有自己的提交：从未提交过的 DMG 没有票据，装订会以 error 65 失败，因此标签构建绝不能走到该状态。应用可正常打开，无需 `xattr` 命令或“安全性与隐私”覆盖。缺少密钥、提交被拒或装订重试耗尽都会让作业失败。
 - **关联规格**：`06-delivery/06-release-runbook.md`、`05-security/01-security.md`、ADR 0289
 - **验收**：质量、安全
@@ -5652,6 +5666,7 @@ eleven-tool-round desktop paths are verified by
 | H——诊断 | E2E-027、E2E-031、E2E-034、E2E-042、E2E-096、E2E-098、E2E-104、E2E-107、E2E-108、E2E-109、E2E-110、E2E-113、E2E-115、E2E-116、 E2E-118、E2E-121、E2E-146、E2E-194、E2E-195 |
 | 安全性 | E2E-SETTINGS-inline-capability-imports、E2E-028、E2E-029、E2E-030、E2E-024J、E2E-024K、E2E-024M、E2E-049、E2E-068、E2E-086、E2E-105、E2E-106、E2E-107、E2E-108、E2E-109、 E2E-110、E2E-112、E2E-113、E2E-115、E2E-116、E2E-117、E2E-119、E2E-121、E2E-122、E2E-123、E2E-142、E2E-148、E2E-151、E2E-153 |
 | 品质 | E2E-SETTINGS-inline-capability-imports、E2E-CHAT-running-status-survives-output-pauses、E2E-032、E2E-033、E2E-039、E2E-043、E2E-044、E2E-045、E2E-046、E2E-047、E2E-048、E2E-048c、E2E-048A、E2E-049、E2E-050、E2E-053、E2E-055、 E2E-056、E2E-057、E2E-058、E2E-059、E2E-060、E2E-061、E2E-062、E2E-063、E2E-064、E2E-065、E2E-066、E2E-067、E2E-068、E2E-069、 E2E-070、E2E-071、E2E-072、E2E-073、E2E-074、E2E-075、E2E-076、E2E-077、E2E-078、E2E-079、E2E-080、E2E-081、E2E-082、E2E-083、 E2E-084、E2E-085、E2E-086、E2E-092、E2E-093、E2E-094、E2E-095、E2E-096、E2E-097、E2E-098、E2E-099、E2E-100、E2E-101、E2E-102、 E2E-102a、E2E-102b、E2E-103、E2E-AGENTS-001、E2E-024N、E2E-024O、E2E-059a、E2E-060b、E2E-060c、E2E-060d、E2E-061a、E2E-073a、E2E-111、 E2E-114、E2E-117、E2E-118、E2E-119、E2E-120、E2E-122、E2E-123、E2E-142、E2E-143、E2E-144、E2E-145、E2E-146、E2E-147、E2E-148、E2E-150、E2E-151、E2E-153、E2E-194、E2E-195、E2E-199、E2E-200、E2E-201、E2E-202、E2E-203、E2E-204、E2E-209、E2E-210、E2E-UPDATE-preference-and-once-only-reminder、E2E-250、E2E-PLUGIN-imported-pi-package-skills、E2E-SUBAGENT-resume-a-settled-delegation |
+| 品质（侧边栏菜单定位） | E2E-021c |
 | 品质（项目排序） | E2E-253 |
 | C — 对话和直播（输入法斜杠别名） | E2E-255 |
 | E——工具和权限（Skill 常驻） | E2E-254 |
@@ -5700,6 +5715,7 @@ eleven-tool-round desktop paths are verified by
 | MVP 后实验性交互维护 | E2E-LIVE-VOICE-four-stage-ui |
 | M1 | E2E-001、E2E-002、E2E-003、E2E-028、E2E-029 |
 | M2 | E2E-004、E2E-005、E2E-006、E2E-007、E2E-008、E2E-008d、E2E-009、E2E-010、E2E-011、E2E-011a、E2E-011b、E2E-020、E2E-021、E2E-027、E2E-031、E2E-042、E2E-087、E2E-088、E2E-088b、E2E-089、E2E-090、E2E-144、E2E-005J、E2E-201 |
+| M2（侧边栏菜单定位） | E2E-021c |
 | M3 | E2E-012、E2E-013、E2E-014、E2E-015、E2E-016、E2E-017、E2E-018、E2E-019、E2E-040 |
 | M4 | E2E-022、E2E-023、E2E-024、E2E-025、E2E-026、E2E-030、E2E-038 |
 | M5 | E2E-CHAT-running-status-survives-output-pauses、E2E-008a、E2E-032、E2E-033、E2E-034、E2E-039、E2E-043、E2E-044、E2E-045、E2E-046、E2E-047、E2E-048、E2E-048c、E2E-048A、E2E-049、E2E-050、 E2E-051、E2E-052、E2E-053、E2E-054、E2E-055、E2E-056、E2E-057、E2E-058、E2E-059、E2E-060、E2E-061、E2E-062、E2E-063、E2E-064、 E2E-065、E2E-066、E2E-067、E2E-068、E2E-069、E2E-070、E2E-071、E2E-072、E2E-073、E2E-074、E2E-075、E2E-076、E2E-077、E2E-078、 E2E-079、E2E-080、E2E-081、E2E-082、E2E-083、E2E-084、E2E-085、E2E-086、E2E-092、E2E-093、E2E-096、E2E-097、E2E-098、E2E-099、 E2E-100、E2E-101、E2E-102、E2E-102a、E2E-102b、E2E-AGENTS-001、E2E-059a、E2E-060b、E2E-060c、E2E-061a、E2E-073a、E2E-094、E2E-095、E2E-143、E2E-145、E2E-146、E2E-147、E2E-194、E2E-195、E2E-204、E2E-250 |

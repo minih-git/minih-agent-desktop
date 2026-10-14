@@ -2,6 +2,22 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.20.1",
+    date: "2026-10-13",
+    highlights: [
+      "Configure custom endpoints without an API key; requests omit authentication in that mode.",
+      "Open local files outside a project folder in the built-in browser, while web pages remain scoped to project files.",
+      "See provider wait, streamed model response, and top-level tool time separately in the context usage inspector.",
+      "After you stop a turn, the next one waits for the previous run to settle so work does not overlap.",
+      "The Windows portable ZIP now includes the update feed so installed copies can find and download updates.",
+      "Plugins can query fetch's supported redirect modes and inspect or refuse redirects without following; existing fetch calls still follow redirects by default.",
+      "Long-text compaction and model response-rate estimates are more accurate; interrupted streams keep the existing fallback.",
+      "Text selection stays continuous when it crosses popup overlays.",
+      "Project menus stay visible when opened from rows near the bottom of the sidebar.",
+      "Windows keeps the installer lock while it removes old backups.",
+    ],
+  },
+  {
     version: "0.19.1",
     date: "2026-10-13",
     highlights: [

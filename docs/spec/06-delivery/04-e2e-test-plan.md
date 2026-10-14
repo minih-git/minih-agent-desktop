@@ -8,6 +8,37 @@
 
 ## 1. Goals
 
+### E2E-QUEUE-send-now-wakes-subagents
+
+- **Preconditions:** Dedicated request worktree with built workspace packages,
+  compatible reused Host binary, temporary HOME/data/project, and a local SSE
+  model fixture. Production Composer queue service, Main IPC, AgentHost, Rust
+  Host and agent sidecar are used; no installed app or real account is used.
+  The fixture requires Linux/macOS HOME isolation and refuses Windows before
+  Host startup because known-folder lookup does not honor that isolation.
+- **Steps:** Start two background delegates and let the parent enter TaskWait.
+  Submit ordinary FIFO input and a correction, then choose Send now on the
+  correction. Hold both delegate responses until the parent answers the
+  correction. Release both responses and observe report delivery and FIFO drain.
+- **Expected:** The correction reaches the same durable turn, TaskWait returns
+  interrupted, and neither delegate is aborted. The correction appears once
+  in history and leaves the durable queue only after acceptance. Ordinary
+  input remains queued until parent settlement. Both reports reach the parent
+  and the remaining FIFO input runs once. No graceful stop is requested.
+  In rendered Electron, expand the earlier process after the steering reply:
+  both delegate nodes remain running with Stop controls, then become completed
+  after their reports arrive; the ordinary queued row remains until settlement.
+- **Coverage:** `pnpm test:e2e:send-now-subagents` runs the headless process
+  journey; append `-- --auto` to repeat with the session in auto mode.
+  `queue-pending-actions.test.mjs` covers normal send followed by Send
+  now through the production renderer service. AgentHost tests cover click
+  order, concurrent delivery/cancellation, stale targets, and permission-mode
+  preservation; runtime tests cover input before/during TaskWait and existing
+  stop/dispose behavior. `send-now-subagent-rendering.test.mjs` covers the
+  steering transcript path, parent settlement, ordinary-turn boundaries,
+  compaction, and terminal Task snapshots through the real React rendering.
+  The headless command does not replace the rendered Electron check above.
+
 ### E2E-STORAGE-custom-location-and-maintenance
 
 - **Preconditions:** Dedicated request worktree, current remote-main base, shared
@@ -909,8 +940,10 @@ identify the platform validation still needed.
   `codesign --verify --deep --strict --verbose=2`,
   `spctl --assess --type execute --verbose=4`, and `xcrun stapler validate`
   against the app, including `Contents/Resources/bin/minih-agent-desktop-host-core`.
-  4) Confirm the workflow's DMG step reported an Apple notary status of
-  `Accepted` and then run `xcrun stapler validate` against the matching DMG.
+  4) Confirm the app stapler shim retries only `xcrun stapler staple` up to six
+  total attempts after the app submission is accepted, then confirm the
+  workflow's DMG step reported an Apple notary status of `Accepted` and run
+  `xcrun stapler validate` against the matching DMG.
   5) Download the DMG on a clean macOS profile, move the app to
   `/Applications`, and open it without clearing `com.apple.quarantine`.
 - **Expected**: Each macOS app passes signature integrity, Gatekeeper reports
@@ -1033,12 +1066,23 @@ identify the platform validation still needed.
 #### E2E-005: Add a provider and save API key
 
 - **Preconditions**: App running; no provider configured; the models.dev snapshot ships with the build.
-- **Steps**: 1) Open Settings → Model configuration and choose Add provider. 2) Confirm the searchable service chooser opens. Filter and select a built-in API-key service or **Custom endpoint**; the selection must open its matching form, never the plugin-only “selected service unavailable” state. Confirm the form has no stepper or Next/Back buttons. For **Custom endpoint**, Name and Base URL appear on one row with no helper paragraph under the URL (placeholder only), API Key and API format appear side by side on the next row (not behind Advanced), and a focused field plus its 2px accent ring stays fully inside the dialog, including on a window narrower than 1040px. 3) Enter a name and a base URL for a service that publishes a `/models` route, then paste an API key. 4) Confirm the models section fills with the models THAT SERVICE returned, not with every model its vendor publishes; confirm a model the deployment does not host is absent. 5) Type in the filter box and confirm the list narrows client-side with no network request per keystroke. 6) Confirm each row shows the models.dev-derived context/output for models the catalog knows, that its compact text tracks the published value instead of a coarser rounded one (a 1,050,000 window reads `1.05M`, never `1.1M`), and that a model with no catalog match still lists with generic defaults. 7) Select two models with the checkboxes. 8) Expand Advanced on one chosen row, override its limits and toggle thinking chips; confirm each numeric field has a five-chip preset ladder for common values, clicking a chip writes the value, hand editing remains possible, and a non-preset value leaves the ladder unselected. Set max output to 8,192 while its context window still follows the catalog. On a model whose published image input is enabled, toggle image input off and then back on before saving, so the explicit choice equals the current catalog value. Confirm the label and optional hint sit above one compact grouped control and do not force the options onto a second row at normal dialog width; confirm all seven canonical levels are available, that published levels start selected for a known reasoning model, and that a non-reasoning or unknown row shows the same chips unselected with the manual-override hint; enable one level on that row and confirm the other row is unaffected. 9) Open the form-level Advanced and confirm the API format is present but pre-derived. 10) Add a free-form model ID the service did not return; confirm it is added with 128,000 / 8,192 / no-thinking defaults, then enable a thinking level if the endpoint supports it; confirm re-adding the same ID in different letter case is rejected as already added. 11) Save.
-- **Expected**: The service is asked first and models.dev only enriches the answer and seeds known-model defaults. Newly fetched or checked model rows stay collapsed until the user opens Advanced, so every selected model ID remains visible in the right pane after a multi-select. The settings picker always offers the seven canonical thinking levels, and the Composer later renders the explicit levels saved in the same model binding; an empty or `off`-only binding resolves to `off`. Discovery is debounced ~600 ms, does not mark loading until that window elapses, and a slow reply from an earlier keystroke never replaces a newer list; named add-path discovery waits for an API key, while an unsaved custom provider is probed with the typed base URL (and key, if any) before it exists. Preset ladders cover common context/output limits while preserving hand-edited values. The explicitly selected 8,192 output remains pinned independently of the catalog-sourced context window, and the image-input choice remains explicitly enabled after it is toggled back to the published value; neither is reinterpreted as "follow catalog" on save/reopen. Later catalog corrections change only values whose own source is `catalog`. Limit text renders through one shared compact formatter, so neighbouring published windows stay distinguishable (`1M` / `1.05M` / `1.1M`) and a compact limit never reads above its published value. Custom endpoint keeps API format beside the key and omits Base URL helper copy; named endpoints do not show format. Point the same custom form at an unreachable or unauthorized URL and confirm one classified sentence reaches the app toast while the left pane keeps its single “no list” label (not a raw JSON/HTML dump and not a second “no models” empty state); with cached rows from a later edit the same reason is toasted while the rows stay. Point a second provider at a base URL with no `/models` route and confirm the list falls back to the catalog, is labelled as coming from models.dev rather than the service, and still saves. The provider appears as a row with its host, model count and secret badge; the key is stored securely (not in plaintext config); `models` contains both bindings and `models[0]` remains the provider default.
+- **Steps**: 1) Open Settings → Model configuration and choose Add provider. 2) Confirm the searchable service chooser opens. Filter and select a built-in API-key service or **Custom endpoint**; the selection must open its matching form, never the plugin-only “selected service unavailable” state. Confirm the form has no stepper or Next/Back buttons. For **Custom endpoint**, Name and Base URL appear on one row with no helper paragraph under the URL (placeholder only), API Key and API format appear side by side on the next row (not behind Advanced), and a focused field plus its 2px accent ring stays fully inside the dialog, including on a window narrower than 1040px. The custom form's **No API key required** switch starts off; enabling it clears and disables the key field. 3) Enter a name and a base URL for a service that publishes a `/models` route, then paste an API key. Confirm the models section fills with the models THAT SERVICE returned without requiring a key for discovery; confirm a model the deployment does not host is absent. Also exercise the no-auth path with a custom endpoint: leave the key empty, enable **No API key required**, select a discovered model, and save. 4) Type in the filter box and confirm the list narrows client-side with no network request per keystroke. 5) Confirm each row shows the models.dev-derived context/output for models the catalog knows, that its compact text tracks the published value instead of a coarser rounded one (a 1,050,000 window reads `1.05M`, never `1.1M`), and that a model with no catalog match still lists with generic defaults. 6) Select two models with the checkboxes. 7) Expand Advanced on one chosen row, override its limits and toggle thinking chips; confirm each numeric field has a five-chip preset ladder for common values, clicking a chip writes the value, hand editing remains possible, and a non-preset value leaves the ladder unselected. Set max output to 8,192 while its context window still follows the catalog. On a model whose published image input is enabled, toggle image input off and then back on before saving, so the explicit choice equals the current catalog value. Confirm the label and optional hint sit above one compact grouped control and do not force the options onto a second row at normal dialog width; confirm all seven canonical levels are available, that published levels start selected for a known reasoning model, and that a non-reasoning or unknown row shows the same chips unselected with the manual-override hint; enable one level on that row and confirm the other row is unaffected. 8) Open the form-level Advanced and confirm the API format is present but pre-derived. 9) Add a free-form model ID the service did not return; confirm it is added with 128,000 / 8,192 / no-thinking defaults, then enable a thinking level if the endpoint supports it; confirm re-adding the same ID in different letter case is rejected as already added. 10) Save.
+- **Expected**: The service is asked first and models.dev only enriches the answer and seeds known-model defaults. The no-auth custom path saves `authKind: "none"`, omits `secretValue`, and makes the configured provider available anywhere an enabled no-auth provider is selectable; named cloud preset behavior stays unchanged. Newly fetched or checked model rows stay collapsed until the user opens Advanced, so every selected model ID remains visible in the right pane after a multi-select. The settings picker always offers the seven canonical thinking levels, and the Composer later renders the explicit levels saved in the same model binding; an empty or `off`-only binding resolves to `off`. Discovery is debounced ~600 ms, does not mark loading until that window elapses, and a slow reply from an earlier keystroke never replaces a newer list; named add-path discovery waits for an API key, while an unsaved custom provider is probed with the typed base URL (and key, if any) before it exists. Preset ladders cover common context/output limits while preserving hand-edited values. The explicitly selected 8,192 output remains pinned independently of the catalog-sourced context window, and the image-input choice remains explicitly enabled after it is toggled back to the published value; neither is reinterpreted as "follow catalog" on save/reopen. Later catalog corrections change only values whose own source is `catalog`. Limit text renders through one shared compact formatter, so neighbouring published windows stay distinguishable (`1M` / `1.05M` / `1.1M`) and a compact limit never reads above its published value. Custom endpoint keeps API format beside the key and omits Base URL helper copy; named endpoints do not show format. Point the same custom form at an unreachable or unauthorized URL and confirm one classified sentence reaches the app toast while the left pane keeps its single “no list” label (not a raw JSON/HTML dump and not a second “no models” empty state); with cached rows from a later edit the same reason is toasted while the rows stay. Point a second provider at a base URL with no `/models` route and confirm the list falls back to the catalog, is labelled as coming from models.dev rather than the service, and still saves. The provider appears as a row with its host, model count and secret badge; the key is stored securely (not in plaintext config); `models` contains both bindings and `models[0]` remains the provider default.
 - **Specs linked**: `03-runtime/11-provider-model-system.md`, `03-runtime/12-provider-config-schema.md`, `03-runtime/13-model-catalog-and-selection.md`, `03-runtime/14-secrets-storage.md`, `04-ux/06-settings-ia.md`
 - **Acceptance**: B (multi-model provider configuration, save key)
 - **Milestone**: M2
 - **Status**: Manual model-picker acceptance; chooser-to-key-form selection is covered by `apps/desktop/test/plugin-provider-catalog-user-path.test.mjs`; automated protocol smoke covers provider creation and secret handling without plaintext echo.
+
+#### E2E-PROVIDER-custom-endpoint-no-api-key: Configure a custom service without credentials
+
+- **Preconditions**: Isolated settings profile and a local OpenAI-compatible fixture that lists a model without credentials; no live or paid provider.
+- **Steps**: 1) Open Settings → Model configuration → Add provider → Custom endpoint. 2) Enter a name and the fixture URL; check **No API key required**. 3) Confirm model discovery succeeds without a key, select the returned model, and save. 4) Confirm the provider and model are offered by chat/default-model and subagent selectors. 5) Edit an API-key provider, select **No API key required**, save, and inspect the provider's stored auth kind and credential state. 6) Send a request through the no-auth provider fixture.
+- **Expected**: The custom form remains in API-key mode by default. The explicit no-key selection saves `authKind: "none"` without `secretValue`; editing to this mode removes the provider's existing API key. The enabled provider with `hasSecret: false` remains selectable for chat, defaults, subagents, and image generation where its model supports that operation. Runtime requests contain no API-key or Authorization credentials.
+- **Automation**: `pnpm test:e2e:provider-api-style` renders the production setup form in English and Simplified Chinese with a stubbed model-discovery/API boundary and verifies create/update payloads and chat/default/subagent selector eligibility. `pnpm --filter @minih-agent/agent-runtime test -- provider-binding.test.ts` verifies request headers; `apps/desktop/test/image-generation-default.test.mjs` covers no-auth image-model availability; `cargo test -p host-core --locked switching_provider_to_no_auth_clears_its_api_key` verifies Host persistence and secret removal.
+- **Specs linked**: `03-runtime/11-provider-model-system.md`, `03-runtime/12-provider-config-schema.md`, `03-runtime/13-model-catalog-and-selection.md`, `04-ux/06-settings-ia.md`.
+- **Acceptance**: B (model configuration), F (provider persistence), Security.
+- **Milestone**: M2.
+- **Status**: Automated coverage uses a deterministic stub for model discovery and fetch. The full local-endpoint send flow remains available for manual acceptance; no paid provider or user profile is used.
 
 #### E2E-PROVIDER-defaults-survive-an-added-provider: An added provider leaves the app defaults alone
 
@@ -1681,12 +1725,15 @@ identify the platform validation still needed.
 - **Steps**: 1) Send ordinary text and click Stop immediately, including while
   the prompt is still being admitted. 2) Confirm the user row is undone and
   the text returns to the composer after that first Stop. 3) Send again, wait
-  for partial output, then stop during the stream. 4) Observe the transcript
-  and composer.
+  for partial output, then stop during the stream. 4) Immediately send a new
+  prompt after Stop returns, without waiting for an idle delay. 5) Observe the
+  transcript and composer.
 - **Expected**: The first Stop is honored even if prompt admission is still in
   progress; the unanswered send is undone and its draft restored. The
   streaming send stops with its partial response preserved and no draft
-  restoration or duplicate user turn. The session remains usable.
+  restoration or duplicate user turn. Stop returns after the active runtime
+  operation has settled, and the follow-up starts without `AGENT_BUSY`. The
+  session remains usable.
 - **Specs linked**: `03-runtime/02-agent-runtime.md`
 - **Acceptance**: C (abort)
 - **Milestone**: M2
@@ -2105,7 +2152,7 @@ identify the platform validation still needed.
   composer. 3) Remove the second queued row and switch to B. 4) Send a prompt
   in B, then return to A before either run completes. 5) Choose Send now on A's
   remaining queued row, then choose Send now on a second row. 6) Observe A
-  through the current tool/reply boundary and then the next turn. 7) Start
+  through the next model request within the same turn. 7) Start
   another run in A, clear the draft to expose the single Stop button, press
   Stop, and inspect the queue. 8) Repeat with two queued prompts, let the active
   turn finish without Send now, and delay its host `session.endTurn` response
@@ -2121,11 +2168,10 @@ identify the platform validation still needed.
   state: disabled Send while idle and empty, enabled Send while running with
   content (which queues the prompt), and Stop while running with an empty
   draft. A's two prompts appear in FIFO order, the removed row never sends,
-  and B's queue remains independent. Send now requests a graceful stop: the
-  current batch completes with a normal `agent_end`/completed turn, then the
-  promoted rows are delivered in the order they were promoted, before any
-  waiting row, without `AGENT_BUSY`: the first starts the turn and the rest join
-  it as adjacent user messages, so the model answers once for the whole block.
+  and B's queue remains independent. Send now delivers promoted input in click
+  order into the current turn without requesting a stop. An active TaskWait
+  yields to the input while delegates keep running. Refused input or input
+  with a different permission mode remains queued for a later turn.
   A promoted row locks move/edit and Send now, but permits removal; promotion is
   one-way. Move up/down swaps only waiting rows, never crosses the promoted
   block, and persists. Edit is refused with a visible message while the input
@@ -2160,14 +2206,14 @@ identify the platform validation still needed.
   least one completed tool batch; three prompts are queued behind it.
   the first queued row. 3) Confirm the promoted block orders third → first, that
   both rows lock their move/edit actions, and that the remaining row is
-  still editable. 4) Let the boundary pass and observe the transcript.
+  still editable. 4) Observe steering delivery at the next model request.
 - **Expected**: The first click is delivered first and the second second — the
   click order is the delivery order, not "last click wins" and not the original
-  queue order. Both rows appear as adjacent user messages in one turn and the
-  model answers once; the queue no longer lists either promoted row. Both
+  queue order. Both rows appear as user messages in the same active turn;
+  the queue no longer lists either accepted promoted row. Both
   promoted rows show as waiting and cannot be edited or reordered. Removal
-  remains available until delivery. A refused or failed graceful stop reports
-  a message and leaves the row cancelable. If cancellation wins admission,
+  remains available until delivery. Refused steering retains the row for the
+  next turn and leaves it cancelable. If cancellation wins admission,
   the input never executes; if delivery wins, cancellation reports that it
   already started. The row disappears only after Host acknowledgement.
   A stalled steering delivery does not block admission or cancellation of other
@@ -2959,6 +3005,16 @@ identify the platform validation still needed.
 - **Milestone**: M2
 - **Status**: Unit-covered (`session-scratch-path.test.mjs`); desktop journey
   Draft (run only in a capable environment when this surface changes)
+
+#### E2E-021c: Bottom-edge project menus stay beside their anchor
+
+- **Preconditions**: The expanded Sidebar shows a retained project in its lowest visible row, with insufficient room below it for the project menu.
+- **Steps**: 1) Right-click the project row and inspect the menu. 2) Close it, open the row's overflow button, and inspect the menu again. 3) Verify every action remains inside the viewport.
+- **Expected**: Both entry points place the menu immediately above the row when it cannot fit below, using the rendered menu height. When there is enough room, the menu opens below its anchor. No menu is displaced to a distant viewport edge or clipped.
+- **Specs linked**: `04-ux/08-component-spec.md`, `04-ux/09-interaction-patterns.md`
+- **Acceptance**: Quality (sidebar interaction)
+- **Milestone**: M2
+- **Status**: Automated (`node scripts/e2e-three-column-layout.mjs --sidebar-only`, `sidebar-floating-menu.test.mjs`, `sidebar-navigation.test.mjs`)
 
 #### E2E-036: Settings session-import destination retired
 
@@ -4497,7 +4553,7 @@ window; opening a normal panel afterward must still work.
 
 #### E2E-059: Embedded browser preview isolation and overlays
 
-- **Preconditions**: A local dev server is running; a URL or BrowserPreview artifact exists.
+- **Preconditions**: A local dev server is running; a URL or BrowserPreview artifact exists; HTML fixtures exist both inside and outside the workspace.
 - **Steps**: 1) Activate the artifact, enter `localhost:<port>` and
   `localhost:<port>/index.html` without a scheme, and submit each. Enter a
   dotted host with a port (for example, `example.com:8080`), then verify an
@@ -4509,30 +4565,38 @@ window; opening a normal panel afterward must still work.
   and trigger an inline tool permission card. 5) Switch to another panel tab
   and back; close the panel. 6) Use open-external. 7) From both an existing page
   and a blank Browser tab, enter an existing HTML file inside the workspace by
-  `file:` URL and absolute path. Then enter both `file:///tmp/demo.html` and
-  `/tmp/demo.html`, pointing to an existing file outside the workspace.
+  platform-appropriate `file:` URL and absolute path. Then enter an existing
+  file outside the workspace by its platform-appropriate URL and absolute path
+  (for example, `file:///tmp/demo.html` and `/tmp/demo.html` on Unix, or
+  `file:///D:/demo.html` and `D:\demo.html` on Windows). From the loaded
+  local HTML, follow a link to another existing file outside the workspace.
+  From an HTTP page, try the same outside file link and enter a missing local
+  file path.
 - **Expected**: Scheme-less input normalizes to http; nav state (URL bar,
   back/forward enablement, load spinner) mirrors the page. Popups open in
   the default browser (never in-app) only when the URL parses as http(s) or
-  mailto; `file:`, `javascript:`, and custom schemes are denied. Permission
-  requests are denied; non-http(s) navigation is blocked except in-root
-  `file:` siblings. The preview hides for the whole lifetime of the rename
+  mailto; popups using `file:`, `javascript:`, and custom schemes are denied.
+  Permission requests are denied; top-level navigation allows HTTP(S),
+  in-workspace file links, and existing local file links from a local file
+  page. HTTP pages cannot navigate to files outside the workspace. Missing
+  files, directories, remote file authorities, and other schemes are blocked.
+  The preview hides for the whole lifetime of the rename
   dialog and every other blocking overlay, and while
   unmounted, reappearing with correct bounds afterwards. An inline permission
   card does not hide or remount the preview; resize/drag keeps the native view
   visible and aligned with the placeholder rect without a black flash. Opening
   the work-panel context dropdown moves beside the native view; the view keeps
   its full surface rect and the plugin body does not shift down.
-  Open-external launches an http(s) page in the default browser and an in-root
-  file preview via `openPath`. The view uses an isolated persist partition
-  (no session bleed from the app shell). Both in-root forms open; neither
-  outside form reaches the guest load, the submitted address remains visible,
-  and the browser explains in the active locale that only existing workspace
-  files can open.
-- **Specs linked**: `03-runtime/01-ipc-protocol.md` §13a, ADR 0019, ADR 0168
+  Open-external launches an http(s) page in the default browser and any loaded
+  local file via `openPath`. The view uses an isolated persist partition
+  (no session bleed from the app shell). Both inside and outside forms load;
+  the HTTP page's outside link and missing path do not reach the guest load.
+  The submitted address remains visible on failure, with localized copy that
+  only existing local files can open.
+- **Specs linked**: `03-runtime/01-ipc-protocol.md` §13a, `04-ux/08-component-spec.md`, `05-security/01-security.md`, ADR 0019, ADR 0168, ADR 0328
 - **Acceptance**: Quality, Security
 - **Milestone**: M5
-- **Status**: Draft (manual)
+- **Status**: Partial automation: `scripts/e2e-browser-local-file-access.mjs` covers native local-file navigation; the address-bar and overlay workflow remains manual.
 
 #### E2E-BROWSER-capture-resize: Capture preserves live placement and restores the latest viewport
 
@@ -4906,12 +4970,15 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   badge and no context inspector under the answer. 3) Hover the composer
   toolbar inspector trigger, confirm the panel stays closed, then click it.
   4) Inspect the remaining-token-plus-percentage heading, used/window counts,
-  unboxed turn/speed values, session duration, cumulative model response time
-  with its share of session duration, one inline provider-usage summary, and
-  one aggregate tool-usage summary, with no doubled heading rule and no inner
-  section hairlines. For a transcript with more than one loaded page, wait for
-  the earlier response timings to finish loading and confirm the cumulative
-  value includes them. 5) Scroll the transcript and resize the window while the
+  unboxed turn/speed values, total session duration, and three timing rows for
+  network/provider wait, streamed model response (including thinking and
+  answer), and tool execution, each with its share of session duration. Confirm
+  overlapping top-level tool calls are counted once, nested delegate timings
+  are excluded, and one inline provider-usage summary plus one aggregate
+  tool-usage summary remain. There is no doubled heading rule or inner section
+  hairline. For a transcript with more than one loaded page, wait for earlier
+  timing metadata to finish loading and confirm the cumulative values include
+  it. 5) Scroll the transcript and resize the window while the
   panel is open. Toggle and resize the sidebar and work panel while the panel
   remains open. 6) Move the pointer away from the panel, then dismiss it by
   clicking the trigger again, clicking outside it, and pressing Escape from
@@ -4931,9 +4998,11 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   survives the pointer leaving it and closes on a second trigger activation,
   an outside click, or Escape, which returns focus to the trigger. Session
   duration runs from session creation to the latest activity (or to now while
-  running); cumulative model response time sums recorded top-level model
-  request durations and its percentage is relative to that wall-time span.
-  Earlier transcript pages load only while the inspector is open. Provider
+  running). Network request wait ends at the first model response event; model
+  response includes streamed thinking and answer, and tool time excludes nested
+  delegates and unions overlapping top-level calls. Each cumulative timing
+  percentage is relative to that wall-time span. Earlier transcript pages load
+  only while the inspector is open. Provider
   values remain exact, tool values remain visibly approximate through the `~`
   aggregate total, and no per-tool list, source badge, progress bar, or
   explanatory estimate paragraph is rendered. Occupancy, turn total, and
@@ -9724,20 +9793,21 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | E / F / Quality — MCP server timeout override | E2E-261 |
 | A — App startup | E2E-001, E2E-002, E2E-003, E2E-004, E2E-067, E2E-076, E2E-079, E2E-092, E2E-097, E2E-143, E2E-150, E2E-168, E2E-204 |
 | A / C / F / Quality — Tray session navigation | E2E-TRAY-bounded-session-navigation |
-| B — Model config | E2E-005, E2E-006, E2E-007, E2E-038, E2E-050, E2E-052, E2E-055, E2E-066, E2E-080, E2E-082, E2E-102c, E2E-102d, E2E-102e, E2E-151, E2E-154, E2E-163, E2E-166, E2E-172, E2E-174, E2E-197, E2E-005G, E2E-005J, E2E-199, E2E-201, E2E-202, E2E-203, E2E-205, E2E-206, E2E-209, E2E-PLUGIN-provider-catalog-add-service |
+| B — Model config | E2E-005, E2E-PROVIDER-custom-endpoint-no-api-key, E2E-006, E2E-007, E2E-038, E2E-050, E2E-052, E2E-055, E2E-066, E2E-080, E2E-082, E2E-102c, E2E-102d, E2E-102e, E2E-151, E2E-154, E2E-163, E2E-166, E2E-172, E2E-174, E2E-197, E2E-005G, E2E-005J, E2E-199, E2E-201, E2E-202, E2E-203, E2E-205, E2E-206, E2E-209, E2E-PLUGIN-provider-catalog-add-service |
 | C — Conversation & stream | E2E-CHAT-long-history-stream-keeps-responsive, E2E-CHAT-running-status-survives-output-pauses, E2E-008, E2E-008d, E2E-008e, E2E-008a, E2E-009, E2E-010, E2E-011, E2E-011a, E2E-011b, E2E-011d, E2E-011e, E2E-011g, E2E-031, E2E-040, E2E-047, E2E-048, E2E-048A, E2E-049, E2E-052, E2E-053, E2E-054, E2E-055, E2E-059, E2E-059a, E2E-060c, E2E-060d, E2E-061, E2E-061a, E2E-062, E2E-064, E2E-065, E2E-068, E2E-071, E2E-073, E2E-074, E2E-075, E2E-081, E2E-083, E2E-084, E2E-086, E2E-087, E2E-088, E2E-088b, E2E-089, E2E-090, E2E-COMPOSER-narrow-controls, E2E-094, E2E-095, E2E-096, E2E-097, E2E-098, E2E-099, E2E-102, E2E-102a, E2E-102b, E2E-102c, E2E-102d, E2E-102g, E2E-106, E2E-109, E2E-111, E2E-114, E2E-116, E2E-117, E2E-118, E2E-119, E2E-120, E2E-121, E2E-218, E2E-259, E2E-219, E2E-AGENTS-001, E2E-142, E2E-144, E2E-145, E2E-146, E2E-146a, E2E-147, E2E-151, E2E-154, E2E-155, E2E-158, E2E-159, E2E-161, E2E-162, E2E-166, E2E-172, E2E-173, E2E-174, E2E-177, E2E-178, E2E-179, E2E-180, E2E-182, E2E-183, E2E-187, E2E-198, E2E-199, E2E-202, E2E-203, E2E-207, E2E-208, E2E-CHAT-content-width-handles, E2E-250, E2E-102i, E2E-PLUGIN-session-orchestrator-real-workers, E2E-SUBAGENT-settlement-updates-before-parent-poll, E2E-SUBAGENT-resume-a-settled-delegation |
 | C — Conversation & stream (composer drafts) | E2E-011c, E2E-011c-1 |
 | D — Workspace | E2E-012, E2E-013, E2E-022B, E2E-024I, E2E-047, E2E-049, E2E-057, E2E-058, E2E-060, E2E-068, E2E-075, E2E-078, E2E-153, E2E-158, E2E-182, E2E-187, E2E-252 |
 | C / D / Quality — Project session history resets after collapse | E2E-263 |
 | D — Workspace (project ordering) | E2E-253 |
 | E — Tools & permissions | E2E-008a, E2E-014, E2E-015, E2E-016, E2E-017, E2E-018, E2E-019, E2E-024I, E2E-024K, E2E-040, E2E-049, E2E-074, E2E-093, E2E-097, E2E-099, E2E-100, E2E-101, E2E-102, E2E-102d, E2E-102e, E2E-102g, E2E-103, E2E-105, E2E-106, E2E-107, E2E-111, E2E-112, E2E-113, E2E-114, E2E-115, E2E-116, E2E-119, E2E-121, E2E-122, E2E-142, E2E-145, E2E-147, E2E-155, E2E-158, E2E-166, E2E-181, E2E-PLUGIN-imported-pi-package-skills |
-| F — Persistence | E2E-020, E2E-021, E2E-021a, E2E-038, E2E-SETTINGS-inline-capability-imports, E2E-040, E2E-042, E2E-047, E2E-048, E2E-051, E2E-054, E2E-056, E2E-061, E2E-062, E2E-064, E2E-066, E2E-068, E2E-071, E2E-072, E2E-073, E2E-082, E2E-084, E2E-096, E2E-098, E2E-102, E2E-102b, E2E-102c, E2E-102d, E2E-102g, E2E-102i, E2E-103, E2E-AGENTS-001, E2E-061a, E2E-073a, E2E-104, E2E-106, E2E-107, E2E-108, E2E-109, E2E-110, E2E-112, E2E-118, E2E-119, E2E-120, E2E-121, E2E-123, E2E-142, E2E-146, E2E-146a, E2E-148, E2E-151, E2E-158, E2E-160, E2E-168, E2E-171, E2E-177, E2E-178, E2E-183, E2E-186, E2E-005J, E2E-PLUGIN-session-orchestrator-real-workers, E2E-PLUGIN-provider-catalog-add-service, E2E-SESSION-outbox-unclassifiable-failure-does-not-stall-the-queue |
+| F — Persistence | E2E-020, E2E-021, E2E-021a, E2E-038, E2E-SETTINGS-inline-capability-imports, E2E-040, E2E-042, E2E-047, E2E-048, E2E-051, E2E-054, E2E-056, E2E-061, E2E-062, E2E-064, E2E-066, E2E-068, E2E-071, E2E-072, E2E-073, E2E-082, E2E-084, E2E-096, E2E-098, E2E-102, E2E-102b, E2E-102c, E2E-102d, E2E-102g, E2E-102i, E2E-103, E2E-AGENTS-001, E2E-061a, E2E-073a, E2E-104, E2E-106, E2E-107, E2E-108, E2E-109, E2E-110, E2E-112, E2E-118, E2E-119, E2E-120, E2E-121, E2E-123, E2E-142, E2E-146, E2E-146a, E2E-148, E2E-151, E2E-158, E2E-160, E2E-168, E2E-171, E2E-177, E2E-178, E2E-183, E2E-186, E2E-005J, E2E-PROVIDER-custom-endpoint-no-api-key, E2E-PLUGIN-session-orchestrator-real-workers, E2E-PLUGIN-provider-catalog-add-service, E2E-SESSION-outbox-unclassifiable-failure-does-not-stall-the-queue |
 | F — Persistence (project ordering) | E2E-251 |
 | G / Security — Fetch redirect policy | E2E-PLUGIN-fetch-redirect-policy |
 | G — Plugins | E2E-022, E2E-022A, E2E-022B, E2E-022C, E2E-023, E2E-024, E2E-024B, E2E-024C, E2E-024D, E2E-024AA, E2E-024E, E2E-024W, E2E-024F, E2E-024G, E2E-024H, E2E-024I, E2E-024J, E2E-024K, E2E-024L, E2E-024M, E2E-024N, E2E-024O, E2E-024P, E2E-025, E2E-026, E2E-105, E2E-117, E2E-120, E2E-122, E2E-123, E2E-024Q, E2E-148, E2E-152, E2E-153, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-imported-pi-package-wrapper, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-global-shortcut-owns-only-its-own-command, E2E-PLUGIN-permission-gate-for-real-time-capabilities, E2E-PLUGIN-background-audio-and-realtime-connection, E2E-PLUGIN-fs-root-follows-the-calling-session, E2E-PLUGIN-provider-catalog-add-service |
 | H — Diagnostics | E2E-027, E2E-031, E2E-034, E2E-042, E2E-096, E2E-098, E2E-104, E2E-107, E2E-108, E2E-109, E2E-110, E2E-113, E2E-115, E2E-116, E2E-118, E2E-121, E2E-146, E2E-146a, E2E-155, E2E-159, E2E-176, E2E-194, E2E-195 |
-| Security | E2E-SETTINGS-inline-capability-imports, E2E-028, E2E-029, E2E-030, E2E-024J, E2E-024K, E2E-024M, E2E-049, E2E-068, E2E-086, E2E-102c, E2E-102d, E2E-102e, E2E-105, E2E-106, E2E-107, E2E-108, E2E-109, E2E-110, E2E-112, E2E-113, E2E-115, E2E-116, E2E-117, E2E-119, E2E-121, E2E-122, E2E-123, E2E-142, E2E-148, E2E-151, E2E-153, E2E-158, E2E-187, E2E-196c, E2E-196b, E2E-196, E2E-PLUGIN-fs-root-follows-the-calling-session, E2E-PLUGIN-provider-catalog-add-service |
+| Security | E2E-SETTINGS-inline-capability-imports, E2E-028, E2E-029, E2E-030, E2E-024J, E2E-024K, E2E-024M, E2E-049, E2E-068, E2E-086, E2E-102c, E2E-102d, E2E-102e, E2E-105, E2E-106, E2E-107, E2E-108, E2E-109, E2E-110, E2E-112, E2E-113, E2E-115, E2E-116, E2E-117, E2E-119, E2E-121, E2E-122, E2E-123, E2E-142, E2E-148, E2E-151, E2E-153, E2E-158, E2E-187, E2E-196c, E2E-196b, E2E-196, E2E-PROVIDER-custom-endpoint-no-api-key, E2E-PLUGIN-fs-root-follows-the-calling-session, E2E-PLUGIN-provider-catalog-add-service |
 | Quality | E2E-SETTINGS-inline-capability-imports, E2E-CHAT-long-history-stream-keeps-responsive, E2E-CHAT-running-status-survives-output-pauses, E2E-032, E2E-033, E2E-039, E2E-043, E2E-044, E2E-045, E2E-046, E2E-047, E2E-048, E2E-048A, E2E-049, E2E-050, E2E-053, E2E-055, E2E-056, E2E-057, E2E-058, E2E-059, E2E-060, E2E-061, E2E-062, E2E-063, E2E-064, E2E-065, E2E-066, E2E-067, E2E-068, E2E-069, E2E-070, E2E-071, E2E-072, E2E-073, E2E-074, E2E-075, E2E-076, E2E-077, E2E-078, E2E-079, E2E-080, E2E-081, E2E-082, E2E-083, E2E-084, E2E-085, E2E-086, E2E-092, E2E-093, E2E-094, E2E-095, E2E-096, E2E-097, E2E-098, E2E-099, E2E-100, E2E-101, E2E-102, E2E-102a, E2E-102b, E2E-102c, E2E-102d, E2E-102e, E2E-103, E2E-AGENTS-001, E2E-021a, E2E-024N, E2E-059a, E2E-060b, E2E-060c, E2E-061a, E2E-073a, E2E-111, E2E-114, E2E-117, E2E-118, E2E-119, E2E-120, E2E-122, E2E-123, E2E-142, E2E-143, E2E-144, E2E-145, E2E-146, E2E-147, E2E-148, E2E-150, E2E-151, E2E-153, E2E-155, E2E-158, E2E-159, E2E-160, E2E-161, E2E-162, E2E-163, E2E-168, E2E-172, E2E-173, E2E-174, E2E-011g, E2E-176, E2E-177, E2E-178, E2E-179, E2E-180, E2E-181, E2E-182, E2E-183, E2E-186, E2E-187, E2E-194, E2E-195, E2E-196a, E2E-196b, E2E-196c, E2E-198, E2E-199, E2E-200, E2E-196, E2E-201, E2E-204, E2E-202, E2E-203, E2E-205, E2E-206, E2E-207, E2E-208, E2E-209, E2E-210, E2E-UPDATE-preference-and-once-only-reminder, E2E-218, E2E-259, E2E-219, E2E-250, E2E-252, E2E-102i, E2E-SUBAGENT-settlement-updates-before-parent-poll, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-fs-root-follows-the-calling-session, E2E-SUBAGENT-resume-a-settled-delegation, E2E-PLUGIN-provider-catalog-add-service |
+| Quality (sidebar menu placement) | E2E-021c |
 | Quality (project ordering) | E2E-253 |
 | C — Conversation & stream (IME slash alias) | E2E-255 |
 | E — Tools & permissions (Skill residency) | E2E-254 |
@@ -9786,6 +9856,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | Post-MVP experimental interaction maintenance | E2E-LIVE-VOICE-four-stage-ui |
 | M1 | E2E-001, E2E-002, E2E-003, E2E-028, E2E-029 |
 | M2 | E2E-004, E2E-005, E2E-006, E2E-007, E2E-008, E2E-008d, E2E-008e, E2E-009, E2E-010, E2E-011, E2E-011a, E2E-011b, E2E-011d, E2E-011e, E2E-011g, E2E-020, E2E-021, E2E-021a, E2E-027, E2E-031, E2E-042, E2E-087, E2E-088, E2E-088b, E2E-089, E2E-090, E2E-COMPOSER-narrow-controls, E2E-144, E2E-005J, E2E-201, E2E-202, E2E-207, E2E-206 |
+| M2 (sidebar menu placement) | E2E-021c |
 | M3 | E2E-012, E2E-013, E2E-014, E2E-015, E2E-016, E2E-017, E2E-018, E2E-019, E2E-040 |
 | M4 | E2E-022, E2E-023, E2E-024, E2E-025, E2E-026, E2E-030, E2E-038 |
 | M5 | E2E-CHAT-long-history-stream-keeps-responsive, E2E-CHAT-running-status-survives-output-pauses, E2E-008a, E2E-032, E2E-033, E2E-034, E2E-039, E2E-043, E2E-044, E2E-045, E2E-046, E2E-047, E2E-048, E2E-048A, E2E-049, E2E-050, E2E-051, E2E-052, E2E-053, E2E-054, E2E-055, E2E-056, E2E-057, E2E-058, E2E-059, E2E-060, E2E-061, E2E-062, E2E-063, E2E-064, E2E-065, E2E-066, E2E-067, E2E-068, E2E-069, E2E-070, E2E-071, E2E-072, E2E-073, E2E-074, E2E-075, E2E-076, E2E-077, E2E-078, E2E-079, E2E-080, E2E-081, E2E-082, E2E-083, E2E-084, E2E-085, E2E-086, E2E-092, E2E-093, E2E-096, E2E-097, E2E-098, E2E-099, E2E-100, E2E-101, E2E-102, E2E-102a, E2E-102b, E2E-102c, E2E-102d, E2E-102e, E2E-AGENTS-001, E2E-059a, E2E-060b, E2E-060c, E2E-061a, E2E-073a, E2E-094, E2E-095, E2E-143, E2E-145, E2E-146, E2E-146a, E2E-147, E2E-177, E2E-178, E2E-180, E2E-181, E2E-182, E2E-183, E2E-186, E2E-187, E2E-194, E2E-195, E2E-204, E2E-208, E2E-CHAT-content-width-handles, E2E-250, E2E-252, E2E-102i, E2E-BROWSER-capture-resize |
@@ -13734,9 +13805,11 @@ are withdrawn with ADR 0165.
   setup wizard or administrator prompt, keeps the normal Minih-Agent-Desktop taskbar
   identity/icon, uses the existing application data directory, and reports
   update preference `manual` by default and effective update mode `manual`.
-  An available update does not download or run
-  `Minih-Agent-Desktop-Setup-<version>.exe`. Relaunch restores sessions from that same
-  profile.
+  Its `resources/app-update.yml` points to the same GitHub feed, so the manual
+  check settles as up-to-date or available instead of failing with `ENOENT`.
+  When an update is available, Settings offers the Releases page; it does not
+  download or run `Minih-Agent-Desktop-Setup-<version>.exe`. Relaunch restores
+  sessions from that same profile.
 - **Specs linked**: `01-product/01-product-scope.md`,
   `06-delivery/06-release-runbook.md`, `03-runtime/07-process-model.md`,
   ADR 0197 / D603
@@ -16745,6 +16818,37 @@ the latest destination. These assertions measure work counts, not device FPS.
   and the shutdown cases cover the "quit is not a crash" half.
 - **Status:** Automated at the runtime level; no UI driver reads the plugin
   page's error text.
+
+### E2E-DIALOG-native-selection-across-boundaries
+
+- **Preconditions:** Built renderer, isolated Electron profile, real production
+  React dialogs/hover card and stylesheet; only preload IPC is stubbed. Reveal
+  and dismissal delays use a controlled clock, not arbitrary sleeps.
+- **Steps:** Drag from release-note/table text onto the backdrop and copy the
+  selected text with Chromium's native Copy command; repeat content-to-backdrop
+  and reverse drags in project instructions and provider setup. Open provider
+  Advanced, drag across its boundary, then deliberately click its backdrop.
+  Cancel a backdrop press or blur the window before release, then try a fresh
+  outside click. Save project
+  instructions while trying outside click/Escape, then use the close button.
+  Hover a session row, drag card text outside, advance past the grace period
+  while held and after release, Copy, revisit/leave the row, clear selection,
+  and repeat ordinary leave, cancellation, Escape and outside press.
+- **Expected:** Cross-boundary drags preserve the modal and native selection;
+  deliberate backdrop clicks still dismiss. Cancelled/blurred presses never
+  dismiss; the next fresh click works. Nested clicks close only Advanced and
+  saving protections remain effective. The hover card survives dragging and
+  remains copyable while its text selection exists; row timers cannot override
+  retention. Clearing selection or ending an unselected/cancelled drag resumes
+  ordinary 160ms dismissal. Escape/outside press still dismiss selected cards.
+- **Specs:** `04-ux/09-interaction-patterns.md` sections 1.10 and 9.1b;
+  `04-ux/07-ui-design-system.md` section 11.4.
+- **Automation:** `pnpm test:e2e:overlay-selection`; production Chromium mouse
+  and keyboard input with deterministic host replies. On macOS the fixture uses
+  Chromium's native copy command because Electron's synthetic Command+C input
+  does not invoke the system clipboard. No running user app or real provider is
+  used.
+- **Status:** Automated on Windows and macOS; Linux native evidence pending.
 
 ### E2E-DIALOG-long-text-boundaries
 

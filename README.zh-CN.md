@@ -79,6 +79,8 @@ Subagent，或并行协调完整的 Worker 会话。
 </tr>
 </table>
 
+> **当前发布线：0.20.x（Early Preview）。**
+
 ---
 
 ## 三种工作方式

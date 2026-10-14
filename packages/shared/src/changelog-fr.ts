@@ -2,6 +2,22 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    "version": "0.20.1",
+    "date": "2026-10-13",
+    "highlights": [
+      "Configurez des points de terminaison personnalisés sans clé API ; dans ce mode, les requêtes n’envoient aucune donnée d’authentification.",
+      "Ouvrez des fichiers locaux situés hors d’un dossier de projet dans le navigateur intégré ; les pages Web restent limitées aux fichiers du projet.",
+      "Consultez séparément l’attente du fournisseur, la réponse du modèle en continu et le temps des outils principaux, avec les totaux et les pourcentages.",
+      "Après l’arrêt d’un tour, le suivant attend la fin du précédent pour éviter le chevauchement des tâches.",
+      "Le ZIP portable Windows inclut maintenant le flux de mise à jour afin que les copies installées puissent détecter et télécharger les mises à jour.",
+      "Les plugins peuvent interroger les modes de redirection pris en charge par fetch et choisir d’inspecter ou de refuser une redirection sans la suivre ; les appels fetch existants continuent de suivre les redirections par défaut.",
+      "Les estimations de compaction des longs textes et du débit de réponse du modèle sont plus précises ; les flux interrompus conservent le repli actuel.",
+      "La sélection de texte reste continue lorsqu’elle traverse les fenêtres superposées.",
+      "Les menus de projet restent visibles lorsqu’ils sont ouverts depuis les lignes en bas de la barre latérale.",
+      "Windows conserve le verrou d’installation pendant la suppression des anciennes sauvegardes.",
+    ],
+  },
+  {
     "version": "0.19.1",
     "date": "2026-10-13",
     "highlights": [

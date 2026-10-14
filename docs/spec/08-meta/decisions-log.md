@@ -50,6 +50,7 @@ This log freezes previously open questions into concrete decisions.
 | D654 | Keep the deterministic first-prompt session title in the core | **Amend D652 / ADR 0323: a session whose stored title is still a recognized placeholder derives a whitespace-collapsed 48-character fallback from the first prompt, written through the host RPC and IPC `session/deriveTitle`. Host-core applies it only while the title is still a placeholder with the `default` source, and the derived text keeps that source, so an installed title plugin may still replace it and only a manual rename opts out. No model call, no new permission, no schema or protocol version change; `updated_at`, transcript content, and message count stay unchanged. See `03-runtime/01-ipc-protocol.md`, `03-runtime/02-agent-runtime.md`, `03-runtime/06-host-rpc-protocol.md`, `03-runtime/04-data-storage.md`, `04-ux/08-component-spec.md`, and E2E-021a.** | Removing every automatic write left an untouched session showing a placeholder until a plugin ran, so offline readability depended on installing optional software. |
 | D655 | Cloud sync opens in packaged builds as Experimental | **Amend D649: remove the packaged-build visibility gate from Settings `sync` and restore its `Experimental` badge on the rail row and page title. Cloud sync and Remote Hosts are both available in packaged and development builds with Experimental badges. The S3 sync behavior, protocol, Host schema, and persisted data are unchanged. See `04-ux/06-settings-ia.md`, `03-runtime/22-config-sync.md`, and E2E-CONFIG-SYNC-s3-portable-configuration.** | The existing encrypted backup is useful to packaged-build users; the Experimental badge communicates its current maturity without keeping the feature hidden. |
 | D656 | Quarantine appends the host keeps refusing instead of stalling the outbox | **Amend ADR 0041 / D318 / D444 / D597: an append whose `session.appendMessage` or `session.recordUsage` call fails with an error the outbox cannot classify as a duplicate message id, a `PERMISSION_DENIED:` poison row, or a foreign-key orphan is retried on a bounded backoff (5s, doubling to a 60s cap) instead of ending the flush. The fifth consecutive failure on that head moves it into an application-owned dead-letter file, `session-message-outbox.dead-letter.json`, with its payload, session id, quarantine timestamp, and host error; only the newest 256 quarantined appends are kept, and the oldest is discarded with a warn. The flush then continues with the next entry, so one refused append can no longer hold the FIFO head, fill the 1024-entry cap, or fail every session's writes. Quarantined appends are never replayed automatically, and `session.delete` drops that session's quarantined appends too. No protocol version, storage schema, or queued-outbox format change.** | A `stream did not contain valid UTF-8` append stayed at the FIFO head for 14.8 hours while `session.persistence.outbox.is.full` fired 5990 times, so every session's appends failed until restart. Only three error classes had a drain, and every other error was treated as transient forever (#1560). |
+| D657 | Let the embedded Browser open local files outside the workspace | **Amend ADR 0170: an explicit absolute path or `file:` URL may load any existing regular local file, and a local-file page may navigate to other existing local files. Relative inputs remain workspace-rooted; HTTP(S) pages retain only the prior in-workspace file-link allowance. Missing files, directories, and remote file authorities remain blocked. `BrowserPreview` and the sidecar keep their workspace-rooted resolver. The public `pi.browser.navigate` API follows this policy under the high-risk `browser.cdp` permission. See ADR 0328, E2E-059, `04-ux/08-component-spec.md`, and `05-security/01-security.md`.** | Users need to inspect local HTML outside a project, while workspace-scoped agent file tools and remote-page navigation must retain their existing boundary (#1627). |
 
 ## B. Secondary implementation defaults
 
@@ -7641,3 +7642,17 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   restart, dead-letter cap, session delete) and
   E2E-SESSION-outbox-unclassifiable-failure-does-not-stall-the-queue. See ADR
   0041, `03-runtime/04-data-storage.md`, and `03-runtime/06-host-rpc-protocol.md`.
+
+## 2026-10-13 — Open local files in the embedded Browser (D657)
+
+- D657 amends ADR 0170: explicit absolute paths and `file:` URLs can open any
+  existing regular local file, and local-file pages can follow links to other
+  local files. Relative paths remain workspace-rooted. HTTP(S) pages cannot
+  navigate outside the workspace through a file link.
+- The public `pi.browser.navigate` API follows the same policy under its
+  existing high-risk `browser.cdp` permission. `BrowserPreview` and the sidecar
+  retain workspace-rooted validation.
+- Covered by `apps/desktop/test/browser-pane-navigation.test.mjs`,
+  `apps/desktop/test/browser-local-file-feedback.test.mjs`, and E2E-059. See
+  ADR 0328, `04-ux/08-component-spec.md`, `07-plugins/03-plugin-api.md`, and
+  `05-security/01-security.md`.

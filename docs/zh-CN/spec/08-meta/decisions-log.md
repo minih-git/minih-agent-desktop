@@ -52,6 +52,7 @@
 | D654 | 核心保留确定性的首条提示标题 | **修订 D652 / ADR 0323：当会话存储标题仍是可识别占位标题时，用首条提示派生一个折叠空白、截断为 48 字符的兜底标题，通过主机 RPC 与 IPC `session/deriveTitle` 写入。host-core 只在标题仍是占位标题且来源为 `default` 时接受，派生文本也保留该来源，因此已安装的标题插件仍可替换它，只有手动重命名会退出自动替换。不调用模型、不新增权限、不改架构或协议版本；`updated_at`、转录内容与消息数都不变。见 `03-runtime/01-ipc-protocol.md`、`03-runtime/02-agent-runtime.md`、`03-runtime/06-host-rpc-protocol.md`、`03-runtime/04-data-storage.md`、`04-ux/08-component-spec.md` 与 E2E-021a。** | 移除全部自动写入会让未触碰的会话一直显示占位标题，直到插件运行，从而让离线可读性依赖安装可选软件。 |
 | D655 | 云同步在打包版开放并标记为实验性 | **修订 D649：移除设置中 `sync` 目的地的打包构建门控，并在导轨行与页面标题恢复实验性徽章。云同步和远程主机在开发版与打包版中均可使用，并带有实验性标签。S3 同步行为、协议、Host schema 与持久化数据不变。见 `04-ux/06-settings-ia.md`、`03-runtime/22-config-sync.md` 与 E2E-CONFIG-SYNC-s3-portable-configuration。** | 已实现的加密云备份对打包版用户同样有用；实验性标签可以说明其成熟度，而无需继续隐藏功能。 |
 | D656 | 隔离宿主持续拒绝的 outbox 追加，避免整队停摆 | **修订 ADR 0041 / D318 / D444 / D597：当 `session.appendMessage` 或 `session.recordUsage` 返回的错误无法归类为重复消息 ID、`PERMISSION_DENIED:` 毒行或外键孤立行时，不再结束本次 flush，而是在同一 Host 代内按有界退避重试（5 秒起、翻倍、上限 60 秒）。同一队头连续第五次失败后，该追加被移入应用自有的死信文件 `session-message-outbox.dead-letter.json`（保留载荷、sessionId、隔离时间与宿主错误；只保留最新 256 条，超出丢弃最旧并记 warn），随后继续排空后续条目，因此单条被拒追加不再长期占用 FIFO 队头、填满 1024 条上限或导致所有会话写入失败。Host 重启属于新代，会立即重试该队头。隔离条目永不自动重放，`session.delete` 会连同该会话的隔离条目一起删除。协议版本、存储架构与队列文件格式均不变。** | 一条 `stream did not contain valid UTF-8` 追加在队头滞留 14.8 小时，期间 `session.persistence.outbox.is.full` 触发 5990 次，导致所有会话的写入直到重启前全部失败；此前只有三类错误有排空出口，其余错误被永久当作瞬时错误（#1560）。 |
+| D657 | 让内置浏览器打开工作区外的本地文件 | **修订 ADR 0170：通过绝对路径或 `file:` URL 可打开任意已存在的本地普通文件，本地文件页面也可导航到其他已存在的本地文件。相对输入仍以工作区为根；HTTP(S) 页面只保留此前工作区内文件链接的权限。缺失文件、目录与远程文件 authority 仍被阻止。`BrowserPreview` 与 sidecar 继续使用工作区根解析。公开的 `pi.browser.navigate` API 在高风险 `browser.cdp` 权限下采用相同策略。见 ADR 0328、E2E-059、`04-ux/08-component-spec.md` 与 `05-security/01-security.md`。** | 用户需要检查项目外的本地 HTML，而工作区范围内的 Agent 文件工具和远程页面导航仍须保留原有边界（#1627）。 |
 
 ## B. 辅助实现默认值
 
@@ -5388,3 +5389,13 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   跨重启保留死信、死信上限、会话删除）与
   E2E-SESSION-outbox-unclassifiable-failure-does-not-stall-the-queue 覆盖。见 ADR 0041、
   `03-runtime/04-data-storage.md` 与 `03-runtime/06-host-rpc-protocol.md`。
+
+## 2026-10-13 —— 内置浏览器打开工作区外本地文件（D657）
+
+- D657 修订 ADR 0170：绝对路径与 `file:` URL 可打开任意已存在的本地普通文件，本地文件页面也可
+  跟随链接访问其他本地文件。相对路径仍以工作区为根；HTTP(S) 页面不能通过 file 链接越出工作区。
+- 公开的 `pi.browser.navigate` API 在现有高风险 `browser.cdp` 权限下采用相同策略。
+  `BrowserPreview` 与 sidecar 仍保留工作区范围校验。
+- 由 `apps/desktop/test/browser-pane-navigation.test.mjs`、
+  `apps/desktop/test/browser-local-file-feedback.test.mjs` 与 E2E-059 覆盖。见 ADR 0328、
+  `04-ux/08-component-spec.md`、`07-plugins/03-plugin-api.md` 与 `05-security/01-security.md`。

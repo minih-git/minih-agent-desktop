@@ -296,30 +296,14 @@ export function createQueueSlice({
           promptId,
         ),
       }));
-      let prioritized = false;
       try {
+        // The Host delivers promoted input into the active turn, or keeps it
+        // queued when that turn can no longer accept steering.
         await api.prioritizeQueuedPrompt(promptId);
-        prioritized = true;
-        // Send now keeps its graceful stop: the active turn reaches its
-        // boundary before the promoted row starts.
-        if (get().runningSessions[sessionId] &&
-            queuedPromptForSession(get().queuedPrompts, sessionId, promptId)) {
-          const result = await api.stop(sessionId);
-          if (!result.requested) {
-            await get().refreshQueuedPrompts(sessionId);
-            if (queuedPromptForSession(get().queuedPrompts, sessionId, promptId)) {
-              get().showToast(i18n.t("chat.queuedPromptStopFailed"), { variant: "info" });
-            }
-          }
-        }
       } catch (error) {
         await get().refreshQueuedPrompts(sessionId);
         const detail = error instanceof Error ? error.message : String(error);
-        const stillQueued = queuedPromptForSession(get().queuedPrompts, sessionId, promptId);
-        get().showToast(
-          prioritized && stillQueued ? `${i18n.t("chat.queuedPromptStopFailed")} ${detail}` : detail,
-          { variant: "error" },
-        );
+        get().showToast(detail, { variant: "error" });
       }
     },
 
