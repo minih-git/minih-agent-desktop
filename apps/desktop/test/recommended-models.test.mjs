@@ -156,20 +156,15 @@ test("nothing qualifies, nothing is picked", () => {
   assert.deepEqual(recommendModels([model("gpt-6-sol")], 0), []);
 });
 
-test("only a list the service did not refuse is recommended from", () => {
-  const ready = (source, error) => ({ status: "ready", source, ...(error ? { error } : {}) });
-  assert.equal(canRecommendFrom(ready("remote"), false), true);
-  assert.equal(canRecommendFrom(ready("catalog"), false), true);
-  // A named vendor without a /models route still accepted the key.
-  assert.equal(canRecommendFrom(ready("catalog", "HTTP 404 Not Found"), true), true);
-  assert.equal(canRecommendFrom(ready("catalog", "HTTP 404 Not Found"), false), false);
-  // A refused key or an unreachable host says nothing about the key.
-  assert.equal(canRecommendFrom(ready("catalog", "HTTP 401 Unauthorized"), true), false);
-  assert.equal(canRecommendFrom(ready("catalog", "fetch failed"), true), false);
-  assert.equal(canRecommendFrom(ready("fallback"), true), false);
-  assert.equal(canRecommendFrom(ready("cache"), true), false);
-  assert.equal(canRecommendFrom({ status: "loading", source: "remote" }, true), false);
-  assert.equal(canRecommendFrom({ status: "error", source: "remote" }, true), false);
+test("only the service's own list is recommended from", () => {
+  const ready = (source) => ({ status: "ready", source });
+  assert.equal(canRecommendFrom(ready("remote")), true);
+  // A list not produced by the endpoint (a fallback row, a cached paint) says
+  // nothing about what the service actually serves.
+  assert.equal(canRecommendFrom(ready("fallback")), false);
+  assert.equal(canRecommendFrom(ready("cache")), false);
+  assert.equal(canRecommendFrom({ status: "loading", source: "remote" }), false);
+  assert.equal(canRecommendFrom({ status: "error", source: "remote" }), false);
 });
 
 test("picks are the same bindings a manual pick creates", () => {

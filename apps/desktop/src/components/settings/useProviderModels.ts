@@ -11,7 +11,7 @@ import type { ModelInfo, ProviderPublic } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 
 /** Where the returned list came from, as reported by the host. */
-export type ProviderModelsSource = "cache" | "remote" | "catalog" | "fallback";
+export type ProviderModelsSource = "cache" | "remote" | "fallback";
 
 export type ProviderModelsState = {
   status: "idle" | "loading" | "ready" | "error";

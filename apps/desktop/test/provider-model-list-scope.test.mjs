@@ -1,12 +1,13 @@
 /**
- * What the settings picker's catalog fallback lists.
+ * What `modelsForProvider` lists from the bundled models.dev snapshot.
  *
- * The picker renders what the credential can call, so when a service publishes
- * no model list of its own the catalog stands in for it: the vendor's published
- * set as a whole, chat models next to the embedding, speech and image endpoints
- * the same key can reach. Preselection stays chat-only (`recommendModels`), and
- * the session and agent paths keep asking for text models only, so the wider
- * list is a settings surface rather than a new default everywhere.
+ * The settings picker no longer answers from this snapshot when a service
+ * publishes no model list of its own — the service is the authority on what it
+ * serves, and a directory stand-in would make a rejected key look ready to
+ * save. The catalog read itself remains the enrichment source for discovery
+ * answers and session/agent model lookups, so its scope contract still holds:
+ * the default list stays what a session can run, and the wider list is the
+ * same set plus the endpoints a text-only filter hides.
  */
 import assert from "node:assert/strict";
 import { register } from "node:module";
@@ -28,7 +29,7 @@ async function loadedCatalog() {
 const isTextModel = (model) =>
   model.modalities.input.includes("text") && model.modalities.output.includes("text");
 
-test("the settings list can ask for every model a provider publishes", async () => {
+test("the catalog read can ask for every model a provider publishes", async () => {
   const catalog = await loadedCatalog();
   const input = { vendorKey: "openai", providerId: "row" };
   const textOnly = catalog.modelsForProvider(input);

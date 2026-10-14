@@ -527,8 +527,9 @@ a usage tab.
     model-list probe reports one classified sentence through the app toast and
     leaves a one-line “no list” label in the empty pane, or the rows in place
     above it; raw HTTP/JSON dumps are shown in neither. A settled probe —
-    connected, catalog, or refused — is announced once instead of holding a
-    status row under the key.
+    connected or refused — is announced once instead of holding a status row
+    under the key. A refused or empty probe is never answered with catalog
+    rows: the service's own list is the only one the picker renders.
     Named display names and optional custom headers stay behind Advanced settings.
     The dialog header's upper-right actions include an explicit Advanced settings
     button that opens a separate compact modal, keeping the main form focused on

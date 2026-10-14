@@ -115,7 +115,7 @@ export function createCatalogSlice({
           });
           if (generation !== catalogRuntime.providerGeneration()) return;
           if (
-            (refreshed.source === "remote" || refreshed.source === "catalog") &&
+            (refreshed.source === "remote" || refreshed.source === "fallback") &&
             refreshed.models.length > 0
           ) {
             set((state) => ({

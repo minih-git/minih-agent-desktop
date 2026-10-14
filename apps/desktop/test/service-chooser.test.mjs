@@ -161,9 +161,8 @@ test("named add-path discovery waits for a key and does not flash loading", () =
 test("the probe's own answer is toasted instead of parked under the key", () => {
   assert.match(probeFeedbackSource, /export function useProbeFeedback/);
   assert.match(probeFeedbackSource, /settings\.connectionReady/);
-  assert.match(probeFeedbackSource, /settings\.connectionCatalog/);
-  assert.match(probeFeedbackSource, /settings\.connectionNoModelList/);
-  assert.match(probeFeedbackSource, /canRecommendFrom\(discovery, namedService\)/);
+  assert.doesNotMatch(probeFeedbackSource, /connectionCatalog/);
+  assert.doesNotMatch(probeFeedbackSource, /connectionNoModelList/);
   assert.match(
     probeFeedbackSource,
     /showToast\(outcome\.message, \{ variant: outcome\.variant \}\)/,
@@ -175,8 +174,8 @@ test("the probe's own answer is toasted instead of parked under the key", () => 
     /if \(discovery\.status !== "ready" && discovery\.status !== "error"\) return null;/,
   );
   // Both dialogs that probe report through the same hook...
-  assert.match(setupSource, /useProbeFeedback\(discovery, named\)/);
-  assert.match(vendorDialogSource, /useProbeFeedback\(discovery, true\)/);
+  assert.match(setupSource, /useProbeFeedback\(discovery\)/);
+  assert.match(vendorDialogSource, /useProbeFeedback\(discovery\)/);
   // ...and the credential fields no longer reserve a row for the answer.
   assert.doesNotMatch(fieldsSource, /ConnectionStatus/);
   assert.doesNotMatch(fieldsSource, /\{status\}/);

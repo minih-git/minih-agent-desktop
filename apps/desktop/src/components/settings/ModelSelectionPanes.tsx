@@ -526,12 +526,7 @@ export function ModelSelectionPanes({
             ) : null}
             <h4 className="provider-models-title">
               {listTitle}
-              {/* Where this batch came from is the heading's answer now, so the
-                  list keeps its height whether the source is the catalog or
-                  the fallback. */}
-              {discovery.source === "catalog" ? (
-                <HelpIcon label={t("settings.modelsFromCatalogNote")} />
-              ) : discovery.source === "fallback" ? (
+              {discovery.source === "fallback" ? (
                 <HelpIcon label={t("settings.modelsFallbackNote")} />
               ) : null}
             </h4>

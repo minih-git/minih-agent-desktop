@@ -16,7 +16,6 @@ import {
   type ModelBinding,
   type ModelInfo,
 } from "@minih-agent/shared";
-import { describeModelsFetchError } from "./model-fetch-error";
 import type { ProviderModelsState } from "./useProviderModels";
 
 export const RECOMMENDED_MODEL_LIMIT = 3;
@@ -24,21 +23,16 @@ export const RECOMMENDED_MODEL_LIMIT = 3;
 /**
  * Whether a discovery answer is trustworthy enough to preselect from.
  *
- * The service's own list always is. The models.dev fallback is only when the
- * service did not refuse: a named vendor that simply has no `/models` route
- * (404) still accepted the key, but a rejected key, a timeout or a network
- * failure says nothing about whether the key works, and a preselection there
- * would make a broken service look ready to save.
+ * Only the service's own list is: anything else (a rejected key, a timeout, a
+ * network failure, an endpoint that published nothing) says nothing about what
+ * this deployment actually serves, and a preselection there would make a
+ * broken service look ready to save.
  */
 export function canRecommendFrom(
-  discovery: Pick<ProviderModelsState, "status" | "source" | "error">,
-  namedService: boolean,
+  discovery: Pick<ProviderModelsState, "status" | "source">,
 ): boolean {
   if (discovery.status !== "ready") return false;
-  if (discovery.source === "remote") return true;
-  if (discovery.source !== "catalog") return false;
-  if (!discovery.error) return true;
-  return namedService && describeModelsFetchError(discovery.error).kind === "notFound";
+  return discovery.source === "remote";
 }
 
 /**

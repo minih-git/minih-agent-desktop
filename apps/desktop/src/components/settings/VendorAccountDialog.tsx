@@ -69,7 +69,7 @@ export function VendorAccountDialog({
     provider,
   );
   // The vendored account's own answer is announced once, like the service form's.
-  useProbeFeedback(discovery, true);
+  useProbeFeedback(discovery);
   const selection = useModelSelection(discovery, models, setModels);
 
   useEffect(() => {

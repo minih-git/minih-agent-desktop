@@ -120,8 +120,8 @@ test("editing paints the cached list first, then replaces it with a live answer"
   assert.match(hookSource, /cachedModels/);
 });
 
-test("the renderer can tell a catalog fallback from the service's own answer", () => {
-  assert.match(apiSource, /"cache" \| "remote" \| "catalog" \| "fallback"/);
+test("the renderer can tell a fallback from the service's own answer", () => {
+  assert.match(apiSource, /"cache" \| "remote" \| "fallback"/);
   assert.match(hookSource, /source/);
 });
 
