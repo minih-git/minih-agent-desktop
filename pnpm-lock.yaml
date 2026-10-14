@@ -207,7 +207,7 @@ overrides:
 patchedDependencies:
   '@earendil-works/pi-agent-core@1.1.0': 5faaaf1361453db3d15e155423d83b7fa183bb828cfd17cdc32acbc3b871f6cd
   '@earendil-works/pi-ai@1.1.0': e1a9d09a2a6df5320796b678c028b850bce3d32857e6b09ebc51249da349ec7d
-  '@earendil-works/pi-coding-agent@1.1.0': a2878f6aa1d66afa239d6be4252403a73df48b702b3e582aaae04bd90bf3d354
+  '@earendil-works/pi-coding-agent@1.1.0': 73b8776451352deeaa307306b1aaa3a22e2c2cfd6e06c802fcd390409912f60a
 
 importers:
 
@@ -432,7 +432,7 @@ importers:
         version: 1.1.0(patch_hash=e1a9d09a2a6df5320796b678c028b850bce3d32857e6b09ebc51249da349ec7d)(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(supports-color@7.2.0)(undici@8.10.2)(ws@8.21.1)(zod@4.4.3)
       '@earendil-works/pi-coding-agent':
         specifier: 1.1.0
-        version: 1.1.0(patch_hash=a2878f6aa1d66afa239d6be4252403a73df48b702b3e582aaae04bd90bf3d354)(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(supports-color@7.2.0)(ws@8.21.1)(zod@4.4.3)
+        version: 1.1.0(patch_hash=73b8776451352deeaa307306b1aaa3a22e2c2cfd6e06c802fcd390409912f60a)(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(supports-color@7.2.0)(ws@8.21.1)(zod@4.4.3)
       '@minih-agent/shared':
         specifier: workspace:*
         version: link:../shared
@@ -5307,7 +5307,7 @@ snapshots:
     dependencies:
       quickjs-wasi: 3.6.2
 
-  '@earendil-works/pi-coding-agent@1.1.0(patch_hash=a2878f6aa1d66afa239d6be4252403a73df48b702b3e582aaae04bd90bf3d354)(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(supports-color@7.2.0)(ws@8.21.1)(zod@4.4.3)':
+  '@earendil-works/pi-coding-agent@1.1.0(patch_hash=73b8776451352deeaa307306b1aaa3a22e2c2cfd6e06c802fcd390409912f60a)(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(supports-color@7.2.0)(ws@8.21.1)(zod@4.4.3)':
     dependencies:
       '@earendil-works/chord': 1.1.0
       '@earendil-works/pi-agent-core': 1.1.0(patch_hash=5faaaf1361453db3d15e155423d83b7fa183bb828cfd17cdc32acbc3b871f6cd)(@aws-sdk/credential-provider-node@3.972.83)(@smithy/signature-v4@5.7.3)(supports-color@7.2.0)(undici@8.10.2)(ws@8.21.1)(zod@4.4.3)

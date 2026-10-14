@@ -4602,21 +4602,27 @@ window; opening a normal panel afterward must still work.
 
 - **Preconditions**: Isolated Electron profile and a local responsive page
   taller than the visible browser viewport. No provider account is needed.
-- **Steps**: Start a full-page screenshot and keep it pending while resizing
-  the browser hole twice. Repeat with raw `Page.captureScreenshot`. While a
-  capture is pending, maximize, restore, enter fullscreen, and leave fullscreen
-  so the panel moves or changes size. Also queue overlapping captures, switch
-  resource tabs, hide and restore a captured page, fail a capture, close a tab
-  with a queued capture, and recreate a destroyed guest.
-- **Expected**: During capture, the native guest follows the panel's current
-  position and remains clipped within its bounds; it never covers the
-  conversation. Its capture-time viewport stays stable until completion, then
-  `innerWidth`/`innerHeight` match the latest requested bounds. Captures on one
-  page serialize without blocking a sibling page. Failed capture releases
-  resize handling. Hiding or closing a page cannot expose it or redirect its
-  queued capture to another page. A destroyed guest leaves no orphan native
-  view when it is recreated or disposed. No screenshot is repeated to repair
-  layout.
+- **Steps**: Start a full-page screenshot for pages taller than 2048px and
+  verify proportional scaling to at most 1280×2048 output pixels. Keep one
+  capture pending while resizing the browser hole twice. Repeat with raw
+  `Page.captureScreenshot`, which retains caller-supplied capture settings.
+  While a capture is pending, maximize, restore, enter fullscreen, and leave
+  fullscreen so the panel moves or changes size. Also queue overlapping
+  captures, switch resource tabs, hide and restore a captured page, fail a
+  capture, close a tab with a queued capture, and recreate a destroyed guest.
+- **Expected**: Full-page Browser captures are proportionally bounded to
+  1280×2048; viewport captures are unchanged. During capture, the native guest
+  follows the panel's current position and remains clipped within its bounds;
+  it never covers the conversation. Its capture-time viewport stays stable
+  until completion, then `innerWidth`/`innerHeight` match the latest requested
+  bounds. Captures on one page serialize without blocking a sibling page.
+  Failed capture releases resize handling. Hiding or closing a page cannot
+  expose it or redirect its queued capture to another page. A destroyed guest
+  leaves no orphan native view when it is recreated or disposed. No screenshot
+  is repeated to repair layout.
+- **Image failure recovery**: If a full-page image cannot be normalized, the tool
+  result keeps its screenshot path/text and replaces the image with an omission
+  message; the failed image is absent from later model requests.
 - **Timeout recovery**: When either screenshot API does not complete within
   30 seconds, it fails with `TIMEOUT`, detaches the stalled CDP session, and
   releases the page queue; the next capture reattaches and can run.
