@@ -10,6 +10,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  isMinihRouterVendorKey,
+  MINIH_ROUTER_PRESET_ID,
   vendorAccountImageCandidates,
   type ImageGenerationBinding,
   type ModelBinding,
@@ -40,6 +42,7 @@ import { VendorAccountDialog, type VendorAccountForm } from "./VendorAccountDial
 import { ModelConfigImportPanel } from "../../features/settings/imports/ModelConfigImportPanel";
 import { ImportToggleButton } from "../../features/settings/import-workbench";
 import { JevSettingsCard } from "./JevSettingsCard";
+import { MinihRouterPanel } from "./MinihRouterPanel";
 import { JEV_SERVICE } from "./service-catalog";
 import { isPluginCatalogSetupForProvider } from "./provider-setup-mode";
 
@@ -101,6 +104,8 @@ export function ModelConfigPage() {
 
   // The Jev card opens the same dialog, straight on the Jev service.
   const [jevSetup, setJevSetup] = useState(false);
+  // The empty state's Minih Router action opens the dialog on that service.
+  const [routerSetup, setRouterSetup] = useState(false);
   // Bumped when that dialog stored a key, so the card re-reads what exists.
   const [jevStatusRevision, setJevStatusRevision] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -151,6 +156,10 @@ export function ModelConfigPage() {
 
   const editingProvider =
     setupFor ? providers.find((provider) => provider.id === setupFor) ?? null : null;
+  // Saved Minih Router rows with a token get the balance and model plaza panel.
+  const routerProviders = providers.filter(
+    (provider) => isMinihRouterVendorKey(provider.vendorKey) && provider.hasSecret,
+  );
   const editingAccount = editingAccountId
     ? providers.find((provider) => provider.id === editingAccountId) ?? null
     : null;
@@ -246,6 +255,7 @@ export function ModelConfigPage() {
       setSetupFor(null);
       setCopyDraft(null);
       setPluginCatalogSetup(null);
+      setRouterSetup(false);
       await refreshProviders();
     } catch (error) {
       showToast(error instanceof Error ? error.message : String(error), {
@@ -452,13 +462,26 @@ export function ModelConfigPage() {
                 <IconServer size={18} />
               </div>
               <div className="model-provider-empty-title">{t("settings.noProviders")}</div>
-              <div className="model-provider-empty-desc">{t("settings.noProvidersDesc")}</div>
-              <Button variant="primary" onClick={() => setSetupFor("")}>
-                <span className="model-config-btn-inner">
-                  <IconPlus size={14} />
-                  <span>{t("settings.addProvider")}</span>
-                </span>
-              </Button>
+              <div className="model-provider-empty-desc">{t("settings.minihRouterEmptyDesc")}</div>
+              <div className="model-provider-empty-actions">
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    setRouterSetup(true);
+                    setSetupFor("");
+                  }}
+                >
+                  <span className="model-config-btn-inner">
+                    <IconPlus size={14} />
+                    <span>{t("settings.minihRouterConnect")}</span>
+                  </span>
+                </Button>
+                <Button variant="secondary" onClick={() => setSetupFor("")}>
+                  <span className="model-config-btn-inner">
+                    <span>{t("settings.addProvider")}</span>
+                  </span>
+                </Button>
+              </div>
             </div>
           ) : (
             <ServiceList
@@ -501,6 +524,10 @@ export function ModelConfigPage() {
           )}
         </div>
       </section>
+
+      {routerProviders.map((provider) => (
+        <MinihRouterPanel key={provider.id} provider={provider} />
+      ))}
 
       <div className="model-catalog-status">
         <span className="model-catalog-status-text">
@@ -565,12 +592,13 @@ export function ModelConfigPage() {
           )}
           pluginCatalogPluginName={pluginCatalogSetup?.pluginName}
           initialDraft={copyDraft}
-          initialService={jevSetup ? JEV_SERVICE : undefined}
+          initialService={jevSetup ? JEV_SERVICE : routerSetup ? MINIH_ROUTER_PRESET_ID : undefined}
           onClose={() => {
             setSetupFor(null);
             setCopyDraft(null);
             setPluginCatalogSetup(null);
             setJevSetup(false);
+            setRouterSetup(false);
           }}
           imageModelIds={editingProvider
             ? imageGenerationCandidates

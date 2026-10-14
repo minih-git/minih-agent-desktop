@@ -39,6 +39,7 @@ import {
   nativeWebSearchTransport,
   deepseekRequestCompat,
   zhipuRequestCompat,
+  isMinihRouterVendorKey,
   type ThinkingLevel,
 } from "@minih-agent/shared";
 import { genericModelConfig } from "./model-capabilities.js";
@@ -199,7 +200,10 @@ function providerRequestTransport(provider: RuntimeProviderConfig) {
   const modelStyle = resolveApiStyle(provider.modelConfig?.api);
   const resolvedProviderStyle = resolveApiStyle(provider.apiStyle);
   const providerStyle = resolvedProviderStyle ?? (provider.apiStyle ? normalizeApiStyle(provider.apiStyle) : undefined);
-  const customEndpoint = provider.vendorKey?.trim().toLowerCase() === "custom";
+  // A Minih Router row is a user-addressed gateway like a custom endpoint: its
+  // saved format names the route the gateway serves for every model it relays.
+  const customEndpoint =
+    provider.vendorKey?.trim().toLowerCase() === "custom" || isMinihRouterVendorKey(provider.vendorKey);
   const isOpenAiStyle = (style: string | undefined) =>
     style === "chat_completions" ||
     style === "responses" ||

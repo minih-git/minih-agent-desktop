@@ -18,6 +18,7 @@ import { registerNotificationIpc } from "./notification-ipc";
 import { registerPluginIpc } from "./plugin-ipc";
 import { registerPluginUiIpc } from "./plugin-ui-ipc";
 import { registerJevIpc } from "./jev-ipc";
+import { registerMinihRouterIpc } from "./minih-router-ipc";
 import { registerProviderIpc } from "./provider-ipc";
 import { registerScheduledIpc } from "./scheduled-ipc";
 import { registerSessionIpc } from "./session-ipc";
@@ -302,6 +303,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     onProviderInvalidated: (providerId) => liveCallService?.invalidateProvider(providerId),
   });
   registerJevIpc({ registrar, logger });
+  registerMinihRouterIpc({ registrar, getHost, logger });
   const loadComposerTemplatesCached = createComposerTemplateLoader(logger);
   const composerCommandService = registerComposerIpc({
     registrar,

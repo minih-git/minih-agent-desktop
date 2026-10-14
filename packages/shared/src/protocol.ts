@@ -244,6 +244,20 @@ export const IPC = {
     providersSetSecret: "minih-agent-desktop/providers/setSecret",
     providersTest: "minih-agent-desktop/providers/testConnection",
     /**
+     * Minih Router account surface for one saved `minih-router` row: the
+     * AccessKey's balance/quotas (`MinihRouterAccount`) and a page of the
+     * gateway's model plaza with prices (`MinihRouterModelPage`). Main reads
+     * the row's stored key itself; the renderer never handles it.
+     */
+    providersMinihRouterAccount: "minih-agent-desktop/providers/minihRouter/account",
+    providersMinihRouterModels: "minih-agent-desktop/providers/minihRouter/models",
+    /**
+     * Prices for the models one Router row sends, looked up in the gateway's
+     * plaza. Separate from the plaza channel because the panel shows the
+     * chosen models first, and those are not a page of it.
+     */
+    providersMinihRouterModelDetails: "minih-agent-desktop/providers/minihRouter/modelDetails",
+    /**
      * Check a TypeSafe key before the Jev settings row keeps it.
      *
      * Jev is not a provider row, so `providersTest` cannot answer this: the

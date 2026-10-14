@@ -14,7 +14,11 @@ import { Field, Input } from "../ui";
 import { SettingsMenuSelect } from "./SettingsMenuSelect";
 import { ServiceMonogram } from "./ServiceMonogram";
 import { endpointLabel } from "./service-catalog";
-import { API_STYLE_LABEL_KEYS, CUSTOM_PROVIDER_API_STYLES } from "./provider-api-style";
+import {
+  API_STYLE_LABEL_KEYS,
+  CUSTOM_PROVIDER_API_STYLES,
+  MINIH_ROUTER_API_STYLES,
+} from "./provider-api-style";
 
 export type ProviderConnectionFieldsProps = {
   named: boolean;
@@ -28,6 +32,15 @@ export type ProviderConnectionFieldsProps = {
   serviceBaseUrl: string;
   /** Hides service switching when the manifest owns this provider row. */
   lockedService?: boolean;
+  /**
+   * A named service whose address may be changed (Minih Router): the form
+   * shows a Base URL field prefilled with `defaultBaseUrl`, and the key reads
+   * as the service's token.
+   */
+  relocatable?: boolean;
+  defaultBaseUrl?: string;
+  /** The wire format a relocatable gateway row speaks; the gateway serves several. */
+  onRelocatableApiStyleChange?: (value: CatalogApiStyle) => void;
   onChangeService: () => void;
   apiKeyRef: RefObject<HTMLInputElement | null>;
   nameRef: RefObject<HTMLInputElement | null>;
@@ -56,6 +69,9 @@ export function ProviderConnectionFields({
   apiKeyHint,
   serviceBaseUrl,
   lockedService = false,
+  relocatable = false,
+  defaultBaseUrl,
+  onRelocatableApiStyleChange,
   onChangeService,
   apiKeyRef,
   nameRef,
@@ -111,7 +127,10 @@ export function ProviderConnectionFields({
 
         {named ? (
           <div className="provider-setup-key">
-            <Field label={t("settings.apiKey")} hint={apiKeyHint ?? keyHint}>
+            <Field
+              label={relocatable ? t("settings.minihRouterToken") : t("settings.apiKey")}
+              hint={apiKeyHint ?? keyHint ?? (relocatable ? t("settings.minihRouterTokenHint") : undefined)}
+            >
               <Input
                 ref={apiKeyRef}
                 type="password"
@@ -126,6 +145,43 @@ export function ProviderConnectionFields({
           </div>
         ) : null}
       </div>
+
+      {named && relocatable ? (
+        <div className="provider-setup-field-row provider-setup-relocatable-row">
+          <Field label={t("settings.baseUrl")} hint={t("settings.minihRouterBaseUrlHint")}>
+            <Input
+              value={baseUrl}
+              type="url"
+              inputMode="url"
+              autoComplete="url"
+              className="font-mono text-sm-plus"
+              placeholder={defaultBaseUrl}
+              aria-invalid={Boolean(baseUrlError)}
+              aria-describedby={baseUrlError ? "provider-base-url-error" : undefined}
+              onChange={(event) => onBaseUrlChange(event.target.value)}
+              onBlur={commitBaseUrl}
+            />
+            {baseUrlError ? (
+              <div id="provider-base-url-error" className="provider-setup-field-error" role="alert">
+                {baseUrlError}
+              </div>
+            ) : null}
+          </Field>
+          <Field label={t("settings.apiStyle")} hint={t("settings.minihRouterApiStyleHint")}>
+            <SettingsMenuSelect
+              fullWidth
+              label={t("settings.apiStyle")}
+              value={apiStyle}
+              disabled={saving}
+              onChange={(id) => onRelocatableApiStyleChange?.(id as CatalogApiStyle)}
+              options={MINIH_ROUTER_API_STYLES.map((style) => ({
+                id: style,
+                label: t(API_STYLE_LABEL_KEYS[style]),
+              }))}
+            />
+          </Field>
+        </div>
+      ) : null}
 
       {custom ? (
         <>

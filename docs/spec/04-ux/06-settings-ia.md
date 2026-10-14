@@ -394,8 +394,8 @@ a usage tab.
 
 ### Model configuration (`agent` tab)
 - The model configuration page groups its sections in this order: **AI
-  services** (including model-catalog status and refresh), **Jev**, then the
-  image-generation model selector. The sections use one consistent vertical
+  services**, one **Minih Router** panel per connected Router row, model-catalog
+  status and refresh, **Jev**, then the image-generation model selector. The sections use one consistent vertical
   spacing rhythm.
 - **Defaults** card: a compact settings row shows the provider name and exact
   model ID beneath the Default model label. A quiet Change action opens the
@@ -563,6 +563,35 @@ session is in Agent, Plan, or Goal. In Plan and Goal it controls Bash
 confirmation only: Ask and Accept edits prompt, while Auto may run a mutating
 Bash command without confirmation. The AI Defaults card must describe that both
 contract modes are intent boundaries, not strict read-only security profiles.
+
+### Minih Router panel
+
+- Every saved Minih Router row with a stored token gets a panel on the model
+  configuration page, after AI services. It is headed by the row name and
+  endpoint host and has one Refresh action that re-reads both halves.
+- **Balance** (top): the headline is the remaining amount of the cost limit
+  with the smallest remaining share, labelled with its period (total, daily,
+  weekly, monthly, every N hours/days) and limit, with a meter. A token without
+  a cost limit reads **Unlimited**. Beside it: spend and requests for the last
+  30 days, and expiry (or Never) with the key name and mask. Further limits are
+  listed below; a blocked token states when requests resume; a non-1 price
+  multiplier is called out.
+- **My models** (first): the models this service sends, in the row's own order,
+  each with the gateway's prices. A model the gateway lists no price for is
+  still shown, with its configured limits and a line saying no price was
+  returned — the row sends it, so it is never hidden.
+- **All models** (below): the gateway's model plaza, 12 cards per page,
+  with search (debounced, restarting at page one) and previous/next paging that
+  keeps the current page visible while the next loads. A card shows vendor,
+  category, the copyable model id, input and output price per 1M tokens (USD,
+  "from" when sources differ, Free for zero, an em dash when unpriced), cache
+  prices, context window, tiered pricing, and **Added** when the model is
+  already configured on the row. Prices are list prices before the token's
+  multiplier, as the hint under the title says.
+- A failed read is shown in place with the gateway's message; the plaza half
+  offers Retry and keeps the previous page. A price-lookup failure leaves the
+  chosen models listed without prices. Nothing on the panel stores or
+  shows the token itself.
 
 ### Jev classifier
 

@@ -3,7 +3,7 @@ import { register } from "node:module";
 import test from "node:test";
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 const { API_STYLES } = await import("@minih-agent/shared");
-const { CUSTOM_PROVIDER_API_STYLES, needsCustomApiStyleChoice, providerSetupPreset } =
+const { CUSTOM_PROVIDER_API_STYLES, MINIH_ROUTER_API_STYLES, needsCustomApiStyleChoice, providerSetupPreset } =
   await import("../src/components/settings/provider-api-style.ts");
 const { copyProviderConfiguration } = await import("../src/components/settings/provider-copy.ts");
 
@@ -54,4 +54,19 @@ test("ordinary named services retain existing preset selection", () => {
 test("a named hostname cannot overwrite a manually saved protocol", () => {
   assert.equal(providerSetupPreset(source("chat_completions")), undefined);
 
+});
+
+test("a Minih Router row stays the Router service whatever format and address it saved", () => {
+  for (const apiStyle of ["chat_completions", "responses", "anthropic_messages"]) {
+    const preset = providerSetupPreset({ ...source(apiStyle),
+      vendorKey: "minih-router", baseUrl: "http://11.11.11.10:3001/v1" });
+    assert.equal(preset?.id, "minih-router", apiStyle);
+  }
+  // A custom row pointing at a Router address is not silently reclassified.
+  assert.equal(providerSetupPreset({ ...source("responses"),
+    baseUrl: "http://11.11.11.10:3001/v1" }), undefined);
+});
+
+test("the Router form offers only the formats a Router serves under /v1", () => {
+  assert.deepEqual(MINIH_ROUTER_API_STYLES, ["chat_completions", "responses", "anthropic_messages"]);
 });

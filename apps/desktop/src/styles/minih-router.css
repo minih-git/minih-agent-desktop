@@ -1,0 +1,378 @@
+/*
+  Minih Router panel on the model configuration page: the token's balance
+  and the gateway's priced model plaza. Typography, radii and weights come
+  from styles/tokens.css only — scripts/check-style-tokens.mjs enforces that.
+*/
+
+.minih-router-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.minih-router-head-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.minih-router-head-detail {
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-relaxed);
+  overflow-wrap: anywhere;
+}
+
+.minih-router-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+/* ------------------------------------------------------------- balance */
+
+.minih-router-stats {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.minih-router-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--ds-tile);
+}
+
+.minih-router-stat dt {
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-tight);
+}
+
+.minih-router-stat dd {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  min-width: 0;
+}
+
+.minih-router-stat-value {
+  color: var(--ds-text-primary);
+  font-size: var(--text-lg-plus);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-tight);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.minih-router-stat-value.is-compact {
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-medium);
+}
+
+.minih-router-stat.is-balance .minih-router-stat-value {
+  font-size: var(--text-xl);
+}
+
+.minih-router-stat-detail {
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.minih-router-meter {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--ds-border-subtle);
+}
+
+.minih-router-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--ds-accent);
+}
+
+.minih-router-quotas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-2xs);
+  line-height: var(--leading-normal);
+}
+
+.minih-router-quota {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--ds-text-secondary);
+}
+
+.minih-router-quota-label {
+  color: var(--ds-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.minih-router-quota-reset {
+  color: var(--ds-text-muted);
+}
+
+.minih-router-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.minih-router-status.is-error {
+  color: var(--ds-error);
+}
+
+.minih-router-status-detail {
+  color: var(--ds-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.minih-router-price-hint {
+  margin: 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-relaxed);
+}
+
+/* ---------------------------------------------------------- model plaza */
+
+.minih-router-models {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ds-border-subtle);
+}
+
+.minih-router-models-head {
+  display: flex;
+  margin-top: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.minih-router-models-title {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-tight);
+}
+
+.minih-router-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 1 280px;
+  min-width: 180px;
+  color: var(--ds-text-muted);
+}
+
+.minih-router-search > svg {
+  position: absolute;
+  left: 10px;
+  pointer-events: none;
+}
+
+.minih-router-search .field-input {
+  width: 100%;
+  padding-left: 30px;
+}
+
+.minih-router-model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.minih-router-model-grid[hidden] {
+  display: none;
+}
+
+.minih-router-model-grid[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+.minih-router-model {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--ds-bg-elevated);
+}
+
+.minih-router-model-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 20px;
+}
+
+.minih-router-model-vendor {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.minih-router-model-tags {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.minih-router-model-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.minih-router-model-name code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ds-text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm-plus);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.minih-router-copy {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--radius-3xs);
+  background: transparent;
+  color: var(--ds-text-muted);
+  cursor: pointer;
+}
+
+.minih-router-copy:hover {
+  background: var(--ds-bg-hover);
+  color: var(--ds-text-primary);
+}
+
+.minih-router-copy:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 1px;
+}
+
+.minih-router-model-prices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-xs);
+  background: var(--ds-tile);
+}
+
+.minih-router-model-prices dt {
+  color: var(--ds-text-muted);
+  font-size: var(--text-3xs);
+  line-height: var(--leading-tight);
+}
+
+.minih-router-model-prices dd {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  margin: 2px 0 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-tight);
+  font-variant-numeric: tabular-nums;
+}
+
+.minih-router-price-from {
+  color: var(--ds-text-muted);
+  font-size: var(--text-3xs);
+  font-weight: var(--font-weight-normal);
+}
+
+.minih-router-model-meta {
+  color: var(--ds-text-muted);
+  font-size: var(--text-3xs);
+  line-height: var(--leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.minih-router-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.minih-router-page-status {
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-tight);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The featured gateway tile in the service chooser. */
+.service-chooser-tile.is-featured {
+  box-shadow: inset 0 0 0 1px var(--ds-accent-soft);
+}
+
+/* The Minih Router form's Base URL row sits under the service and token. */
+.provider-setup-relocatable-row {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+}
+
+/* Empty state: Minih Router is the primary action, any other service second. */
+.model-provider-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}

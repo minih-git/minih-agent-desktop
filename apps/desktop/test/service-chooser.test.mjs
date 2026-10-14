@@ -51,7 +51,18 @@ test("a new service starts on a searchable chooser, not a closed menu (D625)", (
 });
 
 test("subscriptions and API services share the chooser, custom endpoint first", () => {
-  assert.match(chooserSource, /\[customServiceOption\(t\), \.\.\.namedServiceOptions\(t\)\]/);
+  assert.match(
+    chooserSource,
+    /customServiceOption\(t\),\s+\.\.\.namedServiceOptions\(t\)\.filter\(\(option\) => !isFeaturedService\(option\.id\)\)/,
+  );
+  // Minih Router, the primary gateway, leads the chooser in its own group and
+  // is not repeated among the API-key services.
+  assert.match(chooserSource, /settings\.chooserFeatured/);
+  assert.ok(
+    chooserSource.indexOf("settings.chooserFeatured") <
+      chooserSource.indexOf("settings.chooserSubscriptions"),
+    "the featured gateway renders above subscriptions",
+  );
   // The custom endpoint is the group's first tile, ahead of every named host.
   const customAt = chooserSource.indexOf("customServiceOption(t)");
   const namedAt = chooserSource.indexOf("namedServiceOptions(t)");

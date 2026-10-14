@@ -1,6 +1,12 @@
 /** Shared identifiers and connection defaults for first-class provider presets. */
 
 import type { CatalogApiStyle } from "./model-catalog.js";
+import {
+  MINIH_ROUTER_DEFAULT_BASE_URL,
+  MINIH_ROUTER_NAME,
+  MINIH_ROUTER_PRESET_ID,
+  MINIH_ROUTER_VENDOR_KEY,
+} from "./minih-router.js";
 
 export const OPENCODE_GO_API_STYLE = "opencode_go" as const;
 export const OPENCODE_GO_NAME = "OpenCode Go";
@@ -18,9 +24,25 @@ export type NamedEndpointPreset = {
   aliases?: readonly string[];
   /** Completions thinking/tool-stream flags for Zhipu / Z.AI hosts. */
   zhipuCompat?: boolean;
+  /**
+   * `baseUrl` is only the default: the user may point the row at another
+   * deployment of the same service (a self-hosted gateway). Rows of such a
+   * preset are identified by `vendorKey`, never by their address.
+   */
+  customBaseUrl?: boolean;
 };
 
 export const NAMED_ENDPOINT_PRESETS: readonly NamedEndpointPreset[] = [
+  {
+    id: MINIH_ROUTER_PRESET_ID,
+    vendorKey: MINIH_ROUTER_VENDOR_KEY,
+    name: MINIH_ROUTER_NAME,
+    baseUrl: MINIH_ROUTER_DEFAULT_BASE_URL,
+    apiStyle: "chat_completions",
+    labelKey: "settings.presetMinihRouter",
+    aliases: ["minihrouter", "hmini"],
+    customBaseUrl: true,
+  },
   {
     id: "openai",
     vendorKey: "openai",
@@ -396,13 +418,20 @@ function presetByUrl(url: string): NamedEndpointPreset | undefined {
  * Resolve a named endpoint from a stored row.
  *
  * URL wins when it addresses a published host, so API vs Coding Plan cannot
- * be catalog-matched as the wrong record.
+ * be catalog-matched as the wrong record. A preset whose address is only a
+ * default (`customBaseUrl`) is the exception: its rows are identified by
+ * their vendor key wherever they point.
  */
 export function matchNamedPreset(input: {
   vendorKey?: string;
   baseUrl?: string;
   apiStyle?: string;
 }): NamedEndpointPreset | undefined {
+  const key = normalizedVendorKey(input.vendorKey);
+  const relocatable = key
+    ? NAMED_ENDPOINT_PRESETS.find((preset) => preset.customBaseUrl && preset.vendorKey === key)
+    : undefined;
+  if (relocatable) return relocatable;
   const url = normalizeEndpointUrl(input.baseUrl);
   if (url) {
     const byUrl = presetByUrl(url);
@@ -411,7 +440,6 @@ export function matchNamedPreset(input: {
   if (input.apiStyle === OPENCODE_GO_API_STYLE) {
     return NAMED_ENDPOINT_PRESETS.find((preset) => preset.id === OPENCODE_GO_API_STYLE);
   }
-  const key = normalizedVendorKey(input.vendorKey);
   if (!key || key === "custom") return undefined;
   return NAMED_ENDPOINT_PRESETS.find(
     (preset) => preset.vendorKey === key || preset.aliases?.includes(key) || preset.id === key,
