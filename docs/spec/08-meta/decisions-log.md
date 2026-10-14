@@ -7641,3 +7641,28 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   restart, dead-letter cap, session delete) and
   E2E-SESSION-outbox-unclassifiable-failure-does-not-stall-the-queue. See ADR
   0041, `03-runtime/04-data-storage.md`, and `03-runtime/06-host-rpc-protocol.md`.
+## 2026-09-26 — Model discovery answers only what the service served (D630)
+
+- When a service's model-list probe failed (a rejected key, a timeout, a
+  network error, or an empty answer), the settings picker used to fall back to
+  the bundled models.dev catalog and show the vendor's published set, with only
+  a small help icon marking the substitution. A rejected key therefore looked
+  like a working service whose list simply loaded: the error toast appeared
+  while dozens of selectable rows implied the credential was fine.
+- The fallback is removed. `providersListModels` now answers from the service's
+  own endpoint or not at all: the live answer (`source: "remote"`) is the only
+  list that renders, the `catalog` source value is gone, and a failed probe
+  returns the discovery error with just the provider's already-configured
+  bindings so an existing row stays editable. Automatic preselection follows
+  the same rule — `canRecommendFrom` accepts only a live answer — and the
+  connection toast reports the refusal instead of catalog counts. The
+  `modelsFromCatalogNote`, `connectionCatalog` and `connectionNoModelList`
+  strings were removed from all locales. models.dev enrichment of a live
+  answer, and `modelsForProvider` as the metadata/enrichment read, are
+  unchanged.
+- Covered by the rewritten `apps/desktop/test/model-discovery-precedence.test.mjs`
+  (the handler must not consult `modelsForProvider`; a refusal returns
+  `error: discoveryError` with no catalog list), `recommended-models.test.mjs`
+  (only `source: "remote"` is recommendable), `service-chooser.test.mjs`
+  (no catalog toasts), and `provider-model-list-scope.test.mjs` (now a pure
+  catalog-scope contract).

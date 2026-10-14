@@ -236,14 +236,13 @@ export function ProviderSetupDialog({
   );
   // The probe's own answer is reported once as a toast instead of a status row
   // under the key, which held a line of the dialog open for as long as it stood.
-  useProbeFeedback(discovery, named);
+  useProbeFeedback(discovery);
   const recommended = useRecommendedModelSelection({
     // A copy keeps the models it was copied with.
     enabled: !provider && !initialDraft?.models?.length,
     serviceKey: `${service}|${requestBaseUrl}|${resolvedApiStyle}`,
     discovery,
     setModels,
-    namedService: named,
   });
   // Every edit made through the picker or the summary ends preselection.
   const selection = useModelSelection(discovery, models, recommended.setModels);

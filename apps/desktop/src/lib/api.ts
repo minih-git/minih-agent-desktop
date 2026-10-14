@@ -785,7 +785,7 @@ export const api = {
   }) =>
     invoke<{
       models: ModelInfo[];
-      source: "cache" | "remote" | "catalog" | "fallback";
+      source: "cache" | "remote" | "fallback";
       error?: string;
       effectiveBaseUrl?: string;
       discoveryStyle?: string;

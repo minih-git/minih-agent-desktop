@@ -29,7 +29,6 @@ export function useRecommendedModelSelection({
   serviceKey,
   discovery,
   setModels: setModelsState,
-  namedService,
 }: {
   /** Only a new service with an empty selection is preselected. */
   enabled: boolean;
@@ -37,7 +36,6 @@ export function useRecommendedModelSelection({
   serviceKey: string;
   discovery: ProviderModelsState;
   setModels: (next: ModelBinding[] | ((current: ModelBinding[]) => ModelBinding[])) => void;
-  namedService: boolean;
 }): RecommendedModelSelection {
   const touchedRef = useRef(false);
   const serviceKeyRef = useRef(serviceKey);
@@ -63,7 +61,7 @@ export function useRecommendedModelSelection({
     setNoRecommendation(false);
   }, [enabled, serviceKey, setModelsState]);
 
-  const recommendable = canRecommendFrom(discovery, namedService);
+  const recommendable = canRecommendFrom(discovery);
   useEffect(() => {
     // A later failure (say a mistyped key after a good one) keeps the picks:
     // they came from a list the service did answer with.
