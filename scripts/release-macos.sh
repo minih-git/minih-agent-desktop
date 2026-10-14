@@ -4,12 +4,13 @@
 # Local builds without a certificate remain unsigned. This script injects a
 # real signing identity and requires notarization credentials:
 #
-#   MAC_SIGNING_IDENTITY   default: "XingYu Liu (DUV63RKYTW)" — bare common
-#                          name; electron-builder rejects the
+#   MAC_SIGNING_IDENTITY   required — bare common name, e.g. "Name (TEAMID)";
+#                          electron-builder rejects the
 #                          "Developer ID Application:" prefix
 #   APPLE_ID               Apple ID email for notarization
 #   APPLE_APP_SPECIFIC_PASSWORD  app-specific password for the Apple ID
-#   APPLE_TEAM_ID          Apple Developer Team ID (must be DUV63RKYTW)
+#   APPLE_TEAM_ID          Apple Developer Team ID; must match the team id
+#                          in MAC_SIGNING_IDENTITY's parentheses
 #   MAC_ARCH               optional `arm64` or `x64`; must match the host
 #
 # Observability: the packaging command runs under
@@ -55,9 +56,16 @@ if [[ "$MAC_ARCH" != "$DEFAULT_MAC_ARCH" ]]; then
   exit 1
 fi
 
-MAC_SIGNING_IDENTITY="${MAC_SIGNING_IDENTITY:-XingYu Liu (DUV63RKYTW)}"
+if [[ -z "${MAC_SIGNING_IDENTITY:-}" ]]; then
+  echo "error: MAC_SIGNING_IDENTITY is required (bare common name, e.g. \"Name (TEAMID)\")." >&2
+  echo "For an unsigned local build use: pnpm --filter @minih-agent/desktop dist" >&2
+  exit 1
+fi
 MAC_SIGNING_IDENTITY="${MAC_SIGNING_IDENTITY#Developer ID Application: }"
-APPLE_TEAM_ID="${APPLE_TEAM_ID:-DUV63RKYTW}"
+if [[ -z "${APPLE_TEAM_ID:-}" ]]; then
+  echo "error: APPLE_TEAM_ID is required for notarization." >&2
+  exit 1
+fi
 
 if [[ -z "${APPLE_ID:-}" || -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
   echo "error: notarization credentials are required (APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD)." >&2
@@ -65,8 +73,10 @@ if [[ -z "${APPLE_ID:-}" || -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
   exit 1
 fi
 
-if [[ "$APPLE_TEAM_ID" != "DUV63RKYTW" ]]; then
-  echo "error: APPLE_TEAM_ID must be DUV63RKYTW (got: $APPLE_TEAM_ID)." >&2
+SIGNING_TEAM="${MAC_SIGNING_IDENTITY##*(}"
+SIGNING_TEAM="${SIGNING_TEAM%)}"
+if [[ "$APPLE_TEAM_ID" != "$SIGNING_TEAM" ]]; then
+  echo "error: APPLE_TEAM_ID ($APPLE_TEAM_ID) must match the team in MAC_SIGNING_IDENTITY (${MAC_SIGNING_IDENTITY})." >&2
   exit 1
 fi
 

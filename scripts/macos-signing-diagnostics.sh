@@ -14,9 +14,8 @@
 # Usage: scripts/macos-signing-diagnostics.sh [--require-identity]
 #
 # Environment:
-#   MAC_SIGNING_IDENTITY   bare common name ("XingYu Liu (DUV63RKYTW)") or the
-#                          full certificate label
-#                          ("Developer ID Application: XingYu Liu (DUV63RKYTW)").
+#   MAC_SIGNING_IDENTITY   bare common name ("Name (TEAMID)") or the full
+#                          certificate label ("Developer ID Application: Name (TEAMID)").
 #
 # Exit status:
 #   0  snapshot printed. A missing certificate is only a warning by default:
@@ -48,7 +47,7 @@ done
 
 # Accepts either the bare common name or the full certificate label, matching
 # scripts/verify-macos-release.sh.
-IDENTITY_NAME="${MAC_SIGNING_IDENTITY:-XingYu Liu (DUV63RKYTW)}"
+IDENTITY_NAME="${MAC_SIGNING_IDENTITY:-<no identity requested>}"
 IDENTITY_NAME="${IDENTITY_NAME#Developer ID Application: }"
 EXPECTED_IDENTITY="Developer ID Application: ${IDENTITY_NAME}"
 

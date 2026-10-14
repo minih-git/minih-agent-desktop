@@ -239,6 +239,7 @@ jobs:
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -247,6 +248,7 @@ jobs:
           missing=()
           [[ -n "${CSC_LINK}" ]] || missing+=(CSC_LINK)
           [[ -n "${CSC_KEY_PASSWORD}" ]] || missing+=(CSC_KEY_PASSWORD)
+          [[ -n "${MACOS_SIGNING_IDENTITY}" ]] || missing+=(MACOS_SIGNING_IDENTITY)
           [[ -n "${APPLE_ID}" ]] || missing+=(APPLE_ID)
           [[ -n "${APPLE_APP_SPECIFIC_PASSWORD}" ]] || missing+=(APPLE_APP_SPECIFIC_PASSWORD)
           [[ -n "${APPLE_TEAM_ID}" ]] || missing+=(APPLE_TEAM_ID)
@@ -255,8 +257,13 @@ jobs:
             echo "::error::Add them under Settings → Secrets and variables → Actions. See docs/spec/06-delivery/06-release-runbook.md."
             exit 1
           fi
-          if [[ "${APPLE_TEAM_ID}" != "DUV63RKYTW" ]]; then
-            echo "::error::APPLE_TEAM_ID must be DUV63RKYTW (XingYu Liu Developer ID team)."
+          # The signing identity is fork-owned: MACOS_SIGNING_IDENTITY carries the
+          # bare common name ("Name (TEAMID)") and APPLE_TEAM_ID must match the
+          # team id in that identity's parentheses.
+          SIGNING_TEAM="${MACOS_SIGNING_IDENTITY##*(}"
+          SIGNING_TEAM="${SIGNING_TEAM%)}"
+          if [[ "${APPLE_TEAM_ID}" != "${SIGNING_TEAM}" ]]; then
+            echo "::error::APPLE_TEAM_ID (${APPLE_TEAM_ID}) must match the team in MACOS_SIGNING_IDENTITY (${MACOS_SIGNING_IDENTITY})."
             exit 1
           fi
 
@@ -265,10 +272,12 @@ jobs:
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
           # electron-builder rejects the "Developer ID Application:" prefix on
           # identity names and resolves the certificate itself, so CSC_NAME
-          # carries the bare common name only.
-          CSC_NAME: "XingYu Liu (DUV63RKYTW)"
+          # carries the bare common name only. The identity is fork-owned and
+          # comes from the MACOS_SIGNING_IDENTITY secret.
+          CSC_NAME: ${{ secrets.MACOS_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -321,6 +330,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
           # 20 minutes bounds the second Apple wait; the packaging phase owns
           # the first one.
           PI_SIGNING_TIMEOUT_SECONDS: "1200"

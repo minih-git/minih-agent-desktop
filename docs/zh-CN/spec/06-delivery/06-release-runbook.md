@@ -44,10 +44,10 @@ Windows 可执行文件和原生窗口图标中使用 `build/icon.ico`。渲染�
 
 ## 2. 先决条件（发布通道）
 
-1. Apple 开发者帐户，登录钥匙串中具有 **Developer ID Application** 证书。正式证书为 `Developer ID Application: XingYu Liu (DUV63RKYTW)`（Team ID `DUV63RKYTW`）。
+1. Apple 开发者帐户，登录钥匙串中具有 **Developer ID Application** 证书。本 fork 使用自有签名身份：证书形如 `Developer ID Application: <名字> (<TEAMID>)`，团队为本 fork 自己的团队。
 2. 本地签名通道的环境变量：
-   - `MAC_SIGNING_IDENTITY` — 裸通用名 `XingYu Liu (DUV63RKYTW)`；electron-builder 拒绝保留 `Developer ID Application:` 前缀的名称，脚本会自动去掉该前缀
-   - `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` — 公证所必需（`APPLE_TEAM_ID` 必须为 `DUV63RKYTW`）
+   - `MAC_SIGNING_IDENTITY`（必填）— 本 fork 的裸通用名 `<名字> (<TEAMID>)`；electron-builder 拒绝保留 `Developer ID Application:` 前缀的名称，脚本会自动去掉该前缀
+   - `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` — 公证所必需（`APPLE_TEAM_ID` 必须等于 `MAC_SIGNING_IDENTITY` 括号中的团队 ID）
 3. 安装 Rust 工具链和 pnpm 工作区。Rust 必须在 macOS 本机运行器上运行：
    Apple Silicon 使用 arm64，Intel 使用 x86_64。
 
@@ -159,7 +159,7 @@ Windows 可执行文件和原生窗口图标中使用 `build/icon.ico`。渲染�
 ### 4.2 构建/打包
 
 ```bash
-export MAC_SIGNING_IDENTITY="XingYu Liu (DUV63RKYTW)"
+export MAC_SIGNING_IDENTITY="<名字> (<TEAMID>)"
 export APPLE_ID=...
 export APPLE_APP_SPECIFIC_PASSWORD=...
 export APPLE_TEAM_ID=...
@@ -212,7 +212,7 @@ macOS ZIP 在安装包根目录包含 `Minih-Agent-Desktop.app`。DMG 和 ZIP �
 启动命令助手，本地与未签名调试构建也一样。标签发布工件仍会签名并公证；未签名通道
 仅用于调试，不代表已通过 Gatekeeper 验证。
 
-标签构建和 `sign_macos: true`（手动运行的默认值）仅从 GitHub Actions 密钥接收 `CSC_LINK`、`CSC_KEY_PASSWORD`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD` 和 `APPLE_TEAM_ID`，通过 `CSC_NAME=XingYu Liu (DUV63RKYTW)`（裸通用名——electron-builder 拒绝 `Developer ID Application:` 前缀）固定证书，强制代码签名与 `notarytool` 公证 `Minih-Agent-Desktop.app`。随后 DMG 会由 `scripts/notarize-and-staple-macos-release-dmg.sh` 单独提交到同一个服务，只有返回 `Accepted` 才允许装订票据。之后验证身份、代码签名完整性（含 `minih-agent-desktop-host-core`）、Gatekeeper `Notarized Developer ID` 以及两份已装订票据，再进行任何工件上传。
+标签构建和 `sign_macos: true`（手动运行的默认值）仅从 GitHub Actions 密钥接收 `CSC_LINK`、`CSC_KEY_PASSWORD`、`MACOS_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD` 和 `APPLE_TEAM_ID`，通过 `CSC_NAME`（`MACOS_SIGNING_IDENTITY` 密钥中的裸通用名——electron-builder 拒绝 `Developer ID Application:` 前缀）固定证书，强制代码签名与 `notarytool` 公证 `Minih-Agent-Desktop.app`。随后 DMG 会由 `scripts/notarize-and-staple-macos-release-dmg.sh` 单独提交到同一个服务，只有返回 `Accepted` 才允许装订票据。之后验证身份、代码签名完整性（含 `minih-agent-desktop-host-core`）、Gatekeeper `Notarized Developer ID` 以及两份已装订票据，再进行任何工件上传。
 
 对于 app 票据，当设置 `PI_STAPLER_MAX_ATTEMPTS` 时，签名看门狗会注入临时 `xcrun` shim。它只重试确切的 `stapler staple` 操作，最多总计六次、间隔 10 秒；`notarytool` 和其他 `xcrun` 命令会原样透传。electron-notarize 仅会在 Apple 接受 app 提交后调用该命令。DMG 脚本会在其单独提交被接受后执行自己的有界重试。任一重试耗尽都会让作业失败；工件验证仍要求 app 和 DMG 都包含有效的装订票据。
 
@@ -246,9 +246,10 @@ Actions 中创建下列密钥。不要把 p12、密码、Apple ID 或应用专�
 |---|---|
 | `CSC_LINK` | 导出的 Developer ID Application `.p12`（证书+私钥）的 Base64。electron-builder 也接受文件路径，但 CI 使用 Secret 正文。 |
 | `CSC_KEY_PASSWORD` | 导出该 `.p12` 时设置的密码 |
-| `APPLE_ID` | 属于团队 `DUV63RKYTW` 的 Apple ID 邮箱 |
+| `MACOS_SIGNING_IDENTITY` | 本 fork Developer ID Application 证书的裸通用名：`<名字> (<TEAMID>)`——electron-builder 拒绝 `Developer ID Application:` 前缀 |
+| `APPLE_ID` | 签名团队的 Apple ID 邮箱 |
 | `APPLE_APP_SPECIFIC_PASSWORD` | 来自 https://appleid.apple.com → Sign-In and Security → App-Specific Passwords 的应用专用密码 |
-| `APPLE_TEAM_ID` | `DUV63RKYTW` |
+| `APPLE_TEAM_ID` | 签名团队的 Team ID；必须等于 `MACOS_SIGNING_IDENTITY` 括号中的团队 ID |
 
 在本地把 p12 编成 base64（不要把输出贴到聊天或仓库）：
 

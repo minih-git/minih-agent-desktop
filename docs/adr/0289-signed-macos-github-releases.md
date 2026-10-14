@@ -17,7 +17,13 @@ cannot provide a qualified in-app upgrade. Local packaging without a
 certificate must stay possible (D078). Contributors must not commit
 certificate material.
 
-A Developer ID Application certificate for team `DUV63RKYTW` is now available
+> **Fork amendment (2026-10-14):** the signing identity is fork-owned. It
+> arrives through the `MACOS_SIGNING_IDENTITY` secret (CI) or the
+> `MAC_SIGNING_IDENTITY` environment variable (local lane), and every team-id
+> check compares against the team inside that identity instead of a pinned
+> team. The identity named below is the original upstream author's.
+
+A Developer ID Application certificate for the fork's own team is available
 for the official `minih-git/minih-agent-desktop` release lane.
 
 ## Decision

@@ -14,13 +14,13 @@ const notarizeScript = new URL(
   import.meta.url,
 );
 
-const SIGNING_IDENTITY = "Developer ID Application: XingYu Liu (DUV63RKYTW)";
-const SIGNING_IDENTITY_NAME = "XingYu Liu (DUV63RKYTW)";
+const SIGNING_IDENTITY = "Developer ID Application: Release Bot (RELE45E123)";
+const SIGNING_IDENTITY_NAME = "Release Bot (RELE45E123)";
 const SUBMISSION_ID = "11111111-2222-3333-4444-555555555555";
 const NOTARY_ENV = {
   APPLE_ID: "release@example.com",
   APPLE_APP_SPECIFIC_PASSWORD: "app-specific-password",
-  APPLE_TEAM_ID: "DUV63RKYTW",
+  APPLE_TEAM_ID: "RELE45E123",
 };
 
 async function writeSignedAppFixture(release) {
@@ -203,9 +203,13 @@ test("the notarization step fails closed without team-scoped credentials", async
 
   const wrongTeam = runNotarize(release, bin, log, {
     APPLE_TEAM_ID: "WRONGTEAMID",
+    MAC_SIGNING_IDENTITY: "Release Bot (RELE45E123)",
   });
   assert.equal(wrongTeam.status, 1);
-  assert.match(wrongTeam.stderr, /APPLE_TEAM_ID must be DUV63RKYTW/);
+  assert.match(
+    wrongTeam.stderr,
+    /APPLE_TEAM_ID \(WRONGTEAMID\) must match the team in MAC_SIGNING_IDENTITY/,
+  );
 
   assert.equal(
     await readFile(log, "utf8").catch(() => ""),
@@ -284,7 +288,11 @@ test("macOS release verification rejects a Developer ID app without notarization
 
   const result = spawnSync("bash", [verifyScript.pathname, release], {
     encoding: "utf8",
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      MAC_SIGNING_IDENTITY: SIGNING_IDENTITY_NAME,
+    },
   });
 
   assert.equal(result.status, 1);

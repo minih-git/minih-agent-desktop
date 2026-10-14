@@ -282,7 +282,10 @@ test("macOS release signing is required on tag pushes", () => {
     releaseWorkflowSource,
     /Require macOS signing and notarization secrets[\s\S]*?Missing GitHub Actions secrets for macOS signing/,
   );
-  assert.match(releaseWorkflowSource, /APPLE_TEAM_ID must be DUV63RKYTW/);
+  assert.match(
+    releaseWorkflowSource,
+    /APPLE_TEAM_ID \(\$\{APPLE_TEAM_ID\}\) must match the team in MACOS_SIGNING_IDENTITY/,
+  );
 
   const signedBlock = releaseWorkflowSource.match(
     /- name: Package signed and notarized macOS installer[\s\S]*?(?=\n      - name:)/,
@@ -292,6 +295,7 @@ test("macOS release signing is required on tag pushes", () => {
   for (const secret of [
     "CSC_LINK",
     "CSC_KEY_PASSWORD",
+    "MACOS_SIGNING_IDENTITY",
     "APPLE_ID",
     "APPLE_APP_SPECIFIC_PASSWORD",
     "APPLE_TEAM_ID",
@@ -301,7 +305,7 @@ test("macOS release signing is required on tag pushes", () => {
   // electron-builder throws InvalidConfigurationError when an identity name
   // keeps the "Developer ID Application:" prefix, so CSC_NAME carries the bare
   // common name and the CLI must not pass -c.mac.identity.
-  assert.match(signedBlock, /CSC_NAME: "XingYu Liu \(DUV63RKYTW\)"/);
+  assert.match(signedBlock, /CSC_NAME: \$\{\{ secrets\.MACOS_SIGNING_IDENTITY \}\}/);
   assert.doesNotMatch(signedBlock, /-c\.mac\.identity=/);
   assert.doesNotMatch(signedBlock, /CSC_NAME: "Developer ID Application:/);
   assert.match(signedBlock, /-c\.mac\.notarize=true/);
@@ -365,7 +369,11 @@ test("the signed local macOS lane selects the native runner architecture", () =>
   assert.match(releaseMacScriptSource, /MAC_ARCH="\$\{MAC_ARCH:-\$DEFAULT_MAC_ARCH\}"/);
   assert.match(releaseMacScriptSource, /must match the host/);
   assert.match(releaseMacScriptSource, /electron-builder --mac "--\$\{MAC_ARCH\}"/);
-  assert.match(releaseMacScriptSource, /XingYu Liu \(DUV63RKYTW\)/);
+  assert.match(releaseMacScriptSource, /MAC_SIGNING_IDENTITY is required/);
+  assert.match(
+    releaseMacScriptSource,
+    /APPLE_TEAM_ID \(\$APPLE_TEAM_ID\) must match the team in MAC_SIGNING_IDENTITY/,
+  );
   assert.match(
     releaseMacScriptSource,
     /MAC_SIGNING_IDENTITY="\$\{MAC_SIGNING_IDENTITY#Developer ID Application: \}"/,

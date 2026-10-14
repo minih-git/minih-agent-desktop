@@ -46,14 +46,15 @@ when macOS `iconutil` is available, without overwriting the canonical source.
 ## 2. Prerequisites (release lane)
 
 1. Apple Developer account with a **Developer ID Application** certificate in
-   the login keychain. Official certificate:
-   `Developer ID Application: XingYu Liu (DUV63RKYTW)` (Team ID `DUV63RKYTW`).
-2. Environment variables for the local signed lane:
-   - `MAC_SIGNING_IDENTITY` — bare common name `XingYu Liu (DUV63RKYTW)`;
+   the login keychain. This fork owns its signing identity: the certificate is
+   `Developer ID Application: <Name> (<TEAMID>)` for the fork's own team.
+2. Environment variables for the local signed lane (both required):
+   - `MAC_SIGNING_IDENTITY` — the fork's bare common name `<Name> (<TEAMID>)`;
      electron-builder rejects a name that keeps the
      `Developer ID Application:` prefix, so the script strips it
    - `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` — required for
-     notarization (`APPLE_TEAM_ID` must be `DUV63RKYTW`)
+     notarization (`APPLE_TEAM_ID` must equal the team id inside
+     `MAC_SIGNING_IDENTITY`'s parentheses)
 3. Rust toolchain and pnpm workspace installed. The Rust toolchain must run on
    the native macOS runner: arm64 for Apple Silicon or x86_64 for Intel.
 
@@ -189,7 +190,7 @@ Pre-tag checklist:
 ### 4.2 Build / package
 
 ```bash
-export MAC_SIGNING_IDENTITY="XingYu Liu (DUV63RKYTW)"
+export MAC_SIGNING_IDENTITY="<Name> (<TEAMID>)"
 export APPLE_ID=...
 export APPLE_APP_SPECIFIC_PASSWORD=...
 export APPLE_TEAM_ID=...
@@ -230,10 +231,11 @@ The macOS matrix uses `macos-15` for arm64 and `macos-15-intel` for Intel x64.
 Each job verifies `uname -m`, passes the matching `--arm64` or `--x64` flag to
 electron-builder, and builds `minih-agent-desktop-host-core` on that same native
 runner. Tag builds and `sign_macos: true` (the dispatch default) receive
-`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and
-`APPLE_TEAM_ID` only from GitHub Actions secrets, pin the certificate through
-`CSC_NAME=XingYu Liu (DUV63RKYTW)` (bare common name — electron-builder rejects
-the `Developer ID Application:` prefix), force code signing and
+`CSC_LINK`, `CSC_KEY_PASSWORD`, `MACOS_SIGNING_IDENTITY`, `APPLE_ID`,
+`APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` only from GitHub Actions
+secrets, pin the certificate through `CSC_NAME` (the bare common name from the
+`MACOS_SIGNING_IDENTITY` secret — electron-builder rejects the
+`Developer ID Application:` prefix), force code signing and
 `notarytool` notarization of `Minih-Agent-Desktop.app`. The DMG is then submitted to the
 same service on its own (`scripts/notarize-and-staple-macos-release-dmg.sh`),
 and only an `Accepted` status allows the ticket to be stapled. Verification
@@ -312,9 +314,10 @@ app-specific password. Never `echo` these values in CI.
 |---|---|
 | `CSC_LINK` | Base64 of the exported Developer ID Application `.p12` (Certificate + Private Key). electron-builder also accepts a file path, but CI uses the secret body. |
 | `CSC_KEY_PASSWORD` | Password used when exporting that `.p12` |
-| `APPLE_ID` | Apple ID email that belongs to team `DUV63RKYTW` |
+| `MACOS_SIGNING_IDENTITY` | Bare common name of the fork's Developer ID Application certificate: `<Name> (<TEAMID>)` — electron-builder rejects the `Developer ID Application:` prefix |
+| `APPLE_ID` | Apple ID email of the signing team |
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password from https://appleid.apple.com → Sign-In and Security → App-Specific Passwords |
-| `APPLE_TEAM_ID` | `DUV63RKYTW` |
+| `APPLE_TEAM_ID` | The signing team's Team ID; must equal the team id in `MACOS_SIGNING_IDENTITY` |
 
 Encode the p12 locally (do not paste the output into chat or the repo):
 

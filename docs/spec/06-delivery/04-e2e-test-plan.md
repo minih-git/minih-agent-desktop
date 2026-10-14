@@ -936,7 +936,7 @@ identify the platform validation still needed.
   runners are available.
 - **Steps**: 1) Run the tag workflow. 2) For each macOS architecture, inspect
   the unpacked app with `codesign -dv --verbose=4` and confirm authority
-  `Developer ID Application: XingYu Liu (DUV63RKYTW)`. 3) Run
+  the fork's own `Developer ID Application: <Name> (<TEAMID>)` authority. 3) Run
   `codesign --verify --deep --strict --verbose=2`,
   `spctl --assess --type execute --verbose=4`, and `xcrun stapler validate`
   against the app, including `Contents/Resources/bin/minih-agent-desktop-host-core`.

@@ -6,9 +6,13 @@ set -euo pipefail
 
 RELEASE_DIR="${1:-apps/desktop/release}"
 PRODUCT_NAME="Minih-Agent-Desktop"
-# Accepts either the bare common name ("XingYu Liu (DUV63RKYTW)") or the full
-# certificate label ("Developer ID Application: XingYu Liu (DUV63RKYTW)").
-IDENTITY_NAME="${MAC_SIGNING_IDENTITY:-XingYu Liu (DUV63RKYTW)}"
+# Accepts either the bare common name ("Name (TEAMID)") or the full
+# certificate label ("Developer ID Application: Name (TEAMID)").
+IDENTITY_NAME="${MAC_SIGNING_IDENTITY:-}"
+if [[ -z "$IDENTITY_NAME" ]]; then
+  echo "error: MAC_SIGNING_IDENTITY is required (bare common name, e.g. \"Name (TEAMID)\")." >&2
+  exit 1
+fi
 IDENTITY_NAME="${IDENTITY_NAME#Developer ID Application: }"
 EXPECTED_IDENTITY="Developer ID Application: ${IDENTITY_NAME}"
 

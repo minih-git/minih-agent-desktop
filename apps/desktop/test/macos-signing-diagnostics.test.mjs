@@ -17,7 +17,7 @@ const inventoryScript = fileURLToPath(
   new URL("../../../scripts/macos-bundle-inventory.mjs", import.meta.url),
 );
 
-const SIGNING_IDENTITY_NAME = "XingYu Liu (DUV63RKYTW)";
+const SIGNING_IDENTITY_NAME = "Release Bot (RELE45E123)";
 const SIGNING_IDENTITY = `Developer ID Application: ${SIGNING_IDENTITY_NAME}`;
 const NO_IDENTITIES = "  0 valid identities found";
 const MATCHING_IDENTITY = `echo '  1) 0123456789ABCDEF "Developer ID Application: ${SIGNING_IDENTITY_NAME}"'
@@ -244,7 +244,9 @@ test("diagnostics report an available Developer ID identity", async (t) => {
   const bin = join(root, "bin");
   await writeDiagnosticsShims(bin, { identities: MATCHING_IDENTITY });
 
-  const result = runDiagnostics(bin);
+  const result = runDiagnostics(bin, {
+    env: { MAC_SIGNING_IDENTITY: SIGNING_IDENTITY_NAME },
+  });
 
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /^==> System$/m);
@@ -267,7 +269,10 @@ test("diagnostics fail closed when --require-identity finds no identity", async 
   const bin = join(root, "bin");
   await writeDiagnosticsShims(bin, { identities: NO_IDENTITIES });
 
-  const result = runDiagnostics(bin, { args: ["--require-identity"] });
+  const result = runDiagnostics(bin, {
+    args: ["--require-identity"],
+    env: { MAC_SIGNING_IDENTITY: SIGNING_IDENTITY_NAME },
+  });
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /not available/);
@@ -284,7 +289,9 @@ test("diagnostics treat a missing identity as a warning by default", async (t) =
   const bin = join(root, "bin");
   await writeDiagnosticsShims(bin, { identities: NO_IDENTITIES });
 
-  const result = runDiagnostics(bin);
+  const result = runDiagnostics(bin, {
+    env: { MAC_SIGNING_IDENTITY: SIGNING_IDENTITY_NAME },
+  });
 
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.ok(
@@ -318,7 +325,7 @@ test("diagnostics never echo signing secrets", async (t) => {
       CSC_KEY_PASSWORD: CSC_PASSWORD_SENTINEL,
       APPLE_ID: APPLE_ID_SENTINEL,
       APPLE_APP_SPECIFIC_PASSWORD: APPLE_PASSWORD_SENTINEL,
-      APPLE_TEAM_ID: "DUV63RKYTW",
+      APPLE_TEAM_ID: "RELE45E123",
     },
   });
 
