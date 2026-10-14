@@ -242,6 +242,12 @@ CNB 镜像工作流（`.github/workflows/mirror-to-cnb.yml`）已随品牌重构
 Actions 中创建下列密钥。不要把 p12、密码、Apple ID 或应用专用密码提交进仓库。
 不要在 CI 中 `echo` 这些值。
 
+The Release `build` matrix uses the GitHub environment `minih-agent-desktop`.
+Store the six secrets below under Settings → Environments →
+`minih-agent-desktop` → Environment secrets (repository secrets remain a
+fallback). Environment protection rules apply to every packaging platform;
+allow the intended release branches/tags and approve deployments when required.
+
 | Secret | Value |
 |---|---|
 | `CSC_LINK` | 导出的 Developer ID Application `.p12`（证书+私钥）的 Base64。electron-builder 也接受文件路径，但 CI 使用 Secret 正文。 |

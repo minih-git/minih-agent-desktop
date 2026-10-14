@@ -310,6 +310,12 @@ Create these under GitHub → repository `minih-git/minih-agent-desktop` → Set
 Secrets and variables → Actions. Never commit the p12, password, Apple ID, or
 app-specific password. Never `echo` these values in CI.
 
+The Release `build` matrix uses the GitHub environment `minih-agent-desktop`.
+Store the six secrets below under Settings → Environments →
+`minih-agent-desktop` → Environment secrets (repository secrets remain a
+fallback). Environment protection rules apply to every packaging platform;
+allow the intended release branches/tags and approve deployments when required.
+
 | Secret | Value |
 |---|---|
 | `CSC_LINK` | Base64 of the exported Developer ID Application `.p12` (Certificate + Private Key). electron-builder also accepts a file path, but CI uses the secret body. |

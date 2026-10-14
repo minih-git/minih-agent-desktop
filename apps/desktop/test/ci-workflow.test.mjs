@@ -28,6 +28,22 @@ const [
   read("../../../scripts/export-linux-asar.mjs"),
 ]);
 
+test("release packaging binds the configured signing environment", () => {
+  const buildJob = releaseWorkflowSource.match(
+    /^  build:\n([\s\S]*?)(?=^  [a-z][a-z0-9-]*:|$(?![\s\S]))/m,
+  )?.[0];
+  assert.ok(buildJob, "release build job exists");
+  assert.match(buildJob, /^    environment: minih-agent-desktop$/m);
+  for (const step of [
+    "Notarize and staple the macOS DMG",
+    "Verify signed and notarized macOS installer",
+  ]) {
+    const block = buildJob.match(new RegExp(`- name: ${step}[\\s\\S]*?(?=\\n      - name:)`))?.[0];
+    assert.ok(block, step);
+    assert.match(block, /MAC_SIGNING_IDENTITY: \$\{\{ secrets\.MACOS_SIGNING_IDENTITY \}\}/);
+  }
+});
+
 test("CI skips documentation-only pushes and pull requests", () => {
   assert.equal(
     (ciWorkflowSource.match(/- 'docs\/\*\*'/g) ?? []).length,

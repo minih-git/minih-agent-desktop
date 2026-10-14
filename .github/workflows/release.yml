@@ -85,6 +85,7 @@ jobs:
   build:
     name: Build ${{ matrix.name }}
     needs: verify
+    environment: minih-agent-desktop
     env:
       # Tag pushes always sign. workflow_dispatch signs unless explicitly disabled.
       MACOS_SIGN_RELEASE: ${{ github.event_name != 'workflow_dispatch' || inputs.sign_macos == true }}
@@ -330,7 +331,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          MAC_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
           # 20 minutes bounds the second Apple wait; the packaging phase owns
           # the first one.
           PI_SIGNING_TIMEOUT_SECONDS: "1200"
@@ -345,6 +346,8 @@ jobs:
 
       - name: Verify signed and notarized macOS installer
         if: matrix.platform == 'macos' && env.MACOS_SIGN_RELEASE == 'true'
+        env:
+          MAC_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
         run: scripts/verify-macos-release.sh apps/desktop/release
 
       - name: Verify Linux host-core glibc floor
