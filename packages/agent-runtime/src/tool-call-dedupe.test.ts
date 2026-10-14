@@ -3,8 +3,11 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { transformMessages } from "@earendil-works/pi-ai/api/transform-messages";
 import {
   dedupeToolCallMessages,
+  normalizeReplayToolCallId,
   reportDuplicateToolCallDrop,
 } from "./tool-call-dedupe.js";
+import { chainRowsToMessages } from "./delegation-history.js";
+import { toolResultFromUi } from "./runtime.js";
 
 /** Only the fields the guard reads: the role, the blocks, and the call id. */
 function assistantMessage(content: unknown[]): AgentMessage {
@@ -220,5 +223,73 @@ describe("request wire contract (D620)", () => {
 
     expect(drop.droppedMessages).toBe(1);
     expect(wireOutputIds(drop.messages)).toEqual(["call-1"]);
+  });
+
+  it("strips 72-char composite item suffixes for non-Responses APIs and restored history", () => {
+    const compositeId =
+      "call_00_abc123456789012345678901|fc_064803d2-dc75-4ca7-b58a-832d5319645a";
+    expect(compositeId.length).toBe(72);
+    expect(normalizeReplayToolCallId(compositeId)).toBe(
+      "call_00_abc123456789012345678901",
+    );
+    expect(normalizeReplayToolCallId("x".repeat(80))).toHaveLength(64);
+
+    // 1. Live non-Responses request strips `|fc_*` without reporting a duplicate drop.
+    const assistant = assistantMessage([toolCall(compositeId)]);
+    const result = toolResult(compositeId);
+    const nonResponsesDrop = dedupeToolCallMessages([assistant, result], {
+      targetApi: "openai-completions",
+    });
+    expect(nonResponsesDrop.droppedCount).toBe(0);
+    expect(callIds(nonResponsesDrop.messages)).toEqual([
+      "call_00_abc123456789012345678901",
+    ]);
+    expect(resultIds(nonResponsesDrop.messages)).toEqual([
+      "call_00_abc123456789012345678901",
+    ]);
+
+    // 2. Live Responses request preserves the composite id when wire call_id <= 64 chars.
+    const responsesDrop = dedupeToolCallMessages([assistant, result], {
+      targetApi: "openai-responses",
+    });
+    expect(responsesDrop.messages).toBeTruthy();
+    expect(callIds(responsesDrop.messages)).toEqual([compositeId]);
+    expect(resultIds(responsesDrop.messages)).toEqual([compositeId]);
+
+    // 3. Reconstructed UiMessage history normalizes both toolResultFromUi and delegation history.
+    const uiToolRow = {
+      id: "msg-tool-1",
+      role: "tool" as const,
+      content: "ok",
+      createdAt: "2026-10-14T00:00:00.000Z",
+      toolCallId: compositeId,
+      toolName: "Read",
+      toolArgs: { path: "README.md" },
+      toolResult: { content: [{ type: "text", text: "ok" }] },
+      toolStatus: "success" as const,
+    };
+    expect(toolResultFromUi(uiToolRow, 1).toolCallId).toBe(
+      "call_00_abc123456789012345678901",
+    );
+
+    const rebuilt = chainRowsToMessages(
+      [uiToolRow],
+      {
+        id: "provider-1",
+        name: "Test",
+        vendorKey: "openai",
+        modelId: "test-model",
+        apiKey: "k",
+        supportsReasoning: false,
+        supportedThinkingLevels: ["off"],
+      },
+      model,
+    );
+    expect(callIds(rebuilt as unknown as AgentMessage[])).toEqual([
+      "call_00_abc123456789012345678901",
+    ]);
+    expect(resultIds(rebuilt as unknown as AgentMessage[])).toEqual([
+      "call_00_abc123456789012345678901",
+    ]);
   });
 });

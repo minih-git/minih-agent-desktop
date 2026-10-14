@@ -167,6 +167,7 @@ import {
 } from "./system-transcript.js";
 import {
   dedupeToolCallMessages,
+  normalizeReplayToolCallId,
   reportDuplicateToolCallDrop,
 } from "./tool-call-dedupe.js";
 import {
@@ -1644,7 +1645,7 @@ export function toolResultFromUi(
   }
   return {
     role: "toolResult",
-    toolCallId: m.toolCallId ?? "",
+    toolCallId: normalizeReplayToolCallId(m.toolCallId ?? ""),
     toolName: m.toolName ?? "",
     content: blocks,
     ...(toJsonValue(rawRecord?.details) !== undefined || addedToolNames.length > 0
@@ -3059,7 +3060,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         }
         toolCarrier.content.push({
           type: "toolCall",
-          id: m.toolCallId,
+          id: normalizeReplayToolCallId(m.toolCallId),
           name: m.toolName,
           arguments: toJsonObject(m.toolArgs),
         });
@@ -3091,7 +3092,9 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
    * sentence.
    */
   private dropDuplicateToolCalls(messages: AgentMessage[]): AgentMessage[] {
-    const drop = dedupeToolCallMessages(messages);
+    const drop = dedupeToolCallMessages(messages, {
+      targetApi: this.model.api,
+    });
     reportDuplicateToolCallDrop(this.sessionId, drop);
     return drop.messages;
   }

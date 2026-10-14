@@ -43,6 +43,7 @@ import {
   apiBindingForProviderModel,
   type RuntimeProviderConfig,
 } from "./provider-binding.js";
+import { normalizeReplayToolCallId } from "./tool-call-dedupe.js";
 
 /** One chain of `Task` calls that share a delegate session. */
 export type DelegationChain = {
@@ -299,7 +300,7 @@ export function chainRowsToMessages(
       }
       toolCarrier.content.push({
         type: "toolCall",
-        id: row.toolCallId,
+        id: normalizeReplayToolCallId(row.toolCallId),
         name: row.toolName,
         arguments: toJsonObject(row.toolArgs),
       });
@@ -487,7 +488,7 @@ function toolResultFromUi(m: UiMessage, timestamp: number): ToolResultMessage {
       : rawDetails;
   return {
     role: "toolResult",
-    toolCallId: m.toolCallId ?? "",
+    toolCallId: normalizeReplayToolCallId(m.toolCallId ?? ""),
     toolName: m.toolName ?? "",
     content: blocks,
     ...(details !== undefined ? { details } : {}),
