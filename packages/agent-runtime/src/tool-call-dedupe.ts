@@ -3,6 +3,13 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 type RecordLike = Record<string, unknown>;
 
 const MAX_LOGGED_DUPLICATE_TOOL_CALLS = 8;
+const MAX_WIRE_TOOL_CALL_ID_CHARS = 64;
+
+const COMPOSITE_TOOL_CALL_APIS = new Set([
+  "openai-responses",
+  "openai-codex-responses",
+  "azure-openai-responses",
+]);
 
 export type DuplicateToolCallDrop = {
   messages: AgentMessage[];
@@ -12,8 +19,21 @@ export type DuplicateToolCallDrop = {
   droppedIds: string[];
 };
 
+export type DedupeToolCallOptions = {
+  /**
+   * When set, strips the `|<item_id>` suffix when `targetApi` does not use
+   * OpenAI Responses composite item ids (e.g. `openai-completions`), and clamps
+   * wire `call_id`s to 64 characters.
+   */
+  targetApi?: string;
+};
+
 function isRecord(value: unknown): value is RecordLike {
   return typeof value === "object" && value !== null;
+}
+
+export function supportsCompositeToolCallIds(api: string | undefined): boolean {
+  return typeof api === "string" && COMPOSITE_TOOL_CALL_APIS.has(api);
 }
 
 /**
@@ -28,6 +48,21 @@ function isRecord(value: unknown): value is RecordLike {
 function wireCallId(id: string): string {
   const separator = id.indexOf("|");
   return separator < 0 ? id : id.slice(0, separator);
+}
+
+/**
+ * Normalize a persisted or cross-API tool-call id to the wire `call_id` part
+ * (`<= 64` chars). Reconstructed `UiMessage` rows never carry OpenAI `rs_*`
+ * reasoning items, and non-Responses adapters (`openai-completions`) send
+ * `toolCall.id` verbatim when `isSameModel` is true, so keeping the `|fc_*`
+ * suffix on restored or non-Responses messages produces 72-character `call_id`s
+ * that upstream `/v1/responses` gateways reject with HTTP 400 (max 64).
+ */
+export function normalizeReplayToolCallId(id: string): string {
+  const wire = wireCallId(id);
+  return wire.length > MAX_WIRE_TOOL_CALL_ID_CHARS
+    ? wire.slice(0, MAX_WIRE_TOOL_CALL_ID_CHARS)
+    : wire;
 }
 
 /**
@@ -56,7 +91,11 @@ function wireCallId(id: string): string {
  */
 export function dedupeToolCallMessages(
   messages: AgentMessage[],
+  options?: DedupeToolCallOptions,
 ): DuplicateToolCallDrop {
+  const stripComposite =
+    options?.targetApi !== undefined &&
+    !supportsCompositeToolCallIds(options.targetApi);
   const keptCalls = new Map<string, string>();
   const keptResults = new Set<string>();
   /** Wire ids whose call is still waiting for a result in this request. */
@@ -64,6 +103,7 @@ export function dedupeToolCallMessages(
   const droppedIds = new Set<string>();
   let droppedCount = 0;
   let droppedMessages = 0;
+  let rewritten = false;
   const note = (id: string) => {
     droppedCount += 1;
     if (droppedIds.size < MAX_LOGGED_DUPLICATE_TOOL_CALLS) {
@@ -80,20 +120,36 @@ export function dedupeToolCallMessages(
         continue;
       }
       let calls = 0;
-      const kept = content.filter((block) => {
-        if (!isRecord(block) || block.type !== "toolCall") return true;
+      let blockRewritten = false;
+      const kept: unknown[] = [];
+      for (const block of content) {
+        if (!isRecord(block) || block.type !== "toolCall") {
+          kept.push(block);
+          continue;
+        }
         const id = typeof block.id === "string" ? block.id : undefined;
-        if (id === undefined) return true;
+        if (id === undefined) {
+          kept.push(block);
+          continue;
+        }
         calls += 1;
-        const wire = wireCallId(id);
+        const wire = normalizeReplayToolCallId(id);
         if (keptCalls.has(wire)) {
           note(wire);
-          return false;
+          continue;
         }
-        keptCalls.set(wire, id);
+        const canonicalId =
+          stripComposite || wire !== wireCallId(id) ? wire : id;
+        keptCalls.set(wire, canonicalId);
         openCalls.set(wire, (openCalls.get(wire) ?? 0) + 1);
-        return true;
-      });
+        if (canonicalId !== id) {
+          blockRewritten = true;
+          rewritten = true;
+          kept.push({ ...block, id: canonicalId });
+        } else {
+          kept.push(block);
+        }
+      }
       // Every call this message carried was already claimed by an earlier one,
       // so the message is that earlier message's snapshot rather than new
       // context. Its text is a copy too, and keeping the copy would place a
@@ -106,7 +162,9 @@ export function dedupeToolCallMessages(
         continue;
       }
       next.push(
-        kept.length === content.length ? message : ({ ...message, content: kept } as AgentMessage),
+        kept.length === content.length && !blockRewritten
+          ? message
+          : ({ ...message, content: kept } as AgentMessage),
       );
       continue;
     }
@@ -114,23 +172,29 @@ export function dedupeToolCallMessages(
     if (message.role === "toolResult") {
       const id = (message as { toolCallId?: unknown }).toolCallId;
       if (typeof id === "string") {
-        const wire = wireCallId(id);
+        const wire = normalizeReplayToolCallId(id);
         if (keptResults.has(wire)) {
           note(wire);
           continue;
         }
         keptResults.add(wire);
         const waiting = openCalls.get(wire) ?? 0;
+        let targetId =
+          stripComposite || wire !== wireCallId(id) ? wire : id;
         if (waiting > 0) {
           openCalls.set(wire, waiting - 1);
           const owner = keptCalls.get(wire);
           // One call id, one result: pi-ai pairs a result to its call by the
           // composite id, so a result whose item half disagrees would leave the
           // call pending and earn a second, synthesized output for this id.
-          if (owner !== undefined && owner !== id) {
-            next.push({ ...message, toolCallId: owner } as AgentMessage);
-            continue;
+          if (owner !== undefined) {
+            targetId = owner;
           }
+        }
+        if (targetId !== id) {
+          rewritten = true;
+          next.push({ ...message, toolCallId: targetId } as AgentMessage);
+          continue;
         }
       }
     }
@@ -138,7 +202,7 @@ export function dedupeToolCallMessages(
   }
 
   return {
-    messages: droppedCount === 0 ? messages : next,
+    messages: droppedCount === 0 && !rewritten ? messages : next,
     droppedCount,
     droppedMessages,
     droppedIds: [...droppedIds],

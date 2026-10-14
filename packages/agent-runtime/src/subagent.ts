@@ -426,7 +426,9 @@ export class SubagentRun {
     return this.bindingFor(this.provider, this.thinkingLevel);
   }
   private dedupeToolCalls(messages: AgentMessage[]): AgentMessage[] {
-    const drop = dedupeToolCallMessages(messages);
+    const drop = dedupeToolCallMessages(messages, {
+      targetApi: this.agent.state.model.api,
+    });
     reportDuplicateToolCallDrop(this.opts.sessionId, drop);
     return drop.messages;
   }

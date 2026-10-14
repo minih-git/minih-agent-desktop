@@ -98,7 +98,9 @@ pub fn parse_ops(ops: &str) -> Result<ParsedOps, ParseError> {
         idx += 1;
         match op {
             ParsedOp::Put {
-                locator, register, ..
+                locator,
+                mut body,
+                register,
             } => {
                 if colon {
                     if register.is_some() {
@@ -107,11 +109,10 @@ pub fn parse_ops(ops: &str) -> Result<ParsedOps, ParseError> {
                             "a register paste takes no body rows; drop the trailing colon",
                         ));
                     }
-                    let mut body = Vec::new();
                     while idx < lines.len() {
                         let line = lines[idx];
                         if let Some(rest) = line.strip_prefix('+') {
-                            body.push(rest.to_string());
+                            body.push(rest.trim_end_matches('\r').to_string());
                             idx += 1;
                         } else {
                             break;
@@ -184,13 +185,92 @@ pub fn parse_ops(ops: &str) -> Result<ParsedOps, ParseError> {
     })
 }
 
+/// Recover a complete `ops` payload when a model splits a bodyless `PUT` header
+/// in `ops` and places the replacement lines in `new_string`.
+pub fn coalesce_split_put_body(ops: &str, new_string: &str) -> Option<String> {
+    if parse_ops(ops).is_ok() {
+        return None;
+    }
+    if parse_ops(new_string).is_ok() {
+        return Some(new_string.to_string());
+    }
+    let header = ops.trim();
+    if header.is_empty() || header.contains('\n') {
+        return None;
+    }
+    let header_with_colon = if header.ends_with(':') {
+        header.to_string()
+    } else {
+        format!("{header}:")
+    };
+    let mut raw_lines: Vec<&str> = new_string.split('\n').collect();
+    if new_string.ends_with('\n') {
+        raw_lines.pop();
+    }
+    let all_plus = !raw_lines.is_empty() && raw_lines.iter().all(|line| line.starts_with('+'));
+    let body_lines: Vec<String> = raw_lines
+        .into_iter()
+        .map(|line| {
+            let trimmed = line.trim_end_matches('\r');
+            if all_plus {
+                trimmed.to_string()
+            } else {
+                format!("+{trimmed}")
+            }
+        })
+        .collect();
+    let combined = format!("{header_with_colon}\n{}", body_lines.join("\n"));
+    parse_ops(&combined).ok().map(|_| combined)
+}
+
 fn parse_header(raw: &str) -> Result<(ParsedOp, bool), ParseError> {
     let line = raw.trim_end_matches('\r');
-    let colon = line.ends_with(':');
+    let trimmed = line.trim_end();
+    if let Some((before_colon, after_colon)) = line.split_once(':') {
+        let mut head_parts = before_colon.split_whitespace();
+        if head_parts.next() == Some("PUT") {
+            let locator_raw = head_parts
+                .next()
+                .ok_or_else(|| ParseError::new("EDIT_PARSE_FAILED", "PUT requires a locator"))?;
+            let locator = parse_locator(locator_raw)?;
+            let register = match head_parts.next() {
+                Some(token) => Some(parse_register(token)?),
+                None => None,
+            };
+            if head_parts.next().is_some() {
+                return Err(ParseError::new(
+                    "EDIT_PARSE_FAILED",
+                    format!("unexpected token in PUT header: {raw}"),
+                ));
+            }
+            let inline_trimmed = after_colon.trim_start();
+            let body = if inline_trimmed.is_empty() {
+                Vec::new()
+            } else if inline_trimmed.starts_with('-') {
+                return Err(ParseError::new(
+                    "EDIT_PARSE_FAILED",
+                    format!("PUT body cannot contain - diff rows: {raw}"),
+                ));
+            } else if let Some(rest) = inline_trimmed.strip_prefix('+') {
+                vec![rest.to_string()]
+            } else {
+                vec![after_colon.to_string()]
+            };
+            return Ok((
+                ParsedOp::Put {
+                    locator,
+                    body,
+                    register,
+                },
+                true,
+            ));
+        }
+    }
+    let colon = trimmed.ends_with(':');
     let core = if colon {
-        line[..line.len() - 1].trim_end()
+        trimmed[..trimmed.len() - 1].trim_end()
     } else {
-        line.trim_end()
+        trimmed
     };
     let mut parts = core.split_whitespace();
     let kind = parts
@@ -441,5 +521,60 @@ mod tests {
         assert!(matches!(parsed.ops[0], ParsedOp::Cut { .. }));
         assert!(matches!(parsed.ops[1], ParsedOp::Mv { .. }));
         assert!(matches!(parse_ops("REM\n").unwrap().ops[0], ParsedOp::Rem));
+    }
+
+    #[test]
+    fn parses_inline_put_body_and_trailing_whitespace_after_colon() {
+        let direct = parse_ops("PUT 14.=14:export type Mode = \"a\" | \"b\";").unwrap();
+        assert_eq!(
+            direct.ops,
+            vec![ParsedOp::Put {
+                locator: Locator::Range { start: 14, end: 14 },
+                body: vec!["export type Mode = \"a\" | \"b\";".to_string()],
+                register: None,
+            }]
+        );
+
+        let inline_plus = parse_ops(
+            "PUT 18.=20: +  defaultBaseUrl: \"https://api.z.ai/api/paas/v4\",\n+  enabled: true,\n",
+        )
+        .unwrap();
+        assert_eq!(
+            inline_plus.ops,
+            vec![ParsedOp::Put {
+                locator: Locator::Range { start: 18, end: 20 },
+                body: vec![
+                    "  defaultBaseUrl: \"https://api.z.ai/api/paas/v4\",".to_string(),
+                    "  enabled: true,".to_string(),
+                ],
+                register: None,
+            }]
+        );
+
+        let trailing_ws = parse_ops("PUT 2.=2:   \n+replaced\n").unwrap();
+        assert_eq!(
+            trailing_ws.ops,
+            vec![ParsedOp::Put {
+                locator: Locator::Range { start: 2, end: 2 },
+                body: vec!["replaced".to_string()],
+                register: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn coalesces_split_put_header_and_new_string_body() {
+        assert_eq!(
+            coalesce_split_put_body("PUT <21:", "+  delete: \"Delete\",\n+  close: \"Close\","),
+            Some("PUT <21:\n+  delete: \"Delete\",\n+  close: \"Close\",".to_string())
+        );
+        assert_eq!(
+            coalesce_split_put_body("PUT 18.=20", "  line one\n  line two\n"),
+            Some("PUT 18.=20:\n+  line one\n+  line two".to_string())
+        );
+        assert_eq!(
+            coalesce_split_put_body("PUT 18.=20:", "PUT 18.=20:\n+  line one\n"),
+            Some("PUT 18.=20:\n+  line one\n".to_string())
+        );
     }
 }

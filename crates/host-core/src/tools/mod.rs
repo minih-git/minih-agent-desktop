@@ -10,9 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-#[cfg(not(test))]
-use tokio::io::AsyncWriteExt;
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, watch};
 
@@ -1581,14 +1579,22 @@ fn tool_edit(
     })?;
     let legacy_old = args.get("old_string").and_then(Value::as_str);
     let legacy_new = args.get("new_string").and_then(Value::as_str);
-    let (tag, ops) = match (
-        args.get("tag").and_then(Value::as_str),
-        args.get("ops").and_then(Value::as_str),
-        legacy_old,
-        legacy_new,
-    ) {
+    let raw_tag = args
+        .get("tag")
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty());
+    let raw_ops = args
+        .get("ops")
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty());
+    let (tag, ops) = match (raw_tag, raw_ops, legacy_old, legacy_new) {
+        (Some(tag), Some(ops), None, Some(new_str)) => {
+            let resolved_ops =
+                hashline::coalesce_split_put_body(ops, new_str).unwrap_or_else(|| ops.to_string());
+            (tag.to_string(), resolved_ops)
+        }
         (Some(tag), Some(ops), _, _) => (tag.to_string(), ops.to_string()),
-        (None, None, Some(old), Some(new)) => {
+        (_, None, Some(old), Some(new)) => {
             let file = hashline::normalize_file(&live);
             let tag = hashline::tag_of_lf_text(&file.text);
             let matches: Vec<_> = file
@@ -2544,47 +2550,12 @@ struct SpawnedToolRunner {
     wait_task: tokio::task::JoinHandle<std::io::Result<ExitStatus>>,
 }
 
-async fn spawn_tool_runner(
-    config: &ToolRunnerStartConfig,
-) -> Result<SpawnedToolRunner, (String, String)> {
-    #[cfg(not(test))]
-    let config_frame =
-        encode_runner_config(config).map_err(|error| ("TOOL_FAILED".to_string(), error))?;
-
-    #[cfg(not(test))]
-    let mut command = {
-        let executable = std::env::current_exe().map_err(|error| {
-            (
-                "TOOL_FAILED".to_string(),
-                format!("failed to resolve host-core executable: {error}"),
-            )
-        })?;
-        let mut command = Command::new(executable);
-        command.arg(INTERNAL_TOOL_RUNNER_FLAG);
-        command
-    };
-
-    // Unit tests run inside libtest's harness rather than the host binary. A
-    // direct resolved-shell child keeps those tests focused on ownership and
-    // descendant cleanup while production always uses the hidden runner mode.
-    #[cfg(test)]
-    let mut command = Command::new(&config.program);
-
-    #[cfg(test)]
-    {
-        command.args(&config.args).current_dir(&config.workspace);
-        if let Some(scratch_dir) = config.scratch_dir.as_deref() {
-            command.env("PI_SCRATCH_DIR", scratch_dir);
-        }
-        if let Some(path) = config.env_path.as_deref() {
-            command.env("PATH", path);
-        }
+fn configure_runner_stdio_and_group(command: &mut Command, piped_stdin: bool) {
+    if piped_stdin {
+        command.stdin(Stdio::piped());
+    } else {
+        command.stdin(Stdio::null());
     }
-
-    #[cfg(not(test))]
-    command.stdin(Stdio::piped());
-    #[cfg(test)]
-    command.stdin(Stdio::null());
     command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -2593,8 +2564,65 @@ async fn spawn_tool_runner(
     command.process_group(0);
     #[cfg(windows)]
     command.creation_flags(0x0800_0000);
+}
 
-    let mut child = spawn_with_retries(&mut command).await?;
+fn build_direct_shell_command(config: &ToolRunnerStartConfig) -> Command {
+    let mut command = Command::new(&config.program);
+    command.args(&config.args).current_dir(&config.workspace);
+    if let Some(scratch_dir) = config.scratch_dir.as_deref() {
+        command.env("PI_SCRATCH_DIR", scratch_dir);
+    }
+    if let Some(path) = config.env_path.as_deref() {
+        command.env("PATH", path);
+    }
+    configure_runner_stdio_and_group(&mut command, false);
+    command
+}
+
+async fn spawn_tool_runner(
+    config: &ToolRunnerStartConfig,
+) -> Result<SpawnedToolRunner, (String, String)> {
+    // Unit tests run inside libtest's harness rather than the host binary. A
+    // direct resolved-shell child keeps those tests focused on ownership and
+    // descendant cleanup while production uses the hidden runner mode when the
+    // host binary is still present on disk.
+    #[cfg(test)]
+    let runner_exe: Option<PathBuf> = None;
+    #[cfg(not(test))]
+    let runner_exe: Option<PathBuf> = std::env::current_exe().ok();
+
+    spawn_tool_runner_with_executable(config, runner_exe.as_deref()).await
+}
+
+async fn spawn_tool_runner_with_executable(
+    config: &ToolRunnerStartConfig,
+    runner_executable: Option<&Path>,
+) -> Result<SpawnedToolRunner, (String, String)> {
+    let config_frame =
+        encode_runner_config(config).map_err(|error| ("TOOL_FAILED".to_string(), error))?;
+
+    let (mut child, uses_internal_runner) =
+        if let Some(executable) = runner_executable.filter(|path| path.is_file()) {
+            let mut command = Command::new(executable);
+            command.arg(INTERNAL_TOOL_RUNNER_FLAG);
+            configure_runner_stdio_and_group(&mut command, true);
+            match spawn_with_retries(&mut command).await {
+                Ok(child) => (child, true),
+                // If a concurrent build or update unlinked the host binary
+                // between the `is_file()` check and `spawn()`, fall back to
+                // spawning the resolved shell directly with process-group /
+                // job-object ownership rather than failing every Bash call.
+                Err(_) if !executable.is_file() => {
+                    let mut fallback = build_direct_shell_command(config);
+                    (spawn_with_retries(&mut fallback).await?, false)
+                }
+                Err(error) => return Err(error),
+            }
+        } else {
+            let mut command = build_direct_shell_command(config);
+            (spawn_with_retries(&mut command).await?, false)
+        };
+
     let pid = child.id().unwrap_or_default();
     #[allow(unused_mut)]
     let mut ownership = match ProcessOwnership::assign(&child) {
@@ -2611,8 +2639,7 @@ async fn spawn_tool_runner(
 
     #[allow(unused_mut)]
     let mut control = child.stdin.take();
-    #[cfg(not(test))]
-    {
+    if uses_internal_runner {
         let Some(mut control_pipe) = control.take() else {
             let _ = ownership.terminate_fail_closed(pid);
             let _ = child.kill().await;
@@ -5432,5 +5459,142 @@ mod tests {
             msg.contains("no-such-file.txt"),
             "diagnostic should name the path: {msg}"
         );
+    }
+
+    #[tokio::test]
+    async fn edit_accepts_legacy_old_string_new_string_with_tag() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("legacy_with_tag.txt");
+        std::fs::write(&target, "fn main() {\n    println!(\"hello\");\n}\n").unwrap();
+
+        let read_result = execute_tool(
+            Some(dir.path()),
+            None,
+            "Read",
+            &serde_json::json!({ "path": "legacy_with_tag.txt" }),
+            5_000,
+        )
+        .await;
+        assert!(read_result.ok);
+        let tag = read_result.content["tag"].as_str().unwrap().to_string();
+
+        let result = execute_tool(
+            Some(dir.path()),
+            None,
+            "Edit",
+            &serde_json::json!({
+                "path": "legacy_with_tag.txt",
+                "tag": tag,
+                "old_string": "    println!(\"hello\");",
+                "new_string": "    println!(\"world\");"
+            }),
+            5_000,
+        )
+        .await;
+        assert!(
+            result.ok,
+            "Edit with tag + legacy old_string/new_string should succeed: {:?}",
+            result.content
+        );
+        let written = std::fs::read_to_string(&target).unwrap();
+        assert_eq!(written, "fn main() {\n    println!(\"world\");\n}\n");
+    }
+
+    #[tokio::test]
+    async fn edit_accepts_split_put_header_and_new_string_body_and_inline_put() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("split_put.txt");
+        std::fs::write(&target, "line 1\nline 2\nline 3\n").unwrap();
+
+        let read_result = execute_tool(
+            Some(dir.path()),
+            None,
+            "Read",
+            &serde_json::json!({ "path": "split_put.txt" }),
+            5_000,
+        )
+        .await;
+        assert!(read_result.ok);
+        let tag = read_result.content["tag"].as_str().unwrap().to_string();
+
+        // 1. Model puts a bodyless PUT header in `ops` and the body in `new_string`.
+        let split_result = execute_tool(
+            Some(dir.path()),
+            None,
+            "Edit",
+            &serde_json::json!({
+                "path": "split_put.txt",
+                "tag": tag,
+                "ops": "PUT 2.=2:",
+                "new_string": "line two\nline two-b"
+            }),
+            5_000,
+        )
+        .await;
+        assert!(
+            split_result.ok,
+            "Edit with split PUT header + new_string should succeed: {:?}",
+            split_result.content
+        );
+        let next_tag = split_result.content["tag"].as_str().unwrap().to_string();
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "line 1\nline two\nline two-b\nline 3\n"
+        );
+
+        // 2. Model writes an inline PUT body on the header line after `:`.
+        let inline_result = execute_tool(
+            Some(dir.path()),
+            None,
+            "Edit",
+            &serde_json::json!({
+                "path": "split_put.txt",
+                "tag": next_tag,
+                "ops": "PUT 2.=3:line 2 restored"
+            }),
+            5_000,
+        )
+        .await;
+        assert!(
+            inline_result.ok,
+            "Edit with inline PUT body should succeed: {:?}",
+            inline_result.content
+        );
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "line 1\nline 2 restored\nline 3\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn spawn_tool_runner_falls_back_when_runner_executable_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let shell_id = shell::default_shell_id();
+        let resolved = shell::resolve_shell(shell_id).expect("host shell should resolve");
+        let invocation = shell::build_invocation_for_platform(
+            shell::current_platform(),
+            shell_id,
+            resolved.program,
+            "printf 'fallback-ok'",
+        )
+        .expect("shell invocation should build");
+        let config = ToolRunnerStartConfig {
+            program: invocation.program,
+            args: invocation.args,
+            workspace: dir.path().to_path_buf(),
+            scratch_dir: None,
+            env_path: shell::user_login_path().map(str::to_string),
+        };
+        let missing_exe = dir.path().join("unlinked-host-core-binary");
+        let mut spawned = spawn_tool_runner_with_executable(&config, Some(&missing_exe))
+            .await
+            .expect("missing runner binary should fall back to direct shell spawn");
+        let mut stdout_bytes = Vec::new();
+        if let Some(mut stdout) = spawned.stdout.take() {
+            stdout.read_to_end(&mut stdout_bytes).await.unwrap();
+        }
+        let status = (&mut spawned.wait_task).await.unwrap().unwrap();
+        assert!(status.success());
+        assert_eq!(String::from_utf8_lossy(&stdout_bytes), "fallback-ok");
     }
 }
