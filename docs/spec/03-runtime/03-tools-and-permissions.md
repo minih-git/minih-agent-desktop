@@ -364,6 +364,11 @@ Serialization also protects the snapshot store, which both producers and `Edit`
 mutate: without the per-session permit, a concurrent record could land between a
 validation and its write.
 
+The host's workspace diff collector applies Git hardening to every repository it
+inspects. Each host-started Git command disables repository-configured hooks and
+`core.fsmonitor`, and removes environment variables that can redirect Git to
+another repository or inject command-scope configuration.
+
 ## 5. Bash Rules
 
 Host execution baseline:
