@@ -27,7 +27,7 @@
     "@huggingface/hub": "2.15.0"
   },
   "devDependencies": {
-    "vitest": "^3.2.1",
+    "vitest": "^4.1.11",
     "typescript": "~5.9.3"
   }
 }
