@@ -367,7 +367,8 @@ validation and its write.
 The host's workspace diff collector applies Git hardening to every repository it
 inspects. Each host-started Git command disables repository-configured hooks and
 `core.fsmonitor`, and removes environment variables that can redirect Git to
-another repository or inject command-scope configuration.
+another repository or inject command-scope configuration. Diff invocations also
+disable external diff and text-conversion helpers.
 
 ## 5. Bash Rules
 

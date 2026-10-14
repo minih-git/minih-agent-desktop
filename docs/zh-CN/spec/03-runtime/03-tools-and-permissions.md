@@ -303,7 +303,7 @@ type ReviewChange = {
 不要手动编辑旧的 unified-diff 块头，也不要继续修复循环。
 
 宿主的工作区差异收集器会对其检查的所有仓库应用 Git 加固措施。每次由宿主启动
-Git 命令都会禁用仓库配置的 hooks 和 `core.fsmonitor`，并移除可将 Git 重定向到其他仓库或注入命令级配置的环境变量。
+Git 命令都会禁用仓库配置的 hooks 和 `core.fsmonitor`，并移除可将 Git 重定向到其他仓库或注入命令级配置的环境变量。差异命令也会禁用外部 diff 和文本转换辅助程序。
 
 ## 5. Bash 规则
 

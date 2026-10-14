@@ -86,4 +86,52 @@ describe("collectWorkspaceDiff", () => {
       }
     }
   });
+
+  it("does not execute repository-configured textconv commands", async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), "pi-workspace-diff-textconv-"));
+    tempDirs.push(tempRoot);
+    const root = join(tempRoot, "repo");
+    await mkdir(root);
+
+    await runGit(root, ["init", "--quiet"]);
+    await runGit(root, ["config", "user.name", "Workspace diff test"]);
+    await runGit(root, ["config", "user.email", "workspace-diff@example.invalid"]);
+    await writeFile(join(root, "tracked.txt"), "initial\n", "utf8");
+    await runGit(root, ["add", "tracked.txt"]);
+    await runGit(root, ["commit", "--quiet", "-m", "initial"]);
+    await writeFile(
+      join(root, ".gitattributes"),
+      "tracked.txt diff=probe\nuntracked.txt diff=probe\n",
+      "utf8",
+    );
+    await runGit(root, ["add", ".gitattributes"]);
+    await runGit(root, ["commit", "--quiet", "-m", "diff attributes"]);
+
+    const marker = join(tempRoot, "textconv-ran");
+    const command = join(tempRoot, "textconv.cjs");
+    await writeFile(
+      command,
+      `const fs = require("node:fs");\nfs.appendFileSync(${JSON.stringify(marker)}, "ran\\n");\nprocess.stdout.write(fs.readFileSync(process.argv.at(-1)));\n`,
+      "utf8",
+    );
+    const textconv = `${shellQuote(process.execPath)} ${shellQuote(command)}`;
+    await runGit(root, ["config", "diff.probe.textconv", textconv]);
+    await writeFile(join(root, "tracked.txt"), "changed\n", "utf8");
+    await writeFile(join(root, "untracked.txt"), "new file\n", "utf8");
+
+    // Prove the repository's textconv command is active before exercising the host.
+    await execFile("git", ["diff", "--textconv", "--", "tracked.txt"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    expect(existsSync(marker)).toBe(true);
+    await rm(marker, { force: true });
+
+    const diff = await collectWorkspaceDiff(root);
+
+    expect(diff.files.map((file) => file.path)).toEqual(
+      expect.arrayContaining(["tracked.txt", "untracked.txt"]),
+    );
+    expect(existsSync(marker)).toBe(false);
+  });
 });
