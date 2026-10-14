@@ -38,7 +38,7 @@ overrides:
   brace-expansion@5: '>=5.0.12 <6' # GHSA via app-builder-lib and pi-coding-agent
   # Ships in the app. mermaid allows ^3.3.3 but resolves its own copy, so the
   # renderer would load an unpatched sanitizer next to our patched one.
-  dompurify@3: '>=3.4.16 <4' # renderer SVG sanitizer, including Mermaid
+  dompurify@3: '>=3.4.17 <4' # renderer SVG sanitizer, including Mermaid
   fast-uri@3: '>=3.1.8 <4' # GHSA via ajv@8
   '@xmldom/xmldom@0.8': '>=0.8.15 <0.9' # GHSA via plist in electron-builder
   '@xmldom/xmldom@0.9': '>=0.9.12 <0.10' # GHSA via plist in electron-builder
