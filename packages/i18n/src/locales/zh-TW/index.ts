@@ -177,6 +177,11 @@ export const zhTW = {
     checkForUpdates: "檢查更新…",
   },
   updates: {
+    failure: {
+      checkTimeout: "更新伺服器沒有及時回應。請檢查網路或代理後重試。",
+      downloadStalled: "更新下載已停止，且無法繼續。",
+    },
+    mirrorSource: "下載來源：{{host}}",
     title: "軟體更新",
     desc: "更新通過 GitHub Releases 分發。",
     preferenceTitle: "更新方式",

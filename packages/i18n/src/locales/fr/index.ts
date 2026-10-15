@@ -175,6 +175,11 @@ export const fr = {
     "checkForUpdates": "Rechercher les mises à jour…"
   },
   "updates": {
+    "failure": {
+      "checkTimeout": "Le serveur de mise à jour n'a pas répondu à temps. Vérifiez votre réseau ou votre proxy, puis réessayez.",
+      "downloadStalled": "Le téléchargement de la mise à jour n'a plus progressé et n'a pas pu reprendre.",
+    },
+    "mirrorSource": "Source du téléchargement : {{host}}",
     "title": "Mises à jour",
     "desc": "Les mises à jour sont téléchargées à partir des versions de GitHub.",
     "preferenceTitle": "Mode de mise à jour",

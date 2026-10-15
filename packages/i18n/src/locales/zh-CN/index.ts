@@ -177,6 +177,11 @@ export const zhCN = {
     checkForUpdates: "检查更新…",
   },
   updates: {
+    failure: {
+      checkTimeout: "更新服务器没有及时响应。请检查网络或代理后重试。",
+      downloadStalled: "更新下载已停止，且无法继续。",
+    },
+    mirrorSource: "下载来源：{{host}}",
     title: "软件更新",
     desc: "更新通过 GitHub Releases 分发。",
     preferenceTitle: "更新方式",

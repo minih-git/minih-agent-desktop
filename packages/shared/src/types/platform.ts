@@ -55,6 +55,13 @@ export type UpdateStatus =
   | "downloaded"
   | "error";
 
+/**
+ * Machine-readable failure code for `status: "error"` states that the desktop
+ * itself authors. The renderer localizes these; `error` keeps the raw
+ * diagnostic text for codes it does not know (ADR 0022 amendment).
+ */
+export type UpdateErrorCode = "check-timeout" | "download-stalled";
+
 /** Snapshot pushed on the `updatesState` event and returned by updates IPC. */
 export type UpdateState = {
   mode: UpdateMode;
@@ -75,7 +82,14 @@ export type UpdateState = {
   releaseNotes?: string;
   /** 0-100 while status is "downloading". */
   progressPercent?: number;
+  /** Present when `status` is "error" and the code is one this client authored. */
+  errorCode?: UpdateErrorCode;
   error?: string;
+  /**
+   * Host of the feed source currently in use, for support diagnostics
+   * ("github.com" or a compiled-in mirror host). Main owns it.
+   */
+  feedHost?: string;
   /** True when the transition came from a user-initiated check. */
   manual?: boolean;
   /**

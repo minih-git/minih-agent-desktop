@@ -5,6 +5,13 @@
 
 export const UPDATE_CHECK_TIMEOUT_CODE = "UPDATE_CHECK_TIMEOUT";
 
+/** True when `error` is this module's bounded-wait rejection. */
+export function isUpdateCheckTimeout(error: unknown): boolean {
+  return (
+    (error as { code?: unknown } | null)?.code === UPDATE_CHECK_TIMEOUT_CODE
+  );
+}
+
 export function raceWithTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,

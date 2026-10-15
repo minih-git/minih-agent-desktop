@@ -39,6 +39,8 @@ let activeRelay: AuthenticatedProxyRelay | null = null;
 let relayUpstreamHref: string | null = null;
 let systemProxyRelay: SystemProxyRelay | null = null;
 let systemProxyRelayStart: Promise<SystemProxyRelay> | null = null;
+/** Sessions registered through registerNetworkProxySession (updater traffic). */
+const registeredSessions = new Set<Session>();
 
 export async function ensureSystemProxyRelay(): Promise<string> {
   if (!systemProxyRelay) {
@@ -155,6 +157,28 @@ async function applyResolvedConfig(config: ChromiumProxyConfig): Promise<void> {
   } catch {
     // Partition may not exist yet; session-created will catch it.
   }
+  for (const ses of registeredSessions) {
+    await applyToSession(ses, config);
+  }
+}
+
+/**
+ * Sessions other subsystems own but that must still follow the proxy.
+ *
+ * electron-updater requests on its own partition, which the desktop only
+ * creates once the first check runs; without registration a proxy change made
+ * afterwards would not reach update traffic until the next app start.
+ */
+export async function registerNetworkProxySession(
+  partition: string,
+  options?: { cache?: boolean },
+): Promise<void> {
+  const ses =
+    options?.cache === undefined
+      ? session.fromPartition(partition)
+      : session.fromPartition(partition, { cache: options.cache });
+  registeredSessions.add(ses);
+  await applyToSession(ses, chromiumConfigFromApplied());
 }
 
 async function applyToSession(

@@ -175,6 +175,11 @@ export const es = {
     "checkForUpdates": "Buscar actualizaciones…"
   },
   "updates": {
+    "failure": {
+      "checkTimeout": "El servidor de actualizaciones no respondió a tiempo. Revisa tu red o proxy y vuelve a intentarlo.",
+      "downloadStalled": "La descarga de la actualización dejó de avanzar y no se pudo reanudar.",
+    },
+    "mirrorSource": "Origen de descarga: {{host}}",
     "title": "Actualizaciones",
     "desc": "Las actualizaciones se descargan de las versiones de GitHub.",
     "preferenceTitle": "Comportamiento de actualización",
