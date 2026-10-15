@@ -8,6 +8,27 @@
 
 ## 1. Goals
 
+### E2E-RELEASE-mirror-recovery
+
+- **Preconditions:** Isolated workspace, production release/recovery workflow
+  definitions and mirror publisher, synthetic GitHub/AWS CLI boundaries. No
+  live credentials, installed Desktop or paid service is used in local tests.
+- **Steps:** Verify checkout precedes artifact download in the publish job.
+  Execute recovery for the latest stable release without a configured bucket,
+  then with a configured fixture bucket; repeat for an older tag, shell-like
+  tag input, failed GitHub lookup and failed artifact upload.
+- **Expected:** Node 24 and the repository script exist in the publish runner.
+  No bucket reports GitHub-only success without downloading or uploading assets.
+  A configured mirror reuses existing Release assets and uploads artifacts
+  before feeds; older tags and failures stop the operation. Tags and GitHub
+  Release assets are never rewritten. Recovery is manual on main with read-only
+  GitHub contents permission and the original publisher's mirror configuration.
+- **Coverage:** `release-mirror-workflow.test.mjs` executes the production
+  recovery steps and publisher against fake external CLIs; `ci-workflow.test.mjs`
+  and `update-mirror-publish.test.mjs` cover workflow and publisher contracts.
+  Dispatch `recover-release-mirror.yml` for an authorized live recovery and
+  record its run URL/result; the original failed tag run remains historical.
+
 ### E2E-QUEUE-send-now-wakes-subagents
 
 - **Preconditions:** Dedicated request worktree with built workspace packages,

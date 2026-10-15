@@ -327,6 +327,31 @@ it syncs every artifact first, then uploads each `latest*.yml` with
 still missing. It refuses to publish when the feeds disagree on a version or
 when the directory carries no feed at all.
 
+The publish job checks out its own source before downloading artifacts, then
+provisions Node 24. Jobs do not share workspaces: a successful build job does
+not make `scripts/publish-update-mirror.mjs` available to the publish runner.
+
+#### Recover a mirror after the GitHub Release already succeeded
+
+Do not move an existing tag or rebuild already published installers to repair
+only the mirror. Rerunning a failed tag workflow uses its original workflow
+definition, not a later fix on `main`. Once the fix is merged, dispatch the
+main-branch **Recover release mirror** workflow instead:
+
+```bash
+gh workflow run recover-release-mirror.yml --ref main -f release_tag=v0.20.4
+```
+
+The recovery accepts only GitHub's latest published stable release, refusing
+older tags so a retry cannot roll back the shared update feed. With a mirror
+configured, it downloads that Release's assets and runs the same publisher;
+without a bucket it reports GitHub-only delivery and skips both the asset
+download and upload. GitHub failures and upload failures still fail the run.
+It uses repository mirror variables/secrets just like the original publish job,
+with read-only GitHub contents permission: no Release assets or tags are changed.
+The old failed run stays as historical evidence; the recovery run records the
+new outcome. It does not add a mirror URL to installers that did not compile one.
+
 The mirror must serve the same key layout the client requests:
 
 ```
