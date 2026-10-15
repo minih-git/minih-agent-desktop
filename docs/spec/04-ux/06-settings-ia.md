@@ -441,6 +441,10 @@ a usage tab.
   a dropdown of the formats the Router serves, writing the provider row
   directly. Every per-model "Follow global" override names this value, so
   changing it here reroutes every model that has not pinned its own protocol.
+  Both menus and the Router account editor offer OpenAI Chat Completions,
+  OpenAI Responses, Anthropic Messages, and Google Generative AI (Gemini).
+  Saving and reopening retain an explicit Gemini override; selecting Follow
+  global removes it without changing the row's saved endpoint or protocol.
 - Added models keep their automatic upstream configuration: the models.dev
   record seeds the published limits, the thinking ladder with its default
   level, and attachment capabilities (a vision model's image input reads on

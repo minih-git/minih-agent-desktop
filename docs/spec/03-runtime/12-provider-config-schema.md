@@ -433,10 +433,16 @@ address is only a default (`customBaseUrl: true`):
   self-hosted Router can be used. A console address
   (`https://router.example.com`) is saved as its API address
   (`https://router.example.com/v1`); a path mount before `/v1` is kept.
-- API format defaults to Chat Completions and may be set to OpenAI Responses or
-  Anthropic Messages (the formats a Router serves under `/v1`). Like a custom
-  endpoint, the saved format is authoritative at runtime: a borrowed catalog
-  record never retargets a Router row to another wire API.
+- API format defaults to Chat Completions and may be set to OpenAI Responses,
+  Anthropic Messages, or Google Generative AI (Gemini), globally or per model.
+  An explicit model override wins; an absent override follows the row. Like a
+  custom endpoint, the saved format is authoritative at runtime: a borrowed
+  catalog record never retargets a Router row to another wire API.
+- For Router Gemini requests only, runtime maps the stored `/v1` suffix to
+  `/v1beta`, retaining the origin and reverse-proxy prefix, including resolved
+  LAN endpoints. The stored URL and account/catalog control-plane routes do
+  not change, so other models can retain OpenAI or Anthropic protocols.
+  Non-Router Google/custom endpoints keep their literal configured URL.
 - `matchNamedPreset` identifies the row by `vendorKey` wherever it points; the
   default address alone also matches the preset. A custom row that already
   points at a Router is not reclassified automatically; Edit → Change service

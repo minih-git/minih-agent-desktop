@@ -17519,8 +17519,10 @@ renderer's durable transcript reads. No real model or provider is contacted.
   the whole page. Paste a token and connect (the endpoint stays behind
   "Advanced" unless the user opens it). Then open Settings → Models: add models
   from the gateway plaza, pin one model's protocol mode in its configure
-  drawer, and remove a model again. Repeat at 850×600, 1200×900 and 1600×1100
-  with the production stylesheet cascade loaded.
+  drawer, and remove a model again. Select Google Generative AI globally,
+  switch back to Anthropic, then pin Gemini on a model, save, remount the page,
+  reopen Configure, and restore Follow global. Repeat at 850×600, 1200×900 and
+  1600×1100 with the production stylesheet cascade loaded.
 - **Expected:** Connecting creates a `minih-router` row carrying the token and
   **no models at all** — initialization is one field, not one field plus a model
   pick. The connected card replaces the token entry with its masked key name and
@@ -17542,11 +17544,19 @@ renderer's durable transcript reads. No real model or provider is contacted.
   binding naming it. Removing the model the app default names leaves no
   dangling replacement. Renderer calls carry only the provider id, never the
   token.
+  Global/account/model protocol selectors include Google Generative AI. The
+  explicit model choice survives reopening; Follow global clears the pin and
+  retains the row endpoint and global choice. Offline generation checks send
+  Router Gemini calls to the sibling `/v1beta/models/:streamGenerateContent`
+  route, preserving proxy mounts, LAN origins, and authentication. Ordinary
+  Google/custom endpoints and OpenAI/Anthropic routes remain unchanged.
 - **Specs:** 03-runtime/12 Minih Router preset, account channels, and EasyTier
   virtual LAN routing/fallback; 04-ux/06 Minih Router panel; 04-ux/07 settings IA.
 - **Acceptance:** `accounts-models-user-path.test.mjs` (token-only connect, add
-  models with compact search layout at all three window sizes, per-model
-  protocol pin, removal),
+  models with compact search layout at all three window sizes, Gemini global
+  selection, per-model protocol pin/reload/reset, removal),
+  `provider-api-style.test.mjs` (four selectable general wire formats),
+  `google-adapter-fetch.test.ts` (native Google and Router request paths),
   `models-page-state.test.mjs` (default planning),
   `minih-router-client.test.mjs` (gateway DTO contract, EasyTier LAN resolution
   and public URL fallback, redirect guard, redaction, vendor-key refusal),

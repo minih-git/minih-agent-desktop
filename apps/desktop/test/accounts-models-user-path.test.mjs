@@ -266,6 +266,18 @@ window.accountsProbe = async ({ width, height }) => {
     '.models-global-style-row button[aria-label="API format"]') ??
     document.querySelector(".models-global-style-row .settings-menu-select-trigger");
   flushSync(() => globalTrigger.click());
+  const googleGlobalOption = [...document.querySelectorAll('[role="option"]')]
+    .find((node) => node.textContent.includes("Google Generative AI"));
+  if (!googleGlobalOption) throw new Error("Gemini is missing from the global protocol menu");
+  flushSync(() => googleGlobalOption.click());
+  await waitFor(
+    () => providers[0]?.apiStyle === "google_generative_ai" &&
+      globalTrigger.textContent.includes("Google Generative AI") && !globalTrigger.disabled,
+    "the global Gemini protocol was not saved and displayed",
+  );
+  const geminiProtocol = { globalSaved: updated.apiStyle === "google_generative_ai" };
+  // Switching back preserves the existing Anthropic and Responses coverage.
+  flushSync(() => globalTrigger.click());
   const globalOption = [...document.querySelectorAll('[role="option"]')]
     .find((node) => node.textContent.includes("Anthropic Messages"));
   flushSync(() => globalOption.click());
@@ -400,6 +412,45 @@ window.accountsProbe = async ({ width, height }) => {
   );
   const pinnedProtocol = updated.models[0].apiStyle;
 
+  // Pin Gemini, remount the page, and reopen the dialog from saved data.
+  flushSync(() => button("Configure").click());
+  const googleDrawer = await waitFor(
+    () => document.querySelector(".model-configure-dialog"),
+    "the configure dialog did not reopen",
+  );
+  flushSync(() => googleDrawer.querySelector('button[aria-label="Protocol mode"]').click());
+  const googleOption = [...document.querySelectorAll('[role="option"]')]
+    .find((node) => node.textContent.includes("Google Generative AI"));
+  if (!googleOption) throw new Error("Gemini is missing from the model protocol menu");
+  flushSync(() => googleOption.click());
+  flushSync(() => button("Save").click());
+  await waitFor(
+    () => !document.querySelector(".model-configure-dialog") &&
+      providers[0]?.models[0]?.apiStyle === "google_generative_ai",
+    "the model Gemini override was not saved",
+  );
+  mount(null);
+  mount(React.createElement(ModelsPage));
+  await waitFor(() => button("Configure"), "the saved model did not reload");
+  flushSync(() => button("Configure").click());
+  const restoredProtocol = await waitFor(
+    () => document.querySelector('.model-configure-dialog button[aria-label="Protocol mode"]'),
+    "the saved protocol did not render",
+  );
+  geminiProtocol.pinReloaded = restoredProtocol.textContent.includes("Google Generative AI");
+  flushSync(() => restoredProtocol.click());
+  const followGlobalOption = [...document.querySelectorAll('[role="option"]')]
+    .find((node) => node.textContent.includes("Follow global (anthropic_messages)"));
+  flushSync(() => followGlobalOption.click());
+  flushSync(() => button("Save").click());
+  await waitFor(
+    () => !document.querySelector(".model-configure-dialog") &&
+      !providers[0]?.models[0]?.apiStyle,
+    "Follow global did not clear the Gemini override",
+  );
+  geminiProtocol.followsGlobal = providers[0].apiStyle === "anthropic_messages";
+  geminiProtocol.baseUrlUnchanged = providers[0].baseUrl === "https://router.hmini.org/v1";
+
   // The image-default row renders once a model is designated, and the default
   // is the model just selected.
   const imageRow = await waitFor(
@@ -453,6 +504,7 @@ window.accountsProbe = async ({ width, height }) => {
     otherProvidersHidden,
     globalStyleRowShown,
     globalStyleSaved,
+    geminiProtocol,
     followGlobalNamesNewStyle,
     nullSettingsRendersEmpty,
     tokenEntryGoneAfterConnect,
@@ -586,6 +638,7 @@ app.whenReady().then(async () => {
       otherProvidersHidden: true,
       globalStyleRowShown: true,
       globalStyleSaved: true,
+      geminiProtocol: { globalSaved: true, pinReloaded: true, followsGlobal: true, baseUrlUnchanged: true },
       followGlobalNamesNewStyle: true,
       nullSettingsRendersEmpty: true,
       tokenEntryGoneAfterConnect: true,
@@ -622,6 +675,7 @@ app.whenReady().then(async () => {
         "OpenAI Chat Completions",
         "OpenAI Responses",
         "Anthropic Messages",
+        "Google Generative AI",
       ],
       pinnedProtocol: "responses",
       removalWroteNoDefaults: true,
