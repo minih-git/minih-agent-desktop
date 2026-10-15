@@ -11342,13 +11342,13 @@ This test plan spec is accepted when:
      button — and that the command is not repeated inside the body, with no
      argument list in its place.
   2) Confirm each row's head states its outcome to the right of the summary:
-     `Done`, `Failed`, `Denied`, or `Working…`, each with a dot in the matching
-     tint, and that the running row shows the pulsing dot instead of the row
-     spinner.
+     `Done`, `Failed`, `Denied`, or `Working…`. Success keeps its green dot;
+     failure uses muted neutral text and a neutral dot. The running row shows
+     the pulsing dot instead of the row spinner.
   2a) Run a command that exits non-zero (`pnpm test` on a failing suite, or
-     `false`) and confirm the row reads `Failed` with the error dot and opens
-     itself, even though the tool call completed. Confirm the exit-code chip and
-     the worded outcome agree.
+     `false`) and confirm the row reads `Failed` without opening itself, even
+     though the tool call completed. The neutral exit-code chip and worded
+     outcome agree; expanding the row retains error styling in diagnostics.
   2b) Interrupt a long command so the shell is killed with no exit code, and
      confirm the row reads `Failed` rather than `Done`.
   3) Hover the successful row and confirm a copy button and the chevron appear
@@ -16849,6 +16849,12 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   request; item-level targeting is not part of this change, and Compact
   reasoning requires an explicit switch to Detailed. Saved mode survives
   restart and a missing/unknown setting resolves to Detailed.
+  Failed tool/search headers, non-zero exit chips and process/group issue counts
+  remain visible in neutral colors during execution, after a later successful
+  tool and after completion. Counts, failure wording and accessible status are
+  preserved; no red exit-chip fill or red inline failure indicator is shown.
+  Expanded error details and terminal assistant errors retain their existing
+  error treatment and recovery actions. Repeat in light/dark and English/Chinese.
 - **Validation scope for the 2026-09-20 change:** Nested disclosure and activity
   group presentation only; precise item-level transcript search targeting is out
   of scope and keeps the existing message-level search behavior.
@@ -16856,6 +16862,8 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   process disclosure behavior; `pnpm test:e2e:transcript-disclosure` verifies
   manual-open retention and viewport anchoring; `apps/desktop/test/turn-process.test.mjs`
   covers default selection.
+  `tool-run-head.test.mjs` and `transcript-style.test.mjs` guard the neutral
+  inline failure treatment and retained diagnostic styling.
 - **Specs:** 04-ux/06-settings-ia, 04-ux/08-component-spec,
   04-ux/09-interaction-patterns; ADR turn-process-and-thinking-display.
 
