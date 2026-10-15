@@ -57,7 +57,7 @@ test("a named hostname cannot overwrite a manually saved protocol", () => {
 });
 
 test("a Minih Router row stays the Router service whatever format and address it saved", () => {
-  for (const apiStyle of ["chat_completions", "responses", "anthropic_messages"]) {
+  for (const apiStyle of ["chat_completions", "responses", "anthropic_messages", "google_generative_ai"]) {
     const preset = providerSetupPreset({ ...source(apiStyle),
       vendorKey: "minih-router", baseUrl: "http://11.11.11.10:3001/v1" });
     assert.equal(preset?.id, "minih-router", apiStyle);
@@ -67,6 +67,8 @@ test("a Minih Router row stays the Router service whatever format and address it
     baseUrl: "http://11.11.11.10:3001/v1" }), undefined);
 });
 
-test("the Router form offers only the formats a Router serves under /v1", () => {
-  assert.deepEqual(MINIH_ROUTER_API_STYLES, ["chat_completions", "responses", "anthropic_messages"]);
+test("the Router form offers the four general wire formats", () => {
+  assert.deepEqual(MINIH_ROUTER_API_STYLES, [
+    "chat_completions", "responses", "anthropic_messages", "google_generative_ai",
+  ]);
 });
