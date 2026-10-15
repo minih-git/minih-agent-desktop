@@ -256,6 +256,26 @@ GitHub Releases 始终都会发布。发布还可以为网络限速 `github.com`
 再用 `Cache-Control: no-cache` 上传每个 `latest*.yml`，因此客户端绝不会读到文件尚未齐备
 的源清单。当各源对版本号的声明不一致，或该目录里没有任何源清单时，脚本会拒绝发布。
 
+发布 job 会先检出自己的源码，再下载构建产物，并配置 Node 24。各 job 的工作目录互不共享：
+构建 job 成功不代表发布 runner 中存在 `scripts/publish-update-mirror.mjs`。
+
+#### GitHub Release 已成功后的镜像恢复
+
+仅恢复镜像时，不要移动既有 tag，也不要重编已经发布的安装包。重跑失败的 tag workflow
+仍使用其原始定义，而不是 main 上之后合入的修复。修复合入后，改为执行 main 分支的
+**Recover release mirror** workflow：
+
+```bash
+gh workflow run recover-release-mirror.yml --ref main -f release_tag=v0.20.4
+```
+
+恢复只接受 GitHub 最新已发布的稳定版，拒绝旧 tag，防止重试把共享更新清单回滚。
+已配置镜像时，下载该 Release 的现有资产并调用同一个发布脚本；没有配置存储桶时，
+报告仅通过 GitHub 分发，跳过资产下载与上传。GitHub 查询或镜像上传失败仍会让任务失败。
+它沿用原发布 job 的仓库镜像变量和密钥，仅有 GitHub contents 只读权限，不会改写
+Release 资产或 tag。旧失败运行保留为历史记录，恢复运行记录新的结果。恢复不会为
+原先未编译镜像 URL 的安装包新增镜像地址。
+
 镜像必须提供与客户端请求相同的键布局：
 
 ```
