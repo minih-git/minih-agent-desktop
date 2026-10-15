@@ -9,6 +9,7 @@ build/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 !apps/desktop/build/
+!vendor/easytier-proto/build/
 apps/desktop/build/icon.iconset/
 target/
 *.tsbuildinfo

@@ -89,6 +89,13 @@ function harness(realCatalog) {
     "../host-process": {},
     "../logger": { app: () => {} },
     "./types": {},
+    "./minih-router-ipc": {
+      // The lookup handler is a snapshot read of the local catalog; the LAN
+      // resolver is imported by the module but must never be reached here.
+      resolveMinihRouterEndpoint: async () => {
+        throw new Error("the lookup must not resolve a LAN endpoint");
+      },
+    },
   });
   registerProviderIpc({
     registrar: { handle: (channel, handler) => handlers.set(channel, handler) },

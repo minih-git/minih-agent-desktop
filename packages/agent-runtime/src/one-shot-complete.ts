@@ -119,6 +119,10 @@ export async function completeOneShot(
             providerFailure = failure;
           }),
           provider.authKind,
+          {
+            primaryBaseUrl: model.baseUrl ?? provider.baseUrl,
+            fallbackBaseUrl: provider.fallbackBaseUrl,
+          },
         ),
       },
       {

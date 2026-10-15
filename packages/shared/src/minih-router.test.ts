@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  EASYTIER_DEFAULT_NETWORK_NAME,
+  EASYTIER_DEFAULT_NETWORK_SECRET,
+  EASYTIER_DEFAULT_PEERS,
+  EASYTIER_DEFAULT_ROUTER_LAN_URL,
   MINIH_ROUTER_DEFAULT_BASE_URL,
   MINIH_ROUTER_PRESET_ID,
   MINIH_ROUTER_VENDOR_KEY,
@@ -7,6 +11,8 @@ import {
   minihRouterApiBaseUrl,
   minihRouterControlRoot,
   minihRouterHeadlineQuota,
+  normalizeEasyTierSettings,
+  validateEasyTierSettings,
   type MinihRouterQuota,
 } from "./minih-router.js";
 import { NAMED_ENDPOINT_PRESETS, matchNamedPreset } from "./provider-presets.js";
@@ -119,3 +125,32 @@ describe("Minih Router balance headline", () => {
     expect(minihRouterHeadlineQuota([broken, fine, zero])?.id).toBe(2);
   });
 });
+
+describe("EasyTier virtual LAN settings", () => {
+  it("normalizes empty settings to the built-in Minih Router LAN defaults", () => {
+    expect(normalizeEasyTierSettings(undefined)).toEqual({
+      enabled: true,
+      mode: "no_tun",
+      networkName: EASYTIER_DEFAULT_NETWORK_NAME,
+      networkSecret: EASYTIER_DEFAULT_NETWORK_SECRET,
+      peers: [...EASYTIER_DEFAULT_PEERS],
+      routerLanUrl: EASYTIER_DEFAULT_ROUTER_LAN_URL,
+    });
+  });
+
+  it("validates peer URLs, modes, and router LAN addresses", () => {
+    expect(
+      validateEasyTierSettings({
+        enabled: true,
+        mode: "tun",
+        networkName: "minih-net",
+        networkSecret: "Minih@9527",
+        peers: ["udp://tier.hmini.org:11010", "tcp://tier.hmini.org:11010"],
+        routerLanUrl: "http://11.11.11.10:3001",
+      }),
+    ).toBeNull();
+    expect(validateEasyTierSettings({ mode: "invalid" })).toMatch(/mode/);
+    expect(validateEasyTierSettings({ peers: ["http://not-a-peer"] })).toMatch(/invalid EasyTier peer URL/);
+  });
+});
+

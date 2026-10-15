@@ -32,6 +32,7 @@ import {
   useMinihRouterModels,
   useMinihRouterSelectedModels,
 } from "./useMinihRouter";
+import { EasyTierLanSection } from "./EasyTierLanSection";
 
 export const MINIH_ROUTER_MODEL_PAGE_SIZE = 12;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -117,6 +118,8 @@ export function MinihRouterPanel({ provider }: MinihRouterPanelProps) {
             <span className="minih-router-status-detail">{account.message}</span>
           </p>
         ) : null}
+
+        <EasyTierLanSection revision={revision} />
 
         <div className="minih-router-models">
           <div className="minih-router-models-head">

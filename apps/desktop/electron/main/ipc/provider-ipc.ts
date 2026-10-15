@@ -2,11 +2,13 @@ import {
   IPC,
   ErrorCodes,
   inferEndpointProfile,
+  isMinihRouterVendorKey,
   normalizeApiStyle,
   type ModelBinding,
   type ProviderReorderInput,
   type OAuthRespondInput,
 } from "@minih-agent/shared";
+import { resolveMinihRouterEndpoint } from "./minih-router-ipc";
 import { OAUTH_AUTH_KIND, type VendorOAuth } from "../oauth";
 import { probeProviderEndpoint } from "../model-discovery";
 import {
@@ -224,6 +226,7 @@ export function registerProviderIpc({
     if (!local.ok) return { ...local, network: "skipped" };
     const detail = await host.call<{
       provider?: {
+        vendorKey?: string;
         baseUrl?: string;
         authKind?: string;
         apiStyle?: string;
@@ -248,6 +251,9 @@ export function registerProviderIpc({
     const baseUrl = detail.provider?.baseUrl;
     if (!baseUrl) return { ...local, network: "skipped" };
     const secret = await host.call<{ value?: string }>("providers.getSecret", { id });
+    const routerEndpoint = isMinihRouterVendorKey(detail.provider?.vendorKey)
+      ? await resolveMinihRouterEndpoint(host, baseUrl)
+      : { activeBaseUrl: baseUrl, usingLan: false };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     try {
@@ -256,13 +262,29 @@ export function registerProviderIpc({
         connection test passed" can never describe two different endpoints: one
         URL rule, one auth rule, one wire style, for a real at-least-once check.
       */
-      const probe = await probeProviderEndpoint({
-        baseUrl,
-        apiKey: secret.value,
-        apiStyle: detail.provider?.apiStyle,
-        headers: detail.provider?.headers,
-        signal: controller.signal,
-      });
+      const probeTarget = async (targetBaseUrl: string) =>
+        probeProviderEndpoint({
+          baseUrl: targetBaseUrl,
+          apiKey: secret.value,
+          apiStyle: detail.provider?.apiStyle,
+          headers: detail.provider?.headers,
+          signal: controller.signal,
+        });
+      let probe: Awaited<ReturnType<typeof probeProviderEndpoint>>;
+      try {
+        probe = await probeTarget(routerEndpoint.activeBaseUrl || baseUrl);
+      } catch (firstError) {
+        const firstStatus = (firstError as { status?: unknown }).status;
+        const canFallback =
+          routerEndpoint.usingLan &&
+          Boolean(routerEndpoint.fallbackBaseUrl) &&
+          !controller.signal.aborted &&
+          firstStatus !== 401 &&
+          firstStatus !== 403 &&
+          firstStatus !== 429;
+        if (!canFallback) throw firstError;
+        probe = await probeTarget(routerEndpoint.fallbackBaseUrl!);
+      }
       return { ok: true, network: "ok", status: probe.status };
     } catch (e) {
       const status = (e as { status?: unknown }).status;
@@ -628,15 +650,45 @@ export function registerProviderIpc({
       } = {};
       if (baseUrl) {
         try {
-          const sweep = profile
-            ? await probeDiscoveryCandidates({
-                origin: profile.origin,
-                candidates: profile.candidates,
-                apiKey,
-                headers: req.headers ?? provider?.headers,
-              })
-            : { attempts: [] };
-          const outcome = sweep.outcome;
+          let sweepOutcome: Awaited<ReturnType<typeof probeDiscoveryCandidates>>["outcome"];
+          let sweepAttempts: DiscoveryAttempt[] = [];
+          let usedLanSweep = false;
+          let lanProfile: ReturnType<typeof inferEndpointProfile>;
+          if (isMinihRouterVendorKey(provider?.vendorKey)) {
+            const routerEndpoint = await resolveMinihRouterEndpoint(host, baseUrl);
+            if (routerEndpoint.usingLan && routerEndpoint.activeBaseUrl) {
+              lanProfile = inferEndpointProfile({
+                baseUrl: routerEndpoint.activeBaseUrl,
+                apiStyle: normalizeApiStyle(apiStyle),
+                explicitApiStyle: true,
+                providerKey: provider?.vendorKey,
+              });
+              if (lanProfile) {
+                const lanSweep = await probeDiscoveryCandidates({
+                  origin: lanProfile.origin,
+                  candidates: lanProfile.candidates,
+                  apiKey,
+                  headers: req.headers ?? provider?.headers,
+                });
+                sweepOutcome = lanSweep.outcome;
+                sweepAttempts = lanSweep.attempts;
+                usedLanSweep = Boolean(lanSweep.outcome);
+              }
+            }
+          }
+          if (!sweepOutcome) {
+            const sweep = profile
+              ? await probeDiscoveryCandidates({
+                  origin: profile.origin,
+                  candidates: profile.candidates,
+                  apiKey,
+                  headers: req.headers ?? provider?.headers,
+                })
+              : { attempts: [] };
+            sweepOutcome = sweep.outcome;
+            sweepAttempts = [...sweepAttempts, ...sweep.attempts];
+          }
+          const outcome = sweepOutcome;
           if (outcome) {
             endpointBaseUrl = outcome.effectiveBaseUrl;
             resolution = {
@@ -645,6 +697,13 @@ export function registerProviderIpc({
               ...(outcome.apiStyleHint ? { apiStyleHint: outcome.apiStyleHint } : {}),
               evidence: outcome.evidence.type,
             };
+            // A LAN sweep answers from the tunnel address, so the reported
+            // endpoint becomes the tunnel's own resolved candidate. The
+            // renderer still reads it from this IPC result.
+            if (usedLanSweep) {
+              endpointBaseUrl = lanProfile?.effectiveBaseUrl ?? baseUrl;
+              resolution.effectiveBaseUrl = endpointBaseUrl;
+            }
             const models = outcome.models.map((model) => decorate(model));
             // Only what the endpoint actually served is cached; a configured id
             // it never offered must not be recorded as discovered.
@@ -655,7 +714,7 @@ export function registerProviderIpc({
               ...resolution,
             };
           }
-          discoveryError = describeSweepFailure(sweep.attempts);
+          discoveryError = describeSweepFailure(sweepAttempts);
           if (discoveryError) {
             logger.app("provider", "warn", "model discovery failed", {
               data: { providerId: provider?.id, error: discoveryError },

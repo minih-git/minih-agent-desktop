@@ -3,6 +3,7 @@ import {
   ErrorCodes as SharedErrorCodes,
   isActiveInProject,
   isCommandShellCatalog,
+  isMinihRouterVendorKey,
   JEV_API_KEY_SECRET_REF,
   imageGenerationBindings,
   isImageGenerationModel,
@@ -30,6 +31,7 @@ import {
   type UserSubagentDocument,
 } from "@minih-agent/agent-runtime";
 import { builtinSkills } from "../builtin-skills";
+import { resolveMinihRouterEndpoint } from "../ipc/minih-router-ipc";
 import { OAUTH_AUTH_KIND, type VendorOAuth } from "../oauth";
 import {
   catalogModelConfigFor,
@@ -378,7 +380,9 @@ export function createSessionLaunchRuntime({
     }
     const storedModel = bindingForModel(provider, modelId);
     const apiStyle = vendorBinding?.apiStyle ?? provider.apiStyle;
-    const baseUrl = vendorBinding?.baseUrl ?? provider.baseUrl;
+    // The LAN channel can replace the address this launch resolves against, so
+    // the binding is mutable after the catalog read below.
+    let baseUrl = vendorBinding?.baseUrl ?? provider.baseUrl;
     const catalogModelConfig = vendorBinding?.modelConfig ??
       catalogModelConfigFor(modelsDevCatalog, {
         providerId: provider.id,
@@ -387,7 +391,7 @@ export function createSessionLaunchRuntime({
         apiStyle,
         modelId,
       });
-    const modelConfig = catalogModelConfig;
+    let modelConfig = catalogModelConfig;
     const thinkingCapabilities = capabilitiesFromModelConfig(modelConfig);
     const thinkingLevel = clampThinkingLevel(
       thinkingCapabilities,
@@ -663,6 +667,45 @@ export function createSessionLaunchRuntime({
         logger.app("session", "warn", "Jev API key could not be loaded", {
           sessionId,
         });
+      }
+    }
+    if (isMinihRouterVendorKey(provider.vendorKey)) {
+      const resolvedRouterEndpoint = await resolveMinihRouterEndpoint(
+        runtimeState.host,
+        baseUrl,
+      );
+      if (resolvedRouterEndpoint.activeBaseUrl) {
+        baseUrl = resolvedRouterEndpoint.activeBaseUrl;
+        if (modelConfig) {
+          modelConfig = {
+            ...modelConfig,
+            baseUrl: resolvedRouterEndpoint.activeBaseUrl,
+          };
+        }
+      }
+    }
+    for (const [subagentKey, subagentProvider] of Object.entries(subagentBindings.providers)) {
+      if (!isMinihRouterVendorKey(subagentProvider.vendorKey)) continue;
+      const resolvedSubagentEndpoint = await resolveMinihRouterEndpoint(
+        runtimeState.host,
+        subagentProvider.baseUrl,
+      );
+      if (resolvedSubagentEndpoint.activeBaseUrl) {
+        subagentBindings.providers[subagentKey] = {
+          ...subagentProvider,
+          baseUrl: resolvedSubagentEndpoint.activeBaseUrl,
+          ...(resolvedSubagentEndpoint.fallbackBaseUrl
+            ? { fallbackBaseUrl: resolvedSubagentEndpoint.fallbackBaseUrl }
+            : {}),
+          ...(subagentProvider.modelConfig
+            ? {
+                modelConfig: {
+                  ...subagentProvider.modelConfig,
+                  baseUrl: resolvedSubagentEndpoint.activeBaseUrl,
+                },
+              }
+            : {}),
+        };
       }
     }
     return {

@@ -3,6 +3,7 @@ import {
   SESSION_THINKING_LEVELS,
   defaultCommandShellForPlatform,
   isCommandShellId,
+  validateEasyTierSettings,
   validateNetworkProxy,
   validateSpeechSettings,
   type CommandShellId,
@@ -257,6 +258,14 @@ export function createProviderCatalogRuntime({
       (value as T & { speech?: unknown }).speech = validateSpeechSettings(
         (value as { speech?: unknown }).speech,
       );
+    }
+    if (Object.prototype.hasOwnProperty.call(value, "easytier")) {
+      const easytierError = validateEasyTierSettings((value as { easytier?: unknown }).easytier);
+      if (easytierError) {
+        throw Object.assign(new Error(easytierError), {
+          errorCode: ErrorCodes.INVALID_ARGUMENT,
+        });
+      }
     }
     return settings;
   };

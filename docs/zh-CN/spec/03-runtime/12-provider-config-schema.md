@@ -260,6 +260,16 @@ Minih Router 是自有的模型网关，排在命名预设的第一位。它是�
 - 添加服务的选择器把它单独放在最前面的**推荐**分组；模型配置页为空时，
   **接入 Minih Router** 是主操作。默认模型规则不变：只有当前没有可用默认值时才设为默认。
 - `vendorKey` 不是 models.dev 的提供商，模型元数据按下文“按哪个发布方读取元数据”的中继规则解析。
+- **内置 EasyTier 虚拟局域网通道**：Rust `host-core` 内嵌一个 EasyTier 虚拟局域网节点
+  （`networkName: "minih-net"`，引导节点 `udp://tier.hmini.org:11010` 与
+  `tcp://tier.hmini.org:11010`，默认局域网网关 `http://11.11.11.10:3001/v1`，
+  持久化在 `settings.app.easytier`）。默认以用户态 **No-TUN** 模式启动
+  （`no_tun = true`、`dhcp = true`），通过本地回环 TCP 端口转发
+  （`127.0.0.1:<local_port> -> 11.11.11.10:3001`）实现，不需要管理员权限；用户也可以
+  主动申请管理员提权切换到系统 **TUN** 模式（`--easytier-tun-runner`），提权被拒绝或
+  不可用时自动回退到 `no_tun`。当局域网网关可达时，`minih-router` 控制面（`/api/*`）、
+  模型发现、连接测试，以及聊天/子智能体运行时请求都优先走局域网隧道，遇到传输错误或
+  `502/503/504` 网关错误时自动改用该行配置的公网 `baseUrl` 重试。
 
 同一令牌还用于读取网关中按密钥隔离的控制面，设置页据此显示余额和模型广场（§5，Minih Router 账户）。
 
@@ -339,22 +349,35 @@ Copilot 的上下文相关请求标头；已保存的同名自定义 header 会�
 - `providers.refreshModels`
 - `providers.upsertUserModel`
 - `providers.deleteUserModel`
+- `easytier.status`
+- `easytier.configure`
+- `easytier.reconnect`
+- `easytier.requestElevation`
+- `easytier.resolveMinihRouterEndpoint`
 
-### Minih Router 账户（仅 Electron main）
+### Minih Router 账户与 EasyTier 虚拟局域网（Electron main / host-core）
 
-两个渲染层 invoke 通道读取已保存 `minih-router` 行的网关账户。Electron main
-自行读取该行（`providers.get`）及其密钥（`providers.getSecret`）；渲染层只发送行 id，
-永远拿不到密钥。`vendorKey` 不是 `minih-router` 的行在读取密钥之前即以
-`INVALID_ARGUMENT` 拒绝；没有密钥的行返回 `PROVIDER_SECRET_MISSING`。两个通道都在
-MCP 控制面的屏蔽列表中，因为它们会使用已存储的凭据。
+三个渲染层 invoke 通道读取已保存 `minih-router` 行的网关账户，另有四个渲染层
+invoke 通道查看或控制内置的 EasyTier 虚拟局域网节点（`easytier/status`、
+`easytier/configure`、`easytier/reconnect`、`easytier/requestElevation`）。
+Electron main 自行读取该行（`providers.get`）及其密钥（`providers.getSecret`）；
+渲染层只发送行 id，永远拿不到密钥。`vendorKey` 不是 `minih-router` 的行在读取密钥
+之前即以 `INVALID_ARGUMENT` 拒绝；没有密钥的行返回 `PROVIDER_SECRET_MISSING`。
+所有通道都在 MCP 控制面的屏蔽列表中，因为它们会使用已存储的凭据。
 
-| 通道 | 输入 | 网关请求 | 结果 |
+| 通道 | 输入 | 网关 / 主机动作 | 结果 |
 |---|---|---|---|
 | `providers/minihRouter/account` | `{ providerId }` | `GET <root>/api/home`，另尽力读取近 30 天的 `GET <root>/api/usage` | `MinihRouterAccount`：密钥名称/掩码、状态、到期、计价倍率、RPM 限制、`allowed` 与 `nextAvailableAtMs`、费用额度（USD 十进制）、用量汇总或 `null` |
 | `providers/minihRouter/modelDetails` | `{ providerId, modelIds ≤ 200 }` | 分页读取模型广场，直到每个 id 都有结果（最多扫描 5000 个模型） | 网关有定价的 id 对应的 `MinihRouterModel[]`；未列出的 id 不会出现 |
 | `providers/minihRouter/models` | `{ providerId, page, pageSize ≤ 100, query? }` | `GET <root>/api/models?group_status=enabled&page&page_size[&q]` | `MinihRouterModelPage`：模型的厂商、分类、协议、每百万 Token 的最低输入/输出/缓存价格（USD）、“起”与阶梯计费标记、上下文/输出上限，以及分页 |
+| `easytier/status` | `void` | `host-core` 上的 `easytier.status` | `EasyTierStatus`（连接状态、生效模式 `no_tun` 或 `tun`、虚拟 IPv4、对端数量、活动路由与回退的 Router URL） |
+| `easytier/configure` | `EasyTierSettings` | `host-core` 上的 `easytier.configure` | 持久化 `settings.app.easytier` 并重配节点后的更新 `EasyTierStatus` |
+| `easytier/reconnect` | `void` | `host-core` 上的 `easytier.reconnect` | 重启隧道后的更新 `EasyTierStatus` |
+| `easytier/requestElevation` | `void` | `host-core` 上的 `easytier.requestElevation` | 管理员提权成功时为 `tun` 模式的更新 `EasyTierStatus`，否则为 `no_tun` 回退 |
 
-`<root>` 是该行 Base URL 去掉末尾 `/v1`。请求以 `Authorization: Bearer` 携带密钥，
+`<root>` 是活动的 Router Base URL（局域网隧道可达时优先使用，遇到传输错误或
+`502/503/504` 时自动改用该行配置的公网 Base URL 重试）去掉末尾 `/v1`。请求以
+`Authorization: Bearer` 携带密钥，
 超时 15 秒，仅跟随同源重定向，所有错误信息都会脱敏密钥。HTTP 401/403 映射为
 `PROVIDER_UNAUTHORIZED`，429 映射为 `PROVIDER_RATE_LIMITED`，其他失败为
 `PROVIDER_ERROR`。用量读取失败时 `usage` 为 `null`，余额照常返回。响应中没有

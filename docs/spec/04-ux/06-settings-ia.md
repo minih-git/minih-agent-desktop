@@ -581,6 +581,15 @@ contract modes are intent boundaries, not strict read-only security profiles.
   30 days, and expiry (or Never) with the key name and mask. Further limits are
   listed below; a blocked token states when requests resume; a non-1 price
   multiplier is called out.
+- **Virtual LAN Channel (EasyTier)**: between Balance and My models, displays
+  the built-in EasyTier virtual LAN status (`Connected`, `Connecting`,
+  `Degraded`, `Error`, `Disabled`), effective operating mode (`No-TUN`
+  user-space forwarder vs `TUN` virtual NIC), active routing path (`LAN Tunnel`
+  vs `Public Fallback`), virtual IPv4 address, and connected peer count, along
+  with actions to toggle the LAN channel, reconnect, request administrator
+  privileges for TUN mode (or switch back to No-TUN mode), and edit/reset the
+  LAN network parameters (`networkName`, `networkSecret`, bootstrap `peers`,
+  `routerLanUrl`).
 - **My models** (first): the models this service sends, in the row's own order,
   each with the gateway's prices. A model the gateway lists no price for is
   still shown, with its configured limits and a line saying no price was

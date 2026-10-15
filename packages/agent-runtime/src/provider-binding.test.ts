@@ -1616,4 +1616,81 @@ describe("Minih Router rows", () => {
     expect(responses.api).toBe("openai-responses");
     expect(responses.baseUrl).toBe("http://11.11.11.10:3001/v1");
   });
+
+  it("retries on fallbackBaseUrl when the EasyTier LAN tunnel fails with a network or 502 error", async () => {
+    const urls: string[] = [];
+    const underlyingFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = input instanceof Request ? input.url : String(input);
+      urls.push(url);
+      if (url.startsWith("http://127.0.0.1:25890/v1")) {
+        throw new Error("connect ECONNREFUSED 127.0.0.1:25890");
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+
+    const requestFetch = providerRequestFetch(
+      "openai-completions",
+      underlyingFetch,
+      "api_key_and_base_url",
+      {
+        primaryBaseUrl: "http://127.0.0.1:25890/v1",
+        fallbackBaseUrl: "https://router.hmini.org/v1",
+      },
+    );
+    expect(requestFetch).toBeDefined();
+    const res = await requestFetch!("http://127.0.0.1:25890/v1/chat/completions?stream=true", {
+      method: "POST",
+      body: JSON.stringify({ model: "gpt-4.1" }),
+    });
+    expect(res.status).toBe(200);
+    expect(urls).toEqual([
+      "http://127.0.0.1:25890/v1/chat/completions?stream=true",
+      "https://router.hmini.org/v1/chat/completions?stream=true",
+    ]);
+
+    const gatewayUrls: string[] = [];
+    const gatewayFetch = providerRequestFetch(
+      "openai-completions",
+      async (input: RequestInfo | URL) => {
+        const url = input instanceof Request ? input.url : String(input);
+        gatewayUrls.push(url);
+        if (url.startsWith("http://11.11.11.10:3001/v1")) {
+          return new Response("bad gateway", { status: 502 });
+        }
+        return new Response("ok", { status: 200 });
+      },
+      "api_key_and_base_url",
+      {
+        primaryBaseUrl: "http://11.11.11.10:3001/v1",
+        fallbackBaseUrl: "https://router.hmini.org/v1",
+      },
+    );
+    const gatewayRes = await gatewayFetch!("http://11.11.11.10:3001/v1/models");
+    expect(gatewayRes.status).toBe(200);
+    expect(gatewayUrls).toEqual([
+      "http://11.11.11.10:3001/v1/models",
+      "https://router.hmini.org/v1/models",
+    ]);
+  });
+
+  it("does not fall back to the public URL on a 401 unauthorized response from the LAN gateway", async () => {
+    const urls: string[] = [];
+    const requestFetch = providerRequestFetch(
+      "openai-completions",
+      async (input: RequestInfo | URL) => {
+        const url = input instanceof Request ? input.url : String(input);
+        urls.push(url);
+        return new Response("unauthorized", { status: 401 });
+      },
+      "api_key_and_base_url",
+      {
+        primaryBaseUrl: "http://127.0.0.1:25890/v1",
+        fallbackBaseUrl: "https://router.hmini.org/v1",
+      },
+    );
+    const res = await requestFetch!("http://127.0.0.1:25890/v1/chat/completions");
+    expect(res.status).toBe(401);
+    expect(urls).toEqual(["http://127.0.0.1:25890/v1/chat/completions"]);
+  });
 });
+

@@ -431,6 +431,20 @@ address is only a default (`customBaseUrl: true`):
   becomes the default only when no runnable default exists.
 - `vendorKey` is not a models.dev provider, so model metadata resolves through
   the relay rule in "Which publisher a row is read against" below.
+- **Built-in EasyTier virtual LAN channel**: Rust `host-core` embeds an EasyTier
+  virtual LAN node (`networkName: "minih-net"`, bootstrap peers
+  `udp://tier.hmini.org:11010` and `tcp://tier.hmini.org:11010`, default LAN
+  gateway `http://11.11.11.10:3001/v1`, persisted under `settings.app.easytier`).
+  By default it starts in user-space **No-TUN** mode (`no_tun = true`,
+  `dhcp = true`) with a local loopback TCP port forward
+  (`127.0.0.1:<local_port> -> 11.11.11.10:3001`) requiring no administrator
+  privileges; users may optionally request administrator elevation to switch into
+  system **TUN** mode (`--easytier-tun-runner`), automatically falling back to
+  `no_tun` if elevation is declined or unavailable. When the LAN gateway is
+  reachable, `minih-router` control-plane (`/api/*`), model discovery, connection
+  test, and chat/subagent runtime requests prefer the LAN tunnel and
+  automatically retry against the row's configured public `baseUrl` on transport
+  or `502/503/504` gateway errors.
 
 The same token also reads the gateway's key-scoped control plane, which
 Settings uses for the balance and model plaza (§6, Minih Router account).
@@ -556,24 +570,38 @@ change for the raw snapshot.
 - `providers.refreshModels`
 - `providers.upsertUserModel`
 - `providers.deleteUserModel`
+- `easytier.status`
+- `easytier.configure`
+- `easytier.reconnect`
+- `easytier.requestElevation`
+- `easytier.resolveMinihRouterEndpoint`
 
-### Minih Router account (Electron main only)
+### Minih Router account & EasyTier virtual LAN (Electron main / host-core)
 
-Two renderer invoke channels read a saved `minih-router` row's gateway account.
+Three renderer invoke channels read a saved `minih-router` row's gateway account,
+and four renderer invoke channels inspect or control the built-in EasyTier
+virtual LAN node (`easytier/status`, `easytier/configure`, `easytier/reconnect`,
+`easytier/requestElevation`).
 Electron main loads the row (`providers.get`) and its key
 (`providers.getSecret`) itself; the renderer sends only the row id and never
 receives the key. A row whose `vendorKey` is not `minih-router` is refused with
 `INVALID_ARGUMENT` before its secret is read, a row without a key fails with
-`PROVIDER_SECRET_MISSING`, and both channels are on the MCP control-surface
-blocklist because they spend a stored credential.
+`PROVIDER_SECRET_MISSING`, and all channels are on the MCP control-surface
+blocklist.
 
-| Channel | Input | Gateway reads | Result |
+| Channel | Input | Gateway / Host action | Result |
 |---|---|---|---|
 | `providers/minihRouter/account` | `{ providerId }` | `GET <root>/api/home`, plus best-effort `GET <root>/api/usage` for the last 30 days | `MinihRouterAccount`: key name/mask, status, expiry, price multiplier, RPM limit, `allowed` + `nextAvailableAtMs`, cost-limit quotas (USD decimals), usage summary or `null` |
 | `providers/minihRouter/modelDetails` | `{ providerId, modelIds ≤ 200 }` | the plaza, read in pages until each id is answered (≤ 5000 models scanned) | `MinihRouterModel[]` for the ids the gateway prices; ids it does not list are absent |
 | `providers/minihRouter/models` | `{ providerId, page, pageSize ≤ 100, query? }` | `GET <root>/api/models?group_status=enabled&page&page_size[&q]` | `MinihRouterModelPage`: models with vendor, category, protocols, lowest input/output/cache price in USD per 1M tokens, starting-price and tiered flags, context/output limits; pagination |
+| `easytier/status` | `void` | `easytier.status` on `host-core` | `EasyTierStatus` (connection state, effective mode `no_tun` vs `tun`, virtual IPv4, peer count, active vs fallback Router URL) |
+| `easytier/configure` | `EasyTierSettings` | `easytier.configure` on `host-core` | Updated `EasyTierStatus` after persisting `settings.app.easytier` and reconfiguring the node |
+| `easytier/reconnect` | `void` | `easytier.reconnect` on `host-core` | Updated `EasyTierStatus` after restarting the tunnel |
+| `easytier/requestElevation` | `void` | `easytier.requestElevation` on `host-core` | Updated `EasyTierStatus` in `tun` mode if administrator elevation succeeded, or `no_tun` fallback |
 
-`<root>` is the row's base URL without its trailing `/v1`. Requests carry the
+`<root>` is the active Router base URL (preferring the EasyTier LAN tunnel when
+reachable and automatically retrying on the row's configured public base URL on
+transport or `502/503/504` errors) without its trailing `/v1`. Requests carry the
 key as `Authorization: Bearer`, use a 15 s timeout, follow redirects only
 within the same origin, and redact the key from every error. HTTP 401/403 map
 to `PROVIDER_UNAUTHORIZED`, 429 to `PROVIDER_RATE_LIMITED`, and other failures

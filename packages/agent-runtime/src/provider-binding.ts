@@ -50,6 +50,8 @@ export type RuntimeProviderConfig = {
   name: string;
   vendorKey?: string;
   baseUrl?: string;
+  /** Public fallback base URL when `baseUrl` points to a local/LAN EasyTier tunnel. */
+  fallbackBaseUrl?: string;
   modelId: string;
   apiKey: string;
   authKind?: string;
@@ -75,6 +77,11 @@ export type RuntimeProviderConfig = {
    * moment it signs a request.
    */
   resolveAuth?: () => Promise<ModelAuth>;
+};
+
+export type ProviderEndpointFallback = {
+  primaryBaseUrl?: string;
+  fallbackBaseUrl?: string;
 };
 
 export const DEFAULT_CONTEXT_WINDOW = 128_000;
@@ -138,6 +145,73 @@ function withoutNoAuthCredential(fetchFn: FetchFunction): FetchFunction {
   };
 }
 
+function rewriteEndpointUrl(
+  url: string,
+  primaryPrefixes: readonly string[],
+  fallbackPrefixes: readonly string[],
+): string | undefined {
+  for (let index = 0; index < primaryPrefixes.length; index += 1) {
+    const primary = primaryPrefixes[index]!;
+    const fallback = fallbackPrefixes[index]!;
+    if (!primary || !fallback || primary === fallback) continue;
+    if (url === primary || url.startsWith(`${primary}/`) || url.startsWith(`${primary}?`)) {
+      return `${fallback}${url.slice(primary.length)}`;
+    }
+  }
+  return undefined;
+}
+
+function withEndpointFallback(
+  api: Api | undefined,
+  fetchFn: FetchFunction,
+  primaryBaseUrl: string,
+  fallbackBaseUrl: string,
+): FetchFunction {
+  const rawPrimary = primaryBaseUrl.trim().replace(/\/+$/, "");
+  const rawFallback = fallbackBaseUrl.trim().replace(/\/+$/, "");
+  if (!rawPrimary || !rawFallback || rawPrimary === rawFallback) {
+    return fetchFn;
+  }
+  const apiPrimary = api ? runtimeBaseUrlForApi(api, rawPrimary).replace(/\/+$/, "") : rawPrimary;
+  const apiFallback = api
+    ? runtimeBaseUrlForApi(api, rawFallback).replace(/\/+$/, "")
+    : rawFallback;
+  const primaryPrefixes = apiPrimary !== rawPrimary ? [rawPrimary, apiPrimary] : [rawPrimary];
+  const fallbackPrefixes = apiPrimary !== rawPrimary ? [rawFallback, apiFallback] : [rawFallback];
+
+  return async (input, init) => {
+    const urlString =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+    const rewrittenUrl = rewriteEndpointUrl(urlString, primaryPrefixes, fallbackPrefixes);
+    if (!rewrittenUrl) {
+      return fetchFn(input, init);
+    }
+    const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+    const toFallbackInput = (): RequestInfo | URL => {
+      if (typeof input === "string") return rewrittenUrl;
+      if (input instanceof URL) return new URL(rewrittenUrl);
+      return new Request(rewrittenUrl, input);
+    };
+    try {
+      const response = await fetchFn(input, init);
+      if (
+        (response.status === 502 || response.status === 503 || response.status === 504) &&
+        !signal?.aborted
+      ) {
+        return await fetchFn(toFallbackInput(), init);
+      }
+      return response;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return fetchFn(toFallbackInput(), init);
+    }
+  };
+}
+
 /**
  * The `fetch` one request may hand to `api`'s adapter: the caller's wrapper
  * where the adapter accepts one, otherwise nothing. Callers keep building the
@@ -149,10 +223,29 @@ export function providerRequestFetch(
   api: Api | undefined,
   fetchFn: FetchFunction | undefined,
   authKind?: string,
+  endpointFallback?: ProviderEndpointFallback,
 ): FetchFunction | undefined {
   if (!adapterAcceptsCustomFetch(api)) return undefined;
-  if (authKind !== "none") return fetchFn;
-  return withoutNoAuthCredential(fetchFn ?? globalThis.fetch.bind(globalThis));
+  const hasFallback = Boolean(
+    endpointFallback?.primaryBaseUrl?.trim() &&
+      endpointFallback?.fallbackBaseUrl?.trim() &&
+      endpointFallback.primaryBaseUrl.trim().replace(/\/+$/, "") !==
+        endpointFallback.fallbackBaseUrl.trim().replace(/\/+$/, ""),
+  );
+  if (authKind !== "none" && !hasFallback) return fetchFn;
+  let wrapped: FetchFunction = fetchFn ?? globalThis.fetch.bind(globalThis);
+  if (hasFallback) {
+    wrapped = withEndpointFallback(
+      api,
+      wrapped,
+      endpointFallback!.primaryBaseUrl!,
+      endpointFallback!.fallbackBaseUrl!,
+    );
+  }
+  if (authKind === "none") {
+    wrapped = withoutNoAuthCredential(wrapped);
+  }
+  return wrapped;
 }
 
 /** Map a stored provider apiStyle onto a pi-ai wire API. Unknown styles fall
