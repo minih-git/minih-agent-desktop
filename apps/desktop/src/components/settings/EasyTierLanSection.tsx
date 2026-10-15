@@ -348,7 +348,7 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
                 <Input
                   value={staticIpv4}
                   aria-label={t("settings.minihRouterLanStaticIpv4")}
-                  placeholder="10.144.144.10"
+                  placeholder="11.12.0.10"
                   disabled={busy}
                   onChange={(event) => setStaticIpv4(event.target.value)}
                 />
