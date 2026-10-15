@@ -258,6 +258,7 @@ export const ko = {
     sessionSelected: "선택됨",
     sessionCompleted: "완료",
     sessionFailed: "확인 필요",
+    sessionAwaitingDecision: "결정을 기다리는 중",
     sortSessions: "프로젝트와 채팅 정렬",
     sortRecent: "최근 업데이트순",
     sortOldest: "오래된 순",

@@ -256,6 +256,7 @@ export const en = {
     sessionSelected: "Selected",
     sessionCompleted: "Done",
     sessionFailed: "Needs attention",
+    sessionAwaitingDecision: "Waiting for your decision",
     sortSessions: "Sort projects and chats",
     sortRecent: "Recently updated",
     sortOldest: "Oldest first",

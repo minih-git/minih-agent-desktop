@@ -258,6 +258,7 @@ export const tr = {
     sessionSelected: "Seçili",
     sessionCompleted: "Bitti",
     sessionFailed: "İlgi gerekiyor",
+    sessionAwaitingDecision: "Kararınız bekleniyor",
     sortSessions: "Projeleri ve sohbetleri sırala",
     sortRecent: "Son güncellenenler",
     sortOldest: "Eskiden yeniye",

@@ -249,6 +249,7 @@ export const es = {
     "sessionSelected": "Seleccionado",
     "sessionCompleted": "Listo",
     "sessionFailed": "Necesita atención",
+    "sessionAwaitingDecision": "Esperando tu decisión",
     "sortSessions": "Ordenar proyectos y chats",
     "sortRecent": "Actualizado recientemente",
     "sortOldest": "Más antiguo primero",

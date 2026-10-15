@@ -255,10 +255,11 @@ token rather than introducing a decorative palette:
 |---|---|---|---|
 | Selected | neutral accent | static outlined ring | current conversation |
 | In progress | warning orange | filled dot; two breathing cycles, then steady | agent is producing or executing |
+| Waiting for decision | purple | filled dot; two pulses, then steady | turn paused on a tool permission or a question card |
 | Completed | success green | check mark | latest unread task turn completed |
 | Failed | error red | circled alert mark | latest unread task turn failed |
 
-Precedence is `in progress → selected → completed/failed`. Starting another
+Precedence is `waiting for decision → in progress → selected → completed/failed`. Starting another
 turn clears the prior terminal outcome; abort clears the live indicator without
 creating a failure. Opening a conversation acknowledges its unread terminal
 outcome: the terminal mark clears immediately and the matching durable task
@@ -277,14 +278,14 @@ submit frames while the rest of the window is idle.
 
 The same bound covers every idle-reachable status indicator, because any
 one of them keeps the transparent macOS window dirty and therefore
-re-composited even when nothing is happening: the permission dot on a
-session waiting for approval, the plan-mode chip in the composer toolbar,
-and the warning dot on the backend banner each play two cycles and then
-hold a steady state that carries the meaning by itself (purple fill,
-planning-tinted icon, warning fill). Only indicators that describe work in
-flight — a streaming cursor, a running tool row, a recording microphone —
-may animate for as long as that work lasts. Reduced-motion mode disables
-all of them.
+re-composited even when nothing is happening: the decision dot on a
+session waiting for a tool permission or a question card, the plan-mode
+chip in the composer toolbar, and the warning dot on the backend banner
+each play two cycles and then hold a steady state that carries the
+meaning by itself (purple fill, planning-tinted icon, warning fill). Only
+indicators that describe work in flight — a streaming cursor, a running
+tool row, a recording microphone — may animate for as long as that work
+lasts. Reduced-motion mode disables all of them.
 
 ### 4.6 Tailwind CSS variable stub
 

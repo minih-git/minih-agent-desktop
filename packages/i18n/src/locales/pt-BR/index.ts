@@ -248,6 +248,7 @@ export const ptBR = {
     sessionSelected: "Selecionada",
     sessionCompleted: "Concluída",
     sessionFailed: "Requer atenção",
+    sessionAwaitingDecision: "Aguardando sua decisão",
     sortSessions: "Ordenar projetos e conversas",
     sortRecent: "Atualizados recentemente",
     sortOldest: "Mais antigos primeiro",
