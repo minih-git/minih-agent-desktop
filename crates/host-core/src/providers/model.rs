@@ -170,6 +170,11 @@ pub struct ModelBinding {
     /// default because models.dev does not publish hosted-tool capability.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_web_search: Option<bool>,
+    /// Per-model wire protocol override. None follows the provider row's own
+    /// apiStyle (the global configuration); a known value is used for requests
+    /// naming this model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_style: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

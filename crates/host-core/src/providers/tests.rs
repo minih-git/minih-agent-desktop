@@ -253,6 +253,7 @@ fn model_bindings_roundtrip_and_legacy_model_migrates_on_read() {
                     supports_documents: None,
                     available_for_subagents: Some(true),
                     native_web_search: None,
+                    api_style: None,
                 },
                 ModelBinding {
                     id: "plain-model".into(),
@@ -268,6 +269,7 @@ fn model_bindings_roundtrip_and_legacy_model_migrates_on_read() {
                     supports_documents: Some(false),
                     available_for_subagents: None,
                     native_web_search: None,
+                    api_style: None,
                 },
             ]),
             default_model_id: None,
@@ -377,6 +379,7 @@ fn binding_with_alias(id: &str, alias: Option<&str>) -> ModelBinding {
         supports_documents: None,
         available_for_subagents: None,
         native_web_search: None,
+        api_style: None,
     }
 }
 
@@ -392,6 +395,47 @@ fn normalize_model_bindings_trims_aliases_and_drops_blank_ones() {
     assert_eq!(normalized[1].alias, None);
     assert_eq!(normalized[2].alias, None);
     assert_eq!(normalized[3].alias, None);
+}
+
+#[test]
+fn normalize_model_bindings_preserves_known_api_styles_only() {
+    let normalized = normalize_model_bindings(&[
+        ModelBinding {
+            api_style: Some(" responses ".into()),
+            ..binding_with_alias("responses-model", None)
+        },
+        ModelBinding {
+            api_style: Some("not_a_wire_style".into()),
+            ..binding_with_alias("fallback-model", None)
+        },
+    ]);
+    assert_eq!(normalized[0].api_style.as_deref(), Some("responses"));
+    // An unknown per-model style is dropped, so the model falls back to the
+    // provider row's own global apiStyle instead of failing the whole save.
+    assert_eq!(normalized[1].api_style, None);
+}
+
+#[test]
+fn model_binding_api_style_survives_the_provider_config_round_trip() {
+    let bindings = vec![ModelBinding {
+        api_style: Some("anthropic_messages".into()),
+        ..binding_with_alias("pinned-model", None)
+    }];
+    let config = build_provider_config_json(
+        None,
+        None,
+        Some(&bindings),
+        &LimitOverrides {
+            context_window: None,
+            max_output_tokens: None,
+            temperature: None,
+        },
+    )
+    .unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&config).unwrap();
+    assert_eq!(parsed["models"][0]["apiStyle"], "anthropic_messages");
+    let restored: Vec<ModelBinding> = serde_json::from_value(parsed["models"].clone()).unwrap();
+    assert_eq!(restored[0].api_style.as_deref(), Some("anthropic_messages"));
 }
 
 #[test]
@@ -1560,6 +1604,7 @@ fn binding_with_limits(id: &str, context_window: u32, max_tokens: u32) -> ModelB
         supports_documents: None,
         available_for_subagents: None,
         native_web_search: None,
+        api_style: None,
     }
 }
 
