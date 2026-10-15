@@ -1591,6 +1591,8 @@ sklm: {
     minihRouterLanTunEnabled: "TUN sanal ağ arayüzü etkinleştirildi",
     minihRouterLanShowSecret: "Ağ parolasını göster",
     minihRouterLanHideSecret: "Ağ parolasını gizle",
+    minihRouterLanDhcp: "Otomatik sanal IP (DHCP)",
+    minihRouterLanStaticIpv4: "Sabit sanal IP",
     presetAnthropic: "Anthropic",
     presetGoogle: "Google Gemini",
     presetOpenrouter: "OpenRouter",

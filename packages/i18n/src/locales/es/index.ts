@@ -1583,6 +1583,8 @@ sklm: {
     "minihRouterLanTunFallback": "Permiso TUN rechazado o no disponible; ejecutando en modo No-TUN",
     "minihRouterLanTunEnabled": "Interfaz de red virtual TUN activada",
     "minihRouterLanShowSecret": "Mostrar secreto de red",
+    "minihRouterLanDhcp": "IP virtual automática (DHCP)",
+    "minihRouterLanStaticIpv4": "IP virtual estática",
     "minihRouterLanHideSecret": "Ocultar secreto de red",
     "presetAnthropic": "Antrópico",
     "presetGoogle": "Google Gemini",
