@@ -678,6 +678,8 @@
   position: relative;
   display: flex;
   align-items: center;
+  /* The toolbar's 280px flex basis must not become height in this column. */
+  flex: none;
   gap: 8px;
 }
 

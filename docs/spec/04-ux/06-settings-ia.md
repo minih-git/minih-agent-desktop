@@ -459,6 +459,9 @@ a usage tab.
   cards already configured), and a selection count in the footer. Cards already configured on the row render as
   added and cannot be re-picked. Confirming appends the chosen bindings and
   claims the app's chat default only while nothing runnable resolves.
+  The dialog's search row stays at the input's natural height directly below
+  the title; it never reserves the horizontal toolbar's flex basis as vertical
+  space, including in short and large windows.
 - Removing a model drops any image-generation binding naming it and leaves no
   dangling replacement behind: a stored default is only replaced when another
   model on the row can run it. A failed read is shown in place with the
