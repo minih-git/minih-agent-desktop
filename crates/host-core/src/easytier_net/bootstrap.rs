@@ -161,14 +161,65 @@ impl std::fmt::Display for BootstrapError {
 /// present-but-malformed field does fail, because silently ignoring it would
 /// leave the node on a network the gateway does not expect.
 pub fn parse_bootstrap_payload(payload: &serde_json::Value) -> Result<BootstrapResponse, String> {
-    let obj = payload
+    let root_obj = payload
         .as_object()
         .ok_or_else(|| "payload must be an object".to_string())?;
 
-    let network_name = required_string(obj, "networkName")?;
-    let network_secret = required_string(obj, "networkSecret")?;
+    // Unwrap Minih-Router's standard `{ code: 0, message: "...", data: { ... } }`
+    // envelope when present, while continuing to accept bare objects.
+    let obj = if let Some(code_val) = root_obj.get("code") {
+        let code = code_val
+            .as_i64()
+            .ok_or_else(|| "envelope code must be an integer".to_string())?;
+        if code != 0 {
+            let msg = root_obj
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("non-zero gateway code");
+            return Err(format!("gateway returned error code {code}: {msg}"));
+        }
+        root_obj
+            .get("data")
+            .and_then(serde_json::Value::as_object)
+            .ok_or_else(|| "envelope data must be an object".to_string())?
+    } else if let Some(data_obj) = root_obj.get("data").and_then(serde_json::Value::as_object) {
+        data_obj
+    } else {
+        root_obj
+    };
 
-    let gateway_virtual_ipv4 = match obj.get("gatewayVirtualIpv4") {
+    if obj.get("available").and_then(serde_json::Value::as_bool) == Some(false) {
+        return Err("gateway EasyTier instance is not available".to_string());
+    }
+
+    let network_name = required_string_any(obj, &["networkName", "network_name"])?;
+    let raw_network_secret = required_string_any(obj, &["networkSecret", "network_secret"])?;
+
+    let secure_mode = obj
+        .get("secureMode")
+        .or_else(|| obj.get("secure_mode"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let shared_network_secret = obj
+        .get("sharedNetworkSecret")
+        .or_else(|| obj.get("shared_network_secret"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && s.len() <= MAX_FIELD_LEN)
+        .map(ToString::to_string);
+
+    // When the gateway instance is running in classic shared-secret mode
+    // (`secure_mode == false`), `NetworkIdentity::new` requires the shared
+    // network secret so the handshake digest matches the mesh.
+    let network_secret = match (secure_mode, shared_network_secret) {
+        (false, Some(shared)) => shared,
+        _ => raw_network_secret,
+    };
+
+    let gateway_virtual_ipv4 = match obj
+        .get("gatewayVirtualIpv4")
+        .or_else(|| obj.get("gateway_virtual_ipv4"))
+    {
         None | Some(serde_json::Value::Null) => None,
         Some(value) => {
             let raw = value
@@ -214,7 +265,7 @@ pub fn parse_bootstrap_payload(payload: &serde_json::Value) -> Result<BootstrapR
         Some(_) => return Err("peers must be an array".into()),
     };
 
-    let ttl_seconds = match obj.get("ttlSeconds") {
+    let ttl_seconds = match obj.get("ttlSeconds").or_else(|| obj.get("ttl_seconds")) {
         None | Some(serde_json::Value::Null) => None,
         Some(value) => {
             let raw = value
@@ -233,21 +284,22 @@ pub fn parse_bootstrap_payload(payload: &serde_json::Value) -> Result<BootstrapR
     })
 }
 
-fn required_string(
+fn required_string_any(
     obj: &serde_json::Map<String, serde_json::Value>,
-    field: &str,
+    fields: &[&str],
 ) -> Result<String, String> {
-    let raw = obj
-        .get(field)
+    let primary = fields.first().copied().unwrap_or("field");
+    let value = fields.iter().find_map(|field| obj.get(*field));
+    let raw = value
         .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| format!("{field} must be a string"))?;
+        .ok_or_else(|| format!("{primary} must be a string"))?;
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return Err(format!("{field} must not be empty"));
+        return Err(format!("{primary} must not be empty"));
     }
     if trimmed.len() > MAX_FIELD_LEN {
         return Err(format!(
-            "{field} must not exceed {MAX_FIELD_LEN} characters"
+            "{primary} must not exceed {MAX_FIELD_LEN} characters"
         ));
     }
     Ok(trimmed.to_string())
@@ -615,5 +667,49 @@ mod tests {
         assert_eq!(host_for_url("2001:db8::1"), "[2001:db8::1]");
         assert_eq!(port_suffix("https", 443), "");
         assert_eq!(port_suffix("https", 8443), ":8443");
+    }
+
+    #[test]
+    fn payload_accepts_minih_router_snake_case_envelope() {
+        let parsed = parse_bootstrap_payload(&json!({
+            "code": 0,
+            "message": "操作成功",
+            "data": {
+                "available": true,
+                "network_name": "minih-net",
+                "network_secret": "per-caller-credential",
+                "shared_network_secret": "Minih@9527",
+                "secure_mode": false,
+                "gateway_virtual_ipv4": "11.11.11.10",
+                "peers": [
+                    "tcp://router.hmini.org:11010",
+                    "udp://router.hmini.org:11010"
+                ],
+                "ttl_seconds": 86400,
+                "router_lan_access": "http://11.11.11.10:3001"
+            }
+        }))
+        .expect("Minih-Router envelope should parse cleanly");
+        assert_eq!(parsed.network_name, "minih-net");
+        assert_eq!(parsed.network_secret, "Minih@9527");
+        assert_eq!(parsed.gateway_virtual_ipv4.as_deref(), Some("11.11.11.10"));
+        assert_eq!(
+            parsed.peers,
+            Some(vec![
+                "tcp://router.hmini.org:11010".to_string(),
+                "udp://router.hmini.org:11010".to_string()
+            ])
+        );
+        assert_eq!(parsed.ttl_seconds, Some(86400));
+
+        assert!(parse_bootstrap_payload(&json!({
+            "code": 0,
+            "data": {
+                "available": false,
+                "network_name": "minih-net",
+                "network_secret": "s"
+            }
+        }))
+        .is_err());
     }
 }

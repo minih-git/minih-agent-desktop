@@ -121,6 +121,8 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
       networkName: status.networkName,
       peers: bootstrapPeers,
       routerLanUrl: status.routerLanUrl,
+      dhcp: status.dhcp,
+      ipv4: status.dhcp ? "" : status.staticIpv4,
     }).catch((error: unknown) => {
       showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
     });
@@ -155,6 +157,8 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
       networkName: status.networkName,
       peers: bootstrapPeers,
       routerLanUrl: status.routerLanUrl,
+      dhcp: status.dhcp,
+      ipv4: status.dhcp ? "" : status.staticIpv4,
     }).then(
       () => showToast(t("settings.minihRouterLanSaved"), { variant: "success" }),
       (error: unknown) =>
