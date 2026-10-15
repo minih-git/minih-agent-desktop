@@ -42,12 +42,18 @@ async function writeDmgFixture(release) {
 
 /**
  * Fake `xcrun` that records every notarytool/stapler call. `status` is the
- * notarytool result and `stapleFailures` makes the first N staple attempts fail
- * so the bounded retry is covered.
+ * notarytool result, `stapleFailures` makes the first N staple attempts fail
+ * so the bounded retry is covered, and `validateFailures` does the same for
+ * the ticket-validation retry.
  */
 async function writeXcrunNotaryFixture(
   bin,
-  { status = "Accepted", submitExit = 0, stapleFailures = 0 } = {},
+  {
+    status = "Accepted",
+    submitExit = 0,
+    stapleFailures = 0,
+    validateFailures = 0,
+  } = {},
 ) {
   await mkdir(bin, { recursive: true });
   const xcrun = `#!/usr/bin/env bash
@@ -76,6 +82,18 @@ case "$1 $2" in
     fi
     exit 0
     ;;
+  "stapler validate")
+    count_file="$NOTARY_LOG.validates"
+    count=0
+    if [[ -f "$count_file" ]]; then count="$(cat "$count_file")"; fi
+    count=$((count + 1))
+    echo "$count" > "$count_file"
+    if (( count <= ${validateFailures} )); then
+      echo 'The validate action failed! Error 68.' >&2
+      exit 68
+    fi
+    exit 0
+    ;;
 esac
 exit 0
 `;
@@ -92,6 +110,7 @@ function runNotarize(release, bin, log, extraEnv = {}) {
       PATH: `${bin}:${process.env.PATH}`,
       NOTARY_LOG: log,
       STAPLE_DELAY_SECONDS: "1",
+      VALIDATE_DELAY_SECONDS: "1",
       ...extraEnv,
     },
   });
@@ -137,6 +156,50 @@ test("stapling retries only after Apple accepts the DMG", async (t) => {
     calls.filter((line) => line.startsWith("stapler staple")).length,
     3,
     "two failures then a successful staple",
+  );
+});
+
+test("staple validation retries through transient network failures", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "minih-agent-desktop-macos-dmg-validate-retry-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  const release = join(root, "release");
+  const bin = join(root, "bin");
+  const log = join(root, "xcrun.log");
+  await writeDmgFixture(release);
+  await writeXcrunNotaryFixture(bin, { validateFailures: 2 });
+
+  const result = runNotarize(release, bin, log);
+
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const calls = (await readFile(log, "utf8")).split("\n");
+  assert.equal(
+    calls.filter((line) => line.startsWith("stapler validate")).length,
+    3,
+    "two transient failures then a successful validate",
+  );
+  assert.match(result.stdout, /Staple validation passed/);
+});
+
+test("staple validation fails closed after exhausting the retries", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "minih-agent-desktop-macos-dmg-validate-fail-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  const release = join(root, "release");
+  const bin = join(root, "bin");
+  const log = join(root, "xcrun.log");
+  await writeDmgFixture(release);
+  await writeXcrunNotaryFixture(bin, { validateFailures: 99 });
+
+  const result = runNotarize(release, bin, log, { VALIDATE_ATTEMPTS: "3" });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /could not validate the ticket/);
+  const calls = (await readFile(log, "utf8")).split("\n");
+  assert.equal(
+    calls.filter((line) => line.startsWith("stapler validate")).length,
+    3,
+    "every bounded attempt is made before failing",
   );
 });
 
@@ -262,6 +325,68 @@ test("macOS release verification requires a notarized Developer ID app and DMG",
   assert.equal(
     await readFile(staplerLog, "utf8"),
     `stapler validate ${app}\nstapler validate ${dmg}\n`,
+  );
+});
+
+test("macOS release verification retries transient stapler validate failures", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "minih-agent-desktop-macos-verify-retry-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  const release = join(root, "release");
+  const bin = join(root, "bin");
+  const staplerLog = join(root, "stapler.log");
+  const { app, dmg } = await writeSignedAppFixture(release);
+  await mkdir(bin, { recursive: true });
+  await writeFile(
+    join(bin, "codesign"),
+    `#!/usr/bin/env bash\nif [[ "$*" == *"-dv"* ]]; then echo 'Authority=${SIGNING_IDENTITY}' >&2; echo 'flags=0x10000(runtime)' >&2; fi\n`,
+  );
+  await writeFile(
+    join(bin, "spctl"),
+    "#!/usr/bin/env bash\necho 'source=Notarized Developer ID' >&2\n",
+  );
+  await writeFile(
+    join(bin, "xcrun"),
+    `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$STAPLER_LOG"
+[[ "$1 $2" == 'stapler validate' ]] || exit 0
+count_file="$STAPLER_LOG.count"
+count=0
+if [[ -f "$count_file" ]]; then count="$(cat "$count_file")"; fi
+count=$((count + 1))
+echo "$count" > "$count_file"
+if (( count <= 1 )); then
+  echo 'The validate action failed! Error 68.' >&2
+  exit 68
+fi
+exit 0
+`,
+  );
+  await Promise.all(
+    ["codesign", "spctl", "xcrun"].map((name) => chmod(join(bin, name), 0o755)),
+  );
+
+  const result = spawnSync("bash", [verifyScript.pathname, release], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      MAC_SIGNING_IDENTITY: SIGNING_IDENTITY_NAME,
+      PATH: `${bin}:${process.env.PATH}`,
+      STAPLER_LOG: staplerLog,
+      VALIDATE_DELAY_SECONDS: "1",
+    },
+  });
+
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const calls = (await readFile(staplerLog, "utf8")).split("\n");
+  assert.equal(
+    calls.filter((line) => line === `stapler validate ${app}`).length,
+    2,
+    "one transient failure then a successful validate for the app",
+  );
+  assert.ok(
+    calls.includes(`stapler validate ${dmg}`),
+    "the DMG is still validated after the app recovers",
   );
 });
 

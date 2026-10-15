@@ -27,6 +27,12 @@ RELEASE_DIR="${1:-apps/desktop/release}"
 # tests do not sleep for real.
 STAPLE_ATTEMPTS="${STAPLE_ATTEMPTS:-6}"
 STAPLE_DELAY_SECONDS="${STAPLE_DELAY_SECONDS:-10}"
+# `stapler validate` re-checks the ticket against Apple's ticket-delivery
+# service, so a transient network drop (NSURLErrorDomain -1005, exit 68) can
+# fail an otherwise valid staple. Retry a bounded number of times before
+# failing the release; overridable so tests do not sleep for real.
+VALIDATE_ATTEMPTS="${VALIDATE_ATTEMPTS:-5}"
+VALIDATE_DELAY_SECONDS="${VALIDATE_DELAY_SECONDS:-10}"
 
 if [[ -z "${APPLE_ID:-}" || -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" || -z "${APPLE_TEAM_ID:-}" ]]; then
   echo "error: APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID are required to notarize the DMG." >&2
@@ -136,6 +142,21 @@ if [[ "$stapled" != "true" ]]; then
 fi
 
 echo "==> Validating the stapled ticket on $DMG"
-xcrun stapler validate "$DMG"
+validated=false
+for attempt in $(seq 1 "$VALIDATE_ATTEMPTS"); do
+  if xcrun stapler validate "$DMG"; then
+    validated=true
+    break
+  fi
+  if [[ "$attempt" -lt "$VALIDATE_ATTEMPTS" ]]; then
+    echo "warning: stapler validate attempt $attempt/$VALIDATE_ATTEMPTS failed; retrying in ${VALIDATE_DELAY_SECONDS}s." >&2
+    sleep "$VALIDATE_DELAY_SECONDS"
+  fi
+done
+
+if [[ "$validated" != "true" ]]; then
+  echo "error: stapler could not validate the ticket on $DMG after $VALIDATE_ATTEMPTS attempts." >&2
+  exit 1
+fi
 
 echo "==> Staple validation passed: $DMG (status=Accepted)"

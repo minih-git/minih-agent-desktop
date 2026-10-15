@@ -69,8 +69,30 @@ if [[ "$ASSESSMENT" != *"source=Notarized Developer ID"* ]]; then
   exit 1
 fi
 
+# `stapler validate` re-checks the ticket against Apple's ticket-delivery
+# service, so a transient network drop (NSURLErrorDomain -1005, exit 68) can
+# fail an otherwise valid staple. Retry a bounded number of times before
+# failing the verification; overridable so tests do not sleep for real.
+VALIDATE_ATTEMPTS="${VALIDATE_ATTEMPTS:-5}"
+VALIDATE_DELAY_SECONDS="${VALIDATE_DELAY_SECONDS:-10}"
+
+validate_staple() {
+  local target="$1" attempt
+  for attempt in $(seq 1 "$VALIDATE_ATTEMPTS"); do
+    if xcrun stapler validate "$target"; then
+      return 0
+    fi
+    if [[ "$attempt" -lt "$VALIDATE_ATTEMPTS" ]]; then
+      echo "warning: stapler validate attempt $attempt/$VALIDATE_ATTEMPTS failed for $target; retrying in ${VALIDATE_DELAY_SECONDS}s." >&2
+      sleep "$VALIDATE_DELAY_SECONDS"
+    fi
+  done
+  echo "error: stapler could not validate the ticket on $target after $VALIDATE_ATTEMPTS attempts." >&2
+  return 1
+}
+
 echo "==> Validating stapled notarization tickets"
-xcrun stapler validate "$APP"
-xcrun stapler validate "$DMG"
+validate_staple "$APP"
+validate_staple "$DMG"
 
 echo "==> macOS release verification passed: $APP and $DMG"
