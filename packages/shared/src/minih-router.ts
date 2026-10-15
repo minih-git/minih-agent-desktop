@@ -196,7 +196,7 @@ export const EASYTIER_DEFAULT_PEERS = [
   "udp://tier.hmini.org:11010",
   "tcp://tier.hmini.org:11010",
 ] as const;
-export const EASYTIER_DEFAULT_ROUTER_LAN_URL = "http://11.11.11.10:3001/v1";
+export const EASYTIER_DEFAULT_ROUTER_LAN_URL = "http://10.144.144.10:3001/v1";
 
 export type EasyTierMode = "auto" | "no_tun" | "no-tun" | "tun";
 export type EasyTierEffectiveMode = "disabled" | "no_tun" | "no-tun" | "tun";
@@ -209,6 +209,10 @@ export type EasyTierSettings = {
   networkSecret?: string;
   peers?: string[];
   routerLanUrl?: string;
+  /** True lets EasyTier hand out a virtual IPv4 (default); false pins `ipv4`. */
+  dhcp?: boolean;
+  /** Static virtual IPv4 (or CIDR) used when `dhcp` is false, e.g. `10.144.144.10`. */
+  ipv4?: string;
 };
 
 export type EasyTierPeerSummary = {
@@ -240,6 +244,10 @@ export type EasyTierStatus = {
   peerCount: number;
   peers: string[];
   bootstrapPeers: string[];
+  /** True when EasyTier hands out the virtual IPv4; false pins `staticIpv4`. */
+  dhcp: boolean;
+  /** The configured static virtual IPv4, empty when DHCP is on. */
+  staticIpv4: string;
   connectedPeers?: EasyTierPeerSummary[];
   networkName: string;
   routerLanUrl: string;
@@ -302,7 +310,23 @@ export function normalizeEasyTierSettings(
     networkSecret,
     peers: peers.length > 0 ? peers : [...EASYTIER_DEFAULT_PEERS],
     routerLanUrl: rawRouterLanUrl,
+    dhcp: input?.dhcp ?? true,
+    ipv4: normalizeEasyTierIpv4(input?.ipv4),
   };
+}
+
+/**
+ * A static virtual IPv4, or a CIDR prefix length EasyTier accepts as-is.
+ *
+ * Accepts a bare address and `/32` (the only sensible host mask) so a user
+ * pasting a CIDR block gets the same node as one pasting the plain address.
+ * Anything else is returned untouched for the form's own validation to report.
+ */
+export function normalizeEasyTierIpv4(input: string | null | undefined): string {
+  const trimmed = (input ?? "").trim();
+  if (!trimmed) return "";
+  const withoutMask = trimmed.replace(/\/32$/, "");
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(withoutMask) ? withoutMask : trimmed;
 }
 
 export function validateEasyTierSettings(input: unknown): string | null {
@@ -357,6 +381,19 @@ export function validateEasyTierSettings(input: unknown): string | null {
       } catch {
         return "easytier.routerLanUrl must be a valid URL";
       }
+    }
+  }
+  if (obj.dhcp !== undefined && typeof obj.dhcp !== "boolean") {
+    return "easytier.dhcp must be a boolean";
+  }
+  if (obj.ipv4 !== undefined) {
+    if (typeof obj.ipv4 !== "string") return "easytier.ipv4 must be a string";
+    const trimmed = obj.ipv4.trim();
+    if (trimmed && !/^\d{1,3}(\.\d{1,3}){3}(\/32)?$/.test(trimmed)) {
+      return "easytier.ipv4 must be an IPv4 address, optionally with /32";
+    }
+    if (trimmed && obj.dhcp !== false) {
+      return "easytier.ipv4 requires easytier.dhcp to be false";
     }
   }
   return null;

@@ -1478,6 +1478,8 @@ export const ptBR = {
     minihRouterLanTunEnabled: "Interface de rede virtual TUN ativada",
     minihRouterLanShowSecret: "Mostrar segredo da rede",
     minihRouterLanHideSecret: "Ocultar segredo da rede",
+    minihRouterLanDhcp: "IP virtual automática (DHCP)",
+    minihRouterLanStaticIpv4: "IP virtual estática",
     presetAnthropic: "Anthropic",
     presetGoogle: "Google Gemini",
     presetOpenrouter: "OpenRouter",

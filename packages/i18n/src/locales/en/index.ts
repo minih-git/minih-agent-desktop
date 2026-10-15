@@ -1523,6 +1523,8 @@ sklm: {
     minihRouterLanTunEnabled: "TUN virtual network interface enabled",
     minihRouterLanShowSecret: "Show network secret",
     minihRouterLanHideSecret: "Hide network secret",
+    minihRouterLanDhcp: "Automatic virtual IP (DHCP)",
+    minihRouterLanStaticIpv4: "Static virtual IP",
     presetAnthropic: "Anthropic",
     presetGoogle: "Google Gemini",
     presetOpenrouter: "OpenRouter",

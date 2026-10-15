@@ -1505,6 +1505,8 @@ sklm: {
     "minihRouterLanTunFallback": "TUN-Berechtigung abgelehnt oder nicht verfügbar; läuft im No-TUN-Modus",
     "minihRouterLanTunEnabled": "Virtuelle TUN-Netzwerkschnittstelle aktiviert",
     "minihRouterLanShowSecret": "Netzwerk-Secret anzeigen",
+    "minihRouterLanDhcp": "Automatische virtuelle IP (DHCP)",
+    "minihRouterLanStaticIpv4": "Statische virtuelle IP",
     "minihRouterLanHideSecret": "Netzwerk-Secret ausblenden",
     "presetAnthropic": "Anthropic",
     "presetGoogle": "Google Gemini",
