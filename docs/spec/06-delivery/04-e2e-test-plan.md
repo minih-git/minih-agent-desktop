@@ -371,6 +371,52 @@
   session IPC contract tests, and real-model desktop acceptance. A local model
   fixture or mocked component result is not real-model acceptance evidence.
 
+### E2E-WORKTREE-isolated-session-lifecycle
+
+- **Preconditions:** Isolated desktop profile and data directory, git 2.29+, a
+  git project on a branch with at least one commit, a configured model, and an
+  optional `.worktreeinclude` listing one ignored file.
+- **Steps:** Create two isolated sessions from the project menu and run a
+  file-editing prompt in each at the same time. Run a Bash command that prints
+  `PI_PORT` / `PI_WORKTREE_ROOT`. Merge the first session into the project;
+  edit the same line in the project and in the second session, then merge the
+  second. Resolve the conflict in the second session and merge again, then
+  use **Sync from project** in the first session. In one
+  isolated session, start two writing subagents in parallel. Finally delete
+  an isolated session with unmerged work, and restart the app once while a
+  session exists. Open the menu of a non-git project.
+- **Expected:** Each session's edits land only in its own worktree; the project
+  checkout and `git status` stay clean until a merge, and the ignored include
+  file is present in each worktree. The two sessions get distinct ports. The
+  first merge fast-forwards the project and a success toast names the branch.
+  The conflicting merge lists the files, leaves the project untouched, and
+  marks the row `Conflict`; after resolution the badge clears and the merge
+  lands. The first session's row shows `↓N`; Sync from project shows the new
+  commits, clears the marker, and brings the resolution
+  into the first session without touching the project. Writing
+  subagents edit in separate worktrees and completed runs merge back into the
+  session. Delete warns about unmerged work and removes the worktree folder
+  and `minih-agent/<id>` branch without touching files linked from it. After
+  restart the session reopens in its worktree; a manually removed worktree
+  shows `Folder missing` and never falls back to the project. In the non-git
+  project **New isolated session** is disabled with the reason under it.
+- **Windows checks:** a worktree containing a directory junction is deleted
+  without following the junction; a deep path beyond 260 characters is
+  created and removed; deleting while a file in the worktree is locked fails
+  visibly and can be retried.
+- **Specs linked:** `03-runtime/03-tools-and-permissions.md` §4e, §10.2;
+  `03-runtime/06-host-rpc-protocol.md`; `04-ux/01-ui-ia.md` §3.2; ADR 0329.
+- **Coverage:** host-core `session_worktrees` tests (create, merge, conflict,
+  removal, link safety, reconcile, delegates), worktree IPC contract tests,
+  renderer `worktree-ui` tests, and agent-runtime delegate tests. The Windows
+  checks run as host-core tests on a Windows host: junction removal
+  (`remove::tests`), the replaced-root link (`lifecycle::tests`), and the deep
+  path and locked-file delete through the RPC user path
+  (`rpc::worktree_rpc::tests`). `pnpm test:e2e:worktree-live`
+  (`scripts/e2e-worktree-live.mjs`) runs the steps above against a real model
+  at protocol level, without the renderer.
+- **Status:** Partially automated
+
 ### E2E-CONVERSATION-minimap-jump-leaves-follow
 
 - **Preconditions:** One Desktop conversation long enough that the transcript
@@ -4598,6 +4644,28 @@ window; opening a normal panel afterward must still work.
 - **Milestone**: M5
 - **Status**: Partial automation: `scripts/e2e-browser-local-file-access.mjs` covers native local-file navigation; the address-bar and overlay workflow remains manual.
 
+#### E2E-CHAT-html-artifacts: Open generated pages from ordinary and project conversations
+
+- **Preconditions**: Isolated Electron profile, real Host storage and loopback
+  model fixture; no credentials or paid provider requests.
+- **Steps**: Open assistant Markdown links to ordinary-session scratch HTML,
+  primary project HTML, secondary project-folder HTML, project scratch HTML
+  and an isolated session's worktree HTML. Repeat with a `file:` URL containing
+  Unicode/spaces. Interact with each rendered page using native pointer input.
+  Try a missing file, an outside file and a positioned HTML
+  source reference. Send a prompt that invokes BrowserPreview through the real
+  sidecar in ordinary, project and isolated conversations. Disable Browser and click
+  again. Switch conversations between cases.
+- **Expected**: Valid pages render and execute in the side browser at their
+  canonical path. Missing/restricted files report errors without guest loads.
+  A line reference opens source, not execution. Disabled Browser remains
+  disabled and reports an error. BrowserPreview uses its originating session's
+  roots and delivers a valid resource tab. No visible-project fallback.
+- **Automation**: `node scripts/e2e-chat-html-artifacts.mjs`, after building
+  Host, runtime and Electron. Captures and synthetic profiles are retained in
+  `PI_TEST_OUTPUT` (or the OS temporary directory).
+- **Status**: Electron user-path covered on Windows; other OSes pending.
+
 #### E2E-BROWSER-capture-resize: Capture preserves live placement and restores the latest viewport
 
 - **Preconditions**: Isolated Electron profile and a local responsive page
@@ -5776,10 +5844,12 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 - **Expected**: Only the visible pane and the two most recently visited ones are
   retained; visiting beyond that budget evicts the oldest pane. A warm return
   paints the retained frame and offset immediately. Returning to an evicted
-  session behaves exactly like a cold open: the visible pane stays on its own
-  session under the thin progress track, the composer is inert until the
-  destination commits, and the destination then paints at its newest turn with no
-  error, no empty frame, and no restored offset from before eviction. Nothing is
+  session restores the message and viewport offset recorded before eviction,
+  including explicit expanded content, using a bounded historical read if the
+  latest page no longer contains the anchor. The cold selection's progress track
+  and composer fence remain unchanged. No search highlight is introduced, live
+  model-input messages are unchanged, and real input or a new turn cancels
+  automatic alignment. First visits and pinned revisits still follow latest. Nothing is
   dimmed at any point, hidden panes stay non-interactive and out of the
   accessibility tree, and repeated cycling neither leaks a growing number of
   mounted transcripts nor leaves a pane showing another session's rows.
@@ -5787,7 +5857,9 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   `04-ux/09-interaction-patterns.md` §5, ADR 0130, ADR 0137
 - **Acceptance**: C (switch sessions), Quality
 - **Milestone**: M5
-- **Status**: Draft
+- **Status**: Renderer regression automated by
+  `node scripts/e2e-transcript-reading-position.mjs` (isolated React/Electron,
+  fixture IPC); live UI scenario Draft.
 
 #### E2E-071h: Reopening a session while its response is streaming
 
@@ -6672,7 +6744,10 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
     (`openai-responses`, `openai-codex-responses`) the outgoing payload keeps
     the session id as `prompt_cache_key`, exactly as the session's turns do, so
     a gateway fronting a Codex backend accepts it instead of answering 400
-    `invalid_responses_request`. Providers on other wire APIs are unchanged.
+    `invalid_responses_request`. A provider on another wire API, or on a
+    published vendor host, is unchanged; an unrecognized endpoint on Chat
+    Completions gains the key for the reason
+    `E2E-PROVIDER-custom-endpoint-session-identity` records.
   - Each `turn_end` is evaluated before another provider request and never
     marks the overall task idle; composer/config controls remain blocked until
     `agent_end`, `error`, or manual-only `compaction_end`. In-run follow-up
@@ -6746,6 +6821,42 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 - **Status**: Partially automated (`runtime.test.ts`,
   `context-compaction.test.mjs`, `assistant-turns.test.mjs`, host-core
   transcript/session unit tests); full provider/UI journey Draft
+
+#### E2E-PROVIDER-custom-endpoint-session-identity: A self-hosted endpoint receives the session id
+
+- **Preconditions**: Two independent sessions, each with several turns, bound to
+  a provider row whose API style is `chat_completions` and whose base URL points
+  at a local capture endpoint (not a published vendor host). A third row on a
+  published vendor host, a fourth on `anthropic_messages`, and a fifth on
+  `openai-responses`, use the same capture endpoint's stand-ins where
+  applicable.
+- **Steps**: 1) Send a turn in each session and capture the full request headers
+  and body of both. 2) Compare the two requests field by field. 3) Trigger a
+  context-compaction summary in the first session and capture it. 4) Run a
+  subagent turn and a plugin one-shot that carry a session id, and capture both.
+  5) Repeat step 1 on the row whose base URL host is a published vendor host.
+  6) Repeat step 1 on a row whose API style is `opencode_go`.
+- **Expected**:
+  - Both captured requests carry a stable per-session identifier that differs
+    between the two sessions: `x-session-affinity` and `x-client-request-id`
+    beside `session_id`, plus `prompt_cache_key` in the body, all holding the
+    session's own conversation id and unchanged across that session's turns.
+  - The custom Responses request also carries `x-session-affinity` alongside
+    the adapter's existing `session_id`, `x-client-request-id`, and
+    `prompt_cache_key`, so a reverse proxy that drops underscore headers can
+    still route the session.
+  - The compaction summary, the subagent turn, and the one-shot carry the same
+    id for their session, so a gateway pins the whole session to one backend.
+  - The published-vendor-host row and the OpenCode row are byte-identical to
+    their pre-change requests (the OpenCode row keeps `x-opencode-session`).
+  - A one-shot call with no session id gains no `prompt_cache_key` or
+    `x-session-affinity` header.
+- **Specs linked**: `03-runtime/02-agent-runtime.md` (§6.2, §6.3),
+  `03-runtime/11-provider-model-system.md`, issue #1634
+- **Acceptance**: C (chat/stream) + Quality
+- **Milestone**: M5
+- **Status**: Unit-covered (`session-affinity.test.ts`); full gateway capture
+  journey Draft
 
 #### E2E-AGENTS-001: Project instruction chain configures an agent session
 
@@ -9795,6 +9906,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | A / H / Quality — Renderer process crash recovery | E2E-RUNTIME-renderer-crash-recovery |
 | C / F / Quality — Project folder with chats detaches and deletes safely | E2E-048c |
 | B / F / Security — Provider copy | E2E-PROVIDER-copy-config-without-credentials |
+| C / Quality — Self-hosted endpoint receives the session id | E2E-PROVIDER-custom-endpoint-session-identity |
 | B / F / Quality — Selected model order | E2E-MODEL-selected-order-persists |
 | E / F / Quality — MCP server timeout override | E2E-261 |
 | A — App startup | E2E-001, E2E-002, E2E-003, E2E-004, E2E-067, E2E-076, E2E-079, E2E-092, E2E-097, E2E-143, E2E-150, E2E-168, E2E-204 |
@@ -17224,7 +17336,8 @@ the latest destination. These assertions measure work counts, not device FPS.
   syntax and alignment. CSV decodes as UTF-8 and preserves fields and line breaks.
   The modal fits the viewport, traps focus, updates streamed rows, blocks native
   work-panel surfaces, and returns focus on dismissal. Narrow previews keep short
-  headers on one line and scroll horizontally; sticky headers fully cover the
+  headers on one line and scroll horizontally with visible scrollbars on
+  overflowing axes; sticky headers fully cover the
   rows behind them. Failed copies report an
   error, not success. Existing table wrapping remains intact.
 - **Automated coverage**: `node --test apps/desktop/test/markdown-table.test.mjs`
@@ -17720,3 +17833,41 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **Steps:** Save a 500K user context limit for a model whose catalog publishes 1M. Open the Composer model list, then send a short message and inspect context usage. Repeat with a catalog-owned limit and with discovery unavailable.
 - **Expected:** The user-configured row and context inspector show 500K; a catalog-owned row follows the published limit; a configured model without discovery retains its saved context label. Model selection remains unchanged.
 - **Status:** Automated unit regression in `apps/desktop/test/composer-models.test.mjs` covers user overrides, catalog inheritance, and missing discovery; the full save → picker → message → context-inspector path remains a manual validation scenario.
+
+### E2E-PLUGIN-automatic-jsx-activation
+
+- Preconditions: a granted renderer plugin whose compiled entry imports
+  `react/jsx-runtime` or `react/jsx-dev-runtime`, with React externalized to the
+  host.
+- Steps: activate production and development entries through the host import
+  map; render automatic JSX components that read a host context with a hook.
+- Expected: both entries resolve and render the supplied context value without
+  bundling a second React instance. Legacy React bindings remain unchanged.
+- Automated regression: `apps/desktop/test/plugin-renderer-import-map.test.mjs`
+  evaluates the generated shims and renders an automatic JSX component using
+  the host hooks and context. Isolated Electron coverage uses
+  `scripts/e2e-plugin-jsx-runtime.mjs`; no user profile or provider is used.
+
+### E2E-264: Reopening an archived project restores sidebar visibility
+
+- **Preconditions**: A durable project group exists for a local folder and can
+  be archived through the renderer-owned sidebar preferences.
+- **Steps**:
+  1. Archive the project and confirm its row is hidden from the default
+     sidebar but remains available in Settings → Project archive.
+  2. Use the project's Open action in Project archive.
+  3. Archive it again, open Add project, select the same folder, and create.
+  4. Archive it again and open one of its sessions from Project archive.
+- **Expected**: Each successful activation clears the path's archived
+  presentation state, returns to chat, and makes the project visible in the
+  sidebar. Selecting an inspector row without activating it and ordinary
+  session refreshes leave the archive state unchanged. Reopening the same
+  folder reuses the existing group without duplicating project or session data.
+- **Specs linked**: `04-ux/06-settings-ia.md`,
+  `04-ux/09-interaction-patterns.md`, ADR 0294, D659, issue #1653.
+- **Acceptance**: Renderer project activation restores the normalized path's
+  local archive metadata only after the host project activation succeeds.
+- **Status**: Source-contract coverage in
+  `apps/desktop/test/app-store-sidebar.test.mjs` and
+  `apps/desktop/test/project-create-dialog.test.mjs`; full UI scenario remains
+  Draft and is run only when explicitly requested in a capable environment.

@@ -235,6 +235,28 @@ destination, chat as the home surface, tools and permissions inline.
   delete remain separate actions. Rename edits the task label only; archive
   never removes the transcript. Open folder is a project action, not a
   conversation action.
+- **Isolated sessions** (ADR 0329): the project menu offers **New isolated
+  session**. Opening the menu probes the project: the item stays disabled
+  until the answer arrives, and for an unsuitable project (not git, no
+  commits, detached `HEAD`, missing or old git) it stays disabled with the
+  reason shown under it. Creating probes again; a dirty project gets an info
+  toast that uncommitted changes are not included. The menu also
+  holds **Worktree setup command…**. An isolated row shows an `Isolated` badge
+  (or `Conflict`, `Folder missing`, `Setup failed`) and adds **Merge into
+  project…** (preview of commits and files, then merge; conflicting files are
+  listed and stay in the session; the `Conflict` badge clears as soon as the
+  session resolves or abandons the conflict, and the next merge concludes it),
+  **Sync from project** (labelled with the number of new project commits
+  when the menu opens, disabled when there are none or while the session is
+  conflicted, which also hides the `↓N` marker; it merges the project's
+  branch into the session so the session continues on current code, and a
+  conflict stays in the session like a merge conflict; a row that lacks project
+  commits shows a `↓N` marker next to its badge, read in the background when
+  isolated sessions change, after a merge or sync, and on window focus at most
+  every 15 seconds, so rendering the list never waits for git), **Show worktree folder**, and **Setup log**.
+  Its delete confirmation states that unmerged work will be lost. Isolated
+  sessions are never reused as the empty draft and cannot move to another
+  project; forks are ordinary sessions.
 - **Temporary-task attachments**: selecting a saved attachment opens its file
   preview even without an open project. Back returns to the no-project browsing
   state. Branches preserve referenced pasted/imported inputs as child-owned

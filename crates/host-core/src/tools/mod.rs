@@ -212,6 +212,10 @@ struct ToolRunnerStartConfig {
     scratch_dir: Option<PathBuf>,
     #[serde(default)]
     env_path: Option<String>,
+    /// Session-scoped variables such as `PI_PORT` for an isolated worktree
+    /// (ADR 0329). Empty for every other call.
+    #[serde(default)]
+    extra_env: Vec<(String, String)>,
 }
 
 fn path_has_nul(path: &Path) -> bool {
@@ -395,6 +399,9 @@ pub async fn run_internal_tool_runner() -> Result<i32> {
     if let Some(path) = config.env_path.as_deref() {
         command.env("PATH", path);
     }
+    for (name, value) in &config.extra_env {
+        command.env(name, value);
+    }
     #[cfg(windows)]
     {
         command.creation_flags(0x0800_0000);
@@ -562,6 +569,10 @@ pub struct ToolsExecuteParams {
     /// permission mode. `inherit` and absent behave identically.
     #[serde(default)]
     pub permission_scope: Option<String>,
+    /// Chain id of a Write/Edit subagent with its own worktree (ADR 0329).
+    /// host-core resolves it against its registry; an unknown id is ignored.
+    #[serde(default)]
+    pub delegation_id: Option<String>,
     #[serde(default)]
     pub expected_command_shell_id: Option<String>,
     #[serde(default)]
@@ -759,6 +770,8 @@ pub struct BashExecutionOptions {
     pub timeout_ms: Option<u64>,
     pub cancellation: Option<watch::Receiver<bool>>,
     pub output_tx: Option<mpsc::UnboundedSender<String>>,
+    /// Extra environment for the command, e.g. `PI_PORT` (ADR 0329).
+    pub extra_env: Vec<(String, String)>,
 }
 
 impl BashExecutionOptions {
@@ -770,6 +783,7 @@ impl BashExecutionOptions {
             timeout_ms,
             cancellation: None,
             output_tx: None,
+            extra_env: Vec::new(),
         }
     }
 }
@@ -2575,6 +2589,9 @@ fn build_direct_shell_command(config: &ToolRunnerStartConfig) -> Command {
     if let Some(path) = config.env_path.as_deref() {
         command.env("PATH", path);
     }
+    for (name, value) in &config.extra_env {
+        command.env(name, value);
+    }
     configure_runner_stdio_and_group(&mut command, false);
     command
 }
@@ -2804,6 +2821,7 @@ async fn tool_bash(
             )
         }),
         env_path: shell::user_login_path().map(str::to_string),
+        extra_env: options.extra_env.clone(),
     };
     let SpawnedToolRunner {
         pid,
@@ -3268,6 +3286,7 @@ mod tests {
             workspace: PathBuf::from("workspace"),
             scratch_dir: None,
             env_path: None,
+            extra_env: Vec::new(),
         };
         let frame = encode_runner_config(&config).unwrap();
         assert_eq!(decode_runner_config(&frame).unwrap().args, config.args);
@@ -3286,6 +3305,7 @@ mod tests {
             workspace: PathBuf::from("workspace"),
             scratch_dir: None,
             env_path: None,
+            extra_env: Vec::new(),
         };
         assert!(encode_runner_config(&nul_config).is_err());
     }
@@ -4757,6 +4777,7 @@ mod tests {
                 timeout_ms: Some(1_000),
                 cancellation: None,
                 output_tx: None,
+                extra_env: Vec::new(),
             }),
         )
         .await;
@@ -4798,6 +4819,7 @@ mod tests {
                 timeout_ms: Some(15_000),
                 cancellation: None,
                 output_tx: None,
+                extra_env: Vec::new(),
             }),
         )
         .await;
@@ -4834,6 +4856,7 @@ mod tests {
                 timeout_ms: Some(15_000),
                 cancellation: None,
                 output_tx: None,
+                extra_env: Vec::new(),
             }),
         )
         .await;
@@ -4903,6 +4926,7 @@ mod tests {
             timeout_ms: None,
             cancellation: None,
             output_tx: Some(tx),
+            extra_env: Vec::new(),
         };
         let mut notifier = OutputNotifier::new(&options);
         for _ in 0..(MAX_OUTPUT_NOTIFICATIONS + 100) {
@@ -4928,6 +4952,7 @@ mod tests {
             timeout_ms: Some(5_000),
             cancellation: None,
             output_tx: None,
+            extra_env: Vec::new(),
         };
 
         let output = execute_tool_with_options(
@@ -5584,6 +5609,7 @@ mod tests {
             workspace: dir.path().to_path_buf(),
             scratch_dir: None,
             env_path: shell::user_login_path().map(str::to_string),
+            extra_env: Vec::new(),
         };
         let missing_exe = dir.path().join("unlinked-host-core-binary");
         let mut spawned = spawn_tool_runner_with_executable(&config, Some(&missing_exe))
@@ -5596,5 +5622,58 @@ mod tests {
         let status = (&mut spawned.wait_task).await.unwrap().unwrap();
         assert!(status.success());
         assert_eq!(String::from_utf8_lossy(&stdout_bytes), "fallback-ok");
+    }
+
+    #[tokio::test]
+    async fn spawn_tool_runner_fallback_forwards_extra_env() {
+        let dir = tempfile::tempdir().unwrap();
+        let shell_id = shell::default_shell_id();
+        let resolved = shell::resolve_shell(shell_id).expect("host shell should resolve");
+        let script = if shell_id == "windows-powershell" || shell_id == "windows-pwsh" {
+            "Write-Output \"$env:PI_PORT|$env:PI_PROJECT_ROOT|$env:PI_WORKTREE_ROOT\""
+        } else if shell_id == "cmd" {
+            "echo %PI_PORT%^|%PI_PROJECT_ROOT%^|%PI_WORKTREE_ROOT%"
+        } else {
+            "printf '%s|%s|%s' \"$PI_PORT\" \"$PI_PROJECT_ROOT\" \"$PI_WORKTREE_ROOT\""
+        };
+        let invocation = shell::build_invocation_for_platform(
+            shell::current_platform(),
+            shell_id,
+            resolved.program,
+            script,
+        )
+        .expect("shell invocation should build");
+        let config = ToolRunnerStartConfig {
+            program: invocation.program,
+            args: invocation.args,
+            workspace: dir.path().to_path_buf(),
+            scratch_dir: None,
+            env_path: shell::user_login_path().map(str::to_string),
+            extra_env: vec![
+                ("PI_PORT".to_string(), "41010".to_string()),
+                (
+                    "PI_PROJECT_ROOT".to_string(),
+                    "/tmp/project-root".to_string(),
+                ),
+                (
+                    "PI_WORKTREE_ROOT".to_string(),
+                    "/tmp/worktree-root".to_string(),
+                ),
+            ],
+        };
+        let missing_exe = dir.path().join("unlinked-host-core-binary");
+        let mut spawned = spawn_tool_runner_with_executable(&config, Some(&missing_exe))
+            .await
+            .expect("missing runner binary should fall back to direct shell spawn");
+        let mut stdout_bytes = Vec::new();
+        if let Some(mut stdout) = spawned.stdout.take() {
+            stdout.read_to_end(&mut stdout_bytes).await.unwrap();
+        }
+        let status = (&mut spawned.wait_task).await.unwrap().unwrap();
+        assert!(status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&stdout_bytes).trim(),
+            "41010|/tmp/project-root|/tmp/worktree-root"
+        );
     }
 }

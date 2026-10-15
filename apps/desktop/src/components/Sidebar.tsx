@@ -74,6 +74,14 @@ import {
 import { BrandLogo } from "./BrandLogo";
 import { NotificationCenter } from "./NotificationCenter";
 import { ProjectEditDialog } from "./ProjectEditDialog";
+import {
+  WorktreeBadge,
+  WorktreeDeleteLossNote,
+  WorktreeDialogs,
+  WorktreeProjectMenuItems,
+  WorktreeSessionMenuItems,
+} from "../features/worktree/WorktreeSidebarParts";
+import { WorktreeBehindWatcher } from "../features/worktree/WorktreeBehind";
 import { useArmedDelete } from "../hooks/use-armed-delete";
 import { ProjectDeleteDialog } from "./ProjectDeleteDialog";
 import { SessionRenameDialog } from "./SessionRenameDialog";
@@ -1823,6 +1831,7 @@ export function Sidebar({
             <span className="thread-item-source" title="Native Pi session">Pi</span>
           ) : null}
           {isRemoteSession(session) && <span className="thread-item-source" title={session.remoteHostLabel}>{t("remote:remote")}</span>}
+          <WorktreeBadge worktree={session.worktree} sessionId={session.id} />
           <span className="thread-item-title">{taskTitle(session.title)}</span>
           {options?.global ? (
             <span className="thread-item-project">
@@ -2235,6 +2244,13 @@ export function Sidebar({
                 {t("nav.createBranch")}
               </button>
             ) : null}
+            <WorktreeSessionMenuItems
+              sessionId={session.id}
+              title={taskTitle(session.title)}
+              worktree={session.worktree}
+              running={Boolean(runningSessions[session.id])}
+              onDone={() => closeMenus(false)}
+            />
             <button
               type="button"
               role="menuitem"
@@ -2276,9 +2292,10 @@ export function Sidebar({
                 onClick={() => requestDeleteSession(session)}
               >
                 <IconX size={14} />
-                {armedDelete === session.id
-                  ? t("nav.deleteTaskConfirm", { defaultValue: "Delete?" })
-                  : t("nav.deleteTask", { defaultValue: "Delete" })}
+                {armedDelete === session.id ? t("nav.deleteTaskConfirm", { defaultValue: "Delete?" }) : t("nav.deleteTask", { defaultValue: "Delete" })}
+                {armedDelete === session.id && session.worktree ? (
+                  <WorktreeDeleteLossNote sessionId={session.id} />
+                ) : null}
               </button>
             ) : null}
           </>
@@ -2308,6 +2325,11 @@ export function Sidebar({
               <IconPencil size={14} />
               {t("project.edit", { defaultValue: "Edit project" })}
             </button>
+            <WorktreeProjectMenuItems
+              projectPath={entry.path}
+              projectName={entry.name}
+              onDone={() => closeMenus(false)}
+            />
             <button
               type="button"
               role="menuitem"
@@ -2624,6 +2646,8 @@ export function Sidebar({
           registerDismissGuard={registerSessionHoverCardDismissGuard}
         />
       ) : null}
+      <WorktreeDialogs />
+      <WorktreeBehindWatcher />
       {renameFor ? (
         <SessionRenameDialog
           session={renameFor}

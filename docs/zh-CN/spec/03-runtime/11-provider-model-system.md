@@ -84,6 +84,13 @@ pi-ai 去发出 `x-opencode-session`。每个提供商行（AI 服务或 OAuth �
 `onResponse`，这样的行不上报捕获到的 HTTP 状态与传输原因：`Retry-After`
 退回有界退避阶梯，issue-234 的传输诊断与重建对它不生效。
 
+会话身份跟随端点归谁所有。在 `openai-completions` 与 `anthropic-messages` 上，
+base URL 主机不属于任何已发布厂商主机的行会带上会话亲和标头，并在 Chat
+Completions 上带上 `prompt_cache_key` 请求体键。自建 `openai-responses` 行保留适配器
+原有的会话标头与缓存键，并额外带上连字符形式的 `x-session-affinity`，这样反向代理丢掉
+下划线标头后仍可按会话路由。属于已发布厂商主机的行以及 OpenCode 线路保持原有出网字节
+（issue #1634；`03-runtime/02-agent-runtime.md` §6.3）。
+
 当 OAuth 厂商围绕本地 provider 行 id 重建运行时模型时，运行时仍保留 pi-ai
 原生传输元数据，不会把该行当作普通 OpenAI 端点。GitHub Copilot 请求会保留
 固定 pin 模型的 IDE 身份标头，包括 `Editor-Version`、`Editor-Plugin-Version`

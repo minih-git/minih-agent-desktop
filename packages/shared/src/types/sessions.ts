@@ -5,6 +5,7 @@ import type { SessionThinkingLevel, ThinkingLevel } from "./models.js";
 import type { PermissionMode } from "./permissions.js";
 import type { UiMessage } from "./messages.js";
 import type { PlanHistoryEntry, PlanningState } from "./plans.js";
+import type { SessionWorktreeSummary } from "./worktree.js";
 
 /**
  * Which authority owns a session's transcript.
@@ -68,6 +69,11 @@ export type SessionSummary = {
    * Older hosts omit it, so `undefined` means an ordinary conversation.
    */
   scheduledRun?: boolean;
+  /**
+   * Present only for an isolated session (ADR 0329): its tools run in its own
+   * git worktree. Older hosts and ordinary sessions omit it.
+   */
+  worktree?: SessionWorktreeSummary;
   updatedAt: string;
   createdAt: string;
 };

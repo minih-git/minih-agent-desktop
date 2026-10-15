@@ -136,6 +136,21 @@ export const IPC = {
     /** Validate and select a durable session from a reviewed host operation. */
     sessionOpen: "minih-agent-desktop/session/open",
     sessionDelete: "minih-agent-desktop/session/delete",
+    /** Isolated sessions in git worktrees (ADR 0329). */
+    worktreeProbe: "minih-agent-desktop/worktree/probe",
+    worktreePreview: "minih-agent-desktop/worktree/preview",
+    worktreeMerge: "minih-agent-desktop/worktree/merge",
+    worktreePendingWork: "minih-agent-desktop/worktree/pendingWork",
+    /** "Sync from project": project commits the session lacks, and the sync. */
+    worktreeBehind: "minih-agent-desktop/worktree/behind",
+    worktreeSync: "minih-agent-desktop/worktree/sync",
+    /** Behind counts of every isolated session, for the sidebar marker. */
+    worktreeBehindAll: "minih-agent-desktop/worktree/behindAll",
+    worktreeSetupLog: "minih-agent-desktop/worktree/setupLog",
+    /** Opens the worktree folder in the OS file manager; no path is returned. */
+    worktreeReveal: "minih-agent-desktop/worktree/reveal",
+    worktreeSetupCommandGet: "minih-agent-desktop/worktree/setupCommand/get",
+    worktreeSetupCommandSet: "minih-agent-desktop/worktree/setupCommand/set",
     sessionRename: "minih-agent-desktop/session/rename",
     /** Deterministic first-prompt title for a session that is still untitled. */
     sessionDeriveTitle: "minih-agent-desktop/session/deriveTitle",

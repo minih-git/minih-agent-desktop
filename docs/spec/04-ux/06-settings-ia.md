@@ -881,6 +881,9 @@ system while preserving their different data ownership:
   history
 - Activating a project or project session returns to chat; archive and close
   actions keep Project archive open even when the active workspace changes
+- Opening an archived project also clears its renderer-local archive state so
+  the project becomes visible in the home sidebar; merely selecting its row
+  for inspection does not restore it.
 
 ### Info
 - app/host/protocol versions + open logs

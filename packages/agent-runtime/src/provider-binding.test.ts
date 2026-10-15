@@ -15,6 +15,10 @@ import {
   runtimeBaseUrlForApi,
   type RuntimeProviderConfig,
 } from "./provider-binding.js";
+import {
+  providerUsesSessionAffinity,
+  withSessionAffinityOptions,
+} from "./session-affinity.js";
 
 const keyedProvider: RuntimeProviderConfig = {
   id: "acme",
@@ -1692,5 +1696,180 @@ describe("Minih Router rows", () => {
     expect(res.status).toBe(401);
     expect(urls).toEqual(["http://127.0.0.1:25890/v1/chat/completions"]);
   });
+
+  it("stamps session affinity headers and prompt_cache_key on Minih Router Chat Completions requests", async () => {
+    const provider: RuntimeProviderConfig = {
+      ...router,
+      vendorKey: "minih-router",
+      baseUrl: "https://router.hmini.org/v1",
+      apiStyle: "chat_completions",
+      modelId: "gpt-4.1",
+    };
+    const model = buildProviderModel(provider);
+    expect(providerUsesSessionAffinity(provider, model.api, model.baseUrl)).toBe(true);
+    expect(model.compat).toMatchObject({
+      sendSessionAffinityHeaders: true,
+      sessionAffinityFormat: "openai",
+    });
+
+    let capturedHeaders: Headers | undefined;
+    let capturedBody: Record<string, unknown> | undefined;
+    const fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedHeaders = new Headers(init?.headers);
+      capturedBody = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : undefined;
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    };
+
+    const options = withSessionAffinityOptions(
+      { sessionId: "session-minih-1", fetch },
+      {
+        provider,
+        api: model.api,
+        baseUrl: model.baseUrl,
+        sessionId: "session-minih-1",
+      },
+    );
+
+    await createProviderModels(provider, model)
+      .streamSimple(
+        model,
+        {
+          systemPrompt: "system",
+          messages: [{ role: "user", content: "hello", timestamp: 1 }],
+        } as never,
+        options,
+      )
+      .result();
+
+    expect(capturedHeaders?.get("session_id")).toBe("session-minih-1");
+    expect(capturedHeaders?.get("x-client-request-id")).toBe("session-minih-1");
+    expect(capturedHeaders?.get("x-session-affinity")).toBe("session-minih-1");
+    expect(capturedBody?.prompt_cache_key).toBe("session-minih-1");
+  });
 });
 
+describe("session affinity for the adapters' anonymous endpoints (#1634)", () => {
+  const ownEndpoint = (
+    overrides: Partial<RuntimeProviderConfig> = {},
+  ): RuntimeProviderConfig => ({
+    id: "gateway-row",
+    name: "Own gateway",
+    vendorKey: "custom",
+    baseUrl: "https://gateway.example.com/v1",
+    modelId: "gateway-model-1",
+    apiKey: "sk-test",
+    authKind: "api_key_and_base_url",
+    apiStyle: "chat_completions",
+    supportsReasoning: false,
+    supportedThinkingLevels: ["off"],
+    ...overrides,
+  });
+  const compatOf = (
+    provider: RuntimeProviderConfig,
+  ): Record<string, unknown> | undefined =>
+    buildProviderModel(provider).compat as Record<string, unknown> | undefined;
+
+  it("gives the built model the adapter's non-OpenRouter session shape", () => {
+    expect(compatOf(ownEndpoint())).toMatchObject({
+      sendSessionAffinityHeaders: true,
+      sessionAffinityFormat: "openai",
+    });
+    expect(
+      compatOf(
+        ownEndpoint({
+          apiStyle: "anthropic_messages",
+          baseUrl: "https://relay.example.com",
+        }),
+      ),
+    ).toMatchObject({
+      sendSessionAffinityHeaders: true,
+      sessionAffinityFormat: "openai",
+    });
+  });
+
+  it("leaves a published vendor host and the OpenCode path on their own shape", () => {
+    expect(
+      compatOf(
+        ownEndpoint({
+          vendorKey: "deepseek",
+          baseUrl: "https://api.deepseek.com",
+          apiStyle: "chat_completions",
+        }),
+      )?.sendSessionAffinityHeaders,
+    ).toBeUndefined();
+    expect(
+      compatOf(
+        ownEndpoint({
+          vendorKey: "openai",
+          baseUrl: "https://api.openai.com/v1",
+          apiStyle: "chat_completions",
+        }),
+      )?.sendSessionAffinityHeaders,
+    ).toBeUndefined();
+    expect(
+      compatOf(
+        ownEndpoint({
+          vendorKey: "opencode-go",
+          baseUrl: "https://opencode.ai/zen/go/v1",
+          apiStyle: "opencode_go",
+        }),
+      )?.sendSessionAffinityHeaders,
+    ).toBeUndefined();
+  });
+
+  it("spreads the default under a catalog entry that already answers", () => {
+    const provider = ownEndpoint();
+    const model = buildProviderModel({
+      ...provider,
+      modelConfig: {
+        source: "generic",
+        name: "Gateway model 1",
+        baseUrl: provider.baseUrl!,
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128_000,
+        maxTokens: 8_192,
+        compat: {
+          sendSessionAffinityHeaders: false,
+          sessionAffinityFormat: "openrouter",
+        },
+      },
+    });
+    expect(model.compat).toMatchObject({
+      sendSessionAffinityHeaders: false,
+      sessionAffinityFormat: "openrouter",
+    });
+  });
+
+  it("reaches the wire as the three headers §6.3 names", async () => {
+    const provider = ownEndpoint();
+    const model = buildProviderModel(provider);
+    let headers: Headers | undefined;
+    const fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      headers = new Headers(init?.headers);
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    };
+
+    await createProviderModels(provider, model)
+      .streamSimple(
+        model,
+        {
+          systemPrompt: "system",
+          messages: [{ role: "user", content: "hello", timestamp: 1 }],
+        } as never,
+        { sessionId: "session-9", fetch },
+      )
+      .result();
+
+    expect(headers?.get("session_id")).toBe("session-9");
+    expect(headers?.get("x-client-request-id")).toBe("session-9");
+    expect(headers?.get("x-session-affinity")).toBe("session-9");
+  });
+});

@@ -1398,3 +1398,9 @@ one at runtime.
 
 All high-risk entry points assert declared+granted permissions and emit audit log lines.
 Plugin panels no longer receive the full `pi` object; they use `window.pluginBridge.invoke`.
+
+Renderer ES modules may import `react/jsx-runtime` or
+`react/jsx-dev-runtime` for automatic JSX. The host import map exposes both of
+its runtimes alongside `react`, `react-dom`, and `react-dom/client`, before
+evaluating plugin entries. This keeps compiled JSX, hooks and context on the
+host React instance in production and development builds.

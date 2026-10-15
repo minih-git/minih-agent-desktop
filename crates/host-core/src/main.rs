@@ -24,6 +24,7 @@ mod scratch;
 mod secrets;
 mod session_collaboration;
 mod session_search;
+mod session_worktrees;
 mod sessions;
 mod state;
 mod todos;
@@ -110,5 +111,11 @@ async fn main() -> anyhow::Result<()> {
         let app_settings = st.db.get_setting("app").unwrap_or_default();
         easytier_net::spawn_from_settings(&data_dir, app_settings.as_ref());
     }
+    // Drop half-created worktrees, mark vanished ones, repair links after a
+    // moved data directory, and remove orphans (ADR 0329).
+    tokio::spawn(session_worktrees::lifecycle::reconcile(
+        state.clone(),
+        session_worktrees::git::GitRunner::default(),
+    ));
     rpc::serve(state).await
 }

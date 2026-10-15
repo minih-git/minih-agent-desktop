@@ -61,6 +61,7 @@ export type ChatRefContainmentRoot = { kind: FsChatRefRoot; path: string };
 type ChatRefRootEntry = {
   kind: FsChatRefRoot;
   path: string;
+  sessionScratch?: boolean;
   projectRoot?: FsChatRefProjectRoot;
 };
 
@@ -158,7 +159,7 @@ function orderedRoots(roots: ChatRefRoots): ChatRefRootEntry[] {
   for (const kind of ["scratch", "attachments"] as const) {
     const value = roots[kind];
     if (typeof value !== "string" || !value.trim()) continue;
-    list.push({ kind, path: resolve(value) });
+    list.push({ kind, path: resolve(value), ...(kind === "scratch" ? { sessionScratch: true } : {}) });
   }
   return list;
 }
@@ -408,6 +409,7 @@ export async function resolveChatFileRef(
         relativePath,
         absolutePath,
         matchedBy: "exact-absolute",
+        ...(root.sessionScratch ? { sessionScratch: true } : {}),
         ...(root.projectRoot ? { projectRoot: root.projectRoot } : {}),
       };
     }
@@ -456,6 +458,7 @@ export async function resolveChatFileRef(
         relativePath: parsed.segments.join("/"),
         absolutePath,
         matchedBy: "exact-relative",
+        ...(root.sessionScratch ? { sessionScratch: true } : {}),
         ...(root.projectRoot ? { projectRoot: root.projectRoot } : {}),
       };
     }
@@ -471,6 +474,7 @@ export async function resolveChatFileRef(
         relativePath: candidate.relativePath,
         absolutePath: join(root.path, ...segmentsOf(candidate.relativePath)),
         matchedBy: candidate.matchedBy,
+        ...(root.sessionScratch ? { sessionScratch: true } : {}),
         ...(root.projectRoot ? { projectRoot: root.projectRoot } : {}),
       };
     }

@@ -223,8 +223,11 @@ may be retained while exactly one workspace supplies the visible shell context.
 
 #### Project tab lifecycle
 
-1. **Open** — selecting a project from Settings → Project archive or the picker adds its
-   normalized path to the retained set and activates it. Existing tabs remain.
+1. **Open** — activating a project from Settings → Project archive or the
+   picker adds its normalized path to the retained set and activates it.
+   Activation clears that path's archived presentation state so the project
+   appears in the home sidebar; selecting an inspector row without activating
+   it does not restore the project. Existing tabs remain.
 2. **Activate** — selecting a different group calls the existing `project.set`
    bridge. Its path then drives topbar identity, active workspace state, and
    new-task scope.
@@ -338,8 +341,17 @@ may be retained while exactly one workspace supplies the visible shell context.
   `aria-busy` mark the wait, the composer stays non-interactive so a prompt cannot
   reach the session being left, and the destination session id is never paired
   with another session's messages. The destination is then revealed at its final
-  record without a top-of-history or empty-home flash. An evicted session is
-  indistinguishable from a first visit.
+  record without a top-of-history or empty-home flash on a first visit. An
+  evicted session instead restores its runtime reading bookmark: message id,
+  viewport offset, mounted-window budget, and explicit disclosure choices.
+  Reading bookmarks outlive DOM eviction and project switches, but not a
+  renderer/app restart; deleting the session releases them. If the bookmarked
+  message is outside the loaded page, read a bounded range around it using the
+  existing history API, without search focus or highlighting. Revalidation must
+  not replace that reading range with the latest page. Real scroll input, search
+  navigation, return-to-latest, and send/retry/regenerate take priority over
+  restoration; obsolete reads cannot reclaim the viewport. A missing anchor
+  falls back to latest, and read failures use the existing error notification.
 - New Task is not a cold switch. Creating a session reveals the empty home on
   the first frame (the previous conversation and retained panes clear before
   `session.create`). Reusing the group's latest empty session commits that empty
@@ -1350,8 +1362,16 @@ Project drag/drop follows these patterns:
   (ADR 0263) — and then opens where it resolved: a project file in the bundled
   `pi.file-manager` work-panel view (the host `file:` tab when that view is not
   available), a session-scratch or attachment file in the host `file:` tab, and
-  a `.html`/`.htm` page of the project's primary folder in the side browser,
-  because the side browser is rooted at that folder. The address handed to
+  an unpositioned `.html`/`.htm` page from any project folder or the current
+  session's scratch directory in the side browser. HTML navigation uses the
+  resolved absolute path after file-reference resolution checks its roots.
+  No project is required to open a scratch artifact. Missing workspace state
+  is normalized consistently across asynchronous session-change guards.
+  Local `file:` Markdown URLs are converted to file references before
+  sanitization, not admitted as native links. `path:line[:column]` retains
+  source navigation in plain text, inline code and Markdown links, including
+  HTML; unavailable browser views report an error without auto-enabling.
+  The address handed to
   the work panel follows the folder that answered: a file of the primary folder
   travels as a project-relative path, a file of a sibling folder of the same
   project as an absolute one, exactly as a scratch or attachment file does. A

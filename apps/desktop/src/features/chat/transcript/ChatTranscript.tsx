@@ -20,6 +20,7 @@ import { collectLiveDelegationEntries } from "../../../lib/live-delegation-entri
 import { reuseReadonlyMap } from "../../../lib/assistant-turns";
 import { useTranscriptScroll } from "./hooks/useTranscriptScroll";
 import type { TranscriptSearchTarget } from "../../../lib/transcript-reading";
+import type { RestoreTranscriptReading } from "../../../hooks/use-transcript-reading-position";
 import { TranscriptSearchContext } from "../../../lib/transcript-search-context";
 import { DisclosureAnchorContext } from "../../../lib/disclosure-anchor-context";
 import { api } from "../../../lib/api";
@@ -52,6 +53,7 @@ type ChatTranscriptProps = {
   paneVisible?: boolean;
   searchTarget?: TranscriptSearchTarget | null;
   readingWindow?: boolean;
+  onRestoreReading?: RestoreTranscriptReading;
   hasMoreAfter?: boolean;
   onLoadNewer?: () => Promise<void>;
   onReturnToLatest?: () => void;
@@ -86,6 +88,7 @@ function TranscriptBody({
   paneVisible = true,
   searchTarget = null,
   readingWindow = false,
+  onRestoreReading,
   hasMoreAfter = false,
   onLoadNewer,
   onReturnToLatest,
@@ -152,6 +155,7 @@ function TranscriptBody({
     paneVisible,
     searchTarget,
     readingWindow,
+    onRestoreReading,
   });
 
   const specializedActivity = agentActivity;

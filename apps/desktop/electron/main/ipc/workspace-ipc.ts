@@ -771,9 +771,19 @@ export function registerWorkspaceIpc({
   const requireWorkspaceRoot = async (sessionId?: string) => {
     const owner = getHost();
     if (!owner) throw new Error("host unavailable");
-    const root = sessionId
-      ? (await owner.call<{ session?: { projectPath?: string } }>("session.get", { id: sessionId, messageLimit: 1 })).session?.projectPath
-      : (await owner.call<{ workspace?: { path: string } }>("workspace.get")).workspace?.path;
+    let root: string | undefined;
+    if (sessionId) {
+      const { session } = await owner.call<{ session?: { projectPath?: string; worktree?: unknown } }>(
+        "session.get", { id: sessionId, messageLimit: 1 },
+      );
+      // Chat references and source reads must see the same files as the
+      // session's tools, not a same-named file in the parent checkout.
+      root = session?.worktree
+        ? (await owner.call<{ path?: string }>("worktree.location", { sessionId })).path
+        : session?.projectPath;
+    } else {
+      root = (await owner.call<{ workspace?: { path: string } }>("workspace.get")).workspace?.path;
+    }
     if (getHost() !== owner) throw Object.assign(new Error("host replaced"), { errorCode: ErrorCodes.HOST_UNAVAILABLE });
     if (!root) throw Object.assign(new Error("workspace required"), { errorCode: ErrorCodes.INVALID_ARGUMENT });
     return root;
