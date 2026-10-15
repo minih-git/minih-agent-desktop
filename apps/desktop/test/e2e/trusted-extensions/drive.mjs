@@ -160,14 +160,15 @@ check("other plugins keep no owned provider rows", (providerList.providers ?? []
 const ui = await connectUiRenderer(Number(process.env.E2E_CDP_PORT));
 await ui.click('button[data-nav="settings"]');
 await ui.until(() => Boolean(document.querySelector(".settings-shell-full")), null, "Settings page");
-const openedModels = await ui.run((label) => {
-  const button = [...document.querySelectorAll(".settings-nav-item")].find((entry) => entry.textContent?.includes(label));
+const openedAccounts = await ui.run((label) => {
+  const button = [...document.querySelectorAll(".settings-nav-item")].find((entry) => entry.querySelector(".settings-nav-label")?.textContent?.trim() === label);
   button?.click();
   return Boolean(button);
-}, "Models");
-check("Model configuration is reachable from Settings navigation", openedModels);
-await ui.until(() => Boolean(document.querySelector("button.model-provider-add")), null, "Add provider action");
-await ui.click("button.model-provider-add");
+}, "Accounts");
+check("Accounts is reachable from Settings navigation", openedAccounts);
+const addProviderSelector = ".other-providers-section button.model-provider-add:not(:disabled)";
+await ui.until((selector) => Boolean(document.querySelector(selector)), addProviderSelector, "Other providers Add service action");
+await ui.click(addProviderSelector);
 await ui.until(
   (id) => [...document.querySelectorAll("[data-subscription-vendor-id]")].some((entry) => entry.getAttribute("data-subscription-vendor-id") === id),
   pluginOAuthId,
@@ -212,7 +213,7 @@ if (typeof initialProviderId !== "string" || typeof initialModelId !== "string")
 
 // Cancel a second login while its Host prompt is open; the plugin signal must
 // abort without disturbing the credential from the completed login.
-await ui.click("button.model-provider-add");
+await ui.click(addProviderSelector);
 await ui.click(oauthTile);
 await ui.until(
   () => Boolean(document.querySelector('.oauth-dialog input[type="password"]')),
@@ -253,12 +254,12 @@ check("refresh credentials never enter model requests", !JSON.stringify(oauthReq
 
 await ui.click('button[data-nav="settings"]');
 await ui.until(() => Boolean(document.querySelector(".settings-shell-full")), null, "Settings before sign-out");
-const reopenedModels = await ui.run((label) => {
-  const button = [...document.querySelectorAll(".settings-nav-item")].find((entry) => entry.textContent?.includes(label));
+const reopenedAccounts = await ui.run((label) => {
+  const button = [...document.querySelectorAll(".settings-nav-item")].find((entry) => entry.querySelector(".settings-nav-label")?.textContent?.trim() === label);
   button?.click();
   return Boolean(button);
-}, "Models");
-check("Model settings can be reopened after an OAuth-backed turn", reopenedModels);
+}, "Accounts");
+check("Accounts can be reopened after an OAuth-backed turn", reopenedAccounts);
 await ui.until(
   (id) => Boolean(document.querySelector(`[data-provider-id="${id}"] button[aria-haspopup="menu"]`)),
   pluginOAuthId,

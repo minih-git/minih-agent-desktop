@@ -16535,15 +16535,18 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   model has `thinkingLevels: ["off", "low", "high"]` and
   `defaultThinkingLevel: "high"`. Its `onProviderOAuth` callback uses only a
   local OAuth fixture and host-rendered `pi.providers.oauth` interactions.
-- **Steps**: 1) Enable the plugin and open Settings → Providers. 2) Inspect
+  Developer mode is enabled only in the isolated fixture profile so Accounts
+  exposes Other providers; production visibility and defaults remain unchanged.
+- **Steps**: 1) Enable the plugin and open Settings → Accounts → Other providers. 2) Inspect
   the model binding and Composer thinking selector, then select the row as the
   session model and run a turn. 3) Change the session thinking level and run a
   second turn. 4) Try to edit the provider, then delete it, through the user
-  path. 5) Open Vendor accounts, sign in to the plugin OAuth provider using its
+  path. 5) Choose Add service within Accounts → Other providers, then sign in
+  to the plugin OAuth provider using its
   host-rendered prompt/device-code step, then select that provider and run a
   turn. 6) Expire the fixture access token and run another turn to exercise the
   plugin refresh callback. 7) Cancel a second login and confirm the callback's
-  abort signal fires; sign out and then disable/re-enable the plugin. 8)
+  abort signal fires; return to Accounts to sign out, then disable/re-enable the plugin. 8)
   Uninstall the plugin; reinstall and enable it, then remove the declaration
   from its manifest and reload. 9) Load manifests that omit `provider.register`
   or `provider.oauth`, have OAuth metadata without `authKind: "oauth"`, or
@@ -16589,6 +16592,8 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   and plugin process. Ownership refusal, disable/enable, cleanup, and malformed
   manifest cases remain covered by host-core checks. No live identity provider
   is used.
+  The driver scopes Add service to `.other-providers-section` and requires an
+  enabled button, never the similarly styled Add models action on Models.
 
 #### E2E-CHAT-disclosure-toggle-keeps-reading-position
 
