@@ -97,4 +97,31 @@ describe("Google Generative AI requests", () => {
 
     expect(text).toEqual([{ type: "text", text: "hello" }]);
   });
+
+  it.each([
+    ["minih-router", "https://router.example/v1", "https://router.example/v1beta"],
+    ["minih-router", "https://router.example/mount/v1/", "https://router.example/mount/v1beta"],
+    ["minih-router", "http://127.0.0.1:23001/v1", "http://127.0.0.1:23001/v1beta"],
+    ["minih-router", "https://router.example/v1beta", "https://router.example/v1beta"],
+    ["custom", "https://relay.example/v1", "https://relay.example/v1"],
+    ["google", "https://generativelanguage.googleapis.com/v1", "https://generativelanguage.googleapis.com/v1"],
+  ])("routes %s Gemini requests from %s to %s", async (vendorKey, baseUrl, expectedBase) => {
+    const provider = { ...googleProvider, vendorKey, baseUrl };
+    const before = structuredClone(provider);
+    await withStubbedGoogle(async (captured) => {
+      const result = await completeOneShot(
+        provider,
+        { systemPrompt: "s", messages: [{ role: "user", content: "hi", timestamp: 0 }] },
+        "off",
+      );
+      expect(result.text).toBe("hello");
+      expect(captured).toHaveLength(1);
+      expect(captured[0].url).toBe(
+        `${expectedBase}/models/${provider.modelId}:streamGenerateContent?alt=sse`,
+      );
+      expect(captured[0].headers["x-goog-api-key"]).toBe(provider.apiKey);
+      expect(captured[0].headers["x-team"]).toBe("platform");
+    });
+    expect(provider).toEqual(before);
+  });
 });

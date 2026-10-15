@@ -259,13 +259,14 @@ globalThis.providerApiStyleProbe = async () => {
         `${locale}: StepFun saved the wrong model selection`);
       results.push(`${locale}:stepfun-plan-choose-key-discover-select-save`);
       render();
-      // A new service opens on the chooser (D625, D626); the custom endpoint
-      // leads the API-key tiles, and picking it moves to the form.
+      // A new service opens on the chooser (D625, D626); select the custom
+      // endpoint by identity, independently of the featured Router group.
       const tiles = [...document.querySelectorAll<HTMLButtonElement>("[data-service-id]")];
       assert(tiles.length > 1, `${locale}: service chooser tiles missing`);
-      assert(tiles.at(0)?.dataset.serviceId === CUSTOM_SERVICE, `${locale}: custom endpoint is not first`);
+      const customTile = tiles.find((tile) => tile.dataset.serviceId === CUSTOM_SERVICE);
+      assert(customTile, `${locale}: custom endpoint is missing`);
       assert(!apiStyleTrigger(), `${locale}: form rendered before a service was chosen`);
-      click(tiles.at(0));
+      click(customTile);
       await frame();
       assert(!document.querySelector("[data-service-id]"), `${locale}: chooser stayed open after a pick`);
       await openApiStyleMenu();

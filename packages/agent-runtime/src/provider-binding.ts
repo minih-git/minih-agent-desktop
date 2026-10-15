@@ -99,8 +99,13 @@ export type ApiBinding = {
  * Provider discovery accepts both an Anthropic root and a URL that already
  * includes `/v1`, so canonicalize the latter before runtime requests to keep
  * both forms on the same `/v1/messages` endpoint.
+ * Minih Router stores one `/v1` base for all bindings; its Gemini route uses
+ * the sibling `/v1beta` path. Other Google/custom endpoints remain literal.
  */
-export function runtimeBaseUrlForApi(api: Api, baseUrl: string): string {
+export function runtimeBaseUrlForApi(api: Api, baseUrl: string, vendorKey?: string): string {
+  if (api === "google-generative-ai" && isMinihRouterVendorKey(vendorKey)) {
+    return baseUrl.replace(/\/v1\/*$/i, "/v1beta");
+  }
   if (api !== "anthropic-messages") return baseUrl;
   const withoutTrailingSlash = baseUrl.replace(/\/+$/, "");
   const withoutVersion = withoutTrailingSlash.replace(/\/v1$/i, "");
@@ -453,6 +458,7 @@ export function buildProviderModel(
   const baseUrl = runtimeBaseUrlForApi(
     binding.api,
     providerRequestTransport(provider).baseUrl ?? binding.defaultBaseUrl,
+    provider.vendorKey,
   );
   const zhipuCompat = zhipuRequestCompat({
     vendorKey: provider.vendorKey,

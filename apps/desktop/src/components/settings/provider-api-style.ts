@@ -15,15 +15,12 @@ export const CUSTOM_PROVIDER_API_STYLES = API_STYLES.filter(
   (style) => !isAccountOnlyApiStyle(style) && style !== OPENCODE_GO_API_STYLE,
 );
 
-/**
- * Formats a Minih Router serves under its `/v1` address. Gemini lives under
- * `/v1beta` and account-only formats are not gateway formats, so neither is
- * offered.
- */
+/** General wire formats available globally and as per-model Router overrides. */
 export const MINIH_ROUTER_API_STYLES: readonly CatalogApiStyle[] = [
   "chat_completions",
   "responses",
   "anthropic_messages",
+  "google_generative_ai",
 ];
 
 /** Localized names for every transport in the catalog. */
