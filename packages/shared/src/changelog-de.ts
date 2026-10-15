@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.20.4",
+    date: "2026-10-15",
+    highlights: [
+      "Einstellungen teilen sich in Konten und Modelle: Minih Router verbindet nur mit einem Token, Modelle werden auf einer eigenen Seite gewählt.",
+      "Modelle aus dem Gateway-Katalog hinzufügen - mit Suche, Paging und Alles auswählen; gewählte Modelle erscheinen als Karten mit Preisen und Kontext.",
+      "Jedes Modell kann einen eigenen Protokollmodus festlegen; der Rest folgt der globalen Einstellung der Zeile, jetzt oberhalb der Modellliste.",
+      "Hinzugefügte Modelle behalten ihre automatische Upstream-Konfiguration - Limits, Thinking-Stufen und Bild-/PDF-Fähigkeit kommen aus dem Katalog.",
+      "Ein Modell lässt sich direkt aus seinem Konfigurationsdialog als Bildmodell festlegen.",
+    ],
+  },
+  {
     "version": "0.20.3",
     "date": "2026-10-15",
     "highlights": [

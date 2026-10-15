@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhTWEntries: ChangelogEntry[] = [
   {
+    version: "0.20.4",
+    date: "2026-10-15",
+    highlights: [
+      "設定拆分為「帳戶」與「模型」：連線 Minih Router 只需一個權杖，模型在獨立頁面選擇。",
+      "新增模型支援搜尋、分頁與全選；已選模型以卡片顯示價格與上下文。",
+      "每個模型可單獨指定協定模式，其餘跟隨全域設定（新增於模型列表上方的全域設定列）。",
+      "新加入的模型保留上游自動設定——上下文、思考等級與圖片/PDF 能力來自目錄。",
+      "可在模型設定視窗中直接將模型設為生圖模型。",
+    ],
+  },
+  {
     version: "0.20.3",
     date: "2026-10-15",
     highlights: [
