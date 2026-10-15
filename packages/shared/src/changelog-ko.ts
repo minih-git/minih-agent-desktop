@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const koEntries: ChangelogEntry[] = [
   {
+    "version": "0.20.3",
+    "date": "2026-10-15",
+    "highlights": [
+      "설정에서 기본 제공 서브에이전트를 직접 편집하고, 수정된 기본 서브에이전트를 원클릭으로 초기 기본값으로 복원할 수 있습니다.",
+      "앱 업데이트가 구성된 미러 서버로 자동 폴백하며 멈춘 다운로드를 복구합니다.",
+      "접힌 사이드바 프로젝트 행에 실시간 세션 상태와 활동 미리보기 스트림을 표시하고 5행을 넘는 목록을 자동으로 접습니다.",
+      "EasyTier 가상 LAN이 Minih-Router 부트스트랩 응답 봉투를 언래핑하고 모드 전환 시 고정 IP 설정을 유지하며 기본 클라이언트 서브넷을 11.12.0.0/24로 설정합니다.",
+    ],
+  },
+  {
     "version": "0.20.2",
     "date": "2026-10-15",
     "highlights": [

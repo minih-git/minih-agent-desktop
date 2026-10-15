@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    "version": "0.20.3",
+    "date": "2026-10-15",
+    "highlights": [
+      "Edita los subagentes integrados en Ajustes y restaura cualquier subagente personalizado a sus valores predeterminados con un clic.",
+      "Las actualizaciones de la aplicación recurren automáticamente a los servidores espejo configurados y recuperan descargas estancadas.",
+      "Las filas de proyecto contraídas en la barra lateral muestran el estado en vivo y una vista previa de actividad, plegando listas de más de 5 filas.",
+      "La LAN virtual EasyTier desenvuelve la respuesta de arranque de Minih-Router, conserva la IP estática al cambiar de modo y usa por defecto la subred 11.12.0.0/24.",
+    ],
+  },
+  {
     "version": "0.20.2",
     "date": "2026-10-15",
     "highlights": [

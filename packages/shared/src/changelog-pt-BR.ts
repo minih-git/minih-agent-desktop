@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    "version": "0.20.3",
+    "date": "2026-10-15",
+    "highlights": [
+      "Edite subagentes integrados nas Configurações e restaure qualquer subagente personalizado para os padrões de fábrica com um clique.",
+      "As atualizações do aplicativo recorrem automaticamente aos espelhos configurados e recuperam downloads travados.",
+      "Linhas de projeto recolhidas na barra lateral exibem o status da sessão ao vivo e uma prévia de atividade, recolhendo listas acima de 5 linhas.",
+      "A LAN virtual EasyTier desempacota o envelope de inicialização do Minih-Router, preserva configurações de IP estático ao alternar modos e define a sub-rede padrão como 11.12.0.0/24.",
+    ],
+  },
+  {
     "version": "0.20.2",
     "date": "2026-10-15",
     "highlights": [

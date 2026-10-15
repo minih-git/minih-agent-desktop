@@ -9,8 +9,10 @@ use url::Url;
 
 pub const DEFAULT_EASYTIER_NETWORK_NAME: &str = "minih-router";
 pub const DEFAULT_EASYTIER_NETWORK_SECRET: &str = "Minih@9527";
-pub const DEFAULT_EASYTIER_PEERS: &[&str] =
-    &["udp://router.hmini.org:11012", "tcp://router.hmini.org:11012"];
+pub const DEFAULT_EASYTIER_PEERS: &[&str] = &[
+    "udp://router.hmini.org:11012",
+    "tcp://router.hmini.org:11012",
+];
 pub const DEFAULT_ROUTER_LAN_URL: &str = "http://11.12.0.1:3001/v1";
 pub const DEFAULT_ROUTER_PUBLIC_URL: &str = "https://router.hmini.org/v1";
 

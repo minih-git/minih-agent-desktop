@@ -8536,13 +8536,18 @@ mod tests {
     #[test]
     fn session_summaries_include_normalized_last_message_preview() {
         let db = test_db();
-        let session = create_session(&db, Some("Activity Task".into()), None, None, None, None).unwrap();
+        let session =
+            create_session(&db, Some("Activity Task".into()), None, None, None, None).unwrap();
         assert_eq!(session.last_message_preview, None);
 
         append_message(
             &db,
             &session.id,
-            &user_msg("u-1", "First line\n\n  with extra   whitespace ", "2026-01-01T00:00:01Z"),
+            &user_msg(
+                "u-1",
+                "First line\n\n  with extra   whitespace ",
+                "2026-01-01T00:00:01Z",
+            ),
             None,
         )
         .unwrap();
@@ -8554,7 +8559,11 @@ mod tests {
             Some("First line with extra whitespace")
         );
 
-        let mut tool_msg = user_msg("t-1", "tool output should not override user/assistant preview", "2026-01-01T00:00:02Z");
+        let mut tool_msg = user_msg(
+            "t-1",
+            "tool output should not override user/assistant preview",
+            "2026-01-01T00:00:02Z",
+        );
         tool_msg.role = "tool".into();
         append_message(&db, &session.id, &tool_msg, None).unwrap();
 
