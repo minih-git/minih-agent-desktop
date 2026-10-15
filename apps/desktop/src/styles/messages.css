@@ -2480,6 +2480,17 @@
     0 0 0 2px color-mix(in oklab, var(--ds-accent) 22%, transparent);
 }
 
+/* A lone delegate connects center-to-center without a fan-out trunk. */
+@container subagent-activity (width > 520px) {
+  .subagent-topology-agents:has(> .subagent-topology-node:only-child)::before {
+    display: none;
+  }
+
+  .subagent-topology-node:only-child::before {
+    top: calc(50% - 1px);
+  }
+}
+
 @container subagent-activity (max-width: 520px) {
   .tool-activity-group.has-subagents .tool-activity-header {
     flex-wrap: wrap;

@@ -13110,6 +13110,8 @@ are withdrawn with ADR 0165.
   running. 2) Inspect the expanded delegation card and the rows below it.
   3) Let the delegates settle and inspect elapsed time on the card versus the
   parent processing group. 4) Reload the session and re-expand the card.
+  5) Repeat with one delegate and short/wrapped descriptions, in dark/light
+  themes at container widths 700, 521, 520, and 420px.
 - **Expected**: The delegation card contains only the main-agent root and the
   two `Task` nodes. Parent thinking, `Read`, `Grep`, and `TaskWait` render in a
   separate processing group, not flush against the subagent tile and not under
@@ -13117,13 +13119,20 @@ are withdrawn with ADR 0165.
   delegate is still running the card stays labelled working, remains open, and
   ticks elapsed from that fan-out's own timestamps even after the parent has
   moved on. Reload preserves the same split.
+  Above 520px, a lone delegate connects center-to-center to the main agent
+  without a detached segment or unused vertical trunk, even as text wraps.
+  Fan-out and stacked layouts retain their existing connector geometry.
 - **Specs linked**: `04-ux/08-component-spec.md` §9.9, ADR 0062,
   decisions-log D265, D319
 - **Acceptance**: C (conversation), Quality
 - **Milestone**: M6+
 - **Status**: Unit-covered (`assistant-turns.test.mjs`,
-  `subagent-topology.test.mjs`, `subagent-transcript.test.mjs`); desktop
-  journey pending (run only in a capable environment when this surface changes)
+  `subagent-topology.test.mjs`, `subagent-transcript.test.mjs`). Connector
+  geometry is covered by `node scripts/e2e-subagent-connectors.mjs`: production
+  React markup and styles in isolated Electron/Chromium, with no Host, real
+  provider, or user's desktop instance. The full session/reload journey remains
+  pending (run only in a capable environment when this surface changes).
+
 #### E2E-180: Sent file references stay chips and open on click
 
 - **Preconditions**: An Agent session in a workspace that contains a nested
