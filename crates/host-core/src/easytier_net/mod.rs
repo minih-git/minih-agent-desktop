@@ -1,15 +1,27 @@
+pub mod bootstrap;
 pub mod config;
+pub mod credentials;
 pub mod runtime;
 pub mod tun_runner;
 
 use std::path::Path;
+use std::sync::Arc;
 
 use serde_json::Value;
 
 pub use config::{settings_from_app_value, validate_easytier_settings, EasyTierEffectiveMode};
-pub use runtime::{manager, EasyTierPeerSummary, EasyTierStatus, MinihRouterResolvedEndpoint};
+pub use credentials::AppStateCredentialProvider;
+pub use runtime::{
+    manager, BootstrapCredentialProvider, EasyTierPeerSummary, EasyTierStatus,
+    MinihRouterResolvedEndpoint,
+};
 pub use tun_runner::{run_internal_tun_runner, INTERNAL_EASYTIER_TUN_RUNNER_FLAG};
 
+/// Start the channel at boot, without a credential source.
+///
+/// The database is not yet serving when this runs, so the network identity comes
+/// from local settings until the first `easytier.configure` or reconnect
+/// supplies one.
 pub fn spawn_from_settings(data_dir: &Path, app_settings: Option<&Value>) {
     let settings = settings_from_app_value(app_settings);
     let dir = data_dir.to_path_buf();
@@ -21,17 +33,45 @@ pub fn spawn_from_settings(data_dir: &Path, app_settings: Option<&Value>) {
     }
 }
 
-pub async fn apply_from_settings(data_dir: &Path, app_settings: Option<&Value>) -> EasyTierStatus {
+/// `spawn_from_settings` with a credential source, for the settings-update path
+/// where the database is already available.
+pub fn spawn_from_settings_with(
+    data_dir: &Path,
+    app_settings: Option<&Value>,
+    credentials: Arc<dyn BootstrapCredentialProvider>,
+) {
+    let settings = settings_from_app_value(app_settings);
+    let dir = data_dir.to_path_buf();
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(async move {
+            let mut mgr = manager().lock().await;
+            mgr.apply_settings_with(&dir, settings, false, Some(credentials.as_ref()))
+                .await;
+        });
+    }
+}
+
+pub async fn apply_from_settings(
+    data_dir: &Path,
+    app_settings: Option<&Value>,
+    credentials: Option<&dyn BootstrapCredentialProvider>,
+) -> EasyTierStatus {
     let settings = settings_from_app_value(app_settings);
     let mut mgr = manager().lock().await;
-    mgr.apply_settings(data_dir, settings, false).await;
+    mgr.apply_settings_with(data_dir, settings, false, credentials)
+        .await;
     mgr.status(None).await
 }
 
-pub async fn reconnect(data_dir: &Path, app_settings: Option<&Value>) -> EasyTierStatus {
+pub async fn reconnect(
+    data_dir: &Path,
+    app_settings: Option<&Value>,
+    credentials: Option<&dyn BootstrapCredentialProvider>,
+) -> EasyTierStatus {
     let settings = settings_from_app_value(app_settings);
     let mut mgr = manager().lock().await;
-    mgr.apply_settings(data_dir, settings, true).await;
+    mgr.apply_settings_with(data_dir, settings, true, credentials)
+        .await;
     mgr.status(None).await
 }
 

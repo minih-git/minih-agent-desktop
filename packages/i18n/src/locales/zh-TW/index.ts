@@ -1579,6 +1579,8 @@ sklm: {
     minihRouterLanTunEnabled: "已啟用 TUN 虛擬網卡模式",
     minihRouterLanShowSecret: "顯示網路金鑰",
     minihRouterLanHideSecret: "隱藏網路金鑰",
+    minihRouterLanBootstrapGateway: "閘道分配",
+    minihRouterLanBootstrapHint: "由 Minih Router 管理；網路名稱與位址由閘道下發。",
     minihRouterLanDhcp: "自動分配虛擬 IP（DHCP）",
     minihRouterLanStaticIpv4: "固定虛擬 IP",
     presetAnthropic: "Anthropic",

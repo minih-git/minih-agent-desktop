@@ -7,6 +7,10 @@ use easytier::instance::factory::{create_native_instance, NativeCoreInstance};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
+use super::bootstrap::{
+    access_key_digest, apply_bootstrap, bootstrap_client, defaults_overlay, fetch_bootstrap,
+    BootstrapCache, BootstrapError, BootstrapResponse, BootstrapSource, SharedClient,
+};
 use super::config::{
     build_toml_config, parse_router_lan_target, EasyTierConnectionState, EasyTierEffectiveMode,
     EasyTierMode, EasyTierSettings, DEFAULT_ROUTER_PUBLIC_URL,
@@ -57,6 +61,12 @@ pub struct EasyTierStatus {
     pub dhcp: bool,
     /// The configured static virtual IPv4, empty when DHCP is on.
     pub static_ipv4: String,
+    /// Where the network identity in effect came from.
+    pub bootstrap_source: BootstrapSource,
+    /// The network name the gateway issued, empty when it did not answer.
+    pub bootstrap_network_name: String,
+    /// Why the bootstrap did not apply, empty when it did.
+    pub bootstrap_error: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,12 +99,33 @@ struct ProbeCache {
     reachable: bool,
 }
 
+/// Reads the AccessKey of the Minih Router row the tunnel is built for.
+///
+/// Kept as a trait so `easytier_net` never imports the provider layer: the
+/// secret store stays owned by `providers`, and a test can answer without a
+/// database. Implementations must return the key already folded for HTTP
+/// headers, and must never log it.
+#[async_trait::async_trait]
+pub trait BootstrapCredentialProvider: Send + Sync {
+    /// The Router base URL and AccessKey to identify with, or `None` when the
+    /// user has no Minih Router row or that row carries no key.
+    async fn minih_router_credential(&self) -> Option<(String, String)>;
+}
+
 pub struct EasyTierManager {
     data_dir: Option<PathBuf>,
     settings: EasyTierSettings,
     backend: ActiveBackend,
     last_error: Option<String>,
     probe_cache: Option<ProbeCache>,
+    /// Server-issued network identities, keyed by AccessKey digest.
+    bootstrap_cache: BootstrapCache,
+    /// Why the last bootstrap attempt did not apply.
+    bootstrap_error: Option<String>,
+    /// The answer currently in effect, so the panel can show the source.
+    active_bootstrap: Option<BootstrapResponse>,
+    /// Shared HTTP client, so the TLS session pool survives across calls.
+    http_client: SharedClient,
 }
 
 impl Default for EasyTierManager {
@@ -105,6 +136,10 @@ impl Default for EasyTierManager {
             backend: ActiveBackend::Disabled,
             last_error: None,
             probe_cache: None,
+            bootstrap_cache: BootstrapCache::default(),
+            bootstrap_error: None,
+            active_bootstrap: None,
+            http_client: std::sync::Arc::new(bootstrap_client()),
         }
     }
 }
@@ -194,11 +229,93 @@ impl EasyTierManager {
         Ok(())
     }
 
+    /// Ask the gateway for the network identity this AccessKey should use.
+    ///
+    /// A cached answer is reused until its TTL expires. Every failure falls back
+    /// to the local configuration instead of propagating, because a gateway that
+    /// does not serve the endpoint yet must keep working on the public URL. The
+    /// reason is retained only so the panel can explain the source.
+    async fn refresh_bootstrap(&mut self, credentials: Option<&dyn BootstrapCredentialProvider>) {
+        self.bootstrap_error = None;
+        let Some(provider) = credentials else {
+            // No credential source: keep whatever answer is already in effect so
+            // a restart inside the elevated runner does not drop the network.
+            if self.active_bootstrap.is_none() {
+                self.bootstrap_error = None;
+            }
+            return;
+        };
+        let Some((base_url, access_key)) = provider.minih_router_credential().await else {
+            self.active_bootstrap = None;
+            self.bootstrap_error = Some(BootstrapError::NoAccessKey.to_string());
+            return;
+        };
+
+        let digest = access_key_digest(&access_key);
+        let now = Instant::now();
+        if let Some(cached) = self.bootstrap_cache.get(&digest, now) {
+            self.active_bootstrap = Some(cached.clone());
+            return;
+        }
+
+        match fetch_bootstrap(&self.http_client, &base_url, &access_key).await {
+            Ok(response) => {
+                self.bootstrap_cache
+                    .insert(digest, response.clone(), Instant::now());
+                self.active_bootstrap = Some(response);
+            }
+            Err(error) => {
+                // A 404 means the gateway has not shipped the endpoint; that is a
+                // supported configuration and is not worth surfacing as an error.
+                self.active_bootstrap = None;
+                self.bootstrap_error = match error {
+                    BootstrapError::EndpointUnavailable => None,
+                    other => Some(other.to_string()),
+                };
+            }
+        }
+    }
+
+    /// Where the identity in effect came from, for the panel and for logs.
+    fn bootstrap_source(&self) -> BootstrapSource {
+        if !self.settings.enabled {
+            BootstrapSource::Disabled
+        } else if self.active_bootstrap.is_some() {
+            BootstrapSource::Gateway
+        } else {
+            BootstrapSource::Local
+        }
+    }
+
+    /// The local settings with the bootstrap chain resolved.
+    fn effective_settings(&self, mut settings: EasyTierSettings) -> EasyTierSettings {
+        match &self.active_bootstrap {
+            Some(response) => apply_bootstrap(&mut settings, response),
+            None => defaults_overlay(&mut settings),
+        }
+        settings
+    }
+
     pub async fn apply_settings(
         &mut self,
         data_dir: &Path,
         next_settings: EasyTierSettings,
         force_restart: bool,
+    ) {
+        self.apply_settings_with(data_dir, next_settings, force_restart, None)
+            .await;
+    }
+
+    /// `apply_settings` with a credential source for the gateway identity.
+    ///
+    /// Every caller that owns the database passes one; the elevated TUN runner
+    /// and tests do not, and fall back to the local configuration.
+    pub async fn apply_settings_with(
+        &mut self,
+        data_dir: &Path,
+        next_settings: EasyTierSettings,
+        force_restart: bool,
+        credentials: Option<&dyn BootstrapCredentialProvider>,
     ) {
         let data_dir_buf = data_dir.to_path_buf();
         let unchanged = !force_restart
@@ -224,8 +341,16 @@ impl EasyTierManager {
 
         if !self.settings.enabled {
             self.last_error = None;
+            self.active_bootstrap = None;
+            self.bootstrap_error = None;
             return;
         }
+
+        // The gateway identity is fetched once per settings change, not per
+        // request: `resolve_minih_router_endpoint` runs on the chat path and
+        // must never pay a network round trip there.
+        self.refresh_bootstrap(credentials).await;
+        self.settings = self.effective_settings(self.settings.clone());
 
         let elevated = is_current_process_elevated();
         let try_tun_in_process = match self.settings.mode {
@@ -387,6 +512,13 @@ impl EasyTierManager {
                 updated_at_ms: now_ms(),
                 dhcp: self.settings.dhcp,
                 static_ipv4: self.settings.ipv4.clone().unwrap_or_default(),
+                bootstrap_source: self.bootstrap_source(),
+                bootstrap_network_name: self
+                    .active_bootstrap
+                    .as_ref()
+                    .map(|b| b.network_name.clone())
+                    .unwrap_or_default(),
+                bootstrap_error: self.bootstrap_error.clone().unwrap_or_default(),
             };
         }
 
@@ -415,6 +547,13 @@ impl EasyTierManager {
                 updated_at_ms: now_ms(),
                 dhcp: self.settings.dhcp,
                 static_ipv4: self.settings.ipv4.clone().unwrap_or_default(),
+                bootstrap_source: self.bootstrap_source(),
+                bootstrap_network_name: self
+                    .active_bootstrap
+                    .as_ref()
+                    .map(|b| b.network_name.clone())
+                    .unwrap_or_default(),
+                bootstrap_error: self.bootstrap_error.clone().unwrap_or_default(),
             },
             ActiveBackend::InProcess {
                 instance,
@@ -477,6 +616,13 @@ impl EasyTierManager {
                     updated_at_ms: now_ms(),
                     dhcp: self.settings.dhcp,
                     static_ipv4: self.settings.ipv4.clone().unwrap_or_default(),
+                    bootstrap_source: self.bootstrap_source(),
+                    bootstrap_network_name: self
+                        .active_bootstrap
+                        .as_ref()
+                        .map(|b| b.network_name.clone())
+                        .unwrap_or_default(),
+                    bootstrap_error: self.bootstrap_error.clone().unwrap_or_default(),
                 }
             }
             ActiveBackend::ElevatedTun { spec } => {
@@ -528,6 +674,13 @@ impl EasyTierManager {
                         updated_at_ms: snap.updated_at_ms,
                         dhcp: self.settings.dhcp,
                         static_ipv4: self.settings.ipv4.clone().unwrap_or_default(),
+                        bootstrap_source: self.bootstrap_source(),
+                        bootstrap_network_name: self
+                            .active_bootstrap
+                            .as_ref()
+                            .map(|b| b.network_name.clone())
+                            .unwrap_or_default(),
+                        bootstrap_error: self.bootstrap_error.clone().unwrap_or_default(),
                     }
                 } else {
                     // Elevated runner exited unexpectedly; fall back seamlessly to No-TUN mode.

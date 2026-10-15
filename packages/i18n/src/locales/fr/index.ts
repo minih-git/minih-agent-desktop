@@ -1586,6 +1586,8 @@ sklm: {
     "minihRouterLanDhcp": "IP virtuelle automatique (DHCP)",
     "minihRouterLanStaticIpv4": "IP virtuelle statique",
     "minihRouterLanHideSecret": "Masquer le secret du réseau",
+    "minihRouterLanBootstrapGateway": "Attribué par la passerelle",
+    "minihRouterLanBootstrapHint": "Géré par Minih Router ; la passerelle attribue ce réseau et son adresse.",
     "presetAnthropic": "Anthropique",
     "presetGoogle": "Google Gemini",
     "presetOpenrouter": "OpenRouter",
