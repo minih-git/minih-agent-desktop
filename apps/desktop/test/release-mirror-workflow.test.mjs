@@ -93,13 +93,17 @@ function fixture(t, overrides = {}) {
   return { dir, env, run, calls };
 }
 
+const posix = {
+  skip: process.platform === "win32" ? "Requires Bash and POSIX CLI fixtures" : false,
+};
+
 const configured = {
   MINIH_UPDATE_MIRROR_S3_BUCKET: "test-only-bucket",
   MINIH_UPDATE_MIRROR_S3_ACCESS_KEY_ID: "test-only-key",
   MINIH_UPDATE_MIRROR_S3_SECRET_ACCESS_KEY: "test-only-secret",
 };
 
-test("an unconfigured mirror recovers successfully without downloading assets or invoking AWS", (t) => {
+test("an unconfigured mirror recovers successfully without downloading assets or invoking AWS", posix, (t) => {
   const { dir, env, run, calls } = fixture(t);
   const result = run(download.run);
   assert.equal(result.status, 0, result.stderr);
@@ -112,7 +116,7 @@ test("an unconfigured mirror recovers successfully without downloading assets or
   assert.deepEqual(calls(env.AWS_CALLS), []);
 });
 
-test("a configured mirror reuses the published assets and uploads artifacts before feeds", (t) => {
+test("a configured mirror reuses the published assets and uploads artifacts before feeds", posix, (t) => {
   const { dir, env, run, calls } = fixture(t, configured);
   const result = run(download.run);
   assert.equal(result.status, 0, result.stderr);
@@ -124,7 +128,7 @@ test("a configured mirror reuses the published assets and uploads artifacts befo
   assert.match(mirrored.stdout, /artifacts published for 0\.20\.4/);
 });
 
-test("an older release cannot replace the latest mirror feed", (t) => {
+test("an older release cannot replace the latest mirror feed", posix, (t) => {
   const { env, run, calls } = fixture(t, { ...configured, RELEASE_TAG: "v0.20.3" });
   const result = run(download.run);
   assert.equal(result.status, 1);
@@ -133,21 +137,21 @@ test("an older release cannot replace the latest mirror feed", (t) => {
   assert.deepEqual(calls(env.AWS_CALLS), []);
 });
 
-test("release-tag input is data, never interpolated into executable shell", (t) => {
+test("release-tag input is data, never interpolated into executable shell", posix, (t) => {
   const { dir, env, run, calls } = fixture(t, { ...configured, RELEASE_TAG: "$(touch must-not-execute)" });
   assert.equal(run(download.run).status, 1);
   assert.equal(existsSync(join(dir, "must-not-execute")), false);
   assert.equal(calls(env.GH_CALLS).length, 1);
 });
 
-test("GitHub lookup failure cannot fall through to a mirror upload", (t) => {
+test("GitHub lookup failure cannot fall through to a mirror upload", posix, (t) => {
   const { env, run, calls } = fixture(t, { ...configured, FAIL_GITHUB: "1" });
   assert.equal(run(download.run).status, 1);
   assert.equal(calls(env.GH_CALLS).length, 1);
   assert.deepEqual(calls(env.AWS_CALLS), []);
 });
 
-test("a failed mirror upload remains a failed recovery", (t) => {
+test("a failed mirror upload remains a failed recovery", posix, (t) => {
   const { env, run, calls } = fixture(t, { ...configured, FAIL_AWS: "1" });
   assert.equal(run(download.run).status, 0);
   const result = run(mirror.run);
