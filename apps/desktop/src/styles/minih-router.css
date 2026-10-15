@@ -527,6 +527,17 @@
   add-models dialog over the gateway catalog.
 */
 
+/* The row's global protocol sits above the cards: every per-model override
+   names it, so it belongs at the top of the list it governs. */
+.models-global-style-row {
+  margin-bottom: 10px;
+}
+
+.models-global-style-row .settings-menu-select-anchor {
+  flex: 0 0 auto;
+  max-width: 220px;
+}
+
 .models-chosen-grid {
   align-items: start;
 }

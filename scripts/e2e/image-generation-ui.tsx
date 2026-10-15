@@ -33,6 +33,7 @@ globalThis.imageGenerationProbe = async () => {
     resources: { en: { translation: catalogs.en }, "zh-CN": { translation: catalogs["zh-CN"] } },
   });
   let settings = {
+    developerMode: true, // The AI-service list is developer-only surface now.
     defaultMode: "agent",
     defaultProviderId: "chat",
     defaultModelId: "chat-model",

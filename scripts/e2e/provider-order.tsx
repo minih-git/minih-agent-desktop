@@ -70,6 +70,10 @@ globalThis.providerOrderProbe = async (restart = false) => {
   const realList = api.listProviders;
   try {
     await useAppStore.getState().refreshProviders();
+    // The AI-service list the drag test drives is developer-only surface.
+    flushSync(() => useAppStore.setState({
+      settings: { ...useAppStore.getState().settings, developerMode: true } as never,
+    }));
     // The service rows now live on the accounts page, inside the "other
     // providers" disclosure: open it so the rows are on screen.
     flushSync(() => root.render(<I18nextProvider i18n={i18n}><AccountsPage /><ModelMenu /></I18nextProvider>));

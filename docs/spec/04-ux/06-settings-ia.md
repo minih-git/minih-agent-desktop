@@ -407,9 +407,9 @@ a usage tab.
   the Virtual LAN Channel, and then the folded **Other providers** section.
 - **Other providers** holds the AI-service list (D625: API services, plugin
   services and vendor subscription accounts in one list), the add-service and
-  import actions, and the Jev card. It is folded away until a non-Router row
-  exists or developer mode is on, so a fresh install shows one account card and
-  nothing else; an existing configuration is never hidden.
+  import actions, and the Jev card. It is hidden surface: only developer mode
+  reveals it, so a normal profile sees one account card and nothing else —
+  even a profile that still carries other providers' rows.
 - The page keeps one consistent vertical spacing rhythm and reads its rows
   through the same service components as before.
 
@@ -432,6 +432,10 @@ a usage tab.
   current style. Capability checkboxes and limit hints follow the published
   models.dev record for the model, exactly like the service dialog's editor.
   Saving writes the whole binding list once and closes the dialog.
+- Above the cards sits the row's **global protocol mode** (`settings.apiStyle`):
+  a dropdown of the formats the Router serves, writing the provider row
+  directly. Every per-model "Follow global" override names this value, so
+  changing it here reroutes every model that has not pinned its own protocol.
 - Added models keep their automatic upstream configuration: the models.dev
   record seeds the published limits, the thinking ladder with its default
   level, and attachment capabilities (a vision model's image input reads on

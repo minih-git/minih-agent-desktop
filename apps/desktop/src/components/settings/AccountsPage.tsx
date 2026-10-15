@@ -45,14 +45,9 @@ export function AccountsPage() {
   const account = useMinihRouterAccount(routerProvider?.id ?? null, revision);
   const refreshing = account.state === "loading";
 
+  // The service list is legacy surface: a normal profile sees the account card
+  // only, and developer mode brings the other providers back.
   const developerMode = settings?.developerMode === true;
-  const hasOtherProviders = providers.some(
-    (provider) => !isMinihRouterVendorKey(provider.vendorKey),
-  );
-  const routerRowsExist = providers.some((provider) =>
-    isMinihRouterVendorKey(provider.vendorKey),
-  );
-  const otherProvidersOpen = hasOtherProviders || developerMode;
 
   return (
     <div className="settings-stack accounts-page">
@@ -123,9 +118,7 @@ export function AccountsPage() {
         </div>
       </section>
 
-      {otherProvidersOpen || routerRowsExist ? (
-        <OtherProvidersSection defaultOpen={hasOtherProviders} />
-      ) : null}
+      {developerMode ? <OtherProvidersSection defaultOpen /> : null}
     </div>
   );
 }

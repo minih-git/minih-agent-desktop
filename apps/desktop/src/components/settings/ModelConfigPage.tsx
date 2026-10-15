@@ -26,6 +26,7 @@ import {
   API_STYLE_LABEL_KEYS,
 } from "./provider-api-style";
 import { ModelBindingFields } from "./ModelBindingFields";
+import { SettingsMenuSelect } from "./SettingsMenuSelect";
 import { AddModelsDialog } from "./AddModelsDialog";
 import { ModelConfigureDialog } from "./ModelConfigureDialog";
 import { MinihRouterModelCard } from "./MinihRouterModelCard";
@@ -207,6 +208,21 @@ export function ModelsPage() {
     );
   };
 
+  /** The row's global protocol: what every per-model "follow global" reads. */
+  const setGlobalApiStyle = async (style: string) => {
+    if (!routerProvider) return;
+    setSaving(true);
+    try {
+      await api.updateProvider({ id: routerProvider.id, apiStyle: style });
+      await refreshProviders();
+      showToast(t("settings.providerUpdated"), { variant: "success" });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const removeModel = async (binding: ModelBinding) => {
     if (!routerProvider) return;
     if (configuringId === binding.id) setConfiguringId(null);
@@ -341,6 +357,27 @@ export function ModelsPage() {
             </Button>
           </div>
         </div>
+
+        {routerProvider ? (
+          <div className="settings-row model-default-row models-global-style-row">
+            <div className="settings-row-copy model-default-copy">
+              <div className="settings-row-title model-default-label">
+                {t("settings.apiStyle")}
+              </div>
+              <div className="settings-row-detail model-default-value">
+                {t("settings.minihRouterApiStyleHint")}
+              </div>
+            </div>
+            <SettingsMenuSelect
+              className="models-global-style-select"
+              label={t("settings.apiStyle")}
+              value={routerProvider.apiStyle ?? "chat_completions"}
+              disabled={saving}
+              onChange={(id) => void setGlobalApiStyle(id)}
+              options={modelApiStyleOptions.map((style) => ({ ...style }))}
+            />
+          </div>
+        ) : null}
 
         <div className="settings-panel model-provider-panel">
           {!routerProvider ? (

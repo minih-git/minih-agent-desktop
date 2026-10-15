@@ -17483,8 +17483,8 @@ renderer's durable transcript reads. No real model or provider is contacted.
   active `LAN Tunnel` routing (updating to `TUN (Virtual NIC)` on elevation and
   persisting custom LAN parameters). The accounts page carries the service list,
   the add-service and import actions, Jev and vendor subscription accounts under
-  "Other providers", which is folded away until a non-Router row exists or
-  developer mode is on. On the models page, "Add models" opens the gateway
+  "Other providers", which developer mode alone reveals; above the models sits
+  the row's global protocol mode, which writes the provider row's apiStyle. On the models page, "Add models" opens the gateway
   plaza as selectable cards with search and paging, and confirming appends the
   chosen bindings while claiming the app's chat default only when nothing
   runnable resolves; each chosen card reports the default, offers Configure

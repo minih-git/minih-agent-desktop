@@ -238,6 +238,10 @@ window.accountsProbe = async () => {
     endpointHiddenInitially: endpointHiddenInitially && Boolean(endpointShown),
   };
 
+  // The AI-service list is developer-only surface: a normal profile, even one
+  // with other providers, sees the account card alone.
+  const otherProvidersHidden = !document.querySelector(".other-providers-section");
+
   // The connected card replaces the token entry once the row exists.
   const connectedBadge = await waitFor(
     () => document.body.innerText.includes("Connected") || null,
@@ -250,6 +254,21 @@ window.accountsProbe = async () => {
   mount(React.createElement(ModelsPage));
   await waitFor(() => button("Add models"), "the add-models action did not render");
   const emptyStateShown = document.body.innerText.includes("No models yet");
+  const globalStyleRow = document.querySelector(".models-global-style-row");
+  const globalStyleRowShown = Boolean(globalStyleRow);
+
+  const globalTrigger = document.querySelector(
+    '.models-global-style-row button[aria-label="API format"]') ??
+    document.querySelector(".models-global-style-row .settings-menu-select-trigger");
+  flushSync(() => globalTrigger.click());
+  const globalOption = [...document.querySelectorAll('[role="option"]')]
+    .find((node) => node.textContent.includes("Anthropic Messages"));
+  flushSync(() => globalOption.click());
+  await waitFor(
+    () => updated && "apiStyle" in updated && updated.apiStyle === "anthropic_messages",
+    "the global protocol write did not land",
+  );
+  const globalStyleSaved = updated.apiStyle === "anthropic_messages";
 
   flushSync(() => button("Add models").click());
   const dialog = await waitFor(
@@ -338,6 +357,8 @@ window.accountsProbe = async () => {
     return box && box.checked ? true : null;
   }, "the image capability did not follow the published record");
 
+  const followGlobalNamesNewStyle = [...drawer.querySelectorAll("button")]
+    .some((node) => node.textContent.includes("Follow global (anthropic_messages)"));
   const protocolTrigger = drawer.querySelector('button[aria-label="Protocol mode"]');
   flushSync(() => protocolTrigger.click());
   const protocolOptions = [...document.querySelectorAll('[role="option"]')]
@@ -383,6 +404,10 @@ window.accountsProbe = async () => {
   return {
     connectSaved,
     connectedBadge: Boolean(connectedBadge),
+    otherProvidersHidden,
+    globalStyleRowShown,
+    globalStyleSaved,
+    followGlobalNamesNewStyle,
     nullSettingsRendersEmpty,
     tokenEntryGoneAfterConnect,
     emptyStateShown,
@@ -503,6 +528,10 @@ app.whenReady().then(async () => {
         endpointHiddenInitially: true,
       },
       connectedBadge: true,
+      otherProvidersHidden: true,
+      globalStyleRowShown: true,
+      globalStyleSaved: true,
+      followGlobalNamesNewStyle: true,
       nullSettingsRendersEmpty: true,
       tokenEntryGoneAfterConnect: true,
       emptyStateShown: true,
@@ -530,8 +559,9 @@ app.whenReady().then(async () => {
       dialogClosesAfterSave: true,
       defaultBadgeShown: true,
       followGlobalDefault: true,
+      // The follow-global default names the style the row now stores.
       protocolOptions: [
-        "Follow global (chat_completions)",
+        "Follow global (anthropic_messages)",
         "OpenAI Chat Completions",
         "OpenAI Responses",
         "Anthropic Messages",
