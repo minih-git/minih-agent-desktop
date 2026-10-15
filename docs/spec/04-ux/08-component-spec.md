@@ -2426,6 +2426,11 @@ to two lines, its description is clamped to two readable lines, and its step
 summary can wrap rather than forcing the user to resize the divider. Complete
 descriptions remain available through the node's accessible name/hover title;
 the node and its live process never create horizontal overflow.
+For a single delegate in the side-by-side layout (container width above 520px),
+the parent and delegate connect with one continuous center-aligned horizontal
+line, regardless of card height or wrapped text; no fan-out trunk is shown.
+Multiple delegates and the stacked layout at 520px or below retain their
+existing trunk and branch geometry.
 
 An accepted steering message creates a new visual reply without ending the
 parent runtime turn. Earlier delegation cards in that running turn keep their
