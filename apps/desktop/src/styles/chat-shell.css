@@ -749,22 +749,40 @@
   overflow: visible;
 }
 
+:root[data-theme="light"] {
+  --ds-mascot-shell-top: #ffffff;
+  --ds-mascot-shell-mid: #f8fafc;
+  --ds-mascot-shell-bot: #e0e7ff;
+  --ds-mascot-stroke: #1e293b;
+  --ds-mascot-ear: #e0e7ff;
+  --ds-mascot-visor-top: #1e1b4b;
+  --ds-mascot-visor-bot: #090d16;
+  --ds-mascot-visor-stroke: #1e293b;
+  --ds-mascot-highlight: rgba(255, 255, 255, 0.95);
+  --ds-mascot-badge: #6366f1;
+  --ds-mascot-cuff: #0ea5e9;
+  --ds-mascot-accent-start: #6366f1;
+  --ds-mascot-orb: rgba(99, 102, 241, 0.58);
+  --ds-mascot-shadow-outer: rgba(99, 102, 241, 0.16);
+  --ds-mascot-shadow-inner: rgba(30, 41, 59, 0.14);
+}
+
 :root[data-theme="light"] .home-mascot-logo {
-  --mascot-shell-top: #ffffff;
-  --mascot-shell-mid: #f8fafc;
-  --mascot-shell-bot: #e0e7ff;
-  --mascot-stroke: #1e293b;
-  --mascot-ear: #e0e7ff;
-  --mascot-visor-top: #1e1b4b;
-  --mascot-visor-bot: #090d16;
-  --mascot-visor-stroke: #1e293b;
-  --mascot-highlight: rgba(255, 255, 255, 0.95);
-  --mascot-badge: #6366f1;
-  --mascot-cuff: #0ea5e9;
-  --mascot-accent-start: #6366f1;
-  --mascot-orb: rgba(99, 102, 241, 0.58);
-  --mascot-shadow-outer: rgba(99, 102, 241, 0.16);
-  --mascot-shadow-inner: rgba(30, 41, 59, 0.14);
+  --mascot-shell-top: var(--ds-mascot-shell-top);
+  --mascot-shell-mid: var(--ds-mascot-shell-mid);
+  --mascot-shell-bot: var(--ds-mascot-shell-bot);
+  --mascot-stroke: var(--ds-mascot-stroke);
+  --mascot-ear: var(--ds-mascot-ear);
+  --mascot-visor-top: var(--ds-mascot-visor-top);
+  --mascot-visor-bot: var(--ds-mascot-visor-bot);
+  --mascot-visor-stroke: var(--ds-mascot-visor-stroke);
+  --mascot-highlight: var(--ds-mascot-highlight);
+  --mascot-badge: var(--ds-mascot-badge);
+  --mascot-cuff: var(--ds-mascot-cuff);
+  --mascot-accent-start: var(--ds-mascot-accent-start);
+  --mascot-orb: var(--ds-mascot-orb);
+  --mascot-shadow-outer: var(--ds-mascot-shadow-outer);
+  --mascot-shadow-inner: var(--ds-mascot-shadow-inner);
 }
 
 .home-mascot-svg {

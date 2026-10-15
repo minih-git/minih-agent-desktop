@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "0.20.3",
+    date: "2026-10-15",
+    highlights: [
+      "支持在设置中直接编辑内置子智能体，并可一键复原为出厂默认配置。",
+      "应用更新支持自动回退到配置的更新镜像源，并在下载停滞时自动恢复。",
+      "侧边栏折叠的项目行显示实时会话状态与活动预览流，超过 5 行的会话列表自动折叠。",
+      "EasyTier 虚拟局域网支持解包 Minih-Router 引导响应、在模式切换时保留静态 IP 设置，并将客户端默认网段调整为 11.12.0.0/24。",
+    ],
+  },
+  {
     version: "0.20.2",
     date: "2026-10-15",
     highlights: [

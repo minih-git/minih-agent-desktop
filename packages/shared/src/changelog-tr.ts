@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    "version": "0.20.3",
+    "date": "2026-10-15",
+    "highlights": [
+      "Yerleşik alt aracıları Ayarlar'da düzenleyin ve özelleştirilmiş herhangi bir yerleşik alt aracıyı tek tıklamayla fabrika varsayılanlarına geri yükleyin.",
+      "Uygulama güncellemeleri yapılandırılmış güncelleme yansılarına otomatik olarak geri döner ve duraksayan indirmeleri kurtarır.",
+      "Kenar çubuğundaki daraltılmış proje satırları canlı oturum durumunu ve etkinlik önizleme akışını gösterir, 5 satırı aşan listeleri katlar.",
+      "EasyTier sanal LAN, Minih-Router önyükleme zarfını açar, mod geçişlerinde statik IP ayarlarını korur ve istemci alt ağını varsayılan olarak 11.12.0.0/24 yapar.",
+    ],
+  },
+  {
     "version": "0.20.2",
     "date": "2026-10-15",
     "highlights": [

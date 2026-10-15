@@ -1107,7 +1107,7 @@
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
   font-weight: var(--font-weight-semibold);
-  line-height: 1;
+  line-height: var(--leading-none);
 }
 
 @media (prefers-reduced-motion: reduce) {

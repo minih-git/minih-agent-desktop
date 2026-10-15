@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.20.3",
+    date: "2026-10-15",
+    highlights: [
+      "Edit built-in subagents in Settings and restore any customized built-in to its factory defaults with one click.",
+      "App updates automatically fall back to configured update mirrors and recover stalled downloads.",
+      "Collapsed sidebar project rows display live session status and an activity preview stream, folding long session lists past 5 rows.",
+      "EasyTier virtual LAN unwraps the Minih-Router bootstrap envelope, preserves static IP settings across mode switches, and defaults the client subnet to 11.12.0.0/24.",
+    ],
+  },
+  {
     version: "0.20.2",
     date: "2026-10-15",
     highlights: [

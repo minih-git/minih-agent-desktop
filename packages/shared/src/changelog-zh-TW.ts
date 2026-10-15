@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhTWEntries: ChangelogEntry[] = [
   {
+    version: "0.20.3",
+    date: "2026-10-15",
+    highlights: [
+      "支援在設定中直接編輯內建子代理，並可一鍵復原為原廠預設設定。",
+      "應用程式更新支援自動回退至設定的更新鏡像來源，並在下載停滯時自動恢復。",
+      "側邊欄收合的專案列顯示即時工作階段狀態與活動預覽流，超過 5 列的工作階段清單自動收合。",
+      "EasyTier 虛擬區域網路支援解包 Minih-Router 引導回應、在模式切換時保留靜態 IP 設定，並將用戶端預設網段調整為 11.12.0.0/24。",
+    ],
+  },
+  {
     version: "0.20.2",
     date: "2026-10-15",
     highlights: [
