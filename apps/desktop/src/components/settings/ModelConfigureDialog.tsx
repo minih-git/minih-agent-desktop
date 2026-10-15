@@ -7,13 +7,17 @@
  * this dialog and the service dialog cannot drift apart.
  */
 import { useTranslation } from "react-i18next";
-import type { ModelBinding } from "@minih-agent/shared";
+import type { ModelBinding, ModelInfo, ThinkingLevel } from "@minih-agent/shared";
 import { OverlayBackdrop, Button, portalOverlay } from "../ui";
 import { ModelBindingFields } from "./ModelBindingFields";
 
 export type ModelConfigureDialogProps = {
   /** The binding being edited (draft state included). */
   binding: ModelBinding;
+  /** Published models.dev record for this model, when one exists. */
+  info?: ModelInfo;
+  /** Published thinking levels, when known; empty means every level is manual. */
+  publishedLevels?: readonly ThinkingLevel[];
   /** True while the caller saves, so the actions stop accepting input. */
   saving?: boolean;
   /** Wire styles this model may pin; absent hides the protocol override. */
@@ -29,6 +33,8 @@ export type ModelConfigureDialogProps = {
 
 export function ModelConfigureDialog({
   binding,
+  info,
+  publishedLevels,
   saving,
   apiStyleOptions,
   globalApiStyle,
@@ -65,7 +71,8 @@ export function ModelConfigureDialog({
         <div className="model-configure-body">
           <ModelBindingFields
             binding={binding}
-            publishedLevels={[]}
+            info={info}
+            publishedLevels={publishedLevels ?? []}
             busy={saving}
             nativeWebSearchCapable
             apiStyleOptions={apiStyleOptions}

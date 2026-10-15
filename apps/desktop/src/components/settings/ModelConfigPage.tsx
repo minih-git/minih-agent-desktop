@@ -11,8 +11,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   isMinihRouterVendorKey,
+  publishedThinkingLevels,
+  sortThinkingLevels,
   type ImageGenerationBinding,
   type ModelBinding,
+  type ModelInfo,
 } from "@minih-agent/shared";
 import { useAppStore } from "../../stores/app-store";
 import { api } from "../../lib/api";
@@ -32,6 +35,9 @@ import {
   mergeAddedBindings,
   planModelsSave,
 } from "./models-page-state";
+import {
+  customModelLookupInput,
+} from "./model-custom-lookup";
 import {
   imageGenerationPickerCandidates,
   isImageGenerationPickerCandidate,
@@ -65,6 +71,8 @@ export function ModelsPage() {
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   /** Draft edits while a drawer is open; saved as one list write. */
   const [draftBindings, setDraftBindings] = useState<ModelBinding[] | null>(null);
+  /** Published models.dev record per chosen wire id, for display and seeding. */
+  const [publishedInfoById, setPublishedInfoById] = useState<Map<string, ModelInfo>>(new Map());
   const [changingImageModel, setChangingImageModel] = useState(false);
   const [refreshingCatalog, setRefreshingCatalog] = useState(false);
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(null);
@@ -93,6 +101,34 @@ export function ModelsPage() {
     () => routerProvider?.models.map((model) => model.id) ?? [],
     [routerProvider?.models],
   );
+  // The published record behind each chosen model: what the configure dialog
+  // shows (published limits, capability defaults, thinking ladder) and what a
+  // freshly added binding is seeded from. One read per id per revision.
+  useEffect(() => {
+    if (!routerProvider || chosenIds.length === 0) return;
+    let current = true;
+    const context = {
+      providerId: routerProvider.id,
+      vendorKey: routerProvider.vendorKey,
+      baseUrl: routerProvider.baseUrl,
+    };
+    void Promise.all(
+      chosenIds.map((id) =>
+        api.lookupProviderModel(customModelLookupInput(id, context))
+          .then((result) => [id.toLowerCase(), result.info] as const)
+          .catch(() => [id.toLowerCase(), null] as const),
+      ),
+    ).then((entries) => {
+      if (!current) return;
+      setPublishedInfoById(
+        new Map(entries.filter(([, info]) => info != null) as [string, ModelInfo][]),
+      );
+    });
+    return () => {
+      current = false;
+    };
+  }, [routerProvider, chosenIds, revision]);
+
   const selected = useMinihRouterSelectedModels(routerProvider, chosenIds, revision);
 
   const imageGenerationCandidates = useMemo(
@@ -137,8 +173,36 @@ export function ModelsPage() {
   const addModels = async (models: Parameters<typeof mergeAddedBindings>[1]) => {
     if (!routerProvider) return;
     setAddOpen(false);
+    // The same auto-configuration the service dialog applied: the published
+    // record seeds limits, thinking and capabilities when models.dev describes
+    // the id, so a freshly added model is usable without manual tuning.
+    const context = {
+      providerId: routerProvider.id,
+      vendorKey: routerProvider.vendorKey,
+      baseUrl: routerProvider.baseUrl,
+    };
+    const entries = await Promise.all(
+      models.map(async (model) => {
+        try {
+          const result = await api.lookupProviderModel(
+            customModelLookupInput(model.id, context),
+          );
+          return [model.id.toLowerCase(), result.info ?? null] as const;
+        } catch {
+          return [model.id.toLowerCase(), null] as const;
+        }
+      }),
+    );
+    const infoById = new Map(entries);
+    setPublishedInfoById((current) => {
+      const next = new Map(current);
+      for (const [id, info] of entries) if (info) next.set(id, info);
+      return next;
+    });
     await saveBindings(
-      mergeAddedBindings(routerProvider.models, models),
+      mergeAddedBindings(routerProvider.models, models, (model) =>
+        infoById.get(model.id.toLowerCase()),
+      ),
       "settings.modelsAddedToast",
     );
   };
@@ -162,6 +226,11 @@ export function ModelsPage() {
   };
 
   const effectiveBindings = draftBindings ?? routerProvider?.models ?? [];
+  /** The published thinking ladder for one chosen id, in canonical order. */
+  const publishedLevelsFor = (id: string) =>
+    sortThinkingLevels(
+      publishedThinkingLevels(publishedInfoById.get(id.toLowerCase()) ?? undefined),
+    );
   const configuredBinding = configuringId
     ? effectiveBindings.find(
         (binding) => binding.id.toLowerCase() === configuringId.toLowerCase(),
@@ -422,6 +491,8 @@ export function ModelsPage() {
       {configuredBinding && routerProvider ? (
         <ModelConfigureDialog
           binding={configuredBinding}
+          info={publishedInfoById.get(configuredBinding.id.toLowerCase())}
+          publishedLevels={publishedLevelsFor(configuredBinding.id)}
           saving={saving}
           apiStyleOptions={modelApiStyleOptions}
           globalApiStyle={routerProvider.apiStyle ?? "chat_completions"}

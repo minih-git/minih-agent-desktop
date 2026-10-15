@@ -130,6 +130,20 @@ window.minihAgent = {
         const wanted = new Set(input.modelIds.map((id) => id.toLowerCase()));
         return { ok: true, data: allModels.filter((model) => wanted.has(model.id.toLowerCase())) };
       }
+      case "minih-agent-desktop/providers/lookupModel": {
+        // The models.dev record behind an id: limits, thinking ladder and the
+        // published image capability the configure dialog must follow.
+        if ((input?.modelId ?? "").toLowerCase() === "gpt-4.1") {
+          return { ok: true, data: { info: {
+            modelId: "gpt-4.1", displayName: "gpt-4.1", providerId: "router-1",
+            capabilities: [], reasoning: true,
+            thinkingLevelMap: { low: "low", medium: "medium", high: "high" },
+            modalities: { input: ["text", "image"] },
+            limit: { context: 400_000, output: 16_384 },
+          } } };
+        }
+        return { ok: true, data: { info: null } };
+      }
       case "minih-agent-desktop/providers/minihRouter/models": {
         const query = (input.query ?? "").toLowerCase();
         const matched = allModels.filter((model) => model.id.includes(query));
@@ -285,9 +299,19 @@ window.accountsProbe = async () => {
   const savedBinding = updated.models[0];
   const addSaved = {
     modelId: savedBinding.id,
-    // A seeded binding keeps the gateway's own window and no protocol pin.
+    // A seeded binding keeps no protocol pin.
     protocolPinLeftToGlobal: !("apiStyle" in savedBinding) || !savedBinding.apiStyle,
-    contextWindowKept: savedBinding.contextWindow === 1047576,
+    // The published record auto-configured the binding: the catalog's window
+    // (400k) replaced the gateway's own number, and the thinking ladder and
+    // image capability follow models.dev instead of defaulting off.
+    autoConfigured: {
+      contextWindow: savedBinding.contextWindow,
+      contextWindowSource: savedBinding.contextWindowSource,
+      thinkingLevels: savedBinding.thinkingLevels,
+      defaultThinkingLevel: savedBinding.defaultThinkingLevel,
+      followsPublishedCapabilities:
+        savedBinding.supportsImages == null && savedBinding.supportsDocuments == null,
+    },
     // Nothing else in the row was rewritten by the models page.
     nameUntouched: updated.name === undefined,
     defaultFollowsFirstBinding: updated.defaultModelId === savedBinding.id,
@@ -305,6 +329,15 @@ window.accountsProbe = async () => {
   );
   const cardStayedCompact = !document.querySelector(".models-configure-drawer");
   const modalIsDialog = drawer.getAttribute("role") === "dialog";
+  // The published record reaches the dialog: the image-input checkbox follows
+  // models.dev (on) without the user pinning anything. The read is async, so
+  // the checkbox settles once the catalog answer lands.
+  const imageFollowsPublished = await waitFor(() => {
+    const box = [...drawer.querySelectorAll("input[type=checkbox]")]
+      .find((node) => node.closest("label")?.textContent?.trim().startsWith("Images"));
+    return box && box.checked ? true : null;
+  }, "the image capability did not follow the published record");
+
   const protocolTrigger = drawer.querySelector('button[aria-label="Protocol mode"]');
   flushSync(() => protocolTrigger.click());
   const protocolOptions = [...document.querySelectorAll('[role="option"]')]
@@ -361,6 +394,7 @@ window.accountsProbe = async () => {
     addSaved,
     cardStayedCompact,
     modalIsDialog,
+    imageFollowsPublished,
     dialogClosesAfterSave,
     defaultBadgeShown,
     followGlobalDefault,
@@ -480,12 +514,19 @@ app.whenReady().then(async () => {
       addSaved: {
         modelId: "gpt-4.1",
         protocolPinLeftToGlobal: true,
-        contextWindowKept: true,
+        autoConfigured: {
+          contextWindow: 400000,
+          contextWindowSource: "catalog",
+          thinkingLevels: ["low", "medium", "high"],
+          defaultThinkingLevel: "medium",
+          followsPublishedCapabilities: true,
+        },
         nameUntouched: true,
         defaultFollowsFirstBinding: true,
       },
       cardStayedCompact: true,
       modalIsDialog: true,
+      imageFollowsPublished: true,
       dialogClosesAfterSave: true,
       defaultBadgeShown: true,
       followGlobalDefault: true,

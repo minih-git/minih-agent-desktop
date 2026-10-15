@@ -43,12 +43,13 @@ const provider = (overrides = {}) => ({
   ...overrides,
 });
 
-test("a plaza row seeds a binding, keeping the gateway's published window", () => {
+test("a plaza row seeds a binding that still follows the catalog", () => {
   const seeded = bindingFromRouterModel(plazaModel("gpt-4.1", 1_047_576));
   assert.equal(seeded.id, "gpt-4.1");
   assert.equal(seeded.contextWindow, 1_047_576);
-  // The gateway's number is not a models.dev value to keep tracking.
-  assert.equal(seeded.contextWindowSource, "user");
+  // The gateway's number is the best known published value, not a pin: a later
+  // models.dev correction still reaches the binding.
+  assert.equal(seeded.contextWindowSource, "catalog");
   assert.equal(seeded.apiStyle, undefined);
 
   // Without a published window the generic seed stands, so models.dev can still
@@ -56,6 +57,33 @@ test("a plaza row seeds a binding, keeping the gateway's published window", () =
   const unknown = bindingFromRouterModel(plazaModel("mystery"));
   assert.equal(unknown.contextWindowSource, "catalog");
   assert.equal(unknown.apiStyle, undefined);
+});
+
+test("a published models.dev record auto-configures the added binding", () => {
+  const info = {
+    modelId: "gpt-4.1",
+    displayName: "gpt-4.1",
+    providerId: "minih-router",
+    reasoning: true,
+    thinkingLevelMap: { minimal: "minimal", low: "low", high: "high" },
+    modalities: { input: ["text", "image"] },
+    limit: { context: 400_000, output: 16_384 },
+  };
+  const seeded = bindingFromRouterModel(plazaModel("gpt-4.1", 1_047_576), info);
+  // The catalog's numbers and thinking ladder arrive configured, and the
+  // capabilities follow the published record instead of defaulting to off.
+  assert.equal(seeded.contextWindow, 400_000);
+  assert.equal(seeded.contextWindowSource, "catalog");
+  assert.deepEqual(seeded.thinkingLevels, ["minimal", "low", "high"]);
+  // No published "medium": the default is the ladder's first enabled level.
+  assert.equal(seeded.defaultThinkingLevel, "minimal");
+  assert.equal(seeded.supportsImages, null);
+  assert.equal(seeded.supportsDocuments, null);
+
+  // A record without limits keeps the gateway's own window as the fallback.
+  const sparse = { ...info, limit: undefined, contextWindow: undefined };
+  const fallback = bindingFromRouterModel(plazaModel("gpt-4.1", 1_047_576), sparse);
+  assert.equal(fallback.contextWindow, 1_047_576);
 });
 
 test("adding models appends the new ones once, keeping the saved order", () => {

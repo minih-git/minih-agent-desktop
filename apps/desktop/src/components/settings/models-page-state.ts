@@ -9,9 +9,11 @@
  */
 import {
   bindingForCustomModel,
+  bindingForCustomModelInfo,
   type ImageGenerationBinding,
   type MinihRouterModel,
   type ModelBinding,
+  type ModelInfo,
   type ProviderPublic,
 } from "@minih-agent/shared";
 import { keepsAppDefaultModel } from "./default-model.ts";
@@ -23,30 +25,41 @@ function sameId(left: string, right: string): boolean {
 }
 
 /**
- * Seed a binding from a gateway plaza model: the gateway's own context window
- * is a real published number, everything else starts from the generic seed so
- * models.dev can still take over the limits it knows better.
+ * Seed a binding from a gateway plaza model.
+ *
+ * The models.dev record wins when it describes the id — it carries the
+ * published limits, thinking ladder and attachment capabilities — and the
+ * gateway's own context window is the fallback for an id the catalog has not
+ * described yet. Either way the seed stays catalog-sourced: nothing is pinned,
+ * so a later catalog correction still reaches the binding.
  */
-export function bindingFromRouterModel(model: MinihRouterModel): ModelBinding {
+export function bindingFromRouterModel(
+  model: MinihRouterModel,
+  info?: ModelInfo | null,
+): ModelBinding {
+  if (info) {
+    const binding = bindingForCustomModelInfo(model.id, info);
+    const published = info.limit?.context ?? info.contextWindow;
+    return published
+      ? binding
+      : { ...binding, contextWindow: model.contextWindow ?? binding.contextWindow };
+  }
   const seed = bindingForCustomModel(model.id);
-  if (model.contextWindow === null || model.contextWindow === undefined) return seed;
-  return {
-    ...seed,
-    contextWindow: model.contextWindow,
-    // The gateway published the number; it is not a models.dev value to track.
-    contextWindowSource: "user",
-  };
+  return model.contextWindow == null
+    ? seed
+    : { ...seed, contextWindow: model.contextWindow };
 }
 
 /** Append only models the row does not carry yet, preserving saved order. */
 export function mergeAddedBindings(
   current: readonly ModelBinding[],
   added: readonly MinihRouterModel[],
+  infoFor?: (model: MinihRouterModel) => ModelInfo | null | undefined,
 ): ModelBinding[] {
   const next = [...current];
   for (const model of added) {
     if (next.some((binding) => sameId(binding.id, model.id))) continue;
-    next.push(bindingFromRouterModel(model));
+    next.push(bindingFromRouterModel(model, infoFor?.(model)));
   }
   return next;
 }

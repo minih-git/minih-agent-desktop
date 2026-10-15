@@ -429,8 +429,15 @@ a usage tab.
   default level, the thinking protocol, attachment capabilities, subagent
   availability, provider-hosted web search, and the **protocol mode**
   (per-model `apiStyle`) whose default reads "Follow global" with the row's
-  current style. Saving writes the whole binding list once and closes the
-  dialog.
+  current style. Capability checkboxes and limit hints follow the published
+  models.dev record for the model, exactly like the service dialog's editor.
+  Saving writes the whole binding list once and closes the dialog.
+- Added models keep their automatic upstream configuration: the models.dev
+  record seeds the published limits, the thinking ladder with its default
+  level, and attachment capabilities (a vision model's image input reads on
+  without the user pinning it). A model the catalog has not described falls
+  back to the gateway's own context window, and every seeded value stays
+  catalog-sourced, so a later catalog correction still reaches the binding.
 - **Add models** (top right) opens the gateway catalog as selectable cards, 12
   per page, with search (debounced, restarting at page one), previous/next
   paging that keeps the current page visible while the next loads, a
