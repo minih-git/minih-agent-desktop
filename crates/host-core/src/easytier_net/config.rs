@@ -7,11 +7,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use url::Url;
 
-pub const DEFAULT_EASYTIER_NETWORK_NAME: &str = "minih-net";
+pub const DEFAULT_EASYTIER_NETWORK_NAME: &str = "minih-router";
 pub const DEFAULT_EASYTIER_NETWORK_SECRET: &str = "Minih@9527";
 pub const DEFAULT_EASYTIER_PEERS: &[&str] =
-    &["udp://tier.hmini.org:11010", "tcp://tier.hmini.org:11010"];
-pub const DEFAULT_ROUTER_LAN_URL: &str = "http://10.144.144.10:3001/v1";
+    &["udp://router.hmini.org:11012", "tcp://router.hmini.org:11012"];
+pub const DEFAULT_ROUTER_LAN_URL: &str = "http://11.12.0.1:3001/v1";
 pub const DEFAULT_ROUTER_PUBLIC_URL: &str = "https://router.hmini.org/v1";
 
 const MAX_NETWORK_NAME_LEN: usize = 128;
@@ -434,26 +434,26 @@ mod tests {
         let defaults = EasyTierSettings::default();
         assert!(defaults.enabled);
         assert_eq!(defaults.mode, EasyTierMode::Auto);
-        assert_eq!(defaults.network_name, "minih-net");
+        assert_eq!(defaults.network_name, "minih-router");
         assert_eq!(defaults.network_secret, "Minih@9527");
         assert_eq!(
             defaults.peers,
             vec![
-                "udp://tier.hmini.org:11010".to_string(),
-                "tcp://tier.hmini.org:11010".to_string()
+                "udp://router.hmini.org:11012".to_string(),
+                "tcp://router.hmini.org:11012".to_string()
             ]
         );
-        assert_eq!(defaults.router_lan_url, "http://10.144.144.10:3001/v1");
+        assert_eq!(defaults.router_lan_url, "http://11.12.0.1:3001/v1");
         assert!(defaults.dhcp);
     }
 
     #[test]
     fn router_lan_target_normalizes_root_and_v1_paths() {
-        let target = parse_router_lan_target("http://10.144.144.10:3001").unwrap();
-        assert_eq!(target.host, "10.144.144.10");
+        let target = parse_router_lan_target("http://11.12.0.1:3001").unwrap();
+        assert_eq!(target.host, "11.12.0.1");
         assert_eq!(target.port, 3001);
         assert_eq!(target.api_path, "/v1");
-        assert_eq!(target.normalized_base_url, "http://10.144.144.10:3001/v1");
+        assert_eq!(target.normalized_base_url, "http://11.12.0.1:3001/v1");
         assert_eq!(target.forward_base_url(25890), "http://127.0.0.1:25890/v1");
     }
 
@@ -463,10 +463,10 @@ mod tests {
             "easytier": {
                 "enabled": true,
                 "mode": "no-tun",
-                "networkName": "minih-net",
+                "networkName": "minih-router",
                 "networkSecret": "Minih@9527",
-                "peers": ["udp://tier.hmini.org:11010"],
-                 "routerLanUrl": "http://10.144.144.10:3001/v1",
+                "peers": ["udp://router.hmini.org:11012"],
+                 "routerLanUrl": "http://11.12.0.1:3001/v1",
                 "dhcp": true
             }
         });
@@ -481,7 +481,7 @@ mod tests {
         );
         assert_eq!(
             toml.get_port_forwards()[0].dst_addr.to_string(),
-            "10.144.144.10:3001"
+            "11.12.0.1:3001"
         );
     }
 }

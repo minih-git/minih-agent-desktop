@@ -202,13 +202,13 @@ export function minihRouterHeadlineQuota(
 }
 
 /** Built-in EasyTier virtual LAN parameters for Minih Router. */
-export const EASYTIER_DEFAULT_NETWORK_NAME = "minih-net";
+export const EASYTIER_DEFAULT_NETWORK_NAME = "minih-router";
 export const EASYTIER_DEFAULT_NETWORK_SECRET = "Minih@9527";
 export const EASYTIER_DEFAULT_PEERS = [
-  "udp://tier.hmini.org:11010",
-  "tcp://tier.hmini.org:11010",
+  "udp://router.hmini.org:11012",
+  "tcp://router.hmini.org:11012",
 ] as const;
-export const EASYTIER_DEFAULT_ROUTER_LAN_URL = "http://10.144.144.10:3001/v1";
+export const EASYTIER_DEFAULT_ROUTER_LAN_URL = "http://11.12.0.1:3001/v1";
 
 export type EasyTierMode = "auto" | "no_tun" | "no-tun" | "tun";
 export type EasyTierEffectiveMode = "disabled" | "no_tun" | "no-tun" | "tun";
@@ -223,7 +223,7 @@ export type EasyTierSettings = {
   routerLanUrl?: string;
   /** True lets EasyTier hand out a virtual IPv4 (default); false pins `ipv4`. */
   dhcp?: boolean;
-  /** Static virtual IPv4 (or CIDR) used when `dhcp` is false, e.g. `10.144.144.10`. */
+  /** Static virtual IPv4 (or CIDR) used when `dhcp` is false, e.g. `11.12.0.10`. */
   ipv4?: string;
 };
 

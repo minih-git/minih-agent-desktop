@@ -432,11 +432,11 @@ address is only a default (`customBaseUrl: true`):
 - `vendorKey` is not a models.dev provider, so model metadata resolves through
   the relay rule in "Which publisher a row is read against" below.
 - **Built-in EasyTier virtual LAN channel**: Rust `host-core` embeds an EasyTier
-  virtual LAN node (`networkName: "minih-net"`, bootstrap peers
-  `udp://tier.hmini.org:11010` and `tcp://tier.hmini.org:11010`, default LAN
-  gateway `http://10.144.144.10:3001/v1`, persisted under `settings.app.easytier`).
-  The virtual range is EasyTier's own default `10.144.144.0/24`, chosen so it
-  cannot overlap a private network the user already runs; a deployment whose
+  virtual LAN node (`networkName: "minih-router"`, bootstrap peers
+  `udp://router.hmini.org:11012` and `tcp://router.hmini.org:11012`, default LAN
+  gateway `http://11.12.0.1:3001/v1`, persisted under `settings.app.easytier`).
+  The virtual range is `11.12.0.0/24`, chosen so it
+  cannot overlap a private network (`11.11.11.0/24`) the user already runs; a deployment whose
   gateway sits on another range sets `routerLanUrl`, and pins the gateway's own
   address with `dhcp: false` plus `ipv4` (an IPv4 literal, `/32` accepted).
   The gateway may also issue the identity itself: `GET <root>/api/easytier/bootstrap`
@@ -456,7 +456,7 @@ address is only a default (`customBaseUrl: true`):
   marks the gateway-owned fields read-only while a gateway answer is in effect.
   By default it starts in user-space **No-TUN** mode (`no_tun = true`,
   `dhcp = true`) with a local loopback TCP port forward
-  (`127.0.0.1:<local_port> -> 10.144.144.10:3001`) requiring no administrator
+  (`127.0.0.1:<local_port> -> 11.12.0.1:3001`) requiring no administrator
   privileges; users may optionally request administrator elevation to switch into
   system **TUN** mode (`--easytier-tun-runner`), automatically falling back to
   `no_tun` if elevation is declined or unavailable. When the LAN gateway is
