@@ -415,8 +415,9 @@ a usage tab.
 
 ### Models (`agent` tab)
 - The models page groups its sections in this order: the **chosen models** as
-  cards, the image-generation model selector, then the model-catalog status and
-  refresh row. The sections use one consistent vertical spacing rhythm.
+  cards, the image-generation model selector (rendered once at least one model
+  is designated as an image model), then the model-catalog status and refresh
+  row. The sections use one consistent vertical spacing rhythm.
 - Each chosen card shows the gateway's published record (vendor, category,
   copyable id, input/output prices per 1M tokens, context window, cache price,
   tiered-pricing marker) with the app's default marked, plus **Configure** and
@@ -431,7 +432,11 @@ a usage tab.
   (per-model `apiStyle`) whose default reads "Follow global" with the row's
   current style. Capability checkboxes and limit hints follow the published
   models.dev record for the model, exactly like the service dialog's editor.
-  Saving writes the whole binding list once and closes the dialog.
+  The dialog also carries **Set as image model**: designating a model adds it
+  to the image-generation candidates, which is what brings the image-default
+  row below the cards to life — a fresh profile has no other way to offer one.
+  Saving writes the binding list and the image selection together, and closes
+  the dialog.
 - Above the cards sits the row's **global protocol mode** (`settings.apiStyle`):
   a dropdown of the formats the Router serves, writing the provider row
   directly. Every per-model "Follow global" override names this value, so

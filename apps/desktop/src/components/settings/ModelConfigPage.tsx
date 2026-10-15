@@ -74,6 +74,11 @@ export function ModelsPage() {
   const [draftBindings, setDraftBindings] = useState<ModelBinding[] | null>(null);
   /** Published models.dev record per chosen wire id, for display and seeding. */
   const [publishedInfoById, setPublishedInfoById] = useState<Map<string, ModelInfo>>(new Map());
+  /**
+   * Image-model selection drafted in the configure dialog; `null` means the
+   * stored selection stands and the write plans no change of its own.
+   */
+  const [draftImageIds, setDraftImageIds] = useState<string[] | null>(null);
   const [changingImageModel, setChangingImageModel] = useState(false);
   const [refreshingCatalog, setRefreshingCatalog] = useState(false);
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(null);
@@ -132,6 +137,15 @@ export function ModelsPage() {
 
   const selected = useMinihRouterSelectedModels(routerProvider, chosenIds, revision);
 
+  /** The image-model ids this row designates today. */
+  const currentImageIds = useMemo(
+    () =>
+      (settings?.imageGenerationModels ?? [])
+        .filter((binding) => binding.providerId === routerProvider?.id)
+        .map((binding) => binding.modelId),
+    [settings?.imageGenerationModels, routerProvider?.id],
+  );
+
   const imageGenerationCandidates = useMemo(
     () => imageCandidates(
       settings?.imageGenerationModels,
@@ -148,13 +162,17 @@ export function ModelsPage() {
     (settings.defaultModelId ?? "").toLowerCase() === binding.id.toLowerCase();
 
   /** One write path for every binding-list change this page makes. */
-  const saveBindings = async (nextBindings: ModelBinding[], successKey: string) => {
+  const saveBindings = async (
+    nextBindings: ModelBinding[],
+    successKey: string,
+    imageModelIds?: readonly string[],
+  ) => {
     if (!routerProvider) return;
     setSaving(true);
     try {
       // Re-read settings: another window or agent may have moved defaults.
       const current = await api.getSettings();
-      const plan = planModelsSave(routerProvider, nextBindings, current, providers);
+      const plan = planModelsSave(routerProvider, nextBindings, current, providers, imageModelIds);
       await api.updateProvider(plan.provider);
       if (plan.settings) {
         const nextSettings = { ...current, ...plan.settings };
@@ -262,9 +280,11 @@ export function ModelsPage() {
     const nextBindings = routerProvider?.models.map((binding) =>
       binding.id === configuredBinding.id ? configuredBinding : binding,
     ) ?? [];
+    const imageModelIds = draftImageIds ?? undefined;
     setConfiguringId(null);
     setDraftBindings(null);
-    await saveBindings(nextBindings, "settings.modelConfiguredToast");
+    setDraftImageIds(null);
+    await saveBindings(nextBindings, "settings.modelConfiguredToast", imageModelIds);
   };
 
   const setImageGenerationDefault = async (binding: ImageGenerationBinding) => {
@@ -531,11 +551,25 @@ export function ModelsPage() {
           info={publishedInfoById.get(configuredBinding.id.toLowerCase())}
           publishedLevels={publishedLevelsFor(configuredBinding.id)}
           saving={saving}
+          imageModelSelected={(draftImageIds ?? currentImageIds).some((id) =>
+            id.toLowerCase() === configuredBinding.id.toLowerCase(),
+          )}
+          onImageModelChange={(id, selected) =>
+            setDraftImageIds((current) => {
+              const base = current ?? currentImageIds;
+              return selected
+                ? base.some((entry) => entry.toLowerCase() === id.toLowerCase())
+                  ? base
+                  : [...base, id]
+                : base.filter((entry) => entry.toLowerCase() !== id.toLowerCase());
+            })
+          }
           apiStyleOptions={modelApiStyleOptions}
           globalApiStyle={routerProvider.apiStyle ?? "chat_completions"}
           onClose={() => {
             setConfiguringId(null);
             setDraftBindings(null);
+            setDraftImageIds(null);
           }}
           onSave={() => void saveConfigured()}
           onChange={(patch) => updateBinding(configuredBinding.id, patch)}

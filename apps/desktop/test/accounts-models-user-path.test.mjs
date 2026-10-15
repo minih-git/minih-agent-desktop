@@ -367,6 +367,12 @@ window.accountsProbe = async () => {
   const responsesOption = [...document.querySelectorAll('[role="option"]')]
     .find((node) => node.textContent.includes("OpenAI Responses"));
   flushSync(() => responsesOption.click());
+  // The image-model designation lives here too: checking it and saving makes
+  // this model the row's image model, which is what brings the image-default
+  // row onto the page at all.
+  const imageModelToggle = [...drawer.querySelectorAll("input[type=checkbox]")]
+    .find((node) => node.closest("label")?.textContent?.includes("Set as image model"));
+  flushSync(() => imageModelToggle.click());
   const dialogClosesAfterSave = true; // asserted through the wait below
   flushSync(() => button("Save").click());
   await waitFor(
@@ -379,13 +385,38 @@ window.accountsProbe = async () => {
   );
   const pinnedProtocol = updated.models[0].apiStyle;
 
+  // The image-default row renders once a model is designated, and the default
+  // is the model just selected.
+  const imageRow = await waitFor(
+    () => document.querySelector(".model-image-row") ?? null,
+    "the image-generation row did not appear",
+  );
+  const imageDefaultNamed = imageRow.textContent.includes("gpt-4.1");
+  // Captured here: the removal below correctly drops the binding again.
+  const imageSelectionSaved = settings.imageGenerationModels ?? [];
+
   // 4) Removing the only model leaves no dangling replacement behind: the row
   //    loses its binding list, and no default is invented for an empty row.
   const settingsWritesBeforeRemoval = settingsWrites.length;
   await waitFor(() => button("Remove model"), "the remove action did not render");
   flushSync(() => button("Remove model").click());
   await waitFor(() => updated && updated.models.length === 0, "the model was not removed");
-  const removalWroteNoDefaults = settingsWrites.length === settingsWritesBeforeRemoval;
+  // The removal write only drops the image binding that named the removed
+  // model; the chat defaults keep their stored values through it.
+  const defaultsBeforeRemoval = {
+    provider: settings.defaultProviderId,
+    model: settings.defaultModelId,
+  };
+  const removalWrites = settingsWrites.slice(settingsWritesBeforeRemoval);
+  const removalWroteNoDefaults = removalWrites.every(
+    (write) =>
+      write.defaultProviderId === defaultsBeforeRemoval.provider &&
+      write.defaultModelId === defaultsBeforeRemoval.model,
+  );
+  const removalDroppedImageBinding = removalWrites.some(
+    (write) => Array.isArray(write.imageGenerationModels) &&
+      write.imageGenerationModels.length === 0,
+  );
 
   // The models page also renders while settings are still absent (the shell's
   // recovery path) without changing its hook order: nothing renders, and the
@@ -420,12 +451,15 @@ window.accountsProbe = async () => {
     cardStayedCompact,
     modalIsDialog,
     imageFollowsPublished,
+    imageDefaultNamed,
+    imageSelectionSaved,
     dialogClosesAfterSave,
     defaultBadgeShown,
     followGlobalDefault,
     protocolOptions,
     pinnedProtocol,
     removalWroteNoDefaults,
+    removalDroppedImageBinding,
     storedDefaultsKept: {
       defaultProviderId: settings.defaultProviderId,
       defaultModelId: settings.defaultModelId,
@@ -556,6 +590,8 @@ app.whenReady().then(async () => {
       cardStayedCompact: true,
       modalIsDialog: true,
       imageFollowsPublished: true,
+      imageDefaultNamed: true,
+      imageSelectionSaved: [{ providerId: "router-1", modelId: "gpt-4.1" }],
       dialogClosesAfterSave: true,
       defaultBadgeShown: true,
       followGlobalDefault: true,
@@ -568,6 +604,7 @@ app.whenReady().then(async () => {
       ],
       pinnedProtocol: "responses",
       removalWroteNoDefaults: true,
+      removalDroppedImageBinding: true,
       storedDefaultsKept: {
         defaultProviderId: "router-1",
         defaultModelId: "gpt-4.1",

@@ -152,6 +152,26 @@ test("removing the model the app default names does not invent a replacement", (
   assert.equal(plan.settings, null);
 });
 
+test("an explicit image selection designates the row's image models", () => {
+  const row = provider({ models: [bindingFromRouterModel(plazaModel("gpt-image"))] });
+  const plan = planModelsSave(
+    row,
+    [bindingFromRouterModel(plazaModel("gpt-image"))],
+    { defaultProviderId: "router-1", defaultModelId: "gpt-image" },
+    [row],
+    ["gpt-image"],
+  );
+  // The designated model becomes a candidate and claims the image default,
+  // exactly like the service dialog's image checkbox did.
+  assert.deepEqual(plan.settings?.imageGenerationModels, [
+    { providerId: "router-1", modelId: "gpt-image" },
+  ]);
+  assert.deepEqual(plan.settings?.imageGeneration, {
+    providerId: "router-1",
+    modelId: "gpt-image",
+  });
+});
+
 test("an image binding naming a removed model is dropped with its default", () => {
   const row = provider({
     models: [bindingFromRouterModel(plazaModel("gpt-image")), bindingFromRouterModel(plazaModel("chat"))],

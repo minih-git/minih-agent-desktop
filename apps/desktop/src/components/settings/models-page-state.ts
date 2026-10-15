@@ -100,13 +100,17 @@ export type ModelsPageSavePlan = {
  * - the app's chat default is kept while it still resolves, and claimed by the
  *   first binding only when nothing runnable is left — the same rule the
  *   service dialog applies after a provider save;
- * - image bindings naming a removed model are dropped with their default.
+ * - image bindings follow `imageModelIds` when the caller carries an explicit
+ *   selection (the configure dialog's image-model checkbox), and otherwise
+ * keep the stored selection filtered by the bindings that remain, dropping a
+ * default whose model was removed.
  */
 export function planModelsSave(
   provider: ProviderPublic,
   nextBindings: readonly ModelBinding[],
   settings: ModelsPageSettingsDraft,
   providers: readonly ProviderPublic[],
+  imageModelIds?: readonly string[],
 ): ModelsPageSavePlan {
   const savedRow: ProviderPublic = { ...provider, models: [...nextBindings] };
   const nextProviders = providers.map((row) => (row.id === provider.id ? savedRow : row));
@@ -116,10 +120,12 @@ export function planModelsSave(
     settings.defaultProviderId,
     settings.defaultModelId,
   );
-  const imageIds = (settings.imageGenerationModels ?? [])
-    .filter((binding) => binding.providerId === provider.id)
-    .map((binding) => binding.modelId)
-    .filter((modelId) => nextBindings.some((binding) => sameId(binding.id, modelId)));
+  const imageIds = imageModelIds !== undefined
+    ? [...new Set(imageModelIds)]
+    : (settings.imageGenerationModels ?? [])
+      .filter((binding) => binding.providerId === provider.id)
+      .map((binding) => binding.modelId)
+      .filter((modelId) => nextBindings.some((binding) => sameId(binding.id, modelId)));
   const imageRemovedDefault = !!settings.imageGeneration &&
     settings.imageGeneration.providerId === provider.id &&
     !nextBindings.some((binding) => sameId(binding.id, settings.imageGeneration!.modelId));

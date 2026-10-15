@@ -392,7 +392,10 @@ test("a saved image selection never takes the app's image default", () => {
   // default moves only when the stored binding stops resolving. The decision
   // itself is pinned by image-generation-default.test.mjs.
   assert.match(modelsPageStateSource, /planImageGenerationDefaults\(/);
-  assert.match(pageSource, /planModelsSave\(routerProvider, nextBindings, current, providers\)/);
+  assert.match(
+    pageSource,
+    /planModelsSave\(routerProvider, nextBindings, current, providers, imageModelIds\)/,
+  );
   assert.doesNotMatch(pageSource, /nextActive/);
 });
 

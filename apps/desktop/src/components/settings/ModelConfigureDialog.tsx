@@ -20,6 +20,10 @@ export type ModelConfigureDialogProps = {
   publishedLevels?: readonly ThinkingLevel[];
   /** True while the caller saves, so the actions stop accepting input. */
   saving?: boolean;
+  /** Whether this model is one of the row's image-generation models. */
+  imageModelSelected?: boolean;
+  /** Toggles this model in the row's image-generation selection. */
+  onImageModelChange?: (id: string, selected: boolean) => void;
   /** Wire styles this model may pin; absent hides the protocol override. */
   apiStyleOptions?: ReadonlyArray<{ id: string; label: string }>;
   /** The provider row's own global style, shown as the follow-global value. */
@@ -36,6 +40,8 @@ export function ModelConfigureDialog({
   info,
   publishedLevels,
   saving,
+  imageModelSelected,
+  onImageModelChange,
   apiStyleOptions,
   globalApiStyle,
   onClose,
@@ -75,6 +81,8 @@ export function ModelConfigureDialog({
             publishedLevels={publishedLevels ?? []}
             busy={saving}
             nativeWebSearchCapable
+            imageModelSelected={imageModelSelected}
+            onImageModelChange={onImageModelChange}
             apiStyleOptions={apiStyleOptions}
             globalApiStyle={globalApiStyle}
             onChange={onChange}
