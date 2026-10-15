@@ -10855,10 +10855,13 @@ This test plan spec is accepted when:
   row background. If selected B starts work, its orange in-progress dot takes
   precedence until the turn settles; its latest terminal result remains hidden
   behind the selected ring while selected.
-- Every indicator exposes localized In progress / Selected / Completed / Failed
-  text through its accessible name and tooltip. Reduced motion makes the orange
-  dot static without changing its color or meaning. Row height, title truncation,
-  pin icon, hover actions, and focus ring remain stable in both themes.
+- Every indicator exposes localized In progress / Selected / Completed / Failed /
+  Waiting for your decision text through its accessible name and tooltip. A turn
+  paused on a question card shows the same purple decision mark as a pending tool
+  permission, in both the session row and the collapsed project header. Reduced
+  motion makes the orange dot static without changing its color or meaning. Row
+  height, title truncation, pin icon, hover actions, and focus ring remain stable
+  in both themes.
 - Open a conversation with a completed or failed mark and expect that terminal
   mark to clear immediately while its durable task notification becomes read.
   Refresh notifications and restart the app; the acknowledged mark must not
@@ -10870,7 +10873,7 @@ This test plan spec is accepted when:
   Start a new turn and reopen the hover card: the bounded animation can play again.
   GPU measurements must distinguish app frame submissions from whole-system load.
 - Repeat with the three idle-reachable indicators, one per idle window: leave a
-  session parked on a tool approval request, turn plan mode on, and raise a
+  session parked on a tool approval request or a question card, turn plan mode on, and raise a
   backend warning banner. After 3.2 seconds none of the permission dot, the
   plan-mode chip, or the warning dot has an active animation, and recording an
   otherwise idle native macOS window shows no continuous frames from them.

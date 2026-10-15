@@ -272,6 +272,43 @@ test("sidebar renders global pins once, outside project folding and history limi
       /<span class="thread-activity-preview">Live streaming message preview!<\/span>/,
       "active session prefers live transcript messages over static summary preview",
     );
+
+    // A session parked on a question card also waits for the user, so its row
+    // and its collapsed project show the purple decision indicator.
+    const awaitingLabel = catalogs.en.nav.sessionAwaitingDecision;
+    const withPendingAsk = render({
+      runningSessions: {},
+      pendingPermissions: {},
+      pendingAsks: {
+        "normal-00": [{ requestId: "ask-1", sessionId: "normal-00" }],
+      },
+    });
+    assert.match(
+      withPendingAsk,
+      new RegExp(
+        `<span class="thread-item-status permission"[^>]*aria-label="${awaitingLabel}"`,
+      ),
+      "a session waiting on a question card renders the decision indicator",
+    );
+    const collapsedWithAsk = render({
+      projectMeta: { ...seed.projectMeta, "/open": { collapsed: true } },
+      runningSessions: {},
+      pendingPermissions: {},
+      pendingAsks: {
+        "normal-00": [{ requestId: "ask-1", sessionId: "normal-00" }],
+        "normal-01": [{ requestId: "ask-2", sessionId: "normal-01" }],
+      },
+    });
+    const collapsedOpenWithAsk =
+      collapsedWithAsk.match(/data-sidebar-project-group="\/open"[\s\S]*?<\/section>/)?.[0] ?? "";
+    assert.match(
+      collapsedOpenWithAsk,
+      new RegExp(
+        `data-sidebar-project-status="permission"[^>]*aria-label="${awaitingLabel}"`,
+      ),
+      "a collapsed project with a question-pending session renders the decision indicator",
+    );
+    assert.match(collapsedOpenWithAsk, /sidebar-project-status-count[^>]*>2<\/span>/);
   } finally {
     globalThis.document = previousDocument;
     await server.close();

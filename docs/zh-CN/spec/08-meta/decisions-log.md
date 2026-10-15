@@ -54,6 +54,7 @@
 | D656 | 隔离宿主持续拒绝的 outbox 追加，避免整队停摆 | **修订 ADR 0041 / D318 / D444 / D597：当 `session.appendMessage` 或 `session.recordUsage` 返回的错误无法归类为重复消息 ID、`PERMISSION_DENIED:` 毒行或外键孤立行时，不再结束本次 flush，而是在同一 Host 代内按有界退避重试（5 秒起、翻倍、上限 60 秒）。同一队头连续第五次失败后，该追加被移入应用自有的死信文件 `session-message-outbox.dead-letter.json`（保留载荷、sessionId、隔离时间与宿主错误；只保留最新 256 条，超出丢弃最旧并记 warn），随后继续排空后续条目，因此单条被拒追加不再长期占用 FIFO 队头、填满 1024 条上限或导致所有会话写入失败。Host 重启属于新代，会立即重试该队头。隔离条目永不自动重放，`session.delete` 会连同该会话的隔离条目一起删除。协议版本、存储架构与队列文件格式均不变。** | 一条 `stream did not contain valid UTF-8` 追加在队头滞留 14.8 小时，期间 `session.persistence.outbox.is.full` 触发 5990 次，导致所有会话的写入直到重启前全部失败；此前只有三类错误有排空出口，其余错误被永久当作瞬时错误（#1560）。 |
 | D657 | 让内置浏览器打开工作区外的本地文件 | **修订 ADR 0170：通过绝对路径或 `file:` URL 可打开任意已存在的本地普通文件，本地文件页面也可导航到其他已存在的本地文件。相对输入仍以工作区为根；HTTP(S) 页面只保留此前工作区内文件链接的权限。缺失文件、目录与远程文件 authority 仍被阻止。`BrowserPreview` 与 sidecar 继续使用工作区根解析。公开的 `pi.browser.navigate` API 在高风险 `browser.cdp` 权限下采用相同策略。见 ADR 0328、E2E-059、`04-ux/08-component-spec.md` 与 `05-security/01-security.md`。** | 用户需要检查项目外的本地 HTML，而工作区范围内的 Agent 文件工具和远程页面导航仍须保留原有边界（#1627）。 |
 | D659 | 重新打开归档项目后恢复侧栏显示 | **修订 D093 / D455：成功明确激活项目时，清除该规范化路径的渲染层归档标记并持久化，使用户从「项目归档」点击「打开」、通过「添加项目」再次选择同一目录，或打开项目会话后，都能在主页侧边栏看到该项目。仅选择归档详情行而未激活，以及普通会话刷新，都不改变归档状态。不更改 Host/项目/会话存储或协议。见 ADR 0294、E2E-264 与 issue #1653。** | 用户明确重新打开项目后，活动工作区虽已切换，但按路径存储的归档展示标记仍在，导致项目从侧栏隐藏。 |
+| D660 | 侧栏"等待决策"状态覆盖提问卡 | **修订 D135 与侧栏状态规则：`sidebarSessionStatus` 与 `sidebarCollapsedProjectStatus` 在 `pendingPermissions` 之外统计 `pendingAsks`（asktool 提问卡），因此暂停在提问上的回合显示紫色决策圆点而不是橙色运行圆点，含提问挂起会话的折叠项目也显示紫色指示。状态 kind 仍为 `permission`（CSS/DOM 契约不变），所有已发货语言包为两种情况新增 `nav.sessionAwaitingDecision`。仅渲染层；不改 Host 协议、存储或权限。见 `04-ux/07-ui-design-system.md` §4.5 与 E2E US-UI-67。** | 提问卡让回合保持 `running`，而运行时实际上在等待用户，于是侧栏显示"进行中"，而不是待处理工具授权早已显示的决策状态。 |
 
 ## B. 辅助实现默认值
 
@@ -5445,3 +5446,18 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   `apps/desktop/test/update-fallback.test.mjs`（故障转移、收敛门、停滞重试与停滞上报）、
   `apps/desktop/test/update-mirror-publish.test.mjs`（上传顺序、拒绝、跳过），以及更新后的
   `apps/desktop/test/auto-update.test.mjs` / `ci-workflow.test.mjs` 覆盖。
+
+## 2026-10-15 —— 侧栏决策状态覆盖提问卡（D660）
+
+- 暂停在 asktool 提问卡上的回合在运行时段等待用户作答期间保持 `runningSessions[id]` 为 true，
+  因此 `sidebarSessionStatus` 返回 `running`，侧栏在实际等待用户的对话前绘制橙色进行中圆点；
+  紫色决策圆点此前只能通过 `pendingPermissions` 触达。
+- `sidebarSessionStatus` 新增 `hasPendingAsk`，`sidebarCollapsedProjectStatus` 新增 `pendingAsks` 输入；
+  待处理工具授权与待处理提问现在返回同一 `permission` 状态/类型，会话行与折叠项目标题对提问
+  显示紫色圆点，与此前对授权显示的行为一致。优先级为：等待决策、进行中、已选择、最新终端结果。
+  不改 CSS、DOM 属性或 Host 契约。
+- 两个界面都用 `nav.sessionAwaitingDecision`（"等待你的决定"）标注该状态并覆盖所有已发货语言包；
+  此前引用但无任何语言包定义的 `nav.sessionPermission` 键已移除。
+- 由 `apps/desktop/test/sidebar-session-status.test.mjs`（纯选择逻辑）与
+  `apps/desktop/test/sidebar-pinned-rendering.test.mjs`（会话行与折叠项目渲染）覆盖；
+  E2E US-UI-67 新增提问卡相关预期。见 `04-ux/01-ui-ia.md` 与 `04-ux/07-ui-design-system.md` §4.5。

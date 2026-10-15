@@ -68,6 +68,27 @@ test("common setup and marketplace copy avoid developer jargon", () => {
   assert.equal(korean["nav.temporarySessions"], "임시 대화");
 });
 
+test("sidebar decision status copy stays localized across locales", () => {
+  assert.equal(english["nav.sessionAwaitingDecision"], "Waiting for your decision");
+  assert.equal(chinese["nav.sessionAwaitingDecision"], "等待你的决定");
+  assert.equal(traditional["nav.sessionAwaitingDecision"], "等待你的決定");
+  for (const [id, catalog] of Object.entries(catalogs)) {
+    const flat = flattenCatalog(catalog);
+    assert.equal(
+      typeof flat["nav.sessionAwaitingDecision"],
+      "string",
+      `${id} nav.sessionAwaitingDecision`,
+    );
+    if (id !== "en") {
+      assert.notEqual(
+        flat["nav.sessionAwaitingDecision"],
+        english["nav.sessionAwaitingDecision"],
+        `${id} nav.sessionAwaitingDecision must not fall back to English`,
+      );
+    }
+  }
+});
+
 test("Turkish cloud sync recovery copy stays localized", () => {
   const keys = [
     "settings.configSync.errorTitle",

@@ -216,7 +216,7 @@ destination, chat as the home surface, tools and permissions inline.
   folder basename. Legacy single-folder projects are compatibility groups.
 - **Header**: project name, current-workspace dot, collapsed-project running/permission
   indicator (breathing orange dot when a collapsed project has running tasks, pulsing
-  purple dot when any task in the collapsed project awaits permission approval, plus a
+  purple dot when any task in the collapsed project awaits a tool permission or a question card, plus a
   running-task count when more than one task is active in that project; hidden when the
   project group is expanded so session rows remain the single status surface), disclosure,
   new-task action, and an overflow menu. Workspace context is not navigation selection: project

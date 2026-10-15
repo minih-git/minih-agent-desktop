@@ -44,6 +44,10 @@ export type CaptureRigMethods = {
     running: string;
     completed: string;
     failed: string;
+    /** A running turn parked on a question card (D660). */
+    askWaiting: string | null;
+    /** A running turn parked on a tool permission: the reference mark. */
+    permissionWaiting: string | null;
   } | null;
   ensureVisualFixtures: () => Promise<void>;
 };
@@ -996,14 +1000,57 @@ export function installCaptureRig(): CaptureRig {
     },
     seedSidebarStatuses: () => {
       if (!window.__PI_CAPTURE__) return null;
-      const sessions = useAppStore.getState().sessions.slice(0, 4);
+      const sessions = useAppStore.getState().sessions.slice(0, 6);
       if (sessions.length < 4) return null;
-      const [selected, running, completed, failed] = sessions;
+      const [selected, running, completed, failed, askWaiting, permissionWaiting] =
+        sessions;
+      // Both waiting rows keep the turn `running`: the ask row reproduces the
+      // real wait that used to paint the in-progress dot (D660), the permission
+      // row is the reference mark it must match.
+      const runningSessions: Record<string, boolean> = { [running.id]: true };
+      if (askWaiting) {
+        runningSessions[askWaiting.id] = true;
+      }
+      if (permissionWaiting) {
+        runningSessions[permissionWaiting.id] = true;
+      }
       useAppStore.setState({
         page: "chat",
         activeSessionId: selected.id,
         isRunning: false,
-        runningSessions: { [running.id]: true },
+        runningSessions,
+        pendingAsks: askWaiting
+          ? {
+              [askWaiting.id]: [
+                {
+                  requestId: "capture-ask-waiting",
+                  sessionId: askWaiting.id,
+                  toolCallId: "capture-ask-waiting-call",
+                  questions: [
+                    {
+                      question: "Capture ask: keep the decision dot?",
+                      options: ["Yes", "No"],
+                    },
+                  ],
+                },
+              ],
+            }
+          : {},
+        pendingPermissions: permissionWaiting
+          ? {
+              [permissionWaiting.id]: [
+                {
+                  requestId: "capture-permission-waiting",
+                  sessionId: permissionWaiting.id,
+                  toolCallId: "capture-permission-waiting-call",
+                  toolName: "Write",
+                  argsPreview: {},
+                  risk: "high",
+                  reason: "Capture fixture",
+                },
+              ],
+            }
+          : {},
         sessionOutcomes: {
           [completed.id]: "completed",
           [failed.id]: "failed",
@@ -1014,6 +1061,8 @@ export function installCaptureRig(): CaptureRig {
         running: running.id,
         completed: completed.id,
         failed: failed.id,
+        askWaiting: askWaiting?.id ?? null,
+        permissionWaiting: permissionWaiting?.id ?? null,
       };
     },
     ensureVisualFixtures: async () => {

@@ -52,6 +52,7 @@ This log freezes previously open questions into concrete decisions.
 | D656 | Quarantine appends the host keeps refusing instead of stalling the outbox | **Amend ADR 0041 / D318 / D444 / D597: an append whose `session.appendMessage` or `session.recordUsage` call fails with an error the outbox cannot classify as a duplicate message id, a `PERMISSION_DENIED:` poison row, or a foreign-key orphan is retried on a bounded backoff (5s, doubling to a 60s cap) instead of ending the flush. The fifth consecutive failure on that head moves it into an application-owned dead-letter file, `session-message-outbox.dead-letter.json`, with its payload, session id, quarantine timestamp, and host error; only the newest 256 quarantined appends are kept, and the oldest is discarded with a warn. The flush then continues with the next entry, so one refused append can no longer hold the FIFO head, fill the 1024-entry cap, or fail every session's writes. Quarantined appends are never replayed automatically, and `session.delete` drops that session's quarantined appends too. No protocol version, storage schema, or queued-outbox format change.** | A `stream did not contain valid UTF-8` append stayed at the FIFO head for 14.8 hours while `session.persistence.outbox.is.full` fired 5990 times, so every session's appends failed until restart. Only three error classes had a drain, and every other error was treated as transient forever (#1560). |
 | D657 | Let the embedded Browser open local files outside the workspace | **Amend ADR 0170: an explicit absolute path or `file:` URL may load any existing regular local file, and a local-file page may navigate to other existing local files. Relative inputs remain workspace-rooted; HTTP(S) pages retain only the prior in-workspace file-link allowance. Missing files, directories, and remote file authorities remain blocked. `BrowserPreview` and the sidecar keep their workspace-rooted resolver. The public `pi.browser.navigate` API follows this policy under the high-risk `browser.cdp` permission. See ADR 0328, E2E-059, `04-ux/08-component-spec.md`, and `05-security/01-security.md`.** | Users need to inspect local HTML outside a project, while workspace-scoped agent file tools and remote-page navigation must retain their existing boundary (#1627). |
 | D659 | Reopen archived projects in the sidebar | **Amend D093 / D455: successful explicit project activation clears the normalized path's renderer-local archived flag and persists it, so Open from Project archive, reopening the same folder through Add project, and opening a project session reveal the project in the home sidebar. Selecting a row for inspection and ordinary session refreshes do not alter archive state. No host/project/session storage or protocol change. See ADR 0294, E2E-264, and issue #1653.** | Reopening a project changed the active workspace but left its path-keyed archived presentation flag set, hiding it from the sidebar after the user explicitly reopened it. |
+| D660 | Sidebar waiting-for-decision status covers question cards | **Amend D135 and the sidebar status rules: `sidebarSessionStatus` and `sidebarCollapsedProjectStatus` count `pendingAsks` (asktool question cards) beside `pendingPermissions`, so a turn paused on a question shows the purple decision dot instead of the orange running dot, and a collapsed project with question-pending sessions gains the purple indicator. The status kind stays `permission` (CSS/DOM contract unchanged), and every shipped locale gains `nav.sessionAwaitingDecision` for both cases. Renderer-only; no host protocol, storage, or permission change. See `04-ux/07-ui-design-system.md` §4.5 and E2E US-UI-67.** | A question card left the turn `running` while the runtime was actually paused waiting for the user, so the sidebar showed work in progress instead of the decision state a pending tool permission already showed. |
 
 ## B. Secondary implementation defaults
 
@@ -7749,3 +7750,26 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   retry and reported stall), `apps/desktop/test/update-mirror-publish.test.mjs`
   (upload order, refusals, skip), and the updated
   `apps/desktop/test/auto-update.test.mjs` / `ci-workflow.test.mjs`.
+
+## 2026-10-15 — Sidebar decision status covers question cards (D660)
+
+- A turn paused on an asktool question card kept `runningSessions[id]` true
+  while the runtime blocked on the user's answer, so `sidebarSessionStatus`
+  returned `running` and the sidebar painted the orange in-progress dot in
+  front of a conversation that was actually waiting for the user. The purple
+  decision dot was reachable only through `pendingPermissions`.
+- `sidebarSessionStatus` gains `hasPendingAsk` and
+  `sidebarCollapsedProjectStatus` gains a `pendingAsks` input; either a pending
+  tool permission or a pending question now yields the same `permission`
+  status/kind, so the session row and the collapsed project header show the
+  purple dot for a question exactly as they already did for a permission.
+  Precedence is waiting for decision, in progress, selected, then the latest
+  terminal outcome. No CSS, DOM attribute, or host contract changes.
+- Both surfaces label the state with `nav.sessionAwaitingDecision` ("Waiting
+  for your decision") in every shipped locale; the previously referenced
+  `nav.sessionPermission` key, which no catalog defined, is gone.
+- Covered by `apps/desktop/test/sidebar-session-status.test.mjs` (pure
+  selection) and `apps/desktop/test/sidebar-pinned-rendering.test.mjs` (row and
+  collapsed-project rendering); E2E US-UI-67 gains the question-card
+  expectations. See `04-ux/01-ui-ia.md` and
+  `04-ux/07-ui-design-system.md` §4.5.

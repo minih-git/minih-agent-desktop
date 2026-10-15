@@ -264,6 +264,7 @@ export function Sidebar({
   const runningSessions = useAppStore((s) => s.runningSessions);
   const sessionOutcomes = useAppStore((s) => s.sessionOutcomes);
   const pendingPermissions = useAppStore((s) => s.pendingPermissions);
+  const pendingAsks = useAppStore((s) => s.pendingAsks);
   const setPage = useAppStore((s) => s.setPage);
   const navBack = useAppStore((s) => s.navBack);
   const canNavBack = useAppStore((s) => s.canNavBack);
@@ -1159,27 +1160,18 @@ export function Sidebar({
   }, [sessionIdSet]); // intentionally not including selectedIds to avoid loop
 
   const renderSessionStatus = (status: SidebarSessionStatus) => {
-    const labelKey =
+    const label =
       status === "running"
-        ? "nav.sessionRunning"
+        ? t("nav.sessionRunning", { defaultValue: "In progress" })
         : status === "selected"
-          ? "nav.sessionSelected"
+          ? t("nav.sessionSelected", { defaultValue: "Selected" })
           : status === "completed"
-            ? "nav.sessionCompleted"
+            ? t("nav.sessionCompleted", { defaultValue: "Completed" })
             : status === "failed"
-              ? "nav.sessionFailed"
-              : "nav.sessionPermission";
-    const fallback =
-      status === "running"
-        ? "In progress"
-        : status === "selected"
-          ? "Selected"
-          : status === "completed"
-            ? "Completed"
-            : status === "failed"
-              ? "Failed"
-              : "Permission required";
-    const label = t(labelKey, { defaultValue: fallback });
+              ? t("nav.sessionFailed", { defaultValue: "Failed" })
+              : t("nav.sessionAwaitingDecision", {
+                  defaultValue: "Waiting for your decision",
+                });
     return (
       <span className={`thread-item-status ${status}`} aria-label={label} title={label}>
         {status === "completed" ? <IconCheck size={10} aria-hidden /> : null}
@@ -1793,11 +1785,13 @@ export function Sidebar({
     const archived = sessionArchived(session, meta);
     const running = Boolean(runningSessions[session.id]);
     const hasPendingPermission = (pendingPermissions[session.id]?.length ?? 0) > 0;
+    const hasPendingAsk = (pendingAsks[session.id]?.length ?? 0) > 0;
     const status = sidebarSessionStatus({
       running,
       selected: active,
       outcome: sessionOutcomes[session.id],
       hasPendingPermission,
+      hasPendingAsk,
     });
     return (
       <div
@@ -1920,10 +1914,13 @@ export function Sidebar({
       sessions: entry.sessions,
       runningSessions,
       pendingPermissions,
+      pendingAsks,
     });
     const collapsedStatusLabel = collapsedProjectStatus
       ? collapsedProjectStatus.kind === "permission"
-        ? t("sessionCollaboration.statusPermission", { defaultValue: "Permission required" })
+        ? t("nav.sessionAwaitingDecision", {
+            defaultValue: "Waiting for your decision",
+          })
         : collapsedProjectStatus.runningCount > 1
           ? t("nav.projectRunningCount", {
               count: collapsedProjectStatus.runningCount,

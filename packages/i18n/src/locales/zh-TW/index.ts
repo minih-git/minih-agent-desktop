@@ -251,6 +251,7 @@ export const zhTW = {
     sessionSelected: "已選中",
     sessionCompleted: "已完成",
     sessionFailed: "未完成",
+    sessionAwaitingDecision: "等待你的決定",
     sortSessions: "專案與對話排序",
     sortRecent: "最近更新",
     sortOldest: "最早建立",

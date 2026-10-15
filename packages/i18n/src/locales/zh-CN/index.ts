@@ -251,6 +251,7 @@ export const zhCN = {
     sessionSelected: "已选中",
     sessionCompleted: "已完成",
     sessionFailed: "未完成",
+    sessionAwaitingDecision: "等待你的决定",
     sortSessions: "项目与对话排序",
     sortRecent: "最近更新",
     sortOldest: "最早创建",

@@ -68,6 +68,21 @@ test("prioritizes in-progress and selected states over terminal outcomes", () =>
   assert.equal(sidebarSessionStatus({ running: false, selected: false }), null);
 });
 
+test("treats a pending question card as awaiting the user like a pending permission", () => {
+  assert.equal(
+    sidebarSessionStatus({ running: true, selected: true, hasPendingAsk: true }),
+    "permission",
+  );
+  assert.equal(
+    sidebarSessionStatus({ running: true, selected: false, hasPendingAsk: true }),
+    "permission",
+  );
+  assert.equal(
+    sidebarSessionStatus({ running: true, selected: false, hasPendingAsk: false }),
+    "running",
+  );
+});
+
 test("shows collapsed project status only when project is collapsed and has running or permission-pending sessions", () => {
   const sessions = [{ id: "s1" }, { id: "s2" }, { id: "s3" }];
 
@@ -116,6 +131,21 @@ test("shows collapsed project status only when project is collapsed and has runn
     {
       kind: "permission",
       runningCount: 2,
+      permissionCount: 1,
+    },
+  );
+
+  assert.deepEqual(
+    sidebarCollapsedProjectStatus({
+      collapsed: true,
+      sessions,
+      runningSessions: {},
+      pendingPermissions: {},
+      pendingAsks: { s3: [{ id: "ask-1" }] },
+    }),
+    {
+      kind: "permission",
+      runningCount: 1,
       permissionCount: 1,
     },
   );
