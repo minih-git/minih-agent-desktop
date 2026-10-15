@@ -7,6 +7,7 @@
 
 export type SettingsTabId =
   | "general"
+  | "accounts"
   | "ai"
   | "shortcuts"
   | "instructions"
@@ -162,13 +163,12 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
     ],
   },
   {
-    id: "agent",
-    labelKey: "settings.nav.models",
-    titleKey: "settings.configuration",
+    id: "accounts",
+    labelKey: "settings.nav.accounts",
+    titleKey: "settings.accounts",
     group: "agent",
     keywordKeys: [
       "settings.providers",
-      "settings.models",
       "settings.apiKey",
       "settings.baseUrl",
       "settings.apiStyle",
@@ -183,6 +183,25 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "settings.importSourceCodex",
       "settings.importSourcePi",
       "settings.importSourceCcSwitch",
+    ],
+  },
+  {
+    id: "agent",
+    labelKey: "settings.nav.models",
+    titleKey: "settings.modelsPageTitle",
+    group: "agent",
+    keywordKeys: [
+      "settings.models",
+      "settings.modelsPageTitle",
+      "settings.addModelsTitle",
+      "settings.modelsConfigure",
+      "settings.modelApiStyle",
+      "settings.imageModel",
+      "settings.thinkingProtocol",
+      "settings.defaultThinkingLevel",
+      "settings.modelCapabilities",
+      "settings.availableForSubagents",
+      "settings.nativeWebSearch",
     ],
   },
   {

@@ -19,7 +19,11 @@ import { api } from "../../lib/api";
 
 export type MinihRouterLoad<T> =
   | { state: "loading"; data: T | null }
-  | { state: "ready"; data: T }
+  /**
+   * `data: null` on a ready load means "nothing to read": the caller named no
+   * provider row, so there is no account — distinct from a read in flight.
+   */
+  | { state: "ready"; data: T | null }
   | { state: "error"; data: T | null; message: string };
 
 function messageOf(error: unknown): string {
@@ -27,8 +31,11 @@ function messageOf(error: unknown): string {
 }
 
 /** Balance and quotas; `revision` forces a re-read (the Refresh action). */
+/** Page size the plaza-style lists ask the gateway for. */
+export const MINIH_ROUTER_MODEL_PAGE_SIZE = 12;
+
 export function useMinihRouterAccount(
-  providerId: string,
+  providerId: string | null,
   revision: number,
 ): MinihRouterLoad<MinihRouterAccount> {
   const [load, setLoad] = useState<MinihRouterLoad<MinihRouterAccount>>({
@@ -36,6 +43,11 @@ export function useMinihRouterAccount(
     data: null,
   });
   useEffect(() => {
+    // No row to read for: the account is simply absent, not loading forever.
+    if (!providerId) {
+      setLoad({ state: "ready", data: null });
+      return;
+    }
     let current = true;
     setLoad((previous) => ({ state: "loading", data: previous.data }));
     api.minihRouterAccount(providerId).then(
@@ -146,7 +158,7 @@ export type MinihRouterSelectedLoad = {
 };
 
 export function useMinihRouterSelectedModels(
-  provider: Pick<ProviderPublic, "id" | "models">,
+  provider: Pick<ProviderPublic, "id" | "models"> | null,
   modelIds: readonly string[],
   revision: number,
 ): MinihRouterSelectedLoad {
@@ -157,6 +169,10 @@ export function useMinihRouterSelectedModels(
   // The lookup is keyed by the exact ids the row sends.
   const key = modelIds.join("\n");
   useEffect(() => {
+    if (!provider) {
+      setLoad({ state: "ready", data: [] });
+      return;
+    }
     const ids = key ? key.split("\n") : [];
     if (ids.length === 0) {
       setLoad({ state: "ready", data: [] });

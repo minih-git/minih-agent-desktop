@@ -4,7 +4,7 @@ import { flushSync } from "react-dom";
 import { createInstance } from "i18next";
 import { I18nextProvider, useTranslation } from "react-i18next";
 import { catalogs } from "@minih-agent/i18n";
-import { ModelConfigPage } from "../../apps/desktop/src/components/settings/ModelConfigPage";
+import { AccountsPage } from "../../apps/desktop/src/components/settings/AccountsPage";
 import { ComposerModelPicker } from "../../apps/desktop/src/features/chat/composer/ComposerModelPicker";
 import { useComposerModelMenu } from "../../apps/desktop/src/features/chat/composer/hooks/useComposerModelMenu";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
@@ -70,7 +70,11 @@ globalThis.providerOrderProbe = async (restart = false) => {
   const realList = api.listProviders;
   try {
     await useAppStore.getState().refreshProviders();
-    flushSync(() => root.render(<I18nextProvider i18n={i18n}><ModelConfigPage /><ModelMenu /></I18nextProvider>));
+    // The service rows now live on the accounts page, inside the "other
+    // providers" disclosure: open it so the rows are on screen.
+    flushSync(() => root.render(<I18nextProvider i18n={i18n}><AccountsPage /><ModelMenu /></I18nextProvider>));
+    const disclosure = host.querySelector<HTMLDetailsElement>(".other-providers-section details");
+    if (disclosure && !disclosure.open) flushSync(() => { disclosure.open = true; });
     await until(() => rows().length === 3, "configured provider rows missing");
     assert(errors.length === 0, `render failed: ${errors.map(String)}`);
     if (restart) {

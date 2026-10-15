@@ -58,8 +58,10 @@ const settingsSource = (
     [
       "../src/components/settings/ModelConfigPage.tsx",
       "../src/components/settings/ProviderSetupDialog.tsx",
-      // The picker both credential kinds render owns the thinking chips (D270).
+      // The picker both credential kinds render owns the row shell; the chips
+      // themselves are the shared binding editor (D270).
       "../src/components/settings/ModelSelectionPanes.tsx",
+      "../src/components/settings/ModelBindingFields.tsx",
       "../src/components/settings/VendorAccountDialog.tsx",
       "../src/components/settings/useProviderModels.ts",
     ].map((path) => readFile(new URL(path, import.meta.url), "utf8")),
@@ -321,7 +323,7 @@ test("thinking-only assistant streams open the transcript surface", () => {
 test("provider settings persist model-local limits and thinking configuration", () => {
   assert.match(settingsSource, /useProviderModels/);
   assert.match(settingsSource, /bindingFromModelInfo/);
-  assert.match(settingsSource, /levelChoices\.map/);
+  assert.match(settingsSource, /THINKING_LEVELS\.map\(\(level\) => \{/);
   assert.match(settingsSource, /supportedThinkingLevels/);
   assert.match(settingsSource, /contextWindow/);
   assert.match(settingsSource, /maxTokens/);
@@ -342,12 +344,15 @@ test("settings offers the canonical thinking levels for explicit overrides", () 
   // gate: proxies and newly released models need the same opt-in controls.
   assert.match(settingsSource, /publishedThinkingLevels/);
   assert.match(settingsSource, /THINKING_LEVELS/);
+  // One editor renders the chips, so the models page and the service dialog
+  // offer the same canonical ladder.
+  assert.match(settingsSource, /ui\.settings\.modelApiStyle|settings\.modelApiStyle/);
   assert.match(
     settingsSource,
     /publishedLevelsById[\s\S]*?publishedThinkingLevels\(row\.info\)/,
   );
   assert.match(settingsSource, /settings\.thinkingManualOverrideHint/);
-  assert.match(settingsSource, /const levelChoices = THINKING_LEVELS/);
+  assert.match(settingsSource, /THINKING_LEVELS\.map\(\(level\) => \{/);
   // Explicit selections, including levels absent from the catalog, survive
   // save and are resolved by the runtime for the configured endpoint.
   assert.doesNotMatch(

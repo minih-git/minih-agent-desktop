@@ -1,5 +1,5 @@
 /**
- * EasyTier virtual LAN status and configuration section inside MinihRouterPanel.
+ * EasyTier virtual LAN status and configuration section on the accounts page.
  *
  * Displays the current tunnel state (Connected / Connecting / Degraded / Error / Disabled),
  * effective operating mode (Mode 1 No-TUN user-space forwarder vs Mode 2 privileged TUN NIC),
