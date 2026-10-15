@@ -1190,26 +1190,32 @@ export async function createWindow({
               const probeStatuses = async (theme: "light" | "dark") => {
                 await setTheme(theme);
                 await new Promise((r) => setTimeout(r, 350));
-                const probe = await windowState.mainWindow!.webContents.executeJavaScript(`(() => ({
-                  theme: document.documentElement.dataset.theme,
-                  reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
-                  rows: [...document.querySelectorAll('.thread-item-status')].map((status) => {
-                    const row = status.closest('.thread-item');
-                    const rect = status.getBoundingClientRect();
-                    const before = getComputedStyle(status, '::before');
-                    return {
-                      state: [...status.classList].find((name) => name !== 'thread-item-status'),
-                      label: status.getAttribute('aria-label'),
-                      color: getComputedStyle(status).color,
-                      fill: before.backgroundColor,
-                      animation: before.animationName,
-                      width: Math.round(rect.width),
-                      height: Math.round(rect.height),
-                      rowHeight: Math.round(row?.getBoundingClientRect().height || 0),
-                    };
-                  }),
-                }))()`);
-                console.log("SIDEBAR_STATUS_PROBE", probe);
+                const probe = await windowState.mainWindow!.webContents.executeJavaScript(`(() => {
+                  const tokens = getComputedStyle(document.documentElement);
+                  return {
+                    theme: document.documentElement.dataset.theme,
+                    reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+                    decisionColor: tokens.getPropertyValue('--ds-purple').trim(),
+                    runningColor: tokens.getPropertyValue('--ds-warning').trim(),
+                    rows: [...document.querySelectorAll('.thread-item-status')].map((status) => {
+                      const row = status.closest('.thread-item');
+                      const rect = status.getBoundingClientRect();
+                      const before = getComputedStyle(status, '::before');
+                      return {
+                        sessionId: row?.dataset.sidebarSessionRow ?? null,
+                        state: [...status.classList].find((name) => name !== 'thread-item-status'),
+                        label: status.getAttribute('aria-label'),
+                        color: getComputedStyle(status).color,
+                        fill: before.backgroundColor,
+                        animation: before.animationName,
+                        width: Math.round(rect.width),
+                        height: Math.round(rect.height),
+                        rowHeight: Math.round(row?.getBoundingClientRect().height || 0),
+                      };
+                    }),
+                  };
+                })()`);
+                console.log("SIDEBAR_STATUS_PROBE", JSON.stringify(probe));
                 await shot(`pi-sidebar-status-${theme}`);
               };
               console.log("SIDEBAR_STATUS_FIXTURE", statusFixture);
