@@ -122,6 +122,14 @@ notarize, and staple macOS artifacts; `workflow_dispatch` may set
 `sign_macos: false` only for unsigned debug artifacts. See the [release
 runbook](../docs/spec/06-delivery/06-release-runbook.md).
 
+The publish job checks out its own source before downloading build artifacts;
+it provisions Node 24 to run `publish-update-mirror.mjs` even when no mirror is
+configured (the script then reports GitHub-only delivery and exits normally).
+To recover only the mirror for an already published latest stable Release,
+dispatch `recover-release-mirror.yml` on `main` with `release_tag`. It reuses the
+existing Release assets, never rebuilds installers or moves a tag, and refuses
+older releases so a recovery cannot roll the update feed back. See runbook §4.6.
+
 ### Provider certificate regression
 
 - `node scripts/e2e-provider-certificates.mjs`: real desktop launcher and
