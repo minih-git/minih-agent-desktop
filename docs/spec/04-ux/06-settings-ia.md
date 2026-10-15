@@ -49,20 +49,21 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
   2. **AI** — Lucide `Sparkles` (permissions, defaults, command shell)
   3. **Shortcuts / 快捷键** — Lucide `Keyboard` (keyboard shortcuts)
   4. **Instructions / 指令** — Lucide `FileText` (global and project instruction files)
-  5. **Models / 模型** — Lucide `Bot` (providers and default model)
-  6. **Skills / 技能** — Lucide `BookOpen` (reusable agent instructions)
-  7. **MCP** — Lucide `Server` (agent connections)
-  8. **Subagents / 子智能体** — Lucide `Bot` (built-in and personal parallel agents)
-  9. **Projects / 项目** — Lucide `Archive` (durable project index)
-  10. **Cloud sync / 云同步** — Lucide `CloudDownload` (encrypted portable configuration backup and bidirectional sync; Experimental, all builds)
-  11. **Remote Hosts / 远程主机** — Lucide `Globe` (experimental SSH hosts, sessions, and explicit model copy)
-  12. **Info / 信息** — Lucide `Info` (versions, logs, updates, developer)
+  5. **Accounts / 账户** — Lucide `KeyRound` (the Minih Router token and every other provider)
+  6. **Models / 模型** — Lucide `Bot` (chosen models and the gateway catalog)
+  7. **Skills / 技能** — Lucide `BookOpen` (reusable agent instructions)
+  8. **MCP** — Lucide `Server` (agent connections)
+  9. **Subagents / 子智能体** — Lucide `Bot` (built-in and personal parallel agents)
+  10. **Projects / 项目** — Lucide `Archive` (durable project index)
+  11. **Cloud sync / 云同步** — Lucide `CloudDownload` (encrypted portable configuration backup and bidirectional sync; Experimental, all builds)
+  12. **Remote Hosts / 远程主机** — Lucide `Globe` (experimental SSH hosts, sessions, and explicit model copy)
+  13. **Info / 信息** — Lucide `Info` (versions, logs, updates, developer)
   Icons are decorative (`aria-hidden` via the SVG default) and stay monochrome
   with the rail label; do not reuse refresh/rotate glyphs here.
 - The directory remains a flat searchable list in the same exact order. For
   scanability, the destinations are shown in four titled visual clusters:
   `Preferences` / `偏好` (General, AI, Shortcuts), `Agent` / `智能体`
-  (Instructions, Models, Skills, MCP, Subagents), `Workspace` / `工作区`
+  (Instructions, Accounts, Models, Skills, MCP, Subagents), `Workspace` / `工作区`
   (Projects), and `System` / `系统` (Cloud sync, Remote Hosts, Info; Cloud sync
   and Remote Hosts are Experimental destinations available in all builds). Headings are
   muted, non-interactive labels and use whitespace for separation; no divider
@@ -392,11 +393,53 @@ a usage tab.
     on its own close-window command; a stored `closeWindow`/`summonWindow`
     override is folded into it when the map is read (D438, D439)
 
-### Model configuration (`agent` tab)
-- The model configuration page groups its sections in this order: **AI
-  services**, one **Minih Router** panel per connected Router row, model-catalog
-  status and refresh, **Jev**, then the image-generation model selector. The sections use one consistent vertical
-  spacing rhythm.
+### Accounts (`accounts` tab)
+- The accounts page is the only place credentials are configured. It leads with
+  the **Minih Router** account: initialization is deliberately **one field** —
+  paste a token and connect. The endpoint stays behind an **Advanced** toggle
+  that starts collapsed and defaults to `https://router.hmini.org/v1`, so a
+  self-hosted gateway is reachable without putting an address in the way of the
+  common path. Connecting creates a `minih-router` row with **no models**: the
+  models are chosen on the models page.
+- The connected card shows the masked key name and mask, with actions to
+  replace the token, edit the endpoint (normalized to its `/v1` API address),
+  and disconnect. Below it: the balance card (see **Minih Router panel** below),
+  the Virtual LAN Channel, and then the folded **Other providers** section.
+- **Other providers** holds the AI-service list (D625: API services, plugin
+  services and vendor subscription accounts in one list), the add-service and
+  import actions, and the Jev card. It is folded away until a non-Router row
+  exists or developer mode is on, so a fresh install shows one account card and
+  nothing else; an existing configuration is never hidden.
+- The page keeps one consistent vertical spacing rhythm and reads its rows
+  through the same service components as before.
+
+### Models (`agent` tab)
+- The models page groups its sections in this order: the **chosen models** as
+  cards, the image-generation model selector, then the model-catalog status and
+  refresh row. The sections use one consistent vertical spacing rhythm.
+- Each chosen card shows the gateway's published record (vendor, category,
+  copyable id, input/output prices per 1M tokens, context window, cache price,
+  tiered-pricing marker) with the app's default marked, plus **Configure** and
+  **Remove**. A model the gateway lists no price for is still shown with its
+  configured limits and a line saying no price was returned — the row sends it,
+  so it is never hidden.
+- **Configure** opens the shared per-model editor inline: alias, context window
+  and max-output ladders, thinking levels and default level, the thinking
+  protocol, attachment capabilities, subagent availability, provider-hosted web
+  search, and the **protocol mode** (per-model `apiStyle`) whose default reads
+  "Follow global" with the row's current style. Saving writes the whole binding
+  list once.
+- **Add models** (top right) opens the gateway catalog as selectable cards, 12
+  per page, with search (debounced, restarting at page one), previous/next
+  paging that keeps the current page visible while the next loads, and a
+  selection count in the footer. Cards already configured on the row render as
+  added and cannot be re-picked. Confirming appends the chosen bindings and
+  claims the app's chat default only while nothing runnable resolves.
+- Removing a model drops any image-generation binding naming it and leaves no
+  dangling replacement behind: a stored default is only replaced when another
+  model on the row can run it. A failed read is shown in place with the
+  gateway's message and offers Retry, keeping the previous page. Nothing on the
+  page stores or shows the token itself.
 - **Defaults** card: a compact settings row shows the provider name and exact
   model ID beneath the Default model label. A quiet Change action opens the
   picker without duplicating the current value. The picker groups model-level
@@ -571,9 +614,10 @@ contract modes are intent boundaries, not strict read-only security profiles.
 
 ### Minih Router panel
 
-- Every saved Minih Router row with a stored token gets a panel on the model
-  configuration page, after AI services. It is headed by the row name and
-  endpoint host and has one Refresh action that re-reads both halves.
+- Every saved Minih Router row with a stored token gets the account card on the
+  accounts page: it is headed by the row name and endpoint host, carries the
+  connection state and one Refresh action that re-reads both halves, and owns
+  the replace-token, edit-endpoint and disconnect actions.
 - **Balance** (top): the headline is the remaining amount of the cost limit
   with the smallest remaining share, labelled with its period (total, daily,
   weekly, monthly, every N hours/days) and limit, with a meter. A token without
@@ -590,22 +634,21 @@ contract modes are intent boundaries, not strict read-only security profiles.
   privileges for TUN mode (or switch back to No-TUN mode), and edit/reset the
   LAN network parameters (`networkName`, `networkSecret`, bootstrap `peers`,
   `routerLanUrl`).
-- **My models** (first): the models this service sends, in the row's own order,
-  each with the gateway's prices. A model the gateway lists no price for is
-  still shown, with its configured limits and a line saying no price was
-  returned — the row sends it, so it is never hidden.
-- **All models** (below): the gateway's model plaza, 12 cards per page,
-  with search (debounced, restarting at page one) and previous/next paging that
-  keeps the current page visible while the next loads. A card shows vendor,
-  category, the copyable model id, input and output price per 1M tokens (USD,
-  "from" when sources differ, Free for zero, an em dash when unpriced), cache
-  prices, context window, tiered pricing, and **Added** when the model is
-  already configured on the row. Prices are list prices before the token's
-  multiplier, as the hint under the title says.
-- A failed read is shown in place with the gateway's message; the plaza half
-  offers Retry and keeps the previous page. A price-lookup failure leaves the
-  chosen models listed without prices. Nothing on the panel stores or
-  shows the token itself.
+- **Chosen models** live on the models page, in the row's own order, each with
+  the gateway's prices. A model the gateway lists no price for is still shown,
+  with its configured limits and a line saying no price was returned — the row
+  sends it, so it is never hidden.
+- **The plaza** is the add-models dialog on that page: 12 cards per page, with
+  search (debounced, restarting at page one) and previous/next paging that keeps
+  the current page visible while the next loads. A card shows vendor, category,
+  the copyable model id, input and output price per 1M tokens (USD, "from" when
+  sources differ, Free for zero, an em dash when unpriced), cache prices,
+  context window, tiered pricing, and **Added** when the model is already
+  configured on the row. Prices are list prices before the token's multiplier,
+  as the hint under the title says.
+- A failed read is shown in place with the gateway's message and offers Retry,
+  keeping the previous page. A price-lookup failure leaves the chosen models
+  listed without prices. Nothing stores or shows the token itself.
 
 ### Jev classifier
 

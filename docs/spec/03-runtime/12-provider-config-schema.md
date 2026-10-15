@@ -108,7 +108,15 @@ Tables (canonical DDL in [04-data-storage](04-data-storage.md) §4.3–4.4, §4.
           },
           "supportsImages": { "type": ["boolean", "null"] },
           "supportsDocuments": { "type": ["boolean", "null"] },
-          "availableForSubagents": { "type": "boolean", "default": false }
+          "availableForSubagents": { "type": "boolean", "default": false },
+          "apiStyle": {
+            "enum": [
+              "chat_completions", "responses", "anthropic_messages",
+              "google_generative_ai", "openai_codex_responses",
+              "pi_messages", "opencode_go"
+            ],
+            "description": "Per-model wire protocol override; absent follows the provider row's own apiStyle."
+          }
         }
       }
     },
@@ -246,6 +254,14 @@ seed, not a reason to hide a published long-context limit. If models.dev now
 publishes a positive `limit.context`, the effective runtime and inspector window
 follow it; a non-default value entered in the model's Advanced controls remains
 an explicit per-model override. Unknown IDs continue to use 128,000.
+
+`apiStyle` is an optional, persisted override **per model**: absent means the
+model follows the provider row's own `apiStyle` (the global configuration), so
+one gateway row can serve models that speak different wire APIs. A value outside
+the enum is dropped by normalization, which makes the model fall back to the
+global style instead of failing the whole save. Precedence when a request is
+resolved: a vendor account's own binding wins, then this per-model override,
+then the row's `apiStyle`.
 
 `availableForSubagents` is an optional, persisted opt-in on each model binding.
 Host read/write and normalization preserve `true`; records created before this
