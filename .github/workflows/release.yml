@@ -89,6 +89,9 @@ jobs:
     env:
       # Tag pushes always sign. workflow_dispatch signs unless explicitly disabled.
       MACOS_SIGN_RELEASE: ${{ github.event_name != 'workflow_dispatch' || inputs.sign_macos == true }}
+      # Compiles the optional update mirror into the desktop bundle (ADR 0022
+      # amendment). Unset keeps the packaged GitHub feed as the only source.
+      MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS: ${{ vars.MINIH_UPDATE_MIRROR_URL }}
     strategy:
       fail-fast: false
       matrix:
@@ -586,3 +589,19 @@ jobs:
           files: dist/*
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+      - name: Mirror release assets to the configured update mirror
+        # Optional dual-write (ADR 0022 amendment): uploads the same feeds,
+        # installers, and blockmaps that the release just published to an
+        # S3-compatible mirror so clients behind networks that throttle
+        # github.com still update. With MINIH_UPDATE_MIRROR_S3_BUCKET unset the
+        # script reports "GitHub Releases only" and the release is unchanged.
+        env:
+          MINIH_UPDATE_MIRROR_S3_BUCKET: ${{ vars.MINIH_UPDATE_MIRROR_S3_BUCKET }}
+          MINIH_UPDATE_MIRROR_S3_ENDPOINT: ${{ vars.MINIH_UPDATE_MIRROR_S3_ENDPOINT }}
+          MINIH_UPDATE_MIRROR_S3_REGION: ${{ vars.MINIH_UPDATE_MIRROR_S3_REGION }}
+          MINIH_UPDATE_MIRROR_S3_PREFIX: ${{ vars.MINIH_UPDATE_MIRROR_S3_PREFIX }}
+          MINIH_UPDATE_MIRROR_PUBLIC_URL: ${{ vars.MINIH_UPDATE_MIRROR_PUBLIC_URL }}
+          MINIH_UPDATE_MIRROR_S3_ACCESS_KEY_ID: ${{ secrets.MINIH_UPDATE_MIRROR_S3_ACCESS_KEY_ID }}
+          MINIH_UPDATE_MIRROR_S3_SECRET_ACCESS_KEY: ${{ secrets.MINIH_UPDATE_MIRROR_S3_SECRET_ACCESS_KEY }}
+        run: node scripts/publish-update-mirror.mjs dist

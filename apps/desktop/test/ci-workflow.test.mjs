@@ -473,3 +473,38 @@ test("macOS signing instrumentation stays out of the Windows and Linux lanes", (
   assert.ok(unsignedBlock, "unsigned macOS debug package step is missing");
   assert.doesNotMatch(unsignedBlock, instrumentation);
 });
+
+test("the release compiles and publishes the optional update mirror together", () => {
+  const buildJob = releaseWorkflowSource.match(
+    /^  build:\n([\s\S]*?)(?=^  [a-z][a-z0-9-]*:|$(?![\s\S]))/m,
+  )?.[0];
+  assert.ok(buildJob, "release build job exists");
+  assert.match(
+    buildJob,
+    /^ {6}MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS: \$\{\{ vars\.MINIH_UPDATE_MIRROR_URL \}\}$/m,
+    "the desktop bundle must compile the mirror the same release publishes",
+  );
+
+  const publishJob = releaseWorkflowSource.match(
+    /^  publish:\n([\s\S]*)$/m,
+  )?.[0];
+  assert.ok(publishJob, "release publish job exists");
+  const step = publishJob.match(
+    /- name: Mirror release assets to the configured update mirror[^]*?(?=\n {6}- name:|\s*$)/,
+  )?.[0];
+  assert.ok(step, "mirror publish step is missing");
+  assert.match(step, /run: node scripts\/publish-update-mirror\.mjs dist/);
+  assert.match(step, /MINIH_UPDATE_MIRROR_S3_BUCKET: \$\{\{ vars\.MINIH_UPDATE_MIRROR_S3_BUCKET \}\}/);
+  assert.match(
+    step,
+    /MINIH_UPDATE_MIRROR_S3_ACCESS_KEY_ID: \$\{\{ secrets\.MINIH_UPDATE_MIRROR_S3_ACCESS_KEY_ID \}\}/,
+  );
+  assert.match(
+    step,
+    /MINIH_UPDATE_MIRROR_S3_SECRET_ACCESS_KEY: \$\{\{ secrets\.MINIH_UPDATE_MIRROR_S3_SECRET_ACCESS_KEY \}\}/,
+  );
+  assert.doesNotMatch(step, /working-directory: dist/);
+  // Credentials never ride a repository variable, and the feed URL never rides
+  // a secret: a public URL in a secret would be invisible to the client build.
+  assert.doesNotMatch(step, /MINIH_UPDATE_MIRROR_URL:/);
+});
