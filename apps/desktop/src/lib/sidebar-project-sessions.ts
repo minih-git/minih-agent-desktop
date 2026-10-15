@@ -1,4 +1,4 @@
-export const DEFAULT_VISIBLE_PROJECT_SESSION_COUNT = 10;
+export const DEFAULT_VISIBLE_PROJECT_SESSION_COUNT = 5;
 
 export function updateProjectSessionExpansion(
   expandedByProject: Record<string, boolean>,

@@ -737,7 +737,7 @@ controls.
 | Project archive | omitted from default view; restorable from archived view |
 | Project delete | the row-menu danger action always opens a confirmation dialog naming the project and session count; X, Cancel, Escape, and backdrop dismiss without changes; explicit confirmation stops listed running sessions before removing the durable project row, owned sessions/transcripts, and project memory; the folder is never deleted; deleting a root of a stored multi-folder project group is refused until the root is detached through Edit project. Chats on a detached root remain available as a standalone project. A path the host no longer knows is still removed from the list. |
 | Project memory | row-menu editor reads and saves a compact list of titled or untitled memory cards for the exact project path; cards can be added, edited, and removed, the context is available in later chats, and it is never a higher-priority instruction |
-| Session list | exact-path matches only; no basename grouping; the latest ten unpinned sessions appear initially, Load more reveals the remaining history, and collapsing the project clears that expanded-list state so the next expansion returns to the initial ten |
+| Session list | exact-path matches only; no basename grouping; the latest five unpinned sessions appear initially, Load more reveals the remaining history, and collapsing the project clears that expanded-list state so the next expansion returns to the initial five |
 | Active group | exactly one group reflects the selected host workspace |
 | Task state | In-progress, selected, completed, and failed indicators update by session without replacing the visible transcript; precedence is in-progress, selected, then terminal outcome |
 

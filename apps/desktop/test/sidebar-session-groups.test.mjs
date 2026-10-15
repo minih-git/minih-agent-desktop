@@ -3,9 +3,11 @@ import test from "node:test";
 import {
   groupSidebarSessions,
   getGlobalPinnedSessions,
+  getSidebarActivitySessions,
   groupSidebarSessionsByTime,
   normalizeProjectPath,
   projectPathsForNewSessions,
+  resolveSessionActivityPreview,
   sessionMatchesProject,
 } from "../src/lib/sidebar-session-groups.ts";
 
@@ -159,3 +161,77 @@ test("ordinary date groups retain their order after pins are removed", () => {
     ["today", "yesterday", "thisWeek", "older14d", "archived"],
   );
 });
+
+test("activity feed orders sessions across all projects by updatedAt descending and respects archive state", () => {
+  const rows = [
+    session({ id: "older-proj", projectPath: "/proj-a", updatedAt: "2026-09-10T10:00:00Z" }),
+    session({ id: "newest-temp", projectPath: undefined, updatedAt: "2026-09-13T12:00:00Z" }),
+    session({ id: "middle-proj", projectPath: "/proj-b", updatedAt: "2026-09-12T08:00:00Z" }),
+    session({ id: "archived-session", projectPath: "/proj-a", updatedAt: "2026-09-13T13:00:00Z" }),
+    session({ id: "archived-project-session", projectPath: "/proj-archived", updatedAt: "2026-09-13T14:00:00Z" }),
+    session({ id: "scheduled-run", projectPath: "/proj-a", updatedAt: "2026-09-13T15:00:00Z", scheduledRun: true }),
+  ];
+  const sessionMeta = { "archived-session": { archived: true } };
+  const projectMeta = { "/proj-archived": { archived: true } };
+
+  assert.deepEqual(
+    getSidebarActivitySessions({
+      sessions: rows,
+      sessionMeta,
+      projectMeta,
+      showArchived: false,
+    }).map((item) => item.id),
+    ["newest-temp", "middle-proj", "older-proj"],
+  );
+
+  assert.deepEqual(
+    getSidebarActivitySessions({
+      sessions: rows,
+      sessionMeta,
+      projectMeta,
+      showArchived: true,
+    }).map((item) => item.id),
+    ["archived-project-session", "archived-session", "newest-temp", "middle-proj", "older-proj"],
+  );
+});
+
+test("resolveSessionActivityPreview prefers live and retained transcript messages over summary preview", () => {
+  const row = session({
+    id: "s-1",
+    lastMessagePreview: "Summary preview from database",
+  });
+
+  assert.equal(
+    resolveSessionActivityPreview({ session: row }),
+    "Summary preview from database",
+  );
+
+  assert.equal(
+    resolveSessionActivityPreview({
+      session: row,
+      retainedTranscripts: {
+        "s-1": [
+          { role: "user", content: "First prompt" },
+          { role: "tool", content: "Tool output ignored" },
+          { role: "assistant", content: "Retained\n  assistant   reply" },
+        ],
+      },
+    }),
+    "Retained assistant reply",
+  );
+
+  assert.equal(
+    resolveSessionActivityPreview({
+      session: row,
+      activeSessionId: "s-1",
+      activeMessages: [
+        { role: "user", content: "Live user prompt\nwith newline" },
+      ],
+      retainedTranscripts: {
+        "s-1": [{ role: "assistant", content: "Older retained reply" }],
+      },
+    }),
+    "Live user prompt with newline",
+  );
+});
+

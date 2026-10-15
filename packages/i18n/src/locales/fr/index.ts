@@ -278,7 +278,12 @@ export const fr = {
     "hoverCardSpace": "Espace de travail",
     "hoverCardUpdatedAt": "{{when}} mis à jour",
     "hoverCardTemporarySpace": "Temporaire",
-    "hoverCardBranchAria": "Branche {{name}}"
+    "hoverCardBranchAria": "Branche {{name}}",
+    "activity": "Activité",
+    "noActivitySessions": "Aucune activité récente",
+    "timeGroupToday": "Aujourd'hui",
+    "projectRunningCount": "{{count}} en cours",
+    "collapseMoreSessions": "Afficher moins"
   },
   "sessionCollaboration": {
     "statusIdle": "Inactif",

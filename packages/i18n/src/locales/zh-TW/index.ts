@@ -281,6 +281,11 @@ export const zhTW = {
     hoverCardUpdatedAt: "更新於 {{when}}",
     hoverCardTemporarySpace: "臨時對話",
     hoverCardBranchAria: "分支 {{name}}",
+    activity: "活動",
+    noActivitySessions: "暫無活動記錄",
+    timeGroupToday: "今天",
+    projectRunningCount: "{{count}} 個任務進行中",
+    collapseMoreSessions: "收起",
   },
   sessionCollaboration: {
     statusIdle: "閒置",

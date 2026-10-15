@@ -1,4 +1,4 @@
-import { IconClock } from "./icons";
+import { IconActivity, IconClock } from "./icons";
 import { RemoteProjectGroups } from "./remote/RemoteProjectGroups";
 import { groupRemoteProjectSessions } from "../lib/remote-project-catalog";
 import { isRemoteSession, sessionAllows } from "../lib/remote-session-safety";
@@ -30,12 +30,15 @@ import { useSessionHoverCard } from "../features/sessions/useSessionHoverCard";
 import { isDefaultSessionTitle, useAppStore } from "../stores/app-store";
 import {
   getGlobalPinnedSessions,
+  getSidebarActivitySessions,
   groupSidebarSessionsByTime,
   normalizeProjectPath,
+  resolveSessionActivityPreview,
   sessionArchived,
   sessionPinned,
 } from "../lib/sidebar-session-groups";
 import {
+  DEFAULT_VISIBLE_PROJECT_SESSION_COUNT,
   getVisibleProjectSessions,
   updateProjectSessionExpansion,
 } from "../lib/sidebar-project-sessions";
@@ -51,6 +54,7 @@ import {
   sameProjectReorderBucket,
 } from "../lib/sidebar-project-reorder";
 import {
+  sidebarCollapsedProjectStatus,
   sidebarSessionStatus,
   type SidebarSessionStatus,
 } from "../lib/sidebar-session-status";
@@ -229,6 +233,7 @@ export function Sidebar({
   onResizeCollapse,
   className,
   onAnimationEnd,
+  defaultActivityOpen = false,
 }: {
   onToggleSidebar: () => void;
   sidebarToggleShortcut: string;
@@ -239,11 +244,14 @@ export function Sidebar({
   onResizeCollapse: () => void;
   className?: string;
   onAnimationEnd?: ReactAnimationEventHandler<HTMLElement>;
+  defaultActivityOpen?: boolean;
 }) {
   const { t } = useTranslation();
   const sessions = useAppStore((s) => s.sessions);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const selectingSessionId = useAppStore((s) => s.selectingSessionId);
+  const messages = useAppStore((s) => s.messages);
+  const retainedTranscripts = useAppStore((s) => s.retainedTranscripts);
   const workspace = useAppStore((s) => s.workspace);
   const openProjects = useAppStore((s) => s.openProjects);
   const openProjectPathsState = useAppStore((s) => s.openProjectPaths);
@@ -291,6 +299,7 @@ export function Sidebar({
   const update = useUpdateState();
 
   const [sortOpen, setSortOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(defaultActivityOpen);
   const [sessionMenu, setSessionMenu] = useState<string | null>(null);
   const [renameFor, setRenameFor] = useState<SessionSummary | null>(null);
   const [editProjectFor, setEditProjectFor] = useState<ProjectEntry | null>(null);
@@ -1053,8 +1062,21 @@ export function Sidebar({
   const remoteProjectGroups = useMemo(() => groupRemoteProjectSessions(
     filtered.filter((session) => isRemoteSession(session) && !pinnedSessionIds.has(session.id)), compareSessions,
   ), [filtered, pinnedSessionIds, compareSessions]);
+  const activitySessions = useMemo(
+    () =>
+      getSidebarActivitySessions({
+        sessions: filtered,
+        sessionMeta,
+        projectMeta,
+        showArchived,
+      }),
+    [filtered, sessionMeta, projectMeta, showArchived],
+  );
   // Flat ordered list of every visible session id — used for Shift+click range selection.
   const flatSessionOrder = useMemo(() => {
+    if (activityOpen) {
+      return activitySessions.map((session) => session.id);
+    }
     const ids: string[] = [];
     // Pinned first (same order as rendered)
     for (const s of pinnedSessions) ids.push(s.id);
@@ -1068,7 +1090,7 @@ export function Sidebar({
     // Then temporary (standalone) sessions
     for (const s of temporarySessionHistory) ids.push(s.id);
     return ids;
-  }, [pinnedSessions, projectEntries, pinnedSessionIds, temporarySessionHistory, remoteProjectGroups]);
+  }, [activityOpen, activitySessions, pinnedSessions, projectEntries, pinnedSessionIds, temporarySessionHistory, remoteProjectGroups]);
 
   /** Handle multi-select click on a session row. Returns true if the click was consumed by multi-select. */
   const handleMultiSelectClick = (event: React.MouseEvent, sessionId: string): boolean => {
@@ -1278,6 +1300,12 @@ export function Sidebar({
   const expandProjectSessions = (projectKey: string) => {
     setExpandedProjectSessions((previous) =>
       updateProjectSessionExpansion(previous, projectKey, true),
+    );
+  };
+
+  const collapseProjectSessions = (projectKey: string) => {
+    setExpandedProjectSessions((previous) =>
+      updateProjectSessionExpansion(previous, projectKey, false),
     );
   };
 
@@ -1738,15 +1766,29 @@ export function Sidebar({
 
   const renderSessionRows = (
     items: SessionSummary[],
-    options?: { temporary?: boolean; projectPath?: string; global?: boolean },
+    options?: { temporary?: boolean; projectPath?: string; global?: boolean; activity?: boolean },
   ) => items.map((session) => {
     const meta = sessionMeta[session.id] ?? {};
     const normalizedProjectPath = normalizeProjectPath(session.projectPath);
     const temporary = options?.temporary ?? !normalizedProjectPath;
-    const owningProject = options?.global && normalizedProjectPath
-      ? projectEntriesByPath.get(normalizedProjectPath)?.name
-        ?? projectName(normalizedProjectPath, projectMetaFor(normalizedProjectPath, projectMeta).name)
+    const isActivity = Boolean(options?.activity);
+    const showOwningProject = Boolean(options?.global || isActivity);
+    const owningProject = showOwningProject
+      ? isRemoteSession(session)
+        ? session.remoteWorkspaceLabel ?? session.remoteHostLabel ?? t("remote:remote")
+        : normalizedProjectPath
+          ? projectEntriesByPath.get(normalizedProjectPath)?.name
+            ?? projectName(normalizedProjectPath, projectMetaFor(normalizedProjectPath, projectMeta).name)
+          : t("nav.hoverCardTemporarySpace")
       : t("nav.hoverCardTemporarySpace");
+    const activityPreview = isActivity
+      ? resolveSessionActivityPreview({
+          session,
+          activeSessionId,
+          activeMessages: messages,
+          retainedTranscripts,
+        })
+      : null;
     const active = page === "chat" && selectedSessionId === session.id;
     const archived = sessionArchived(session, meta);
     const running = Boolean(runningSessions[session.id]);
@@ -1760,8 +1802,9 @@ export function Sidebar({
     return (
       <div
         key={session.id}
-        className={`thread-item ${active ? "active" : ""} ${archived ? "archived" : ""} ${draggingSessionId === session.id ? "is-dragging" : ""} ${selectedIds.has(session.id) ? "selected" : ""}`}
+        className={`thread-item${isActivity ? " thread-activity-item" : ""} ${active ? "active" : ""} ${archived ? "archived" : ""} ${draggingSessionId === session.id ? "is-dragging" : ""} ${selectedIds.has(session.id) ? "selected" : ""}`}
         data-sidebar-session-row={session.id}
+        data-sidebar-activity-row={isActivity ? session.id : undefined}
         draggable={!running && !isRemoteSession(session)}
         onDragStart={(event) => {
           if (running || isRemoteSession(session)) {
@@ -1833,10 +1876,13 @@ export function Sidebar({
           {isRemoteSession(session) && <span className="thread-item-source" title={session.remoteHostLabel}>{t("remote:remote")}</span>}
           <WorktreeBadge worktree={session.worktree} sessionId={session.id} />
           <span className="thread-item-title">{taskTitle(session.title)}</span>
-          {options?.global ? (
+          {showOwningProject ? (
             <span className="thread-item-project">
               {owningProject}
             </span>
+          ) : null}
+          {activityPreview ? (
+            <span className="thread-activity-preview">{activityPreview}</span>
           ) : null}
         </button>
         <div className="sidebar-row-actions">
@@ -1869,6 +1915,22 @@ export function Sidebar({
     const collapsedProject = entry.meta.collapsed ?? projectCollapsed[entry.key] ?? false;
     const projectId = projectDomId(entry.key);
     const isMenuOpen = projectMenu === entry.key;
+    const collapsedProjectStatus = sidebarCollapsedProjectStatus({
+      collapsed: collapsedProject,
+      sessions: entry.sessions,
+      runningSessions,
+      pendingPermissions,
+    });
+    const collapsedStatusLabel = collapsedProjectStatus
+      ? collapsedProjectStatus.kind === "permission"
+        ? t("sessionCollaboration.statusPermission", { defaultValue: "Permission required" })
+        : collapsedProjectStatus.runningCount > 1
+          ? t("nav.projectRunningCount", {
+              count: collapsedProjectStatus.runningCount,
+              defaultValue: "{{count}} running",
+            })
+          : t("nav.sessionRunning", { defaultValue: "Working" })
+      : null;
 
     // Show the initial page by default; the remaining sessions stay folded
     // behind the same load-more affordance used for time-group overflow.
@@ -1897,7 +1959,7 @@ export function Sidebar({
         }
         result.push(...renderSessionRows(groupSessions, { projectPath: entry.path }));
       }
-      // Add "load more" button if there are hidden sessions
+      // Add "load more" / "collapse" button when project sessions exceed the default page size
       if (hiddenCount > 0) {
         result.push(
           <button
@@ -1907,6 +1969,18 @@ export function Sidebar({
             onClick={() => expandProjectSessions(entry.key)}
           >
             {t("nav.loadMoreCount", { count: hiddenCount })}
+          </button>
+        );
+      } else if (sessionsExpanded && history.length > DEFAULT_VISIBLE_PROJECT_SESSION_COUNT) {
+        result.push(
+          <button
+            key="collapse-more"
+            type="button"
+            className="sidebar-collapse-more"
+            data-action="collapse-project-sessions"
+            onClick={() => collapseProjectSessions(entry.key)}
+          >
+            {t("nav.collapseMoreSessions", { defaultValue: "Show less" })}
           </button>
         );
       }
@@ -2008,6 +2082,21 @@ export function Sidebar({
             )}
             <span>{entry.name}</span>
             {entry.active ? <span className="sidebar-project-active-dot" aria-label={t("project.active", { defaultValue: "Active" })} /> : null}
+            {collapsedProjectStatus && collapsedStatusLabel ? (
+              <span
+                className={`sidebar-project-status ${collapsedProjectStatus.kind}`}
+                data-sidebar-project-status={collapsedProjectStatus.kind}
+                aria-label={collapsedStatusLabel}
+                title={collapsedStatusLabel}
+              >
+                <span className="sidebar-project-status-dot" aria-hidden />
+                {collapsedProjectStatus.runningCount > 1 ? (
+                  <span className="sidebar-project-status-count" aria-hidden>
+                    {collapsedProjectStatus.runningCount}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
           </TooltipButton>
           <span id={`${projectId}-path-description`} className="sr-only">
             {entry.displayPath ?? entry.path}
@@ -2408,6 +2497,70 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-body no-drag">
+        {activityOpen ? (
+          <section
+            className="sidebar-activity-panel min-h-0 flex-1"
+            aria-labelledby="sidebar-activity-label"
+            data-sidebar-activity-panel="true"
+          >
+            <div
+              className="sidebar-list-toolbar sidebar-list-toolbar-secondary sidebar-activity-toolbar"
+              data-sidebar-section="activity"
+            >
+              <span id="sidebar-activity-label" className="sidebar-list-label">
+                {t("nav.activity", { defaultValue: "Activity" })}
+              </span>
+              <div className="sidebar-toolbar-actions">
+                <TooltipButton
+                  type="button"
+                  className="sidebar-toolbar-button"
+                  data-action="new-activity-session"
+                  tooltip={t("nav.newChat")}
+                  ariaLabel={t("nav.newChat")}
+                  onClick={() => void createSession({ projectPath: activeProjectPath ?? null })}
+                >
+                  <IconNewSession size={14} />
+                </TooltipButton>
+              </div>
+            </div>
+            <div
+              className="sidebar-activity-list min-h-0 flex-1 overflow-auto px-0.5"
+              onScroll={() => {
+                if (sessionMenu || projectMenu || sectionMenu || sortOpen) closeMenus(false);
+              }}
+            >
+              {activitySessions.length > 0 ? (
+                groupSidebarSessionsByTime(activitySessions).map(({ group, sessions: groupSessions }) => {
+                  const i18nKey =
+                    group === "today"
+                      ? "nav.timeGroupToday"
+                      : group === "yesterday"
+                        ? "nav.timeGroupYesterday"
+                        : group === "thisWeek"
+                          ? "nav.timeGroupThisWeek"
+                          : group === "older14d"
+                            ? "nav.timeGroupOlder14d"
+                            : "nav.timeGroupArchived";
+                  return (
+                    <div key={`activity-group-${group}`} className="sidebar-activity-group">
+                      <div className="sidebar-time-group-header activity">
+                        {t(i18nKey)}
+                      </div>
+                      <div className="sidebar-activity-group-list">
+                        {renderSessionRows(groupSessions, { global: true, activity: true })}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="sidebar-session-empty">
+                  {t("nav.noActivitySessions", { defaultValue: "No recent activity yet" })}
+                </div>
+              )}
+            </div>
+          </section>
+        ) : (
+          <>
 
         {pinnedSessions.length > 0 ? (
           <section
@@ -2567,6 +2720,8 @@ export function Sidebar({
           <RemoteProjectGroups groups={remoteProjectGroups}
             renderSessions={(sessions) => renderSessionRows(sessions, { temporary: false })} />
         </div>
+          </>
+        )}
 
         <div className="sidebar-footer no-drag">
           <div className="footer-actions">
@@ -2604,6 +2759,20 @@ export function Sidebar({
               aria-pressed={page === "scheduled"}
             >
               <IconClock size={14} aria-hidden />
+            </TooltipButton>
+            <TooltipButton
+              type="button"
+              className={`footer-action ${activityOpen ? "active" : ""}`}
+              data-nav="activity"
+              tooltip={t("nav.activity", { defaultValue: "Activity" })}
+              ariaLabel={t("nav.activity", { defaultValue: "Activity" })}
+              onClick={() => {
+                closeMenus(false);
+                setActivityOpen((previous) => !previous);
+              }}
+              aria-pressed={activityOpen}
+            >
+              <IconActivity size={14} aria-hidden />
             </TooltipButton>
             <NotificationCenter onBeforeOpen={() => closeMenus(false)} />
           </div>

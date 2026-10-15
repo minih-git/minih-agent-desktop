@@ -351,16 +351,16 @@ export async function checkSidebarRowStates({ cdp, check, waitFor, seed }) {
       [...document.querySelectorAll(${JSON.stringify(`${historyGroup} [data-sidebar-session-row]`)})]
         .map(element => element.getAttribute('data-sidebar-session-row'))
     `);
-    const expectedInitialIds = seed.historySessionIds.slice(0, 10);
+    const expectedInitialIds = seed.historySessionIds.slice(0, 5);
     await waitFor(
       async () =>
-        (await historyRowIds()).length === 10 &&
+        (await historyRowIds()).length === 5 &&
         (await cdp.evaluate(`!!document.querySelector(${JSON.stringify(historyLoadMore)})`)),
-      "history project starts with ten sessions and a load-more control",
+      "history project starts with five sessions and a load-more control",
     );
     check(
       JSON.stringify(await historyRowIds()) === JSON.stringify(expectedInitialIds),
-      "project history initially shows the ten most recent sessions",
+      "project history initially shows the five most recent sessions",
       JSON.stringify(await historyRowIds()),
     );
     await click(historyLoadMore);
@@ -382,7 +382,7 @@ export async function checkSidebarRowStates({ cdp, check, waitFor, seed }) {
     await waitFor(
       async () =>
         !(await cdp.evaluate(`document.querySelector(${JSON.stringify(historyBody)}).inert`)) &&
-        (await historyRowIds()).length === 10,
+        (await historyRowIds()).length === 5,
       "history project reopens with its initial session page",
     );
     const resetLoadMoreText = await cdp.evaluate(
@@ -390,8 +390,8 @@ export async function checkSidebarRowStates({ cdp, check, waitFor, seed }) {
     );
     check(
       (await historyRowIds()).join() === expectedInitialIds.join() &&
-        resetLoadMoreText?.includes("2"),
-      "folding a project resets its loaded history and restores the two-session remainder",
+        resetLoadMoreText?.includes("7"),
+      "folding a project resets its loaded history and restores the seven-session remainder",
       JSON.stringify({ rowIds: await historyRowIds(), loadMoreText: resetLoadMoreText }),
     );
   } finally {

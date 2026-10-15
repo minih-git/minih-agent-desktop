@@ -214,8 +214,12 @@ destination, chat as the home surface, tools and permissions inline.
 - **Identity**: each project group is keyed by a host-owned logical group id;
   each root path remains canonical and is never inferred from an ambiguous
   folder basename. Legacy single-folder projects are compatibility groups.
-- **Header**: project name, current-workspace dot, disclosure, new-task action,
-  and an overflow menu. Workspace context is not navigation selection: project
+- **Header**: project name, current-workspace dot, collapsed-project running/permission
+  indicator (breathing orange dot when a collapsed project has running tasks, pulsing
+  purple dot when any task in the collapsed project awaits permission approval, plus a
+  running-task count when more than one task is active in that project; hidden when the
+  project group is expanded so session rows remain the single status surface), disclosure,
+  new-task action, and an overflow menu. Workspace context is not navigation selection: project
   headers have no persistent selected background, including when no conversation
   is selected. Only the current conversation on the chat page receives selected
   row paint. Project and conversation rows share full-row hover feedback; the
@@ -224,6 +228,14 @@ destination, chat as the home surface, tools and permissions inline.
   dense tree rather than detached cards. Hovering or focusing the project title
   reveals the full project path. Pressing the title and moving 8px reorders
   the group.
+- **Activity stream view**: the sidebar footer exposes an `Activity` toggle button
+  (`data-nav="activity"`) alongside Settings, Extensions, Scheduled, and Notifications.
+  When active, the sidebar body switches into a Codex-style Activity stream that lists
+  all visible tasks across all projects and standalone chats ordered by `updatedAt`
+  descending, grouped by time (`Today`, `Yesterday`, `Previous 7 days`, `Previous 14 days`,
+  `Older`), with each row displaying a two-line card (line 1: status indicator, task title,
+  and owning project/workspace label; line 2: 2-line clamped preview of the latest user or
+  assistant message).
 - **Project actions**: open folder reveals the primary project directory; Edit
   project changes the host-owned logical group name and adjusts eligible
   non-primary roots (keeping renderer metadata in sync); pin/unpin changes
@@ -265,11 +277,12 @@ destination, chat as the home surface, tools and permissions inline.
   first, and Name. Pinned rows precede unpinned rows. Project groups switch
   to `manual` by dragging a title or using ArrowUp/ArrowDown on that
   title. Session `manual` remains a compatibility value.
-- **Conversation list**: each group shows the ten most-recent sessions in the
+- **Conversation list**: each group shows the five most-recent sessions in the
   active sort order by default; the remainder folds behind a **Load N more…**
-  row that expands the full time-grouped list on click. Pinned rows precede
-  unpinned rows and are never pushed behind the fold; the expansion state is
-  not persisted.
+  row that expands the full time-grouped list on click (with a **Show less**
+  control at the bottom of the expanded list to fold back to the initial five).
+  Pinned rows precede unpinned rows and are never pushed behind the fold; the
+  expansion state is not persisted.
 - **Standalone sessions**: path-less sessions remain in the separate Sessions
   section and never inherit the last active project's workspace.
 - **Concurrency**: the shell selects one visible project at a time, while

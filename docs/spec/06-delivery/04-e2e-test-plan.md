@@ -17622,12 +17622,12 @@ renderer's durable transcript reads. No real model or provider is contacted.
 
 - **Preconditions:** One retained project has at least twelve unpinned sessions,
   and its group can be expanded in the sidebar.
-- **Steps:** 1. Expand the project and confirm the latest ten sessions plus a
+- **Steps:** 1. Expand the project and confirm the latest five sessions plus a
   Load more control are visible. 2. Click Load more and confirm all twelve
   sessions appear. 3. Collapse the project, then expand it again. 4. Inspect the
   visible sessions and the Load more count.
-- **Expected:** Reopening the project shows only the latest ten unpinned
-  sessions, and Load more reports the two hidden sessions. The collapse clears
+- **Expected:** Reopening the project shows only the latest five unpinned
+  sessions, and Load more reports the seven hidden sessions. The collapse clears
   only that project's loaded-more state; session selection and other project
   groups remain unchanged.
 - **Specs:** `04-ux/08-component-spec.md` §3.9;

@@ -74,6 +74,12 @@ export type SessionSummary = {
    * git worktree. Older hosts and ordinary sessions omit it.
    */
   worktree?: SessionWorktreeSummary;
+  /**
+   * Single-line preview of the latest user or assistant message in this
+   * session, used by the sidebar Activity stream. Omitted when empty or by
+   * older hosts.
+   */
+  lastMessagePreview?: string;
   updatedAt: string;
   createdAt: string;
 };

@@ -234,7 +234,7 @@ may be retained while exactly one workspace supplies the visible shell context.
 3. **Collapse** — disclosure state belongs to each project path. Collapsing
    does not change the selected session or stop a run, and clears that group's
    loaded-more session history so its next expansion starts with the initial
-   ten unpinned sessions. The directory row is one full-width disclosure target
+   five unpinned sessions. The directory row is one full-width disclosure target
    containing its chevron, folder, and label: selecting an inactive directory
    activates it first, and every directory-row click toggles that group's
    children without changing any other group's state. Project actions are
@@ -294,7 +294,7 @@ may be retained while exactly one workspace supplies the visible shell context.
   contiguous order per normalized path. Archived and pinned priority remains
   ahead of the manual order; projects without an assigned order fall back to
   a stable path order until they are moved.
-- Each project group shows the ten most-recent rows in the active sort order
+- Each project group shows the five most-recent rows in the active sort order
   by default; the remaining sessions fold behind a **Load N more…** control
   (the same affordance used for time-grouped overflow). Selecting it expands
   the full time-grouped list, and the expanded state is per-group, for the

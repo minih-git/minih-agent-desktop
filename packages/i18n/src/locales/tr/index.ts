@@ -288,6 +288,11 @@ export const tr = {
     hoverCardUpdatedAt: "Güncellendi {{when}}",
     hoverCardTemporarySpace: "Geçici",
     hoverCardBranchAria: "Dal {{name}}",
+    activity: "Etkinlik",
+    noActivitySessions: "Henüz etkinlik yok",
+    timeGroupToday: "Bugün",
+    projectRunningCount: "{{count}} çalışıyor",
+    collapseMoreSessions: "Daha az göster",
   },
   sessionCollaboration: {
     statusIdle: "Boşta",

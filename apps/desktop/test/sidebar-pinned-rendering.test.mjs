@@ -63,7 +63,7 @@ test("sidebar renders global pins once, outside project folding and history limi
       projectCollapsed: {},
       sessionView: { sort: "recent", archived: false },
     };
-    const render = (overrides = {}) => {
+    const render = (overrides = {}, props = {}) => {
       Object.assign(useAppStore.getInitialState(), seed, overrides);
       globalThis.document = { documentElement: { dataset: { theme: "light" } } };
       return renderToStaticMarkup(
@@ -76,6 +76,7 @@ test("sidebar renders global pins once, outside project folding and history limi
             sidebarWidth: 275,
             onWidthChange() {},
             onWidthCommit() {},
+            ...props,
           }),
         ),
       );
@@ -107,7 +108,8 @@ test("sidebar renders global pins once, outside project folding and history limi
         html.indexOf('data-sidebar-session-section="temporary"'),
     );
     assert.equal(rows(html).length, new Set(rows(html)).size, "pins have no duplicate rows");
-    assert.equal(rows(html).filter((id) => id.startsWith("normal-")).length, 10);
+    assert.equal(rows(html).filter((id) => id.startsWith("normal-")).length, 5);
+    assert.match(html, /class="sidebar-load-more"[^>]*>Load 6 more…<\/button>/);
     assert.ok(rows(html).includes("temporary-normal"));
     assert.ok(!rows(html).includes("archived-pin"));
     assert.ok(!rows(html).includes("archived-project-pin"));
@@ -193,6 +195,83 @@ test("sidebar renders global pins once, outside project folding and history limi
       assert.match(withoutSelection, /data-current-workspace="true"/);
       assert.doesNotMatch(withoutSelection, /class="sidebar-session-group project-group [^"]*\bactive\b/);
     }
+
+    // Collapsed project running/permission status indicator:
+    // Only shown on collapsed projects that have running or permission-pending sessions.
+    const withRunningProjects = render({
+      runningSessions: {
+        "collapsed-pin": true,
+        "normal-00": true,
+        "normal-01": true,
+      },
+      pendingPermissions: {},
+    });
+    const collapsedWithRunning =
+      withRunningProjects.match(/data-sidebar-project-group="\/collapsed"[\s\S]*?<\/section>/)?.[0] ?? "";
+    const openWithRunning =
+      withRunningProjects.match(/data-sidebar-project-group="\/open"[\s\S]*?<\/section>/)?.[0] ?? "";
+    assert.match(
+      collapsedWithRunning,
+      /data-sidebar-project-status="running"/,
+      "collapsed project with running session renders running indicator",
+    );
+    assert.doesNotMatch(
+      openWithRunning,
+      /data-sidebar-project-status=/,
+      "expanded project does not render collapsed project status indicator",
+    );
+
+    const withMultipleRunningCollapsed = render({
+      projectMeta: { ...seed.projectMeta, "/open": { collapsed: true } },
+      runningSessions: { "normal-00": true, "normal-01": true },
+      pendingPermissions: { "normal-02": [{ id: "perm-1" }] },
+    });
+    const collapsedOpenWithPermission =
+      withMultipleRunningCollapsed.match(/data-sidebar-project-group="\/open"[\s\S]*?<\/section>/)?.[0] ?? "";
+    assert.match(collapsedOpenWithPermission, /data-sidebar-project-status="permission"/);
+    assert.match(collapsedOpenWithPermission, /<span class="sidebar-project-status-count"[^>]*>3<\/span>/);
+
+    // Activity stream panel: orders all visible sessions across all projects by updatedAt descending,
+    // groups by time (including Today), and renders two-line rows with project name and latest message preview.
+    const activityHtml = render(
+      {
+        sessions: [
+          {
+            ...session("older-open", "/open", new Date(now - 2 * 86_400_000).toISOString()),
+            title: "Refactor auth",
+            lastMessagePreview: "Updated token validation in host-core.",
+          },
+          {
+            ...session("newest-collapsed", "/collapsed", new Date(now - 5_000).toISOString()),
+            title: "Fix sidebar badge",
+            lastMessagePreview: "Added breathing dot for collapsed projects.",
+          },
+          {
+            ...session("middle-temp", null, new Date(now - 60_000).toISOString()),
+            title: "Quick question",
+            lastMessagePreview: "Initial summary from DB",
+          },
+        ],
+        sessionMeta: {},
+        activeSessionId: "middle-temp",
+        messages: [
+          { id: "m-1", role: "user", content: "Live streaming\n  message preview!" },
+        ],
+      },
+      { defaultActivityOpen: true },
+    );
+    assert.match(activityHtml, /data-sidebar-activity-panel="true"/);
+    const activityOrder = [
+      ...activityHtml.matchAll(/data-sidebar-activity-row="([^"]+)"/g),
+    ].map((match) => match[1]);
+    assert.deepEqual(activityOrder, ["newest-collapsed", "middle-temp", "older-open"]);
+    assert.match(activityHtml, /<div class="sidebar-time-group-header activity">Today<\/div>/);
+    assert.match(activityHtml, /<span class="thread-activity-preview">Added breathing dot for collapsed projects\.<\/span>/);
+    assert.match(
+      activityHtml,
+      /<span class="thread-activity-preview">Live streaming message preview!<\/span>/,
+      "active session prefers live transcript messages over static summary preview",
+    );
   } finally {
     globalThis.document = previousDocument;
     await server.close();

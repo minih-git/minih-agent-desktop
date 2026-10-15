@@ -249,7 +249,8 @@
   text-overflow: ellipsis;
 }
 
-.sidebar-load-more {
+.sidebar-load-more,
+.sidebar-collapse-more {
   display: flex;
   width: 100%;
   align-items: center;
@@ -261,7 +262,8 @@
   transition: background var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
-.sidebar-load-more:hover {
+.sidebar-load-more:hover,
+.sidebar-collapse-more:hover {
   background: var(--ds-bg-hover);
   color: var(--ds-text-secondary);
 }
@@ -332,4 +334,71 @@
   background: var(--ds-bg-active);
 }
 
+/* Codex-style Activity stream view across all projects */
+.sidebar-activity-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+}
 
+.sidebar-activity-list {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding-top: 2px;
+  padding-bottom: 6px;
+}
+
+.sidebar-activity-group,
+.sidebar-activity-group-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-time-group-header.activity {
+  padding: 4px 8px 2px;
+}
+
+.thread-item.thread-activity-item {
+  align-items: flex-start;
+}
+
+.thread-item.thread-activity-item .thread-item-status {
+  top: 14px;
+}
+
+.thread-item.thread-activity-item .thread-item-main {
+  flex-wrap: wrap;
+  row-gap: 3px;
+  padding: 6px 8px 6px 20px;
+}
+
+.thread-item.thread-activity-item .thread-item-title {
+  min-width: 0;
+  flex: 1;
+  color: var(--ds-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.thread-activity-preview {
+  flex: 0 0 100%;
+  width: 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs-plus);
+  line-height: var(--leading-compact);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

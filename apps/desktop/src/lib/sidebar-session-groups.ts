@@ -86,7 +86,7 @@ export function getGlobalPinnedSessions(
   });
 }
 
-type TimeGroup = "today" | "yesterday" | "thisWeek" | "older14d" | "archived";
+export type TimeGroup = "today" | "yesterday" | "thisWeek" | "older14d" | "archived";
 
 function getTimeGroup(dateStr: string | undefined, now: Date): TimeGroup {
   if (!dateStr) return "older14d";
@@ -117,3 +117,105 @@ export function groupSidebarSessionsByTime(sessions: SessionSummary[], now = new
     return rows?.length ? [{ group, sessions: rows }] : [];
   });
 }
+
+const MAX_ACTIVITY_PREVIEW_CHARS = 160;
+
+export function normalizeMessagePreview(
+  raw?: string | null,
+  maxChars = MAX_ACTIVITY_PREVIEW_CHARS,
+): string | null {
+  if (!raw) return null;
+  const collapsed = raw.replace(/\s+/g, " ").trim();
+  if (!collapsed) return null;
+  const chars = Array.from(collapsed);
+  if (chars.length <= maxChars) return collapsed;
+  return `${chars.slice(0, maxChars).join("").trimEnd()}…`;
+}
+
+export function latestTranscriptMessagePreview(
+  messages?: readonly { role?: string; content?: string | null }[] | null,
+): string | null {
+  if (!messages?.length) return null;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || (message.role !== "assistant" && message.role !== "user")) continue;
+    const preview = normalizeMessagePreview(message.content);
+    if (preview) return preview;
+  }
+  return null;
+}
+
+export function resolveSessionActivityPreview({
+  session,
+  activeSessionId,
+  activeMessages,
+  retainedTranscripts,
+}: {
+  session: { id: string; lastMessagePreview?: string | null };
+  activeSessionId?: string | null;
+  activeMessages?: readonly { role?: string; content?: string | null }[] | null;
+  retainedTranscripts?: Record<
+    string,
+    readonly { role?: string; content?: string | null }[] | undefined
+  >;
+}): string | null {
+  if (activeSessionId === session.id) {
+    const livePreview = latestTranscriptMessagePreview(activeMessages);
+    if (livePreview) return livePreview;
+  }
+  const retainedPreview = latestTranscriptMessagePreview(
+    retainedTranscripts?.[session.id],
+  );
+  if (retainedPreview) return retainedPreview;
+  return normalizeMessagePreview(session.lastMessagePreview);
+}
+
+function optionalSessionTimestamp(value?: string | null): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Return all visible sessions across all projects and temporary chats ordered
+ * by latest activity (`updatedAt` descending) for the sidebar Activity panel.
+ */
+export function getSidebarActivitySessions({
+  sessions,
+  sessionMeta,
+  projectMeta,
+  showArchived,
+}: {
+  sessions: readonly SessionSummary[];
+  sessionMeta: Record<string, SessionMeta>;
+  projectMeta: Record<string, ProjectMeta>;
+  showArchived: boolean;
+}): SessionSummary[] {
+  return sessions
+    .filter((session) => {
+      if (session.scheduledRun) return false;
+      const path = normalizeProjectPath(session.projectPath);
+      const project = path ? (projectMeta[path] ?? projectMeta[session.projectPath!]) : undefined;
+      return (
+        showArchived || (!sessionArchived(session, sessionMeta[session.id]) && !project?.archived)
+      );
+    })
+    .sort((left, right) => {
+      const leftUpdated = optionalSessionTimestamp(left.updatedAt);
+      const rightUpdated = optionalSessionTimestamp(right.updatedAt);
+      if (leftUpdated !== rightUpdated) {
+        if (leftUpdated === null) return 1;
+        if (rightUpdated === null) return -1;
+        return rightUpdated - leftUpdated;
+      }
+      const leftCreated = optionalSessionTimestamp(left.createdAt);
+      const rightCreated = optionalSessionTimestamp(right.createdAt);
+      if (leftCreated !== rightCreated) {
+        if (leftCreated === null) return 1;
+        if (rightCreated === null) return -1;
+        return rightCreated - leftCreated;
+      }
+      return left.id.localeCompare(right.id);
+    });
+}
+

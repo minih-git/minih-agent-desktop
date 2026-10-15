@@ -288,6 +288,11 @@ export const ko = {
     hoverCardUpdatedAt: "{{when}} 업데이트됨",
     hoverCardTemporarySpace: "임시",
     hoverCardBranchAria: "브랜치 {{name}}",
+    activity: "활동",
+    noActivitySessions: "최근 활동이 없습니다",
+    timeGroupToday: "오늘",
+    projectRunningCount: "{{count}}개 진행 중",
+    collapseMoreSessions: "간략히 보기",
   },
   sessionCollaboration: {
     statusIdle: "대기",

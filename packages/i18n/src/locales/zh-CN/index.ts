@@ -281,6 +281,11 @@ export const zhCN = {
     hoverCardUpdatedAt: "更新于 {{when}}",
     hoverCardTemporarySpace: "临时对话",
     hoverCardBranchAria: "分支 {{name}}",
+    activity: "活动",
+    noActivitySessions: "暂无活动记录",
+    timeGroupToday: "今天",
+    projectRunningCount: "{{count}} 个任务进行中",
+    collapseMoreSessions: "收起",
   },
   sessionCollaboration: {
     statusIdle: "空闲",

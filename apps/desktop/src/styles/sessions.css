@@ -1069,6 +1069,54 @@
   background: var(--ds-accent);
 }
 
+.sidebar-project-status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  margin-left: 3px;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.sidebar-project-status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  overflow: visible;
+  border-radius: var(--radius-full);
+}
+
+.sidebar-project-status.running .sidebar-project-status-dot {
+  background: var(--ds-warning);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ds-warning) 15%, transparent);
+  animation: sidebar-status-breathe 1.6s ease-in-out infinite;
+}
+
+.sidebar-project-status.permission .sidebar-project-status-dot {
+  background: var(--ds-purple);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ds-purple) 15%, transparent);
+  animation: sidebar-status-pulse-purple 1.2s ease-in-out infinite;
+}
+
+.sidebar-project-status-count {
+  flex: 0 0 auto;
+  overflow: visible;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-project-status.running .sidebar-project-status-dot,
+  .sidebar-project-status.permission .sidebar-project-status-dot {
+    animation: none;
+  }
+}
+
 .project-menu {
   top: calc(100% + 3px);
 }

@@ -7,6 +7,7 @@ import fs from "node:fs";
 import test from "node:test";
 import {
   latestSessionOutcomes,
+  sidebarCollapsedProjectStatus,
   sidebarSessionStatus,
 } from "../src/lib/sidebar-session-status.ts";
 import { loadStylesSync } from "./helpers/styles.mjs";
@@ -28,12 +29,13 @@ test("keeps the newest unread completed or failed outcome for each session", () 
   const outcomes = latestSessionOutcomes([
     notification({ id: "latest", kind: "task.completed" }),
     notification({ id: "older", kind: "task.failed" }),
+  ,
     notification({
       id: "other",
       kind: "task.failed",
       sessionId: "session-2",
     }),
-  ]);
+  ].filter(Boolean));
 
   assert.deepEqual(outcomes, {
     "session-1": "completed",
@@ -64,6 +66,59 @@ test("prioritizes in-progress and selected states over terminal outcomes", () =>
     "completed",
   );
   assert.equal(sidebarSessionStatus({ running: false, selected: false }), null);
+});
+
+test("shows collapsed project status only when project is collapsed and has running or permission-pending sessions", () => {
+  const sessions = [{ id: "s1" }, { id: "s2" }, { id: "s3" }];
+
+  assert.equal(
+    sidebarCollapsedProjectStatus({
+      collapsed: false,
+      sessions,
+      runningSessions: { s1: true, s2: true },
+      pendingPermissions: { s3: [{ id: "perm-1" }] },
+    }),
+    null,
+    "expanded projects must not duplicate row status badges",
+  );
+
+  assert.equal(
+    sidebarCollapsedProjectStatus({
+      collapsed: true,
+      sessions,
+      runningSessions: {},
+      pendingPermissions: {},
+    }),
+    null,
+  );
+
+  assert.deepEqual(
+    sidebarCollapsedProjectStatus({
+      collapsed: true,
+      sessions,
+      runningSessions: { s1: true },
+      pendingPermissions: {},
+    }),
+    {
+      kind: "running",
+      runningCount: 1,
+      permissionCount: 0,
+    },
+  );
+
+  assert.deepEqual(
+    sidebarCollapsedProjectStatus({
+      collapsed: true,
+      sessions,
+      runningSessions: { s1: true, s2: true },
+      pendingPermissions: { s2: [{ id: "perm-1" }] },
+    }),
+    {
+      kind: "permission",
+      runningCount: 2,
+      permissionCount: 1,
+    },
+  );
 });
 
 test("opening a conversation acknowledges its outcome badge before loading details", () => {
@@ -114,6 +169,14 @@ test("renders semantic, shape-distinct sidebar status indicators", () => {
   assert.match(
     styles,
     /prefers-reduced-motion: reduce[\s\S]*thread-item-status\.running::before[\s\S]*animation: none/,
+  );
+  assert.match(
+    styles,
+    /\.sidebar-project-status\.running \.sidebar-project-status-dot[\s\S]*--ds-warning/,
+  );
+  assert.match(
+    styles,
+    /\.sidebar-project-status\.permission \.sidebar-project-status-dot[\s\S]*--ds-purple/,
   );
   assert.match(
     app,

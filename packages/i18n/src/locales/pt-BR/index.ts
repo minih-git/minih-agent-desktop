@@ -277,7 +277,12 @@ export const ptBR = {
     hoverCardSpace: "Espaço de trabalho",
     hoverCardUpdatedAt: "Atualizado {{when}}",
     hoverCardTemporarySpace: "Temporário",
-    hoverCardBranchAria: "Ramificação {{name}}"
+    hoverCardBranchAria: "Ramificação {{name}}",
+    activity: "Atividade",
+    noActivitySessions: "Nenhuma atividade recente",
+    timeGroupToday: "Hoje",
+    projectRunningCount: "{{count}} em andamento",
+    collapseMoreSessions: "Mostrar menos"
   },
   sessionCollaboration: {
     statusIdle: "Ocioso",

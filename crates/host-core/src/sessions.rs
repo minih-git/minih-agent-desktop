@@ -141,6 +141,10 @@ pub struct SessionSummary {
     /// session. Filled in by the list and single-summary reads.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<crate::session_worktrees::lifecycle::WorktreeSummary>,
+    /// Compact single-line preview of the latest user or assistant message in
+    /// the session, populated on summary reads for the sidebar Activity view.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_message_preview: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1286,10 +1290,35 @@ fn session_created_at(db: &Database, session_id: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("session not found: {session_id}"))
 }
 
+const MAX_MESSAGE_PREVIEW_CHARS: usize = 160;
+
+fn normalize_message_preview(raw: Option<String>) -> Option<String> {
+    let text = raw?;
+    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() {
+        return None;
+    }
+    let mut chars = collapsed.chars();
+    let truncated: String = chars.by_ref().take(MAX_MESSAGE_PREVIEW_CHARS).collect();
+    if chars.next().is_some() {
+        Some(format!("{}…", truncated.trim_end()))
+    } else {
+        Some(truncated)
+    }
+}
+
 const SUMMARY_SELECT: &str =
     "SELECT s.id, s.title, s.last_seq, p.path, s.model_id, s.provider_id, s.mode,
             s.thinking_level, s.permission_mode, s.updated_at, s.created_at,
-            EXISTS (SELECT 1 FROM task_runs r WHERE r.session_id = s.id) AS scheduled_run
+            EXISTS (SELECT 1 FROM task_runs r WHERE r.session_id = s.id) AS scheduled_run,
+            (SELECT substr(m.text, 1, 240)
+             FROM messages m
+             WHERE m.session_id = s.id
+               AND m.role IN ('assistant', 'user')
+               AND m.text IS NOT NULL
+               AND trim(m.text) != ''
+             ORDER BY m.seq DESC
+             LIMIT 1) AS last_message_preview
      FROM sessions s LEFT JOIN projects p ON p.id = s.project_id
      WHERE s.deleted_at IS NULL";
 
@@ -1310,6 +1339,11 @@ pub(crate) fn summary_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Sess
         // alias keeps this mapper independent of any one query's column order.
         scheduled_run: row.get("scheduled_run")?,
         worktree: None,
+        last_message_preview: normalize_message_preview(
+            row.get::<_, Option<String>>("last_message_preview")
+                .ok()
+                .flatten(),
+        ),
     })
 }
 
@@ -1466,6 +1500,7 @@ pub fn create_session_with_options(
         scheduled_run: false,
         // A new or forked session starts without a worktree (ADR 0329).
         worktree: None,
+        last_message_preview: None,
     })
 }
 
@@ -1830,6 +1865,12 @@ pub fn fork_session_through(
         scheduled_run: false,
         // A new or forked session starts without a worktree (ADR 0329).
         worktree: None,
+        last_message_preview: records
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, r)| matches!(r.role.as_str(), "assistant" | "user"))
+            .and_then(|(i, _)| normalize_message_preview(texts[i].clone())),
     };
     let messages = records.into_iter().map(record_to_ui).collect();
     Ok(ForkSessionResult::Created(Box::new(SessionDetail {
@@ -5032,6 +5073,7 @@ mod tests {
             // Ownership is derived from `task_runs`, so an import is never one.
             scheduled_run: false,
             worktree: None,
+            last_message_preview: None,
             created_at: "2025-01-01T00:00:00Z".into(),
             updated_at: "2025-01-02T00:00:00Z".into(),
         };
@@ -5085,6 +5127,7 @@ mod tests {
             // Ownership is derived from `task_runs`, so an import is never one.
             scheduled_run: false,
             worktree: None,
+            last_message_preview: None,
             created_at: "2025-01-01T00:00:00Z".into(),
             updated_at: "2025-01-01T00:00:00Z".into(),
         };
@@ -6027,6 +6070,7 @@ mod tests {
             // Ownership is derived from `task_runs`, so an import is never one.
             scheduled_run: false,
             worktree: None,
+            last_message_preview: None,
             created_at: "2025-01-01T00:00:00Z".into(),
             updated_at: "2025-01-01T00:00:00Z".into(),
         };
@@ -8486,6 +8530,52 @@ mod tests {
                 .unwrap()
                 .as_i64(),
             Some(0)
+        );
+    }
+
+    #[test]
+    fn session_summaries_include_normalized_last_message_preview() {
+        let db = test_db();
+        let session = create_session(&db, Some("Activity Task".into()), None, None, None, None).unwrap();
+        assert_eq!(session.last_message_preview, None);
+
+        append_message(
+            &db,
+            &session.id,
+            &user_msg("u-1", "First line\n\n  with extra   whitespace ", "2026-01-01T00:00:01Z"),
+            None,
+        )
+        .unwrap();
+
+        let listed = list_sessions(&db).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(
+            listed[0].last_message_preview.as_deref(),
+            Some("First line with extra whitespace")
+        );
+
+        let mut tool_msg = user_msg("t-1", "tool output should not override user/assistant preview", "2026-01-01T00:00:02Z");
+        tool_msg.role = "tool".into();
+        append_message(&db, &session.id, &tool_msg, None).unwrap();
+
+        let after_tool = session_summary(&db, &session.id).unwrap().unwrap();
+        assert_eq!(
+            after_tool.last_message_preview.as_deref(),
+            Some("First line with extra whitespace")
+        );
+
+        let mut assistant_msg = user_msg(
+            "a-1",
+            "Completed the sidebar activity view\nand updated collapsed project badges.",
+            "2026-01-01T00:00:03Z",
+        );
+        assistant_msg.role = "assistant".into();
+        append_message(&db, &session.id, &assistant_msg, None).unwrap();
+
+        let after_assistant = session_summary(&db, &session.id).unwrap().unwrap();
+        assert_eq!(
+            after_assistant.last_message_preview.as_deref(),
+            Some("Completed the sidebar activity view and updated collapsed project badges.")
         );
     }
 }

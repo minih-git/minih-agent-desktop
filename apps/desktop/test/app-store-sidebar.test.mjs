@@ -139,6 +139,13 @@ test("collapsing a project resets its expanded session history", () => {
     loadMoreBlock,
     /updateProjectSessionExpansion\(previous, projectKey, true\)/,
   );
+  const collapseMoreBlock = sidebarSource.match(
+    /const collapseProjectSessions = \(projectKey: string\) => \{[\s\S]*?\n  \};/,
+  )?.[0] ?? "";
+  assert.match(
+    collapseMoreBlock,
+    /updateProjectSessionExpansion\(previous, projectKey, false\)/,
+  );
 });
 
 test("global search stays on the conversation topbar, not the sidebar header", () => {

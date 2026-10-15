@@ -286,6 +286,11 @@ export const en = {
     hoverCardUpdatedAt: "Updated {{when}}",
     hoverCardTemporarySpace: "Temporary",
     hoverCardBranchAria: "Branch {{name}}",
+    activity: "Activity",
+    noActivitySessions: "No recent activity yet",
+    timeGroupToday: "Today",
+    projectRunningCount: "{{count}} running",
+    collapseMoreSessions: "Show less",
   },
   sessionCollaboration: {
     statusIdle: "Idle",
