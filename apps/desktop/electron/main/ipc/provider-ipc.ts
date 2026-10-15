@@ -653,10 +653,11 @@ export function registerProviderIpc({
           let sweepOutcome: Awaited<ReturnType<typeof probeDiscoveryCandidates>>["outcome"];
           let sweepAttempts: DiscoveryAttempt[] = [];
           let usedLanSweep = false;
+          let lanProfile: ReturnType<typeof inferEndpointProfile>;
           if (isMinihRouterVendorKey(provider?.vendorKey)) {
             const routerEndpoint = await resolveMinihRouterEndpoint(host, baseUrl);
             if (routerEndpoint.usingLan && routerEndpoint.activeBaseUrl) {
-              const lanProfile = inferEndpointProfile({
+              lanProfile = inferEndpointProfile({
                 baseUrl: routerEndpoint.activeBaseUrl,
                 apiStyle: normalizeApiStyle(apiStyle),
                 explicitApiStyle: true,
@@ -689,16 +690,20 @@ export function registerProviderIpc({
           }
           const outcome = sweepOutcome;
           if (outcome) {
-            const reportedEffectiveBaseUrl = usedLanSweep
-              ? (profile?.effectiveBaseUrl ?? baseUrl)
-              : outcome.effectiveBaseUrl;
-            endpointBaseUrl = reportedEffectiveBaseUrl;
+            endpointBaseUrl = outcome.effectiveBaseUrl;
             resolution = {
-              effectiveBaseUrl: reportedEffectiveBaseUrl,
+              effectiveBaseUrl: outcome.effectiveBaseUrl,
               discoveryStyle: outcome.discoveryStyle,
               ...(outcome.apiStyleHint ? { apiStyleHint: outcome.apiStyleHint } : {}),
               evidence: outcome.evidence.type,
             };
+            // A LAN sweep answers from the tunnel address, so the reported
+            // endpoint becomes the tunnel's own resolved candidate. The
+            // renderer still reads it from this IPC result.
+            if (usedLanSweep) {
+              endpointBaseUrl = lanProfile?.effectiveBaseUrl ?? baseUrl;
+              resolution.effectiveBaseUrl = endpointBaseUrl;
+            }
             const models = outcome.models.map((model) => decorate(model));
             // Only what the endpoint actually served is cached; a configured id
             // it never offered must not be recorded as discovered.

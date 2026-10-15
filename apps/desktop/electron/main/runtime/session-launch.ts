@@ -380,7 +380,9 @@ export function createSessionLaunchRuntime({
     }
     const storedModel = bindingForModel(provider, modelId);
     const apiStyle = vendorBinding?.apiStyle ?? provider.apiStyle;
-    const baseUrl = vendorBinding?.baseUrl ?? provider.baseUrl;
+    // The LAN channel can replace the address this launch resolves against, so
+    // the binding is mutable after the catalog read below.
+    let baseUrl = vendorBinding?.baseUrl ?? provider.baseUrl;
     const catalogModelConfig = vendorBinding?.modelConfig ??
       catalogModelConfigFor(modelsDevCatalog, {
         providerId: provider.id,
@@ -389,7 +391,7 @@ export function createSessionLaunchRuntime({
         apiStyle,
         modelId,
       });
-    const modelConfig = catalogModelConfig;
+    let modelConfig = catalogModelConfig;
     const thinkingCapabilities = capabilitiesFromModelConfig(modelConfig);
     const thinkingLevel = clampThinkingLevel(
       thinkingCapabilities,
@@ -667,20 +669,16 @@ export function createSessionLaunchRuntime({
         });
       }
     }
-    let effectiveProviderBaseUrl = baseUrl;
-    let effectiveProviderFallbackBaseUrl: string | undefined;
-    let effectiveModelConfig = modelConfig;
     if (isMinihRouterVendorKey(provider.vendorKey)) {
       const resolvedRouterEndpoint = await resolveMinihRouterEndpoint(
         runtimeState.host,
         baseUrl,
       );
       if (resolvedRouterEndpoint.activeBaseUrl) {
-        effectiveProviderBaseUrl = resolvedRouterEndpoint.activeBaseUrl;
-        effectiveProviderFallbackBaseUrl = resolvedRouterEndpoint.fallbackBaseUrl;
-        if (effectiveModelConfig) {
-          effectiveModelConfig = {
-            ...effectiveModelConfig,
+        baseUrl = resolvedRouterEndpoint.activeBaseUrl;
+        if (modelConfig) {
+          modelConfig = {
+            ...modelConfig,
             baseUrl: resolvedRouterEndpoint.activeBaseUrl,
           };
         }
@@ -733,10 +731,7 @@ export function createSessionLaunchRuntime({
           id: provider.id,
           name: provider.name,
           vendorKey: provider.vendorKey,
-          baseUrl: effectiveProviderBaseUrl,
-          ...(effectiveProviderFallbackBaseUrl
-            ? { fallbackBaseUrl: effectiveProviderFallbackBaseUrl }
-            : {}),
+          baseUrl,
           modelId,
           apiKey: secret.value || "",
           authKind: provider.authKind,
@@ -744,9 +739,9 @@ export function createSessionLaunchRuntime({
           apiStyle,
           ...optionalProviderHeaders(provider.headers),
           supportsReasoning: thinkingCapabilities.supportsReasoning,
-          supportsVision: visionFromModelConfig(effectiveModelConfig),
+          supportsVision: visionFromModelConfig(modelConfig),
           supportedThinkingLevels: [...thinkingCapabilities.supportedThinkingLevels],
-          ...(effectiveModelConfig ? { modelConfig: effectiveModelConfig } : {}),
+          ...(modelConfig ? { modelConfig } : {}),
         },
         pluginTools: [
           ...plugins
