@@ -184,6 +184,11 @@ export const ko = {
     checkForUpdates: "업데이트 확인…",
   },
   updates: {
+    failure: {
+      checkTimeout: "업데이트 서버가 제때 응답하지 않았습니다. 네트워크나 프록시를 확인한 뒤 다시 시도하세요.",
+      downloadStalled: "업데이트 다운로드가 더 이상 진행되지 않아 이어서 받을 수 없습니다.",
+    },
+    mirrorSource: "다운로드 출처: {{host}}",
     title: "업데이트",
     desc: "업데이트는 GitHub Releases에서 다운로드됩니다.",
     preferenceTitle: "업데이트 방식",

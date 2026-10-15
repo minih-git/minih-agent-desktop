@@ -214,6 +214,11 @@ export const en = {
     backgroundLabel: "Downloading in the background",
     backgroundHint: "You'll be prompted to restart once the download finishes; you can keep using the app meanwhile.",
     retry: "Retry",
+    failure: {
+      checkTimeout: "The update server didn't answer in time. Check your network or proxy, then retry.",
+      downloadStalled: "The update download stopped making progress and could not be resumed.",
+    },
+    mirrorSource: "Download source: {{host}}",
   },
   nav: {
     "pinnedSessions": "Pinned",

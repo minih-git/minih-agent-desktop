@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { AgentInstructionFile, AppSettings, UpdatePreference } from "@minih-agent/shared";
+import type { AgentInstructionFile, AppSettings, UpdatePreference, UpdateState } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 import { useAppStore } from "../../stores/app-store";
 import { useUpdateState } from "../../hooks/use-update-state";
@@ -105,6 +105,19 @@ export function UpdatesRow({
         update?.preference ??
         update?.defaultPreference ??
         "manual";
+  const updateFailureText = (state: UpdateState): string => {
+    switch (state.errorCode) {
+      case "check-timeout":
+        return t("updates.failure.checkTimeout");
+      case "download-stalled":
+        return t("updates.failure.downloadStalled");
+      default:
+        return t("updates.error", { message: state.error ?? "" });
+    }
+  };
+  // Only a mirror is worth naming; the packaged feed is always github.com.
+  const mirrorHost =
+    update?.feedHost && update.feedHost !== "github.com" ? update.feedHost : null;
   const savePreference = useCallback(async (value: string) => {
     if (value !== "automatic" && value !== "manual") return;
     setPreferenceSaving(true);
@@ -218,6 +231,11 @@ export function UpdatesRow({
             <div className="about-update-hint">
               {t("updates.backgroundHint")}
             </div>
+            {mirrorHost ? (
+              <div className="about-update-hint">
+                {t("updates.mirrorSource", { host: mirrorHost })}
+              </div>
+            ) : null}
           </div>
         );
         break;
@@ -231,7 +249,12 @@ export function UpdatesRow({
       case "error":
         statusBody = (
           <div className="about-update-status is-error">
-            {t("updates.error", { message: update.error ?? "" })}
+            {updateFailureText(update)}
+            {mirrorHost ? (
+              <div className="about-update-hint">
+                {t("updates.mirrorSource", { host: mirrorHost })}
+              </div>
+            ) : null}
           </div>
         );
         break;

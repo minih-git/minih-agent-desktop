@@ -2,9 +2,13 @@
  * App auto-update via electron-updater against GitHub Releases.
  *
  * The feed (latest*.yml + installers) is attached to each GitHub Release by
- * .github/workflows/release.yml. Discovery always tracks the latest stable
- * release (`allowPrerelease = false`) so RC installs still graduate to newer
- * stables. Delivery mode per install:
+ * .github/workflows/release.yml. A release may compile in HTTPS mirrors
+ * (`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`) that carry the same files for the
+ * same version; the packaged GitHub feed is always tried first and mirrors
+ * only replace the host, never the release (ADR 0022 amendment, see
+ * ./update-source). Discovery always tracks the latest stable release
+ * (`allowPrerelease = false`) so RC installs still graduate to newer stables.
+ * Delivery mode per install:
  *  - Windows NSIS / Linux AppImage / packaged macOS → full in-app flow: silent
  *    background download, "restart to update" prompt, install-on-quit fallback.
  *  - Windows ZIP / legacy portable (`piDistribution = "zip"` or
@@ -12,6 +16,10 @@
  *    NSIS installer must not replace a no-install run.
  *  - Linux deb (no $APPIMAGE in env) → notify + link.
  *  - Unpackaged dev runs → disabled (no app-update.yml in resources).
+ *
+ * A check that fails or times out moves the next attempt to the next source,
+ * and a download that stops making progress is cancelled and retried against
+ * the next usable source before the failure is reported.
  *
  * The installer download cache lives in the user cache directory rather than
  * beside the installation; `MINIH_AGENT_UPDATE_CACHE_DIR` relocates it, and
@@ -39,8 +47,8 @@ import {
 } from "./update-cache";
 import { UpdateCacheMaintenance } from "./update-cache-maintenance";
 import {
+  isUpdateCheckTimeout,
   raceWithTimeout,
-  UPDATE_CHECK_TIMEOUT_CODE,
 } from "./update-timeout";
 import {
   resolveDefaultUpdatePreference,
@@ -51,6 +59,12 @@ import {
   type WindowsDistribution,
 } from "./update-policy";
 import { ManualUpdateReminderTracker } from "./manual-update-reminder";
+import {
+  configuredUpdateMirrors,
+  parseUpdateMirrors,
+  resolveUpdateSources,
+  type UpdateSource,
+} from "./update-source";
 
 export { resolveUpdateMode } from "./update-policy";
 export type { WindowsDistribution } from "./update-policy";
@@ -74,12 +88,28 @@ function createRelocatedUpdater(
 
 export const RELEASES_URL = "https://github.com/minih-git/minih-agent-desktop/releases/latest";
 
+/**
+ * Chromium partition electron-updater requests on (`NET_SESSION_NAME` in its
+ * `electronHttpExecutor`). Main registers it with ./network-proxy so update
+ * traffic follows Settings → Network on the first check and after changes.
+ */
+export const UPDATER_SESSION_PARTITION = "electron-updater";
+
 const AUTO_CHECK_INITIAL_DELAY_MS = 15_000;
 const AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 /** Auto-check wait. Chromium's GitHub hang is ~60s; do not pin UI on that. */
 export const AUTO_CHECK_TIMEOUT_MS = 8_000;
 /** Manual check can wait a bit longer; still far below the socket timeout. */
 export const MANUAL_CHECK_TIMEOUT_MS = 15_000;
+
+/** Background bound on waiting for a failed attempt to settle before the next source is tried. */
+export const SOURCE_SETTLE_TIMEOUT_MS = 75_000;
+/** No transfer progress for this long means the source stalled the download. */
+export const DOWNLOAD_STALL_TIMEOUT_MS = 45_000;
+/** Pause before a stalled download restarts against the next source. */
+export const DOWNLOAD_RETRY_BACKOFF_MS = 3_000;
+/** Stalled-download retries per discovered version before the failure is reported. */
+const DOWNLOAD_STALL_MAX_RETRIES = 1;
 
 export type UpdaterSettings = {
   updatePreference?: unknown;
@@ -107,6 +137,20 @@ export type UpdaterOptions = {
    * download cache out of the user cache directory. Empty keeps the default.
    */
   updateCacheDirOverride?: string | null;
+  /**
+   * Feed order; defaults to the packaged GitHub feed plus any compiled-in
+   * mirrors (`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`).
+   */
+  sources?: UpdateSource[];
+  /** Overrides for the bounded check waits (tests). */
+  autoCheckTimeoutMs?: number;
+  manualCheckTimeoutMs?: number;
+  /** Bounded background wait for a timed-out attempt to settle. */
+  sourceSettleTimeoutMs?: number;
+  /** No download progress for this long marks the transfer stalled. */
+  downloadStallTimeoutMs?: number;
+  /** Pause before a stalled download is retried against the next source. */
+  downloadRetryBackoffMs?: number;
   /** Overrides for tests. */
   platform?: NodeJS.Platform;
   isPackaged?: boolean;
@@ -156,6 +200,25 @@ export class AppUpdaterController {
   private installRequested = false;
   private readonly autoUpdater: AppUpdater;
   private readonly cacheMaintenance: UpdateCacheMaintenance;
+  private readonly sources: UpdateSource[];
+  private readonly autoCheckTimeoutMs: number;
+  private readonly manualCheckTimeoutMs: number;
+  private readonly sourceSettleTimeoutMs: number;
+  /** Source currently applied to the updater; null before the first apply. */
+  private appliedSourceIndex: number | null = null;
+  private readonly downloadStallTimeoutMs: number;
+  private readonly downloadRetryBackoffMs: number;
+  /** Preferred source for the next attempt; stays on the last host that answered. */
+  private sourceIndex = 0;
+  /** A settle-driven source fallback is already waiting. */
+  private fallbackPending = false;
+  /** Fires when a download stops reporting progress. */
+  private stallTimer: NodeJS.Timeout | null = null;
+  /** Delays the restart of a stalled download. */
+  private retryTimer: NodeJS.Timeout | null = null;
+  /** Stalled-download retries already spent on `stallRetryVersion`. */
+  private stallRetries = 0;
+  private stallRetryVersion?: string;
 
   private readPackagedDistribution(
     isPackaged: boolean,
@@ -213,6 +276,10 @@ export class AppUpdaterController {
     );
     this.readUpdateSettings = options.readUpdateSettings;
     this.persistLastNotifiedVersion = options.persistLastNotifiedVersion;
+    this.autoCheckTimeoutMs =
+      options.autoCheckTimeoutMs ?? AUTO_CHECK_TIMEOUT_MS;
+    this.manualCheckTimeoutMs =
+      options.manualCheckTimeoutMs ?? MANUAL_CHECK_TIMEOUT_MS;
     this.persistDismissedVersion = options.persistDismissedVersion;
     const mode = resolveUpdateModePolicy(
       platform,
@@ -263,13 +330,139 @@ export class AppUpdaterController {
       currentVersion: options.currentVersion,
       releasesUrl: RELEASES_URL,
     };
+    const configuredMirrors = configuredUpdateMirrors();
+    this.sources = options.sources ?? resolveUpdateSources(configuredMirrors);
+    this.sourceSettleTimeoutMs =
+      options.sourceSettleTimeoutMs ?? SOURCE_SETTLE_TIMEOUT_MS;
+    this.downloadStallTimeoutMs =
+      options.downloadStallTimeoutMs ?? DOWNLOAD_STALL_TIMEOUT_MS;
+    this.downloadRetryBackoffMs =
+      options.downloadRetryBackoffMs ?? DOWNLOAD_RETRY_BACKOFF_MS;
+    if (mode !== "disabled" && options.sources === undefined) {
+      for (const entry of parseUpdateMirrors(configuredMirrors).rejected) {
+        this.logger.app(
+          "updater",
+          "warn",
+          "ignored unusable update mirror entry",
+          { data: entry },
+        );
+      }
+    }
+    if (this.sources.length === 0) {
+      this.sources = [{ kind: "packaged", host: "github.com" }];
+    }
+    this.state = { ...this.state, feedHost: this.sources[0]?.host };
+    if (mode !== "disabled") this.applySource(0);
     if (mode !== "disabled") this.attachListeners();
   }
-
   /** Localized product notes for a discovered version, if catalogued. */
   private notesFor(version: string | undefined): string | undefined {
     if (!version) return undefined;
     return formatChangelogNotes(version, this.getLocale());
+  }
+
+
+  /**
+   * Point the updater at `sources[index]` and publish the diagnostic host.
+   *
+   * The packaged source carries no feed, so `app-update.yml` keeps driving the
+   * check exactly as before; only a build with compiled-in mirrors applies an
+   * explicit feed. Applying the same source twice is a no-op, so a repeated
+   * attempt does not re-issue the feed.
+   */
+  private applySource(index: number): void {
+    const source = this.sources[index];
+    if (!source) return;
+    this.sourceIndex = index;
+    if (source.feed && this.appliedSourceIndex !== index) {
+      this.autoUpdater.setFeedURL(source.feed);
+      this.appliedSourceIndex = index;
+    }
+    if (this.state.feedHost !== source.host) {
+      this.setState({ feedHost: source.host });
+    }
+  }
+
+  private nextSourceIndex(): number {
+    return (this.sourceIndex + 1) % this.sources.length;
+  }
+
+  /**
+   * Watchdog for a transfer that stops producing bytes.
+   *
+   * electron-updater has no download deadline of its own, so a source that
+   * accepts the request and then goes quiet pins the card on "downloading"
+   * forever.
+   */
+  private armDownloadWatchdog(): void {
+    this.clearDownloadWatchdog();
+    if (this.disposed || this.state.mode !== "in-app") return;
+    this.stallTimer = setTimeout(() => {
+      this.stallTimer = null;
+      this.handleDownloadStall();
+    }, this.downloadStallTimeoutMs);
+    this.stallTimer.unref?.();
+  }
+
+  private clearDownloadWatchdog(): void {
+    if (this.stallTimer) clearTimeout(this.stallTimer);
+    this.stallTimer = null;
+  }
+
+  /**
+   * Cancel a stalled download and retry once against the next usable source.
+   *
+   * The retry runs as a fresh check so the new source resolves its own installer
+   * URLs; the second stall for the same version reports the failure instead of
+   * looping.
+   */
+  private handleDownloadStall(): void {
+    if (this.disposed || this.state.mode !== "in-app") return;
+    const version = this.state.availableVersion;
+    const cancellation = this.activeDownloadCancellation;
+    if (!version || !cancellation) return;
+    if (this.dismissedVersion === version) return;
+    if (this.stallRetryVersion !== version) {
+      this.stallRetryVersion = version;
+      this.stallRetries = 0;
+    }
+    if (this.stallRetries >= DOWNLOAD_STALL_MAX_RETRIES) {
+      this.logger.app("updater", "warn", "update download stalled again", {
+        data: { version, host: this.state.feedHost },
+      });
+      // Stop the hung transfer too; leaving it running would keep a socket and
+      // a partial installer behind an error the user already sees.
+      cancellation.cancel();
+      this.activeDownloadCancellation = undefined;
+      this.setState({
+        status: "error",
+        progressPercent: undefined,
+        error: "update download stalled",
+        errorCode: "download-stalled",
+      });
+      return;
+    }
+    this.stallRetries += 1;
+    this.logger.app("updater", "warn", "update download stalled, retrying", {
+      data: {
+        version,
+        host: this.state.feedHost,
+        attempt: this.stallRetries,
+      },
+    });
+    cancellation.cancel();
+    this.activeDownloadCancellation = undefined;
+    // `update-cancelled` follows the cancel. Leaving "downloading" here is what
+    // lets the retry pass the busy guard in check().
+    this.setState({ status: "available", progressPercent: undefined });
+    if (this.sources.length > 1) this.applySource(this.nextSourceIndex());
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      if (this.disposed) return;
+      void this.check({ manual: true }).catch(() => undefined);
+    }, this.downloadRetryBackoffMs);
+    this.retryTimer.unref?.();
   }
 
   private ensureSettingsLoaded(): Promise<void> {
@@ -403,6 +596,7 @@ export class AppUpdaterController {
     const version = this.state.availableVersion;
     if (!version) return;
     this.dismissedVersion = version;
+    this.clearDownloadWatchdog();
     if (this.state.mode === "in-app") {
       this.autoUpdater.autoDownload = false;
       this.autoUpdater.autoInstallOnAppQuit = false;
@@ -488,13 +682,18 @@ export class AppUpdaterController {
     };
 
     this.autoUpdater.on("checking-for-update", () => {
-      this.setState({ status: "checking", error: undefined });
+      this.setState({ status: "checking", error: undefined, errorCode: undefined });
     });
     this.autoUpdater.on("update-available", (info: UpdateInfo) => {
       // A newly discovered version supersedes any earlier dismissal.
       if (this.dismissedVersion && this.dismissedVersion !== info.version) {
         this.dismissedVersion = undefined;
         void this.persistDismissedVersionInOrder(null);
+      }
+      // Stall retries are counted per discovered version.
+      if (this.stallRetryVersion !== info.version) {
+        this.stallRetryVersion = undefined;
+        this.stallRetries = 0;
       }
       const dismissed = this.dismissedVersion === info.version;
       const automatic = this.state.mode === "in-app" && !dismissed;
@@ -506,18 +705,26 @@ export class AppUpdaterController {
         releaseNotes: this.notesFor(info.version),
         progressPercent: automatic ? 0 : undefined,
         dismissed,
+        error: undefined,
+        errorCode: undefined,
         manualReminder: automatic
           ? false
           : this.manualReminderFor(info.version),
       });
+      if (automatic) this.armDownloadWatchdog();
     });
     this.autoUpdater.on("update-not-available", () => {
+      this.clearDownloadWatchdog();
+      this.stallRetryVersion = undefined;
+      this.stallRetries = 0;
       this.setState({
         status: "up-to-date",
         availableVersion: undefined,
         releaseNotes: undefined,
         progressPercent: undefined,
         manualReminder: false,
+        error: undefined,
+        errorCode: undefined,
       });
       // In-app installs have no newer staged installer after the feed reports
       // current. Keep the differential baselines for the next update. Manual
@@ -535,12 +742,19 @@ export class AppUpdaterController {
         releaseNotes:
           this.state.releaseNotes ?? this.notesFor(this.state.availableVersion),
         progressPercent: Math.round(progress.percent),
+        error: undefined,
+        errorCode: undefined,
       });
+      // Bytes arrived: restart the stall window from here.
+      this.armDownloadWatchdog();
     });
     this.autoUpdater.on("update-downloaded", (info: UpdateInfo) => {
       const dismissed = this.dismissedVersion === info.version;
       const automatic = this.state.mode === "in-app" && !dismissed;
+      this.clearDownloadWatchdog();
       this.activeDownloadCancellation = undefined;
+      this.stallRetryVersion = undefined;
+      this.stallRetries = 0;
       this.autoUpdater.autoInstallOnAppQuit = automatic;
       this.setState({
         status: automatic ? "downloaded" : "available",
@@ -548,12 +762,15 @@ export class AppUpdaterController {
         releaseNotes: this.notesFor(info.version),
         progressPercent: automatic ? 100 : undefined,
         dismissed,
+        error: undefined,
+        errorCode: undefined,
         manualReminder: automatic
           ? false
           : this.manualReminderFor(info.version),
       });
     });
     this.autoUpdater.on("update-cancelled", (info: UpdateInfo) => {
+      this.clearDownloadWatchdog();
       if (this.activeDownloadCancellation?.version === info.version) {
         this.activeDownloadCancellation = undefined;
       }
@@ -567,8 +784,23 @@ export class AppUpdaterController {
     this.autoUpdater.on("error", (error: Error) => {
       // Auto checks fail quietly (offline, private repo, rate limits);
       // the renderer only surfaces errors when `manual` is set.
+      this.clearDownloadWatchdog();
+      const wasDownloading = this.activeDownloadCancellation !== undefined;
+      this.activeDownloadCancellation = undefined;
       this.logger.app("updater", "warn", "updater error", { data: String(error) });
-      this.setState({ status: "error", error: error.message });
+      if (
+        wasDownloading &&
+        this.state.mode === "in-app" &&
+        this.sources.length > 1
+      ) {
+        // A source that cannot deliver the installer must not be retried first.
+        this.applySource(this.nextSourceIndex());
+      }
+      this.setState({
+        status: "error",
+        error: error.message,
+        errorCode: undefined,
+      });
     });
   }
 
@@ -608,41 +840,122 @@ export class AppUpdaterController {
     }
     this.manualRequested = Boolean(options.manual);
     const timeoutMs = this.manualRequested
-      ? MANUAL_CHECK_TIMEOUT_MS
-      : AUTO_CHECK_TIMEOUT_MS;
-    try {
-      // Fire-and-forget relative to boot: callers must not await this from the
-      // first-window path. The race only bounds *our* wait; electron-updater
-      // may still finish later and emit available/up-to-date.
-      const checkPromise = this.autoUpdater.checkForUpdates();
-      void checkPromise.then(
-        (result) => this.trackAutomaticDownload(result),
-        () => undefined,
-      );
-      await raceWithTimeout(checkPromise, timeoutMs, "update check");
-    } catch (error) {
-      const timedOut =
-        (error as { code?: unknown } | null)?.code === UPDATE_CHECK_TIMEOUT_CODE;
-      if (timedOut) {
-        if (this.manualRequested) {
-          this.setState({ status: "error", error: "update check timed out" });
-          throw error;
-        }
+      ? this.manualCheckTimeoutMs
+      : this.autoCheckTimeoutMs;
+    // Fire-and-forget relative to boot: callers must not await this from the
+    // first-window path. The race only bounds *our* wait; electron-updater may
+    // still finish later and emit available/up-to-date.
+    const attempt = await this.runCheckAttempt(timeoutMs);
+    if (attempt.ok) return this.state;
+
+    if (isUpdateCheckTimeout(attempt.error)) {
+      if (this.manualRequested) {
+        this.setState({
+          status: "error",
+          error: "update check timed out",
+          errorCode: "check-timeout",
+        });
+      } else if (this.getState().status === "checking") {
         // Auto checks fail quietly. Drop "checking" so a 60s GitHub hang
         // cannot skip the next interval or freeze Settings on a spinner.
         // Read through getState(): check() already narrowed this.state.status
         // away from "checking", but the checking-for-update listener can set
         // it during the awaited race.
-        if (this.getState().status === "checking") {
-          this.setState({ status: "idle", error: undefined });
-        }
-        return this.state;
+        this.setState({
+          status: "idle",
+          error: undefined,
+          errorCode: undefined,
+        });
       }
-      // The 'error' listener already recorded state; rethrow for manual
-      // callers so the invoke rejects and the UI can toast it.
-      if (options.manual) throw error;
     }
+    // A source that could not answer this time is not tried first again, and
+    // the fallback below may reach it as soon as this attempt has failed.
+    if (this.sources.length > 1) this.applySource(this.nextSourceIndex());
+    this.scheduleSourceFallback(attempt.settled, this.manualRequested);
+    // The 'error' listener already recorded a non-timeout failure; rethrow for
+    // manual callers so the invoke rejects and the UI can report it.
+    if (options.manual) throw attempt.error;
     return this.state;
+  }
+
+  /**
+   * One bounded feed attempt against the preferred source.
+   *
+   * `settled` reports how the underlying request ended. It is what keeps a
+   * timed-out attempt from racing the next source.
+   */
+  private async runCheckAttempt(timeoutMs: number): Promise<
+    | { ok: true }
+    | { ok: false; error: unknown; settled: Promise<"ok" | "failed"> }
+  > {
+    const checkPromise = this.autoUpdater.checkForUpdates();
+    const settled = new Promise<"ok" | "failed">((resolve) => {
+      void checkPromise.then(
+        () => resolve("ok"),
+        () => resolve("failed"),
+      );
+    });
+    void checkPromise.then(
+      (result) => this.trackAutomaticDownload(result),
+      () => undefined,
+    );
+    try {
+      await raceWithTimeout(checkPromise, timeoutMs, "update check");
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error, settled };
+    }
+  }
+
+  /**
+   * Retry the check against the source the preference moved to, once the
+   * failed attempt has actually settled.
+   *
+   * Waiting for settlement keeps one check in flight at a time: a request that
+   * hangs past our window and then succeeds must not download from the host
+   * the desktop has already left.
+   */
+  private scheduleSourceFallback(
+    settled: Promise<"ok" | "failed">,
+    manual: boolean,
+  ): void {
+    if (this.sources.length < 2 || this.disposed || this.fallbackPending) {
+      return;
+    }
+    this.fallbackPending = true;
+    void (async () => {
+      try {
+        if (!(await this.settledAsFailure(settled))) return;
+        if (this.disposed) return;
+        this.logger.app(
+          "updater",
+          "info",
+          "update check retried on another source",
+          { data: { host: this.state.feedHost } },
+        );
+        await this.check({ manual }).catch(() => undefined);
+      } finally {
+        this.fallbackPending = false;
+      }
+    })();
+  }
+
+  /** True once `settled` failed; false while it is still in flight. */
+  private async settledAsFailure(
+    settled: Promise<"ok" | "failed">,
+  ): Promise<boolean> {
+    try {
+      const outcome = await raceWithTimeout(
+        settled,
+        this.sourceSettleTimeoutMs,
+        "update source settle",
+      );
+      return outcome === "failed";
+    } catch {
+      // Still in flight after the settle window: leave it alone rather than
+      // race a second feed request against a request that may still answer.
+      return false;
+    }
   }
 
   /** Explicit download for in-app installs when a check was manual-only. */
@@ -714,7 +1027,10 @@ export class AppUpdaterController {
     this.disposed = true;
     if (this.initialTimer) clearTimeout(this.initialTimer);
     if (this.intervalTimer) clearInterval(this.intervalTimer);
+    if (this.retryTimer) clearTimeout(this.retryTimer);
     this.initialTimer = null;
     this.intervalTimer = null;
+    this.retryTimer = null;
+    this.clearDownloadWatchdog();
   }
 }

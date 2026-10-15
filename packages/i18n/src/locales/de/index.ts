@@ -175,6 +175,11 @@ export const de = {
     "checkForUpdates": "Nach Updates suchen…"
   },
   "updates": {
+    "failure": {
+      "checkTimeout": "Der Update-Server hat nicht rechtzeitig geantwortet. Prüfe Netzwerk oder Proxy und versuche es erneut.",
+      "downloadStalled": "Der Update-Download hat keinen Fortschritt mehr gemacht und konnte nicht fortgesetzt werden.",
+    },
+    "mirrorSource": "Download-Quelle: {{host}}",
     "title": "Updates",
     "desc": "Updates werden von GitHub Releases heruntergeladen.",
     "preferenceTitle": "Update-Verhalten",

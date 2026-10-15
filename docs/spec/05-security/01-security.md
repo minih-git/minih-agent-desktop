@@ -239,6 +239,22 @@ whole-filesystem transaction.
 
 - Electron Main owns `electron-updater`; renderer IPC cannot provide or
   override the fixed HTTPS GitHub owner/repository or releases URL.
+- A release may compile in a fixed, ordered mirror list
+  (`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`): absolute `https` bases, no
+  credentials or query, at most three, validated at startup and applied by Main
+  through `setFeedURL` only. The list is build-owned; no renderer message,
+  setting, or runtime environment variable can extend it.
+- A mirror serves the same `latest*.yml` and artifacts as the GitHub Release, so
+  its manifest binds the hashes the client verifies. Until Windows packages are
+  code-signed, a configured mirror is a trust anchor for the Windows lane: a
+  release that configures one must control that host.
+- A check that fails or times out moves to the next configured source, and a
+  download that stops making progress is cancelled and retried once, before the
+  failure is reported. Neither path changes hash verification, and the packaged
+  GitHub feed is always tried first.
+- Update traffic follows Settings → Network: the updater's own Chromium
+  partition is registered with the proxy module, so a proxy change reaches
+  update requests without waiting for the next app start.
 - The updater forces `allowPrerelease = false` so discovery always uses
   GitHub's latest stable release rather than a same-channel prerelease pin.
 - Feed manifests bind artifacts with electron-builder hashes. An error,

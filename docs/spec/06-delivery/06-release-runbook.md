@@ -300,11 +300,57 @@ initiated manually in Vercel when required.
 The CNB mirror workflow (`.github/workflows/mirror-to-cnb.yml`) was removed
 with the rebrand: it pushed release tags to an upstream contributor's
 cnb.cool mirror that this fork has no token for. GitHub Release is the
-canonical artifact source. If a CNB mirror for Chinese users is wanted
-later, reintroduce a workflow pointed at a fork-owned CNB repository
-together with its own `CNB_MIRROR_TOKEN` secret.
+canonical artifact source. For desktop users whose network throttles
+`github.com`, §4.6 mirrors the release assets to an S3-compatible host the fork
+controls; reintroducing CNB as that mirror means creating a fork-owned CNB
+repository and its own `CNB_MIRROR_TOKEN` secret first.
 
-### 4.6 GitHub Actions secrets for macOS signing
+### 4.6 Optional update mirror (dual write)
+
+GitHub Releases is always published. A release may additionally mirror the same
+assets for users whose network throttles `github.com`, which costs one repository
+variable set plus S3 credentials:
+
+| Kind | Name | Value |
+| --- | --- | --- |
+| Variable | `MINIH_UPDATE_MIRROR_URL` | Public base URL the **client** compiles in, e.g. `https://dl.example.com/minih/desktop`. Set it before a tag build: the desktop build reads it as `MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`. Unset keeps GitHub as the only source. |
+| Variable | `MINIH_UPDATE_MIRROR_S3_BUCKET` | Bucket the workflow uploads to. Unset skips the mirror step entirely. |
+| Variable | `MINIH_UPDATE_MIRROR_S3_ENDPOINT` | S3-compatible endpoint (OSS / COS / R2 / MinIO). Omit for AWS S3. |
+| Variable | `MINIH_UPDATE_MIRROR_S3_REGION` | Bucket region, when the endpoint needs one. |
+| Variable | `MINIH_UPDATE_MIRROR_S3_PREFIX` | Key prefix, default `minih-agent-desktop`. Must match the path inside `MINIH_UPDATE_MIRROR_URL`. |
+| Variable | `MINIH_UPDATE_MIRROR_PUBLIC_URL` | Optional; the publish step fetches `<url>/<prefix>/latest.yml` after upload and fails the release when it does not serve the version just built. |
+| Secret | `MINIH_UPDATE_MIRROR_S3_ACCESS_KEY_ID`, `MINIH_UPDATE_MIRROR_S3_SECRET_ACCESS_KEY` | Upload credentials. The step fails when a bucket is configured without them. |
+
+`scripts/publish-update-mirror.mjs` runs after the GitHub Release is created:
+it syncs every artifact first, then uploads each `latest*.yml` with
+`Cache-Control: no-cache`, so a client can never read a feed whose files are
+still missing. It refuses to publish when the feeds disagree on a version or
+when the directory carries no feed at all.
+
+The mirror must serve the same key layout the client requests:
+
+```
+<prefix>/latest.yml                # Windows
+<prefix>/latest-mac.yml            # merged macOS feed
+<prefix>/latest-linux.yml          # Linux x64
+<prefix>/latest-linux-arm64.yml    # Linux arm64
+<prefix>/<installer, zip, dmg, AppImage, deb, rpm, *.blockmap>
+```
+
+Verify a mirror by hand before announcing it:
+
+```bash
+curl -fsSL https://dl.example.com/minih/desktop/latest.yml | head
+node scripts/publish-update-mirror.mjs dist --dry-run   # prints the exact uploads
+```
+
+A client only uses a mirror when its build compiled one in; the desktop tries the
+packaged GitHub feed first, keeps the host that answered, and falls back after a
+failed check or a stalled download (ADR 0022 amendment, D659). Git tags and
+GitHub Releases remain the canonical artifact source — a mirror is never the
+place to publish a release that GitHub did not receive.
+
+### 4.7 GitHub Actions secrets for macOS signing
 
 Create these under GitHub → repository `minih-git/minih-agent-desktop` → Settings →
 Secrets and variables → Actions. Never commit the p12, password, Apple ID, or
@@ -334,7 +380,7 @@ base64 -i developer-id-application.p12 | pbcopy
 On Linux use `base64 -w0 developer-id-application.p12`. Files that must never
 enter git: `*.p12`, `*.cer`, `*.p8`, `*.mobileprovision`.
 
-### 4.7 macOS signing observability and timeouts
+### 4.8 macOS signing observability and timeouts
 
 `electron-builder` prints one line before signing — `signing
 file=release/mac-arm64/Minih-Agent-Desktop.app platform=darwin type=distribution

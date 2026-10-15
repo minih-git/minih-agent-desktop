@@ -184,6 +184,11 @@ export const tr = {
     checkForUpdates: "Güncellemeleri denetle…",
   },
   updates: {
+    failure: {
+      checkTimeout: "Güncelleme sunucusu zamanında yanıt vermedi. Ağınızı veya proxy'nizi kontrol edip yeniden deneyin.",
+      downloadStalled: "Güncelleme indirmesi ilerlemeyi durdurdu ve sürdürülemedi.",
+    },
+    mirrorSource: "İndirme kaynağı: {{host}}",
     title: "Güncellemeler",
     desc: "Güncellemeler GitHub Releases’ten indirilir.",
     preferenceTitle: "Güncelleme davranışı",

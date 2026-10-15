@@ -11,6 +11,7 @@ import {
   currentNetworkProxy,
   disposeSystemProxyRelay,
   ensureSystemProxyRelay,
+  registerNetworkProxySession,
   testNetworkProxy,
 } from "./network-proxy";
 import { installInsecureEndpointNotice } from "./network-notice";
@@ -39,7 +40,10 @@ import {
   catalogModelConfigFor,
 } from "./models-dev-catalog";
 import { VendorOAuth } from "./oauth";
-import { AppUpdaterController } from "./updater";
+import {
+  AppUpdaterController,
+  UPDATER_SESSION_PARTITION,
+} from "./updater";
 import {
   WINDOW_MIN_HEIGHT,
   WINDOW_MIN_WIDTH,
@@ -262,6 +266,19 @@ const updater = new AppUpdaterController({
     await host.call("settings.set", { updateDismissedVersion: version });
   },
 });
+
+// electron-updater requests on its own Chromium partition. Registering it keeps
+// update traffic on the proxy chosen in Settings, including a change made after
+// a check already created that partition (ADR 0177).
+if (updater.getState().mode !== "disabled") {
+  void registerNetworkProxySession(UPDATER_SESSION_PARTITION, {
+    cache: false,
+  }).catch((error) => {
+    logger.app("updater", "warn", "updater proxy session unavailable", {
+      data: String(error),
+    });
+  });
+}
 
 /**
  * Vendor-account logins. Holds the pi-ai credential plumbing so tokens stay in

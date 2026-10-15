@@ -165,7 +165,11 @@ test("updater gates delivery mode by platform and delivery policy", () => {
     "auto GitHub checks must not wait for Chromium's ~60s socket timeout",
   );
   assert.match(updaterSource, /raceWithTimeout/);
-  assert.match(updaterSource, /UPDATE_CHECK_TIMEOUT/);
+  assert.match(
+    updaterSource,
+    /isUpdateCheckTimeout/,
+    "the timed-out attempt is recognized without inlining the timeout code",
+  );
   assert.match(
     updaterSource,
     /status === "checking"[\s\S]*status: "idle"/,

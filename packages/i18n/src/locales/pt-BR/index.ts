@@ -174,6 +174,11 @@ export const ptBR = {
     checkForUpdates: "Verificar atualizações…"
   },
   updates: {
+    failure: {
+      checkTimeout: "O servidor de atualizações não respondeu a tempo. Verifique sua rede ou proxy e tente novamente.",
+      downloadStalled: "O download da atualização parou de avançar e não pôde ser retomado.",
+    },
+    mirrorSource: "Origem do download: {{host}}",
     title: "Atualizações",
     desc: "As atualizações são baixadas do GitHub Releases.",
     preferenceTitle: "Comportamento das atualizações",
