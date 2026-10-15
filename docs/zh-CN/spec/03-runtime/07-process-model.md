@@ -19,7 +19,7 @@ Minih-Agent-Desktop.app
 
 | 工艺流程 | 拥有 |
 |---|---|
-| Electron 主要 | 窗口生命周期、跨平台托盘集成、IPC fan-in/out、子进程监控、固定源应用程序更新生命周期 |
+| Electron 主要 | 窗口生命周期、跨平台托盘集成、IPC fan-in/out、子进程监控、允许列表源（打包 GitHub 加内置镜像）的应用程序更新生命周期 |
 | Renderer | 仅用户界面 |
 | Rust host-core | DB、工具、权限、不可变 Plan/Goal artifacts/Electron 执行字段、shell 目录、插件主机服务、机密适配器 |
 | Node pi sidecar | pi 代理循环、提供商流、工具调用规划 |
@@ -189,6 +189,18 @@ shutdown: Electron Main 隐藏窗口并使进程保持活动状态
 `updates/install` 仅在更新后调用 Electron 的退出并安装路径
 达到 `downloaded`。 Electron 仍然发出 `before-quit`，所以正常
 sidecar/host 关闭序列在更新程序替换应用程序之前运行。
+
+更新程序维护一份有序的更新源列表。打包的 `app-update.yml` GitHub 源是第 0 个源，
+始终最先尝试；发布方可以通过 `MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS` 编译进最多
+三个 HTTPS 镜像基址，每个镜像提供与同一版本相同的 `latest*.yml` 与安装包。主进程
+在启动时校验该列表并通过 `setFeedURL` 应用；渲染进程和运行时设置都无法提供更新
+源。检查失败或超时后，一旦失败的请求落定，偏好就移到下一个源；应答过的源在本会话
+中保持优先。下载 45 秒没有进度时会被取消，并针对下一个源重试一次，之后才报告失败
+（D659 / ADR 0022 修订）。
+
+更新请求遵循设置 → 网络 中配置的代理：更新程序自己的 Chromium 分区已注册到
+`./network-proxy`，因此代理变更无需等到下次应用启动就会作用到更新流量
+（ADR 0177）。
 
 ## 6. 开发与发布
 

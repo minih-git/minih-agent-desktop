@@ -297,13 +297,17 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
   当 bootstrap 运行时，然后用当前的英文显示主 shell
   语言环境目录；没有编译错误、缺少菜单运行时错误或崩溃；
   版本信息可见。分类日志会写入关键生命周期和错误记录。GitHub 自动更新在首个窗口出现之后才开始，
-  且不会因约 60 秒的网络超时把状态钉在 `checking`。
+  且不会因约 60 秒的网络超时把状态钉在 `checking`；编译进了更新镜像的构建会把失败或停滞的
+  传输交给下一个已配置主机，而不是把卡片一直钉在 `downloading`。
 - **链接规格**：`03-runtime/07-process-model.md`、`04-ux/01-ui-ia.md`、
   `03-runtime/09-logging-and-observability.md` §7b
 - **接受**：A（应用程序启动）
 - **里程碑**：M1
 - **状态**：部分自动化（`runtime-build-contract.test.mjs` 涵盖
-  依赖构建合约；`update-timeout.test.mjs` 与 `auto-update.test.mjs` 覆盖限时自动检查；Electron 窗口启动仍处于草案状态）
+  依赖构建合约；`update-timeout.test.mjs` 与 `auto-update.test.mjs` 覆盖限时自动检查；
+  `update-source.test.mjs` 覆盖镜像列表校验、打包 GitHub 源与 `app-update.yml` 的漂移防护，
+  以及更新器分区防护；`update-fallback.test.mjs` 覆盖源故障转移、第二次检查前的收敛门
+  与停滞下载重试；Electron 窗口启动仍处于草案状态）
 
 #### E2E-002：IPC 桥功能正常
 

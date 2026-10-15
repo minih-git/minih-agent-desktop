@@ -16,7 +16,7 @@ Minih-Agent-Desktop.app
 
 | Process | Owns |
 |---|---|
-| Electron Main | window lifecycle, cross-platform tray integration, IPC fan-in/out, child process supervision, fixed-feed app update lifecycle |
+| Electron Main | window lifecycle, cross-platform tray integration, IPC fan-in/out, child process supervision, allowlisted-feed app update lifecycle |
 | Renderer | UI only |
 | Rust host-core | DB, tools, permissions, immutable Plan/Goal artifacts/`plan_approvals` execution fields, shell catalog, plugin host services, secrets adapters |
 | Node pi sidecar | pi agent loop, provider streaming, tool-call planning |
@@ -284,6 +284,22 @@ The download-and-install path remains owned by Electron Main. The installer itse
 still creates `installer.exe` in `%LOCALAPPDATA%`; relocation adopts that copy on
 the next launch rather than changing the NSIS installer or writing into
 `Program Files` (issue #1098).
+
+The updater keeps one ordered feed list. The packaged `app-update.yml` GitHub
+feed is source zero and is always tried first; a release may compile in up to
+three HTTPS mirror bases with `MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`, each
+serving the same `latest*.yml` files and installers for the same version. Main
+validates that list at startup and applies it through `setFeedURL`; the renderer
+and runtime settings cannot supply a feed. A failed or timed-out check moves the
+preference to the next source once the failed request has settled, and the host
+that answered stays preferred for the session. A download that reports no
+progress for 45 s is cancelled and retried once against the next source before
+the failure is reported (D659 / ADR 0022 amendment).
+
+Update requests follow the proxy configured in Settings → Network: the
+updater's own Chromium partition is registered with `./network-proxy`, so a
+proxy change reaches update traffic without waiting for the next app start
+(ADR 0177).
 
 ## 6. Dev vs release
 

@@ -1032,8 +1032,10 @@ identify the platform validation still needed.
   version info visible. The macOS development bundle contains both tray icon
   resources, and the tray starts without a missing-icon warning. Key lifecycle
   and error records are written to the categorized logs. GitHub auto-update is
-  not started until after `ensureWindow`, and a hung feed cannot keep updater
-  status on `checking` for Chromium's ~60s timeout. The Main output root also
+  not started until after `ensureWindow`, a hung feed cannot keep updater status
+  on `checking` for Chromium's ~60s timeout, and a build that compiled in update
+  mirrors hands a failed or stalled transfer to the next configured host instead
+  of pinning the card on `downloading`. The Main output root also
   resolves from inside Rollup shared chunks (`out/main/chunks/*.js`), so the
   renderer entry, preloads, and the forked plugin host keep their authored
   relative paths instead of resolving one level too deep (black screen).
@@ -1044,9 +1046,12 @@ identify the platform validation still needed.
 - **Status**: Partially automated (`runtime-build-contract.test.mjs` covers the
   dependency build contract; `update-timeout.test.mjs` and
   `auto-update.test.mjs` cover the bounded auto-check contract;
-  `main-module-path.test.mjs` covers the Main output-root contract from the
-  entry bundle and from inside `out/main/chunks/`; Electron window
-  launch remains Draft)
+  `update-source.test.mjs` covers the mirror list validation, the packaged
+  GitHub feed / `app-update.yml` drift guard, and the updater partition guard;
+  `update-fallback.test.mjs` covers source failover, the settle gate before a
+  second check, and the stalled-download retry; `main-module-path.test.mjs`
+  covers the Main output-root contract from the entry bundle and from inside
+  `out/main/chunks/`; Electron window launch remains Draft)
 
 #### E2E-002: IPC bridge is functional
 

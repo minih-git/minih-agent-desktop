@@ -127,3 +127,46 @@ available on supported Windows packages only after the UI warns that NSIS may
 replace the extracted no-install copy. Unsupported installer formats remain
 Manual. This additive setting requires no database schema or host protocol
 version change.
+
+## Amendment (update mirrors and download resilience, D659)
+
+GitHub Releases stays the canonical feed. A release may now compile in a fixed,
+ordered list of HTTPS mirrors (`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`, at most
+three) so installs on networks that throttle `github.com` can still reach the
+same release:
+
+1. Every mirror hosts the same `latest*.yml` files, installers, and blockmaps as
+   the GitHub Release for that version. `scripts/publish-update-mirror.mjs`
+   dual-writes them after the Release is published, artifacts first and feeds
+   last with `Cache-Control: no-cache`. A mirror changes the host, never the
+   release.
+2. Main owns the list. It is compiled into the bundle, validated at startup
+   (absolute `https`, no credentials, no query or fragment, not `github.com`),
+   and applied only through `setFeedURL`. The renderer and runtime settings
+   cannot supply or extend a feed; unusable entries are logged and ignored, and
+   a build without mirrors keeps exactly the packaged GitHub feed.
+3. Sources are tried in order, packaged GitHub first. The host that answered
+   stays preferred for the session, and a failing check moves the preference to
+   the next source. The retry itself waits for the failed request to settle
+   (bounded), so only one check is ever in flight and a request that hangs past
+   the check window and then succeeds cannot download from a host the desktop
+   has already left.
+4. A download that stops reporting progress is cancelled after 45 s and retried
+   once against the next source; a second stall for the same version reports
+   `errorCode: "download-stalled"`. An installer failure while bytes were in
+   flight also moves the preference on rather than retrying the broken host.
+5. The updater's own Chromium partition is registered with the network-proxy
+   module (ADR 0177), so update traffic follows Settings → Network on the first
+   check and after a proxy change without waiting for the next app start.
+6. `UpdateState` gains `errorCode` (`check-timeout` or `download-stalled`) and
+   `feedHost`. Both are additive optional fields: the renderer localizes a
+   failure it understands and keeps the raw text otherwise, and support can see
+   which host served the update.
+
+Mirror trust: the feed a client reads binds the artifact hashes it verifies, so
+a mirror that serves both the manifest and the bytes is trusted for that release
+in the same way the on-disk `app-update.yml` provider is trusted. Windows
+packages are unsigned today, which makes a configured mirror the trust anchor on
+that lane; Windows code signing (`forceCodeSigning` writing `publisherName`) is
+the prerequisite for treating a mirror as untrusted, and stays a release
+follow-up.

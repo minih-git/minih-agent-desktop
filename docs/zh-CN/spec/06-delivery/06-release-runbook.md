@@ -229,14 +229,55 @@ Linux 更新源带上它们所构建的架构：x64 为 `latest-linux.yml`，arm
 `latest-linux-arm64.yml`。这正是 `electron-updater` 在对应架构上请求的通道文件，
 因此某条通道若缺少自己的更新源，会在上传前就失败。
 
-### 4.4 CNB 镜像触发
+### 4.5 CNB 镜像触发
 
-CNB 镜像工作流（`.github/workflows/mirror-to-cnb.yml`）已随品牌重构移除：它向
-一个本 fork 无令牌的上游贡献者 cnb.cool 镜像推送发布标签。GitHub Release 是
-权威产物源。后续如需面向中国用户的 CNB 镜像，先建立 fork 自有的 CNB 仓库并
-配置自己的 `CNB_MIRROR_TOKEN`，再恢复该工作流。
+CNB 镜像工作流（`.github/workflows/mirror-to-cnb.yml`）已随品牌重构移除：它会把发布标签
+推送到上游贡献者的 cnb.cool 镜像，而本 fork 没有该镜像所需的令牌。GitHub Release 是
+权威工件来源。对于网络限速 `github.com` 的桌面用户，§4.6 会把发布资产镜像到 fork 自有的
+S3 兼容主机；若要把 CNB 重新做成这个镜像，需要先建立 fork 自有的 CNB 仓库，并配置它
+自己的 `CNB_MIRROR_TOKEN` 密钥。
 
-### 4.5 GitHub Actions 中的 macOS 签名密钥
+### 4.6 可选的更新镜像（双写）
+
+GitHub Releases 始终都会发布。发布还可以为网络限速 `github.com` 的用户镜像同一批资产，
+代价只是一组仓库变量加上 S3 凭据：
+
+| 类型 | 名称 | 取值 |
+| --- | --- | --- |
+| 变量 | `MINIH_UPDATE_MIRROR_URL` | **客户端**编译进去的公开基址，例如 `https://dl.example.com/minih/desktop`。请在打标签构建前设置：桌面构建会把它读取为 `MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`。不设置则只保留 GitHub 一个源。 |
+| 变量 | `MINIH_UPDATE_MIRROR_S3_BUCKET` | 工作流上传到的存储桶。不设置则完全跳过镜像步骤。 |
+| 变量 | `MINIH_UPDATE_MIRROR_S3_ENDPOINT` | S3 兼容端点（OSS / COS / R2 / MinIO）。AWS S3 可省略。 |
+| 变量 | `MINIH_UPDATE_MIRROR_S3_REGION` | 存储桶区域，仅在端点需要时设置。 |
+| 变量 | `MINIH_UPDATE_MIRROR_S3_PREFIX` | 键前缀，默认 `minih-agent-desktop`。必须与 `MINIH_UPDATE_MIRROR_URL` 中的路径一致。 |
+| 变量 | `MINIH_UPDATE_MIRROR_PUBLIC_URL` | 可选；发布步骤会在上传后抓取 `<url>/<prefix>/latest.yml`，若该地址提供的不是刚构建的版本，就让整个发布失败。 |
+| 密钥 | `MINIH_UPDATE_MIRROR_S3_ACCESS_KEY_ID`、`MINIH_UPDATE_MIRROR_S3_SECRET_ACCESS_KEY` | 上传凭据。配置了存储桶却没有它们时，该步骤会失败。 |
+
+`scripts/publish-update-mirror.mjs` 在 GitHub Release 创建之后运行：它先同步全部工件，
+再用 `Cache-Control: no-cache` 上传每个 `latest*.yml`，因此客户端绝不会读到文件尚未齐备
+的源清单。当各源对版本号的声明不一致，或该目录里没有任何源清单时，脚本会拒绝发布。
+
+镜像必须提供与客户端请求相同的键布局：
+
+```
+<prefix>/latest.yml                # Windows
+<prefix>/latest-mac.yml            # merged macOS feed
+<prefix>/latest-linux.yml          # Linux x64
+<prefix>/latest-linux-arm64.yml    # Linux arm64
+<prefix>/<installer, zip, dmg, AppImage, deb, rpm, *.blockmap>
+```
+
+对外公布镜像前先手工校验：
+
+```bash
+curl -fsSL https://dl.example.com/minih/desktop/latest.yml | head
+node scripts/publish-update-mirror.mjs dist --dry-run   # prints the exact uploads
+```
+
+客户端只在构建编译进了镜像时才会使用镜像；桌面端先尝试打包内置的 GitHub 源，记住给出响应
+的主机，并只在检查失败或下载停滞时回退（ADR 0022 修正案，D659）。Git 标签与 GitHub
+Releases 仍是权威工件来源——镜像绝不是发布 GitHub 未收到版本的地方。
+
+### 4.7 GitHub Actions 中的 macOS 签名密钥
 
 在 GitHub → 仓库 `minih-git/minih-agent-desktop` → Settings → Secrets and variables →
 Actions 中创建下列密钥。不要把 p12、密码、Apple ID 或应用专用密码提交进仓库。
@@ -266,7 +307,7 @@ base64 -i developer-id-application.p12 | pbcopy
 Linux 使用 `base64 -w0 developer-id-application.p12`。绝不能进入 git 的文件：
 `*.p12`、`*.cer`、`*.p8`、`*.mobileprovision`。
 
-### 4.6 macOS 签名可观测性与超时
+### 4.8 macOS 签名可观测性与超时
 
 `electron-builder` 在开始签名前只打印一行 —— `signing
 file=release/mac-arm64/Minih-Agent-Desktop.app platform=darwin type=distribution
