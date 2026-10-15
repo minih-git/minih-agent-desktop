@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "0.20.4",
+    date: "2026-10-15",
+    highlights: [
+      "Les réglages se séparent en Comptes et Modèles : connecter Minih Router ne demande qu'un jeton, et les modèles se choisissent sur leur propre page.",
+      "Ajoutez des modèles du catalogue de la passerelle avec recherche, pagination et tout sélectionner ; les modèles choisis s'affichent en cartes avec prix et contexte.",
+      "Chaque modèle peut fixer son propre mode de protocole ; les autres suivent le réglage global de la ligne, configurable au-dessus de la liste.",
+      "Les modèles ajoutés conservent leur configuration automatique - limites, niveaux de réflexion et capacité image/PDF viennent du catalogue.",
+      "Désignez un modèle comme générateur d'images directement depuis sa boîte de configuration.",
+    ],
+  },
+  {
     "version": "0.20.3",
     "date": "2026-10-15",
     "highlights": [

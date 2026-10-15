@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.20.4",
+    date: "2026-10-15",
+    highlights: [
+      "Ayarlar Hesaplar ve Modeller olarak ayrıldı: Minih Router'a bağlanmak tek jeton yeterli, modeller kendi sayfasında seçiliyor.",
+      "Modeller ağ geçidi kataloğundan arama, sayfalama ve tümünü seçle ekleniyor; seçilenler fiyat ve bağlam içeren kartlar olarak görünüyor.",
+      "Her model kendi protokol modunu sabitleyebilir; diğerleri satırın genel ayarını izler - model listesinin üstünden yapılandırılır.",
+      "Eklenen modeller otomatik kaynak yapılandırmasını korur - limitler, düşünme seviyeleri ve görüntü/PDF yeteneği katalogdan gelir.",
+      "Bir modeli yapılandırma penceresinden doğrudan görüntü üretim modeli olarak atayabilirsiniz.",
+    ],
+  },
+  {
     "version": "0.20.3",
     "date": "2026-10-15",
     "highlights": [

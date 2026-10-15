@@ -2,6 +2,17 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.20.4",
+    date: "2026-10-15",
+    highlights: [
+      "Settings splits into Accounts and Models: connecting Minih Router takes just a token, and models are chosen on their own page.",
+      "Add models from the gateway catalog with search, paging and select-all; chosen models show as cards with prices and context.",
+      "Each model can pin its own protocol mode; the rest follow the row's global setting, now configurable above the model list.",
+      "Added models keep their automatic upstream configuration - limits, thinking levels and image/PDF capability come from the catalog.",
+      "Designate a model as the image-generation model straight from its configure dialog.",
+    ],
+  },
+  {
     version: "0.20.3",
     date: "2026-10-15",
     highlights: [
