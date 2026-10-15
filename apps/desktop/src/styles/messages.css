@@ -2648,8 +2648,10 @@
   white-space: nowrap;
 }
 
+/* A failed tool is execution evidence, not a terminal turn alert. Keep the
+   wording and diagnostics while letting the agent continue without alarm. */
 .tool-row-state.is-error {
-  color: var(--ds-error);
+  color: var(--ds-text-muted);
 }
 
 .tool-row-state-dot {
@@ -2665,7 +2667,7 @@
 }
 
 .tool-row-state.is-error .tool-row-state-dot {
-  background: var(--ds-error);
+  background: var(--ds-text-muted);
 }
 
 .tool-row-state.is-running .tool-row-state-dot {
@@ -2787,7 +2789,7 @@
 }
 
 .tool-row-status.error {
-  color: var(--ds-error);
+  color: var(--ds-text-muted);
 }
 
 .tool-spinner {
@@ -2964,8 +2966,7 @@
 }
 
 .tool-chip.is-error {
-  background: color-mix(in oklab, var(--ds-error) 12%, transparent);
-  color: var(--ds-error);
+  color: var(--ds-text-secondary);
 }
 
 .tool-block + .tool-block {
@@ -3414,7 +3415,7 @@
   gap: 4px;
   flex: none;
   font-size: var(--text-xs-plus);
-  color: var(--ds-error);
+  color: var(--ds-text-muted);
 }
 
 /* Provider-hosted web search round. The row reuses the tool-row idiom; only

@@ -2253,6 +2253,16 @@ terminally failed; terminal agent errors remain owned by the assistant error or
 TurnOutcomeCard surface. A user action on a group, item, or collapse rail claims
 that level and its ancestors without toggling them, so streaming and completion
 never reverse the chosen state or close around focused/selected content.
+
+Tool failures are execution evidence that the agent may recover from, not
+terminal-turn alerts. Process/group issue counts and ordinary failed tool/search
+headers use muted neutral text and icons. Failed command dots are neutral, and
+non-zero exit-code chips keep the ordinary neutral fill without a red accent.
+The localized failure wording, exact exit code, issue count, accessible status
+and disclosure behavior stay intact; a later success does not erase evidence or
+claim that a particular failure was recovered. Expanded stderr/error details and
+terminal assistant/turn recovery surfaces retain their existing error treatment.
+
 Elapsed labels use compact automatically carried units: seconds below one
 minute, minutes plus seconds below one hour, and hours plus minutes (and
 seconds when non-zero) from one hour onward. Zero-value units are omitted, so
@@ -2283,7 +2293,7 @@ seconds when non-zero) from one hour onward. Zero-value units are omitted, so
 - The visible label is a natural-language action (`Read`, `Ran`, `Searched`),
   not the raw function name. Running actions use the progressive form.
 - The primary argument is a clamped single-line monospace hint.
-- Result chips follow the hint: exit code (error hue), match/file counts,
+- Result chips follow the hint: exit code (neutral), match/file counts,
   replacement count, Write byte size, Read line count plus its 1-based closed
   line range (`{lineCount},L{offset+1}-L{offset+lineCount}`), `truncated`, and
   `scratch`. Read uses `offset` and `lineCount` from the returned window rather
@@ -2337,7 +2347,7 @@ twice.
   start and do not add a second horizontal inset. The collapse rail remains
   available beside the expanded body. Thinking disclosures and subagent
   topology nodes retain their dedicated hierarchy insets.
-- Chips: monospace `--text-2xs`, `--ds-tile-deep` fill (no border, D297), error hue for exit codes
+- Chips: monospace `--text-2xs`, `--ds-tile-deep` fill (no border, D297), neutral secondary text for non-zero exit codes
 - Code, file list, match list and field blocks: `font-mono text-sm`,
   independently copyable, capped at 260px with internal scrolling
 - File-list paths are block-level, start-aligned rows (same box as Grep path
@@ -2655,8 +2665,8 @@ things the body no longer offers move up into the head.
 - **The outcome is stated, success included**: a toned dot plus `Done`,
   `Failed`, `Denied`, or `Working…`. A `run` row shows no spinner; the running
   dot pulses instead, and holds still under `prefers-reduced-motion`. The label
-  carries the meaning, so the dot's hue is never the only signal. A failing
-  command opens its own row, whichever layer noticed the failure.
+  carries the meaning, so the dot's hue is never the only signal. A failed
+  command keeps a neutral dot and stays collapsed until the user opens it.
 - Both new controls follow the chevron's quiet-until-needed rule: hidden at
   rest, revealed on row hover, on focus, and while the row is open. The status
   label is always visible — it is the outcome, not an affordance.

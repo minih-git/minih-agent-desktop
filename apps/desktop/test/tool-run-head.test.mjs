@@ -57,7 +57,7 @@ test("a run row states what the command did, not what the call did", () => {
   assert.match(transcript, /run === "running" \|\| \(!run && status === "running"\)\s*\?\s*"is-running"/);
   assert.match(transcript, /: "is-done"/);
   assert.match(styles, /\.tool-row-state\.is-done \.tool-row-state-dot \{\s*background: var\(--ds-success\)/);
-  assert.match(styles, /\.tool-row-state\.is-error \.tool-row-state-dot \{\s*background: var\(--ds-error\)/);
+  assert.match(styles, /\.tool-row-state\.is-error \.tool-row-state-dot \{\s*background: var\(--ds-text-muted\)/);
   // A row with nothing to claim says nothing rather than claiming success, and
   // hands the announcement back to the hidden live region.
   assert.match(transcript, /\{runHead && statusLabel \? \(/);

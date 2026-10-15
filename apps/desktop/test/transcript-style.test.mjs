@@ -105,7 +105,7 @@ test("tool block bodies stay bounded and role-coded", () => {
   assert.match(fileItem, /flex:\s*none;/);
   // stderr and error notes carry the error hue, host notices stay neutral.
   assert.match(stylesSource, /\.tool-row-content\.is-error \{[\s\S]*?var\(--ds-error\)/);
-  assert.match(stylesSource, /\.tool-chip\.is-error \{[\s\S]*?var\(--ds-error\)/);
+  assert.match(stylesSource, /\.tool-chip\.is-error \{\s*color: var\(--ds-text-secondary\);\s*\}/);
   assert.match(stylesSource, /\.tool-note\.is-error \{[\s\S]*?var\(--ds-error\)/);
   const note = stylesSource.match(/\.tool-note \{([^}]*)\}/)?.[1];
   assert.ok(note);
@@ -114,6 +114,25 @@ test("tool block bodies stay bounded and role-coded", () => {
   const permissionArgs = stylesSource.match(/\.permission-card-args \{([^}]*)\}/)?.[1];
   assert.ok(permissionArgs);
   assert.doesNotMatch(permissionArgs, /white-space|font-family/);
+});
+
+test("tool failures stay neutral in process headers without hiding diagnostics", () => {
+  for (const selector of [
+    "\\.tool-row-state\\.is-error",
+    "\\.tool-row-status\\.error",
+    "\\.turn-process-error",
+  ]) {
+    const rule = stylesSource.match(new RegExp(`${selector} \\{([^}]*)\\}`))?.[1];
+    assert.ok(rule, selector);
+    assert.match(rule, /color:\s*var\(--ds-text-muted\);/, selector);
+    assert.doesNotMatch(rule, /--ds-error|background:/, selector);
+  }
+  // Failure wording and exit codes remain; only the collapsed-row emphasis changes.
+  assert.match(transcriptSource, /aria-label=\{t\("chat.toolFailed"\)\}/);
+  assert.match(transcriptSource, /<ToolChips chips=\{chips\} \/>/);
+  // Explicitly opened diagnostics still distinguish errors from ordinary output.
+  assert.match(stylesSource, /\.tool-row-content\.is-error \{[^}]*var\(--ds-error\)/);
+  assert.match(stylesSource, /\.tool-note\.is-error \{[^}]*var\(--ds-error\)/);
 });
 
 test("tool details do not add a second visual indent", () => {
