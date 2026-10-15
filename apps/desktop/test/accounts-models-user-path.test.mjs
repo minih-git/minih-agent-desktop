@@ -22,6 +22,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { repositoryRoot, resolveElectronBinary } from "../../../scripts/e2e/boot.mjs";
+import { loadStyles } from "./helpers/styles.mjs";
 
 const root = repositoryRoot();
 const { build } = createRequire(join(root, "packages/agent-runtime/package.json"))("esbuild");
@@ -200,7 +201,11 @@ function mount(element) {
 
 const rootNode = createRoot(document.getElementById("root"));
 
-window.accountsProbe = async () => {
+window.accountsProbe = async ({ width, height }) => {
+  await waitFor(
+    () => innerWidth === width && innerHeight === height,
+    "the requested viewport did not settle",
+  );
   // 1) Fresh install: the connect card is the whole page body.
   providers = [];
   settings = { ...settings, defaultProviderId: "", defaultModelId: "" };
@@ -277,6 +282,16 @@ window.accountsProbe = async () => {
   );
   const firstPage = [...dialog.querySelectorAll("[data-model-id]")].map((node) => node.getAttribute("data-model-id"));
   const dialogCards = firstPage.length;
+
+  // The shared toolbar search has a horizontal flex basis. In this column
+  // dialog its wrapper must stay input-height, not reserve that basis vertically.
+  const searchRow = dialog.querySelector(".add-models-search").getBoundingClientRect();
+  const searchInput = dialog.querySelector(".add-models-search input").getBoundingClientRect();
+  if (searchInput.height <= 0 || searchRow.height > searchInput.height + 1) {
+    throw new Error("Add-models search reserves excess height: " + JSON.stringify({
+      viewport: [innerWidth, innerHeight], row: searchRow.height, input: searchInput.height,
+    }));
+  }
 
   // Search settles, then a card can be picked and confirmed.
   const search = dialog.querySelector('input[aria-label="Search models, vendors or groups"]');
@@ -503,9 +518,10 @@ test("Accounts and models pages: token-only connect, then models are added, conf
       },
       nodePaths: [join(root, "apps/desktop/node_modules")],
     });
+    await writeFile(join(temp, "renderer.css"), (await loadStyles()).replace(/@theme(?: inline)?\s*\{/g, ":root {"));
     await writeFile(
       join(temp, "index.html"),
-      '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; style-src \'self\' \'unsafe-inline\'"><body><div id="root"></div><script type="module" src="renderer.js"></script>',
+      '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; style-src \'self\' \'unsafe-inline\'"><link rel="stylesheet" href="renderer.css"><body><div id="root"></div><script type="module" src="renderer.js"></script>',
     );
     await writeFile(
       join(temp, "main.cjs"),
@@ -518,9 +534,13 @@ app.whenReady().then(async () => {
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
   win.webContents.on("console-message", (event) => console.error(event.message));
   try {
-    await win.loadFile(path.join(__dirname, "index.html"));
-    const result = await win.webContents.executeJavaScript("window.accountsProbe()");
-    console.log("ACCOUNTS_PROBE " + JSON.stringify(result));
+    const results = [];
+    for (const [width, height] of [[850, 600], [1200, 900], [1600, 1100]]) {
+      win.setContentSize(width, height);
+      await win.loadFile(path.join(__dirname, "index.html"));
+      results.push(await win.webContents.executeJavaScript("window.accountsProbe(" + JSON.stringify({ width, height }) + ")"));
+    }
+    console.log("ACCOUNTS_PROBE " + JSON.stringify(results));
     app.exit(0);
   } catch (error) { console.error(error?.stack ?? error); app.exit(1); }
 });
@@ -551,8 +571,9 @@ app.whenReady().then(async () => {
     assert.equal(code, 0, output.slice(-6000));
     const line = output.split(/\r?\n/).find((item) => item.startsWith("ACCOUNTS_PROBE "));
     assert(line, output.slice(-6000));
-    const result = JSON.parse(line.slice("ACCOUNTS_PROBE ".length));
-    assert.deepEqual(result, {
+    const results = JSON.parse(line.slice("ACCOUNTS_PROBE ".length));
+    assert.equal(results.length, 3);
+    for (const result of results) assert.deepEqual(result, {
       connectSaved: {
         vendorKey: "minih-router",
         baseUrl: "https://router.hmini.org/v1",

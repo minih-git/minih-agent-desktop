@@ -17511,7 +17511,8 @@ renderer's durable transcript reads. No real model or provider is contacted.
   the whole page. Paste a token and connect (the endpoint stays behind
   "Advanced" unless the user opens it). Then open Settings → Models: add models
   from the gateway plaza, pin one model's protocol mode in its configure
-  drawer, and remove a model again.
+  drawer, and remove a model again. Repeat at 850×600, 1200×900 and 1600×1100
+  with the production stylesheet cascade loaded.
 - **Expected:** Connecting creates a `minih-router` row carrying the token and
   **no models at all** — initialization is one field, not one field plus a model
   pick. The connected card replaces the token entry with its masked key name and
@@ -17523,7 +17524,9 @@ renderer's durable transcript reads. No real model or provider is contacted.
   the add-service and import actions, Jev and vendor subscription accounts under
   "Other providers", which developer mode alone reveals; above the models sits
   the row's global protocol mode, which writes the provider row's apiStyle. On the models page, "Add models" opens the gateway
-  plaza as selectable cards with search and paging, and confirming appends the
+  plaza as selectable cards with search and paging. The search wrapper stays
+  at input height below the title instead of reserving a tall empty band on
+  either side of the input. Confirming appends the
   chosen bindings while claiming the app's chat default only when nothing
   runnable resolves; each chosen card reports the default, offers Configure
   (alias, limits, thinking, capabilities, and a per-model **protocol mode** that
@@ -17534,7 +17537,8 @@ renderer's durable transcript reads. No real model or provider is contacted.
 - **Specs:** 03-runtime/12 Minih Router preset, account channels, and EasyTier
   virtual LAN routing/fallback; 04-ux/06 Minih Router panel; 04-ux/07 settings IA.
 - **Acceptance:** `accounts-models-user-path.test.mjs` (token-only connect, add
-  models, per-model protocol pin, removal),
+  models with compact search layout at all three window sizes, per-model
+  protocol pin, removal),
   `models-page-state.test.mjs` (default planning),
   `minih-router-client.test.mjs` (gateway DTO contract, EasyTier LAN resolution
   and public URL fallback, redirect guard, redaction, vendor-key refusal),
