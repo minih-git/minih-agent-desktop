@@ -6,8 +6,10 @@
  * after the row, page, query or revision changed is dropped, so a slow first
  * page can never overwrite the page the user has since moved to.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
+  EasyTierSettings,
+  EasyTierStatus,
   MinihRouterAccount,
   MinihRouterModel,
   MinihRouterModelPage,
@@ -193,3 +195,96 @@ export function useMinihRouterSelectedModels(
   }, [key, provider, revision]);
   return load;
 }
+
+export type EasyTierStatusHandle = {
+  load: MinihRouterLoad<EasyTierStatus | null>;
+  busy: boolean;
+  configure: (settings: EasyTierSettings) => Promise<EasyTierStatus>;
+  reconnect: () => Promise<EasyTierStatus>;
+  requestElevation: () => Promise<EasyTierStatus>;
+};
+
+export function useEasyTierStatus(
+  revision: number,
+  pollIntervalMs = 5000,
+): EasyTierStatusHandle {
+  const [load, setLoad] = useState<MinihRouterLoad<EasyTierStatus | null>>({
+    state: "loading",
+    data: null,
+  });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let current = true;
+    const fetchStatus = (showLoading: boolean) => {
+      if (showLoading) {
+        setLoad((previous) => ({ state: "loading", data: previous.data }));
+      }
+      api.easytierStatus().then(
+        (data) => {
+          if (current) setLoad({ state: "ready", data: data ?? null });
+        },
+        (error: unknown) => {
+          if (current) {
+            setLoad((previous) => ({
+              state: "error",
+              data: previous.data,
+              message: messageOf(error),
+            }));
+          }
+        },
+      );
+    };
+
+    fetchStatus(true);
+    if (pollIntervalMs <= 0) {
+      return () => {
+        current = false;
+      };
+    }
+    const timer = window.setInterval(() => {
+      fetchStatus(false);
+    }, pollIntervalMs);
+    return () => {
+      current = false;
+      window.clearInterval(timer);
+    };
+  }, [revision, pollIntervalMs]);
+
+  const runAction = useCallback(async (action: () => Promise<EasyTierStatus>) => {
+    setBusy(true);
+    try {
+      const next = await action();
+      setLoad({ state: "ready", data: next ?? null });
+      return next;
+    } catch (error: unknown) {
+      const message = messageOf(error);
+      setLoad((previous) => ({ state: "error", data: previous.data, message }));
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const configure = useCallback(
+    (settings: EasyTierSettings) => runAction(() => api.easytierConfigure(settings)),
+    [runAction],
+  );
+  const reconnect = useCallback(
+    () => runAction(() => api.easytierReconnect()),
+    [runAction],
+  );
+  const requestElevation = useCallback(
+    () => runAction(() => api.easytierRequestElevation()),
+    [runAction],
+  );
+
+  return {
+    load,
+    busy,
+    configure,
+    reconnect,
+    requestElevation,
+  };
+}
+

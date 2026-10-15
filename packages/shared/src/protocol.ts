@@ -257,6 +257,10 @@ export const IPC = {
      * chosen models first, and those are not a page of it.
      */
     providersMinihRouterModelDetails: "minih-agent-desktop/providers/minihRouter/modelDetails",
+    easytierStatus: "minih-agent-desktop/easytier/status",
+    easytierConfigure: "minih-agent-desktop/easytier/configure",
+    easytierReconnect: "minih-agent-desktop/easytier/reconnect",
+    easytierRequestElevation: "minih-agent-desktop/easytier/requestElevation",
     /**
      * Check a TypeSafe key before the Jev settings row keeps it.
      *

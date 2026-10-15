@@ -5,6 +5,7 @@ mod audit;
 mod config_sync;
 mod data_relocation;
 mod db;
+mod easytier_net;
 mod keyboard;
 mod mcp_servers;
 mod network_policy;
@@ -58,6 +59,16 @@ async fn main() -> anyhow::Result<()> {
         };
         std::process::exit(exit_code);
     }
+    if std::env::args().any(|arg| arg == easytier_net::INTERNAL_EASYTIER_TUN_RUNNER_FLAG) {
+        let exit_code = match easytier_net::run_internal_tun_runner().await {
+            Ok(exit_code) => exit_code,
+            Err(error) => {
+                eprintln!("internal easytier tun runner failed: {error:#}");
+                1
+            }
+        };
+        std::process::exit(exit_code);
+    }
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -96,6 +107,8 @@ async fn main() -> anyhow::Result<()> {
             scratch::sweep(&data_dir, &live);
             review::sweep(&data_dir, &live);
         }
+        let app_settings = st.db.get_setting("app").unwrap_or_default();
+        easytier_net::spawn_from_settings(&data_dir, app_settings.as_ref());
     }
     rpc::serve(state).await
 }

@@ -1,4 +1,5 @@
 mod config_sync_rpc;
+mod easytier_rpc;
 mod remote_tools;
 mod scheduled_rpc;
 mod scheduled_tools;
@@ -1110,6 +1111,9 @@ fn validate_settings_value(value: &Value) -> Result<(), JsonRpcError> {
     if let Err(message) = crate::network_proxy::validate_network_proxy(value) {
         return Err(rpc_err(1002, message, "INVALID_PARAMS"));
     }
+    if let Err(message) = crate::easytier_net::validate_easytier_settings(value) {
+        return Err(rpc_err(1002, message, "INVALID_PARAMS"));
+    }
     let Some(shell_value) = object.get("defaultCommandShell") else {
         return Ok(());
     };
@@ -1787,6 +1791,9 @@ async fn handle_request(
             .await
             .map_err(config_sync_rpc_err);
     }
+    if method.starts_with("easytier.") {
+        return easytier_rpc::handle(state, method, params).await;
+    }
 
     match method {
         "tools.remoteComplete" | "tools.workspaceExecute" | "tools.workspaceAbort" => {
@@ -2293,6 +2300,8 @@ async fn handle_request(
             {
                 gate_default_command_shell_setting(&st)?;
             }
+            let previous_easytier = stored.as_ref().and_then(|v| v.get("easytier")).cloned();
+            let incoming_has_easytier = params.get("easytier").is_some();
             let mut settings = normalize_settings_value(merge_settings_value(stored, params));
             prune_unresolvable_image_bindings(&st.db, &mut settings)
                 .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
@@ -2316,6 +2325,9 @@ async fn handle_request(
             }
             crate::network_proxy::apply_from_settings(Some(&settings));
             crate::network_policy::apply_from_settings(Some(&settings));
+            if incoming_has_easytier && settings.get("easytier") != previous_easytier.as_ref() {
+                crate::easytier_net::spawn_from_settings(&st.data_dir, Some(&settings));
+            }
             Ok(json!({ "ok": true }))
         }
 

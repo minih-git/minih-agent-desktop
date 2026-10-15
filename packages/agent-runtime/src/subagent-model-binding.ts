@@ -86,6 +86,10 @@ export function subagentModelBinding(opts: {
                   : undefined;
               }),
               opts.provider.authKind,
+              {
+                primaryBaseUrl: m.baseUrl ?? opts.provider.baseUrl,
+                fallbackBaseUrl: opts.provider.fallbackBaseUrl,
+              },
             ),
           },
           {

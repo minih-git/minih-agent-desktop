@@ -3,6 +3,7 @@ import {
   ErrorCodes as SharedErrorCodes,
   isActiveInProject,
   isCommandShellCatalog,
+  isMinihRouterVendorKey,
   JEV_API_KEY_SECRET_REF,
   imageGenerationBindings,
   isImageGenerationModel,
@@ -30,6 +31,7 @@ import {
   type UserSubagentDocument,
 } from "@minih-agent/agent-runtime";
 import { builtinSkills } from "../builtin-skills";
+import { resolveMinihRouterEndpoint } from "../ipc/minih-router-ipc";
 import { OAUTH_AUTH_KIND, type VendorOAuth } from "../oauth";
 import {
   catalogModelConfigFor,
@@ -665,6 +667,49 @@ export function createSessionLaunchRuntime({
         });
       }
     }
+    let effectiveProviderBaseUrl = baseUrl;
+    let effectiveProviderFallbackBaseUrl: string | undefined;
+    let effectiveModelConfig = modelConfig;
+    if (isMinihRouterVendorKey(provider.vendorKey)) {
+      const resolvedRouterEndpoint = await resolveMinihRouterEndpoint(
+        runtimeState.host,
+        baseUrl,
+      );
+      if (resolvedRouterEndpoint.activeBaseUrl) {
+        effectiveProviderBaseUrl = resolvedRouterEndpoint.activeBaseUrl;
+        effectiveProviderFallbackBaseUrl = resolvedRouterEndpoint.fallbackBaseUrl;
+        if (effectiveModelConfig) {
+          effectiveModelConfig = {
+            ...effectiveModelConfig,
+            baseUrl: resolvedRouterEndpoint.activeBaseUrl,
+          };
+        }
+      }
+    }
+    for (const [subagentKey, subagentProvider] of Object.entries(subagentBindings.providers)) {
+      if (!isMinihRouterVendorKey(subagentProvider.vendorKey)) continue;
+      const resolvedSubagentEndpoint = await resolveMinihRouterEndpoint(
+        runtimeState.host,
+        subagentProvider.baseUrl,
+      );
+      if (resolvedSubagentEndpoint.activeBaseUrl) {
+        subagentBindings.providers[subagentKey] = {
+          ...subagentProvider,
+          baseUrl: resolvedSubagentEndpoint.activeBaseUrl,
+          ...(resolvedSubagentEndpoint.fallbackBaseUrl
+            ? { fallbackBaseUrl: resolvedSubagentEndpoint.fallbackBaseUrl }
+            : {}),
+          ...(subagentProvider.modelConfig
+            ? {
+                modelConfig: {
+                  ...subagentProvider.modelConfig,
+                  baseUrl: resolvedSubagentEndpoint.activeBaseUrl,
+                },
+              }
+            : {}),
+        };
+      }
+    }
     return {
       providerId: provider.id,
       modelId,
@@ -688,7 +733,10 @@ export function createSessionLaunchRuntime({
           id: provider.id,
           name: provider.name,
           vendorKey: provider.vendorKey,
-          baseUrl,
+          baseUrl: effectiveProviderBaseUrl,
+          ...(effectiveProviderFallbackBaseUrl
+            ? { fallbackBaseUrl: effectiveProviderFallbackBaseUrl }
+            : {}),
           modelId,
           apiKey: secret.value || "",
           authKind: provider.authKind,
@@ -696,9 +744,9 @@ export function createSessionLaunchRuntime({
           apiStyle,
           ...optionalProviderHeaders(provider.headers),
           supportsReasoning: thinkingCapabilities.supportsReasoning,
-          supportsVision: visionFromModelConfig(modelConfig),
+          supportsVision: visionFromModelConfig(effectiveModelConfig),
           supportedThinkingLevels: [...thinkingCapabilities.supportedThinkingLevels],
-          ...(modelConfig ? { modelConfig } : {}),
+          ...(effectiveModelConfig ? { modelConfig: effectiveModelConfig } : {}),
         },
         pluginTools: [
           ...plugins

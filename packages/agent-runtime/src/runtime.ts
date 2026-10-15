@@ -2102,6 +2102,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
                   },
                 ),
                 this.provider.authKind,
+                {
+                  primaryBaseUrl: m.baseUrl ?? this.provider.baseUrl,
+                  fallbackBaseUrl: this.provider.fallbackBaseUrl,
+                },
               ),
               onResponse: async (response, responseModel) => {
                 this.providerResponseStatus = response.status;

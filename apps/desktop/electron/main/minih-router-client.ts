@@ -35,6 +35,8 @@ export type MinihRouterFetchOptions = {
   /** Test seam; defaults to the global fetch. */
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /** Public fallback base URL used when the EasyTier LAN endpoint is unreachable. */
+  fallbackBaseUrl?: string;
 };
 
 type RouterErrorData = { errorCode: string; status?: number; routerCode?: string };
@@ -93,11 +95,13 @@ export function nanoUsdToUsd(value: unknown): string {
   return fraction ? `${whole}.${fraction}` : whole;
 }
 
-/**
- * GET a control-plane path with the AccessKey and unwrap the gateway's
- * `{ code: 0, data }` envelope.
- */
-export async function minihRouterGet(
+function shouldFallbackOnRouterError(error: unknown): boolean {
+  if (!(error instanceof MinihRouterRequestError)) return false;
+  const status = error.data.status;
+  return status === undefined || status === 502 || status === 503 || status === 504;
+}
+
+async function minihRouterGetSingle(
   baseUrl: string,
   path: string,
   apiKey: string,
@@ -167,6 +171,35 @@ export async function minihRouterGet(
   throw new MinihRouterRequestError("Minih Router followed too many redirects", {
     errorCode: ErrorCodes.PROVIDER_ERROR,
   });
+}
+
+/**
+ * GET a control-plane path with the AccessKey and unwrap the gateway's
+ * `{ code: 0, data }` envelope.
+ */
+export async function minihRouterGet(
+  baseUrl: string,
+  path: string,
+  apiKey: string,
+  options: MinihRouterFetchOptions = {},
+): Promise<unknown> {
+  try {
+    return await minihRouterGetSingle(baseUrl, path, apiKey, options);
+  } catch (error) {
+    const fallback = options.fallbackBaseUrl?.trim();
+    if (
+      fallback &&
+      fallback !== baseUrl.trim() &&
+      !options.signal?.aborted &&
+      shouldFallbackOnRouterError(error)
+    ) {
+      return minihRouterGetSingle(fallback, path, apiKey, {
+        ...options,
+        fallbackBaseUrl: undefined,
+      });
+    }
+    throw error;
+  }
 }
 
 function parseQuota(value: unknown): MinihRouterQuota | null {

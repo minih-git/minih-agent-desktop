@@ -138,6 +138,8 @@ import type {
   TrustedExtensionUiPromptResponse,
   SessionTodoSnapshot,
   StorageInfo,
+  EasyTierSettings,
+  EasyTierStatus,
   MinihRouterAccount,
   MinihRouterModel,
   MinihRouterModelDetailsInput,
@@ -154,6 +156,7 @@ import {
   normalizeNetworkPolicy,
   resolveFontScale,
   normalizeChatContentMaxWidth,
+  validateEasyTierSettings,
   validateNetworkPolicy,
   validateNetworkProxy,
   validateSpeechSettings,
@@ -525,6 +528,14 @@ export function validateSettingsWrite(settings: AppSettings): AppSettings {
       (value as { speech?: unknown }).speech,
     );
   }
+  if (Object.prototype.hasOwnProperty.call(value, "easytier")) {
+    const easytierError = validateEasyTierSettings((value as { easytier?: unknown }).easytier);
+    if (easytierError) {
+      throw Object.assign(new Error(easytierError), {
+        errorCode: "INVALID_ARGUMENT",
+      });
+    }
+  }
   return settings;
 }
 
@@ -758,6 +769,15 @@ export const api = {
   /** Gateway prices for the models this row already sends. */
   minihRouterModelDetails: (input: MinihRouterModelDetailsInput) =>
     invoke<MinihRouterModel[]>(IPC.invoke.providersMinihRouterModelDetails, input),
+  /** Live status of the built-in EasyTier virtual LAN node. */
+  easytierStatus: () => invoke<EasyTierStatus>(IPC.invoke.easytierStatus),
+  /** Update and apply EasyTier virtual LAN settings. */
+  easytierConfigure: (input: EasyTierSettings) =>
+    invoke<EasyTierStatus>(IPC.invoke.easytierConfigure, input),
+  /** Force a reconnect of the EasyTier virtual LAN node. */
+  easytierReconnect: () => invoke<EasyTierStatus>(IPC.invoke.easytierReconnect),
+  /** Request OS administrator privileges to switch EasyTier into system TUN mode. */
+  easytierRequestElevation: () => invoke<EasyTierStatus>(IPC.invoke.easytierRequestElevation),
   /**
    * Discover models from the provider's own endpoint. Saved providers pass
    * providerId (stored secret is reused); the setup form may pass raw config

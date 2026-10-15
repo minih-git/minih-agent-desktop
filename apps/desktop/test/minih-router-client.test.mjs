@@ -441,13 +441,87 @@ test("a missing key or unusable address fails before any request", async () => {
 });
 
 /** A Host stand-in holding provider rows and their secrets. */
-function fakeHost(rows) {
+function fakeHost(rows, easytierEndpoint = null) {
   const calls = [];
   return {
     calls,
     call: async (method, params) => {
       calls.push({ method, params });
-      const row = rows[params.id];
+      if (method === "easytier.resolveMinihRouterEndpoint") {
+        if (easytierEndpoint) return easytierEndpoint;
+        const fallbackBaseUrl = params?.baseUrl ?? "https://router.hmini.org/v1";
+        return {
+          activeBaseUrl: fallbackBaseUrl,
+          fallbackBaseUrl,
+          usingLan: false,
+          effectiveMode: "no_tun",
+          virtualIpv4: null,
+        };
+      }
+      if (method === "easytier.status") {
+        return {
+          enabled: true,
+          configuredMode: "no_tun",
+          effectiveMode: "no_tun",
+          state: "connected",
+          virtualIpv4: "11.11.11.20",
+          localForwardPort: 25890,
+          activeRouterBaseUrl: "http://127.0.0.1:25890/v1",
+          fallbackRouterBaseUrl: "https://router.hmini.org/v1",
+          usingLan: true,
+          routerLanReachable: true,
+          peerCount: 2,
+          peers: ["udp://tier.hmini.org:11010", "tcp://tier.hmini.org:11010"],
+          bootstrapPeers: ["udp://tier.hmini.org:11010", "tcp://tier.hmini.org:11010"],
+          networkName: "minih-net",
+          routerLanUrl: "http://11.11.11.10:3001/v1",
+          lastError: null,
+          updatedAtMs: NOW,
+        };
+      }
+      if (method === "easytier.configure") {
+        return {
+          enabled: params?.easytier?.enabled ?? true,
+          configuredMode: params?.easytier?.mode ?? "no_tun",
+          effectiveMode: "no_tun",
+          state: "connected",
+          virtualIpv4: "11.11.11.20",
+          localForwardPort: 25890,
+          activeRouterBaseUrl: "http://127.0.0.1:25890/v1",
+          fallbackRouterBaseUrl: "https://router.hmini.org/v1",
+          usingLan: true,
+          routerLanReachable: true,
+          peerCount: 1,
+          peers: params?.easytier?.peers ?? ["udp://tier.hmini.org:11010"],
+          bootstrapPeers: params?.easytier?.peers ?? ["udp://tier.hmini.org:11010"],
+          networkName: params?.easytier?.networkName ?? "minih-net",
+          routerLanUrl: params?.easytier?.routerLanUrl ?? "http://11.11.11.10:3001/v1",
+          lastError: null,
+          updatedAtMs: NOW,
+        };
+      }
+      if (method === "easytier.reconnect" || method === "easytier.requestElevation") {
+        return {
+          enabled: true,
+          configuredMode: method === "easytier.requestElevation" ? "tun" : "no_tun",
+          effectiveMode: method === "easytier.requestElevation" ? "tun" : "no_tun",
+          state: "connected",
+          virtualIpv4: "11.11.11.20",
+          localForwardPort: 25890,
+          activeRouterBaseUrl: "http://127.0.0.1:25890/v1",
+          fallbackRouterBaseUrl: "https://router.hmini.org/v1",
+          usingLan: true,
+          routerLanReachable: true,
+          peerCount: 2,
+          peers: ["udp://tier.hmini.org:11010"],
+          bootstrapPeers: ["udp://tier.hmini.org:11010"],
+          networkName: "minih-net",
+          routerLanUrl: "http://11.11.11.10:3001/v1",
+          lastError: null,
+          updatedAtMs: NOW,
+        };
+      }
+      const row = rows[params?.id];
       if (method === "providers.get") return { provider: row?.provider };
       if (method === "providers.getSecret") return { value: row?.secret };
       throw new Error(`unexpected host call ${method}`);
@@ -482,6 +556,70 @@ test("the IPC handlers read the saved row's own address and key", async () => {
   assert(fetch.calls.every((call) => call.init.headers.authorization === `Bearer ${KEY}`));
 });
 
+test("the IPC handlers prefer the EasyTier LAN tunnel and fall back to the public URL when the tunnel drops", async () => {
+  const host = fakeHost(
+    {
+      router: {
+        provider: { vendorKey: "minih-router", baseUrl: "https://router.hmini.org/v1" },
+        secret: KEY,
+      },
+    },
+    {
+      activeBaseUrl: "http://127.0.0.1:25890/v1",
+      fallbackBaseUrl: "https://router.hmini.org/v1",
+      usingLan: true,
+      effectiveMode: "no_tun",
+      virtualIpv4: "11.11.11.20",
+    },
+  );
+  let dropLan = false;
+  const fetch = recordingFetch((url) => {
+    if (dropLan && url.startsWith("http://127.0.0.1:25890/")) {
+      throw new Error("connect ECONNREFUSED 127.0.0.1:25890");
+    }
+    return url.includes("/api/models")
+      ? response(200, envelope(MODELS))
+      : response(200, envelope(HOME));
+  });
+  const handlers = createMinihRouterHandlers({
+    getHost: () => host,
+    logger,
+    fetchImpl: fetch.fetchImpl,
+  });
+
+  // 1) When the LAN tunnel responds, requests travel over the local EasyTier forwarder.
+  const page = await handlers.models({ providerId: "router", page: 1, pageSize: 3 });
+  assert.equal(page.items.length, 3);
+  assert.equal(fetch.calls[0].url.startsWith("http://127.0.0.1:25890/api/models"), true);
+
+  // 2) If the LAN tunnel drops mid-flight, minihRouterGet automatically retries on fallbackBaseUrl.
+  fetch.calls.length = 0;
+  dropLan = true;
+  const account = await handlers.account({ providerId: "router" });
+  assert.equal(account.keyName, "desktop");
+  assert.equal(
+    fetch.calls.some((call) => call.url === "http://127.0.0.1:25890/api/home"),
+    true,
+  );
+  assert.equal(
+    fetch.calls.some((call) => call.url === "https://router.hmini.org/api/home"),
+    true,
+  );
+
+  // 3) EasyTier status, configure, reconnect, and elevation RPCs round-trip cleanly.
+  const status = await handlers.easytierStatus();
+  assert.equal(status.usingLan, true);
+  assert.equal(status.virtualIpv4, "11.11.11.20");
+  const configured = await handlers.easytierConfigure({
+    enabled: true,
+    mode: "no_tun",
+    networkName: "minih-net",
+  });
+  assert.equal(configured.networkName, "minih-net");
+  const elevated = await handlers.easytierRequestElevation();
+  assert.equal(elevated.effectiveMode, "tun");
+});
+
 test("the IPC handlers never send another vendor's key to a Router address", async () => {
   const host = fakeHost({
     openai: { provider: { vendorKey: "openai", baseUrl: "https://api.openai.com/v1" }, secret: "sk-openai" },
@@ -504,10 +642,10 @@ test("the IPC handlers never send another vendor's key to a Router address", asy
     error.errorCode === "NOT_FOUND");
   await assert.rejects(handlers.models({}), (error) => error.errorCode === "INVALID_ARGUMENT");
   assert.equal(fetched, false);
-  assert.equal(host.calls.some((call) => call.method === "providers.getSecret" && call.params.id === "openai"), false);
+  assert.equal(host.calls.some((call) => call.method === "providers.getSecret" && call.params?.id === "openai"), false);
 });
 
-test("registration exposes exactly the three Minih Router channels", () => {
+test("registration exposes the Minih Router and EasyTier LAN channels", () => {
   const channels = [];
   registerMinihRouterIpc({
     registrar: { handle: (channel) => channels.push(channel) },
@@ -518,5 +656,10 @@ test("registration exposes exactly the three Minih Router channels", () => {
     IPC.invoke.providersMinihRouterAccount,
     IPC.invoke.providersMinihRouterModels,
     IPC.invoke.providersMinihRouterModelDetails,
+    IPC.invoke.easytierStatus,
+    IPC.invoke.easytierConfigure,
+    IPC.invoke.easytierReconnect,
+    IPC.invoke.easytierRequestElevation,
   ]);
 });
+

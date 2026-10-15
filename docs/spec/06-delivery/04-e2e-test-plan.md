@@ -17342,33 +17342,39 @@ renderer's durable transcript reads. No real model or provider is contacted.
 
 - **Preconditions:** Isolated Electron/Chromium, production provider dialog and
   Minih Router panel, synthetic IPC answers for discovery, provider creation,
-  account and model plaza; no live Router, token, or paid service.
+  account, model plaza, and EasyTier virtual LAN status/elevation/configuration;
+  no live Router, token, or paid service.
 - **Steps:** Open Add Service and pick Minih Router from the Recommended group.
   Paste a token, replace the Base URL with a console address, save. Open the
-  row's panel: read the balance, page forward through the model plaza, search,
-  then make the model read fail and Retry. Separately, edit an existing custom
-  row that points at a Router (Responses format) and change its service to
-  Minih Router.
+  row's panel: read the balance, inspect the Virtual LAN Channel (EasyTier)
+  status, request TUN Mode elevation, customize and save LAN Settings, page
+  forward through the model plaza, search, then make the model read fail and
+  Retry. Separately, edit an existing custom row that points at a Router
+  (Responses format) and change its service to Minih Router.
 - **Expected:** Minih Router is the first tile and is not repeated among API-key
   services; the Base URL starts at `https://router.hmini.org/v1` and saves as
   the typed host's `/v1` address with `vendorKey: "minih-router"`. The balance
   headline is the quota closest to running out; totals, 30-day spend and
-  requests, multiplier and expiry are shown. Cards show per-1M input/output
-  prices, "from", cache price, context and Added; paging and search request the
-  right page; a failure keeps the last page and Retry recovers. Renderer calls
-  carry only the provider id, never the token. The converted row saves
-  `vendorKey: "minih-router"` with its own address and Responses format and
-  without rewriting the stored key.
-- **Specs:** 03-runtime/12 Minih Router preset and account channels; 04-ux/06
-  Minih Router panel.
+  requests, multiplier and expiry are shown. The Virtual LAN section shows
+  `Connected`, `No-TUN (User-space)`, virtual IP, and active `LAN Tunnel`
+  routing, updates to `TUN (Virtual NIC)` on elevation, and persists custom LAN
+  parameters. Cards show per-1M input/output prices, "from", cache price,
+  context and Added; paging and search request the right page; a failure keeps
+  the last page and Retry recovers. Renderer calls carry only the provider id,
+  never the token. The converted row saves `vendorKey: "minih-router"` with its
+  own address and Responses format and without rewriting the stored key.
+- **Specs:** 03-runtime/12 Minih Router preset, account channels, and EasyTier
+  virtual LAN routing/fallback; 04-ux/06 Minih Router panel.
 - **Acceptance:** `minih-router-settings-user-path.test.mjs`,
-  `minih-router-client.test.mjs` (gateway DTO contract, redirect guard,
-  redaction, vendor-key refusal), `minih-router-format.test.mjs`, and shared
-  `minih-router.test.ts`.
+  `minih-router-client.test.mjs` (gateway DTO contract, EasyTier LAN resolution
+  and public URL fallback, redirect guard, redaction, vendor-key refusal),
+  `minih-router-format.test.mjs`, `provider-binding.test.ts` (runtime
+  `providerRequestFetch` LAN-to-public fallback), `minih-router.test.ts`, and
+  Rust `cargo test -p host-core easytier`.
 - **Milestone:** Provider configuration maintenance.
-- **Status:** Covered by the isolated UI fixture and main-process contract
-  tests. Host/SQLite persistence of the row uses the unchanged provider path;
-  a live Router deployment is not exercised.
+- **Status:** Covered by the isolated UI fixture, main-process/runtime contract
+  tests, and Rust host-core EasyTier unit/RPC tests.
+
 
 ## E2E-OAUTH-pi-installation-identity-and-standalone-load
 

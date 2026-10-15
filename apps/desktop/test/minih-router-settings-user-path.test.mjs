@@ -39,6 +39,25 @@ const apiCalls = [];
 let created = null;
 let updated = null;
 let failModels = false;
+let easytierState = {
+  enabled: true,
+  configuredMode: "no_tun",
+  effectiveMode: "no_tun",
+  state: "connected",
+  virtualIpv4: "11.11.11.20",
+  localForwardPort: 25890,
+  activeRouterBaseUrl: "http://127.0.0.1:25890/v1",
+  fallbackRouterBaseUrl: "https://router.hmini.org/v1",
+  usingLan: true,
+  routerLanReachable: true,
+  peerCount: 2,
+  peers: ["udp://tier.hmini.org:11010", "tcp://tier.hmini.org:11010"],
+  bootstrapPeers: ["udp://tier.hmini.org:11010", "tcp://tier.hmini.org:11010"],
+  networkName: "minih-net",
+  routerLanUrl: "http://11.11.11.10:3001/v1",
+  lastError: null,
+  updatedAtMs: 1760000000000,
+};
 const allModels = Array.from({ length: 30 }, (_, index) => ({
   id: index === 0 ? "gpt-4.1" : "model-" + String(index).padStart(2, "0"),
   vendor: index === 0 ? "OpenAI" : "Vendor",
@@ -102,6 +121,29 @@ window.minihAgent = {
           totalPages: Math.ceil(matched.length / input.pageSize),
         } };
       }
+      case "minih-agent-desktop/easytier/status":
+        return { ok: true, data: easytierState };
+      case "minih-agent-desktop/easytier/configure":
+        easytierState = {
+          ...easytierState,
+          enabled: input.enabled ?? easytierState.enabled,
+          configuredMode: input.mode ?? easytierState.configuredMode,
+          effectiveMode: input.mode === "tun" ? "tun" : "no_tun",
+          networkName: input.networkName ?? easytierState.networkName,
+          bootstrapPeers: input.peers ?? easytierState.bootstrapPeers,
+          peers: input.peers ?? easytierState.peers,
+          routerLanUrl: input.routerLanUrl ?? easytierState.routerLanUrl,
+        };
+        return { ok: true, data: easytierState };
+      case "minih-agent-desktop/easytier/reconnect":
+        return { ok: true, data: easytierState };
+      case "minih-agent-desktop/easytier/requestElevation":
+        easytierState = {
+          ...easytierState,
+          configuredMode: "tun",
+          effectiveMode: "tun",
+        };
+        return { ok: true, data: easytierState };
       default:
         // Model lookups and catalog reads the dialog may issue are answered empty.
         return { ok: true, data: null };
@@ -311,6 +353,40 @@ window.minihRouterProbe = async () => {
   flushSync(() => button("Retry").click());
   await waitFor(() => !document.body.innerText.includes("Couldn't load models"), "Retry did not recover");
 
+  // 5) EasyTier virtual LAN status, TUN elevation, and custom network settings.
+  const lanSection = await waitFor(
+    () => document.querySelector('[data-testid="minih-router-lan"]'),
+    "EasyTier LAN section did not render",
+  );
+  const initialLanText = lanSection.innerText;
+  const lanInitial = {
+    connected: initialLanText.includes("Connected"),
+    noTunMode: initialLanText.includes("No-TUN (User-space)"),
+    virtualIp: initialLanText.includes("11.11.11.20"),
+    routeActive: initialLanText.includes("LAN Tunnel (11.11.11.10:3001/v1)"),
+  };
+  flushSync(() => button("Enable TUN Mode (Admin)").click());
+  await waitFor(
+    () => lanSection.innerText.includes("TUN (Virtual NIC)"),
+    "TUN elevation did not switch the displayed mode",
+  );
+  flushSync(() => button("LAN Settings").click());
+  const netNameInput = await waitFor(
+    () => document.querySelector('input[aria-label="Network Name"]'),
+    "Network Name input did not appear",
+  );
+  flushSync(() => setValue(netNameInput, "custom-lan"));
+  flushSync(() => button("Save LAN Settings").click());
+  await waitFor(
+    () => !document.querySelector('[data-testid="minih-router-lan-form"]'),
+    "LAN Settings form did not close after saving",
+  );
+  const lanConfigured = apiCalls.some(
+    (call) =>
+      call.channel === "minih-agent-desktop/easytier/configure" &&
+      call.input?.networkName === "custom-lan",
+  );
+
   const routerCalls = apiCalls.filter((call) => call.channel.startsWith("minih-agent-desktop/providers/minihRouter/"));
   return {
     featuredFirst,
@@ -330,6 +406,8 @@ window.minihRouterProbe = async () => {
     paginationHiddenForOnePage,
     failureDetail,
     keptPreviousPage,
+    lanInitial,
+    lanConfigured,
     rendererNeverSendsToken: routerCalls.every((call) => !JSON.stringify(call.input).includes("sk-gl-user-token")),
     callsNameTheRow: routerCalls.every((call) => call.input.providerId === "router-1"),
   };
@@ -467,6 +545,13 @@ app.whenReady().then(async () => {
       paginationHiddenForOnePage: true,
       failureDetail: true,
       keptPreviousPage: true,
+      lanInitial: {
+        connected: true,
+        noTunMode: true,
+        virtualIp: true,
+        routeActive: true,
+      },
+      lanConfigured: true,
       rendererNeverSendsToken: true,
       callsNameTheRow: true,
     });

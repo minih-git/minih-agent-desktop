@@ -159,6 +159,8 @@ export type AppSettings = {
   preventScreenSleep?: boolean;
   /** Voice input settings (D-voice-runtime). */
   voice?: VoiceInputSettings;
+  /** Built-in EasyTier virtual LAN settings for Minih Router. */
+  easytier?: import("../minih-router.js").EasyTierSettings;
   onboardingDismissed: boolean;
 };
 

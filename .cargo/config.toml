@@ -3,3 +3,7 @@
 # Visual C++ Redistributable installation before the local service can boot.
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+[net]
+git-fetch-with-cli = true
+

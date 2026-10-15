@@ -474,6 +474,11 @@ export const MCP_CONTROL_BLOCKED_CHANNEL_KEYS = [
   "providersMinihRouterAccount",
   "providersMinihRouterModels",
   "providersMinihRouterModelDetails",
+  // Virtual LAN configuration and privilege elevation are local host controls.
+  "easytierStatus",
+  "easytierConfigure",
+  "easytierReconnect",
+  "easytierRequestElevation",
   "providersOauthStart",
   "providersOauthRespond",
   "providersOauthCancel",
