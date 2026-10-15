@@ -1478,6 +1478,8 @@ export const ptBR = {
     minihRouterLanTunEnabled: "Interface de rede virtual TUN ativada",
     minihRouterLanShowSecret: "Mostrar segredo da rede",
     minihRouterLanHideSecret: "Ocultar segredo da rede",
+    minihRouterLanBootstrapGateway: "Atribuído pelo gateway",
+    minihRouterLanBootstrapHint: "Gerenciado pelo Minih Router; o gateway atribui esta rede e seu endereço.",
     minihRouterLanDhcp: "IP virtual automática (DHCP)",
     minihRouterLanStaticIpv4: "IP virtual estática",
     presetAnthropic: "Anthropic",

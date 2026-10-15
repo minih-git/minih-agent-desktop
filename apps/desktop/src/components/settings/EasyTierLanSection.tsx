@@ -13,6 +13,7 @@ import {
   EASYTIER_DEFAULT_NETWORK_SECRET,
   EASYTIER_DEFAULT_PEERS,
   EASYTIER_DEFAULT_ROUTER_LAN_URL,
+  easyTierBootstrapLabel,
   type EasyTierConnectionState,
   type EasyTierStatus,
 } from "@minih-agent/shared";
@@ -99,6 +100,11 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
     effectiveMode === "tun"
       ? t("settings.minihRouterLanModeTun")
       : t("settings.minihRouterLanModeNoTun");
+
+  // The gateway issues the network identity when it answered, so the fields it
+  // owns are shown read-only rather than silently ignored on save.
+  const gatewayNetworkName = easyTierBootstrapLabel(status);
+  const gatewayManaged = gatewayNetworkName !== null;
 
   const activeRouteText = status.usingLan
     ? t("settings.minihRouterLanRouteActive", {
@@ -196,6 +202,9 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
           <h4 className="minih-router-models-title">{t("settings.minihRouterLanTitle")}</h4>
           <Badge tone={stateBadgeTone(status.state)}>{t(stateLabelKey(status.state))}</Badge>
           <Badge tone={effectiveMode === "tun" ? "success" : "neutral"}>{modeLabel}</Badge>
+          {gatewayManaged ? (
+            <Badge tone="neutral">{t("settings.minihRouterLanBootstrapGateway")}</Badge>
+          ) : null}
         </div>
         <div className="minih-router-lan-actions">
           <SettingsToggle
@@ -282,12 +291,17 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
 
       {editing ? (
         <div className="minih-router-lan-form" data-testid="minih-router-lan-form">
+          {gatewayManaged ? (
+            <p className="minih-router-price-hint">
+              {t("settings.minihRouterLanBootstrapHint")}
+            </p>
+          ) : null}
           <div className="minih-router-lan-grid">
             <Field label={t("settings.minihRouterLanNetworkName")}>
               <Input
                 value={networkName}
                 aria-label={t("settings.minihRouterLanNetworkName")}
-                disabled={busy}
+                disabled={busy || gatewayManaged}
                 onChange={(event) => setNetworkName(event.target.value)}
               />
             </Field>
@@ -297,7 +311,7 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
                 aria-label={t("settings.minihRouterLanNetworkSecret")}
                 showLabel={t("settings.minihRouterLanShowSecret")}
                 hideLabel={t("settings.minihRouterLanHideSecret")}
-                disabled={busy}
+                disabled={busy || gatewayManaged}
                 onChange={(event) => setNetworkSecret(event.target.value)}
               />
             </Field>

@@ -2326,7 +2326,17 @@ async fn handle_request(
             crate::network_proxy::apply_from_settings(Some(&settings));
             crate::network_policy::apply_from_settings(Some(&settings));
             if incoming_has_easytier && settings.get("easytier") != previous_easytier.as_ref() {
-                crate::easytier_net::spawn_from_settings(&st.data_dir, Some(&settings));
+                // Pass a credential source: the database is live here, so the
+                // gateway identity is refreshed on the same settings write
+                // instead of waiting for the next reconnect.
+                let credentials = std::sync::Arc::new(
+                    crate::easytier_net::AppStateCredentialProvider::new(state.clone()),
+                );
+                crate::easytier_net::spawn_from_settings_with(
+                    &st.data_dir,
+                    Some(&settings),
+                    credentials,
+                );
             }
             Ok(json!({ "ok": true }))
         }

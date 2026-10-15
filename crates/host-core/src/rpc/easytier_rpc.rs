@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 use super::{
     merge_settings_value, normalize_settings_value, rpc_err, validate_settings_value, JsonRpcError,
 };
-use crate::easytier_net::{self, EasyTierEffectiveMode};
+use crate::easytier_net::{self, AppStateCredentialProvider, EasyTierEffectiveMode};
 use crate::state::AppState;
 
 pub(super) async fn handle(
@@ -41,7 +41,15 @@ pub(super) async fn handle(
                 (st.data_dir.clone(), settings)
             };
 
-            let status = easytier_net::apply_from_settings(&data_dir, Some(&settings)).await;
+            // The credential provider borrows the same state lock this arm is
+            // about to release, so it is built after the write and asked for the
+            // key inside `apply_from_settings`, not here.
+            let status = easytier_net::apply_from_settings(
+                &data_dir,
+                Some(&settings),
+                Some(&AppStateCredentialProvider::new(state.clone())),
+            )
+            .await;
             serde_json::to_value(status).map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))
         }
         "easytier.reconnect" => {
@@ -53,7 +61,12 @@ pub(super) async fn handle(
                     .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
                 (st.data_dir.clone(), stored)
             };
-            let status = easytier_net::reconnect(&data_dir, stored.as_ref()).await;
+            let status = easytier_net::reconnect(
+                &data_dir,
+                stored.as_ref(),
+                Some(&AppStateCredentialProvider::new(state.clone())),
+            )
+            .await;
             serde_json::to_value(status).map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))
         }
         "easytier.requestElevation" => {

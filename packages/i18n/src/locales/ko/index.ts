@@ -1519,6 +1519,8 @@ sklm: {
     minihRouterLanTunEnabled: "TUN 가상 네트워크 인터페이스가 활성화되었습니다",
     minihRouterLanShowSecret: "네트워크 키 표시",
     minihRouterLanHideSecret: "네트워크 키 숨기기",
+    minihRouterLanBootstrapGateway: "게이트웨이 할당",
+    minihRouterLanBootstrapHint: "Minih Router가 관리하며 네트워크 이름과 주소는 게이트웨이가 내려줍니다.",
     minihRouterLanDhcp: "자동 가상 IP (DHCP)",
     minihRouterLanStaticIpv4: "고정 가상 IP",
     presetAnthropic: "Anthropic",

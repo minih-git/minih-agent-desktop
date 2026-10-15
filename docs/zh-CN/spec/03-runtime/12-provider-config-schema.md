@@ -266,7 +266,17 @@ Minih Router 是自有的模型网关，排在命名预设的第一位。它是�
   持久化在 `settings.app.easytier`）。虚拟网段采用 EasyTier 自带的默认
   `10.144.144.0/24`，确保不会与用户已有的私网重叠；网关位于其他网段时设置
   `routerLanUrl`，并用 `dhcp: false` 加 `ipv4`（IPv4 字面量，可带 `/32`）
-  固定网关自身地址。默认以用户态 **No-TUN** 模式启动
+  固定网关自身地址。网关也可以自行下发身份：带 `Authorization: Bearer <AccessKey>`
+  请求 `GET <root>/api/easytier/bootstrap`，返回 `networkName`、`networkSecret`，
+  以及可选的 `gatewayVirtualIpv4`、`peers` 与 `ttlSeconds`。网关应答优先于本地
+  配置，本地配置优先于内置默认值；只替换网关实际应答的字段，因此部分应答也能
+  升级密钥。网关返回 `404` 表示尚未提供该接口，属于受支持的配置而非失败；其他
+  失败一律回落到本地配置，保证公网 URL 继续可用。应答按 AccessKey 的摘要缓存
+  （不保留密钥本身），有效期至少一分钟、至多七天，因此轮换密钥会自然失效，
+  异常的 `ttlSeconds` 既不能禁用缓存也不能无限期固定一个已泄漏的密钥。
+  `EasyTierStatus` 回报 `bootstrapSource`（`gateway` / `local` / `disabled`）与
+  `bootstrapNetworkName`；网关应答生效时，设置面板将网关所属字段置为只读。
+  默认以用户态 **No-TUN** 模式启动
   （`no_tun = true`、`dhcp = true`），通过本地回环 TCP 端口转发
   （`127.0.0.1:<local_port> -> 10.144.144.10:3001`）实现，不需要管理员权限；用户也可以
   主动申请管理员提权切换到系统 **TUN** 模式（`--easytier-tun-runner`），提权被拒绝或

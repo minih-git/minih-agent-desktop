@@ -1508,6 +1508,8 @@ sklm: {
     "minihRouterLanDhcp": "Automatische virtuelle IP (DHCP)",
     "minihRouterLanStaticIpv4": "Statische virtuelle IP",
     "minihRouterLanHideSecret": "Netzwerk-Secret ausblenden",
+    "minihRouterLanBootstrapGateway": "Vom Gateway zugewiesen",
+    "minihRouterLanBootstrapHint": "Von Minih Router verwaltet; das Gateway vergibt dieses Netz und seine Adresse.",
     "presetAnthropic": "Anthropic",
     "presetGoogle": "Google Gemini",
     "presetOpenrouter": "OpenRouter",

@@ -1513,6 +1513,8 @@ sklm: {
     minihRouterLanTunEnabled: "TUN sanal ağ arayüzü etkinleştirildi",
     minihRouterLanShowSecret: "Ağ parolasını göster",
     minihRouterLanHideSecret: "Ağ parolasını gizle",
+    minihRouterLanBootstrapGateway: "Ağ geçidi tarafından atandı",
+    minihRouterLanBootstrapHint: "Minih Router tarafından yönetilir; ağ ve adresini ağ geçidi verir.",
     minihRouterLanDhcp: "Otomatik sanal IP (DHCP)",
     minihRouterLanStaticIpv4: "Sabit sanal IP",
     presetAnthropic: "Anthropic",

@@ -21,6 +21,18 @@ export const MINIH_ROUTER_MODEL_PAGE_SIZE_MAX = 100;
 export const MINIH_ROUTER_LOOKUP_MAX_IDS = 200;
 export const MINIH_ROUTER_LOOKUP_MAX_MODELS = 5000;
 
+/**
+ * The network identity the gateway issued for this AccessKey, or the local
+ * configuration when it did not answer. `null` means the channel is off.
+ */
+export function easyTierBootstrapLabel(
+  status: Pick<EasyTierStatus, "bootstrapSource" | "bootstrapNetworkName">,
+): string | null {
+  if (status.bootstrapSource === "disabled") return null;
+  if (status.bootstrapSource === "gateway") return status.bootstrapNetworkName || null;
+  return null;
+}
+
 export function isMinihRouterVendorKey(vendorKey: string | null | undefined): boolean {
   return (vendorKey ?? "").trim().toLowerCase() === MINIH_ROUTER_VENDOR_KEY;
 }
@@ -248,6 +260,12 @@ export type EasyTierStatus = {
   dhcp: boolean;
   /** The configured static virtual IPv4, empty when DHCP is on. */
   staticIpv4: string;
+  /** Where the network identity in effect came from. */
+  bootstrapSource: "gateway" | "local" | "disabled";
+  /** The network name the gateway issued, empty when it did not answer. */
+  bootstrapNetworkName: string;
+  /** Why the bootstrap did not apply, empty when it did. */
+  bootstrapError: string;
   connectedPeers?: EasyTierPeerSummary[];
   networkName: string;
   routerLanUrl: string;

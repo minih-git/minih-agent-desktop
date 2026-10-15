@@ -7,6 +7,7 @@ import {
   MINIH_ROUTER_DEFAULT_BASE_URL,
   MINIH_ROUTER_PRESET_ID,
   MINIH_ROUTER_VENDOR_KEY,
+  easyTierBootstrapLabel,
   isMinihRouterVendorKey,
   minihRouterApiBaseUrl,
   minihRouterControlRoot,
@@ -147,6 +148,27 @@ describe("EasyTier virtual LAN settings", () => {
     });
     expect(normalized.dhcp).toBe(false);
     expect(normalized.ipv4).toBe("10.144.144.10");
+  });
+
+  it("names the gateway network only when the gateway answered", () => {
+    // The panel disables the identity fields on this signal, so a "local" source
+    // must read as null or the user loses the ability to configure the channel.
+    expect(
+      easyTierBootstrapLabel({
+        bootstrapSource: "gateway",
+        bootstrapNetworkName: "minih-net-abc12345",
+      }),
+    ).toBe("minih-net-abc12345");
+    expect(
+      easyTierBootstrapLabel({ bootstrapSource: "local", bootstrapNetworkName: "" }),
+    ).toBeNull();
+    expect(
+      easyTierBootstrapLabel({ bootstrapSource: "disabled", bootstrapNetworkName: "" }),
+    ).toBeNull();
+    // A gateway answer with no name is treated as absent rather than blank.
+    expect(
+      easyTierBootstrapLabel({ bootstrapSource: "gateway", bootstrapNetworkName: "" }),
+    ).toBeNull();
   });
 
   it("refuses a static virtual IPv4 without switching DHCP off", () => {

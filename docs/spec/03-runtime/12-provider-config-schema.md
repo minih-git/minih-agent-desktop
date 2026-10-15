@@ -439,6 +439,21 @@ address is only a default (`customBaseUrl: true`):
   cannot overlap a private network the user already runs; a deployment whose
   gateway sits on another range sets `routerLanUrl`, and pins the gateway's own
   address with `dhcp: false` plus `ipv4` (an IPv4 literal, `/32` accepted).
+  The gateway may also issue the identity itself: `GET <root>/api/easytier/bootstrap`
+  with `Authorization: Bearer <AccessKey>` answers `networkName`,
+  `networkSecret`, optional `gatewayVirtualIpv4`, optional `peers`, and an
+  optional `ttlSeconds`. A gateway answer takes precedence over the local
+  configuration, which in turn takes precedence over the built-in defaults;
+  only the fields the gateway actually answered are replaced, so a partial
+  response still upgrades the secret. `404` means the gateway has not shipped
+  the endpoint and is a supported configuration, not a failure, and every other
+  failure falls back to the local configuration so the public URL keeps working.
+  The answer is cached under a digest of the AccessKey — the key itself is never
+  retained — for at most seven days and at least a minute, so a rotated key
+  misses and a broken `ttlSeconds` cannot disable caching or pin a compromised
+  key indefinitely. `EasyTierStatus` reports `bootstrapSource`
+  (`gateway` / `local` / `disabled`) and `bootstrapNetworkName`, and the panel
+  marks the gateway-owned fields read-only while a gateway answer is in effect.
   By default it starts in user-space **No-TUN** mode (`no_tun = true`,
   `dhcp = true`) with a local loopback TCP port forward
   (`127.0.0.1:<local_port> -> 10.144.144.10:3001`) requiring no administrator
