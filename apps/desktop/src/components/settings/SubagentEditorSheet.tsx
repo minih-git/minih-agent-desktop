@@ -21,7 +21,7 @@ import {
 } from "@minih-agent/shared";
 import { useAppStore } from "../../stores/app-store";
 import { Button, Field, HelpIcon, Input, SettingsToggle, Textarea, TooltipButton, cx, portalOverlay } from "../ui";
-import { IconChevronRight, IconFolderOpen, IconX } from "../icons";
+import { IconChevronRight, IconFolderOpen, IconUndo2, IconX } from "../icons";
 import {
   groupSubagentModelChoices,
   subagentModelChoices,
@@ -188,6 +188,45 @@ export function draftFromDefinition(definition: SubagentDefinition): SubagentDra
     maxTokens: definition.maxTokens ?? 0,
     body: definition.prompt,
   };
+}
+
+/** Prefill the edit sheet from a shipped builtin definition in place. */
+export function draftFromBuiltin(
+  definition: SubagentDefinition & { enabled?: boolean },
+): SubagentDraft {
+  return {
+    ...draftFromDefinition(definition),
+    id: definition.name,
+    name: definition.name,
+    enabled: definition.enabled ?? true,
+  };
+}
+
+/** Whether a draft differs from the factory default of a shipped builtin. */
+export function isBuiltinDraftModified(
+  draft: SubagentDraft,
+  builtin: SubagentDefinition,
+): boolean {
+  const baseline = draftFromBuiltin(builtin);
+  if (draft.description.trim() !== baseline.description.trim()) return true;
+  if (draft.body.trim() !== baseline.body.trim()) return true;
+  if (draft.inheritTools !== baseline.inheritTools) return true;
+  if (
+    draft.tools.length !== baseline.tools.length ||
+    draft.tools.some((tool, index) => tool !== baseline.tools[index])
+  ) {
+    return true;
+  }
+  if (draft.model.trim() !== baseline.model.trim()) return true;
+  if (
+    draft.fallbackModels.length !== baseline.fallbackModels.length ||
+    draft.fallbackModels.some((pin, index) => pin.trim() !== baseline.fallbackModels[index])
+  ) {
+    return true;
+  }
+  if (draft.thinkingLevel !== baseline.thinkingLevel) return true;
+  if (draft.maxTokens !== baseline.maxTokens) return true;
+  return false;
 }
 
 /** Mirror of host-core's `normalize_name`, so the handle shown is the one stored. */
@@ -562,21 +601,29 @@ export function SubagentEditorSheet({
   draft,
   setDraft,
   editing,
+  builtin,
+  canReset,
   saving,
   initialPresetId,
   onClose,
   onSave,
   onReveal,
+  onReset,
 }: {
   draft: SubagentDraft;
   setDraft: (next: SubagentDraft) => void;
   editing: UserSubagentRecord | null;
+  /** Shipped builtin definition when editing a builtin in place. */
+  builtin?: SubagentDefinition | null;
+  /** True when `~/.agents/subagents/<handle>.md` already overrides this builtin on disk. */
+  canReset?: boolean;
   saving: boolean;
   /** Template chip to select on create, e.g. after Copy as mine. */
   initialPresetId?: string;
   onClose: () => void;
   onSave: () => void;
   onReveal?: () => void;
+  onReset?: () => void;
 }) {
   const { t } = useTranslation();
   const providers = useAppStore((state) => state.providers);
@@ -590,6 +637,14 @@ export function SubagentEditorSheet({
   const pristine = !editing && !draft.name.trim() && !draft.description.trim();
   const bytes = new TextEncoder().encode(draft.body).length;
   const slug = draft.id || subagentSlug(draft.name);
+  const builtinNameKey = builtin ? subagentPresetCopyKey(builtin.name, "name") : null;
+  const builtinDisplayName = builtin
+    ? builtinNameKey
+      ? t(builtinNameKey)
+      : builtin.name
+    : "";
+  const resetDisabled =
+    saving || (builtin ? !canReset && !isBuiltinDraftModified(draft, builtin) : true);
   const modelChoices = useMemo(() => subagentModelChoices(providers), [providers]);
   const modelGroups = useMemo(
     () => groupSubagentModelChoices(modelChoices),
@@ -686,10 +741,12 @@ export function SubagentEditorSheet({
             hint={slug ? t("extensions.subagents.slugHint", { id: slug }) : undefined}
           >
             <Input
-              value={draft.name}
+              value={builtin ? builtinDisplayName : draft.name}
               autoFocus={!editing}
+              disabled={!!builtin}
               placeholder={t("extensions.subagents.namePlaceholder")}
               onChange={(event) => {
+                if (builtin) return;
                 setNameTouched(true);
                 setName(event.target.value);
               }}
@@ -804,6 +861,12 @@ export function SubagentEditorSheet({
             <Button variant="ghost" onClick={onReveal}>
               <IconFolderOpen size={13} />
               {t("extensions.subagents.reveal")}
+            </Button>
+          ) : null}
+          {builtin && onReset ? (
+            <Button variant="ghost" onClick={onReset} disabled={resetDisabled}>
+              <IconUndo2 size={13} />
+              {t("extensions.subagents.resetBuiltin")}
             </Button>
           ) : null}
           <div className="ext-sheet-actions-end">

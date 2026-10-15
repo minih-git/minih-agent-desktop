@@ -16,14 +16,79 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { SubagentEditorSheet } from "../../apps/desktop/src/components/settings/SubagentEditorSheet";
+import { AgentSubagentsPage } from "../../apps/desktop/src/components/settings/AgentSubagentsPage";
+import { IPC, fallbackBuiltinDefinitions } from "@minih-agent/shared";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 import "../../apps/desktop/src/styles/model-config.css";
 
 await i18n.use(initReactI18next).init({ lng: "en", keySeparator: false,
   resources: { en: { translation: flattenCatalog(catalogs.en) } },
   interpolation: { escapeValue: false } });
+let ownedRecords = [];
+const bodies = new Map();
+const disabledBuiltins = new Set();
 window.minihAgent = { platform: "win32", on() { return () => {}; },
-  invoke() { throw new Error("Unexpected IPC in fallback display test"); } };
+  async invoke(channel, payload = {}) {
+    const ok = (data) => ({ ok: true, data });
+    if (channel === IPC.invoke.subagentList) return ok({ subagents: [...ownedRecords] });
+    if (channel === IPC.invoke.subagentCatalog) {
+      const activeUserIds = new Set(ownedRecords.filter((r) => r.enabled).map((r) => r.id));
+      const builtins = fallbackBuiltinDefinitions()
+        .filter((item) => !activeUserIds.has(item.name))
+        .map((item) => ({
+          ...item,
+          enabled: !disabledBuiltins.has(item.name),
+        }));
+      return ok({ subagents: builtins, builtins, diagnostics: [], projectPath: null });
+    }
+    if (channel === IPC.invoke.subagentCreate) {
+      const s = payload;
+      const rec = {
+        id: s.name,
+        name: s.name,
+        description: s.description,
+        path: "/tmp/" + s.name + ".md",
+        tools: s.tools,
+        enabled: s.enabled ?? true,
+        level: "global",
+        sizeBytes: 64,
+        createdAt: "",
+        updatedAt: "",
+      };
+      ownedRecords = [...ownedRecords.filter((r) => r.id !== rec.id), rec];
+      bodies.set(rec.id, s.body);
+      return ok({ subagent: rec });
+    }
+    if (channel === IPC.invoke.subagentUpdate) {
+      const { id, ...s } = payload;
+      ownedRecords = ownedRecords.map((r) =>
+        r.id === id
+          ? { ...r, description: s.description, tools: s.tools, enabled: s.enabled ?? r.enabled }
+          : r,
+      );
+      bodies.set(id, s.body);
+      return ok({ subagent: ownedRecords.find((r) => r.id === id) });
+    }
+    if (channel === IPC.invoke.subagentRead) {
+      const id = typeof payload === "string" ? payload : payload.id;
+      return ok({
+        subagent: ownedRecords.find((r) => r.id === id) ?? null,
+        body: bodies.get(id) ?? "",
+      });
+    }
+    if (channel === IPC.invoke.subagentRemove) {
+      const id = typeof payload === "string" ? payload : payload.id;
+      ownedRecords = ownedRecords.filter((r) => r.id !== id);
+      bodies.delete(id);
+      return ok({ ok: true });
+    }
+    if (channel === IPC.invoke.subagentSetBuiltinEnabled) {
+      if (payload.enabled) disabledBuiltins.delete(payload.id);
+      else disabledBuiltins.add(payload.id);
+      return ok({ id: payload.id, enabled: payload.enabled });
+    }
+    throw new Error("Unexpected IPC in subagent user-path test: " + channel);
+  } };
 const provider = (id, name) => ({ id, name, vendorKey: "custom", enabled: true,
   hasSecret: true, hasOauth: false, authKind: "api_key_and_base_url", models: [{ id: "model" }] });
 const providers = [provider("account-a", "Shared Workspace"),
@@ -86,6 +151,46 @@ window.fallbackProbe = async () => {
   const save = [...document.querySelectorAll("button")].find((button) => button.textContent.trim() === i18n.t("common.save"));
   flushSync(() => save.click());
   check(JSON.stringify(saved) === JSON.stringify(["account-a/model", "deleted/model", "Other Workspace/model"]), "save changed pin identity or order");
+
+  // Representative user path for built-in subagent in-place editing and one-click restore:
+  rootNode.render(React.createElement(AgentSubagentsPage));
+  await settle();
+  await settle();
+  const editExplorer = action("Actions for Explorer");
+  check(editExplorer, "builtin Explorer edit button missing: " + [...document.querySelectorAll("button")].map((b) => b.getAttribute("aria-label") || b.textContent).join(", "));
+  flushSync(() => editExplorer.click());
+  await settle();
+  const dialog = document.querySelector('[role="dialog"]');
+  check(dialog, "builtin edit sheet did not open");
+  const nameInput = dialog.querySelector("input.field-input");
+  check(nameInput?.value === "Explorer" && nameInput.disabled, "builtin Name input should show Explorer and be disabled");
+  const sheetReset = [...dialog.querySelectorAll("button")].find((b) => b.textContent.includes("Restore default"));
+  check(sheetReset && sheetReset.disabled, "unedited builtin sheet Restore default button should start disabled");
+  const descArea = dialog.querySelector("textarea");
+  const setNativeValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+  flushSync(() => {
+    setNativeValue.call(descArea, "Custom explorer description.");
+    descArea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await settle();
+  check(!sheetReset.disabled, "Restore default button should enable once draft is modified");
+  const saveBtn = [...dialog.querySelectorAll("button")].find((b) => b.textContent.trim() === "Save");
+  flushSync(() => saveBtn.click());
+  await settle();
+  await settle();
+  check(!document.querySelector('[role="dialog"]'), "sheet did not close after saving builtin");
+  check(document.body.textContent.includes("Custom explorer description."), "customized description not rendered on builtin row");
+  check(document.body.textContent.includes("Modified"), "Modified badge not rendered on customized builtin row");
+  check(document.querySelectorAll(".agent-capability-row").length === 5, "customized builtin must stay in Built-in and not duplicate into Global");
+  const rowRestore = action("Restore Explorer to default");
+  check(rowRestore, "one-click Restore Explorer to default button missing on row");
+  flushSync(() => rowRestore.click());
+  await settle();
+  await settle();
+  check(!document.body.textContent.includes("Custom explorer description."), "restored builtin still shows customized description");
+  check(!document.body.textContent.includes("Modified"), "Modified badge still present after restore");
+  check(!action("Restore Explorer to default"), "restore button still present after restore");
+
   flushSync(() => rootNode.unmount());
   return { passed: true, saved };
 };

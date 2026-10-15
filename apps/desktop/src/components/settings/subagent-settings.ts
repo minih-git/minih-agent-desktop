@@ -6,12 +6,18 @@ import {
 import { api } from "../../lib/api";
 
 /**
- * One shipped default plus whether this installation still offers it.
+ * One shipped default plus whether this installation still offers it and
+ * whether `~/.agents/subagents/<name>.md` currently customizes it in place.
  *
- * A switched-off builtin stays in the list on purpose: it has no document to
- * delete, so its row and its switch are the only way back on.
+ * A switched-off or customized builtin stays in the list on purpose: editing
+ * adjusts the builtin in place, and one-click restore removes the override
+ * document to return to the factory definition.
  */
-export type BuiltinSubagentRow = SubagentDefinition & { enabled: boolean };
+export type BuiltinSubagentRow = SubagentDefinition & {
+  enabled: boolean;
+  customized?: boolean;
+  override?: UserSubagentRecord;
+};
 
 /** User-owned documents plus the shipped defaults, switched off ones included. */
 export type SubagentPageData = {
@@ -25,6 +31,58 @@ export const EMPTY_SUBAGENT_PAGE: SubagentPageData = {
 };
 
 /**
+ * Merge user-owned records with the shipped built-in catalog so that every
+ * built-in stays in `builtins` (with `customized` and `override` attached when
+ * `~/.agents/subagents/<handle>.md` exists) and `owned` lists only custom
+ * user-defined subagents.
+ */
+export function buildSubagentPageData(
+  owned: readonly UserSubagentRecord[],
+  catalogBuiltins: readonly (SubagentDefinition & { enabled: boolean })[],
+): SubagentPageData {
+  const shipped = fallbackBuiltinDefinitions();
+  const builtinHandles = new Set(shipped.map((item) => item.name));
+  const overrides = new Map<string, UserSubagentRecord>();
+  for (const row of owned) {
+    if (builtinHandles.has(row.id)) {
+      overrides.set(row.id, row);
+    }
+  }
+  const catalogByHandle = new Map(
+    catalogBuiltins
+      .filter((item) => item.source === "builtin")
+      .map((item) => [item.name, item]),
+  );
+  const builtins: BuiltinSubagentRow[] = shipped.map((shippedItem) => {
+    const item = catalogByHandle.get(shippedItem.name) ?? {
+      ...shippedItem,
+      enabled: true,
+    };
+    const override = overrides.get(item.name);
+    if (!override) {
+      return {
+        ...item,
+        customized: false,
+      };
+    }
+    return {
+      ...item,
+      description: override.description ?? item.description,
+      tools: override.tools,
+      enabled: override.enabled,
+      thinkingLevel: override.thinkingLevel ?? item.thinkingLevel,
+      maxTokens: override.maxTokens ?? item.maxTokens,
+      customized: true,
+      override,
+    };
+  });
+  return {
+    owned: owned.filter((row) => !builtinHandles.has(row.id)),
+    builtins,
+  };
+}
+
+/**
  * Settings lists two sources: the writable global registry, and the shipped
  * defaults `Task` offers. Catalog load failures must not hide the user list, so
  * builtins fall back to the shared preset catalog — reported enabled, because a
@@ -33,7 +91,6 @@ export const EMPTY_SUBAGENT_PAGE: SubagentPageData = {
 export async function fetchSubagentPageData(): Promise<SubagentPageData> {
   const ownedResult = await api.listUserSubagents({ level: "global" });
   const owned = ownedResult.subagents ?? [];
-  const enabledHandles = new Set(owned.filter((row) => row.enabled).map((row) => row.id));
   try {
     const catalog = await api.subagentCatalog();
     // Older main processes answer without `builtins`; derive the group from the
@@ -44,18 +101,11 @@ export async function fetchSubagentPageData(): Promise<SubagentPageData> {
       (catalog.subagents ?? [])
         .filter((item) => item.source === "builtin")
         .map((item) => ({ ...item, enabled: true }));
-    return {
-      owned,
-      builtins: builtins.filter(
-        (item) => item.source === "builtin" && !enabledHandles.has(item.name),
-      ),
-    };
+    return buildSubagentPageData(owned, builtins);
   } catch {
-    return {
+    return buildSubagentPageData(
       owned,
-      builtins: fallbackBuiltinDefinitions()
-        .map((item) => ({ ...item, enabled: true }))
-        .filter((item) => !enabledHandles.has(item.name)),
-    };
+      fallbackBuiltinDefinitions().map((item) => ({ ...item, enabled: true })),
+    );
   }
 }

@@ -1294,6 +1294,7 @@ sklm: {
     skillSaved: "{{name}} 저장됨",
     subagentCreated: "{{name}} 생성됨",
     subagentSaved: "{{name}} 저장됨",
+    subagentRestored: "{{name}} 기본값으로 복원됨",
     projectArchive: "프로젝트 보관함",
     remoteHosts: {
       title: "원격 호스트",
@@ -2682,6 +2683,9 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       thinkingMeta: "생각: {{level}}",
       providedTitle: "내장 및 프로젝트",
       sourceBuiltin: "내장",
+      customized: "수정됨",
+      resetBuiltin: "기본값 복원",
+      resetBuiltinOf: "{{name}} 기본값으로 복원",
       sourceProject: "프로젝트",
       name: "이름",
       nameHint: "소문자, 숫자 및 대시만 사용하세요 — 에이전트가 그대로 입력합니다.",

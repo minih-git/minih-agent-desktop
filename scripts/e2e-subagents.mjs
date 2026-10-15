@@ -395,6 +395,50 @@ try {
     merged2.diagnostics.length === 0,
     merged2.diagnostics.join(" / "),
   );
+  await call("agents.update", {
+    id: "explorer",
+    description: "Adjusted explorer.",
+    tools: ["Read", "Grep"],
+    body: "You are an adjusted explorer.\n",
+  });
+  const mergedEditedBuiltin = await loadSubagentDefinitions(projectB, {
+    userDocuments: await readActive(projectB),
+  });
+  const editedExplorer = mergedEditedBuiltin.definitions.find(
+    (definition) => definition.name === "explorer",
+  );
+  check(
+    "editing a customized builtin updates the active override while keeping the other builtins intact",
+    editedExplorer?.source === "user" &&
+      editedExplorer?.description === "Adjusted explorer." &&
+      JSON.stringify(editedExplorer?.tools) === JSON.stringify(["Read", "Grep"]) &&
+      mergedEditedBuiltin.builtins.length === builtinNames.length - 1,
+    JSON.stringify({
+      source: editedExplorer?.source,
+      description: editedExplorer?.description,
+      tools: editedExplorer?.tools,
+      builtins: mergedEditedBuiltin.builtins.length,
+    }),
+  );
+  await call("agents.remove", { id: "explorer" });
+  const mergedRestoredBuiltin = await loadSubagentDefinitions(projectB, {
+    userDocuments: await readActive(projectB),
+  });
+  const restoredExplorer = mergedRestoredBuiltin.definitions.find(
+    (definition) => definition.name === "explorer",
+  );
+  check(
+    "restoring a customized builtin removes the override document and restores the factory builtin",
+    !existsSync(join(agentsDir, "explorer.md")) &&
+      restoredExplorer?.source === "builtin" &&
+      JSON.stringify(restoredExplorer?.tools) ===
+        JSON.stringify(["Read", "Glob", "Grep", "Bash"]),
+    JSON.stringify({
+      exists: existsSync(join(agentsDir, "explorer.md")),
+      source: restoredExplorer?.source,
+      tools: restoredExplorer?.tools,
+    }),
+  );
 
   const broken = await loadSubagentDefinitions(null, {
     userDocuments: [{ id: "broken", document: "no frontmatter at all\n" }],

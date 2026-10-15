@@ -122,3 +122,21 @@ test("inherit grant helpers keep the inherit token out of the checkbox list", ()
   assert.match(editorSource, /inheritTools: grant\.inheritTools/);
   assert.match(editorSource, /SUBAGENT_INHERIT_TOKEN/);
 });
+
+test("builtin draft helpers preserve canonical handle and expose one-click restore in the sheet", () => {
+  const fromBuiltin = editorSource.match(
+    /export function draftFromBuiltin\([\s\S]+?\n\}/,
+  );
+  assert.ok(fromBuiltin, "draftFromBuiltin not found");
+  assert.match(fromBuiltin[0], /id: definition\.name/);
+  assert.match(fromBuiltin[0], /name: definition\.name/);
+  assert.match(fromBuiltin[0], /enabled: definition\.enabled \?\? true/);
+
+  const modified = editorSource.match(
+    /export function isBuiltinDraftModified\([\s\S]+?\n\}/,
+  );
+  assert.ok(modified, "isBuiltinDraftModified not found");
+  assert.match(modified[0], /const baseline = draftFromBuiltin\(builtin\)/);
+  assert.match(editorSource, /disabled=\{!!builtin\}/);
+  assert.match(editorSource, /extensions\.subagents\.resetBuiltin/);
+});

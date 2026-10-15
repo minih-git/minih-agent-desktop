@@ -653,18 +653,19 @@ system while preserving their different data ownership:
   picker because it is global-only, keeping only search and its actions.
   The panel still uses two in-panel groups: **Built-in** (the five shipped
   definitions `explorer`, `code-reviewer`, `test-runner`, `fixer`, and
-  `ui-designer`) and **Global** (`~/.agents/subagents`, user-owned). An enabled
-  user document of the same name shadows that builtin in the Task catalog, so
-  the Built-in row is omitted while the user row remains. A disabled user
-  document of the same name leaves the builtin in the catalog (and on the
-  Built-in list) because Task uses the shipped definition again. Built-in rows
-  carry a source badge, **Copy as mine** (opens the create sheet pre-filled from
-  that definition, with the matching template chip selected), and the same
+  `ui-designer`) and **Global** (`~/.agents/subagents`, custom user-owned
+  definitions). Built-in subagents always stay in the **Built-in** group:
+  editing a built-in opens the edit sheet in place (with its handle locked) and
+  saves a global override document at `~/.agents/subagents/<handle>.md`, marking
+  the row with a **Modified** badge (`extensions.subagents.customized`) and
+  exposing a one-click **Restore default** action (`extensions.subagents.resetBuiltin`)
+  on both the row and the edit sheet footer that deletes the override document
+  and returns the row to its factory definition. Built-in rows carry a source
+  badge, **Edit**, **Restore default** (when customized), and the same
   enablement switch a user row has (D202 activation, ADR 0270): turning one off
-  writes app-local state rather than a document, the row stays listed and dimmed
-  so the switch is still the way back on, and the next catalog load stops
-  offering it to `Task`. Reveal and delete remain absent because a builtin is
-  not a file.
+  updates app-local state (and syncs any on-disk override activation), the row
+  stays listed and dimmed so the switch is still the way back on, and the next
+  catalog load stops offering it to `Task`.
 - The level filter narrows which groups the panel renders; it never hides the
   toolbar or moves the actions. New capabilities are created at the level the
   filter points at — Global under All or Global, Project under Project — and
@@ -782,9 +783,10 @@ system while preserving their different data ownership:
   is a picker over the configured providers' models; the picker groups entries
   by provider and every option comes from the configured catalog, so there is
   no hand-typed pin entry (issue #60). With no providers configured it shows
-  an empty state whose action opens Models. A builtin keeps its Built-in row,
-  which is switched but never edited; the picker is for new and user-owned
-  subagents only.
+  an empty state whose action opens Models. Editing a built-in locks the Name
+  field to its localized display name and keeps its canonical handle (`explorer`,
+  `code-reviewer`, `test-runner`, `fixer`, `ui-designer`), while offering
+  **Restore default** in the sheet footer.
   The create/edit sheet stays compact at desktop sizes: form controls are
   local filled wells with restrained padding, the prompt editor is the only
   intentionally tall control, and Advanced remains a compact disclosure. Hover

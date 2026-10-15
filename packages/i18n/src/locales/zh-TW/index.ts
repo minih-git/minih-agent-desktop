@@ -1278,6 +1278,7 @@ sklm: {
     skillSaved: "已儲存 {{name}}",
     subagentCreated: "已新建 {{name}}",
     subagentSaved: "已儲存 {{name}}",
+    subagentRestored: "已復原 {{name}}",
     projectArchive: "專案歸檔",
     remoteHosts: {
       title: "遠端主機",
@@ -2642,6 +2643,9 @@ sklm: {
       thinkingMeta: "推理：{{level}}",
       providedTitle: "內建與專案",
       sourceBuiltin: "內建",
+      customized: "已修改",
+      resetBuiltin: "恢復預設",
+      resetBuiltinOf: "恢復 {{name}} 為預設定義",
       sourceProject: "專案",
       name: "名稱",
       nameHint: "小寫字母、數字和短橫線——主智慧體會原樣使用。",

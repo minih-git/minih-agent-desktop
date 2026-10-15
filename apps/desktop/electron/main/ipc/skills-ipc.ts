@@ -421,7 +421,17 @@ export function registerSkillsIpc({
     IPC.invoke.subagentSetBuiltinEnabled,
     async (payload: { id: string; enabled: boolean }) => {
       if (!host) throw new Error("host unavailable");
-      const res = await host.call("agents.setBuiltinEnabled", payload);
+      const res = await host.call<{ id?: string; enabled: boolean }>(
+        "agents.setBuiltinEnabled",
+        payload,
+      );
+      // If the user customized this builtin on disk (`~/.agents/subagents/<id>.md`),
+      // keep the document's activation in step so switching a customized builtin off
+      // also removes its override from `agents.active`.
+      await host.call("agents.setEnabled", {
+        id: res.id ?? payload.id,
+        enabled: payload.enabled,
+      });
       sendToRenderer(IPC.event.pluginChanged, { reason: "subagent" });
       return res;
     },
