@@ -1,50 +1,50 @@
 /**
- * Model configuration tab: AI services, Jev settings, image model selection,
- * and the models.dev enrichment snapshot status.
+ * The models settings page: the Minih Router row's chosen models as cards, an
+ * add-models dialog over the gateway catalog, per-model configuration (the
+ * shared binding editor, including the per-model protocol override), the
+ * image-generation default, and the models.dev enrichment snapshot status.
  *
- * API services, plugin-declared services and vendor subscription accounts
- * share one list (D625). An account row still lives and dies through the
- * vendor-account editor and `deleteOauthAccount`, never the provider CRUD.
- *
+ * Accounts — the token, endpoint, balance and the other providers — live on
+ * the accounts page; this page only reads the connected router row.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   isMinihRouterVendorKey,
-  MINIH_ROUTER_PRESET_ID,
-  vendorAccountImageCandidates,
+  publishedThinkingLevels,
+  sortThinkingLevels,
   type ImageGenerationBinding,
   type ModelBinding,
-  type ProviderPublic,
+  type ModelInfo,
 } from "@minih-agent/shared";
 import { useAppStore } from "../../stores/app-store";
 import { api } from "../../lib/api";
-import { Button } from "../ui";
+import { Badge, Button } from "../ui";
+import { IconConfig, IconPlus, IconServer } from "../icons";
 import {
-  IconConfig,
-  IconPlus,
-  IconServer,
-} from "../icons";
-import { providerServesChatModels } from "./default-model";
+  MINIH_ROUTER_API_STYLES,
+  API_STYLE_LABEL_KEYS,
+} from "./provider-api-style";
+import { ModelBindingFields } from "./ModelBindingFields";
+import { SettingsMenuSelect } from "./SettingsMenuSelect";
+import { AddModelsDialog } from "./AddModelsDialog";
+import { ModelConfigureDialog } from "./ModelConfigureDialog";
+import { MinihRouterModelCard } from "./MinihRouterModelCard";
+import { ImageGenerationModelRow } from "./ImageGenerationModelRow";
+import {
+  bindingAfterRemoval,
+  mergeAddedBindings,
+  planModelsSave,
+} from "./models-page-state";
+import {
+  customModelLookupInput,
+} from "./model-custom-lookup";
 import {
   imageGenerationPickerCandidates,
   isImageGenerationPickerCandidate,
-  planImageGenerationDefaults,
 } from "./image-generation-default";
-import { copyProviderConfiguration, type ProviderCopyDraft } from "./provider-copy";
-import { ImageGenerationModelRow } from "./ImageGenerationModelRow";
-import { OAuthLoginDialog } from "./OAuthLoginDialog";
-import { ProviderSetupDialog } from "./ProviderSetupDialog";
-import { ServiceList } from "./ServiceList";
-import { serviceRowKind } from "./service-row-status";
-import { useVendorAccounts } from "./useVendorAccounts";
-import { VendorAccountDialog, type VendorAccountForm } from "./VendorAccountDialog";
-import { ModelConfigImportPanel } from "../../features/settings/imports/ModelConfigImportPanel";
-import { ImportToggleButton } from "../../features/settings/import-workbench";
-import { JevSettingsCard } from "./JevSettingsCard";
-import { MinihRouterPanel } from "./MinihRouterPanel";
-import { JEV_SERVICE } from "./service-catalog";
-import { isPluginCatalogSetupForProvider } from "./provider-setup-mode";
+import { imageCandidates } from "./provider-list-helpers";
+import { useMinihRouterSelectedModels } from "./useMinihRouter";
 
 type CatalogStatus = {
   loaded: boolean;
@@ -56,77 +56,32 @@ type CatalogStatus = {
   lastError?: string;
 };
 
-const sameWireId = (left: string, right: string) => left.toLowerCase() === right.toLowerCase();
-
-/** Image candidates and chat choices are keyed by complete provider + wire id. */
-function imageCandidates(
-  candidates: readonly ImageGenerationBinding[] | null | undefined,
-  active: ImageGenerationBinding | null | undefined,
-): ImageGenerationBinding[] {
-  const source = candidates === undefined ? (active ? [active] : []) : candidates ?? [];
-  const result: ImageGenerationBinding[] = [];
-  for (const entry of source) {
-    if (!result.some((other) =>
-      other.providerId === entry.providerId && sameWireId(other.modelId, entry.modelId)
-    )) result.push(entry);
-  }
-  if (active && !result.some((entry) =>
-    entry.providerId === active.providerId && sameWireId(entry.modelId, active.modelId)
-  )) result.push(active);
-  return result;
-}
-
-function chatModelOptions(providers: readonly ProviderPublic[], imageModels: readonly ImageGenerationBinding[]) {
-  return providers.flatMap((provider) => {
-    const ids = provider.models?.length
-      ? provider.models.map((model) => model.id)
-      : [provider.defaultModelId ?? ""];
-    return ids.filter((id) => !!id.trim() && !isImageGenerationPickerCandidate(imageModels, provider.id, id))
-      .map((modelId) => ({ provider, modelId }));
-  });
-}
-
-
-export function ModelConfigPage() {
+export function ModelsPage() {
   const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? i18n.language;
   const providers = useAppStore((s) => s.providers);
   const settings = useAppStore((s) => s.settings);
   const refreshProviders = useAppStore((s) => s.refreshProviders);
   const showToast = useAppStore((s) => s.showToast);
+  const setSettingsTab = useAppStore((s) => s.setSettingsTab);
 
-  // null = closed, "" = add flow, provider id = edit flow.
-  const [copyDraft, setCopyDraft] = useState<ProviderCopyDraft | null>(null);
-  const [setupFor, setSetupFor] = useState<string | null>(null);
-  const [pluginCatalogSetup, setPluginCatalogSetup] = useState<{
-    providerId: string;
-    pluginName: string;
-  } | null>(null);
-
-  // The Jev card opens the same dialog, straight on the Jev service.
-  const [jevSetup, setJevSetup] = useState(false);
-  // The empty state's Minih Router action opens the dialog on that service.
-  const [routerSetup, setRouterSetup] = useState(false);
-  // Bumped when that dialog stored a key, so the card re-reads what exists.
-  const [jevStatusRevision, setJevStatusRevision] = useState(0);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [testingId, setTestingId] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [addOpen, setAddOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  /** The binding whose configure drawer is open, by wire id. */
+  const [configuringId, setConfiguringId] = useState<string | null>(null);
+  /** Draft edits while a drawer is open; saved as one list write. */
+  const [draftBindings, setDraftBindings] = useState<ModelBinding[] | null>(null);
+  /** Published models.dev record per chosen wire id, for display and seeding. */
+  const [publishedInfoById, setPublishedInfoById] = useState<Map<string, ModelInfo>>(new Map());
+  /**
+   * Image-model selection drafted in the configure dialog; `null` means the
+   * stored selection stands and the write plans no change of its own.
+   */
+  const [draftImageIds, setDraftImageIds] = useState<string[] | null>(null);
   const [changingImageModel, setChangingImageModel] = useState(false);
   const [refreshingCatalog, setRefreshingCatalog] = useState(false);
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const {
-    vendors,
-    accountFor,
-    login,
-    busyAccountId,
-    savingAccount,
-    startLogin,
-    finishLogin,
-    closeLogin,
-    removeAccount,
-    saveAccount,
-  } = useVendorAccounts();
-  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -140,128 +95,196 @@ export function ModelConfigPage() {
     })();
   }, []);
 
+  const routerProvider = useMemo(
+    () =>
+      providers.find(
+        (provider) => isMinihRouterVendorKey(provider.vendorKey) && provider.hasSecret,
+      ) ?? null,
+    [providers],
+  );
+
+  const chosenIds = useMemo(
+    () => routerProvider?.models.map((model) => model.id) ?? [],
+    [routerProvider?.models],
+  );
+  // The published record behind each chosen model: what the configure dialog
+  // shows (published limits, capability defaults, thinking ladder) and what a
+  // freshly added binding is seeded from. One read per id per revision.
+  useEffect(() => {
+    if (!routerProvider || chosenIds.length === 0) return;
+    let current = true;
+    const context = {
+      providerId: routerProvider.id,
+      vendorKey: routerProvider.vendorKey,
+      baseUrl: routerProvider.baseUrl,
+    };
+    void Promise.all(
+      chosenIds.map((id) =>
+        api.lookupProviderModel(customModelLookupInput(id, context))
+          .then((result) => [id.toLowerCase(), result.info] as const)
+          .catch(() => [id.toLowerCase(), null] as const),
+      ),
+    ).then((entries) => {
+      if (!current) return;
+      setPublishedInfoById(
+        new Map(entries.filter(([, info]) => info != null) as [string, ModelInfo][]),
+      );
+    });
+    return () => {
+      current = false;
+    };
+  }, [routerProvider, chosenIds, revision]);
+
+  const selected = useMinihRouterSelectedModels(routerProvider, chosenIds, revision);
+
+  /** The image-model ids this row designates today. */
+  const currentImageIds = useMemo(
+    () =>
+      (settings?.imageGenerationModels ?? [])
+        .filter((binding) => binding.providerId === routerProvider?.id)
+        .map((binding) => binding.modelId),
+    [settings?.imageGenerationModels, routerProvider?.id],
+  );
+
   const imageGenerationCandidates = useMemo(
-    () => imageCandidates([
-      ...imageCandidates(settings?.imageGenerationModels, settings?.imageGeneration),
-      // A signed-in vendor account serves its image model without listing it as
-      // a chat model, so it must reach this list or the picker row never renders.
-      ...vendorAccountImageCandidates(providers),
-    ], null),
+    () => imageCandidates(
+      settings?.imageGenerationModels,
+      settings?.imageGeneration,
+      providers,
+    ),
     [settings?.imageGenerationModels, settings?.imageGeneration, providers],
   );
-  const providerReady = (provider: ProviderPublic) =>
-    providerServesChatModels(provider, imageGenerationCandidates);
 
   if (!settings) return null;
 
-  const editingProvider =
-    setupFor ? providers.find((provider) => provider.id === setupFor) ?? null : null;
-  // Saved Minih Router rows with a token get the balance and model plaza panel.
-  const routerProviders = providers.filter(
-    (provider) => isMinihRouterVendorKey(provider.vendorKey) && provider.hasSecret,
-  );
-  const editingAccount = editingAccountId
-    ? providers.find((provider) => provider.id === editingAccountId) ?? null
-    : null;
-  /**
-   * Preserve the selected app defaults unless they were removed from the
-   * provider or no longer resolve, and let a newly added provider claim a
-   * default only while none resolves.
-   */
-  const afterSaved = async (
-    saved: ProviderPublic,
-    models: ModelBinding[],
-    imageModelIds?: string[],
+  const isDefaultModel = (binding: ModelBinding) =>
+    settings.defaultProviderId === routerProvider?.id &&
+    (settings.defaultModelId ?? "").toLowerCase() === binding.id.toLowerCase();
+
+  /** One write path for every binding-list change this page makes. */
+  const saveBindings = async (
+    nextBindings: ModelBinding[],
+    successKey: string,
+    imageModelIds?: readonly string[],
   ) => {
-    const selectedImageIds = imageModelIds ?? imageGenerationCandidates
-      .filter((entry) => entry.providerId === saved.id)
-      .map((entry) => entry.modelId);
-    const firstModelId = models.find((model) =>
-      !selectedImageIds.some((id) => sameWireId(id, model.id)),
-    )?.id;
-    const replacementChatModelId =
-      settings.defaultProviderId === saved.id && firstModelId &&
-      !models.some((model) => sameWireId(model.id, settings.defaultModelId ?? "") &&
-        !selectedImageIds.some((id) => sameWireId(id, model.id)))
-    ? firstModelId
-    : undefined;
+    if (!routerProvider) return;
+    setSaving(true);
     try {
-      if (pluginCatalogSetup?.providerId === saved.id) {
-        const defaultsProviders = [...providers.filter((provider) => provider.id !== saved.id), saved];
-        const currentDefault = defaultsProviders.find(
-          (provider) => provider.id === settings.defaultProviderId,
-        );
-        const keepsCurrentDefault = !!currentDefault &&
-          providerServesChatModels(currentDefault, imageGenerationCandidates) &&
-          chatModelOptions([currentDefault], imageGenerationCandidates).some(
-            ({ modelId }) => sameWireId(modelId, settings.defaultModelId ?? ""),
-          );
-        if (!keepsCurrentDefault && firstModelId) {
-          const nextSettings = {
-            ...settings,
-            defaultProviderId: saved.id,
-            defaultModelId: firstModelId,
-          };
-          await api.setSettings(nextSettings);
-          useAppStore.setState({ settings: nextSettings });
-        }
-        showToast(t("settings.pluginProviderKeySaved"), { variant: "success" });
-      } else if (imageModelIds !== undefined) {
-        const current = await api.getSettings();
-        const plan = planImageGenerationDefaults(
-          current,
-          saved.id,
-          imageModelIds,
-          [...providers.filter((provider) => provider.id !== saved.id), saved],
-          current.imageGeneration?.providerId === saved.id &&
-            (!imageModelIds.some((id) => sameWireId(id, current.imageGeneration?.modelId ?? "")) ||
-              !models.some((model) => sameWireId(model.id, current.imageGeneration?.modelId ?? ""))),
-        );
-        const nextSettings = {
-          ...current,
-          ...plan,
-          ...(replacementChatModelId ? { defaultModelId: replacementChatModelId } : {}),
-        };
+      // Re-read settings: another window or agent may have moved defaults.
+      const current = await api.getSettings();
+      const plan = planModelsSave(routerProvider, nextBindings, current, providers, imageModelIds);
+      await api.updateProvider(plan.provider);
+      if (plan.settings) {
+        const nextSettings = { ...current, ...plan.settings };
         await api.setSettings(nextSettings);
         useAppStore.setState({ settings: nextSettings });
-        showToast(t(editingProvider ? "settings.providerUpdated" : "settings.providerSaved"), {
-          variant: "success",
-        });
-      } else if (copyDraft) {
-        showToast(t("settings.providerSaved"), { variant: "success" });
-      } else if (!editingProvider) {
-        // A freshly added provider must not take over the app default: whatever
-        // the user already picked keeps running — as long as that default's own
-        // provider is still runnable — until they change it themselves.
-        const currentProvider = providers.find((provider) => provider.id === settings.defaultProviderId);
-        const keepsCurrentDefault = !!currentProvider && providerReady(currentProvider) &&
-          chatModelOptions([currentProvider], imageGenerationCandidates).some(
-            ({ modelId }) => sameWireId(modelId, settings.defaultModelId ?? ""),
-          );
-        if (!keepsCurrentDefault && firstModelId) {
-          await api.setSettings({
-            ...settings,
-            defaultProviderId: saved.id,
-            defaultModelId: firstModelId ?? "",
-          });
-        }
-        showToast(t("settings.providerSaved"), { variant: "success" });
-      } else {
-        if (replacementChatModelId) {
-          await api.setSettings({ ...settings, defaultModelId: replacementChatModelId });
-        }
-        showToast(t("settings.providerUpdated"), { variant: "success" });
       }
-      setSetupFor(null);
-      setCopyDraft(null);
-      setPluginCatalogSetup(null);
-      setRouterSetup(false);
       await refreshProviders();
+      setRevision((value) => value + 1);
+      showToast(t(successKey), { variant: "success" });
     } catch (error) {
-      showToast(error instanceof Error ? error.message : String(error), {
-        variant: "error",
-      });
+      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
+    } finally {
+      setSaving(false);
     }
+  };
+
+  const addModels = async (models: Parameters<typeof mergeAddedBindings>[1]) => {
+    if (!routerProvider) return;
+    setAddOpen(false);
+    // The same auto-configuration the service dialog applied: the published
+    // record seeds limits, thinking and capabilities when models.dev describes
+    // the id, so a freshly added model is usable without manual tuning.
+    const context = {
+      providerId: routerProvider.id,
+      vendorKey: routerProvider.vendorKey,
+      baseUrl: routerProvider.baseUrl,
+    };
+    const entries = await Promise.all(
+      models.map(async (model) => {
+        try {
+          const result = await api.lookupProviderModel(
+            customModelLookupInput(model.id, context),
+          );
+          return [model.id.toLowerCase(), result.info ?? null] as const;
+        } catch {
+          return [model.id.toLowerCase(), null] as const;
+        }
+      }),
+    );
+    const infoById = new Map(entries);
+    setPublishedInfoById((current) => {
+      const next = new Map(current);
+      for (const [id, info] of entries) if (info) next.set(id, info);
+      return next;
+    });
+    await saveBindings(
+      mergeAddedBindings(routerProvider.models, models, (model) =>
+        infoById.get(model.id.toLowerCase()),
+      ),
+      "settings.modelsAddedToast",
+    );
+  };
+
+  /** The row's global protocol: what every per-model "follow global" reads. */
+  const setGlobalApiStyle = async (style: string) => {
+    if (!routerProvider) return;
+    setSaving(true);
+    try {
+      await api.updateProvider({ id: routerProvider.id, apiStyle: style });
+      await refreshProviders();
+      showToast(t("settings.providerUpdated"), { variant: "success" });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeModel = async (binding: ModelBinding) => {
+    if (!routerProvider) return;
+    if (configuringId === binding.id) setConfiguringId(null);
+    await saveBindings(
+      bindingAfterRemoval(routerProvider.models, binding.id),
+      "settings.modelRemovedToast",
+    );
+  };
+
+  const updateBinding = (id: string, patch: Partial<ModelBinding>) => {
+    // Local draft only; the drawer's Save writes the whole list once.
+    setDraftBindings((current) =>
+      (current ?? routerProvider?.models ?? []).map((binding) =>
+        binding.id === id ? { ...binding, ...patch } : binding,
+      ),
+    );
+  };
+
+  const effectiveBindings = draftBindings ?? routerProvider?.models ?? [];
+  /** The published thinking ladder for one chosen id, in canonical order. */
+  const publishedLevelsFor = (id: string) =>
+    sortThinkingLevels(
+      publishedThinkingLevels(publishedInfoById.get(id.toLowerCase()) ?? undefined),
+    );
+  const configuredBinding = configuringId
+    ? effectiveBindings.find(
+        (binding) => binding.id.toLowerCase() === configuringId.toLowerCase(),
+      ) ?? null
+    : null;
+
+  const saveConfigured = async () => {
+    if (!configuredBinding || draftBindings === null) {
+      setConfiguringId(null);
+      setDraftBindings(null);
+      return;
+    }
+    const nextBindings = routerProvider?.models.map((binding) =>
+      binding.id === configuredBinding.id ? configuredBinding : binding,
+    ) ?? [];
+    const imageModelIds = draftImageIds ?? undefined;
+    setConfiguringId(null);
+    setDraftBindings(null);
+    setDraftImageIds(null);
+    await saveBindings(nextBindings, "settings.modelConfiguredToast", imageModelIds);
   };
 
   const setImageGenerationDefault = async (binding: ImageGenerationBinding) => {
@@ -277,12 +300,10 @@ export function ModelConfigPage() {
         providers,
       );
       if (!isImageGenerationPickerCandidate(candidates, binding.providerId, binding.modelId)) {
-        // The row offered this binding when it rendered, but the settings read
-        // above no longer lists it: another window, another agent or a
-        // concurrent provider edit changed the candidates in between. Report
-        // the refusal instead of returning silently — a pick that keeps the
-        // previous default with no message reads as a broken menu, and the
-        // runtime would reject the binding on the next request anyway.
+        // The row offered this binding when it rendered, but the read above no
+        // longer lists it: another window, another agent or a concurrent
+        // provider edit changed the candidates in between. Report the refusal
+        // instead of silently keeping the previous default.
         showToast(t("settings.imageModelSaveFailed"), { variant: "error" });
         return;
       }
@@ -291,97 +312,9 @@ export function ModelConfigPage() {
       useAppStore.setState({ settings: nextSettings });
       showToast(t("settings.imageModelSelected"), { variant: "success" });
     } catch (error) {
-      showToast(error instanceof Error ? error.message : String(error), {
-        variant: "error",
-      });
+      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
     } finally {
       setChangingImageModel(false);
-    }
-  };
-
-  const toggleEnabled = async (provider: ProviderPublic) => {
-    setBusyId(provider.id);
-    try {
-      await api.updateProvider({ id: provider.id, enabled: !provider.enabled });
-      await refreshProviders();
-      showToast(
-        t(provider.enabled ? "settings.providerDisabled" : "settings.providerEnabled"),
-        { variant: "success" },
-      );
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : String(error), {
-        variant: "error",
-      });
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const removeProvider = async (provider: ProviderPublic) => {
-    setBusyId(provider.id);
-    try {
-      await api.deleteProvider(provider.id);
-      await refreshProviders();
-      showToast(t("settings.providerRemoved"), { variant: "success" });
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : String(error), {
-        variant: "error",
-      });
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  /** Resolves true once the key is stored, so the row can close its entry. */
-  const saveProviderKey = async (provider: ProviderPublic, value: string) => {
-    setBusyId(provider.id);
-    try {
-      await api.setProviderSecret({ id: provider.id, secretValue: value });
-      await refreshProviders();
-      showToast(
-        t(value.trim() ? "settings.pluginProviderKeySaved" : "settings.pluginProviderKeyRemoved"),
-        { variant: "success" },
-      );
-      return true;
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : String(error), {
-        variant: "error",
-      });
-      return false;
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const saveEditingAccount = async (provider: ProviderPublic, form: VendorAccountForm) => {
-    if (await saveAccount(provider, form)) setEditingAccountId(null);
-  };
-
-  const testProvider = async (provider: ProviderPublic) => {
-    setTestingId(provider.id);
-    try {
-      const result = (await api.testProvider(provider.id)) as {
-        ok?: boolean;
-        message?: string;
-        status?: number;
-      };
-      if (result?.ok) {
-        showToast(t("settings.testOk"), { variant: "success" });
-      } else {
-        showToast(
-          result?.message ||
-            (result?.status
-              ? t("settings.testFailedStatus", { status: result.status })
-              : t("settings.testFailed")),
-          { variant: "error" },
-        );
-      }
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : String(error), {
-        variant: "error",
-      });
-    } finally {
-      setTestingId(null);
     }
   };
 
@@ -399,9 +332,7 @@ export function ModelConfigPage() {
         });
       }
     } catch (error) {
-      showToast(error instanceof Error ? error.message : String(error), {
-        variant: "error",
-      });
+      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
     } finally {
       setRefreshingCatalog(false);
     }
@@ -417,117 +348,173 @@ export function ModelConfigPage() {
       )
     : "";
 
+  const modelApiStyleOptions = MINIH_ROUTER_API_STYLES.map((style) => ({
+    id: style,
+    label: t(API_STYLE_LABEL_KEYS[style]),
+  }));
+
   return (
-    <div className="settings-stack model-config-page">
+    <div className="settings-stack models-page">
       <section className="settings-card-block">
         <div className="model-config-section-head">
           <div className="settings-card-heading-line">
-            <h3 className="settings-card-heading">{t("settings.providers")}</h3>
-            {providers.length > 0 ? (
-              <span className="provider-section-count">{providers.length}</span>
+            <h3 className="settings-card-heading">{t("settings.modelsPageTitle")}</h3>
+            {chosenIds.length > 0 ? (
+              <span className="provider-section-count">{chosenIds.length}</span>
             ) : null}
           </div>
           <div className="provider-section-head-actions">
-            <ImportToggleButton
-              open={importOpen}
-              controls="model-config-import-panel"
-              label={t("settings.importTitle")}
-              onClick={() => setImportOpen((current) => !current)}
-            />
             <Button
               variant="primary"
               className="model-provider-add"
-              onClick={() => setSetupFor("")}
+              disabled={!routerProvider || saving}
+              onClick={() => setAddOpen(true)}
             >
               <span className="model-config-btn-inner">
                 <IconPlus size={14} />
-                <span>{t("settings.addProvider")}</span>
+                <span>{t("settings.addModelsTitle")}</span>
               </span>
             </Button>
           </div>
         </div>
 
-        <div
-          id="model-config-import-panel"
-          className="import-inline-workbench"
-          hidden={!importOpen}
-        >
-          <ModelConfigImportPanel />
-        </div>
+        {routerProvider ? (
+          <div className="settings-row model-default-row models-global-style-row">
+            <div className="settings-row-copy model-default-copy">
+              <div className="settings-row-title model-default-label">
+                {t("settings.apiStyle")}
+              </div>
+              <div className="settings-row-detail model-default-value">
+                {t("settings.minihRouterApiStyleHint")}
+              </div>
+            </div>
+            <SettingsMenuSelect
+              className="models-global-style-select"
+              label={t("settings.apiStyle")}
+              value={routerProvider.apiStyle ?? "chat_completions"}
+              disabled={saving}
+              onChange={(id) => void setGlobalApiStyle(id)}
+              options={modelApiStyleOptions.map((style) => ({ ...style }))}
+            />
+          </div>
+        ) : null}
 
         <div className="settings-panel model-provider-panel">
-          {providers.length === 0 ? (
+          {!routerProvider ? (
             <div className="model-provider-empty">
               <div className="model-provider-empty-icon" aria-hidden>
                 <IconServer size={18} />
               </div>
-              <div className="model-provider-empty-title">{t("settings.noProviders")}</div>
-              <div className="model-provider-empty-desc">{t("settings.minihRouterEmptyDesc")}</div>
+              <div className="model-provider-empty-title">
+                {t("settings.modelsNoAccountTitle")}
+              </div>
+              <div className="model-provider-empty-desc">
+                {t("settings.modelsNoAccountDesc")}
+              </div>
               <div className="model-provider-empty-actions">
-                <Button
-                  variant="primary"
-                  onClick={() => {
-                    setRouterSetup(true);
-                    setSetupFor("");
-                  }}
-                >
+                <Button variant="primary" onClick={() => setSettingsTab("accounts")}>
                   <span className="model-config-btn-inner">
-                    <IconPlus size={14} />
-                    <span>{t("settings.minihRouterConnect")}</span>
+                    <span>{t("settings.modelsGoToAccounts")}</span>
                   </span>
                 </Button>
-                <Button variant="secondary" onClick={() => setSetupFor("")}>
+              </div>
+            </div>
+          ) : chosenIds.length === 0 ? (
+            <div className="model-provider-empty">
+              <div className="model-provider-empty-title">
+                {t("settings.modelsEmptyTitle")}
+              </div>
+              <div className="model-provider-empty-desc">
+                {t("settings.modelsEmptyDesc")}
+              </div>
+              <div className="model-provider-empty-actions">
+                <Button variant="primary" onClick={() => setAddOpen(true)}>
                   <span className="model-config-btn-inner">
-                    <span>{t("settings.addProvider")}</span>
+                    <IconPlus size={14} />
+                    <span>{t("settings.addModelsTitle")}</span>
                   </span>
                 </Button>
               </div>
             </div>
           ) : (
-            <ServiceList
-              providers={providers}
-              accountFor={accountFor}
-              busy={
-                busyId !== null ||
-                testingId !== null ||
-                setupFor !== null ||
-                editingAccountId !== null ||
-                busyAccountId !== null ||
-                savingAccount ||
-                login !== null
-              }
-              isRowBusy={(id) => busyId === id || testingId === id || busyAccountId === id}
-              testingId={testingId}
-              onEdit={(provider) =>
-                serviceRowKind(provider) === "account"
-                  ? setEditingAccountId(provider.id)
-                  : setSetupFor(provider.id)
-              }
-              onTest={(provider) => void testProvider(provider)}
-              onCopy={(provider) => {
-                setCopyDraft(
-                  copyProviderConfiguration(
-                    provider,
-                    t("settings.copyProviderName", { name: provider.name }),
-                  ),
-                );
-                setSetupFor("");
-              }}
-              onToggleEnabled={(provider) => void toggleEnabled(provider)}
-              onRemove={(provider) =>
-                void (serviceRowKind(provider) === "account"
-                  ? removeAccount(provider)
-                  : removeProvider(provider))
-              }
-              onSaveKey={saveProviderKey}
-            />
+            <>
+              {selected.state === "loading" && selected.data.length === 0 ? (
+                <p className="minih-router-status">{t("settings.minihRouterLoading")}</p>
+              ) : null}
+              <ul className="minih-router-model-grid models-chosen-grid" data-model-section="chosen">
+                {routerProvider.models.map((binding) => {
+                  const plaza = selected.data.find(
+                    (entry) => entry.model.id.toLowerCase() === binding.id.toLowerCase(),
+                  );
+                  return (
+                    <li
+                      key={binding.id}
+                      className="models-chosen-card"
+                      data-model-id={binding.id}
+                    >
+                      {plaza ? (
+                        <MinihRouterModelCard
+                          model={plaza.model}
+                          locale={locale}
+                          unpricedLabel={
+                            plaza.priced ? undefined : t("settings.minihRouterSelectedUnpriced")
+                          }
+                        />
+                      ) : (
+                        <div className="models-chosen-fallback">
+                          <span className="minih-router-model-vendor">
+                            {t("settings.minihRouterSelectedUnpriced")}
+                          </span>
+                          <div className="minih-router-model-name">
+                            <code title={binding.id}>{binding.id}</code>
+                          </div>
+                        </div>
+                      )}
+                      <div className="models-chosen-card-actions">
+                        {isDefaultModel(binding) ? (
+                          <Badge tone="success">{t("settings.modelsDefaultBadge")}</Badge>
+                        ) : null}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setDraftBindings(null);
+                            setConfiguringId(binding.id);
+                          }}
+                        >
+                          {t("settings.modelsConfigure")}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={saving}
+                          onClick={() => void removeModel(binding)}
+                        >
+                          {t("settings.removeModel")}
+                        </Button>
+                      </div>
+
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
           )}
         </div>
       </section>
 
-      {routerProviders.map((provider) => (
-        <MinihRouterPanel key={provider.id} provider={provider} />
-      ))}
+      {imageGenerationCandidates.length > 0 ? (
+        <section className="settings-card-block">
+          <div className="settings-panel model-default-panel">
+            <ImageGenerationModelRow
+              settings={settings}
+              providers={providers}
+              busy={changingImageModel}
+              onChange={setImageGenerationDefault}
+            />
+          </div>
+        </section>
+      ) : null}
 
       <div className="model-catalog-status">
         <span className="model-catalog-status-text">
@@ -536,9 +523,7 @@ export function ModelConfigPage() {
                 source: catalogSourceLabel,
                 models: catalogStatus.modelCount,
                 fetchedAt: catalogStatus.fetchedAt
-                  ? new Date(catalogStatus.fetchedAt).toLocaleString(
-                      i18n.resolvedLanguage ?? i18n.language,
-                    )
+                  ? new Date(catalogStatus.fetchedAt).toLocaleString(locale)
                   : t("settings.catalogNeverFetched"),
               })
             : t("settings.catalogStatusUnknown")}
@@ -560,97 +545,44 @@ export function ModelConfigPage() {
         </Button>
       </div>
 
-      <JevSettingsCard
-        settings={settings}
-        onConfigure={() => {
-          setJevSetup(true);
-          setSetupFor("");
-        }}
-        statusRevision={jevStatusRevision}
-      />
-
-      {imageGenerationCandidates.length > 0 ? (
-        <section className="settings-card-block">
-          <div className="settings-panel model-default-panel">
-            <ImageGenerationModelRow
-              settings={settings}
-              providers={providers}
-              busy={changingImageModel}
-              onChange={setImageGenerationDefault}
-            />
-          </div>
-        </section>
-      ) : null}
-
-      {setupFor !== null ? (
-        <ProviderSetupDialog
-          key={setupFor}
-          provider={editingProvider}
-          pluginCatalogSetup={isPluginCatalogSetupForProvider(
-            pluginCatalogSetup,
-            editingProvider,
+      {configuredBinding && routerProvider ? (
+        <ModelConfigureDialog
+          binding={configuredBinding}
+          info={publishedInfoById.get(configuredBinding.id.toLowerCase())}
+          publishedLevels={publishedLevelsFor(configuredBinding.id)}
+          saving={saving}
+          imageModelSelected={(draftImageIds ?? currentImageIds).some((id) =>
+            id.toLowerCase() === configuredBinding.id.toLowerCase(),
           )}
-          pluginCatalogPluginName={pluginCatalogSetup?.pluginName}
-          initialDraft={copyDraft}
-          initialService={jevSetup ? JEV_SERVICE : routerSetup ? MINIH_ROUTER_PRESET_ID : undefined}
-          onClose={() => {
-            setSetupFor(null);
-            setCopyDraft(null);
-            setPluginCatalogSetup(null);
-            setJevSetup(false);
-            setRouterSetup(false);
-          }}
-          imageModelIds={editingProvider
-            ? imageGenerationCandidates
-                .filter((binding) => binding.providerId === editingProvider.id)
-                .map((binding) => binding.modelId)
-            : undefined}
-          onSaved={afterSaved}
-          onJevConfigured={() => {
-            setSetupFor(null);
-            setCopyDraft(null);
-            setJevSetup(false);
-            // The card is already mounted: tell it the key it read has changed.
-            setJevStatusRevision((revision) => revision + 1);
-          }}
-          vendors={vendors}
-          onPickSubscription={(vendor) => {
-            setSetupFor(null);
-            setCopyDraft(null);
-            setPluginCatalogSetup(null);
-            // Started here, not in the dialog: a click happens once, where
-            // StrictMode would run a mount effect twice and open two browsers.
-            startLogin(vendor);
-          }}
-          onPickPluginProvider={(providerId, pluginName) => {
-            setPluginCatalogSetup({ providerId, pluginName });
-            setCopyDraft(null);
-            setJevSetup(false);
-            setSetupFor(providerId);
-          }}
-        />
-      ) : null}
-
-      {editingAccount ? (
-        <VendorAccountDialog
-          provider={editingAccount}
-          initialName={
-            accountFor(editingAccount.id)?.account.accountLabel ||
-            editingAccount.oauthAccountLabel ||
-            editingAccount.name
+          onImageModelChange={(id, selected) =>
+            setDraftImageIds((current) => {
+              const base = current ?? currentImageIds;
+              return selected
+                ? base.some((entry) => entry.toLowerCase() === id.toLowerCase())
+                  ? base
+                  : [...base, id]
+                : base.filter((entry) => entry.toLowerCase() !== id.toLowerCase());
+            })
           }
-          saving={savingAccount}
-          onClose={() => setEditingAccountId(null)}
-          onSave={(form) => void saveEditingAccount(editingAccount, form)}
+          apiStyleOptions={modelApiStyleOptions}
+          globalApiStyle={routerProvider.apiStyle ?? "chat_completions"}
+          onClose={() => {
+            setConfiguringId(null);
+            setDraftBindings(null);
+            setDraftImageIds(null);
+          }}
+          onSave={() => void saveConfigured()}
+          onChange={(patch) => updateBinding(configuredBinding.id, patch)}
         />
       ) : null}
 
-      {login ? (
-        <OAuthLoginDialog
-          vendor={login.vendor}
-          session={login.session}
-          onDone={finishLogin}
-          onClose={closeLogin}
+      {addOpen && routerProvider ? (
+        <AddModelsDialog
+          providerId={routerProvider.id}
+          configuredIds={chosenIds}
+          busy={saving}
+          onClose={() => setAddOpen(false)}
+          onConfirm={(models) => void addModels(models)}
         />
       ) : null}
     </div>

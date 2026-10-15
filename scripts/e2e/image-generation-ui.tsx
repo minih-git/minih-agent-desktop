@@ -4,7 +4,7 @@ import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { catalogs } from "@minih-agent/i18n";
 import type { AppSettings, ProviderPublic, UiMessage } from "@minih-agent/shared";
-import { ModelConfigPage } from "../../apps/desktop/src/components/settings/ModelConfigPage";
+import { AccountsPage } from "../../apps/desktop/src/components/settings/AccountsPage";
 import { GeneratedImages } from "../../apps/desktop/src/features/chat/transcript/GeneratedImages";
 import { Markdown } from "../../apps/desktop/src/components/Markdown";
 import { api } from "../../apps/desktop/src/lib/api";
@@ -33,6 +33,7 @@ globalThis.imageGenerationProbe = async () => {
     resources: { en: { translation: catalogs.en }, "zh-CN": { translation: catalogs["zh-CN"] } },
   });
   let settings = {
+    developerMode: true, // The AI-service list is developer-only surface now.
     defaultMode: "agent",
     defaultProviderId: "chat",
     defaultModelId: "chat-model",
@@ -99,7 +100,7 @@ globalThis.imageGenerationProbe = async () => {
     flushSync(() =>
       root.render(
         <I18nextProvider i18n={i18n}>
-          {message ? <GeneratedImages message={message} /> : <ModelConfigPage />}
+          {message ? <GeneratedImages message={message} /> : <AccountsPage />}
         </I18nextProvider>,
       ),
     );
@@ -108,6 +109,11 @@ globalThis.imageGenerationProbe = async () => {
     flushSync(() => element!.click());
   };
   // A service row opens its own editor (D625); without a name, the first row.
+  const openOtherProviders = () => {
+    const disclosure = container.querySelector<HTMLDetailsElement>(".other-providers-section details");
+    if (disclosure && !disclosure.open) flushSync(() => { disclosure.open = true; });
+  };
+  openOtherProviders();
   const editProvider = (name?: string) =>
     click([...container.querySelectorAll<HTMLElement>(".model-provider-row")].find(
       (element) => !name || element.querySelector(".model-provider-row-name")?.textContent === name,

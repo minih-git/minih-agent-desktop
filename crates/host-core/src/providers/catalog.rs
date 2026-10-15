@@ -8,6 +8,20 @@ pub(crate) const PROVIDER_SELECT: &str =
 pub(crate) const CANONICAL_THINKING_LEVELS: &[&str] =
     &["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const THINKING_PROTOCOLS: &[&str] = &["legacy", "adaptive"];
+
+/// Wire styles a model binding may pin. Mirrors the `apiStyle` enum of the
+/// provider config schema; an unknown value is dropped so the model falls back
+/// to the provider row's own global style.
+const MODEL_API_STYLES: &[&str] = &[
+    "chat_completions",
+    "opencode_go",
+    "responses",
+    "anthropic_messages",
+    "google_generative_ai",
+    "openai_codex_responses",
+    "pi_messages",
+];
+
 /// Recognised per-limit provenance markers. Anything else is dropped so a
 /// row always falls back to the documented rule instead of a third state no
 /// reader understands.
@@ -50,6 +64,12 @@ pub(crate) fn normalize_model_bindings(bindings: &[ModelBinding]) -> Vec<ModelBi
                 .filter(|level| default_thinking_level_allowed(level, &thinking_levels))
                 .map(str::to_string)
                 .or_else(|| thinking_levels.first().cloned());
+            let api_style = binding
+                .api_style
+                .as_deref()
+                .map(str::trim)
+                .filter(|style| MODEL_API_STYLES.contains(style))
+                .map(str::to_string);
             Some(ModelBinding {
                 id: id.to_string(),
                 alias: binding
@@ -81,6 +101,7 @@ pub(crate) fn normalize_model_bindings(bindings: &[ModelBinding]) -> Vec<ModelBi
                 supports_documents: binding.supports_documents,
                 available_for_subagents: binding.available_for_subagents,
                 native_web_search: binding.native_web_search,
+                api_style,
             })
         })
         .collect()
@@ -104,6 +125,7 @@ fn legacy_model_binding(model_id: Option<String>) -> Vec<ModelBinding> {
                 supports_documents: None,
                 available_for_subagents: None,
                 native_web_search: None,
+                api_style: None,
             }]
         })
         .unwrap_or_default()
@@ -490,6 +512,7 @@ mod tests {
             supports_documents: None,
             available_for_subagents: None,
             native_web_search: None,
+            api_style: None,
         }
     }
 

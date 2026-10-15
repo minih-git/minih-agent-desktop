@@ -15,6 +15,10 @@ const settingsSearchSource = await readFile(
   "utf8",
 );
 const providersSource = await readFile(
+  new URL("../src/components/settings/OtherProvidersSection.tsx", import.meta.url),
+  "utf8",
+);
+const modelsPageSource = await readFile(
   new URL("../src/components/settings/ModelConfigPage.tsx", import.meta.url),
   "utf8",
 );
@@ -270,8 +274,8 @@ test("date copy follows the active application locale", () => {
     /new Intl\.DateTimeFormat\(locale \|\| undefined/,
   );
   assert.match(
-    providersSource,
-    /toLocaleString\(\s*i18n\.resolvedLanguage \?\? i18n\.language/s,
+    modelsPageSource,
+    /new Date\(catalogStatus\.fetchedAt\)\.toLocaleString\(locale\)/,
   );
 });
 
@@ -288,6 +292,9 @@ test("model configuration keeps model defaults; AI owns app behavior defaults", 
   assert.doesNotMatch(providersSource, /enterToSend/);
   assert.doesNotMatch(providersSource, /settings\.modeAgent/);
   assert.doesNotMatch(providersSource, /EnhancementModelCard/);
+  // The models page shows which model is the app default without owning a
+  // second way to change provider defaults.
+  assert.match(modelsPageSource, /settings\.modelsDefaultBadge/);
 });
 
 
@@ -468,6 +475,7 @@ test("settings nav keeps a flat searchable index with titled visual groups", () 
 test("settings rail uses short parallel labels and descriptive page titles", () => {
   const navKeys = [
     "settings.nav.general",
+    "settings.nav.accounts",
     "settings.nav.ai",
     "settings.nav.shortcuts",
     "settings.nav.instructions",
@@ -485,7 +493,10 @@ test("settings rail uses short parallel labels and descriptive page titles", () 
     assert.match(zhTWLocaleSource, new RegExp(`${key.split(".").at(-1)}:`));
     assert.match(trLocaleSource, new RegExp(`${key.split(".").at(-1)}:`));
   }
-  assert.match(settingsSearchSource, /titleKey: "settings\.configuration"/);
+  // Both agent-group pages name themselves: accounts own the credentials,
+  // models own the chosen models.
+  assert.match(settingsSearchSource, /titleKey: "settings\.accounts"/);
+  assert.match(settingsSearchSource, /titleKey: "settings\.modelsPageTitle"/);
   assert.match(settingsSearchSource, /titleKey: "settings\.projectArchive"/);
   assert.match(settingsPageSource, /activeTitleKey/);
   assert.match(settingsPageSource, /titleKey: entry\.titleKey/);

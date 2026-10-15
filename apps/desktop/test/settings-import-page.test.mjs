@@ -8,7 +8,7 @@ const here = new URL(".", import.meta.url);
 const read = (path) => readFileSync(fileURLToPath(new URL(path, here)), "utf8");
 const settingsPage = read("../src/features/settings/SettingsPage.tsx");
 const settingsSearch = read("../src/lib/settings-search.ts");
-const modelPage = read("../src/components/settings/ModelConfigPage.tsx");
+const modelPage = read("../src/components/settings/OtherProvidersSection.tsx");
 const skillsPage = read("../src/components/settings/AgentSkillsPage.tsx");
 const mcpPage = read("../src/components/settings/AgentMcpPage.tsx");
 const modelImport = read("../src/features/settings/imports/ModelConfigImportPanel.tsx");

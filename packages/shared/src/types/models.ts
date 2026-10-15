@@ -254,6 +254,13 @@ export type ModelBinding = {
    * knowledge of the endpoint is the only source.
    */
   nativeWebSearch?: boolean;
+  /**
+   * Per-model wire protocol override. Absent follows the provider row's own
+   * `apiStyle` (the global configuration); an explicit value is sent for
+   * requests naming this model, so one gateway row can serve models that
+   * speak different wire APIs.
+   */
+  apiStyle?: string;
 };
 
 export const MODEL_MODALITIES = ["text", "image", "audio", "video", "pdf"] as const;

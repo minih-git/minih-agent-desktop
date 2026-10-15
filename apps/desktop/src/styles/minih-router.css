@@ -439,3 +439,288 @@
   gap: 8px;
 }
 
+
+/*
+  Accounts page: the connect card, the connected account row and the other
+  providers disclosure. Same token discipline as the panel above.
+*/
+
+.accounts-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+}
+
+.accounts-connect-advanced-toggle {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+
+.accounts-connect-advanced-toggle:hover {
+  color: var(--ds-text);
+}
+
+.accounts-connect-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.accounts-connected {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.accounts-connected-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.accounts-connected-key {
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.accounts-connected-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.accounts-connected-edit {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.accounts-connected-edit .field {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.minih-router-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.other-providers-section .settings-disclosure-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/*
+  Models page: chosen models as cards with a configure drawer, and the
+  add-models dialog over the gateway catalog.
+*/
+
+/* The row's global protocol sits above the cards: every per-model override
+   names it, so it belongs at the top of the list it governs. */
+.models-global-style-row {
+  margin-bottom: 10px;
+}
+
+.models-global-style-row .settings-menu-select-anchor {
+  flex: 0 0 auto;
+  max-width: 220px;
+}
+
+.models-chosen-grid {
+  align-items: start;
+}
+
+.models-chosen-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--ds-bg-elevated);
+}
+
+/* The card inside a chosen tile loses its own frame: the tile is the frame. */
+.models-chosen-card > .minih-router-model {
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.models-chosen-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.models-chosen-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.model-configure-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(720px, 92vw);
+  max-height: 86vh;
+}
+
+.model-configure-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.model-configure-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.model-configure-body {
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.model-configure-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ds-border-subtle);
+}
+
+.models-configure-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ds-border-subtle);
+}
+
+.models-configure-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.models-configure-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.provider-chosen-row-body-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.provider-binding-api-style {
+  max-width: 320px;
+}
+
+.minih-router-model-check {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.minih-router-model-check:disabled {
+  cursor: default;
+}
+
+.add-models-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(920px, 92vw);
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+.add-models-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.add-models-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.add-models-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.add-models-search .field-input {
+  width: 100%;
+  padding-left: 30px;
+}
+
+/* Select-all covers the current page only; the footer count still names the
+   whole pending selection across pages. */
+.add-models-select-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+
+.add-models-select-all:has(input:disabled) {
+  cursor: default;
+}
+
+.add-models-grid {
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+}
+
+.add-models-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ds-border-subtle);
+}
+
+.add-models-count {
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+}
+
+.add-models-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

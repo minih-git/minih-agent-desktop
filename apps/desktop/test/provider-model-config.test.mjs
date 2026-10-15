@@ -25,25 +25,31 @@ const read = (rel) => readFile(new URL(rel, import.meta.url), "utf8");
 const setupSource = await read("../src/components/settings/ProviderSetupDialog.tsx");
 const hookSource = await read("../src/components/settings/useProviderModels.ts");
 const pageSource = await read("../src/components/settings/ModelConfigPage.tsx");
+const providersSource = await read("../src/components/settings/OtherProvidersSection.tsx");
 const vendorDialogSource = await read("../src/components/settings/VendorAccountDialog.tsx");
 const pickerSource = await read("../src/components/settings/ModelSelectionPanes.tsx");
 const fieldsSource = await read("../src/components/settings/ProviderConnectionFields.tsx");
 const filterSource = await read("../src/components/settings/model-chosen-filter.ts");
 const vendorAccountsSource = await read("../src/components/settings/useVendorAccounts.ts");
+const modelsPageStateSource = await read("../src/components/settings/models-page-state.ts");
+const bindingFieldsSource = await read("../src/components/settings/ModelBindingFields.tsx");
+const helpersSource = await read("../src/components/settings/provider-list-helpers.ts");
 const apiSource = await read("../src/lib/api.ts");
 const catalogContractSource = await read("../../../packages/shared/src/model-catalog.ts");
 const styles = await loadStyles();
 
-test("model configuration places AI services before Jev and image generation", () => {
-  const services = pageSource.indexOf('className="model-config-section-head"');
-  const catalogStatus = pageSource.indexOf('className="model-catalog-status"');
-  const jev = pageSource.indexOf("<JevSettingsCard");
+test("the accounts page places services before Jev, and models own the catalog row", () => {
+  // The credential list and its import workbench live on the accounts page;
+  // the image-generation row follows the model cards on the models page.
+  const services = providersSource.indexOf('className="model-config-section-head"');
+  const jev = providersSource.indexOf("<JevSettingsCard");
   const image = pageSource.indexOf("<ImageGenerationModelRow");
+  const catalogStatus = pageSource.indexOf('className="model-catalog-status"');
 
   assert.ok(services >= 0, "the AI services section is present");
-  assert.ok(catalogStatus > services, "catalog actions stay with AI services");
-  assert.ok(jev > catalogStatus, "Jev follows AI services");
-  assert.ok(image > jev, "image generation follows Jev");
+  assert.ok(jev > services, "Jev follows AI services");
+  assert.ok(image > 0, "image generation stays on the models page");
+  assert.ok(catalogStatus > image, "the catalog row closes the models page");
 });
 
 test("the model list comes from the AI service, not from a browsable catalog", () => {
@@ -89,7 +95,7 @@ test("the add flow only enters plugin setup for a resolved selected provider", (
     false,
   );
   assert.match(
-    pageSource,
+    providersSource,
     /pluginCatalogSetup=\{isPluginCatalogSetupForProvider\([\s\S]*?pluginCatalogSetup,[\s\S]*?editingProvider,[\s\S]*?\)\}/,
   );
 });
@@ -218,12 +224,18 @@ test("the shared picker can select or clear every visible model at once", () => 
 });
 
 test("the shared picker owns the advanced per-model controls for both kinds", () => {
+  // The row shell and its persist rule stay in the picker; the fields
+  // themselves are one shared editor, so both credential kinds — and the
+  // models page — cannot drift apart.
   assert.match(pickerSource, /provider-chosen-advanced-toggle/);
-  assert.match(pickerSource, /settings\.contextWindow/);
-  assert.match(pickerSource, /settings\.maxOutput/);
-  assert.match(pickerSource, /provider-chosen-thinking-chips/);
+  assert.match(pickerSource, /<ModelBindingFields/);
   assert.match(pickerSource, /publishedThinkingLevels/);
   assert.match(pickerSource, /bindingsToPersist/);
+  assert.match(bindingFieldsSource, /settings\.contextWindow/);
+  assert.match(bindingFieldsSource, /settings\.maxOutput/);
+  assert.match(bindingFieldsSource, /provider-chosen-thinking-chips/);
+  assert.match(bindingFieldsSource, /settings\.modelAlias/);
+  assert.match(bindingFieldsSource, /settings\.modelApiStyle/);
 });
 
 test("fetched model selections stay collapsed until Advanced is requested", () => {
@@ -254,9 +266,13 @@ test("model ids are matched case-insensitively across picking and hand entry", (
 });
 
 test("provider edits retain legacy defaults for non-chat consumers", () => {
-  assert.match(pageSource, /defaultModelId: firstModelId \?\? ""/);
-  assert.match(pageSource, /settings\.defaultProviderId === saved\.id && firstModelId/);
+  // A new row may only claim the app default while none resolves; the models
+  // page leaves the stored default alone and never offers a second way to set
+  // it (the composer picker owns that).
+  assert.match(providersSource, /defaultModelId: firstModelId \?\? ""/);
+  assert.match(providersSource, /settings\.defaultProviderId === saved\.id/);
   assert.doesNotMatch(pageSource, /setDefaultModel|displayedChatModelId/);
+  assert.doesNotMatch(pageSource, /settings\.modelsSetDefault/);
 });
 
 test("the rejected catalog-browser styles are gone from the cascade", () => {
@@ -285,12 +301,12 @@ test("model ids are copyable and a configured model can carry an alias", () => {
   assert.match(pickerSource, /event\.target instanceof HTMLInputElement/);
   assert.match(pickerSource, /event\.preventDefault\(\)/);
   assert.doesNotMatch(pickerSource, /window\.getSelection\(\)\?\.toString\(\)/);
-  // The alias is edited in the Advanced body and shown beside the id.
-  assert.match(pickerSource, /settings\.modelAlias/);
-  assert.match(pickerSource, /updateBinding\(binding\.id, \{/);
-  // The 60-character cap counts Unicode scalars, matching host-core.
-  assert.match(pickerSource, /\[\.\.\.event\.target\.value\]\.slice\(0, 60\)/);
+  // The alias is edited in the shared Advanced body and shown beside the id.
+  assert.match(pickerSource, /onChange=\{\(patch\) => updateBinding\(binding\.id, patch\)\}/);
   assert.match(pickerSource, /provider-chosen-row-alias/);
+  assert.match(bindingFieldsSource, /settings\.modelAlias/);
+  // The 60-character cap counts Unicode scalars, matching host-core.
+  assert.match(bindingFieldsSource, /\[\.\.\.event\.target\.value\]\.slice\(0, 60\)/);
   assert.match(styles, /\.provider-chosen-row-alias\s*\{/);
 });
 
@@ -354,7 +370,7 @@ test("adding a service only claims the app default while none resolves", () => {
   // The add branch used to write defaultProviderId/defaultModelId
   // unconditionally, so configuring a second service silently moved the app
   // default away from the one the user was already running.
-  const branch = pageSource.match(
+  const branch = providersSource.match(
     /\} else if \(!editingProvider\) \{([\s\S]*?)\n      \} else \{/,
   );
   assert.ok(branch, "the add-provider branch moved");
@@ -367,15 +383,19 @@ test("adding a service only claims the app default while none resolves", () => {
   // default provider to be runnable (enabled, credentialed, a chat model
   // configured), so a keyless default row cannot block the new provider.
   // Provider readiness and default selection use the same exact chat choices.
-  assert.match(pageSource, /chatModelOptions\(\[currentProvider\], imageGenerationCandidates\)/);
-  assert.match(pageSource, /providerServesChatModels\(provider, imageGenerationCandidates\)/);
+  assert.match(providersSource, /chatModelOptions\(\[currentProvider\], imageGenerationCandidates\)/);
+  assert.match(providersSource, /providerServesChatModels\(currentProvider, imageGenerationCandidates\)/);
 });
 
 test("a saved image selection never takes the app's image default", () => {
   // The image default follows the same rule: the candidate list grows, the
   // default moves only when the stored binding stops resolving. The decision
   // itself is pinned by image-generation-default.test.mjs.
-  assert.match(pageSource, /planImageGenerationDefaults\(\n\s+current,\n\s+saved\.id,/);
+  assert.match(modelsPageStateSource, /planImageGenerationDefaults\(/);
+  assert.match(
+    pageSource,
+    /planModelsSave\(routerProvider, nextBindings, current, providers, imageModelIds\)/,
+  );
   assert.doesNotMatch(pageSource, /nextActive/);
 });
 
@@ -392,15 +412,23 @@ test("a hand-typed id is seeded from the model library, not only from generic de
 });
 
 test("settings match complete case-normalized wire ids, not proxy suffixes", () => {
-  const identity = pageSource.match(/const sameWireId = \(left: string, right: string\) => ([^;]+);/);
-  assert.ok(identity);
+  const identity = modelsPageStateSource.match(
+    /function sameId\(left: string, right: string\): boolean \{[\s\S]*?return ([^;]+);/,
+  );
+  assert.ok(identity, "the identity helper moved");
   const sameWireId = new Function("left", "right", `return ${identity[1]}`);
   assert.equal(sameWireId("PROXY/model", "proxy/MODEL"), true);
+  // A complete-id rule, so a proxy suffix is a different model, not a match.
   assert.equal(sameWireId("proxy/model", "model"), false);
   // Image candidates are excluded by the same complete-id membership rule the
   // picker row and the page's own selection check share.
-  assert.ok(pageSource.includes("isImageGenerationPickerCandidate(imageModels, provider.id, id)"));
-  assert.match(pageSource, /!models\.some\(\(model\) => sameWireId\(model\.id, settings\.defaultModelId/);
+  assert.ok(
+    helpersSource.includes("isImageGenerationPickerCandidate(imageModels, provider.id, id)"),
+  );
+  assert.match(
+    providersSource,
+    /!models\.some\(\(model\) => sameWireId\(model\.id, settings\.defaultModelId/,
+  );
   assert.doesNotMatch(pageSource, /modelIdsMatch|isImageGenerationModel/);
   assert.doesNotMatch(setupSource, /modelIdsMatch/);
   assert.doesNotMatch(pickerSource, /modelIdsMatch/);
@@ -415,8 +443,13 @@ test("settings match complete case-normalized wire ids, not proxy suffixes", () 
 });
 
 test("new chat default skips an image-only first model", () => {
-  assert.match(pageSource, /const firstModelId = models\.find\(\(model\) =>\s*!selectedImageIds\.some\(\(id\) => sameWireId\(id, model\.id\)\)/);
-  assert.match(pageSource, /if \(!keepsCurrentDefault && firstModelId\)/);
+  // The add branch picks the first binding that is not already the image model,
+  // so a row configured for images only cannot become the chat default.
+  assert.match(
+    providersSource,
+    /const firstModelId = models\.find\(\(model\) =>\s*!selectedImageIds\.some\(\(id\) => sameWireId\(id, model\.id\)\)/,
+  );
+  assert.match(providersSource, /if \(!keepsCurrentDefault && firstModelId\)/);
 });
 
 // Chat inheritance and image exclusions are exercised by recent-models.test.mjs.

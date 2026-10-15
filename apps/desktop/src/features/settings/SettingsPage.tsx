@@ -24,6 +24,7 @@ import {
   IconGlobe,
   IconInfo,
   IconKeyboard,
+  IconKey,
   IconPalette,
   IconSearch,
   IconServer,
@@ -33,7 +34,8 @@ import {
   IconMic,
 } from "../../components/icons";
 import { Badge, Button, cx, SegmentedControl, SettingsToggle } from "../../components/ui";
-import { ModelConfigPage } from "../../components/settings/ModelConfigPage";
+import { ModelsPage } from "../../components/settings/ModelConfigPage";
+import { AccountsPage } from "../../components/settings/AccountsPage";
 import { KeyboardShortcutsSection } from "../../components/settings/KeyboardShortcutsSection";
 import { FontFamilyRow } from "../../components/settings/FontFamilyRow";
 import { ThinkingDisplayModeRow } from "../../components/settings/ThinkingDisplayModeRow";
@@ -231,6 +233,7 @@ export function SettingsPage() {
     const iconFor: Record<SettingsTab, ReactNode> = {
       // Semantic Lucide glyphs for the settings destinations.
       general: <IconSliders size={14} />,
+      accounts: <IconKey size={14} />,
       ai: <IconSparkles size={14} />,
       shortcuts: <IconKeyboard size={14} />,
       instructions: <IconFileText size={14} />,
@@ -554,7 +557,8 @@ export function SettingsPage() {
             </div>
           )}
 
-          {tab === "agent" && <ModelConfigPage />}
+          {tab === "accounts" && <AccountsPage />}
+          {tab === "agent" && <ModelsPage />}
 
           {tab === "skills" && <AgentSkillsPage />}
 

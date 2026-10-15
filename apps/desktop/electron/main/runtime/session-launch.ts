@@ -398,7 +398,9 @@ export function createSessionLaunchRuntime({
       );
     }
     const storedModel = bindingForModel(provider, modelId);
-    const apiStyle = vendorBinding?.apiStyle ?? provider.apiStyle;
+    // A binding may pin a wire protocol for one model; absent keeps following
+    // the provider row's own global style.
+    const apiStyle = vendorBinding?.apiStyle ?? storedModel?.apiStyle ?? provider.apiStyle;
     // The LAN channel can replace the address this launch resolves against, so
     // the binding is mutable after the catalog read below.
     let baseUrl = vendorBinding?.baseUrl ?? provider.baseUrl;
@@ -550,16 +552,20 @@ export function createSessionLaunchRuntime({
       resolveVendorBinding: (pinned, pinnedModelId) =>
         vendorOAuth.bindingFor(pinned.id, pinnedModelId),
       resolveModel: async (pinned, pinnedModelId) => {
+        const configuredProvider = providers.providers.find(
+          (candidate) => candidate.id === pinned.id,
+        );
+        // A per-model wire protocol override outranks the row's global style.
+        const pinnedStyle =
+          configuredProvider &&
+          bindingForModel(configuredProvider, pinnedModelId)?.apiStyle;
         const catalogModelConfig = catalogModelConfigFor(modelsDevCatalog, {
           providerId: pinned.id,
           vendorKey: pinned.vendorKey,
           baseUrl: pinned.baseUrl,
-          apiStyle: pinned.apiStyle,
+          apiStyle: pinnedStyle ?? pinned.apiStyle,
           modelId: pinnedModelId,
         });
-        const configuredProvider = providers.providers.find(
-          (candidate) => candidate.id === pinned.id,
-        );
         return configuredProvider
           ? effectiveSubagentModelConfig(
               configuredProvider,
@@ -608,6 +614,9 @@ export function createSessionLaunchRuntime({
           if (!apiKey) continue;
         }
         let catalogModelConfig: Parameters<typeof modelConfigWithBinding>[0];
+        // Same precedence as the main session: vendor binding, then a per-model
+        // override on the row, then the row's global style.
+        const bindingApiStyle = binding.apiStyle;
         if (isVendorAccount) {
           const vb = await vendorOAuth.bindingFor(row.id, binding.id);
           if (!vb) continue;
@@ -616,7 +625,7 @@ export function createSessionLaunchRuntime({
               providerId: row.id,
             vendorKey: row.vendorKey,
               baseUrl: vb.baseUrl ?? row.baseUrl,
-              apiStyle: vb.apiStyle ?? row.apiStyle,
+              apiStyle: vb.apiStyle ?? bindingApiStyle ?? row.apiStyle,
               modelId: binding.id,
             });
         } else {
@@ -624,7 +633,7 @@ export function createSessionLaunchRuntime({
             providerId: row.id,
             vendorKey: row.vendorKey,
             baseUrl: row.baseUrl,
-            apiStyle: row.apiStyle,
+            apiStyle: bindingApiStyle ?? row.apiStyle,
             modelId: binding.id,
           });
         }
@@ -643,7 +652,11 @@ export function createSessionLaunchRuntime({
           modelId: binding.id,
           apiKey,
           ...(row.authKind ? { authKind: row.authKind } : {}),
-          ...(row.apiStyle ? { apiStyle: row.apiStyle } : {}),
+          ...(bindingApiStyle
+            ? { apiStyle: bindingApiStyle }
+            : row.apiStyle
+              ? { apiStyle: row.apiStyle }
+              : {}),
           ...optionalProviderHeaders(row.headers),
           supportsReasoning: caps.supportsReasoning,
           supportedThinkingLevels: [...caps.supportedThinkingLevels],

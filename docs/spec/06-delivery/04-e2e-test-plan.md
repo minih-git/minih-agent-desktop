@@ -17468,40 +17468,48 @@ renderer's durable transcript reads. No real model or provider is contacted.
 
 ## E2E-PROVIDER-minih-router-primary-gateway
 
-- **Preconditions:** Isolated Electron/Chromium, production provider dialog and
-  Minih Router panel, synthetic IPC answers for discovery, provider creation,
-  account, model plaza, and EasyTier virtual LAN status/elevation/configuration;
-  no live Router, token, or paid service.
-- **Steps:** Open Add Service and pick Minih Router from the Recommended group.
-  Paste a token, replace the Base URL with a console address, save. Open the
-  row's panel: read the balance, inspect the Virtual LAN Channel (EasyTier)
-  status, request TUN Mode elevation, customize and save LAN Settings, page
-  forward through the model plaza, search, then make the model read fail and
-  Retry. Separately, edit an existing custom row that points at a Router
-  (Responses format) and change its service to Minih Router.
-- **Expected:** Minih Router is the first tile and is not repeated among API-key
-  services; the Base URL starts at `https://router.hmini.org/v1` and saves as
-  the typed host's `/v1` address with `vendorKey: "minih-router"`. The balance
-  headline is the quota closest to running out; totals, 30-day spend and
-  requests, multiplier and expiry are shown. The Virtual LAN section shows
-  `Connected`, `No-TUN (User-space)`, virtual IP, and active `LAN Tunnel`
-  routing, updates to `TUN (Virtual NIC)` on elevation, and persists custom LAN
-  parameters. Cards show per-1M input/output prices, "from", cache price,
-  context and Added; paging and search request the right page; a failure keeps
-  the last page and Retry recovers. Renderer calls carry only the provider id,
-  never the token. The converted row saves `vendorKey: "minih-router"` with its
-  own address and Responses format and without rewriting the stored key.
+- **Preconditions:** Isolated Electron/Chromium, production accounts and models
+  pages, synthetic IPC answers for discovery, provider creation/update, the
+  account read, the model plaza, and EasyTier virtual LAN status/elevation/
+  configuration; no live Router, token, or paid service.
+- **Steps:** On a clean profile, open Settings → Accounts: the connect card is
+  the whole page. Paste a token and connect (the endpoint stays behind
+  "Advanced" unless the user opens it). Then open Settings → Models: add models
+  from the gateway plaza, pin one model's protocol mode in its configure
+  drawer, and remove a model again.
+- **Expected:** Connecting creates a `minih-router` row carrying the token and
+  **no models at all** — initialization is one field, not one field plus a model
+  pick. The connected card replaces the token entry with its masked key name and
+  keeps the refresh action; the balance headline is the quota closest to running
+  out, with totals, 30-day spend and requests, multiplier and expiry, and the
+  Virtual LAN section shows `Connected`, `No-TUN (User-space)`, virtual IP, and
+  active `LAN Tunnel` routing (updating to `TUN (Virtual NIC)` on elevation and
+  persisting custom LAN parameters). The accounts page carries the service list,
+  the add-service and import actions, Jev and vendor subscription accounts under
+  "Other providers", which developer mode alone reveals; above the models sits
+  the row's global protocol mode, which writes the provider row's apiStyle. On the models page, "Add models" opens the gateway
+  plaza as selectable cards with search and paging, and confirming appends the
+  chosen bindings while claiming the app's chat default only when nothing
+  runnable resolves; each chosen card reports the default, offers Configure
+  (alias, limits, thinking, capabilities, and a per-model **protocol mode** that
+  defaults to "Follow global"), and can be removed, which drops any image
+  binding naming it. Removing the model the app default names leaves no
+  dangling replacement. Renderer calls carry only the provider id, never the
+  token.
 - **Specs:** 03-runtime/12 Minih Router preset, account channels, and EasyTier
-  virtual LAN routing/fallback; 04-ux/06 Minih Router panel.
-- **Acceptance:** `minih-router-settings-user-path.test.mjs`,
+  virtual LAN routing/fallback; 04-ux/06 Minih Router panel; 04-ux/07 settings IA.
+- **Acceptance:** `accounts-models-user-path.test.mjs` (token-only connect, add
+  models, per-model protocol pin, removal),
+  `models-page-state.test.mjs` (default planning),
   `minih-router-client.test.mjs` (gateway DTO contract, EasyTier LAN resolution
   and public URL fallback, redirect guard, redaction, vendor-key refusal),
   `minih-router-format.test.mjs`, `provider-binding.test.ts` (runtime
-  `providerRequestFetch` LAN-to-public fallback), `minih-router.test.ts`, and
-  Rust `cargo test -p host-core easytier`.
+  `providerRequestFetch` LAN-to-public fallback, per-model `apiStyle`
+  precedence), `minih-router.test.ts`, and Rust
+  `cargo test -p host-core normalize_model_bindings`.
 - **Milestone:** Provider configuration maintenance.
-- **Status:** Covered by the isolated UI fixture, main-process/runtime contract
-  tests, and Rust host-core EasyTier unit/RPC tests.
+- **Status:** Covered by the isolated UI fixtures, main-process/runtime contract
+  tests, and Rust host-core unit tests.
 
 
 ## E2E-OAUTH-pi-installation-identity-and-standalone-load
