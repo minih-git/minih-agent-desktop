@@ -135,7 +135,29 @@ describe("EasyTier virtual LAN settings", () => {
       networkSecret: EASYTIER_DEFAULT_NETWORK_SECRET,
       peers: [...EASYTIER_DEFAULT_PEERS],
       routerLanUrl: EASYTIER_DEFAULT_ROUTER_LAN_URL,
+      dhcp: true,
+      ipv4: "",
     });
+  });
+
+  it("keeps a static virtual IPv4 and its DHCP switch", () => {
+    const normalized = normalizeEasyTierSettings({
+      dhcp: false,
+      ipv4: "10.144.144.10/32",
+    });
+    expect(normalized.dhcp).toBe(false);
+    expect(normalized.ipv4).toBe("10.144.144.10");
+  });
+
+  it("refuses a static virtual IPv4 without switching DHCP off", () => {
+    expect(validateEasyTierSettings({ ipv4: "10.144.144.10" })).toBe(
+      "easytier.ipv4 requires easytier.dhcp to be false",
+    );
+    expect(validateEasyTierSettings({ dhcp: false, ipv4: "10.144.144.10" })).toBeNull();
+    expect(validateEasyTierSettings({ dhcp: false, ipv4: "not-an-ip" })).toBe(
+      "easytier.ipv4 must be an IPv4 address, optionally with /32",
+    );
+    expect(validateEasyTierSettings({ dhcp: "yes" })).toBe("easytier.dhcp must be a boolean");
   });
 
   it("validates peer URLs, modes, and router LAN addresses", () => {

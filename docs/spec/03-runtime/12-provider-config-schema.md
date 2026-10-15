@@ -434,10 +434,14 @@ address is only a default (`customBaseUrl: true`):
 - **Built-in EasyTier virtual LAN channel**: Rust `host-core` embeds an EasyTier
   virtual LAN node (`networkName: "minih-net"`, bootstrap peers
   `udp://tier.hmini.org:11010` and `tcp://tier.hmini.org:11010`, default LAN
-  gateway `http://11.11.11.10:3001/v1`, persisted under `settings.app.easytier`).
+  gateway `http://10.144.144.10:3001/v1`, persisted under `settings.app.easytier`).
+  The virtual range is EasyTier's own default `10.144.144.0/24`, chosen so it
+  cannot overlap a private network the user already runs; a deployment whose
+  gateway sits on another range sets `routerLanUrl`, and pins the gateway's own
+  address with `dhcp: false` plus `ipv4` (an IPv4 literal, `/32` accepted).
   By default it starts in user-space **No-TUN** mode (`no_tun = true`,
   `dhcp = true`) with a local loopback TCP port forward
-  (`127.0.0.1:<local_port> -> 11.11.11.10:3001`) requiring no administrator
+  (`127.0.0.1:<local_port> -> 10.144.144.10:3001`) requiring no administrator
   privileges; users may optionally request administrator elevation to switch into
   system **TUN** mode (`--easytier-tun-runner`), automatically falling back to
   `no_tun` if elevation is declined or unavailable. When the LAN gateway is

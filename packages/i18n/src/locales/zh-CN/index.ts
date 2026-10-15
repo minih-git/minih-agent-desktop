@@ -1501,6 +1501,8 @@ sklm: {
     minihRouterLanTunEnabled: "已启用 TUN 虚拟网卡模式",
     minihRouterLanShowSecret: "显示网络密钥",
     minihRouterLanHideSecret: "隐藏网络密钥",
+    minihRouterLanDhcp: "自动分配虚拟 IP（DHCP）",
+    minihRouterLanStaticIpv4: "固定虚拟 IP",
     presetAnthropic: "Anthropic",
     presetGoogle: "Google Gemini",
     presetOpenrouter: "OpenRouter",

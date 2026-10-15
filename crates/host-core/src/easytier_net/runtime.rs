@@ -53,6 +53,10 @@ pub struct EasyTierStatus {
     pub router_lan_reachable: bool,
     pub last_error: Option<String>,
     pub updated_at_ms: u64,
+    /// True when EasyTier hands out the virtual IPv4; false pins `static_ipv4`.
+    pub dhcp: bool,
+    /// The configured static virtual IPv4, empty when DHCP is on.
+    pub static_ipv4: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -381,6 +385,8 @@ impl EasyTierManager {
                 router_lan_reachable: false,
                 last_error: self.last_error.clone(),
                 updated_at_ms: now_ms(),
+                dhcp: self.settings.dhcp,
+                static_ipv4: self.settings.ipv4.clone().unwrap_or_default(),
             };
         }
 
@@ -407,6 +413,8 @@ impl EasyTierManager {
                 router_lan_reachable: false,
                 last_error: self.last_error.clone(),
                 updated_at_ms: now_ms(),
+                dhcp: self.settings.dhcp,
+                static_ipv4: self.settings.ipv4.clone().unwrap_or_default(),
             },
             ActiveBackend::InProcess {
                 instance,
@@ -467,6 +475,8 @@ impl EasyTierManager {
                     router_lan_reachable: reachable,
                     last_error: inst_err.or_else(|| self.last_error.clone()),
                     updated_at_ms: now_ms(),
+                    dhcp: self.settings.dhcp,
+                    static_ipv4: self.settings.ipv4.clone().unwrap_or_default(),
                 }
             }
             ActiveBackend::ElevatedTun { spec } => {
@@ -516,6 +526,8 @@ impl EasyTierManager {
                         router_lan_reachable: reachable,
                         last_error: snap.last_error.or_else(|| self.last_error.clone()),
                         updated_at_ms: snap.updated_at_ms,
+                        dhcp: self.settings.dhcp,
+                        static_ipv4: self.settings.ipv4.clone().unwrap_or_default(),
                     }
                 } else {
                     // Elevated runner exited unexpectedly; fall back seamlessly to No-TUN mode.
@@ -573,7 +585,7 @@ mod tests {
             network_name: "minih-net-test".to_string(),
             network_secret: "Minih@9527".to_string(),
             peers: vec!["tcp://127.0.0.1:65530".to_string()],
-            router_lan_url: "http://11.11.11.10:3001/v1".to_string(),
+            router_lan_url: "http://10.144.144.10:3001/v1".to_string(),
             dhcp: true,
             ipv4: None,
         };

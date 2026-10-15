@@ -62,6 +62,8 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
   const [networkName, setNetworkName] = useState(EASYTIER_DEFAULT_NETWORK_NAME);
   const [networkSecret, setNetworkSecret] = useState(EASYTIER_DEFAULT_NETWORK_SECRET);
   const [peersInput, setPeersInput] = useState(EASYTIER_DEFAULT_PEERS.join(", "));
+  const [staticIpv4, setStaticIpv4] = useState("");
+  const [dhcp, setDhcp] = useState(true);
   const [routerLanUrl, setRouterLanUrl] = useState(EASYTIER_DEFAULT_ROUTER_LAN_URL);
 
   const status: EasyTierStatus | null = load.data;
@@ -76,6 +78,8 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
         : EASYTIER_DEFAULT_PEERS.join(", "),
     );
     setRouterLanUrl(status.routerLanUrl || EASYTIER_DEFAULT_ROUTER_LAN_URL);
+    setDhcp(status.dhcp !== false);
+    setStaticIpv4(status.staticIpv4 ?? "");
   }, [status, editing]);
 
   if (!status) {
@@ -164,6 +168,8 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
       networkSecret: networkSecret.trim() || EASYTIER_DEFAULT_NETWORK_SECRET,
       peers: peers.length > 0 ? peers : [...EASYTIER_DEFAULT_PEERS],
       routerLanUrl: routerLanUrl.trim() || EASYTIER_DEFAULT_ROUTER_LAN_URL,
+      dhcp,
+      ipv4: dhcp ? "" : staticIpv4.trim(),
     }).then(
       () => {
         setEditing(false);
@@ -179,6 +185,8 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
     setNetworkSecret(EASYTIER_DEFAULT_NETWORK_SECRET);
     setPeersInput(EASYTIER_DEFAULT_PEERS.join(", "));
     setRouterLanUrl(EASYTIER_DEFAULT_ROUTER_LAN_URL);
+    setDhcp(true);
+    setStaticIpv4("");
   };
 
   return (
@@ -309,6 +317,25 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
                 onChange={(event) => setPeersInput(event.target.value)}
               />
             </Field>
+            <Field label={t("settings.minihRouterLanDhcp")}>
+              <SettingsToggle
+                checked={dhcp}
+                busy={busy}
+                label={t("settings.minihRouterLanDhcp")}
+                onChange={() => setDhcp((current) => !current)}
+              />
+            </Field>
+            {dhcp ? null : (
+              <Field label={t("settings.minihRouterLanStaticIpv4")}>
+                <Input
+                  value={staticIpv4}
+                  aria-label={t("settings.minihRouterLanStaticIpv4")}
+                  placeholder="10.144.144.10"
+                  disabled={busy}
+                  onChange={(event) => setStaticIpv4(event.target.value)}
+                />
+              </Field>
+            )}
           </div>
           <div className="minih-router-lan-form-actions">
             <Button variant="ghost" size="sm" disabled={busy} onClick={handleResetDefaults}>

@@ -11,7 +11,7 @@ pub const DEFAULT_EASYTIER_NETWORK_NAME: &str = "minih-net";
 pub const DEFAULT_EASYTIER_NETWORK_SECRET: &str = "Minih@9527";
 pub const DEFAULT_EASYTIER_PEERS: &[&str] =
     &["udp://tier.hmini.org:11010", "tcp://tier.hmini.org:11010"];
-pub const DEFAULT_ROUTER_LAN_URL: &str = "http://11.11.11.10:3001/v1";
+pub const DEFAULT_ROUTER_LAN_URL: &str = "http://10.144.144.10:3001/v1";
 pub const DEFAULT_ROUTER_PUBLIC_URL: &str = "https://router.hmini.org/v1";
 
 const MAX_NETWORK_NAME_LEN: usize = 128;
@@ -443,17 +443,17 @@ mod tests {
                 "tcp://tier.hmini.org:11010".to_string()
             ]
         );
-        assert_eq!(defaults.router_lan_url, "http://11.11.11.10:3001/v1");
+        assert_eq!(defaults.router_lan_url, "http://10.144.144.10:3001/v1");
         assert!(defaults.dhcp);
     }
 
     #[test]
     fn router_lan_target_normalizes_root_and_v1_paths() {
-        let target = parse_router_lan_target("http://11.11.11.10:3001").unwrap();
-        assert_eq!(target.host, "11.11.11.10");
+        let target = parse_router_lan_target("http://10.144.144.10:3001").unwrap();
+        assert_eq!(target.host, "10.144.144.10");
         assert_eq!(target.port, 3001);
         assert_eq!(target.api_path, "/v1");
-        assert_eq!(target.normalized_base_url, "http://11.11.11.10:3001/v1");
+        assert_eq!(target.normalized_base_url, "http://10.144.144.10:3001/v1");
         assert_eq!(target.forward_base_url(25890), "http://127.0.0.1:25890/v1");
     }
 
@@ -466,7 +466,7 @@ mod tests {
                 "networkName": "minih-net",
                 "networkSecret": "Minih@9527",
                 "peers": ["udp://tier.hmini.org:11010"],
-                "routerLanUrl": "http://11.11.11.10:3001/v1",
+                 "routerLanUrl": "http://10.144.144.10:3001/v1",
                 "dhcp": true
             }
         });
@@ -481,7 +481,7 @@ mod tests {
         );
         assert_eq!(
             toml.get_port_forwards()[0].dst_addr.to_string(),
-            "11.11.11.10:3001"
+            "10.144.144.10:3001"
         );
     }
 }

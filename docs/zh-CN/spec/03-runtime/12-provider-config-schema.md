@@ -262,10 +262,13 @@ Minih Router 是自有的模型网关，排在命名预设的第一位。它是�
 - `vendorKey` 不是 models.dev 的提供商，模型元数据按下文“按哪个发布方读取元数据”的中继规则解析。
 - **内置 EasyTier 虚拟局域网通道**：Rust `host-core` 内嵌一个 EasyTier 虚拟局域网节点
   （`networkName: "minih-net"`，引导节点 `udp://tier.hmini.org:11010` 与
-  `tcp://tier.hmini.org:11010`，默认局域网网关 `http://11.11.11.10:3001/v1`，
-  持久化在 `settings.app.easytier`）。默认以用户态 **No-TUN** 模式启动
+  `tcp://tier.hmini.org:11010`，默认局域网网关 `http://10.144.144.10:3001/v1`，
+  持久化在 `settings.app.easytier`）。虚拟网段采用 EasyTier 自带的默认
+  `10.144.144.0/24`，确保不会与用户已有的私网重叠；网关位于其他网段时设置
+  `routerLanUrl`，并用 `dhcp: false` 加 `ipv4`（IPv4 字面量，可带 `/32`）
+  固定网关自身地址。默认以用户态 **No-TUN** 模式启动
   （`no_tun = true`、`dhcp = true`），通过本地回环 TCP 端口转发
-  （`127.0.0.1:<local_port> -> 11.11.11.10:3001`）实现，不需要管理员权限；用户也可以
+  （`127.0.0.1:<local_port> -> 10.144.144.10:3001`）实现，不需要管理员权限；用户也可以
   主动申请管理员提权切换到系统 **TUN** 模式（`--easytier-tun-runner`），提权被拒绝或
   不可用时自动回退到 `no_tun`。当局域网网关可达时，`minih-router` 控制面（`/api/*`）、
   模型发现、连接测试，以及聊天/子智能体运行时请求都优先走局域网隧道，遇到传输错误或
