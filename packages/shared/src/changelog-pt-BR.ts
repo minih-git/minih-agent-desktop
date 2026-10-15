@@ -2,6 +2,22 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    "version": "0.20.2",
+    "date": "2026-10-15",
+    "highlights": [
+      "O tráfego do Minih Router pode passar por uma LAN virtual EasyTier criptografada; a URL pública continua como retorno automático.",
+      "O gateway pode emitir a identidade da rede; as configurações mostram os campos que ele gerencia e aceitam um IP virtual estático.",
+      "Sessões paralelas de um projeto rodam em worktrees git isolados, então agentes não sobrescrevem mais os arquivos uns dos outros.",
+      "Imagens de ferramentas grandes demais não quebram mais sessões; são redimensionadas ou omitidas em vez de salvar conteúdo inutilizável.",
+      "As posições de leitura sobrevivem à troca de painéis; voltar a uma conversa restaura a mensagem e a viewport exatas.",
+      "Abrir um projeto limpa sua marca de arquivado; projetos ativados reaparecem na barra lateral.",
+      "Plugins React compilam JSX automático e de desenvolvimento contra o runtime do host, inclusive após reiniciar.",
+      "Auxiliares, hooks e monitores do git configurados no repositório não podem executar comandos durante o diff do workspace.",
+      "Tela cheia e maximizar são mutuamente exclusivos no Windows; a janela presa em vários monitores foi corrigida.",
+      "Dependências vulneráveis conhecidas são corrigidas, incluindo o piso do aviso do DOMPurify.",
+    ],
+  },
+  {
     "version": "0.20.1",
     "date": "2026-10-13",
     "highlights": [

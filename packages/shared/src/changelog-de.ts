@@ -2,6 +2,22 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    "version": "0.20.2",
+    "date": "2026-10-15",
+    "highlights": [
+      "Minih-Router-Verkehr kann über ein verschlüsseltes EasyTier-Virtuallan laufen; die öffentliche URL bleibt automatischer Fallback.",
+      "Das Gateway kann die Netzwerkidentität selbst ausstellen; die Einstellungen zeigen die von ihm verwalteten Felder und unterstützen eine statische virtuelle IP.",
+      "Parallele Sitzungen eines Projekts laufen in isolierten Git-Worktrees, sodass Agenten sich nicht mehr gegenseitig Dateien überschreiben.",
+      "Übergroße Tool-Bilder brechen Sitzungen nicht mehr; sie werden skaliert oder übersprungen, statt unbrauchbare Inhalte zu speichern.",
+      "Lesepositionen überleben Panelwechsel; bei der Rückkehr zu einer Unterhaltung werden Nachricht und Ansicht exakt wiederhergestellt.",
+      "Beim Öffnen eines Projekts wird das Archiv-Flag gelöscht; aktivierte Projekte erscheinen wieder in der Seitenleiste.",
+      "React-Plugins kompilieren automatisches und Entwicklungs-JSX gegen die Host-Laufzeit, auch nach einem Neustart.",
+      "Im Repository konfigurierte Git-Helfer, Hooks und Monitore können beim Workspace-Diff keine Befehle ausführen.",
+      "Vollbild und Maximieren schließen sich unter Windows gegenseitig aus; das festsitzende Fenster bei mehreren Monitoren ist behoben.",
+      "Bekannte verwundbare Abhängigkeiten werden gepatcht, einschließlich der DOMPurify-Advisory-Untergrenze.",
+    ],
+  },
+  {
     "version": "0.20.1",
     "date": "2026-10-13",
     "highlights": [

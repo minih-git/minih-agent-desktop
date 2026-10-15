@@ -2,6 +2,22 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    "version": "0.20.2",
+    "date": "2026-10-15",
+    "highlights": [
+      "Minih Router trafiği şifreli bir EasyTier sanal LAN üzerinden aktarılabilir; genel URL otomatik yedek olarak kalır.",
+      "Ağ geçidi ağ kimliğini kendisi verebilir; ayarlar sahibi olduğu alanları gösterir ve sabit sanal IP'yi destekler.",
+      "Bir projenin paralel oturumları yalıtılmış git worktree'lerinde çalışır; aracılar birbirinin dosyalarını ezmez.",
+      "Aşırı büyük araç görselleri oturumları bozmaz; kullanılamaz içerik kaydedilmek yerine ölçeklenir veya atlanır.",
+      "Okuma konumları panel değişimlerinden sonra korunur; sohbete dönünce tam ileti ve görünüm geri yüklenir.",
+      "Bir projeyi açmak arşiv bayrağını temizler; etkinleştirilen projeler kenar çubuğunda yeniden görünür.",
+      "React eklentileri otomatik ve geliştirme JSX'i konak çalışma zamanısına göre derlenir; yeniden başlatmadan sonra da çalışır.",
+      "Depoda yapılandırılmış Git yardımcıları, kancalar ve izleyiciler çalışma alanı diff'i sırasında komut çalıştıramaz.",
+      "Windows'ta tam ekran ve büyütme karşılıklı olarak dışlanır; çok monitörlü kurulumlarda sıkışan pencere düzelir.",
+      "Bilinen güvenlik açığı içeren bağımlılıklar yamalanır; DOMPurify duyurusunun taban sürümü dahil.",
+    ],
+  },
+  {
     "version": "0.20.1",
     "date": "2026-10-13",
     "highlights": [

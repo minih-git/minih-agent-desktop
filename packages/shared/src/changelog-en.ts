@@ -2,6 +2,22 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.20.2",
+    date: "2026-10-15",
+    highlights: [
+      "Route Minih Router traffic through an encrypted EasyTier virtual LAN, with the public URL kept as an automatic fallback.",
+      "The gateway can issue the network identity itself; settings show which fields it owns and pin a static virtual IP.",
+      "Parallel sessions of one project now work in isolated git worktrees, so agents no longer overwrite each other's files.",
+      "Oversized tool images no longer break sessions; they are resized or skipped instead of persisting unusable payloads.",
+      "Reading positions survive pane switches, so returning to a conversation restores the exact message and viewport.",
+      "Opening a project clears its archived flag, so activated projects reappear in the sidebar instead of staying hidden.",
+      "React plugins compile with automatic and development JSX against the host runtime, including after a restart.",
+      "Repository-configured Git helpers, hooks and monitors cannot execute commands during workspace diffs.",
+      "Fullscreen and maximize are mutually exclusive on Windows, fixing the stranded window on multi-monitor setups.",
+      "Known vulnerable dependencies are patched, including the DOMPurify advisory floor.",
+    ],
+  },
+  {
     version: "0.20.1",
     date: "2026-10-13",
     highlights: [
