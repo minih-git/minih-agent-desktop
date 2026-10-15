@@ -726,38 +726,215 @@
 }
 
 .home-mascot-logo {
+  --mascot-shell-top: #28304d;
+  --mascot-shell-mid: #1b2138;
+  --mascot-shell-bot: #131829;
+  --mascot-stroke: #e2e8f0;
+  --mascot-ear: #312e81;
+  --mascot-visor-top: #0d1120;
+  --mascot-visor-bot: #060810;
+  --mascot-visor-stroke: rgba(99, 102, 241, 0.55);
+  --mascot-highlight: rgba(129, 140, 248, 0.45);
+  --mascot-badge: #5eead4;
+  --mascot-cuff: #2dd4bf;
+  --mascot-accent-start: #c4b5fd;
+  --mascot-orb: rgba(129, 140, 248, 0.72);
+  --mascot-shadow-outer: rgba(99, 102, 241, 0.24);
+  --mascot-shadow-inner: rgba(0, 0, 0, 0.45);
   display: block;
   position: relative;
   width: 100px;
   height: 100px;
   flex: 0 0 auto;
-  overflow: hidden;
+  overflow: visible;
 }
 
-.home-mascot-logo img {
-  display: none;
+:root[data-theme="light"] .home-mascot-logo {
+  --mascot-shell-top: #ffffff;
+  --mascot-shell-mid: #f8fafc;
+  --mascot-shell-bot: #e0e7ff;
+  --mascot-stroke: #1e293b;
+  --mascot-ear: #e0e7ff;
+  --mascot-visor-top: #1e1b4b;
+  --mascot-visor-bot: #090d16;
+  --mascot-visor-stroke: #1e293b;
+  --mascot-highlight: rgba(255, 255, 255, 0.95);
+  --mascot-badge: #6366f1;
+  --mascot-cuff: #0ea5e9;
+  --mascot-accent-start: #6366f1;
+  --mascot-orb: rgba(99, 102, 241, 0.58);
+  --mascot-shadow-outer: rgba(99, 102, 241, 0.16);
+  --mascot-shadow-inner: rgba(30, 41, 59, 0.14);
+}
+
+.home-mascot-svg {
+  display: block;
   width: 100px;
   height: 100px;
-  object-fit: contain;
   pointer-events: none;
-  -webkit-user-drag: none;
   user-select: none;
+  overflow: visible;
 }
 
-:root:not([data-theme="light"]) .home-mascot-logo .home-mascot-motion.home-mascot-dark,
-:root[data-theme="light"] .home-mascot-logo .home-mascot-motion.home-mascot-light {
-  display: block;
+.home-mascot-float {
+  animation: home-mascot-float 3.6s ease-in-out infinite;
+}
+
+.home-mascot-shadow {
+  transform-origin: 60px 109px;
+  animation: home-mascot-shadow 3.6s ease-in-out infinite;
+}
+
+.home-mascot-wave {
+  transform-origin: 96px 58px;
+  animation: home-mascot-wave 3.6s ease-in-out infinite;
+}
+
+.home-mascot-arm-left {
+  transform-origin: 16.5px 67px;
+  animation: home-mascot-arm-left 3.6s ease-in-out infinite;
+}
+
+.home-mascot-feet {
+  animation: home-mascot-feet 3.6s ease-in-out infinite;
+}
+
+.home-mascot-eyes {
+  transform-origin: 60px 53.5px;
+  animation: home-mascot-blink 4.4s ease-in-out infinite;
+}
+
+.home-mascot-spark {
+  transform-origin: 60px 15px;
+  animation: home-mascot-spark 2.6s ease-in-out infinite;
+}
+
+.home-mascot-sparkle {
+  transform-origin: 106px 29px;
+  animation: home-mascot-sparkle 3.6s ease-in-out infinite;
+}
+
+.home-mascot-orb {
+  transform-origin: 16px 36px;
+  animation: home-mascot-spark 3.2s ease-in-out infinite reverse;
+}
+
+@keyframes home-mascot-float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes home-mascot-shadow {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.84, 0.8);
+    opacity: 0.68;
+  }
+}
+
+@keyframes home-mascot-wave {
+  0%,
+  16%,
+  72%,
+  100% {
+    transform: rotate(22deg);
+  }
+  28% {
+    transform: rotate(36deg);
+  }
+  40% {
+    transform: rotate(10deg);
+  }
+  52% {
+    transform: rotate(35deg);
+  }
+  62% {
+    transform: rotate(14deg);
+  }
+}
+
+@keyframes home-mascot-arm-left {
+  0%,
+  100% {
+    transform: rotate(15deg);
+  }
+  50% {
+    transform: rotate(21deg);
+  }
+}
+
+@keyframes home-mascot-feet {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(1.6px);
+  }
+}
+
+@keyframes home-mascot-blink {
+  0%,
+  44%,
+  48%,
+  92%,
+  96%,
+  100% {
+    transform: scaleY(1);
+  }
+  46%,
+  94% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes home-mascot-spark {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.14);
+    opacity: 1;
+  }
+}
+
+@keyframes home-mascot-sparkle {
+  0%,
+  18%,
+  74%,
+  100% {
+    transform: scale(0.82) rotate(0deg);
+    opacity: 0.55;
+  }
+  34%,
+  54% {
+    transform: scale(1.12) rotate(12deg);
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-theme="light"]) .home-mascot-logo .home-mascot-motion.home-mascot-dark,
-  :root[data-theme="light"] .home-mascot-logo .home-mascot-motion.home-mascot-light {
-    display: none;
-  }
-
-  :root:not([data-theme="light"]) .home-mascot-logo .home-mascot-still.home-mascot-dark,
-  :root[data-theme="light"] .home-mascot-logo .home-mascot-still.home-mascot-light {
-    display: block;
+  .home-mascot-float,
+  .home-mascot-shadow,
+  .home-mascot-wave,
+  .home-mascot-arm-left,
+  .home-mascot-feet,
+  .home-mascot-eyes,
+  .home-mascot-spark,
+  .home-mascot-sparkle,
+  .home-mascot-orb {
+    animation: none;
   }
 }
 

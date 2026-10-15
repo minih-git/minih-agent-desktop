@@ -1,0 +1,98 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="squircle-light">
+      <rect width="1024" height="1024" rx="228"/>
+    </clipPath>
+
+    <!-- Crisp pearl-alabaster background gradient for light mode -->
+    <linearGradient id="bg-light" x1="128" y1="48" x2="896" y2="976" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.55" stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#EEF2FF"/>
+    </linearGradient>
+
+    <radialGradient id="aura-indigo-light" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(240 180) rotate(42) scale(620)">
+      <stop offset="0" stop-color="#6366F1" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#6366F1" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="aura-teal-light" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 820) rotate(-135) scale(600)">
+      <stop offset="0" stop-color="#14B8A6" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#14B8A6" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="rim-light" x1="160" y1="0" x2="864" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366F1" stop-opacity="0.34"/>
+      <stop offset="0.5" stop-color="#94A3B8" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#0D9488" stop-opacity="0.34"/>
+    </linearGradient>
+
+    <!-- Seamless sculptural gradient across the M mark in light mode -->
+    <linearGradient id="m-sculpt-light" x1="210" y1="360" x2="814" y2="756" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1E1B4B"/>
+      <stop offset="0.45" stop-color="#312E81"/>
+      <stop offset="0.78" stop-color="#0369A1"/>
+      <stop offset="1" stop-color="#0D9488"/>
+    </linearGradient>
+
+    <!-- Agent Spark gradient for light theme -->
+    <linearGradient id="spark-light" x1="400" y1="160" x2="624" y2="384" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366F1"/>
+      <stop offset="0.48" stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#0D9488"/>
+    </linearGradient>
+  </defs>
+
+  <g clip-path="url(#squircle-light)">
+    <rect width="1024" height="1024" fill="url(#bg-light)"/>
+    <rect width="1024" height="1024" fill="url(#aura-indigo-light)"/>
+    <rect width="1024" height="1024" fill="url(#aura-teal-light)"/>
+
+    <!-- Symmetrical flanking orbital arcs -->
+    <path
+      d="M 332 332 A 204 204 0 0 1 424 198"
+      stroke="url(#spark-light)"
+      stroke-width="10"
+      stroke-linecap="round"
+      stroke-opacity="0.32"
+    />
+    <path
+      d="M 600 198 A 204 204 0 0 1 692 332"
+      stroke="url(#spark-light)"
+      stroke-width="10"
+      stroke-linecap="round"
+      stroke-opacity="0.32"
+    />
+
+    <!-- Seamless sculptural M silhouette -->
+    <path
+      d="M 264 740 V 408 L 512 632 L 760 408 V 740"
+      stroke="url(#m-sculpt-light)"
+      stroke-width="106"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+
+    <!-- Sculpted 4-Point Agent Spark -->
+    <path
+      d="M 512 156
+         C 512 228 548 268 620 268
+         C 548 268 512 308 512 380
+         C 512 308 476 268 404 268
+         C 476 268 512 228 512 156 Z"
+      fill="url(#spark-light)"
+    />
+    <path
+      d="M 512 212
+         C 512 246 528 268 564 268
+         C 528 268 512 290 512 324
+         C 512 290 496 268 460 268
+         C 496 268 512 246 512 212 Z"
+      fill="#FFFFFF"
+      fill-opacity="0.60"
+    />
+
+    <!-- Flush edge border -->
+    <rect x="8" y="8" width="1008" height="1008" rx="220" stroke="url(#rim-light)" stroke-width="16"/>
+  </g>
+</svg>

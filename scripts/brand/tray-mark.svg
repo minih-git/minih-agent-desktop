@@ -1,0 +1,18 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Transparent monochrome macOS menu bar template icon -->
+  <path
+    d="M 192 816 V 396 L 512 680 L 832 396 V 816"
+    stroke="#000000"
+    stroke-width="124"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M 512 120
+       C 512 206 556 252 642 252
+       C 556 252 512 298 512 384
+       C 512 298 468 252 382 252
+       C 468 252 512 206 512 120 Z"
+    fill="#000000"
+  />
+</svg>
