@@ -11922,8 +11922,7 @@ This test plan spec is accepted when:
   1. Open Settings → Agent → Subagents. Confirm a Built-in group lists
      `explorer`, `code-reviewer`, `test-runner`, `fixer`, and `ui-designer`
      with localized names, `Task(<handle>)` copy, tool grants, a Built-in
-     badge, **Copy as mine**, and an enablement switch in the on position.
-     Confirm none of those rows has Reveal or Delete.
+     badge, **Edit**, and an enablement switch in the on position.
   2. Confirm the Global group still shows localized `settings.subagentsEmpty`
      copy and the New subagent action.
   3. Switch `fixer` off from its Built-in row. Confirm the row dims with its
@@ -11932,28 +11931,30 @@ This test plan spec is accepted when:
   4. Send a prompt with `fixer` switched off. Confirm the Task catalog does not
      offer it while the other four remain, then switch it back on and confirm
      the next prompt offers it again.
-  5. Choose **Copy as mine** on explorer. Confirm the create sheet opens
-     pre-filled from that definition (name, description, tools, body) with
-     the Explorer template chip selected, not Blank. Save. Confirm
-     explorer now appears only as a user-owned Global row and is omitted from
-     Built-in, and the next prompt's Task catalog uses the user document.
-  6. Disable the user explorer and reload the page. Confirm the user row is
-     off and explorer reappears under Built-in (disabled user documents do
-     not reach the loader, so the shipped definition wins again).
+  5. Choose **Edit** on `explorer`. Confirm the edit sheet opens pre-filled
+     from that definition (locked localized name, description, tools, body,
+     and Advanced fields) with **Restore default** disabled until a field is
+     changed. Adjust description or tools and Save. Confirm `explorer` stays in
+     the Built-in group (and is not duplicated into Global), shows the
+     **Modified** badge and the one-click **Restore default** button on its row,
+     and the next prompt's Task catalog uses the customized `~/.agents/subagents/explorer.md`.
+  6. Click **Restore default** on the `explorer` row (or in its edit sheet).
+     Confirm `~/.agents/subagents/explorer.md` is removed, the **Modified**
+     badge and restore button disappear, and `explorer` returns to its factory
+     definition.
 - **Expected**: Settings shows the defaults the agent can actually delegate to,
-  and every one of them can be turned off from its own row. Builtin activation
-  is app-local state rather than a document, so a switched-off default keeps its
-  row; copying a builtin stays the way to retune one, and reveal and delete
-  remain file-backed actions on user-owned rows only.
+  and every one of them can be turned off, edited in place, and restored to its
+  factory default with one click from its own row.
 - **Specs linked**: `04-ux/06-settings-ia.md` §2, `03-runtime/01-ipc-protocol.md`
   §12c, `03-runtime/02-agent-runtime.md` §5f, ADR 0062, ADR 0063, ADR 0270
 - **Acceptance**: E (tools & permissions), Quality
 - **Milestone**: M6+
-- **Status**: Source/unit covered (`apps/desktop/test/agent-capability-settings.test.mjs`,
+- **Status**: Covered by `apps/desktop/test/agent-capability-settings.test.mjs`,
+  `apps/desktop/test/subagent-editor-helpers.test.mjs`,
+  `apps/desktop/test/subagent-fallback-user-path.test.mjs`,
   `apps/desktop/test/subagent-wiring.test.mjs`,
   `packages/agent-runtime/src/subagent-definitions.test.ts`,
-  `packages/shared/src/subagent-presets.test.ts`); full UI journey Draft
-  (run only in a capable environment when this surface changes)
+  `packages/shared/src/subagent-presets.test.ts`, and `scripts/e2e-subagents.mjs`
 
 #### E2E-198: A subagent task opens with a live conversation process
 

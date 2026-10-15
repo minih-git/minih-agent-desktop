@@ -1286,6 +1286,7 @@ sklm: {
     "skillSaved": "Guardado {{name}}",
     "subagentCreated": "Creado {{name}}",
     "subagentSaved": "Guardado {{name}}",
+    "subagentRestored": "{{name}} restaurado a los valores predeterminados",
     "projectArchive": "Archivo de proyecto",
     "remoteHosts": {
       "title": "Hosts remotos",
@@ -2646,6 +2647,9 @@ sklm: {
       "thinkingMeta": "pensando: {{level}}",
       "providedTitle": "Integrado y proyecto",
       "sourceBuiltin": "Integrado",
+      "customized": "Modificado",
+      "resetBuiltin": "Restaurar predeterminado",
+      "resetBuiltinOf": "Restaurar {{name}} a los valores predeterminados",
       "sourceProject": "Proyecto",
       "name": "Nombre",
       "nameHint": "Letras minúsculas, dígitos y guiones: el agente lo escribe palabra por palabra.",

@@ -1288,6 +1288,7 @@ sklm: {
     skillSaved: "{{name}} kaydedildi",
     subagentCreated: "{{name}} oluşturuldu",
     subagentSaved: "{{name}} kaydedildi",
+    subagentRestored: "{{name}} varsayılana sıfırlandı",
     projectArchive: "Proje arşivi",
     remoteHosts: {
       title: "Uzak ana bilgisayarlar",
@@ -2676,6 +2677,9 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       thinkingMeta: "düşünme: {{level}}",
       providedTitle: "Yerleşik ve proje",
       sourceBuiltin: "Yerleşik",
+      customized: "Değiştirildi",
+      resetBuiltin: "Varsayılana sıfırla",
+      resetBuiltinOf: "{{name}} öğesini varsayılana sıfırla",
       sourceProject: "Proje",
       name: "Ad",
       nameHint: "Küçük harf, rakam ve tire — ajan aynen yazar.",

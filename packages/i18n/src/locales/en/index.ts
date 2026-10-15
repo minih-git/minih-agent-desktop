@@ -1138,6 +1138,7 @@ sklm: {
     skillSaved: "Saved {{name}}",
     subagentCreated: "Created {{name}}",
     subagentSaved: "Saved {{name}}",
+    subagentRestored: "Restored {{name}} to default",
     projectArchive: "Project archive",
     remoteHosts: {
       title: "Remote hosts",
@@ -2689,6 +2690,9 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       thinkingMeta: "thinking: {{level}}",
       providedTitle: "Built-in and project",
       sourceBuiltin: "Built-in",
+      customized: "Modified",
+      resetBuiltin: "Restore default",
+      resetBuiltinOf: "Restore {{name}} to default",
       sourceProject: "Project",
       name: "Name",
       nameHint: "Lowercase letters, digits and dashes — the agent types it verbatim.",

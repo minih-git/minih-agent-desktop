@@ -1106,6 +1106,7 @@ export const ptBR = {
     skillSaved: "Salvo {{name}}",
     subagentCreated: "{{name}} criado",
     subagentSaved: "Salvo {{name}}",
+    subagentRestored: "{{name}} restaurado para o padrão",
     projectArchive: "Arquivo de projeto",
     remoteHosts: {
       title: "Hosts remotos",
@@ -2610,6 +2611,9 @@ export const ptBR = {
       thinkingMeta: "raciocínio: {{level}}",
       providedTitle: "Integrados e do projeto",
       sourceBuiltin: "Integrado",
+      customized: "Modificado",
+      resetBuiltin: "Restaurar padrão",
+      resetBuiltinOf: "Restaurar {{name}} para o padrão",
       sourceProject: "Projeto",
       name: "Nome",
       nameHint: "Letras minúsculas, números e hífens — o agente digita o nome exatamente assim.",

@@ -1278,6 +1278,7 @@ sklm: {
     skillSaved: "已保存 {{name}}",
     subagentCreated: "已新建 {{name}}",
     subagentSaved: "已保存 {{name}}",
+    subagentRestored: "已复原 {{name}}",
     projectArchive: "项目归档",
     remoteHosts: {
       title: "远程主机",
@@ -2643,6 +2644,9 @@ sklm: {
       thinkingMeta: "推理：{{level}}",
       providedTitle: "内置与项目",
       sourceBuiltin: "内置",
+      customized: "已修改",
+      resetBuiltin: "恢复默认",
+      resetBuiltinOf: "恢复 {{name}} 为默认定义",
       sourceProject: "项目",
       name: "名称",
       nameHint: "小写字母、数字和短横线——主智能体会原样使用。",

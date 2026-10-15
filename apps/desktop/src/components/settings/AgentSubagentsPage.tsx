@@ -20,6 +20,7 @@ import {
 } from "./AgentCapabilityLayout";
 import {
   SubagentEditorSheet,
+  draftFromBuiltin,
   draftFromDefinition,
   draftFromRecord,
   emptySubagentDraft,
@@ -34,11 +35,11 @@ import {
 } from "./subagent-settings";
 import {
   IconBot,
-  IconCopy,
   IconFolderOpen,
   IconPencil,
   IconPlus,
   IconTrash,
+  IconUndo2,
 } from "../icons";
 import { TooltipButton } from "../ui";
 const GLOBAL_SUBAGENTS_PATH = "~/.agents/subagents";
@@ -46,6 +47,8 @@ const GLOBAL_SUBAGENTS_PATH = "~/.agents/subagents";
 type SubagentEditorState = {
   draft: SubagentDraft;
   editing: UserSubagentRecord | null;
+  /** Shipped builtin row when editing a builtin in place. */
+  builtin?: BuiltinSubagentRow | null;
   /** Selected template chip; set when Copy as mine pre-fills a builtin. */
   presetId?: string;
 };
@@ -76,7 +79,6 @@ export function AgentSubagentsPage() {
   const [editor, setEditor] = useState<SubagentEditorState | null>(null);
   const [saving, setSaving] = useState(false);
   const { armed, setArmed } = useArmedDelete();
-  const ownedHandles = useMemo(() => new Set(owned.map((row) => row.id)), [owned]);
 
   /**
    * The switch flips locally first and only reverts if the host refuses, so one
@@ -165,6 +167,82 @@ export function AgentSubagentsPage() {
     }
   };
 
+  const openEditBuiltin = async (builtin: BuiltinSubagentRow) => {
+    const handle = builtin.name;
+    if (builtin.override) {
+      setBusyId(`builtin:${handle}`);
+      try {
+        const result = await api.readUserSubagent(handle);
+        const record = result.subagent ?? builtin.override;
+        setEditor({
+          draft: {
+            ...draftFromRecord(record, result.body ?? builtin.prompt),
+            id: handle,
+            name: handle,
+          },
+          editing: record,
+          builtin,
+        });
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
+      } finally {
+        setBusyId(null);
+      }
+      return;
+    }
+    setEditor({
+      draft: draftFromBuiltin(builtin),
+      editing: {
+        id: handle,
+        name: handle,
+        description: builtin.description,
+        path: "",
+        tools: builtin.tools,
+        enabled: builtin.enabled,
+        level: "global",
+        sizeBytes: 0,
+        createdAt: "",
+        updatedAt: "",
+      },
+      builtin,
+    });
+  };
+
+  const resetBuiltin = async (builtin: BuiltinSubagentRow) => {
+    const handle = builtin.name;
+    if (!builtin.customized && !builtin.override) {
+      if (editor?.builtin?.name === handle) {
+        setEditor((current) =>
+          current && current.builtin
+            ? { ...current, draft: draftFromBuiltin(current.builtin) }
+            : current,
+        );
+      }
+      return;
+    }
+    if (busyId === `builtin:${handle}`) return;
+    setBusyId(`builtin:${handle}`);
+    if (editor?.builtin?.name === handle) setSaving(true);
+    try {
+      await api.removeUserSubagent(handle);
+      await load();
+      showToast(
+        t("settings.subagentRestored", {
+          name: builtinDisplayName(handle, t),
+        }),
+        { variant: "success" },
+      );
+      if (editor?.builtin?.name === handle) {
+        setEditor(null);
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
+    } finally {
+      setBusyId(null);
+      setSaving(false);
+    }
+  };
+
   const copyBuiltin = (definition: SubagentDefinition) => {
     setEditor({
       draft: draftFromDefinition(definition),
@@ -175,9 +253,9 @@ export function AgentSubagentsPage() {
 
   const save = async () => {
     if (!editor) return;
-    const { draft, editing } = editor;
+    const { draft, editing, builtin } = editor;
     const payload = {
-      name: draft.name.trim(),
+      name: builtin ? builtin.name : draft.name.trim(),
       description: draft.description.trim(),
       body: draft.body,
       tools: mergeSubagentToolGrant(draft.inheritTools, draft.tools),
@@ -192,12 +270,21 @@ export function AgentSubagentsPage() {
     };
     setSaving(true);
     try {
-      if (editing) await api.updateUserSubagent(editing.id, payload);
-      else await api.createUserSubagent(payload);
+      if (builtin) {
+        if (builtin.override) await api.updateUserSubagent(builtin.name, payload);
+        else await api.createUserSubagent(payload);
+        if (draft.enabled !== builtin.enabled) {
+          await api.setBuiltinSubagentEnabled(builtin.name, draft.enabled);
+        }
+      } else if (editing) {
+        await api.updateUserSubagent(editing.id, payload);
+      } else {
+        await api.createUserSubagent(payload);
+      }
       await load();
       showToast(
         t(editing ? "settings.subagentSaved" : "settings.subagentCreated", {
-          name: payload.name,
+          name: builtin ? builtinDisplayName(builtin.name, t) : payload.name,
         }),
         { variant: "success" },
       );
@@ -262,7 +349,6 @@ export function AgentSubagentsPage() {
   const renderBuiltin = (definition: BuiltinSubagentRow) => {
     const handle = definition.name;
     const name = builtinDisplayName(handle, t);
-    const canCopy = !ownedHandles.has(handle);
     const busy = busyId === `builtin:${handle}`;
     return (
       <CapabilityRow
@@ -272,7 +358,12 @@ export function AgentSubagentsPage() {
         off={!definition.enabled}
         command={t("extensions.subagents.handle", { name: handle })}
         badges={
-          <span className="agent-capability-badge">{t("extensions.subagents.sourceBuiltin")}</span>
+          <>
+            <span className="agent-capability-badge">{t("extensions.subagents.sourceBuiltin")}</span>
+            {definition.customized ? (
+              <span className="agent-capability-badge">{t("extensions.subagents.customized")}</span>
+            ) : null}
+          </>
         }
         description={definition.description || t("settings.noCapabilityDescription")}
         meta={
@@ -286,16 +377,28 @@ export function AgentSubagentsPage() {
         }
         actions={
           <>
-            {canCopy ? (
+            {definition.customized ? (
               <TooltipButton
                 type="button"
                 className="settings-icon-button"
-                tooltip={t("extensions.subagents.copy")}
-                onClick={() => copyBuiltin(definition)}
+                ariaLabel={t("extensions.subagents.resetBuiltinOf", { name })}
+                tooltip={t("extensions.subagents.resetBuiltin")}
+                disabled={busy}
+                onClick={() => void resetBuiltin(definition)}
               >
-                <IconCopy size={15} />
+                <IconUndo2 size={15} />
               </TooltipButton>
             ) : null}
+            <TooltipButton
+              type="button"
+              className="settings-icon-button"
+              ariaLabel={t("extensions.subagents.rowActions", { name })}
+              tooltip={t("extensions.subagents.edit")}
+              disabled={busy}
+              onClick={() => void openEditBuiltin(definition)}
+            >
+              <IconPencil size={15} />
+            </TooltipButton>
             <CapabilityToggle
               checked={definition.enabled}
               busy={busy}
@@ -398,6 +501,8 @@ export function AgentSubagentsPage() {
     </CapabilityButton>
   );
 
+  const revealTarget = editor?.builtin ? editor.builtin.override : editor?.editing;
+
   return (
     <AgentCapabilityPage
       className="agent-subagents-page"
@@ -458,13 +563,16 @@ export function AgentSubagentsPage() {
           draft={editor.draft}
           setDraft={(draft) => setEditor((current) => (current ? { ...current, draft } : current))}
           editing={editor.editing}
+          builtin={editor.builtin}
+          canReset={Boolean(editor.builtin?.customized || editor.builtin?.override)}
           initialPresetId={editor.presetId}
           saving={saving}
           onClose={() => {
             if (!saving) setEditor(null);
           }}
           onSave={() => void save()}
-          onReveal={editor.editing ? () => void reveal(editor.editing!) : undefined}
+          onReveal={revealTarget ? () => void reveal(revealTarget) : undefined}
+          onReset={editor.builtin ? () => void resetBuiltin(editor.builtin!) : undefined}
         />
       ) : null}
     </AgentCapabilityPage>

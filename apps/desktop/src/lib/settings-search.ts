@@ -244,6 +244,7 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "extensions.subagents.reveal",
       "extensions.subagents.copy",
       "extensions.subagents.sourceBuiltin",
+      "extensions.subagents.resetBuiltin",
       "extensions.subagents.presetExplorerName",
       "extensions.subagents.presetReviewerName",
       "extensions.subagents.presetTestRunnerName",

@@ -351,27 +351,32 @@ test("all capability paths are agents roots, not legacy capability directories",
   }
 });
 
-test("Settings lists shipped builtin subagents with a switch of their own", () => {
+test("Settings lists shipped builtin subagents with in-place edit, restore, and a switch of their own", () => {
   const api = read("../src/lib/api.ts");
   assert.match(subagentSettings, /api\.subagentCatalog/);
   assert.match(subagentSettings, /item\.source === "builtin"/);
   assert.match(subagentSettings, /fallbackBuiltinDefinitions/);
-  assert.match(subagentSettings, /owned\.filter\(\(row\) => row\.enabled\)/);
+  assert.match(subagentSettings, /export function buildSubagentPageData/);
+  assert.match(subagentSettings, /owned\.filter\(\(row\) => !builtinHandles\.has\(row\.id\)\)/);
+  assert.match(subagentSettings, /customized: true/);
   assert.match(subagentSettings, /catalog\.builtins/);
   assert.match(subagents, /extensions\.subagents\.sourceBuiltin/);
-  assert.match(subagents, /extensions\.subagents\.copy/);
-  assert.match(subagents, /draftFromDefinition/);
-  assert.match(subagents, /copyBuiltin/);
-  assert.match(subagents, /presetId: definition\.name/);
-  assert.match(subagents, /initialPresetId=\{editor\.presetId\}/);
-  // A builtin row keeps its badge and Copy as mine, gains the switch, and still
-  // has no Reveal or Delete: there is no file behind it.
+  assert.match(subagents, /extensions\.subagents\.customized/);
+  assert.match(subagents, /extensions\.subagents\.resetBuiltin/);
+  assert.match(subagents, /draftFromBuiltin/);
+  assert.match(subagents, /openEditBuiltin/);
+  assert.match(subagents, /resetBuiltin/);
+  // A builtin row keeps its badge, supports in-place Edit and one-click Restore
+  // when customized, and has a switch of its own.
   const builtinRow = subagents.slice(
     subagents.indexOf("const renderBuiltin"),
     subagents.indexOf("const renderRow"),
   );
   assert.notEqual(builtinRow, "", "builtin row renderer should be present");
-  assert.match(builtinRow, /IconCopy/);
+  assert.match(builtinRow, /IconPencil/);
+  assert.match(builtinRow, /IconUndo2/);
+  assert.match(builtinRow, /openEditBuiltin\(definition\)/);
+  assert.match(builtinRow, /resetBuiltin\(definition\)/);
   assert.match(builtinRow, /<CapabilityToggle/);
   assert.match(builtinRow, /checked=\{definition\.enabled\}/);
   assert.doesNotMatch(
@@ -379,7 +384,8 @@ test("Settings lists shipped builtin subagents with a switch of their own", () =
     /setUserSubagentEnabled|revealSubagent|removeUserSubagent/,
   );
   // The switch writes builtin activation, flipping locally first like the rows
-  // that own a document do.
+  // that own a document do, and the main IPC handler keeps any on-disk override
+  // activation in sync.
   const toggle = subagents.slice(
     subagents.indexOf("const toggleBuiltin = async"),
     subagents.indexOf("const openEdit = async"),
@@ -390,6 +396,10 @@ test("Settings lists shipped builtin subagents with a switch of their own", () =
   assert.doesNotMatch(toggle.slice(0, toggle.indexOf("catch")), /await load\(\)/);
   assert.match(toggle, /catch[\s\S]*?enabled: builtin\.enabled/);
   assert.match(api, /setBuiltinSubagentEnabled: \(id: string, enabled: boolean\) =>/);
+  assert.match(
+    skillImport,
+    /IPC\.invoke\.subagentSetBuiltinEnabled[\s\S]*?host\.call<[^>]+>\(\s*"agents\.setBuiltinEnabled"[\s\S]*?host\.call\("agents\.setEnabled"/,
+  );
 });
 
 test("a capability can be moved between the global and a project level", () => {
