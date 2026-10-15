@@ -24,6 +24,7 @@ import {
 } from "./provider-api-style";
 import { ModelBindingFields } from "./ModelBindingFields";
 import { AddModelsDialog } from "./AddModelsDialog";
+import { ModelConfigureDialog } from "./ModelConfigureDialog";
 import { MinihRouterModelCard } from "./MinihRouterModelCard";
 import { ImageGenerationModelRow } from "./ImageGenerationModelRow";
 import {
@@ -319,7 +320,6 @@ export function ModelsPage() {
                   const plaza = selected.data.find(
                     (entry) => entry.model.id.toLowerCase() === binding.id.toLowerCase(),
                   );
-                  const configuring = configuringId === binding.id;
                   return (
                     <li
                       key={binding.id}
@@ -351,15 +351,9 @@ export function ModelsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          aria-expanded={configuring}
                           onClick={() => {
-                            if (configuring) {
-                              setConfiguringId(null);
-                              setDraftBindings(null);
-                            } else {
-                              setDraftBindings(null);
-                              setConfiguringId(binding.id);
-                            }
+                            setDraftBindings(null);
+                            setConfiguringId(binding.id);
                           }}
                         >
                           {t("settings.modelsConfigure")}
@@ -374,44 +368,6 @@ export function ModelsPage() {
                         </Button>
                       </div>
 
-                      {configuring && configuredBinding?.id === binding.id ? (
-                        <div className="models-configure-drawer">
-                          <div className="models-configure-head">
-                            <h4 className="settings-card-heading">
-                              {t("settings.modelsConfigureTitle", { model: binding.id })}
-                            </h4>
-                            <div className="models-configure-actions">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setConfiguringId(null);
-                                  setDraftBindings(null);
-                                }}
-                              >
-                                {t("settings.cancel")}
-                              </Button>
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                disabled={saving}
-                                onClick={() => void saveConfigured()}
-                              >
-                                {t("settings.save")}
-                              </Button>
-                            </div>
-                          </div>
-                          <ModelBindingFields
-                            binding={configuredBinding}
-                            publishedLevels={[]}
-                            busy={saving}
-                            nativeWebSearchCapable
-                            apiStyleOptions={modelApiStyleOptions}
-                            globalApiStyle={routerProvider.apiStyle ?? "chat_completions"}
-                            onChange={(patch) => updateBinding(binding.id, patch)}
-                          />
-                        </div>
-                      ) : null}
                     </li>
                   );
                 })}
@@ -462,6 +418,21 @@ export function ModelsPage() {
           </span>
         </Button>
       </div>
+
+      {configuredBinding && routerProvider ? (
+        <ModelConfigureDialog
+          binding={configuredBinding}
+          saving={saving}
+          apiStyleOptions={modelApiStyleOptions}
+          globalApiStyle={routerProvider.apiStyle ?? "chat_completions"}
+          onClose={() => {
+            setConfiguringId(null);
+            setDraftBindings(null);
+          }}
+          onSave={() => void saveConfigured()}
+          onChange={(patch) => updateBinding(configuredBinding.id, patch)}
+        />
+      ) : null}
 
       {addOpen && routerProvider ? (
         <AddModelsDialog

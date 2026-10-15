@@ -423,16 +423,20 @@ a usage tab.
   **Remove**. A model the gateway lists no price for is still shown with its
   configured limits and a line saying no price was returned — the row sends it,
   so it is never hidden.
-- **Configure** opens the shared per-model editor inline: alias, context window
-  and max-output ladders, thinking levels and default level, the thinking
-  protocol, attachment capabilities, subagent availability, provider-hosted web
-  search, and the **protocol mode** (per-model `apiStyle`) whose default reads
-  "Follow global" with the row's current style. Saving writes the whole binding
-  list once.
+- **Configure** opens the shared per-model editor in a modal dialog — the card
+  grid stays a compact list, so a tall form never stretches a card. The dialog
+  holds alias, context window and max-output ladders, thinking levels and
+  default level, the thinking protocol, attachment capabilities, subagent
+  availability, provider-hosted web search, and the **protocol mode**
+  (per-model `apiStyle`) whose default reads "Follow global" with the row's
+  current style. Saving writes the whole binding list once and closes the
+  dialog.
 - **Add models** (top right) opens the gateway catalog as selectable cards, 12
   per page, with search (debounced, restarting at page one), previous/next
-  paging that keeps the current page visible while the next loads, and a
-  selection count in the footer. Cards already configured on the row render as
+  paging that keeps the current page visible while the next loads, a
+  **select-all row** for every card on the current page that the row does not
+  carry yet (indeterminate while only some are picked, and it never touches
+  cards already configured), and a selection count in the footer. Cards already configured on the row render as
   added and cannot be re-picked. Confirming appends the chosen bindings and
   claims the app's chat default only while nothing runnable resolves.
 - Removing a model drops any image-generation binding naming it and leaves no

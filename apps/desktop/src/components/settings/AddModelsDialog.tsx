@@ -73,6 +73,32 @@ export function AddModelsDialog({
     });
   };
 
+  // Cards on the current page the row does not carry yet: select-all touches
+  // exactly these, never the already-configured ones (they are not togglable).
+  const selectableItems = useMemo(
+    () =>
+      (models.data?.items ?? []).filter(
+        (model) => !configuredSet.has(model.id.toLowerCase()),
+      ),
+    [models.data?.items, configuredSet],
+  );
+  const allVisibleSelected =
+    selectableItems.length > 0 &&
+    selectableItems.every((model) => selected.has(model.id));
+  const someVisibleSelected =
+    !allVisibleSelected && selectableItems.some((model) => selected.has(model.id));
+
+  const toggleAllVisible = (check: boolean) => {
+    setSelected((current) => {
+      const next = new Map(current);
+      for (const model of selectableItems) {
+        if (check) next.set(model.id, model);
+        else next.delete(model.id);
+      }
+      return next;
+    });
+  };
+
   const confirm = () => {
     if (selected.size === 0) {
       onClose();
@@ -116,6 +142,30 @@ export function AddModelsDialog({
           />
         </div>
         <p className="minih-router-price-hint">{t("settings.minihRouterPriceHint")}</p>
+
+        {models.data && models.data.items.length > 0 ? (
+          <label className="add-models-select-all">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              disabled={busy || selectableItems.length === 0}
+              ref={(el) => {
+                if (el) el.indeterminate = someVisibleSelected;
+              }}
+              aria-label={
+                allVisibleSelected
+                  ? t("settings.deselectAllVisibleModels")
+                  : t("settings.selectAllVisibleModels")
+              }
+              onChange={(event) => toggleAllVisible(event.target.checked)}
+            />
+            <span>
+              {allVisibleSelected
+                ? t("settings.deselectAllVisibleModels")
+                : t("settings.selectAllVisibleModels")}
+            </span>
+          </label>
+        ) : null}
 
         {models.state === "error" ? (
           <div className="minih-router-status is-error" role="alert">

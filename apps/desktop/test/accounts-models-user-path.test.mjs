@@ -252,6 +252,30 @@ window.accountsProbe = async () => {
     () => dialog.querySelectorAll("[data-model-id]").length === 1,
     "search did not filter the dialog",
   );
+  // Select-all before anything is picked: a fresh search keeps every card
+  // available, so the one visible card becomes selected through the bulk row.
+  const selectAllBefore = document.querySelector(".add-models-select-all input");
+  const selectAllWasUnchecked = selectAllBefore ? !selectAllBefore.checked : false;
+  flushSync(() => setValue(search, ""));
+  await waitFor(
+    () => dialog.querySelectorAll("[data-model-id]").length === 12,
+    "clearing the search did not restore the page",
+  );
+  // The bulk row selects every card on the page that is not already on the row.
+  const selectAll = document.querySelector(".add-models-select-all input");
+  flushSync(() => selectAll.click());
+  await waitFor(
+    () => document.querySelector(".add-models-count").textContent.includes("12"),
+    "select-all did not select the whole page",
+  );
+  const selectAllCheckedAfter = selectAll.checked;
+  const selectAllIndeterminate = selectAll.indeterminate;
+  flushSync(() => selectAll.click());
+  await waitFor(
+    () => !document.querySelector(".add-models-count").textContent.includes("12"),
+    "select-all did not clear the page",
+  );
+  // Then one card is picked on its own, which is what gets saved.
   const check = dialog.querySelector(".minih-router-model-check");
   flushSync(() => check.click());
   const selectedCount = document.querySelector(".add-models-count").textContent;
@@ -272,13 +296,15 @@ window.accountsProbe = async () => {
   // The default the save claimed is reported on the card, not re-settable here.
   const defaultBadgeShown = document.body.innerText.includes("Default");
 
-  // 3) The configure drawer pins a protocol for that one model.
+  // 3) Configure opens a modal dialog, not an inline drawer in the card.
   await waitFor(() => cardIds().length === 1, "the chosen model card did not render");
   flushSync(() => button("Configure").click());
   const drawer = await waitFor(
-    () => document.querySelector(".models-configure-drawer"),
-    "the configure drawer did not open",
+    () => document.querySelector(".model-configure-dialog"),
+    "the configure dialog did not open",
   );
+  const cardStayedCompact = !document.querySelector(".models-configure-drawer");
+  const modalIsDialog = drawer.getAttribute("role") === "dialog";
   const protocolTrigger = drawer.querySelector('button[aria-label="Protocol mode"]');
   flushSync(() => protocolTrigger.click());
   const protocolOptions = [...document.querySelectorAll('[role="option"]')]
@@ -287,7 +313,12 @@ window.accountsProbe = async () => {
   const responsesOption = [...document.querySelectorAll('[role="option"]')]
     .find((node) => node.textContent.includes("OpenAI Responses"));
   flushSync(() => responsesOption.click());
+  const dialogClosesAfterSave = true; // asserted through the wait below
   flushSync(() => button("Save").click());
+  await waitFor(
+    () => !document.querySelector(".model-configure-dialog"),
+    "the configure dialog did not close after saving",
+  );
   await waitFor(
     () => updated && updated.models[0]?.apiStyle === "responses",
     "the per-model protocol was not saved",
@@ -324,7 +355,13 @@ window.accountsProbe = async () => {
     emptyStateShown,
     dialogCards,
     selectedCount: selectedCount.trim(),
+    selectAllWasUnchecked,
+    selectAllCheckedAfter,
+    selectAllIndeterminate,
     addSaved,
+    cardStayedCompact,
+    modalIsDialog,
+    dialogClosesAfterSave,
     defaultBadgeShown,
     followGlobalDefault,
     protocolOptions,
@@ -437,6 +474,9 @@ app.whenReady().then(async () => {
       emptyStateShown: true,
       dialogCards: 12,
       selectedCount: "1 selected",
+      selectAllWasUnchecked: true,
+      selectAllCheckedAfter: true,
+      selectAllIndeterminate: false,
       addSaved: {
         modelId: "gpt-4.1",
         protocolPinLeftToGlobal: true,
@@ -444,6 +484,9 @@ app.whenReady().then(async () => {
         nameUntouched: true,
         defaultFollowsFirstBinding: true,
       },
+      cardStayedCompact: true,
+      modalIsDialog: true,
+      dialogClosesAfterSave: true,
       defaultBadgeShown: true,
       followGlobalDefault: true,
       protocolOptions: [

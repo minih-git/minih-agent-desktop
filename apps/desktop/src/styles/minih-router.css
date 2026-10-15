@@ -562,6 +562,42 @@
   gap: 6px;
 }
 
+.model-configure-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(720px, 92vw);
+  max-height: 86vh;
+}
+
+.model-configure-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.model-configure-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.model-configure-body {
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.model-configure-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ds-border-subtle);
+}
+
 .models-configure-drawer {
   display: flex;
   flex-direction: column;
@@ -637,6 +673,21 @@
 .add-models-search .field-input {
   width: 100%;
   padding-left: 30px;
+}
+
+/* Select-all covers the current page only; the footer count still names the
+   whole pending selection across pages. */
+.add-models-select-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+
+.add-models-select-all:has(input:disabled) {
+  cursor: default;
 }
 
 .add-models-grid {
