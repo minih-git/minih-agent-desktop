@@ -159,6 +159,9 @@ jobs:
       - name: Build Desktop bundle
         run: pnpm --filter @minih-agent/desktop build
 
+      - name: Run subagent connector geometry E2E
+        run: xvfb-run --auto-servernum node scripts/e2e-subagent-connectors.mjs
+
       - name: Run browser capture/resize E2E
         run: xvfb-run --auto-servernum sh -c 'openbox >/dev/null 2>&1 & exec node scripts/e2e-browser-capture-resize.mjs'
 
