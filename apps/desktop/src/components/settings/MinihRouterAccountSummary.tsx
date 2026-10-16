@@ -26,7 +26,11 @@ export function MinihRouterAccountSummary({ account, locale }: MinihRouterAccoun
     : account.expiresAtMs
       ? formatTime(account.expiresAtMs)
       : t("settings.minihRouterNeverExpires");
-  const otherQuotas = account.quotas.length > 1 ? account.quotas : [];
+  const otherQuotas =
+    account.quotas.length > 1
+      ? account.quotas.filter((quota) => quota.id !== headline?.id)
+      : [];
+  const keyIdentity = [account.keyName, account.maskedKey].filter(Boolean).join(" · ");
   return (
     <>
       <dl className="minih-router-stats">
@@ -37,15 +41,22 @@ export function MinihRouterAccountSummary({ account, locale }: MinihRouterAccoun
               {headline ? formatUsd(headline.remainingUsd, locale) : t("settings.minihRouterUnlimited")}
             </span>
             {headline ? (
-              <span className="minih-router-stat-detail">
-                {quotaLabel(headline, t)} ·{" "}
-                {t("settings.minihRouterBalanceOf", { limit: formatUsd(headline.limitUsd, locale) })}
-              </span>
-            ) : null}
-            {headline ? (
               <span className="minih-router-meter" aria-hidden>
                 <span style={{ width: `${Math.round(quotaRemainingShare(headline) * 100)}%` }} />
               </span>
+            ) : null}
+            {headline ? (
+              <div className="minih-router-balance-foot">
+                <span className="minih-router-stat-detail">
+                  {quotaLabel(headline, t)} ·{" "}
+                  {t("settings.minihRouterBalanceOf", { limit: formatUsd(headline.limitUsd, locale) })}
+                </span>
+                {headline.windowEndsAtMs ? (
+                  <span className="minih-router-stat-reset">
+                    {t("settings.minihRouterQuotaResets", { time: formatTime(headline.windowEndsAtMs) })}
+                  </span>
+                ) : null}
+              </div>
             ) : null}
           </dd>
         </div>
@@ -69,14 +80,12 @@ export function MinihRouterAccountSummary({ account, locale }: MinihRouterAccoun
             </div>
           </>
         ) : null}
-        <div className="minih-router-stat">
+        <div className="minih-router-stat is-expires">
           <dt>{t("settings.minihRouterExpires")}</dt>
-          <dd>
+          <dd className="minih-router-expires-body">
             <span className="minih-router-stat-value is-compact">{expires}</span>
-            {account.keyName || account.maskedKey ? (
-              <span className="minih-router-stat-detail">
-                {[account.keyName, account.maskedKey].filter(Boolean).join(" · ")}
-              </span>
+            {keyIdentity ? (
+              <span className="minih-router-stat-detail is-key-meta">{keyIdentity}</span>
             ) : null}
           </dd>
         </div>
@@ -94,12 +103,17 @@ export function MinihRouterAccountSummary({ account, locale }: MinihRouterAccoun
         <ul className="minih-router-quotas">
           {otherQuotas.map((quota) => (
             <li key={quota.id} className="minih-router-quota">
-              <span className="minih-router-quota-label">{quotaLabel(quota, t)}</span>
-              <span className="minih-router-quota-value">
-                {t("settings.minihRouterQuotaUsage", {
-                  remaining: formatUsd(quota.remainingUsd, locale),
-                  limit: formatUsd(quota.limitUsd, locale),
-                })}
+              <div className="minih-router-quota-row">
+                <span className="minih-router-quota-label">{quotaLabel(quota, t)}</span>
+                <span className="minih-router-quota-value">
+                  {t("settings.minihRouterQuotaUsage", {
+                    remaining: formatUsd(quota.remainingUsd, locale),
+                    limit: formatUsd(quota.limitUsd, locale),
+                  })}
+                </span>
+              </div>
+              <span className="minih-router-meter is-subtle" aria-hidden>
+                <span style={{ width: `${Math.round(quotaRemainingShare(quota) * 100)}%` }} />
               </span>
               {quota.windowEndsAtMs ? (
                 <span className="minih-router-quota-reset">
