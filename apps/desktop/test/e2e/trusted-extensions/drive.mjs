@@ -158,6 +158,7 @@ check("other plugins keep no owned provider rows", (providerList.providers ?? []
 // 4) plugin OAuth through the real Settings page, Host-rendered dialog, and
 // provider runtime. The plugin returns only synthetic fixture credentials.
 const ui = await connectUiRenderer(Number(process.env.E2E_CDP_PORT));
+await ui.click('button[data-nav="user"]');
 await ui.click('button[data-nav="settings"]');
 await ui.until(() => Boolean(document.querySelector(".settings-shell-full")), null, "Settings page");
 const openedAccounts = await ui.run((label) => {
@@ -252,6 +253,7 @@ check("a model turn refreshes the plugin credential and uses its access token", 
 check("the refresh callback ran in the plugin process", readFileSync(hookPath, "utf8").includes("provider_oauth_refresh"));
 check("refresh credentials never enter model requests", !JSON.stringify(oauthRequest ?? {}).includes("plugin-refresh"));
 
+await ui.click('button[data-nav="user"]');
 await ui.click('button[data-nav="settings"]');
 await ui.until(() => Boolean(document.querySelector(".settings-shell-full")), null, "Settings before sign-out");
 const reopenedAccounts = await ui.run((label) => {
