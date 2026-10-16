@@ -32,8 +32,8 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
 - Top of rail: traffic-light clearance and the pill **Search settings…**
 - The **Back to app** (`返回应用`) action is pinned to the foot of the rail, not
   the top: it keeps its chevron + label form as a 32px control, and it shares
-  the horizontal band of the main shell's sidebar footer icon row (settings /
-  plugins / notifications), so the action does not jump vertically when the
+  the horizontal band of the main shell's sidebar footer row (account /
+  notifications / version), so the action does not jump vertically when the
   full-page takeover opens or closes. The directory above it scrolls when the
   window is too short for every destination, so a pinned action never covers a
   row
@@ -394,6 +394,14 @@ a usage tab.
     override is folded into it when the map is read (D438, D439)
 
 ### Accounts (`accounts` tab)
+- The bottom-left shell account button opens Account and settings. Its Manage
+  account action opens this tab; Settings preserves the existing settings
+  destination, and Cloud sync opens the `sync` tab. The popover shows only the
+  first saved credentialed Minih Router row, matching this page's selection.
+  Account quota reads go through existing redacted Main IPC, only while open;
+  a row/endpoint change remounts the quota reader so old balances cannot appear
+  under a new identity. No token input or raw diagnostic appears in the popover.
+
 - The accounts page is the only place credentials are configured. It leads with
   the **Minih Router** account: initialization is deliberately **one field** —
   paste a token and connect. The endpoint stays behind an **Advanced** toggle

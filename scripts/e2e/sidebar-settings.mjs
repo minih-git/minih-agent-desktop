@@ -149,6 +149,7 @@ export async function checkSidebarSettings({ cdp, check, waitFor, artifactDir })
         await cdp.evaluate(`Object.assign(document.documentElement.dataset, ${JSON.stringify({ platform, theme })})`);
         const home = await material('.sidebar');
         if (platform === original.platform) await capture(`home-${theme}`);
+        await click('[data-nav="user"]');
         await click('[data-nav="settings"]');
         await waitFor(() => cdp.evaluate("!!document.querySelector('.settings-nav')"), "settings rail mounts");
         const settings = await material('.settings-nav');
@@ -183,6 +184,7 @@ export async function checkSidebarSettings({ cdp, check, waitFor, artifactDir })
           root.style.setProperty('--ds-bg-sidebar-image', 'linear-gradient(180deg, #243645, #39563d)');
         })()`);
         const home = await material('.sidebar');
+        await click('[data-nav="user"]');
         await click('[data-nav="settings"]');
         await waitFor(() => cdp.evaluate("!!document.querySelector('.settings-nav')"), "custom-theme settings mounts");
         const settings = await material('.settings-nav');
@@ -203,6 +205,7 @@ export async function checkSidebarSettings({ cdp, check, waitFor, artifactDir })
 
     const width = (await material('.sidebar')).width;
     for (let i = 0; i < 3; i++) {
+      await click('[data-nav="user"]');
       await click('[data-nav="settings"]');
       await waitFor(() => cdp.evaluate("!!document.querySelector('.settings-nav')"), "rapid settings navigation");
       await returnToApp(width, `rapid round trip ${i + 1}`);
@@ -231,6 +234,7 @@ export async function checkSidebarSettings({ cdp, check, waitFor, artifactDir })
     await returnToApp(width, "interrupted entrance");
 
     await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+    await click('[data-nav="user"]');
     await click('[data-nav="settings"]');
     await waitFor(() => cdp.evaluate("!!document.querySelector('.settings-nav')"), "reduced-motion settings");
     await returnToApp(width, "reduced motion");

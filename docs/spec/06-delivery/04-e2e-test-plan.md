@@ -630,7 +630,7 @@
 
 - **Preconditions:** Isolated desktop profile, built task candidate, local SSE
   fixture model; no real provider credentials or paid API.
-- **Steps:** Open the footer clock; create a daily Morning task at 09:00; select
+- **Steps:** Open Scheduled in the sidebar; create a daily Morning task at 09:00; select
   another saved project, Auto permission and a non-default configured model; edit its name;
   select a daily time period from four fixed defaults; open the weekday menu,
   select custom days, save and reopen; reject empty days; verify the four defaults,
@@ -3416,7 +3416,7 @@ identify the platform validation still needed.
 #### E2E-022: Load local plugin
 
 - **Preconditions**: App running; sample plugin available at local path.
-- **Steps**: 1) Open Extensions from the sidebar footer Plugins icon. 2) Choose Load local plugin from the header overflow menu. 3) Enable it with the row switch.
+- **Steps**: 1) Open Extensions from the labeled sidebar Plugins row. 2) Choose Load local plugin from the header overflow menu. 3) Enable it with the row switch.
 - **Expected**: Plugin loads; manifest validated; contributions registered; the row appears under Active with a Local tag.
 - **Specs linked**: `07-plugins/01-plugin-system.md`, `07-plugins/05-plugin-lifecycle.md`
 - **Acceptance**: G (load local plugin)
@@ -4118,7 +4118,7 @@ window; opening a normal panel afterward must still work.
   empty-home hero and docked composer. 3) Observe the eight-frame mascot GIF
   looping in place, move the pointer over it, and confirm its cadence and
   geometry do not change. Enable reduced motion and confirm the still first
-  frame is shown. 4) Focus the footer Settings and Plugins icons, then each
+  frame is shown. 4) Open the account menu and focus Settings, then the sidebar Plugins row and each
   project/Temporary session create control. 5) Open Settings and the composer
   input.
 - **Expected**: Visible shell identity reads `Minih-Agent-Desktop`; the empty-home hero
@@ -4132,9 +4132,8 @@ window; opening a normal panel afterward must still work.
   gutter. The right Composer toolbar shows a Bot model × reasoning chip and
   the single submit slot; an installed plugin may contribute text actions
   between them. Without such a plugin no prompt-enhancement action appears.
-  The footer Settings and Plugins actions are compact icon buttons;
-  Plugins sits immediately to the right of Settings and exposes a localized
-  accessible name. Every scoped session-creation control uses the dedicated
+  The account menu exposes Settings, while the labeled sidebar Plugins row
+  exposes a localized accessible name and selected state. Every scoped session-creation control uses the dedicated
   message-plus icon with localized labels and accessible names. `Codex` remains visible only as
   the external import-source label or in non-runtime design-reference text.
 - **Specs linked**: `04-ux/01-ui-ia.md`, `04-ux/07-ui-design-system.md`,
@@ -9628,7 +9627,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 - **Preconditions**: An isolated profile has a named conversation and visible
   messages. No model credentials or external marketplace access are required.
 - **Steps**: 1) Select the conversation, type an unsent draft, enter Plugins
-  from the footer, and click the same button again. 2) Reopen Plugins, type a
+  from the sidebar, and click the same button again. 2) Reopen Plugins, type a
   search in Installed, return and reopen. 3) In the navigation fixture, repeat
   from `scheduled` and Settings; test a history containing both
   Scheduled and Settings before Plugins. 4) Exercise Forward then the Plugins
@@ -9637,7 +9636,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   it does not append a return entry or skip Settings. A chat history entry uses
   existing session selection/loading behavior. The conversation and unsent draft
   remain usable on return. If Back is unavailable, the button opens chat.
-  Its pressed state reflects whether Plugins is active. Plugin browsing tab,
+  Its current-page state reflects whether Plugins is active. Plugin browsing tab,
   search fields, and category survive route unmounts; dialogs and listeners
   are released rather than kept hidden. Settings navigation is unchanged.
 - **Specs linked**: `04-ux/01-ui-ia.md` §2/§5, `04-ux/08-component-spec.md` §3
@@ -9894,7 +9893,15 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
      capability is run.
   4. Configure backup mode. Verify remote configuration is not applied, backup
      history is separate, unchanged snapshots do not duplicate revisions, and
-     a local restore does not change either cloud head.
+     a local restore does not change either cloud head. Add a Minih Router
+     account and multiple models with aliases, protocol/limit/thinking and
+     capability overrides; select default and image model bindings. Back up and
+     restore onto a device with no account. Credentials remain staged until
+     local approval, then account identity, explicit provider overrides, ordered
+     model bindings and application defaults survive restore and Host restart
+     without duplicate account rows or a new backup publication. Capture requires
+     both the credentials category and the explicit secret permission; OAuth
+     sessions are never exported, even when credentials are selected.
   5. Restore an older sync revision with propagation acknowledgment. Verify a
      local recovery point, a new shared revision and propagation to the second
      device, with sensitive activation still requiring approval. Rewrap the
@@ -9986,10 +9993,36 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   desktop and host. Host-core and targeted renderer tests are companion checks,
   not substitutes for the Electron journey.
 
+### E2E-NAV-account-menu-and-sidebar-utilities
+
+- **Preconditions:** An isolated Electron window, production Sidebar/store and
+  styles, fixture-only preload responses, and no real provider or user profile.
+- **Steps:** Open the bottom-left account menu; verify saved identity and quota
+  loading, successful balance/usage, failed-read recovery via Refresh, keyboard
+  action navigation, Escape/focus return, outside pointer/focus dismissal. Switch
+  provider while a quota read is pending; the previous balance and late reply
+  must not appear under the new account. Navigate to Accounts, Settings, and
+  Cloud sync, then open Scheduled, Plugins, and Activity from labeled sidebar
+  rows. Activate Plugins again to return. Remove the account and reopen; show a
+  connection action without fetching quota. Repeat at 800×560/light/English and
+  1200×900/dark/Simplified Chinese; confirm viewport bounds and no horizontal
+  overflow. Unmount with pending requests and confirm portal cleanup.
+- **Expected:** Account and quota details are on demand and redacted. Missing
+  accounts are not fabricated, stale replies are ignored, and closed menus are
+  idle. Notifications and the version/update action remain in the footer.
+- **Specs:** `04-ux/01-ui-ia.md`, `04-ux/06-settings-ia.md`.
+- **Acceptance:** C / G / Quality / Security. **Milestone:** M6+.
+- **Automation:** `apps/desktop/test/sidebar-user-menu-user-path.test.mjs` runs
+  the production Sidebar and real store in isolated Electron, with preload as
+  the only external mock. The hidden-window focus-out event is delivered
+  explicitly after checking `activeElement`; no OS desktop instance is used.
+- **Status:** Implemented automated fixture user-path coverage.
+
 ## 8. Traceability Matrix
 
 | Acceptance | Scenarios |
 |---|---|
+| C / G / Quality / Security — Account menu and sidebar utilities | E2E-NAV-account-menu-and-sidebar-utilities |
 | C / E / F / Quality / Security — Session Todo checklist | E2E-CHAT-session-todo-checklist |
 | C / E / Security / Quality — Live Voice four-stage interaction | E2E-LIVE-VOICE-four-stage-ui |
 | C / F — Hourly task updates | E2E-SCHEDULED-manual-to-hourly |
@@ -10214,8 +10247,8 @@ This test plan spec is accepted when:
 
 ### US-UI-05 Locale chrome
 - On a zh-CN system locale, sidebar labels render in Chinese (项目 / 临时会话),
-  with no extra standalone destination rows. The footer plug-shaped Plugins icon
-  exposes the localized accessible name 插件.
+  with labeled Scheduled, Plugins and Activity rows. The Plugins row exposes
+  the localized accessible name 插件; the bottom-left account menu opens Settings.
 - Empty-thread hero and supporting line are localized Chinese copy; project
   name remains a dotted-underline action when a workspace is open.
 - Composer omits the 本地 workspace label and shows Agent/Plan/Goal plus the

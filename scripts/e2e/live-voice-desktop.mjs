@@ -174,7 +174,7 @@ export async function launchLiveVoiceDesktop({ root, dataDir, profile, home, cer
       !entry.url.includes("plugin-launcher") && !entry.url.includes("live-voice-widget");
     const isWidgetWindow = (entry) => entry.url.includes("surface=live-voice-widget");
     const mainWindow = await attach(isMainWindow, "isolated Live Voice desktop CDP target");
-    await waitFor(() => mainWindow.evaluate(`!!document.querySelector('[data-nav="settings"]') && !document.querySelector('.startup-splash')`),
+    await waitFor(() => mainWindow.evaluate(`!!document.querySelector('[data-nav="user"]') && !document.querySelector('.startup-splash')`),
       35_000, "Live Voice app navigation");
     let widgetWindow = null;
     return {

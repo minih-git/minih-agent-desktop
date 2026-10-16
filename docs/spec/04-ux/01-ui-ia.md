@@ -25,15 +25,23 @@ destination, chat as the home surface, tools and permissions inline.
 |  Projects      + |                                | ◫ | App.tsx  ⌄ × |
 |   Project A      |                                | > |              |
 |   Project B      |                                | ◎ | Active       |
-| Footer [⚙][plug][☾][bell] |  Floating composer (chat) |   | resource     |
+| Footer [account][bell][version] |  Floating composer (chat) |   | resource     |
 +------------------+--------------------------------+------------------+
 ```
 
 - **Sidebar**: primary navigation — path-less conversations under a compact
   **Sessions** section with new-session and sort actions, retained open-project
   groups under a following **Projects** section with a persistent new-project
-  action, and the WorkBuddy-inspired footer. The footer keeps compact Settings,
-  Extensions, Scheduled (clock), and notification icon actions. Each retained
+  action. Labeled Scheduled, Plugins, and Activity navigation rows sit above
+  the session/project lists. The bottom-left account button opens an upward,
+  viewport-bounded Account and settings popover with the saved Minih Router
+  account identity, balance/quotas and usage, refresh, Manage account, Settings,
+  and Cloud sync. No account uses an honest Local user/connect-account state.
+  Quotas are read only while the popover is open; loading and recoverable errors
+  remain visible, and stale replies never cross account changes or unmount.
+  Escape restores trigger focus; outside pointer/focus and navigation dismiss
+  the non-modal popover. The footer retains notifications and the update/version
+  chip, not duplicate settings or task icons. Each retained
   project is a
   path-keyed tab/group that can be
   collapsed independently. Project and conversation rows expose
@@ -82,7 +90,7 @@ destination, chat as the home surface, tools and permissions inline.
   macOS keeps native traffic lights and its existing fullscreen insets.
   Destination history is
   shortcut-first (`Cmd/Ctrl+[` and `Cmd/Ctrl+]`) with no dedicated back/forward
-  chrome; while Extensions is active, the footer Plugins button performs one
+  chrome; while Extensions is active, the sidebar Plugins button performs one
   Back step as the only pointer affordance. The main titlebar has no
   notification action; the durable local inbox opens from the sidebar footer
   bell instead (D130/D117). In work-panel preview mode, MainChat is unmounted
@@ -321,7 +329,7 @@ session search never list it, and Open conversation is the explicit action that
 carries it into the chat route, and the chat top bar then offers that
 conversation's own way back: the row names the task it belongs to, and returning
 restores the same task and the same run, reusing the navigation history when
-this route is directly behind it. The footer clock and global search open
+this route is directly behind it. The labeled sidebar Scheduled row and global search open
 this route. Run now dispatches in the background, selects the run it admitted,
 and leaves the reader on this page. Automatic runs never steal foreground
 focus. See [desktop automations](../../adr/scheduled-desktop-automations.md).
@@ -426,7 +434,7 @@ shared capability contract:
 |---|---|---|
 | Command palette | Cmd/Ctrl+K (also Cmd/Ctrl+Shift+P per D014) | builtin + plugin commands |
 | Model menu | Composer-right model × reasoning chip | configured provider/model choices + settings entry (D091) |
-| Profile menu | sidebar footer | Settings / Logs / Theme cycle (D041) |
+| Account menu | bottom-left sidebar account button | Saved identity, balance/quotas, Manage account, Settings, Cloud sync |
 | Notification inbox | sidebar footer bell | All/Unread views, task failure rows only (successful completions are hidden, D295), mark-all-read and clear actions (D130/D117) |
 | Toasts | events (plugin toast, backend restored, copy) | top-center; 4s default, 8s for errors |
 | Project switcher | empty-home underlined project name | sidebar open projects + search + clone git project + open project |
@@ -438,7 +446,7 @@ shared capability contract:
   archive is the `projects` settings tab rather than a standalone page.
 - Destination history is linear; `Cmd/Ctrl+[` and `Cmd/Ctrl+]` traverse it
   without persistent back/forward chrome. While Extensions is active, the
-  footer Plugins button reuses one Back step (§2 shell regions); no separate
+  sidebar Plugins button reuses one Back step (§2 shell regions); no separate
   back or forward control is added.
 - Selecting a project tab reuses `project.set` when its path differs from the
   selected host workspace and keeps the other tabs retained.

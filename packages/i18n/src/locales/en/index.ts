@@ -1,4 +1,14 @@
 export const en = {
+  userMenu: {
+    open: "Account menu for {{name}}",
+    title: "Account and settings",
+    localUser: "Local user",
+    notConnected: "No account connected",
+    connectHint: "Connect an account to view your balance and quotas.",
+    quota: "Balance and quotas",
+    manageAccount: "Manage account",
+    navigation: "Workspace navigation",
+  },
   worktree: {
     newIsolatedSession: "New isolated session",
     uncommittedNotIncluded: "Uncommitted changes in the project are not included in the isolated session.",
@@ -1289,7 +1299,7 @@ sklm: {
       categoriesDescription:
         "All supported configuration is selected by default. Credentials and memory require an explicit opt-in.",
       categoryApplication: "Application preferences",
-      categoryProviders: "User-owned providers and models",
+      categoryProviders: "Accounts, providers and model configuration",
       categoryMcp: "MCP definitions",
       categorySkills: "Skills",
       categorySubagents: "Subagents",
@@ -1299,7 +1309,7 @@ sklm: {
       categoryMemory: "Project memory",
       categoryCredentials: "Portable credentials",
       credentialsWarning:
-        "Secrets are encrypted in the vault, but a new device still requires local approval and secure storage.",
+        "API keys and account API tokens are encrypted in the vault and require local approval on a new device. OAuth sign-ins are not backed up.",
       approvalsTitle: "Awaiting local activation",
       approvalsDescription:
         "Imported executable or security-sensitive configuration is staged until you approve it on this device.",
