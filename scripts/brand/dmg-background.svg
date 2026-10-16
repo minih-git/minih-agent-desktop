@@ -14,7 +14,7 @@
       <stop offset="0" stop-color="#171B30"/>
       <stop offset="1" stop-color="#090C16"/>
     </linearGradient>
-    <linearGradient id="m-sculpt" x1="210" y1="360" x2="814" y2="756" gradientUnits="userSpaceOnUse">
+    <linearGradient id="h-sculpt" x1="210" y1="360" x2="814" y2="756" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF"/>
       <stop offset="0.5" stop-color="#E0E7FF"/>
       <stop offset="1" stop-color="#2DD4BF"/>
@@ -45,7 +45,7 @@
   <!-- Top header badge -->
   <g transform="translate(694, 58) scale(0.05078125)">
     <rect width="1024" height="1024" rx="228" fill="url(#mark-bg)" stroke="#6366F1" stroke-opacity="0.4" stroke-width="24"/>
-    <path d="M 264 740 V 408 L 512 632 L 760 408 V 740" stroke="url(#m-sculpt)" stroke-width="112" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M 280 408 V 740 M 744 408 V 740 M 280 574 H 744" stroke="url(#h-sculpt)" stroke-width="112" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="M 512 156 C 512 228 548 268 620 268 C 548 268 512 308 512 380 C 512 308 476 268 404 268 C 476 268 512 228 512 156 Z" fill="url(#spark-grad)"/>
   </g>
 </svg>

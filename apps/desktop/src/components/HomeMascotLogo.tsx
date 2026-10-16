@@ -195,9 +195,9 @@ export function HomeMascotLogo() {
             strokeLinecap="round"
           />
 
-          {/* Chest M-emblem */}
+          {/* Chest H-emblem */}
           <path
-            d="M 55.5 81.5 V 77.5 L 60 80.5 L 64.5 77.5 V 81.5"
+            d="M 56.5 77.5 V 81.5 M 63.5 77.5 V 81.5 M 56.5 79.5 H 63.5"
             stroke="var(--mascot-badge)"
             strokeWidth="1.9"
             strokeLinecap="round"

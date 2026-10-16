@@ -27,8 +27,8 @@
       <stop offset="1" stop-color="#0D9488" stop-opacity="0.34"/>
     </linearGradient>
 
-    <!-- Seamless sculptural gradient across the M mark in light mode -->
-    <linearGradient id="m-sculpt-light" x1="210" y1="360" x2="814" y2="756" gradientUnits="userSpaceOnUse">
+    <!-- Seamless sculptural gradient across the H mark in light mode -->
+    <linearGradient id="h-sculpt-light" x1="210" y1="360" x2="814" y2="756" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#1E1B4B"/>
       <stop offset="0.45" stop-color="#312E81"/>
       <stop offset="0.78" stop-color="#0369A1"/>
@@ -64,10 +64,10 @@
       stroke-opacity="0.32"
     />
 
-    <!-- Seamless sculptural M silhouette -->
+    <!-- Sculptural H silhouette -->
     <path
-      d="M 264 740 V 408 L 512 632 L 760 408 V 740"
-      stroke="url(#m-sculpt-light)"
+      d="M 280 408 V 740 M 744 408 V 740 M 280 574 H 744"
+      stroke="url(#h-sculpt-light)"
       stroke-width="106"
       stroke-linecap="round"
       stroke-linejoin="round"

@@ -40,8 +40,8 @@
       <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.08"/>
     </linearGradient>
 
-    <!-- Seamless sculptural gradient across the M mark -->
-    <linearGradient id="m-sculpt" x1="210" y1="360" x2="814" y2="756" gradientUnits="userSpaceOnUse">
+    <!-- Seamless sculptural gradient across the H mark -->
+    <linearGradient id="h-sculpt" x1="210" y1="360" x2="814" y2="756" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF"/>
       <stop offset="0.38" stop-color="#E0E7FF"/>
       <stop offset="0.68" stop-color="#A5F3FC"/>
@@ -84,16 +84,16 @@
     />
 
     <g filter="url(#emblem-shadow)">
-      <!-- Seamless sculptural M silhouette -->
+      <!-- Sculptural H silhouette -->
       <path
-        d="M 264 740 V 408 L 512 632 L 760 408 V 740"
-        stroke="url(#m-sculpt)"
+        d="M 280 408 V 740 M 744 408 V 740 M 280 574 H 744"
+        stroke="url(#h-sculpt)"
         stroke-width="106"
         stroke-linecap="round"
         stroke-linejoin="round"
       />
 
-      <!-- Sculpted 4-Point Agent Spark suspended above the M valley -->
+      <!-- Sculpted 4-Point Agent Spark suspended above the H crossbar -->
       <path
         d="M 512 156
            C 512 228 548 268 620 268
