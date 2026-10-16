@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.20.5",
+    date: "2026-10-16",
+    highlights: [
+      "Gemini protokol yapılandırması yeniden çalışıyor: model başına protokol geçersiz kılmaları Gemini sağlayıcılarına uygulanır ve gömülü model kataloğu güncellendi.",
+      "Sohbetteki araç hataları sert hata blokları yerine yumuşak durum notları olarak görünür; tek alt aracı düğümleri de doğru bağlanır.",
+      "Yeni sohbet başlatmak otomasyon oturumunun boşta kalan yuvasını artık kullanmaz.",
+      "Sağlayıcı bağlantı testleri çözümlenen ucu yoklar; plan türü uçlardan model listesi belgesinde yazdığı şekilde istenir.",
+      "PowerShell araç çalıştırmaları çıktısını ve yerel çıkış kodlarını bozulmadan korur.",
+      "Sohbet kayıtları yırtılmış veya geçersiz UTF-8 satırlarına dayanır; ileti silmek kayıt yeniden yüklemesiyle yarışmaz; geri yüklenen oturumlarda araç çağrıları yardımcı iletisinde kalır.",
+      "Windows: büyütülmüş pencere geri yüklendiğinde görev çubuğunu artık kapatmaz; yapılandırma eşitlemesi \\\\?\\ uzun yolları doğru eşler.",
+      "Windows depolama geçişi bağlantı türlerini, ilk çalıştırma profillerini ve fiziksel arşivleri korur.",
+    ],
+  },
+  {
     version: "0.20.4",
     date: "2026-10-15",
     highlights: [

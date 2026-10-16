@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.20.5",
+    date: "2026-10-16",
+    highlights: [
+      "Gemini protocol configuration works again: per-model protocol overrides now apply to Gemini providers, and the bundled model catalog is refreshed.",
+      "Tool failures in the chat read as soft status notes instead of hard error blocks, and single-subagent graphs connect their nodes correctly.",
+      "Starting a new chat no longer reuses an empty session slot left behind by an automation session.",
+      "Provider connection tests probe the resolved endpoint, and plan-style endpoints are asked for their model list the way they document.",
+      "PowerShell tool runs keep their output and native exit codes intact.",
+      "Transcripts survive torn or invalid-UTF-8 lines, deleting a message no longer races the transcript reload, and restored sessions keep tool calls attached to their assistant message.",
+      "Windows: restoring a maximized window no longer covers the taskbar, and config-sync maps \\\\?\\ extended-length paths correctly.",
+      "Windows storage migration preserves link kinds, first-run profiles, and physical archives.",
+    ],
+  },
+  {
     version: "0.20.4",
     date: "2026-10-15",
     highlights: [
