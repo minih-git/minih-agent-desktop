@@ -168,7 +168,9 @@ recency only breaks ties between equally relevant matches.
 - On Windows, clicking the taskbar button of the focused visible main window
   means **native minimize**. The window stays represented by its taskbar entry;
   the next click restores and focuses it. A taskbar click while the window is
-  merely covered brings it to the front and does not hide it to the tray.
+  merely covered brings it to the front and does not hide it to the tray. When
+  a maximized frameless window is restored, it respects the active display's
+  work area so the taskbar remains visible.
 - Tray hiding, including a Windows/Linux close with `tray`, removes the main
   window from the taskbar/dock window list while the Electron process and
   background work remain alive. It does not persist a minimized geometry or

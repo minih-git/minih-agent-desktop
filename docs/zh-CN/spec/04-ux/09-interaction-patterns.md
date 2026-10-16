@@ -128,20 +128,22 @@
   Dock 生命周期（关闭后应用留在 Dock 中，激活时重建窗口）。边界看门狗
   永远不会恢复一个最小化或隐藏到托盘的窗口。
 
-### 1. 5.1 托盘驻留最小化
+### 1.5.1 托盘驻留与任务栏最小化
 
-- 最小化意味着 macOS、Windows 和 Linux 上**隐藏到托盘**。渲染器的
-  Windows/Linux 最小化按钮、macOS 交通灯最小化按钮，以及
-  macOS 窗口 → 最小化角色共享此行为。
-- 隐藏将从 taskbar/dock 窗口列表中删除主窗口，而
-  Electron 进程和后台工作仍然有效。它不坚持
-  最小化几何形状或处置 host/sidecar。
-- Double-clicking the tray icon (or single-clicking on Windows/Linux), choosing
-  Open, or activating the macOS Dock restores/focuses the existing window or
-  creates a new one if it was closed. macOS single-click opens the menu.
-- The localized tray includes Open, bounded session groups, and Quit. Quit
-  keeps confirmation and ordered shutdown. Close behavior remains user-owned
-  on Windows/Linux (ADR 0090), and macOS retains its Dock lifecycle.
+- Windows 和 Linux 上的显式应用最小化是**原生任务栏最小化**：渲染器窗口控件和
+  原生菜单最小化操作使用常规系统过渡。macOS 交通灯最小化和“窗口 → 最小化”仍然
+  **隐藏到托盘**。
+- 在 Windows 上，单击当前聚焦且可见的主窗口任务栏按钮表示**原生最小化**。窗口仍保留
+  在任务栏中；再次单击会还原并聚焦。若窗口只是被其他应用遮挡，单击任务栏按钮会将其带到
+  前台，而不会隐藏到托盘。最大化的无边框窗口还原后仍符合当前显示器的工作区，任务栏保持可见。
+- 隐藏到托盘（包括 Windows/Linux 上选择“托盘”行为的关闭操作）会将主窗口从任务栏或 Dock
+  列表中移除，而 Electron 进程和后台任务继续运行。它不会保存最小化几何状态，也不会释放
+  host/sidecar。
+- 双击托盘图标（Windows/Linux 上单击即可）、选择“打开”或从 macOS Dock 激活应用，都会恢复并
+  聚焦现有窗口；如果窗口已关闭，则创建新窗口。macOS 单击托盘图标会打开菜单。
+- 本地化托盘菜单使用当前应用语言，提供“打开”、有数量上限的会话分组和“退出”。“退出”仍需
+  确认并按正常顺序关闭。Windows/Linux 上的关闭行为由用户选择（ADR 0090），macOS 保持其 Dock
+  生命周期；两种关闭选择下，托盘图标都只在启动时创建一次。
 
 ### 1.5.2 Tray session navigation (issue #293)
 

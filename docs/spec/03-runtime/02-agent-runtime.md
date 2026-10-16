@@ -790,7 +790,10 @@ criterion-by-criterion report of what was met and the evidence observed.
   instead of collapsing to bare chat text (D127). An interrupted tool row
   restores as an errored result; a tool row whose assistant row was lost
   gets a synthesized call-only assistant carrier so call/result pairs stay
-  well-formed for every provider API.
+  well-formed for every provider API. A model system record saved while a
+  call ran restores between that call and its result without ending the
+  assistant's calls, so the call stays on the assistant that made it, as in
+  the live request.
 Vision runtimes hydrate persisted image refs only from the session-bound
 attachment, scratch, and project roots. Each image remains subject to the 10 MB
 safety bound, and restored history has a 30 MB aggregate raw-byte budget.

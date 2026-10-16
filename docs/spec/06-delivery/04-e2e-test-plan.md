@@ -65,6 +65,26 @@
 - **Preconditions:** Dedicated request worktree, current remote-main base, shared
   compatible host toolchain, built host-core and desktop, isolated temporary data
   and Chromium profiles. No user's running desktop, provider, or network is used.
+- **First-install / new-directory regression:** Run
+  `node scripts/e2e-storage-directory.mjs` with `MINIH_AGENT_HOST_BIN` pointing
+  to the candidate Host. The production storage controls and preload invoke real
+  Main handlers through native mouse clicks, schedule cold maintenance, and reopen
+  the migrated Electron profile and Host. Cover an absent data root with missing
+  parents and an existing conversation with attachments, settings and project
+  memory. The chosen destination initially does not exist. Set
+  `PI_STORAGE_E2E_SOURCE_ROOT` to a temporary folder on a different drive for
+  cross-volume coverage. Verify browser localStorage, conversation/attachment
+  reads, project-memory lookup, original backups and the displayed new path.
+  Only native picker selection and relaunch dispatch are scripted; each startup
+  phase is a separate real Electron process. Keep screenshots and synthetic
+  profiles under `.artifacts/` for inspection rather than deleting them.
+- **Electron filesystem regression:** Run `node scripts/e2e-storage-files.mjs`
+  in real Electron, not `ELECTRON_RUN_AS_NODE`. Seed valid and opaque `.asar`
+  files, live and dangling file/directory links, Unicode paths, and a destination
+  collision. Expect byte-preserving copies, relocated internal links, unchanged
+  external targets, and path-specific errors without mutating originals. The
+  existing-profile Settings journey also includes an archive and a dangling
+  dependency junction, then verifies history and browser state after reopening.
 - **Steps:** Through the production Settings page, choose/cancel a destination,
   confirm/retry migration, and confirm cache/backup cleanup. Seed a real host with
   sessions, queued attachments, project metadata, credentials and a local installed
@@ -80,8 +100,20 @@
   survive migration/restart. Cache cleanup preserves durable state; backup cleanup
   retains active data and the stable bootstrap pointer. Filesystem regression tests
   reject unsafe targets, redirecting links, wrong ownership and active-root overlap.
+- **Windows junction spelling:** The filesystem suite includes a Node-created
+  junction whose target ends with a separator. Copying it in Electron must
+  preserve the target without a false symbolic-link verification failure.
+- **Installation lock and cleanup retry:** `e2e-storage-backup-lock.mjs` holds a
+  real Electron single-instance lock while retrying cleanup with the old data
+  already absent. Verify the lock, bootstrap pointer and current history remain.
+  The Settings directory suite additionally confirms cleanup, cold-restarts and
+  reopens the active Host; backup controls disappear and current attachments and
+  browser state remain readable. These retry fixtures are not full-payload
+  deletion tests and retain their synthetic profiles.
 - **Coverage:** `pnpm test:e2e:storage` runs `e2e-storage-settings.mjs`,
-  `e2e-storage-migration.mjs`, and `e2e-storage-bootstrap.mjs`. The first uses the
+  `e2e-storage-migration.mjs`, `e2e-storage-bootstrap.mjs`,
+  `e2e-storage-directory.mjs`, `e2e-storage-files.mjs`, and
+  `e2e-storage-backup-lock.mjs`. The first uses the
   production renderer/API with only preload mocked; the latter suites run real
   host/Electron processes and production maintenance. The bootstrap harness
   intercepts relaunch to inspect its result, then explicitly starts another isolated
@@ -391,6 +423,23 @@
 - **Coverage:** Host fork regression, renderer session-fork-running tests,
   session IPC contract tests, and real-model desktop acceptance. A local model
   fixture or mocked component result is not real-model acceptance evidence.
+
+### E2E-CHAT-transcript-rewrite-late-events
+
+- **Preconditions:** Isolated session with at least one completed turn and a
+  persistence callback from that turn held until transcript replacement or
+  revision activation begins.
+- **Steps:** Start either transcript replacement or revision activation. Deliver
+  the held old-turn event after the persistence outbox has drained but before
+  the Host rewrite completes. Complete the rewrite, then start a new turn and
+  persist one event. Repeat with the Host rewrite returning an error.
+- **Expected:** A successful rewrite does not append the old-turn event to the
+  rewritten transcript, while the new turn persists normally. A failed rewrite
+  replays the buffered event into the unchanged transcript. Both rewrite
+  entrances use the same fence and outbox drain.
+- **Coverage:** `session-turn-ended.test.mjs` exercises the event persistence
+  fence and rollback with deterministic event delivery; session IPC contract
+  tests assert the fence/drain/rewrite ordering. No live provider is required.
 
 ### E2E-WORKTREE-isolated-session-lifecycle
 
@@ -1987,6 +2036,27 @@ identify the platform validation still needed.
 - **Milestone**: M5
 - **Status**: Source-level and isolated Host RPC cache regressions covered;
   full large-fixture Electron journey Draft
+
+#### E2E-TRANSCRIPT-invalid-utf8-window-remains-readable
+
+- **Preconditions**: An isolated Host profile contains a session transcript
+  with valid messages before and after a complete line containing invalid
+  UTF-8 bytes. The damaged bytes are inside message text in one fixture and
+  make a separate message line unparseable in another. No real user data.
+- **Steps**: Open the session through the renderer's bounded `session.get`
+  path with `messageLimit`, page across the damaged line, then read the full
+  history through the Host API. Compare the transcript file before and after.
+- **Expected**: The session stays readable. Valid surrounding messages appear
+  in order; parseable damaged text contains U+FFFD, while an unparseable row is
+  skipped. The source transcript remains byte-identical and paging positions
+  stay consistent.
+- **Specs**: `03-runtime/04-data-storage.md` and ADR 0127.
+- **Acceptance**: C (conversation and stream), F (persistence), Quality.
+- **Milestone**: Maintenance.
+- **Automation**: `pnpm test:e2e:transcript-cache` exercises bounded `session.get`
+  against an isolated Host and verifies replacement text plus unchanged source
+  bytes. `crates/host-core/src/transcripts_layout_tests.rs` covers the invalid
+  row and layout reader directly. Full renderer journey remains Draft.
 
 #### E2E-011a: New session while another session is still streaming
 
@@ -9627,13 +9697,16 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   model discovery, explicitly select Step 5 Preview, then save.
 - **Expected**: The chooser and connection summary both visibly include
   `api.stepfun.com/step_plan/v1`. Discovery receives `https://api.stepfun.com/step_plan/v1`,
-  `anthropic_messages` and the entered key. Save retains that URL and format,
+  `anthropic_messages`, and the entered key sent as `Authorization: Bearer` rather
+  than the Anthropic `x-api-key`. Save retains that URL and format,
   the catalog vendor `stepfun-step-plan`, and the selected model. The ordinary
   StepFun `/v1` endpoint is not substituted for the subscription endpoint.
 - **Automation**: `pnpm test:e2e:provider-api-style` uses real settings components
   with only the API boundary stubbed. `provider-presets.test.ts` checks the
   preset contract and ordinary-endpoint separation; `service-catalog.test.mjs`
-  checks discoverability by localized label, name, vendor key, and URL.
+  checks discoverability by localized label, name, vendor key, and URL;
+  `provider-stepfun-plan-discovery.test.mjs` drives the real provider handlers
+  and pins the Bearer model list for both discovery and the connection test.
 - **Scope**: Save/discovery payloads are covered; host persistence, live model
   calls, and visual layout are not asserted by this fixture.
 - **Specs linked**: `03-runtime/12-provider-config-schema.md`, `guide/stepfun.md`.
@@ -10052,7 +10125,10 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | F — Persistence (stored model binding array) | E2E-PROVIDER-stored-binding-array-reads-entry-by-entry |
 | Quality (stored model binding array) | E2E-PROVIDER-stored-binding-array-reads-entry-by-entry |
 | Quality (unique tool-call ids) | E2E-RUNTIME-unique-tool-call-ids-per-request |
+| C — Conversation & stream (system update during a tool call, restored) | E2E-RUNTIME-system-update-during-tool-call-restore |
+| Quality (system update during a tool call, restored) | E2E-RUNTIME-system-update-during-tool-call-restore |
 | C — Conversation & stream (loop context ownership) | E2E-RUNTIME-loop-context-ownership |
+| C / F / Quality — Transcript invalid UTF-8 recovery | E2E-TRANSCRIPT-invalid-utf8-window-remains-readable |
 | Quality (loop context ownership) | E2E-RUNTIME-loop-context-ownership |
 | G — Plugin host lifecycle (crash report) | E2E-PLUGIN-crash-report-names-the-exit-code |
 | Quality (crash report) | E2E-PLUGIN-crash-report-names-the-exit-code |
@@ -11057,6 +11133,15 @@ This test plan spec is accepted when:
   text never replaces that title. Background sessions retain the existing
   native notification policy. Exactly one soft chime plays for the ask; the
   toast and native banner do not double it.
+  Clicking the question toast (including from New task or Settings) opens its
+  originating conversation and project, shows the pending card, and permits
+  submitting an answer for that request. Enter and Space activate the focused
+  message button. Dismiss and text selection do not navigate. Identical prompt
+  text from two sessions preserves two independent navigation targets; ordinary
+  info toasts stay non-interactive. A history-read failure produces a visible
+  error and leaves both the original reminder and question pending. Retrying
+  from that same reminder after the read recovers opens the correct chat and
+  dismisses the reminder only after navigation succeeds.
 - **Specs linked**: `03-runtime/17-asktool-questions.md`,
   `04-ux/11-asktool-question-card.md`, ADR 0077
 - **Acceptance**: E (interactive tool output), C (inline card)
@@ -11064,6 +11149,9 @@ This test plan spec is accepted when:
 - **Automated coverage**: `pnpm test:e2e:asktool-card` mounts the production
   component in Electron and covers long-prompt scrolling, keyboard reachability,
   visible header actions, and scroll reset on Next.
+  `pnpm test:e2e:question-notification` exercises real renderer event handling,
+  toast creation, session/project navigation, and answer submission in isolated
+  Electron with only the IPC boundary stubbed, plus native keyboard input.
 - **Status**: Partially automated (component paths and long-prompt behavior are
   covered; full application journey pending)
 
@@ -11078,11 +11166,12 @@ This test plan spec is accepted when:
 
 - **Preconditions**: Built desktop app on macOS, Windows, and Linux; English
   and zh-CN locales are available; a normal main window is open.
-- **Steps**: 1) On Windows, leave the focused main window visible and click its
+- **Steps**: 1) On Windows, maximize the focused main window and click its
   taskbar button; confirm it minimizes while the Minih-Agent-Desktop taskbar entry
-  remains. Click the same taskbar button again and confirm the window restores
-  and focuses. Cover the window with another app, click the Minih-Agent-Desktop taskbar
-  entry, and confirm it comes to the front without entering the tray. 2) On
+  remains. Click the same taskbar button again; after the restore settles,
+  confirm the window remains maximized within the display work area and the
+  taskbar stays visible. Cover the window with another app, click the Minih-Agent-Desktop
+  taskbar entry, and confirm it comes to the front without entering the tray. 2) On
 -  macOS, click the traffic-light minimize control and confirm it hides the
   window to the tray. On Windows/Linux, use the renderer minimize control and
   confirm the native taskbar entry remains available; click it again and
@@ -11093,7 +11182,9 @@ This test plan spec is accepted when:
   zh-CN and invoke macOS app activation while the window is tray-hidden.
 - **Expected**: Windows native taskbar toggling and the Windows/Linux renderer
   minimize controls keep the taskbar entry and round-trip through native
-  minimize/restore; a taskbar click on a covered window brings it to the front.
+  minimize/restore. Restoring a maximized frameless Windows window keeps it
+  within the display work area and leaves the taskbar visible. A taskbar click
+  on a covered window brings it to the front.
   Close to tray is the only Windows/Linux close path that hides the window,
   while Quit exits. On macOS the menu bar icon is a readable transparent
   monochrome PI mark without the rounded application tile, and native minimize
@@ -17155,6 +17246,31 @@ the latest destination. These assertions measure work counts, not device FPS.
 
 - **Status:** Unit-covered; no end-to-end driver issues a real provider request
   against a duplicated transcript.
+
+### E2E-RUNTIME-system-update-during-tool-call-restore
+
+- **Preconditions:** A session transcript with a model system record saved
+  while a tool call ran: it sits after the assistant row that made the call and
+  before that call's tool row (`beforeMessageId` is the tool row id). Loaded
+  into a recreated runtime against a deterministic Anthropic Messages fixture
+  with mid-conversation system messages enabled. No real provider credentials.
+- **Steps:** Send one prompt so the runtime assembles and issues a request. Read
+  the outgoing request body the fixture received.
+- **Expected:** The tool call stays on the assistant message that made it,
+  next to that message's text, and no call-only assistant is synthesized. Every
+  mid-conversation `system` message follows a `user` message, so the provider
+  does not answer `role 'system' must follow a 'user' message or an 'assistant'
+  message ending in a server tool result`.
+- **Specs:** `03-runtime/02-agent-runtime.md` §5c and §7.0.0,
+  `08-meta/decisions-log.md` D127.
+- **Acceptance:** C (conversation and stream), Quality.
+- **Milestone:** Post-MVP regression coverage.
+- **Automation:** `packages/agent-runtime/src/system-transcript-runtime.test.ts`
+  restores the rows into a real runtime and passes the captured request through
+  Pi's Anthropic adapter.
+
+- **Status:** Unit-covered; no end-to-end driver restores such a transcript
+  against an Anthropic provider fixture.
 
 ### E2E-RUNTIME-loop-context-ownership
 

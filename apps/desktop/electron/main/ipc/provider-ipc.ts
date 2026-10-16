@@ -258,18 +258,32 @@ export function registerProviderIpc({
     const timer = setTimeout(() => controller.abort(), 8000);
     try {
       /*
-        The same request builder discovery uses, so "the list loaded" and "the
-        connection test passed" can never describe two different endpoints: one
-        URL rule, one auth rule, one wire style, for a real at-least-once check.
+        The same request builder and the same resolved endpoint discovery
+        uses, so "the list loaded" and "the connection test passed" can never
+        describe two different endpoints: one URL rule, one auth rule, one
+        wire style, for a real at-least-once check. The URL is probed after
+        effective-base-URL resolution (#1687) — a saved operation suffix like
+        `/messages` must not send the test to `<endpoint>/messages/models`
+        while the list on the same page loads from `<endpoint>/models`.
       */
-      const probeTarget = async (targetBaseUrl: string) =>
-        probeProviderEndpoint({
-          baseUrl: targetBaseUrl,
+      // Each probe target (active tunnel address, then the fallback) resolves
+      // its own endpoint profile, so suffix stripping and discovery style
+      // match what model discovery does for the same URL (#1687).
+      const probeTarget = async (baseUrl: string) => {
+        const profile = inferEndpointProfile({
+          baseUrl,
+          apiStyle: normalizeApiStyle(detail.provider?.apiStyle),
+          explicitApiStyle: true,
+        });
+        return probeProviderEndpoint({
+          baseUrl: profile?.effectiveBaseUrl ?? baseUrl,
           apiKey: secret.value,
           apiStyle: detail.provider?.apiStyle,
+          discoveryStyle: profile?.discoveryStyle,
           headers: detail.provider?.headers,
           signal: controller.signal,
         });
+      };
       let probe: Awaited<ReturnType<typeof probeProviderEndpoint>>;
       try {
         probe = await probeTarget(routerEndpoint.activeBaseUrl || baseUrl);

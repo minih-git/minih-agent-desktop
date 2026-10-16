@@ -1350,6 +1350,21 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
 - **状态**：草案。2026-09-20 的嵌套披露变更仅把本场景作为静态源码／设计审查的
   预期行为；该范围不新增或运行单元、组件、集成、浏览器、Electron 或 E2E 测试。
 
+#### E2E-TRANSCRIPT-invalid-utf8-window-remains-readable
+
+- **先决条件**：隔离的 Host 配置中有一个会话转录，损坏行前后都有有效消息。完整行内含非法
+  UTF-8 字节：一份夹具把字节放在消息文本中，另一份使消息行无法解析。不使用真实用户数据。
+- **步骤**：通过渲染器的有界 `session.get` 路径以 `messageLimit` 打开会话，分页经过损坏行，
+  再通过 Host API 读取完整历史。比较读取前后的转录文件。
+- **预期**：会话仍可读取。前后有效消息按顺序出现；可解析的损坏文本以 U+FFFD 替代非法字节，
+  无法解析的行会跳过。源转录逐字节不变，分页位置保持一致。
+- **链接规格**：`03-runtime/04-data-storage.md`、ADR 0127。
+- **验收**：C（对话和流）、F（持久性）、质量。
+- **里程碑**：维护。
+- **自动化**：`pnpm test:e2e:transcript-cache` 通过隔离 Host 的有界 `session.get` 验证替代文本
+  和源文件不变；`crates/host-core/src/transcripts_layout_tests.rs` 直接覆盖坏行与布局读取。完整
+  Renderer 用户旅程仍为草案。
+
 #### E2E-041：对话小地图导航长记录
 
 - **先决条件**：会话包含足够的用户和助理轮流
@@ -5801,8 +5816,11 @@ eleven-tool-round desktop paths are verified by
 | C / F / 品质 —— 上下文估算保持安全（校准） | E2E-CONTEXT-estimate-calibration-stays-safe |
 | C — 对话与流式（工具调用 id 唯一） | E2E-RUNTIME-unique-tool-call-ids-per-request |
 | 品质（工具调用 id 唯一） | E2E-RUNTIME-unique-tool-call-ids-per-request |
+| C — 对话与流式（工具执行期间的系统更新恢复） | E2E-RUNTIME-system-update-during-tool-call-restore |
+| 品质（工具执行期间的系统更新恢复） | E2E-RUNTIME-system-update-during-tool-call-restore |
 | C — 对话与流式（循环上下文归属） | E2E-RUNTIME-loop-context-ownership |
 | 品质（循环上下文归属） | E2E-RUNTIME-loop-context-ownership |
+| C / F / 质量 — 转录非法 UTF-8 恢复 | E2E-TRANSCRIPT-invalid-utf8-window-remains-readable |
 | G — 插件宿主生命周期（崩溃上报） | E2E-PLUGIN-crash-report-names-the-exit-code |
 | 品质（崩溃上报） | E2E-PLUGIN-crash-report-names-the-exit-code |
 | F — 持久化（存储的模型绑定数组） | E2E-PROVIDER-stored-binding-array-reads-entry-by-entry |
@@ -6605,25 +6623,29 @@ eleven-tool-round desktop paths are verified by
   在同一会话排队两个请求，提交第一个后为第二个选择不同答案，确认两次提交分别包含
   自己的请求 ID 和所选答案。
 
-#### E2E-124：最小化隐藏跨平台托盘中的窗口
+#### E2E-124：窗口控件最小化到任务栏并关闭到所选界面
 
 - **先决条件**：在 macOS、Windows 和 Linux 上构建桌面应用程序；英语
   和 zh-CN 语言环境可用；正常的主窗口打开。
-- **步骤**：1）从平台的窗口控制最小化（macOS流量
-  光或 Windows/Linux 渲染器控制）。 2) 确认主窗口是
-  当应用程序进程保持驻留时隐藏。 3) 单击或双击
-  托盘图标并确认同一窗口已恢复并聚焦。 4) 打开
-  托盘菜单并选择“显示”，然后重复“退出”。 5) 在 zh-CN 中重复并
-  在窗口隐藏时调用 macOS 应用程序激活。
-- **预期**：所有最小化路径都隐藏到一个托盘图标，而不是退出或
-  留下任务栏最小化的窗口。 Show/click/double-click/app 激活
-恢复现有窗口；本地化菜单包含 Show Minih-Agent-Desktop
-  并退出 Minih-Agent-Desktop。 Quit 运行正常的关闭顺序，并且不留下任何内容
-  孤立主机、sidecar 或托盘进程。关闭窗口仍然是明确的
-  放弃行动。
-- **链接规格**：`03-runtime/07-process-model.md`，
-  `04-ux/09-interaction-patterns.md`、`08-meta/decisions-log.md` (D216)、
-  ADR 0078
+- **步骤**：1）在 Windows 上最大化主窗口，然后单击其任务栏按钮；确认窗口最小化，
+  Minih-Agent-Desktop 的任务栏项仍然存在。再次单击同一任务栏按钮；还原过渡结束后，确认
+  窗口仍在最大化状态、边界符合显示器工作区，且任务栏仍可见。用其他应用覆盖窗口，
+  再单击 Minih-Agent-Desktop 的任务栏项，确认窗口回到前台且没有隐藏到托盘。2）在 macOS 上
+  单击交通灯最小化控件，确认窗口隐藏到托盘。3）在 Windows/Linux 上使用渲染器最小化控件，
+  确认原生任务栏项仍然存在；再次单击后确认同一窗口还原并聚焦。选择“关闭到托盘”并关闭
+  Windows/Linux 窗口，确认任务栏项消失且可从托盘恢复；选择“退出”并重复，确认进程退出。
+  4）打开托盘菜单并选择“显示”，再重复“退出”。5）在 zh-CN 中重复，并在窗口隐藏时
+  调用 macOS 应用程序激活。
+- **预期**：Windows 原生任务栏切换和 Windows/Linux 渲染器最小化控件保留任务栏项，
+  并通过原生最小化/还原完成往返。还原最大化的无边框 Windows 窗口后，窗口仍符合显示器
+  工作区，任务栏保持可见。单击被覆盖窗口的任务栏项会将窗口带到前台。Windows/Linux 上
+  只有“关闭到托盘”会隐藏窗口；“退出”会结束进程。macOS 菜单栏图标是清晰的透明单色 PI
+  标记，不带圆角应用磁贴，原生最小化仍隐藏到托盘。“显示”、托盘图标点击/双击及应用激活
+  会恢复现有窗口；本地化菜单包含“显示 Minih-Agent-Desktop”和“退出 Minih-Agent-Desktop”。退出按正常顺序关闭，
+  不留下孤立的主机、sidecar 或托盘进程。
+- **链接规格**：`03-runtime/01-ipc-protocol.md`、`03-runtime/07-process-model.md`、
+  `04-ux/08-component-spec.md`、`04-ux/09-interaction-patterns.md`、
+  `08-meta/decisions-log.md` (D216、D230、D252、D256)、ADR 0078、ADR 0090、ADR 0117、ADR 0123
 - **验收**：A（应用程序生命周期），质量
 - **里程碑**：M6+
 - **状态**：Unit/source-contract 已覆盖；原生跨平台托盘之旅
@@ -9120,6 +9142,19 @@ Follow the [current S3 acceptance scenario](/spec/06-delivery/04-e2e-test-plan#e
   （同一对象、无日志）。
 
 - **状态：** 单元测试覆盖；没有端到端驱动对重复转录发出真实提供商请求。
+
+### E2E-RUNTIME-system-update-during-tool-call-restore
+
+- **先决条件：** 一份会话转录，其中一条模型系统记录在工具调用执行期间保存：位于发出该调用的助手行之后、该调用的工具行之前
+  （`beforeMessageId` 为工具行 id）。在启用对话中途系统消息的确定性 Anthropic Messages 夹具下加载进重新创建的运行时；不使用真实凭据。
+- **步骤：** 发一条提示，使运行时组装并发出请求。读取夹具收到的出站请求体。
+- **预期：** 工具调用仍挂在发出它的助手消息上、紧随该消息的文本，不合成只含调用的助手消息。每条对话中途的 `system` 消息都跟在
+  `user` 消息之后，因此提供商不会回 `role 'system' must follow a 'user' message or an 'assistant' message ending in a server tool result`。
+- **规格：** 03-runtime/02-agent-runtime §5c 与 §7.0.0、08-meta/decisions-log D127。**验收：** C（对话与流）、品质。
+  **里程碑：** Post-MVP 回归覆盖。
+- **自动化：** `packages/agent-runtime/src/system-transcript-runtime.test.ts` 把这些行恢复进真实运行时，并把捕获的请求交给 Pi 的 Anthropic 适配器。
+
+- **状态：** 单元测试覆盖；没有端到端驱动对 Anthropic 提供商夹具恢复这类转录。
 
 ### E2E-RUNTIME-loop-context-ownership
 
