@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.20.5",
+    date: "2026-10-16",
+    highlights: [
+      "Die Gemini-Protokollkonfiguration funktioniert wieder: Protokoll-Overrides pro Modell greifen für Gemini-Anbieter, und der mitgelieferte Modellkatalog ist aktualisiert.",
+      "Tool-Fehler im Chat erscheinen als dezente Statushinweise statt als harte Fehlerblöcke; einzelne Subagent-Knoten verbinden sich korrekt.",
+      "Ein neuer Chat belegt nicht mehr den freien Slot einer Automatisierungssitzung.",
+      "Verbindungstests prüfen den aufgelösten Endpunkt; Plan-Endpunkte werden auf die dokumentierte Weise nach ihrer Modellliste gefragt.",
+      "PowerShell-Tool-Läufe bewahren Ausgabe und native Exit-Codes.",
+      "Transkripte überstehen beschädigte oder ungültige UTF-8-Zeilen; das Löschen einer Nachricht konkurriert nicht mehr mit dem Transkript-Neuladen; wiederhergestellte Tool-Aufrufe bleiben an ihrer Assistenten-Nachricht.",
+      "Windows: Ein maximiertes Fenster verdeckt beim Wiederherstellen die Taskleiste nicht mehr; der Konfig-Sync ordnet \\\\?\\-Langpfade richtig zu.",
+      "Die Windows-Speichermigration erhält Verknüpfungsarten, Erstsitzungsprofile und physische Archive.",
+    ],
+  },
+  {
     version: "0.20.4",
     date: "2026-10-15",
     highlights: [

@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "0.20.5",
+    date: "2026-10-16",
+    highlights: [
+      "La configuración del protocolo Gemini vuelve a funcionar: las anulaciones de protocolo por modelo se aplican a los proveedores Gemini y el catálogo de modelos incluido está actualizado.",
+      "Los fallos de herramientas en el chat se muestran como notas de estado discretas en vez de bloques de error; los grafos de un solo subagente conectan sus nodos correctamente.",
+      "Iniciar un chat nuevo ya no reutiliza el hueco libre de una sesión de automatización.",
+      "Las pruebas de conexión exploran el endpoint resuelto; a los endpoints de tipo plan se les pide su lista de modelos como indican sus documentos.",
+      "Las ejecuciones de PowerShell conservan su salida y sus códigos de salida nativos.",
+      "Las transcripciones sobreviven a líneas truncadas o UTF-8 no válido; borrar un mensaje ya no compite con la recarga de la transcripción; las llamadas de herramientas restauradas permanecen en su mensaje del asistente.",
+      "Windows: restaurar una ventana maximizada ya no tapa la barra de tareas; la sincronización de configuración asigna bien las rutas \\\\?\\ de longitud extendida.",
+      "La migración de almacenamiento en Windows conserva los tipos de enlace, los perfiles de primera ejecución y los archivos físicos.",
+    ],
+  },
+  {
     version: "0.20.4",
     date: "2026-10-15",
     highlights: [
