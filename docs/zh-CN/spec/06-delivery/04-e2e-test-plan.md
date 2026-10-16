@@ -5680,9 +5680,35 @@ eleven-tool-round desktop paths are verified by
 - **自动化：** `pnpm test:e2e:todos` 从生产 Agent 的 ToolSearch/TodoWrite 路径进入，使用生产渲染器、真实 Host/SQLite 和隔离 Electron 配置验证清单旅程；仅替换外部模型流和 preload 传输，不使用真实 Provider 或用户配置。覆盖 Unicode 截断及警告重放、单一活动项归一化、全量清单渲染与 dock 内滚动、首次读取失败后不切换会话的主机恢复、已缓存快照重新同步及旧事件拒绝。运行时 `runtime-todos.test.ts` 使用确定性 Provider 验证 Agent 工具校验、超长内容归一化和续跑。
 - **状态：** 构建 Desktop 和 Host 后，在确切的请求候选中执行。Host-core 和渲染器定向测试是辅助检查，不能替代 Electron 用户旅程。
 
+### E2E-NAV-account-menu-and-sidebar-utilities
+
+- **Preconditions:** An isolated Electron window, production Sidebar/store and
+  styles, fixture-only preload responses, and no real provider or user profile.
+- **Steps:** Open the bottom-left account menu; verify saved identity and quota
+  loading, successful balance/usage, failed-read recovery via Refresh, keyboard
+  action navigation, Escape/focus return, outside pointer/focus dismissal. Switch
+  provider while a quota read is pending; the previous balance and late reply
+  must not appear under the new account. Navigate to Accounts, Settings, and
+  Cloud sync, then open Scheduled, Plugins, and Activity from labeled sidebar
+  rows. Activate Plugins again to return. Remove the account and reopen; show a
+  connection action without fetching quota. Repeat at 800×560/light/English and
+  1200×900/dark/Simplified Chinese; confirm viewport bounds and no horizontal
+  overflow. Unmount with pending requests and confirm portal cleanup.
+- **Expected:** Account and quota details are on demand and redacted. Missing
+  accounts are not fabricated, stale replies are ignored, and closed menus are
+  idle. Notifications and the version/update action remain in the footer.
+- **Specs:** `04-ux/01-ui-ia.md`, `04-ux/06-settings-ia.md`.
+- **Acceptance:** C / G / Quality / Security. **Milestone:** M6+.
+- **Automation:** `apps/desktop/test/sidebar-user-menu-user-path.test.mjs` runs
+  the production Sidebar and real store in isolated Electron, with preload as
+  the only external mock. The hidden-window focus-out event is delivered
+  explicitly after checking `activeElement`; no OS desktop instance is used.
+- **Status:** Implemented automated fixture user-path coverage.
+
 ## 8. 可追溯性矩阵
 | 验收 | 应用场景 |
 |---|---|
+| C / G / Quality / Security — Account menu and sidebar utilities | E2E-NAV-account-menu-and-sidebar-utilities |
 | C / E / F / Quality / Security — Session Todo checklist | E2E-CHAT-session-todo-checklist |
 | C / E / Security / Quality — Live Voice 四阶段交互 | E2E-LIVE-VOICE-four-stage-ui |
 | C / F — Hourly task updates | E2E-SCHEDULED-manual-to-hourly |
