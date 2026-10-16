@@ -1,6 +1,6 @@
 # ADR: S3-only encrypted configuration backup and synchronization
 
-- Status: Accepted; implemented in the S3 configuration-sync change
+- Status: Superseded by [Router-account hosted configuration backup](router-account-configuration-backup.md)
 - Supersedes: The WebDAV transport and compatibility decisions in ADR 0300 and ADR 0301
 
 ## Context

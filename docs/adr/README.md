@@ -21,7 +21,8 @@ Each ADR includes:
 | ID | Title | Status |
 |---|---|---|
 | device-local-project-lists-in-config-sync | [Device-local project lists in configuration sync](device-local-project-lists-in-config-sync.md) | Accepted |
-| s3-only-configuration-backup-sync | [S3-only encrypted configuration backup and synchronization](s3-only-configuration-backup-sync.md) | Accepted; supersedes WebDAV decisions in 0300 / 0301 |
+| router-account-configuration-backup | [Router-account hosted configuration backup](router-account-configuration-backup.md) | Accepted; supersedes the S3-only transport decision |
+| s3-only-configuration-backup-sync | [S3-only encrypted configuration backup and synchronization](s3-only-configuration-backup-sync.md) | Superseded by router-account configuration backup |
 | remote-provider-import | [Explicit provider import into a running remote Host](remote-provider-import.md) | Accepted for the experimental SSH MVP |
 | remote-project-home-workflow | [Remote projects in the shared Chat home workflow](remote-project-home-workflow.md) | Accepted |
 | composer-mcp-invocations | [Composer MCP Invocations](composer-mcp-invocations.md) | Accepted |

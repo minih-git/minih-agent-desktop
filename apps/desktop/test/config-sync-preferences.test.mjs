@@ -22,37 +22,49 @@ function fakeStorage() {
   };
 }
 
-const connection = {
-  endpoint: "https://s3.example.com",
-  region: "us-east-1",
-  bucket: "private-config",
-  prefix: "minih-agent-desktop/config",
-  accessKeyId: "test-access-id",
-  pathStyle: true,
+const preferences0 = {
   mode: "sync",
+  automaticSync: false,
+  deviceLabel: "MacBook",
 };
 const entries = [{ revisionId: "revision-a", current: true }];
 
-test("S3 draft round-trips only typed non-sensitive choices", () => {
+test("router drafts round-trip only typed non-sensitive choices", () => {
   const store = fakeStorage();
   const draft = {
-    ...connection,
-    deviceLabel: "MacBook",
-    automaticSync: false,
+    ...preferences0,
     categories: { providers: true, credentials: false },
     saved: false,
   };
   preferences.writeConfigSyncDraft({
     ...draft,
-    secretAccessKey: "never-persist-secret",
-    sessionToken: "never-persist-token",
     backupPassword: "never-persist-password",
     currentBackupPassword: "never-persist-current",
     newBackupPassword: "never-persist-new",
   }, store);
   const raw = store.values.get(preferences.CONFIG_SYNC_DRAFT_STORAGE_KEY);
-  assert.doesNotMatch(raw, /never-persist|secretAccessKey|sessionToken|[Pp]assword/);
+  assert.doesNotMatch(raw, /never-persist|endpoint|bucket|accessKeyId|[Pp]assword/);
   assert.deepEqual(preferences.readConfigSyncDraft(store), draft);
+});
+
+test("the draft key is the router key and S3 fields are gone from it", () => {
+  assert.equal(preferences.CONFIG_SYNC_DRAFT_STORAGE_KEY, "pi.desktop.configSyncRouterDraft.v1");
+  assert.match(source, /const TEXT_FIELDS = \["deviceLabel"\]/);
+  assert.match(source, /const BOOLEAN_FIELDS = \["automaticSync", "saved"\]/);
+  const store = fakeStorage();
+  store.setItem(preferences.CONFIG_SYNC_DRAFT_STORAGE_KEY, JSON.stringify({
+    ...preferences0,
+    endpoint: "https://s3.example.com", bucket: "private", accessKeyId: "id", pathStyle: true,
+  }));
+  assert.deepEqual(preferences.readConfigSyncDraft(store), preferences0);
+});
+
+test("writing the router draft retires the legacy S3 draft key", () => {
+  const store = fakeStorage();
+  store.setItem("pi.desktop.configSyncS3Draft.v1", JSON.stringify({ endpoint: "https://s3.example.com", bucket: "private" }));
+  preferences.writeConfigSyncDraft(preferences0, store);
+  assert.equal(store.getItem("pi.desktop.configSyncS3Draft.v1"), null);
+  assert.ok(store.getItem(preferences.CONFIG_SYNC_DRAFT_STORAGE_KEY));
 });
 
 test("old WebDAV drafts are ignored and left untouched", () => {
@@ -67,29 +79,29 @@ test("old WebDAV drafts are ignored and left untouched", () => {
 test("draft rejects malformed fields and strips injected credentials on read", () => {
   const store = fakeStorage();
   store.setItem(preferences.CONFIG_SYNC_DRAFT_STORAGE_KEY, JSON.stringify({
-    endpoint: "x".repeat(2049), mode: "unsafe", pathStyle: "yes",
+    deviceLabel: "x".repeat(2049), mode: "unsafe", automaticSync: "yes",
     categories: { providers: "yes", mcp: true }, saved: "no",
-    secretAccessKey: "hidden", sessionToken: "hidden",
+    backupPassword: "hidden",
   }));
   assert.deepEqual(preferences.readConfigSyncDraft(store), { categories: { mcp: true } });
   store.setItem(preferences.CONFIG_SYNC_DRAFT_STORAGE_KEY, "{");
   assert.deepEqual(preferences.readConfigSyncDraft(store), {});
 });
 
-test("history expires and connection or mode changes invalidate it immediately", () => {
-  preferences.cacheConfigSyncState({ ...connection, configured: true });
+test("history expires and account or mode changes invalidate it immediately", () => {
+  const account = { accountConnected: true, accountEndpoint: "https://router.example.com", mode: "sync" };
+  preferences.cacheConfigSyncState({ ...account, configured: true });
   preferences.cacheConfigSyncHistory(entries, 1000);
   assert.equal(preferences.hasFreshConfigSyncHistory(1000), true);
   assert.equal(preferences.hasFreshConfigSyncHistory(1000 + preferences.CONFIG_SYNC_HISTORY_CACHE_TTL_MS), false);
-  preferences.cacheConfigSyncState({ ...connection, configured: true, status: "syncing" });
+  preferences.cacheConfigSyncState({ ...account, configured: true, status: "syncing" });
   assert.deepEqual(preferences.getCachedConfigSyncHistory(), entries);
   for (const [field, value] of Object.entries({
-    endpoint: "https://other.example.com", region: "eu-west-1", bucket: "other-bucket",
-    prefix: "other-prefix", accessKeyId: "other-id", pathStyle: false, mode: "backup", configured: false,
+    accountConnected: false, accountEndpoint: "https://other.example.com", mode: "backup", configured: false,
   })) {
-    preferences.cacheConfigSyncState({ ...connection, configured: true });
+    preferences.cacheConfigSyncState({ ...account, configured: true });
     preferences.cacheConfigSyncHistory(entries, 1000);
-    assert.equal(preferences.cacheConfigSyncState({ ...connection, configured: true, [field]: value }), true);
+    assert.equal(preferences.cacheConfigSyncState({ ...account, configured: true, [field]: value }), true);
     assert.deepEqual(preferences.getCachedConfigSyncHistory(), [], field);
     assert.equal(preferences.hasFreshConfigSyncHistory(1000), false, field);
   }
@@ -98,12 +110,12 @@ test("history expires and connection or mode changes invalidate it immediately",
 test("legacy project selection is discarded on draft read and write", () => {
   const store = fakeStorage();
   store.setItem(preferences.CONFIG_SYNC_DRAFT_STORAGE_KEY, JSON.stringify({
-    ...connection, categories: { projects: true, providers: false, memory: true },
+    ...preferences0, categories: { projects: true, providers: false, memory: true },
   }));
   assert.deepEqual(preferences.readConfigSyncDraft(store), {
-    ...connection, categories: { providers: false, memory: true },
+    ...preferences0, categories: { providers: false, memory: true },
   });
-  preferences.writeConfigSyncDraft({ ...connection, categories: { projects: false, mcp: true } }, store);
+  preferences.writeConfigSyncDraft({ ...preferences0, categories: { projects: false, mcp: true } }, store);
   const saved = JSON.parse(store.getItem(preferences.CONFIG_SYNC_DRAFT_STORAGE_KEY));
   assert.deepEqual(saved.categories, { mcp: true });
   assert.equal(Object.hasOwn(saved.categories, "projects"), false);

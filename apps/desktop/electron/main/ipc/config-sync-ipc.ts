@@ -8,7 +8,7 @@ export type ConfigSyncIpcDependencies = {
   sendToRenderer: (channel: string, payload?: unknown) => void;
 };
 
-/** Keep S3 credentials and vault passwords inside transient Host IPC calls. */
+/** Keep the account token and vault passwords inside transient Host IPC calls. */
 export function registerConfigSyncIpc({
   registrar,
   getHost,
@@ -35,9 +35,7 @@ export function registerConfigSyncIpc({
   handle(IPC.invoke.configSyncConfigure, (input: unknown) =>
     callHost("configSync.configure", input),
   );
-  handle(IPC.invoke.configSyncTest, (input: unknown) =>
-    callHost("configSync.test", input),
-  );
+  handle(IPC.invoke.configSyncTest, () => callHost("configSync.test", {}));
   // This request is Host-owned; navigating away from the Settings route must
   // not cancel it. Host state/progress notifications remain the completion path.
   handle(IPC.invoke.configSyncSyncNow, () => callHost("configSync.syncNow"));

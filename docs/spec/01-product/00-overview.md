@@ -37,7 +37,8 @@ Minih-Agent-Desktop =
 9. Make project sessions, imports, extensions, and scheduled prompts practical
    for daily local work
 10. Synchronize explicitly selected portable configuration through a
-    host-owned encrypted S3 vault without exporting conversation history
+    host-owned encrypted vault stored with the Minih Router account without
+    exporting conversation history
 
 ## Non-goals (MVP)
 

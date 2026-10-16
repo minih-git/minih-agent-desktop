@@ -217,13 +217,14 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
   and manual run above settings. Pause and inline password unlock remain
   reachable without expanding connection settings; errors, manual progress and
   pending activation are never hidden behind a disclosure.
-- **Connection**: initial setup exposes endpoint, private bucket, access key
-  ID, secret key and vault password. Mode uses the shared settings picker;
-  automatic runs use `SettingsToggle`. Advanced settings (region, object
-  prefix, addressing, device label and optional session token) start collapsed
-  with unchanged defaults. Saved connections reopen collapsed, while unfinished
-  drafts reopen for editing. Test and Save remain together at the form footer.
-  Connection testing requires reliable conditional writes; no fallback exists.
+- **Connection**: the page uses the connected Minih Router account; without
+  one, setup controls stay disabled and the page links to Settings →
+  Accounts. Initial setup exposes only the vault password and device label.
+  Mode uses the shared settings picker; automatic runs use `SettingsToggle`.
+  Saved configurations reopen collapsed, while unfinished drafts reopen for
+  editing. Test and Save remain together at the form footer. Connection
+  testing probes the account's backup storage and requires reliable
+  conditional writes; no fallback exists.
 - **Portable configuration**: a disclosure inside the same connection form
   allows category selection before initial setup and later edits. Supported
   categories are selected by default; credentials and memory remain explicit
@@ -233,24 +234,25 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
   maintenance start collapsed. Expanding does not perform a sync, save, or reset
   entered values. The preview retains its complete counts.
 - **Safety**: exported secrets and vault keys are never returned to the page.
-  Connection secrets exist only in transient password controls. Imported
+  The vault password exists only in transient password controls. Imported
   executable/security-sensitive content keeps local approval and mapping.
   Public HTTP and redirects are rejected; LAN HTTP follows the shared Host
   network policy, not a page-specific checkbox. Disconnect preserves local
-  configuration and remote objects. Only the new S3 format is supported;
-  there is no legacy-data detection, migration or compatibility notice.
+  configuration and remote objects. Only the router-account format is
+  supported; there is no legacy-data detection, migration or compatibility
+  notice.
 - **State and recovery**: show distinct configured, locked, syncing, offline,
   unsupported-server, conflict, awaiting-activation, paused, and error states.
   Users can sync now, unlock, pause this device, approve/reject staged items,
   and disconnect. The page does not imply convergence from an old successful
   run while a pending state remains.
 - **Fast revisit and drafts**: cache redacted status/history and typed,
-  non-sensitive connection choices. S3 uses a versioned draft key; old drafts
-  are ignored. Secret keys, session tokens and vault passwords never enter
-  renderer persistence. Blank credentials reuse Host storage only for the exact
-  same connection; an explicit token-clear checkbox and new secret replacement
-  can clear the saved session token. Connection/mode changes invalidate history,
-  including late responses from the previous connection.
+  non-sensitive choices. The draft key is
+  `pi.desktop.configSyncRouterDraft.v1`; only mode, device label,
+  automatic-run choice, and categories persist, and the legacy S3 draft key is
+  removed on the next save. Vault passwords never enter renderer persistence.
+  Account or mode changes invalidate history, including late responses from
+  the previous account.
 - **History and restore**: show the latest 30 revisions for the saved mode and
   disclose indefinite object retention without automatic cloud cleanup. Sync
   restore confirms immediate propagation; backup restore confirms local-only

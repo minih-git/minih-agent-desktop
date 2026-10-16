@@ -2,7 +2,7 @@ use super::domains::{self, CategorySelection, LocalSnapshot, PortableEntity, Rev
 use super::merge::{self, MergeConflict};
 use super::{
     create_vault, decrypt_object, encrypt_object, rewrap_vault, unlock_vault, vault_key_b64,
-    vault_key_from_b64, S3Config, S3Transport, VaultHeader, VaultKey,
+    vault_key_from_b64, RouterConfig, RouterTransport, VaultHeader, VaultKey,
 };
 use crate::agent_capabilities::CapabilityLevel;
 use crate::mcp_servers::McpServerInput;
@@ -30,8 +30,7 @@ mod conflicts;
 #[path = "connection.rs"]
 mod connection;
 use connection::{
-    config_from_input, configured_transport, connection_credentials, credential_ref,
-    transport_with_credentials, S3Connection,
+    account_transport, config_from_input, configured_account, resolve_account, RouterConnection,
 };
 #[path = "apply.rs"]
 mod apply;
@@ -46,8 +45,8 @@ mod progress;
 #[path = "engine_remote.rs"]
 mod remote;
 #[cfg(test)]
-#[path = "engine_s3_tests.rs"]
-mod s3_tests;
+#[path = "engine_router_tests.rs"]
+mod router_tests;
 #[cfg(test)]
 pub(crate) use apply::validate_application_references;
 pub(crate) use apply::{apply_bundle, recover_import_journal};
@@ -63,9 +62,9 @@ use remote::{
     validate_remote_id,
 };
 
-const CONFIG_NS: &str = "configSyncS3";
+const CONFIG_NS: &str = "configSyncRouter";
 const CONFIG_KEY: &str = "config";
-const FORMAT: &str = "minih-agent-desktop-config-sync-s3";
+const FORMAT: &str = "minih-agent-desktop-config-sync-router";
 const REVISION_FORMAT: &str = "minih-agent-desktop-config-revision";
 const MAX_ENTITIES: usize = 4096;
 const MAX_RESOURCES: usize = 4096;
@@ -90,7 +89,7 @@ pub(crate) struct StoredConfig {
     pub format: String,
     pub version: u32,
     #[serde(flatten)]
-    pub connection: S3Connection,
+    pub connection: RouterConnection,
     pub mode: SyncMode,
     pub state_id: String,
     pub device_label: String,
@@ -228,20 +227,13 @@ struct PublicState {
     paused: bool,
     locked: bool,
     status: String,
+    /// Whether a Minih Router account row with a token exists right now.
+    account_connected: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    endpoint: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    region: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bucket: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    prefix: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    access_key_id: Option<String>,
+    account_endpoint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     device_label: Option<String>,
     mode: SyncMode,
-    path_style: bool,
     categories: BTreeMap<String, bool>,
     include_secrets: bool,
     include_memory: bool,
@@ -289,13 +281,13 @@ fn identity_overrides(config: &StoredConfig) -> domains::ProjectIdentityOverride
 
 fn config_dir(st: &AppState) -> Result<PathBuf> {
     let config =
-        load_config(st)?.ok_or_else(|| anyhow!("CONFIG_SYNC_LOCKED: S3 sync is not configured"))?;
+        load_config(st)?.ok_or_else(|| anyhow!("CONFIG_SYNC_LOCKED: sync is not configured"))?;
     Uuid::parse_str(&config.state_id)
-        .map_err(|_| anyhow!("CONFIG_SYNC_INVALID: invalid local S3 state identity"))?;
+        .map_err(|_| anyhow!("CONFIG_SYNC_INVALID: invalid local sync state identity"))?;
     Ok(st
         .data_dir
         .join("config-sync")
-        .join("s3")
+        .join("router")
         .join(config.state_id))
 }
 
@@ -646,20 +638,17 @@ fn status(
 pub fn public_state(st: &mut AppState) -> Result<Value> {
     let mut config = load_config(st)?;
     let Some(initial_config) = config.as_ref() else {
+        let (account_connected, account_endpoint) = connection::account_status(st);
         return Ok(serde_json::to_value(PublicState {
             configured: false,
             enabled: false,
             paused: false,
             locked: false,
             status: "notConfigured".into(),
-            endpoint: None,
-            region: None,
-            bucket: None,
-            prefix: None,
-            access_key_id: None,
+            account_connected,
+            account_endpoint,
             device_label: None,
             mode: SyncMode::Sync,
-            path_style: true,
             categories: default_categories(),
             include_secrets: false,
             include_memory: false,
@@ -737,6 +726,7 @@ pub fn public_state(st: &mut AppState) -> Result<Value> {
             _ => false,
         }
     };
+    let (account_connected, account_endpoint) = connection::account_status(st);
     Ok(serde_json::to_value(PublicState {
         configured: true,
         enabled: config_ref.enabled,
@@ -749,14 +739,10 @@ pub fn public_state(st: &mut AppState) -> Result<Value> {
             syncing,
             local_changes_pending,
         ),
-        endpoint: Some(config_ref.connection.endpoint.clone()),
-        region: Some(config_ref.connection.region.clone()),
-        bucket: Some(config_ref.connection.bucket.clone()),
-        prefix: Some(config_ref.connection.prefix.clone()),
-        access_key_id: Some(config_ref.connection.access_key_id.clone()),
+        account_connected,
+        account_endpoint,
         device_label: Some(config_ref.device_label.clone()),
         mode: config_ref.mode,
-        path_style: config_ref.connection.path_style,
         categories: config_ref.categories.clone(),
         include_secrets: config_ref.include_secrets,
         include_memory: config_ref.include_memory,
@@ -1029,18 +1015,16 @@ mod tests {
         mode: &str,
     ) -> Result<Arc<Mutex<AppState>>> {
         let state = Arc::new(Mutex::new(AppState::open(data_dir)?));
+        connection::tests::create_router_provider(
+            &*state.lock().await,
+            &format!("{endpoint}/v1"),
+            "fixture-access-key",
+        )?;
         configure(
             state.clone(),
             json!({
-                "endpoint": endpoint,
-                "region": "us-east-1",
-                "bucket": "fixture-bucket",
-                "accessKeyId": "fixture-access",
-                "secretAccessKey": "fixture-secret",
-                "prefix": "config-sync-test",
                 "deviceLabel": "test-device",
                 "backupPassword": "portable-backup-password",
-                "pathStyle": true,
                 "mode": mode,
                 "categories": {
                     "application": true,
@@ -1164,7 +1148,11 @@ mod tests {
         let device_a = configure_test_device(device_a_dir.path(), &fixture.endpoint).await?;
         let device_b = configure_test_device(device_b_dir.path(), &fixture.endpoint).await?;
         let device_a_state = get_state(device_a.clone()).await?;
-        assert_eq!(device_a_state.get("pathStyle"), Some(&json!(true)));
+        assert_eq!(device_a_state.get("accountConnected"), Some(&json!(true)));
+        assert_eq!(
+            device_a_state.get("accountEndpoint"),
+            Some(&json!(format!("{}/v1", fixture.endpoint)))
+        );
         assert_eq!(device_a_state.get("mode"), Some(&json!("sync")));
         let project_a = device_a_dir.path().join("project");
         let project_b = device_b_dir.path().join("project");
@@ -1316,7 +1304,8 @@ mod tests {
             let state = device_b.lock().await;
             let config = load_config(&state)?.expect("configured device");
             let key = local_vault_key(&state, &config)?.expect("unlocked device");
-            let transport = configured_transport(&state, &config)?;
+            let account = configured_account(&state, &config)?;
+            let transport = account_transport(&account).await?;
             let (head, _) = read_remote_head(&transport, &config, &key)
                 .await?
                 .expect("remote head");
@@ -1467,7 +1456,8 @@ mod tests {
             let state = device_b.lock().await;
             let config = load_config(&state)?.expect("configured device");
             let key = local_vault_key(&state, &config)?.expect("unlocked device");
-            let transport = configured_transport(&state, &config)?;
+            let account = configured_account(&state, &config)?;
+            let transport = account_transport(&account).await?;
             let (head, _) = read_remote_head(&transport, &config, &key)
                 .await?
                 .expect("remote head after device B edit");

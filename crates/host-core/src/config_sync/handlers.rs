@@ -21,18 +21,15 @@ pub(crate) async fn restore(
     history::restore(state, params, tx).await
 }
 
-pub(crate) async fn test(state: Arc<Mutex<AppState>>, params: Value) -> Result<Value> {
-    let transport = {
+pub(crate) async fn test(state: Arc<Mutex<AppState>>, _params: Value) -> Result<Value> {
+    let account = {
         let st = state.lock().await;
-        let existing = load_config(&st)?;
-        let connection =
-            S3Connection::from_input(existing.as_ref().map(|v| &v.connection), &params)?;
-        let credentials = connection_credentials(&st, existing.as_ref(), &connection, &params)?;
-        transport_with_credentials(&connection, credentials)?
+        resolve_account(&st)?
     };
+    let transport = account_transport(&account).await?;
     let probe = transport.probe().await?;
     if !probe.conditional_writes {
-        bail!("CONFIG_SYNC_UNSUPPORTED: S3 storage did not prove reliable conditional writes");
+        bail!("CONFIG_SYNC_UNSUPPORTED: Minih Router backup storage did not prove reliable conditional writes");
     }
     Ok(json!({"ok": true, "conditionalWrites": true}))
 }
@@ -48,7 +45,11 @@ pub(crate) async fn configure(state: Arc<Mutex<AppState>>, params: Value) -> Res
     if !backup_password.is_empty() && backup_password.len() < 8 {
         bail!("CONFIG_SYNC_INVALID: backup password must be at least 8 characters");
     }
-    let (mut config, mut key, credentials, previous) = {
+    let account = {
+        let st = state.lock().await;
+        resolve_account(&st)?
+    };
+    let (mut config, mut key, previous) = {
         let st = state.lock().await;
         let existing = load_config(&st)?;
         let (header, key) = if let Some(saved) = existing.as_ref() {
@@ -61,11 +62,11 @@ pub(crate) async fn configure(state: Arc<Mutex<AppState>>, params: Value) -> Res
             (saved.vault_header.clone(), key)
         } else {
             if backup_password.is_empty() {
-                bail!("CONFIG_SYNC_LOCKED: enter the vault password to set up S3 backup");
+                bail!("CONFIG_SYNC_LOCKED: enter the vault password to set up backup");
             }
             create_vault(backup_password, &Uuid::new_v4().to_string())?
         };
-        let config = config_from_input(existing.as_ref(), &params, header)?;
+        let config = config_from_input(existing.as_ref(), &params, header, &account.fingerprint)?;
         if existing
             .as_ref()
             .is_some_and(|saved| saved.state_id != config.state_id)
@@ -73,19 +74,17 @@ pub(crate) async fn configure(state: Arc<Mutex<AppState>>, params: Value) -> Res
         {
             bail!("CONFIG_SYNC_CONFLICT: resolve pending changes before changing the destination or mode");
         }
-        let credentials =
-            connection_credentials(&st, existing.as_ref(), &config.connection, &params)?;
-        (config, key, credentials, existing)
+        (config, key, existing)
     };
-    let transport = transport_with_credentials(&config.connection, credentials.clone())?;
+    let transport = account_transport(&account).await?;
     if !transport.probe().await?.conditional_writes {
-        bail!("CONFIG_SYNC_UNSUPPORTED: S3 storage did not prove reliable conditional writes");
+        bail!("CONFIG_SYNC_UNSUPPORTED: Minih Router backup storage did not prove reliable conditional writes");
     }
     if let Some((bytes, _)) = transport.get("header").await? {
         let remote: VaultHeader =
             serde_json::from_slice(&bytes).context("decode remote vault header")?;
         if previous.is_some() && config.vault_id != remote.vault_id {
-            bail!("CONFIG_SYNC_CONFLICT: selected S3 prefix belongs to another vault; disconnect first");
+            bail!("CONFIG_SYNC_CONFLICT: this Minih Router account already holds another vault; disconnect first");
         }
         adopt_remote_vault(&mut key, &mut config, remote, backup_password)?;
     } else {
@@ -108,18 +107,13 @@ pub(crate) async fn configure(state: Arc<Mutex<AppState>>, params: Value) -> Res
         }
     }
     let mut st = state.lock().await;
-    st.secrets.set(
-        &credential_ref(&config),
-        &serde_json::to_string(&credentials)?,
-    )?;
+    // The account token lives in the providers store; only the unlocked vault
+    // key is persisted by config sync itself.
     st.secrets.set(
         &secret_ref_for_vault(&config.vault_id),
         &vault_key_b64(&key),
     )?;
     save_config(&st, &config)?;
-    if let Some(previous) = previous.filter(|saved| saved.state_id != config.state_id) {
-        st.secrets.delete(&credential_ref(&previous))?;
-    }
     public_state(&mut st)
 }
 
@@ -387,7 +381,6 @@ pub(crate) async fn disconnect(state: Arc<Mutex<AppState>>) -> Result<Value> {
     let _sync_guard = sync_lock.lock().await;
     let mut st = state.lock().await;
     if let Some(config) = load_config(&st)? {
-        st.secrets.delete(&credential_ref(&config))?;
         st.secrets.delete(&secret_ref_for_vault(&config.vault_id))?;
         for file in ["base.bin", "pending.bin"] {
             let path = local_path(&st, file)?;

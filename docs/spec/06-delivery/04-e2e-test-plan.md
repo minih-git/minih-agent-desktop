@@ -9858,24 +9858,25 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   audio lands.
 
 <a id="e2e-config-sync-webdav-portable-configuration"></a>
+<a id="e2e-config-sync-s3-portable-configuration"></a>
 
-### E2E-CONFIG-SYNC-s3-portable-configuration
+### E2E-CONFIG-SYNC-router-account
 
 - **Preconditions:** A built task candidate, isolated Host processes with
-  separate data, HOME and agent directories, and a local S3 fixture with strong
-  ETags and conditional PUT. No real model provider or running desktop instance.
-  A live S3 run is separately opt-in and requires explicit authorization.
+  separate data, HOME and agent directories, and an in-process Minih Router
+  HTTP fixture with strong ETags and conditional PUT. No real model provider
+  or running desktop instance. A live router run is separately opt-in and
+  requires explicit authorization with a real account.
 - **Steps:**
   1. In a packaged build, confirm Cloud sync appears in Settings navigation
      and search with Experimental badges on its row and page title. Open the
-     destination and confirm only the new S3 setup is offered; old formats are
-     not detected, migrated or deleted.
-  2. Confirm initial setup shows only required connection/password fields and
-     automatic runs use the shared switch. Expand Advanced to edit region,
-     prefix, addressing, device label and optional token; collapse/reopen it
-     without losing values. Select categories before the first save, keeping
+     destination and confirm only the router-account setup is offered; old
+     formats are not detected, migrated or deleted.
+  2. Connect a Minih Router test account, then confirm initial setup shows
+     only the vault password and device label, and automatic runs use the
+     shared switch. Select categories before the first save, keeping
      credentials/memory opt-in. Test conditional creation, readback, matching
-     update, stale-write rejection and probe cleanup.
+     update, stale-write rejection and server-side probe cleanup.
      Reject ignored preconditions, weak ETags, redirects, public HTTP and 403;
      never interpret 502 as a missing object. LAN HTTP follows network policy.
   3. Configure two sync devices. Publish a provider and mapped packaged skill,
@@ -9906,13 +9907,12 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
      local recovery point, a new shared revision and propagation to the second
      device, with sensitive activation still requiring approval. Rewrap the
      password without claiming revocation of already unlocked devices.
-  6. Reopen Settings with saved and unfinished drafts. Preserve typed S3 choices
-     and automatic-run preferences, but never persist secret keys, tokens or
-     passwords. Test blank credential reuse, explicit token clearing and full
-     replacement. Invalidate history on destination/mode changes and ignore
-     outstanding responses from the old connection. Unsaved mode changes must
-     not alter restore confirmation or propagation flags.
-     Saved connections reopen collapsed while status, manual run and inline
+  6. Reopen Settings with saved and unfinished drafts. Drafts persist mode,
+     device label, automatic-run choice and categories only; never persist
+     passwords or the account token. Invalidate history on account/mode
+     changes and ignore outstanding responses from the old account. Unsaved
+     mode changes must not alter restore confirmation or propagation flags.
+     Saved configurations reopen collapsed while status, manual run and inline
      unlock remain visible above them. Open History and Security/connection
      to restore, change password or disconnect. Pending approvals and errors
      remain visible. At narrow content widths the form becomes one column
@@ -9924,29 +9924,35 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   8. Hold an in-flight manual sync, navigate away from Settings and return.
      Verify Host still reports `syncing`, duplicate actions stay disabled, and
      releasing the fixture completes the operation and refreshes Host state.
-- **Expected:** Only S3 is supported, with mandatory conditional writes and
-  encrypted vault contents. Identical/disjoint edits converge; conflicts and
+- **Expected:** Only router-account storage is supported, with mandatory
+  conditional writes and encrypted vault contents; drafts persist mode, device
+  label, automatic-run choice and categories only, and the account row is
+  device-local. Identical/disjoint edits converge; conflicts and
   tombstones preserve changes; excluded categories do not imply deletion.
   Backup never downloads/applies remote configuration during normal runs.
   History queries index at most 30 revisions; stored immutable objects are not
   automatically deleted. Import recovery remains observable; per-file atomic
   replacement is not asserted to be a whole-filesystem transaction.
-- **Live S3 safety:** `--live-s3 --env-file <authorized-file>` reads credentials
-  programmatically without logging/copying them. Use a new random test prefix,
-  confirm it is initially empty, run actual isolated Host processes, delete
-  only objects created under that prefix, and verify it is empty afterward.
-  Never use an existing backup prefix or production desktop profile. Record
-  tested base/candidate and distinguish this run from a standalone SDK probe.
+- **Live router safety:** a live router run is separately opt-in and requires
+  explicit authorization with a real account; the harness reads the account
+  token from an authorized env file programmatically without logging/copying
+  it. Use a dedicated test account, confirm it is initially empty, run actual
+  isolated Host processes, delete only objects created by the run, and verify
+  it is empty afterward. Never use an existing backup account or the
+  production desktop profile. Record tested base/candidate and distinguish
+  this run from a standalone SDK probe.
 - **Automation:** `pnpm test:e2e:config-sync` is the multi-Host harness.
   Rust `config_sync::` and `user_skills::` suites cover transport, merge,
-  application and resource safety. `config-sync-user-path.test.mjs` runs the
-  real settings page and shared checkbox with a mocked external IPC boundary,
-  actual styles and isolated Electron input, without network access;
-  `config-sync-ipc.test.mjs` covers Main notification shape. Visibility remains
-  covered by `settings-developer-only-destinations.test.mjs`.
+  application and resource safety, using an in-process router HTTP fixture
+  for the transport/engine tests rather than an S3 fixture.
+  `config-sync-user-path.test.mjs` runs the real settings page and shared
+  checkbox with a mocked external IPC boundary, actual styles and isolated
+  Electron input, without network access; `config-sync-ipc.test.mjs` covers
+  Main notification shape. Visibility remains covered by
+  `settings-developer-only-destinations.test.mjs`.
 - **Specs:** `03-runtime/22-config-sync.md`, `04-ux/06-settings-ia.md`,
   `03-runtime/14-secrets-storage.md`, `05-security/01-security.md`,
-  `docs/adr/s3-only-configuration-backup-sync.md`.
+  `docs/adr/router-account-configuration-backup.md`.
 - **Acceptance:** F (persistence), Security, Quality. **Milestone:** M6+.
 - **Status:** Candidate validation required; full checkpoint-recovery fault
   injection is not claimed by the settings or multi-Host happy-path suites.
@@ -10028,7 +10034,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | C / F — Hourly task updates | E2E-SCHEDULED-manual-to-hourly |
 | C / F / Quality — Saved project isolation | E2E-SCHEDULED-manual-workspace-binding |
 | C / F / Quality — Desktop automations | E2E-SCHEDULED-desktop-automation-lifecycle |
-| F / Security / Quality — Portable configuration sync | E2E-CONFIG-SYNC-s3-portable-configuration |
+| F / Security / Quality — Portable configuration sync | E2E-CONFIG-SYNC-router-account |
 | A / C — Unicode stdio framing | E2E-RPC-unicode-separators |
 | C / G / Quality — Plugins navigation | E2E-NAV-plugins-button-goes-back |
 | C / D / Quality — Sidebar row states | E2E-LAYOUT-sidebar-row-states |

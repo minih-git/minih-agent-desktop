@@ -53,9 +53,10 @@ notifications, and run scheduled prompts manually or on a remembered cadence.
 
 ### H. Portable configuration sync
 
-Configure an encrypted S3 vault for portable preferences and user-owned
-capabilities, review category and credential inclusion, and reconcile changes
-across devices without synchronizing conversation history or source files.
+Connect a Minih Router account for an encrypted, account-hosted vault of
+portable preferences and user-owned capabilities, review category and
+credential inclusion, and reconcile changes across devices without
+synchronizing conversation history or source files.
 
 ## 4. Current shipped scope
 
@@ -78,7 +79,7 @@ across devices without synchronizing conversation history or source files.
 - Extensions page: local plugins, marketplace packages, MCP, Skills, and
   Subagents with activation scopes
 - Scheduled task records with manual execution and cadence metadata
-- Host-owned encrypted S3 configuration backup/sync with category selection,
+- Account-hosted encrypted configuration backup/sync with category selection,
   conditional-write probing, three-way merge, and local activation review
 - Rust host core skeleton for privileged operations
 

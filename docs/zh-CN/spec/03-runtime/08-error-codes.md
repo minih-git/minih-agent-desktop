@@ -75,8 +75,8 @@ type AppError = {
 | `LIMIT_EXCEEDED` | 不 | 载荷超过了固定的主机上限（条目数、字节数）并被拒绝 |
 | `CONFIG_SYNC_INVALID` | 不 | 同步配置、密码、路径、请求或审批输入无效 |
 | `CONFIG_SYNC_LOCKED` | 不 | 本地加密同步 vault 尚未解锁 |
-| `CONFIG_SYNC_UNSUPPORTED` | no | unsupported vault format or S3 conditional-write capability |
-| `CONFIG_SYNC_REMOTE` | maybe | S3 object, authentication, quota or availability failure |
+| `CONFIG_SYNC_UNSUPPORTED` | no | unsupported vault format or router backup conditional-write capability |
+| `CONFIG_SYNC_REMOTE` | maybe | router backup object, authentication, quota or availability failure |
 | `CONFIG_SYNC_CONFLICT` | 也许 | 远端 head、vault 身份或审批 digest 冲突 |
 | `CONFIG_SYNC_CRYPTO` | 不 | 认证加密、对象身份或密文校验失败 |
 | `CONFIG_SYNC_MAPPING_REQUIRED` | 不 | 导入的项目作用域配置需要明确的本地文件夹/项目组映射 |

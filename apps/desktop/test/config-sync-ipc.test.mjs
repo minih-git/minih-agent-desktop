@@ -22,7 +22,9 @@ test("history and probe results never masquerade as configuration state events",
     sendToRenderer: (channel, value) => events.push([channel, value]),
   });
   assert.deepEqual(await handlers.get(IPC.invoke.configSyncListHistory)(), history);
-  assert.deepEqual(await handlers.get(IPC.invoke.configSyncTest)({ bucket: "private" }), { ok: true, conditionalWrites: true });
+  // The probe carries no renderer payload: the host tests the router account.
+  assert.deepEqual(await handlers.get(IPC.invoke.configSyncTest)(), { ok: true, conditionalWrites: true });
+  assert.deepEqual(calls.filter(([method]) => method === "configSync.test"), [["configSync.test", {}]]);
   assert.deepEqual(events, []);
   assert.equal(await handlers.get(IPC.invoke.configSyncConfigure)({ mode: "backup" }), state);
   assert.deepEqual(events, [[IPC.event.configSyncChanged, state]]);

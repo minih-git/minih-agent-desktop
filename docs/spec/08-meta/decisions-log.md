@@ -10,6 +10,7 @@ This log freezes previously open questions into concrete decisions.
 
 | ID | Topic | Decision | Rationale |
 |---|---|---|---|
+| D661 | Configuration backup/sync storage moves to the Minih Router account | **Configuration backup/sync storage moves from user-provided S3 to the Minih Router backend under the signed-in account (AccessKey Bearer over the gateway control plane, per-account namespace, mandatory conditional writes). The S3 transport and connection UI are removed; the connected account provider row is device-local and never synced; old S3 configuration and cloud data are left inert, not migrated or deleted. See `docs/adr/router-account-configuration-backup.md` and `03-runtime/22-config-sync.md`.** | One account identity already covers chat and account reads; the encrypted vault, merge, and activation contracts are unchanged. |
 | D001 | Electron ↔ Rust transport | **Rust sidecar + stdio JSON-RPC (NDJSON)** | Simple isolation, debuggable, replaceable later |
 | D002 | SQLite ownership | **Rust host-core owns SQLite exclusively** | Single writer, clearer privilege boundary |
 | D003 | Default mode | **Agent** | Product is an agent desktop, not pure chat |

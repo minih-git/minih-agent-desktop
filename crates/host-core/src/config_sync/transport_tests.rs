@@ -1,19 +1,22 @@
 use super::*;
-use reqwest::header::{AUTHORIZATION, HOST};
+use reqwest::header::{AUTHORIZATION, IF_MATCH, IF_NONE_MATCH};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+const FIXTURE_KEY: &str = "fixture-access-key";
+
 #[derive(Default)]
 struct FixtureState {
+    // Object name (path after /api/client-backup/objects/) -> (body, strong etag).
     objects: HashMap<String, (Vec<u8>, String)>,
     weak_etag: bool,
     ignore_preconditions: bool,
     read_status: Option<u16>,
     fail_next_read: bool,
-    fail_delete: bool,
+    reject_auth: bool,
 }
 
 pub(crate) struct Fixture {
@@ -84,97 +87,82 @@ async fn read_request(stream: &mut TcpStream) -> Option<(Method, String, HeaderM
     ))
 }
 
-// Verify every wire request (including conditional headers and optional token).
-// The independent official AWS vector below anchors the signer itself.
-fn authorized(method: &Method, path: &str, headers: &HeaderMap, body: &[u8]) -> Result<bool> {
-    let host = headers
-        .get(HOST)
-        .ok_or_else(|| anyhow!("missing host"))?
-        .to_str()?;
-    let url = Url::parse(&format!("http://{host}{path}"))?;
-    let timestamp = headers
-        .get("x-amz-date")
-        .ok_or_else(|| anyhow!("missing date"))?
-        .to_str()?;
-    let mut expected = HeaderMap::new();
-    for name in [IF_MATCH, IF_NONE_MATCH] {
-        if let Some(value) = headers.get(&name) {
-            expected.insert(name, value.clone());
-        }
-    }
-    let credentials = signing::Credentials {
-        access_key_id: "fixture-access".into(),
-        secret_access_key: "fixture-secret".into(),
-        session_token: headers
-            .get("x-amz-security-token")
-            .map(|_| "fixture-session".into()),
-    };
-    signing::sign(
-        method,
-        &url,
-        "us-east-1",
-        &credentials,
-        body,
-        &mut expected,
-        timestamp,
-    )?;
-    Ok(expected
-        .iter()
-        .all(|(name, value)| headers.get(name) == Some(value)))
+// A strong, opaque etag that changes with every write, like the router.
+fn etag_for(name: &str, version: u64, body: &[u8]) -> String {
+    let digest = Sha256::digest(format!("{name}:{version}").as_bytes());
+    let _ = body;
+    format!("\"{}-{version}\"", hex::encode(&digest[..8]))
 }
 
 async fn handle(mut stream: TcpStream, state: Arc<Mutex<FixtureState>>) {
     let Some((method, path, headers, body)) = read_request(&mut stream).await else {
         return;
     };
+    let authorized = !state.lock().unwrap().reject_auth
+        && headers.get(AUTHORIZATION).and_then(|v| v.to_str().ok())
+            == Some(&format!("Bearer {FIXTURE_KEY}"));
     let (status, response, etag) = {
         let mut state = state.lock().unwrap();
-        if !authorized(&method, &path, &headers, &body).unwrap_or(false) {
+        if !authorized {
+            (401, b"fixture auth text must not escape".to_vec(), None)
+        } else if path == "/api/client-backup/probe" {
+            let conditional_writes = !state.ignore_preconditions;
             (
-                403,
-                b"fixture credential details must not escape".to_vec(),
+                200,
+                serde_json::to_vec(&serde_json::json!({
+                    "code": 0,
+                    "data": {"conditionalWrites": conditional_writes}
+                }))
+                .unwrap(),
                 None,
             )
-        } else if method == Method::GET && state.fail_next_read {
-            state.fail_next_read = false;
-            (503, Vec::new(), None)
-        } else {
-            match method {
-                Method::GET => {
-                    if let Some(status) = state.read_status {
-                        (status, Vec::new(), None)
-                    } else if let Some((body, etag)) = state.objects.get(&path) {
-                        let tag = if state.weak_etag {
-                            format!("W/{etag}")
+        } else if let Some(name) = path.strip_prefix("/api/client-backup/objects/") {
+            if method == Method::GET && state.fail_next_read {
+                state.fail_next_read = false;
+                (503, Vec::new(), None)
+            } else {
+                match method {
+                    Method::GET => {
+                        if let Some(status) = state.read_status {
+                            (status, Vec::new(), None)
+                        } else if let Some((body, etag)) = state.objects.get(name) {
+                            let tag = if state.weak_etag {
+                                format!("W/{etag}")
+                            } else {
+                                etag.clone()
+                            };
+                            (200, body.clone(), Some(tag))
                         } else {
-                            etag.clone()
-                        };
-                        (200, body.clone(), Some(tag))
-                    } else {
-                        (404, Vec::new(), None)
+                            (404, Vec::new(), None)
+                        }
                     }
-                }
-                Method::PUT => {
-                    let existing = state.objects.get(&path);
-                    let conflict = (headers.contains_key(IF_NONE_MATCH) && existing.is_some())
-                        || headers.get(IF_MATCH).is_some_and(|value| {
-                            existing.is_none_or(|(_, tag)| value != tag.as_str())
-                        });
-                    if conflict && !state.ignore_preconditions {
-                        (412, Vec::new(), None)
-                    } else {
-                        let etag = format!("\"{}\"", hex::encode(Sha256::digest(&body)));
-                        state.objects.insert(path, (body, etag));
-                        (200, Vec::new(), None)
+                    Method::PUT => {
+                        let existing = state.objects.get(name);
+                        let conflict = (headers.contains_key(IF_NONE_MATCH) && existing.is_some())
+                            || headers.get(IF_MATCH).is_some_and(|value| {
+                                existing.is_none_or(|(_, tag)| value != tag.as_str())
+                            });
+                        if conflict && !state.ignore_preconditions {
+                            (412, Vec::new(), None)
+                        } else {
+                            let version = existing.map_or(1, |(_, tag)| {
+                                tag.trim_matches('"')
+                                    .rsplit('-')
+                                    .next()
+                                    .and_then(|v| v.parse::<u64>().ok())
+                                    .unwrap_or(1)
+                                    + 1
+                            });
+                            let etag = etag_for(name, version, &body);
+                            state.objects.insert(name.to_string(), (body, etag.clone()));
+                            (201, Vec::new(), Some(etag))
+                        }
                     }
+                    _ => (405, Vec::new(), None),
                 }
-                Method::DELETE if state.fail_delete => (403, Vec::new(), None),
-                Method::DELETE => {
-                    state.objects.remove(&path);
-                    (204, Vec::new(), None)
-                }
-                _ => (405, Vec::new(), None),
             }
+        } else {
+            (404, Vec::new(), None)
         }
     };
     let mut response_headers = format!(
@@ -225,198 +213,146 @@ pub(crate) async fn fixture_ignoring_preconditions() -> Fixture {
     fixture
 }
 
-fn config(endpoint: &str) -> S3Config {
-    S3Config {
-        endpoint: endpoint.into(),
-        region: "us-east-1".into(),
-        bucket: "fixture-bucket".into(),
-        access_key_id: "fixture-access".into(),
-        secret_access_key: "fixture-secret".into(),
-        session_token: None,
-        prefix: "nested/test prefix".into(),
-        path_style: true,
+fn config(endpoint: &str) -> RouterConfig {
+    RouterConfig {
+        root: endpoint.into(),
+        access_key: FIXTURE_KEY.into(),
         allow_insecure_http: true,
     }
 }
 
-#[test]
-fn aws_official_get_object_signature_vector() -> Result<()> {
-    // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
-    let credentials = signing::Credentials {
-        access_key_id: "AKIAIOSFODNN7EXAMPLE".into(),
-        secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".into(),
-        session_token: None,
-    };
-    let mut headers = HeaderMap::new();
-    headers.insert("range", HeaderValue::from_static("bytes=0-9"));
-    signing::sign(
-        &Method::GET,
-        &Url::parse("https://examplebucket.s3.amazonaws.com/test.txt")?,
-        "us-east-1",
-        &credentials,
-        b"",
-        &mut headers,
-        "20130524T000000Z",
-    )?;
-    assert!(headers[AUTHORIZATION]
-        .to_str()?
-        .ends_with("Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41"));
-    Ok(())
-}
-
-#[test]
-fn addressing_and_input_boundaries() -> Result<()> {
-    let mut config = config("https://s3.example.test:9443");
-    let transport = S3Transport::new(&config)?;
-    assert_eq!(
-        transport.url("head")?.as_str(),
-        "https://s3.example.test:9443/fixture-bucket/nested/test%20prefix/head"
-    );
-    config.path_style = false;
-    let virtual_host = S3Transport::new(&config)?;
-    assert_eq!(
-        virtual_host.url("head")?.as_str(),
-        "https://fixture-bucket.s3.example.test:9443/nested/test%20prefix/head"
-    );
-    for path in [
-        "",
-        "../secret",
-        "a/../b",
-        "a//b",
-        "/outside",
-        "a\\b",
-        "a%2fb",
-        "a?query",
-        "a#fragment",
-    ] {
-        assert!(transport.url(path).is_err(), "accepted {path}");
-    }
-    for endpoint in [
-        "http://public.example.test",
-        "http://0.0.0.0",
-        "http://[::]",
-        "https://user:pass@s3.example.test",
-        "https://s3.example.test/?secret=1",
-        "https://s3.example.test/#fragment",
-        "https://s3.example.test/path",
-        "file:///tmp",
-    ] {
-        assert!(validate_endpoint(endpoint, true).is_err());
-    }
-    for endpoint in [
-        "http://127.0.0.1",
-        "http://[::1]",
-        "http://192.168.1.10",
-        "http://nas.local",
-    ] {
-        assert!(validate_endpoint(endpoint, false).is_err());
-        assert!(validate_endpoint(endpoint, true).is_ok());
-    }
-    for etag in [
-        "",
-        "*",
-        "W/\"weak\"",
-        "\"\"",
-        "\"one\",\"two\"",
-        "\"line\nbreak\"",
-    ] {
-        assert!(!valid_etag(etag));
-    }
-    Ok(())
-}
-
 #[tokio::test]
-async fn signed_probe_proves_cas_and_cleans_only_its_objects() -> Result<()> {
+async fn probe_reports_router_self_test_result() -> Result<()> {
     let fixture = fixture(false).await;
-    let mut config = config(&fixture.endpoint);
-    config.session_token = Some("fixture-session".into());
-    let transport = S3Transport::new(&config)?;
-    assert!(transport.put_if_none("existing", b"keep".to_vec()).await?);
+    let transport = RouterTransport::new(&config(&fixture.endpoint))?;
     assert!(transport.probe().await?.conditional_writes);
-    assert_eq!(fixture.state.lock().unwrap().objects.len(), 1);
-    assert_eq!(transport.get("existing").await?.unwrap().0, b"keep");
-    let (first, second) = tokio::join!(
-        transport.put_if_none("head", b"first".to_vec()),
-        transport.put_if_none("head", b"second".to_vec())
-    );
-    assert_ne!(first?, second?);
-    let (_, etag) = transport.get("head").await?.unwrap();
-    let etag = etag.unwrap();
-    let (first, second) = tokio::join!(
-        transport.put_if_match("head", &etag, b"third".to_vec()),
-        transport.put_if_match("head", &etag, b"fourth".to_vec())
-    );
-    assert_ne!(first?, second?);
+    let broken = fixture_ignoring_preconditions().await;
+    let transport = RouterTransport::new(&config(&broken.endpoint))?;
+    assert!(!transport.probe().await?.conditional_writes);
     Ok(())
 }
 
 #[tokio::test]
-async fn unsupported_servers_and_failed_probe_are_cleaned() -> Result<()> {
-    for weak_etag in [false, true] {
-        let fixture = fixture(weak_etag).await;
-        fixture.state.lock().unwrap().ignore_preconditions = !weak_etag;
-        assert!(
-            !S3Transport::new(&config(&fixture.endpoint))?
-                .probe()
-                .await?
-                .conditional_writes
-        );
-        assert!(fixture.state.lock().unwrap().objects.is_empty());
-    }
+async fn objects_round_trip_with_strong_etags() -> Result<()> {
     let fixture = fixture(false).await;
-    fixture.state.lock().unwrap().fail_next_read = true;
-    assert!(S3Transport::new(&config(&fixture.endpoint))?
-        .probe()
-        .await
-        .is_err());
-    assert!(fixture.state.lock().unwrap().objects.is_empty());
-    fixture.state.lock().unwrap().fail_delete = true;
-    assert!(S3Transport::new(&config(&fixture.endpoint))?
-        .probe()
-        .await
-        .is_err());
+    let transport = RouterTransport::new(&config(&fixture.endpoint))?;
+    assert!(transport.get("vault/v1/head").await?.is_none());
+    assert!(
+        transport
+            .put_if_none("vault/v1/head", b"one".to_vec())
+            .await?
+    );
+    let (body, etag) = transport.get("vault/v1/head").await?.expect("object");
+    assert_eq!(body, b"one");
+    let etag = etag.expect("strong etag");
+    assert!(
+        transport
+            .put_if_match("vault/v1/head", &etag, b"two".to_vec())
+            .await?
+    );
+    // Stale etag must not replace the object.
+    assert!(
+        !transport
+            .put_if_match("vault/v1/head", &etag, b"stale".to_vec())
+            .await?
+    );
+    // Create-only writes never replace an existing object.
+    assert!(
+        !transport
+            .put_if_none("vault/v1/head", b"must-not-replace".to_vec())
+            .await?
+    );
+    let (body, new_etag) = transport.get("vault/v1/head").await?.expect("object");
+    assert_eq!(body, b"two");
+    assert_ne!(etag, new_etag.expect("strong etag"));
     Ok(())
 }
 
 #[tokio::test]
-async fn errors_preserve_auth_missing_offline_and_redirect_boundaries() -> Result<()> {
+async fn weak_etags_are_ignored() -> Result<()> {
+    let fixture = fixture(true).await;
+    let transport = RouterTransport::new(&config(&fixture.endpoint))?;
+    assert!(
+        transport
+            .put_if_none("vault/v1/head", b"one".to_vec())
+            .await?
+    );
+    let (_, etag) = transport.get("vault/v1/head").await?.expect("object");
+    assert!(
+        etag.is_none(),
+        "weak etags must not be used as preconditions"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn unsafe_object_paths_are_rejected_locally() -> Result<()> {
     let fixture = fixture(false).await;
-    let mut config = config(&fixture.endpoint);
-    config.secret_access_key = "invalid-secret".into();
-    let error = S3Transport::new(&config)?.get("missing").await.unwrap_err();
-    assert!(error.to_string().starts_with("CONFIG_SYNC_PERMISSION:"));
-    assert!(!error.to_string().contains("credential details"));
-    assert!(!remote_error_is_offline(&error));
-    config.secret_access_key = "fixture-secret".into();
-    let transport = S3Transport::new(&config)?;
-    for (status, prefix, offline) in [
-        (403, "CONFIG_SYNC_PERMISSION:", false),
-        (502, "CONFIG_SYNC_SERVER:", true),
-        (307, "CONFIG_SYNC_REDIRECT:", false),
+    let transport = RouterTransport::new(&config(&fixture.endpoint))?;
+    for name in [
+        "",
+        "../escape",
+        "vault//head",
+        "vault/./head",
+        "vault/../head",
     ] {
-        fixture.state.lock().unwrap().read_status = Some(status);
-        let error = transport.get("missing").await.unwrap_err();
-        assert!(error.to_string().starts_with(prefix));
-        assert_eq!(remote_error_is_offline(&error), offline);
+        assert!(
+            transport.get(name).await.is_err(),
+            "{name} must be rejected"
+        );
+        assert!(transport.put_if_none(name, Vec::new()).await.is_err());
     }
-    fixture.state.lock().unwrap().read_status = None;
-    assert!(transport.get("missing").await?.is_none());
     Ok(())
 }
 
-#[test]
-fn service_error_details_never_echo_untrusted_text() {
-    assert_eq!(
-        service_error_code(b"<Error><Code>InvalidRequest</Code><Message>secret</Message></Error>"),
-        Some("InvalidRequest")
-    );
-    assert_eq!(
-        service_error_code(b"<Error><Code>reflected-secret</Code></Error>"),
-        None
-    );
-    assert_eq!(
-        service_error_code(b"<Message>InvalidRequest secret</Message>"),
-        None
-    );
-    assert_eq!(service_error_code(&[0xff]), None);
+#[tokio::test]
+async fn http_root_requires_relaxed_policy_and_lan_host() -> Result<()> {
+    let public_http = RouterConfig {
+        root: "http://router.example.test".into(),
+        access_key: FIXTURE_KEY.into(),
+        allow_insecure_http: true,
+    };
+    assert!(RouterTransport::new(&public_http).is_err());
+    let https = RouterConfig {
+        root: "https://router.example.test".into(),
+        access_key: FIXTURE_KEY.into(),
+        allow_insecure_http: false,
+    };
+    assert!(RouterTransport::new(&https).is_ok());
+    Ok(())
+}
+
+#[tokio::test]
+async fn redirects_are_not_followed() -> Result<()> {
+    let fixture = fixture(false).await;
+    fixture.state.lock().unwrap().read_status = Some(307);
+    let transport = RouterTransport::new(&config(&fixture.endpoint))?;
+    let error = transport.get("vault/v1/head").await.unwrap_err();
+    assert!(error.to_string().starts_with("CONFIG_SYNC_REDIRECT:"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn auth_errors_map_to_fixed_messages_without_body_text() -> Result<()> {
+    let fixture = fixture(false).await;
+    fixture.state.lock().unwrap().reject_auth = true;
+    let transport = RouterTransport::new(&config(&fixture.endpoint))?;
+    let error = transport.get("vault/v1/head").await.unwrap_err();
+    let text = error.to_string();
+    assert!(text.starts_with("CONFIG_SYNC_AUTH:"), "{text}");
+    assert!(!text.contains("fixture auth text"), "{text}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn network_failures_map_to_offline_errors() -> Result<()> {
+    let transport = RouterTransport::new(&RouterConfig {
+        root: "http://127.0.0.1:9".into(),
+        access_key: FIXTURE_KEY.into(),
+        allow_insecure_http: true,
+    })?;
+    let error = transport.get("vault/v1/head").await.unwrap_err();
+    assert!(error.to_string().starts_with("CONFIG_SYNC_NETWORK:"));
+    assert!(remote_error_is_offline(&error));
+    Ok(())
 }

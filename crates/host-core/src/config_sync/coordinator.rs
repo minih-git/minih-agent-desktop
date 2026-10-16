@@ -93,10 +93,11 @@ pub(super) async fn sync_once(
             save_config(&st, &config)?;
             (config, key, base, local, local_before, local_digest)
         };
-        let transport = {
+        let account = {
             let st = state.lock().await;
-            configured_transport(&st, &config)?
+            configured_account(&st, &config)?
         };
+        let transport = account_transport(&account).await?;
         let remote_head = read_remote_head(&transport, &config, &key).await?;
         if remote_head.is_none() && config.last_revision_id.is_some() {
             bail!(

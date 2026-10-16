@@ -82,7 +82,7 @@ test("Cloud sync is Experimental and available in every build", () => {
       for (const query of [
         "configSync.experimental",
         "configSync.connectionTitle",
-        "configSync.endpoint",
+        "configSync.accountTitle",
         "configSync.syncNow",
       ]) {
         assert.ok(searchSettings(query, identity, {
