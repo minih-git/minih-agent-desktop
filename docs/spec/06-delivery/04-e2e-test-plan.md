@@ -13234,8 +13234,9 @@ are withdrawn with ADR 0165.
   running. 2) Inspect the expanded delegation card and the rows below it.
   3) Let the delegates settle and inspect elapsed time on the card versus the
   parent processing group. 4) Reload the session and re-expand the card.
-  5) Repeat with one delegate and short/wrapped descriptions, in dark/light
-  themes at container widths 700, 521, 520, and 420px.
+  5) Repeat with one, two, and three delegates, mixing running/settled cards
+  and short/wrapped descriptions in both orders. Use English/Chinese, dark/light
+  themes, 100%/150% font scale, and container widths 700, 521, 520, and 420px.
 - **Expected**: The delegation card contains only the main-agent root and the
   two `Task` nodes. Parent thinking, `Read`, `Grep`, and `TaskWait` render in a
   separate processing group, not flush against the subagent tile and not under
@@ -13245,7 +13246,10 @@ are withdrawn with ADR 0165.
   moved on. Reload preserves the same split.
   Above 520px, a lone delegate connects center-to-center to the main agent
   without a detached segment or unused vertical trunk, even as text wraps.
-  Fan-out and stacked layouts retain their existing connector geometry.
+  A fan-out trunk begins at the first branch junction and ends exactly at the
+  final branch junction, including when the last card is taller or shorter.
+  Adjacent trunk segments meet without gaps. Stacked layouts connect the parent
+  line to that same trunk and never extend below the final branch.
 - **Specs linked**: `04-ux/08-component-spec.md` §9.9, ADR 0062,
   decisions-log D265, D319
 - **Acceptance**: C (conversation), Quality
@@ -13254,8 +13258,11 @@ are withdrawn with ADR 0165.
   `subagent-topology.test.mjs`, `subagent-transcript.test.mjs`). Connector
   geometry is covered by `node scripts/e2e-subagent-connectors.mjs`: production
   React markup and styles in isolated Electron/Chromium, with no Host, real
-  provider, or user's desktop instance. The full session/reload journey remains
-  pending (run only in a capable environment when this surface changes).
+  provider, or user's desktop instance. All 384 geometry cases also run in the
+  existing Linux Electron CI job under Xvfb. Set `E2E_SCREENSHOT_DIR` to an
+  existing artifact directory to capture the two-delegate Chinese fixture at
+  wide and stacked widths. The full session/reload journey remains pending
+  (run only in a capable environment when this surface changes).
 
 #### E2E-180: Sent file references stay chips and open on click
 

@@ -2212,22 +2212,18 @@
 }
 
 .subagent-topology-agents {
+  --subagent-node-gap: 16px;
+  --subagent-branch-y: 36px;
   position: relative;
   display: grid;
   min-width: 0;
-  gap: 10px;
-  padding-left: 14px;
+  gap: var(--subagent-node-gap);
+  padding: 3px 0 3px 14px;
 }
 
-.subagent-topology-agents::before {
-  position: absolute;
-  top: 36px;
-  bottom: 36px;
-  left: 0;
-  width: 2px;
-  border-radius: var(--radius-full);
-  background: var(--ds-tile-deep);
-  content: "";
+/* Keep the previous spacing without generic tool-row margins moving junctions. */
+.subagent-topology-agents > .subagent-topology-node {
+  margin: 0;
 }
 
 .subagent-topology-node {
@@ -2241,12 +2237,31 @@
 
 .subagent-topology-node::before {
   position: absolute;
-  top: 35px;
+  top: calc(var(--subagent-branch-y) - 1px);
   right: 100%;
   width: 15px;
   height: 2px;
   background: var(--ds-tile-deep);
   content: "";
+}
+
+/* Join adjacent rows halfway across their gap; trim only the first/last ends. */
+.subagent-topology-node::after {
+  position: absolute;
+  top: calc(var(--subagent-node-gap) / -2);
+  bottom: calc(var(--subagent-node-gap) / -2);
+  left: -14px;
+  width: 2px;
+  background: var(--ds-tile-deep);
+  content: "";
+}
+
+.subagent-topology-node:first-child::after {
+  top: var(--subagent-branch-y);
+}
+
+.subagent-topology-node:last-child::after {
+  bottom: calc(100% - var(--subagent-branch-y));
 }
 
 .subagent-stop-button {
@@ -2482,7 +2497,7 @@
 
 /* A lone delegate connects center-to-center without a fan-out trunk. */
 @container subagent-activity (width > 520px) {
-  .subagent-topology-agents:has(> .subagent-topology-node:only-child)::before {
+  .subagent-topology-node:only-child::after {
     display: none;
   }
 
@@ -2509,17 +2524,15 @@
   .subagent-topology-connector {
     width: 2px;
     height: 18px;
-    margin-left: 28px;
+    margin-left: 14px;
   }
 
   .subagent-topology-agents {
     padding-left: 28px;
   }
 
-  .subagent-topology-agents::before {
-    top: 0;
-    bottom: 36px;
-    left: 14px;
+  .subagent-topology-node:first-child::after {
+    top: -3px;
   }
 
   .subagent-topology-node::before {

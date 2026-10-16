@@ -2439,8 +2439,12 @@ the node and its live process never create horizontal overflow.
 For a single delegate in the side-by-side layout (container width above 520px),
 the parent and delegate connect with one continuous center-aligned horizontal
 line, regardless of card height or wrapped text; no fan-out trunk is shown.
-Multiple delegates and the stacked layout at 520px or below retain their
-existing trunk and branch geometry.
+For multiple delegates, the trunk starts at the first branch junction and ends
+at the last branch junction, without protruding beyond either one. Each row
+owns its trunk segment, so unequal card heights, Stop controls, wrapped copy,
+and font scaling cannot move the final endpoint away from the last branch.
+In the stacked layout at 520px or below, the parent connector aligns with the
+trunk, which runs continuously from that connector to the last branch.
 
 An accepted steering message creates a new visual reply without ending the
 parent runtime turn. Earlier delegation cards in that running turn keep their
