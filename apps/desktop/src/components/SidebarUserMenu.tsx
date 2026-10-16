@@ -8,6 +8,7 @@ import { useAppStore } from "../stores/app-store";
 import { Button } from "./ui";
 import { IconChevronUp, IconCloudDown, IconRefresh, IconSettings, IconUser } from "./icons";
 import { MinihRouterAccountSummary } from "./settings/MinihRouterAccountSummary";
+import { endpointLabel } from "./settings/service-catalog";
 import { useMinihRouterAccount } from "./settings/useMinihRouter";
 
 /** Mount only while open: no quota polling, retained credentials or hidden requests. */
@@ -40,7 +41,13 @@ export function SidebarUserMenu({ onBeforeOpen }: { onBeforeOpen?: () => void })
   const setSettingsTab = useAppStore((state) => state.setSettingsTab);
   const provider = providers.find((row) => isMinihRouterVendorKey(row.vendorKey) && row.hasSecret) ?? null;
   const name = provider?.oauthAccountLabel || provider?.name || t("userMenu.localUser");
+  const subtitle = provider
+    ? name === MINIH_ROUTER_NAME && provider.baseUrl
+      ? endpointLabel(provider.baseUrl)
+      : MINIH_ROUTER_NAME
+    : t("userMenu.notConnected");
   const [open, setOpen] = useState(false);
+  const avatarGlyph = provider ? Array.from(name)[0]?.toLocaleUpperCase() : <IconUser size={16} />;
   const [position, setPosition] = useState<{ left: number; bottom: number } | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -58,7 +65,7 @@ export function SidebarUserMenu({ onBeforeOpen }: { onBeforeOpen?: () => void })
     const place = () => {
       const rect = trigger.current?.getBoundingClientRect();
       if (!rect) return;
-      const width = Math.min(340, window.innerWidth - 24);
+      const width = Math.min(352, window.innerWidth - 24);
       setPosition({
         left: Math.max(12, Math.min(rect.left, window.innerWidth - width - 12)),
         bottom: Math.min(window.innerHeight - 12, Math.max(12, window.innerHeight - rect.top + 8)),
@@ -115,7 +122,7 @@ export function SidebarUserMenu({ onBeforeOpen }: { onBeforeOpen?: () => void })
       <Button ref={trigger} type="button" variant="ghost" className="sidebar-user-trigger" data-nav="user"
         aria-label={t("userMenu.open", { name })} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
         onClick={() => { if (open) close(); else { onBeforeOpen?.(); setOpen(true); } }}>
-        <span className="sidebar-user-avatar" aria-hidden>{provider ? Array.from(name)[0]?.toLocaleUpperCase() : <IconUser size={16} />}</span>
+        <span className="sidebar-user-avatar" aria-hidden>{avatarGlyph}</span>
         <span className="sidebar-user-trigger-name">{name}</span>
         <IconChevronUp size={12} aria-hidden />
       </Button>
@@ -123,7 +130,13 @@ export function SidebarUserMenu({ onBeforeOpen }: { onBeforeOpen?: () => void })
         <div ref={panel} id={id} role="dialog" aria-label={t("userMenu.title")} tabIndex={-1}
           className="sidebar-user-popover no-drag" data-sidebar-user-popover="true" onKeyDown={onKeyDown}
           style={{ left: position?.left ?? 12, bottom: position?.bottom ?? 56, maxHeight: position ? Math.max(0, window.innerHeight - position.bottom - 12) : undefined }}>
-          <div className="sidebar-user-identity"><strong>{name}</strong><span>{provider ? MINIH_ROUTER_NAME : t("userMenu.notConnected")}</span></div>
+          <div className="sidebar-user-identity">
+            <span className="sidebar-user-avatar is-large" aria-hidden>{avatarGlyph}</span>
+            <div className="sidebar-user-identity-copy">
+              <strong>{name}</strong>
+              <span>{subtitle}</span>
+            </div>
+          </div>
           {provider ? <AccountDetails key={`${provider.id}:${provider.baseUrl ?? ""}:${provider.updatedAt}`} providerId={provider.id} />
             : <p className="sidebar-user-empty">{t("userMenu.connectHint")}</p>}
           <nav className="sidebar-user-links" aria-label={t("userMenu.title")}>

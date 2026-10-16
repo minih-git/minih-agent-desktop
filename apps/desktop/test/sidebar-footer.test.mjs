@@ -20,13 +20,26 @@ const enLocale = await readFile(
 const userMenuSource = await readFile(
   new URL("../src/components/SidebarUserMenu.tsx", import.meta.url), "utf8",
 );
+const accountSummarySource = await readFile(
+  new URL("../src/components/settings/MinihRouterAccountSummary.tsx", import.meta.url), "utf8",
+);
 
 test("the footer shows a saved account or an honest local-user state", () => {
   assert.match(sidebarSource, /<SidebarUserMenu/);
   assert.match(userMenuSource, /isMinihRouterVendorKey\(row.vendorKey\) && row.hasSecret/);
   assert.match(userMenuSource, /t\("userMenu.localUser"\)/);
   assert.match(userMenuSource, /t\("userMenu.notConnected"\)/);
+  assert.match(userMenuSource, /className="sidebar-user-avatar is-large"/);
+  assert.match(userMenuSource, /className="sidebar-user-identity-copy"/);
   for (const locale of [zhLocale, enLocale]) assert.match(locale, /userMenu:/);
+});
+
+test("account summary deduplicates headline quota and balances card grid in popover", () => {
+  assert.match(accountSummarySource, /account\.quotas\.filter\(\(quota\) => quota\.id !== headline\?\.id\)/);
+  assert.match(accountSummarySource, /className="minih-router-balance-foot"/);
+  assert.match(accountSummarySource, /className="minih-router-stat is-expires"/);
+  assert.match(accountSummarySource, /className="minih-router-quota-row"/);
+  assert.match(globalStyles, /\.sidebar-user-quota\s+\.minih-router-stat\.is-expires\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s);
 });
 
 test("labeled sidebar navigation replaces the footer utility cluster", () => {

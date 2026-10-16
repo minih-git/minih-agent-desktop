@@ -60,7 +60,10 @@ const panel = () => document.querySelector('[data-sidebar-user-popover]');
 const account = (remaining = "87.5") => ({
   keyName: "Desktop", maskedKey: "sk-…xxxx", status: "active", expiresAtMs: null, expired: false,
   priceMultiplier: "1", rpmLimit: 60, allowed: true, nextAvailableAtMs: null,
-  quotas: [{ id: 1, kind: "total", limitUsd: "100", usedUsd: "12.5", remainingUsd: remaining, status: "ok" }],
+  quotas: [
+    { id: 1, kind: "period", periodSeconds: 18000, limitUsd: "100", usedUsd: "12.5", remainingUsd: remaining, windowEndsAtMs: 1760600000000, status: "ok" },
+    { id: 2, kind: "period", periodSeconds: 604800, limitUsd: "500", usedUsd: "50", remainingUsd: "450", windowEndsAtMs: 1761000000000, status: "ok" },
+  ],
   usage: { days: 30, requestCount: 321, totalTokens: 987654, costUsd: "12.5" }, observedAtMs: 1760000000000,
 });
 async function answer(id, data, error = false) {
@@ -92,6 +95,10 @@ window.userMenuProbe = async ({ theme, locale }) => {
   await answer("router-a", account());
   check(panel().textContent.includes("87.50"), "balance renders");
   check(panel().textContent.includes("321"), "usage renders");
+  check(panel().querySelectorAll(".minih-router-quota").length === 1, "headline quota is not duplicated in secondary quota list");
+  const spentRect = panel().querySelectorAll(".minih-router-stat")[1].getBoundingClientRect();
+  const expiresRect = panel().querySelector(".minih-router-stat.is-expires").getBoundingClientRect();
+  check(expiresRect.width > spentRect.width * 1.5, "expires card spans full row in popover");
   const box = panel().getBoundingClientRect();
   check(box.left >= 11 && box.right <= innerWidth - 11 && box.top >= 11 && box.bottom <= innerHeight - 11, "popover fits viewport");
   check(panel().scrollWidth <= panel().clientWidth + 1, "no horizontal quota overflow");
