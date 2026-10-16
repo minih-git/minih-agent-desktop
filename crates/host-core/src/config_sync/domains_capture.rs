@@ -24,6 +24,17 @@ fn capture_providers(st: &AppState) -> Result<Vec<PortableEntity>> {
         if provider.owner_plugin_id.is_some() {
             continue;
         }
+        // The connected Minih Router account row is the backup transport's own
+        // identity, not portable configuration. Each device links its own
+        // account row; syncing it would duplicate the row and tombstone the
+        // receiving device's working account. It stays device-local, like the
+        // device-local project lists.
+        if provider
+            .vendor_key
+            .eq_ignore_ascii_case(crate::providers::MINIH_ROUTER_VENDOR_KEY)
+        {
+            continue;
+        }
         let mut payload = serde_json::to_value(&provider)?;
         strip_keys(
             &mut payload,

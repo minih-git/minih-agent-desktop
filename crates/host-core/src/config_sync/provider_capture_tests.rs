@@ -9,7 +9,7 @@ fn provider_snapshot(include_credentials: bool, requested: bool) -> Result<Local
         &state.secrets,
         serde_json::from_value(json!({
             "name": "Personal router",
-            "vendorKey": "minih-router",
+            "vendorKey": "custom",
             "type": "openai_compatible",
             "protocol": "openai_compatible",
             "baseUrl": "https://router.example.test/v1",

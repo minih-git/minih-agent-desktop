@@ -500,7 +500,7 @@ fn apply_entity(
         } else {
             // Installation and activation remain explicit user actions. The
             // portable intent is retained locally, but no plugin bytes or
-            // permissions are pulled from S3.
+            // permissions are pulled from the backup remote.
             config
                 .plugin_intents
                 .insert(plugin_id.to_string(), entity.payload.clone());

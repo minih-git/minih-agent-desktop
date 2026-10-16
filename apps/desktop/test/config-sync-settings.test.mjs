@@ -13,7 +13,6 @@ const read = (relativePath) =>
 const settingsPage = await read("../src/features/settings/SettingsPage.tsx");
 const settingsIndex = await read("../src/lib/settings-search.ts");
 const syncPage = await read("../src/components/settings/ConfigSyncPage.tsx");
-const connectionFields = await read("../src/components/settings/ConfigSyncConnectionFields.tsx");
 const syncPreferences = await read(
   "../src/features/settings/config-sync-preferences.ts",
 );
@@ -43,9 +42,9 @@ test("cloud sync keeps credentials and vault operations on the host boundary", (
   assert.match(syncPage, /api\.configSyncConfigure\(/);
   assert.match(syncPage, /applyState\(await api\.configSyncSyncNow\(\)\)/);
   // HTTP policy remains Host-owned; unsafe conditional-write fallback is gone.
-  assert.doesNotMatch(syncPage + connectionFields, /allowInsecureHttp|appendOnly|remoteMode/);
-  assert.match(connectionFields, /settings\.configSync\.modeBackup/);
-  assert.match(connectionFields, /settings\.configSync\.modeSync/);
+  assert.doesNotMatch(syncPage, /allowInsecureHttp|appendOnly|remoteMode/);
+  assert.match(syncPage, /settings\.configSync\.modeBackup/);
+  assert.match(syncPage, /settings\.configSync\.modeSync/);
   assert.match(syncPage, /api\.configSyncUnlock\(/);
   assert.match(syncPage, /api\.configSyncMapProject\(/);
   assert.match(syncPage, /api\.configSyncListHistory\(/);
@@ -64,13 +63,34 @@ test("cloud sync keeps a non-sensitive draft and paints cached state first", () 
   assert.match(syncPage, /getCachedConfigSyncState\(\)/);
   assert.match(syncPage, /getCachedConfigSyncHistory\(\)/);
   assert.match(syncPage, /writeConfigSyncDraft\(/);
-  assert.match(connectionFields, /secretSavedHint/);
+  assert.equal(syncPreferences.includes("pi.desktop.configSyncRouterDraft.v1"), true);
   assert.doesNotMatch(syncPage, /if \(loading\) \{[\s\S]{0,180}return \(/);
   assert.match(syncPreferences, /passwords are never copied into renderer persistence/);
   assert.match(syncPreferences, /CONFIG_SYNC_DRAFT_STORAGE_KEY/);
   assert.match(syncPreferences, /saved\?: boolean/);
   assert.match(syncPreferences, /store\.setItem\(CONFIG_SYNC_DRAFT_STORAGE_KEY/);
   assert.doesNotMatch(syncPreferences, /appPassword|backupPassword/);
+});
+
+test("the account card replaces the S3 connection form and gates setup on the router account", () => {
+  // Connected: read-only account summary plus a payload-free connection probe.
+  assert.match(syncPage, /accountConnected \? \(/);
+  assert.match(syncPage, /settings\.configSync\.accountTitle/);
+  assert.match(syncPage, /settings\.configSync\.accountEndpointLabel/);
+  assert.match(syncPage, /state\?\.\s*accountEndpoint/);
+  assert.match(syncPage, /await api\.configSyncTest\(\);/);
+  assert.match(syncPage, /settings\.configSync\.testConnection/);
+  assert.match(syncPage, /settings\.configSync\.accountBackupNote/);
+  // Not connected: prompt card routes to Accounts, and setup stays disabled.
+  assert.match(syncPage, /settings\.configSync\.accountRequiredTitle/);
+  assert.match(syncPage, /settings\.configSync\.accountRequiredBody/);
+  assert.match(syncPage, /settings\.configSync\.goToAccounts/);
+  assert.match(syncPage, /setSettingsTab\("accounts"\)/);
+  assert.match(syncPage, /const connectionReady = accountConnected;/);
+  assert.doesNotMatch(syncPage, /configSyncTestInput|secretAccessKey|sessionToken|pathStyle|accessKeyId/);
+  // The connected summary names the account endpoint, not a bucket.
+  assert.match(syncPage, /<span>\{state\.accountEndpoint\}<\/span>/);
+  assert.doesNotMatch(syncPage, /state\.bucket/);
 });
 
 test("cloud sync settings remain usable on narrow surfaces", () => {

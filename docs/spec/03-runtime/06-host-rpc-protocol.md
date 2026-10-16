@@ -1378,17 +1378,18 @@ The Host exposes the `configSync.getState`, `configSync.test`,
 `configSync.mapProject`, `configSync.listHistory`, `configSync.restore`,
 `configSync.changePassword`, and
 `configSync.disconnect` methods through the existing Electron Host bridge.
-These methods operate on the Host-owned encrypted S3 vault and explicit
-portable-domain adapters. Connection input uses `endpoint`, `region`, `bucket`,
-`prefix`, `accessKeyId`, optional `secretAccessKey` and `sessionToken`,
-`pathStyle`, and `mode: "sync" | "backup"`. The former WebDAV fields are
-rejected. Omitted credential fields mean reuse for the exact connection;
-an empty token clears it. Responses contain no secrets or vault keys.
+These methods operate on the Host-owned encrypted vault in the Minih Router
+backend and explicit portable-domain adapters. Connection input is the vault
+password, device label, `mode: "sync" | "backup"`, and category selections;
+the destination is the connected `minih-router` account row, and the former
+WebDAV and S3 connection fields are rejected. Responses contain no secrets or
+vault keys.
 
-`configSync.test` proves reliable conditional writes with a random temporary
-object and verifies cleanup. It returns `{ ok: true, conditionalWrites: true }`
-or an error, never an append-only capability result. `configure` performs the
-same probe and creates or unlocks the vault without applying remote settings.
+`configSync.test` probes the connected Minih Router account's backup storage
+with the server-side conditional-write self-test. It returns
+`{ ok: true, conditionalWrites: true }` or an error, never an append-only
+capability result. `configure` performs the same probe and creates or unlocks
+the vault without applying remote settings.
 
 `configSync.syncNow` runs the saved mode. Sync reconciles shared, observed and
 remote state before conditional publication and local application. Backup
@@ -1397,8 +1398,8 @@ failures restart from the latest head, never an unconditional overwrite.
 
 `configSync.syncNow` has no aggregate request deadline: the Host owns the
 multi-step operation, and renderer route navigation does not cancel it. A
-reopened Settings page reads the Host's current `syncing` state. Individual S3
-requests remain bounded; Host shutdown is still the lifecycle boundary.
+reopened Settings page reads the Host's current `syncing` state. Individual
+router requests remain bounded; Host shutdown is still the lifecycle boundary.
 
 `configSync.listHistory` returns at most 30 indexed entries for the saved mode.
 It returns metadata only, and is not broadcast as a `configSync.changed` state.
@@ -1407,8 +1408,10 @@ shared revision. Backup restore is local only and leaves remote heads intact.
 Both save a local recovery point and keep sensitive activation pending.
 `changePassword` CAS-rewraps the same key; it does not revoke unlocked devices.
 
-State responses and `configSync.changed` include `mode` and S3 connection
-metadata. Approval/rejection remain digest-bound. Only the new S3 format is
+State responses and `configSync.changed` include `mode` and
+`accountConnected`/`accountEndpoint` instead of S3 connection metadata.
+Approval/rejection remain digest-bound. Only the router-account format is
 supported; there is no old-data detection or migration. Disconnect removes
-only current S3 credentials, keys and local sync metadata/staging; unrelated
-files and remote objects remain intact. See `22-config-sync.md`.
+only the current account-bound configuration, keys and local sync
+metadata/staging; the account token lives in the providers store, and
+unrelated files and remote objects remain intact. See `22-config-sync.md`.

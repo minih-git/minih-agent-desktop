@@ -88,7 +88,7 @@ pub(super) fn serialize_json<T: Serialize>(value: &T) -> Result<Vec<u8>> {
 }
 
 pub(super) async fn read_remote_head(
-    transport: &S3Transport,
+    transport: &RouterTransport,
     config: &StoredConfig,
     key: &VaultKey,
 ) -> Result<Option<(RemoteHead, String)>> {
@@ -96,8 +96,9 @@ pub(super) async fn read_remote_head(
     let Some((ciphertext, etag)) = transport.get(&head_path(config)).await? else {
         return Ok(None);
     };
-    let etag = etag
-        .ok_or_else(|| anyhow!("CONFIG_SYNC_UNSUPPORTED: S3 head does not expose a strong ETag"))?;
+    let etag = etag.ok_or_else(|| {
+        anyhow!("CONFIG_SYNC_UNSUPPORTED: router head does not expose a strong ETag")
+    })?;
     let plain = decrypt_object(key, head_purpose(config), &config.vault_id, &ciphertext)?;
     let head: RemoteHead = serde_json::from_slice(&plain).context("decode remote head")?;
     if head.format != FORMAT || head.version != 1 {
@@ -117,7 +118,7 @@ pub(super) async fn read_remote_head(
 }
 
 pub(super) async fn read_remote_revision(
-    transport: &S3Transport,
+    transport: &RouterTransport,
     config: &StoredConfig,
     key: &VaultKey,
     revision_id: &str,
@@ -163,7 +164,7 @@ pub(super) async fn read_remote_revision(
 }
 
 pub(super) async fn read_remote_manifest(
-    transport: &S3Transport,
+    transport: &RouterTransport,
     config: &StoredConfig,
     key: &VaultKey,
     revision_id: &str,
@@ -236,7 +237,7 @@ pub(super) async fn read_remote_manifest(
 }
 
 pub(super) async fn upload_snapshot(
-    transport: &S3Transport,
+    transport: &RouterTransport,
     config: &StoredConfig,
     key: &VaultKey,
     snapshot: &LocalSnapshot,
@@ -342,7 +343,7 @@ pub(super) async fn upload_snapshot(
 }
 
 pub(super) async fn publish_head(
-    transport: &S3Transport,
+    transport: &RouterTransport,
     config: &StoredConfig,
     key: &VaultKey,
     head: &RemoteHead,

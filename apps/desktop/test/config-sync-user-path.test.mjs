@@ -30,9 +30,10 @@ const listeners = new Map();
 const calls = [];
 const confirmations = [];
 const initial = { configured: false, enabled: false, paused: false, locked: false,
-  status: "notConfigured", mode: "sync", pathStyle: true, automaticSync: true,
+  status: "notConfigured", mode: "sync", accountConnected: false, automaticSync: true,
   categories: selectionFromDraft(), includeSecrets: false,
   includeMemory: false, pendingApprovals: [], mappings: [] };
+const connected = { accountConnected: true, accountEndpoint: "https://router.example.com" };
 let state = initial;
 let releaseSync;
 let holdSync = true;
@@ -42,8 +43,8 @@ const emitState = () => {
   for (const callback of listeners.get(IPC.event.configSyncChanged) ?? []) callback(state);
 };
 const history = () => [
-  { revisionId: "current-" + state.prefix, createdAt: "2026-01-02T00:00:00Z", entityCount: 1, current: true },
-  { revisionId: "older-" + state.prefix, createdAt: "2026-01-01T00:00:00Z", entityCount: 1, current: false },
+  { revisionId: "current-" + state.accountEndpoint, createdAt: "2026-01-02T00:00:00Z", entityCount: 1, current: true },
+  { revisionId: "older-" + state.accountEndpoint, createdAt: "2026-01-01T00:00:00Z", entityCount: 1, current: false },
 ];
 window.confirm = (message) => { confirmations.push(message); return true; };
 window.minihAgent = { platform: "darwin", channels: IPC,
@@ -58,7 +59,7 @@ window.minihAgent = { platform: "darwin", channels: IPC,
     if (channel === IPC.invoke.configSyncGetState) data = state;
     else if (channel === IPC.invoke.configSyncTest) data = { ok: true, conditionalWrites: true };
     else if (channel === IPC.invoke.configSyncConfigure) {
-      const { secretAccessKey, sessionToken, backupPassword, ...publicFields } = input;
+      const { backupPassword, ...publicFields } = input;
       state = { ...state, ...publicFields, configured: true, enabled: true, status: "upToDate" };
       data = state;
     } else if (channel === IPC.invoke.configSyncSyncNow) {
@@ -79,12 +80,13 @@ window.minihAgent = { platform: "darwin", channels: IPC,
     else if (channel === IPC.invoke.configSyncPause) data = state = { ...state, paused: input.paused };
     else if (channel === IPC.invoke.configSyncUnlock) data = state = { ...state, locked: false, status: "upToDate" };
     else if (channel === IPC.invoke.configSyncChangePassword) data = state;
-    else if (channel === IPC.invoke.configSyncDisconnect) data = state = initial;
+    else if (channel === IPC.invoke.configSyncDisconnect) data = state = { ...initial, ...connected };
     else throw new Error("Unexpected IPC: " + channel);
     return { ok: true, data };
   },
 };
 localStorage.setItem("pi.desktop.configSyncDraft", JSON.stringify({ endpoint: "https://legacy.example.com" }));
+localStorage.setItem("pi.desktop.configSyncS3Draft.v1", JSON.stringify({ endpoint: "https://s3.example.com", bucket: "private-config" }));
 let view;
 const mount = () => { view = createRoot(document.getElementById("root")); flushSync(() => view.render(React.createElement(ConfigSyncPage))); };
 const check = (value, message) => { if (!value) throw new Error(message); };
@@ -124,18 +126,29 @@ const choose = async (key, value) => {
 };
 const click = async (key) => { check(button(key) && !button(key).disabled, "action unavailable " + key); flushSync(() => button(key).click()); await frame(); };
 const ready = () => until(() => button("save") && !button("save").disabled, "save did not settle");
+const connectAccount = () => {
+  state = { ...state, ...connected };
+  flushSync(() => { for (const callback of listeners.get(IPC.event.configSyncChanged) ?? []) callback(state); });
+};
 const verifyNoSecrets = () => {
   const cache = localStorage.getItem(CONFIG_SYNC_DRAFT_STORAGE_KEY) ?? "";
-  check(!/test-secret|test-token|test-password|secretAccessKey|sessionToken|[Pp]assword/.test(cache), "secret leaked into draft");
+  check(!/test-password|test-password-new|backupPassword|[Pp]assword/.test(cache), "secret leaked into draft");
 };
 mount();
 window.configSyncProbe = async () => {
   await until(() => button("enable"), "initial page missing");
-  check(input("endpoint").value === "", "legacy draft reused as S3");
-  check(disclosure("connectionTitle")?.open, "setup must show connection fields");
-  check(disclosure("advancedTitle") && !disclosure("advancedTitle").open, "advanced fields must start collapsed");
-  check(!input("region").checkVisibility(), "advanced region leaked into setup");
-  check(input("region").value === "us-east-1" && input("prefix").value === "minih-agent-desktop/config", "advanced defaults changed");
+  // Without a router account the setup form is replaced by a prompt card and
+  // every setup action stays disabled.
+  check(document.body.textContent.includes(label("accountRequiredTitle")), "account prompt missing");
+  check(document.body.textContent.includes(label("accountRequiredBody")), "account prompt body missing");
+  check(button("goToAccounts") && !button("goToAccounts").disabled, "accounts shortcut missing");
+  check(button("enable").disabled, "setup enabled without an account");
+  check(!input("deviceLabel"), "setup inputs must not render without an account");
+  connectAccount();
+  await until(() => input("deviceLabel"), "connected account did not reveal the setup form");
+  check(document.body.textContent.includes(label("accountTitle")), "account card missing");
+  check(document.body.textContent.includes(state.accountEndpoint), "account endpoint missing");
+  check(!document.body.textContent.includes(label("accountRequiredTitle")), "prompt outlived the account");
   const page = document.querySelector(".settings-config-sync");
   for (const theme of ["light", "dark"]) {
     document.documentElement.dataset.theme = theme;
@@ -147,50 +160,34 @@ window.configSyncProbe = async () => {
     }
   }
   page.style.removeProperty("width");
-  await expand("advancedTitle");
-  await fill("region", "test-region");
-  disclosure("advancedTitle").querySelector("summary").click(); await frame();
-  check(input("region").value === "test-region", "collapsing advanced settings lost values");
-  await expand("advancedTitle");
   await expand("categoriesTitle");
   check(document.querySelectorAll(".settings-config-sync-category").length === 10, "scope must contain supported categories only");
   check(!document.body.textContent.includes("Projects and folder mappings"), "removed project category still visible");
   await toggle("categoryProviders");
+  check(localStorage.getItem("pi.desktop.configSyncS3Draft.v1") === null, "legacy S3 draft retained after a write");
   check(![...document.querySelectorAll('input[type="checkbox"]')].find((node) => node.closest("label")?.textContent.trim() === label("categoryCredentials")).checked, "credentials opted in by default");
   await toggle("categoryCredentials");
   check(document.querySelector(".settings-config-sync-warning")?.checkVisibility(), "credential opt-in warning hidden");
   await toggle("categoryCredentials");
-  for (const [key, value] of Object.entries({ endpoint: "https://s3.example.com", bucket: "private-config",
-    accessKeyId: "test-access", secretAccessKey: "test-secret", sessionToken: "test-token" })) await fill(key, value);
+  await fill("deviceLabel", "MacBook");
   await fill("backupPassword", "short1");
-  check(!button("test").disabled, "complete S3 connection must enable the probe");
   check(button("enable").disabled, "short vault password must keep setup disabled");
   const passwordHelp = [...document.querySelectorAll("button")].find((node) => node.getAttribute("aria-label") === label("backupPasswordHint"));
   check(passwordHelp?.getAttribute("aria-label").includes("8"), "password help must expose the eight-character minimum");
-  await fill("backupPassword", "abc12345");
-  check(!button("enable").disabled, "eight-character vault password must enable setup");
   await fill("backupPassword", "test-password");
   check(!button("enable").disabled, "valid vault password must enable setup");
   await choose("mode", "modeBackup");
-  await choose("addressing", "virtualHosted");
   await toggle("automaticSync");
   verifyNoSecrets();
-  await click("test");
-  await until(() => !button("test").disabled, "probe did not settle");
-  const probe = last("configSyncTest");
-  check(probe.mode === "backup" && probe.pathStyle === false && probe.automaticSync === false, "probe lost choices");
-  check(!Object.hasOwn(probe.categories, "projects"), "removed project category leaked into probe");
-  check(probe.region === "test-region" && probe.categories.providers === false && probe.includeSecrets === false, "hidden advanced values or scope lost");
-  check(probe.secretAccessKey === "test-secret" && probe.sessionToken === "test-token" && !('backupPassword' in probe), "probe credential contract");
+  await until(() => button("testConnection") && !button("testConnection").disabled, "probe did not become ready");
+  await click("testConnection");
+  await until(() => !button("testConnection").disabled, "probe did not settle");
+  check(last("configSyncTest") === undefined, "probe must not carry a renderer payload");
   await click("enable");
   await until(() => releaseSync, "first run did not start");
-  const transientInputs = {
-    accessKey: input("secretAccessKey").value.length > 0,
-    sessionToken: input("sessionToken").value.length > 0,
-    vaultPassword: input("backupPassword").value.length > 0,
-  };
-  check(Object.values(transientInputs).every((present) => !present), "transient inputs remained after configure: " + JSON.stringify(transientInputs));
+  check(input("backupPassword").value.length === 0, "transient vault password remained after configure");
   check(last("configSyncConfigure").backupPassword === "test-password", "vault password missing");
+  check(last("configSyncConfigure").deviceLabel === "MacBook", "device label lost");
   flushSync(() => view.unmount());
   mount();
   await until(() => button("backupNow")?.disabled, "re-entered settings did not restore active sync state");
@@ -198,9 +195,9 @@ window.configSyncProbe = async () => {
   releaseSync();
   await until(() => button("backupNow") && !button("backupNow").disabled, "background sync did not complete after navigation");
   await ready();
-  await until(() => document.body.textContent.includes("older-minih-agent-desktop/config"), "history missing");
+  await until(() => document.body.textContent.includes("older-https://router.example.com"), "history missing");
   flushSync(() => view.unmount()); mount(); await ready();
-  check(input("bucket").value === "private-config", "saved connection not hydrated");
+  check(input("deviceLabel").value === "MacBook", "saved choices not hydrated");
   check(!disclosure("connectionTitle").open, "saved connection must start collapsed");
   check(button("backupNow")?.checkVisibility(), "manual run must stay visible above settings");
   await toggle("pauseTitle"); await ready();
@@ -208,12 +205,12 @@ window.configSyncProbe = async () => {
   await toggle("pauseTitle"); await ready();
   check(!button("backupNow").disabled, "resume did not restore manual run");
   await expand("connectionTitle");
-  await expand("advancedTitle");
   await expand("historyTitle");
-  check(input("secretAccessKey").value === "", "secret returned on reopen");
-  await toggle("clearSessionToken"); await click("save"); await ready();
-  check(last("configSyncConfigure").sessionToken === "" && !('secretAccessKey' in last("configSyncConfigure")), "explicit token clear or key reuse lost");
-  check(last("configSyncConfigure").automaticSync === false, "automatic runs reenabled");
+  check(input("backupPassword").value === "", "vault password returned on reopen");
+  await click("save"); await ready();
+  const resaved = last("configSyncConfigure");
+  check(resaved.deviceLabel === "MacBook" && resaved.automaticSync === false && resaved.mode === "backup", "resave lost saved choices");
+  check(resaved.backupPassword === "", "blank vault password must mean keep");
   verifyNoSecrets();
   await choose("mode", "modeSync");
   await click("restore"); await ready();
@@ -226,11 +223,11 @@ window.configSyncProbe = async () => {
   check(confirmations.at(-1) === label("restoreConfirm") && last("configSyncRestore").acknowledgePropagation === true, "sync restore acknowledgment missing");
   holdHistory = true; await click("refreshHistory");
   await until(() => releaseHistory, "history request not held");
-  state = { ...state, prefix: "other-prefix" };
+  state = { ...state, accountEndpoint: "https://other.example.com" };
   flushSync(() => { for (const callback of listeners.get(IPC.event.configSyncChanged) ?? []) callback(state); });
-  await until(() => document.body.textContent.includes("older-other-prefix"), "new connection history not loaded");
+  await until(() => document.body.textContent.includes("older-https://other.example.com"), "new account history not loaded");
   releaseHistory(); await ready();
-  check(!document.body.textContent.includes("older-minih-agent-desktop/config"), "stale history overwrote new connection");
+  check(!document.body.textContent.includes("older-https://router.example.com"), "stale history overwrote new account");
   await expand("maintenanceTitle");
   await fill("currentBackupPassword", "test-password");
   await fill("newBackupPassword", "test-password-new");
@@ -246,9 +243,10 @@ window.configSyncProbe = async () => {
   check(last("configSyncUnlock").backupPassword === "test-password-new", "unlock contract changed");
   verifyNoSecrets();
   await click("disconnect");
-  await until(() => button("enable") && input("endpoint").value === "", "disconnect did not clear form");
+  await until(() => button("enable") && input("deviceLabel").value === "", "disconnect did not clear form");
   check(localStorage.getItem(CONFIG_SYNC_DRAFT_STORAGE_KEY) === null, "disconnect retained draft");
   check(localStorage.getItem("pi.desktop.configSyncDraft") !== null, "legacy draft deleted");
+  check(input("deviceLabel") && document.body.textContent.includes(label("accountTitle")), "disconnect dropped the router account");
   flushSync(() => view.unmount());
   check(listeners.get(IPC.event.configSyncChanged)?.size === 0 && listeners.get(IPC.event.configSyncProgress)?.size === 0, "subscriptions leaked");
   return { passed: true };
@@ -286,10 +284,10 @@ window.checkboxProbe = async () => {
 };
 `;
 
-test("S3 settings user path preserves credentials, modes, history and legacy data", {
+test("router account settings user path preserves preferences, modes, history and legacy data", {
   skip: process.platform === "linux" && !process.env.DISPLAY ? "Electron requires a display" : false,
 }, async () => {
-  const temp = await mkdtemp(join(process.env.PI_SCRATCH_DIR ?? tmpdir(), "s3-settings-"));
+  const temp = await mkdtemp(join(process.env.PI_SCRATCH_DIR ?? tmpdir(), "router-settings-"));
   try {
     await build({
       stdin: { contents: fixture, resolveDir: join(root, "scripts/e2e"), loader: "tsx" },
@@ -317,7 +315,7 @@ app.whenReady().then(async () => {
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
   try {
     await win.loadFile(path.join(__dirname, "index.html"));
-    console.log("S3_SETTINGS_PROBE " + JSON.stringify(await win.webContents.executeJavaScript("window.configSyncProbe()")));
+    console.log("ROUTER_SETTINGS_PROBE " + JSON.stringify(await win.webContents.executeJavaScript("window.configSyncProbe()")));
     await win.webContents.executeJavaScript("window.checkboxProbe()");
     win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Space" });
     win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Space" });
@@ -337,7 +335,7 @@ app.whenReady().then(async () => {
     try { code = await new Promise((resolve, reject) => { child.once("error", reject); child.once("close", resolve); }); }
     finally { clearTimeout(timer); }
     assert.equal(code, 0, output.slice(-6000));
-    assert.match(output, /S3_SETTINGS_PROBE \{"passed":true\}/);
+    assert.match(output, /ROUTER_SETTINGS_PROBE \{"passed":true\}/);
     assert.match(output, /CHECKBOX_PROBE \{"passed":true\}/);
   } finally { await rm(temp, { recursive: true, force: true }); }
 });

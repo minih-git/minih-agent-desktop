@@ -2512,14 +2512,14 @@ unchanged. See [provider configuration](12-provider-config-schema.md).
 The Settings → Cloud sync page uses the following renderer-to-Main channels;
 all are forwarded to the Host-owned `configSync.*` RPC methods. The page is
 available in all builds and carries an Experimental badge. Channel names stay
-stable; connection inputs
-and results use the S3-only contract in `types/config-sync.ts`:
+stable; connection inputs and results use the router-account contract in
+`types/config-sync.ts`:
 
 | IPC channel | Host method | contract |
 |---|---|---|
 | `minih-agent-desktop/configSync/getState` | `configSync.getState` | redacted status, category selections, preview counts, and pending approval summaries |
-| `minih-agent-desktop/configSync/test` | `configSync.test` | S3 conditional-write probe and verified cleanup; returns `{ ok: true, conditionalWrites: true }` without persisting configuration |
-| `minih-agent-desktop/configSync/configure` | `configSync.configure` | validates the endpoint, stores encrypted local sync metadata, and enables the vault |
+| `minih-agent-desktop/configSync/test` | `configSync.test` | probes the connected Minih Router account's backup storage (server-side conditional-write self-test); returns `{ ok: true, conditionalWrites: true }` without persisting configuration; it forwards no payload |
+| `minih-agent-desktop/configSync/configure` | `configSync.configure` | validates the vault password, stores encrypted local sync metadata, and enables the vault |
 | `minih-agent-desktop/configSync/syncNow` | `configSync.syncNow` | runs one Host-owned two-way sync or local-snapshot backup, according to the saved mode |
 | `minih-agent-desktop/configSync/pause` | `configSync.pause` | pauses or resumes this device only |
 | `minih-agent-desktop/configSync/unlock` | `configSync.unlock` | unlocks the local vault for the current process/device |

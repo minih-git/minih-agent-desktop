@@ -5714,7 +5714,7 @@ eleven-tool-round desktop paths are verified by
 | C / F — Hourly task updates | E2E-SCHEDULED-manual-to-hourly |
 | C / F / Quality — Saved project isolation | E2E-SCHEDULED-manual-workspace-binding |
 | C / F / Quality — 桌面定时任务 | E2E-SCHEDULED-desktop-automation-lifecycle |
-| F / Security / Quality — Portable configuration sync | E2E-CONFIG-SYNC-s3-portable-configuration |
+| F / Security / Quality — Portable configuration sync | E2E-CONFIG-SYNC-router-account |
 | A / C — Unicode stdio 成帧 | E2E-RPC-unicode-separators |
 | C / G / Quality — Plugins navigation | E2E-NAV-plugins-button-goes-back |
 | C / D / Quality — 侧边栏行状态 | E2E-LAYOUT-sidebar-row-states |
@@ -9047,38 +9047,44 @@ the latest destination. These assertions measure work counts, not device FPS.
   版本上运行，并记录已测提交与基线。
 
 <a id="e2e-config-sync-webdav-portable-configuration"></a>
+<a id="e2e-config-sync-s3-portable-configuration"></a>
 
-### E2E-CONFIG-SYNC-s3-portable-configuration
+### E2E-CONFIG-SYNC-router-account
 
-Follow the [current S3 acceptance scenario](/spec/06-delivery/04-e2e-test-plan#e2e-config-sync-s3-portable-configuration).
+Follow the [current router-account acceptance scenario](/spec/06-delivery/04-e2e-test-plan#e2e-config-sync-router-account).
 
 - Use separate Host processes, data directories, HOME and agent directories.
-  Local S3 fixtures exercise conditional writes, authentication, merge,
-  conflict choices and repeated convergence, deletions, credential opt-out,
-  approval and skill resources.
+  An in-process router HTTP fixture (transport/engine tests) exercises
+  conditional writes, authentication, merge, conflict choices and repeated
+  convergence, deletions, credential opt-out, approval and skill resources.
 - 项目和项目组列表保留在本机，不提供 projects 同步类别。发布项目/项目组元数据
   不会在接收设备创建或修改项目/项目组；接收设备自行注册 workspace 后，映射并
   审批项目级技能，验证资源成功到达而本机项目组名称、根目录及排序保持不变。
   同步/恢复忽略旧 vault 的 `projects` 实体，保留本机项目和云端历史。
 - Backup only uploads local snapshots; histories are mode-specific. Sync
   restore publishes with explicit acknowledgment; backup restore stays local.
-- The real settings-page test covers secret-free drafts, saved credential reuse,
-  explicit token clearing, mode selection, restore confirmation, stale history
-  responses and disconnect. Development-build-only visibility remains unchanged.
-- Live S3 is explicitly opt-in and authorized. Read credentials without logging
-  or copying them; use a fresh random prefix, verify initial emptiness, clean
-  only test-created objects and verify final emptiness. Never use the running
+- Device setup connects a Minih Router test account instead of filling S3
+  fields. The real settings-page test covers secret-free drafts (mode, device
+  label, automatic-run choice and categories only), mode selection, restore
+  confirmation, stale history responses and disconnect; the account provider
+  row is device-local.
+- Live router runs are separately opt-in and require explicit authorization
+  with a real account. Read the account token without logging or copying it;
+  use a dedicated test account, verify initial emptiness, clean only
+  test-created objects and verify final emptiness. Never use the running
   desktop or real model providers. Record the tested candidate/base.
 - A 30-entry history index does not imply physical garbage collection. Only
-  the new S3 format is supported, without legacy detection or migration;
-  unrelated data is not deleted. Recovery is not whole-filesystem atomicity.
+  the router-account format is supported, without legacy detection or
+  migration; unrelated data is not deleted. Recovery is not whole-filesystem
+  atomicity.
 - Automation: `pnpm test:e2e:config-sync`, Rust `config_sync::` and
-  `user_skills::`, `config-sync-user-path.test.mjs`, `config-sync-ipc.test.mjs`.
+  `user_skills::` (in-process router HTTP fixture),
+  `config-sync-user-path.test.mjs`, `config-sync-ipc.test.mjs`.
   Full checkpoint-recovery fault injection is not claimed by these user paths.
 - Start a held manual sync, leave Settings, then return. Verify Host still
   reports `syncing`, duplicate actions remain disabled, and releasing the local
   fixture finishes the operation and refreshes state. The aggregate RPC has no
-  deadline; individual S3 requests remain bounded.
+  deadline; individual router requests remain bounded.
 - Acceptance: F (persistence), Security, Quality. Candidate validation required.
 
 ### E2E-DIALOG-long-text-boundaries

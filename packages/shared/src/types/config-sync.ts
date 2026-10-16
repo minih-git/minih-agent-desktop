@@ -1,9 +1,10 @@
 /**
  * Public contracts for the Host-owned portable configuration synchronizer.
  *
- * Responses contain redacted status only. S3 secrets and backup passwords are
- * accepted as transient inputs; vault keys and portable secret values are
- * never returned to the renderer.
+ * Backups live in the Minih Router backend under the connected account;
+ * responses contain redacted status only. The account token and backup
+ * passwords are accepted as transient inputs; vault keys and portable secret
+ * values are never returned to the renderer.
  */
 
 export const CONFIG_SYNC_CATEGORIES = [
@@ -70,16 +71,7 @@ export type ConfigSyncProgress = {
   bytesDone: number;
   bytesTotal: number;
 };
-export type ConfigSyncConnection = {
-  endpoint: string;
-  region: string;
-  bucket: string;
-  prefix: string;
-  accessKeyId: string;
-  pathStyle: boolean;
-};
-
-export type ConfigSyncPreferences = ConfigSyncConnection & {
+export type ConfigSyncPreferences = {
   deviceLabel: string;
   mode: ConfigSyncMode;
   categories: ConfigSyncCategorySelection;
@@ -136,12 +128,10 @@ export type ConfigSyncState = {
   paused: boolean;
   locked: boolean;
   status: ConfigSyncStatus;
-  endpoint?: string;
-  region?: string;
-  bucket?: string;
-  prefix?: string;
-  accessKeyId?: string;
-  pathStyle: boolean;
+  /** Whether a Minih Router account row with a token exists right now. */
+  accountConnected: boolean;
+  /** The connected account's configured base URL (e.g. the public endpoint). */
+  accountEndpoint?: string;
   deviceLabel?: string;
   mode: ConfigSyncMode;
   categories: ConfigSyncCategorySelection;
@@ -158,16 +148,6 @@ export type ConfigSyncState = {
 };
 
 export type ConfigSyncConfigureInput = {
-  endpoint: string;
-  region: string;
-  bucket: string;
-  prefix: string;
-  accessKeyId: string;
-  /** Omitted fields reuse saved credentials only for the same connection. */
-  secretAccessKey?: string;
-  /** Empty string explicitly clears a saved session token. */
-  sessionToken?: string;
-  pathStyle?: boolean;
   deviceLabel: string;
   /** Required when creating or unlocking the encrypted vault. */
   backupPassword: string;
@@ -178,7 +158,6 @@ export type ConfigSyncConfigureInput = {
   automaticSync?: boolean;
 };
 
-export type ConfigSyncTestInput = Omit<ConfigSyncConfigureInput, "backupPassword">;
 export type ConfigSyncTestResult = { ok: true; conditionalWrites: true };
 
 export type ConfigSyncApprovalInput = {

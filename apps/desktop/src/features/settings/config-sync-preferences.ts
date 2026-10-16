@@ -7,18 +7,12 @@ import type {
 } from "@minih-agent/shared";
 
 /**
- * The draft is deliberately limited to non-sensitive connection fields.
- * S3 secrets and derived vault keys stay in Host-owned secret storage;
- * passwords are never copied into renderer persistence, even as a
- * convenience cache.
+ * The draft is deliberately limited to non-sensitive preference fields.
+ * The connected account's token and derived vault keys stay in Host-owned
+ * secret storage; passwords are never copied into renderer persistence,
+ * even as a convenience cache.
  */
 export type ConfigSyncDraft = {
-  endpoint?: string;
-  region?: string;
-  bucket?: string;
-  prefix?: string;
-  accessKeyId?: string;
-  pathStyle?: boolean;
   automaticSync?: boolean;
   deviceLabel?: string;
   mode?: ConfigSyncMode;
@@ -29,11 +23,13 @@ export type ConfigSyncDraft = {
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-export const CONFIG_SYNC_DRAFT_STORAGE_KEY = "pi.desktop.configSyncS3Draft.v1";
+export const CONFIG_SYNC_DRAFT_STORAGE_KEY = "pi.desktop.configSyncRouterDraft.v1";
+/** Superseded S3 draft; never contained secrets, so removal is cosmetic. */
+const LEGACY_S3_DRAFT_STORAGE_KEY = "pi.desktop.configSyncS3Draft.v1";
 export const CONFIG_SYNC_HISTORY_CACHE_TTL_MS = 30_000;
 
-const TEXT_FIELDS = ["endpoint", "region", "bucket", "prefix", "accessKeyId", "deviceLabel"] as const;
-const BOOLEAN_FIELDS = ["pathStyle", "automaticSync", "saved"] as const;
+const TEXT_FIELDS = ["deviceLabel"] as const;
+const BOOLEAN_FIELDS = ["automaticSync", "saved"] as const;
 
 const CATEGORY_KEYS: ConfigSyncCategory[] = [
   "application",
@@ -132,6 +128,12 @@ export function writeConfigSyncDraft(
       if (Object.keys(categories).length > 0) value.categories = categories;
     }
     store.setItem(CONFIG_SYNC_DRAFT_STORAGE_KEY, JSON.stringify(value));
+    // Best effort: retire the superseded S3 draft key on the next write.
+    try {
+      store.removeItem(LEGACY_S3_DRAFT_STORAGE_KEY);
+    } catch {
+      // Removal is cosmetic; the legacy key never contained secrets.
+    }
   } catch {
     // A blocked or full localStorage must not prevent cloud sync from working.
   }
@@ -158,7 +160,7 @@ export function getCachedConfigSyncState(): ConfigSyncState | null {
 export function cacheConfigSyncState(next: ConfigSyncState): boolean {
   const previous = cachedState;
   const changed = previous === null ||
-    ["configured", "endpoint", "region", "bucket", "prefix", "accessKeyId", "pathStyle", "mode"].some(
+    ["configured", "accountConnected", "accountEndpoint", "mode"].some(
       (key) => previous[key as keyof ConfigSyncState] !== next[key as keyof ConfigSyncState],
     );
   if (changed) {

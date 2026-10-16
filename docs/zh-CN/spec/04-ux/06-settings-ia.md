@@ -316,24 +316,21 @@ Token 用量**不是设置目的地**（D335 / ADR 0173）。已完成回合历�
 
 ### 云同步
 
-- **Connection**: S3 endpoint, region, private bucket, prefix, access key ID,
-  secret key, optional token, addressing style, device label and vault password.
-  Choose sync or backup mode and automatic runs. Conditional writes are required;
-  there is no WebDAV/append-only fallback. Legacy data remains without migration.
+- **Connection**: 页面使用已连接的 Minih Router 账户；未连接时设置控件保持禁用，
+  并链接到「设置 → 账户」。初始设置只需 vault 密码和设备标签；选择 sync 或
+  backup 模式与自动运行。连接测试探测账户的备份存储，要求可靠的条件写；不存在
+  WebDAV/append-only 回退。旧数据保持原样，不做迁移。
 - **可移植配置**：支持的类别默认选中；凭据和项目 memory 必须明确选择。预览显示 supported、excluded、secret-bearing、mapping-required 和 pending-approval 计数。
-- **Safety**: vault keys and exported secrets are never returned to the page.
-  Connection secrets stay transient; imports keep local approval and mappings.
-  Public HTTP and redirects are rejected; LAN HTTP follows Host network policy.
-  Disconnect preserves local configuration, legacy data and remote objects.
+- **Safety**: vault key 和导出的秘密永远不会返回到页面。vault 密码只存在于瞬态
+  控件中；导入内容保留本地审批与映射。公共 HTTP 与重定向被拒绝；LAN HTTP 遵循
+  Host 网络策略。断开连接保留本地配置与远端对象。仅支持 router-account 格式；
+  不做旧数据检测、迁移或兼容性提示。
 - **状态与恢复**：显示已配置、已锁定、同步中、离线、不支持服务器、冲突、等待激活、暂停和错误等不同状态。用户可以立即同步、解锁、暂停本设备、批准/拒绝暂存项目以及断开连接。存在待处理状态时，页面不会根据旧的成功记录暗示已经收敛。
-- **Drafts and recovery**: cache only typed non-secret S3 choices under a new
-  versioned key; ignore old drafts. Blank credentials reuse the exact connection,
-  while explicit clearing/replacement clears the token. Never persist secrets or
-  passwords. Invalidate old history requests when the saved destination/mode
-  changes. Display the latest 30 revisions and disclose indefinite object
-  retention. Sync restore confirms immediate publication; backup restore is
-  local only. Unsaved mode edits do not change restore semantics. Password
-  changes do not revoke unlocked devices.
+- **Drafts and recovery**: 草稿键为 `pi.desktop.configSyncRouterDraft.v1`，只
+  持久化模式、设备标签、自动运行选择和类别；旧 S3 草稿键在下一次保存时移除。
+  秘密和密码永不进入渲染层持久化。已保存的账户/模式变化会使旧历史请求失效。
+  展示最近 30 个修订并说明对象无限期保留。同步恢复确认立即发布；备份恢复仅限
+  本地。未保存的模式编辑不改变恢复语义。密码变更不撤销已解锁设备。
 
 ### 信息
 - app/host/protocol版本+开放日志

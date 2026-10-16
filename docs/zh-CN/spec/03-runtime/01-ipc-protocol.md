@@ -1896,14 +1896,14 @@ unchanged. See [provider configuration](12-provider-config-schema.md).
 ## 15. 云配置同步
 
 The page is available in all builds and carries an Experimental badge. Channel
-names stay stable. Inputs and results use the S3-only contract in
+names stay stable. Inputs and results use the router-account contract in
 `types/config-sync.ts` and the current source spec.
 
 | IPC 通道 | Host 方法 | 契约 |
 |---|---|---|
 | `minih-agent-desktop/configSync/getState` | `configSync.getState` | 脱敏状态、类别选择、预览计数和待审批摘要 |
-| `minih-agent-desktop/configSync/test` | `configSync.test` | S3 conditional-write probe with verified cleanup; returns `{ ok: true, conditionalWrites: true }` without persisting configuration |
-| `minih-agent-desktop/configSync/configure` | `configSync.configure` | 校验 endpoint、保存加密的本地同步元数据并启用 vault |
+| `minih-agent-desktop/configSync/test` | `configSync.test` | probes the connected Minih Router account's backup storage (server-side conditional-write self-test); returns `{ ok: true, conditionalWrites: true }` without persisting configuration; it forwards no payload |
+| `minih-agent-desktop/configSync/configure` | `configSync.configure` | 校验 vault 密码、保存加密的本地同步元数据并启用 vault |
 | `minih-agent-desktop/configSync/syncNow` | `configSync.syncNow` | runs the saved sync or backup mode |
 | `minih-agent-desktop/configSync/pause` | `configSync.pause` | 仅暂停或恢复本设备 |
 | `minih-agent-desktop/configSync/unlock` | `configSync.unlock` | 为当前进程/设备解锁本地 vault |

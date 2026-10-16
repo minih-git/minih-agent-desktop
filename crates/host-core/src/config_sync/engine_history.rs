@@ -4,15 +4,16 @@ use super::*;
 /// Immutable objects are retained: deleting shared resources without a durable
 /// cross-device acknowledgement protocol can race an offline or publishing peer.
 pub(super) async fn list_history(state: Arc<Mutex<AppState>>) -> Result<Value> {
-    let (config, key, transport) = {
+    let (config, key, account) = {
         let st = state.lock().await;
         let config = load_config(&st)?
-            .ok_or_else(|| anyhow!("CONFIG_SYNC_INVALID: S3 backup is not configured"))?;
+            .ok_or_else(|| anyhow!("CONFIG_SYNC_INVALID: backup is not configured"))?;
         let key = local_vault_key(&st, &config)?
             .ok_or_else(|| anyhow!("CONFIG_SYNC_LOCKED: backup vault is locked"))?;
-        let transport = configured_transport(&st, &config)?;
-        (config, key, transport)
+        let account = configured_account(&st, &config)?;
+        (config, key, account)
     };
+    let transport = account_transport(&account).await?;
     let Some((head, _)) = read_remote_head(&transport, &config, &key).await? else {
         return Ok(json!([]));
     };
@@ -82,21 +83,22 @@ pub(super) async fn change_password(state: Arc<Mutex<AppState>>, params: Value) 
     if new_password.len() < 8 {
         bail!("CONFIG_SYNC_INVALID: new backup password must be at least 8 characters");
     }
-    let (mut config, key, transport) = {
+    let (mut config, key, account) = {
         let st = state.lock().await;
         let config = load_config(&st)?
-            .ok_or_else(|| anyhow!("CONFIG_SYNC_INVALID: S3 backup is not configured"))?;
+            .ok_or_else(|| anyhow!("CONFIG_SYNC_INVALID: backup is not configured"))?;
         let key = unlock_vault(&config.vault_header, current_password)?;
-        let transport = configured_transport(&st, &config)?;
-        (config, key, transport)
+        let account = configured_account(&st, &config)?;
+        (config, key, account)
     };
+    let transport = account_transport(&account).await?;
     let Some((bytes, etag)) = transport.get("header").await? else {
         bail!("CONFIG_SYNC_REMOTE: remote vault header is missing");
     };
     let remote: VaultHeader =
         serde_json::from_slice(&bytes).context("decode remote vault header")?;
     if remote.vault_id != config.vault_id {
-        bail!("CONFIG_SYNC_CONFLICT: selected S3 prefix belongs to another vault");
+        bail!("CONFIG_SYNC_CONFLICT: this Minih Router account holds another vault");
     }
     let remote_key = unlock_vault(&remote, current_password)?;
     if remote_key.as_bytes() != key.as_bytes() {
@@ -138,10 +140,10 @@ pub(super) async fn restore(
     validate_remote_id(revision_id, "revision")?;
     let sync_lock = state.lock().await.config_sync_lock.clone();
     let _sync_guard = sync_lock.lock().await;
-    let (mut config, key, base, local, transport) = {
+    let (mut config, key, base, local, account) = {
         let mut st = state.lock().await;
         let config = load_config(&st)?
-            .ok_or_else(|| anyhow!("CONFIG_SYNC_INVALID: S3 backup is not configured"))?;
+            .ok_or_else(|| anyhow!("CONFIG_SYNC_INVALID: backup is not configured"))?;
         if config.mode == SyncMode::Sync
             && !params
                 .get("acknowledgePropagation")
@@ -164,9 +166,10 @@ pub(super) async fn restore(
             &config.plugin_intents,
             &identity_overrides(&config),
         )?;
-        let transport = configured_transport(&st, &config)?;
-        (config, key, base, local, transport)
+        let account = configured_account(&st, &config)?;
+        (config, key, base, local, account)
     };
+    let transport = account_transport(&account).await?;
     let Some((current_head, etag)) = read_remote_head(&transport, &config, &key).await? else {
         bail!("CONFIG_SYNC_REMOTE: cannot restore from an empty vault");
     };

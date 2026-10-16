@@ -1,21 +1,125 @@
 use super::*;
+use sha2::{Digest, Sha256};
 
+/// The vendor key of the Minih Router account row in the providers store.
+pub(crate) use crate::providers::MINIH_ROUTER_VENDOR_KEY;
+const DEFAULT_ROUTER_BASE_URL: &str = "https://router.hmini.org/v1";
+
+/// Identifies the server-side backup namespace this configuration belongs to.
+///
+/// The router stores backup objects per AccessKey, so the fingerprint of the
+/// connected account's key is the destination identity. Changing the account
+/// (or rotating the key) therefore requires setting the backup up again — the
+/// same binding a direct cloud-credential transport would have.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct S3Connection {
-    pub endpoint: String,
-    pub region: String,
-    pub bucket: String,
-    pub prefix: String,
-    pub access_key_id: String,
-    pub path_style: bool,
+pub(crate) struct RouterConnection {
+    pub account: String,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct ConnectionCredentials {
-    pub secret_access_key: String,
-    pub session_token: Option<String>,
+/// The connected Minih Router account, resolved live from the providers store.
+/// `access_key` must never be logged or serialized.
+pub(crate) struct ResolvedAccount {
+    pub base_url: String,
+    pub access_key: String,
+    pub fingerprint: String,
+}
+
+pub(super) fn account_fingerprint(access_key: &str) -> String {
+    let digest = Sha256::digest(access_key.trim().as_bytes());
+    digest[..16]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// The first enabled Minih Router provider row that holds a token — the same
+/// row the Accounts page presents as the connected account.
+pub(super) fn resolve_account(st: &AppState) -> Result<ResolvedAccount> {
+    let rows = providers::list_providers(&st.db, &st.secrets, false)?;
+    let provider = rows
+        .iter()
+        .find(|row| row.vendor_key.eq_ignore_ascii_case(MINIH_ROUTER_VENDOR_KEY) && row.has_secret)
+        .ok_or_else(|| {
+            anyhow!("CONFIG_SYNC_AUTH: connect a Minih Router account before using backup")
+        })?;
+    let access_key = providers::get_secret_for_provider(&st.db, &st.secrets, &provider.id)?
+        .ok_or_else(|| {
+            anyhow!("CONFIG_SYNC_AUTH: the Minih Router account token is not available")
+        })?;
+    let access_key = access_key.trim().to_string();
+    if access_key.is_empty() {
+        bail!("CONFIG_SYNC_AUTH: the Minih Router account token is empty");
+    }
+    let base_url = provider
+        .base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(DEFAULT_ROUTER_BASE_URL)
+        .to_string();
+    Ok(ResolvedAccount {
+        base_url,
+        fingerprint: account_fingerprint(&access_key),
+        access_key,
+    })
+}
+
+/// Renderer-facing account presence, without reading the token.
+pub(super) fn account_status(st: &AppState) -> (bool, Option<String>) {
+    let Ok(rows) = providers::list_providers(&st.db, &st.secrets, false) else {
+        return (false, None);
+    };
+    match rows
+        .iter()
+        .find(|row| row.vendor_key.eq_ignore_ascii_case(MINIH_ROUTER_VENDOR_KEY) && row.has_secret)
+    {
+        Some(row) => (
+            true,
+            Some(
+                row.base_url
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or(DEFAULT_ROUTER_BASE_URL)
+                    .to_string(),
+            ),
+        ),
+        None => (false, None),
+    }
+}
+
+/// Strip the OpenAI-compatible `/v1` suffix so the control-plane root remains.
+pub(super) fn control_root(base_url: &str) -> String {
+    let mut value = base_url.trim().trim_end_matches('/').to_string();
+    if let Some(stripped) = value.strip_suffix("/v1") {
+        value = stripped.trim_end_matches('/').to_string();
+    }
+    value
+}
+
+/// Prefer the EasyTier LAN endpoint when it is reachable, like the chat path.
+pub(super) async fn account_transport(account: &ResolvedAccount) -> Result<RouterTransport> {
+    let resolved =
+        crate::easytier_net::resolve_minih_router_endpoint(Some(&account.base_url)).await;
+    RouterTransport::new(&RouterConfig {
+        root: control_root(&resolved.active_base_url),
+        access_key: account.access_key.clone(),
+        allow_insecure_http: crate::network_policy::relaxed(),
+    })
+}
+
+/// Validate the stored configuration against the live account. The account is
+/// returned owned so no `&AppState` borrow crosses an await (AppState is not
+/// `Sync`); pair it with `account_transport`.
+pub(super) fn configured_account(st: &AppState, config: &StoredConfig) -> Result<ResolvedAccount> {
+    let account = resolve_account(st)?;
+    if account.fingerprint != config.connection.account {
+        bail!(
+            "CONFIG_SYNC_AUTH: the connected Minih Router account changed; set the backup up again"
+        );
+    }
+    Ok(account)
 }
 
 fn input_text(input: &Value, name: &str, fallback: &str) -> Result<String> {
@@ -34,130 +138,36 @@ fn input_bool(input: &Value, name: &str, fallback: bool) -> Result<bool> {
     }
 }
 
-impl S3Connection {
-    pub(super) fn from_input(existing: Option<&Self>, input: &Value) -> Result<Self> {
-        let value = Self {
-            endpoint: input_text(input, "endpoint", existing.map_or("", |v| &v.endpoint))?
-                .trim_end_matches('/')
-                .to_string(),
-            region: input_text(input, "region", existing.map_or("us-east-1", |v| &v.region))?,
-            bucket: input_text(input, "bucket", existing.map_or("", |v| &v.bucket))?,
-            prefix: input_text(
-                input,
-                "prefix",
-                existing.map_or("minih-agent-desktop/config", |v| &v.prefix),
-            )?
-            .trim_matches('/')
-            .to_string(),
-            access_key_id: input_text(
-                input,
-                "accessKeyId",
-                existing.map_or("", |v| &v.access_key_id),
-            )?,
-            path_style: input_bool(input, "pathStyle", existing.is_none_or(|v| v.path_style))?,
-        };
-        if value.endpoint.is_empty()
-            || value.region.is_empty()
-            || value.bucket.is_empty()
-            || value.access_key_id.is_empty()
-        {
-            bail!(
-                "CONFIG_SYNC_INVALID: S3 endpoint, region, bucket and access key ID are required"
-            );
-        }
-        Ok(value)
-    }
-}
-
-pub(super) fn credential_ref(config: &StoredConfig) -> String {
-    format!("secret:config-sync:s3:{}:connection", config.state_id)
-}
-
-pub(super) fn stored_credentials(
-    st: &AppState,
-    config: &StoredConfig,
-) -> Result<ConnectionCredentials> {
-    let value = st
-        .secrets
-        .get(&credential_ref(config))?
-        .ok_or_else(|| anyhow!("CONFIG_SYNC_AUTH: S3 credentials are not available"))?;
-    serde_json::from_str(&value)
-        .map_err(|_| anyhow!("CONFIG_SYNC_AUTH: stored S3 credentials are invalid"))
-}
-
-pub(super) fn connection_credentials(
-    st: &AppState,
-    existing: Option<&StoredConfig>,
-    connection: &S3Connection,
-    input: &Value,
-) -> Result<ConnectionCredentials> {
-    // A complete replacement must recover even when the old secret was lost.
-    // Omitted fields still mean reuse, never silently dropping a session token.
-    let needs_saved = input.get("secretAccessKey").is_none() || input.get("sessionToken").is_none();
-    let saved = if needs_saved {
-        existing
-            .filter(|saved| saved.connection == *connection)
-            .map(|saved| stored_credentials(st, saved))
-            .transpose()?
-    } else {
-        None
-    };
-    let secret_access_key = match input.get("secretAccessKey") {
-        Some(Value::String(value)) if !value.is_empty() => value.clone(),
-        Some(_) => bail!("CONFIG_SYNC_AUTH: enter the S3 secret access key"),
-        None => saved
-            .as_ref()
-            .map(|saved| saved.secret_access_key.clone())
-            .ok_or_else(|| {
-                anyhow!("CONFIG_SYNC_AUTH: enter the S3 secret access key for this connection")
-            })?,
-    };
-    let session_token = match input.get("sessionToken") {
-        Some(Value::String(value)) => (!value.is_empty()).then(|| value.clone()),
-        Some(_) => bail!("CONFIG_SYNC_INVALID: S3 session token must be text"),
-        None => saved.and_then(|saved| saved.session_token),
-    };
-    Ok(ConnectionCredentials {
-        secret_access_key,
-        session_token,
-    })
-}
-
-pub(super) fn transport_with_credentials(
-    connection: &S3Connection,
-    credentials: ConnectionCredentials,
-) -> Result<S3Transport> {
-    S3Transport::new(&S3Config {
-        endpoint: connection.endpoint.clone(),
-        region: connection.region.clone(),
-        bucket: connection.bucket.clone(),
-        prefix: connection.prefix.clone(),
-        access_key_id: connection.access_key_id.clone(),
-        secret_access_key: credentials.secret_access_key,
-        session_token: credentials.session_token,
-        path_style: connection.path_style,
-        allow_insecure_http: crate::network_policy::relaxed(),
-    })
-}
-
-pub(super) fn configured_transport(st: &AppState, config: &StoredConfig) -> Result<S3Transport> {
-    transport_with_credentials(&config.connection, stored_credentials(st, config)?)
-}
-
 pub(super) fn config_from_input(
     existing: Option<&StoredConfig>,
     input: &Value,
     header: VaultHeader,
+    account: &str,
 ) -> Result<StoredConfig> {
     if !input.is_object() {
         bail!("CONFIG_SYNC_INVALID: configuration must be an object");
     }
-    for removed in ["username", "appPassword", "directory", "remoteMode"] {
+    for removed in [
+        "username",
+        "appPassword",
+        "directory",
+        "remoteMode",
+        "endpoint",
+        "region",
+        "bucket",
+        "prefix",
+        "accessKeyId",
+        "secretAccessKey",
+        "sessionToken",
+        "pathStyle",
+    ] {
         if input.get(removed).is_some() {
-            bail!("CONFIG_SYNC_INVALID: legacy connection fields are no longer supported");
+            bail!("CONFIG_SYNC_INVALID: standalone S3 connection fields are no longer supported");
         }
     }
-    let connection = S3Connection::from_input(existing.map(|value| &value.connection), input)?;
+    let connection = RouterConnection {
+        account: account.to_string(),
+    };
     let device_label = input_text(
         input,
         "deviceLabel",
@@ -257,92 +267,93 @@ pub(super) fn config_from_input(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn input() -> Value {
-        json!({"endpoint":"https://s3.example.test", "region":"us-east-1", "bucket":"config-bucket",
-            "accessKeyId":"fixture-access", "prefix":"config", "deviceLabel":"Test"})
+    #[test]
+    fn control_root_strips_the_data_plane_suffix() {
+        assert_eq!(
+            control_root("https://router.hmini.org/v1/"),
+            "https://router.hmini.org"
+        );
+        assert_eq!(
+            control_root("http://11.12.0.1:3001/v1"),
+            "http://11.12.0.1:3001"
+        );
+        assert_eq!(
+            control_root("https://proxy.example.test/router/v1"),
+            "https://proxy.example.test/router"
+        );
+        assert_eq!(
+            control_root("https://router.hmini.org"),
+            "https://router.hmini.org"
+        );
     }
 
     #[test]
-    fn credentials_are_scoped_to_the_complete_connection() -> Result<()> {
+    fn fingerprint_binds_the_account_identity() -> Result<()> {
         let directory = tempfile::tempdir()?;
         let state = AppState::open(directory.path())?;
-        let (header, _) = create_vault("backup-password", "test-vault")?;
-        let config = config_from_input(None, &input(), header)?;
-        state.secrets.set(
-            &credential_ref(&config),
-            &serde_json::to_string(&ConnectionCredentials {
-                secret_access_key: "fixture-secret".into(),
-                session_token: Some("fixture-session".into()),
-            })?,
-        )?;
-        let reused = connection_credentials(&state, Some(&config), &config.connection, &json!({}))?;
-        assert_eq!(reused.secret_access_key, "fixture-secret");
-        for (name, value) in [
-            ("endpoint", "https://other.example.test"),
-            ("region", "eu-west-1"),
-            ("bucket", "other-bucket"),
-            ("prefix", "other-prefix"),
-            ("accessKeyId", "other-access"),
-        ] {
-            let changed =
-                S3Connection::from_input(Some(&config.connection), &json!({(name):value}))?;
-            assert!(connection_credentials(&state, Some(&config), &changed, &json!({})).is_err());
-        }
-        let changed =
-            S3Connection::from_input(Some(&config.connection), &json!({"pathStyle":false}))?;
-        assert!(connection_credentials(&state, Some(&config), &changed, &json!({})).is_err());
-        let cleared = connection_credentials(
-            &state,
-            Some(&config),
-            &config.connection,
-            &json!({"sessionToken":""}),
-        )?;
-        assert!(cleared.session_token.is_none());
+        assert!(resolve_account(&state).is_err());
+        create_router_provider(&state, "https://router.example.test/v1", "fixture-key")?;
+        let account = resolve_account(&state)?;
+        assert_eq!(account.fingerprint, account_fingerprint("fixture-key"));
+        assert_eq!(account.base_url, "https://router.example.test/v1");
+        // Rotating to a different key changes the destination identity.
+        assert_ne!(account_fingerprint("rotated-key"), account.fingerprint);
         Ok(())
     }
 
     #[test]
-    fn complete_replacement_recovers_missing_or_invalid_stored_credentials() -> Result<()> {
-        let directory = tempfile::tempdir()?;
-        let state = AppState::open(directory.path())?;
+    fn account_changes_get_a_fresh_local_baseline() -> Result<()> {
         let (header, _) = create_vault("backup-password", "test-vault")?;
-        let config = config_from_input(None, &input(), header)?;
-        for invalid in [None, Some("not-json")] {
-            if let Some(invalid) = invalid {
-                state.secrets.set(&credential_ref(&config), invalid)?;
-            }
-            let replaced = connection_credentials(
-                &state,
+        let input = json!({"deviceLabel":"Test"});
+        let config = config_from_input(None, &input, header.clone(), "account-one")?;
+        let same = config_from_input(Some(&config), &input, header.clone(), "account-one")?;
+        assert_eq!(same.state_id, config.state_id);
+        let changed = config_from_input(Some(&config), &input, header, "account-two")?;
+        assert_ne!(changed.state_id, config.state_id);
+        assert!(changed.last_revision_id.is_none());
+        for removed in ["endpoint", "bucket", "secretAccessKey"] {
+            let error = config_from_input(
                 Some(&config),
-                &config.connection,
-                &json!({"secretAccessKey":"replacement", "sessionToken":""}),
-            )?;
-            assert_eq!(replaced.secret_access_key, "replacement");
-            assert!(replaced.session_token.is_none());
-            assert!(
-                connection_credentials(&state, Some(&config), &config.connection, &json!({}))
-                    .is_err()
+                &json!({(removed):"value"}),
+                create_vault("backup-password", "test-vault")?.0,
+                "account-one",
             );
+            assert!(error.is_err());
         }
         Ok(())
     }
 
-    #[test]
-    fn destination_and_mode_changes_get_a_fresh_local_baseline() -> Result<()> {
-        let (header, _) = create_vault("backup-password", "test-vault")?;
-        let mut config = config_from_input(None, &input(), header.clone())?;
-        config.paused = true;
-        let saved = config_from_input(Some(&config), &input(), header.clone())?;
-        assert_eq!(saved.state_id, config.state_id);
-        assert!(saved.paused);
-        for change in [json!({"mode":"backup"}), json!({"bucket":"other-bucket"})] {
-            let changed = config_from_input(Some(&config), &change, header.clone())?;
-            assert_ne!(changed.state_id, config.state_id);
-            assert!(changed.last_revision_id.is_none());
-        }
+    pub(crate) fn create_router_provider(
+        st: &AppState,
+        base_url: &str,
+        access_key: &str,
+    ) -> Result<()> {
+        providers::create_provider(
+            &st.db,
+            &st.secrets,
+            ProviderCreateInput {
+                name: "Minih Router".into(),
+                vendor_key: Some(MINIH_ROUTER_VENDOR_KEY.into()),
+                provider_type: Some("custom".into()),
+                protocol: Some("openai_compatible".into()),
+                base_url: Some(base_url.into()),
+                auth_kind: Some("api_key_and_base_url".into()),
+                secret_value: Some(access_key.into()),
+                models: None,
+                default_model_id: None,
+                api_style: None,
+                oauth_account_label: None,
+                headers: None,
+                supports_reasoning: None,
+                supported_thinking_levels: None,
+                context_window: None,
+                max_output_tokens: None,
+                temperature: None,
+            },
+        )?;
         Ok(())
     }
 }

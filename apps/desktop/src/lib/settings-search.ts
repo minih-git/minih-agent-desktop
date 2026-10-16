@@ -294,7 +294,7 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
     keywordKeys: [
       "settings.configSync.experimental",
       "settings.configSync.connectionTitle",
-      "settings.configSync.endpoint",
+      "settings.configSync.accountTitle",
       "settings.configSync.statusTitle",
       "settings.configSync.categoriesTitle",
       "settings.configSync.approvalsTitle",

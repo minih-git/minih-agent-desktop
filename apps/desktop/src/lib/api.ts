@@ -2,7 +2,6 @@ import { projectPlanHistory } from "./plan-history";
 import { guardRemoteInvocation } from "./remote-ipc-safety";
 import { isRemoteSession, safeSessionSummary } from "./remote-session-safety";
 import type {
-  ConfigSyncTestInput,
   ConfigSyncTestResult,
   ScheduledTaskRun,
   ActivationScope,
@@ -750,8 +749,7 @@ export const api = {
   configSyncGetState: () => invoke<ConfigSyncState>(IPC.invoke.configSyncGetState),
   configSyncConfigure: (input: ConfigSyncConfigureInput) =>
     invoke<ConfigSyncState>(IPC.invoke.configSyncConfigure, input),
-  configSyncTest: (input: ConfigSyncTestInput) =>
-    invoke<ConfigSyncTestResult>(IPC.invoke.configSyncTest, input),
+  configSyncTest: () => invoke<ConfigSyncTestResult>(IPC.invoke.configSyncTest),
   configSyncSyncNow: () => invoke<ConfigSyncState>(IPC.invoke.configSyncSyncNow),
   configSyncPause: (paused: boolean) =>
     invoke<ConfigSyncState>(IPC.invoke.configSyncPause, { paused }),

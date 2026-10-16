@@ -18,6 +18,10 @@ mod order;
 mod repository;
 mod validation;
 
+/// Vendor key of the Minih Router account row. The row doubles as the account
+/// system's local identity, so cross-device features treat it specially.
+pub const MINIH_ROUTER_VENDOR_KEY: &str = "minih-router";
+
 pub use catalog::{cache_discovered_models, list_models};
 pub use credentials::get_secret_for_provider;
 pub use model::{

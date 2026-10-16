@@ -196,13 +196,15 @@ by path/hash.
 
 ### 1.3 Portable configuration sync
 
-Host Core stores S3 configuration at `configSyncS3/config` in the key-value
-store. Credentials and the vault key use existing encrypted secret storage.
-`config-sync/s3/<state-id>/base.bin` stores shared and observed baselines;
-`pending.bin` and local recovery points are also authenticated encrypted
-bundles replaced through temp-file rename. Connection or mode changes create
-a fresh state ID. The legacy `configSync` namespace, old credentials and old
-files are preserved, not migrated or deleted. Remote immutable objects remain
+Host Core stores router-account configuration at `configSyncRouter/config` in
+the key-value store. The vault key uses existing encrypted secret storage;
+the account token stays in the providers store. Local state lives under
+`config-sync/router/<state-id>/`: `base.bin` stores shared and observed
+baselines, while `pending.bin` and local recovery points are also
+authenticated encrypted bundles replaced through temp-file rename. Account or
+mode changes create a fresh state ID. The legacy `configSync` namespace and
+the former S3 configuration (kv namespace, credentials and local files) are
+preserved, not migrated or deleted. Remote immutable objects remain
 indefinitely; only the mode-specific history index is capped at 30 revisions.
 This does not change the SQLite schema or transcript retention.
 

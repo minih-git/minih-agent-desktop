@@ -169,22 +169,23 @@ policy above.
 
 ## 4.3 Portable configuration sync
 
-S3 configuration backup/sync is a Host Core network boundary. The renderer
-supplies connection secrets and the vault password only as transient IPC
-inputs, receives redacted status, and never owns the transport or vault key.
-Agent Runtime has no sync implementation. Host validates origin-only endpoints,
-rejects redirects and public plaintext HTTP, constrains paths, bounds streamed
-objects and KDF parameters, and requires strong conditional writes. LAN HTTP
-follows the shared relaxed network policy. There is no WebDAV or append-only
-fallback; only GET 404 is absence, never 403 or 502.
+Configuration backup/sync remains a Host Core network boundary. The renderer
+supplies the vault password only as a transient IPC input, receives redacted
+status, and never owns the transport or vault key. Agent Runtime has no sync
+implementation. Requests authenticate with the account AccessKey as a Bearer
+token over the gateway control plane. Host rejects redirects and public
+plaintext HTTP, constrains object names, bounds streamed objects and KDF
+parameters, and requires strong conditional writes. LAN HTTP follows the
+shared relaxed network policy. There is no WebDAV, S3, or append-only
+fallback; only GET 404 is absence, never 401/403 or 5xx.
 
-Vault contents are authenticated ciphertext. S3 never receives the backup
-password or machine key. SigV4 uses scoped S3 credentials; bucket identity,
-request timing and object sizes remain visible. Credential export and import
-require opt-in. Raw exported secrets are absent from status, preview, conflict
-labels and logs. Provider/MCP secrets use the Host secret store; OAuth sessions
-and cookies are not portable. The local secret store uses encrypted files plus
-a colocated `.machine-key`, not an OS Keychain backend.
+Vault contents are authenticated ciphertext. The Minih Router backend never
+receives the backup password or machine key; it stores authenticated
+ciphertext and learns object names, sizes, and request timing. Credential
+export and import require opt-in. Raw exported secrets are absent from status,
+preview, conflict labels and logs. Provider/MCP secrets use the Host secret
+store; OAuth sessions and cookies are not portable. The local secret store uses
+encrypted files plus a colocated `.machine-key`, not an OS Keychain backend.
 
 Imported commands, endpoints, scripts, skills, plugins, and automations are
 staged behind a digest-bound local approval. Local paths and approvals are

@@ -27,13 +27,13 @@ async fn approve_all(
 }
 
 #[test]
-fn unconfigured_device_uses_s3_defaults() -> Result<()> {
+fn unconfigured_device_reports_no_account() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let mut state = AppState::open(directory.path())?;
     let public = public_state(&mut state)?;
     assert_eq!(public["configured"], false);
     assert_eq!(public["mode"], "sync");
-    assert_eq!(public["pathStyle"], true);
+    assert_eq!(public["accountConnected"], false);
     assert!(load_config(&state)?.is_none());
     Ok(())
 }
@@ -41,7 +41,7 @@ fn unconfigured_device_uses_s3_defaults() -> Result<()> {
 #[tokio::test]
 async fn backup_does_not_apply_remote_settings_and_restore_is_local_only() -> Result<()> {
     if run_in_isolated_process(
-        "config_sync::engine::s3_tests::backup_does_not_apply_remote_settings_and_restore_is_local_only",
+        "config_sync::engine::router_tests::backup_does_not_apply_remote_settings_and_restore_is_local_only",
     )? {
         return Ok(());
     }
@@ -107,7 +107,7 @@ async fn backup_does_not_apply_remote_settings_and_restore_is_local_only() -> Re
 #[tokio::test]
 async fn sync_restore_requires_acknowledgement_and_propagates_as_a_new_revision() -> Result<()> {
     if run_in_isolated_process(
-        "config_sync::engine::s3_tests::sync_restore_requires_acknowledgement_and_propagates_as_a_new_revision",
+        "config_sync::engine::router_tests::sync_restore_requires_acknowledgement_and_propagates_as_a_new_revision",
     )? {
         return Ok(());
     }
@@ -154,7 +154,7 @@ async fn sync_restore_requires_acknowledgement_and_propagates_as_a_new_revision(
 #[tokio::test]
 async fn credentials_opt_out_survives_approval_and_remote_deletion_converges() -> Result<()> {
     if run_in_isolated_process(
-        "config_sync::engine::s3_tests::credentials_opt_out_survives_approval_and_remote_deletion_converges",
+        "config_sync::engine::router_tests::credentials_opt_out_survives_approval_and_remote_deletion_converges",
     )? {
         return Ok(());
     }
@@ -164,15 +164,14 @@ async fn credentials_opt_out_survives_approval_and_remote_deletion_converges() -
     let device_a = configure_test_device(directory_a.path(), &fixture.endpoint).await?;
     let device_b = configure_test_device(directory_b.path(), &fixture.endpoint).await?;
     configure(device_b.clone(), json!({"includeSecrets":false})).await?;
-    let provider_id =
-        {
-            let state = device_a.lock().await;
-            providers::create_provider(&state.db, &state.secrets, serde_json::from_value(json!({
-            "name":"S3 regression", "type":"openai_compatible", "protocol":"openai_compatible",
+    let provider_id = {
+        let state = device_a.lock().await;
+        providers::create_provider(&state.db, &state.secrets, serde_json::from_value(json!({
+            "name":"Router regression", "type":"openai_compatible", "protocol":"openai_compatible",
             "baseUrl":"https://provider.example.test/v1", "authKind":"api_key_and_base_url",
             "secretValue":"source-only-key", "models":[]
         }))?)?.id
-        };
+    };
     let (tx, _rx) = mpsc::unbounded_channel();
     sync_now(device_a.clone(), tx.clone()).await?;
     let received = sync_now(device_b.clone(), tx.clone()).await?;
@@ -216,7 +215,7 @@ async fn credentials_opt_out_survives_approval_and_remote_deletion_converges() -
 #[tokio::test]
 async fn resource_updates_and_packaged_skill_deletion_reach_the_other_device() -> Result<()> {
     if run_in_isolated_process(
-        "config_sync::engine::s3_tests::resource_updates_and_packaged_skill_deletion_reach_the_other_device",
+        "config_sync::engine::router_tests::resource_updates_and_packaged_skill_deletion_reach_the_other_device",
     )? {
         return Ok(());
     }
@@ -316,7 +315,7 @@ async fn resource_updates_and_packaged_skill_deletion_reach_the_other_device() -
 #[tokio::test]
 async fn chosen_conflict_is_published_without_reopening_old_candidates() -> Result<()> {
     if run_in_isolated_process(
-        "config_sync::engine::s3_tests::chosen_conflict_is_published_without_reopening_old_candidates",
+        "config_sync::engine::router_tests::chosen_conflict_is_published_without_reopening_old_candidates",
     )? {
         return Ok(());
     }
@@ -384,7 +383,7 @@ fn legacy_project(entity_id: &str, payload: Value, deleted: bool) -> PortableEnt
 #[tokio::test]
 async fn legacy_project_revision_sync_and_restore_preserve_local_projects() -> Result<()> {
     if run_in_isolated_process(
-        "config_sync::engine::s3_tests::legacy_project_revision_sync_and_restore_preserve_local_projects",
+        "config_sync::engine::router_tests::legacy_project_revision_sync_and_restore_preserve_local_projects",
     )? {
         return Ok(());
     }
@@ -424,7 +423,8 @@ async fn legacy_project_revision_sync_and_restore_preserve_local_projects() -> R
         state.db.set_setting("app", &json!({"theme":"light"}))?;
         let config = load_config(&state)?.expect("configured device");
         let key = local_vault_key(&state, &config)?.expect("unlocked device");
-        let transport = configured_transport(&state, &config)?;
+        let account = configured_account(&state, &config)?;
+        let transport = account_transport(&account).await?;
         let mut snapshot = domains::capture(
             &mut state,
             &key,
@@ -506,7 +506,7 @@ async fn legacy_project_revision_sync_and_restore_preserve_local_projects() -> R
 #[tokio::test]
 async fn legacy_project_config_and_pending_approval_do_not_block_sync() -> Result<()> {
     if run_in_isolated_process(
-        "config_sync::engine::s3_tests::legacy_project_config_and_pending_approval_do_not_block_sync",
+        "config_sync::engine::router_tests::legacy_project_config_and_pending_approval_do_not_block_sync",
     )? {
         return Ok(());
     }
