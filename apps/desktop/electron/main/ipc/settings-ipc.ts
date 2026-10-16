@@ -97,7 +97,8 @@ export function registerSettingsIpc({
       .preventScreenSleep === "boolean") {
       applyPreventScreenSleep(validatedSettings as { preventScreenSleep: boolean });
     }
-    await applyNetworkProxyFromAppSettings(validatedSettings);
+    // Settings writes are patches; omitted network sections keep their values.
+    await applyNetworkProxyFromAppSettings(prospectiveSettings);
     if (sidecar) {
       try {
         await sidecar.call("sidecar.configure", {

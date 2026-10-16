@@ -86,6 +86,12 @@ cannot carry userinfo (issue #490). host-core marketplace `curl` gets explicit
 proxy arguments and does **not** inherit proxy env, so workspace Bash cannot
 see proxy credentials. Direct mode bypasses the System relay. TLS certificate
 verification remains enabled on every route.
+Settings writes are partial patches. Main applies the current settings merged
+with the validated patch when updating its proxy and endpoint policy, and sends
+the resulting proxy to the sidecar. Saving unrelated preferences must not reset
+the route used by model discovery, Router account reads, or provider calls;
+omitting either network section preserves its current value.
+
 Marketplace curl diagnostics prefer UTF-8 and fall back to the active Windows
 ANSI code page before crossing the UTF-8 RPC boundary, so localized Schannel
 errors remain readable instead of becoming replacement characters.
