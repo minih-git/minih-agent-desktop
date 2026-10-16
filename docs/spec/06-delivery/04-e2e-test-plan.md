@@ -13715,9 +13715,15 @@ are withdrawn with ADR 0165.
      TCP chunk. Confirm a subsequent marketplace refresh and a models.dev
      catalog refresh use the proxy (host-core curl `--proxy`, Electron
      `net.fetch`), and confirm a loopback URL in Bypass is not proxied.
+     Change the language and theme without resubmitting the proxy fields, then
+     refresh a provider model list and the Minih Router account/model plaza.
+     Confirm those requests still reach the configured proxy, the saved proxy
+     and bypass list remain unchanged, and sidecar configuration keeps Custom.
+     A proxy-only save must also preserve the stored endpoint policy.
   6. Switch to Direct. Confirm Chromium returns to `mode: "direct"`, provider
      and marketplace traffic bypass the System relay, and workspace Bash does
      not inherit proxy variables from the setting.
+     Save another unrelated preference and confirm Direct remains in effect.
   7. Switch to System. Confirm Chromium returns to `mode: "system"` and send a
      provider request and marketplace refresh. Confirm both follow the OS/PAC
      route selected for each destination, including ordered proxy-to-direct
@@ -13739,7 +13745,8 @@ are withdrawn with ADR 0165.
 - **Milestone**: M5
 - **Status**: Custom-path unit coverage exists (`network-proxy.test.ts`,
   `node-proxy.test.ts`, `authenticated-proxy-relay.test.ts`,
-  `settings-general.test.mjs`, host-core `network_proxy` tests); malformed
+  `settings-general.test.mjs`, `settings-network-proxy-user-path.test.mjs`,
+  host-core `network_proxy` tests); malformed
   credentials and unsupported SOCKS4 schemes are covered by shared parser
   tests. `system-proxy-relay.test.ts` covers authenticated provider traffic,
   PAC proxy fallback, HTTP proxy forwarding, and scheme detection on
