@@ -1,0 +1,370 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+const {
+  FILE_MANAGER_PLUGIN_TAB,
+  activateWorkPanelTabState,
+  browserPluginTab,
+  browserPluginTabForReveal,
+  closeWorkPanelTabState,
+  createWorkPanelFileRequest,
+  emptyWorkPanelContext,
+  fileWorkPanelTab,
+  hasPluginView,
+  isKnownWorkPanelTab,
+  isToolWorkPanelTab,
+  normalizeWorkPanelFilePath,
+  newWorkPanelTab,
+  openWorkPanelTabState,
+  pluginWorkPanelTab,
+  preferredFileWorkPanelTab,
+  replaceWorkPanelTabState,
+  reorderWorkPanelTabsState,
+  sanitizeWorkPanelTabsState,
+  subagentTabDisplayLabels,
+  subagentWorkPanelTab,
+  switchWorkPanelContextState,
+  toolWorkPanelTab,
+} = await import("../src/lib/work-panel-tabs.ts");
+
+test("work panel tabs open on demand and deduplicate by resource", () => {
+  const empty = { tabs: [], activeTabId: null };
+  const review = openWorkPanelTabState(empty, toolWorkPanelTab("review"));
+  const file = openWorkPanelTabState(review, fileWorkPanelTab("src/App.tsx"));
+  const reopened = openWorkPanelTabState(file, toolWorkPanelTab("review"));
+
+  assert.deepEqual(reopened.tabs.map((tab) => tab.id), ["review", "file:src/App.tsx"]);
+  assert.equal(reopened.activeTabId, "review");
+});
+
+test("new tabs are unique launcher pages and replace themselves with a tool", () => {
+  const first = newWorkPanelTab();
+  const second = newWorkPanelTab();
+  assert.equal(first.kind, "new");
+  assert.equal(second.kind, "new");
+  assert.match(first.id, /^new:/);
+  assert.notEqual(first.id, second.id);
+
+  const state = openWorkPanelTabState(
+    openWorkPanelTabState({ tabs: [], activeTabId: null }, first),
+    second,
+  );
+  const browser = browserPluginTab("https://example.com");
+  const replaced = replaceWorkPanelTabState(
+    state,
+    second.id,
+    browser,
+  );
+
+  assert.deepEqual(replaced.tabs.map((tab) => tab.id), [first.id, browser.id]);
+  assert.equal(replaced.activeTabId, browser.id);
+  assert.equal(replaced.tabs.find((tab) => tab.id === first.id)?.kind, "new");
+});
+
+test("selecting an already-open tool removes only the source launcher tab", () => {
+  const browser = browserPluginTab("https://example.com");
+  const launcher = newWorkPanelTab();
+  const state = {
+    tabs: [browser, launcher],
+    activeTabId: launcher.id,
+  };
+  const replaced = replaceWorkPanelTabState(state, launcher.id, browser);
+
+  assert.deepEqual(replaced.tabs, [browser]);
+  assert.equal(replaced.activeTabId, browser.id);
+});
+
+test("Browser reveal reuses the originating session's browser tab", () => {
+  const first = browserPluginTab("https://example.com/first");
+  const latest = browserPluginTab("https://example.com/latest");
+  const tabs = [first, toolWorkPanelTab("review"), latest];
+
+  assert.equal(browserPluginTabForReveal(tabs, "review", first.id), first);
+  assert.equal(browserPluginTabForReveal(tabs, latest.id), latest);
+  assert.equal(browserPluginTabForReveal([], null).id, browserPluginTab().id);
+});
+
+test("file tabs normalize lexical paths and remain distinct by resource", () => {
+  const first = fileWorkPanelTab("src\\App.tsx");
+  const equivalent = fileWorkPanelTab("./src//components/../App.tsx");
+  const second = fileWorkPanelTab("test/App.tsx");
+
+  assert.equal(first.id, "file:src/App.tsx");
+  assert.equal(equivalent.id, first.id);
+  assert.notEqual(first.id, second.id);
+  assert.equal(normalizeWorkPanelFilePath("../src/../App.tsx"), "../App.tsx");
+  assert.equal(normalizeWorkPanelFilePath("/repo/./src/../App.tsx"), "/repo/App.tsx");
+});
+
+test("file-view requests preserve a positioned file tab", () => {
+  const tab = fileWorkPanelTab("src/App.tsx", "text/typescript", {
+    line: 65,
+    column: 4,
+  });
+
+  assert.deepEqual(createWorkPanelFileRequest(tab, 7), {
+    path: "src/App.tsx",
+    seq: 7,
+    mimeType: "text/typescript",
+    line: 65,
+    column: 4,
+  });
+  assert.equal(createWorkPanelFileRequest(toolWorkPanelTab("review"), 8), null);
+});
+
+test("closing the active tab selects its right neighbor then its left", () => {
+  const state = {
+    tabs: [
+      toolWorkPanelTab("review"),
+      fileWorkPanelTab("src/App.tsx"),
+      browserPluginTab(),
+    ],
+    activeTabId: "file:src/App.tsx",
+  };
+  const middleClosed = closeWorkPanelTabState(state, "file:src/App.tsx");
+  const endClosed = closeWorkPanelTabState(middleClosed, browserPluginTab().id);
+
+  assert.equal(middleClosed.activeTabId, browserPluginTab().id);
+  assert.equal(endClosed.activeTabId, "review");
+});
+
+test("closing an inactive tab preserves selection and the last close empties state", () => {
+  const state = {
+    tabs: [toolWorkPanelTab("review"), browserPluginTab()],
+    activeTabId: "review",
+  };
+  const inactiveClosed = closeWorkPanelTabState(state, browserPluginTab().id);
+  const empty = closeWorkPanelTabState(inactiveClosed, "review");
+
+  assert.equal(inactiveClosed.activeTabId, "review");
+  assert.deepEqual(empty, { tabs: [], activeTabId: null });
+});
+
+test("activation ignores stale tab ids", () => {
+  const state = { tabs: [toolWorkPanelTab("review")], activeTabId: "review" };
+  assert.equal(activateWorkPanelTabState(state, "missing"), state);
+});
+
+test("reordering tabs inserts before or after a target and preserves selection", () => {
+  const review = toolWorkPanelTab("review");
+  const file = fileWorkPanelTab("src/App.tsx");
+  const browser = browserPluginTab();
+  const state = {
+    tabs: [review, file, browser],
+    activeTabId: file.id,
+  };
+
+  const movedAfter = reorderWorkPanelTabsState(state, review.id, browser.id, true);
+  assert.deepEqual(movedAfter.tabs.map((tab) => tab.id), [file.id, browser.id, review.id]);
+  assert.equal(movedAfter.activeTabId, file.id);
+
+  const movedBefore = reorderWorkPanelTabsState(movedAfter, review.id, file.id, false);
+  assert.deepEqual(movedBefore.tabs.map((tab) => tab.id), [review.id, file.id, browser.id]);
+  assert.equal(movedBefore.activeTabId, file.id);
+});
+
+test("reordering an unknown or identical tab is a no-op", () => {
+  const state = {
+    tabs: [toolWorkPanelTab("review"), browserPluginTab()],
+    activeTabId: "review",
+  };
+
+  assert.equal(
+    reorderWorkPanelTabsState(state, "missing", "review", false),
+    state,
+  );
+  assert.equal(
+    reorderWorkPanelTabsState(state, "review", "review", false),
+    state,
+  );
+});
+
+test("unknown retained tabs are discarded without losing a known selection", () => {
+  const stale = { id: "removed", kind: "removed" };
+  const selected = sanitizeWorkPanelTabsState({
+    tabs: [stale, browserPluginTab(), toolWorkPanelTab("review")],
+    activeTabId: browserPluginTab().id,
+  });
+  const staleSelected = sanitizeWorkPanelTabsState({
+    tabs: [browserPluginTab(), stale, toolWorkPanelTab("review")],
+    activeTabId: "removed",
+  });
+
+  assert.equal(isKnownWorkPanelTab(stale), false);
+  assert.deepEqual(selected.tabs.map((tab) => tab.id), [
+    browserPluginTab().id,
+    "review",
+  ]);
+  assert.equal(selected.activeTabId, browserPluginTab().id);
+  assert.equal(staleSelected.activeTabId, "review");
+});
+
+test("only plugin views are launchable tools", () => {
+  assert.equal(isToolWorkPanelTab(browserPluginTab()), true);
+  assert.equal(isToolWorkPanelTab(toolWorkPanelTab("review")), false);
+  assert.equal(isToolWorkPanelTab(fileWorkPanelTab("README.md")), false);
+  assert.equal(isToolWorkPanelTab(pluginWorkPanelTab("pi.file-manager", "manager")), true);
+  assert.equal(isKnownWorkPanelTab({ id: "browser", kind: "browser" }), false);
+  assert.equal(isKnownWorkPanelTab(newWorkPanelTab()), true);
+});
+
+test("a host-chosen project file prefers the bundled file view", () => {
+  // A plan or goal artifact is project markdown the host opens for the user, so
+  // it lands in the same view the user's own file work uses. The bundle is
+  // never required: without that view the host file tab remains.
+  const fileView = { pluginId: "pi.file-manager", viewId: "manager" };
+  const openedInView = preferredFileWorkPanelTab("plans/plan.md", [fileView]);
+
+  assert.equal(hasPluginView([fileView], FILE_MANAGER_PLUGIN_TAB), true);
+  assert.equal(
+    hasPluginView(
+      [{ pluginId: "pi.browser", viewId: "browser" }],
+      FILE_MANAGER_PLUGIN_TAB,
+    ),
+    false,
+  );
+  assert.equal(openedInView.kind, "plugin");
+  assert.equal(openedInView.id, "plugin:pi.file-manager/manager");
+  assert.equal(openedInView.location, "plans/plan.md");
+  assert.deepEqual(
+    preferredFileWorkPanelTab("plans/plan.md", []),
+    fileWorkPanelTab("plans/plan.md"),
+  );
+});
+
+test("empty work panel context has no visible or retained resource state", () => {
+  assert.deepEqual(emptyWorkPanelContext(), {
+    open: false,
+    tabs: [],
+    activeTabId: null,
+    fileRequest: null,
+  });
+});
+
+test("switching work panel contexts isolates session tabs and visible state", () => {
+  const sessionA = {
+    open: true,
+    tabs: [browserPluginTab(), fileWorkPanelTab("src/App.tsx")],
+    activeTabId: "file:src/App.tsx",
+    fileRequest: { path: "src/App.tsx", seq: 4 },
+  };
+  const sessionB = {
+    open: false,
+    tabs: [browserPluginTab()],
+    activeTabId: browserPluginTab().id,
+    fileRequest: null,
+  };
+
+  const toB = switchWorkPanelContextState(
+    { "session-b": sessionB },
+    "session-a",
+    sessionA,
+    "session-b",
+  );
+  assert.deepEqual(toB.contexts["session-a"], sessionA);
+  assert.deepEqual(toB.visible, sessionB);
+
+  const backToA = switchWorkPanelContextState(
+    toB.contexts,
+    "session-b",
+    toB.visible,
+    "session-a",
+  );
+  assert.deepEqual(backToA.contexts["session-b"], sessionB);
+  assert.deepEqual(backToA.visible, sessionA);
+  assert.notEqual(backToA.visible.tabs, toB.visible.tabs);
+});
+
+test("switching to a session without context returns an isolated empty state", () => {
+  const sessionA = {
+    open: true,
+    tabs: [toolWorkPanelTab("review")],
+    activeTabId: "review",
+    fileRequest: null,
+  };
+  const switched = switchWorkPanelContextState(
+    {},
+    "session-a",
+    sessionA,
+    "session-new",
+  );
+
+  assert.deepEqual(switched.contexts["session-a"], sessionA);
+  assert.deepEqual(switched.visible, emptyWorkPanelContext());
+  switched.visible.tabs.push(browserPluginTab());
+  assert.deepEqual(switched.contexts["session-a"].tabs, sessionA.tabs);
+});
+
+test("a newer retained artifact is not overwritten by a stale visible projection", () => {
+  const staleVisible = emptyWorkPanelContext();
+  const retained = {
+    open: true,
+    tabs: [toolWorkPanelTab("review")],
+    activeTabId: "review",
+    fileRequest: null,
+  };
+  const switched = switchWorkPanelContextState(
+    { "session-a": retained },
+    "session-a",
+    staleVisible,
+    "session-b",
+  );
+
+  assert.deepEqual(switched.contexts["session-a"], retained);
+  assert.deepEqual(switched.visible, emptyWorkPanelContext());
+});
+
+test("subagent tabs key by delegation and carry the captured agent name", () => {
+  const tab = subagentWorkPanelTab("del-1", "explorer");
+  assert.equal(tab.id, "subagent:del-1");
+  assert.equal(tab.kind, "subagent");
+  assert.equal(tab.resource, "del-1");
+  assert.equal(tab.label, "explorer");
+  const unnamed = subagentWorkPanelTab("del-2");
+  assert.equal(unnamed.label, undefined);
+});
+
+test("subagent tabs reopen in place and close like any resource tab", () => {
+  const empty = { tabs: [], activeTabId: null };
+  const first = openWorkPanelTabState(empty, subagentWorkPanelTab("del-1", "explorer"));
+  const second = openWorkPanelTabState(
+    first,
+    subagentWorkPanelTab("del-2", "explorer"),
+  );
+  assert.equal(second.tabs.length, 2);
+  assert.equal(second.activeTabId, "subagent:del-2");
+  // Re-opening the same delegation reuses its tab instead of stacking one.
+  const reopened = openWorkPanelTabState(second, subagentWorkPanelTab("del-1"));
+  assert.equal(reopened.tabs.length, 2);
+  assert.equal(reopened.activeTabId, "subagent:del-1");
+  const closed = closeWorkPanelTabState(reopened, "subagent:del-1");
+  assert.deepEqual(
+    closed.tabs.map((tab) => tab.id),
+    ["subagent:del-2"],
+  );
+  assert.equal(closed.activeTabId, "subagent:del-2");
+});
+
+test("the sanitizer keeps subagent tabs across session switches", () => {
+  const state = {
+    tabs: [subagentWorkPanelTab("del-1", "explorer"), toolWorkPanelTab("review")],
+    activeTabId: "subagent:del-1",
+  };
+  assert.equal(isKnownWorkPanelTab({ id: "x", kind: "subagent" }), true);
+  assert.deepEqual(sanitizeWorkPanelTabsState(state), state);
+  const switched = switchWorkPanelContextState(
+    {},
+    undefined,
+    { ...state, open: true, fileRequest: null },
+    "session-b",
+  );
+  assert.deepEqual(switched.visible.tabs, []);
+});
+
+test("repeated subagent labels gain a strip-order suffix, singletons stay bare", () => {
+  assert.deepEqual(
+    subagentTabDisplayLabels(["explorer", "reviewer", "explorer", "explorer"]),
+    ["explorer#1", "reviewer", "explorer#2", "explorer#3"],
+  );
+  assert.deepEqual(subagentTabDisplayLabels(["explorer"]), ["explorer"]);
+});

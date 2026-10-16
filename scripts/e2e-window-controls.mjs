@@ -1,0 +1,412 @@
+#!/usr/bin/env node
+/** Window controls must remain hit-testable through the real work-panel flow.
+ * Uses a throwaway profile, production preload/IPC and the built application.
+ * Platform CSS emulation is explicitly not native macOS/Linux qualification.
+ */
+import assert from "node:assert/strict";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+import { once } from "node:events";
+import { mkdtemp, rm, writeFile, mkdir, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { assertDesktopBuild, repositoryRoot, resolveElectronBinary } from "./e2e/boot.mjs";
+import { Host, resolveHostBinary } from "./e2e/host.mjs";
+
+const root = repositoryRoot();
+const radiusTokens = await readFile(join(root, "apps/desktop/src/styles/tokens.css"), "utf8");
+const mediumRadius = radiusTokens.match(/^\s*--radius-md:\s*(\d+(?:\.\d+)?)px;/m);
+assert.ok(mediumRadius, "the global medium radius token is defined");
+const defaultWindowCornerRadius = Number(mediumRadius[1]);
+const runNativeEdgeDrag = process.argv.includes("--native-edge-drag");
+const execFileAsync = promisify(execFile);
+const { appDir } = assertDesktopBuild(root);
+const { electronBinary } = resolveElectronBinary(root);
+const binary = resolveHostBinary();
+const temp = await mkdtemp(join(tmpdir(), "pi-window-controls-"));
+const port = Number(process.env.MINIH_AGENT_CHROME_CDP_PORT || 9347);
+const pending = new Map();
+let sequence = 0;
+let socket;
+let child;
+let output = "";
+let failed = false;
+
+async function waitFor(predicate, label) {
+  const end = Date.now() + 30_000;
+  while (Date.now() < end) {
+    if (await predicate()) return;
+    await delay(100);
+  }
+  throw new Error(`Timed out: ${label}`);
+}
+function send(method, params = {}) {
+  const id = ++sequence;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      reject(new Error(`CDP timeout: ${method}`));
+    }, 15_000);
+    pending.set(id, { resolve, reject, timer });
+    socket.send(JSON.stringify({ id, method, params }));
+  });
+}
+async function evaluate(expression) {
+  const result = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+  if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
+  return result.result.value;
+}
+async function settle() {
+  await evaluate(`(async () => {
+    await new Promise(requestAnimationFrame);
+    await Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity)
+      .map(a => a.finished.catch(() => {})));
+    await new Promise(requestAnimationFrame);
+  })()`);
+}
+async function click(selector, waitForPaint = true) {
+  const point = await evaluate(`(() => {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (!el) throw new Error('Missing target: ' + ${JSON.stringify(selector)});
+    const r = el.getBoundingClientRect();
+    const x = r.x + r.width / 2, y = r.y + r.height / 2;
+    if (!el.contains(document.elementFromPoint(x, y))) throw new Error('Obscured target: ' + ${JSON.stringify(selector)} + ' by ' + document.elementFromPoint(x, y)?.className);
+    return { x, y };
+  })()`);
+  for (const type of ["mousePressed", "mouseReleased"]) {
+    await send("Input.dispatchMouseEvent", { type, ...point, button: "left", clickCount: 1 });
+  }
+  if (waitForPaint) await settle();
+}
+async function checkControls(label) {
+  const result = await evaluate(`(() => {
+    const buttons = [...document.querySelectorAll('.window-control-btn')];
+    const band = document.querySelector('.window-controls');
+    const header = document.querySelector('.work-panel-header');
+    if (band && header && getComputedStyle(band).backgroundColor !== getComputedStyle(header).backgroundColor)
+      throw new Error('Window-control background differs from the adjacent panel header');
+    return buttons.map(el => {
+      const r = el.getBoundingClientRect();
+      const x = r.x + r.width / 2, y = r.y + r.height / 2;
+      return { label: el.getAttribute('aria-label'), visible: r.width > 0 && r.height > 0 &&
+        x >= 0 && x < innerWidth && y >= 0 && y < innerHeight,
+        reachable: el.contains(document.elementFromPoint(x, y)) };
+    });
+  })()`);
+  const ok = process.platform === "darwin"
+    ? result.length === 0
+    : result.length === 3 && result.every(r => r.visible && r.reachable);
+  console.log(`${ok ? "PASS" : "FAIL"} ${label}: ${JSON.stringify(result)}`);
+  if ((!ok || label === "panel opened") && process.env.MINIH_AGENT_CHROME_ARTIFACT_DIR) {
+    const dir = resolve(process.env.MINIH_AGENT_CHROME_ARTIFACT_DIR);
+    await mkdir(dir, { recursive: true });
+    const shot = await send("Page.captureScreenshot");
+    await writeFile(join(dir, ok ? "window-controls-fixed.png" : "window-controls-failure.png"), Buffer.from(shot.data, "base64"));
+  }
+  assert.ok(ok, label);
+}
+
+async function checkWindowsRoundedCorners(
+  label,
+  rounded = true,
+  radius = rounded ? defaultWindowCornerRadius : 0,
+) {
+  if (process.platform !== "win32") return;
+  let corners;
+  let probeError;
+  await evaluate(`window.minihAgent.invoke('minih-agent-desktop/menu/nativeAction', { action: 'restoreMainWindow' })`);
+  await waitFor(() => evaluate(`document.hasFocus()`), `${label} window focused`);
+  try {
+    await waitFor(async () => {
+      try {
+        const { stdout } = await execFileAsync("pwsh.exe", [
+          "-NoLogo", "-NoProfile", "-File",
+          fileURLToPath(new URL("./e2e/probe-window-corners.ps1", import.meta.url)),
+          String(child.pid), String(radius),
+        ]);
+        corners = JSON.parse(stdout.trim());
+        probeError = undefined;
+        if (corners.windowsBuild >= 22000) {
+          return corners.cornerMode === "dwm-native" &&
+            corners.innerCornerOwned === true && corners.thickFrameStyle === false &&
+            corners.nativeHitSampleCount > 0;
+        }
+        return corners.topLeftCutout === rounded && corners.topRightCutout === rounded &&
+          corners.bottomLeftCutout === rounded && corners.bottomRightCutout === rounded &&
+          corners.innerCornerOwned === true && corners.gridMismatches === 0 &&
+          corners.insideSamples > 0 && (!rounded || corners.outsideSamples > 0);
+      } catch (error) {
+        probeError = String(error);
+        return false;
+      }
+    }, label);
+  } catch (error) {
+    throw new Error(`${label}: ${JSON.stringify(corners)}; ${probeError ?? String(error)}`);
+  }
+  if (corners.windowsBuild < 22000) {
+    assert.deepEqual([
+      corners.topLeftCutout,
+      corners.topRightCutout,
+      corners.bottomLeftCutout,
+      corners.bottomRightCutout,
+    ], [rounded, rounded, rounded, rounded], label);
+  }
+  assert.equal(corners.innerCornerOwned, true, label);
+  assert.equal(corners.thickFrameStyle, false, label);
+  if (corners.windowsBuild < 22000) {
+    assert.equal(corners.gridMismatches, 0, `${label}: native corner hit grid`);
+  }
+  assert.ok(corners.insideSamples > 0, `${label}: inside hit samples`);
+  if (rounded && corners.windowsBuild < 22000) {
+    assert.ok(corners.outsideSamples > 0, `${label}: outside click-through samples`);
+  }
+  if (corners.windowsBuild >= 22000) {
+    console.log(`INFO ${label}: native DWM corner hit behavior recorded: ${JSON.stringify(corners.nativeCornerHitBehavior)}`);
+  }
+  console.log(`PASS ${label}: ${JSON.stringify(corners)}`);
+}
+
+async function checkNativeWindowResizes(edges) {
+  if (process.platform !== "win32") return;
+  if (!runNativeEdgeDrag) {
+    console.log("SKIP native edge drag: run with --native-edge-drag on an interactive Windows desktop");
+    return;
+  }
+  for (const edge of edges) {
+    await evaluate(`window.minihAgent.invoke('minih-agent-desktop/menu/nativeAction', { action: 'restoreMainWindow' })`);
+    await waitFor(() => evaluate(`document.hasFocus()`), `${edge} drag window focused`);
+    const { stdout } = await execFileAsync("pwsh.exe", [
+      "-NoLogo", "-NoProfile", "-File",
+      fileURLToPath(new URL("./e2e/drag-window-edge.ps1", import.meta.url)),
+      String(child.pid), edge,
+    ]);
+    const bounds = JSON.parse(stdout.trim());
+    assert.equal(bounds.restored, true, `restore after ${edge} drag: ${stdout}`);
+    if (edge === "right") {
+      assert.ok(Math.abs(bounds.afterWidth - bounds.beforeWidth) >= 20, `right edge: ${stdout}`);
+      assert.equal(bounds.afterX, bounds.beforeX);
+      assert.equal(bounds.afterHeight, bounds.beforeHeight);
+    } else if (edge === "left") {
+      assert.ok(Math.abs(bounds.afterWidth - bounds.beforeWidth) >= 20, `left edge: ${stdout}`);
+      assert.ok(Math.abs(bounds.afterX + bounds.afterWidth - bounds.beforeX - bounds.beforeWidth) <= 2, `left anchor: ${stdout}`);
+      assert.equal(bounds.afterHeight, bounds.beforeHeight);
+    } else if (edge === "bottom") {
+      assert.ok(Math.abs(bounds.afterHeight - bounds.beforeHeight) >= 20, `bottom edge: ${stdout}`);
+      assert.equal(bounds.afterY, bounds.beforeY);
+      assert.equal(bounds.afterWidth, bounds.beforeWidth);
+    } else if (edge === "bottom-left") {
+      // Win32 can reposition a synthetic cursor during a native corner drag.
+      // Both axes must move while the opposite edges remain anchored.
+      assert.ok(Math.abs(bounds.afterWidth - bounds.beforeWidth) >= 8, `corner width: ${stdout}`);
+      assert.ok(Math.abs(bounds.afterHeight - bounds.beforeHeight) >= 8, `corner height: ${stdout}`);
+      assert.ok(Math.abs(bounds.afterX + bounds.afterWidth - bounds.beforeX - bounds.beforeWidth) <= 2, `corner right anchor: ${stdout}`);
+      assert.equal(bounds.afterY, bounds.beforeY);
+    } else if (edge === "left-min") {
+      assert.ok(bounds.afterWidth >= 800 && bounds.afterWidth <= 810, `minimum width: ${stdout}`);
+    } else {
+      assert.ok(bounds.afterHeight >= 560 && bounds.afterHeight <= 570, `minimum height: ${stdout}`);
+    }
+    console.log(`PASS native ${edge} drag: ${stdout.trim()}`);
+  }
+  await checkWindowsRoundedCorners("resized window corner behavior remains correct");
+}
+
+try {
+  const radiusPluginPath = join(temp, "window-radius-plugin");
+  await mkdir(radiusPluginPath, { recursive: true });
+  await writeFile(join(radiusPluginPath, "manifest.json"), JSON.stringify({
+    schemaVersion: 1,
+    id: "demo.window-radius",
+    name: "Window radius E2E",
+    version: "0.1.0",
+    main: "main.js",
+    permissions: ["ui.theme", "ui.window.appearance"],
+    contributes: {
+      themes: [{ id: "square", label: "Square window", base: "dark", path: "theme.css" }],
+      windowAppearance: { cornerRadius: 0 },
+    },
+  }));
+  await writeFile(join(radiusPluginPath, "main.js"), "// E2E theme fixture.\n");
+  await writeFile(join(radiusPluginPath, "theme.css"), ":root[data-theme=\"dark\"] { --ds-bg-primary: #181818; }\n");
+  const host = new Host(binary, join(temp, "data"));
+  let sessionId;
+  try {
+    await host.start();
+    await host.call("workspace.set", { path: temp });
+    const { session } = await host.call("session.create", { title: "Window controls regression" });
+    sessionId = session.id;
+  } finally {
+    await host.stop();
+  }
+  const env = { ...process.env, MINIH_AGENT_DATA_DIR: join(temp, "data"),
+    MINIH_AGENT_HOST_BIN: binary, MINIH_AGENT_START_MAXIMIZED: "0",
+    MINIH_AGENT_MCP_CONTROL: "0", ELECTRON_RENDERER_URL: "" };
+  delete env.ELECTRON_RUN_AS_NODE;
+  child = spawn(electronBinary, [`--remote-debugging-port=${port}`, `--user-data-dir=${join(temp, "profile")}`, "."],
+    { cwd: appDir, env, stdio: ["ignore", "pipe", "pipe"] });
+  child.stdout.on("data", data => { output = (output + data).slice(-4000); });
+  child.stderr.on("data", data => { output = (output + data).slice(-4000); });
+  let target;
+  await waitFor(async () => {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1000) });
+      target = (await response.json()).find(t => t.type === "page" && t.url.includes("out/renderer/index.html") && !t.url.includes("surface="));
+      return !!target;
+    } catch { return false; }
+  }, "renderer target");
+  socket = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
+  socket.onmessage = event => {
+    const message = JSON.parse(event.data);
+    const entry = pending.get(message.id);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    pending.delete(message.id);
+    if (message.error) entry.reject(new Error(JSON.stringify(message.error)));
+    else entry.resolve(message.result);
+  };
+  await waitFor(() => evaluate(`!!document.querySelector('.main-pane') && !document.querySelector('.startup-splash')`), "ready shell");
+  await evaluate(`window.__MINIH_AGENT__.selectSession(${JSON.stringify(sessionId)})`);
+  await waitFor(() => evaluate(`document.querySelector('.app-work-panel-toggle')?.disabled === false`), "active session");
+  await settle();
+  await checkControls("panel closed");
+    await checkWindowsRoundedCorners("normal window corner behavior");
+  await checkNativeWindowResizes(["left-min", "bottom-min"]);
+  await click(".app-work-panel-toggle");
+  await waitFor(() => evaluate(`!!document.querySelector('.work-panel')`), "panel opened");
+  await settle();
+  await checkControls("panel opened");
+  await checkNativeWindowResizes(["right", "left", "bottom", "bottom-left"]);
+  if (process.platform !== "darwin") {
+    for (const platform of ["win32", "linux"]) {
+      for (const theme of ["light", "dark"]) {
+        await evaluate(`document.documentElement.dataset.platform = ${JSON.stringify(platform)};
+          window.__MINIH_AGENT__.setThemeAttr(${JSON.stringify(theme)})`);
+        await settle();
+        await checkControls(`${platform}/${theme} CSS with panel open (emulated)`);
+      }
+    }
+    await evaluate(`document.documentElement.dataset.platform = ${JSON.stringify(process.platform)}`);
+  }
+  await click('[data-nav="toggle-sidebar"]');
+  await checkControls("sidebar toggled with panel open");
+  await waitFor(() => evaluate(`!!document.querySelector('.work-panel-maximize')`), "work-panel maximize action");
+  await click(".work-panel-maximize");
+  await waitFor(() => evaluate(`!!document.querySelector('.work-panel-maximized')`), "panel maximized");
+  await checkControls("panel maximized");
+  await click('[data-nav="toggle-sidebar"]');
+  await checkControls("sidebar toggled with panel maximized");
+  await click(".work-panel-maximize");
+  await checkControls("panel restored");
+  await evaluate(`window.minihAgent.invoke('minih-agent-desktop/menu/nativeAction', {action:'toggleFullScreen'})`);
+  await waitFor(() => evaluate(`window.minihAgent.invoke('minih-agent-desktop/menu/nativeAction', {action:'restoreMainWindow'}).then(s => s.ok && s.data.fullScreen)`), "native fullscreen");
+  await settle();
+  await checkControls("native fullscreen with panel open");
+  if (process.platform === "win32") {
+    const { stdout } = await execFileAsync("pwsh.exe", [
+      "-NoLogo", "-NoProfile", "-File",
+      fileURLToPath(new URL("./e2e/probe-fullscreen-taskbar.ps1", import.meta.url)),
+      String(child.pid),
+    ]);
+    assert.equal(JSON.parse(stdout.trim()).appCoversTaskbar, true, `fullscreen covers the taskbar: ${stdout.trim()}`);
+    console.log("PASS fullscreen covers the taskbar");
+  }
+  await evaluate(`window.minihAgent.invoke('minih-agent-desktop/menu/nativeAction', {action:'toggleFullScreen'})`);
+  await waitFor(() => evaluate(`window.minihAgent.invoke('minih-agent-desktop/menu/nativeAction', {action:'restoreMainWindow'}).then(s => s.ok && !s.data.fullScreen)`), "leave native fullscreen");
+  await settle();
+  if (process.platform !== "darwin") {
+    await click(".window-control-btn:nth-child(2)");
+    await waitFor(() => evaluate(`window.minihAgent.invoke('minih-agent-desktop/window/control', {action:'getState'}).then(s => s.ok && s.data.maximized)`), "native window maximized");
+    await checkControls("native window maximized with panel open");
+    await click(".window-control-btn:nth-child(2)");
+    await waitFor(() => evaluate(`window.minihAgent.invoke('minih-agent-desktop/window/control', {action:'getState'}).then(s => s.ok && !s.data.maximized)`), "native window restored");
+  }
+  await click(".app-work-panel-toggle");
+  await waitFor(() => evaluate(`!document.querySelector('.work-panel')`), "panel closed again");
+  await checkControls("panel closed again");
+  await evaluate(`window.__MINIH_AGENT__.setPage('settings')`);
+  await waitFor(() => evaluate(`!!document.querySelector('.settings-mode')`), "settings opened");
+  await settle();
+  await checkControls("settings route");
+  await evaluate(`window.__MINIH_AGENT__.setPage('chat')`);
+  await settle();
+  await click(".app-work-panel-toggle");
+  await settle();
+  await checkControls("panel reopened after settings");
+  if (process.platform === "win32") {
+    const scheme = await evaluate(`document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'`);
+    const setRadius = (radius) => evaluate(`window.minihAgent.invoke(
+      'minih-agent-desktop/window/setBackgroundColor',
+      { theme: ${JSON.stringify(scheme)}, cornerRadius: ${radius} }
+    )`);
+    assert.equal((await setRadius(0)).ok, true);
+    await checkWindowsRoundedCorners("theme can request square corners", false);
+    assert.equal((await setRadius(25)).ok, false, "out-of-range radius is rejected");
+    await checkWindowsRoundedCorners("invalid radius leaves the current shape", false);
+    assert.equal((await setRadius(defaultWindowCornerRadius)).ok, true);
+    await checkWindowsRoundedCorners("theme switch restores the global radius token");
+    assert.equal((await setRadius(24)).ok, true);
+    await checkWindowsRoundedCorners("authorized theme can request a 24 DIP rounded preference", true, 24);
+    assert.equal((await setRadius(defaultWindowCornerRadius)).ok, true);
+    await checkWindowsRoundedCorners("returning to the default radius restores the 12 DIP request");
+    const loaded = await evaluate(`window.minihAgent.invoke(
+      'minih-agent-desktop/plugin/loadDevConfirm',
+      { path: ${JSON.stringify(radiusPluginPath)}, grantedPermissions: ['ui.theme', 'ui.window.appearance'] }
+    )`);
+    assert.equal(loaded.ok, true, "authorized theme fixture loads");
+    await waitFor(() => evaluate(`window.minihAgent.invoke('minih-agent-desktop/plugin/themes').then(
+      result => result.ok && result.data.some(theme => theme.id === 'plugin:demo.window-radius:square' && theme.windowCornerRadius === 0)
+    )`), "theme catalog includes the authorized radius");
+    const chooseTheme = (themeId) => evaluate(`(async () => {
+      const current = await window.minihAgent.invoke('minih-agent-desktop/settings/get');
+      if (!current.ok) return current;
+      return window.minihAgent.invoke('minih-agent-desktop/settings/set', { ...current.data, theme: ${JSON.stringify(themeId)} });
+    })()`);
+    const reloadTheme = async (themeId, label) => {
+      assert.equal((await chooseTheme(themeId)).ok, true, label);
+      await send("Page.reload");
+      await waitFor(async () => {
+        try {
+          return await evaluate(`!!document.querySelector('.main-pane') && !document.querySelector('.startup-splash') &&
+            document.documentElement.dataset.pluginTheme === ${JSON.stringify(themeId.startsWith("plugin:") ? themeId : undefined)}`);
+        } catch { return false; }
+      }, label);
+    };
+    await reloadTheme("plugin:demo.window-radius:square", "selected plugin theme");
+    await checkWindowsRoundedCorners("selected plugin theme makes square corners", false);
+    await reloadTheme("dark", "returned to built-in theme");
+    await checkWindowsRoundedCorners("built-in theme restores rounded corners");
+  }
+  if (process.platform !== "darwin") {
+    await click(".window-control-btn:first-child", false);
+    await waitFor(() => evaluate(`document.visibilityState === 'hidden'`), "native minimize");
+    await evaluate(`window.minihAgent.invoke('minih-agent-desktop/menu/nativeAction', {action:'toggleMainWindow'})`);
+    await waitFor(() => evaluate(`document.visibilityState === 'visible'`), "native window shown");
+    await settle();
+    await checkControls("restored after native minimize");
+    await checkWindowsRoundedCorners("corner behavior after native minimize and restore");
+    // Configure only the disposable profile so close-to-tray can be observed
+    // without leaving a blocking native confirmation dialog on the test runner.
+    await evaluate(`window.minihAgent.invoke('minih-agent-desktop/window/closeBehavior/set', {behavior:'tray'})`);
+    await click(".window-control-close", false);
+    await waitFor(() => evaluate(`document.visibilityState === 'hidden'`), "native close-to-tray");
+    console.log("PASS native minimize and close actions");
+  }
+  console.log(`PASS native ${process.platform} window-control flow`);
+} catch (error) {
+  failed = true;
+  console.error(error);
+  console.error(output);
+} finally {
+  socket?.close();
+  for (const entry of pending.values()) clearTimeout(entry.timer);
+  if (child && child.exitCode === null) {
+    const exited = once(child, "exit");
+    child.kill();
+    await exited;
+  }
+  await rm(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+}
+process.exitCode = failed ? 1 : 0;

@@ -1,0 +1,120 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="squircle">
+      <rect width="1024" height="1024" rx="228"/>
+    </clipPath>
+
+    <!-- Deep obsidian-indigo background gradient -->
+    <linearGradient id="bg" x1="128" y1="48" x2="896" y2="976" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#171B30"/>
+      <stop offset="0.48" stop-color="#0E1222"/>
+      <stop offset="1" stop-color="#080B14"/>
+    </linearGradient>
+
+    <!-- Top-left indigo-violet ambient aura -->
+    <radialGradient id="aura-indigo" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(240 180) rotate(42) scale(640)">
+      <stop offset="0" stop-color="#6366F1" stop-opacity="0.45"/>
+      <stop offset="0.55" stop-color="#4F46E5" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#4F46E5" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Bottom-right teal-cyan ambient aura -->
+    <radialGradient id="aura-teal" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 820) rotate(-135) scale(620)">
+      <stop offset="0" stop-color="#2DD4BF" stop-opacity="0.38"/>
+      <stop offset="0.55" stop-color="#0EA5E9" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#0EA5E9" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Center core glow behind the Agent spark -->
+    <radialGradient id="core-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(512 284) scale(260)">
+      <stop offset="0" stop-color="#38BDF8" stop-opacity="0.38"/>
+      <stop offset="0.5" stop-color="#818CF8" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#818CF8" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Top-lit specular glass rim -->
+    <linearGradient id="rim" x1="160" y1="0" x2="864" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.38"/>
+      <stop offset="0.35" stop-color="#818CF8" stop-opacity="0.22"/>
+      <stop offset="0.7" stop-color="#2DD4BF" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.08"/>
+    </linearGradient>
+
+    <!-- Seamless sculptural gradient across the H mark -->
+    <linearGradient id="h-sculpt" x1="210" y1="360" x2="814" y2="756" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.38" stop-color="#E0E7FF"/>
+      <stop offset="0.68" stop-color="#A5F3FC"/>
+      <stop offset="1" stop-color="#2DD4BF"/>
+    </linearGradient>
+
+    <!-- Agent Spark gradient -->
+    <linearGradient id="spark-grad" x1="400" y1="160" x2="624" y2="384" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C4B5FD"/>
+      <stop offset="0.45" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#2DD4BF"/>
+    </linearGradient>
+
+    <filter id="emblem-shadow" x="140" y="100" width="744" height="740" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#020617" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <!-- Background layers -->
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <rect width="1024" height="1024" fill="url(#aura-indigo)"/>
+    <rect width="1024" height="1024" fill="url(#aura-teal)"/>
+    <circle cx="512" cy="284" r="260" fill="url(#core-glow)"/>
+
+    <!-- Symmetrical flanking orbital arcs framing the Agent Spark -->
+    <path
+      d="M 332 332 A 204 204 0 0 1 424 198"
+      stroke="url(#spark-grad)"
+      stroke-width="10"
+      stroke-linecap="round"
+      stroke-opacity="0.40"
+    />
+    <path
+      d="M 600 198 A 204 204 0 0 1 692 332"
+      stroke="url(#spark-grad)"
+      stroke-width="10"
+      stroke-linecap="round"
+      stroke-opacity="0.40"
+    />
+
+    <g filter="url(#emblem-shadow)">
+      <!-- Sculptural H silhouette -->
+      <path
+        d="M 280 408 V 740 M 744 408 V 740 M 280 574 H 744"
+        stroke="url(#h-sculpt)"
+        stroke-width="106"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+
+      <!-- Sculpted 4-Point Agent Spark suspended above the H crossbar -->
+      <path
+        d="M 512 156
+           C 512 228 548 268 620 268
+           C 548 268 512 308 512 380
+           C 512 308 476 268 404 268
+           C 476 268 512 228 512 156 Z"
+        fill="url(#spark-grad)"
+      />
+      <!-- Crisp inner diamond highlight of the Agent Spark -->
+      <path
+        d="M 512 204
+           C 512 244 532 268 572 268
+           C 532 268 512 292 512 332
+           C 512 292 492 268 452 268
+           C 492 268 512 244 512 204 Z"
+        fill="#FFFFFF"
+        fill-opacity="0.85"
+      />
+    </g>
+
+    <!-- Flush edge glass border -->
+    <rect x="6" y="6" width="1012" height="1012" rx="222" stroke="url(#rim)" stroke-width="12"/>
+  </g>
+</svg>

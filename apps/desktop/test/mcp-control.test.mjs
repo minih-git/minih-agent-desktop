@@ -1,0 +1,926 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { register } from "node:module";
+import { pathToFileURL, fileURLToPath } from "node:url";
+
+const here = dirname(fileURLToPath(import.meta.url));
+register(pathToFileURL(join(here, "helpers/ts-import-hooks.mjs")));
+const {
+  McpControlServer,
+  createMcpControlController,
+  boundMcpResult,
+  createMcpControlOperations,
+  isLoopbackBindHost,
+  mcpControlRendererEvent,
+  negotiateMcpProtocolVersion,
+  projectSessionGetResult,
+  stripSecretMaterial,
+  tokensEqual,
+} = await import("../electron/main/mcp-control.ts");
+
+test("the plugin and MCP paths share desktop operation validation", async () => {
+  const calls = [];
+  const controller = createMcpControlController({
+    channels: {
+      projectSet: "minih-agent-desktop/project/set",
+      sessionDelete: "minih-agent-desktop/session/delete",
+    },
+    invoke: async (channel, args) => {
+      calls.push({ channel, args });
+      return { ok: true };
+    },
+  });
+
+  assert.deepEqual(
+    controller.operations.map((operation) => operation.id),
+    ["session/delete", "project/set"],
+  );
+  await assert.rejects(
+    () => controller.invoke({ operation: "session/delete", args: ["s1"] }),
+    (error) => error.code === "CONFIRMATION_REQUIRED",
+  );
+  await controller.invoke({ operation: "project/set", args: ["/tmp/project"] });
+  await controller.invoke({ operation: "session/delete", args: ["s1"], confirm: true });
+  assert.deepEqual(calls, [
+    { channel: "minih-agent-desktop/project/set", args: ["/tmp/project"] },
+    { channel: "minih-agent-desktop/session/delete", args: ["s1"] },
+  ]);
+});
+
+async function post(url, token, body, headers = {}) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...headers,
+    },
+    body: JSON.stringify(body),
+  });
+  const raw = await response.text();
+  return {
+    response,
+    body: raw ? JSON.parse(raw) : null,
+  };
+}
+
+const fixtureChannels = {
+  appGetVersion: "minih-agent-desktop/app/getVersion",
+  projectSet: "minih-agent-desktop/project/set",
+  sessionGet: "minih-agent-desktop/session/get",
+  sessionCreate: "minih-agent-desktop/session/create",
+  sessionDelete: "minih-agent-desktop/session/delete",
+  sessionConfigure: "minih-agent-desktop/session/configure",
+  plansResolve: "minih-agent-desktop/plans/resolve",
+  agentPrompt: "minih-agent-desktop/agent/prompt",
+};
+
+test("local MCP control server authenticates, discovers, and invokes desktop operations", async (t) => {
+  const dataDir = mkdtempSync(join(tmpdir(), "pi-mcp-control-"));
+  const calls = [];
+  const events = [];
+  const sessionMessages = [
+    { id: "m1", role: "user", content: "hello" },
+    { id: "m2", role: "assistant", content: "hi" },
+  ];
+  const largeSession = {
+    session: {
+      id: "large-session",
+      compaction: {
+        id: "cp-large",
+        createdAt: "2026-10-03T07:37:04.094Z",
+        summary: "x".repeat(700_000),
+        retainedTail: [{ content: "large" }],
+        details: { generation: 13, modifiedFiles: ["src/a.ts"] },
+      },
+      messages: sessionMessages,
+    },
+  };
+  const smallSession = {
+    session: {
+      id: "small-session",
+      compaction: {
+        id: "cp-small",
+        createdAt: "2026-10-03T07:37:04.094Z",
+        summary: "Keep this summary",
+        retainedTail: [{ content: "Keep this reply" }],
+        details: { generation: 2, modifiedFiles: ["src/b.ts"] },
+      },
+      messages: sessionMessages,
+    },
+  };
+  const server = new McpControlServer({
+    dataDir,
+    port: 0,
+    version: "test",
+    channels: fixtureChannels,
+    invoke: async (channel, args) => {
+      calls.push({ channel, args });
+      if (channel === "minih-agent-desktop/app/getVersion") {
+        return { name: "Minih-Agent-Desktop", version: "test" };
+      }
+      if (channel === "minih-agent-desktop/project/set") {
+        return { workspace: { path: args[0], name: "fixture" } };
+      }
+      if (channel === "minih-agent-desktop/session/create") {
+        return { session: { id: "session-created", projectPath: args[0]?.projectPath ?? null } };
+      }
+      if (channel === "minih-agent-desktop/session/get") {
+        if (args[0]?.id === largeSession.session.id) return largeSession;
+        if (args[0]?.id === smallSession.session.id) return smallSession;
+      }
+      return { ok: true };
+    },
+    onOperationComplete: (operation, result, args) => {
+      events.push(mcpControlRendererEvent(operation, result, args));
+    },
+  });
+  t.after(() => server.stop());
+
+  const info = await server.start();
+  assert.ok(info);
+  assert.match(info.url, /127\.0\.0\.1:\d+\/mcp$/);
+  assert.match(info.token, /^[a-f0-9]{64}$/);
+  assert.deepEqual(JSON.parse(readFileSync(join(dataDir, "mcp-control.json"), "utf8")), info);
+
+  const unauthorized = await fetch(info.url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+  });
+  assert.equal(unauthorized.status, 401);
+
+  const rejectedOrigin = await fetch(info.url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${info.token}`,
+      Origin: "https://attacker.example",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+  });
+  assert.equal(rejectedOrigin.status, 403);
+
+  const getResponse = await fetch(info.url, {
+    headers: { Authorization: `Bearer ${info.token}` },
+  });
+  assert.equal(getResponse.status, 405);
+
+  const initialized = await post(info.url, info.token, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: { protocolVersion: "2099-01-01" },
+  });
+  assert.equal(initialized.response.status, 200);
+  assert.equal(initialized.body.result.serverInfo.name, "minih-agent-desktop");
+  assert.equal(initialized.body.result.serverInfo.version, "test");
+  assert.equal(initialized.body.result.protocolVersion, "2025-06-18");
+  const sessionId = initialized.response.headers.get("mcp-session-id");
+  assert.ok(sessionId);
+
+  const missingSession = await post(info.url, info.token, {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/list",
+  });
+  assert.equal(missingSession.response.status, 400);
+
+  const unsupportedVersion = await post(
+    info.url,
+    info.token,
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    { "Mcp-Session-Id": sessionId, "MCP-Protocol-Version": "2099-01-01" },
+  );
+  assert.equal(unsupportedVersion.response.status, 400);
+
+  const listed = await post(
+    info.url,
+    info.token,
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    { "Mcp-Session-Id": sessionId },
+  );
+  const toolNames = listed.body.result.tools.map((tool) => tool.name);
+  assert.ok(toolNames.includes("minih_agent_invoke"));
+  assert.ok(toolNames.includes("minih_control_describe"));
+  assert.ok(toolNames.includes("minih_project_open"));
+  assert.ok(toolNames.includes("minih_plans_resolve"));
+  assert.ok(toolNames.includes("minih_session_configure"));
+
+  const opened = await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "minih_project_open", arguments: { path: "/tmp/project" } },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.equal(opened.body.result.structuredContent.workspace.path, "/tmp/project");
+  assert.deepEqual(calls.at(-1), {
+    channel: "minih-agent-desktop/project/set",
+    args: ["/tmp/project"],
+  });
+
+  const version = await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: {
+        name: "minih_agent_invoke",
+        arguments: { operation: "app/getVersion", args: [] },
+      },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.equal(version.body.result.structuredContent.result.version, "test");
+
+  const refusedDelete = await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 5,
+      method: "tools/call",
+      params: {
+        name: "minih_agent_invoke",
+        arguments: { operation: "session/delete", args: ["session-1"] },
+      },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.equal(refusedDelete.body.result.isError, true);
+  assert.equal(calls.some((call) => call.channel === "minih-agent-desktop/session/delete"), false);
+
+  await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 6,
+      method: "tools/call",
+      params: {
+        name: "minih_agent_invoke",
+        arguments: {
+          operation: "session/delete",
+          args: ["session-1"],
+          confirm: true,
+        },
+      },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.equal(calls.at(-1).channel, "minih-agent-desktop/session/delete");
+
+  const refusedPlan = await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 7,
+      method: "tools/call",
+      params: {
+        name: "minih_plans_resolve",
+        arguments: {
+          proposalId: "proposal-1",
+          sessionId: "session-1",
+          turnId: "turn-1",
+          toolCallId: "tool-1",
+          action: "reject",
+        },
+      },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.equal(refusedPlan.body.result.isError, true);
+  assert.equal(calls.some((call) => call.channel === "minih-agent-desktop/plans/resolve"), false);
+
+  await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 8,
+      method: "tools/call",
+      params: {
+        name: "minih_plans_resolve",
+        arguments: {
+          proposalId: "proposal-1",
+          sessionId: "session-1",
+          turnId: "turn-1",
+          toolCallId: "tool-1",
+          action: "reject",
+          confirm: true,
+        },
+      },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.deepEqual(calls.at(-1), {
+    channel: "minih-agent-desktop/plans/resolve",
+    args: [{
+      proposalId: "proposal-1",
+      sessionId: "session-1",
+      turnId: "turn-1",
+      toolCallId: "tool-1",
+      action: "reject",
+    }],
+  });
+
+  const refusedConfigure = await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 9,
+      method: "tools/call",
+      params: {
+        name: "minih_session_configure",
+        arguments: {
+          id: "session-1",
+          mode: "agent",
+          permissionMode: "auto",
+        },
+      },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.equal(refusedConfigure.body.result.isError, true);
+  assert.equal(calls.some((call) => call.channel === "minih-agent-desktop/session/configure"), false);
+
+  await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 10,
+      method: "tools/call",
+      params: {
+        name: "minih_session_configure",
+        arguments: {
+          id: "session-1",
+          mode: "agent",
+          permissionMode: "auto",
+          confirm: true,
+        },
+      },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.deepEqual(calls.at(-1), {
+    channel: "minih-agent-desktop/session/configure",
+    args: ["session-1", { mode: "agent", permissionMode: "auto" }],
+  });
+
+  const described = await post(
+    info.url,
+    info.token,
+    { jsonrpc: "2.0", id: 11, method: "tools/call", params: { name: "minih_control_describe", arguments: {} } },
+    { "Mcp-Session-Id": sessionId },
+  );
+  const describedIds = described.body.result.structuredContent.map((entry) => entry.id);
+  assert.equal(describedIds.includes("pluginLauncher/toggle"), false);
+  assert.equal(describedIds.includes("plugin/loadDev"), false);
+  assert.equal(describedIds.includes("providers/create"), false);
+  assert.equal(describedIds.includes("settings/set"), false);
+  assert.equal(describedIds.some((id) => id.startsWith("secrets/")), false);
+  assert.equal(describedIds.includes("pulls/list"), false);
+  const configure = described.body.result.structuredContent.find((entry) => entry.id === "session/configure");
+  assert.equal(configure.risk, "dangerous");
+  assert.deepEqual(configure.argumentShape, ["id", "config"]);
+
+  const created = await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 12,
+      method: "tools/call",
+      params: { name: "minih_session_create", arguments: { title: "from mcp", secretValue: "sk-live" } },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.equal(created.body.result.structuredContent.session.id, "session-created");
+  assert.equal(calls.at(-1).args[0].secretValue, undefined);
+  assert.equal(calls.at(-1).args[0].title, "from mcp");
+
+  const refreshCount = events.filter(Boolean).length;
+  const readSession = await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 13,
+      method: "tools/call",
+      params: { name: "minih_session_get", arguments: { id: "session-1" } },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.equal(readSession.body.result.isError, undefined);
+  assert.equal(events.filter(Boolean).length, refreshCount);
+
+  const readLargeSession = await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 16,
+      method: "tools/call",
+      params: { name: "minih_session_get", arguments: { id: largeSession.session.id } },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  const largeResult = readLargeSession.body.result.structuredContent;
+  assert.equal(largeResult.truncated, undefined);
+  assert.deepEqual(largeResult.session.messages, sessionMessages);
+  assert.equal(largeResult.session.compaction.createdAt, largeSession.session.compaction.createdAt);
+  assert.equal(largeResult.session.compaction.details.generation, 13);
+  assert.equal(largeResult.session.compaction.summary, undefined);
+  assert.equal(largeResult.session.compaction.retainedTail, undefined);
+  assert.equal(largeResult.session.compaction.details.modifiedFiles, undefined);
+
+  const readSmallSession = await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 17,
+      method: "tools/call",
+      params: { name: "minih_session_get", arguments: { id: smallSession.session.id } },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.deepEqual(readSmallSession.body.result.structuredContent, smallSession);
+
+  const missingPath = await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 14,
+      method: "tools/call",
+      params: { name: "minih_project_open", arguments: {} },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.equal(missingPath.body.result.isError, true);
+
+  const notification = await post(
+    info.url,
+    info.token,
+    { jsonrpc: "2.0", method: "notifications/initialized" },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.equal(notification.response.status, 202);
+
+  const callCount = calls.length;
+  const missingId = await fetch(info.url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${info.token}`,
+      "Content-Type": "application/json",
+      "Mcp-Session-Id": sessionId,
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "minih_session_delete", arguments: { id: "session-1", confirm: true } },
+    }),
+  });
+  assert.equal(missingId.status, 400);
+  assert.equal(calls.length, callCount);
+
+  const tokenHeader = await fetch(info.url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Mcp-Session-Id": sessionId,
+      "X-Minih-Agent-Desktop-Token": info.token,
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 15, method: "ping" }),
+  });
+  assert.equal(tokenHeader.status, 200);
+
+  const deleted = await fetch(info.url, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${info.token}`, "Mcp-Session-Id": sessionId },
+  });
+  assert.equal(deleted.status, 204);
+});
+
+test("the MCP control connection file is marked inactive on shutdown", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "pi-mcp-control-stop-"));
+  const server = new McpControlServer({
+    dataDir,
+    port: 0,
+    channels: { appGetVersion: "minih-agent-desktop/app/getVersion" },
+    invoke: async () => ({}),
+  });
+  const info = await server.start();
+  await server.stop();
+  const stopped = JSON.parse(readFileSync(join(dataDir, "mcp-control.json"), "utf8"));
+  assert.equal(stopped.active, false);
+  assert.equal(stopped.url, info.url);
+});
+
+test("the MCP control server refuses a non-loopback bind address", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "pi-mcp-control-bind-"));
+  const server = new McpControlServer({
+    dataDir,
+    host: "0.0.0.0",
+    port: 0,
+    channels: { appGetVersion: "minih-agent-desktop/app/getVersion" },
+    invoke: async () => ({}),
+  });
+  await assert.rejects(() => server.start(), /loopback/);
+});
+
+test("control-plane helpers clamp protocol versions, strip secrets, and bound results", () => {
+  assert.equal(negotiateMcpProtocolVersion("2025-03-26"), "2025-03-26");
+  assert.equal(negotiateMcpProtocolVersion("2099-01-01"), "2025-06-18");
+  assert.equal(isLoopbackBindHost("127.0.0.1"), true);
+  assert.equal(isLoopbackBindHost("127.1.2.3"), true);
+  assert.equal(isLoopbackBindHost("0.0.0.0"), false);
+  assert.equal(isLoopbackBindHost("::1"), true);
+  assert.equal(tokensEqual("abc", "abc"), true);
+  assert.equal(tokensEqual("abc", "abd"), false);
+
+  const stripped = stripSecretMaterial({
+    title: "ok",
+    secretValue: "sk-live",
+    apiKey: "x",
+    headers: { Authorization: "Bearer x", Accept: "application/json" },
+    env: { PATH: "/bin", OPENAI_API_KEY: "sk" },
+    nested: { client_secret: "nope", keep: 1 },
+  });
+  assert.deepEqual(stripped, {
+    title: "ok",
+    headers: { Accept: "application/json" },
+    env: { PATH: "/bin" },
+    nested: { keep: 1 },
+  });
+
+  const bounded = boundMcpResult({ blob: "a".repeat(600_000) });
+  assert.equal(bounded.truncated, true);
+  assert.equal(bounded.reason, "MCP_RESULT_LIMIT");
+  assert.ok(JSON.stringify(bounded).length < 600_000);
+});
+
+test("session/get compaction metadata is projected before bounding (mocode #495)", () => {
+  const messages = [
+    { id: "m1", role: "user", content: "hello" },
+    { id: "m2", role: "assistant", content: "hi" },
+  ];
+  const huge = "x".repeat(700_000);
+  const raw = {
+    session: {
+      id: "s1",
+      title: "Long session",
+      modelId: "deepseek/deepseek-v4.1-flash",
+      mode: "agent",
+      messageStart: 0,
+      hasMoreBefore: false,
+      compaction: {
+        id: "cp1",
+        throughMessageId: "m900",
+        tokensBefore: 12_345,
+        createdAt: "2026-10-03T07:37:04.094Z",
+        summary: huge,
+        retainedTail: [{ huge }],
+        details: { generation: 13, modifiedFiles: ["a", "b", "c"] },
+        providerId: "p1",
+        modelId: "deepseek/deepseek-v4.1-flash",
+      },
+      messages,
+    },
+  };
+
+  // Without the projection the whole answer is replaced by a half-JSON preview
+  // and `messages` becomes unreachable — exactly what the phone hit.
+  const unprojected = boundMcpResult(raw);
+  assert.equal(unprojected.truncated, true);
+
+  const bounded = boundMcpResult(raw, projectSessionGetResult);
+  assert.notEqual(bounded.truncated, true, "projected answer must fit the limit");
+
+  const session = bounded.session;
+  assert.deepEqual(session.messages, messages, "messages must survive");
+  assert.equal(session.title, "Long session");
+  assert.equal(session.modelId, "deepseek/deepseek-v4.1-flash");
+  // The compact identity external clients rely on is kept ...
+  assert.equal(session.compaction.createdAt, "2026-10-03T07:37:04.094Z");
+  assert.equal(session.compaction.details.generation, 13);
+  // ... and the unbounded fields are dropped.
+  assert.equal(session.compaction.summary, undefined);
+  assert.equal(session.compaction.retainedTail, undefined);
+  assert.equal(session.compaction.details.modifiedFiles, undefined);
+});
+
+test("session/get compaction history is projected before bounding (mocode #506)", () => {
+  // The history array alone blows the limit even though the newest record is
+  // already projected and the transcript page is tiny: the phone could not open
+  // the session at ANY messageLimit/contentLimit, because the overflow was
+  // independent of the transcript page.
+  const huge = "y".repeat(200_000);
+  const historyEntry = (generation) => ({
+    id: `cp${generation}`,
+    throughMessageId: `m${generation}`,
+    tokensBefore: generation * 1000,
+    createdAt: `2026-09-2${generation}T00:00:00.000Z`,
+    summary: huge,
+    retainedTail: [{ content: huge }],
+    details: { generation, modifiedFiles: ["a", "b", "c"] },
+    providerId: "p1",
+    modelId: "deepseek/deepseek-v4.1-flash",
+  });
+  const messages = [{ id: "m1", role: "user", content: "hello" }];
+  const raw = {
+    session: {
+      id: "s1",
+      title: "Long session",
+      messageStart: 0,
+      hasMoreBefore: false,
+      compaction: {
+        id: "cp7",
+        createdAt: "2026-10-05T02:51:23.415Z",
+        details: { generation: 7 },
+      },
+      compactions: [historyEntry(1), historyEntry(2), historyEntry(3), historyEntry(4)],
+      messages,
+    },
+  };
+
+  const unprojected = boundMcpResult(raw);
+  assert.equal(unprojected.truncated, true, "the history array alone must exceed the limit");
+
+  const bounded = boundMcpResult(raw, projectSessionGetResult);
+  assert.notEqual(bounded.truncated, true, "projected answer must fit the limit");
+
+  const session = bounded.session;
+  assert.deepEqual(session.messages, messages, "messages must survive");
+  assert.equal(session.compaction.details.generation, 7, "newest record keeps its identity");
+  assert.equal(session.compactions.length, 4, "history length is preserved");
+  for (const entry of session.compactions) {
+    // The compact identity is kept ...
+    assert.equal(typeof entry.createdAt, "string");
+    assert.equal(typeof entry.details.generation, "number");
+    // ... and every entry's unbounded fields are dropped.
+    assert.equal(entry.summary, undefined);
+    assert.equal(entry.retainedTail, undefined);
+    assert.equal(entry.details.modifiedFiles, undefined);
+  }
+});
+
+test("session/get projection bounds a session with history but no newest record (mocode #506)", () => {
+  const huge = "z".repeat(700_000);
+  const raw = {
+    session: {
+      id: "s1",
+      compactions: [
+        {
+          id: "cp1",
+          createdAt: "2026-09-29T22:54:23.437Z",
+          summary: huge,
+          retainedTail: [huge],
+          details: { generation: 1, modifiedFiles: ["a"] },
+        },
+      ],
+      messages: [{ id: "m1", role: "user", content: "hello" }],
+    },
+  };
+
+  assert.equal(boundMcpResult(raw).truncated, true);
+
+  const bounded = boundMcpResult(raw, projectSessionGetResult);
+  assert.notEqual(bounded.truncated, true, "history-only sessions must still be projected");
+  assert.equal(bounded.session.compactions[0].summary, undefined);
+  assert.equal(bounded.session.compactions[0].details.generation, 1);
+});
+
+test("session/get projection leaves a small session untouched (mocode #495)", () => {
+  const raw = {
+    session: {
+      id: "s1",
+      compaction: {
+        id: "cp1",
+        createdAt: "t",
+        summary: "A small summary",
+        retainedTail: [{ role: "assistant", content: "A retained reply" }],
+        details: { generation: 1, modifiedFiles: ["src/a.ts"] },
+      },
+      messages: [],
+    },
+  };
+  assert.deepEqual(boundMcpResult(raw, projectSessionGetResult), raw);
+  // Non-session shapes and sessions without a compaction record pass through.
+  assert.deepEqual(boundMcpResult({ ok: true }, projectSessionGetResult), { ok: true });
+  assert.deepEqual(
+    boundMcpResult({ session: { id: "s2" } }, projectSessionGetResult),
+    { session: { id: "s2" } },
+  );
+});
+
+test("renderer refresh events fire only for mutating control operations", () => {
+  const sessionOp = (id) => ({
+    id,
+    channel: `minih-agent-desktop/${id}`,
+    description: id,
+    risk: "write",
+    argumentShape: [],
+  });
+  assert.equal(mcpControlRendererEvent(sessionOp("session/get"), { session: { id: "s1" } }, []), null);
+  assert.equal(mcpControlRendererEvent(sessionOp("session/list"), { sessions: [] }, []), null);
+  assert.deepEqual(
+    mcpControlRendererEvent(sessionOp("session/create"), { session: { id: "s1", projectPath: "/tmp/p" } }, []),
+    { reason: "mcp.session", selectSessionId: "s1", projectPath: "/tmp/p" },
+  );
+  assert.deepEqual(
+    mcpControlRendererEvent(
+      sessionOp("session/create"),
+      { session: { id: "s2", projectPath: "/tmp/p" } },
+      [],
+      "plugin",
+    ),
+    { reason: "plugin.session" },
+  );
+  assert.deepEqual(
+    mcpControlRendererEvent(sessionOp("session/configure"), { session: { id: "s1" } }, ["s1", { mode: "agent" }]),
+    { reason: "mcp.session" },
+  );
+  assert.deepEqual(
+    mcpControlRendererEvent(sessionOp("agent/prompt"), { accepted: true }, [{ sessionId: "s1" }]),
+    { reason: "mcp.prompt", selectSessionId: "s1" },
+  );
+  assert.deepEqual(
+    mcpControlRendererEvent(
+      sessionOp("agent/prompt"),
+      { accepted: true },
+      [{ sessionId: "s1" }],
+      "plugin",
+    ),
+    { reason: "plugin.prompt" },
+  );
+  assert.deepEqual(
+    mcpControlRendererEvent(
+      sessionOp("session/open"),
+      { session: { id: "s1", projectPath: "/tmp/p" } },
+      [],
+      "plugin",
+    ),
+    { reason: "plugin.session.open", selectSessionId: "s1", projectPath: "/tmp/p" },
+  );
+});
+
+test("the reviewed catalog never includes picker or secret-write channels", () => {
+  const operations = createMcpControlOperations({
+    appGetVersion: "minih-agent-desktop/app/getVersion",
+    pluginLoadDev: "minih-agent-desktop/plugin/loadDev",
+    pluginCreateFromTemplate: "minih-agent-desktop/plugin/createFromTemplate",
+    secretsSet: "minih-agent-desktop/secrets/set",
+    providersCreate: "minih-agent-desktop/providers/create",
+    settingsSet: "minih-agent-desktop/settings/set",
+    mcpUpsert: "minih-agent-desktop/mcp/upsert",
+    sessionConfigure: "minih-agent-desktop/session/configure",
+    projectSet: "minih-agent-desktop/project/set",
+  });
+  const ids = operations.map((operation) => operation.id).sort();
+  assert.deepEqual(ids, ["app/getVersion", "project/set", "session/configure"].sort());
+});
+
+test("plugin-only session collaboration operations stay off the external MCP surface", async (t) => {
+  const dataDir = mkdtempSync(join(tmpdir(), "pi-mcp-plugin-only-"));
+  const calls = [];
+  const pluginCalls = [];
+  const controller = createMcpControlController({
+    channels: fixtureChannels,
+    invoke: async (channel, args) => {
+      calls.push({ channel, args });
+      return { ok: true, channel };
+    },
+    invokeSessionCollaboration: async (input) => {
+      pluginCalls.push(input);
+      return { sessions: [] };
+    },
+  });
+
+  const collaborationIds = [
+    "session/collaboration/spawn",
+    "session/collaboration/send",
+    "session/collaboration/status",
+    "session/collaboration/list",
+    "session/collaboration/result",
+    "session/collaboration/cancel",
+  ];
+  assert.deepEqual(
+    controller.operations.map((operation) => operation.id).filter((id) => id.startsWith("session/collaboration/")),
+    collaborationIds,
+  );
+
+  const pluginResult = await controller.invoke({
+    operation: "session/collaboration/list",
+    args: [],
+    source: "plugin",
+    pluginContext: { pluginId: "fixture-plugin" },
+  });
+  assert.deepEqual(pluginResult, { sessions: [] });
+  assert.equal(pluginCalls.length, 1);
+  assert.equal(pluginCalls[0].pluginContext.pluginId, "fixture-plugin");
+
+  const catalogCount = createMcpControlOperations(fixtureChannels).length;
+  const hiddenCount = controller.operations.length - catalogCount;
+  assert.equal(hiddenCount, collaborationIds.length);
+
+  const server = new McpControlServer({
+    dataDir,
+    port: 0,
+    channels: fixtureChannels,
+    controller,
+    invoke: async () => ({}),
+  });
+  t.after(() => server.stop());
+  const info = await server.start();
+  assert.ok(info);
+
+  const initialized = await post(info.url, info.token, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: { protocolVersion: "2025-06-18" },
+  });
+  const sessionId = initialized.response.headers.get("mcp-session-id");
+  assert.ok(sessionId);
+
+  const listed = await post(
+    info.url,
+    info.token,
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    { "Mcp-Session-Id": sessionId },
+  );
+  const toolNames = listed.body.result.tools.map((tool) => tool.name);
+  for (const id of collaborationIds) {
+    assert.equal(toolNames.includes(id), false);
+  }
+  const invokeTool = listed.body.result.tools.find((tool) => tool.name === "minih_agent_invoke");
+  const exposedIds = invokeTool.inputSchema.properties.operation.enum;
+  for (const id of collaborationIds) {
+    assert.equal(exposedIds.includes(id), false);
+  }
+  assert.equal(exposedIds.length, catalogCount);
+
+  const described = await post(
+    info.url,
+    info.token,
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "minih_control_describe", arguments: {} } },
+    { "Mcp-Session-Id": sessionId },
+  );
+  const describedIds = described.body.result.structuredContent.map((entry) => entry.id);
+  for (const id of collaborationIds) {
+    assert.equal(describedIds.includes(id), false);
+  }
+  assert.equal(describedIds.length, catalogCount);
+
+  const hidden = await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: { name: "minih_agent_invoke", arguments: { operation: "session/collaboration/list", args: [] } },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.equal(hidden.body.result.isError, true);
+  assert.equal(hidden.body.result.structuredContent.error.code, "NOT_FOUND");
+  assert.equal(
+    hidden.body.result.structuredContent.error.message,
+    "operation is not exposed: session/collaboration/list",
+  );
+  assert.equal(pluginCalls.length, 1);
+
+  const known = await post(
+    info.url,
+    info.token,
+    {
+      jsonrpc: "2.0",
+      id: 5,
+      method: "tools/call",
+      params: { name: "minih_agent_invoke", arguments: { operation: "app/getVersion", args: [] } },
+    },
+    { "Mcp-Session-Id": sessionId },
+  );
+  assert.equal(known.body.result.isError, undefined);
+  assert.deepEqual(known.body.result.structuredContent, {
+    operation: "app/getVersion",
+    result: { ok: true, channel: "minih-agent-desktop/app/getVersion" },
+  });
+  assert.deepEqual(calls.at(-1), { channel: "minih-agent-desktop/app/getVersion", args: [] });
+});

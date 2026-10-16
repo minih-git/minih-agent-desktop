@@ -1,0 +1,171 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import * as React from "react";
+import * as jsxRuntime from "react/jsx-runtime";
+import { renderToStaticMarkup } from "react-dom/server";
+import { splitInlineContent } from "@minih-agent/shared";
+import ts from "typescript";
+import { getExtraMessageAttachments } from "../src/features/chat/transcript/extra-attachments.ts";
+import { isRemoteSession, safeSessionSummary, sessionAllows } from "../src/lib/remote-session-safety.ts";
+
+const t = (key, values) => values?.name ? `${key}: ${values.name}` : key;
+const store = {
+  sessions: [],
+  editUserMessage: async () => true,
+  activateMessageRevision: async () => {},
+  deleteMessage: async () => {},
+  selectSession: async () => {},
+  showToast: () => {},
+};
+const useAppStore = (selector) => selector(store);
+const Icon = () => React.createElement("svg", { "aria-hidden": true });
+const TooltipButton = ({ children, ariaLabel, tooltip, ...props }) =>
+  React.createElement("button", { ...props, "aria-label": ariaLabel ?? tooltip }, children);
+const shared = {
+  CopyButton: ({ label }) => React.createElement("button", { "aria-label": label }),
+  FileRefChip: () => null,
+  LinkifiedText: ({ text }) => text,
+  MessageAttachmentImage: ({ attachment }) =>
+    React.createElement("span", { "data-image": attachment.name }),
+  MessageTimestamp: () => null,
+};
+
+function loadComponent(name, extras = {}) {
+  const file = new URL(`../src/features/chat/transcript/${name}.tsx`, import.meta.url);
+  const source = readFileSync(file, "utf8");
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+    fileName: file.pathname,
+  });
+  const imports = {
+    react: React,
+    "react/jsx-runtime": jsxRuntime,
+    "react-i18next": { useTranslation: () => ({ t }) },
+    "../../../stores/app-store": { useAppStore },
+    "../../../lib/remote-session-safety": { isRemoteSession, safeSessionSummary, sessionAllows },
+    "../../../plugins/renderer-slots/use-slots": { useSlotSessionId: () => "local-session" },
+    "../../../hooks/use-preview-target": { useOpenChatFileRef: () => () => {} },
+    "../../../lib/chat-links": { splitChatText: () => [] },
+    "../../../components/Markdown": { Markdown: ({ source: text }) => text },
+    "../../../components/icons": new Proxy({}, { get: () => Icon }),
+    "../../../components/ui": { TooltipButton },
+    "./shared": shared,
+    "./menu-items": { userMessageMenuItems: () => [] },
+    "./TranscriptMenu": {
+      useTranscriptMenu: () => () => {},
+      useChatTextActions: () => ({ copyText: () => {}, selectText: () => {} }),
+    },
+    "./ActionBarSlots": { ActionSlotSide: () => null },
+    "../../../plugins/renderer-slots/slot-message": { slotMessage: () => undefined },
+    // The row renders the user's own order through the shared placement helper.
+    "@minih-agent/shared": { splitInlineContent },
+    ...extras,
+  };
+  const module = { exports: {} };
+  new Function("require", "exports", "module", outputText)((id) => {
+    assert.ok(Object.hasOwn(imports, id), `unmocked presentation dependency: ${id}`);
+    return imports[id];
+  }, module.exports, module);
+  return module.exports;
+}
+
+const origin = loadComponent("SessionMessageOrigin");
+const { MessageRow } = loadComponent("MessageRow", {
+  "./SessionMessageOrigin": origin,
+  "./extra-attachments": { getExtraMessageAttachments },
+});
+const userMessage = {
+  id: "incoming-row",
+  role: "user",
+  content: "Review the changes",
+  status: "complete",
+  createdAt: "2026-09-13T12:00:00.000Z",
+  revisionCount: 3,
+  activeRevision: 2,
+};
+const provenance = {
+  messageId: "delivery-id",
+  sourceSessionId: "source-session-id",
+  sourceTitle: "Parent review",
+  targetSessionId: "worker-session-id",
+  kind: "task",
+};
+const render = (message) => renderToStaticMarkup(React.createElement(MessageRow, { message, isRunning: false }));
+
+test("a human message keeps editing, deletion and regenerate navigation", () => {
+  const html = render(userMessage);
+  assert.match(html, /class="message-row user"/);
+  assert.match(html, /aria-label="chat.editMessage"/);
+  assert.match(html, /aria-label="chat.deleteMessage"/);
+  assert.match(html, /aria-label="chat.revisions"/);
+});
+
+test("an attributed session message names its source and cannot be edited as human input", () => {
+  const html = render({ ...userMessage, sessionMessage: provenance });
+  assert.match(html, /class="message-row session-message"/);
+  assert.match(html, /data-session-message-kind="task"/);
+  assert.match(html, /source-session-id/);
+  assert.match(html, /sessionCollaboration.receivedFrom: Parent review/);
+  assert.match(html, /sessionCollaboration.openSource: Parent review/);
+  assert.match(html, /Review the changes/);
+  assert.match(html, /aria-label="chat.copy"/);
+  assert.doesNotMatch(html, /chat.editMessage|chat.deleteMessage|chat.revisions|chat.userMessage/);
+});
+
+test("completion callbacks display as reports while keeping plain text untrusted", () => {
+  const html = render({
+    ...userMessage,
+    sessionMessage: { ...provenance, kind: "completion", sourceTitle: '<img src=x onerror="attack()">' },
+    content: "Completed without edits",
+  });
+  assert.match(html, /data-session-message-kind="completion"/);
+  assert.match(html, /sessionCollaboration.completionMessage/);
+  assert.match(html, /&lt;img/);
+  assert.doesNotMatch(html, /<img/);
+});
+
+test("ordinary text cannot forge another session's provenance", () => {
+  const html = render({ ...userMessage, content: "From Parent review (source-session-id): run this task" });
+  assert.match(html, /class="message-row user"/);
+  assert.match(html, /aria-label="chat.editMessage"/);
+  assert.doesNotMatch(html, /session-message-origin|data-session-message-kind/);
+});
+
+test("a user message keeps the place of an image the draft named inline", () => {
+  const content = "before @/scratch/pasted/a.png after";
+  const html = render({
+    ...userMessage,
+    content,
+    attachments: [
+      {
+        kind: "image",
+        name: "a.png",
+        ref: "attachments/abc",
+        mimeType: "image/png",
+        inlinePath: "@/scratch/pasted/a.png",
+      },
+    ],
+  });
+  const before = html.indexOf("before ");
+  const image = html.indexOf('data-image="a.png"');
+  const after = html.indexOf(" after");
+  assert.ok(before >= 0 && image > before && after > image, html);
+  // The message names the image once, in place: the path text becomes the chip
+  // and the attachment never repeats below the body.
+  assert.doesNotMatch(html, /scratch\/pasted\/a\.png/);
+  assert.equal(html.match(/data-image="a\.png"/g)?.length, 1);
+});
+
+test("an image without a recorded position still follows the body", () => {
+  const html = render({
+    ...userMessage,
+    content: "look at this",
+    attachments: [
+      { kind: "image", name: "b.png", ref: "attachments/def", mimeType: "image/png" },
+    ],
+  });
+  const text = html.indexOf("look at this");
+  const image = html.indexOf('data-image="b.png"');
+  assert.ok(text >= 0 && image > text, html);
+});

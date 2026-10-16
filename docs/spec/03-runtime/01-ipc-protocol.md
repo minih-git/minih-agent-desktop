@@ -1,0 +1,2595 @@
+# 01. IPC Protocol
+
+## 1. Goal
+
+Define a stable contract between the renderer and main.
+
+Principles:
+
+1. All capabilities go through the preload allowlist
+2. Requests/responses are typed
+3. Long-running tasks use event streams, not a single oversized response
+4. Errors must have a code + message
+
+## 2. API Groups
+
+| Domain | Description |
+|---|---|
+| `app` | App info, health checks |
+| `agent` | Conversation, queued-send stop/abort, status, and interactive asktool resolution |
+| `plan` | Plan proposal listing, resolution, and change events |
+| `session` | Session CRUD / history / title metadata and summarization |
+| `session collaboration` | Read-only bounded collaboration status for sidebar projections; mutation stays in the reviewed plugin gateway |
+| `settings` | Config read/write |
+| `secrets` | Secret write/delete/exists (never return plaintext to UI logs) |
+| `project` | Workspace selection, logical project groups, and query |
+| `tool` | Permission confirmation callback |
+| `shell` | Host shell catalog and persisted default shell |
+| `log` | Diagnostics that the frontend can display |
+| `plugin` | Plugin install/enable-disable/query/permissions |
+| `commandPalette` | Command palette search and execution |
+| `workspace` | Workspace selection and legacy working-tree diagnostics |
+| `browser` | Work panel embedded preview navigation/bounds/visibility + state events |
+| `fs` | Work panel workspace file listing/reading/reveal, chat file-reference completion against the project, session scratch, and attachment roots, plus user-initiated open with the OS default handler (read-only) |
+| `window` | Frameless window state, controls, and compatibility work-panel geometry channels |
+| `menu` | Allowlisted application-menu commands and native editing/window actions |
+| `notification` | Durable inbox list/read/clear, new/activated events, and native-notification sound cues |
+| `stats` | Completed-turn token history (host RPC; dashboard is plugin-owned) |
+| `voice/live` | App-owned real-time calls, secret-free status/settings DTOs, and per-call media ports |
+
+## 3. Channel Conventions
+
+```text
+invoke: minih-agent-desktop/<domain>/<action>
+event: minih-agent-desktop/<domain>/event/<name>
+```
+
+Examples:
+
+- `minih-agent-desktop/agent/prompt`
+- `minih-agent-desktop/agent/steer`
+- `minih-agent-desktop/agent/stop`
+- `minih-agent-desktop/agent/stop-subagents`
+- `minih-agent-desktop/agent/abort`
+- `minih-agent-desktop/agent/event/message`
+- `minih-agent-desktop/agent/askTool/resolve`
+- `minih-agent-desktop/session/list`
+- `minih-agent-desktop/project/open`
+- `minih-agent-desktop/project/pickFolders`
+- `minih-agent-desktop/project/clone`
+- `minih-agent-desktop/project/cloneCheckout`
+- `minih-agent-desktop/project/openFolder`
+- `minih-agent-desktop/project-group/list`
+- `minih-agent-desktop/project-group/create`
+- `minih-agent-desktop/project-group/rename`
+- `minih-agent-desktop/project-group/update`
+- `minih-agent-desktop/project-group/memory/get` / `save`
+- `minih-agent-desktop/project-group/instructions/get` / `save`
+- `minih-agent-desktop/session/getScratchPath`
+- `minih-agent-desktop/session/openScratchPath`
+- `minih-agent-desktop/session/collaboration`
+
+## 3.1 Logical project groups
+
+A project group is the ChatGPT-style project container used by the renderer.
+The host owns its id, display name, ordered roots, primary root, shared memory,
+and shared instructions. The first selected root is primary.
+
+```ts
+type ProjectGroupRoot = { path: string; name: string; position: number };
+type ProjectGroupRecord = {
+  id: string;
+  name: string;
+  primaryPath: string;
+  roots: ProjectGroupRoot[];
+  createdAt: number;
+  updatedAt: number;
+  pinned: boolean;
+  lastOpenedAt: number;
+  legacy?: boolean;
+};
+```
+
+`project-group/create` is additive and does not change the active workspace.
+`project-group/list` returns one row per logical group; old path projects are
+returned as `legacy` single-root groups. Group memory and instructions are
+shared by all sessions whose primary path belongs to the group. The first
+selected root is primary at creation; `project-group/update` may promote any
+other selected root by naming it as `primary`, and the host then stores that
+root first. The primary path is the default builtin-tool workspace. The runtime
+advertises all registered roots; an absolute path under an additional root is
+canonicalized and executed against that root, while arbitrary external paths
+still require the ordinary permission flow.
+roots; an absolute path under an additional root is canonicalized and executed
+against that root, while arbitrary external paths still require the ordinary
+permission flow.
+
+## 4. Common Response Envelope
+
+```ts
+type Result<T> =
+ | { ok: true; data: T }
+ | { ok: false; error: AppError };
+
+type AppError = {
+ code: string;
+ message: string;
+ details?: unknown;
+ retriable?: boolean;
+};
+```
+
+## 5. Agent API
+
+### 5.1 prompt
+
+```ts
+type AgentPromptRequest = {
+ sessionId: string;
+ content: string;
+ /** Host-owned collaboration delivery; its ledger supplies content and provenance. */
+ sessionMessageId?: string;
+ attachments?: AgentPromptAttachment[];
+ /** Truncate durable transcript to N leading messages before append (regenerate). */
+ truncateBefore?: number;
+ /** Renderer snapshot used to close the prompt-to-completion notification race. */
+ viewingSessionId?: string | null;
+};
+
+type AgentPromptAttachment = {
+ path: string;
+ name: string;
+ kind: "image" | "file";
+ mimeType?: string;
+ size?: number;
+ /** `@path` text this attachment occupies inline in `content`; main-filled. */
+ inlinePath?: string;
+};
+
+type AgentPromptResponse = {
+ accepted: boolean;
+ turnId: string;
+};
+```
+
+Slash template expansion (D123): when `content` starts with `/name` and the
+name matches a loaded pi prompt template, the main-process handler expands
+the invocation (`parseCommandArgs` + `substituteArgs`) before persisting.
+The persisted user message stores `content = expanded text` plus an optional
+`command: string` field carrying the typed invocation for transcript
+display. Explicit Skill invocations also persist validated `skillMentions`
+with UTF-16 offsets into `command`, allowing the transcript to show each
+Skill separately from the user's remaining text after reopening a session.
+These optional transcript metadata fields do not alter the model-facing
+`content`. Reseed replays `content`, so the agent context is identical across
+restarts. Builtin/plugin slash aliases never reach this channel — the
+renderer executes them locally. Unknown `/foo` passes through as literal
+content. Ordinary `@path` tokens are not transformed anywhere in the pipeline
+(D124). Composer-owned pasted file references travel separately in
+`attachments`; they are validated and prepared by Electron main at dispatch,
+so a pasted image does not depend on the model being able to interpret a path
+token.
+
+Prompt execution resolves `mode`, `providerId`, `modelId`, and `thinkingLevel`
+from the durable session record and snapshots the effective command shell ID and
+dialect for Bash.
+The renderer changes those values through
+`minih-agent-desktop/session/configure` while the session is idle:
+
+```ts
+type ThinkingLevel =
+  | "off" | "minimal" | "low" | "medium"
+  | "high" | "xhigh" | "max";
+type SessionThinkingLevel = ThinkingLevel | "omit";
+
+type SessionConfigureRequest = {
+  id: string;
+  mode: "plan" | "goal" | "agent";
+  providerId?: string;
+  modelId?: string;
+  thinkingLevel: SessionThinkingLevel;
+};
+```
+
+`session/configure` is accepted only while the session is idle. Mode, provider,
+model, permission, and shell-default changes are rejected while a turn or a
+Plan/Goal `pending`/`queued`/`running` record exists. The renderer may keep these
+controls editable during a turn, but it queues the latest full configuration
+locally and invokes this channel only after the terminal event; the running
+turn never observes that optimistic next-turn choice.
+
+Only a changed effective global `defaultCommandShell` is idle-only across all
+affected sessions: any active turn or pending/queued/running Plan/Goal work blocks
+that shell change, while an omitted or idempotent shell field does not.
+
+`attachments` is an additive prompt field. The renderer sends metadata and a
+source path only; it never sends binary data. Electron main validates the path
+against the session scratch/project roots, persists image bytes in the
+content-addressed attachment store, and derives the effective model transport
+from the published model record plus the exact binding's `supportsImages`
+override. An absent or `null` override follows the published image capability;
+`true` enables and `false` disables image input for that configured model.
+For a vision-capable model, images within the 10 MB per-image bound become
+transient pi-ai image blocks. Restored history also has a 30 MB aggregate raw
+image-byte budget: the sidecar considers persisted attachments newest-first and
+preserves every eligible image when the total fits. If the budget is exceeded,
+older images use the existing safe `@path` fallback. Unknown/custom models
+without an explicit image override, non-vision models, oversized images, and
+unavailable refs also use the safe fallback. Main uses streamed hashing and file
+copying for oversized images. The durable user message stores `content` plus
+attachment metadata/ref, never base64. An image the draft named inline also
+carries that `@path` text as `inlinePath` on the durable message and on the
+sidecar attachment: the runtime keeps the prompt content blocks in the user's
+order instead of appending every image after the text, and the transcript
+renders the image at that position. An attachment without it keeps the trailing
+position.
+Invalid attachment paths fail with `PATH_OUTSIDE_WORKSPACE`.
+
+Regenerate history (D109) also uses session channels:
+
+- `minih-agent-desktop/session/saveRevision`
+- `minih-agent-desktop/session/listRevisions`
+- `minih-agent-desktop/session/activateRevision`
+
+Root user turns may include `revisionRootId`, `revisionCount`, and
+`activeRevision`. Activating a revision replaces the live tail with
+`prefix + archived branch` and disposes the session agent.
+The sidecar receives only the prepared attachment subset needed for the current
+turn. On a vision runtime, persisted refs are hydrated from session-bound
+attachment/scratch/project roots. The current prompt row is excluded by message
+id before hydration, so it does not consume the history budget; oversized,
+over-budget, or unavailable images remain safe path fallbacks. This keeps
+renderer, main, sidecar, the models.dev catalog, and host persistence on one
+capability-aware contract.
+
+### 5.1a Steer an active turn
+
+`minih-agent-desktop/agent/steer` accepts `AgentSteerRequest`:
+
+```ts
+type AgentSteerRequest = {
+ sessionId: string;
+ expectedTurnId: string;
+ content: string;
+ messageId?: string;
+ attachments?: AgentPromptAttachment[];
+};
+```
+
+It returns `{ accepted: true, turnId }` for the existing turn. Main checks its
+active durable turn, asks the existing sidecar runtime for the active project's
+attachment roots and model image capability, then applies the ordinary bounded
+attachment preparation. The sidecar revalidates `expectedTurnId` after that IO.
+A missing, ended, stopping, or mismatched turn, or a pending plan/goal approval,
+fails with `TURN_NOT_FOUND`; it never falls back to starting or queueing a turn.
+An empty payload fails with `INVALID_ARGUMENT`.
+
+The internal `agent.steeringContext` and `agent.steer` methods use only an
+existing runtime. They do not run launch configuration, `runtimeFor`, or
+`session.beginTurn`. Steering cannot change the active model, permission mode,
+workspace, or approved execution. Slash text is literal input on this channel.
+
+Accepted input is echoed as ordinary user message events with the current
+`turnId`, main-prepared attachment refs, and `UiMessage.steering: true`. This
+persisted marker protects accepted input from Smart Stop after renderer reload.
+A native Pi `message_end` may additionally carry the optional additive
+`replacesMessageId`: the provisional streaming row id whose durable SDK entry
+this event publishes. The renderer re-keys exactly that row (active, cache,
+retained) and a generic event without the field leaves every other
+row untouched. The field adds no event kind, RACP kind, or storage change.
+A user `message_end` can additionally
+carry `precedingAssistant`, a streaming snapshot that reserves the reply's
+position before the input is persisted. Main writes both through its replayable
+outbox; the host replaces only that provisional assistant row with its terminal
+snapshot, preserving its id, sequence and owning turn. No image bytes enter the
+durable message. This is an additive desktop channel and event field; it does
+not change RACP, the host RPC version, or the storage schema. See ADR active-turn-steering.
+
+### 5.2 stop at the next turn boundary
+
+```ts
+type AgentStopRequest = {
+ sessionId: string;
+ turnId?: string;
+};
+
+type AgentStopResponse = {
+ requested: boolean;
+};
+```
+
+`minih-agent-desktop/agent/stop` requests a graceful stop for the active runtime. The
+sidecar evaluates the one-shot request after the current assistant response and
+completed tool batch, at the same boundary where it would otherwise start the
+next model request. The current durable turn then emits `agent_end` and is
+finalized as `completed`; the request does not abort the provider stream,
+cancel running tools, or open a second concurrent turn. An idle session returns
+`requested: false`.
+
+The Host owns the persisted prompt queue. **Send now** uses queue promotion and
+steering into the active turn; it does not call this graceful-stop channel.
+
+### 5.2a stop-subagents
+
+`minih-agent-desktop/agent/stop-subagents` accepts `{ sessionId, delegationIds? }` and
+returns `{ pending: string[] }`. Omitting IDs selects all currently running
+delegates in that session; an explicitly empty or malformed selection is
+rejected. The local Desktop route forwards to `agent.stopSubagents` on the
+existing sidecar runtime and never starts a runtime or prompts the model.
+Native/remote session controls are not exposed by this local route.
+
+It reuses `TaskStop` cancellation, waiting up to five seconds for termination.
+Unconfirmed IDs are returned in `pending`; their durable status stays running
+until settlement. The parent and unselected delegates remain active. Existing
+terminal Task snapshots carry settlement through the normal persistence and
+renderer event path; no synthetic tool call is added to model history.
+
+### 5.3 abort
+
+```ts
+type AgentAbortRequest = {
+ sessionId: string;
+ turnId?: string;
+};
+```
+
+The abort request and response carry no Composer draft or file-reference data.
+If renderer smart Stop undoes an unanswered user turn, restoration comes from
+the renderer's session/turn-scoped pre-serialization snapshot; the existing
+transcript rewrite removes the sent row without changing protocol version. That
+rewrite is computed from the full durable transcript (`session.get` without a
+window) merged with the live rows, never from the renderer's paged,
+display-capped window, and it is re-evaluated on that merge: a reply row that
+landed between the abort and the read turns the undo into a settle (D299). A
+Stop that finds a started reply settles it in renderer memory only (streaming
+assistant → `aborted`, running tools → error) and performs no transcript
+rewrite; the durable copy is the runtime's own aborted final row or, if that
+never arrives, the host's promoted in-flight checkpoint.
+
+### 5.4 compact (protocol v10)
+
+```ts
+type AgentCompactRequest = { sessionId: string };
+type AgentCompactResponse = { accepted: boolean };
+```
+
+`minih-agent-desktop/agent/compact` creates a model-context checkpoint for an idle
+session. It is available even when automatic context protection is disabled.
+Missing provider/session configuration fails through the normal `AppError`
+envelope; an active turn or compaction returns `AGENT_BUSY`.
+
+`agent.compact` is a blocking summary request, not a status poll: the sidecar
+serializes the conversation into one prompt, streams one model summary, and may
+retry a transient failure. Its transport deadline is therefore derived from that
+budget — `(1 + 3) × 180s` stream watchdog `+ 14s` of retry backoff `+ 10s`
+slack — instead of the flat 130s default, which expired while the sidecar was
+still summarizing a large context (**D614**, issue #795). The host also treats a
+transport deadline as "unknown" rather than "failed": when the call times out it
+re-reads the session's durable record, and reports success when a new checkpoint
+landed, because the sidecar persists through host-core whether or not Electron
+received the reply. A verdict the sidecar itself reported (for example
+`CONTEXT_COMPACTION_FAILED`) is never reconciled this way.
+
+### 5.5 Plan and Goal checkpoint approval
+
+Contract approval is separate from a tool permission. Plan and Goal share this
+whole surface; `kind` is the only discriminator (**D198**). The renderer receives
+the
+host-written artifact metadata from the same Agent and resolves it through
+typed preload IPC; it never changes the session mode optimistically. Contract
+entry
+and submission remain Agent/host operations, not renderer preload methods.
+
+```ts
+type PlanningState = "inactive" | "planning" | "awaiting_approval";
+
+type ProposalKind = "plan" | "goal";
+
+type GlobalPermissionMode = "ask" | "accept-edits" | "auto";
+
+type PlanApprovalAction = "approve" | "reject";
+
+type PlanProposalStatus =
+  | "pending" | "approved" | "rejected"
+  | "expired" | "interrupted";
+
+type PlanExecutionState =
+  | "queued" | "running" | "completed" | "interrupted";
+
+// Same shape for SubmitPlan and SubmitGoal; the tool name selects the kind.
+type SubmitPlanInput = {
+  title: string;
+  markdown: string;
+  question: string;
+};
+
+type PlanArtifact = {
+  relativePath: string; // `.pi/plan/<unique-name>.md` or `.pi/goal/<unique-name>.md`
+  sha256: string;
+  sizeBytes: number;
+};
+
+type PlanProposal = {
+  id: string;
+  sessionId: string;
+  turnId: string;
+  toolCallId: string;
+  // Legacy rows written before the discriminator existed read back as `plan`.
+  kind: ProposalKind;
+  plan: string;
+  markdown: string;
+  title: string;
+  question: string;
+  status: PlanProposalStatus;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string;
+  resolvedAt?: string;
+  action?: PlanApprovalAction;
+  targetPermissionMode?: GlobalPermissionMode;
+  errorCode?: string;
+  artifact?: PlanArtifact;
+  version: number;
+  executionId?: string;
+  executionState?: PlanExecutionState;
+};
+
+type PlanExecution = {
+  id: string;
+  proposalId: string;
+  sessionId: string;
+  kind: ProposalKind;
+  plan: string;
+  title: string;
+  question: string;
+  artifact: PlanArtifact;
+  targetPermissionMode: GlobalPermissionMode;
+  state: PlanExecutionState;
+};
+
+type PlanningStateEvent = {
+  sessionId: string;
+  state: PlanningState;
+  // Absent only for `inactive` transitions that carry no proposal.
+  kind?: ProposalKind;
+  proposalId?: string;
+  title?: string;
+  markdown?: string;
+  question?: string;
+  artifact?: PlanArtifact;
+  version?: number;
+  plan?: string;
+  action?: PlanApprovalAction;
+  targetPermissionMode?: GlobalPermissionMode;
+  executionId?: string;
+  executionState?: PlanExecutionState;
+  proposal?: PlanProposal;
+};
+
+type PlansPendingResult = {
+  plans: PlanProposal[];
+  state?: PlanningState;
+  // The contract being negotiated, for mode chip and approval copy.
+  kind?: ProposalKind;
+};
+
+type PlanResolveIdentity = {
+  proposalId: string;
+  sessionId: string;
+  turnId: string;
+  toolCallId: string;
+  version?: number;
+};
+
+type PlanResolveRequest =
+  | (PlanResolveIdentity & {
+      action: "approve";
+      targetPermissionMode: GlobalPermissionMode;
+    })
+  | (PlanResolveIdentity & { action: "reject" });
+
+type PlanResolutionResult = {
+  ok: boolean;
+  proposal: PlanProposal;
+  state: PlanningState;
+  action?: PlanApprovalAction;
+  targetPermissionMode?: GlobalPermissionMode;
+  execution?: PlanExecution;
+};
+```
+
+Preload methods:
+
+- `minih-agent-desktop/plans/pending({ sessionId? }) -> PlansPendingResult`
+- `minih-agent-desktop/plans/resolve(PlanResolveRequest) -> PlanResolutionResult`
+
+Electron forwards each host `plans.changed` notification unchanged to the
+renderer through the stable shared `IPC.event.plansChanged` channel
+(`minih-agent-desktop/plans/event/changed`). This is the Plan/Goal change event surface;
+the
+renderer does not receive contract approval transitions as AgentEvent variants.
+`plans.pending` returns only currently pending approval rows. Terminal
+`plan_approvals` rows remain durable Host records, but are not renderer
+hydration data; the renderer retains its latest contract snapshot only for the
+current renderer lifetime while live `plans.changed` events arrive.
+
+For `approve`, host-core and Electron require an explicit
+`targetPermissionMode`; Electron never fills it from stored settings. The
+renderer initializes each approval to Ask, which remains the product default,
+and the host does not persist the selection as the next approval default.
+`reject` carries no permission mode.
+Responses with a wrong proposal, session, turn, tool-call, version, or expired
+host-owned deadline fail with a stable Plan/Goal approval error. There is no
+request-changes action.
+
+### 5.5 getStatus
+
+```ts
+type AgentActivityAgent = {
+  name: string;
+  lastPhase?: "waiting-model" | "thinking" | "tool";
+  lastToolName?: string;
+};
+
+type AgentActivity =
+ | { phase: "starting"; since: number }
+ | { phase: "waiting-model"; since: number }
+ | { phase: "preparing"; since: number }
+ | { phase: "compacting"; since: number;
+     reason: "manual" | "threshold" | "overflow" }
+ | { phase: "recovering"; since: number }
+ | { phase: "retrying"; since: number; attempt: number;
+     infinite?: boolean; retryDelayMs?: number; error?: AgentActivityError }
+ | { phase: "waiting-subagents"; since: number; subagentCount: number;
+     agents?: AgentActivityAgent[] };
+
+type AgentStatus = {
+ sessionId: string;
+ isRunning: boolean;
+ currentTurnId?: string;
+ modelId?: string;
+ pendingToolConfirmations: number;
+ activity?: AgentActivity;
+};
+```
+
+### 5.6 Turn queue (D375 / D386)
+
+The Host owns the per-session prompt queue; the renderer mirrors it. A
+Send-while-running pushes through `minih-agent-desktop/agent/queue/push` and the
+headless Agent Host module admits, orders, and drains the durable entries
+(`turn_queue`, schema v18). Every change is fanned out as
+`minih-agent-desktop/agent/event/queueChanged`.
+
+```ts
+type AgentQueuePushRequest = {
+  sessionId: string;
+  content: string;
+  attachments?: AgentPromptAttachment[];
+  idempotencyKey?: string;
+};
+
+type QueuedTurnSummary = {
+  id: string;         // the RACP turn id, stable from admission
+  sessionId: string;
+  content: string;
+  attachments?: AgentPromptAttachment[];
+  position: number;   // 1-based queue position
+  priority?: number;  // set only for a promoted entry; the click order
+  createdAt: string;
+};
+
+// minih-agent-desktop/agent/queue/push       -> QueuedTurnSummary
+// minih-agent-desktop/agent/queue/list       -> { entries: QueuedTurnSummary[] }
+// minih-agent-desktop/agent/queue/remove     -> { ok: true }   (turnId)
+// minih-agent-desktop/agent/queue/prioritize -> { ok: true }   (turnId; "send now")
+// minih-agent-desktop/agent/queue/reorder    -> { moved: boolean } (turnId, direction)
+// minih-agent-desktop/agent/event/queueChanged -> { sessionId, entries }
+```
+
+`push` returns `AGENT_BUSY` with `queueFull` once a session holds eight
+entries and `IDEMPOTENCY_CONFLICT` when a key is reused with other input.
+`entries` arrive in delivery order: promoted entries first in ascending
+`priority` (the order they were promoted), then every remaining entry by
+`position`. `prioritize` appends an entry to the end of that priority block
+and attempts steering delivery into the active runtime turn, refuses an entry
+that already carries a priority with `CONFLICT`, and refuses a turn that is no
+longer queued. Delivery runs outside the session admission lock, reserves only
+the input being delivered, and never requests stop or abort. A queued input
+with a different effective permission mode stays queued so its own grants are
+preserved. Immediate promotion delivers only the paired caller's own input;
+other principals retain the existing turn-boundary delivery and queue policy.
+`reorder` swaps one non-promoted entry with its adjacent
+non-promoted neighbour and reports `moved: false` for a promoted entry, a
+missing entry, or a block/queue edge; a promoted entry is never a neighbour.
+`remove` cancels an entry that has not started. A restored queue stays held
+until the desktop attaches as the owner, so a reboot never starts work
+unattended.
+
+The promoted block is delivered as adjacent messages rather than as separate
+turns: promoted entries join the active turn through the steering channel
+when it accepts input. With no active turn, the first promoted entry starts
+the turn and every later promoted entry is injected into that same turn
+(`minih-agent-desktop/agent/steer` with the running turn's id), so the transcript shows
+the user rows in click order within one turn. An injected entry
+leaves the queue and its own turn is canceled because it never runs on its own.
+An entry the runtime refuses to accept stays queued and leaves at the next
+boundary as its own turn.
+
+The queue's delivery contract is frozen by ADR 0265. A turn's own settlement is
+authoritative for the queue: the terminal event can be dropped (a terminal event
+naming a turn Main no longer owns never reaches the module) or never emitted, so
+the settlement closes the turn inside the module and releases the queue the turn
+was holding.
+
+### 5.7 Session collaboration projection
+
+The renderer has one read-only Electron channel for the sidebar hover card:
+
+```ts
+// minih-agent-desktop/session/collaboration({ sessionId }) -> SessionCollaborationSummary
+type SessionCollaborationSummary = {
+  sessionId: string;
+  title: string;
+  status: "idle" | "waiting_permission" |
+    "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
+  observedAt: string;
+  modelKey?: string;
+  providerName?: string;
+  modelName?: string;
+  createdBySession?: { sessionId: string; title: string; available?: boolean };
+  createdSessions?: Array<{ sessionId: string; title: string; available?: boolean }>;
+  currentTask?: {
+    messageId: string;
+    senderSession: { sessionId: string; title: string; available?: boolean };
+    text: string;
+    status: string;
+    turnId?: string;
+    createdAt: string;
+  };
+  result?: { messageId: string; turnId?: string; status: string; text?: string; error?: string };
+  recentExchanges: Array<{
+    messageId: string;
+    direction: "incoming" | "outgoing";
+    peer: { sessionId: string; title: string; available?: boolean };
+    kind: "task" | "message" | "completion";
+    status: string;
+    preview: string;
+    createdAt: string;
+  }>;
+};
+```
+
+`available` is `false` when the referenced session was deleted or is otherwise
+absent; the host then also falls back to the Session ID as the title. The
+renderer renders an unavailable reference as text rather than a
+keyboard-focusable navigation control, and activating a reference whose session
+no longer exists reports a visible error instead of committing an empty
+selection. Independently created sessions never receive a fabricated creator
+reference. `session_collaboration_messages.source_session_id` intentionally has
+no foreign key, so a delivery record survives deletion of its sender; such
+references are reported as unavailable rather than removed.
+
+Electron overlays live Agent status on the durable host projection, bounds the
+exchange previews, and fetches it only while a session row is hovered or
+focused. The renderer cannot invoke the host's mutating
+`session.collaboration.*` methods. The plugin's `desktop.control` gateway is
+the sole reviewed mutation surface and binds send/cancel authorization to the
+active plugin Agent tool invocation.
+
+A hover-card read that does not settle within the card's deadline is abandoned,
+its late result is ignored, and the next bounded read is scheduled. While the
+card is mounted but not visible (a hidden window, or a window without focus) the
+loop keeps polling at a slower idle interval so a later focus change is picked
+up. Polling still never overlaps reads and stops on unmount.
+
+## 6. Agent Events
+
+Pushed from main → renderer:
+
+```ts
+type AgentEventEnvelope = {
+ sessionId: string;
+ turnId?: string;
+ ts: number;
+ event: AgentEvent;
+ /** Set on events emitted inside a subagent (D201, ADR 0062): the `Task` call
+  * that spawned it, and the definition name. */
+ parentToolCallId?: string;
+ agentName?: string;
+};
+
+type AgentEvent =
+ | { type: "agent_start" }
+ | { type: "agent_end"; messageIds: string[] }
+ | { type: "turn_start" }
+ | { type: "turn_end"; subagentUsage?: MessageUsage }
+ | { type: "message_start"; message: UiMessage }
+ | { type: "message_update"; message: UiMessage;
+     deltaText?: string; deltaThinking?: string;
+     stream?: "delta"; resetText?: boolean; resetThinking?: boolean }
+ | { type: "message_end"; message: UiMessage; replacesMessageId?: string }
+ | { type: "tool_start"; toolCallId: string; toolName: string; args: unknown }
+ | { type: "tool_update"; toolCallId: string; partialResult?: unknown }
+  | { type: "tool_end"; toolCallId: string; result: unknown; isError?: boolean;
+      toolUsage?: ToolTokenUsage }
+  | ({ type: "planning_state" } & Omit<PlanningStateEvent, "sessionId">)
+  | { type: "tool_permission_request"; request: ToolPermissionRequest }
+  | { type: "compaction_start";
+     reason: "manual" | "threshold" | "overflow" }
+ | { type: "compaction_end";
+     reason: "manual" | "threshold" | "overflow";
+     ok: boolean; tokensBefore?: number; firstKeptMessageId?: string;
+     willRetry: boolean; fallback?: "retained_tail";
+     mark?: { id: string; throughMessageId: string;
+              generation: number; summaryTokens: number;
+              summarized: boolean;
+              fallback?: "retained_tail" };
+     error?: { code: string; message: string } }
+ | { type: "error"; error: AppError }
+ | { type: "status"; status: AgentStatus };
+```
+
+> These are **UI-normalized events**, not a pass-through of raw pi events.
+> `packages/agent-runtime` is responsible for mapping pi events to this model.
+
+Append-only `message_update` frames set `stream: \"delta\"` and omit growing
+`content` / `thinking` from `message`. Consumers apply `deltaText` /
+`deltaThinking` onto the live row (replace instead of append when `resetText`
+or `resetThinking` is set). The runtime coalesces those frames on an ~16ms
+interval and flushes immediately before tool, terminal, abort, error, and
+retry events. `message_start` and `message_end` still carry a full
+`UiMessage`. Snapshot replacements omit `stream`. These fields are additive
+in protocol v11 (D412).
+
+`status` events include an optional runtime-owned `activity` phase while a turn
+is active. `starting` is the prompt handoff; `waiting-model` is the interval
+after a provider request is issued and before the first assistant event;
+`preparing` is the gap after a tool batch and before the next provider request;
+`compacting` is an in-progress context checkpoint (threshold, overflow, or
+manual); `recovering` is the silent-turn re-run; `retrying` is an abortable
+provider backoff; and `waiting-subagents` is a parent wait on delegated work,
+with a live running count and each target's latest coarse child action (waiting
+for the model, thinking, or the current tool). The renderer keeps this status
+per session and renders it as a compact inline row. The phase is cleared when
+assistant or tool activity starts, or when the turn reaches a terminal event.
+These phases explain quiet intervals; they do not replace message/tool
+lifecycle events or imply a percentage of completion.
+
+`planning_state` is the agent-runtime's local planning projection. Its optional
+proposal and execution fields mirror the shared `PlanningStateEvent` shape
+(`proposal`, `executionId`, and `executionState`). The full approved execution
+descriptor uses `PlanExecution` and is carried by the host result/notification.
+The authoritative host approval/queue transition is the separate `plans.changed`
+notification forwarded through `IPC.event.plansChanged`.
+`tools.output` is a host notification consumed by `packages/agent-runtime`
+while a Bash tool runs; it is not an AgentEvent.
+
+`turn_end` closes one model/tool turn but is not a terminal desktop run event:
+another provider request may follow immediately. Renderer busy state and
+durable turn completion therefore settle only on `agent_end` or `error`.
+Compaction is always inline: `compaction_start` keeps the run busy, a manual
+operation settles on its matching `compaction_end`, and threshold/overflow
+compaction stays inside the active agent run. There is no pre-computed phase to
+distinguish (D203).
+
+`compaction_end.mark` is present whenever a checkpoint was installed. It is the
+renderer's whole view of that compaction: `id`, the `throughMessageId` anchor the
+transcript row sits after, `generation` (how many checkpoints this session has
+installed), `summaryTokens` (the summary's estimated context cost), and
+`summarized` (`false` when the window rolled over without asking the model for a
+summary), and `fallback` (`"retained_tail"` when summary generation failed and
+the checkpoint carries only a recovery notice plus a retained tail; the row
+labels it as a failed summary, never as a summary of N tokens). The record itself is not carried — its summary and retained tail are
+far larger than an event should be — and is instead read from
+`SessionDetail.compactions` on session open or fork.
+
+Automatic summary failures may still produce a successful lifecycle event with
+`fallback: "retained_tail"`; this means a durable, aggressively bounded tail
+checkpoint was installed and the run may continue with reduced historical
+context. Manual compaction never silently falls back.
+
+Provider `error` events may include bounded diagnostic fields in
+`AppError.details`: `phase` (`request` or `stream`), `providerStatus`,
+`providerCode`, `providerWaitMs`, `streamMs`, `retryAttempt`, and, for a
+network failure, `networkCategory`, `networkCode`, `networkSyscall`,
+`networkHost` and `networkRoute` plus the request correlation fields
+`requestMessages`,
+`requestBytes` and `compactionGeneration`. These fields are additive and
+redacted; they never carry credentials or an unrestricted provider response,
+and the request fields are counts and byte sizes only. A transient stream
+failure may be replayed once inside the
+same turn without a terminal `error` event or a duplicate assistant message.
+The second failure emits the terminal normalized `STREAM_FAILED` error.
+
+## 6a. Notification API (D117, protocol v4)
+
+Durable inbox requests are allowlisted preload invokes that Electron forwards
+to the singular host RPC domain without renderer access to SQLite:
+
+- `minih-agent-desktop/notification/list({ unreadOnly?, limit? })`
+- `minih-agent-desktop/notification/markRead({ id })`
+- `minih-agent-desktop/notification/markAllRead()`
+- `minih-agent-desktop/notification/clear()`
+
+The renderer invokes
+`minih-agent-desktop/notification/setViewingSession({ sessionId })` whenever the chat
+page's active session changes; `sessionId: null` clears the viewing context on
+non-chat pages. A renderer-originated `agent/prompt` also carries a matching
+`viewingSessionId` snapshot, which Electron installs before asynchronous turn
+setup so a fast completion cannot beat the viewing-context update. Electron
+combines this hint with Main-owned window visibility/focus at the terminal event
+boundary. Missing, null, or mismatched context fails safe to notification. It
+also invokes
+`minih-agent-desktop/notification/showNative({ id, sessionId, kind, title, body, createdAt? })`
+after localizing a new record, where `kind` is `"task" | "interactive"` and
+`createdAt` is the durable task timestamp when available. Main keeps a
+`dismissedBefore` watermark for successful mark-all-read/clear actions and
+rejects task deliveries at or before that timestamp; individual acknowledgements
+use the durable id as a tombstone. This prevents a delayed renderer or host
+replay from resurfacing an already acknowledged banner. This Electron-only
+request never crosses into the host RPC domain.
+
+```ts
+type AppNotification = {
+  id: string;
+  kind: "task.completed" | "task.failed";
+  sessionId: string;
+  sessionTitle: string;
+  turnId: string;
+  errorCode?: string;
+  createdAt: string;
+  readAt?: string | null;
+};
+
+type NotificationListResult = {
+  notifications: AppNotification[];
+  unreadCount: number;
+};
+
+type NotificationChangedEvent = {
+  notification: AppNotification;
+};
+
+type NotificationActivatedEvent = {
+  id: string;
+  sessionId: string;
+};
+
+type SessionsChangedEvent = {
+  reason: "plugin.session.import" | "plugin.session.importBatch" |
+    "plugin.session.rename" | "plugin.session.delete";
+  pluginId: string;
+};
+```
+
+Main sends two events:
+
+- `minih-agent-desktop/notification/event/changed` after `session.endTurn` returns a
+  newly inserted record. Renderer merges the record into its bounded local list
+  and recalculates the exact unread count. A terminal result already visible in
+  the focused current chat, repeated terminal updates, and aborted turns emit
+  nothing.
+- The durable `id` is the renderer and Electron native-delivery idempotency key.
+  A repeated `notification.changed` payload for an id already present in the
+  local list is a no-op; a delayed payload whose row was acknowledged or
+  cleared is ignored and must not recreate the row or its sidebar outcome.
+- `minih-agent-desktop/notification/event/activated` after the user clicks Electron's
+  native system notification. Renderer follows its existing session-selection
+  path, including project activation for a project-bound session.
+- `minih-agent-desktop/notification/event/sound` is a payload-free, one-way cue for a
+  plugin-native notification that Electron successfully showed. Renderer plays
+  the shared soft chime; the event carries no notification content and creates
+  no inbox row. Native task, interactive, and plugin banners are silent so the
+  in-app chime is not doubled by a platform-specific sound.
+
+Plugin-owned session mutations additionally emit
+`minih-agent-desktop/session/event/changed` after a successful write. The renderer
+handles this host-owned event by calling its existing `refreshSessions()` path;
+plugins never send a sidebar event and a skipped import does not emit one.
+
+Calls to the renderer store's `refreshSessions()` action have at most one
+session-list request in flight per store instance. Calls arriving while that
+request is running share one follow-up request; their promises resolve
+after that later response is committed, rather than accepting the older read.
+Further calls during the follow-up form the next batch. Each batch commits
+once, and a failed batch does not prevent a queued or later refresh. An import
+refresh retains its own pre-refresh session baseline and project-reveal intent,
+even if an earlier ordinary refresh already observed the imported rows.
+Ordinary refreshes do not gain import-reveal behavior or change the current
+session, project, or page. Bursts from parallel plugin workers therefore remain
+current without issuing overlapping full-list reads within this refresh path.
+Bootstrap and provider-refresh snapshots remain independent reads.
+
+Electron owns the native surface while the renderer derives localized
+title/body text from the structured record. Electron accepts `showNative` only
+for a valid notification/session pair. For `kind: "task"`, it shows a native
+notification only while the main window is unfocused; for `kind: "interactive"`,
+it preserves the exact-visible-session suppression while allowing a focused
+background session to alert. In both cases the platform API is best-effort,
+and a shown notification restores/shows and focuses the window before emitting
+`activated`. No permission, scheduled-reminder, or plugin source enters the
+task notification contract. Native delivery is best-effort; the durable
+inbox remains authoritative when the OS suppresses a banner. On Windows,
+Electron Main registers `org.hmini.agent` as the process AppUserModelID
+before readiness and before any window is created. The ID matches the NSIS
+package identity so notification attribution, notification settings, taskbar
+grouping, and installed shortcuts resolve to `Minih-Agent-Desktop`, never the stock
+Electron host.
+
+Task native objects are retained by durable notification id, with at most one
+live object per id. Replayed `showNative` requests do not create a second
+object. A successful `notification.markRead`, `notification.markAllRead`, or
+`notification.clear` closes matching task objects (and leaves an id tombstone
+long enough to reject late delivery); a failed host mutation does not dismiss
+the object optimistically. Interactive prompt notifications use a separate
+transient registry and are not affected by task inbox mutations.
+
+The viewing-session hint is advisory and fail-safe: missing, stale, hidden, or
+unfocused renderer state creates the durable notification. Suppression occurs
+only when the main window is visible and focused and the reported chat session
+matches the finishing session. Window creation, renderer reload, and renderer
+process loss clear the hint before any later terminal event is evaluated.
+
+## 7. Session API
+
+```ts
+type SessionSummary = {
+ id: string;
+ title: string;
+ messageCount: number;
+ projectPath?: string;
+ modelId?: string;
+ providerId?: string;
+  mode: "plan" | "goal" | "agent";
+ thinkingLevel: SessionThinkingLevel;
+ supportsReasoning?: boolean;
+ supportedThinkingLevels?: ThinkingLevel[];
+ updatedAt: string;
+ createdAt: string;
+ /** Isolated sessions only (ADR 0329); never carries a filesystem path. */
+ worktree?: {
+  branch: string;
+  status: "creating" | "active" | "conflict" | "merged" | "missing";
+  setupStatus?: "none" | "running" | "ok" | "failed" | null;
+ };
+};
+
+type SessionMessageOrigin = {
+ messageId: string;
+ sourceSessionId: string;
+ sourceTitle: string;
+ targetSessionId: string;
+ kind: "task" | "message" | "completion";
+ replyToMessageId?: string;
+};
+
+type UiMessage = {
+ id: string;
+ role: "user" | "assistant" | "system" | "tool";
+ content: string;
+ /** Host-authenticated session collaboration origin; absent for human input. */
+ sessionMessage?: SessionMessageOrigin;
+ thinking?: string; // assistant reasoning, never folded into content
+ usage?: MessageUsage; // provider-reported assistant usage
+ responseDurationMs?: number; // elapsed assistant response duration for throughput
+ providerWaitMs?: number; // request start to first model response event
+ modelStreamDurationMs?: number; // streamed thinking and answer duration
+ responseOutputTokens?: number; // estimated partial output when stop has no final usage
+ toolName?: string;
+ toolCallId?: string;
+ toolArgs?: unknown;
+ toolResult?: unknown;
+ toolUsage?: ToolTokenUsage; // estimated tool call/result footprint
+ error?: AppError;  // structured failure owned by this assistant turn
+ createdAt: string;
+ // Rows produced inside a subagent (D201, ADR 0062); absent on the session's own
+ parentToolCallId?: string;   // `Task` call that spawned the delegate
+ agentName?: string;          // delegate definition name
+ // status/tool fields omitted here
+};
+
+type ToolTokenUsage = {
+ argumentTokens: number;
+ resultTokens: number;
+ totalTokens: number;
+ estimated: true;
+};
+
+type SessionDetail = SessionSummary & {
+  messages: UiMessage[];
+  /** Authoritative metadata for SubmitPlan/SubmitGoal calls in this page. */
+  planHistory?: Array<{ proposal: PlanProposal; superseded: boolean }>;
+  /** Zero-based start offset when the renderer received a bounded page. */
+  messageStart?: number;
+  /** True when an older page can be requested with session.get. */
+  hasMoreBefore?: boolean;
+};
+```
+
+Historical contract reads attach `planHistory` only for submission call IDs in
+that session's returned page. SQLite supplies the current approval status,
+exact Markdown snapshot, artifact path, and same-kind supersession; original
+JSONL tool results stay immutable. Display content caps do not truncate these
+bounded contract snapshots (submission already enforces the Markdown limit).
+This additive field is optional for older/native hosts and empty forks: no
+approval record is copied or inferred from tool output or artifact filenames.
+The renderer may attach it to `UiMessage.planHistory` as display-only metadata;
+it must never persist that projection as model evidence.
+
+
+`messageCount` is the host-authoritative count of messages in the current
+canonical transcript. The renderer uses it to distinguish an empty durable
+session from a session whose title still looks untitled; title text is not a
+session-state signal.
+
+Electron main enriches session list/get/create/fork/configure results with
+effective reasoning capability from the local models.dev record for that
+session's exact provider/API URL and model. Sessions without a pinned
+`providerId`/`modelId` inherit the app default provider/model for this
+enrichment only. Desktop session create writes the then-current default (or an
+explicit Composer draft override) into the durable ids; later default-model
+changes do not rewrite an already created session. A home draft with no session
+still follows the live default. An ID absent from the snapshot, or a session with no resolvable
+default, gets `supportsReasoning: false` and `off`; cached/provider claims do
+not replace catalog semantics. The Rust host remains authoritative only for the
+durable `thinkingLevel`.
+
+The global plugin launcher uses Electron-only allowlisted channels:
+
+- `minih-agent-desktop/pluginLauncher/toggle` shows or hides the centered utility window
+- `minih-agent-desktop/pluginLauncher/dismiss` hides it only when invoked by that window
+- `minih-agent-desktop/pluginLauncher/event/shown` resets its query, reloads installed
+  plugins, and restores input focus after every invocation
+
+The launcher reuses `plugin/list` and `plugin/openPanel`; it adds no host-core
+plugin RPC. The Electron main process also calls the additive host method
+`keyboard.setGlobalShortcut({ binding })` to enable the Windows-only fallback
+for the reserved `Alt+Space` binding. Host-core emits the notification
+`keyboard.shortcut({ binding: "Alt+Space" })` when its low-level Windows
+keyboard hook detects the chord; the hook consumes that chord so the active
+window system menu does not open. Non-Windows hosts treat the method as a
+no-op. `responseDurationMs` and `responseOutputTokens` are optional transcript
+  metadata persisted in message metadata, so protocol v11 and storage schema v16
+remain unchanged.
+
+The Settings font picker (ADR 0083) reads installed system font families
+through one Electron-only allowlisted channel:
+
+- `minih-agent-desktop/app/systemFonts` returns `string[]` of installed system font
+  family names (platform tooling in Electron main — `system_profiler` on
+  macOS as the fallback only, with `osascript` JXA bridging the fast CoreText
+  query `CTFontManagerCopyAvailableFontFamilyNames` as the primary path,
+  PowerShell on Windows, `fc-list` on Linux), deduplicated, sorted, with
+  hidden `.`-prefixed families excluded. The main process caches the result
+  for 60 seconds; failures resolve to `[]`. The host RPC and protocol version
+  are unchanged.
+
+Minimal interface:
+
+- `session/list`
+- `session/create` — optional `isolated: true` with a `projectPath` creates
+  the session in its own git worktree (ADR 0329); a refusal surfaces the host's
+  `WORKTREE_*` code
+- `session/open(sessionId)` — validate and select an existing durable session
+  through the reviewed desktop-control path; it does not create or mutate the
+  session
+- `session/fork({ sessionId, title?, throughMessageId? }) -> { session: SessionDetail }`
+- `session/get({ id, messageBefore?, messageAround?, messageLimit?, contentLimit? })` — without
+  read-window options returns the complete UI projection; with them returns a
+  bounded newest/older page plus `messageStart` and `hasMoreBefore`. The
+  content limit applies only to display values and never changes the lossless
+  transcript or model context. `messageBefore` and `messageStart` are physical
+  message-line positions in the transcript file, not deduplicated index counts.
+  `messageAround` centers a bounded read on a stable message ID; it requires
+  `messageLimit` and cannot accompany `messageBefore`. A missing target returns
+  no session. Only the selected user/assistant text bypasses the display cap.
+  Bounded responses also include exclusive `messageEnd` and `hasMoreAfter` for
+  forward paging; reading windows never replace the live transcript cache.
+  A nested target may also return `navigationParent`, the latest capped owning
+  Task `UiMessage`. It is display context outside the physical page, not an
+  extra history line. The renderer shares one reading view between ordinary
+  paging, search navigation, and subagent details.
+- `session/search({ query, offset? }) -> SessionSearchPage` forwards to
+  `search.sessions`; host-core owns discovery, counts, filtering, and pagination.
+- `session/searchContext(SessionSearchContextRequest) -> SessionSearchContext`
+  forwards to `search.context`. This read-only text window is separate from
+  `session/get` and must never enter the renderer's live transcript cache.
+  Both channels are explicitly included in the preload IPC allowlist.
+- `session/delete`
+- `session/rename({ id, title }) -> { ok: boolean }` trims the title and
+  accepts 1–80 Unicode code points. Blank or overlong titles are rejected as
+  `INVALID_PARAMS`; a successful rename changes only session metadata and does
+  not alter transcript content, message count, or activity timestamps. It marks
+  the title source as manual so an installed title plugin cannot replace it.
+- `session/deriveTitle({ id, title }) -> { updated: boolean }` applies the
+  deterministic first-prompt fallback. Host-core accepts it only while the
+  stored title is still a recognized placeholder with the `default` title
+  source, and it is applied only to metadata: `updated_at`, transcript content,
+  and message count are unchanged. The derived title keeps that source, so an
+  installed title plugin may still replace it; `session/rename` remains the
+  user-owned path.
+- `session/getScratchPath({ sessionId }) -> { path }` returns the session
+  scratch directory `<data_dir>/scratch/<sessionId>/` without creating it.
+- `session/openScratchPath({ sessionId }) -> { ok, path }` resolves that same
+  directory, creates it if missing, and opens it in the system file manager.
+  The renderer supplies only the session id; Main rejects a path outside the
+  scratch root.
+- `session/importScan -> { sessions, truncated? }`
+- `session/importRun(candidates) -> { imported, skipped, failed }`
+- `modelConfig/importScan -> { providers }`
+- `modelConfig/importRun(candidates) -> { imported, skipped, failed }`
+
+Import candidates carry `projectPath: string | null` and
+`messageCount: number | null`. A scan reads each source file fully up to the
+importer's sampled-scan threshold; larger files are sampled (head + tail) so
+scanning a multi-gigabyte archive stays interactive, and their `messageCount`
+is null — the import list renders an em dash for it, while imported sessions
+always compute their real message count at convert time. Codex discovery also
+caps traversal at 250 session files, walking `YYYY/MM/DD` paths newest-first
+(path date, not `updatedAt`). Hitting that cap sets `truncated.codex` to 250
+so the renderer can say the list is incomplete. Scan titles come
+from the first real user message: known synthetic injections (repo
+instructions, the IDE-context family such as `# Context from my IDE setup:`
+or `# Browser comments:`) are skipped, while pasted markdown starting with
+`#` is kept. A corrupt or out-of-range stored timestamp falls back to the
+source file's mtime, never to the import moment. A successful import
+refreshes both sessions and the durable Projects index.
+
+
+`modelConfig/importScan` reads Claude Code, Codex, OpenCode, Pi, and CC
+Switch config files from the user home directory and returns public provider drafts
+(`source`, `externalId`, `name`, `baseUrl`, `apiStyle`, `modelIds`,
+`hasSecret`). Secrets stay in the main-process scan cache and are written
+through `providers.create` on `modelConfig/importRun`. Re-importing a
+matching endpoint, API style, and credential is skipped; a different
+credential at the same endpoint remains independent. OAuth tokens from those
+tools are never copied. No host protocol or storage schema version bump.
+
+A regenerate or edit-resend truncates the durable transcript before appending
+its new user turn. `agent/prompt` accepts `truncateFromMessageId` — the identity
+of the first message to drop — and forwards it to host-owned
+`session.truncateFrom`, which resolves that identity against its own
+transcript; an unresolvable id is rejected with `NOT_FOUND` rather than cutting
+at a guessed position. The kept prefix never crosses the JSON-RPC pipe
+(ADR 0216 / issue #211). The older `truncateBefore` count remains accepted, but it
+is only correct when the caller holds the entire history: a renderer showing a
+bounded window addresses different messages than the transcript does.
+`agent/prompt` itself loads only a bounded `session.get` for launch
+configuration.
+
+
+`session/fork` is a protocol-v5 channel that creates an independent
+session from the source session's current active transcript. When optional
+`throughMessageId` is present, the copied snapshot ends at that message; an
+unknown id returns `NOT_FOUND`. While a Desktop source has an active turn,
+`throughMessageId` may select an already-completed assistant prefix containing
+no messages owned by a running turn. The host validates this under its RPC lock;
+whole-session and active-turn forks still return `AGENT_BUSY`. Native Pi forks
+retain their existing idle/ownership guard. The source continues running when
+the child is activated; the renderer never reloads history over its live tail.
+Electron owns localization and supplies the user-facing branch title; the host
+fallback title is reserved for non-UI callers.
+The host assigns a new session id, message ids, and tool-call ids; it copies
+the durable project/provider/model/mode/thinking/permission configuration but
+does not copy turns, notifications, artifacts, scratch data, permission
+grants, or regenerate revisions. The source session remains unchanged.
+Message-scoped assistant Fork/Edit uses this option so the child receives a
+new session id and therefore cannot reuse or mutate the source pi runtime or
+its provider cache.
+
+Protocol version 9 adds the checkpoint Plan contract: `SubmitPlan`, unique
+`.pi/plan/*.md` artifact metadata, approve/reject-only responses, absolute
+expiry, `plan_approvals` execution fields, shell catalog/identity fields, and
+streamed stdout/stderr events. A v7 or older host, and any incompatible v8
+peer, must fail the handshake so a desktop cannot display Plan while silently
+losing the artifact, queue, shell, or policy boundary.
+`minih-agent-desktop/agent/compact` and `session.appendCompaction` remain part of the v9
+contract. The Goal contract is additive inside v9 (**D198**): `kind` is optional
+on the wire and absent means `plan`, so a peer that predates Goal keeps working
+and simply never negotiates one.
+
+Protocol version 2 adds `thinkingLevel`, `UiMessage.thinking`, and
+`message_update.deltaThinking`. A v1 peer must fail the version check instead
+of silently discarding these fields.
+
+`UiMessage.error` is an optional additive field. Provider failures attach the
+same normalized `AppError` carried by the lifecycle `error` event to the
+assistant message before `message_end`. Error messages persist with the
+transcript but are excluded from restored model context.
+
+The context inspector consumes additive usage and timing signals. `MessageUsage`
+is the provider-reported assistant usage and `responseDurationMs` is the
+elapsed request duration used to display output tokens per second. Completed
+responses use pi-ai 1.1.0's monotonic `AssistantMessage.durationMs`; when
+that value is unavailable, the sidecar stopwatch remains the fallback.
+`providerWaitMs` measures from the model request start to the first response
+event, including transport and provider-side first-response wait;
+`modelStreamDurationMs` measures streamed thinking and answer content after
+that event. Both are persisted as optional assistant-message metadata. Older
+messages without split timing keep their prior `responseDurationMs` as the
+model-duration fallback; their request-wait duration cannot be recovered. The
+inspector sums top-level model timing and tool duration against elapsed session
+time; nested delegate timings are excluded, and overlapping top-level tool
+calls count once. `ToolTokenUsage` is a runtime estimate from the tool call
+arguments and result; providers do not report per-tool allocation, so the
+renderer labels these rows as estimates and never merges them into the exact
+provider total. Older peers may omit all of these optional fields without
+breaking the v6 handshake.
+
+`turn_end.subagentUsage` is the settled subagent total since the previous
+emitted `turn_end` of the same durable turn. Parent `message.usage` stays the
+provider-reported assistant usage (D103). Electron sums parent-message usages
+plus `subagentUsage` into `session.endTurn.usage`.
+
+### stats
+
+- `minih-agent-desktop/stats/getTokenUsageHistory({ startDate?, endDate?, bucket? }) -> TokenUsageHistoryResult`
+
+`bucket` is `day` | `week` | `month`. Omitted dates use the host default window
+(53 weeks / 52 weeks / 24 months) in the host's local calendar. `week` keys use
+ISO week year (`%G-W%V`). The result fills empty buckets in range. This channel
+is not a Settings page; the user-facing dashboard is plugin `pi.token-insights`
+(D335 / ADR 0173).
+
+## 8. Settings / Secrets API
+
+### settings
+Non-sensitive config that can be returned to the UI:
+
+- provider list (without secret plaintext)
+- default model
+- persisted `defaultCommandShell` from the host shell catalog
+- persisted `largePasteThreshold` for oversized text-only composer pastes;
+  host reads missing values as 600 and accepts integers from 1 through 1,000,000
+- permission policy toggles
+- UI preferences, including optional `AppSettings.keybindings` overrides keyed
+  by the shared shortcut action ids; values are either `null` or portable
+  `Mod+Shift+Key` strings and contain no platform-specific native accelerator
+  strings. A missing entry uses the platform default, while `null` is an
+  explicit disabled/Unbound state
+- optional `AppSettings.developerMode`; absent and `false` both keep developer
+  tools disabled
+- optional `AppSettings.networkProxy` (`system` / `direct` / `custom` plus a
+  proxy URL and bypass list). Absent means System. Custom accepts `http`,
+  `https`, `socks5`, and `socks5h` URLs, including userinfo. Main applies
+  Chromium `session.setProxy` (credentialed URLs through a loopback SOCKS5
+  relay; issue #490) and Node env immediately; the agent sidecar is
+  reconfigured without a process restart. `minih-agent-desktop/network/testProxy`
+  runs one bounded Chromium fetch through the supplied config and does not
+  persist it.
+
+`settings.set` accepts a partial settings object. Host-core merges supplied
+fields into the stored app settings, so omitted fields, including
+`defaultCommandShell`, are preserved. Only an incoming shell field is shell
+validated; the idle Plan/configuration gate runs only when its effective shell
+would change. Unrelated writes and idempotent writes of the current effective
+shell remain accepted while work is active. Legacy
+`planApprovalPermissionMode` is ignored and stripped from current reads and
+writes; it is not exposed or recreated.
+
+### shell
+
+```ts
+type CommandShellId =
+  | "windows-powershell"
+  | "windows-pwsh"
+  | "cmd"
+  | "git-bash"
+  | "bash";
+
+type CommandShellOption = {
+  id: CommandShellId;
+  label: string;
+  dialect: "powershell" | "cmd" | "posix";
+  available: boolean;
+  isDefault: boolean;
+};
+
+type CommandShellCatalog = {
+  configuredId: CommandShellId | null;
+  effective: CommandShellOption | null;
+  fallback: boolean;
+  choices: CommandShellOption[];
+};
+```
+
+Preload methods:
+
+- `minih-agent-desktop/commandShell/list() -> CommandShellCatalog`
+- `minih-agent-desktop/settings/set({ defaultCommandShell }) -> { ok: true }`
+
+Settings shell writes accept only an available ID for the current platform and
+reject unknown, unavailable, or wrong-platform IDs. A genuine effective shell
+change is accepted only while all sessions and Plan/Goal work are idle. If a
+persisted ID later becomes unavailable, the catalog selects the first available
+platform shell and sets `fallback: true`; if no choice is available, Bash
+returns `SHELL_NOT_FOUND`.
+Each turn pins the effective ID and dialect. The runtime transports both values;
+host rejects a changed pin before permission evaluation and before spawn with
+`COMMAND_SHELL_CHANGED`.
+
+### secrets
+- `secrets/set(providerId, apiKey)`
+- `secrets/delete(providerId)`
+- `secrets/has(providerId) -> boolean`
+
+Forbidden:
+- Writing the full API key into ordinary logs
+- Holding API key plaintext long-term in the renderer
+
+### vendor accounts (OAuth, D237/D240)
+
+Signing in with a vendor subscription is an Electron-main conversation, so it
+uses IPC only — the host protocol version is unchanged. Five invoke channels
+plus one event channel:
+
+- `minih-agent-desktop/providers/oauth/vendors() -> { vendors: OAuthVendor[] }`
+- `minih-agent-desktop/providers/oauth/start({ vendorId }) -> { loginId }`
+- `minih-agent-desktop/providers/oauth/respond({ loginId, promptId, value? })` — an
+  absent `value` cancels that prompt, which aborts the flow
+- `minih-agent-desktop/providers/oauth/cancel({ loginId }) -> { ok: boolean }`
+- `minih-agent-desktop/providers/oauth/delete({ providerId }) -> { ok: true }` deletes
+  one OAuth account's provider row and its scoped credential
+- `minih-agent-desktop/providers/oauth/event` streams `OAuthLoginEvent`
+
+```ts
+type OAuthLoginEvent = { loginId: string; vendorId: string } & (
+  | { kind: "info"; message: string; links?: Array<{ url: string; label?: string }> }
+  | { kind: "authUrl"; url: string; instructions?: string; opened: boolean }
+  | { kind: "deviceCode"; userCode: string; verificationUri: string;
+      intervalSeconds?: number; expiresInSeconds?: number }
+  | { kind: "progress"; message: string }
+  | { kind: "prompt"; request: OAuthPromptRequest }
+  | { kind: "promptCancelled"; promptId: string }
+  | { kind: "done"; providerId: string; accountLabel?: string }
+  | { kind: "error"; message: string }
+  | { kind: "cancelled" }
+);
+```
+
+A flow may raise its first event before `start` has replied — OpenAI Codex
+asks browser-or-device-code in the same tick the login begins — so the renderer
+must subscribe to the event channel *before* it invokes `start`, hold what
+arrives while `loginId` is unknown, and release the matching events in order
+once the reply lands. Subscribing after the reply drops that first prompt and
+the flow waits forever on a question nobody was shown.
+
+`start` must also be called exactly once per attempt, from a user action rather
+than from a React effect — StrictMode runs an effect twice on mount, and a
+second attempt opens a second browser and contends for the same local callback
+port. The renderer's session object keeps every event it has delivered and
+replays it to a later subscriber, so a dialog may mount, unmount and mount
+again without restarting anything. Main defends the same invariant from its
+side: a `start` for a vendor whose attempt is still in flight cancels that
+attempt and waits for it to unwind before beginning the next one.
+
+Every flow shape — browser callback, device code, a pasted code, a vendor
+choice — travels this one stream, so the renderer renders what arrived instead
+of branching per vendor. `opened: false` means the browser could not be
+launched and the user must copy the link. `promptCancelled` means the flow
+answered a question itself (a callback that beat the paste box), so the input
+must disappear on its own.
+
+Forbidden here as well: no event carries a token, a refresh token, or an
+authorization code. `accountLabel` is a display string.
+
+## 9. Project API
+
+- `project/open()`: system directory picker
+- `project/pickFolders()`: multi-select directory picker used by the
+  renderer-owned Create project dialog; returns selected absolute paths without
+  changing the active workspace
+- `project/clone({ url })`: pick a parent directory, `git clone` the URL into
+  it, and return the cloned workspace (the renderer then activates it)
+- `project/cloneCheckout({ url, parentPath })`: `git clone` a public remote
+  into an explicit parent folder and return `{ path, name }` without changing
+  the active workspace; the Create project dialog uses it before it creates the
+  logical project group
+- `project/openFolder(path)`: open a known project directory in the system file
+  manager
+- `project/get()`: current workspace
+- `project/list()`: durable project records, including import-created entries
+- `project/memory/get(path)`: read the host-owned memory for a canonical project
+  path
+- `project/memory/save(path, entries)`: replace that project's durable memory
+  entries; the host derives a readable `content` value, caps it at 32 KiB, and
+  uses it as context in the next session launch. Legacy callers may still save
+  plain `content`.
+- `project/set(path)`: set workspace
+- `project/clear()`
+
+Returns:
+
+```ts
+type ProjectWorkspace = {
+ path: string;
+ name: string;
+};
+
+type ProjectRecord = {
+ id: number;
+ path: string;
+ name: string;
+ pinned: boolean;
+ createdAt: number;
+ lastOpenedAt: number;
+};
+
+type ProjectMemory = {
+ content: string;
+ entries?: ProjectMemoryEntry[];
+ updatedAt?: number;
+};
+
+type ProjectMemoryEntry = {
+ id: string;
+ title: string;
+ content: string;
+};
+```
+
+## 9a. Session worktree API (ADR 0329)
+
+Thin forwards to the host `worktree.*` methods
+(06-host-rpc-protocol §4); errors keep the host's `WORKTREE_*` code.
+
+- `worktree/probe({ projectPath })` → whether the project can host isolated
+  sessions, with the refusal code, or whether it has uncommitted changes
+- `worktree/preview({ sessionId })` / `worktree/merge({ sessionId, previewToken })`
+- `worktree/behind({ sessionId })` → commit count, and
+  `worktree/sync({ sessionId })` — "Sync from project"; `worktree/behindAll()`
+  → `{ counts: { [sessionId]: count }, statusesChanged }` for the sidebar marker
+- `worktree/pendingWork({ sessionId })` — unmerged work a delete discards
+- `worktree/setupLog({ sessionId })`
+- `worktree/reveal({ sessionId })` — Electron Main resolves the folder with
+  `worktree.location` and opens it in the OS file manager; the path is never
+  returned to the renderer
+- `worktree/setupCommand/get({ projectPath })` /
+  `worktree/setupCommand/set({ projectPath, command })`
+
+## 10. Tool Permission API
+
+When a tool requires confirmation:
+
+1. main sends `tool_permission_request`
+2. UI shows a confirmation card
+3. UI calls `tool/resolvePermission`
+
+```ts
+type ToolPermissionRequest = {
+ requestId: string;
+ sessionId: string;
+ toolCallId: string;
+ toolName: string;
+ argsPreview: unknown;
+ risk: "low" | "medium" | "high";
+ reason: string;
+ /** Definition name when a subagent asked (D201, ADR 0062); absent for the
+  * session's own calls, together with the `Task` call that spawned it. */
+ agentName?: string;
+ parentToolCallId?: string;
+};
+
+type ToolPermissionResolution = {
+ requestId: string;
+ decision: "allow-once" | "allow-session" | "deny";
+};
+```
+
+A session can hold more than one open request once it runs parallel subagents.
+The renderer queues them per session and answers the oldest first; the resolution
+contract is unchanged, because it was already keyed by `requestId`
+(`04-ux/03-permission-ux.md` §6a).
+
+Plan does not replace this generic permission contract. A Plan `Bash` call
+uses the normal session-scoped permission flow: `ask` and `accept-edits` emit a
+tool permission request, while `auto` executes without confirmation. Plan
+approval is a separate state transition and always uses the `plan` methods
+above.
+
+## 11. Version Compatibility
+
+- IPC/host contract version field: `protocolVersion: 11`
+- Breaking changes must bump the version and record an ADR
+- renderer and main validate the version at startup; on mismatch, prompt to upgrade/reinstall
+- Protocol v4 adds notification records, channels, and the
+  notification-bearing `session.endTurn` result. A v3 peer is rejected rather
+  than silently losing durable completion/failure events.
+- The optional viewing-session invoke and `createNotification` end-turn field
+  are additive v4 behavior. Older callers omit the field and retain the
+  fail-safe default of creating notifications.
+- Protocol v5 adds the required `session/fork` snapshot operation. A v4 peer is
+  rejected before chat becomes interactive instead of exposing a branch
+  command that can only fail at invocation time (ADR 0023).
+- Protocol v6 added durable context checkpoints plus the manual/lifecycle
+  channels. A v5 peer is rejected because silently omitting a checkpoint can
+  make the next provider request unsafe (ADR 0030).
+- Protocol v9 supersedes the earlier v7 Plan contract. It adds `SubmitPlan`,
+  exact unique artifact metadata, approve/reject-only resolution, 30-minute
+  absolute expiry, `plan_approvals` execution states, shell selection and
+  pinned ID/dialect, and streamed command output. A v7/v8 peer is rejected
+  before the UI becomes interactive because it cannot enforce or represent this
+  boundary (ADR 0053/0054). `SubmitGoal` and the optional `kind` discriminator
+  ride along inside v9 and need no version bump, because an absent `kind` is
+  exactly the pre-Goal behavior.
+
+## 12. Plugin API (host UI side)
+
+Minimal interface:
+
+- `plugin/list`
+- `plugin/loadDev(path)`
+- `plugin/reload(id)` — reload a registered development plugin from its stored
+  path and refresh its permission ceiling
+- `plugin/installFromPath(path)`
+- `plugin/enable(id)`
+- `plugin/disable(id)`
+- `plugin/uninstall(id)`
+- `plugin/getPermissions(id)`
+- `plugin/setPermission(id, permission, allowed)` (optional fine-grained)
+- `plugin/setScope(id, scope)` (D192)
+
+Returned summary:
+
+```ts
+type PluginSummary = {
+ id: string
+ name: string
+ version: string
+ enabled: boolean
+ source: "installed" | "dev"
+ status: "ready" | "error" | "disabled"
+ errorMessage?: string
+ permissions: string[]
+ scope?: ActivationScope
+}
+```
+
+## 12a. User MCP server API (D193)
+
+User-owned MCP configuration is stored as one JSON file per id under
+`~/.agents/servers/<id>.json` or `<project>/.agents/servers/<id>.json`.
+Enablement is not written to those files; host-core stores it in the
+application-local `<data>/agent-capabilities/mcp.json` state file.
+
+- `mcp.list({ level, projectPath? })` → `{ servers: McpServerRecord[]; statuses: McpServerStatus[] }`
+- `mcp.active({ projectPath? })` → the effective runtime list
+- `mcp.upsert(server)` — creates or replaces the file at the requested level
+- `McpServerInput.timeoutSeconds` accepts an integer from 1 through 600.
+  Omitting it preserves the current value during an edit; sending `null` clears
+  the override and restores the runtime default.
+- `mcp.remove({ id, level, projectPath? })`
+- `mcp.setEnabled({ id, enabled, level, projectPath? })`
+- `mcp.setScope` remains a compatibility-shaped call; the Settings page uses
+  the explicit capability level and local state instead
+
+A project-level request without `projectPath` is invalid. `mcp.active` removes
+project records from the global set by id or case-insensitive label before it
+filters disabled records, so a disabled project record still shadows a global
+one. The desktop-only `mcp/test` IPC action forces one connection test and
+returns its status to the MCP editor.
+The desktop's `mcp.list` IPC response probes previously ready remote connections
+before reporting their status. If a server no longer responds, its row reports
+`failed` instead of retaining a stale `ready` status; Test connection retries it. A failed settings probe does not interrupt an in-flight tool call; Test connection closes the old client before retrying.
+Each user stdio MCP child starts with the resolved workspace path of the
+session that uses it as its working directory. Sessions in the same workspace
+share that child; sessions in different workspaces use separate children.
+A projectless session uses the user's home directory. Idle cached connections
+may be closed under the runtime's connection limit and are reconnected when
+the session needs them again.
+Stopping a session aborts its in-flight user MCP tool calls. The client sends
+`notifications/cancelled` for each active request without closing a connection
+used by other sessions; a completed or canceled tool call is never replayed.
+Cancellation stops the local wait, while a server may ignore the notification
+and finish an already started side effect. A request that times out is
+cancelled the same way, with reason `timeout`; `initialize` is never cancelled.
+
+Desktop-only channels scan configuration written by other agent tools on the
+same machine — Claude Desktop (`claude_desktop_config.json` on macOS, Windows
+and Linux), Claude Code (`~/.claude.json` and `~/.claude/settings.json` merged),
+Cursor global and per-project `mcp.json`, Codex (`~/.codex/config.toml`
+`[mcp_servers.*]`), opencode (`~/.config/opencode/opencode.json` `mcp` map) —
+so the user can review and batch-import into this app's MCP list. ChatGPT
+desktop is listed as a placeholder because it has no public configuration path
+yet.
+
+- `minih-agent-desktop/mcp/importScan` — `{ projectPath? }` →
+  `{ candidates: ExternalMcpCandidate[], sources: ExternalMcpSourceReport[] }`.
+  Missing files, ENOENT and parse errors surface on `sources[].error`; one bad
+  source never fails the scan. Per-source de-duplication keeps the cross-source
+  copies so the user can pick which install to import.
+- `minih-agent-desktop/mcp/importRun` — `{ items: ExternalMcpImportItem[] }` →
+  `{ imported, skipped, failed }`. Main calls `mcp.upsert` once per item,
+  omitting `disabled` from the server payload and following up with
+  `mcp.setEnabled({ enabled: false })` when the source marked the server
+  disabled. One failure never blocks the rest; conflicts land in `skipped`
+  and every other error lands in `failed`.
+
+```ts
+type McpServerStatus = {
+ serverId: string
+ state: "idle" | "connecting" | "ready" | "failed"
+ toolCount: number
+ toolNames?: string[]
+ message?: string
+ updatedAt: number
+}
+```
+
+Tools reach the agent as `mcp_<serverId>_<toolName>`, disjoint from the plugin
+bridge's `plugin_` namespace (D015).
+
+## 12b. User skill API (D194)
+
+User skills are Markdown documents scanned from `~/.agents/skills` and
+`<project>/.agents/skills`. Both direct Markdown files and the conventional
+`<skill>/SKILL.md` shape are accepted. Enablement is stored in
+`<data>/agent-capabilities/skills.json`, never in the document. Catalog ids
+are ASCII slugs: the frontmatter `name` when it slugifies, otherwise the
+skill directory name for `SKILL.md` (not a staging folder such as
+`Downloads`), otherwise a stable `skill-<hash>` so a non-ASCII title is still
+listed. Folded YAML `description: >` / `|` blocks flatten into the catalog
+one-liner.
+
+- `skills.list({ level, projectPath? })` → `{ skills: UserSkillRecord[] }`
+- `skills.active({ projectPath? })` → the effective runtime list
+- `skills.create(skill)`
+- `skills.import({ path, level, projectPath?, shape?, mode?, id?, name?, description? })`
+  — imports one Markdown skill. `shape` is `"file"` (default when `path` is a
+  regular file) or `"dir"` (Anthropic-style `<name>/SKILL.md` plus resources).
+  `mode` is `"copy"` (default, byte-for-byte replica so a moved or deleted
+  source cannot break the skill) or `"link"` (symlink so external edits appear
+  on the next scan; `SKILL_INVALID` if the OS or file system refuses a symlink).
+- `skills.update({ id, ...skill })`
+- `skills.read({ id, level?, projectPath? })` → `{ skill, body }`
+- `skills.remove({ id, level?, projectPath? })`
+- `skills.setEnabled({ id, enabled, level, projectPath? })`
+- `skills.disabledBuiltins()` → `{ disabled: string[] }`
+- `skills.setBuiltinEnabled({ id, enabled })` → `{ id, enabled }`
+
+Built-in skill activation is global and defaults to enabled. Host stores only
+disabled IDs in `<data>/agent-capabilities/skill-builtins.json`, separately
+from the scanned user-skill state. Renderer IPC lists bundled entries with
+their effective enabled state and sets one entry's global state. The
+corresponding Desktop channels are `minih-agent-desktop/skill/builtin/list` and
+`minih-agent-desktop/skill/builtin/setEnabled`.
+
+The list contains frontmatter-derived `name` and `description`, not the body.
+Only the description enters the prompt, and the body is fetched when the model
+invokes `Skill` (D174). A missing file is removed from the list and its local
+state is pruned during the next scan.
+
+The desktop `minih-agent-desktop/skill/import` channel keeps the file picker
+single-select and returns `{ skill }` for that path. With
+`sourceKind: "dir"`, it lets the user select multiple directories and returns
+`{ imported: UserSkillRecord[], failed: { path, error }[] }`. Cancellation
+returns `{ canceled: true }` for either picker. Main calls `skills.import`
+separately for each selected directory so one error cannot roll back the
+others. After a successful folder import, Main stores the parent of the
+last successfully imported source folder in machine-local app data. The next
+directory picker opens there while that parent still exists. Cancellation and
+all-failed batches do not replace this preference.
+
+Desktop-only channels scan skill folders written by other agent tools on this
+machine — `~/.claude/skills/`, `<project>/.claude/skills/`, and the app's own
+`~/.agents/skills/` (or `MINIH_AGENT_AGENTS_DIR/skills/`) plus its project
+equivalent — so the user can review candidates and batch-import them. Both the
+single-file (`<id>.md`) and Anthropic-style directory (`<name>/SKILL.md`)
+shapes are detected.
+
+- `minih-agent-desktop/skill/importScan` — `{ projectPath? }` →
+  `{ candidates: ExternalSkillCandidate[], sources: ExternalSkillSourceReport[] }`.
+  Missing directories and read errors surface on `sources[].error`; one failing
+  source never aborts the scan. Candidates from `~/.agents/skills/` carry an
+  "already in current registry" warning so the UI can filter or highlight them.
+- `minih-agent-desktop/skill/importRun` — `{ level, projectPath?, mode?, items }` →
+  `{ imported, skipped, failed }`. Main calls `skills.import` once per item,
+  passing `path = shape==="dir" ? rootDir : sourcePath` and forwarding `mode`
+  and per-item `id`/`name`/`description`. A conflict lands in `skipped` and
+  every other error lands in `failed`; one failure never blocks the rest. Batch
+  import is still bounded by `MAX_SKILLS` (128 per level).
+
+Desktop-only skill market channels (not host RPC) live on Electron IPC:
+
+- `minih-agent-desktop/skill/market/search` — `{ query, sources[] }` →
+  `{ entries, failedSources, failureKinds, failureDetails }`. Main aggregates
+  builtin-safe catalog JSON and GitHub repo SKILL.md scans. Source URLs must pass
+  the public-HTTPS policy (ADR 0243). One failing source is dropped; the rest
+  still return. `failureKinds` maps each name in `failedSources` to `policy`
+  (the guard judged the target's own non-public address and refused it),
+  `fake-ip` (it judged a fake-IP placeholder the local proxy invented for the
+  name — Clash's `198.18.0.0/15`; it remains refused on a direct or unreadable
+  route by default, while the explicit `allowFakeIp` setting may permit only
+  the benchmark placeholder for a transparent router/TUN deployment),
+  `unresolved` (the local DNS lookup returned no answer, so no address was
+  judged), or `network`.
+  `unresolved` (the local DNS lookup returned no answer, so no address was
+  judged), or `network`.
+  `failureDetails` carries the same keys with the host that actually failed, the
+  address it resolved to, the guard's own `reason`, that address's class, and the
+  route the guard judged it on (`proxied`, `direct`, or `unknown` when the
+  transport reported no readable route, ADR 0272), which is what lets the panel
+  name *what* was refused — "your proxy answered github.com with 198.18.0.1" —
+  instead of only which source went quiet. A judged refusal and a fake-IP refusal
+  both surface as `NETWORK_POLICY_BLOCKED` (both are refusals the guard decided),
+  and an unanswered resolver as `NETWORK_RESOLVE_FAILED` (spec 08 §3.1); the
+  install sheet classifies a failed preview on those codes together with the
+  structured `reason`.
+- `minih-agent-desktop/skill/market/fetch` — `{ entry }` → `{ name?, description?, body, resources? }`.
+  Main fetches the document over the same policy, splits frontmatter, and may
+  attach sibling `.md` files from a jsDelivr listing. The renderer installs
+  through existing `skills.create`. That policy is the main-process
+  public-network client: syntactic URL guard, DNS classification, per-hop
+  redirect revalidation, and bounded responses — the renderer never reaches
+  the network directly. Catalog ids are sanitized to host
+  `valid_capability_id` (`[a-z0-9][a-z0-9-]{0,63}`).
+
+Desktop-only MCP market channels (not host RPC) live on Electron IPC:
+
+- `minih-agent-desktop/mcp/market/search` — `{ query?, sources[], more? }` →
+  `{ entries, failedSources, exhausted }`. Main validates source URLs and asks
+  the Electron session for the route on every hop. Fully proxied hops use the
+  session transport; direct and unknown hops pin the resolved public address by
+  default, with explicit `allowFakeIp` limited to benchmark placeholders.
+  Redirects stay bounded HTTPS, browse/search cursors are retained, and one
+  failed source does not discard successful sources; responses and caches are bounded.
+
+### MCP OAuth (ADR 0283)
+
+Browser-based OAuth 2.1 authentication for HTTP MCP servers is handled in the Electron main process via non-blocking IPC invocations and an event stream:
+
+Discovery preserves authorization-server issuer paths, trying OAuth path insertion,
+OIDC path insertion, then OIDC path appending (root issuers use the two root URLs).
+The authorization request uses the initial 401 Bearer challenge's `scope`, otherwise
+all valid protected-resource `scopes_supported` entries, otherwise omits `scope`.
+Authorization-server scope catalogs do not add or select requested permissions.
+
+- `minih-agent-desktop/mcp/oauth/start({ id, level?, projectPath? }) -> { ok: true, loginId }`
+  Initiates OAuth metadata discovery and PKCE authorization code flow. Returns immediately; user browser navigation and callback exchange proceed asynchronously in the background.
+- `minih-agent-desktop/mcp/oauth/cancel({ loginId?, id? }) -> { ok: boolean }`
+  Aborts an in-flight authorization attempt, tears down the local loopback HTTP server, and cancels pending timers.
+- `minih-agent-desktop/mcp/oauth/event` streams `McpOAuthLoginEvent` to the renderer:
+
+```ts
+type McpOAuthLoginEvent = {
+  loginId: string;
+  serverId: string;
+} & (
+  | { kind: "authUrl"; url: string; instructions?: string; opened: boolean }
+  | { kind: "progress"; message: string }
+  | { kind: "done"; status: McpServerStatus }
+  | { kind: "error"; message: string }
+  | { kind: "cancelled" }
+);
+```
+
+#### Status and Token Storage
+- `McpServerStatus` includes:
+  - `hasOauth: boolean` — whether the server has an encrypted OAuth secret stored in host-core (`secret:mcp:<serverId>:oauth`).
+  - `authRequired: boolean` — flags that a connection attempt or `tools/call` returned HTTP 401 Unauthorized and user re-authentication is required.
+- OAuth tokens (`accessToken`, `refreshToken`, `expiresAt`, `resource`, `clientId`, `redirectUris`) are persisted exclusively in host-core encrypted secrets under `secret:mcp:<serverId>:oauth` and never exposed to the renderer. Authorization-server endpoints must be HTTPS (loopback HTTP is the only exception). Token-endpoint error bodies stay in main-process logs and are not copied into renderer events.
+
+## 12c. Subagent API (D202)
+
+User-owned subagents are global-only Markdown documents under
+`~/.agents/subagents/<id>.md`. There is no project-level subagent directory.
+Enablement is stored in `<data>/agent-capabilities/subagents.json` and is never
+written into the Markdown file.
+
+- `agents.list` → `{ subagents: UserSubagentRecord[] }`
+- `agents.active` → enabled global documents
+- `agents.create(subagent)` — duplicate names fail with `SUBAGENT_INVALID`
+- `agents.update(id, subagent)`
+- `agents.read(id)` → `{ subagent, body }`
+- `agents.remove(id)`
+- `agents.setEnabled(id, enabled)`
+- `agents.disabledBuiltins` → `{ disabled: string[] }`
+- `agents.setBuiltinEnabled(id, enabled)` → `{ id, enabled }`
+
+The `thinkingLevel` field accepted by `agents.create` and `agents.update` may
+be a canonical thinking level, `omit`, or the empty string. The empty string
+clears the override; `omit` is persisted as `thinkingLevel: omit` and tells the
+runtime not to send a provider thinking override.
+
+The `model` field accepted by `agents.create` and `agents.update` must be a
+`<provider>/<model>` pin. The empty string clears the pin; a value with no
+provider half is rejected with `SUBAGENT_INVALID` instead of being stored,
+because no resolver could ever look it up. The provider half is matched by a
+normalized alias at both ends of the app, so a display name containing spaces
+is valid.
+
+The `tools` array may include the token `inherit` (ADR 0246). `inherit` alone
+is a valid grant; host-core must not drop the document. Settings round-trips
+the token as `tools: inherit` or `tools: [inherit, Bash]`.
+
+`agents.disabledBuiltins` and `agents.setBuiltinEnabled` carry activation for the
+shipped builtins, which have no document to switch (ADR 0270). Handles are stored
+at the global level in `<data>/agent-capabilities/subagent-builtins.json`, a file
+of its own: the user-document scan prunes state for ids it cannot see, and a
+builtin is never scanned, so a shared file would drop every builtin exclusion on
+the next scan. `agents.setBuiltinEnabled` normalizes the id the way a document
+name is normalized and rejects an empty one with `SUBAGENT_INVALID`; a handle no
+current builtin uses is stored inertly rather than refused, because host-core
+does not ship the builtin list.
+
+Electron's `subagent/list` IPC channel exposes the same global-only list to
+Settings > Agent > Subagents. `subagent/catalog` returns the effective Task
+catalog — enabled user documents merged with the five shipped builtins, minus the
+builtins the user switched off — together with `builtins`: every shipped
+definition that still wins its handle, each carrying `enabled`, so the page can
+render a switched-off default as a row with its own switch. The runtime catalog
+combines the same sources and applies the same exclusions; it does not scan
+`.pi/agents` or any project capability directory.
+
+## 12d. Capability level and local activation
+
+Skills and MCP management calls use:
+
+```ts
+type AgentCapabilityQuery = {
+ level: "global" | "project"
+ projectPath?: string
+}
+```
+
+Global records default to enabled and may have a per-project override. Project
+records have state for their owning project. The host prunes state for deleted
+files while scanning; deleting a global file removes all of its project
+overrides. These records are independent from plugin `ActivationScope`.
+
+## 13. Command Palette API
+
+- `commandPalette/search(query)`
+- `commandPalette/execute(commandId)`
+
+Command sources:
+- Built-in commands
+- Plugin contributes.commands
+
+## 13a. Work Panel APIs
+
+Work panel channels are Electron-main implementations. User-driven workspace
+operations resolve the visible root from `workspace.get` and fail closed
+without one. Agent-driven BrowserPreview resolves the owning conversation
+through `session.get`, allowing its project-group folders (or its isolated
+worktree) and its own `<data_dir>/scratch/<sessionId>` directory. A temporary
+conversation needs no workspace to preview its generated HTML. A missing
+session fails explicitly; a background preview never inherits the visible
+session's roots. BrowserPreview validates realpath containment before emitting
+the absolute path to the existing resource-tab owner. Chat links to other
+sessions' scratch files and attachments retain the read-only file surface.
+This does not restrict the Browser's explicit absolute-path / `file:` address
+entry or local-page navigation, which follow its existing local-file policy.
+
+### workspace
+
+- `workspace/diff()` → `WorkspaceDiff { repo, clean, files: DiffFile[], truncated? }`.
+  This legacy diagnostics channel may inspect the current working tree, but it
+  is not the Review source of truth. The Review UI reads message-owned review
+  records from transcript tool results instead, so a commit cannot erase a
+  recorded change.
+- `workspace/review/rollback({sessionId, snapshotId})` →
+  `ReviewRollbackResult`. The host verifies the current post-tool hash before
+  restoring the snapshot; it returns `rolledBack`, `alreadyRolledBack`,
+  `conflict`, or `unavailable` and never overwrites a conflicting later edit.
+
+### browser (D100, D333)
+
+Chrome and agent CDP live in bundled plugin `pi.browser` over `pi.browser.*`.
+Renderer IPC kept for the Plan-safe preview facade and URL fallback:
+
+- `browser/openExternal({url?})` — allowlisted http(s)/mailto, or the current
+  guest URL when omitted
+- Renderer plugin-view open/close requests may carry `sessionId` and `tabId`.
+  Open binds the resource tab after checking the plugin contribution and scope;
+  close releases only that tab's retained page (or the session's pages when no
+  tab id is supplied). The shared plugin chrome is not closed with a sibling page.
+- event: `browser/event/state {url, title, isLoading, canGoBack, canGoForward, loadError?, sessionId?, tabId?}`
+  (also pushed to plugin views as `browser:state`)
+- agent preview event: `browser/event/preview {sessionId, path?, url?}`.
+  Electron Main validates a workspace `path` inside that session's project,
+  asks the renderer to create a Browser resource tab before navigation, with
+  `location` in the matching
+  runtime panel context. Navigation of a background session does not steal the
+  visible guest.
+
+### fs (read-only)
+
+- `fs/list({path})` → entries sorted dirs-first; ignores `.git`,
+  `node_modules`, and the default ignore subset of
+  [15-workspace-ignore-rules](15-workspace-ignore-rules.md)
+- `fs/read({path, mimeType?})` → text (≤512KB) / image data URL (≤5MB) /
+  binary / tooLarge. Relative paths resolve inside the workspace root;
+  `attachments/<sha256>` blobs and absolute paths already inside the
+  workspace, `<data_dir>/scratch/`, or `<data_dir>/attachments/` are also
+  accepted after a realpath check (D334 / ADR 0172), as is an absolute path in
+  another folder of the same project group (ADR 0249 §5, ADR 0263). A known
+  image extension wins over `mimeType`; extension-less blobs accept only the
+  image MIME allowlist. Traversal, `~`, and other escapes are rejected
+  (`INVALID_ARGUMENT`).
+- `fs/readImageDataUrl({ref, mimeType?})` → `FsImageDataUrlResult`
+  (`image` with `dataUrl`, or `missing` / `notImage` / `tooLarge`). Same
+  containment as `fs/read`. Never returns non-image bytes. Renderer-only;
+  not a plugin host API.
+- `fs/reveal({path})` → reveal in Finder. Same containment as `fs/read`.
+- `fs/open({path, mimeType?})` → open an existing regular file with the OS
+  default application. It uses the same realpath containment as `fs/read`,
+  including rejection of symlink escapes. For a content-addressed
+  `attachments/<sha256>` blob declared as `video/mp4`, the host creates a
+  `.mp4` symlink inside its private app-data directory before the OS handoff,
+  so the extensionless blob has a media association without copying its bytes.
+- `fs/resolveRef({ref, sessionId?})` → `FsChatRefResolveResult`
+  (for isolated sessions, lookup and file reads use `worktree.location` rather
+  than the parent project checkout)
+  (`{ match: FsChatRefMatch | null, reason?: "outside-allowed-roots" }`, the match naming the answering `root`
+  (`workspace` / `scratch` / `attachments`), the `relativePath` relative to that
+  root, optional `sessionScratch: true` for the current session's own scratch
+  (not the wider read-only scratch containment store), the absolute
+  `absolutePath`, `matchedBy` (`exact-relative` /
+  `exact-absolute` / `path-suffix` / `basename`), and — for a `workspace` match
+  — `projectRoot` (`{ path, name, primary }`), which names the project folder
+  that answered); `sessionId` selects the
+  session whose scratch store is searched. Completes a file reference the agent
+  printed in chat, because the renderer cannot see the session's own scratch
+  store: an absolute reference only matches that exact file inside a known
+  root, and an `attachments/<sha256>` blob resolves against the
+  attachment store directly; otherwise the roots are searched in priority order
+  — the open project first, the session's own scratch store
+  (`<data_dir>/scratch/<sessionId>/`, ADR 0124) second, the attachment store
+  last — and the first root that answers wins. The project is the folder group
+  behind the open workspace (ADR 0249): its primary folder answers before its
+  other folders, which are then searched in the group's own order (ADR 0263),
+  so a shorthand resolves in a sibling folder as readily as in the primary one,
+  and the match names the folder that answered. Inside one root an exact path
+  beats a shorthand; among shorthands the longest matching tail wins, then the
+  shallowest path. Relative and indexed candidates must resolve to regular files
+  whose real paths remain inside their answering root; an exact path through an
+  escaping or dangling link cannot fall back to a same-name indexed file. The
+  files-panel ignore set applies. An absolute reference may also name a store
+  the app reads without searching it: the whole scratch store
+  (`<data_dir>/scratch/`) holds every session's files — a generated image is
+  clicked from whatever conversation is open — and the read guards (`fs/read`,
+  `fs/open`, the image reader) already accept it, so such a path completes
+  instead of reporting a restriction. A shorthand never completes from that
+  wider store; it still searches the session's own one. A reference that matches
+  nothing returns `match: null`; an absolute path outside every allowed root
+  also returns `reason: "outside-allowed-roots"`, without trying a same-name
+  file inside a root. Resolving never opens anything (ADR 0262).
+- `fs/list` stays workspace-only; traversal outside is rejected
+  (`INVALID_ARGUMENT`).
+
+## 13b. Desktop Menu and Window APIs
+
+The preload exposes a synchronous, read-only `platform: NodeJS.Platform`
+value so the renderer chooses native macOS chrome or menu-free Windows/Linux
+frameless chrome before first paint.
+
+Main-to-renderer application commands use one allowlisted event:
+
+```ts
+type AppMenuCommand =
+  | "newTask" | "openProject" | "openSettings"
+  | "openCommandPalette" | "toggleSidebar"
+  | "openHelp" | "openLogs" | "checkForUpdates";
+
+event: menu/event/command { command: AppMenuCommand }
+
+menu/rendererReady() -> { ready: true }
+```
+
+The renderer subscribes to `menu/event/command` before invoking
+`menu/rendererReady`. Main waits for that acknowledgement when a native menu
+command creates or reloads a window, so startup timing cannot drop the first
+command.
+
+Renderer-owned Windows/Linux keyboard shortcuts execute zoom and fullscreen
+operations through `menu/nativeAction`. The retained compatibility surface
+also supports editing and window operations. Its request is restricted to the
+exported `NATIVE_MENU_ACTIONS` tuple; unknown values fail rather than becoming
+a generic main-process command surface:
+
+```ts
+type NativeMenuAction =
+  | "undo" | "redo" | "cut" | "copy" | "paste" | "selectAll"
+  | "reload" | "zoomIn" | "zoomOut" | "resetZoom"
+  | "toggleFullScreen" | "minimize" | "toggleMaximize" | "close"
+  | "restoreMainWindow" | "toggleMainWindow";
+
+menu/nativeAction({ action: NativeMenuAction })
+  -> { maximized: boolean; fullScreen: boolean }
+```
+
+Developer tools use a dedicated Main-owned gate rather than a generic native
+menu action:
+
+```ts
+devtools/toggle({ open?: boolean }) -> { open: boolean }
+```
+
+Main rejects the request while `AppSettings.developerMode` is not `true` or no
+live window exists. The same stored flag gates F12 on all platforms,
+Ctrl+Shift+I on Windows/Linux, and the macOS View-menu role. Disabling the flag
+closes an already-open developer-tools window.
+
+`window/control` accepts the exported `WINDOW_CONTROL_ACTIONS` tuple:
+
+```ts
+type WindowControlAction =
+  | "getState" | "minimize" | "toggleMaximize" | "close";
+
+window/control({ action: WindowControlAction })
+  -> { maximized: boolean }
+```
+
+On Windows/Linux, `minimize` performs the native OS minimize transition so
+the window remains represented in the taskbar and can be restored there. A
+Windows/Linux close still follows the persisted close-behavior choice below;
+it is the close path, not minimize, that can hide the window to the tray.
+macOS keeps its native Dock/tray minimize behavior.
+
+Windows/Linux close behavior (D230, ADR 0090) is read and written through
+two additive Main-owned channels. `closeBehavior/get` returns the persisted
+preference and whether the platform supports it (macOS keeps the native
+Dock lifecycle and reports `supported: false`); `closeBehavior/set`
+accepts a settable `CloseBehavior` (`tray` or `quit`) and persists it:
+
+```ts
+type CloseBehavior = "ask" | "tray" | "quit";
+
+window/closeBehavior/get -> { behavior: CloseBehavior; supported: boolean }
+window/closeBehavior/set({ behavior: "tray" | "quit" })
+  -> { behavior: "tray" | "quit" }
+```
+
+`ask` is the transient unset state reported by `get`; it is never settable
+— the first close prompts once, and once a choice exists it can be switched
+but not reverted to prompting. `ask` and unknown values fail with
+`INVALID_ARGUMENT` rather than being coerced, and `set` fails the same way on
+macOS, where there is no close behavior to configure. Setting a behavior does
+not touch the tray icon: D216 (ADR 0078) creates one at startup on every
+platform, and minimize-to-tray needs it whichever close behavior is stored.
+
+Maximize/unmaximize changes also emit
+`window/event/maximized`. Unknown actions fail. These window-control channels
+remain Electron-only and do not change the host RPC protocol version.
+The preload exposes no arbitrary BrowserWindow bounds or resize channel.
+Windows retains Electron's native frameless edge/corner hit testing with
+`thickFrame: false`; the renderer does not submit window geometry.
+The Windows borderless fullscreen fallback is tracked in Main because Electron
+reports `isFullScreen() === false` while it uses display bounds for that mode;
+the window-control state and fullscreen event use the tracked value.
+`window/setBackgroundColor` remains Electron-local and main-renderer-only. Its
+optional `cornerRadius` is an integer from 0 to 24 DIP; omission restores the
+Windows main-window default of 12 DIP, matching the global `--radius-md` token.
+On Windows build 22000 and later, Main maps radius 0 to the native square
+preference and every positive radius to the DWM system-rounded preference;
+maximized/fullscreen states request square corners. Windows chooses the actual
+positive radius. The top-level surface stays opaque, and an alpha background is
+flattened over the built-in background for the resolved theme. Earlier Windows
+builds retain the existing `contentView` clip and native shape behavior. Linux
+keeps the native window background, and macOS keeps its existing vibrancy
+behavior. The internal Main-to-Host Core DWM call checks that the HWND belongs
+to the Electron process; it is not exposed through preload, renderer IPC, or the
+plugin API. This does not alter the `window/setBackgroundColor` request or
+response and remains pending Windows native qualification.
+Malformed values fail with `INVALID_ARGUMENT` before changing the background.
+Plugin panel chrome uses a separate Electron-local
+`pi-plugin-panel-window-control` channel with the same four semantic actions,
+but the handler resolves the target strictly from the sender's live panel
+window. The preload consumes this channel internally for its closed-Shadow-DOM
+titlebar; it is not added to `window.pluginBridge` or the shared host protocol.
+The work-panel geometry seam is retained for Electron compatibility, but the
+panel is renderer-owned and never changes native window bounds (ADR 0151):
+
+```ts
+window/setWorkPanelReservation({ width: 0 | number })
+  -> { requested: number; reserved: number }
+```
+
+`width` must be a finite integer JSON number equal to `0` or inside the
+inclusive `244..720` range. Strings, booleans, null, fractional values, and
+other malformed payloads fail with `INVALID_ARGUMENT` rather than being
+coerced. The internal dock normalizes every valid request to zero and returns
+`{ requested: 0, reserved: 0 }`; positive values are accepted only as a
+backwards-compatible no-op. Repeating a request never changes native bounds.
+
+The legacy chat-width/event shapes remain Electron-local compatibility surfaces,
+but the visible internal dock does not call them or use them to resize the
+window:
+
+```ts
+window/setWorkPanelChatWidth({ width: number })
+  -> { requested: number; applied: number }
+
+window/event/workPanelResize
+  -> { phase: "preview" | "commit"; panelWidth: number }
+```
+
+`window/setWorkPanelChatWidth` and `window/event/workPanelResize` remain
+available only to older Electron callers. The current renderer divider changes
+the persisted `244..720px` panel width locally, and native window edges resize
+the fixed application window without changing that panel target. The native
+Browser view continues to follow the renderer-measured panel rectangle.
+Window bounds persistence and display reconciliation therefore operate on the
+ordinary application bounds; there is no panel-specific width or x-offset
+reservation, and background artifacts cannot change visible window geometry.
+
+### Tray session shortcuts (ADR tray-session-shortcuts)
+
+- `minih-agent-desktop/tray/setSessionPreferences({ sessionMeta, archivedProjectPaths, sort })`
+  returns `{ ok: true }`. `sessionMeta` maps IDs to optional boolean `pinned`
+  and `archived` flags plus a non-negative safe integer `order`. `sort` is
+  `recent`, `created`, `oldest`, `name`, or `manual`; the renderer mirrors the
+  sidebar's effective sort. Main validates the payload, strips unrelated
+  metadata, and rejects senders other than the current main window. The setter
+  is excluded from the local MCP catalog and persists nothing.
+- Main emits `minih-agent-desktop/tray/event/sessionActivated { sessionId: string | null }`
+  after restoring/focusing the window, waiting for post-bootstrap
+  `menu/rendererReady`, and checking that the session still exists and is not
+  archived. Renderer enters normal session selection, including cross-project
+  navigation and unread acknowledgement. A null ID closes search, returns to
+  the conversation page, and expands the sidebar for View more. Merely opening
+  the menu is read-only.
+- Main reads existing Host session/inbox APIs, observes root runtime events and
+  successful session/inbox mutations, and combines them with the ephemeral
+  organization copy. No host protocol or storage schema changes.
+
+## 13c. Composer input APIs (D123/D124/D197, ADR 0024/0059)
+
+Electron-only channels backing composer autocomplete and file references.
+`composer/commands` and `fs/index` are read-only and fail soft;
+`composer/pickFiles` opens the unified native picker used by the Composer and
+returns a one-shot token; the legacy `composer/pickPhotos` channel remains
+available for compatibility but is not exposed by the Composer UI.
+`composer/importFiles` and `composer/pasteFiles` write only to the originating
+session's Electron-owned scratch directory. None adds a host RPC method or
+changes the host protocol version. Renderer-supplied absolute source paths are
+never accepted by the picker import channel (ADR 0181).
+
+### composer/commands
+
+```ts
+composer/commands() -> { commands: ComposerCommand[] }
+
+type ComposerCommand = {
+  /** Slash name typed after "/", unique across the merged list. */
+  name: string;
+  kind: "template" | "builtin" | "plugin";
+  title: string;            // display title (templates: name)
+  description?: string;     // template frontmatter / palette title
+  argumentHint?: string;    // template frontmatter `argument-hint`
+  source?: "project" | "user"; // template provenance
+  id?: string;              // builtin/plugin palette id for execution
+};
+```
+
+Templates load from `<workspace>/.pi/prompts/*.md` and
+`~/.pi/agent/prompts/*.md` (project wins name conflicts; short TTL cache).
+Without a workspace only user-global templates, builtins, and plugin
+commands return.
+
+A source that fails is not an empty command list (**D613**, issue #795).
+Submit-time resolution distinguishes three outcomes: a resolved
+builtin/plugin/extension command dispatches locally, a template, an unknown
+alias, and a command entry without a dispatchable id stay on the prompt path,
+and an unreadable source refuses the submission. The refusal is deliberate —
+with the source down the composer cannot prove `/compact` is not a builtin, and
+a control command sent to the model as literal text is acted on. The refusal
+keeps the draft, shows `chat.slashCommandSourceUnavailable`, and leaves the TTL
+cache cold so the next submit retries the read; a warm cache keeps resolving
+through a source blip.
+
+### fs/index
+
+```ts
+fs/index() -> { entries: FsIndexEntry[]; truncated: boolean }
+
+type FsIndexEntry = { path: string; kind: "file" | "dir" };
+```
+
+Workspace-rooted relative paths for the `@` menu: `git ls-files -co
+--exclude-standard` fast path, ignore-set recursive walk fallback,
+directories derived from file paths, 8000-entry cap with `truncated: true`,
+short TTL cache per root. Fails closed to an empty list without a
+workspace. Fuzzy filtering happens renderer-side.
+
+### composer/pickFiles and composer/pickPhotos
+
+```ts
+composer/pickFiles() -> { token: string | null; canceled: boolean }
+composer/pickPhotos() -> { token: string | null; canceled: boolean }
+```
+
+Both dialogs run in Electron main. The Composer uses `pickFiles` as its single
+file/image entry point: it accepts regular files without a type filter, and the
+importer classifies each result as an image or file from MIME/extension metadata.
+`pickPhotos` is retained as a compatibility channel for older renderer clients.
+Directories are not part of the MVP picker contract. When the user selects
+files, main stores the native paths against a token bound to the invoking
+`WebContents`, with a 60-second lifetime and one-shot consumption. The
+renderer receives the token but never receives the selected absolute paths.
+
+### composer/importFiles
+
+```ts
+composer/importFiles({ sessionId, token }) -> {
+  files: ComposerPastedFile[];
+}
+```
+
+Electron main consumes the sender-bound picker token, resolves each recorded
+path through `realpath`, requires an existing regular file, applies the same
+20-file / 64 MiB per file / 128 MiB total limits as clipboard transfer, and
+copies the bytes into `<data_dir>/scratch/<sessionId>/pasted/` under a
+UUID-backed sanitized name. The token is deleted before import starts, so it
+cannot be replayed. The returned `ComposerPastedFile` records are the only
+paths the renderer stores or dispatches, so a picker selection cannot leave an
+external source path in the prompt or bypass the attachment-root boundary.
+
+### composer/pasteFiles
+
+```ts
+composer/pasteFiles({ sessionId, files }) -> {
+  files: ComposerPastedFile[];
+}
+
+type ComposerPasteFile = {
+  name?: string;
+  mimeType?: string;
+  /** Set for generated large-text pastes so host-owned clipboard history can retain the text. */
+  recordHistory?: boolean;
+  data: ArrayBuffer;
+};
+
+type ComposerPastedFile = {
+  path: string;     // UUID-backed absolute storage path
+  name: string;     // sanitized original leaf display name
+  kind: "image" | "file";
+  mimeType: string;
+  size: number;
+};
+```
+
+Electron main verifies that `sessionId` resolves to a durable host session,
+limits the request to 20 files, 64 MiB per file, and 128 MiB total, strips
+renderer-provided directory components, and writes unique names below
+`<data_dir>/scratch/<sessionId>/pasted/` with exclusive-create semantics. The
+renderer holds returned paths and kind metadata in transient reference state,
+displays `name`, and submits them through `AgentPromptRequest.attachments`.
+Main persists image bytes by SHA-256 and adds a path fallback only when the
+selected model cannot receive that image as a visual block. Clipboard bytes
+never enter the persisted prompt or host agent message as base64.
+Invalid sessions and malformed/oversized payloads fail with an IPC error, and
+the operation cannot write to the workspace.
+
+### clipboard/recordPaste
+
+```ts
+clipboard/recordPaste({ text }) -> { ok: true }
+```
+
+This renderer-to-main channel is accepted only from the main application window
+and records text already supplied by that window's user-initiated Composer paste
+event. It never reads the OS clipboard. Empty text is ignored by the bounded
+history store.
+
+### prompt/enhance
+
+```ts
+prompt/enhance({
+  sessionId?: string | null;
+  draft: string;
+  providerId?: string;
+  modelId?: string;
+  thinkingLevel?: ThinkingLevel;
+}) -> { enhancedDraft: string }
+```
+
+This is an independent, one-shot completion with no session history, tools, or
+attachments. Electron main resolves the provider/model and credentials, so the
+renderer never receives a secret. Empty drafts, slash-command drafts, missing
+models, and provider failures return the common `Result` error envelope.
+
+### speech/getStatus, speech/transcribe, speech/synthesize
+
+```ts
+speech/getStatus() -> SpeechStatus
+speech/transcribe({ sessionId?, path, mimeType?, language? }) -> { text }
+speech/synthesize({ sessionId?, text, voice?, format? }) -> { path, mimeType, dataUrl? }
+```
+
+Host speech is independent of chat. Bindings live on `AppSettings.speech`.
+Audio bytes never enter the renderer. See spec `20-speech.md`.
+
+### app/openFeedback (D313)
+
+```ts
+app/openFeedback() -> { ok: true }
+```
+
+Electron Main builds a fixed GitHub bug-form URL
+(`https://github.com/minih-git/minih-agent-desktop/issues/new?template=bug_report.yml`)
+and opens it with `shell.openExternal`. Query fields `app-version`, `os`, and
+`environment` are filled from Main-owned version info. The renderer cannot
+supply a URL. Construction that leaves that origin or template is rejected.
+This channel does not cross into host-core and does not change the host RPC
+protocol version.
+
+## 13d. Local MCP control API (D370)
+
+Minih-Agent-Desktop can expose a local automation surface for an external Agent without
+changing the renderer preload contract or host RPC protocol. The server is
+disabled by default and starts only when the Electron process receives:
+
+```text
+MINIH_AGENT_MCP_CONTROL=1
+MINIH_AGENT_MCP_PORT=37123       # optional; defaults to 37123
+```
+
+Electron Main binds `127.0.0.1` only and serves Streamable HTTP MCP at
+`/mcp`. The selected port may be `0` in tests to request an ephemeral port;
+normal desktop configuration uses the default or an explicit local port. The
+server uses MCP protocol version `2025-06-18` and supports `initialize`,
+`notifications/initialized`, `ping`, `tools/list`, `tools/call`,
+`resources/list`, and `logging/setLevel`. `initialize` negotiates `2025-06-18`
+or the compatible `2025-03-26` value and never echoes an unsupported client
+version. Listen is asserted to be loopback after bind. It accepts the standard
+POST transport; GET is handled with 405 because this server does not offer an
+SSE stream. Clients poll `minih_session_get` or `minih_agent_status` for turn
+progress.
+
+### Connection and authentication
+
+The server creates a 256-bit random bearer token on first use and stores it in
+the Electron user-data directory as `mcp-control.token`. It writes the current
+connection record to `mcp-control.json`:
+
+```json
+{
+  "active": true,
+  "serverName": "minih-agent-desktop",
+  "protocol": "streamable-http",
+  "url": "http://127.0.0.1:37123/mcp",
+  "token": "<redacted>",
+  "pid": 12345,
+  "startedAt": "2026-09-09T00:00:00.000Z"
+}
+```
+
+Both files are written with mode `0600` where the platform supports POSIX
+permissions. Every request must include `Authorization: Bearer <token>` (the
+`X-Minih-Agent-Desktop-Token` header is retained for simple local clients). Requests to
+other paths, requests without the token, and methods other than
+POST/DELETE/OPTIONS are rejected. The server is stopped before Electron waits
+for host shutdown and the manifest is marked inactive.
+
+When an `Origin` header is present, its hostname must be `localhost`,
+`127.0.0.1`, or `::1`; absent Origin is allowed for non-browser MCP clients.
+After initialization, requests must carry the issued `Mcp-Session-Id` and may
+carry `MCP-Protocol-Version` `2025-06-18` or the compatible `2025-03-26` value.
+Unknown session ids and unsupported protocol versions are rejected at the HTTP
+boundary.
+
+### Tools
+
+The named tools cover the common Agent workflow:
+
+- `minih_app_info`
+- `minih_project_get`, `minih_project_list`, `minih_project_open`, `minih_project_clear`
+- `minih_session_list`, `minih_session_create`, `minih_session_get`,
+  `minih_session_rename`, `minih_session_fork`, `minih_session_delete`,
+  `minih_session_configure`
+- `minih_agent_prompt`, `minih_agent_status`, `minih_agent_stop`, `minih_agent_abort`,
+  `minih_agent_compact`
+- `minih_plans_pending`, `minih_plans_resolve`
+- `minih_workspace_diff`, `minih_fs_list`, `minih_fs_read`
+
+`minih_control_describe` returns the reviewed operation catalog. `minih_agent_invoke`
+accepts an operation id and positional IPC arguments:
+
+```json
+{
+  "operation": "project/set",
+  "args": ["/path/to/project"]
+}
+```
+
+Only main-process channels registered in the reviewed catalog are available.
+The first-version catalog is the project/session/Agent/workspace flow plus
+reviewed reads. Secret get/set/delete channels, provider/OAuth/MCP secret-write
+paths, settings writes, plugin/marketplace install, window/OS control, and
+renderer-only native picker/dialog channels (including `plugin/loadDev`) are
+not exposed. Secret-shaped argument fields are stripped before IPC dispatch.
+Each catalog entry is tagged `read`, `write`, or `dangerous`; dangerous
+generic operations and the named session-delete, session-configure, and
+plan-resolution tools require `confirm: true`. That flag is an agent
+acknowledgement, not a desktop user prompt. All calls still pass through the
+existing IPC handler validation, host permissions, workspace boundaries, and
+error model. Both the text payload and `structuredContent` are size-bounded to
+512 KiB (`MAX_RESULT_CHARS`). A larger answer is not returned verbatim: it is
+replaced by `{truncated: true, reason: "MCP_RESULT_LIMIT", preview: "<the first
+512 KiB of the JSON>"}`, so an external caller can never receive a silently
+shortened payload. If an oversized answer comes from `session/get`
+(`minih_session_get`) and carries a `compaction` record or a `compactions` history,
+Main projects each record to the compact identity (`createdAt` and
+`details.generation`) and checks the size again before returning the truncation
+envelope. This lets a long session's transcript survive when its unbounded
+`ContextCompactionRecord` (`summary` / `retainedTail` / `details.modifiedFiles`)
+alone caused the overflow — including the case where the newest `compaction` is
+already compact but the unbounded `compactions` history alone still exceeds the
+limit, which no `messageLimit` / `contentLimit` reduction can fix because the
+overflow is independent of the transcript page. Results already under the limit
+retain their full compaction details, and the desktop's own session detail is
+unchanged.
+
+The six `session/collaboration/*` operations are first-party-plugin-only: they
+require an authenticated plugin tool invocation context, so they appear in
+`pi.desktop.listOperations` and are callable through `pi.desktop.invoke`, but
+they are excluded from the MCP-visible catalog (`tools/list`,
+`minih_control_describe`, and the `minih_agent_invoke` operation enum) and an MCP
+caller cannot invoke them.
+
+After successful **mutating** external calls, Electron Main may emit the existing
+`minih-agent-desktop/session/event/changed` event with additive fields:
+
+```ts
+{
+  reason?: string;
+  projectPath?: string | null;
+  selectSessionId?: string;
+}
+```
+
+The renderer refreshes sessions and applies project/session selection from that
+event, so an external Agent can create a session, open a project, or submit a
+prompt while the visible desktop follows the same state. A control-server
+startup failure is logged and does not prevent the desktop from launching.
+
+## 14. Error Codes — Initial registry (extensible)
+
+| code | Meaning |
+|---|---|
+| `AGENT_BUSY` | The current session already has a running turn |
+| `AGENT_NOT_FOUND` | Session does not exist |
+| `MODEL_NOT_CONFIGURED` | No available model |
+| `PROVIDER_SECRET_MISSING` | Missing API key |
+| `TOOL_DENIED` | Permission denied |
+| `TOOL_TIMEOUT` | Tool timed out |
+| `WORKSPACE_REQUIRED` | Project directory required |
+| `PATH_OUTSIDE_WORKSPACE` | Path out of bounds before an explicit outside-path permission decision |
+| `INTERNAL` | Uncategorized internal error |
+
+## Native Pi session routing (ADR 0254)
+
+`minih-agent-desktop/session/list` returns both Desktop and native summaries. Each summary
+may carry `source: "desktop" | "pi-native"`, capability flags, and a stable
+`readOnlyReason`; clients normalize omitted source to `desktop` for backward
+compatibility. `session/get`, `session/open`, `session/fork`, `agent/prompt`,
+`agent/stop`, and `agent/abort` route opaque `native-pi:` ids to the Node
+sidecar. Native file paths never enter renderer payloads.
+
+Native rename/delete/move/revision/configuration/scratch/Plan/Goal/queue/
+collaboration operations return an explicit unsupported/invalid-argument error.
+`session/fork` for a native id returns `{ session: SessionDetail }` for one new
+child JSONL and never mutates the parent; an anchor id that is not a message on
+the active branch is `INVALID_ARGUMENT`. The fork response carries the child's
+whole projected transcript (`messageStart: 0`, `hasMoreBefore: false`) at full
+fork parity, independent of general detail paging. Forking reuses the same
+source ownership state list/detail report: an owned idle runtime keeps its
+lease, while a live/remote/malformed foreign lease rejects with
+`NATIVE_PI_SESSION_BUSY` and a changed owned source with
+`NATIVE_PI_SESSION_CHANGED`. Unexpected filesystem failures surface as a
+path-free `NATIVE_PI_FORK_IO_ERROR`.
+Native continuation refusal codes include `NATIVE_PI_SESSION_BUSY`,
+`NATIVE_PI_SESSION_CHANGED`, `NATIVE_PI_PROVIDER_UNAVAILABLE`, and
+`NATIVE_PI_PROJECT_UNTRUSTED` plus format/newline/cwd-specific codes.
+
+Native compact and queue push/list reject with `NATIVE_PI_UNSUPPORTED` before
+Desktop host/queue access. Queue remove/prioritize continue to take an opaque
+host `turnId`, not a session id: native paths never create host queue entries.
+Supporting a native queue later requires an explicit source/session contract;
+a turn-id prefix is not source authentication.
+
+Native events include `user_message_persisted` with `optimisticMessageId` and a
+projected durable `message`. The renderer replaces that submission identity in
+live/cache/retained state before normal completion refresh. Identical-text
+submissions remain distinct; SDK entry IDs are never rewritten. Desktop event
+semantics are unchanged. Native terminal completion follows SDK settlement,
+not intermediate retry/compaction loop ends. Native abort never invokes
+`replaceSessionMessages` and reloads durable detail after abort returns.
+
+### Provider ordering
+
+`minih-agent-desktop/providers/reorder({ id, targetId, placement: "before" | "after" })`
+returns `{ ok: true }` and forwards to host `providers.reorder`. The sandboxed
+preload permits this channel through the shared IPC registry. Invalid placement
+or missing providers returns `INVALID_PARAMS`; configuration and defaults are
+unchanged. See [provider configuration](12-provider-config-schema.md).
+
+## 15. Cloud configuration sync
+
+The Settings → Cloud sync page uses the following renderer-to-Main channels;
+all are forwarded to the Host-owned `configSync.*` RPC methods. The page is
+available in all builds and carries an Experimental badge. Channel names stay
+stable; connection inputs
+and results use the S3-only contract in `types/config-sync.ts`:
+
+| IPC channel | Host method | contract |
+|---|---|---|
+| `minih-agent-desktop/configSync/getState` | `configSync.getState` | redacted status, category selections, preview counts, and pending approval summaries |
+| `minih-agent-desktop/configSync/test` | `configSync.test` | S3 conditional-write probe and verified cleanup; returns `{ ok: true, conditionalWrites: true }` without persisting configuration |
+| `minih-agent-desktop/configSync/configure` | `configSync.configure` | validates the endpoint, stores encrypted local sync metadata, and enables the vault |
+| `minih-agent-desktop/configSync/syncNow` | `configSync.syncNow` | runs one Host-owned two-way sync or local-snapshot backup, according to the saved mode |
+| `minih-agent-desktop/configSync/pause` | `configSync.pause` | pauses or resumes this device only |
+| `minih-agent-desktop/configSync/unlock` | `configSync.unlock` | unlocks the local vault for the current process/device |
+| `minih-agent-desktop/configSync/approve` / `reject` | `configSync.approve` / `configSync.reject` | records a digest-bound local activation decision |
+| `minih-agent-desktop/configSync/mapProject` | `configSync.mapProject` | binds one opaque project/group identity to one or more explicitly selected local folders, preserving primary-root order |
+| `minih-agent-desktop/configSync/listHistory` | `configSync.listHistory` | lists the saved mode's latest 30 indexed revisions; never emitted as a state-change event |
+| `minih-agent-desktop/configSync/restore` | `configSync.restore` | sync publishes a new shared revision with propagation acknowledgment; backup restores locally without changing cloud history; both retain recovery/approvals |
+| `minih-agent-desktop/configSync/changePassword` | `configSync.changePassword` | CAS-rewraps the vault key header without returning keys or secret values |
+| `minih-agent-desktop/configSync/disconnect` | `configSync.disconnect` | removes local sync metadata and keys; it does not delete remote vault data |
+
+Input passwords are accepted only for the operation that needs them. No raw
+secret, vault key, decrypted resource, or remote archive crosses back to the
+renderer. The `configSync.changed` event carries the same redacted state and
+is emitted by Host-originated changes, including the Host scheduler. Main is a
+transport/lifecycle coordinator and does not schedule, merge, encrypt, or
+apply configuration.
+
+A manual sync reports `configSync.progress` while it runs: the phase
+(`capture`, `download`, `merge`, `upload`, or `apply`), the units
+done and total for that phase, and the bytes when they are known. A long upload
+of many resource objects is therefore not an interface with nothing to show.
+Background polls report nothing, since only the manual path has a caller
+watching.
+
+## 16. Live Voice API
+
+Live Voice is an app-owned call path described in [live-voice.md](live-voice.md)
+whose ownership is bound to the main window. Its DTOs are defined in
+`packages/shared/src/types/live-voice.ts`; the preload exposes only the
+allowlisted channels below. Main derives the owner from the invoking trusted
+frame and sends call events only to that frame. No payload can supply an owner
+identity or credentials. The docked widget window draws the call chrome without
+owning the call, so its three channels are validated separately and never enter
+owner derivation.
+
+| IPC channel | Direction | contract |
+|---|---|---|
+| `minih-agent-desktop/voice/live/status` | Renderer → Main | redacted feature status, binding readiness and settings revision |
+| `minih-agent-desktop/voice/live/prepare` | Renderer → Main | idempotent call preparation by request ID; synchronously reserves the shared microphone lease |
+| `minih-agent-desktop/voice/live/connect` | Renderer → Main | connects a prepared call; Codex may include a bounded SDP offer |
+| `minih-agent-desktop/voice/live/setMuted` | Renderer → Main | sets mute state with a monotonically increasing capture epoch |
+| `minih-agent-desktop/voice/live/reportMedia` | Renderer → Main | reports capture, connection and release lifecycle; release acknowledgement is required before lease reuse |
+| `minih-agent-desktop/voice/live/reportPlayback` | Renderer → Main | bounded list of played PCM cursors used for interruption/truncation |
+| `minih-agent-desktop/voice/live/reportDelegation` | Renderer → Main | reports a provider-requested delegation; v1 rejects execution and never forwards it to Agent/MCP |
+| `minih-agent-desktop/voice/live/reportControlApplied` | Renderer → Main | acknowledges a supported provider control or a rejected unsupported action |
+| `minih-agent-desktop/voice/live/end` | Renderer → Main | idempotently ends an active call or cancels its pending request |
+| `minih-agent-desktop/voice/live/heartbeat` | Renderer → Main | keeps the owning call alive while its renderer is responsive |
+| `minih-agent-desktop/voice/live/event/changed` | Main → Renderer | redacted call phase, error, notice and activity updates |
+| `minih-agent-desktop/voice/live/event/port` | Main → Renderer | transfers exactly one call-scoped `MessagePort` with its call ID and one-time nonce |
+| `minih-agent-desktop/voice/live/event/control` | Main → Renderer | provider control request, limited to the explicit v1 control vocabulary |
+| `minih-agent-desktop/voice/live/event/transcript` | Main → Renderer | transient bounded transcript event for the current call |
+| `minih-agent-desktop/voice/live/widget/visibility` | Widget → Main | the docked widget's own presentation decision and the content box it needs; Main shows or hides that window accordingly |
+| `minih-agent-desktop/voice/live/widget/action` | Widget → Main | a call action pressed in the docked widget; Main validates the sender and forwards it to the owner frame, which runs it |
+| `minih-agent-desktop/voice/live/widget/ownerState` | Main window → Main | what only the owner frame knows: its own failure code (for example a refused mute) and whether the bound work session waits on a decision; neither is in the call view |
+| `minih-agent-desktop/voice/live/event/widgetState` | Main → Widget | the authoritative call view plus the owner's own failure code and waiting-decision flag, pushed to the docked widget window |
+| `minih-agent-desktop/voice/live/event/widgetAction` | Main → Main window | the forwarded widget action the owner frame has to run |
+
+The `MessagePort` is provisioned only after successful owner validation, then
+relayed by preload to the renderer window. The owner echoes the per-call nonce
+in its first `hello`; Main accepts the port once and only after the call ID and
+nonce match the prepared call. Its binary frames are bounded PCM audio, capture
+epochs, release acknowledgements, playback cursors and protocol readiness
+signals. It is not a generic IPC tunnel: it carries no provider
+credentials, arbitrary commands, workspace paths, Agent messages or durable
+transcripts. A port is closed on call end or owner loss.
+
+The docked widget window is not a call owner and can never become one: it is
+refused on every owner-validated channel with `PERMISSION_DENIED`, exactly like
+any other renderer. Main answers its two channels only when the sender is that
+window, and the owner's own failure code arrives through the main window, which
+is the frame that ran the action. A widget action never changes call state by
+itself: it is forwarded to the owner frame, and the resulting state reaches the
+widget through the same authoritative view the owner receives.

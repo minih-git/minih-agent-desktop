@@ -1,0 +1,171 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  js:
+    name: JS build / typecheck / lint / architecture / test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          # Match the Node that Electron 43 bundles (24.18), so CI type-checks
+          # and tests against the same runtime the app actually ships.
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm build:js
+
+      - name: Typecheck Desktop
+        # Workspace dependency builds already run tsc; Vite does not check the app.
+        run: pnpm --filter @minih-agent/desktop typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Check architecture budgets
+        env:
+          ARCHITECTURE_BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+        run: node scripts/check-architecture.mjs
+
+      - name: Unit-test the Pi patch checks
+        run: node --test scripts/pi-patch-hash.test.mjs
+
+      - name: Unit tests
+        run: pnpm -r --if-present test
+
+  rust:
+    name: Rust host-core format / lint / test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features
+
+      - name: Test
+        run: cargo test -p host-core --locked
+
+  rust-windows:
+    name: Rust host-core Windows / transcript cache E2E
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy -p host-core --all-targets --locked
+
+      - name: Test transcript module on Windows
+        run: "cargo test -p host-core --locked transcripts::"
+
+      - name: Build host-core
+        run: cargo build -p host-core --locked
+
+      - name: Build Host RPC helper dependency
+        run: pnpm --filter @minih-agent/shared build
+
+      - name: Run transcript cache Host RPC E2E
+        run: node scripts/e2e-transcript-cache.mjs
+
+  trusted-extensions-e2e:
+    name: Trusted extensions Electron E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes openbox xauth xvfb
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Electron binary
+        run: pnpm --filter @minih-agent/desktop exec install-electron
+
+      - name: Configure Chromium SUID sandbox
+        run: |
+          sandbox=apps/desktop/node_modules/electron/dist/chrome-sandbox
+          sudo chown root:root "$sandbox"
+          sudo chmod 4755 "$sandbox"
+
+      - name: Build workspace packages
+        run: pnpm build:js
+
+      - name: Build Desktop bundle
+        run: pnpm --filter @minih-agent/desktop build
+
+      - name: Run browser capture/resize E2E
+        run: xvfb-run --auto-servernum sh -c 'openbox >/dev/null 2>&1 & exec node scripts/e2e-browser-capture-resize.mjs'
+
+      - name: Build host-core
+        run: cargo build -p host-core --locked
+
+      - name: Run trusted extensions E2E
+        env:
+          DEBUG_E2E: "1"
+        run: xvfb-run --auto-servernum pnpm test:e2e:trusted-extensions

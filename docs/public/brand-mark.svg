@@ -1,0 +1,51 @@
+<svg width="32" height="32" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="squircle">
+      <rect width="1024" height="1024" rx="280"/>
+    </clipPath>
+    <linearGradient id="bg" x1="128" y1="48" x2="896" y2="976" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#171B30"/>
+      <stop offset="0.48" stop-color="#0E1222"/>
+      <stop offset="1" stop-color="#080B14"/>
+    </linearGradient>
+    <radialGradient id="aura-indigo" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(240 180) rotate(42) scale(640)">
+      <stop offset="0" stop-color="#6366F1" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#4F46E5" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="aura-teal" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 820) rotate(-135) scale(620)">
+      <stop offset="0" stop-color="#2DD4BF" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#0EA5E9" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="h-sculpt" x1="210" y1="360" x2="814" y2="756" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.38" stop-color="#E0E7FF"/>
+      <stop offset="0.68" stop-color="#A5F3FC"/>
+      <stop offset="1" stop-color="#2DD4BF"/>
+    </linearGradient>
+    <linearGradient id="spark-grad" x1="400" y1="160" x2="624" y2="384" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C4B5FD"/>
+      <stop offset="0.45" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#2DD4BF"/>
+    </linearGradient>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <rect width="1024" height="1024" fill="url(#aura-indigo)"/>
+    <rect width="1024" height="1024" fill="url(#aura-teal)"/>
+    <path
+      d="M 272 408 V 748 M 752 408 V 748 M 272 578 H 752"
+      stroke="url(#h-sculpt)"
+      stroke-width="112"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M 512 148
+         C 512 224 552 268 628 268
+         C 552 268 512 312 512 388
+         C 512 312 472 268 396 268
+         C 472 268 512 224 512 148 Z"
+      fill="url(#spark-grad)"
+    />
+  </g>
+</svg>

@@ -1,0 +1,750 @@
+import {
+  memo,
+  useCallback,
+  useContext,
+  useId,
+  useRef,
+  useState,
+} from "react";
+import { useTranslation } from "react-i18next";
+import type {
+  MessageAttachment,
+  MessageUsage,
+  UiMessage,
+} from "@minih-agent/shared";
+import {
+  formatCompactTokenCount,
+  isCertificateVerificationError,
+} from "@minih-agent/shared";
+import { useOpenChatFileRef, useOpenPreviewTarget } from "../../../hooks/use-preview-target";
+import { useChatFileMenu } from "../../../hooks/use-chat-file-menu";
+import { ContextMenu } from "../../../components/ContextMenu";
+import { ImageHoverCard, type ImageHoverAnchor } from "../../../components/ImageHoverCard";
+import { useDisclosureAnchorNotifier } from "../../../lib/disclosure-anchor-context";
+import { isThinkingActive, resolveThinkingDisplayMode } from "../../../lib/turn-process";
+import { TranscriptSearchContext } from "../../../lib/transcript-search-context";
+import { disclosureKey, useAutomaticDisclosure } from "./disclosure";
+export { useAutomaticDisclosure } from "./disclosure";
+import { messageThinking as thinkingText } from "../../../lib/assistant-turns";
+import { useReferencedImageDataUrl } from "../../../lib/use-referenced-image-data-url";
+import { useVerifiedChatText } from "../../../hooks/use-verified-chat-text";
+import { isHtmlFilePath } from "../../../lib/chat-links";
+import type { SourcePositionProps } from "../../../lib/markdown-source";
+import type { ToolAction } from "../../../lib/tool-display";
+import { calculateTokenRate } from "../../../lib/context-usage";
+import { useAppStore } from "../../../stores/app-store";
+import { Markdown, useCopy } from "../../../components/Markdown";
+import {
+  IconArchive,
+  IconAudio,
+  IconBot,
+  IconBranch,
+  IconChat,
+  IconCheck,
+  IconChevronRight,
+  IconCircleAlert,
+  IconCode,
+  IconCopy,
+  IconFileText,
+  IconFolder,
+  IconGlobe,
+  IconImage,
+  IconListChecks,
+  IconPencil,
+  IconSearch,
+  IconSheet,
+  IconSparkles,
+  IconTerminal,
+  IconVideo,
+  IconWrench,
+  IconX,
+} from "../../../components/icons";
+import { TooltipButton } from "../../../components/ui";
+
+/**
+ * Legacy message navigation reveals the row it names, at message precision.
+ * Item-level targeting is not part of this change.
+ */
+export function useMessageRevealRequest(messageId: string) {
+  const target = useContext(TranscriptSearchContext);
+  return target && target.messageId === messageId
+    ? target.requestId
+    : undefined;
+}
+
+
+/**
+ * Format a message timestamp for the toolbar.
+ * Today → HH:mm:ss; other days → YYYY-MM-DD HH:mm:ss.
+ */
+function formatMessageTime(iso: string, locale: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (isToday) {
+    return date.toLocaleTimeString(locale, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+  }
+  return date.toLocaleString(locale, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+export function MessageTimestamp({ createdAt }: { createdAt?: string }) {
+  const { i18n } = useTranslation();
+  if (!createdAt) return null;
+  const display = formatMessageTime(createdAt, i18n.language);
+  if (!display) return null;
+  return (
+    <span className="message-timestamp" title={createdAt}>
+      {display}
+    </span>
+  );
+}
+
+export function CopyButton({
+  text,
+  label,
+  withLabel = false,
+}: {
+  text: string;
+  label: string;
+  withLabel?: boolean;
+}) {
+  const { copied, copy } = useCopy();
+  const { t } = useTranslation();
+  const tip = copied ? t("chat.copied") : label;
+  if (withLabel) {
+    return (
+      <button
+        className={`copy-btn ${copied ? "copied" : ""}`}
+        title={tip}
+        aria-label={label}
+        onClick={() => copy(text)}
+      >
+        {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+        <span>{tip}</span>
+      </button>
+    );
+  }
+  return (
+    <TooltipButton
+      className={`copy-btn icon ${copied ? "copied" : ""}`}
+      tooltip={tip}
+      ariaLabel={label}
+      onClick={() => copy(text)}
+    >
+      {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+    </TooltipButton>
+  );
+}
+export function MessageMeta({
+  modelId,
+  usage,
+  responseDurationMs,
+  responseOutputTokens,
+}: {
+  modelId?: string;
+  usage?: MessageUsage;
+  responseDurationMs?: number;
+  responseOutputTokens?: number;
+}) {
+  const { t } = useTranslation();
+  const throughput = calculateTokenRate(
+    responseOutputTokens ?? usage?.outputTokens ?? 0,
+    responseDurationMs,
+  );
+  const showThroughput = !usage && throughput !== undefined;
+  if (!modelId && !showThroughput) {
+    return null;
+  }
+  return (
+    <div className="message-meta">
+      {modelId ? (
+        <span className="message-meta-chip model" title={modelId}>
+          {modelId}
+        </span>
+      ) : null}
+      {showThroughput ? (
+        <span className="message-meta-chip throughput">
+          {t("chat.usageThroughputEstimated", {
+            count: formatCompactTokenCount(throughput),
+          })}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+export function AssistantErrorMessage({ message }: { message: UiMessage }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(true);
+  const detailsToggleRef = useRef<HTMLButtonElement | null>(null);
+  const notifyDisclosureAnchor = useDisclosureAnchorNotifier();
+  const detailsId = useId();
+  const dismissed = useAppStore(
+    (state) => state.dismissedAssistantErrorMessages[message.id] === true,
+  );
+  const dismissAssistantErrorMessage = useAppStore(
+    (state) => state.dismissAssistantErrorMessage,
+  );
+  const error = message.error;
+  if (!error || dismissed) return null;
+  const networkDetails = error.details;
+  const certificateFailure =
+    error.code === "NETWORK_ERROR" &&
+    networkDetails !== null && typeof networkDetails === "object" &&
+    isCertificateVerificationError(
+      (networkDetails as { networkCode?: unknown }).networkCode,
+    );
+  const localizedKey = certificateFailure
+    ? "errors.providerCertificate"
+    : `errors.${error.code}`;
+  const localized = t(localizedKey);
+  const summary = localized === localizedKey ? t("chat.responseFailed") : localized;
+  const configurationError = [
+    "MODEL_NOT_CONFIGURED",
+    "PROVIDER_SECRET_MISSING",
+    "PROVIDER_UNAUTHORIZED",
+  ].includes(error.code);
+  // The transport errno is what separates "DNS did not resolve" from "TLS was
+  // rejected" from "the socket died" for the user; the localized summary can
+  // only say "can't reach the provider" (issue #234).
+  const networkCode = (() => {
+    const details = error.details;
+    if (!details || typeof details !== "object") return undefined;
+    const value = (details as { networkCode?: unknown }).networkCode;
+    return typeof value === "string" ? value : undefined;
+  })();
+
+  return (
+    <section className="message-error" aria-label={t("chat.responseError")}>
+      <div className="message-error-heading">
+        <span className="message-error-icon" aria-hidden>
+          <IconCircleAlert size={16} />
+        </span>
+        <div className="message-error-copy">
+          <strong>{summary}</strong>
+          <code>
+            {error.code}
+            {networkCode ? ` · ${networkCode}` : ""}
+          </code>
+        </div>
+        <div className="message-error-actions">
+          <button
+            type="button"
+            ref={detailsToggleRef}
+            className="message-error-toggle"
+            aria-expanded={open}
+            aria-controls={detailsId}
+            onClick={() => {
+              // The raw detail block changes the row's height, so this manual
+              // disclosure holds its own reading position like the others
+              // (#324).
+              notifyDisclosureAnchor?.(detailsToggleRef.current);
+              setOpen((value) => !value);
+            }}
+          >
+            <IconChevronRight size={12} aria-hidden />
+            {open ? t("chat.hideErrorDetails") : t("chat.showErrorDetails")}
+          </button>
+          <button
+            type="button"
+            className="copy-btn primary"
+            onClick={() =>
+              void useAppStore
+                .getState()
+                .sendPrompt(t("chat.continueCurrentTaskPrompt"))
+            }
+          >
+            {t("errors.action.continue")}
+          </button>
+          {configurationError ? (
+            <button
+              type="button"
+              className="copy-btn"
+              onClick={() => {
+                useAppStore.getState().setSettingsTab("agent");
+                useAppStore.getState().setPage("settings");
+              }}
+            >
+              {t("errors.action.openSettings")}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="message-error-dismiss"
+            aria-label={t("chat.dismissError")}
+            title={t("chat.dismissError")}
+            onClick={() => dismissAssistantErrorMessage(message.id)}
+          >
+            <IconX size={14} aria-hidden />
+          </button>
+        </div>
+      </div>
+      <div
+        id={detailsId}
+        className={`message-error-details ${open ? "open" : ""}`}
+        hidden={!open}
+      >
+        <dl>
+          {message.providerId ? (
+            <>
+              <dt>{t("chat.errorProvider")}</dt>
+              <dd>{message.providerId}</dd>
+            </>
+          ) : null}
+          {message.modelId ? (
+            <>
+              <dt>{t("chat.errorModel")}</dt>
+              <dd>{message.modelId}</dd>
+            </>
+          ) : null}
+        </dl>
+        <div className="message-error-raw">
+          <pre className="selectable">{error.message}</pre>
+          <CopyButton text={error.message} label={t("chat.copyErrorDetails")} />
+        </div>
+      </div>
+    </section>
+  );
+}
+export const TOOL_ACTION_KEYS: Record<ToolAction, string> = {
+  read: "chat.toolRead",
+  list: "chat.toolListed",
+  search: "chat.toolSearched",
+  write: "chat.toolWrote",
+  edit: "chat.toolEdited",
+  run: "chat.toolRan",
+  fetch: "chat.toolFetched",
+  fork: "chat.toolUsed",
+  delegate: "chat.toolDelegated",
+  todo: "chat.todo.updated",
+  use: "chat.toolUsed",
+};
+
+/**
+ * A lifecycle row says what it did to subagents, not that it "delegated":
+ * `Task` is the only call that delegates (ADR 0062, ADR 0089, D268).
+ */
+export const LIFECYCLE_LABEL_KEYS: Record<"wait" | "list" | "stop", string> = {
+  wait: "chat.subagentWaited",
+  list: "chat.subagentListed",
+  stop: "chat.subagentStopped",
+};
+
+/** A wait in progress is the one lifecycle row that visibly takes time. */
+export const LIFECYCLE_RUNNING_KEYS: Record<"wait" | "list" | "stop", string> = {
+  wait: "chat.subagentWaiting",
+  list: "chat.subagentListing",
+  stop: "chat.subagentStopping",
+};
+
+export const TOOL_RUNNING_KEYS: Record<ToolAction, string> = {
+  read: "chat.toolReading",
+  list: "chat.toolListing",
+  search: "chat.toolSearching",
+  write: "chat.toolWriting",
+  edit: "chat.toolEditing",
+  run: "chat.toolRunning",
+  fetch: "chat.toolFetching",
+  fork: "chat.toolUsing",
+  delegate: "chat.toolDelegating",
+  todo: "chat.todo.updating",
+  use: "chat.toolUsing",
+};
+
+export function ToolActionIcon({ action }: { action: ToolAction }) {
+  const props = { size: 15, "aria-hidden": true };
+  switch (action) {
+    case "read":
+      return <IconFileText {...props} />;
+    case "list":
+      return <IconFolder {...props} />;
+    case "search":
+      return <IconSearch {...props} />;
+    case "write":
+    case "edit":
+      return <IconPencil {...props} />;
+    case "todo":
+      return <IconListChecks {...props} />;
+    case "run":
+      return <IconTerminal {...props} />;
+    case "fetch":
+      return <IconGlobe {...props} />;
+    case "fork":
+      return <IconBranch {...props} />;
+    case "delegate":
+      return <IconBot {...props} />;
+    default:
+      return <IconWrench {...props} />;
+  }
+}
+
+
+/** Actions whose path/url argument makes sense to preview in the panel. */
+export const PREVIEWABLE_ACTIONS = new Set<ToolAction>(["read", "write", "edit", "fetch"]);
+
+export function fileChipIcon(name: string, kind?: "image" | "file") {
+  if (kind === "image" || /\.(avif|bmp|gif|heic|jpe?g|png|tiff?|webp)$/i.test(name)) {
+    return IconImage;
+  }
+  if (
+    /\.(cjs|css|go|html?|java|js|json|jsx|kt|mjs|php|py|rb|rs|sh|sql|svelte|swift|toml|ts|tsx|vue|ya?ml)$/i.test(
+      name,
+    )
+  ) {
+    return IconCode;
+  }
+  if (/\.(7z|bz2|gz|jar|rar|tar|zip)$/i.test(name)) return IconArchive;
+  if (/\.(csv|ods|xls|xlsx)$/i.test(name)) return IconSheet;
+  if (/\.(flac|m4a|mp3|ogg|wav)$/i.test(name)) return IconAudio;
+  if (/\.(avi|mkv|m4v|mov|mp4|webm)$/i.test(name)) return IconVideo;
+  return IconFileText;
+}
+
+/** Compact leaf-name chip matching the composer file node (D320). */
+export function FileRefChip({
+  name,
+  path,
+  kind,
+  mimeType,
+  onOpen,
+  line,
+  column,
+  ...position
+}: {
+  name: string;
+  path: string;
+  kind?: "image" | "file";
+  mimeType?: string;
+  onOpen: (
+    path: string,
+    baseDir?: string,
+    mimeType?: string,
+    position?: { line?: number; column?: number },
+  ) => void;
+  line?: number;
+  column?: number;
+} & SourcePositionProps) {
+  const { t } = useTranslation();
+  const Icon = fileChipIcon(name, kind);
+  const { fileMenu, openFileMenu, closeFileMenu } = useChatFileMenu();
+  const html = isHtmlFilePath(path) || isHtmlFilePath(name);
+  return (
+    <>
+      <button
+        type="button"
+        className="composer-chip chat-file-chip"
+        {...position}
+        title={`${html ? t("chat.previewUrl") : t("chat.openFile")} — ${path}`}
+        aria-label={`${name} — ${path}`}
+        onClick={() => onOpen(path, undefined, mimeType, { line, column })}
+        onContextMenu={(event) => openFileMenu(event, { path })}
+      >
+        <span className="composer-chip-icon" aria-hidden>
+          <Icon size={13} />
+        </span>
+        <span className="composer-chip-name">{name}</span>
+      </button>
+      <ContextMenu state={fileMenu} onClose={closeFileMenu} />
+    </>
+  );
+}
+
+/**
+ * A referenced conversation as a chip. The draft carried a
+ * `minih-agent-desktop://session/<id>` link; main attached a bounded excerpt for the
+ * model, and this chip is how the reader sees and reopens it.
+ */
+function SessionChip({ sessionId, fallbackName, ...position }: {
+  sessionId: string;
+  fallbackName: string;
+} & SourcePositionProps) {
+  const { t } = useTranslation();
+  const selectSession = useAppStore((state) => state.selectSession);
+  // The chip names a conversation, not the name that conversation carried when
+  // the link was pasted: a rename — manual, or the first-turn summary — follows
+  // through to every message that references it. The recorded name is what the
+  // model block quotes, and it stays the fallback for a conversation this
+  // viewer no longer lists.
+  const liveTitle = useAppStore(
+    (state) => state.sessions.find((session) => session.id === sessionId)?.title,
+  );
+  const name = (liveTitle ?? "").trim() || fallbackName;
+  const label = `${t("chat.sessionReference")} · ${name}`;
+  const open = () => void selectSession(sessionId).catch(() => undefined);
+  // This chip carries a conversation title, so it can be wider than whatever
+  // space a line has left. Chromium never fragments a `<button>` across lines:
+  // as one it is pushed whole onto the next line and the rest of the line it
+  // left stays blank. The button role and its keyboard behaviour therefore sit
+  // on a span, which the message stylesheet lays out as an inline run that
+  // breaks with the text.
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      className="composer-chip chat-file-chip"
+      {...position}
+      data-action="open-session-reference"
+      data-session-id={sessionId}
+      title={t("chat.sessionReferenceOpen", { title: name })}
+      aria-label={label}
+      onClick={open}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        open();
+      }}
+    >
+      <span className="composer-chip-icon" aria-hidden>
+        <IconChat size={13} />
+      </span>
+      <span className="composer-chip-name">{label}</span>
+    </span>
+  );
+}
+
+/** A bare `minih-agent-desktop://session/<id>` link in prose, rendered as that chip. */
+export function SessionLinkChip({ sessionId, ...position }: { sessionId: string } & SourcePositionProps) {
+  return (
+    <SessionChip sessionId={sessionId} fallbackName={sessionId.slice(0, 8)} {...position} />
+  );
+}
+
+/**
+ * User-message image attachment as the same compact chip as any other file
+ * reference. The host resolves the ref into a bounded data URL that the hover
+ * (or focus) card shows; an unresolved load simply keeps the chip. Clicking
+ * opens the files viewer on the same contained ref.
+ */
+export function MessageAttachmentImage({
+  attachment,
+  onOpenFile,
+  inline = false,
+}: {
+  attachment: MessageAttachment;
+  onOpenFile: (path: string, baseDir?: string, mimeType?: string) => void;
+  /** Inline placement inside the message prose; only the trailing list has a list parent. */
+  inline?: boolean;
+}) {
+  const dataUrl = useReferencedImageDataUrl(attachment.ref, attachment.mimeType);
+  const [anchor, setAnchor] = useState<ImageHoverAnchor | null>(null);
+  const chipRef = useRef<HTMLSpanElement>(null);
+  const reveal = () => {
+    const element = chipRef.current;
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    setAnchor({ left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width });
+  };
+  const dismiss = () => setAnchor(null);
+  return (
+    <>
+      <span
+        ref={chipRef}
+        className="message-attachment-image-chip"
+        role={inline ? undefined : "listitem"}
+        onPointerEnter={reveal}
+        onPointerLeave={dismiss}
+        onFocus={reveal}
+        onBlur={dismiss}
+      >
+        <FileRefChip
+          name={attachment.name}
+          path={attachment.ref}
+          kind="image"
+          mimeType={attachment.mimeType}
+          onOpen={onOpenFile}
+        />
+      </span>
+      <ImageHoverCard src={dataUrl} anchor={anchor} onDismiss={dismiss} />
+    </>
+  );
+}
+
+/** Plain user text: @paths become composer-like chips; URLs stay text links. */
+export function LinkifiedText({
+  text,
+  attachments,
+  sourceOffset = 0,
+}: {
+  text: string;
+  attachments?: readonly MessageAttachment[];
+  /** Where this run starts in the message content, so offsets stay absolute. */
+  sourceOffset?: number;
+}) {
+  const { t } = useTranslation();
+  const openTarget = useOpenPreviewTarget();
+  const openFileRef = useOpenChatFileRef();
+  const segments = useVerifiedChatText(text, attachments);
+  let offset = 0;
+  return (
+    <>
+      {segments.map((segment, index) => {
+        const start = sourceOffset + offset;
+        offset += segment.text.length;
+        const position = { "data-source-start": start, "data-source-end": sourceOffset + offset };
+        return segment.kind === "text" ? (
+          <span key={index} {...position}>{segment.text}</span>
+        ) : segment.target.kind === "file" ? (
+          <FileRefChip
+            key={index}
+            name={segment.label}
+            path={segment.target.path}
+            line={segment.target.line}
+            column={segment.target.column}
+            onOpen={openFileRef}
+            {...position}
+          />
+        ) : segment.target.kind === "session" ? (
+          <SessionLinkChip key={index} sessionId={segment.target.sessionId} {...position} />
+        ) : (
+          <TooltipButton
+            key={index}
+            type="button"
+            className="chat-text-link"
+            {...position}
+            tooltip={t("chat.previewUrl")}
+            ariaLabel={segment.text}
+            onClick={() => openTarget(segment.target)}
+          >
+            {segment.text}
+          </TooltipButton>
+        );
+      })}
+    </>
+  );
+}
+
+/** Definition name a `Task` row delegated to, from the rows it produced or,
+ * before any arrived, from the call's own argument. */
+
+export function ToolCommandCopy({ command }: { command: string }) {
+  const { t } = useTranslation();
+  const { copied, copy } = useCopy();
+  return (
+    <TooltipButton
+      className={`tool-row-head-copy${copied ? " copied" : ""}`}
+      ariaLabel={`${t("chat.copy")} ${t("chat.toolBlockCommand")}`}
+      tooltip={copied ? t("chat.copied") : t("chat.copy")}
+      onClick={() => copy(command)}
+    >
+      {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+    </TooltipButton>
+  );
+}
+
+export function DisclosureCollapseRail({
+  label,
+  onCollapse,
+}: {
+  label: string;
+  onCollapse: () => void;
+}) {
+  return (
+    <TooltipButton
+      type="button"
+      className="disclosure-collapse-rail"
+      ariaLabel={label}
+      tooltip={label}
+      onClick={onCollapse}
+    />
+  );
+}
+
+export const ThinkingRow = memo(function ThinkingRow({
+  message,
+  streaming,
+  autoOpen = false,
+  onUserInteraction,
+}: {
+  message: UiMessage;
+  streaming: boolean;
+  autoOpen?: boolean;
+  onUserInteraction?: () => void;
+}) {
+  const { t } = useTranslation();
+  const detailsId = useId();
+  const revealRequest = useMessageRevealRequest(message.id);
+  const disclosure = useAutomaticDisclosure(autoOpen, revealRequest, disclosureKey("thinking", message.id));
+  const { open, toggle: toggleDisclosure, collapse: collapseDisclosure } = disclosure;
+  const titleRef = disclosure.titleRef;
+  const toggleRow = useCallback(() => {
+    onUserInteraction?.();
+    toggleDisclosure();
+  }, [onUserInteraction, toggleDisclosure]);
+  const collapseRow = useCallback(() => {
+    onUserInteraction?.();
+    collapseDisclosure();
+  }, [collapseDisclosure, onUserInteraction]);
+  const compact = useAppStore(
+    (state) => resolveThinkingDisplayMode(state.settings?.thinkingDisplayMode) === "compact",
+  );
+  if (compact) {
+    return isThinkingActive(message, streaming) ? (
+      <div className="tool-row thinking thinking-compact" role="status">
+        <span className="tool-row-icon" aria-hidden>
+          <IconSparkles size={15} />
+        </span>
+        <span className="tool-row-name running">
+          {t("chat.thinking", { defaultValue: "Thinking" })}
+        </span>
+      </div>
+    ) : null;
+  }
+  const text = thinkingText(message);
+  const summary = text.replace(/\s+/g, " ").trim();
+  return (
+    <div className={`tool-row thinking ${open ? "open" : ""}`}>
+      <button
+        ref={titleRef}
+        className="tool-row-header"
+        aria-expanded={open}
+        aria-controls={detailsId}
+        aria-label={t(open ? "chat.thinkingHide" : "chat.thinkingShow")}
+        onClick={toggleRow}
+      >
+        <span className="tool-row-icon">
+          <IconSparkles size={15} aria-hidden />
+        </span>
+        <span className={`tool-row-name ${streaming ? "running" : ""}`}>
+          {t("chat.thinking", { defaultValue: "Thinking" })}
+        </span>
+        <span className="tool-row-summary">{summary}</span>
+        <span className="tool-row-caret" aria-hidden>
+          <IconChevronRight size={12} />
+        </span>
+      </button>
+      {open ? (
+        <div className="tool-row-body" id={detailsId} ref={disclosure.bodyRef} {...disclosure.bodyEvents}>
+          <DisclosureCollapseRail
+            label={t("chat.thinkingHide")}
+            onCollapse={collapseRow}
+          />
+          <div className="prose-chat thinking-prose">
+            <Markdown source={text} renderDiagrams={false} />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}, (previous, next) =>
+  previous.message === next.message &&
+  previous.streaming === next.streaming &&
+  previous.autoOpen === next.autoOpen &&
+  previous.onUserInteraction === next.onUserInteraction,
+);

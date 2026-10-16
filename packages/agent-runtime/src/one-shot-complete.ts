@@ -1,0 +1,205 @@
+/**
+ * Host-owned one-shot completion behind the plugin `agent.complete` API. No
+ * session history is implied: the caller supplies the full Context and tools
+ * stay empty.
+ */
+
+import type {
+  Api,
+  AssistantMessageEventStream,
+  Context,
+  Model,
+  SimpleStreamOptions,
+} from "@earendil-works/pi-ai";
+import { addUsage, type MessageUsage, type ThinkingLevel } from "@minih-agent/shared";
+import { accountModelStream } from "./request-usage.js";
+import { requestThinkingLevel } from "./thinking-level.js";
+import { classifyAgentError } from "./agent-errors.js";
+import { clampOutputToContext } from "./output-cap.js";
+import { assistantContent, usageFromPi } from "./agent-messages.js";
+import {
+  buildProviderModel,
+  copilotRequestHeaders,
+  createProviderModels,
+  providerRequestFetch,
+  type RuntimeProviderConfig,
+} from "./provider-binding.js";
+import {
+  openCodeEndpointFromProvider,
+  withOpenCodeSessionHeaders,
+} from "./opencode-session-headers.js";
+import { withSessionAffinityOptions } from "./session-affinity.js";
+import { mergeProviderHeaders, withProviderHeaders } from "./provider-headers.js";
+import {
+  withProviderFetchFailure,
+  type ProviderFetchFailure,
+} from "./provider-transport-recovery.js";
+import {
+  captureProviderResponse,
+  createProviderRetryStream,
+  PROVIDER_RATE_LIMIT_MAX_RETRIES,
+  PROVIDER_TRANSIENT_MAX_RETRIES,
+  isTransientProviderRetryCode,
+} from "./provider-retry.js";
+
+export type OneShotCompleteStream = (
+  model: Model<Api>,
+  context: Context,
+  options?: SimpleStreamOptions,
+) => AssistantMessageEventStream;
+
+export type OneShotCompleteOptions = {
+  signal?: AbortSignal;
+  stream?: OneShotCompleteStream;
+  /** Optional hard cap for callers whose response schema has a small bound. */
+  maxOutputTokens?: number;
+  emptyErrorCode?: string;
+  emptyErrorMessage?: string;
+  /** Conversation id forwarded to OpenCode as `x-opencode-session`. */
+  sessionId?: string;
+};
+
+export type OneShotCompleteResult = {
+  text: string;
+  usage?: MessageUsage;
+};
+
+function completeError(
+  code: string,
+  message: string,
+  details?: Record<string, unknown>,
+  retriable = false,
+): Error & { errorCode: string; data?: Record<string, unknown> } {
+  return Object.assign(new Error(message), {
+    errorCode: code,
+    data: { ...(details ?? {}), errorCode: code, retriable },
+  });
+}
+
+/**
+ * Run one independent completion with the caller's context and no tools.
+ * Provider setup retries follow the same controller as the agent runtime.
+ */
+export async function completeOneShot(
+  provider: RuntimeProviderConfig,
+  context: Context,
+  thinkingLevel: ThinkingLevel,
+  options: OneShotCompleteOptions = {},
+): Promise<OneShotCompleteResult> {
+  const model = buildProviderModel(provider);
+  const models = createProviderModels(provider, model);
+  const streamSimple =
+    options.stream ??
+    ((requestModel, requestContext, streamOptions) =>
+      models.streamSimple(requestModel, requestContext, streamOptions));
+  let usage: MessageUsage | undefined;
+  let providerStatus: number | undefined;
+  let providerHeaders: Record<string, string> | undefined;
+  let providerFailure: ProviderFetchFailure | undefined;
+  let transientRetryAttempt = 0;
+  let rateLimitRetryAttempt = 0;
+
+  const requestOptions: SimpleStreamOptions = withProviderHeaders(
+    withOpenCodeSessionHeaders(
+      {
+        maxTokens: clampOutputToContext(
+          model,
+          context,
+          options.maxOutputTokens === undefined
+            ? undefined
+            : Math.min(model.maxTokens, Math.max(1, Math.floor(options.maxOutputTokens))),
+        ),
+        ...(options.signal ? { signal: options.signal } : {}),
+        maxRetries: 0,
+        reasoning: requestThinkingLevel(model, thinkingLevel),
+        fetch: providerRequestFetch(
+          model.api,
+          captureProviderResponse(undefined, (response, _requestBytes, failure) => {
+            providerStatus = response?.status;
+            providerHeaders = response?.headers;
+            providerFailure = failure;
+          }),
+          provider.authKind,
+          {
+            primaryBaseUrl: model.baseUrl ?? provider.baseUrl,
+            fallbackBaseUrl: provider.fallbackBaseUrl,
+          },
+        ),
+      },
+      {
+        ...openCodeEndpointFromProvider(provider, model),
+        sessionId: options.sessionId,
+      },
+    ),
+    mergeProviderHeaders(
+      copilotRequestHeaders(provider, context),
+      provider.headers,
+    ),
+    model.api,
+  );
+  // A one-shot call spends the session's credential like any turn does, so it
+  // carries the session id too; a caller that supplies none keeps an unkeyed
+  // request, and an endpoint that is not stamped is returned unchanged.
+  const sessionOptions = withSessionAffinityOptions(requestOptions, {
+    provider,
+    api: model.api,
+    baseUrl: model.baseUrl,
+    sessionId: options.sessionId,
+  });
+  const stream = createProviderRetryStream(
+    model,
+    context,
+    sessionOptions,
+    (retryOptions) => accountModelStream(model, () => streamSimple(model, context, retryOptions), {
+      providerId: provider.id, nativeCost: provider.modelConfig?.nativeCost,
+      onUsage: attemptUsage => { usage = addUsage(usage, attemptUsage); },
+    }),
+    {
+      claim: (error, phase) => {
+        if (phase !== "request" || !error.retriable) return undefined;
+        if (error.code === "PROVIDER_RATE_LIMITED") {
+          if (rateLimitRetryAttempt >= PROVIDER_RATE_LIMIT_MAX_RETRIES) {
+            return undefined;
+          }
+          rateLimitRetryAttempt += 1;
+          return rateLimitRetryAttempt;
+        }
+        if (!isTransientProviderRetryCode(error.code)) return undefined;
+        if (transientRetryAttempt >= PROVIDER_TRANSIENT_MAX_RETRIES) {
+          return undefined;
+        }
+        transientRetryAttempt += 1;
+        return transientRetryAttempt;
+      },
+      headers: () => providerHeaders,
+      status: () => providerStatus,
+      failure: () => providerFailure,
+    },
+  );
+  const result = await stream.result();
+
+  if (result.stopReason === "aborted") {
+    throw completeError("TURN_ABORTED", "The completion was aborted.");
+  }
+  if (result.stopReason === "error") {
+    const classified = withProviderFetchFailure(
+      classifyAgentError(result.errorMessage || "Completion failed."),
+      providerFailure,
+    );
+    throw completeError(
+      classified.code,
+      classified.message,
+      classified.details,
+      classified.retriable,
+    );
+  }
+
+  const text = assistantContent(result.content).text.trim();
+  if (!text) {
+    throw completeError(
+      options.emptyErrorCode ?? "EMPTY_COMPLETION",
+      options.emptyErrorMessage ?? "The model returned no text.",
+    );
+  }
+  return { text, usage: usage ?? usageFromPi(result.usage) };
+}

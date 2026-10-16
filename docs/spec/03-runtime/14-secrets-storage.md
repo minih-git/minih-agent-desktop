@@ -1,0 +1,187 @@
+# 14. Secrets Storage
+
+## 1. Goal
+
+Store provider credentials and future sensitive tokens safely under Rust host ownership, with zero raw secret leakage to renderer logs/UI persistence.
+
+## 2. Ownership
+
+| Concern | Owner |
+|---|---|
+| secret write/read/delete | Rust host-core |
+| secret metadata index | SQLite `secrets_meta` |
+| OS secure storage integration | Rust host-core |
+| vendor-account login/refresh orchestration | Electron main (`oauth.ts`) |
+| renderer knowledge | `hasSecret` / `hasOauth` booleans and a non-secret account label |
+
+Node pi sidecar may receive secret **ephemerally in-memory** for a run via host RPC, never persisted by sidecar. For a vendor-account provider it receives even less: a short-lived `ModelAuth` resolved per request, never the OAuth refresh token (§10).
+
+## 3. Backends
+
+### Primary
+- **Electron/OS safe storage style backend** mediated by host
+- macOS: Keychain-backed path preferred for first release
+
+### Fallback
+If primary backend unavailable:
+1. encrypt secret blob with machine-local key material
+2. store ciphertext under app data
+3. mark `backend=file_fallback` in metadata
+4. surface security warning in settings
+
+MVP must implement both paths with automatic selection.
+
+## 4. Data model
+
+```ts
+type SecretMeta = {
+  secretRef: string
+  providerId?: string
+  kind: "api_key" | "bearer_token" | "azure_api_key" | "custom"
+  backend: "safeStorage" | "file_fallback"
+  updatedAt: string
+}
+
+// raw value never appears in SQLite tables
+// raw value never appears in IPC list/get provider responses
+```
+
+`secretRef` formats:
+
+```text
+secret:provider:<providerId>:api_key
+secret:provider:<providerId>:oauth
+secret:app:typesafe-jev
+```
+
+The two refs are independent, so one provider row may hold an API key, a vendor
+account, or both. The OAuth ref stores the serialized pi-ai `OAuthCredential`
+(access token, refresh token, expiry) written through the generic `secrets.set`
+path, so it is encrypted by the same backend but is not indexed in
+`secrets_meta`; provider delete clears both refs and any metadata row for them.
+The Jev API key uses the fixed `secret:app:typesafe-jev` reference through the
+same encrypted Host store. Renderer access is limited to set/delete/has; Electron
+main reads it only for an explicitly enabled Agent launch and passes it
+ephemerally to the sidecar.
+
+## 4a. Provider readiness flags
+
+| flag | meaning |
+|---|---|
+| `hasSecret` | the row has **either** credential — an API key or a vendor account |
+| `hasOauth` | the row has a vendor-account credential |
+| `oauthAccountLabel` | non-secret display label for the signed-in account (from `config_json.oauth.accountLabel`) |
+
+`hasSecret` deliberately stayed the single readiness signal, so model pickers,
+composer guards, and provider lists needed no new condition when vendor
+accounts arrived. `hasOauth` only drives presentation: the account badge, and
+hiding the API key input on a vendor row.
+
+## 5. Host RPC
+
+- `secrets.set` `{ secretRef, value, meta }`
+- `secrets.delete` `{ secretRef }`
+- `secrets.has` `{ secretRef } -> boolean`
+- `secrets.getForRuntime` `{ secretRef, reason, runId }` **internal only** (main/host → not exposed to renderer)
+
+### Renderer-facing surface
+Renderer uses provider methods that accept optional `secretValue` on create/update and only reads `hasSecret`.
+
+## 6. Access rules
+
+1. Renderer cannot list raw secrets
+2. Logs redaction: mask values matching secret patterns / known secret refs
+3. `getForRuntime` requires active run context and is audited
+4. Export excludes secrets by default
+5. Uninstall/reset app deletes secrets unless future explicit migrate tool says otherwise
+6. Provider delete defaults to deleting linked secret — both the API key and the OAuth credential
+7. An OAuth refresh token never crosses a process boundary: only Electron main reads it, and only to mint request auth
+8. Portable configuration sync exports provider API keys or MCP
+   environment/header values only after explicit credential opt-in. Values
+   remain inside host-owned encrypted staging and are restored through the
+   receiving device's local secret store. S3 connection credentials, machine
+   encryption keys, OAuth sessions, and cookies are never portable.
+
+## 7. Redaction policy
+
+Never write to logs:
+- Authorization headers
+- api keys
+- bearer tokens
+- query params named `key`/`token`/`api_key`
+
+Replace with:
+```text
+***REDACTED***
+```
+
+## 8. Failure modes
+
+| case | behavior |
+|---|---|
+| set fails | provider update fails atomically if secret required |
+| backend downgrades to fallback | warn once per session in settings |
+| missing secret at run | `PROVIDER_SECRET_MISSING` |
+| decrypt failure | treat as missing + prompt re-enter |
+
+## 9. Acceptance criteria
+
+- [ ] set/has/delete works on native macOS arm64 and Intel x64 paths
+- [ ] renderer never receives raw secret on provider list/get
+- [ ] runtime can fetch secret ephemerally for a turn
+- [ ] logs do not contain raw key material in normal failure tests
+- [ ] fallback backend works when primary unavailable (dev/test harness)
+- [ ] a vendor-account row reports `hasSecret` and `hasOauth` without exposing the credential
+
+## 10. Vendor-account credentials
+
+Electron main owns login, account-removal, and refresh orchestration (ADR 0095,
+D237, D240)
+because pi-ai declares it app-owned. `oauth.ts` implements pi-ai's
+`CredentialStore` on top of `secrets.getForRuntime` / `secrets.set` /
+`secrets.delete`, serializing `modify` per provider so pi-ai's locked-refresh
+assumption holds across concurrent turns. Each OAuth provider row gets its own
+collection and store scope; two rows with the same vendor key never share a
+credential or refresh lock.
+
+Pi login receives an installation context whose `getDeviceId` returns one stable
+UUID v4. Electron main creates it lazily, shares concurrent initialization, and
+persists it through Host secrets under `secret:installation:oauth-device-id`
+before exposing it to the flow. It is independent of provider accounts and
+survives cancellation, account deletion, and service restart. Initialization
+failures remain retryable and use a redacted error. The identity never enters
+provider rows, portable configuration, renderer events, or ordinary diagnostics.
+
+Anthropic login uses pi-ai's browser or copy-code choice through the existing
+Main-to-renderer `select` prompt bridge. Copy-code login returns through the
+generic manual-code prompt with the flow's PKCE state; both paths persist the
+credential through the same provider-scoped Host secret store. The choice does
+not expose refresh tokens or change the account/auth ownership boundary.
+
+Plugin-owned OAuth rows use the same encrypted
+`secret:provider:<providerId>:oauth` reference. The host invokes the owning
+plugin's `onProviderOAuth` callback for login and refresh only after checking
+the `provider.oauth` grant and declared contribution. The callback can read
+that provider's own credential; it receives an abort signal for cancellation,
+plugin unload, or timeout. The host validates and bounds callback results,
+serializes refresh per provider row, and passes only the access token through
+the normal per-request auth resolver. The refresh token never reaches the
+renderer or Agent Runtime. One credential is stored per manifest contribution;
+sign out clears that secret without deleting the provider row. Plugin-owned
+provider rows are omitted from portable configuration and credential capture.
+
+Request auth flows one way only:
+
+1. The launch payload for an `authKind: "oauth"` row carries `apiKey: ""`.
+   Main does not read the credential at launch.
+2. Per request, the runtime calls the host-proxy method
+   `provider.resolveAuth` with `{ sessionId, providerId }`.
+3. Electron main answers it locally — the call is **never forwarded to
+   host-core** — after checking the pair against the per-launch binding table.
+   An unbound provider fails with `PROVIDER_NOT_BOUND`.
+4. The reply is a short-lived `ModelAuth` (`apiKey`, `headers`, `baseUrl`),
+   refreshed under the store lock only when it has expired.
+
+The sidecar therefore holds a revocable, roughly hour-long token scoped to the
+one provider its session is bound to — strictly less than the long-lived API
+key it receives for a keyed row.

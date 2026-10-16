@@ -1,0 +1,64 @@
+# Repair only the optional mirror after a GitHub Release already exists.
+# Rerunning the old tag workflow uses its old definition; do not move that tag.
+name: Recover release mirror
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Latest published stable release to mirror (for example v0.20.4)'
+        required: true
+        type: string
+
+# Download existing Release assets only; never rewrite a Release or its tag.
+permissions:
+  contents: read
+
+# Serialize against the same tag's original Release workflow.
+concurrency:
+  group: release-refs/tags/${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Use the fixed script on main, not the old workflow from the release tag.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Download the latest published release for mirror recovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          MINIH_UPDATE_MIRROR_S3_BUCKET: ${{ vars.MINIH_UPDATE_MIRROR_S3_BUCKET }}
+        run: |
+          set -euo pipefail
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          if [[ "$RELEASE_TAG" != "$latest" ]]; then
+            echo "::error::Recovery only accepts the latest published stable release; refusing to roll back the update mirror."
+            exit 1
+          fi
+          if [[ -z "${MINIH_UPDATE_MIRROR_S3_BUCKET//[[:space:]]/}" ]]; then
+            printf 'Release %s exists. No update mirror is configured; no assets need downloading.\n' "$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir dist
+
+      - name: Mirror release assets to the configured update mirror
+        env:
+          MINIH_UPDATE_MIRROR_S3_BUCKET: ${{ vars.MINIH_UPDATE_MIRROR_S3_BUCKET }}
+          MINIH_UPDATE_MIRROR_S3_ENDPOINT: ${{ vars.MINIH_UPDATE_MIRROR_S3_ENDPOINT }}
+          MINIH_UPDATE_MIRROR_S3_REGION: ${{ vars.MINIH_UPDATE_MIRROR_S3_REGION }}
+          MINIH_UPDATE_MIRROR_S3_PREFIX: ${{ vars.MINIH_UPDATE_MIRROR_S3_PREFIX }}
+          MINIH_UPDATE_MIRROR_PUBLIC_URL: ${{ vars.MINIH_UPDATE_MIRROR_PUBLIC_URL }}
+          MINIH_UPDATE_MIRROR_S3_ACCESS_KEY_ID: ${{ secrets.MINIH_UPDATE_MIRROR_S3_ACCESS_KEY_ID }}
+          MINIH_UPDATE_MIRROR_S3_SECRET_ACCESS_KEY: ${{ secrets.MINIH_UPDATE_MIRROR_S3_SECRET_ACCESS_KEY }}
+        run: node scripts/publish-update-mirror.mjs dist

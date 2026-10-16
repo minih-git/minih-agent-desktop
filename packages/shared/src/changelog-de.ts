@@ -1,0 +1,1029 @@
+import type { ChangelogEntry } from "./changelog.js";
+
+export const deEntries: ChangelogEntry[] = [
+  {
+    version: "0.20.5",
+    date: "2026-10-16",
+    highlights: [
+      "Die Gemini-Protokollkonfiguration funktioniert wieder: Protokoll-Overrides pro Modell greifen für Gemini-Anbieter, und der mitgelieferte Modellkatalog ist aktualisiert.",
+      "Tool-Fehler im Chat erscheinen als dezente Statushinweise statt als harte Fehlerblöcke; einzelne Subagent-Knoten verbinden sich korrekt.",
+      "Ein neuer Chat belegt nicht mehr den freien Slot einer Automatisierungssitzung.",
+      "Verbindungstests prüfen den aufgelösten Endpunkt; Plan-Endpunkte werden auf die dokumentierte Weise nach ihrer Modellliste gefragt.",
+      "PowerShell-Tool-Läufe bewahren Ausgabe und native Exit-Codes.",
+      "Transkripte überstehen beschädigte oder ungültige UTF-8-Zeilen; das Löschen einer Nachricht konkurriert nicht mehr mit dem Transkript-Neuladen; wiederhergestellte Tool-Aufrufe bleiben an ihrer Assistenten-Nachricht.",
+      "Windows: Ein maximiertes Fenster verdeckt beim Wiederherstellen die Taskleiste nicht mehr; der Konfig-Sync ordnet \\\\?\\-Langpfade richtig zu.",
+      "Die Windows-Speichermigration erhält Verknüpfungsarten, Erstsitzungsprofile und physische Archive.",
+    ],
+  },
+  {
+    version: "0.20.4",
+    date: "2026-10-15",
+    highlights: [
+      "Einstellungen teilen sich in Konten und Modelle: Minih Router verbindet nur mit einem Token, Modelle werden auf einer eigenen Seite gewählt.",
+      "Modelle aus dem Gateway-Katalog hinzufügen - mit Suche, Paging und Alles auswählen; gewählte Modelle erscheinen als Karten mit Preisen und Kontext.",
+      "Jedes Modell kann einen eigenen Protokollmodus festlegen; der Rest folgt der globalen Einstellung der Zeile, jetzt oberhalb der Modellliste.",
+      "Hinzugefügte Modelle behalten ihre automatische Upstream-Konfiguration - Limits, Thinking-Stufen und Bild-/PDF-Fähigkeit kommen aus dem Katalog.",
+      "Ein Modell lässt sich direkt aus seinem Konfigurationsdialog als Bildmodell festlegen.",
+    ],
+  },
+  {
+    "version": "0.20.3",
+    "date": "2026-10-15",
+    "highlights": [
+      "Integrierte Subagenten lassen sich in den Einstellungen bearbeiten und mit einem Klick auf die Werkseinstellungen zurücksetzen.",
+      "App-Updates wechseln automatisch auf konfigurierte Update-Spiegelserver und nehmen stockende Downloads wieder auf.",
+      "Eingeklappte Projektzeilen in der Seitenleiste zeigen den Live-Sitzungsstatus und eine Aktivitätsvorschau; Listen ab 5 Zeilen werden gefaltet.",
+      "Das virtuelle EasyTier-LAN entpackt die Minih-Router-Bootstrap-Antwort, behält statische IP-Einstellungen beim Moduswechsel bei und nutzt standardmäßig das Subnetz 11.12.0.0/24.",
+    ],
+  },
+  {
+    "version": "0.20.2",
+    "date": "2026-10-15",
+    "highlights": [
+      "Minih-Router-Verkehr kann über ein verschlüsseltes EasyTier-Virtuallan laufen; die öffentliche URL bleibt automatischer Fallback.",
+      "Das Gateway kann die Netzwerkidentität selbst ausstellen; die Einstellungen zeigen die von ihm verwalteten Felder und unterstützen eine statische virtuelle IP.",
+      "Parallele Sitzungen eines Projekts laufen in isolierten Git-Worktrees, sodass Agenten sich nicht mehr gegenseitig Dateien überschreiben.",
+      "Übergroße Tool-Bilder brechen Sitzungen nicht mehr; sie werden skaliert oder übersprungen, statt unbrauchbare Inhalte zu speichern.",
+      "Lesepositionen überleben Panelwechsel; bei der Rückkehr zu einer Unterhaltung werden Nachricht und Ansicht exakt wiederhergestellt.",
+      "Beim Öffnen eines Projekts wird das Archiv-Flag gelöscht; aktivierte Projekte erscheinen wieder in der Seitenleiste.",
+      "React-Plugins kompilieren automatisches und Entwicklungs-JSX gegen die Host-Laufzeit, auch nach einem Neustart.",
+      "Im Repository konfigurierte Git-Helfer, Hooks und Monitore können beim Workspace-Diff keine Befehle ausführen.",
+      "Vollbild und Maximieren schließen sich unter Windows gegenseitig aus; das festsitzende Fenster bei mehreren Monitoren ist behoben.",
+      "Bekannte verwundbare Abhängigkeiten werden gepatcht, einschließlich der DOMPurify-Advisory-Untergrenze.",
+    ],
+  },
+  {
+    "version": "0.20.1",
+    "date": "2026-10-13",
+    "highlights": [
+      "Konfigurieren Sie benutzerdefinierte Endpunkte ohne API-Schlüssel; in diesem Modus werden keine Anmeldedaten gesendet.",
+      "Öffnen Sie lokale Dateien außerhalb eines Projektordners im integrierten Browser; Webseiten bleiben auf Projektdateien beschränkt.",
+      "Die Kontextübersicht trennt Wartezeit beim Anbieter, gestreamte Modellantworten und Ausführung der obersten Tools und zeigt Gesamtdauer sowie Anteil.",
+      "Nach dem Stoppen wartet der nächste Durchlauf, bis der vorherige abgeschlossen ist, damit sich Aufgaben nicht überschneiden.",
+      "Das Windows-Portable-ZIP enthält jetzt den Update-Feed, damit installierte Kopien Updates finden und herunterladen können.",
+      "Plugins können abfragen, welche Umleitungsmodi fetch unterstützt, und Umleitungen prüfen oder ablehnen, ohne ihnen zu folgen; bestehende Fetch-Aufrufe folgen ihnen weiterhin standardmäßig.",
+      "Schätzungen für die Kompaktierung langer Texte und die Modellantwortzeit sind genauer; abgebrochene Streams behalten den bisherigen Ersatzwert.",
+      "Die Textauswahl bleibt durchgehend erhalten, wenn sie über Popup-Overlays hinweg gezogen wird.",
+      "Projektmenüs bleiben sichtbar, wenn sie über Zeilen am unteren Rand der Seitenleiste geöffnet werden.",
+      "Windows hält die Installationssperre, während alte Sicherungen entfernt werden.",
+    ],
+  },
+  {
+    "version": "0.19.1",
+    "date": "2026-10-13",
+    "highlights": [
+      "Beim Wechsel zurück zum benutzerdefinierten Modus wird Ihre gespeicherte Proxy-Adresse wiederhergestellt, auch wenn der aktuelle Entwurf leer oder ungültig ist.",
+      "Browseraktionen laufen bei einer nicht reagierenden Seite in eine Zeitüberschreitung und werden wiederhergestellt, statt unbegrenzt zu warten.",
+    ],
+  },
+  {
+    "version": "0.19.0",
+    "date": "2026-10-13",
+    "highlights": [
+      "Erstellen Sie SSH-Arbeitsbereichsprojekte auf der Startseite, durchsuchen Sie entfernte Ordner in einem eigenen Dialog und wählen Sie eine SSH-Identität pro Host.",
+      "Fügen Sie einem Projekt geeignete Ordner hinzu oder entfernen Sie sie; bestehende Chats bleiben in ihrem bisherigen Arbeitsbereich.",
+      "Synchronisieren Sie ausgewählte Einstellungen zwischen Geräten, während Projektlisten lokal bleiben.",
+      "Gekoppelte Remote Hosts aktualisieren sich über die geprüfte SSH-Einrichtung auf die aktuelle Desktop-Version und verbinden sich am selben Ort erneut.",
+      "Aktivieren oder deaktivieren Sie mitgelieferte Skills in den Einstellungen und stellen Sie die ausgelieferten Vorgaben wieder her.",
+      "Die Update-Karte zeigt den Downloadfortschritt und bietet klare Aktionen zum Abbrechen oder erneuten Versuchen.",
+      "Ihre eigene Proxy-Konfiguration bleibt beim Wechsel des Netzwerkmodus erhalten.",
+      "Beim Löschen einer Nachricht bleiben laufende KI-Ausgaben und die übrigen Gesprächsnachrichten erhalten.",
+      "Hängende Browser-Screenshot-Aufnahmen werden beendet und wiederhergestellt, statt die Seite festzusetzen.",
+      "Der mitgelieferte Modellkatalog enthält neue Modelle und aktuelle Fähigkeitsdaten.",
+      "AskTool-Fragen haben jetzt eine klare Längenbegrenzung; zu lange Fragen werden vor dem Öffnen der Karte abgewiesen.",
+    ],
+  },
+  {
+    "version": "0.18.0",
+    "date": "2026-10-09",
+    "highlights": [
+      "SSH-Arbeitsbereichsprojekte auf der Startseite benennen und Ordner in einem eigenen Dialog wählen; Modellanfragen und Zugangsdaten bleiben auf Ihrem Computer.",
+      "Richten Sie den Jev-Klassifizierer von TypeSafe über „Dienst hinzufügen“ ein; der API-Schlüssel wird vor dem Speichern geprüft.",
+      "Cloud-Synchronisierung ist in den Einstellungen der installierten Version verfügbar und als experimentell gekennzeichnet. Projektlisten bleiben auf dem jeweiligen Gerät.",
+      "Fügen Sie über „Dienst hinzufügen“ Plugin-eigene API-Schlüssel-Dienste hinzu, mit lokalisierten Beschreibungen und Modellerkennung nach der Einrichtung.",
+      "Autorisierte Plugin-Aktionen können den Composer-Entwurf ändern und lassen sich rückgängig machen; die Prompt-Verbesserung steckt jetzt in einem optionalen Plugin.",
+      "Tool-Details bleiben eingeklappt, bis Sie sie öffnen, damit die fertige Antwort im Blick bleibt.",
+      "Sehen Sie frühere AskTool-Fragen und -Antworten in einer übersichtlichen Frage-Antwort-Karte.",
+      "Erzeugen Sie Sitzungstitel mit einem optionalen Plugin; die erste Eingabe bleibt als Ersatz erhalten und manuelle Umbenennungen haben Vorrang.",
+      "Öffnen Sie lokale Markdown-Links aus dem Chat im integrierten Dateimanager, auch relative Links und Zeilenverweise.",
+      "Die Modellliste im Composer zeigt jetzt konfigurierte Kontextfensterlimits.",
+      "Plugins können Netzwerkweiterleitungen prüfen oder ablehnen; bestehende Fetch-Aufrufe folgen Weiterleitungen weiterhin standardmäßig.",
+      "Stoppen Sie einen laufenden Unteragenten direkt über seine Karte oder Detailansicht oder alle Unteragenten der aktuellen Sitzung, ohne den Hauptagenten zu stoppen.",
+      "Sehen Sie die gesamte Sitzungsdauer, die kumulierte Modellantwortzeit und deren Anteil an der Sitzung im Kontextverbrauchsfenster.",
+      "Ein gekoppelter entfernter Host, der hinter der Desktop-Version zurückbleibt, aktualisiert sich jetzt über dieselbe verifizierte SSH-Installation und wird an Ort und Stelle neu gekoppelt, statt Sie nur zum Aktualisieren aufzufordern.",
+    ],
+  },
+  {
+    "version": "0.17.0",
+    "date": "2026-10-07",
+    "highlights": [
+      "Fügen Sie Bilder beim Schreiben inline ein und sehen Sie gesendete Bilder direkt im Gespräch in einer Vorschau an.",
+      "Gesprächsverweise erscheinen als lesbare Chips und öffnen direkt die verknüpfte Sitzung.",
+      "Wählen Sie aus, welche MCP-Server und Tools eine Eingabe verwenden darf.",
+      "Wechseln Sie im Modellauswahlmenü schnell zu zuletzt verwendeten Modellen.",
+      "Erzeugen und bearbeiten Sie Bilder mit Ihrem angemeldeten ChatGPT-Konto.",
+      "Plugin-Anbieter können sich jetzt per OAuth authentifizieren.",
+      "Finden Sie das gewünschte Skill über Slash-Befehle mit Namensraum.",
+      "Klappen Sie die Todo-Liste aus, um alle Checklistenpunkte zu sehen.",
+      "Importieren Sie Modelle, Skills und MCP-Server auf den jeweils passenden Einstellungsseiten.",
+      "Anfragen an Anbieter und Marktplätze verwenden jetzt den Systemproxy.",
+      "Große Tool-Ausgaben werden seitenweise angezeigt und Transkripte schneller aktualisiert, damit der Chat flüssig bleibt.",
+      "Wenn ein Plugin-Panel nicht fertig lädt, wird der Fehler klar angezeigt.",
+    ],
+  },
+  {
+    "version": "0.16.1",
+    "date": "2026-10-04",
+    "highlights": [
+      "Wählen Sie in den Einstellungen einen eigenen Datenspeicherort, verfolgen Sie eine geprüfte Kaltmigration und leeren Sie nur neu erzeugbare Caches.",
+      "Geplante Aufgaben können im Intervall laufen: alle 5 Minuten bis zu 24 Stunden, gezählt ab dem Zeitpunkt, an dem die Aufgabe aktiviert wurde.",
+      "Die Seite „Geplant“ verbindet die Aufgabenliste mit der ausgewählten Aufgabe: letztes Ergebnis, nächste Ausführung, Anweisung und Ausführungsverlauf.",
+      "Die Unterhaltung eines Laufs hat eine Zurück-Zeile zu ihrer Aufgabe und ihrem Lauf, und jede Aufgabe legt fest, ob ein Lauf eine neue Unterhaltung öffnet oder eine bestehende fortsetzt.",
+      "Fügen Sie einen Link minih-agent-desktop://session/<id> in den Composer ein, um eine Unterhaltung an einen weiteren Turn zu übergeben.",
+      "Öffnen Sie Dateiverweise der Form path:line aus dem Chat, dem Arbeitsbereich und dem mitgelieferten Dateimanager und springen Sie direkt zu dieser Zeile.",
+      "Inline-Code, der auf einen echten Dateipfad verweist, ist jetzt ein anklickbarer Link; anderer Inline-Code und Codeblöcke bleiben einfacher Text.",
+      "Jeder MCP-Server kann sein eigenes Verbindungs-Timeout festlegen (1–600 Sekunden), und das Zurücksetzen stellt den Standardwert wieder her.",
+      "Lesevorgänge liefern PNG-, JPEG-, GIF- und WebP-Dateien als Bilder, und Bildergebnisse aus MCP- und Plugin-Tools erreichen Vision-Modelle als Bildblöcke.",
+      "Modellgrenzen und Fähigkeiten im Chat stammen jetzt von models.dev, und ein selbst fixiertes Kontextfenster wird nicht mehr überschrieben.",
+      "Die automatische Komprimierung behält ihren verbindlichen Stand: Ein fehlender Plan-Arbeitsbereich beendet den Turn nicht mehr.",
+      "Die Agent-Laufzeit wechselt auf die Pi-1.0.1-Linie und behält das Verhalten von Anbietern, OAuth und vertrauenswürdigen Erweiterungen bei.",
+      "MCP-Tools von Nutzern fragen jetzt in den Modi „Ask“ und „Accept-edits“ nach Freigabe; „Auto“ führt sie weiterhin ohne Rückfrage aus.",
+      "Lange Sitzungen bleiben für externe MCP-Clients nutzbar: Das Lesen einer Sitzung begrenzt ihre Komprimierungs-Metadaten, statt die Antwort abzuschneiden.",
+      "Lange Unterhaltungen bleiben beim Streaming der Antworten flüssig, ohne vertikales Springen und ohne verirrte Cursorzeile in verschachtelten Listen.",
+      "Kopien oder Backups einer Sitzungsdatei erscheinen nicht mehr als zweite Unterhaltung.",
+      "Das Löschen eines Projekts innerhalb einer Gruppe mit mehreren Ordnern und das Trennen eines Ordners mit bestehenden Chats funktionieren jetzt sicher.",
+      "Die Auswahl eines Ordners, der zu einer geschlossenen Projektgruppe gehört, öffnet diese Gruppe wieder, statt ein Duplikat anzulegen.",
+      "Ein Klick auf einen Strich in der Konversationsübersicht scrollt zu diesem Turn, statt zum Ende zurückzuspringen.",
+      "Ein Prompt, der direkt vor einem Sitzungswechsel gesendet wird, erscheint bei der Rückkehr nicht mehr doppelt.",
+      "Fragekarten sind kompakt und laufen über den Host: Antworten erreichen den Agenten, die Senden-Schaltfläche erholt sich, und eine beantwortete Karte kommt nicht zurück.",
+      "Angedockte Plugin-Ansichten wie Browser und Dateimanager sind ausgeblendet, solange Projektdialoge oder Erweiterungshinweise offen sind, und aus dem Dock gestartete Plugins finden npm wieder.",
+      "Das Ausblenden eines Update-Hinweises wird gemerkt und bricht den Download dieser Version ab, sodass sie beim Beenden nicht installiert wird.",
+      "Transkripte geplanter Läufe bleiben aus der Sitzungsliste, dem Schnellwechsler und dem Tray heraus.",
+      "Zurückgezogene oder widerrufene Modelle bleiben aus dem Live-Dienstbereich heraus, während Ihre gespeicherten Bindungen und Überschreibungen bearbeitbar bleiben.",
+      "Bedarfstools bleiben für die gesamte Sitzung verfügbar, und Tool-Deklarationen werden einmal pro Konto gesendet, damit Tool-Suchen das Anfrage-Präfix nicht mehr ungültig machen.",
+      "Ein schwarzes Fenster beim Start, verursacht durch gemeinsam genutzte Chunks, die das App-Stammverzeichnis eine Ebene zu tief auflösten, ist behoben.",
+      "Produktionsabhängigkeiten lösen jetzt gepatchte Versionen von brace-expansion und js-yaml auf.",
+    ],
+  },
+
+  {
+    "version": "0.16.0",
+    "date": "2026-10-02",
+    "highlights": [
+      "Live Voice steht jetzt allen zur Verfügung, und Anrufe starten im aktuellen Verlauf.",
+      "Neue Checkliste pro Verlauf, die ihren verbindlichen Stand auch nach einem Neustart des lokalen Dienstes behält.",
+      "Einmalige Hinweise erscheinen jetzt im gemeinsamen Toast-Stapel statt in blockierenden Dialogen.",
+      "Modelllisten richten sich nach den offiziellen Anbieter-Metadaten, damit Relay-Dienste und Modellnamen korrekt bleiben.",
+      "Live Voice lässt sich als Desktop-Widget andocken, und die offene Frage des gebundenen Verlaufs lässt sich per Sprache beantworten.",
+      "Ein an einen Arbeitsverlauf gebundener Live-Voice-Anruf zeigt die Frage, Berechtigung oder den Plan, auf die er wartet, mit einer Aktion, die diesen Verlauf öffnet.",
+      "Plugins können sieben finalisierte UI-Plätze füllen und eigene überlagerte Dialoge zeichnen.",
+      "Plugins können den Composer-Entwurf lesen und umschreiben und beim Installieren Netzwerkzugriff auf beliebige Hosts anfordern.",
+      "Das Abbrechen einer vertrauenswürdigen Erweiterung beendet ihre SDK-Befehle, Tool-Updates, Unterprozesse und wartenden Prompts; Start-, Shutdown- und Benachrichtigungs-Handler haben jetzt begrenzte Wartezeiten.",
+      "Große Scratch-Ausgaben von Subagenten werden auf die Festplatte ausgelagert, und statt eines fehlgeschlagenen Turns erscheinen Hinweise zum Fortsetzen.",
+      "Beim Fortsetzen eines Subagenten wird nicht mehr die private Modellbindung einer anderen Definition verwendet, und widerrufene Delegationsrechte gelten ab dem nächsten Turn.",
+      "Topologie-Karten von Subagenten und ihre Live-Prozesszeilen folgen jetzt der Breite des Hauptverlaufs.",
+      "Claude-Modelle in einem GitHub-Copilot-Konto authentifizieren sich mit einem Bearer-Token, statt an einem fehlenden Authorization-Header zu scheitern.",
+      "Anbieterzeilen für Google Gemini senden wieder Anfragen (issue #1072).",
+      "Beim Löschen eines Anbieters wird auch die daran gebundene Standard-Bildeinstellung entfernt.",
+      "OpenAI-Codex-OAuth-Modelle können die vom Anbieter gehostete native Websuche aktivieren.",
+      "Die gehostete Websuche hat einen vollständigen Vertrag für Replay und Kostenschätzung, und Verläufe, die vor der Vertragsänderung geschrieben wurden, bleiben nutzbar.",
+      "Die Komprimierung funktioniert wieder bei einem Gateway, das ein Codex-Backend anbindet.",
+      "Einzelne Markdown-Tabellen kopieren, als CSV herunterladen oder zum Lesen aufklappen.",
+      "Chat-Dateiverweise an vollständigen Pfaden innerhalb von Projektwurzeln öffnen, und Links in Nutzernachrichten bleiben markier- und kopierbar.",
+      "Der Reasoning-Regler im Composer gleitet sauber auf angeklickte oder per Tastatur gewählte Stufen, folgt dem Ziehen und zeichnet jetzt seinen gefüllten Track und Hover-Hervorhebungen einheitlich.",
+      "Lange Unterhaltungen bleiben beim Streaming reaktionsfähig, und jeder Host-Anfrageplatz wird innerhalb eines Zeitlimits freigegeben.",
+      "MCP-Verbindungen bleiben zuverlässig: Streamable-HTTP-Antworten kommen vor dem Schließen des SSE-Streams an, und OAuth-Issuer-Pfade sowie Ressourcen-Scopes bleiben erhalten.",
+      "Die alte Tool-Form old_string/new_string, die ältere Modelle weiterhin an Edit senden, wird akzeptiert.",
+      "Die minimale Fenstergröße sinkt auf 800×560, begrenzt auf die Arbeitsfläche, und der Windows-Rahmen bei rahmenlosen Fenstern entfällt.",
+      "Beim Neuladen des Renderers bleiben die ausstehenden Genehmigungs- und Fragekarten eines Verlaufs erhalten.",
+    ],
+  },
+
+  {
+    "version": "0.15.10",
+    "date": "2026-09-28",
+    "highlights": [
+      "Marketplace-Plugins werden jetzt in zufälliger statt alphabetischer Reihenfolge angezeigt.",
+    ],
+  },
+
+  {
+    "version": "0.15.9",
+    "date": "2026-09-27",
+    "highlights": [
+      "Entfernt veraltete Hilfsdateien für den ersten Start aus macOS-DMG- und ZIP-Paketen.",
+    ],
+  },
+
+  {
+    "version": "0.15.6",
+    "date": "2026-09-23",
+    "highlights": [
+      "Native Suche direkt in bestehenden DeepSeek-, xAI- und OpenAI-Diensten aktivieren, ohne gespeicherte Verbindungen zu ändern.",
+      "Unterstützung für GPT-6 Astra, Sol und Luna in den OpenAI- und ChatGPT/Codex-Modellkatalogen.",
+    ],
+  },
+
+  {
+    "version": "0.15.5",
+    "date": "2026-09-23",
+    "highlights": [
+      "Unterstützung für GPT-6 Astra, Sol und Luna in den OpenAI- und ChatGPT/Codex-Modellkatalogen.",
+    ],
+  },
+
+  {
+    "version": "0.15.2",
+    "date": "2026-09-21",
+    "highlights": [
+      "Bilder im Chat generieren und bearbeiten, ein Bildmodell wählen und mit dem integrierten imagegen-Skill Stapel erstellen.",
+      "Werkzeugaktivitäten folgen der Gesprächsbreite; lange Aktivitätsnamen werden sauber begrenzt.",
+      "Dateianhänge aus dem Einfügen bleiben erhalten, auch wenn der Vorgang nach einem Sitzungswechsel endet.",
+      "Das ausgewählte Standardmodell bleibt beim Bearbeiten von Anbietern erhalten und fällt sicher zurück, wenn es entfernt wird.",
+      "Verschachtelte Denk- und Werkzeugaktivitäten lassen sich leichter lesen, navigieren und wiederherstellen.",
+      "Composer-Layouts, Reasoning-Steuerung und die Theme-Konsistenz im Arbeitsbereich wurden verbessert.",
+      "Optionale Einstellung, Netzwerk- und vorübergehende Anbieterfehler bis zum Erfolg zu wiederholen.",
+    ],
+  },
+
+  {
+    "version": "0.15.1",
+    "date": "2026-09-19",
+    "highlights": [
+      "Remote-Hosts lassen sich in den Einstellungen per SSH koppeln und verwalten, inklusive Passwort-Login, Installation und erneuter Verbindung beim Start.",
+      "Prompt-Enhancement (Vorlage, Modell und Reasoning) wird in der KI-Einstellungskarte konfiguriert.",
+      "Ausgewählte Modelle lassen sich per Drag-and-Drop umordnen; eine Stufe „Thinking weglassen“ sendet keine Anbieter-Überschreibung.",
+      "Die Seitenleiste lässt sich vergrößern oder einklappen; ein Doppelklick stellt die Standardbreite von Seitenleiste oder Panel wieder her.",
+      "Projekte werden in einem gruppierten Archiv mit Inspektor verwaltet; der Import hat pro Art eine eigene Werkbank.",
+      "Skills und MCP-Server anderer Agent-Tools lassen sich scannen und gesammelt importieren.",
+      "Das macOS-Menüleisten-Extra bleibt auf einem nativen Statusitem, mit begrenzten Tray-Sitzungs-Shortcuts.",
+      "Offizielle macOS-Builds sind signiert und notariell beglaubigt und unterstützen In-App-Updates.",
+      "Die signierte macOS-DMG ist eine Zwei-Symbol-Installation; der Hinweis für unsignierte Starts bleibt nur im ZIP.",
+      "Review öffnet sich nur auf ausdrückliche Aktion; das Öffnen einer Sitzung landet bei der neuesten Runde.",
+      "Eine blockierte Sendewarteschlange wird wiederhergestellt, gefälschte Steering-Origins werden ignoriert.",
+    ],
+  },
+
+  {
+    "version": "0.15.0",
+    "date": "2026-09-17",
+    "highlights": [
+      "Warteschlangen-Prompts lassen sich umordnen, bearbeiten, sperren und als Nächstes senden.",
+      "Beim Erstellen eines Projekts lässt sich ein Git-Repository klonen.",
+      "Die Inhaltsbreite der Unterhaltung lässt sich in der Chat-Spalte ziehen.",
+      "Fehler bei der Skill-Markt-Installation zeigen einen Retry statt eines toten Buttons.",
+      "Von Plugins deklarierte Anbieter erscheinen als native Zeilen, inklusive API-Keys und vertrauenswürdiger Custom-Agents.",
+      "Plugins können Echtzeitverbindungen, globale Shortcuts, Fähigkeitsrechte und einen offiziellen Kanal mit Backups nutzen.",
+      "Plugins können Theme-Variablen, Theme-Assets und ein transparentes schwebendes Widget registrieren.",
+      "Ein Projekt wird zusammen mit seinen eigenen Sitzungen gelöscht, nach einer zweiten Bestätigung.",
+      "Subagenten erhalten eine geordnete Modell-Fallback-Liste; abgeschlossene laufen in derselben Task-Karte weiter; mitgelieferte Builtins lassen sich in den Einstellungen schalten.",
+      "Dateiverweise in Tool-Zeilen öffnen die passende Ansicht; das Aufklappen hält die Leseposition; Plan-Freigabe-Hover ist undurchsichtig.",
+    ],
+  },
+
+  {
+    "version": "0.14.9",
+    "date": "2026-09-17",
+    "highlights": [
+      "Warteschlangen-Prompts lassen sich umordnen, bearbeiten, sperren und als Nächstes senden.",
+      "Beim Erstellen eines Projekts lässt sich ein Git-Repository klonen.",
+      "Die Inhaltsbreite der Unterhaltung lässt sich in der Chat-Spalte ziehen.",
+      "Fehler bei der Skill-Markt-Installation zeigen einen Retry statt eines toten Buttons.",
+      "Von Plugins deklarierte Anbieter erscheinen als native Zeilen, inklusive API-Keys und vertrauenswürdiger Custom-Agents.",
+      "Plugins können Echtzeitverbindungen, globale Shortcuts, Fähigkeitsrechte und einen offiziellen Kanal mit Backups nutzen.",
+      "Plugins können Theme-Variablen, Theme-Assets und ein transparentes schwebendes Widget registrieren.",
+      "Ein Projekt wird zusammen mit seinen eigenen Sitzungen gelöscht, nach einer zweiten Bestätigung.",
+      "Subagenten erhalten eine geordnete Modell-Fallback-Liste; mitgelieferte Builtins lassen sich in den Einstellungen schalten.",
+      "Dateiverweise in Tool-Zeilen öffnen die passende Ansicht; das Aufklappen hält die Leseposition; Plan-Freigabe-Hover ist undurchsichtig.",
+    ],
+  },
+
+
+  {
+    "version": "0.14.8",
+    "date": "2026-09-14",
+    "highlights": [
+      "Durchsuchen und installieren Sie MCP-Server aus der offiziellen Registry und benutzerdefinierten Quellen im MCP-Markt.",
+      "Durchsuchen und installieren Sie Skills aus kuratierten und GitHub-Quellen im Skill-Markt, mit öffentlichem HTTPS und Größenbegrenzung.",
+      "Liefert die Dateiansicht als mitgeliefertes File-Manager-Plugin; gebündelte Plugins können Marktplatz-Updates behalten.",
+      "Fügt einen Vorschau-Modus für das Arbeitspanel hinzu, hebt die Chat-Spalte auf mindestens 450px und priorisiert MainChat im Dreispalten-Layout.",
+      "Findet unabhängige Sitzungen, sendet host-eigene Kollaborationsnachrichten und öffnet Kollaborationslinks.",
+      "Subagenten können Eltern-Tools erben, mitgelieferte Builtins erscheinen in den Einstellungen, ein UI-Designer-Builtin kommt hinzu, und das Erstellen zeigt einen eigenen Status.",
+      "Steuert einen laufenden Turn mit Alt+Enter und öffnet eingefügte Textdateien im Composer zum Bearbeiten.",
+      "Gestaltet die Projekterstellung neu: Mehrordner-Arbeitsbereiche, projekteigene Memory und visueller Memory-Editor.",
+      "Installiert deklarierte Abhängigkeiten und Skills aus importierten pi-Paketen hinter einer host-eigenen Sicherheitsgrenze.",
+      "Fügt Vorgabe-Chips für Kontextfenster und Max-Output hinzu, zeigt Read-Zeilenbereiche auf Tool-Chips und hält den Kontext nach fehlgeschlagener Kompaktierung wiederherstellbar.",
+    ],
+  },
+  {
+    "version": "0.14.6",
+    "date": "2026-09-10",
+    "highlights": [
+      "Warnt, wenn diese Version älter ist als Ihre lokalen Daten oder die Intel-Version auf Apple Silicon läuft, statt stumm zu scheitern.",
+      "Fügt eine lokale MCP-Desktop-Steuerebene hinzu; geprüfte Plugins steuern den Desktop nur nach nativer Zustimmung.",
+      "Fügt Subagent-Vorlagen, eine anbietergebundene Modellauswahl und die effektive Denkstufe auf Delegationskarten hinzu.",
+      "Konfigurierte Modelle mit Alias versehen, Modell-IDs kopieren und das modell-eigene Wire-API vor dem Anbieterstil bevorzugen.",
+      "Ersetzt textuelles Edit-Matching durch zeilenverankerte Operationen mit fehlerspezifischen Wiederherstellungshinweisen.",
+      "Wiederholt Anbieteranfragen bis zu zehnmal mit sichtbarem Countdown und setzt autonome Fortschrittsrunden fort.",
+      "Neu gestalteter macOS-Installer, portable Windows-Exe und Linux-RPM-Paket, GNOME-Tray- und Dock-Symbole wiederhergestellt.",
+      "Konversations-IDs kopieren und Sitzungsordner aus der Seitenleiste öffnen, mit lokalisierten Tooltips für Symbolaktionen.",
+      "Zeigt Live-Prozessstatus und ruhige Intervalle in der Aktivitätszeile und fügt einen fixierten Arbeitsbereich-Umschalter hinzu.",
+      "Erzwingt Ignore-Regeln im Arbeitsbereich, löst hängende Symlinks auf und prüft Plugin-Netzwerkausgang bei jeder Umleitung neu.",
+      "Beachtet Proxy-Bypass-Regeln, behält eingefügte Private-Use-Glyphen und lädt Dateivorschauen ohne den Editor zu blockieren.",
+    ],
+  },
+  {
+    "version": "0.14.5",
+    "date": "2026-09-09",
+    "highlights": [
+      "Kennzeichnen Sie jedes macOS-DMG und jede ZIP-Datei mit der nativen arm64- oder x64-Architektur."
+    ]
+  },
+  {
+    "version": "0.14.4",
+    "date": "2026-09-09",
+    "highlights": [
+      "Fügen Sie begrenzte Bereichslesevorgänge für große Dateien und an echte Zieh-und-Ablegen-Gesten gebundene Dateifreigaben für Plugins hinzu.",
+      "Verlangen Sie für macOS-Signierung und Notarisierung eine ausdrückliche Aktivierung und liefern Sie Hinweise zum Öffnen vertrauenswürdiger unsignierter Builds."
+    ]
+  },
+  {
+    "version": "0.14.3",
+    "date": "2026-09-09",
+    "highlights": [
+      "Kennzeichnen Sie Intel-macOS-Downloads eindeutig, damit die Architektur des Installationsprogramms klar erkennbar ist."
+    ]
+  },
+  {
+    "version": "0.14.2",
+    "date": "2026-09-08",
+    "highlights": [
+      "Fügen Sie einen Kontextverbrauch-Inspektor hinzu, der dem ausgewählten Modell folgt und Hinweise zur Komprimierung anzeigt.",
+      "Verbessern Sie die Anbieter- und Modelleinstellungen mit durchsuchbarer Auswahl, Sammelaktionen und klareren Abruffehlern.",
+      "Fassen Sie Sitzungstitel automatisch zusammen und erlauben Sie dauerhafte Projektnamen.",
+      "Überarbeiten Sie das Subagent-Seitenpanel mit Live-Status, kompakten Aufgabenblasen, Modellinformationen und Navigation zur neuesten Ausgabe.",
+      "Senden Sie native Benachrichtigungen für interaktive Fragen und Freigaben, während normale Abschlüsse aus dem Posteingang fernbleiben.",
+      "Fügen Sie eine koreanische Oberflächenlokalisierung hinzu und verbessern Sie lokalisierte Einstellungen, Zwischenablageverlauf und sichere Links.",
+    ]
+  },
+  {
+    "version": "0.14.1",
+    "date": "2026-09-08",
+    "highlights": [
+      "Ermöglichen Sie die Vererbung des Elternmodells für Subagenten, wenn kein Delegationsmodell konfiguriert ist.",
+      "Verhindern Sie, dass zurückgegebene IDs des Elternmodells fälschlich als nicht verfügbare Delegationsmodelle abgelehnt werden.",
+    ]
+  },
+  {
+    "version": "0.14.0",
+    "date": "2026-09-08",
+    "highlights": [
+      "Konfigurieren Sie ausgehende HTTP-Proxys pro Anbieter, einschließlich Validierung und klarer Behandlung nicht unterstützter SOCKS4-Anmeldedaten.",
+      "Importieren Sie Anbieterprofile und Modellkonfigurationen aus CC Switch und lokalen Agentenspeichern.",
+      "Fügen Sie benutzerdefinierte Anbieter-Header und User-Agent-Einstellungen sowie ein MiniMax-Voreinstellung hinzu, mit klareren Fehlern beim Abruf von Modellen.",
+      "Hängen Sie Dateien über den einheitlichen Dateiauswahldialog an, mit Kopien im Sitzungsspeicher und Unterstützung für Inline-Bilder.",
+      "Fügen Sie die Benutzeroberflächen für traditionelles Chinesisch, Deutsch, Spanisch und Französisch sowie durchsuchbare Erscheinungsbild- und Anbietereinstellungen hinzu.",
+      "Passen Sie Leseschriftgrößen, Typografie und Symbole einheitlich an und zeigen Sie das ausgewählte Subagent-Modell in Delegationskarten an.",
+    ]
+  },
+  {
+    "version": "0.13.11",
+    "date": "2026-09-07",
+    "highlights": [
+      "Ermöglichen Sie Plugins, Modelle aufzulisten, den Sitzungskontext während der Übertragung zu lesen und hosteigene Vervollständigungen anzufordern, ohne Anmeldeinformationen zu erhalten."
+    ]
+  },
+  {
+    "version": "0.13.10",
+    "date": "2026-09-07",
+    "highlights": [
+      "Bestätigen Sie vor dem Beenden (Befehl+Q, Taskleiste oder Menü), um versehentlichen Datenverlust zu verhindern."
+    ]
+  },
+  {
+    "version": "0.13.9",
+    "date": "2026-09-06",
+    "highlights": [
+      "Versionssprung für die Release-Infrastruktur."
+    ]
+  },
+  {
+    "version": "0.13.8",
+    "date": "2026-09-06",
+    "highlights": [
+      "Suchen Sie nach Projektdateien, einschließlich Bildern, zeigen Sie eine Vorschau an und öffnen Sie sie dann mit der Standard-App auf einer speziellen Viewer-Seite.",
+      "Führen Sie den Work-Panel-Browser als gebündeltes Plugin aus, mit der gleichen Isolation wie andere Plugin-Ansichten.",
+      "Behalten Sie die @-Datei-Chips nach der Eingabetaste bei und aktivieren Sie den Modus-Chip während der Planung.",
+      "Öffnen Sie nur http(s)- und Mailto-Links aus Chat, Plugins und Vorschauen."
+    ]
+  },
+  {
+    "version": "0.13.7",
+    "date": "2026-09-06",
+    "highlights": [
+      "Behalten Sie abgeschlossene KI-Antworten nach dem Neustart bei, anstatt nur die Benutzernachrichten anzuzeigen.",
+      "Lassen Sie Hintergrund-Subagenten laufen, bis Sie sie stoppen oder der übergeordnete Agent sie stoppt.",
+      "Lassen Sie den Agenten ein Bash-Timeout von bis zu sechs Stunden wählen, damit lange Jobs nicht nach 60 Sekunden beendet werden."
+    ]
+  },
+  {
+    "version": "0.13.6",
+    "date": "2026-09-06",
+    "highlights": [
+      "Passen Sie die Größe der Benutzernachrichten in eingefügte Dateien an ihren Inhalt an, anstatt sie über den gesamten Thread zu verteilen."
+    ]
+  },
+  {
+    "version": "0.13.5",
+    "date": "2026-09-06",
+    "highlights": [
+      "Entfernen Sie den A2A-Broker und die Peer-to-Peer-Konversationstools.",
+      "Behebung von Agent-Laufzeittests, die nach der A2A-Entfernung fehlschlugen."
+    ]
+  },
+  {
+    "version": "0.13.4",
+    "date": "2026-09-05",
+    "highlights": [
+      "Fügen Sie Türkisch und eine durchsuchbare Sprachauswahl unter Einstellungen → Allgemein hinzu.",
+      "Machen Sie das Thema zu einer durchsuchbaren Auswahl-ähnlichen Sprache, einschließlich Plugin-Themen.",
+      "Reduzieren Sie die Liste der Add-Provider-Dienste, fügen Sie Xiaomi, Zhipu und Z.AI hinzu und machen Sie den Dienst durchsuchbar.",
+      "Melden Sie ein Problem über Einstellungen → Informationen, wobei Version und Betriebssystem bereits ausgefüllt sind.",
+      "Streamen Sie die Gesprächsrunden weiterhin in chronologischer Reihenfolge, wenn das Live-Transkript zusammengeführt wird."
+    ]
+  },
+  {
+    "version": "0.13.3",
+    "date": "2026-09-05",
+    "highlights": [
+      "Neue Aufgabe sofort an einem leeren Ziel öffnen, ohne dass das vorherige Transkript auf dem Bildschirm bleibt.",
+      "Behandeln Sie ein gefülltes Lesefenster als vollständig und behalten Sie den abgeschnittenen Chip für tatsächliche Schnitte.",
+      "Behalten Sie spätere Konversationsrunden bei, wenn Sie die Neugenerierungsvariante wechseln, anstatt ein veraltetes Archiv wiederherzustellen."
+    ]
+  },
+  {
+    "version": "0.13.2",
+    "date": "2026-09-05",
+    "highlights": [
+      "Behalten Sie nicht gesendete Composer-Entwürfe, einschließlich Dateichips, bei, wenn die Eingabe erneut bereitgestellt oder das Fenster ausgeblendet wird.",
+      "Starten Sie neue Sitzungen auf der Standard-Denkebene der Modellbindung, anstatt immer die stärkste zu verwenden.",
+      "Erweiterte Subagentenausführungen werden bis zur neuesten Ausgabe gescrollt, mit einem Steuerelement „Zur neuesten Version springen“, nachdem Sie nach oben gescrollt haben.",
+      "Halten Sie das Denkebenenmenü verfügbar, wenn Sie eine Ebene während einer laufenden Runde fixieren.",
+      "Halten Sie die Add-Provider-Felder in einem schmalen Fenster vollständig sichtbar und fokussiert.",
+      "Passen Sie den macOS-Startup-Splash an das Seitenleistenglas an, damit im Fenster kein undurchsichtiges Panel mehr blinkt."
+    ]
+  },
+  {
+    "version": "0.13.1",
+    "date": "2026-09-05",
+    "highlights": [
+      "Fügen Sie atomare Anhangschips in der Composer-Eingabezeile mit einer Standardhöhe von drei Zeilen ein.",
+      "Checkpoint-Streaming-Antworten, damit sie Quit, Sidecar-Verlust und Stop überstehen, ohne das Transkript neu zu schreiben.",
+      "Erfolgreiche Abschlüsse im Benachrichtigungseingang ausblenden.",
+      "Entfernen Sie Einlaufränder und Trennlinien und zeigen Sie Bildlaufleisten nur beim Schweben oder beim Scrollen an.",
+      "Spielen Sie helle und dunkle GIF-Maskottchen auf dem leeren Startbildschirm ab."
+    ]
+  },
+  {
+    "version": "0.13.0",
+    "date": "2026-09-04",
+    "highlights": [
+      "Fügen Sie in den Sitzungszeilen der Seitenleiste eine umfangreiche Hover-Karte hinzu, die Arbeitsbereich, Zweig und Aktualisierungszeit anzeigt.",
+      "Schalten Sie die macOS-Seitenleiste auf das Lebendigkeitsmaterial unter dem Fenster um, um eine größere Glastiefe zu erzielen.",
+      "Entfernen Sie die Dock-Naht der macOS-Seitenleiste, um eine randlose Glaskante zu erhalten.",
+      "Spielen Sie themenspezifische winkende Maskottchen mit acht Bildern auf dem leeren Startbildschirm.",
+      "Behebung eines Absturzes der Seitenleiste beim ersten Rendern, der durch eine vorwärtsreferenzierte Variable verursacht wurde."
+    ]
+  },
+  {
+    "version": "0.12.4",
+    "date": "2026-09-04",
+    "highlights": [
+      "Behalten Sie das rechte Arbeitsfeld im Anwendungsfenster, damit MainChat wie die linke Seitenleiste umfließt.",
+      "Ändern Sie die Größe des Arbeitsfelds von seiner inneren Trennlinie aus mit Zeiger- oder Tastatursteuerungen unter Beibehaltung der Fenstergrenzen.",
+      "Deduplizieren Sie seitenweise gelesene Transkripte während des Sitzungswechsels für eine reibungslosere Navigation.",
+      "Fügen Sie eine native macOS-Oberflächenbehandlung für die Seitenleiste hinzu, ohne das Layoutverhalten der Seitenleiste zu ändern."
+    ]
+  },
+  {
+    "version": "0.12.3",
+    "date": "2026-09-03",
+    "highlights": [
+      "Zeigt die Kontextverwendung im veröffentlichten Kontextfenster des ausgewählten Modells an.",
+      "Sorgen Sie dafür, dass modellspezifische Kontextgrenzen über die Anbietereinstellungen, den Composer und die Laufzeit hinweg konsistent bleiben.",
+      "Halten Sie die kontextbezogene Führung des Composer beim Modellwechsel und während aktiver Runden stabil."
+    ]
+  },
+  {
+    "version": "0.12.2",
+    "date": "2026-09-03",
+    "highlights": [
+      "Problem behoben, bei dem die Benutzernachrichtenzeile angezeigt wurde, bevor der Host-Roundtrip abgeschlossen war.",
+      "Löschen Sie die Entwurfsaufforderung vor dem Senden, um veraltete Inhalte zu verhindern.",
+      "Legen Sie lange Transkripte für eine reibungslosere Wiedergabe unter einen Skelettschleier."
+    ]
+  },
+  {
+    "version": "0.12.1",
+    "date": "2026-09-03",
+    "highlights": [
+      "Halten Sie die für die Subagentendelegierung aktivierten Modelle verfügbar, nachdem Sie die Anbietereinstellungen gespeichert und die App neu gestartet haben.",
+      "Halten Sie Live-Antworten sichtbar, wenn Sie Sitzungen erneut öffnen."
+    ]
+  },
+  {
+    "version": "0.12.0",
+    "date": "2026-09-02",
+    "highlights": [
+      "Koordinieren Sie gleichzeitige Subagenten über das Agent2Agent (A2A)-Protokoll: Erkennen Sie laufende Peers als Agentenkarten, tauschen Sie dauerhafte Aufgaben und eingegebene Nachrichten aus und streamen Sie Aufgabenaktualisierungen – ersetzen Sie die bisherige prozessinterne Peer-Nachrichtenübermittlung."
+    ]
+  },
+  {
+    "version": "0.11.4",
+    "date": "2026-09-01",
+    "highlights": [
+      "Veröffentlichen Sie native macOS Intel DMG- und ZIP-Installationsprogramme neben Apple Silicon-Builds.",
+      "Halten Sie die macOS-Updater-Feeds in beiden nativen Architekturen einheitlich."
+    ]
+  },
+  {
+    "version": "0.11.3",
+    "date": "2026-08-31",
+    "highlights": [
+      "Weisen Sie jedem Subagenten sein eigenes Modell aus einem Delegationskatalog zu oder lassen Sie ihn die Auswahl der übergeordneten Konversation erben.",
+      "Ermöglichen Sie gleichzeitigen Subagenten, sich gegenseitig Nachrichten mit themengefilterten Peer-Messaging-Threads zu senden.",
+      "Führen Sie strukturierte Diskussionsrunden durch, bei denen mehrere Subagenten rundenübergreifend ein Thema diskutieren und das Ergebnis zusammenfassen.",
+      "Halten Sie die Steuerelemente für die Modellkonfiguration – Delegierungs-Kontrollkästchen, benutzerdefinierter Modellabschnitt und Schriftgrößen – in allen Bereichen harmonisiert.",
+      "Ersetzen Sie den Delegierungshinweistext durch einen übersichtlicheren Symbol-Tooltip."
+    ]
+  },
+  {
+    "version": "0.11.2",
+    "date": "2026-08-31",
+    "highlights": [
+      "Wechseln Sie zwischen den letzten Konversationen, ohne dass der Chatbereich blinkt: Jede Konversation behält ihren eigenen Bereich und wird genau dort wieder angezeigt, wo Sie sie verlassen haben, einschließlich der Bildlaufposition.",
+      "Kehren Sie zu einer Konversation zurück, in der Sie nach oben gescrollt haben, und landen Sie wieder an dieser Stelle, während eine zum ersten Mal geöffnete Sitzung immer noch an der neuesten Stelle beginnt.",
+      "Lesen Sie die aktuelle Konversation weiter, während eine neue geladen wird, anstatt zuzusehen, wie das Transkript dunkler wird.",
+      "Wiederholen Sie eine bearbeitete Eingabeaufforderung, auch wenn Sie den Text unverändert gelassen haben.",
+      "Arbeiten Sie nach einer automatischen Kontextkomprimierung weiter an der aktuellen Aufgabe, anstatt dass der Agent eine ältere Anfrage aufnimmt."
+    ]
+  },
+  {
+    "version": "0.11.0",
+    "date": "2026-08-30",
+    "highlights": [
+      "Richten Sie einen Anbieter in einer entdeckungsgesteuerten Form ein, der den KI-Dienst nach seinen eigenen Modellen fragt, bevor er auf den gebündelten Katalog zurückgreift.",
+      "Wählen Sie ein Modell aus einer durchsuchbaren Liste aus, die Fähigkeitsabzeichen und Kontextgröße anzeigt und aus dem Katalog models.dev stammt.",
+      "Überschreiben Sie Anhangfunktionen und die Standard-Denkebene pro Modellbindung und sehen Sie nur die Denkebenen, die ein Modell veröffentlicht.",
+      "Lesen Sie eine einzelne Subagentendelegation als eigene Karte mit Lebenszykluszeilen und scrollen Sie durch einen erweiterten Delegatenlauf, anstatt das Transkript zu strecken.",
+      "Halten Sie die Konversationsübersicht erreichbar, während der Verlauf noch geladen wird, und sehen Sie ein Gerüst statt einer leeren Liste, während die Sitzungen geladen werden.",
+      "Fügen Sie einen großen Textblock in den Composer ein und lassen Sie ihn in eine Sitzungsdatei überlaufen, wobei die Eingabe vom Reflow-Pfad ferngehalten wird.",
+      "Behalten Sie ein Fenster dort bei, wo Sie es beim Ziehen über Anzeigen abgelegt haben, und behalten Sie den Titelleistenbereich auf macOS-Zielseiten bei.",
+      "Verlieren Sie weniger Durchgänge durch abgelehnte Datei- und Suchtoolaufrufe und durch ein in Millisekunden angegebenes Befehls-Timeout."
+    ]
+  },
+  {
+    "version": "0.10.9",
+    "date": "2026-08-28",
+    "highlights": [
+      "Verwalten Sie Skills, Subagenten und MCP-Server über eine Capability Workbench in den Einstellungen, mit Ebenenfiltern, Suche und bestätigter Entfernung.",
+      "Sorgen Sie dafür, dass die Funktions-Workbench und das obere Einstellungsband in beiden Themes lesbar sind, mit der korrekten Symbolleiste und den Steuerelementen für den leeren Zustand.",
+      "Halten Sie lange Gespräche reaktionsfähig, während Sie scrollen, Sitzungen wechseln und mit der Maus über die Minikarte fahren, ohne dass das Transkript an Ort und Stelle springt.",
+      "Laden Sie jede von älteren Builds geschriebene Transkriptzeile, anstatt eine vergangene Sitzung als leer anzuzeigen.",
+      "Schneiden Sie das Transkript an der Nachricht aus, die Sie beim erneuten Generieren oder erneuten Senden einer Bearbeitung ausgewählt haben, und listen Sie eine gegabelte Sitzung immer in der Seitenleiste auf.",
+      "Beurteilen Sie die Aktivität des Subagenten anhand jeder Antwort, begrenzen Sie die Runden jedes integrierten Subagenten und melden Sie eine abgelaufene Wartezeit als noch aktiv statt als fehlgeschlagen.",
+      "Wiederholen Sie einen vorübergehenden Anbieterausfall bis zu viermal mit 1/2/4/8 Sekunden Wartezeit auf einem gemeinsamen Budget pro Runde und melden Sie den tatsächlichen Versuch mitten im Stream."
+    ]
+  },
+  {
+    "version": "0.10.8",
+    "date": "2026-08-26",
+    "highlights": [
+      "Halten Sie die nativen Windows-Fenstersteuerelemente von Panel-Aktionen in der rahmenlosen Shell isoliert.",
+      "Geben Sie temporären Chats isolierte Scratch-Arbeitsbereiche, damit ihre Dateien von der Projektarbeit getrennt bleiben.",
+      "Verbesserung der Wiederherstellungsaufforderung im Befehlsstarter mit einem klareren Bot-Modellsymbol.",
+      "Blenden Sie die Bildlaufleisten der Seitenleiste beim Schweben ein, während sie im Ruhezustand still bleiben."
+    ]
+  },
+  {
+    "version": "0.10.7",
+    "date": "2026-08-25",
+    "highlights": [
+      "Behalten Sie die Composer-Sende- und Stoppsteuerung in einem stabilen Steckplatz, damit Zugluft und Laufdrehungen aufeinander abgestimmt bleiben.",
+      "Die Eingabeaufforderungserweiterung bleibt über den Befehlsstarter verfügbar, ohne dass ein eigenständiges Symbolleistensymbol erforderlich ist.",
+      "Machen Sie die Bildlaufleisten der Seitenleiste im Ruhezustand leiser und sorgen Sie dafür, dass sie während der Navigation erkennbar bleiben."
+    ]
+  },
+  {
+    "version": "0.10.6",
+    "date": "2026-08-25",
+    "highlights": [
+      "Denkfähigkeiten für genau das im Composer ausgewählte Modell anzeigen, auch bevor eine neue Sitzung erstellt wird.",
+      "Starten Sie neue Sitzungen auf der stärksten veröffentlichten Ebene des ausgewählten Argumentationsmodells."
+    ]
+  },
+  {
+    "version": "0.10.5",
+    "date": "2026-08-25",
+    "highlights": [
+      "Halten Sie Windows-Fenstersteuerelemente von Panel-Aktionen in der rahmenlosen Shell isoliert.",
+      "Öffnen Sie Windows-Projektordner und -dateien zuverlässig, einschließlich Pfaden mit dem Präfix mit erweiterter Länge.",
+      "Bearbeiten Sie CRLF-Dateien, ohne ihren ursprünglichen Zeilenendestil zu ändern."
+    ]
+  },
+  {
+    "version": "0.10.4",
+    "date": "2026-08-25",
+    "highlights": [
+      "Zeigt nur konfigurierte Anbietermodelle in der Konversationsauswahl an, während gespeicherte Modelle verfügbar bleiben, wenn die Erkennung nicht verfügbar ist.",
+      "Halten Sie das rahmenlose Fenstersteuerungsband undurchsichtig, damit der Seiteninhalt niemals durch native Steuerelemente angezeigt wird.",
+      "Halten Sie die Chat-Breite stabil, während das Arbeitsfenster geöffnet ist, und stellen Sie die Grenzen des Nur-Chat-Fensters wieder her, nachdem es ausgeblendet wurde."
+    ]
+  },
+  {
+    "version": "0.10.3",
+    "date": "2026-08-25",
+    "highlights": [
+      "Verbessern Sie die Verbesserung der einmaligen Eingabeaufforderung, sodass der aktuelle Entwurf und die Dateiverweise erhalten bleiben.",
+      "Halten Sie die Sende- und Stoppaktionen des Composers auf den sichtbaren Entwurf und die laufende Sitzung ausgerichtet.",
+      "Behalten Sie Hintergrunddelegierungsmetadaten über TaskWait-Runden und Renderer-Neuladungen hinweg bei.",
+      "Halten Sie den Verlauf und das Transkript der gespaltenen Sitzungen sofort nach der Verzweigung verfügbar."
+    ]
+  },
+  {
+    "version": "0.10.2",
+    "date": "2026-08-24",
+    "highlights": [
+      "Halten Sie Chat-Inhalte und den Composer bequem zentriert, wenn die Seitenleiste minimiert ist.",
+      "Bereiten Sie große Bildanhänge vor, ohne die gesamte Datei in den Speicher zu laden, auch bei der Wiedergabe des Verlaufs."
+    ]
+  },
+  {
+    "version": "0.10.1",
+    "date": "2026-08-24",
+    "highlights": [
+      "Stellen Sie Eingabeaufforderungen in die Warteschlange, die während einer aktiven Ausführung gesendet werden, und stellen Sie sie der Reihe nach bereit, ohne dass der aktuelle Entwurf verloren geht.",
+      "Bindet Hintergrund-Subagenten mit Leerlauf- und Gesamtzeitüberschreitungen und zeigt an, wenn ein Delegat eine Zeitüberschreitung aufweist.",
+      "Laden Sie lange Sitzungsverläufe auf begrenzten Seiten und rufen Sie frühere Nachrichten ab, während Sie nach oben scrollen."
+    ]
+  },
+  {
+    "version": "0.10.0",
+    "date": "2026-08-21",
+    "highlights": [
+      "Konfigurieren Sie mehrere Modelle pro Anbieter und wechseln Sie direkt im Composer zwischen ihnen.",
+      "Verwalten Sie Agentenfunktionen in einem neu gestalteten Einstellungsstudio mit klareren Bereichsblöcken und Menüs.",
+      "Den Verlauf der Host-Zwischenablage für Plugins als neue Funktion verfügbar machen.",
+      "Halten Sie leere Sitzungen dauerhaft, damit sie nach dem Neustart angezeigt und wiederverwendet werden können.",
+      "Erleichtern Sie die Verwendung der Modellauswahl durch eine klarere Anbieterhierarchie und gleichmäßiges Scrollen.",
+      "Geben Sie immer die Gesamtzeilenanzahl in den Leseergebnissen an, damit große Dateien zuverlässig ausgelagert werden können.",
+      "Stellen Sie ratenbegrenzte Streams bei Wiederholungsversuchen zuverlässiger wieder her.",
+      "Zeigen Sie ausgewählte Dateien im Dateimanager an, wenn Sie sie über das Bedienfeld „Dateien“ öffnen."
+    ]
+  },
+  {
+    "version": "0.9.1",
+    "date": "2026-08-20",
+    "highlights": [
+      "Machen Sie angeheftete Projektsymbole deutlich, damit sie in der Seitenleiste leichter zu erkennen sind.",
+      "Verhindern Sie, dass die Aktivität des Subagenten nach Abschluss des Vorgangs beim Ausführen hängenbleibt.",
+      "Passen Sie Plugin-Seiten und -Bedienfelder besser an den Rest des App-Chroms an.",
+      "Reduzieren Sie die Eingabe- und Sendelatenz im Composer.",
+      "Sorgen Sie dafür, dass lange Transkripte reibungsloser scrollen, und vermeiden Sie Blitze beim Wechseln der Sitzungen.",
+      "Stellen Sie die leere Hilfslinie und das unten ausgerichtete Composer-Layout wieder her."
+    ]
+  },
+  {
+    "version": "0.9.0",
+    "date": "2026-08-20",
+    "highlights": [
+      "Durchsuchen Sie Projektdateien im gebündelten Dateifenster und öffnen Sie sie mit der Standard-App des Betriebssystems.",
+      "Fügen Sie dem Arbeitsfenster isolierte, von Plugins beigesteuerte Ansichten hinzu und sorgen Sie dafür, dass die Herkunft des Marktplatzes und der Status der zurückgezogenen Version sichtbar bleiben.",
+      "Entfernen Sie das integrierte interaktive Terminal, während Sie die Bash-Ausgabe in der Konversation und die interaktiven Shells im externen Terminal beibehalten.",
+      "Ratenbegrenzungen des Wiederholungsanbieters ohne doppelte Assistentenmeldungen vorhanden, dann „Weiter“ anbieten, wenn das Wiederholungsbudget erschöpft ist.",
+      "Verwenden Sie eine kompakte Kontextzusammenfassung, um die Modell-, Tool-, Cache- und Komprimierungsnutzung auf einen Blick zu sehen.",
+      "Bringen Sie die fünf Kernsitzungsbefehle durch lokalisierte Slash-Befehlshinweise im Composer bei.",
+      "Halten Sie die Home- und Konversationskomponisten auf dem Laufenden, während ihre Begrüßungs- und Befehlshinweise reibungslos rotieren."
+    ]
+  },
+  {
+    "version": "0.8.1",
+    "date": "2026-08-19",
+    "highlights": [
+      "Melden Sie sich bei mehreren Anbieterkonten an und wählen Sie das für jeden Anbieter verwendete Konto aus.",
+      "Nutzen Sie die Fähigkeiten jedes Modells, um zu entscheiden, wann Bildanhänge unterstützt werden.",
+      "Wählen Sie den Argumentationsaufwand direkt vom Composer für Modelle aus, die ihn offenlegen.",
+      "Behalten Sie eine Minih-Agent-Desktop-Instanz pro Datenverzeichnis bei, um widersprüchliche Sitzungen zu vermeiden.",
+      "Organisieren Sie Einstellungen in übersichtlicheren Gruppen und vereinfachen Sie die Verwaltung von Anbieterkonten.",
+      "Halten Sie die integrierten Subagenten an den Berechtigungsmodus der übergeordneten Konversation angepasst."
+    ]
+  },
+  {
+    "version": "0.8.0",
+    "date": "2026-08-17",
+    "highlights": [
+      "Delegieren Sie Hintergrund-Subagenten und warten Sie auf deren Ergebnisse, ohne die Konversation zu blockieren.",
+      "Erhöhen Sie die Obergrenze des laufenden Subagenten auf 10 und wenden Sie den Berechtigungsbereich jedes Agenten auf delegierte Arbeit an.",
+      "Fügen Sie integrierte Explorer- und Fixer-Subagenten für allgemeine Hintergrundaufgaben hinzu.",
+      "Fragen Sie einmal, ob das Schließen des Fensters in die Taskleiste minimiert oder beendet werden soll, und merken Sie sich dann die Auswahl.",
+      "Lassen Sie Plugin-Panels der App-Sprache und dem Farbmodus folgen.",
+      "Wiederholen Sie Fehler bei der Ratenbegrenzung in der Mitte des Streams im selben Zug, anstatt die Antwort zu stoppen.",
+      "Genehmigte Planläufe nach einer Sidecar-Unterbrechung wiederherstellen.",
+      "Verhindern Sie, dass Seitenwagen-Unfallwarnungen ein Fenster zerbrechen, das bereits verschwunden ist."
+    ]
+  },
+  {
+    "version": "0.7.0",
+    "date": "2026-08-15",
+    "highlights": [
+      "Beschränken Sie den Zugriff auf Plugin-Dateien auf den deklarierten Dateibereich jedes Plugins und senden Sie gelöschte Dateien zur einfachen Wiederherstellung in den Papierkorb.",
+      "Zeigt den deklarierten Dateibereich jedes Plugins neben seinen Berechtigungen an.",
+      "Beschränken Sie Plugin-Netzwerkanfragen auf die deklarierte Domänen-Zulassungsliste jedes Plugins.",
+      "Leiten Sie unbekannte Plugin-Panel-Kanäle an das Plugin weiter, damit tiefere Integrationen weiterhin funktionieren.",
+      "Verhindern Sie, dass die Seitenleiste beim Ein- und Ausblenden flackert.",
+      "Machen Sie Agentenbearbeitungen zeilenverankert, sodass eine unterbrochene Bearbeitung ordnungsgemäß wiederhergestellt wird, anstatt die Runde stillschweigend zu beenden.",
+      "Harmonisierung der Hierarchie der Kartentypografie für eine einheitlichere Benutzeroberfläche.",
+      "Aktualisieren Sie die Desktop-Shell und die Agent-Laufzeit auf die neuesten Electron- und Pi-Versionen."
+    ]
+  },
+  {
+    "version": "0.6.0",
+    "date": "2026-08-14",
+    "highlights": [
+      "Öffnen Sie den Kontextnutzungsinspektor per Klick, um Token- und Cache-Statistiken anzuzeigen.",
+      "Schalten Sie die Sichtbarkeit des Arbeitsbereichs mit einer neuen Tastenkombination um.",
+      "Halten Sie Entwürfe neuer Aufgaben aus dem Verlauf fern, bis die erste Nachricht gesendet wird.",
+      "Fügen Sie eine benutzerdefinierte globale Schriftartenauswahl mit gebündelten OFL-Schriftarten für personalisierte Typografie hinzu.",
+      "Merken Sie sich kürzlich verwendete Plugins im Launcher für einen schnelleren Zugriff.",
+      "Kopiersitzungspfad zum Kontextmenü für den Entwicklermodus hinzufügen.",
+      "Behebung von Problemen mit dem Abschneiden der Schriftartenauswahl und dem Zurücksetzen der Systemstandards.",
+      "Lassen Sie macOS Minih-Agent-Desktop nach dem Schließen des Fensters im Dock und drücken Sie Cmd+Tab.",
+      "Chat-Transkript angeheftet halten, wenn Composer nach dem Senden ausgeblendet wird.",
+      "Geben Sie dem Arbeitspanel einen echten leeren Zustand mit klarerer Führung."
+    ]
+  },
+  {
+    "version": "0.5.11",
+    "date": "2026-08-13",
+    "highlights": [
+      "Fügen Sie Offline-Verfügbarkeit und Metadatenaktualisierung für den Plugin-Marktplatz hinzu.",
+      "Zwischenspeichern von Composer-Entwürfen pro Konversation für eine schnellere Sitzungswiederherstellung.",
+      "Plugin-Panel-Titel lokalisieren und Panel-Fenster-Chrom anpassen.",
+      "Maskottchen-Schlüsselfarbe auf dunklen Oberflächen korrigieren.",
+      "Reduzieren Sie die Latenz der macOS-Launcher-Verknüpfung für schnellere Interaktionen."
+    ]
+  },
+  {
+    "version": "0.5.10",
+    "date": "2026-08-13",
+    "highlights": [
+      "Verfeinern Sie die Fensterchrome und sicheren Bereiche des Plug-in-Panels, damit der Plug-in-Inhalt von nativen Steuerelementen ferngehalten wird.",
+      "Polieren Sie die Seitenhierarchie der Plugins und reduzieren Sie die Übersichtskopie für einen klareren Erweiterungsworkflow.",
+      "Verwenden Sie das richtige macOS-Tray-Vorlagensymbol für ein klareres Erscheinungsbild der Menüleiste."
+    ]
+  },
+  {
+    "version": "0.5.9",
+    "date": "2026-08-13",
+    "highlights": [
+      "Sorgen Sie dafür, dass der Zielmodus die automatische Berechtigungsbehandlung verwendet, um einen konsistenteren Arbeitsablauf zu gewährleisten.",
+      "Wärmen Sie den globalen Plugin-Launcher vor, damit er schneller geöffnet wird, auch wenn eine andere App fokussiert ist.",
+      "Geben Sie Plugin-Panels natives Fenster-Chrom mit zuverlässigen Steuerelementen zum Minimieren, Maximieren und Schließen.",
+      "Aktualisieren Sie die zweisprachige Dokumentationsseite mit vollständigen Anleitungen und Spezifikationen in Englisch und vereinfachtem Chinesisch."
+    ]
+  },
+  {
+    "version": "0.5.8",
+    "date": "2026-08-12",
+    "highlights": [
+      "Stellen Sie den globalen Plugin-Starter „Alt+Leertaste“ von Windows wieder her, auch wenn eine andere App fokussiert ist.",
+      "Halten Sie Minih-Agent-Desktop in der Taskleiste verfügbar, wenn es unter macOS, Windows und Linux minimiert ist.",
+      "Verbessern Sie die Lesbarkeit des nativen Auswahlmenüs in hellen und dunklen Designs."
+    ]
+  },
+  {
+    "version": "0.5.7",
+    "date": "2026-08-12",
+    "highlights": [
+      "Fügen Sie Asktool-Fragen mit Einzelauswahl-, Mehrfachauswahl-, benutzerdefinierten Antwort-, Überspringen- und Ablehnungsabläufen hinzu.",
+      "Halten Sie den Fortschritt mehrerer Fragen mit den Indikatoren für beantwortete, unbeantwortete und übersprungene Fragen sichtbar.",
+      "Platzieren Sie interaktive Fragen auf derselben Composer-Genehmigungsoberfläche wie Plan- und Zielgenehmigungen.",
+      "Vereinfachen Sie Genehmigungskarten und merken Sie sich den ausgewählten Genehmigungsmodus für die nächste Anfrage."
+    ]
+  },
+  {
+    "version": "0.5.6",
+    "date": "2026-08-11",
+    "highlights": [
+      "Öffnen Sie installierte Plugins über einen globalen Tastatur-Launcher, ohne den aktuellen Arbeitsbereich zu verlassen.",
+      "Reduzieren Sie erweiterte Denk-, Tool- und Subagentendetails, um lange Gespräche lesbar zu halten.",
+      "Halten Sie die Aufgabenkonfiguration während aktiver Runden verfügbar und zeigen Sie Durchsatzstatistiken nach dem Stoppen an.",
+      "Verfeinern Sie die Eckhierarchie auf der gesamten Benutzeroberfläche für eine klarere visuelle Gruppierung."
+    ]
+  },
+  {
+    "version": "0.5.5",
+    "date": "2026-08-11",
+    "highlights": [
+      "Visualisieren Sie parallele Subagenten und ihre Aufgabenbeziehungen direkt im Gespräch.",
+      "Halten Sie eingefügte Dateiverweise kompakt und stellen Sie ihre Chips wieder her, nachdem Sie eine Runde angehalten haben.",
+      "Halten Sie die Modussteuerung während der Sitzungserstellung verfügbar und das Transkript nach dem Senden angeheftet.",
+      "Führen Sie eine reibungslosere Wiederherstellung durch, wenn native Tools einen falschen Dateipfad erhalten.",
+      "Polnische Seitenleisten-Fußzeilenaktionen und umschlossene Links in Benutzernachrichten."
+    ]
+  },
+  {
+    "version": "0.5.4",
+    "date": "2026-08-08",
+    "highlights": [
+      "Verfeinern Sie das leere Maskottchen mit langsameren Posenänderungen im Leerlauf und kontinuierlicher Wiedergabe beim Schweben."
+    ]
+  },
+  {
+    "version": "0.5.0",
+    "date": "2026-08-07",
+    "highlights": [
+      "Führen Sie begrenzte Subagenten hinter einem Aufgabentool aus, mit benutzerdefinierten Agenten, angehefteten Modellen, Attribution und Sitzungspersistenz.",
+      "Verwalten Sie Subagenten aus Erweiterungen mit Neuladen der Registrierung und einem klareren schreibgeschützten Status.",
+      "Bereiten Sie Kontextprüfpunkte während der Leerlaufzeit vor und installieren Sie sie, während der Transkriptverlauf erhalten bleibt und Komprimierungszeilen und Warnungen angezeigt werden.",
+      "Fügen Sie den Zielmodus als zweiten Vertragsmodus hinzu und behalten Sie eingefügte Dateiverweise über Modusbefehle bei.",
+      "Stellen Sie Subagent- und Host-gestützte Panels wieder her, wenn der Host die Verbindung wiederherstellt, mit leiserer routinemäßiger Teardown-Diagnose.",
+      "Polnische Arbeitspanel- und Erweiterungsoberflächen mit klareren Metadaten, Steuerelementen und Kontrast zu dunklen Themen."
+    ]
+  },
+  {
+    "version": "0.4.3",
+    "date": "2026-08-05",
+    "highlights": [
+      "Vervollständigen Sie den Agent-Only-Plan-Workflow mit dauerhaften Markdown-Prüfpunkten, Genehmigung und Ausführung in der Warteschlange.",
+      "Fügen Sie projektbezogene MCP-Server und Skills mit einer Erweiterungsbereichssteuerung hinzu.",
+      "Verschärfen Sie externe Pfadberechtigungen und native Suchbereiche über Arbeitsbereiche hinweg.",
+      "Plangenehmigungsoberflächen schließen, nachdem Auflösungs- und Modusbefehle die aktive Sitzung wechseln.",
+      "Lange Konversationen werden automatisch komprimiert: Das Transkript speichert jede Nachricht, markiert, wo jede Komprimierung stattgefunden hat, und warnt Sie, damit Sie entscheiden können, ob Sie eine neue Sitzung starten möchten."
+    ]
+  },
+  {
+    "version": "0.4.2",
+    "date": "2026-08-03",
+    "highlights": [
+      "Zeigt die Kontext-Cache-Trefferrate im Chat-Transkript-Header für bessere Transparenz an."
+    ]
+  },
+  {
+    "version": "0.4.1",
+    "date": "2026-08-02",
+    "highlights": [
+      "GitHub-Versionen aktualisieren und Links zum kanonischen Minih-Agent-Desktop-Repository automatisch aktualisieren.",
+      "Aktualisieren Sie die Projekt-, Plugin- und Release-Dokumentation, um den Minih-Agent-Desktop-Repository-Namen zu verwenden."
+    ]
+  },
+  {
+    "version": "0.4.0",
+    "date": "2026-08-01",
+    "highlights": [
+      "Plugins können jetzt Fähigkeiten, Themen, MCP-Server, residente Dienste und einen Inter-Plugin-Nachrichtenbus beitragen.",
+      "Das Plugin-SDK deklariert alle neuen Funktionstypen, damit Autoren sie über das Manifest aktivieren können.",
+      "Der Host-Kern validiert Funktionsbeiträge und leitet automatisch Berechtigungen pro Plugin ab.",
+      "Die Eingabeaufforderung des Agentensystems umfasst jetzt vom Plugin deklarierte Fähigkeiten für Tool-bezogene Konversationen.",
+      "Plugins-Seite neu gestaltet mit Vorlagenauswahl, Hot-Reload beim Speichern und Autorentools.",
+      "Beim Erstellen eines Plugins aus einer Vorlage wird jetzt der Scaffolded-Ordner als Projekt geöffnet.",
+      "Einheitliches Kopfzeilenmenü des Arbeitspanels mit übersichtlicheren Steuerelementen und Kontextaktionen.",
+      "Stile, aufgeteilt in Partialtypen pro Oberfläche; Duplikat und totes CSS entfernt."
+    ]
+  },
+  {
+    "version": "0.3.0",
+    "date": "2026-07-31",
+    "highlights": [
+      "Das Projektarchiv „Einstellungen“ zeigt jetzt gruppierte Abschnitte (Angeheftet/Alle/Archiviert) mit Anzahl pro Abschnitt, Live-Suche und Sortierkontrollen an.",
+      "Die Breite des Arbeitspanel-Docks ist schmaler für bessere Layout-Proportionen.",
+      "Das Design des Schalters auf der Schiene im Lichtdesign wurde korrigiert."
+    ]
+  },
+  {
+    "version": "0.2.11",
+    "date": "2026-07-31",
+    "highlights": [
+      "Die globale Suche findet jetzt Chats, Seiten, Einstellungen und integrierte oder Plugin-Befehle an einem Ort.",
+      "Darstellungssteuerelemente verwenden jetzt Design- und Sprachvorschaukarten, wobei die automatische Sprache korrekt dem Gebietsschema des Betriebssystems folgt.",
+      "Die Einstellungen verfügen jetzt über spezielle KI- und Verknüpfungsabschnitte für eine klarere Navigation.",
+      "Der Agent lädt jetzt mehrschichtige Projektanweisungen für AGENTS.md/CLAUDE.md mit Editoren für globale und projektbezogene AGENTS.md.",
+      "Das Projektarchiv durchsucht jetzt Sitzungstitel und zeigt die neueste Aktivität, die Anzahl der Sitzungen, Zeitstempel und den erweiterbaren Verlauf an.",
+      "Behebung eines Desktop-Startfehlers, der durch die Sandbox-Preload-Regression verursacht wurde.",
+      "Reduzieren Sie den überwachten Footprint der entpackten macOS-App um etwa 55 % und behalten Sie dabei die Offline-Syntaxhervorhebung und die native Terminalunterstützung bei."
+    ]
+  },
+  {
+    "version": "0.2.10",
+    "date": "2026-07-30",
+    "highlights": [
+      "Fügen Sie eine obere Konversationsleiste im Codex/WorkBuddy-Stil mit verbesserten Steuerelementen hinzu.",
+      "Aktualisieren Sie das Chat-Transkript und den Markdown-Prosa-Stil für eine bessere Lesbarkeit.",
+      "Vereinheitlichen Sie die Kopfzeile des Arbeitspanels mit dem Kontextmenü und animieren Sie das Zusammenklappen der Seitenleiste.",
+      "Kombinieren Sie Tool-Launcher in einem Erstellungs-Dropdown für eine übersichtlichere Benutzeroberfläche.",
+      "Docken Sie das Arbeitsfeld im festen Fenster an, anstatt es zu erweitern.",
+      "Polnische Steuerelemente in der oberen Leiste: Deduplizierung umschalten, Steuerelemente schützen, macOS-Ausrichtung."
+    ]
+  },
+  {
+    "version": "0.2.8",
+    "date": "2026-07-29",
+    "highlights": [
+      "Update-Eingabeaufforderungen und -Einstellungen öffnen jetzt vollständige lokalisierte Versionshinweise.",
+      "Animationen zum Erweitern und Reduzieren des Arbeitspanels wirken flüssiger.",
+      "Lange Gespräche verdichten übergroße Werkzeug-Ergebnisstapel zuverlässiger."
+    ]
+  },
+  {
+    "version": "0.2.7",
+    "date": "2026-07-28",
+    "highlights": [
+      "Markdown-Antworten können Bilder, Audio und Video inline rendern.",
+      "Remote-Bilder werden mit aktualisierter Inhaltssicherheitsrichtlinie angezeigt.",
+      "Medien-Markup wird bereinigt, sodass nur sichere Tags zulässig sind."
+    ]
+  },
+  {
+    "version": "0.2.6",
+    "date": "2026-07-28",
+    "highlights": [
+      "Turn-Boundary-Kontextkontrollpunkte verdichten lange Chats, ohne den Verlauf zu verbergen.",
+      "Reibungsloser Gesprächswechsel mit zwischengespeicherten Transkripten und einem stabilen Rahmen.",
+      "Angedockte Werkzeuge behalten eine feste Breite, sodass der Chat neben dem Arbeitsfenster lesbar bleibt.",
+      "Das Projektmenü kann den Ordner in Ihrem Systemdateimanager öffnen.",
+      "Composer-Eingabeaufforderungszeilen zeigen kein führendes Markensymbol mehr an."
+    ]
+  },
+  {
+    "version": "0.2.5",
+    "date": "2026-07-28",
+    "highlights": [
+      "Die Navigation im Arbeitspanel wurde mit einer übersichtlicheren Werkzeugleiste neu gestaltet.",
+      "Die Größenänderung des Fensters erfolgt bereichsabhängig, sodass das Layout vorhersehbar bleibt.",
+      "Streaming-Renderings sind für eine schnellere Interaktion isoliert.",
+      "Bei neuen Argumentationssitzungen wird standardmäßig auf maximales Denken zurückgegriffen, sofern verfügbar.",
+      "Das Transkript bleibt nach dem Senden an die letzte Nachricht angeheftet."
+    ]
+  },
+  {
+    "version": "0.2.4",
+    "date": "2026-07-28",
+    "highlights": [
+      "Composer-Chips sorgen dafür, dass Unterlängen vollständig sichtbar sind.",
+      "Aktualisiertes Pi-AI für neuere Claude-Modelle einschließlich Opus 5-Unterstützung."
+    ]
+  },
+  {
+    "version": "0.2.3",
+    "date": "2026-07-28",
+    "highlights": [
+      "Shell-Kopie länderübergreifend in einfacher Benutzersprache neu geschrieben.",
+      "Auswahl, CJK-Beschriftungen und Politur der Hover-Bewegung.",
+      "Arbeitsplatte und Einstellungen Lichtoberflächen verfeinert.",
+      "Vorabversionsinstallationen entdecken jetzt neuere stabile GitHub-Versionen."
+    ]
+  },
+  {
+    "version": "0.2.2",
+    "date": "2026-07-27",
+    "highlights": [
+      "Plugin-Marktplatz mit offiziellem Remote-Katalog und Detailfenstern.",
+      "Isolierte Plugin-Panels und geschlossene Hochrisiko-APIs.",
+      "Klicken Sie mit der rechten Maustaste auf Abschnittssymbolleisten, um Projekte oder Sitzungen zu erstellen.",
+      "Startup-Splash, sanftere Bewegung und i18n-Politur.",
+      "Die obere Navigation des Arbeitspanels unterstützt Rechtsklick zum Öffnen von Werkzeugen."
+    ]
+  },
+  {
+    "version": "0.2.1",
+    "date": "2026-07-27",
+    "highlights": [
+      "Arbeitspanel-Tools bleiben pro Konversation erhalten.",
+      "Der Überprüfungseintrag ist auf die Sitzung beschränkt, in der die Änderungen vorgenommen wurden."
+    ]
+  },
+  {
+    "version": "0.2.0",
+    "date": "2026-07-27",
+    "highlights": [
+      "Seitenleiste trennt Projekte und Sitzungen mit klarerem Aufgabenstatus.",
+      "Forken oder Antworten des Assistenten bearbeiten; Symbolleisten für Nachrichten, die nur aus Symbolen bestehen.",
+      "Eintrag zur Arbeitsbereichsüberprüfung nach erfolgreichen Dateibearbeitungen.",
+      "Tastaturkürzelzuordnungen und Entwicklermodus für DevTools.",
+      "Der Pi-Modellkatalog ist die Autorität für Anbietermodelle.",
+      "Die Denkkontrolle steht im Composer neben dem Modus."
+    ]
+  },
+  {
+    "version": "0.1.1",
+    "date": "2026-07-26",
+    "highlights": [
+      "Erste öffentliche Veröffentlichung: Local-First-KI-Coding-Agent-Desktop-Client.",
+      "Chat- und Agent-Modi mit Streaming, Denkebenen und Modellverwaltung.",
+      "Workspace-Tools mit Permission Gating, Terminal, Browser und Git-Review.",
+      "Rust-Hostkern für Speicher, Geheimnisse, Sitzungen und Benachrichtigungen.",
+      "Plugin-Grundlage plus duale Englisch-/简体中文-Benutzeroberfläche.",
+      "Update prüft anhand von GitHub-Releases (in der App, sofern unterstützt)."
+    ]
+  }
+];

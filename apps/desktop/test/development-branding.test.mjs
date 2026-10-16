@@ -1,0 +1,248 @@
+import { readMainSource, readMainModule } from "./helpers/source-contracts.mjs";
+import assert from "node:assert/strict";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+const devScriptUrl = new URL(
+  "../../../scripts/dev-electron.mjs",
+  import.meta.url,
+);
+
+const mainSource = await readMainSource();
+const installationSource = await readMainModule("installation.ts");
+const brandingSource = await readMainModule("bootstrap/app-lifecycle.ts");
+const windowSource = await readMainModule("bootstrap/window.ts");
+const startupSource = await readMainModule("bootstrap/startup.ts");
+const iconScriptSource = await readFile(
+  new URL("../../../scripts/make-icon.py", import.meta.url),
+  "utf8",
+);
+const devScriptSource = await readFile(
+  devScriptUrl,
+  "utf8",
+);
+const packageJson = JSON.parse(
+  await readFile(new URL("../package.json", import.meta.url), "utf8"),
+);
+const protocolSource = await readFile(
+  new URL("../../../packages/shared/src/protocol.ts", import.meta.url),
+  "utf8",
+);
+const windowsIcon = await readFile(
+  new URL("../build/icon.ico", import.meta.url),
+);
+
+test("Windows runtime registers the canonical native application identity", () => {
+  const appId = protocolSource.match(/APP_ID = "([^"]+)"/)?.[1];
+  assert.equal(appId, packageJson.build.appId);
+  assert.ok(startupSource.includes("app.whenReady()"), "main process readiness hook");
+  assert.match(installationSource, /app\.setName\(APP_NAME\)/);
+  assert.match(
+    installationSource,
+    /process\.platform === "win32"[\s\S]*app\.setAppUserModelId\(APP_ID\)/,
+  );
+});
+
+test("Windows packages pin Minih-Agent-Desktop executable and shortcut names", () => {
+  assert.equal(packageJson.build.win.executableName, "Minih-Agent-Desktop");
+  assert.equal(packageJson.build.nsis.shortcutName, "Minih-Agent-Desktop");
+});
+
+test("Windows packages and windows use the canonical Minih-Agent-Desktop icon", () => {
+  assert.equal(packageJson.build.win.icon, "build/icon.ico");
+  assert.deepEqual(
+    packageJson.build.win.extraResources.find((resource) => resource.to === "app-icon.ico"),
+    {
+      from: "build/icon.ico",
+      to: "app-icon.ico",
+    },
+  );
+  assert.deepEqual([...windowsIcon.subarray(0, 4)], [0, 0, 1, 0]);
+  assert.ok(windowsIcon.readUInt16LE(4) >= 4, "ICO must contain multiple sizes");
+  assert.match(iconScriptSource, /windows_icon = BUILD \/ "icon\.ico"/);
+  assert.match(iconScriptSource, /format="ICO"/);
+  assert.match(windowSource, /function windowsIconPath\(\)/);
+  assert.match(windowSource, /app\.isPackaged\s*\n?\s*\?\s*process\.resourcesPath/);
+  assert.match(windowSource, /app-icon\.ico/);
+  assert.match(windowSource, /icon: windowsIconPath\(\)/);
+});
+
+test("Linux packages align the desktop entry with the Wayland app identity", () => {
+  assert.equal(packageJson.desktopName, "minih-agent-desktop.desktop");
+  assert.equal(packageJson.build.linux.syncDesktopName, true);
+});
+
+test("macOS development uses the canonical Minih-Agent-Desktop Dock icon", () => {
+  assert.match(
+    brandingSource,
+    /process\.platform !== "darwin" \|\| !isDevelopmentBuild \|\| !app\.dock/,
+  );
+  assert.match(
+    brandingSource,
+    /join\(app\.getAppPath\(\), "build", "icon_1024\.png"\)/,
+  );
+  assert.match(brandingSource, /nativeImage\.createFromPath\(iconPath\)/);
+  assert.match(brandingSource, /if \(icon\.isEmpty\(\)\)/);
+  assert.match(brandingSource, /app\.dock\.setIcon\(icon\)/);
+  // Branding is the first thing readiness does, after the only statement that
+  // may precede it: the bail for a launch that lost the single-instance lock
+  // and must not touch the running app's Dock tile.
+  assert.match(
+    startupSource,
+    /if \(!hasSingleInstanceLock\) return;\s+applyDevelopmentBranding\(\);/,
+  );
+});
+
+test("macOS icon derivation preserves the canonical renderer asset", () => {
+  assert.match(iconScriptSource, /SOURCE = BUILD \/ "icon_1024\.png"/);
+  assert.match(iconScriptSource, /with Image\.open\(SOURCE\) as source/);
+  assert.doesNotMatch(
+    iconScriptSource,
+    /\.save\(BUILD \/ "icon_1024\.png"\)/,
+  );
+});
+
+test("development launcher resolves Electron before platform-specific setup", () => {
+  assert.match(
+    devScriptSource,
+    /const electron = resolveElectronInstallation\(\);\s+if \(process\.platform === "darwin"\)/,
+  );
+});
+
+test("macOS development launches from a branded host bundle", () => {
+  assert.equal(packageJson.scripts.dev, "node ../../scripts/dev-electron.mjs");
+  assert.match(devScriptSource, /process\.platform === "darwin"/);
+  assert.match(devScriptSource, /MINIH_AGENT_DEV: "1"/);
+  assert.match(devScriptSource, /ELECTRON_EXEC_PATH/);
+  assert.match(devScriptSource, /CFBundleDisplayName", APP_NAME/);
+  assert.match(devScriptSource, /CFBundleName", APP_NAME/);
+  assert.match(devScriptSource, /CFBundleExecutable", APP_NAME/);
+  assert.match(devScriptSource, /CFBundleIconFile", "icon\.icns"/);
+  assert.match(devScriptSource, /BRANDING_SCHEMA = "v4"/);
+  assert.match(
+    devScriptSource,
+    /copyFileSync\(iconPath, join\(resources, "icon\.icns"\)\)/,
+  );
+  assert.match(
+    devScriptSource,
+    /copyFileSync\(trayIconPath, join\(resources, "tray-icon\.png"\)\)/,
+  );
+  assert.match(
+    devScriptSource,
+    /copyFileSync\(trayIconMacPath, join\(resources, "tray-icon-mac\.png"\)\)/,
+  );
+  assert.match(devScriptSource, /verbatimSymlinks: true/);
+  assert.match(devScriptSource, /join\(ROOT, "\.cache", "electron-dev"\)/);
+  assert.doesNotMatch(devScriptSource, /node_modules.*Info\.plist/);
+});
+
+test("Electron main resolves runtime paths from ES module URLs", () => {
+  assert.match(mainSource, /function getModuleDirectory\(moduleUrl: string\)/);
+  assert.doesNotMatch(mainSource, /\b__dirname\b/);
+});
+
+test(
+  "development launcher can be imported without starting Electron",
+  async () => {
+    const launcher = await import(devScriptUrl.href);
+    assert.equal(typeof launcher.prepareMacDevelopmentBundle, "function");
+  },
+);
+
+test(
+  "macOS development bundle rewrites native identity and reuses its cache",
+  { skip: process.platform !== "darwin" },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "minih-agent-desktop-dev-bundle-"));
+    const sourceBundle = join(root, "Electron.app");
+    const contents = join(sourceBundle, "Contents");
+    const macos = join(contents, "MacOS");
+    const resources = join(contents, "Resources");
+    const executable = join(macos, "Electron");
+    const iconPath = join(root, "source.icns");
+    const trayIconPath = join(root, "tray-icon.png");
+    const trayIconMacPath = join(root, "tray-icon-mac.png");
+    const cacheRoot = join(root, "cache");
+
+    try {
+      await mkdir(macos, { recursive: true });
+      await mkdir(resources, { recursive: true });
+      await writeFile(executable, "electron-host");
+      await writeFile(iconPath, "canonical-icon");
+      await writeFile(trayIconPath, "generic-tray-icon");
+      await writeFile(trayIconMacPath, "macOS-tray-icon");
+      await writeFile(
+        join(contents, "Info.plist"),
+        `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleDisplayName</key><string>Electron</string>
+<key>CFBundleName</key><string>Electron</string>
+<key>CFBundleExecutable</key><string>Electron</string>
+<key>CFBundleIdentifier</key><string>com.github.Electron</string>
+<key>CFBundleIconFile</key><string>electron.icns</string>
+</dict></plist>`,
+      );
+
+      const { prepareMacDevelopmentBundle } = await import(devScriptUrl.href);
+      const options = {
+        electronExecutable: executable,
+        electronVersion: "test-version",
+        iconPath,
+        trayIconPath,
+        trayIconMacPath,
+        cacheRoot,
+        sign: false,
+      };
+      const brandedExecutable = prepareMacDevelopmentBundle(options);
+      const brandedContents = join(
+        brandedExecutable,
+        "..",
+        "..",
+      );
+      const plist = await readFile(join(brandedContents, "Info.plist"), "utf8");
+
+      assert.equal(await readFile(brandedExecutable, "utf8"), "electron-host");
+      assert.equal(
+        await readFile(join(brandedContents, "Resources", "icon.icns"), "utf8"),
+        "canonical-icon",
+      );
+      assert.equal(
+        await readFile(join(brandedContents, "Resources", "tray-icon.png"), "utf8"),
+        "generic-tray-icon",
+      );
+      assert.equal(
+        await readFile(
+          join(brandedContents, "Resources", "tray-icon-mac.png"),
+          "utf8",
+        ),
+        "macOS-tray-icon",
+      );
+      assert.match(plist, /<string>Minih-Agent-Desktop<\/string>/);
+      assert.match(plist, /<string>org\.hmini\.agent\.dev<\/string>/);
+      assert.equal(prepareMacDevelopmentBundle(options), brandedExecutable);
+
+      await writeFile(trayIconMacPath, "updated-macOS-tray-icon");
+      const updatedExecutable = prepareMacDevelopmentBundle(options);
+      assert.notEqual(updatedExecutable, brandedExecutable);
+      const updatedContents = join(updatedExecutable, "..", "..");
+      assert.equal(
+        await readFile(
+          join(updatedContents, "Resources", "tray-icon-mac.png"),
+          "utf8",
+        ),
+        "updated-macOS-tray-icon",
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);

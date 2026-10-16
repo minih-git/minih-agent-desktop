@@ -1,0 +1,1875 @@
+import { describe, expect, it, vi } from "vitest";
+import { DEEPSEEK_REASONING_REPLAY_PLACEHOLDER } from "@minih-agent/shared";
+import type { ModelAuth } from "@earendil-works/pi-ai";
+import { convertMessages } from "@earendil-works/pi-ai/api/openai-completions";
+import { genericModelConfig, modelConfigFromPi, modelConfigWithBinding } from "./model-capabilities.js";
+import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import type { ModelConfig } from "./thinking-level.js";
+import {
+  adapterAcceptsCustomFetch,
+  apiBindingForStyle,
+  buildProviderModel,
+  copilotRequestHeaders,
+  createProviderModels,
+  providerRequestFetch,
+  runtimeBaseUrlForApi,
+  type RuntimeProviderConfig,
+} from "./provider-binding.js";
+import {
+  providerUsesSessionAffinity,
+  withSessionAffinityOptions,
+} from "./session-affinity.js";
+
+const keyedProvider: RuntimeProviderConfig = {
+  id: "acme",
+  name: "Acme",
+  baseUrl: "https://api.acme.test/v1",
+  modelId: "acme-1",
+  apiKey: "sk-test",
+  authKind: "api_key_and_base_url",
+  supportsReasoning: false,
+  supportedThinkingLevels: ["off"],
+};
+
+describe("account-local Pi registries", () => {
+  it("preserves native pricing tiers through a serialized model projection", () => {
+    const native = builtinProviders().flatMap((provider) => provider.getModels())
+      .find((model) => model.cost.tiers?.length);
+    expect(native).toBeDefined();
+    if (!native) throw new Error("Missing tiered Pi catalog model");
+    const modelConfig: ModelConfig = JSON.parse(JSON.stringify(modelConfigFromPi(native)));
+    const restored = buildProviderModel({
+      ...keyedProvider,
+      modelId: native.id,
+      vendorKey: native.provider,
+      modelConfig,
+    });
+    expect(restored.cost).toEqual(native.cost);
+    expect(restored.cost.tiers).toHaveLength(native.cost.tiers!.length);
+  });
+
+  it("keeps same-vendor credentials isolated during concurrent resolution", async () => {
+    const first: RuntimeProviderConfig = {
+      ...keyedProvider,
+      id: "account-one",
+      vendorKey: "openai",
+      resolveAuth: async () => ({ apiKey: "first-fixture-key" }),
+    };
+    const second: RuntimeProviderConfig = {
+      ...first,
+      id: "account-two",
+      resolveAuth: async () => ({ apiKey: "second-fixture-key" }),
+    };
+    const firstModel = buildProviderModel(first);
+    const secondModel = buildProviderModel(second);
+    const firstModels = createProviderModels(first, firstModel);
+    const secondModels = createProviderModels(second, secondModel);
+    expect(firstModels).not.toBe(secondModels);
+    expect(firstModel.provider).toBe("openai");
+    expect(secondModel.provider).toBe("openai");
+    const [firstAuth, secondAuth] = await Promise.all([
+      firstModels.getAuth(firstModel),
+      secondModels.getAuth(secondModel),
+    ]);
+    expect(firstAuth?.auth.apiKey).toBe("first-fixture-key");
+    expect(secondAuth?.auth.apiKey).toBe("second-fixture-key");
+    expect(first.id).toBe("account-one");
+    expect(second.id).toBe("account-two");
+  });
+});
+
+describe("apiBindingForStyle", () => {
+  it("binds OpenCode Go to its fixed OpenAI-compatible endpoint", () => {
+    const opencode = apiBindingForStyle("opencode_go");
+    expect(opencode.api).toBe("openai-completions");
+    expect(opencode.defaultBaseUrl).toBe("https://opencode.ai/zen/go/v1");
+  });
+
+  it("binds the two vendor-account wire APIs", () => {
+    const codex = apiBindingForStyle("openai_codex_responses");
+    expect(codex.api).toBe("openai-codex-responses");
+    expect(codex.defaultBaseUrl).toBe("https://chatgpt.com/backend-api");
+
+    const radius = apiBindingForStyle("pi_messages");
+    expect(radius.api).toBe("pi-messages");
+    expect(radius.defaultBaseUrl).toBe("https://radius.pi.dev");
+  });
+
+  it("keeps unknown styles on chat completions", () => {
+    expect(apiBindingForStyle("not-a-style").api).toBe("openai-completions");
+    expect(apiBindingForStyle(undefined).api).toBe("openai-completions");
+  });
+});
+
+describe("custom fetch injection", () => {
+  const wrapper = async () => new Response("ok");
+
+  it("withholds the fetch from the adapters that reject one", () => {
+    expect(adapterAcceptsCustomFetch("google-generative-ai")).toBe(false);
+    expect(adapterAcceptsCustomFetch("google-vertex")).toBe(false);
+    expect(providerRequestFetch("google-generative-ai", wrapper)).toBeUndefined();
+    expect(providerRequestFetch("google-vertex", wrapper)).toBeUndefined();
+  });
+
+  it("passes the caller's fetch to every other adapter", () => {
+    expect(adapterAcceptsCustomFetch("openai-completions")).toBe(true);
+    expect(adapterAcceptsCustomFetch("anthropic-messages")).toBe(true);
+    expect(adapterAcceptsCustomFetch(undefined)).toBe(true);
+    expect(providerRequestFetch("openai-completions", wrapper)).toBe(wrapper);
+    expect(providerRequestFetch("anthropic-messages", wrapper)).toBe(wrapper);
+    expect(providerRequestFetch(undefined, wrapper)).toBe(wrapper);
+  });
+});
+
+describe("Anthropic runtime endpoint", () => {
+  it("removes a trailing /v1 before pi-ai appends its version path", () => {
+    expect(runtimeBaseUrlForApi("anthropic-messages", "https://gw.example/v1/")).toBe(
+      "https://gw.example",
+    );
+    expect(runtimeBaseUrlForApi("anthropic-messages", "https://gw.example/anthropic/v1")).toBe(
+      "https://gw.example/anthropic",
+    );
+    expect(runtimeBaseUrlForApi("anthropic-messages", "https://api.anthropic.com")).toBe(
+      "https://api.anthropic.com",
+    );
+    expect(runtimeBaseUrlForApi("openai-completions", "https://gw.example/v1/")).toBe(
+      "https://gw.example/v1/",
+    );
+  });
+
+  it("sends a /v1 endpoint to Anthropic gateways without doubling the path", async () => {
+    const provider: RuntimeProviderConfig = {
+      ...keyedProvider,
+      id: "anthropic-gateway",
+      name: "Anthropic gateway",
+      baseUrl: "https://gw.example/anthropic/v1",
+      modelId: "glm-5.3",
+      apiStyle: "anthropic_messages",
+    };
+    const model = buildProviderModel(provider);
+    const urls: string[] = [];
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      urls.push(input instanceof Request ? input.url : String(input));
+      return new Response("bad gateway", { status: 502 });
+    });
+
+    const result = await createProviderModels(provider, model)
+      .streamSimple(
+        model,
+        {
+          systemPrompt: "system",
+          messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+          tools: [],
+        },
+        { fetch },
+      )
+      .result();
+
+    expect(result.stopReason).toBe("error");
+    expect(urls).toEqual(["https://gw.example/anthropic/v1/messages?beta=true"]);
+  });
+
+  it("signs a plain Anthropic API-key row without a Bearer header", async () => {
+    const provider: RuntimeProviderConfig = {
+      ...keyedProvider,
+      id: "anthropic-api-key-row",
+      name: "Anthropic",
+      baseUrl: "https://api.anthropic.com",
+      modelId: "claude-sonnet-4-6",
+      apiStyle: "anthropic_messages",
+    };
+    const model = buildProviderModel(provider);
+    let request: Request | undefined;
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      request = new Request(input, init);
+      return new Response(
+        JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "test response" } }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    });
+
+    const result = await createProviderModels(provider, model)
+      .streamSimple(
+        model,
+        {
+          systemPrompt: "system",
+          messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+          tools: [],
+        },
+        { fetch, maxRetries: 0 },
+      )
+      .result();
+
+    expect(result.stopReason).toBe("error");
+    expect(request?.headers.get("x-api-key")).toBe("sk-test");
+    expect(request?.headers.get("Authorization")).toBeNull();
+  });
+
+  it("sends no API-key or Authorization header for a no-auth provider", async () => {
+    const provider: RuntimeProviderConfig = {
+      ...keyedProvider,
+      id: "local-no-auth",
+      name: "Local gateway",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      apiKey: "stale-fixture-key",
+      authKind: "none",
+    };
+    const model = buildProviderModel(provider);
+    let request: Request | undefined;
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      request = new Request(input, init);
+      return new Response(
+        JSON.stringify({ error: { message: "fixture response" } }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    });
+    const requestFetch = providerRequestFetch(model.api, fetch, provider.authKind);
+    expect(requestFetch).toBeDefined();
+    if (!requestFetch) throw new Error("OpenAI-compatible requests must accept custom fetch");
+
+    const result = await createProviderModels(provider, model)
+      .streamSimple(
+        model,
+        {
+          systemPrompt: "system",
+          messages: [{ role: "user", content: "hello", timestamp: 1 }],
+          tools: [],
+        },
+        { fetch: requestFetch, maxRetries: 0 },
+      )
+      .result();
+
+    expect(result.stopReason).toBe("error");
+    expect(request).toBeDefined();
+    if (!request) throw new Error("Expected the no-auth request to reach fetch");
+    expect(request.url).not.toContain("minih-agent-desktop-no-auth");
+    expect(request.headers.get("x-api-key")).toBeNull();
+    expect(request.headers.get("Authorization")).toBeNull();
+  });
+
+  it("does not send an API-key value for a no-auth Google protocol provider", async () => {
+    const provider: RuntimeProviderConfig = {
+      ...keyedProvider,
+      id: "local-google-no-auth",
+      name: "Local Google gateway",
+      baseUrl: "http://127.0.0.1:9000/v1beta",
+      modelId: "gemini-local",
+      apiKey: "stale-fixture-key",
+      authKind: "none",
+      apiStyle: "google_generative_ai",
+    };
+    const model = buildProviderModel(provider);
+    let request: Request | undefined;
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      request = new Request(input, init);
+      return new Response("{}", {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+    try {
+      const result = await createProviderModels(provider, model)
+        .streamSimple(
+          model,
+          {
+            systemPrompt: "system",
+            messages: [{ role: "user", content: "hello", timestamp: 1 }],
+            tools: [],
+          },
+          { maxRetries: 0 },
+        )
+        .result();
+      expect(result.stopReason).toBe("error");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(request).toBeDefined();
+    if (!request) throw new Error("Expected the no-auth Google request to reach fetch");
+    expect(request.url).not.toContain("minih-agent-desktop-no-auth");
+    expect(request.headers.get("x-goog-api-key")).toBe("");
+    expect(request.headers.get("Authorization")).toBeNull();
+  });
+
+  it("does not send the mid-conversation tool-change beta for a models.dev Claude gateway", async () => {
+    const provider: RuntimeProviderConfig = {
+      ...keyedProvider,
+      id: "sub2api-anthropic-gateway",
+      vendorKey: "custom",
+      name: "sub2api",
+      baseUrl: "https://relay.example/v1",
+      modelId: "claude-opus-5-5",
+      apiStyle: "anthropic_messages",
+      supportsReasoning: true,
+      supportedThinkingLevels: ["off", "medium"],
+      modelConfig: {
+        source: "models.dev",
+        name: "Claude Opus 5.5",
+        baseUrl: "https://relay.example/v1",
+        reasoning: true,
+        reasoningOptions: [{ type: "effort", values: ["low", "medium", "high"] }],
+        thinkingProtocol: "adaptive",
+        input: ["text"],
+        contextWindow: 200_000,
+        maxTokens: 16_000,
+      },
+    };
+    const model = buildProviderModel(provider);
+    let request: Request | undefined;
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      request = new Request(input, init);
+      return new Response(
+        JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "test response" } }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    });
+    const readTool = {
+      name: "Read",
+      description: "Read a file",
+      parameters: { type: "object", properties: { path: { type: "string" } } },
+    };
+
+    const result = await createProviderModels(provider, model)
+      .streamSimple(
+        model,
+        {
+          messages: [
+            { role: "system", content: "system", toolsAdded: [readTool], timestamp: 1 },
+            { role: "user", content: "hello", timestamp: 2 },
+          ],
+          tools: [],
+        },
+        { fetch, maxRetries: 0 },
+      )
+      .result();
+
+    expect(result.stopReason).toBe("error");
+    expect(model.compat).toMatchObject({
+      supportsMidConvoSystemMessages: false, supportsMidConvoToolChanges: false,
+    });
+    expect(request?.headers.get("anthropic-beta") ?? "").not.toMatch(
+      /mid-conversation-tool-changes|inline-tools/,
+    );
+  });
+
+  it("uses adaptive thinking for models explicitly marked adaptive", async () => {
+    const provider: RuntimeProviderConfig = {
+      ...keyedProvider,
+      id: "anthropic-adaptive",
+      name: "Anthropic adaptive",
+      baseUrl: "https://api.anthropic.com",
+      modelId: "claude-opus-5-5",
+      apiStyle: "anthropic_messages",
+      supportsReasoning: true,
+      supportedThinkingLevels: ["off", "medium"],
+      modelConfig: {
+        source: "models.dev",
+        name: "Claude Opus 5.5",
+        baseUrl: "https://api.anthropic.com",
+        reasoning: true,
+        thinkingProtocol: "adaptive",
+        thinkingLevelMap: { medium: "medium" },
+        input: ["text"],
+        contextWindow: 200_000,
+        maxTokens: 16_000,
+      },
+    };
+    const model = buildProviderModel(provider);
+    const requests: Record<string, unknown>[] = [];
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response("bad request", { status: 400 });
+    });
+
+    await createProviderModels(provider, model)
+      .streamSimple(
+        model,
+        { systemPrompt: "system", messages: [{ role: "user", content: "hello", timestamp: Date.now() }], tools: [] },
+        { reasoning: "medium", fetch },
+      )
+      .result();
+
+    expect(model.compat).toMatchObject({ forceAdaptiveThinking: true });
+    expect(requests[0]).toMatchObject({
+      thinking: { type: "adaptive" },
+      output_config: { effort: "medium" },
+    });
+  });
+
+  it("keeps the legacy budget request for legacy models", async () => {
+    const provider: RuntimeProviderConfig = {
+      ...keyedProvider,
+      id: "anthropic-legacy",
+      name: "Anthropic legacy",
+      baseUrl: "https://api.anthropic.com",
+      modelId: "claude-opus-4-5",
+      apiStyle: "anthropic_messages",
+      supportsReasoning: true,
+      supportedThinkingLevels: ["off", "medium"],
+      modelConfig: {
+        source: "models.dev",
+        name: "Claude Opus 4.5",
+        baseUrl: "https://api.anthropic.com",
+        reasoning: true,
+        reasoningOptions: [{ type: "effort", values: ["low", "medium", "high"] }],
+        thinkingProtocol: "legacy",
+        input: ["text"],
+        contextWindow: 200_000,
+        maxTokens: 16_000,
+      },
+    };
+    const model = buildProviderModel(provider);
+    const requests: Record<string, unknown>[] = [];
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response("bad request", { status: 400 });
+    });
+
+    await createProviderModels(provider, model)
+      .streamSimple(
+        model,
+        { systemPrompt: "system", messages: [{ role: "user", content: "hello", timestamp: Date.now() }], tools: [] },
+        { reasoning: "medium", fetch },
+      )
+      .result();
+
+    expect(model.compat).toMatchObject({ forceAdaptiveThinking: false });
+    expect(requests[0]).toMatchObject({
+      thinking: { type: "enabled" },
+    });
+    expect((requests[0].thinking as Record<string, unknown>).budget_tokens).toEqual(expect.any(Number));
+  });
+});
+
+describe("Anthropic adaptive thinking from models.dev reasoning options", () => {
+  function anthropicProvider(
+    modelId: string,
+    reasoningOptions: ModelConfig["reasoningOptions"],
+  ): RuntimeProviderConfig {
+    return {
+      ...keyedProvider,
+      id: "anthropic",
+      name: "Anthropic",
+      baseUrl: "https://api.anthropic.com",
+      modelId,
+      apiStyle: "anthropic_messages",
+      supportsReasoning: true,
+      supportedThinkingLevels: ["low", "medium", "high"],
+      modelConfig: {
+        source: "models.dev",
+        name: modelId,
+        baseUrl: "https://api.anthropic.com",
+        reasoning: true,
+        reasoningOptions,
+        supportedThinkingLevels: ["low", "medium", "high"],
+        input: ["text"],
+        contextWindow: 1_000_000,
+        maxTokens: 128_000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    };
+  }
+
+  async function thinkingRequest(provider: RuntimeProviderConfig) {
+    const model = buildProviderModel(provider);
+    const requests: Record<string, unknown>[] = [];
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response("bad gateway", { status: 502 });
+    });
+    await createProviderModels(provider, model)
+      .streamSimple(
+        model,
+        {
+          systemPrompt: "system",
+          messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+          tools: [],
+        },
+        { reasoning: "medium", fetch, maxRetries: 0 },
+      )
+      .result();
+    return requests[0];
+  }
+
+  function genericAnthropicProvider(
+    modelId: string,
+    overrides: Partial<
+      Pick<ModelConfig, "reasoningOptions" | "thinkingProtocol" | "compat">
+    > = {},
+  ): RuntimeProviderConfig {
+    const baseUrl = "https://gateway.example";
+    const modelConfig = modelConfigWithBinding(
+      {
+        ...genericModelConfig(modelId, baseUrl),
+        ...overrides,
+      },
+      {
+        contextWindow: 200_000,
+        maxTokens: 16_000,
+        thinkingLevels: ["off", "medium"],
+        ...(overrides.thinkingProtocol
+          ? { thinkingProtocol: overrides.thinkingProtocol }
+          : {}),
+      },
+    );
+    return {
+      ...anthropicProvider(modelId, overrides.reasoningOptions ?? []),
+      baseUrl,
+      modelConfig,
+    };
+  }
+
+  it("sends adaptive thinking to effort-only Claude models such as Opus 5.5", async () => {
+    const request = await thinkingRequest(
+      anthropicProvider("claude-opus-5-5", [
+        { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
+      ]),
+    );
+
+    expect(request?.thinking).toMatchObject({ type: "adaptive" });
+    expect(request?.thinking).not.toHaveProperty("budget_tokens");
+    expect(request?.output_config).toEqual({ effort: "medium" });
+  });
+
+  it("sends adaptive thinking when an unidentified gateway keeps only the Anthropic wire shape", async () => {
+    const fallback = genericModelConfig("claude-opus-5-5", "https://gateway.example");
+    const modelConfig = modelConfigWithBinding(
+      {
+        ...fallback,
+        reasoningOptions: [
+          { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
+        ],
+        thinkingLevelMap: {
+          low: "low",
+          medium: "medium",
+          high: "high",
+          xhigh: "xhigh",
+          max: "max",
+          off: null,
+        },
+      },
+      {
+        contextWindow: 1_000_000,
+        maxTokens: 128_000,
+        thinkingLevels: ["off", "low", "medium", "high"],
+      },
+    );
+    const request = await thinkingRequest({
+      ...anthropicProvider("claude-opus-5-5", modelConfig.reasoningOptions),
+      baseUrl: "https://gateway.example",
+      modelConfig,
+    });
+
+    expect(request?.thinking).toMatchObject({ type: "adaptive" });
+    expect(request?.thinking).not.toHaveProperty("budget_tokens");
+    expect(request?.output_config).toEqual({ effort: "medium" });
+  });
+
+  it("keeps budget thinking for models that publish budget_tokens", async () => {
+    const request = await thinkingRequest(
+      anthropicProvider("claude-sonnet-4-5", [{ type: "budget_tokens", min: 1024 }]),
+    );
+
+    expect(request?.thinking).toMatchObject({ type: "enabled" });
+    expect(request?.thinking).toHaveProperty("budget_tokens");
+  });
+
+  it("preserves an explicit catalog adaptive override", () => {
+    const provider = anthropicProvider("claude-opus-4-6", [
+      { type: "effort", values: ["low", "medium", "high", "max"] },
+      { type: "budget_tokens", min: 1024 },
+    ]);
+    provider.modelConfig = {
+      ...provider.modelConfig!,
+      compat: { forceAdaptiveThinking: true },
+    };
+
+    expect(buildProviderModel(provider).compat).toMatchObject({
+      forceAdaptiveThinking: true,
+    });
+  });
+
+  // #926: a catalog miss still arrives as a generic model config in sessions.
+  // Without protocol or reasoning options, a Claude id on the Anthropic wire
+  // defaults to adaptive thinking.
+  it("defaults adaptive thinking for a catalog-less Claude id on the Anthropic wire", async () => {
+    const provider = genericAnthropicProvider("claude-opus-5-5");
+    expect(provider.modelConfig?.source).toBe("generic");
+
+    const request = await thinkingRequest(provider);
+
+    expect(request?.thinking).toMatchObject({ type: "adaptive" });
+    expect(request?.thinking).not.toHaveProperty("budget_tokens");
+  });
+
+  it("keeps budget thinking when a generic model carries budget metadata", async () => {
+    const request = await thinkingRequest(
+      genericAnthropicProvider("claude-relay-model", {
+        reasoningOptions: [{ type: "budget_tokens", min: 1024 }],
+      }),
+    );
+
+    expect(request?.thinking).toMatchObject({ type: "enabled" });
+    expect(request?.thinking).toHaveProperty("budget_tokens");
+  });
+
+  it("keeps the legacy default for live-only OAuth Claude ids", async () => {
+    const provider = genericAnthropicProvider("claude-sonnet-99");
+    provider.authKind = "oauth";
+    provider.vendorKey = "github-copilot";
+    const request = await thinkingRequest(provider);
+
+    expect(request?.thinking).toMatchObject({ type: "enabled" });
+    expect(request?.thinking).toHaveProperty("budget_tokens");
+  });
+
+  it("honors an explicit legacy protocol on a generic Claude model", async () => {
+    const request = await thinkingRequest(
+      genericAnthropicProvider("claude-relay-model", {
+        thinkingProtocol: "legacy",
+      }),
+    );
+
+    expect(request?.thinking).toMatchObject({ type: "enabled" });
+    expect(request?.thinking).toHaveProperty("budget_tokens");
+  });
+
+  it("prioritizes an explicit protocol over a conflicting generic compat value", async () => {
+    const provider = genericAnthropicProvider("claude-relay-model", {
+      thinkingProtocol: "adaptive",
+    });
+    provider.modelConfig = {
+      ...provider.modelConfig!,
+      compat: { forceAdaptiveThinking: false },
+    };
+    const request = await thinkingRequest(provider);
+
+    expect(request?.thinking).toMatchObject({ type: "adaptive" });
+    expect(request?.thinking).not.toHaveProperty("budget_tokens");
+  });
+
+  it("lets a per-model compat record opt a custom Claude id out of adaptive thinking", async () => {
+    const optedOut = genericAnthropicProvider("claude-opus-5-5", {
+      compat: { forceAdaptiveThinking: false },
+    });
+    const model = buildProviderModel(optedOut);
+    expect(model.compat).toMatchObject({ forceAdaptiveThinking: false });
+    const request = await thinkingRequest(optedOut);
+    expect(request?.thinking).toMatchObject({ type: "enabled" });
+    expect(request?.thinking).toHaveProperty("budget_tokens");
+
+    // Precedence also holds when catalog reasoning options would derive the
+    // flag: the explicit record wins.
+    const effortOnly = anthropicProvider("claude-opus-5-5", [
+      { type: "effort", values: ["low", "medium", "high"] },
+    ]);
+    const derived = buildProviderModel({
+      ...effortOnly,
+      modelConfig: {
+        ...effortOnly.modelConfig!,
+        compat: { forceAdaptiveThinking: false },
+      },
+    });
+    expect(derived.compat).toMatchObject({ forceAdaptiveThinking: false });
+  });
+});
+
+describe("buildProviderModel OpenAI-compatible role compatibility", () => {
+  const reasoningProvider: RuntimeProviderConfig = {
+    ...keyedProvider,
+    supportsReasoning: true,
+    supportedThinkingLevels: ["off", "high"],
+    modelConfig: {
+      source: "generic",
+      name: "Reasoning model",
+      baseUrl: keyedProvider.baseUrl!,
+      reasoning: true,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128_000,
+      maxTokens: 8_192,
+    },
+  };
+
+  it("sends the system prompt as system for issue #30's GLM gateway", () => {
+    const model = buildProviderModel({
+      ...reasoningProvider,
+      id: "aimom",
+      name: "AIMOM",
+      baseUrl: "https://platform.aimom.net/v1",
+      modelId: "glm-5.3-flash",
+      apiStyle: "chat_completions",
+      modelConfig: {
+        ...reasoningProvider.modelConfig!,
+        name: "GLM-5.3-Flash",
+        baseUrl: "https://platform.aimom.net/v1",
+      },
+    }) as any;
+
+    expect(model.compat).toMatchObject({ supportsDeveloperRole: false });
+    const messages = convertMessages(
+      model,
+      { messages: [{ role: "system", content: "Follow the workspace rules.", timestamp: Date.now() }] } as never,
+      { supportsDeveloperRole: model.compat.supportsDeveloperRole } as any,
+    );
+
+    expect(messages).toEqual([
+      { role: "system", content: "Follow the workspace rules." },
+    ]);
+  });
+
+  it("preserves an explicit model-level developer-role override", () => {
+    const model = buildProviderModel({
+      ...reasoningProvider,
+      apiStyle: "chat_completions",
+      modelConfig: {
+        ...reasoningProvider.modelConfig!,
+        compat: { supportsDeveloperRole: true },
+      },
+    }) as any;
+
+    expect(model.compat).toMatchObject({ supportsDeveloperRole: true });
+    const messages = convertMessages(
+      model,
+      { messages: [{ role: "system", content: "Use the provider's developer role.", timestamp: Date.now() }] } as never,
+      { supportsDeveloperRole: model.compat.supportsDeveloperRole } as any,
+    );
+
+    expect(messages).toEqual([
+      { role: "developer", content: "Use the provider's developer role." },
+    ]);
+  });
+
+  it("applies Zhipu thinking and tool-stream flags from the endpoint URL", () => {
+    const model = buildProviderModel({
+      ...reasoningProvider,
+      id: "row-uuid",
+      vendorKey: "zhipuai-coding-plan",
+      baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",
+      modelId: "glm-5.3",
+      apiStyle: "chat_completions",
+      modelConfig: {
+        ...reasoningProvider.modelConfig!,
+        name: "GLM-5.3",
+        baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",
+      },
+    }) as any;
+
+    expect(model.compat).toMatchObject({
+      thinkingFormat: "zai",
+      zaiToolStream: true,
+      supportsDeveloperRole: false,
+    });
+  });
+
+  it("fills missing reasoning_content for DeepSeek models on aggregator URLs", () => {
+    const model = buildProviderModel({
+      ...reasoningProvider,
+      id: "row-uuid",
+      vendorKey: "siliconflow-cn",
+      baseUrl: "https://api.siliconflow.cn/v1",
+      modelId: "deepseek-ai/DeepSeek-V3.2",
+      apiStyle: "chat_completions",
+      modelConfig: {
+        ...reasoningProvider.modelConfig!,
+        name: "DeepSeek V3.2",
+        family: "deepseek",
+        baseUrl: "https://api.siliconflow.cn/v1",
+      },
+    }) as any;
+
+    expect(model.provider).toBe("siliconflow-cn");
+    expect(model.compat).toMatchObject({
+      requiresReasoningContentOnAssistantMessages: true,
+      requiresNonEmptyReasoningReplay: true,
+      supportsDeveloperRole: false,
+    });
+    expect(model.compat.thinkingFormat).toBeUndefined();
+
+    // Empty-string path (#223): this convertMessages call uses a compat WITHOUT
+    // requiresNonEmptyReasoningReplay, so official-style "" fill still works.
+    // The SiliconFlow model itself sets requiresNonEmptyReasoningReplay (above).
+    const messages = convertMessages(
+      model,
+      {
+        messages: [
+          { role: "system", content: "Follow the workspace rules.", timestamp: Date.now() },
+          { role: "user", content: "hello", timestamp: Date.now() },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "answer without thinking" }],
+            api: "openai-completions",
+            provider: model.provider,
+            model: model.id,
+            usage: {
+              input: 1,
+              output: 1,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 2,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            stopReason: "stop",
+            timestamp: Date.now(),
+          },
+        ],
+      } as never,
+      {
+        supportsDeveloperRole: false,
+        requiresReasoningContentOnAssistantMessages: true,
+      } as any,
+    );
+
+    expect(messages).toEqual([
+      { role: "system", content: "Follow the workspace rules." },
+      { role: "user", content: "hello" },
+      {
+        role: "assistant",
+        content: "answer without thinking",
+        reasoning_content: "",
+      },
+    ]);
+  });
+
+  it("fills missing reasoning_content from catalog family when the model id is an endpoint", () => {
+    const model = buildProviderModel({
+      ...reasoningProvider,
+      id: "row-uuid",
+      vendorKey: "volcengine",
+      baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+      modelId: "ep-20250101-xyz",
+      apiStyle: "chat_completions",
+      modelConfig: {
+        ...reasoningProvider.modelConfig!,
+        name: "DeepSeek V4 Pro",
+        family: "deepseek-thinking",
+        baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+      },
+    }) as any;
+
+    expect(model.compat).toMatchObject({
+      requiresReasoningContentOnAssistantMessages: true,
+      requiresNonEmptyReasoningReplay: true,
+    });
+  });
+
+  it("keeps empty-string replay for official deepseek.com endpoints", () => {
+    const model = buildProviderModel({
+      ...reasoningProvider,
+      id: "row-uuid",
+      vendorKey: "deepseek",
+      baseUrl: "https://api.deepseek.com",
+      modelId: "deepseek-chat",
+      apiStyle: "chat_completions",
+    }) as any;
+
+    expect(model.compat).toMatchObject({
+      requiresReasoningContentOnAssistantMessages: true,
+    });
+    expect(model.compat.requiresNonEmptyReasoningReplay).toBeUndefined();
+  });
+
+  it("does not mark unrelated OpenAI-compatible models as DeepSeek reasoning replay", () => {
+    const model = buildProviderModel({
+      ...reasoningProvider,
+      id: "row-uuid",
+      vendorKey: "custom",
+      baseUrl: "https://api.example.com/v1",
+      modelId: "gpt-4.1",
+      apiStyle: "chat_completions",
+    }) as any;
+
+    expect(model.compat.requiresReasoningContentOnAssistantMessages).toBeUndefined();
+  });
+
+  it("preserves MiniMax M3 image input on its OpenAI-compatible endpoint", () => {
+    const provider: RuntimeProviderConfig = {
+      ...keyedProvider,
+      id: "minimax-row",
+      name: "MiniMax (OpenAI)",
+      vendorKey: "minimax-cn",
+      baseUrl: "https://api.minimaxi.com/v1",
+      modelId: "MiniMax-M3",
+      apiStyle: "chat_completions",
+      supportsReasoning: true,
+      supportedThinkingLevels: ["off", "low", "medium", "high"],
+      modelConfig: {
+        source: "models.dev",
+        name: "MiniMax-M3",
+        baseUrl: "https://api.minimaxi.com/v1",
+        reasoning: true,
+        modalities: { input: ["text", "image", "video"], output: ["text"] },
+        input: ["text", "image"],
+        contextWindow: 1_048_576,
+        maxTokens: 512_000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    };
+    const model = buildProviderModel(provider) as any;
+    expect(model.input).toEqual(["text", "image"]);
+    expect(model.compat).toMatchObject({ supportsDeveloperRole: false });
+
+    const messages = convertMessages(
+      model,
+      {
+        messages: [
+          { role: "system", content: "Read the image.", timestamp: Date.now() },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "What is shown?" },
+              { type: "image", data: "AQI=", mimeType: "image/png" },
+            ],
+            timestamp: Date.now(),
+          },
+        ],
+      } as never,
+      { supportsDeveloperRole: false } as any,
+    );
+
+    expect(messages).toEqual([
+      { role: "system", content: "Read the image." },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "What is shown?" },
+          { type: "image_url", image_url: { url: "data:image/png;base64,AQI=" } },
+        ],
+      },
+    ]);
+  });
+});
+
+describe("createProviderModels auth resolution", () => {
+  it("signs with the stored key when no vendor account is bound", async () => {
+    const models = createProviderModels(
+      keyedProvider,
+      buildProviderModel(keyedProvider),
+    );
+
+    const resolved = await models.getAuth(keyedProvider.id);
+
+    expect(resolved?.auth).toEqual({ apiKey: "sk-test" });
+  });
+
+  it("asks Electron main for vendor auth on every request", async () => {
+    // A vendor access token lives about an hour, so nothing here may be
+    // cached: each request must see whatever main hands back now.
+    const auths: ModelAuth[] = [
+      { apiKey: "first-token", headers: { "x-vendor": "1" } },
+      { apiKey: "second-token", baseUrl: "https://per-account.acme.test" },
+    ];
+    const resolveAuth = vi.fn(async () => auths.shift() as ModelAuth);
+    const provider: RuntimeProviderConfig = {
+      ...keyedProvider,
+      apiKey: "",
+      authKind: "oauth",
+      resolveAuth,
+    };
+    const models = createProviderModels(provider, buildProviderModel(provider));
+
+    const first = await models.getAuth(provider.id);
+    const second = await models.getAuth(provider.id);
+
+    expect(resolveAuth).toHaveBeenCalledTimes(2);
+    // Headers and the per-credential baseUrl ride along with the token: they
+    // are how Copilot pins an account to its own endpoint.
+    expect(first?.auth).toEqual({ apiKey: "first-token", headers: { "x-vendor": "1" } });
+    expect(second?.auth).toEqual({
+      apiKey: "second-token",
+      baseUrl: "https://per-account.acme.test",
+    });
+  });
+});
+
+describe("explicit extended thinking levels", () => {
+  it("sends enabled xhigh and max values instead of clamping them to high", async () => {
+    const thinkingLevels = ["off", "low", "medium", "high", "xhigh", "max"] as const;
+    const configuredModel = modelConfigWithBinding(
+      {
+        source: "generic",
+        name: "Explicit reasoning model",
+        baseUrl: "https://api.acme.test/v1",
+        reasoning: true,
+        supportedThinkingLevels: ["low", "medium", "high"],
+        thinkingLevelMap: { xhigh: null, max: null },
+        input: ["text"],
+        contextWindow: 128_000,
+        maxTokens: 8_192,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+      {
+        contextWindow: 128_000,
+        maxTokens: 8_192,
+        thinkingLevels: [...thinkingLevels],
+      },
+    );
+    const provider: RuntimeProviderConfig = {
+      ...keyedProvider,
+      supportsReasoning: true,
+      supportedThinkingLevels: [...thinkingLevels],
+      modelConfig: configuredModel,
+    };
+    const requests: Record<string, unknown>[] = [];
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(
+        JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    const model = buildProviderModel(provider);
+
+    for (const reasoning of ["high", "xhigh", "max"] as const) {
+      await createProviderModels(provider, model)
+        .streamSimple(
+          model,
+          {
+            systemPrompt: "system",
+            messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+            tools: [],
+          },
+          { reasoning, fetch },
+        )
+        .result();
+    }
+
+    expect(requests.map((request) => request.reasoning_effort)).toEqual([
+      "high",
+      "xhigh",
+      "max",
+    ]);
+  });
+});
+
+describe("buildProviderModel model-level wire API", () => {
+  const museCatalog: ModelConfig = {
+    source: "models.dev",
+    name: "Muse Spark 1.3 Contributor",
+    baseUrl: "https://opencode.ai/zen/go/v1",
+    api: "openai-responses",
+    reasoning: true,
+    input: ["text", "image"],
+    contextWindow: 1048576,
+    maxTokens: 131072,
+    compat: { supportsStrictMode: true },
+  };
+  const responsesCatalogProvider: RuntimeProviderConfig = {
+    ...keyedProvider,
+    id: "opencode-go",
+    name: "OpenCode Go",
+    vendorKey: "opencode-go",
+    baseUrl: "https://opencode.ai/zen/go/v1",
+    modelId: "muse-spark-1.3-contributor",
+    apiStyle: "opencode_go",
+    supportsReasoning: true,
+    supportedThinkingLevels: ["off", "low", "medium", "high", "xhigh"],
+    modelConfig: { ...museCatalog },
+  };
+
+  it("routes a responses-only model through the responses API (issue #105)", () => {
+    const model = buildProviderModel(responsesCatalogProvider) as any;
+    expect(model.api).toBe("openai-responses");
+    expect(model.baseUrl).toBe("https://opencode.ai/zen/go/v1");
+    expect(model.compat).toMatchObject({ supportsStrictMode: true });
+  });
+
+  it("keeps the provider-wide style when the catalog pins no wire API", () => {
+    const model = buildProviderModel({
+      ...responsesCatalogProvider,
+      modelId: "deepseek-v4-flash",
+      modelConfig: {
+        source: "models.dev",
+        name: "DeepSeek V4 Flash",
+        baseUrl: "https://opencode.ai/zen/go/v1",
+        reasoning: true,
+        input: ["text"],
+        contextWindow: 1000000,
+        maxTokens: 384000,
+      },
+    }) as any;
+    expect(model.api).toBe("openai-completions");
+  });
+
+  it("honors the API format selected for a custom endpoint over a model catalog API", () => {
+    const provider: RuntimeProviderConfig = {
+      ...keyedProvider,
+      id: "zhipu-custom-endpoint",
+      name: "Zhipu Responses endpoint",
+      vendorKey: "custom",
+      baseUrl: "https://open.bigmodel.cn/api/v1",
+      modelId: "glm-5.3-flash",
+      apiStyle: "responses",
+      modelConfig: {
+        source: "models.dev",
+        name: "GLM 5.3 Flash",
+        baseUrl: "https://open.bigmodel.cn/api/v1",
+        api: "openai-completions",
+        reasoning: true,
+        input: ["text"],
+        contextWindow: 200_000,
+        maxTokens: 32_000,
+      },
+    };
+
+    expect(buildProviderModel(provider).api).toBe("openai-responses");
+  });
+
+  it("posts a custom endpoint model to the explicitly selected Responses route", async () => {
+    const provider: RuntimeProviderConfig = {
+      ...keyedProvider,
+      id: "zhipu-custom-endpoint",
+      name: "Zhipu Responses endpoint",
+      vendorKey: "custom",
+      baseUrl: "https://open.bigmodel.cn/api/v1",
+      modelId: "glm-5.3-flash",
+      apiStyle: "responses",
+      modelConfig: {
+        source: "models.dev",
+        name: "GLM 5.3 Flash",
+        baseUrl: "https://open.bigmodel.cn/api/v1",
+        api: "openai-completions",
+        reasoning: true,
+        input: ["text"],
+        contextWindow: 200_000,
+        maxTokens: 32_000,
+      },
+    };
+    const model = buildProviderModel(provider);
+    const urls: string[] = [];
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      urls.push(input instanceof Request ? input.url : String(input));
+      return new Response("bad gateway", { status: 502 });
+    });
+
+    const result = await createProviderModels(provider, model)
+      .streamSimple(
+        model,
+        {
+          systemPrompt: "system",
+          messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+          tools: [],
+        },
+        { fetch },
+      )
+      .result();
+
+    expect(result.stopReason).toBe("error");
+    expect(urls).toEqual(["https://open.bigmodel.cn/api/v1/responses"]);
+  });
+
+  it("leaves the same model on completions under other providers (issue #105)", () => {
+    const model = buildProviderModel({
+      ...responsesCatalogProvider,
+      id: "llmgateway",
+      name: "LLM Gateway",
+      vendorKey: "llmgateway",
+      baseUrl: "https://llmgateway.example/v1",
+      apiStyle: "chat_completions",
+      modelConfig: {
+        source: "models.dev",
+        name: "Muse Spark 1.3 Contributor",
+        baseUrl: "https://llmgateway.example/v1",
+        reasoning: true,
+        input: ["text", "image"],
+        contextWindow: 1048576,
+        maxTokens: 131072,
+      },
+    }) as any;
+    expect(model.api).toBe("openai-completions");
+  });
+
+  it("does not overwrite OpenAI completions with foreign catalog APIs such as Google or Anthropic (issue #1310)", () => {
+    const geminiRelay = buildProviderModel({
+      ...keyedProvider,
+      id: "cliproxy",
+      name: "CliProxy",
+      baseUrl: "http://127.0.0.1:8317/v1",
+      modelId: "gemini-3.8-flash",
+      apiStyle: "chat_completions",
+      modelConfig: {
+        source: "models.dev",
+        name: "Gemini 3.8 Flash",
+        baseUrl: "http://127.0.0.1:8317/v1",
+        api: "google-generative-ai",
+        reasoning: true,
+        input: ["text", "image"],
+        contextWindow: 1048576,
+        maxTokens: 65536,
+      },
+    }) as any;
+    expect(geminiRelay.api).toBe("openai-completions");
+
+    const claudeRelay = buildProviderModel({
+      ...keyedProvider,
+      id: "openai-proxy",
+      name: "OpenAI Proxy",
+      baseUrl: "http://127.0.0.1:8317/v1",
+      modelId: "claude-sonnet-4-6",
+      apiStyle: "chat_completions",
+      modelConfig: {
+        source: "models.dev",
+        name: "Claude Sonnet 4.6",
+        baseUrl: "http://127.0.0.1:8317/v1",
+        api: "anthropic-messages",
+        reasoning: true,
+        input: ["text", "image"],
+        contextWindow: 200000,
+        maxTokens: 64000,
+      },
+    }) as any;
+    expect(claudeRelay.api).toBe("openai-completions");
+  });
+
+  it("posts responses models to the responses endpoint", async () => {
+    const provider = responsesCatalogProvider;
+    const model = buildProviderModel(provider);
+    const urls: string[] = [];
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      urls.push(input instanceof Request ? input.url : String(input));
+      return new Response("bad gateway", { status: 502 });
+    });
+    const result = await createProviderModels(provider, model)
+      .streamSimple(
+        model,
+        {
+          systemPrompt: "system",
+          messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+          tools: [],
+        },
+        { fetch },
+      )
+      .result();
+    expect(result.stopReason).toBe("error");
+    expect(urls).toEqual(["https://opencode.ai/zen/go/v1/responses"]);
+  });
+});
+
+describe("buildProviderModel native web search capability", () => {
+  const catalogModel: ModelConfig = {
+    source: "generic",
+    name: "Configured web search model",
+    baseUrl: "https://chatgpt.com/backend-api",
+    reasoning: false,
+    input: ["text"],
+    contextWindow: 128_000,
+    maxTokens: 8_192,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  };
+  const configuredModel = modelConfigWithBinding(catalogModel, {
+    contextWindow: 128_000,
+    maxTokens: 8_192,
+    thinkingLevels: ["off"],
+    nativeWebSearch: true,
+  });
+
+  it("forwards an opt-in only when the resolved wire supports it", () => {
+    const codex = buildProviderModel({
+      ...keyedProvider,
+      vendorKey: "openai-codex",
+      apiStyle: "openai_codex_responses",
+      modelConfig: configuredModel,
+    });
+    expect(codex.api).toBe("openai-codex-responses");
+    expect(codex.webSearch).toBe(true);
+
+    const completions = buildProviderModel({
+      ...keyedProvider,
+      apiStyle: "chat_completions",
+      modelConfig: configuredModel,
+    });
+    expect(completions.api).toBe("openai-completions");
+    expect(completions.webSearch).toBeUndefined();
+  });
+});
+
+describe("GitHub Copilot transport identity", () => {
+  const provider: RuntimeProviderConfig = {
+    id: "copilot-account-row",
+    name: "GitHub Copilot",
+    vendorKey: "github-copilot",
+    baseUrl: "https://api.individual.githubcopilot.com",
+    modelId: "gpt-4o",
+    apiKey: "",
+    authKind: "oauth",
+    apiStyle: "responses",
+    supportsReasoning: true,
+    supportedThinkingLevels: ["off", "low", "medium", "high", "max"],
+    resolveAuth: async () => ({
+      apiKey: "copilot-token",
+      baseUrl: "https://api.individual.githubcopilot.com",
+    }),
+  };
+
+  it("retains pi-ai static headers for a row-scoped OAuth model", () => {
+    const model = buildProviderModel(provider);
+
+    expect(model.provider).toBe(provider.vendorKey);
+    expect(model.headers).toMatchObject({
+      "Editor-Version": "vscode/1.107.0",
+      "Editor-Plugin-Version": "copilot-chat/0.35.0",
+      "Copilot-Integration-Id": "vscode-chat",
+    });
+  });
+
+  it("derives dynamic headers from the current request context", () => {
+    expect(
+      copilotRequestHeaders(provider, {
+        messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+      }),
+    ).toEqual({
+      "X-Initiator": "user",
+      "Openai-Intent": "conversation-edits",
+    });
+
+    expect(
+      copilotRequestHeaders(provider, {
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "hello" },
+              { type: "image", data: "AQI=", mimeType: "image/png" },
+            ],
+            timestamp: Date.now(),
+          },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "working" }],
+            api: "openai-responses",
+            provider: provider.id,
+            model: provider.modelId,
+            usage: {
+              input: 1,
+              output: 1,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 2,
+              cost: {
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+                total: 0,
+              },
+            },
+            stopReason: "stop",
+            timestamp: Date.now(),
+          },
+        ],
+      }),
+    ).toEqual({
+      "X-Initiator": "agent",
+      "Openai-Intent": "conversation-edits",
+      "Copilot-Vision-Request": "true",
+    });
+  });
+
+  it("sends the complete identity on a row-scoped Responses request", async () => {
+    const model = buildProviderModel(provider);
+    const context = {
+      systemPrompt: "system",
+      messages: [{ role: "user" as const, content: "hello", timestamp: Date.now() }],
+      tools: [],
+    };
+    let request: Request | undefined;
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      request = new Request(input, init);
+      return new Response(
+        JSON.stringify({ error: "missing Editor-Version header for IDE auth" }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    });
+
+    const result = await createProviderModels(provider, model)
+      .streamSimple(model, context, {
+        fetch,
+        headers: copilotRequestHeaders(provider, context),
+      })
+      .result();
+
+    expect(result.stopReason).toBe("error");
+    expect(request?.headers.get("Editor-Version")).toBe("vscode/1.107.0");
+    expect(request?.headers.get("Editor-Plugin-Version")).toBe("copilot-chat/0.35.0");
+    expect(request?.headers.get("Copilot-Integration-Id")).toBe("vscode-chat");
+    expect(request?.headers.get("X-Initiator")).toBe("user");
+    expect(request?.headers.get("Openai-Intent")).toBe("conversation-edits");
+    expect(request?.headers.get("Authorization")).toBe("Bearer copilot-token");
+    expect(request?.headers.get("x-api-key")).toBeNull();
+  });
+
+  it("sends Bearer auth and the complete identity on a row-scoped Claude request", async () => {
+    const claudeProvider: RuntimeProviderConfig = {
+      ...provider,
+      modelId: "claude-sonnet-4.6",
+      apiStyle: "anthropic_messages",
+      resolveAuth: async () => ({
+        apiKey: "copilot-token",
+        baseUrl: "https://api.business.githubcopilot.com",
+      }),
+    };
+    const model = buildProviderModel(claudeProvider);
+    const context = {
+      systemPrompt: "system",
+      messages: [{ role: "user" as const, content: "hello", timestamp: Date.now() }],
+      tools: [],
+    };
+    let request: Request | undefined;
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      request = new Request(input, init);
+      return new Response(
+        JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "test response" } }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    });
+
+    const result = await createProviderModels(claudeProvider, model)
+      .streamSimple(model, context, {
+        fetch,
+        maxRetries: 0,
+        headers: copilotRequestHeaders(claudeProvider, context),
+      })
+      .result();
+
+    expect(result.stopReason).toBe("error");
+    expect(request?.headers.get("Authorization")).toBe("Bearer copilot-token");
+    expect(request?.headers.get("x-api-key")).toBeNull();
+    expect(request?.headers.get("Editor-Version")).toBe("vscode/1.107.0");
+    expect(request?.headers.get("Editor-Plugin-Version")).toBe("copilot-chat/0.35.0");
+    expect(request?.headers.get("Copilot-Integration-Id")).toBe("vscode-chat");
+    expect(request?.headers.get("X-Initiator")).toBe("user");
+    expect(request?.headers.get("Openai-Intent")).toBe("conversation-edits");
+    expect(request?.url).toBe("https://api.business.githubcopilot.com/v1/messages?beta=true");
+    expect(model.provider).toBe(claudeProvider.vendorKey);
+  });
+
+  it("re-resolves the rotating Bearer token for each row-scoped Claude request", async () => {
+    const resolveAuth = vi.fn<NonNullable<RuntimeProviderConfig["resolveAuth"]>>()
+      .mockResolvedValueOnce({ apiKey: "first-token" })
+      .mockResolvedValueOnce({ apiKey: "second-token" });
+    const claudeProvider: RuntimeProviderConfig = {
+      ...provider,
+      modelId: "claude-sonnet-4.6",
+      apiStyle: "anthropic_messages",
+      resolveAuth,
+    };
+    const model = buildProviderModel(claudeProvider);
+    const models = createProviderModels(claudeProvider, model);
+    const context = {
+      systemPrompt: "system",
+      messages: [{ role: "user" as const, content: "hello", timestamp: Date.now() }],
+      tools: [],
+    };
+    const requests: Request[] = [];
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(new Request(input, init));
+      return new Response(
+        JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "test response" } }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    });
+
+    for (let turn = 0; turn < 2; turn++) {
+      const result = await models
+        .streamSimple(model, context, {
+          fetch,
+          maxRetries: 0,
+          headers: copilotRequestHeaders(claudeProvider, context),
+        })
+        .result();
+      expect(result.stopReason).toBe("error");
+    }
+
+    expect(requests.map((request) => request.headers.get("Authorization"))).toEqual([
+      "Bearer first-token",
+      "Bearer second-token",
+    ]);
+    expect(requests.map((request) => request.headers.get("x-api-key"))).toEqual([null, null]);
+    expect(resolveAuth).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("DeepSeek-family relay reasoning replay (#296)", () => {
+  /**
+   * The non-empty-replay opt-in lives in `model.compat`, but pi-ai rebuilds
+   * compat from an explicit allowlist in `getCompat`. Only a request that goes
+   * through the adapter can prove the placeholder survives that rebuild and
+   * reaches the wire, so this asserts the captured body rather than the compat
+   * object. Guards patches/@earendil-works__pi-ai@0.87.1.patch.
+   */
+  it("fills a thinking-less assistant turn with the documented placeholder", async () => {
+    const provider: RuntimeProviderConfig = {
+      ...keyedProvider,
+      id: "air-outer",
+      name: "Air Outer",
+      // A relay, not deepseek.com, so the strict non-empty replay applies.
+      baseUrl: "https://ps.air-outer.com/v1",
+      modelId: "deepseek-v4-flash",
+      supportsReasoning: true,
+      supportedThinkingLevels: ["off", "high"],
+    };
+    const requests: Record<string, unknown>[] = [];
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(
+        JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    const model = buildProviderModel(provider);
+    const usage = {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    };
+    const context = {
+      systemPrompt: "system",
+      tools: [],
+      messages: [
+        { role: "user", content: "hello", timestamp: 1 },
+        {
+          role: "assistant",
+          api: "openai-completions",
+          provider: provider.id,
+          model: provider.modelId,
+          content: [
+            { type: "thinking", thinking: "let me look", thinkingSignature: "reasoning_content" },
+            { type: "text", text: "looking" },
+          ],
+          usage,
+          stopReason: "stop",
+          timestamp: 2,
+        },
+        { role: "user", content: "again", timestamp: 3 },
+        {
+          role: "assistant",
+          api: "openai-completions",
+          provider: provider.id,
+          model: provider.modelId,
+          content: [{ type: "text", text: "done" }],
+          usage,
+          stopReason: "stop",
+          timestamp: 4,
+        },
+      ],
+    };
+
+    await createProviderModels(provider, model)
+      .streamSimple(model, context as never, { reasoning: "high", fetch })
+      .result();
+
+    const assistants = (
+      requests[0].messages as Array<Record<string, unknown>>
+    ).filter((message) => message.role === "assistant");
+    expect(assistants[0].reasoning_content).toBe("let me look");
+    expect(assistants[1].reasoning_content).toBe(
+      DEEPSEEK_REASONING_REPLAY_PLACEHOLDER,
+    );
+  });
+});
+
+describe("Minih Router rows", () => {
+  const router: RuntimeProviderConfig = {
+    ...keyedProvider,
+    id: "router-1",
+    name: "Minih Router",
+    vendorKey: "minih-router",
+    baseUrl: "https://router.hmini.org/v1",
+    apiStyle: "chat_completions",
+    apiKey: "sk-gl-test",
+  };
+
+  it("send chat traffic to the configured gateway over Chat Completions", () => {
+    const model = buildProviderModel({ ...router, modelId: "gpt-4.1" });
+    expect(model.api).toBe("openai-completions");
+    expect(model.baseUrl).toBe("https://router.hmini.org/v1");
+  });
+
+  it("keep the gateway protocol when a borrowed catalog record names another wire API", () => {
+    const anthropicRecord = {
+      ...genericModelConfig("claude-sonnet-4-5", "https://api.anthropic.com"),
+      api: "anthropic-messages",
+    } as ModelConfig;
+    const model = buildProviderModel({
+      ...router,
+      baseUrl: "https://self-hosted.example/router/v1",
+      modelId: "claude-sonnet-4-5",
+      modelConfig: anthropicRecord,
+    });
+    expect(model.api).toBe("openai-completions");
+    expect(model.baseUrl).toBe("https://self-hosted.example/router/v1");
+  });
+
+  it("keep the saved format even when a borrowed record names a sibling OpenAI route", () => {
+    const responsesRecord = {
+      ...genericModelConfig("gpt-5", "https://api.openai.com/v1"),
+      api: "openai-responses",
+    } as ModelConfig;
+    const chat = buildProviderModel({ ...router, modelId: "gpt-5", modelConfig: responsesRecord });
+    expect(chat.api).toBe("openai-completions");
+    const responses = buildProviderModel({
+      ...router,
+      apiStyle: "responses",
+      baseUrl: "http://11.11.11.10:3001/v1",
+      modelId: "gpt-5",
+    });
+    expect(responses.api).toBe("openai-responses");
+    expect(responses.baseUrl).toBe("http://11.11.11.10:3001/v1");
+  });
+
+  it("retries on fallbackBaseUrl when the EasyTier LAN tunnel fails with a network or 502 error", async () => {
+    const urls: string[] = [];
+    const underlyingFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = input instanceof Request ? input.url : String(input);
+      urls.push(url);
+      if (url.startsWith("http://127.0.0.1:25890/v1")) {
+        throw new Error("connect ECONNREFUSED 127.0.0.1:25890");
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+
+    const requestFetch = providerRequestFetch(
+      "openai-completions",
+      underlyingFetch,
+      "api_key_and_base_url",
+      {
+        primaryBaseUrl: "http://127.0.0.1:25890/v1",
+        fallbackBaseUrl: "https://router.hmini.org/v1",
+      },
+    );
+    expect(requestFetch).toBeDefined();
+    const res = await requestFetch!("http://127.0.0.1:25890/v1/chat/completions?stream=true", {
+      method: "POST",
+      body: JSON.stringify({ model: "gpt-4.1" }),
+    });
+    expect(res.status).toBe(200);
+    expect(urls).toEqual([
+      "http://127.0.0.1:25890/v1/chat/completions?stream=true",
+      "https://router.hmini.org/v1/chat/completions?stream=true",
+    ]);
+
+    const gatewayUrls: string[] = [];
+    const gatewayFetch = providerRequestFetch(
+      "openai-completions",
+      async (input: RequestInfo | URL) => {
+        const url = input instanceof Request ? input.url : String(input);
+        gatewayUrls.push(url);
+        if (url.startsWith("http://11.11.11.10:3001/v1")) {
+          return new Response("bad gateway", { status: 502 });
+        }
+        return new Response("ok", { status: 200 });
+      },
+      "api_key_and_base_url",
+      {
+        primaryBaseUrl: "http://11.11.11.10:3001/v1",
+        fallbackBaseUrl: "https://router.hmini.org/v1",
+      },
+    );
+    const gatewayRes = await gatewayFetch!("http://11.11.11.10:3001/v1/models");
+    expect(gatewayRes.status).toBe(200);
+    expect(gatewayUrls).toEqual([
+      "http://11.11.11.10:3001/v1/models",
+      "https://router.hmini.org/v1/models",
+    ]);
+  });
+
+  it("does not fall back to the public URL on a 401 unauthorized response from the LAN gateway", async () => {
+    const urls: string[] = [];
+    const requestFetch = providerRequestFetch(
+      "openai-completions",
+      async (input: RequestInfo | URL) => {
+        const url = input instanceof Request ? input.url : String(input);
+        urls.push(url);
+        return new Response("unauthorized", { status: 401 });
+      },
+      "api_key_and_base_url",
+      {
+        primaryBaseUrl: "http://127.0.0.1:25890/v1",
+        fallbackBaseUrl: "https://router.hmini.org/v1",
+      },
+    );
+    const res = await requestFetch!("http://127.0.0.1:25890/v1/chat/completions");
+    expect(res.status).toBe(401);
+    expect(urls).toEqual(["http://127.0.0.1:25890/v1/chat/completions"]);
+  });
+
+  it("stamps session affinity headers and prompt_cache_key on Minih Router Chat Completions requests", async () => {
+    const provider: RuntimeProviderConfig = {
+      ...router,
+      vendorKey: "minih-router",
+      baseUrl: "https://router.hmini.org/v1",
+      apiStyle: "chat_completions",
+      modelId: "gpt-4.1",
+    };
+    const model = buildProviderModel(provider);
+    expect(providerUsesSessionAffinity(provider, model.api, model.baseUrl)).toBe(true);
+    expect(model.compat).toMatchObject({
+      sendSessionAffinityHeaders: true,
+      sessionAffinityFormat: "openai",
+    });
+
+    let capturedHeaders: Headers | undefined;
+    let capturedBody: Record<string, unknown> | undefined;
+    const fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedHeaders = new Headers(init?.headers);
+      capturedBody = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : undefined;
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    };
+
+    const options = withSessionAffinityOptions(
+      { sessionId: "session-minih-1", fetch },
+      {
+        provider,
+        api: model.api,
+        baseUrl: model.baseUrl,
+        sessionId: "session-minih-1",
+      },
+    );
+
+    await createProviderModels(provider, model)
+      .streamSimple(
+        model,
+        {
+          systemPrompt: "system",
+          messages: [{ role: "user", content: "hello", timestamp: 1 }],
+        } as never,
+        options,
+      )
+      .result();
+
+    expect(capturedHeaders?.get("session_id")).toBe("session-minih-1");
+    expect(capturedHeaders?.get("x-client-request-id")).toBe("session-minih-1");
+    expect(capturedHeaders?.get("x-session-affinity")).toBe("session-minih-1");
+    expect(capturedBody?.prompt_cache_key).toBe("session-minih-1");
+  });
+});
+
+describe("session affinity for the adapters' anonymous endpoints (#1634)", () => {
+  const ownEndpoint = (
+    overrides: Partial<RuntimeProviderConfig> = {},
+  ): RuntimeProviderConfig => ({
+    id: "gateway-row",
+    name: "Own gateway",
+    vendorKey: "custom",
+    baseUrl: "https://gateway.example.com/v1",
+    modelId: "gateway-model-1",
+    apiKey: "sk-test",
+    authKind: "api_key_and_base_url",
+    apiStyle: "chat_completions",
+    supportsReasoning: false,
+    supportedThinkingLevels: ["off"],
+    ...overrides,
+  });
+  const compatOf = (
+    provider: RuntimeProviderConfig,
+  ): Record<string, unknown> | undefined =>
+    buildProviderModel(provider).compat as Record<string, unknown> | undefined;
+
+  it("gives the built model the adapter's non-OpenRouter session shape", () => {
+    expect(compatOf(ownEndpoint())).toMatchObject({
+      sendSessionAffinityHeaders: true,
+      sessionAffinityFormat: "openai",
+    });
+    expect(
+      compatOf(
+        ownEndpoint({
+          apiStyle: "anthropic_messages",
+          baseUrl: "https://relay.example.com",
+        }),
+      ),
+    ).toMatchObject({
+      sendSessionAffinityHeaders: true,
+      sessionAffinityFormat: "openai",
+    });
+  });
+
+  it("leaves a published vendor host and the OpenCode path on their own shape", () => {
+    expect(
+      compatOf(
+        ownEndpoint({
+          vendorKey: "deepseek",
+          baseUrl: "https://api.deepseek.com",
+          apiStyle: "chat_completions",
+        }),
+      )?.sendSessionAffinityHeaders,
+    ).toBeUndefined();
+    expect(
+      compatOf(
+        ownEndpoint({
+          vendorKey: "openai",
+          baseUrl: "https://api.openai.com/v1",
+          apiStyle: "chat_completions",
+        }),
+      )?.sendSessionAffinityHeaders,
+    ).toBeUndefined();
+    expect(
+      compatOf(
+        ownEndpoint({
+          vendorKey: "opencode-go",
+          baseUrl: "https://opencode.ai/zen/go/v1",
+          apiStyle: "opencode_go",
+        }),
+      )?.sendSessionAffinityHeaders,
+    ).toBeUndefined();
+  });
+
+  it("spreads the default under a catalog entry that already answers", () => {
+    const provider = ownEndpoint();
+    const model = buildProviderModel({
+      ...provider,
+      modelConfig: {
+        source: "generic",
+        name: "Gateway model 1",
+        baseUrl: provider.baseUrl!,
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128_000,
+        maxTokens: 8_192,
+        compat: {
+          sendSessionAffinityHeaders: false,
+          sessionAffinityFormat: "openrouter",
+        },
+      },
+    });
+    expect(model.compat).toMatchObject({
+      sendSessionAffinityHeaders: false,
+      sessionAffinityFormat: "openrouter",
+    });
+  });
+
+  it("reaches the wire as the three headers §6.3 names", async () => {
+    const provider = ownEndpoint();
+    const model = buildProviderModel(provider);
+    let headers: Headers | undefined;
+    const fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      headers = new Headers(init?.headers);
+      return new Response("data: [DONE]\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    };
+
+    await createProviderModels(provider, model)
+      .streamSimple(
+        model,
+        {
+          systemPrompt: "system",
+          messages: [{ role: "user", content: "hello", timestamp: 1 }],
+        } as never,
+        { sessionId: "session-9", fetch },
+      )
+      .result();
+
+    expect(headers?.get("session_id")).toBe("session-9");
+    expect(headers?.get("x-client-request-id")).toBe("session-9");
+    expect(headers?.get("x-session-affinity")).toBe("session-9");
+  });
+});

@@ -1,0 +1,730 @@
+# 06. Desktop Release Runbook
+
+> Scope: D126/D285/D603 tag artifacts for macOS arm64 and Intel x64, Windows x64,
+> and Linux x64 and arm64, including the Linux system-Electron ASAR assets;
+> macOS signing/notarization remains the detailed qualification lane below.
+> Cross-references: [milestones](01-mvp-milestones.md) · [process model](../03-runtime/07-process-model.md) · [security](../05-security/01-security.md)
+
+## 1. Build lanes
+
+| Lane | Command | Signing | Use |
+|---|---|---|---|
+| Dev | `pnpm dev` | none | daily development |
+| Local package | `pnpm --filter @minih-agent/desktop pack` | unsigned without a configured certificate | packaging smoke (`--dir` output) |
+| Local DMG | `pnpm --filter @minih-agent/desktop dist` | unsigned without a configured certificate | local install test |
+| Release | `scripts/release-macos.sh` | Developer ID + mandatory notarization | distributable artifact |
+
+The static electron-builder config does not embed a certificate identity, so
+contributors without certificates can still package locally. The release lane
+requires an injected Developer ID identity (local) or `CSC_LINK` certificate
+(CI), and fails before publication if signing or notarization verification does
+not pass.
+
+On macOS, `pnpm dev` creates and reuses a fingerprinted branded Electron host
+bundle under `.cache/electron-dev/`. Its bundle name, executable, identifier,
+and ICNS resource are development-only Minih-Agent-Desktop values, so AppKit shows
+Minih-Agent-Desktop in the application menu and uses the canonical icon in the native
+About panel. The runtime also applies `build/icon_1024.png` to the Dock. Stock
+files under `node_modules` are never modified. Windows/Linux development keeps
+the normal electron-vite executable. Windows Main nevertheless registers the
+same `org.hmini.agent` AppUserModelID used by the NSIS package before
+Electron readiness, preventing the stock host identity from owning native
+notifications or taskbar groups. The Windows package additionally pins the
+`Minih-Agent-Desktop` executable and Start menu shortcut names. The launcher sets
+`MINIH_AGENT_DEV=1` so runtime packaging checks keep update delivery disabled
+and preserve developer workspace defaults despite the branded executable name.
+The first `pnpm dev` on Electron 43+ downloads the Electron binary on demand
+(the package no longer installs it during `pnpm install`).
+Packaged lanes use `build/icon.icns` through electron-builder on macOS and
+`build/icon.ico` for the Windows executable and native window icon. The
+renderer imports the same PNG through `BrandLogo`. The PNG is canonical;
+`scripts/make-icon.py` derives the multi-size Windows ICO, the 512px
+Windows/Linux package PNG, the
+transparent monochrome `build/tray-icon-mac.png` template, and the iconset/ICNS
+when macOS `iconutil` is available, without overwriting the canonical source.
+
+## 2. Prerequisites (release lane)
+
+1. Apple Developer account with a **Developer ID Application** certificate in
+   the login keychain. This fork owns its signing identity: the certificate is
+   `Developer ID Application: <Name> (<TEAMID>)` for the fork's own team.
+2. Environment variables for the local signed lane (both required):
+   - `MAC_SIGNING_IDENTITY` — the fork's bare common name `<Name> (<TEAMID>)`;
+     electron-builder rejects a name that keeps the
+     `Developer ID Application:` prefix, so the script strips it
+   - `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` — required for
+     notarization (`APPLE_TEAM_ID` must equal the team id inside
+     `MAC_SIGNING_IDENTITY`'s parentheses)
+3. Rust toolchain and pnpm workspace installed. The Rust toolchain must run on
+   the native macOS runner: arm64 for Apple Silicon or x86_64 for Intel.
+
+## 3. What the build ships
+
+- Electron app with hardened runtime + entitlements
+  (`build/entitlements.mac.plist`: V8 JIT, unsigned-executable-memory,
+  library-validation disable for Electron helpers and plugin native addons,
+  and microphone input for plugin capture after user grant — ADR 0257), plus
+  `NSLocalNetworkUsageDescription` and `NSMicrophoneUsageDescription` in
+  Info.plist (via `apps/desktop/package.json` → `mac.extendInfo`). The local
+  network string is required so macOS 15+ prompts for Local Network access and
+  grants it to both the Chromium main process and the `ELECTRON_RUN_AS_NODE`
+  agent sidecar — without it, LAN provider requests from the sidecar fail with
+  `EHOSTUNREACH` even though the main process's Test Provider fetch succeeds
+  (issue #573).
+- `Resources/bin/minih-agent-desktop-host-core` — Rust host binary (release build).
+- Windows NSIS builds include an x64 `minih-agent-desktop-host-core.exe` statically
+  linked to the MSVC CRT, so a clean Windows x64 or Windows 11 ARM64
+  (x64-emulated) installation does not need a separate Visual C++
+  Redistributable before the local service can start.
+- `Resources/agent-runtime/` — bundled sidecar, executed with
+  `ELECTRON_RUN_AS_NODE=1` (no separate Node shipped).
+- `Resources/licenses/` — notices that must remain distributable when the
+  corresponding dependency's build-only source tree is pruned.
+- `Resources/app.asar` — Electron Main, preload, renderer output, and only the
+  runtime-resolved production modules. Renderer libraries are already present
+  in Vite output and are not copied again as raw package trees.
+- Chromium locale packs for English, Simplified Chinese, Traditional Chinese,
+  Turkish, German, Spanish, French, and Korean. Product catalogs remain bundled
+  independently of Chromium locales.
+- App icons `build/icon.icns` and `build/icon.ico` (derived from canonical
+  `build/icon_1024.png` by `scripts/make-icon.py`).
+- macOS menu bar template `build/tray-icon-mac.png`, derived from the dark PI
+  mark with a transparent background; Windows/Linux use the product PNG tray
+  resource.
+
+## 4. Release steps
+
+### 4.1 Mandatory release version-surface gate (D164 + D260)
+
+**Every product release that bumps a stable app version and cuts a tag MUST
+first update every version-bearing surface: the shipped-locale in-app product
+changelog and the version numbers stated in project documentation.** Tagging a
+stable version while any surface still describes an older version is a
+**release process failure**: packaged builds cannot show "what's new" without a
+network fetch, the READMEs advertise a stale release line, and GitHub
+auto-generated release bodies are **not** a substitute (extends D120 /
+ADR 0022).
+
+Surfaces in scope:
+
+| Surface | Requirement |
+|---|---|
+| `apps/desktop/resources/models.dev/api.json` | Refreshed from https://models.dev/api.json before tagging; the release workflow packages this snapshot unchanged |
+| `packages/shared/src/changelog-en.ts` | Newest-first English entries (source of truth, ADR 0009) |
+| `packages/shared/src/changelog-zh-CN.ts`, `changelog-zh-TW.ts`, `changelog-tr.ts`, `changelog-de.ts`, `changelog-es.ts`, `changelog-fr.ts`, `changelog-ko.ts`, `changelog-pt-BR.ts` | Same version set and highlight counts as English; a newly shipped locale is also registered in `packages/shared/src/changelog.ts` |
+| `packages/shared/src/changelog.test.ts` | Version added at the top of the newest-first list |
+| `package.json`, `apps/*/package.json`, `packages/*/package.json`, `docs/package.json` | Same version (`docs` is a third workspace root, not under `apps`/`packages`) |
+| `Cargo.toml` `[workspace.package]`, `Cargo.lock` `host-core` | Same version |
+| `packages/shared/src/protocol.ts` `APP_VERSION` | Same version |
+| `README.md`, `README.zh-CN.md` | Status section states the current `<major>.<minor>.x` release line; toolchain, command, and roadmap claims still true |
+
+Blocking steps:
+
+1. Refresh `apps/desktop/resources/models.dev/api.json` **before** tagging:
+
+   ```bash
+   curl -fsSL https://models.dev/api.json -o apps/desktop/resources/models.dev/api.json
+   ```
+
+   The version-bump script does not fetch this catalog. The release preflight
+   checks that the snapshot is a valid provider catalog, and the tagged tree
+   determines what artifacts ship. A no-op refresh (already current) still
+   counts. Do not treat a minified one-line JSON diff as absent.
+2. Edit `packages/shared/src/changelog-en.ts` **before**
+   `node scripts/release.mjs <version>` / `git tag`:
+   - Add a **newest-first** entry under `en` and every shipped product locale
+     (`zh-CN` / `zh-TW` in `changelog-zh-CN.ts` / `changelog-zh-TW.ts`; the
+     remaining catalogs are the sibling `packages/shared/src/changelog-*.ts` files).
+   - Same `version` string (semver **without** a leading `v`, matching
+     `apps/desktop` / `APP_VERSION` for a stable cut).
+   - Optional ISO `date` (`YYYY-MM-DD`).
+   - Matching highlight counts; English is the source of truth (ADR 0009).
+   - Each bullet is one short user-facing idea (not raw PR titles).
+3. Do **not** catalog the prerelease identifier (`x.y.z-rc.*`,
+   `x.y.z-beta.*`) as its own in-app changelog version. When the prerelease
+   is a preview of the next stable line, add that **stable** version's
+   entries (`x.y.z`) so testers can read "what's new" without a network
+   fetch. Omit the catalog only when product explicitly ships no notes for
+   this cut.
+4. Sync the newest-first version list in
+   `packages/shared/src/changelog.test.ts` (add the new stable version at the
+   top), then run `pnpm --filter @minih-agent/shared test` and confirm catalog
+   alignment (version sets + highlight counts) still passes.
+5. Update `README.md` and `README.zh-CN.md` when the release line changes
+   (`0.10.x` → `0.11.x`) and whenever the release ships user-visible behavior
+   the Highlights, Download, Getting started, Status, or Development sections
+   now describe incorrectly. Both locales stay structurally in sync; English is
+   the source of truth and the zh-CN file links the `docs/zh-CN/` mirrors.
+6. Run the preflight and fix every reported surface:
+   `pnpm check:release-docs [version]` (`node scripts/check-release-docs.mjs`).
+   For a prerelease, run it against the **stable** version being previewed
+   (`pnpm check:release-docs x.y.z`) so changelog/README alignment is
+   checked even though `scripts/release.mjs` skips that preflight for
+   `x.y.z-beta.*` / `x.y.z-rc.*`. The preflight compiles the TypeScript
+   changelog in a temporary directory, so it does not require a prior
+   workspace build. Refresh the models.dev snapshot explicitly for stable and
+   prerelease builds; `--skip-docs-check` exists only for a deliberate
+   non-release bump.
+7. Commit the documentation updates so the tagged commit contains notes and
+   accurate version claims for that version (alone or adjacent to the bump).
+8. GitHub Release bodies may still use `generate_release_notes: true` for the
+   web page; they remain web-only and are **not** the in-app notes source.
+
+Pre-tag checklist:
+
+- [ ] `apps/desktop/resources/models.dev/api.json` is refreshed or confirmed
+      current in the tagged tree
+- [ ] `packages/shared/src/changelog-en.ts` and every shipped locale catalog
+      carry entries for the stable version being shipped or previewed
+- [ ] `packages/shared/src/changelog-de.ts` and the other locale catalogs
+      match the English version set and highlight counts
+- [ ] Highlight counts match across locales
+- [ ] Shared changelog tests pass
+- [ ] `README.md` and `README.zh-CN.md` state the current release line and
+      contain no claims the release invalidates
+- [ ] `node scripts/check-release-docs.mjs` passes on the release commit
+      (use the stable version when tagging a prerelease preview)
+- [ ] `release.mjs` / tag runs only after the documentation commit is on the
+      release branch
+
+### 4.2 Build / package
+
+```bash
+export MAC_SIGNING_IDENTITY="<Name> (<TEAMID>)"
+export APPLE_ID=...
+export APPLE_APP_SPECIFIC_PASSWORD=...
+export APPLE_TEAM_ID=...
+scripts/release-macos.sh
+```
+
+Artifacts land in `apps/desktop/release/` (DMG + ZIP + blockmaps).
+
+`scripts/release-macos.sh` defaults to the host architecture and accepts
+`MAC_ARCH=arm64` or `MAC_ARCH=x64` only when that architecture matches the
+host. This keeps the native Rust host sidecar and Electron package aligned.
+
+### 4.3 GitHub tag and manual workflow
+
+The GitHub Release workflow starts all native platform runners without a
+separate validation-job barrier. Each runner validates that the pushed tag
+matches `apps/desktop/package.json` immediately after checkout, before package
+inputs are prepared.
+
+On every platform, the release preparation step starts the locked Rust host
+build in parallel with pnpm installation and native dependency rebuilding. It
+then builds only the workspace dependencies selected by
+`@minih-agent/desktop^...`, failing if that dependency selection is unexpectedly
+empty. The platform `dist:*` command remains responsible for bundling the agent
+runtime, verifying the host build, building the Desktop application once, and
+invoking electron-builder. This avoids a redundant Desktop build without
+changing the package scripts or release artifacts.
+
+**Default macOS release policy:** GitHub tag releases Developer ID-sign,
+notarize, staple, and Gatekeeper-verify macOS DMG/ZIP before upload (D450 /
+ADR 0289). Missing signing or notarization secrets fail the job. A
+`workflow_dispatch` run may set `sign_macos: false` only to produce unsigned
+debug artifacts; that path must not be used for a GitHub Release tag. Local
+`scripts/release-macos.sh` remains the explicit signed local lane; `pnpm dist:mac`
+stays unsigned without a configured certificate (D078).
+
+The macOS matrix uses `macos-15` for arm64 and `macos-15-intel` for Intel x64.
+Each job verifies `uname -m`, passes the matching `--arm64` or `--x64` flag to
+electron-builder, and builds `minih-agent-desktop-host-core` on that same native
+runner. Tag builds and `sign_macos: true` (the dispatch default) receive
+`CSC_LINK`, `CSC_KEY_PASSWORD`, `MACOS_SIGNING_IDENTITY`, `APPLE_ID`,
+`APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` only from GitHub Actions
+secrets, pin the certificate through `CSC_NAME` (the bare common name from the
+`MACOS_SIGNING_IDENTITY` secret — electron-builder rejects the
+`Developer ID Application:` prefix), force code signing and
+`notarytool` notarization of `Minih-Agent-Desktop.app`. The DMG is then submitted to the
+same service on its own (`scripts/notarize-and-staple-macos-release-dmg.sh`),
+and only an `Accepted` status allows the ticket to be stapled. Verification
+then checks the identity, code-signing integrity (including
+`minih-agent-desktop-host-core`), Gatekeeper `Notarized Developer ID`, and both stapled
+tickets before any artifact upload. The per-architecture `latest-mac.yml` files
+are renamed before upload; the publish job merges them into one feed after
+downloading both artifacts.
+
+For the app ticket, the signing watchdog injects a temporary `xcrun` shim when
+`PI_STAPLER_MAX_ATTEMPTS` is set. It retries only the exact `stapler staple`
+operation, at most six total attempts with a 10-second delay; `notarytool` and
+all other `xcrun` commands pass through unchanged. electron-notarize reaches
+that command only after Apple accepts the app submission. The DMG script has
+its own bounded retry after its separate submission is accepted. Both retry
+paths fail the job if their limit is exhausted, and artifact verification
+still requires valid stapled tickets on the app and DMG.
+
+The shared electron-builder configuration applies the architecture-labelled
+pattern at the macOS platform level for ZIPs and overrides it at the DMG target
+level. Both public architectures are therefore explicit: the arm64 lane
+publishes `Minih-Agent-Desktop-<version>-arm64.dmg` and
+`Minih-Agent-Desktop-<version>-arm64-mac.zip`, while the Intel x64 lane publishes
+`Minih-Agent-Desktop-<version>-x64.dmg` and `Minih-Agent-Desktop-<version>-x64-mac.zip`. This
+applies to both unsigned and signed macOS lanes, including local release builds,
+and ensures each generated updater feed references its architecture-labelled
+asset names and matching checksums. Before upload, each macOS runner requires
+exactly one architecture-labelled DMG and ZIP (including blockmaps) and rejects
+any unlabelled or wrong-architecture macOS artifact.
+
+The DMG uses a branded 720×440 background with a two-icon drag-to-Applications
+gesture. The app and Applications link are the only items in the window.
+
+The macOS ZIP contains `Minih-Agent-Desktop.app` at its root. Neither the DMG nor ZIP
+ships an opening-help note or executable first-launch helper, including local
+and unsigned debug builds. Tagged artifacts remain signed and notarized; the
+unsigned lane is for debugging and does not imply Gatekeeper qualification.
+
+DMG, ZIP, NSIS, AppImage, deb, rpm, blockmap, and updater feed outputs are already
+compressed or compression-insensitive. The workflow therefore uploads their
+temporary Actions artifacts with compression level zero before the publish job
+assembles the GitHub Release. The Linux runners also copy their unpacked
+`resources/app.asar` (`linux-unpacked` on x64, `linux-arm64-unpacked` on arm64)
+to the versioned `Minih-Agent-Desktop-<version>-linux-<arch>.asar` asset before upload.
+This preserves the exact archive used by the Linux installers for downstream
+repackaging with a system Electron.
+
+The Linux updater feeds carry the architecture they were built for:
+`latest-linux.yml` for x64 and `latest-linux-arm64.yml` for arm64. Those are the
+channel files `electron-updater` requests on the matching architecture, so a
+lane fails before upload if its own feed is missing.
+
+### 4.4 Documentation site deployment
+
+The release workflow does not deploy the documentation site. Vercel Git
+Deployments are disabled in `docs/vercel.json`, so changes to documentation
+sources do not automatically update the production site. Deployments must be
+initiated manually in Vercel when required.
+
+### 4.5 CNB mirror trigger
+
+The CNB mirror workflow (`.github/workflows/mirror-to-cnb.yml`) was removed
+with the rebrand: it pushed release tags to an upstream contributor's
+cnb.cool mirror that this fork has no token for. GitHub Release is the
+canonical artifact source. For desktop users whose network throttles
+`github.com`, §4.6 mirrors the release assets to an S3-compatible host the fork
+controls; reintroducing CNB as that mirror means creating a fork-owned CNB
+repository and its own `CNB_MIRROR_TOKEN` secret first.
+
+### 4.6 Optional update mirror (dual write)
+
+GitHub Releases is always published. A release may additionally mirror the same
+assets for users whose network throttles `github.com`, which costs one repository
+variable set plus S3 credentials:
+
+| Kind | Name | Value |
+| --- | --- | --- |
+| Variable | `MINIH_UPDATE_MIRROR_URL` | Public base URL the **client** compiles in, e.g. `https://dl.example.com/minih/desktop`. Set it before a tag build: the desktop build reads it as `MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`. Unset keeps GitHub as the only source. |
+| Variable | `MINIH_UPDATE_MIRROR_S3_BUCKET` | Bucket the workflow uploads to. Unset skips the mirror step entirely. |
+| Variable | `MINIH_UPDATE_MIRROR_S3_ENDPOINT` | S3-compatible endpoint (OSS / COS / R2 / MinIO). Omit for AWS S3. |
+| Variable | `MINIH_UPDATE_MIRROR_S3_REGION` | Bucket region, when the endpoint needs one. |
+| Variable | `MINIH_UPDATE_MIRROR_S3_PREFIX` | Key prefix, default `minih-agent-desktop`. Must match the path inside `MINIH_UPDATE_MIRROR_URL`. |
+| Variable | `MINIH_UPDATE_MIRROR_PUBLIC_URL` | Optional; the publish step fetches `<url>/<prefix>/latest.yml` after upload and fails the release when it does not serve the version just built. |
+| Secret | `MINIH_UPDATE_MIRROR_S3_ACCESS_KEY_ID`, `MINIH_UPDATE_MIRROR_S3_SECRET_ACCESS_KEY` | Upload credentials. The step fails when a bucket is configured without them. |
+
+`scripts/publish-update-mirror.mjs` runs after the GitHub Release is created:
+it syncs every artifact first, then uploads each `latest*.yml` with
+`Cache-Control: no-cache`, so a client can never read a feed whose files are
+still missing. It refuses to publish when the feeds disagree on a version or
+when the directory carries no feed at all.
+
+The publish job checks out its own source before downloading artifacts, then
+provisions Node 24. Jobs do not share workspaces: a successful build job does
+not make `scripts/publish-update-mirror.mjs` available to the publish runner.
+
+#### Recover a mirror after the GitHub Release already succeeded
+
+Do not move an existing tag or rebuild already published installers to repair
+only the mirror. Rerunning a failed tag workflow uses its original workflow
+definition, not a later fix on `main`. Once the fix is merged, dispatch the
+main-branch **Recover release mirror** workflow instead:
+
+```bash
+gh workflow run recover-release-mirror.yml --ref main -f release_tag=v0.20.4
+```
+
+The recovery accepts only GitHub's latest published stable release, refusing
+older tags so a retry cannot roll back the shared update feed. With a mirror
+configured, it downloads that Release's assets and runs the same publisher;
+without a bucket it reports GitHub-only delivery and skips both the asset
+download and upload. GitHub failures and upload failures still fail the run.
+It uses repository mirror variables/secrets just like the original publish job,
+with read-only GitHub contents permission: no Release assets or tags are changed.
+The old failed run stays as historical evidence; the recovery run records the
+new outcome. It does not add a mirror URL to installers that did not compile one.
+
+The mirror must serve the same key layout the client requests:
+
+```
+<prefix>/latest.yml                # Windows
+<prefix>/latest-mac.yml            # merged macOS feed
+<prefix>/latest-linux.yml          # Linux x64
+<prefix>/latest-linux-arm64.yml    # Linux arm64
+<prefix>/<installer, zip, dmg, AppImage, deb, rpm, *.blockmap>
+```
+
+Verify a mirror by hand before announcing it:
+
+```bash
+curl -fsSL https://dl.example.com/minih/desktop/latest.yml | head
+node scripts/publish-update-mirror.mjs dist --dry-run   # prints the exact uploads
+```
+
+A client only uses a mirror when its build compiled one in; the desktop tries the
+packaged GitHub feed first, keeps the host that answered, and falls back after a
+failed check or a stalled download (ADR 0022 amendment, D659). Git tags and
+GitHub Releases remain the canonical artifact source — a mirror is never the
+place to publish a release that GitHub did not receive.
+
+### 4.7 GitHub Actions secrets for macOS signing
+
+Create these under GitHub → repository `minih-git/minih-agent-desktop` → Settings →
+Secrets and variables → Actions. Never commit the p12, password, Apple ID, or
+app-specific password. Never `echo` these values in CI.
+
+The Release `build` matrix uses the GitHub environment `minih-agent-desktop`.
+Store the six secrets below under Settings → Environments →
+`minih-agent-desktop` → Environment secrets (repository secrets remain a
+fallback). Environment protection rules apply to every packaging platform;
+allow the intended release branches/tags and approve deployments when required.
+
+| Secret | Value |
+|---|---|
+| `CSC_LINK` | Base64 of the exported Developer ID Application `.p12` (Certificate + Private Key). electron-builder also accepts a file path, but CI uses the secret body. |
+| `CSC_KEY_PASSWORD` | Password used when exporting that `.p12` |
+| `MACOS_SIGNING_IDENTITY` | Bare common name of the fork's Developer ID Application certificate: `<Name> (<TEAMID>)` — electron-builder rejects the `Developer ID Application:` prefix |
+| `APPLE_ID` | Apple ID email of the signing team |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password from https://appleid.apple.com → Sign-In and Security → App-Specific Passwords |
+| `APPLE_TEAM_ID` | The signing team's Team ID; must equal the team id in `MACOS_SIGNING_IDENTITY` |
+
+Encode the p12 locally (do not paste the output into chat or the repo):
+
+```bash
+base64 -i developer-id-application.p12 | pbcopy
+```
+
+On Linux use `base64 -w0 developer-id-application.p12`. Files that must never
+enter git: `*.p12`, `*.cer`, `*.p8`, `*.mobileprovision`.
+
+### 4.8 macOS signing observability and timeouts
+
+`electron-builder` prints one line before signing — `signing
+file=release/mac-arm64/Minih-Agent-Desktop.app platform=darwin type=distribution
+identityName=...` — and then nothing until the phase is over. Three mechanisms
+hide in that gap, and the macOS lanes now expose all three:
+
+| Point in the phase | What happens | How it is visible |
+|---|---|---|
+| Walk | `@electron/osx-sign` walks `Minih-Agent-Desktop.app/Contents` and collects every Mach-O file plus nested `.app` and `.framework` bundles | `DEBUG=electron-osx-sign*` prints `Walking... <dir>`; `scripts/macos-bundle-inventory.mjs` prints the same bundle's counts right after packaging |
+| Per-file signing | `codesign --force --sign <identity> --timestamp --entitlements ... <file>` runs serially, deepest file first, the app bundle last | `DEBUG=electron-osx-sign*` prints `Signing... <file>` and `Executing... <file> codesign ...`; the codesign shim times every invocation. If a keychain ever refuses to hand the key to a wrapped `codesign`, `PI_SIGNING_NO_CODESIGN_SHIM=1` runs the phase without the shim |
+| Silent retry | A failing pass is retried up to three more times with a 5s/10s/15s backoff and no log line | The watchdog's `codesign-calls` and `failures` lines expose repeated passes |
+| App notarization | `@electron/notarize` zips the app, uploads it, and waits for Apple's queue (`mac.notarize=true`) | `DEBUG=electron-notarize*` prints `zipping application to`, `attempting to upload file to Apple`, `notarization success`, then electron-builder prints `notarization successful` |
+| App ticket stapling | `xcrun stapler staple` attaches the accepted app ticket; the watchdog retries only this exact command up to six attempts with a 10-second delay | `stapler-shim=on` appears in the watchdog header and each failed attempt is reported |
+| DMG notarization | The DMG carries its own signature, so the next step submits it again with `xcrun notarytool submit --wait` | The same watchdog keeps that wait observable and bounded |
+
+`scripts/macos-signing-watchdog.mjs` wraps both long phases. It forwards every
+child line with a `[sign] ` prefix and keeps the child's exit code, so the
+failure semantics of the lane do not change. stdout and stderr are forwarded as
+two independent streams, so their relative order can differ from a direct run,
+and the child receives no stdin. It prints a heartbeat while the
+child is silent (elapsed time, phase, last file, active codesign target), dumps
+diagnostics when the phase produces no output and no codesign activity for
+`PI_SIGNING_STALL_SECONDS` (the last file, the `ps` state of the signing
+processes, the codesign log tail), and reports per-file codesign timings — call
+count, total, p50, p95, maximum, and the slowest files — in a `[sign] summary`
+block. The knobs:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `PI_SIGNING_TIMEOUT_SECONDS` | 2400 (CI: 1800 packaging, 1200 DMG) | Hard limit for the wrapped phase: diagnostics are dumped, the process group is killed, and the step exits 124 instead of hanging |
+| `PI_SIGNING_STALL_SECONDS` | 300 | Silence with no codesign activity for this long triggers one diagnostics dump; the phase keeps running, because Apple's notarization queue is a legitimate wait |
+| `PI_SIGNING_HEARTBEAT_SECONDS` | 60 | Heartbeat interval while the child produces no output |
+| `PI_STAPLER_MAX_ATTEMPTS` | unset (no stapler shim) | When set for signed app packaging, enables at most six attempts for `xcrun stapler staple` |
+| `PI_STAPLER_RETRY_DELAY_SECONDS` | 10 | Delay between failed app stapler attempts (maximum 60 seconds) |
+| `DEBUG` | `electron-osx-sign*,electron-notarize*` | Namespaces that expose walking, per-file signing, and notarization progress |
+
+`DEBUG` lists only the two namespaces that sanitize their own command lines,
+because `electron-builder`'s namespace is not safe here: builder-util prints
+every spawned command through a stem list that does not cover
+`security set-key-partition-list -k <p12 password>`. On top of that the watchdog
+redacts the values of `CSC_KEY_PASSWORD` and `APPLE_APP_SPECIFIC_PASSWORD` at any
+length, the values of `CSC_LINK` and `APPLE_ID`, and any `--password` or `-k`
+argument, from everything it emits — including the diagnostics, whose process
+view prints `comm` only and never `argv`, and the summary, which carries counts
+and redacted target paths. GitHub additionally masks every value that comes from
+a secret.
+
+Measured on the maintainer machine, one macOS arm64 bundle needs 93 `codesign`
+invocations (91 signing, 1 verification, 1 entitlement display) and about 49s of
+`codesign` wall time; only 16 of those files are Mach-O code and 5 are nested
+bundles. `@electron/osx-sign` also signs binary resources — 33 `.pak` files plus
+`.nib`, `.dat`, `.bin`, `.png`, `.icns`, and `app.asar` — because its walk
+selects every file that looks binary, not only Mach-O. Excluding exactly those
+data files with `mac.signIgnore` would remove roughly three quarters of the
+calls, but it changes what the release artifacts carry and needs a notarized
+release to validate, so it is deliberately not enabled.
+
+`scripts/macos-signing-diagnostics.sh` records the runner baseline before the
+certificate is imported: system version, `codesign --version`, keychain
+identities/list/default, `xcrun --find notarytool`, and the reachability and
+latency of `http://timestamp.apple.com/ts01`. The Developer ID identity is
+expected to be absent at that point, because electron-builder imports it from
+`CSC_LINK` while packaging; only `--require-identity` makes a missing identity
+fatal.
+
+Signer status: `@electron/osx-sign@1.3.3` is pinned exactly by
+`app-builder-lib@26.15.3` and no override applies to it. Its
+`signApplication()` awaits one `codesign` per file; it has no batch or parallel
+path and no option or environment variable that enables one. A faster signer
+therefore needs the `mac.sign` replacement hook, which is a rewrite rather than
+a configuration switch, so the lane keeps the pinned signer and the diagnostics
+above.
+
+## 5. Verification gates
+
+Unsigned debug artifacts (`workflow_dispatch` with `sign_macos: false`) are
+not Gatekeeper-qualified. Tag releases must pass the signature, notarization,
+and staple checks below or the workflow fails.
+
+Two separate notarization submissions exist, because Apple notarizes one
+artifact per submission and electron-builder only covers the app:
+
+| Artifact | Submitted by | Ticket |
+|---|---|---|
+| `Minih-Agent-Desktop.app` (inside the ZIP) | electron-builder `-c.mac.notarize=true` | stapled by electron-builder through the watchdog's bounded `xcrun stapler staple` retry shim |
+| `Minih-Agent-Desktop-<version>-<arch>.dmg` | `scripts/notarize-and-staple-macos-release-dmg.sh` (`notarytool submit --wait`) | stapled by the same script after `status: Accepted` |
+
+A DMG that was never submitted has no ticket, so stapling it fails with
+`Could not find base64 encoded ticket ... Error 65`. Stapler retries are only
+allowed after Apple returns `Accepted`.
+
+Run after every signed release build:
+
+```bash
+for APP in apps/desktop/release/mac-*/Minih-Agent-Desktop.app; do
+  codesign -dv --verbose=4 "$APP"          # identity + hardened runtime flags
+  codesign --verify --deep --strict --verbose=2 "$APP"
+  spctl --assess --type execute --verbose=4 "$APP"
+  xcrun stapler validate "$APP"
+done
+xcrun stapler validate apps/desktop/release/*.dmg
+```
+
+To read the Apple notarization log for a submission (the Release workflow does
+this automatically when a submission is not accepted):
+
+```bash
+xcrun notarytool log <submission-id> \
+  --apple-id "$APPLE_ID" \
+  --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+  --team-id "$APPLE_TEAM_ID"
+```
+
+### 5.1 Package footprint gate
+
+Inspect every native-runner package before publication and record all
+compressed artifact formats, unpacked application, ASAR, Electron
+framework/runtime, locale, and unpacked-native sizes. Compare them with the
+previous stable release; an unexplained increase above 15% blocks publication
+until reviewed.
+
+The package inventory must confirm:
+
+- exactly one `Resources/agent-runtime/sidecar.js` and one target-native Rust
+  host binary
+- no raw renderer packages such as Mermaid, Shiki, React, KaTeX, or Lucide
+  under packaged `node_modules`
+- no dependency `*.map`, test, example, declaration, or second agent-runtime
+  tree in ASAR
+- required third-party license and notice files remain in ASAR or
+  `Resources/licenses` when their non-runtime package trees are pruned
+- only the configured English, Simplified Chinese, Traditional Chinese,
+  Turkish, German, Spanish, French, and Korean Chromium locale packs
+
+The first audited optimized package establishes the platform baseline. Keep
+per-platform measurements rather than applying one budget to different
+Electron target layouts.
+
+The first macOS arm64 baseline was captured on 2026-07-30 from an unsigned
+`electron-builder --dir` package. Sizes below sum regular-file bytes so they
+remain comparable across filesystems; the compressed artifact is not
+applicable to this directory-only validation build.
+
+| Inventory | Bytes | MiB |
+|---|---:|---:|
+| Unpacked application | 251,724,810 | 240.1 |
+| `Contents/Frameworks` | 218,567,792 | 208.4 |
+| `Contents/Resources` | 33,102,807 | 31.6 |
+| `Resources/app.asar` | 20,944,962 | 20.0 |
+| `Resources/app.asar.unpacked` native payload | 137,336 | 0.1 |
+| Historical English and Simplified Chinese Chromium locale packs baseline | 1,033,673 | 1.0 |
+| Agent sidecar | 3,258,983 | 3.1 |
+| Rust host | 7,160,000 | 6.8 |
+
+The pre-optimization unpacked regular-file total was 559,355,716 bytes
+(533.4 MiB). The audited package is 307,630,906 bytes smaller, a 55.0%
+reduction. Its curated renderer output is 14.1 MiB, down from 20.5 MiB.
+
+#### Renderer output budget
+
+The renderer bundle carries three standing controls. Regressing any of them
+shows up as renderer growth in the table above and must be explained before
+publication:
+
+- **Minification is explicit.** `electron-vite` hard-defaults the renderer
+  preset to `minify: false`, unlike plain Vite, so
+  `apps/desktop/electron.vite.config.ts` sets `minify: "esbuild"`. Removing it
+  silently doubles emitted JS.
+- **Legacy font formats are stripped.** The `pi-drop-legacy-font-fallbacks`
+  plugin removes `woff` and `truetype` `src` entries before Vite registers
+  them as assets. The bundled Chromium supports `woff2` universally, so those
+  faces would be emitted and never served.
+- **Brand marks are renderer-sized.** `src/assets/brand/logo-{light,dark}.png`
+  are the renderer assets. `build/icon_1024.png` and `build/logo_dark.png` are
+  electron-builder installer icons and must not be imported by the renderer.
+
+Renderer output measured on 2026-08-26 after applying these three controls,
+against the same tree at `v0.10.8`:
+
+| Renderer group | Before | After |
+|---|---:|---:|
+| JavaScript (120 chunks) | 12.53 MiB | 7.72 MiB |
+| `woff2` | 15.71 MiB | 15.71 MiB |
+| `woff` + `ttf` legacy fallbacks (40 files) | 0.78 MiB | 0 |
+| PNG brand assets | 1.23 MiB | 0.27 MiB |
+| CSS | 0.42 MiB | 0.35 MiB |
+| **Total `out/renderer`** | **31 MiB** | **24 MiB** |
+
+The renderer no longer emits any application font face. D598 / ADR 0298 removed
+the four bundled families (Geist, Inter, Noto Sans SC, LXGW WenKai), so the only
+`woff2` files left in `out/renderer` are KaTeX's math glyphs. Measured on this
+machine from a clean `pnpm install --frozen-lockfile`, with and without the
+removal:
+
+| Renderer group | Bundled fonts | After D598 |
+|---|---:|---:|
+| JavaScript (121 chunks) | 9.04 MiB | 9.04 MiB |
+| `woff2` (23 → 19 files) | 15.71 MiB | 0.24 MiB |
+| CSS (1 file) | 0.48 MiB | 0.48 MiB |
+| PNG brand assets (4 files) | 0.08 MiB | 0.08 MiB |
+| GIF (2 files) | 0.05 MiB | 0.05 MiB |
+| **Total `out/renderer`** (152 → 148 files) | **25.36 MiB** | **9.89 MiB** |
+
+The entire difference is the four deleted faces, at the sizes the build reports:
+`lxgw-wenkai.woff2` 8,016.75 kB, `noto-sans-sc.woff2` 7,782.07 kB,
+`inter.woff2` 352.24 kB, and `geist.woff2` 69.65 kB — 16,220.71 kB, which is the
+whole 15.47 MiB drop in the total. Chinese text now renders from the system tier
+(`PingFang SC`, `Hiragino Sans GB`, `Microsoft YaHei`), so no glyph coverage is
+lost to subsetting: no face ships.
+The other two controls are unchanged: minification stays explicit, and the
+legacy `woff`/`truetype` strip stays because KaTeX still declares those sources.
+
+The three-controls table above is the `v0.10.8` record and predates the removal,
+so its `woff2` row is no longer current.
+
+Manual smoke on a clean profile (`MINIH_AGENT_DATA_DIR=$(mktemp -d)`):
+
+1. `pnpm dev` launches with `Minih-Agent-Desktop` in the macOS application menu and the
+   canonical icon in both the Dock and native About panel; no Electron brand is
+   visible.
+2. App launches from DMG install, window appears, and the application-menu,
+   About-panel, and Dock branding match the development lane.
+3. Empty home and expanded/collapsed sidebar show the canonical Minih-Agent-Desktop
+   logo; composer prompt rows have no leading brand icon; New task and
+   project/Temporary create controls use the message-plus session icon.
+4. Onboarding checklist appears; configure provider; one streamed chat turn.
+5. One permissioned tool call (Write) allow + deny paths.
+6. Quit/relaunch → session history restored, window bounds restored.
+7. `~/.minih-agent-desktop/logs/` contains categorized NDJSON under `app/`, `host/`,
+   and `agent/`; key lifecycle, tool, provider, plugin, and error records are
+   available without dedicated timing files.
+8. With network access disabled, the shell still starts; English/Chinese
+   switching, syntax highlighting, shell highlighting, KaTeX, Mermaid
+   fallback/rendering, host health, and sidecar health continue to use packaged
+   local assets.
+
+## 6. Native-runner release packages
+
+The repository exposes native-runner commands for every release target. Each
+packaging command first runs `build:host-release`, then bundles the agent
+runtime and Electron app. D126/D285/D603 tag workflows publish these outputs and
+their electron-updater manifests. Run a target command on that target OS:
+
+```text
+macOS Apple Silicon: pnpm --filter @minih-agent/desktop run dist:mac -- --arm64
+macOS Intel:         pnpm --filter @minih-agent/desktop run dist:mac -- --x64
+Windows: pnpm --filter @minih-agent/desktop dist:win
+Linux:   pnpm --filter @minih-agent/desktop dist:linux -- --x64|--arm64
+```
+
+The Windows `dist:win` command runs `scripts/build-desktop-release.mjs`,
+which invokes electron-builder once for NSIS and once for ZIP so each package
+gets the correct updater distribution marker.
+
+The macOS packages include `bin/minih-agent-desktop-host-core` built for their runner
+architecture; the Linux packages do the same on their native x64 and arm64
+runners; Windows includes `bin/minih-agent-desktop-host-core.exe`. Signing, rollback,
+and installer upgrade
+qualification remain release hardening work; publication is active under
+D126/D285/D603.
+
+Native-runner output matrix:
+
+- macOS arm64: `Minih-Agent-Desktop-<version>-arm64.dmg` and
+  `Minih-Agent-Desktop-<version>-arm64-mac.zip`
+- macOS Intel x64: `Minih-Agent-Desktop-<version>-x64.dmg` and
+  `Minih-Agent-Desktop-<version>-x64-mac.zip`
+- Windows x64: NSIS installer `Minih-Agent-Desktop-Setup-<version>.exe` and portable
+  ZIP `Minih-Agent-Desktop-Portable-<version>.zip`
+- Linux x64 and arm64: AppImage, deb, and rpm
+- Linux system Electron assets: `Minih-Agent-Desktop-<version>-linux-x64.asar` and
+  `Minih-Agent-Desktop-<version>-linux-arm64.asar`
+
+The portable Windows ZIP target does not write `latest.yml`. The Windows
+release helper builds NSIS and ZIP separately and stamps the ZIP app metadata
+with `piDistribution = "zip"`; packaged ZIP runs use notify-and-link delivery.
+Legacy portable executables remain manual when `PORTABLE_EXECUTABLE_FILE` is
+present. NSIS keeps the in-app download and quit-and-install lane. Data stays
+in the existing application data directory. Users extract the ZIP and launch
+`Minih-Agent-Desktop.exe` directly, so the package does not run a self-extracting
+wrapper or request administrator execution.
+
+RPM targets pass `_build_id_links none` to FPM. Bundled Electron binaries live
+under `/opt/Minih-Agent-Desktop`; omitting global `/usr/lib/.build-id` links prevents
+collisions with other applications that bundle the same Electron binaries.
+
+The ASAR asset contains the Electron application archive, not a complete Linux
+distribution. To repackage it, place it as the application archive in the
+target Electron resources layout together with the native host and other
+resources from the target package, then launch it with:
+
+```bash
+electron Minih-Agent-Desktop-<version>-linux-<arch>.asar
+```
+
+Shell smoke on each native runner:
+
+1. Confirm no File/Edit/View/Window/Help menu appears inside the window.
+2. Verify F10 and Shift+F10 remain available to focused content.
+3. Execute application and editing shortcuts from a focused editor.
+4. Minimize, maximize, restore, and close from the custom controls.
+5. Relaunch with `MINIH_AGENT_START_MAXIMIZED=1`; confirm the initial
+   maximize/restore glyph matches the queried native state.
+6. Verify unknown menu/window IPC actions fail with the window open and closed.
+
+## 7. Known limitations
+
+- Linux deb/rpm and the Windows portable ZIP remain notify-and-link update
+  modes. Packaged macOS, Windows NSIS, and Linux AppImage use in-app
+  `electron-updater`.
+- Linux x64 and arm64 packages are built on Ubuntu 22.04 (native `ubuntu-22.04`
+  and `ubuntu-22.04-arm` runners), so host-core needs glibc 2.35 or newer
+  (Ubuntu 22.04, Debian 12, Fedora 36+). Each tag job runs
+  `scripts/check-linux-host-glibc.mjs` and refuses a binary that needs a
+  newer glibc.
+- Linux arm64 microphone capture works on Raspberry Pi boards only:
+  `@picovoice/pvrecorder-node` classifies Linux arm64 by `/proc/cpuinfo` CPU
+  part. Speech-to-text (`transcribe-cpp` ships a `linux-arm64-cpu-vulkan`
+  bundle) and every other feature work on any arm64 Linux device.
+- Rollback, staged rollout, and prerelease channel policy remain open release
+  work. Existing unsigned macOS installs may need one manual signed DMG before
+  in-app updates succeed.

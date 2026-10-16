@@ -1,0 +1,296 @@
+{
+  "name": "@minih-agent/desktop",
+  "version": "0.20.5",
+  "desktopName": "minih-agent-desktop.desktop",
+  "private": true,
+  "description": "Minih-Agent-Desktop Electron application",
+  "homepage": "https://github.com/minih-git/minih-agent-desktop",
+  "author": {
+    "name": "minih-git",
+    "email": "hhxk666@gmail.com"
+  },
+  "main": "./out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "build:deps": "pnpm --filter '@minih-agent/desktop^...' build",
+    "predev": "pnpm run build:deps && cargo build --manifest-path ../../Cargo.toml -p host-core",
+    "dev": "node ../../scripts/dev-electron.mjs",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "postinstall": "electron-builder install-app-deps",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.mjs",
+    "lint": "node ../../scripts/check-style-tokens.mjs",
+    "clean": "node -e \"fs.rmSync('out',{recursive:true,force:true});fs.rmSync('dist',{recursive:true,force:true})\"",
+    "build:host-release": "cargo build --release --manifest-path ../../Cargo.toml -p host-core",
+    "bundle:runtime": "pnpm -C ../../packages/agent-runtime bundle",
+    "pack": "pnpm run build:deps && pnpm run build:host-release && pnpm run bundle:runtime && electron-vite build && electron-builder --dir",
+    "dist": "pnpm run build:deps && pnpm run build:host-release && pnpm run bundle:runtime && electron-vite build && node ../../scripts/build-desktop-release.mjs",
+    "dist:mac": "pnpm run build:deps && pnpm run build:host-release && pnpm run bundle:runtime && electron-vite build && electron-builder --mac --publish never",
+    "dist:win": "pnpm run build:deps && pnpm run build:host-release && pnpm run bundle:runtime && electron-vite build && node ../../scripts/build-desktop-release.mjs win",
+    "dist:linux": "pnpm run build:deps && pnpm run build:host-release && pnpm run bundle:runtime && electron-vite build && electron-builder --linux --publish never"
+  },
+  "dependencies": {
+    "@picovoice/pvrecorder-node": "1.2.9",
+    "transcribe-cpp": "0.2.2",
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-mcp": "1.1.0",
+    "@minih-agent/agent-host": "workspace:*",
+    "@minih-agent/agent-runtime": "workspace:*",
+    "@minih-agent/host-runtime": "workspace:*",
+    "@minih-agent/i18n": "workspace:*",
+    "@minih-agent/plugin-devkit": "workspace:*",
+    "@minih-agent/plugin-sdk": "workspace:*",
+    "@minih-agent/racp": "workspace:*",
+    "@minih-agent/shared": "workspace:*",
+    "@minih-agent/voice-runtime": "workspace:*",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.6.0",
+    "dompurify": "^3.4.17",
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^4.0.0",
+    "i18next": "^26.3.6",
+    "katex": "^0.16.47",
+    "lucide-react": "^1.31.0",
+    "mermaid": "^11.16.1",
+    "pinyin-pro": "3.29.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-i18next": "^15.6.0",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "remark-parse": "^11.0.0",
+    "shiki": "^4.4.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "unified": "^11.0.5",
+    "vite": "^7.3.6",
+    "ws": "8.21.1",
+    "zustand": "^5.0.15"
+  },
+  "build": {
+    "appId": "org.hmini.agent",
+    "productName": "Minih-Agent-Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "minih-git",
+        "repo": "minih-agent-desktop"
+      }
+    ],
+    "extraMetadata": {
+      "piDistribution": "installed"
+    },
+    "files": [
+      "out/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/node_modules/*/{test,tests,__tests__,powered-test,example,examples}/**",
+      "!**/node_modules/**/*.{test,spec}.{js,cjs,mjs}",
+      "!**/node_modules/node-addon-api/tools/**",
+      "!**/node_modules/node-addon-api/*.{c,gyp,gypi,h,js,json}",
+      "!**/node_modules/node-addon-api/README.md"
+    ],
+    "electronLanguages": [
+      "en-US",
+      "zh-CN",
+      "zh_CN",
+      "zh-TW",
+      "zh_TW",
+      "tr",
+      "de",
+      "es",
+      "fr",
+      "ko",
+      "pt-BR",
+      "pt_BR"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "tray-icon.png"
+      },
+      {
+        "from": "../../packages/agent-runtime/dist-bundle",
+        "to": "agent-runtime"
+      },
+      {
+        "from": "resources/skills",
+        "to": "skills"
+      },
+      {
+        "from": "resources/plugins",
+        "to": "plugins"
+      },
+      {
+        "from": "resources/models.dev",
+        "to": "models.dev"
+      }
+    ],
+    "mac": {
+      "artifactName": "Minih-Agent-Desktop-${version}-${arch}-mac.${ext}",
+      "target": [
+        {
+          "target": "dmg"
+        },
+        {
+          "target": "zip"
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "Minih-Agent-Desktop needs local network access so agents can reach OpenAI-compatible providers, Ollama, and other AI endpoints running on your LAN. / Minih-Agent-Desktop 需要本地网络访问权限，以便助手请求同一局域网中的 OpenAI 兼容服务、Ollama 等本地 AI 端点。",
+        "NSMicrophoneUsageDescription": "Minih-Agent-Desktop uses the microphone for Live voice calls and authorized plugin audio access. / Minih-Agent-Desktop 使用麦克风进行实时语音通话，以及你已授权的插件音频访问。",
+        "NSBonjourServices": [
+          "_http._tcp",
+          "_https._tcp"
+        ]
+      },
+      "extraResources": [
+        {
+          "from": "../../target/release/minih-agent-desktop-host-core",
+          "to": "bin/minih-agent-desktop-host-core"
+        },
+        {
+          "from": "build/tray-icon-mac.png",
+          "to": "tray-icon-mac.png"
+        }
+      ]
+    },
+    "dmg": {
+      "artifactName": "Minih-Agent-Desktop-${version}-${arch}.${ext}",
+      "background": "build/dmg-background.png",
+      "icon": "build/icon.icns",
+      "window": {
+        "width": 720,
+        "height": 440
+      },
+      "iconSize": 128,
+      "iconTextSize": 12,
+      "contents": [
+        {
+          "x": 180,
+          "y": 196
+        },
+        {
+          "x": 540,
+          "y": 196,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "win": {
+      "executableName": "Minih-Agent-Desktop",
+      "artifactName": "Minih-Agent-Desktop-Portable-${version}.${ext}",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "extraResources": [
+        {
+          "from": "resources/app-update.yml",
+          "to": "app-update.yml"
+        },
+        {
+          "from": "../../target/release/minih-agent-desktop-host-core.exe",
+          "to": "bin/minih-agent-desktop-host-core.exe"
+        },
+        {
+          "from": "build/icon.ico",
+          "to": "app-icon.ico"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Minih-Agent-Desktop",
+      "artifactName": "Minih-Agent-Desktop-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Minih-Agent-Desktop-Portable-${version}.${ext}"
+    },
+    "deb": {
+      "packageName": "minih-agent-desktop",
+      "artifactName": "minih-agent-desktop_${version}_${arch}.${ext}"
+    },
+    "rpm": {
+      "packageName": "minih-agent-desktop",
+      "artifactName": "minih-agent-desktop-${version}-${arch}.${ext}",
+      "fpm": [
+        "--rpm-rpmbuild-define",
+        "_build_id_links none"
+      ]
+    },
+    "linux": {
+      "executableName": "minih-agent-desktop",
+      "syncDesktopName": true,
+      "artifactName": "Minih-Agent-Desktop-${version}-linux-${arch}.${ext}",
+      "target": [
+        {
+          "target": "AppImage"
+        },
+        {
+          "target": "deb"
+        },
+        {
+          "target": "rpm"
+        }
+      ],
+      "category": "Development",
+      "icon": "build/icon.png",
+      "extraResources": [
+        {
+          "from": "../../target/release/minih-agent-desktop-host-core",
+          "to": "bin/minih-agent-desktop-host-core"
+        }
+      ]
+    },
+    "asarUnpack": [
+      "node_modules/transcribe-cpp/**/*.node",
+      "node_modules/transcribe-cpp/**/bin/**",
+      "node_modules/@picovoice/pvrecorder-node/**/*.node",
+      "node_modules/@picovoice/pvrecorder-node/**/lib/**"
+    ],
+    "asar": {
+      "smartUnpack": false
+    }
+  }
+}
