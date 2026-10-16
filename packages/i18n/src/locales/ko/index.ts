@@ -1,6 +1,7 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const ko = {
+  userMenu: en.userMenu,
   worktree: {
     newIsolatedSession: "새 격리 세션",
     uncommittedNotIncluded: "프로젝트의 커밋되지 않은 변경 사항은 격리 세션에 포함되지 않습니다.",

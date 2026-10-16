@@ -1,6 +1,16 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const zhCN = {
+  userMenu: {
+    open: "{{name}} 的账户菜单",
+    title: "账户与设置",
+    localUser: "本地用户",
+    notConnected: "尚未连接账户",
+    connectHint: "连接账户后可查看余额和额度。",
+    quota: "余额与额度",
+    manageAccount: "管理账户",
+    navigation: "工作区导航",
+  },
   worktree: {
     newIsolatedSession: "新建隔离会话",
     uncommittedNotIncluded: "项目中未提交的改动不会带入隔离会话。",
@@ -994,7 +1004,7 @@ sklm: {
       categoriesTitle: "可移植配置",
       categoriesDescription: "默认选择所有受支持的配置。凭据和记忆需要明确选择。",
       categoryApplication: "应用偏好",
-      categoryProviders: "用户提供商和模型",
+      categoryProviders: "账户、提供商和模型配置",
       categoryMcp: "MCP 定义",
       categorySkills: "技能",
       categorySubagents: "子智能体",
@@ -1003,7 +1013,7 @@ sklm: {
       categoryAutomation: "自动化定义",
       categoryMemory: "项目记忆",
       categoryCredentials: "可移植凭据",
-      credentialsWarning: "凭据会在保管库中加密，但新设备仍需本地审批和安全存储。",
+      credentialsWarning: "API Key 和账户 API 令牌会加密备份，新设备仍需本地审批；OAuth 登录状态不会备份。",
       approvalsTitle: "等待本地启用",
       approvalsDescription: "导入的可执行或安全敏感配置会暂存，直到你在此设备上批准。",
       approve: "批准",

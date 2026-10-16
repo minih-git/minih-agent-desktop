@@ -17,70 +17,36 @@ const enLocale = await readFile(
   "utf8",
 );
 
-test("the sidebar footer is an action bar, not a fabricated identity", () => {
-  // The app has no accounts; an avatar with a name implied one that never existed.
-  assert.doesNotMatch(sidebarSource, /footer-profile/);
-  assert.doesNotMatch(sidebarSource, /profile-menu/);
-  assert.doesNotMatch(sidebarSource, /sidebar-profile-menu/);
-  assert.doesNotMatch(sidebarSource, /IconUser/);
-  assert.doesNotMatch(globalStyles, /\.footer-profile/);
-  assert.doesNotMatch(globalStyles, /\.profile-menu/);
-  for (const locale of [zhLocale, enLocale]) {
-    assert.doesNotMatch(locale, /localProfile:/);
-    assert.doesNotMatch(locale, /openProfileMenu:/);
-  }
+const userMenuSource = await readFile(
+  new URL("../src/components/SidebarUserMenu.tsx", import.meta.url), "utf8",
+);
+
+test("the footer shows a saved account or an honest local-user state", () => {
+  assert.match(sidebarSource, /<SidebarUserMenu/);
+  assert.match(userMenuSource, /isMinihRouterVendorKey\(row.vendorKey\) && row.hasSecret/);
+  assert.match(userMenuSource, /t\("userMenu.localUser"\)/);
+  assert.match(userMenuSource, /t\("userMenu.notConnected"\)/);
+  for (const locale of [zhLocale, enLocale]) assert.match(locale, /userMenu:/);
 });
 
-test("footer exposes settings, plugins, scheduled tasks, activity, and notifications in one row", () => {
-  assert.match(sidebarSource, /className="footer-actions"/);
-  assert.match(sidebarSource, /data-nav="settings"/);
-  assert.match(sidebarSource, /data-nav="plugins"/);
-  assert.match(sidebarSource, /data-nav="activity"/);
-  const pluginsAction = sidebarSource.match(
-    /<TooltipButton[\s\S]*?data-nav="plugins"[\s\S]*?<\/TooltipButton>/,
-  )?.[0] ?? "";
-  assert.match(pluginsAction, /<IconPlug size=\{14\} aria-hidden \/>/);
-  const activityAction = sidebarSource.match(
-    /<TooltipButton[\s\S]*?data-nav="activity"[\s\S]*?<\/TooltipButton>/,
-  )?.[0] ?? "";
-  assert.match(activityAction, /<IconActivity size=\{14\} aria-hidden \/>/);
-  assert.doesNotMatch(sidebarSource, /data-nav="theme"/);
-  assert.match(
-    sidebarSource,
-    /<NotificationCenter onBeforeOpen=\{\(\) => closeMenus\(false\)\} \/>/,
-  );
-  // Logs live in Settings → About; the footer stays down to daily controls.
-  assert.doesNotMatch(sidebarSource, /openLogs/);
-  // Every action is icon-only, so each needs a label for pointer and AT users.
-  const actions = sidebarSource
-    .split("<TooltipButton")
-    .filter((chunk) => /className=(?:"footer-action"|\{`footer-action )/.test(chunk));
-  assert.equal(actions.length, 4);
-  for (const action of actions) {
-    const attrs = action.slice(0, action.indexOf(">"));
-    assert.match(attrs, /tooltip=/);
-    assert.match(attrs, /ariaLabel=/);
+test("labeled sidebar navigation replaces the footer utility cluster", () => {
+  const nav = sidebarSource.match(/<nav className="sidebar-destinations"[\s\S]*?<\/nav>/)?.[0] ?? "";
+  const footer = sidebarSource.slice(sidebarSource.indexOf('<div className="sidebar-footer no-drag">'));
+  for (const destination of ["plugins", "scheduled", "activity"]) {
+    assert.ok(nav.includes('data-nav="' + destination + '"'));
+    assert.ok(!footer.includes('data-nav="' + destination + '"'));
   }
-  // All footer destinations report their active state to assistive tech; the
-  // Plugins button also reports the Back toggle a second activation performs.
-  const footerAttributes = (marker) => {
-    const at = sidebarSource.indexOf(marker);
-    if (at < 0) return "";
-    return sidebarSource.slice(
-      sidebarSource.lastIndexOf("<TooltipButton", at),
-      sidebarSource.indexOf("</TooltipButton>", at),
-    );
-  };
-  assert.match(
-    footerAttributes('data-nav="settings"'),
-    /aria-pressed=\{page === "settings"\}/,
-  );
-  assert.match(
-    footerAttributes('data-nav="plugins"'),
-    /aria-pressed=\{page === "plugins"\}/,
-  );
-  assert.match(footerAttributes('data-nav="scheduled"'), /aria-pressed=\{page === "scheduled"\}/);
-  assert.match(footerAttributes('data-nav="activity"'), /aria-pressed=\{activityOpen\}/);
+  assert.match(nav, /aria-current=\{page === "scheduled" \? "page" : undefined\}/);
+  assert.match(nav, /aria-current=\{page === "plugins" \? "page" : undefined\}/);
+  assert.match(nav, /aria-pressed=\{activityOpen\}/);
+  assert.match(nav, /t\("scheduled.title"\)/);
+  assert.match(nav, /t\("nav.plugins"\)/);
+  assert.match(nav, /t\("nav.activity"\)/);
+  assert.match(sidebarSource, /<NotificationCenter onBeforeOpen=\{\(\) => closeMenus\(false\)\} \/>/);
+  assert.match(userMenuSource, /data-nav="settings"/);
+  assert.match(userMenuSource, /navigate\("accounts"\)/);
+  assert.match(userMenuSource, /navigate\("sync"\)/);
+  assert.doesNotMatch(sidebarSource, /openLogs/);
 });
 
 test("footer sits on the sidebar content grid without a hairline", () => {

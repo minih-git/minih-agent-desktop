@@ -15,7 +15,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { TooltipButton, cx } from "./ui";
+import { Button, TooltipButton, cx } from "./ui";
 
 import { portalToBody } from "../lib/portal-visibility";
 import {
@@ -77,6 +77,7 @@ import {
 } from "../lib/sidebar-resize";
 import { BrandLogo } from "./BrandLogo";
 import { NotificationCenter } from "./NotificationCenter";
+import { SidebarUserMenu } from "./SidebarUserMenu";
 import { ProjectEditDialog } from "./ProjectEditDialog";
 import {
   WorktreeBadge,
@@ -107,7 +108,6 @@ import {
   IconPin,
   IconPencil,
   IconSidebar,
-  IconSettings,
   IconStar,
   IconTrash,
   IconX,
@@ -654,7 +654,7 @@ export function Sidebar({
     sortOpen,
   ]);
 
-  // Footer utility bar: settings / plugins / notifications + build chip.
+  // Footer identity, notifications and actionable build chip.
 
   // An update only earns the accent dot once it is actionable — a pending
   // check or a failed one keeps the chip quiet.
@@ -2494,6 +2494,21 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-body no-drag">
+        <nav className="sidebar-destinations" aria-label={t("userMenu.navigation")}>
+          <Button type="button" variant="ghost" className="sidebar-destination" data-nav="scheduled"
+            aria-current={page === "scheduled" ? "page" : undefined} onClick={() => setPage("scheduled")}>
+            <IconClock size={16} /><span>{t("scheduled.title")}</span>
+          </Button>
+          <Button type="button" variant="ghost" className="sidebar-destination" data-nav="plugins"
+            aria-current={page === "plugins" ? "page" : undefined}
+            onClick={() => page === "plugins" ? (canNavBack() ? navBack() : setPage("chat")) : setPage("plugins")}>
+            <IconPlug size={16} /><span>{t("nav.plugins")}</span>
+          </Button>
+          <Button type="button" variant="ghost" className="sidebar-destination" data-nav="activity" aria-pressed={activityOpen}
+            onClick={() => { closeMenus(false); setActivityOpen((previous) => !previous); }}>
+            <IconActivity size={16} /><span>{t("nav.activity")}</span>
+          </Button>
+        </nav>
         {activityOpen ? (
           <section
             className="sidebar-activity-panel min-h-0 flex-1"
@@ -2721,56 +2736,8 @@ export function Sidebar({
         )}
 
         <div className="sidebar-footer no-drag">
+          <SidebarUserMenu onBeforeOpen={() => closeMenus(false)} />
           <div className="footer-actions">
-            <TooltipButton
-              type="button"
-              className={`footer-action ${page === "settings" ? "active" : ""}`}
-              data-nav="settings"
-              tooltip={t("nav.settings")}
-              ariaLabel={t("nav.settings")}
-              onClick={() => setPage("settings")}
-              aria-pressed={page === "settings"}
-            >
-              <IconSettings size={14} aria-hidden />
-            </TooltipButton>
-            <TooltipButton
-              type="button"
-              className={`footer-action ${page === "plugins" ? "active" : ""}`}
-              data-nav="plugins"
-              tooltip={t("nav.plugins")}
-              ariaLabel={t("nav.plugins")}
-              onClick={() => page === "plugins"
-                ? (canNavBack() ? navBack() : setPage("chat"))
-                : setPage("plugins")}
-              aria-pressed={page === "plugins"}
-            >
-              <IconPlug size={14} aria-hidden />
-            </TooltipButton>
-            <TooltipButton
-              type="button"
-              className={`footer-action ${page === "scheduled" ? "active" : ""}`}
-              data-nav="scheduled"
-              tooltip={t("scheduled.title")}
-              ariaLabel={t("scheduled.title")}
-              onClick={() => setPage("scheduled")}
-              aria-pressed={page === "scheduled"}
-            >
-              <IconClock size={14} aria-hidden />
-            </TooltipButton>
-            <TooltipButton
-              type="button"
-              className={`footer-action ${activityOpen ? "active" : ""}`}
-              data-nav="activity"
-              tooltip={t("nav.activity", { defaultValue: "Activity" })}
-              ariaLabel={t("nav.activity", { defaultValue: "Activity" })}
-              onClick={() => {
-                closeMenus(false);
-                setActivityOpen((previous) => !previous);
-              }}
-              aria-pressed={activityOpen}
-            >
-              <IconActivity size={14} aria-hidden />
-            </TooltipButton>
             <NotificationCenter onBeforeOpen={() => closeMenus(false)} />
           </div>
 

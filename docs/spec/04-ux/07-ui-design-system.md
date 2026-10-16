@@ -493,11 +493,14 @@ Light theme: minimal shadows only where layering is insufficient.
 | `elevation-2` | bg-tertiary | bg-tertiary + `shadow-md` | Hover, dropdowns |
 | `elevation-3` | bg-tertiary + border-accent | bg-white + `shadow-lg` | Dialogs, overlays |
 
-Sidebar footer: a transparent utility band with no separator. The Settings,
-Plugins and notification icon buttons stay grouped on the left. The
-build/version chip is right-aligned and remains the update check/release entry
-point. Hover and active states use semantic sidebar surfaces; neither side adds
-a persistent card fill.
+Sidebar footer: a transparent utility band with no separator. The left account
+button uses a round initial/avatar and a truncating saved-account label, or an
+explicit Local user state. It opens the bounded account/quota popover; Settings
+and account-management actions live there. Notifications and the right-aligned
+build/version chip remain reachable; the latter keeps its update/release action.
+Scheduled, Plugins and Activity use labeled navigation rows above the lists.
+Hover and active states use semantic sidebar surfaces, and the popover uses the
+existing opaque elevated surface and dialog shadow tokens.
 
 Every scroll container in the renderer uses one quiet scrollbar: 6px,
 trackless, with a thumb that is transparent at rest. The thumb appears only

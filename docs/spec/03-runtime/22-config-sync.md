@@ -37,6 +37,16 @@ instructions, plugin installation intent, scheduled automations,
 and optional project memory. Credentials are opt-in. Provider API keys and MCP
 environment variables/headers are included only when the credential category
 is selected; OAuth access/refresh tokens and cookies are never exported.
+The providers category includes a user-owned Minih Router account's name,
+vendor, endpoint, non-secret account display label, headers, explicit provider
+reasoning/limit overrides, and ordered model bindings. Model aliases, wire
+protocol, limit provenance, thinking levels/default, attachment capabilities,
+subagent availability, and hosted-search opt-in survive capture and restore.
+Application preferences carry the default provider/model and image/speech model
+bindings; provider dependencies remain staged until available. Live balances,
+quota/usage responses, OAuth sessions, and readiness flags are not backed up.
+Restoring an API token requires both the credential opt-in and local approval;
+without it, a new secret-bearing provider remains disabled until configured.
 The instruction adapter reads only the fixed global `~/.pi/agent/AGENTS.md`
 and each registered project's root `AGENTS.md`; it does not scan nested
 repositories or arbitrary files. Imported instruction files are written only

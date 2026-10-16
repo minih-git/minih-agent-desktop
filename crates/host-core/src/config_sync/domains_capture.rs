@@ -30,11 +30,8 @@ fn capture_providers(st: &AppState) -> Result<Vec<PortableEntity>> {
             &[
                 "hasSecret",
                 "hasOauth",
-                "oauthAccountLabel",
                 "enabled",
-                "supportsReasoning",
                 "supportsVision",
-                "supportedThinkingLevels",
                 "createdAt",
                 "updatedAt",
                 "ownerPluginId",
@@ -664,7 +661,7 @@ pub(crate) fn capture(
     }
     if selection.is_selected(DOMAIN_PROVIDERS) {
         for mut provider in capture_providers(st)? {
-            if include_secrets {
+            if selection.include_secrets(include_secrets) {
                 let id = provider
                     .entity_id
                     .strip_prefix("provider:")

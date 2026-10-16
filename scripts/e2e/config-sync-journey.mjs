@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export const PASSWORD = "portable-backup-password";
-export const MARKERS = ["S3 shared provider", "fixture-provider-secret", "S3 fixture instructions", "resource-first", "resource-updated", "fixture-mcp-secret"];
+export const MARKERS = ["S3 shared provider", "fixture-provider-secret", "S3 fixture instructions", "resource-first", "resource-updated", "fixture-mcp-secret", "fixture-router-backup-token", "Personal backup account", "Portable reasoning model"];
 const categories = Object.fromEntries(["application", "providers", "credentials", "mcp", "skills", "subagents", "instructions", "plugins", "automation"].map((name) => [name, true]));
 export const rpc = (host, method, params = {}) => host.call(method, params, 120_000);
 const sync = (host) => rpc(host, "configSync.syncNow");
@@ -234,6 +234,62 @@ export async function runBackupJourney({ a, b, c, d, connection, step }) {
   assert.equal((await rpc(c, "configSync.listHistory"))[0].revisionId, second);
   assert.equal((await rpc(a, "configSync.listHistory"))[0].revisionId, syncHead);
   assert.equal((await settings(a)).theme, "dark");
+
+  step("account-model-configuration-backup-and-fresh-device-restore");
+  const { provider: router } = await rpc(c, "providers.create", {
+    name: MARKERS[7], vendorKey: "minih-router", type: "openai_compatible",
+    protocol: "openai_compatible", authKind: "api_key_and_base_url",
+    baseUrl: "http://127.0.0.1:9/v1", secretValue: MARKERS[6],
+    oauthAccountLabel: "Fixture account label", apiStyle: "responses",
+    supportsReasoning: true, supportedThinkingLevels: ["low", "high"],
+    contextWindow: 200000, maxOutputTokens: 8192, temperature: 0.4,
+    headers: { "User-Agent": "Portable fixture" },
+    models: [{
+      id: "fixture-reasoning", alias: MARKERS[8],
+      contextWindow: 200000, contextWindowSource: "user",
+      maxTokens: 8192, maxTokensSource: "user",
+      thinkingLevels: ["low", "high"], defaultThinkingLevel: "high",
+      thinkingProtocol: "adaptive", supportsImages: true, supportsDocuments: false,
+      availableForSubagents: true, nativeWebSearch: true, apiStyle: "responses",
+    }, {
+      id: "fixture-second", alias: "Secondary model",
+      contextWindow: 64000, maxTokens: 4096, thinkingLevels: [],
+    }],
+  });
+  const imageBinding = { providerId: router.id, modelId: "fixture-second" };
+  await rpc(c, "settings.set", {
+    defaultProviderId: router.id, defaultModelId: "fixture-second",
+    imageGeneration: imageBinding, imageGenerationModels: [imageBinding],
+  });
+  const accountRevision = (await sync(c)).lastRevisionId;
+  const beforeRestoreHistory = await rpc(d, "configSync.listHistory");
+  assert.equal(await provider(d, router.id), null);
+  const pending = await rpc(d, "configSync.restore", { revisionId: accountRevision });
+  assert.ok(pending.pendingApprovals.some((item) => item.domain === "providers"));
+  assert.equal(await provider(d, router.id), null, "restored credentials require approval");
+  await approveAll(d, pending);
+  const checkRestoredAccount = async () => {
+    const restoredRouter = await provider(d, router.id);
+    assert.ok(restoredRouter?.hasSecret, "approved opt-in restores the saved router token");
+    assert.equal(restoredRouter.hasOauth, false, "restore never invents an OAuth session");
+    for (const field of ["name", "vendorKey", "baseUrl", "authKind", "oauthAccountLabel",
+      "apiStyle", "supportsReasoning", "supportedThinkingLevels", "contextWindow",
+      "maxOutputTokens", "temperature", "headers", "models", "defaultModelId"]) {
+      assert.deepEqual(restoredRouter[field], router[field], `restored account field: ${field}`);
+    }
+    const restoredSettings = await settings(d);
+    assert.equal(restoredSettings.defaultProviderId, router.id);
+    assert.equal(restoredSettings.defaultModelId, "fixture-second");
+    assert.deepEqual(restoredSettings.imageGeneration, imageBinding);
+    assert.deepEqual(restoredSettings.imageGenerationModels, [imageBinding]);
+    assert.equal((await rpc(d, "providers.list")).providers.filter((row) => row.id === router.id).length, 1);
+    assert.deepEqual(await rpc(d, "configSync.listHistory"), beforeRestoreHistory,
+      "restoring an account does not publish a backup revision");
+    assert.equal((await rpc(a, "configSync.listHistory"))[0].revisionId, syncHead);
+  };
+  await checkRestoredAccount();
+  await d.restart();
+  await checkRestoredAccount();
 
   step("password-rewrap-new-device-and-existing-device");
   const nextPassword = "replacement-backup-password";

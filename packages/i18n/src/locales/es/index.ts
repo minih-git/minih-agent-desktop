@@ -1,6 +1,7 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const es = {
+  userMenu: en.userMenu,
   "worktree": {
     "newIsolatedSession": "Nueva sesión aislada",
     "uncommittedNotIncluded": "Los cambios sin confirmar del proyecto no se incluyen en la sesión aislada.",

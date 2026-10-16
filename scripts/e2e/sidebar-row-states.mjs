@@ -307,6 +307,7 @@ export async function checkSidebarRowStates({ cdp, check, waitFor, seed }) {
         `${theme} standalone conversation selection clears workspace context without selecting a group`,
       );
       await select(id);
+      await click('[data-nav="user"]');
       await click('[data-nav="settings"]');
       await waitFor(() => cdp.evaluate("!!document.querySelector('.settings-shell')"), "settings opens");
       await move(600, 120);

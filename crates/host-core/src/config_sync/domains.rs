@@ -123,6 +123,8 @@ pub const DOMAIN_ADAPTERS: &[DomainAdapterSpec] = &[
         schema_version: 1,
         exportable_fields: &[
             "provider identity",
+            "account display label",
+            "explicit reasoning configuration",
             "models",
             "aliases",
             "parameters",
@@ -614,6 +616,10 @@ pub fn preview(snapshot: &LocalSnapshot, selection: &CategorySelection) -> Previ
     counts.categories = by_category.into_values().collect();
     counts
 }
+
+#[cfg(test)]
+#[path = "provider_capture_tests.rs"]
+mod provider_capture_tests;
 
 #[cfg(test)]
 mod tests {

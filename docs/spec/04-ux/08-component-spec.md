@@ -484,16 +484,16 @@ visually distinct from list content.
 - On Windows/Linux, click the Minih-Agent-Desktop brand to return the main pane to the
   chat home while preserving the active conversation and workspace; macOS
   intentionally omits this brand control from the sidebar header
-- Click the footer Plugins icon immediately right of Settings to open the
-  Extensions destination; while Plugins is active, click it again to go back
+- Click the labeled sidebar Plugins row to open the Extensions destination;
+  while Plugins is active, click it again to go back
   one entry in the existing navigation history. If no previous entry exists,
-  open chat instead. The pressed state reflects the current page and the
-  localized label remains available on hover/focus.
+  open chat instead. `aria-current="page"` reflects the current page and the
+  localized label remains visible.
 - This shortcut reuses the existing Back action (also bound to `Cmd/Ctrl+[`),
   including its session selection and loading behavior. It does not skip
   Settings entries or track a separate return destination. Settings navigation
-  is unchanged; its existing Back to app control opens chat. Both footer
-  destination buttons report their active state to assistive technology.
+  is unchanged; its existing Back to app control opens chat. Sidebar destination
+  rows report their active state to assistive technology.
 - Reopening Plugins retains its Installed/Marketplace tab, both search inputs,
   and category filter in renderer memory. Detail/settings/permission dialogs,
   transient menus, and pending-operation UI are not retained. The page still

@@ -1,6 +1,7 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const zhTW = {
+  userMenu: en.userMenu,
   worktree: {
     newIsolatedSession: "新增隔離工作階段",
     uncommittedNotIncluded: "專案中未提交的變更不會帶入隔離工作階段。",
