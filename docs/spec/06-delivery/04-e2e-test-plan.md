@@ -17015,7 +17015,10 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   `Show thinking` off and confirm the live thinking indicator remains while
   completed reasoning rows and excerpts disappear and no empty thinking-only
   container is left; turn it back on and confirm the completed rows return. Collapse
-  every group and confirm the Bash/run rows stay visible. Review the nested path,
+  every group and confirm the Bash/run rows stay visible. Each process chunk
+  header reports only its own recorded span (two chunks around a Bash row differ),
+  and a folded chunk with progress text shows that most recent narration under
+  its header while a chunk without narration shows none. Review the nested path,
   including independent group/item toggles, parent close/reopen, a singleton
   segment, literal-final-item leaf selection, failure/denial/recovery, retained-pane
   remounts, Bash rows staying standalone (including adjacent Bash rows) with their
@@ -17050,7 +17053,8 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   group presentation only; precise item-level transcript search targeting is out
   of scope and keeps the existing message-level search behavior.
 - **Automation:** `pnpm test:e2e:transcript` covers default and active-to-completed
-  process disclosure behavior; `pnpm test:e2e:transcript-disclosure` verifies
+  process disclosure behavior plus per-chunk timing and the folded narration
+  preview; `pnpm test:e2e:transcript-disclosure` verifies
   manual-open retention and viewport anchoring; `apps/desktop/test/turn-process.test.mjs`
   covers process defaults and `apps/desktop/test/thinking-visibility.test.mjs`
   covers the `showThinking`/legacy resolver precedence.

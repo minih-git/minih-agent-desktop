@@ -10,6 +10,7 @@ const {
   segmentTurnProcess,
   visibleProcessSteps,
   turnProcessTiming,
+  processNarrationPreview,
 } = await import("../src/lib/turn-process.ts");
 
 const message = (id, role, content, extra = {}) => ({
@@ -213,6 +214,57 @@ test("history timing uses recorded ends and rejects invalid timestamps and durat
       endedAt: undefined,
     },
   );
+});
+
+test("each process chunk times its own span, not the whole turn", () => {
+  const entry = turn([
+    message("user", "user", "run"),
+    tool("read", "Read", {
+      toolResult: "a",
+      toolCompletedAt: "2026-09-17T00:00:02.000Z",
+    }),
+    tool("bash", "Bash", {
+      toolArgs: { command: "ls" },
+      toolCompletedAt: "2026-09-17T00:00:03.000Z",
+    }),
+    tool("edit", "Edit", {
+      toolResult: "b",
+      toolCompletedAt: "2026-09-17T00:01:00.000Z",
+    }),
+  ]);
+  const segments = segmentTurnProcess(projectTurnProcess(entry).process);
+  const first = turnProcessTiming(segments[0].parts);
+  const second = turnProcessTiming(segments[2].parts);
+  assert.equal(first.endedAt - first.startedAt, 2000);
+  assert.equal(second.endedAt - second.startedAt, 60000);
+});
+
+test("a folded chunk previews its last narration; silent chunks preview nothing", () => {
+  const entry = turn([
+    message("user", "user", "run"),
+    message("n1", "assistant", "Checking the layout"),
+    tool("read", "Read", { toolResult: "a" }),
+    message("n2", "assistant", "Found the offset bug"),
+    tool("bash", "Bash", { toolArgs: { command: "ls" } }),
+    tool("edit", "Edit", { toolResult: "b" }),
+    message("final", "assistant", "Done"),
+  ]);
+  const segments = segmentTurnProcess(projectTurnProcess(entry).process);
+  assert.equal(processNarrationPreview(segments[0].parts), "Found the offset bug");
+  assert.equal(processNarrationPreview(segments[2].parts), "");
+});
+
+test("narration preview collapses whitespace and caps its length", () => {
+  const parts = (content) => [
+    { kind: "message", message: message("n", "assistant", content) },
+  ];
+  assert.equal(
+    processNarrationPreview(parts("  First\n\nline  text  ")),
+    "First line text",
+  );
+  const capped = processNarrationPreview(parts("x".repeat(300)));
+  assert.equal(capped.length, 201);
+  assert.ok(capped.endsWith("…"));
 });
 
 test("user boundaries retain independent processes and delegation details stay attached", () => {

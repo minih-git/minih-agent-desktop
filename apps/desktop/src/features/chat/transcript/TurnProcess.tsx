@@ -8,6 +8,7 @@ import { TranscriptSearchContext } from "../../../lib/transcript-search-context"
 import {
   isTurnThinking,
   processContainsMessage,
+  processNarrationPreview,
   turnProcessTiming,
 } from "../../../lib/turn-process";
 import { resolveShowThinking } from "../../../lib/thinking-visibility";
@@ -56,7 +57,12 @@ export function TurnProcess({
   );
   const detailsId = useId();
   const [now, setNow] = useState(Date.now);
-  const { startedAt, endedAt } = useMemo(() => turnProcessTiming(turnParts), [turnParts]);
+  const { startedAt, endedAt } = useMemo(() => turnProcessTiming(processParts), [processParts]);
+  // A folded completed segment previews its last narration so the header says
+  // what the model reported, not only how long the work took; the live tail
+  // already shows the running state, and an open body would duplicate it.
+  const narration = useMemo(() => processNarrationPreview(processParts), [processParts]);
+  const tail = !isActive && !disclosure.open ? narration : "";
   useEffect(() => {
     if (!isActive) return;
     setNow(Date.now());
@@ -94,6 +100,11 @@ export function TurnProcess({
         ) : null}
         <span className="tool-activity-caret" aria-hidden><IconChevronRight size={12} /></span>
       </button>
+      {tail ? (
+        <div className="tool-activity-preview turn-process-narration" aria-hidden>
+          {tail}
+        </div>
+      ) : null}
       <div
         ref={disclosure.bodyRef}
         id={detailsId}

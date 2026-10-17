@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-17
-- Amended: 2026-10-16
+- Amended: 2026-10-17
 - Issues: #510, #461
 - Amends: D071, [ADR 0242](0242-delta-only-streaming-updates.md)
 
@@ -90,7 +90,12 @@ provider thinking levels, runtime/model context, stored reasoning, export,
 permissions, execution, or copy payloads, and it does not control process-segment
 or activity-group folding. Process headers use recorded timing, direct tool/search
 counts, running state, and issue counts; they do not double-count delegated child
-work or treat a failed child as a failed assistant turn.
+work or treat a failed child as a failed assistant turn. Timing is computed from
+the chunk's own parts, so each segmented chunk reports its own span rather than
+the whole turn's. A folded completed chunk also previews the most recent progress
+text inside it, so a collapsed header still says what the model reported; a
+chunk without narration previews nothing, and an active or open chunk shows the
+live tail instead of the preview.
 
 ## Consequences
 
@@ -126,3 +131,6 @@ covers the `showThinking`/legacy `thinkingDisplayMode` resolver precedence, and
 the i18n catalog tests cover the new `settings.showThinking` copy. The UI,
 resolver, and E2E scenarios are validated on the integration candidate; see
 E2E-CHAT-turn-process-and-thinking-display for the synchronized scenario text.
+For the 2026-10-17 amendment, `apps/desktop/test/turn-process.test.mjs` covers
+per-chunk timing and the narration preview selector, and the turn-process probe
+in `pnpm test:e2e:transcript` asserts both behaviors in real Chromium.
