@@ -535,6 +535,42 @@
   overflow-wrap: anywhere;
 }
 
+/* Account identity head: avatar glyph from the key name's first character,
+   mirroring the sidebar user menu. */
+.accounts-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.accounts-identity-avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: var(--ds-accent);
+  color: var(--ds-bg-primary);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.accounts-identity-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.accounts-identity-copy > strong {
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-tight);
+  overflow-wrap: anywhere;
+}
+
 .accounts-connected-actions {
   display: flex;
   align-items: center;

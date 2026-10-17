@@ -27,6 +27,7 @@ await i18n.use(initReactI18next).init({ lng: "en", keySeparator: false,
 const requests = [];
 const pending = [];
 const unexpected = [];
+let primeObserved = false;
 window.minihAgent = { platform: "linux", on() { return () => {}; },
   invoke(channel, input) {
     if (channel === IPC.invoke.providersMinihRouterAccount) {
@@ -80,19 +81,32 @@ window.userMenuProbe = async ({ theme, locale }) => {
   document.documentElement.dataset.theme = theme;
   await i18n.changeLanguage(locale);
   await settle();
-  check(requests.length === 0, "closed menu must not fetch quota");
+  const startRequests = requests.length;
+  check(requests.length === startRequests, "closed menu adds no request");
   for (const destination of ["scheduled", "plugins", "activity"]) {
     check(document.querySelector('.sidebar-destinations [data-nav="' + destination + '"]')?.textContent.trim(), "labeled sidebar destination " + destination);
     check(!document.querySelector('.sidebar-footer [data-nav="' + destination + '"]'), "utility removed from footer");
   }
   check(document.querySelector(".notification-trigger"), "notification remains reachable");
   check(document.querySelector('[data-nav="build"]')?.textContent.includes("0.20.5"), "version remains reachable");
+  if (!primeObserved && pending.some((value) => value.id === "router-a")) {
+    primeObserved = true;
+    // The startup prime: one background read fills the trigger label
+    // without opening the menu.
+    check(requests.length === 1 && Object.keys(requests[0]).join() === "providerId", "startup primes the account name once");
+    check(trigger().querySelector(".sidebar-user-trigger-name")?.textContent === "My account", "trigger falls back to the row label before the prime answers");
+    await answer("router-a", account());
+    check(trigger().querySelector(".sidebar-user-trigger-name")?.textContent === "Desktop", "trigger shows the gateway key name right after startup");
+  }
+  const beforeOpen = requests.length;
   await open();
   check(trigger().getAttribute("aria-expanded") === "true", "trigger expanded state");
   check(document.activeElement === panel(), "focus enters dialog");
   check(panel().querySelector('[role="status"]'), "loading state visible");
-  check(requests.length === 1 && Object.keys(requests[0]).join() === "providerId", "quota request only names saved account");
+  check(panel().querySelector(".sidebar-user-identity-copy strong")?.textContent === "My account", "identity falls back to the row label while loading");
+  check(requests.length === beforeOpen + 1 && Object.keys(requests.at(-1)).join() === "providerId", "quota request only names saved account");
   await answer("router-a", account());
+  check(panel().querySelector(".sidebar-user-identity-copy strong")?.textContent === "Desktop", "identity shows the gateway key name once loaded");
   check(panel().textContent.includes("87.50"), "balance renders");
   check(panel().textContent.includes("321"), "usage renders");
   check(panel().querySelectorAll(".minih-router-quota").length === 1, "headline quota is not duplicated in secondary quota list");
@@ -107,6 +121,9 @@ window.userMenuProbe = async ({ theme, locale }) => {
   key("End"); check(document.activeElement.dataset.nav === "configSync", "End reaches last action");
   key("Escape"); await settle();
   check(!panel() && document.activeElement === trigger(), "Escape closes and returns focus");
+  // The resolved gateway key name now labels the collapsed trigger too.
+  check(trigger().querySelector(".sidebar-user-trigger-name")?.textContent === "Desktop",
+    "trigger shows the remembered gateway key name after a read");
   const closedRequests = requests.length; await settle();
   check(requests.length === closedRequests, "closed menu stays idle");
 
@@ -125,6 +142,9 @@ window.userMenuProbe = async ({ theme, locale }) => {
   check(!panel().textContent.includes("87.50"), "switch hides previous balance immediately");
   await answer("router-a", account("99"));
   check(!panel().textContent.includes("99.00"), "late old account reply ignored");
+  // Two reads are in flight for the new row: the popover's own and the
+  // trigger-label prime. Answer both; the popover shows the second answer.
+  await answer("router-b", account("42"));
   await answer("router-b", account("42"));
   check(panel().textContent.includes("42.00"), "new account quota visible");
   panel().querySelector('[data-nav="accounts"]').click(); await settle();
