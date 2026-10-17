@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
+    version: "0.20.7",
+    date: "2026-10-17",
+    highlights: [
+      "会话命名更可靠：标题只根据首条消息生成一次，重发或追问不再改写；上下文压缩后标题会随对话当前主题刷新——你的手动重命名始终优先。",
+      "侧栏用户菜单与账户页显示已连接 Minih Router 账户的网关密钥名和首字母头像，多个账户一目了然。",
+    ],
+  },
+  {
     version: "0.20.6",
     date: "2026-10-17",
     highlights: [

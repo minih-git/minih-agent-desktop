@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "0.20.7",
+    date: "2026-10-17",
+    highlights: [
+      "Nomes de sessão mais confiáveis: o título é gerado uma única vez a partir da primeira mensagem; reenviar ou enviar mensagens seguintes não o altera mais, e após uma compactação de contexto o título é atualizado para seguir o assunto atual da conversa - nomes definidos por você sempre têm prioridade.",
+      "O menu de usuário da barra lateral e a página de contas exibem o nome da chave de gateway da conta Minih Router conectada com um avatar da inicial, para distinguir várias contas de relance.",
+    ],
+  },
+  {
     version: "0.20.6",
     date: "2026-10-17",
     highlights: [

@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const koEntries: ChangelogEntry[] = [
   {
+    version: "0.20.7",
+    date: "2026-10-17",
+    highlights: [
+      "세션 이름 지정이 더 안정적입니다: 제목은 첫 메시지로 한 번만 생성되며, 다시 보내거나 이후 메시지로는 바뀌지 않습니다. 컨텍스트 압축 후에는 제목이 대화의 현재 주제에 맞게 새로 고쳐집니다 - 직접 지은 이름은 항상 우선합니다.",
+      "사이드바 사용자 메뉴와 계정 페이지에 연결된 Minih Router 계정의 게이트웨이 키 이름과 이니셜 아바타가 표시되어 여러 계정을 한눈에 구분할 수 있습니다.",
+    ],
+  },
+  {
     version: "0.20.6",
     date: "2026-10-17",
     highlights: [

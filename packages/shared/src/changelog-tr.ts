@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.20.7",
+    date: "2026-10-17",
+    highlights: [
+      "Oturum adlandırma daha güvenilir: başlık ilk mesajdan yalnızca bir kez üretilir, yeniden gönderilen veya sonraki mesajlar artık başlığı değiştirmez; bağlam sıkıştırmasından sonra başlık konuşmanın güncel konusunu yansıtacak şekilde tazelenir - kendi verdiğiniz adlar her zaman önceliklidir.",
+      "Kenar çubuğu kullanıcı menüsü ve hesaplar sayfası, bağlı Minih Router hesabının ağ geçidi anahtar adını ve baş harf avatarını gösterir; birden çok hesabı ayırt etmek kolaylaşır.",
+    ],
+  },
+  {
     version: "0.20.6",
     date: "2026-10-17",
     highlights: [

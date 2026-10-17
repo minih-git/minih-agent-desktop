@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "0.20.7",
+    date: "2026-10-17",
+    highlights: [
+      "Noms de session plus fiables : le titre est généré une seule fois à partir du premier message ; renvoyer un message ou poursuivre la conversation ne le modifie plus, et après une compression du contexte le titre s'actualise pour suivre le sujet actuel de la conversation - vos propres renommages ont toujours priorité.",
+      "Le menu utilisateur de la barre latérale et la page des comptes affichent le nom de clé de passerelle du compte Minih Router connecté avec un avatar à l'initiale, pour distinguer plusieurs comptes d'un coup d'œil.",
+    ],
+  },
+  {
     version: "0.20.6",
     date: "2026-10-17",
     highlights: [

@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.20.7",
+    date: "2026-10-17",
+    highlights: [
+      "Zuverlässige Sitzungsnamen: Der Titel wird einmal aus der ersten Nachricht erzeugt, erneutes Senden oder Folge Nachrichten benennen die Sitzung nicht mehr um; nach einer Kontextkompaktierung folgt der Titel dem aktuellen Thema des Gesprächs - eigene Umbenennungen haben immer Vorrang.",
+      "Das Seitenleisten-Benutzermenü und die Kontoseite zeigen den Gateway-Schlüsselnamen des verbundenen Minih-Router-Kontos mit Avatar-Anfangsbuchstaben, sodass sich mehrere Konten leicht unterscheiden lassen.",
+    ],
+  },
+  {
     version: "0.20.6",
     date: "2026-10-17",
     highlights: [

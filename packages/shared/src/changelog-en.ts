@@ -2,6 +2,14 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.20.7",
+    date: "2026-10-17",
+    highlights: [
+      "Sessions stay named correctly: a conversation is titled once from its first message, resent or follow-up messages never rename it, and after a context compaction the title refreshes to follow the conversation's current subject - your own renames always win.",
+      "The connected Minih Router account shows its gateway key name with an avatar initial in the sidebar user menu and the accounts page, so multiple accounts are easy to tell apart.",
+    ],
+  },
+  {
     version: "0.20.6",
     date: "2026-10-17",
     highlights: [
