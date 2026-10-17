@@ -100,6 +100,15 @@
   survive migration/restart. Cache cleanup preserves durable state; backup cleanup
   retains active data and the stable bootstrap pointer. Filesystem regression tests
   reject unsafe targets, redirecting links, wrong ownership and active-root overlap.
+- **Missing default root recovery:** Run `node scripts/e2e-storage-bootstrap.mjs`
+  with the managed default data root absent. Stub the native choice and folder
+  dialogs at the Electron API boundary, then exercise both decisions in isolated
+  launches: creating a fresh default profile, and selecting an existing storage
+  root containing `data/pi.sqlite`. Confirm the pointer is normalized only after
+  the selected action succeeds, the selected database remains byte-for-byte
+  intact, and dismissing the choice leaves the pointer unchanged. Also compare
+  Windows path variants with slash and case differences in the offline regression
+  test so they still enter this recovery path.
 - **Windows junction spelling:** The filesystem suite includes a Node-created
   junction whose target ends with a separator. Copying it in Electron must
   preserve the target without a false symbolic-link verification failure.
@@ -117,8 +126,10 @@
   production renderer/API with only preload mocked; the latter suites run real
   host/Electron processes and production maintenance. The bootstrap harness
   intercepts relaunch to inspect its result, then explicitly starts another isolated
-  child; it does not launch the user's desktop. `storage-maintenance.test.mjs`
-  and Rust `data_relocation` tests cover rollback and path/filesystem boundaries.
+  child; it does not launch the user's desktop. The same bootstrap harness
+  exercises missing-default recovery without showing native dialogs.
+  `storage-maintenance.test.mjs` and Rust `data_relocation` tests cover rollback
+  and path/filesystem boundaries.
 
 
 ### E2E-LEGACY-DICTATION-idle-model-release
@@ -1643,6 +1654,9 @@ identify the platform validation still needed.
   turns that had no thinking. Non-official DeepSeek-family relays use real
   retained thinking when available, otherwise the documented non-empty
   placeholder from ADR 0256 — never a silent empty string after compaction.
+  The request omits the generic OpenAI `reasoning_effort` field because
+  DeepSeek endpoints do not accept it, while the selected thinking mode still
+  follows the endpoint's own wire format.
   The request does not switch `thinkingFormat` to `"deepseek"` solely because
   the model id contains `"deepseek"`. Official `api.deepseek.com` rows keep
   URL-based DeepSeek `thinkingFormat` from pi-ai.
@@ -3293,30 +3307,32 @@ identify the platform validation still needed.
 #### E2E-040: Nested tool activity survives transcript reload
 - **Preconditions**: Provider configured; project open; a turn can contain
   progress text, multiple search/tool/thinking items, and a failed or denied tool.
-- **Steps**: 1) In Detailed, stream progress paragraph A, a multi-item search
-  segment, progress paragraph B, and a multi-item command segment. 2) Inspect the
-  open whole process and active group; manually close the active group while more
-  output arrives. 3) Complete the turn and inspect untouched versus user-owned
-  groups. 4) Open one completed group and one item, copy its output, close and
-  reopen the group, then open a sibling group independently. 5) Repeat with a
-  singleton item and with the last activity group's literal final item set to a
-  tool/search, thinking, failed tool, and denied tool. 6) Switch to Compact and
-  inspect the active-thinking, failure/recovery and completed states. 7) Remount
-  rows within the retained pane, then reload the renderer and reopen the session.
-- **Expected**: Both modes use one whole-process disclosure and keep the trailing
-  answer outside it. Detailed keeps active and completed processes open; the
-  active multi-item group opens, then closes on completion only if untouched.
-  Compact starts processes/groups and all payloads closed, hides reasoning text,
-  and keeps an untouched active process open after a failed/denied tool through
-  later recovery. A singleton has no group wrapper. No item payload opens itself:
-  a tool/search row stays a header until the user opens it, while a final thinking
-  item keeps its own leaf default and never selects an earlier tool. Parent, child
-  and sibling choices are independent;
+- **Steps**: 1) Stream progress paragraph A, a multi-item search segment,
+  progress paragraph B, and a multi-item command segment with adjacent Bash rows.
+  2) Inspect the open active group; manually close it while more output arrives.
+  3) Complete the turn and inspect untouched versus user-owned groups, and confirm
+  the Bash rows stay visible with every group collapsed. 4) Open one completed
+  group and one item, copy its output, close and reopen the group, then open a
+  sibling group independently. 5) Repeat with a singleton item and with the last
+  activity group's literal final item set to a tool/search, thinking, failed tool,
+  and denied tool. 6) Toggle `Show thinking` off and on and inspect the
+  active-thinking, failure/recovery and completed states. 7) Remount rows within
+  the retained pane, then reload the renderer and reopen the session.
+- **Expected**: Chronological collapsible process segments keep the trailing answer
+  outside them. The active group opens, then closes on completion only if
+  untouched; completed groups otherwise start closed. Bash/run aliases are excluded
+  from every process disclosure and stay visible even when every group is collapsed.
+  A singleton has no group wrapper. No item payload opens itself: a tool/search row
+  stays a header until the user opens it, while a final thinking item keeps its own
+  leaf default and never selects an earlier tool. When `Show thinking` is off, the
+  live thinking indicator stays visible while completed reasoning text and excerpts
+  are hidden and empty thinking-only containers are omitted; turning it back on
+  restores them. Parent, child and sibling choices are independent;
   closing/reopening a parent preserves descendants, and streaming/completion does
   not override user-owned choices. Retained-pane remounts preserve choices;
   renderer restart reapplies defaults while tool names, arguments, results and
-  statuses remain restored. Group/process headers show bounded running and issue
-  summaries without marking the whole turn failed.
+  statuses remain restored. Group headers show bounded running and issue summaries
+  without marking the whole turn failed.
 - **Specs linked**: `04-ux/01-ui-ia.md`,
   `04-ux/07-ui-design-system.md`, `04-ux/08-component-spec.md`,
   `04-ux/09-interaction-patterns.md`
@@ -6688,7 +6704,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   Electron; deterministic messages/status transitions, no provider credentials.
 - **Steps**: Send a turn, stream partial text, stop delivering deltas, start and
   finish a tool, clear/set runtime phases, resume text, then complete, stop, or
-  fail. Repeat in detailed and compact modes. Exercise planning, permission,
+  fail. Repeat with `Show thinking` on and off. Exercise planning, permission,
   question and proposal waits, history reading, and switching sessions.
 - **Expected**: Exactly one localized, accessible tail status remains through
   output pauses and completed-tool gaps. Runtime phases take precedence over
@@ -6698,7 +6714,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   Active and assistant-error turns mount no empty action toolbar. A partial
   answer has 24 CSS px between its fragment box and the status label
   at the default font scale; settled non-error content retains Copy, Fork,
-  and Regenerate. Check detailed and compact modes. History reading and
+  and Regenerate. Check the `Show thinking` preference on and off. History reading and
   permission cards retain normal message padding. Ending a turn keeps pinned
   follow at the bottom while restoring the normal toolbar height. A scrolled-up reader keeps the exact text position
   and scroll offset.
@@ -7766,7 +7782,10 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   descendants, output events, audit, and turn state after the shutdown grace.
 - **Expected**: The process group/job tree is terminated, no descendant remains,
   no later output arrives, the turn returns `TURN_ABORTED`, and the workspace is
-  not rolled back automatically.
+  not rolled back automatically. On Windows, the hidden runner first breaks
+  away from any parent Job Object before entering its own kill-on-close job; a
+  denied breakaway fails the tool closed instead of allowing the Desktop tree
+  to become the termination scope.
 - **Specs linked**: `03-runtime/03-tools-and-permissions.md`,
   `03-runtime/07-process-model.md`, `03-runtime/08-error-codes.md`,
   `03-runtime/16-tool-result-limits.md`, `05-security/01-security.md`, ADR 0054
@@ -10069,6 +10088,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | E — Tools & permissions (Skill residency) | E2E-254 |
 | Quality (Skill residency and IME slash alias) | E2E-254, E2E-255 |
 | C / E / F / Quality — Built-in skill activation | E2E-SKILL-builtin-activation |
+| Quality — Market catalog retry recovery | E2E-MARKET-CATALOG-RETRY |
 | C — Conversation & stream (plugin session import visibility) | E2E-257 |
 | F — Persistence (plugin session import visibility) | E2E-257 |
 | G — Plugins (session import visibility) | E2E-257 |
@@ -16368,6 +16388,7 @@ plugin-form fixtures in an isolated temporary directory at runtime.
 | E2E-MCP-MARKET-INSTALL | Builtin catalog entry resolves through `resolveCatalogEntry` and installs via the host `mcp.upsert` RPC; record lands in `~/.agents/servers/` | real host binary, isolated temp HOME |
 | E2E-MCP-MARKET-HEADER-SCOPE | Registry header-local `{token}` resolves only in its header; same-named URL path/query tokens remain literal through mapping, resolution, host upsert/list and persistence. URL templates retain only legacy `${NAME}` substitution. When `headerBindings` exists (even empty or partial), unbound tokens in every header stay literal and never consume another header's input or default | shared regressions plus real host binary with isolated temporary storage; remote entry disabled, no network call |
 | E2E-MCP-MARKET-partial-header-bindings-stay-literal | Resolve a catalog with only Authorization bound and another header using the same `{token}` / `${token}`; an undeclared `${UNBOUND}` in a third header also remains literal through host upsert/list and disk persistence | real host binary, disabled remote entry, synthetic input and isolated temporary storage; no network call |
+| E2E-MARKET-CATALOG-RETRY | In Skill Market and MCP Market, a failed query and then a partial source failure expose Retry; clicking it announces loading, refreshes the same query, and clears the failure when the source recovers | real React components in Electron with deterministic mocked market API responses; no live network |
 
 
 #### E2E-SKILL-MARKET-NET-BOUNDARY: A user-supplied source reaches the LAN, third-party content does not
@@ -16416,6 +16437,25 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   `apps/desktop/test/skill-market-failure.test.mjs`,
   `apps/desktop/test/skill-market-policy-refusal.test.mjs`,
   `packages/shared/src/public-network.test.ts`)
+
+#### E2E-MARKET-CATALOG-RETRY: Retry a failed or partially available market query
+
+- **Preconditions**: Rendered Skill Market and MCP Market panels with the
+  market APIs stubbed at the IPC boundary. Each API returns a total failure,
+  then a result with one failed source, then a complete result.
+- **Steps**: Open each market; click Retry after the total failure; confirm the
+  loading announcement and recovered entry; click Retry again after the
+  partial failure.
+- **Expected**: Both markets repeat the current search, show loading while the
+  request runs, retain a Retry action for partial failures, and clear the failed
+  source after recovery. The test makes no live network request and does not
+  change the main-process network policy.
+- **Specs linked**: `04-ux/06-settings-ia.md`, ADR 0177, ADR 0272
+- **Acceptance**: Quality
+- **Milestone**: M6+
+- **Status**: Automated (`pnpm test:e2e:market-retry`,
+  `apps/desktop/test/skill-market-panel.test.mjs`,
+  `apps/desktop/test/mcp-market-panel.test.mjs`)
 
 #### E2E-SKILL-MARKET-EXPANSION: Adjacent markdown resources inline before install
 
@@ -16967,32 +17007,39 @@ plugin-form fixtures in an isolated temporary directory at runtime.
 
 - **Preconditions:** A turn with progress paragraph A, multiple searches plus
   thinking, progress paragraph B, multiple commands plus thinking, and a final
-  answer; Detailed and Compact display modes; legacy message-level transcript
-  search targets.
-- **Steps:** In Detailed, confirm a live process starts open, let that same turn
-  finish without interacting, and confirm the process collapses. On a second
-  turn, explicitly open the completed process and confirm the choice survives
-  subsequent updates. Review the nested path, including independent group/item
-  toggles, parent close/reopen, a singleton segment, literal-final-item leaf
-  selection, failure/denial/recovery, retained-pane remounts and a legacy search
-  reveal. Repeat in Compact with permission/question/plan/goal cards, a stopped
-  partial answer, an assistant error and delegated child work.
-- **Expected:** Both modes use one whole-process disclosure and leave the final
-  answer, assistant errors, stopped trailing text and pending actions outside it.
-  Detailed starts active processes open; untouched processes collapse at
-  completion, while explicit user choices persist. The active multi-item group
-  is open and an untouched group closes on completion. Compact starts processes
-  and groups closed, hides reasoning, and keeps payloads closed; an untouched
-  active process with a recorded failed/denied tool stays open through recovery
-  and closes on completion. Singletons have no group. No item payload opens
-  itself: a tool/search row stays closed until the user opens it, while a final
-  thinking item keeps its own leaf default. Parent/child/
-  sibling states remain independent, pane-owned user choices survive updates,
-  mode changes and remounts, and renderer restart reapplies defaults. Search
-  reveals the process and activity group that own the named message once per
-  request; item-level targeting is not part of this change, and Compact
-  reasoning requires an explicit switch to Detailed. Saved mode survives
-  restart and a missing/unknown setting resolves to Detailed.
+  answer; the `Show thinking` preference on and off; legacy message-level
+  transcript search targets.
+- **Steps:** Confirm a live active group starts open, let that same turn finish
+  without interacting, and confirm the group collapses. On a second turn, explicitly
+  open a completed group and confirm the choice survives subsequent updates. Turn
+  `Show thinking` off and confirm the live thinking indicator remains while
+  completed reasoning rows and excerpts disappear and no empty thinking-only
+  container is left; turn it back on and confirm the completed rows return. Collapse
+  every group and confirm the Bash/run rows stay visible. Review the nested path,
+  including independent group/item toggles, parent close/reopen, a singleton
+  segment, literal-final-item leaf selection, failure/denial/recovery, retained-pane
+  remounts, Bash rows staying standalone (including adjacent Bash rows) with their
+  details closed until opened, and a legacy search reveal.
+- **Expected:** Chronological collapsible process segments leave the final answer,
+  assistant errors, stopped trailing text and pending actions outside them. The
+  active group starts open; untouched groups collapse at completion, while explicit
+  user choices persist. These group defaults do not depend on the `Show thinking`
+  preference. Bash/run aliases are excluded from every process disclosure and stay
+  standalone rows visible even when every group is collapsed; adjacent Bash rows
+  each remain standalone and a Bash row's detail stays closed until the user opens
+  it. When `Show thinking` is off, the live thinking indicator stays visible,
+  completed reasoning rows and excerpts are hidden, and empty thinking-only
+  containers are omitted; turning it back on restores them. Singletons have no
+  group. No item payload opens itself: a tool/search row stays closed until the user
+  opens it, while a final thinking item keeps its own leaf default.
+  Parent/child/sibling states remain independent, pane-owned user choices survive
+  updates, preference changes and remounts, and renderer restart reapplies defaults.
+  Search reveals the process segment and activity group that own the named message
+  once per request; item-level targeting is not part of this change, and reasoning
+  hidden by the preference stays hidden until the user turns `Show thinking` on.
+  Saved `showThinking` survives restart; an absent value falls back to the legacy
+  `thinkingDisplayMode` (`compact` hides, `detailed`/unknown/absent shows).
+
   Failed tool/search headers, non-zero exit chips and process/group issue counts
   remain visible in neutral colors during execution, after a later successful
   tool and after completion. Counts, failure wording and accessible status are
@@ -17005,7 +17052,8 @@ plugin-form fixtures in an isolated temporary directory at runtime.
 - **Automation:** `pnpm test:e2e:transcript` covers default and active-to-completed
   process disclosure behavior; `pnpm test:e2e:transcript-disclosure` verifies
   manual-open retention and viewport anchoring; `apps/desktop/test/turn-process.test.mjs`
-  covers default selection.
+  covers process defaults and `apps/desktop/test/thinking-visibility.test.mjs`
+  covers the `showThinking`/legacy resolver precedence.
   `tool-run-head.test.mjs` and `transcript-style.test.mjs` guard the neutral
   inline failure treatment and retained diagnostic styling.
 - **Specs:** 04-ux/06-settings-ia, 04-ux/08-component-spec,

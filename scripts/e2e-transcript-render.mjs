@@ -204,6 +204,11 @@ app.whenReady().then(async () => {
     `runtime status slot scenario failed: ${JSON.stringify(result.runtimeSlot?.failures)}`,
   );
   assert.equal(
+    result.turnProcess?.ok,
+    true,
+    `turn process scenario failed: ${JSON.stringify(result.turnProcess?.checks)}`,
+  );
+  assert.equal(
     result.smoothText?.ok,
     true,
     `smooth text cadence scenario failed: ${JSON.stringify(result.smoothText)}`,
