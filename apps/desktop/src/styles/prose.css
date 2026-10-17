@@ -193,7 +193,7 @@
 }
 
 :root[data-theme="light"] .prose-chat li::marker {
-  color: color-mix(in oklab, var(--ds-text-primary) 40%, transparent);
+  color: color-mix(in oklab, var(--ds-text-primary) 48%, transparent);
 }
 
 .prose-chat li > p {
@@ -203,6 +203,19 @@
 .prose-chat li > ul,
 .prose-chat li > ol {
   margin: 0.25em 0 0.3em;
+}
+
+/*
+  List rhythm is a settling policy (Codex parity, ListSpacing): while a
+  message streams — [data-streaming] on the prose root — sibling items stay
+  compact so the arriving tail does not reflow the list; once settled,
+  top-level items get uniform breathing room so multi-part answers read as
+  distinct thoughts. Nested lists keep the compact rhythm either way.
+*/
+.prose-chat:not([data-streaming]) > ul > li,
+.prose-chat:not([data-streaming]) > ol > li,
+.prose-chat:not([data-streaming]) > .contains-task-list > .task-list-item {
+  margin: 0.45em 0;
 }
 
 .prose-chat .contains-task-list {
@@ -224,7 +237,7 @@
   width: 14px;
   height: 14px;
   margin: 0.28em 0 0;
-  accent-color: var(--ds-accent);
+  accent-color: var(--ds-prose-accent);
   border-radius: var(--radius-3xs);
 }
 
@@ -269,35 +282,26 @@
   background: none;
 }
 
-/* Links stay monochrome but are always discoverable: a soft permanent
-   underline that firms up on hover, instead of relying on color alone. */
+/* Links carry the prose accent (Codex parity: one accent for text semantics)
+   plus a soft permanent underline that firms up on hover, so color is never
+   the only discoverability cue. */
 .prose-chat a {
-  color: var(--ds-text-primary);
+  color: var(--ds-prose-accent);
   text-decoration-line: underline;
-  text-decoration-color: color-mix(in oklab, var(--ds-text-primary) 32%, transparent);
+  text-decoration-color: color-mix(in oklab, var(--ds-prose-accent) 45%, transparent);
   text-underline-offset: 3px;
   text-decoration-thickness: 1px;
   transition: color var(--motion-duration-fast) var(--motion-ease-out), text-decoration-color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
 .prose-chat a:hover {
-  color: var(--ds-text-primary);
-  text-decoration-color: color-mix(in oklab, var(--ds-text-primary) 85%, transparent);
+  color: var(--ds-prose-accent);
+  text-decoration-color: color-mix(in oklab, var(--ds-prose-accent) 85%, transparent);
 }
 
 .prose-chat a:focus-visible {
   outline-offset: 3px;
   border-radius: var(--radius-3xs);
-}
-
-/* Light only softens the permanent underline; the base rule already paints the
-   `--ds-text-primary` ink, so the colour line is not duplicated here. */
-:root[data-theme="light"] .prose-chat a {
-  text-decoration-color: color-mix(in oklab, var(--ds-text-primary) 30%, transparent);
-}
-
-:root[data-theme="light"] .prose-chat a:hover {
-  text-decoration-color: color-mix(in oklab, var(--ds-text-primary) 80%, transparent);
 }
 
 .prose-chat img,
@@ -322,7 +326,8 @@
 }
 
 /* Inline code: borderless soft chip — the hairline frame used to add noise
-   around every token in dense technical answers. */
+   around every token in dense technical answers. The ink leans toward the
+   prose accent (Codex: inline code reads as accent-colored token text). */
 .prose-chat code {
   font-family: var(--font-mono);
   font-size: var(--text-sm-plus);
@@ -330,12 +335,12 @@
   background: color-mix(in oklab, var(--ds-text-primary) 7%, transparent);
   border-radius: var(--radius-3xs);
   padding: 0.14em 0.4em;
-  color: color-mix(in oklab, var(--ds-text-primary) 94%, var(--ds-accent-soft));
+  color: color-mix(in oklab, var(--ds-text-primary) 86%, var(--ds-prose-accent));
 }
 
 :root[data-theme="light"] .prose-chat code {
   background: color-mix(in oklab, var(--ds-text-primary) 6%, transparent);
-  color: var(--ds-text-primary);
+  color: color-mix(in oklab, var(--ds-text-primary) 84%, var(--ds-prose-accent));
 }
 
 /* Fallback for a bare <pre> that bypassed the code-block chrome */
@@ -468,11 +473,11 @@
 
 /* Shiki one-light token ink for the language rail and the copy button. */
 :root[data-theme="light"] .code-block-lang {
-  color: color-mix(in oklab, #383a42 62%, transparent);
+  color: color-mix(in oklab, #383a42 74%, transparent);
 }
 
 :root[data-theme="light"] .code-block .code-copy-btn {
-  color: color-mix(in oklab, #383a42 62%, transparent);
+  color: color-mix(in oklab, #383a42 74%, transparent);
   opacity: 0.9;
 }
 
@@ -741,7 +746,7 @@
 }
 
 :root[data-theme="light"] .thinking-prose {
-  color: color-mix(in oklab, var(--ds-text-primary) 58%, transparent);
+  color: color-mix(in oklab, var(--ds-text-primary) 64%, transparent);
 }
 
 :root[data-theme="light"] .thinking-prose code {

@@ -56,6 +56,9 @@ jobs:
       - name: Unit-test the Pi patch checks
         run: node --test scripts/pi-patch-hash.test.mjs
 
+      - name: Check text contrast floors
+        run: node scripts/check-text-contrast.mjs && node --test scripts/check-text-contrast.test.mjs
+
       - name: Unit tests
         run: pnpm -r --if-present test
 
