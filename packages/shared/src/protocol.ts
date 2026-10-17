@@ -1,5 +1,11 @@
 export const PROTOCOL_VERSION = 11 as const;
 export const SCHEMA_VERSION = 16 as const;
+/**
+ * Pre-branding constants, kept for backward compatibility: persisted schema
+ * fields, tests, and external tooling compare against these minih values.
+ * User-visible identity comes from `currentAppName` / `currentAppId`, which
+ * resolve the brand this bundle was built for (see ./brand.ts).
+ */
 export const APP_ID = "org.hmini.agent";
 export const APP_NAME = "Minih-Agent-Desktop";
 export const APP_VERSION = "0.20.5";

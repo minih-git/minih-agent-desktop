@@ -263,7 +263,11 @@ Minih Router 是自有的模型网关，排在命名预设的第一位。它是�
 - **内置 EasyTier 虚拟局域网通道**：Rust `host-core` 内嵌一个 EasyTier 虚拟局域网节点
   （`networkName: "minih-router"`，引导节点 `udp://router.hmini.org:11012` 与
   `tcp://router.hmini.org:11012`，默认局域网网关 `http://11.12.0.1:3001/v1`，
-  持久化在 `settings.app.easytier`）。虚拟网段采用独立的
+  持久化在 `settings.app.easytier`）。以上是 `minih` 品牌默认值；`DESKTOP_BRAND=hungraim`
+  构建会编译自己的默认值（`hungraim-router` 网络、`router-mesh.hungraim.com:11023`
+  引导节点、`http://11.123.0.1:3001/v1` 网关、`https://aiapi.hungraim.com/v1`
+  预设地址），来源与 minih 相同的品牌 profile（`packages/shared/src/brand.ts`）。
+  虚拟网段采用独立的
   `11.12.0.0/24`，确保不会与用户已有的专用私域网段（`11.11.11.0/24`）重叠；网关位于其他网段时设置
   `routerLanUrl`，并用 `dhcp: false` 加 `ipv4`（IPv4 字面量，可带 `/32`）
   固定网关自身地址。网关也可以自行下发身份：带 `Authorization: Bearer <AccessKey>`

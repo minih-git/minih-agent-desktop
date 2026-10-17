@@ -6,8 +6,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   APP_MENU_COMMANDS,
-  APP_NAME,
   IPC,
+  currentAppName,
   isThemeColorScheme,
   traySessionTitle,
   migrateKeybindingOverrides,
@@ -272,7 +272,7 @@ export function createApplicationLifecycle({
     if (process.platform === "darwin") icon.setTemplateImage(true);
 
     state.tray = new Tray(icon);
-    state.tray.setToolTip(APP_NAME);
+    state.tray.setToolTip(currentAppName());
     // macOS single-click opens its attached menu without focusing/reading a conversation.
     // mouse-enter/move/leave replace the native NSStatusItem with a custom view,
     // which hides the menu-bar extra. Keep hover retry on Windows/Linux only.

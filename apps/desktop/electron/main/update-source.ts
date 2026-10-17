@@ -1,13 +1,16 @@
 /**
  * Ordered application-update feed sources (ADR 0022 amendment).
  *
- * The packaged `app-update.yml` GitHub feed stays the default. A release may
- * additionally compile in HTTPS mirror bases with
+ * The packaged `app-update.yml` feed stays the default: GitHub Releases for a
+ * minih build, the generic `updates.hungraim.com` host for a hungraim build. A
+ * release may additionally compile in HTTPS mirror bases with
  * `MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`; each mirror holds the same
- * `latest*.yml` files, installers, and blockmaps as the GitHub Release (see
+ * `latest*.yml` files, installers, and blockmaps as the release it mirrors (see
  * `docs/spec/06-delivery/06-release-runbook.md`). Main owns the list: the
  * renderer cannot supply a feed, and no user input can change it at runtime.
  */
+
+import { currentBrandProfile } from "@minih-agent/shared";
 
 /** Build-time environment variable that carries the mirror base URLs. */
 export const UPDATE_MIRRORS_ENV = "MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS";
@@ -16,17 +19,22 @@ export const UPDATE_MIRRORS_ENV = "MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS";
 export const MAX_UPDATE_MIRRORS = 3;
 
 /**
- * Packaged GitHub feed coordinates.
+ * Packaged minih GitHub feed coordinates.
  *
  * `apps/desktop/package.json` `build.publish` produces the same values in
  * `app-update.yml`; the release test asserts the three stay identical so the
  * explicit feed this module can apply never drifts from the shipped one.
+ * Only a minih build resolves an explicit GitHub feed — a hungraim build ships
+ * a generic feed in `app-update.yml` and never overrides it.
  */
 export const GITHUB_UPDATE_FEED = {
   provider: "github",
   owner: "minih-git",
   repo: "minih-agent-desktop",
 } as const;
+
+/** Host that would only duplicate the packaged minih GitHub feed. */
+const GITHUB_HOSTS = new Set(["github.com", "api.github.com"]);
 
 export type UpdateFeed =
   | { provider: "github"; owner: string; repo: string }
@@ -50,8 +58,8 @@ export type ParsedUpdateMirrors = {
   rejected: RejectedUpdateMirror[];
 };
 
-/** Hosts that would only duplicate the packaged GitHub feed. */
-const GITHUB_HOSTS = new Set(["github.com", "api.github.com"]);
+/** Hosts that would only duplicate the packaged minih GitHub feed. */
+const GITHUB_FEED_HOSTS = new Set(["github.com", "api.github.com"]);
 
 function validateMirror(value: string): { url: string } | RejectedUpdateMirror {
   let parsed: URL;
@@ -72,7 +80,7 @@ function validateMirror(value: string): { url: string } | RejectedUpdateMirror {
   if (parsed.search || parsed.hash) {
     return { value, reason: "must not carry a query or fragment" };
   }
-  if (GITHUB_HOSTS.has(parsed.hostname.toLowerCase())) {
+  if (GITHUB_FEED_HOSTS.has(parsed.hostname.toLowerCase())) {
     return { value, reason: "duplicates the packaged GitHub feed" };
   }
   // electron-updater appends the separator itself; a stable base keeps the
@@ -118,13 +126,23 @@ export function parseUpdateMirrors(configured: unknown): ParsedUpdateMirrors {
 }
 
 /**
- * Sources tried in order: the packaged GitHub feed first, then every mirror.
+ * Sources tried in order: the packaged feed first, then every mirror.
  *
- * A build without mirrors yields the single `packaged` source, so no feed is
- * applied and today's behavior is unchanged.
+ * A minih build without mirrors yields the single `packaged` source, so no
+ * feed is applied and today's behavior is unchanged. A hungraim build never
+ * produces an explicit GitHub source — its packaged `app-update.yml` already
+ * points at the generic host — so mirrors, when compiled in, follow the
+ * packaged generic feed directly. An unknown brand falls back to minih.
  */
 export function resolveUpdateSources(configured: unknown): UpdateSource[] {
   const { mirrors } = parseUpdateMirrors(configured);
+  if (currentBrandProfile().name === "hungraim") {
+    return mirrors.map((url): UpdateSource => ({
+      kind: "mirror",
+      host: new URL(url).host,
+      feed: { provider: "generic", url },
+    }));
+  }
   if (mirrors.length === 0) {
     return [{ kind: "packaged", host: "github.com" }];
   }

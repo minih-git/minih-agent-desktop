@@ -457,6 +457,10 @@ address is only a default (`customBaseUrl: true`):
   virtual LAN node (`networkName: "minih-router"`, bootstrap peers
   `udp://router.hmini.org:11012` and `tcp://router.hmini.org:11012`, default LAN
   gateway `http://11.12.0.1:3001/v1`, persisted under `settings.app.easytier`).
+  These are the `minih` brand defaults; a `DESKTOP_BRAND=hungraim` build
+  compiles its own defaults (`hungraim-router` mesh, `router-mesh.hungraim.com:11023`
+  peers, `http://11.123.0.1:3001/v1` gateway, `https://aiapi.hungraim.com/v1`
+  preset URL) from the same brand profile (`packages/shared/src/brand.ts`).
   The virtual range is `11.12.0.0/24`, chosen so it
   cannot overlap a private network (`11.11.11.0/24`) the user already runs; a deployment whose
   gateway sits on another range sets `routerLanUrl`, and pins the gateway's own

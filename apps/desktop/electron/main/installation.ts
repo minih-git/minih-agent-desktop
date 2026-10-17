@@ -1,6 +1,11 @@
 import { app } from "electron";
-import { APP_ID, APP_NAME } from "@minih-agent/shared";
-import { applyDevelopmentUserData, desktopDataDir } from "./data-paths";
+import { currentAppId, currentAppName } from "@minih-agent/shared";
+import {
+  applyDevelopmentUserData,
+  clearDataDirOverride,
+  dataDirOverrideFromEnv,
+  desktopDataDir,
+} from "./data-paths";
 import { ignoreBrokenStdio } from "./logger";
 import { installMainProcessErrorHandlers } from "./main-process-errors";
 
@@ -8,13 +13,13 @@ import { installMainProcessErrorHandlers } from "./main-process-errors";
 ignoreBrokenStdio();
 installMainProcessErrorHandlers();
 export const isDevelopmentBuild = process.env.MINIH_AGENT_DEV === "1" || !app.isPackaged;
-app.setName(APP_NAME);
+app.setName(currentAppName());
 applyDevelopmentUserData(app, isDevelopmentBuild);
-if (process.platform === "win32") app.setAppUserModelId(APP_ID);
+if (process.platform === "win32") app.setAppUserModelId(currentAppId());
 
 // A managed restart inherits the root published for children, not an explicit profile override.
-if (process.argv.includes("--pi-managed-storage")) delete process.env.MINIH_AGENT_DATA_DIR;
-export const singleInstanceRequired = !process.env.MINIH_AGENT_DATA_DIR;
+if (process.argv.includes("--pi-managed-storage")) clearDataDirOverride();
+export const singleInstanceRequired = !dataDirOverrideFromEnv();
 export const hasSingleInstanceLock = singleInstanceRequired ? app.requestSingleInstanceLock() : true;
 export const defaultDataDir = desktopDataDir(isDevelopmentBuild);
 if (!hasSingleInstanceLock) app.quit();
