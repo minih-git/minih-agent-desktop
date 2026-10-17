@@ -1,6 +1,6 @@
 {
   "name": "@minih-agent/plugin-sdk",
-  "version": "0.20.8",
+  "version": "0.21.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
