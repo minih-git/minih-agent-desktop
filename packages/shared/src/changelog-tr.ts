@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.20.8",
+    date: "2026-10-17",
+    highlights: [
+      "Ajan turları, modelin çalışırken gerçekten bildirdiklerini gösterir: varsayılan Standart kayıt ayrıntısı her ilerleme paragrafını ve her araç ile düşünme satırını kendi satırında tutar; Ayarlar → YZ → Varsayılanlar ayrıca Kompakt (biten turun adımlarını tek özette toplar) ve Ayrıntılı (araç ayrıntılarını ve tamamlanan düşünmeyi açar) seçeneklerini sunar.",
+      "Her süreç grubu başlığı artık tüm tur yerine yalnızca kendi aralığını ölçer ve katlanmış grup modelin son ilerleme satırını önizler; böylece uzun bir çalışma bir bakışta okunur.",
+      "Biten tur, gerçek geçen süreyi adım ve araç sayılarıyla birlikte gösterir ve bu sayılar gerçekten görünen satırlarla eşleşir.",
+      "Kayıt ayrıntısı tercihi, düşünme anahtarı gibi hesapla eşitlenir; başka bir cihaz kayıtları aynı biçimde açar.",
+    ],
+  },
+  {
     version: "0.20.7",
     date: "2026-10-17",
     highlights: [

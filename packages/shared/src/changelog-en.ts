@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.20.8",
+    date: "2026-10-17",
+    highlights: [
+      "Agent turns show what the model reported while it works: the default Transcript detail keeps every progress paragraph and each tool or thinking row on its own line, and Settings → AI → Defaults now offers Compact (fold a finished turn's steps behind one summary) and Detailed (open tool details and completed reasoning).",
+      "Each process group header times only its own span instead of the whole turn, and a folded group previews the model's latest progress line, so a long run reads at a glance.",
+      "A finished turn states its real elapsed time with step and tool counts, and those counts match the rows you can actually see.",
+      "The Transcript detail preference syncs with your account like the thinking toggle, so another device opens transcripts the same way.",
+    ],
+  },
+  {
     version: "0.20.7",
     date: "2026-10-17",
     highlights: [

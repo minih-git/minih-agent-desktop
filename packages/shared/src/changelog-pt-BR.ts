@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "0.20.8",
+    date: "2026-10-17",
+    highlights: [
+      "Os turnos do agente mostram o que o modelo relata enquanto trabalha: o nível Padrão de detalhe da transcrição mantém cada parágrafo de progresso e cada linha de ferramenta ou raciocínio na própria linha, e Configurações → IA → Padrões traz ainda Compacto (recolher as etapas de um turno concluído em um resumo) e Detalhado (abrir detalhes de ferramenta e o raciocínio concluído).",
+      "O cabeçalho de cada grupo de processo passa a medir apenas o próprio intervalo em vez do turno inteiro, e um grupo recolhido mostra como prévia a última linha de progresso do modelo, então uma execução longa é lida de relance.",
+      "Um turno concluído informa a duração real junto com as contagens de etapas e ferramentas, e esses números correspondem às linhas realmente visíveis.",
+      "A preferência de detalhe da transcrição sincroniza com a conta como o botão de raciocínio, então outro dispositivo abre as transcrições do mesmo jeito.",
+    ],
+  },
+  {
     version: "0.20.7",
     date: "2026-10-17",
     highlights: [

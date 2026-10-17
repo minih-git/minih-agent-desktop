@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.20.8",
+    date: "2026-10-17",
+    highlights: [
+      "Agenten-Durchläufe zeigen, was das Modell tatsächlich berichtet: Die Standard-Transkriptdetailstufe behält jeden Fortschrittsabsatz sowie jede Werkzeug- und Denkzeile in einer eigenen Zeile; unter Einstellungen → KI → Standardwerte stehen zusätzlich Kompakt (Schritte eines beendeten Durchlaufs hinter einer Zusammenfassung) und Ausführlich (Werkzeugdetails und abgeschlossenes Denken geöffnet) bereit.",
+      "Jede Prozessgruppe misst nur noch ihre eigene Spanne statt des ganzen Durchlaufs, und eine eingeklappte Gruppe zeigt die letzte Fortschrittszeile des Modells als Vorschau, sodass lange Läufe auf einen Blick lesbar sind.",
+      "Ein abgeschlossener Durchlauf nennt seine tatsächliche Dauer sowie Schritte und Werkzeuge, und diese Zahlen entsprechen den sichtbaren Zeilen.",
+      "Die Detailstufe des Transkripts wird wie der Denk-Schalter mit dem Konto synchronisiert, sodass ein zweites Gerät Transkripte gleich darstellt.",
+    ],
+  },
+  {
     version: "0.20.7",
     date: "2026-10-17",
     highlights: [

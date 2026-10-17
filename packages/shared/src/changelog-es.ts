@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "0.20.8",
+    date: "2026-10-17",
+    highlights: [
+      "Los turnos del agente muestran lo que el modelo informa mientras trabaja: el nivel Estándar de detalle de la transcripción conserva cada párrafo de progreso y cada fila de herramienta o razonamiento en su propia línea, y Ajustes → IA → Valores predeterminados ofrece además Compacto (pliega los pasos de un turno terminado en un resumen) y Detallado (abre los detalles de herramienta y el razonamiento completado).",
+      "La cabecera de cada grupo de proceso mide solo su propio tramo en lugar del turno completo, y un grupo plegado muestra como vista previa la última línea de progreso del modelo, así una ejecución larga se lee de un vistazo.",
+      "Un turno terminado indica su duración real junto con el número de pasos y herramientas, y esas cifras coinciden con las filas visibles.",
+      "La preferencia de detalle de la transcripción se sincroniza con tu cuenta igual que el interruptor de razonamiento, así otro dispositivo abre las transcripciones del mismo modo.",
+    ],
+  },
+  {
     version: "0.20.7",
     date: "2026-10-17",
     highlights: [
