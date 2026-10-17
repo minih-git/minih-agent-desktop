@@ -128,6 +128,17 @@ atomically replaced. Errors keep the old profile active and visible in settings;
 retrying the same destination uses the failed job's ownership identity. A crash
 before publication leaves pending work to recopy from the source. An unavailable
 selected volume refuses startup rather than creating a blank profile elsewhere.
+If the managed installation's default data root is missing, startup pauses before
+loading app services and offers two recovery choices: create a fresh default data
+root or select an existing Minih-Agent-Desktop storage root. The selected location must
+contain `data/pi.sqlite` or be the data directory containing `pi.sqlite`; its
+pointer is written only after validation. A sibling `browser/` directory is used
+when present, otherwise the installation's current browser root is retained.
+Dismissal exits without changing the pointer or creating a profile. Missing custom
+roots and pending cache/backup maintenance continue to refuse startup. A queued
+migration may resume with an absent default data root only when its browser root
+still exists, preserving first-install migration. An explicit `MINIH_AGENT_DATA_DIR`
+remains outside this recovery flow.
 Original directories remain explicit backups. Deleting these requires a separate
 settings confirmation after checking new-location functionality, including plugins
 that may own absolute references the host cannot safely rewrite. Backup cleanup
