@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "0.20.8",
+    date: "2026-10-17",
+    highlights: [
+      "Les tours de l'agent montrent ce que le modèle rapporte pendant qu'il travaille : le niveau Standard de détail de la transcription conserve chaque paragraphe de progression ainsi que chaque ligne d'outil ou de raisonnement sur sa propre ligne, et Réglages → IA → Valeurs par défaut propose en plus Compact (replier les étapes d'un tour terminé derrière un résumé) et Détaillé (ouvrir les détails d'outil et le raisonnement terminé).",
+      "Chaque en-tête de groupe de processus ne mesure plus que sa propre plage au lieu du tour entier, et un groupe replié affiche en aperçu la dernière ligne de progression du modèle, si bien qu'une longue exécution se lit d'un coup d'œil.",
+      "Un tour terminé indique sa durée réelle ainsi que le nombre d'étapes et d'outils, et ces chiffres correspondent aux lignes réellement visibles.",
+      "La préférence de détail de la transcription se synchronise avec le compte comme le réglage du raisonnement, si bien qu'un second appareil affiche les transcriptions de la même façon.",
+    ],
+  },
+  {
     version: "0.20.7",
     date: "2026-10-17",
     highlights: [
