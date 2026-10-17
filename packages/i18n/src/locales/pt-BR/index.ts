@@ -1585,6 +1585,8 @@ export const ptBR = {
     minihRouterCategoryVideo: "Vídeo",
     minihRouterCategoryEmbedding: "Embedding",
     minihRouterCategoryCode: "Código",
+    minihRouterVendorAll: "Todos os provedores",
+    minihRouterVendorOther: "Outros",
     minihRouterLanTitle: "Canal LAN Virtual (EasyTier)",
     minihRouterLanDesc: "Roteia o tráfego do Minih Router por um túnel P2P/relay criptografado e retorna à URL pública se inacessível.",
     minihRouterLanToggle: "Ativar canal LAN virtual",

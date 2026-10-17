@@ -30,6 +30,7 @@ import { SettingsMenuSelect } from "./SettingsMenuSelect";
 import { AddModelsDialog } from "./AddModelsDialog";
 import { ModelConfigureDialog } from "./ModelConfigureDialog";
 import { MinihRouterModelCard } from "./MinihRouterModelCard";
+import { groupModelsByVendor, inferModelVendor } from "./minih-router-format";
 import { ImageGenerationModelRow } from "./ImageGenerationModelRow";
 import {
   bindingAfterRemoval,
@@ -441,63 +442,93 @@ export function ModelsPage() {
               {selected.state === "loading" && selected.data.length === 0 ? (
                 <p className="minih-router-status">{t("settings.minihRouterLoading")}</p>
               ) : null}
-              <ul className="minih-router-model-grid models-chosen-grid" data-model-section="chosen">
-                {routerProvider.models.map((binding) => {
-                  const plaza = selected.data.find(
-                    (entry) => entry.model.id.toLowerCase() === binding.id.toLowerCase(),
-                  );
-                  return (
-                    <li
-                      key={binding.id}
-                      className="models-chosen-card"
-                      data-model-id={binding.id}
-                    >
-                      {plaza ? (
-                        <MinihRouterModelCard
-                          model={plaza.model}
-                          locale={locale}
-                          unpricedLabel={
-                            plaza.priced ? undefined : t("settings.minihRouterSelectedUnpriced")
-                          }
-                        />
-                      ) : (
-                        <div className="models-chosen-fallback">
-                          <span className="minih-router-model-vendor">
-                            {t("settings.minihRouterSelectedUnpriced")}
-                          </span>
-                          <div className="minih-router-model-name">
-                            <code title={binding.id}>{binding.id}</code>
+              <div className="models-vendor-groups" data-model-section="chosen">
+                {groupModelsByVendor(
+                  routerProvider.models.map((binding) => {
+                    const plaza = selected.data.find(
+                      (entry) => entry.model.id.toLowerCase() === binding.id.toLowerCase(),
+                    );
+                    const model = plaza?.model ?? {
+                      id: binding.id,
+                      upstreamIds: [],
+                      vendor: inferModelVendor({ id: binding.id }),
+                      category: "chat" as const,
+                      protocols: [],
+                      price: { input: null, output: null, cacheRead: null, cacheWrite: null },
+                      multiplePrices: false,
+                      tieredPricing: false,
+                      contextWindow:
+                        binding.contextWindow && binding.contextWindow > 0
+                          ? binding.contextWindow
+                          : null,
+                      maxOutput:
+                        binding.maxTokens && binding.maxTokens > 0 ? binding.maxTokens : null,
+                    };
+                    return {
+                      binding,
+                      model,
+                      priced: plaza ? plaza.priced : false,
+                    };
+                  }),
+                  (entry) => entry.model,
+                  t("settings.minihRouterVendorOther"),
+                ).map((group) => (
+                  <section
+                    key={group.key}
+                    className="models-vendor-group"
+                    data-vendor-group={group.key}
+                  >
+                    <div className="models-vendor-group-head">
+                      <h4 className="models-vendor-group-title">{group.label}</h4>
+                      <span className="models-vendor-group-count">{group.items.length}</span>
+                    </div>
+                    <ul className="minih-router-model-grid models-chosen-grid">
+                      {group.items.map(({ binding, model, priced }) => (
+                        <li
+                          key={binding.id}
+                          className="models-chosen-card"
+                          data-model-id={binding.id}
+                        >
+                          <MinihRouterModelCard
+                            model={model}
+                            locale={locale}
+                            unpricedLabel={
+                              priced ? undefined : t("settings.minihRouterSelectedUnpriced")
+                            }
+                          />
+                          <div className="models-chosen-card-actions">
+                            <span className="models-chosen-card-status">
+                              {isDefaultModel(binding) ? (
+                                <Badge tone="success">{t("settings.modelsDefaultBadge")}</Badge>
+                              ) : null}
+                            </span>
+                            <div className="models-chosen-card-buttons">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setDraftBindings(null);
+                                  setConfiguringId(binding.id);
+                                }}
+                              >
+                                {t("settings.modelsConfigure")}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={saving}
+                                onClick={() => void removeModel(binding)}
+                              >
+                                {t("settings.removeModel")}
+                              </Button>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                      <div className="models-chosen-card-actions">
-                        {isDefaultModel(binding) ? (
-                          <Badge tone="success">{t("settings.modelsDefaultBadge")}</Badge>
-                        ) : null}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setDraftBindings(null);
-                            setConfiguringId(binding.id);
-                          }}
-                        >
-                          {t("settings.modelsConfigure")}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={saving}
-                          onClick={() => void removeModel(binding)}
-                        >
-                          {t("settings.removeModel")}
-                        </Button>
-                      </div>
-
-                    </li>
-                  );
-                })}
-              </ul>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </div>
             </>
           )}
         </div>

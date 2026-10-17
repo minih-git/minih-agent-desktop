@@ -1620,6 +1620,8 @@ sklm: {
     minihRouterCategoryVideo: "Video",
     minihRouterCategoryEmbedding: "Embedding",
     minihRouterCategoryCode: "Kod",
+    minihRouterVendorAll: "Tüm sağlayıcılar",
+    minihRouterVendorOther: "Diğer",
     minihRouterLanTitle: "Sanal LAN Kanalı (EasyTier)",
     minihRouterLanDesc: "Minih Router trafiğini şifreli bir P2P/röle tüneli üzerinden yönlendirir ve ulaşılamadığında genel URL'ye geri döner.",
     minihRouterLanToggle: "Sanal LAN kanalını etkinleştir",

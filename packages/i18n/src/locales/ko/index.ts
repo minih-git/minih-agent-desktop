@@ -1626,6 +1626,8 @@ sklm: {
     minihRouterCategoryVideo: "비디오",
     minihRouterCategoryEmbedding: "임베딩",
     minihRouterCategoryCode: "코드",
+    minihRouterVendorAll: "전체 공급업체",
+    minihRouterVendorOther: "기타",
     minihRouterLanTitle: "가상 LAN 채널 (EasyTier)",
     minihRouterLanDesc: "암호화된 P2P/릴레이 터널을 통해 Minih Router 트래픽을 라우팅하며 연결할 수 없을 때 공개 URL로 자동 전환합니다.",
     minihRouterLanToggle: "가상 LAN 채널 사용",

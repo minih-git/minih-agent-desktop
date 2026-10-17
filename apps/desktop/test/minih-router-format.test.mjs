@@ -4,14 +4,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  OTHER_VENDOR_KEY,
   cachePriceText,
+  filterModelsByVendorAndQuery,
   formatContextTokens,
   formatUnitPrice,
   formatUsd,
+  groupModelsByVendor,
+  inferModelVendor,
   isModelConfigured,
+  modelVendorLabel,
   priceCell,
   quotaLabel,
   quotaRemainingShare,
+  summarizeModelVendors,
 } from "../src/components/settings/minih-router-format.ts";
 
 const t = (key, options) => (options ? `${key} ${JSON.stringify(options)}` : key);
@@ -85,4 +91,77 @@ test("configured models are matched case-insensitively", () => {
   assert.equal(isModelConfigured("GPT-4.1", [{ id: "gpt-4.1" }]), true);
   assert.equal(isModelConfigured("gpt-4.1", [{ id: "gpt-4o" }]), false);
   assert.equal(isModelConfigured("gpt-4.1", undefined), false);
+});
+
+test("vendor inference resolves explicit vendor, known families, namespace prefixes, and fallback label", () => {
+  assert.equal(inferModelVendor({ id: "claude-opus-4-6", vendor: "Anthropic" }), "Anthropic");
+  assert.equal(inferModelVendor({ id: "claude-3-7-sonnet-20250219", vendor: "" }), "Anthropic");
+  assert.equal(inferModelVendor({ id: "Kwai-Kolors/Kolors", vendor: "" }), "Kwai-Kolors");
+  assert.equal(inferModelVendor({ id: "custom-model", vendor: "" }), "");
+  assert.equal(modelVendorLabel({ id: "custom-model", vendor: "" }, "Other"), "Other");
+  assert.equal(modelVendorLabel({ id: "Kwai-Kolors/Kolors", vendor: "" }, "Other"), "Kwai-Kolors");
+});
+
+test("vendor summaries count and sort vendors with uncategorized models last", () => {
+  const models = [
+    { id: "gpt-4.1", vendor: "OpenAI" },
+    { id: "claude-3-5-haiku", vendor: "Anthropic" },
+    { id: "claude-opus-4-6", vendor: "Anthropic" },
+    { id: "mystery-1", vendor: "" },
+    { id: "mystery-2", vendor: "" },
+    { id: "mystery-3", vendor: "" },
+  ];
+  assert.deepEqual(summarizeModelVendors(models, "Other"), [
+    { key: "Anthropic", label: "Anthropic", count: 2 },
+    { key: "OpenAI", label: "OpenAI", count: 1 },
+    { key: OTHER_VENDOR_KEY, label: "Other", count: 3 },
+  ]);
+});
+
+test("filtering models by vendor and query matches id, vendor and upstream ids", () => {
+  const base = {
+    upstreamIds: [],
+    category: "chat",
+    protocols: [],
+    price: { input: "1", output: "2", cacheRead: null, cacheWrite: null },
+    multiplePrices: false,
+    tieredPricing: false,
+    contextWindow: null,
+    maxOutput: null,
+  };
+  const catalog = [
+    { ...base, id: "claude-opus-4-6", vendor: "Anthropic" },
+    { ...base, id: "gpt-4.1", vendor: "OpenAI", upstreamIds: ["gpt-4.1-2025-04-14"] },
+    { ...base, id: "custom-local", vendor: "" },
+  ];
+  assert.deepEqual(
+    filterModelsByVendorAndQuery(catalog, "Anthropic", "").map((m) => m.id),
+    ["claude-opus-4-6"],
+  );
+  assert.deepEqual(
+    filterModelsByVendorAndQuery(catalog, OTHER_VENDOR_KEY, "").map((m) => m.id),
+    ["custom-local"],
+  );
+  assert.deepEqual(
+    filterModelsByVendorAndQuery(catalog, "all", "2025-04-14").map((m) => m.id),
+    ["gpt-4.1"],
+  );
+});
+
+test("grouping models by vendor preserves first-seen order and puts Other last", () => {
+  const items = [
+    { id: "unpriced-custom", vendor: "" },
+    { id: "deepseek-r1", vendor: "DeepSeek" },
+    { id: "claude-sonnet-4", vendor: "Anthropic" },
+    { id: "deepseek-v3", vendor: "DeepSeek" },
+  ];
+  const groups = groupModelsByVendor(items, (item) => item, "Other");
+  assert.deepEqual(
+    groups.map((g) => ({ key: g.key, label: g.label, ids: g.items.map((i) => i.id) })),
+    [
+      { key: "DeepSeek", label: "DeepSeek", ids: ["deepseek-r1", "deepseek-v3"] },
+      { key: "Anthropic", label: "Anthropic", ids: ["claude-sonnet-4"] },
+      { key: OTHER_VENDOR_KEY, label: "Other", ids: ["unpriced-custom"] },
+    ],
+  );
 });
