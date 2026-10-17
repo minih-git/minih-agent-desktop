@@ -10,6 +10,7 @@ import { DisclosureAnchorContext } from "../../apps/desktop/src/lib/disclosure-a
 import { useTranscriptScroll } from "../../apps/desktop/src/features/chat/transcript/hooks/useTranscriptScroll";
 import { ToolRow } from "../../apps/desktop/src/features/chat/transcript/ToolRow";
 import { useFollowScroll } from "../../apps/desktop/src/hooks/use-follow-scroll";
+import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 
 declare global {
   var transcriptDisclosureProbe: () => Promise<unknown>;
@@ -152,6 +153,19 @@ function FollowFixture({ tool }: { tool: UiMessage }) {
 }
 
 globalThis.transcriptDisclosureProbe = async () => {
+  // This scenario is the folding contract itself, so it pins the compact
+  // density; the flat densities are covered by the turn-process probe.
+  useAppStore.setState((state) => ({
+    settings: {
+      ...(state.settings ?? {
+        defaultMode: "agent",
+        theme: "dark",
+        enterToSend: true,
+        onboardingDismissed: true,
+      }),
+      transcriptDensity: "compact",
+    },
+  }));
   const i18n = createInstance();
   await i18n.init({
     lng: "en",

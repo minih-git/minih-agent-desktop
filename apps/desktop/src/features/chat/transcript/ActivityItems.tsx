@@ -21,6 +21,8 @@ type ActivityItemsProps = {
   delegateItems: DelegationActivityItem[];
   delegationStatuses: ReadonlyMap<string, SubagentOutcome>;
   delegationTimings: ReadonlyMap<string, SubagentTiming>;
+  /** Detailed density: open tool details and completed reasoning rows. */
+  openDetails?: boolean;
   onUserInteraction: () => void;
 };
 
@@ -34,7 +36,7 @@ type ActivityItemBlockProps = Omit<ActivityItemsProps, "items" | "delegateItems"
 };
 
 const ActivityItemBlock = memo(function ActivityItemBlock({
-  block, isActive, live, lastItem, topologyItem,
+  block, isActive, live, lastItem, topologyItem, openDetails,
   delegateItems, delegationStatuses, delegationTimings, onUserInteraction,
 }: ActivityItemBlockProps) {
   return <>{block.items.map((item) => {
@@ -51,11 +53,12 @@ const ActivityItemBlock = memo(function ActivityItemBlock({
         onUserInteraction={onUserInteraction}
       />;
     }
-    // A tool or hosted-search row always starts collapsed: only the user opens
-    // a payload, never the row's position in the turn.
+    // A tool row starts collapsed unless the density asks for details: only the
+    // user opens a payload, and `detailed` is that request made once for all.
     if (item.kind === "tool") return (
       <Fragment key={item.message.id}>
         <ToolRow imagesInTurn message={item.message}
+          autoOpen={openDetails}
           onUserInteraction={onUserInteraction} {...(item.delegate ? { delegate: item.delegate } : {})} />
         <ReviewChangeCard message={item.message} />
       </Fragment>
@@ -71,7 +74,7 @@ const ActivityItemBlock = memo(function ActivityItemBlock({
       key={`thinking-${item.message.id}`}
       message={item.message}
       streaming={isActive && item.message.status === "streaming"}
-      autoOpen={live && item === lastItem}
+      autoOpen={openDetails || (live && item === lastItem)}
       onUserInteraction={onUserInteraction}
     />;
   })}</>;
@@ -89,6 +92,7 @@ export const ActivityItems = memo(function ActivityItems({ items, ...context }: 
       block={block}
       isActive={context.isActive}
       live={context.live}
+      openDetails={context.openDetails}
       lastItem={ownsLast ? lastItem : undefined}
       topologyItem={ownsTopology ? topologyItem : undefined}
       delegateItems={ownsTopology ? context.delegateItems : undefined}

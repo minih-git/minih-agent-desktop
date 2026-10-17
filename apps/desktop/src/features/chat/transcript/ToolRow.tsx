@@ -95,6 +95,8 @@ type ToolRowProps = {
   variant?: "default" | "topology";
   /** The containing turn renders image results outside its process disclosure. */
   imagesInTurn?: boolean;
+  /** Detailed density: the payload is open from the start. */
+  autoOpen?: boolean;
   /** Claims the containing activity group when this row is manually used. */
   onUserInteraction?: () => void;
   /** Live delegation statuses read from the turn's lifecycle-tool rows. */
@@ -125,6 +127,7 @@ function toolRowPropsEqual(
     previous.message !== next.message ||
     previous.variant !== next.variant ||
     previous.imagesInTurn !== next.imagesInTurn ||
+    previous.autoOpen !== next.autoOpen ||
     previous.onUserInteraction !== next.onUserInteraction ||
     !subagentRunsEqual(previous.delegate, next.delegate)
   ) {
@@ -174,6 +177,7 @@ function HostToolRow({
   delegate,
   variant = "default",
   imagesInTurn = false,
+  autoOpen = false,
   onUserInteraction,
   delegationStatuses,
   delegationTimings,
@@ -197,7 +201,7 @@ function HostToolRow({
   // failure or denial stays in the row head either way.
   const revealRequest = useMessageRevealRequest(message.id);
   const disclosure = useAutomaticDisclosure(
-    false,
+    autoOpen,
     revealRequest,
     disclosureKey("tool", message.id),
   );

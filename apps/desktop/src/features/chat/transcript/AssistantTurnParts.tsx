@@ -47,11 +47,15 @@ type PartContext = {
   runtimeActivity?: AgentActivity;
   turnDelegationStatuses: ReadonlyMap<string, SubagentOutcome>;
   turnDelegationTimings: ReadonlyMap<string, SubagentTiming>;
+  /** Render tool/reasoning rows in the flow instead of a folding group. */
+  flat?: boolean;
+  /** Open tool details and completed reasoning rows by default. */
+  openDetails?: boolean;
 };
 
 const TurnPartBlock = memo(function TurnPartBlock({
   block, isActive, activePart, runtimeActivity,
-  turnDelegationStatuses, turnDelegationTimings,
+  turnDelegationStatuses, turnDelegationTimings, flat, openDetails,
 }: PartContext & { block: RenderBlock<AssistantTurnPart> }) {
   return <>{block.items.map((part) => part.kind === "activity" ? (
     <ActivityGroup
@@ -63,6 +67,8 @@ const TurnPartBlock = memo(function TurnPartBlock({
       runtimeActivity={part === activePart ? runtimeActivity : undefined}
       turnDelegationStatuses={turnDelegationStatuses}
       turnDelegationTimings={turnDelegationTimings}
+      flat={flat}
+      openDetails={openDetails}
     />
   ) : (
     <SmoothMessageBubble
@@ -87,6 +93,8 @@ export const AssistantTurnParts = memo(function AssistantTurnParts({ parts, ...c
       runtimeActivity={activePart ? context.runtimeActivity : undefined}
       turnDelegationStatuses={context.turnDelegationStatuses}
       turnDelegationTimings={context.turnDelegationTimings}
+      flat={context.flat}
+      openDetails={context.openDetails}
     />;
   })}</>;
 });

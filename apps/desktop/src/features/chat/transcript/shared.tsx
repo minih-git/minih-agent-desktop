@@ -158,11 +158,19 @@ export function MessageMeta({
   usage,
   responseDurationMs,
   responseOutputTokens,
+  durationLabel,
+  steps,
+  tools,
 }: {
   modelId?: string;
   usage?: MessageUsage;
   responseDurationMs?: number;
   responseOutputTokens?: number;
+  /** Preformatted turn duration, so this row keeps no extra module dependency. */
+  durationLabel?: string;
+  /** Process rows this turn ran, so a folded or flat turn still states its size. */
+  steps?: number;
+  tools?: number;
 }) {
   const { t } = useTranslation();
   const throughput = calculateTokenRate(
@@ -170,7 +178,7 @@ export function MessageMeta({
     responseDurationMs,
   );
   const showThroughput = !usage && throughput !== undefined;
-  if (!modelId && !showThroughput) {
+  if (!modelId && !showThroughput && !durationLabel && !steps) {
     return null;
   }
   return (
@@ -178,6 +186,17 @@ export function MessageMeta({
       {modelId ? (
         <span className="message-meta-chip model" title={modelId}>
           {modelId}
+        </span>
+      ) : null}
+      {durationLabel ? (
+        <span className="message-meta-chip duration">
+          {t("chat.metaDuration", { time: durationLabel })}
+        </span>
+      ) : null}
+      {steps ? (
+        <span className="message-meta-chip steps">
+          {t("chat.metaSteps", { count: steps })}
+          {tools ? t("chat.metaTools", { count: tools }) : null}
         </span>
       ) : null}
       {showThroughput ? (
