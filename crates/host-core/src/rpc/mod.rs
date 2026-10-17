@@ -2856,6 +2856,51 @@ async fn handle_request(
                 .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
             Ok(context.map(|context| json!(context)).unwrap_or(Value::Null))
         }
+        "session.retitleContext" => {
+            let id = params
+                .get("id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| rpc_err(1002, "id required", "INVALID_PARAMS"))?;
+            let st = state.lock().await;
+            // Post-compaction re-titling reads the current title and model key
+            // before composing; null means a manual rename owns the session.
+            let context = sessions::retitle_context(&st.db, id)
+                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            Ok(match context {
+                Some((expected_title, model_key)) => {
+                    let mut value = json!({ "expectedTitle": expected_title });
+                    if let Some(key) = model_key {
+                        value["modelKey"] = json!(key);
+                    }
+                    value
+                }
+                None => Value::Null,
+            })
+        }
+        "session.retitleFromCompaction" => {
+            let id = params
+                .get("id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| rpc_err(1002, "id required", "INVALID_PARAMS"))?;
+            let expected_title = params
+                .get("expectedTitle")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| rpc_err(1002, "expectedTitle required", "INVALID_PARAMS"))?;
+            let title = params
+                .get("title")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| rpc_err(1002, "title required", "INVALID_PARAMS"))?;
+            let title = sessions::normalize_session_title(title)
+                .map_err(|e| rpc_err(1002, e.to_string(), "INVALID_PARAMS"))?;
+            let st = state.lock().await;
+            // Post-compaction re-titling refreshes a generated title when the
+            // conversation's subject moved on; a manual rename is never
+            // replaced, and the compare-and-set serializes concurrent writers.
+            let updated =
+                sessions::retitle_session_after_compaction(&st.db, id, expected_title, &title)
+                    .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            Ok(json!({ "updated": updated }))
+        }
         "session.deriveTitle" => {
             let id = params
                 .get("id")
@@ -5563,10 +5608,62 @@ mod tests {
         assert_eq!(named, Value::Null);
 
         // The CAS also refuses a stale write even if a caller ignored the gate.
-        let stale = handle_request(
-            state,
+        let mut stale = handle_request(
+            state.clone(),
             "session.autoTitle",
             json!({ "id": session_id, "expectedTitle": "New task", "title": "Renamed again" }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(stale, json!({ "updated": false }));
+
+        // Post-compaction re-titling: a generated title may be refreshed, but
+        // the context refuses nothing less and a manual rename is untouchable.
+        let context = handle_request(
+            state.clone(),
+            "session.retitleContext",
+            json!({ "id": session_id }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(context["expectedTitle"], json!("Fix login bug"));
+        assert_eq!(context["modelKey"], json!("p1/m1"));
+
+        let refreshed = handle_request(
+            state.clone(),
+            "session.retitleFromCompaction",
+            json!({ "id": session_id, "expectedTitle": "Fix login bug", "title": "Export March report" }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(refreshed, json!({ "updated": true }));
+
+        // A manual rename ends every automatic naming, including this one.
+        let renamed = handle_request(
+            state.clone(),
+            "session.rename",
+            json!({ "id": session_id, "title": "My own name" }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(renamed, json!({ "ok": true }));
+        let manual_context = handle_request(
+            state.clone(),
+            "session.retitleContext",
+            json!({ "id": session_id }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(manual_context, Value::Null);
+        stale = handle_request(
+            state,
+            "session.retitleFromCompaction",
+            json!({ "id": session_id, "expectedTitle": "My own name", "title": "Overwritten" }),
             tx,
         )
         .await

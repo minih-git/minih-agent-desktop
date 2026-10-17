@@ -102,6 +102,7 @@ import type {
 import {
   addUsage,
   checkpointGeneration,
+  checkpointSummaryFingerprint,
   contextCompactionMark,
   cumulativeDelta,
   DEFAULT_SUBAGENT_PERMISSION,
@@ -7415,6 +7416,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       willRetry,
       ...(fallback ? { fallback } : {}),
       mark: contextCompactionMark(checkpoint),
+      // Lets the desktop re-title the session from the summary that governs
+      // the context now: the conversation's subject may have drifted from the
+      // first prompt the original title came from.
+      summaryFingerprint: checkpointSummaryFingerprint(checkpoint.summary),
     });
     return "persisted";
   }

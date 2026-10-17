@@ -65,6 +65,7 @@ import { MainProcessState } from "./bootstrap/main-state";
 import { registerApplicationActivation } from "./bootstrap/app-activation";
 import { createHostRuntime } from "./runtime/host";
 import { createSidecarRuntime } from "./runtime/sidecar";
+import { createSessionRetitleGenerator } from "./session-title-service";
 import { createEventPersistence } from "./runtime/event-persistence";
 import { createPlanRuntime } from "./runtime/plans";
 import { createRuntimeLifecycle } from "./runtime/lifecycle";
@@ -771,6 +772,19 @@ const sidecarRuntime = createSidecarRuntime({
   disabledBuiltinSkills,
   pluginActiveInProject,
   currentNetworkProxy,
+  generateSessionRetitle: createSessionRetitleGenerator({
+    getHost,
+    resolveAgentRuntimeLaunch: (sessionId, session, settings, overrides) =>
+      resolveAgentRuntimeLaunch(sessionId, session, settings, {
+        ...(overrides ?? {}),
+        // The engine already clamps the level to the model's advertised set.
+        thinkingLevel: overrides?.thinkingLevel
+          ? normalizeThinkingLevel(overrides.thinkingLevel)
+          : undefined,
+      }),
+    vendorOAuth,
+    logger,
+  }),
 });
 emitAgentEvent = sidecarRuntime.emitAgentEvent;
 const { startSidecar } = sidecarRuntime;

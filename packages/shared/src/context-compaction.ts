@@ -38,6 +38,26 @@ export function estimateSummaryTokens(summary: string): number {
 }
 
 /**
+ * Stable fingerprint of a checkpoint's summary. The `compaction_end` event
+ * carries this instead of the summary itself so the desktop can re-title the
+ * session from exactly the summary that still governs the context — a stale
+ * event whose checkpoint was superseded is dropped by comparing fingerprints.
+ *
+ * A fixed FNV-1a variant rather than a crypto hash: this runs in the renderer
+ * bundle too (no `node:crypto` there), it names a summary only for staleness
+ * comparison, and it must match across the runtime and the desktop main.
+ */
+export function checkpointSummaryFingerprint(summary: string): string {
+  const text = typeof summary === "string" ? summary : "";
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+/**
  * Whether the checkpoint's summary came from the model. The no-summary family
  * stamps `strategy: "fresh_window"` into the same opaque `details` value and
  * fills the summary with a fixed rollover marker instead.

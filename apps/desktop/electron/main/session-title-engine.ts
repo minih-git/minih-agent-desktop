@@ -30,8 +30,23 @@ const TITLE_USER_TEMPLATE = [
   "{{userPrompt}}",
 ].join("\n");
 
+const RETITLE_USER_TEMPLATE = [
+  "Create a short, descriptive title for this conversation.",
+  "At most five words where possible, starting with an imperative verb.",
+  "Capitalize only the first word unless the user's language, proper nouns, acronyms, or code terms require otherwise.",
+  "Preserve ticket references exactly. Write in the user's language.",
+  "Do not use quotes, markdown, or trailing punctuation. Do not answer the request.",
+  "Prioritize the conversation's current subject over its earlier one.",
+  "Return only the title, without quotes.",
+  "",
+  "Conversation summary:",
+  "{{summary}}",
+].join("\n");
+
 /** The bounded excerpt of the user's first message sent to the title model. */
 const MAX_USER_PROMPT_CHARS = 1_000;
+/** The bounded excerpt of a compaction summary sent to the title model. */
+const MAX_SUMMARY_CHARS = 1_500;
 /** Titles longer than this are truncated, matching the host's title limit. */
 export const MAX_TITLE_CHARS = 80;
 
@@ -119,6 +134,40 @@ export function buildSessionTitleRequest(
     userContent: TITLE_USER_TEMPLATE.replace(/\{\{userPrompt\}\}/g, () => userPrompt),
   };
 }
+
+export type SessionRetitleGenerationInput = {
+  /** `providerId/modelId` from settings; empty uses the session's model. */
+  preferredModelKey?: string;
+  /** The session's own model, when it has one. */
+  sessionModelKey?: string | null;
+  /** Reasoning level from settings; absent and `off` skip reasoning. */
+  thinkingLevel?: string;
+  models: SessionTitleModel[];
+  /** The compaction summary naming the conversation's current subject. */
+  summary: string;
+};
+
+/** Build the post-compaction completion request, or null when nothing can be asked. */
+export function buildSessionRetitleRequest(
+  input: SessionRetitleGenerationInput,
+): SessionTitleRequest | null {
+  const model = selectSessionTitleModel(input);
+  if (!model) return null;
+  const summary = Array.from(String(input.summary ?? ""))
+    .slice(0, MAX_SUMMARY_CHARS)
+    .join("");
+  if (!summary.trim()) return null;
+  return {
+    modelKey: model.key,
+    thinkingLevel: resolveSessionTitleThinkingLevel(input.thinkingLevel, model),
+    system: TITLE_SYSTEM_PROMPT,
+    userContent: RETITLE_USER_TEMPLATE.replace(/\{\{summary\}\}/g, () => summary),
+  };
+}
+
+export {
+  checkpointSummaryFingerprint as summaryFingerprint,
+} from "@minih-agent/shared";
 
 /**
  * Clean model output into a presentable title: strip labelled prefixes,

@@ -258,6 +258,12 @@ type ToolBudgetHealth = {
   `expectedTitle`、首条持久化用户消息（≤1,000 字符）、首条助手回复（≤500 字符）以及会话的
   `providerId/modelId` 键——且只在标题来源仍为 `default` 时返回。会话一旦被手动命名或已有
   生成标题即返回 `null`，调用方因此完全跳过生成，会话不会被重复命名。
+- `session.retitleContext` — `{ id }`：为压缩后重命名返回当前标题与模型键，且只在标题来源
+  仍为 `default` 或 `generated` 时返回；手动重命名返回 `null`，调用方不会为用户自选的名称
+  花费模型调用。它不携带任何转录文本——命名输入是调用方已持有的压缩摘要。
+- `session.retitleFromCompaction` — `{ id, expectedTitle, title }`：在上下文压缩后刷新会话
+  标题。应用比较并设置写入，可替换 `default` **或** `generated` 标题（对话主题会自然漂移），
+  但绝不替换 `manual` 重命名。返回 `{ updated: boolean }`。
 - `session.configure` — 以原子方式持久保存 `mode`、`providerId`、`modelId`，
   以及可选的 `thinkingLevel` 用于下一个 pi 回合； omitting/null
   `thinkingLevel` 保留当前值；返回无效模式或级别

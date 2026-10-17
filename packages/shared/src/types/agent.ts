@@ -314,6 +314,10 @@ export type AgentEvent =
       /** Present when a checkpoint was installed: it feeds the transcript row
        * and the context inspector. */
       mark?: ContextCompactionMark;
+      /** Present when a summarized checkpoint persisted: lets the desktop
+       * re-title the session from the summary that governs the context now.
+       * A fingerprint, never the summary text itself. */
+      summaryFingerprint?: string;
       error?: { code: string; message: string };
     }
   | { type: "error"; error: AppError }

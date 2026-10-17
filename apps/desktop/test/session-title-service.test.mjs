@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { register } from "node:module";
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
-const { generateSessionTitle } = await import("../electron/main/session-title-service.ts");
+const { generateSessionRetitle, generateSessionTitle } = await import("../electron/main/session-title-service.ts");
+const { summaryFingerprint } = await import("../electron/main/session-title-engine.ts");
 
 /** Fake host RPC surface. */
 function fakeHost(handlers) {
@@ -247,4 +248,125 @@ test("a failing host call is logged and swallowed", async () => {
     false,
   );
   assert.deepEqual(logged, ["session:warn:session title generation failed"]);
+});
+
+const RETITLE_CONTEXT = { expectedTitle: "Fix login bug", modelKey: "p1/m1" };
+
+test("retitle rewrites a generated title from the compaction summary", async () => {
+  const host = fakeHost({
+    "session.retitleContext": () => RETITLE_CONTEXT,
+    "session.get": () => ({ session: { compaction: { summary: "Moved on to the export job" } } }),
+    "providers.list": () => PROVIDERS,
+    "session.retitleFromCompaction": (params) => {
+      assert.equal(params.expectedTitle, "Fix login bug");
+      assert.equal(params.title, "Export the March report");
+      return { updated: true };
+    },
+  });
+  const deps = {
+    ...baseDeps(host),
+    completeOneShot: async (_provider, context) => {
+      assert.match(context.messages[0].content, /Conversation summary:/);
+      assert.match(context.messages[0].content, /Moved on to the export job/);
+      return { text: "Export the March report", usage: undefined };
+    },
+  };
+  assert.equal(
+    await generateSessionRetitle(deps, {
+      sessionId: "s1",
+      summaryFingerprint: summaryFingerprint("Moved on to the export job"),
+      settings: {},
+    }),
+    true,
+  );
+});
+
+test("retitle refuses a manual rename without any model call", async () => {
+  const host = fakeHost({
+    "session.retitleContext": () => null,
+  });
+  const deps = {
+    ...baseDeps(host),
+    completeOneShot: async () => {
+      throw new Error("must not be called");
+    },
+  };
+  assert.equal(
+    await generateSessionRetitle(deps, {
+      sessionId: "s1",
+      summaryFingerprint: summaryFingerprint("anything"),
+      settings: {},
+    }),
+    false,
+  );
+  assert.deepEqual(host.calls.map((entry) => entry.method), ["session.retitleContext"]);
+});
+
+test("retitle drops a stale event whose checkpoint was superseded", async () => {
+  const host = fakeHost({
+    "session.retitleContext": () => RETITLE_CONTEXT,
+    "session.get": () => ({ session: { compaction: { summary: "The newer summary" } } }),
+    "providers.list": () => PROVIDERS,
+  });
+  const deps = {
+    ...baseDeps(host),
+    completeOneShot: async () => {
+      throw new Error("must not be called");
+    },
+  };
+  assert.equal(
+    await generateSessionRetitle(deps, {
+      sessionId: "s1",
+      summaryFingerprint: summaryFingerprint("The older summary"),
+      settings: {},
+    }),
+    false,
+  );
+  assert.deepEqual(host.calls.map((entry) => entry.method), [
+    "session.retitleContext",
+    "session.get",
+  ]);
+});
+
+test("retitle skips when disabled or the fingerprint is missing", async () => {
+  const host = fakeHost({});
+  const deps = { ...baseDeps(host), completeOneShot: async () => { throw new Error("must not be called"); } };
+  assert.equal(
+    await generateSessionRetitle(deps, {
+      sessionId: "s1",
+      summaryFingerprint: "x",
+      settings: { sessionTitle: { enabled: false } },
+    }),
+    false,
+  );
+  assert.equal(
+    await generateSessionRetitle(deps, {
+      sessionId: "s1",
+      summaryFingerprint: "  ",
+      settings: {},
+    }),
+    false,
+  );
+  assert.deepEqual(host.calls, []);
+});
+
+test("retitle keeps the title when the model repeats it or fails the CAS", async () => {
+  const host = fakeHost({
+    "session.retitleContext": () => RETITLE_CONTEXT,
+    "session.get": () => ({ session: { compaction: { summary: "Same subject" } } }),
+    "providers.list": () => PROVIDERS,
+    "session.retitleFromCompaction": () => ({ updated: false }),
+  });
+  const deps = {
+    ...baseDeps(host),
+    completeOneShot: async () => ({ text: "Fix login bug", usage: undefined }),
+  };
+  assert.equal(
+    await generateSessionRetitle(deps, {
+      sessionId: "s1",
+      summaryFingerprint: summaryFingerprint("Same subject"),
+      settings: {},
+    }),
+    false,
+  );
 });

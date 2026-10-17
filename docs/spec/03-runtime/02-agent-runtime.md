@@ -124,9 +124,27 @@ The completion writes through a host compare-and-set that succeeds only while
 the exact title it read is still current with the `default` source. Manual
 renames and another generated title therefore win concurrent updates.
 Host-core owns the title source in schema v23; this state survives renderer
-restart and does not expose a general transcript-read API. Settings own the
-built-in generator's model and thinking level (`sessionTitle`); the standalone
-title plugin is superseded (ADR 0323 amendment, 2026-10-17).
+restart and does not expose a general transcript-read API.
+
+### 4.2 Re-titling after a context compaction
+
+A long conversation's subject legitimately drifts away from its first prompt,
+so the built-in title may stop describing the session. When a summarized
+compaction checkpoint persists, the runtime's `compaction_end` event carries a
+short fingerprint of the summary it installed. Electron main then runs the
+same one-shot title completion against the compaction summary instead of the
+first message, and writes through `session.retitleFromCompaction`: a
+compare-and-set that replaces a `default` or `generated` title — the
+session keeps following the conversation's current subject — but never a
+`manual` rename. The job re-reads the host's current summary and compares
+fingerprints before spending a model call, so a stale or duplicated event
+costs nothing, and a session is never re-titled twice for the same checkpoint.
+The event carries the fingerprint only, never summary text: everything the
+main process needs about the summary is re-read from the host.
+
+Settings own the built-in generator's model and thinking level
+(`sessionTitle`); the standalone title plugin is superseded (ADR 0323
+amendment, 2026-10-17).
 
 ## 5. Prompt flow
 
