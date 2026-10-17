@@ -493,7 +493,11 @@ mod tests {
         let hungraim = brand_is_hungraim();
         assert_eq!(
             defaults.network_name,
-            if hungraim { "hungraim-router" } else { "minih-router" }
+            if hungraim {
+                "hungraim-router"
+            } else {
+                "minih-router"
+            }
         );
         assert_eq!(
             defaults.network_secret,

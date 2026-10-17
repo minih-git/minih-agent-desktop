@@ -17,6 +17,29 @@
 | 本地 DMG | `pnpm --filter @minih-agent/desktop dist` | 未配置证书时未签名 | 本地安装测试 |
 | 发布 | `scripts/release-macos.sh` | Developer ID + 强制公证 | 可分发产物 |
 
+### 品牌通道
+
+`DESKTOP_BRAND` 选择构建所面向的发行版：
+
+| 品牌 | 产品标识 | 数据根目录 | 更新源 | 远程 CLI 基址 |
+|---|---|---|---|---|
+| `minih`（默认） | `Minih-Agent-Desktop` / `org.hmini.agent` | `~/.minih-agent-desktop` | GitHub Releases `minih-git/minih-agent-desktop` | GitHub Releases 下载基址 |
+| `hungraim` | `Hungraim-Agent-Desktop` / `com.hungraim.agent` | `~/.hungraim-agent-desktop` | 通用 `https://updates.hungraim.com/desktop/stable` | `https://updates.hungraim.com/desktop/agent-host-cli` |
+
+规则：
+
+- 默认（`minih`）构建与品牌化之前的发布行为完全一致：相同的标识、数据根目录
+  与更新源。未知 `DESKTOP_BRAND` 值回退到 `minih`（见
+  `packages/shared/src/brand.ts`）。
+- `hungraim` 构建会在 electron-builder 运行期间把打包的 `app-update.yml`
+  换成通用更新源，之后再还原该文件（`scripts/build-desktop-release.mjs`）；
+  安装包标识、产物名与 Linux 包名在构建器命令行上覆盖。
+- GitHub 发布通道拒绝 `DESKTOP_BRAND=hungraim`；Hungraim 发行版只从它自己的
+  仓库与更新主机发布。
+- Minih Router 预设与 EasyTier 组网的品牌默认值通过同一 profile 解析
+  （`packages/shared/src/brand.ts` 与 Rust `easytier_net::config`），因此
+  hungraim 构建默认使用 `https://aiapi.hungraim.com/v1` 与 `hungraim-router` 网络。
+
 静态 electron-builder 配置不嵌入证书身份，因此没有证书的贡献者仍可在本地打包。
 发布通道需要注入 Developer ID 身份（本地）或 `CSC_LINK` 证书（CI）；签名或公证验证
 失败时，发布会在上传前失败。
