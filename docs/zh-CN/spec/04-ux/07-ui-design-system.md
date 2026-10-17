@@ -12,7 +12,7 @@
 
 ## 视觉基线（与 Codex 一致）
 
-桌面外壳的目标是与本地 Codex 桌面客户端 (ChatGPT.app electro-dark) 进行 1:1 视觉匹配：木炭表面 (`#181818`)、中性灰度（不是蓝石板）、~275px 侧边栏、46px 工具栏节奏和浮动药丸编辑器。语义标记名称保持稳定；值遵循 Codex 灰色系统，带有**中性灰色强调**（无蓝色品牌强调）。
+桌面外壳的目标是与本地 Codex 桌面客户端 (ChatGPT.app electro-dark) 进行 1:1 视觉匹配：木炭表面 (`#181818`)、中性灰度（不是蓝石板）、~275px 侧边栏、46px 工具栏节奏和浮动药丸编辑器。语义标记名称保持稳定；值遵循 Codex 灰色系统，应用 chrome 带有**中性灰色强调**（无蓝色品牌强调）——外加一个**prose 强调色**（Codex CLI ChatGPT 蓝），仅保留给阅读面文字语义：聊天链接、行内代码墨色、任务复选框与可复制选择填充。chrome（按钮、控件、焦点环）保持单色；蓝色不会离开 prose 表面。
 
 ## 2. 非目标
 
@@ -51,10 +51,10 @@ Minih-Agent-Desktop 的行为类似于桌面应用程序 shell，因此意外拖
   等效的显式 `user-select: text` 规则）。
 - Electron 渲染器设置 `user-select` 和 `-webkit-user-select`；
   选择规则不得删除焦点可见环或窗口拖动区域。
-- 可复制的选择油漆使用单色口音合同通过
-  `::selection`（`--ds-text-primary` 的 `color-mix` 位于表面约 18% 处，
-  文本仍为 `--ds-text-primary`)。浏览器默认的蓝色突出显示不是
-  允许在外壳表面。
+- 可复制的选择油漆遵循 Codex 会话记录契约，通过
+  `::selection`：使用 `--ds-prose-selection` 的细微填充（prose 强调色 tint，
+  深色约 30% / 浅色约 45%），文本仍为 `--ds-text-primary`。浏览器默认的
+  蓝色突出显示不允许出现在外壳表面。
 - `caret-color` 和 `accent-color` 解析为 `--ds-text-primary` /
   `--ds-accent` 因此本机插入符和形式重音符号保持主题。
 - 焦点可见环使用 `color-mix(in oklab, var(--ds-accent) 80%, transparent)`
@@ -160,6 +160,8 @@ Minih-Agent-Desktop 的行为类似于桌面应用程序 shell，因此意外拖
 | `--color-accent` | `#FFFFFF`（深色）/`#1a1c1f`（浅色） | 反转灰色墨水 | 主要口音，CTA |
 | `--color-accent-hover` | `#EDEDED`（深色）/`#303030`（浅色） | 灰色-100 / 灰色-700 | 重音悬停 |
 | `--color-accent-soft` | `#AFAFAF`（深色）/`#5d5d5d`（浅色） | 灰色-300 / 灰色-500 | 软口音、链接 |
+| `--ds-prose-accent` | `#63a8f8`（深色）/ `#1c64c8`（浅色） | Codex CLI ChatGPT 蓝 | 仅 prose 的强调色：聊天链接、行内代码墨色、任务复选框、选择填充。绝不用于 chrome |
+| `--ds-prose-selection` | 强调色 tint 约 30%（深色）/ 约 45%（浅色） | — | 可复制选择填充（`::selection`） |
 | `--color-success` | `#22C55E` | `text-green-500` | 成功，运行完成 |
 | `--color-warning` | `#F59E0B` | `text-amber-500` | 警告、小心 |
 | `--color-error` | `#EF4444` | `text-red-500` | 错误，被拒绝 |
@@ -318,6 +320,16 @@ Minih-Agent-Desktop 的行为类似于桌面应用程序 shell，因此意外拖
 
 实施说明：Tailwind v4 支持 CSS 优先配置。 `@theme` 指令将自定义属性映射到实用程序类（`bg-bg-primary`、`text-text-primary` 等）。实现应验证命名以避免双前缀冲突（例如，`bg-bg` 很尴尬 - 考虑在 Tailwind 级别别名为 `bg-primary`、`text-primary` 等）。
 
+### 4.7 文本墨水对比度底线（与 Codex 一致）
+
+Codex 的 TUI 对信息性文本强制执行 WCAG 底线（`MIN_TEXT_CONTRAST = 4.5`，见 codex-rs/tui/src/style/contrast.rs）；渲染器移植了同样的纪律：
+
+- **信息性文本墨水在其可绘制的每个表面**（`bg-primary`、`bg-secondary`、`bg-primary` 之上的 tile）**上保持 ≥ 4.5:1**，两种主题皆然。涵盖 `--ds-text-primary/secondary/muted`、`--ds-prose-accent` 与状态墨水（`--ds-success/warning/error/info`）。
+- **安静的 prose 层级同样受审**：`prose.css` 中向 `transparent` 混合的 `color:` 值合成后必须过线；装饰性字形（列表 marker）与 placeholder/禁用墨水携带显式且有理由的更低底线，而不是被跳过。
+- **弱化色调从所绘制的表面推导**（墨水在背景上的 alpha 混合），绝不用按表面挑选的固定 hex——悬停填充与抬升 tile 才不会悄悄破坏和谐或对比度。
+- **状态色只承载语义**（success / warning / error）：只出现在状态语义上，彼此色相可区分（warning 永远不会读成第二种 error 红），且从不 dim。
+- 该守卫是机械的：`pnpm check:contrast`（`scripts/check-text-contrast.mjs`）按主题解析 token、在受审表面上合成、低于底线即失败。它与其它样式守卫一起在 CI 中运行。
+
 ## 5. 版式
 
 ### 5. 1 字体堆栈
@@ -376,7 +388,7 @@ UI 字体栈可从设置 → 基础 → 外观中由用户覆盖（ADR 0083）�
 
 - 代码块和工具输出：Tailwind/Tailwind 和 `font-mono`
 - 消息中的内联代码：`--text-sm-plus` `font-mono`、软文本色调背景、无边框、圆形
-- 聊天散文 (`.prose-chat`) 使用 `--text-base` / `--leading-prose` 作为正文，标题坡度为 `text-xl` → `text-lg-plus` → `text-lg` → `text-base-plus` → `text-base`，因此多块答案保持可扫描，无需文档规模的戏剧。标题不包含 rules/borders（层次结构来自大小、重量和上方的空间）；链接保留了柔和的永久下划线，悬停时会变硬，而不是仅仅依靠颜色； blockquotes 是一个安静的 2px 左栏，没有背景填充
+- 聊天散文 (`.prose-chat`) 使用 `--text-base` / `--leading-prose` 作为正文，标题坡度为 `text-xl` → `text-lg-plus` → `text-lg` → `text-base-plus` → `text-base`，因此多块答案保持可扫描，无需文档规模的戏剧。标题不包含 rules/borders（层次结构来自大小、重量和上方的空间）；链接带有 prose 强调色并保留柔和的永久下划线，悬停时变硬，因此颜色永远不是唯一的可发现性线索；列表节奏是一种落定策略（Codex `ListSpacing` 同款）：消息流式传输期间兄弟项保持紧凑（prose 根带 `[data-streaming]`），消息落定后获得均匀的呼吸间距
 
 ### 5. 4 重量规则
 
