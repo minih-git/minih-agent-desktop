@@ -2,7 +2,28 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 
 import type { Principal } from "@minih-agent/agent-host";
-import { RACP_DEVICE_TOKEN_PREFIX, RACP_PAIRING_TOKEN_PREFIX, type RacpRole } from "@minih-agent/shared";
+import {
+  RACP_DEVICE_TOKEN_PREFIX,
+  RACP_PAIRING_TOKEN_PREFIX,
+  type RacpRole,
+} from "@minih-agent/shared";
+
+/**
+ * Where a credential came from (security §3.7, D663 / ADR 0330). The loopback
+ * `RACP-WS` binding is `"ssh"`; a Host link logical connection is
+ * `"gateway"`. Old records predate the field and read as `"ssh"`, so legacy
+ * credential stores need no migration.
+ */
+export type CredentialOrigin = "ssh" | "gateway";
+
+export function credentialOriginFromRecord(origin: string | undefined): CredentialOrigin {
+  return origin === "gateway" ? "gateway" : "ssh";
+}
+
+/** The roles `connection/pair` grants for an ssh-origin connection (unchanged). */
+export const SSH_PAIR_ROLES: readonly RacpRole[] = ["owner"];
+/** The roles `connection/pair` grants for a gateway-origin connection: never `owner`. */
+export const GATEWAY_PAIR_ROLES: readonly RacpRole[] = ["viewer", "controller", "approver"];
 
 /**
  * Credentials for the header profile (security §3.1, §3.4). A device token
@@ -17,6 +38,8 @@ export type DeviceRecord = {
   /** SHA-256 of the token, hex. */
   tokenHash: string;
   createdAt: string;
+  /** Missing on records written before D663; those read as `"ssh"`. */
+  origin?: CredentialOrigin;
   lastSeenAt?: string;
   revokedAt?: string;
 };
@@ -26,6 +49,13 @@ export type PairingRecord = {
   expiresAt: string;
   /** Set once exchanged; a second exchange is refused. */
   consumedAt?: string;
+  /**
+   * Channel the code is redeemable on (security §3.7, gate 17 / 28): an
+   * ssh-origin code (from `--pair`) redeems only on the loopback `RACP-WS`
+   * binding, a gateway-origin code (from `remote-pair` or the desktop
+   * settings page) only over the Host link. Missing reads as `"ssh"`.
+   */
+  origin?: CredentialOrigin;
 };
 
 /** Durable credential storage; `agent-host-cli` keeps it under its data directory. */
@@ -133,12 +163,21 @@ export type AuthenticateInput = {
   /** Rejected outright: a token in the URL is never accepted (security §3.1). */
   urlHasToken: boolean;
   connectionId: string;
+  /**
+   * Channel the credential arrived on (security §3.7): `"ssh"` for the
+   * loopback `RACP-WS` binding, `"gateway"` for a Host link logical
+   * connection. Defaults to `"ssh"` for existing callers.
+   */
+  origin?: CredentialOrigin;
 };
 
 /**
  * The header-profile authenticator. A device token yields the device's
  * principal; a still-valid pairing token yields an unprivileged principal
- * that may only call `connection/pair`.
+ * that may only call `connection/pair`. Cross-channel use is rejected: a
+ * gateway-origin device authenticates only on the Host link, an ssh-origin
+ * device only on the loopback binding, and a pairing token only on the
+ * channel its own origin names (gates 17 and 28).
  */
 export class DeviceTokenAuthenticator {
   constructor(
@@ -154,6 +193,8 @@ export class DeviceTokenAuthenticator {
     if (isDeviceToken(token)) {
       const device = await this.store.findDeviceByTokenHash(tokenHash);
       if (!device || device.revokedAt || !hashesEqual(device.tokenHash, tokenHash)) return null;
+      const origin = credentialOriginFromRecord(device.origin);
+      if (origin !== (input.origin ?? "ssh")) return null;
       await this.store.touchDevice(device.deviceId, new Date(this.now()).toISOString());
       return {
         kind: "device",
@@ -161,7 +202,12 @@ export class DeviceTokenAuthenticator {
         principal: {
           subject: device.deviceId,
           roles: [...device.roles],
-          pairedDevice: true,
+          // A gateway-paired device is never an SSH-paired owner (security §3.7):
+          // the remote permission ceiling always applies to it.
+          pairedDevice: origin !== "gateway",
+          // AgentHost reads this to enforce the policy-immune restrictions:
+          // no allow-session, no approverOverride, ceiling always applies.
+          origin,
           connectionId: input.connectionId,
         },
       };
@@ -169,6 +215,8 @@ export class DeviceTokenAuthenticator {
     if (isPairingToken(token)) {
       const pairing = await this.store.findPairing(tokenHash);
       if (!pairing || pairing.consumedAt || Date.parse(pairing.expiresAt) <= this.now()) return null;
+      const origin = credentialOriginFromRecord(pairing.origin);
+      if (origin !== (input.origin ?? "ssh")) return null;
       return {
         kind: "pairing",
         tokenHash,
@@ -178,19 +226,29 @@ export class DeviceTokenAuthenticator {
     return null;
   }
 
-  /** Mint a single-use pairing token; the caller hands it over the bootstrap channel. */
-  async issuePairingToken(lifetimeMs: number): Promise<{ token: string; expiresAt: string }> {
+  /**
+   * Mint a single-use pairing token; the caller hands it over the bootstrap
+   * channel. The origin fixes the only channel that can redeem it.
+   */
+  async issuePairingToken(lifetimeMs: number, origin: CredentialOrigin = "ssh"): Promise<{ token: string; expiresAt: string }> {
     const token = newPairingToken();
     const expiresAt = new Date(this.now() + lifetimeMs).toISOString();
-    await this.store.savePairing({ tokenHash: hashToken(token), expiresAt });
+    await this.store.savePairing({ tokenHash: hashToken(token), expiresAt, origin });
     return { token, expiresAt };
   }
 
-  /** Exchange a pairing token (already authenticated on the upgrade) for a device credential. */
-  async pair(tokenHash: string, label: string, roles: RacpRole[]): Promise<{ deviceId: string; token: string }> {
+  /**
+   * Exchange a pairing token (already authenticated on the upgrade) for a
+   * device credential. Roles come from the pairing token's origin, never
+   * from the client: ssh mints `owner`, gateway mints the weaker set.
+   */
+  async pair(tokenHash: string, label: string, roles: RacpRole[], origin: CredentialOrigin = "ssh"): Promise<{ deviceId: string; token: string }> {
     const consumedAt = new Date(this.now()).toISOString();
     const pairing = await this.store.findPairing(tokenHash);
     if (!pairing) throw pairingError("PAIRING_FAILED", "the pairing token is unknown");
+    if (credentialOriginFromRecord(pairing.origin) !== origin) {
+      throw pairingError("PAIRING_FAILED", "the pairing token cannot be redeemed on this channel");
+    }
     if (Date.parse(pairing.expiresAt) <= this.now()) {
       throw pairingError("PAIRING_TOKEN_EXPIRED", "the pairing token has expired");
     }
@@ -205,6 +263,7 @@ export class DeviceTokenAuthenticator {
       roles,
       tokenHash: hashToken(token),
       createdAt: consumedAt,
+      origin,
     });
     return { deviceId, token };
   }

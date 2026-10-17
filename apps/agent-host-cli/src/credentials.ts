@@ -7,6 +7,15 @@ import type { DeviceCredentialStore, DeviceRecord, PairingRecord } from "@minih-
 type IdentityFile = { hostId: string; createdAt: string };
 type CredentialFile = { devices: DeviceRecord[]; pairings: PairingRecord[] };
 
+/**
+ * Records written before D663 have no `origin`; they read as `"ssh"`
+ * (security §3.7) so this loader keeps the historical behavior untouched.
+ */
+function normalizeOrigin<T extends { origin?: "ssh" | "gateway" }>(record: T): T {
+  if (record.origin === "gateway") return record;
+  return { ...record, origin: "ssh" as const };
+}
+
 const FILE_MODE = 0o600;
 
 async function readJson<T>(path: string): Promise<T | null> {
@@ -75,7 +84,8 @@ export class FileCredentialStore implements DeviceCredentialStore {
 
   async findDeviceByTokenHash(tokenHash: string): Promise<DeviceRecord | null> {
     const state = await this.load();
-    return state.devices.find((device) => device.tokenHash === tokenHash) ?? null;
+    const device = state.devices.find((device) => device.tokenHash === tokenHash) ?? null;
+    return device ? normalizeOrigin(device) : null;
   }
   async saveDevice(record: DeviceRecord): Promise<void> {
     await this.mutate((state) => {
@@ -101,7 +111,8 @@ export class FileCredentialStore implements DeviceCredentialStore {
   }
   async findPairing(tokenHash: string): Promise<PairingRecord | null> {
     const state = await this.load();
-    return state.pairings.find((pairing) => pairing.tokenHash === tokenHash) ?? null;
+    const pairing = state.pairings.find((pairing) => pairing.tokenHash === tokenHash) ?? null;
+    return pairing ? normalizeOrigin(pairing) : null;
   }
   async savePairing(record: PairingRecord): Promise<void> {
     await this.mutate((state) => {

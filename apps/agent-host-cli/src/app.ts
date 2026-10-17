@@ -30,8 +30,12 @@ export type AgentHostCliApp = {
   authenticator: DeviceTokenAuthenticator;
   server: RacpServer;
   log: HostLogger;
-  /** Mint a single-use pairing token for the bootstrap channel. */
-  issuePairingToken(lifetimeMs: number): Promise<{ token: string; expiresAt: string }>;
+  /**
+   * Mint a single-use pairing token for the bootstrap channel. The origin
+   * fixes the only channel that can redeem it (security §3.7): `--pair` uses
+   * `"ssh"`; `remote-pair` (PR-2) will pass `"gateway"`.
+   */
+  issuePairingToken(lifetimeMs: number, origin?: "ssh" | "gateway"): Promise<{ token: string; expiresAt: string }>;
   stop(): Promise<void>;
 };
 
@@ -282,7 +286,7 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
     authenticator,
     server,
     log,
-    issuePairingToken: (lifetimeMs) => authenticator.issuePairingToken(lifetimeMs),
+    issuePairingToken: (lifetimeMs, origin) => authenticator.issuePairingToken(lifetimeMs, origin),
     async stop() {
       if (state.stopping) return;
       state.stopping = true;

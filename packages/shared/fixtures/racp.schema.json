@@ -2280,5 +2280,391 @@
         "minimum": 1
       }
     }
+  },
+  "HostRouteContext": {
+    "type": "object",
+    "required": [
+      "link",
+      "hostId",
+      "clientConnectionId",
+      "issuedAt",
+      "expiresAt"
+    ],
+    "properties": {
+      "link": {
+        "type": "string",
+        "const": "racp-hostlink.v1"
+      },
+      "hostId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "clientConnectionId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "issuedAt": {
+        "type": "string"
+      },
+      "expiresAt": {
+        "type": "string"
+      },
+      "pairing": {
+        "type": "boolean"
+      }
+    }
+  },
+  "HostLinkFrame": {
+    "anyOf": [
+      {
+        "type": "object",
+        "required": [
+          "link",
+          "type",
+          "clientConnectionId",
+          "routeContext",
+          "credential"
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "const": "racp-hostlink.v1"
+          },
+          "type": {
+            "type": "string",
+            "const": "client.open"
+          },
+          "clientConnectionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "routeContext": {
+            "type": "object",
+            "required": [
+              "link",
+              "hostId",
+              "clientConnectionId",
+              "issuedAt",
+              "expiresAt"
+            ],
+            "properties": {
+              "link": {
+                "type": "string",
+                "const": "racp-hostlink.v1"
+              },
+              "hostId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "clientConnectionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "issuedAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              },
+              "pairing": {
+                "type": "boolean"
+              }
+            }
+          },
+          "credential": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "link",
+          "type",
+          "clientConnectionId",
+          "message"
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "const": "racp-hostlink.v1"
+          },
+          "type": {
+            "type": "string",
+            "const": "client.message"
+          },
+          "clientConnectionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message": {}
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "link",
+          "type",
+          "clientConnectionId",
+          "reason"
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "const": "racp-hostlink.v1"
+          },
+          "type": {
+            "type": "string",
+            "const": "client.close"
+          },
+          "clientConnectionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "link",
+          "type",
+          "clientConnectionId",
+          "message"
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "const": "racp-hostlink.v1"
+          },
+          "type": {
+            "type": "string",
+            "const": "host.message"
+          },
+          "clientConnectionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message": {}
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "link",
+          "type",
+          "clientConnectionId",
+          "code"
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "const": "racp-hostlink.v1"
+          },
+          "type": {
+            "type": "string",
+            "const": "host.close"
+          },
+          "clientConnectionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "link",
+          "type",
+          "uploadId",
+          "offset",
+          "last"
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "const": "racp-hostlink.v1"
+          },
+          "type": {
+            "type": "string",
+            "const": "attachment.chunk"
+          },
+          "uploadId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "last": {
+            "type": "boolean"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "link",
+          "type"
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "const": "racp-hostlink.v1"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "link.ping"
+              },
+              {
+                "type": "string",
+                "const": "link.pong"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "EnrollRequest": {
+    "type": "object",
+    "required": [
+      "enrollmentCode",
+      "hostId",
+      "csr"
+    ],
+    "properties": {
+      "enrollmentCode": {
+        "type": "string",
+        "minLength": 1
+      },
+      "hostId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "csr": {
+        "type": "string",
+        "minLength": 1
+      },
+      "label": {
+        "type": "string"
+      }
+    }
+  },
+  "EnrollResponse": {
+    "type": "object",
+    "required": [
+      "certificate",
+      "caCertificate",
+      "expiresAt"
+    ],
+    "properties": {
+      "certificate": {
+        "type": "string",
+        "minLength": 1
+      },
+      "caCertificate": {
+        "type": "string",
+        "minLength": 1
+      },
+      "expiresAt": {
+        "type": "string"
+      }
+    }
+  },
+  "PairHttpRequest": {
+    "type": "object",
+    "required": [
+      "deviceLabel",
+      "client"
+    ],
+    "properties": {
+      "deviceLabel": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "client": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "web"
+          },
+          {
+            "type": "string",
+            "const": "ios"
+          },
+          {
+            "type": "string",
+            "const": "android"
+          }
+        ]
+      }
+    }
+  },
+  "PairHttpResponse": {
+    "type": "object",
+    "required": [
+      "deviceId",
+      "hostId",
+      "roles"
+    ],
+    "properties": {
+      "deviceId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "hostId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "roles": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1
+      },
+      "token": {
+        "type": "string",
+        "minLength": 1
+      },
+      "csrfToken": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "GatewayHostSummary": {
+    "type": "object",
+    "required": [
+      "hostId",
+      "label",
+      "online"
+    ],
+    "properties": {
+      "hostId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "label": {
+        "type": "string"
+      },
+      "online": {
+        "type": "boolean"
+      },
+      "lastSeenAt": {
+        "type": "string"
+      }
+    }
   }
 }

@@ -14,6 +14,14 @@ export type Principal = {
   roles: RacpRole[];
   /** The SSH-paired desktop device, exempt from the remote ceiling by default. */
   pairedDevice?: boolean;
+  /**
+   * Where the credential came from (security §3.7): `"ssh"` on the loopback
+   * binding, `"gateway"` on a Host link logical connection. Absent reads as
+   * `"ssh"`, so existing principals are unchanged. Gateway-origin principals
+   * are policy-immune: no `allow-session`, no `approverOverride`, always
+   * under the remote permission ceiling.
+   */
+  origin?: "ssh" | "gateway";
   /** Set when Host policy lets approvers use the session's own mode. */
   approverOverride?: boolean;
   connectionId?: string;

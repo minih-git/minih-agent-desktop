@@ -72,6 +72,13 @@ type ServerRequestWaiter = {
 export class RacpConnection {
   readonly id = `conn_${randomUUID()}`;
   principal: Principal;
+  /**
+   * Channel the credential arrived on (security §3.7): `"ssh"` on the
+   * loopback binding, `"gateway"` on a Host link logical connection. Decides
+   * the roles `connection/pair` grants and, with the authenticator, rejects
+   * cross-channel tokens.
+   */
+  readonly origin: "ssh" | "gateway";
   initialized = false;
   readonly subscriptions = new Map<string, Subscription>();
   readonly terminals = new Set<string>();
@@ -83,8 +90,10 @@ export class RacpConnection {
     readonly auth: ConnectionAuth,
     readonly transport: ServerConnectionTransport,
     private readonly server: RacpServer,
+    origin: "ssh" | "gateway" = "ssh",
   ) {
     this.principal = { ...auth.principal, connectionId: this.id };
+    this.origin = origin;
   }
 
   send(message: JsonRpcMessage): void {
@@ -199,7 +208,11 @@ export class RacpServer {
    * when the Host is at its client limit (the transport is closed with
    * `RATE_LIMITED`).
    */
-  accept(auth: ConnectionAuth, transport: ServerConnectionTransport): RacpConnection | null {
+  accept(
+    auth: ConnectionAuth,
+    transport: ServerConnectionTransport,
+    origin: "ssh" | "gateway" = "ssh",
+  ): RacpConnection | null {
     if (this.closed) {
       transport.close(1001, "server closing");
       return null;
@@ -209,7 +222,7 @@ export class RacpServer {
       transport.close(1013, "RATE_LIMITED");
       return null;
     }
-    const connection = new RacpConnection(auth, transport, this);
+    const connection = new RacpConnection(auth, transport, this, origin);
     this.connections.set(connection.id, connection);
     const initializeTimer = setTimeout(() => {
       if (!connection.initialized) {
