@@ -57,6 +57,7 @@ This log freezes previously open questions into concrete decisions.
 | D660 | Built-in session title generation *(amends ADR 0323 / D652 / D654)* | **Restore model-composed titles in Electron main and supersede the standalone Session Titles plugin. After the first user message of a still-default-titled session is persisted, main runs one detached one-shot completion over a bounded excerpt of that message only (no transcript read, no assistant reply) and writes through a new main-process `session.autoTitle` host RPC that reuses the schema-v23 `set_automatic_session_title` compare-and-set, so manual renames win races and the deterministic first-prompt fallback stays on any failure. Settings gains `sessionTitle` (`enabled`, `modelKey`, `thinkingLevel`); an empty model key uses the session's own model and an unadvertised thinking level degrades to `off`. The plugin-only `session.autoTitle` capability keeps its host boundary but is no longer granted to any plugin. See ADR 0323 amendment and `06-host-rpc-protocol.md`.** | Users expected automatic titles without installing a plugin, and the plugin duplicated model selection Settings already owns; the trigger moves earlier (first sent message, not first completed turn) so the sidebar is named while the first reply is still streaming. |
 | D660 | Sidebar waiting-for-decision status covers question cards | **Amend D135 and the sidebar status rules: `sidebarSessionStatus` and `sidebarCollapsedProjectStatus` count `pendingAsks` (asktool question cards) beside `pendingPermissions`, so a turn paused on a question shows the purple decision dot instead of the orange running dot, and a collapsed project with question-pending sessions gains the purple indicator. The status kind stays `permission` (CSS/DOM contract unchanged), and every shipped locale gains `nav.sessionAwaitingDecision` for both cases. Renderer-only; no host protocol, storage, or permission change. See `04-ux/07-ui-design-system.md` §4.5 and E2E US-UI-67.** | A question card left the turn `running` while the runtime was actually paused waiting for the user, so the sidebar showed work in progress instead of the decision state a pending tool permission already showed. |
 | D662 | Segmented turn process and independent thinking preference | **Supersede the `Detailed` / `Compact` display-mode behavior and the single whole-process disclosure recorded by D633 / D651 and the `turn-process-and-thinking-display` ADR: a turn renders as chronological collapsible process segments, Bash and run aliases stay outside every folded container (the turn-level process disclosure and any ordinary activity group) and remain visible even when every group is collapsed, and process/group folding defaults are independent of the thinking preference. The preference is the optional boolean `AppSettings.showThinking`; absent or non-boolean values fall back to the legacy `thinkingDisplayMode` field (`compact` hides, `detailed`/unknown/absent shows), which is retained only for persisted-settings compatibility. `showThinking` joins the portable application fields so it synchronizes like the legacy field; no other host protocol, persistence schema, permission, or plugin contract change. See the amended ADR, `04-ux/06-settings-ia.md`, `04-ux/08-component-spec.md`, `04-ux/09-interaction-patterns.md`, and E2E-CHAT-turn-process-and-thinking-display.** | One flat container left long tool/search runs hard to scan and forced reasoning visibility and process folding into the same two-valued switch; an independent boolean plus always-visible Bash rows keeps shell-heavy turns readable without hiding the answer. |
+| D663 | Self-hosted Gateway, connected desktop Host, and mobile client | **Schedule the previously unscheduled Gateway, Host link, and browser milestones as R4–R6 of the rollout and add `apps/remote-gateway` plus `apps/remote-web` (ADR 0330): the user-operated Gateway relays an outbound `racp-hostlink.v1` Host link (WSS with mutual TLS) and serves `RACP-HTTP` + SSE, holds no transcript, provider secret, or durable turn command, binds the Host link only to configured private or overlay addresses and the client API to loopback (or TLS elsewhere), and persists only token hashes, routing metadata, and a redacted audit log. The `client.open` frame gains a `credential` field and the Host re-authenticates every relayed logical connection with its own `DeviceTokenAuthenticator`. Device records gain an additive `origin` field (absent reads as `"ssh"`): gateway pairing grants `viewer` / `controller` / `approver` (never `owner`), sets `pairedDevice: false` under the remote permission ceiling, and a gateway token authenticates only on the Host link. The desktop may serve its existing Agent Host over the link behind an off-by-default Experimental setting, and `apps/remote-web` ships the H5 plus Capacitor iOS/Android clients with the token in an `HttpOnly` cookie (browser) or the Keychain / Keystore (native). See ADR 0330.** | The maintainer needs to follow and steer turns from a phone against both the always-on `agent-host-cli` machine and a running desktop; a browser cannot join the overlay network or set request headers, and the Host-owned state model of ADR 0205 forbids a stateful relay that copies transcripts. |
 
 ## B. Secondary implementation defaults
 
@@ -7805,3 +7806,53 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   the i18n catalog tests. See the amended ADR, `04-ux/06-settings-ia.md`,
   `04-ux/08-component-spec.md`, `04-ux/09-interaction-patterns.md`, and
   E2E-CHAT-turn-process-and-thinking-display.
+
+## 2026-10-17 — Self-hosted Gateway, connected desktop Host, and mobile client (D663)
+
+- D663 schedules the previously unscheduled Gateway, Host link, and browser
+  milestones as R4–R6 of `06-delivery/07-remote-control-rollout.md` and records
+  the design in ADR 0330. The user-operated `apps/remote-gateway` relays an
+  outbound `racp-hostlink.v1` Host link (WSS with mutual TLS) and serves
+  `RACP-HTTP` with SSE; it holds no transcript, no provider secret, and no
+  durable turn command.
+- The Host link listener binds only to a configured private or overlay address
+  (RFC1918, `100.64.0.0/10`, or an explicitly configured CIDR) and refuses
+  wildcard or public binds; the client API binds loopback behind a
+  TLS-terminating reverse proxy, or elsewhere only with TLS configured.
+- `client.open` gains a `credential` field carrying the client's raw bearer
+  token. The Host re-authenticates every relayed logical connection with its
+  own `DeviceTokenAuthenticator`; the Gateway's cached token hash is only a
+  pre-routing fast reject and a rate-limit key, and revocation on either side
+  closes new and existing relayed connections. In the self-hosted scenario the
+  route context's integrity is guaranteed by the authenticated Host link, and
+  the `credential` never appears in logs or audit records.
+- Device records gain an additive `origin` field (`"ssh"` default, so old
+  credential stores need no migration). Gateway pairing grants
+  `viewer` / `controller` / `approver`, never `owner`; it sets
+  `pairedDevice: false`, so the remote permission ceiling always applies and
+  `allow-session` is unavailable even when `allowRemoteSessionGrants` is
+  true, `approverOverride` never applies, and the ceiling holds regardless of
+  `applyCeilingToPairedDevices`. A gateway token authenticates only on the
+  Host link and an ssh token only on the loopback `RACP-WS` binding; the
+  cross-channel use of either is rejected.
+- Pairing stays Host-issued: the Host displays a single-use code (10-minute
+  validity) locally, the client submits it to
+  `POST /v1/hosts/{hostId}/pair`, the Gateway relays it over the Host link,
+  and the Host returns an `origin: "gateway"` device token. The Gateway stores
+  only the token hash and delivers the token via an `HttpOnly; Secure;
+  SameSite=Strict` cookie plus a CSRF token (browser) or in the response body
+  for Keychain / Keystore storage (native). Pairing tokens carry an origin
+  like devices: a `--pair` code redeems only on the loopback binding and a
+  `remote-pair` / desktop-settings code only over the Host link (gate 28).
+- Gateway storage is `--data-dir` with `0700` directories, `0600` files, and
+  atomic rename writes: the CA, `hosts.json`, `enrollments.json`,
+  `devices.json`, and a daily redacted `audit/YYYY-MM-DD.jsonl`. Host
+  enrollment exchanges a 15-minute one-time code for a one-year client
+  certificate with the `hostId` as CN; the Host pins the Gateway CA with
+  `--gateway-ca` and refuses a fingerprint mismatch.
+- The desktop may serve its existing in-process Agent Host over the link
+  behind an off-by-default Experimental setting that opens no listener, and
+  `apps/remote-web` ships the H5 plus Capacitor iOS/Android clients on the
+  Node-free `@minih-agent/racp/browser` entry. Push, when configured, carries
+  ids and fixed summary kinds only. See ADR 0330 and
+  `05-security/02-remote-control-security.md` §3.7.

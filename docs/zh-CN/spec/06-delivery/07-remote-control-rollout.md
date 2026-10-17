@@ -14,9 +14,11 @@ loopback MCP；不得直接暴露 host-core 或现有 IPC。远程工作先从 t
 D375 按已记录的需求而不是传输广度排序：#176 与 #140 要从本地桌面操作远程
 Linux 或 WSL 机器上的项目，即 SSH 隧道远端 Host 拓扑；#100 要把任务完成与
 审批通知推送到 Telegram、微信、Slack 或 Webhook 并回传简单指令，即 Host 旁的
-出站集成；没有任何已记录的请求要求浏览器或手机端控制桌面，因此 Gateway 与
-浏览器里程碑不排期。排期顺序为 R0、R1、R2、R3；不排期的里程碑保留规格以免
-契约漂移，只由后续产品决策排期。
+出站集成；维护者要求从手机跟进执行过程、处理审批和输入请求，并对
+`agent-host-cli` 常驻机器与运行中的桌面发起、停止和打断回合，这把 Gateway、
+可连接 Host 与浏览器／移动客户端里程碑排期（D663，ADR 0330）。排期顺序为
+R0、R1、R2、R3，随后 R4、R5、R6（D663）；保留的 gRPC 绑定仍不排期，只在有
+明确消费者时由后续记录在案的产品决策交付。
 
 ## 2. 里程碑
 
@@ -57,9 +59,58 @@ Linux 或 WSL 机器上的项目，即 SSH 隧道远端 Host 拓扑；#100 要�
   指令词汇从已关联的聊天映射到 `turn/start`、`turn/stop`、`turn/interrupt`、
   `approval/respond`，以关联主体的角色和同一 Host 策略执行，未关联聊天忽略并审计；
   投递失败有界重试，绝不阻塞回合。
-- 不排期：Gateway 与 Host link（原 R3），PI 不运营 Gateway，用户自托管并以 Host 签发的设备凭据准入，没有 Host 之外的身份源（D385）；浏览器 profile
-  （原 R4），Gateway-less 场景的 Host 自签 cookie 仍需补规格条款；保留的 gRPC
-  绑定（原 R5）仅在有明确消费者时交付，`.proto` 由 typebox 来源生成。
+- R4（D663）：自托管 Gateway 与 Host link。交付 `apps/remote-gateway`（用户自托管的
+  Node 服务）与 `agent-host-cli` 的外连注册和链路：网关模块（含绑定地址校验的配置、
+  `--data-dir` 文件存储、本地 CA 与注册/吊销、同 hostId 替换前先校验身份的 wss + mTLS
+  Host link 监听器、带 cookie/header 两种 profile 与 Origin、CORS、CSRF 控制的
+  `RACP-HTTP` + SSE 客户端 API、配对中继、HTTP 到逻辑连接的路由、按设备与 IP 的限流、
+  脱敏审计日志，以及 `serve` / `enroll-code` / `hosts list` / `hosts revoke` /
+  `devices list` / `devices revoke` CLI）；`agent-host-cli enroll`（本地密钥对、CSR 加
+  一次性注册码、`--gateway-ca` 固定网关身份）、可选的 `--gateway <wss-url>` 外连链路
+  （1s–60s 带抖动指数退避）与经现有 admin socket 的 `remote-pair`；loopback `RACP-WS`、
+  `--pair` 与 SSH 引导行为不变；协议 §11.4 带 `credential` 字段的 Host link 契约与安全
+  规格 §3.7 的设备来源规则（网关配对只授予 `viewer` / `controller` / `approver`，绝不
+  授予 `owner`，`pairedDevice: false`，Host 对每条中继逻辑连接重新认证）；可独立运行的
+  Gateway 打包产物与部署 README（systemd 示例、透传 SSE 的 Nginx 反代示例
+  （`proxy_buffering off`、`X-Accel-Buffering: no`）、注册与吊销步骤）；`RACP-HTTP`
+  一致性测试通过后加入 `RACP_SHIPPED_BINDINGS`。网关不保存 transcript、provider
+  secret，也不持久化回合命令；Host 离线时不排队非幂等命令。Host link 监听器只绑定
+  显式配置的私网或组网地址（RFC1918、`100.64.0.0/10` 或显式配置的 CIDR），拒绝
+  `0.0.0.0`、`::` 与公网地址；客户端 API 绑定 loopback（由 TLS 反向代理终结），其他
+  地址必须配 TLS。退出条件：E2E-227 通过；绑定规则（安全门 22–23）成立；令牌不出现在
+  URL、query string、SSE URL 或事件载荷中，浏览器请求过 Origin 白名单（§5.2、
+门 14）且修改类请求带
+  CSRF token（门 24）；网关配对设备不能执行 owner 专属操作、受权限上限约束、拿不到
+  `allow-session`，其令牌在 loopback `RACP-WS` 上被拒（门 25）；任意一侧吊销后新连接
+  被拒、已有逻辑连接 5 秒内关闭（门 26）；网关可清空重注册而不丢 Host 会话数据，审计日志不含
+  令牌与内容。
+- R5（D663）：桌面作为可连接的 Host。交付桌面的外连网关链路（ADR 0330）：在现有进程内
+  Agent Host 之上以 Host link host 承载 Electron-Main 的 `RacpServer` 传输——不新建
+  AgentHost、不新增执行路径、不开监听；可选的 `remoteGateway` AppSettings 字段
+  （`enabled`、`url`；设备本地、不同步、缺失即关闭）与实验性设置页（开关、网关地址、
+  注册码、链路状态、二维码加 10 分钟倒计时的配对码、已配对设备列表与吊销）；main 进程
+  经 `EncryptionPort` 加密保存设备凭据，绝不进 SQLite、不改 host-core schema，mTLS
+  密钥与证书单独存储；`minih-agent-desktop/remoteGateway/*` IPC 通道全部加入 MCP 控制
+  屏蔽列表；生命周期清理：关闭开关、退出应用、`before-quit`、渲染进程重载都断开链路并
+  取消挂起的服务端请求，不影响本地回合。退出条件：关闭状态下行为与现状完全一致，不发起
+  连接也不开监听（回归测试，安全门 27）；开启后只建立一条外连链路，关闭、退出与重载都会
+  清理；网关主体受远程权限上限约束、不能修改本地会话权限模式、不能用 `allow-session`，
+  `DESKTOP_PRINCIPAL` 不变；吊销桌面设备即断开链路；mTLS 密钥与证书加密存放在设置与
+  SQLite 之外。
+- R6（D663）：浏览器与移动客户端。交付 `apps/remote-web`（ADR 0330）：基于无 Node 依赖
+  的 `@minih-agent/racp/browser` 入口与共享 typebox 契约的 React + TypeScript 客户端，
+  不依赖 `apps/desktop` 源码；页面包括配对（网关地址、配对码、选择 Host）、带在线状态的
+  Host 列表、带运行中／等待审批徽标的会话列表，以及实时时间线（消息行、工具调用摘要、
+  可折叠工具详情、带本地决策词汇但不提供 `allow-session` 的审批与输入卡片，以及发起、
+  停止、打断回合的输入框）；快照加游标的状态管理，`visibilitychange` 时从最后游标续传，
+  修改类操作带幂等 key，提交期间禁用按钮；移动端适配（`env(safe-area-inset-*)`、不小于
+  44px 的触控区域、深色模式、PWA manifest 与图标）；Capacitor iOS/Android 打包，原生凭据
+  经 `CredentialPort` 存入 Keychain / Keystore，可选的脱敏推送只携带 id 与固定摘要类型。
+  退出条件：E2E-228 通过（`RACP-HTTP` 与 `RACP-WS` 语义一致、cookie profile 过 Origin
+  与 CSRF 校验、URL 令牌被拒）；E2E-266 通过（两种移动视口下的配对、`Last-Event-ID`
+  续传、审批与停止，截图产物不入库）；浏览器构建不把令牌存进脚本可读存储，原生构建只存
+  Keychain / Keystore；推送载荷只含 id 与事件类型，未配置凭据时推送关闭。
+- 保留的 gRPC 绑定仅在有明确消费者时交付，`.proto` 由 typebox 来源生成。
 
 R2 的设计决定（D375，2026-09-10 记录）：远端 Host 的 provider 配置经 SSH 引导通道
 写入，不经 RACP；桌面用户 MCP 服务器与不需工作区的插件工具在本里程碑通过反向工具
@@ -105,8 +156,10 @@ host 与 sidecar 路径；不从网络监听器调用 renderer、`host.proxy` �
 流式、引导下载的有效与篡改 checksum、针对 Webhook 接收端与
 长轮询 bot fixture 的集成适配层，排期后再覆盖 Gateway 路由、cookie profile 下的
 浏览器重连和 NAT 下的 Host link 中继。安全验证覆盖无效、过期、撤销、错误 Host
+- 无效、过期、撤销、错误 Host
 的设备 token，`agent-host-cli` 上非 loopback 对端与无 TLS 的非 loopback 绑定，配对 token
-复用与非 SSH 通道配对，错误角色/会话/Host/revision，含 `workspace/read` 越界的
+复用与非 SSH 通道配对，以及 D663 起的配对码交叉通道兑换：ssh 来源的码经网关、
+gateway 来源的码在 loopback `RACP-WS` 上（安全规格 §3.7，门 17 与 28），错误角色/会话/Host/revision，含 `workspace/read` 越界的
 SSRF 与路径攻击，超限与哈希不符的上传，试图选择 secret 或权限的注入请求，
 未关联聊天与重放的集成指令，慢读者与连接耗尽，审计脱敏与保留，排期后再覆盖
 Origin、CORS、CSRF、cookie 与 Gateway 中继。运营指标记录准入延迟与队列深度、
@@ -118,8 +171,9 @@ Host 连接健康与引导时长与版本不匹配、认证与授权失败、集
 
 先发布 typebox 契约、生成的 fixture 和禁用代码路径；R1 只在开发 profile 启用；
 SSH 隧道拓扑先对 allowlist 用户以 feature flag 启用再普遍开放；集成适配层作为
-默认不配置任何渠道的可选设置启用；Gateway、浏览器与 gRPC 只由记录在案的产品
-决策排期。kill switch 拒绝新的远程连接并取消远程主体提交的排队回合，不影响
+默认不配置任何渠道的可选设置启用；R4–R6 作为独立启用的面交付（D663）：Gateway
+是用户自行启动的独立服务，桌面链路与移动客户端是默认关闭的可选设置；保留的
+gRPC 里程碑只由后续记录在案的产品决策排期。kill switch 拒绝新的远程连接并取消远程主体提交的排队回合，不影响
 本地桌面。回滚必须停止接受新的远程连接并停止集成适配层，远端 `agent-host-cli` 进程
 按用户选择保留或停止但绝不删除其 transcript，保持本地 stdio、renderer 与 MCP
 路径可用，保留本地已完成的 transcript，且绝不因远程 feature flag 变化而重放回合。
@@ -132,6 +186,11 @@ SSH 隧道拓扑先对 allowlist 用户以 feature flag 启用再普遍开放；
 checksum 发布到 GitHub Releases 的 `agent-host-cli` 包且版本不匹配与篡改下载路径已测试，Host 运营指标可用，且新的发布/回滚
 runbook 写明 feature flag、配对撤销路径、远端机器上的数据保留和事件负责人之后，
 才可进入生产。绑定 parity 与 E2E-227 / E2E-228 在其里程碑排期后成为门槛。
+
+R4–R6 准入（D663）：E2E-227、E2E-228、E2E-265 与 E2E-266 针对打包后的 Gateway、
+可连接的桌面 Host 与移动客户端全部通过；`05-security/02-remote-control-security.md`
+的安全门 22–27 签核通过（含桌面关闭态回归）；部署 README 的 Nginx 示例经实测透传
+SSE 不缓冲。
 
 ## 7. 实现状态
 
@@ -166,3 +225,10 @@ Gateway 身份源定为 PI 账号服务。
 
 D385（2026-09-10）撤回身份源条款：远程控制从结构上就是用户本地的，Gateway 只能由
 用户自托管并以 Host 签发的设备凭据准入。
+
+D663（2026-10-17，ADR 0330）在维护者要求从手机跟进并操控 `agent-host-cli` 常驻
+机器与运行中桌面两边的回合之后，把 Gateway 与浏览器里程碑排期为 R4–R6。它命名了
+`apps/remote-gateway` 与 `apps/remote-web`；`client.open` 的 `credential` 字段与
+Host 侧对 Host link 的重新认证；把网关配对主体压在远程权限上限之下、排除在 owner
+角色之外的设备来源规则；Gateway 存储、配对与注册设计；桌面默认关闭的可连接 Host
+设置；以及带可选脱敏推送的 Capacitor 移动打包。gRPC 绑定保持保留、不排期。

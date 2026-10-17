@@ -59,6 +59,7 @@
 | D660 | 内置会话标题生成 *（修订 ADR 0323 / D652 / D654）* | **恢复 Electron 主进程内的模型标题生成，并取代独立的 Session Titles 插件。在一个仍为默认标题的会话的第一条用户消息持久化后，主进程对该消息的有界摘录发起一次分离的一次性补全（不读取 transcript，不含助手回复），并通过新的主进程 `session.autoTitle` 主机 RPC 写入；该 RPC 复用 schema v23 的 `set_automatic_session_title` 比较并设置语义，因此手动重命名在竞态中始终胜出，模型失败时保留确定性的首条提示兜底标题。设置新增 `sessionTitle`（`enabled`、`modelKey`、`thinkingLevel`）；空模型键使用会话自身模型，未声明该思考级别的模型回退为 `off`。原仅供插件的 `session.autoTitle` 能力保留其主机边界，但不再授予任何插件。见 ADR 0323 修订与 `06-host-rpc-protocol.md`。** | 用户期望不安装插件也能自动命名会话，而插件面板重复了设置已有的模型选择；触发时机提前到发送第一条消息（而非首个回合结束），侧边栏在第一条回复仍在流式输出时即可显示名称。 |
 | D660 | 侧栏"等待决策"状态覆盖提问卡 | **修订 D135 与侧栏状态规则：`sidebarSessionStatus` 与 `sidebarCollapsedProjectStatus` 在 `pendingPermissions` 之外统计 `pendingAsks`（asktool 提问卡），因此暂停在提问上的回合显示紫色决策圆点而不是橙色运行圆点，含提问挂起会话的折叠项目也显示紫色指示。状态 kind 仍为 `permission`（CSS/DOM 契约不变），所有已发货语言包为两种情况新增 `nav.sessionAwaitingDecision`。仅渲染层；不改 Host 协议、存储或权限。见 `04-ux/07-ui-design-system.md` §4.5 与 E2E US-UI-67。** | 提问卡让回合保持 `running`，而运行时实际上在等待用户，于是侧栏显示"进行中"，而不是待处理工具授权早已显示的决策状态。 |
 | D662 | 分段回合过程与独立的思考偏好 | **取代 D633 / D651 与 `turn-process-and-thinking-display` ADR 中记录的 `Detailed` / `Compact` 显示模式行为与单一整体过程披露：回合渲染为按时间顺序排列的可折叠过程片段，Bash 与 run 别名位于所有折叠容器之外（回合级过程披露与任何普通活动组），即使所有组都收起也保持可见，且过程／组折叠默认值不依赖思考偏好。偏好为可选的布尔值 `AppSettings.showThinking`；缺失或非布尔值回退到旧版 `thinkingDisplayMode` 字段（`compact` 隐藏，`detailed`／未知／缺失显示），该旧字段仅为持久化设置兼容性保留。`showThinking` 加入可移植应用字段，因此会像旧字段一样同步；其余 Host 协议、持久化 schema、权限或插件契约不变。见修订后的 ADR、`04-ux/06-settings-ia.md`、`04-ux/08-component-spec.md`、`04-ux/09-interaction-patterns.md` 与 E2E-CHAT-turn-process-and-thinking-display。** | 单一扁平容器让较长的工具／搜索序列难以浏览，并把推理可见性与过程折叠挤进同一个二值开关；独立布尔值加上始终可见的 Bash 行，让命令密集的回合保持可读又不遮挡回答。 |
+| D663 | 自托管网关、可连接的桌面 Host 与移动客户端 | **把此前不排期的 Gateway、Host link 与浏览器里程碑排期为交付序列的 R4–R6，并新增 `apps/remote-gateway` 与 `apps/remote-web`（ADR 0330）：用户自托管的 Gateway 中继出站 `racp-hostlink.v1` Host link（WSS + 双向 TLS）并服务 `RACP-HTTP` + SSE，不保存 transcript、provider secret 或持久化回合命令；Host link 监听器只绑定显式配置的私网或组网地址，客户端 API 绑定 loopback（其他地址必须配 TLS），持久化内容只有令牌哈希、路由元数据和脱敏审计日志。`client.open` 帧新增 `credential` 字段，Host 用自己的 `DeviceTokenAuthenticator` 重新验证每条中继的逻辑连接。设备记录新增可追加的 `origin` 字段（缺省按 `"ssh"` 读取）：经网关配对授予 `viewer` / `controller` / `approver`（绝不是 `owner`），`pairedDevice: false` 并始终受远程权限上限约束，网关令牌只能在 Host link 上认证。桌面可在默认关闭的实验性设置下经该链路提供其现有 Agent Host；`apps/remote-web` 交付 H5 与 Capacitor iOS/Android 客户端，令牌存于 `HttpOnly` cookie（浏览器）或 Keychain / Keystore（原生）。见 ADR 0330。** | 维护者需要从手机跟进并操控 `agent-host-cli` 常驻机器与运行中桌面两边的回合；浏览器无法加入组网也无法设置请求头，而 ADR 0205 的 Host 持有状态模型禁止复制 transcript 的有状态中继。 |
 
 ## B. 辅助实现默认值
 
@@ -5484,6 +5485,42 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   i18n 目录测试覆盖。见修订后的 ADR、`04-ux/06-settings-ia.md`、
   `04-ux/08-component-spec.md`、`04-ux/09-interaction-patterns.md` 与
   E2E-CHAT-turn-process-and-thinking-display。
+
+## 2026-10-17 —— 自托管网关、可连接的桌面 Host 与移动客户端（D663）
+
+- D663 把此前不排期的 Gateway、Host link 与浏览器里程碑排期为交付序列的 R4–R6，
+  设计记录于 ADR 0330。用户自托管的 `apps/remote-gateway` 中继出站的
+  `racp-hostlink.v1` Host link（WSS + 双向 TLS）并服务 `RACP-HTTP` + SSE；它不保存
+  transcript、provider secret，也不持久化回合命令。
+- Host link 监听器只绑定显式配置的私网或组网地址（RFC1918、`100.64.0.0/10` 或显式
+  配置的 CIDR），遇到通配或公网地址拒绝启动；客户端 API 绑定 loopback（由 TLS 反向
+  代理终结），绑定其他地址必须配置 TLS。
+- `client.open` 帧新增 `credential` 字段，携带客户端原始 bearer token。Host 用自己的
+  `DeviceTokenAuthenticator` 重新验证每条中继的逻辑连接；Gateway 缓存的令牌哈希只用于
+  路由前的快速拒绝和限流，任意一侧吊销都会拒绝新连接并在 5 秒内关闭已有逻辑连接。
+  自托管场景下 route context 的完整性由已认证的 Host link 保证，`credential` 绝不出现在
+  日志或审计记录中。
+- 设备记录新增可追加的 `origin` 字段（缺省按 `"ssh"` 读取，旧凭据文件无需迁移）。经
+  网关配对授予 `viewer` / `controller` / `approver`，绝不授予 `owner`；`pairedDevice`
+  为 false，因此始终受远程权限上限约束且拿不到 `allow-session`——即使
+  `allowRemoteSessionGrants` 为 true、`approverOverride` 永不适用、上限与
+  `applyCeilingToPairedDevices` 无关，这些限制不受 Host 策略影响且须用测试锁住。
+  网关令牌只能在 Host
+  link 上认证，ssh 令牌只能在 loopback `RACP-WS` 上认证，交叉通道使用一律拒绝。
+- 配对仍由 Host 签发：Host 在本机显示一次性配对码（10 分钟有效），客户端调用
+  `POST /v1/hosts/{hostId}/pair`，Gateway 经 Host link 中继，Host 返回
+  `origin: "gateway"` 的设备令牌。Gateway 只保存令牌哈希，并以
+  `HttpOnly; Secure; SameSite=Strict` cookie 加 CSRF token（浏览器）或在响应体中返回
+  令牌交由 Keychain / Keystore 保存（原生）。配对令牌与设备同源：`--pair` 的码只能在
+  loopback 绑定上兑换，`remote-pair` / 桌面设置页的码只能在 Host link 上兑换（gate 28）。
+- Gateway 存储位于 `--data-dir`，目录 `0700`、文件 `0600`、rename 原子写入：CA、
+  `hosts.json`、`enrollments.json`、`devices.json` 和按日的脱敏
+  `audit/YYYY-MM-DD.jsonl`。Host 注册用 15 分钟有效的一次性注册码换取一年期、CN 为
+  `hostId` 的客户端证书；Host 用 `--gateway-ca` 固定网关身份，指纹不匹配即拒绝连接。
+- 桌面可在默认关闭、不开启任何监听的实验性设置下经该链路提供其进程内的 Agent Host；
+  `apps/remote-web` 基于无 Node 依赖的 `@minih-agent/racp/browser` 入口交付 H5 与
+  Capacitor iOS/Android 客户端。推送在配置后只携带 id 和固定摘要类型。见 ADR 0330 与
+  `05-security/02-remote-control-security.md` §3.7。
 
 ## 2026-10-18 — 内置会话消息工具（D663）
 

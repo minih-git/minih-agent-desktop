@@ -3,12 +3,14 @@
 ## 1. MVP will not include
 
 1. Remote Gateway / WebUI remote control (the local loopback MCP control plane
-   is an opt-in desktop-side exception, not a remote gateway)
+   is an opt-in desktop-side exception, not a remote gateway); post-MVP this
+   is scheduled as R4–R6 by D663 (ADR 0330) and remains outside the MVP
 2. Cloud accounts and multi-device sync
 3. Full IDE (LSP, debugger, multi-file editor workspace)
 4. A from-scratch agent loop replacing pi
 5. Full plugin marketplace at day one
-6. Mobile clients
+6. Mobile clients; post-MVP they are scheduled as R6 by D663 (ADR 0330) and
+   remain outside the MVP
 7. Multi-user auth systems
 8. Billing/subscription modules
 9. Computer Use browser takeover

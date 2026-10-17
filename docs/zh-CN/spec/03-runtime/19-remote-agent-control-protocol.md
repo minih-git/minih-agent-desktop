@@ -2,8 +2,9 @@
 
 - 协议：`PI Remote Agent Control Protocol`（`RACP`）
 - 版本：`1.0`
-- 状态：目标规格，属于 MVP 之后
-- 决策：D373 / ADR 0205，经 D374 与 D375 修订
+- 状态：目标规格，属于 MVP 之后。MVP 本身不包含远程控制；MVP 后 Gateway 与浏览器
+  里程碑已由 D663（ADR 0330）排期为 R4–R6
+- 决策：D373 / ADR 0205，经 D374、D375 与 D663 修订
 - 英文源规格：[英文源规格](/spec/03-runtime/19-remote-agent-control-protocol)
 
 英文页面是规范源。本页保留协议字段、方法名、错误码和代码结构，便于
@@ -128,7 +129,7 @@ POST /v1/approvals/{approvalId}:respond
 ```
 
 ```ts
-type HostLinkFrame = { link: "racp-hostlink.v1"; type: "client.open" | "client.message" | "host.message" | "attachment.chunk"; clientConnectionId?: string }
+type HostLinkFrame = { link: "racp-hostlink.v1"; type: "client.open" | "client.message" | "host.message" | "attachment.chunk"; clientConnectionId?: string; credential?: string }
 ```
 
 ```ts
@@ -285,20 +286,36 @@ Plan/Goal 审批为带显式 `permissionMode` 的 `approve` 或 `reject`，且�
 | Prioritize turn | `POST /v1/turns/{turnId}:prioritize` |
 | Session event stream | `GET /v1/sessions/{sessionId}/events` |
 | Host event stream | `GET /v1/events` |
+| Pair a device (Gateway only) | `POST /v1/hosts/{hostId}/pair` |
 | Resolve approval | `POST /v1/approvals/{approvalId}:respond` |
 | Resolve input | `POST /v1/inputs/{inputId}:respond` |
 
 `RACP-WS` 是 v1 唯一规范绑定，首个部署（rollout R2）是远端机器上只绑定 loopback
 的 `agent-host-cli`，桌面经 SSH 端口转发以 header profile 和 SSH 引导配对得到的设备 token
 连接，绑定与对端都是 loopback 时才接受明文 `ws://`；`RACP-HTTP` 是浏览器 profile，
-在任何浏览器客户端发布前必须交付，但浏览器里程碑不排期（D375），映射保留以免
-契约漂移；`RACP-GRPC` 保留，若采用则 `.proto` 由 typebox 来源生成。Host link 属于
-不排期的 Gateway 里程碑，SSH 隧道拓扑不使用它。浏览器
+随 Gateway 与浏览器里程碑（R4–R6，D663）交付，绑定在 R4 生效并在任何浏览器客户端
+使用前与 `RACP-WS` 一起加入一致性 fixture；`RACP-GRPC` 保留，若采用则 `.proto` 由
+typebox 来源生成。Host link 随 R4 交付（D663，ADR 0330），SSH 隧道拓扑不使用它。
+浏览器
 无法在 WebSocket/EventSource 上设置请求头，因此非浏览器客户端用
 `Authorization` 头（header profile），浏览器客户端用 HttpOnly cookie + Origin 白名单
 + CSRF token（cookie profile）；两者都禁止 URL 中的 token。Host link
 （`racp-hostlink.v1`）在一条出站连接上复用逻辑客户端连接，服务端发起的请求按
 `clientConnectionId` 中继并在同一逻辑连接上应答；Gateway 不得改写其中的消息。
+`client.open` 帧携带 `credential` 字段（客户端原始 bearer token），Host 用自己的
+`DeviceTokenAuthenticator` 以连接来源 `"gateway"` 重新验证每条逻辑连接，Gateway 缓存的
+令牌哈希只用于路由前快速拒绝和限流；自托管场景下 route context 的完整性由已认证的
+Host link 保证，`credential` 绝不出现在日志或审计记录中。注册与配对使用同一监听器：
+管理员用 `remote-gateway enroll-code --label <name>` 打印 15 分钟有效的一次性注册码，
+Host 本地生成密钥对并把 CSR 与注册码发到 Host link 端口上的专用注册接口（仅服务端
+TLS 认证，不要求客户端证书），Host 用 `--gateway-ca` 固定网关身份，指纹不匹配即拒绝，
+网关签发一年期、CN 为 `hostId` 的客户端证书；配对时 Host 在本机显示 10 分钟有效的
+一次性配对码，客户端调用 `POST /v1/hosts/{hostId}/pair`，网关以配对令牌作为
+`credential` 打开逻辑连接并依次执行 `connection/initialize` 与 `connection/pair`，
+Host 签发网关来源（安全规格 §3.7）的设备令牌，网关只记录
+`{ deviceId, hostId, sha256(token), label, createdAt }`，并以
+`HttpOnly; Secure; SameSite=Strict; Path=/v1` cookie 加 CSRF token（浏览器）或在响应体
+中返回 `{ deviceId, token }`（原生，存入 Keychain / Keystore）交付令牌。
 
 ## 6. 限制和错误
 
@@ -362,5 +379,13 @@ idempotency key 时返回原结果；使用相同 key 发送不同输入则失�
 SSH 隧道部署与 loopback 规则、SSH 配对 owner 设备的上限豁免，并把 `RACP-HTTP`、
 cookie profile 与 Host link 标记为不排期；终端流式操作、`tools/advertise` 与
 `tool/execute` 中继、host-core 持久化的队列、远程订阅者 30 分钟默认审批寿命和
-`applyCeilingToPairedDevices` 策略同属该修订。
+`applyCeilingToPairedDevices` 策略同属该修订。D663（2026-10-17，ADR 0330）排期
+Gateway 与浏览器里程碑（R4–R6）：`RACP-HTTP`（§11.2）随 R4 绑定并在任何浏览器客户端
+使用前加入一致性 fixture，HTTP 映射在既有 `GET /v1/hosts` 旁新增
+`POST /v1/hosts/{hostId}/pair`；Host link（§11.4）随 R4 交付，`client.open` 新增
+`credential` 字段，Host 以连接来源 `"gateway"` 用自己的 `DeviceTokenAuthenticator`
+重新验证每条中继逻辑连接，自托管场景下 route context 的完整性由已认证的 Host link
+保证；注册（15 分钟一次性注册码、固定网关 CA、CN 为 `hostId` 的一年期证书）与网关
+配对（Host 本机显示的 10 分钟配对码、网关只存哈希、cookie 或响应体交付令牌）在同一
+监听器上规定。
 完整状态机、示例和验收条款见英文源规格。

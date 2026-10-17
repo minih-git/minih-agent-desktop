@@ -2,10 +2,12 @@
 
 - Protocol name: `PI Remote Agent Control Protocol` (`RACP`)
 - Version: `1.0`
-- Status: Target specification; post-MVP
-- Decision: D373 / ADR 0205, amended by D374 and D375
+- Status: Target specification; post-MVP. The MVP itself does not include
+  remote control; post-MVP the Gateway and browser milestones are scheduled
+  as R4–R6 by D663 (ADR 0330)
+- Decision: D373 / ADR 0205, amended by D374, D375, and D663
 - Transport profiles: `RACP-WS` (normative v1 binding; first deployed over an
-  SSH tunnel), `RACP-HTTP` (browser profile; unscheduled), `RACP-GRPC`
+  SSH tunnel), `RACP-HTTP` (browser profile; binds with R4), `RACP-GRPC`
   (reserved)
 
 This document is normative for the remote control contract. It defines the
@@ -1074,7 +1076,7 @@ profile with a device token obtained by the SSH bootstrap pairing. Plain
 `ws://` is accepted on that port only when both the bind address and the peer
 address are loopback; the SSH channel provides confidentiality
 (`05-security/02-remote-control-security.md` §5.1). The cookie profile ships
-with the unscheduled browser milestone.
+with the Gateway and browser milestones (R4–R6, D663).
 
 ### 11.2 HTTP/JSON + SSE (`RACP-HTTP`, browser profile)
 
@@ -1093,6 +1095,7 @@ with the unscheduled browser milestone.
 | Prioritize turn | `POST /v1/turns/{turnId}:prioritize` |
 | Session event stream | `GET /v1/sessions/{sessionId}/events` |
 | Host event stream | `GET /v1/events` |
+| Pair a device (Gateway only) | `POST /v1/hosts/{hostId}/pair` |
 | Resolve approval | `POST /v1/approvals/{approvalId}:respond` |
 | Resolve input | `POST /v1/inputs/{inputId}:respond` |
 
@@ -1106,10 +1109,10 @@ MAY instead consume the stream through `fetch` with header authentication, in
 which case it sends `Last-Event-ID` as a request header itself and implements
 its own reconnect.
 
-`RACP-HTTP` is required before any browser client ships. The browser
-milestone is unscheduled (D375); the mapping is retained so the contract does
-not drift, and the binding joins the conformance fixture with `RACP-WS` when
-it is scheduled.
+`RACP-HTTP` is required before any browser client ships. It is delivered by
+the Gateway and browser milestones (R4–R6, D663): the mapping binds when R4
+ships and the binding joins the conformance fixture with `RACP-WS` before any
+browser client uses it.
 
 ### 11.3 gRPC (`RACP-GRPC`, reserved)
 
@@ -1129,9 +1132,8 @@ and one browser profile; the Host link (§11.4) uses `RACP-WS` framing.
 
 ### 11.4 Host link relay profile
 
-The Host link belongs to the unscheduled Gateway milestone (D375). It is
-specified here so the contract does not drift; the SSH-tunnel topology does
-not use it.
+The Host link ships with the Gateway milestone R4 (D663, ADR 0330). The
+SSH-tunnel topology does not use it.
 
 The Host link is the outbound connection from an Agent Host to a Gateway. It
 is not a third client binding: it multiplexes logical client connections onto
@@ -1140,7 +1142,7 @@ connection.
 
 ```ts
 type HostLinkFrame =
-  | { link: "racp-hostlink.v1"; type: "client.open"; clientConnectionId: string; routeContext: string }
+  | { link: "racp-hostlink.v1"; type: "client.open"; clientConnectionId: string; routeContext: string; credential: string }
   | { link: "racp-hostlink.v1"; type: "client.message"; clientConnectionId: string; message: unknown }
   | { link: "racp-hostlink.v1"; type: "client.close"; clientConnectionId: string; reason: string }
   | { link: "racp-hostlink.v1"; type: "host.message"; clientConnectionId: string; message: unknown }
@@ -1151,10 +1153,20 @@ type HostLinkFrame =
 
 Rules:
 
-1. `client.open` carries the signed `HostRouteContext` for that client. The
-   Host authorizes every operation on the logical connection from that
-   context alone; the link's own mTLS identity authenticates the Gateway, not
-   any user.
+1. `client.open` carries the `HostRouteContext` and the client's raw
+   bearer `credential` (a device token or a pairing token) for that client.
+   The Host authorizes every operation on the logical connection by
+   re-authenticating that credential with its own `DeviceTokenAuthenticator`
+   under the connection origin `"gateway"`; the Gateway's cached token hash
+   is only a pre-routing fast reject and a rate-limit key. The link's own
+   mTLS identity authenticates the Gateway, not any user. In the
+   self-hosted, user-local Gateway scenario the route context is not
+   separately signed: its integrity is guaranteed by the authenticated Host
+   link, so the Host does not verify a second signature on `routeContext`;
+   it still rejects a context whose
+   `hostId` is not its own, that has expired, or whose `clientConnectionId`
+   is already in use on the same link. The `credential` appears only in
+   `client.open` frames and never in logs, audit records, or error payloads.
 2. Each logical connection has its own `connection/initialize`, subscriptions,
    server-request id space, and send queue. A server-initiated request is
    addressed to a `clientConnectionId`; the Gateway relays it on the matching
@@ -1169,6 +1181,31 @@ Rules:
 5. Loss of the link closes every logical connection with a resumable cursor.
    The Host reconnects with bounded exponential backoff; local turns continue
    throughout.
+
+Enrollment and pairing run against the same listener:
+
+- **Enrollment (Host to Gateway).** An administrator prints a one-time
+  enrollment code with `remote-gateway enroll-code --label <name>`, valid 15
+  minutes. The Host generates its key pair locally and sends the CSR and the
+  code to a dedicated enrollment endpoint on the Host link port that
+  authenticates by server TLS only and requires no client certificate. The
+  Host pins the Gateway identity with the `--gateway-ca` certificate and
+  refuses a fingerprint mismatch. The Gateway issues a one-year client
+  certificate with the `hostId` as CN, which the Host then uses for the
+  mutual-TLS link.
+- **Pairing (client to Host through the Gateway).** The Host displays a
+  single-use pairing code with a 10-minute validity locally, never through
+  the Gateway. The client calls `POST /v1/hosts/{hostId}/pair` with
+  `Authorization: Bearer <pairingToken>` and
+  `{ deviceLabel, client: "web" | "ios" | "android" }`. The Gateway opens a
+  logical connection whose `credential` is the pairing token and performs
+  `connection/initialize` followed by `connection/pair` on it. The Host
+  issues a device token with the gateway device origin (security §3.7), and
+  the Gateway records only
+  `{ deviceId, hostId, sha256(token), label, createdAt }`, delivering the
+  token as an `HttpOnly; Secure; SameSite=Strict; Path=/v1` cookie plus a
+  CSRF token for browsers, or as `{ deviceId, token }` in the response body
+  for native clients to store in the iOS Keychain or the Android Keystore.
 
 ## 12. Limits and deadlines
 
@@ -1340,3 +1377,19 @@ D375 (2026-09-10) re-sequenced the deployments and extended the catalog:
 - queued turns persisted by host-core and held after a restart, the
   30-minute default approval lifetime for remote subscribers, and the
   `applyCeilingToPairedDevices` policy.
+
+D663 (2026-10-17, ADR 0330) scheduled the Gateway and browser milestones
+(R4–R6) and refined this contract:
+
+- `RACP-HTTP` (§11.2) binds with R4 and joins the conformance fixture before
+  any browser client uses it; the HTTP mapping gains
+  `POST /v1/hosts/{hostId}/pair` beside the existing `GET /v1/hosts`;
+- the Host link (§11.4) ships with R4; `client.open` gains the `credential`
+  field, the Host re-authenticates every relayed logical connection with its
+  own `DeviceTokenAuthenticator` under the connection origin `"gateway"`, and
+  the route context's integrity is guaranteed by the authenticated Host link
+  in the self-hosted scenario; and
+- enrollment (one-time 15-minute code, pinned Gateway CA, one-year client
+  certificate with the `hostId` as CN) and Gateway pairing (Host-displayed
+  10-minute code, hash-only Gateway storage, cookie or response-body token
+  delivery) are specified on the same listener.
