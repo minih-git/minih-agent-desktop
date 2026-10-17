@@ -20,8 +20,8 @@ import {
   collectDelegationTimings,
 } from "../../../lib/subagent-topology";
 import {
-  resolveThinkingDisplayMode,
-  shouldGroupTurnProcess,
+  segmentTurnProcess,
+  type TurnProcessRunSegment,
 } from "../../../lib/turn-process";
 import { sessionAllows } from "../../../lib/remote-session-safety";
 import { useSlotSessionId } from "../../../plugins/renderer-slots/use-slots";
@@ -36,6 +36,8 @@ import {
 import { activityItemsEqual } from "./ActivityGroup";
 import { GeneratedImages } from "./GeneratedImages";
 import { MessageRow } from "./MessageRow";
+import { ReviewChangeCard } from "../../../components/ReviewChangeCard";
+import { ToolRow } from "./ToolRow";
 import { assistantTurnMenuItems } from "./menu-items";
 import {
   useChatTextActions,
@@ -233,6 +235,24 @@ export const TranscriptTail = memo(function TranscriptTail({
   transcriptEntryEqual(previous.entry, next.entry)
 );
 
+/**
+ * A `Bash`/run call rendered on its own, outside every process and activity
+ * disclosure. It stays visible with all disclosures collapsed, and its own
+ * detail stays closed until the user opens it.
+ */
+const StandaloneRunRow = memo(function StandaloneRunRow({
+  segment,
+}: {
+  segment: TurnProcessRunSegment;
+}) {
+  return (
+    <div className="turn-run-row" data-run-row="true">
+      <ToolRow imagesInTurn message={segment.item.message} />
+      <ReviewChangeCard message={segment.item.message} />
+    </div>
+  );
+});
+
 export const AssistantTurn = memo(function AssistantTurn({
   entry,
   isActive,
@@ -323,12 +343,18 @@ export const AssistantTurn = memo(function AssistantTurn({
   );
   statusesRef.current = turnDelegationStatuses;
   timingsRef.current = turnDelegationTimings;
-  const groupProcess = useAppStore((state) =>
-    shouldGroupTurnProcess(
-      resolveThinkingDisplayMode(state.settings?.thinkingDisplayMode),
-    ),
-  );
   const { process, responses } = summary;
+  const segments = useMemo(() => segmentTurnProcess(process), [process]);
+  // While the turn runs, its latest process chunk stays open; earlier chunks
+  // have settled, and untouched chunks close on completion.
+  const lastProcessIndex = useMemo(
+    () =>
+      segments.reduce(
+        (last, segment, index) => (segment.kind === "process" ? index : last),
+        -1,
+      ),
+    [segments],
+  );
   const activePart = isActive ? entry.parts.at(-1) : undefined;
   const partContext = { isActive, activePart, runtimeActivity, turnDelegationStatuses, turnDelegationTimings };
 
@@ -342,16 +368,24 @@ export const AssistantTurn = memo(function AssistantTurn({
       aria-label={t("chat.assistantMessage")}
     >
       <div className="message-col">
-        {groupProcess ? (
-          <>
-            <TurnProcess turnId={entry.id} processParts={process} turnParts={entry.parts} isActive={isActive} delegationStatuses={turnDelegationStatuses}>
-              <AssistantTurnParts parts={process} {...partContext} />
+        {segments.map((segment, index) => {
+          if (segment.kind === "run") {
+            return <StandaloneRunRow key={`run-${segment.key}`} segment={segment} />;
+          }
+          return (
+            <TurnProcess
+              key={`process-${segment.key}`}
+              turnId={segment.key}
+              processParts={segment.parts}
+              turnParts={segment.parts}
+              isActive={isActive && index === lastProcessIndex}
+              delegationStatuses={turnDelegationStatuses}
+            >
+              <AssistantTurnParts parts={segment.parts} {...partContext} />
             </TurnProcess>
-            <AssistantTurnParts parts={responses} {...partContext} />
-          </>
-        ) : (
-          <AssistantTurnParts parts={entry.parts} {...partContext} />
-        )}
+          );
+        })}
+        <AssistantTurnParts parts={responses} {...partContext} />
         {generatedImages}
         {!isActive && metaMessage ? (
           <MessageMeta

@@ -56,6 +56,7 @@
 | D657 | 让内置浏览器打开工作区外的本地文件 | **修订 ADR 0170：通过绝对路径或 `file:` URL 可打开任意已存在的本地普通文件，本地文件页面也可导航到其他已存在的本地文件。相对输入仍以工作区为根；HTTP(S) 页面只保留此前工作区内文件链接的权限。缺失文件、目录与远程文件 authority 仍被阻止。`BrowserPreview` 与 sidecar 继续使用工作区根解析。公开的 `pi.browser.navigate` API 在高风险 `browser.cdp` 权限下采用相同策略。见 ADR 0328、E2E-059、`04-ux/08-component-spec.md` 与 `05-security/01-security.md`。** | 用户需要检查项目外的本地 HTML，而工作区范围内的 Agent 文件工具和远程页面导航仍须保留原有边界（#1627）。 |
 | D659 | 重新打开归档项目后恢复侧栏显示 | **修订 D093 / D455：成功明确激活项目时，清除该规范化路径的渲染层归档标记并持久化，使用户从「项目归档」点击「打开」、通过「添加项目」再次选择同一目录，或打开项目会话后，都能在主页侧边栏看到该项目。仅选择归档详情行而未激活，以及普通会话刷新，都不改变归档状态。不更改 Host/项目/会话存储或协议。见 ADR 0294、E2E-264 与 issue #1653。** | 用户明确重新打开项目后，活动工作区虽已切换，但按路径存储的归档展示标记仍在，导致项目从侧栏隐藏。 |
 | D660 | 侧栏"等待决策"状态覆盖提问卡 | **修订 D135 与侧栏状态规则：`sidebarSessionStatus` 与 `sidebarCollapsedProjectStatus` 在 `pendingPermissions` 之外统计 `pendingAsks`（asktool 提问卡），因此暂停在提问上的回合显示紫色决策圆点而不是橙色运行圆点，含提问挂起会话的折叠项目也显示紫色指示。状态 kind 仍为 `permission`（CSS/DOM 契约不变），所有已发货语言包为两种情况新增 `nav.sessionAwaitingDecision`。仅渲染层；不改 Host 协议、存储或权限。见 `04-ux/07-ui-design-system.md` §4.5 与 E2E US-UI-67。** | 提问卡让回合保持 `running`，而运行时实际上在等待用户，于是侧栏显示"进行中"，而不是待处理工具授权早已显示的决策状态。 |
+| D662 | 分段回合过程与独立的思考偏好 | **取代 D633 / D651 与 `turn-process-and-thinking-display` ADR 中记录的 `Detailed` / `Compact` 显示模式行为与单一整体过程披露：回合渲染为按时间顺序排列的可折叠过程片段，Bash 与 run 别名位于所有折叠容器之外（回合级过程披露与任何普通活动组），即使所有组都收起也保持可见，且过程／组折叠默认值不依赖思考偏好。偏好为可选的布尔值 `AppSettings.showThinking`；缺失或非布尔值回退到旧版 `thinkingDisplayMode` 字段（`compact` 隐藏，`detailed`／未知／缺失显示），该旧字段仅为持久化设置兼容性保留。`showThinking` 加入可移植应用字段，因此会像旧字段一样同步；其余 Host 协议、持久化 schema、权限或插件契约不变。见修订后的 ADR、`04-ux/06-settings-ia.md`、`04-ux/08-component-spec.md`、`04-ux/09-interaction-patterns.md` 与 E2E-CHAT-turn-process-and-thinking-display。** | 单一扁平容器让较长的工具／搜索序列难以浏览，并把推理可见性与过程折叠挤进同一个二值开关；独立布尔值加上始终可见的 Bash 行，让命令密集的回合保持可读又不遮挡回答。 |
 
 ## B. 辅助实现默认值
 
@@ -5462,3 +5463,22 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
 - 由 `apps/desktop/test/sidebar-session-status.test.mjs`（纯选择逻辑）与
   `apps/desktop/test/sidebar-pinned-rendering.test.mjs`（会话行与折叠项目渲染）覆盖；
   E2E US-UI-67 新增提问卡相关预期。见 `04-ux/01-ui-ia.md` 与 `04-ux/07-ui-design-system.md` §4.5。
+## 2026-10-16 —— 分段回合过程与独立的思考偏好（D662）
+
+- D662 取代 D633 / D651 与 `turn-process-and-thinking-display` ADR 中记录的
+  `Detailed` / `Compact` 显示模式行为与单一整体过程披露。回合现在渲染为按时间顺序排列的
+  可折叠过程片段；末尾回答、助手错误、中止后的末尾文字和待处理操作面留在这些片段之外。
+- Bash 与 run 别名作为独立行渲染，位于所有折叠容器之外——既不属于回合级过程披露，也不
+  属于普通活动组——即使所有组都收起也保持可见。相邻的 Bash 行保持独立，Bash 行的详情在
+  用户打开之前保持收起。
+- 组折叠默认值统一且不依赖思考偏好：活动组默认展开，完成时仅在用户未操作时收起；其他
+  已完成组默认收起；记录过失败或被拒工具的未接管活动组会在后续恢复期间保持展开。
+- 偏好为可选的布尔值 `AppSettings.showThinking`。当它为 false 时，活动思考指示器保持
+  可见，而已完成的思考行和摘要被隐藏，空的纯思考容器被省略；已存推理仍会保留。缺失或
+  非布尔值回退到旧版 `thinkingDisplayMode` 字段（`compact` 隐藏，`detailed`／未知／缺失
+  显示），该旧字段仅为持久化设置兼容性保留，不再在界面中暴露。
+- `showThinking` 加入可移植应用字段，因此会像旧字段一样同步；其余 Host 协议、持久化
+  schema、权限或插件契约不变。由 `apps/desktop/test/thinking-visibility.test.mjs` 与
+  i18n 目录测试覆盖。见修订后的 ADR、`04-ux/06-settings-ia.md`、
+  `04-ux/08-component-spec.md`、`04-ux/09-interaction-patterns.md` 与
+  E2E-CHAT-turn-process-and-thinking-display。

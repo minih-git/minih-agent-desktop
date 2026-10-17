@@ -466,8 +466,9 @@ globalThis.transcriptRenderProbe = async () => {
 
     const statusLifecycle = await transcriptStatusProbe();
     const markdownLinks = await markdownLinkInteractionProbe(i18n);
+    const turnProcess = await turnProcessProbe();
     return {
-      ok: statusLifecycle.ok && markdownLinks.ok,
+      ok: statusLifecycle.ok && markdownLinks.ok && turnProcess.ok,
       statusLifecycle,
       markdownLinks,
       groups,
@@ -476,7 +477,7 @@ globalThis.transcriptRenderProbe = async () => {
       changedToolRenders: 1,
       taskLifecycleUpdated: true,
       taskTimingUpdated: true,
-      turnProcess: await turnProcessProbe(),
+      turnProcess,
       messageEditing: await transcriptEditProbe(),
       textUpdateDurationMs,
     };

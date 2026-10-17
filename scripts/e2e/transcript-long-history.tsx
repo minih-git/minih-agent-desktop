@@ -186,7 +186,7 @@ export async function transcriptLongHistoryProbe() {
       runningSessions: Object.fromEntries(sessions.map((item) => [item.summary.id, true])),
       isRunning: true, page: "chat", selectingSessionId: undefined,
       settings: { defaultMode: "agent", theme: "dark", enterToSend: true, onboardingDismissed: true,
-        ...initial.settings, smoothStreaming: false, thinkingDisplayMode: "detailed" },
+        ...initial.settings, smoothStreaming: false, showThinking: true },
     });
     // Seed canonical loaded snapshots through the real store subscription/cache
     // writer, rather than bypassing it with a projection builder or custom store.
