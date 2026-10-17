@@ -782,6 +782,7 @@ describe("buildProviderModel OpenAI-compatible role compatibility", () => {
     expect(model.provider).toBe("siliconflow-cn");
     expect(model.compat).toMatchObject({
       requiresReasoningContentOnAssistantMessages: true,
+      supportsReasoningEffort: false,
       requiresNonEmptyReasoningReplay: true,
       supportsDeveloperRole: false,
     });
@@ -1569,6 +1570,7 @@ describe("DeepSeek-family relay reasoning replay (#296)", () => {
     expect(assistants[1].reasoning_content).toBe(
       DEEPSEEK_REASONING_REPLAY_PLACEHOLDER,
     );
+    expect(requests[0].reasoning_effort).toBeUndefined();
   });
 });
 
