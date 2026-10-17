@@ -56,7 +56,8 @@ coverage/
 .cc-connect/
 
 .playwright-mcp/
-.claude/
+.claude/*
+!.claude/skills
 .workbuddy
 electron.vite.config.*.mjs
 
