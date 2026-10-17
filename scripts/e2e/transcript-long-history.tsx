@@ -345,11 +345,29 @@ export async function transcriptLongHistoryProbe() {
         // The row is a `Read` call, so the partial carries `details.content` —
         // the only field the read presentation renders (Bash progress uses
         // `details.output`; non-run tools never emit that shape in production).
+        // The turn-process lane is collapsed at this point (a streamed answer
+        // owns the turn tail), and a folded ancestor keeps every nested row
+        // hidden: disclosure visibility is ancestry-based, not viewport-based.
+        // Expand the lane first, the same way a reader would, before touching
+        // any row inside it.
+        const processHeader = element<HTMLButtonElement>(".turn-process > .tool-activity-header");
+        if (processHeader.getAttribute("aria-expanded") !== "true") flushSync(() => processHeader.click());
+        await settled();
         const liveToolId = `${item.summary.id}-tool-128`;
         const liveTool = element<HTMLButtonElement>(`[data-message-id="${liveToolId}"] .tool-row-header`);
         if (liveTool.getAttribute("aria-expanded") !== "true") flushSync(() => liveTool.click());
-        await until(() => host.querySelector(`[data-message-id="${liveToolId}"] .tool-row-body`) !== null,
-          "expanded tool row mounted its body");
+        await until(() => {
+          const body = host.querySelector(`[data-message-id="${liveToolId}"] .tool-row-body`);
+          if (!body) return false;
+          // Guard the actual invariant: no folded ancestor between the row and
+          // the transcript host, otherwise the updates below land on hidden UI.
+          let ancestor: HTMLElement | null = body;
+          while (ancestor && ancestor !== host) {
+            if (ancestor.hidden || ancestor.inert) return false;
+            ancestor = ancestor.parentElement;
+          }
+          return true;
+        }, "expanded tool row mounted its visible body");
         // The row must be on screen: presentation defers formatting while the
         // disclosure lane reports the row hidden, exactly like a real reader.
         liveTool.scrollIntoView({ block: "center" });
