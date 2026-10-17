@@ -43,6 +43,9 @@ test("buildSessionTitleRequest bounds the prompt and rejects an empty one", () =
   assert.equal(request?.thinkingLevel, "off");
   assert.match(request?.userContent ?? "", /Fix the login bug on Windows/);
   assert.match(request?.userContent ?? "", /User prompt:/);
+  assert.match(request?.userContent ?? "", /imperative verb/);
+  assert.match(request?.userContent ?? "", /user's language/);
+  assert.match(request?.userContent ?? "", /Preserve ticket references exactly/);
   assert.equal(
     buildSessionTitleRequest({ sessionModelKey: null, models, userPrompt: "   " }),
     null,

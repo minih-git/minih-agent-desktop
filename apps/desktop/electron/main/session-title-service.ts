@@ -1,6 +1,7 @@
 /**
- * Orchestrates one built-in title generation: read the session, pick a model,
- * run a one-shot completion, and compare-and-set the title through the host.
+ * Orchestrates one built-in title generation: ask the host whether the session
+ * is still auto-title eligible, pick a model, run a one-shot completion, and
+ * compare-and-set the title through the host.
  *
  * Kept separate from `agent-ipc.ts` so the flow is unit-testable with fake
  * ports. Fire-and-forget by contract: `generateSessionTitle` resolves to
@@ -49,13 +50,11 @@ export type SessionTitleDeps = {
   completeOneShot?: typeof completeOneShotImpl;
 };
 
-/** One generation's input, read by the caller at send time. */
+/** One generation's trigger, read by the caller at send time. */
 export type SessionTitleJob = {
   sessionId: string;
-  /** The persisted first user message text. */
-  userPrompt: string;
+  /** The session's launch identity, used to resolve the title model. */
   session: {
-    title?: string;
     providerId?: string;
     modelId?: string;
   } | null | undefined;
@@ -99,12 +98,15 @@ export function sessionTitleModelsFromProviders(
 }
 
 /**
- * Generate a title for `sessionId` from its first user message.
+ * Generate a title for `sessionId` from its first persisted user message.
  *
  * Gate order matters: the settings gate runs first so a disabled feature
- * costs nothing, and the host CAS is the final arbiter — the write lands only
- * while the read fallback title is still current, so a manual rename always
- * wins and a generated title never lands twice.
+ * costs nothing, and `session.autoTitleContext` is the once-only gate — it
+ * answers nothing once a manual or generated title owns the session, so no
+ * later message ever renames it again and no wasted model call is made. The
+ * naming input is always the first persisted user message, and the host CAS
+ * stays the final arbiter: the write lands only while the expected title is
+ * still current, so a manual rename always wins.
  */
 export async function generateSessionTitle(
   deps: SessionTitleDeps,
@@ -113,8 +115,6 @@ export async function generateSessionTitle(
   const sessionId = job.sessionId.trim();
   if (!sessionId || sessionId.startsWith("native-pi:")) return false;
   if (job.settings?.sessionTitle?.enabled === false) return false;
-  const expectedTitle = String(job.session?.title ?? "");
-  if (!expectedTitle.trim()) return false;
 
   const host = deps.getHost();
   if (!host) return false;
@@ -123,12 +123,21 @@ export async function generateSessionTitle(
 
   const settingsTitle = job.settings?.sessionTitle;
   const preferredModelKey = String(settingsTitle?.modelKey ?? "").trim();
-  const sessionModelKey =
-    job.session?.providerId && job.session?.modelId
-      ? `${job.session.providerId}/${job.session.modelId}`
-      : null;
 
   try {
+    // One host round-trip decides everything: null means the session already
+    // carries a manual or generated title (or has no first message yet), so
+    // the session is left untouched and no model call is spent.
+    const context = (await host.call("session.autoTitleContext", {
+      id: sessionId,
+    })) as {
+      expectedTitle: string;
+      userPrompt: string;
+      modelKey?: string;
+    } | null;
+    const expectedTitle = String(context?.expectedTitle ?? "");
+    if (!context || !expectedTitle.trim()) return false;
+
     // A listed model set doubles as the "is a provider ready" check: an
     // empty list means no usable provider, and no call is attempted.
     const listed = (await host.call("providers.list", {
@@ -136,10 +145,10 @@ export async function generateSessionTitle(
     })) as { providers?: Array<Record<string, unknown>> } | undefined;
     const request = buildSessionTitleRequest({
       preferredModelKey: preferredModelKey || undefined,
-      sessionModelKey,
+      sessionModelKey: context.modelKey ?? null,
       thinkingLevel: settingsTitle?.thinkingLevel,
       models: sessionTitleModelsFromProviders(listed?.providers),
-      userPrompt: job.userPrompt,
+      userPrompt: context.userPrompt,
     });
     if (!request) return false;
 
@@ -149,7 +158,7 @@ export async function generateSessionTitle(
       sessionId,
       job.session ?? {},
       job.settings ?? {},
-      preferredModelKey && request.modelKey !== sessionModelKey
+      preferredModelKey && request.modelKey !== (context.modelKey ?? null)
         ? {
             providerId: request.modelKey.slice(0, request.modelKey.indexOf("/")),
             modelId: request.modelKey.slice(request.modelKey.indexOf("/") + 1),
