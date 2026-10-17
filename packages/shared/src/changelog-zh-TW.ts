@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhTWEntries: ChangelogEntry[] = [
   {
+    version: "0.21.0",
+    date: "2026-10-17",
+    highlights: [
+      "轉錄預設改為結論優先：助手工作時你能看到每一步，一輪結束時整輪過程折進一個寫明用時的標頭，只留下最終結論。",
+      "點開這個標頭即可讀到敘述段落與逐條單行動作——執行、讀取、搜尋——不再回顯指令；需要輸出時再點開那一列。",
+      "Bash 指令現在是摺疊裡的普通步驟，指令密集的任務不會再用滿屏的 shell 列淹掉回報。",
+      "「詳細」檔維持全部鋪開並預設展開工具明細與已完成的思考；「精簡」檔仍按分段各自摺疊。",
+    ],
+  },
+  {
     version: "0.20.8",
     date: "2026-10-17",
     highlights: [

@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.21.0",
+    date: "2026-10-17",
+    highlights: [
+      "Transcripts read conclusion-first by default: while the agent works you see each step, and when the turn finishes the whole process folds behind one header stating how long it took, leaving only the answer.",
+      "Open that header to read the narration with one line per step - Ran, Read, Searched - without echoing the command; click a row when you want its output.",
+      "Bash commands are ordinary steps inside that fold now, so command-heavy turns no longer bury the report in shell rows.",
+      "Detailed keeps every row in the flow with tool details and completed reasoning open; Compact still folds each part of the turn separately.",
+    ],
+  },
+  {
     version: "0.20.8",
     date: "2026-10-17",
     highlights: [

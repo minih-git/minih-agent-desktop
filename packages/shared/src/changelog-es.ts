@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "0.21.0",
+    date: "2026-10-17",
+    highlights: [
+      "Las transcripciones ahora se leen con la conclusión primero: mientras el agente trabaja ves cada paso y, al terminar el turno, todo el proceso se pliega tras una cabecera con la duración y solo queda la respuesta.",
+      "Abre esa cabecera para leer la narración con una línea por paso —Ejecutado, Leído, Buscado— sin repetir el comando; pulsa una fila cuando quieras su salida.",
+      "Los comandos Bash son ahora pasos normales dentro de ese pliegue, así que los turnos con muchos comandos ya no entierran el informe bajo filas de shell.",
+      "Detallado mantiene todas las filas en el flujo con los detalles de herramienta y el razonamiento completado abiertos; Compacto sigue plegando cada tramo por separado.",
+    ],
+  },
+  {
     version: "0.20.8",
     date: "2026-10-17",
     highlights: [

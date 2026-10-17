@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "0.21.0",
+    date: "2026-10-17",
+    highlights: [
+      "As transcrições agora são lidas com a conclusão primeiro: enquanto o agente trabalha você vê cada passo e, ao terminar o turno, todo o processo se recolhe atrás de um cabeçalho com a duração, deixando apenas a resposta.",
+      "Abra esse cabeçalho para ler a narração com uma linha por passo — Executado, Lido, Buscado — sem repetir o comando; clique numa linha quando quiser a saída.",
+      "Comandos Bash agora são passos comuns dentro desse recolhimento, então turnos com muitos comandos não enterram mais o relatório em linhas de shell.",
+      "Detalhado mantém todas as linhas no fluxo com detalhes de ferramenta e raciocínio concluído abertos; Compacto continua recolhendo cada trecho separadamente.",
+    ],
+  },
+  {
     version: "0.20.8",
     date: "2026-10-17",
     highlights: [

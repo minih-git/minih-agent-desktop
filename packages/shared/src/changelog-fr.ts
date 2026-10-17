@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "0.21.0",
+    date: "2026-10-17",
+    highlights: [
+      "Les transcriptions se lisent désormais conclusion d'abord : pendant que l'agent travaille vous voyez chaque étape, et à la fin du tour tout le processus se replie derrière un en-tête indiquant la durée, ne laissant que la réponse.",
+      "Ouvrez cet en-tête pour lire la narration avec une ligne par étape — Exécuté, Lu, Recherché — sans répéter la commande ; cliquez une ligne pour voir sa sortie.",
+      "Les commandes Bash sont désormais des étapes ordinaires dans ce repli, donc les tours chargés en commandes n'enterrent plus le rapport sous des lignes de shell.",
+      "Détaillé garde toutes les lignes dans le flux avec les détails d'outil et le raisonnement terminé ouverts ; Compact replie toujours chaque portion séparément.",
+    ],
+  },
+  {
     version: "0.20.8",
     date: "2026-10-17",
     highlights: [

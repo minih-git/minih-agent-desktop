@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.21.0",
+    date: "2026-10-17",
+    highlights: [
+      "Transkripte lesen sich jetzt ergebnisorientiert: Während der Agent arbeitet, siehst du jeden Schritt; wenn der Durchlauf endet, faltet sich der gesamte Prozess hinter eine Kopfzeile mit der Dauer, und nur die Antwort bleibt stehen.",
+      "Öffne die Kopfzeile, um die Erzählung mit einer Zeile pro Schritt zu lesen - Ausgeführt, Gelesen, Gesucht -, ohne die Befehlszeile zu wiederholen; klicke eine Zeile für ihre Ausgabe an.",
+      "Bash-Befehle sind in dieser Faltung gewöhnliche Schritte; befehlsintensive Durchläufe begraben den Bericht nicht mehr unter Shell-Zeilen.",
+      "Ausführlich zeigt weiterhin jede Zeile im Fluss mit offenen Werkzeugdetails und abgeschlossenem Denken; Kompakt faltet weiterhin jeden Abschnitt einzeln.",
+    ],
+  },
+  {
     version: "0.20.8",
     date: "2026-10-17",
     highlights: [
