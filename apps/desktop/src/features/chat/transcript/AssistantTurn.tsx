@@ -21,8 +21,11 @@ import {
 } from "../../../lib/subagent-topology";
 import {
   segmentTurnProcess,
+  turnElapsedMs,
+  visibleStepCount,
   type TurnProcessRunSegment,
 } from "../../../lib/turn-process";
+import { resolveShowThinking } from "../../../lib/thinking-visibility";
 import {
   foldsTurnProcess,
   opensProcessDetails,
@@ -357,6 +360,11 @@ export const AssistantTurn = memo(function AssistantTurn({
   const density = useAppStore((state) => resolveTranscriptDensity(state.settings));
   const folded = foldsTurnProcess(density);
   const openProcessDetails = opensProcessDetails(density);
+  const showThinking = useAppStore((state) => resolveShowThinking(state.settings));
+  // The footer states the turn's real wall-clock span (tools and waits
+  // included) and counts only the rows the reader can see.
+  const elapsedMs = useMemo(() => turnElapsedMs(entry.parts), [entry.parts]);
+  const steps = visibleStepCount(summary.activityItems, showThinking);
   const segments = useMemo(() => segmentTurnProcess(process), [process]);
   // The live tail is the turn's actual last part. A process chunk opens and
   // reports live state only while it owns that part, so a superseded thinking
@@ -417,11 +425,11 @@ export const AssistantTurn = memo(function AssistantTurn({
             responseDurationMs={responseDurationMs}
             responseOutputTokens={responseOutputTokens}
             durationLabel={
-              typeof responseDurationMs === "number" && responseDurationMs > 0
-                ? formatToolDuration(Math.round(responseDurationMs / 1000))
+              elapsedMs !== undefined && elapsedMs >= 1000
+                ? formatToolDuration(Math.round(elapsedMs / 1000))
                 : undefined
             }
-            steps={summary.activityItems.length}
+            steps={steps}
             tools={summary.tools.length}
           />
         ) : null}

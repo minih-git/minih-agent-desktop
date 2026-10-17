@@ -64,3 +64,23 @@ test("density validation accepts only the three known values", () => {
     /transcriptDensity is invalid/,
   );
 });
+
+test("turn footer copy pluralizes and keeps its separator out of the catalog", async () => {
+  const { createInstance } = await import("i18next");
+  const { en, zhCN } = await import("../../../packages/i18n/src/index.ts");
+  const i18n = createInstance();
+  await i18n.init({
+    lng: "en",
+    resources: { en: { translation: en }, "zh-CN": { translation: zhCN } },
+    interpolation: { escapeValue: false },
+  });
+  assert.equal(i18n.t("chat.metaSteps", { count: 1 }), "1 step");
+  assert.equal(i18n.t("chat.metaSteps", { count: 3 }), "3 steps");
+  assert.equal(i18n.t("chat.metaTools", { count: 1 }), "1 tool");
+  assert.equal(i18n.t("chat.metaTools", { count: 2 }), "2 tools");
+  for (const catalog of [en, zhCN]) {
+    assert.doesNotMatch(catalog.chat.metaTools, /·/);
+  }
+  await i18n.changeLanguage("zh-CN");
+  assert.equal(i18n.t("chat.metaSteps", { count: 1 }), "1 步");
+});

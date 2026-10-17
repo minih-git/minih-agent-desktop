@@ -193,6 +193,10 @@ function activityGroupPropsEqual(
     previous.isActive !== next.isActive ||
     previous.endedAt !== next.endedAt ||
     previous.runtimeActivity !== next.runtimeActivity ||
+    // Density props change the presentation of unchanged items: a settings
+    // switch between standard and detailed must reach groups already on screen.
+    previous.flat !== next.flat ||
+    previous.openDetails !== next.openDetails ||
     previous.items.length !== next.items.length
   ) {
     return false;

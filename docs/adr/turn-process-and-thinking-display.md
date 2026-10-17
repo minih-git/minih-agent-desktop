@@ -107,7 +107,12 @@ described above. Bash rows stay standalone in every density, chronological part
 order and the trailing answer never depend on it, and the density changes only
 visibility: it never alters model context, stored messages, copy payloads, or
 execution. An absent or unknown value resolves to `standard`, so an older
-settings file can never hide a turn's narration.
+settings file can never hide a turn's narration. A density change applies to
+turns already on screen, and the preference synchronizes as a portable
+application field. In every density the turn footer states the turn's
+wall-clock span (first recorded part to last recorded end, tool execution and
+waits included, not the summed model streaming time) and counts only the rows
+the reader can see, so hidden reasoning rows are not counted as steps.
 
 ## Consequences
 
@@ -151,4 +156,6 @@ covers the resolver, folding/detail helpers, and settings validation; the
 turn-process probe asserts the flat `standard`, opening `detailed`, and folding
 `compact` presentations in real Chromium, and the disclosure-anchor and
 long-history probes pin `compact` because they assert the folding contract
-itself.
+itself. The review follow-up adds in-place density switching to the turn-process
+probe, `turnElapsedMs`/`visibleStepCount` unit tests, pluralized footer copy,
+and the config-sync portable-field assertions in host-core.

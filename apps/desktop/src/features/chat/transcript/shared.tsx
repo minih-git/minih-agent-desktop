@@ -196,7 +196,12 @@ export function MessageMeta({
       {steps ? (
         <span className="message-meta-chip steps">
           {t("chat.metaSteps", { count: steps })}
-          {tools ? t("chat.metaTools", { count: tools }) : null}
+          {tools ? (
+            <>
+              <span aria-hidden> · </span>
+              {t("chat.metaTools", { count: tools })}
+            </>
+          ) : null}
         </span>
       ) : null}
       {showThroughput ? (

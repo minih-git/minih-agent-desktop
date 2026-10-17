@@ -243,6 +243,26 @@ export async function turnProcessProbe() {
       container.querySelector(".tool-row.thinking")?.classList.contains("open") === true,
       "detailed density opens completed reasoning rows",
     );
+
+    // A settings switch must reach turns already on screen: the same mounted
+    // turn (same key, no re-render call) follows standard <-> detailed.
+    setSettings({ transcriptDensity: "standard" });
+    render(mixed, false, null, "flat-switch");
+    check(
+      row("read")?.classList.contains("open") !== true,
+      "a mounted standard turn starts with tool details closed",
+    );
+    setSettings({ transcriptDensity: "detailed" });
+    check(
+      row("read")?.classList.contains("open") === true &&
+        container.querySelector(".tool-row.thinking")?.classList.contains("open") === true,
+      "switching a mounted turn to detailed opens its details in place",
+    );
+    setSettings({ transcriptDensity: "standard" });
+    check(
+      row("read")?.classList.contains("open") !== true,
+      "switching a mounted turn back to standard closes untouched details",
+    );
     setSettings();
 
     // A turn of only Bash calls has no process disclosure at all.
