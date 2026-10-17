@@ -122,8 +122,9 @@ export function projectTurnProcess(entry: AssistantTurnEntry) {
  *
  * `hideThinking` is `!showThinking`: completed reasoning rows and excerpts are
  * hidden, while the live reasoning indicator still counts as a visible step so
- * a thinking-only process keeps its indicator. Bash and run aliases are always
- * counted: they render as standalone rows inside the process.
+ * a thinking-only process keeps its indicator. The helper counts exactly the
+ * parts it is given; Bash and run aliases are segmented out before rendering
+ * and never reach a process chunk, so they are never counted here.
  */
 export function visibleProcessSteps(
   parts: readonly AssistantTurnPart[],

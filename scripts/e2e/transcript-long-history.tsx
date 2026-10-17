@@ -28,8 +28,10 @@ const row = (id: string, role: UiMessage["role"], content: string, extra: Partia
   id, role, content, createdAt, status: "complete", ...extra,
 });
 const tool = (id: string): UiMessage => row(id, "tool", "Synthetic result", {
-  toolName: "Bash", toolCallId: id, toolStatus: "success",
-  toolArgs: { command: `printf ${id}` }, toolResult: { details: { stdout: "Synthetic result", exitCode: 0 } },
+  // A non-run tool so the fixture forms ordinary activity groups. A Bash row is
+  // standalone and would not join a group.
+  toolName: "Read", toolCallId: id, toolStatus: "success",
+  toolArgs: { path: `${id}.ts` }, toolResult: { details: { content: "Synthetic result" } },
 });
 function session(id: string, messages: UiMessage[]): FixtureSession {
   const reads = { count: 0 };

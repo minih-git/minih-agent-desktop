@@ -345,16 +345,10 @@ export const AssistantTurn = memo(function AssistantTurn({
   timingsRef.current = turnDelegationTimings;
   const { process, responses } = summary;
   const segments = useMemo(() => segmentTurnProcess(process), [process]);
-  // While the turn runs, its latest process chunk stays open; earlier chunks
-  // have settled, and untouched chunks close on completion.
-  const lastProcessIndex = useMemo(
-    () =>
-      segments.reduce(
-        (last, segment, index) => (segment.kind === "process" ? index : last),
-        -1,
-      ),
-    [segments],
-  );
+  // The live tail is the turn's actual last part. A process chunk opens and
+  // reports live state only while it owns that part, so a superseded thinking
+  // chunk cannot keep a false "Thinking" header once a Bash call or a separate
+  // streamed answer takes over the turn.
   const activePart = isActive ? entry.parts.at(-1) : undefined;
   const partContext = { isActive, activePart, runtimeActivity, turnDelegationStatuses, turnDelegationTimings };
 
@@ -368,17 +362,19 @@ export const AssistantTurn = memo(function AssistantTurn({
       aria-label={t("chat.assistantMessage")}
     >
       <div className="message-col">
-        {segments.map((segment, index) => {
+        {segments.map((segment) => {
           if (segment.kind === "run") {
             return <StandaloneRunRow key={`run-${segment.key}`} segment={segment} />;
           }
+          const ownsActiveTail =
+            activePart !== undefined && segment.parts.includes(activePart);
           return (
             <TurnProcess
               key={`process-${segment.key}`}
               turnId={segment.key}
               processParts={segment.parts}
-              turnParts={segment.parts}
-              isActive={isActive && index === lastProcessIndex}
+              turnParts={entry.parts}
+              isActive={isActive && ownsActiveTail}
               delegationStatuses={turnDelegationStatuses}
             >
               <AssistantTurnParts parts={segment.parts} {...partContext} />

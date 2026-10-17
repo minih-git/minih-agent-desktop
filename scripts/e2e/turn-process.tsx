@@ -205,6 +205,69 @@ export async function turnProcessProbe() {
       "an untouched process chunk collapses on completion",
     );
 
+    // A streaming thinking chunk superseded by a later Bash row must not keep a
+    // false Thinking header: the real tail is the Bash row.
+    const supersededThought = message("thought-before-bash", "assistant", "", {
+      thinking: "Reasoning before a command",
+      status: "streaming",
+    });
+    const bashLive = run("bash-live", "pnpm test");
+    const thinkingLabel = i18n.t("chat.thinkingFor", { time: "" });
+    render([supersededThought, bashLive], true, null, "thinking-to-bash");
+    check(
+      row("bash-live")?.closest(".turn-process") === null &&
+        visible(row("bash-live")),
+      "a Bash row that supersedes thinking stays standalone and visible",
+    );
+    check(
+      !processHeaders().some((header) =>
+        header
+          .querySelector(".tool-activity-label")
+          ?.textContent?.startsWith(thinkingLabel),
+      ),
+      "a superseded thinking chunk does not keep a Thinking header",
+    );
+    setSettings({ showThinking: false });
+    render([supersededThought, bashLive], true, null, "thinking-to-bash-hidden");
+    check(
+      container.querySelectorAll(".turn-process").length === 0 &&
+        visible(row("bash-live")),
+      "hidden superseded thinking leaves no empty process and keeps the Bash row",
+    );
+    setSettings();
+
+    // A separate streamed answer supersedes the thinking chunk the same way.
+    const supersededThought2 = message("thought-before-answer", "assistant", "", {
+      thinking: "Reasoning before an answer",
+      status: "streaming",
+    });
+    const separateAnswer = message("stream-answer", "assistant", "Answer text", {
+      status: "streaming",
+    });
+    render([supersededThought2, separateAnswer], true, null, "thinking-to-answer");
+    check(
+      Boolean(row("stream-answer")) &&
+        row("stream-answer")?.closest(".turn-process") === null,
+      "a separate streamed answer stays outside the process",
+    );
+    check(
+      !processHeaders().some((header) =>
+        header
+          .querySelector(".tool-activity-label")
+          ?.textContent?.startsWith(thinkingLabel),
+      ),
+      "a separate streamed answer clears the Thinking header",
+    );
+    setSettings({ showThinking: false });
+    render([supersededThought2, separateAnswer], true, null, "thinking-to-answer-hidden");
+    check(
+      container.querySelectorAll(".turn-process").length === 0 &&
+        !container.querySelector(".thinking") &&
+        Boolean(row("stream-answer")),
+      "hidden thinking superseded by a separate answer leaves no empty process",
+    );
+    setSettings();
+
     // Show thinking off: the live indicator stays, completed reasoning leaves
     // nothing behind, and stored reasoning is never deleted.
     const liveThought = message("live-thought", "assistant", "", {
