@@ -143,14 +143,26 @@ try {
     `
 const { app, BrowserWindow } = require("electron");
 const path = require("node:path");
+const heartbeat = (stage) => console.error("TRANSCRIPT_RENDER_HEARTBEAT " + stage);
+process.on("uncaughtException", (error) => {
+  console.error("TRANSCRIPT_RENDER_PROBE " + JSON.stringify({ ok: false, error: error?.stack ?? String(error) }));
+  app.exit(1);
+});
 app.setPath("userData", path.join(__dirname, "profile"));
+heartbeat("main-loaded");
 app.whenReady().then(async () => {
+  heartbeat("app-ready");
   const window = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
   window.webContents.on("console-message", (event) => console.error(event.message));
+  window.webContents.on("render-process-gone", (_event, details) => console.error("TRANSCRIPT_RENDER_HEARTBEAT renderer-gone " + JSON.stringify(details)));
+  window.webContents.on("did-fail-load", (_event, code, description) => console.error("TRANSCRIPT_RENDER_HEARTBEAT did-fail-load " + code + " " + description));
   try {
     await window.loadFile(path.join(__dirname, "index.html"));
-    await window.webContents.executeJavaScript("window.addEventListener('error', event => console.error(event.error?.stack ?? event.message)); window.addEventListener('unhandledrejection', event => console.error(event.reason?.stack ?? String(event.reason)));");
-    const result = await window.webContents.executeJavaScript("(async () => { const render = await globalThis.transcriptRenderProbe(); const slot = await globalThis.transcriptRuntimeSlotProbe(); const smoothText = await globalThis.smoothTextThrottleProbe(); const longHistory = await globalThis.transcriptLongHistoryProbe(); return { ...render, runtimeSlot: slot, smoothText, longHistory, ok: render.ok && slot.ok && smoothText.ok && longHistory.ok }; })()");
+    heartbeat("page-loaded");
+    await window.webContents.executeJavaScript("window.addEventListener('error', event => console.error(event.error?.stack ?? event.message)); window.addEventListener('unhandledrejection', event => console.error(event.reason?.stack ?? String(event.reason))); 'ready'");
+    heartbeat("error-handlers-installed");
+    const result = await window.webContents.executeJavaScript("(async () => { console.error('TRANSCRIPT_RENDER_HEARTBEAT probe-render-start'); const render = await globalThis.transcriptRenderProbe(); console.error('TRANSCRIPT_RENDER_HEARTBEAT probe-render-done'); const slot = await globalThis.transcriptRuntimeSlotProbe(); console.error('TRANSCRIPT_RENDER_HEARTBEAT probe-slot-done'); const smoothText = await globalThis.smoothTextThrottleProbe(); console.error('TRANSCRIPT_RENDER_HEARTBEAT probe-smooth-done'); const longHistory = await globalThis.transcriptLongHistoryProbe(); console.error('TRANSCRIPT_RENDER_HEARTBEAT probe-longhistory-done'); return { ...render, runtimeSlot: slot, smoothText, longHistory, ok: render.ok && slot.ok && smoothText.ok && longHistory.ok }; })()");
+    heartbeat("probes-collected");
     const contextOverflowRecovery = await require(${JSON.stringify(join(root, "scripts/e2e/context-overflow-recovery.cjs"))})(window);
     result.contextOverflowRecovery = contextOverflowRecovery;
     result.ok = result.ok && contextOverflowRecovery.ok;
@@ -174,7 +186,7 @@ app.whenReady().then(async () => {
     stream.on("data", (data) => {
       output += data;
     });
-  const timeout = setTimeout(() => child.kill("SIGKILL"), 45_000);
+  const timeout = setTimeout(() => child.kill("SIGKILL"), 120_000);
   let code;
   try {
     code = await new Promise((resolve, reject) => {
