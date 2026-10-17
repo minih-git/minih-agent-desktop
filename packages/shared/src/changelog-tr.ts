@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.21.0",
+    date: "2026-10-17",
+    highlights: [
+      "Kayıtlar artık önce sonucu okutuyor: ajan çalışırken her adımı görürsünüz, tur bittiğinde tüm süreç süreyi yazan tek bir başlığın arkasına katlanır ve yalnızca yanıt kalır.",
+      "Bu başlığı açtığınızda komutu yeniden yazmayan tek satırlık adımlarla (Çalıştırdı, Okudu, Aradı) birlikte anlatımı okursunuz; çıktı için o satıra tıklayın.",
+      "Bash komutları artık bu katlamanın içinde sıradan adımlardır; komut yoğun turlar raporu kabuk satırları altına gömmez.",
+      "Ayrıntılı tüm satırları akışta tutar ve araç ayrıntıları ile tamamlanan düşünmeyi açık gösterir; Kompakt her bölümü ayrı ayrı katlamaya devam eder.",
+    ],
+  },
+  {
     version: "0.20.8",
     date: "2026-10-17",
     highlights: [
