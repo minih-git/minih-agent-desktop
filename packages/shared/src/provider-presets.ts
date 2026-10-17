@@ -550,6 +550,8 @@ export const DEEPSEEK_REASONING_REPLAY_PLACEHOLDER =
 
 export type DeepSeekRequestCompat = {
   requiresReasoningContentOnAssistantMessages: true;
+  /** DeepSeek endpoints reject the OpenAI-style `reasoning_effort` field. */
+  supportsReasoningEffort: false;
   /** When set, missing reasoning is filled with {@link DEEPSEEK_REASONING_REPLAY_PLACEHOLDER}. */
   requiresNonEmptyReasoningReplay?: true;
 };
@@ -563,10 +565,14 @@ export function deepseekRequestCompat(input: {
 }): DeepSeekRequestCompat | undefined {
   if (!isDeepSeekReasoningReplay(input)) return undefined;
   if (isOfficialDeepSeekEndpoint(input)) {
-    return { requiresReasoningContentOnAssistantMessages: true };
+    return {
+      requiresReasoningContentOnAssistantMessages: true,
+      supportsReasoningEffort: false,
+    };
   }
   return {
     requiresReasoningContentOnAssistantMessages: true,
+    supportsReasoningEffort: false,
     requiresNonEmptyReasoningReplay: true,
   };
 }

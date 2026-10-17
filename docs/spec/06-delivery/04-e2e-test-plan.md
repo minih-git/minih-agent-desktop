@@ -1643,6 +1643,9 @@ identify the platform validation still needed.
   turns that had no thinking. Non-official DeepSeek-family relays use real
   retained thinking when available, otherwise the documented non-empty
   placeholder from ADR 0256 — never a silent empty string after compaction.
+  The request omits the generic OpenAI `reasoning_effort` field because
+  DeepSeek endpoints do not accept it, while the selected thinking mode still
+  follows the endpoint's own wire format.
   The request does not switch `thinkingFormat` to `"deepseek"` solely because
   the model id contains `"deepseek"`. Official `api.deepseek.com` rows keep
   URL-based DeepSeek `thinkingFormat` from pi-ai.
