@@ -11,11 +11,14 @@ export function ProcessActivityGroup({
   items,
   active,
   disclosure,
+  elapsedLabel,
   children,
 }: {
   items: readonly AssistantActivityItem[];
   active: boolean;
   disclosure: ReturnType<typeof useAutomaticDisclosure>;
+  /** Time this burst took, so a folded block still says how long it ran. */
+  elapsedLabel?: string;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -43,6 +46,9 @@ export function ProcessActivityGroup({
             <span className="tool-activity-count">{t("chat.activityIncludesThinking")}</span>
           ) : null}
           {active ? <span className="tool-activity-count">{t("chat.running")}</span> : null}
+          {!active && elapsedLabel ? (
+            <span className="tool-activity-count">{elapsedLabel}</span>
+          ) : null}
           {summary.issues > 0 ? (
             <span className="turn-process-error">
               <IconCircleAlert size={14} aria-hidden />

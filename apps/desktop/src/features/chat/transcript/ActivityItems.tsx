@@ -23,6 +23,8 @@ type ActivityItemsProps = {
   delegationTimings: ReadonlyMap<string, SubagentTiming>;
   /** Detailed density: open tool details and completed reasoning rows. */
   openDetails?: boolean;
+  /** One-line step rows, used inside a folded turn. */
+  dense?: boolean;
   onUserInteraction: () => void;
 };
 
@@ -36,7 +38,7 @@ type ActivityItemBlockProps = Omit<ActivityItemsProps, "items" | "delegateItems"
 };
 
 const ActivityItemBlock = memo(function ActivityItemBlock({
-  block, isActive, live, lastItem, topologyItem, openDetails,
+  block, isActive, live, lastItem, topologyItem, openDetails, dense,
   delegateItems, delegationStatuses, delegationTimings, onUserInteraction,
 }: ActivityItemBlockProps) {
   return <>{block.items.map((item) => {
@@ -59,6 +61,7 @@ const ActivityItemBlock = memo(function ActivityItemBlock({
       <Fragment key={item.message.id}>
         <ToolRow imagesInTurn message={item.message}
           autoOpen={openDetails}
+          dense={dense}
           onUserInteraction={onUserInteraction} {...(item.delegate ? { delegate: item.delegate } : {})} />
         <ReviewChangeCard message={item.message} />
       </Fragment>
@@ -93,6 +96,7 @@ export const ActivityItems = memo(function ActivityItems({ items, ...context }: 
       isActive={context.isActive}
       live={context.live}
       openDetails={context.openDetails}
+      dense={context.dense}
       lastItem={ownsLast ? lastItem : undefined}
       topologyItem={ownsTopology ? topologyItem : undefined}
       delegateItems={ownsTopology ? context.delegateItems : undefined}

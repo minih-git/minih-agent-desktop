@@ -280,6 +280,10 @@ globalThis.transcriptRenderProbe = async () => {
       enterToSend: true,
       onboardingDismissed: false,
       smoothStreaming: false,
+      // This probe asserts the folding contract (a run row stands outside every
+      // disclosure and updates through its own group), which is the compact
+      // presentation; the flat densities are asserted by the turn-process probe.
+      transcriptDensity: "compact",
     },
   });
   const container = document.createElement("div");

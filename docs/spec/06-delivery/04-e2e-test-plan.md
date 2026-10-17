@@ -17016,10 +17016,12 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   completed reasoning rows and excerpts disappear and no empty thinking-only
   container is left; turn it back on and confirm the completed rows return. Collapse
   every group and confirm the Bash/run rows stay visible. With the default
-  `standard` transcript detail, confirm a finished turn shows its progress text
-  and every tool/reasoning row inline (no summary header) and that a Bash row
-  stays standalone; set `detailed` and confirm tool details and completed
-  reasoning rows open; set `compact` and confirm the folding described here.
+  `standard` transcript detail, confirm a finished turn folds behind one header
+  stating its duration, keeps the final answer outside the fold, and reveals the
+  narration plus one line per step (action only, no command echo, Bash included)
+  when opened; set `detailed` and confirm nothing folds and tool details plus
+  completed reasoning are open; set `compact` and confirm the segmented folding
+  described here.
   Each process chunk
   header reports only its own recorded span (two chunks around a Bash row differ),
   and a folded chunk with progress text shows that most recent narration under

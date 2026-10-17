@@ -315,13 +315,15 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
 - **Transcript detail** is a three-way segmented control that persists as the
   optional `transcriptDensity` field (`compact` / `standard` / `detailed`) in
   host-owned settings and synchronizes as a portable application preference.
-  `standard`, the default for an absent or unknown value, keeps the model's
-  progress text and every tool and reasoning row visible on its own line;
-  `compact` folds a finished turn's process behind summary headers (active
-  processes start open and untouched completed ones fold); `detailed` is
-  `standard` with tool details and completed reasoning rows opened. A change
-  applies to turns already on screen. It affects presentation only. Settings
-  search indexes the row.
+  `standard`, the default for an absent or unknown value, keeps the process open
+  while the turn runs and folds it behind one header stating the turn's duration
+  once it finishes, leaving the final answer visible; opening the header shows
+  the narration and one line per step (the action only, no command echo).
+  `compact` folds each chronological segment separately with standalone Bash
+  rows and per-group step counts; `detailed` folds nothing and shows every tool,
+  reasoning and run row with tool details and completed reasoning opened. A
+  change applies to turns already on screen. It affects presentation only.
+  Settings search indexes the row.
 - The **Command shell** row in Defaults uses the host-discovered catalog of native
   PowerShell 5.1, PowerShell 7, cmd, Git Bash, and Bash with IDs
   `windows-powershell`, `windows-pwsh`, `cmd`, `git-bash`, and

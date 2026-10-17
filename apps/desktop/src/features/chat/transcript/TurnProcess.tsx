@@ -85,9 +85,16 @@ export function TurnProcess({
       >
         <span className="tool-activity-icon" aria-hidden><IconSparkles size={14} /></span>
         <span className={`tool-activity-label${isActive ? " running" : ""}`}>
-          {t(isActive ? thinkingNow ? "chat.thinkingFor" : "chat.processingFor" : "chat.processedFor", {
-            time: formatToolDuration(seconds),
-          })}
+          {t(
+            isActive
+              ? thinkingNow
+                ? "chat.thinkingFor"
+                : "chat.processingFor"
+              : // A finished turn states how long it took, which is what the
+                // reader keeps once the steps are folded away.
+                "chat.metaDuration",
+            { time: formatToolDuration(seconds) },
+          )}
         </span>
         {summary.issues > 0 ? (
           <span className="turn-process-error">
@@ -95,9 +102,7 @@ export function TurnProcess({
             {t("chat.activityFailures", { count: summary.issues })}
           </span>
         ) : null}
-        {summary.tools > 0 ? (
-          <span className="tool-activity-count">{t("chat.processTools", { count: summary.tools })}</span>
-        ) : null}
+
         <span className="tool-activity-caret" aria-hidden><IconChevronRight size={12} /></span>
       </button>
       {tail ? (

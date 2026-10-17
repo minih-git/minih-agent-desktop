@@ -97,22 +97,39 @@ text inside it, so a collapsed header still says what the model reported; a
 chunk without narration previews nothing, and an active or open chunk shows the
 live tail instead of the preview.
 
-The presentation is chosen by one setting, `transcriptDensity`. `standard` — the
-default — matches the CLI agents and folds nothing: progress text renders as
-ordinary assistant text, every tool and reasoning row keeps its own single line,
-Task fan-out keeps its card, and only a row's own payload stays closed until the
-reader opens it. `detailed` is `standard` with tool details and completed
-reasoning rows opened from the start. `compact` keeps the segmented folding
-described above. Bash rows stay standalone in every density, chronological part
-order and the trailing answer never depend on it, and the density changes only
-visibility: it never alters model context, stored messages, copy payloads, or
-execution. An absent or unknown value resolves to `standard`, so an older
-settings file can never hide a turn's narration. A density change applies to
-turns already on screen, and the preference synchronizes as a portable
-application field. In every density the turn footer states the turn's
-wall-clock span (first recorded part to last recorded end, tool execution and
-waits included, not the summed model streaming time) and counts only the rows
-the reader can see, so hidden reasoning rows are not counted as steps.
+The presentation is chosen by one setting, `transcriptDensity`. Narration is
+never folded away in any density: the model's progress text is the reading
+spine, and what changes is only how much of the work between two narration
+paragraphs is shown.
+
+- `standard` — the default — keeps the process open while the turn runs and
+  folds it behind one header when the turn finishes; the header states the
+  turn's duration, and the final answer stays outside, so a finished turn reads
+  as the conclusion. Opening the header shows the narration paragraphs and one
+  line per step: the action only ("Ran", "Read", "Searched"), without echoing
+  the command or the argument summary, because opening the row itself shows
+  that. Bash and run aliases are ordinary steps inside that fold, which
+  supersedes the always-visible Standalone-Bash rows of D662: a command-heavy
+  turn is exactly the case that has to fold, and the step line keeps what ran
+  reachable. Task fan-out keeps its card, because a delegation result is not a
+  step the reader scrolls past.
+- `detailed` puts every tool, reasoning and run row in the flow with its
+  command or argument summary, and opens tool details and completed reasoning
+  from the start; it folds nothing.
+- `compact` keeps the segmented folding described above, where each
+  chronological segment folds on its own, Bash rows stay standalone and
+  ordinary groups state their own step counts.
+
+Chronological part order and the trailing answer never depend on the density,
+and the density changes only visibility: it never alters model context, stored
+messages, copy payloads, or execution. An absent or unknown value resolves to
+`standard`, so an older settings file can never hide a turn's narration. A
+density change applies to turns already on screen, and the preference
+synchronizes as a portable application field. In every density the turn footer
+states the turn's wall-clock span (first recorded part to last recorded end,
+tool execution and waits included, not the summed model streaming time) and
+counts only the rows the reader can see, so hidden reasoning rows are not
+counted as steps.
 
 ## Consequences
 
@@ -158,4 +175,10 @@ turn-process probe asserts the flat `standard`, opening `detailed`, and folding
 long-history probes pin `compact` because they assert the folding contract
 itself. The review follow-up adds in-place density switching to the turn-process
 probe, `turnElapsedMs`/`visibleStepCount` unit tests, pluralized footer copy,
-and the config-sync portable-field assertions in host-core.
+and the config-sync portable-field assertions in host-core. The conclusion-first amendment keeps
+`apps/desktop/test/transcript-density.test.mjs` covering the resolver and the
+per-density fold choice, and the same probe asserts that a finished turn folds
+behind one header stating its duration, that the conclusion stays outside, that
+opening it reveals the narration and one line per step without the command echo,
+and that `detailed` folds nothing; the probes that assert the segmented folding
+contract itself pin `compact`.
