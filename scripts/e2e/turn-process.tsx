@@ -119,16 +119,19 @@ export async function turnProcessProbe() {
   const read = tool("read", "Read", {
     toolResult: "read output",
     toolArgs: { path: "src/example.ts" },
+    toolCompletedAt: "2026-09-17T00:00:02.000Z",
   });
   const grep = tool("grep", "Grep", {
     toolResult: "grep output",
     toolArgs: { query: "todo" },
+    toolCompletedAt: "2026-09-17T00:00:02.000Z",
   });
   const bash1 = run("bash1", "pnpm test");
   const bash2 = run("bash2", "pnpm build");
   const edit = tool("edit", "Edit", {
     toolResult: "edit output",
     toolArgs: { path: "src/example.ts" },
+    toolCompletedAt: "2026-09-17T00:01:00.000Z",
   });
   const answer = message("answer", "assistant", "The fix is ready.", {
     status: "complete",
@@ -167,6 +170,27 @@ export async function turnProcessProbe() {
     check(
       !visible(row("read")) && !visible(row("grep")),
       "non-run work stays inside its collapsed process",
+    );
+    // Each process chunk reports its own recorded span, not the whole turn:
+    // the pre-Bash chunk ends at 2s and the post-Bash chunk at 1m.
+    const chunkTimings = processHeaders().map(
+      (header) =>
+        header.querySelector(".tool-activity-label")?.textContent ?? "",
+    );
+    check(
+      chunkTimings.length === 2 &&
+        chunkTimings[0].includes("2s") &&
+        !chunkTimings[0].includes("1m") &&
+        chunkTimings[1].startsWith(i18n.t("chat.processedFor", { time: "1m" })),
+      `each process chunk times only itself (${JSON.stringify(chunkTimings)})`,
+    );
+    // A folded chunk previews the model's last narration under its header;
+    // a silent chunk (tools only) renders no preview at all.
+    const previews = [...container.querySelectorAll(".turn-process-narration")];
+    check(
+      previews.length === 1 &&
+        previews[0].textContent === "Inspecting the files",
+      "a folded chunk previews its last narration and a silent chunk none",
     );
     check(
       bash1Row?.classList.contains("open") !== true,

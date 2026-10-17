@@ -5,6 +5,7 @@ import type {
   AssistantTurnPart,
 } from "./assistant-turns";
 import { isStandaloneRunActivity } from "./assistant-turns";
+import { messageContentFacts } from "./transcript-summary";
 
 export function isThinkingActive(message: UiMessage, active: boolean): boolean {
   return active && message.status === "streaming" && !message.content.trim();
@@ -177,4 +178,32 @@ export function turnProcessTiming(parts: readonly AssistantTurnPart[]) {
     }),
   );
   return { startedAt, endedAt };
+}
+
+/**
+ * The narration a folded completed process segment previews under its header:
+ * the most recent progress text inside the chunk, like the live tail's ticker.
+ * A folded group then says what the model reported, not only how long it took;
+ * silent chunks (thinking and tools only) preview nothing. Single line, so the
+ * whitespace collapses and the CSS ellipsis handles the rest. Content goes
+ * through the cached facts, so streaming deltas never reread historical bodies.
+ */
+const NARRATION_PREVIEW_MAX_CHARS = 200;
+
+export function processNarrationPreview(
+  parts: readonly AssistantTurnPart[],
+): string {
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const part = parts[index];
+    if (part.kind !== "message") continue;
+    const text = messageContentFacts(part.message).trimmedContent.replace(
+      /\s+/g,
+      " ",
+    );
+    if (!text) continue;
+    return text.length > NARRATION_PREVIEW_MAX_CHARS
+      ? `${text.slice(0, NARRATION_PREVIEW_MAX_CHARS)}…`
+      : text;
+  }
+  return "";
 }
