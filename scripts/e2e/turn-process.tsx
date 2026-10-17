@@ -184,7 +184,7 @@ export async function turnProcessProbe() {
       chunkTimings.length === 2 &&
         chunkTimings[0].includes("2s") &&
         !chunkTimings[0].includes("1m") &&
-        chunkTimings[1].startsWith(i18n.t("chat.processedFor", { time: "1m" })),
+        chunkTimings[1].startsWith(i18n.t("chat.metaDuration", { time: "1m" })),
       `each process chunk times only itself (${JSON.stringify(chunkTimings)})`,
     );
     // A folded chunk previews the model's last narration under its header;
@@ -205,36 +205,50 @@ export async function turnProcessProbe() {
       "a Bash row opens its own detail on request",
     );
 
-    // Standard density is the CLI-agent presentation: progress text and every
-    // step row stay in the flow, so no header can hide what the model said.
+    // Standard density folds the finished turn behind one header that states
+    // its duration; the conclusion stays outside, and opening the header shows
+    // the narration with one line per step.
     setSettings({ transcriptDensity: "standard" });
     render(mixed, false, null, "flat-standard");
+    const turnHeaders = () => processHeaders();
     check(
-      container.querySelectorAll(".turn-process").length === 0,
-      "standard density renders no folding process header",
+      turnHeaders().length === 1 &&
+        turnHeaders()[0]?.getAttribute("aria-expanded") === "false" &&
+        /\d+[smh]/.test(turnHeaders()[0]?.textContent ?? ""),
+      "a finished turn folds behind one header stating its duration",
     );
+    check(
+      (container.textContent ?? "").includes("The fix is ready."),
+      "the conclusion stays visible outside the fold",
+    );
+    check(
+      !visible(row("read")) && !visible(row("bash1")),
+      "the folded body hides its steps, Bash included",
+    );
+    click(turnHeaders()[0] ?? null);
     check(
       (container.textContent ?? "").includes("Inspecting the files"),
-      "standard density keeps the progress text visible",
+      "opening the fold reveals the narration",
     );
     check(
-      visible(row("read")) && visible(row("grep")),
-      "standard density keeps every step row visible",
+      visible(row("read")) && visible(row("bash1")),
+      "opening the fold reveals a line per step",
     );
     check(
-      Boolean(container.querySelector(".tool-row.thinking")) &&
-        Boolean(container.querySelector(".tool-row[data-message-id=\"read\"]")),
-      "standard density renders reasoning and tool rows as their own lines",
-    );
-    check(
-      row("bash1")?.closest(".turn-run-row") !== null &&
-        row("bash1")?.closest(".turn-process") === null,
-      "standard density keeps a Bash row standalone",
+      (row("bash1")?.textContent ?? "").includes("Ran") &&
+        !(row("bash1")?.textContent ?? "").includes("pnpm test"),
+      "a step row states the action without echoing the command",
     );
 
     // Detailed density opens the payloads a reader would otherwise click.
     setSettings({ transcriptDensity: "detailed" });
     render(mixed, false, null, "flat-detailed");
+    check(
+      container.querySelectorAll(".turn-process").length === 0 &&
+        visible(row("read")) &&
+        visible(row("bash1")),
+      "detailed density puts every row in the flow with no fold",
+    );
     check(
       row("read")?.classList.contains("open") === true,
       "detailed density opens tool details",

@@ -97,6 +97,11 @@ type ToolRowProps = {
   imagesInTurn?: boolean;
   /** Detailed density: the payload is open from the start. */
   autoOpen?: boolean;
+  /**
+   * One-line step row: the action label only. Inside a folded turn the command
+   * echo and argument summary would just repeat what opening the row shows.
+   */
+  dense?: boolean;
   /** Claims the containing activity group when this row is manually used. */
   onUserInteraction?: () => void;
   /** Live delegation statuses read from the turn's lifecycle-tool rows. */
@@ -128,6 +133,7 @@ function toolRowPropsEqual(
     previous.variant !== next.variant ||
     previous.imagesInTurn !== next.imagesInTurn ||
     previous.autoOpen !== next.autoOpen ||
+    previous.dense !== next.dense ||
     previous.onUserInteraction !== next.onUserInteraction ||
     !subagentRunsEqual(previous.delegate, next.delegate)
   ) {
@@ -178,6 +184,7 @@ function HostToolRow({
   variant = "default",
   imagesInTurn = false,
   autoOpen = false,
+  dense = false,
   onUserInteraction,
   delegationStatuses,
   delegationTimings,
@@ -226,7 +233,7 @@ function HostToolRow({
   // A run row keeps its command in the head and only its output in the body, so
   // the head carries the two things the body no longer offers: a copy of the
   // command, and the outcome (D226).
-  const runHead = action === "run" && variant !== "topology";
+  const runHead = action === "run" && variant !== "topology" && !dense;
   const command = runHead
     ? getToolSummaryValue(message.toolName, message.toolArgs)
     : "";
@@ -448,7 +455,7 @@ function HostToolRow({
                 {duration ? ` · ${duration}` : ""}
               </span>
             </span>
-            {summary ? (
+            {summary && !dense ? (
               <span className="subagent-topology-node-summary" title={summary}>
                 {summary}
               </span>
@@ -502,7 +509,7 @@ function HostToolRow({
                 {agentName}
               </span>
             ) : null}
-            {summary ? (
+            {summary && !dense ? (
               <span
                 className={`tool-row-summary${previewTarget && localToolsAllowed ? " linked" : ""}`}
                 title={
@@ -531,7 +538,7 @@ function HostToolRow({
                 {summary}
               </span>
             ) : null}
-            <ToolChips chips={chips} />
+            {dense ? null : <ToolChips chips={chips} />}
             {runHead && statusLabel ? (
               <span
                 className={`tool-row-state ${statusTone}`}

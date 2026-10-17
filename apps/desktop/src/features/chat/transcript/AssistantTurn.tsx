@@ -28,6 +28,7 @@ import {
 import { resolveShowThinking } from "../../../lib/thinking-visibility";
 import {
   foldsTurnProcess,
+  foldsWholeTurn,
   opensProcessDetails,
   resolveTranscriptDensity,
 } from "../../../lib/transcript-density";
@@ -353,12 +354,12 @@ export const AssistantTurn = memo(function AssistantTurn({
   statusesRef.current = turnDelegationStatuses;
   timingsRef.current = turnDelegationTimings;
   const { process, responses } = summary;
-  // Density decides whether a turn's process folds behind summary headers.
-  // `standard` and `detailed` keep the CLI-agent presentation: progress text
-  // stays in the flow and every tool or reasoning row keeps its own line, so a
-  // folded header can never hide what the model reported.
+  // Density decides how a turn's process is presented. `standard` folds the
+  // finished turn behind one header and keeps the answer, `detailed` puts every
+  // row in the flow, and `compact` folds each chronological segment on its own.
   const density = useAppStore((state) => resolveTranscriptDensity(state.settings));
   const folded = foldsTurnProcess(density);
+  const foldedWhole = foldsWholeTurn(density);
   const openProcessDetails = opensProcessDetails(density);
   const showThinking = useAppStore((state) => resolveShowThinking(state.settings));
   // The footer states the turn's real wall-clock span (tools and waits
@@ -383,39 +384,47 @@ export const AssistantTurn = memo(function AssistantTurn({
       aria-label={t("chat.assistantMessage")}
     >
       <div className="message-col">
-        {segments.map((segment) => {
-          if (segment.kind === "run") {
-            return <StandaloneRunRow key={`run-${segment.key}`} segment={segment} />;
-          }
-          const ownsActiveTail =
-            activePart !== undefined && segment.parts.includes(activePart);
-          // Flat densities keep the same chronological chunks — Bash rows stay
-          // standalone either way — but render their parts in the flow instead
-          // of behind a summary header.
-          if (!folded) {
+        {folded ? (
+          segments.map((segment) => {
+            if (segment.kind === "run") {
+              return <StandaloneRunRow key={`run-${segment.key}`} segment={segment} />;
+            }
+            const ownsActiveTail =
+              activePart !== undefined && segment.parts.includes(activePart);
             return (
-              <AssistantTurnParts
+              <TurnProcess
                 key={`process-${segment.key}`}
-                parts={segment.parts}
-                {...partContext}
-                flat
-                openDetails={openProcessDetails}
-              />
+                turnId={segment.key}
+                processParts={segment.parts}
+                turnParts={entry.parts}
+                isActive={isActive && ownsActiveTail}
+                delegationStatuses={turnDelegationStatuses}
+              >
+                <AssistantTurnParts parts={segment.parts} {...partContext} />
+              </TurnProcess>
             );
-          }
-          return (
-            <TurnProcess
-              key={`process-${segment.key}`}
-              turnId={segment.key}
-              processParts={segment.parts}
-              turnParts={entry.parts}
-              isActive={isActive && ownsActiveTail}
-              delegationStatuses={turnDelegationStatuses}
-            >
-              <AssistantTurnParts parts={segment.parts} {...partContext} />
-            </TurnProcess>
-          );
-        })}
+          })
+        ) : foldedWhole ? (
+          // The default reading: one header states how long the turn took, and
+          // the body holds the narration with a single line per step. The
+          // answer stays outside, so a finished turn shows the conclusion.
+          <TurnProcess
+            turnId={entry.id}
+            processParts={process}
+            turnParts={entry.parts}
+            isActive={isActive}
+            delegationStatuses={turnDelegationStatuses}
+          >
+            <AssistantTurnParts parts={process} {...partContext} flat dense />
+          </TurnProcess>
+        ) : (
+          <AssistantTurnParts
+            parts={process}
+            {...partContext}
+            flat
+            openDetails={openProcessDetails}
+          />
+        )}
         <AssistantTurnParts parts={responses} {...partContext} />
         {generatedImages}
         {!isActive && metaMessage ? (
@@ -425,7 +434,9 @@ export const AssistantTurn = memo(function AssistantTurn({
             responseDurationMs={responseDurationMs}
             responseOutputTokens={responseOutputTokens}
             durationLabel={
-              elapsedMs !== undefined && elapsedMs >= 1000
+              // The folded header already states the duration; the footer keeps
+              // it only where no header is shown.
+              !foldedWhole && elapsedMs !== undefined && elapsedMs >= 1000
                 ? formatToolDuration(Math.round(elapsedMs / 1000))
                 : undefined
             }

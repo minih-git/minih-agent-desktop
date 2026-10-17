@@ -164,6 +164,8 @@ type ActivityGroupProps = {
   flat?: boolean;
   /** Open tool details and completed reasoning rows by default. */
   openDetails?: boolean;
+  /** One-line step rows, used inside a folded turn. */
+  dense?: boolean;
 };
 
 /** Whether two activity items render identically, delegate rows included. */
@@ -197,6 +199,7 @@ function activityGroupPropsEqual(
     // switch between standard and detailed must reach groups already on screen.
     previous.flat !== next.flat ||
     previous.openDetails !== next.openDetails ||
+    previous.dense !== next.dense ||
     previous.items.length !== next.items.length
   ) {
     return false;
@@ -228,6 +231,7 @@ export const ActivityGroup = memo(function ActivityGroup({
   turnDelegationTimings,
   flat = false,
   openDetails = false,
+  dense = false,
 }: ActivityGroupProps) {
   const showThinking = useAppStore((state) => resolveShowThinking(state.settings));
   const hideThinking = !showThinking;
@@ -347,6 +351,7 @@ export const ActivityGroup = memo(function ActivityGroup({
     delegationStatuses={delegationStatuses}
     delegationTimings={delegationTimings}
     openDetails={openDetails}
+    dense={dense}
     onUserInteraction={claimDisclosure}
   />;
 
@@ -360,7 +365,12 @@ export const ActivityGroup = memo(function ActivityGroup({
 
   if (!hasSubagentTopology) {
     return (
-      <ProcessActivityGroup items={visibleItems} active={isActive} disclosure={disclosure}>
+      <ProcessActivityGroup
+        items={visibleItems}
+        active={isActive}
+        disclosure={disclosure}
+        elapsedLabel={elapsed}
+      >
         {renderedItems}
       </ProcessActivityGroup>
     );

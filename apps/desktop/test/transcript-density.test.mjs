@@ -4,6 +4,7 @@ import test from "node:test";
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 const {
   foldsTurnProcess,
+  foldsWholeTurn,
   isTranscriptDensity,
   opensProcessDetails,
   resolveTranscriptDensity,
@@ -28,10 +29,15 @@ test("an absent or unknown density falls back to the flat standard presentation"
   );
 });
 
-test("density decides folding and default detail opening", () => {
+test("density decides which fold a turn uses and default detail opening", () => {
   assert.equal(foldsTurnProcess("compact"), true);
   assert.equal(foldsTurnProcess("standard"), false);
   assert.equal(foldsTurnProcess("detailed"), false);
+  // Standard folds the whole finished turn behind one header; compact folds
+  // its chronological segments; detailed puts every row in the flow.
+  assert.equal(foldsWholeTurn("compact"), false);
+  assert.equal(foldsWholeTurn("standard"), true);
+  assert.equal(foldsWholeTurn("detailed"), false);
   assert.equal(opensProcessDetails("compact"), false);
   assert.equal(opensProcessDetails("standard"), false);
   assert.equal(opensProcessDetails("detailed"), true);
