@@ -21,8 +21,17 @@ import {
 } from "../../../lib/subagent-topology";
 import {
   segmentTurnProcess,
+  turnElapsedMs,
+  visibleStepCount,
   type TurnProcessRunSegment,
 } from "../../../lib/turn-process";
+import { resolveShowThinking } from "../../../lib/thinking-visibility";
+import {
+  foldsTurnProcess,
+  opensProcessDetails,
+  resolveTranscriptDensity,
+} from "../../../lib/transcript-density";
+import { formatToolDuration } from "../../../lib/tool-display";
 import { sessionAllows } from "../../../lib/remote-session-safety";
 import { useSlotSessionId } from "../../../plugins/renderer-slots/use-slots";
 import { useAppStore } from "../../../stores/app-store";
@@ -344,6 +353,18 @@ export const AssistantTurn = memo(function AssistantTurn({
   statusesRef.current = turnDelegationStatuses;
   timingsRef.current = turnDelegationTimings;
   const { process, responses } = summary;
+  // Density decides whether a turn's process folds behind summary headers.
+  // `standard` and `detailed` keep the CLI-agent presentation: progress text
+  // stays in the flow and every tool or reasoning row keeps its own line, so a
+  // folded header can never hide what the model reported.
+  const density = useAppStore((state) => resolveTranscriptDensity(state.settings));
+  const folded = foldsTurnProcess(density);
+  const openProcessDetails = opensProcessDetails(density);
+  const showThinking = useAppStore((state) => resolveShowThinking(state.settings));
+  // The footer states the turn's real wall-clock span (tools and waits
+  // included) and counts only the rows the reader can see.
+  const elapsedMs = useMemo(() => turnElapsedMs(entry.parts), [entry.parts]);
+  const steps = visibleStepCount(summary.activityItems, showThinking);
   const segments = useMemo(() => segmentTurnProcess(process), [process]);
   // The live tail is the turn's actual last part. A process chunk opens and
   // reports live state only while it owns that part, so a superseded thinking
@@ -368,6 +389,20 @@ export const AssistantTurn = memo(function AssistantTurn({
           }
           const ownsActiveTail =
             activePart !== undefined && segment.parts.includes(activePart);
+          // Flat densities keep the same chronological chunks — Bash rows stay
+          // standalone either way — but render their parts in the flow instead
+          // of behind a summary header.
+          if (!folded) {
+            return (
+              <AssistantTurnParts
+                key={`process-${segment.key}`}
+                parts={segment.parts}
+                {...partContext}
+                flat
+                openDetails={openProcessDetails}
+              />
+            );
+          }
           return (
             <TurnProcess
               key={`process-${segment.key}`}
@@ -389,6 +424,13 @@ export const AssistantTurn = memo(function AssistantTurn({
             usage={usage}
             responseDurationMs={responseDurationMs}
             responseOutputTokens={responseOutputTokens}
+            durationLabel={
+              elapsedMs !== undefined && elapsedMs >= 1000
+                ? formatToolDuration(Math.round(elapsedMs / 1000))
+                : undefined
+            }
+            steps={steps}
+            tools={summary.tools.length}
           />
         ) : null}
         {complete && actionMessage ? (

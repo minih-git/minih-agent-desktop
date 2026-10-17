@@ -35,6 +35,7 @@ pub(crate) const PORTABLE_APPLICATION_FIELDS: &[&str] = &[
     "fontScale",
     "showThinking",
     "thinkingDisplayMode",
+    "transcriptDensity",
     "enterToSend",
     "largePasteThreshold",
     "defaultProviderId",
@@ -100,6 +101,7 @@ pub const DOMAIN_ADAPTERS: &[DomainAdapterSpec] = &[
             "fontScale",
             "showThinking",
             "thinkingDisplayMode",
+            "transcriptDensity",
             "enterToSend",
             "keybindings",
             "display bindings",
@@ -641,6 +643,10 @@ mod tests {
         assert!(application
             .exportable_fields
             .contains(&"thinkingDisplayMode"));
+        // Transcript density is a portable presentation preference like the
+        // reasoning-display boolean above.
+        assert!(PORTABLE_APPLICATION_FIELDS.contains(&"transcriptDensity"));
+        assert!(application.exportable_fields.contains(&"transcriptDensity"));
         for domain in ALL_DOMAINS {
             let adapter = adapter_for(domain).expect("portable domain adapter");
             assert_eq!(adapter.schema_version, 1);

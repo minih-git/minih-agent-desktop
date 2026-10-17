@@ -307,11 +307,20 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
   and hides completed reasoning rows and excerpts; stored reasoning is retained
   and reappears when the toggle is turned back on. It affects presentation only,
   not model reasoning configuration, and it does not control turn-process or
-  activity-group folding: active processes start open and untouched completed
-  processes fold by default regardless of the toggle. The legacy
+  activity-group folding, which the **Transcript detail** row owns. The legacy
   `thinkingDisplayMode` field (`detailed` / `compact`) is retained only for
   persisted-settings compatibility and is no longer exposed; an absent or
   unknown value shows reasoning and an explicit `compact` hides it. Settings
+  search indexes the row.
+- **Transcript detail** is a three-way segmented control that persists as the
+  optional `transcriptDensity` field (`compact` / `standard` / `detailed`) in
+  host-owned settings and synchronizes as a portable application preference.
+  `standard`, the default for an absent or unknown value, keeps the model's
+  progress text and every tool and reasoning row visible on its own line;
+  `compact` folds a finished turn's process behind summary headers (active
+  processes start open and untouched completed ones fold); `detailed` is
+  `standard` with tool details and completed reasoning rows opened. A change
+  applies to turns already on screen. It affects presentation only. Settings
   search indexes the row.
 - The **Command shell** row in Defaults uses the host-discovered catalog of native
   PowerShell 5.1, PowerShell 7, cmd, Git Bash, and Bash with IDs

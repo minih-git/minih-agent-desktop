@@ -1,4 +1,5 @@
 import { projectPlanHistory } from "./plan-history";
+import { isTranscriptDensity } from "./transcript-density";
 import { guardRemoteInvocation } from "./remote-ipc-safety";
 import { isRemoteSession, safeSessionSummary } from "./remote-session-safety";
 import type {
@@ -434,6 +435,14 @@ export function validateSettingsWrite(settings: AppSettings): AppSettings {
     typeof settings.showThinking !== "boolean"
   ) {
     throw Object.assign(new Error("showThinking is invalid"), {
+      errorCode: "INVALID_PARAMS",
+    });
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(settings, "transcriptDensity") &&
+    !isTranscriptDensity(settings.transcriptDensity)
+  ) {
+    throw Object.assign(new Error("transcriptDensity is invalid"), {
       errorCode: "INVALID_PARAMS",
     });
   }

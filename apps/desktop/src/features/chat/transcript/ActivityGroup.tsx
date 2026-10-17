@@ -157,6 +157,13 @@ type ActivityGroupProps = {
   turnDelegationStatuses?: ReadonlyMap<string, SubagentOutcome>;
   /** Delegation timings from the entire assistant turn (cross-activity-part). */
   turnDelegationTimings?: ReadonlyMap<string, SubagentTiming>;
+  /**
+   * Render every row in the flow instead of one folding group. Task fan-out
+   * keeps its card: a delegation is a result, not a process row.
+   */
+  flat?: boolean;
+  /** Open tool details and completed reasoning rows by default. */
+  openDetails?: boolean;
 };
 
 /** Whether two activity items render identically, delegate rows included. */
@@ -186,6 +193,10 @@ function activityGroupPropsEqual(
     previous.isActive !== next.isActive ||
     previous.endedAt !== next.endedAt ||
     previous.runtimeActivity !== next.runtimeActivity ||
+    // Density props change the presentation of unchanged items: a settings
+    // switch between standard and detailed must reach groups already on screen.
+    previous.flat !== next.flat ||
+    previous.openDetails !== next.openDetails ||
     previous.items.length !== next.items.length
   ) {
     return false;
@@ -215,6 +226,8 @@ export const ActivityGroup = memo(function ActivityGroup({
   runtimeActivity,
   turnDelegationStatuses,
   turnDelegationTimings,
+  flat = false,
+  openDetails = false,
 }: ActivityGroupProps) {
   const showThinking = useAppStore((state) => resolveShowThinking(state.settings));
   const hideThinking = !showThinking;
@@ -333,8 +346,17 @@ export const ActivityGroup = memo(function ActivityGroup({
     delegateItems={delegateItems}
     delegationStatuses={delegationStatuses}
     delegationTimings={delegationTimings}
+    openDetails={openDetails}
     onUserInteraction={claimDisclosure}
   />;
+
+  // Flat density keeps every row in the flow: the group header exists to hide a
+  // run of steps, and a transcript that shows them needs no wrapper. Task
+  // fan-out still renders its card below, because a delegation result is not a
+  // process row the reader wants to scroll past.
+  if (flat && !hasSubagentTopology) {
+    return <>{renderedItems}</>;
+  }
 
   if (!hasSubagentTopology) {
     return (

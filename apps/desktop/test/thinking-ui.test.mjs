@@ -286,13 +286,13 @@ test("tool and search rows stay collapsed while thinking keeps its leaf default"
   assert.match(transcriptSource, /useAutomaticDisclosure\(\s*hasSubagentTopology \? live : visibleItems\.length <= 1/);
   assert.match(
     transcriptSource,
-    /<ThinkingRow[\s\S]*?autoOpen=\{live && item === lastItem\}/,
+    /<ThinkingRow[\s\S]*?autoOpen=\{openDetails \|\| \(live && item === lastItem\)\}/,
   );
-  // The leaf default stays with thinking only; a tool, hosted-search or plan
-  // row waits for an explicit user action in either mode.
+  // The leaf default follows the density: `detailed` opens payloads, and in
+  // every other density a tool, hosted-search or plan row waits for the user.
   assert.doesNotMatch(transcriptSource, /autoOpenLatest/);
-  assert.doesNotMatch(transcriptSource, /<ToolRow[^>]*\sautoOpen/);
-  assert.match(transcriptToolRowSource, /const disclosure = useAutomaticDisclosure\(\s*false,\s*revealRequest,\s*disclosureKey\("tool", message\.id\),\s*\);/);
+  assert.match(transcriptSource, /<ToolRow[^>]*\sautoOpen=\{openDetails\}/);
+  assert.match(transcriptToolRowSource, /const disclosure = useAutomaticDisclosure\(\s*autoOpen,\s*revealRequest,\s*disclosureKey\("tool", message\.id\),\s*\);/);
   assert.match(transcriptSource, /onClick=\{toggleDisclosure\}/);
   assert.match(transcriptSource, /onCollapse=\{collapseDisclosure\}/);
   assert.match(transcriptSource, /onUserInteraction=\{claimDisclosure\}/);

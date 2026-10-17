@@ -181,6 +181,35 @@ export function turnProcessTiming(parts: readonly AssistantTurnPart[]) {
 }
 
 /**
+ * Wall-clock span of a whole turn, for its footer: from the first recorded
+ * part to the last recorded end, tool execution and waits included. The summed
+ * `responseDurationMs` counts only model streaming time, so a tool-heavy turn
+ * would read as far shorter than it ran.
+ */
+export function turnElapsedMs(parts: readonly AssistantTurnPart[]): number | undefined {
+  const { startedAt, endedAt } = turnProcessTiming(parts);
+  if (startedAt === undefined || endedAt === undefined) return undefined;
+  const elapsed = endedAt - startedAt;
+  return elapsed > 0 ? elapsed : undefined;
+}
+
+/**
+ * Rows a turn footer counts as steps: every tool and hosted-search row, plus
+ * reasoning rows only while `Show thinking` is on, so the count matches what
+ * the reader can see.
+ */
+export function visibleStepCount(
+  items: readonly AssistantActivityItem[],
+  showThinking: boolean,
+): number {
+  let count = 0;
+  for (const item of items) {
+    if (item.kind !== "thinking" || showThinking) count += 1;
+  }
+  return count;
+}
+
+/**
  * The narration a folded completed process segment previews under its header:
  * the most recent progress text inside the chunk, like the live tail's ticker.
  * A folded group then says what the model reported, not only how long it took;

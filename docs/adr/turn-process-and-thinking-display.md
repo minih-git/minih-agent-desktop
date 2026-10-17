@@ -97,6 +97,23 @@ text inside it, so a collapsed header still says what the model reported; a
 chunk without narration previews nothing, and an active or open chunk shows the
 live tail instead of the preview.
 
+The presentation is chosen by one setting, `transcriptDensity`. `standard` — the
+default — matches the CLI agents and folds nothing: progress text renders as
+ordinary assistant text, every tool and reasoning row keeps its own single line,
+Task fan-out keeps its card, and only a row's own payload stays closed until the
+reader opens it. `detailed` is `standard` with tool details and completed
+reasoning rows opened from the start. `compact` keeps the segmented folding
+described above. Bash rows stay standalone in every density, chronological part
+order and the trailing answer never depend on it, and the density changes only
+visibility: it never alters model context, stored messages, copy payloads, or
+execution. An absent or unknown value resolves to `standard`, so an older
+settings file can never hide a turn's narration. A density change applies to
+turns already on screen, and the preference synchronizes as a portable
+application field. In every density the turn footer states the turn's
+wall-clock span (first recorded part to last recorded end, tool execution and
+waits included, not the summed model streaming time) and counts only the rows
+the reader can see, so hidden reasoning rows are not counted as steps.
+
 ## Consequences
 
 - Chronological collapsible process segments keep the final answer and actionable
@@ -134,3 +151,11 @@ E2E-CHAT-turn-process-and-thinking-display for the synchronized scenario text.
 For the 2026-10-17 amendment, `apps/desktop/test/turn-process.test.mjs` covers
 per-chunk timing and the narration preview selector, and the turn-process probe
 in `pnpm test:e2e:transcript` asserts both behaviors in real Chromium.
+For the same day's density amendment, `apps/desktop/test/transcript-density.test.mjs`
+covers the resolver, folding/detail helpers, and settings validation; the
+turn-process probe asserts the flat `standard`, opening `detailed`, and folding
+`compact` presentations in real Chromium, and the disclosure-anchor and
+long-history probes pin `compact` because they assert the folding contract
+itself. The review follow-up adds in-place density switching to the turn-process
+probe, `turnElapsedMs`/`visibleStepCount` unit tests, pluralized footer copy,
+and the config-sync portable-field assertions in host-core.

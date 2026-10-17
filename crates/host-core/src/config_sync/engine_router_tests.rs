@@ -129,6 +129,7 @@ async fn application_show_thinking_roundtrips_and_keeps_local_only_settings() ->
             "theme": "light",
             "showThinking": false,
             "thinkingDisplayMode": "detailed",
+            "transcriptDensity": "compact",
             "defaultPermissionMode": "accept-edits",
         }),
     )?;
@@ -144,16 +145,20 @@ async fn application_show_thinking_roundtrips_and_keeps_local_only_settings() ->
         assert_eq!(settings["showThinking"], false);
         // The legacy field is still exported so older readers keep working.
         assert_eq!(settings["thinkingDisplayMode"], "detailed");
+        // The transcript density is a portable presentation preference.
+        assert_eq!(settings["transcriptDensity"], "compact");
         // Local-only settings do not travel: the source value never appears.
         assert!(settings.get("defaultPermissionMode").is_none());
     }
-    // The receiving device now adopts its own local-only value.
+    // The receiving device now adopts its own local-only value. Its portable
+    // fields stay exactly as synced, so only the local-only value differs.
     device_b.lock().await.db.set_setting(
         "app",
         &json!({
             "theme": "light",
             "showThinking": false,
             "thinkingDisplayMode": "detailed",
+            "transcriptDensity": "compact",
             "defaultPermissionMode": "ask",
         }),
     )?;
@@ -164,6 +169,7 @@ async fn application_show_thinking_roundtrips_and_keeps_local_only_settings() ->
             "theme": "light",
             "showThinking": true,
             "thinkingDisplayMode": "detailed",
+            "transcriptDensity": "detailed",
             "defaultPermissionMode": "accept-edits",
         }),
     )?;
@@ -173,6 +179,7 @@ async fn application_show_thinking_roundtrips_and_keeps_local_only_settings() ->
     let settings = app_settings(&state)?;
     assert_eq!(settings["showThinking"], true);
     assert_eq!(settings["thinkingDisplayMode"], "detailed");
+    assert_eq!(settings["transcriptDensity"], "detailed");
     assert_eq!(settings["defaultPermissionMode"], "ask");
     Ok(())
 }

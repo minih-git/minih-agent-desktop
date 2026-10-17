@@ -11,6 +11,8 @@ const {
   visibleProcessSteps,
   turnProcessTiming,
   processNarrationPreview,
+  turnElapsedMs,
+  visibleStepCount,
 } = await import("../src/lib/turn-process.ts");
 
 const message = (id, role, content, extra = {}) => ({
@@ -252,6 +254,41 @@ test("a folded chunk previews its last narration; silent chunks preview nothing"
   const segments = segmentTurnProcess(projectTurnProcess(entry).process);
   assert.equal(processNarrationPreview(segments[0].parts), "Found the offset bug");
   assert.equal(processNarrationPreview(segments[2].parts), "");
+});
+
+test("the turn footer spans wall-clock time, not summed model streaming", () => {
+  // Two short model responses around a long tool: the footer must report the
+  // whole span (0s -> 5m), not the 2s of streaming the responses summed to.
+  const entry = turn([
+    message("user", "user", "deploy"),
+    message("plan", "assistant", "Running the deploy", {
+      createdAt: "2026-09-17T00:00:00.000Z",
+      responseDurationMs: 1000,
+    }),
+    tool("bash", "Bash", {
+      createdAt: "2026-09-17T00:00:01.000Z",
+      toolCompletedAt: "2026-09-17T00:04:59.000Z",
+    }),
+    message("done", "assistant", "Deployed", {
+      createdAt: "2026-09-17T00:04:59.000Z",
+      responseDurationMs: 1000,
+    }),
+  ]);
+  assert.equal(turnElapsedMs(entry.parts), 300000);
+  assert.equal(
+    turnElapsedMs(turn([message("bad", "assistant", "x", { createdAt: "bad" })]).parts),
+    undefined,
+  );
+});
+
+test("footer steps count only rows the reader can see", () => {
+  const items = [
+    { kind: "thinking", message: message("t", "assistant", "", { thinking: "plan" }) },
+    { kind: "tool", message: tool("read", "Read") },
+    { kind: "tool", message: tool("bash", "Bash") },
+  ];
+  assert.equal(visibleStepCount(items, true), 3);
+  assert.equal(visibleStepCount(items, false), 2);
 });
 
 test("narration preview collapses whitespace and caps its length", () => {

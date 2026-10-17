@@ -57,11 +57,14 @@ export async function turnProcessProbe() {
   const container = document.createElement("div");
   document.body.append(container);
   const initialSettings = useAppStore.getState().settings;
+  // The folding contract lives in the compact density; flat densities are
+  // asserted further down against the same fixture.
   const baseSettings: AppSettings = {
     defaultMode: "agent",
     theme: "light",
     enterToSend: true,
     onboardingDismissed: true,
+    transcriptDensity: "compact",
   };
   const setSettings = (patch: Partial<AppSettings> = {}) =>
     flushSync(() => useAppStore.setState({ settings: { ...baseSettings, ...patch } }));
@@ -201,6 +204,66 @@ export async function turnProcessProbe() {
       bash1Row?.classList.contains("open") === true,
       "a Bash row opens its own detail on request",
     );
+
+    // Standard density is the CLI-agent presentation: progress text and every
+    // step row stay in the flow, so no header can hide what the model said.
+    setSettings({ transcriptDensity: "standard" });
+    render(mixed, false, null, "flat-standard");
+    check(
+      container.querySelectorAll(".turn-process").length === 0,
+      "standard density renders no folding process header",
+    );
+    check(
+      (container.textContent ?? "").includes("Inspecting the files"),
+      "standard density keeps the progress text visible",
+    );
+    check(
+      visible(row("read")) && visible(row("grep")),
+      "standard density keeps every step row visible",
+    );
+    check(
+      Boolean(container.querySelector(".tool-row.thinking")) &&
+        Boolean(container.querySelector(".tool-row[data-message-id=\"read\"]")),
+      "standard density renders reasoning and tool rows as their own lines",
+    );
+    check(
+      row("bash1")?.closest(".turn-run-row") !== null &&
+        row("bash1")?.closest(".turn-process") === null,
+      "standard density keeps a Bash row standalone",
+    );
+
+    // Detailed density opens the payloads a reader would otherwise click.
+    setSettings({ transcriptDensity: "detailed" });
+    render(mixed, false, null, "flat-detailed");
+    check(
+      row("read")?.classList.contains("open") === true,
+      "detailed density opens tool details",
+    );
+    check(
+      container.querySelector(".tool-row.thinking")?.classList.contains("open") === true,
+      "detailed density opens completed reasoning rows",
+    );
+
+    // A settings switch must reach turns already on screen: the same mounted
+    // turn (same key, no re-render call) follows standard <-> detailed.
+    setSettings({ transcriptDensity: "standard" });
+    render(mixed, false, null, "flat-switch");
+    check(
+      row("read")?.classList.contains("open") !== true,
+      "a mounted standard turn starts with tool details closed",
+    );
+    setSettings({ transcriptDensity: "detailed" });
+    check(
+      row("read")?.classList.contains("open") === true &&
+        container.querySelector(".tool-row.thinking")?.classList.contains("open") === true,
+      "switching a mounted turn to detailed opens its details in place",
+    );
+    setSettings({ transcriptDensity: "standard" });
+    check(
+      row("read")?.classList.contains("open") !== true,
+      "switching a mounted turn back to standard closes untouched details",
+    );
+    setSettings();
 
     // A turn of only Bash calls has no process disclosure at all.
     render([run("only1", "echo 1"), run("only2", "echo 2")], false, null, "only-bash");

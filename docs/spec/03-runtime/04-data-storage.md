@@ -417,8 +417,10 @@ reasoning visibility. It is a portable application preference and synchronizes
 across devices like the legacy field. Missing values fall back to the legacy
 `thinkingDisplayMode` field (`compact` hides, `detailed`/unknown/absent shows),
 which is retained only for persisted-settings compatibility and as that
-fallback. These additive display preferences neither rewrite stored reasoning
-nor change the database schema.
+fallback. It may also store `transcriptDensity` (`compact` / `standard` /
+`detailed`), the portable transcript-detail preference; an absent or unknown
+value reads as `standard`. These additive display preferences neither rewrite
+stored reasoning nor change the database schema.
 
 The settings blob may still contain legacy prompt-enhancement keys from an
 earlier release. They are retained for rollback and downgrade compatibility,

@@ -39,6 +39,7 @@ import { AccountsPage } from "../../components/settings/AccountsPage";
 import { KeyboardShortcutsSection } from "../../components/settings/KeyboardShortcutsSection";
 import { FontFamilyRow } from "../../components/settings/FontFamilyRow";
 import { ShowThinkingRow } from "../../components/settings/ShowThinkingRow";
+import { TranscriptDensityRow } from "../../components/settings/TranscriptDensityRow";
 import {
   SessionTitleModelRow,
   SessionTitleThinkingRow,
@@ -502,6 +503,7 @@ export function SettingsPage() {
                 <CommandShellRow settings={settings} saveSettings={saveSettings} />
                 <LinkOpenTargetRow settings={settings} saveSettings={saveSettings} />
                 <ShowThinkingRow settings={settings} saveSettings={saveSettings} />
+                <TranscriptDensityRow settings={settings} saveSettings={saveSettings} />
                 <ContextUsageDisplayRow
                   settings={settings}
                   saveSettings={saveSettings}

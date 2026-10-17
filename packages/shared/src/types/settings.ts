@@ -15,6 +15,16 @@ import type { LiveVoiceSettings } from "./live-voice.js";
 export type ThemePreference = "system" | "light" | "dark" | `plugin:${string}`;
 
 /**
+ * How much of a turn's process the transcript shows by default.
+ *
+ * `standard` keeps progress text and every tool/reasoning row visible as its
+ * own line (the CLI-agent presentation), `compact` folds a finished turn's
+ * process behind summary headers, and `detailed` is `standard` with tool
+ * details and completed reasoning rows opened.
+ */
+export type TranscriptDensity = "compact" | "standard" | "detailed";
+
+/**
  * What a TypeSafe key check answered.
  *
  * `ok` means the classifier answered this key at its own address. A refusal
@@ -110,6 +120,15 @@ export type AppSettings = {
    * value, or an absent field shows it.
    */
   thinkingDisplayMode?: "detailed" | "compact";
+  /**
+   * Transcript density. `standard` (default) keeps the model's progress text
+   * visible as ordinary assistant text and shows every tool and reasoning row
+   * as its own single line; `compact` folds a finished turn's process into
+   * collapsible summaries; `detailed` behaves like `standard` and additionally
+   * opens tool details and completed reasoning rows. Presentation only: it
+   * never changes what the model sees, stores, or executes.
+   */
+  transcriptDensity?: TranscriptDensity;
   /**
    * @deprecated Unreleased D343 px field. Reads migrate into `fontScale`
    * as `px / 14`; new writes persist `fontScale` instead.

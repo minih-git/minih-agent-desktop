@@ -90,6 +90,9 @@ function rendererApi(invoke) {
   });
   const { api } = load("../src/lib/api.ts", {
     "@minih-agent/shared": shared,
+    "./transcript-density": load("../src/lib/transcript-density.ts", {
+      "@minih-agent/shared": shared,
+    }),
     "./plan-history": load("../src/lib/plan-history.ts", {}),
     "./remote-ipc-safety": load("../src/lib/remote-ipc-safety.ts", {
       "@minih-agent/shared": shared,
