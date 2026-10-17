@@ -12,7 +12,15 @@ export function createFrameBatcher<T>(
 ) {
   const pending = new Map<string, T>();
   let handle: FrameHandle | null = null;
+  let fallback: FrameHandle | null = null;
   let usesAnimationFrame = false;
+
+  const clearFallback = () => {
+    if (fallback !== null) {
+      globalThis.clearTimeout(fallback);
+      fallback = null;
+    }
+  };
 
   const cancelScheduledFlush = () => {
     if (handle === null) return;
@@ -29,6 +37,7 @@ export function createFrameBatcher<T>(
 
   const run = () => {
     handle = null;
+    clearFallback();
     if (pending.size === 0) return;
     const values = [...pending.values()];
     pending.clear();
@@ -40,6 +49,13 @@ export function createFrameBatcher<T>(
     if (typeof globalThis.requestAnimationFrame === "function") {
       usesAnimationFrame = true;
       handle = globalThis.requestAnimationFrame(run);
+      /*
+        Headless surfaces (xvfb, hidden windows, occluded panes) can starve
+        rAF indefinitely, which would strand every enqueued update forever.
+        The rAF handle stays primary so steady state keeps single-frame
+        latency; the timeout only fires when the compositor stays silent.
+      */
+      fallback = globalThis.setTimeout(run, 250) as unknown as FrameHandle;
       return;
     }
     usesAnimationFrame = false;
