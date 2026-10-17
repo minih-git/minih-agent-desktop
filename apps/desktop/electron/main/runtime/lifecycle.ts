@@ -1,8 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
-  APP_NAME,
   APP_VERSION,
+  currentAppName,
   ErrorCodes,
   IPC,
   PROTOCOL_VERSION,
@@ -216,7 +216,7 @@ export function createRuntimeLifecycle({
 
   const bootBackends = async (): Promise<void> => {
     mkdirSync(join(dataDir, "logs"), { recursive: true });
-    logger.app("lifecycle", "info", "app boot " + APP_NAME + " " + APP_VERSION, {
+    logger.app("lifecycle", "info", "app boot " + currentAppName() + " " + APP_VERSION, {
       data: { protocolVersion: PROTOCOL_VERSION },
     });
     await startHost();

@@ -428,7 +428,25 @@ pub async fn fetch_bootstrap(
         .json()
         .await
         .map_err(|error| BootstrapError::InvalidPayload(redact(error)))?;
-    parse_bootstrap_payload(&payload).map_err(BootstrapError::InvalidPayload)
+    parse_bootstrap_payload(&payload)
+        .map_err(BootstrapError::InvalidPayload)
+        .and_then(validate_brand_expectation)
+}
+
+/// A hungraim build must never join a foreign (e.g. minih) mesh: the gateway
+/// answer must name the hungraim network, otherwise the response is unusable
+/// and the caller falls back to local settings rather than the wrong network.
+fn validate_brand_expectation(
+    response: BootstrapResponse,
+) -> Result<BootstrapResponse, BootstrapError> {
+    if option_env!("DESKTOP_BRAND") == Some("hungraim")
+        && response.network_name != "hungraim-router"
+    {
+        return Err(BootstrapError::InvalidPayload(
+            "gateway network identity does not match the hungraim brand".to_string(),
+        ));
+    }
+    Ok(response)
 }
 
 /// A host that needs brackets in a URL gets them; one that does not is untouched.

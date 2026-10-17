@@ -14,6 +14,31 @@
 | Local DMG | `pnpm --filter @minih-agent/desktop dist` | unsigned without a configured certificate | local install test |
 | Release | `scripts/release-macos.sh` | Developer ID + mandatory notarization | distributable artifact |
 
+### Brand lanes
+
+`DESKTOP_BRAND` selects the distribution a build packages for:
+
+| Brand | Product identity | Data root | Update feed | Remote CLI base |
+|---|---|---|---|---|
+| `minih` (default) | `Minih-Agent-Desktop` / `org.hmini.agent` | `~/.minih-agent-desktop` | GitHub Releases `minih-git/minih-agent-desktop` | GitHub Releases download base |
+| `hungraim` | `Hungraim-Agent-Desktop` / `com.hungraim.agent` | `~/.hungraim-agent-desktop` | generic `https://updates.hungraim.com/desktop/stable` | `https://updates.hungraim.com/desktop/agent-host-cli` |
+
+Rules:
+
+- The default (`minih`) build is behaviorally identical to the pre-branding
+  release: same identity, data root, and feed. Unknown `DESKTOP_BRAND` values
+  fall back to `minih` (see `packages/shared/src/brand.ts`).
+- A `hungraim` build swaps the packaged `app-update.yml` to the generic feed
+  for the electron-builder run and restores the file afterwards
+  (`scripts/build-desktop-release.mjs`); installer identity, artifact names,
+  and Linux package names are overridden on the builder command line.
+- The GitHub release lane refuses `DESKTOP_BRAND=hungraim`; the Hungraim
+  distribution is published only from its own repository and update host.
+- Brand defaults for the Minih Router preset and the EasyTier mesh resolve
+  through the same profile (`packages/shared/src/brand.ts`, Rust
+  `easytier_net::config`), so a hungraim build defaults to
+  `https://aiapi.hungraim.com/v1` and the `hungraim-router` mesh.
+
 The static electron-builder config does not embed a certificate identity, so
 contributors without certificates can still package locally. The release lane
 requires an injected Developer ID identity (local) or `CSC_LINK` certificate

@@ -9,9 +9,14 @@ import { pipeline } from "node:stream/promises";
 import { ErrorCodes } from "@minih-agent/shared";
 import { shellQuote } from "./agent-host-cli-bootstrap-script.js";
 import { checksumMatches, normalizeChecksum } from "./agent-host-cli-release.js";
+import { REMOTE_AGENT_HOST_CLI_BASE, REMOTE_DATA_DIR_NAME } from "./remote-install-root.js";
 import type { SshTransport } from "./ssh-transport.js";
 
 const MAX_ARTIFACT_BYTES = 512 * 1024 * 1024;
+/** Upload staging must live under this brand's own agent-host-cli root. */
+const UPLOAD_PATH_PATTERN = new RegExp(
+  `^/[^\\r\\n\\0]*/${REMOTE_DATA_DIR_NAME.replaceAll(".", "\\.")}/agent-host-cli/\\.upload\\.[a-zA-Z0-9]{6,}$`,
+);
 export type UploadedSshArtifact = { path: string; cleanup(): Promise<void> };
 export type SshArtifactTransferInput = {
   url: string; expectedSha256: string; signal?: AbortSignal;
@@ -25,7 +30,7 @@ function failure(): Error {
 /** The path must identify only a directory minted by our remote mktemp command. */
 function uploadDirectory(value: string): string {
   const path = value.trim();
-  if (!/^\/[^\r\n\0]*\/\.minih-agent-desktop\/agent-host-cli\/\.upload\.[a-zA-Z0-9]{6,}$/.test(path)) throw failure();
+  if (!UPLOAD_PATH_PATTERN.test(path)) throw failure();
   return path;
 }
 export async function uploadSshArtifact(
@@ -41,7 +46,7 @@ export async function uploadSshArtifact(
     if (!remoteDir) return;
     // Never trust remote output to choose a deletion target outside this prefix.
     const directory = shellQuote(remoteDir);
-    await transport.exec(`path=${directory}; case "$path" in "$HOME"/.minih-agent-desktop/agent-host-cli/.upload.*) rm -rf -- "$path" ;; *) exit 1 ;; esac`, { timeoutMs: 30_000 });
+    await transport.exec(`path=${directory}; case "$path" in "$HOME"/${REMOTE_DATA_DIR_NAME}/agent-host-cli/.upload.*) rm -rf -- "$path" ;; *) exit 1 ;; esac`, { timeoutMs: 30_000 });
     remoteDir = undefined;
   };
   try {
@@ -76,7 +81,7 @@ export async function uploadSshArtifact(
       createWriteStream(localPath, { flags: "wx", mode: 0o600 }), { signal });
     if (!checksumMatches(hash.digest("hex"), input.expectedSha256)) throw failure();
     input.signal?.throwIfAborted();
-    const created = await transport.exec('umask 077; mkdir -p "$HOME/.minih-agent-desktop/agent-host-cli" && mktemp -d "$HOME/.minih-agent-desktop/agent-host-cli/.upload.XXXXXX"');
+    const created = await transport.exec(`umask 077; mkdir -p "${REMOTE_AGENT_HOST_CLI_BASE}" && mktemp -d "${REMOTE_AGENT_HOST_CLI_BASE}/.upload.XXXXXX"`);
     remoteDir = uploadDirectory(created.stdout);
     input.signal?.throwIfAborted();
     const path = `${remoteDir}/artifact.tar.gz`;

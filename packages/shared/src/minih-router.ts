@@ -9,11 +9,23 @@
  * renderer only receives the parsed, credential-free shapes below.
  */
 
+import { currentBrandProfile } from "./brand.js";
+
 export const MINIH_ROUTER_PRESET_ID = "minih-router";
 export const MINIH_ROUTER_VENDOR_KEY = "minih-router";
 export const MINIH_ROUTER_NAME = "Minih Router";
 /** Default public deployment; a self-hosted address may replace it per row. */
 export const MINIH_ROUTER_DEFAULT_BASE_URL = "https://router.hmini.org/v1";
+
+/**
+ * Brand-resolved defaults. The exported constants above keep their pre-branding
+ * (minih) values for backward compatibility; new code that registers presets or
+ * fills unset settings reads these so a hungraim build defaults to its own
+ * deployment (see ./brand.ts).
+ */
+export function minihRouterDefaultBaseUrl(): string {
+  return currentBrandProfile().routerDefaultBaseUrl;
+}
 
 /** Page size bounds accepted by the model plaza IPC channel. */
 export const MINIH_ROUTER_MODEL_PAGE_SIZE_MAX = 100;
@@ -201,7 +213,7 @@ export function minihRouterHeadlineQuota(
   return best;
 }
 
-/** Built-in EasyTier virtual LAN parameters for Minih Router. */
+/** Built-in EasyTier virtual LAN parameters for Minih Router (minih values). */
 export const EASYTIER_DEFAULT_NETWORK_NAME = "minih-router";
 export const EASYTIER_DEFAULT_NETWORK_SECRET = "Minih@9527";
 export const EASYTIER_DEFAULT_PEERS = [
@@ -209,6 +221,21 @@ export const EASYTIER_DEFAULT_PEERS = [
   "tcp://router.hmini.org:11012",
 ] as const;
 export const EASYTIER_DEFAULT_ROUTER_LAN_URL = "http://11.12.0.1:3001/v1";
+
+/**
+ * Brand-resolved EasyTier defaults. The constants above stay at their
+ * pre-branding minih values for backward compatibility; settings normalization
+ * and preset registration read these so a hungraim build joins its own mesh.
+ */
+export function easyTierDefaultNetworkName(): string {
+  return currentBrandProfile().easyTierNetworkName;
+}
+export function easyTierDefaultPeers(): string[] {
+  return [...currentBrandProfile().easyTierPeers];
+}
+export function easyTierDefaultRouterLanUrl(): string {
+  return currentBrandProfile().easyTierRouterLanUrl;
+}
 
 export type EasyTierMode = "auto" | "no_tun" | "no-tun" | "tun";
 export type EasyTierEffectiveMode = "disabled" | "no_tun" | "no-tun" | "tun";
@@ -307,7 +334,7 @@ export function normalizeEasyTierSettings(
   const networkName =
     typeof input?.networkName === "string" && input.networkName.trim().length > 0
       ? input.networkName.trim()
-      : EASYTIER_DEFAULT_NETWORK_NAME;
+      : easyTierDefaultNetworkName();
   const networkSecret =
     typeof input?.networkSecret === "string" && input.networkSecret.trim().length > 0
       ? input.networkSecret.trim()
@@ -320,13 +347,13 @@ export function normalizeEasyTierSettings(
   const rawRouterLanUrl =
     typeof input?.routerLanUrl === "string" && input.routerLanUrl.trim().length > 0
       ? minihRouterApiBaseUrl(input.routerLanUrl.trim())
-      : EASYTIER_DEFAULT_ROUTER_LAN_URL;
+      : easyTierDefaultRouterLanUrl();
   return {
     enabled,
     mode,
     networkName,
     networkSecret,
-    peers: peers.length > 0 ? peers : [...EASYTIER_DEFAULT_PEERS],
+    peers: peers.length > 0 ? peers : easyTierDefaultPeers(),
     routerLanUrl: rawRouterLanUrl,
     dhcp: input?.dhcp ?? true,
     ipv4: normalizeEasyTierIpv4(input?.ipv4),

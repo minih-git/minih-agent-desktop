@@ -9,7 +9,7 @@
  * remote machine. Everything here is pure so the URL, target, and checksum
  * rules stay testable without a network or an SSH connection.
  */
-import { GITHUB_REPO } from "@minih-agent/shared";
+import { AGENT_HOST_CLI_DOWNLOAD_BASE } from "./remote-install-root.js";
 
 /** Platforms the bootstrap can classify from `uname -s`. */
 export type AgentHostCliPlatform = "linux" | "darwin";
@@ -84,15 +84,17 @@ export function agentHostCliArtifactName(version: string, target: AgentHostCliTa
 }
 
 /**
- * Release asset URLs. `release.yml` uploads both files to the `v<version>` tag,
- * so the desktop and the bootstrap script derive them without an API call.
+ * Release asset URLs. The minih brand serves them from the `v<version>` tag on
+ * GitHub Releases; the hungraim brand from the same layout under its own
+ * download base. The desktop and the bootstrap script derive both without an
+ * API call.
  */
 export function agentHostCliArtifactUrls(
   version: string,
   target: AgentHostCliTarget,
 ): { tarball: string; checksum: string } {
   const name = agentHostCliArtifactName(version, target);
-  const base = `https://github.com/${GITHUB_REPO}/releases/download/v${version}`;
+  const base = `${AGENT_HOST_CLI_DOWNLOAD_BASE}/v${version}`;
   return { tarball: `${base}/${name}`, checksum: `${base}/${name}.sha256` };
 }
 

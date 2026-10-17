@@ -1,5 +1,6 @@
 import { shellQuote, type AgentHostCliReadyLine } from "./agent-host-cli-bootstrap-script.js";
 import { REMOTE_DEPLOY_LOCK_SCRIPT } from "./remote-deploy-lock.js";
+import { REMOTE_AGENT_HOST_CLI_BASE } from "./remote-install-root.js";
 import type { SshTransport } from "./ssh-transport.js";
 
 export type RemoteHostSupervisorOptions = {
@@ -30,7 +31,7 @@ set -eu
 umask 077
 die() { printf '%s\\n' "AGENT_HOST_CLI_SUPERVISOR_FAILED $1" >&2; exit 1; }
 [ -n "\${HOME:-}" ] || die no-home
-base="$HOME/.minih-agent-desktop/agent-host-cli"
+base="${REMOTE_AGENT_HOST_CLI_BASE}"
 entry="$base/current/agent-host-cli.js"
 work="$base/.bootstrap"
 [ ! -L "$work" ] || die unsafe-work-directory

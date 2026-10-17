@@ -1,8 +1,8 @@
 import { app, BrowserWindow, crashReporter, Menu, safeStorage } from "electron";
 import { createScheduledRunner } from "../runtime/scheduled-runner";
 import {
-  APP_NAME,
   APP_VERSION,
+  currentAppName,
   ErrorCodes,
   IPC,
   type AppMenuCommand,
@@ -128,7 +128,7 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
   // here is a warning: it never blocks boot.
   try {
     app.setPath("crashDumps", ensureCrashDumpsDirectory(deps.dataDir));
-    crashReporter.start({ uploadToServer: false, productName: APP_NAME });
+    crashReporter.start({ uploadToServer: false, productName: currentAppName() });
   } catch (error) {
     deps.logger.app("diagnostics", "warn", "crash reporter failed to start", {
       event: "crashReporterStartFailed",
@@ -203,7 +203,7 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
     if (storedBehavior) state.closeBehavior = storedBehavior;
     createTray();
     app.setAboutPanelOptions({
-      applicationName: APP_NAME,
+      applicationName: currentAppName(),
       applicationVersion: APP_VERSION,
       version: APP_VERSION,
     });
@@ -243,7 +243,7 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
       router: state.backendRouter,
       emit: sendToRenderer,
       getLocalHost: getHost,
-      clientInfo: { name: APP_NAME, version: APP_VERSION },
+      clientInfo: { name: currentAppName(), version: APP_VERSION },
       log: (level, message, data) =>
         logger.app("runtime", level, message, { data: formatRemoteLogData(data) }),
     });

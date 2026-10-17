@@ -7,14 +7,68 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use url::Url;
 
-pub const DEFAULT_EASYTIER_NETWORK_NAME: &str = "minih-router";
-pub const DEFAULT_EASYTIER_NETWORK_SECRET: &str = "Minih@9527";
-pub const DEFAULT_EASYTIER_PEERS: &[&str] = &[
-    "udp://router.hmini.org:11012",
-    "tcp://router.hmini.org:11012",
-];
-pub const DEFAULT_ROUTER_LAN_URL: &str = "http://11.12.0.1:3001/v1";
-pub const DEFAULT_ROUTER_PUBLIC_URL: &str = "https://router.hmini.org/v1";
+/// Build-time brand selector. `DESKTOP_BRAND=hungraim` compiles the Hungraim
+/// defaults; absent or any other value keeps the minih defaults, so existing
+/// builds stay byte-compatible.
+const DESKTOP_BRAND: Option<&str> = option_env!("DESKTOP_BRAND");
+
+/// Const byte equality; `const` contexts cannot match on `str` or use
+/// `PartialEq`, so the brand comparison walks the bytes directly.
+const fn brand_bytes_equal(actual: &[u8], expected: &[u8]) -> bool {
+    if actual.len() != expected.len() {
+        return false;
+    }
+    let mut index = 0;
+    while index < actual.len() {
+        if actual[index] != expected[index] {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+const fn brand_is_hungraim() -> bool {
+    match DESKTOP_BRAND {
+        Some(name) => brand_bytes_equal(name.as_bytes(), b"hungraim"),
+        None => false,
+    }
+}
+
+pub const DEFAULT_EASYTIER_NETWORK_NAME: &str = if brand_is_hungraim() {
+    "hungraim-router"
+} else {
+    "minih-router"
+};
+// A hungraim build ships no fallback credential: its network identity must
+// come from the gateway bootstrap or explicit user settings, never from a
+// secret checked into source.
+pub const DEFAULT_EASYTIER_NETWORK_SECRET: &str = if brand_is_hungraim() {
+    ""
+} else {
+    "Minih@9527"
+};
+pub const DEFAULT_EASYTIER_PEERS: &[&str] = if brand_is_hungraim() {
+    &[
+        "tcp://router-mesh.hungraim.com:11023",
+        "udp://router-mesh.hungraim.com:11023",
+    ]
+} else {
+    &[
+        "udp://router.hmini.org:11012",
+        "tcp://router.hmini.org:11012",
+    ]
+};
+pub const DEFAULT_ROUTER_LAN_URL: &str = if brand_is_hungraim() {
+    "http://11.123.0.1:3001/v1"
+} else {
+    "http://11.12.0.1:3001/v1"
+};
+pub const DEFAULT_ROUTER_PUBLIC_URL: &str = if brand_is_hungraim() {
+    "https://aiapi.hungraim.com/v1"
+} else {
+    "https://router.hmini.org/v1"
+};
 
 const MAX_NETWORK_NAME_LEN: usize = 128;
 const MAX_NETWORK_SECRET_LEN: usize = 256;
@@ -432,20 +486,41 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn default_settings_match_minih_router_lan_parameters() {
+    fn default_settings_match_compiled_brand() {
         let defaults = EasyTierSettings::default();
         assert!(defaults.enabled);
         assert_eq!(defaults.mode, EasyTierMode::Auto);
-        assert_eq!(defaults.network_name, "minih-router");
-        assert_eq!(defaults.network_secret, "Minih@9527");
+        let hungraim = brand_is_hungraim();
+        assert_eq!(
+            defaults.network_name,
+            if hungraim { "hungraim-router" } else { "minih-router" }
+        );
+        assert_eq!(
+            defaults.network_secret,
+            if hungraim { "" } else { "Minih@9527" }
+        );
         assert_eq!(
             defaults.peers,
-            vec![
-                "udp://router.hmini.org:11012".to_string(),
-                "tcp://router.hmini.org:11012".to_string()
-            ]
+            if hungraim {
+                vec![
+                    "tcp://router-mesh.hungraim.com:11023".to_string(),
+                    "udp://router-mesh.hungraim.com:11023".to_string(),
+                ]
+            } else {
+                vec![
+                    "udp://router.hmini.org:11012".to_string(),
+                    "tcp://router.hmini.org:11012".to_string(),
+                ]
+            }
         );
-        assert_eq!(defaults.router_lan_url, "http://11.12.0.1:3001/v1");
+        assert_eq!(
+            defaults.router_lan_url,
+            if hungraim {
+                "http://11.123.0.1:3001/v1"
+            } else {
+                "http://11.12.0.1:3001/v1"
+            }
+        );
         assert!(defaults.dhcp);
     }
 

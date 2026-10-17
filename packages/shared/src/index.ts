@@ -1,5 +1,16 @@
 export * from "./activation.js";
 export * from "./protocol.js";
+export {
+  BRAND_PROFILES,
+  brandProfileFor,
+  currentAppName,
+  currentAppId,
+  currentBrandProfile,
+  resolveBrandName,
+  type BrandName,
+  type BrandProfile,
+  type BrandUpdateFeed,
+} from "./brand.js";
 export * from "./errors.js";
 export * from "./rpc-error.js";
 export * from "./certificate-errors.js";

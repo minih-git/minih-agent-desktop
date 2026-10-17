@@ -18162,3 +18162,20 @@ host-created files. The full app's file-preview viewer is covered separately.
   `apps/desktop/test/app-store-sidebar.test.mjs` and
   `apps/desktop/test/project-create-dialog.test.mjs`; full UI scenario remains
   Draft and is run only when explicitly requested in a capable environment.
+
+### HG-BRAND-01: Dual-brand side-by-side isolation
+
+- **ID**: HG-BRAND-01
+- **Title**: A `DESKTOP_BRAND=hungraim` build coexists with the minih build without sharing identity, data, updates, or network defaults.
+- **Preconditions**: A packaged minih build (installed, with existing user data) and a packaged `DESKTOP_BRAND=hungraim` build of the same version on the same machine.
+- **Steps**:
+  1. Launch both builds. Both windows stay usable; neither quits via the single-instance lock.
+  2. Create a session in each build; confirm sessions, API keys, plugins, and browser partitions are not visible across builds.
+  3. Check on-disk roots: minih keeps `~/.minih-agent-desktop`, hungraim creates `~/.hungraim-agent-desktop`; neither writes into the other.
+  4. Open Settings in the hungraim build: the Router preset defaults to `https://aiapi.hungraim.com/v1` and EasyTier defaults to the `hungraim-router` mesh (`11.123.0.1` LAN gateway); the minih build still shows `router.hmini.org` / `11.12.0.1`.
+  5. Check for updates in the hungraim build: the feed resolves to `updates.hungraim.com`, never to GitHub Releases.
+- **Expected**: No identity, data, update, or network-default leakage in either direction; the minih build's behavior is unchanged.
+- **Specs**: `06-delivery/06-release-runbook.md` (Brand lanes), `03-runtime/12-provider-config-schema.md` (brand defaults).
+- **Acceptance**: `apps/desktop/test` brand/data-path/update-source suites pass; a manual side-by-side run records screenshots per platform before a hungraim release.
+- **Milestone**: Hungraim distribution line.
+- **Status**: Implemented (source-contract tests); full manual side-by-side run is part of the hungraim release checklist.
