@@ -105,3 +105,10 @@ core regains title generation with a narrower trigger than the pre-0186 flow:
   it is never renamed again and never costs a generation, and every generation
   uses the first persisted user message as its input — the "first persisted
   user message only" trigger above holds for resends too.
+- 2026-10-17 compaction refinement: a summarized compaction checkpoint may
+  refresh the title afterwards (`session.retitleContext` +
+  `session.retitleFromCompaction`). The compare-and-set replaces a `default`
+  **or** `generated` title so the name can follow the conversation's current
+  subject, while a `manual` rename still wins every race; the naming input is
+  the compaction summary, matched to the live checkpoint by a fingerprint the
+  `compaction_end` event carries.

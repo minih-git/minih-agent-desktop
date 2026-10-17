@@ -1,4 +1,4 @@
-import { IPC, type AgentEventEnvelope, type UiMessage } from "@minih-agent/shared";
+import { IPC, type AgentEventEnvelope, type AppSettings, type UiMessage } from "@minih-agent/shared";
 import {
   findSubagentProviderSource,
   modelConfigWithBinding,
@@ -66,6 +66,17 @@ export type SidecarRuntimeDependencies = {
   disabledBuiltinSkills: () => Promise<string[]>;
   pluginActiveInProject: (pluginId: string, projectPath: string | null | undefined) => boolean;
   currentNetworkProxy: () => any;
+  /**
+   * Post-compaction re-titling (ADR 0323 refinement). Fired for a persisted,
+   * summarized checkpoint so the sidebar name can follow the conversation's
+   * current subject; the job re-reads host state and compares fingerprints,
+   * so a stale or duplicated event costs nothing.
+   */
+  generateSessionRetitle?: (job: {
+    sessionId: string;
+    summaryFingerprint: string;
+    settings: AppSettings | null | undefined;
+  }) => Promise<boolean>;
 };
 
 export function createSidecarRuntime({
@@ -97,6 +108,7 @@ export function createSidecarRuntime({
   disabledBuiltinSkills,
   pluginActiveInProject,
   currentNetworkProxy,
+  generateSessionRetitle: generateSessionRetitleJob,
 }: SidecarRuntimeDependencies): {
   emitAgentEvent: (envelope: AgentEventEnvelope) => void;
   wireSidecar: (sidecar: AgentSidecar) => void;
@@ -240,6 +252,33 @@ export function createSidecarRuntime({
             },
           },
         );
+      }
+      // Built-in re-titling (ADR 0323 refinement): a persisted, summarized
+      // checkpoint means the conversation's subject may have drifted from the
+      // first prompt the title came from. Detached and gated — the job re-reads
+      // the host's current summary, compares fingerprints, and the host CAS
+      // refuses anything but a default/generated title, so a manual rename
+      // always wins and a failure changes nothing the user sees.
+      if (
+        generateSessionRetitleJob &&
+        event.type === "compaction_end" &&
+        event.ok === true &&
+        typeof (event as { summaryFingerprint?: unknown }).summaryFingerprint === "string" &&
+        !envelope.parentToolCallId
+      ) {
+        const retitleSessionId = envelope.sessionId;
+        const retitleFingerprint = (event as { summaryFingerprint: string }).summaryFingerprint;
+        void (async () => {
+          const settings = (await runtimeState.host?.call("settings.get")) as
+            | AppSettings
+            | null
+            | undefined;
+          await generateSessionRetitleJob({
+            sessionId: retitleSessionId,
+            summaryFingerprint: retitleFingerprint,
+            settings,
+          });
+        })().catch(() => undefined);
       }
       emitAgentEvent(envelope);
       const persistedMessage = persistAgentEvent(envelope);

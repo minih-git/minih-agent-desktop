@@ -361,7 +361,17 @@ to later refresh and inference; the vendor picker does not collect them.
   and the session's `providerId/modelId` key — but only while the title source
   is still `default`. It answers `null` once a manual or generated title owns
   the session, so the caller skips generation entirely and a session is never
-  renamed twice.
+  renamed twice by later messages.
+- `session.retitleContext({ id })` returns the current title and model key for
+  a post-compaction re-title, but only while the title source is still
+  `default` or `generated`; it answers `null` for a manual rename, so the
+  caller never spends a model call on a user-chosen name. It carries no
+  transcript text — the naming input is the compaction summary the caller
+  already holds.
+- `session.retitleFromCompaction({ id, expectedTitle, title })` refreshes a
+  session title after a context compaction. It applies a compare-and-set that
+  replaces a `default` **or** `generated` title (the conversation's subject
+  legitimately drifts) but never a `manual` rename. Returns `{ updated: boolean }`.
 - `session.configure` — atomically persists `mode`, `providerId`, `modelId`,
   and optional `thinkingLevel` (`off|minimal|low|medium|high|xhigh|max|omit`)
   for the next pi turn; omitting/null

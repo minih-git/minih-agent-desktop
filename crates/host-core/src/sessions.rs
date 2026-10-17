@@ -2086,6 +2086,34 @@ pub fn auto_title_context(db: &Database, id: &str) -> Result<Option<AutoTitleCon
     }))
 }
 
+/// Return the current title and model key for a post-compaction re-title.
+///
+/// Unlike `auto_title_context` this answers for `default` *and* `generated`
+/// sources — a compaction may refresh either — but never for a `manual`
+/// rename. It carries no transcript text: the naming input is the compaction
+/// summary the caller already holds.
+pub fn retitle_context(db: &Database, id: &str) -> Result<Option<(String, Option<String>)>> {
+    let row: Option<(String, String, Option<String>, Option<String>)> = db
+        .conn()
+        .query_row(
+            "SELECT title, title_source, provider_id, model_id
+             FROM sessions WHERE id = ?1 AND deleted_at IS NULL",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?;
+    let Some((title, title_source, provider_id, model_id)) = row else {
+        return Ok(None);
+    };
+    if title_source != TITLE_SOURCE_DEFAULT && title_source != TITLE_SOURCE_GENERATED {
+        return Ok(None);
+    }
+    let model_key = provider_id
+        .zip(model_id)
+        .map(|(provider, model)| format!("{provider}/{model}"));
+    Ok(Some((title, model_key)))
+}
+
 fn truncate_title_context(value: &str, limit: usize) -> String {
     value.chars().take(limit).collect()
 }
@@ -2111,6 +2139,38 @@ pub fn set_automatic_session_title(
             id,
             expected_title,
             TITLE_SOURCE_DEFAULT
+        ])?;
+    Ok(n > 0)
+}
+
+/// Re-title a session after a context compaction refreshed its subject.
+///
+/// Unlike the first-turn flow, this may replace an earlier *generated* title:
+/// the conversation's subject legitimately drifts, and the compaction summary
+/// is a better naming input than the first prompt ever was. A user rename
+/// (`manual`) is still untouchable, and the compare-and-set keeps concurrent
+/// writers serialized: the write lands only while the title read by the
+/// caller is still current with a replaceable source.
+pub fn retitle_session_after_compaction(
+    db: &Database,
+    id: &str,
+    expected_title: &str,
+    title: &str,
+) -> Result<bool> {
+    let title = normalize_session_title(title)?;
+    let n = db
+        .conn()
+        .prepare_cached(
+            "UPDATE sessions SET title = ?1, title_source = ?2
+             WHERE id = ?3 AND title = ?4 AND title_source IN (?5, ?6) AND deleted_at IS NULL",
+        )?
+        .execute(params![
+            title,
+            TITLE_SOURCE_GENERATED,
+            id,
+            expected_title,
+            TITLE_SOURCE_DEFAULT,
+            TITLE_SOURCE_GENERATED
         ])?;
     Ok(n > 0)
 }

@@ -3,10 +3,12 @@ import test from "node:test";
 import { register } from "node:module";
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 const {
+  buildSessionRetitleRequest,
   buildSessionTitleRequest,
   normalizeGeneratedTitle,
   resolveSessionTitleThinkingLevel,
   selectSessionTitleModel,
+  summaryFingerprint,
 } = await import("../electron/main/session-title-engine.ts");
 const { sessionTitleModelsFromProviders } = await import(
   "../electron/main/session-title-service.ts"
@@ -53,6 +55,31 @@ test("buildSessionTitleRequest bounds the prompt and rejects an empty one", () =
   const long = "x".repeat(2_000);
   const bounded = buildSessionTitleRequest({ sessionModelKey: null, models, userPrompt: long });
   assert.ok((bounded?.userContent ?? "").length < 2_000);
+});
+
+test("buildSessionRetitleRequest bounds the summary and rejects an empty one", () => {
+  const request = buildSessionRetitleRequest({
+    sessionModelKey: "p1/cheap",
+    models,
+    summary: "The user pivoted to exporting the March report",
+  });
+  assert.equal(request?.modelKey, "p1/cheap");
+  assert.match(request?.userContent ?? "", /Conversation summary:/);
+  assert.match(request?.userContent ?? "", /exporting the March report/);
+  assert.match(request?.userContent ?? "", /current subject/);
+  assert.equal(
+    buildSessionRetitleRequest({ sessionModelKey: null, models, summary: "   " }),
+    null,
+  );
+  const long = "y".repeat(3_000);
+  const bounded = buildSessionRetitleRequest({ sessionModelKey: null, models, summary: long });
+  assert.ok((bounded?.userContent ?? "").length < 3_000);
+});
+
+test("summaryFingerprint is stable and input-sensitive", () => {
+  assert.equal(summaryFingerprint("abc"), summaryFingerprint("abc"));
+  assert.notEqual(summaryFingerprint("abc"), summaryFingerprint("abd"));
+  assert.equal(summaryFingerprint(undefined), summaryFingerprint(null));
 });
 
 test("normalizeGeneratedTitle strips labels, quotes and trailing punctuation", () => {

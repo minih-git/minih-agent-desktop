@@ -15,8 +15,10 @@ import type { Context } from "@earendil-works/pi-ai";
 import { OAUTH_AUTH_KIND, type VendorOAuth } from "./oauth";
 import type { Logger } from "./logger";
 import {
+  buildSessionRetitleRequest,
   buildSessionTitleRequest,
   normalizeGeneratedTitle,
+  summaryFingerprint,
   type SessionTitleModel,
 } from "./session-title-engine";
 
@@ -218,4 +220,138 @@ export async function generateSessionTitle(
 /** The one generator instance the IPC layer wires in. */
 export function createSessionTitleGenerator(deps: SessionTitleDeps) {
   return (job: SessionTitleJob) => generateSessionTitle(deps, job);
+}
+
+/** One post-compaction re-title job, read by the compaction event listener. */
+export type SessionRetitleJob = {
+  sessionId: string;
+  /** Fingerprint of the summary at trigger time; stale events are dropped. */
+  summaryFingerprint: string;
+  settings: AppSettings | null | undefined;
+};
+
+/**
+ * Re-title a session from its latest compaction summary.
+ *
+ * Fired after a compaction persists (`compaction_end`): the conversation's
+ * subject may have drifted, and the summary is the best naming input. The
+ * host's retitle context gates the call — a manual rename answers nothing —
+ * and the compare-and-set write replaces only a `default` or `generated`
+ * title, so a user's own name always survives. Fire-and-forget by contract:
+ * resolves to `false` for every skipped or failed case and never throws.
+ */
+export async function generateSessionRetitle(
+  deps: SessionTitleDeps,
+  job: SessionRetitleJob,
+): Promise<boolean> {
+  const sessionId = job.sessionId.trim();
+  if (!sessionId || sessionId.startsWith("native-pi:")) return false;
+  if (job.settings?.sessionTitle?.enabled === false) return false;
+  if (!job.summaryFingerprint.trim()) return false;
+
+  const host = deps.getHost();
+  if (!host) return false;
+  const guard = deps.inFlight ?? inFlightSessions;
+  if (guard.has(sessionId)) return false;
+
+  const settingsTitle = job.settings?.sessionTitle;
+  const preferredModelKey = String(settingsTitle?.modelKey ?? "").trim();
+
+  try {
+    // Null means the session carries a manual rename (or is gone): the user's
+    // title wins forever and no model call is spent.
+    const context = (await host.call("session.retitleContext", {
+      id: sessionId,
+    })) as {
+      expectedTitle: string;
+      modelKey?: string;
+    } | null;
+    const expectedTitle = String(context?.expectedTitle ?? "");
+    if (!context || !expectedTitle.trim()) return false;
+
+    // The checkpoint may have been superseded between the event and this
+    // read; only the summary that is still current names the session.
+    const compactions = (await host.call("session.get", {
+      id: sessionId,
+      messageLimit: 1,
+    })) as { session?: { compaction?: { summary?: unknown } | null } } | undefined;
+    const summary = String(compactions?.session?.compaction?.summary ?? "");
+    if (summaryFingerprint(summary) !== job.summaryFingerprint) return false;
+
+    const listed = (await host.call("providers.list", {
+      includeDisabled: false,
+    })) as { providers?: Array<Record<string, unknown>> } | undefined;
+    const request = buildSessionRetitleRequest({
+      preferredModelKey: preferredModelKey || undefined,
+      sessionModelKey: context.modelKey ?? null,
+      thinkingLevel: settingsTitle?.thinkingLevel,
+      models: sessionTitleModelsFromProviders(listed?.providers),
+      summary,
+    });
+    if (!request) return false;
+
+    const launch = await deps.resolveAgentRuntimeLaunch(
+      sessionId,
+      {},
+      job.settings ?? {},
+      preferredModelKey && request.modelKey !== (context.modelKey ?? null)
+        ? {
+            providerId: request.modelKey.slice(0, request.modelKey.indexOf("/")),
+            modelId: request.modelKey.slice(request.modelKey.indexOf("/") + 1),
+            thinkingLevel: request.thinkingLevel,
+          }
+        : { thinkingLevel: request.thinkingLevel },
+    );
+    if (!launch?.sidecarParams?.provider) return false;
+    const provider = {
+      ...launch.sidecarParams.provider,
+      ...(launch.sidecarParams.provider.authKind === OAUTH_AUTH_KIND
+        ? { resolveAuth: () => deps.vendorOAuth.resolveAuth(launch.providerId) }
+        : {}),
+    } as RuntimeProviderConfig;
+
+    guard.add(sessionId);
+    try {
+      const result = await (deps.completeOneShot ?? completeOneShotImpl)(
+        provider,
+        {
+          systemPrompt: request.system,
+          messages: [
+            { role: "user", content: request.userContent, timestamp: Date.now() },
+          ],
+        } as Context,
+        request.thinkingLevel,
+        { sessionId, maxOutputTokens: 128 },
+      );
+      const title = normalizeGeneratedTitle(result?.text);
+      if (!title || title === expectedTitle) return false;
+      // The host replaces only a default/generated title, so a manual rename
+      // always wins and two racing generations serialize on the CAS.
+      const written = (await host.call("session.retitleFromCompaction", {
+        id: sessionId,
+        expectedTitle,
+        title,
+      })) as { updated?: boolean } | undefined;
+      if (written?.updated === true) {
+        deps.logger.app("session", "info", "session title refreshed after compaction", {
+          sessionId,
+          data: { modelKey: request.modelKey },
+        });
+      }
+      return written?.updated === true;
+    } finally {
+      guard.delete(sessionId);
+    }
+  } catch (error) {
+    deps.logger.app("session", "warn", "session retitle after compaction failed", {
+      sessionId,
+      data: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/** The one re-title instance the IPC/event layer wires in. */
+export function createSessionRetitleGenerator(deps: SessionTitleDeps) {
+  return (job: SessionRetitleJob) => generateSessionRetitle(deps, job);
 }
