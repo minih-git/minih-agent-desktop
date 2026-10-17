@@ -6,7 +6,7 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 license = "LGPL-3.0-or-later"
-version = "0.20.6"
+version = "0.20.7"
 
 [patch."https://github.com/EasyTier/EasyTier.git"]
 easytier-proto = { path = "vendor/easytier-proto" }
