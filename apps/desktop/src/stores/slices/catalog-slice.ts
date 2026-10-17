@@ -30,6 +30,7 @@ export function createCatalogSlice({
 }: CatalogSliceDependencies): Pick<
   AppState,
   | "rememberModel"
+  | "rememberMinihRouterKeyName"
   | "refreshProviders"
   | "loadProviderModels"
   | "refreshPlugins"
@@ -52,6 +53,13 @@ export function createCatalogSlice({
       } catch (error) {
         console.warn("Could not persist recent model selection", error);
       }
+    },
+    // In-memory display cache only: the gateway key name fills the sidebar
+    // trigger after the first account read, without adding a standing request.
+    rememberMinihRouterKeyName: (name) => {
+      const keyName = name?.trim() || null;
+      if (get().minihRouterKeyName === keyName) return;
+      set({ minihRouterKeyName: keyName });
     },
     refreshProviders: async () => {
       const generation = catalogRuntime.beginProviderRefresh();

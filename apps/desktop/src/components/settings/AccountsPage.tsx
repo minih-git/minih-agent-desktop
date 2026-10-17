@@ -236,7 +236,12 @@ function ConnectedAccountCard({
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl ?? "");
   const [saving, setSaving] = useState(false);
 
-  const masked = account ? [account.keyName, account.maskedKey].filter(Boolean).join(" · ") : null;
+  // The gateway's key name is the account identity here; the row name is only
+  // a local label, so the card head mirrors the sidebar identity (avatar glyph
+  // from the name's first character) once the account read answers.
+  const accountName = account?.keyName?.trim() || MINIH_ROUTER_NAME;
+  const avatarGlyph = Array.from(accountName)[0]?.toLocaleUpperCase();
+  const masked = account?.maskedKey || null;
 
   const saveToken = async () => {
     const secret = token.trim();
@@ -288,9 +293,15 @@ function ConnectedAccountCard({
   return (
     <div className="accounts-connected">
       <div className="accounts-connected-row">
-        <span className="accounts-connected-key font-mono">
-          {masked || t("settings.accountsTokenStored")}
-        </span>
+        <div className="accounts-identity">
+          <span className="accounts-identity-avatar" aria-hidden>{avatarGlyph}</span>
+          <div className="accounts-identity-copy">
+            <strong>{accountName}</strong>
+            <span className="accounts-connected-key font-mono">
+              {masked || t("settings.accountsTokenStored")}
+            </span>
+          </div>
+        </div>
         <div className="accounts-connected-actions">
           <Button
             variant="ghost"

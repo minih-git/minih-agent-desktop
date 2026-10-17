@@ -161,6 +161,14 @@ export type AppState = {
   /** Every checkpoint a session has installed, oldest first. */
   sessionCompactions: Record<string, (ContextCompactionMark & { summary?: string })[]>;
   providers: ProviderPublic[];
+  /**
+   * The gateway key name of the connected Minih Router account, remembered
+   * in memory after the first successful account read (the sidebar user menu
+   * fetch). Transient session state, never persisted: the row label remains
+   * the fallback until a read fills it.
+   */
+  minihRouterKeyName?: string | null;
+  rememberMinihRouterKeyName: (name: string | null | undefined) => void;
   recentModels: RecentModel[];
   rememberModel: (model: { providerId?: string; modelId?: string }) => void;
   /** Discovered model lists per provider id (composer model menu). */

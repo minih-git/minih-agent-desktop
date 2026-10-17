@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { isMinihRouterVendorKey, MINIH_ROUTER_NAME } from "@minih-agent/shared";
 import type { SettingsTabId } from "../lib/settings-search";
 import { portalToBody } from "../lib/portal-visibility";
+import { api } from "../lib/api";
 import { useAppStore } from "../stores/app-store";
 import { Button } from "./ui";
 import { IconChevronUp, IconCloudDown, IconRefresh, IconSettings, IconUser } from "./icons";
@@ -11,12 +12,46 @@ import { MinihRouterAccountSummary } from "./settings/MinihRouterAccountSummary"
 import { endpointLabel } from "./settings/service-catalog";
 import { useMinihRouterAccount } from "./settings/useMinihRouter";
 
-/** Mount only while open: no quota polling, retained credentials or hidden requests. */
-function AccountDetails({ providerId }: { providerId: string }) {
+/**
+ * The connected account's identity and live quota. Mounted only while the
+ * popover is open: no quota polling, retained credentials or hidden requests.
+ *
+ * The identity name prefers the gateway's own key name (`/api/home`), because
+ * the provider row is usually the generic "Minih Router" default — the real
+ * account name is what the user recognizes. It falls back to the row label
+ * (OAuth label or row name) until that single fetch answers, and the identity
+ * and the quota block share the one request.
+ */
+function ConnectedAccount({
+  providerId,
+  baseUrl,
+  fallbackName,
+}: {
+  providerId: string;
+  baseUrl?: string;
+  fallbackName: string;
+}) {
   const { t, i18n } = useTranslation();
+  const rememberMinihRouterKeyName = useAppStore((state) => state.rememberMinihRouterKeyName);
   const [revision, setRevision] = useState(0);
   const account = useMinihRouterAccount(providerId, revision);
+  const accountName = account.data?.keyName?.trim() || fallbackName;
+  const identitySubtitle = baseUrl ? endpointLabel(baseUrl) : MINIH_ROUTER_NAME;
+  const glyph = Array.from(accountName)[0]?.toLocaleUpperCase();
+  // Publish the resolved name to the in-memory display cache so the collapsed
+  // trigger can show it too; writing the fallback would erase a known name.
+  useEffect(() => {
+    if (account.data?.keyName?.trim()) rememberMinihRouterKeyName(account.data.keyName);
+  }, [account.data?.keyName, rememberMinihRouterKeyName]);
   return (
+    <>
+      <div className="sidebar-user-identity">
+        <span className="sidebar-user-avatar is-large" aria-hidden>{glyph}</span>
+        <div className="sidebar-user-identity-copy">
+          <strong>{accountName}</strong>
+          <span>{identitySubtitle}</span>
+        </div>
+      </div>
     <section className="sidebar-user-quota" aria-label={t("userMenu.quota")} aria-busy={account.state === "loading"}>
       <div className="sidebar-user-quota-heading">
         <span>{t("userMenu.quota")}</span>
@@ -29,6 +64,20 @@ function AccountDetails({ providerId }: { providerId: string }) {
       {account.state === "error" ? <p role="alert">{t("settings.minihRouterAccountFailed")}</p> : null}
       <MinihRouterAccountSummary account={account.data} locale={i18n.resolvedLanguage ?? i18n.language} />
     </section>
+    </>
+  );
+}
+
+/** Identity block for the signed-out state: no request, no placeholder name. */
+function LocalUserIdentity({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div className="sidebar-user-identity">
+      <span className="sidebar-user-avatar is-large" aria-hidden><IconUser size={16} /></span>
+      <div className="sidebar-user-identity-copy">
+        <strong>{title}</strong>
+        <span>{subtitle}</span>
+      </div>
+    </div>
   );
 }
 
@@ -40,18 +89,42 @@ export function SidebarUserMenu({ onBeforeOpen }: { onBeforeOpen?: () => void })
   const setPage = useAppStore((state) => state.setPage);
   const setSettingsTab = useAppStore((state) => state.setSettingsTab);
   const provider = providers.find((row) => isMinihRouterVendorKey(row.vendorKey) && row.hasSecret) ?? null;
-  const name = provider?.oauthAccountLabel || provider?.name || t("userMenu.localUser");
-  const subtitle = provider
-    ? name === MINIH_ROUTER_NAME && provider.baseUrl
-      ? endpointLabel(provider.baseUrl)
-      : MINIH_ROUTER_NAME
-    : t("userMenu.notConnected");
+  const rememberedKeyName = useAppStore((state) => state.minihRouterKeyName);
+  const rememberMinihRouterKeyName = useAppStore((state) => state.rememberMinihRouterKeyName);
+  // Trigger label: the gateway key name once any account read has filled the
+  // in-memory cache; the row label before that. A single background read at
+  // mount primes it, so the name is there without opening the menu first.
+  const name = provider
+    ? rememberedKeyName?.trim() || provider.oauthAccountLabel || provider.name
+    : t("userMenu.localUser");
   const [open, setOpen] = useState(false);
   const avatarGlyph = provider ? Array.from(name)[0]?.toLocaleUpperCase() : <IconUser size={16} />;
   const [position, setPosition] = useState<{ left: number; bottom: number } | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const id = useId();
+
+  // Prime the trigger label once per provider identity: one fire-and-forget
+  // account read at startup fills the name cache. Silent on failure — the
+  // popover read remains the error surface.
+  const primedIdentity = useRef<string | null>(null);
+  useEffect(() => {
+    const identity = provider
+      ? `${provider.id}:${provider.baseUrl ?? ""}:${provider.updatedAt}`
+      : null;
+    if (!provider || primedIdentity.current === identity) return;
+    primedIdentity.current = identity;
+    let current = true;
+    api.minihRouterAccount(provider.id).then(
+      (data) => {
+        if (current) rememberMinihRouterKeyName(data?.keyName);
+      },
+      () => {},
+    );
+    return () => {
+      current = false;
+    };
+  }, [provider, rememberMinihRouterKeyName]);
 
   const close = useCallback((restoreFocus = false) => {
     setOpen(false);
@@ -130,15 +203,19 @@ export function SidebarUserMenu({ onBeforeOpen }: { onBeforeOpen?: () => void })
         <div ref={panel} id={id} role="dialog" aria-label={t("userMenu.title")} tabIndex={-1}
           className="sidebar-user-popover no-drag" data-sidebar-user-popover="true" onKeyDown={onKeyDown}
           style={{ left: position?.left ?? 12, bottom: position?.bottom ?? 56, maxHeight: position ? Math.max(0, window.innerHeight - position.bottom - 12) : undefined }}>
-          <div className="sidebar-user-identity">
-            <span className="sidebar-user-avatar is-large" aria-hidden>{avatarGlyph}</span>
-            <div className="sidebar-user-identity-copy">
-              <strong>{name}</strong>
-              <span>{subtitle}</span>
-            </div>
-          </div>
-          {provider ? <AccountDetails key={`${provider.id}:${provider.baseUrl ?? ""}:${provider.updatedAt}`} providerId={provider.id} />
-            : <p className="sidebar-user-empty">{t("userMenu.connectHint")}</p>}
+          {provider ? (
+            <ConnectedAccount
+              key={`${provider.id}:${provider.baseUrl ?? ""}:${provider.updatedAt}`}
+              providerId={provider.id}
+              baseUrl={provider.baseUrl}
+              fallbackName={provider.oauthAccountLabel || provider.name}
+            />
+          ) : (
+            <>
+              <LocalUserIdentity title={t("userMenu.localUser")} subtitle={t("userMenu.notConnected")} />
+              <p className="sidebar-user-empty">{t("userMenu.connectHint")}</p>
+            </>
+          )}
           <nav className="sidebar-user-links" aria-label={t("userMenu.title")}>
             <Button type="button" variant="ghost" data-nav="accounts" onClick={() => navigate("accounts")}><IconUser size={15} /><span>{t("userMenu.manageAccount")}</span></Button>
             <Button type="button" variant="ghost" data-nav="settings" onClick={() => navigate()}><IconSettings size={15} /><span>{t("nav.settings")}</span></Button>

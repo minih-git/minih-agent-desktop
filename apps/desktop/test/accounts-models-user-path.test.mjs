@@ -254,6 +254,17 @@ window.accountsProbe = async ({ width, height }) => {
   );
   const tokenEntryGoneAfterConnect = !document.querySelector('input[type="password"]');
 
+  // The connected card leads with the gateway key name and its avatar glyph.
+  await waitFor(
+    () => document.querySelector(".accounts-identity-copy strong")?.textContent === "desktop" ? true : null,
+    "the connected card did not show the gateway key name",
+  );
+  const accountIdentity = {
+    name: document.querySelector(".accounts-identity-copy strong")?.textContent ?? null,
+    glyph: document.querySelector(".accounts-identity-avatar")?.textContent ?? null,
+    keyLine: document.querySelector(".accounts-identity-copy .accounts-connected-key")?.textContent ?? null,
+  };
+
   // 2) Models page for the connected row.
   mount(null);
   mount(React.createElement(ModelsPage));
@@ -508,6 +519,7 @@ window.accountsProbe = async ({ width, height }) => {
     followGlobalNamesNewStyle,
     nullSettingsRendersEmpty,
     tokenEntryGoneAfterConnect,
+    accountIdentity,
     emptyStateShown,
     dialogCards,
     selectedCount: selectedCount.trim(),
@@ -642,6 +654,7 @@ app.whenReady().then(async () => {
       followGlobalNamesNewStyle: true,
       nullSettingsRendersEmpty: true,
       tokenEntryGoneAfterConnect: true,
+      accountIdentity: { name: "desktop", glyph: "D", keyLine: "sk-gl-…cret" },
       emptyStateShown: true,
       dialogCards: 12,
       selectedCount: "1 selected",
