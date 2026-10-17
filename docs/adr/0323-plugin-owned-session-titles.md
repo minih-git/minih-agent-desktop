@@ -1,9 +1,13 @@
 # ADR 0323: Make Session Title Generation a Standalone Plugin
 
-- Status: Accepted
+- Status: Accepted (core title generation restored by the 2026-10-17 amendment;
+  the standalone plugin is superseded)
 - Date: 2026-10-08
 - Supersedes: ADR 0186
 - Amended: 2026-10-08 (D654 restores the deterministic first-prompt fallback)
+- Amended: 2026-10-17 (built-in title generation moves back into Electron main,
+  triggered by the first sent message; the plugin's `session.autoTitle`
+  permission and its CAS host boundary are kept)
 
 ## Context
 
@@ -74,3 +78,24 @@ model-composed title moves to the plugin.
   sessions and do not match the required boundary.
 - Run a second title flow in Electron main: rejected because title policy and
   user-configured prompts/models belong to the plugin after this change.
+
+## Amendment 2026-10-17: built-in title generation restored
+
+Users expected automatic titles without installing a plugin, and the plugin's
+settings panel duplicated model selection that Settings already owns. The
+core regains title generation with a narrower trigger than the pre-0186 flow:
+
+- Electron main composes one title from the first persisted user message only
+  (no assistant reply), right after `session.appendMessage` on the send path.
+  The request is detached: the send never waits on it, and every failure is
+  logged and forgotten.
+- The completion writes through a main-process `session.autoTitle` host RPC
+  that calls the existing `set_automatic_session_title` compare-and-set, so a
+  manual rename still wins any race and the deterministic fallback stays when
+  the model is unavailable or returns nothing usable.
+- Settings gains `sessionTitle` (`enabled`, `modelKey`, `thinkingLevel`). An
+  empty `modelKey` uses the session's own model; an unadvertised thinking
+  level degrades to `off`.
+- The standalone Session Titles plugin and its `session.autoTitle` permission
+  are superseded; the permission and the CAS boundary it introduced remain in
+  host-core and are reused by the built-in flow.

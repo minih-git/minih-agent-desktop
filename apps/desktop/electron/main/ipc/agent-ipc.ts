@@ -4,6 +4,7 @@ import type { FinishTurn } from "../runtime/plans";
 import { expandSlashInvocation, visionFromModelConfig, type ComposerTemplate } from "@minih-agent/agent-runtime";
 import { appendPromptFallbackPaths, durableUserMessageId, preparePromptAttachments, type PreparedPromptAttachment } from "../prompt-attachments";
 import { resolveSessionReferences } from "../session-references";
+import type { SessionTitleJob } from "../session-title-service";
 import { executionFromResponse, resolveSessionMessageInput } from "@minih-agent/host-runtime";
 import type { AgentExtensionBridge } from "../agent-extensions";
 import type { AgentHostBridge } from "../agent-host-bridge";
@@ -48,6 +49,8 @@ export type AgentIpcDependencies = {
   optionalWorkspaceRoot: () => Promise<string | null>;
   composerCommandService: Pick<ComposerCommandService, "buildComposerCommands">;
   loadComposerTemplatesCached: (root: string | null) => Promise<ComposerTemplate[]>;
+  /** Built-in title generation (ADR 0323 amendment). Optional for tests. */
+  generateSessionTitle?: (job: SessionTitleJob) => Promise<boolean>;
 };
 
 function rejectNativeAgentOperation(sessionId: string): void {
@@ -104,6 +107,7 @@ export function registerAgentIpc({
   optionalWorkspaceRoot,
   composerCommandService,
   loadComposerTemplatesCached,
+  generateSessionTitle: generateSessionTitleJob,
 }: AgentIpcDependencies): void {
   let host: HostProcess | null = null;
   let sidecar: AgentSidecar | null = null;
@@ -513,6 +517,24 @@ export function registerAgentIpc({
       ts: Date.now(),
       event: { type: "message_end", message: userMessage },
     } satisfies AgentEventEnvelope);
+
+    // Built-in title generation (ADR 0323 amendment): once the first user
+    // message is durable, a model may name the session. Detached and gated —
+    // the renderer's deterministic fallback has already run, and the host CAS
+    // refuses anything but a still-fallback title, so a manual rename always
+    // wins and a failure changes nothing the user sees.
+    if (generateSessionTitleJob) {
+      void generateSessionTitleJob({
+        sessionId: req.sessionId,
+        userPrompt: promptContent,
+        session: {
+          title: session.title,
+          ...(session.providerId ? { providerId: session.providerId } : {}),
+          ...(session.modelId ? { modelId: session.modelId } : {}),
+        },
+        settings,
+      }).catch(() => undefined);
+    }
 
     let result: { accepted: boolean; turnId: string };
     try {
