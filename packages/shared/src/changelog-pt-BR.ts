@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "0.20.6",
+    date: "2026-10-17",
+    highlights: [
+      "As sessões se nomeiam sozinhas: após o envio da primeira mensagem, um modelo sugere um título conciso na barra lateral; renomeações manuais sempre vencem. Um novo cartão Títulos de sessão nos Ajustes escolhe modelo e nível de raciocínio.",
+      "Comandos Bash ganham linha própria no processo do turno, e a exibição de raciocínio vira um único interruptor; sessões com muitos comandos não escondem mais o que foi executado.",
+      "Renovação tipográfica da superfície de leitura: acento de links e cor de seleção estilo Codex, listas mais tranquilas durante o streaming e contraste WCAG garantido em todos os temas.",
+      "Os backups do config-sync migram para o backend da conta Minih Router - sem bucket S3; conecte uma vez na página de conta e os backups seguem o namespace do gateway.",
+      "Um diretório de dados padrão ausente oferece recuperação na inicialização em vez de falhar, e os catálogos de market ganham botão de nova tentativa quando as fontes falham.",
+      "Correções de provedores: endpoints estilo DeepSeek não rejeitam mais o campo reasoning_effort, e o proxy de rede sobrevive a mudanças de preferência não relacionadas.",
+      "Diagramas do chat e grafos multi-subagente aparvam troncos de conector excedentes, e seções de raciocínio substituídas fecham imediatamente.",
+      "Correções de confiabilidade de Windows e transcript chegam do merge upstream, com a CI emitindo batimentos por etapa em E2E longos.",
+    ],
+  },
+  {
     version: "0.20.5",
     date: "2026-10-16",
     highlights: [

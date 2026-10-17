@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.20.6",
+    date: "2026-10-17",
+    highlights: [
+      "Sitzungen benennen sich selbst: Nach dem Senden der ersten Nachricht schlägt ein Modell in der Seitenleiste einen prägnanten Titel vor; manuelle Umbenennungen gewinnen immer. Die neue Karte Sitzungstitel in den Einstellungen wählt Modell und Denkstufe.",
+      "Bash-Befehle stehen im Sitzungsverlauf in einer eigenen Zeile, und die Denkungsanzeige wird zu einem einzigen Schalter; befehlsreiche Sitzungen verbergen nicht mehr, was lief.",
+      "Typografische Auffrischung der Lesefläche: Codex-artiger Link-Akzent und Auswahl-Farbe, ruhigere Streaming-Listen und durchgesetzte WCAG-Kontrastgrenze über alle Themes.",
+      "Config-sync-Sicherungen wandern in das Minih-Router-Konto-Backend - kein S3-Bucket nötig; einmal auf der Kontoseite verbinden, Backoffs folgen dem Gateway-Namespace.",
+      "Ein fehlendes Standard-Datenverzeichnis bietet beim Start Wiederherstellung statt Abbruch, und Marktkataloge erhalten eine Wiederholen-Schaltfläche, wenn Quellen fehlschlagen.",
+      "Provider-Korrekturen: DeepSeek-artige Endpunkte lehnen das reasoning_effort-Feld nicht mehr ab, und Netzwerk-Proxy-Einstellungen überleben unabhängige Präferenzänderungen.",
+      "Chat-Diagramme und Mehrfach-Subagenten-Graphen kürzen überstehende Verbinder, und ersetzte Denkungsabschnitte schließen sofort statt zu bleiben.",
+      "Windows- und Transkript-Zuverlässigkeitskorrekturen aus dem Upstream-Merge sind enthalten; die CI sendet für lange E2E-Läufe Herzschlagevents.",
+    ],
+  },
+  {
     version: "0.20.5",
     date: "2026-10-16",
     highlights: [

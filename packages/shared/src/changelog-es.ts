@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "0.20.6",
+    date: "2026-10-17",
+    highlights: [
+      "Las sesiones se nombran solas: tras enviar el primer mensaje, un modelo sugiere un título conciso en la barra lateral; los cambios manuales siempre ganan. Una nueva tarjeta Títulos de sesión en Ajustes elige modelo y nivel de razonamiento.",
+      "Los comandos Bash ocupan su propia línea en el proceso del turno, y la visualización de razonamiento se simplifica a un solo interruptor; las sesiones con muchos comandos ya no ocultan qué se ejecutó.",
+      "Renovación tipográfica de la superficie de lectura: acento de enlaces y color de selección estilo Codex, listas más tranquilas durante el streaming y contraste WCAG garantizado en todos los temas.",
+      "Las copias de config-sync migran al backend de la cuenta de Minih Router: sin bucket S3; conéctate una vez en la página de cuenta y las copias siguen el espacio del gateway.",
+      "Un directorio de datos predeterminado ausente ofrece recuperación al arrancar en lugar de fallar, y los catálogos de market añaden un botón de reintento cuando sus fuentes fallan.",
+      "Correcciones de proveedores: los endpoints tipo DeepSeek ya no rechazan el campo reasoning_effort, y el proxy de red sobrevive a cambios de preferencias no relacionados.",
+      "Los diagramas del chat y los grafos multi-subagente recortan troncos de conector sobrantes, y las secciones de razonamiento sustituidas se cierran de inmediato.",
+      "Incluye correcciones de fiabilidad de Windows y transcripciones del merge upstream, con la CI emitiendo latidos por etapas en E2E largos.",
+    ],
+  },
+  {
     version: "0.20.5",
     date: "2026-10-16",
     highlights: [

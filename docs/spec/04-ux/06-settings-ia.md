@@ -208,6 +208,16 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
     `configSync.allowInsecureHttp`) are gone (ADR 0304).
 - Platform-specific **Close behavior** remains in General because it changes
   application-window behavior rather than agent behavior.
+- **Session titles** card (ADR 0323 amendment, D660): one switch persisting as
+  `AppSettings.sessionTitle.enabled` (on when absent), a model picker
+  persisting `sessionTitle.modelKey` (`providerId/modelId`; "Session's model"
+  when empty), and a thinking-level picker persisting
+  `sessionTitle.thinkingLevel` (off when absent). After the first message of a
+  still-default-titled session is sent, main composes a title from that
+  message through a detached one-shot completion and writes it only when the
+  deterministic fallback title is still current, so a manual rename always
+  wins and a failure keeps the fallback. Picker rows disabled while the
+  switch is off; the choices stay stored.
 - File-open target, menu-bar behavior, and bottom-panel behavior are not
   rendered until their host-backed settings schemas and runtime effects exist.
 

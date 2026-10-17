@@ -1831,7 +1831,7 @@ dependencies = [
 
 [[package]]
 name = "host-core"
-version = "0.20.5"
+version = "0.20.6"
 dependencies = [
  "aes-gcm 0.11.0",
  "anyhow",

@@ -111,17 +111,22 @@ source, so the fallback never replaces a manual rename or an earlier automatic
 title, and the write does not change `updated_at`.
 
 That fallback keeps the source `default`: the derived text is not a user choice,
-so the session stays eligible for automatic replacement. An optional standalone
-plugin may subscribe to `session:turnEnded`; with the dedicated
-`session.autoTitle` permission it can read only the first user prompt and first
-assistant reply for a session whose title is still default, then use
-`agent.complete` with its configured prompt, model, and thinking level.
+so the session stays eligible for automatic replacement. Once the first user
+message is durable, Electron main may compose one model title for the session —
+once. Each send asks the host for the auto-title context first; a session whose
+title source is no longer `default` (a manual rename, or a generated title that
+already landed) answers nothing, costs no model call, and is never renamed
+again. The naming input is always the first persisted user message, never the
+message that happened to trigger a later send, so resending or continuing a
+conversation cannot rename the session.
 
-The plugin writes through a host compare-and-set that succeeds only while the
-exact title it read is still current. Manual renames and another generated
-title therefore win concurrent updates. Host-core owns the title source in
-schema v23; this state survives renderer restart and does not expose a general
-transcript-read API. The core runs no title completion of its own.
+The completion writes through a host compare-and-set that succeeds only while
+the exact title it read is still current with the `default` source. Manual
+renames and another generated title therefore win concurrent updates.
+Host-core owns the title source in schema v23; this state survives renderer
+restart and does not expose a general transcript-read API. Settings own the
+built-in generator's model and thinking level (`sessionTitle`); the standalone
+title plugin is superseded (ADR 0323 amendment, 2026-10-17).
 
 ## 5. Prompt flow
 

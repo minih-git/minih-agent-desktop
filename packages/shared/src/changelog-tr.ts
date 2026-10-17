@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.20.6",
+    date: "2026-10-17",
+    highlights: [
+      "Oturumlar kendini adlandırır: ilk ileti gönderildikten sonra model kenar çubuğunda kısa bir başlık önerir; elle yeniden adlandırma her zaman kazanır. Ayarlar'daki yeni Oturum başlıkları kartı modeli ve düşünme düzeyini seçer.",
+      "Bash komutları tur sürecinde kendi satırında durur ve düşünme gösterimi tek bir anahtara sadeleşir; komut yoğun oturumlar artık neyin çalıştığını gizlemez.",
+      "Okuma yüzeyinde tipografik yenileme: Codex tarzı bağlantı vurgusu ve seçim rengi, akış sırasında daha sakin listeler ve temalar arası WCAG karşıtlık sınırı.",
+      "Config-sync yedekleri Minih Router hesap arka ucuna taşındı - S3 kovası gerekmez; hesap sayfasında bir kez bağlanın, yedekler ağ geçidi ad alanını izler.",
+      "Varsayılan veri dizini eksikse başlangıçta doğrudan hata vermek yerine kurtarma sunulur ve market kataloglarına kaynak başarısız olduğunda yeniden deneme düğmesi gelir.",
+      "Sağlayıcı düzeltmeleri: DeepSeek tarzı uçlar reasoning_effort alanını artık reddetmez; ağ proxy ayarı alakasız tercih değişikliklerinde korunur.",
+      "Sohbet diyagramları ve çoklu alt ajan grafikleri fazladan bağlantı gövdelerini kırpınır, yerine geçilen düşünme bölümleri hemen kapanır.",
+      "Yukarı akış birleşiminden Windows ve transkript güvenilirlik düzeltmeleri gelir; CI uzun E2E çalıştırmaları için aşama kalp atışı ekler.",
+    ],
+  },
+  {
     version: "0.20.5",
     date: "2026-10-16",
     highlights: [
