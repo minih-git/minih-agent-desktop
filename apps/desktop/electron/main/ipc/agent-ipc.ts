@@ -519,16 +519,16 @@ export function registerAgentIpc({
     } satisfies AgentEventEnvelope);
 
     // Built-in title generation (ADR 0323 amendment): once the first user
-    // message is durable, a model may name the session. Detached and gated —
-    // the renderer's deterministic fallback has already run, and the host CAS
-    // refuses anything but a still-fallback title, so a manual rename always
-    // wins and a failure changes nothing the user sees.
+    // message is durable, a model may name the session — once. The job asks
+    // the host's auto-title context first, so an already-named session costs
+    // nothing, and the naming input is always the first persisted user
+    // message, never the message that happened to trigger this send. The
+    // host CAS still refuses anything but a still-fallback title, so a manual
+    // rename always wins and a failure changes nothing the user sees.
     if (generateSessionTitleJob) {
       void generateSessionTitleJob({
         sessionId: req.sessionId,
-        userPrompt: promptContent,
         session: {
-          title: session.title,
           ...(session.providerId ? { providerId: session.providerId } : {}),
           ...(session.modelId ? { modelId: session.modelId } : {}),
         },

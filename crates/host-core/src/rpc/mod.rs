@@ -2843,6 +2843,19 @@ async fn handle_request(
                 .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
             Ok(json!({ "updated": updated }))
         }
+        "session.autoTitleContext" => {
+            let id = params
+                .get("id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| rpc_err(1002, "id required", "INVALID_PARAMS"))?;
+            let st = state.lock().await;
+            // Built-in title generation asks once whether the session is still
+            // eligible: None means a manual or generated title already won, so
+            // the caller must not spend a model call or rename it again.
+            let context = sessions::auto_title_context(&st.db, id)
+                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            Ok(context.map(|context| json!(context)).unwrap_or(Value::Null))
+        }
         "session.deriveTitle" => {
             let id = params
                 .get("id")
@@ -5466,6 +5479,99 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(current, json!({ "disabled": [] }));
+    }
+
+    // The built-in title generator must name a session exactly once: the
+    // context RPC gates the model call, so an already-named session answers
+    // nothing and a resent message never renames it (ADR 0323 refinement).
+    #[tokio::test]
+    async fn auto_title_context_gates_the_built_in_title_generation_once() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let state = Arc::new(Mutex::new(app_state));
+        let tx = mpsc::unbounded_channel().0;
+
+        let session_id = handle_request(
+            state.clone(),
+            "session.create",
+            json!({ "title": "New task", "providerId": "p1", "modelId": "m1" }),
+            tx.clone(),
+        )
+        .await
+        .unwrap()["session"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        // No first message yet: nothing to name from.
+        let empty = handle_request(
+            state.clone(),
+            "session.autoTitleContext",
+            json!({ "id": session_id }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(empty, Value::Null);
+
+        handle_request(
+            state.clone(),
+            "session.appendMessage",
+            json!({
+                "sessionId": session_id,
+                "message": { "id": "m-1", "role": "user", "content": "Fix the login bug", "createdAt": "2026-10-17T00:00:00Z", "status": "complete" }
+            }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+
+        // A still-default session exposes the bounded first-turn context.
+        let context = handle_request(
+            state.clone(),
+            "session.autoTitleContext",
+            json!({ "id": session_id }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(context["expectedTitle"], json!("New task"));
+        assert_eq!(context["userPrompt"], json!("Fix the login bug"));
+        assert_eq!(context["modelKey"], json!("p1/m1"));
+
+        // The generated title lands through the compare-and-set.
+        let written = handle_request(
+            state.clone(),
+            "session.autoTitle",
+            json!({ "id": session_id, "expectedTitle": "New task", "title": "Fix login bug" }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(written, json!({ "updated": true }));
+
+        // The named session now answers nothing: a later send cannot rename it.
+        let named = handle_request(
+            state.clone(),
+            "session.autoTitleContext",
+            json!({ "id": session_id }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(named, Value::Null);
+
+        // The CAS also refuses a stale write even if a caller ignored the gate.
+        let stale = handle_request(
+            state,
+            "session.autoTitle",
+            json!({ "id": session_id, "expectedTitle": "New task", "title": "Renamed again" }),
+            tx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(stale, json!({ "updated": false }));
     }
 
     // Issue #1071: the per-request wall-clock budget must cut loose requests

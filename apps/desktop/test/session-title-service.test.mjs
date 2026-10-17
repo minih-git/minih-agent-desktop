@@ -24,6 +24,14 @@ const PROVIDERS = {
   ],
 };
 
+/** What the host's `session.autoTitleContext` returns for an eligible session. */
+const CONTEXT = {
+  sessionId: "s1",
+  expectedTitle: "New task",
+  userPrompt: "Fix the login bug",
+  modelKey: "p1/m1",
+};
+
 const baseDeps = (host) => ({
   getHost: () => host,
   resolveAgentRuntimeLaunch: async () => ({
@@ -38,8 +46,12 @@ const baseDeps = (host) => ({
   logger: { app: () => undefined },
 });
 
-test("generates a title and writes it through the host CAS", async () => {
+test("generates a title from the first persisted message and writes it through the host CAS", async () => {
   const host = fakeHost({
+    "session.autoTitleContext": (params) => {
+      assert.equal(params.id, "s1");
+      return CONTEXT;
+    },
     "providers.list": () => PROVIDERS,
     "session.autoTitle": (params) => {
       assert.equal(params.id, "s1");
@@ -61,6 +73,8 @@ test("generates a title and writes it through the host CAS", async () => {
     },
     completeOneShot: async (_provider, context, thinkingLevel) => {
       assert.equal(thinkingLevel, "off");
+      // The naming input is the context's first persisted message — the job
+      // carries no prompt at all, so a resent message cannot change it.
       assert.match(context.messages[0].content, /Fix the login bug/);
       return { text: "Title: Fix login bug", usage: undefined };
     },
@@ -68,19 +82,40 @@ test("generates a title and writes it through the host CAS", async () => {
   assert.equal(
     await generateSessionTitle(deps, {
       sessionId: "s1",
-      userPrompt: "Fix the login bug",
-      session: { title: "New task" },
+      session: { providerId: "p1", modelId: "m1" },
       settings: {},
     }),
     true,
   );
   const methods = host.calls.map((entry) => entry.method);
-  assert.deepEqual(methods, ["providers.list", "session.autoTitle"]);
+  assert.deepEqual(methods, ["session.autoTitleContext", "providers.list", "session.autoTitle"]);
   assert.deepEqual(launches, [{ thinkingLevel: "off" }]);
+});
+
+test("an already-named session costs no model call and is never renamed again", async () => {
+  const host = fakeHost({
+    "session.autoTitleContext": () => null,
+  });
+  const deps = {
+    ...baseDeps(host),
+    completeOneShot: async () => {
+      throw new Error("must not be called");
+    },
+  };
+  assert.equal(
+    await generateSessionTitle(deps, {
+      sessionId: "s1",
+      session: { providerId: "p1", modelId: "m1" },
+      settings: {},
+    }),
+    false,
+  );
+  assert.deepEqual(host.calls.map((entry) => entry.method), ["session.autoTitleContext"]);
 });
 
 test("an empty model answer leaves the title untouched", async () => {
   const host = fakeHost({
+    "session.autoTitleContext": () => CONTEXT,
     "providers.list": () => PROVIDERS,
   });
   const deps = {
@@ -90,18 +125,18 @@ test("an empty model answer leaves the title untouched", async () => {
   assert.equal(
     await generateSessionTitle(deps, {
       sessionId: "s1",
-      userPrompt: "hello",
-      session: { title: "New task" },
+      session: { providerId: "p1", modelId: "m1" },
       settings: {},
     }),
     false,
   );
   const methods = host.calls.map((entry) => entry.method);
-  assert.deepEqual(methods, ["providers.list"]);
+  assert.deepEqual(methods, ["session.autoTitleContext", "providers.list"]);
 });
 
 test("a refused CAS write (renamed meanwhile) is not an error", async () => {
   const host = fakeHost({
+    "session.autoTitleContext": () => CONTEXT,
     "providers.list": () => PROVIDERS,
     "session.autoTitle": () => ({ updated: false }),
   });
@@ -112,22 +147,20 @@ test("a refused CAS write (renamed meanwhile) is not an error", async () => {
   assert.equal(
     await generateSessionTitle(deps, {
       sessionId: "s1",
-      userPrompt: "hello",
-      session: { title: "New task" },
+      session: { providerId: "p1", modelId: "m1" },
       settings: {},
     }),
     false,
   );
 });
 
-test("skips everything when disabled, native, or missing a title", async () => {
+test("skips everything when disabled or native, and a prompt-less context never calls the model", async () => {
   const host = fakeHost({});
   const deps = { ...baseDeps(host), completeOneShot: async () => { throw new Error('must not be called'); } };
   assert.equal(
     await generateSessionTitle(deps, {
       sessionId: "s1",
-      userPrompt: "hello",
-      session: { title: "New task" },
+      session: { providerId: "p1", modelId: "m1" },
       settings: { sessionTitle: { enabled: false } },
     }),
     false,
@@ -135,17 +168,7 @@ test("skips everything when disabled, native, or missing a title", async () => {
   assert.equal(
     await generateSessionTitle(deps, {
       sessionId: "native-pi:abc",
-      userPrompt: "hello",
-      session: { title: "New task" },
-      settings: {},
-    }),
-    false,
-  );
-  assert.equal(
-    await generateSessionTitle(deps, {
-      sessionId: "s1",
-      userPrompt: "hello",
-      session: { title: "" },
+      session: { providerId: "p1", modelId: "m1" },
       settings: {},
     }),
     false,
@@ -153,20 +176,40 @@ test("skips everything when disabled, native, or missing a title", async () => {
   assert.deepEqual(host.calls, []);
 });
 
-test("a provider-less host never calls the completion or the CAS", async () => {
-  const host = fakeHost({ "providers.list": () => ({ providers: [] }) });
+test("a context without a usable first message stops before the provider list", async () => {
+  const host = fakeHost({
+    "session.autoTitleContext": () => ({ ...CONTEXT, userPrompt: "   " }),
+    "providers.list": () => PROVIDERS,
+  });
   const deps = { ...baseDeps(host), completeOneShot: async () => { throw new Error('must not be called'); } };
   assert.equal(
     await generateSessionTitle(deps, {
       sessionId: "s1",
-      userPrompt: "hello",
-      session: { title: "New task" },
+      session: { providerId: "p1", modelId: "m1" },
       settings: {},
     }),
     false,
   );
   const methods = host.calls.map((entry) => entry.method);
-  assert.deepEqual(methods, ["providers.list"]);
+  assert.deepEqual(methods, ["session.autoTitleContext", "providers.list"]);
+});
+
+test("a provider-less host never calls the completion or the CAS", async () => {
+  const host = fakeHost({
+    "session.autoTitleContext": () => CONTEXT,
+    "providers.list": () => ({ providers: [] }),
+  });
+  const deps = { ...baseDeps(host), completeOneShot: async () => { throw new Error('must not be called'); } };
+  assert.equal(
+    await generateSessionTitle(deps, {
+      sessionId: "s1",
+      session: { providerId: "p1", modelId: "m1" },
+      settings: {},
+    }),
+    false,
+  );
+  const methods = host.calls.map((entry) => entry.method);
+  assert.deepEqual(methods, ["session.autoTitleContext", "providers.list"]);
 });
 
 test("an in-flight session is not generated twice", async () => {
@@ -176,8 +219,7 @@ test("an in-flight session is not generated twice", async () => {
   assert.equal(
     await generateSessionTitle(deps, {
       sessionId: "s1",
-      userPrompt: "hello",
-      session: { title: "New task" },
+      session: { providerId: "p1", modelId: "m1" },
       settings: {},
     }),
     false,
@@ -187,7 +229,7 @@ test("an in-flight session is not generated twice", async () => {
 
 test("a failing host call is logged and swallowed", async () => {
   const host = fakeHost({
-    "providers.list": () => {
+    "session.autoTitleContext": () => {
       throw new Error("host died");
     },
   });
@@ -199,8 +241,7 @@ test("a failing host call is logged and swallowed", async () => {
   assert.equal(
     await generateSessionTitle(deps, {
       sessionId: "s1",
-      userPrompt: "hello",
-      session: { title: "New task" },
+      session: { providerId: "p1", modelId: "m1" },
       settings: {},
     }),
     false,

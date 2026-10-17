@@ -99,3 +99,9 @@ core regains title generation with a narrower trigger than the pre-0186 flow:
 - The standalone Session Titles plugin and its `session.autoTitle` permission
   are superseded; the permission and the CAS boundary it introduced remain in
   host-core and are reused by the built-in flow.
+- 2026-10-17 refinement: the send path asks the host for the auto-title
+  context (`session.autoTitleContext`, reusing `sessions::auto_title_context`)
+  before spending a model call. An already-named session answers nothing, so
+  it is never renamed again and never costs a generation, and every generation
+  uses the first persisted user message as its input — the "first persisted
+  user message only" trigger above holds for resends too.

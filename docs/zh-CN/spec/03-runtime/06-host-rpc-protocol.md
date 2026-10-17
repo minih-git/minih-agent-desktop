@@ -250,6 +250,14 @@ type ToolBudgetHealth = {
   `{ updated: boolean }`。标题按同样的 1–80 码点规则校验，且只在存储标题仍是可识别占位
   标题、标题来源为 `default` 时写入；写入后仍保留该来源，因此标题插件还能替换派生文本，
   并且不更新 `updated_at`、转录内容或消息数。
+- `session.autoTitle` — `{ id, expectedTitle, title }`：为仍未命名的会话写入模型生成的
+  标题（ADR 0323 修订，2026-10-17）。标题按同样的 1–80 规则校验，然后应用
+  `set_automatic_session_title` 比较并设置：只有存储标题仍等于 `expectedTitle` 且来源为
+  `default` 时写入，因此手动重命名或更早的生成标题在竞态中胜出。返回 `{ updated: boolean }`。
+- `session.autoTitleContext` — `{ id }`：返回内置标题生成所需的有界首轮上下文——
+  `expectedTitle`、首条持久化用户消息（≤1,000 字符）、首条助手回复（≤500 字符）以及会话的
+  `providerId/modelId` 键——且只在标题来源仍为 `default` 时返回。会话一旦被手动命名或已有
+  生成标题即返回 `null`，调用方因此完全跳过生成，会话不会被重复命名。
 - `session.configure` — 以原子方式持久保存 `mode`、`providerId`、`modelId`，
   以及可选的 `thinkingLevel` 用于下一个 pi 回合； omitting/null
   `thinkingLevel` 保留当前值；返回无效模式或级别

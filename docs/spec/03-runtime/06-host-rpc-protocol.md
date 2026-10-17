@@ -355,6 +355,13 @@ to later refresh and inference; the vendor picker does not collect them.
   compare-and-set: the write lands only while the stored title still equals
   `expectedTitle` with the `default` source, so a manual rename or an earlier
   generated title wins the race. Returns `{ updated: boolean }`.
+- `session.autoTitleContext({ id })` returns the bounded first-turn context the
+  built-in title generator needs — `expectedTitle`, the first persisted user
+  message (≤1,000 characters), the first assistant reply (≤500 characters),
+  and the session's `providerId/modelId` key — but only while the title source
+  is still `default`. It answers `null` once a manual or generated title owns
+  the session, so the caller skips generation entirely and a session is never
+  renamed twice.
 - `session.configure` — atomically persists `mode`, `providerId`, `modelId`,
   and optional `thinkingLevel` (`off|minimal|low|medium|high|xhigh|max|omit`)
   for the next pi turn; omitting/null
