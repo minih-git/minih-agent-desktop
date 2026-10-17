@@ -864,6 +864,7 @@ sklm: {
       proxyHint: "That check resolves the host locally, while the download itself would use your proxy. If you use a proxy or VPN, check Settings → General → Network.",
       failureDetail: "Details: ",
       retryPreview: "Retry",
+      retryCatalog: "Retry",
       remoteErrorPolicy: "Catalog sources were blocked by the app's address check — showing built-in picks",
       remoteErrorUnresolved:
         "The local resolver could not answer for the catalog sources — showing built-in picks",
@@ -1109,6 +1110,8 @@ sklm: {
       remoteBadge: "Registry",
       remoteLoading: "Loading the official registry…",
       remoteError: "Registry unreachable — showing built-in picks",
+      remotePartial: "Some market sources are unavailable ({{names}})",
+      retry: "Retry",
       manageSources: "Sources",
       sourcesHint: "Query several market sources at once. Registry sources speak the official MCP registry protocol; catalog sources are static JSON files in the market schema.",
       addSource: "Add source",

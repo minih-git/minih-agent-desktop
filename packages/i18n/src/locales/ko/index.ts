@@ -852,6 +852,7 @@ sklm: {
       proxyHint: "이 검사는 호스트를 로컬에서 조회하지만, 다운로드 자체는 프록시를 사용합니다. 프록시나 VPN을 사용한다면 설정 → 일반 → 네트워크를 확인하세요.",
       failureDetail: "세부 정보: ",
       retryPreview: "다시 시도",
+      retryCatalog: "다시 시도",
       remoteErrorPolicy: "앱의 주소 검사가 카탈로그 소스를 차단했습니다. 내장 목록을 표시합니다",
       remoteErrorUnresolved:
         "로컬 리졸버가 카탈로그 소스를 확인하지 못했습니다. 내장 목록을 표시합니다",
@@ -1246,6 +1247,8 @@ sklm: {
       remoteBadge: "레지스트리",
       remoteLoading: "공식 레지스트리에서 불러오는 중…",
       remoteError: "레지스트리에 연결할 수 없어 내장 목록을 표시합니다",
+      remotePartial: "일부 마켓 소스를 사용할 수 없습니다 ({{names}})",
+      retry: "다시 시도",
       manageSources: "마켓 소스",
       sourcesHint: "여러 마켓 소스를 동시에 조회합니다. 레지스트리 소스는 공식 MCP 레지스트리 프로토콜을, 카탈로그 소스는 마켓 스키마의 정적 JSON 파일을 사용합니다.",
       addSource: "소스 추가",

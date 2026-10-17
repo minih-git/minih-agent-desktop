@@ -843,6 +843,7 @@ sklm: {
       proxyHint: "Esa comprobación resuelve el host de forma local, mientras que la descarga usaría tu proxy. Si usas proxy o VPN, revisa Configuración → General → Red.",
       failureDetail: "Detalles: ",
       retryPreview: "Reintentar",
+      retryCatalog: "Reintentar",
       remoteErrorPolicy: "La comprobación de direcciones de la aplicación bloqueó las fuentes del catálogo: se muestran las selecciones integradas",
       remoteErrorUnresolved:
         "El resolutor local no pudo resolver las fuentes del catálogo: se muestran las selecciones integradas",
@@ -1236,6 +1237,8 @@ sklm: {
       remoteBadge: "Registro",
       remoteLoading: "Cargando el registro oficial…",
       remoteError: "Registro no disponible: se muestran las selecciones integradas",
+      remotePartial: "Algunas fuentes del mercado no están disponibles ({{names}})",
+      retry: "Reintentar",
       manageSources: "Fuentes",
       sourcesHint: "Consulta varias fuentes a la vez. Las fuentes de registro hablan el protocolo oficial MCP; las de catálogo son archivos JSON estáticos con el esquema del mercado.",
       addSource: "Añadir fuente",

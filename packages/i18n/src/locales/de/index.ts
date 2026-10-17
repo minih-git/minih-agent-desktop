@@ -843,6 +843,7 @@ sklm: {
       proxyHint: "Diese Prüfung löst den Host lokal auf, der Download selbst würde über Ihren Proxy laufen. Bei Proxy oder VPN: Einstellungen → Allgemein → Netzwerk prüfen.",
       failureDetail: "Details: ",
       retryPreview: "Erneut versuchen",
+      retryCatalog: "Erneut versuchen",
       remoteErrorPolicy: "Katalogquellen wurden von der Adressprüfung der App blockiert – integrierte Auswahl wird angezeigt",
       remoteErrorUnresolved:
         "Der lokale Resolver konnte die Katalogquellen nicht auflösen – integrierte Auswahl wird angezeigt",
@@ -1236,6 +1237,8 @@ sklm: {
       remoteBadge: "Registry",
       remoteLoading: "Offizielle Registry wird geladen…",
       remoteError: "Registry nicht erreichbar – integrierte Auswahl wird angezeigt",
+      remotePartial: "Einige Marktquellen sind nicht verfügbar ({{names}})",
+      retry: "Erneut versuchen",
       manageSources: "Quellen",
       sourcesHint: "Mehrere Marktquellen gleichzeitig abfragen. Registry-Quellen sprechen das offizielle MCP-Registrierungsprotokoll; Katalogquellen sind statische JSON-Dateien im Markt-Schema.",
       addSource: "Quelle hinzufügen",

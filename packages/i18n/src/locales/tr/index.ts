@@ -852,6 +852,7 @@ sklm: {
       proxyHint: "Bu denetim ana makineyi yerel olarak çözer, indirme ise proxy üzerinden yapılır. Proxy veya VPN kullanıyorsanız Ayarlar → Genel → Ağ bölümüne bakın.",
       failureDetail: "Ayrıntılar: ",
       retryPreview: "Yeniden dene",
+      retryCatalog: "Yeniden dene",
       remoteErrorPolicy: "Uygulamanın adres denetimi katalog kaynaklarını engelledi – yerleşik seçkiler gösteriliyor",
       remoteErrorUnresolved:
         "Yerel çözümleyici katalog kaynaklarını çözemedi – yerleşik seçkiler gösteriliyor",
@@ -1240,6 +1241,8 @@ sklm: {
       remoteBadge: "Kayıt",
       remoteLoading: "Resmî kayıt yükleniyor…",
       remoteError: "Kayıt erişilemiyor – yerleşik seçkiler gösteriliyor",
+      remotePartial: "Bazı market kaynakları kullanılamıyor ({{names}})",
+      retry: "Yeniden dene",
       manageSources: "Kaynaklar",
       sourcesHint: "Birden fazla market kaynağını aynı anda sorgular. Kayıt kaynakları resmî MCP kayıt protokolünü; katalog kaynakları market şemasında statik JSON dosyalarını kullanır.",
       addSource: "Kaynak ekle",

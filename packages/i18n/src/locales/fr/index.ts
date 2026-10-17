@@ -843,6 +843,7 @@ sklm: {
       proxyHint: "Ce contrôle résout l'hôte localement, alors que le téléchargement passerait par votre proxy. Si vous utilisez un proxy ou un VPN, vérifiez Paramètres → Général → Réseau.",
       failureDetail: "Détails : ",
       retryPreview: "Réessayer",
+      retryCatalog: "Réessayer",
       remoteErrorPolicy: "Les sources du catalogue ont été bloquées par le contrôle d'adresse de l'application – sélection intégrée affichée",
       remoteErrorUnresolved:
         "Le résolveur local n'a pas pu résoudre les sources du catalogue – sélection intégrée affichée",
@@ -1236,6 +1237,8 @@ sklm: {
       remoteBadge: "Registre",
       remoteLoading: "Chargement du registre officiel…",
       remoteError: "Registre inaccessible – sélection intégrée affichée",
+      remotePartial: "Certaines sources du marché sont indisponibles ({{names}})",
+      retry: "Réessayer",
       manageSources: "Sources",
       sourcesHint: "Interroge plusieurs sources à la fois. Les sources de registre parlent le protocole officiel MCP ; les sources de catalogue sont des fichiers JSON statiques au schéma du marché.",
       addSource: "Ajouter une source",
