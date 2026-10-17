@@ -9,7 +9,7 @@
 
 ## Visual baseline (Codex-aligned)
 
-The desktop shell targets a 1:1 visual match with the local Codex desktop client (ChatGPT.app electron-dark): charcoal surfaces (`#181818`), neutral gray scale (not blue-slate), ~275px sidebar, 46px toolbar rhythm, and a floating pill composer. Semantic token names remain stable; values follow the Codex gray system with a **neutral gray accent** (no blue brand accent).
+The desktop shell targets a 1:1 visual match with the local Codex desktop client (ChatGPT.app electron-dark): charcoal surfaces (`#181818`), neutral gray scale (not blue-slate), ~275px sidebar, 46px toolbar rhythm, and a floating pill composer. Semantic token names remain stable; values follow the Codex gray system with a **neutral gray accent** (no blue brand accent) for app chrome — plus one **prose accent** (Codex CLI ChatGPT blue) reserved for reading-surface text semantics: chat links, inline-code ink, task checkboxes, and the copyable selection fill. Chrome (buttons, controls, focus rings) stays monochrome; the blue never leaves the prose surface.
 
 ## 2. Non-goals
 
@@ -60,10 +60,10 @@ selection is suppressed for chrome by default. The selection contract is:
   an equivalent explicit `user-select: text` rule).
 - The Electron renderer sets both `user-select` and `-webkit-user-select`;
   selection rules must not remove focus-visible rings or window drag regions.
-- Copyable selection paint uses the monochrome accent contract via
-  `::selection` (`color-mix` of `--ds-text-primary` at ~18% over the surface,
-  text remains `--ds-text-primary`). Browser-default blue highlights are not
-  allowed on shell surfaces.
+- Copyable selection paint follows the Codex transcript contract via
+  `::selection`: a subtle `--ds-prose-selection` fill (prose-accent tint,
+  ~30% dark / ~45% light) with text remaining `--ds-text-primary`.
+  Browser-default blue highlights are not allowed on shell surfaces.
 - `caret-color` and `accent-color` resolve to `--ds-text-primary` /
   `--ds-accent` so native carets and form accents stay on-theme.
 - Focus-visible rings use `color-mix(in oklab, var(--ds-accent) 80%, transparent)`
@@ -189,6 +189,8 @@ All color references in components use **semantic token names**, never raw hex v
 | `--color-accent` | `#FFFFFF` (dark) / `#1a1c1f` (light) | inverted gray ink | Primary accent, CTA |
 | `--color-accent-hover` | `#EDEDED` (dark) / `#303030` (light) | gray-100 / gray-700 | Accent hover |
 | `--color-accent-soft` | `#AFAFAF` (dark) / `#5d5d5d` (light) | gray-300 / gray-500 | Soft accent, links |
+| `--ds-prose-accent` | `#63a8f8` (dark) / `#1c64c8` (light) | Codex CLI ChatGPT blue | Prose-only accent: chat links, inline-code ink, task checkboxes, selection fill. Never used for chrome |
+| `--ds-prose-selection` | accent tint ~30% (dark) / ~45% (light) | — | Copyable selection fill (`::selection`) |
 | `--color-success` | `#22C55E` | `text-green-500` | Success, run complete |
 | `--color-warning` | `#F59E0B` | `text-amber-500` | Warning, caution |
 | `--color-error` | `#EF4444` | `text-red-500` | Error, denied |
@@ -356,6 +358,16 @@ The following CSS custom properties stub is the canonical bridge between spec to
 
 Implementation note: Tailwind v4 supports CSS-first configuration. The `@theme` directive maps custom properties to utility classes (`bg-bg-primary`, `text-text-primary`, etc.). Implementation should validate naming to avoid double-prefix collision (e.g., `bg-bg` is awkward — consider aliasing to `bg-primary`, `text-primary` etc. at the Tailwind level).
 
+### 4.7 Text ink contrast floors (Codex parity)
+
+Codex's TUI enforces a WCAG floor on informative text (`MIN_TEXT_CONTRAST = 4.5`, codex-rs/tui/src/style/contrast.rs); the renderer ports the same discipline:
+
+- **Informative text ink keeps ≥ 4.5:1** on every surface it can paint on (`bg-primary`, `bg-secondary`, tile over `bg-primary`), in both themes. This covers `--ds-text-primary/secondary/muted`, `--ds-prose-accent`, and the status inks (`--ds-success/warning/error/info`).
+- **Quiet prose tiers are audited too**: `color:` values in `prose.css` that mix toward `transparent` must clear the floor once composited; decorative glyphs (list markers) and placeholder/disabled ink carry an explicit, reasoned lower floor instead of being skipped.
+- **Muted tones derive from the painted surface** (alpha mixes of the ink over the background), never flat hex picked per surface — so hover fills and elevated tiles cannot silently break harmony or contrast.
+- **Status colors carry meaning only** (success / warning / error): they appear exclusively on status semantics, stay hue-distinct from each other (warning never reads as a second error red), and are never dimmed.
+- The guard is mechanical: `pnpm check:contrast` (`scripts/check-text-contrast.mjs`) resolves tokens per theme, composites over the audited surfaces, and fails below the floor. It runs in CI next to the other style guards.
+
 ## 5. Typography
 
 ### 5.1 Font stacks
@@ -419,7 +431,7 @@ Letter-spacing tokens: `--tracking-tighter` −0.03em, `--tracking-tight` −0.0
 
 - Code blocks and tool output: `--text-sm`/`--text-sm-plus` with `font-mono`
 - Inline code within messages: `--text-sm-plus` `font-mono`, soft text-tint background, borderless, rounded
-- Chat prose (`.prose-chat`) uses `--text-base` / `--leading-prose` for body, with a heading ramp of `text-xl` → `text-lg-plus` → `text-lg` → `text-base-plus` → `text-base` so multi-block answers stay scannable without document-scale drama. Headings carry no rules/borders (hierarchy comes from size, weight, and space above); links keep a soft permanent underline that firms up on hover instead of relying on color alone; blockquotes are a quiet 2px left rail without a background fill
+- Chat prose (`.prose-chat`) uses `--text-base` / `--leading-prose` for body, with a heading ramp of `text-xl` → `text-lg-plus` → `text-lg` → `text-base-plus` → `text-base` so multi-block answers stay scannable without document-scale drama. Headings carry no rules/borders (hierarchy comes from size, weight, and space above); links carry the prose accent plus a soft permanent underline that firms up on hover, so color is never the only discoverability cue; list rhythm is a settling policy (Codex `ListSpacing` parity): sibling items stay compact while a message streams (`[data-streaming]` on the prose root) and get uniform breathing room once the message settles
 
 ### 5.4 Weight rules
 

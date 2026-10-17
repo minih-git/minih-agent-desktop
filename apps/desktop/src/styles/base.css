@@ -111,10 +111,11 @@ textarea:disabled {
   outline-offset: 2px;
 }
 
-/* Theme-aware text selection keeps the monochrome accent contract on
- * copyable surfaces (transcript, code, inputs). Chrome stays non-selectable. */
+/* Theme-aware text selection follows the Codex transcript contract: a subtle
+ * prose-accent fill on copyable surfaces (transcript, code, inputs), with the
+ * primary ink kept readable on the tint. Chrome stays non-selectable. */
 ::selection {
-  background: color-mix(in oklab, var(--ds-text-primary) 18%, transparent);
+  background: var(--ds-prose-selection);
   color: var(--ds-text-primary);
 }
 

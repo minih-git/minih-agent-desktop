@@ -116,10 +116,37 @@ test("light theme markdown uses paper-quiet surfaces", () => {
     #1a1c1f they used to hardcode: paint-identical, and now a contributed theme
     can move the whole light ink tier at once (issue #341).
   */
-  // Links keep the underline from the base rule and only soften its colour here.
+  /*
+    Links carry the prose accent (Codex parity: one blue accent for reading-
+    surface text semantics) plus the permanent underline from the base rule.
+    The accent token flips per theme, so — like the table tiles — no light-only
+    colour override exists.
+  */
   assert.match(
     stylesSource,
-    /:root\[data-theme="light"\] \.prose-chat a\s*\{[^}]*text-decoration-color:\s*color-mix\(in oklab,\s*var\(--ds-text-primary\) 30%/,
+    /\.prose-chat a\s*\{[^}]*color:\s*var\(--ds-prose-accent\)/,
+  );
+  assert.match(
+    stylesSource,
+    /\.prose-chat a\s*\{[^}]*text-decoration-color:\s*color-mix\(in oklab,\s*var\(--ds-prose-accent\) 45%/,
+  );
+  assert.doesNotMatch(
+    stylesSource,
+    /:root\[data-theme="light"\] \.prose-chat a\s*\{/,
+  );
+  // The accent pair is themed and clears the contrast floor (dark #63a8f8 /
+  // light #1c64c8, scripts/check-text-contrast.mjs).
+  assert.match(stylesSource, /--ds-prose-accent:\s*#63a8f8;/);
+  assert.match(stylesSource, /--ds-prose-accent:\s*#1c64c8;/);
+  assert.match(
+    stylesSource,
+    /::selection\s*\{[^}]*background:\s*var\(--ds-prose-selection\)/,
+  );
+  // List rhythm is a settling policy (Codex ListSpacing parity): compact while
+  // the prose root carries [data-streaming], breathing once settled.
+  assert.match(
+    stylesSource,
+    /\.prose-chat:not\(\[data-streaming\]\) > ul > li,/,
   );
   assert.match(
     stylesSource,

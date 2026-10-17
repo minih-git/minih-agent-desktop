@@ -75,6 +75,7 @@
     "check:pi-patches": "node scripts/check-pi-patches.mjs",
     "check:release-docs": "node scripts/check-release-docs.mjs",
     "check:agent-policy": "node scripts/check-agent-policy-sync.mjs",
+    "check:contrast": "node scripts/check-text-contrast.mjs",
     "check:pr-base": "node scripts/check-pr-base-main.mjs",
     "docs:dev": "pnpm --filter @minih-agent/docs dev",
     "docs:build": "pnpm --filter @minih-agent/docs build",
