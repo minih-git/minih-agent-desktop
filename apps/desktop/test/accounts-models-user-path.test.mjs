@@ -303,8 +303,28 @@ window.accountsProbe = async ({ width, height }) => {
     () => document.querySelector(".add-models-dialog"),
     "the add-models dialog did not open",
   );
-  const firstPage = [...dialog.querySelectorAll("[data-model-id]")].map((node) => node.getAttribute("data-model-id"));
+  const firstPageNodes = [...dialog.querySelectorAll("[data-model-id]")];
+  const firstPage = firstPageNodes.map((node) => node.getAttribute("data-model-id"));
   const dialogCards = firstPage.length;
+  const cardHeights = new Set(firstPageNodes.map((node) => Math.round(node.getBoundingClientRect().height)));
+  if (cardHeights.size !== 1) {
+    throw new Error("Dialog model cards do not have uniform height: " + JSON.stringify([...cardHeights]));
+  }
+  const openaiVendorPill = await waitFor(
+    () => dialog.querySelector('[data-vendor-filter="OpenAI"]'),
+    "the OpenAI vendor filter pill did not render",
+  );
+  flushSync(() => openaiVendorPill.click());
+  await waitFor(
+    () => dialog.querySelectorAll("[data-model-id]").length === 1,
+    "clicking the OpenAI vendor pill did not filter to 1 model",
+  );
+  const allVendorPill = dialog.querySelector('[data-vendor-filter="all"]');
+  flushSync(() => allVendorPill.click());
+  await waitFor(
+    () => dialog.querySelectorAll("[data-model-id]").length === 12,
+    "clicking the All vendors pill did not restore the 12-card page",
+  );
 
   // The shared toolbar search has a horizontal flex basis. In this column
   // dialog its wrapper must stay input-height, not reserve that basis vertically.
@@ -379,6 +399,10 @@ window.accountsProbe = async ({ width, height }) => {
 
   // 3) Configure opens a modal dialog, not an inline drawer in the card.
   await waitFor(() => cardIds().length === 1, "the chosen model card did not render");
+  const vendorGroupRendered = document.querySelector('[data-vendor-group="OpenAI"] .models-vendor-group-title')?.textContent === "OpenAI";
+  if (!vendorGroupRendered) {
+    throw new Error("Chosen models page did not render the OpenAI vendor group header");
+  }
   flushSync(() => button("Configure").click());
   const drawer = await waitFor(
     () => document.querySelector(".model-configure-dialog"),

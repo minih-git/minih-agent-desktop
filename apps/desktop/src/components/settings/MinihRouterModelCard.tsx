@@ -10,6 +10,7 @@ import { IconCopy } from "../icons";
 import {
   cachePriceText,
   formatContextTokens,
+  modelVendorLabel,
   priceCell,
 } from "./minih-router-format";
 
@@ -47,16 +48,21 @@ export function MinihRouterModelCard({
 }: MinihRouterModelCardProps) {
   const { t } = useTranslation();
   const showToast = useAppStore((state) => state.showToast);
+  const vendorLabel = modelVendorLabel(model, t("settings.minihRouterVendorOther"));
   const context = formatContextTokens(model.contextWindow);
   const cache = cachePriceText(model.price, locale, t);
   const meta = [
+    unpricedLabel ?? null,
     context ? t("settings.minihRouterContext", { tokens: context }) : null,
     cache,
     model.tieredPricing ? t("settings.minihRouterTiered") : null,
   ].filter((entry): entry is string => Boolean(entry));
+  const metaText = meta.join(" · ");
   const from = model.multiplePrices ? (
     <span className="minih-router-price-from">{t("settings.minihRouterPriceFrom")}</span>
   ) : null;
+
+  const canToggle = Boolean(selectable && !configured && !busy);
 
   const copy = () => {
     void navigator.clipboard.writeText(model.id).then(
@@ -66,23 +72,44 @@ export function MinihRouterModelCard({
     );
   };
 
+  const cardClasses = [
+    "minih-router-model",
+    selectable ? "is-selectable" : "",
+    selected && !configured ? "is-selected" : "",
+    configured ? "is-configured" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <li className="minih-router-model" data-model-id={model.id}>
+    <li
+      className={cardClasses}
+      data-model-id={model.id}
+      data-model-vendor={vendorLabel}
+      onClick={(event) => {
+        if (!canToggle) return;
+        const target = event.target as HTMLElement | null;
+        if (target?.closest("button, input, a")) return;
+        onToggle?.(model);
+      }}
+    >
       <div className="minih-router-model-top">
-        <span className="minih-router-model-vendor">{model.vendor}</span>
+        <span className="minih-router-model-vendor" title={vendorLabel}>
+          {vendorLabel}
+        </span>
         <span className="minih-router-model-tags">
+          {configured ? <Badge tone="success">{t("settings.minihRouterInUse")}</Badge> : null}
+          <Badge>{t(CATEGORY_KEYS[model.category])}</Badge>
           {selectable ? (
             <input
               type="checkbox"
               className="minih-router-model-check"
               checked={selected}
-              disabled={busy}
+              disabled={busy || configured}
               aria-label={t("settings.minihRouterSelectModel", { model: model.id })}
               onChange={() => onToggle?.(model)}
             />
           ) : null}
-          {configured ? <Badge tone="success">{t("settings.minihRouterInUse")}</Badge> : null}
-          <Badge>{t(CATEGORY_KEYS[model.category])}</Badge>
         </span>
       </div>
       <div className="minih-router-model-name">
@@ -92,12 +119,14 @@ export function MinihRouterModelCard({
           className="minih-router-copy"
           aria-label={t("settings.minihRouterCopyModel")}
           title={t("settings.minihRouterCopyModel")}
-          onClick={copy}
+          onClick={(event) => {
+            event.stopPropagation();
+            copy();
+          }}
         >
           <IconCopy size={12} />
         </button>
       </div>
-      {unpricedLabel ? <div className="minih-router-model-meta">{unpricedLabel}</div> : null}
       <dl className="minih-router-model-prices">
         <div>
           <dt>{t("settings.minihRouterInputPrice")}</dt>
@@ -114,7 +143,12 @@ export function MinihRouterModelCard({
           </dd>
         </div>
       </dl>
-      {meta.length > 0 ? <div className="minih-router-model-meta">{meta.join(" · ")}</div> : null}
+      <div
+        className={metaText ? "minih-router-model-meta" : "minih-router-model-meta is-empty"}
+        title={metaText || undefined}
+      >
+        {metaText || "\u00a0"}
+      </div>
     </li>
   );
 }

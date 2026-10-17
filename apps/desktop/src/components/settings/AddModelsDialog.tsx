@@ -1,19 +1,27 @@
 /**
  * The add-models dialog: the gateway's whole catalog as selectable cards, one
- * page at a time, with search — the same plaza the account panel offered, now
- * the models page's only entry into it.
+ * page at a time, with search and vendor filter pills — the same plaza the
+ * account panel offered, now the models page's entry into it.
  *
- * Selection survives paging and searching (it is a set of ids plus the plaza
- * rows that carry them); models already on the row show as added and cannot be
- * re-picked.
+ * Selection survives paging, vendor filtering and searching (it is a set of
+ * ids plus the plaza rows that carry them); models already on the row show as
+ * added and cannot be re-picked.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { MinihRouterModel } from "@minih-agent/shared";
+import type { MinihRouterModel, MinihRouterModelPage } from "@minih-agent/shared";
 import { OverlayBackdrop, Button, Input, portalOverlay } from "../ui";
 import { IconChevronLeft, IconChevronRight, IconSearch } from "../icons";
 import { MinihRouterModelCard } from "./MinihRouterModelCard";
-import { MINIH_ROUTER_MODEL_PAGE_SIZE, useMinihRouterModels } from "./useMinihRouter";
+import {
+  filterModelsByVendorAndQuery,
+  summarizeModelVendors,
+} from "./minih-router-format";
+import {
+  MINIH_ROUTER_MODEL_PAGE_SIZE,
+  useMinihRouterCatalog,
+  useMinihRouterModels,
+} from "./useMinihRouter";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -39,6 +47,7 @@ export function AddModelsDialog({
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
+  const [selectedVendor, setSelectedVendor] = useState<string>("all");
   // Bumped by Retry: the hook refetches when its request key or this changes.
   const [revision, setRevision] = useState(0);
   const [selected, setSelected] = useState<Map<string, MinihRouterModel>>(new Map());
@@ -58,6 +67,32 @@ export function AddModelsDialog({
     { page, pageSize: MINIH_ROUTER_MODEL_PAGE_SIZE, query },
     revision,
   );
+  const catalog = useMinihRouterCatalog(providerId, revision);
+
+  const otherVendorLabel = t("settings.minihRouterVendorOther");
+  const vendorSummaries = useMemo(
+    () => summarizeModelVendors(catalog.data ?? models.data?.items ?? [], otherVendorLabel),
+    [catalog.data, models.data?.items, otherVendorLabel],
+  );
+  const totalCatalogCount = catalog.data?.length ?? models.data?.totalItems ?? 0;
+
+  const activePageData: MinihRouterModelPage | null = useMemo(() => {
+    if (selectedVendor === "all" || !catalog.data) {
+      return models.data;
+    }
+    const filtered = filterModelsByVendorAndQuery(catalog.data, selectedVendor, query);
+    const totalItems = filtered.length;
+    const totalPages = totalItems > 0 ? Math.ceil(totalItems / MINIH_ROUTER_MODEL_PAGE_SIZE) : 0;
+    const safePage = totalPages > 0 ? Math.min(page, totalPages) : 1;
+    const start = (safePage - 1) * MINIH_ROUTER_MODEL_PAGE_SIZE;
+    return {
+      items: filtered.slice(start, start + MINIH_ROUTER_MODEL_PAGE_SIZE),
+      page: safePage,
+      pageSize: MINIH_ROUTER_MODEL_PAGE_SIZE,
+      totalItems,
+      totalPages,
+    };
+  }, [selectedVendor, catalog.data, models.data, query, page]);
 
   const configuredSet = useMemo(
     () => new Set(configuredIds.map((id) => id.toLowerCase())),
@@ -77,10 +112,10 @@ export function AddModelsDialog({
   // exactly these, never the already-configured ones (they are not togglable).
   const selectableItems = useMemo(
     () =>
-      (models.data?.items ?? []).filter(
+      (activePageData?.items ?? []).filter(
         (model) => !configuredSet.has(model.id.toLowerCase()),
       ),
-    [models.data?.items, configuredSet],
+    [activePageData?.items, configuredSet],
   );
   const allVisibleSelected =
     selectableItems.length > 0 &&
@@ -141,31 +176,86 @@ export function AddModelsDialog({
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
-        <p className="minih-router-price-hint">{t("settings.minihRouterPriceHint")}</p>
 
-        {models.data && models.data.items.length > 0 ? (
-          <label className="add-models-select-all">
-            <input
-              type="checkbox"
-              checked={allVisibleSelected}
-              disabled={busy || selectableItems.length === 0}
-              ref={(el) => {
-                if (el) el.indeterminate = someVisibleSelected;
-              }}
-              aria-label={
-                allVisibleSelected
-                  ? t("settings.deselectAllVisibleModels")
-                  : t("settings.selectAllVisibleModels")
+        {vendorSummaries.length > 0 ? (
+          <div
+            className="add-models-vendor-tabs"
+            role="tablist"
+            aria-label={t("settings.minihRouterVendorAll")}
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={selectedVendor === "all"}
+              data-vendor-filter="all"
+              className={
+                selectedVendor === "all"
+                  ? "add-models-vendor-pill is-active"
+                  : "add-models-vendor-pill"
               }
-              onChange={(event) => toggleAllVisible(event.target.checked)}
-            />
-            <span>
-              {allVisibleSelected
-                ? t("settings.deselectAllVisibleModels")
-                : t("settings.selectAllVisibleModels")}
-            </span>
-          </label>
+              onClick={() => {
+                setSelectedVendor("all");
+                setPage(1);
+              }}
+            >
+              <span>{t("settings.minihRouterVendorAll")}</span>
+              {totalCatalogCount > 0 ? (
+                <span className="add-models-vendor-count">{totalCatalogCount}</span>
+              ) : null}
+            </button>
+            {vendorSummaries.map((vendor) => {
+              const active = selectedVendor.toLowerCase() === vendor.key.toLowerCase();
+              return (
+                <button
+                  key={vendor.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  data-vendor-filter={vendor.key}
+                  className={
+                    active ? "add-models-vendor-pill is-active" : "add-models-vendor-pill"
+                  }
+                  onClick={() => {
+                    setSelectedVendor(vendor.key);
+                    setPage(1);
+                  }}
+                >
+                  <span>{vendor.label}</span>
+                  <span className="add-models-vendor-count">{vendor.count}</span>
+                </button>
+              );
+            })}
+          </div>
         ) : null}
+
+        <div className="add-models-toolbar">
+          {activePageData && activePageData.items.length > 0 ? (
+            <label className="add-models-select-all">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                disabled={busy || selectableItems.length === 0}
+                ref={(el) => {
+                  if (el) el.indeterminate = someVisibleSelected;
+                }}
+                aria-label={
+                  allVisibleSelected
+                    ? t("settings.deselectAllVisibleModels")
+                    : t("settings.selectAllVisibleModels")
+                }
+                onChange={(event) => toggleAllVisible(event.target.checked)}
+              />
+              <span>
+                {allVisibleSelected
+                  ? t("settings.deselectAllVisibleModels")
+                  : t("settings.selectAllVisibleModels")}
+              </span>
+            </label>
+          ) : (
+            <span />
+          )}
+          <p className="minih-router-price-hint">{t("settings.minihRouterPriceHint")}</p>
+        </div>
 
         {models.state === "error" ? (
           <div className="minih-router-status is-error" role="alert">
@@ -180,19 +270,19 @@ export function AddModelsDialog({
             </Button>
           </div>
         ) : null}
-        {models.data === null && models.state === "loading" ? (
+        {activePageData === null && models.state === "loading" ? (
           <p className="minih-router-status">{t("settings.minihRouterLoading")}</p>
         ) : null}
-        {models.data && models.data.items.length === 0 ? (
+        {activePageData && activePageData.items.length === 0 ? (
           <p className="minih-router-status">{t("settings.minihRouterModelsEmpty")}</p>
         ) : null}
-        {models.data && models.data.items.length > 0 ? (
+        {activePageData && activePageData.items.length > 0 ? (
           <ul
             className="minih-router-model-grid add-models-grid"
             data-model-section="plaza"
             aria-busy={models.state === "loading" ? "true" : undefined}
           >
-            {models.data.items.map((model) => (
+            {activePageData.items.map((model) => (
               <MinihRouterModelCard
                 key={model.id}
                 model={model}
@@ -210,29 +300,29 @@ export function AddModelsDialog({
           </ul>
         ) : null}
 
-        {models.data && models.data.totalPages > 1 ? (
+        {activePageData && activePageData.totalPages > 1 ? (
           <nav className="minih-router-pagination" aria-label={t("settings.minihRouterModels")}>
             <Button
               variant="ghost"
               size="sm"
               aria-label={t("settings.minihRouterPrevPage")}
-              disabled={page <= 1 || models.state === "loading"}
+              disabled={activePageData.page <= 1 || models.state === "loading"}
               onClick={() => setPage((value) => Math.max(1, value - 1))}
             >
               <IconChevronLeft size={14} />
             </Button>
             <span className="minih-router-page-status">
               {t("settings.minihRouterPageStatus", {
-                page: models.data.page,
-                pages: models.data.totalPages,
-                total: models.data.totalItems,
+                page: activePageData.page,
+                pages: activePageData.totalPages,
+                total: activePageData.totalItems,
               })}
             </span>
             <Button
               variant="ghost"
               size="sm"
               aria-label={t("settings.minihRouterNextPage")}
-              disabled={page >= models.data.totalPages || models.state === "loading"}
+              disabled={activePageData.page >= activePageData.totalPages || models.state === "loading"}
               onClick={() => setPage((value) => value + 1)}
             >
               <IconChevronRight size={14} />
@@ -260,6 +350,6 @@ export function AddModelsDialog({
           </div>
         </div>
       </div>
-    </OverlayBackdrop>
+    </OverlayBackdrop>,
   );
 }

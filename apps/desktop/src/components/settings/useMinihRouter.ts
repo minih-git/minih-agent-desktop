@@ -7,14 +7,17 @@
  * page can never overwrite the page the user has since moved to.
  */
 import { useCallback, useEffect, useState } from "react";
-import type {
-  EasyTierSettings,
-  EasyTierStatus,
-  MinihRouterAccount,
-  MinihRouterModel,
-  MinihRouterModelPage,
-  ProviderPublic,
+import {
+  MINIH_ROUTER_LOOKUP_MAX_MODELS,
+  MINIH_ROUTER_MODEL_PAGE_SIZE_MAX,
+  type EasyTierSettings,
+  type EasyTierStatus,
+  type MinihRouterAccount,
+  type MinihRouterModel,
+  type MinihRouterModelPage,
+  type ProviderPublic,
 } from "@minih-agent/shared";
+import { inferModelVendor } from "./minih-router-format";
 import { api } from "../../lib/api";
 
 export type MinihRouterLoad<T> =
@@ -115,6 +118,69 @@ export function useMinihRouterModels(
   return load;
 }
 
+/**
+ * Reads the gateway's full model catalog across pages (100 models per page) so
+ * the add-models dialog can list every vendor with accurate counts and filter
+ * by vendor client-side without losing models on later pages.
+ */
+export function useMinihRouterCatalog(
+  providerId: string,
+  revision: number,
+): MinihRouterLoad<MinihRouterModel[]> {
+  const [load, setLoad] = useState<MinihRouterLoad<MinihRouterModel[]>>({
+    state: "loading",
+    data: null,
+  });
+  useEffect(() => {
+    if (!providerId) {
+      setLoad({ state: "ready", data: [] });
+      return;
+    }
+    let current = true;
+    setLoad((previous) => ({ state: "loading", data: previous.data }));
+    void (async () => {
+      try {
+        const items: MinihRouterModel[] = [];
+        const seen = new Set<string>();
+        let page = 1;
+        let totalPages = 1;
+        do {
+          const res = await api.minihRouterModels({
+            providerId,
+            page,
+            pageSize: MINIH_ROUTER_MODEL_PAGE_SIZE_MAX,
+          });
+          if (!current) return;
+          totalPages = res.totalPages;
+          for (const item of res.items) {
+            const key = item.id.toLowerCase();
+            if (!seen.has(key)) {
+              seen.add(key);
+              items.push(item);
+            }
+          }
+          page += 1;
+        } while (page <= totalPages && items.length < MINIH_ROUTER_LOOKUP_MAX_MODELS);
+        if (current) {
+          setLoad({ state: "ready", data: items });
+        }
+      } catch (error: unknown) {
+        if (current) {
+          setLoad((previous) => ({
+            state: "error",
+            data: previous.data,
+            message: messageOf(error),
+          }));
+        }
+      }
+    })();
+    return () => {
+      current = false;
+    };
+  }, [providerId, revision]);
+  return load;
+}
+
 /** A configured model with whatever the gateway prices for it. */
 export type MinihRouterSelectedModel = {
   /** The row's configured model (its own limits stand in until a price exists). */
@@ -134,7 +200,7 @@ function unreportedModel(
   return {
     id: modelId,
     upstreamIds: [],
-    vendor: "",
+    vendor: inferModelVendor({ id: modelId }),
     category: "chat",
     protocols: [],
     price: { input: null, output: null, cacheRead: null, cacheWrite: null },

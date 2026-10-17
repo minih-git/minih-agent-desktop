@@ -1639,6 +1639,8 @@ sklm: {
     minihRouterCategoryVideo: "Video",
     minihRouterCategoryEmbedding: "Embedding",
     minihRouterCategoryCode: "Code",
+    minihRouterVendorAll: "All vendors",
+    minihRouterVendorOther: "Other",
     minihRouterLanTitle: "Virtual LAN Channel (EasyTier)",
     minihRouterLanDesc: "Routes Minih Router traffic over an encrypted P2P/relay tunnel and falls back to the public URL if unreachable.",
     minihRouterLanToggle: "Enable Virtual LAN channel",

@@ -1613,6 +1613,8 @@ sklm: {
     "minihRouterCategoryVideo": "Video",
     "minihRouterCategoryEmbedding": "Embedding",
     "minihRouterCategoryCode": "Code",
+    "minihRouterVendorAll": "Alle Anbieter",
+    "minihRouterVendorOther": "Sonstige",
     "minihRouterLanTitle": "Virtueller LAN-Kanal (EasyTier)",
     "minihRouterLanDesc": "Leitet Minih-Router-Verkehr über einen verschlüsselten P2P-/Relay-Tunnel und fällt bei Nichterreichbarkeit auf die öffentliche URL zurück.",
     "minihRouterLanToggle": "Virtuellen LAN-Kanal aktivieren",

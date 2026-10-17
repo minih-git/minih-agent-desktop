@@ -1617,6 +1617,8 @@ sklm: {
     minihRouterCategoryVideo: "视频生成",
     minihRouterCategoryEmbedding: "向量嵌入",
     minihRouterCategoryCode: "代码 / 工具",
+    minihRouterVendorAll: "全部厂商",
+    minihRouterVendorOther: "其他",
     minihRouterLanTitle: "虚拟局域网通道 (EasyTier)",
     minihRouterLanDesc: "通过加密 P2P/中继隧道直连 Minih Router，不可达时自动回退至公网地址。",
     minihRouterLanToggle: "启用虚拟局域网通道",

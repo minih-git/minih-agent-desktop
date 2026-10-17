@@ -6,11 +6,34 @@
  * unit prices keep up to four decimals so `$0.075` does not become `$0.08`.
  * Nothing here talks to IPC or React, so the rules are tested directly.
  */
-import type { MinihRouterModelPrice, MinihRouterQuota } from "@minih-agent/shared";
+import type {
+  MinihRouterModel,
+  MinihRouterModelPrice,
+  MinihRouterQuota,
+} from "@minih-agent/shared";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 const DAY_SECONDS = 86_400;
+
+export const OTHER_VENDOR_KEY = "__other__";
+
+const VENDOR_BY_MODEL_PREFIX: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^(?:gpt-|o[134]|chatgpt|dall-e|text-embedding|whisper|tts|codex)/i, "OpenAI"],
+  [/^claude/i, "Anthropic"],
+  [/^(?:gemini|gemma|imagen)/i, "Google"],
+  [/^deepseek/i, "DeepSeek"],
+  [/^(?:moonshot|kimi)/i, "Moonshot"],
+  [/^(?:glm|chatglm|cogview)/i, "Zhipu"],
+  [/^(?:minimax|abab)/i, "MiniMax"],
+  [/^(?:qwen|qwq|wanx|tongyi)/i, "Alibaba Cloud"],
+  [/^(?:doubao|skylark|seed)/i, "ByteDance"],
+  [/^grok/i, "xAI"],
+  [/^(?:mimo|miai|xiaomi)/i, "Xiaomi"],
+  [/^hunyuan/i, "Tencent"],
+  [/^(?:mistral|mixtral|codestral|devstral)/i, "Mistral"],
+  [/^(?:llama|meta)/i, "Meta"],
+];
 
 function amount(value: string | null | undefined): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -100,4 +123,128 @@ export function isModelConfigured(
 ): boolean {
   const target = modelId.toLowerCase();
   return (configured ?? []).some((model) => model.id.toLowerCase() === target);
+}
+
+/**
+ * Resolves the canonical vendor name for a gateway or configured model.
+ *
+ * Uses the gateway-provided `vendor` first, then matches known model families
+ * on the leaf id, then falls back to a `namespace/model` prefix (such as
+ * `Kwai-Kolors/Kolors` -> `Kwai-Kolors`). Returns `""` when unknown.
+ */
+export function inferModelVendor(model: { id: string; vendor?: string | null }): string {
+  const explicit = (model.vendor ?? "").trim();
+  if (explicit) return explicit;
+  const rawId = model.id.trim();
+  if (!rawId) return "";
+  const segments = rawId.split("/").map((part) => part.trim()).filter(Boolean);
+  const leaf = segments.at(-1) ?? rawId;
+  for (const [pattern, vendor] of VENDOR_BY_MODEL_PREFIX) {
+    if (pattern.test(leaf)) return vendor;
+  }
+  if (segments.length > 1 && segments[0]) {
+    for (const [pattern, vendor] of VENDOR_BY_MODEL_PREFIX) {
+      if (pattern.test(segments[0])) return vendor;
+    }
+    return segments[0];
+  }
+  return "";
+}
+
+/** Display label for a model vendor, using `otherLabel` when unknown. */
+export function modelVendorLabel(
+  model: { id: string; vendor?: string | null },
+  otherLabel: string,
+): string {
+  return inferModelVendor(model) || otherLabel;
+}
+
+export type ModelVendorSummary = {
+  /** Canonical vendor key (`OTHER_VENDOR_KEY` for uncategorized models). */
+  key: string;
+  label: string;
+  count: number;
+};
+
+/**
+ * Summarizes distinct vendors across a catalog of models, ordered by count
+ * descending (then alphabetically), with uncategorized models last.
+ */
+export function summarizeModelVendors(
+  models: readonly { id: string; vendor?: string | null }[],
+  otherLabel: string,
+): ModelVendorSummary[] {
+  const counts = new Map<string, { key: string; label: string; count: number }>();
+  for (const model of models) {
+    const inferred = inferModelVendor(model);
+    const key = inferred ? inferred : OTHER_VENDOR_KEY;
+    const label = inferred || otherLabel;
+    const existing = counts.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      counts.set(key, { key, label, count: 1 });
+    }
+  }
+  return [...counts.values()].sort((a, b) => {
+    if (a.key === OTHER_VENDOR_KEY && b.key !== OTHER_VENDOR_KEY) return 1;
+    if (b.key === OTHER_VENDOR_KEY && a.key !== OTHER_VENDOR_KEY) return -1;
+    if (b.count !== a.count) return b.count - a.count;
+    return a.label.localeCompare(b.label);
+  });
+}
+
+/** Filters catalog models by vendor key (`"all"` or a summary key) and search query. */
+export function filterModelsByVendorAndQuery(
+  models: readonly MinihRouterModel[],
+  vendorKey: string,
+  query: string,
+): MinihRouterModel[] {
+  const needle = query.trim().toLowerCase();
+  const targetVendor = vendorKey.trim();
+  return models.filter((model) => {
+    const vendor = inferModelVendor(model);
+    const key = vendor || OTHER_VENDOR_KEY;
+    if (targetVendor && targetVendor !== "all" && key.toLowerCase() !== targetVendor.toLowerCase()) {
+      return false;
+    }
+    if (!needle) return true;
+    if (model.id.toLowerCase().includes(needle)) return true;
+    if (vendor.toLowerCase().includes(needle)) return true;
+    return (model.upstreamIds ?? []).some((upstream) => upstream.toLowerCase().includes(needle));
+  });
+}
+
+export type ModelVendorGroup<T> = {
+  key: string;
+  label: string;
+  items: T[];
+};
+
+/**
+ * Groups items by their resolved model vendor while preserving first-seen
+ * vendor order (with uncategorized models placed last).
+ */
+export function groupModelsByVendor<T>(
+  items: readonly T[],
+  getModel: (item: T) => { id: string; vendor?: string | null },
+  otherLabel: string,
+): ModelVendorGroup<T>[] {
+  const groups = new Map<string, ModelVendorGroup<T>>();
+  for (const item of items) {
+    const inferred = inferModelVendor(getModel(item));
+    const key = inferred || OTHER_VENDOR_KEY;
+    const label = inferred || otherLabel;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.items.push(item);
+    } else {
+      groups.set(key, { key, label, items: [item] });
+    }
+  }
+  return [...groups.values()].sort((a, b) => {
+    if (a.key === OTHER_VENDOR_KEY && b.key !== OTHER_VENDOR_KEY) return 1;
+    if (b.key === OTHER_VENDOR_KEY && a.key !== OTHER_VENDOR_KEY) return -1;
+    return 0;
+  });
 }
