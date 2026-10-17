@@ -2,10 +2,10 @@
 
 import type { CatalogApiStyle, DiscoveryStyle } from "./model-catalog.js";
 import {
-  MINIH_ROUTER_DEFAULT_BASE_URL,
   MINIH_ROUTER_NAME,
   MINIH_ROUTER_PRESET_ID,
   MINIH_ROUTER_VENDOR_KEY,
+  minihRouterDefaultBaseUrl,
 } from "./minih-router.js";
 
 export const OPENCODE_GO_API_STYLE = "opencode_go" as const;
@@ -43,7 +43,9 @@ export const NAMED_ENDPOINT_PRESETS: readonly NamedEndpointPreset[] = [
     id: MINIH_ROUTER_PRESET_ID,
     vendorKey: MINIH_ROUTER_VENDOR_KEY,
     name: MINIH_ROUTER_NAME,
-    baseUrl: MINIH_ROUTER_DEFAULT_BASE_URL,
+    // Brand-resolved default deployment: minih rows point at router.hmini.org,
+    // hungraim builds at aiapi.hungraim.com (see ./brand.ts).
+    baseUrl: minihRouterDefaultBaseUrl(),
     apiStyle: "chat_completions",
     labelKey: "settings.presetMinihRouter",
     aliases: ["minihrouter", "hmini"],
@@ -550,6 +552,8 @@ export const DEEPSEEK_REASONING_REPLAY_PLACEHOLDER =
 
 export type DeepSeekRequestCompat = {
   requiresReasoningContentOnAssistantMessages: true;
+  /** DeepSeek endpoints reject the OpenAI-style `reasoning_effort` field. */
+  supportsReasoningEffort: false;
   /** When set, missing reasoning is filled with {@link DEEPSEEK_REASONING_REPLAY_PLACEHOLDER}. */
   requiresNonEmptyReasoningReplay?: true;
 };
@@ -563,10 +567,14 @@ export function deepseekRequestCompat(input: {
 }): DeepSeekRequestCompat | undefined {
   if (!isDeepSeekReasoningReplay(input)) return undefined;
   if (isOfficialDeepSeekEndpoint(input)) {
-    return { requiresReasoningContentOnAssistantMessages: true };
+    return {
+      requiresReasoningContentOnAssistantMessages: true,
+      supportsReasoningEffort: false,
+    };
   }
   return {
     requiresReasoningContentOnAssistantMessages: true,
+    supportsReasoningEffort: false,
     requiresNonEmptyReasoningReplay: true,
   };
 }

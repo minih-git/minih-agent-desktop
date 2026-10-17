@@ -14,7 +14,16 @@ const createdAt = "2026-09-01T00:00:00.000Z";
 function assert(value: unknown, label: string): asserts value {
   if (!value) throw new Error(`Long history: ${label}`);
 }
-const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+const frame = () => new Promise<void>((resolve) => {
+  // Headless runners (xvfb, hidden windows) may never deliver a frame, which
+  // would hang every `until` loop. rAF still wins when frames flow; the budget
+  // only unblocks the wait when the compositor is silent.
+  const budget = setTimeout(resolve, 250);
+  requestAnimationFrame(() => {
+    clearTimeout(budget);
+    resolve();
+  });
+});
 async function until(predicate: () => boolean, label: string, diagnostic?: () => unknown) {
   for (let attempt = 0; attempt < 180; attempt++) {
     if (predicate()) return;
@@ -28,8 +37,10 @@ const row = (id: string, role: UiMessage["role"], content: string, extra: Partia
   id, role, content, createdAt, status: "complete", ...extra,
 });
 const tool = (id: string): UiMessage => row(id, "tool", "Synthetic result", {
-  toolName: "Bash", toolCallId: id, toolStatus: "success",
-  toolArgs: { command: `printf ${id}` }, toolResult: { details: { stdout: "Synthetic result", exitCode: 0 } },
+  // A non-run tool so the fixture forms ordinary activity groups. A Bash row is
+  // standalone and would not join a group.
+  toolName: "Read", toolCallId: id, toolStatus: "success",
+  toolArgs: { path: `${id}.ts` }, toolResult: { details: { content: "Synthetic result" } },
 });
 function session(id: string, messages: UiMessage[]): FixtureSession {
   const reads = { count: 0 };
@@ -103,6 +114,14 @@ function Surface({ sessions, errors }: { sessions: FixtureSession[]; errors: unk
 export async function transcriptLongHistoryProbe() {
   // Store actions use the default i18next instance, not just React's provider.
   await i18n.init({ lng: "en", resources: { en: { translation: en } } });
+  /*
+    rAF can starve under headless/hidden windows, stranding every wait that
+    rides it — including the store's frame batcher. Drive frames from timers
+    instead: deterministic cadence, independent of the compositor.
+  */
+  const originalRaf = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) =>
+    setTimeout(() => callback(performance.now()), 16) as unknown as number) as typeof requestAnimationFrame;
   const initial = useAppStore.getState();
   const originalDateNow = Date.now;
   const wallTime = Date.now();
@@ -186,7 +205,7 @@ export async function transcriptLongHistoryProbe() {
       runningSessions: Object.fromEntries(sessions.map((item) => [item.summary.id, true])),
       isRunning: true, page: "chat", selectingSessionId: undefined,
       settings: { defaultMode: "agent", theme: "dark", enterToSend: true, onboardingDismissed: true,
-        ...initial.settings, smoothStreaming: false, thinkingDisplayMode: "detailed" },
+        ...initial.settings, smoothStreaming: false, showThinking: true },
     });
     // Seed canonical loaded snapshots through the real store subscription/cache
     // writer, rather than bypassing it with a projection builder or custom store.
@@ -323,20 +342,46 @@ export async function transcriptLongHistoryProbe() {
         assert(globalThis.__activityGroupRenders.length === 1, "live giant group must render exactly its changed group");
         // A real tool_update targets a middle row, not the assistant tail. Warm
         // its output shape before counting unrelated completed body accesses.
+        // The row is a `Read` call, so the partial carries `details.content` —
+        // the only field the read presentation renders (Bash progress uses
+        // `details.output`; non-run tools never emit that shape in production).
+        // The turn-process lane is collapsed at this point (a streamed answer
+        // owns the turn tail), and a folded ancestor keeps every nested row
+        // hidden: disclosure visibility is ancestry-based, not viewport-based.
+        // Expand the lane first, the same way a reader would, before touching
+        // any row inside it.
+        const processHeader = element<HTMLButtonElement>(".turn-process > .tool-activity-header");
+        if (processHeader.getAttribute("aria-expanded") !== "true") flushSync(() => processHeader.click());
+        await settled();
         const liveToolId = `${item.summary.id}-tool-128`;
         const liveTool = element<HTMLButtonElement>(`[data-message-id="${liveToolId}"] .tool-row-header`);
         if (liveTool.getAttribute("aria-expanded") !== "true") flushSync(() => liveTool.click());
-        send(item.summary.id, { type: "tool_update", toolCallId: liveToolId, partialResult: { details: { output: "warm tool output" } } });
+        await until(() => {
+          const body = host.querySelector(`[data-message-id="${liveToolId}"] .tool-row-body`);
+          if (!body) return false;
+          // Guard the actual invariant: no folded ancestor between the row and
+          // the transcript host, otherwise the updates below land on hidden UI.
+          let ancestor: HTMLElement | null = body;
+          while (ancestor && ancestor !== host) {
+            if (ancestor.hidden || ancestor.inert) return false;
+            ancestor = ancestor.parentElement;
+          }
+          return true;
+        }, "expanded tool row mounted its visible body");
+        // The row must be on screen: presentation defers formatting while the
+        // disclosure lane reports the row hidden, exactly like a real reader.
+        liveTool.scrollIntoView({ block: "center" });
+        await until(() => {
+          const row = host.querySelector(`[data-message-id="${liveToolId}"]`);
+          const rect = row?.getBoundingClientRect();
+          return rect !== undefined && rect !== null && rect.top >= 0 && rect.bottom <= window.innerHeight;
+        }, "live tool row scrolled into view");
+        send(item.summary.id, { type: "tool_update", toolCallId: liveToolId, partialResult: { details: { content: "warm tool output" } } });
         await until(() => host.querySelector(`[data-message-id="${liveToolId}"]`)?.textContent?.includes("warm tool output") === true,
-          "warm tool_update output", () => ({
-            message: useAppStore.getState().messages.find((message) => message.id === liveToolId),
-            groupExpanded: groupHeader.getAttribute("aria-expanded"),
-            toolExpanded: liveTool.getAttribute("aria-expanded"),
-            toolDom: host.querySelector(`[data-message-id="${liveToolId}"]`)?.outerHTML.slice(-3000),
-          }));
+          "warm tool_update output");
         await settled();
         item.reads.count = 0; globalThis.__activityGroupRenders = [];
-        send(item.summary.id, { type: "tool_update", toolCallId: liveToolId, partialResult: { details: { output: "fresh non-tail tool output" } } });
+        send(item.summary.id, { type: "tool_update", toolCallId: liveToolId, partialResult: { details: { content: "fresh non-tail tool output" } } });
         await until(() => host.querySelector(`[data-message-id="${liveToolId}"]`)?.textContent?.includes("fresh non-tail tool output") === true,
           "fresh tool_update output");
         await settled();
@@ -380,6 +425,7 @@ export async function transcriptLongHistoryProbe() {
   } finally {
     flushSync(() => root.unmount());
     Date.now = originalDateNow;
+    globalThis.requestAnimationFrame = originalRaf;
     observer?.disconnect(); host.remove();
     Object.assign(api, originals);
     if (clipboard) Object.defineProperty(navigator, "clipboard", clipboard);

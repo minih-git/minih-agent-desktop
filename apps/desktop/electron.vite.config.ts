@@ -56,6 +56,8 @@ export default defineConfig({
       // The main bundle is ESM (`type: module`), where Node does not provide
       // the CommonJS `__dirname` global used by Electron's relative asset paths.
       "__dirname": "import.meta.dirname",
+      // Build-time brand identity (see @minih-agent/shared brand.ts).
+      "__DESKTOP_BRAND__": JSON.stringify(process.env.DESKTOP_BRAND ?? "minih"),
     },
     build: {
       rollupOptions: {
@@ -102,6 +104,11 @@ export default defineConfig({
   },
   renderer: {
     root: ".",
+    define: {
+      // Build-time brand identity, mirrored from the main config so renderer
+      // code resolves the same brand as Main (see @minih-agent/shared brand.ts).
+      "__DESKTOP_BRAND__": JSON.stringify(process.env.DESKTOP_BRAND ?? "minih"),
+    },
     build: {
       // electron-vite's renderer preset hard-defaults minify to false, unlike
       // plain Vite. Enabling esbuild minification roughly halves the emitted

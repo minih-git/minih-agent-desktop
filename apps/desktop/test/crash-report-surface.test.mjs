@@ -308,7 +308,7 @@ test("ensureCrashDumpsDirectory is the installation-local Crashpad root", () => 
 
 test("startup starts Crashpad local-only, under dataDir, before ready", () => {
   assert.match(startupSource, /crashReporter\.start\(\{\s*uploadToServer: false,/);
-  assert.match(startupSource, /productName: APP_NAME/);
+  assert.match(startupSource, /productName: currentAppName\(\)/);
   assert.match(
     startupSource,
     /app\.setPath\(\s*"crashDumps",\s*ensureCrashDumpsDirectory\(deps\.dataDir\)\s*\)/,

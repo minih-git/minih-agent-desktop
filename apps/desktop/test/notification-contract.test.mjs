@@ -113,7 +113,7 @@ test("sidebar terminal outcomes are notification-backed, not lifecycle-backed", 
 });
 
 test("task and interactive native notifications keep separate visibility rules", () => {
-  assert.match(mainSource, /app\.setAppUserModelId\(APP_ID\)/);
+  assert.match(mainSource, /app\.setAppUserModelId\(currentAppId\(\)\)/);
   assert.match(mainSource, /mainWindow\.isFocused\(\)/);
   assert.match(mainSource, /SystemNotification\.isSupported\(\)/);
   assert.match(mainSource, /new SystemNotification/);

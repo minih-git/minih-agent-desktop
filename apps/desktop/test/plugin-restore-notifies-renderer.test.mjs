@@ -48,6 +48,8 @@ test("startup plugin restore notifies the renderer after every enabled plugin lo
     "@minih-agent/shared": {
       APP_NAME: "Minih Agent Desktop",
       APP_VERSION: "0.0.0-test",
+      currentAppName: () => "Minih Agent Desktop",
+      currentAppId: () => "org.hmini.agent",
       ErrorCodes: { HOST_UNAVAILABLE: "HOST_UNAVAILABLE" },
       IPC: { event: { hostStatus: "hostStatus", pluginChanged: "pluginChanged" } },
       PROTOCOL_VERSION: "test",

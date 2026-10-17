@@ -141,8 +141,8 @@ test("updater gates delivery mode by platform and delivery policy", () => {
   assert.match(updaterSource, /autoUpdater\.on\("error"/);
   assert.match(
     updaterSource,
-    /github\.com\/minih-git\/minih-agent-desktop\/releases/,
-    "releases fallback URL",
+    /RELEASES_URL = currentBrandProfile\(\)\.releasesUrl/,
+    "releases fallback URL resolves through the brand profile",
   );
   assert.match(
     updaterSource,

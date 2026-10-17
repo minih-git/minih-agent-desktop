@@ -36,6 +36,7 @@ import { registerComposerIpc } from "./composer-ipc";
 import { registerSpeechIpc } from "./speech-ipc";
 import { registerVoiceIpc } from "./voice-ipc";
 import { registerLiveVoiceIpc } from "./live-voice-ipc";
+import { createSessionTitleGenerator } from "../session-title-service";
 import type { LiveCallService } from "../live-voice/call-service";
 import type { LiveVoiceWidget } from "../live-voice/widget-window";
 import type { IpcRegistrar } from "./types";
@@ -426,6 +427,12 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     optionalWorkspaceRoot,
     composerCommandService,
     loadComposerTemplatesCached,
+    generateSessionTitle: createSessionTitleGenerator({
+      getHost,
+      resolveAgentRuntimeLaunch,
+      vendorOAuth,
+      logger,
+    }),
   });
 
   registerPluginIpc({

@@ -4,8 +4,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getModuleDirectory } from "../module-path";
 import {
-  APP_NAME,
   builtinWindowBackground,
+  currentAppName,
   IPC,
   MAC_TRAFFIC_LIGHT_POSITION,
   type CloseBehavior,
@@ -181,7 +181,7 @@ export async function createWindow({
     ...(restoredBounds ?? { width: 1200, height: 800 }),
     minWidth: initialMinWidth,
     minHeight: initialMinHeight,
-    title: APP_NAME,
+    title: currentAppName(),
     show: false,
     // Keep native edge/corner resizing explicit. Frameless chrome owns the
     // titlebar only; the OS remains responsible for the resize hit regions.

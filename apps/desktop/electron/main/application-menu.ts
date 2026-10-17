@@ -1,7 +1,7 @@
 import { Menu, type MenuItemConstructorOptions } from "electron";
 import {
-  APP_NAME,
   KEYBOARD_SHORTCUTS,
+  currentAppName,
   keybindingToElectronAccelerator,
   resolveKeybinding,
   type AppMenuCommand,
@@ -74,7 +74,7 @@ export function buildApplicationMenuTemplate({
 
   if (isMac) {
     template.push({
-      label: APP_NAME,
+      label: currentAppName(),
       submenu: [
         { role: "about" },
         appCommand(labels.menu.checkForUpdates, "checkForUpdates", dispatch),

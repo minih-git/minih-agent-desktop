@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.20.6",
+    date: "2026-10-17",
+    highlights: [
+      "Sessions name themselves: after the first message is sent, a model suggests a concise title right in the sidebar; manual renames always win, and a new Session titles card in Settings picks the model and thinking level.",
+      "Bash commands stand on their own line in the turn process, and the thinking display becomes a single toggle; command-heavy sessions no longer hide what ran.",
+      "Typographic refresh for the reading surface: Codex-style link accent and selection color, calmer streaming lists, and enforced WCAG contrast across themes.",
+      "Config-sync backups move to the Minih Router account backend - no S3 bucket needed; connect once on the account page and backups follow the gateway namespace.",
+      "A missing default data directory now offers recovery at startup instead of failing, and market catalogs gain a retry button when their sources fail.",
+      "Provider fixes: DeepSeek-style endpoints no longer reject the reasoning_effort field, and network proxy settings survive unrelated preference changes.",
+      "Chat diagrams and subagent graphs trim stray connector trunks, and superseded thinking sections close immediately instead of lingering.",
+      "Windows and transcript reliability fixes ride along from the upstream merge, with CI now streaming heartbeat stages for long E2E runs.",
+    ],
+  },
+  {
     version: "0.20.5",
     date: "2026-10-16",
     highlights: [

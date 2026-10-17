@@ -1,7 +1,7 @@
 {
   "name": "minih-agent-desktop",
   "private": true,
-  "version": "0.20.5",
+  "version": "0.20.6",
   "description": "Local-first AI coding agent desktop client",
   "packageManager": "pnpm@12.8.1+sha512.f64ba907507f5ceafe06c8d38e6052d0179444580ec1279ddd5bfc11cb48aa8a2644b66598e07e761da84872a9fc57d5f902b87fa49d024198d558612aabbe45",
   "engines": {
@@ -75,6 +75,7 @@
     "check:pi-patches": "node scripts/check-pi-patches.mjs",
     "check:release-docs": "node scripts/check-release-docs.mjs",
     "check:agent-policy": "node scripts/check-agent-policy-sync.mjs",
+    "check:contrast": "node scripts/check-text-contrast.mjs",
     "check:pr-base": "node scripts/check-pr-base-main.mjs",
     "docs:dev": "pnpm --filter @minih-agent/docs dev",
     "docs:build": "pnpm --filter @minih-agent/docs build",
@@ -86,6 +87,7 @@
     "lint:biome": "biome lint",
     "test:e2e:mcp-market": "node scripts/e2e-mcp-market.mjs",
     "test:e2e:skill-market": "node scripts/e2e-skill-market.mjs",
+    "test:e2e:market-retry": "node scripts/e2e-market-retry.mjs",
     "test:e2e:capability-move": "node scripts/e2e-capability-move.mjs",
     "test:e2e:plugin-fetch-redirect": "node --test apps/desktop/test/plugin-fetch-redirect.test.mjs",
     "test:e2e:plugin-import-deps": "node scripts/e2e-plugin-import-deps.mjs",

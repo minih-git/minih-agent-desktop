@@ -101,7 +101,7 @@ test("a development build takes its own userData before the single-instance lock
   // `pnpm dev` quits on arrival.
   const pathsSource = await readMainModule("data-paths.ts");
   const apply = installationSource.indexOf("applyDevelopmentUserData(app, isDevelopmentBuild)");
-  const setName = installationSource.indexOf("app.setName(APP_NAME)");
+  const setName = installationSource.indexOf("app.setName(currentAppName())");
   const lock = installationSource.indexOf("app.requestSingleInstanceLock()");
 
   assert.ok(apply > 0, "main must give the development build its own userData");
@@ -143,7 +143,7 @@ test("main resolves one data directory and publishes it to everything below", ()
   // moving the write above `singleInstanceRequired` would make every launch
   // look like it had been given an explicit data directory and skip the lock.
   const lockVerdict = installationSource.indexOf(
-    "const singleInstanceRequired = !process.env.MINIH_AGENT_DATA_DIR;",
+    "const singleInstanceRequired = !dataDirOverrideFromEnv();",
   );
   assert.ok(lockVerdict > 0);
   assert.doesNotMatch(installationSource, /process\.env\.MINIH_AGENT_DATA_DIR = dataDir;/);

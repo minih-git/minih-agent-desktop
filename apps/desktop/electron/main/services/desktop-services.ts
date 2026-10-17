@@ -5,7 +5,7 @@ import {
   type BrowserWindow,
 } from "electron";
 import {
-  APP_NAME,
+  currentAppName,
   type ComposerPasteFile,
 } from "@minih-agent/shared";
 import type {
@@ -106,7 +106,7 @@ export function createDesktopServices({
   const requestPluginNotificationPermission =
     async (): Promise<PluginNotificationPermission> => {
       const result = await showPluginNativeNotification({
-        title: APP_NAME + " notifications",
+        title: currentAppName() + " notifications",
         body: "Native notifications are enabled for this app.",
       });
       return result.permission;

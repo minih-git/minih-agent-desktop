@@ -103,6 +103,15 @@
   --ds-accent: var(--gray-0);
   --ds-accent-hover: var(--gray-100);
   --ds-accent-soft: var(--gray-300);
+  /*
+    Codex-parity prose accent (ChatGPT blue): one accent for reading-surface
+    text semantics only — links, inline-code ink, task checkboxes, and the
+    copyable selection fill. App chrome keeps the neutral ink accent above so
+    buttons, controls, and focus rings stay monochrome. Both theme values
+    clear the 4.5:1 informative-text floor (scripts/check-text-contrast.mjs).
+  */
+  --ds-prose-accent: #63a8f8;
+  --ds-prose-selection: color-mix(in oklab, #63a8f8 30%, transparent);
   /* Focus rings / resize affordances. Tied to the accent so themes stay monochrome. */
   --ds-focus: var(--ds-accent);
   /* Settings fields and shared inset searches keep their built-in tones. */
@@ -256,6 +265,9 @@
   --ds-accent: #1a1c1f;
   --ds-accent-hover: #303030;
   --ds-accent-soft: #5d5d5d;
+  /* Prose accent flips to the light-background blue (Codex LIGHT_BG_ACCENT). */
+  --ds-prose-accent: #1c64c8;
+  --ds-prose-selection: color-mix(in oklab, #a4cdfb 45%, transparent);
   --ds-focus: var(--ds-accent);
   --ds-settings-field-bg: #ffffff;
   --ds-settings-nav-active: color-mix(in oklab, #1a1c1f 12%, #ffffff);
@@ -280,9 +292,14 @@
   --ds-switch-ring-off: color-mix(in oklab, #1a1c1f 20%, transparent);
   --ds-switch-knob-off: #ffffff;
   --ds-switch-knob-on: #ffffff;
-  --ds-success: #00a240;
-  --ds-warning: #e25507;
-  --ds-error: #e02e2a;
+  /*
+    Status inks clear the 4.5:1 informative-text floor on the light plate
+    (scripts/check-text-contrast.mjs): each literal is the darkest step that
+    keeps its hue family readable on bg-secondary and tile, not just on white.
+  */
+  --ds-success: #00802f;
+  --ds-warning: #c2410c;
+  --ds-error: #d42a26;
   --ds-info: #5d5d5d;
   --ds-purple: #7c3aed;
   --ds-shadow-dialog: 0 16px 48px rgba(0, 0, 0, 0.12);

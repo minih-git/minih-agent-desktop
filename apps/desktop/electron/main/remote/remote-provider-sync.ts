@@ -6,8 +6,9 @@ import {
 } from "@minih-agent/shared";
 import type { SshTarget, SshTransport } from "./ssh-transport.js";
 import { sshTargetOf } from "./ssh-tunnel.js";
+import { REMOTE_AGENT_HOST_CLI_BASE } from "./remote-install-root.js";
 
-const IMPORT_COMMAND = 'node "$HOME/.minih-agent-desktop/agent-host-cli/current/agent-host-cli.js" provider-import';
+const IMPORT_COMMAND = `node "${REMOTE_AGENT_HOST_CLI_BASE}/current/agent-host-cli.js" provider-import`;
 const OUTPUT_MAX_BYTES = 64 * 1024;
 function invalid(): Error {
   return Object.assign(new Error("Provider selection cannot be synced"), { errorCode: ErrorCodes.INVALID_ARGUMENT });

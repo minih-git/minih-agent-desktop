@@ -44,10 +44,10 @@ test("Windows runtime registers the canonical native application identity", () =
   const appId = protocolSource.match(/APP_ID = "([^"]+)"/)?.[1];
   assert.equal(appId, packageJson.build.appId);
   assert.ok(startupSource.includes("app.whenReady()"), "main process readiness hook");
-  assert.match(installationSource, /app\.setName\(APP_NAME\)/);
+  assert.match(installationSource, /app\.setName\(currentAppName\(\)\)/);
   assert.match(
     installationSource,
-    /process\.platform === "win32"[\s\S]*app\.setAppUserModelId\(APP_ID\)/,
+    /process\.platform === "win32"[\s\S]*app\.setAppUserModelId\(currentAppId\(\)\)/,
   );
 });
 

@@ -36,6 +36,7 @@ import {
   IPC,
   type UpdatePreference,
   type UpdateState,
+  currentBrandProfile,
 } from "@minih-agent/shared";
 import type { Logger } from "./logger";
 import { parseAllowedExternalUrl } from "./safe-open-external";
@@ -86,7 +87,11 @@ function createRelocatedUpdater(
   return platform === "win32" ? new RelocatedNsisUpdater(baseCachePath) : null;
 }
 
-export const RELEASES_URL = "https://github.com/minih-git/minih-agent-desktop/releases/latest";
+/**
+ * The page the "check for updates" surface opens in a browser: the minih
+ * GitHub releases list, or the hungraim updates page (see ./brand.ts).
+ */
+export const RELEASES_URL = currentBrandProfile().releasesUrl;
 
 /**
  * Chromium partition electron-updater requests on (`NET_SESSION_NAME` in its

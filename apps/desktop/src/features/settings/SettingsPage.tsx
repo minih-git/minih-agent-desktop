@@ -38,7 +38,12 @@ import { ModelsPage } from "../../components/settings/ModelConfigPage";
 import { AccountsPage } from "../../components/settings/AccountsPage";
 import { KeyboardShortcutsSection } from "../../components/settings/KeyboardShortcutsSection";
 import { FontFamilyRow } from "../../components/settings/FontFamilyRow";
-import { ThinkingDisplayModeRow } from "../../components/settings/ThinkingDisplayModeRow";
+import { ShowThinkingRow } from "../../components/settings/ShowThinkingRow";
+import {
+  SessionTitleModelRow,
+  SessionTitleThinkingRow,
+  SessionTitleToggleRow,
+} from "../../components/settings/SessionTitleRows";
 import { FontSizeRow } from "../../components/settings/FontSizeRow";
 import { LanguageRow } from "../../components/settings/LanguageRow";
 import { SettingsMenuSelect } from "../../components/settings/SettingsMenuSelect";
@@ -86,6 +91,7 @@ export function SettingsPage() {
   const setSettingsAnchor = useAppStore((s) => s.setSettingsAnchor);
   const setPage = useAppStore((s) => s.setPage);
   const settings = useAppStore((s) => s.settings);
+  const providers = useAppStore((s) => s.providers);
   const version = useAppStore((s) => s.version);
   const refreshProviders = useAppStore((s) => s.refreshProviders);
   const platform = (window.minihAgent?.platform ?? "darwin") as ShortcutPlatform;
@@ -495,7 +501,7 @@ export function SettingsPage() {
                 </SettingsRow>
                 <CommandShellRow settings={settings} saveSettings={saveSettings} />
                 <LinkOpenTargetRow settings={settings} saveSettings={saveSettings} />
-                <ThinkingDisplayModeRow settings={settings} saveSettings={saveSettings} />
+                <ShowThinkingRow settings={settings} saveSettings={saveSettings} />
                 <ContextUsageDisplayRow
                   settings={settings}
                   saveSettings={saveSettings}
@@ -532,6 +538,20 @@ export function SettingsPage() {
                 </SettingsRow>
                 <LargePasteThresholdRow
                   settings={settings}
+                  saveSettings={saveSettings}
+                />
+              </SettingsCard>
+
+              <SettingsCard title={t("settings.sessionTitleCard")}>
+                <SessionTitleToggleRow settings={settings} saveSettings={saveSettings} />
+                <SessionTitleModelRow
+                  settings={settings}
+                  providers={providers}
+                  saveSettings={saveSettings}
+                />
+                <SessionTitleThinkingRow
+                  settings={settings}
+                  providers={providers}
                   saveSettings={saveSettings}
                 />
               </SettingsCard>

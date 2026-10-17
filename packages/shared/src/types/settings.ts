@@ -59,6 +59,13 @@ export type AppSettings = {
   infiniteProviderRetry?: boolean;
   /** Allow Agent mode to call TypeSafe Jev for explicit structured classifications. */
   jevEnabled?: boolean;
+  /**
+   * Built-in session title generation. Absent keeps the default (enabled,
+   * session's own model, no reasoning). Replaces the standalone Session
+   * Titles plugin; the model only names a session that still carries the
+   * deterministic fallback title, so manual renames always win.
+   */
+  sessionTitle?: SessionTitleSettings;
   /** Prevent idle system sleep while this desktop app runs; off when absent. */
   keepAwakeWhileRunning?: boolean;
   /** Configured command shell for the agent Bash protocol tool. */
@@ -88,7 +95,20 @@ export type AppSettings = {
    * Absent means 1. Range 0.8–1.5 in 0.025 steps. Window zoom is independent.
    */
   fontScale?: number;
-  /** Transcript presentation only; absent means detailed. Reasoning is retained. */
+  /**
+   * Show model reasoning in the transcript. Off keeps the live thinking
+   * indicator visible and hides completed reasoning rows and excerpts; absent
+   * falls back to the legacy `thinkingDisplayMode`. This is a presentation
+   * preference only: it never changes model thinking levels, stored reasoning,
+   * export, or execution, and it does not control turn-process folding.
+   */
+  showThinking?: boolean;
+  /**
+   * @deprecated Retained for persisted-settings compatibility. New writes use
+   * `showThinking`; this field is read only as a fallback when `showThinking`
+   * is absent. An explicit `compact` hides reasoning; `detailed`, an unknown
+   * value, or an absent field shows it.
+   */
   thinkingDisplayMode?: "detailed" | "compact";
   /**
    * @deprecated Unreleased D343 px field. Reads migrate into `fontScale`
@@ -179,5 +199,22 @@ export type VoiceInputSettings = {
 };
 
 export type LinkOpenTarget = "workpanel" | "external";
+
+/**
+ * Built-in session title generation preferences. The prompt template is not
+ * user-editable; it lives in the main process next to the code that renders
+ * it, and the model output is validated before it reaches the session row.
+ */
+export type SessionTitleSettings = {
+  /** Absent and true enable generation. `false` keeps fallback titles only. */
+  enabled?: boolean;
+  /**
+   * Model that names new sessions as `providerId/modelId`. Absent or empty
+   * uses the session's own provider/model.
+   */
+  modelKey?: string;
+  /** Reasoning level for the title completion; absent means `off`. */
+  thinkingLevel?: ThinkingLevel;
+};
 
 export type ContextUsageDisplay = "remaining" | "used";

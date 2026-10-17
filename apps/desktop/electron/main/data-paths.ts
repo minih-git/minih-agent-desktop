@@ -1,38 +1,83 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { APP_NAME } from "@minih-agent/shared";
+import { currentBrandProfile, type BrandName } from "@minih-agent/shared";
 
 /**
  * The two directories that define an installation, and the development split
  * between them.
  *
- * A packaged Minih-Agent-Desktop and a `pnpm dev` host used to share both: the
+ * A packaged desktop app and a `pnpm dev` host used to share both: the
  * name-derived `userData` — where Electron keeps the single-instance lock,
- * renderer `localStorage`, and the plugin panel partitions — and
- * `~/.minih-agent-desktop`, where host-core keeps `pi.sqlite` beside the persistence
- * outbox and the log tree. Sharing them meant a shipped app that was already
- * running held the lock, so the development launch quit on arrival; a
- * development host that won the race instead put a second host-core over the
+ * renderer `localStorage`, and the plugin panel partitions — and the data root
+ * below the user's home, where host-core keeps `pi.sqlite` beside the
+ * persistence outbox and the log tree. Sharing them meant a shipped app that
+ * was already running held the lock, so the development launch quit on arrival;
+ * a development host that won the race instead put a second host-core over the
  * same single-writer database, which is the divergence D236 exists to
  * prevent. Neither is workable while someone debugs against the app they use.
  *
- * Only the development side moves, and only these two names differ. A shipped
- * installation keeps `Minih-Agent-Desktop` and `~/.minih-agent-desktop`, so no upgrade relocates
- * a user's database, secrets, plugins, or renderer-local state, and
- * `MINIH_AGENT_DATA_DIR` still overrides either profile outright.
+ * Only the development side moves, and only these two names differ. The names
+ * come from the brand profile, so `DESKTOP_BRAND=hungraim` builds own
+ * `~/.hungraim-agent-desktop` instead of the minih root and the two brands can
+ * sit side by side. The minih names are unchanged, so no upgrade relocates a
+ * user's database, secrets, plugins, or renderer-local state.
  */
 
-/** `userData` directory of a development installation, beside the shipped one. */
-export const DEVELOPMENT_INSTALLATION_NAME = `${APP_NAME} Dev`;
+/** `MINIH_AGENT_DATA_DIR`: the minih override and the cross-brand channel. */
+export const DATA_DIR_OVERRIDE_ENV = "MINIH_AGENT_DATA_DIR";
+/** `HUNGRAIM_AGENT_DATA_DIR`: the hungraim brand's own override. */
+export const HUNGRAIM_DATA_DIR_OVERRIDE_ENV = "HUNGRAIM_AGENT_DATA_DIR";
+
+/** The brand this bundle resolves installation names for. */
+const brand = currentBrandProfile();
 
 /** Data directory of a shipped installation, below the user's home. */
-export const INSTALLATION_DATA_DIR_NAME = ".minih-agent-desktop";
+export const INSTALLATION_DATA_DIR_NAME = brand.dataDirName;
 
 /** Data directory of a development installation, below the user's home. */
-export const DEVELOPMENT_DATA_DIR_NAME = ".minih-agent-desktop-dev";
+export const DEVELOPMENT_DATA_DIR_NAME = brand.devDataDirName;
+
+/** `userData` directory of a development installation, beside the shipped one. */
+export const DEVELOPMENT_INSTALLATION_NAME = brand.devInstallationName;
+
+/**
+ * Environment variables that may override the data root, highest priority
+ * first. A hungraim build reads its own variable before the minih one, which
+ * stays a compatibility channel for pre-branding harnesses and child
+ * processes; a minih build reads only `MINIH_AGENT_DATA_DIR`, exactly as
+ * before.
+ */
+export function dataDirOverrideEnvNames(brandName: BrandName = brand.name): string[] {
+  return brandName === "hungraim"
+    ? [HUNGRAIM_DATA_DIR_OVERRIDE_ENV, DATA_DIR_OVERRIDE_ENV]
+    : [DATA_DIR_OVERRIDE_ENV];
+}
+
+/**
+ * The explicit data-root override in `env`, or undefined.
+ *
+ * A blank value is unset: every call site this replaced treated an empty
+ * `MINIH_AGENT_DATA_DIR=` as absent, which is what keeps it from naming a
+ * relative directory.
+ */
+export function dataDirOverrideFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  brandName: BrandName = brand.name,
+): string | undefined {
+  for (const name of dataDirOverrideEnvNames(brandName)) {
+    const value = env[name]?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
+/** Remove every override variable this brand may have been given. */
+export function clearDataDirOverride(env: NodeJS.ProcessEnv = process.env): void {
+  for (const name of dataDirOverrideEnvNames(brand.name)) delete env[name];
+}
 
 export type DataDirInput = {
-  /** `MINIH_AGENT_DATA_DIR`; an explicit directory wins over either profile. */
+  /** Explicit directory; wins over either profile. */
   override: string | undefined;
   /** True for a development build. */
   development: boolean;
@@ -43,14 +88,13 @@ export type DataDirInput = {
 /**
  * The data directory one installation owns.
  *
- * `MINIH_AGENT_DATA_DIR` stays the escape hatch it always was: an explicit
- * directory wins, which is how the E2E harnesses, the capture rig, and
- * side-by-side profiles keep choosing their own root. The result is absolute,
- * because it reaches host-core as a child-process environment variable from a
- * working directory that need not be this one, and because `homedir()` is the
- * only other input that could be relative. Without an override the profile
- * picks the name, and that name is the whole difference between the two
- * installations.
+ * An explicit directory wins, which is how the E2E harnesses, the capture rig,
+ * and side-by-side profiles keep choosing their own root. The result is
+ * absolute, because it reaches host-core as a child-process environment
+ * variable from a working directory that need not be this one, and because
+ * `homedir()` is the only other input that could be relative. Without an
+ * override the profile picks the name, and that name is the whole difference
+ * between the two installations.
  */
 export function resolveDataDir({
   override,
@@ -82,7 +126,7 @@ export function desktopDataDir(
   development: boolean = process.env.MINIH_AGENT_DEV === "1",
 ): string {
   return resolveDataDir({
-    override: process.env.MINIH_AGENT_DATA_DIR,
+    override: dataDirOverrideFromEnv(),
     development,
     home: homedir(),
   });

@@ -21,7 +21,7 @@ const bundledEntry = await build({
   // A CJS build also rejects an accidentally reintroduced top-level await.
   bundle: true, platform: "node", format: "cjs", write: false,
   plugins: [{ name: "installation-external-boundaries", setup(builder) {
-    builder.onResolve({ filter: /^@minih-agent\/shared$/ }, () => ({ path: fileURLToPath(new URL("../../../packages/shared/src/protocol.ts", import.meta.url)) }));
+    builder.onResolve({ filter: /^@minih-agent\/shared$/ }, () => ({ path: fileURLToPath(new URL("../../../packages/shared/src/index.ts", import.meta.url)) }));
     builder.onResolve({ filter: /^electron$|^\.\/(logger|main-process-errors|index|storage\/bootstrap)$/ }, (args) => ({ path: args.path, namespace: "installation-test-boundary" }));
     builder.onLoad({ filter: /.*/, namespace: "installation-test-boundary" }, (args) => {
       if (args.path === "electron") return { contents: "export const app = globalThis.__installationHarness.app; export class BrowserWindow { static getAllWindows() { return []; } }" };
@@ -83,7 +83,7 @@ test("the single-instance lock is taken before anything touches the data directo
   // appends. A duplicate launch must be gone before either happens.
   const lock = installationSource.indexOf("app.requestSingleInstanceLock()");
   assert.ok(lock > 0, "main must request the single-instance lock");
-  assert.ok(installationSource.indexOf("app.setName(APP_NAME)") < lock);
+  assert.ok(installationSource.indexOf("app.setName(currentAppName())") < lock);
   assert.doesNotMatch(installationSource, /new Logger\(|new PersistenceOutbox\(|prepareStorage\(/);
   assert.match(entrySource, /from ["']\.\/installation["']/);
   assert.match(entrySource, /if \(hasSingleInstanceLock\)/);
@@ -129,7 +129,7 @@ test("a run with its own data directory keeps the current start behavior", () =>
   // installation, and have to stay launchable while one is running.
   assert.match(
     installationSource,
-    /const singleInstanceRequired = !process\.env\.MINIH_AGENT_DATA_DIR;/,
+    /const singleInstanceRequired = !dataDirOverrideFromEnv\(\);/,
   );
   assert.match(
     installationSource,
