@@ -96,6 +96,29 @@ export function registerMemoryIpc({ registrar, getHost }: MemoryIpcDependencies)
     forward("memory.delete", { id: requiredText(request?.id, "memory id") }),
   );
 
+  // The receipt's "remember again". The renderer supplies the turn it belongs
+  // to, never a message id: the host resolves the cited evidence from that
+  // turn's rows, so this channel cannot be used to invent provenance.
+  registrar.handle(
+    IPC.invoke.memoryRememberAgain,
+    async (request: Record<string, unknown> = {}) => {
+      const kind = requiredText(request?.kind, "kind");
+      const scope = optionalText(request?.scope, "scope") ?? "project";
+      const basis = optionalText(request?.basis, "basis") ?? "user_stated";
+      return forward("memory.rememberAgain", {
+        sessionId: requiredText(request?.sessionId, "sessionId"),
+        turnId: requiredText(request?.turnId, "turnId"),
+        kind,
+        content: requiredText(request?.content, "content"),
+        scope,
+        basis,
+        ...(optionalText(request?.rationale, "rationale")
+          ? { rationale: request?.rationale }
+          : {}),
+      });
+    },
+  );
+
   registrar.handle(IPC.invoke.memorySessionGet, async (request: Record<string, unknown> = {}) =>
     forward("memory.session.get", {
       sessionId: requiredText(request?.sessionId, "sessionId"),

@@ -291,7 +291,10 @@ recall tools.
   `sessionId`, `kind`, `content`, optional `rationale`, `origin` (`explicit` |
   `user_ui`, the default | `extracted`), `evidence` (`user_stated`, the default |
   `verified` | `inferred`), `status` (`active`, the default | `suggested`),
-  `sourceSessionId`, `sourceMessageIds`, `overrideTombstone`. `origin` and
+  `sourceSessionId`, `sourceMessageIds`, `overrideTombstone`. `overrideTombstone`
+  clears a delete and is reserved for the user's own action — the desktop sends
+  it from the receipt's "remember again", which uses `memory.rememberAgain`;
+  the `MemoryRemember` tool never sets it. `origin` and
   `status` must agree: `extracted` requires `suggested` and `suggested` requires
   `extracted`, so extraction can only propose and only extraction may propose.
   Returns
@@ -301,6 +304,14 @@ recall tools.
   `MEMORY_INVALID_FIELD`, `MEMORY_CREDENTIAL_DETECTED`,
   `MEMORY_PROVENANCE_REQUIRED`, `MEMORY_TOMBSTONED`. A rejected message never
   repeats the refused text.
+- `memory.rememberAgain({ sessionId, turnId, kind, content, scope?, basis?, rationale? })`
+  — the transcript receipt's "remember again", the one write that clears a
+  tombstone. It is reached only from the renderer, never from `tools.execute`, so
+  no model-callable path can undo a delete. The cited evidence is the user
+  messages of `turnId`, resolved by the host; that turn may already have ended,
+  but it must belong to `sessionId`, and the caller never supplies a message id.
+  Returns `{ entry, duplicate }` or `{ rejected: { code, message } }` like
+  `memory.create`.
 - `memory.update({ id, revision, content?, rationale?, kind?, scope?, path? })` —
   edit an entry. Compare-and-set on `revision`: a stale revision fails with 1008 /
   `MEMORY_REVISION_CONFLICT` and leaves the row unchanged. The provenance of a

@@ -60,6 +60,24 @@ test("each memory channel forwards exactly one host method", async () => {
     assert.deepEqual(calls.at(-1), [method, { id: "entry-1" }]);
   }
 
+  await handlers.get(IPC.invoke.memoryRememberAgain)({
+    sessionId: "session-1",
+    turnId: "turn-1",
+    kind: "preference",
+    content: "Prefers terse replies.",
+  });
+  assert.deepEqual(calls.at(-1), [
+    "memory.rememberAgain",
+    {
+      sessionId: "session-1",
+      turnId: "turn-1",
+      kind: "preference",
+      content: "Prefers terse replies.",
+      scope: "project",
+      basis: "user_stated",
+    },
+  ]);
+
   await handlers.get(IPC.invoke.memorySessionGet)({ sessionId: "session-1" });
   assert.deepEqual(calls.at(-1), ["memory.session.get", { sessionId: "session-1" }]);
 
@@ -94,6 +112,16 @@ test("a malformed renderer value never reaches the host", async () => {
     /an edit changes something/,
   );
   await assert.rejects(handlers.get(IPC.invoke.memoryDelete)({}), /invalid memory id/);
+  // The receipt's action names the turn it belongs to; it may never name a
+  // message id, so only the turn is forwarded and a missing one is refused.
+  await assert.rejects(
+    handlers.get(IPC.invoke.memoryRememberAgain)({
+      sessionId: "session-1",
+      kind: "preference",
+      content: "x",
+    }),
+    /invalid turnId/,
+  );
   await assert.rejects(
     handlers.get(IPC.invoke.memorySessionSetExcluded)({ sessionId: "session-1" }),
     /invalid excluded/,

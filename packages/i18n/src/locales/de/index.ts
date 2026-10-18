@@ -2017,6 +2017,8 @@ sklm: {
     rememberDuplicate: "Bereits gespeichert",
     rememberScopeProject: "Dieses Projekt",
     rememberScopeUser: "Alle Projekte",
+    rememberAgain: "Trotzdem merken",
+    rememberAgainBusy: "Wird gemerkt…",
     rememberUndo: "Rückgängig",
     rememberUndoing: "Wird rückgängig gemacht…",
     rememberUndone: "Gelöscht",

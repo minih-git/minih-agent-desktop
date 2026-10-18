@@ -7,6 +7,7 @@ import type {
   LearnedMemoryEntry,
   LearnedMemoryListRequest,
   LearnedMemoryListResult,
+  LearnedMemoryRememberAgainRequest,
   LearnedMemorySessionState,
   LearnedMemoryUpdateRequest,
   LearnedMemoryUpdateResult,
@@ -1023,6 +1024,14 @@ export const api = {
   restoreLearnedMemory: (id: string) =>
     invoke<{ entry: LearnedMemoryEntry }>(IPC.invoke.memoryRestore, { id }),
   deleteLearnedMemory: (id: string) => invoke<{ ok: boolean }>(IPC.invoke.memoryDelete, { id }),
+  // The user's own "remember again" on a receipt: the one write that clears a
+  // delete. It sends the turn, never a message id, so the host stays the source
+  // of the cited evidence.
+  rememberLearnedMemoryAgain: (request: LearnedMemoryRememberAgainRequest) =>
+    invoke<{ entry?: LearnedMemoryEntry; duplicate?: boolean; rejected?: { code: string } }>(
+      IPC.invoke.memoryRememberAgain,
+      request,
+    ),
   getMemorySessionState: (sessionId: string) =>
     invoke<{ state: LearnedMemorySessionState }>(IPC.invoke.memorySessionGet, { sessionId }),
   setMemorySessionExcluded: (sessionId: string, excluded: boolean) =>

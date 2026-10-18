@@ -790,9 +790,11 @@ no argument can name a session, a turn, or a message, and a call whose turn is
 missing or already ended is refused with `TOOL_TURN_CANCELLED`. `basis` is
 `user_stated` (the default) or `verified`; `verified` is accepted only for
 `fact` and `reference`. The result states that the entry applies from the next
-session, because the running session keeps the snapshot it started with. Asking
-again for content an earlier delete removed is the explicit request that clears
-the tombstone.
+session, because the running session keeps the snapshot it started with. It
+never clears a delete: asking the agent to remember something the user removed
+is refused with `MEMORY_TOMBSTONED` in every permission mode, Auto included,
+because bringing a note back is the user's decision. The receipt's own "remember
+again" action is a separate, user-only host call.
 
 A refusal is a tool outcome with a stable code, never the refused text:
 `MEMORY_CREDENTIAL_DETECTED`, `MEMORY_PROVENANCE_REQUIRED`,

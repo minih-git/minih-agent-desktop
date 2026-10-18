@@ -829,7 +829,7 @@ fn remembering_reports_refusals_without_echoing_the_content() {
 }
 
 #[test]
-fn remembering_clears_a_tombstone_and_follows_the_read_switch() {
+fn remembering_never_clears_a_tombstone() {
     let (dir, state) = open();
     let project_path = project(&dir, "app");
     let session_id = session(&state.db, &project_path, "App");
@@ -844,19 +844,84 @@ fn remembering_clears_a_tombstone_and_follows_the_read_switch() {
     );
     let id = saved["entry"]["id"].as_str().unwrap().to_string();
     assert!(state.db.delete_memory_entry(&id).unwrap());
-    // Asking again in so many words is the request that clears the tombstone.
-    let again = remember(
+    // The model cannot bring back what the user deleted. Asking the agent to
+    // remember it again is not the user's own decision, so the tombstone stands
+    // and the refusal names the reason (ADR §6).
+    let (ok, content) = remember_call(
         &state,
         &session_id,
-        &turn,
+        Some(&turn),
         json!({ "content": "Prefers Chinese replies.", "kind": "preference" }),
     );
-    assert_ne!(again["entry"]["id"], json!(id));
+    assert!(!ok, "{content}");
+    assert_eq!(error_code(&content), "MEMORY_TOMBSTONED");
+    assert!(content["error"]
+        .as_str()
+        .unwrap()
+        .contains("Only the user can bring it back"));
+
+    // Citing a different message of the same turn is the same evidence, so the
+    // tombstone still blocks it.
+    turn_message(&state.db, &session_id, &turn, "m2", "再说一次：用中文。", 2);
+    let (ok, content) = remember_call(
+        &state,
+        &session_id,
+        Some(&turn),
+        json!({ "content": "Prefers Chinese replies.", "kind": "preference" }),
+    );
+    assert!(!ok, "{content}");
+    assert_eq!(error_code(&content), "MEMORY_TOMBSTONED");
+
+    // The same holds under Auto, where a medium-risk tool needs no card.
+    state
+        .db
+        .set_setting("app", &json!({ "defaultPermissionMode": "auto" }))
+        .unwrap();
+    let (ok, content) = remember_call(
+        &state,
+        &session_id,
+        Some(&turn),
+        json!({ "content": "Prefers Chinese replies.", "kind": "preference" }),
+    );
+    assert!(!ok, "{content}");
+    assert_eq!(error_code(&content), "MEMORY_TOMBSTONED");
+    // Nothing was resurrected by any of those attempts.
+    let live: i64 = state
+        .db
+        .conn()
+        .query_row("SELECT COUNT(*) FROM memory_entries", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(live, 0);
+
+    // A note from another turn is still allowed — the tombstone covers the
+    // deleted note's own content and the messages it cited, not the whole
+    // project — so the switch test below has data to protect. One session runs
+    // one turn at a time, so the finished turn makes way for the next one.
+    state
+        .db
+        .conn()
+        .execute(
+            "UPDATE turns SET status = 'completed' WHERE id = ?1",
+            params![turn],
+        )
+        .unwrap();
+    let other_turn = running_turn(&state.db, &session_id);
+    turn_message(&state.db, &session_id, &other_turn, "m3", "条理清楚地回答。", 3);
+    let fresh = remember(
+        &state,
+        &session_id,
+        &other_turn,
+        json!({ "content": "Prefers terse diffs.", "kind": "preference" }),
+    );
+    assert_eq!(fresh["duplicate"], json!(false));
 
     // Turning reading off hides the whole capability, including the write.
     state
         .db
-        .set_setting("app", &json!({ "learnedMemoryRead": false }))
+        .set_setting(
+            "app",
+            &json!({ "defaultPermissionMode": "auto", "learnedMemoryRead": false }),
+        )
         .unwrap();
     for (tool, args) in [
         ("MemoryRemember", json!({ "content": "x", "kind": "fact" })),

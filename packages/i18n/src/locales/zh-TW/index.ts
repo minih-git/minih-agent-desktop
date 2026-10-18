@@ -2009,6 +2009,8 @@ sklm: {
     rememberDuplicate: "先前已儲存",
     rememberScopeProject: "本專案",
     rememberScopeUser: "所有專案",
+    rememberAgain: "仍然記住",
+    rememberAgainBusy: "正在記住…",
     rememberUndo: "復原",
     rememberUndoing: "正在復原…",
     rememberUndone: "已刪除",

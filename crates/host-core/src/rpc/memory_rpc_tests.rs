@@ -436,9 +436,239 @@ async fn memory_rpc_keeps_extraction_and_suggestions_paired() {
     assert_eq!(again["rejected"]["code"], json!("MEMORY_TOMBSTONED"));
 }
 
-/// The session-start snapshot without a project: a session that belongs to no
-/// project still starts with the user's own notes, and never with a project's
-/// (ADR agent-long-term-memory §5).
+// ---- remember again --------------------------------------------------------
+
+/// A finished turn of `session_id` with one user message, the way a receipt is
+/// answered after its turn ended. Returns `(turnId, messageId)`.
+async fn finished_turn(
+    state: &Arc<Mutex<AppState>>,
+    session_id: &str,
+    content: &str,
+) -> (String, String) {
+    let turn = call(state, "session.beginTurn", json!({ "sessionId": session_id }))
+        .await
+        .unwrap();
+    let turn_id = turn["turnId"].as_str().unwrap().to_string();
+    let message_id = uuid::Uuid::new_v4().to_string();
+    call(
+        state,
+        "session.appendMessage",
+        json!({
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "message": {
+                "id": message_id,
+                "role": "user",
+                "content": content,
+                "createdAt": crate::db::ms_to_ts(crate::db::now_ms()),
+            }
+        }),
+    )
+    .await
+    .unwrap();
+    {
+        let st = state.lock().await;
+        st.db
+            .conn()
+            .execute(
+                "UPDATE turns SET status = 'completed' WHERE id = ?1",
+                rusqlite::params![turn_id],
+            )
+            .unwrap();
+    }
+    (turn_id, message_id)
+}
+
+/// One stored note, through the M1 create path. A `preference` has to cite what
+/// the user said, so the caller passes the turn's own message.
+async fn create_note(
+    state: &Arc<Mutex<AppState>>,
+    session_id: &str,
+    message_id: &str,
+    content: &str,
+) -> String {
+    let created = call(
+        state,
+        "memory.create",
+        json!({
+            "sessionId": session_id,
+            "kind": "preference",
+            "content": content,
+            "sourceSessionId": session_id,
+            "sourceMessageIds": [message_id],
+        }),
+    )
+    .await
+    .unwrap();
+    assert!(created["entry"].is_object(), "{created}");
+    created["entry"]["id"].as_str().unwrap().to_string()
+}
+
+/// The user's own action is the one write that clears a delete: it reaches the
+/// host through `memory.rememberAgain`, never through the tool, and the cited
+/// evidence is still resolved host-side from the turn the receipt belongs to.
+#[tokio::test]
+async fn remember_again_restores_a_deleted_note_for_the_user() {
+    let (dir, state) = open().await;
+    let project_dir = dir.path().join("app");
+    std::fs::create_dir_all(&project_dir).unwrap();
+    let project = canonical_project_path(project_dir.to_str().unwrap()).unwrap();
+    let session = call(
+        &state,
+        "session.create",
+        json!({ "projectPath": project, "title": "App" }),
+    )
+    .await
+    .unwrap();
+    let session_id = session["session"]["id"].as_str().unwrap().to_string();
+    let (turn_id, message_id) =
+        finished_turn(&state, &session_id, "以后都用中文回答。").await;
+
+    let note = create_note(
+        &state,
+        &session_id,
+        &message_id,
+        "Prefers terse Chinese replies.",
+    )
+    .await;
+    call(&state, "memory.delete", json!({ "id": note }))
+        .await
+        .unwrap();
+
+    // The user presses "remember again" on the receipt. The turn has already
+    // ended, which is fine: the receipt is answered after the fact.
+    let restored = call(
+        &state,
+        "memory.rememberAgain",
+        json!({
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "kind": "preference",
+            "content": "Prefers terse Chinese replies.",
+            "scope": "project",
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(restored["duplicate"], json!(false));
+    let entry = &restored["entry"];
+    assert_ne!(entry["id"], json!(note));
+    assert_eq!(entry["status"], json!("active"));
+    assert_eq!(entry["origin"], json!("explicit"));
+    assert_eq!(entry["evidence"], json!("user_stated"));
+    assert_eq!(entry["sourceSessionId"], json!(session_id));
+    // The provenance is the turn's own user message, resolved by the host.
+    assert_eq!(entry["sourceMessageIds"], json!([message_id]));
+
+    // The same content can no longer be refused by the tombstone.
+    let listed = call(&state, "memory.list", json!({ "path": project }))
+        .await
+        .unwrap();
+    assert_eq!(listed["entries"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn remember_again_refuses_a_turn_from_another_session() {
+    let (dir, state) = open().await;
+    let mut sessions = Vec::new();
+    for name in ["first", "second"] {
+        let path = dir.path().join(name);
+        std::fs::create_dir_all(&path).unwrap();
+        let project = canonical_project_path(path.to_str().unwrap()).unwrap();
+        let session = call(
+            &state,
+            "session.create",
+            json!({ "projectPath": project, "title": name }),
+        )
+        .await
+        .unwrap();
+        sessions.push(session["session"]["id"].as_str().unwrap().to_string());
+    }
+    let (other_turn, _) = finished_turn(&state, &sessions[1], "别人的话").await;
+
+    // The renderer cannot point at another session's turn to borrow its
+    // evidence, and it cannot name a message id at all.
+    let refused = call(
+        &state,
+        "memory.rememberAgain",
+        json!({
+            "sessionId": sessions[0],
+            "turnId": other_turn,
+            "kind": "preference",
+            "content": "Prefers terse Chinese replies.",
+            "sourceMessageIds": ["whatever"],
+        }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error_code(&refused), "SESSION_NOT_FOUND");
+
+    // A turn id that does not exist is refused the same way.
+    let missing = call(
+        &state,
+        "memory.rememberAgain",
+        json!({
+            "sessionId": sessions[0],
+            "turnId": "no-such-turn",
+            "kind": "preference",
+            "content": "Prefers terse Chinese replies.",
+        }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error_code(&missing), "SESSION_NOT_FOUND");
+}
+
+#[tokio::test]
+async fn remember_again_keeps_every_other_write_rule() {
+    let (dir, state) = open().await;
+    let project_dir = dir.path().join("app");
+    std::fs::create_dir_all(&project_dir).unwrap();
+    let project = canonical_project_path(project_dir.to_str().unwrap()).unwrap();
+    let session = call(
+        &state,
+        "session.create",
+        json!({ "projectPath": project, "title": "App" }),
+    )
+    .await
+    .unwrap();
+    let session_id = session["session"]["id"].as_str().unwrap().to_string();
+    let (turn_id, _) = finished_turn(&state, &session_id, "用中文回答。").await;
+
+    // A credential is refused here too, and the text is not echoed.
+    let secret = "sk-ant-api03-abcdefghijklmnopqrstuvwx";
+    let refused = call(
+        &state,
+        "memory.rememberAgain",
+        json!({
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "kind": "fact",
+            "content": format!("The API key is {secret}"),
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(refused["rejected"]["code"], json!("MEMORY_CREDENTIAL_DETECTED"));
+    assert!(!refused.to_string().contains(secret));
+
+    // `verified` stays limited to a fact or a reference.
+    let refused = call(
+        &state,
+        "memory.rememberAgain",
+        json!({
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "kind": "preference",
+            "content": "Prefers Chinese replies.",
+            "basis": "verified",
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(refused["rejected"]["code"], json!("MEMORY_PROVENANCE_REQUIRED"));
+}
+
 #[tokio::test]
 async fn memory_index_without_a_project_returns_the_user_scope_alone() {
     let (dir, state) = open().await;

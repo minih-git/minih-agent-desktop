@@ -229,6 +229,9 @@ export const IPC = {
     memoryArchive: "minih-agent-desktop/memory/archive",
     memoryRestore: "minih-agent-desktop/memory/restore",
     memoryDelete: "minih-agent-desktop/memory/delete",
+    // The transcript receipt's "remember again": the user's own action, and the
+    // only path that clears a delete. Never reachable from a model tool.
+    memoryRememberAgain: "minih-agent-desktop/memory/rememberAgain",
     memorySessionGet: "minih-agent-desktop/memory/session/get",
     memorySessionSetExcluded: "minih-agent-desktop/memory/session/setExcluded",
     toolResolvePermission: "minih-agent-desktop/tool/resolvePermission",

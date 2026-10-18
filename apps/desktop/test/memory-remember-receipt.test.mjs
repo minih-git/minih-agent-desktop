@@ -125,3 +125,78 @@ test("a duplicate says nothing changed but still offers the actions", async (t) 
   assert.match(html, /Undo/);
   assert.match(html, /Edit/);
 });
+
+test("a tombstoned refusal offers the user's own remember-again action", async (t) => {
+  const ssr = await slotSsr(t, {
+    translationOverrides: {
+      memory: {
+        rememberSaved: "Saved to learned memory",
+        rememberRefused: "Not saved: {{reason}}",
+        rememberAgain: "Remember it again",
+        reason: { MEMORY_TOMBSTONED: "you deleted this before" },
+      },
+    },
+  });
+  const { ToolRow } = await ssr.load("/src/features/chat/transcript/ToolRow.tsx");
+  const html = ssr.render(
+    createElement(ToolRow, {
+      message: rememberMessage({
+        toolStatus: "error",
+        isError: true,
+        toolArgs: { content: "Prefers terse Chinese replies.", kind: "preference" },
+        toolResult: {
+          content: [
+            {
+              type: "text",
+              text: "the user deleted this memory before, so it stays forgotten",
+            },
+          ],
+          details: {
+            error: "the user deleted this memory before, so it stays forgotten",
+            code: "MEMORY_TOMBSTONED",
+            sessionId: "session-1",
+            turnId: "turn-1",
+          },
+        },
+      }),
+    }),
+  );
+  assert.match(html, /Not saved: you deleted this before/);
+  // The model could not have restored it; only this button can.
+  assert.match(html, /Remember it again/);
+});
+
+test("only a tombstone refusal offers remember-again", async (t) => {
+  const ssr = await slotSsr(t, {
+    translationOverrides: {
+      memory: {
+        rememberSaved: "Saved to learned memory",
+        rememberRefused: "Not saved: {{reason}}",
+        rememberAgain: "Remember it again",
+        reason: { MEMORY_CREDENTIAL_DETECTED: "it looks like a credential" },
+      },
+    },
+  });
+  const { ToolRow } = await ssr.load("/src/features/chat/transcript/ToolRow.tsx");
+  const html = ssr.render(
+    createElement(ToolRow, {
+      message: rememberMessage({
+        toolStatus: "error",
+        isError: true,
+        toolArgs: { content: "x", kind: "fact" },
+        toolResult: {
+          content: [{ type: "text", text: "refused" }],
+          details: {
+            error: "memory content looks like a credential and was not stored",
+            code: "MEMORY_CREDENTIAL_DETECTED",
+            sessionId: "session-1",
+            turnId: "turn-1",
+          },
+        },
+      }),
+    }),
+  );
+  assert.match(html, /Not saved: it looks like a credential/);
+  // A credential is not something the user can wave through.
+  assert.doesNotMatch(html, /Remember it again/);
+});

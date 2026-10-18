@@ -673,8 +673,10 @@ sidecar 不附加覆盖，委托使用会话的有效权限模式；因此父会
 主机掌握——调用会话本身，以及它正在运行的回合中的用户消息——因此任何参数都无法指定会话、
 回合或消息；回合缺失或已结束的调用会以 `TOOL_TURN_CANCELLED` 拒绝。`basis` 为
 `user_stated`（默认）或 `verified`；`verified` 只对 `fact` 与 `reference` 接受。工具结果说明
-该条目从下一个会话开始生效，因为正在运行的会话保留它启动时的快照。对早先删除过的内容再次
-明确要求记住，就是清除删除屏蔽记录的显式请求。
+该条目从下一个会话开始生效，因为正在运行的会话保留它启动时的快照。它**永不清除**删除屏蔽
+记录：要求代理记住用户已删除的内容，在所有权限模式下都会被 `MEMORY_TOMBSTONED` 拒绝，Auto
+也不例外，因为让记录回来是用户本人的决定。回执自带的「仍然记住」是一个单独的、只属于用户的
+主机调用。
 
 拒绝是带稳定错误码的工具结果，绝不包含被拒原文：`MEMORY_CREDENTIAL_DETECTED`、
 `MEMORY_PROVENANCE_REQUIRED`、`MEMORY_TOMBSTONED`、`MEMORY_INVALID_FIELD`、

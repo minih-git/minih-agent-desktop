@@ -92,11 +92,20 @@ pub fn execute(st: &AppState, p: &ToolsExecuteParams) -> ToolsExecuteResult {
                 .and_then(|data| data["errorCode"].as_str())
                 .unwrap_or("INTERNAL")
                 .to_string();
-            (
-                false,
-                json!({ "error": error.message, "code": code }),
-                Some(code),
-            )
+            // A refused remember still tells the receipt which turn it came
+            // from, because the user's own "remember again" action needs that
+            // turn and the renderer must never invent one.
+            let content = if p.tool_name == MEMORY_REMEMBER {
+                json!({
+                    "error": error.message,
+                    "code": code,
+                    "sessionId": p.session_id,
+                    "turnId": p.turn_id,
+                })
+            } else {
+                json!({ "error": error.message, "code": code })
+            };
+            (false, content, Some(code))
         }
     };
     ToolsExecuteResult {
@@ -313,24 +322,24 @@ fn remember(st: &AppState, p: &ToolsExecuteParams) -> Result<Value, JsonRpcError
     }
     let rationale = remember_rationale_arg(args)?;
     let scope = remember_scope(st, &p.session_id, scope_kind)?;
-    let source_message_ids = turn_user_messages(&st.db, &p.session_id, p.turn_id.as_deref())?;
-    let outcome = st
-        .db
-        .create_memory_entry(CreateMemoryRequest {
-            scope,
-            kind,
-            content,
-            rationale,
-            origin: ORIGIN_EXPLICIT.to_string(),
-            evidence: basis.to_string(),
-            status: STATUS_ACTIVE.to_string(),
-            source_session_id: Some(p.session_id.clone()),
-            source_message_ids,
-            // Asking in so many words is exactly the request that clears an
-            // earlier delete of the same content (ADR §6).
-            override_tombstone: true,
-        })
-        .map_err(internal)?;
+    let source_message_ids =
+        turn_user_messages(&st.db, &p.session_id, p.turn_id.as_deref(), true)?;
+    // The model never clears a delete: asking the agent to remember something is
+    // not the user's own decision to bring back a note they removed, and a prompt
+    // injection inside project content must not be able to do it either. Only
+    // the receipt's "remember again" action, which the user presses, may clear
+    // the tombstone (ADR §6).
+    let outcome = write_explicit(
+        &st.db,
+        &p.session_id,
+        content,
+        kind,
+        scope,
+        basis.to_string(),
+        rationale,
+        source_message_ids,
+        false,
+    )?;
     match outcome {
         CreateMemoryOutcome::Created(entry) => Ok(remember_result(&entry, false)),
         CreateMemoryOutcome::Duplicate(entry) => Ok(remember_result(&entry, true)),
@@ -442,18 +451,54 @@ fn remember_scope(
         .ok_or_else(|| rpc_err(1007, "session has no project", "NOT_FOUND"))
 }
 
-/// The user messages of the calling turn, in order. The transport turn must be
-/// the session's running turn: a remember call cites what the user said now, not
-/// whatever turn happened to be open when the call was authorized.
-fn turn_user_messages(
+/// Store one explicit note.
+///
+/// Shared by the model's tool and the user's "remember again" action, so the two
+/// cannot drift: the only difference between them is `override_tombstone`, which
+/// is the user's decision to make and never the model's.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn write_explicit(
+    db: &crate::db::Database,
+    session_id: &str,
+    content: String,
+    kind: String,
+    scope: MemoryScope,
+    basis: String,
+    rationale: Option<String>,
+    source_message_ids: Vec<String>,
+    override_tombstone: bool,
+) -> Result<CreateMemoryOutcome, JsonRpcError> {
+    db.create_memory_entry(CreateMemoryRequest {
+        scope,
+        kind,
+        content,
+        rationale,
+        origin: ORIGIN_EXPLICIT.to_string(),
+        evidence: basis,
+        status: STATUS_ACTIVE.to_string(),
+        source_session_id: Some(session_id.to_string()),
+        source_message_ids,
+        override_tombstone,
+    })
+    .map_err(internal)
+}
+
+/// The user messages cited by one explicit write: those of `turn_id`.
+///
+/// A tool call must cite the turn that is running now, because that is what the
+/// user just said. The user's own "remember again" action may cite a turn that
+/// already ended — the receipt is answered after the fact — but never a turn of
+/// another session.
+pub(crate) fn turn_user_messages(
     db: &crate::db::Database,
     session_id: &str,
     turn_id: Option<&str>,
+    require_running: bool,
 ) -> Result<Vec<String>, JsonRpcError> {
     let Some(turn_id) = turn_id else {
         return Err(rpc_err(
             1008,
-            "MemoryRemember requires the running turn of the calling session",
+            "MemoryRemember requires the turn that asked for it",
             "TOOL_TURN_CANCELLED",
         ));
     };
@@ -466,7 +511,14 @@ fn turn_user_messages(
         )
         .optional()
         .map_err(internal)?;
-    if status.as_deref() != Some("running") {
+    let Some(status) = status else {
+        return Err(rpc_err(
+            1007,
+            "the turn does not belong to this session",
+            "SESSION_NOT_FOUND",
+        ));
+    };
+    if require_running && status != "running" {
         return Err(rpc_err(
             1008,
             "the calling turn is no longer running for this session",

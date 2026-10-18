@@ -125,3 +125,19 @@ export type LearnedMemorySessionState = {
   lastError?: string;
   excluded: boolean;
 };
+
+/**
+ * The transcript receipt's "remember again" request. The renderer names the turn
+ * the receipt belongs to and never a message id: the host resolves the cited
+ * evidence from that turn's own user messages. This is the only path that clears
+ * a delete, and only the user can take it.
+ */
+export type LearnedMemoryRememberAgainRequest = {
+  sessionId: string;
+  turnId: string;
+  kind: LearnedMemoryKind;
+  content: string;
+  scope?: LearnedMemoryScopeKind;
+  basis?: "user_stated" | "verified";
+  rationale?: string;
+};

@@ -2025,6 +2025,8 @@ sklm: {
     rememberDuplicate: "Zaten kayıtlı",
     rememberScopeProject: "Bu proje",
     rememberScopeUser: "Tüm projeler",
+    rememberAgain: "Yine de hatırla",
+    rememberAgainBusy: "Hatırlanıyor…",
     rememberUndo: "Geri al",
     rememberUndoing: "Geri alınıyor…",
     rememberUndone: "Silindi",

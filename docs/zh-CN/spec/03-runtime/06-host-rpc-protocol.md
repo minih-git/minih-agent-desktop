@@ -222,7 +222,7 @@ type ToolBudgetHealth = {
   `sessionId`、`kind`、`content`、可选 `rationale`、`origin`（`explicit` |
   `user_ui`，默认 | `extracted`）、`evidence`（`user_stated`，默认 | `verified` |
   `inferred`）、`status`（`active`，默认 | `suggested`）、`sourceSessionId`、
-  `sourceMessageIds`、`overrideTombstone`。`origin` 与 `status` 必须一致：
+  `sourceMessageIds`、`overrideTombstone`。`overrideTombstone` 会清除删除屏蔽记录，保留给用户本人的动作：桌面端从回执的「仍然记住」发送它，走 `memory.rememberAgain`；`MemoryRemember` 工具永不设置它。`origin` 与 `status` 必须一致：
   `extracted` 必须配 `suggested`，`suggested` 也必须来自 `extracted`，因此抽取只能
   产生建议，建议也只能来自抽取。写入或发现已存在条目时返回
   `{ entry, duplicate }`，被规则拒绝时返回 `{ rejected: { code, message } }`。
@@ -230,6 +230,11 @@ type ToolBudgetHealth = {
   `MEMORY_RATIONALE_TOO_LARGE`、`MEMORY_INVALID_FIELD`、
   `MEMORY_CREDENTIAL_DETECTED`、`MEMORY_PROVENANCE_REQUIRED`、
   `MEMORY_TOMBSTONED`。拒绝信息不会重复被拒原文。
+- `memory.rememberAgain({ sessionId, turnId, kind, content, scope?, basis?, rationale? })`
+  —— 回执上的「仍然记住」，也是唯一会清除删除屏蔽记录的写入。它只由渲染层调用，永不经过
+  `tools.execute`，因此没有任何模型可调用的路径能撤销删除。引用的证据是 `turnId` 的用户消息，
+  由主机解析；该回合可能已经结束，但必须属于 `sessionId`，且调用方从不提供消息 ID。返回
+  `{ entry, duplicate }` 或 `{ rejected: { code, message } }`，与 `memory.create` 相同。
 - `memory.update({ id, revision, content?, rationale?, kind?, scope?, path? })` ——
   编辑条目。对 `revision` 做比较并交换：过期版本返回 1008 /
   `MEMORY_REVISION_CONFLICT`，且该行保持不变。只有当编辑把类型改成

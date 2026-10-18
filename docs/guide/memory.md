@@ -27,9 +27,9 @@ The receipt offers two actions:
 - **Edit** changes the wording. If something else changed the same note first,
   you are told and the list reloads instead of overwriting it.
 - **Undo** deletes the note. Deleting is not a hide: the text is erased, and the
-  agent cannot be talked into recreating the same note from the same evidence.
-  Asking it to remember that content again in so many words is the one thing that
-  brings it back.
+  agent cannot be talked into recreating it — not by asking, and not by anything
+  written inside a file it reads. If you do want it back, the receipt of the
+  deleted note offers **Remember it again**; only you can press it.
 
 A note applies from the **next** session. The conversation you are in keeps the
 memory snapshot it started with, so asking the agent to remember something never

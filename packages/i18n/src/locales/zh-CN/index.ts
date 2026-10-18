@@ -2018,6 +2018,8 @@ sklm: {
     rememberDuplicate: "此前已保存",
     rememberScopeProject: "本项目",
     rememberScopeUser: "所有项目",
+    rememberAgain: "仍然记住",
+    rememberAgainBusy: "正在记住…",
     rememberUndo: "撤销",
     rememberUndoing: "正在撤销…",
     rememberUndone: "已删除",

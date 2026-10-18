@@ -225,9 +225,14 @@ opt-in.
   removed, so the text cannot be read back or restored — and writes a tombstone
   with its fingerprint and source message ids. Extraction and every create path
   drop candidates whose fingerprint or cited source messages match a tombstone,
-  so the same evidence can never resurrect a deleted memory. An explicit user
-  request to remember the same content again clears the tombstone. Archive and
-  restore stay a reversible hide and never write a tombstone.
+  so the same evidence can never resurrect a deleted memory. Clearing a
+  tombstone is the **user's** own action and only theirs: the transcript receipt
+  offers "remember again" after a delete, and that button reaches a dedicated
+  host method that no model-callable path can invoke. A model calling the
+  remember tool for deleted content is refused with `MEMORY_TOMBSTONED` in every
+  permission mode, so a prompt injection in workspace content can never undo a
+  delete. Archive and restore stay a reversible hide and never write a
+  tombstone.
 - **Rejecting a suggestion** erases the suggestion and writes the same
   tombstone, so it is not proposed again from the same evidence.
 - **Separate switches:** "use learned memory" (read, default on), "learn

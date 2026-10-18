@@ -131,14 +131,38 @@ try {
   assert.equal(deleted.ok, true, JSON.stringify(deleted));
   const afterDelete = await host.call("memory.index", { path: firstProject });
   assert.deepEqual(afterDelete.index.entries, []);
-  // Asking again in so many words is the request that clears it.
-  const again = await remember(first, turn, {
-    content: "Prefers terse Chinese replies.",
-    kind: "preference",
+  // The model cannot resurrect it, under Auto either. Only the user's own
+  // "remember again" action on the receipt may clear the tombstone.
+  await host.call("settings.set", { defaultPermissionMode: "auto" });
+  // Under Auto the call needs no card, so it reaches the write rule directly —
+  // which is exactly the case that used to clear the tombstone.
+  const blocked = await host.call("tools.execute", {
+    sessionId: first.id,
+    turnId: turn,
+    toolCallId: `call-${randomUUID()}`,
+    toolName: "MemoryRemember",
+    args: { content: "Prefers terse Chinese replies.", kind: "preference" },
+    mode: "agent",
   });
-  assert.equal(again.ok, true, JSON.stringify(again.content));
-  assert.notEqual(again.content.entry.id, entryId);
-  summary.deleted = "stays-forgotten-until-asked-again";
+  assert.equal(blocked.ok, false, JSON.stringify(blocked.content));
+  assert.equal(blocked.errorCode, "MEMORY_TOMBSTONED");
+  assert.equal(blocked.content.sessionId, first.id);
+  assert.equal(blocked.content.turnId, turn);
+  const rememberedAgain = await host.call("memory.rememberAgain", {
+    sessionId: blocked.content.sessionId,
+    turnId: blocked.content.turnId,
+    kind: "preference",
+    content: "Prefers terse Chinese replies.",
+    scope: "project",
+  });
+  assert.ok(rememberedAgain.entry, JSON.stringify(rememberedAgain));
+  assert.notEqual(rememberedAgain.entry.id, entryId);
+  assert.equal(rememberedAgain.entry.origin, "explicit");
+  // The host resolved the evidence from that turn's own user message.
+  assert.equal(rememberedAgain.entry.sourceSessionId, first.id);
+  assert.equal(rememberedAgain.entry.sourceMessageIds.length, 1);
+  summary.deleted = "only-the-user-can-restore";
+  await host.call("settings.set", { defaultPermissionMode: "ask" });
 
   // 4. Project scope isolation: the other project's index and search never
   //    see this note, and its own remember writes its own scope.

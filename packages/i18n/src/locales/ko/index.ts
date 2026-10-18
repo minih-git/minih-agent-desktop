@@ -2030,6 +2030,8 @@ sklm: {
     rememberDuplicate: "이미 저장됨",
     rememberScopeProject: "이 프로젝트",
     rememberScopeUser: "모든 프로젝트",
+    rememberAgain: "그래도 기억하기",
+    rememberAgainBusy: "기억하는 중…",
     rememberUndo: "실행 취소",
     rememberUndoing: "취소 중…",
     rememberUndone: "삭제됨",

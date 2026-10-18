@@ -1987,6 +1987,8 @@ export const ptBR = {
     rememberDuplicate: "Já estava salvo",
     rememberScopeProject: "Este projeto",
     rememberScopeUser: "Todos os projetos",
+    rememberAgain: "Lembrar mesmo assim",
+    rememberAgainBusy: "Lembrando…",
     rememberUndo: "Desfazer",
     rememberUndoing: "Desfazendo…",
     rememberUndone: "Excluído",

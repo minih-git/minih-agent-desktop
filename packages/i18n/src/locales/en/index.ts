@@ -2045,6 +2045,8 @@ sklm: {
     rememberDuplicate: "Already saved",
     rememberScopeProject: "This project",
     rememberScopeUser: "All projects",
+    rememberAgain: "Remember it again",
+    rememberAgainBusy: "Remembering…",
     rememberUndo: "Undo",
     rememberUndoing: "Undoing…",
     rememberUndone: "Deleted",

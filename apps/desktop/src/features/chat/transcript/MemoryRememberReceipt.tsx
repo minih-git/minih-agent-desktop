@@ -26,6 +26,47 @@ function refusalCode(payload: unknown): string {
   return typeof code === "string" ? code : "";
 }
 
+/** The identity a tombstone refusal carries: the turn the receipt belongs to. */
+function provenanceOf(payload: unknown): { sessionId: string; turnId: string } | null {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as { sessionId?: unknown; turnId?: unknown };
+  if (typeof record.sessionId !== "string" || typeof record.turnId !== "string") return null;
+  if (!record.sessionId || !record.turnId) return null;
+  return { sessionId: record.sessionId, turnId: record.turnId };
+}
+
+/**
+ * What the model asked to store. The "remember again" button repeats exactly
+ * this request: the renderer never composes a note of its own.
+ */
+function restoreDraftOf(message: UiMessage): {
+  content: string;
+  kind: LearnedMemoryKind;
+  scope?: LearnedMemoryScopeKind;
+  basis?: "user_stated" | "verified";
+  rationale?: string;
+} | null {
+  const args = message.toolArgs;
+  if (!args || typeof args !== "object") return null;
+  const record = args as Record<string, unknown>;
+  if (typeof record.content !== "string" || !record.content.trim()) return null;
+  const kind = record.kind;
+  if (kind !== "preference" && kind !== "feedback" && kind !== "fact" && kind !== "reference") {
+    return null;
+  }
+  const scope = record.scope === "user" || record.scope === "project" ? record.scope : undefined;
+  const basis =
+    record.basis === "verified" || record.basis === "user_stated" ? record.basis : undefined;
+  const rationale = typeof record.rationale === "string" ? record.rationale : undefined;
+  return {
+    content: record.content.trim(),
+    kind,
+    ...(scope ? { scope } : {}),
+    ...(basis ? { basis } : {}),
+    ...(rationale ? { rationale } : {}),
+  };
+}
+
 /** A stored entry, or nothing when the row is not a saved receipt. */
 function receiptOf(payload: unknown): Receipt | null {
   if (!payload || typeof payload !== "object") return null;
@@ -54,12 +95,66 @@ export function MemoryRememberReceipt({ message }: { message: UiMessage }) {
   const [busy, setBusy] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const [failed, setFailed] = useState("");
+  const [restoring, setRestoring] = useState(false);
+  const [restoreFailed, setRestoreFailed] = useState("");
+  const [restoredId, setRestoredId] = useState<string | null>(null);
+  // What the model asked to store, so the user's own "remember again" sends the
+  // same note rather than a summary the renderer invented.
+  const restoreDraft = restoreDraftOf(message);
+
+  const rememberAgain = async (provenance: { sessionId: string; turnId: string }) => {
+    if (!restoreDraft) return;
+    setRestoring(true);
+    setRestoreFailed("");
+    try {
+      const result = await api.rememberLearnedMemoryAgain({
+        sessionId: provenance.sessionId,
+        turnId: provenance.turnId,
+        kind: restoreDraft.kind,
+        content: restoreDraft.content,
+        ...(restoreDraft.scope ? { scope: restoreDraft.scope } : {}),
+        ...(restoreDraft.basis ? { basis: restoreDraft.basis } : {}),
+        ...(restoreDraft.rationale ? { rationale: restoreDraft.rationale } : {}),
+      });
+      if (result.rejected) {
+        setRestoreFailed(`memory.reason.${result.rejected.code}`);
+        return;
+      }
+      if (result.entry) setRestoredId(result.entry.id);
+    } catch (error) {
+      const code = (error as { errorCode?: unknown })?.errorCode;
+      setRestoreFailed(typeof code === "string" ? `memory.reason.${code}` : "memory.reason.INTERNAL");
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   const refused = message.toolStatus === "error" || message.toolStatus === "denied";
+  if (refused && restoredId) {
+    return (
+      <div className="learned-memory-receipt" role="note" data-memory-entry={restoredId}>
+        <div className="learned-memory-receipt-head">
+          <IconSparkles size={14} aria-hidden />
+          <span>{t("memory.rememberSaved")}</span>
+          <span className="learned-memory-receipt-scope">
+            {restoreDraft?.scope === "user"
+              ? t("memory.rememberScopeUser")
+              : t("memory.rememberScopeProject")}
+          </span>
+        </div>
+        <p className="learned-memory-receipt-content">{restoreDraft?.content ?? ""}</p>
+        <p className="learned-memory-receipt-note">{t("memory.rememberNote")}</p>
+      </div>
+    );
+  }
   if (refused) {
     const code = refusalCode(payload);
     const reasonKey = `memory.reason.${code}`;
     const reason = code && t(reasonKey) !== reasonKey ? t(reasonKey) : t("memory.reason.INTERNAL");
+    // A tombstone is the one refusal the user can overrule, and only here: the
+    // model may never bring the note back, so the button is the whole point of
+    // the refusal (ADR §6).
+    const provenance = code === "MEMORY_TOMBSTONED" ? provenanceOf(payload) : null;
     return (
       <div className="learned-memory-receipt learned-memory-receipt-refused" role="note">
         <span className="learned-memory-receipt-head">
@@ -69,6 +164,22 @@ export function MemoryRememberReceipt({ message }: { message: UiMessage }) {
         <p className="learned-memory-receipt-refusal">
           {t("memory.rememberRefused", { reason })}
         </p>
+        {provenance && restoreDraft ? (
+          <div className="learned-memory-receipt-actions">
+            <Button
+              type="button"
+              size="sm"
+              disabled={restoring}
+              onClick={() => void rememberAgain(provenance)}
+            >
+              <IconCheck size={13} aria-hidden />
+              {restoring ? t("memory.rememberAgainBusy") : t("memory.rememberAgain")}
+            </Button>
+          </div>
+        ) : null}
+        {restoreFailed ? (
+          <p className="learned-memory-receipt-refusal">{t(restoreFailed)}</p>
+        ) : null}
       </div>
     );
   }
