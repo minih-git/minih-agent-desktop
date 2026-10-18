@@ -122,6 +122,27 @@ test("a delegate whose start row is gone still appears from its own rows", () =>
   assert.equal(roster[0].agentName, "explorer");
 });
 
+test("a delegate's own rows do not create a second, permanently running row", () => {
+  const roster = buildSessionSubagentRoster([
+    taskCall("call-1", "del-1", "Inspect auth", { status: "completed" }),
+    message("step-1", {
+      toolName: "Read",
+      parentToolCallId: "call-1",
+      agentName: "explorer",
+    }),
+    message("answer-1", {
+      role: "assistant",
+      parentToolCallId: "call-1",
+      agentName: "explorer",
+      content: "Report",
+    }),
+  ]);
+  assert.equal(roster.length, 1, "the delegate appears exactly once");
+  assert.equal(roster[0].delegationId, "del-1");
+  assert.equal(roster[0].status, "completed");
+  assert.equal(roster[0].running, false);
+});
+
 test("a lifecycle roster entry survives without the delegate's own rows", () => {
   const roster = buildSessionSubagentRoster([
     message("list-1", {

@@ -28,15 +28,32 @@ import {
 const COLLAPSED_SESSIONS = new Set<string>();
 
 /**
- * A comparable signature of what the roster reads from the live transcript.
+ * A signature of the delegation facts the roster renders.
  *
- * The transcript array identity changes on every streaming token, but a
- * delegation row's own fields only change when it starts, settles, or records
- * a new step. Recomputing the roster on the signature keeps the list calm
- * during a long answer; a new row or a status change still rebuilds it.
+ * The transcript array identity changes on every streaming token, so caching on
+ * it would rebuild the list continuously. Caching on row identity alone is
+ * wrong in the other direction: a settled delegation keeps its row id and only
+ * its result changes, which left the row showing `running` after the delegate
+ * finished. The signature therefore covers the fields that can change a row.
  */
-function liveDelegationSignature(messages: readonly { id: string }[]): string {
-  return messages.map((message) => message.id).join("\u0000");
+function liveDelegationSignature(
+  messages: readonly {
+    id: string;
+    toolName?: string;
+    toolResult?: unknown;
+    agentName?: string;
+  }[],
+): string {
+  const parts: string[] = [];
+  for (const message of messages) {
+    const payload = message.toolResult as { details?: { status?: unknown; completedAt?: unknown } } | undefined;
+    const status = payload?.details?.status;
+    const completedAt = payload?.details?.completedAt;
+    parts.push(
+      `${message.id}\u0001${message.toolName ?? ""}\u0001${typeof status === "string" ? status : ""}\u0001${typeof completedAt === "number" ? completedAt : ""}\u0001${message.agentName ?? ""}`,
+    );
+  }
+  return parts.join("\u0000");
 }
 
 function StatusIcon({ entry }: { entry: SessionSubagentEntry }) {
@@ -159,15 +176,17 @@ export function SessionSubagentRoster() {
         { turnLive: running },
       ),
     // `liveSignature` stands in for the live array: its identity changes on
-    // every token, its delegation rows do not.
+    // every token, while a row's own fields only change when it really does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows, liveSignature, running],
   );
 
-  if (!sessionId) return null;
+  // Keep the section on screen for every state the user must be told about:
+  // loading and a failed read. Hiding those would present an unknown answer as
+  // "no subagents", which is exactly what the roster is supposed to resolve.
+  const visible = roster.length > 0 || loading || error !== null;
+  if (!sessionId || !visible) return null;
   const summary = sessionSubagentSummary(roster);
-  const onScreen = loading || error !== null || summary.total > 0;
-  if (!onScreen) return null;
 
   const groups = groupSessionSubagentRoster(roster);
   const activeDelegationId =
@@ -232,11 +251,6 @@ export function SessionSubagentRoster() {
               >
                 {t("panel.roster.retry")}
               </button>
-            </div>
-          ) : null}
-          {rows && !rows.complete ? (
-            <div className="subagent-roster-note is-warning" role="status">
-              {t("panel.roster.incomplete")}
             </div>
           ) : null}
           {groups.running.length > 0 ? (

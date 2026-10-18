@@ -164,16 +164,31 @@ export function buildSessionSubagentRoster(
     });
   }
 
-  // A delegate that produced rows while its start row sits outside the merged
-  // set still exists; `parentToolCallId` names the call that started it.
+  // A delegate's own rows name the call that started it, not the delegation id.
+  // Without this mapping the same delegate appears twice: once from its start
+  // call and once from its rows, the second stuck at `running` because no
+  // status ever names a call id.
+  const delegationByCallId = new Map<string, string>();
+  for (const message of messages) {
+    if (message.role !== "tool" || !isDelegationStartTool(message.toolName)) continue;
+    const callId = message.toolCallId;
+    const payload = asRecord(toolResultPayload(message));
+    const delegationId = payload?.delegationId;
+    if (typeof callId === "string" && callId && typeof delegationId === "string" && delegationId) {
+      delegationByCallId.set(callId, delegationId);
+    }
+  }
   for (const message of messages) {
     const parent = message.parentToolCallId;
-    if (!parent || entries.has(parent) || !message.agentName) continue;
-    entries.set(parent, {
-      delegationId: parent,
+    if (!parent || !message.agentName) continue;
+    const delegationId = delegationByCallId.get(parent) ?? parent;
+    // The start call already contributed this delegation.
+    if (entries.has(delegationId) || delegationByCallId.has(parent)) continue;
+    entries.set(delegationId, {
+      delegationId,
       agentName: message.agentName,
       task: "",
-      status: statuses.get(parent) ?? "running",
+      status: statuses.get(delegationId) ?? "running",
       ...(createdAtMs(message) !== undefined
         ? { startedAt: createdAtMs(message) }
         : {}),

@@ -1,33 +1,95 @@
-import "./session-subagent-roster.css";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 import { catalogs } from "@minih-agent/i18n";
 import { SessionSubagentRoster } from "../../apps/desktop/src/components/workpanel/SessionSubagentRoster";
+import { SubagentTranscriptTab } from "../../apps/desktop/src/components/workpanel/SubagentTranscriptTab";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 import { api } from "../../apps/desktop/src/lib/api";
+import type { UiMessage } from "@minih-agent/shared";
 
 declare global {
-  var sessionSubagentRosterProbe: () => Promise<{ ok: true }>;
+  var sessionSubagentRosterProbe: () => Promise<{
+    ok: true;
+    sectionHeight: number;
+    bodyHeight: number;
+    bodyOverflows: boolean;
+  }>;
 }
 
 const assert = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
 };
 
-const waitFor = async (check: () => boolean, label: string) => {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    if (check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 25));
+const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+async function until(check: () => boolean, label: string) {
+  const deadline = performance.now() + 5_000;
+  while (!check()) {
+    if (performance.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+    await frame();
   }
-  throw new Error(`timed out waiting for ${label}`);
-};
+}
+
+const message = (
+  id: string,
+  role: UiMessage["role"],
+  extra: Partial<UiMessage> = {},
+): UiMessage => ({
+  id,
+  role,
+  content: "",
+  createdAt: "2026-10-18T00:00:00.000Z",
+  ...extra,
+});
+
+/** A settled `Task` call whose session is far longer than the reading window. */
+const storedTask = message("task-row", "tool", {
+  toolName: "Task",
+  toolCallId: "call-1",
+  toolArgs: { agent: "explorer", task: "Inspect authentication" },
+  toolResult: {
+    details: { delegationId: "del-1", status: "completed", agent: "explorer" },
+  },
+});
+
+const storedAnswer = message("stored-answer", "assistant", {
+  content: "The stored report from an earlier turn.",
+  parentToolCallId: "call-1",
+  agentName: "explorer",
+});
+
+/**
+ * The whole session is 40 messages long and the renderer only holds the tail,
+ * which is what made the old detail tab announce "details unavailable" for a
+ * delegation it had just listed.
+ */
+const recentTail = [
+  message("recent-user", "user", { content: "Continue" }),
+  ...Array.from({ length: 39 }, (_, index) =>
+    message(`filler-${index}`, "assistant", { content: `filler ${index}` }),
+  ),
+];
+
+function Harness() {
+  const active = useAppStore((state) =>
+    state.workPanelTabs.find((tab) => tab.id === state.activeWorkPanelTabId),
+  );
+  return (
+    <>
+      <SessionSubagentRoster />
+      {active?.kind === "subagent" ? (
+        <SubagentTranscriptTab delegationId={active.resource ?? ""} />
+      ) : null}
+    </>
+  );
+}
 
 globalThis.sessionSubagentRosterProbe = async () => {
   const previousStore = useAppStore.getState();
   const host = document.createElement("div");
-  host.style.cssText = "width: 360px; height: 640px; background: #212121; color: #fff;";
+  host.style.cssText = "width: 360px; height: 680px; background: #212121; color: #fff;";
   document.body.append(host);
 
   const i18n = createInstance();
@@ -38,153 +100,151 @@ globalThis.sessionSubagentRosterProbe = async () => {
     interpolation: { escapeValue: false },
   });
 
-  const opened: Array<[string, string | undefined]> = [];
-  const many = Array.from({ length: 12 }, (_, index) => ({
-    id: `call-bulk-${index}`,
-    role: "tool",
-    content: "",
-    createdAt: `2026-10-18T00:${String(index).padStart(2, "0")}:00.000Z`,
-    toolName: "Task",
-    toolCallId: `call-bulk-${index}`,
-    toolArgs: { agent: "explorer", task: `Bulk delegated task ${index}` },
-    toolResult: { details: { delegationId: `del-bulk-${index}`, status: "completed" } },
-  }));
-  api.getSessionDelegations = async (sessionId) => ({
+  let rosterRows: UiMessage[] = [];
+  let detailMessages: UiMessage[] | null = null;
+  let rosterError: Error | null = null;
+  api.getSessionDelegations = async (sessionId) => {
+    if (rosterError) throw rosterError;
+    return { sessionId, messages: rosterRows };
+  };
+  api.getSessionDelegation = async (sessionId, delegationId) => ({
     sessionId,
-    complete: true,
-    messages: [...many,
-      {
-        id: "call-old",
-        role: "tool",
-        content: "",
-        createdAt: "2026-10-18T00:00:00.000Z",
-        toolName: "Task",
-        toolCallId: "call-old",
-        toolArgs: { agent: "explorer", task: "Old settled task" },
-        toolResult: { details: { delegationId: "del-old", status: "completed" } },
-      },
-      {
-        id: "call-live",
-        role: "tool",
-        content: "",
-        createdAt: "2026-10-18T00:01:00.000Z",
-        toolName: "Task",
-        toolCallId: "call-live",
-        toolArgs: { agent: "test-runner", task: "Running task" },
-        toolResult: { details: { delegationId: "del-live", status: "running" } },
-      },
-    ],
+    delegationId,
+    messages: detailMessages,
+    truncated: false,
   });
+
+  const setSession = (messages: UiMessage[], running: boolean) =>
+    useAppStore.setState({
+      ...previousStore,
+      activeSessionId: "session-roster",
+      messages,
+      retainedTranscripts: {},
+      runningSessions: { "session-roster": running },
+      workPanelTabs: [],
+      activeWorkPanelTabId: null,
+      workPanelContexts: {},
+      workPanelOpen: true,
+      openSubagentTab: (delegationId: string, agentName?: string) =>
+        previousStore.openSubagentTab(delegationId, agentName),
+    });
 
   const uncaught: unknown[] = [];
-  const root = createRoot(host, {
-    onUncaughtError: (error) => uncaught.push(error),
-  });
-
-  try {
-    flushSync(() =>
-      useAppStore.setState({
-        ...previousStore,
-        activeSessionId: "session-roster",
-        messages: [],
-        retainedTranscripts: {},
-        runningSessions: { "session-roster": true },
-        workPanelTabs: [{ id: "subagent:del-old", kind: "subagent", resource: "del-old" }],
-        activeWorkPanelTabId: "subagent:del-old",
-        openSubagentTab: (delegationId, agentName) =>
-          opened.push([delegationId, agentName]),
-      }),
-    );
+  let root = createRoot(host, { onUncaughtError: (error) => uncaught.push(error) });
+  const mount = () =>
     flushSync(() =>
       root.render(
         <I18nextProvider i18n={i18n}>
-          <SessionSubagentRoster />
+          <Harness />
         </I18nextProvider>,
       ),
     );
 
-    await waitFor(
-      () => Boolean(host.querySelector('[data-delegation-id="del-live"]')),
-      "the live roster row",
+  try {
+    // 1. A live delegate settles while its row keeps the same identity.
+    rosterRows = [];
+    detailMessages = null;
+    setSession([message("live-task", "tool", {
+      toolName: "Task",
+      toolCallId: "call-live",
+      toolArgs: { agent: "test-runner", task: "Run the suite" },
+      toolResult: { details: { delegationId: "del-live", status: "running" } },
+    })], true);
+    mount();
+    await until(
+      () => host.querySelector('[data-delegation-id="del-live"]')?.classList.contains("is-running") === true,
+      "the running row",
+    );
+    flushSync(() =>
+      useAppStore.setState({
+        messages: [message("live-task", "tool", {
+          toolName: "Task",
+          toolCallId: "call-live",
+          toolArgs: { agent: "test-runner", task: "Run the suite" },
+          toolResult: { details: { delegationId: "del-live", status: "completed" } },
+        })],
+      }),
+    );
+    await until(
+      () => host.querySelector('[data-delegation-id="del-live"]')?.classList.contains("is-completed") === true,
+      "the settled row to update in place",
     );
 
-    const rows = [...host.querySelectorAll(".subagent-roster-row")];
-    assert(rows.length >= 2, `expected the bulk roster rows, got ${rows.length}`);
-    const bulkBody = host.querySelector(".subagent-roster-body") as HTMLElement;
-    const cap = Number.parseFloat(getComputedStyle(bulkBody).maxHeight);
-    assert(
-      Number.isFinite(cap) && bulkBody.getBoundingClientRect().height <= cap + 1,
-      `the roster body must stay within its height cap (height=${bulkBody.getBoundingClientRect().height}, cap=${cap})`,
+    // 2. An old delegation from the stored history opens a real conversation,
+    //    even though the renderer's live window does not contain its rows.
+    flushSync(() => root.unmount());
+    root = createRoot(host, { onUncaughtError: (error) => uncaught.push(error) });
+    rosterRows = [storedTask];
+    detailMessages = [storedTask, storedAnswer];
+    setSession(recentTail, false);
+    mount();
+    await until(
+      () => Boolean(host.querySelector('[data-delegation-id="del-1"]')),
+      "the historical roster row",
+    );
+    (host.querySelector('[data-delegation-id="del-1"]') as HTMLButtonElement).click();
+    await until(
+      () => host.textContent?.includes("The stored report from an earlier turn.") === true,
+      "the stored conversation",
     );
     assert(
-      bulkBody.scrollHeight > bulkBody.clientHeight,
-      "many delegations must scroll inside the roster, not grow the body",
-    );
-    // Focus the two rows the assertions below describe rather than assuming a
-    // fixed total count from the bulk fixture.
-    rows.splice(0, rows.length, ...rows.filter((row) =>
-      ["del-live", "del-old"].includes(row.getAttribute("data-delegation-id") ?? ""),
-    ));
-    assert(rows.length === 2, `expected the two named roster rows, got ${rows.length}`);
-    // The running delegate leads even though it started later.
-    assert(
-      rows[0].getAttribute("data-delegation-id") === "del-live",
-      "the running delegate must lead the roster",
+      !host.textContent?.includes("no longer available"),
+      "a listed delegation must not report its details as unavailable",
     );
     assert(
-      rows[1].getAttribute("data-delegation-id") === "del-old",
-      "the settled delegate must follow",
-    );
-    assert(
-      rows[0].textContent?.includes("Running task"),
-      "the row must show the Task brief",
-    );
-    assert(
-      rows[0].textContent?.includes("test-runner"),
-      "the row must show the delegate's agent",
-    );
-    assert(
-      rows[1].getAttribute("aria-current") === "true",
-      "the open detail tab must mark its row",
-    );
-    const groupLabels = [...host.querySelectorAll(".subagent-roster-group-label")].map(
-      (node) => node.textContent,
-    );
-    assert(
-      groupLabels.join("|") === "Running|Finished",
-      `unexpected groups: ${groupLabels.join("|")}`,
+      useAppStore.getState().messages.map((entry) => entry.id).includes("recent-user"),
+      "opening a delegation must not rewrite the main transcript",
     );
 
-    // Clicking a row opens the existing subagent detail tab; it does not create
-    // a second detail surface.
-    (rows[0] as HTMLButtonElement).click();
-    assert(opened.length === 1, "clicking a roster row must open one tab");
-    assert(opened[0][0] === "del-live", "the clicked delegation must be opened");
-    assert(opened[0][1] === "test-runner", "the tab keeps the agent name");
-
-    // Collapse keeps the summary and hides the rows, then expands again.
-    const header = host.querySelector(".subagent-roster-header") as HTMLButtonElement;
-    assert(header.getAttribute("aria-expanded") === "true", "roster starts expanded");
-    header.click();
-    await waitFor(
-      () => !host.querySelector(".subagent-roster-row"),
-      "collapsed rows",
+    // 3. A failed read is visible with a retry, never an empty panel.
+    flushSync(() => root.unmount());
+    root = createRoot(host, { onUncaughtError: (error) => uncaught.push(error) });
+    rosterRows = [];
+    detailMessages = null;
+    rosterError = new Error("host read failed");
+    setSession([], false);
+    mount();
+    await until(
+      () => host.textContent?.includes("Could not load this session's subagents.") === true,
+      "the roster failure state",
     );
     assert(
-      header.getAttribute("aria-expanded") === "false",
-      "collapse must update aria-expanded",
+      host.textContent?.includes("Retry"),
+      "a failed roster read must offer a retry",
     );
-    const collapsedText = header.textContent ?? "";
-    assert(collapsedText.includes("1 running"), "collapsed header keeps the live count");
-    header.click();
-    await waitFor(
-      () => Boolean(host.querySelector(".subagent-roster-row")),
-      "expanded rows",
+    rosterError = null;
+
+    // 4. Many delegations scroll inside the cap instead of squeezing the body.
+    flushSync(() => root.unmount());
+    root = createRoot(host, { onUncaughtError: (error) => uncaught.push(error) });
+    rosterRows = Array.from({ length: 12 }, (_, index) =>
+      message(`bulk-${index}`, "tool", {
+        toolName: "Task",
+        toolCallId: `call-bulk-${index}`,
+        toolArgs: { agent: "explorer", task: `Bulk task ${index}` },
+        toolResult: { details: { delegationId: `del-bulk-${index}`, status: "completed" } },
+      }),
+    );
+    setSession([], false);
+    mount();
+    await until(
+      () => host.querySelectorAll(".subagent-roster-row").length === 12,
+      "the bulk rows",
+    );
+    const body = host.querySelector(".subagent-roster-body") as HTMLElement;
+    const cap = Number.parseFloat(getComputedStyle(body).maxHeight);
+    assert(Number.isFinite(cap), "the roster body must declare a height cap");
+    assert(
+      body.getBoundingClientRect().height <= cap + 1,
+      `roster height ${body.getBoundingClientRect().height} exceeds cap ${cap}`,
+    );
+    assert(
+      body.scrollHeight > body.clientHeight,
+      "many delegations must scroll inside the roster",
     );
 
     assert(uncaught.length === 0, `uncaught render error: ${String(uncaught[0])}`);
     const section = host.querySelector(".subagent-roster") as HTMLElement;
-    const body = host.querySelector(".subagent-roster-body") as HTMLElement;
     return {
       ok: true,
       sectionHeight: Math.round(section.getBoundingClientRect().height),

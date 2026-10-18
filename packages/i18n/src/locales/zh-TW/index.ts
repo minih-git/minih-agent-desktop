@@ -2204,6 +2204,7 @@ sklm: {
     subagentTaskEmpty: "暫無任務描述。",
     subagentReadOnly: "子智慧體由主智慧體驅動，無法在此輸入。",
     subagentEmpty: "子智慧體詳情已不可用。",
+    subagentLoadFailed: "無法載入此子代理的對話。",
     roster: {
       title: "子代理",
       count: "{{total}} 個",

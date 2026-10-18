@@ -2209,6 +2209,7 @@ sklm: {
     "subagentTaskEmpty": "Keine Aufgabenbeschreibung.",
     "subagentReadOnly": "Unteragenten werden vom Haupt-Agenten gesteuert — eine Eingabe ist nicht möglich.",
     "subagentEmpty": "Die Unteragent-Details sind nicht mehr verfügbar.",
+    "subagentLoadFailed": "Die Unterhaltung dieses Unteragenten konnte nicht geladen werden.",
     "roster": {
       "title": "Unteragenten",
       "count": "{{total}}",

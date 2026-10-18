@@ -502,6 +502,28 @@ const RPC_REQUEST_BUDGET_MS: u64 = 135_000;
 /// the grace covers host-side bookkeeping around the actual execution.
 const RPC_TOOL_BUDGET_GRACE_MS: u64 = 90_000;
 
+/// The validated session id of a read-only session method.
+fn session_id_param(params: &Value) -> Result<&str, JsonRpcError> {
+    params
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|id| !id.is_empty() && id.len() <= 256)
+        .ok_or_else(|| rpc_err(1002, "sessionId required", "INVALID_PARAMS"))
+}
+
+/// A read-only session method must name an existing session. A missing id is
+/// `NOT_FOUND` rather than an empty answer, so the renderer never presents a
+/// deleted session as "no subagents ever ran".
+fn require_session(db: &crate::db::Database, session_id: &str) -> Result<(), JsonRpcError> {
+    if sessions::session_summary(db, session_id)
+        .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?
+        .is_none()
+    {
+        return Err(rpc_err(1007, "session not found", "NOT_FOUND"));
+    }
+    Ok(())
+}
 /// Cap added to the `tools.execute` budget for the permission prompt. Before
 /// the tool runs, the handler may legitimately wait for the user to answer an
 /// ask prompt for tens of seconds — that wait must not eat the tool's own
@@ -3131,32 +3153,48 @@ async fn handle_request(
             Ok(json!({ "path": path.to_string_lossy() }))
         }
 
-        // Read-only roster input for the work panel: every delegation-related
-        // row of the full transcript, independent of any reading window. This
-        // method never mutates a session and derives no state of its own.
+        // Read-only roster summaries for the work panel. Covers the whole
+        // transcript rather than a reading window, and carries no delegate
+        // conversation: the detail read serves that separately.
         "session.delegations" => {
-            let session_id = params
-                .get("sessionId")
+            let session_id = session_id_param(&params)?;
+            let st = state.lock().await;
+            require_session(&st.db, session_id)?;
+            let messages = delegations::read_session_delegation_rows(&st.db, session_id)
+                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            Ok(json!({ "sessionId": session_id, "messages": messages }))
+        }
+
+        // Read-only conversation of one delegation chain, bounded per field and
+        // in total. `messages: null` means the session has no such delegation,
+        // which the panel shows as unavailable rather than as an empty run.
+        "session.delegation" => {
+            let session_id = session_id_param(&params)?;
+            let delegation_id = params
+                .get("delegationId")
                 .and_then(|v| v.as_str())
                 .map(str::trim)
                 .filter(|id| !id.is_empty() && id.len() <= 256)
-                .ok_or_else(|| rpc_err(1002, "sessionId required", "INVALID_PARAMS"))?;
+                .ok_or_else(|| rpc_err(1002, "delegationId required", "INVALID_PARAMS"))?;
             let st = state.lock().await;
-            if sessions::session_summary(&st.db, session_id)
-                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?
-                .is_none()
-            {
-                return Err(rpc_err(1007, "session not found", "NOT_FOUND"));
-            }
-            let (messages, complete) =
-                delegations::read_session_delegation_rows(&st.db, session_id)
+            require_session(&st.db, session_id)?;
+            let detail =
+                delegations::read_session_delegation_detail(&st.db, session_id, delegation_id)
                     .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
-            Ok(json!({
-                "sessionId": session_id,
-                "messages": messages,
-                "complete": complete,
-                "incompleteReason": if complete { None } else { Some("transcript incomplete") }
-            }))
+            Ok(match detail {
+                Some(detail) => json!({
+                    "sessionId": session_id,
+                    "delegationId": delegation_id,
+                    "messages": detail.messages,
+                    "truncated": detail.truncated,
+                }),
+                None => json!({
+                    "sessionId": session_id,
+                    "delegationId": delegation_id,
+                    "messages": Value::Null,
+                    "truncated": false,
+                }),
+            })
         }
 
         "session.import" => {

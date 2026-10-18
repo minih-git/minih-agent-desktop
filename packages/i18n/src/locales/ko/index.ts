@@ -2225,6 +2225,7 @@ sklm: {
     subagentTaskEmpty: "작업 설명이 없습니다.",
     subagentReadOnly: "서브에이전트는 메인 에이전트가 구동하므로 입력할 수 없습니다.",
     subagentEmpty: "서브에이전트 세부 정보를 더 이상 사용할 수 없습니다.",
+    subagentLoadFailed: "이 서브에이전트의 대화를 불러올 수 없습니다.",
     roster: {
       title: "서브에이전트",
       count: "{{total}}개",

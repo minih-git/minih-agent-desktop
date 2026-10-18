@@ -2213,6 +2213,7 @@ sklm: {
     subagentTaskEmpty: "暂无任务描述。",
     subagentReadOnly: "子智能体由主智能体驱动，无法在此输入。",
     subagentEmpty: "子智能体详情已不可用。",
+    subagentLoadFailed: "无法加载此子智能体的对话。",
     roster: {
       title: "子代理",
       count: "{{total}} 个",

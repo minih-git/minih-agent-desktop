@@ -2209,6 +2209,7 @@ sklm: {
     "subagentTaskEmpty": "Aucune description de tâche.",
     "subagentReadOnly": "Les sous-agents sont pilotés par l'agent principal — la saisie est indisponible.",
     "subagentEmpty": "Les détails du sous-agent ne sont plus disponibles.",
+    "subagentLoadFailed": "Impossible de charger la conversation de ce sous-agent.",
     "roster": {
       "title": "Sous-agents",
       "count": "{{total}}",

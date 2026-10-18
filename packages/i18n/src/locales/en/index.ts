@@ -2238,6 +2238,7 @@ sklm: {
     subagentTaskEmpty: "No task description.",
     subagentReadOnly: "Subagents are driven by the main agent — input is unavailable.",
     subagentEmpty: "Subagent details are no longer available.",
+    subagentLoadFailed: "Could not load this subagent's conversation.",
     roster: {
       title: "Subagents",
       count: "{{total}}",

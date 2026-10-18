@@ -2175,6 +2175,7 @@ export const ptBR = {
     subagentTaskEmpty: "Nenhuma descrição de tarefa.",
     subagentReadOnly: "Subagentes são orientados pelo agente principal — a entrada não está disponível.",
     subagentEmpty: "Os detalhes do subagente não estão mais disponíveis.",
+    subagentLoadFailed: "Não foi possível carregar a conversa deste subagente.",
     roster: {
       title: "Subagentes",
       count: "{{total}}",

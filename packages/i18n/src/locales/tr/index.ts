@@ -2219,6 +2219,7 @@ sklm: {
     subagentTaskEmpty: "Görev açıklaması yok.",
     subagentReadOnly: "Alt ajanlar ana ajan tarafından yönetilir — girdi kullanılamaz.",
     subagentEmpty: "Alt ajan ayrıntıları artık kullanılamıyor.",
+    subagentLoadFailed: "Bu alt ajanın konuşması yüklenemedi.",
     roster: {
       title: "Alt ajanlar",
       count: "{{total}}",

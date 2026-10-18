@@ -411,6 +411,29 @@ export function registerSessionIpc({
       return host.call("session.delegations", { sessionId });
     },
   );
+  handle(
+    IPC.invoke.sessionDelegation,
+    async (input?: { sessionId?: unknown; delegationId?: unknown }) => {
+      if (!host) throw new Error("host unavailable");
+      const sessionId =
+        typeof input?.sessionId === "string" ? input.sessionId.trim() : "";
+      const delegationId =
+        typeof input?.delegationId === "string" ? input.delegationId.trim() : "";
+      if (!sessionId || sessionId.length > 256 || !delegationId || delegationId.length > 256) {
+        throw Object.assign(
+          new Error("sessionId and delegationId are required"),
+          { errorCode: ErrorCodes.INVALID_ARGUMENT },
+        );
+      }
+      if (sessionId.startsWith("native-pi:") || sessionId.startsWith("remote:")) {
+        throw Object.assign(
+          new Error("delegation detail is unavailable for this session source"),
+          { errorCode: ErrorCodes.UNSUPPORTED },
+        );
+      }
+      return host.call("session.delegation", { sessionId, delegationId });
+    },
+  );
   handle(IPC.invoke.sessionDelete, async (id: string) => {
     if (id.startsWith("native-pi:")) {
       throw Object.assign(new Error("Native Pi sessions cannot be deleted from Minih-Agent-Desktop"), {

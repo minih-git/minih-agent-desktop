@@ -2209,6 +2209,7 @@ sklm: {
     "subagentTaskEmpty": "No hay descripción de la tarea.",
     "subagentReadOnly": "Los subagentes son dirigidos por el agente principal; no se puede escribir aquí.",
     "subagentEmpty": "Los detalles del subagente ya no están disponibles.",
+    "subagentLoadFailed": "No se pudo cargar la conversación de este subagente.",
     "roster": {
       "title": "Subagentes",
       "count": "{{total}}",
