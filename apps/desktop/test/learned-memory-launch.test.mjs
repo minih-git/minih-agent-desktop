@@ -47,13 +47,13 @@ const index = {
   bytes: 120,
 };
 
-function fixture({ indexRead, failIndex = false } = {}) {
+function fixture({ indexRead, failIndex = false, indexCalls } = {}) {
   const logs = [];
   const runtime = createSessionLaunchRuntime({
     runtimeState: {
       host: {
         isAvailable: () => true,
-        call: async (method) => {
+        call: async (method, params) => {
           if (method === "commandShells.list") {
             return { configuredId: "bash", effective: shell, fallback: false, choices: [shell] };
           }
@@ -66,6 +66,7 @@ function fixture({ indexRead, failIndex = false } = {}) {
           if (method === "project.memory.get") return {};
           if (method === "memory.index") {
             if (indexRead) indexRead.push(method);
+            if (indexCalls) indexCalls.push(params);
             if (failIndex) {
               throw Object.assign(new Error("host refused the read"), {
                 data: { errorCode: "INTERNAL" },
@@ -146,4 +147,24 @@ test("turning reading off skips the read and carries the switch", async () => {
   assert.equal("learnedMemoryIndex" in params, false);
   assert.equal(params.learnedMemoryRead, false);
   assert.deepEqual(memoryWarnings(logs), []);
+});
+
+test("a session without a project still starts with the user-scope index", async () => {
+  const indexCalls = [];
+  const { runtime } = fixture({ indexCalls });
+  const launch = await runtime.resolveAgentRuntimeLaunch(
+    "session",
+    { providerId: provider.id, modelId: "parent" },
+    {},
+  );
+  // Naming no project is what makes the host answer with the user scope alone.
+  assert.deepEqual(indexCalls, [{}]);
+  assert.deepEqual(launch.sidecarParams.learnedMemoryIndex, index);
+  assert.equal(launch.sidecarParams.learnedMemoryRead, true);
+
+  // A session with a project still names it.
+  const scoped = [];
+  const { runtime: projectRuntime } = fixture({ indexCalls: scoped });
+  await launchParams(projectRuntime);
+  assert.deepEqual(scoped, [{ path: workspace }]);
 });

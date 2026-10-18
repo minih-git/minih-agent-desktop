@@ -93,9 +93,15 @@ fn scopes_are_isolated_between_projects_and_the_user() {
     assert!(!contents.contains(&"Second project fact."));
 
     // The index for one project sees the same two scopes.
-    let index = db.learned_memory_index(&first).unwrap();
+    let index = db.learned_memory_index(Some(&first)).unwrap();
     assert_eq!(index.entries.len(), 2);
-    assert!(db.learned_memory_index(&second).unwrap().entries.len() == 2);
+    assert!(
+        db.learned_memory_index(Some(&second))
+            .unwrap()
+            .entries
+            .len()
+            == 2
+    );
     assert!(db
         .learned_memory_scopes_for_session("missing")
         .unwrap()
@@ -232,7 +238,7 @@ fn the_session_start_index_is_ordered_and_budgeted() {
         created(db.create_memory_entry(write).unwrap());
     }
     // Suggestions are not part of the index.
-    let index = db.learned_memory_index(&project).unwrap();
+    let index = db.learned_memory_index(Some(&project)).unwrap();
     assert_eq!(index.entries.len(), 1);
     assert_eq!(index.omitted_count, 0);
 
@@ -252,13 +258,13 @@ fn the_session_start_index_is_ordered_and_budgeted() {
             SuggestionOutcome::Accepted(_)
         ));
     }
-    let index = db.learned_memory_index(&project).unwrap();
+    let index = db.learned_memory_index(Some(&project)).unwrap();
     assert_eq!(index.entries.len(), 40);
     assert_eq!(index.omitted_count, 11);
     assert_eq!(index.entries[0].content, "Explicit first.");
     assert!(index.bytes <= super::model::INDEX_MAX_BYTES);
     // Deterministic: the same data returns the same lines.
-    let again = db.learned_memory_index(&project).unwrap();
+    let again = db.learned_memory_index(Some(&project)).unwrap();
     assert_eq!(
         index
             .entries
@@ -286,7 +292,7 @@ fn the_session_start_index_is_ordered_and_budgeted() {
             .unwrap(),
         );
     }
-    let index = db.learned_memory_index(&long).unwrap();
+    let index = db.learned_memory_index(Some(&long)).unwrap();
     assert!(index.bytes <= super::model::INDEX_MAX_BYTES);
     assert!(index.entries.len() < 10);
     assert_eq!(index.entries.len() as i64 + index.omitted_count, 10);

@@ -280,9 +280,11 @@ recall tools.
   user scope, with the trigram FTS index as a prefilter. `limit` defaults to 8 and
   is capped at 20. Hits refresh `lastUsedAt` and `useCount` only with
   `recordUse: true`; the session-start index never does.
-- `memory.index({ path })` — the session-start index for a project: active entries
-  of the project scope and the user scope, explicit entries first, then by recency
-  of use, bounded to 40 entries and 6 KiB. Returns
+- `memory.index({ path? })` — the session-start index: active entries of the
+  project scope (when `path` names one) and the user scope, explicit entries
+  first, then by recency of use, bounded to 40 entries and 6 KiB. Without `path`
+  the snapshot is the user scope alone, so a session that belongs to no project
+  still starts with the user's own notes. Returns
   `{ index: { entries, omittedCount, bytes } }`. A launch that cannot read it
   continues without an index.
 - `memory.create({ ... })` — the only create path. Params: `scope`, `path` or

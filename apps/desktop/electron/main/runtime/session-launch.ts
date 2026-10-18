@@ -503,18 +503,22 @@ export function createSessionLaunchRuntime({
       }
     }
     // Learned memory (ADR agent-long-term-memory): the host returns a bounded,
-    // ordered index of the entries this session may read. It is captured once
-    // per launch — the runtime freezes it and never rebuilds a prompt from a
-    // later write — and it is best effort: a failing read degrades to no index
-    // and must never prevent a launch. The portable read switch hides the index
-    // and both recall tools without deleting anything.
+    // ordered index of the entries this session may read — its project scope
+    // plus the user scope, or the user scope alone when the session has no
+    // project. It is captured once per launch — the runtime freezes it and
+    // never rebuilds a prompt from a later write — and it is best effort: a
+    // failing read degrades to no index and must never prevent a launch. The
+    // portable read switch hides the index and both recall tools without
+    // deleting anything.
     const learnedMemoryRead = settings.learnedMemoryRead !== false;
     let learnedMemoryIndex: LearnedMemoryIndex | undefined;
-    if (learnedMemoryRead && projectPath) {
+    if (learnedMemoryRead) {
       try {
+        // A session without a project still reads the user scope, which is what
+        // the host returns for a call that names no project.
         const result = await runtimeState.host!.call<{ index?: LearnedMemoryIndex }>(
           "memory.index",
-          { path: projectPath },
+          projectPath ? { path: projectPath } : {},
         );
         if (result.index && result.index.entries.length > 0) {
           learnedMemoryIndex = result.index;

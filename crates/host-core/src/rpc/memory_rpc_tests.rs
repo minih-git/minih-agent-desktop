@@ -435,3 +435,60 @@ async fn memory_rpc_keeps_extraction_and_suggestions_paired() {
     .unwrap();
     assert_eq!(again["rejected"]["code"], json!("MEMORY_TOMBSTONED"));
 }
+
+/// The session-start snapshot without a project: a session that belongs to no
+/// project still starts with the user's own notes, and never with a project's
+/// (ADR agent-long-term-memory §5).
+#[tokio::test]
+async fn memory_index_without_a_project_returns_the_user_scope_alone() {
+    let (dir, state) = open().await;
+    let project_dir = dir.path().join("app");
+    std::fs::create_dir_all(&project_dir).unwrap();
+    let project = canonical_project_path(project_dir.to_str().unwrap()).unwrap();
+
+    let project_entry = call(
+        &state,
+        "memory.create",
+        json!({
+            "path": project,
+            "kind": "fact",
+            "content": "The host core is Rust.",
+            "origin": "user_ui"
+        }),
+    )
+    .await
+    .unwrap();
+    let user_entry = call(
+        &state,
+        "memory.create",
+        json!({
+            "scope": "user",
+            "kind": "fact",
+            "content": "Prefers terse Chinese replies.",
+            "origin": "user_ui"
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(user_entry["entry"]["scopeKind"], json!("user"));
+
+    let index = call(&state, "memory.index", json!({})).await.unwrap();
+    let entries = index["index"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1, "{index}");
+    assert_eq!(entries[0]["id"], user_entry["entry"]["id"]);
+    assert_eq!(entries[0]["scopeKind"], json!("user"));
+
+    // A project snapshot still carries both scopes.
+    let scoped = call(&state, "memory.index", json!({ "path": project }))
+        .await
+        .unwrap();
+    let ids: Vec<&str> = scoped["index"]["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids.len(), 2, "{scoped}");
+    assert!(ids.contains(&project_entry["entry"]["id"].as_str().unwrap()));
+    assert!(ids.contains(&user_entry["entry"]["id"].as_str().unwrap()));
+}
