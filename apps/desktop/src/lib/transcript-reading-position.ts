@@ -1,4 +1,4 @@
-import { transcriptHasLayout } from "./transcript-scroll";
+import { transcriptHasLayout, transcriptSitsAtBottom } from "./transcript-scroll";
 
 export type TranscriptReadingPosition = {
   pinned: boolean;
@@ -31,7 +31,17 @@ export function forgetTranscriptReadingState(sessionId: string) {
   readingStates.delete(sessionId);
 }
 
-/** Sample only a visible layout; hidden panes must never replace a bookmark. */
+/**
+ * Sample only a visible layout; hidden panes must never replace a bookmark.
+ *
+ * A scroller that sits within the re-pin band of its own bottom is captured as
+ * pinned even when follow mode was released. Interactions that are not reading
+ * history hand the scroller to the disclosure anchor — expanding a tool,
+ * thinking or activity title does exactly that (#324) — so the sticky follow
+ * flag alone recorded a session the reader never left the newest turn of as
+ * "scrolled up". Restoring such a bookmark pages history around an old message
+ * and opens the session mid-way, needing a manual scroll back to the tail.
+ */
 export function captureTranscriptReadingPosition(
   scroller: HTMLElement,
   content: HTMLElement,
@@ -39,7 +49,9 @@ export function captureTranscriptReadingPosition(
   windowSize: number,
 ): TranscriptReadingPosition | undefined {
   if (!transcriptHasLayout(scroller)) return;
-  if (pinned) return { pinned, offset: 0, scrollTop: scroller.scrollTop, windowSize };
+  if (pinned || transcriptSitsAtBottom(scroller)) {
+    return { pinned: true, offset: 0, scrollTop: scroller.scrollTop, windowSize };
+  }
   const viewport = scroller.getBoundingClientRect();
   // Prefer the outer message/turn: its offset also describes reading inside an
   // expanded tool body, whose explicit disclosure choices survive eviction.

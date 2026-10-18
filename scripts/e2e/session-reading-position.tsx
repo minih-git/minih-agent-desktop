@@ -7,12 +7,25 @@ import { IPC } from "@minih-agent/shared/protocol";
 import type { Result, SessionSummary, UiMessage } from "@minih-agent/shared";
 import { SessionPane } from "../../apps/desktop/src/components/SessionPane";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
+import { getTranscriptReadingPosition } from "../../apps/desktop/src/lib/transcript-reading-position";
 
 const createdAt = "2026-09-01T00:00:00Z";
 const messages: UiMessage[] = Array.from({ length: 140 }, (_, index) => ({
   id: `real-m${index}`, role: "user", content: `Message ${index}. ${"Synthetic reading content. ".repeat(30)}`,
   createdAt, status: "complete",
 }));
+messages.push({
+  id: "real-m140",
+  role: "tool",
+  content: "",
+  createdAt,
+  status: "success",
+  toolName: "Read",
+  toolCallId: "call-m140",
+  toolStatus: "success",
+  toolArgs: { path: "src/example.ts" },
+  toolResult: "Synthetic tool output.",
+});
 const sessions: SessionSummary[] = ["A", "B", "C", "D", "E"].map((id) => ({
   id: `real-${id}`, title: id, mode: "agent", permissionMode: "ask", thinkingLevel: "off",
   providerId: "fixture", modelId: "fixture", createdAt, updatedAt: createdAt, messageCount: messages.length,
@@ -131,6 +144,36 @@ globalThis.sessionReadingPositionProbe = async () => {
     await until(() => !useAppStore.getState().transcriptViews["real-A"] &&
       Math.abs(scroller().scrollHeight - scroller().clientHeight - scroller().scrollTop) < 2,
     "return to latest exits history and resumes follow");
+    assert(unexpected.length === 0, `unexpected IPC: ${unexpected}`);
+
+    // A session the reader left at the bottom of the tail, after a manual
+    // disclosure handed the scroller to its anchor and released follow mode,
+    // must come back at the bottom - not restored into a history page.
+    const atBottom = () => {
+      const scrollerNow = scroller();
+      return scrollerNow.scrollHeight - scrollerNow.clientHeight - scrollerNow.scrollTop < 2;
+    };
+    await until(atBottom, "A resumes the tail before the disclosure");
+    const toolHeader = row("real-m140")?.querySelector<HTMLElement>(".tool-row-header");
+    assert(toolHeader, "the expandable tool row did not render");
+    flushSync(() => toolHeader.click());
+    await frame();
+    // The disclosure released follow mode; a scroll event at the bottom with no
+    // gesture is what samples the bookmark again.
+    scroller().dispatchEvent(new Event("scroll", { bubbles: true }));
+    await frame();
+    assert(
+      getTranscriptReadingPosition("real-A")?.pinned === true,
+      "a disclosure at the bottom must not demote the reading bookmark",
+    );
+    for (const id of ["B", "C", "D", "E"]) await select(id);
+    assert(!host.querySelector('[data-session-pane="real-A"]'), "A was not evicted");
+    await select("A");
+    await until(atBottom, "a session left at the bottom returns to the tail");
+    assert(
+      !useAppStore.getState().transcriptViews["real-A"],
+      "a bottom bookmark must not reopen a history page",
+    );
     assert(unexpected.length === 0, `unexpected IPC: ${unexpected}`);
     return { ok: true, anchor: id, restoredOffset, aroundReads, panes: 3 };
   } catch (error) {
