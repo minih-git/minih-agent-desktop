@@ -6,6 +6,7 @@
  *   remote-gateway enroll-code --label <name>
  *   remote-gateway hosts list | hosts revoke <hostId>
  *   remote-gateway devices list | devices revoke <deviceId>
+ *   remote-gateway account-sessions list | account-sessions revoke <sessionId>
  *
  * `serve` prints one `GATEWAY_READY` line on stdout with the bound addresses
  * and the CA certificate path; everything else prints a single JSON line per
@@ -32,12 +33,20 @@ const USAGE = [
   "    --client-tls-key <pem>      client API private key",
   "    --allowed-origin <origin>   browser origin allowed for cookie requests (repeatable)",
   "    --public-name <dns>         extra DNS SAN on the Host link certificate",
+  "    --trusted-proxy <cidr>      reverse proxy whose client-IP header is honored (repeatable)",
+  "    --client-ip-header <name>   header a trusted proxy reports the caller address in",
+  "    --router-url <url>          loopback Minih-Router base URL; turns account mode on",
+  "    --router-client-ip-header <name>",
+  "                                header equal to the Router's CLIENT_IP_HEADER",
   "",
   "  enroll-code [--label <name>]  print a one-time enrollment code (15 minutes)",
   "  hosts list                    list registered Hosts",
   "  hosts revoke <hostId>         revoke a Host and drop its link",
   "  devices list                  list paired devices",
   "  devices revoke <deviceId>     revoke a device and close its connections",
+  "  account-sessions list         list live account sessions (account mode)",
+  "  account-sessions revoke <sessionId>",
+  "                                revoke an account session",
   "",
 ].join("\n");
 
@@ -52,7 +61,7 @@ function positional(args: ReturnType<typeof parseArgv>): string | undefined {
 }
 
 async function serve(argv: readonly string[]): Promise<number> {
-  const args = parseArgv(argv, ["hostlink-allow-cidr", "allowed-origin"]);
+  const args = parseArgv(argv, ["hostlink-allow-cidr", "allowed-origin", "trusted-proxy"]);
   const config = resolveServeConfig(args);
   const gateway = await startGateway(config, { log: createJsonLogger() });
   process.stdout.write(
@@ -103,6 +112,7 @@ async function listHosts(argv: readonly string[]): Promise<number> {
     registeredAt: host.registeredAt,
     lastSeenAt: host.lastSeenAt,
     revokedAt: host.revokedAt,
+    ...(host.accountId ? { accountId: host.accountId } : {}),
   }));
   process.stdout.write(`GATEWAY_HOSTS ${JSON.stringify({ hosts })}\n`);
   return 0;
@@ -147,6 +157,38 @@ async function revokeDevice(argv: readonly string[]): Promise<number> {
   return 0;
 }
 
+/** Account sessions are listed without their token hash: a hash is not a credential, but nothing needs it. */
+async function listAccountSessions(argv: readonly string[]): Promise<number> {
+  const args = parseArgv(argv);
+  const store = await GatewayStore.open(dataDirOf(args));
+  const sessions = store.listAccountSessions().map((session) => ({
+    sessionId: session.sessionId,
+    accountId: session.accountId,
+    label: session.label,
+    createdAt: session.createdAt,
+    expiresAt: session.expiresAt,
+    revokedAt: session.revokedAt,
+  }));
+  process.stdout.write(`GATEWAY_ACCOUNT_SESSIONS ${JSON.stringify({ sessions })}\n`);
+  return 0;
+}
+
+async function revokeAccountSession(argv: readonly string[]): Promise<number> {
+  const args = parseArgv(argv);
+  const sessionId = (typeof args["session-id"] === "string" ? args["session-id"] : positional(args)) ?? "";
+  if (!sessionId) {
+    process.stderr.write("remote-gateway: account-sessions revoke needs a session id\n");
+    return 1;
+  }
+  const response = await sendAdminRequest(dataDirOf(args), { op: "account-sessions.revoke", payload: { sessionId } });
+  if (!response.ok) {
+    process.stderr.write(`remote-gateway: ${response.code}\n`);
+    return 1;
+  }
+  process.stdout.write(`GATEWAY_REVOKED ${JSON.stringify({ sessionId, revoked: true })}\n`);
+  return 0;
+}
+
 export async function run(argv: readonly string[]): Promise<number> {
   const [command, ...rest] = argv;
   if (!command || command === "help" || command === "--help" || command === "-h") {
@@ -167,6 +209,13 @@ export async function run(argv: readonly string[]): Promise<number> {
     if (action === "list") return listDevices(rest.slice(1));
     if (action === "revoke") return revokeDevice(rest.slice(1));
     process.stderr.write("remote-gateway: devices expects list or revoke\n");
+    return 1;
+  }
+  if (command === "account-sessions") {
+    const [action] = rest;
+    if (action === "list") return listAccountSessions(rest.slice(1));
+    if (action === "revoke") return revokeAccountSession(rest.slice(1));
+    process.stderr.write("remote-gateway: account-sessions expects list or revoke\n");
     return 1;
   }
   process.stderr.write(`remote-gateway: unknown command ${command}\n${USAGE}`);

@@ -10,9 +10,28 @@ import { isIP } from "node:net";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
+import { validateHeaderName, validateTrustedProxy } from "./client-ip.js";
+import { resolveRouterUrl } from "./router-verifier.js";
+
 export type ListenAddress = { host: string; port: number };
 
 export type ClientTlsOptions = { certificatePath: string; keyPath: string };
+
+/** Trusted-proxy client address resolution (ADR decision 10, gate 31). */
+export type ClientIpOptions = {
+  /** CIDRs whose peer may speak for the caller through `headerName`. */
+  trustedProxies: string[];
+  /** Header carrying the caller address; equals the Router's `CLIENT_IP_HEADER`. */
+  headerName: string;
+};
+
+/** Router AccessKey verification; absent means account mode is off (D666). */
+export type RouterOptions = {
+  /** Loopback base URL of the Router control plane. */
+  baseUrl: string;
+  /** Header name equal to the Router's `CLIENT_IP_HEADER`. */
+  clientIpHeader: string;
+};
 
 export type GatewayServeConfig = {
   dataDir: string;
@@ -26,6 +45,10 @@ export type GatewayServeConfig = {
   allowedOrigins: string[];
   /** Extra DNS name added to the Host link server certificate SANs. */
   publicName?: string;
+  /** Present only when `--trusted-proxy` and `--client-ip-header` are both given. */
+  clientIp?: ClientIpOptions;
+  /** Present only when `--router-url` and `--router-client-ip-header` are both given. */
+  router?: RouterOptions;
 };
 
 export class GatewayConfigError extends Error {
@@ -209,13 +232,55 @@ function stringArg(args: ParsedArgv, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function listArg(args: ParsedArgv, key: string): string[] {
+  return Array.isArray(args[key]) ? args[key] : [];
+}
+
+/**
+ * `--trusted-proxy` and `--client-ip-header` are one setting: a header name with
+ * no trusted peer would never be read, and a trusted peer with no header name
+ * would resolve nothing, so a half-configured pair refuses to start instead of
+ * silently leaving the Gateway on the peer address (gate 31).
+ */
+function resolveClientIpOptions(args: ParsedArgv): ClientIpOptions | undefined {
+  const trustedProxies = listArg(args, "trusted-proxy");
+  const headerName = stringArg(args, "client-ip-header");
+  if (trustedProxies.length === 0 && !headerName) return undefined;
+  if (trustedProxies.length === 0) {
+    throw new GatewayConfigError("--client-ip-header needs at least one --trusted-proxy");
+  }
+  if (!headerName) throw new GatewayConfigError("--trusted-proxy needs --client-ip-header");
+  for (const cidr of trustedProxies) validateTrustedProxy(cidr);
+  validateHeaderName(headerName, "--client-ip-header");
+  return { trustedProxies, headerName };
+}
+
+/**
+ * `--router-url` turns account mode on (protocol §11.5). It is meaningless
+ * without the header name the Router reads the caller address from, and the
+ * header name is meaningless without the URL.
+ */
+function resolveRouterOptions(args: ParsedArgv): RouterOptions | undefined {
+  const baseUrl = stringArg(args, "router-url");
+  const clientIpHeader = stringArg(args, "router-client-ip-header");
+  if (!baseUrl && !clientIpHeader) return undefined;
+  if (!baseUrl) throw new GatewayConfigError("--router-client-ip-header needs --router-url");
+  if (!clientIpHeader) throw new GatewayConfigError("--router-url needs --router-client-ip-header");
+  validateHeaderName(clientIpHeader, "--router-client-ip-header");
+  try {
+    return { baseUrl: resolveRouterUrl(baseUrl), clientIpHeader };
+  } catch (error) {
+    throw new GatewayConfigError(error instanceof Error ? error.message : String(error));
+  }
+}
+
 /** Resolve and validate the `serve` configuration; throws on any bind-rule violation. */
 export function resolveServeConfig(args: ParsedArgv, env: NodeJS.ProcessEnv = process.env): GatewayServeConfig {
   const dataDir = resolve(stringArg(args, "data-dir") ?? env.MINIH_GATEWAY_DATA_DIR ?? resolve(homedir(), ".minih-remote-gateway"));
   const hostlink = stringArg(args, "hostlink-listen") ? parseListen(stringArg(args, "hostlink-listen")!, "--hostlink-listen") : DEFAULT_HOSTLINK;
   const client = stringArg(args, "client-listen") ? parseListen(stringArg(args, "client-listen")!, "--client-listen") : DEFAULT_CLIENT;
-  const allowCidrs = Array.isArray(args["hostlink-allow-cidr"]) ? args["hostlink-allow-cidr"] : [];
-  const origins = Array.isArray(args["allowed-origin"]) ? args["allowed-origin"] : [];
+  const allowCidrs = listArg(args, "hostlink-allow-cidr");
+  const origins = listArg(args, "allowed-origin");
   const tlsCertificate = stringArg(args, "client-tls-cert");
   const tlsKey = stringArg(args, "client-tls-key");
   if (Boolean(tlsCertificate) !== Boolean(tlsKey)) {
@@ -226,6 +291,8 @@ export function resolveServeConfig(args: ParsedArgv, env: NodeJS.ProcessEnv = pr
   validateHostlinkAddress(hostlink.host, allowCidrs);
   validateClientAddress(client.host, clientTls);
   for (const origin of origins) validateOrigin(origin);
+  const clientIp = resolveClientIpOptions(args);
+  const router = resolveRouterOptions(args);
 
   return {
     dataDir,
@@ -235,6 +302,8 @@ export function resolveServeConfig(args: ParsedArgv, env: NodeJS.ProcessEnv = pr
     ...(clientTls ? { clientTls } : {}),
     allowedOrigins: origins,
     ...(stringArg(args, "public-name") ? { publicName: stringArg(args, "public-name")! } : {}),
+    ...(clientIp ? { clientIp } : {}),
+    ...(router ? { router } : {}),
   };
 }
 

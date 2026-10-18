@@ -623,6 +623,12 @@ export const RACP_INITIALIZED_NOTIFICATION = "notifications/initialized" as cons
 /** Bearer scheme prefixes on the upgrade request (security §3.4). */
 export const RACP_DEVICE_TOKEN_PREFIX = "pdt1." as const;
 export const RACP_PAIRING_TOKEN_PREFIX = "ppt1." as const;
+/**
+ * Gateway account session credential (protocol §11.5, D666). It is minted by
+ * `POST /v1/account/login` from a verified Router AccessKey and authorizes only
+ * the account's own host listing; it never authorizes a relayed Host operation.
+ */
+export const RACP_ACCOUNT_SESSION_TOKEN_PREFIX = "rat1." as const;
 
 /** Operations the desktop offers locally that RACP reserves but does not expose. */
 export const RACP_DEFERRED_OPERATIONS = [

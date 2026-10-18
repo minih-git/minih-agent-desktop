@@ -136,3 +136,55 @@ describe("serve configuration", () => {
     expect(parseArgv(["host_1", "--data-dir", "/tmp/x"])["_"]).toEqual(["host_1"]);
   });
 });
+
+/**
+ * Account-mode configuration (D666, ADR decision 10): the trusted-proxy client
+ * address pair and the Router verifier pair. A half-configured pair refuses to
+ * start rather than silently leaving the Gateway on the peer address or account
+ * mode off.
+ */
+describe("account-mode configuration", () => {
+  const serve = (argv: string[]) =>
+    resolveServeConfig(parseArgv(argv, ["hostlink-allow-cidr", "allowed-origin", "trusted-proxy"]), {});
+
+  it("leaves the client-IP resolver and account mode off by default", () => {
+    const config = serve([]);
+    expect(config.clientIp).toBeUndefined();
+    expect(config.router).toBeUndefined();
+  });
+
+  it("reads a repeated trusted-proxy list and the header name", () => {
+    const config = serve([
+      "--trusted-proxy",
+      "127.0.0.1/32",
+      "--trusted-proxy",
+      "10.0.0.0/8",
+      "--client-ip-header",
+      "X-Forwarded-For",
+    ]);
+    expect(config.clientIp).toEqual({ trustedProxies: ["127.0.0.1/32", "10.0.0.0/8"], headerName: "X-Forwarded-For" });
+  });
+
+  it("refuses a half-configured trusted proxy or Router", () => {
+    expect(() => serve(["--client-ip-header", "X-Real-IP"])).toThrow(/--trusted-proxy/);
+    expect(() => serve(["--trusted-proxy", "10.0.0.0/8"])).toThrow(/--client-ip-header/);
+    expect(() => serve(["--router-client-ip-header", "X-Real-IP"])).toThrow(/--router-url/);
+    expect(() => serve(["--router-url", "http://127.0.0.1:3001"])).toThrow(/--router-client-ip-header/);
+  });
+
+  it("turns account mode on with a loopback Router URL only", () => {
+    const config = serve(["--router-url", "http://127.0.0.1:3001/", "--router-client-ip-header", "X-Real-IP"]);
+    expect(config.router).toEqual({ baseUrl: "http://127.0.0.1:3001", clientIpHeader: "X-Real-IP" });
+    expect(() =>
+      serve(["--router-url", "http://router.example.test:3001", "--router-client-ip-header", "X-Real-IP"]),
+    ).toThrow(/not loopback/);
+  });
+
+  it("refuses a bad CIDR, a wildcard trust, or an injectable header name at startup", () => {
+    expect(() => serve(["--trusted-proxy", "10.0.0.0/8", "--trusted-proxy", "nope", "--client-ip-header", "X-Real-IP"])).toThrow(
+      GatewayConfigError,
+    );
+    expect(() => serve(["--trusted-proxy", "0.0.0.0/0", "--client-ip-header", "X-Real-IP"])).toThrow(/every peer/);
+    expect(() => serve(["--trusted-proxy", "10.0.0.0/8", "--client-ip-header", "X Real"])).toThrow(GatewayConfigError);
+  });
+});

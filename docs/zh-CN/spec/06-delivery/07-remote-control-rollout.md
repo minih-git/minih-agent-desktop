@@ -133,8 +133,8 @@ R0、R1、R2、R3，随后 R4、R5、R6（D665），再之后是 R7——Router 
 |---|---|---|---|
 | A | Desktop | 本决策：ADR、规格更新与决策 D666（仅文档） | — |
 | B | Router | bootstrap 应答新增可选的 `remoteGateway {hostlinkUrl, publicOrigin, caPem}`，含系统设置、测试与文档 | A（契约） |
-| C | Desktop | Gateway 账户目录：按 key 注册、账户登录、账户主机列表、设备申请与确认中继、可信代理客户端 IP、跨账户隔离测试 | A |
-| D | Desktop | `device.request` / `device.grant` 帧、Host 侧确认与授权校验、`agent-host-cli` 支持 | C |
+| C | Desktop | Gateway 账户目录：按 key 注册、账户登录、账户主机列表、可信代理客户端 IP、跨账户隔离测试 | A |
+| D | Desktop | 设备申请与确认中继：`device.request` / `device.grant` 帧、Host 侧确认与授权校验、`agent-host-cli` 支持 | C |
 | E | Desktop | host-core 第二条组网端口转发、按 bootstrap 自动配置、桌面确认对话框、严格模式与 i18n | B、D |
 | F | Desktop | 客户端：`apps/remote-web` 的 AccessKey 登录与主机切换 | C、D |
 | G | Desktop | 在账户之上叠加推送 | F |
@@ -146,7 +146,9 @@ B 与 C 可在 A 之后并行。范围说明：Gateway 保持为独立进程，�
 监听需用 `--hostlink-allow-cidr` 放行（组网网段既不属于 RFC1918 也不属于
 `100.64.0.0/10`），H5 客户端需要域名或路径前缀——这些都是部署决定；桌面需要第二条
 No-TUN 转发到组网上的 Host link 地址（provider 配置规格 §3），目前只有一条；新帧只发给
-声明支持的 Host，声明方式由工作包 D 定义。
+声明支持的 Host，声明方式由工作包 D 定义；设备申请与确认中继从工作包 C 移到工作包 D，
+因为中继设备申请、接受已签名授权依赖 D 定义的 `device.request` / `device.grant` 帧与
+能力声明，C 只负责账户目录，D 负责中继所依赖的全部基础。
 
 退出条件：`E2E-REMOTE-ACCOUNT-cross-account-isolation`、
 `E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts`、
@@ -290,11 +292,16 @@ Gateway 全部通过，且 `05-security/02-remote-control-security.md` 的安全
   关闭的审批、拒绝 `allow-session`、会话配置、工作区读取与终端、任一侧吊销 5 秒内生效、
   开关关闭与恢复链路、`dispose()` 后无残留定时器与 socket，以及两端日志不含凭据。
 
-- R7 未开始（2026-10-18，D666 / ADR `remote-control-router-account-binding`）：账户模式
-  目前只有规格——协议 §11.5、安全规格 §3.8 与验收门 29–33、provider 配置规格 §3，以及
-  `E2E-REMOTE-ACCOUNT-*` 的 Draft 场景。Gateway 账户目录、`device.request` /
-  `device.grant` 帧、第二条 No-TUN 转发、客户端 key 登录与主机切换、严格模式都还没有
-  任何代码。
+- R7 工作包 C 已交付（2026-10-18，D666 / ADR `remote-control-router-account-binding`）：
+  Gateway 账户目录——可信代理客户端地址解析、Router AccessKey 校验器、按 key 注册并把
+  账户绑定写入签发的证书、账户登录与账户主机列表（会话凭据只存哈希且有界）、按客户端
+  IP 的凭据限流，以及针对 stub Router 的跨账户隔离测试。本包确定的路由、错误码、会话
+  形态、证书绑定与客户端 IP 规则已写入协议 §11.5、安全规格 §3.8 与 Gateway README。
+  仍缺：`device.request` / `device.grant` 帧与能力声明（工作包 D）、桌面自动配置、第二条
+  No-TUN 转发、确认对话框与严格模式（工作包 E）、客户端 key 登录与主机切换（工作包 F）、
+  Router 的 `remoteGateway` bootstrap 对象（工作包 B），以及在 Router 旁的部署（D-1）。
+  `E2E-REMOTE-ACCOUNT-*` 场景仍为 Draft：目前只覆盖了跨账户隔离的第 1–4 步与第 6 步，
+  由 Gateway 自身的集成测试承担。
 
 ## 8. 修订记录
 

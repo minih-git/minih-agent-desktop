@@ -16,12 +16,13 @@ export const ADMIN_MAX_BYTES = 8 * 1024;
 const RESPONSE_MAX_BYTES = 16 * 1024;
 const REQUEST_TIMEOUT_MS = 5_000;
 
-export type AdminOperation = "enroll-code.issue" | "hosts.revoke" | "devices.revoke";
+export type AdminOperation = "enroll-code.issue" | "hosts.revoke" | "devices.revoke" | "account-sessions.revoke";
 
 export type AdminRequest =
   | { op: "enroll-code.issue"; payload: { label?: string } }
   | { op: "hosts.revoke"; payload: { hostId: string } }
-  | { op: "devices.revoke"; payload: { deviceId: string } };
+  | { op: "devices.revoke"; payload: { deviceId: string } }
+  | { op: "account-sessions.revoke"; payload: { sessionId: string } };
 
 export type AdminResponse =
   | { ok: true; enrollment?: { code: string; expiresAt: string }; revoked?: boolean; closedConnections?: number }
@@ -67,6 +68,7 @@ function isAdminRequest(value: unknown): value is AdminRequest {
   if (request.op === "enroll-code.issue") return payload["label"] === undefined || typeof payload["label"] === "string";
   if (request.op === "hosts.revoke") return typeof payload["hostId"] === "string" && payload["hostId"].length > 0;
   if (request.op === "devices.revoke") return typeof payload["deviceId"] === "string" && payload["deviceId"].length > 0;
+  if (request.op === "account-sessions.revoke") return typeof payload["sessionId"] === "string" && payload["sessionId"].length > 0;
   return false;
 }
 

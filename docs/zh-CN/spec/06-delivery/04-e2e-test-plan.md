@@ -7858,7 +7858,11 @@ eleven-tool-round desktop paths are verified by
 以下五个场景是 ADR `remote-control-router-account-binding`、协议 §11.5 与安全规格
 §3.8（门 29–33）的验收目标，全部针对本地 Router 测试实例（或本地桩）与本地测试
 Gateway、loopback 模型桩运行；不使用生产 Router、真实 AccessKey 或真实域名。决策交给
-实施 PR 定义的行为（错误码、路由名、撤销如何传到兄弟 Host）在该 PR 定义后再断言。R4–R6
+实施 PR 定义的行为在该 PR 定义后再断言：路由（`POST /v1/account/login`、
+`GET /v1/account/hosts`，以及 `POST /v1/enroll` 上的按 key 注册）、错误码
+（`ACCESS_KEY_INVALID`、`ACCESS_KEY_UNAVAILABLE`、`HOST_ACCOUNT_MISMATCH`、
+`RATE_LIMITED`，以及账户作用域路由统一的 `UNAUTHORIZED`）、会话形态与证书账户绑定由
+交付 R7 工作包 C 定义（协议 §11.5）；撤销如何传到兄弟 Host 仍待工作包 D。R4–R6
 的远程控制场景仍以英文源规格为准。
 
 #### E2E-REMOTE-ACCOUNT-cross-account-isolation：账户之间端到端隔离

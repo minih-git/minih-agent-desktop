@@ -2538,7 +2538,6 @@
   "EnrollRequest": {
     "type": "object",
     "required": [
-      "enrollmentCode",
       "hostId",
       "csr"
     ],
@@ -2664,6 +2663,100 @@
       },
       "lastSeenAt": {
         "type": "string"
+      }
+    }
+  },
+  "AccountLoginRequest": {
+    "type": "object",
+    "required": [
+      "client"
+    ],
+    "properties": {
+      "client": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "web"
+          },
+          {
+            "type": "string",
+            "const": "ios"
+          },
+          {
+            "type": "string",
+            "const": "android"
+          }
+        ]
+      },
+      "label": {
+        "type": "string",
+        "maxLength": 128
+      }
+    }
+  },
+  "AccountLoginResponse": {
+    "type": "object",
+    "required": [
+      "accountId",
+      "expiresAt"
+    ],
+    "properties": {
+      "accountId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "keyName": {
+        "type": "string"
+      },
+      "expiresAt": {
+        "type": "string"
+      },
+      "token": {
+        "type": "string",
+        "minLength": 1
+      },
+      "csrfToken": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "AccountHostListResponse": {
+    "type": "object",
+    "required": [
+      "accountId",
+      "hosts"
+    ],
+    "properties": {
+      "accountId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "hosts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "hostId",
+            "label",
+            "online"
+          ],
+          "properties": {
+            "hostId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "label": {
+              "type": "string"
+            },
+            "online": {
+              "type": "boolean"
+            },
+            "lastSeenAt": {
+              "type": "string"
+            }
+          }
+        }
       }
     }
   }

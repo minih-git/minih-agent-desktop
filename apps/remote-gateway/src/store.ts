@@ -23,6 +23,12 @@ export type GatewayHostRecord = {
   registeredAt: string;
   lastSeenAt?: string;
   revokedAt?: string;
+  /**
+   * Router account this Host is enrolled under (protocol §11.5, D666). The
+   * Router `access_key_id` as a decimal string. Absent means the Host came
+   * through the self-hosted enrollment code and belongs to no account.
+   */
+  accountId?: string;
 };
 
 export type GatewayEnrollmentRecord = {
@@ -45,9 +51,29 @@ export type GatewayDeviceRecord = {
   revokedAt?: string;
 };
 
+/**
+ * One account login (protocol §11.5, D666). The Router AccessKey is never
+ * stored: only the hash of the session credential the Gateway minted from a
+ * verified key, with a bounded lifetime. Revocation is server-side, so a
+ * `revokedAt` record denies the credential for the rest of its lifetime.
+ */
+export type GatewayAccountSessionRecord = {
+  sessionId: string;
+  /** Router `access_key_id` of the account this session belongs to. */
+  accountId: string;
+  /** SHA-256 of the session credential; only the hash is ever stored. */
+  tokenHash: string;
+  /** Client-supplied label, for the operator reading the store. */
+  label?: string;
+  createdAt: string;
+  expiresAt: string;
+  revokedAt?: string;
+};
+
 type HostsFile = { hosts: GatewayHostRecord[] };
 type EnrollmentsFile = { enrollments: GatewayEnrollmentRecord[] };
 type DevicesFile = { devices: GatewayDeviceRecord[] };
+type AccountSessionsFile = { accountSessions: GatewayAccountSessionRecord[] };
 type SecretFile = { secret: string; createdAt: string };
 
 const DIRECTORY_MODE = 0o700;
@@ -92,6 +118,7 @@ export class GatewayStore {
   private hosts: GatewayHostRecord[] = [];
   private enrollments: GatewayEnrollmentRecord[] = [];
   private devices: GatewayDeviceRecord[] = [];
+  private accountSessions: GatewayAccountSessionRecord[] = [];
   private chain: Promise<void> = Promise.resolve();
   /** Audit appends still in flight, so shutdown can flush them. */
   private readonly pendingAudits = new Set<Promise<void>>();
@@ -126,6 +153,7 @@ export class GatewayStore {
     store.hosts = (await readJson<HostsFile>(join(dataDir, "hosts.json")))?.hosts ?? [];
     store.enrollments = (await readJson<EnrollmentsFile>(join(dataDir, "enrollments.json")))?.enrollments ?? [];
     store.devices = (await readJson<DevicesFile>(join(dataDir, "devices.json")))?.devices ?? [];
+    store.accountSessions = (await readJson<AccountSessionsFile>(join(dataDir, "account-sessions.json")))?.accountSessions ?? [];
     return store;
   }
 
@@ -142,15 +170,38 @@ export class GatewayStore {
     return [...this.hosts];
   }
 
+  /**
+   * The Hosts of one account, revoked ones excluded (gate 29). The account host
+   * list is built from this and never from `listHosts`, so a foreign Host can
+   * neither appear nor be reached by id.
+   */
+  listHostsForAccount(accountId: string): GatewayHostRecord[] {
+    return this.hosts.filter((host) => host.accountId === accountId && !host.revokedAt);
+  }
+
   findHost(hostId: string): GatewayHostRecord | null {
     return this.hosts.find((host) => host.hostId === hostId) ?? null;
   }
 
-  async saveHost(record: GatewayHostRecord): Promise<void> {
+  /**
+   * Replace a Host record only when `guard` still accepts the record stored at
+   * the moment of the write. The guard runs inside the same serialized mutation
+   * as the write, so a concurrent revocation or an enrollment under another
+   * account cannot be silently undone by this write (security gate 26, gate 29).
+   * Returns whether the record was written.
+   */
+  async saveHostIfUnchanged(
+    record: GatewayHostRecord,
+    guard: (current: GatewayHostRecord | null) => boolean,
+  ): Promise<boolean> {
+    let saved = false;
     await this.mutate(async () => {
+      if (!guard(this.findHost(record.hostId))) return;
+      saved = true;
       this.hosts = [...this.hosts.filter((host) => host.hostId !== record.hostId), record];
       await writeJsonAtomic(join(this.dataDir, "hosts.json"), { hosts: this.hosts } satisfies HostsFile);
     });
+    return saved;
   }
 
   async touchHost(hostId: string, seenAt: string): Promise<void> {
@@ -236,6 +287,57 @@ export class GatewayStore {
         return { ...device, revokedAt };
       });
       await writeJsonAtomic(join(this.dataDir, "devices.json"), { devices: this.devices } satisfies DevicesFile);
+    });
+    return revoked;
+  }
+
+  // ------------------------------------------------------- account sessions
+
+  findAccountSession(sessionId: string): GatewayAccountSessionRecord | null {
+    return this.accountSessions.find((session) => session.sessionId === sessionId) ?? null;
+  }
+
+  findAccountSessionByTokenHash(tokenHash: string): GatewayAccountSessionRecord | null {
+    return this.accountSessions.find((session) => session.tokenHash === tokenHash) ?? null;
+  }
+
+  /**
+   * Account sessions that have not expired, optionally scoped to one account.
+   * The stored hash is never part of the account-scoped view a caller sees; this
+   * is the operator's and the tests' read path.
+   */
+  listAccountSessions(accountId?: string): GatewayAccountSessionRecord[] {
+    const now = this.now();
+    return this.accountSessions.filter(
+      (session) => Date.parse(session.expiresAt) > now && (accountId === undefined || session.accountId === accountId),
+    );
+  }
+
+  async saveAccountSession(record: GatewayAccountSessionRecord): Promise<void> {
+    await this.mutate(async () => {
+      // Drop expired sessions; they can no longer authenticate anything.
+      const now = this.now();
+      this.accountSessions = [
+        ...this.accountSessions.filter((session) => Date.parse(session.expiresAt) > now),
+        record,
+      ];
+      await writeJsonAtomic(join(this.dataDir, "account-sessions.json"), {
+        accountSessions: this.accountSessions,
+      } satisfies AccountSessionsFile);
+    });
+  }
+
+  async revokeAccountSession(sessionId: string, revokedAt: string): Promise<boolean> {
+    let revoked = false;
+    await this.mutate(async () => {
+      this.accountSessions = this.accountSessions.map((session) => {
+        if (session.sessionId !== sessionId || session.revokedAt) return session;
+        revoked = true;
+        return { ...session, revokedAt };
+      });
+      await writeJsonAtomic(join(this.dataDir, "account-sessions.json"), {
+        accountSessions: this.accountSessions,
+      } satisfies AccountSessionsFile);
     });
     return revoked;
   }

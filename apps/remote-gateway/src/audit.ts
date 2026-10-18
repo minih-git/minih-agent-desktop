@@ -16,6 +16,8 @@ export type AuditRecord = {
   op: string;
   hostId?: string;
   deviceId?: string;
+  /** Router account id (protocol §11.5); never the AccessKey itself. */
+  accountId?: string;
   result: AuditResult;
   /** Client IP; never a port, never a forwarded identity header. */
   ip: string;

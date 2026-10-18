@@ -107,4 +107,14 @@ describe("enrollment", () => {
     expect(text).not.toContain(request.enrollmentCode);
     expect(text).not.toContain("BEGIN CERTIFICATE REQUEST");
   });
+
+  it("keeps the operator's label and ignores the request label on the code path", async () => {
+    const request = await enrollRequest("host_a");
+    // The self-hosted flow has always taken the label from `enroll-code
+    // --label`, so a request label of any length stays irrelevant rather than
+    // becoming a malformed request: the account-mode bound must not reach here.
+    const result = await service.handleEnroll({ ...request, label: "x".repeat(4_096) }, "127.0.0.1");
+    expect(result.status).toBe(200);
+    expect(store.findHost("host_a")?.label).toBe("laptop");
+  });
 });

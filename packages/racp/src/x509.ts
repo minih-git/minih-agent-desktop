@@ -34,6 +34,7 @@ const NOT_BEFORE_SKEW_MS = 5 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const OID_COMMON_NAME = "2.5.4.3";
+const OID_ORGANIZATIONAL_UNIT = "2.5.4.11";
 const OID_BASIC_CONSTRAINTS = "2.5.29.19";
 const OID_KEY_USAGE = "2.5.29.15";
 const OID_EXT_KEY_USAGE = "2.5.29.37";
@@ -115,13 +116,32 @@ async function importSigningKey(privateKeyPem: string): Promise<CryptoKey> {
   return domCrypto.subtle.importKey("pkcs8", pemToDer(privateKeyPem), KEY_ALGORITHM, false, ["sign"]);
 }
 
-function distinguishedName(commonName: string): pkijs.RelativeDistinguishedNames {
+/**
+ * Subject DN of an issued certificate: `CN=<commonName>` first, then the
+ * optional organizational unit. The CN stays the first attribute in the DER, so
+ * both the peer-certificate `subject.CN` object the Host link reads and
+ * `readDistinguishedNameValue` keep finding the host id.
+ */
+function distinguishedName(commonName: string, organizationalUnit?: string): pkijs.RelativeDistinguishedNames {
   const name = new pkijs.RelativeDistinguishedNames();
   name.typesAndValues.push(
     new pkijs.AttributeTypeAndValue({ type: OID_COMMON_NAME, value: new asn1js.PrintableString({ value: commonName }) }),
   );
+  if (organizationalUnit) {
+    name.typesAndValues.push(
+      new pkijs.AttributeTypeAndValue({ type: OID_ORGANIZATIONAL_UNIT, value: new asn1js.PrintableString({ value: organizationalUnit }) }),
+    );
+  }
   return name;
 }
+
+/**
+ * The organizational-unit value that binds an issued Host certificate to the
+ * Gateway account directory (protocol §11.5, D666). The Gateway CA sets it and
+ * a sibling Host reads it back with `readCertificateAccountBinding`; a
+ * certificate without it belongs to the self-hosted flow, which has no account.
+ */
+export const ACCOUNT_BINDING_PREFIX = "account:";
 
 function extension(oid: string, critical: boolean, value: ArrayBuffer): pkijs.Extension {
   return new pkijs.Extension({ extnID: oid, critical, extnValue: value });
@@ -151,19 +171,24 @@ export function fingerprintOfPem(pem: string): string {
 export function readCertificateInfo(certificatePem: string): CertificateInfo {
   const certificate = new X509Certificate(certificatePem);
   return {
-    commonName: commonNameOf(certificate.subject),
+    commonName: readDistinguishedNameValue(pkijs.Certificate.fromBER(pemToDer(certificatePem)).subject, OID_COMMON_NAME),
     fingerprint256: fingerprintOfPem(certificatePem),
     notAfter: new Date(certificate.validTo).toISOString(),
     publicKeyPem: certificate.publicKey.export({ type: "spki", format: "pem" }).toString(),
   };
 }
 
-function commonNameOf(subject: string): string {
-  // Node renders a subject as "CN=name\nO=org"; the CN is the first line.
-  for (const part of subject.split("\n")) {
-    if (part.startsWith("CN=")) return part.slice(3);
-  }
-  return "";
+/**
+ * One attribute of a subject DN, read from the DER. Node renders a subject as a
+ * single string that separates attributes with a newline or with ` + `
+ * depending on how the name fits, and an attribute value may itself contain
+ * either character, so the rendered form is not a stable source for the CN or
+ * for the account binding.
+ */
+function readDistinguishedNameValue(name: pkijs.RelativeDistinguishedNames, oid: string): string {
+  const attribute = name.typesAndValues.find((entry) => entry.type === oid);
+  const value = attribute?.value as { valueBlock?: { value?: unknown } } | undefined;
+  return typeof value?.valueBlock?.value === "string" ? value.valueBlock.value : "";
 }
 
 /** Whether the certificate certifies exactly this public key. */
@@ -207,6 +232,8 @@ type CertificateDraft = {
   issuer: pkijs.RelativeDistinguishedNames;
   issuerKeyPem: string;
   subjectCommonName: string;
+  /** Account binding of a Host certificate (protocol §11.5, D666). */
+  subjectOrganizationalUnit?: string;
   subjectPublicKeyInfo: pkijs.PublicKeyInfo;
   purpose: CertificatePurpose;
   sans?: readonly CertificateSan[];
@@ -219,7 +246,7 @@ async function buildCertificate(draft: CertificateDraft): Promise<IssuedCertific
   certificate.version = 2;
   certificate.serialNumber = new asn1js.Integer({ valueHex: newSerialNumberBytes() });
   certificate.issuer = draft.issuer;
-  certificate.subject = distinguishedName(draft.subjectCommonName);
+  certificate.subject = distinguishedName(draft.subjectCommonName, draft.subjectOrganizationalUnit);
   certificate.notBefore.value = new Date(draft.now - NOT_BEFORE_SKEW_MS);
   certificate.notAfter.value = new Date(draft.now + draft.validityDays * DAY_MS);
   certificate.subjectPublicKeyInfo = draft.subjectPublicKeyInfo;
@@ -341,9 +368,7 @@ export async function readCsr(csrPem: string): Promise<CsrInfo> {
     verified = false;
   }
   if (!verified) throw csrInvalid("the certificate request signature does not match its public key");
-  const commonName = csr.subject.typesAndValues.find((attribute) => attribute.type === OID_COMMON_NAME);
-  const value = commonName?.value as { valueBlock?: { value?: unknown } } | undefined;
-  const text = typeof value?.valueBlock?.value === "string" ? value.valueBlock.value : "";
+  const text = readDistinguishedNameValue(csr.subject, OID_COMMON_NAME);
   if (!text) throw csrInvalid("the certificate request has no subject CN");
   return {
     commonName: text,
@@ -365,16 +390,46 @@ export async function issueCertificateFromCsr(options: {
   purpose: CertificatePurpose;
   validityDays?: number;
   now?: number;
+  /**
+   * Account binding to place in the subject DN (protocol §11.5, D666). Absent
+   * for the self-hosted flow, so an account-mode certificate is the only kind
+   * that carries the `account:` organizational unit.
+   */
+  accountId?: string;
 }): Promise<IssuedCertificate & { commonName: string }> {
   const csr = await readCsr(options.csrPem);
   const issued = await buildCertificate({
     issuer: subjectNameOf(options.ca.certificatePem),
     issuerKeyPem: options.ca.privateKeyPem,
     subjectCommonName: csr.commonName,
+    ...(options.accountId ? { subjectOrganizationalUnit: accountBindingOrganizationalUnit(options.accountId) } : {}),
     subjectPublicKeyInfo: pkijs.PublicKeyInfo.fromBER(pemToDer(csr.publicKeyPem)),
     purpose: options.purpose,
     validityDays: options.validityDays ?? 365,
     now: options.now ?? defaultNow(),
   });
   return { ...issued, commonName: csr.commonName };
+}
+
+/** The subject DN value that binds a Host certificate to an account. */
+export function accountBindingOrganizationalUnit(accountId: string): string {
+  return `${ACCOUNT_BINDING_PREFIX}${accountId}`;
+}
+
+/**
+ * Read the account binding of an issued Host certificate, or `null` when the
+ * certificate carries none (the self-hosted flow). A Host uses this to check
+ * that a signing sibling was enrolled in its own account (security §3.8, gate
+ * 32); the value is only trustworthy because the Gateway CA signed the
+ * certificate.
+ */
+export function readCertificateAccountBinding(certificatePem: string): string | null {
+  let certificate: pkijs.Certificate;
+  try {
+    certificate = pkijs.Certificate.fromBER(pemToDer(certificatePem));
+  } catch {
+    return null;
+  }
+  const text = readDistinguishedNameValue(certificate.subject, OID_ORGANIZATIONAL_UNIT);
+  return text.startsWith(ACCOUNT_BINDING_PREFIX) ? text.slice(ACCOUNT_BINDING_PREFIX.length) || null : null;
 }

@@ -130,11 +130,24 @@ export function isHostLinkFrame(value: unknown): value is RacpHostLinkFrame {
 // Enrollment (Host to Gateway, one-time code exchange; ADR 0331)
 // ---------------------------------------------------------------------------
 
+/**
+ * Enrollment request (protocol §11.4, §11.5). Exactly one credential is
+ * accepted, and the Gateway enforces that rule structurally because JSON Schema
+ * cannot: either the one-time `enrollmentCode` of the self-hosted flow, or a
+ * Router AccessKey presented as `Authorization: Bearer <AccessKey>` with the
+ * field absent (account mode, D666). `hostId` and `csr` are required either way.
+ */
 export const RacpEnrollRequestSchema = Type.Object({
-  enrollmentCode: Type.String({ minLength: 1 }),
+  /** Self-hosted flow only: the one-time code printed by the Gateway. */
+  enrollmentCode: Type.Optional(Type.String({ minLength: 1 })),
   hostId: Type.String({ minLength: 1 }),
   /** PEM-encoded PKCS#10 CSR generated locally by the Host. */
   csr: Type.String({ minLength: 1 }),
+  /**
+   * Host-chosen label. The self-hosted flow ignores it and uses the operator's
+   * `enroll-code --label`, so it carries no bound here; the Gateway bounds it in
+   * the account-mode path, which is the only path that persists it.
+   */
   label: Type.Optional(Type.String()),
 });
 export type RacpEnrollRequest = Static<typeof RacpEnrollRequestSchema>;
@@ -154,6 +167,14 @@ export const RacpEnrollErrorCodeSchema = Type.Union([
   Type.Literal("ENROLLMENT_CODE_USED"),
   Type.Literal("CSR_INVALID"),
   Type.Literal("HOST_REVOKED"),
+  /** Account mode: the presented AccessKey did not verify (D666, gate 30). */
+  Type.Literal("ACCESS_KEY_INVALID"),
+  /** Account mode: the Router could not be reached; retriable (D666). */
+  Type.Literal("ACCESS_KEY_UNAVAILABLE"),
+  /** Account mode: the `hostId` is enrolled under another account (gate 29). */
+  Type.Literal("HOST_ACCOUNT_MISMATCH"),
+  /** The caller exceeded the credential-attempt rate limit (security §9). */
+  Type.Literal("RATE_LIMITED"),
 ]);
 export type RacpEnrollErrorCode = Static<typeof RacpEnrollErrorCodeSchema>;
 
@@ -366,6 +387,63 @@ export const RacpGatewayHostSummarySchema = Type.Object({
 });
 export type RacpGatewayHostSummary = Static<typeof RacpGatewayHostSummarySchema>;
 
+// ---------------------------------------------------------------------------
+// Account mode (Gateway account directory; protocol §11.5, D666)
+// ---------------------------------------------------------------------------
+
+/**
+ * Gateway account routes (protocol §11.2 Gateway mapping, §11.5). They live in
+ * their own namespace so `GET /v1/hosts` and every `/hosts/{hostId}/...` route
+ * keep accepting device tokens only: an account session authorizes the account
+ * directory, never a relayed Host operation.
+ */
+export const RACP_ACCOUNT_ROUTES = {
+  login: "POST /v1/account/login",
+  hosts: "GET /v1/account/hosts",
+} as const;
+
+/**
+ * Account login. The Router AccessKey travels only in the `Authorization`
+ * header; the body says which credential profile the client wants, exactly like
+ * the pairing route. The Gateway never stores the key and never echoes it.
+ */
+export const RacpAccountLoginRequestSchema = Type.Object({
+  client: Type.Union([Type.Literal("web"), Type.Literal("ios"), Type.Literal("android")]),
+  label: Type.Optional(Type.String({ maxLength: 128 })),
+});
+export type RacpAccountLoginRequest = Static<typeof RacpAccountLoginRequestSchema>;
+
+/**
+ * Account login response. The account id is the Router `access_key_id`, which is
+ * the account identity (ADR decision 4); the session credential is the
+ * `rat1.`-prefixed bearer value. A browser receives it as an `HttpOnly` cookie
+ * plus a CSRF cookie and must never read it from the body.
+ */
+export const RacpAccountLoginResponseSchema = Type.Object({
+  accountId: Type.String({ minLength: 1 }),
+  /** Router `key_name`, shown in the client so a user can tell keys apart. */
+  keyName: Type.Optional(Type.String()),
+  /** ISO-8601 end of the session credential's bounded lifetime. */
+  expiresAt: Type.String(),
+  token: Type.Optional(Type.String({ minLength: 1 })),
+  csrfToken: Type.Optional(Type.String({ minLength: 1 })),
+});
+export type RacpAccountLoginResponse = Static<typeof RacpAccountLoginResponseSchema>;
+
+/**
+ * One Host of the caller's own account. It is deliberately the same shape as
+ * `RacpGatewayHostSummary`, so a client renders the account list and the device
+ * list identically; only the authorization path differs.
+ */
+export const RacpAccountHostSummarySchema = RacpGatewayHostSummarySchema;
+export type RacpAccountHostSummary = RacpGatewayHostSummary;
+
+export const RacpAccountHostListResponseSchema = Type.Object({
+  accountId: Type.String({ minLength: 1 }),
+  hosts: Type.Array(RacpAccountHostSummarySchema),
+});
+export type RacpAccountHostListResponse = Static<typeof RacpAccountHostListResponseSchema>;
+
 /** Named schemas that join the generated JSON Schema fixture bundle. */
 export const RACP_HOSTLINK_HTTP_SCHEMAS = {
   HostRouteContext: RacpHostRouteContextSchema,
@@ -375,6 +453,9 @@ export const RACP_HOSTLINK_HTTP_SCHEMAS = {
   PairHttpRequest: RacpPairHttpRequestSchema,
   PairHttpResponse: RacpPairHttpResponseSchema,
   GatewayHostSummary: RacpGatewayHostSummarySchema,
+  AccountLoginRequest: RacpAccountLoginRequestSchema,
+  AccountLoginResponse: RacpAccountLoginResponseSchema,
+  AccountHostListResponse: RacpAccountHostListResponseSchema,
 } as const;
 export type RacpHostLinkSchemaName = keyof typeof RACP_HOSTLINK_HTTP_SCHEMAS;
 
