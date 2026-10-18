@@ -10237,6 +10237,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | E / Quality — Browser screenshot timeout recovery | E2E-BROWSER-capture-resize |
 | A / C / Quality — Sidebar material and settings return | E2E-LAYOUT-sidebar-settings |
 | C / Quality — Destination loading and focus | E2E-087b |
+| C / F / Quality — Session subagent roster | E2E-SESSION-subagent-roster-finds-old-delegations |
 | A / H / Quality — Renderer process crash recovery | E2E-RUNTIME-renderer-crash-recovery |
 | C / F / Quality — Project folder with chats detaches and deletes safely | E2E-048c |
 | B / F / Security — Provider copy | E2E-PROVIDER-copy-config-without-credentials |
@@ -18724,3 +18725,22 @@ Verify a successful check permits the push, a failure leaves the remote ref
 unchanged and stops later checks, and explicit bypass, tags and deletions
 skip checks. Missing tools must report incomplete validation, never success.
 Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
+
+### E2E-SESSION-subagent-roster-finds-old-delegations
+
+- **ID**: E2E-SESSION-subagent-roster-finds-old-delegations
+- **Title**: The work panel's subagent roster finds delegates that are no longer in the loaded transcript.
+- **Preconditions**: A session whose earliest `Task` rows are older than the renderer's transcript reading window, with at least one running and one settled delegate; the work panel opens on a Review or Browser tab.
+- **Steps**:
+  1. Run several delegates, let the oldest settle, then continue the main conversation until the early `Task` rows are outside the loaded reading range.
+  2. Open the work panel while a non-subagent tab is active and inspect the roster above the tab body.
+  3. Confirm the delegate with the earliest `Task` is listed, grouped under Finished, with its brief, agent, and text status.
+  4. Click that row; confirm the existing subagent detail tab opens or activates and the row shows the selected state.
+  5. Start another delegate, switch to Review, and confirm the running count updates without changing the active tab.
+  6. Collapse the roster, then switch sessions and back; confirm the collapse choice is retained for the session and the counts stay correct.
+  7. Delete the session; confirm its roster entries do not reappear for another session.
+- **Expected**: The roster indexes the whole persisted session, not just the loaded transcript page, so an old delegate remains findable. Running rows lead, settled rows follow, both newest first. A same-named delegate is never merged with another; a rejected `Task` (no delegation id) never appears; a settled entry never disappears because the turn advanced. Clicking opens the existing detail tab rather than a new surface. The roster never opens the panel, switches the active tab, or takes focus by itself. A failed host read shows a retry action instead of an empty list, and an incomplete transcript is labelled as such.
+- **Specs**: `04-ux/01-ui-ia.md`, `04-ux/08-component-spec.md` §5.3, `04-ux/09-interaction-patterns.md` §9.1, `03-runtime/06-host-rpc-protocol.md` (`session.delegations`), `03-runtime/01-ipc-protocol.md` (`sessionDelegations`).
+- **Acceptance**: `apps/desktop/test/subagent-roster.test.mjs` (model), `apps/desktop/test/subagent-roster-ui.test.mjs` (renderer contract), and `pnpm test:e2e:subagent-roster` (real renderer interaction) pass.
+- **Milestone**: M5.
+- **Status**: Implemented and covered by the three suites above; the real-device walk-through is Draft.

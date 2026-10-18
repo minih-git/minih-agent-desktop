@@ -263,3 +263,24 @@ export type SessionSearchContextRequest = {
   query: string;
   direction?: "around" | "before" | "after";
 };
+
+/**
+ * Every canonical row one session's delegation roster may need, derived from
+ * the full persisted transcript rather than the renderer's loaded reading
+ * window. A long session keeps its oldest `Task` rows outside that window, so
+ * the roster cannot be built from `state.messages`.
+ *
+ * The rows are the same `UiMessage` records the transcript uses, which keeps
+ * delegation status, resume chains, and report parsing in the one renderer
+ * projection that already owns them. `complete` says whether the transcript
+ * itself could be read in full; a bounded or unreadable transcript is reported
+ * instead of being presented as an empty roster.
+ */
+export type SessionDelegationRows = {
+  sessionId: string;
+  messages: UiMessage[];
+  /** False when the transcript could not be read completely. */
+  complete: boolean;
+  /** Present only when `complete` is false. */
+  incompleteReason?: string;
+};

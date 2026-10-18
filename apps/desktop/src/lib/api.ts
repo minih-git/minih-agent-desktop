@@ -84,6 +84,7 @@ import type {
   ProviderUpdateInput,
   Result,
   SessionDetail,
+  SessionDelegationRows,
   SessionSearchPage,
   SessionSearchContext,
   SessionSearchContextRequest,
@@ -715,6 +716,13 @@ export const api = {
       ...result,
       session: normalizeSessionDetail(result.session),
     })),
+  /**
+   * Delegation rows from the full persisted transcript, for the work panel's
+   * per-session roster. A reading window cannot answer this: the oldest `Task`
+   * rows of a long session are outside it.
+   */
+  getSessionDelegations: (sessionId: string) =>
+    invoke<SessionDelegationRows>(IPC.invoke.sessionDelegations, { sessionId }),
   getSessionCollaboration: (sessionId: string) =>
     invoke<SessionCollaborationSummary>(IPC.invoke.sessionCollaboration, { sessionId }),
   deleteSession: (id: string) => invoke(IPC.invoke.sessionDelete, id),

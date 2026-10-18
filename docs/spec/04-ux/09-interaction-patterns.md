@@ -1510,6 +1510,29 @@ Project drag/drop follows these patterns:
   closes them, and they are scoped to their session like every other tab.
   Switching sessions or routes hides the panel; `Cmd/Ctrl + J` toggles the
   whole work panel.
+- A session subagent roster sits between the work-panel tab strip and the
+  active tab body, outside every tab, so "who is still working, and where is
+  the one from earlier" stays answerable while Review, a file, or a browser
+  view owns the body. It lists only the active conversation's delegations from
+  the full persisted transcript, not just the renderer's bounded reading
+  window: an old `Task` row that has scrolled out of the loaded transcript is
+  still listed, and reopening the session does not lose it. Rows are grouped
+  Running then Finished, ordered newest first inside each group, and labelled
+  by the `Task` brief with the agent name and a text status; color is never
+  the only carrier of state. Clicking a row activates that delegation's
+  existing `subagent` tab, or opens one if it is not open. Rows are keyed by
+  `sessionId + delegationId`, so same-named delegates stay separate and a
+  settled delegate remains listed until the session itself is deleted.
+  Started, completed, failed, stopped, and rejected-at-start calls follow the
+  transcript's existing rules: a rejected `Task` (no delegation id) is not a
+  roster row, `TaskWait`/`TaskList`/`TaskStop` only update status, and a
+  finished turn never leaves a stale `running` entry. The roster is expanded
+  by default; a manual collapse is remembered for the rest of the app run on
+  that session, and a collapsed header keeps the total and running count
+  visible. A host read that fails shows a retry action instead of an empty
+  list, and an unreadable transcript reports that it is incomplete. Starting,
+  settling, or failing a delegate never opens the panel, switches tabs, or
+  takes focus; the roster appears only when the panel is already visible.
 
 ### 9.1a Sidebar project path and open folder
 

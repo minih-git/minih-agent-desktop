@@ -397,6 +397,19 @@ to later refresh and inference; the vendor picker does not collect them.
   contains the latest matching Task tool-call projection from the same canonical
   transcript. It is capped separately and does not widen the window or alter its
   cursors. Ordinary and uncapped reads omit this navigation-only field.
+- `session.delegations({ sessionId })` — read-only roster input for the work
+  panel. Returns `{ sessionId, messages, complete, incompleteReason? }`, where
+  `messages` is the canonical `UiMessage` projection of only the rows a
+  delegation roster needs: every `Task` start call with a `delegationId`, every
+  delegate-attributed row (`parentToolCallId`), and the
+  `TaskWait`/`TaskList`/`TaskStop` lifecycle rows. Ordinary conversation rows
+  never cross this boundary, and one tool payload is bounded to a preview while
+  keeping its object shape so `details.delegationId` stays readable. The read
+  covers the whole persisted transcript rather than a `session.get` window, so
+  the oldest delegation of a long session is still discoverable; `complete` is
+  false when the transcript could not be read end to end. The method derives no
+  status and mutates nothing: status, resume chains, and agent names stay in the
+  renderer's existing delegation projection.
 - `session.delete` — for an isolated session, also removes its worktree and
   branch (discarding unmerged work)
 - `session.getScratchPath` — the session's scratch directory (D114), created

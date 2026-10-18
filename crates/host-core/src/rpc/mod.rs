@@ -23,6 +23,7 @@ use tokio::sync::{mpsc, oneshot, Mutex, Semaphore};
 use crate::agent_capabilities::CapabilityLevel;
 use crate::artifacts;
 use crate::audit;
+use crate::delegations;
 use crate::notifications;
 use crate::permissions::{PermissionDecision, PermissionEvaluationParams, PermissionManager};
 use crate::plans;
@@ -3128,6 +3129,34 @@ async fn handle_request(
             let path = scratch::session_dir(&st.data_dir, session_id)
                 .ok_or_else(|| rpc_err(1002, "invalid session id", "INVALID_PARAMS"))?;
             Ok(json!({ "path": path.to_string_lossy() }))
+        }
+
+        // Read-only roster input for the work panel: every delegation-related
+        // row of the full transcript, independent of any reading window. This
+        // method never mutates a session and derives no state of its own.
+        "session.delegations" => {
+            let session_id = params
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|id| !id.is_empty() && id.len() <= 256)
+                .ok_or_else(|| rpc_err(1002, "sessionId required", "INVALID_PARAMS"))?;
+            let st = state.lock().await;
+            if sessions::session_summary(&st.db, session_id)
+                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?
+                .is_none()
+            {
+                return Err(rpc_err(1007, "session not found", "NOT_FOUND"));
+            }
+            let (messages, complete) =
+                delegations::read_session_delegation_rows(&st.db, session_id)
+                    .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            Ok(json!({
+                "sessionId": session_id,
+                "messages": messages,
+                "complete": complete,
+                "incompleteReason": if complete { None } else { Some("transcript incomplete") }
+            }))
         }
 
         "session.import" => {
