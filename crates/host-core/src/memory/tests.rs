@@ -83,11 +83,57 @@ fn describe(outcome: &CreateMemoryOutcome) -> String {
     }
 }
 
-fn rejection_of(outcome: &CreateMemoryOutcome) -> &MemoryRejection {
+pub(super) fn rejection_of(outcome: &CreateMemoryOutcome) -> &MemoryRejection {
     match outcome {
         CreateMemoryOutcome::Rejected(rejection) => rejection,
         other => panic!("expected a rejection, got {}", describe(other)),
     }
+}
+
+fn ui(role: &str, content: &str) -> crate::sessions::UiMessage {
+    serde_json::from_value(serde_json::json!({
+        "id": uuid::Uuid::new_v4().to_string(),
+        "role": role,
+        "content": content,
+        "createdAt": crate::db::ms_to_ts(crate::db::now_ms()),
+    }))
+    .unwrap()
+}
+
+/// A real agent-to-agent delivery into `target`: the queued ledger record, the
+/// turn it owns, and the user-role transcript row the delivery path appends for
+/// it. Returns that row's message id.
+///
+/// Nothing here writes the transcript by hand: the point of the test it serves is
+/// that the delivered row looks like a user message to a naive provenance check.
+fn delivered_message(db: &Database, source: &str, target: &str) -> String {
+    let sent = crate::session_collaboration::handle(
+        db,
+        "session.collaboration.send",
+        &serde_json::json!({
+            "sourceSessionId": source,
+            "sessionId": target,
+            "pluginId": "pi.session-orchestrator",
+            "content": "Review the change",
+            "idempotencyKey": "memory-provenance",
+            "kind": "task"
+        }),
+    )
+    .unwrap();
+    let message_id = sent["message"]["id"].as_str().unwrap().to_string();
+    let turn =
+        crate::session_collaboration::begin_turn(db, target, &message_id, None, None).unwrap();
+    crate::sessions::append_message(db, target, &ui("user", "Review the change"), Some(&turn))
+        .unwrap();
+    let id: String = db
+        .conn()
+        .query_row(
+            "SELECT id FROM messages WHERE session_id = ?1 AND turn_id = ?2",
+            params![target, turn],
+            |row| row.get(0),
+        )
+        .unwrap();
+    id
 }
 
 // ---- schema v25 -> v26 -----------------------------------------------------
@@ -231,6 +277,88 @@ fn preference_requires_a_user_message_of_its_own_session() {
     let mut wrong_kind = request(&scope, KIND_REFERENCE, "See the runbook.", ORIGIN_USER_UI);
     wrong_kind.evidence = EVIDENCE_INFERRED.to_string();
     created(db.create_memory_entry(wrong_kind).unwrap());
+}
+
+/// A delivered agent message is stored with role `user`, so only the delivery
+/// ledger distinguishes it from something the user typed. Every cited message
+/// must qualify, not merely one of them.
+#[test]
+fn a_delivered_message_never_supports_a_preference() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let project = project_dir(&dir, "app");
+    let scope = db.learned_memory_scope_for_path(&project).unwrap();
+    let sender = session_with_message(&db, &project, "s1", "user");
+    let target = session_with_message(&db, &project, "u1", "user");
+    let delivered = delivered_message(&db, &sender, &target);
+
+    // The delivered row is a user-role message in the cited session, and the
+    // naive check accepted it.
+    let role: String = db
+        .conn()
+        .query_row(
+            "SELECT role FROM messages WHERE id = ?1 AND session_id = ?2",
+            params![delivered, target],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(role, "user");
+
+    let mut write = request(
+        &scope,
+        KIND_PREFERENCE,
+        "Prefers terse replies.",
+        ORIGIN_EXPLICIT,
+    );
+    write.source_session_id = Some(target.clone());
+    write.source_message_ids = vec![delivered.clone()];
+    let outcome = db.create_memory_entry(write).unwrap();
+    let rejection = rejection_of(&outcome);
+    assert_eq!(rejection.code, REJECT_PROVENANCE_REQUIRED);
+    assert!(
+        !rejection.message.contains("Review the change"),
+        "a refusal never repeats the cited text: {}",
+        rejection.message
+    );
+
+    // The user's own message in the same session still qualifies.
+    let mut own = request(
+        &scope,
+        KIND_PREFERENCE,
+        "Prefers terse replies.",
+        ORIGIN_EXPLICIT,
+    );
+    own.source_session_id = Some(target.clone());
+    own.source_message_ids = vec!["u1".to_string()];
+    created(db.create_memory_entry(own).unwrap());
+
+    // Every cited message must qualify, so one delivered row poisons the set.
+    let mut mixed = request(
+        &scope,
+        KIND_FEEDBACK,
+        "Prefers short reviews.",
+        ORIGIN_EXPLICIT,
+    );
+    mixed.source_session_id = Some(target.clone());
+    mixed.source_message_ids = vec!["u1".to_string(), delivered];
+    assert_eq!(
+        rejection_of(&db.create_memory_entry(mixed).unwrap()).code,
+        REJECT_PROVENANCE_REQUIRED
+    );
+
+    // A citation that names another session's message is refused too.
+    let mut foreign = request(
+        &scope,
+        KIND_FEEDBACK,
+        "Prefers short reviews.",
+        ORIGIN_EXPLICIT,
+    );
+    foreign.source_session_id = Some(sender);
+    foreign.source_message_ids = vec!["u1".to_string()];
+    assert_eq!(
+        rejection_of(&db.create_memory_entry(foreign).unwrap()).code,
+        REJECT_PROVENANCE_REQUIRED
+    );
 }
 
 #[test]
@@ -436,6 +564,101 @@ fn update_is_compare_and_set_on_revision() {
     ));
 }
 
+/// The cited messages are checked when a preference is created, and the source
+/// session may be deleted afterwards. Re-checking on every edit would make the
+/// entry permanently uneditable; only a kind change into a provenance-bearing
+/// kind needs the check again.
+#[test]
+fn deleting_the_source_session_does_not_block_editing_a_preference() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let project = project_dir(&dir, "app");
+    let scope = db.learned_memory_scope_for_path(&project).unwrap();
+    let session = session_with_message(&db, &project, "u1", "user");
+    let mut write = request(
+        &scope,
+        KIND_PREFERENCE,
+        "Prefers terse replies.",
+        ORIGIN_EXPLICIT,
+    );
+    write.source_session_id = Some(session.clone());
+    write.source_message_ids = vec!["u1".to_string()];
+    let entry = created(db.create_memory_entry(write).unwrap());
+
+    crate::sessions::delete_session(&db, &session).unwrap();
+    let remaining: i64 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM messages WHERE session_id = ?1",
+            params![session],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(remaining, 0, "the cited message cascades with its session");
+
+    let updated = match db
+        .update_memory_entry(UpdateMemoryRequest {
+            id: entry.id.clone(),
+            revision: entry.revision,
+            content: Some("Prefers terse replies, with reasons.".to_string()),
+            rationale: None,
+            kind: None,
+            scope: None,
+        })
+        .unwrap()
+    {
+        UpdateMemoryOutcome::Updated(entry) => *entry,
+        _ => panic!("editing an existing preference must not need its old source"),
+    };
+    assert_eq!(updated.content, "Prefers terse replies, with reasons.");
+    assert_eq!(updated.revision, entry.revision + 1);
+    // The citation is preserved, and the other rules still run.
+    assert_eq!(updated.source_message_ids, vec!["u1".to_string()]);
+    let credential = db
+        .update_memory_entry(UpdateMemoryRequest {
+            id: entry.id.clone(),
+            revision: updated.revision,
+            content: Some(format!("{}{}", "sk-", "a1b2c3d4e5f6g7h8i9j0k1l2")),
+            rationale: None,
+            kind: None,
+            scope: None,
+        })
+        .unwrap();
+    match credential {
+        UpdateMemoryOutcome::Rejected(rejection) => {
+            assert_eq!(rejection.code, REJECT_CREDENTIAL_DETECTED)
+        }
+        _ => panic!("the credential detector still runs on an edit"),
+    }
+
+    // Turning another kind into a preference for the first time does check.
+    let fact = created(
+        db.create_memory_entry(request(
+            &scope,
+            KIND_FACT,
+            "Deploys on Fridays.",
+            ORIGIN_USER_UI,
+        ))
+        .unwrap(),
+    );
+    let promoted = db
+        .update_memory_entry(UpdateMemoryRequest {
+            id: fact.id.clone(),
+            revision: fact.revision,
+            content: None,
+            rationale: None,
+            kind: Some(KIND_PREFERENCE.to_string()),
+            scope: None,
+        })
+        .unwrap();
+    match promoted {
+        UpdateMemoryOutcome::Rejected(rejection) => {
+            assert_eq!(rejection.code, REJECT_PROVENANCE_REQUIRED)
+        }
+        _ => panic!("a new preference must cite what the user stated"),
+    }
+}
+
 #[test]
 fn archive_and_restore_hide_without_forgetting() {
     let dir = tempfile::tempdir().unwrap();
@@ -529,14 +752,12 @@ fn delete_blocks_the_same_evidence_until_the_user_insists() {
     let entry = created(db.create_memory_entry(write.clone()).unwrap());
 
     assert!(db.delete_memory_entry(&entry.id).unwrap());
-    // Idempotent, and the entry is archived rather than erased.
-    assert!(db.delete_memory_entry(&entry.id).unwrap());
-    assert_eq!(
-        db.list_memory_entries(&scope, Some(STATUS_ARCHIVED), None, 10, 0)
-            .unwrap()
-            .len(),
-        1
-    );
+    // Idempotent: the second delete has no row left to forget.
+    assert!(!db.delete_memory_entry(&entry.id).unwrap());
+    assert!(db
+        .list_memory_entries(&scope, None, None, 10, 0)
+        .unwrap()
+        .is_empty());
 
     // The same content, and anything citing the same message, stays forgotten.
     let again = db.create_memory_entry(write.clone()).unwrap();
@@ -606,20 +827,105 @@ fn rejecting_a_suggestion_keeps_it_from_coming_back() {
         .unwrap()
         .is_empty());
 
-    let rejected = db
-        .decide_memory_suggestion(&entry.id, false)
-        .unwrap()
-        .unwrap();
-    assert_eq!(rejected.status, STATUS_ARCHIVED);
+    let rejected = db.decide_memory_suggestion(&entry.id, false).unwrap();
+    assert!(matches!(rejected, SuggestionOutcome::Rejected));
     assert_eq!(
         rejection_of(&db.create_memory_entry(suggestion).unwrap()).code,
         REJECT_TOMBSTONED
     );
-    // Deciding again is a miss: the entry is no longer a suggestion.
+    // Deciding again is a miss: the suggestion is gone, not archived.
+    assert!(matches!(
+        db.decide_memory_suggestion(&entry.id, true).unwrap(),
+        SuggestionOutcome::NotFound
+    ));
+}
+
+/// Deleting is a host guarantee, not a status change: the row and its index
+/// entries are removed, so nothing can bring the text back, while the tombstone
+/// keeps the identity that blocks the same evidence.
+#[test]
+fn delete_erases_the_row_and_keeps_a_content_free_tombstone() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let project = project_dir(&dir, "app");
+    let scope = db.learned_memory_scope_for_path(&project).unwrap();
+    let session = session_with_message(&db, &project, "u1", "user");
+    let mut write = request(
+        &scope,
+        KIND_PREFERENCE,
+        "Prefers terse replies.",
+        ORIGIN_EXPLICIT,
+    );
+    write.source_session_id = Some(session);
+    write.source_message_ids = vec!["u1".to_string()];
+    let entry = created(db.create_memory_entry(write).unwrap());
+
+    assert!(db.delete_memory_entry(&entry.id).unwrap());
+    let rows: i64 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM memory_entries WHERE id = ?1",
+            params![entry.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(rows, 0, "the deleted row is gone, not archived");
+    let indexed: i64 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM memory_entries_fts WHERE memory_entries_fts MATCH 'terse'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(indexed, 0, "the full-text index follows the deleted row");
     assert!(db
-        .decide_memory_suggestion(&entry.id, true)
+        .search_memory_entries(SearchMemoryRequest {
+            scopes: std::slice::from_ref(&scope),
+            query: "terse",
+            kinds: &[],
+            limit: 8,
+            record_use: false,
+        })
         .unwrap()
-        .is_none());
+        .is_empty());
+
+    // Neither hiding nor restoring can reach a row that no longer exists.
+    assert!(matches!(
+        db.set_memory_entry_status(&entry.id, STATUS_ARCHIVED)
+            .unwrap(),
+        StatusMemoryOutcome::NotFound
+    ));
+    assert!(matches!(
+        db.set_memory_entry_status(&entry.id, STATUS_ACTIVE)
+            .unwrap(),
+        StatusMemoryOutcome::NotFound
+    ));
+
+    // The tombstone keeps the fingerprint and the cited messages, and has no
+    // column that could hold the text.
+    let (fingerprint, ids): (String, String) = db
+        .conn()
+        .query_row(
+            "SELECT fingerprint, source_message_ids FROM memory_tombstones",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        fingerprint,
+        tombstones::fingerprint(KIND_PREFERENCE, "Prefers terse replies.")
+    );
+    assert_eq!(ids, "[\"u1\"]");
+    let has_content: bool = db
+        .conn()
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('memory_tombstones') WHERE name = 'content')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(!has_content, "a tombstone carries no content");
 }
 
 #[test]
@@ -631,10 +937,46 @@ fn accepting_a_suggestion_activates_it() {
     let mut suggestion = request(&scope, KIND_FACT, "Deploys on Fridays.", ORIGIN_EXTRACTED);
     suggestion.status = STATUS_SUGGESTED.to_string();
     let entry = created(db.create_memory_entry(suggestion).unwrap());
-    let accepted = db
-        .decide_memory_suggestion(&entry.id, true)
-        .unwrap()
-        .unwrap();
+    let accepted = match db.decide_memory_suggestion(&entry.id, true).unwrap() {
+        SuggestionOutcome::Accepted(entry) => *entry,
+        _ => panic!("expected an accepted suggestion"),
+    };
     assert_eq!(accepted.status, STATUS_ACTIVE);
     assert_eq!(accepted.revision, 2);
+}
+
+/// Extraction is the only writer that may produce a suggestion, and a suggestion
+/// is the only thing extraction may produce (ADR §4). Enforced by the host, not
+/// by the caller that happens to pass `status`.
+#[test]
+fn extraction_only_ever_produces_a_suggestion() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let project = project_dir(&dir, "app");
+    let scope = db.learned_memory_scope_for_path(&project).unwrap();
+
+    // An extracted entry may not be created directly as active.
+    let mut extracted = request(&scope, KIND_FACT, "Deploys on Fridays.", ORIGIN_EXTRACTED);
+    assert_eq!(
+        rejection_of(&db.create_memory_entry(extracted.clone()).unwrap()).code,
+        REJECT_INVALID_FIELD
+    );
+
+    // No other writer may create a suggestion.
+    for origin in [ORIGIN_EXPLICIT, ORIGIN_USER_UI] {
+        let mut write = request(&scope, KIND_FACT, "Deploys on Fridays.", origin);
+        write.status = STATUS_SUGGESTED.to_string();
+        assert_eq!(
+            rejection_of(&db.create_memory_entry(write).unwrap()).code,
+            REJECT_INVALID_FIELD,
+            "{origin} cannot create a suggestion"
+        );
+    }
+
+    // The supported pair still works; accepting it is covered by the suggestion
+    // tests and the RPC contract test.
+    extracted.status = STATUS_SUGGESTED.to_string();
+    let entry = created(db.create_memory_entry(extracted).unwrap());
+    assert_eq!(entry.status, STATUS_SUGGESTED);
+    assert_eq!(entry.origin, ORIGIN_EXTRACTED);
 }

@@ -175,6 +175,14 @@ pub(crate) enum StatusMemoryOutcome {
     Duplicate,
 }
 
+pub(crate) enum SuggestionOutcome {
+    Accepted(Box<MemoryEntryRecord>),
+    /// The suggestion was erased; its tombstone blocks the same evidence.
+    Rejected,
+    /// No such entry, or it is no longer a suggestion.
+    NotFound,
+}
+
 pub(crate) struct SearchMemoryRequest<'a> {
     pub scopes: &'a [MemoryScope],
     pub query: &'a str,
@@ -272,12 +280,13 @@ impl Database {
             rationale: request.rationale.clone(),
             origin: request.origin.clone(),
             evidence: request.evidence.clone(),
+            status: request.status.clone(),
             source_session_id: request.source_session_id.clone(),
             source_message_ids: request.source_message_ids.clone(),
             override_tombstone: request.override_tombstone,
         };
         if let WriteOutcome::Rejected(rejection) =
-            validation::validate(&tx, &write, WritePath::Create)?
+            validation::validate(&tx, &write, &WritePath::Create)?
         {
             return Ok(CreateMemoryOutcome::Rejected(rejection));
         }
@@ -338,13 +347,18 @@ impl Database {
             rationale: rationale.clone(),
             origin: current.origin.clone(),
             evidence: current.evidence.clone(),
+            status: current.status.clone(),
             source_session_id: current.source_session_id.clone(),
             source_message_ids: current.source_message_ids.clone(),
             override_tombstone: false,
         };
-        if let WriteOutcome::Rejected(rejection) =
-            validation::validate(&tx, &write, WritePath::Update)?
-        {
+        if let WriteOutcome::Rejected(rejection) = validation::validate(
+            &tx,
+            &write,
+            &WritePath::Update {
+                previous_kind: current.kind.clone(),
+            },
+        )? {
             return Ok(UpdateMemoryOutcome::Rejected(rejection));
         }
         let fingerprint = tombstones::fingerprint(&kind, &content);
@@ -384,8 +398,9 @@ impl Database {
         })
     }
 
-    /// Hide or unhide an entry. Neither direction writes a tombstone: the
-    /// entry still exists, so nothing can be re-learned from its evidence.
+    /// Hide or unhide an entry. Neither direction writes a tombstone: the entry
+    /// still exists, so nothing can be re-learned from its evidence. A deleted
+    /// entry no longer exists at all, so this reports `NotFound` for it.
     pub fn set_memory_entry_status(&self, id: &str, status: &str) -> Result<StatusMemoryOutcome> {
         if !matches!(status, STATUS_ACTIVE | STATUS_ARCHIVED) {
             return Err(anyhow!("unsupported memory status"));
@@ -413,71 +428,66 @@ impl Database {
         })
     }
 
-    /// Forget an entry: archive it and record a tombstone that blocks the same
-    /// fingerprint and the same source messages from ever coming back.
-    /// Idempotent, so a repeated delete is harmless.
+    /// Forget an entry: erase the row and record a tombstone that blocks the same
+    /// fingerprint and the same source messages from ever coming back, so nothing
+    /// can restore the forgotten text. Idempotent: a repeated delete has nothing
+    /// left to forget and reports `false`.
     pub fn delete_memory_entry(&self, id: &str) -> Result<bool> {
         let tx = self.conn().unchecked_transaction()?;
         let Some(entry) = entry_by_id(&tx, id)? else {
             return Ok(false);
         };
-        let now = now_ms();
-        tx.execute(
-            "UPDATE memory_entries SET status = ?1, revision = revision + 1, updated_at = ?2
-             WHERE id = ?3",
-            params![STATUS_ARCHIVED, now, id],
-        )?;
         tombstones::write(
             &tx,
             &entry.scope(),
             &entry.fingerprint,
             entry.source_session_id.as_deref(),
             &entry.source_message_ids,
-            now,
+            now_ms(),
         )?;
+        tx.execute("DELETE FROM memory_entries WHERE id = ?1", params![id])?;
         tx.commit()?;
         Ok(true)
     }
 
-    /// Accept a suggestion, or reject it and remember the refusal so the same
-    /// evidence never proposes it again.
-    pub fn decide_memory_suggestion(
-        &self,
-        id: &str,
-        accept: bool,
-    ) -> Result<Option<MemoryEntryRecord>> {
+    /// Accept a suggestion, or reject it: a rejected suggestion is erased like a
+    /// deleted memory, and its tombstone stops the same evidence from proposing it
+    /// again.
+    pub fn decide_memory_suggestion(&self, id: &str, accept: bool) -> Result<SuggestionOutcome> {
         let tx = self.conn().unchecked_transaction()?;
         let Some(entry) = entry_by_id(&tx, id)? else {
-            return Ok(None);
+            return Ok(SuggestionOutcome::NotFound);
         };
         if entry.status != STATUS_SUGGESTED {
-            return Ok(None);
+            return Ok(SuggestionOutcome::NotFound);
         }
-        let now = now_ms();
         if accept {
             tx.execute(
                 "UPDATE memory_entries SET status = ?1, revision = revision + 1, updated_at = ?2
                  WHERE id = ?3 AND status = ?4",
-                params![STATUS_ACTIVE, now, id, STATUS_SUGGESTED],
+                params![STATUS_ACTIVE, now_ms(), id, STATUS_SUGGESTED],
             )?;
-        } else {
-            tx.execute(
-                "UPDATE memory_entries SET status = ?1, revision = revision + 1, updated_at = ?2
-                 WHERE id = ?3 AND status = ?4",
-                params![STATUS_ARCHIVED, now, id, STATUS_SUGGESTED],
-            )?;
-            tombstones::write(
-                &tx,
-                &entry.scope(),
-                &entry.fingerprint,
-                entry.source_session_id.as_deref(),
-                &entry.source_message_ids,
-                now,
-            )?;
+            let updated = entry_by_id(&tx, id)?;
+            tx.commit()?;
+            return Ok(match updated {
+                Some(entry) => SuggestionOutcome::Accepted(Box::new(entry)),
+                None => SuggestionOutcome::NotFound,
+            });
         }
-        let updated = entry_by_id(&tx, id)?;
+        tombstones::write(
+            &tx,
+            &entry.scope(),
+            &entry.fingerprint,
+            entry.source_session_id.as_deref(),
+            &entry.source_message_ids,
+            now_ms(),
+        )?;
+        tx.execute(
+            "DELETE FROM memory_entries WHERE id = ?1 AND status = ?2",
+            params![id, STATUS_SUGGESTED],
+        )?;
         tx.commit()?;
-        Ok(updated)
+        Ok(SuggestionOutcome::Rejected)
     }
 
     /// The session-start index: active entries of the project scope and the user
@@ -664,26 +674,48 @@ pub(crate) fn rekey_learned_memory_to_group(
             "DELETE FROM memory_entries WHERE scope_kind = 'project' AND scope_key = ?1",
             params![path],
         )?;
-        conn.execute(
-            "UPDATE memory_tombstones SET scope_key = ?1
-             WHERE scope_kind = 'project' AND scope_key = ?2
-               AND NOT EXISTS (
-                 SELECT 1 FROM memory_tombstones other
-                 WHERE other.scope_kind = 'project'
-                   AND IFNULL(other.scope_key, '') = ?1
-                   AND other.fingerprint = memory_tombstones.fingerprint
-               )",
-            params![group_id, path],
-        )?;
-        conn.execute(
-            "DELETE FROM memory_tombstones WHERE scope_kind = 'project' AND scope_key = ?1",
-            params![path],
-        )?;
+        rekey_tombstones(conn, path, group_id)?;
         conn.execute(
             "UPDATE memory_session_state SET scope_key = ?1
              WHERE scope_kind = 'project' AND scope_key = ?2",
             params![group_id, path],
         )?;
     }
+    Ok(())
+}
+
+/// Move one root's tombstones onto the group, merging the source messages of a
+/// fingerprint the group already blocks.
+///
+/// Two roots may have forgotten the same content from different evidence. Taking
+/// one row and dropping the other would let the dropped citation resurrect the
+/// memory in the group, so the union is written instead — the same merge
+/// `tombstones::write` performs for a repeated delete.
+fn rekey_tombstones(conn: &Connection, path: &str, group_id: &str) -> Result<()> {
+    let rows: Vec<(String, Option<String>, String, i64)> = {
+        let mut statement = conn.prepare_cached(
+            "SELECT fingerprint, source_session_id, source_message_ids, created_at
+             FROM memory_tombstones
+             WHERE scope_kind = 'project' AND scope_key = ?1",
+        )?;
+        let rows = statement.query_map(params![path], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for (fingerprint, source_session_id, raw_ids, created_at) in rows {
+        tombstones::write(
+            conn,
+            &MemoryScope::project(group_id),
+            &fingerprint,
+            source_session_id.as_deref(),
+            &tombstones::parse_ids(&raw_ids),
+            created_at,
+        )?;
+    }
+    conn.execute(
+        "DELETE FROM memory_tombstones WHERE scope_kind = 'project' AND scope_key = ?1",
+        params![path],
+    )?;
     Ok(())
 }

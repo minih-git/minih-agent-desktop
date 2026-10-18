@@ -289,7 +289,10 @@ recall tools.
   `sessionId`, `kind`, `content`, optional `rationale`, `origin` (`explicit` |
   `user_ui`, the default | `extracted`), `evidence` (`user_stated`, the default |
   `verified` | `inferred`), `status` (`active`, the default | `suggested`),
-  `sourceSessionId`, `sourceMessageIds`, `overrideTombstone`. Returns
+  `sourceSessionId`, `sourceMessageIds`, `overrideTombstone`. `origin` and
+  `status` must agree: `extracted` requires `suggested` and `suggested` requires
+  `extracted`, so extraction can only propose and only extraction may propose.
+  Returns
   `{ entry, duplicate }` when it stores the entry or finds the one already there,
   and `{ rejected: { code, message } }` when a rule refuses it. Rejection codes:
   `MEMORY_EMPTY_CONTENT`, `MEMORY_CONTENT_TOO_LARGE`, `MEMORY_RATIONALE_TOO_LARGE`,
@@ -298,15 +301,22 @@ recall tools.
   repeats the refused text.
 - `memory.update({ id, revision, content?, rationale?, kind?, scope?, path? })` —
   edit an entry. Compare-and-set on `revision`: a stale revision fails with 1008 /
-  `MEMORY_REVISION_CONFLICT` and leaves the row unchanged.
+  `MEMORY_REVISION_CONFLICT` and leaves the row unchanged. The provenance of a
+  `preference` / `feedback` entry is checked only when the edit changes the kind
+  into one of those, because the messages it cites may have been erased with their
+  session.
 - `memory.archive({ id })` / `memory.restore({ id })` — hide or unhide. Neither
-  writes a tombstone. Unhiding content that a live entry already holds fails with
-  1008 / `MEMORY_DUPLICATE_CONTENT`.
-- `memory.delete({ id })` — forget: archive plus a content-free tombstone that
-  blocks the same fingerprint and the same source messages. Idempotent; returns
-  `{ ok }`.
-- `memory.suggestions.decide({ id, decision })` — `accept` activates a suggestion,
-  `reject` archives it and writes the same tombstone.
+  writes a tombstone, and neither can reach an entry that was deleted: a forgotten
+  memory no longer exists, so both answer 1007 / `NOT_FOUND`. Unhiding content that
+  a live entry already holds fails with 1008 / `MEMORY_DUPLICATE_CONTENT`.
+- `memory.delete({ id })` — forget: erase the entry, its full-text index entries,
+  and record a content-free tombstone that blocks the same fingerprint and the same
+  source messages. The text cannot be read back or restored afterwards. Idempotent;
+  returns `{ ok }`, which is `false` when the id is already gone.
+- `memory.suggestions.decide({ id, decision })` — `accept` activates a suggestion
+  and returns `{ entry }`; `reject` erases it, writes the same tombstone, and
+  returns `{ rejected: true }`. An id that is not a pending suggestion answers
+  1007 / `NOT_FOUND`.
 - `memory.session.get({ sessionId })` / `memory.session.setExcluded({ sessionId,
   excluded })` — per-session extraction state, including "don't learn from this
   conversation".

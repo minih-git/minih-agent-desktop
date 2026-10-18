@@ -1477,26 +1477,36 @@ CREATE INDEX idx_memory_session_state_scope ON memory_session_state(scope_kind, 
   than of the hash, so the same sentence in two projects is two memories. One
   live entry per fingerprint in a scope; archived rows stay out of the key.
 - **Write rules.** `preference` and `feedback` require `evidence = 'user_stated'`
-  and at least one cited message that exists in `source_session_id` with role
-  `user`; `verified` is accepted only for `fact` and `reference`. Tool output,
-  file or web content, MCP responses, subagent output, injected instructions, and
-  skill documents are never valid evidence for them. Content that matches the
-  host credential detector is refused, and the refused text reaches no log. A
-  tombstone match on the fingerprint or on any cited source message blocks the
-  write unless it is an explicit request with `overrideTombstone`.
-- **Forgetting.** Delete archives the row and writes a content-free tombstone;
-  rejecting a suggestion writes the same tombstone. Archive and restore never
-  write one, so hiding an entry is not forgetting it.
+  and must cite only messages the user wrote: **every** cited message must exist
+  in `source_session_id` with role `user`, and none may belong to a turn that
+  `session_collaboration_messages` claims — a message another agent or plugin
+  delivered into the session is stored with role `user` too, and only the
+  delivery ledger distinguishes it. `verified` is accepted only for `fact` and
+  `reference`. Tool output, file or web content, MCP responses, subagent output,
+  injected instructions, and skill documents are never valid evidence for them.
+  `origin = 'extracted'` and `status = 'suggested'` are required together, so
+  extraction can only propose and only extraction may propose. Content that
+  matches the host credential detector is refused, and the refused text reaches
+  no log. A tombstone match on the fingerprint or on any cited source message
+  blocks the write unless it is an explicit request with `overrideTombstone`.
+- **Forgetting.** Delete erases the row — its full-text index entries go with it,
+  so the text cannot be read back or restored — and writes a content-free
+  tombstone; rejecting a suggestion erases it and writes the same tombstone.
+  Archive and restore stay a reversible hide, never write a tombstone, and report
+  `NOT_FOUND` for an erased entry.
 - **Updates.** Every mutation is compare-and-set on `revision`, so a background
-  writer can never overwrite a user edit.
+  writer can never overwrite a user edit. An edit re-checks provenance only when
+  the kind becomes `preference` or `feedback`; the citation an entry was created
+  with may have been erased with its session.
 - **Lifecycle.** Removing a project (`projects.remove`) deletes the rows keyed by
   its own path together with the existing project-memory cleanup; a stored
-  group's rows are keyed by the group id and stay with the group. Upgrading
-  legacy roots into a group re-keys their entries, tombstones, and session state
-  to the group in one transaction, deduplicating by fingerprint. Deleting a group
-  record deletes its group-scoped rows. Session deletion cascades
-  `memory_session_state`. Data relocation re-keys `scope_key` with the projects it
-  belongs to.
+  group's rows are keyed by the group id and stay with the group. Any folder that
+  becomes a root of a group — a legacy upgrade, a new group created around saved
+  projects, or a stored group gaining a root — re-keys its entries, tombstones,
+  and session state to the group in one transaction, deduplicating by fingerprint
+  and merging tombstones that share one. Deleting a group record deletes its
+  group-scoped rows. Session deletion cascades `memory_session_state`. Data
+  relocation re-keys `scope_key` with the projects it belongs to.
 - **Extraction state.** `cursor_seq`, `lease_owner`, `lease_until`, `attempts`,
   `last_error`, and `excluded` make the optional extractor idempotent across
   restarts, duplicate triggers, and renderer reloads; `last_error` holds a code,

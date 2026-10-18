@@ -26,6 +26,6 @@ pub(crate) use model::{
 };
 pub(crate) use repository::{
     delete_learned_scope_tx, rekey_learned_memory_to_group, CreateMemoryOutcome,
-    CreateMemoryRequest, SearchMemoryRequest, StatusMemoryOutcome, UpdateMemoryOutcome,
-    UpdateMemoryRequest,
+    CreateMemoryRequest, SearchMemoryRequest, StatusMemoryOutcome, SuggestionOutcome,
+    UpdateMemoryOutcome, UpdateMemoryRequest,
 };

@@ -4,7 +4,7 @@ use rusqlite::params;
 
 use super::model::*;
 use super::repository::*;
-use super::tests::{created, open, project_dir, request, session_with_message};
+use super::tests::{created, open, project_dir, rejection_of, request, session_with_message};
 use super::tombstones;
 
 // ---- scope isolation -------------------------------------------------------
@@ -236,16 +236,21 @@ fn the_session_start_index_is_ordered_and_budgeted() {
     assert_eq!(index.entries.len(), 1);
     assert_eq!(index.omitted_count, 0);
 
+    // Extraction only ever proposes, so the active entries it produced are the
+    // accepted suggestions.
     for number in 0..50 {
-        created(
-            db.create_memory_entry(request(
-                &scope,
-                KIND_FACT,
-                &format!("Active extracted entry {number}."),
-                ORIGIN_EXTRACTED,
-            ))
-            .unwrap(),
+        let mut write = request(
+            &scope,
+            KIND_FACT,
+            &format!("Accepted extracted entry {number}."),
+            ORIGIN_EXTRACTED,
         );
+        write.status = STATUS_SUGGESTED.to_string();
+        let entry = created(db.create_memory_entry(write).unwrap());
+        assert!(matches!(
+            db.decide_memory_suggestion(&entry.id, true).unwrap(),
+            SuggestionOutcome::Accepted(_)
+        ));
     }
     let index = db.learned_memory_index(&project).unwrap();
     assert_eq!(index.entries.len(), 40);
@@ -381,12 +386,13 @@ fn upgrading_legacy_roots_into_a_group_rekeys_learned_memory() {
         .unwrap();
     assert!(!group.legacy);
 
-    // Both path scopes are empty and the group owns the entries, without the
-    // duplicate the two roots shared.
+    // Both path scopes are empty and the group owns the surviving entry, without
+    // the duplicate the two roots shared. The forgotten entry is gone: deleting
+    // erases the row, so only its tombstone crosses over.
     let group_entries = db
         .list_memory_entries(&MemoryScope::project(group.id.clone()), None, None, 10, 0)
         .unwrap();
-    assert_eq!(group_entries.len(), 2);
+    assert_eq!(group_entries.len(), 1);
     assert_eq!(
         group_entries
             .iter()
@@ -433,6 +439,208 @@ fn upgrading_legacy_roots_into_a_group_rekeys_learned_memory() {
         .unwrap()
         .remove(0);
     assert_eq!(scope.key.as_deref(), Some(group.id.as_str()));
+}
+
+/// A project that is already saved keeps its learned memory when it is put into
+/// a new group, exactly as the legacy upgrade path does.
+#[test]
+fn an_existing_project_joining_a_new_group_keeps_its_learned_memory() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let project = project_dir(&dir, "solo");
+    let scope = db.learned_memory_scope_for_path(&project).unwrap();
+    created(
+        db.create_memory_entry(request(&scope, KIND_FACT, "Host is Rust.", ORIGIN_USER_UI))
+            .unwrap(),
+    );
+    let gone = created(
+        db.create_memory_entry(request(
+            &scope,
+            KIND_FACT,
+            "Deploys on Fridays.",
+            ORIGIN_USER_UI,
+        ))
+        .unwrap(),
+    );
+    db.delete_memory_entry(&gone.id).unwrap();
+    let session = session_with_message(&db, &project, "u1", "user");
+    db.set_memory_session_excluded(&session, true).unwrap();
+
+    let group = db
+        .create_project_group("Group", std::slice::from_ref(&project))
+        .unwrap();
+    let group_scope = MemoryScope::project(group.id.clone());
+    let entries = db
+        .list_memory_entries(&group_scope, None, None, 10, 0)
+        .unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].content, "Host is Rust.");
+    // The tombstone moved with the entry, so a deleted fact cannot come back.
+    assert_eq!(
+        rejection_of(
+            &db.create_memory_entry(request(
+                &group_scope,
+                KIND_FACT,
+                "Deploys on Fridays.",
+                ORIGIN_USER_UI,
+            ))
+            .unwrap()
+        )
+        .code,
+        REJECT_TOMBSTONED
+    );
+    // Nothing is left behind on the old path scope.
+    assert!(db
+        .list_memory_entries(&scope, None, None, 10, 0)
+        .unwrap()
+        .is_empty());
+    let leftovers: i64 = db
+        .conn()
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM memory_tombstones WHERE scope_key = ?1)
+                  + (SELECT COUNT(*) FROM memory_session_state WHERE scope_key = ?1)",
+            params![project],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(leftovers, 0);
+    let state = db.memory_session_state(&session).unwrap().unwrap();
+    assert_eq!(state.scope_key.as_deref(), Some(group.id.as_str()));
+}
+
+/// Adding an independent folder to a stored group moves that folder's learned
+/// memory and tombstones with it.
+#[test]
+fn adding_an_independent_root_to_a_stored_group_moves_its_learned_memory() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let first = project_dir(&dir, "first");
+    let second = project_dir(&dir, "second");
+    let group = db
+        .create_project_group("Group", std::slice::from_ref(&first))
+        .unwrap();
+    let second_scope = db.learned_memory_scope_for_path(&second).unwrap();
+    created(
+        db.create_memory_entry(request(
+            &second_scope,
+            KIND_FACT,
+            "Second project fact.",
+            ORIGIN_USER_UI,
+        ))
+        .unwrap(),
+    );
+    let gone = created(
+        db.create_memory_entry(request(
+            &second_scope,
+            KIND_FACT,
+            "Deploys on Fridays.",
+            ORIGIN_USER_UI,
+        ))
+        .unwrap(),
+    );
+    db.delete_memory_entry(&gone.id).unwrap();
+
+    let group = db
+        .update_project_group(&group.id, "Group", &[first.clone(), second.clone()], None)
+        .unwrap();
+    let group_scope = MemoryScope::project(group.id.clone());
+    let entries = db
+        .list_memory_entries(&group_scope, None, None, 10, 0)
+        .unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].content, "Second project fact.");
+    assert_eq!(
+        rejection_of(
+            &db.create_memory_entry(request(
+                &group_scope,
+                KIND_FACT,
+                "Deploys on Fridays.",
+                ORIGIN_USER_UI,
+            ))
+            .unwrap()
+        )
+        .code,
+        REJECT_TOMBSTONED
+    );
+    assert!(db
+        .list_memory_entries(&second_scope, None, None, 10, 0)
+        .unwrap()
+        .is_empty());
+    let tombstones: i64 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM memory_tombstones WHERE scope_key = ?1",
+            params![second],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(tombstones, 0);
+    // The group resolves the added root to itself from now on.
+    assert_eq!(
+        db.learned_memory_scope_for_path(&second)
+            .unwrap()
+            .key
+            .as_deref(),
+        Some(group.id.as_str())
+    );
+}
+
+/// Two roots that forgot the same content from different evidence must end up
+/// with one tombstone that still blocks both citations.
+#[test]
+fn upgrading_roots_merges_tombstone_source_messages() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let first = project_dir(&dir, "first");
+    let second = project_dir(&dir, "second");
+    let first_scope = db.learned_memory_scope_for_path(&first).unwrap();
+    let second_scope = db.learned_memory_scope_for_path(&second).unwrap();
+    let first_session = session_with_message(&db, &first, "a1", "user");
+    let second_session = session_with_message(&db, &second, "b1", "user");
+
+    for (scope, session_id, message_id) in [
+        (&first_scope, &first_session, "a1"),
+        (&second_scope, &second_session, "b1"),
+    ] {
+        let mut write = request(scope, KIND_FACT, "Deploys on Fridays.", ORIGIN_USER_UI);
+        write.source_session_id = Some(session_id.clone());
+        write.source_message_ids = vec![message_id.to_string()];
+        let entry = created(db.create_memory_entry(write).unwrap());
+        db.delete_memory_entry(&entry.id).unwrap();
+    }
+
+    let legacy = db.project_group_for_path(&first).unwrap().unwrap();
+    let group = db
+        .update_project_group(&legacy.id, "Group", &[first.clone(), second.clone()], None)
+        .unwrap();
+    let group_scope = MemoryScope::project(group.id.clone());
+    let (count, ids): (i64, String) = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*), MAX(source_message_ids) FROM memory_tombstones WHERE scope_key = ?1",
+            params![group.id.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(count, 1, "one fingerprint keeps one tombstone");
+    let ids = tombstones::parse_ids(&ids);
+    assert!(
+        ids.contains(&"a1".to_string()) && ids.contains(&"b1".to_string()),
+        "both roots' evidence survives the merge: {ids:?}"
+    );
+
+    // Citing either root's evidence is still blocked.
+    let mut restated = request(
+        &group_scope,
+        KIND_FACT,
+        "Deploys on Fridays.",
+        ORIGIN_USER_UI,
+    );
+    restated.source_message_ids = vec!["b1".to_string()];
+    assert_eq!(
+        rejection_of(&db.create_memory_entry(restated).unwrap()).code,
+        REJECT_TOMBSTONED
+    );
 }
 
 #[test]

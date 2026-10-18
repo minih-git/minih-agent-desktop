@@ -327,7 +327,13 @@ impl Database {
             detached_paths: Vec::new(),
             remote: None,
         };
+        // The group and the learned memory keyed by its roots' paths become
+        // visible together: a folder that joins a group must never leave its
+        // memories or tombstones behind on the old path scope.
+        let tx = self.conn.unchecked_transaction()?;
+        crate::memory::rekey_learned_memory_to_group(&tx, &canonical_paths, &group.id)?;
         self.kv_set(GROUP_NAMESPACE, &group.id, &serde_json::to_value(&group)?)?;
+        tx.commit()?;
         Ok(group)
     }
 
@@ -505,8 +511,12 @@ impl Database {
                     }),
                 )?;
             }
-            crate::memory::rekey_learned_memory_to_group(&tx, &ordered, &group.id)?;
         }
+        // Every folder that is a root of this group hands over the learned memory
+        // keyed by its own path — whether the group is new (a legacy upgrade) or
+        // already stored and gaining a root. Re-keying an already-owned root is a
+        // no-op.
+        crate::memory::rekey_learned_memory_to_group(&tx, &ordered, &group.id)?;
         self.kv_set(GROUP_NAMESPACE, &group.id, &serde_json::to_value(&group)?)?;
         tx.commit()?;
         Ok(group)

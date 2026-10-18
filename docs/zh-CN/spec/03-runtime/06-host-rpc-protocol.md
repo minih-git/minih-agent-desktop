@@ -221,7 +221,9 @@ type ToolBudgetHealth = {
   `sessionId`、`kind`、`content`、可选 `rationale`、`origin`（`explicit` |
   `user_ui`，默认 | `extracted`）、`evidence`（`user_stated`，默认 | `verified` |
   `inferred`）、`status`（`active`，默认 | `suggested`）、`sourceSessionId`、
-  `sourceMessageIds`、`overrideTombstone`。写入或发现已存在条目时返回
+  `sourceMessageIds`、`overrideTombstone`。`origin` 与 `status` 必须一致：
+  `extracted` 必须配 `suggested`，`suggested` 也必须来自 `extracted`，因此抽取只能
+  产生建议，建议也只能来自抽取。写入或发现已存在条目时返回
   `{ entry, duplicate }`，被规则拒绝时返回 `{ rejected: { code, message } }`。
   拒绝码：`MEMORY_EMPTY_CONTENT`、`MEMORY_CONTENT_TOO_LARGE`、
   `MEMORY_RATIONALE_TOO_LARGE`、`MEMORY_INVALID_FIELD`、
@@ -229,13 +231,18 @@ type ToolBudgetHealth = {
   `MEMORY_TOMBSTONED`。拒绝信息不会重复被拒原文。
 - `memory.update({ id, revision, content?, rationale?, kind?, scope?, path? })` ——
   编辑条目。对 `revision` 做比较并交换：过期版本返回 1008 /
-  `MEMORY_REVISION_CONFLICT`，且该行保持不变。
+  `MEMORY_REVISION_CONFLICT`，且该行保持不变。只有当编辑把类型改成
+  `preference` / `feedback` 时才重新校验来源，因为条目引用的消息可能已随其会话
+  一起删除。
 - `memory.archive({ id })` / `memory.restore({ id })` —— 隐藏或取消隐藏。两者都不写
-  屏蔽记录。取消隐藏的内容已被存活条目持有时返回 1008 / `MEMORY_DUPLICATE_CONTENT`。
-- `memory.delete({ id })` —— 遗忘：归档并写入不含内容的屏蔽记录，屏蔽同一指纹与同一
-  来源消息。幂等；返回 `{ ok }`。
-- `memory.suggestions.decide({ id, decision })` —— `accept` 激活建议，`reject`
-  归档建议并写入同样的屏蔽记录。
+  屏蔽记录，也都够不到已被删除的条目：被遗忘的记忆不再存在，因此两者都返回 1007 /
+  `NOT_FOUND`。取消隐藏的内容已被存活条目持有时返回 1008 / `MEMORY_DUPLICATE_CONTENT`。
+- `memory.delete({ id })` —— 遗忘：擦除该条目及其全文索引行，并写入不含内容的屏蔽
+  记录，屏蔽同一指纹与同一来源消息；此后正文无法再读出或恢复。幂等；返回 `{ ok }`，
+  当该 id 已不存在时为 `false`。
+- `memory.suggestions.decide({ id, decision })` —— `accept` 激活建议并返回
+  `{ entry }`；`reject` 擦除建议、写入同样的屏蔽记录，并返回 `{ rejected: true }`。
+  id 不是待决建议时返回 1007 / `NOT_FOUND`。
 - `memory.session.get({ sessionId })` / `memory.session.setExcluded({ sessionId,
   excluded })` —— 每个会话的抽取状态，包括「不要从这次对话学习」。
 - `memory.extraction.claim({ sessionId, owner, leaseMs? })` /
