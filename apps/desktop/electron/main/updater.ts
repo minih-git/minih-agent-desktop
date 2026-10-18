@@ -2,11 +2,13 @@
  * App auto-update via electron-updater against GitHub Releases.
  *
  * The feed (latest*.yml + installers) is attached to each GitHub Release by
- * .github/workflows/release.yml. A release may compile in HTTPS mirrors
- * (`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`) that carry the same files for the
- * same version; the packaged GitHub feed is always tried first and mirrors
- * only replace the host, never the release (ADR 0022 amendment, see
- * ./update-source). Discovery always tracks the latest stable release
+ * .github/workflows/release.yml. Accelerators are tried in front of it and
+ * only ever replace the host, never the release (ADR 0022 amendment, see
+ * ./update-source): the router-published accelerator list is refreshed per
+ * TTL before a check, then the HTTPS mirrors compiled in with
+ * `MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`, and the packaged GitHub feed stays
+ * last. A failed accelerator refresh never blocks the check. Discovery always
+ * tracks the latest stable release
  * (`allowPrerelease = false`) so RC installs still graduate to newer stables.
  * Delivery mode per install:
  *  - Windows NSIS / Linux AppImage / packaged macOS → full in-app flow: silent
@@ -62,7 +64,12 @@ import {
 import { ManualUpdateReminderTracker } from "./manual-update-reminder";
 import {
   configuredUpdateMirrors,
+  officialUpdateSource,
+  parseRemoteUpdateSources,
+  parseRemoteUpdateSourcesTtl,
   parseUpdateMirrors,
+  REMOTE_UPDATE_SOURCES_DEFAULT_TTL_MS,
+  REMOTE_UPDATE_SOURCES_RETRY_MS,
   resolveUpdateSources,
   type UpdateSource,
 } from "./update-source";
@@ -85,6 +92,11 @@ function createRelocatedUpdater(
   baseCachePath: string,
 ): AppUpdater | null {
   return platform === "win32" ? new RelocatedNsisUpdater(baseCachePath) : null;
+}
+
+/** Order-sensitive comparison; the accelerator order is part of the contract. */
+function sameStringList(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 /**
@@ -143,10 +155,16 @@ export type UpdaterOptions = {
    */
   updateCacheDirOverride?: string | null;
   /**
-   * Feed order; defaults to the packaged GitHub feed plus any compiled-in
-   * mirrors (`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`).
+   * Feed order; defaults to the router-published accelerators plus any
+   * compiled-in mirrors (`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`), with the
+   * packaged GitHub feed last.
    */
   sources?: UpdateSource[];
+  /**
+   * Fetches the router's accelerator list (the raw `/api/desktop-update`
+   * payload). Absent disables server-published accelerators entirely.
+   */
+  loadRemoteUpdateSources?: () => Promise<unknown>;
   /** Overrides for the bounded check waits (tests). */
   autoCheckTimeoutMs?: number;
   manualCheckTimeoutMs?: number;
@@ -205,7 +223,20 @@ export class AppUpdaterController {
   private installRequested = false;
   private readonly autoUpdater: AppUpdater;
   private readonly cacheMaintenance: UpdateCacheMaintenance;
-  private readonly sources: UpdateSource[];
+  private sources: UpdateSource[];
+  /** Compiled-in mirror list; the accelerator refresh rebuilds sources from it. */
+  private readonly configuredMirrors: unknown;
+  private readonly loadRemoteUpdateSources?: () => Promise<unknown>;
+  /** Accelerator bases currently applied from the router list, in order. */
+  private remoteAccelerators: string[] = [];
+  /** When the accelerator list was last fetched; 0 means "not yet". */
+  private remoteSourcesFetchedAt = 0;
+  /** TTL the endpoint published for the list in use. */
+  private remoteSourcesTtlMs = REMOTE_UPDATE_SOURCES_DEFAULT_TTL_MS;
+  /** Earliest time a failed fetch may be retried. */
+  private remoteSourcesRetryAt = 0;
+  /** Fetched list waiting for a download in flight to finish. */
+  private pendingAccelerators?: string[];
   private readonly autoCheckTimeoutMs: number;
   private readonly manualCheckTimeoutMs: number;
   private readonly sourceSettleTimeoutMs: number;
@@ -336,6 +367,8 @@ export class AppUpdaterController {
       releasesUrl: RELEASES_URL,
     };
     const configuredMirrors = configuredUpdateMirrors();
+    this.configuredMirrors = configuredMirrors;
+    this.loadRemoteUpdateSources = options.loadRemoteUpdateSources;
     this.sources = options.sources ?? resolveUpdateSources(configuredMirrors);
     this.sourceSettleTimeoutMs =
       options.sourceSettleTimeoutMs ?? SOURCE_SETTLE_TIMEOUT_MS;
@@ -366,14 +399,94 @@ export class AppUpdaterController {
     return formatChangelogNotes(version, this.getLocale());
   }
 
+  /**
+   * Refresh the router-published accelerator list before a check.
+   *
+   * The list is memoized for the TTL the endpoint published, and a failed fetch
+   * only pauses the next attempt: it never fails or delays the check itself and
+   * never drops the sources already in use. A list that changes while an
+   * installer is in flight waits for the next check instead of repointing the
+   * updater mid-download.
+   */
+  private async refreshSources(): Promise<void> {
+    const load = this.loadRemoteUpdateSources;
+    if (!load || this.disposed) return;
+    const now = Date.now();
+    if (this.pendingAccelerators) {
+      if (this.state.status === "downloading") return;
+      this.applyAccelerators(this.pendingAccelerators);
+      return;
+    }
+    if (now < this.remoteSourcesRetryAt) return;
+    if (
+      this.remoteSourcesFetchedAt !== 0 &&
+      now - this.remoteSourcesFetchedAt < this.remoteSourcesTtlMs
+    ) {
+      return;
+    }
+    let payload: unknown;
+    try {
+      payload = await load();
+    } catch (error) {
+      this.remoteSourcesRetryAt = Date.now() + REMOTE_UPDATE_SOURCES_RETRY_MS;
+      this.logger.app("updater", "warn", "update accelerator list unavailable", {
+        data: { detail: String(error) },
+      });
+      return;
+    }
+    if (this.disposed) return;
+    const accelerators = parseRemoteUpdateSources(payload);
+    this.remoteSourcesFetchedAt = Date.now();
+    this.remoteSourcesRetryAt = 0;
+    this.remoteSourcesTtlMs = parseRemoteUpdateSourcesTtl(payload);
+    if (sameStringList(accelerators, this.remoteAccelerators)) return;
+    if (this.state.status === "downloading") {
+      this.pendingAccelerators = accelerators;
+      return;
+    }
+    this.applyAccelerators(accelerators);
+  }
+
+  /**
+   * Rebuild `sources` from an accelerator list and apply the first source.
+   *
+   * A feed-less `packaged` source cannot revoke a feed that was already
+   * applied, so when the list empties out after an accelerator served the
+   * updater, the official feed is applied explicitly as the only source
+   * instead. The check reads `appliedSourceIndex` before it is cleared, since
+   * that is the only record that a feed is live.
+   */
+  private applyAccelerators(accelerators: readonly string[]): void {
+    this.remoteAccelerators = [...accelerators];
+    this.pendingAccelerators = undefined;
+    const resolved = resolveUpdateSources(
+      this.configuredMirrors,
+      this.remoteAccelerators,
+    );
+    const official =
+      resolved[0]?.feed === undefined && this.appliedSourceIndex !== null
+        ? officialUpdateSource()
+        : null;
+    this.sources =
+      official !== null
+        ? [official]
+        : resolved.length > 0
+          ? resolved
+          : [{ kind: "packaged", host: "github.com" }];
+    // The first source changed, so the applied feed must follow it even when
+    // the index itself did not move.
+    this.appliedSourceIndex = null;
+    this.applySource(0);
+  }
+
 
   /**
    * Point the updater at `sources[index]` and publish the diagnostic host.
    *
    * The packaged source carries no feed, so `app-update.yml` keeps driving the
-   * check exactly as before; only a build with compiled-in mirrors applies an
-   * explicit feed. Applying the same source twice is a no-op, so a repeated
-   * attempt does not re-issue the feed.
+   * check exactly as before; only a build with accelerator sources (the router
+   * list or compiled-in mirrors) applies an explicit feed. Applying the same
+   * source twice is a no-op, so a repeated attempt does not re-issue the feed.
    */
   private applySource(index: number): void {
     const source = this.sources[index];
@@ -847,6 +960,9 @@ export class AppUpdaterController {
     const timeoutMs = this.manualRequested
       ? this.manualCheckTimeoutMs
       : this.autoCheckTimeoutMs;
+    // The accelerator list decides which feed this check uses. Refreshing it
+    // never throws: a failure keeps the current sources and the check runs.
+    await this.refreshSources();
     // Fire-and-forget relative to boot: callers must not await this from the
     // first-window path. The race only bounds *our* wait; electron-updater may
     // still finish later and emit available/up-to-date.

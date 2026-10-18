@@ -394,11 +394,17 @@ curl -fsSL https://dl.example.com/minih/desktop/latest.yml | head
 node scripts/publish-update-mirror.mjs dist --dry-run   # prints the exact uploads
 ```
 
-A client only uses a mirror when its build compiled one in; the desktop tries the
-packaged GitHub feed first, keeps the host that answered, and falls back after a
-failed check or a stalled download (ADR 0022 amendment, D659). Git tags and
-GitHub Releases remain the canonical artifact source — a mirror is never the
-place to publish a release that GitHub did not receive.
+A client only uses a mirror when its build compiled one in, and it also tries
+the accelerator list the router publishes at
+`GET <router origin>/api/desktop-update` (D668). Order: router accelerators,
+compiled mirrors, then the packaged GitHub feed last — the desktop keeps the
+host that answered and falls back after a failed check or a stalled download
+(ADR 0022 amendments, D659 / D668). An accelerated check reads `latest*.yml`
+from the accelerator, so the version and hash anchor of that check sit with that
+site; the installer is still verified against the `sha512` in the yml it read,
+and Windows and macOS signatures are still verified. Git tags and GitHub
+Releases remain the canonical artifact source — a mirror or accelerator is never
+the place to publish a release that GitHub did not receive.
 
 ### 4.7 GitHub Actions secrets for macOS signing
 

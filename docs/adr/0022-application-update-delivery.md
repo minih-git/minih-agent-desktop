@@ -1,6 +1,6 @@
 # ADR 0022: Application Update Delivery
 
-- Status: Accepted (amended by D364 / D603 / D628 / ADR 0197, D450 / ADR 0289; issue #1098)
+- Status: Accepted (amended by D364 / D603 / D628 / ADR 0197, D450 / ADR 0289, D659, D668; issue #1098)
 - Date: 2026-07-26
 - Deciders: Minih-Agent-Desktop core
 - Related: D120, D126, D364, D603, D628, D010, D450, ADR 0021, ADR 0197, ADR 0289
@@ -145,9 +145,11 @@ same release:
    and applied only through `setFeedURL`. The renderer and runtime settings
    cannot supply or extend a feed; unusable entries are logged and ignored, and
    a build without mirrors keeps exactly the packaged GitHub feed.
-3. Sources are tried in order, packaged GitHub first. The host that answered
-   stays preferred for the session, and a failing check moves the preference to
-   the next source. The retry itself waits for the failed request to settle
+3. Sources are tried in order — the packaged GitHub feed first, then the
+   compiled-in mirrors (D668 moved the packaged feed behind both accelerator
+   layers; see the D668 amendment below). The host that answered stays
+   preferred for the session, and a failing check moves the preference to the
+   next source. The retry itself waits for the failed request to settle
    (bounded), so only one check is ever in flight and a request that hangs past
    the check window and then succeeds cannot download from a host the desktop
    has already left.
@@ -170,3 +172,51 @@ packages are unsigned today, which makes a configured mirror the trust anchor on
 that lane; Windows code signing (`forceCodeSigning` writing `publisherName`) is
 the prerequisite for treating a mirror as untrusted, and stays a release
 follow-up.
+
+## Amendment (server-published accelerators, D668)
+
+The router publishes a public, credential-free, read-only accelerator list at
+`GET <router origin>/api/desktop-update`, and a minih build now tries it before
+anything else:
+
+1. `data.sources[].prefix` entries are prefix-style GitHub accelerators
+   (`https://gh-proxy.org/`). Main expands each one into a generic feed base
+   (`<prefix>https://github.com/<owner>/<repo>/releases/latest/download`) and
+   validates it exactly like a compiled-in mirror: absolute `https`, no
+   credentials, no query or fragment, not `github.com`, deduplicated, at most
+   three entries. An unusable entry is dropped on its own; a payload that is not
+   the expected envelope yields no accelerator at all.
+2. Source order for a minih build is now: router accelerators (in the order the
+   endpoint published), compiled-in mirrors
+   (`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`), then the official GitHub feed. The
+   official feed is always last, so a failing accelerator still resolves the
+   update.
+3. The list is refreshed before a check and memoized for the TTL the endpoint
+   published (`ttl_seconds`, clamped to 1 minute … 24 hours; 1 hour when
+   absent). A failed fetch is logged as a warning, pauses the next attempt for
+   at least 5 minutes, and never fails, delays, or blocks the check — the
+   sources already in use keep working. A list that arrives while an installer
+   is downloading is applied by the next check instead of repointing the
+   updater mid-transfer.
+4. Withdrawing the list takes effect the same way: when the endpoint returns no
+   accelerator after one served the updater, Main re-applies the official
+   GitHub feed explicitly and as the only source. The packaged feed carries no
+   URL, so it cannot revoke a feed already applied through `setFeedURL`; without
+   this step a withdrawn accelerator would stay in use until the app restarted.
+5. The list is honored only when the brand's packaged feed is GitHub
+   (`currentBrandProfile().updateFeed.provider === "github"`). A hungraim build
+   keeps its generic `updates.hungraim.com` feed, ignores the router list, and
+   makes no request to it. `MINIH_AGENT_UPDATE_SOURCES_URL` overrides the
+   endpoint URL so a local or self-hosted gateway can be verified without
+   repackaging.
+
+Cost, stated plainly: an accelerated check reads the channel files
+(`latest*.yml`) from a third-party community site, so the version and hash
+anchor move to that site for that check. electron-updater still verifies the
+installer against the `sha512` in the yml it read, and Windows and macOS still
+verify their own signatures, but an accelerator that serves both the manifest
+and the bytes is trusted for that release in the same way a configured mirror
+is (see the mirror-trust note above), and Windows packages remain unsigned
+today. The official GitHub feed stays the last source and the canonical
+artifact origin, and Main still owns the list: the renderer and runtime
+settings cannot supply, extend, or redirect it.

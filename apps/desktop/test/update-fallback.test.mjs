@@ -20,6 +20,19 @@ const GITHUB_FEED = {
 };
 const MIRROR_FEED = { provider: "generic", url: MIRROR };
 const NEXT_VERSION = "0.20.2";
+/** Generic feed base the router's first accelerator prefix expands to. */
+const ACCELERATOR_FEED = {
+  provider: "generic",
+  url: "https://gh-proxy.org/https://github.com/minih-git/minih-agent-desktop/releases/latest/download",
+};
+const ACCELERATOR_PAYLOAD = {
+  code: 0,
+  message: "success",
+  data: {
+    sources: [{ prefix: "https://gh-proxy.org/", label: "gh-proxy.org" }],
+    ttl_seconds: 3600,
+  },
+};
 
 /**
  * Feed double with a scripted per-attempt behaviour: `error`, `fail-after`
@@ -126,36 +139,37 @@ async function waitFor(predicate, label, timeoutMs = 1_000) {
   assert.fail(`timed out waiting for ${label}`);
 }
 
-test("a failed check retries on the mirror and remembers the host", async () => {
+test("a failed check retries on the official feed and remembers the host", async () => {
   const updater = new PlanUpdater();
   updater.plan = [{ kind: "error" }, { kind: "available" }];
   const { controller } = createController({ updater, mirrors: MIRROR });
 
+  // The compiled mirror is the accelerator in front of the official feed.
   await controller.check();
   assert.equal(updater.checks, 1);
-  assert.deepEqual(updater.feeds, [GITHUB_FEED, MIRROR_FEED], "the next cycle is already pointed at the mirror");
+  assert.deepEqual(updater.feeds, [MIRROR_FEED, GITHUB_FEED], "the next cycle is already pointed at the official feed");
 
   await waitFor(
     () => controller.getState().availableVersion === NEXT_VERSION,
-    "the mirror to answer",
+    "the official feed to answer",
   );
   assert.equal(updater.checks, 2);
-  assert.deepEqual(updater.feeds, [GITHUB_FEED, MIRROR_FEED]);
-  assert.equal(controller.getState().feedHost, "dl.example.com");
+  assert.deepEqual(updater.feeds, [MIRROR_FEED, GITHUB_FEED]);
+  assert.equal(controller.getState().feedHost, "github.com");
   assert.equal(controller.getState().status, "downloading");
 
-  // The mirror stays the preferred source for the next cycle.
+  // The host that answered stays the preferred source for the next cycle.
   await controller.dismiss();
   updater.plan = [{ kind: "up-to-date" }];
   await controller.check();
   assert.equal(updater.checks, 3);
-  assert.deepEqual(updater.feeds, [GITHUB_FEED, MIRROR_FEED]);
-  assert.equal(controller.getState().feedHost, "dl.example.com");
+  assert.deepEqual(updater.feeds, [MIRROR_FEED, GITHUB_FEED]);
+  assert.equal(controller.getState().feedHost, "github.com");
   assert.equal(controller.getState().status, "up-to-date");
   controller.dispose();
 });
 
-test("a manual timeout is reported by code and still reaches the mirror", async () => {
+test("a manual timeout is reported by code and still reaches the official feed", async () => {
   const updater = new PlanUpdater();
   // The feed answers later than the check window, which is the reported
   // "GitHub hangs on some networks" shape.
@@ -173,7 +187,7 @@ test("a manual timeout is reported by code and still reaches the mirror", async 
     "the settled failure to fall back",
   );
   assert.equal(updater.checks, 2);
-  assert.equal(controller.getState().feedHost, "dl.example.com");
+  assert.equal(controller.getState().feedHost, "github.com");
   assert.equal(controller.getState().errorCode, undefined);
   controller.dispose();
 });
@@ -187,10 +201,10 @@ test("a request that never settles does not race a second source", async () => {
   await new Promise((resolve) => setTimeout(resolve, 120));
   assert.equal(updater.checks, 1, "no second feed while the first is in flight");
   // The next cycle starts where the failure left off.
-  assert.equal(controller.getState().feedHost, "dl.example.com");
+  assert.equal(controller.getState().feedHost, "github.com");
   await controller.check();
   assert.equal(updater.checks, 2);
-  assert.deepEqual(updater.feeds, [GITHUB_FEED, MIRROR_FEED]);
+  assert.deepEqual(updater.feeds, [MIRROR_FEED, GITHUB_FEED]);
   controller.dispose();
 });
 
@@ -203,11 +217,11 @@ test("a download that stops progressing retries, then reports the stall", async 
   assert.equal(controller.getState().status, "downloading");
 
   await waitFor(() => updater.cancellations.length === 1, "the first stall");
-  await waitFor(() => updater.checks === 2, "the retry on the mirror");
-  assert.deepEqual(updater.feeds, [GITHUB_FEED, MIRROR_FEED]);
-  assert.equal(controller.getState().feedHost, "dl.example.com");
+  await waitFor(() => updater.checks === 2, "the retry on the official feed");
+  assert.deepEqual(updater.feeds, [MIRROR_FEED, GITHUB_FEED]);
+  assert.equal(controller.getState().feedHost, "github.com");
 
-  // The mirror stalls too: one retry per version, then the failure is visible.
+  // The official feed stalls too: one retry per version, then the failure is visible.
   await waitFor(
     () => controller.getState().errorCode === "download-stalled",
     "the stalled download to be reported",
@@ -239,14 +253,42 @@ test("an installer failure moves the retry to the other source", async () => {
   const { controller } = createController({ updater, mirrors: MIRROR });
 
   await controller.check();
-  await waitFor(() => updater.checks === 2, "the mirror attempt");
-  assert.equal(controller.getState().feedHost, "dl.example.com");
+  await waitFor(() => updater.checks === 2, "the official feed attempt");
+  assert.equal(controller.getState().feedHost, "github.com");
 
-  // Bytes were in flight when this host failed, so the retry goes to the
-  // canonical feed instead of the source that just broke.
+  // Bytes were in flight when this host failed, so the retry goes to the other
+  // source instead of the host that just broke.
   updater.emit("error", new Error("installer unavailable"));
   assert.equal(controller.getState().status, "error");
+  assert.equal(controller.getState().feedHost, "dl.example.com");
+  assert.deepEqual(updater.feeds, [MIRROR_FEED, GITHUB_FEED, MIRROR_FEED]);
+  controller.dispose();
+});
+
+test("the router accelerator is tried first and falls back to the official feed", async () => {
+  const updater = new PlanUpdater();
+  updater.plan = [{ kind: "up-to-date" }];
+  const { controller } = createController({
+    updater,
+    loadRemoteUpdateSources: async () => ACCELERATOR_PAYLOAD,
+  });
+
+  await controller.check();
+  assert.deepEqual(
+    updater.feeds,
+    [ACCELERATOR_FEED],
+    "the check runs against the router accelerator, not the packaged feed",
+  );
+  assert.equal(controller.getState().feedHost, "gh-proxy.org");
+  assert.equal(controller.getState().status, "up-to-date");
+
+  // The accelerator stops answering: the next attempt lands on the official
+  // feed, which is what keeps an update reachable.
+  updater.plan = [{ kind: "error" }, { kind: "available" }];
+  await controller.check();
+  await waitFor(() => updater.checks === 3, "the official feed fallback");
+  assert.deepEqual(updater.feeds, [ACCELERATOR_FEED, GITHUB_FEED]);
   assert.equal(controller.getState().feedHost, "github.com");
-  assert.deepEqual(updater.feeds, [GITHUB_FEED, MIRROR_FEED, GITHUB_FEED]);
+  assert.equal(controller.getState().availableVersion, NEXT_VERSION);
   controller.dispose();
 });
