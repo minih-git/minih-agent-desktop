@@ -29,6 +29,7 @@ import {
   getToolSummary,
   getToolSummaryValue,
 } from "../../../lib/tool-display";
+import { getToolIdentity } from "../../../lib/tool-identity";
 import {
   buildToolPresentation,
   hasToolDetails,
@@ -58,6 +59,9 @@ import { ToolChips, ToolDetailBlocks } from "../../../components/ToolDetails";
 import {
   IconArrowDown,
   IconBot,
+  IconBookOpen,
+  IconPlug,
+  IconServer,
   IconCheck,
   IconChevronRight,
   IconCircleAlert,
@@ -98,8 +102,8 @@ type ToolRowProps = {
   /** Detailed density: the payload is open from the start. */
   autoOpen?: boolean;
   /**
-   * One-line step row: the action label only. Inside a folded turn the command
-   * echo and argument summary would just repeat what opening the row shows.
+   * One-line step row: hide argument summaries, but retain capability identity.
+   * Commands and other arguments remain available when opening the row.
    */
   dense?: boolean;
   /** Claims the containing activity group when this row is manually used. */
@@ -199,6 +203,10 @@ function HostToolRow({
   const activeWorkPanelTabId = useAppStore((s) => s.activeWorkPanelTabId);
   const status = message.toolStatus;
   const action = getToolAction(message.toolName);
+  const identity = getToolIdentity(message.toolName, message.toolArgs);
+  const IdentityIcon = identity?.kind === "skill" ? IconBookOpen
+    : identity?.kind === "mcp" ? IconServer
+      : identity?.kind === "plugin" ? IconPlug : null;
   // A run row states what the command did, not what the call around it did: an
   // exit code the shell reported outranks a tool call that came back fine
   // (D227). Property reads only, so a streaming row can afford it every tick.
@@ -225,6 +233,9 @@ function HostToolRow({
   const actionLabel = t(
     status === "running" ? TOOL_RUNNING_KEYS[action] : TOOL_ACTION_KEYS[action],
   );
+  const identityLabel = identity?.kind === "skill" ? t("settings.nav.skills")
+    : identity?.kind === "mcp" ? t("settings.nav.mcp")
+      : identity?.kind === "plugin" ? t("nav.plugins") : actionLabel;
   const rawName = getToolDisplayName(message.toolName) || t("chat.tool");
   const argSummary = getToolSummary(message.toolName, message.toolArgs);
   const previewTarget = PREVIEWABLE_ACTIONS.has(action)
@@ -488,13 +499,13 @@ function HostToolRow({
             aria-expanded={open}
             aria-controls={hasDetails ? detailsId : undefined}
             disabled={!hasDetails}
-            title={summary || rawName}
+            title={identity?.name || summary || rawName}
             onClick={() => hasDetails && toggleRow()}
           >
             <span
               className={`tool-row-icon${lifecycle ? " is-subagent" : ""}`}
             >
-              <ToolActionIcon action={action} />
+              {IdentityIcon ? <IdentityIcon size={15} aria-hidden /> : <ToolActionIcon action={action} />}
             </span>
             <span
               className={`tool-row-name ${status === "running" ? "running" : ""}`}
@@ -505,8 +516,13 @@ function HostToolRow({
                       ? LIFECYCLE_RUNNING_KEYS
                       : LIFECYCLE_LABEL_KEYS)[lifecycle],
                   )
-                : actionLabel}
+                : identityLabel}
             </span>
+            {identity ? (
+              <span className="tool-row-summary tool-row-identity" title={identity.name}>
+                {identity.name}
+              </span>
+            ) : null}
             {lifecycle && roster.length > 0 ? (
               <span className="tool-row-agent is-count">
                 {t("chat.subagentCount", { count: roster.length })}
@@ -517,7 +533,7 @@ function HostToolRow({
                 {agentName}
               </span>
             ) : null}
-            {summary && !dense ? (
+            {summary && !dense && identity?.kind !== "skill" && summary !== identity?.name ? (
               <span
                 className={`tool-row-summary${previewTarget && localToolsAllowed ? " linked" : ""}`}
                 title={

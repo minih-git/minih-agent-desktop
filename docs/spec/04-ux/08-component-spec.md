@@ -2305,8 +2305,21 @@ seconds when non-zero) from one hour onward. Zero-value units are omitted, so
   visible even when every group is collapsed; adjacent Bash rows remain separate.
 - The processing group spans the full available assistant column, so expanded
   result details keep a usable width even when the header or payload is short.
-- The visible label is a natural-language action (`Read`, `Ran`, `Searched`),
-  not the raw function name. Running actions use the progressive form.
+- Built-in actions keep natural-language labels (`Read`, `Ran`, `Searched`)
+  and progressive running forms. Skill and extension calls retain their
+  capability identity even in dense processing rows: Skills use a book icon
+  and the exact requested skill id; MCP uses a server icon and the qualified
+  tool name; plugin fallback rows use a plug icon and their qualified name.
+  Unknown generic tools retain the wrench plus their exact name.
+- Identity is independent of action/result classification. Prefixes identify
+  MCP and plugin provenance; the renderer never guesses an owner/tool split
+  from ambiguous underscores or reads the current catalog to rewrite history.
+  Skill `id` is preferred, with `skill`/`name` accepted for imported histories;
+  a missing id falls back to the called tool name. Names ellipsize within the
+  available width and expose their full value on hover. Other argument hints
+  remain hidden in dense rows; opening details still reveals the arguments.
+  Running, failure, denial, plugin-owned cards, and disclosure ownership keep
+  their existing behavior. No execution, permission, or persistence change.
 - The primary argument is a clamped single-line monospace hint.
 - Result chips follow the hint: exit code (neutral), match/file counts,
   replacement count, Write byte size, Read line count plus its 1-based closed

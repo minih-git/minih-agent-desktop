@@ -1,3 +1,4 @@
+import { toolIdentityProbe } from "./tool-identity";
 import { transcriptLongHistoryProbe as runLongHistoryProbe } from "./transcript-long-history";
 import { transcriptEditProbe } from "./transcript-edit";
 import { turnProcessProbe } from "./turn-process";
@@ -651,9 +652,11 @@ globalThis.transcriptRenderProbe = async () => {
     const markdownLinks = await markdownLinkInteractionProbe(i18n);
     const contextMenuSubmenu = await contextMenuSubmenuInteractionProbe();
     const turnProcess = await turnProcessProbe();
+    const toolIdentity = await toolIdentityProbe();
     return {
-      ok: statusLifecycle.ok && markdownLinks.ok && contextMenuSubmenu.ok && turnProcess.ok,
+      ok: statusLifecycle.ok && markdownLinks.ok && contextMenuSubmenu.ok && turnProcess.ok && toolIdentity.ok,
       statusLifecycle,
+      toolIdentity,
       markdownLinks,
       contextMenuSubmenu,
       groups,
