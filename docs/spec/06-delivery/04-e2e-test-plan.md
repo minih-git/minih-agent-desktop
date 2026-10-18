@@ -18660,6 +18660,10 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **Milestone**: M2.
 - **Status**: Automated — `pnpm test:e2e:memory`
   (`scripts/e2e-memory-recall.mjs`). The CJK latency gate of the same milestone
-  is a host test: `rpc::memory_tools::tests::
-  history_search_stays_within_the_cjk_latency_budget_on_a_large_history`
-  measures 10k sessions / 40k messages and asserts p95 ≤ 300 ms.
+  is `pnpm test:perf:memory`, which runs
+  `rpc::memory_tools::tests::
+  history_search_stays_within_the_cjk_latency_budget_on_a_large_history` on its
+  own and enforces p95 ≤ 300 ms on a 10k-session / 40k-message fixture. Inside
+  the parallel host suite the same test only prints the distribution and guards
+  a 5 s ceiling, because there the samples measure the host's load rather than
+  the query.

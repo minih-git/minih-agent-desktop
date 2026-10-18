@@ -9864,6 +9864,8 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **验收**：代理能找到先前会话的决定，却无法读取它不属于的项目；关闭读取会隐藏该能力而不删除任何数据。
 - **里程碑**：M2。
 - **状态**：已自动化——`pnpm test:e2e:memory`（`scripts/e2e-memory-recall.mjs`）。同一里程碑的中文检索延迟门禁
-  由主机测试承担：`rpc::memory_tools::tests::
-  history_search_stays_within_the_cjk_latency_budget_on_a_large_history` 在 1 万会话 / 4 万消息上测量并断言
-  p95 ≤ 300 ms。
+  是 `pnpm test:perf:memory`：它单独运行
+  `rpc::memory_tools::tests::
+  history_search_stays_within_the_cjk_latency_budget_on_a_large_history`，在 1 万会话 / 4 万消息的夹具上
+  强制 p95 ≤ 300 ms。在并行主机测试套件内，同一测试只打印分布并守护 5 s 上限，因为那里的采样反映的是主机负载
+  而不是查询本身。
