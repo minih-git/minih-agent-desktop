@@ -425,9 +425,9 @@ async function main() {
     });
     hopMessageIds.push(hopMessage.id);
 
-    // A top-level send starts with eight autonomous hops remaining. Seven
-    // bound sends leave one; the eighth must be rejected before insertion.
-    for (let index = 2; index <= 8; index += 1) {
+    // A top-level send starts at 32. After 31 turn-bound forwards, one hop
+    // remains and the 33rd delivery must be refused before insertion.
+    for (let index = 2; index <= 32; index += 1) {
       const turn = await host.call("session.beginTurn", {
         sessionId: hopTarget,
         sessionMessageId: hopMessage.id,
@@ -488,21 +488,21 @@ async function main() {
     await host.call("session.collaboration.settle", { turnId: finalHopTurn.turnId });
     record(
       ORCHESTRATOR_ID,
-      errorCode(hopError) === "LIMIT_EXCEEDED" &&
+      hopMessageIds.length === 32 &&
+        errorCode(hopError) === "LIMIT_EXCEEDED" &&
         rpcCode(hopError) === 1002 &&
         JSON.stringify(hopExchangeIdsBefore) === JSON.stringify(hopExchangeIdsAfter),
-      `hop=${errorCode(hopError)}`,
+      `accepted=${hopMessageIds.length} next=${errorCode(hopError)}`,
     );
 
     const pending = await host.call("session.collaboration.pending", {
       sessionId: source.id,
     });
     const allKnownMessages = [...knownMessageIds, ...hopMessageIds];
-    const settledMessages = await Promise.all(
-      allKnownMessages.map((messageId) =>
-        host.call("session.collaboration.message", { messageId }),
-      ),
-    );
+    const settledMessages = [];
+    for (const messageId of allKnownMessages) {
+      settledMessages.push(await host.call("session.collaboration.message", { messageId }));
+    }
     const noRunningLedgerEntries = settledMessages.every(
       (response) => response.message && response.message.status !== "running",
     );

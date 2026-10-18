@@ -1338,6 +1338,13 @@ does not automatically trigger another callback. This path does not restore
 the withdrawn `A2A` or `Peer` tools and does not change `Task`, `TaskWait`,
 `TaskList`, or `TaskStop` semantics.
 
+New autonomous communication chains start with a budget of 32 on the first
+outgoing delivery. Each turn-bound forward and each completion callback reduces
+the inherited budget by one; a send that would reduce it below one fails with
+`LIMIT_EXCEEDED` and requires a new user-initiated turn. Existing deliveries keep
+their persisted remaining budget; increasing the default does not refill them.
+The separate target inbox limit remains eight queued deliveries.
+
 ### 5f.4 Built-in session messaging (D663)
 
 The same ledger also backs three built-in, on-demand Agent tools —

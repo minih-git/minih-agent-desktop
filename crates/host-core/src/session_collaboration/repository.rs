@@ -202,7 +202,7 @@ pub(super) fn remaining_hops(db: &Database, source: &str, turn: Option<&str>) ->
         "SELECT m.remaining_hops FROM session_collaboration_messages m JOIN turns t ON m.turn_id=t.id
          WHERE t.session_id=?1 AND t.status='running' AND (?2 IS NULL OR t.id=?2) LIMIT 1",
         params![source, turn], |row| row.get(0)).optional()?;
-    let budget = remaining.unwrap_or(9) - 1;
+    let budget = remaining.map_or(32, |remaining| remaining - 1);
     if budget < 1 {
         return Err(anyhow!(
             "LIMIT_EXCEEDED: autonomous communication limit reached; await user input"

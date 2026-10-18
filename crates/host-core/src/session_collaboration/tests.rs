@@ -50,6 +50,7 @@ fn sessions_are_reused_and_send_is_idempotent() {
     let parent = session(&db, "Parent");
     let child = session(&db, "Existing conversation");
     let first = send(&db, &parent, &child, "one");
+    assert_eq!(first.remaining_hops, 32);
     assert_eq!(send(&db, &parent, &child, "one").id, first.id);
     assert_eq!(
         send(&db, &child, &parent, "reply").target_session_id,
@@ -69,6 +70,41 @@ fn sessions_are_reused_and_send_is_idempotent() {
         .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 2);
+}
+
+#[test]
+fn stored_communication_budgets_are_not_refilled() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    let parent = session(&db, "Parent");
+    let child = session(&db, "Child");
+    let original = send(&db, &parent, &child, "legacy");
+    // Simulate a delivery persisted before the default budget increased.
+    db.conn()
+        .execute(
+            "UPDATE session_collaboration_messages SET remaining_hops=8 WHERE id=?1",
+            params![original.id],
+        )
+        .unwrap();
+    let turn = begin_turn(&db, &child, &original.id, None, None).unwrap();
+    let response = handle(
+        &db,
+        "session.collaboration.send",
+        &json!({"sourceSessionId":child,"sourceTurnId":turn,
+            "sessionId":parent,"pluginId":"pi.session-orchestrator",
+            "content":"Continue the existing chain","idempotencyKey":"legacy-next",
+            "notifyOnCompletion":false}),
+    )
+    .unwrap();
+    let next = get(&db, response["message"]["id"].as_str().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(next.remaining_hops, 7);
+    assert_eq!(get(&db, &original.id).unwrap().unwrap().remaining_hops, 8);
+
+    sessions::end_turn(&db, &turn, "completed", None, None, false).unwrap();
+    let receipt = settle_turn(&db, &turn).unwrap().unwrap();
+    assert_eq!(receipt.remaining_hops, 7);
 }
 
 #[test]
@@ -162,6 +198,8 @@ fn turn_bound_result_and_callback_are_durable_and_exactly_once() {
         Some(message.id.as_str())
     );
     assert!(!receipt.notify_on_completion);
+    assert_eq!(message.remaining_hops, 32);
+    assert_eq!(receipt.remaining_hops, 31);
     let result = handle(
         &db,
         "session.collaboration.result",
