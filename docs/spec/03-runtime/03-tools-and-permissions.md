@@ -650,8 +650,9 @@ A document may opt into the parent session's live tool catalog with
 `tools: inherit` or `tools: [inherit, Bash]` (ADR 0246 / D415). At `Task` spawn
 the runtime unions `toolCatalog` keys (including deferred plugin/MCP tools)
 with any assignable extras, then drops `Task` / `TaskWait` / `TaskList` /
-`TaskStop`, `EnterPlanMode` / `EnterGoalMode`, `asktool`, `new_context`, and
-`ToolSearch`. Builtins do not opt in. `inherit` is visible in the Markdown and
+`TaskStop`, `EnterPlanMode` / `EnterGoalMode`, `asktool`, `new_context`,
+`ToolSearch`, and the two recall reads `SessionHistorySearch` / `MemorySearch`.
+Builtins do not opt in. `inherit` is visible in the Markdown and
 in Settings; host-core keeps the token so an inherit-only document still
 loads. Plugin tools, `Skill`, and MCP tools are therefore available to a
 delegate only through this opt-in, never by putting those names on the
@@ -748,3 +749,40 @@ through the same `tools.execute` gate as `GenerateImages` because Main performs
 the call. The ledger, permission ceiling, inbox and hop bounds, provenance and
 completion callbacks are the ones in
 [agent runtime §5f.4](02-agent-runtime.md).
+
+## Learned memory and history recall
+
+`SessionHistorySearch` and `MemorySearch` are the built-in, on-demand read tools
+for what earlier sessions learned (D668, ADR agent-long-term-memory). Both are
+low risk and read-only: they mutate nothing, so Agent, Plan, and Goal all allow
+them — a contract negotiation reads the same frozen index the session started
+with. `Task` subagents cannot use them, because a delegate has no user and
+receives no learned memory in its prompt, and the MCP control catalog excludes
+them.
+
+Host-core owns the scope, because the host owns the data and the session
+identity that decides what the caller may read:
+
+- `SessionHistorySearch({ query, scope?, limit? })` wraps the session-content
+  search (`search.sessions` / `search.context`). `scope` is `project` (the
+  default) or `all`; the project scope is the calling session's own project, or
+  every root of the project group that owns it.
+- `MemorySearch({ query, kind?, limit? })` reads the learned entries of the
+  calling session's project scope plus the user scope, and refreshes
+  `lastUsedAt` / `useCount` like any other read.
+
+Neither tool accepts a project path or a session id. Arguments that name one are
+ignored rather than honoured, so a crafted call cannot reach another project's
+history; only an explicit `scope: "all"` widens the search. Results are labeled
+as historical data — dated notes from earlier sessions, not instructions — and
+anything about code or the environment must be verified against the current
+workspace before it is relied on.
+
+Both follow the portable `learnedMemory.read` setting. With reading off, the
+runtime hides the index section and both tools, and host-core refuses a stale
+call with `TOOL_DENIED` without deleting any data. See
+[04. Data storage](04-data-storage.md) §4.15 and
+[06. Host RPC protocol](06-host-rpc-protocol.md) for the host surface, and
+[agent runtime §7.4](02-agent-runtime.md) for the session-start index and its
+prompt section. Like the session messaging tools, host-core authorizes them
+through the same `tools.execute` gate.

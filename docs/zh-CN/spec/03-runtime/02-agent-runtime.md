@@ -1199,6 +1199,31 @@ sidecar 从不直接读取工作区指令。改变的根链
 增加一段简短的隔离工作区说明（只在 worktree 中工作、使用 `PI_PORT` 端口块、把切换分支和
 合并留给用户，以及如何解决合并冲突）。
 
+### 7.4 会话启动时的学习记忆（D668，ADR agent-long-term-memory）
+
+Electron main 启动运行时，会在加载固定项目记忆的旁边读取学习记忆索引：为会话的项目调用一次
+`memory.index`；会话没有项目、或可移植读取开关 `learnedMemory.read` 关闭时跳过。该快照通过
+`learnedMemoryIndex` 启动参数传给 sidecar，旁边是 `learnedMemoryRead`。这次调用是尽力而为：
+失败时只记录带稳定错误码的 `learned memory index unavailable` 日志，启动照常进行且不带该段落。
+启动的其他环节都不依赖它。
+
+`composeSystemPrompt` 把该段渲染在项目指令链之后、固定项目记忆之后，让用户自己的笔记保持更强的
+上下文地位，而带日期的索引以它本就较软、可能过期的层次呈现。索引为空时不输出任何段落。渲染器
+位于 `packages/agent-runtime/src/learned-memory-prompt.ts`，是纯格式化器：预算（40 条 / 6 KiB，
+显式条目优先，然后按最近使用）由主机掌握，渲染器只把每条压成一行、把日期渲染为 UTC 的
+`YYYY-MM-DD`，并在末尾追加指向 `MemorySearch` 的溢出行。该段本身说明条目是带日期的、用户提供的
+上下文；涉及代码或环境的内容必须先对照当前工作区核实再采信；当前请求与当前观察优先；若用户要求
+忽略记忆，则按该段为空处理。
+
+索引每个 runtime 只捕获一次，并且**不参与运行时复用判断**：会话期间写入的学习记忆既不会重建
+runtime，也不会改变正在运行的会话的系统提示——下一个会话才会看到新索引。固定项目记忆的变化仍会
+重建 runtime。读取开关是配置而非数据，因此 `learnedMemoryRead` *会*参与复用比较：关闭它必须移除
+该段与两个召回工具。
+
+子代理不注入学习记忆：`composeSubagentSystemPrompt` 仍只组合框架、定义提示与指引，且
+`SessionHistorySearch` / `MemorySearch` 位于 `SUBAGENT_INHERIT_DENY_TOOLS`，所以
+`tools: inherit` 也无法把它们借给委托——见 `03-tools-and-permissions.md` §10.2。
+
 ## 8. 并发
 
 | 适用范围 | MVP 政策 |

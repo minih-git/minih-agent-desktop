@@ -18624,3 +18624,42 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **Acceptance**: `apps/desktop/test` brand/data-path/update-source suites pass; a manual side-by-side run records screenshots per platform before a hungraim release.
 - **Milestone**: Hungraim distribution line.
 - **Status**: Implemented (source-contract tests); full manual side-by-side run is part of the hungraim release checklist.
+
+### E2E-MEMORY-history-search-finds-prior-session
+
+- **Preconditions**: A real host-core binary and a temporary data directory, two
+  registered projects (`first-project`, `second-project`), and no model,
+  provider, or network call. The scenario drives `tools.execute` directly,
+  which is the same host gate the runtime's tool calls pass through.
+- **Steps**:
+  1. Create a session in each project and append one user message to the
+     first-project session and one to the second-project session.
+  2. From a later first-project session, call
+     `SessionHistorySearch({ query })` for text the earlier message contains.
+  3. Repeat with `scope: "all"`, then once more with crafted `path`,
+     `projectPath`, and `sessionId` arguments naming the other project.
+  4. Create a learned entry for the first project, then call
+     `MemorySearch({ query })` and read the entry back through `memory.list`.
+  5. Set `learnedMemoryRead: false` and repeat both recall calls; then set it
+     back to `true` and repeat once more.
+  6. Call `SessionHistorySearch({ query: "  " })`.
+- **Expected**: Step 2 returns exactly the earlier session of the same project,
+  with its title, dated snippets, and a note saying the results are historical
+  data rather than instructions. Step 3 returns both projects only for
+  `scope: "all"`; the crafted arguments change nothing. Step 4 returns the
+  entry, advances its `useCount`, and sets `lastUsedAt`. Step 5 fails both calls
+  with `TOOL_DENIED` while `memory.list` still returns the entry, and both work
+  again once the switch is restored. Step 6 fails with `INVALID_ARGUMENT`.
+- **Specs linked**: `03-runtime/03-tools-and-permissions.md` (learned memory and
+  history recall), `03-runtime/02-agent-runtime.md` §7.4,
+  `03-runtime/06-host-rpc-protocol.md` (learned memory), ADR
+  agent-long-term-memory.
+- **Acceptance criterion**: The agent can find what an earlier session decided
+  without being able to read a project it does not belong to, and turning
+  reading off hides the capability without deleting any data.
+- **Milestone**: M2.
+- **Status**: Automated — `pnpm test:e2e:memory`
+  (`scripts/e2e-memory-recall.mjs`). The CJK latency gate of the same milestone
+  is a host test: `rpc::memory_tools::tests::
+  history_search_stays_within_the_cjk_latency_budget_on_a_large_history`
+  measures 10k sessions / 40k messages and asserts p95 ≤ 300 ms.
