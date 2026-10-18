@@ -4,6 +4,8 @@ import type { TranslationKey } from "./en.js";
 export const fr: Record<TranslationKey, string> = {
   "app.name": "Minih Remote",
   "app.loading": "Chargement…",
+  "boot.failedTitle": "Minih Remote n'a pas pu démarrer",
+  "boot.failed": "{{reason}}",
 
   "common.back": "Retour",
   "common.refresh": "Actualiser",
@@ -29,7 +31,7 @@ export const fr: Record<TranslationKey, string> = {
   "hosts.add": "Ajouter un hôte",
   "hosts.open": "Ouvrir",
   "hosts.forget": "Oublier",
-  "hosts.forgetConfirm": "Oublier {{label}} ? Ce navigateur aura besoin d'un nouveau ticket.",
+  "hosts.forgetConfirm": "Oublier {{label}} ? Cet appareil aura besoin d'un nouveau ticket.",
   "hosts.status.online": "En ligne",
   "hosts.status.offline": "Hors ligne",
   "hosts.status.revoked": "Association révoquée",
@@ -37,6 +39,7 @@ export const fr: Record<TranslationKey, string> = {
   "hosts.status.checking": "Vérification…",
   "hosts.pairedAt": "Associé le {{date}}",
   "hosts.revokeHint": "La passerelle n'accepte plus cet appareil. Oubliez l'hôte puis associez-le à nouveau.",
+  "hosts.notPaired": "Cet appareil ne détient plus d'identifiant pour cet hôte. Oubliez-le puis associez-le à nouveau.",
 
   "sessions.title": "Sessions",
   "sessions.empty": "Cet hôte n'a pas encore de session.",
@@ -130,6 +133,7 @@ export const fr: Record<TranslationKey, string> = {
   "error.reason.unsupported": "l'hôte ne propose pas cette opération",
   "error.reason.pairingFailed": "le ticket d'association a été refusé",
   "error.reason.pairingExpired": "le ticket d'association a expiré",
+  "error.reason.storageFailed": "l'appareil a été associé, mais son jeton n'a pas pu être stocké sur cet appareil ; révoquez-le sur le bureau puis associez-le à nouveau",
   "error.reason.internal": "l'hôte signale une erreur interne",
 
   "operation.pair": "Association",

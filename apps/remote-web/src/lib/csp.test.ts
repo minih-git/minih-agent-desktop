@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { withGatewayOrigin, withGatewayOriginInHtml } from "./csp.js";
+
 const html = readFileSync(fileURLToPath(new URL("../../index.html", import.meta.url)), "utf8");
 
 function metaContent(name: string): string {
@@ -43,5 +45,53 @@ describe("index.html security surface", () => {
 
   it("covers the safe area on notched devices", () => {
     expect(metaContent("viewport")).toContain("viewport-fit=cover");
+  });
+});
+
+/**
+ * The native build replaces the document's `connect-src` with the baked
+ * Gateway origin; every other directive must stay exactly as shipped.
+ */
+describe("native CSP builder", () => {
+  const source = metaContent("Content-Security-Policy");
+  const origin = "https://gateway.example.test";
+
+  function directives(csp: string): string[] {
+    return csp
+      .split(";")
+      .map((directive) => directive.trim())
+      .filter((directive) => directive.length > 0);
+  }
+
+  function exceptConnectSrc(csp: string): string[] {
+    return directives(csp).filter((directive) => !directive.startsWith("connect-src"));
+  }
+
+  it("allows exactly the one https origin and keeps every other directive", () => {
+    const rewritten = withGatewayOrigin(source, origin);
+    expect(directives(rewritten).find((directive) => directive.startsWith("connect-src"))).toBe(
+      `connect-src 'self' ${origin}`,
+    );
+    expect(exceptConnectSrc(rewritten)).toEqual(exceptConnectSrc(source));
+    expect(rewritten).not.toContain("*");
+  });
+
+  it("rejects a non-https, wildcard, path-bearing, or missing origin", () => {
+    for (const bad of [
+      "http://gateway.example.test",
+      "https://*.example.test",
+      "https://gateway.example.test/hosts",
+      "capacitor://localhost",
+      "",
+    ]) {
+      expect(() => withGatewayOrigin(source, bad), bad).toThrow();
+    }
+  });
+
+  it("rewrites the document's meta tag and nothing else", () => {
+    const rewritten = withGatewayOriginInHtml(html, origin);
+    expect(rewritten).toContain(`connect-src 'self' ${origin}`);
+    // Undoing the one replacement reproduces the shipped document exactly.
+    expect(rewritten.replace(withGatewayOrigin(source, origin), source)).toBe(html);
   });
 });

@@ -4,6 +4,8 @@ import type { TranslationKey } from "./en.js";
 export const zhCN: Record<TranslationKey, string> = {
   "app.name": "Minih 远程",
   "app.loading": "加载中…",
+  "boot.failedTitle": "Minih 远程无法启动",
+  "boot.failed": "{{reason}}",
 
   "common.back": "返回",
   "common.refresh": "刷新",
@@ -29,7 +31,7 @@ export const zhCN: Record<TranslationKey, string> = {
   "hosts.add": "添加主机",
   "hosts.open": "打开",
   "hosts.forget": "忘记",
-  "hosts.forgetConfirm": "忘记 {{label}}？此后本浏览器需要新的配对票据。",
+  "hosts.forgetConfirm": "忘记 {{label}}？此后本设备需要新的配对票据。",
   "hosts.status.online": "在线",
   "hosts.status.offline": "离线",
   "hosts.status.revoked": "配对已撤销",
@@ -37,6 +39,7 @@ export const zhCN: Record<TranslationKey, string> = {
   "hosts.status.checking": "检查中…",
   "hosts.pairedAt": "配对时间 {{date}}",
   "hosts.revokeHint": "网关不再接受此设备。请忘记该主机后重新配对。",
+  "hosts.notPaired": "本设备已不持有该主机的凭据。请忘记该主机后重新配对。",
 
   "sessions.title": "会话",
   "sessions.empty": "该主机还没有会话。",
@@ -130,6 +133,7 @@ export const zhCN: Record<TranslationKey, string> = {
   "error.reason.unsupported": "主机不提供该操作",
   "error.reason.pairingFailed": "配对票据被拒绝",
   "error.reason.pairingExpired": "配对票据已过期",
+  "error.reason.storageFailed": "设备已配对，但令牌无法保存在本设备上；请先在桌面端吊销它，再重新配对",
   "error.reason.internal": "主机报告了内部错误",
 
   "operation.pair": "配对",

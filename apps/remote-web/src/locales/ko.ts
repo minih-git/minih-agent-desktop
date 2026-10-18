@@ -4,6 +4,8 @@ import type { TranslationKey } from "./en.js";
 export const ko: Record<TranslationKey, string> = {
   "app.name": "Minih 원격",
   "app.loading": "불러오는 중…",
+  "boot.failedTitle": "Minih Remote를 시작할 수 없습니다",
+  "boot.failed": "{{reason}}",
 
   "common.back": "뒤로",
   "common.refresh": "새로 고침",
@@ -29,7 +31,7 @@ export const ko: Record<TranslationKey, string> = {
   "hosts.add": "호스트 추가",
   "hosts.open": "열기",
   "hosts.forget": "잊기",
-  "hosts.forgetConfirm": "{{label}}을(를) 잊을까요? 이후 이 브라우저에는 새 연결 티켓이 필요합니다.",
+  "hosts.forgetConfirm": "{{label}}을(를) 잊을까요? 이후 이 기기에는 새 연결 티켓이 필요합니다.",
   "hosts.status.online": "온라인",
   "hosts.status.offline": "오프라인",
   "hosts.status.revoked": "연결이 취소됨",
@@ -37,6 +39,7 @@ export const ko: Record<TranslationKey, string> = {
   "hosts.status.checking": "확인 중…",
   "hosts.pairedAt": "{{date}} 연결",
   "hosts.revokeHint": "게이트웨이가 더 이상 이 기기를 허용하지 않습니다. 호스트를 잊고 다시 연결하세요.",
+  "hosts.notPaired": "이 기기에 이 호스트의 자격 증명이 더 이상 없습니다. 호스트를 잊고 다시 연결하세요.",
 
   "sessions.title": "세션",
   "sessions.empty": "이 호스트에는 아직 세션이 없습니다.",
@@ -130,6 +133,7 @@ export const ko: Record<TranslationKey, string> = {
   "error.reason.unsupported": "호스트가 해당 작업을 제공하지 않습니다",
   "error.reason.pairingFailed": "연결 티켓이 거부되었습니다",
   "error.reason.pairingExpired": "연결 티켓이 만료되었습니다",
+  "error.reason.storageFailed": "기기는 연결되었지만 토큰을 이 기기에 저장하지 못했습니다. 데스크톱에서 취소한 뒤 다시 연결하세요",
   "error.reason.internal": "호스트가 내부 오류를 보고했습니다",
 
   "operation.pair": "연결",

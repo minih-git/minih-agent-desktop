@@ -116,8 +116,12 @@ R0、R1、R2、R3，随后 R4、R5、R6（D665）；保留的 gRPC 绑定仍不�
   退出条件：E2E-228 通过（`RACP-HTTP` 与 `RACP-WS` 语义一致、cookie profile 过 Origin 与
   CSRF 校验、URL 令牌被拒）；E2E-266 通过（两种移动视口下的配对、`Last-Event-ID` 续传、
   审批与停止，经由 Electron Chromium 设备模拟与同源反向代理驱动，截图产物不入库）；
-  浏览器构建不把令牌存进脚本可读存储，原生构建只存 Keychain / Keystore；推送载荷只含 id
-  与事件类型，未配置凭据时推送关闭；仅凭票据即可完成配对（客户端从票据得到 Host 标识，
+  浏览器构建不把令牌存进脚本可读存储，原生构建只存设备专属、不同步 iCloud 的 Keychain
+  条目或 Android Keystore，并设 `allowBackup="false"`，使该密文无法恢复到另一台设备
+  （PR-5 已完成：原生 `CredentialPort`、发布配置静态测试与
+  `E2E-REMOTE-MOBILE-native-shell-credential-storage` 场景覆盖，真机验收仍由用户完成）；
+  推送载荷只含 id 与事件类型，未配置凭据时推送关闭（推迟到 PR-6：PR-5 不含推送插件、
+  Firebase/APNs 文件与后台模式）；仅凭票据即可完成配对（客户端从票据得到 Host 标识，
   两个配对 cookie 都带有限 `Max-Age`，非同源 `GET`/`HEAD` 的 cookie 请求仍须带白名单内的
   `Origin`）。
 - 保留的 gRPC 绑定仅在有明确消费者时交付，`.proto` 由 typebox 来源生成。

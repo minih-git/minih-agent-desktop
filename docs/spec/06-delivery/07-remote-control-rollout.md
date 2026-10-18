@@ -381,9 +381,15 @@ Exit criteria:
    Chromium device emulation behind a same-origin proxy, with screenshot
    artifacts kept out of the repository.
 3. The browser build never stores the token in script-readable storage;
-   native builds keep it only in the iOS Keychain or the Android Keystore.
+   native builds keep it only in the iOS Keychain (device-only, no iCloud sync)
+   or the Android Keystore, with `allowBackup="false"` so the wrapped ciphertext
+   cannot be restored onto another device. Done in PR-5: the native
+   `CredentialPort`, the static release-configuration test, and the
+   `E2E-REMOTE-MOBILE-native-shell-credential-storage` scenario cover it; a real
+   device acceptance stays with the user.
 4. Push payloads contain ids and event types only, and push is off without
-   operator credentials.
+   operator credentials. Deferred to PR-6: PR-5 ships no push plugin, no
+   Firebase/APNs file, and no background mode.
 5. Pairing works from the ticket alone — the client learns the Host id from it,
    both pairing cookies carry a finite `Max-Age`, and a cookie request that is
    not a same-origin `GET`/`HEAD` still proves an allowlisted `Origin`.

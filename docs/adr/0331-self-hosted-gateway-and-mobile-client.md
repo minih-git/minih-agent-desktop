@@ -95,7 +95,14 @@ Alternatives considered:
    with Capacitor for iOS and Android. Native builds keep the device token in
    the iOS Keychain or the Android Keystore; the browser build relies on the
    Gateway's `HttpOnly` cookie and never stores the token in script-readable
-   storage.
+   storage. Because a packaged webview is a cross-origin caller, its origin has
+   to join the Gateway's allowlist: `capacitor://localhost` for iOS (the only
+   origin a WKWebView page can have) and `https://localhost` for Android. The
+   cost is one explicit `--allowed-origin` per platform per deployment, and the
+   benefit is that the CSP stays a fixed list instead of `connect-src *`; the
+   native client still presents a bearer token, and the cookie profile gains
+   nothing because a cross-site `localhost` page never receives a
+   `SameSite=Strict` cookie.
 7. **Push is optional and redacted.** When the operator configures APNs or
    FCM credentials on the Gateway, it may send notifications carrying ids and
    a fixed summary kind (`approval.requested`, `input.requested`,

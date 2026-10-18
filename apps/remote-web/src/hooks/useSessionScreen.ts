@@ -9,6 +9,7 @@
 import type { RacpApprovalDecision, RacpPermissionMode, RacpTurnAdmission } from "@minih-agent/shared";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
+import { watchForeground } from "../lib/app-state.js";
 import type { HostCredential } from "../lib/credential-port.js";
 import type { OperationFailure } from "../lib/errors.js";
 import { createHostClient, sessionEventsPath, type HostClient } from "../lib/host-client.js";
@@ -22,9 +23,10 @@ import {
   stopTurn,
   type MutationResult,
 } from "../lib/mutations.js";
+import { appStateSource } from "../lib/runtime.js";
 import { StreamSupervisor, type StreamState } from "../lib/stream-supervisor.js";
 import { createInitialTimelineState, timelineReducer, type TimelineState } from "../lib/timeline.js";
-import { watchVisibility } from "../lib/visibility.js";
+
 
 export type TurnAttempt = {
   text: string;
@@ -132,11 +134,20 @@ export function useSessionScreen(options: {
     });
     supervisorRef.current = supervisor;
     supervisor.start();
-    const stopWatching = watchVisibility({
-      onHidden: () => supervisor.pause(),
-      // Visible again: resume a paused loop, or restart one that gave up.
-      onVisible: () => supervisor.onVisible(),
-    });
+    // Two foreground sources: the page visibility (web and webview) and the
+    // native app state (a backgrounded webview does not always report
+    // `visibilitychange`). Both resume the supervisor through one call.
+    const stopWatching = watchForeground(
+      {
+        onHidden: () => supervisor.pause(),
+        // Visible again: resume a paused loop, or restart one that gave up.
+        onVisible: () => supervisor.onVisible(),
+      },
+      {
+        appState: appStateSource(),
+        onError: (error) => console.warn("[remote-web] the native app-state listener failed", error),
+      },
+    );
 
     return () => {
       cancelled = true;

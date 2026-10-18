@@ -63,3 +63,23 @@ electron.vite.config.*.mjs
 
 .playwright-cli
 worktrees
+
+# Capacitor native projects (apps/remote-web, PR-5). Only project sources are
+# tracked; `cap sync` output, build products, signing material, and push
+# configuration stay on the operator's machine.
+apps/remote-web/ios/App/Pods/
+apps/remote-web/ios/App/DerivedData/
+apps/remote-web/ios/App/build/
+apps/remote-web/ios/App/App/public/
+apps/remote-web/ios/App/App/capacitor.config.json
+apps/remote-web/ios/**/*.xcuserstate
+apps/remote-web/ios/**/xcuserdata/
+apps/remote-web/android/.gradle/
+apps/remote-web/android/**/build/
+apps/remote-web/android/local.properties
+apps/remote-web/android/app/src/main/assets/public/
+apps/remote-web/android/app/src/main/assets/capacitor.config.json
+*.keystore
+*.jks
+GoogleService-Info.plist
+google-services.json

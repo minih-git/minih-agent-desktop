@@ -102,6 +102,36 @@ describe("serve configuration", () => {
     expect(() => validateOrigin("http://localhost:5173")).not.toThrow();
   });
 
+  /**
+   * The iOS webview has exactly one possible origin, so the only custom scheme
+   * the allowlist accepts is that exact spelling; the Android build uses
+   * `https://localhost` and needs no relaxation at all.
+   */
+  it("accepts the iOS webview origin and the Android localhost origin", () => {
+    expect(() => validateOrigin("capacitor://localhost")).not.toThrow();
+    expect(() => validateOrigin("https://localhost")).not.toThrow();
+    expect(() => validateOrigin("http://localhost:5173")).not.toThrow();
+    const config = serve(["--allowed-origin", "capacitor://localhost", "--allowed-origin", "https://localhost"]);
+    expect(config.allowedOrigins).toEqual(["capacitor://localhost", "https://localhost"]);
+  });
+
+  it("refuses every other custom scheme, port, host, and wildcard", () => {
+    for (const origin of [
+      "capacitor://evil.example",
+      "capacitor://localhost:8080",
+      "capacitor://*",
+      "capacitor://localhost/pair",
+      "ionic://localhost",
+      "file://",
+      "app://localhost",
+      "https://*.test",
+      "*",
+    ]) {
+      expect(() => validateOrigin(origin), origin).toThrow(GatewayConfigError);
+    }
+    expect(() => serve(["--allowed-origin", "capacitor://evil.example"])).toThrow(GatewayConfigError);
+  });
+
   it("collects positional arguments for the CLI", () => {
     expect(parseArgv(["host_1", "--data-dir", "/tmp/x"])["_"]).toEqual(["host_1"]);
   });

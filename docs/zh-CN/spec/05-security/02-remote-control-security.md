@@ -128,6 +128,16 @@ Host 策略允许远程会话授权时出现在 `allowedDecisions` 中。所有�
 Host 的 workspace、permission、secret 和 approval 边界；不得暴露 `host.proxy`、
 raw IPC 或任意命令执行。
 
+原生客户端存储（PR-5）：iOS / Android 打包版只把设备 token 放在平台安全存储里，
+绝不写进 webview 存储。iOS 使用 `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
+（或更严格）且关闭 iCloud 钥匙串同步，token 不会随备份或同步迁移到另一台设备；
+Android 使用 Keystore 支撑的存储（密钥在 AndroidKeyStore 内），并设置
+`android:allowBackup="false"`、不配置会复制该密文的数据提取规则，因此恢复到另一台
+设备也得不到可用 token。应用先写安全存储、再登记 Host；启动时清理孤儿条目（安全
+存储在重装后仍存在，而 webview 存储不会）。原生客户端所有请求走 header profile，
+不携带任何 ambient cookie，`client: "ios"` / `"android"` 配对只在响应体中返回
+token，不返回 `Set-Cookie`。
+
 ## 4. 网络、附件和多租户
 
 公网 HTTP、SSE 和 WebSocket 必须使用 TLS，保留的 gRPC 同样适用；绑定 loopback
@@ -138,6 +148,13 @@ SSRF 都要在边界处校验。附件使用大小、hash、MIME 和过期时间
 本地路径；经 Gateway 时 Gateway 只校验大小、分块中继到 Host，并在
 `attachment/complete` 成功或过期后删除副本。首个部署为单租户，路由已携带
 `tenantId`，跨租户隔离测试在多租户 harness 就绪后执行。
+
+打包原生客户端（PR-5）同样是跨源调用方，其 webview origin 需要单独加入白名单：
+iOS 版为 `capacitor://localhost`，Android 版为 `https://localhost`，这两个值是
+此类 webview 唯一可能的取值。允许它们是安全的：header profile 仍需有效 bearer
+token，cookie profile 还需要跨站 `localhost` 页面永远不会发送的 `SameSite=Strict`
+cookie。`capacitor://localhost` 是白名单唯一接受的非 http(s) scheme；通配符、带端口
+的写法以及其它自定义 scheme 一律拒绝。
 
 | Resource | Initial target |
 |---|---:|

@@ -1,29 +1,35 @@
 /**
- * Screen routing for the H5 client (PR-4).
+ * Screen routing for the client (PR-4, PR-5).
  *
  * Four screens in a stack held in component state: the host list, pairing, the
  * sessions of one host, and one session's timeline. No router dependency, and
  * every screen receives the credential the port hands out for its host.
+ *
+ * In a native shell the Android hardware back button pops the same stack
+ * (Session → Sessions → Hosts) and only exits the app from the Host list.
  */
 import type { RacpSession } from "@minih-agent/shared";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { HostsScreen } from "./screens/HostsScreen.js";
 import { PairScreen } from "./screens/PairScreen.js";
 import { SessionScreen } from "./screens/SessionScreen.js";
 import { SessionsScreen } from "./screens/SessionsScreen.js";
 import { useHostRegistry } from "./hooks/useHostRegistry.js";
-import { credentialPort } from "./lib/runtime.js";
-
-type Screen =
-  | { kind: "hosts" }
-  | { kind: "pair" }
-  | { kind: "sessions"; hostId: string }
-  | { kind: "session"; hostId: string; sessionId: string; title: string };
+import { setBackHandler } from "./lib/navigation.js";
+import { credentialPort, isNativeApp } from "./lib/runtime.js";
+import { previousScreen, type Screen } from "./lib/screen-stack.js";
 
 export default function App() {
   const hosts = useHostRegistry();
   const [screen, setScreen] = useState<Screen>({ kind: "hosts" });
+
+  useEffect(() => {
+    if (!isNativeApp) return undefined;
+    const previous = previousScreen(screen);
+    setBackHandler(previous ? () => setScreen(previous) : null);
+    return () => setBackHandler(null);
+  }, [screen]);
 
   const hostList = (
     <HostsScreen

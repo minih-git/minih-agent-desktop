@@ -1,10 +1,14 @@
 /**
- * `CredentialPort` — where a host credential comes from (PR-4).
+ * `CredentialPort` — where a host credential comes from (PR-4, PR-5).
  *
  * The port exists so the client never hard-codes "the browser cookie profile":
- * this release ships `WebCookieCredentialPort` only (device token in an
- * `HttpOnly` cookie, CSRF token in `localStorage`), and PR-5 adds a native port
- * that returns `{ kind: "header", token }` from the Keychain/Keystore.
+ * `WebCookieCredentialPort` keeps the device token in an `HttpOnly` cookie and
+ * the CSRF token in `localStorage`, while `NativeCredentialPort` returns
+ * `{ kind: "header", token }` from the Keychain / Keystore. Everything above
+ * this interface is identical in both builds.
+ *
+ * `credentialFor` is synchronous because screens call it while rendering;
+ * `pair` and `forget` are async because a secure-storage write or delete is.
  */
 import { defaultDeviceLabel } from "./device-label.js";
 import type { HostRegistry, HostRegistryEntry } from "./host-registry.js";
@@ -30,7 +34,7 @@ export interface CredentialPort {
   /** Exchange a pairing ticket for a device credential and remember it locally. */
   pair(request: PairRequest): Promise<PairOutcome>;
   /** Drop the local credential of one host; the Gateway keeps its own record. */
-  forget(hostId: string): void;
+  forget(hostId: string): Promise<void>;
 }
 
 /** Headers that carry the credential on a raw `fetch` (the probe, the pairing call). */
@@ -49,9 +53,13 @@ export type WebCookieCredentialPortOptions = {
 export class WebCookieCredentialPort implements CredentialPort {
   constructor(private readonly options: WebCookieCredentialPortOptions) {}
 
+  /**
+   * The cookie profile needs the CSRF token to send a mutation, so an entry
+   * without one (an entry this browser cannot use) yields no credential.
+   */
   credentialFor(hostId: string): HostCredential | null {
     const entry = this.options.registry.get(hostId);
-    if (!entry) return null;
+    if (!entry?.csrfToken) return null;
     return { kind: "cookie", csrfToken: entry.csrfToken };
   }
 
@@ -62,9 +70,19 @@ export class WebCookieCredentialPort implements CredentialPort {
       hostId: request.hostId,
       pairingToken: request.pairingToken,
       deviceLabel: label,
+      client: "web",
       ...(this.options.fetchImpl ? { fetchImpl: this.options.fetchImpl } : {}),
     });
     if (!result.ok) return result;
+    if (result.device.profile !== "cookie") {
+      return {
+        ok: false,
+        failure: {
+          code: "PAIRING_FAILED",
+          message: "the Gateway answered the browser profile without a CSRF token",
+        },
+      };
+    }
     const entry: HostRegistryEntry = {
       hostId: request.hostId,
       label,
@@ -76,7 +94,7 @@ export class WebCookieCredentialPort implements CredentialPort {
     return { ok: true, entry };
   }
 
-  forget(hostId: string): void {
+  async forget(hostId: string): Promise<void> {
     this.options.registry.forget(hostId);
   }
 }

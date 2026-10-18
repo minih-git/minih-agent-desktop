@@ -25,6 +25,7 @@ const input = {
   hostId: "host1",
   pairingToken: "ppt1.secret",
   deviceLabel: "Chrome on macOS",
+  client: "web" as const,
 };
 
 describe("pairDevice", () => {
@@ -36,7 +37,7 @@ describe("pairDevice", () => {
 
     expect(result).toEqual({
       ok: true,
-      device: { deviceId: "dev_1", hostId: "host1", roles: ["viewer"], csrfToken: "csrf-1" },
+      device: { deviceId: "dev_1", hostId: "host1", roles: ["viewer"], profile: "cookie", csrfToken: "csrf-1" },
     });
     const call = calls[0]!;
     expect(call.url).toBe("https://gw.example.com/v1/hosts/host1/pair");
@@ -94,5 +95,56 @@ describe("pairDevice", () => {
       ok: false,
       failure: { code: "REMOTE_CONNECTION_FAILED", message: "offline" },
     });
+  });
+});
+
+/**
+ * The native profiles (PR-5): the device token arrives in the body for the
+ * Keychain / Keystore, the request carries no ambient cookie, and the result
+ * type has no CSRF field at all.
+ */
+describe("pairDevice (native profile)", () => {
+  const native = { ...input, client: "ios" as const };
+
+  it("sends client ios, omits credentials, and returns the device token", async () => {
+    const { fetchImpl, calls } = recordingFetch(
+      jsonResponse(200, { deviceId: "dev_2", hostId: "host1", roles: ["viewer", "controller"], token: "pdt1.token" }),
+    );
+    const result = await pairDevice({ ...native, fetchImpl });
+    expect(result).toEqual({
+      ok: true,
+      device: { deviceId: "dev_2", hostId: "host1", roles: ["viewer", "controller"], profile: "native", token: "pdt1.token" },
+    });
+    const call = calls[0]!;
+    expect(call.init?.credentials).toBe("omit");
+    expect(JSON.parse(String(call.init?.body))).toEqual({ deviceLabel: "Chrome on macOS", client: "ios" });
+    // The token only ever travels in the response body.
+    expect(call.url).not.toContain("pdt1.token");
+    expect((call.init?.headers as Record<string, string>).authorization).toBe("Bearer ppt1.secret");
+  });
+
+  it("never exposes a CSRF token to a native result", async () => {
+    const { fetchImpl } = recordingFetch(
+      jsonResponse(200, { deviceId: "dev_2", hostId: "host1", roles: ["viewer"], token: "pdt1.token", csrfToken: "csrf-1" }),
+    );
+    const result = await pairDevice({ ...native, fetchImpl });
+    expect(result.ok).toBe(true);
+    expect(result.ok ? Object.keys(result.device).sort() : []).toEqual(["deviceId", "hostId", "profile", "roles", "token"]);
+  });
+
+  it("refuses a native response without a device token", async () => {
+    const { fetchImpl } = recordingFetch(
+      jsonResponse(200, { deviceId: "dev_2", hostId: "host1", roles: ["viewer"], csrfToken: "csrf-1" }),
+    );
+    const result = await pairDevice({ ...native, fetchImpl });
+    expect(result.ok ? "" : result.failure.message).toContain("no device token");
+  });
+
+  it("uses the android profile value verbatim", async () => {
+    const { fetchImpl, calls } = recordingFetch(
+      jsonResponse(200, { deviceId: "dev_3", hostId: "host1", roles: ["viewer"], token: "pdt1.android" }),
+    );
+    await pairDevice({ ...native, client: "android", fetchImpl });
+    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ deviceLabel: "Chrome on macOS", client: "android" });
   });
 });
