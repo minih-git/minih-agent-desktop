@@ -1,0 +1,20 @@
+#!/bin/sh
+# Fast local pre-push gate (see scripts/check-pre-push-fast.mjs).
+#
+# Installed by `pnpm hooks:install`, which points core.hooksPath at .githooks.
+# This wrapper stays thin on purpose: the steps, the skip rules, and the bypass
+# flag live in the Node script so they stay testable. A missing node or a
+# checkout without the script must never block a push — the gate is a
+# convenience, and CI stays the authority.
+
+root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+if [ -z "$root" ] || [ ! -f "$root/scripts/check-pre-push-fast.mjs" ]; then
+  exit 0
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-push gate skipped: node is not installed" >&2
+  exit 0
+fi
+
+exec node "$root/scripts/check-pre-push-fast.mjs" --hook

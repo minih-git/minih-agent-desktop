@@ -85,6 +85,8 @@
     "host:dev": "cargo run -p host-core",
     "clean": "pnpm -r --if-present clean && cargo clean",
     "lint:biome": "biome lint",
+    "check:fast": "node scripts/check-pre-push-fast.mjs",
+    "hooks:install": "git config core.hooksPath .githooks && chmod +x .githooks/pre-push",
     "test:e2e:mcp-market": "node scripts/e2e-mcp-market.mjs",
     "test:e2e:skill-market": "node scripts/e2e-skill-market.mjs",
     "test:e2e:market-retry": "node scripts/e2e-market-retry.mjs",

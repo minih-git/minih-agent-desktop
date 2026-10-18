@@ -9841,3 +9841,10 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **关联规格**：`03-runtime/10-session-state-machine.md`、`03-runtime/04-data-storage.md`。
 - **验收**：C（会话与流）、F（持久化）。
 - **状态**：`apps/desktop/test/quit-interrupts-running-turn.test.mjs` 以真实退出处理、会话协调、回合结算与事件持久化覆盖；完整桌面往返仍待补。
+
+
+### E2E-TOOLING-local-pre-push-gate
+
+运行 `node --test scripts/pre-push-gate.e2e.test.mjs`。套件使用隔离的本地裸仓库和真实 Git pre-push 钩子，以受控检查命令替代用户正在运行的应用或外部服务。
+验证检查成功允许推送、失败阻断推送且不改变远端 ref 并停止后续检查，显式绕过、仅标签推送和删除分支跳过检查；工具缺失必须显示未完整验证，不能显示通过。
+在候选提交上另外运行 `pnpm check:fast`，验证真实检查命令。

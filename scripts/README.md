@@ -39,6 +39,8 @@ disagrees, so a green `check:release-docs` is a precondition, not a substitute.
 | Script | Alias | Purpose |
 |---|---|---|
 | `dev-electron.mjs` | `pnpm dev`, through `predev` | Launch Electron against the dev server. On macOS it builds and reuses the fingerprinted branded host bundle under `.cache/electron-dev/` |
+| `check-pre-push-fast.mjs` | `pnpm check:fast` (`-- --full` for local unit, bundle and Rust checks, not E2E or cross-platform CI, `-- --list` to print the steps) | Fast local gate over the deterministic static half of `CI`: workspace package builds, typecheck, lint, architecture budgets, agent policy anchors, token contrast, patch hashes, Rust formatting. Skips tag-only pushes and branch deletions; `PI_SKIP_PREPUSH=1` bypasses a push |
+| `.githooks/pre-push` | installed by `pnpm hooks:install` (`git config core.hooksPath .githooks`) | Thin wrapper that runs the fast gate on branch pushes only; a missing `node` skips instead of blocking |
 
 ## End-to-end
 
