@@ -556,6 +556,31 @@ Settings uses for the balance and model plaza (§6, Minih Router account).
   overlay address itself and dials the Gateway directly. A Router that advertises
   nothing leaves the tunnel exactly as it is today — one forward, and
   `remoteGateway.available` false.
+- **Desktop enrollment from that status (D666, package E2).** Settings ▸ Remote
+  gateway reads `EasyTierStatus.remoteGateway` and nothing else: the desktop
+  never parses a bootstrap answer itself. When the Router advertises a usable
+  endpoint **and** the user has switched remote control on, the desktop enrolls
+  with the account AccessKey (`Authorization: Bearer`, + CSR) against `dialUrl`,
+  pinning `caPem` and validating `tlsServerName`; the key is read from the saved
+  `minih-router` provider row inside the main process, used for that one
+  request, and dropped. An unavailable advertisement, a missing or refused key,
+  and a new endpoint are all reported on the same page, and the
+  registration-code form stays available so a user without a Router key can
+  still enroll. The switch stays the security default: with it off nothing is
+  enrolled and no link is dialled, whatever the Router advertises.
+- **Registration identity and dial address are different things.** The identity
+  is the advertised endpoint — `hostlinkUrl`, `caPem`, and `tlsServerName` —
+  and only one of those changing means the Gateway changed and the desktop has
+  to enroll again. `dialUrl` is not identity: in No-TUN mode it is a loopback
+  forward whose port host-core allocates afresh on every overlay start, so a
+  moved port is the same Gateway and the stored certificate keeps working
+  (ADR decision 8 — a disabled key blocks a *new* enrollment, never the link
+  this Host already has). The credential therefore records the advertised
+  endpoint, never the port that happened to be dialled, and the desktop resolves
+  the address to dial from the current status on every connection *and* every
+  reconnect, so it follows an overlay that restarted while the link was up.
+  A status answer with no usable endpoint fails that attempt and is retried with
+  backoff instead of dialling a stale address.
 
 ### Named endpoint presets
 

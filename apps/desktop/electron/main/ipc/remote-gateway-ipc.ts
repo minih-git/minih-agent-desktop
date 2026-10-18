@@ -1,7 +1,9 @@
 import {
   ErrorCodes,
   IPC,
+  type RemoteGatewayDeviceDecisionRequest,
   type RemoteGatewayDevicesResult,
+  type RemoteGatewayDeviceRequest,
   type RemoteGatewayEnrollRequest,
   type RemoteGatewayPairingCodeResult,
   type RemoteGatewaySetEnabledRequest,
@@ -100,6 +102,44 @@ export function registerRemoteGatewayIpc(options: RegisterRemoteGatewayIpcOption
       const deviceId = trim(request?.deviceId);
       if (!deviceId) throw invalid("deviceId is required", "deviceId");
       return { revoked: await requireController(getGatewayLink).revokeDevice(deviceId) };
+    },
+  );
+
+  // --- Account mode (D666) ---------------------------------------------------
+  registrar.handle(
+    IPC.invoke.remoteGatewayDeviceDecision,
+    async (request: RemoteGatewayDeviceDecisionRequest): Promise<{ answered: boolean }> => {
+      const requestId = trim(request?.requestId);
+      if (!requestId) throw invalid("requestId is required", "requestId");
+      if (typeof request?.approved !== "boolean") throw invalid("approved must be a boolean", "approved");
+      return {
+        answered: await requireController(getGatewayLink).answerDeviceRequest(requestId, request.approved),
+      };
+    },
+  );
+
+  registrar.handle(
+    IPC.invoke.remoteGatewayPendingDeviceRequests,
+    async (): Promise<{ requests: RemoteGatewayDeviceRequest[] }> => ({
+      requests: await requireController(getGatewayLink).pendingDeviceRequests(),
+    }),
+  );
+
+  registrar.handle(
+    IPC.invoke.remoteGatewayDevicePresence,
+    async (request: { present?: unknown }): Promise<{ denied: number }> => {
+      if (typeof request?.present !== "boolean") throw invalid("present must be a boolean", "present");
+      return { denied: await requireController(getGatewayLink).devicePresence(request.present) };
+    },
+  );
+
+  registrar.handle(
+    IPC.invoke.remoteGatewaySetStrictDevices,
+    async (request: { strictDevices?: unknown }): Promise<RemoteGatewayStatus> => {
+      if (typeof request?.strictDevices !== "boolean") {
+        throw invalid("strictDevices must be a boolean", "strictDevices");
+      }
+      return requireController(getGatewayLink).setStrictDevices(request.strictDevices);
     },
   );
 }

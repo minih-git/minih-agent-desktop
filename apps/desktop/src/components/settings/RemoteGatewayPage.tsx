@@ -14,12 +14,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   formatPairingTicket,
+  type RemoteGatewayDeviceNotice,
   type RemoteGatewayDeviceSummary,
   type RemoteGatewayLinkState,
   type RemoteGatewayStatus,
 } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 import {
+  accountModeReplacesEnrollment,
+  accountModeVisible,
   pairingCodeExpired,
   pairingCodeRemainingLabel,
   remoteGatewayErrorKey,
@@ -29,6 +32,9 @@ import {
 import { Badge, Button, Field, Input, SettingsToggle, Textarea, cx } from "../ui";
 
 type PairingCode = { code: string; expiresAt: string; hostId: string };
+
+/** Keeps at most this many "new device" notices on screen. */
+const MAX_VISIBLE_NOTICES = 3;
 
 export function RemoteGatewayPage() {
   const { t } = useTranslation();
@@ -53,6 +59,9 @@ export function RemoteGatewayPage() {
   const [devicesError, setDevicesError] = useState<string | null>(null);
   const [pendingRevoke, setPendingRevoke] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [notices, setNotices] = useState<RemoteGatewayDeviceNotice[]>([]);
+  const [strictBusy, setStrictBusy] = useState(false);
+  const [strictError, setStrictError] = useState<string | null>(null);
   const urlTouched = useRef(false);
 
   const describeError = useCallback(
@@ -93,8 +102,16 @@ export function RemoteGatewayPage() {
     // A renderer reload re-subscribes here; the link itself belongs to main
     // and is deliberately left running.
     const unsubscribe = api.onRemoteGatewayStatus(applyStatus);
+    // Every mint, adoption, and revocation produces a notice (ADR decision 6):
+    // a device that was approved on another Host shows up here too.
+    const unsubscribeNotices = api.onRemoteGatewayDeviceNotice((notice) => {
+      setNotices((prev) => [notice, ...prev].slice(0, MAX_VISIBLE_NOTICES));
+      // A new device changes this Host's device list.
+      if (notice.kind !== "device.minted") void loadDevices();
+    });
     return () => {
       unsubscribe();
+      unsubscribeNotices();
     };
   }, [applyStatus, loadDevices, loadStatus]);
 
@@ -149,6 +166,24 @@ export function RemoteGatewayPage() {
       setEnrolling(false);
     }
   }, [applyStatus, caPem, describeError, loadDevices, registrationCode, t, url]);
+
+  /**
+   * ADR decision 9. The switch is device-local and takes effect by rebuilding
+   * the link, because the capability list is part of what the Host announces:
+   * a strict-mode Host stops advertising `device.accept-sibling-grant`.
+   */
+  const toggleStrictDevices = useCallback(async () => {
+    if (!status) return;
+    setStrictBusy(true);
+    setStrictError(null);
+    try {
+      applyStatus(await api.setRemoteGatewayStrictDevices(status.strictDevices !== true));
+    } catch (error) {
+      setStrictError(describeError("settings.remoteGateway.strictFailed", error));
+    } finally {
+      setStrictBusy(false);
+    }
+  }, [applyStatus, describeError, status]);
 
   const createPairingCode = useCallback(async () => {
     setPairingBusy(true);
@@ -220,6 +255,35 @@ export function RemoteGatewayPage() {
           <Badge>{t("settings.remoteHosts.experimental")}</Badge>
         </div>
         <p className="text-sm text-text-secondary">{t("settings.remoteGateway.desc")}</p>
+        {accountModeVisible(status) ? (
+          <div className="space-y-1 py-2" role="status" data-testid="remote-gateway-account-mode">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-text-primary">
+                {t("settings.remoteGateway.accountModeTitle")}
+              </span>
+              <Badge tone={status?.accountMode?.available ? "success" : "neutral"}>
+                {status?.accountMode?.available
+                  ? t("settings.remoteGateway.accountModeActive")
+                  : t("settings.remoteGateway.accountModeUnavailable")}
+              </Badge>
+            </div>
+            {status?.accountMode?.available ? (
+              <>
+                <p className="text-xs text-text-secondary">
+                  {t("settings.remoteGateway.accountModeActiveHint")}
+                </p>
+                {status?.accountMode?.url ? (
+                  <p className="font-mono text-xs text-text-secondary">{status.accountMode.url}</p>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-xs text-text-secondary">
+                {t("settings.remoteGateway.accountModeUnavailableHint")}
+                {status?.accountMode?.reason ? ` ${status.accountMode.reason}` : ""}
+              </p>
+            )}
+          </div>
+        ) : null}
         <div className="flex items-center justify-between gap-4 py-2">
           <div className="space-y-1">
             <div className="text-sm text-text-primary">{t("settings.remoteGateway.enabled")}</div>
@@ -237,6 +301,32 @@ export function RemoteGatewayPage() {
       </section>
 
       <section className="settings-card-block">
+        {accountModeReplacesEnrollment(status) ? (
+          // Account mode replaces the registration-code form: the Router already
+          // named the Gateway and its CA, and this desktop enrolled with the
+          // Router key (D666). A user without a Router key keeps the form.
+          <div className="space-y-2" role="status">
+            <h3 className="settings-card-heading">
+              {t("settings.remoteGateway.accountEnrollTitle")}
+            </h3>
+            <p className="text-sm text-text-secondary">
+              {t("settings.remoteGateway.accountEnrollBody")}
+            </p>
+            <p className="text-xs text-text-secondary">
+              {t("settings.remoteGateway.enrollHint")}
+            </p>
+            {enrollError ? (
+              <p className="text-sm text-danger" role="alert">
+                {enrollError}
+              </p>
+            ) : null}
+            {statusError ? (
+              <p className="text-sm text-danger" role="alert">
+                {statusError}
+              </p>
+            ) : null}
+          </div>
+        ) : (
         <div className="space-y-3">
           <Field label={t("settings.remoteGateway.url")}>
             <Input
@@ -295,7 +385,51 @@ export function RemoteGatewayPage() {
             </p>
           ) : null}
         </div>
+        )}
       </section>
+
+      {accountModeVisible(status) ? (
+        <section className="settings-card-block">
+          <h3 className="settings-card-heading">{t("settings.remoteGateway.strictTitle")}</h3>
+          <div className="flex items-center justify-between gap-4 py-2">
+            <div className="space-y-1">
+              <div className="text-sm text-text-primary">{t("settings.remoteGateway.strictLabel")}</div>
+              <div className="text-xs text-text-secondary">{t("settings.remoteGateway.strictHint")}</div>
+              {strictError ? (
+                <div className="text-xs text-danger" role="alert">
+                  {strictError}
+                </div>
+              ) : null}
+            </div>
+            <SettingsToggle
+              checked={status?.strictDevices === true}
+              busy={strictBusy}
+              label={t("settings.remoteGateway.strictLabel")}
+              onChange={() => void toggleStrictDevices()}
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {notices.length > 0 ? (
+        <section className="settings-card-block" aria-live="polite">
+          <h3 className="settings-card-heading">{t("settings.remoteGateway.noticesTitle")}</h3>
+          <ul className="space-y-1 text-xs text-text-secondary" role="list">
+            {notices.map((notice) => (
+              <li key={`${notice.kind}-${notice.deviceId}-${notice.at}`} role="listitem">
+                {t(
+                  notice.kind === "device.minted"
+                    ? "settings.remoteGateway.noticeMinted"
+                    : notice.kind === "device.adopted"
+                      ? "settings.remoteGateway.noticeAdopted"
+                      : "settings.remoteGateway.noticeRevoked",
+                  { label: notice.label, time: notice.at },
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="settings-card-block">
         <h3 className="settings-card-heading">{t("settings.remoteGateway.statusTitle")}</h3>

@@ -2,6 +2,8 @@ import type { AgentHost } from "@minih-agent/agent-host";
 import type { HostRpc } from "@minih-agent/host-runtime";
 import type {
   AppSettings,
+  RemoteGatewayDeviceNotice,
+  RemoteGatewayDeviceRequest,
   RemoteGatewayDeviceSummary,
   RemoteGatewayEnrollRequest,
   RemoteGatewayPairingCodeResult,
@@ -55,6 +57,10 @@ export type GatewayLinkBootstrapOptions = {
   serverVersion: string;
   /** Fan one status snapshot out to the renderer. */
   emitStatus: (status: RemoteGatewayStatus) => void;
+  /** Push one `device.request` to the renderer for the confirmation dialog. */
+  emitDeviceRequest?: (request: RemoteGatewayDeviceRequest) => void;
+  /** One "new device" style notice per mint, adoption, and revocation. */
+  emitDeviceNotice?: (notice: RemoteGatewayDeviceNotice) => void;
   log?: (level: "info" | "warn" | "error", message: string, data?: Record<string, unknown>) => void;
   now?: () => number;
 };
@@ -67,6 +73,14 @@ export type GatewayLinkController = {
   createPairingCode(): Promise<RemoteGatewayPairingCodeResult>;
   listDevices(): Promise<RemoteGatewayDeviceSummary[]>;
   revokeDevice(deviceId: string): Promise<boolean>;
+  /** Account mode: answer one pending device request. */
+  answerDeviceRequest(requestId: string, approved: boolean): Promise<boolean>;
+  /** Account mode: requests still waiting for this desktop's user. */
+  pendingDeviceRequests(): Promise<RemoteGatewayDeviceRequest[]>;
+  /** The confirmation dialog host came or went. */
+  devicePresence(present: boolean): Promise<number>;
+  /** ADR decision 9: require confirmation on every terminal. */
+  setStrictDevices(strictDevices: boolean): Promise<RemoteGatewayStatus>;
 };
 
 export type GatewayLinkBootstrap = {
@@ -100,6 +114,7 @@ export function createGatewayLinkBootstrap(
 
   let configuredEnabled = false;
   let configuredUrl = "";
+  let configuredStrictDevices = false;
   let store: GatewayCredentialStore | null = null;
   let service: GatewayLinkService | null = null;
   let serviceInitialized = false;
@@ -134,11 +149,25 @@ export function createGatewayLinkBootstrap(
     const created = createGatewayLinkService({
       port,
       store: ensureStore(),
+      dataDir: options.dataDir,
       agentHost: options.getAgentHost,
       getHost: options.getHost,
       serverVersion: options.serverVersion,
       log,
       now,
+      strictDevices: configuredStrictDevices,
+      // Persist the strict-mode switch on its own: it is device-local and must
+      // not rewrite the link switch or the Gateway URL.
+      saveStrictDevices: async (strictDevices) => {
+        configuredStrictDevices = strictDevices;
+        await options.saveSettings({
+          enabled: configuredEnabled,
+          url: configuredUrl,
+          strictDevices,
+        });
+      },
+      ...(options.emitDeviceRequest ? { emitDeviceRequest: options.emitDeviceRequest } : {}),
+      ...(options.emitDeviceNotice ? { emitDeviceNotice: options.emitDeviceNotice } : {}),
     });
     created.onChange(emit);
     service = created;
@@ -253,6 +282,29 @@ export function createGatewayLinkBootstrap(
       const created = await activate();
       return created.revokeDevice(deviceId);
     },
+    async answerDeviceRequest(requestId, approved) {
+      // The dialog is answered against the live link; a stopped link has no
+      // pending request, and the service reports that as "no".
+      if (!service) return false;
+      return service.answerDeviceRequest(requestId, approved);
+    },
+    async pendingDeviceRequests() {
+      return service?.pendingDeviceRequests() ?? [];
+    },
+    async devicePresence(present) {
+      return service?.devicePresence(present) ?? 0;
+    },
+    setStrictDevices(strictDevices) {
+      return enqueue(async () => {
+        if (disposed) {
+          throw Object.assign(new Error("the gateway link is shutting down"), {
+            errorCode: GATEWAY_LINK_UNAVAILABLE,
+          });
+        }
+        const created = await activate();
+        return decorate(await created.setStrictDevices(strictDevices));
+      });
+    },
   };
 
   const result: GatewayLinkBootstrap = {
@@ -266,6 +318,7 @@ export function createGatewayLinkBootstrap(
       const configured = settings?.remoteGateway;
       configuredEnabled = configured?.enabled === true;
       configuredUrl = typeof configured?.url === "string" ? configured.url : "";
+      configuredStrictDevices = configured?.strictDevices === true;
       // S12: an absent or disabled setting must not create a store, a server,
       // or a socket. The switch flips this through `setEnabled`.
       if (!configuredEnabled) return;

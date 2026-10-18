@@ -331,6 +331,20 @@ Minih Router 是自有的模型网关，排在命名预设的第一位。它是�
   安全规格 §5.1）、`localForwardPort`（仅 No-TUN 模式有值）与 `unavailableReason`。
   TUN 模式不装第二条转发：它自行路由组网地址、直连 Gateway。Router 不下发该对象时行为与
   现在完全一致——只有一条转发，`remoteGateway.available` 为 false。
+- **桌面据该状态完成注册（D666，工作包 E2）**：设置 ▸ 远程网关只读
+  `EasyTierStatus.remoteGateway`，绝不自己解析 bootstrap。Router 下发可用端点**且**用户已
+  打开远程控制时，桌面以账户 AccessKey（`Authorization: Bearer` 加 CSR）向 `dialUrl` 注册，
+  固定 `caPem`、校验 `tlsServerName`；AccessKey 在主进程内从已保存的 `minih-router` provider
+  行读出，只用于这一次请求，随后丢弃。下发不可用、密钥缺失或被拒、端点已变更，都会在同
+  一页面说明，且注册码表单继续可用，没有 Router key 的用户仍能自行注册。开关仍是安全默认：
+  关闭时不注册、不拨号，无论 Router 下发了什么。
+- **注册身份与拨号地址是两件事**：注册身份是下发的端点——`hostlinkUrl`、`caPem` 与
+  `tlsServerName`；只有这三项之一变化才说明 Gateway 换了，桌面才需要重新注册。`dialUrl`
+  不是身份：No-TUN 模式下它是回环转发，其端口由 host-core 在每次组网启动时重新分配，因此
+  端口变化仍是同一个 Gateway，已签发的证书继续有效（ADR 决策 8——被禁用的密钥只阻止**新的**
+  注册，绝不阻止这台 Host 已有的链路）。因此凭据记录下发端点，绝不记录当次拨过的端口；桌面
+  在每次连接**以及每次重连**时从当前状态解析要拨的地址，从而跟上链路在线期间重启过的组网。
+  若状态答不出可用端点，该次尝试按失败处理并退避重试，绝不去拨过期地址。
 
 ### 命名端点预设
 

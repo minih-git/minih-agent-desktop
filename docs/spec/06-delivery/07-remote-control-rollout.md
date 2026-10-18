@@ -784,11 +784,37 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   advertised endpoint and CA, the dial address, the certificate service name,
   the forward port, and why account mode is unavailable. provider-config §3
   carries the field rules, the destination and port rules, and the status shape.
-  Still missing: the Electron main auto-enrollment and Host-link wiring, the
-  confirm dialog, strict mode and i18n (package E2), the client login and host
-  switcher (package F), and the deployment beside the Router (D-1). The
-  `E2E-REMOTE-ACCOUNT-*` scenarios stay Draft: E1 changes no user-facing flow on
-  its own.
+
+- R7 package E2 delivered (2026-10-18, D666 / ADR
+  `remote-control-router-account-binding`): the desktop side of account mode.
+  Settings ▸ Remote gateway reads `EasyTierStatus.remoteGateway` and enrolls with
+  the account AccessKey when the Router advertises a usable endpoint and the
+  user's remote-control switch is on — the key is read through host-core from the
+  saved `minih-router` row, used for that one request, and never reaches a
+  renderer payload, a log, or the credential file. The desktop now dials the
+  Gateway through the No-TUN forward under the advertised service name
+  (`tlsServerName`, security §5.1) instead of the loopback address. The
+  registration identity is the advertised endpoint — `hostlinkUrl`, its CA and
+  that name — so a forward port host-core re-allocates on the next overlay start
+  neither re-enrolls the desktop nor strands the link: the address is resolved
+  per connection and per reconnect, and the certificate already held keeps
+  working even after the Router key is gone (ADR decision 8). Its confirmation
+  dialog asks the user in the desktop window — label, client, remaining time,
+  focus on Deny, Escape denies, `expiresAt` closes it — and a renderer that
+  reports it is going away refuses what was waiting at once, while a request no
+  window can show waits out `expiresAt` and is refused then. Strict mode is a
+  device-local switch, off by default, that takes effect by rebuilding the link
+  so the capability list stops announcing `device.accept-sibling-grant`. Every
+  mint, adoption, and revocation shows a notice (ADR decision 6), and a
+  revocation from the settings page travels as the signed frame, queued while the
+  link is down. The route through `device.request` is covered by a main-process
+  test suite, an Electron-rendered page and dialog test, and the existing
+  remote-host and remote-gateway E2E suites. Still missing: the client login and
+  host switcher (package F), push on top of accounts (package G), and the
+  deployment beside the Router (D-1). The `E2E-REMOTE-ACCOUNT-*` scenarios
+  advance to Partial: their cross-account isolation and confirm-once steps now
+  run against a real desktop Host, while routing through a live Router remains
+  the deployment gate.
 
 - R7 package D delivered (2026-10-18, D666 / ADR
   `remote-control-router-account-binding`): the account-mode device relay. New

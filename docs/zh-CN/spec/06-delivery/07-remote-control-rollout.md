@@ -316,6 +316,24 @@ Gateway 全部通过，且 `05-security/02-remote-control-security.md` 的安全
   （工作包 F），以及在 Router 旁的部署（D-1）。`E2E-REMOTE-ACCOUNT-*` 场景仍为 Draft：
   E1 自身不改变任何用户可见流程。
 
+- R7 工作包 E2 已交付（2026-10-18，D666 / ADR `remote-control-router-account-binding`）：
+  账户模式的桌面侧。设置 ▸ 远程网关读取 `EasyTierStatus.remoteGateway`，当 Router 公布可用端点
+  且用户的远程控制开关已打开时，用账户 AccessKey 完成注册——key 经 host-core 从已保存的
+  `minih-router` 记录读入，只用于这一次请求，绝不进入任何 renderer 载荷、日志或凭据文件。桌面端
+  改为在公布的服务名下经 No-TUN 转发拨号（`tlsServerName`，安全 §5.1），不再用回环地址。注册
+  身份取下发端点——`hostlinkUrl`、其 CA 与该名字——因此 host-core 在下一次组网启动时重新分配
+  的转发端口既不会让桌面重新注册，也不会让链路失联：拨号地址在每次连接与每次重连时重新解析，
+  已持有的证书即使 Router key 已被禁用也继续可用（ADR 决策 8）。确认对话框在桌面窗口询问用户
+  ——设备名、客户端、剩余时间，焦点落在“拒绝”，Escape 即拒绝，`expiresAt` 到期即关闭——主动
+  报告即将消失的 renderer 会立刻拒绝等待中的请求，而没有窗口能显示的请求则等到 `expiresAt`
+  才被拒绝。严格模式是设备本地开关，默认关闭，通过重建链路生效，使能力
+  列表不再声明 `device.accept-sibling-grant`。每次铸出、收编与吊销都给出一条通知（ADR 决策 6），
+  设置页发起的吊销以签名帧传播，链路断开期间排队。`device.request` 这条路径由 main 进程测试、
+  Electron 渲染的页面与弹窗测试，以及现有的 remote-host 与 remote-gateway 套件覆盖。
+  仍缺：客户端 key 登录与主机切换（工作包 F）、账户之上的推送（工作包 G），以及在 Router 旁的
+  部署（D-1）。`E2E-REMOTE-ACCOUNT-*` 场景推进为 Partial：跨账户隔离与“确认一次”步骤现在跑在
+  真实桌面 Host 上，经真实 Router 的路由仍是部署门禁。
+
 - R7 工作包 D 已交付（2026-10-18，D666 / ADR `remote-control-router-account-binding`）：
   账户模式设备中继。新增 Host link 帧 `host.capabilities`、`device.request`、
   `device.grant`、`device.revoke`；每条链路建立后声明能力；由批准方 Host 签名的授权，兄弟
