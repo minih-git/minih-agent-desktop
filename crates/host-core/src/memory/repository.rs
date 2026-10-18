@@ -210,6 +210,21 @@ impl Database {
         &self,
         session_id: &str,
     ) -> Result<Option<Vec<MemoryScope>>> {
+        let Some(paths) = self.project_scope_paths_for_session(session_id)? else {
+            return Ok(None);
+        };
+        let mut scopes = Vec::with_capacity(paths.len() + 1);
+        if let Some(path) = paths.first() {
+            scopes.push(self.learned_memory_scope_for_path(path)?);
+        }
+        scopes.push(MemoryScope::user());
+        Ok(Some(scopes))
+    }
+
+    /// Canonical root paths of the project identity the session belongs to:
+    /// every root of its project group, or the project's own path. `None` means
+    /// the session does not exist; an empty list means it has no project.
+    pub fn project_scope_paths_for_session(&self, session_id: &str) -> Result<Option<Vec<String>>> {
         let project_path: Option<Option<String>> = self
             .conn()
             .query_row(
@@ -222,12 +237,10 @@ impl Database {
         let Some(project_path) = project_path else {
             return Ok(None);
         };
-        let mut scopes = Vec::with_capacity(2);
-        if let Some(path) = project_path {
-            scopes.push(self.learned_memory_scope_for_path(&path)?);
-        }
-        scopes.push(MemoryScope::user());
-        Ok(Some(scopes))
+        let Some(path) = project_path else {
+            return Ok(Some(Vec::new()));
+        };
+        Ok(Some(self.project_scope_paths_for_path(&path)?))
     }
 
     /// Entries of one scope, newest first. `status` and `kind` are optional
@@ -493,9 +506,18 @@ impl Database {
     /// The session-start index: active entries of the project scope and the user
     /// scope, explicit ones first, then by recency of use, inside a fixed budget.
     /// Ordering is total, so two launches of the same data return the same lines.
-    pub fn learned_memory_index(&self, path: &str) -> Result<MemoryIndex> {
-        let project = self.learned_memory_scope_for_path(path)?;
-        let (project_slot, user_slot) = scope_slots(&[project, MemoryScope::user()]);
+    /// `path` is the project the session belongs to. Without one the snapshot is
+    /// the user scope alone, so a session that belongs to no project still
+    /// starts with the notes the user wrote for themselves (ADR §5).
+    pub fn learned_memory_index(&self, path: Option<&str>) -> Result<MemoryIndex> {
+        let scopes = match path {
+            Some(path) => vec![
+                self.learned_memory_scope_for_path(path)?,
+                MemoryScope::user(),
+            ],
+            None => vec![MemoryScope::user()],
+        };
+        let (project_slot, user_slot) = scope_slots(&scopes);
         let sql = format!(
             "SELECT {ENTRY_COLUMNS} FROM memory_entries
              WHERE status = ?1

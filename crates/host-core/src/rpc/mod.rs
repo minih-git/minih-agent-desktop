@@ -1,6 +1,7 @@
 mod config_sync_rpc;
 mod easytier_rpc;
 mod memory_rpc;
+mod memory_tools;
 mod remote_tools;
 mod scheduled_rpc;
 mod scheduled_tools;
@@ -4096,6 +4097,10 @@ async fn handle_request(
                             &p.args,
                         )
                     };
+                    // A recall read of every project is not the free read the
+                    // tool's registered low risk describes: the argument decides
+                    // the risk, the same way an explicit outside path does.
+                    let recall_risk = memory_tools::risk_for(&p.tool_name, &p.args);
                     let mut auto = st
                         .permissions
                         .evaluate_auto_with_permission_mode_and_risk_and_path(
@@ -4106,6 +4111,7 @@ async fn handle_request(
                                 permission_mode: &effective_pm,
                                 session_grants: &st.session_grants,
                                 declared_risk: p.declared_risk.as_deref(),
+                                effective_risk: recall_risk.clone(),
                                 requires_external_path_permission: external_path_permission,
                                 plan_safe_actions: p.plan_safe_actions.as_deref(),
                             },
@@ -4143,6 +4149,8 @@ async fn handle_request(
                     } else {
                         let reason = if external_path_permission {
                             "Accesses a path outside the session workspace"
+                        } else if recall_risk.is_some() {
+                            "Reads conversations from every project"
                         } else {
                             match p.tool_name.as_str() {
                                 "Write" | "Edit" => "Modifies files in your workspace",
@@ -4164,6 +4172,7 @@ async fn handle_request(
                                 args_preview: p.args.clone(),
                                 reason,
                                 declared_risk: p.declared_risk.as_deref(),
+                                effective_risk: recall_risk,
                                 command_shell_id: command_shell_id.as_deref(),
                             },
                         );
@@ -4477,6 +4486,11 @@ async fn handle_request(
                 } else if scheduled_tools::recognizes(&p.tool_name) {
                     let st = state.lock().await;
                     scheduled_tools::execute(&st, &p)
+                } else if memory_tools::recognizes(&p.tool_name) {
+                    // Recall tools read host-owned history and learned memory,
+                    // so they run here with the calling session's own scope.
+                    let st = state.lock().await;
+                    memory_tools::execute(&st, &p)
                 } else if let Some(remote) = remote_workspace.clone() {
                     remote_tools::execute_remote_tool(
                         &state,
@@ -4703,6 +4717,9 @@ async fn handle_request(
                         &args,
                     )
                 };
+            // The renderer's preview must agree with the execute gate: a recall
+            // read of every project carries its own risk.
+            let recall_risk = memory_tools::risk_for(tool_name, &args);
             let decision = st
                 .permissions
                 .evaluate_auto_with_permission_mode_and_risk_and_path(PermissionEvaluationParams {
@@ -4712,12 +4729,13 @@ async fn handle_request(
                     permission_mode: &effective_pm,
                     session_grants: &st.session_grants,
                     declared_risk,
+                    effective_risk: recall_risk.clone(),
                     requires_external_path_permission: external_path_permission,
                     plan_safe_actions: plan_safe_actions.as_deref(),
                 });
             Ok(json!({
                 "decision": decision,
-                "risk": PermissionManager::tool_risk_with_declared(tool_name, declared_risk),
+                "risk": PermissionManager::call_risk(tool_name, declared_risk, recall_risk.as_ref()),
                 "externalPathPermission": external_path_permission
             }))
         }

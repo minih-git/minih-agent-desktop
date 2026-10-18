@@ -214,8 +214,9 @@ type ToolBudgetHealth = {
   在会话项目作用域加用户作用域的存活条目上做字面搜索，以 trigram FTS 索引作为
   预过滤。`limit` 默认 8，上限 20。仅在 `recordUse: true` 时命中会刷新
   `lastUsedAt` 与 `useCount`；启动索引从不刷新。
-- `memory.index({ path })` —— 某项目的启动索引：项目作用域与用户作用域的存活条目，
-  显式条目优先，其次按最近使用时间，上限为 40 条、6 KiB。返回
+- `memory.index({ path? })` —— 启动索引：`path` 指向某个项目时包含该项目作用域，加上用户
+  作用域的存活条目，显式条目优先，其次按最近使用时间，上限为 40 条、6 KiB。不传 `path` 时
+  快照只包含用户作用域，因此没有项目的会话也能带着用户自己的笔记启动。返回
   `{ index: { entries, omittedCount, bytes } }`。读取失败时启动会在没有索引的情况下继续。
 - `memory.create({ ... })` —— 唯一的创建路径。参数：`scope`、`path` 或
   `sessionId`、`kind`、`content`、可选 `rationale`、`origin`（`explicit` |

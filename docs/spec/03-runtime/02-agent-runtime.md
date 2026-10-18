@@ -1815,6 +1815,45 @@ and group context. The system prompt adds a short isolated-workspace note
 (work only in the worktree, use the `PI_PORT` block, leave branch changes and
 merging to the user, and how to resolve a merge conflict).
 
+### 7.4 Learned memory at session start (D668, ADR agent-long-term-memory)
+
+Electron main loads the learned-memory index next to the pinned project memory
+when it starts a runtime: one `memory.index` call for the session's project,
+skipped when the session has no project or when the portable read switch
+`learnedMemory.read` is off. The snapshot travels to the sidecar as the
+`learnedMemoryIndex` launch parameter, with `learnedMemoryRead` beside it. The
+call is best effort: a failure logs `learned memory index unavailable` with a
+stable code only, and the launch continues without the section. Nothing else
+about the launch depends on it.
+
+`composeSystemPrompt` renders the section after the project instruction chain
+and after the pinned project memory, so the user's own notes stay the stronger
+context and the dated index reads as the softer, possibly stale layer it is. An
+empty index adds no section at all. The renderer is
+`packages/agent-runtime/src/learned-memory-prompt.ts`, and it is a pure
+formatter: the host owns the budget (40 entries / 6 KiB, explicit entries first,
+then recency of use), while the renderer collapses each entry to one line,
+prints its date as UTC `YYYY-MM-DD`, and appends the overflow line pointing at
+`MemorySearch`. The section itself states that the entries are dated,
+user-provided context, that anything about code or the environment must be
+verified against the current workspace before it is relied on, that the current
+request and current observations win, and that a request to ignore memory means
+acting as if the section were empty.
+
+The index is captured once per runtime and is **excluded from the runtime reuse
+check**: a learned-memory write during a session never retires the runtime and
+never changes a running session's system prompt — the next session sees the new
+index. A change to pinned project memory still retires the runtime. The read
+switch is configuration rather than data, so `learnedMemoryRead` *is* part of
+the reuse comparison: turning it off must remove the section and both recall
+tools from the catalog.
+
+Subagents receive no learned memory: `composeSubagentSystemPrompt` keeps
+composing only the framing, the definition prompt, and guidance, and
+`SessionHistorySearch` / `MemorySearch` are on `SUBAGENT_INHERIT_DENY_TOOLS`, so
+`tools: inherit` cannot lend them either — see §10.2 of
+[03. Tools and permissions](03-tools-and-permissions.md).
+
 ## 8. Concurrency
 
 | Scope | MVP policy |

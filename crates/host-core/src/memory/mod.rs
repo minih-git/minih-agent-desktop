@@ -23,9 +23,9 @@ mod provenance_tests;
 mod tests;
 
 pub(crate) use model::{
-    is_known, MemoryScope, EVIDENCES, EVIDENCE_USER_STATED, EXTRACTION_LEASE_MS, KINDS,
-    MAX_LIST_LIMIT, MAX_SEARCH_LIMIT, ORIGINS, ORIGIN_USER_UI, SCOPES, SCOPE_PROJECT, SCOPE_USER,
-    STATUSES, STATUS_ACTIVE, STATUS_ARCHIVED,
+    is_known, MemoryEntryRecord, MemoryScope, EVIDENCES, EVIDENCE_USER_STATED, EXTRACTION_LEASE_MS,
+    KINDS, MAX_LIST_LIMIT, MAX_SEARCH_LIMIT, ORIGINS, ORIGIN_USER_UI, SCOPES, SCOPE_PROJECT,
+    SCOPE_USER, STATUSES, STATUS_ACTIVE, STATUS_ARCHIVED,
 };
 pub(crate) use repository::{
     delete_learned_scope_tx, rekey_learned_memory_to_group, CreateMemoryOutcome,

@@ -17,6 +17,7 @@ import { todoWriteDescription, todoWriteParameters } from "./todo-tool.js";
 import { createJevClassifierTool } from "./jev-classifier-tool.js";
 import { scheduledToolParameters, scheduledToolDescriptions } from "./scheduled-tools.js";
 import { sessionToolParameters, sessionToolDescriptions } from "./session-tools.js";
+import { memoryToolParameters, memoryToolDescriptions } from "./memory-tools.js";
 import { withPiFileOpToolNames } from "./pi-file-ops.js";
 import { remoteMutationIdentity } from "./remote-workspace.js";
 import { randomUUID } from "node:crypto";
@@ -89,6 +90,7 @@ import type {
   MessageAttachment,
   SessionMessageOrigin,
   PlanExecution,
+  LearnedMemoryIndex,
   PlanProposal,
   PlanningState,
   Risk,
@@ -232,6 +234,7 @@ import type { ProjectInstructions } from "./project-instructions.js";
 import { projectInstructionsPrompt } from "./project-instructions-prompt.js";
 import type { CustomSystemPrompt } from "./custom-system-prompt.js";
 import { projectMemoryPrompt } from "./project-memory-prompt.js";
+import { learnedMemoryPrompt } from "./learned-memory-prompt.js";
 import {
   pluginSkillsPrompt,
   pluginSkillsPromptSections,
@@ -999,6 +1002,17 @@ export type AgentRuntimeOptions = {
   projectInstructions?: ProjectInstructions;
   /** Durable project context loaded from host-owned project memory. */
   projectMemory?: string;
+  /**
+   * Bounded learned-memory index captured at launch (ADR
+   * agent-long-term-memory). It is a frozen snapshot: a later write in this
+   * session never changes the running prompt and never retires the runtime.
+   */
+  learnedMemoryIndex?: LearnedMemoryIndex;
+  /**
+   * Portable "use learned memory" switch. Absent means on. Off hides the index
+   * section and both recall tools; it never deletes anything.
+   */
+  learnedMemoryRead?: boolean;
   /** Persisted transcript to seed the agent with (session isolation: each
    * session's agent carries only its own history). */
   history?: UiMessage[];
@@ -1061,6 +1075,12 @@ export type RuntimeMatchConfig = {
   customSystemPrompt?: CustomSystemPrompt;
   projectInstructions?: ProjectInstructions;
   projectMemory?: string;
+  /**
+   * The read switch only, never the index itself: flipping "use learned
+   * memory" changes the prompt section and the tool catalog, so it retires the
+   * runtime, while learned-memory *writes* must not (ADR §5).
+   */
+  learnedMemoryRead?: boolean;
   projectPath?: string;
   /** Remote tool root. Model requests and runtime state remain on this machine. */
   remoteWorkspace?: { hostKey: string; path: string };
@@ -1869,6 +1889,9 @@ export class DesktopAgentRuntime {
   private baseProjectInstructions?: ProjectInstructions;
   private projectInstructions?: ProjectInstructions;
   private projectMemory?: string;
+  /** Frozen at launch: learned-memory writes never touch a running prompt. */
+  private learnedMemoryIndex?: LearnedMemoryIndex;
+  private learnedMemoryRead = true;
   /** Per-prompt claims prevent repeated path-resolution RPCs for one directory. */
   private pathInstructionClaims = new Map<
     string,
@@ -2055,6 +2078,10 @@ export class DesktopAgentRuntime {
     this.baseProjectInstructions = opts.projectInstructions;
     this.projectInstructions = opts.projectInstructions;
     this.projectMemory = opts.projectMemory?.trim() || undefined;
+    // The index is captured once, here, and never refreshed: it is a snapshot
+    // of the entries that existed when the session started (ADR §5).
+    this.learnedMemoryIndex = opts.learnedMemoryIndex;
+    this.learnedMemoryRead = opts.learnedMemoryRead !== false;
     this.compactionEnabled = compactionEnabled(opts.compactionSettings);
     this.compactionStrategy = resolveCompactionStrategy(opts.compactionStrategy);
 
@@ -2442,6 +2469,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
   private composeSystemPrompt(): string {
     const projectPrompt = projectInstructionsPrompt(this.projectInstructions);
     const memoryPrompt = projectMemoryPrompt(this.projectMemory);
+    // Learned memory is composed after the pinned project memory: the user's
+    // own notes stay the stronger context, and the dated index reads as the
+    // softer, possibly stale layer it is.
+    const learnedPrompt = this.learnedMemoryRead
+      ? learnedMemoryPrompt(this.learnedMemoryIndex)
+      : undefined;
     const optionalToolsPrompt = this.optionalToolsPrompt();
     const resumablePrompt =
       this.subagents.length > 0
@@ -2460,6 +2493,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         ...(optionalToolsPrompt ? [optionalToolsPrompt] : []),
         ...(projectPrompt ? [projectPrompt] : []),
         ...(memoryPrompt ? [memoryPrompt] : []),
+        ...(learnedPrompt ? [learnedPrompt] : []),
         ...(resumablePrompt ? [resumablePrompt] : []),
       ].join("\n\n")),
     };
@@ -2726,6 +2760,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       safeJson(this.customSystemPrompt ?? null) ===
         safeJson(config.customSystemPrompt ?? null) &&
       (this.projectMemory ?? "") === (config.projectMemory?.trim() ?? "") &&
+      // The learned-memory *read switch* is configuration: flipping it changes
+      // the prompt section and the tool catalog, so the next prompt rebuilds
+      // the runtime. The index itself is deliberately absent here — learned
+      // memory written during a session must never retire it (ADR §5).
+      this.learnedMemoryRead === (config.learnedMemoryRead !== false) &&
       (this.projectPath ?? "") === (config.remoteWorkspace?.path ?? config.projectPath?.trim() ?? "") &&
       safeJson(this.remoteWorkspace ?? null) === safeJson(config.remoteWorkspace ?? null) &&
       (this.workspaceRoot ?? "") === (config.workspaceRoot?.trim() ?? "") &&
@@ -3245,6 +3284,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       if (toolName === "GenerateImages") return imageGenerationDescription;
       if (scheduledToolDescriptions[toolName]) return scheduledToolDescriptions[toolName];
       if (sessionToolDescriptions[toolName]) return sessionToolDescriptions[toolName];
+      if (memoryToolDescriptions[toolName]) return memoryToolDescriptions[toolName];
       switch (toolName) {
         case "BrowserPreview":
           return "Open an HTML file in Minih-Agent-Desktop's built-in browser panel. `path` may be relative to a project folder or this session's scratch directory, or an absolute path inside those roots. No project is required for scratch previews. The preview live-reloads on later edits to the file or its sibling assets, so call once per page.";
@@ -3780,7 +3820,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         label: toolName,
         description: describe(toolName),
         parameters: Type.Object(
-          scheduledToolParameters[toolName] ?? sessionToolParameters[toolName] ?? parameters[toolName] ?? { command: Type.String() },
+          scheduledToolParameters[toolName] ??
+            memoryToolParameters[toolName] ??
+            sessionToolParameters[toolName] ??
+            parameters[toolName] ?? { command: Type.String() },
         ),
         // Normalizing here, above the write lock, means every consumer below
         // this line — the lock key, the host call, the transcript record — sees
@@ -3873,6 +3916,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       // Plan or Goal turn must not hand work to another Agent.
       tools.push(...Object.keys(sessionToolParameters));
     }
+    // Recall reads earlier conversations and learned memory. It is read-only
+    // and on-demand, so every mode may use it: a Plan or Goal turn reads the
+    // same frozen index this session started with. Turning reading off in
+    // Settings removes both tools and the section they serve.
+    if (this.learnedMemoryRead) tools.push(...Object.keys(memoryToolParameters));
     const builtins = tools.map(exec);
     const jevTools: AgentTool[] =
       this.mode === "agent" && this.jevApiKey
@@ -4048,6 +4096,8 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     if (!kind) return true;
     // Contract modes are read-only: inspection tools, plan-safe plugin
     // actions (ADR 0211), and the one submit tool that belongs to this kind.
+    // The recall reads change nothing, and the learned-memory section points at
+    // MemorySearch, so they stay available in both contract modes.
     if (this.isPlanSafePluginTool(name)) return true;
     return new Set([
       "Read",
@@ -4058,6 +4108,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       ASK_TOOL_NAME,
       CONTEXT_COMPACTION_TOOL_NAME,
       SUBMIT_TOOL_NAMES[kind],
+      ...Object.keys(memoryToolParameters),
     ]).has(name);
   }
 

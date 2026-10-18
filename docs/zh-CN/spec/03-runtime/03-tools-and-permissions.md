@@ -559,7 +559,8 @@ MVP 可以通过写入 SQLite 或日志文件来启动。
 实时工具目录（ADR 0246 / D415）。`Task` 启动时运行时把 `toolCatalog`
 （含延迟的插件/MCP 工具）与可分配的额外工具取并集，再去掉 `Task` /
 `TaskWait` / `TaskList` / `TaskStop`、`EnterPlanMode` / `EnterGoalMode`、
-`asktool`、`new_context` 和 `ToolSearch`。内置定义不默认开启。`inherit`
+`asktool`、`new_context`、`ToolSearch`，以及两个召回读工具
+`SessionHistorySearch` / `MemorySearch`。内置定义不默认开启。`inherit`
 写在 Markdown 和设置里；host-core 会保留该标记，因此只有 inherit 的文档
 仍能加载。插件工具、`Skill` 和 MCP 工具只通过这一 opt-in 到达委托，
 不能写进可分配白名单。
@@ -638,3 +639,38 @@ sidecar 不附加覆盖，委托使用会话的有效权限模式；因此父会
 回合，message 仅用于标注意图；`SessionResult` 只能读到本会话自己发起的投递。
 账本、权限上限、队列与跳数上限、来源标注与完成回调见
 [Agent 运行时 §5f.4](/zh-CN/spec/03-runtime/02-agent-runtime)。
+
+## 学习记忆与历史召回
+
+`SessionHistorySearch` 与 `MemorySearch` 是读取过往会话所学内容的内置按需工具
+（D668、ADR agent-long-term-memory）。两者均为低风险、只读：不修改任何状态，
+因此 Agent、Plan 与 Goal 都允许使用——契约协商读到的正是本会话启动时冻结的同一份
+索引。`Task` 子代理无法使用：委托没有用户，其提示词中也没有学习记忆；MCP 控制目录
+同样不暴露。
+
+作用域由 host-core 决定，因为数据以及判定调用方可读范围所需的会话身份都归主机所有：
+
+- `SessionHistorySearch({ query, scope?, limit? })` 封装会话内容检索
+  （`search.sessions` / `search.context`）。`scope` 为 `project`（默认）或 `all`；
+  项目作用域是调用会话自己的项目，或拥有它的项目组的全部根目录。
+- `MemorySearch({ query, kind?, limit? })` 读取调用会话的项目作用域与用户作用域的
+  学习条目，并像其他读取一样刷新 `lastUsedAt` / `useCount`。
+
+两个工具都不接受项目路径或会话 ID。传入这类参数会被忽略而非采纳，因此构造的调用无法
+触达其他项目的历史；只有显式的 `scope: "all"` 才会放宽检索范围。结果被标注为历史数据
+——来自更早会话的、带日期的记录，而非指令——涉及代码或环境的内容必须先对照当前工作区
+核实再采信。
+
+`SessionHistorySearch` 只对调用会话自己的项目才是免确认的读取。`scope: "all"` 会读取本机
+所有项目，跨过的正是“显式工作区外路径”那道边界，因此该调用按中等风险走正常审批路径：
+`auto` 放行，`ask` 与 `accept-edits` 弹出确认卡——Agent 与契约模式同样如此——会话级授权
+覆盖后续调用。风险由参数在 host 侧决定，就在裁决其他一切的同一个 `tools.execute` 闸门里，
+运行时无法自行放宽作用域。无法识别的 `scope` 值不是放宽：工具以 `INVALID_ARGUMENT` 拒绝，
+该调用仍是免确认的读取。
+
+两者都遵循可移植的 `learnedMemory.read` 设置。关闭读取时，运行时隐藏索引段与这两个
+工具，host-core 对过期调用返回 `TOOL_DENIED`，且不删除任何数据。主机面见
+[04. 数据存储](/zh-CN/spec/03-runtime/04-data-storage) §4.15 与
+[06. 主机 RPC 协议](/zh-CN/spec/03-runtime/06-host-rpc-protocol)；会话启动索引及其
+提示词段落见 [Agent 运行时 §7.4](/zh-CN/spec/03-runtime/02-agent-runtime)。与会话消息
+工具一样，host-core 通过同一个 `tools.execute` 闸门授权。
