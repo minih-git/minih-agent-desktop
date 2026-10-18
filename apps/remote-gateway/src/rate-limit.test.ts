@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_CREDENTIAL_LIMIT, DEFAULT_DEVICE_LIMIT, RateLimiter } from "./rate-limit.js";
+import { DEFAULT_ACCOUNT_DEVICE_LIMIT, DEFAULT_CREDENTIAL_LIMIT, DEFAULT_DEVICE_LIMIT, RateLimiter } from "./rate-limit.js";
 
 describe("rate limiting", () => {
   it("allows a burst up to the bucket capacity and then refuses", () => {
@@ -21,6 +21,22 @@ describe("rate limiting", () => {
     expect(limiter.check("dev_1", "10.0.0.1")).toEqual({ allowed: true });
   });
 
+
+  it("gives account device requests their own tighter bucket", () => {
+    const now = 0;
+    const limiter = new RateLimiter({ now: () => now });
+    // A device request asks every Host of the account to interrupt its user, so
+    // it is capped well below the command bucket and never spends the budget
+    // that stops AccessKey guessing.
+    for (let attempt = 0; attempt < DEFAULT_ACCOUNT_DEVICE_LIMIT.capacity; attempt += 1) {
+      expect(limiter.checkAccountDevice("10.0.0.9")).toEqual({ allowed: true });
+    }
+    expect(limiter.checkAccountDevice("10.0.0.9").allowed).toBe(false);
+    expect(limiter.checkCredential("10.0.0.9")).toEqual({ allowed: true });
+    expect(limiter.check("dev_1", "10.0.0.9")).toEqual({ allowed: true });
+    // Another caller has its own budget.
+    expect(limiter.checkAccountDevice("10.0.0.10")).toEqual({ allowed: true });
+  });
   it("rate limits per device and per IP independently", () => {
     const now = 0;
     const limiter = new RateLimiter({

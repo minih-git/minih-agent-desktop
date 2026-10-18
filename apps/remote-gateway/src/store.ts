@@ -1,6 +1,7 @@
 /**
  * Gateway file store (ADR 0331 §3.5): `--data-dir` holds the CA, the host and
- * device registries, the one-time enrollment codes, the audit log, and the
+ * device registries, the one-time enrollment codes, the account sessions, the
+ * pending account-mode device grants and revocations, the audit log, and the
  * CSRF HMAC secret. Directory mode 0700, file mode 0600, every JSON write is
  * an atomic rename. No SQLite and no native dependency.
  *
@@ -49,6 +50,65 @@ export type GatewayDeviceRecord = {
   tokenHash: string;
   createdAt: string;
   revokedAt?: string;
+  /**
+   * Account of an account-mode device (protocol §11.5, D666). A device minted
+   * through the account flow reaches every Host of that account, so the
+   * pre-routing fast reject matches on the account instead of on `hostId`.
+   * Absent for a device paired with one Host through §11.4.
+   */
+  accountId?: string;
+};
+
+/**
+ * One signed device grant the Gateway holds for an offline Host (§11.5
+ * "Deferred grants", D666). The grant is durable so a Host that was down when
+ * its sibling approved still adopts the device when its link comes up. The
+ * record carries the signature and the signer's certificate, never the device
+ * token: the token travels through the Gateway once, to the client that asked,
+ * and is never written to disk.
+ */
+export type GatewayPendingGrantRecord = {
+  grantId: string;
+  requestId: string;
+  accountId: string;
+  signerHostId: string;
+  deviceId: string;
+  deviceLabel: string;
+  /** SHA-256 of the device token, lowercase hex. */
+  tokenHash: string;
+  roles: string[];
+  issuedAt: string;
+  /**
+   * The deadline the approving Host signed. It is relayed to the siblings
+   * byte-for-byte, because it is part of the signed payload: rewriting it would
+   * make every sibling refuse the grant.
+   */
+  deliverUntil: string;
+  /**
+   * When the GATEWAY stops offering this grant to a Host that has not taken it
+   * yet. Deliberately not part of the signed payload, so the Gateway can bound
+   * its own retention without touching what the Host signed.
+   */
+  relayUntil: string;
+  signature: string;
+  signerCertificate: string;
+};
+
+/**
+ * One signed device revocation the Gateway holds for an account's Hosts
+ * (§11.5, D666). A Host that was offline when its sibling revoked receives it
+ * when its link comes up, so a lost device stops working everywhere.
+ */
+export type GatewayPendingRevocationRecord = {
+  revokeId: string;
+  accountId: string;
+  signerHostId: string;
+  deviceId: string;
+  revokedAt: string;
+  /** When the Gateway stops offering this revocation to a Host. */
+  relayUntil: string;
+  signature: string;
+  signerCertificate: string;
 };
 
 /**
@@ -74,6 +134,8 @@ type HostsFile = { hosts: GatewayHostRecord[] };
 type EnrollmentsFile = { enrollments: GatewayEnrollmentRecord[] };
 type DevicesFile = { devices: GatewayDeviceRecord[] };
 type AccountSessionsFile = { accountSessions: GatewayAccountSessionRecord[] };
+type DeviceGrantsFile = { deviceGrants: GatewayPendingGrantRecord[] };
+type DeviceRevocationsFile = { deviceRevocations: GatewayPendingRevocationRecord[] };
 type SecretFile = { secret: string; createdAt: string };
 
 const DIRECTORY_MODE = 0o700;
@@ -119,6 +181,8 @@ export class GatewayStore {
   private enrollments: GatewayEnrollmentRecord[] = [];
   private devices: GatewayDeviceRecord[] = [];
   private accountSessions: GatewayAccountSessionRecord[] = [];
+  private deviceGrants: GatewayPendingGrantRecord[] = [];
+  private deviceRevocations: GatewayPendingRevocationRecord[] = [];
   private chain: Promise<void> = Promise.resolve();
   /** Audit appends still in flight, so shutdown can flush them. */
   private readonly pendingAudits = new Set<Promise<void>>();
@@ -154,6 +218,9 @@ export class GatewayStore {
     store.enrollments = (await readJson<EnrollmentsFile>(join(dataDir, "enrollments.json")))?.enrollments ?? [];
     store.devices = (await readJson<DevicesFile>(join(dataDir, "devices.json")))?.devices ?? [];
     store.accountSessions = (await readJson<AccountSessionsFile>(join(dataDir, "account-sessions.json")))?.accountSessions ?? [];
+    store.deviceGrants = (await readJson<DeviceGrantsFile>(join(dataDir, "device-grants.json")))?.deviceGrants ?? [];
+    store.deviceRevocations =
+      (await readJson<DeviceRevocationsFile>(join(dataDir, "device-revocations.json")))?.deviceRevocations ?? [];
     return store;
   }
 
@@ -289,6 +356,73 @@ export class GatewayStore {
       await writeJsonAtomic(join(this.dataDir, "devices.json"), { devices: this.devices } satisfies DevicesFile);
     });
     return revoked;
+  }
+
+  // --------------------------------------------------- pending device grants
+  /**
+   * The grants still deliverable to one account's Hosts, expired ones dropped
+   * on read so a stale grant is never relayed (gate 32).
+   */
+  listPendingGrants(accountId?: string): GatewayPendingGrantRecord[] {
+    const now = this.now();
+    return this.deviceGrants.filter(
+      (grant) => Date.parse(grant.relayUntil) > now && (accountId === undefined || grant.accountId === accountId),
+    );
+  }
+
+  async savePendingGrant(record: GatewayPendingGrantRecord): Promise<void> {
+    await this.mutate(async () => {
+      const now = this.now();
+      this.deviceGrants = [
+        ...this.deviceGrants.filter((grant) => grant.grantId !== record.grantId && Date.parse(grant.relayUntil) > now),
+        record,
+      ];
+      await writeJsonAtomic(join(this.dataDir, "device-grants.json"), { deviceGrants: this.deviceGrants } satisfies DeviceGrantsFile);
+    });
+  }
+
+  async deletePendingGrant(grantId: string): Promise<void> {
+    await this.mutate(async () => {
+      this.deviceGrants = this.deviceGrants.filter((grant) => grant.grantId !== grantId);
+      await writeJsonAtomic(join(this.dataDir, "device-grants.json"), { deviceGrants: this.deviceGrants } satisfies DeviceGrantsFile);
+    });
+  }
+
+  // ----------------------------------------------- pending device revocations
+  /**
+   * The revocations still deliverable to one account's Hosts. A revocation is
+   * kept until its relay window closes, so a Host that was down when the device
+   * was revoked still learns about it.
+   */
+  listPendingRevocations(accountId?: string): GatewayPendingRevocationRecord[] {
+    const now = this.now();
+    return this.deviceRevocations.filter(
+      (revocation) => Date.parse(revocation.relayUntil) > now && (accountId === undefined || revocation.accountId === accountId),
+    );
+  }
+
+  async savePendingRevocation(record: GatewayPendingRevocationRecord): Promise<void> {
+    await this.mutate(async () => {
+      const now = this.now();
+      this.deviceRevocations = [
+        ...this.deviceRevocations.filter(
+          (revocation) => revocation.revokeId !== record.revokeId && Date.parse(revocation.relayUntil) > now,
+        ),
+        record,
+      ];
+      await writeJsonAtomic(join(this.dataDir, "device-revocations.json"), {
+        deviceRevocations: this.deviceRevocations,
+      } satisfies DeviceRevocationsFile);
+    });
+  }
+
+  async deletePendingRevocation(revokeId: string): Promise<void> {
+    await this.mutate(async () => {
+      this.deviceRevocations = this.deviceRevocations.filter((revocation) => revocation.revokeId !== revokeId);
+      await writeJsonAtomic(join(this.dataDir, "device-revocations.json"), {
+        deviceRevocations: this.deviceRevocations,
+      } satisfies DeviceRevocationsFile);
+    });
   }
 
   // ------------------------------------------------------- account sessions

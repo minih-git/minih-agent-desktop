@@ -24,7 +24,16 @@ import * as Value from "typebox/value";
 import { WebSocket } from "ws";
 
 import type { DeviceTokenAuthenticator } from "./auth.js";
-import { createHostLinkHost, type HostLinkLog, type HostLinkSocket } from "./hostlink.js";
+import type { HostDeviceDirectory } from "./host-devices.js";
+import type { DeviceRevocationQueue } from "./device-revocations.js";
+import {
+  createHostLinkHost,
+  revokeDeviceThroughLink,
+  type DeviceRevocationOutcome,
+  type HostLinkHost,
+  type HostLinkLog,
+  type HostLinkSocket,
+} from "./hostlink.js";
 import type { RacpServer } from "./server.js";
 import {
   createHostCsr,
@@ -47,13 +56,18 @@ export type HostLinkCredentials = {
   expiresAt: string;
 };
 
+/**
+ * Enrollment takes exactly one credential (protocol §11.5): the self-hosted
+ * one-time `enrollmentCode`, or the Router `accessKey` of the account the Host
+ * is joining. The Gateway refuses a body that carries both or neither, and the
+ * type keeps a caller from producing one.
+ */
 export type HostLinkEnrollInput = {
   gatewayUrl: string;
   gatewayCaPem: string;
-  enrollmentCode: string;
   hostId: string;
   label?: string;
-};
+} & ({ enrollmentCode: string; accessKey?: never } | { accessKey: string; enrollmentCode?: never });
 
 /**
  * Enrollment failures either come from the Gateway (`RacpEnrollErrorCode`) or
@@ -77,7 +91,17 @@ export class HostLinkError extends Error {
 
 export type HostLinkState = "connecting" | "connected" | "backoff" | "stopped" | "rejected";
 export type HostLinkStatus = { state: HostLinkState; since: string; lastError?: string; nextRetryAt?: string };
-export type HostLinkHandle = { status(): HostLinkStatus; stop(): Promise<void> };
+export type HostLinkHandle = {
+  status(): HostLinkStatus;
+  stop(): Promise<void>;
+  /**
+   * Revoke one device on this Host and announce it to the account's other Hosts
+   * (§11.5, ADR decision 6). The local revocation always happens, even with the
+   * link down: the signed frame is queued and re-offered on the next link, and
+   * `announced` reports only whether it went out in this call.
+   */
+  revokeDevice(deviceId: string): Promise<DeviceRevocationOutcome>;
+};
 
 export type StartHostLinkOptions = {
   credentials: HostLinkCredentials;
@@ -85,6 +109,13 @@ export type StartHostLinkOptions = {
   authenticator: DeviceTokenAuthenticator;
   log: HostLinkLog;
   onStatus?: (status: HostLinkStatus) => void;
+  /**
+   * The account-mode device directory (§11.5). Absent: this Host advertises no
+   * capability, so the Gateway reports it to the client as unable to confirm.
+   */
+  devices?: HostDeviceDirectory | null;
+  /** Where a revocation waits while the link is down (§11.5). */
+  revocations?: DeviceRevocationQueue | null;
   /** Defaults: 1 s base, 60 s ceiling, half-to-full jitter (protocol §11.4 rule 5). */
   backoff?: { baseDelayMs?: number; maxDelayMs?: number };
 };
@@ -196,6 +227,7 @@ async function postEnrollment(
   endpoint: URL,
   body: string,
   gatewayCaPem: string,
+  authorization?: string,
 ): Promise<{ status: number; payload: unknown }> {
   return new Promise((resolve, reject) => {
     const request = httpsRequest(
@@ -207,6 +239,7 @@ async function postEnrollment(
           "content-type": "application/json",
           accept: "application/json",
           "content-length": Buffer.byteLength(body, "utf8"),
+          ...(authorization ? { authorization } : {}),
         },
         timeout: ENROLL_TIMEOUT_MS,
       },
@@ -265,13 +298,20 @@ export async function enrollHostLink(input: HostLinkEnrollInput): Promise<HostLi
   const endpoint = gatewayEndpoint(input.gatewayUrl, "/v1/enroll");
   const keys = newKeyPair();
   const csr = await createHostCsr({ privateKeyPem: keys.privateKeyPem, hostId: input.hostId });
+  // The credential is either the one-time code or the account's AccessKey, in
+  // the `Authorization` header; never both, and never in a URL.
   const body = JSON.stringify({
-    enrollmentCode: input.enrollmentCode,
+    ...(input.enrollmentCode ? { enrollmentCode: input.enrollmentCode } : {}),
     hostId: input.hostId,
     csr,
     ...(input.label ? { label: input.label } : {}),
   });
-  const { status, payload } = await postEnrollment(endpoint, body, input.gatewayCaPem);
+  const { status, payload } = await postEnrollment(
+    endpoint,
+    body,
+    input.gatewayCaPem,
+    input.accessKey ? `Bearer ${input.accessKey}` : undefined,
+  );
   if (status !== 200) {
     if (status >= 500) throw new HostLinkError("GATEWAY_UNREACHABLE", `the Gateway enrollment endpoint returned HTTP ${status}`);
     throw enrollmentError(payload);
@@ -334,9 +374,10 @@ class WebSocketHostLinkSocket implements HostLinkSocket {
     });
   }
 
-  send(frame: string): void {
-    if (this.socket.readyState !== WebSocket.OPEN) return;
+  send(frame: string): boolean {
+    if (this.socket.readyState !== WebSocket.OPEN) return false;
     this.socket.send(frame);
+    return true;
   }
 
   close(): void {
@@ -387,6 +428,8 @@ export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
   let rejected = false;
   let socket: WebSocket | null = null;
   let retry: ReturnType<typeof setTimeout> | null = null;
+  /** The Host link core of the current socket; replaced on every reconnect. */
+  let host: HostLinkHost | null = null;
 
   const status = (): HostLinkStatus => ({
     state,
@@ -434,11 +477,13 @@ export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
       if (ws !== socket) return;
       attempt = 0;
       // The Host link core serves every logical connection the Gateway opens.
-      createHostLinkHost({
+      host = createHostLinkHost({
         server,
         authenticator,
         hostId: credentials.hostId,
         log,
+        devices: options.devices ?? null,
+        revocations: options.revocations ?? null,
         socket: new WebSocketHostLinkSocket(ws),
       });
       publish("connected");
@@ -454,6 +499,9 @@ export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
     ws.on("close", (code: number, reason: Buffer) => {
       if (ws !== socket) return;
       socket = null;
+      // Drop the link core of the socket that just ended: a revocation racing
+      // the disconnect must not be written to a dead socket.
+      host = null;
       if (stopped) return;
       const detail = reason.length > 0 ? `${failure ?? "link closed"} (${reason.toString("utf8")})` : (failure ?? `link closed with code ${code}`);
       if (code === HOSTLINK_REJECTED_CLOSE_CODE || /Unexpected server response: (401|403)/.test(failure ?? "")) {
@@ -470,6 +518,19 @@ export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
 
   return {
     status,
+    async revokeDevice(deviceId: string): Promise<DeviceRevocationOutcome> {
+      // A live link signs, queues, and sends in one step. With no link the
+      // frame is still signed and queued, so the revocation is not lost: the
+      // next link re-offers it (protocol §11.5).
+      if (host) return host.revokeDevice(deviceId);
+      return revokeDeviceThroughLink({
+        devices: options.devices ?? null,
+        revocations: options.revocations ?? null,
+        send: () => false,
+        log,
+        deviceId,
+      });
+    },
     async stop(): Promise<void> {
       if (stopped) return;
       stopped = true;

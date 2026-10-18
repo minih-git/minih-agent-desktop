@@ -1,4 +1,5 @@
 import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 
 import { AgentHost, type ApprovalPort } from "@minih-agent/agent-host";
 import {
@@ -14,8 +15,11 @@ import {
 } from "@minih-agent/host-runtime";
 import {
   DeviceTokenAuthenticator,
+  FileDeviceRevocationQueue,
+  HostDeviceDirectory,
   RacpServer,
   bindRacpWebSocket,
+  readCertificateAccountBinding,
   startHostLink,
   type HostLinkHandle,
   type RacpHostOperations,
@@ -26,6 +30,7 @@ import { APP_VERSION, type AgentEventEnvelope } from "@minih-agent/shared";
 import type { AgentHostCliConfig } from "./config.js";
 import { FileCredentialStore, loadOrCreateHostId } from "./credentials.js";
 import { readGatewayLink } from "./gateway-link.js";
+import { AdminDeviceConfirmer } from "./device-confirmer.js";
 import { createHostOperations } from "./host-operations.js";
 import { createLogger, type HostLogger } from "./logger.js";
 import { TerminalService, loadPty } from "./terminal.js";
@@ -45,6 +50,14 @@ export type AgentHostCliApp = {
    * `"ssh"`; `remote-pair` (PR-2) will pass `"gateway"`.
    */
   issuePairingToken(lifetimeMs: number, origin?: "ssh" | "gateway"): Promise<{ token: string; expiresAt: string }>;
+  /**
+   * Whether this Host advertises `device.confirm` (protocol §11.5). True only
+   * when the device directory really exists, so an operator can tell a Host
+   * that answers device requests from one the Gateway reports as unable to.
+   */
+  confirmDevices: boolean;
+  /** ADR decision 9: this Host confirms every device and refuses sibling grants. */
+  strictDevices: boolean;
   stop(): Promise<void>;
 };
 
@@ -72,6 +85,64 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
     throw Object.assign(new Error("this Host is not enrolled with a gateway; run `agent-host-cli enroll` first"), {
       errorCode: "GATEWAY_LINK_MISSING",
     });
+  }
+
+  // Declared before the admin socket opens, so a device operation that arrives
+  // while the app is still starting never touches an uninitialised binding.
+  let server: RacpServer | null = null;
+  let hostLink: HostLinkHandle | null = null;
+
+  /**
+   * Revoke one device: sign and queue the frame that tells the account's other
+   * Hosts (§11.5, ADR decision 6), then close this Host's live connections for
+   * that subject. The local revocation happens either way, and a frame that
+   * cannot go out now waits in the queue for the next link — so `announced`
+   * reports what really left the process and never overstates it. Without an
+   * account-mode directory this is the plain local revocation of §11.4.
+   */
+  const revokeDevice = async (deviceId: string): Promise<{ revoked: boolean; announced: boolean }> => {
+    const outcome = (await hostLink?.revokeDevice(deviceId)) ?? { revoked: false, announced: false };
+    const revoked = outcome.revoked || (await store.revokeDevice(deviceId, new Date().toISOString()));
+    if (revoked) {
+      const closed = server?.closeConnectionsForSubject(deviceId, "device revoked") ?? 0;
+      log("info", "device revoked", { deviceId, closedConnections: closed, announced: outcome.announced });
+    }
+    return { revoked, announced: outcome.announced };
+  };
+
+  /**
+   * The account-mode device directory (§11.5, D666). It exists only when the
+   * Host can actually answer: `--gateway` on, an account-bound certificate,
+   * `--confirm-devices` (or `--strict-devices`) on, and a platform with the
+   * owner-only admin socket. Otherwise this Host advertises nothing, and the
+   * Gateway reports it to the client as unable to confirm rather than leaving
+   * the client waiting (security gate 33).
+   */
+  let confirmer: AdminDeviceConfirmer | null = null;
+  let devices: HostDeviceDirectory | null = null;
+  let revocations: FileDeviceRevocationQueue | null = null;
+  if (gatewayCredentials && (config.confirmDevices || config.strictDevices)) {
+    if (process.platform === "win32") {
+      log("warn", "device confirmation needs the admin socket; it is unavailable on Windows");
+    } else if (!readCertificateAccountBinding(gatewayCredentials.certificatePem)) {
+      log("warn", "this Host certificate carries no account binding; device confirmation is off");
+    } else {
+      confirmer = new AdminDeviceConfirmer((level, message, data) => log(level, message, data));
+      devices = new HostDeviceDirectory({
+        hostId: gatewayCredentials.hostId,
+        signer: { certificatePem: gatewayCredentials.certificatePem, privateKeyPem: gatewayCredentials.privateKeyPem },
+        gatewayCaPem: gatewayCredentials.gatewayCaPem,
+        store,
+        log: (level, message, data) => log(level, message, data),
+        confirmer,
+        strictMode: config.strictDevices,
+        onNotice: (notice) => log("info", `device ${notice.kind}`, { deviceId: notice.deviceId, label: notice.label }),
+      });
+      // A revocation made while the link is down waits here and is re-offered
+      // on the next link, so a lost device stops working everywhere even if the
+      // user revokes it while this Host is offline.
+      revocations = new FileDeviceRevocationQueue(join(config.dataDir, "agent-host-cli", "device-revocations.json"));
+    }
   }
 
   const state: { host: HostProcess | null; sidecar: AgentSidecar | null; stopping: boolean } = { host: null, sidecar: null, stopping: false };
@@ -239,6 +310,17 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
         dataDir: config.dataDir,
         getHost,
         issuePairingToken: (lifetimeMs) => authenticator.issuePairingToken(lifetimeMs, "gateway"),
+        ...(confirmer
+          ? {
+              devices: {
+                pending: () => confirmer!.pending(),
+                // The admin vocabulary is imperative; the directory's is not.
+                decide: (requestId: string, decision: "approve" | "deny") =>
+                  confirmer!.decide(requestId, decision === "approve" ? "approved" : "denied"),
+                revoke: revokeDevice,
+              },
+            }
+          : {}),
         log,
       });
   try {
@@ -273,9 +355,6 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
     : undefined;
   if (!pty) log("warn", "node-pty is not installed; terminals are disabled");
 
-  // The server is created after the operations, but a revocation must reach it
-  // to close the revoked device's live connections (security §3.7, S9).
-  let server: RacpServer | null = null;
   const operations: RacpHostOperations = {
     ...createHostOperations({
       getHost,
@@ -287,14 +366,9 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
         sidecar.clearProjectInstructionRoot(sessionId);
         await sidecar.call("agent.disposeSession", { sessionId }).catch(() => undefined);
       },
-      revokeDevice: async (deviceId) => {
-        const revoked = await store.revokeDevice(deviceId, new Date().toISOString());
-        if (revoked) {
-          const closed = server?.closeConnectionsForSubject(deviceId, "device revoked") ?? 0;
-          log("info", "device revoked", { deviceId, closedConnections: closed });
-        }
-        return revoked;
-      },
+      // The RACP operation answers whether the device was revoked here; the
+      // announcement to the account's other Hosts is queued separately.
+      revokeDevice: async (deviceId) => (await revokeDevice(deviceId)).revoked,
     }),
     ...(terminal ? { terminal } : {}),
   };
@@ -316,13 +390,14 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
   // The opt-in outbound Host link (ADR 0331). Its credentials were read before
   // the first subprocess started; the loopback listener, `--pair`, and the SSH
   // bootstrap are unchanged when `--gateway` stays off.
-  let hostLink: HostLinkHandle | null = null;
   if (gatewayCredentials) {
     hostLink = startHostLink({
       credentials: gatewayCredentials,
       server,
       authenticator,
       log: (level, message, data) => log(level, message, data),
+      devices,
+      revocations,
       onStatus: (status) => log("info", "gateway link status", { state: status.state, since: status.since }),
     });
   }
@@ -333,6 +408,8 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
     version: APP_VERSION,
     terminal: Boolean(terminal),
     gateway: config.gateway,
+    confirmDevices: Boolean(devices),
+    strictDevices: devices?.isStrict ?? false,
   });
 
   return {
@@ -344,11 +421,15 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
     server,
     log,
     issuePairingToken: (lifetimeMs, origin) => authenticator.issuePairingToken(lifetimeMs, origin),
+    confirmDevices: Boolean(devices),
+    strictDevices: devices?.isStrict ?? false,
     async stop() {
       if (state.stopping) return;
       state.stopping = true;
       log("info", "agent-host-cli stopping");
       await admin?.close();
+      // Nobody can answer a pending request once this Host is going away.
+      confirmer?.close();
       await hostLink?.stop();
       server.close();
       await binding.close();

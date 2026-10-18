@@ -13,6 +13,7 @@ import { loadOrCreateGatewayAuthority, type GatewayAuthority } from "./ca.js";
 import { createClientIpResolver, peerAddress } from "./client-ip.js";
 import { ClientHttpServer } from "./client-http.js";
 import { isLoopbackBind, type GatewayServeConfig } from "./config.js";
+import { DeviceRequestService } from "./device-requests.js";
 import { EnrollmentService } from "./enrollment.js";
 import { HostLinkServer } from "./hostlink-server.js";
 import { PairingService } from "./pairing.js";
@@ -40,6 +41,8 @@ export type GatewayServer = {
   authority: GatewayAuthority;
   /** Account directory (D666); `null` when `--router-url` is not configured. */
   account: AccountSessionService | null;
+  /** Account-mode device relay (D666); always present, used by the account routes. */
+  deviceRequests: DeviceRequestService;
   /** Router AccessKey verifier (D666); `null` when account mode is off. */
   verifier: RouterAccountVerifier | null;
   close: () => Promise<void>;
@@ -110,6 +113,25 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
     ...(now ? { now } : {}),
     ...(options.heartbeatMs ? { heartbeatMs: options.heartbeatMs } : {}),
   });
+  // The device relay is wired before the listener starts, so a Host that
+  // connects immediately still receives the grants pending for its account
+  // (§11.5 "Deferred grants").
+  const deviceRequests = new DeviceRequestService({ store, hostLinks, authority: loadAuthority, log, ...(now ? { now } : {}) });
+  hostLinks.onCapabilities((hostId) => {
+    void deviceRequests.deliverPending(hostId).catch((error: unknown) => {
+      log("warn", "gateway could not deliver pending device frames", { hostId, error: String(error) });
+    });
+  });
+  hostLinks.onDeviceGrant((frame, hostId) => {
+    void deviceRequests.handleGrant(frame, hostId).catch((error: unknown) => {
+      log("warn", "gateway failed to relay a device grant", { hostId, error: String(error) });
+    });
+  });
+  hostLinks.onDeviceRevoke((frame, hostId) => {
+    void deviceRequests.handleRevoke(frame, hostId).catch((error: unknown) => {
+      log("warn", "gateway failed to relay a device revocation", { hostId, error: String(error) });
+    });
+  });
   const hostlink = await hostLinks.start(config.hostlink);
   const pool = new LogicalConnectionPool({ links: hostLinks, log, ...(now ? { now } : {}) });
   const commands = new CommandRouter(pool, log);
@@ -136,6 +158,7 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
     version: APP_VERSION,
     isHostOnline: (hostId) => hostLinks.isOnline(hostId),
     ...(account ? { account } : {}),
+    ...(account ? { deviceRequests } : {}),
     // Without `--trusted-proxy`/`--client-ip-header` the resolved address is the
     // TCP peer, exactly as before (ADR decision 10).
     resolveClientIp: config.clientIp ? createClientIpResolver(config.clientIp) : peerAddress,
@@ -220,6 +243,7 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
     enrollment,
     authority: resolved,
     account,
+    deviceRequests,
     verifier,
     close: () => {
       closing ??= (async () => {

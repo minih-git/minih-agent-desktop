@@ -10,6 +10,14 @@
  *
  * A new link for the same `hostId` replaces the old one only after these
  * identity checks pass, so a rejected peer can never displace a healthy link.
+ *
+ * The listener also owns the account-mode device relay's two Host-link inputs
+ * (protocol §11.5, D666): the capability list each Host announces when its link
+ * comes up, and the signed `device.grant` / `device.revoke` frames it sends. It
+ * holds no device logic — it records capabilities and hands frames to the
+ * registered handlers, so a Gateway without account mode keeps the old
+ * behaviour (no handler is registered, and an unknown frame is dropped by the
+ * mux exactly as before).
  */
 import type { IncomingMessage, Server as HttpsServer, ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
@@ -17,6 +25,7 @@ import type { AddressInfo } from "node:net";
 import type { PeerCertificate, TLSSocket } from "node:tls";
 
 import { HostLinkGatewayMux, type HostLinkSocket } from "@minih-agent/racp";
+import type { RacpDeviceGrantFrame, RacpDeviceRevokeFrame, RacpHostLinkFrame } from "@minih-agent/shared";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import type { GatewayAuthority } from "./ca.js";
@@ -42,6 +51,9 @@ export type HostLinkServerOptions = {
 
 type LiveLink = { hostId: string; mux: HostLinkGatewayMux; socket: WebSocket; heartbeat: ReturnType<typeof setInterval> };
 
+/** A signed frame a Host sent, with the identity of the link that carried it. */
+export type HostFrameHandler<TFrame> = (frame: TFrame, hostId: string) => void;
+
 /** Node types a subject entry as `string | string[]`; the CN is one string. */
 function commonName(subject: PeerCertificate["subject"] | undefined): string | null {
   const value = subject?.["CN"];
@@ -54,6 +66,19 @@ export class HostLinkServer implements HostLinkSource {
   private server: HttpsServer | null = null;
   private wss: WebSocketServer | null = null;
   private readonly links = new Map<string, LiveLink>();
+  /** What each online Host announced on its current link (§11.5). */
+  private readonly capabilities = new Map<string, string[]>();
+  /**
+   * Hosts that sent a `host.capabilities` frame on their current link, whether
+   * or not the list was empty. A Host with no device directory never sends one,
+   * so this is what tells "has a device directory but advertises nothing" from
+   * "predates these frames" — the difference between a Host that may hold a
+   * device and one that must never be sent a device frame at all.
+   */
+  private readonly announced = new Set<string>();
+  private readonly capabilityHandlers: Array<(hostId: string) => void> = [];
+  private readonly deviceGrantHandlers: Array<HostFrameHandler<RacpDeviceGrantFrame>> = [];
+  private readonly deviceRevokeHandlers: Array<HostFrameHandler<RacpDeviceRevokeFrame>> = [];
 
   constructor(private readonly options: HostLinkServerOptions) {}
 
@@ -113,6 +138,55 @@ export class HostLinkServer implements HostLinkSource {
   isOnline(hostId: string): boolean {
     const link = this.links.get(hostId);
     return Boolean(link && link.socket.readyState === link.socket.OPEN);
+  }
+
+  /**
+   * The capability list this Host announced on its current link, or empty when
+   * it is offline or announced nothing. An unknown string in the list is
+   * ignored by the reader, so a newer Host may advertise more than this Gateway
+   * understands (protocol §11.5).
+   */
+  capabilitiesFor(hostId: string): readonly string[] {
+    if (!this.isOnline(hostId)) return [];
+    return this.capabilities.get(hostId) ?? [];
+  }
+
+  /**
+   * Whether this Host announced capabilities on its current link. True for a
+   * Host whose list is empty — it has a device directory but nothing to offer —
+   * and false for a Host that predates these frames.
+   */
+  hasAnnouncedCapabilities(hostId: string): boolean {
+    return this.isOnline(hostId) && this.announced.has(hostId);
+  }
+
+  /** Send one frame to a Host; false when it has no live link. */
+  sendToHost(hostId: string, frame: RacpHostLinkFrame): boolean {
+    const link = this.links.get(hostId);
+    if (!link || link.socket.readyState !== link.socket.OPEN) return false;
+    return link.mux.send(frame);
+  }
+
+  /**
+   * Called with the `hostId` every time that Host announces its capabilities on
+   * a link, so the device relay can offer it the grants and revocations of its
+   * account that it has not taken yet. Capability delivery — not link-up — is
+   * the trigger, because what a Host accepts is only known once it has spoken;
+   * a Host that reconnects with fewer capabilities is therefore never offered a
+   * frame it would refuse. Handlers are registered before `start()`.
+   */
+  onCapabilities(handler: (hostId: string) => void): void {
+    this.capabilityHandlers.push(handler);
+  }
+
+  /** Receive the signed grants Hosts send; the Gateway only verifies and relays. */
+  onDeviceGrant(handler: HostFrameHandler<RacpDeviceGrantFrame>): void {
+    this.deviceGrantHandlers.push(handler);
+  }
+
+  /** Receive the signed revocations Hosts send. */
+  onDeviceRevoke(handler: HostFrameHandler<RacpDeviceRevokeFrame>): void {
+    this.deviceRevokeHandlers.push(handler);
   }
 
   /** `hosts revoke`: drop the live link; the certificate is refused from then on. */
@@ -180,7 +254,9 @@ export class HostLinkServer implements HostLinkSource {
     const previous = this.links.get(peer.hostId);
     const adapter: HostLinkSocket = {
       send: (frame: string) => {
-        if (socket.readyState === socket.OPEN) socket.send(frame);
+        if (socket.readyState !== socket.OPEN) return false;
+        socket.send(frame);
+        return true;
       },
       close: () => socket.close(1000, "host link closed"),
       onMessage: (handler: (frame: string) => void) => {
@@ -202,12 +278,37 @@ export class HostLinkServer implements HostLinkSource {
     }, this.options.heartbeatMs ?? HEARTBEAT_INTERVAL_MS);
     heartbeat.unref?.();
     const link: LiveLink = { hostId: peer.hostId, mux, socket, heartbeat };
+    mux.onCapabilities((capabilities) => {
+      // Only the link that is current may speak for this Host.
+      if (this.links.get(peer.hostId) !== link) return;
+      this.capabilities.set(peer.hostId, [...capabilities]);
+      this.announced.add(peer.hostId);
+      for (const handler of [...this.capabilityHandlers]) handler(peer.hostId);
+    });
+    mux.onDeviceGrant((frame) => {
+      if (this.links.get(peer.hostId) !== link) return;
+      for (const handler of [...this.deviceGrantHandlers]) handler(frame, peer.hostId);
+    });
+    mux.onDeviceRevoke((frame) => {
+      if (this.links.get(peer.hostId) !== link) return;
+      for (const handler of [...this.deviceRevokeHandlers]) handler(frame, peer.hostId);
+    });
+    // A new link speaks for this Host from scratch: whatever the previous one
+    // announced is stale until this one announces something, so a Host that
+    // comes back in strict mode is not still reported as able to confirm.
+    this.capabilities.delete(peer.hostId);
+    this.announced.delete(peer.hostId);
     this.links.set(peer.hostId, link);
     // Identity is verified: only now may the new link replace the old one.
     if (previous) this.closeLink(previous, 1000, "replaced by a new Host link");
     socket.on("close", () => {
       clearInterval(heartbeat);
-      if (this.links.get(peer.hostId) === link) this.links.delete(peer.hostId);
+      if (this.links.get(peer.hostId) === link) {
+        this.links.delete(peer.hostId);
+        // Capabilities belong to the link that announced them.
+        this.capabilities.delete(peer.hostId);
+        this.announced.delete(peer.hostId);
+      }
       this.touch(peer.hostId);
       this.options.log("info", "host link closed", { hostId: peer.hostId });
     });

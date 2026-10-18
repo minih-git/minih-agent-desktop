@@ -1,14 +1,24 @@
 import type { Principal } from "@minih-agent/agent-host";
+import * as Value from "typebox/value";
 
 import {
   RACP_HOSTLINK_CLOSE_CODES,
   RACP_HOSTLINK_VERSION,
+  RacpDeviceGrantFrameSchema,
+  RacpDeviceRequestFrameSchema,
+  RacpDeviceRevokeFrameSchema,
+  RacpHostCapabilitiesFrameSchema,
+  type RacpDeviceGrantFrame,
+  type RacpDeviceRequestFrame,
+  type RacpDeviceRevokeFrame,
   type RacpHostLinkCloseCode,
   type RacpHostLinkFrame,
   type RacpHostRouteContext,
 } from "@minih-agent/shared";
 
 import type { DeviceTokenAuthenticator } from "./auth.js";
+import type { DeviceRevocationQueue } from "./device-revocations.js";
+import type { HostDeviceDirectory } from "./host-devices.js";
 import type { RacpServer, ServerConnectionTransport } from "./server.js";
 
 /**
@@ -31,7 +41,8 @@ export type HostLinkLog = (level: "info" | "warn" | "error", message: string, da
 
 /** The link-side transport the Gateway connection provides. */
 export interface HostLinkSocket {
-  send(frame: string): void;
+  /** Hand one frame to the socket; false when the socket is not open. */
+  send(frame: string): boolean;
   close(): void;
   onMessage(handler: (frame: string) => void): void;
   onClose(handler: () => void): void;
@@ -52,7 +63,27 @@ export type HostLinkHostOptions = {
   maxQueuedFrames?: number;
   /** Extra frames the Host pushes while the client is slow are dropped as ephemeral. */
   onSlowClient?: (clientConnectionId: string) => void;
+  /**
+   * The account-mode device directory (§11.5). When present this Host announces
+   * its capabilities on every link and answers `device.request`; when absent it
+   * advertises nothing and the Gateway reports it as unable to confirm.
+   */
+  devices?: HostDeviceDirectory | null;
+  /**
+   * Where a revocation waits while the link is down (§11.5). Queued frames are
+   * re-offered on every new link, so a revocation made offline still reaches
+   * the account's other Hosts. Absent: a revocation is only sent on a live link.
+   */
+  revocations?: DeviceRevocationQueue | null;
 };
+
+/**
+ * The result of revoking one device on this Host. `revoked` says the local
+ * record is revoked; `announced` says the signed frame went out on a live link
+ * in this call. They differ when the link is down — the frame is queued, not
+ * lost — so a caller never reports an announcement that did not happen.
+ */
+export type DeviceRevocationOutcome = { revoked: boolean; announced: boolean };
 
 export type HostLinkLogicalConnection = {
   clientConnectionId: string;
@@ -93,6 +124,28 @@ export class HostLinkHost {
     socket.onError((error) => {
       this.options.log("error", "host link socket error", { error: String(error) });
     });
+    // Announce capabilities on every link, so a Gateway that restarted (or a
+    // reconnected link) knows what this Host supports before it sends a device
+    // frame. A Host with no device directory sends nothing and is reported to
+    // the client as unable to confirm (§11.5).
+    if (this.options.devices) {
+      this.send({
+        link: RACP_HOSTLINK_VERSION,
+        type: "host.capabilities",
+        capabilities: this.options.devices.capabilities(),
+      });
+    }
+    // A revocation made while the link was down goes out now, before anything
+    // else this link carries. Re-delivery is idempotent (§11.5).
+    if (this.options.revocations) {
+      void this.options
+        .revocations.pending()
+        .then((frames) => {
+          for (const frame of frames) this.send(frame);
+          if (frames.length > 0) this.options.log("info", "host link re-offered queued revocations", { count: frames.length });
+        })
+        .catch((error: unknown) => this.options.log("warn", "could not read queued revocations", { error: String(error) }));
+    }
   }
 
   /** Every open logical connection; the Gateway never sees this state. */
@@ -167,6 +220,57 @@ export class HostLinkHost {
         this.socket.send(hostLinkFrame({ link: RACP_HOSTLINK_VERSION, type: "link.pong" }));
         return;
       case "link.pong":
+        return;
+      case "device.request": {
+        // A malformed frame is dropped, never dereferenced: this Host may not
+        // even have a device directory, and a peer must not be able to crash
+        // the frame loop with one (protocol §11.4 rule 6).
+        if (!Value.Check(RacpDeviceRequestFrameSchema, parsed)) {
+          this.options.log("warn", "host link dropped a malformed device.request frame");
+          return;
+        }
+        const devices = this.options.devices;
+        if (!devices) {
+          // The Gateway sends this only to a Host that advertised `device.confirm`.
+          this.options.log("warn", "device request ignored: this Host has no device directory", {
+            requestId: (parsed as RacpDeviceRequestFrame).request.requestId,
+          });
+          return;
+        }
+        // The local user decides asynchronously; the frame loop must not block.
+        void devices
+          .handleRequest((parsed as RacpDeviceRequestFrame).request, (frame) => this.send(frame))
+          .catch((error: unknown) => this.options.log("error", "device request failed", { error: String(error) }));
+        return;
+      }
+      case "device.grant": {
+        if (!Value.Check(RacpDeviceGrantFrameSchema, parsed)) {
+          this.options.log("warn", "host link dropped a malformed device.grant frame");
+          return;
+        }
+        const devices = this.options.devices;
+        if (!devices) return;
+        void devices
+          .handleGrant(parsed as RacpDeviceGrantFrame)
+          .catch((error: unknown) => this.options.log("error", "device grant failed", { error: String(error) }));
+        return;
+      }
+      case "device.revoke": {
+        if (!Value.Check(RacpDeviceRevokeFrameSchema, parsed)) {
+          this.options.log("warn", "host link dropped a malformed device.revoke frame");
+          return;
+        }
+        const devices = this.options.devices;
+        if (!devices) return;
+        void devices
+          .handleRevoke(parsed as RacpDeviceRevokeFrame)
+          .catch((error: unknown) => this.options.log("error", "device revocation failed", { error: String(error) }));
+        return;
+      }
+      case "host.capabilities":
+        // Only a Host sends this; receiving one here is the same protocol
+        // violation as the other Gateway-only frames.
+        this.closeAll(RACP_HOSTLINK_CLOSE_CODES.protocolError, "unexpected host.capabilities frame");
         return;
     }
   }
@@ -266,8 +370,27 @@ export class HostLinkHost {
     this.options.log("warn", "host link closed every logical connection", { code, detail, count: this.logical.size });
   }
 
-  send(frame: RacpHostLinkFrame): void {
-    this.socket.send(hostLinkFrame(frame));
+  /** Hand one frame to the Gateway socket; false when it is not open. */
+  send(frame: RacpHostLinkFrame): boolean {
+    return this.socket.send(hostLinkFrame(frame));
+  }
+
+  /**
+   * Revoke one device locally and tell the Gateway, so the account's other Hosts
+   * drop it too (ADR decision 6, "any Host of the account can revoke the
+   * device"). The local revocation always happens, so a Host never waits for the
+   * Gateway to honour its own user's decision; the frame is queued first and
+   * re-offered on the next link, so a revocation made while offline still
+   * arrives (§11.5).
+   */
+  async revokeDevice(deviceId: string): Promise<DeviceRevocationOutcome> {
+    return revokeDeviceThroughLink({
+      devices: this.options.devices ?? null,
+      revocations: this.options.revocations ?? null,
+      send: (frame) => this.send(frame),
+      log: this.options.log,
+      deviceId,
+    });
   }
 
   remove(clientConnectionId: string): void {
@@ -451,6 +574,9 @@ class LogicalConnection implements HostLinkLogicalConnection {
 export class HostLinkGatewayMux {
   private readonly messageHandlers = new Map<string, ((frame: string) => void)[]>();
   private readonly closeHandlers = new Map<string, ((code: string) => void)[]>();
+  private readonly capabilityHandlers: Array<(capabilities: string[]) => void> = [];
+  private readonly deviceGrantHandlers: Array<(frame: RacpDeviceGrantFrame) => void> = [];
+  private readonly deviceRevokeHandlers: Array<(frame: RacpDeviceRevokeFrame) => void> = [];
   private socketOpen = true;
 
   constructor(
@@ -467,8 +593,35 @@ export class HostLinkGatewayMux {
       }
       this.messageHandlers.clear();
       this.closeHandlers.clear();
+      // Capability and device handlers belong to the link that just ended; the
+      // Gateway re-registers them when the Host reconnects.
+      this.capabilityHandlers.length = 0;
+      this.deviceGrantHandlers.length = 0;
+      this.deviceRevokeHandlers.length = 0;
     });
     socket.onError((error) => this.log("error", "gateway mux socket error", { error: String(error) }));
+  }
+
+  /** Send one Gateway-to-Host frame; false when the link is already gone. */
+  send(frame: RacpHostLinkFrame): boolean {
+    if (!this.socketOpen) return false;
+    this.socket.send(hostLinkFrame(frame));
+    return true;
+  }
+
+  /** Receive the capability list a Host announces when its link comes up. */
+  onCapabilities(handler: (capabilities: string[]) => void): void {
+    this.capabilityHandlers.push(handler);
+  }
+
+  /** Receive a signed device grant a Host approved. */
+  onDeviceGrant(handler: (frame: RacpDeviceGrantFrame) => void): void {
+    this.deviceGrantHandlers.push(handler);
+  }
+
+  /** Receive a signed device revocation from a Host. */
+  onDeviceRevoke(handler: (frame: RacpDeviceRevokeFrame) => void): void {
+    this.deviceRevokeHandlers.push(handler);
   }
 
   open(clientConnectionId: string, routeContext: RacpHostRouteContext, credential: string): void {
@@ -544,6 +697,33 @@ export class HostLinkGatewayMux {
         handler(parsed.code);
       }
       this.release(parsed.clientConnectionId);
+      return;
+    }
+    // ---- Account-mode device directory (D666, package D) ------------------
+    // A malformed or unknown frame is dropped without closing the link: an
+    // older Host must survive a newer Gateway, and vice versa (§11.4).
+    if (parsed.type === "host.capabilities") {
+      if (!Value.Check(RacpHostCapabilitiesFrameSchema, parsed)) {
+        this.log("warn", "gateway mux dropped malformed host.capabilities frame");
+        return;
+      }
+      for (const handler of [...this.capabilityHandlers]) handler(parsed.capabilities);
+      return;
+    }
+    if (parsed.type === "device.grant") {
+      if (!Value.Check(RacpDeviceGrantFrameSchema, parsed)) {
+        this.log("warn", "gateway mux dropped malformed device.grant frame");
+        return;
+      }
+      for (const handler of [...this.deviceGrantHandlers]) handler(parsed);
+      return;
+    }
+    if (parsed.type === "device.revoke") {
+      if (!Value.Check(RacpDeviceRevokeFrameSchema, parsed)) {
+        this.log("warn", "gateway mux dropped malformed device.revoke frame");
+        return;
+      }
+      for (const handler of [...this.deviceRevokeHandlers]) handler(parsed);
     }
   }
 }
@@ -556,4 +736,39 @@ export function createHostLinkHost(
 ): HostLinkHost {
   const { socket, ...rest } = options;
   return new HostLinkHost(rest, socket);
+}
+
+/**
+ * Sign one revocation, keep it, and offer it to the link (§11.5). The order
+ * matters: the frame is queued before it is sent, so a link that dies in flight
+ * cannot lose a revocation, and `announced` reports only what really left the
+ * process.
+ */
+export async function revokeDeviceThroughLink(input: {
+  devices: HostDeviceDirectory | null;
+  revocations: DeviceRevocationQueue | null;
+  send: (frame: RacpDeviceRevokeFrame) => boolean;
+  log: HostLinkLog;
+  deviceId: string;
+}): Promise<DeviceRevocationOutcome> {
+  if (!input.devices) return { revoked: false, announced: false };
+  const frame = await input.devices.revoke(input.deviceId);
+  if (!frame) return { revoked: false, announced: false };
+  if (input.revocations) {
+    try {
+      const dropped = await input.revocations.enqueue(frame);
+      if (dropped > 0) input.log("warn", "device revocation queue overflowed", { dropped });
+    } catch (error) {
+      // Losing the queue must not lose the send that follows it.
+      input.log("warn", "could not queue a device revocation", { error: String(error) });
+    }
+  }
+  let announced = false;
+  try {
+    announced = input.send(frame);
+  } catch (error) {
+    input.log("warn", "could not send a device revocation", { error: String(error) });
+  }
+  if (!announced) input.log("info", "device revocation queued for the next link", { deviceId: input.deviceId });
+  return { revoked: true, announced };
 }

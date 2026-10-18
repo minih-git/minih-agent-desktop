@@ -85,6 +85,8 @@ describe("--gateway startup without enrollment", () => {
       nodeBinary: process.execPath,
       pair: false,
       gateway: true,
+      confirmDevices: false,
+      strictDevices: false,
       pairingLifetimeMs: 60_000,
       browseRoot: dir,
       logLevel: "error",

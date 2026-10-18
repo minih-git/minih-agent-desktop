@@ -11,4 +11,7 @@ export * from "./hostlink.js";
 // the X.509 helpers it needs (pkijs). Never reachable from `browser.ts`.
 export * from "./x509.js";
 export * from "./hostlink-client.js";
+export * from "./host-artifact.js";
+export * from "./host-devices.js";
+export * from "./device-revocations.js";
 export type { OperationContext, OperationHandler } from "./operations.js";

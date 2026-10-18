@@ -53,6 +53,121 @@ export const RacpHostRouteContextSchema = Type.Object({
 });
 export type RacpHostRouteContext = Static<typeof RacpHostRouteContextSchema>;
 
+/**
+ * Host capabilities on the Host link (protocol §11.4, §11.5; D666). A Host
+ * sends one `host.capabilities` frame as soon as the link is up, and the
+ * Gateway sends the new device frames only to a Host that advertises the
+ * matching entry. This is a safety requirement, not an optimization: a Host
+ * that predates these frames ignores an unknown `type` silently
+ * (`HostLinkHost.handleFrame`), so a `device.request` sent to it would leave
+ * the client waiting forever.
+ *
+ * Unknown strings are ignored by the reader, so a newer Host may advertise more
+ * than an older Gateway understands.
+ */
+export const RACP_HOST_CAPABILITIES = {
+  /** This Host has a confirmer wired up: it can be asked to approve a device. */
+  deviceConfirm: "device.confirm",
+  /** This Host adopts a signed grant from a sibling Host of its own account. */
+  deviceAcceptSiblingGrant: "device.accept-sibling-grant",
+} as const;
+export type RacpHostCapability = (typeof RACP_HOST_CAPABILITIES)[keyof typeof RACP_HOST_CAPABILITIES];
+
+export const RacpHostCapabilitiesFrameSchema = Type.Object({
+  link: Type.Literal(RACP_HOSTLINK_VERSION),
+  type: Type.Literal("host.capabilities"),
+  capabilities: Type.Array(Type.String({ minLength: 1 })),
+});
+export type RacpHostCapabilitiesFrame = Static<typeof RacpHostCapabilitiesFrameSchema>;
+
+/**
+ * A device request the Gateway fans out to the account's confirmable Hosts
+ * (§11.5). `accountId` travels so a Host can refuse a request that is not for
+ * its own account even if the Gateway misroutes it.
+ */
+export const RacpDeviceRequestSchema = Type.Object({
+  requestId: Type.String({ minLength: 1 }),
+  accountId: Type.String({ minLength: 1 }),
+  deviceLabel: Type.String({ minLength: 1, maxLength: 128 }),
+  client: Type.Union([Type.Literal("web"), Type.Literal("ios"), Type.Literal("android")]),
+  requestedAt: Type.String(),
+  expiresAt: Type.String(),
+});
+export type RacpDeviceRequest = Static<typeof RacpDeviceRequestSchema>;
+
+export const RacpDeviceRequestFrameSchema = Type.Object({
+  link: Type.Literal(RACP_HOSTLINK_VERSION),
+  type: Type.Literal("device.request"),
+  request: RacpDeviceRequestSchema,
+});
+export type RacpDeviceRequestFrame = Static<typeof RacpDeviceRequestFrameSchema>;
+
+/**
+ * The signed device grant (§11.5). The approving Host mints a gateway-origin
+ * device token, keeps only its hash, and signs this payload with the private key
+ * of its own Host certificate; a sibling Host of the same account verifies the
+ * signature against the Gateway CA, adopts the device by `tokenHash`, and can
+ * then authenticate the token the client holds. The raw token never appears
+ * here: it travels only in the `deviceToken` field of the Host-to-Gateway leg.
+ */
+export const RacpDeviceGrantSchema = Type.Object({
+  grantId: Type.String({ minLength: 1 }),
+  /** The request this grant answers; a grant for an unknown request is refused. */
+  requestId: Type.String({ minLength: 1 }),
+  accountId: Type.String({ minLength: 1 }),
+  /** The Host whose user approved; its certificate signs this payload. */
+  signerHostId: Type.String({ minLength: 1 }),
+  deviceId: Type.String({ minLength: 1 }),
+  deviceLabel: Type.String({ minLength: 1, maxLength: 128 }),
+  /** SHA-256 of the device token, lowercase hex. */
+  tokenHash: Type.String({ minLength: 64, maxLength: 64 }),
+  roles: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+  origin: Type.Literal("gateway"),
+  issuedAt: Type.String(),
+  /** How long the Gateway may still deliver this grant to an offline Host. */
+  deliverUntil: Type.String(),
+});
+export type RacpDeviceGrant = Static<typeof RacpDeviceGrantSchema>;
+
+export const RacpDeviceGrantFrameSchema = Type.Object({
+  link: Type.Literal(RACP_HOSTLINK_VERSION),
+  type: Type.Literal("device.grant"),
+  grant: RacpDeviceGrantSchema,
+  /** base64url ECDSA P-256 / SHA-256 over `canonicalDeviceGrantPayload(grant)`. */
+  signature: Type.String({ minLength: 1 }),
+  /** PEM of the signer's Host certificate, so a sibling can chain it to its CA. */
+  signerCertificate: Type.String({ minLength: 1 }),
+  /**
+   * Host to Gateway only: the raw device token, for the client that asked. The
+   * Gateway MUST strip it before relaying the grant to any other Host and MUST
+   * never log, audit, or store it.
+   */
+  deviceToken: Type.Optional(Type.String({ minLength: 1 })),
+});
+export type RacpDeviceGrantFrame = Static<typeof RacpDeviceGrantFrameSchema>;
+
+/**
+ * Device revocation, signed by the Host whose user revoked (§11.5). The Gateway
+ * relays it to the account's other Hosts so one Host's revocation reaches them
+ * all; a Host that has not adopted the device simply ignores it.
+ */
+export const RacpDeviceRevokeSchema = Type.Object({
+  revokeId: Type.String({ minLength: 1 }),
+  accountId: Type.String({ minLength: 1 }),
+  signerHostId: Type.String({ minLength: 1 }),
+  deviceId: Type.String({ minLength: 1 }),
+  revokedAt: Type.String(),
+});
+export type RacpDeviceRevoke = Static<typeof RacpDeviceRevokeSchema>;
+
+export const RacpDeviceRevokeFrameSchema = Type.Object({
+  link: Type.Literal(RACP_HOSTLINK_VERSION),
+  type: Type.Literal("device.revoke"),
+  revoke: RacpDeviceRevokeSchema,
+  signature: Type.String({ minLength: 1 }),
+  signerCertificate: Type.String({ minLength: 1 }),
+});
+export type RacpDeviceRevokeFrame = Static<typeof RacpDeviceRevokeFrameSchema>;
 export const RacpHostLinkFrameSchema = Type.Union([
   Type.Object({
     link: Type.Literal(RACP_HOSTLINK_VERSION),
@@ -96,6 +211,13 @@ export const RacpHostLinkFrameSchema = Type.Union([
     link: Type.Literal(RACP_HOSTLINK_VERSION),
     type: Type.Union([Type.Literal("link.ping"), Type.Literal("link.pong")]),
   }),
+  // ---- Account-mode device directory (D666, package D) --------------------
+  // Sent only to a Host that advertises the matching `RACP_HOST_CAPABILITIES`
+  // entry, because an older Host drops an unknown `type` silently.
+  RacpHostCapabilitiesFrameSchema,
+  RacpDeviceRequestFrameSchema,
+  RacpDeviceGrantFrameSchema,
+  RacpDeviceRevokeFrameSchema,
 ]);
 export type RacpHostLinkFrame = Static<typeof RacpHostLinkFrameSchema>;
 export type RacpHostLinkFrameType = RacpHostLinkFrame["type"];

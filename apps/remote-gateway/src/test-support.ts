@@ -10,8 +10,18 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createHostCsr, enrollHostLink, newKeyPair, startHostLink, type HostLinkCredentials, type HostLinkHandle } from "@minih-agent/racp";
+import {
+  createHostCsr,
+  enrollHostLink,
+  newKeyPair,
+  startHostLink,
+  type DeviceRevocationQueue,
+  type HostDeviceDirectory,
+  type HostLinkCredentials,
+  type HostLinkHandle,
+} from "@minih-agent/racp";
 import { harness, type Harness, type HarnessHistory } from "@minih-agent/racp/test-harness";
+import type { MemoryCredentialStore } from "@minih-agent/racp";
 import {
   RACP_HTTP_QUERY_PARAMS,
   RACP_HTTP_ROUTE_LIST,
@@ -116,6 +126,25 @@ export async function enrollTestHost(
       await handle.stop();
     },
   };
+}
+
+/**
+ * Poll an asynchronous condition. `waitFor` below is for synchronous checks and
+ * returns the first truthy value — a promise is always truthy, so an async
+ * condition needs this one to be awaited at all.
+ */
+export async function waitForAsync<T>(
+  check: () => Promise<T | undefined | null | false>,
+  label: string,
+  timeoutMs = 10_000,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await check();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error(`deadline exceeded while waiting for ${label}`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
 }
 
 export async function waitFor<T>(check: () => T | undefined | null | false, timeoutMs = 10_000): Promise<T> {
@@ -372,8 +401,21 @@ export async function postEnrollment(
 /** Enroll a Host by AccessKey and open its real mTLS link. */
 export async function enrollTestHostByKey(
   gateway: TestGateway,
-  options: { hostId: string; accessKey: string; label?: string; history?: HarnessHistory },
-): Promise<TestHost & { certificatePem: string }> {
+  options: {
+    hostId: string;
+    accessKey: string;
+    label?: string;
+    history?: HarnessHistory;
+    /**
+     * Build this Host's account-mode device directory (protocol §11.5). The
+     * certificate and key only exist after enrollment, so the caller supplies a
+     * factory; returning `null` gives a Host that advertises nothing.
+     */
+    devices?: (input: { credentials: HostLinkCredentials; store: MemoryCredentialStore }) => HostDeviceDirectory | null;
+    /** Where a revocation waits while this Host's link is down (§11.5). */
+    revocations?: () => DeviceRevocationQueue | null;
+  },
+): Promise<TestHost & { certificatePem: string; devices: HostDeviceDirectory | null }> {
   const keys = await hostCsrFor(options.hostId);
   const response = await postEnrollment(gateway, {
     body: { hostId: options.hostId, csr: keys.csr, ...(options.label ? { label: options.label } : {}) },
@@ -392,11 +434,14 @@ export async function enrollTestHostByKey(
     expiresAt: issued.expiresAt,
   };
   const h = await harness(options.history ? { history: options.history } : {});
+  const devices = options.devices ? options.devices({ credentials, store: h.store }) : null;
   const handle = startHostLink({
     credentials,
     server: h.server,
     authenticator: h.authenticator,
     log: () => undefined,
+    devices,
+    revocations: options.revocations ? options.revocations() : null,
     backoff: { baseDelayMs: 50, maxDelayMs: 100 },
   });
   await waitFor(() => handle.status().state === "connected", 10_000);
@@ -406,6 +451,7 @@ export async function enrollTestHostByKey(
     handle,
     hostId: options.hostId,
     certificatePem: issued.certificate,
+    devices,
     stop: async () => {
       await handle.stop();
     },
@@ -432,6 +478,34 @@ export async function accountLogin(
     setCookie: response.headers.getSetCookie?.() ?? [],
     retryAfter: response.headers.get("retry-after"),
   };
+}
+
+/** `POST /v1/account/devices`: ask the account's Hosts to approve a device. */
+export async function accountDeviceRequest(
+  gateway: TestGateway,
+  input: { token: string; body: unknown; origin?: string },
+): Promise<{ status: number; payload: Record<string, unknown> }> {
+  const response = await fetch(`${gateway.clientBaseUrl}/v1/account/devices`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${input.token}`,
+      ...(input.origin ? { origin: input.origin } : {}),
+    },
+    body: JSON.stringify(input.body),
+  });
+  return { status: response.status, payload: (await response.json()) as Record<string, unknown> };
+}
+
+/** `GET /v1/account/devices/{requestId}`: the outcome of one device request. */
+export async function accountDeviceStatus(
+  gateway: TestGateway,
+  input: { token: string; requestId: string },
+): Promise<{ status: number; payload: Record<string, unknown> }> {
+  const response = await fetch(`${gateway.clientBaseUrl}/v1/account/devices/${encodeURIComponent(input.requestId)}`, {
+    headers: { authorization: `Bearer ${input.token}` },
+  });
+  return { status: response.status, payload: (await response.json()) as Record<string, unknown> };
 }
 
 /** `GET /v1/account/hosts` with whatever credential headers the test wants. */

@@ -81,8 +81,10 @@ the resolved client address is the TCP peer and no account route exists.
   `--router-client-ip-header` must equal the Router's `CLIENT_IP_HEADER`, and
   the Gateway's loopback peer must be in the Router's `TRUSTED_PROXIES`, so a
   key's `allowed_peer_cidrs` is evaluated against the real caller. Account mode
-  adds `POST /v1/account/login` and `GET /v1/account/hosts`; `GET /v1/hosts` and
-  every `/hosts/{hostId}/...` route still accept device tokens only. Account mode
+  adds `POST /v1/account/login`, `GET /v1/account/hosts`,
+  `POST /v1/account/devices`, and `GET /v1/account/devices/{requestId}`;
+  `GET /v1/hosts` and every `/hosts/{hostId}/...` route still accept device
+  tokens only. Account mode
   without the trusted-proxy pair logs a startup warning when the client API
   binds loopback: every caller then resolves to the proxy address, so one caller
   can empty the shared credential-attempt bucket and a key whose
@@ -92,6 +94,54 @@ the resolved client address is the TCP peer and no account route exists.
   many failed authentications from one address) is reported as a retriable
   `RATE_LIMITED` with that delay in a `Retry-After` header, never as an invalid
   key.
+
+### Device requests (D666)
+
+A logged-in account client asks for a device and one Host of the account approves
+it; the resulting device token works on every Host of that account.
+
+```sh
+# Ask the account's Hosts to approve a device (account session credential).
+curl -X POST http://127.0.0.1:8788/v1/account/devices \
+  -H "authorization: Bearer rat1...." -H "content-type: application/json" \
+  -d '{"deviceLabel":"iPad","client":"ios"}'
+# {"result":{"requestId":"dreq_...","expiresAt":"...","hosts":[{"hostId":"...","label":"...","online":true,"canConfirm":true,"willAcceptGrant":true}]}}
+
+# Poll the outcome; `granted` carries the device token once, to this client.
+curl http://127.0.0.1:8788/v1/account/devices/dreq_... -H "authorization: Bearer rat1...."
+```
+
+* The Gateway sends `device.request` to every online Host of the account that
+  advertised `device.confirm`, and answers the caller with the whole roster so it
+  learns at once which Hosts cannot confirm (`canConfirm: false`) instead of
+  waiting for an answer that cannot come.
+* The approving Host signs the grant with its own Host certificate; the Gateway
+  verifies that signature against its own CA before relaying anything and never
+  signs a grant itself. The raw token is stripped from the relayed grant and is
+  never logged, audited, or stored — only its SHA-256 is, in `devices.json`,
+  scoped to the account. The signed `deliverUntil` is relayed byte for byte,
+  because it is part of the signature; the Gateway bounds its own retention with
+  a separate `relayUntil`.
+* The token is handed to the client that asked, once, and stays readable for a
+  further thirty seconds so a retried HTTP request still succeeds; after that it
+  is gone and the status answer says `tokenDelivered: false`.
+* A Host that was offline receives the pending grant and any pending revocation
+  when it announces its capabilities on a new link, until `relayUntil` (the
+  signed deadline or 24 hours, whichever is sooner); re-delivery is idempotent.
+  A grant is offered only to a Host that announced
+  `device.accept-sibling-grant`, so a strict Host is never sent one it would
+  refuse; a revocation goes to every Host that announced a capability frame at
+  all, because a Host that adopted the device earlier may have restarted in
+  strict mode since. A Host that never announced anything — one that predates
+  these frames — is never sent a device frame.
+* `device.revoke` propagates a revocation to the account's other Hosts, and
+  `remote-gateway devices revoke <deviceId>` still revokes the Gateway's own
+  record.
+* The per-account Host roster, the request records, and the pending grants never
+  cross accounts: a request id of another account, and one of another session of
+  the same account, answer the same `NOT_FOUND` as an unknown one. Every
+  `/v1/account/*` response carries `Cache-Control: no-store`, and asking for a
+  device is rate limited in its own tighter per-IP bucket.
 
 ```sh
 remote-gateway serve \
@@ -114,7 +164,9 @@ remote-gateway serve \
 | `ca/server.crt`, `ca/server.key` | Host link TLS certificate (re-issued when the listen address changes) |
 | `hosts.json` | `hostId`, label, certificate PEM + SHA-256 fingerprint, `registeredAt`, `lastSeenAt`, `revokedAt`, `accountId` (account mode only) |
 | `enrollments.json` | Enrollment code **hashes** with `expiresAt`, `usedAt`, `hostId` |
-| `devices.json` | `deviceId`, `hostId`, label, token **hash**, `createdAt`, `revokedAt` |
+| `devices.json` | `deviceId`, `hostId`, label, token **hash**, `createdAt`, `revokedAt`, `accountId` (account-mode devices) |
+| `device-grants.json` | Signed grants held for offline Hosts: `grantId`, `requestId`, `accountId`, `signerHostId`, `deviceId`, token **hash**, `roles`, `issuedAt`, the signed `deliverUntil`, the Gateway's own `relayUntil`, signature, signer certificate — never a token |
+| `device-revocations.json` | Signed revocations held for offline Hosts: `revokeId`, `accountId`, `signerHostId`, `deviceId`, `revokedAt`, `relayUntil`, signature, signer certificate |
 | `account-sessions.json` | `sessionId`, `accountId`, session token **hash**, `createdAt`, `expiresAt`, `revokedAt` — never the AccessKey |
 | `audit/YYYY-MM-DD.jsonl` | `{ts, op, hostId?, deviceId?, accountId?, result, ip}` — never a token or content |
 | `gateway-secret` | Random 32-byte CSRF HMAC secret |

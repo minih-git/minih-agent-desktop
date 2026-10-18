@@ -7882,7 +7882,8 @@ Gateway、loopback 模型桩运行；不使用生产 Router、真实 AccessKey �
 - **链接规格**：安全规格 §3.8、门 29、30 与 32；协议 §11.5；交付 §2（R7）
 - **验收**：安全、质量
 - **里程碑**：MVP 后（远程控制交付 R7，D666）
-- **状态**：Draft（R7，D666）；尚无实现
+- **状态**：Draft（R7，D666）——第 1–4 步与第 6 步已由 Gateway 账户集成测试
+  （`apps/remote-gateway/src/account.test.ts`）覆盖；Router 测试实例与桌面步骤等待工作包 B 与 E。
 
 #### E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts：确认一次即可在所有 Host 使用
 
@@ -7898,11 +7899,16 @@ Gateway、loopback 模型桩运行；不使用生产 Router、真实 AccessKey �
   Host 显示“新设备”提示；设备持有 `viewer` / `controller` / `approver` 且
   `pairedDevice: false`，始终受远程权限上限约束，永不出现 `allow-session`；AccessKey
   不出现在任何 Host 日志中，且设备交换后不再留存于客户端；步骤 7 后桌面 Host 在 5 秒内
-  拒绝该令牌（门 26）。该撤销如何传到账户内其他 Host 是工作包 D 的待定项，定义后再断言。
+  拒绝该令牌（门 26）。该撤销以签名的 `device.revoke` 帧经 Gateway 中继到账户内其他 Host
+  （协议 §11.5，工作包 D），因此它们同样拒绝该令牌；即使撤销当时该 Host 自己的链路已断也
+  一样，因为该帧会进入待发队列，并在链路恢复后重新投递。
 - **链接规格**：安全规格 §3.7 与 §3.8、门 25、26、30 与 32；协议 §11.5；交付 §2（R7）
 - **验收**：安全、恢复、质量
 - **里程碑**：MVP 后（远程控制交付 R7，D666）
-- **状态**：Draft（R7，D666）；尚无实现
+- **状态**：Draft（R7，D666）——`agent-host-cli` 那一半（两台 CLI Host、授权时其中一台
+  停止、重连后接受待处理授权、同一令牌在两台上都可用、Gateway 存储 / 审计日志 / Host 日志
+  中没有 AccessKey 与原始令牌、撤销在链路断开时作出并因此在恢复后补投到兄弟 Host）已由
+  `pnpm test:e2e:remote-account-device` 自动化；桌面与 webview 步骤等待工作包 E2 与 F。
 
 #### E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm：严格模式逐台确认
 

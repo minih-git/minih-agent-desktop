@@ -20,6 +20,15 @@ export type AgentHostCliConfig = {
    * (ADR 0331). The loopback RACP-WS listener stays exactly as it is.
    */
   gateway: boolean;
+  /**
+   * Answer `device.request` frames from this Host's own user over the admin
+   * socket (protocol §11.5, D666). Off by default: a Host that nobody watches
+   * must not advertise that it can confirm, or the client would wait for an
+   * answer that cannot come. Unavailable on Windows, where the admin socket is.
+   */
+  confirmDevices: boolean;
+  /** ADR decision 9: refuse sibling grants and confirm every device locally. */
+  strictDevices: boolean;
   pairingLifetimeMs: number;
   /** Where the folder picker may browse; defaults to the user's home. */
   browseRoot: string;
@@ -86,6 +95,12 @@ export function parseArgs(argv: string[]): CliArgs {
   return args;
 }
 
+/** A boolean CLI flag or environment variable; absent or `"false"` is off. */
+function flag(value: string | boolean | undefined, fallback: string | undefined): boolean {
+  const resolved = value ?? fallback;
+  return resolved === true || resolved === "true" || resolved === "1";
+}
+
 export function resolveConfig(args: CliArgs, env: NodeJS.ProcessEnv = process.env): AgentHostCliConfig {
   const dataDir = resolve(String(args["data-dir"] ?? env.MINIH_AGENT_DATA_DIR ?? join(homedir(), ".minih-agent-desktop")));
   const port = Number(args.port ?? env.AGENT_HOST_CLI_PORT ?? DEFAULT_PORT);
@@ -102,6 +117,8 @@ export function resolveConfig(args: CliArgs, env: NodeJS.ProcessEnv = process.en
     nodeBinary: String(args.node ?? env.AGENT_HOST_CLI_NODE ?? process.execPath),
     pair: args.pair === true || args.pair === "true",
     gateway: args.gateway === true || args.gateway === "true",
+    confirmDevices: flag(args["confirm-devices"], env.AGENT_HOST_CLI_CONFIRM_DEVICES),
+    strictDevices: flag(args["strict-devices"], env.AGENT_HOST_CLI_STRICT_DEVICES),
     pairingLifetimeMs: Number(args["pairing-lifetime-ms"] ?? DEFAULT_PAIRING_LIFETIME_MS),
     browseRoot: resolve(String(args["browse-root"] ?? env.AGENT_HOST_CLI_BROWSE_ROOT ?? homedir())),
     logLevel: level === "warn" || level === "error" ? level : "info",

@@ -15646,7 +15646,9 @@ sibling Hosts is still open for package D.
   `06-delivery/07-remote-control-rollout.md` §2 (R7)
 - **Acceptance**: Security, Quality
 - **Milestone**: Post-MVP (remote-control rollout R7, D666)
-- **Status**: Draft (R7, D666)
+- **Status**: Draft (R7, D666) — steps 1–4 and 6 are automated in the Gateway's
+  account integration tests (`apps/remote-gateway/src/account.test.ts`); the
+  Router test instance and the desktop steps wait on packages B and E.
 
 #### E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts
 
@@ -15667,13 +15669,22 @@ sibling Hosts is still open for package D.
   `pairedDevice: false`, stays under the remote permission ceiling, and is never
   offered `allow-session`; the AccessKey appears in no Host log and is no longer
   in the client store after the exchange; after step 7 the desktop refuses the
-  token within 5 seconds (gate 26). How that revocation reaches the account's
-  other Hosts is an open item of package D and is asserted once defined.
+  token within 5 seconds (gate 26). The revocation reaches the account's other
+  Hosts as a signed `device.revoke` frame relayed by the Gateway (protocol
+  §11.5, package D), so they refuse the token as well — including when the
+  revoking Host's own link is down at that moment, because the frame is queued
+  and re-offered when the link returns.
 - **Specs linked**: security §3.7 and §3.8 with gates 25, 26, 30, and 32,
   protocol §11.5, rollout §2 (R7)
 - **Acceptance**: Security, Recovery, Quality
 - **Milestone**: Post-MVP (remote-control rollout R7, D666)
-- **Status**: Draft (R7, D666)
+- **Status**: Draft (R7, D666) — the `agent-host-cli` half (two CLI Hosts, one of
+  them stopped at grant time, deferred grant on reconnect, one token on both,
+  no AccessKey or raw token in the Gateway store, the audit log, or the Host
+  logs, and the revocation reaching the sibling — made while the Host link was
+  down, so the frame had to be queued and re-offered) is automated in
+  `pnpm test:e2e:remote-account-device`; the desktop and webview steps wait on
+  packages E2 and F.
 
 #### E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm
 

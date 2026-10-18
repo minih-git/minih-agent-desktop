@@ -92,5 +92,6 @@ export * from "./tool-call-lineage.js";
 export * from "./event-usage.js";
 export * from "./storage.js";
 export * from "./racp-hostlink.js";
+export * from "./racp-account-devices.js";
 export * from "./racp-pairing-ticket.js";
 export * from "./learned-memory.js";

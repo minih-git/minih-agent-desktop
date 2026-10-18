@@ -16,8 +16,9 @@ class FakeGatewaySocket implements HostLinkSocket {
   private messageHandler: ((frame: string) => void) | null = null;
   private closeHandler: (() => void) | null = null;
 
-  send(frame: string): void {
+  send(frame: string): boolean {
     this.sent.push(JSON.parse(frame) as RacpHostLinkFrame);
+    return true;
   }
 
   close(): void {
