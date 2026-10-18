@@ -2138,7 +2138,11 @@ Renderer: `apps/desktop/src/components/Markdown.tsx` + `apps/desktop/src/lib/shi
   `shellscript`, `sql`, `svelte`, `swift`, `terraform`, `toml`, `tsx`,
   `typescript`, `vue`, `xml`, and `yaml`. Streaming code re-tokenizes only
   changed lines by chaining GrammarState (per-line cache), so per-frame cost
-  is constant regardless of block size.
+  is constant regardless of block size. A code body outside the viewport stays
+  plain text until it is on screen: the detailed density opens every tool body
+  at once, and a retained pane keeps rendering while another page covers it, so
+  tokenizing all of them in one flush blocked the renderer for seconds on a long
+  session.
 - **Code block chrome**: `.code-block` single-surface card (radius-md-plus,
   no border since D297 — a `--ds-tile` plate; dark `#282c34`, light `#fafafa` — matching One Dark Pro /
   One Light editor bg). Header is transparent (language tag left, copy right);

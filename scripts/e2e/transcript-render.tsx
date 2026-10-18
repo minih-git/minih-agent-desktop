@@ -1,5 +1,6 @@
 import { toolIdentityProbe } from "./tool-identity";
 import { transcriptLongHistoryProbe as runLongHistoryProbe } from "./transcript-long-history";
+import { transcriptHighlightProbe as runHighlightProbe } from "./transcript-highlight-viewport";
 import { transcriptEditProbe } from "./transcript-edit";
 import { turnProcessProbe } from "./turn-process";
 import { transcriptStatusProbe } from "./transcript-status";
@@ -37,11 +38,13 @@ declare global {
   var transcriptRuntimeSlotProbe: () => Promise<unknown>;
   var smoothTextThrottleProbe: () => Promise<unknown>;
   var transcriptLongHistoryProbe: typeof runLongHistoryProbe;
+  var transcriptHighlightProbe: typeof runHighlightProbe;
   var resetContextOverflowRecoveryProbe: () => Promise<void>;
   var contextOverflowRecoveryProbe: (events: AgentEventEnvelope[]) => Promise<unknown>;
 }
 
 globalThis.transcriptLongHistoryProbe = runLongHistoryProbe;
+globalThis.transcriptHighlightProbe = runHighlightProbe;
 
 function assert(value: unknown, message: string): asserts value {
   if (!value) throw new Error(message);

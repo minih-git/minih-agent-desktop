@@ -1461,7 +1461,9 @@ Renderer： `apps/desktop/src/components/Markdown.tsx` + `apps/desktop/src/lib/s
 `shellscript`、`sql`、`svelte`、`swift`、`terraform`、`toml`、`tsx`、
   `typescript`、`vue`、`xml` 和 `yaml`。流代码仅重新标记
   通过链接 GrammarState（每行缓存）更改行，因此每帧成本
-  无论块大小如何，都是恒定的。
+  无论块大小如何，都是恒定的。视口之外的代码块在滚动到屏幕上之前只显示纯文本：
+  「详细」密度会一次性展开每个工具明细，而被保留的会话窗格在其他页面覆盖时仍在渲染，
+  同一帧里标记全部代码会让渲染进程在长会话中阻塞数秒。
 - **代码块镀铬**：`.code-block`单面卡（radius-md-plus，
   自 D297 起无边框——一块 `--ds-tile` 色块；深色 `#282c34`、浅色 `#fafafa` — 匹配 One Dark Pro /
   一盏灯编辑器 bg)。标题是透明的（语言标签左，复制右）；
