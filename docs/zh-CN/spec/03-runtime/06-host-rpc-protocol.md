@@ -1023,16 +1023,14 @@ JSON-RPC 错误携带一个数字 `code` 以及 `data.errorCode`，后者是来�
 | 1017 | SUBAGENT_INVALID | 用户子代理文档校验失败 |
 | 1018 | CAPABILITY_INVALID | Agent 能力 root/scope 设置校验失败 |
 | 1019 | PLUGIN_CANCELLED | 用户在下载过程中取消了市场安装 |
-| 1020 | PLUGIN_MARKET_NOT_PUBLISHED | 平台有该版本但尚未对外提供 |
-| 1021 | PLUGIN_MARKET_ARCHIVED | 插件已被平台下架 |
-| 1022 | PLUGIN_MARKET_NOT_FOUND | 平台没有该插件或该版本 |
-| 1023 | PLUGIN_MARKET_RATE_LIMITED | 下载接口要求客户端等待后重试 |
-| 1024 | PLUGIN_MARKET_NO_SOURCE | 没有任何分发目标能提供该包 |
 | 1025 | WORKTREE_* | 所有隔离会话 worktree 失败（`WORKTREE_NOT_GIT`、`WORKTREE_CONFLICT`、`WORKTREE_PROJECT_DIRTY`、`WORKTREE_MISSING` 等）共用此槽位，以字符串代码区分 |
 | -32029 | HOST_OVERLOADED | RPC 调度程序容量已耗尽 |
 | -32601 | — | 未知方法 |
 | -32700 | — | 无法解析的请求行 |
 | 1002 | LIMIT_EXCEEDED | 超过 64 MiB 的 NDJSON 请求行；Electron 在写入管道前拒绝；若主机仍读到该行，则读完余下部分、尽量从截断前缀取出请求 id 再应答，stdin 读取器继续运行 |
+
+编号 1020–1024 已随外部插件中心在
+[ADR 0332](/adr/0332-own-plugin-distribution-repository) 中退役，保留为空号，不再重新分配。
 
 
 工具结果（`TOOL_DENIED`、`TOOL_TIMEOUT`、`PATH_OUTSIDE_WORKSPACE`、

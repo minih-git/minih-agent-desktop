@@ -5,6 +5,15 @@
 > Decision record: [ADR 0102](../../adr/0102-publisher-owned-plugin-source-and-git-hosted-artifacts.md)
 > Client contract: [07-plugin-marketplace.md](07-plugin-marketplace.md)
 
+> **Retired for the client by ADR 0332 (2026-10-18).** This project no longer
+> connects to this external plugin center. The client's marketplace reads — and
+> the project publishes to — its own distribution repository,
+> [minih-git/minih-agent-plugins](https://github.com/minih-git/minih-agent-plugins).
+> This file is kept only as background on the external upstream and is no longer
+> a client distribution contract; the client contract is
+> [07-plugin-marketplace.md](07-plugin-marketplace.md) and
+> [ADR 0332](../../adr/0332-own-plugin-distribution-repository.md).
+
 This document defines the distribution system that replaces the single-repository
 marketplace. It is the normative plan for the center service; the marketplace
 document remains the normative contract for what the desktop client consumes.

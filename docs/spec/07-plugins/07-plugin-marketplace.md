@@ -30,9 +30,12 @@ The host is responsible for:
 
 ### Phase B ✅
 - Browse/search + download install are implemented against the official provider
-- Official provider: the upstream PI-Desktop plugin center, `plugins.aiuo.net` (Phase B originally pointed at a GitHub repository; see "Catalog source" below and [ADR 0276](../../adr/0276-official-plugin-channel-and-backup-channels.md))
-- Default catalog URL: `https://plugins.aiuo.net/catalog.json`
-- Package URLs may be absolute `https://` / `http://` / `file://`, or a relative path resolved against the catalog's `artifactBaseUrl` when it declares one, and otherwise against the catalog URL
+- Official provider: this project's own plugin distribution repository,
+  `github.com/minih-git/minih-agent-plugins` (Phase B originally pointed at the
+  upstream plugin center; see "Catalog source" below and
+  [ADR 0332](../../adr/0332-own-plugin-distribution-repository.md))
+- Default catalog URL: `https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json`
+- Package URLs may be absolute `https://` / `http://` / `file://`, or a relative path resolved against the catalog's `artifact_base_url` when it declares one, and otherwise against the catalog URL
 - HTTPS fetch uses `curl` in host-core
 - curl diagnostics are decoded as UTF-8 first and as the active Windows ANSI
   code page when needed; a network failure remains `PLUGIN_NETWORK`, but its
@@ -40,12 +43,16 @@ The host is responsible for:
 
 ### Catalog source
 
-Plugins → Marketplace always uses the official plugin center catalog at
-`https://plugins.aiuo.net/catalog.json`. The page has no source selector.
-Persisted `pluginMarketSource` and `pluginMarketCustomUrl` values from older
-versions are retained for settings compatibility but ignored; no data migration
-is needed. `MINIH_AGENT_PLUGIN_MARKET_URL` remains available to development and
-test runs without making the catalog configurable in the shipped interface.
+Plugins → Marketplace always uses this project's distribution repository catalog
+at
+`https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json`
+(ADR 0332). The page has no source selector. Persisted `pluginMarketSource` and
+`pluginMarketCustomUrl` values from older versions are retained for settings
+compatibility but ignored — `settings.set` keeps the host's marketplace
+selection pinned to the repository — and no data migration is needed.
+`MINIH_AGENT_PLUGIN_MARKET_URL` remains available to development and test runs
+and outranks the channel; it does not make the catalog configurable in the
+shipped interface.
 
 Marketplace catalog and package downloads follow Settings → General → Network.
 System mode sends host-core `curl` through Electron's authenticated loopback
@@ -57,116 +64,59 @@ Schannel's best-effort revocation mode when the installed `curl` supports it,
 so an unavailable revocation distribution point does not block the HTTPS
 request; certificate verification and package size/hash checks remain enabled.
 
-The official catalog is the generated `catalog.json` the center publishes, and
-an install asks the platform where the package is instead of joining a relative
-path onto a base URL. If resolve is slow or unavailable, the client downloads
-from the official catalog's own package URL and verifies its catalog digest.
-Packages on the official resolve path can still come from approved GitHub and
-CNB mirrors returned by the platform. These are package mirrors inside the
-official channel; they do not change the catalog source. Each mirror's bytes
-are checked against its announced digest.
+There is no publishing platform behind this catalog. The repository's
+`catalog.json` is the listing contract, and it names each package's URL and
+sha256 itself, so an install fetches that URL once and verifies the declared
+digest. There is no resolve request, no device identifier, and no
+platform-provided mirror list: the package is served by the git host that
+served the catalog (GitHub, or the CNB mirror of the same repository), and a
+relative package URL is resolved against `artifact_base_url` or the catalog URL,
+so moving to another mirror host changes no recorded digest.
 
 Cached catalogs are keyed to their source in `plugins/market/cache-meta.json`.
-The official catalog cache remains the marketplace snapshot. Any cache left by
-an older selected source is ignored and not deleted. `settings.set` keeps the
-host's marketplace selection pinned to official; remote fetching remains an
-explicit `market.refresh` operation so a settings write never holds the host
-RPC state lock behind a marketplace timeout.
+The distribution repository's catalog cache remains the marketplace snapshot.
+Any cache left by an older selected source is ignored and not deleted. Remote
+fetching remains an explicit `market.refresh` operation so a settings write
+never holds the host RPC state lock behind a marketplace timeout.
 
-### Device identifier
+### Package download
 
-The official channel's resolve call carries a `deviceId`. host-core derives it
-from the machine identity the operating system exposes: the Windows
-`HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`, the macOS platform UUID, or
-Linux `/etc/machine-id` (falling back to `/var/lib/dbus/machine-id` and
-`/sys/class/dmi/id/product_uuid`). What is sent is
-`sha256("minih-agent-desktop.device.v1:" + <machine id>)` as 64-character lowercase hex,
-so the machine code itself never leaves the machine and the digest is
-domain-separated from every other hash the app computes. When no machine
-identity is readable, host-core generates one random 64-hex id and persists it
-under the application data directory (`plugins/market/device.json`), reusing it
-from then on. The value is read once per process, is stable for the installation
-across restarts, is never shown in the UI, and is not a setting the user can
-edit or reset. It is the platform's counting and rate-limit key (see
-[15-plugin-center.md](15-plugin-center.md) §10), not an account or a login.
-
-### Resolve-based install (official channel)
-
-Every install or update from the official channel resolves its package through
-the platform after the catalog has been refreshed:
-
-1. Refresh the catalog and pick the plugin and version, exactly as for any other
-   channel.
-2. `POST {center origin}/api/v1/download/resolve` — the origin that served the
-   official catalog — with a JSON body of `{ deviceId, pluginId, version }`,
-   where `version` is present when the user picked one. POST is used rather than
-   GET because the platform's own contract notes that a device id in a query
-   string lands in access logs. The metadata request has a three-second total
-   deadline and is made once; a slow endpoint cannot hold the install on
-   `resolve` for the download timeout or a `Retry-After` interval.
-3. Try every entry of the returned `downloads` array in order: download, verify
-   the returned `sha256` and the announced `sizeBytes`, then hand the bytes to
-   the installer. A mirror that fails — network error, HTTP error, digest
-   mismatch, size mismatch — is abandoned and the next one is tried. Requests
-   stay on the allowlisted hosts below.
-4. If the resolve request times out or fails at the transport boundary, or
-   returns `429` / `503 NO_DOWNLOAD_SOURCE`, use the catalog's own package URL
-   (`artifactBaseUrl` plus the relative `url`) immediately. The catalog digest
-   and size are still checked, and the install is not counted. If all usable
-   returned mirrors fail at the transport boundary, use the same fallback. A
-   malformed resolve response or an integrity failure does not take this path.
-5. One resolve call per install or update. The answer is never cached, which is
-   why the platform sends `Cache-Control: no-store`; `counted: false` is a
-   normal reply and never an error.
-
-A `200` response always carries a non-empty `downloads` array. Publication
-refusals are reported, never papered over:
-
-- `403 NOT_PUBLISHED` — the version is not published. Report it and do not
-  retry.
-- `403 PLUGIN_ARCHIVED` — the plugin is archived. Hide it from install and
-  update selection.
-- `404` — the platform has no such version. Report it; a version string the
-  byte route cannot carry (a `+` build-metadata suffix, for example) is a
-  missing version, not a URL to guess at.
-- `429` — the platform rate-limits per device id (600 requests per minute by
-  default). Do not wait or retry; use the catalog URL, whose package is checked
-  against the catalog digest.
-- `503 NO_DOWNLOAD_SOURCE` — use the catalog URL because no platform mirror can
-  serve the version. Other `503` deployment failures use the same fast fallback.
-
-The resolve digest is authoritative when mirrors are used; the catalog's
-`shasum` stays authoritative on the fallback. An explicit `403` or `404`
-publication refusal never falls through to a different package source. Nothing
-here switches the catalog source: the fallback stays inside the official
-channel.
+Every marketplace install or update takes one route: refresh the catalog,
+download the package URL the catalog lists, verify the declared sha256, unpack,
+register, and enable. Nothing is resolved against a second service first. A
+failed install can therefore only report `PLUGIN_NETWORK`, `PLUGIN_INTEGRITY`,
+`PLUGIN_MARKET_INVALID`, `PLUGIN_MARKET_UNTRUSTED_HOST`, or
+`PLUGIN_CANCELLED`.
 
 ### Install progress and cancellation
 
 An install or update is one request, so while it runs it reports where it is.
 The `plugin.installProgress` notification carries `pluginId`, `version`, `phase`
-(`resolve`, `download`, `verify`, `install`, `enable`), `source` (the mirror in
-use) with its 1-based `attempt` / `attempts`, `receivedBytes` / `totalBytes`
-(`0` total means the size is unknown), and `tried[]` — every mirror tried so
-far, each `{ source, url, error }`. The report that ends a failed install also
-carries `error`. Reports are throttled to at most one per 200 ms, plus one per
-phase change and the terminal report, so byte progress cannot flood the
-interface.
+(`download`, `verify`, `install`, `enable`), `source` with its 1-based
+`attempt` / `attempts`, `receivedBytes` / `totalBytes` (`0` total means the size
+is unknown), and `tried[]`, each `{ source, url, error }`. A
+distribution-repository install has exactly one package URL, so it reports no
+mirror — `source` is null, `attempt` is 0 and `tried` is empty — while the
+fields stay on the wire for catalog-driven lists. The report that ends a failed
+install also carries `error`. Reports are throttled to at most one per 200 ms,
+plus one per phase change and the terminal report, so byte progress cannot
+flood the interface.
 
 `market.cancelInstall { id }` answers `{ cancelled, id }` and cancels only an
 install that is running right now. Only a download can actually be interrupted:
-the request is honoured while bytes arrive, before each mirror is tried, and at
-the last safe point before the package is written. A cancelled install fails
-with `PLUGIN_CANCELLED` (JSON-RPC code 1019), and the dialog closes quietly
-instead of reporting an error.
+the request is honoured while bytes arrive and at the last safe point before the
+package is verified and written. A cancelled install fails with
+`PLUGIN_CANCELLED` (JSON-RPC code 1019), and the dialog closes quietly instead
+of reporting an error.
 
 The dialog opens for a manual install or update, never for a background
-auto-update. It shows the current phase, `mirror n/N · name`, a determinate bar
-from `receivedBytes` / `totalBytes` with the transfer speed, and a cancel button
-enabled only during `download` and `resolve`. A successful install closes the
-dialog about two seconds after it finishes, and that countdown pauses while the
-dialog is hovered. A failed install keeps it open with the readable error and
-the mirrors that were tried, offering a copy action for them and a retry action.
+auto-update. It shows the current phase, a determinate bar from `receivedBytes` /
+`totalBytes` with the transfer speed, and a cancel button enabled only during
+`download`. A successful install closes the dialog about two seconds after it
+finishes, and that countdown pauses while the dialog is hovered. Escape obeys
+the same rule as the cancel button: it cannot dismiss a running download, and it
+closes the dialog once the install has left `download`. A failed install keeps
+it open with the readable error and its copy and retry actions.
 
 ### Client-visible catalog policy
 
@@ -201,7 +151,7 @@ user who never installed anything.
 Plugin source moves to the publisher's own repository and the catalog gains
 schema v2 (ADR 0102). The client reads v1 and v2 from the same code path; v2
 adds source provenance, review verdicts, yank state, and a declared artifact
-base. See [15-plugin-center.md](15-plugin-center.md) for the publishing side.
+base. The release flow is in §13 of this document.
 
 ## 3. Market Provider abstraction
 
@@ -240,11 +190,12 @@ if it receives a map there.
   "catalogId": "pi-plugin-center",
   "generatedAt": "2026-08-18T02:00:00Z",
   "policyVersion": "2026.08.1",
-  // Optional. The official source omits it: relative package URLs resolve
-  // against the catalog directory, so GitHub and the CNB mirror each serve
-  // their own packages without crossing providers. A mirror or enterprise
-  // source that stores packages elsewhere declares its own base here.
-  "artifactBaseUrl": null,
+  // Optional. The distribution repository's catalog declares its own base;
+  // when a catalog omits it, relative package URLs resolve against the catalog
+  // directory, so GitHub raw and a CNB mirror each serve their own packages
+  // without crossing providers. A mirror or enterprise source that stores
+  // packages elsewhere declares its base here.
+  "artifact_base_url": "https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main",
   "plugins": [
     {
       "id": "acme.todo",
@@ -287,12 +238,13 @@ if it receives a map there.
 
 Client rules for v2:
 
-- `artifactBaseUrl` takes precedence over the catalog directory when resolving a
+- `artifact_base_url` takes precedence over the catalog directory when resolving a
   relative package URL. An absolute package URL is used as given and must still
   pass the download host allowlist.
 - `trust` is display-only and is never derived from publisher-supplied text. A
-  value the client cannot attribute to the configured official source renders as
-  `unknown`. See [15-plugin-center.md](15-plugin-center.md) §11.
+  `verified` claim is honoured only when the catalog in effect is the project's
+  own distribution repository; from any other catalog it degrades to
+  `community`, and an unrecognised tier renders as `unknown`. See §8.
 - `yanked: true` removes the version from install and update selection. It stays
   visible in version history with its reason, and an installed copy of a yanked
   version is surfaced as needing attention.
@@ -302,7 +254,7 @@ Client rules for v2:
   commit.
 - `signature` verification is specified in
   [08-plugin-signing-updates.md](08-plugin-signing-updates.md) and remains
-  optional until the center's signing phase lands. An unverifiable signature is
+  optional until the signing phase lands. An unverifiable signature is
   never treated as a valid one.
 
 ### MarketPluginSummary
@@ -372,7 +324,7 @@ Before publishing or diagnosing a release, run the repository preflight:
 
 ```bash
 pnpm check:marketplace -- \
-  --url https://plugins.aiuo.net/catalog.json \
+  --url https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json \
   --plugin <plugin-id>
 ```
 
@@ -380,7 +332,7 @@ The preflight is intentionally stricter than discovery. Every published
 version must have a valid semantic version, a unique version within its
 plugin, a 64-character SHA-256 checksum, a package URL, a positive package
 size, and a permissions array. A catalog that fails this gate must be fixed in
-the marketplace publisher before client update behavior is changed.
+the distribution repository before client update behavior is changed.
 
 ### MarketDownloadInfo
 ```ts
@@ -439,14 +391,6 @@ Redirects are restricted to HTTPS and re-checked: the effective URL after
 redirection must satisfy the same rules as the initial URL. A custom or
 enterprise catalog is trusted for its own host only — pointing the client at a
 private catalog does not widen the allowlist for arbitrary third-party hosts.
-
-The official channel's resolve response names mirrors rather than a free-form
-URL list, and those mirrors are the distribution hosts above: the GitHub raw
-repository and the CNB mirror the platform already publishes from. A mirror
-entry on any other host is refused exactly like a package URL on that host, so
-the next mirror in the list is tried; if every entry names such a host the
-install fails instead of widening the list. Moving a mirror to a host outside
-this table therefore needs a client release, not a platform-side change.
 
 An off-allowlist package URL fails with `PLUGIN_MARKET_UNTRUSTED_HOST` before any
 network request is made, and the failure names the rejected host so an operator
@@ -559,12 +503,15 @@ detail button in both themes, without clipping above the install footer.
 The UI must make the trust level visible.
 Community must not be disguised as verified.
 
-Under catalog v2 the level is issued by the plugin center, not asserted by a
-publisher. The client renders `unknown` for any entry whose level it cannot
-attribute to the configured official source, and never promotes a level because
-the catalog says so. A v1 catalog's boolean `verified` maps to `verified` /
-`community` unchanged, because a v1 catalog is only writable by marketplace
-maintainers.
+Under catalog v2 the level is a claim about the publisher, so the client only
+honours it when it can attribute it. `verified` is accepted only when the
+catalog in effect is the project's own distribution repository
+(`OFFICIAL_CHANNEL_CATALOG_URL`); the same value from any other catalog degrades
+to `community`, an unrecognised tier renders as `unknown`, and no catalog can
+promote itself. The repository currently redistributes community plugins, so its
+entries declare `community`. A v1 catalog's boolean `verified` maps to
+`verified` / `community` unchanged, because a v1 catalog is only writable by
+marketplace maintainers.
 
 ## 9. Private sources (future enterprise support)
 
@@ -615,45 +562,50 @@ Desktop Extensions page now includes a Marketplace tab that calls:
 Installs always pass through checksum verification and permission review before enable.
 
 
-## 13. Official marketplace repository
+## 13. Distribution repository
 
-The upstream distribution repository
-([AIUO-Net/pi-desktop-plugins](https://github.com/AIUO-Net/pi-desktop-plugins)) holds the published
-`catalog.json` and the `packages/*.piplug` artifacts it references. Plugin sources are neither
-hosted nor reviewed there: the center packs, audits, records the SHA-256 and publishes from each
-publisher's own repository, then publishes the official catalog and package references
-([15-plugin-center.md](15-plugin-center.md),
-[ADR 0276](../../adr/0276-official-plugin-channel-and-backup-channels.md)).
-
-### Retired source layout (catalog v1)
+Repository:
+[minih-git/minih-agent-plugins](https://github.com/minih-git/minih-agent-plugins)
+(public). It is the marketplace's only source and the client's whole
+distribution contract (ADR 0332). Layout:
 
 ```text
-catalog.json               # published catalog, generated by the center
-packages/*.piplug          # published artifacts
-plugins/<id>/              # removed — sources live in each publisher's repository
-scripts/pack_plugin.py     # removed — the center packs
-scripts/rebuild_catalog.py # removed — the center generates the catalog
+catalog.json                 # schemaVersion 1, providerId "official"
+packages/<id>-<version>.piplug
+plugins/<id>/                # plugin sources
+README.md
 ```
 
-The per-plugin maintenance flow this section used to describe (edit `plugins/<id>`, pack, rebuild
-the catalog, commit) is gone. A release is published on the center — tag the publisher's
-repository, bind it to the plugin, submit the version — and `catalog.json` arrives by mirror.
+The catalog declares `artifact_base_url` as
+`https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main` (a
+relative value is also valid) and lists package URLs relatively, so the recorded
+sha256 verifies the package whether the git host serves it from GitHub raw or
+from a CNB mirror of the same repository. Nothing about the catalog is generated
+by a service: the maintainers commit it.
 
-### Who writes it (catalog v2)
+The repository currently redistributes third-party community plugins built from
+their publishers' own sources, so its entries declare `trust: "community"` and
+`verified: false`. A redistributor does not certify a publisher, and §8 explains
+why that is the correct tier rather than `verified`.
 
-Repository: [minih/minih-plugin-center](https://github.com/minih-git/minih-plugin-center)
+### Publishing
 
-This repository stays the distribution source. What changes is who writes to it:
-the plugin center takes over generating `catalog.json` and publishing
-`packages/*.piplug`, and third-party plugin source stays in the publisher's own
-repository rather than under `plugins/`.
+A release is a commit, not a submission to a service:
 
-The default catalog URL, the mirror URL, and the relative package URLs are all
-unchanged, so no client release or user action is needed. Because the catalog and
-packages are static files here and on the CNB Git mirror, browse, install, and
-update keep working even when the center's API is unavailable.
+1. Pack the plugin with the devkit in `packages/plugin-devkit` to
+   `packages/<id>-<version>.piplug`, then regenerate `catalog.json` with the new
+   version entry, its sha256, size, permissions, and `artifact_base_url`.
+2. Commit the package and the regenerated catalog in the same commit, then push.
+   A listed version and the bytes it names never live in different commits, so
+   no client can see a version whose package is not published yet.
+3. Run the release gate from §4 against the published catalog URL before
+   announcing the release:
+   `pnpm check:marketplace -- --url https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json --plugin <plugin-id>`.
 
-See [15-plugin-center.md](15-plugin-center.md).
+Publishing through the marketplace stays optional: §5 describes installing a
+locally packed `.piplug` without touching this repository. The external plugin
+center that used to own publishing is retired; [15-plugin-center.md](15-plugin-center.md)
+is kept as upstream background only and is no longer a client contract.
 
 An explicit update check performs a fresh remote catalog fetch and falls back
 to the last valid local catalog when offline. Opening the Extensions page also
@@ -686,9 +638,12 @@ requests into High / Medium / Low risk sections and tags entries that are new
 relative to the installed version, so an upgrade cannot silently widen access
 (D169).
 
-Authoring documentation lives with the host, and publishing happens on the center:
+Authoring documentation lives with the host, and publishing is a commit to the
+distribution repository:
 
 - Host guide: `docs/plugin-development.md`
-- Publishing: [plugins.aiuo.net](https://plugins.aiuo.net) — console, or the publish skill over MCP
+- Publishing: commit the packed `.piplug` and the regenerated `catalog.json` to
+  [minih-git/minih-agent-plugins](https://github.com/minih-git/minih-agent-plugins)
+  together, after the §4 `check:marketplace` preflight passes
 - Built-in templates: `panel-basic`, `agent-tool-basic`, `skill-pack`, `full-demo`
-- Distribution-side contribution guide: the upstream plugin center's `CONTRIBUTING.md`
+- Contribution guide: the distribution repository's `README.md`

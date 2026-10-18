@@ -249,11 +249,6 @@ malformed.
 | `PLUGIN_MARKET_INVALID` | no | the marketplace catalog is malformed or missing required release fields |
 | `PLUGIN_MARKET_UNTRUSTED_HOST` | no | the catalog or package URL is outside the trusted marketplace hosts |
 | `PLUGIN_MARKET_YANKED` | no | the requested release was withdrawn from the catalog |
-| `PLUGIN_MARKET_NOT_PUBLISHED` | no | the platform has the version and is not offering it yet |
-| `PLUGIN_MARKET_ARCHIVED` | no | the plugin was withdrawn from the platform |
-| `PLUGIN_MARKET_NOT_FOUND` | no | the platform does not have that plugin or version |
-| `PLUGIN_MARKET_RATE_LIMITED` | yes | the download endpoint asked the client to wait |
-| `PLUGIN_MARKET_NO_SOURCE` | maybe | no distribution target can serve the package |
 | `PLUGIN_CANCELLED` | no | the user cancelled an install while it was downloading |
 | `MCP_INVALID` | no | a user MCP server definition failed validation |
 | `SKILL_INVALID` | no | a user skill document failed validation |
@@ -262,6 +257,13 @@ malformed.
 | `PLUGIN_COMMAND_NOT_FOUND` | no | command id missing (reserved) |
 | `PLUGIN_CRASHED` | yes | plugin runtime crashed (reserved) |
 | `PLUGIN_CONTRACT_MISMATCH` | no | unsupported manifest/api version (reserved) |
+
+`PLUGIN_MARKET_NOT_PUBLISHED`, `PLUGIN_MARKET_ARCHIVED`,
+`PLUGIN_MARKET_NOT_FOUND`, `PLUGIN_MARKET_RATE_LIMITED`, and
+`PLUGIN_MARKET_NO_SOURCE` were retired in
+[ADR 0332](../../adr/0332-own-plugin-distribution-repository.md) together with the
+external plugin center that raised them. Their names and host RPC numbers are
+retired with them and are not reused.
 
 ### 3.7 Reserved detail codes (not yet emitted)
 

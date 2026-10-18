@@ -8011,3 +8011,32 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   canonical artifact source and the last fallback. See
   `03-runtime/07-process-model.md`, `05-security/01-security.md`, and
   `06-delivery/06-release-runbook.md`.
+
+## 2026-10-18 — The plugin marketplace serves this project's own distribution repository
+
+- The marketplace's official channel had been the external plugin center at
+  `plugins.aiuo.net`: an install called its `POST /api/v1/download/resolve` with
+  a hashed installation-stable device identifier, followed the platform's mirror
+  list, and could receive five publication and rate-limit codes. ADR 0332
+  retires that channel. `OFFICIAL_CHANNEL_CATALOG_URL` is now
+  `https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json`
+  and it is the only catalog; `resolve.rs` and `device.rs` are deleted, so there
+  is no resolve request, no `deviceId`, and no mirror list, and `InstallPhase`
+  is `download` / `verify` / `install` / `enable`.
+- Publishing is a commit into the same repository: pack with
+  `packages/plugin-devkit`, commit the `.piplug` and the regenerated
+  `catalog.json` together, and pass
+  `pnpm check:marketplace -- --url <catalog-url> --plugin <plugin-id>` before
+  announcing the release. `PLUGIN_MARKET_NOT_PUBLISHED`,
+  `PLUGIN_MARKET_ARCHIVED`, `PLUGIN_MARKET_NOT_FOUND`,
+  `PLUGIN_MARKET_RATE_LIMITED`, `PLUGIN_MARKET_NO_SOURCE` and host RPC numbers
+  1020–1024 are retired and never reused.
+- Unchanged: catalog schema, package format, sha256 verification, permission
+  review, the source-keyed cache, proxy handling, the
+  `PLUGIN_MARKET_UNTRUSTED_HOST` allowlist (`github.com`,
+  `githubusercontent.com`, `cnb.cool`, plus the catalog host), and
+  `MINIH_AGENT_PLUGIN_MARKET_URL` for development. `verified` is honoured only
+  from this project's catalog, so the redistributed community plugins stay
+  `community`.
+- See ADR 0332, `07-plugin-marketplace.md` §2 ("Catalog source") and §13, and
+  E2E-PLUGIN-install-from-the-distribution-repository.

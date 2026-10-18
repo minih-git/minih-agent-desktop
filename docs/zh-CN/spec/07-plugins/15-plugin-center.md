@@ -7,6 +7,13 @@
 > 决策记录：[ADR 0102](../../../adr/0102-publisher-owned-plugin-source-and-git-hosted-artifacts.md)
 > 客户端契约：[07-plugin-marketplace.md](07-plugin-marketplace.md)
 
+> **已由 ADR 0332（2026-10-18）从客户端退役。** 本项目不再接入该外部插件中心。
+> 客户端市场只读取本项目自己的分发仓库，发布也提交到该仓库：
+> [minih-git/minih-agent-plugins](https://github.com/minih-git/minih-agent-plugins)。
+> 本文件仅作为外部上游的背景资料保留，不再是客户端的分发契约；客户端契约以
+> [07-plugin-marketplace.md](07-plugin-marketplace.md) 与
+> [ADR 0332](/adr/0332-own-plugin-distribution-repository) 为准。
+
 本文定义取代单仓库市场的分发系统，是插件中心服务的规范性方案；桌面客户端消费什么，
 仍以市场规范为准。
 

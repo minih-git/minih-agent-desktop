@@ -5,6 +5,16 @@
 > is capped at three seconds and falls back to the official catalog URL after
 > a timeout, rate limit, or `NO_DOWNLOAD_SOURCE`. Publication refusals remain
 > authoritative.
+>
+> Amended 2026-10-18 (ADR 0332): the official channel's definition is
+> superseded. The catalog is now the project's own distribution repository,
+> `github.com/minih-git/minih-agent-plugins`; the resolve request, the device
+> identifier, and the platform-provided mirror list are removed from the client,
+> and error codes `PLUGIN_MARKET_NOT_PUBLISHED`, `PLUGIN_MARKET_ARCHIVED`,
+> `PLUGIN_MARKET_NOT_FOUND`, `PLUGIN_MARKET_RATE_LIMITED`,
+> `PLUGIN_MARKET_NO_SOURCE` with host RPC numbers 1020–1024 are retired. The
+> rest of this record is kept as history: it describes the external center this
+> project no longer uses.
 
 - Status: Accepted for implementation
 - Date: 2026-09-17

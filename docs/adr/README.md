@@ -384,3 +384,4 @@ Each ADR includes:
 | agent-long-term-memory | [Layered, provenance-tracked long-term memory](agent-long-term-memory.md) | Accepted for implementation (D668; amends ADR 0234) |
 
 | local-agent-remote-workspace-tools | [Local Agent and model requests for remote workspaces](local-agent-remote-workspace-tools.md) | Accepted for implementation |
+| 0332 | [Serve the plugin marketplace from the project's own distribution repository](0332-own-plugin-distribution-repository.md) | Accepted (2026-10-18; supersedes the official-channel half of ADR 0276) |

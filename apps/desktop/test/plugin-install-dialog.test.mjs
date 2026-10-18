@@ -60,19 +60,17 @@ function report(overrides = {}) {
   };
 }
 
-test("the install dialog opens on resolve before the first report arrives", () => {
+test("the install dialog opens on download before the first report arrives", () => {
   const job = newInstallJob(request());
 
   assert.equal(job.status, "running");
-  // A slow resolve is the step that has nothing to report, so the dialog shows
-  // it from the click rather than waiting for an event.
-  assert.equal(job.phase, "resolve");
+  // The dialog shows the download phase from the click rather than waiting for
+  // the first event.
+  assert.equal(job.phase, "download");
   assert.deepEqual(
     [job.attempt, job.attempts, job.receivedBytes, job.totalBytes, job.speed],
     [0, 0, 0, 0, 0],
   );
-  assert.deepEqual(job.tried, []);
-  assert.equal(dialogSrc.includes('resolve: "plugins.installPhase.resolve"'), true);
 });
 
 test("the page subscribes to install progress and cleans the subscription up", () => {
@@ -87,7 +85,7 @@ test("the page subscribes to install progress and cleans the subscription up", (
 test("only a download that is still running can be cancelled", () => {
   const job = newInstallJob(request());
 
-  assert.equal(canCancelInstall(job), true, "resolve is still interruptible");
+  assert.equal(canCancelInstall(job), true, "a fresh download is interruptible");
   assert.equal(canCancelInstall({ ...job, phase: "download" }), true);
   assert.equal(
     canCancelInstall({ ...job, phase: "verify" }),
@@ -218,7 +216,7 @@ test("a successful install is dismissed on its own unless the pointer is on it",
 test("Escape dismisses a finished install but never a running download", () => {
   assert.match(
     dialogSrc,
-    /const escapeLocked = running && \(job\.phase === "resolve" \|\| job\.phase === "download"\);/,
+    /const escapeLocked = running && job\.phase === "download";/,
   );
   assert.match(dialogSrc, /if \(escapeLocked\) return;/);
   assert.match(dialogSrc, /if \(event\.key === "Escape"\) closeRef\.current\(\);/);
@@ -243,7 +241,6 @@ test("the install dialog is mounted above the route and sidebar stacking context
 test("install dialog copy exists in every shipped locale", () => {
   const keys = [
     "plugins.installDialogTitle",
-    "plugins.installPhase.resolve",
     "plugins.installPhase.download",
     "plugins.installPhase.verify",
     "plugins.installPhase.install",

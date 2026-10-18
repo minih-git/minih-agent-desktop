@@ -17380,57 +17380,30 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   marked); `packages/shared/src/model-catalog.test.ts` covers the four source rules;
   `crates/host-core/src/providers/catalog.rs` covers the config round trip, the
   unmarked record, and the dropped unknown marker. The end-to-end settings journey
-#### E2E-PLUGIN-official-channel-resolves-through-the-platform: An official-channel install uses platform mirrors when resolve answers promptly
+#### E2E-PLUGIN-install-from-the-distribution-repository: A marketplace install downloads the catalog's package once and verifies its declared sha256
 
-- **Preconditions**: A clean profile on the official channel, a plugin present in `github.com/minih-git/minih-agent-plugins/catalog.json`, and a request log for the platform and both mirror hosts (a local stub may stand in for each).
-- **Steps**: 1) Open Extensions → Marketplace and confirm the catalog loads. 2) Capture the catalog request and verify it used `github.com/minih-git/minih-agent-plugins`. 3) Install the plugin. 4) Capture the request the platform received. 5) Inspect which mirror served the package. 6) Install a second plugin, then install the same version of the first one again.
-- **Expected**: The marketplace UI has no source selector; exactly one `POST /api/v1/download/resolve` is sent per install or update, with a JSON body carrying `deviceId`, `pluginId`, and the version when one was picked; when resolve answers within three seconds, the package comes from the first entry in `downloads` that answers, and its bytes match the returned `sha256` and `sizeBytes` before anything is extracted; a mirror that is unreachable or fails is abandoned and the next one is used without user interaction; if resolve exceeds its deadline, the install switches to the catalog URL and verifies its catalog digest; reinstalling the same version issues a fresh resolve call rather than reusing the earlier answer, because the response is never cached; the installed plugin passes the ordinary permission review and its record names the official channel as its provider.
-- **Specs linked**: `07-plugins/07-plugin-marketplace.md` §2, `07-plugins/15-plugin-center.md` §10
+- **Preconditions**: A clean profile, `github.com/minih-git/minih-agent-plugins` serving `catalog.json` and `packages/<id>-<version>.piplug`, and a request log for the catalog and package host (a local stub may stand in for the repository, reached through `MINIH_AGENT_PLUGIN_MARKET_URL`).
+- **Steps**: 1) Open Extensions → Marketplace and confirm the catalog loads. 2) Capture the catalog request and verify it used `raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json`. 3) Install a plugin whose package URL is relative. 4) Capture every request the install makes. 5) Repeat with a stub that serves bytes not matching the catalog `shasum`, then a catalog entry missing `url` or `shasum`, then a package URL on an off-allowlist host, then an unreachable package host.
+- **Expected**: The marketplace UI has no source selector. The install resolves the catalog's package URL (relative against `artifactBaseUrl`, otherwise against the catalog URL), downloads that URL exactly once, and verifies the catalog's 64-character sha256 and declared size before anything is extracted; no `POST /api/v1/download/resolve` is sent, no `deviceId` or machine-derived identifier appears in any request and no `plugins/market/device.json` is created, and there is no platform-provided mirror list to follow. The dialog shows `download`, `verify`, `install`, and `enable`, with the cancel button enabled only during `download`. A digest or size mismatch ends as `PLUGIN_INTEGRITY`, a malformed catalog entry as `PLUGIN_MARKET_INVALID`, an off-allowlist package host as `PLUGIN_MARKET_UNTRUSTED_HOST` before any network request, and an unreachable host as `PLUGIN_NETWORK`; no other marketplace error code is produced. The installed plugin passes the ordinary permission review and its record names `providerId: "official"`.
+- **Specs linked**: `07-plugins/07-plugin-marketplace.md` §2 and §13, `adr/0332-own-plugin-distribution-repository.md`
 - **Acceptance**: G (remote marketplace source)
 - **Milestone**: M6+
 - **Status**: Draft
 
-#### E2E-PLUGIN-mirror-digest-mismatch-falls-through-to-the-next-mirror: A mirror whose bytes fail the digest is rejected before extraction
 
-- **Preconditions**: An official-channel install whose `downloads` list has at least two entries, with the first mirror serving bytes that do not match the returned `sha256` (a stale distribution, or a stub that serves the CNB-era bytes for `pi.todo-0.6.5`), plus a view of the install cache and the plugin directory.
-- **Steps**: 1) Start the install. 2) Watch the first mirror's download and the digest check. 3) Inspect the install cache and the plugin directory before the install finishes. 4) Let the install continue. 5) Repeat with a stub whose first mirror fails only the announced `sizeBytes`.
-- **Expected**: The mismatching bytes are discarded without being extracted or handed to the installer, nothing lands in the plugin directory, and the rejection is reported in the install progress instead of being swallowed; the next mirror's bytes are verified against the same digest and the install completes from there; the size-mismatch case behaves identically; when every returned mirror fails digest or size validation, the install ends as a reported failure rather than falling back to different bytes or leaving a partial plugin.
-- **Specs linked**: `07-plugins/07-plugin-marketplace.md` §2
-- **Acceptance**: G (remote marketplace source) + Security
-- **Milestone**: M6+
-- **Status**: Draft
 
-#### E2E-PLUGIN-platform-unreachable-install-falls-back-to-the-catalog-url: A slow or unavailable platform resolve falls back quickly to the catalog URL
 
-- **Preconditions**: The official catalog has been refreshed. A local stub can delay `POST /api/v1/download/resolve` beyond three seconds or return `429`, `503 NO_DOWNLOAD_SOURCE`, and the publication refusals.
-- **Steps**: 1) Install a plugin while the resolve stub delays its response beyond three seconds. 2) Confirm the UI leaves Resolve and begins downloading from the catalog URL. 3) Repeat with a `429` and `503 NO_DOWNLOAD_SOURCE`. 4) Return `403 NOT_PUBLISHED`, `403 PLUGIN_ARCHIVED`, and `404` for a selected version.
-- **Expected**: A slow resolve call is abandoned after three seconds; timeout, `429`, and `503 NO_DOWNLOAD_SOURCE` proceed through the catalog's `artifactBaseUrl` plus relative `url`, and bytes still pass the catalog digest check before installation; rate limiting is not retried or waited out; `403 NOT_PUBLISHED`, `403 PLUGIN_ARCHIVED`, and `404` remain explicit failures and never install the fallback package; archived plugins remain hidden from install and update selection; the selected channel does not change.
-- **Specs linked**: `07-plugins/07-plugin-marketplace.md` §2
-- **Acceptance**: G (remote marketplace source)
-- **Milestone**: M6+
-- **Status**: Draft
+#### E2E-PLUGIN-install-progress-shows-phases: A marketplace install reports its phases in order and then completes
 
-#### E2E-PLUGIN-device-identifier-is-stable-and-never-the-machine-code: The device identifier is stable across launches and is not the raw machine code
-
-- **Preconditions**: A host whose machine identifier is readable (Windows `MachineGuid`, the macOS platform UUID, or `/etc/machine-id`), a second environment where it is not readable, and a request-logging stub for `POST /api/v1/download/resolve`.
-- **Steps**: 1) Trigger two installs in one session and compare the recorded `deviceId` values. 2) Restart the app and trigger a third install. 3) Compare the value with the raw machine identifier of the host. 4) Search the settings, the Marketplace surface, and the installed-plugin detail view for the value. 5) Repeat steps 1 and 2 where no machine identifier is readable, then inspect the application data directory.
-- **Expected**: Every resolve request from one installation carries the same 64-character lowercase hex value, including after a restart and after an app reinstall while the machine identifier is unchanged; the value is neither the machine code nor a prefix of it, and it equals `sha256("minih-agent-desktop.device.v1:" + <machine identifier>)`; the identifier never appears in the UI and no setting can reveal or reset it; in the unreadable case the value is a different 64-hex string that is generated once and persisted under `plugins/market/device.json`, then repeated across restarts.
-- **Specs linked**: `07-plugins/07-plugin-marketplace.md` §2, ADR 0276
-- **Acceptance**: G (remote marketplace source) + Security
-- **Milestone**: M6+
-- **Status**: Draft
-
-#### E2E-PLUGIN-install-progress-shows-phases-and-mirror: An official-channel install reports its phases and the mirror it is using, then completes
-
-- **Preconditions**: A clean profile on the official channel, a plugin whose resolve answer lists at least two entries, a first mirror that fails or is slow so a second attempt is observable, and a renderer subscribed to `plugin.installProgress`.
+- **Preconditions**: A clean profile, a marketplace catalog entry whose package URL is relative to the distribution repository, and a renderer subscribed to `plugin.installProgress`.
 - **Steps**: 1) Start a manual install from the marketplace detail sheet. 2) Record the reports that arrive while it runs. 3) Hover the dialog after the install succeeds. 4) Look at the installed plugin once the install ends. 5) Install again with a large package and count the reports over a window of at least one second.
-- **Expected**: The dialog shows the phases in order — `resolve`, `download`, `verify`, `install`, `enable` — with `mirror n/N · name` and a determinate bar from `receivedBytes` / `totalBytes`; it is mounted on the viewport overlay host and remains fully above the expanded sidebar, including its cancel/close controls; every report carries `pluginId` and `version`, only the report that names a mirror carries `source`, and `attempt` counts 1-based within `attempts` while a mirror switch increments `attempt` without changing `attempts`; byte reports arrive at most once per 200 ms, with one extra report per phase change and one terminal report; the install ends with no `error` and the plugin is installed and enabled after the ordinary permission review; the dialog closes about two seconds after success, that countdown pauses while it is hovered, and a background auto-update installs the same way without opening the dialog at all.
-- **Specs linked**: `07-plugins/07-plugin-marketplace.md` §2, `07-plugins/15-plugin-center.md` §10, ADR 0276 §7
+- **Expected**: The dialog shows the phases in order — `download`, `verify`, `install`, `enable` — with a determinate bar from `receivedBytes` / `totalBytes`; it is mounted on the viewport overlay host and remains fully above the expanded sidebar, including its cancel/close controls; every report carries `pluginId` and `version`; `source` stays null, `attempt` and `attempts` stay 0, and `tried` stays empty because one catalog entry names one package URL and one digest; byte reports arrive at most once per 200 ms, with one extra report per phase change and one terminal report; the install ends with no `error` and the plugin is installed and enabled after the ordinary permission review; the dialog closes about two seconds after success, that countdown pauses while it is hovered, and a background auto-update installs the same way without opening the dialog at all.
+- **Specs linked**: `07-plugins/07-plugin-marketplace.md` §2 and §5, ADR 0332
 - **Acceptance**: G (remote marketplace source)
 - **Milestone**: M6+
 - **Status**: Draft
 
-- **Local fallback regression**: Set the process default data directory to a
+- **Bundled fallback regression**: Set the process default data directory to a
   different temporary root, then create a plugin manager with its own root.
   All bundled fallback package URLs must stay beneath the manager's root;
   installing the bundled package must still report byte progress, validate its
@@ -17438,7 +17411,7 @@ plugin-form fixtures in an isolated temporary directory at runtime.
 
 #### E2E-PLUGIN-cancel-during-download-installs-nothing: Cancelling during the download stops the install, leaves nothing installed, and closes the dialog without an error
 
-- **Preconditions**: An official-channel install of a package large enough or a mirror slow enough that the download phase lasts, a way to answer `market.cancelInstall`, and a view of the plugin directory, the install cache, and the Installed list.
+- **Preconditions**: A marketplace install of a package large enough that the download phase lasts, a way to answer `market.cancelInstall`, and a view of the plugin directory, the install cache, and the Installed list.
 - **Steps**: 1) Start the install and wait for the download phase. 2) Press the cancel action in the dialog. 3) Watch the dialog and capture the RPC answer. 4) Inspect the plugin directory, the install cache, and the Installed list after the install ends. 5) Send `market.cancelInstall` again for the same id, for an install that is not running, and once after the download has finished.
 - **Expected**: The cancel call answers `{ cancelled: true, id }` for the running install, and the install fails with `PLUGIN_CANCELLED` (JSON-RPC code 1019); the dialog closes without reporting an error; nothing is installed — no plugin directory, no installed row, no enabled plugin — and no partial package survives in the cache; the second call for the same id, the call for an install that is not running, and a call after the download finished answer `{ cancelled: false, id }` and change nothing, so a cancel can never interrupt the write of the plugin directory.
 - **Specs linked**: `07-plugins/07-plugin-marketplace.md` §2, ADR 0276 §7
@@ -17446,12 +17419,12 @@ plugin-form fixtures in an isolated temporary directory at runtime.
 - **Milestone**: M6+
 - **Status**: Draft
 
-#### E2E-PLUGIN-failed-install-lists-tried-mirrors: A failed install keeps the dialog open and lists the mirrors it tried with a copy action
+#### E2E-PLUGIN-failed-install-reports-the-failed-package: A failed install keeps the dialog open and reports what it could not fetch
 
-- **Preconditions**: An official-channel install whose every mirror fails — for example a digest mismatch on the first and a network error on the second — with a renderer subscribed to `plugin.installProgress` and a clipboard readback.
-- **Steps**: 1) Start the install. 2) Let every mirror fail. 3) Read the terminal report and the dialog. 4) Use the copy action, then the retry action once the mirrors serve valid bytes again.
-- **Expected**: The terminal report carries `error` and a `tried[]` entry per mirror in the order they were tried, each naming its `source`, `url`, and the error that mirror answered; the dialog stays open and shows the readable error plus that list; the copy action puts the tried mirrors on the clipboard; the retry action starts a new install of the same version and completes it when the mirrors answer, without reusing the failed attempt's partial state; nothing was installed by the failed attempt.
-- **Specs linked**: `07-plugins/07-plugin-marketplace.md` §2, ADR 0276 §7
+- **Preconditions**: A marketplace install whose package URL serves bytes that do not match the catalog `shasum`, or a package host that refuses the request, with a renderer subscribed to `plugin.installProgress` and a clipboard readback.
+- **Steps**: 1) Start the install. 2) Let the download or the digest check fail. 3) Read the terminal report and the dialog. 4) Use the copy action, then the retry action once the package serves valid bytes again.
+- **Expected**: The terminal report carries `error` and an empty `tried[]`, because the catalog names one package URL and there is no mirror list to enumerate; the dialog stays open and shows the readable error; a digest or size mismatch ends as `PLUGIN_INTEGRITY`, an unreachable host as `PLUGIN_NETWORK`, and an off-allowlist host as `PLUGIN_MARKET_UNTRUSTED_HOST` before any request leaves the machine; the copy action puts the readable error on the clipboard; the retry action starts a new install of the same version and completes it when the package answers, without reusing the failed attempt's partial state; nothing was installed by the failed attempt.
+- **Specs linked**: `07-plugins/07-plugin-marketplace.md` §2 and §5, ADR 0332
 - **Acceptance**: G (remote marketplace source)
 - **Milestone**: M6+
 - **Status**: Draft

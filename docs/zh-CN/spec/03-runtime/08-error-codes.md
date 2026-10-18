@@ -245,11 +245,6 @@ reveal 不并入任何行，必须重新读取。
 | `PLUGIN_MARKET_INVALID` | 不 | 市场目录格式错误或缺少必需的发布字段 |
 | `PLUGIN_MARKET_UNTRUSTED_HOST` | 不 | 目录或包 URL 不在可信市场主机之内 |
 | `PLUGIN_MARKET_YANKED` | 不 | 请求的发布版本已从目录中撤回 |
-| `PLUGIN_MARKET_NOT_PUBLISHED` | 不 | 平台有该版本但尚未对外提供 |
-| `PLUGIN_MARKET_ARCHIVED` | 不 | 插件已被平台下架 |
-| `PLUGIN_MARKET_NOT_FOUND` | 不 | 平台没有该插件或该版本 |
-| `PLUGIN_MARKET_RATE_LIMITED` | 是 | 下载接口要求客户端等待后重试 |
-| `PLUGIN_MARKET_NO_SOURCE` | 也许 | 没有任何分发目标能提供该包 |
 | `PLUGIN_CANCELLED` | 不 | 用户在下载过程中取消了安装 |
 | `MCP_INVALID` | 不 | 用户的 MCP 服务器定义校验失败 |
 | `SKILL_INVALID` | 不 | 用户的技能文档校验失败 |
@@ -258,6 +253,11 @@ reveal 不并入任何行，必须重新读取。
 | `PLUGIN_COMMAND_NOT_FOUND` | 不 | 命令 ID 丢失（保留） |
 | `PLUGIN_CRASHED` | 是的 | 插件运行时崩溃（保留） |
 | `PLUGIN_CONTRACT_MISMATCH` | 不 | 不支持的 manifest/api 版本（保留） |
+
+`PLUGIN_MARKET_NOT_PUBLISHED`、`PLUGIN_MARKET_ARCHIVED`、`PLUGIN_MARKET_NOT_FOUND`、
+`PLUGIN_MARKET_RATE_LIMITED`、`PLUGIN_MARKET_NO_SOURCE` 已在
+[ADR 0332](/adr/0332-own-plugin-distribution-repository) 中随外部插件中心一起退役；
+其名称与对应的 host RPC 编号一并退役，不再复用。
 
 ### 3. 7 保留的详细代码（尚未发布）
 

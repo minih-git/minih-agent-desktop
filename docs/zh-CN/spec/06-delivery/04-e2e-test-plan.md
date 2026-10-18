@@ -8929,65 +8929,34 @@ runner 会在运行时的隔离临时目录中生成六个插件形态 fixture�
   目录、继承值保持 `catalog` 标记）；`packages/shared/src/model-catalog.test.ts` 覆盖
   四条来源规则；`crates/host-core/src/providers/catalog.rs` 覆盖配置往返、无标记记录与
   被丢弃的未知标记。端到端的设置旅程与实际启动窗口断言为草稿。
-#### E2E-PLUGIN-official-channel-resolves-through-the-platform：resolve 及时应答时官方渠道安装使用平台镜像
+#### E2E-PLUGIN-install-from-the-distribution-repository：市场安装只下载一次目录给出的安装包并校验其声明的 sha256
 
-- **先决条件**：全新配置，目录中存在一个插件，并可记录平台与两个镜像主机的请求（各项都可由本地存根代替）。
-- **步骤**：1) 打开扩展 → 市场并确认目录已加载。 2) 捕获目录请求，确认使用 `github.com/minih-git/minih-agent-plugins`。 3) 安装插件。 4) 捕获平台收到的请求。 5) 检查哪个镜像提供了安装包。 6) 再安装第二个插件，然后重新安装第一个插件的同一版本。
-- **预期**：市场页面没有来源选择器；每次安装或更新只发出一次带 `deviceId`、`pluginId` 以及可选版本的 `POST /api/v1/download/resolve`；resolve 在三秒内应答时，按顺序尝试 `downloads` 并在解压前校验平台返回的 `sha256` 与 `sizeBytes`；某个镜像不可达或失败时无需用户操作即可尝试下一个；resolve 超时后从目录 URL 下载并校验目录摘要；重新安装同一版本会发起新的 resolve 请求，因为响应从不缓存；插件通过常规权限审查，安装记录标明官方渠道。
-- **链接规格**：`07-plugins/07-plugin-marketplace.md` §2、`07-plugins/15-plugin-center.md` §10
+- **先决条件**：全新配置，`github.com/minih-git/minih-agent-plugins` 提供 `catalog.json` 与 `packages/<id>-<version>.piplug`，并可记录目录与安装包主机的请求（可用本地存根代替该仓库，并通过 `MINIH_AGENT_PLUGIN_MARKET_URL` 指向它）。
+- **步骤**：1) 打开扩展 → 市场并确认目录已加载。 2) 捕获目录请求，确认使用 `raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json`。 3) 安装一个包 URL 为相对路径的插件。 4) 捕获安装发出的所有请求。 5) 换成字节与目录 `shasum` 不符的存根重做，然后换成缺少 `url` 或 `shasum` 的目录条目、包 URL 指向白名单外的主机、以及安装包主机不可达的情形。
+- **预期**：市场页面没有来源选择器。安装按目录解析包 URL（相对路径按 `artifactBaseUrl`，否则按目录 URL），只下载该 URL 一次，并在解压前校验目录的 64 位 sha256 与声明大小；不会发出 `POST /api/v1/download/resolve`，任何请求都不带 `deviceId` 或机器派生标识，也不会生成 `plugins/market/device.json`，并且没有平台返回的镜像列表可跟随。对话框依次显示 `download`、`verify`、`install`、`enable`，取消按钮只在 `download` 期间可用。摘要或大小不符以 `PLUGIN_INTEGRITY` 结束，目录条目格式错误以 `PLUGIN_MARKET_INVALID` 结束，包 URL 在白名单外时在任何网络请求之前以 `PLUGIN_MARKET_UNTRUSTED_HOST` 结束，主机不可达以 `PLUGIN_NETWORK` 结束；不会产生其他市场错误码。插件通过常规权限审查，且安装记录的 `providerId` 为 `"official"`。
+- **链接规格**：`07-plugins/07-plugin-marketplace.md` §2 与 §13、`adr/0332-own-plugin-distribution-repository.md`
 - **验收**：G（远程市场来源）
 - **里程碑**：M6+
 - **状态**：草稿
 
-#### E2E-PLUGIN-mirror-digest-mismatch-falls-through-to-the-next-mirror：字节与摘要不符的镜像在解压前被拒绝
 
-- **先决条件**：一次官方渠道安装，其 `downloads` 至少有两个条目，第一个镜像提供的字节与返回的 `sha256` 不符（旧分发内容，或提供 `pi.todo-0.6.5` 的 CNB 时代字节的存根）；同时可以查看安装缓存与插件目录。
-- **步骤**：1) 启动安装。 2) 观察第一个镜像的下载与摘要校验。 3) 在安装结束前检查安装缓存与插件目录。 4) 让安装继续。 5) 换成一个只在第一个镜像上让声明的 `sizeBytes` 不符的存根重做一遍。
-- **预期**：不符的字节被丢弃，不会被解压或交给安装器，插件目录里不会留下任何内容，拒绝会显示在安装进度里而不是被吞掉；下一个镜像的字节按同一摘要校验，安装从那里完成；大小不符的情形表现完全相同；所有条目都失败时安装以明确的失败结束，而不是留下半安装的插件。
-- **链接规格**：`07-plugins/07-plugin-marketplace.md` §2
-- **验收**：G（远程市场来源）+ 安全性
-- **里程碑**：M6+
-- **状态**：草稿
 
-#### E2E-PLUGIN-platform-unreachable-install-falls-back-to-the-catalog-url：平台 resolve 缓慢或不可用时快速回退到目录地址
 
-- **先决条件**：官方目录已刷新；本地存根可让 `POST /api/v1/download/resolve` 延迟超过三秒，或返回 `429`、`503 NO_DOWNLOAD_SOURCE` 与发布拒绝。
-- **步骤**：1) 让 resolve 存根延迟超过三秒并安装插件。 2) 确认界面离开 Resolve 阶段，开始从目录 URL 下载。 3) 分别用 `429` 和 `503 NO_DOWNLOAD_SOURCE` 重复。 4) 对所选版本分别返回 `403 NOT_PUBLISHED`、`403 PLUGIN_ARCHIVED` 和 `404`。
-- **预期**：慢 resolve 三秒后被放弃；超时、`429` 和 `503 NO_DOWNLOAD_SOURCE` 都从目录的 `artifactBaseUrl` 与相对 `url` 回退，且在安装前通过目录摘要校验；限流不等待、不重试；`403 NOT_PUBLISHED`、`403 PLUGIN_ARCHIVED` 和 `404` 仍明确报错，不会安装回退包；已归档插件仍从安装与更新选择中隐藏；所选渠道保持不变。
-- **链接规格**：`07-plugins/07-plugin-marketplace.md` §2
-- **验收**：G（远程市场来源）
-- **里程碑**：M6+
-- **状态**：草稿
+#### E2E-PLUGIN-install-progress-shows-phases：市场安装按顺序上报各阶段并完成
 
-#### E2E-PLUGIN-device-identifier-is-stable-and-never-the-machine-code：设备标识跨启动稳定，且不是机器码原文
-
-- **先决条件**：一个能读到机器标识的主机（Windows `MachineGuid`、macOS 平台 UUID，或 `/etc/machine-id`），一个读不到机器标识的环境，以及为 `POST /api/v1/download/resolve` 记录请求的存根。
-- **步骤**：1) 在同一会话内触发两次安装，比较记录的 `deviceId`。 2) 重启应用后再触发一次安装。 3) 把该值与主机的机器标识原文比较。 4) 在设置、市场页面与已安装插件详情中查找该值。 5) 在读不到机器标识的环境里重复步骤 1 与 2，然后检查应用数据目录。
-- **预期**：同一安装发出的每次 resolve 请求都携带同一个 64 位小写十六进制值，包括重启之后，以及机器标识未变时的应用重装之后；该值既不是机器码原文也不是它的前缀，并等于 `sha256("minih-agent-desktop.device.v1:" + 机器标识)`；该标识从不出现在界面上，也没有任何设置可以显示或重置它；读不到机器标识时，该值是另一个 64 位十六进制字符串，只生成一次并持久化在 `plugins/market/device.json`，之后跨重启一直复用。
-- **链接规格**：`07-plugins/07-plugin-marketplace.md` §2、ADR 0276
-- **验收**：G（远程市场来源）+ 安全性
-- **里程碑**：M6+
-- **状态**：草稿
-
-#### E2E-PLUGIN-install-progress-shows-phases-and-mirror：官方渠道安装显示各阶段与正在尝试的镜像并完成
-
-- **先决条件**：全新配置停留在官方渠道；一个插件的 resolve 应答至少列出两个条目；第一个镜像失败或很慢，以便观察到第二次尝试；渲染进程已订阅 `plugin.installProgress`。
+- **先决条件**：全新配置；一个包地址相对于分发仓库的市场目录条目；渲染进程已订阅 `plugin.installProgress`。
 - **步骤**：1) 从市场详情面板发起一次手动安装。 2) 记录安装期间收到的报告。 3) 安装成功后把指针悬停在对话框上。 4) 安装结束后查看已安装插件。 5) 用一个较大的安装包再次安装，并统计至少一秒窗口内的报告数量。
-- **预期**：对话框按顺序显示各阶段——`resolve`、`download`、`verify`、`install`、`enable`——以及 `mirror n/N · name` 和由 `receivedBytes` / `totalBytes` 得出的确定进度条；每条报告都带 `pluginId` 与 `version`，只有指明镜像的报告才带 `source`，`attempt` 按 1 在 `attempts` 内计数，切换镜像会递增 `attempt` 而不改变 `attempts`；字节报告最多每 200 ms 一条，另有每次阶段变化一条与最终一条；安装以不带 `error` 的状态结束，插件通过常规权限审查后完成安装并启用；成功后对话框约 2 秒自动关闭，悬停时该倒计时暂停；后台自动更新以同样方式安装，但完全不打开对话框。
-- **链接规格**：`07-plugins/07-plugin-marketplace.md` §2、`07-plugins/15-plugin-center.md` §10、ADR 0276 §7
+- **预期**：对话框按顺序显示各阶段——`download`、`verify`、`install`、`enable`——以及由 `receivedBytes` / `totalBytes` 得出的确定进度条；对话框挂在视口浮层宿主上，并且完整位于展开侧栏之上（包括取消与关闭控件）；每条报告都带 `pluginId` 与 `version`；`source` 保持为空、`attempt` 与 `attempts` 保持 0、`tried` 保持为空，因为一个目录条目只对应一个包地址和一份摘要；字节报告最多每 200 ms 一条，另有每次阶段变化一条与最终一条；安装以不带 `error` 的状态结束，插件通过常规权限审查后完成安装并启用；成功后对话框约 2 秒自动关闭，悬停时该倒计时暂停；后台自动更新以同样方式安装，但完全不打开对话框。
+- **链接规格**：`07-plugins/07-plugin-marketplace.md` §2 与 §5、ADR 0332
 - **验收**：G（远程市场来源）
 - **里程碑**：M6+
 - **状态**：草稿
 
-- **Local fallback regression**: Set the process default data directory to a
-  different temporary root, then create a plugin manager with its own root.
-  All bundled fallback package URLs must stay beneath the manager's root;
-  installing the bundled package must still report byte progress, validate its
-  size and checksum, and preserve cancellation behavior.
+- **内置回退回归**：把进程默认数据目录指向另一个临时根，再用它自己的根创建一个插件管理器。所有内置回退包的地址必须留在该管理器根目录之内；安装内置包仍必须上报字节进度、校验大小与摘要，并保持取消行为。
 
 #### E2E-PLUGIN-cancel-during-download-installs-nothing：在下载期间取消会停止安装、不留下任何已安装内容，并让对话框静默关闭
 
-- **先决条件**：一次官方渠道安装，其安装包足够大或镜像足够慢，使下载阶段持续一段时间；能够应答 `market.cancelInstall`；同时可以查看插件目录、安装缓存与已安装列表。
+- **先决条件**：一次市场安装，其安装包足够大，使下载阶段持续一段时间；能够应答 `market.cancelInstall`；同时可以查看插件目录、安装缓存与已安装列表。
 - **步骤**：1) 启动安装并等待进入下载阶段。 2) 按下对话框中的取消操作。 3) 观察对话框并抓取 RPC 应答。 4) 安装结束后检查插件目录、安装缓存与已安装列表。 5) 对同一 id、对一个并未在运行的安装，以及在下载已结束之后，分别再次发出 `market.cancelInstall`。
 - **预期**：对正在运行的安装，取消调用返回 `{ cancelled: true, id }`，安装以 `PLUGIN_CANCELLED`（JSON-RPC 码 1019）失败；对话框不报告错误就关闭；没有任何东西被安装——没有插件目录、没有已安装行、没有已启用的插件——缓存中也不残留任何不完整的安装包；对同一 id 的第二次调用、对并未在运行的安装的调用，以及下载已结束之后的调用都返回 `{ cancelled: false, id }` 且不改变任何状态，因此取消永远不会中断插件目录的写入。
 - **链接规格**：`07-plugins/07-plugin-marketplace.md` §2、ADR 0276 §7
@@ -8995,15 +8964,16 @@ runner 会在运行时的隔离临时目录中生成六个插件形态 fixture�
 - **里程碑**：M6+
 - **状态**：草稿
 
-#### E2E-PLUGIN-failed-install-lists-tried-mirrors：安装失败时对话框保持打开，并列出尝试过的镜像与复制操作
+#### E2E-PLUGIN-failed-install-reports-the-failed-package：安装失败时对话框保持打开，并报告取不到的那份内容
 
-- **先决条件**：一次官方渠道安装，其所有镜像都失败——例如第一个摘要不符、第二个网络错误；渲染进程已订阅 `plugin.installProgress`，且可以读回剪贴板。
-- **步骤**：1) 启动安装。 2) 让所有镜像失败。 3) 读取最终报告与对话框。 4) 使用复制操作，然后在镜像恢复正常后使用重试操作。
-- **预期**：最终报告带有 `error`，并按尝试顺序为每个镜像提供一条 `tried[]` 记录，各自标明 `source`、`url` 与该镜像给出的错误；对话框保持打开，显示可读的错误与这份列表；复制操作把尝试过的镜像放入剪贴板；重试操作会对同一版本发起一次新的安装，并在镜像正常应答后完成，且不会复用失败尝试的不完整状态；失败的尝试没有安装任何东西。
-- **链接规格**：`07-plugins/07-plugin-marketplace.md` §2、ADR 0276 §7
+- **先决条件**：一次市场安装，其包地址返回的字节与目录 `shasum` 不符，或包主机拒绝请求；渲染进程已订阅 `plugin.installProgress`，且可以读回剪贴板。
+- **步骤**：1) 启动安装。 2) 让下载或摘要校验失败。 3) 读取最终报告与对话框。 4) 使用复制操作，然后在包恢复正常后使用重试操作。
+- **预期**：最终报告带有 `error` 且 `tried[]` 为空，因为目录只给出一个包地址、没有可枚举的镜像列表；对话框保持打开并显示可读的错误；摘要或大小不符以 `PLUGIN_INTEGRITY` 结束，主机不可达以 `PLUGIN_NETWORK` 结束，不在白名单内的主机会在任何请求发出之前以 `PLUGIN_MARKET_UNTRUSTED_HOST` 结束；复制操作把可读错误放入剪贴板；重试操作会对同一版本发起一次新的安装，并在包正常应答后完成，且不会复用失败尝试的不完整状态；失败的尝试没有安装任何东西。
+- **链接规格**：`07-plugins/07-plugin-marketplace.md` §2 与 §5、ADR 0332
 - **验收**：G（远程市场来源）
 - **里程碑**：M6+
 - **状态**：草稿
+
 
 ### E2E-RPC-unicode-separators
 

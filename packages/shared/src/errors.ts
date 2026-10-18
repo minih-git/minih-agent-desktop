@@ -262,16 +262,6 @@ export const ErrorCodes = {
   PLUGIN_MARKET_INVALID: "PLUGIN_MARKET_INVALID",
   PLUGIN_MARKET_UNTRUSTED_HOST: "PLUGIN_MARKET_UNTRUSTED_HOST",
   PLUGIN_MARKET_YANKED: "PLUGIN_MARKET_YANKED",
-  /** The platform has the version and is not offering it yet. */
-  PLUGIN_MARKET_NOT_PUBLISHED: "PLUGIN_MARKET_NOT_PUBLISHED",
-  /** The plugin was withdrawn from the platform. */
-  PLUGIN_MARKET_ARCHIVED: "PLUGIN_MARKET_ARCHIVED",
-  /** The platform does not have that plugin or version. */
-  PLUGIN_MARKET_NOT_FOUND: "PLUGIN_MARKET_NOT_FOUND",
-  /** The download endpoint asked the client to wait before asking again. */
-  PLUGIN_MARKET_RATE_LIMITED: "PLUGIN_MARKET_RATE_LIMITED",
-  /** No distribution target can serve the package. */
-  PLUGIN_MARKET_NO_SOURCE: "PLUGIN_MARKET_NO_SOURCE",
   /** The user cancelled an install while it was downloading. */
   PLUGIN_CANCELLED: "PLUGIN_CANCELLED",
   MCP_INVALID: "MCP_INVALID",

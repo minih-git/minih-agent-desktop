@@ -428,7 +428,7 @@ export type PluginInstallMirror = {
 export type PluginInstallProgress = {
   pluginId: string;
   version: string;
-  phase: "resolve" | "download" | "verify" | "install" | "enable";
+  phase: "download" | "verify" | "install" | "enable";
   source?: string | null;
   attempt?: number;
   attempts?: number;
