@@ -64,6 +64,8 @@ export class GatewayRpcError extends Error {
     readonly code: string,
     message: string,
     readonly retriable = false,
+    /** Retry hint for a `RATE_LIMITED` answer; becomes a `Retry-After` header. */
+    readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = "GatewayRpcError";

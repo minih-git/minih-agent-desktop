@@ -3,16 +3,22 @@ import { describe, expect, it } from "vitest";
 import * as Value from "typebox/value";
 
 import {
+  RACP_ACCOUNT_ROUTES,
   RACP_HOSTLINK_CLOSE_CODES,
   RACP_HOSTLINK_VERSION,
   RACP_HTTP_QUERY_PARAMS,
   RACP_HTTP_ROUTE_LIST,
   RACP_HOSTLINK_HTTP_SCHEMAS,
+  RacpAccountHostListResponseSchema,
+  RacpAccountHostSummarySchema,
+  RacpAccountLoginRequestSchema,
+  RacpAccountLoginResponseSchema,
   RacpHostLinkFrameSchema,
   RacpHostRouteContextSchema,
   RacpPairHttpRequestSchema,
   RacpPairHttpResponseSchema,
   RacpGatewayHostSummarySchema,
+  RacpEnrollErrorCodeSchema,
   RacpEnrollRequestSchema,
   RacpEnrollResponseSchema,
   formatSseEvent,
@@ -103,6 +109,63 @@ describe("enrollment contracts", () => {
 
   it("rejects an enrollment request without a CSR", () => {
     expect(Value.Check(RacpEnrollRequestSchema, { enrollmentCode: "enc_abc", hostId: "host_abc" })).toBe(false);
+  });
+
+  it("accepts an account-mode request that carries no enrollment code (D666)", () => {
+    // The credential is the Authorization header, so the field is absent and
+    // the Gateway enforces "exactly one credential" structurally.
+    const accountMode = { hostId: "host_abc", csr: "-----BEGIN CERTIFICATE REQUEST-----" };
+    expect(Value.Check(RacpEnrollRequestSchema, accountMode)).toBe(true);
+    expect(Value.Check(RacpEnrollRequestSchema, { ...accountMode, enrollmentCode: "enc_abc" })).toBe(true);
+    expect(Value.Check(RacpEnrollRequestSchema, { ...accountMode, hostId: "" })).toBe(false);
+    // The label stays unbounded here: the self-hosted flow ignores it and uses
+    // the operator's `enroll-code --label`, so a request that always worked must
+    // keep working. The Gateway bounds it in the path that persists it.
+    expect(Value.Check(RacpEnrollRequestSchema, { ...accountMode, label: "x".repeat(4_096) })).toBe(true);
+  });
+
+  it("names every account-mode enrollment failure the Gateway can return", () => {
+    for (const code of ["ACCESS_KEY_INVALID", "ACCESS_KEY_UNAVAILABLE", "HOST_ACCOUNT_MISMATCH", "RATE_LIMITED"]) {
+      expect(Value.Check(RacpEnrollErrorCodeSchema, code)).toBe(true);
+    }
+  });
+});
+
+describe("account mode contracts (spec §11.5)", () => {
+  it("keeps the account routes in their own namespace", () => {
+    // `GET /v1/hosts` and `/hosts/{hostId}/...` stay device-token routes, so an
+    // account session can never reach a relayed Host operation.
+    expect(RACP_ACCOUNT_ROUTES.login).toBe("POST /v1/account/login");
+    expect(RACP_ACCOUNT_ROUTES.hosts).toBe("GET /v1/account/hosts");
+    expect(RACP_HTTP_ROUTE_LIST.hosts).toBe("GET /v1/hosts");
+  });
+
+  it("accepts a native and a browser login round trip", () => {
+    expect(Value.Check(RacpAccountLoginRequestSchema, { client: "ios", label: "phone" })).toBe(true);
+    expect(Value.Check(RacpAccountLoginRequestSchema, { client: "web" })).toBe(true);
+    expect(Value.Check(RacpAccountLoginRequestSchema, { client: "desktop" })).toBe(false);
+    expect(
+      Value.Check(RacpAccountLoginResponseSchema, {
+        accountId: "7",
+        keyName: "laptop",
+        expiresAt: "2026-10-18T12:00:00.000Z",
+        token: "rat1.fixture",
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(RacpAccountLoginResponseSchema, {
+        accountId: "7",
+        expiresAt: "2026-10-18T12:00:00.000Z",
+        csrfToken: "csrf",
+      }),
+    ).toBe(true);
+  });
+
+  it("lists only the shape of one account's Hosts", () => {
+    const listing = { accountId: "7", hosts: [{ hostId: "host_a", label: "laptop", online: true }] };
+    expect(Value.Check(RacpAccountHostListResponseSchema, listing)).toBe(true);
+    expect(Value.Check(RacpAccountHostListResponseSchema, { ...listing, hosts: [{ hostId: "host_a", label: "x" }] })).toBe(false);
+    expect(Value.Check(RacpAccountHostSummarySchema, { hostId: "host_a", label: "x", online: false })).toBe(true);
   });
 });
 
@@ -197,7 +260,18 @@ describe("SSE event format (spec §11.2)", () => {
 describe("generated fixture bundle", () => {
   it("keeps every named hostlink/http schema in RACP_HOSTLINK_HTTP_SCHEMAS", () => {
     expect(Object.keys(RACP_HOSTLINK_HTTP_SCHEMAS).sort()).toEqual(
-      ["EnrollRequest", "EnrollResponse", "GatewayHostSummary", "HostLinkFrame", "HostRouteContext", "PairHttpRequest", "PairHttpResponse"].sort(),
+      [
+        "AccountHostListResponse",
+        "AccountLoginRequest",
+        "AccountLoginResponse",
+        "EnrollRequest",
+        "EnrollResponse",
+        "GatewayHostSummary",
+        "HostLinkFrame",
+        "HostRouteContext",
+        "PairHttpRequest",
+        "PairHttpResponse",
+      ].sort(),
     );
     for (const schema of Object.values(RACP_HOSTLINK_HTTP_SCHEMAS)) {
       expect(typeof schema).toBe("object");

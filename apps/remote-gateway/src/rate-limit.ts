@@ -15,22 +15,48 @@ export type RateLimitPolicy = {
 
 export const DEFAULT_DEVICE_LIMIT: RateLimitPolicy = { capacity: 60, refillPerSecond: 30 };
 export const DEFAULT_IP_LIMIT: RateLimitPolicy = { capacity: 120, refillPerSecond: 60 };
+/**
+ * Credential attempts (account login, enroll by AccessKey) get their own,
+ * deliberately tight bucket per client IP: an AccessKey is a bearer secret, so
+ * the burst that is generous for commands is a brute-force budget for guesses
+ * (security §9). Ten attempts, then one every five seconds.
+ */
+export const DEFAULT_CREDENTIAL_LIMIT: RateLimitPolicy = { capacity: 10, refillPerSecond: 0.2 };
 
 type Bucket = { tokens: number; updatedAt: number };
 type Projection = { key: string; policy: RateLimitPolicy; tokens: number; updatedAt: number };
 
 export type RateLimitDecision = { allowed: true } | { allowed: false; retryAfterMs: number };
 
+/**
+ * One message for a `RATE_LIMITED` answer, whether the Gateway's own bucket or
+ * the Router's `AUTH_LOCKED` lockout produced the hint. A hint-less lockout
+ * still says "later" rather than telling the user the key is wrong.
+ */
+export function retryMessage(retryAfterMs?: number): string {
+  return retryAfterMs === undefined ? "too many attempts; retry later" : `retry in ${retryAfterMs} ms`;
+}
+
 export class RateLimiter {
   private readonly buckets = new Map<string, Bucket>();
   private readonly device: RateLimitPolicy;
   private readonly ip: RateLimitPolicy;
+  private readonly credential: RateLimitPolicy;
   private readonly now: () => number;
   private readonly maxKeys: number;
 
-  constructor(options: { device?: RateLimitPolicy; ip?: RateLimitPolicy; now?: () => number; maxKeys?: number } = {}) {
+  constructor(
+    options: {
+      device?: RateLimitPolicy;
+      ip?: RateLimitPolicy;
+      credential?: RateLimitPolicy;
+      now?: () => number;
+      maxKeys?: number;
+    } = {},
+  ) {
     this.device = options.device ?? DEFAULT_DEVICE_LIMIT;
     this.ip = options.ip ?? DEFAULT_IP_LIMIT;
+    this.credential = options.credential ?? DEFAULT_CREDENTIAL_LIMIT;
     this.now = options.now ?? (() => Date.now());
     this.maxKeys = options.maxKeys ?? 4096;
   }
@@ -58,14 +84,30 @@ export class RateLimiter {
   }
 
   /**
-   * Both the device and the IP bucket must allow the request; otherwise the
+   * Both the principal and the IP bucket must allow the request; otherwise the
    * decision reports how long until the exhausted bucket refills one token.
+   * `principalId` is a device id or an account session id, so one device and one
+   * account session never share a bucket.
    */
-  check(deviceId: string | null, ip: string): RateLimitDecision {
+  check(principalId: string | null, ip: string): RateLimitDecision {
     const now = this.now();
     const projections: Projection[] = [];
-    if (deviceId) projections.push(this.project(`device:${deviceId}`, this.device, now));
+    if (principalId) projections.push(this.project(`principal:${principalId}`, this.device, now));
     projections.push(this.project(`ip:${ip}`, this.ip, now));
+    return this.decide(projections);
+  }
+
+  /**
+   * Credential attempts from one client IP. Account login and enroll by
+   * AccessKey share the bucket, so spreading guesses across accounts does not
+   * multiply the budget, and it keys on the resolved address so it follows a
+   * caller that arrives through a trusted proxy (security §9).
+   */
+  checkCredential(ip: string): RateLimitDecision {
+    return this.decide([this.project(`credential:${ip}`, this.credential, this.now())]);
+  }
+
+  private decide(projections: Projection[]): RateLimitDecision {
     const exhausted = projections.find((projection) => projection.tokens < 1);
     if (exhausted) {
       this.commit(projections);

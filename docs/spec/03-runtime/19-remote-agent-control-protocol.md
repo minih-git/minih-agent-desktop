@@ -1122,7 +1122,12 @@ table under a Host prefix, so a client sets its base URL to
 
 - Gateway-level endpoints outside that prefix: `GET /healthz` (unauthenticated,
   `{ ok, version }`), `GET /v1/hosts` (the Hosts the caller's device may reach,
-  each with `online`), and `POST /v1/hosts/{hostId}/pair`.
+  each with `online`), `POST /v1/hosts/{hostId}/pair`, and — in account mode
+  only — `POST /v1/account/login` and `GET /v1/account/hosts` (§11.5). The two
+  account routes are the only place an AccessKey-derived credential is accepted:
+  `GET /v1/hosts` and every `/hosts/{hostId}/...` route take a device token
+  exclusively, and a Gateway without account mode answers both with `NOT_FOUND`
+  like any other unknown path.
 - A command body is `{ jsonrpc, id, method, params, idempotencyKey? }`. The
   Gateway answers `INVALID_ARGUMENT` when `method` does not match the route, and
   places `idempotencyKey` where the operation schema defines it: only
@@ -1267,15 +1272,17 @@ Enrollment and pairing run against the same listener:
   `{ deviceId, token }` in the response body for native clients to store in the
   iOS Keychain or the Android Keystore.
 
-### 11.5 Account mode (planned, D666)
+### 11.5 Account mode (D666; the account directory is implemented)
 
 Account mode binds a Minih-Router AccessKey to Hosts and devices (ADR
 `remote-control-router-account-binding`). It is additive: every clause of
 §11.2 and §11.4 keeps its meaning, and the self-hosted enrollment and per-Host
-pairing paths stay available for users without a Router key. Nothing in this
-subsection is implemented yet; field-level detail the decision does not fix is
-defined by the implementing PR, and no clause here may be read as shipped
-behavior.
+pairing paths stay available for users without a Router key.
+
+The Gateway account directory — key verification, enrollment by key, account
+login, and the account host list — is implemented (rollout R7 package C). The
+`device.request` / `device.grant` relay and the Host capability advertisement
+are not; they belong to package D, and the clauses that name them say so.
 
 - **Key verification.** The Gateway validates a presented AccessKey by calling
   the Router's `GET /api/auth/session` over loopback with
@@ -1283,9 +1290,35 @@ behavior.
   the header named by the Router's `CLIENT_IP_HEADER`. The Gateway's loopback
   peer must be inside the Router's `TRUSTED_PROXIES`; otherwise the Router
   ignores the header and evaluates `allowed_peer_cidrs` against `127.0.0.1`. The
-  account is the answered `access_key_id`. The Gateway never persists the raw
-  AccessKey; whether it keeps any digest of it, and for what, is defined by the
-  implementing PR.
+  account is the answered `access_key_id`. Only a clean `code: 0` answer whose
+  `data` carries `authenticated: true`, `principal_type: "access_key"`, and a
+  positive `access_key_id` verifies a key: an admin principal, an
+  unauthenticated answer, and the Router's own error envelope are refusals, and
+  a Router that cannot be reached, times out, answers a status of `500` or more,
+  or returns an unreadable body is a retriable error and never a pass. A
+  locked-out caller is its own answer: the Router's `429` with `Retry-After` and
+  `{ code: "AUTH_LOCKED", data: { retry_after_seconds } }` — what it sends after
+  too many failed authentications from one address — is reported as
+  `RATE_LIMITED`, retriable, with the Router's own delay in the message and in a
+  `Retry-After` header, and never as an invalid key. The
+  Gateway keeps no digest of the AccessKey: the only durable state a login
+  leaves is the hash of the session credential it mints, and a successful
+  verification is never cached — every login calls the Router again.
+- **Client address.** The Gateway takes the caller address from its configured
+  header only when the TCP peer is inside its configured trusted-proxy set, and
+  otherwise from the peer itself. The header name and the trusted proxy are one
+  setting: a half-configured pair refuses to start, because a header name with
+  no trusted peer would never be read and a trusted peer with no header name
+  resolves nothing. `X-Forwarded-For` is read as a chain — the caller is the
+  rightmost entry that is not inside the trusted-proxy set, or the leftmost
+  entry when every entry is trusted — and any other header carries exactly one
+  address; an entry that is not an IP address falls back to the peer, because a
+  malformed chain proves nothing. This is the rule the Router itself applies
+  (`internal/platform/utils/client_ip.go`), so the address the Gateway forwards
+  means to the Router what it means at the Gateway. The resolved address keys
+  the per-IP rate limits and the audit record, and it is the value the Gateway
+  forwards to the Router. Without both settings the resolved address is the TCP
+  peer, exactly as before.
 - **Key lifecycle.** Rotation keeps the account because the Router keeps the id.
   A disabled or deleted key fails `GET /api/auth/session` (the Router indexes
   only active keys), so new logins and new enrollments with it fail. Key state
@@ -1297,33 +1330,66 @@ behavior.
 - **Host enrollment by key.** The Router's `GET <root>/api/easytier/bootstrap`
   answer gains the optional additive
   `remoteGateway { hostlinkUrl, publicOrigin, caPem }` object (provider-config
-  §3). The Host sends its CSR together with `Bearer <AccessKey>` to the
-  Gateway's enrollment endpoint; the Gateway verifies the key, records the Host
-  under that account, and issues the client certificate that binds `hostId` to
-  the account. That certificate is presented on the same mutual-TLS Host link as
-  §11.4. An absent `remoteGateway` object, or a `404` from the bootstrap, means
-  account mode is unavailable and the Host uses the enrollment code of §11.4.
-- **Account login.** A client logs in with the AccessKey and can then list only
-  that account's Hosts, with their online state. How the login is carried
-  (session shape and lifetime) and the route names are defined by the
-  implementing PR. A Host or device of another account is never listed, routed
-  to, or acted on; the error returned, and whether it reveals existence, is
-  defined by the implementing PR. Relayed commands still require the device
-  token of §11.4; the AccessKey alone authorizes no Host operation.
-- **Device request, confirm, grant.** A logged-in client requests a device. The
-  Gateway sends `device.request` (new frame, Gateway to Hosts) to every online
-  Host of the account that advertises support. The first Host whose user
-  approves signs a grant and returns `device.grant` (new frame, Host to Gateway);
-  the Gateway relays that grant to the account's other Hosts, and each accepting
-  Host verifies that the signer is enrolled in the same account under the
-  Gateway CA and that the device is not revoked. The client ends with ONE device
-  token usable on those Hosts and drops the AccessKey.
-- **Deferred grants.** A Host that is offline when the grant is issued receives
-  the pending grant when its link comes up; until it has accepted the grant, it
-  does not accept the device token.
-- **Frame capability.** `device.request` and `device.grant` are sent only to
-  Hosts that advertise support; the advertisement itself is defined by the
-  implementing PR, because the frame union of §11.4 has no hello or capabilities
+  §3). `POST /v1/enroll` on the Host link port then accepts exactly one
+  credential: the self-hosted `enrollmentCode`, or
+  `Authorization: Bearer <AccessKey>` with the field absent. `hostId` and `csr`
+  are required either way, no other field is accepted, and the self-hosted body
+  is unchanged, so `agent-host-cli` and the desktop keep working. The Gateway
+  verifies the key, records the Host under that account, and issues the client
+  certificate that binds `hostId` to the account: the subject DN is
+  `CN=<hostId>` followed by `OU=account:<accountId>`, and a Host reads that
+  attribute back from a sibling's certificate to check the signer belongs to its
+  own account. A certificate without the attribute is a self-hosted one and
+  belongs to no account. The Gateway refuses a `hostId` already enrolled under
+  another account, an account-bound `hostId` presented with an enrollment code
+  instead of that account's key, a self-hosted `hostId` presented with an
+  AccessKey by a request that does not certify the key its current certificate
+  certifies, a key that does not verify, and an unreachable Router. Its
+  enrollment error codes are `ACCESS_KEY_INVALID` (401),
+  `ACCESS_KEY_UNAVAILABLE` (503, retriable), `HOST_ACCOUNT_MISMATCH` (403), and
+  `RATE_LIMITED` (429, retriable). The client address on this endpoint is the
+  Host link's TCP peer: that port is reached directly over the overlay and is
+  never behind the client proxy. An absent `remoteGateway` object, or a `404`
+  from the bootstrap, means account mode is unavailable and the Host uses the
+  enrollment code of §11.4.
+- **Account login.** `POST /v1/account/login` takes
+  `Authorization: Bearer <AccessKey>` and a body
+  `{ client: "web" | "ios" | "android", label? }`, follows the pairing route's
+  browser rules, and answers `{ result: { accountId, keyName?, expiresAt,
+  token?, csrfToken? } }` under the §11.2 command envelope. The account is the
+  Router `access_key_id` as a decimal string. The session credential is a
+  `rat1.`-prefixed bearer value with a twelve-hour bounded lifetime; the Gateway
+  stores only its SHA-256 hash, and revocation stays server-side. A native
+  client receives it in the body; a browser receives it as an
+  `HttpOnly; Secure; SameSite=Strict` cookie scoped to `Path=/` with a `Max-Age`
+  equal to the lifetime, plus a page-readable CSRF cookie whose value is the
+  same HMAC the pairing profile uses. A key that does not verify answers
+  `401 UNAUTHORIZED`, an unreachable Router answers
+  `503 AGENT_UNAVAILABLE` with `retriable: true`, and a caller the Router has
+  locked out answers `429 RATE_LIMITED` with `retriable: true` and a
+  `Retry-After` header carrying the Router's own delay.
+- **Account host list.** `GET /v1/account/hosts` takes the account session
+  credential in either profile and answers only the Hosts whose `accountId` is
+  the session's account, each with its online state. The route is account-scoped
+  and names no Host, so a foreign Host cannot be addressed through it at all. It
+  authorizes no relayed Host operation: `/hosts/{hostId}/...` still requires the
+  device token of §11.4, and an account session presented there is refused with
+  `401 UNAUTHORIZED` — the same answer a Host that does not exist produces, so
+  the refusal never reveals whether a foreign Host exists.
+- **Device request, confirm, grant (package D).** A logged-in client requests a
+  device. The Gateway sends `device.request` (new frame, Gateway to Hosts) to
+  every online Host of the account that advertises support. The first Host whose
+  user approves signs a grant and returns `device.grant` (new frame, Host to
+  Gateway); the Gateway relays that grant to the account's other Hosts, and each
+  accepting Host verifies that the signer is enrolled in the same account under
+  the Gateway CA and that the device is not revoked. The client ends with ONE
+  device token usable on those Hosts and drops the AccessKey.
+- **Deferred grants (package D).** A Host that is offline when the grant is
+  issued receives the pending grant when its link comes up; until it has
+  accepted the grant, it does not accept the device token.
+- **Frame capability (package D).** `device.request` and `device.grant` are
+  sent only to Hosts that advertise support; the advertisement itself is defined
+  by package D, because the frame union of §11.4 has no hello or capabilities
   frame today. This is a safety requirement, not an optimization: today's Host
   ignores an unknown `type` silently (`packages/racp/src/hostlink.ts` L103-172),
   so a frame sent to an unsupporting Host would leave the client waiting
@@ -1339,7 +1405,19 @@ behavior.
   lookup is scoped by account. The Gateway's per-IP rate limit (ADR decision 10)
   applies across accounts by nature; per-account limits stay independent
   (security §8), and no rate-limit response discloses another account's data
-  (security §9). Reachability on the shared overlay grants nothing.
+  (security §9). Account login and enrollment by key share one tight credential
+  bucket keyed on the resolved address, so a caller cannot spend the command
+  budget guessing a key. Reachability on the shared overlay grants nothing. A
+  `hostId` already registered through the self-hosted flow is not an account
+  asset: an AccessKey enrollment may take it over only by presenting the key its
+  current certificate certifies, so learning a `hostId` never lets a key move
+  another user's Host into its own account. The
+  error code of a cross-account attempt is `HOST_ACCOUNT_MISMATCH` (403) on
+  enrollment, where the caller already holds a valid key of another account and
+  the Host must learn that its `hostId` is taken; that code names no account, so
+  it reveals only that the `hostId` is enrolled. Every account-scoped route
+  answers the uniform `UNAUTHORIZED` of §13 instead, so a listing or a routing
+  attempt never discloses another account's Hosts.
 
 ## 12. Limits and deadlines
 

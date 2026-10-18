@@ -84,16 +84,23 @@ export async function loadOrCreateGatewayAuthority(
   return { ca, server: { certificatePem: issued.certificatePem, privateKeyPem: issued.privateKeyPem, expiresAt: issued.expiresAt } };
 }
 
-/** Issue the one-year client certificate a Host uses for the mTLS link. */
+/**
+ * Issue the one-year client certificate a Host uses for the mTLS link. In
+ * account mode the certificate also carries the account binding in its subject
+ * DN, which is what lets a sibling Host verify a grant signer later (protocol
+ * §11.5, gate 32).
+ */
 export async function issueHostCertificate(
   authority: GatewayAuthority,
   csrPem: string,
+  accountId?: string,
 ): Promise<IssuedCertificate & { commonName: string }> {
   return issueCertificateFromCsr({
     ca: authority.ca,
     csrPem,
     purpose: "client",
     validityDays: HOST_CERTIFICATE_VALIDITY_DAYS,
+    ...(accountId ? { accountId } : {}),
   });
 }
 

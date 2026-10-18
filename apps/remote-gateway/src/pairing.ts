@@ -42,13 +42,14 @@ export function hashToken(token: string): string {
 }
 
 /**
- * `Path=/hosts/{hostId}` scopes both cookies to one Host; `Max-Age=34560000`
- * (400 days, the Chromium cap) keeps the pairing across a browser restart —
- * without it both cookies are session cookies and closing the browser loses
- * the device. Revocation stays server-side: a revoked token answers 401.
+ * Cookie attributes for a Gateway-issued credential. `path` scopes the cookie to
+ * the surface that owns it — `/hosts/{hostId}` for a device, `/` for an account
+ * session — and `maxAgeSeconds` bounds its lifetime. `Secure; SameSite=Strict`
+ * keeps a cross-site page from ever sending it, and a revoked credential stays
+ * refused server-side whatever the cookie has left (security §5.2, gate 24).
  */
-function cookieAttributes(hostId: string): string {
-  return `Path=/hosts/${hostId}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; Secure; SameSite=Strict`;
+export function gatewayCookieAttributes(options: { path: string; maxAgeSeconds: number }): string {
+  return `Path=${options.path}; Max-Age=${options.maxAgeSeconds}; Secure; SameSite=Strict`;
 }
 
 export type PairingInput = {
@@ -96,11 +97,15 @@ export class PairingService {
       await this.audit(input, "ok", paired.deviceId);
       const csrfToken = csrfTokenFor(this.options.store.secret, paired.deviceId);
       if (request.client === "web") {
+        // `Max-Age=34560000` (400 days, the Chromium cap) keeps the pairing
+        // across a browser restart; without it both cookies are session cookies
+        // and closing the browser loses the device.
+        const attributes = gatewayCookieAttributes({ path: `/hosts/${input.hostId}`, maxAgeSeconds: COOKIE_MAX_AGE_SECONDS });
         return {
           status: 200,
           cookies: [
-            `${DEVICE_COOKIE}=${paired.deviceToken}; ${cookieAttributes(input.hostId)}; HttpOnly`,
-            `${CSRF_COOKIE}=${csrfToken}; ${cookieAttributes(input.hostId)}`,
+            `${DEVICE_COOKIE}=${paired.deviceToken}; ${attributes}; HttpOnly`,
+            `${CSRF_COOKIE}=${csrfToken}; ${attributes}`,
           ],
           // A browser must never read the device token from the body.
           payload: { deviceId: paired.deviceId, hostId: input.hostId, roles: paired.roles, csrfToken },

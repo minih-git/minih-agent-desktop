@@ -302,7 +302,11 @@ typebox 来源生成。
 
 - 前缀之外的网关级接口：`GET /healthz`（无需鉴权，返回 `{ ok, version }`）、
   `GET /v1/hosts`（调用者设备可访问的 Host，含 `online`）、
-  `POST /v1/hosts/{hostId}/pair`。
+  `POST /v1/hosts/{hostId}/pair`，以及仅在账户模式下存在的
+  `POST /v1/account/login` 与 `GET /v1/account/hosts`（见 §11.5 账户模式）。这两条账户
+  路由是唯一接受 AccessKey 派生凭据的地方：`GET /v1/hosts` 与所有
+  `/hosts/{hostId}/...` 路由只接受设备令牌；未启用账户模式的 Gateway 与任何未知路径
+  一样对这两条路由返回 `NOT_FOUND`。
 - 命令请求体为 `{ jsonrpc, id, method, params, idempotencyKey? }`。`method` 与路由不一致
   返回 `INVALID_ARGUMENT`；`idempotencyKey` 放到该操作 schema 规定的位置，只有
   `turn/start` 有（`params.idempotencyKey`），其它操作携带幂等键同样是
@@ -361,51 +365,101 @@ Host 签发网关来源（安全规格 §3.7）的设备令牌，网关只记录
 加 CSRF token（浏览器）或在响应体中返回 `{ deviceId, token }`（原生，存入 Keychain /
 Keystore）交付令牌。
 
-### 账户模式（规划中，D666）
+### 账户模式（D666，账户目录已实现）
 
 账户模式把 Minih-Router 的 AccessKey 绑定到 Host 与设备（ADR
 `remote-control-router-account-binding`），是**可追加**能力：上一节的全部条款保持
-原义，没有 Router key 的用户继续使用自托管注册码与每 Host 票据。本节内容**尚未实现**，
-决策未固定的字段细节由实施 PR 定义。
+原义，没有 Router key 的用户继续使用自托管注册码与每 Host 票据。
+
+Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主机列表——已实现（交付
+R7 工作包 C）；`device.request` / `device.grant` 中继与 Host 能力声明尚未实现，属于
+工作包 D，涉及它们的条款已标注。
 
 - **key 校验**：Gateway 经 loopback 调用 Router `GET /api/auth/session`，以
   `Authorization: Bearer <AccessKey>` 查询，并把调用者真实地址放进 Router
   `CLIENT_IP_HEADER` 指定的头里转发。Gateway 的 loopback 对端必须在 Router 的
   `TRUSTED_PROXIES` 内，否则 Router 会忽略该头，按 `127.0.0.1` 评估
-  `allowed_peer_cidrs`。账户即应答中的 `access_key_id`。Gateway 绝不持久化原始
-  AccessKey；是否保留其摘要、用于何处，由实施 PR 定义。
+  `allowed_peer_cidrs`。账户即应答中的 `access_key_id`。只有 `code: 0` 且 `data` 同时
+  满足 `authenticated: true`、`principal_type: "access_key"`、`access_key_id` 为正整数
+  的应答才算校验通过：管理员主体、未认证应答、Router 自身的错误信封都是拒绝；Router
+  不可达、超时、返回 `500` 及以上状态码或无法解析的响应体是**可重试错误，绝不是通过**。
+  被锁定是单独的一类结果：Router 对同一地址连续认证失败后返回的 `429`（带 `Retry-After`
+  与 `{ code: "AUTH_LOCKED", data: { retry_after_seconds } }`）一律报为
+  `RATE_LIMITED`（可重试），延迟取 Router 自己的值并同时写进消息与 `Retry-After`
+  响应头，绝不报成 key 无效。Gateway 不保留 AccessKey 的任何摘要：一次登录留下的唯一
+  持久状态是它签发的会话凭据哈希，且校验结果绝不缓存——每次登录都重新调用 Router。
+- **客户端地址**：Gateway 仅在 TCP 对端位于其配置的可信代理集合内时才从配置的头读取
+  调用者地址，否则采用对端地址。头名与可信代理是同一项设置：只配一半则拒绝启动，因为
+  没有可信对端的头名永远不会被读取，没有头名的可信对端也解析不出任何地址。
+  `X-Forwarded-For` 按链解析——从右向左取第一个不在可信代理集合内的条目，若全部可信则
+  取最左条目——其他头只承载一个地址；条目不是 IP 地址时回退到对端，因为畸形链证明不了
+  任何东西。该规则与 Router 自身解析器（`internal/platform/utils/client_ip.go`）一致，
+  因此 Gateway 转发的地址在两端含义相同。解析出的地址用于按 IP 限流与审计记录，也是
+  Gateway 转发给 Router 的值。两个设置都不给时，解析结果就是 TCP 对端地址，与账户模式
+  之前完全一致。
 - **密钥生命周期**：轮换保留账户，因为 Router 保留 id。被禁用或删除的 key 在
   `GET /api/auth/session` 上失败（Router 只索引 active 的 key），因此用它发起的新登录
   与新注册都会失败。key 状态本身不撤销任何东西：已批准的设备令牌与已签发的 Host 证书在
   经既有撤销路径撤销之前保持有效。Host 的链路仍可能因网络原因中断：组网按 key 签发
   凭据时，key 被禁用或删除的 Host 无法刷新 bootstrap，链路只能维持到该凭据过期。
 - **按 key 注册 Host**：Router 的 bootstrap 应答新增可选的
-  `remoteGateway {hostlinkUrl, publicOrigin, caPem}`。Host 以 `Bearer <AccessKey>`
-  加 CSR 调用 Gateway 注册接口；Gateway 校验后把 Host 记在该账户下，并签发把
-  `hostId` 绑定到账户的客户端证书，该证书用于上一节同一条 mTLS Host link。应答缺少
+  `remoteGateway {hostlinkUrl, publicOrigin, caPem}`。Host link 端口上的
+  `POST /v1/enroll` 从此只接受一种凭据：自托管的 `enrollmentCode`，或
+  `Authorization: Bearer <AccessKey>` 且请求体不带该字段。两种方式都必须带 `hostId`
+  与 `csr`，不接受其他字段；自托管请求体不变，`agent-host-cli` 与桌面保持兼容。
+  Gateway 校验 key 后把 Host 记在该账户下，并签发把 `hostId` 绑定到账户的客户端证书：
+  主题 DN 为 `CN=<hostId>` 后接 `OU=account:<accountId>`，Host 从兄弟 Host 的证书读回
+  该属性以确认签名者属于同一账户；没有该属性的证书属于自托管流程，不属于任何账户。
+  Gateway 拒绝已注册在另一账户下的 `hostId`、以注册码而非该账户 key 提交的已绑定
+  `hostId`、以 AccessKey 提交但未证明持有该 Host 现有证书所认证密钥的自托管
+  `hostId`、校验不通过的 key，以及不可达的 Router。注册错误码为
+  `ACCESS_KEY_INVALID`（401）、`ACCESS_KEY_UNAVAILABLE`（503，可重试）、
+  `HOST_ACCOUNT_MISMATCH`（403）与 `RATE_LIMITED`（429，可重试）。该端点的客户端
+  地址是 Host link 的 TCP 对端：该端口直接在组网上可达，从不经过客户端代理。应答缺少
   该对象或返回 `404` 表示账户模式不可用，Host 改用自托管注册码。
-- **账户登录与作用域**：客户端用 AccessKey 登录后，只能列出本账户的 Host 及其在线
-  状态；登录的承载方式（会话形态与有效期）与路由名由实施 PR 定义。其他账户的 Host 或
-  设备绝不会被列出、路由或操作，返回什么错误、是否暴露存在性由实施 PR 定义。中继命令
-  仍须上一节的设备令牌，AccessKey 本身不授权任何 Host 操作。
-- **设备申请、确认与授权**：客户端申请设备后，Gateway 向该账户内所有声明支持的在线
-  Host 发送 `device.request`（新增帧，Gateway→Hosts）；第一个由用户确认的 Host 签发
-  `device.grant`（新增帧，Host→Gateway），Gateway 再把该授权中继给账户内其他 Host，
-  接受方校验签名 Host 在同一账户下由网关 CA 注册、且设备未被撤销。客户端最终只持有一个
-  可用于这些 Host 的设备令牌并丢弃 AccessKey。授权时离线的 Host 在链路恢复后收到待处理
-  授权，在它接受授权之前不接受该设备令牌。
-- **帧能力与旧 Host**：两个新帧只发给声明支持的 Host（该声明由实施 PR 定义，当前
-  Host link 没有 hello 或能力帧）。这是安全要求而非优化：今天的 Host 会静默忽略未知
-  `type`（`packages/racp/src/hostlink.ts` L103-172），发给不支持的 Host 会让客户端
-  无限等待，因此 Gateway 必须把该 Host 以“无法确认”告知客户端，由客户端退回每 Host
-  票据。
+- **账户登录**：`POST /v1/account/login` 以 `Authorization: Bearer <AccessKey>` 与
+  请求体 `{ client: "web" | "ios" | "android", label? }` 调用，沿用配对路由的浏览器
+  规则，并按上一节的命令信封返回
+  `{ result: { accountId, keyName?, expiresAt, token?, csrfToken? } }`。账户是
+  Router `access_key_id` 的十进制字符串。会话凭据是 `rat1.` 前缀的 bearer 值，有效期
+  有界，为十二小时；Gateway 只存其 SHA-256 哈希，撤销始终在服务端完成。原生客户端从
+  响应体取得凭据；浏览器收到 `HttpOnly; Secure; SameSite=Strict` 且
+  `Path=/`、`Max-Age` 等于有效期的 cookie，外加一个页面可读的 CSRF cookie，其值与配对
+  profile 使用同一个 HMAC。校验不通过的 key 返回 `401 UNAUTHORIZED`，Router 不可达返回
+  带 `retriable: true` 的 `503 AGENT_UNAVAILABLE`，被 Router 锁定的调用方返回带
+  `retriable: true` 的 `429 RATE_LIMITED`，并在 `Retry-After` 响应头里带上 Router
+  给出的延迟。
+- **账户主机列表**：`GET /v1/account/hosts` 以任一 profile 的账户会话凭据调用，只返回
+  `accountId` 等于该会话账户的 Host 及其在线状态。该路由按账户作用域且不接受 hostId，
+  因此其他账户的 Host 根本无法在这里被寻址。它不授权任何中继 Host 操作：
+  `/hosts/{hostId}/...` 仍要求上一节的设备令牌，把账户会话用在那里会被 `401
+  UNAUTHORIZED` 拒绝——与不存在的 Host 返回完全相同的应答，因此不会暴露其他账户的
+  Host 是否存在。
+- **设备申请、确认与授权（工作包 D）**：客户端申请设备后，Gateway 向该账户内所有声明
+  支持的在线 Host 发送 `device.request`（新增帧，Gateway→Hosts）；第一个由用户确认的
+  Host 签发 `device.grant`（新增帧，Host→Gateway），Gateway 再把该授权中继给账户内其他
+  Host，接受方校验签名 Host 在同一账户下由网关 CA 注册、且设备未被撤销。客户端最终只
+  持有一个可用于这些 Host 的设备令牌并丢弃 AccessKey。授权时离线的 Host 在链路恢复后
+  收到待处理授权，在它接受授权之前不接受该设备令牌。
+- **帧能力与旧 Host（工作包 D）**：两个新帧只发给声明支持的 Host（该声明由工作包 D
+  定义，当前 Host link 没有 hello 或能力帧）。这是安全要求而非优化：今天的 Host 会
+  静默忽略未知 `type`（`packages/racp/src/hostlink.ts` L103-172），发给不支持的 Host
+  会让客户端无限等待，因此 Gateway 必须把该 Host 以“无法确认”告知客户端，由客户端退回
+  每 Host 票据。
 - **角色与隔离**：账户模式签发的设备属于网关来源主体，沿用安全规格 §3.7 的角色与
   限制（`viewer` / `controller` / `approver`、`pairedDevice: false`、始终受远程权限
   上限约束、无 `allow-session`）；处于严格模式的 Host 拒绝兄弟授权并逐台确认。任何
   路由、主机列表、设备记录、待处理授权与审计查询都不得跨账户，每次路由决定与缓存查找
   都按账户限定。Gateway 按 IP 的限流（ADR 决策 10）天然跨账户；按账户的限额彼此独立
-  （安全规格 §8），任何限流应答都不泄露其他账户的数据（安全规格 §9）。共享组网上的
-  可达性不授予任何权限。
+  （安全规格 §8），任何限流应答都不泄露其他账户的数据（安全规格 §9）。账户登录与按 key
+  注册共用一个按解析地址键控的严格凭据桶，调用方无法用命令预算去猜测 key。共享组网上的
+  可达性不授予任何权限。经自托管流程注册的 `hostId` 不是账户资产：AccessKey 注册只有在
+  证明持有该 Host 现有证书所认证的密钥时才能接管它，因此得知一个 `hostId` 绝不会让某个
+  key 把别人的 Host 移入自己的账户。跨账户尝试的错误码在注册上是
+  `HOST_ACCOUNT_MISMATCH`（403），因为调用方本身持有另一账户的有效 key、Host 必须知道
+  自己的 `hostId` 已被占用；该码不指明账户，只暴露 `hostId` 已被注册。按账户作用域的
+  路由一律返回下一节统一的 `UNAUTHORIZED`，因此列表或路由尝试都不会泄露其他账户的
+  Host。
 
 ## 6. 限制和错误
 

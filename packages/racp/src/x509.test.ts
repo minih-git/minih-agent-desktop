@@ -2,6 +2,7 @@ import { X509Certificate } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import {
+  accountBindingOrganizationalUnit,
   certificateMatchesPublicKey,
   createCertificateAuthority,
   createHostCsr,
@@ -11,6 +12,7 @@ import {
   newKeyPair,
   newSerialNumberBytes,
   publicKeyFromPrivateKey,
+  readCertificateAccountBinding,
   readCertificateInfo,
   readCsr,
 } from "./x509.js";
@@ -147,5 +149,40 @@ describe("certificate serial numbers", () => {
     for (const certificate of issued) {
       expect(new X509Certificate(certificate.certificatePem).subject).toBe("CN=host_gamma");
     }
+  });
+});
+
+/**
+ * Account binding (protocol §11.5, D666): the issued certificate carries the
+ * account in its subject DN, and a reader recovers it. A certificate without the
+ * attribute belongs to the self-hosted flow and reports `null`, so a sibling
+ * Host can never mistake it for a same-account signer.
+ */
+describe("account binding in an issued certificate", () => {
+  it("round-trips the account and keeps the CN first in the subject", async () => {
+    const ca = await createCertificateAuthority({ commonName: "Minih Gateway CA" });
+    const keys = newKeyPair();
+    const csr = await createHostCsr({ privateKeyPem: keys.privateKeyPem, hostId: "host_account" });
+    const issued = await issueCertificateFromCsr({ ca, csrPem: csr, purpose: "client", accountId: "42" });
+    expect(readCertificateAccountBinding(issued.certificatePem)).toBe("42");
+    expect(accountBindingOrganizationalUnit("42")).toBe("account:42");
+    // The Host-link path reads `subject.CN` from the peer certificate object,
+    // and `readCertificateInfo` reads the DER, so neither depends on how Node
+    // renders a multi-attribute DN.
+    expect(new X509Certificate(issued.certificatePem).subject.startsWith("CN=host_account")).toBe(true);
+    expect(readCertificateInfo(issued.certificatePem).commonName).toBe("host_account");
+  });
+
+  it("reports no account for a self-hosted certificate", async () => {
+    const ca = await createCertificateAuthority({ commonName: "Minih Gateway CA" });
+    const keys = newKeyPair();
+    const csr = await createHostCsr({ privateKeyPem: keys.privateKeyPem, hostId: "host_self" });
+    const issued = await issueCertificateFromCsr({ ca, csrPem: csr, purpose: "client" });
+    expect(readCertificateAccountBinding(issued.certificatePem)).toBeNull();
+    expect(new X509Certificate(issued.certificatePem).subject).toBe("CN=host_self");
+  });
+
+  it("reads no account from a certificate that is not a certificate", () => {
+    expect(readCertificateAccountBinding("not a certificate")).toBeNull();
   });
 });

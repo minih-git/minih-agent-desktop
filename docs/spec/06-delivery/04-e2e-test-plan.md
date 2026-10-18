@@ -15562,9 +15562,14 @@ These five scenarios are the acceptance targets of ADR
 gates 29–33. They run against a local Router (or a local test stub answering
 `/api/auth/session` and `/api/easytier/bootstrap`) plus a local test Gateway with
 loopback model stubs. No production Router, no real AccessKey, and no real
-domain are used. Behaviour that the decision leaves to the implementing PR (error
-codes, route names, how a revocation reaches sibling Hosts) is asserted once that
-PR defines it.
+domain are used. Behaviour that the decision leaves to the implementing PR is
+asserted once that PR defines it: the routes (`POST /v1/account/login`,
+`GET /v1/account/hosts`, and enrollment by AccessKey on `POST /v1/enroll`), the
+error codes (`ACCESS_KEY_INVALID`, `ACCESS_KEY_UNAVAILABLE`,
+`HOST_ACCOUNT_MISMATCH`, `RATE_LIMITED`, and the uniform `UNAUTHORIZED` of an
+account-scoped route), the session shape, and the certificate account binding
+are defined by rollout R7 package C (protocol §11.5). How a revocation reaches
+sibling Hosts is still open for package D.
 
 #### E2E-REMOTE-ACCOUNT-cross-account-isolation
 

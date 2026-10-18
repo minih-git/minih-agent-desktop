@@ -338,22 +338,29 @@ authentication input also carries the connection origin: the loopback
 - Revocation on either the Gateway or the Host denies new connections and
   closes existing relayed logical connections within 5 seconds.
 
-### 3.8 Account mode: Router key as discovery and enrollment (planned, D666)
+### 3.8 Account mode: Router key as discovery and enrollment (D666)
 
 Account mode (ADR `remote-control-router-account-binding`, protocol §11.5) lets a
 Minih-Router AccessKey discover and enroll Hosts and bootstrap a device that is
 usable on every Host of the account. It is additive: §3.1–§3.7 keep their
-meaning, and a user without a Router key uses the self-hosted flow. Nothing in
-this subsection is implemented yet.
+meaning, and a user without a Router key uses the self-hosted flow. The Gateway
+account directory — key verification, enrollment by key, account login, and the
+account host list — is implemented (rollout R7 package C); the
+`device.request` / `device.grant` relay and the Host capability advertisement
+are not (package D), and this subsection marks the clauses that wait on them.
 
 - **AccessKey handling.** A client's AccessKey is presented only to the Gateway,
   which verifies it against Router `GET /api/auth/session` over loopback, never
   persists the raw key, and never forwards it to a Host. A Host only ever holds
   its own account key, which it already has for enrollment (the D661 provider
-  row on a desktop; how `agent-host-cli` receives one is defined by the
-  implementing PR). A client drops the key after the device exchange and keeps
-  only the device token. The AccessKey MUST NOT appear in a Host device store, a
-  log line, an audit record, a URL, or an error payload.
+  row on a desktop; how `agent-host-cli` receives one is not settled yet —
+  rollout R7 packages D and E). A client drops the key after the device exchange
+  and keeps only the device token. The AccessKey MUST NOT appear in a Host
+  device store, a log line, an audit record, a URL, or an error payload. The
+  only durable state a login leaves is the SHA-256 hash of the session
+  credential the Gateway mints from a verified key, with a bounded lifetime; a
+  successful verification is never cached, so every login calls the Router
+  again.
 - **Client address.** The Gateway learns the caller address from a configured
   header only when the TCP peer is inside its configured trusted-proxy set, and
   otherwise from the peer itself. It forwards that address in the header named
@@ -361,7 +368,16 @@ this subsection is implemented yet.
   Router's `TRUSTED_PROXIES`, so `allowed_peer_cidrs` binds to the real caller.
   Trusting the header from an untrusted peer would let any caller claim any
   address, so this setting is security-relevant configuration, not a
-  convenience flag.
+  convenience flag. The two settings are one: a header name without a trusted
+  proxy, or a trusted proxy without a header name, refuses to start, so a
+  deployment cannot silently fall back to the proxy's own address. The chain
+  rule mirrors the Router's own resolver, so the forwarded value means the same
+  thing at both ends: `X-Forwarded-For` is read right-to-left and the caller is
+  the first entry outside the trusted-proxy set (or the leftmost entry when
+  every entry is trusted), any other header carries exactly one address, and an
+  entry that is not an IP address falls back to the peer. The resolved address
+  keys the per-IP rate limits and the audit record. Without both settings the
+  resolved address is the TCP peer, exactly as it was before account mode.
 - **Key lifecycle.** A disabled or deleted key fails verification, so it starts
   no new login or enrollment. Key state revokes nothing by itself: approved
   devices and enrolled Hosts are revoked only through the existing revoke paths
@@ -398,12 +414,24 @@ this subsection is implemented yet.
   enrolled in its own account under the Gateway CA, for a device that is not
   revoked. The Gateway's per-IP rate limit (ADR decision 10) applies across
   accounts by nature; per-account limits stay independent (§8), and no
-  rate-limit response discloses another account's data (§9).
-- **Strict mode.** A desktop setting makes that Host refuse sibling grants and
-  confirm every device with its own user. It keeps the per-device approval of
-  ADR 0331 for an operator who does not want roaming.
-- **Unsupported Hosts.** The new frames go only to Hosts that advertise support,
-  because today's Host ignores an unknown frame type silently
+  rate-limit response discloses another account's data (§9). Account login and
+  enrollment by key share one tight credential bucket keyed on the resolved
+  caller address, so a caller cannot spend the command budget guessing a key.
+  The error of a cross-account attempt is `HOST_ACCOUNT_MISMATCH` (403) on
+  enrollment, where the caller already holds a valid key of another account and
+  the Host must learn that its `hostId` is taken; it names no account, so it
+  reveals only that the `hostId` is enrolled. Every account-scoped route answers
+  the uniform `UNAUTHORIZED` of protocol §13 instead — the same answer a
+  nonexistent Host produces — so a listing or a routing attempt never discloses
+  another account's Hosts. A `hostId` registered through the self-hosted flow is
+  not an account asset either: an AccessKey enrollment may take it over only by
+  certifying the key its current certificate certifies, so learning a `hostId`
+  never lets a key move another user's Host into its own account.
+- **Strict mode (package D).** A desktop setting makes that Host refuse sibling
+  grants and confirm every device with its own user. It keeps the per-device
+  approval of ADR 0331 for an operator who does not want roaming.
+- **Unsupported Hosts (package D).** The new frames go only to Hosts that
+  advertise support, because today's Host ignores an unknown frame type silently
   (`packages/racp/src/hostlink.ts` L103-172). A client MUST be told which Hosts
   of its account cannot confirm instead of waiting for an answer that never
   arrives; the fallback is the per-Host pairing ticket (§3.7, protocol §11.4).

@@ -1,6 +1,7 @@
 /**
- * The Gateway client API: `RACP-HTTP` commands, SSE streams, and pairing
- * (protocol §11.2 / §11.4, security §3.1, §3.7, §5.2, gates 24–25).
+ * The Gateway client API: `RACP-HTTP` commands, SSE streams, pairing, and the
+ * account directory (protocol §11.2 / §11.4 / §11.5, security §3.1, §3.7, §3.8,
+ * §5.2, gates 24–25, 29–31).
  *
  * Two authentication profiles are supported. Native clients send
  * `Authorization: Bearer <device token>`; browsers send the `HttpOnly` device
@@ -11,6 +12,12 @@
  * stream without weakening the mutation rule. A credential in a URL is always
  * refused. The Gateway only checks the cached token hash for a fast reject:
  * the Host re-authenticates every relayed logical connection (S8).
+ *
+ * Account mode (D666) adds `POST /v1/account/login` and `GET /v1/account/hosts`
+ * in their own namespace. An account session credential authenticates the
+ * account directory only: `GET /v1/hosts` and every `/hosts/{hostId}/...` route
+ * keep accepting device tokens exclusively, so an AccessKey never authorizes a
+ * relayed Host operation.
  */
 import { randomUUID } from "node:crypto";
 import { createServer as createHttpServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
@@ -18,6 +25,7 @@ import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 
 import {
+  RACP_ACCOUNT_SESSION_TOKEN_PREFIX,
   RACP_DEVICE_TOKEN_PREFIX,
   RACP_HTTP_QUERY_PARAMS,
   RACP_HTTP_ROUTE_LIST,
@@ -28,13 +36,15 @@ import {
   type RacpHttpRouteName,
 } from "@minih-agent/shared";
 
+import { ACCOUNT_COOKIE, type AccountSessionService } from "./account.js";
+import { peerAddress } from "./client-ip.js";
 import type { ClientTlsOptions, ListenAddress } from "./config.js";
 import { CSRF_COOKIE, DEVICE_COOKIE, csrfTokenFor, hashToken, type PairingService } from "./pairing.js";
 import type { GatewayLog } from "./router.js";
 import { GatewayRpcError, type CommandRouter, type ConnectionIdentity, type LogicalConnectionPool } from "./router.js";
 import type { AuditResult } from "./audit.js";
 import type { RateLimiter } from "./rate-limit.js";
-import type { GatewayStore } from "./store.js";
+import type { GatewayAccountSessionRecord, GatewayStore } from "./store.js";
 import { serveEventStream, type StreamSubscription } from "./sse.js";
 
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -92,6 +102,9 @@ const HOST_ROUTES: HostRoute[] = (() => {
 })();
 
 const PAIR_ROUTE = /^\/v1\/hosts\/([^/]+)\/pair\/?$/;
+/** Account directory routes (protocol §11.5); never host-scoped. */
+const ACCOUNT_LOGIN_ROUTE = /^\/v1\/account\/login\/?$/;
+const ACCOUNT_HOSTS_ROUTE = /^\/v1\/account\/hosts\/?$/;
 
 type ResolvedAuth = { deviceId: string; hostId: string; token: string; via: "header" | "cookie" };
 
@@ -115,8 +128,18 @@ function errorPayload(error: GatewayRpcError, traceId: string): unknown {
   };
 }
 
-function clientIp(request: IncomingMessage): string {
-  return request.socket.remoteAddress ?? "unknown";
+/**
+ * The one error response shape for the whole client API. `Retry-After` is set
+ * only when the failure carries a hint, so a `RATE_LIMITED` answer — the
+ * Gateway's own per-IP limit or the Router's `AUTH_LOCKED` lockout — tells the
+ * caller how long to wait (RFC 9110, whole seconds).
+ */
+function sendError(response: ServerResponse, error: GatewayRpcError, traceId: string, cors: Record<string, string>): void {
+  const retryAfter = error.retryAfterMs === undefined ? null : String(Math.max(1, Math.ceil(error.retryAfterMs / 1000)));
+  sendJson(response, error.code === "INTERNAL" ? 500 : error.status, errorPayload(error, traceId), {
+    ...cors,
+    ...(retryAfter ? { "retry-after": retryAfter } : {}),
+  });
 }
 
 function parseCookies(header: string | undefined): Record<string, string> {
@@ -228,6 +251,13 @@ export type ClientHttpServerOptions = {
   version: string;
   /** Whether a Host currently holds a live link (host summaries and offline rejects). */
   isHostOnline: (hostId: string) => boolean;
+  /**
+   * The account directory (D666). Absent means account mode is off, and both
+   * `/v1/account/*` routes answer `NOT_FOUND` like any other unknown path.
+   */
+  account?: AccountSessionService;
+  /** Resolved client address (ADR decision 10); defaults to the TCP peer. */
+  resolveClientIp?: (request: IncomingMessage) => string;
   now?: () => number;
 };
 
@@ -302,14 +332,18 @@ export class ClientHttpServer {
   /** A credential never travels in the URL (security §3.1, gate 24). */
   private assertNoUrlCredential(rawUrl: string): void {
     const url = new URL(rawUrl, "http://gateway.local");
+    const carriesCredential = (value: string): boolean =>
+      value.includes(RACP_DEVICE_TOKEN_PREFIX) ||
+      value.includes(RACP_PAIRING_TOKEN_PREFIX) ||
+      value.includes(RACP_ACCOUNT_SESSION_TOKEN_PREFIX);
     if (url.search === "") {
-      if (url.pathname.includes(RACP_DEVICE_TOKEN_PREFIX) || url.pathname.includes(RACP_PAIRING_TOKEN_PREFIX)) {
+      if (carriesCredential(url.pathname)) {
         throw new GatewayRpcError("UNAUTHORIZED", "a credential must never appear in a URL");
       }
       return;
     }
     for (const key of url.searchParams.keys()) {
-      if (CREDENTIAL_QUERY.test(key) || [...url.searchParams.values()].some((value) => value.startsWith(RACP_DEVICE_TOKEN_PREFIX) || value.startsWith(RACP_PAIRING_TOKEN_PREFIX))) {
+      if (CREDENTIAL_QUERY.test(key) || [...url.searchParams.values()].some(carriesCredential)) {
         throw new GatewayRpcError("UNAUTHORIZED", "a credential must never appear in a URL");
       }
     }
@@ -330,25 +364,54 @@ export class ClientHttpServer {
     return { deviceId: device.deviceId, hostId: device.hostId, token, via: headerToken ? "header" : "cookie" };
   }
 
-  /** CSRF double submit: the header must equal HMAC(gateway-secret, deviceId). */
-  private assertCsrf(request: IncomingMessage, auth: ResolvedAuth): void {
-    if (auth.via !== "cookie") return;
+  /** The account directory, or the `NOT_FOUND` a Gateway without it returns. */
+  private accountService(): AccountSessionService {
+    const account = this.options.account;
+    if (!account) throw new GatewayRpcError("NOT_FOUND", "account mode is not configured on this Gateway");
+    return account;
+  }
+
+  /**
+   * The account session credential of a `/v1/account/*` request, resolved the
+   * same two ways as a device credential. It never authorizes a host-scoped
+   * route, which is why every refusal here is the same `UNAUTHORIZED`: a caller
+   * cannot tell a foreign account's session from an unknown one (gate 29).
+   */
+  private authenticateAccount(request: IncomingMessage): { session: GatewayAccountSessionRecord; via: "header" | "cookie" } {
+    const account = this.accountService();
+    const headerToken = bearer(request.headers.authorization);
+    const cookieToken = request.headers.cookie ? parseCookies(request.headers.cookie)[ACCOUNT_COOKIE] : undefined;
+    const token = headerToken ?? cookieToken;
+    if (!token) throw new GatewayRpcError("UNAUTHORIZED", "this request needs an account session credential");
+    const session = account.authenticate(token);
+    if (headerToken === null) this.assertOrigin(request, "cookie");
+    return { session, via: headerToken ? "header" : "cookie" };
+  }
+
+  /** CSRF double submit: the header must equal HMAC(gateway-secret, credentialId). */
+  private assertCsrf(request: IncomingMessage, via: "header" | "cookie", credentialId: string): void {
+    if (via !== "cookie") return;
     const method = (request.method ?? "GET").toUpperCase();
     if (method === "GET" || method === "HEAD" || method === "OPTIONS") return;
     const header = request.headers["x-csrf-token"];
     const value = Array.isArray(header) ? header[0] : header;
-    if (!value || value !== csrfTokenFor(this.options.store.secret, auth.deviceId)) {
+    if (!value || value !== csrfTokenFor(this.options.store.secret, credentialId)) {
       throw new GatewayRpcError("FORBIDDEN", "the CSRF token is missing or wrong");
     }
   }
 
-  private assertRateLimit(auth: ResolvedAuth | null, ip: string): void {
-    const decision = this.options.rateLimiter.check(auth?.deviceId ?? null, ip);
+  /** `principalId` is a device id or an account session id; `null` is unauthenticated. */
+  private assertRateLimit(principalId: string | null, ip: string): void {
+    const decision = this.options.rateLimiter.check(principalId, ip);
     if (decision.allowed) return;
-    throw new GatewayRpcError("RATE_LIMITED", `retry in ${decision.retryAfterMs} ms`, true);
+    throw new GatewayRpcError("RATE_LIMITED", `retry in ${decision.retryAfterMs} ms`, true, decision.retryAfterMs);
   }
 
-  private async audit(op: string, ip: string, result: AuditResult, extra: { hostId?: string; deviceId?: string }): Promise<void> {
+  private resolveIp(request: IncomingMessage): string {
+    return (this.options.resolveClientIp ?? peerAddress)(request);
+  }
+
+  private async audit(op: string, ip: string, result: AuditResult, extra: { hostId?: string; deviceId?: string; accountId?: string }): Promise<void> {
     await this.options.store.appendAudit({ op, ip, result, ...extra });
   }
 
@@ -357,7 +420,7 @@ export class ClientHttpServer {
     response.setHeader("x-trace-id", traceId);
     const rawUrl = request.url ?? "/";
     const url = new URL(rawUrl, "http://gateway.local");
-    const ip = clientIp(request);
+    const ip = this.resolveIp(request);
     const cors = this.corsHeaders(request);
 
     try {
@@ -385,6 +448,16 @@ export class ClientHttpServer {
         return;
       }
 
+      if (ACCOUNT_LOGIN_ROUTE.test(url.pathname)) {
+        await this.handleAccountLogin(request, response, ip, cors, traceId);
+        return;
+      }
+
+      if (ACCOUNT_HOSTS_ROUTE.test(url.pathname)) {
+        await this.handleAccountHosts(request, response, ip, cors, traceId);
+        return;
+      }
+
       if (url.pathname === "/v1/hosts") {
         await this.handleHostList(request, response, ip, cors, traceId);
         return;
@@ -408,7 +481,7 @@ export class ClientHttpServer {
 
       this.assertOrigin(request, "optional");
       const auth = this.authenticate(request);
-      this.assertCsrf(request, auth);
+      this.assertCsrf(request, auth.via, auth.deviceId);
       if (auth.hostId !== hostId) throw new GatewayRpcError("FORBIDDEN", "this device is paired with another Host");
       const identity: ConnectionIdentity = { hostId, deviceId: auth.deviceId, credential: auth.token };
 
@@ -420,7 +493,7 @@ export class ClientHttpServer {
         if (subscription.scope === "session" && !subscription.sessionId) {
           throw new GatewayRpcError("INVALID_ARGUMENT", "the event stream names no session");
         }
-        this.assertRateLimit(auth, ip);
+        this.assertRateLimit(auth.deviceId, ip);
         await this.audit(route.operation, ip, "ok", { hostId, deviceId: auth.deviceId });
         const lastEventId = request.headers["last-event-id"];
         await serveEventStream({
@@ -465,7 +538,7 @@ export class ClientHttpServer {
         }
         forwarded[name] = value;
       }
-      this.assertRateLimit(auth, ip);
+      this.assertRateLimit(auth.deviceId, ip);
       const idempotencyKey = command["idempotencyKey"];
       const outcome = await this.options.router.run({
         identity,
@@ -483,8 +556,7 @@ export class ClientHttpServer {
         response.end();
         return;
       }
-      const status = rpc.code === "INTERNAL" ? 500 : rpc.status;
-      sendJson(response, status, errorPayload(rpc, traceId), cors);
+      sendError(response, rpc, traceId, cors);
     }
   }
 
@@ -499,7 +571,7 @@ export class ClientHttpServer {
       if (request.method !== "GET") throw new GatewayRpcError("METHOD_NOT_FOUND", "host/list is a GET endpoint");
       this.assertOrigin(request, "optional");
       const auth = this.authenticate(request);
-      this.assertRateLimit(auth, ip);
+      this.assertRateLimit(auth.deviceId, ip);
       const host = this.options.store.findHost(auth.hostId);
       if (!host || host.revokedAt) throw new GatewayRpcError("UNAUTHORIZED", "this device's Host is gone");
       const summary: RacpGatewayHostSummary = {
@@ -512,7 +584,79 @@ export class ClientHttpServer {
       sendJson(response, 200, { result: { hosts: [summary] } }, cors);
     } catch (error) {
       const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to list hosts");
-      sendJson(response, rpc.code === "INTERNAL" ? 500 : rpc.status, errorPayload(rpc, traceId), cors);
+      sendError(response, rpc, traceId, cors);
+    }
+  }
+
+  /**
+   * `POST /v1/account/login` (protocol §11.5). The Router AccessKey travels in
+   * the `Authorization` header only, is verified against the Router over
+   * loopback, and is never stored, logged, or echoed; the response carries the
+   * account session credential as a cookie pair for a browser and in the body
+   * for a native client.
+   */
+  private async handleAccountLogin(
+    request: IncomingMessage,
+    response: ServerResponse,
+    ip: string,
+    cors: Record<string, string>,
+    traceId: string,
+  ): Promise<void> {
+    try {
+      if (request.method !== "POST") throw new GatewayRpcError("METHOD_NOT_FOUND", "account login is a POST endpoint");
+      const accessKey = bearer(request.headers.authorization);
+      if (!accessKey) {
+        throw new GatewayRpcError("UNAUTHORIZED", "account login needs the Router AccessKey in the Authorization header");
+      }
+      const raw = await readBody(request);
+      let body: unknown = null;
+      try {
+        body = raw ? (JSON.parse(raw) as unknown) : null;
+      } catch {
+        throw new GatewayRpcError("INVALID_ARGUMENT", "the login body is not JSON");
+      }
+      // A browser login follows the pairing route's browser rules: the cookie
+      // profile needs an allowlisted Origin before the key is even verified.
+      const client = isRecord(body) ? body["client"] : undefined;
+      this.assertOrigin(request, client === "web" ? "required" : "optional");
+      const outcome = await this.accountService().login({ accessKey, body, ip });
+      // One Set-Cookie header per cookie: browsers reject a folded value.
+      if (outcome.cookies.length > 0) response.setHeader("set-cookie", outcome.cookies);
+      sendJson(response, outcome.status, outcome.payload, cors);
+    } catch (error) {
+      const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to start an account session");
+      if (!(error instanceof GatewayRpcError)) {
+        this.options.log("error", "gateway account login failed", { traceId, error: String(error) });
+      }
+      sendError(response, rpc, traceId, cors);
+    }
+  }
+
+  /**
+   * `GET /v1/account/hosts` (protocol §11.5): the Hosts of the caller's own
+   * account and only those. The route is account-scoped and takes no host id, so
+   * a foreign Host cannot be named here at all (gate 29); naming one on a
+   * host-scoped route instead fails the device-token check with the same
+   * `UNAUTHORIZED` a nonexistent Host produces.
+   */
+  private async handleAccountHosts(
+    request: IncomingMessage,
+    response: ServerResponse,
+    ip: string,
+    cors: Record<string, string>,
+    traceId: string,
+  ): Promise<void> {
+    try {
+      if (request.method !== "GET") throw new GatewayRpcError("METHOD_NOT_FOUND", "the account host list is a GET endpoint");
+      this.assertOrigin(request, "optional");
+      const { session, via } = this.authenticateAccount(request);
+      this.assertCsrf(request, via, session.sessionId);
+      this.assertRateLimit(`account:${session.sessionId}`, ip);
+      const outcome = await this.accountService().listHosts({ session, ip, isHostOnline: this.options.isHostOnline });
+      sendJson(response, outcome.status, outcome.payload, cors);
+    } catch (error) {
+      const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to list account hosts");
+      sendError(response, rpc, traceId, cors);
     }
   }
 
@@ -549,7 +693,7 @@ export class ClientHttpServer {
     } catch (error) {
       const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to pair the device");
       if (!(error instanceof GatewayRpcError)) this.options.log("error", "gateway pairing failed", { traceId, error: String(error) });
-      sendJson(response, rpc.code === "INTERNAL" ? 500 : rpc.status, errorPayload(rpc, traceId), cors);
+      sendError(response, rpc, traceId, cors);
     }
   }
 }

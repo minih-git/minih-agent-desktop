@@ -1,6 +1,8 @@
+export * from "./account.js";
 export * from "./admin-socket.js";
 export * from "./audit.js";
 export * from "./ca.js";
+export * from "./client-ip.js";
 export * from "./client-http.js";
 export * from "./config.js";
 export * from "./enrollment.js";
@@ -8,6 +10,7 @@ export * from "./hostlink-server.js";
 export * from "./pairing.js";
 export * from "./rate-limit.js";
 export * from "./router.js";
+export * from "./router-verifier.js";
 export * from "./serve.js";
 export * from "./sse.js";
 export * from "./store.js";

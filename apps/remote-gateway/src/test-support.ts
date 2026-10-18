@@ -4,11 +4,13 @@
  * it, and pairs a device. Every port, directory, and key is per-test; nothing
  * leaves the machine.
  */
+import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { enrollHostLink, startHostLink, type HostLinkCredentials, type HostLinkHandle } from "@minih-agent/racp";
+import { createHostCsr, enrollHostLink, newKeyPair, startHostLink, type HostLinkCredentials, type HostLinkHandle } from "@minih-agent/racp";
 import { harness, type Harness, type HarnessHistory } from "@minih-agent/racp/test-harness";
 import {
   RACP_HTTP_QUERY_PARAMS,
@@ -20,7 +22,7 @@ import {
 
 import type { GatewayServeConfig } from "./config.js";
 import type { GatewayLog } from "./router.js";
-import { startGateway, type GatewayServer } from "./serve.js";
+import { startGateway, type GatewayServer, type StartGatewayOptions } from "./serve.js";
 
 export type TestGateway = {
   gateway: GatewayServer;
@@ -34,7 +36,10 @@ export type TestGateway = {
 
 const silent: GatewayLog = () => undefined;
 
-export async function startTestGateway(overrides: Partial<GatewayServeConfig> = {}): Promise<TestGateway> {
+export async function startTestGateway(
+  overrides: Partial<GatewayServeConfig> = {},
+  startOptions: StartGatewayOptions = {},
+): Promise<TestGateway> {
   // A short prefix keeps the unix admin socket inside the platform path limit.
   const dataDir = await mkdtemp(join(tmpdir(), "minih-gw-"));
   const config: GatewayServeConfig = {
@@ -45,7 +50,7 @@ export async function startTestGateway(overrides: Partial<GatewayServeConfig> = 
     allowedOrigins: ["https://app.test"],
     ...overrides,
   };
-  const gateway = await startGateway(config, { log: silent, heartbeatMs: 60_000 });
+  const gateway = await startGateway(config, { log: silent, heartbeatMs: 60_000, ...startOptions });
   const caPem = await readFile(gateway.caCertificatePath, "utf8");
   return {
     gateway,
@@ -228,4 +233,212 @@ export async function command(
       : {}),
   });
   return { status: response.status, payload: (await response.json()) as { result?: unknown; error?: { data?: { code?: string } } } };
+}
+
+// ---------------------------------------------------------------------------
+// Account mode (D666): a local Router stub, enroll by key, and account routes
+// ---------------------------------------------------------------------------
+
+export type RouterStubAnswer = { status: number; body: unknown; headers?: Record<string, string> };
+
+export type RouterStubCall = {
+  path: string;
+  /** The AccessKey the Gateway presented; a test asserts on it, the Gateway never logs it. */
+  accessKey: string | null;
+  headers: Record<string, string | string[] | undefined>;
+};
+
+export type TestRouterStub = {
+  /** `http://127.0.0.1:<port>`; the Gateway refuses any other kind of URL. */
+  baseUrl: string;
+  /** Every `/api/auth/session` call the Gateway made, in order. */
+  calls: RouterStubCall[];
+  /** Answer this AccessKey with `answer` instead of the default refusal. */
+  setAnswer(accessKey: string, answer: RouterStubAnswer): void;
+  stop(): Promise<void>;
+};
+
+/** The Router's success envelope for one active AccessKey (`response.SuccessI18n`). */
+export function routerSessionAnswer(data: Record<string, unknown> = {}): RouterStubAnswer {
+  return {
+    status: 200,
+    body: {
+      code: 0,
+      message: "common.success",
+      data: { authenticated: true, principal_type: "access_key", access_key_id: 1, ...data },
+    },
+  };
+}
+
+/** The Router's refusal envelope, the shape `ErrorI18nFromAPIError` produces. */
+export const ROUTER_REFUSAL: RouterStubAnswer = {
+  status: 401,
+  body: { code: "UNAUTHORIZED", message: "auth.invalid_key" },
+};
+
+/**
+ * A local stand-in for the Router's control plane: it answers
+ * `GET /api/auth/session` with the documented envelope and records what the
+ * Gateway sent, so a test can assert the forwarded caller address without a real
+ * Router, AccessKey, or domain (rollout §7 test rule).
+ */
+export async function startRouterStub(): Promise<TestRouterStub> {
+  const answers = new Map<string, RouterStubAnswer>();
+  const calls: RouterStubCall[] = [];
+  const server = createHttpServer((request: IncomingMessage, response: ServerResponse) => {
+    const accessKey = /^Bearer\s+(\S+)$/i.exec(request.headers.authorization ?? "")?.[1] ?? null;
+    calls.push({ path: request.url ?? "/", accessKey, headers: { ...request.headers } });
+    const answer = (accessKey ? answers.get(accessKey) : undefined) ?? ROUTER_REFUSAL;
+    response.writeHead(answer.status, { "content-type": "application/json", ...answer.headers });
+    response.end(JSON.stringify(answer.body));
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  const address = server.address() as AddressInfo;
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    calls,
+    setAnswer: (accessKey, answer) => {
+      answers.set(accessKey, answer);
+    },
+    stop: async () => {
+      server.closeAllConnections?.();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
+}
+
+/** A fresh Host key pair and the CSR that names `hostId`. */
+export async function hostCsrFor(hostId: string): Promise<{ csr: string; privateKeyPem: string }> {
+  const keys = newKeyPair();
+  return { csr: await createHostCsr({ privateKeyPem: keys.privateKeyPem, hostId }), privateKeyPem: keys.privateKeyPem };
+}
+
+/**
+ * POST one `/v1/enroll` request straight at the Host link listener, with an
+ * optional `Authorization: Bearer <AccessKey>`. That listener authenticates the
+ * Gateway with server TLS only, so the test pins the Gateway CA exactly as a
+ * Host does.
+ */
+export async function postEnrollment(
+  gateway: TestGateway,
+  input: { body: unknown; accessKey?: string; authorization?: string },
+): Promise<{ status: number; payload: unknown; retryAfter: string | null }> {
+  const body = JSON.stringify(input.body);
+  return new Promise((resolve, reject) => {
+    const request = httpsRequest(
+      {
+        host: "127.0.0.1",
+        port: gateway.gateway.hostlink.port,
+        method: "POST",
+        path: "/v1/enroll",
+        ca: gateway.caPem,
+        headers: {
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(body),
+          ...(input.authorization
+            ? { authorization: input.authorization }
+            : input.accessKey
+              ? { authorization: `Bearer ${input.accessKey}` }
+              : {}),
+        },
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          let payload: unknown = text;
+          try {
+            payload = text ? (JSON.parse(text) as unknown) : null;
+          } catch {
+            // Keep the raw text so a failure shows exactly what the Gateway sent.
+          }
+          resolve({ status: response.statusCode ?? 0, payload, retryAfter: response.headers["retry-after"] ?? null });
+        });
+        response.on("error", reject);
+      },
+    );
+    request.on("error", reject);
+    request.end(body);
+  });
+}
+
+/** Enroll a Host by AccessKey and open its real mTLS link. */
+export async function enrollTestHostByKey(
+  gateway: TestGateway,
+  options: { hostId: string; accessKey: string; label?: string; history?: HarnessHistory },
+): Promise<TestHost & { certificatePem: string }> {
+  const keys = await hostCsrFor(options.hostId);
+  const response = await postEnrollment(gateway, {
+    body: { hostId: options.hostId, csr: keys.csr, ...(options.label ? { label: options.label } : {}) },
+    accessKey: options.accessKey,
+  });
+  if (response.status !== 200) {
+    throw new Error(`the Gateway refused the account enrollment: ${response.status} ${JSON.stringify(response.payload)}`);
+  }
+  const issued = response.payload as { certificate: string; expiresAt: string };
+  const credentials: HostLinkCredentials = {
+    hostId: options.hostId,
+    gatewayUrl: `wss://127.0.0.1:${gateway.gateway.hostlink.port}/v1/hostlink`,
+    gatewayCaPem: gateway.caPem,
+    certificatePem: issued.certificate,
+    privateKeyPem: keys.privateKeyPem,
+    expiresAt: issued.expiresAt,
+  };
+  const h = await harness(options.history ? { history: options.history } : {});
+  const handle = startHostLink({
+    credentials,
+    server: h.server,
+    authenticator: h.authenticator,
+    log: () => undefined,
+    backoff: { baseDelayMs: 50, maxDelayMs: 100 },
+  });
+  await waitFor(() => handle.status().state === "connected", 10_000);
+  return {
+    harness: h,
+    credentials,
+    handle,
+    hostId: options.hostId,
+    certificatePem: issued.certificate,
+    stop: async () => {
+      await handle.stop();
+    },
+  };
+}
+
+/** `POST /v1/account/login`, header profile or browser profile. */
+export async function accountLogin(
+  gateway: TestGateway,
+  input: { accessKey: string; client: "web" | "ios" | "android"; label?: string; origin?: string },
+): Promise<{ status: number; payload: Record<string, unknown>; setCookie: string[]; retryAfter: string | null }> {
+  const response = await fetch(`${gateway.clientBaseUrl}/v1/account/login`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${input.accessKey}`,
+      ...(input.origin ? { origin: input.origin } : {}),
+    },
+    body: JSON.stringify({ client: input.client, ...(input.label ? { label: input.label } : {}) }),
+  });
+  return {
+    status: response.status,
+    payload: (await response.json()) as Record<string, unknown>,
+    setCookie: response.headers.getSetCookie?.() ?? [],
+    retryAfter: response.headers.get("retry-after"),
+  };
+}
+
+/** `GET /v1/account/hosts` with whatever credential headers the test wants. */
+export async function accountHosts(
+  gateway: TestGateway,
+  headers: Record<string, string>,
+): Promise<{ status: number; payload: Record<string, unknown> }> {
+  const response = await fetch(`${gateway.clientBaseUrl}/v1/account/hosts`, { headers });
+  return { status: response.status, payload: (await response.json()) as Record<string, unknown> };
 }

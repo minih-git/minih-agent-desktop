@@ -406,8 +406,8 @@ keeps working unchanged; account mode is selected when the Router answers a
 |---|---|---|---|
 | A | Desktop | this decision: the ADR, the spec updates, decision D666 (docs only) | — |
 | B | Router | additive `remoteGateway {hostlinkUrl, publicOrigin, caPem}` in the bootstrap answer, its system setting, tests, and docs | A (contract) |
-| C | Desktop | Gateway account directory: enroll-by-key, account login, account host list, device request / confirm relay, trusted-proxy client IP, cross-account isolation tests | A |
-| D | Desktop | `device.request` / `device.grant` Host-link frames, Host-side confirm and grant verification, `agent-host-cli` support | C |
+| C | Desktop | Gateway account directory: enroll-by-key, account login, account host list, trusted-proxy client IP, cross-account isolation tests | A |
+| D | Desktop | device request / confirm relay: `device.request` / `device.grant` Host-link frames, Host-side confirm and grant verification, `agent-host-cli` support | C |
 | E | Desktop | host-core second overlay port forward, auto-configuration from the bootstrap, the desktop confirm dialog, strict mode, and i18n | B, D |
 | F | Desktop | clients: AccessKey login and the host switcher in `apps/remote-web` | C, D |
 | G | Desktop | push on top of accounts | F |
@@ -427,7 +427,11 @@ Scope notes:
 - the desktop needs a second No-TUN forward to the Host-link address on the
   overlay (provider-config §3): exactly one forward exists today;
 - the new frames reach only Hosts that advertise support, and the advertisement
-  is defined by package D.
+  is defined by package D;
+- the device request / confirm relay moved from package C to package D: relaying
+  a request and accepting a signed grant depends on the `device.request` /
+  `device.grant` frames and the capability advertisement that D defines, so C
+  owns only the account directory and D owns everything the relay is built on.
 
 Exit criteria:
 
@@ -750,13 +754,22 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   restoring the link, `dispose()` leaving no timer or socket, and logs free of
   credentials.
 
-- R7 not started (2026-10-18, D666 / ADR
-  `remote-control-router-account-binding`): account mode exists only as a
-  specification — protocol §11.5, security §3.8 with gates 29–33,
-  provider-config §3, and the `E2E-REMOTE-ACCOUNT-*` Draft scenarios. No code
-  exists for the Gateway account directory, the `device.request` /
-  `device.grant` frames, the second No-TUN forward, the client login and host
-  switcher, or strict mode.
+- R7 package C delivered (2026-10-18, D666 / ADR
+  `remote-control-router-account-binding`): the Gateway account directory —
+  trusted-proxy client address resolution, the Router AccessKey verifier,
+  enroll-by-key with the account binding in the issued certificate, account
+  login and account host list with a hashed, bounded session credential,
+  per-IP credential rate limits, and cross-account isolation tests against a
+  stubbed Router. Protocol §11.5, security §3.8, and the Gateway README carry
+  the routes, error codes, session shape, certificate binding, and client-IP
+  rule this package settles. Still missing: the `device.request` /
+  `device.grant` frames and the capability advertisement (package D), the
+  desktop auto-configuration, second No-TUN forward, confirm dialog, and strict
+  mode (package E), the client login and host switcher (package F), the Router's
+  `remoteGateway` bootstrap object (package B), and the deployment beside the
+  Router (D-1). The `E2E-REMOTE-ACCOUNT-*` scenarios stay Draft: only their
+  cross-account isolation steps 1–4 and 6 are covered so far, by the Gateway's
+  own integration tests.
 
 ## 8. Amendment history
 

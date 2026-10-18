@@ -249,8 +249,22 @@ export class HostLinkServer implements HostLinkSource {
       response.end(JSON.stringify({ error: { code: "INVALID_ARGUMENT", message: "the enrollment body is not JSON" } }));
       return;
     }
-    const outcome = await this.options.enrollment.handleEnroll(parsed, request.socket.remoteAddress ?? "unknown");
-    response.writeHead(outcome.status, { "content-type": "application/json" });
+    // The client address here is the Host link's TCP peer: this port is reached
+    // directly over the overlay, never through the client proxy, so there is no
+    // forwarded header to resolve. An account-mode AccessKey travels in the
+    // Authorization header and is handed straight to the verifier (gate 30).
+    const outcome = await this.options.enrollment.handleEnroll(
+      parsed,
+      request.socket.remoteAddress ?? "unknown",
+      request.headers.authorization,
+    );
+    // A 429 carries its retry hint as `Retry-After`, so a Host can wait exactly
+    // as long as the Gateway or the Router asked it to (RFC 9110).
+    const retryAfter = outcome.retryAfterMs === undefined ? null : String(Math.max(1, Math.ceil(outcome.retryAfterMs / 1000)));
+    response.writeHead(outcome.status, {
+      "content-type": "application/json",
+      ...(retryAfter ? { "retry-after": retryAfter } : {}),
+    });
     response.end(JSON.stringify(outcome.payload));
   }
 
