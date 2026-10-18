@@ -318,6 +318,7 @@ ADR 记录那些不应被静默改变的架构选择。中文入口与英文索�
 | 0312 | [会话级 Todo 清单](/adr/0312-session-scoped-todo-checklist) | 已接受实施 |
 | registry-header-variable-spelling | [Remote header variables accept the registry's `{name}` spelling](/adr/registry-header-variable-spelling) | Proposed |
 | 0331 | [自托管网关、可连接的桌面 Host 与移动客户端](/adr/0331-self-hosted-gateway-and-mobile-client) | 已接受待实现（MVP 之后；D665） |
+| agent-long-term-memory | [分层、可溯源的长期记忆](/adr/agent-long-term-memory) | 已接受待实现（D666；修订 ADR 0234） |
 
 ## 什么时候看 ADR
 
