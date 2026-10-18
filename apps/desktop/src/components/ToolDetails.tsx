@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { HighlightedCode, useCopy } from "./Markdown";
+import { CodeText, useCopy } from "./Markdown";
 import { LargeTextPreview } from "./LargeTextPreview";
 import { IconCheck, IconCircleAlert, IconCopy, IconInfo } from "./icons";
 import { TooltipButton, cx } from "./ui";
@@ -216,9 +216,9 @@ function BlockBody({ block, streaming }: { block: ToolBlock; streaming: boolean 
           text={block.text}
           followLatest={streaming}
           preClassName={cx("tool-row-content", block.tone === "error" && "is-error")}
-          renderPage={(page) =>
-            block.highlight ? <HighlightedCode code={page} lang={block.lang} /> : page
-          }
+          renderPage={(page) => (
+            <CodeText code={page} lang={block.lang} highlight={block.highlight} />
+          )}
         />
       );
     case "diff":

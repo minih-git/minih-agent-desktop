@@ -233,6 +233,39 @@ export function HighlightedCode({
   );
 }
 
+/**
+ * Code body that tokenizes once it is near the viewport.
+ *
+ * Shiki tokenizes on the renderer's main thread. The detailed transcript
+ * density opens every tool body at once, and a retained pane keeps rendering
+ * while another page (Settings) covers it, so highlighting every offscreen
+ * block in one flush blocked the renderer for seconds on a long session. The
+ * placeholder is the same text in the same box — identical line breaks and
+ * height — so the tokens land unseen, as soon as the reader can see them.
+ */
+export function CodeText({
+  code,
+  lang,
+  highlight = true,
+}: {
+  code: string;
+  lang: string;
+  highlight?: boolean;
+}) {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  const nearViewport = useNearViewport(ref);
+  // Plain fences and oversized sources never tokenize, so they skip the gate
+  // and keep rendering exactly as the highlighter's own fallback does.
+  if (!highlight || resolveLang(lang) === null || nearViewport) {
+    return <HighlightedCode code={code} lang={lang} />;
+  }
+  return (
+    <span ref={ref}>
+      {code}
+    </span>
+  );
+}
+
 function CodeBlock({ code, lang, ...position }: { code: string; lang: string } & SourcePositionProps) {
   const { t } = useTranslation();
   const { copied, copy } = useCopy();
@@ -251,14 +284,14 @@ function CodeBlock({ code, lang, ...position }: { code: string; lang: string } &
       </div>
       <pre>
         <code>
-          <HighlightedCode code={code} lang={lang} />
+          <CodeText code={code} lang={lang} />
         </code>
       </pre>
     </div>
   );
 }
 
-function useNearViewport(ref: RefObject<HTMLDivElement | null>): boolean {
+function useNearViewport(ref: RefObject<Element | null>): boolean {
   const [nearViewport, setNearViewport] = useState(false);
   useEffect(() => {
     if (nearViewport) return;

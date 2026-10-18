@@ -65,11 +65,15 @@ test("tool rows render structured blocks instead of dumping JSON", async () => {
     /<ToolDetailBlocks blocks=\{blocks\} plain=\{runHead\} streaming=\{status === "running"\} \/>/,
   );
   assert.match(permissionSource, /<ToolDetailBlocks blocks=\{argBlocks\} \/>/);
-  // Code bodies share the transcript highlighter rather than a second cache.
+  // Code bodies share the transcript highlighter rather than a second cache,
+  // and tokenize only once they are visible: the detailed density opens every
+  // tool body at once, and tokenizing a covered pane's bodies blocked the
+  // renderer for seconds on a long session.
   assert.match(
     detailsSource,
-    /block\.highlight \? <HighlightedCode code=\{page\} lang=\{block\.lang\} \/> : page/,
+    /<CodeText code=\{page\} lang=\{block\.lang\} highlight=\{block\.highlight\} \/>/,
   );
+  assert.match(detailsSource, /import \{ CodeText, useCopy \} from "\.\/Markdown";/);
   // Diffs reuse the review card rails; hits and paths open in the work panel.
   assert.match(detailsSource, /className="diff-hunk"/);
   assert.match(detailsSource, /openTarget\(\{ kind: "file", path: rel \}\)/);
