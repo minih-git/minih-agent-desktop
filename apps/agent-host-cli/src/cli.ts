@@ -4,14 +4,25 @@ import { readFile } from "node:fs/promises";
 import { parseArgs, resolveConfig } from "./config.js";
 import { loadOrCreateHostId } from "./credentials.js";
 import { writeGatewayLink } from "./gateway-link.js";
+import { gatewayPairingTokenLine, pairingTokenLine } from "./pairing-line.js";
 
 /**
  * `agent-host-cli [--data-dir <dir>] [--port <n>] [--pair] [--host-core <bin>] [--sidecar <entry>]`
  *
  * stdout carries exactly the lines a bootstrap script parses:
  *   AGENT_HOST_CLI_READY {"hostId":..,"port":..,"version":..}
- *   AGENT_HOST_CLI_PAIRING_TOKEN {"token":..,"expiresAt":..}   (with --pair)
+ *   AGENT_HOST_CLI_PAIRING_TOKEN {"token":..,"expiresAt":..}             (--pair)
+ *   AGENT_HOST_CLI_PAIRING_TOKEN {"token":..,"expiresAt":..,"ticket":..}  (remote-pair)
  * Everything else is structured stderr.
+ *
+ * Only `remote-pair` carries the ticket that names the Host the pairing call
+ * must target (`mpt1:<hostId>:<pairingToken>`): a gateway-origin code is
+ * redeemed through the Gateway, the browser client pairs against
+ * `/v1/hosts/{hostId}/pair`, and a Host-scoped cookie path never exposes
+ * `GET /v1/hosts`, so the Host id has to travel with the token. The `--pair`
+ * token is ssh-origin and redeemable only on the loopback `RACP-WS` binding,
+ * so a ticket built from it could never pair through the Gateway. Two helpers
+ * build the lines so the two shapes cannot drift.
  */
 async function main(): Promise<void> {
   if (process.argv[2] === "provider-import") {
@@ -57,7 +68,7 @@ async function main(): Promise<void> {
   process.stdout.write(`AGENT_HOST_CLI_READY ${JSON.stringify({ hostId: app.hostId, host: app.address.host, port: app.address.port, version: (await import("@minih-agent/shared")).APP_VERSION })}\n`);
   if (config.pair) {
     const pairing = await app.issuePairingToken(config.pairingLifetimeMs);
-    process.stdout.write(`AGENT_HOST_CLI_PAIRING_TOKEN ${JSON.stringify(pairing)}\n`);
+    process.stdout.write(pairingTokenLine(pairing));
   }
   const stop = (signal: string) => {
     app.log("info", "signal received", { signal });
@@ -117,7 +128,10 @@ export async function runRemotePair(argv: string[]): Promise<number> {
     process.stderr.write(`agent-host-cli: pairing code unavailable (${response.code})\n`);
     return 1;
   }
-  process.stdout.write(`AGENT_HOST_CLI_PAIRING_TOKEN ${JSON.stringify(response.pairing)}\n`);
+  // The running instance owns the identity file this reads; the ticket carries
+  // the Host id that the pairing request path needs.
+  const hostId = await loadOrCreateHostId(config.dataDir);
+  process.stdout.write(gatewayPairingTokenLine(hostId, response.pairing));
   return 0;
 }
 

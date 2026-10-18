@@ -72,11 +72,13 @@ Because a browser cannot set request headers on the `WebSocket` and
 - **Header profile** for non-browser clients: the access token is sent in the
   `Authorization` header of every request and of the WebSocket upgrade.
 - **Cookie profile** for browser clients: after device pairing the self-hosted Gateway or the Host issues an
-  `HttpOnly`, `Secure`, `SameSite=Lax` or stricter session cookie; the
-  WebSocket upgrade and the SSE request are authorized by that cookie plus the
-  per-tenant Origin allowlist, and every mutation carries a CSRF token issued
-  with the session. A browser client MAY instead stream events through `fetch`
-  with the header profile.
+- **Cookie profile** for browser clients: after device pairing the self-hosted
+  Gateway or the Host issues an `HttpOnly`, `Secure`, `SameSite=Strict` session
+  cookie scoped to the paired Host with a finite `Max-Age` (400 days at most),
+  so the pairing survives a browser restart; the WebSocket upgrade and the SSE
+  request are authorized by that cookie plus the Origin rule of §5.2, and every
+  mutation carries a CSRF token issued with the session. A browser client MAY
+  instead stream events through `fetch` with the header profile.
 
 In both profiles access tokens MUST NOT be placed in query strings, WebSocket
 URLs, SSE URLs, attachment names, or event payloads. Bearer-only APIs still
@@ -417,7 +419,15 @@ session grant made remotely is the same by-tool-name grant as a local one
 ### 5.2 Origin and cross-site controls
 
 - The Gateway maintains an explicit browser Origin allowlist per tenant and
-  checks it on every WebSocket upgrade and SSE request from a browser.
+  checks it on every WebSocket upgrade and SSE request from a browser. A
+  cookie-authenticated request MUST carry an allowlisted `Origin`, with one
+  exception: a browser omits `Origin` on a same-origin `GET`/`HEAD`, which is
+  the shape of every H5 read and `fetch`-based event stream, so that request is
+  accepted when `Sec-Fetch-Site: same-origin` is present. An `Origin` that is
+  present but not allowlisted is always rejected, a mutation is never exempt
+  (it also needs the CSRF token), and a missing `Sec-Fetch-Site` keeps the
+  mandatory-Origin rule. Revocation stays server-side: a revoked token answers
+  `401` regardless of the cookie's remaining lifetime.
 - Local-only endpoints bind loopback and validate loopback Origin as required
   by ADR 0203.
 - Cookie-profile sessions use `SameSite` protection and a CSRF token on every
@@ -653,9 +663,11 @@ separate, explicitly specified credential-management capability is added.
 23. The Gateway's client API binds loopback by default; a non-loopback bind
     without configured TLS refuses to start. Applies from R4 (D665).
 24. Tokens never appear in URLs, query strings, SSE URLs, or event payloads;
-    browser sessions use the `HttpOnly; Secure; SameSite=Strict` cookie plus
-    a CSRF token on every mutation, and native clients use the header
-    profile. Applies from R4 (D665).
+    browser sessions use the `HttpOnly; Secure; SameSite=Strict` cookie with a
+    finite `Max-Age` plus a CSRF token on every mutation, and native clients
+    use the header profile. A cookie-authenticated request proves its Origin
+    per §5.2: only a same-origin `GET`/`HEAD` marked `Sec-Fetch-Site:
+    same-origin` may omit it. Applies from R4 (D665).
 25. A gateway-paired device is never an SSH-paired owner: it holds
     `pairedDevice: false`, never the `owner` role, stays under the remote
     permission ceiling, is never offered `allow-session`, and its token is

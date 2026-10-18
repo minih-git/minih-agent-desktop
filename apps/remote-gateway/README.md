@@ -158,22 +158,41 @@ WantedBy=multi-user.target
 
 ## Nginx reverse proxy
 
-The SSE endpoints must not be buffered, and the stream can stay idle for a long
-time, so the read timeout has to outlast the 15-second keepalive comment.
+Serve the H5 client (`apps/remote-web`) and the Gateway API from the **same
+origin**: a browser only sends the pairing cookies when the page and the API
+share an origin, and the Gateway's `allowedOrigins` must list that public origin
+exactly (`--allowed-origin https://gateway.example.com`, repeatable). The SSE
+endpoints must not be buffered, and the stream can stay idle for a long time, so
+the read timeout has to outlast the 15-second keepalive comment.
 
 ```nginx
 server {
   listen 443 ssl http2;
-  server_name m.example.com;
+  server_name gateway.example.com;
 
-  ssl_certificate     /etc/letsencrypt/live/m.example.com/fullchain.pem;
-  ssl_certificate_key /etc/letsencrypt/live/m.example.com/privkey.pem;
+  ssl_certificate     /etc/letsencrypt/live/gateway.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/gateway.example.com/privkey.pem;
+
+  # `pnpm --filter @minih-agent/remote-web build` output.
+  root /srv/minih-remote-web;
+  index index.html;
 
   location / {
+    try_files $uri /index.html;
+  }
+
+  # Gateway API: `/v1/...` (host list, pairing) and `/hosts/...` (RACP-HTTP + SSE).
+  location ~ ^/(v1|hosts)/ {
     proxy_pass http://127.0.0.1:8788;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $remote_addr;
+
+    # The Gateway enforces its Origin allowlist on these; forward them as sent.
+    proxy_set_header Origin $http_origin;
+    proxy_set_header Sec-Fetch-Site $http_sec_fetch_site;
+    proxy_set_header Cookie $http_cookie;
+    proxy_set_header Last-Event-ID $http_last_event_id;
 
     # Server-Sent Events: never buffer, never time out mid-stream.
     proxy_buffering off;
@@ -188,6 +207,9 @@ server {
 
 `--client-listen` stays on loopback: only the proxy is reachable from the
 network, and the Host link listener is the one that binds the overlay address.
+Because the proxy forwards `Origin` and `Sec-Fetch-Site` unchanged, the Gateway
+sees exactly what the browser sent: a same-origin `GET`/`HEAD` may arrive
+without `Origin`, and every other cookie request must carry an allowlisted one.
 
 ## Host link port
 
@@ -200,9 +222,15 @@ should still be reachable only from the overlay. Wildcard binds refuse to start.
 
 * A credential never travels in a URL or a query string; the Gateway rejects one
   outright (gate 24).
-* Browser requests need an allowlisted `Origin`, and every mutation carries an
-  `x-csrf-token` equal to HMAC-SHA256(`gateway-secret`, `deviceId`). CORS never
-  answers `*` (gate 24).
+* A cookie-authenticated request proves its `Origin`: an allowlisted one is
+  mandatory, except on a same-origin `GET`/`HEAD` marked
+  `Sec-Fetch-Site: same-origin` (browsers omit `Origin` there, which is every H5
+  read and event stream). A present but disallowed `Origin` is always rejected,
+  a mutation is never exempt, and every mutation carries an `x-csrf-token` equal
+  to HMAC-SHA256(`gateway-secret`, `deviceId`). CORS never answers `*` (gate 24).
+* Both pairing cookies carry `Max-Age=34560000` (400 days, the Chromium cap), so
+  closing the browser does not lose the pairing. Revocation is server-side: a
+  revoked token answers `401` however long the cookie has left.
 * The Gateway caches only token **hashes**; the Host re-authenticates every
   relayed logical connection with its own credential store, so a stolen Gateway
   file cannot mint access (S8).

@@ -66,6 +66,7 @@ const listeners = new Map();
 const calls = [];
 const revokeCalls = [];
 const PAIRING_CODE = "pdt1.test-pairing-code";
+const HOST_ID = "host_test_desktop";
 let status = { state: "disabled", since: "2026-10-18T00:00:00.000Z", enabled: false, enrolled: false };
 let devices = [{
   deviceId: "dev_phone",
@@ -100,7 +101,7 @@ window.minihAgent = { platform: "darwin", channels: IPC,
       return { ok: true, data: status };
     }
     if (channel === IPC.invoke.remoteGatewayCreatePairingCode) {
-      return { ok: true, data: { code: PAIRING_CODE, expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() } };
+      return { ok: true, data: { code: PAIRING_CODE, expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(), hostId: HOST_ID } };
     }
     if (channel === IPC.invoke.remoteGatewayRevokeDevice) {
       if (revokeFailure) return { ok: false, error: revokeFailure };
@@ -145,6 +146,7 @@ const click = async (element, message) => {
   await frame();
 };
 const pairingCode = () => document.querySelector("#remote-gateway-pairing-code")?.textContent.trim();
+const pairingTicket = () => document.querySelector("#remote-gateway-pairing-ticket")?.textContent.trim();
 const prefix = (text) => text.split("{{")[0].trim();
 
 mount();
@@ -194,16 +196,25 @@ window.remoteGatewayProbe = async () => {
   check(calls.filter((call) => call.channel === IPC.invoke.remoteGatewaySetEnabled).at(-1).input.enabled === true,
     "switch did not ask main to enable the link");
 
-  // (c) Pairing code: shown, copied, and cleared once its ten minutes pass.
+  // (c) Pairing code and ticket: shown, copied, and cleared once the ten
+  // minutes pass. The ticket is the code plus the Host id, and the Host id is
+  // the only way a browser can address the Host-scoped pair endpoint.
   await click(button(label("pairingCreate")), "create pairing code");
   await until(() => pairingCode() === PAIRING_CODE, "pairing code not shown");
   check(document.body.textContent.includes(label("pairingExpiresIn", { time: "10:00" })), "countdown missing");
+  await until(() => pairingTicket() === "mpt1:" + HOST_ID + ":" + PAIRING_CODE, "pairing ticket not shown: " + pairingTicket());
+  check(document.body.textContent.includes(label("pairingTicketHint")), "ticket hint missing");
   await click(button(label("pairingCopy")), "copy pairing code");
   await until(() => clipboardWrites.length > 0, "clipboard never received the code");
   check(clipboardWrites.at(-1) === PAIRING_CODE, "clipboard received the wrong value");
   await until(() => button(label("pairingCopied")), "copy confirmation missing");
+  await click(button(label("pairingTicketCopy")), "copy pairing ticket");
+  await until(() => clipboardWrites.length > 1, "clipboard never received the ticket");
+  check(clipboardWrites.at(-1) === "mpt1:" + HOST_ID + ":" + PAIRING_CODE, "clipboard received the wrong ticket");
+  await until(() => button(label("pairingTicketCopied")), "ticket copy confirmation missing");
   advance(10 * 60 * 1000 + 1000);
   await until(() => pairingCode() === undefined, "expired pairing code is still on screen");
+  check(pairingTicket() === undefined, "expired pairing ticket is still on screen");
   check(document.body.textContent.includes(label("pairingExpired")), "expired copy missing");
 
   // (d) Revoke: confirm first, cancel leaves main untouched, confirm calls it

@@ -106,7 +106,7 @@ test("handlers report status, validate input, and refuse to guess", async () => 
       return { state: "connecting", since: "2026-10-18T00:00:00.000Z", enabled: true, enrolled: true, url: request.url };
     },
     async createPairingCode() {
-      return { code: "pdt1.test-pairing-code", expiresAt: "2026-10-18T00:10:00.000Z" };
+      return { code: "pdt1.test-pairing-code", expiresAt: "2026-10-18T00:10:00.000Z", hostId: "host_ipc_test" };
     },
     async listDevices() {
       return [
@@ -150,6 +150,8 @@ test("handlers report status, validate input, and refuse to guess", async () => 
 
   const pairing = await handlers.get(IPC.invoke.remoteGatewayCreatePairingCode)();
   assert.equal(pairing.code, "pdt1.test-pairing-code");
+  // The Host id must survive the IPC hop: the browser client cannot look it up.
+  assert.equal(pairing.hostId, "host_ipc_test");
 
   const devices = await handlers.get(IPC.invoke.remoteGatewayListDevices)();
   assert.equal(devices.devices.length, 1);

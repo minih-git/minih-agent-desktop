@@ -15432,30 +15432,48 @@ acceptance targets.
 #### E2E-266: The mobile / H5 client pairs, resumes the timeline, and approves
 
 - **Preconditions**: A local test Gateway, an enrolled `agent-host-cli` Host,
-  and a loopback model stub; the `apps/remote-web` build served through the
-  Gateway with the cookie profile; Playwright viewports for iPhone 14 and
-  Pixel 7. No real provider and no production Gateway.
-- **Steps**: 1) Pair from the mobile viewport with a Host-displayed pairing
-  code and confirm the cookie is `HttpOnly; Secure; SameSite=Strict`. 2)
-  List Hosts and sessions, then open a session's timeline. 3) Start a turn
-  that raises an approval, disconnect mid-stream, reconnect with
-  `Last-Event-ID`, and confirm the same approval is still pending exactly
+  and a loopback model stub; the `apps/remote-web` build served from a
+  test-only same-origin server that reverse-proxies `/v1/*` and `/hosts/*` to
+  the Gateway client API (the client's CSP allows `connect-src 'self'`, and
+  the Gateway scopes its device cookies to `/hosts/{hostId}`); real Chromium
+  mobile viewports through Electron device emulation — iPhone 14 (390×844 @3)
+  and Pixel 7 (412×915 @2.625), each in its own window, cookie partition, and
+  mobile user agent. No real provider, no production Gateway, and no
+  Playwright dependency.
+- **Steps**: 1) Pair from the mobile viewport by pasting the `mpt1:` ticket
+  the Host printed, and confirm the device cookie is `HttpOnly; Secure;
+  SameSite=Strict` with a `Max-Age`, that `document.cookie` cannot read it,
+  and that no device token or ticket is in `localStorage`. 2) List Hosts and
+  sessions, then open a session's timeline. 3) Start a turn that raises an
+  approval, drop the proxied event stream, confirm the client reconnected
+  with `Last-Event-ID`, and confirm the same approval is still pending exactly
   once. 4) Approve and confirm the tool executes once. 5) Start, stop, and
-  interrupt turns; submit a mutation twice with the same idempotency key.
-  6) Repeat the flow on both viewports and capture a screenshot per step.
+  interrupt turns; submit the same mutation twice with one idempotency key and
+  confirm the stored result. 6) Repeat the flow on both viewports and capture
+  a screenshot per step. Then scan the same-origin server's request log: no
+  `ppt1.` or `pdt1.` prefix in any URL or query string, at least one
+  same-origin `/hosts/...` GET that carried no `Origin` header, and the
+  pairing POSTs that did.
 - **Expected**: Pairing succeeds without the token ever appearing in a URL,
   query string, or event payload; the timeline resumes from the cursor
   without duplicates or gaps; the approval is submitted once (the disabled
   button and the idempotency key prevent a second execution); stop and
   interrupt behave as locally; the repeated mutation returns the stored
-  result; and screenshots are written to the test artifact directory, never
-  committed.
+  result; and screenshots are written to the test artifact directory outside
+  the repository, never committed.
 - **Specs linked**: `03-runtime/19-remote-agent-control-protocol.md` §11.2,
   `05-security/02-remote-control-security.md` §§3.1, 3.7, and 12 (gates 24,
   25), `06-delivery/07-remote-control-rollout.md` §2 (R6)
 - **Acceptance**: C (conversation & stream), Security, Recovery
 - **Milestone**: Post-MVP (rollout R6, D665)
-- **Status**: Draft; Playwright flow required when R6 ships
+- **Status**: Automated by `scripts/e2e-remote-web.mjs`
+  (`pnpm test:e2e:remote-web`, with `AGENT_HOST_CLI_E2E_BUNDLE` and
+  `REMOTE_GATEWAY_E2E_BUNDLE` naming the packaged Host and Gateway). The
+  Electron driver `scripts/e2e/remote-web-main.cjs` drives the real client
+  bundle; `scripts/e2e/remote-web-proxy.mjs` is the test-only same-origin
+  server, and it records header *presence* for the credential headers and
+  never a value. Screenshots go to `E2E_ARTIFACT_DIR` (default: a temporary
+  directory) and are never committed.
 
 ## Trusted extension scenarios (R7 v1)
 

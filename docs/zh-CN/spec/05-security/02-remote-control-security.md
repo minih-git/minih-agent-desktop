@@ -42,8 +42,11 @@ D385 使远程控制从结构上就是用户本地的：链路中没有任何项
 状态。OIDC 联合与 pi-backend 账号服务不在远程控制范围内，该模型中不存在 refresh token。
 浏览器无法在 WebSocket/EventSource 上设置请求头，因此 Gateway 提供两种认证
 profile：非浏览器客户端用 `Authorization` 头（header profile）；浏览器客户端用
-HttpOnly、Secure、SameSite cookie + 按租户的 Origin 白名单 + 每次 mutation 的
-CSRF token（cookie profile），也可改用带头部认证的 `fetch` 流式读取。两种
+HttpOnly、Secure、SameSite=Strict cookie + Origin 规则 + 每次 mutation 的 CSRF token
+（cookie profile；cookie 限定在已配对 Host 的作用域内并带有限 `Max-Age`，最长 400 天，
+因此浏览器重启后配对仍然有效），也可改用带头部认证的 `fetch` 流式读取。cookie 鉴权的请求
+必须带白名单内的 `Origin`；唯一例外是浏览器同源 `GET`/`HEAD`（`Sec-Fetch-Site: same-origin`），
+`Origin` 存在但不在白名单内一律拒绝，修改类请求永不豁免。两种
 profile 都禁止把 token 放进 URL。Gateway 与 cookie profile 随 Gateway 与浏览器
 里程碑交付（R4–R6，D665）；首个远程拓扑使用 header profile，设备 token
 来自 SSH 引导配对。Host 通过出站 mTLS Host link 连接 Gateway，link 只认证
@@ -179,8 +182,9 @@ token 的 loopback 对端且无 TLS 的非 loopback 绑定无法启动、配对 
 22–27：Host link 监听器拒绝 `0.0.0.0`、`::` 与公网地址，只绑定显式配置的私网或
 组网地址（RFC1918、`100.64.0.0/10` 或配置的 CIDR）；客户端 API 默认绑定 loopback，
 未配置 TLS 的非 loopback 绑定拒绝启动；令牌不出现在 URL、query string、SSE URL
-或事件载荷中，浏览器会话用 `HttpOnly; Secure; SameSite=Strict` cookie 加 CSRF
-token，原生客户端用 header profile；网关配对设备绝不是 SSH 配对 owner（无
+或事件载荷中，浏览器会话用 `HttpOnly; Secure; SameSite=Strict` 且带有限 `Max-Age` 的
+cookie 加 CSRF token，且 cookie 请求按 Origin 规则自证来源（仅同源 `GET`/`HEAD` 且
+`Sec-Fetch-Site: same-origin` 时可省略 `Origin`），原生客户端用 header profile；
 `owner` 角色、受权限上限约束、无 `allow-session`，其令牌在 loopback `RACP-WS`
 上被拒，ssh 令牌在 Host link 上被拒）；任意一侧吊销后新连接被拒且已有逻辑连接
 5 秒内关闭；以及桌面网关链路设置关闭时不发起连接、不开监听的回归证明。D665

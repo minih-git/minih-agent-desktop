@@ -95,6 +95,13 @@ export type RemoteGatewayRevokeDeviceRequest = {
 export type RemoteGatewayPairingCodeResult = {
   code: string;
   expiresAt: string;
+  /**
+   * The Host id the code belongs to. A browser pairs against
+   * `/v1/hosts/{hostId}/pair`, and the Host-scoped cookie path never exposes
+   * `GET /v1/hosts`, so the id has to reach the client beside the code — the
+   * pairing ticket (`mpt1:<hostId>:<pairingToken>`) is built from both.
+   */
+  hostId: string;
 };
 
 /**

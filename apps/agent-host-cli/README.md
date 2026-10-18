@@ -73,6 +73,30 @@ install a second dependency environment just to execute these tests.
   remains the separate gate for release download, SSH/password login and recovery
   on another machine. Tests require no production credentials or paid model calls.
 
+## stdout contract and pairing tickets
+
+stdout carries only the lines a bootstrap script parses; everything else is
+structured stderr.
+
+```text
+AGENT_HOST_CLI_READY {"hostId":..,"host":..,"port":..,"version":..}
+AGENT_HOST_CLI_PAIRING_TOKEN {"token":..,"expiresAt":..}              (--pair)
+AGENT_HOST_CLI_PAIRING_TOKEN {"token":..,"expiresAt":..,"ticket":..}  (remote-pair)
+AGENT_HOST_CLI_ENROLLED {"hostId":..,"gatewayUrl":..,"expiresAt":..,"path":..}
+```
+
+`--pair` prints the historical two-key shape: its token is ssh-origin and
+redeemable only on the loopback `RACP-WS` binding, so a ticket built from it
+could never pair through the Gateway and is omitted. `remote-pair` mints a
+gateway-origin pairing code on the running instance, and the line adds
+`ticket` to the historical `token` / `expiresAt` pair: the ticket is
+`mpt1:<hostId>:<pairingToken>`, one copy-pasteable line that names the Host the
+pairing call must target. A browser client pairs against
+`POST /v1/hosts/{hostId}/pair`, and the Host-scoped cookie path never exposes
+`GET /v1/hosts`, so the Host id has to travel beside the token. The ticket is a
+secret: it must not be written to a URL, a log, or a shell history that is
+shared with anyone else.
+
 ## Local-Agent workspace service
 
 The Host advertises additive `workspaceTools` / `workspaceFiles` capabilities.

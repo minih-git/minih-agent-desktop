@@ -93,13 +93,15 @@ describe("gateway client API", () => {
     const csrfCookie = cookieValue(paired.setCookie, "racp_csrf");
     expect(deviceCookie).toMatch(/^pdt1\./);
     expect(csrfCookie).toBe(paired.csrfToken);
+    // The exact attribute set of both cookies: a Host-scoped Path, the
+    // 400-day Max-Age that keeps the pairing across a browser restart, Secure,
+    // SameSite=Strict, and HttpOnly on the device cookie only.
     const deviceHeader = paired.setCookie.find((cookie) => cookie.startsWith("racp_device=")) ?? "";
-    expect(deviceHeader).toContain("HttpOnly");
-    expect(deviceHeader).toContain("Secure");
-    expect(deviceHeader).toContain("SameSite=Strict");
-    expect(deviceHeader).toContain(`Path=/hosts/${host.hostId}`);
     const csrfHeader = paired.setCookie.find((cookie) => cookie.startsWith("racp_csrf=")) ?? "";
-    expect(csrfHeader).not.toContain("HttpOnly");
+    const [devicePair = ""] = deviceHeader.split(";");
+    const [csrfPair = ""] = csrfHeader.split(";");
+    expect(deviceHeader).toBe(`${devicePair}; Path=/hosts/${host.hostId}; Max-Age=34560000; Secure; SameSite=Strict; HttpOnly`);
+    expect(csrfHeader).toBe(`${csrfPair}; Path=/hosts/${host.hostId}; Max-Age=34560000; Secure; SameSite=Strict`);
 
     const cookieAuth = { cookie: `racp_device=${encodeURIComponent(deviceCookie ?? "")}`, origin: "https://app.test" };
     const url = `${gateway.clientBaseUrl}/hosts/${host.hostId}/v1/sessions`;
@@ -123,6 +125,56 @@ describe("gateway client API", () => {
     // Cookie auth without Origin, and an Origin outside the allowlist, are refused.
     expect((await fetch(url, { headers: { cookie: cookieAuth.cookie } })).status).toBe(403);
     expect((await fetch(url, { headers: { ...cookieAuth, origin: "https://evil.test" } })).status).toBe(403);
+  });
+
+  it("accepts a same-origin cookie GET without Origin and refuses every other cookie request", async () => {
+    const paired = await pairDevice(gateway, host, { client: "web", label: "browser", origin: "https://app.test" });
+    expect(paired.status).toBe(200);
+    const cookie = `racp_device=${encodeURIComponent(cookieValue(paired.setCookie, "racp_device") ?? "")}`;
+    const url = `${gateway.clientBaseUrl}/hosts/${host.hostId}/v1/sessions`;
+
+    // A browser omits Origin on a same-origin read and marks the fetch site.
+    const read = await fetch(url, { headers: { cookie, "sec-fetch-site": "same-origin" } });
+    expect(read.status).toBe(200);
+
+    for (const site of ["cross-site", "same-site", "none"]) {
+      const refused = await fetch(url, { headers: { cookie, "sec-fetch-site": site } });
+      expect({ site, status: refused.status }).toEqual({ site, status: 403 });
+    }
+    expect((await fetch(url, { headers: { cookie } })).status).toBe(403);
+
+    // A present but disallowed Origin stays refused whatever the fetch site.
+    const disallowed = await fetch(url, {
+      headers: { cookie, "sec-fetch-site": "same-origin", origin: "https://evil.test" },
+    });
+    expect(disallowed.status).toBe(403);
+
+    // The exemption is read-only: a mutation still needs an allowlisted Origin
+    // and the CSRF header, and a missing Origin is never enough for one.
+    const mutation = (headers: Record<string, string>) =>
+      fetch(url, {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json", ...headers },
+        body: JSON.stringify({ jsonrpc: "2.0", id: "c2", method: "session/create", params: { title: "no origin" } }),
+      });
+    const csrf = paired.csrfToken ?? "";
+    expect((await mutation({ "sec-fetch-site": "same-origin", "x-csrf-token": csrf })).status).toBe(403);
+    expect((await mutation({ origin: "https://app.test" })).status).toBe(403);
+    expect((await mutation({ origin: "https://app.test", "x-csrf-token": csrf })).status).toBe(200);
+  });
+
+  it("opens an event stream for a same-origin cookie GET without Origin", async () => {
+    const paired = await pairDevice(gateway, host, { client: "web", label: "browser", origin: "https://app.test" });
+    expect(paired.status).toBe(200);
+    const cookie = `racp_device=${encodeURIComponent(cookieValue(paired.setCookie, "racp_device") ?? "")}`;
+    const controller = new AbortController();
+    const stream = await fetch(`${gateway.clientBaseUrl}/hosts/${host.hostId}/v1/events`, {
+      headers: { cookie, "sec-fetch-site": "same-origin", accept: "text/event-stream" },
+      signal: controller.signal,
+    });
+    expect(stream.status).toBe(200);
+    expect(stream.headers.get("content-type")).toContain("text/event-stream");
+    controller.abort();
   });
 
   it("never echoes a CORS origin outside the allowlist", async () => {

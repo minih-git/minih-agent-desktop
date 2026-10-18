@@ -98,6 +98,7 @@
     "test:e2e:remote-host": "node scripts/e2e-remote-host.mjs",
     "test:e2e:remote-mvp": "node scripts/e2e-remote-mvp.mjs",
     "test:e2e:remote-gateway": "node scripts/e2e-remote-gateway.mjs",
+    "test:e2e:remote-web": "node scripts/e2e-remote-web.mjs",
     "test:e2e:desktop-gateway-link": "node scripts/e2e-desktop-gateway-link.mjs",
     "test:e2e:remote-mvp-ui": "node scripts/e2e-remote-mvp-ui.mjs",
     "test:e2e:shortcut-settings": "node scripts/test-shortcut-settings.mjs",

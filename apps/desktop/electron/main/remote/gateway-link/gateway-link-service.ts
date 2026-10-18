@@ -372,7 +372,10 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
         GATEWAY_PAIRING_CODE_LIFETIME_MS,
         "gateway",
       );
-      return { code: token, expiresAt };
+      // The Host id travels with the code: the browser pairs against
+      // `/v1/hosts/{hostId}/pair` and cannot look it up through the
+      // Host-scoped cookie path.
+      return { code: token, expiresAt, hostId: options.store.hostId() };
     },
     async listDevices() {
       await ensureOpen();
