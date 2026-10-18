@@ -13,6 +13,10 @@
 			"apps/desktop/electron/main/runtime/session-launch.ts",
 			"apps/desktop/electron/main/ipc/workspace-ipc.ts",
 			"packages/shared/src/types/**/*.ts",
+			"apps/remote-web/src/**/*.ts",
+			"apps/remote-web/src/**/*.tsx",
+			"apps/remote-web/vite.config.ts",
+			"apps/remote-web/vitest.config.ts",
 			"scripts/check-architecture.mjs",
 			"scripts/e2e/*.mjs"
 		]

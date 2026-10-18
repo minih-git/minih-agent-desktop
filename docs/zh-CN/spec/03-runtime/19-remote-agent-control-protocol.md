@@ -326,10 +326,14 @@ typebox 来源生成。
   `turnQueue` 为 `true`，`approvals`、`inputRequests`、`toolRelay`、`terminal`、
   `attachments` 为 `false`。Host 若仍发起服务端请求，网关回答
   `CAPABILITY_UNAVAILABLE`，绝不为用户做决定。
-- 浏览器 profile 使用两个作用域为 `Path=/hosts/{hostId}` 的 cookie：`HttpOnly` 的设备
-  令牌（`racp_device`）和页面可读的 `racp_csrf`，其值为
+- 浏览器 profile 使用两个作用域为 `Path=/hosts/{hostId}`、`Max-Age=34560000`（400 天，
+  Chromium 上限）的 cookie，配对结果因此可以跨浏览器重启保留：`HttpOnly` 的设备令牌
+  （`racp_device`）和页面可读的 `racp_csrf`，其值为
   `HMAC-SHA256(gateway-secret, deviceId)`。每个修改类请求都要在 `x-csrf-token` 中重放
-  该值；cookie 鉴权的请求必须带白名单内的 `Origin`；CORS 绝不返回 `*`。
+  该值。cookie 鉴权的请求必须带白名单内的 `Origin`；唯一例外是浏览器同源
+  `GET`/`HEAD`（`Sec-Fetch-Site: same-origin`，H5 的读取与事件流都是这种形态）。
+  `Origin` 存在但不在白名单内一律拒绝，修改类请求永不豁免；CORS 绝不返回 `*`。
+  撤销仍在服务端生效：已撤销令牌返回 `401`。
 - 命令按 `(device, host)` 复用一条逻辑连接，每个事件流单独占一条，每设备最多 4 条流，
   避免占满 Host 的 `maxConnectedClients`。Host link 随 R4 交付（D665，ADR 0331），SSH 隧道拓扑不使用它。
 浏览器
@@ -346,12 +350,16 @@ Host link 保证，`credential` 绝不出现在日志或审计记录中。注册
 Host 本地生成密钥对并把 CSR 与注册码用 `POST /v1/enroll` 发到 Host link 端口（仅服务端
 TLS 认证，不要求客户端证书），链路本身是 `wss://<gateway>:<port>/v1/hostlink`，Host 用 `--gateway-ca` 固定网关身份，指纹不匹配即拒绝，
 网关签发一年期、CN 为 `hostId` 的客户端证书；配对时 Host 在本机显示 10 分钟有效的
-一次性配对码，客户端调用 `POST /v1/hosts/{hostId}/pair`，网关以配对令牌作为
+一次性配对码；由于配对接口是 Host 作用域的、cookie 路径又不会暴露 `GET /v1/hosts`，
+Host 同时把该配对码打印成票据 `mpt1:<hostId>:<pairingToken>`——一行可复制粘贴的文本，
+同时给出 Host 标识和配对令牌（桌面设置页与 `agent-host-cli remote-pair` 都输出它；
+票据是机密，绝不放进 URL）。客户端调用 `POST /v1/hosts/{hostId}/pair`，网关以配对令牌作为
 `credential` 打开逻辑连接并依次执行 `connection/initialize` 与 `connection/pair`，
 Host 签发网关来源（安全规格 §3.7）的设备令牌，网关只记录
 `{ deviceId, hostId, sha256(token), label, createdAt }`，并以
-`HttpOnly; Secure; SameSite=Strict; Path=/hosts/{hostId}` cookie 加 CSRF token（浏览器）
-或在响应体中返回 `{ deviceId, token }`（原生，存入 Keychain / Keystore）交付令牌。
+`HttpOnly; Secure; SameSite=Strict; Path=/hosts/{hostId}; Max-Age=34560000` cookie
+加 CSRF token（浏览器）或在响应体中返回 `{ deviceId, token }`（原生，存入 Keychain /
+Keystore）交付令牌。
 
 ## 6. 限制和错误
 

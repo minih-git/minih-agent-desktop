@@ -100,17 +100,26 @@ R0、R1、R2、R3，随后 R4、R5、R6（D665）；保留的 gRPC 绑定仍不�
   SQLite 之外。
 - R6（D665）：浏览器与移动客户端。交付 `apps/remote-web`（ADR 0331）：基于无 Node 依赖
   的 `@minih-agent/racp/browser` 入口与共享 typebox 契约的 React + TypeScript 客户端，
-  不依赖 `apps/desktop` 源码；页面包括配对（网关地址、配对码、选择 Host）、带在线状态的
-  Host 列表、带运行中／等待审批徽标的会话列表，以及实时时间线（消息行、工具调用摘要、
-  可折叠工具详情、带本地决策词汇但不提供 `allow-session` 的审批与输入卡片，以及发起、
-  停止、打断回合的输入框）；快照加游标的状态管理，`visibilitychange` 时从最后游标续传，
-  修改类操作带幂等 key，提交期间禁用按钮；移动端适配（`env(safe-area-inset-*)`、不小于
-  44px 的触控区域、深色模式、PWA manifest 与图标）；Capacitor iOS/Android 打包，原生凭据
-  经 `CredentialPort` 存入 Keychain / Keystore，可选的脱敏推送只携带 id 与固定摘要类型。
-  退出条件：E2E-228 通过（`RACP-HTTP` 与 `RACP-WS` 语义一致、cookie profile 过 Origin
-  与 CSRF 校验、URL 令牌被拒）；E2E-266 通过（两种移动视口下的配对、`Last-Event-ID`
-  续传、审批与停止，截图产物不入库）；浏览器构建不把令牌存进脚本可读存储，原生构建只存
-  Keychain / Keystore；推送载荷只含 id 与事件类型，未配置凭据时推送关闭。
+  不依赖 `apps/desktop` 源码；页面包括配对（粘贴 `mpt1:<hostId>:<pairingToken>` 票据、
+  设备名称）、带在线状态的 Host 列表、带运行中／等待审批徽标的会话列表，以及实时时间线
+  （消息行、工具调用摘要、可折叠工具详情、带本地决策词汇但不提供 `allow-session` 的审批
+  与输入卡片，以及发起、停止、打断回合的输入框）；快照加游标的状态管理，
+  `visibilitychange` 时从最后游标续传，修改类操作带幂等 key，提交期间禁用按钮；
+  配对票据（`packages/shared` 持有 `mpt1:<hostId>:<pairingToken>` 编解码，Host 在配对码旁
+  打印它——桌面设置页与 `agent-host-cli remote-pair`——浏览器靠它配对，因为 Host 作用域的
+  cookie 路径不会暴露 `GET /v1/hosts`）；浏览器 cookie profile 修正（两个配对 cookie 都带
+  有限 `Max-Age`，浏览器重启后配对仍有效；同源 `GET`/`HEAD` 允许不带 `Origin`
+  （安全规格 §5.2），使 H5 读取与事件流可用，其余 cookie 请求仍须自证 `Origin`）；
+  移动端适配（`env(safe-area-inset-*)`、不小于 44px 的触控区域、深色模式、PWA manifest 与
+  图标）；Capacitor iOS/Android 打包，原生凭据经 `CredentialPort` 存入 Keychain /
+  Keystore，可选的脱敏推送只携带 id 与固定摘要类型。
+  退出条件：E2E-228 通过（`RACP-HTTP` 与 `RACP-WS` 语义一致、cookie profile 过 Origin 与
+  CSRF 校验、URL 令牌被拒）；E2E-266 通过（两种移动视口下的配对、`Last-Event-ID` 续传、
+  审批与停止，经由 Electron Chromium 设备模拟与同源反向代理驱动，截图产物不入库）；
+  浏览器构建不把令牌存进脚本可读存储，原生构建只存 Keychain / Keystore；推送载荷只含 id
+  与事件类型，未配置凭据时推送关闭；仅凭票据即可完成配对（客户端从票据得到 Host 标识，
+  两个配对 cookie 都带有限 `Max-Age`，非同源 `GET`/`HEAD` 的 cookie 请求仍须带白名单内的
+  `Origin`）。
 - 保留的 gRPC 绑定仅在有明确消费者时交付，`.proto` 由 typebox 来源生成。
 
 R2 的设计决定（D375，2026-09-10 记录）：远端 Host 的 provider 配置经 SSH 引导通道

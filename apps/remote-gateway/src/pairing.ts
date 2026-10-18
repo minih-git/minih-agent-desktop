@@ -23,6 +23,9 @@ import { GatewayRpcError, LogicalConnection, type ConnectionIdentity } from "./r
 export const DEVICE_COOKIE = "racp_device";
 export const CSRF_COOKIE = "racp_csrf";
 
+/** 400 days, the maximum `Max-Age` Chromium honors (RFC 6265bis cap). */
+export const COOKIE_MAX_AGE_SECONDS = 34_560_000;
+
 export type PairingOutcome = {
   status: number;
   payload: RacpPairHttpResponse | { error: { code: string; message: string } };
@@ -38,9 +41,14 @@ export function hashToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
-/** `Path=/hosts/{hostId}` scopes both cookies to one Host. */
+/**
+ * `Path=/hosts/{hostId}` scopes both cookies to one Host; `Max-Age=34560000`
+ * (400 days, the Chromium cap) keeps the pairing across a browser restart —
+ * without it both cookies are session cookies and closing the browser loses
+ * the device. Revocation stays server-side: a revoked token answers 401.
+ */
 function cookieAttributes(hostId: string): string {
-  return `Path=/hosts/${hostId}; Secure; SameSite=Strict`;
+  return `Path=/hosts/${hostId}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; Secure; SameSite=Strict`;
 }
 
 export type PairingInput = {

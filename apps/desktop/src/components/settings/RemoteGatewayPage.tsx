@@ -12,10 +12,11 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type {
-  RemoteGatewayDeviceSummary,
-  RemoteGatewayLinkState,
-  RemoteGatewayStatus,
+import {
+  formatPairingTicket,
+  type RemoteGatewayDeviceSummary,
+  type RemoteGatewayLinkState,
+  type RemoteGatewayStatus,
 } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 import {
@@ -27,7 +28,7 @@ import {
 } from "../../lib/remote-gateway-state";
 import { Badge, Button, Field, Input, SettingsToggle, Textarea, cx } from "../ui";
 
-type PairingCode = { code: string; expiresAt: string };
+type PairingCode = { code: string; expiresAt: string; hostId: string };
 
 export function RemoteGatewayPage() {
   const { t } = useTranslation();
@@ -46,6 +47,7 @@ export function RemoteGatewayPage() {
   const [pairingBusy, setPairingBusy] = useState(false);
   const [pairingError, setPairingError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedTicket, setCopiedTicket] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [devices, setDevices] = useState<RemoteGatewayDeviceSummary[] | null>(null);
   const [devicesError, setDevicesError] = useState<string | null>(null);
@@ -152,10 +154,13 @@ export function RemoteGatewayPage() {
     setPairingBusy(true);
     setPairingError(null);
     setCopied(false);
+    setCopiedTicket(false);
     try {
       const result = await api.createRemoteGatewayPairingCode();
       setNow(Date.now());
-      setPairingCode({ code: result.code, expiresAt: result.expiresAt });
+      // The ticket names the Host the code belongs to; it is derived from the
+      // code, so it expires and clears with it.
+      setPairingCode({ code: result.code, expiresAt: result.expiresAt, hostId: result.hostId });
     } catch (error) {
       setPairingCode(null);
       setPairingError(describeError("settings.remoteGateway.pairingFailed", error));
@@ -176,6 +181,17 @@ export function RemoteGatewayPage() {
     }
   }, [pairingCode, t]);
 
+  const copyPairingTicket = useCallback(async () => {
+    if (!pairingCode) return;
+    try {
+      await navigator.clipboard.writeText(formatPairingTicket(pairingCode.hostId, pairingCode.code));
+      setCopiedTicket(true);
+      setPairingError(null);
+    } catch {
+      setCopiedTicket(false);
+      setPairingError(t("settings.remoteGateway.copyFailed"));
+    }
+  }, [pairingCode, t]);
   const revoke = useCallback(
     async (device: RemoteGatewayDeviceSummary) => {
       setRevoking(device.deviceId);
@@ -318,21 +334,38 @@ export function RemoteGatewayPage() {
             <span className="text-xs text-text-secondary">{t("settings.remoteGateway.pairingHint")}</span>
           </div>
           {pairingCode ? (
-            <div className="flex flex-wrap items-center gap-3" aria-live="polite">
-              <code
-                id="remote-gateway-pairing-code"
-                className="select-all rounded-md border border-border-default bg-surface-raised px-3 py-1.5 font-mono text-sm"
-              >
-                {pairingCode.code}
-              </code>
-              <Button type="button" variant="secondary" onClick={() => void copyPairingCode()}>
-                {copied
-                  ? t("settings.remoteGateway.pairingCopied")
-                  : t("settings.remoteGateway.pairingCopy")}
-              </Button>
-              <span className="text-xs text-text-secondary">
-                {t("settings.remoteGateway.pairingExpiresIn", { time: pairingCodeRemainingLabel(remainingMs) })}
-              </span>
+            <div className="space-y-2" aria-live="polite">
+              <div className="flex flex-wrap items-center gap-3">
+                <code
+                  id="remote-gateway-pairing-code"
+                  className="select-all rounded-md border border-border-default bg-surface-raised px-3 py-1.5 font-mono text-sm"
+                >
+                  {pairingCode.code}
+                </code>
+                <Button type="button" variant="secondary" onClick={() => void copyPairingCode()}>
+                  {copied
+                    ? t("settings.remoteGateway.pairingCopied")
+                    : t("settings.remoteGateway.pairingCopy")}
+                </Button>
+                <span className="text-xs text-text-secondary">
+                  {t("settings.remoteGateway.pairingExpiresIn", { time: pairingCodeRemainingLabel(remainingMs) })}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs text-text-secondary">{t("settings.remoteGateway.pairingTicket")}</span>
+                <code
+                  id="remote-gateway-pairing-ticket"
+                  className="select-all break-all rounded-md border border-border-default bg-surface-raised px-3 py-1.5 font-mono text-xs"
+                >
+                  {formatPairingTicket(pairingCode.hostId, pairingCode.code)}
+                </code>
+                <Button type="button" variant="secondary" onClick={() => void copyPairingTicket()}>
+                  {copiedTicket
+                    ? t("settings.remoteGateway.pairingTicketCopied")
+                    : t("settings.remoteGateway.pairingTicketCopy")}
+                </Button>
+              </div>
+              <p className="text-xs text-text-secondary">{t("settings.remoteGateway.pairingTicketHint")}</p>
             </div>
           ) : (
             <p className="text-xs text-text-secondary">{t("settings.remoteGateway.pairingExpired")}</p>

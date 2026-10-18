@@ -156,6 +156,28 @@ test("a pairing code counts down and stops being usable when it expires", () => 
   assert.equal(pairingCodeExpired("not a date", now), true);
 });
 
+test("the pairing ticket has its own copy in all nine locales", () => {
+  // The ticket is what a browser client pastes: the code alone names no Host.
+  const keys = [
+    "settings.remoteGateway.pairingTicket",
+    "settings.remoteGateway.pairingTicketHint",
+    "settings.remoteGateway.pairingTicketCopy",
+    "settings.remoteGateway.pairingTicketCopied",
+  ];
+  for (const [locale, catalog] of Object.entries(catalogs)) {
+    const flat = flattenCatalog(catalog);
+    for (const key of keys) {
+      assert.equal(typeof flat[key], "string", `${locale}: missing ${key}`);
+      assert.ok(flat[key].trim().length > 0, `${locale}: blank ${key}`);
+    }
+    // The two copy buttons sit side by side and the page finds them by text,
+    // so the ticket labels must never collapse onto the code labels.
+    assert.notEqual(flat["settings.remoteGateway.pairingTicketCopy"], flat["settings.remoteGateway.pairingCopy"], locale);
+    assert.notEqual(flat["settings.remoteGateway.pairingTicketCopied"], flat["settings.remoteGateway.pairingCopied"], locale);
+  }
+  assert.match(english["settings.remoteGateway.pairingTicketHint"], /ticket/i);
+});
+
 test("the page is an experimental settings destination next to remote hosts", () => {
   const entries = SETTINGS_NAV.filter((entry) => entry.id === "remoteGateway");
   assert.equal(entries.length, 1, "remote gateway must be one settings destination");

@@ -348,17 +348,25 @@ Deliver `apps/remote-web` (ADR 0331):
 - the React + TypeScript client on the Node-free `@minih-agent/racp/browser`
   entry and the shared typebox contracts, with no dependency on
   `apps/desktop` sources;
-- the pages: pairing (gateway address, pairing code, Host choice), the Host
-  list with online state, the session list with running / waiting-for-approval
-  badges, and the live timeline with message rows, tool-call summaries,
-  collapsible tool details, approval and input cards carrying the local
-  decision vocabulary except `allow-session`, and a composer to start,
-  stop, or interrupt a turn;
+- the pages: pairing (paste the `mpt1:<hostId>:<pairingToken>` ticket, device
+  label), the Host list with online state, the session list with running /
+  waiting-for-approval badges, and the live timeline with message rows,
+  tool-call summaries, collapsible tool details, approval and input cards
+  carrying the local decision vocabulary except `allow-session`, and a composer
+  to start, stop, or interrupt a turn;
 - snapshot-plus-cursor state with resume from the last cursor on
   `visibilitychange`, idempotency keys on mutations, and submit-disabled
   buttons;
 - mobile adaptation: `env(safe-area-inset-*)`, touch targets of at least
-  44px, dark mode, and a PWA manifest with icons; and
+  44px, dark mode, and a PWA manifest with icons;
+- the pairing ticket: `packages/shared` owns the `mpt1:<hostId>:<pairingToken>`
+  codec, the Host prints it beside the pairing code (the desktop settings page
+  and `agent-host-cli remote-pair`), and the browser pairs with it because the
+  Host-scoped cookie path never exposes `GET /v1/hosts`;
+- the browser cookie profile fixes: a finite `Max-Age` on both pairing cookies
+  so a pairing survives a browser restart, and a same-origin `GET`/`HEAD`
+  accepted without `Origin` (security §5.2) so H5 reads and event streams work
+  while every other cookie request still proves its Origin;
 - the Capacitor iOS and Android packaging with native credentials in the
   Keychain / Keystore through a `CredentialPort`, and optional redacted push
   carrying ids and fixed summary kinds only.
@@ -368,13 +376,17 @@ Exit criteria:
 1. E2E-228 passes with `RACP-HTTP` beside `RACP-WS`: identical semantic
    results, the cookie profile with Origin and CSRF checks, and URL tokens
    rejected.
-2. E2E-266 passes: pairing, timeline resume with `Last-Event-ID`, approval,
-   and stop on two mobile viewports, with screenshot artifacts kept out of
-   the repository.
+2. E2E-266 passes: ticket-based pairing, timeline resume with `Last-Event-ID`,
+   approval, and stop on two mobile viewports driven through Electron's
+   Chromium device emulation behind a same-origin proxy, with screenshot
+   artifacts kept out of the repository.
 3. The browser build never stores the token in script-readable storage;
    native builds keep it only in the iOS Keychain or the Android Keystore.
 4. Push payloads contain ids and event types only, and push is off without
    operator credentials.
+5. Pairing works from the ticket alone — the client learns the Host id from it,
+   both pairing cookies carry a finite `Max-Age`, and a cookie request that is
+   not a same-origin `GET`/`HEAD` still proves an allowlisted `Origin`.
 
 ### Reserved — gRPC binding
 

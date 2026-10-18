@@ -29,7 +29,8 @@ Minih-Agent-Desktop/
 │ │ ├── index.html
 │ │ ├── electron.vite.config.ts
 │ │ └── package.json          # 同时承载 electron-builder 配置
-│ └── remote-gateway/         # 自托管 RACP 网关：Host link（wss + mTLS）与 RACP-HTTP + SSE
+│ ├── remote-gateway/         # 自托管 RACP 网关：Host link（wss + mTLS）与 RACP-HTTP + SSE
+│ └── remote-web/             # H5 浏览器客户端：Vite + React SPA，走 RACP-HTTP（ADR 0331）
 ├── crates/
 │ └── host-core/              # Rust 特权宿主（二进制 minih-agent-desktop-host-core）
 │   ├── Cargo.toml

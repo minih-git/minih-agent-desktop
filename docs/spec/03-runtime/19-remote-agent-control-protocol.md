@@ -1152,11 +1152,17 @@ table under a Host prefix, so a client sets its base URL to
   `attachments` are `false`. A server-initiated request the Host sends anyway is
   answered with `CAPABILITY_UNAVAILABLE`; the Gateway never decides for the
   user.
-- The browser profile uses two cookies scoped to `Path=/hosts/{hostId}`: the
-  `HttpOnly` device token (`racp_device`) and a page-readable `racp_csrf` whose
-  value is `HMAC-SHA256(gateway-secret, deviceId)`. Every mutation repeats that
-  value in `x-csrf-token`, a cookie-authenticated request must carry an
-  allowlisted `Origin`, and CORS never answers `*`.
+- The browser profile uses two cookies scoped to `Path=/hosts/{hostId}` with
+  `Max-Age=34560000` (400 days, the Chromium cap), so a pairing survives a
+  browser restart: the `HttpOnly` device token (`racp_device`) and a
+  page-readable `racp_csrf` whose value is
+  `HMAC-SHA256(gateway-secret, deviceId)`. Every mutation repeats that value in
+  `x-csrf-token`. A cookie-authenticated request must carry an allowlisted
+  `Origin`, except a same-origin `GET`/`HEAD` that the browser sends without one
+  (`Sec-Fetch-Site: same-origin`), which is the shape of every H5 read and event
+  stream; a request whose `Origin` is present but not allowlisted is always
+  refused, a mutation is never exempt, and CORS never answers `*`. Revocation
+  stays server-side: a revoked token answers `401`.
 - Commands share one logical connection per `(device, host)`; each event stream
   takes its own, and a device holds at most four streams, so a Gateway cannot
   exhaust the Host's `maxConnectedClients`.
@@ -1243,7 +1249,12 @@ Enrollment and pairing run against the same listener:
   mutual-TLS link.
 - **Pairing (client to Host through the Gateway).** The Host displays a
   single-use pairing code with a 10-minute validity locally, never through
-  the Gateway. The client calls `POST /v1/hosts/{hostId}/pair` with
+  the Gateway. Because the pairing call is Host-scoped and the cookie path never
+  exposes `GET /v1/hosts`, the Host prints the same code as a ticket,
+  `mpt1:<hostId>:<pairingToken>` — one copy-pasteable line that names the Host
+  and carries the token (the desktop settings page and
+  `agent-host-cli remote-pair` both emit it; the ticket is a secret and never
+  travels in a URL). The client calls `POST /v1/hosts/{hostId}/pair` with
   `Authorization: Bearer <pairingToken>` and
   `{ deviceLabel, client: "web" | "ios" | "android" }`. The Gateway opens a
   logical connection whose `credential` is the pairing token and performs
@@ -1251,9 +1262,10 @@ Enrollment and pairing run against the same listener:
   issues a device token with the gateway device origin (security §3.7), and
   the Gateway records only
   `{ deviceId, hostId, sha256(token), label, createdAt }`, delivering the
-  token as an `HttpOnly; Secure; SameSite=Strict; Path=/hosts/{hostId}` cookie
-  plus a CSRF token for browsers, or as `{ deviceId, token }` in the response body
-  for native clients to store in the iOS Keychain or the Android Keystore.
+  token as an `HttpOnly; Secure; SameSite=Strict; Path=/hosts/{hostId};
+  Max-Age=34560000` cookie plus a CSRF token for browsers, or as
+  `{ deviceId, token }` in the response body for native clients to store in the
+  iOS Keychain or the Android Keystore.
 
 ## 12. Limits and deadlines
 

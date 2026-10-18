@@ -5,9 +5,12 @@
  * Two authentication profiles are supported. Native clients send
  * `Authorization: Bearer <device token>`; browsers send the `HttpOnly` device
  * cookie plus, on every mutation, an `x-csrf-token` header whose value is an
- * HMAC of the device id. A credential in a URL is always refused. The Gateway
- * only checks the cached token hash for a fast reject: the Host re-authenticates
- * every relayed logical connection (S8).
+ * HMAC of the device id. A cookie request must also prove its Origin; only a
+ * same-origin GET/HEAD — where a browser legitimately omits `Origin` and sends
+ * `Sec-Fetch-Site: same-origin` — is exempt, so the H5 client can read and
+ * stream without weakening the mutation rule. A credential in a URL is always
+ * refused. The Gateway only checks the cached token hash for a fast reject:
+ * the Host re-authenticates every relayed logical connection (S8).
  */
 import { randomUUID } from "node:crypto";
 import { createServer as createHttpServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
@@ -188,6 +191,31 @@ function bearer(header: string | undefined): string | null {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+/**
+ * How much Origin evidence a request must carry (security §3.1, gate 24).
+ *
+ * `required` — browser pairing: an allowlisted Origin is mandatory.
+ * `optional` — native clients and CORS preflights: Origin may be absent, but
+ *   a present Origin must still be allowlisted.
+ * `cookie` — the cookie credential profile: a browser omits Origin on a
+ *   same-origin GET/HEAD (including `fetch`-based SSE), so exactly that shape
+ *   is accepted without one; every other cookie request is refused.
+ */
+type OriginMode = "required" | "optional" | "cookie";
+
+/**
+ * A same-origin read: browsers send `Sec-Fetch-Site: same-origin` and drop
+ * `Origin` on GET/HEAD, which is the shape a top-level H5 page produces for
+ * every command and every event stream. Anything else — another fetch site, a
+ * missing header, a mutation — keeps the mandatory-Origin rule.
+ */
+function isSameOriginRead(request: IncomingMessage): boolean {
+  const method = (request.method ?? "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD") return false;
+  const header = request.headers["sec-fetch-site"];
+  const value = Array.isArray(header) ? header[0] : header;
+  return value === "same-origin";
+}
 
 export type ClientHttpServerOptions = {
   store: GatewayStore;
@@ -251,16 +279,24 @@ export class ClientHttpServer {
     };
   }
 
-  private assertOrigin(request: IncomingMessage, requireOrigin: boolean): string | null {
+  /**
+   * The one Origin rule (security §3.1, gate 24). `authenticate()` calls it in
+   * `cookie` mode too, so the pre-auth check and the credential check cannot
+   * drift apart.
+   */
+  private assertOrigin(request: IncomingMessage, mode: OriginMode): string | null {
     const origin = request.headers.origin;
-    if (!origin) {
-      if (requireOrigin) throw new GatewayRpcError("FORBIDDEN", "a cookie-authenticated request must carry an Origin");
-      return null;
+    if (origin) {
+      if (!this.options.allowedOrigins.includes(origin)) {
+        throw new GatewayRpcError("FORBIDDEN", "the request Origin is not allowed");
+      }
+      return origin;
     }
-    if (!this.options.allowedOrigins.includes(origin)) {
-      throw new GatewayRpcError("FORBIDDEN", "the request Origin is not allowed");
+    if (mode === "required") throw new GatewayRpcError("FORBIDDEN", "a browser pairing request must carry an Origin");
+    if (mode === "cookie" && !isSameOriginRead(request)) {
+      throw new GatewayRpcError("FORBIDDEN", "a cookie-authenticated request must carry an Origin");
     }
-    return origin;
+    return null;
   }
 
   /** A credential never travels in the URL (security §3.1, gate 24). */
@@ -279,7 +315,7 @@ export class ClientHttpServer {
     }
   }
 
-  private authenticate(request: IncomingMessage, origin: string | null): ResolvedAuth {
+  private authenticate(request: IncomingMessage): ResolvedAuth {
     const headerToken = bearer(request.headers.authorization);
     const cookieToken = request.headers.cookie ? parseCookies(request.headers.cookie)[DEVICE_COOKIE] : undefined;
     const token = headerToken ?? cookieToken;
@@ -287,10 +323,10 @@ export class ClientHttpServer {
     if (!token.startsWith(RACP_DEVICE_TOKEN_PREFIX)) throw new GatewayRpcError("UNAUTHORIZED", "the credential is not a device token");
     const device = this.options.store.findDeviceByTokenHash(hashToken(token));
     if (!device || device.revokedAt) throw new GatewayRpcError("UNAUTHORIZED", "the device credential is unknown or revoked");
-    if (headerToken === null) {
-      // The cookie profile: Origin is mandatory and every mutation carries CSRF.
-      if (!origin) throw new GatewayRpcError("FORBIDDEN", "a cookie-authenticated request must carry an Origin");
-    }
+    // The cookie profile runs the same Origin rule as the pre-auth check; only
+    // the header profile (a native client that never carries ambient cookies)
+    // is exempt from it.
+    if (headerToken === null) this.assertOrigin(request, "cookie");
     return { deviceId: device.deviceId, hostId: device.hostId, token, via: headerToken ? "header" : "cookie" };
   }
 
@@ -327,7 +363,7 @@ export class ClientHttpServer {
     try {
       this.assertNoUrlCredential(rawUrl);
       if (request.method === "OPTIONS") {
-        this.assertOrigin(request, false);
+        this.assertOrigin(request, "optional");
         response.writeHead(204, {
           ...cors,
           "access-control-allow-methods": "GET, POST, OPTIONS",
@@ -370,8 +406,8 @@ export class ClientHttpServer {
       // parameters, so it is validated before anything is authenticated.
       const queryParams = parseQueryParams(url, route);
 
-      const origin = this.assertOrigin(request, false);
-      const auth = this.authenticate(request, origin);
+      this.assertOrigin(request, "optional");
+      const auth = this.authenticate(request);
       this.assertCsrf(request, auth);
       if (auth.hostId !== hostId) throw new GatewayRpcError("FORBIDDEN", "this device is paired with another Host");
       const identity: ConnectionIdentity = { hostId, deviceId: auth.deviceId, credential: auth.token };
@@ -461,8 +497,8 @@ export class ClientHttpServer {
   ): Promise<void> {
     try {
       if (request.method !== "GET") throw new GatewayRpcError("METHOD_NOT_FOUND", "host/list is a GET endpoint");
-      const origin = this.assertOrigin(request, false);
-      const auth = this.authenticate(request, origin);
+      this.assertOrigin(request, "optional");
+      const auth = this.authenticate(request);
       this.assertRateLimit(auth, ip);
       const host = this.options.store.findHost(auth.hostId);
       if (!host || host.revokedAt) throw new GatewayRpcError("UNAUTHORIZED", "this device's Host is gone");
@@ -504,8 +540,7 @@ export class ClientHttpServer {
         throw new GatewayRpcError("INVALID_ARGUMENT", "the pairing body is not JSON");
       }
       const client = isRecord(body) ? body["client"] : undefined;
-      const origin = this.assertOrigin(request, client === "web");
-      if (origin === null && client === "web") throw new GatewayRpcError("FORBIDDEN", "a browser pairing needs an allowed Origin");
+      this.assertOrigin(request, client === "web" ? "required" : "optional");
       this.assertRateLimit(null, ip);
       const outcome = await this.options.pairing.pair({ hostId, pairingToken: token, body, ip });
       // One Set-Cookie header per cookie: browsers reject a folded value.
