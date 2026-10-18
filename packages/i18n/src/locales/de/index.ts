@@ -1354,6 +1354,11 @@ sklm: {
       "errorCredentials": "Die gespeicherten Gateway-Zugangsdaten sind nicht lesbar.",
       "errorHostUnavailable": "Der lokale Host läuft nicht.",
       "errorInvalidInput": "Prüfe Gateway-URL, Zertifikat und Registrierungscode.",
+      "errorGatewayUnreachable": "Das Gateway ist nicht erreichbar. Prüfe die URL und ob das Gateway läuft.",
+      "errorGatewayIdentity": "Die Gateway-Identität passt nicht zu diesem Zertifikat. Prüfe das CA-Zertifikat des Gateways.",
+      "errorEnrollmentCode": "Der Registrierungscode ist ungültig, abgelaufen oder bereits verwendet.",
+      "errorHostRevoked": "Dieser Desktop wurde vom Gateway widerrufen. Stelle einen neuen Registrierungscode aus.",
+      "errorEnrollmentResponse": "Das Gateway hat eine ungültige Registrierungsantwort geliefert.",
       "errorUnknown": "Unerwarteter Fehler: {{message}}",
     },
     "remoteHosts": {

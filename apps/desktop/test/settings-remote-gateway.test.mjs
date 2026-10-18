@@ -107,6 +107,36 @@ test("a build without the transport gets its own message, not a generic failure"
   assert.match(english["settings.remoteGateway.errorUnavailable"], /transport/);
 });
 
+test("every enrollment failure keeps its own reason", () => {
+  // The eight codes `enrollHostLink` / the Gateway can report (PR-2 contract).
+  // None may fall through to the generic copy: a wrong CA, a spent code, and a
+  // revoked desktop need different instructions.
+  const code = (value) => Object.assign(new Error("boom"), { errorCode: value });
+  const expected = {
+    GATEWAY_UNREACHABLE: "settings.remoteGateway.errorGatewayUnreachable",
+    GATEWAY_IDENTITY_MISMATCH: "settings.remoteGateway.errorGatewayIdentity",
+    ENROLLMENT_RESPONSE_INVALID: "settings.remoteGateway.errorEnrollmentResponse",
+    ENROLLMENT_CODE_INVALID: "settings.remoteGateway.errorEnrollmentCode",
+    ENROLLMENT_CODE_EXPIRED: "settings.remoteGateway.errorEnrollmentCode",
+    ENROLLMENT_CODE_USED: "settings.remoteGateway.errorEnrollmentCode",
+    CSR_INVALID: "settings.remoteGateway.errorEnrollmentResponse",
+    HOST_REVOKED: "settings.remoteGateway.errorHostRevoked",
+  };
+  assert.equal(Object.keys(expected).length, 8);
+  for (const [errorCode, key] of Object.entries(expected)) {
+    assert.equal(remoteGatewayErrorKey(code(errorCode)), key, errorCode);
+    assert.notEqual(remoteGatewayErrorKey(code(errorCode)), "settings.remoteGateway.errorUnknown", errorCode);
+    for (const [locale, catalog] of Object.entries(catalogs)) {
+      assert.equal(typeof flattenCatalog(catalog)[key], "string", `${locale}: missing ${key}`);
+    }
+  }
+  // The distinct reasons do not collapse into three generic buckets beyond
+  // what the copy intends: code reasons share one message, the identity and
+  // revocation reasons stay separate.
+  const keys = new Set(Object.keys(expected).map((errorCode) => remoteGatewayErrorKey(code(errorCode))));
+  assert.equal(keys.size, 5);
+});
+
 test("a pairing code counts down and stops being usable when it expires", () => {
   // The page and main agree on the ten-minute lifetime.
   assert.equal(REMOTE_GATEWAY_PAIRING_CODE_LIFETIME_MS, GATEWAY_PAIRING_CODE_LIFETIME_MS);

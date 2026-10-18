@@ -56,6 +56,24 @@ export function remoteGatewayErrorKey(error: unknown): string {
       return "settings.remoteGateway.errorHostUnavailable";
     case "INVALID_ARGUMENT":
       return "settings.remoteGateway.errorInvalidInput";
+    // Enrollment failures keep the reason RACP reported (see
+    // `racp-gateway-link-port.ts`): a wrong CA, a spent code, and a revoked
+    // desktop need different instructions, so they must not collapse into one
+    // generic failure.
+    case "GATEWAY_UNREACHABLE":
+      return "settings.remoteGateway.errorGatewayUnreachable";
+    case "GATEWAY_IDENTITY_MISMATCH":
+      return "settings.remoteGateway.errorGatewayIdentity";
+    case "ENROLLMENT_CODE_INVALID":
+    case "ENROLLMENT_CODE_EXPIRED":
+    case "ENROLLMENT_CODE_USED":
+      return "settings.remoteGateway.errorEnrollmentCode";
+    case "CSR_INVALID":
+      return "settings.remoteGateway.errorEnrollmentResponse";
+    case "HOST_REVOKED":
+      return "settings.remoteGateway.errorHostRevoked";
+    case "ENROLLMENT_RESPONSE_INVALID":
+      return "settings.remoteGateway.errorEnrollmentResponse";
     default:
       return "settings.remoteGateway.errorUnknown";
   }

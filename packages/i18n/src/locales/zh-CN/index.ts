@@ -1355,6 +1355,11 @@ sklm: {
       errorCredentials: "无法读取已保存的网关凭据。",
       errorHostUnavailable: "本地宿主未运行。",
       errorInvalidInput: "请检查网关地址、证书和注册码。",
+      errorGatewayUnreachable: "无法连接网关。请检查地址，以及网关是否在运行。",
+      errorGatewayIdentity: "网关身份与证书不匹配。请检查网关 CA 证书。",
+      errorEnrollmentCode: "注册码无效、已过期或已被使用。",
+      errorHostRevoked: "本机已被网关吊销。请重新签发注册码。",
+      errorEnrollmentResponse: "网关返回的注册响应无效。",
       errorUnknown: "意外失败：{{message}}",
     },
     remoteHosts: {

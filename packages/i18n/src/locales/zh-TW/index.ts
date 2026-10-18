@@ -1346,6 +1346,11 @@ sklm: {
       errorCredentials: "無法讀取已儲存的閘道憑證。",
       errorHostUnavailable: "本機宿主未執行。",
       errorInvalidInput: "請檢查閘道位址、憑證與註冊碼。",
+      errorGatewayUnreachable: "無法連線閘道。請檢查位址，以及閘道是否在執行。",
+      errorGatewayIdentity: "閘道身分與憑證不符。請檢查閘道 CA 憑證。",
+      errorEnrollmentCode: "註冊碼無效、已過期或已被使用。",
+      errorHostRevoked: "本機已被閘道撤銷。請重新簽發註冊碼。",
+      errorEnrollmentResponse: "閘道傳回的註冊回應無效。",
       errorUnknown: "未預期的失敗：{{message}}",
     },
     remoteHosts: {

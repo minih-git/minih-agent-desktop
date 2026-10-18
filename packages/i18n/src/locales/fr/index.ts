@@ -1354,6 +1354,11 @@ sklm: {
       "errorCredentials": "Les identifiants de passerelle enregistrés sont illisibles.",
       "errorHostUnavailable": "L'hôte local n'est pas démarré.",
       "errorInvalidInput": "Vérifiez l'URL, le certificat et le code d'enregistrement.",
+      "errorGatewayUnreachable": "La passerelle est injoignable. Vérifiez l'URL et qu'elle est démarrée.",
+      "errorGatewayIdentity": "L'identité de la passerelle ne correspond pas à ce certificat. Vérifiez le certificat CA.",
+      "errorEnrollmentCode": "Le code d'enregistrement est invalide, expiré ou déjà utilisé.",
+      "errorHostRevoked": "Cette passerelle a révoqué ce poste. Émettez un nouveau code d'enregistrement.",
+      "errorEnrollmentResponse": "La passerelle a renvoyé une réponse d'enregistrement invalide.",
       "errorUnknown": "Échec inattendu : {{message}}",
     },
     "remoteHosts": {

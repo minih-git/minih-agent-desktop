@@ -27,6 +27,9 @@ const { createGatewayLinkService } = await import(
 const { createGatewayCredentialStore } = await import(
   "../electron/main/remote/gateway-link/gateway-credential-store.ts"
 );
+const { createDesktopHostOperations } = await import(
+  "../electron/main/remote/gateway-link/desktop-host-operations.ts"
+);
 const { RACP_DEVICE_TOKEN_PREFIX, RACP_HOSTLINK_CLOSE_CODES, RACP_HOSTLINK_VERSION } =
   await import("@minih-agent/shared");
 const { RacpClient, createHostLinkHost, HostLinkGatewayMux } = await import("@minih-agent/racp");
@@ -363,7 +366,7 @@ test("a paired phone reads desktop sessions and answers an approval", async () =
   }
 });
 
-test("a revoked device token can no longer open a logical connection", async () => {
+test("revoking a device closes its open connection and refuses the token", async () => {
   const desktop = await startDesktopLink();
   try {
     const { mux } = desktop.starts[0];
@@ -382,18 +385,45 @@ test("a revoked device token can no longer open a logical connection", async () 
     // The renderer-facing summary never carries the token hash.
     assert.equal("tokenHash" in device, false);
 
+    // The device is connected and serving when the revocation happens.
+    const deviceClient = muxClient(mux, hostId, paired.deviceToken);
+    await deviceClient.connect();
+    const before = await deviceClient.request("session/list", {});
+    assert.equal(before.sessions.length, 1, "the device works before revocation");
+
+    // Settings-page revocation: the open logical connection is closed at once,
+    // not on the device's next reconnect (S9 / gate 26).
     assert.equal(await desktop.service.revokeDevice(paired.deviceId), true);
+    await assert.rejects(
+      deviceClient.request("session/list", {}),
+      undefined,
+      "an open connection survives the revocation",
+    );
     const revoked = await desktop.service.listDevices();
     assert.ok(revoked.find((candidate) => candidate.deviceId === paired.deviceId)?.revokedAt);
 
-    // A revoked token is rejected at authentication, before any RCP runs.
-    // PR-3b closes already-open logical connections immediately; this PR only
-    // proves the next connection is refused (security §3.7 / gate 26).
+    // A fresh connection with the same token is refused at authentication.
     const revokedClient = muxClient(mux, hostId, paired.deviceToken);
     await assert.rejects(revokedClient.connect());
   } finally {
     await desktop.cleanup();
   }
+});
+
+test("the RACP revoke operation runs the same closer as the settings page", async () => {
+  // `session/revoke` is owner-only, so a gateway-paired device can never reach
+  // it through the Host link; what has to hold is that the operation the server
+  // hands the Agent Host routes into the same revocation the page uses.
+  const revoked = [];
+  const operations = createDesktopHostOperations({
+    getHost: () => stubHost(),
+    revokeDevice: async (deviceId) => {
+      revoked.push(deviceId);
+      return true;
+    },
+  });
+  assert.equal(await operations.revokeDevice("dev_phone"), true);
+  assert.deepEqual(revoked, ["dev_phone"]);
 });
 
 test("closing the switch stops the link and refuses further logical connections", async () => {

@@ -21,6 +21,7 @@ import { createAgentHostBridge, type AgentHostBridge } from "../agent-host-bridg
 import { createBackendRouter, type BackendRouter } from "../remote/backend-router";
 import { createRemoteHostsBoot, setActiveRemoteHostsBoot } from "./remote-hosts";
 import { createGatewayLinkBootstrap, setActiveGatewayLink } from "./gateway-link";
+import { racpGatewayLinkPort } from "../remote/gateway-link/racp-gateway-link-port.js";
 import {
   createMcpControlController,
   McpControlServer,
@@ -275,6 +276,8 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
     // creates the link service, its store, and its server.
     const gatewayLink = createGatewayLinkBootstrap({
       dataDir,
+      // The real transport (PR-2): mTLS enrollment and the outbound Host link.
+      port: racpGatewayLinkPort,
       encryption: {
         isAvailable: () => safeStorage.isEncryptionAvailable(),
         encryptString: (plain) => safeStorage.encryptString(plain),

@@ -20,7 +20,6 @@ import {
 } from "../remote/gateway-link/gateway-link-service.js";
 import {
   GATEWAY_LINK_UNAVAILABLE,
-  unavailableGatewayLinkPort,
   type GatewayLinkPort,
 } from "../remote/gateway-link/gateway-link-port.js";
 import type { EncryptionPort } from "../remote/remote-host-registry.js";
@@ -42,10 +41,11 @@ export type GatewayLinkBootstrapOptions = {
   dataDir: string;
   encryption: EncryptionPort;
   /**
-   * The Gateway transport. Production injects `unavailableGatewayLinkPort`
-   * until PR-3b lands the real one; tests inject an in-memory port.
+   * The Gateway transport. Required: `bootstrap/startup.ts` passes
+   * `racpGatewayLinkPort`, tests pass an in-memory port, and a caller that
+   * forgets one fails to compile instead of shipping a silently disabled link.
    */
-  port?: GatewayLinkPort;
+  port: GatewayLinkPort;
   getSettings: () => Promise<AppSettings | null>;
   /** Persist the device-local switch without touching the other settings. */
   saveSettings: (remoteGateway: RemoteGatewaySettings) => Promise<void>;
@@ -96,7 +96,7 @@ export function createGatewayLinkBootstrap(
 ): GatewayLinkBootstrap {
   const log = options.log ?? (() => undefined);
   const now = options.now ?? (() => Date.now());
-  const port = options.port ?? unavailableGatewayLinkPort;
+  const port = options.port;
 
   let configuredEnabled = false;
   let configuredUrl = "";

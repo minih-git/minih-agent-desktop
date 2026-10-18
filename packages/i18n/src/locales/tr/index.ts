@@ -1356,6 +1356,11 @@ sklm: {
       errorCredentials: "Kayıtlı ağ geçidi kimlik bilgileri okunamıyor.",
       errorHostUnavailable: "Yerel ana makine çalışmıyor.",
       errorInvalidInput: "Ağ geçidi URL'sini, sertifikayı ve kayıt kodunu denetleyin.",
+      errorGatewayUnreachable: "Ağ geçidine ulaşılamadı. URL'yi ve ağ geçidinin çalıştığını denetleyin.",
+      errorGatewayIdentity: "Ağ geçidi kimliği bu sertifikayla eşleşmiyor. Ağ geçidi CA sertifikasını denetleyin.",
+      errorEnrollmentCode: "Kayıt kodu geçersiz, süresi dolmuş veya zaten kullanılmış.",
+      errorHostRevoked: "Bu masaüstü ağ geçidi tarafından iptal edildi. Yeni bir kayıt kodu oluşturun.",
+      errorEnrollmentResponse: "Ağ geçidi geçersiz bir kayıt yanıtı döndürdü.",
       errorUnknown: "Beklenmedik hata: {{message}}",
     },
     remoteHosts: {

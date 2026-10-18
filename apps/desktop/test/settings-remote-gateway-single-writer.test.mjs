@@ -24,6 +24,9 @@ register(new URL("./helpers/electron-only-stub-hook.mjs", import.meta.url));
 const { registerSettingsIpc } = await import("../electron/main/ipc/settings-ipc.ts");
 const { createGatewayLinkBootstrap } = await import("../electron/main/bootstrap/gateway-link.ts");
 const { buildHost } = await import("@minih-agent/racp/test-harness");
+const { unavailableGatewayLinkPort } = await import(
+  "../electron/main/remote/gateway-link/gateway-link-port.ts"
+);
 
 /**
  * host-core as `settings.get` / `settings.set` see it: a shallow key-wise merge
@@ -129,7 +132,9 @@ test("a stale renderer settings snapshot cannot re-enable a disabled gateway", a
     const bootstrap = createGatewayLinkBootstrap({
       dataDir: dir,
       encryption: fakeEncryption(),
-      port: undefined,
+      // This desktop never enrolls here, so the link never starts; the port is
+      // explicit because the bootstrap no longer falls back to one.
+      port: unavailableGatewayLinkPort,
       getSettings: async () => settings.store,
       saveSettings: async (remoteGateway) => {
         await settings.host.call("settings.set", { remoteGateway });

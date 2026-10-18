@@ -1184,6 +1184,11 @@ export const ptBR = {
       errorCredentials: "As credenciais do gateway salvas não podem ser lidas.",
       errorHostUnavailable: "O host local não está em execução.",
       errorInvalidInput: "Verifique a URL, o certificado e o código de registro.",
+      errorGatewayUnreachable: "Não foi possível alcançar o gateway. Verifique a URL e se ele está em execução.",
+      errorGatewayIdentity: "A identidade do gateway não corresponde a este certificado. Verifique o certificado CA.",
+      errorEnrollmentCode: "O código de registro é inválido, expirou ou já foi usado.",
+      errorHostRevoked: "Este desktop foi revogado pelo gateway. Emita um novo código de registro.",
+      errorEnrollmentResponse: "O gateway retornou uma resposta de registro inválida.",
       errorUnknown: "Falha inesperada: {{message}}",
     },
     remoteHosts: {

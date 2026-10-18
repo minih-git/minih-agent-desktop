@@ -648,6 +648,24 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   seconds, and refusal of a Gateway-issued token on the loopback binding.
   Attachment relay stays deferred (`RacpServer` declares `attachments: false`),
   so E2E-227 step 5 does not run in R4.
+- R5 delivered in PR-3 and PR-3b (`feat/desktop-gateway-link`): Electron Main
+  serves its existing Agent Host over one outbound Host link, created only when
+  the device-local `remoteGateway` setting is on and an enrollment exists — a
+  disabled desktop writes no credential file, builds no `RacpServer`, and opens
+  no socket, and the desktop never listens. `racp-gateway-link-port.ts` injects
+  PR-2's `enrollHostLink` / `startHostLink`, translating `HostLinkError.code`
+  into the `errorCode` the IPC layer reports so the settings page can name a
+  wrong CA, a spent code, or a revoked desktop instead of a generic failure.
+  Revoking a device through the settings page or `session/revoke` closes that
+  device's open logical connections immediately. `scripts/e2e-desktop-gateway-link.mjs`
+  (`pnpm test:e2e:desktop-gateway-link`) covers E2E-265 against the packaged
+  Gateway: the off state registers nothing and opens no listener, enrollment
+  and the link, pairing with viewer/controller/approver roles, a relayed
+  approval answered once with the local card closed, refusal of
+  `allow-session`, session configuration, workspace reads, and terminals,
+  revocation on either side within five seconds, the switch closing and
+  restoring the link, `dispose()` leaving no timer or socket, and logs free of
+  credentials.
 
 ## 8. Amendment history
 

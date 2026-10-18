@@ -1225,6 +1225,11 @@ sklm: {
       errorCredentials: "The saved gateway credentials cannot be read.",
       errorHostUnavailable: "The local host is not running.",
       errorInvalidInput: "Check the gateway URL, certificate, and registration code.",
+      errorGatewayUnreachable: "The gateway could not be reached. Check the URL and that the gateway is running.",
+      errorGatewayIdentity: "The gateway identity does not match this certificate. Check the gateway CA certificate.",
+      errorEnrollmentCode: "The registration code is invalid, expired, or already used.",
+      errorHostRevoked: "This desktop was revoked by the gateway. Issue a new registration code.",
+      errorEnrollmentResponse: "The gateway returned an invalid enrollment response.",
       errorUnknown: "Unexpected failure: {{message}}",
     },
     remoteHosts: {

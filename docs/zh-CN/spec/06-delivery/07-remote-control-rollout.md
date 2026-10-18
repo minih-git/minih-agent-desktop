@@ -226,6 +226,17 @@ SSE 不缓冲。
   header 与 cookie 两种配对、跨 SSE 续传只应答一次的审批、网关重启后 Host 自动重连与
   游标续传、任一侧吊销在 5 秒内生效，以及网关令牌在 loopback 绑定上被拒绝。附件中继仍延后
   （`RacpServer` 声明 `attachments: false`），E2E-227 第 5 步不在 R4 执行。
+- R5 已由 PR-3 与 PR-3b（`feat/desktop-gateway-link`）交付：Electron Main 通过一条出站
+  Host link 提供现有 Agent Host，只有设备本地的 `remoteGateway` 打开且已注册时才创建——
+  关闭状态下不写凭据文件、不创建 `RacpServer`、不建立 socket，桌面端始终不监听。
+  `racp-gateway-link-port.ts` 注入 PR-2 的 `enrollHostLink` / `startHostLink`，把
+  `HostLinkError.code` 转成 IPC 层读取的 `errorCode`，让设置页能指明 CA 不对、注册码已用
+  或本机已被吊销，而不是笼统失败。经设置页或 `session/revoke` 吊销设备会立即关闭该设备
+  已打开的逻辑连接。`scripts/e2e-desktop-gateway-link.mjs`
+  （`pnpm test:e2e:desktop-gateway-link`）覆盖 E2E-265：打包网关下验证关闭态不注册、不开
+  监听、注册与外连、viewer/controller/approver 角色配对、经网关只会应答一次且本地卡片同时
+  关闭的审批、拒绝 `allow-session`、会话配置、工作区读取与终端、任一侧吊销 5 秒内生效、
+  开关关闭与恢复链路、`dispose()` 后无残留定时器与 socket，以及两端日志不含凭据。
 
 ## 8. 修订记录
 

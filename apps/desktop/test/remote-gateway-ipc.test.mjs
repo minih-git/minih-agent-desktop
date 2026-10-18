@@ -21,6 +21,9 @@ register(pathToFileURL(join(here, "helpers/ts-import-hooks.mjs")));
 const { IPC } = await import("@minih-agent/shared");
 const { registerRemoteGatewayIpc } = await import("../electron/main/ipc/remote-gateway-ipc.ts");
 const { createGatewayLinkBootstrap } = await import("../electron/main/bootstrap/gateway-link.ts");
+const { unavailableGatewayLinkPort } = await import(
+  "../electron/main/remote/gateway-link/gateway-link-port.ts"
+);
 const { MCP_CONTROL_BLOCKED_CHANNEL_KEYS, MCP_CONTROL_CATALOG_CHANNEL_KEYS } = await import(
   "../electron/main/mcp-control.ts"
 );
@@ -170,7 +173,9 @@ test("a build without the transport surfaces GATEWAY_LINK_UNAVAILABLE through IP
     const bootstrap = createGatewayLinkBootstrap({
       dataDir: dir,
       encryption: fakeEncryption(),
-      // Production wiring: PR-3 injects the unavailable port.
+      // This build has no transport: the settings page must say so instead of
+      // looking like a connection problem.
+      port: unavailableGatewayLinkPort,
       getSettings: async () => ({ remoteGateway: { enabled: true, url: "wss://gateway.test" } }),
       saveSettings: async () => undefined,
       getHost: () => stubHost(),

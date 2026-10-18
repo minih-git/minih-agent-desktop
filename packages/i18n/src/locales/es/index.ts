@@ -1354,6 +1354,11 @@ sklm: {
       "errorCredentials": "No se pueden leer las credenciales guardadas de la puerta de enlace.",
       "errorHostUnavailable": "El host local no está en ejecución.",
       "errorInvalidInput": "Revisa la URL, el certificado y el código de registro.",
+      "errorGatewayUnreachable": "No se pudo alcanzar la puerta de enlace. Revisa la URL y que esté en ejecución.",
+      "errorGatewayIdentity": "La identidad de la puerta de enlace no coincide con este certificado. Revisa el certificado CA.",
+      "errorEnrollmentCode": "El código de registro no es válido, ha caducado o ya se usó.",
+      "errorHostRevoked": "La puerta de enlace revocó este escritorio. Emite un código de registro nuevo.",
+      "errorEnrollmentResponse": "La puerta de enlace devolvió una respuesta de registro no válida.",
       "errorUnknown": "Fallo inesperado: {{message}}",
     },
     "remoteHosts": {

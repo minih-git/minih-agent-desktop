@@ -192,8 +192,23 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
     });
   };
 
-  const revokeStoredDevice = async (deviceId: string): Promise<boolean> =>
-    options.store.revokeDevice(deviceId, iso(now));
+  /**
+   * Revoke one paired device (security §3.7, gate 26 / S9).
+   *
+   * Both revocation paths land here — the settings page
+   * (`service.revokeDevice`) and RACP `session/revoke`
+   * (`operations.revokeDevice`) — so a revoked device loses its open logical
+   * connections the moment the store records the revocation, not on its next
+   * reconnect. The closed count is logged; the subject is the device id the
+   * authenticator already put on the connection, never a token.
+   */
+  const revokeStoredDevice = async (deviceId: string): Promise<boolean> => {
+    const revoked = await options.store.revokeDevice(deviceId, iso(now));
+    if (!revoked) return false;
+    const closed = server ? server.closeConnectionsForSubject(deviceId, "device revoked") : 0;
+    log("info", "gateway device revoked", { deviceId, closedConnections: closed });
+    return true;
+  };
 
   const startLink = async (): Promise<void> => {
     if (disposed || !enabled || handle || server) return;

@@ -1362,6 +1362,11 @@ sklm: {
       errorCredentials: "저장된 게이트웨이 자격 증명을 읽을 수 없습니다.",
       errorHostUnavailable: "로컬 호스트가 실행 중이 아닙니다.",
       errorInvalidInput: "게이트웨이 URL, 인증서, 등록 코드를 확인하세요.",
+      errorGatewayUnreachable: "게이트웨이에 연결할 수 없습니다. URL과 게이트웨이 실행 여부를 확인하세요.",
+      errorGatewayIdentity: "게이트웨이 신원이 이 인증서와 일치하지 않습니다. 게이트웨이 CA 인증서를 확인하세요.",
+      errorEnrollmentCode: "등록 코드가 유효하지 않거나 만료되었거나 이미 사용되었습니다.",
+      errorHostRevoked: "이 데스크톱은 게이트웨이에서 해지되었습니다. 새 등록 코드를 발급하세요.",
+      errorEnrollmentResponse: "게이트웨이가 잘못된 등록 응답을 반환했습니다.",
       errorUnknown: "예기치 않은 실패: {{message}}",
     },
     remoteHosts: {

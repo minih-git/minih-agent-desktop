@@ -15319,8 +15319,10 @@ acceptance targets.
   26, 27)
 - **Acceptance**: Security, Recovery, Quality
 - **Milestone**: Post-MVP (rollout R5, D663)
-- **Status**: Draft; covered by `scripts/e2e-desktop-gateway-link.mjs` when
-  R5 ships
+- **Status**: Covered by `scripts/e2e-desktop-gateway-link.mjs`
+  (`pnpm test:e2e:desktop-gateway-link`) against the packaged Gateway: the
+  desktop's production main-process modules run in Node with a stub host-core
+  and the fixture runtime, and the phone side is the Gateway's client API.
 
 #### E2E-266: The mobile / H5 client pairs, resumes the timeline, and approves
 

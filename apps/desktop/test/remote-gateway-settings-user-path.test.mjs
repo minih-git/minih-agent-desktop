@@ -171,6 +171,16 @@ window.remoteGatewayProbe = async () => {
   check(switchControl().disabled, "a failed registration must not unlock the switch");
 
   // A successful registration unlocks the switch and reports the new state.
+  // A pinned CA that does not match the Gateway is its own failure: the user
+  // has to fix a certificate, not a URL or a code.
+  enrollFailure = { code: "GATEWAY_IDENTITY_MISMATCH", message: "the Gateway certificate chain does not end at the pinned CA" };
+  await click(button(label("enroll")), "register action");
+  await until(() => alerts().some((text) => text.includes(label("errorGatewayIdentity"))),
+    "identity-mismatch copy missing: " + alerts());
+  check(!alerts().some((text) => text.includes(label("errorEnrollmentCode"))),
+    "an identity mismatch claimed a bad registration code");
+  check(switchControl().disabled, "an identity mismatch must not unlock the switch");
+
   enrollFailure = null;
   await click(button(label("enroll")), "register action");
   await until(() => !switchControl().disabled, "registration did not unlock the switch");
