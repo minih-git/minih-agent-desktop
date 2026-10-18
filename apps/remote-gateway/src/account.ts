@@ -98,6 +98,9 @@ export class AccountSessionService {
       createdAt,
       expiresAt,
       ...(request.label ? { label: request.label } : {}),
+      // Remembered so the device route knows whether this client can read the
+      // token from a body or needs it as an HttpOnly cookie (§11.5).
+      client: request.client,
     });
     await this.audit("account.login", input.ip, "ok", verdict.accountId);
 
@@ -135,6 +138,28 @@ export class AccountSessionService {
     if (!session || session.revokedAt) throw new GatewayRpcError("UNAUTHORIZED", "the account session is unknown or revoked");
     if (Date.parse(session.expiresAt) <= this.nowMs()) throw new GatewayRpcError("UNAUTHORIZED", "the account session has expired");
     return session;
+  }
+
+  /**
+   * `POST /v1/account/logout`: end the caller's own account session.
+   *
+   * The record is revoked server-side, so the credential is dead even if a copy
+   * of the cookie survives somewhere, and both account cookies are cleared with
+   * `Max-Age=0` — JavaScript cannot delete an `HttpOnly` cookie, so the client
+   * cannot do this part itself. The device token the account flow produced is a
+   * separate credential and is untouched (protocol §11.5).
+   */
+  async logout(input: { session: GatewayAccountSessionRecord; ip: string }): Promise<AccountOutcome> {
+    const revokedAt = new Date(this.nowMs()).toISOString();
+    await this.options.store.revokeAccountSession(input.session.sessionId, revokedAt);
+    await this.audit("account.logout", input.ip, "ok", input.session.accountId);
+    // Clearing needs the name and the Path the cookie was set with.
+    const attributes = gatewayCookieAttributes({ path: "/", maxAgeSeconds: 0 });
+    return {
+      status: 200,
+      cookies: [`${ACCOUNT_COOKIE}=; ${attributes}; HttpOnly`, `${ACCOUNT_CSRF_COOKIE}=; ${attributes}`],
+      payload: { result: { accountId: input.session.accountId, revoked: true } },
+    };
   }
 
   /** `GET /v1/account/hosts`: the caller's own account, and nothing else. */

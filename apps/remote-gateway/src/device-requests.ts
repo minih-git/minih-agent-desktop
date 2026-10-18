@@ -53,6 +53,7 @@ import {
   relayToSiblings,
   type DeviceRelayPort,
 } from "./device-frames.js";
+import { COOKIE_MAX_AGE_SECONDS, CSRF_COOKIE, DEVICE_COOKIE, csrfTokenFor, gatewayCookieAttributes } from "./pairing.js";
 import { GatewayRpcError, type GatewayLog } from "./router.js";
 import type {
   GatewayAccountSessionRecord,
@@ -258,10 +259,17 @@ export class DeviceRequestService {
         granted.token = null;
       }
     }
+    // A browser cannot keep a device token in JavaScript and still meet gate 24,
+    // so the token is handed over the way the pairing route hands it over: an
+    // `HttpOnly` cookie per Host of the account, plus the CSRF value the client
+    // repeats on every mutation to that Host. A native client reads `token`
+    // from the body instead and stores it in its platform secure store.
+    const browser = input.session.client === "web";
+    const handover = token && granted && browser ? this.browserHandover(request.accountId, granted.deviceId, token) : null;
     await this.audit("account.devices.status", input.ip, "ok", input.session.accountId);
     return {
       status: 200,
-      cookies: [],
+      cookies: handover?.cookies ?? [],
       payload: {
         result: {
           requestId: request.requestId,
@@ -273,13 +281,38 @@ export class DeviceRequestService {
                 deviceId: granted.deviceId,
                 roles: granted.roles,
                 signerHostId: granted.signerHostId,
-                ...(token ? { token } : {}),
+                ...(token && !browser ? { token } : {}),
+                // True for a browser too: the token did leave the Gateway, as
+                // the cookies above.
                 tokenDelivered: Boolean(token),
+                ...(handover ? { csrfTokens: handover.csrfTokens } : {}),
               }
             : {}),
         },
       },
     };
+  }
+
+  /**
+   * One `HttpOnly` device cookie and one readable CSRF cookie per Host of the
+   * account, exactly as the pairing route sets them for one Host, so every
+   * existing host-scoped call works unchanged. `csrfTokens` carries the same
+   * CSRF values in the body, because a cookie scoped to `Path=/hosts/{hostId}`
+   * is not visible to `document.cookie` on the app's own path.
+   */
+  private browserHandover(accountId: string, deviceId: string, token: string): { cookies: string[]; csrfTokens: Record<string, string> } {
+    const csrfToken = csrfTokenFor(this.options.store.secret, deviceId);
+    const cookies: string[] = [];
+    const csrfTokens: Record<string, string> = {};
+    for (const host of this.options.store.listHostsForAccount(accountId)) {
+      const attributes = gatewayCookieAttributes({ path: `/hosts/${host.hostId}`, maxAgeSeconds: COOKIE_MAX_AGE_SECONDS });
+      cookies.push(
+        `${DEVICE_COOKIE}=${token}; ${attributes}; HttpOnly`,
+        `${CSRF_COOKIE}=${csrfToken}; ${attributes}`,
+      );
+      csrfTokens[host.hostId] = csrfToken;
+    }
+    return { cookies, csrfTokens };
   }
 
   /**

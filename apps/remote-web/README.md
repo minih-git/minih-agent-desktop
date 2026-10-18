@@ -50,6 +50,68 @@ Two dev-only notes: Vite injects its stylesheet and the React refresh preamble
 inline, which the strict `index.html` CSP blocks; production builds are
 unaffected. The Gateway must also serve the built `dist/` from the same origin.
 
+## Account mode (D666, rollout R7 package F)
+
+When the Gateway serves account mode (it was started with `--router-url` and
+`--router-client-ip-header`, see `apps/remote-gateway/README.md`), this client
+can sign in with the account's Minih-Router AccessKey, ask the account's
+computers to approve ONE device, and then use that device on all of them.
+
+* **Discovery.** `GET /v1/account/hosts` is probed once per Hosts screen, with no
+  credential at all. `401` means the route exists and wants a session, so the
+  AccessKey entry is offered; `404` (no account mode) and `403` (this origin is
+  refused) keep the pairing flow and hide the entry; anything else, including a
+  transport failure, keeps the pairing flow too, because an entry that cannot
+  work is worse than no entry.
+* **The AccessKey.** It is typed into a `type="password"` field with autofill
+  off, presented once in the `Authorization` header of `POST /v1/account/login`,
+  and dropped from the component on every outcome. It is never written to
+  `localStorage`, `sessionStorage`, IndexedDB, a cookie, a native store, a URL,
+  or a log. What the login leaves behind is an account *session* credential,
+  which the client keeps in memory only.
+* **Roster.** `POST /v1/account/devices` answers the account's whole Host roster
+  immediately, with `canConfirm` and `willAcceptGrant` per Host, so a computer
+  that cannot answer is named up front instead of being waited on. When none of
+  them can confirm, the screen says so and offers the per-Host pairing ticket.
+* **Waiting.** `GET /v1/account/devices/{requestId}` is polled every 2 s; a
+  failed read backs off exponentially to 15 s, a `RATE_LIMITED` answer waits
+  exactly as long as its `Retry-After` asked, and eight consecutive failures end
+  the wait as a failure. The request's own deadline ends it too, without another
+  read. Both `expired` and a `granted` answer whose token was already picked up
+  (`tokenDelivered: false`, no token) let the user ask again under the same
+  session; `NOT_FOUND` returns to sign-in. The cancel button stops the wait and
+  keeps the session.
+* **Where the device token lands.** In the browser it is one `HttpOnly` cookie
+  per Host of the account, set by the Gateway together with `csrfTokens` in the
+  body, and each registry entry carries only that CSRF value — exactly the shape
+  a paired Host has, which is why every host-scoped screen works unchanged. A
+  native build receives the token in the body and keeps it in the platform
+  secure store (`NativeCredentialPort.adoptAccountDevice`), never in the
+  registry.
+* **Logout.** Once the device is stored the client revokes the account session
+  with `POST /v1/account/logout`, because JavaScript cannot clear an `HttpOnly`
+  cookie. The device token is a separate credential and is untouched.
+* **Switching.** A device granted this way is accepted on every Host of the
+  account, so the Host list doubles as a switcher: no pairing per computer. A
+  Host that answers `401 HOST_UNAUTHORIZED` has not adopted the device yet, and
+  the row offers the next step that can actually work:
+  * a Host the roster reported as `online: true, willAcceptGrant: false`
+    confirms every device itself and will never adopt the grant this client
+    holds, so the row says "this computer confirms every device itself" and
+    offers **Ask again** — a new request, approved on that computer, whose new
+    device replaces the previous one on every Host of the account;
+  * any other unready Host has simply not caught up, so the row offers a
+    refresh, with the same new request as the fallback.
+
+  `401 UNAUTHORIZED` is the other case, a credential that is gone, and the row
+  says so.
+* **Which Hosts a browser can reach.** The browser's device cookies are set for
+  the Hosts of the account that exist when the grant is issued. A Host enrolled
+  into the account later has no cookie in this browser and no registry entry, so
+  it becomes reachable from here only after a new device request (or a pairing
+  ticket for that Host). A native build is not affected: it holds one
+  account-scoped token and addresses whichever Host id it likes.
+
 ## Building the iOS / Android apps
 
 The operator builds the app for **their own** Gateway: there is no shared

@@ -446,6 +446,9 @@ export function parseSseLastEventId(value: string): RacpCursor | null {
  */
 export const RACP_HTTP_STATUS_BY_CODE = {
   UNAUTHORIZED: 401,
+  // The Host refused the credential the Gateway accepted: still "not
+  // authorized", but a different cause with a different next step.
+  HOST_UNAUTHORIZED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
   METHOD_NOT_FOUND: 405,

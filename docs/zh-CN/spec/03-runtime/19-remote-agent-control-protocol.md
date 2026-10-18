@@ -467,19 +467,85 @@ Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主
 - **客户端路由**：`POST /v1/account/devices` 使用账户会话凭据（绝不是设备令牌），请求体
   为 `{ deviceLabel, client }`，按上一节的命令信封应答
   `{ result: { requestId, expiresAt, hosts } }`。`GET /v1/account/devices/{requestId}`
-  应答 `{ result: { requestId, status, expiresAt, hosts, deviceId?, token?, roles?,
-  signerHostId?, tokenDelivered? } }`，`status` 为 `pending`、`granted` 或 `expired`，
-  `tokenDelivered` 表示本次应答是否携带令牌，`token` 仅在 `granted` 且取件窗口仍开着时
-  出现。请求属于创建它的那个账户会话：不存在的 id、其他账户的请求、以及同一账户其他会话的
-  请求，一律返回相同的 `NOT_FOUND`——因为 requestId 会发给每台 Host 并写进 Gateway 日志，
-  它本身不是凭据（门禁 29）。所有账户应答都带 `Cache-Control: no-store`，因为它们都携带
-  会话凭据、设备令牌或两者。请求体畸形为 `INVALID_ARGUMENT`，超出预算为
-  `RATE_LIMITED`，缺少或属于他人的会话凭据为下一节统一的 `UNAUTHORIZED`。拒绝没有独立
-  状态：拒绝的 Host 不发任何帧，请求保持 `pending` 直到 `expiresAt`，由客户端自己的截止
-  时间结束等待。`hosts` 每项为 `{ hostId, label, online, canConfirm, willAcceptGrant }`；
-  `canConfirm` 仅对声明 `device.confirm` 的在线主机为真，`willAcceptGrant` 仅对声明
+  应答 `{ result: { requestId, status, expiresAt, hosts, deviceId?, token?,
+  csrfTokens?, roles?, signerHostId?, tokenDelivered? } }`，`status` 为 `pending`、
+  `granted` 或 `expired`，`tokenDelivered` 表示本次应答是否携带令牌，`token` 仅在
+  `granted` 且取件窗口仍开着时出现。浏览器会话拿到的不是 `token` 而是 `csrfTokens`：
+  按账户内每台 Host 一个 CSRF 值，见下条。请求属于创建它的那个账户会话：不存在的 id、
+  其他账户的请求、以及同一账户其他会话的请求，一律返回相同的 `NOT_FOUND`——因为
+  requestId 会发给每台 Host 并写进 Gateway 日志，它本身不是凭据（门禁 29）。所有账户应答
+  都带 `Cache-Control: no-store`，因为它们都携带会话凭据、设备令牌或两者。请求体畸形为
+  `INVALID_ARGUMENT`，超出预算为 `RATE_LIMITED`，缺少或属于他人的会话凭据为下一节统一的
+  `UNAUTHORIZED`。拒绝没有独立状态：拒绝的 Host 不发任何帧，请求保持 `pending` 直到
+  `expiresAt`，由客户端自己的截止时间结束等待。`hosts` 每项为
+  `{ hostId, label, online, canConfirm, willAcceptGrant }`；`canConfirm` 仅对声明
+  `device.confirm` 的在线主机为真，`willAcceptGrant` 仅对声明
   `device.accept-sibling-grant` 的在线主机为真，客户端因此立即知道哪些主机无法应答
   （门禁 33）。
+- **浏览器设备交接**：浏览器会话（`client: "web"`）拿到设备令牌的方式与拿到自己的会话
+  一样：通过 cookie。第一条报告 `granted` 的状态读取会为账户内每台 Host 各设一个
+  `HttpOnly; Secure; SameSite=Strict` 设备 cookie，作用域为 `Path=/hosts/{hostId}`，并在
+  响应体里返回 `csrfTokens`——`hostId` 到该 Host 设备 cookie 所配对 CSRF 值的映射——因此
+  客户端可以记录账户内每台 Host 而完全不必持有令牌。此时响应体里没有 `token`，但
+  `tokenDelivered` 仍为 `true`，因为令牌确实已经交付。原生会话（`client: "ios"` /
+  `"android"`）在响应体里拿到令牌，且完全不下发 cookie。走哪条路只取决于登录时创建的
+  会话，绝不取决于状态路由的调用方，因此一次状态读取永远不可能往原生 webview 的 cookie
+  jar 里写东西。每个 Host 的 cookie 与 `POST /v1/hosts/{hostId}/pair` 下发的完全一致，
+  因此上一节所有按 Host 作用域的界面与路由，对账户模式签发的设备无需任何改动即可工作。
+- **账户登出**：`POST /v1/account/logout` 以任一种 profile 接受账户会话凭据并结束该会话：
+  Gateway 作废自己的会话记录，并用 `Max-Age=0` 清掉账户 cookie 及其页面可读的 CSRF 伴随
+  cookie。它不授权任何 Host 操作，按命令信封应答 `{ result: { accountId, revoked } }`，
+  且完全不触碰设备令牌——设备是上一节的另一种凭据。它遵循 §11.2 的浏览器规则：`Origin`
+  必须在允许列表内，cookie profile 还需 CSRF 头。这条路由之所以存在，是因为浏览器无法
+  自己清除 `HttpOnly` cookie：没有它，刚收编完设备的客户端会把一个仍可用的账户会话留在
+  服务端最多十二小时。不调用它的客户端也是正确的——会话会自行过期——但它会持有一份不再
+  需要的凭据。
+- **客户端流程（rollout R7 包 F）**：“确认一次、处处可用”的客户端一半是发现、一次登录、
+  一次申请、一次等待、一次收编，然后丢掉会话：
+  - **发现**：账户模式由一个不带凭据的 `GET /v1/account/hosts` 探测：`401` 表示该 Gateway
+    提供账户模式（路由存在且需要会话），`404` 表示不提供，`403` 表示该 origin 被拒绝——
+    也就是说从这里发起的任何账户请求都不会成功。其他任何应答（含传输失败）都让客户端保持
+    未决。只有 `401` 才显示 AccessKey 入口；其他应答一律保持上一节的配对流程并隐藏该入口，
+    因此不支持账户模式的 Gateway 行为与从前完全一致（rollout 退出标准 7）。
+  - **登录**：AccessKey 只在登录调用的 `Authorization` 头里出现一次，并在该调用返回时立刻
+    丢弃：绝不写入 `localStorage`、`sessionStorage`、IndexedDB、cookie、原生存储、URL 或
+    日志，也不属于该调用产生的会话（门禁 30）。无论成功失败，输入框都会被清空。
+  - **花名册**：`POST /v1/account/devices` 应答里的 Host 会立即展示，包括无法确认的那些，
+    用户因此一开始就知道哪台电脑能应答。当账户内没有任何 Host 能确认时，客户端明确说明，
+    并提供上一节的每 Host 配对票据，而不是等待一个不可能到来的应答（门禁 33）。
+  - **等待**：状态路由每两秒读一次。读取失败按指数退避，上限十五秒；`RATE_LIMITED` 应答
+    严格按其 `Retry-After` 等待，且不短于正常间隔；连续八次失败即结束等待并报告失败，而不是
+    无限轮询。客户端自己的 `expiresAt` 截止时间同样会结束等待（`expired`），且不再发起读取。
+    一条 `granted` 应答若既没有令牌也没有 `csrfTokens`——取件窗口在读之前就已关闭——会作为
+    独立结果上报，它与 `expired` 一样允许用户在同一会话下重新申请。`NOT_FOUND` 表示 Gateway
+    已不认识该请求（已过期，或会话变了），客户端回到登录。由于拒绝没有帧，客户端同时提供
+    显式取消：它停止等待，但保留账户会话。
+  - **收编**：客户端在 Gateway 点名的每台 Host 上记录该设备——浏览器每台 Host 一个 cookie，
+    原生端写入平台安全存储——之后才丢掉账户会话，并在 Gateway 提供登出路由时通过它作废该
+    会话。存储失败会作为独立结果上报，且账户会话仍然可用，因为设备在 Gateway 上确实存在，
+    只是没有保存在本机。
+  - **切换**：上一节的设备令牌在账户内每台 Host 上都被接受，因此用它调用 `GET /v1/hosts`
+    即可列出账户内的 Host，客户端无需重新配对即可在它们之间切换。
+- **尚未收编该设备的 Host**：一台尚未接受该设备的 Host——授权签发时它离线，或它处于严格
+  模式且本机用户尚未确认——会拒绝该令牌，Gateway 把这次拒绝作为 `401 HOST_UNAUTHORIZED`
+  报告给客户端，它刻意不同于“凭据已不存在”的 `401 UNAUTHORIZED`。只有账户模式设备会被这样
+  报告：经 §11.4 配对的设备被某台 Host 拒绝，说明该设备已在那台电脑上被吊销，凭据确实已经
+  失效，应答仍是 `UNAUTHORIZED`（安全门禁 26）。客户端必须区分两者：`HOST_UNAUTHORIZED`
+  表示设备本身完好、只是这台电脑尚未同步，下一步是重试或在那台电脑上本地确认；
+  `UNAUTHORIZED` 表示凭据已经失效（被吊销，或从未有效），唯一的下一步是重新配对或重新
+  申请设备。把前者当作后者上报的客户端会丢弃一个仍然可用的设备。
+  但“重试”只对还可能自己追上来的 Host 成立。严格模式的 Host 会永久拒收所有兄弟授权
+  （ADR 决策 9），因此客户端绝不能给出一个永远不可能成功的“刷新”：当花名册对某台 Host
+  返回 `online: true, willAcceptGrant: false` 时，客户端要提示用户重新申请一次并在那台电脑上
+  批准，并把该申请作为可执行的动作提供出来。新的授权会签发一个新设备，由该严格 Host 自己
+  签名、账户内其他 Host 照常收编，因此新令牌在所有 Host 上都能用；客户端会用它替换此前在
+  每台已知 Host 上保存的设备（浏览器 cookie、原生安全存储、registry 条目），而不是两份并存。
+  授权时离线的那台 Host 不属于这种情况：它回来时可能自行收编待处理授权，对它说“重试”是诚实的。
+- **浏览器能覆盖到的 Host**：浏览器拿到的设备是每台 Host 一个 `HttpOnly` cookie，而 Gateway
+  只为**授权签发时已存在**的账户内 Host 设这些 cookie。因此之后才加入该账户的 Host，在这个
+  浏览器里既没有 cookie 也没有 registry 条目，用户必须重新申请设备（或为该 Host 使用配对
+  票据）才能从该浏览器访问它。原生客户端不受此限：它持有一个按账户作用域的令牌，向哪个
+  Host id 发请求就带哪个，因此后加入的 Host 只要已收编该授权就无需重新申请。
 - **能力声明**：Host 在链路建立后立即在每条链路上发送 `host.capabilities`，携带它支持的
   能力串：接上确认器时含 `device.confirm`，接受兄弟授权时含
   `device.accept-sibling-grant`。没有确认器的 Host 什么都不声明，严格模式的 Host 只声明
@@ -563,6 +629,7 @@ Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主
 | Code | Retriable | Meaning |
 |---|---:|---|
 | `UNAUTHORIZED` | no | 凭据缺失、过期或无效 |
+| `HOST_UNAUTHORIZED` | no | Gateway 后面的那台 Host 拒绝了它尚未收编的账户模式设备（§11.5），下一步是重试，或重新申请并在那台电脑上批准。经 §11.4 配对的设备被 Host 拒绝时仍是 `UNAUTHORIZED`，因为那份凭据确实已经失效 |
 | `FORBIDDEN` | no | 主体没有操作或会话范围 |
 | `PROTOCOL_MISMATCH` | no | 协议主版本或能力不支持 |
 | `INVALID_ARGUMENT` | no | 请求结构或字段无效 |

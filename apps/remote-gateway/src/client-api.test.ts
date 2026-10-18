@@ -265,6 +265,23 @@ describe("gateway client API", () => {
     expect(after.payload.error?.data?.code).toBe("UNAUTHORIZED");
   });
 
+  /**
+   * The other revocation path (security gate 26): the user revoked the device
+   * on that computer, so the Gateway's own record still accepts the token and
+   * the refusal comes from the Host. That stays `UNAUTHORIZED` — the credential
+   * really is gone — and must not be reported as the `HOST_UNAUTHORIZED` an
+   * account-mode device gets when a Host has not adopted it yet (§11.5): the
+   * client would then keep retrying a device that no longer exists.
+   */
+  it("reports a Host that refused a device revoked on that Host as UNAUTHORIZED", async () => {
+    const revoked = await host.harness.store.revokeDevice(deviceId, new Date().toISOString());
+    expect(revoked).toBe(true);
+
+    const after = await command(gateway, { hostId: host.hostId, token: deviceToken, method: "session/list", params: {} });
+    expect(after.status).toBe(401);
+    expect(after.payload.error?.data?.code).toBe("UNAUTHORIZED");
+  });
+
   it("forwards a declared GET query parameter as its declared type", async () => {
     // The Host receives `limit` as a number: the Gateway parsed the query
     // string, and the fixture transcript is long enough to prove it applied.

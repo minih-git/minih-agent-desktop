@@ -829,6 +829,15 @@ export type RacpErrorSpec = { retriable: boolean | "maybe" };
 
 export const RACP_ERROR_CODES = {
   UNAUTHORIZED: { retriable: false },
+  /**
+   * The Gateway accepted this credential, and the Host behind it refused. The
+   * two are deliberately distinct: a client that sees `UNAUTHORIZED` must drop
+   * the credential, while `HOST_UNAUTHORIZED` means this Host has not adopted
+   * the device yet (an account device the Host has not synced, or a strict-mode
+   * Host that has not confirmed it), and the credential itself is still good
+   * elsewhere.
+   */
+  HOST_UNAUTHORIZED: { retriable: false },
   PAIRING_FAILED: { retriable: false },
   PAIRING_TOKEN_EXPIRED: { retriable: false },
   CAPABILITY_UNAVAILABLE: { retriable: false },
