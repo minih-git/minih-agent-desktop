@@ -1477,11 +1477,14 @@ CREATE INDEX idx_memory_session_state_scope ON memory_session_state(scope_kind, 
   than of the hash, so the same sentence in two projects is two memories. One
   live entry per fingerprint in a scope; archived rows stay out of the key.
 - **Write rules.** `preference` and `feedback` require `evidence = 'user_stated'`
-  and must cite only messages the user wrote: **every** cited message must exist
-  in `source_session_id` with role `user`, and none may belong to a turn that
-  `session_collaboration_messages` claims — a message another agent or plugin
-  delivered into the session is stored with role `user` too, and only the
-  delivery ledger distinguishes it. `verified` is accepted only for `fact` and
+  and must cite only messages the user wrote: **every** cited message must belong
+  to a real turn of `source_session_id` (`turn_id IS NOT NULL`), exist there with
+  role `user`, and not belong to a turn that `session_collaboration_messages`
+  claims — a message another agent or plugin delivered into the session is stored
+  with role `user` too, and only the delivery ledger distinguishes it. The turn
+  requirement also covers copies that carry no turn reference at all: the prefix a
+  fork copies into a branch session and an imported session's rows cannot stand in
+  for user input. `verified` is accepted only for `fact` and
   `reference`. Tool output, file or web content, MCP responses, subagent output,
   injected instructions, and skill documents are never valid evidence for them.
   `origin = 'extracted'` and `status = 'suggested'` are required together, so

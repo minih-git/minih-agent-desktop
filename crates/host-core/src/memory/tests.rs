@@ -18,13 +18,16 @@ pub(super) fn project_dir(dir: &tempfile::TempDir, name: &str) -> String {
     canonical_project_path(path.to_str().unwrap()).unwrap()
 }
 
-fn insert_message(db: &Database, session_id: &str, id: &str, role: &str, seq: i64) {
+/// A message row inside a real turn of the session. The provenance rule only
+/// accepts messages that belong to a turn, so a test that wants to prove "the
+/// user's own message passes" must not fabricate a turn-less row.
+fn insert_message(db: &Database, session_id: &str, turn_id: &str, id: &str, role: &str, seq: i64) {
     db.conn()
         .execute(
             "INSERT INTO messages
                (id, session_id, turn_id, seq, role, tool_name, is_error, text, created_at, streaming)
-             VALUES (?1, ?2, NULL, ?3, ?4, NULL, 0, 'message text', 1, 0)",
-            params![id, session_id, seq, role],
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL, 0, 'message text', 1, 0)",
+            params![id, session_id, turn_id, seq, role],
         )
         .unwrap();
 }
@@ -44,7 +47,17 @@ pub(super) fn session_with_message(
         Some(project.to_string()),
     )
     .unwrap();
-    insert_message(db, &session.id, message_id, role, 1);
+    let turn = crate::sessions::begin_turn(db, &session.id, None, None).unwrap();
+    insert_message(db, &session.id, &turn, message_id, role, 1);
+    // The turn is settled immediately: the message keeps the turn reference the
+    // provenance rule needs, while the session stays free to receive a delivery
+    // or to be forked.
+    db.conn()
+        .execute(
+            "UPDATE turns SET status = 'completed', ended_at = ?2 WHERE id = ?1",
+            params![turn, crate::db::now_ms()],
+        )
+        .unwrap();
     session.id
 }
 
@@ -88,52 +101,6 @@ pub(super) fn rejection_of(outcome: &CreateMemoryOutcome) -> &MemoryRejection {
         CreateMemoryOutcome::Rejected(rejection) => rejection,
         other => panic!("expected a rejection, got {}", describe(other)),
     }
-}
-
-fn ui(role: &str, content: &str) -> crate::sessions::UiMessage {
-    serde_json::from_value(serde_json::json!({
-        "id": uuid::Uuid::new_v4().to_string(),
-        "role": role,
-        "content": content,
-        "createdAt": crate::db::ms_to_ts(crate::db::now_ms()),
-    }))
-    .unwrap()
-}
-
-/// A real agent-to-agent delivery into `target`: the queued ledger record, the
-/// turn it owns, and the user-role transcript row the delivery path appends for
-/// it. Returns that row's message id.
-///
-/// Nothing here writes the transcript by hand: the point of the test it serves is
-/// that the delivered row looks like a user message to a naive provenance check.
-fn delivered_message(db: &Database, source: &str, target: &str) -> String {
-    let sent = crate::session_collaboration::handle(
-        db,
-        "session.collaboration.send",
-        &serde_json::json!({
-            "sourceSessionId": source,
-            "sessionId": target,
-            "pluginId": "pi.session-orchestrator",
-            "content": "Review the change",
-            "idempotencyKey": "memory-provenance",
-            "kind": "task"
-        }),
-    )
-    .unwrap();
-    let message_id = sent["message"]["id"].as_str().unwrap().to_string();
-    let turn =
-        crate::session_collaboration::begin_turn(db, target, &message_id, None, None).unwrap();
-    crate::sessions::append_message(db, target, &ui("user", "Review the change"), Some(&turn))
-        .unwrap();
-    let id: String = db
-        .conn()
-        .query_row(
-            "SELECT id FROM messages WHERE session_id = ?1 AND turn_id = ?2",
-            params![target, turn],
-            |row| row.get(0),
-        )
-        .unwrap();
-    id
 }
 
 // ---- schema v25 -> v26 -----------------------------------------------------
@@ -206,181 +173,6 @@ fn v25_database_gains_learned_memory_without_touching_pinned_memory() {
     );
     let state = db.set_memory_session_excluded(&session_id, true).unwrap();
     assert!(state.excluded);
-}
-
-// ---- provenance ------------------------------------------------------------
-
-#[test]
-fn preference_requires_a_user_message_of_its_own_session() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = open(&dir);
-    let project = project_dir(&dir, "app");
-    let scope = db.learned_memory_scope_for_path(&project).unwrap();
-    let user_session = session_with_message(&db, &project, "u1", "user");
-    let tool_session = session_with_message(&db, &project, "t1", "tool");
-    let assistant_session = session_with_message(&db, &project, "a1", "assistant");
-
-    // Tool output, assistant text, another session's message, and no citation at
-    // all are all refused.
-    for (session_id, message_id) in [
-        (tool_session.as_str(), "t1"),
-        (assistant_session.as_str(), "a1"),
-        (user_session.as_str(), "a1"),
-    ] {
-        let mut write = request(
-            &scope,
-            KIND_PREFERENCE,
-            "Prefers terse replies.",
-            ORIGIN_EXPLICIT,
-        );
-        write.source_session_id = Some(session_id.to_string());
-        write.source_message_ids = vec![message_id.to_string()];
-        let outcome = db.create_memory_entry(write).unwrap();
-        assert_eq!(
-            rejection_of(&outcome).code,
-            REJECT_PROVENANCE_REQUIRED,
-            "{session_id}/{message_id} must not support a preference"
-        );
-    }
-    let mut uncited = request(
-        &scope,
-        KIND_PREFERENCE,
-        "Prefers terse replies.",
-        ORIGIN_EXPLICIT,
-    );
-    uncited.source_session_id = Some(user_session.clone());
-    assert_eq!(
-        rejection_of(&db.create_memory_entry(uncited).unwrap()).code,
-        REJECT_PROVENANCE_REQUIRED
-    );
-
-    // The user's own message is the evidence a preference needs.
-    let mut cited = request(
-        &scope,
-        KIND_PREFERENCE,
-        "Prefers terse replies.",
-        ORIGIN_EXPLICIT,
-    );
-    cited.source_session_id = Some(user_session.clone());
-    cited.source_message_ids = vec!["u1".to_string()];
-    let entry = created(db.create_memory_entry(cited).unwrap());
-    assert_eq!(entry.kind, KIND_PREFERENCE);
-    assert_eq!(entry.source_message_ids, vec!["u1".to_string()]);
-    assert_eq!(entry.origin, ORIGIN_EXPLICIT);
-    assert_eq!(entry.revision, 1);
-
-    // A tool-role message never supports a preference, but a fact may be
-    // recorded as verified.
-    let mut verified = request(&scope, KIND_FACT, "The host is Rust.", ORIGIN_USER_UI);
-    verified.evidence = EVIDENCE_VERIFIED.to_string();
-    created(db.create_memory_entry(verified).unwrap());
-    let mut wrong_kind = request(&scope, KIND_REFERENCE, "See the runbook.", ORIGIN_USER_UI);
-    wrong_kind.evidence = EVIDENCE_INFERRED.to_string();
-    created(db.create_memory_entry(wrong_kind).unwrap());
-}
-
-/// A delivered agent message is stored with role `user`, so only the delivery
-/// ledger distinguishes it from something the user typed. Every cited message
-/// must qualify, not merely one of them.
-#[test]
-fn a_delivered_message_never_supports_a_preference() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = open(&dir);
-    let project = project_dir(&dir, "app");
-    let scope = db.learned_memory_scope_for_path(&project).unwrap();
-    let sender = session_with_message(&db, &project, "s1", "user");
-    let target = session_with_message(&db, &project, "u1", "user");
-    let delivered = delivered_message(&db, &sender, &target);
-
-    // The delivered row is a user-role message in the cited session, and the
-    // naive check accepted it.
-    let role: String = db
-        .conn()
-        .query_row(
-            "SELECT role FROM messages WHERE id = ?1 AND session_id = ?2",
-            params![delivered, target],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(role, "user");
-
-    let mut write = request(
-        &scope,
-        KIND_PREFERENCE,
-        "Prefers terse replies.",
-        ORIGIN_EXPLICIT,
-    );
-    write.source_session_id = Some(target.clone());
-    write.source_message_ids = vec![delivered.clone()];
-    let outcome = db.create_memory_entry(write).unwrap();
-    let rejection = rejection_of(&outcome);
-    assert_eq!(rejection.code, REJECT_PROVENANCE_REQUIRED);
-    assert!(
-        !rejection.message.contains("Review the change"),
-        "a refusal never repeats the cited text: {}",
-        rejection.message
-    );
-
-    // The user's own message in the same session still qualifies.
-    let mut own = request(
-        &scope,
-        KIND_PREFERENCE,
-        "Prefers terse replies.",
-        ORIGIN_EXPLICIT,
-    );
-    own.source_session_id = Some(target.clone());
-    own.source_message_ids = vec!["u1".to_string()];
-    created(db.create_memory_entry(own).unwrap());
-
-    // Every cited message must qualify, so one delivered row poisons the set.
-    let mut mixed = request(
-        &scope,
-        KIND_FEEDBACK,
-        "Prefers short reviews.",
-        ORIGIN_EXPLICIT,
-    );
-    mixed.source_session_id = Some(target.clone());
-    mixed.source_message_ids = vec!["u1".to_string(), delivered];
-    assert_eq!(
-        rejection_of(&db.create_memory_entry(mixed).unwrap()).code,
-        REJECT_PROVENANCE_REQUIRED
-    );
-
-    // A citation that names another session's message is refused too.
-    let mut foreign = request(
-        &scope,
-        KIND_FEEDBACK,
-        "Prefers short reviews.",
-        ORIGIN_EXPLICIT,
-    );
-    foreign.source_session_id = Some(sender);
-    foreign.source_message_ids = vec!["u1".to_string()];
-    assert_eq!(
-        rejection_of(&db.create_memory_entry(foreign).unwrap()).code,
-        REJECT_PROVENANCE_REQUIRED
-    );
-}
-
-#[test]
-fn verified_basis_is_refused_for_kinds_that_cannot_be_verified() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = open(&dir);
-    let project = project_dir(&dir, "app");
-    let scope = db.learned_memory_scope_for_path(&project).unwrap();
-    let session = session_with_message(&db, &project, "u1", "user");
-    let mut write = request(
-        &scope,
-        KIND_PREFERENCE,
-        "Prefers terse replies.",
-        ORIGIN_EXPLICIT,
-    );
-    write.evidence = EVIDENCE_VERIFIED.to_string();
-    write.source_session_id = Some(session);
-    write.source_message_ids = vec!["u1".to_string()];
-    assert_eq!(
-        rejection_of(&db.create_memory_entry(write).unwrap()).code,
-        REJECT_PROVENANCE_REQUIRED
-    );
 }
 
 // ---- content rules ---------------------------------------------------------

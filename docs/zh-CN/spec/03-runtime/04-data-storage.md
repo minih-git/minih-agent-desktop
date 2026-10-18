@@ -1128,10 +1128,13 @@ CREATE INDEX idx_memory_session_state_scope ON memory_session_state(scope_kind, 
   作用域属于唯一性键而不进入哈希，因此同一句话在两个项目中是两条记忆。
   同一作用域内每个指纹只有一条存活条目；已归档行不参与该键。
 - **写入规则。** `preference` 与 `feedback` 要求 `evidence = 'user_stated'`，且
-  只能引用用户本人写的消息：**每一条**被引用消息都必须存在于
-  `source_session_id` 中、role 为 `user`，且不得属于
+  只能引用用户本人写的消息：**每一条**被引用消息都必须属于
+  `source_session_id` 的某个真实轮次（`turn_id IS NOT NULL`）、在该会话中 role 为
+  `user`，且不得属于
   `session_collaboration_messages` 声明的轮次——其他 Agent 或插件投递进会话的
-  消息同样以 role `user` 存储，只有投递账本能把它与用户输入区分开。
+  消息同样以 role `user` 存储，只有投递账本能把它与用户输入区分开。轮次要求同时
+  覆盖没有任何轮次引用的副本：fork 复制到分支会话的前缀、导入会话的行都不能充当
+  用户输入。
   `verified` 只对 `fact` 和 `reference` 生效。工具输出、文件或网页内容、
   MCP 返回、子代理输出、注入的指令和技能文档都不能作为它们的依据。
   `origin = 'extracted'` 与 `status = 'suggested'` 必须同时成立，因此抽取只能

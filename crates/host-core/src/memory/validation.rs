@@ -146,7 +146,9 @@ pub(crate) fn validate(
 /// instructions, and skill documents are never valid evidence for them, and
 /// neither is a message another agent or plugin delivered into the session:
 /// those are stored with role `user` too, and only the delivery ledger tells the
-/// two apart.
+/// two apart. A cited message must also belong to a real turn of the session, so
+/// a copy that lost its turn reference (a forked prefix, an imported session)
+/// cannot stand in for user input either.
 pub(crate) fn requires_user_statement(kind: &str) -> bool {
     matches!(kind, KIND_PREFERENCE | KIND_FEEDBACK)
 }
@@ -186,12 +188,16 @@ fn check_user_provenance(
     // Every cited message must qualify, not merely one of them. A message an
     // agent or plugin delivered into this session is stored with role `user`, and
     // its turn is the one the delivery ledger claims, so the ledger is what
-    // separates it from something the user typed.
+    // separates it from something the user typed. The message must also belong to
+    // a real turn of this session: a forked session copies its prefix with fresh
+    // ids and no turn reference, and an imported session may have none either, so
+    // such a copy carries no evidence that the user wrote it.
     let cited = tombstones::encode_ids(&write.source_message_ids);
     let (eligible, cited_total): (i64, i64) = conn.query_row(
         "SELECT
            (SELECT COUNT(DISTINCT m.id) FROM messages m
              WHERE m.session_id = ?1 AND m.role = 'user'
+               AND m.turn_id IS NOT NULL
                AND m.id IN (SELECT value FROM json_each(?2))
                AND NOT EXISTS (
                  SELECT 1 FROM session_collaboration_messages delivered

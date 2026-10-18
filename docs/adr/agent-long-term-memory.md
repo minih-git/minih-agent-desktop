@@ -148,10 +148,13 @@ user edit.
 Every writer enforces the same rules:
 
 - `preference` and `feedback` entries require `evidence = user_stated` and
-  must cite **only** messages the user wrote: every cited message must exist in
-  the source session with role `user`, and none may be a message another agent
-  or plugin delivered into that session — a delivered message is stored with
-  role `user` too, and only the delivery ledger distinguishes it. Tool results,
+  must cite **only** messages the user wrote: every cited message must belong to
+  a real turn of the source session, exist there with role `user`, and not be a
+  message another agent or plugin delivered into that session — a delivered
+  message is stored with role `user` too, and only the delivery ledger
+  distinguishes it. A copy that lost its turn reference (the prefix a fork
+  copies, an imported session) therefore cannot stand in for user input either,
+  which is what keeps a forked delivery from becoming a preference. Tool results,
   file or web content, MCP responses, subagent output, injected instructions,
   and skill documents are never valid evidence for these kinds.
 - Content is rejected when it matches a new host-side credential detector

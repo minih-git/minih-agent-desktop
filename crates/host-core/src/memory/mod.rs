@@ -17,6 +17,9 @@ mod validation;
 #[path = "lifecycle_tests.rs"]
 mod lifecycle_tests;
 #[cfg(test)]
+#[path = "provenance_tests.rs"]
+mod provenance_tests;
+#[cfg(test)]
 mod tests;
 
 pub(crate) use model::{

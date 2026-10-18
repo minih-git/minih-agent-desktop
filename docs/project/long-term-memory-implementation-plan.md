@@ -134,10 +134,13 @@ Validation (host, every write path):
 
 - Size limits; non-empty content; enum checks.
 - `preference` / `feedback` need `evidence = user_stated` and must cite only
-  messages the user wrote: **every** `source_message_ids` entry must exist in
-  `source_session_id` with role `user`, and none may belong to a turn the
-  delivery ledger (`session_collaboration_messages`) claims — a message another
-  agent or plugin delivered into the session is stored with role `user` too.
+  messages the user wrote: **every** `source_message_ids` entry must belong to a
+  real turn of `source_session_id` (`turn_id IS NOT NULL`), exist there with role
+  `user`, and not belong to a turn the delivery ledger
+  (`session_collaboration_messages`) claims — a message another agent or plugin
+  delivered into the session is stored with role `user` too. The turn requirement
+  also excludes copies with no turn reference (a forked prefix, an imported
+  session), which is what keeps a forked delivery from becoming a preference.
 - `origin = extracted` and `status = suggested` are required together, so
   extraction can only propose and only extraction may propose.
 - Credential detector rejects; rejected text never reaches logs.
@@ -162,7 +165,9 @@ Tests (Rust, `cargo test -p host-core --locked`):
   pinned memory unchanged, new tables empty, version 26.
 - Provenance: tool-role or assistant-role citation rejected for preference; a
   delivered agent message rejected even though its role is `user`; a mixed
-  citation rejected because every cited message must qualify.
+  citation rejected because every cited message must qualify; a forked copy of a
+  delivered message rejected because the fork carries no turn reference, while a
+  message the user writes in the branch after the fork is accepted.
 - A preference stays editable after its source session is deleted, while a kind
   change into `preference` / `feedback` is still checked.
 - CAS conflict returns a typed error and leaves the row unchanged.
