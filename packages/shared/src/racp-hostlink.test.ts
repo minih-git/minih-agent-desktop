@@ -1,9 +1,11 @@
+import Type from "typebox";
 import { describe, expect, it } from "vitest";
 import * as Value from "typebox/value";
 
 import {
   RACP_HOSTLINK_CLOSE_CODES,
   RACP_HOSTLINK_VERSION,
+  RACP_HTTP_QUERY_PARAMS,
   RACP_HTTP_ROUTE_LIST,
   RACP_HOSTLINK_HTTP_SCHEMAS,
   RacpHostLinkFrameSchema,
@@ -21,6 +23,16 @@ import {
   type RacpHostRouteContext,
 } from "./racp-hostlink.js";
 import type { RacpEventEnvelope } from "./racp.js";
+
+/**
+ * The operation parameters `session/history` accepts, mirroring `HistoryParams`
+ * in `packages/racp/src/operations.ts` (this package must not depend on racp).
+ */
+const HistoryParamsShape = Type.Object({
+  sessionId: Type.String({ minLength: 1 }),
+  beforeItemId: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.Integer({ minimum: 1 })),
+});
 
 const routeContext: RacpHostRouteContext = {
   link: RACP_HOSTLINK_VERSION,
@@ -98,6 +110,32 @@ describe("RACP-HTTP contracts (spec §11.2)", () => {
   it("includes the Gateway-only pair endpoint beside GET /v1/hosts", () => {
     expect(RACP_HTTP_ROUTE_LIST.hosts).toBe("GET /v1/hosts");
     expect(RACP_HTTP_ROUTE_LIST.pairDevice).toBe("POST /v1/hosts/{hostId}/pair");
+  });
+
+  it("declares GET query parameters only where the operation schema has them", () => {
+    // The one GET route with non-path parameters: `HistoryParams` carries
+    // `beforeItemId` (string) and `limit` (integer, minimum 1).
+    expect(RACP_HTTP_QUERY_PARAMS.sessionHistory).toEqual({ beforeItemId: "string", limit: "integer" });
+    expect(Value.Check(HistoryParamsShape, { sessionId: "s1", beforeItemId: "item_02", limit: 20 })).toBe(true);
+    for (const [key, type] of Object.entries(RACP_HTTP_QUERY_PARAMS.sessionHistory)) {
+      const value = type === "integer" ? 20 : "item_02";
+      const wrong = type === "integer" ? "20" : 20;
+      expect(Value.Check(HistoryParamsShape, { sessionId: "s1", [key]: value })).toBe(true);
+      expect(Value.Check(HistoryParamsShape, { sessionId: "s1", [key]: wrong })).toBe(false);
+    }
+    // Every other route has no query parameters to forward.
+    const withQuery = Object.entries(RACP_HTTP_QUERY_PARAMS).filter(([, params]) => Object.keys(params).length > 0);
+    expect(withQuery.map(([route]) => route)).toEqual(["sessionHistory"]);
+  });
+
+  it("lists a query-parameter entry for every route and only for GET routes", () => {
+    expect(Object.keys(RACP_HTTP_QUERY_PARAMS).sort()).toEqual(Object.keys(RACP_HTTP_ROUTE_LIST).sort());
+    for (const [routeName, spec] of Object.entries(RACP_HTTP_ROUTE_LIST)) {
+      const [method] = spec.split(" ");
+      const declared = Object.keys(RACP_HTTP_QUERY_PARAMS[routeName as keyof typeof RACP_HTTP_QUERY_PARAMS]);
+      // Only a GET can carry parameters outside its path.
+      if (method === "POST") expect({ routeName, declared }).toEqual({ routeName, declared: [] });
+    }
   });
 
   it("accepts a pairing request with the three client kinds", () => {

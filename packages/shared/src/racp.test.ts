@@ -324,7 +324,7 @@ describe("catalog and roles", () => {
     for (const operation of Object.keys(RACP_HTTP_ROUTES)) {
       expect(RACP_OPERATIONS).toHaveProperty(operation);
     }
-    expect(RACP_SHIPPED_BINDINGS).toEqual(["RACP-WS"]);
+    expect(RACP_SHIPPED_BINDINGS).toEqual(["RACP-WS", "RACP-HTTP"]);
   });
 
   it("marks every operation with a profile", () => {

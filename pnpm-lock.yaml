@@ -400,6 +400,43 @@ importers:
         specifier: ^5.0.15
         version: 5.0.15(@types/react@19.2.18)(react@19.2.8)
 
+  apps/remote-gateway:
+    dependencies:
+      '@minih-agent/racp':
+        specifier: workspace:*
+        version: link:../../packages/racp
+      '@minih-agent/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      asn1js:
+        specifier: 3.0.10
+        version: 3.0.10
+      pkijs:
+        specifier: 3.4.0
+        version: 3.4.0
+      typebox:
+        specifier: ^1.3.13
+        version: 1.3.27
+      ws:
+        specifier: 8.21.1
+        version: 8.21.1
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      esbuild:
+        specifier: ^0.25.12
+        version: 0.25.12
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@opentelemetry/api@1.9.0)(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.0))
+
   docs:
     devDependencies:
       vitepress:
@@ -530,6 +567,12 @@ importers:
       '@minih-agent/shared':
         specifier: workspace:*
         version: link:../shared
+      asn1js:
+        specifier: 3.0.10
+        version: 3.0.10
+      pkijs:
+        specifier: 3.4.0
+        version: 3.4.0
       typebox:
         specifier: ^1.3.13
         version: 1.3.27

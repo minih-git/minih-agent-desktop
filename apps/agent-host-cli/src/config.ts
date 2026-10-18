@@ -15,6 +15,11 @@ export type AgentHostCliConfig = {
   nodeBinary: string;
   /** Print a fresh single-use pairing token at start and exit once it is consumed or expired. */
   pair: boolean;
+  /**
+   * Keep the outbound Host link open using the credentials `enroll` stored
+   * (ADR 0330). The loopback RACP-WS listener stays exactly as it is.
+   */
+  gateway: boolean;
   pairingLifetimeMs: number;
   /** Where the folder picker may browse; defaults to the user's home. */
   browseRoot: string;
@@ -96,6 +101,7 @@ export function resolveConfig(args: CliArgs, env: NodeJS.ProcessEnv = process.en
     sidecarEntry: args.sidecar ? resolve(String(args.sidecar)) : firstExisting(sidecarCandidates(), "agent sidecar entry"),
     nodeBinary: String(args.node ?? env.AGENT_HOST_CLI_NODE ?? process.execPath),
     pair: args.pair === true || args.pair === "true",
+    gateway: args.gateway === true || args.gateway === "true",
     pairingLifetimeMs: Number(args["pairing-lifetime-ms"] ?? DEFAULT_PAIRING_LIFETIME_MS),
     browseRoot: resolve(String(args["browse-root"] ?? env.AGENT_HOST_CLI_BROWSE_ROOT ?? homedir())),
     logLevel: level === "warn" || level === "error" ? level : "info",

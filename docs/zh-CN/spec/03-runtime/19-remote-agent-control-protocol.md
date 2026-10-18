@@ -295,7 +295,43 @@ Plan/Goal 审批为带显式 `permissionMode` 的 `approve` 或 `reject`，且�
 连接，绑定与对端都是 loopback 时才接受明文 `ws://`；`RACP-HTTP` 是浏览器 profile，
 随 Gateway 与浏览器里程碑（R4–R6，D663）交付，绑定在 R4 生效并在任何浏览器客户端
 使用前与 `RACP-WS` 一起加入一致性 fixture；`RACP-GRPC` 保留，若采用则 `.proto` 由
-typebox 来源生成。Host link 随 R4 交付（D663，ADR 0330），SSH 隧道拓扑不使用它。
+typebox 来源生成。
+
+自托管 Gateway（`ADR 0330`）在同一个映射之上加一层 Host 前缀，一个 Gateway 可以同时
+服务多个 Host：客户端把 baseUrl 设为 `https://<gateway>/hosts/{hostId}`，表内映射不变。
+
+- 前缀之外的网关级接口：`GET /healthz`（无需鉴权，返回 `{ ok, version }`）、
+  `GET /v1/hosts`（调用者设备可访问的 Host，含 `online`）、
+  `POST /v1/hosts/{hostId}/pair`。
+- 命令请求体为 `{ jsonrpc, id, method, params, idempotencyKey? }`。`method` 与路由不一致
+  返回 `INVALID_ARGUMENT`；`idempotencyKey` 放到该操作 schema 规定的位置，只有
+  `turn/start` 有（`params.idempotencyKey`），其它操作携带幂等键同样是
+  `INVALID_ARGUMENT`。成功响应为 `{ result }`，失败为
+  `{ error: { code, message, data: RemoteError } }`，HTTP 状态码按 §6（错误）映射。
+  路径参数是唯一来源：请求体用不同值重复同一个路径参数同样返回 `INVALID_ARGUMENT`。
+- GET 路由的非路径参数通过查询字符串传递，路由表逐条声明允许的 key 与类型
+  （`RACP_HTTP_QUERY_PARAMS`）：
+
+  | 路由 | 查询参数 |
+  | --- | --- |
+  | `GET /v1/sessions/{sessionId}/history` | `beforeItemId`（`string`）、`limit`（`integer`） |
+  | 其余路由 | 无 |
+
+  未声明或重复出现的 key 返回 `INVALID_ARGUMENT`；`integer` 不是带符号十进制字面量、
+  `boolean` 不是 `true`/`false` 同样返回 `INVALID_ARGUMENT`。网关把解析出的值合并进
+  转发的参数，路径参数仍然优先。URL 中一律不接受凭据和事件游标：游标走
+  `Last-Event-ID`。
+- 每条中继逻辑连接都单独执行 `connection/initialize`，`bindings` 为 `["RACP-WS"]`
+  （Host link 的帧格式），声明客户端能力 `eventReplay`、`hostEvents`、`history`、
+  `turnQueue` 为 `true`，`approvals`、`inputRequests`、`toolRelay`、`terminal`、
+  `attachments` 为 `false`。Host 若仍发起服务端请求，网关回答
+  `CAPABILITY_UNAVAILABLE`，绝不为用户做决定。
+- 浏览器 profile 使用两个作用域为 `Path=/hosts/{hostId}` 的 cookie：`HttpOnly` 的设备
+  令牌（`racp_device`）和页面可读的 `racp_csrf`，其值为
+  `HMAC-SHA256(gateway-secret, deviceId)`。每个修改类请求都要在 `x-csrf-token` 中重放
+  该值；cookie 鉴权的请求必须带白名单内的 `Origin`；CORS 绝不返回 `*`。
+- 命令按 `(device, host)` 复用一条逻辑连接，每个事件流单独占一条，每设备最多 4 条流，
+  避免占满 Host 的 `maxConnectedClients`。Host link 随 R4 交付（D663，ADR 0330），SSH 隧道拓扑不使用它。
 浏览器
 无法在 WebSocket/EventSource 上设置请求头，因此非浏览器客户端用
 `Authorization` 头（header profile），浏览器客户端用 HttpOnly cookie + Origin 白名单
@@ -307,15 +343,15 @@ typebox 来源生成。Host link 随 R4 交付（D663，ADR 0330），SSH 隧道
 令牌哈希只用于路由前快速拒绝和限流；自托管场景下 route context 的完整性由已认证的
 Host link 保证，`credential` 绝不出现在日志或审计记录中。注册与配对使用同一监听器：
 管理员用 `remote-gateway enroll-code --label <name>` 打印 15 分钟有效的一次性注册码，
-Host 本地生成密钥对并把 CSR 与注册码发到 Host link 端口上的专用注册接口（仅服务端
-TLS 认证，不要求客户端证书），Host 用 `--gateway-ca` 固定网关身份，指纹不匹配即拒绝，
+Host 本地生成密钥对并把 CSR 与注册码用 `POST /v1/enroll` 发到 Host link 端口（仅服务端
+TLS 认证，不要求客户端证书），链路本身是 `wss://<gateway>:<port>/v1/hostlink`，Host 用 `--gateway-ca` 固定网关身份，指纹不匹配即拒绝，
 网关签发一年期、CN 为 `hostId` 的客户端证书；配对时 Host 在本机显示 10 分钟有效的
 一次性配对码，客户端调用 `POST /v1/hosts/{hostId}/pair`，网关以配对令牌作为
 `credential` 打开逻辑连接并依次执行 `connection/initialize` 与 `connection/pair`，
 Host 签发网关来源（安全规格 §3.7）的设备令牌，网关只记录
 `{ deviceId, hostId, sha256(token), label, createdAt }`，并以
-`HttpOnly; Secure; SameSite=Strict; Path=/v1` cookie 加 CSRF token（浏览器）或在响应体
-中返回 `{ deviceId, token }`（原生，存入 Keychain / Keystore）交付令牌。
+`HttpOnly; Secure; SameSite=Strict; Path=/hosts/{hostId}` cookie 加 CSRF token（浏览器）
+或在响应体中返回 `{ deviceId, token }`（原生，存入 Keychain / Keystore）交付令牌。
 
 ## 6. 限制和错误
 

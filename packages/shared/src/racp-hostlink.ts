@@ -193,6 +193,8 @@ export type RacpHttpRouteName = keyof typeof RACP_HTTP_ROUTE_LIST;
  * RACP method to route-name mapping, kept beside the route table so the HTTP
  * client derives method and path from one source (spec §11.2). Operations
  * without an HTTP mapping must not silently fall through to a made-up path.
+ * `events/subscribe` is deliberately absent: an event stream is only ever
+ * opened through the SSE `stream()`, never as a JSON command.
  */
 export const RACP_METHOD_HTTP_ROUTES: Partial<Record<string, RacpHttpRouteName>> = {
   "host/list": "hosts",
@@ -208,7 +210,6 @@ export const RACP_METHOD_HTTP_ROUTES: Partial<Record<string, RacpHttpRouteName>>
   "turn/interrupt": "interruptTurn",
   "turn/cancel": "cancelTurn",
   "turn/prioritize": "prioritizeTurn",
-  "events/subscribe": "sessionEvents",
   "approval/respond": "respondApproval",
   "input/respond": "respondInput",
 };
@@ -234,6 +235,42 @@ export const RACP_HTTP_ROUTE_PARAMS: Record<RacpHttpRouteName, readonly string[]
   hostEvents: [],
   respondApproval: ["approvalId"],
   respondInput: ["inputId"],
+};
+
+/**
+ * How a query-string value is represented for a GET route (spec §11.2).
+ * `integer` is a signed decimal literal, `boolean` is exactly `true`/`false`.
+ */
+export type RacpHttpQueryParamType = "string" | "integer" | "boolean";
+
+/**
+ * The non-path parameters a GET route carries in its query string. The types
+ * mirror the operation schemas in `packages/racp/src/operations.ts`; every
+ * route is listed so a key that is missing here is a caller error rather than
+ * a silently dropped parameter (spec §11.2).
+ */
+export const RACP_HTTP_QUERY_PARAMS: Record<RacpHttpRouteName, Readonly<Record<string, RacpHttpQueryParamType>>> = {
+  capabilities: {},
+  hosts: {},
+  pairDevice: {},
+  projects: {},
+  sessions: {},
+  createSession: {},
+  getSession: {},
+  attachSession: {},
+  // `HistoryParams`: beforeItemId is a string cursor, limit a positive integer.
+  sessionHistory: { beforeItemId: "string", limit: "integer" },
+  startTurn: {},
+  getTurn: {},
+  stopTurn: {},
+  interruptTurn: {},
+  cancelTurn: {},
+  prioritizeTurn: {},
+  // Event streams carry their cursor in `Last-Event-ID`, never in the URL.
+  sessionEvents: {},
+  hostEvents: {},
+  respondApproval: {},
+  respondInput: {},
 };
 
 /** SSE event format on the stream endpoints (spec §11.2). */

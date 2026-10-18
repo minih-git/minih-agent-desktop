@@ -12,11 +12,20 @@ import {
   createHostSessionPort,
   listPendingToolRequests,
 } from "@minih-agent/host-runtime";
-import { DeviceTokenAuthenticator, RacpServer, bindRacpWebSocket, type RacpHostOperations, type WsBinding } from "@minih-agent/racp";
+import {
+  DeviceTokenAuthenticator,
+  RacpServer,
+  bindRacpWebSocket,
+  startHostLink,
+  type HostLinkHandle,
+  type RacpHostOperations,
+  type WsBinding,
+} from "@minih-agent/racp";
 import { APP_VERSION, type AgentEventEnvelope } from "@minih-agent/shared";
 
 import type { AgentHostCliConfig } from "./config.js";
 import { FileCredentialStore, loadOrCreateHostId } from "./credentials.js";
+import { readGatewayLink } from "./gateway-link.js";
 import { createHostOperations } from "./host-operations.js";
 import { createLogger, type HostLogger } from "./logger.js";
 import { TerminalService, loadPty } from "./terminal.js";
@@ -55,6 +64,15 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
   const hostId = await loadOrCreateHostId(config.dataDir);
   const store = new FileCredentialStore(config.dataDir);
   const authenticator = new DeviceTokenAuthenticator(store);
+  // The outbound Host link needs its credentials before anything is spawned:
+  // an unenrolled Host fails here, while it still owns no resources at all
+  // (ADR 0330). A corrupt file reports its own `GATEWAY_LINK_INVALID` error.
+  const gatewayCredentials = config.gateway ? await readGatewayLink(config.dataDir) : null;
+  if (config.gateway && !gatewayCredentials) {
+    throw Object.assign(new Error("this Host is not enrolled with a gateway; run `agent-host-cli enroll` first"), {
+      errorCode: "GATEWAY_LINK_MISSING",
+    });
+  }
 
   const state: { host: HostProcess | null; sidecar: AgentSidecar | null; stopping: boolean } = { host: null, sidecar: null, stopping: false };
   const getHost = () => state.host;
@@ -213,7 +231,16 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
   });
 
   // Claim the owner-only channel before spawning the sole SQLite writer.
-  const admin = process.platform === "win32" ? undefined : await startAdminSocket({ dataDir: config.dataDir, getHost, log });
+  // `remote-pair` mints a gateway-origin code on the running instance: the code
+  // is redeemable only over the Host link, never through the SSH channel.
+  const admin = process.platform === "win32"
+    ? undefined
+    : await startAdminSocket({
+        dataDir: config.dataDir,
+        getHost,
+        issuePairingToken: (lifetimeMs) => authenticator.issuePairingToken(lifetimeMs, "gateway"),
+        log,
+      });
   try {
     await startHost();
     await startSidecar();
@@ -246,6 +273,9 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
     : undefined;
   if (!pty) log("warn", "node-pty is not installed; terminals are disabled");
 
+  // The server is created after the operations, but a revocation must reach it
+  // to close the revoked device's live connections (security §3.7, S9).
+  let server: RacpServer | null = null;
   const operations: RacpHostOperations = {
     ...createHostOperations({
       getHost,
@@ -257,14 +287,21 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
         sidecar.clearProjectInstructionRoot(sessionId);
         await sidecar.call("agent.disposeSession", { sessionId }).catch(() => undefined);
       },
-      revokeDevice: (deviceId) => store.revokeDevice(deviceId, new Date().toISOString()),
+      revokeDevice: async (deviceId) => {
+        const revoked = await store.revokeDevice(deviceId, new Date().toISOString());
+        if (revoked) {
+          const closed = server?.closeConnectionsForSubject(deviceId, "device revoked") ?? 0;
+          log("info", "device revoked", { deviceId, closedConnections: closed });
+        }
+        return revoked;
+      },
     }),
     ...(terminal ? { terminal } : {}),
   };
-  const server = new RacpServer({ agentHost, operations, authenticator, hostId, serverVersion: APP_VERSION, log });
+  server = new RacpServer({ agentHost, operations, authenticator, hostId, serverVersion: APP_VERSION, log });
   let binding: WsBinding;
   try {
-    binding = await bindRacpWebSocket({ server: server, authenticator, host: config.host, port: config.port, log });
+    binding = await bindRacpWebSocket({ server, authenticator, host: config.host, port: config.port, log });
   } catch (error) {
     state.stopping = true;
     await admin?.close();
@@ -276,7 +313,27 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
     await state.host?.dispose();
     throw error;
   }
-  log("info", "agent-host-cli ready", { hostId, host: binding.address.host, port: binding.address.port, version: APP_VERSION, terminal: Boolean(terminal) });
+  // The opt-in outbound Host link (ADR 0330). Its credentials were read before
+  // the first subprocess started; the loopback listener, `--pair`, and the SSH
+  // bootstrap are unchanged when `--gateway` stays off.
+  let hostLink: HostLinkHandle | null = null;
+  if (gatewayCredentials) {
+    hostLink = startHostLink({
+      credentials: gatewayCredentials,
+      server,
+      authenticator,
+      log: (level, message, data) => log(level, message, data),
+      onStatus: (status) => log("info", "gateway link status", { state: status.state, since: status.since }),
+    });
+  }
+  log("info", "agent-host-cli ready", {
+    hostId,
+    host: binding.address.host,
+    port: binding.address.port,
+    version: APP_VERSION,
+    terminal: Boolean(terminal),
+    gateway: config.gateway,
+  });
 
   return {
     hostId,
@@ -292,6 +349,7 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
       state.stopping = true;
       log("info", "agent-host-cli stopping");
       await admin?.close();
+      await hostLink?.stop();
       server.close();
       await binding.close();
       await terminal?.closeAll();

@@ -10,25 +10,26 @@
 ```text
 Minih-Agent-Desktop/
 ├── apps/
-│ └── desktop/                # Electron 产品外壳
-│   ├── electron/
-│   │ ├── main/               # 主进程，每个关注点一个模块
-│   │ ├── preload/            # 渲染器与插件面板的 preload
-│   │ └── shared/             # main 与 preload 共用的代码
-│   ├── src/                  # React 渲染器
-│   │ ├── components/         # UI；含 settings/、workpanel/、plugins/、extensions/
-│   │ ├── hooks/              # React hooks
-│   │ ├── lib/                # 与框架无关的渲染器逻辑和 IPC 客户端
-│   │ ├── pages/              # 路由目的页
-│   │ ├── stores/             # zustand 应用 store
-│   │ ├── styles/             # 按界面拆分的 CSS；tokens.css 是设计系统
-│   │ └── assets/             # 字体与品牌素材
-│   ├── test/                 # node --test 套件（*.test.mjs）与 helpers/
-│   ├── resources/            # 打包 extraResources：skills/、plugins/、models.dev/
-│   ├── build/                # electron-builder 用的图标与 macOS entitlements
-│   ├── index.html
-│   ├── electron.vite.config.ts
-│   └── package.json          # 同时承载 electron-builder 配置
+│ ├── desktop/                # Electron 产品外壳
+│ │ ├── electron/
+│ │ │ ├── main/               # 主进程，每个关注点一个模块
+│ │ │ ├── preload/            # 渲染器与插件面板的 preload
+│ │ │ └── shared/             # main 与 preload 共用的代码
+│ │ ├── src/                  # React 渲染器
+│ │ │ ├── components/         # UI；含 settings/、workpanel/、plugins/、extensions/
+│ │ │ ├── hooks/              # React hooks
+│ │ │ ├── lib/                # 与框架无关的渲染器逻辑和 IPC 客户端
+│ │ │ ├── pages/              # 路由目的页
+│ │ │ ├── stores/             # zustand 应用 store
+│ │ │ ├── styles/             # 按界面拆分的 CSS；tokens.css 是设计系统
+│ │ │ └── assets/             # 字体与品牌素材
+│ │ ├── test/                 # node --test 套件（*.test.mjs）与 helpers/
+│ │ ├── resources/            # 打包 extraResources：skills/、plugins/、models.dev/
+│ │ ├── build/                # electron-builder 用的图标与 macOS entitlements
+│ │ ├── index.html
+│ │ ├── electron.vite.config.ts
+│ │ └── package.json          # 同时承载 electron-builder 配置
+│ └── remote-gateway/         # 自托管 RACP 网关：Host link（wss + mTLS）与 RACP-HTTP + SSE
 ├── crates/
 │ └── host-core/              # Rust 特权宿主（二进制 minih-agent-desktop-host-core）
 │   ├── Cargo.toml

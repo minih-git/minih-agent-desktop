@@ -1114,6 +1114,53 @@ the Gateway and browser milestones (R4–R6, D663): the mapping binds when R4
 ships and the binding joins the conformance fixture with `RACP-WS` before any
 browser client uses it.
 
+#### Gateway mapping
+
+A self-hosted Gateway (`ADR 0330`) fronts one or more Hosts and serves the same
+table under a Host prefix, so a client sets its base URL to
+`https://<gateway>/hosts/{hostId}` and uses the mapping above unchanged.
+
+- Gateway-level endpoints outside that prefix: `GET /healthz` (unauthenticated,
+  `{ ok, version }`), `GET /v1/hosts` (the Hosts the caller's device may reach,
+  each with `online`), and `POST /v1/hosts/{hostId}/pair`.
+- A command body is `{ jsonrpc, id, method, params, idempotencyKey? }`. The
+  Gateway answers `INVALID_ARGUMENT` when `method` does not match the route, and
+  places `idempotencyKey` where the operation schema defines it: only
+  `turn/start` has one (`params.idempotencyKey`), so a key on any other
+  operation is `INVALID_ARGUMENT`. A successful response is `{ result }`; a
+  failure is `{ error: { code, message, data: RemoteError } }` with the HTTP
+  status of the §13 mapping. A path parameter is authoritative: a body that
+  repeats it with another value is `INVALID_ARGUMENT`.
+- A GET route carries its non-path parameters in the query string, and the route
+  table declares exactly which keys and types it accepts
+  (`RACP_HTTP_QUERY_PARAMS`):
+
+  | Route | Query parameters |
+  | --- | --- |
+  | `GET /v1/sessions/{sessionId}/history` | `beforeItemId` (`string`), `limit` (`integer`) |
+  | every other route | none |
+
+  An undeclared or repeated key is `INVALID_ARGUMENT`, as is an `integer` that
+  is not a signed decimal literal or a `boolean` other than `true`/`false`. The
+  Gateway merges the parsed values into the forwarded parameters and the path
+  parameter still wins. Neither a credential nor an event cursor is ever
+  accepted in a URL: the cursor travels in `Last-Event-ID`.
+- Every relayed logical connection performs its own `connection/initialize` with
+  `bindings: ["RACP-WS"]` (the Host link framing, §11.4) and the client
+  capabilities `eventReplay`, `hostEvents`, `history`, and `turnQueue` set to
+  `true`; `approvals`, `inputRequests`, `toolRelay`, `terminal`, and
+  `attachments` are `false`. A server-initiated request the Host sends anyway is
+  answered with `CAPABILITY_UNAVAILABLE`; the Gateway never decides for the
+  user.
+- The browser profile uses two cookies scoped to `Path=/hosts/{hostId}`: the
+  `HttpOnly` device token (`racp_device`) and a page-readable `racp_csrf` whose
+  value is `HMAC-SHA256(gateway-secret, deviceId)`. Every mutation repeats that
+  value in `x-csrf-token`, a cookie-authenticated request must carry an
+  allowlisted `Origin`, and CORS never answers `*`.
+- Commands share one logical connection per `(device, host)`; each event stream
+  takes its own, and a device holds at most four streams, so a Gateway cannot
+  exhaust the Host's `maxConnectedClients`.
+
 ### 11.3 gRPC (`RACP-GRPC`, reserved)
 
 gRPC is not part of the v1 conformance surface. It is reserved for a typed
@@ -1187,8 +1234,9 @@ Enrollment and pairing run against the same listener:
 - **Enrollment (Host to Gateway).** An administrator prints a one-time
   enrollment code with `remote-gateway enroll-code --label <name>`, valid 15
   minutes. The Host generates its key pair locally and sends the CSR and the
-  code to a dedicated enrollment endpoint on the Host link port that
-  authenticates by server TLS only and requires no client certificate. The
+  code with `POST /v1/enroll` on the Host link port, which authenticates by
+  server TLS only and requires no client certificate. The link itself is
+  `wss://<gateway>:<port>/v1/hostlink`. The
   Host pins the Gateway identity with the `--gateway-ca` certificate and
   refuses a fingerprint mismatch. The Gateway issues a one-year client
   certificate with the `hostId` as CN, which the Host then uses for the
@@ -1203,8 +1251,8 @@ Enrollment and pairing run against the same listener:
   issues a device token with the gateway device origin (security §3.7), and
   the Gateway records only
   `{ deviceId, hostId, sha256(token), label, createdAt }`, delivering the
-  token as an `HttpOnly; Secure; SameSite=Strict; Path=/v1` cookie plus a
-  CSRF token for browsers, or as `{ deviceId, token }` in the response body
+  token as an `HttpOnly; Secure; SameSite=Strict; Path=/hosts/{hostId}` cookie
+  plus a CSRF token for browsers, or as `{ deviceId, token }` in the response body
   for native clients to store in the iOS Keychain or the Android Keystore.
 
 ## 12. Limits and deadlines

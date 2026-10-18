@@ -620,6 +620,32 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   `minih-agent-desktop/remoteHost/bootstrap` joins `list` / `pair` / `remove`. The
   terminal work-panel client, the reverse tool relay, and provider-configuration
   propagation over the SSH channel are not in this slice.
+- R4 delivered in PR-2 (`feat/remote-gateway`): `apps/remote-gateway` runs the
+  self-hosted Gateway — bind-address validation (gates 22–23), the `--data-dir`
+  file store with `0700`/`0600` and atomic renames, the local CA with
+  enrollment and revocation, the `wss` + mutual-TLS Host link listener that
+  replaces a same-`hostId` link only after identity checks, the `RACP-HTTP` +
+  SSE client API with the header and cookie profiles plus Origin, CORS, and
+  CSRF controls, the pairing relay, the HTTP-to-logical-connection router with
+  one command connection per `(device, host)` and at most four streams per
+  device, per-device and per-IP token buckets, the closed-shape audit log, and
+  the `serve` / `enroll-code` / `hosts list|revoke` / `devices list|revoke` CLI
+  over an owner-only admin socket. `agent-host-cli` gained `enroll` (local key
+  pair, CSR, pinned Gateway CA, `gateway-link.json` at `0600`), the opt-in
+  `--gateway` outbound link with 1 s–60 s jittered backoff, `remote-pair` over
+  the existing admin socket, and `RacpServer.closeConnectionsForSubject` wiring
+  for revocation; the loopback listener, `--pair`, and the SSH bootstrap are
+  unchanged. `RACP-SHIPPED_BINDINGS` now lists `RACP-HTTP` — the conformance
+  test runs the same deterministic commands over `RACP-WS` and through the
+  Gateway and compares results, error codes, and session state.
+  `scripts/e2e-remote-gateway.mjs` (`pnpm test:e2e:remote-gateway`) covers
+  E2E-227 against the packaged Gateway and a packaged `agent-host-cli` with the
+  real host-core: enrollment and the outbound link, header and cookie pairing,
+  a relayed approval answered once across an SSE resume, a Gateway restart with
+  Host reconnect and cursor resume, revocation on either side within five
+  seconds, and refusal of a Gateway-issued token on the loopback binding.
+  Attachment relay stays deferred (`RacpServer` declares `attachments: false`),
+  so E2E-227 step 5 does not run in R4.
 
 ## 8. Amendment history
 

@@ -28,6 +28,8 @@
   "dependencies": {
     "@minih-agent/agent-host": "workspace:*",
     "@minih-agent/shared": "workspace:*",
+    "asn1js": "3.0.10",
+    "pkijs": "3.4.0",
     "typebox": "^1.3.13",
     "ws": "8.21.1"
   },

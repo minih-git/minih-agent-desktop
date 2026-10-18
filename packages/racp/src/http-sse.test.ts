@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   RACP_HTTP_ROUTE_LIST,
+  RACP_HTTP_ROUTE_PARAMS,
   RACP_METHOD_HTTP_ROUTES,
   formatRacpCursor,
   parseSseLastEventId,
@@ -40,13 +41,10 @@ describe("http route derivation (fix 4)", () => {
   it("asserts the method and path of every route in the shared table", async () => {
     for (const [name, spec] of Object.entries(RACP_HTTP_ROUTE_LIST)) {
       const [httpMethod, template] = spec.split(" ") as ["GET" | "POST", string];
-      // Fill path parameters with fixture values.
-      const path = template
-        .replace("{hostId}", "host_1")
-        .replace("{sessionId}", "ses_1")
-        .replace("{turnId}", "turn_1")
-        .replace("{approvalId}", "appr_1")
-        .replace("{inputId}", "in_1");
+      // Only the parameters this route actually names: extra scalars would
+      // (correctly) become query parameters on a GET.
+      const params = Object.fromEntries(RACP_HTTP_ROUTE_PARAMS[name].map((param) => [param, `${param}_1`]));
+      const path = RACP_HTTP_ROUTE_PARAMS[name].reduce((current, param) => current.replace(`{${param}}`, `${param}_1`), template);
       const requests: Request[] = [];
       const client = createHttpSseClient({
         ...baseOptions,
@@ -57,7 +55,7 @@ describe("http route derivation (fix 4)", () => {
       });
       const method = Object.entries(RACP_METHOD_HTTP_ROUTES).find(([, route]) => route === name)?.[0];
       if (!method) continue;
-      await client.request(method, { hostId: "host_1", sessionId: "ses_1", turnId: "turn_1", approvalId: "appr_1", inputId: "in_1" });
+      await client.request(method, params);
       expect(requests, `route ${name}`).toHaveLength(1);
       expect(requests[0]!.method, `route ${name} method`).toBe(httpMethod);
       expect(requests[0]!.url, `route ${name} path`).toBe(`https://gateway.test${path}`);
@@ -78,14 +76,79 @@ describe("http route derivation (fix 4)", () => {
     expect(requests[0]!.url).toBe("https://gateway.test/v1/sessions");
   });
 
-  it("throws INVALID_PARAMS for an unmapped method and for missing path parameters", async () => {
+  it("throws INVALID_ARGUMENT for an unmapped method and for missing path parameters", async () => {
     const client = createHttpSseClient({
       ...baseOptions,
       fetchImpl: (async () => new Response(JSON.stringify({ result: {} }), { status: 200 })) as unknown as typeof fetch,
     });
-    await expect(client.request("terminal/open", { sessionId: "ses_1" })).rejects.toMatchObject({ code: "INVALID_PARAMS" });
-    await expect(client.request("session/get", {})).rejects.toMatchObject({ code: "INVALID_PARAMS" });
-    await expect(client.request("turn/stop", { sessionId: "ses_1" })).rejects.toMatchObject({ code: "INVALID_PARAMS" });
+    await expect(client.request("terminal/open", { sessionId: "ses_1" })).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    await expect(client.request("session/get", {})).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    await expect(client.request("turn/stop", { sessionId: "ses_1" })).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  });
+});
+
+describe("PR-2 command-profile fixes", () => {
+  const recorder = () => {
+    const requests: Request[] = [];
+    const client = createHttpSseClient({
+      ...baseOptions,
+      fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push(new Request(input, init));
+        return new Response(JSON.stringify({ result: { ok: true } }), { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+    return { client, requests };
+  };
+
+  it("serializes the declared GET parameters into the query string", async () => {
+    const { client, requests } = recorder();
+    await client.request("session/history", { sessionId: "ses_1", limit: 20, beforeItemId: "item_9" });
+    expect(requests[0]!.method).toBe("GET");
+    expect(requests[0]!.url).toBe("https://gateway.test/v1/sessions/ses_1/history?limit=20&beforeItemId=item_9");
+  });
+
+  it("refuses a GET parameter the route table does not declare", async () => {
+    const { client, requests } = recorder();
+    await expect(client.request("session/history", { sessionId: "ses_1", includeSnapshot: false })).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+    expect(requests).toHaveLength(0);
+  });
+
+  it("refuses a declared GET parameter of the wrong type", async () => {
+    const { client, requests } = recorder();
+    for (const limit of ["20", 20.5, Number.NaN]) {
+      await expect(client.request("session/history", { sessionId: "ses_1", limit })).rejects.toMatchObject({
+        code: "INVALID_ARGUMENT",
+      });
+    }
+    await expect(client.request("session/history", { sessionId: "ses_1", beforeItemId: 9 })).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+    expect(requests).toHaveLength(0);
+  });
+
+  it("never serializes a credential-like parameter into a URL", async () => {
+    const { client, requests } = recorder();
+    for (const key of ["token", "deviceToken", "credential", "pairingToken", "apiKey", "secret"]) {
+      await expect(client.request("session/list", { [key]: "pdt1_fixture_token" })).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    }
+    expect(requests).toHaveLength(0);
+  });
+
+  it("refuses an object parameter on a GET route instead of dropping it", async () => {
+    const { client, requests } = recorder();
+    await expect(client.request("session/list", { filter: { mode: "agent" } })).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    expect(requests).toHaveLength(0);
+  });
+
+  it("refuses events/subscribe as a command: events stream only through stream()", async () => {
+    const { client, requests } = recorder();
+    await expect(client.request("events/subscribe", { scope: "session", sessionId: "ses_1" })).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+    expect(requests).toHaveLength(0);
+    expect(RACP_METHOD_HTTP_ROUTES["events/subscribe"]).toBeUndefined();
   });
 });
 

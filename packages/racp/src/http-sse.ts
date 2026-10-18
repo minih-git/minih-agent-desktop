@@ -13,6 +13,7 @@
  * the caller to keep a request open for turn execution").
  */
 import {
+  RACP_HTTP_QUERY_PARAMS,
   RACP_HTTP_ROUTE_LIST,
   RACP_HTTP_ROUTE_PARAMS,
   RACP_METHOD_HTTP_ROUTES,
@@ -86,16 +87,17 @@ export function createHttpSseClient(options: HttpSseClientOptions): HttpSseClien
   async function request(method: string, params: Record<string, unknown>, idempotencyKey?: string): Promise<unknown> {
     const routeName = RACP_METHOD_HTTP_ROUTES[method];
     if (!routeName) {
-      throw new RacpError("INVALID_PARAMS", `the RACP method ${method} has no HTTP mapping`);
+      throw new RacpError("INVALID_ARGUMENT", `the RACP method ${method} has no HTTP command mapping`);
     }
     const spec = RACP_HTTP_ROUTE_LIST[routeName];
     const [httpMethod, template] = spec.split(" ") as ["GET" | "POST", string];
     const path = fillPathParams(routeName, template, method, params);
+    const query = httpMethod === "GET" ? buildQuery(routeName, method, params) : "";
     const body =
       httpMethod === "POST"
         ? JSON.stringify({ jsonrpc: "2.0", id: `${method}:${Date.now()}`, method, params, ...(idempotencyKey ? { idempotencyKey } : {}) })
         : undefined;
-    const response = await fetchImpl(`${options.baseUrl}${path}`, {
+    const response = await fetchImpl(`${options.baseUrl}${path}${query}`, {
       method: httpMethod,
       headers: headers(),
       credentials: options.auth.kind === "cookie" ? "include" : "same-origin",
@@ -247,11 +249,50 @@ function fillPathParams(
   for (const name of RACP_HTTP_ROUTE_PARAMS[routeName]) {
     const value = params[name];
     if (typeof value !== "string" || value.length === 0) {
-      throw new RacpError("INVALID_PARAMS", `the ${method} call needs a ${name} path parameter`);
+      throw new RacpError("INVALID_ARGUMENT", `the ${method} call needs a ${name} path parameter`);
     }
     path = path.replace(`{${name}}`, encodeURIComponent(value));
   }
   return path;
+}
+
+/** Query-string keys that would put a credential in a URL (security §3.1). */
+const CREDENTIAL_PARAM = /(token|credential|secret|password|api[-_]?key|authorization)/i;
+
+/**
+ * Serialize the non-path parameters of a GET call (spec §11.2). The route table
+ * declares which keys may travel in a query string and how each is encoded, so
+ * an undeclared key fails loudly instead of being dropped — a credential-like
+ * key is refused outright rather than leaking into the URL.
+ */
+function buildQuery(
+  routeName: keyof typeof RACP_HTTP_ROUTE_LIST,
+  method: string,
+  params: Record<string, unknown>,
+): string {
+  const pathParams = new Set<string>(RACP_HTTP_ROUTE_PARAMS[routeName]);
+  const declared = RACP_HTTP_QUERY_PARAMS[routeName];
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (pathParams.has(key) || value === undefined) continue;
+    if (CREDENTIAL_PARAM.test(key)) {
+      throw new RacpError("INVALID_ARGUMENT", `the ${method} call must never carry ${key} in the URL`);
+    }
+    const type = declared[key];
+    if (type === undefined) {
+      throw new RacpError("INVALID_ARGUMENT", `the ${method} call cannot carry ${key} in the query string`);
+    }
+    if (type === "integer") {
+      if (typeof value !== "number" || !Number.isInteger(value)) {
+        throw new RacpError("INVALID_ARGUMENT", `the ${method} call needs an integer ${key}`);
+      }
+    } else if (typeof value !== type) {
+      throw new RacpError("INVALID_ARGUMENT", `the ${method} call needs a ${type} ${key}`);
+    }
+    query.set(key, String(value));
+  }
+  const text = query.toString();
+  return text ? `?${text}` : "";
 }
 
 /** Re-exported for callers that need to inspect a server notification payload. */

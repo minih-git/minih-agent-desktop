@@ -254,6 +254,25 @@ export class RacpServer {
     return connection;
   }
 
+  /**
+   * Revocation (security §3.7, gate 26): close every connection whose
+   * principal is `subject` and return how many were closed. Loopback
+   * `RACP-WS` connections and Host link logical connections are both ordinary
+   * entries here, so one implementation covers either channel and each is
+   * released through the normal teardown path.
+   */
+  closeConnectionsForSubject(subject: string, reason: string): number {
+    let closed = 0;
+    for (const connection of [...this.connections.values()]) {
+      if (connection.principal.subject !== subject) continue;
+      connection.close(1000, reason);
+      this.release(connection);
+      closed += 1;
+    }
+    if (closed > 0) this.options.log("info", "racp connections closed for subject", { subject, reason, closed });
+    return closed;
+  }
+
   /** Stop accepting and close every connection; running turns are untouched. */
   close(): void {
     this.closed = true;

@@ -208,6 +208,23 @@ SSE 不缓冲。
 - R2 已开始（2026-09-18，D447 / ADR 0284）：`packages/host-runtime` 承载与 Electron 无关的运行时层 —— host-core 与 sidecar 的 stdio 传输、重启监督器、`RuntimeService`（模块的 `RuntimePort`，含持久回合生命周期）、转录持久化、无头启动解析器与已批准 Plan/Goal 的派发 —— Electron main 通过薄适配层运行其上。
 - R2（2026-09-18，D448 / ADR 0285）：`packages/racp` 承载 `RACP-WS` 服务端与客户端核心、回环上的 `ws` 绑定与设备令牌配对；握手、鉴权、幂等、队列顺序、审批、游标重放、驱逐、epoch 变更、慢客户端与不重复执行的重连都是包内测试。`agent-host-cli` 包、桌面适配器与 SSH 引导此后均已开始：R2a 桌面内核（D449 / ADR 0286）带来了适配器与 `agent-host-cli` 包，SSH 引导随后在 D453 / ADR 0292 落地。
 - R2b 部分完成（2026-09-19，D453 / ADR 0292）：桌面使用用户自己的 `ssh` 客户端并以 `BatchMode=yes` 在远端安装并配对 `agent-host-cli`，用户的配置、agent 与跳板机照常生效，应用不持有任何 SSH 密钥。`remote/agent-host-cli-release.ts` 承载纯发布坐标（远端平台、桌面版本、已发布的 SHA-256、拒绝未发布的目标），`remote/agent-host-cli-bootstrap-script.ts` 生成唯一的 `umask 077` 脚本：下载、校验、安装到远端 `$HOME`、以 `--pair` 在回环上重启主机，并回显 `AGENT_HOST_CLI_READY` / `AGENT_HOST_CLI_PAIRING_TOKEN`；`remote/ssh-transport.ts` 是可注入的传输端口，`remote/ssh-tunnel.ts` 为每台主机维护一条持久的 `ssh -N -L` 转发，每次启动重新建立，并在引导时被收编（adopt），使配对只建立一条隧道。记录以 `metadata.transport = "ssh"` 加 SSH 描述符取代 URL，`minih-agent-desktop/remoteHost/bootstrap` 加入 `list` / `pair` / `remove`。终端工作面板客户端、反向工具中继，以及经 SSH 通道下发 provider 配置均不在本次范围内。
+- R4 已由 PR-2（`feat/remote-gateway`）交付：`apps/remote-gateway` 提供自托管网关，包括
+  绑定地址校验（gate 22–23）、`--data-dir` 文件存储（目录 0700、文件 0600、原子 rename）、
+  本地 CA 与注册/吊销、先校验身份再替换同 `hostId` 旧链路的 wss + mTLS Host link 监听、
+  带 header 与 cookie 两种鉴权及 Origin/CORS/CSRF 控制的 `RACP-HTTP` + SSE 客户端 API、
+  配对中继、每个 `(device, host)` 复用一条命令连接且每设备最多 4 条事件流的
+  HTTP→逻辑连接路由器、按设备与 IP 的令牌桶、闭集审计日志，以及基于 owner-only 管理
+  socket 的 `serve` / `enroll-code` / `hosts list|revoke` / `devices list|revoke` CLI。
+  `agent-host-cli` 新增 `enroll`（本地密钥对、CSR、固定网关 CA、0600 的
+  `gateway-link.json`）、可选的 `--gateway` 外连（1s–60s 抖动退避）、走原管理 socket 的
+  `remote-pair`，以及吊销时调用 `RacpServer.closeConnectionsForSubject` 的接线；loopback
+  监听、`--pair` 与 SSH 引导行为不变。`RACP_SHIPPED_BINDINGS` 现已包含 `RACP-HTTP`：
+  一致性测试对同一个 `RacpServer` 分别经 `RACP-WS` 与网关跑同一组确定性命令，比较结果、
+  错误码与会话状态。`scripts/e2e-remote-gateway.mjs`（`pnpm test:e2e:remote-gateway`）
+  覆盖 E2E-227：打包后的网关与打包后的 `agent-host-cli` 加真实 host-core，验证注册与外连、
+  header 与 cookie 两种配对、跨 SSE 续传只应答一次的审批、网关重启后 Host 自动重连与
+  游标续传、任一侧吊销在 5 秒内生效，以及网关令牌在 loopback 绑定上被拒绝。附件中继仍延后
+  （`RacpServer` 声明 `attachments: false`），E2E-227 第 5 步不在 R4 执行。
 
 ## 8. 修订记录
 
