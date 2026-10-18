@@ -127,8 +127,12 @@ export function createInteractionSlice({
     resolvePermission: async (sessionId, requestId, decision) => {
       const permission = headPermission(get().pendingPermissions, sessionId);
       if (!permission || permission.requestId !== requestId) return;
+      // The reminder outlives a failed resolve: only a request the host
+      // actually settled may clear its toast and its unread row.
+      let resolved = false;
       try {
         await api.resolvePermission({ requestId, decision });
+        resolved = true;
       } finally {
         set((state) => ({
           pendingPermissions: removePermission(
@@ -137,14 +141,19 @@ export function createInteractionSlice({
             requestId,
           ),
         }));
+        if (resolved) {
+          void get().acknowledgePrompt(requestId).catch(() => undefined);
+        }
       }
     },
 
     resolveAsk: async (sessionId, resolution: AskToolResolution) => {
       const ask = headAsk(get().pendingAsks, sessionId);
       if (!ask || ask.requestId !== resolution.requestId) return;
+      let resolved = false;
       try {
         await api.resolveAskTool(resolution);
+        resolved = true;
       } finally {
         set((state) => ({
           pendingAsks: removeAsk(
@@ -153,6 +162,11 @@ export function createInteractionSlice({
             resolution.requestId,
           ),
         }));
+        if (resolved) {
+          void get()
+            .acknowledgePrompt(resolution.requestId)
+            .catch(() => undefined);
+        }
       }
     },
 
@@ -180,6 +194,7 @@ export function createInteractionSlice({
             action: result.action,
             targetPermissionMode: result.targetPermissionMode,
           });
+          void get().acknowledgePrompt(resolution.proposalId).catch(() => undefined);
           return result;
         } catch (error) {
           if ((error as { code?: unknown })?.code === PLAN_APPROVAL_TIMEOUT) {
@@ -223,6 +238,7 @@ export function createInteractionSlice({
             duration,
             sound: options?.sound !== false,
             sessionId: options?.sessionId,
+            promptRequestId: options?.promptRequestId,
           },
         ];
         return { toasts: next.slice(-TOAST_STACK_LIMIT) };

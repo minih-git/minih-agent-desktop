@@ -43,6 +43,7 @@ export function createCatalogSlice({
   | "clearNotifications"
   | "openNotification"
   | "acknowledgeSessionOutcome"
+  | "acknowledgePrompt"
 > {
   return {
     rememberModel: (model) => {
@@ -278,13 +279,22 @@ export function createCatalogSlice({
       catalogRuntime.invalidateNotificationRefresh();
       set((state) => {
         const notifications = [notification, ...state.notifications].slice(0, 200);
+        // Prompt rows are reminders, not results: an arriving ask must not
+        // replace the session's outcome badge with "completed". Recompute that
+        // session from the shared rule so both entry points agree.
+        const sessionOutcomes = { ...state.sessionOutcomes };
+        delete sessionOutcomes[notification.sessionId];
+        Object.assign(
+          sessionOutcomes,
+          latestSessionOutcomes(
+            notifications.filter(
+              (item) => item.sessionId === notification.sessionId,
+            ),
+          ),
+        );
         return {
           notifications,
-          sessionOutcomes: {
-            ...state.sessionOutcomes,
-            [notification.sessionId]:
-              notification.kind === "task.failed" ? "failed" : "completed",
-          },
+          sessionOutcomes,
           unreadNotificationCount:
             state.unreadNotificationCount + (notification.readAt ? 0 : 1),
         };
@@ -419,11 +429,42 @@ export function createCatalogSlice({
       const intent = sessionRuntime.beginNavigationIntent();
       const notification = get().notifications.find((item) => item.id === id);
       if (!notification) return;
-      await get().markNotificationRead(id);
+      // One bell row stands for the whole conversation (D664), so opening it
+      // settles every unread row of that conversation, not just the newest.
+      const unread = get().notifications.filter(
+        (item) => item.sessionId === notification.sessionId && !item.readAt,
+      );
+      for (const item of unread) {
+        await get().markNotificationRead(item.id);
+      }
       if (!sessionRuntime.navigationIntentIsCurrent(intent)) return;
       await get().selectSession(notification.sessionId, {
         navigationIntent: intent,
       });
+    },
+
+    acknowledgePrompt: async (requestId) => {
+      // The toast is the visible half of the reminder; the durable row is the
+      // half that survives a restart. Both are settled here so a resolved
+      // request never leaves a sticky toast or an unread inbox entry behind.
+      set((state) => ({
+        toasts: state.toasts.filter(
+          (item) => item.promptRequestId !== requestId,
+        ),
+      }));
+      // A very fast answer can beat the row's own `notification.changed`
+      // delivery; reconcile once instead of leaving the reminder unread.
+      const findReminder = () =>
+        get().notifications.find(
+          (item) => item.requestId === requestId && !item.readAt,
+        );
+      let notification = findReminder();
+      if (!notification) {
+        await get().refreshNotifications().catch(() => undefined);
+        notification = findReminder();
+      }
+      if (!notification) return;
+      await get().markNotificationRead(notification.id);
     },
 
     acknowledgeSessionOutcome: async (sessionId) => {

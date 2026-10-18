@@ -336,15 +336,14 @@ test("source uses a Segoe UI Canvas path for smooth Windows badge glyphs", () =>
   assert.match(overlaySource, /executeJavaScript/);
   assert.doesNotMatch(overlaySource, /\.roundRect\s*\(/);
   assert.doesNotMatch(overlaySource, /ctx\.ellipse\s*\(/);
-  assert.match(overlaySource, /D295/);
-  assert.match(overlaySource, /failures only|failure-only|failures-only/i);
+  assert.match(overlaySource, /D664 made the bell list the same rows/);
 });
 
-test("documents the D295 bell vs shell-badge count split", () => {
-  const inboxSource = readFileSync(
-    join(root, "src/lib/notification-inbox.ts"),
+test("documents the D664 bell vs shell-badge agreement", () => {
+  const centerSource = readFileSync(
+    join(root, "src/components/NotificationCenter.tsx"),
     "utf8",
   );
-  assert.match(inboxSource, /task\.completed/);
-  assert.match(inboxSource, /notification\.kind !== "task\.completed"/);
+  assert.match(centerSource, /mergeNotificationsBySession\(storedNotifications\)/);
+  assert.match(centerSource, /unreadSessionIds\(storedNotifications\)/);
 });

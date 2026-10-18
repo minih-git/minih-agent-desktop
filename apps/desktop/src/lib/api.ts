@@ -644,6 +644,21 @@ export const api = {
     invoke<{ ok: boolean }>(IPC.invoke.notificationSetViewingSession, {
       sessionId,
     }),
+  /**
+   * Report an interactive request so the durable inbox keeps a reminder even
+   * when the toast auto-dismissed and no native banner was shown.
+   */
+  recordPromptNotification: (input: {
+    sessionId: string;
+    requestId: string;
+    kind: "ask" | "permission" | "plan";
+    toolName?: string;
+    turnId?: string;
+  }) =>
+    invoke<{ notification: AppNotification | null }>(
+      IPC.invoke.notificationRecordPrompt,
+      input,
+    ),
   listSessions: () =>
     invoke<{ sessions: SessionSummary[] }>(IPC.invoke.sessionList).then((result) => ({
       ...result,

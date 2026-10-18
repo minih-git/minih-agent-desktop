@@ -1985,3 +1985,101 @@ fn migrates_v21_to_v22_replaces_session_index() {
         "idx_sessions_updated_id should be created"
     );
 }
+
+#[test]
+fn v24_notifications_migrate_to_prompt_kinds() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pi.sqlite");
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE sessions (id TEXT PRIMARY KEY, title TEXT NOT NULL);
+         CREATE TABLE notifications (
+           id         TEXT PRIMARY KEY,
+           kind       TEXT NOT NULL CHECK (kind IN ('task.completed', 'task.failed')),
+           session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+           session_title TEXT NOT NULL,
+           turn_id    TEXT NOT NULL UNIQUE,
+           error_code TEXT,
+           created_at INTEGER NOT NULL,
+           read_at    INTEGER
+         );
+         CREATE INDEX idx_notifications_created ON notifications(created_at DESC);
+         CREATE INDEX idx_notifications_unread
+           ON notifications(created_at DESC) WHERE read_at IS NULL;
+         INSERT INTO sessions (id, title) VALUES ('s1', 'Old session');
+         INSERT INTO notifications
+           (id, kind, session_id, session_title, turn_id, error_code, created_at, read_at)
+         VALUES
+           ('n1', 'task.failed', 's1', 'Old session', 't1', 'MODEL_ERROR', 1000, 7);
+         PRAGMA user_version = 24;",
+    )
+    .unwrap();
+
+    super::prompt_notification_migration::migrate_v24_to_v25(&conn, &path).unwrap();
+
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 25);
+
+    // The pre-v25 row keeps its identity, error code, and read state.
+    let (kind, turn_id, request_id, error_code, read_at): (
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<i64>,
+    ) = conn
+        .query_row(
+            "SELECT kind, turn_id, request_id, error_code, read_at
+             FROM notifications WHERE id = 'n1'",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(kind, "task.failed");
+    assert_eq!(turn_id.as_deref(), Some("t1"));
+    assert_eq!(request_id, None);
+    assert_eq!(error_code.as_deref(), Some("MODEL_ERROR"));
+    assert_eq!(read_at, Some(7));
+
+    // Prompt rows are now allowed, need no turn, and stay unique per request.
+    conn.execute(
+        "INSERT INTO notifications
+           (id, kind, session_id, session_title, turn_id, request_id, tool_name, created_at)
+         VALUES ('n2', 'prompt.ask', 's1', 'Old session', NULL, 'r1', NULL, 2000)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO notifications
+           (id, kind, session_id, session_title, turn_id, request_id, tool_name, created_at)
+         VALUES ('n3', 'prompt.permission', 's1', 'Old session', NULL, 'r1', 'Bash', 3000)",
+        [],
+    )
+    .unwrap_err();
+    // The old turn_id uniqueness survives the rebuild.
+    conn.execute(
+        "INSERT INTO notifications
+           (id, kind, session_id, session_title, turn_id, created_at)
+         VALUES ('n4', 'task.completed', 's1', 'Old session', 't1', 4000)",
+        [],
+    )
+    .unwrap_err();
+    // Unknown prompt kinds are still rejected by the widened CHECK.
+    conn.execute(
+        "INSERT INTO notifications
+           (id, kind, session_id, session_title, request_id, created_at)
+         VALUES ('n5', 'prompt.bogus', 's1', 'Old session', 'r2', 5000)",
+        [],
+    )
+    .unwrap_err();
+}

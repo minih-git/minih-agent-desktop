@@ -1,14 +1,29 @@
 import type { ProjectMemory } from "./filesystem.js";
 
 /** Shared public types grouped by the owning application domain. */
-export type AppNotificationKind = "task.completed" | "task.failed";
+/**
+ * Durable inbox families. `task.*` names a settled turn; `prompt.*` names an
+ * interactive request the runtime is blocked on, so a reminder survives a
+ * missed toast, a hidden window, or a restart.
+ */
+export type AppNotificationKind =
+  | "task.completed"
+  | "task.failed"
+  | "prompt.ask"
+  | "prompt.permission"
+  | "prompt.plan";
 
 export type AppNotification = {
   id: string;
   kind: AppNotificationKind;
   sessionId: string;
   sessionTitle: string;
-  turnId: string;
+  /** Present for settled-turn rows only. */
+  turnId?: string;
+  /** Present for prompt rows; the runtime's id for the pending request. */
+  requestId?: string;
+  /** Present for prompt rows that ask about one tool. */
+  toolName?: string;
   errorCode?: string;
   createdAt: string;
   readAt?: string | null;

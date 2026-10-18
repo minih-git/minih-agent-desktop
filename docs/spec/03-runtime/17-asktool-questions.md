@@ -43,10 +43,14 @@ There is no timer, countdown, or automatic expiration. The card remains pending
 until the user submits or the turn is stopped. If the turn is stopped while a
 card is open, the runtime resolves every remaining question as skipped.
 
-When an ask arrives, the app shows an in-app toast with a stable localized
-prompt title and the first question; background sessions also follow the
-existing native notification policy. Ask titles deliberately do not interpolate
-the session title, because generated titles may contain tool-call text. The ask
+When an ask arrives, the app shows a sticky in-app toast with a stable
+localized prompt title and the first question; the toast stays until the
+question is answered, declined, or dismissed. The same event records one
+unread `prompt.ask` row in the durable inbox (D663), so a request that outlived
+the window's attention is still recoverable from the bell. Background sessions
+also follow the existing native notification policy. Ask titles deliberately do
+not interpolate the session title, because generated titles may contain
+tool-call text; the inbox row uses the session-name snapshot instead. The ask
 event plays one soft in-app chime; its toast does not play a second one.
 
 The toast retains its originating session. Clicking its message, or activating

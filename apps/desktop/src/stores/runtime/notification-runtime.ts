@@ -3,10 +3,21 @@ import { api } from "../../lib/api";
 import { playNotificationChime } from "../../lib/notification-sound";
 import type { StoreGet } from "../slices/types";
 
+export type InteractivePromptKind = "ask" | "permission" | "plan";
+
+export type InteractivePromptPayload = {
+  question?: string;
+  toolName?: string;
+  /** Runtime id of the pending request; the durable reminder is keyed by it. */
+  requestId?: string;
+  /** Turn that is blocked on the request, when the runtime reports one. */
+  turnId?: string;
+};
+
 export type InteractivePromptNotifier = (
   sessionId: string,
-  kind: "ask" | "permission" | "plan",
-  payload?: { question?: string; toolName?: string },
+  kind: InteractivePromptKind,
+  payload?: InteractivePromptPayload,
 ) => void;
 
 export function createInteractivePromptNotifier(
@@ -32,13 +43,29 @@ export function createInteractivePromptNotifier(
       body = i18n.t("notifications.planApprovalBody");
     }
     playNotificationChime();
-    if (kind === "ask") {
-      get().showToast(`${title}: ${body}`, {
-        variant: "info",
-        duration: 8_000,
-        sound: false,
-        sessionId,
-      });
+    // A prompt toast is sticky (`duration: 0`): the runtime is blocked on the
+    // user, so the reminder stays until it is answered, declined, or dismissed
+    // instead of disappearing after 8 s while the window was in the background.
+    // `promptRequestId` lets the resolution close exactly this reminder.
+    get().showToast(`${title}: ${body}`, {
+      variant: "info",
+      duration: 0,
+      sound: false,
+      sessionId,
+      ...(payload?.requestId ? { promptRequestId: payload.requestId } : {}),
+    });
+    // The durable row is what survives a missed toast, a hidden window, or a
+    // restart: the inbox keeps pointing at the conversation that is waiting.
+    if (payload?.requestId) {
+      void api
+        .recordPromptNotification({
+          sessionId,
+          requestId: payload.requestId,
+          kind,
+          ...(payload.toolName ? { toolName: payload.toolName } : {}),
+          ...(payload.turnId ? { turnId: payload.turnId } : {}),
+        })
+        .catch(() => undefined);
     }
     void api
       .showNativeNotification({

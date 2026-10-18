@@ -2801,6 +2801,8 @@ sklm: {
     "askTitle": "Une question attend votre réponse",
     "askBody": "{{question}}",
     "askBodyFallback": "La tâche nécessite votre réponse pour continuer.",
+    "promptAskTitle": "{{sessionTitle}} a une question pour vous",
+    "promptAskBody": "Ouvrez la conversation et répondez pour que la tâche continue.",
     "permissionTitle": "{{sessionTitle}} nécessite une autorisation d'outil",
     "permissionBody": "Autorisation requise pour exécuter {{toolName}}.",
     "planApprovalTitle": "{{sessionTitle}} plan en attente d'approbation",

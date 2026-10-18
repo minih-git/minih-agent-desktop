@@ -2801,6 +2801,8 @@ sklm: {
     "askTitle": "Eine Frage braucht Ihre Antwort",
     "askBody": "{{question}}",
     "askBodyFallback": "Die Aufgabe erfordert Ihre Antwort, um fortzufahren.",
+    "promptAskTitle": "{{sessionTitle}} hat eine Frage an Sie",
+    "promptAskBody": "Öffnen Sie den Chat und antworten Sie, damit die Aufgabe fortgesetzt werden kann.",
     "permissionTitle": "{{sessionTitle}} benötigt Tool-Genehmigung",
     "permissionBody": "Berechtigung zur Ausführung von {{toolName}} erforderlich.",
     "planApprovalTitle": "{{sessionTitle}} Plan wartet auf Genehmigung",

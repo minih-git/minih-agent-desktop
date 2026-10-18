@@ -649,6 +649,10 @@ export function useAppShellRuntime() {
       // to a row that is already present/acknowledged. Do not surface a native
       // banner for an event the store intentionally rejected.
       if (!accepted) return;
+      // Prompt rows carry their own sticky toast and interactive banner from
+      // the notifier; replaying them here would add a second chime and a
+      // "task finished" banner for work that is still waiting.
+      if (!notification.kind.startsWith("task.")) return;
       playNotificationChime();
       const failed = notification.kind === "task.failed";
       const title = t(

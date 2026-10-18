@@ -669,10 +669,17 @@ Electron 的请求永远不会进入主机 RPC 域。
 ```ts
 type AppNotification = {
   id: string;
-  kind: "task.completed" | "task.failed";
+  kind:
+    | "task.completed"
+    | "task.failed"
+    | "prompt.ask"
+    | "prompt.permission"
+    | "prompt.plan";
   sessionId: string;
   sessionTitle: string;
-  turnId: string;
+  turnId?: string;     // 终端回合行；提问行为被阻塞的回合
+  requestId?: string;  // 仅提问行
+  toolName?: string;   // 仅 prompt.permission
   errorCode?: string;
   createdAt: string;
   readAt?: string | null;

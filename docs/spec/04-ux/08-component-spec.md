@@ -4158,21 +4158,22 @@ Sidebar footer                                        Popover (360px max)
 ### 20.4 Interactions
 
 - Bell toggles the popover. Opening does not implicitly mark anything read.
-- `All` shows the newest retained rows; `Unread` filters to `readAt == null`.
-- Selecting a row first calls `notification.markRead`, closes the popover, then
-  activates the row's durable session (including its project when applicable)
-  and scrolls the transcript to its latest content. The successful read also
-  dismisses the matching task-native banner before a late activation can
-  surface it again.
+- `All` shows one row per conversation (its newest retained row); `Unread`
+  filters to conversations with at least one unread row.
+- Selecting a row settles its conversation: every unread row of that session is
+  marked read, the popover closes, then the row's durable session (including its
+  project when applicable) is activated and the transcript scrolls to its latest
+  content. The successful reads also dismiss the matching task-native banner
+  before a late activation can surface it again.
 - Restoring/focusing the app from its taskbar or Dock while an unread terminal
   outcome's session is already visible in the chat marks that session's
   matching durable notifications read; it does not mark outcomes belonging to
   other sessions.
 - Mark all read is idempotent and preserves rows; it dismisses every outstanding
   task-native banner. Clear deletes every inbox row, dismisses all task-native
-  banners, and leaves sessions, transcripts, and turns intact. These actions
-  remain available for successful completions hidden from the failure-only
-  bell list, so the taskbar unread badge can be cleared from the popover.
+  banners, and leaves sessions, transcripts, and turns intact. Both actions
+  cover every retained row, and the bell badge counts the same unread rows as
+  the taskbar overlay (D664).
 - `notification.changed` updates the visible list and badge only for a new
   durable id. A duplicate id, or a delayed event for an acknowledged/cleared
   row, is ignored. Opening the
@@ -4208,13 +4209,16 @@ Sidebar footer                                        Popover (360px max)
 
 ### 20.6 Constraints
 
-- The list contains only `task.completed` and `task.failed` records produced
-  from unseen terminal agent turns. Visible-current results and `aborted` turns
-  are intentionally silent.
+- The list is one row per conversation: `task.completed`, `task.failed`, and
+  pending `prompt.*` records produced from unseen terminal agent turns and
+  interactive requests, merged to the newest row of each conversation. A
+  conversation reads as unread while any of its rows is unread, and opening it
+  settles them all (D664). Visible-current results and `aborted` turns are
+  intentionally silent.
 - At most 200 newest rows are retained globally. There is no pagination,
-  scheduled notification source, durable permission-notification source,
-  preferences page, notification permission prompt, or cloud sync. Interactive
-  prompt banners are transient native surfaces outside the inbox.
+  scheduled notification source, preferences page, notification permission
+  prompt, or cloud sync. Interactive prompts join the list as `prompt.*` rows
+  (D663) and keep their transient native banner as well.
 
 ---
 

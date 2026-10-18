@@ -32,6 +32,7 @@ import {
   clearSessionPermissions,
   enqueuePermission,
   removePermissionForToolCall,
+  sessionPermissions,
 } from "../../lib/pending-permissions";
 import {
   isActivePlanExecution,
@@ -42,6 +43,7 @@ import { formatToolValue } from "../../lib/tool-display";
 import type { AppState } from "../app-state";
 import type { SessionRuntime } from "../runtime/session-runtime";
 import type { StoreAccess } from "./types";
+import type { InteractivePromptPayload } from "../runtime/notification-runtime";
 
 export type EventsSliceDependencies = StoreAccess & {
   runtime: SessionRuntime;
@@ -58,7 +60,7 @@ export type EventsSliceDependencies = StoreAccess & {
   notifyInteractivePrompt: (
     sessionId: string,
     kind: "ask" | "permission" | "plan",
-    payload?: { question?: string; toolName?: string },
+    payload?: InteractivePromptPayload,
   ) => void;
   flushPendingSessionConfiguration: (sessionId: string) => Promise<void>;
   assistantErrorMessage: (error: {
@@ -343,6 +345,12 @@ export function createEventsSlice({
         void flushPendingSessionConfiguration(envelope.sessionId);
         void get().refreshQueuedPrompts(envelope.sessionId);
       } else if (event.type === "agent_end" || event.type === "error") {
+        // A turn that ends without an answer drops its pending prompts; their
+        // reminders must not outlive the requests they point at.
+        const droppedPromptIds = [
+          ...sessionPermissions(get().pendingPermissions, envelope.sessionId),
+          ...(get().pendingAsks[envelope.sessionId] ?? []),
+        ].map((request) => request.requestId);
         set((state) => ({
           runningSessions: {
             ...state.runningSessions,
@@ -380,6 +388,9 @@ export function createEventsSlice({
                   },
         }));
         void flushPendingSessionConfiguration(envelope.sessionId);
+        for (const requestId of droppedPromptIds) {
+          void get().acknowledgePrompt(requestId).catch(() => undefined);
+        }
         if (event.type === "agent_end") {
           void get().refreshQueuedPrompts(envelope.sessionId);
         }
@@ -419,7 +430,10 @@ export function createEventsSlice({
             );
           }
           void get().restorePendingPlan(envelope.sessionId);
-          notifyInteractivePrompt(envelope.sessionId, "plan");
+          notifyInteractivePrompt(envelope.sessionId, "plan", {
+            requestId: event.proposalId,
+            turnId: envelope.turnId,
+          });
         }
         if (event.state !== "awaiting_approval") {
           void get().refreshQueuedPrompts(envelope.sessionId);
@@ -441,6 +455,18 @@ export function createEventsSlice({
         // A tool result never opens or activates a work-panel tab: Review is a
         // user-opened surface (panel toggle or New launcher), so an agent edit
         // cannot reveal the panel even in its own session.
+        //
+        // A tool ending also closes whatever prompt belonged to it, so the
+        // reminder for that request must not survive it.
+        const droppedPromptIds = [
+          ...sessionPermissions(
+            get().pendingPermissions,
+            envelope.sessionId,
+          ).filter((request) => request.toolCallId === event.toolCallId),
+          ...(get().pendingAsks[envelope.sessionId] ?? []).filter(
+            (request) => request.toolCallId === event.toolCallId,
+          ),
+        ].map((request) => request.requestId);
         set((state) => {
           const pendingPermissions = removePermissionForToolCall(
             state.pendingPermissions,
@@ -457,6 +483,9 @@ export function createEventsSlice({
             ? {}
             : { pendingPermissions, pendingAsks };
         });
+        for (const requestId of droppedPromptIds) {
+          void get().acknowledgePrompt(requestId).catch(() => undefined);
+        }
       }
 
       if (event.type === "compaction_end" && event.ok && event.mark) {
@@ -477,6 +506,34 @@ export function createEventsSlice({
         runtime.cacheBackgroundTranscriptEvent(envelope);
         if (event.type === "tool_end") {
           runtime.removeToolStart(event.toolCallId);
+          // The same rule as the visible path: a tool that ends closes its
+          // prompt, so a background reminder must not point at a dead request.
+          const droppedPromptIds = [
+            ...sessionPermissions(
+              get().pendingPermissions,
+              envelope.sessionId,
+            ).filter((request) => request.toolCallId === event.toolCallId),
+            ...(get().pendingAsks[envelope.sessionId] ?? []).filter(
+              (request) => request.toolCallId === event.toolCallId,
+            ),
+          ].map((request) => request.requestId);
+          if (droppedPromptIds.length > 0) {
+            set((state) => ({
+              pendingPermissions: removePermissionForToolCall(
+                state.pendingPermissions,
+                envelope.sessionId,
+                event.toolCallId,
+              ),
+              pendingAsks: removeAskForToolCall(
+                state.pendingAsks,
+                envelope.sessionId,
+                event.toolCallId,
+              ),
+            }));
+            for (const requestId of droppedPromptIds) {
+              void get().acknowledgePrompt(requestId).catch(() => undefined);
+            }
+          }
         }
         if (event.type === "tool_permission_request") {
           set((state) => ({
@@ -486,6 +543,8 @@ export function createEventsSlice({
           }));
           notifyInteractivePrompt(envelope.sessionId, "permission", {
             toolName: event.request.toolName,
+            requestId: event.request.requestId,
+            turnId: envelope.turnId,
           });
         } else if (event.type === "asktool_request") {
           set((state) => ({
@@ -493,6 +552,8 @@ export function createEventsSlice({
           }));
           notifyInteractivePrompt(envelope.sessionId, "ask", {
             question: event.request.questions?.[0]?.question,
+            requestId: event.request.requestId,
+            turnId: envelope.turnId,
           });
         } else if (event.type === "agent_end") {
           void get().refreshSessions();
@@ -662,6 +723,8 @@ export function createEventsSlice({
           }));
           notifyInteractivePrompt(envelope.sessionId, "permission", {
             toolName: event.request.toolName,
+            requestId: event.request.requestId,
+            turnId: envelope.turnId,
           });
           break;
         case "asktool_request":
@@ -670,6 +733,8 @@ export function createEventsSlice({
           }));
           notifyInteractivePrompt(envelope.sessionId, "ask", {
             question: event.request.questions?.[0]?.question,
+            requestId: event.request.requestId,
+            turnId: envelope.turnId,
           });
           break;
         case "error": {

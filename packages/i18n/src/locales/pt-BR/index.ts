@@ -2771,6 +2771,8 @@ export const ptBR = {
     askTitle: "Uma pergunta precisa da sua resposta",
     askBody: "{{question}}",
     askBodyFallback: "A tarefa requer sua resposta para prosseguir.",
+    promptAskTitle: "{{sessionTitle}} tem uma pergunta para você",
+    promptAskBody: "Abra a conversa e responda para a tarefa continuar.",
     permissionTitle: "{{sessionTitle}} requer aprovação de ferramenta",
     permissionBody: "Permissão necessária para executar {{toolName}}.",
     planApprovalTitle: "Plano de {{sessionTitle}} aguardando aprovação",

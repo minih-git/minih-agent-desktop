@@ -1016,6 +1016,10 @@
   color: var(--ds-error);
 }
 
+.notification-kind-icon.prompt {
+  color: var(--ds-accent);
+}
+
 .notification-copy {
   display: flex;
   min-width: 0;
