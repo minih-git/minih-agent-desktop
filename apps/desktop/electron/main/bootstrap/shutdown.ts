@@ -14,6 +14,7 @@ import type { UserMcpRuntime } from "../user-mcp";
 import type { McpControlServer } from "../mcp-control";
 import type { McpOAuthManager } from "../mcp-oauth";
 import { getActiveRemoteHostsBoot, setActiveRemoteHostsBoot } from "./remote-hosts";
+import { getActiveGatewayLink, setActiveGatewayLink } from "./gateway-link";
 import type { LiveCallService } from "../live-voice/call-service";
 
 const QUIT_TURN_SETTLE_BUDGET_MS = 2_000;
@@ -146,6 +147,10 @@ export function registerShutdownHandlers({
       // parallelism inside `closeAll`; safe to run before local disposals.
       const remoteHostsShutdown = getActiveRemoteHostsBoot()?.closeAll();
       setActiveRemoteHostsBoot(null);
+      // The desktop Host link closes before host-core goes away, so a remote
+      // device sees a clean link close instead of a dangling relay.
+      const gatewayLinkShutdown = getActiveGatewayLink()?.dispose();
+      setActiveGatewayLink(null);
       // Replies still streaming are stopped through the sidecar first so their
       // aborted final rows can reach the transcript while host-core is alive;
       // whatever does not make it in time is covered by the last checkpoint
@@ -213,6 +218,7 @@ export function registerShutdownHandlers({
         sidecarShutdown,
         mcpShutdown,
         remoteHostsShutdown,
+        gatewayLinkShutdown,
       ]);
       await disposeSystemProxyRelay?.();
     })();

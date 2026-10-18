@@ -18,6 +18,7 @@ export type SettingsTabId =
   | "projects"
   | "sync"
   | "remoteHosts"
+  | "remoteGateway"
   | "voice"
   | "about";
 
@@ -325,6 +326,26 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "settings.remoteHosts.statusOnline",
       "settings.remoteHosts.statusOffline",
       "settings.remoteHosts.experimental",
+    ],
+  },
+  {
+    id: "remoteGateway",
+    labelKey: "settings.nav.remoteGateway",
+    titleKey: "settings.remoteGateway.title",
+    group: "system",
+    experimentalBadgeKey: "settings.remoteHosts.experimental",
+    keywordKeys: [
+      "settings.remoteGateway.title",
+      "settings.remoteGateway.desc",
+      "settings.remoteGateway.enabled",
+      "settings.remoteGateway.url",
+      "settings.remoteGateway.caPem",
+      "settings.remoteGateway.registrationCode",
+      "settings.remoteGateway.enroll",
+      "settings.remoteGateway.statusTitle",
+      "settings.remoteGateway.pairingTitle",
+      "settings.remoteGateway.pairingCreate",
+      "settings.remoteGateway.devicesTitle",
     ],
   },
   {

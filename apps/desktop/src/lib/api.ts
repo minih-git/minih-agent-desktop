@@ -130,6 +130,11 @@ import type {
   RemoteHostPairResult,
   RemoteHostSummary,
   RemoteInteractionUpdate,
+  RemoteGatewayDeviceSummary,
+  RemoteGatewayDevicesResult,
+  RemoteGatewayEnrollRequest,
+  RemoteGatewayPairingCodeResult,
+  RemoteGatewayStatus,
   UpdateState,
   WindowControlAction,
   CloseBehavior,
@@ -1773,6 +1778,31 @@ export const api = {
   onRemoteInteractions: (listener: (event: RemoteInteractionUpdate) => void) => {
     if (!window.minihAgent?.on) return () => undefined;
     return window.minihAgent.on(IPC.event.remoteInteractions, (payload) => listener(payload as RemoteInteractionUpdate));
+  },
+
+  // --- Remote gateway (R5: this desktop as a connected Host) ----------------
+  /**
+   * Link state, enrollment, and paired devices of the outbound Host link. The
+   * main process owns the link: these calls steer it, and only the pairing
+   * code ever comes back as a secret for the user to read off the screen.
+   */
+  remoteGatewayStatus: () =>
+    invoke<RemoteGatewayStatus>(IPC.invoke.remoteGatewayStatus),
+  setRemoteGatewayEnabled: (enabled: boolean) =>
+    invoke<RemoteGatewayStatus>(IPC.invoke.remoteGatewaySetEnabled, { enabled }),
+  enrollRemoteGateway: (request: RemoteGatewayEnrollRequest) =>
+    invoke<RemoteGatewayStatus>(IPC.invoke.remoteGatewayEnroll, request),
+  createRemoteGatewayPairingCode: () =>
+    invoke<RemoteGatewayPairingCodeResult>(IPC.invoke.remoteGatewayCreatePairingCode),
+  listRemoteGatewayDevices: () =>
+    invoke<RemoteGatewayDevicesResult>(IPC.invoke.remoteGatewayListDevices),
+  revokeRemoteGatewayDevice: (deviceId: string) =>
+    invoke<{ revoked: boolean }>(IPC.invoke.remoteGatewayRevokeDevice, { deviceId }),
+  onRemoteGatewayStatus: (listener: (status: RemoteGatewayStatus) => void) => {
+    if (!window.minihAgent?.on) return () => undefined;
+    return window.minihAgent.on(IPC.event.remoteGatewayStatusChanged, (payload) =>
+      listener(payload as RemoteGatewayStatus),
+    );
   },
   onSessionsChanged: (
     listener: (event: {

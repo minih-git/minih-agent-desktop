@@ -306,8 +306,10 @@ the mTLS key material live in the main process, encrypted through
 schema. Relayed principals follow the device-origin rules of security §3.7:
 they are never SSH-paired owners, the remote permission ceiling always
 applies, and they cannot change a local session's permission mode. Disabling
-the setting, app quit, `before-quit`, and renderer reload close the link and
-cancel pending server requests; local turns continue throughout.
+the setting, app quit, and `before-quit` close the link and cancel pending
+server requests. A renderer reload does not: the link belongs to the main
+process, and the settings page only re-subscribes to its status. Local turns
+continue throughout.
 
 ## 6. Ownership and authority
 

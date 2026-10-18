@@ -28,6 +28,7 @@ import { registerConfigSyncIpc } from "./config-sync-ipc";
 import { registerSkillsIpc } from "./skills-ipc";
 import { registerAgentImportIpc } from "./agent-import-ipc";
 import { registerRemoteHostIpc } from "./remote-host-ipc";
+import { registerRemoteGatewayIpc } from "./remote-gateway-ipc";
 import { fetchSkillMarketDocument, searchSkillMarket } from "../skill-market-catalog";
 import { registerWindowIpc } from "./window-ipc";
 import { registerWorktreeIpc } from "./worktree-ipc";
@@ -508,6 +509,11 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
   }
 
   registerRemoteHostIpc({ registrar });
+
+  // Desktop as a connected Host (rollout R5): the settings page steers the
+  // main-owned link through these channels; nothing behind them is a secret
+  // the renderer may keep.
+  registerRemoteGatewayIpc({ registrar });
 
   registerMarketIpc({
     registrar,

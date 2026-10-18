@@ -15299,16 +15299,18 @@ acceptance targets.
   local session's timeline, then answer a pending tool approval and an input
   request. 5) Attempt an owner-only operation, an `allow-session` grant, and
   a local permission-mode change from the remote device. 6) Revoke the
-  device on the Host, then repeat from the Gateway side. 7) Disable the
-  setting, quit the app, and reload the renderer at separate points.
+  device on the Host, then repeat from the Gateway side. 7) Reload the
+  renderer while the remote device stays attached, then disable the setting
+  and quit the app at separate points.
 - **Expected**: The off state is byte-for-byte identical to the current
   desktop (no connection, no listener); enabling opens exactly one outbound
   link; the remote device sees the same ordered timeline and its approval
   closes the local card; owner-only operations, `allow-session`, and
   permission-mode changes are rejected while the ceiling applies; revocation
   on either side rejects new connections and closes the relayed logical
-  connection within 5 seconds; disabling, quitting, and reloading close the
-  link and cancel pending server requests without touching local turns.
+  connection within 5 seconds; a renderer reload leaves the link and its
+  remote subscribers untouched, while disabling and quitting close the link
+  and cancel pending server requests without touching local turns.
   `DESKTOP_PRINCIPAL` is unchanged and the mTLS key material never appears in
   settings or SQLite.
 - **Specs linked**: `02-architecture/05-remote-agent-control.md` §5.4,

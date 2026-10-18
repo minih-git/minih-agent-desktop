@@ -313,25 +313,27 @@ Deliver the desktop's outbound gateway link (ADR 0330):
   path, and no listener;
 - the optional `remoteGateway` AppSettings field (`enabled`, `url`;
   device-local, never synced, absent means off) and the Experimental
-  settings page: switch, gateway URL, enrollment code, link status, pairing
-  code with QR display and a 10-minute countdown, and the paired-device list
-  with revoke;
+  settings page: switch, gateway URL, enrollment code, link status, a
+  pairing code shown as copyable text with a 10-minute countdown, and the
+  paired-device list with revoke;
 - main-process device-credential storage encrypted through `EncryptionPort`,
   never in SQLite and never in host-core's schema; the mTLS key and
   certificate are stored separately from settings;
 - the `minih-agent-desktop/remoteGateway/*` IPC channels, all added to the
   MCP control block list; and
-- lifecycle cleanup: disabling the setting, app quit, `before-quit`, and
-  renderer reload close the link and cancel pending server requests without
-  touching local turns.
+- lifecycle cleanup: disabling the setting, app quit, and `before-quit`
+  close the link and cancel pending server requests without touching local
+  turns; a renderer reload leaves the main-owned link running and only drops
+  that renderer's status subscription.
 
 Exit criteria:
 
 1. With the setting off, behavior is identical to the current desktop: no
    connection is attempted and no listener opens (regression tests; security
    gate 27).
-2. Enabling the setting opens exactly one outbound link; disabling,
-   quitting, and reloading close it and cancel pending server requests.
+2. Enabling the setting opens exactly one outbound link; disabling and
+   quitting close it and cancel pending server requests, while a renderer
+   reload leaves it running and the settings page re-subscribes to its status.
 3. A gateway-routed principal stays under the remote permission ceiling,
    cannot change a local session's permission mode, and cannot use
    `allow-session`; `DESKTOP_PRINCIPAL` is unchanged.

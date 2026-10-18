@@ -1,0 +1,86 @@
+import type { RemoteGatewayLinkState, RemoteGatewayStatus } from "@minih-agent/shared";
+
+/**
+ * Renderer-side rules for the Remote gateway settings page (rollout R5,
+ * ADR 0330). Kept out of the component so the decisions the page makes — which
+ * switch state is allowed, which message a failure earns, when a pairing code
+ * stops being usable — are testable without a DOM.
+ */
+
+/** How long the page counts down a pairing code; kept in step with main. */
+export const REMOTE_GATEWAY_PAIRING_CODE_LIFETIME_MS = 10 * 60_000;
+
+export function remoteGatewayStateKey(state: RemoteGatewayLinkState): string {
+  switch (state) {
+    case "disabled":
+      return "settings.remoteGateway.stateDisabled";
+    case "not-enrolled":
+      return "settings.remoteGateway.stateNotEnrolled";
+    case "enrolling":
+      return "settings.remoteGateway.stateEnrolling";
+    case "starting":
+      return "settings.remoteGateway.stateStarting";
+    case "connecting":
+      return "settings.remoteGateway.stateConnecting";
+    case "connected":
+      return "settings.remoteGateway.stateConnected";
+    case "backoff":
+      return "settings.remoteGateway.stateBackoff";
+    case "rejected":
+      return "settings.remoteGateway.stateRejected";
+    case "error":
+      return "settings.remoteGateway.stateError";
+  }
+}
+
+function errorCodeOf(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  if ("errorCode" in error && typeof error.errorCode === "string") return error.errorCode;
+  if ("code" in error && typeof error.code === "string") return error.code;
+  return undefined;
+}
+
+/**
+ * Why an operation failed, as a catalog key. `GATEWAY_LINK_UNAVAILABLE` keeps
+ * its own message: a build without the transport must say so instead of
+ * looking like a connectivity problem.
+ */
+export function remoteGatewayErrorKey(error: unknown): string {
+  switch (errorCodeOf(error)) {
+    case "GATEWAY_LINK_UNAVAILABLE":
+      return "settings.remoteGateway.errorUnavailable";
+    case "GATEWAY_CREDENTIALS_UNREADABLE":
+    case "GATEWAY_CREDENTIALS_STORAGE_UNAVAILABLE":
+      return "settings.remoteGateway.errorCredentials";
+    case "AGENT_UNAVAILABLE":
+      return "settings.remoteGateway.errorHostUnavailable";
+    case "INVALID_ARGUMENT":
+      return "settings.remoteGateway.errorInvalidInput";
+    default:
+      return "settings.remoteGateway.errorUnknown";
+  }
+}
+
+/**
+ * The switch is only offered once this desktop holds Gateway credentials: a
+ * link without an enrollment has nothing to dial.
+ */
+export function remoteGatewaySwitchDisabled(status: RemoteGatewayStatus | null): boolean {
+  return status === null || status.enrolled !== true;
+}
+
+/** `m:ss` for the remaining lifetime; never negative. */
+export function pairingCodeRemainingLabel(remainingMs: number): string {
+  const total = Math.max(0, Math.ceil(remainingMs / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+/** Whether a pairing code can still be redeemed at `now`. */
+export function pairingCodeExpired(expiresAt: string, now: number): boolean {
+  const deadline = Date.parse(expiresAt);
+  // An unparseable deadline is treated as expired: never show a code that
+  // cannot be trusted to be single-use and short-lived.
+  return Number.isNaN(deadline) || deadline <= now;
+}
