@@ -20,6 +20,7 @@ Each ADR includes:
 
 | ID | Title | Status |
 |---|---|---|
+| remote-control-router-account-binding | [Router-account binding for remote control](remote-control-router-account-binding.md) | Accepted for implementation (post-MVP; D666; amends ADR 0331) |
 | builtin-session-messaging | [Built-in session messaging tools](builtin-session-messaging.md) | Accepted (D663) |
 | device-local-project-lists-in-config-sync | [Device-local project lists in configuration sync](device-local-project-lists-in-config-sync.md) | Accepted |
 | router-account-configuration-backup | [Router-account hosted configuration backup](router-account-configuration-backup.md) | Accepted; supersedes the S3-only transport decision |

@@ -494,6 +494,37 @@ address is only a default (`customBaseUrl: true`):
 The same token also reads the gateway's key-scoped control plane, which
 Settings uses for the balance and model plaza (§6, Minih Router account).
 
+- **Remote-control account binding (planned, D666).** The same key-scoped
+  bootstrap answer gains an optional additive
+  `remoteGateway { hostlinkUrl, publicOrigin, caPem }` object (ADR
+  `remote-control-router-account-binding`, protocol §11.5):
+
+  - `hostlinkUrl` is the Gateway's `wss://` Host-link endpoint the desktop dials
+    with mutual TLS (protocol §11.4);
+  - `publicOrigin` is the HTTPS origin a phone or browser uses for the client
+    API;
+  - `caPem` is the Gateway's CA certificate the desktop pins, replacing the
+    hand-pasted PEM of the self-hosted flow.
+
+  An absent object, or a `404` answer, means the Router does not offer account
+  mode: the desktop keeps the self-hosted enrollment flow (Gateway URL, CA PEM,
+  one-time enrollment code) and shows no account-mode affordances. The object is
+  covered by the bootstrap cache rules above — same AccessKey-digest key, same
+  seven-day ceiling, same one-minute floor — so it is never cached longer than
+  the answer it arrived in. It carries no secret: a CA certificate is public, and
+  the field never carries the AccessKey, which goes only to the Gateway in the
+  enrollment request.
+- **Second overlay forward for the Host link (planned, D666).** No-TUN mode
+  installs exactly one loopback forward today, derived from `routerLanUrl`, to the
+  Router's HTTP port (data plane and control plane alike). Reaching the Gateway's
+  Host-link port on the same machine needs a second forward (for example
+  `127.0.0.1:<local_port> -> <router mesh address>:<hostlink port>`), because the
+  desktop never listens and the Host dials out; TUN mode reaches the port
+  directly. The forward's configuration, port allocation, and the server name
+  used for certificate validation are defined by the implementing PR. Validation
+  must use the name in `hostlinkUrl`, never `127.0.0.1`, because certificate
+  validation includes the service identity (security §5.1).
+
 ### Named endpoint presets
 
 These rows are created from the add-provider **Service** select, not from a

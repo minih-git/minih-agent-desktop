@@ -1267,6 +1267,80 @@ Enrollment and pairing run against the same listener:
   `{ deviceId, token }` in the response body for native clients to store in the
   iOS Keychain or the Android Keystore.
 
+### 11.5 Account mode (planned, D666)
+
+Account mode binds a Minih-Router AccessKey to Hosts and devices (ADR
+`remote-control-router-account-binding`). It is additive: every clause of
+§11.2 and §11.4 keeps its meaning, and the self-hosted enrollment and per-Host
+pairing paths stay available for users without a Router key. Nothing in this
+subsection is implemented yet; field-level detail the decision does not fix is
+defined by the implementing PR, and no clause here may be read as shipped
+behavior.
+
+- **Key verification.** The Gateway validates a presented AccessKey by calling
+  the Router's `GET /api/auth/session` over loopback with
+  `Authorization: Bearer <AccessKey>`, forwarding the original caller address in
+  the header named by the Router's `CLIENT_IP_HEADER`. The Gateway's loopback
+  peer must be inside the Router's `TRUSTED_PROXIES`; otherwise the Router
+  ignores the header and evaluates `allowed_peer_cidrs` against `127.0.0.1`. The
+  account is the answered `access_key_id`. The Gateway never persists the raw
+  AccessKey; whether it keeps any digest of it, and for what, is defined by the
+  implementing PR.
+- **Key lifecycle.** Rotation keeps the account because the Router keeps the id.
+  A disabled or deleted key fails `GET /api/auth/session` (the Router indexes
+  only active keys), so new logins and new enrollments with it fail. Key state
+  revokes nothing by itself: already approved device tokens and already issued
+  Host certificates stay valid until revoked through the existing revoke paths.
+  A Host's link can still end for network reasons: when the mesh issues per-key
+  credentials, a Host whose key is disabled or deleted cannot refresh its
+  bootstrap and keeps the link only until that credential expires.
+- **Host enrollment by key.** The Router's `GET <root>/api/easytier/bootstrap`
+  answer gains the optional additive
+  `remoteGateway { hostlinkUrl, publicOrigin, caPem }` object (provider-config
+  §3). The Host sends its CSR together with `Bearer <AccessKey>` to the
+  Gateway's enrollment endpoint; the Gateway verifies the key, records the Host
+  under that account, and issues the client certificate that binds `hostId` to
+  the account. That certificate is presented on the same mutual-TLS Host link as
+  §11.4. An absent `remoteGateway` object, or a `404` from the bootstrap, means
+  account mode is unavailable and the Host uses the enrollment code of §11.4.
+- **Account login.** A client logs in with the AccessKey and can then list only
+  that account's Hosts, with their online state. How the login is carried
+  (session shape and lifetime) and the route names are defined by the
+  implementing PR. A Host or device of another account is never listed, routed
+  to, or acted on; the error returned, and whether it reveals existence, is
+  defined by the implementing PR. Relayed commands still require the device
+  token of §11.4; the AccessKey alone authorizes no Host operation.
+- **Device request, confirm, grant.** A logged-in client requests a device. The
+  Gateway sends `device.request` (new frame, Gateway to Hosts) to every online
+  Host of the account that advertises support. The first Host whose user
+  approves signs a grant and returns `device.grant` (new frame, Host to Gateway);
+  the Gateway relays that grant to the account's other Hosts, and each accepting
+  Host verifies that the signer is enrolled in the same account under the
+  Gateway CA and that the device is not revoked. The client ends with ONE device
+  token usable on those Hosts and drops the AccessKey.
+- **Deferred grants.** A Host that is offline when the grant is issued receives
+  the pending grant when its link comes up; until it has accepted the grant, it
+  does not accept the device token.
+- **Frame capability.** `device.request` and `device.grant` are sent only to
+  Hosts that advertise support; the advertisement itself is defined by the
+  implementing PR, because the frame union of §11.4 has no hello or capabilities
+  frame today. This is a safety requirement, not an optimization: today's Host
+  ignores an unknown `type` silently (`packages/racp/src/hostlink.ts` L103-172),
+  so a frame sent to an unsupporting Host would leave the client waiting
+  forever. The Gateway MUST instead report that Host to the client as unable to
+  confirm, and the client offers the per-Host ticket of §11.4.
+- **Roles and policy.** A device minted through account mode is a
+  gateway-origin principal under security §3.7: `viewer` / `controller` /
+  `approver`, `pairedDevice: false`, always under the remote permission ceiling,
+  never offered `allow-session`. A Host in strict mode refuses sibling grants
+  and confirms every device with its own user.
+- **Cross-account isolation.** No route, Host listing, device record, pending
+  grant, or audit query may cross accounts, and every routing decision and cache
+  lookup is scoped by account. The Gateway's per-IP rate limit (ADR decision 10)
+  applies across accounts by nature; per-account limits stay independent
+  (security §8), and no rate-limit response discloses another account's data
+  (security §9). Reachability on the shared overlay grants nothing.
+
 ## 12. Limits and deadlines
 
 The initial target limits are:
@@ -1453,3 +1527,15 @@ D665 (2026-10-17, ADR 0331) scheduled the Gateway and browser milestones
   certificate with the `hostId` as CN) and Gateway pairing (Host-displayed
   10-minute code, hash-only Gateway storage, cookie or response-body token
   delivery) are specified on the same listener.
+
+D666 (2026-10-18, ADR `remote-control-router-account-binding`) adds the planned
+account mode of §11.5: key verification through Router `/api/auth/session` over
+loopback with the caller address forwarded, the key-lifecycle rule (a disabled
+or deleted key starts no new login or enrollment but revokes nothing by
+itself), enrollment by AccessKey plus CSR from the additive `remoteGateway`
+bootstrap object, account-scoped login and host listing, the device request /
+confirm / grant exchange over the new `device.request` and `device.grant`
+Host-link frames, and the rule that those frames reach only Hosts that
+advertise support. The self-hosted enrollment code and per-Host ticket of §11.4
+are unchanged, and account-mode devices keep the gateway-origin roles and
+restrictions of D665.

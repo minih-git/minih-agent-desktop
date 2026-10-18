@@ -361,6 +361,52 @@ Host 签发网关来源（安全规格 §3.7）的设备令牌，网关只记录
 加 CSRF token（浏览器）或在响应体中返回 `{ deviceId, token }`（原生，存入 Keychain /
 Keystore）交付令牌。
 
+### 账户模式（规划中，D666）
+
+账户模式把 Minih-Router 的 AccessKey 绑定到 Host 与设备（ADR
+`remote-control-router-account-binding`），是**可追加**能力：上一节的全部条款保持
+原义，没有 Router key 的用户继续使用自托管注册码与每 Host 票据。本节内容**尚未实现**，
+决策未固定的字段细节由实施 PR 定义。
+
+- **key 校验**：Gateway 经 loopback 调用 Router `GET /api/auth/session`，以
+  `Authorization: Bearer <AccessKey>` 查询，并把调用者真实地址放进 Router
+  `CLIENT_IP_HEADER` 指定的头里转发。Gateway 的 loopback 对端必须在 Router 的
+  `TRUSTED_PROXIES` 内，否则 Router 会忽略该头，按 `127.0.0.1` 评估
+  `allowed_peer_cidrs`。账户即应答中的 `access_key_id`。Gateway 绝不持久化原始
+  AccessKey；是否保留其摘要、用于何处，由实施 PR 定义。
+- **密钥生命周期**：轮换保留账户，因为 Router 保留 id。被禁用或删除的 key 在
+  `GET /api/auth/session` 上失败（Router 只索引 active 的 key），因此用它发起的新登录
+  与新注册都会失败。key 状态本身不撤销任何东西：已批准的设备令牌与已签发的 Host 证书在
+  经既有撤销路径撤销之前保持有效。Host 的链路仍可能因网络原因中断：组网按 key 签发
+  凭据时，key 被禁用或删除的 Host 无法刷新 bootstrap，链路只能维持到该凭据过期。
+- **按 key 注册 Host**：Router 的 bootstrap 应答新增可选的
+  `remoteGateway {hostlinkUrl, publicOrigin, caPem}`。Host 以 `Bearer <AccessKey>`
+  加 CSR 调用 Gateway 注册接口；Gateway 校验后把 Host 记在该账户下，并签发把
+  `hostId` 绑定到账户的客户端证书，该证书用于上一节同一条 mTLS Host link。应答缺少
+  该对象或返回 `404` 表示账户模式不可用，Host 改用自托管注册码。
+- **账户登录与作用域**：客户端用 AccessKey 登录后，只能列出本账户的 Host 及其在线
+  状态；登录的承载方式（会话形态与有效期）与路由名由实施 PR 定义。其他账户的 Host 或
+  设备绝不会被列出、路由或操作，返回什么错误、是否暴露存在性由实施 PR 定义。中继命令
+  仍须上一节的设备令牌，AccessKey 本身不授权任何 Host 操作。
+- **设备申请、确认与授权**：客户端申请设备后，Gateway 向该账户内所有声明支持的在线
+  Host 发送 `device.request`（新增帧，Gateway→Hosts）；第一个由用户确认的 Host 签发
+  `device.grant`（新增帧，Host→Gateway），Gateway 再把该授权中继给账户内其他 Host，
+  接受方校验签名 Host 在同一账户下由网关 CA 注册、且设备未被撤销。客户端最终只持有一个
+  可用于这些 Host 的设备令牌并丢弃 AccessKey。授权时离线的 Host 在链路恢复后收到待处理
+  授权，在它接受授权之前不接受该设备令牌。
+- **帧能力与旧 Host**：两个新帧只发给声明支持的 Host（该声明由实施 PR 定义，当前
+  Host link 没有 hello 或能力帧）。这是安全要求而非优化：今天的 Host 会静默忽略未知
+  `type`（`packages/racp/src/hostlink.ts` L103-172），发给不支持的 Host 会让客户端
+  无限等待，因此 Gateway 必须把该 Host 以“无法确认”告知客户端，由客户端退回每 Host
+  票据。
+- **角色与隔离**：账户模式签发的设备属于网关来源主体，沿用安全规格 §3.7 的角色与
+  限制（`viewer` / `controller` / `approver`、`pairedDevice: false`、始终受远程权限
+  上限约束、无 `allow-session`）；处于严格模式的 Host 拒绝兄弟授权并逐台确认。任何
+  路由、主机列表、设备记录、待处理授权与审计查询都不得跨账户，每次路由决定与缓存查找
+  都按账户限定。Gateway 按 IP 的限流（ADR 决策 10）天然跨账户；按账户的限额彼此独立
+  （安全规格 §8），任何限流应答都不泄露其他账户的数据（安全规格 §9）。共享组网上的
+  可达性不授予任何权限。
+
 ## 6. 限制和错误
 
 | Limit | Target |
@@ -432,4 +478,13 @@ Gateway 与浏览器里程碑（R4–R6）：`RACP-HTTP`（§11.2）随 R4 绑�
 保证；注册（15 分钟一次性注册码、固定网关 CA、CN 为 `hostId` 的一年期证书）与网关
 配对（Host 本机显示的 10 分钟配对码、网关只存哈希、cookie 或响应体交付令牌）在同一
 监听器上规定。
+
+D666（2026-10-18，ADR `remote-control-router-account-binding`）新增规划的账户模式：
+经 loopback 调用并转发调用者地址的 Router key 校验；密钥生命周期规则（被禁用或删除的
+key 不能再发起新登录或新注册，但本身不撤销任何东西）；以 AccessKey 加 CSR 并按
+bootstrap 的 `remoteGateway` 注册 Host；账户作用域的登录与主机列表；经
+`device.request` 与 `device.grant` 两个新帧完成的设备申请／确认／授权；以及这两个帧
+只发给声明支持该能力的 Host 的强制要求。自托管注册码与每 Host 票据保持不变，账户模式
+设备仍受 D665 的网关来源角色与限制约束。
+
 完整状态机、示例和验收条款见英文源规格。

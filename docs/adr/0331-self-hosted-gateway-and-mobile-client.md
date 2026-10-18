@@ -1,6 +1,7 @@
 # ADR 0331: Self-hosted Gateway, connected desktop Host, and mobile client
 
 - Status: Accepted for implementation (post-MVP)
+- Amended by: [Router-account binding for remote control](remote-control-router-account-binding.md) (D666)
 - Date: 2026-10-17
 - Decision: D665
 - Related: ADR 0205 (D373 / D374 / D375), ADR 0285 (D448), ADR 0286 (D449),

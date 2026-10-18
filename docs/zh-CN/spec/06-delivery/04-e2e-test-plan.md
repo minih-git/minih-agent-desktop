@@ -5822,7 +5822,7 @@ eleven-tool-round desktop paths are verified by
 | 后MVP | E2E-022A、E2E-022B、E2E-022C、E2E-024I、E2E-024J、E2E-024K、E2E-024L、E2E-024M（插件路线图 R2/R3/R6） |
 | 基线后本地自动化 | E2E-220 |
 | 基线后本地自动化（MCP `minih_session_get` 超大 compaction） | E2E-MCP-session-get-projects-large-compaction |
-| MVP 后远程控制 | E2E-221、E2E-222、E2E-223、E2E-224、E2E-225、E2E-226、E2E-227、E2E-228、E2E-229、E2E-230、E2E-231、E2E-232、E2E-265、E2E-266、E2E-REMOTE-HOST-settings-compact-inventory、E2E-REMOTE-MOBILE-native-shell-credential-storage |
+| MVP 后远程控制 | E2E-221、E2E-222、E2E-223、E2E-224、E2E-225、E2E-226、E2E-227、E2E-228、E2E-229、E2E-230、E2E-231、E2E-232、E2E-265、E2E-266、E2E-REMOTE-HOST-settings-compact-inventory、E2E-REMOTE-MOBILE-native-shell-credential-storage、E2E-REMOTE-ACCOUNT-cross-account-isolation、E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts、E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm、E2E-REMOTE-ACCOUNT-key-rotation-keeps-account、E2E-REMOTE-ACCOUNT-disabled-key-blocks-login |
 | 受信任扩展（R7 v1） | E2E-DIALOG-long-text-boundaries、E2E-241、E2E-242、E2E-HOOKS-cancel-and-dispose、E2E-243、E2E-TRUSTED-EXTENSION-temporary-session-cwd-is-scratch、E2E-244、E2E-245、E2E-PLUGIN-imported-pi-package-skills、E2E-PLUGIN-import-extension-installs-dependencies、E2E-PLUGIN-import-extension-reports-missing-dependency、E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list |
 | 受信任扩展（R7 v1 npm 恢复） | E2E-PLUGIN-import-extension-recovers-missing-npm |
 | Post-MVP 回归覆盖（插件工具调度） | E2E-PLUGIN-slow-tool-is-not-cut-off-by-host-dispatch |
@@ -7852,6 +7852,103 @@ eleven-tool-round desktop paths are verified by
 - **状态**：`apps/desktop/test/mcp-control.test.mjs` 中的本地 MCP Server 合约测试会运行带认证的
   JSON-RPC `tools/call`，分别验证超限和未超限的 `minih_session_get` 答复。完整 Electron 到 Host
   旅程仍属于发布验收。
+
+## 远程控制账户模式场景（MVP 后，D666）
+
+以下五个场景是 ADR `remote-control-router-account-binding`、协议 §11.5 与安全规格
+§3.8（门 29–33）的验收目标，全部针对本地 Router 测试实例（或本地桩）与本地测试
+Gateway、loopback 模型桩运行；不使用生产 Router、真实 AccessKey 或真实域名。决策交给
+实施 PR 定义的行为（错误码、路由名、撤销如何传到兄弟 Host）在该 PR 定义后再断言。R4–R6
+的远程控制场景仍以英文源规格为准。
+
+#### E2E-REMOTE-ACCOUNT-cross-account-isolation：账户之间端到端隔离
+
+- **前置条件**：本地 Router 测试实例（或桩）对 key A 与 key B 返回不同的
+  `access_key_id`，并通过 `/api/easytier/bootstrap` 给出指向本地测试 Gateway 的
+  `remoteGateway`；每个账户各有一台已注册 Host；两个 loopback 模型桩。
+- **步骤**：1）用 key A 注册 A1、用 key B 注册 B1，记录各自所属账户。2）用 key A 登录
+  客户端并列出账户主机。3）用该客户端在账户主机列表、Host 作用域路由与设备申请中按 id
+  访问 B1。4）提交 CSR 名为 A1 的 `hostId` 却出示 key B 的注册请求。5）把 B1 签名的授权
+  中继给 A1。6）读取 Gateway 的 `--data-dir` 与审计日志。
+- **预期**：key A 的列表只含 A1；任何指向 B1 的请求都被拒绝且绝不被路由；key B 的注册
+  既不替换也不加入 A1，A1 保持原账户与原链路；A1 拒绝 B1 签名的授权；B1 的 Host link
+  端口在共享组网上可达不授予任何权限；主机列表、设备记录、待处理授权与审计查询都不跨
+  账户；数据目录与审计日志都不含原始 AccessKey。
+- **链接规格**：安全规格 §3.8、门 29、30 与 32；协议 §11.5；交付 §2（R7）
+- **验收**：安全、质量
+- **里程碑**：MVP 后（远程控制交付 R7，D666）
+- **状态**：Draft（R7，D666）；尚无实现
+
+#### E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts：确认一次即可在所有 Host 使用
+
+- **前置条件**：带 key A 的本地 Router 测试实例、本地测试 Gateway，以及账户 A 的三台
+  Host：带确认对话框的桌面 Host、`agent-host-cli` Host，以及启动时保持停止的第三台
+  Host；每台各有一个 loopback 模型桩。
+- **步骤**：1）注册桌面 Host 与 CLI Host，第三台保持停止。2）用 key A 登录手机客户端
+  （移动视口走同源测试代理），确认主机列表恰好是这几台。3）申请设备，只在 CLI Host 上
+  确认。4）用签发的令牌分别访问桌面 Host 与 CLI Host（列出会话、各启停一次回合）。
+  5）启动第三台 Host，用同一令牌访问它。6）检查客户端存储与各 Host 日志。7）在桌面
+  Host 上撤销该设备。
+- **预期**：单次确认签发的一个令牌被三台 Host 全部接受，包括授权时离线的那台；每台
+  Host 显示“新设备”提示；设备持有 `viewer` / `controller` / `approver` 且
+  `pairedDevice: false`，始终受远程权限上限约束，永不出现 `allow-session`；AccessKey
+  不出现在任何 Host 日志中，且设备交换后不再留存于客户端；步骤 7 后桌面 Host 在 5 秒内
+  拒绝该令牌（门 26）。该撤销如何传到账户内其他 Host 是工作包 D 的待定项，定义后再断言。
+- **链接规格**：安全规格 §3.7 与 §3.8、门 25、26、30 与 32；协议 §11.5；交付 §2（R7）
+- **验收**：安全、恢复、质量
+- **里程碑**：MVP 后（远程控制交付 R7，D666）
+- **状态**：Draft（R7，D666）；尚无实现
+
+#### E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm：严格模式逐台确认
+
+- **前置条件**：与上一场景相同的本地栈，账户 A 的两台 Host，其中桌面 Host 打开严格模式
+  （“每个终端都需要确认”），以及一个 loopback 模型桩。
+- **步骤**：1）在桌面 Host 上启用严格模式并注册两台 Host。2）用 key A 登录并申请设备，
+  只在第二台 Host 上确认。3）用该令牌访问严格模式的 Host。4）确认该 Host 自己弹出的
+  对话框后重试。5）关闭严格模式，为第二个客户端申请设备，只在第二台 Host 上确认，再用它
+  访问桌面 Host。
+- **预期**：严格模式开启时桌面 Host 拒绝兄弟授权、改用自身确认，只有本机确认后才接受该
+  令牌；在此之前客户端不会把该 Host 显示为可用；第二台 Host 经自己的确认接受该设备；
+  关闭严格模式后单次确认重新覆盖两台；严格模式的 Host 绝不静默接受授权。
+- **链接规格**：安全规格 §3.8（严格模式）与门 32；协议 §11.5；交付 §2（R7）
+- **验收**：安全、质量
+- **里程碑**：MVP 后（远程控制交付 R7，D666）
+- **状态**：Draft（R7，D666）；尚无实现
+
+#### E2E-REMOTE-ACCOUNT-key-rotation-keeps-account：密钥轮换保留账户
+
+- **前置条件**：本地 Router 测试实例（key 可在保留 id 的前提下轮换）、本地测试
+  Gateway、一台已注册桌面 Host 与一个已配对设备。
+- **步骤**：1）用原 key 注册 Host 并配对设备。2）在 Router 上轮换 key，并把新值填入
+  桌面。3）刷新 bootstrap 并读取应答中的 `remoteGateway` 对象。4）重启 Gateway 并重连
+  Host link。5）用轮换后的 key 配对第二台设备。
+- **预期**：桌面重新拉取 bootstrap（其缓存按 key 的摘要索引）；应答中的账户 id 不变；
+  Host 无需重新注册即保持已注册；已配对设备继续可用；第二台设备与首次一样只需确认一次；
+  Gateway 把轮换后的 key 解析到同一账户，因此轮换既不使 Host 失联也不产生第二个账户。
+- **链接规格**：安全规格 §3.8（密钥生命周期）；协议 §11.5（密钥生命周期）；provider
+  配置规格 §3（`remoteGateway` 与 bootstrap 缓存）；交付 §2（R7）
+- **验收**：安全、恢复
+- **里程碑**：MVP 后（远程控制交付 R7，D666）
+- **状态**：Draft（R7，D666）；尚无实现
+
+#### E2E-REMOTE-ACCOUNT-disabled-key-blocks-login：禁用密钥阻断登录
+
+- **前置条件**：与轮换场景相同的本地栈；测试 Router 可禁用与删除 key，并按 key 签发
+  短有效期的组网凭据；一台已连接 Host 与一个已批准设备。
+- **步骤**：1）用该 key 登录并确认设备在该 Host 上可用。2）禁用 key，随即用它尝试新的
+  账户登录与新的 Host 注册。3）继续用已签发的设备令牌访问该 Host。4）删除 key 并重复
+  步骤 2 的尝试。5）在 Host 上撤销设备后再次使用令牌。6）等待超过组网凭据有效期，观察
+  Host 链路。
+- **预期**：被禁用与被删除的 key 在登录与注册上都以认证错误被拒绝，即使紧接在一次成功
+  登录之后；已批准的设备令牌与 Host 证书在撤销前保持有效（ADR 决策 8），因此链路在线时
+  令牌照常可用；步骤 5 后该 Host 在 5 秒内拒绝令牌（门 26）；步骤 6 后 Host 链路因被禁用
+  的 key 无法刷新 bootstrap 而中断，Host 证书仍未被撤销。若组网为 classic 共享密钥模式，
+  步骤 6 不会中断链路，运行记录需写明组网模式。
+- **链接规格**：安全规格 §3.8（密钥生命周期）；协议 §11.5（密钥生命周期）；ADR
+  `remote-control-router-account-binding` 决策 8；交付 §2（R7）
+- **验收**：安全、恢复
+- **里程碑**：MVP 后（远程控制交付 R7，D666）
+- **状态**：Draft（R7，D666）；尚无实现
 
 ## 受信任扩展场景（R7 v1）
 
