@@ -34,6 +34,7 @@ import {
   type RacpSessionSnapshot,
 } from "./racp.js";
 import { RACP_HOSTLINK_HTTP_SCHEMAS } from "./racp-hostlink.js";
+import { RACP_ACCOUNT_DEVICE_SCHEMAS } from "./racp-account-devices.js";
 
 const session = {
   id: "ses_01J",
@@ -146,7 +147,7 @@ describe("RACP schemas", () => {
   it("keeps every named schema in the generated fixture bundle", () => {
     // The hostlink/http schemas join the same bundle so the Gateway and the
     // H5 client generate from one source (ADR 0331 / PR-1).
-    const bundle = JSON.stringify({ ...RACP_SCHEMAS, ...RACP_HOSTLINK_HTTP_SCHEMAS }, null, 2) + "\n";
+    const bundle = JSON.stringify({ ...RACP_SCHEMAS, ...RACP_HOSTLINK_HTTP_SCHEMAS, ...RACP_ACCOUNT_DEVICE_SCHEMAS }, null, 2) + "\n";
     expect(bundle).toMatchFileSnapshot("../fixtures/racp.schema.json");
   });
 });

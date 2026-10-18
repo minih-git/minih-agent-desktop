@@ -316,6 +316,27 @@ Gateway 全部通过，且 `05-security/02-remote-control-security.md` 的安全
   （工作包 F），以及在 Router 旁的部署（D-1）。`E2E-REMOTE-ACCOUNT-*` 场景仍为 Draft：
   E1 自身不改变任何用户可见流程。
 
+- R7 工作包 D 已交付（2026-10-18，D666 / ADR `remote-control-router-account-binding`）：
+  账户模式设备中继。新增 Host link 帧 `host.capabilities`、`device.request`、
+  `device.grant`、`device.revoke`；每条链路建立后声明能力；由批准方 Host 签名的授权，兄弟
+  Host 按所固定的网关 CA 与签名者证书里的 `OU=account:` 绑定校验，原始令牌只出现在
+  “批准方 Host→Gateway”这一跳；一个令牌通用于账户内所有主机；按账户作用域的客户端路由
+  `POST /v1/account/devices` 与 `GET /v1/account/devices/{requestId}`；Gateway 只向声明
+  支持的主机扇出，并立即把无法确认的主机告知客户端；授权时离线的主机获得持久化的待处理
+  授权，在新链路宣告能力时幂等重投；吊销以签名帧传播到账户内其他主机，链路断开期间排入
+  Host 本地待发队列、恢复后重新投递；请求记录按账户与发起会话限定作用域，令牌只在很短的
+  取件窗口内交付一次；`agent-host-cli` 通过其 admin socket 完成设备确认
+  （`devices pending` / `approve` / `deny` / `revoke`），由 `--confirm-devices` 与
+  `--strict-devices` 控制，并支持按 AccessKey 注册——key 由 0600 文件、stdin 或环境变量
+  读入，绝不从命令行参数读取。本包确定的帧形状、规则、路由与错误码已写入协议
+  §11.4、§11.5、安全规格 §3.8 与门禁 32–33、Gateway README 与 `agent-host-cli`
+  README，`E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts` 有了任务候选 E2E
+  （`pnpm test:e2e:remote-account-device`）。仍缺：Electron main 自动注册与 Host link
+  接线、桌面确认对话框、严格模式 UI 与 i18n（工作包 E2），客户端 key 登录与主机切换
+  （工作包 F），以及在 Router 旁的部署（D-1）。
+  桌面 Host 目前不声明任何设备能力，因此账户模式确认暂只由 `agent-host-cli` 承担；
+  `E2E-REMOTE-ACCOUNT-*` 场景仍为 Draft，因为它们的桌面与 webview 步骤需要工作包 E2 与 F。
+
 ## 8. 修订记录
 
 D374（2026-09-10）用无头 Agent Host 模块替换 Electron facade 里程碑，加入

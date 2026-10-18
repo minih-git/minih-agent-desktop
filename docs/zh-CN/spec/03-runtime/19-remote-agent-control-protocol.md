@@ -129,7 +129,7 @@ POST /v1/approvals/{approvalId}:respond
 ```
 
 ```ts
-type HostLinkFrame = { link: "racp-hostlink.v1"; type: "client.open" | "client.message" | "host.message" | "attachment.chunk"; clientConnectionId?: string; credential?: string }
+type HostLinkFrame = { link: "racp-hostlink.v1"; type: "client.open" | "client.message" | "host.message" | "attachment.chunk" | "host.capabilities" | "device.request" | "device.grant" | "device.revoke"; clientConnectionId?: string; credential?: string }
 ```
 
 ```ts
@@ -371,9 +371,10 @@ Keystore）交付令牌。
 `remote-control-router-account-binding`），是**可追加**能力：上一节的全部条款保持
 原义，没有 Router key 的用户继续使用自托管注册码与每 Host 票据。
 
-Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主机列表——已实现（交付
-R7 工作包 C）；`device.request` / `device.grant` 中继与 Host 能力声明尚未实现，属于
-工作包 D，涉及它们的条款已标注。
+Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主机列表，以及设备申请 / 确认 /
+授权中继——已实现（交付 R7 工作包 C 与 D）。能询问本机用户的 Host 在链路上声明
+`device.confirm`，账户内任一 Host 上的一次确认即签发一个全账户可用的设备令牌，下列条款
+均按定稿实现。
 
 - **key 校验**：Gateway 经 loopback 调用 Router `GET /api/auth/session`，以
   `Authorization: Bearer <AccessKey>` 查询，并把调用者真实地址放进 Router
@@ -416,7 +417,11 @@ R7 工作包 C）；`device.request` / `device.grant` 中继与 Host 能力声�
   `ACCESS_KEY_INVALID`（401）、`ACCESS_KEY_UNAVAILABLE`（503，可重试）、
   `HOST_ACCOUNT_MISMATCH`（403）与 `RATE_LIMITED`（429，可重试）。该端点的客户端
   地址是 Host link 的 TCP 对端：该端口直接在组网上可达，从不经过客户端代理。应答缺少
-  该对象或返回 `404` 表示账户模式不可用，Host 改用自托管注册码。
+  该对象或返回 `404` 表示账户模式不可用，Host 改用自托管注册码。`agent-host-cli enroll`
+  从 `--access-key-file <path>`（普通文件、权限 0600、属主为调用者）、`--access-key-stdin`
+  或 `MINIH_ROUTER_ACCESS_KEY` 读取该 key，并**拒绝**在命令行上直接给出 key：argv 对机器上
+  每个用户可读，还会进入 shell 历史。key 只在 `POST /v1/enroll` 上提交一次且不落盘；
+  `gateway-link.json` 只保存签发的证书与 Host 自己的私钥。
 - **账户登录**：`POST /v1/account/login` 以 `Authorization: Bearer <AccessKey>` 与
   请求体 `{ client: "web" | "ios" | "android", label? }` 调用，沿用配对路由的浏览器
   规则，并按上一节的命令信封返回
@@ -435,17 +440,73 @@ R7 工作包 C）；`device.request` / `device.grant` 中继与 Host 能力声�
   `/hosts/{hostId}/...` 仍要求上一节的设备令牌，把账户会话用在那里会被 `401
   UNAUTHORIZED` 拒绝——与不存在的 Host 返回完全相同的应答，因此不会暴露其他账户的
   Host 是否存在。
-- **设备申请、确认与授权（工作包 D）**：客户端申请设备后，Gateway 向该账户内所有声明
-  支持的在线 Host 发送 `device.request`（新增帧，Gateway→Hosts）；第一个由用户确认的
-  Host 签发 `device.grant`（新增帧，Host→Gateway），Gateway 再把该授权中继给账户内其他
-  Host，接受方校验签名 Host 在同一账户下由网关 CA 注册、且设备未被撤销。客户端最终只
-  持有一个可用于这些 Host 的设备令牌并丢弃 AccessKey。授权时离线的 Host 在链路恢复后
-  收到待处理授权，在它接受授权之前不接受该设备令牌。
-- **帧能力与旧 Host（工作包 D）**：两个新帧只发给声明支持的 Host（该声明由工作包 D
-  定义，当前 Host link 没有 hello 或能力帧）。这是安全要求而非优化：今天的 Host 会
-  静默忽略未知 `type`（`packages/racp/src/hostlink.ts` L103-172），发给不支持的 Host
-  会让客户端无限等待，因此 Gateway 必须把该 Host 以“无法确认”告知客户端，由客户端退回
-  每 Host 票据。
+- **设备申请、确认与授权**：已登录客户端用 `POST /v1/account/devices` 申请设备。Gateway
+  把请求记在会话所属账户下，向该账户内所有声明 `device.confirm` 且在线的主机发送
+  `device.request`，并向调用方应答请求 id、截止时间与该账户完整的主机清单。第一个由用户
+  确认的 Host 沿用上一节的机制签发设备令牌、只保留其 SHA-256、用自己 Host 证书的私钥对
+  `DeviceGrant` 签名，并回送 `device.grant`。Gateway 先用自己的 CA 校验该签名再转发——它
+  自己永不签发授权（ADR `remote-control-router-account-binding` 决策 5 已被否决）——然后
+  把授权中继给账户内其他 Host。接受方校验签名者证书链到所固定的网关 CA、证书中的
+  `OU=account:<accountId>` 绑定、规范化授权载荷上的签名、签名者 `hostId`、`deliverUntil`
+  期限、恰为 `viewer` / `controller` / `approver` 的角色集合，以及设备未在本机被吊销；
+  其他任何结果都是拒绝，且不改变本机状态（安全规格门禁 32）。客户端最终只持有一个可用于
+  账户内所有主机的设备令牌，并丢弃 AccessKey。在途请求按账户（四条）与总量双重设限，超出
+  任一上限返回 `RATE_LIMITED` 而不是淘汰旧请求，因此任何账户都无法把其他账户的在途请求
+  ——或它已批准、客户端尚未取走的令牌——挤出内存表。
+- **设备令牌**：由批准方 Host 签发、只保留哈希、兄弟 Host 以该哈希收编，因此兄弟收到的
+  授权里没有原始令牌。令牌只在“批准方 Host→Gateway”这一跳里以 `device.grant` 的
+  `deviceToken` 字段传输：Gateway 必须在把授权转发给任何其他 Host 前剥掉它，必须不记录、
+  不审计、不持久化它，并把它交给发起申请的客户端。Gateway 只在内存中持有该令牌，在第一次
+  返回 `granted` 的读取里交给发起申请的客户端，并在此后三十秒内继续可取，以便客户端重试
+  同一请求；超过该窗口即丢弃令牌并返回 `tokenDelivered: false`，丢失令牌的客户端应重新
+  发起申请，而不是等待一个已不存在的令牌。Gateway 像上一节那样只记录设备的哈希，但按账户
+  而不是按单台 Host 限定作用域，因此它的预路由快速拒绝在账户内每台 Host 上都接受该令牌、
+  在其他主机上一律不接受。这样签发的设备是安全规格 §3.7 的网关来源主体：
+  `viewer` / `controller` / `approver`、`pairedDevice: false`、始终受远程权限上限约束、
+  不提供 `allow-session`。在兄弟 Host 收编授权之前就交给客户端的令牌，会被它们拒绝。
+- **客户端路由**：`POST /v1/account/devices` 使用账户会话凭据（绝不是设备令牌），请求体
+  为 `{ deviceLabel, client }`，按上一节的命令信封应答
+  `{ result: { requestId, expiresAt, hosts } }`。`GET /v1/account/devices/{requestId}`
+  应答 `{ result: { requestId, status, expiresAt, hosts, deviceId?, token?, roles?,
+  signerHostId?, tokenDelivered? } }`，`status` 为 `pending`、`granted` 或 `expired`，
+  `tokenDelivered` 表示本次应答是否携带令牌，`token` 仅在 `granted` 且取件窗口仍开着时
+  出现。请求属于创建它的那个账户会话：不存在的 id、其他账户的请求、以及同一账户其他会话的
+  请求，一律返回相同的 `NOT_FOUND`——因为 requestId 会发给每台 Host 并写进 Gateway 日志，
+  它本身不是凭据（门禁 29）。所有账户应答都带 `Cache-Control: no-store`，因为它们都携带
+  会话凭据、设备令牌或两者。请求体畸形为 `INVALID_ARGUMENT`，超出预算为
+  `RATE_LIMITED`，缺少或属于他人的会话凭据为下一节统一的 `UNAUTHORIZED`。拒绝没有独立
+  状态：拒绝的 Host 不发任何帧，请求保持 `pending` 直到 `expiresAt`，由客户端自己的截止
+  时间结束等待。`hosts` 每项为 `{ hostId, label, online, canConfirm, willAcceptGrant }`；
+  `canConfirm` 仅对声明 `device.confirm` 的在线主机为真，`willAcceptGrant` 仅对声明
+  `device.accept-sibling-grant` 的在线主机为真，客户端因此立即知道哪些主机无法应答
+  （门禁 33）。
+- **能力声明**：Host 在链路建立后立即在每条链路上发送 `host.capabilities`，携带它支持的
+  能力串：接上确认器时含 `device.confirm`，接受兄弟授权时含
+  `device.accept-sibling-grant`。没有确认器的 Host 什么都不声明，严格模式的 Host 只声明
+  `device.confirm`（ADR 决策 9）。Gateway 必须只把 `device.request` 发给声明
+  `device.confirm` 的 Host、只把转发的 `device.grant` 发给声明
+  `device.accept-sibling-grant` 的 Host，并且必须把账户内其他主机以“无法确认”告知客户端
+  而不是让它空等（门禁 33）；客户端随后对这些主机退回上一节的每 Host 票据。一台 Host 接受
+  什么，只有它声明之后才知道，因此 Gateway 在**收到新链路的能力宣告时**才投递待处理授权与
+  待处理吊销，而不是在链路建立时；以严格模式重连的 Host 因此不会被投递它会拒绝的授权。
+- **待处理授权**：授权签发时离线的 Host 在链路恢复后收到该授权：Gateway 按账户保留这份
+  已签名的授权（不含令牌），并在每次重连时再次投递。批准方 Host 签名的 `deliverUntil`
+  必须**原样**转发——它是签名载荷的一部分，任何改写（哪怕只是缩短）都会让所有兄弟 Host
+  拒绝该授权；Gateway 用另一个不参与签名的 `relayUntil` 限定自己的保留期，取签名期限与
+  24 小时中较早者。重复投递是幂等的——已收编该设备的 Host 应答 `already-adopted` 且不做
+  任何改变——而在 Host 收编授权之前，它不接受该设备令牌。
+- **吊销**：账户内任一 Host 都可吊销设备，且吊销会传播到其他主机。Host 先在本机吊销，让
+  本机用户的决定不必等待网络，再用自己的 Host 证书签发 `DeviceRevoke`。发不出去的帧——链路
+  已断或正在重连——会持久化在 Host 数据目录下的待发队列里，并在下一条链路上重新投递，直到
+  投递窗口结束；协议没有确认帧，而吊销绝不能随一次断链丢失。重复投递是幂等的。Gateway
+  校验签名后把帧中继给账户内**所有宣告过能力帧**（即拥有设备目录）的其他 Host，而不只是
+  声明了 `device.accept-sibling-grant` 的那些：一台 Host 可能在非严格模式下、或还带着确认器
+  时收编过该设备，随后以严格模式、或不再带确认器的方式重启，若按
+  `device.accept-sibling-grant` 过滤，恰好会让这台 Host 继续接受一个已吊销的令牌。从未收编
+  该设备的 Host 也会记录该设备已吊销，因此在途的授权无法把它复活；而早于这些帧的 Host 从不
+  宣告，也就永远不会收到。
+  Gateway 同时吊销自己持有的该设备记录，使其快速拒绝立即停止接受该令牌，并在转发吊销之前
+  丢弃该设备任何待处理授权。
 - **角色与隔离**：账户模式签发的设备属于网关来源主体，沿用安全规格 §3.7 的角色与
   限制（`viewer` / `controller` / `approver`、`pairedDevice: false`、始终受远程权限
   上限约束、无 `allow-session`）；处于严格模式的 Host 拒绝兄弟授权并逐台确认。任何

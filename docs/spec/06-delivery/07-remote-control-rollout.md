@@ -790,6 +790,36 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   `E2E-REMOTE-ACCOUNT-*` scenarios stay Draft: E1 changes no user-facing flow on
   its own.
 
+- R7 package D delivered (2026-10-18, D666 / ADR
+  `remote-control-router-account-binding`): the account-mode device relay. New
+  Host-link frames `host.capabilities`, `device.request`, `device.grant`, and
+  `device.revoke`; capability advertisement on every link; Host-signed device
+  grants that a sibling Host verifies against the pinned Gateway CA and the
+  signer's `OU=account:` binding, with the raw token confined to the approving
+  Host to Gateway leg; one token for every Host of the account; the
+  account-scoped client routes `POST /v1/account/devices` and
+  `GET /v1/account/devices/{requestId}`; Gateway fan-out to advertising Hosts
+  only, with the Hosts that cannot confirm reported to the client up front;
+  durable deferred grants for Hosts that were offline, re-delivered idempotently
+  when the Host announces its capabilities on a new link; a revocation
+  propagated to the account's other Hosts by a signed frame, queued on the Host
+  while its link is down and re-offered when it returns; account-scoped,
+  session-scoped request records whose token is handed over once inside a short
+  pickup window; `agent-host-cli` device confirmation over its admin socket
+  (`devices pending` / `approve` / `deny` / `revoke`) behind `--confirm-devices`
+  and `--strict-devices`, plus enrollment by AccessKey, which the CLI reads from
+  a 0600 file, stdin, or the environment and never from argv. Protocol §11.4
+  and §11.5, security §3.8 with gates 32–33, the Gateway README, and the `agent-host-cli` README carry the
+  shapes, rules, routes, and error codes this package settles, and
+  `E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts` has a task-candidate E2E
+  (`pnpm test:e2e:remote-account-device`). Still missing: the Electron main
+  auto-enrollment and Host-link wiring, the desktop confirm dialog, strict-mode
+  UI, and i18n (package E2), the client login and host switcher (package F), and
+  the deployment beside the Router (D-1). The desktop Host declares no device capability yet,
+  so account-mode confirmation is `agent-host-cli`-only for now, and the
+  `E2E-REMOTE-ACCOUNT-*` scenarios stay Draft because their desktop and webview
+  steps need packages E2 and F.
+
 ## 8. Amendment history
 
 D374 (2026-09-10) replaced the Electron facade milestone with the headless

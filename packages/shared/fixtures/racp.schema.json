@@ -2532,6 +2532,254 @@
             ]
           }
         }
+      },
+      {
+        "type": "object",
+        "required": [
+          "link",
+          "type",
+          "capabilities"
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "const": "racp-hostlink.v1"
+          },
+          "type": {
+            "type": "string",
+            "const": "host.capabilities"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "link",
+          "type",
+          "request"
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "const": "racp-hostlink.v1"
+          },
+          "type": {
+            "type": "string",
+            "const": "device.request"
+          },
+          "request": {
+            "type": "object",
+            "required": [
+              "requestId",
+              "accountId",
+              "deviceLabel",
+              "client",
+              "requestedAt",
+              "expiresAt"
+            ],
+            "properties": {
+              "requestId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "accountId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "deviceLabel": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "client": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "web"
+                  },
+                  {
+                    "type": "string",
+                    "const": "ios"
+                  },
+                  {
+                    "type": "string",
+                    "const": "android"
+                  }
+                ]
+              },
+              "requestedAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "link",
+          "type",
+          "grant",
+          "signature",
+          "signerCertificate"
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "const": "racp-hostlink.v1"
+          },
+          "type": {
+            "type": "string",
+            "const": "device.grant"
+          },
+          "grant": {
+            "type": "object",
+            "required": [
+              "grantId",
+              "requestId",
+              "accountId",
+              "signerHostId",
+              "deviceId",
+              "deviceLabel",
+              "tokenHash",
+              "roles",
+              "origin",
+              "issuedAt",
+              "deliverUntil"
+            ],
+            "properties": {
+              "grantId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "requestId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "accountId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "signerHostId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "deviceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "deviceLabel": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "tokenHash": {
+                "type": "string",
+                "minLength": 64,
+                "maxLength": 64
+              },
+              "roles": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              },
+              "origin": {
+                "type": "string",
+                "const": "gateway"
+              },
+              "issuedAt": {
+                "type": "string"
+              },
+              "deliverUntil": {
+                "type": "string"
+              }
+            }
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 1
+          },
+          "signerCertificate": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deviceToken": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "link",
+          "type",
+          "revoke",
+          "signature",
+          "signerCertificate"
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "const": "racp-hostlink.v1"
+          },
+          "type": {
+            "type": "string",
+            "const": "device.revoke"
+          },
+          "revoke": {
+            "type": "object",
+            "required": [
+              "revokeId",
+              "accountId",
+              "signerHostId",
+              "deviceId",
+              "revokedAt"
+            ],
+            "properties": {
+              "revokeId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "accountId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "signerHostId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "deviceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "revokedAt": {
+                "type": "string"
+              }
+            }
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 1
+          },
+          "signerCertificate": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     ]
   },
@@ -2757,6 +3005,171 @@
             }
           }
         }
+      }
+    }
+  },
+  "DeviceRequestHttpRequest": {
+    "type": "object",
+    "required": [
+      "deviceLabel",
+      "client"
+    ],
+    "properties": {
+      "deviceLabel": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "client": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "web"
+          },
+          {
+            "type": "string",
+            "const": "ios"
+          },
+          {
+            "type": "string",
+            "const": "android"
+          }
+        ]
+      }
+    }
+  },
+  "DeviceRequestHttpResponse": {
+    "type": "object",
+    "required": [
+      "requestId",
+      "expiresAt",
+      "hosts"
+    ],
+    "properties": {
+      "requestId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "expiresAt": {
+        "type": "string"
+      },
+      "hosts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "hostId",
+            "label",
+            "online",
+            "canConfirm",
+            "willAcceptGrant"
+          ],
+          "properties": {
+            "hostId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "label": {
+              "type": "string"
+            },
+            "online": {
+              "type": "boolean"
+            },
+            "canConfirm": {
+              "type": "boolean"
+            },
+            "willAcceptGrant": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  },
+  "DeviceStatusHttpResponse": {
+    "type": "object",
+    "required": [
+      "requestId",
+      "status",
+      "expiresAt",
+      "hosts"
+    ],
+    "properties": {
+      "requestId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "status": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "pending"
+          },
+          {
+            "type": "string",
+            "const": "granted"
+          },
+          {
+            "type": "string",
+            "const": "expired"
+          }
+        ]
+      },
+      "expiresAt": {
+        "type": "string"
+      },
+      "hosts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "hostId",
+            "label",
+            "online",
+            "canConfirm",
+            "willAcceptGrant"
+          ],
+          "properties": {
+            "hostId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "label": {
+              "type": "string"
+            },
+            "online": {
+              "type": "boolean"
+            },
+            "canConfirm": {
+              "type": "boolean"
+            },
+            "willAcceptGrant": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "deviceId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "token": {
+        "type": "string",
+        "minLength": 1
+      },
+      "tokenDelivered": {
+        "type": "boolean"
+      },
+      "roles": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1
+      },
+      "signerHostId": {
+        "type": "string",
+        "minLength": 1
       }
     }
   }

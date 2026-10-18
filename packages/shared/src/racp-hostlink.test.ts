@@ -6,6 +6,7 @@ import {
   RACP_ACCOUNT_ROUTES,
   RACP_HOSTLINK_CLOSE_CODES,
   RACP_HOSTLINK_VERSION,
+  RACP_HOST_CAPABILITIES,
   RACP_HTTP_QUERY_PARAMS,
   RACP_HTTP_ROUTE_LIST,
   RACP_HOSTLINK_HTTP_SCHEMAS,
@@ -26,6 +27,11 @@ import {
   hostLinkRouteContextIsValid,
   parseHostLinkFrame,
   parseSseLastEventId,
+  type RacpDeviceGrant,
+  type RacpDeviceGrantFrame,
+  type RacpDeviceRequestFrame,
+  type RacpDeviceRevoke,
+  type RacpDeviceRevokeFrame,
   type RacpHostRouteContext,
 } from "./racp-hostlink.js";
 import type { RacpEventEnvelope } from "./racp.js";
@@ -47,6 +53,64 @@ const routeContext: RacpHostRouteContext = {
   issuedAt: "2026-10-17T00:00:00.000Z",
   expiresAt: "2026-10-17T00:05:00.000Z",
 };
+
+/** The account-mode device frames (protocol §11.5, D666). */
+const deviceGrant: RacpDeviceGrant = {
+  grantId: "grant_1",
+  requestId: "req_1",
+  accountId: "7",
+  signerHostId: "host_abc",
+  deviceId: "dev_1",
+  deviceLabel: "phone",
+  tokenHash: "a".repeat(64),
+  roles: ["viewer", "controller", "approver"],
+  origin: "gateway",
+  issuedAt: "2026-10-18T00:00:00.000Z",
+  deliverUntil: "2026-10-19T00:00:00.000Z",
+};
+
+const deviceRevoke: RacpDeviceRevoke = {
+  revokeId: "revoke_1",
+  accountId: "7",
+  signerHostId: "host_abc",
+  deviceId: "dev_1",
+  revokedAt: "2026-10-18T00:00:00.000Z",
+};
+
+function deviceRequestFrame(): RacpDeviceRequestFrame {
+  return {
+    link: RACP_HOSTLINK_VERSION,
+    type: "device.request",
+    request: {
+      requestId: "req_1",
+      accountId: "7",
+      deviceLabel: "phone",
+      client: "ios",
+      requestedAt: "2026-10-18T00:00:00.000Z",
+      expiresAt: "2026-10-18T00:10:00.000Z",
+    },
+  };
+}
+
+function deviceGrantFrame(): RacpDeviceGrantFrame {
+  return {
+    link: RACP_HOSTLINK_VERSION,
+    type: "device.grant",
+    grant: { ...deviceGrant },
+    signature: "c2lnbmF0dXJl",
+    signerCertificate: "-----BEGIN CERTIFICATE-----",
+  };
+}
+
+function deviceRevokeFrame(): RacpDeviceRevokeFrame {
+  return {
+    link: RACP_HOSTLINK_VERSION,
+    type: "device.revoke",
+    revoke: { ...deviceRevoke },
+    signature: "c2lnbmF0dXJl",
+    signerCertificate: "-----BEGIN CERTIFICATE-----",
+  };
+}
 
 describe("host link frames", () => {
   it("accepts a client.open frame with a credential and route context", () => {
@@ -84,6 +148,10 @@ describe("host link frames", () => {
       { link: RACP_HOSTLINK_VERSION, type: "host.close", clientConnectionId: "cc_1", code: RACP_HOSTLINK_CLOSE_CODES.clientTooSlow },
       { link: RACP_HOSTLINK_VERSION, type: "attachment.chunk", uploadId: "up_1", offset: 0, last: false },
       { link: RACP_HOSTLINK_VERSION, type: "link.ping" },
+      { link: RACP_HOSTLINK_VERSION, type: "host.capabilities", capabilities: ["device.confirm"] },
+      deviceRequestFrame(),
+      deviceGrantFrame(),
+      deviceRevokeFrame(),
     ];
     for (const frame of frames) {
       const parsed = parseHostLinkFrame(JSON.stringify(frame));
@@ -92,6 +160,39 @@ describe("host link frames", () => {
     }
     expect(parseHostLinkFrame("not json")).toBeNull();
     expect(parseHostLinkFrame(JSON.stringify({ hello: 1 }))).toBeNull();
+  });
+
+  /**
+   * The account-mode device frames (protocol §11.5, D666 / package D). They join
+   * the same union, so a peer that predates them still parses every frame it
+   * knows and simply ignores an unknown `type`.
+   */
+  it("validates the capability and device frames", () => {
+    const capabilities = {
+      link: RACP_HOSTLINK_VERSION,
+      type: "host.capabilities",
+      capabilities: [RACP_HOST_CAPABILITIES.deviceConfirm, RACP_HOST_CAPABILITIES.deviceAcceptSiblingGrant, "device.future"],
+    };
+    expect(Value.Check(RacpHostLinkFrameSchema, capabilities)).toBe(true);
+    // An unknown capability string is allowed (forward compatible); a malformed
+    // list is not.
+    expect(Value.Check(RacpHostLinkFrameSchema, { ...capabilities, capabilities: "device.confirm" })).toBe(false);
+    expect(Value.Check(RacpHostLinkFrameSchema, { ...capabilities, capabilities: [""] })).toBe(false);
+
+    expect(Value.Check(RacpHostLinkFrameSchema, deviceRequestFrame())).toBe(true);
+    expect(Value.Check(RacpHostLinkFrameSchema, { ...deviceRequestFrame(), request: { ...deviceRequestFrame().request, client: "desktop" } })).toBe(false);
+    expect(Value.Check(RacpHostLinkFrameSchema, { ...deviceRequestFrame(), request: { ...deviceRequestFrame().request, deviceLabel: "x".repeat(129) } })).toBe(false);
+
+    expect(Value.Check(RacpHostLinkFrameSchema, deviceGrantFrame())).toBe(true);
+    // The Host-to-Gateway leg carries the raw token; a relayed grant need not.
+    expect(Value.Check(RacpHostLinkFrameSchema, { ...deviceGrantFrame(), deviceToken: "pdt1.fixture" })).toBe(true);
+    const grant = deviceGrantFrame().grant;
+    expect(Value.Check(RacpHostLinkFrameSchema, { ...deviceGrantFrame(), grant: { ...grant, tokenHash: "abc" } })).toBe(false);
+    expect(Value.Check(RacpHostLinkFrameSchema, { ...deviceGrantFrame(), grant: { ...grant, roles: [] } })).toBe(false);
+    expect(Value.Check(RacpHostLinkFrameSchema, { ...deviceGrantFrame(), grant: { ...grant, origin: "ssh" } })).toBe(false);
+
+    expect(Value.Check(RacpHostLinkFrameSchema, deviceRevokeFrame())).toBe(true);
+    expect(Value.Check(RacpHostLinkFrameSchema, { ...deviceRevokeFrame(), signature: "" })).toBe(false);
   });
 
   it("keeps CLIENT_TOO_SLOW as the slow-client close code (rule 3)", () => {

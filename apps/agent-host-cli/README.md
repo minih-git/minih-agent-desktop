@@ -79,10 +79,13 @@ stdout carries only the lines a bootstrap script parses; everything else is
 structured stderr.
 
 ```text
-AGENT_HOST_CLI_READY {"hostId":..,"host":..,"port":..,"version":..}
+AGENT_HOST_CLI_READY {"hostId":..,"host":..,"port":..,"version":..,"confirmDevices":..,"strictDevices":..}
 AGENT_HOST_CLI_PAIRING_TOKEN {"token":..,"expiresAt":..}              (--pair)
 AGENT_HOST_CLI_PAIRING_TOKEN {"token":..,"expiresAt":..,"ticket":..}  (remote-pair)
 AGENT_HOST_CLI_ENROLLED {"hostId":..,"gatewayUrl":..,"expiresAt":..,"path":..}
+AGENT_HOST_CLI_DEVICE_REQUESTS {"requests":[{..}]}                    (devices pending)
+AGENT_HOST_CLI_DEVICE_DECIDED {"requestId":..,"decision":..}          (devices approve|deny)
+AGENT_HOST_CLI_DEVICE_REVOKED {"deviceId":..,"announced":..}          (devices revoke)
 ```
 
 `--pair` prints the historical two-key shape: its token is ssh-origin and
@@ -96,6 +99,51 @@ pairing call must target. A browser client pairs against
 `GET /v1/hosts`, so the Host id has to travel beside the token. The ticket is a
 secret: it must not be written to a URL, a log, or a shell history that is
 shared with anyone else.
+
+## Device confirmation (account mode, D666)
+
+`agent-host-cli enroll` enrolls this Host into an account when it is given that
+account's Router key, and as a self-hosted Host when it is given
+`--code <one-time code>`. The key is read from `--access-key-file <path>` (a
+regular file, mode 0600, owned by you), `--access-key-stdin`, or
+`MINIH_ROUTER_ACCESS_KEY`; a key typed on the command line is refused, because
+argv is readable by every user on the machine and lands in the shell history. It
+is presented once on `POST /v1/enroll` and never written to disk —
+`gateway-link.json` holds only the issued certificate and the Host's own key.
+
+With `--gateway` and `--confirm-devices`, this Host answers `device.request`
+frames from the account's Gateway by asking its own user over the admin socket,
+and advertises `device.confirm` on the link. Without the flag it advertises
+nothing, so the Gateway reports it to the client as unable to confirm instead of
+leaving the client waiting. `--strict-devices` (ADR decision 9) additionally
+refuses sibling grants, so every device must be confirmed on this Host.
+
+```sh
+# The key never appears in argv: export it, or pipe it, or point at a 0600 file.
+export MINIH_ROUTER_ACCESS_KEY=...                    # or: --access-key-stdin
+agent-host-cli enroll --gateway wss://gateway.example.com:8787/v1/hostlink \
+  --gateway-ca ./ca.crt --label "build box"
+agent-host-cli --gateway --confirm-devices            # or: --strict-devices
+
+agent-host-cli devices pending                        # what is waiting for you
+agent-host-cli devices approve dreq_...               # mints the account device token
+agent-host-cli devices deny dreq_...
+agent-host-cli devices revoke dev_...                 # revokes here and on the account's other Hosts
+```
+
+The device operations talk to the running instance over the same owner-only
+admin socket as `provider-import` and `remote-pair`; `--data-dir` selects the
+instance. A request nobody answers before its deadline is denied, so the client
+learns the outcome instead of polling until its own timeout. The approval mints
+one device token for the whole account: this Host keeps only its hash and signs
+the grant with its own Host certificate, and the account's other Hosts adopt the
+device by that hash — the raw token is never sent to them. Revoking signs a frame
+on the Host link, so a revocation made here also stops the token on the account's
+other Hosts. If the link is down at that moment the frame is queued in
+`<data-dir>/agent-host-cli/device-revocations.json` and re-offered on the next
+link: the command still revokes locally, and it reports
+`{"announced":false}` plus a note on stderr instead of claiming the account has
+been told.
 
 ## Local-Agent workspace service
 

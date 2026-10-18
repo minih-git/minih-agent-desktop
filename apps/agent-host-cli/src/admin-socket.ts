@@ -6,6 +6,7 @@ import {
   PROVIDER_SYNC_MAX_BYTES, parseProviderImportPayload, parseProviderImportSummary,
   type ProviderImportPayload, type ProviderImportSummary,
 } from "@minih-agent/shared";
+import type { PendingDeviceRequest } from "./device-confirmer.js";
 import {
   IMPORT_DEADLINE_MS, ImportFailure, importFailureCode, importProviders, readCapped,
   type HostCaller, type ImportFailureCode,
@@ -15,13 +16,21 @@ export const ADMIN_MAX_BYTES = PROVIDER_SYNC_MAX_BYTES + 128;
 const RESPONSE_MAX_BYTES = 64 * 1024;
 const FAILURE_CODES: readonly ImportFailureCode[] = ["INVALID_REQUEST", "PAYLOAD_TOO_LARGE", "ADMIN_UNAVAILABLE", "ADMIN_BUSY", "TIMEOUT", "IMPORT_FAILED"];
 /**
- * Two operations share the admin channel: `providers.import` (the SSH bootstrap
- * import) and `pairing.issue` (a gateway-origin pairing code minted by a
- * running instance, PR-2). Both are owner-only and bounded.
+ * Five operations share the owner-only, bounded admin channel:
+ * `providers.import` (the SSH bootstrap import), `pairing.issue` (a
+ * gateway-origin pairing code minted by a running instance, PR-2), and the
+ * account-mode device confirmations of §11.5 (`devices.pending`,
+ * `devices.decide`, `devices.revoke`). The device operations carry no
+ * credential and no token: they list questions and answer yes or no.
  */
+export type AdminDeviceDecision = "approve" | "deny";
+
 export type AdminResponse =
   | { ok: true; summary: ProviderImportSummary }
   | { ok: true; pairing: { token: string; expiresAt: string } }
+  | { ok: true; devices: PendingDeviceRequest[] }
+  | { ok: true; decided: { requestId: string; decision: AdminDeviceDecision } }
+  | { ok: true; revoked: { deviceId: string; announced: boolean } }
   | { ok: false; code: ImportFailureCode };
 
 /** Whether a response carries a provider import summary. */
@@ -31,7 +40,10 @@ export function isImportResponse(response: AdminResponse): response is { ok: tru
 
 export type AdminRequest =
   | { op: "providers.import"; payload: ProviderImportPayload }
-  | { op: "pairing.issue"; payload: { lifetimeMs?: number } };
+  | { op: "pairing.issue"; payload: { lifetimeMs?: number } }
+  | { op: "devices.pending"; payload: Record<string, never> }
+  | { op: "devices.decide"; payload: { requestId: string; decision: AdminDeviceDecision } }
+  | { op: "devices.revoke"; payload: { deviceId: string } };
 export type AdminSocket = { path: string; close(): Promise<void> };
 type Log = (level: "info" | "warn", message: string, data?: Record<string, unknown>) => void;
 
@@ -107,6 +119,26 @@ function parseAdminRequest(raw: string): AdminRequest {
   }
   const { op, payload } = request as { op?: unknown; payload?: unknown };
   if (op === "providers.import") return { op, payload: parseProviderImportPayload(payload) };
+  if (op === "devices.pending") {
+    // A listing carries nothing; an empty object is accepted so a caller can
+    // always send the same two-key envelope.
+    const empty = payload === undefined || (typeof payload === "object" && payload !== null && !Array.isArray(payload) && Object.keys(payload).length === 0);
+    if (!empty) throw new ImportFailure("INVALID_REQUEST");
+    return { op, payload: {} };
+  }
+  if (op === "devices.decide") {
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) throw new ImportFailure("INVALID_REQUEST");
+    const { requestId, decision } = payload as { requestId?: unknown; decision?: unknown };
+    if (typeof requestId !== "string" || requestId.length === 0) throw new ImportFailure("INVALID_REQUEST");
+    if (decision !== "approve" && decision !== "deny") throw new ImportFailure("INVALID_REQUEST");
+    return { op, payload: { requestId, decision } };
+  }
+  if (op === "devices.revoke") {
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) throw new ImportFailure("INVALID_REQUEST");
+    const { deviceId } = payload as { deviceId?: unknown };
+    if (typeof deviceId !== "string" || deviceId.length === 0) throw new ImportFailure("INVALID_REQUEST");
+    return { op, payload: { deviceId } };
+  }
   if (op === "pairing.issue") {
     if (payload !== undefined && (typeof payload !== "object" || payload === null || Array.isArray(payload))) throw new ImportFailure("INVALID_REQUEST");
     const lifetimeMs = (payload as { lifetimeMs?: unknown } | undefined)?.lifetimeMs;
@@ -116,12 +148,32 @@ function parseAdminRequest(raw: string): AdminRequest {
   throw new ImportFailure("INVALID_REQUEST");
 }
 
+/**
+ * The account-mode device surface the socket exposes (§11.5). Absent when this
+ * Host has no device directory — `--gateway` off, no account binding in the
+ * certificate, Windows, or `--confirm-devices` off — and then every
+ * `devices.*` operation answers `ADMIN_UNAVAILABLE`.
+ */
+export type AdminDevicePort = {
+  pending(): PendingDeviceRequest[];
+  decide(requestId: string, decision: AdminDeviceDecision): boolean;
+  /**
+   * Revoke one device. `revoked` says the local record is revoked; `announced`
+   * says the signed frame went out on a live link in this call. A frame that
+   * could not go out is queued for the next link, and the caller is told so
+   * instead of being told it was announced.
+   */
+  revoke(deviceId: string): Promise<{ revoked: boolean; announced: boolean }>;
+};
+
 /** One owner-only Unix channel, one allowed operation, one active import. */
 export async function startAdminSocket(options: {
   dataDir: string;
   getHost: () => HostCaller | null;
   /** Mint a gateway-origin pairing code for `pairing.issue`. */
   issuePairingToken?: (lifetimeMs: number) => Promise<{ token: string; expiresAt: string }>;
+  /** The device confirmation surface, when this Host has one. */
+  devices?: AdminDevicePort;
   log?: Log;
   timeoutMs?: number;
 }): Promise<AdminSocket> {
@@ -163,6 +215,29 @@ export async function startAdminSocket(options: {
         const pairing = await options.issuePairingToken(lifetimeMs);
         log("info", "pairing code issued");
         return { ok: true, pairing };
+      }
+      if (request.op === "devices.pending") {
+        const devices = options.devices;
+        if (!devices) throw new ImportFailure("ADMIN_UNAVAILABLE");
+        // A listing is a read: it never waits for an import and holds no slot.
+        return { ok: true, devices: devices.pending() };
+      }
+      if (request.op === "devices.decide") {
+        const devices = options.devices;
+        if (!devices) throw new ImportFailure("ADMIN_UNAVAILABLE");
+        const { requestId, decision } = request.payload;
+        if (!devices.decide(requestId, decision)) throw new ImportFailure("INVALID_REQUEST");
+        log("info", "device request answered", { requestId, decision });
+        return { ok: true, decided: { requestId, decision } };
+      }
+      if (request.op === "devices.revoke") {
+        const devices = options.devices;
+        if (!devices) throw new ImportFailure("ADMIN_UNAVAILABLE");
+        const { deviceId } = request.payload;
+        const outcome = await devices.revoke(deviceId);
+        if (!outcome.revoked) throw new ImportFailure("INVALID_REQUEST");
+        log("info", "device revoked through the admin socket", { deviceId, announced: outcome.announced });
+        return { ok: true, revoked: { deviceId, announced: outcome.announced } };
       }
       const payload = request.payload;
       if (active) throw new ImportFailure("ADMIN_BUSY");
@@ -253,6 +328,61 @@ export async function sendAdminRequest(
   } catch (error) {
     throw new ImportFailure(error instanceof ImportFailure ? error.code : "ADMIN_UNAVAILABLE");
   }
+}
+
+/** One short admin round trip for the device operations (§11.5). */
+async function sendDeviceRequest(dataDir: string, request: AdminRequest): Promise<AdminResponse> {
+  try {
+    for (const dir of [dataDir, join(dataDir, "agent-host-cli")]) {
+      const stat = await lstat(dir);
+      if (!stat.isDirectory() || stat.uid !== process.getuid?.() || (stat.mode & 0o077) !== 0) throw new ImportFailure("ADMIN_UNAVAILABLE");
+    }
+    const path = adminSocketPath(dataDir);
+    await privateSocket(path);
+    const socket = createConnection(path);
+    socket.on("error", () => undefined);
+    const response = readCapped(socket, RESPONSE_MAX_BYTES, IMPORT_DEADLINE_MS + 5000);
+    socket.once("connect", () => socket.end(JSON.stringify(request)));
+    try {
+      const raw: unknown = JSON.parse(await response);
+      if (!raw || typeof raw !== "object" || Array.isArray(raw) || !("ok" in raw)) throw new ImportFailure("ADMIN_UNAVAILABLE");
+      return raw as AdminResponse;
+    } finally {
+      socket.destroy();
+    }
+  } catch (error) {
+    throw new ImportFailure(error instanceof ImportFailure ? error.code : "ADMIN_UNAVAILABLE");
+  }
+}
+
+/** `agent-host-cli devices pending`: the requests waiting for this Host's user. */
+export async function sendDevicesPending(
+  dataDir: string,
+): Promise<{ ok: true; devices: PendingDeviceRequest[] } | { ok: false; code: ImportFailureCode }> {
+  const response = await sendDeviceRequest(dataDir, { op: "devices.pending", payload: {} });
+  if (response.ok && "devices" in response) return { ok: true, devices: response.devices };
+  return { ok: false, code: response.ok ? "ADMIN_UNAVAILABLE" : response.code };
+}
+
+/** `agent-host-cli devices approve|deny <requestId>`. */
+export async function sendDeviceDecision(
+  dataDir: string,
+  requestId: string,
+  decision: AdminDeviceDecision,
+): Promise<{ ok: true; decided: { requestId: string; decision: AdminDeviceDecision } } | { ok: false; code: ImportFailureCode }> {
+  const response = await sendDeviceRequest(dataDir, { op: "devices.decide", payload: { requestId, decision } });
+  if (response.ok && "decided" in response) return { ok: true, decided: response.decided };
+  return { ok: false, code: response.ok ? "ADMIN_UNAVAILABLE" : response.code };
+}
+
+/** `agent-host-cli devices revoke <deviceId>`: revoke here and on the account's Hosts. */
+export async function sendDeviceRevoke(
+  dataDir: string,
+  deviceId: string,
+): Promise<{ ok: true; revoked: { deviceId: string; announced: boolean } } | { ok: false; code: ImportFailureCode }> {
+  const response = await sendDeviceRequest(dataDir, { op: "devices.revoke", payload: { deviceId } });
+  if (response.ok && "revoked" in response) return { ok: true, revoked: response.revoked };
+  return { ok: false, code: response.ok ? "ADMIN_UNAVAILABLE" : response.code };
 }
 
 /**

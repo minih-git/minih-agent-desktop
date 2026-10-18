@@ -344,17 +344,23 @@ Account mode (ADR `remote-control-router-account-binding`, protocol §11.5) lets
 Minih-Router AccessKey discover and enroll Hosts and bootstrap a device that is
 usable on every Host of the account. It is additive: §3.1–§3.7 keep their
 meaning, and a user without a Router key uses the self-hosted flow. The Gateway
-account directory — key verification, enrollment by key, account login, and the
-account host list — is implemented (rollout R7 package C); the
-`device.request` / `device.grant` relay and the Host capability advertisement
-are not (package D), and this subsection marks the clauses that wait on them.
+account directory — key verification, enrollment by key, account login, the
+account host list, and the device request / confirm / grant relay — is
+implemented (rollout R7 packages C and D), and every clause below is
+implemented as written.
 
 - **AccessKey handling.** A client's AccessKey is presented only to the Gateway,
   which verifies it against Router `GET /api/auth/session` over loopback, never
-  persists the raw key, and never forwards it to a Host. A Host only ever holds
-  its own account key, which it already has for enrollment (the D661 provider
-  row on a desktop; how `agent-host-cli` receives one is not settled yet —
-  rollout R7 packages D and E). A client drops the key after the device exchange
+  persists the raw key, and never forwards it to a Host. A Host holds its own
+  account key only while it enrolls: `agent-host-cli enroll` presents it once on
+  `POST /v1/enroll` and stores only the issued certificate and key, and a
+  desktop presents the D661 provider row the same way. The CLI reads the key
+  from `--access-key-file <path>` (mode 0600, owned by the caller),
+  `--access-key-stdin`, or `MINIH_ROUTER_ACCESS_KEY`, and refuses one typed on
+  the command line: argv is world-readable through `ps` and
+  `/proc/<pid>/cmdline` and is copied into the shell history, which is the same
+  leak as writing the key into a log. A client drops the key after the device
+  exchange
   and keeps only the device token. The AccessKey MUST NOT appear in a Host
   device store, a log line, an audit record, a URL, or an error payload. The
   only durable state a login leaves is the SHA-256 hash of the session
@@ -403,9 +409,18 @@ are not (package D), and this subsection marks the clauses that wait on them.
   to sign a grant that the account's other Hosts accept, obtaining a device on
   all of them. Required mitigations: grants are signed by a Host key and never
   by the Gateway; the device role set and the remote permission ceiling are
-  unchanged; any Host of the account can revoke; every Host shows a "new device"
-  notice; every grant produces an audit record; and strict mode makes a Host
-  refuse sibling grants.
+  unchanged; any Host of the account can revoke, and that revocation reaches the
+  others as a signed frame; every Host shows a "new device" notice; every grant
+  produces an audit record; and strict mode makes a Host refuse sibling grants.
+  The raw device token is a separate matter from the CA: it travels only on the
+  approving Host to Gateway leg, the Gateway strips it before relaying the grant
+  and never logs, audits, or persists it, and the siblings adopt the device by
+  the token's hash alone. The token is handed to the client that asked, once,
+  with a thirty-second pickup window for a retried HTTP request; after that the
+  Gateway drops it, so a token that was never picked up cannot be collected
+  later by whoever learns the request id. The request id is not a credential
+  either: a read of another account, or of another session of the same account,
+  answers the same `NOT_FOUND` an unknown id produces.
 - **Cross-account isolation is a hard rule.** Reachability on the shared
   EasyTier mesh is not authorization: every Router user's terminals are on one
   mesh, and in the classic shared-secret mode every caller holds the same
@@ -427,14 +442,21 @@ are not (package D), and this subsection marks the clauses that wait on them.
   not an account asset either: an AccessKey enrollment may take it over only by
   certifying the key its current certificate certifies, so learning a `hostId`
   never lets a key move another user's Host into its own account.
-- **Strict mode (package D).** A desktop setting makes that Host refuse sibling
-  grants and confirm every device with its own user. It keeps the per-device
-  approval of ADR 0331 for an operator who does not want roaming.
-- **Unsupported Hosts (package D).** The new frames go only to Hosts that
-  advertise support, because today's Host ignores an unknown frame type silently
-  (`packages/racp/src/hostlink.ts` L103-172). A client MUST be told which Hosts
-  of its account cannot confirm instead of waiting for an answer that never
-  arrives; the fallback is the per-Host pairing ticket (§3.7, protocol §11.4).
+- **Strict mode.** A Host in strict mode refuses sibling grants and confirms
+  every device with its own user; it announces `device.confirm` alone, so the
+  Gateway never offers it a grant it would refuse, and the client does not count
+  it as one that will accept. It keeps the per-device approval of ADR 0331 for
+  an operator who does not want roaming. The setting is per Host
+  (`--strict-devices` on `agent-host-cli`); the desktop's settings UI is package
+  E.
+- **Unsupported Hosts.** A Host announces what it supports with
+  `host.capabilities` on every link, and the new frames go only to a Host that
+  announced the matching capability, because a Host that predates them ignores
+  an unknown frame type silently (`packages/racp/src/hostlink.ts`). A client
+  MUST be told which Hosts of its account cannot confirm instead of waiting for
+  an answer that never arrives; the fallback is the per-Host pairing ticket
+  (§3.7, protocol §11.4). The advertisement is a Host's own claim: a Host with no
+  confirmer advertises nothing rather than promising an answer no one can give.
 
 ## 4. Authorization model
 
@@ -814,25 +836,28 @@ separate, explicitly specified credential-management capability is added.
 29. Account mode isolates accounts end to end: a key of one account cannot
     list, enroll against, route to, or obtain a grant for a Host of another
     account, even though every Router user's terminals share one overlay mesh.
-    Planned (D666).
+    Applies from R7 (D666).
 30. The Gateway never persists a raw Router AccessKey and never forwards a
     client's key to a Host, and a client does not retain the key after the
     device exchange; the key appears in no Host device store, log line, audit
-    record, URL, or error payload. Planned (D666).
+    record, URL, or error payload. Applies from R7 (D666).
 31. The Gateway takes the client address from its configured header only when
     the TCP peer is inside its trusted-proxy set, and forwards the caller's
     address to Router `/api/auth/session` in the header named by the Router's
     `CLIENT_IP_HEADER`, from a peer inside the Router's `TRUSTED_PROXIES`, so a
     key's `allowed_peer_cidrs` rejects a caller outside its policy.
-    Planned (D666).
+    Applies from R7 (D666).
 32. A confirm-once grant is accepted by a sibling Host only when the signer is
     enrolled in the same account under the Gateway CA and the device is not
     revoked; a Host in strict mode accepts no sibling grant. The minted device
     keeps `pairedDevice: false`, the remote permission ceiling, and no
-    `allow-session`, so gate 25 applies unchanged. Planned (D666).
+    `allow-session`, so gate 25 applies unchanged. A revocation a Host makes
+    while its link is down is queued and reaches the account's other Hosts when
+    the link returns, so a lost device stops working everywhere rather than on
+    one Host. Applies from R7 (D666).
 33. `device.request` and `device.grant` reach only Hosts that advertise support,
     and a client is told which Hosts of its account cannot confirm instead of
-    waiting for an answer. Planned (D666).
+    waiting for an answer. Applies from R7 (D666).
 
 ## 13. Amendment history
 

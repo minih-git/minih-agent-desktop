@@ -37,6 +37,7 @@ import {
 } from "@minih-agent/shared";
 
 import { ACCOUNT_COOKIE, type AccountSessionService } from "./account.js";
+import type { DeviceRequestService } from "./device-requests.js";
 import { peerAddress } from "./client-ip.js";
 import type { ClientTlsOptions, ListenAddress } from "./config.js";
 import { CSRF_COOKIE, DEVICE_COOKIE, csrfTokenFor, hashToken, type PairingService } from "./pairing.js";
@@ -105,8 +106,21 @@ const PAIR_ROUTE = /^\/v1\/hosts\/([^/]+)\/pair\/?$/;
 /** Account directory routes (protocol §11.5); never host-scoped. */
 const ACCOUNT_LOGIN_ROUTE = /^\/v1\/account\/login\/?$/;
 const ACCOUNT_HOSTS_ROUTE = /^\/v1\/account\/hosts\/?$/;
+const ACCOUNT_DEVICES_ROUTE = /^\/v1\/account\/devices\/?$/;
+const ACCOUNT_DEVICE_STATUS_ROUTE = /^\/v1\/account\/devices\/([^/]+)\/?$/;
 
-type ResolvedAuth = { deviceId: string; hostId: string; token: string; via: "header" | "cookie" };
+type ResolvedAuth = {
+  deviceId: string;
+  hostId: string;
+  /**
+   * The account of an account-mode device (§11.5, D666). Such a device reaches
+   * every Host of its account; a §11.4 device has none and stays bound to the
+   * one Host it paired with.
+   */
+  accountId?: string;
+  token: string;
+  via: "header" | "cookie";
+};
 
 function sendJson(response: ServerResponse, status: number, payload: unknown, headers: Record<string, string> = {}): void {
   const text = JSON.stringify(payload);
@@ -164,6 +178,17 @@ async function readBody(request: IncomingMessage): Promise<string> {
     chunks.push(buffer);
   }
   return Buffer.concat(chunks).toString("utf8");
+}
+
+/** The request body parsed as JSON; an empty body is `null`. */
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const raw = await readBody(request);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    throw new GatewayRpcError("INVALID_ARGUMENT", "the request body is not JSON");
+  }
 }
 
 /** Coerce one query value to the type the route declares, or reject it. */
@@ -256,6 +281,12 @@ export type ClientHttpServerOptions = {
    * `/v1/account/*` routes answer `NOT_FOUND` like any other unknown path.
    */
   account?: AccountSessionService;
+  /**
+   * The account-mode device relay (D666). Absent means `/v1/account/devices`
+   * answers `NOT_FOUND` like any other unknown path, and a `device.grant` a
+   * Host sends is simply not handled.
+   */
+  deviceRequests?: DeviceRequestService;
   /** Resolved client address (ADR decision 10); defaults to the TCP peer. */
   resolveClientIp?: (request: IncomingMessage) => string;
   now?: () => number;
@@ -361,7 +392,13 @@ export class ClientHttpServer {
     // the header profile (a native client that never carries ambient cookies)
     // is exempt from it.
     if (headerToken === null) this.assertOrigin(request, "cookie");
-    return { deviceId: device.deviceId, hostId: device.hostId, token, via: headerToken ? "header" : "cookie" };
+    return {
+      deviceId: device.deviceId,
+      hostId: device.hostId,
+      ...(device.accountId ? { accountId: device.accountId } : {}),
+      token,
+      via: headerToken ? "header" : "cookie",
+    };
   }
 
   /** The account directory, or the `NOT_FOUND` a Gateway without it returns. */
@@ -369,6 +406,30 @@ export class ClientHttpServer {
     const account = this.options.account;
     if (!account) throw new GatewayRpcError("NOT_FOUND", "account mode is not configured on this Gateway");
     return account;
+  }
+
+  /** The account device relay, or the `NOT_FOUND` a Gateway without it returns. */
+  private deviceService(): DeviceRequestService {
+    const devices = this.options.deviceRequests;
+    if (!devices) throw new GatewayRpcError("NOT_FOUND", "account mode is not configured on this Gateway");
+    return devices;
+  }
+
+  /**
+   * Whether this credential may act on `hostId`. A §11.4 device is bound to the
+   * one Host it paired with; an account-mode device (§11.5) reaches every Host
+   * of its own account. A foreign, unknown, and revoked Host are one refusal,
+   * so the answer never discloses whether a Host exists.
+   */
+  private assertDeviceReachesHost(auth: ResolvedAuth, hostId: string): void {
+    if (auth.accountId) {
+      const host = this.options.store.findHost(hostId);
+      if (!host || host.revokedAt || host.accountId !== auth.accountId) {
+        throw new GatewayRpcError("FORBIDDEN", "this device is paired with another Host");
+      }
+      return;
+    }
+    if (auth.hostId !== hostId) throw new GatewayRpcError("FORBIDDEN", "this device is paired with another Host");
   }
 
   /**
@@ -405,6 +466,25 @@ export class ClientHttpServer {
     const decision = this.options.rateLimiter.check(principalId, ip);
     if (decision.allowed) return;
     throw new GatewayRpcError("RATE_LIMITED", `retry in ${decision.retryAfterMs} ms`, true, decision.retryAfterMs);
+  }
+
+  /**
+   * The tighter per-IP bucket that guards the device fan-out: one request asks
+   * every Host of the account to interrupt its user, so it does not share the
+   * budget of ordinary account reads (security §9).
+   */
+  private assertAccountDeviceRateLimit(ip: string): void {
+    const decision = this.options.rateLimiter.checkAccountDevice(ip);
+    if (decision.allowed) return;
+    throw new GatewayRpcError("RATE_LIMITED", `retry in ${decision.retryAfterMs} ms`, true, decision.retryAfterMs);
+  }
+
+  /**
+   * Account responses carry a session credential, a device token, or both, so
+   * none of them may be stored by a cache on the way (gate 30).
+   */
+  private accountHeaders(cors: Record<string, string>): Record<string, string> {
+    return { ...cors, "cache-control": "no-store" };
   }
 
   private resolveIp(request: IncomingMessage): string {
@@ -458,6 +538,17 @@ export class ClientHttpServer {
         return;
       }
 
+      if (ACCOUNT_DEVICES_ROUTE.test(url.pathname)) {
+        await this.handleAccountDeviceRequest(request, response, ip, cors, traceId);
+        return;
+      }
+
+      const deviceStatus = ACCOUNT_DEVICE_STATUS_ROUTE.exec(url.pathname);
+      if (deviceStatus) {
+        await this.handleAccountDeviceStatus(request, response, decodeURIComponent(deviceStatus[1] ?? ""), ip, cors, traceId);
+        return;
+      }
+
       if (url.pathname === "/v1/hosts") {
         await this.handleHostList(request, response, ip, cors, traceId);
         return;
@@ -482,7 +573,7 @@ export class ClientHttpServer {
       this.assertOrigin(request, "optional");
       const auth = this.authenticate(request);
       this.assertCsrf(request, auth.via, auth.deviceId);
-      if (auth.hostId !== hostId) throw new GatewayRpcError("FORBIDDEN", "this device is paired with another Host");
+      this.assertDeviceReachesHost(auth, hostId);
       const identity: ConnectionIdentity = { hostId, deviceId: auth.deviceId, credential: auth.token };
 
       if (route.stream) {
@@ -572,16 +663,30 @@ export class ClientHttpServer {
       this.assertOrigin(request, "optional");
       const auth = this.authenticate(request);
       this.assertRateLimit(auth.deviceId, ip);
-      const host = this.options.store.findHost(auth.hostId);
-      if (!host || host.revokedAt) throw new GatewayRpcError("UNAUTHORIZED", "this device's Host is gone");
-      const summary: RacpGatewayHostSummary = {
-        hostId: host.hostId,
-        label: host.label,
-        online: this.options.isHostOnline(host.hostId),
-        ...(host.lastSeenAt ? { lastSeenAt: host.lastSeenAt } : {}),
+      const summarise = (hostId: string): RacpGatewayHostSummary | null => {
+        const host = this.options.store.findHost(hostId);
+        if (!host || host.revokedAt) return null;
+        return {
+          hostId: host.hostId,
+          label: host.label,
+          online: this.options.isHostOnline(host.hostId),
+          ...(host.lastSeenAt ? { lastSeenAt: host.lastSeenAt } : {}),
+        };
       };
-      await this.audit("host/list", ip, "ok", { hostId: host.hostId, deviceId: auth.deviceId });
-      sendJson(response, 200, { result: { hosts: [summary] } }, cors);
+      // An account-mode device works on every Host of its account, so its host
+      // list is the account's (§11.5); a §11.4 device still sees its one Host.
+      const hosts = auth.accountId
+        ? this.options.store
+            .listHostsForAccount(auth.accountId)
+            .map((entry) => summarise(entry.hostId))
+            .filter((summary): summary is RacpGatewayHostSummary => summary !== null)
+        : [summarise(auth.hostId)].filter((summary): summary is RacpGatewayHostSummary => summary !== null);
+      if (hosts.length === 0) throw new GatewayRpcError("UNAUTHORIZED", "this device's Host is gone");
+      await this.audit("host/list", ip, "ok", {
+        deviceId: auth.deviceId,
+        ...(auth.accountId ? { accountId: auth.accountId } : { hostId: auth.hostId }),
+      });
+      sendJson(response, 200, { result: { hosts } }, cors);
     } catch (error) {
       const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to list hosts");
       sendError(response, rpc, traceId, cors);
@@ -622,7 +727,7 @@ export class ClientHttpServer {
       const outcome = await this.accountService().login({ accessKey, body, ip });
       // One Set-Cookie header per cookie: browsers reject a folded value.
       if (outcome.cookies.length > 0) response.setHeader("set-cookie", outcome.cookies);
-      sendJson(response, outcome.status, outcome.payload, cors);
+      sendJson(response, outcome.status, outcome.payload, this.accountHeaders(cors));
     } catch (error) {
       const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to start an account session");
       if (!(error instanceof GatewayRpcError)) {
@@ -653,9 +758,66 @@ export class ClientHttpServer {
       this.assertCsrf(request, via, session.sessionId);
       this.assertRateLimit(`account:${session.sessionId}`, ip);
       const outcome = await this.accountService().listHosts({ session, ip, isHostOnline: this.options.isHostOnline });
-      sendJson(response, outcome.status, outcome.payload, cors);
+      sendJson(response, outcome.status, outcome.payload, this.accountHeaders(cors));
     } catch (error) {
       const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to list account hosts");
+      sendError(response, rpc, traceId, cors);
+    }
+  }
+
+  /**
+   * `POST /v1/account/devices` (protocol §11.5): ask the account's Hosts to
+   * approve a new device. The route takes the account session credential, never
+   * a device token, and answers the account's roster, so the client learns at
+   * once which Hosts cannot confirm instead of waiting for an answer that
+   * cannot come (security gate 33).
+   */
+  private async handleAccountDeviceRequest(
+    request: IncomingMessage,
+    response: ServerResponse,
+    ip: string,
+    cors: Record<string, string>,
+    traceId: string,
+  ): Promise<void> {
+    try {
+      if (request.method !== "POST") throw new GatewayRpcError("METHOD_NOT_FOUND", "a device request is a POST endpoint");
+      this.assertOrigin(request, "optional");
+      const { session, via } = this.authenticateAccount(request);
+      this.assertCsrf(request, via, session.sessionId);
+      this.assertAccountDeviceRateLimit(ip);
+      const outcome = await this.deviceService().request({ session, body: await readJsonBody(request), ip });
+      sendJson(response, outcome.status, outcome.payload, this.accountHeaders(cors));
+    } catch (error) {
+      const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to start the device request");
+      sendError(response, rpc, traceId, cors);
+    }
+  }
+
+  /**
+   * `GET /v1/account/devices/{requestId}` (protocol §11.5): the outcome of one
+   * device request, and the device token once a Host approved. A request of
+   * another account answers the same `NOT_FOUND` as an unknown one, so this
+   * route discloses nothing across accounts (gate 29).
+   */
+  private async handleAccountDeviceStatus(
+    request: IncomingMessage,
+    response: ServerResponse,
+    requestId: string,
+    ip: string,
+    cors: Record<string, string>,
+    traceId: string,
+  ): Promise<void> {
+    try {
+      if (request.method !== "GET") throw new GatewayRpcError("METHOD_NOT_FOUND", "a device status is a GET endpoint");
+      this.assertOrigin(request, "optional");
+      const { session, via } = this.authenticateAccount(request);
+      this.assertCsrf(request, via, session.sessionId);
+      this.assertRateLimit(`account:${session.sessionId}`, ip);
+      if (!requestId) throw new GatewayRpcError("INVALID_ARGUMENT", "the request names no device request");
+      const outcome = await this.deviceService().status({ session, requestId, ip });
+      sendJson(response, outcome.status, outcome.payload, this.accountHeaders(cors));
+    } catch (error) {
+      const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to read the device request");
       sendError(response, rpc, traceId, cors);
     }
   }

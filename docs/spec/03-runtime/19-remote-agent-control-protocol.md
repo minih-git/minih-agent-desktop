@@ -1207,6 +1207,13 @@ type HostLinkFrame =
   | { link: "racp-hostlink.v1"; type: "host.close"; clientConnectionId: string; code: string }
   | { link: "racp-hostlink.v1"; type: "attachment.chunk"; uploadId: string; offset: number; last: boolean }
   | { link: "racp-hostlink.v1"; type: "link.ping" | "link.pong" }
+  // Account mode (§11.5, D666): the device directory's own frames.
+  | { link: "racp-hostlink.v1"; type: "host.capabilities"; capabilities: string[] }
+  | { link: "racp-hostlink.v1"; type: "device.request"; request: DeviceRequest }
+  | { link: "racp-hostlink.v1"; type: "device.grant"; grant: DeviceGrant; signature: string;
+      signerCertificate: string; deviceToken?: string }
+  | { link: "racp-hostlink.v1"; type: "device.revoke"; revoke: DeviceRevoke; signature: string;
+      signerCertificate: string }
 ```
 
 Rules:
@@ -1239,6 +1246,16 @@ Rules:
 5. Loss of the link closes every logical connection with a resumable cursor.
    The Host reconnects with bounded exponential backoff; local turns continue
    throughout.
+6. `host.capabilities`, `device.request`, `device.grant`, and `device.revoke`
+   exist for account mode only, and §11.5 defines what they carry. The Host
+   sends `host.capabilities` on every link as soon as it is up, and the Gateway
+   MUST NOT send a `device.request` or a relayed `device.grant` to a Host that
+   has not announced the matching capability: a Host that predates these frames
+   ignores an unknown `type` silently, so a frame sent to it would leave the
+   client waiting forever. Unknown capability strings are ignored by the reader,
+   so a newer Host may advertise more than an older Gateway understands. A
+   malformed frame and an unknown `type` are dropped without closing the link,
+   in both directions.
 
 Enrollment and pairing run against the same listener:
 
@@ -1280,9 +1297,11 @@ Account mode binds a Minih-Router AccessKey to Hosts and devices (ADR
 pairing paths stay available for users without a Router key.
 
 The Gateway account directory — key verification, enrollment by key, account
-login, and the account host list — is implemented (rollout R7 package C). The
-`device.request` / `device.grant` relay and the Host capability advertisement
-are not; they belong to package D, and the clauses that name them say so.
+login, the account host list, and the device request / confirm / grant relay —
+is implemented (rollout R7 packages C and D). A Host that can ask its own user
+advertises `device.confirm` on the link, one approval on any Host of the account
+mints one device token for all of them, and every clause below is implemented as
+written.
 
 - **Key verification.** The Gateway validates a presented AccessKey by calling
   the Router's `GET /api/auth/session` over loopback with
@@ -1351,7 +1370,13 @@ are not; they belong to package D, and the clauses that name them say so.
   Host link's TCP peer: that port is reached directly over the overlay and is
   never behind the client proxy. An absent `remoteGateway` object, or a `404`
   from the bootstrap, means account mode is unavailable and the Host uses the
-  enrollment code of §11.4.
+  enrollment code of §11.4. `agent-host-cli enroll` reads the key from
+  `--access-key-file <path>` (a regular file, mode 0600, owned by the caller),
+  `--access-key-stdin`, or `MINIH_ROUTER_ACCESS_KEY`, and refuses a key typed on
+  the command line: argv is readable by every user on the machine and lands in
+  the shell history. The key is presented once on `POST /v1/enroll` and is not
+  written to disk; `gateway-link.json` holds only the issued certificate and the
+  Host's own private key.
 - **Account login.** `POST /v1/account/login` takes
   `Authorization: Bearer <AccessKey>` and a body
   `{ client: "web" | "ios" | "android", label? }`, follows the pairing route's
@@ -1376,25 +1401,114 @@ are not; they belong to package D, and the clauses that name them say so.
   device token of §11.4, and an account session presented there is refused with
   `401 UNAUTHORIZED` — the same answer a Host that does not exist produces, so
   the refusal never reveals whether a foreign Host exists.
-- **Device request, confirm, grant (package D).** A logged-in client requests a
-  device. The Gateway sends `device.request` (new frame, Gateway to Hosts) to
-  every online Host of the account that advertises support. The first Host whose
-  user approves signs a grant and returns `device.grant` (new frame, Host to
-  Gateway); the Gateway relays that grant to the account's other Hosts, and each
-  accepting Host verifies that the signer is enrolled in the same account under
-  the Gateway CA and that the device is not revoked. The client ends with ONE
-  device token usable on those Hosts and drops the AccessKey.
-- **Deferred grants (package D).** A Host that is offline when the grant is
-  issued receives the pending grant when its link comes up; until it has
-  accepted the grant, it does not accept the device token.
-- **Frame capability (package D).** `device.request` and `device.grant` are
-  sent only to Hosts that advertise support; the advertisement itself is defined
-  by package D, because the frame union of §11.4 has no hello or capabilities
-  frame today. This is a safety requirement, not an optimization: today's Host
-  ignores an unknown `type` silently (`packages/racp/src/hostlink.ts` L103-172),
-  so a frame sent to an unsupporting Host would leave the client waiting
-  forever. The Gateway MUST instead report that Host to the client as unable to
-  confirm, and the client offers the per-Host ticket of §11.4.
+- **Device request, confirm, grant.** A logged-in client requests a device with
+  `POST /v1/account/devices`. The Gateway records the request under the
+  session's account, sends `device.request` to every online Host of that account
+  that advertises `device.confirm`, and answers the caller with the request id,
+  its deadline, and the account's whole Host roster. The first Host whose user
+  approves mints a device token with the ordinary §11.4 machinery, keeps only
+  its SHA-256, signs a `DeviceGrant` with the private key of its own Host
+  certificate, and answers `device.grant`. The Gateway verifies that signature
+  against its own CA before it relays anything — it never signs a grant itself
+  (ADR `remote-control-router-account-binding` decision 5 is rejected) — then
+  relays the grant to the account's other Hosts. Each accepting Host verifies
+  the signer's chain to the pinned Gateway CA, the `OU=account:<accountId>`
+  binding in the signer's certificate, the signature over the canonical grant
+  payload, the signer's `hostId`, the `deliverUntil` deadline, the exact
+  `viewer` / `controller` / `approver` role set, and that the device is not
+  revoked locally; every other outcome is a refusal that leaves the Host
+  unchanged (security gate 32). The client ends with ONE device token usable on
+  every Host of the account, and drops the AccessKey. In-flight requests are
+  bounded per account (four) and in total; a request beyond either bound is
+  `RATE_LIMITED` rather than an eviction, so one account can never push another
+  account's request — or a granted token it has not taken yet — out of the
+  table.
+- **The device token.** The approving Host mints it, keeps only its hash, and
+  signs the grant; the siblings adopt the device by that hash, so the raw token
+  is never in the grant they receive. It travels exactly once from the approving
+  Host to the Gateway, in the `deviceToken` field of a `device.grant` frame that
+  is valid only on that leg: the Gateway MUST strip it before relaying the grant
+  to any other Host, MUST NOT log, audit, or persist it, and hands it to the
+  client that asked. The Gateway records the device as it does for §11.4 — the
+  hash, scoped to the account instead of to one Host — so its pre-routing fast
+  reject accepts that token on every Host of the account and on no other. The
+  Gateway holds the token in memory only, hands it to the client that asked on
+  the first read that reports `granted`, and keeps it available for a further
+  thirty seconds so a retried HTTP request still succeeds; after that it drops
+  the token and reports `tokenDelivered: false`, and a client that lost it
+  starts a new request rather than waiting for one that no longer exists. A
+  device minted this way is a gateway-origin principal of security §3.7:
+  `viewer` / `controller` / `approver`, `pairedDevice: false`, always under the
+  remote permission ceiling, never offered `allow-session`. A token handed to
+  the client before its siblings adopted the grant is refused by them until they
+  do.
+- **Client routes.** `POST /v1/account/devices` takes the account session
+  credential, never a device token, with a body `{ deviceLabel, client }`, and
+  answers `{ result: { requestId, expiresAt, hosts } }` under the §11.2 command
+  envelope. `GET /v1/account/devices/{requestId}` answers
+  `{ result: { requestId, status, expiresAt, hosts, deviceId?, token?, roles?,
+  signerHostId?, tokenDelivered? } }`, where `status` is `pending`, `granted`,
+  or `expired`, `tokenDelivered` says whether this response carried the token,
+  and `token` is present exactly while the request is `granted` and its pickup
+  window is open. A request belongs to the account session that created it: an
+  unknown id, a request of another account, and a request of another session of
+  the same account all answer the same `NOT_FOUND`, because the request id
+  travels to every Host and through the Gateway's logs and is therefore not a
+  credential (gate 29). Every account response carries
+  `Cache-Control: no-store`, because each one carries a session credential, a
+  device token, or both. A malformed body is
+  `INVALID_ARGUMENT`, a caller over its budget is `RATE_LIMITED`, and a missing
+  or foreign session credential is the uniform `UNAUTHORIZED` of §13. A denial
+  has no status of its own: a Host that declines sends nothing, so the request
+  stays `pending` until `expiresAt` and the client's own deadline ends the wait.
+  Each entry of `hosts` is `{ hostId, label, online, canConfirm,
+  willAcceptGrant }`; `canConfirm` is true only for an online Host that
+  advertised `device.confirm`, and `willAcceptGrant` only for one that
+  advertised `device.accept-sibling-grant`, so the client learns immediately
+  which Hosts cannot answer (gate 33).
+- **Capability advertisement.** A Host sends `host.capabilities` on every link,
+  as soon as the link is up, with the capability strings it supports:
+  `device.confirm` when it has a confirmer wired up, and
+  `device.accept-sibling-grant` when it adopts a sibling's grant. A Host with no
+  confirmer advertises nothing, and a Host in strict mode advertises
+  `device.confirm` alone (ADR decision 9). The Gateway MUST send a
+  `device.request` only to a Host that announced `device.confirm`, and a relayed
+  `device.grant` only to one that announced `device.accept-sibling-grant`, and
+  MUST report every other Host of the account to the client as unable to confirm
+  instead of leaving it waiting (gate 33); the client then offers that Host the
+  per-Host ticket of §11.4. What a Host accepts is known only once it has
+  announced, so the Gateway offers deferred grants and revocations when the
+  announcement arrives on a new link, not when the link comes up, and a Host
+  that reconnects in strict mode is never offered a grant it would refuse.
+- **Deferred grants.** A Host that is offline when the grant is issued receives
+  it when its link comes up: the Gateway keeps the signed grant for that
+  account, without the token, and offers it again on every reconnect. The
+  `deliverUntil` the approving Host signed is relayed byte for byte, because it
+  is part of the signed payload and rewriting it — even to shorten it — would
+  make every sibling refuse the grant; the Gateway bounds its own retention with
+  a separate `relayUntil` that nothing signs, which is the signed deadline or 24
+  hours, whichever is sooner. Re-delivery is idempotent — a Host that already
+  adopted the device answers `already-adopted` and changes nothing — and until a
+  Host has adopted the grant it does not accept that device token.
+- **Revocation.** Any Host of the account can revoke a device, and the
+  revocation reaches the others. The Host revokes the device locally first, so
+  its own user's decision never waits for the network, and signs a
+  `DeviceRevoke` with its own Host certificate. A frame that cannot go out — the
+  link is down, or it is still reconnecting — is queued under the Host's data
+  directory and re-offered on the next link until its delivery window closes,
+  because the protocol has no acknowledgement and a revocation must not be lost
+  with a socket. Re-delivery is idempotent. The Gateway verifies the signature
+  and relays the frame to every other Host of the account that announced a
+  capability frame at all — that is, to every Host that has a device directory —
+  and not only to those that accept sibling grants: a Host may have adopted the
+  device while it was not strict, or while it had a confirmer, and then
+  restarted in strict mode or without one, and filtering by
+  `device.accept-sibling-grant` would leave exactly that Host accepting a
+  revoked token. A Host that never adopted the device records it as revoked
+  anyway, so a grant still in flight cannot resurrect it, and a Host that
+  predates these frames never announces and is never sent one. The Gateway also revokes its own record
+  for the device, so its fast reject stops accepting the token at once, and
+  drops any pending grant for that device before it relays the revocation.
 - **Roles and policy.** A device minted through account mode is a
   gateway-origin principal under security §3.7: `viewer` / `controller` /
   `approver`, `pairedDevice: false`, always under the remote permission ceiling,

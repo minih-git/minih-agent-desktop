@@ -40,8 +40,9 @@ class FakeHostLinkSocket implements HostLinkSocket {
     this.close?.();
   }
 
-  send(frame: string): void {
+  send(frame: string): boolean {
     this.sent.push(JSON.parse(frame) as RacpHostLinkFrame);
+    return true;
   }
 
   closeLink(): void {

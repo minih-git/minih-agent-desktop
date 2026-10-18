@@ -22,6 +22,14 @@ export const DEFAULT_IP_LIMIT: RateLimitPolicy = { capacity: 120, refillPerSecon
  * (security §9). Ten attempts, then one every five seconds.
  */
 export const DEFAULT_CREDENTIAL_LIMIT: RateLimitPolicy = { capacity: 10, refillPerSecond: 0.2 };
+/**
+ * Account device requests get their own tighter bucket per client IP, separate
+ * from ordinary account reads: asking the account's Hosts to confirm is a
+ * fan-out to every one of them, so a flood of requests must not be able to bury
+ * a Host or fill the Gateway's in-flight table. Six requests, then one every ten
+ * seconds.
+ */
+export const DEFAULT_ACCOUNT_DEVICE_LIMIT: RateLimitPolicy = { capacity: 6, refillPerSecond: 0.1 };
 
 type Bucket = { tokens: number; updatedAt: number };
 type Projection = { key: string; policy: RateLimitPolicy; tokens: number; updatedAt: number };
@@ -42,6 +50,7 @@ export class RateLimiter {
   private readonly device: RateLimitPolicy;
   private readonly ip: RateLimitPolicy;
   private readonly credential: RateLimitPolicy;
+  private readonly accountDevice: RateLimitPolicy;
   private readonly now: () => number;
   private readonly maxKeys: number;
 
@@ -50,6 +59,7 @@ export class RateLimiter {
       device?: RateLimitPolicy;
       ip?: RateLimitPolicy;
       credential?: RateLimitPolicy;
+      accountDevice?: RateLimitPolicy;
       now?: () => number;
       maxKeys?: number;
     } = {},
@@ -57,6 +67,7 @@ export class RateLimiter {
     this.device = options.device ?? DEFAULT_DEVICE_LIMIT;
     this.ip = options.ip ?? DEFAULT_IP_LIMIT;
     this.credential = options.credential ?? DEFAULT_CREDENTIAL_LIMIT;
+    this.accountDevice = options.accountDevice ?? DEFAULT_ACCOUNT_DEVICE_LIMIT;
     this.now = options.now ?? (() => Date.now());
     this.maxKeys = options.maxKeys ?? 4096;
   }
@@ -105,6 +116,16 @@ export class RateLimiter {
    */
   checkCredential(ip: string): RateLimitDecision {
     return this.decide([this.project(`credential:${ip}`, this.credential, this.now())]);
+  }
+
+  /**
+   * Account device requests from one client IP, in their own bucket. Kept
+   * apart from the credential bucket so a device request cannot spend the
+   * budget that stops AccessKey guessing, and from the command bucket so it
+   * cannot spend the budget of the account's ordinary reads.
+   */
+  checkAccountDevice(ip: string): RateLimitDecision {
+    return this.decide([this.project(`account-device:${ip}`, this.accountDevice, this.now())]);
   }
 
   private decide(projections: Projection[]): RateLimitDecision {

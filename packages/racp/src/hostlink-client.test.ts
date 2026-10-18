@@ -43,8 +43,10 @@ class WsHostLinkSocket implements HostLinkSocket {
     socket.on("close", () => this.close?.());
   }
 
-  send(frame: string): void {
-    if (this.socket.readyState === WebSocket.OPEN) this.socket.send(frame);
+  send(frame: string): boolean {
+    if (this.socket.readyState !== WebSocket.OPEN) return false;
+    this.socket.send(frame);
+    return true;
   }
 
   closeLink(): void {

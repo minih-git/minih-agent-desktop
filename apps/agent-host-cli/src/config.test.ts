@@ -26,6 +26,18 @@ describe("config", () => {
     expect(() => resolveConfig({ "host-core": "/bin/hc", sidecar: "/s.js", port: "abc" }, {})).toThrow(/invalid port/);
     expect(resolveConfig({ "host-core": "/bin/hc", sidecar: "/s.js", "log-level": "warn" }, {}).logLevel).toBe("warn");
   });
+
+  it("keeps device confirmation off unless it is asked for", () => {
+    const base = { "data-dir": "/data", "host-core": "/bin/hc", sidecar: "/s.js" };
+    // A Host that nobody watches must not advertise that it can confirm.
+    expect(resolveConfig({ ...base }, {}).confirmDevices).toBe(false);
+    expect(resolveConfig({ ...base }, {}).strictDevices).toBe(false);
+    expect(resolveConfig({ ...base, "confirm-devices": true }, {}).confirmDevices).toBe(true);
+    expect(resolveConfig({ ...base, "strict-devices": "true" }, {}).strictDevices).toBe(true);
+    // The environment supplies the same two settings for a service unit.
+    expect(resolveConfig({ ...base }, { AGENT_HOST_CLI_CONFIRM_DEVICES: "1" }).confirmDevices).toBe(true);
+    expect(resolveConfig({ ...base }, { AGENT_HOST_CLI_STRICT_DEVICES: "false" }).strictDevices).toBe(false);
+  });
 });
 
 describe("identity and credentials", () => {
