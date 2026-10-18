@@ -2498,7 +2498,6 @@ importConfirm: "Imported extensions run inside the agent process with the same a
     installingVersion: "Installing version v{{version}}",
     installDialogTitle: "Installing {{name}}",
     installPhase: {
-      resolve: "Resolving the download address",
       download: "Downloading",
       verify: "Verifying the package",
       install: "Installing",

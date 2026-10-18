@@ -470,7 +470,7 @@ fn resolve_relative_package_urls_against_catalog() {
     );
     assert_eq!(
         resolved,
-        "https://plugins.aiuo.net/packages/demo.hello-0.2.0.piplug"
+        "https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/packages/demo.hello-0.2.0.piplug"
     );
 }
 
@@ -534,13 +534,13 @@ fn upstream_live_catalog_snapshot_parses() {
     }
 }
 
-/// The official channel's install path, against the live deployment.
+/// The distribution channel's catalog, against the live repository.
 ///
-/// This test is ignored by default because it contacts the plugin center. It
+/// This test is ignored by default because it contacts the network. It
 /// requires both explicit test opt-in and user authorization.
 #[test]
 #[ignore = "requires explicit live plugin marketplace authorization"]
-fn the_plugin_center_resolves_a_published_package() {
+fn the_published_catalog_and_its_packages_agree() {
     if std::env::var("MINIH_AGENT_RUN_LIVE_PLUGIN_MARKET_TESTS").as_deref() != Ok("1") {
         eprintln!(
             "Set MINIH_AGENT_RUN_LIVE_PLUGIN_MARKET_TESTS=1 after authorization to run this live test."
@@ -553,42 +553,26 @@ fn the_plugin_center_resolves_a_published_package() {
     };
     let catalog: MarketCatalogFile =
         serde_json::from_slice(&bytes).expect("the published catalog parses");
-    // A device id of the shape the platform is sent, so a failure here is the
-    // interface's and not the identifier's.
-    let device = "0".repeat(64);
+    let base = catalog.artifact_base_url.clone();
     for plugin in &catalog.plugins {
         for version in &plugin.versions {
-            if version.shasum.trim().is_empty() {
+            if version.shasum.trim().is_empty() || version.url.trim().is_empty() {
                 continue;
             }
-            let Ok(resolved) = super::resolve::request(
+            let url = PluginManager::resolve_package_url(
                 OFFICIAL_CHANNEL_CATALOG_URL,
-                &device,
-                &plugin.id,
-                &version.version,
-            ) else {
-                // Not published yet, withdrawn since, or the deployment cannot
-                // answer: none of those is what this test is about.
-                continue;
-            };
+                base.as_deref(),
+                &version.url,
+            );
+            package_host_allowed(&url, OFFICIAL_CHANNEL_CATALOG_URL)
+                .unwrap_or_else(|error| panic!("{url} is not an allowed package host: {error}"));
+            let bytes = download_url(&url).expect("the catalog's own package downloads");
             assert_eq!(
-                resolved.sha256.trim().to_ascii_lowercase(),
+                sha256_hex(&bytes),
                 version.shasum.trim().to_ascii_lowercase(),
-                "the platform answers with the digest the catalog carries for {}",
+                "the package bytes match the digest the catalog carries for {}",
                 plugin.id
             );
-            assert!(
-                !resolved.downloads.is_empty(),
-                "a 200 carries at least one mirror for {}",
-                plugin.id
-            );
-            for mirror in &resolved.downloads {
-                assert!(
-                    mirror.url.starts_with("https://"),
-                    "a mirror is fetched over https: {}",
-                    mirror.url
-                );
-            }
             return;
         }
     }
@@ -1797,20 +1781,22 @@ fn relative_package_urls_resolve_against_the_declared_artifact_base() {
     );
 }
 
-/// The official platform can return package URLs on approved GitHub and CNB
-/// hosts. The catalog's declared base keeps each package on its own host.
+/// The channel's declared base keeps each package on its own approved host.
+///
+/// A catalog served from the project's repository may still name the CNB mirror
+/// for packages; both hosts are on the download allowlist.
 #[test]
 fn official_catalog_package_bases_resolve_to_approved_mirror_hosts() {
     let relative = "packages/acme.todo-1.0.0.piplug";
 
     let github = PluginManager::resolve_package_url(
         OFFICIAL_CHANNEL_CATALOG_URL,
-        Some("https://raw.githubusercontent.com/AIUO-Net/pi-desktop-plugins/main"),
+        Some("https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main"),
         relative,
     );
     assert_eq!(
         github,
-        "https://raw.githubusercontent.com/AIUO-Net/pi-desktop-plugins/main/packages/acme.todo-1.0.0.piplug"
+        "https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/packages/acme.todo-1.0.0.piplug"
     );
 
     let mirror = PluginManager::resolve_package_url(

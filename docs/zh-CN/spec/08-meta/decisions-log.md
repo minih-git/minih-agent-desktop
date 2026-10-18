@@ -5660,3 +5660,27 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   读到的 yml 中的 `sha512` 校验安装包，Windows 与 macOS 仍校验各自签名，官方 GitHub 源
   仍是权威工件来源与最后兜底。见 `03-runtime/07-process-model.md`、
   `05-security/01-security.md` 与 `06-delivery/06-release-runbook.md`。
+
+## 2026-10-18 —— 插件市场改为只提供本项目自己的分发仓库
+
+- 市场此前的官方渠道是外部插件中心 `plugins.aiuo.net`：安装会用它提供的
+  `POST /api/v1/download/resolve`，携带经哈希的安装级稳定设备标识，按平台返回的镜像
+  列表下载，并可能收到五个发布与限流错误码。ADR 0332 退役了该渠道。
+  `OFFICIAL_CHANNEL_CATALOG_URL` 现为
+  `https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json`，
+  也是唯一目录；`resolve.rs` 与 `device.rs` 已删除，因此没有 resolve 请求、没有
+  `deviceId`、也没有镜像列表，`InstallPhase` 只有 `download` / `verify` / `install` /
+  `enable` 四个。
+- 发布是向同一个仓库提交：用 `packages/plugin-devkit` 打包，把 `.piplug` 与重新生成的
+  `catalog.json` 放进同一个 commit，并在宣布发布前通过
+  `pnpm check:marketplace -- --url <目录-URL> --plugin <plugin-id>` 预检。
+  `PLUGIN_MARKET_NOT_PUBLISHED`、`PLUGIN_MARKET_ARCHIVED`、`PLUGIN_MARKET_NOT_FOUND`、
+  `PLUGIN_MARKET_RATE_LIMITED`、`PLUGIN_MARKET_NO_SOURCE` 与 host RPC 编号 1020–1024
+  均退役，编号与名称不再复用。
+- 保持不变：目录 schema、包格式、sha256 校验、权限审查、按来源记录的缓存、代理设置、
+  `PLUGIN_MARKET_UNTRUSTED_HOST` 白名单（`github.com`、`githubusercontent.com`、
+  `cnb.cool` 加提供目录的那个主机），以及开发用的
+  `MINIH_AGENT_PLUGIN_MARKET_URL`。只有本项目目录里的 `verified` 才会被采信，因此
+  重新分发的社区插件保持 `community`。
+- 见 ADR 0332、`07-plugin-marketplace.md` 第 2 节「目录来源」与第 13 节，以及
+  E2E-PLUGIN-install-from-the-distribution-repository。

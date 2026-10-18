@@ -1352,16 +1352,15 @@ numeric slot; the string is the contract, the number is transport detail.
 | 1017 | SUBAGENT_INVALID | user subagent document failed validation |
 | 1018 | CAPABILITY_INVALID | agent capability root/scope setting failed validation |
 | 1019 | PLUGIN_CANCELLED | the user cancelled a marketplace install while it was downloading |
-| 1020 | PLUGIN_MARKET_NOT_PUBLISHED | the platform has the version and is not offering it yet |
-| 1021 | PLUGIN_MARKET_ARCHIVED | the plugin was withdrawn from the platform |
-| 1022 | PLUGIN_MARKET_NOT_FOUND | the platform does not have that plugin or version |
-| 1023 | PLUGIN_MARKET_RATE_LIMITED | the download endpoint asked the client to wait |
-| 1024 | PLUGIN_MARKET_NO_SOURCE | no distribution target can serve the package |
 | 1025 | WORKTREE_* | every isolated-session worktree failure (`WORKTREE_NOT_GIT`, `WORKTREE_CONFLICT`, `WORKTREE_PROJECT_DIRTY`, `WORKTREE_MISSING`, …) shares this slot; the string code distinguishes them |
 | -32029 | HOST_OVERLOADED | RPC dispatcher capacity exhausted |
 | -32601 | — | unknown method |
 | -32700 | — | unparseable request line |
 | 1002 | LIMIT_EXCEEDED | an NDJSON request line over 64 MiB; Electron rejects the write before it reaches the pipe; if the host still sees it, the remainder of the line is drained, the reply keeps the request id when it can be peeked from the prefix, and the stdin reader keeps running |
+
+Numbers 1020–1024 are retired with the external plugin center in
+[ADR 0332](../../adr/0332-own-plugin-distribution-repository.md). They stay
+empty and are never reassigned.
 
 
 Tool outcomes (`TOOL_DENIED`, `TOOL_TIMEOUT`, `PATH_OUTSIDE_WORKSPACE`,

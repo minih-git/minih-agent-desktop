@@ -284,120 +284,27 @@ impl PluginManager {
         Ok(results)
     }
 
-    /// Fetch the package an install needs, through the channel's own path.
+    /// Fetch the package an install needs from the catalog that listed it.
     ///
     /// Answers with the file it wrote and the digest it verified. The failure
     /// that ends the install is reported here, exactly once, so a surface
     /// showing progress always learns how the install finished.
+    ///
+    /// The catalog carries the package URL and its digest, so there is nothing
+    /// to resolve first: one download, one digest check. A relative URL has
+    /// already been made absolute against the catalog by the time a
+    /// [`MarketDownloadInfo`] exists.
     fn fetch_market_package(
         &self,
         info: &MarketDownloadInfo,
         report: &mut DownloadReport<'_>,
     ) -> Result<(PathBuf, String)> {
-        let mut tried: Vec<TriedMirror> = Vec::new();
-        if self.uses_download_resolve() {
-            report.phase(InstallPhase::Resolve);
-            match self.download_market_package_via_resolve(info, report, &mut tried) {
-                Ok(fetched) => return Ok(fetched),
-                // Publication refusals and cancellations are authoritative:
-                // never install through the catalog URL after either one.
-                Err(error)
-                    if !super::resolve::allows_catalog_fallback(&error)
-                        || super::progress::is_cancelled(&error) =>
-                {
-                    return Err(report.failed(tried, error))
-                }
-                Err(error) => tracing::warn!(
-                    plugin = %info.plugin_id,
-                    version = %info.version,
-                    %error,
-                    "the plugin center resolve path is unavailable; using the catalog url"
-                ),
-            }
-        }
-        // The catalog's own URL avoids waiting for a slow resolve endpoint and
-        // remains safe because download_market_package verifies its digest.
         report.phase(InstallPhase::Download);
         report.mirror(None, 0, 0);
         match self.download_market_package(info, &info.url, &info.shasum, info.size_bytes, report) {
             Ok(path) => Ok((path, info.shasum.clone())),
-            Err(error) => Err(report.failed(tried, error)),
+            Err(error) => Err(report.failed(Vec::new(), error)),
         }
-    }
-
-    /// Download through the plugin center's resolve interface.
-    ///
-    /// Every mirror the platform lists is tried in the order it gave: they are
-    /// different hosts, and one can be unreachable, rate limited, or holding
-    /// different bytes under the same version — which the digest catches before
-    /// anything is extracted. The mirrors that failed are recorded in `tried`,
-    /// which the terminal report carries so the surface can list what was
-    /// attempted.
-    fn download_market_package_via_resolve(
-        &self,
-        info: &MarketDownloadInfo,
-        report: &mut DownloadReport<'_>,
-        tried: &mut Vec<TriedMirror>,
-    ) -> Result<(PathBuf, String)> {
-        let catalog_url = self.market_source_url();
-        let device_id = super::device::device_id(&self.data_dir);
-        let resolved =
-            super::resolve::request(&catalog_url, &device_id, &info.plugin_id, &info.version)?;
-        let expected = resolved.sha256.trim().to_ascii_lowercase();
-        let attempts = resolved.downloads.len() as u32;
-        let mut last_error: Option<anyhow::Error> = None;
-        for (index, mirror) in resolved.downloads.iter().enumerate() {
-            if report.cancelled() {
-                return Err(anyhow!(super::progress::CANCELLED));
-            }
-            let url = mirror.url.trim();
-            if url.is_empty() {
-                continue;
-            }
-            // Resolve mirrors are hosts the platform named, not local catalog
-            // fixtures: file:// and bare paths skip the allowlist on the
-            // backup path and must not do so here.
-            if let Err(error) = super::package_host_allowed(url, &catalog_url) {
-                tracing::warn!(
-                    source = %mirror.source,
-                    %url,
-                    %error,
-                    "this mirror is not an allowed package host"
-                );
-                tried.push(TriedMirror {
-                    source: mirror.source.clone(),
-                    url: url.to_string(),
-                    error: Some(error.to_string()),
-                });
-                last_error = Some(error);
-                continue;
-            }
-            report.mirror(Some(&mirror.source), index as u32 + 1, attempts);
-            match self.download_market_package(info, url, &expected, resolved.size_bytes, report) {
-                Ok(path) => return Ok((path, expected)),
-                Err(error) => {
-                    tracing::warn!(
-                        source = %mirror.source,
-                        %url,
-                        %error,
-                        "this mirror did not serve the package"
-                    );
-                    // A cancellation is not a mirror's fault: stop asking.
-                    if super::progress::is_cancelled(&error) {
-                        return Err(error);
-                    }
-                    tried.push(TriedMirror {
-                        source: mirror.source.clone(),
-                        url: url.to_string(),
-                        error: Some(error.to_string()),
-                    });
-                    last_error = Some(error);
-                }
-            }
-        }
-        Err(last_error.unwrap_or_else(|| {
-            anyhow!("PLUGIN_MARKET_NO_SOURCE: the plugin center listed no usable mirror")
-        }))
     }
 
     /// Download one package URL, verify it, and leave it in the cache.

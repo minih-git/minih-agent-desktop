@@ -1626,18 +1626,6 @@ fn plugin_err(err: impl ToString) -> JsonRpcError {
         // The user's own action rather than a failure: the surface closes the
         // dialog quietly instead of reporting an error.
         rpc_err(1019, msg, "PLUGIN_CANCELLED")
-    } else if msg.contains("PLUGIN_MARKET_NOT_PUBLISHED") {
-        // The platform has the version and is not offering it yet: a state to
-        // report, not a bug to sweep into INTERNAL.
-        rpc_err(1020, msg, "PLUGIN_MARKET_NOT_PUBLISHED")
-    } else if msg.contains("PLUGIN_MARKET_ARCHIVED") {
-        rpc_err(1021, msg, "PLUGIN_MARKET_ARCHIVED")
-    } else if msg.contains("PLUGIN_MARKET_NOT_FOUND") {
-        rpc_err(1022, msg, "PLUGIN_MARKET_NOT_FOUND")
-    } else if msg.contains("PLUGIN_MARKET_RATE_LIMITED") {
-        rpc_err(1023, msg, "PLUGIN_MARKET_RATE_LIMITED")
-    } else if msg.contains("PLUGIN_MARKET_NO_SOURCE") {
-        rpc_err(1024, msg, "PLUGIN_MARKET_NO_SOURCE")
     } else if msg.contains("PLUGIN_NETWORK") {
         rpc_err(1014, msg, "PLUGIN_NETWORK")
     } else {

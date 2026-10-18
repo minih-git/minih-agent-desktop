@@ -20,7 +20,6 @@ import {
 const SUCCESS_DWELL_MS = 2000;
 
 const PHASE_KEYS: Record<PluginInstallJob["phase"], string> = {
-  resolve: "plugins.installPhase.resolve",
   download: "plugins.installPhase.download",
   verify: "plugins.installPhase.verify",
   install: "plugins.installPhase.install",
@@ -63,7 +62,7 @@ export function PluginInstallDialog({ job, onCancel, onRetry, onClose }: Props) 
   const running = job.status === "running";
   // Escape obeys the same rule the cancel button does: a download is not
   // dismissed by accident, a finished install is.
-  const escapeLocked = running && (job.phase === "resolve" || job.phase === "download");
+  const escapeLocked = running && job.phase === "download";
 
   useEffect(() => {
     if (escapeLocked) return;
