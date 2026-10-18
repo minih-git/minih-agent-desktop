@@ -7954,3 +7954,23 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   (`11.123.0.0/24`, its own mesh) later by explicit commit range per the
   dual-brand rule. See ADR remote-control-router-account-binding, protocol
   §11.5, security §3.8 with gates 29–33, and rollout R7.
+
+## 2026-10-18 — A one-line run step row keeps its command in the body (D667)
+
+- Standard density folds a turn's process into one line per step, so a `run`
+  row's head can only print its command as a hint cut to the row width and
+  capped at 220 characters. The opened body had stopped repeating it —
+  `hideSummaryArg` was forced on for every row — so the whole command was
+  unreadable anywhere on screen, and a step row carried no copy control either,
+  because that control is rendered for a full row only.
+- Withholding the summary argument is gated on the row being a full one again
+  (`hideSummaryArg: !dense`). A full row's head prints and copies the command,
+  so its body still holds only `Output`, `Errors` and any host `notice`. A
+  one-line step row opens on a `Command` block and keeps the block headings and
+  frames that tell that command apart from the output below it; the block's copy
+  action is its copy affordance. A collapsed step row still mounts no body, so
+  the single-line rhythm between steps is unchanged.
+- Decision D667 refines D226 and is renderer-only. Protocol, host RPC, IPC
+  channels, and storage schema are unchanged. See
+  `04-ux/08-component-spec.md` §9.2/§9.3/§9.10 and
+  E2E-CHAT-turn-process-and-thinking-display.

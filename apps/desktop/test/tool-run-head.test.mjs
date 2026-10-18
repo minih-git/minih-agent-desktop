@@ -4,10 +4,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 /*
- * A run row's head is the only place its command appears (D226): the body holds
- * output alone, so the head carries the copy affordance and the outcome beside
- * the caret. Those three controls live in markup and CSS, where nothing else
- * would notice them drifting apart.
+ * A run row's head states its outcome and copies its command (D226): its body
+ * holds output alone, so those controls live beside the caret. A one-line step
+ * row prints the command as a hint cut to the row width instead, so its body
+ * repeats the whole command. That wiring lives in markup and CSS, where
+ * nothing else would notice it drifting apart.
  */
 
 const transcript = await readTranscriptSource();
@@ -37,8 +38,9 @@ test("the head copies the command, unsqueezed", () => {
   );
   // A one-line step row carries its content beside the action — the command
   // after "Ran", the path after "Read" — so the line never reads as a bare
-  // verb, and the opened body must not echo what the head already says.
-  assert.match(transcript, /hideSummaryArg: true,/);
+  // verb. That hint is cut to the row width, so the opened body must still
+  // print the whole command; only a full row's body drops it.
+  assert.match(transcript, /hideSummaryArg: !dense,/);
   assert.match(
     transcript,
     /\{summary && identity\?\.kind !== "skill" && summary !== identity\?\.name \? \(/,
