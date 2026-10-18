@@ -2844,6 +2844,8 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
     askTitle: "답변이 필요한 질문이 있습니다",
     askBody: "{{question}}",
     askBodyFallback: "작업을 계속하려면 응답이 필요합니다.",
+    promptAskTitle: "{{sessionTitle}}에 답변할 질문이 있습니다",
+    promptAskBody: "대화를 열어 답변해야 작업이 계속됩니다.",
     permissionTitle: "{{sessionTitle}} 도구 승인 필요",
     permissionBody: "{{toolName}} 실행 권한이 필요합니다.",
     planApprovalTitle: "{{sessionTitle}} 계획 승인 대기 중",

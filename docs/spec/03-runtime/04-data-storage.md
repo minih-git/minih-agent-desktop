@@ -1340,24 +1340,36 @@ CREATE INDEX idx_audit_session ON audit_log(session_id, ts)
   WHERE session_id IS NOT NULL;
 ```
 
-### 4.14 notifications — durable local inbox (D117)
+### 4.14 notifications — durable local inbox (D117, D663)
 
-One row records one terminal agent-turn outcome that was not already visible in
-the focused current chat. It stores structured source data only; renderer and
-Electron derive localized title/body strings at the presentation boundary.
+One row records either one terminal agent-turn outcome that was not already
+visible in the focused current chat, or one interactive request the runtime is
+waiting on. It stores structured source data only; renderer and Electron derive
+localized title/body strings at the presentation boundary.
 
 ```sql
 CREATE TABLE notifications (
   id            TEXT PRIMARY KEY,
   kind          TEXT NOT NULL
-                  CHECK (kind IN ('task.completed', 'task.failed')),
+                  CHECK (kind IN ('task.completed', 'task.failed',
+                                  'prompt.ask', 'prompt.permission',
+                                  'prompt.plan')),
   session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  session_title TEXT NOT NULL,              -- snapshot at terminal transition
-  turn_id       TEXT NOT NULL UNIQUE,       -- exactly one inbox row per turn
+  session_title TEXT NOT NULL,              -- snapshot at insert time
+  turn_id       TEXT,                       -- task: exactly one row per turn;
+                                            -- prompt: the blocked turn, not a key
+  request_id    TEXT,                       -- prompt: exactly one row per request
+  tool_name     TEXT,                       -- prompt.permission only
   error_code    TEXT,                       -- populated for task.failed when known
   created_at    INTEGER NOT NULL,
   read_at       INTEGER
 );
+CREATE UNIQUE INDEX idx_notifications_turn
+  ON notifications(turn_id)
+  WHERE turn_id IS NOT NULL
+    AND kind IN ('task.completed', 'task.failed');
+CREATE UNIQUE INDEX idx_notifications_request
+  ON notifications(request_id) WHERE request_id IS NOT NULL;
 CREATE INDEX idx_notifications_created
   ON notifications(created_at DESC);
 CREATE INDEX idx_notifications_unread
@@ -1369,14 +1381,23 @@ CREATE INDEX idx_notifications_unread
   in the **same transaction**. Electron passes false only when the main window
   is visible/focused and that exact session is the current chat. `aborted`
   never inserts a row.
-- Repeating a terminal update cannot duplicate a notification because
-  `turn_id` is unique. The RPC result includes the record only when this call
-  inserted it; otherwise the `notification` field is omitted.
+- `notification.recordPrompt` inserts one `prompt.ask` / `prompt.permission` /
+  `prompt.plan` row when the renderer reports an interactive request. A prompt
+  row records the blocked `turn_id` but never competes for it: the `turn_id`
+  unique index covers the task family only, so one turn can ask several times
+  and still own its single terminal row.
+- Repeating a terminal update cannot duplicate a notification because `turn_id`
+  is unique per task row; repeating a prompt event cannot duplicate a reminder
+  because `request_id` is unique across prompt rows. The RPC result includes
+  the record only when this call inserted it; otherwise the `notification`
+  field is omitted or null.
 - `session_title` is the stable session-name snapshot at notification creation,
   not a localized notification title/body. An empty title remains valid and
   receives a localized “Untitled task” fallback only at presentation time.
-- No title/body prose is stored. Permission requests, scheduled reminders,
-  plugin notices, and aborted turns are not notification sources.
+- No title/body prose is stored, and a prompt row never stores the question or
+  tool arguments. Scheduled reminders, plugin notices, and aborted turns are
+  not notification sources; permission, ask, and plan requests are, as
+  `prompt.*` rows only.
 - After an insert, the same transaction prunes all but the newest 200 rows by
   `(created_at DESC, id DESC)`. This is a global cap; session deletion also
   cascades its rows.

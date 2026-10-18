@@ -8,18 +8,19 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { portalToBody } from "../lib/portal-visibility";
-import type { AppNotification } from "@minih-agent/shared";
+import {
+  mergeNotificationsBySession,
+  unreadSessionIds,
+  type AppNotification,
+} from "@minih-agent/shared";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../stores/app-store";
-import {
-  inboxNotifications,
-  inboxUnreadCount,
-} from "../lib/notification-inbox";
 import {
   IconBell,
   IconCheckCheck,
   IconCircleAlert,
   IconCircleCheck,
+  IconInfo,
   IconTrash,
 } from "./icons";
 import { TooltipButton } from "./ui";
@@ -67,16 +68,19 @@ export function NotificationCenter({
 }) {
   const { t, i18n } = useTranslation();
   const storedNotifications = useAppStore((state) => state.notifications);
-  // Successful completions are hidden here; they still drive the sidebar
-  // outcome badge and native notifications from the unfiltered store.
+  // The bell is a per-conversation surface (D664, amending D295): every
+  // retained conversation gets one row — its newest notification — and a
+  // conversation counts as unread while any of its rows is unread.
   const notifications = useMemo(
-    () => inboxNotifications(storedNotifications),
+    () => mergeNotificationsBySession(storedNotifications),
     [storedNotifications],
   );
-  const unreadCount = useMemo(
-    () => inboxUnreadCount(storedNotifications),
+  const unreadSessions = useMemo(
+    () => unreadSessionIds(storedNotifications),
     [storedNotifications],
   );
+  const unreadCount = unreadSessions.size;
+  // Row-level unread still decides whether Mark all read has work to do.
   const allUnreadCount = useAppStore((state) => state.unreadNotificationCount);
   const refreshNotifications = useAppStore((state) => state.refreshNotifications);
   const markAllNotificationsRead = useAppStore(
@@ -97,9 +101,11 @@ export function NotificationCenter({
   const visibleNotifications = useMemo(
     () =>
       filter === "unread"
-        ? notifications.filter((notification) => !notification.readAt)
+        ? notifications.filter((notification) =>
+            unreadSessions.has(notification.sessionId),
+          )
         : notifications,
-    [filter, notifications],
+    [filter, notifications, unreadSessions],
   );
 
   const closePopover = useCallback((restoreFocus = true) => {
@@ -313,35 +319,61 @@ export function NotificationCenter({
             <ul className="notification-list">
               {visibleNotifications.map((notification) => {
                 const failed = notification.kind === "task.failed";
+                // A prompt row means the runtime is still blocked on the user:
+                // it reads as a call to action, not as an outcome.
+                const prompt = notification.kind.startsWith("prompt.")
+                  ? notification.kind
+                  : null;
                 const sessionTitle = notification.sessionTitle || t("chat.untitledTask");
-                const title = t(
-                  failed
-                    ? "notifications.failedTitle"
-                    : "notifications.completedTitle",
-                  { sessionTitle },
-                );
-                const body = failed
-                  ? notification.errorCode
-                    ? t("notifications.failedBodyWithCode", {
-                        code: notification.errorCode,
-                      })
-                    : t("notifications.failedBody")
-                  : t("notifications.completedBody");
+                let title = "";
+                let body = "";
+                if (prompt === "prompt.permission") {
+                  title = t("notifications.permissionTitle", { sessionTitle });
+                  body = t("notifications.permissionBody", {
+                    toolName: notification.toolName || "tool",
+                  });
+                } else if (prompt === "prompt.plan") {
+                  title = t("notifications.planApprovalTitle", { sessionTitle });
+                  body = t("notifications.planApprovalBody");
+                } else if (prompt === "prompt.ask") {
+                  title = t("notifications.promptAskTitle", { sessionTitle });
+                  body = t("notifications.promptAskBody");
+                } else {
+                  title = t(
+                    failed
+                      ? "notifications.failedTitle"
+                      : "notifications.completedTitle",
+                    { sessionTitle },
+                  );
+                  body = failed
+                    ? notification.errorCode
+                      ? t("notifications.failedBodyWithCode", {
+                          code: notification.errorCode,
+                        })
+                      : t("notifications.failedBody")
+                    : t("notifications.completedBody");
+                }
                 return (
                   <li key={notification.id}>
                     <button
                       type="button"
-                      className={`notification-item ${notification.readAt ? "" : "unread"}`}
+                      className={`notification-item ${
+                        unreadSessions.has(notification.sessionId) ? "unread" : ""
+                      }`}
                       data-notification-id={notification.id}
                       disabled={busy}
                       onClick={() => void activateNotification(notification)}
                     >
                       <span
-                        className={`notification-kind-icon ${failed ? "failed" : ""}`}
+                        className={`notification-kind-icon ${failed ? "failed" : ""}${
+                          prompt ? " prompt" : ""
+                        }`}
                         aria-hidden
                       >
                         {failed ? (
                           <IconCircleAlert size={17} />
+                        ) : prompt ? (
+                          <IconInfo size={17} />
                         ) : (
                           <IconCircleCheck size={17} />
                         )}
@@ -360,7 +392,7 @@ export function NotificationCenter({
                           t("notifications.justNow"),
                         )}
                       </time>
-                      {!notification.readAt ? (
+                      {unreadSessions.has(notification.sessionId) ? (
                         <span className="notification-unread-dot" aria-hidden />
                       ) : null}
                     </button>

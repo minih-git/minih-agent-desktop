@@ -1,5 +1,5 @@
 import { Notification as SystemNotification } from "electron";
-import { IPC } from "@minih-agent/shared";
+import { IPC, type AppNotification } from "@minih-agent/shared";
 import type { HostProcess } from "../host-process";
 import {
   shouldShowNativeNotification,
@@ -137,6 +137,35 @@ export function registerNotificationIpc({
         typeof input.sessionId === "string" ? input.sessionId.trim() : "";
       setViewingSessionId(sessionId || null);
       return { ok: true };
+    },
+  );
+
+  // An interactive request is reported as soon as the renderer sees it, before
+  // any toast or native banner can be missed. The host owns the durable row, so
+  // the reminder is still in the inbox after a restart shows the same session
+  // with nothing pending.
+  handle(
+    IPC.invoke.notificationRecordPrompt,
+    async (
+      input: {
+        sessionId?: string;
+        requestId?: string;
+        kind?: "ask" | "permission" | "plan";
+        toolName?: string;
+        turnId?: string;
+      } = {},
+    ) => {
+      const host = getHost();
+      if (!host) throw new Error("host unavailable");
+      const result = await host.call<{ notification?: AppNotification | null }>(
+        "notification.recordPrompt",
+        input,
+      );
+      const notification = result?.notification ?? null;
+      if (notification) {
+        sendToRenderer(IPC.event.notificationChanged, { notification });
+      }
+      return { notification };
     },
   );
 

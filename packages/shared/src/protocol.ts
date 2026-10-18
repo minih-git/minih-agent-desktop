@@ -86,6 +86,7 @@ export const IPC = {
     notificationMarkAllRead: "minih-agent-desktop/notification/markAllRead",
     notificationClear: "minih-agent-desktop/notification/clear",
     notificationShowNative: "minih-agent-desktop/notification/showNative",
+    notificationRecordPrompt: "minih-agent-desktop/notification/recordPrompt",
     notificationSetViewingSession: "minih-agent-desktop/notification/setViewingSession",
     agentPrompt: "minih-agent-desktop/agent/prompt",
     agentSteer: "minih-agent-desktop/agent/steer",

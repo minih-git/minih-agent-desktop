@@ -811,6 +811,7 @@ to the singular host RPC domain without renderer access to SQLite:
 - `minih-agent-desktop/notification/markRead({ id })`
 - `minih-agent-desktop/notification/markAllRead()`
 - `minih-agent-desktop/notification/clear()`
+- `minih-agent-desktop/notification/recordPrompt({ sessionId, requestId, kind, toolName?, turnId? })`
 
 The renderer invokes
 `minih-agent-desktop/notification/setViewingSession({ sessionId })` whenever the chat
@@ -833,10 +834,17 @@ request never crosses into the host RPC domain.
 ```ts
 type AppNotification = {
   id: string;
-  kind: "task.completed" | "task.failed";
+  kind:
+    | "task.completed"
+    | "task.failed"
+    | "prompt.ask"
+    | "prompt.permission"
+    | "prompt.plan";
   sessionId: string;
   sessionTitle: string;
-  turnId: string;
+  turnId?: string;     // settled-turn rows; the blocked turn on prompt rows
+  requestId?: string;  // prompt rows only
+  toolName?: string;   // prompt.permission only
   errorCode?: string;
   createdAt: string;
   readAt?: string | null;
@@ -866,10 +874,12 @@ type SessionsChangedEvent = {
 Main sends two events:
 
 - `minih-agent-desktop/notification/event/changed` after `session.endTurn` returns a
-  newly inserted record. Renderer merges the record into its bounded local list
-  and recalculates the exact unread count. A terminal result already visible in
-  the focused current chat, repeated terminal updates, and aborted turns emit
-  nothing.
+  newly inserted task record, and after `notification/recordPrompt` accepts an
+  interactive prompt. Renderer merges the record into its bounded local list and
+  recalculates the exact unread count. A terminal result already visible in the
+  focused current chat, repeated terminal updates, and aborted turns emit
+  nothing; a replayed prompt event is rejected by the host's `request_id`
+  uniqueness and emits nothing.
 - The durable `id` is the renderer and Electron native-delivery idempotency key.
   A repeated `notification.changed` payload for an id already present in the
   local list is a no-op; a delayed payload whose row was acknowledged or

@@ -1,63 +1,40 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import {
-  inboxNotifications,
-  inboxUnreadCount,
-} from "../src/lib/notification-inbox.ts";
+import { readStoreModule } from "./helpers/source-contracts.mjs";
 
+// D664 amends D295: the bell is a per-conversation surface. One row per
+// conversation — its newest notification — and a conversation counts as unread
+// while any of its rows is unread. The badge and the taskbar overlay use the
+// same projection.
 const componentSource = await readFile(
   new URL("../src/components/NotificationCenter.tsx", import.meta.url),
   "utf8",
 );
+const catalogSource = await readStoreModule("slices/catalog-slice.ts");
 
-function notification(overrides) {
-  return {
-    id: "notification-1",
-    kind: "task.completed",
-    sessionId: "session-1",
-    sessionTitle: "Session",
-    turnId: "turn-1",
-    createdAt: "2026-09-04T10:00:00.000Z",
-    readAt: null,
-    ...overrides,
-  };
-}
-
-test("inbox hides successful completions and keeps failures in order", () => {
-  const rows = inboxNotifications([
-    notification({ id: "done-1" }),
-    notification({ id: "failed-1", kind: "task.failed" }),
-    notification({ id: "done-2", readAt: "2026-09-04T10:01:00.000Z" }),
-    notification({ id: "failed-2", kind: "task.failed", readAt: "2026-09-04T10:02:00.000Z" }),
-  ]);
-  assert.deepEqual(
-    rows.map((row) => row.id),
-    ["failed-1", "failed-2"],
-  );
+test("the bell lists every conversation, including completed ones", () => {
+  assert.match(componentSource, /mergeNotificationsBySession\(storedNotifications\)/);
+  assert.doesNotMatch(componentSource, /notification\.kind !== "task\.completed"/);
+  assert.match(componentSource, /"notifications\.completedTitle"/);
+  assert.match(componentSource, /"notifications\.completedBody"/);
+  assert.match(componentSource, /"notifications\.failedTitle"/);
 });
 
-test("inbox unread count ignores unread completions", () => {
-  assert.equal(
-    inboxUnreadCount([
-      notification({ id: "done-1" }),
-      notification({ id: "done-2" }),
-      notification({ id: "failed-1", kind: "task.failed" }),
-      notification({ id: "failed-2", kind: "task.failed", readAt: "2026-09-04T10:02:00.000Z" }),
-    ]),
-    1,
-  );
-  assert.equal(inboxUnreadCount([notification({ id: "done-1" })]), 0);
+test("the bell badge counts unread conversations", () => {
+  assert.match(componentSource, /unreadSessionIds\(storedNotifications\)/);
+  assert.match(componentSource, /const unreadCount = unreadSessions\.size;/);
+  assert.match(componentSource, /unreadSessions\.has\(notification\.sessionId\)/);
 });
 
-test("notification center renders the filtered inbox instead of the raw store", () => {
-  assert.match(componentSource, /inboxNotifications\(storedNotifications\)/);
-  assert.match(componentSource, /inboxUnreadCount\(storedNotifications\)/);
+test("selecting a row settles the whole conversation", () => {
+  assert.match(componentSource, /onClick=\{\(\) => void activateNotification\(notification\)\}/);
+  assert.match(catalogSource, /item\.sessionId === notification\.sessionId && !item\.readAt/);
+  assert.match(catalogSource, /await get\(\)\.markNotificationRead\(item\.id\)/);
+  assert.match(catalogSource, /await get\(\)\.selectSession\(notification\.sessionId, \{/);
 });
 
-test("notification center actions can clear taskbar-only completed outcomes", () => {
-  assert.match(componentSource, /const allUnreadCount = useAppStore\(/);
-  assert.match(componentSource, /state\.unreadNotificationCount/);
+test("toolbar actions stay available for every retained row", () => {
   assert.match(componentSource, /disabled=\{busy \|\| allUnreadCount === 0\}/);
   assert.match(componentSource, /disabled=\{busy \|\| storedNotifications\.length === 0\}/);
 });

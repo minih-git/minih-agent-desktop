@@ -2,12 +2,13 @@ import { deflateSync } from "node:zlib";
 import type { WebContents } from "electron";
 
 /**
- * OS shell badge for durable task outcomes.
+ * OS shell badge for durable notifications.
  *
- * Count = ALL unread `task.completed` + `task.failed` rows (host
- * `notification.list` unreadCount). This is intentionally different from the
- * D295 bell inbox in `notification-inbox.ts`, which still lists and badges
- * failures only.
+ * Count = ALL unread rows (host `notification.list` unreadCount): task outcomes
+ * plus pending `prompt.*` reminders, because a blocked request is at least as
+ * worth a badge as a finished turn. D664 made the bell list the same rows, so
+ * the popover badge and this shell badge agree; the overlay exists so a
+ * minimized window still shows the count.
  *
  * Display policy: counts 1–99 show the real digit string; counts ≥100 show
  * "99+" so a Windows overlay stays readable.

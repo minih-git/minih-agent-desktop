@@ -1000,24 +1000,35 @@ CREATE INDEX idx_audit_session ON audit_log(session_id, ts)
   WHERE session_id IS NOT NULL;
 ```
 
-### 4.14 notifications — 持久本地收件箱 (D117)
+### 4.14 notifications — 持久本地收件箱 (D117, D663)
 
-一行记录了一个终端代理轮转结果，该结果在
-当前聊天的焦点。它仅存储结构化源数据；渲染器和
+一行记录两种事实之一：一个尚未在当前聚焦聊天中可见的终端代理回合结果，
+或一个运行时正在等待用户回应的交互请求。它仅存储结构化源数据；渲染器和
 Electron 在表示边界处派生本地化的 title/body 字符串。
 
 ```sql
 CREATE TABLE notifications (
   id            TEXT PRIMARY KEY,
   kind          TEXT NOT NULL
-                  CHECK (kind IN ('task.completed', 'task.failed')),
+                  CHECK (kind IN ('task.completed', 'task.failed',
+                                  'prompt.ask', 'prompt.permission',
+                                  'prompt.plan')),
   session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  session_title TEXT NOT NULL,              -- snapshot at terminal transition
-  turn_id       TEXT NOT NULL UNIQUE,       -- exactly one inbox row per turn
-  error_code    TEXT,                       -- populated for task.failed when known
+  session_title TEXT NOT NULL,              -- 插入时的快照
+  turn_id       TEXT,                       -- task：每个回合恰好一行；
+                                            -- prompt：被阻塞的回合，不作去重键
+  request_id    TEXT,                       -- prompt：每个请求恰好一行
+  tool_name     TEXT,                       -- 仅 prompt.permission
+  error_code    TEXT,                       -- task.failed 已知时填充
   created_at    INTEGER NOT NULL,
   read_at       INTEGER
 );
+CREATE UNIQUE INDEX idx_notifications_turn
+  ON notifications(turn_id)
+  WHERE turn_id IS NOT NULL
+    AND kind IN ('task.completed', 'task.failed');
+CREATE UNIQUE INDEX idx_notifications_request
+  ON notifications(request_id) WHERE request_id IS NOT NULL;
 CREATE INDEX idx_notifications_created
   ON notifications(created_at DESC);
 CREATE INDEX idx_notifications_unread
@@ -1029,17 +1040,21 @@ CREATE INDEX idx_notifications_unread
   在**同一笔交易**中。仅当主窗口时 Electron 才会传递 false
   是 visible/focused 并且该确切会话是当前聊天。 `aborted`
   从不插入行。
-- 重复终端更新无法复制通知，因为
-  `turn_id` 是独一无二的。仅当此调用时，RPC 结果才包含记录
-  插入它；否则，`notification` 字段将被省略。
+- `notification.recordPrompt` 在渲染层上报交互请求时插入一行
+  `prompt.ask` / `prompt.permission` / `prompt.plan`。提问行记录被阻塞的
+  `turn_id`，但从不占用该键：`turn_id` 唯一索引只覆盖 task 家族，因此一个
+  回合可以多次提问，并仍然拥有它唯一的终端行。
+- 重复终端更新无法复制通知，因为 task 行的 `turn_id` 唯一；重复提问事件
+  也无法复制提醒，因为 `request_id` 在提问行之间唯一。仅当此调用插入
+  记录时，RPC 结果才包含它；否则 `notification` 字段被省略或为 null。
 - `session_title` 是通知创建时的稳定会话名称快照，
   不是本地化通知 title/body。空标题仍然有效，并且
   仅在演示时接收本地化的“无标题任务”回退。
-- 不存储 title/body 散文。权限请求、预定提醒、
-  插件通知和中止的回合不是通知源。
+- 不存储 title/body 散文，提问行也从不存储问题或工具参数。预定提醒、
+  插件通知和中止的回合不是通知源；权限、询问与计划请求是通知源，且仅以
+  `prompt.*` 行的形式出现。
 - 插入后，同一事务将除最新的 200 行之外的所有行删减
-`(created_at DESC, id DESC)`。这是全球上限；会话删除也
-  级联其行。
+  `(created_at DESC, id DESC)`。这是全局上限；会话删除也级联其行。
 - 标记读取更新是幂等的（`read_at` 仅从 null 更改），标记所有
   read 是一项索引更新，而clear 仅删除通知行。没有一个
   这些操作会更改会话、回合或记录。

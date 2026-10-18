@@ -31,7 +31,7 @@ test("notification center exposes an accessible sidebar footer trigger and dialo
 
 test("notification center supports filtering, bulk actions, and session navigation", () => {
   assert.match(componentSource, /filter === "unread"/);
-  assert.match(componentSource, /notification\.readAt/);
+  assert.match(componentSource, /unreadSessions\.has\(notification\.sessionId\)/);
   assert.match(componentSource, /aria-pressed=\{filter === value\}/);
   assert.match(componentSource, /markAllNotificationsRead/);
   assert.match(componentSource, /clearNotifications/);

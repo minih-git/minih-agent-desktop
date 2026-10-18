@@ -1,6 +1,7 @@
 import { app, nativeImage, type BrowserWindow } from "electron";
 import {
   IPC,
+  unreadSessionCount,
   type NotificationListResult,
 } from "@minih-agent/shared";
 import type { HostProcess } from "./host-process";
@@ -19,8 +20,9 @@ const REFRESH_AFTER_INVOKE = new Set<string>([
 ]);
 
 /**
- * Main-owned shell badge for unread durable task notifications.
- * Uses host unreadCount (completed + failed). Does not change D295 bell filtering.
+ * Main-owned shell badge for conversations with unread notifications.
+ * Counts the retained rows per conversation (D664), so the overlay always
+ * equals the bell badge.
  *
  * `desiredCount` is what we last learned from the host; `appliedCount` is what we
  * successfully painted onto the OS shell. Windows overlay needs a live BrowserWindow,
@@ -161,7 +163,7 @@ export function createTaskbarUnreadBadge({
         try {
           const inbox = await host.call<NotificationListResult>(
             "notification.list",
-            { limit: 1 },
+            { limit: 200 },
           );
           if (isQuitting()) return;
           if (host !== getHost()) {
@@ -169,7 +171,7 @@ export function createTaskbarUnreadBadge({
             continue;
           }
           if (observed !== revision) continue;
-          await apply(inbox.unreadCount ?? 0);
+          await apply(unreadSessionCount(inbox.notifications ?? []));
         } catch (error) {
           if (host !== getHost()) {
             revision += 1;

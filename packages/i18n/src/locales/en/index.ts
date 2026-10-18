@@ -2861,6 +2861,8 @@ importConfirm: "Imported extensions run inside the agent process with the same a
     askTitle: "A question needs your answer",
     askBody: "{{question}}",
     askBodyFallback: "The task requires your response to proceed.",
+    promptAskTitle: "{{sessionTitle}} has a question for you",
+    promptAskBody: "Open the chat and answer it so the task can continue.",
     permissionTitle: "{{sessionTitle}} needs tool approval",
     permissionBody: "Permission required to run {{toolName}}.",
     planApprovalTitle: "{{sessionTitle}} plan awaiting approval",
