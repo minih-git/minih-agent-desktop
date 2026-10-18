@@ -97,7 +97,6 @@ import {
   IconArrowUpDown,
   IconPlug,
   IconBranch,
-  IconCheck,
   IconChevronDown,
   IconCopy,
   IconCircleAlert,
@@ -1174,7 +1173,6 @@ export function Sidebar({
                 });
     return (
       <span className={`thread-item-status ${status}`} aria-label={label} title={label}>
-        {status === "completed" ? <IconCheck size={10} aria-hidden /> : null}
         {status === "failed" ? <IconCircleAlert size={11} aria-hidden /> : null}
       </span>
     );

@@ -319,13 +319,17 @@
   transform: translateY(-50%);
 }
 
-.thread-item-status.running::before {
+.thread-item-status.running::before,
+.thread-item-status.completed::before {
   width: 7px;
   height: 7px;
   border-radius: var(--radius-full);
+  content: "";
+}
+
+.thread-item-status.running::before {
   background: var(--ds-warning);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--ds-warning) 15%, transparent);
-  content: "";
   animation: sidebar-status-breathe 1.6s ease-in-out 2;
 }
 
@@ -347,16 +351,13 @@
   content: "";
 }
 
-.thread-item-status.completed {
-  color: var(--ds-success);
+.thread-item-status.completed::before {
+  background: var(--ds-success);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ds-success) 15%, transparent);
 }
 
 .thread-item-status.failed {
   color: var(--ds-error);
-}
-
-.thread-item-status.completed svg {
-  stroke-width: 3;
 }
 
 .thread-item-status.failed svg {

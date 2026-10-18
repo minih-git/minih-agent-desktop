@@ -173,8 +173,9 @@ is still the only selected host workspace; retained groups do not create
 parallel workspace singletons. This supersedes D088's one-current-project
 sidebar limitation while preserving its exact-path and Temporary boundaries.
 **Refined in D135**: each conversation row uses a fixed leading status slot
-with distinct color and geometry: accent-blue selection ring, warning-orange
-breathing in-progress dot, success-green check, and error-red alert. In-progress
+with semantic color and shape: accent-blue selection ring, warning-orange
+breathing in-progress dot, static success-green solid completion dot with the
+same diameter and halo, and error-red alert. In-progress
 outranks selection, selection outranks the latest terminal outcome, and reduced
 motion keeps the in-progress dot static.
 
