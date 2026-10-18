@@ -1,8 +1,8 @@
 //! Learned-memory RPC sub-dispatch (ADR agent-long-term-memory).
 //!
-//! Every mutation goes through here, so the validation in `crate::memory` cannot
-//! be bypassed by a caller: the desktop manager, the explicit remember tool, and
-//! the optional extractor all speak the same methods.
+//! Every learned-memory mutation a client can make goes through here, and the
+//! rules themselves live in `crate::memory`, so the desktop manager, the explicit
+//! remember tool, and the optional extractor cannot each invent their own.
 
 use super::{json, rpc_err, AppState, JsonRpcError, Value};
 use crate::db::Database;
@@ -12,9 +12,9 @@ use crate::db::Database;
 mod tests;
 use crate::memory::{
     is_known, CreateMemoryOutcome, CreateMemoryRequest, MemoryScope, SearchMemoryRequest,
-    StatusMemoryOutcome, UpdateMemoryOutcome, UpdateMemoryRequest, EVIDENCES, EVIDENCE_USER_STATED,
-    EXTRACTION_LEASE_MS, KINDS, MAX_LIST_LIMIT, MAX_SEARCH_LIMIT, ORIGINS, ORIGIN_USER_UI, SCOPES,
-    SCOPE_PROJECT, SCOPE_USER, STATUSES, STATUS_ACTIVE, STATUS_ARCHIVED,
+    StatusMemoryOutcome, SuggestionOutcome, UpdateMemoryOutcome, UpdateMemoryRequest, EVIDENCES,
+    EVIDENCE_USER_STATED, EXTRACTION_LEASE_MS, KINDS, MAX_LIST_LIMIT, MAX_SEARCH_LIMIT, ORIGINS,
+    ORIGIN_USER_UI, SCOPES, SCOPE_PROJECT, SCOPE_USER, STATUSES, STATUS_ACTIVE, STATUS_ARCHIVED,
 };
 
 pub(super) fn handle(st: &AppState, method: &str, params: Value) -> Result<Value, JsonRpcError> {
@@ -195,8 +195,10 @@ fn decide_suggestion(db: &Database, params: &Value) -> Result<Value, JsonRpcErro
         _ => return Err(invalid_params("decision must be accept or reject")),
     };
     match db.decide_memory_suggestion(id, accept).map_err(internal)? {
-        Some(entry) => Ok(json!({ "entry": entry })),
-        None => Err(not_found("suggestion not found")),
+        SuggestionOutcome::Accepted(entry) => Ok(json!({ "entry": entry })),
+        // A rejection erases the suggestion, so there is no entry left to report.
+        SuggestionOutcome::Rejected => Ok(json!({ "rejected": true })),
+        SuggestionOutcome::NotFound => Err(not_found("suggestion not found")),
     }
 }
 

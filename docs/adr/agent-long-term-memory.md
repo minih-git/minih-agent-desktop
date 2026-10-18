@@ -1,6 +1,6 @@
 # ADR agent-long-term-memory: Layered, provenance-tracked long-term memory
 
-- Status: Accepted for implementation (D667)
+- Status: Accepted for implementation (D668)
 - Date: 2026-10-18
 - Amends: ADR 0234 (project memory stays the pinned layer)
 - Related: ADR 0249, ADR 0323, ADR 0329, ADR session-content-search,
@@ -113,14 +113,19 @@ keep the main project's identity (ADR 0329), so all worktrees of a project
 share learned memory, and remote workspace sessions use the same identity as
 pinned memory. Only `project` and `user` scopes exist.
 
-Learned memory follows the pinned-memory lifecycle of ADR 0249 groups.
-Upgrading legacy roots into a group re-keys their path-scoped entries,
-tombstones, and session state to the group in the same transaction,
-deduplicating by fingerprint. Removing a root leaves the group's memory with
-the group. Deleting a group record deletes its group-scoped learned memory.
+Learned memory follows the pinned-memory lifecycle of ADR 0249 groups. A
+folder that becomes a root of a group — whether the group is created around
+projects that were already saved, or a stored group gains a root — hands its
+path-scoped entries, tombstones, and session state to the group in the same
+transaction, deduplicating by fingerprint and merging the source messages of
+tombstones that share one. Removing a root leaves the group's memory with the
+group. Deleting a group record deletes its group-scoped learned memory.
 
-All mutations go through host RPCs. Updates are compare-and-set on
-`revision`, so a background writer can never overwrite a user edit.
+All mutations go through host RPCs and one shared set of host rules, so a
+caller cannot store an extracted entry as active, invent a suggestion, or
+record a preference from content the user did not write. Updates are
+compare-and-set on `revision`, so a background writer can never overwrite a
+user edit.
 
 ### 3. Write paths
 
@@ -136,13 +141,20 @@ All mutations go through host RPCs. Updates are compare-and-set on
    edits, archives, restores, and deletes entries, and reviews suggestions.
 3. **Optional extraction (off by default).** See §4. It only ever creates
    `suggested` entries. A suggestion becomes `active` only through user
-   confirmation in v1.
+   confirmation in v1. The host enforces the pairing: `origin = extracted` and
+   `status = suggested` are required together, so no writer can store an
+   extracted entry as active or invent a suggestion.
 
 Every writer enforces the same rules:
 
 - `preference` and `feedback` entries require `evidence = user_stated` and
-  must cite at least one user-authored message in the source session. The
-  host verifies the cited messages exist and have role `user`. Tool results,
+  must cite **only** messages the user wrote: every cited message must belong to
+  a real turn of the source session, exist there with role `user`, and not be a
+  message another agent or plugin delivered into that session — a delivered
+  message is stored with role `user` too, and only the delivery ledger
+  distinguishes it. A copy that lost its turn reference (the prefix a fork
+  copies, an imported session) therefore cannot stand in for user input either,
+  which is what keeps a forked delivery from becoming a preference. Tool results,
   file or web content, MCP responses, subagent output, injected instructions,
   and skill documents are never valid evidence for these kinds.
 - Content is rejected when it matches a new host-side credential detector
@@ -165,7 +177,8 @@ When enabled, an Electron main memory service (a new module, not added to
   interval. Nothing runs during a turn or at shutdown.
 - **Input:** user-authored messages after the session cursor plus the
   latest compaction summary, bounded by a byte budget. Tool output is not
-  sent.
+  sent, and a message another agent or plugin delivered into the session is
+  not user-authored input either.
 - **Model:** a user-selected model via the existing one-shot completion path
   (`completeOneShot`), with per-run and daily budgets shown in Settings.
 - **Durability:** the host-owned cursor and lease make runs idempotent across
@@ -173,7 +186,9 @@ When enabled, an Electron main memory service (a new module, not added to
   retried with backoff; excluded sessions are skipped.
 - **Output:** at most a small number of typed candidates with cited message
   ids, validated by the host (§3 rules, tombstones, deduplication by
-  fingerprint) before they are stored as `suggested`.
+  fingerprint) before they are stored as `suggested`. The host rejects any
+  write that pairs extraction with another status, so this path cannot store
+  an active entry even if the service asks for one.
 
 This keeps ADR 0323 intact: no user flow waits on the model, and model cost is
 opt-in.
@@ -206,13 +221,15 @@ opt-in.
 
 ### 6. Forgetting is a host guarantee
 
-- **Delete** archives the entry and writes a tombstone with its fingerprint
-  and source message ids. Extraction and every create path drop candidates
-  whose fingerprint or cited source messages match a tombstone, so the same
-  evidence can never resurrect a deleted memory. An explicit user request to
-  remember the same content again clears the tombstone.
-- **Rejecting a suggestion** writes the same tombstone, so a rejected
-  suggestion is not proposed again from the same evidence.
+- **Delete** erases the entry — the row and its full-text index entries are
+  removed, so the text cannot be read back or restored — and writes a tombstone
+  with its fingerprint and source message ids. Extraction and every create path
+  drop candidates whose fingerprint or cited source messages match a tombstone,
+  so the same evidence can never resurrect a deleted memory. An explicit user
+  request to remember the same content again clears the tombstone. Archive and
+  restore stay a reversible hide and never write a tombstone.
+- **Rejecting a suggestion** erases the suggestion and writes the same
+  tombstone, so it is not proposed again from the same evidence.
 - **Separate switches:** "use learned memory" (read, default on), "learn
   automatically" (extraction, default off), and a per-session "don't learn
   from this conversation". Turning reading off hides the index and the memory
@@ -281,7 +298,7 @@ clients show the tools as generic tool rows).
   measured suggestion quality.
 - **Embeddings.** Deferred until literal and FTS recall measurably fails.
 
-## Resolved decisions (D667)
+## Resolved decisions (D668)
 
 - **Learn automatically is off by default.** Extraction needs a model the
   user chooses and spends the user's quota, so it cannot be on before that

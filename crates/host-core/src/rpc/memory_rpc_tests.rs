@@ -113,7 +113,8 @@ async fn memory_rpc_round_trips_an_entry_through_its_lifecycle() {
     .unwrap();
     assert_eq!(updated["entry"]["revision"], json!(2));
 
-    // Forget, then the same content cannot come back.
+    // Forget, then the same content cannot come back. The row is erased, so a
+    // repeated delete has nothing left to forget and hiding cannot reach it.
     let deleted = call(&state, "memory.delete", json!({ "id": id }))
         .await
         .unwrap();
@@ -121,7 +122,16 @@ async fn memory_rpc_round_trips_an_entry_through_its_lifecycle() {
     let deleted_again = call(&state, "memory.delete", json!({ "id": id }))
         .await
         .unwrap();
-    assert_eq!(deleted_again["ok"], json!(true));
+    assert_eq!(deleted_again["ok"], json!(false));
+    for method in ["memory.restore", "memory.archive"] {
+        let gone = call(&state, method, json!({ "id": id })).await.unwrap_err();
+        assert_eq!(gone.code, 1007, "{method} must not reach a deleted memory");
+        assert_eq!(error_code(&gone), "NOT_FOUND");
+    }
+    let listed = call(&state, "memory.list", json!({ "path": project }))
+        .await
+        .unwrap();
+    assert!(listed["entries"].as_array().unwrap().is_empty());
     let refused = call(
         &state,
         "memory.create",
@@ -305,4 +315,123 @@ async fn memory_rpc_keeps_a_session_out_of_the_extractor() {
     .await
     .unwrap();
     assert_eq!(state_value["state"]["excluded"], json!(true));
+}
+
+#[tokio::test]
+async fn memory_rpc_keeps_extraction_and_suggestions_paired() {
+    let (dir, state) = open().await;
+    let project_dir = dir.path().join("app");
+    std::fs::create_dir_all(&project_dir).unwrap();
+    let project = canonical_project_path(project_dir.to_str().unwrap()).unwrap();
+
+    // Extraction may only propose.
+    let active = call(
+        &state,
+        "memory.create",
+        json!({
+            "path": project,
+            "kind": "fact",
+            "content": "Deploys on Fridays.",
+            "origin": "extracted"
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(active["rejected"]["code"], json!("MEMORY_INVALID_FIELD"));
+    for origin in ["explicit", "user_ui"] {
+        let refused = call(
+            &state,
+            "memory.create",
+            json!({
+                "path": project,
+                "kind": "fact",
+                "content": "Deploys on Fridays.",
+                "origin": origin,
+                "status": "suggested"
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            refused["rejected"]["code"],
+            json!("MEMORY_INVALID_FIELD"),
+            "{origin} cannot create a suggestion"
+        );
+    }
+
+    let suggestion = call(
+        &state,
+        "memory.create",
+        json!({
+            "path": project,
+            "kind": "fact",
+            "content": "Deploys on Fridays.",
+            "origin": "extracted",
+            "status": "suggested"
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(suggestion["entry"]["status"], json!("suggested"));
+    let id = suggestion["entry"]["id"].as_str().unwrap().to_string();
+    // A suggestion is not part of the index until the user accepts it.
+    let index = call(&state, "memory.index", json!({ "path": project }))
+        .await
+        .unwrap();
+    assert!(index["index"]["entries"].as_array().unwrap().is_empty());
+
+    let accepted = call(
+        &state,
+        "memory.suggestions.decide",
+        json!({ "id": id, "decision": "accept" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(accepted["entry"]["status"], json!("active"));
+
+    // A rejected suggestion is erased, and its evidence is blocked afterwards.
+    let second = call(
+        &state,
+        "memory.create",
+        json!({
+            "path": project,
+            "kind": "fact",
+            "content": "Reviews on Mondays.",
+            "origin": "extracted",
+            "status": "suggested"
+        }),
+    )
+    .await
+    .unwrap();
+    let second_id = second["entry"]["id"].as_str().unwrap().to_string();
+    let rejected = call(
+        &state,
+        "memory.suggestions.decide",
+        json!({ "id": second_id, "decision": "reject" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(rejected["rejected"], json!(true));
+    let gone = call(
+        &state,
+        "memory.suggestions.decide",
+        json!({ "id": second_id, "decision": "accept" }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error_code(&gone), "NOT_FOUND");
+    let again = call(
+        &state,
+        "memory.create",
+        json!({
+            "path": project,
+            "kind": "fact",
+            "content": "Reviews on Mondays.",
+            "origin": "extracted",
+            "status": "suggested"
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(again["rejected"]["code"], json!("MEMORY_TOMBSTONED"));
 }

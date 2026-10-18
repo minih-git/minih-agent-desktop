@@ -1,7 +1,7 @@
 # Long-term memory implementation plan
 
 - Decision record: [ADR agent-long-term-memory](../adr/agent-long-term-memory.md)
-  (Accepted for implementation, D667)
+  (Accepted for implementation, D668)
 - Status: Ready; no milestone started
 - Baseline: `main` at `ce48410f4` (v0.21.2), host schema v25
 - Scope: learned memory, history recall, explicit remember, optional
@@ -122,20 +122,27 @@ Host RPCs (names final in `06-host-rpc-protocol.md`):
 | `memory.list` | Entries for a scope, filter by status/kind | Paged |
 | `memory.search` | FTS + literal fallback in scope(s) | Updates `last_used_at` only with `recordUse: true` |
 | `memory.index` | Session-start index for a project | Budgeted, deterministic order |
-| `memory.create` | New entry | Runs all validation; returns `rejected` reasons |
-| `memory.update` | Edit content/kind/scope | CAS on `revision` |
-| `memory.archive` / `memory.restore` | Hide / unhide | No tombstone |
-| `memory.delete` | Forget | Archives + tombstone; idempotent |
-| `memory.suggestions.decide` | Accept / reject a suggestion | Reject writes a tombstone |
+| `memory.create` | New entry | Runs all validation; returns `rejected` reasons; `extracted` and `suggested` are required together |
+| `memory.update` | Edit content/kind/scope | CAS on `revision`; provenance is re-checked only when the kind becomes `preference` / `feedback` |
+| `memory.archive` / `memory.restore` | Hide / unhide | No tombstone; a deleted entry is gone, so both report `NOT_FOUND` |
+| `memory.delete` | Forget | Erases the row + writes a tombstone; idempotent (`ok: false` when nothing is left) |
+| `memory.suggestions.decide` | Accept / reject a suggestion | Reject erases the suggestion and writes a tombstone |
 | `memory.session.setExcluded` | "Don't learn from this conversation" | |
 | `memory.extraction.*` | Claim, complete, fail (M4) | Lease + cursor |
 
 Validation (host, every write path):
 
 - Size limits; non-empty content; enum checks.
-- `preference` / `feedback` need `evidence = user_stated` and at least one
-  `source_message_ids` entry that exists in `source_session_id` with role
-  `user`.
+- `preference` / `feedback` need `evidence = user_stated` and must cite only
+  messages the user wrote: **every** `source_message_ids` entry must belong to a
+  real turn of `source_session_id` (`turn_id IS NOT NULL`), exist there with role
+  `user`, and not belong to a turn the delivery ledger
+  (`session_collaboration_messages`) claims — a message another agent or plugin
+  delivered into the session is stored with role `user` too. The turn requirement
+  also excludes copies with no turn reference (a forked prefix, an imported
+  session), which is what keeps a forked delivery from becoming a preference.
+- `origin = extracted` and `status = suggested` are required together, so
+  extraction can only propose and only extraction may propose.
 - Credential detector rejects; rejected text never reaches logs.
 - Tombstone match on fingerprint or on any cited source message blocks the
   write unless `origin = explicit` with `overrideTombstone: true`.
@@ -145,27 +152,39 @@ Lifecycle hooks: project removal (`projects.remove`) deletes the project's
 entries and tombstones in the same transaction as the existing project memory
 cleanup; session deletion cascades `memory_session_state`; data relocation and
 backup include the new tables. Group lifecycle mirrors pinned memory in
-`crates/host-core/src/db/project_groups.rs`: the legacy-to-group upgrade
-re-keys path-scoped learned memory to the group in the same transaction,
-root removal keeps it with the group, and `delete_project_group_record`
-deletes group-scoped learned memory.
+`crates/host-core/src/db/project_groups.rs`: any folder that becomes a root of a
+group — the legacy-to-group upgrade, a new group created around saved projects,
+or a stored group gaining a root — re-keys its path-scoped learned memory to the
+group in the same transaction, merging tombstones that share a fingerprint;
+root removal keeps it with the group, and `delete_project_group_record` deletes
+group-scoped learned memory.
 
 Tests (Rust, `cargo test -p host-core --locked`):
 
 - Migration from a v25 fixture with existing `projectMemory` kv data:
   pinned memory unchanged, new tables empty, version 26.
-- Provenance: tool-role or assistant-role citation rejected for preference.
+- Provenance: tool-role or assistant-role citation rejected for preference; a
+  delivered agent message rejected even though its role is `user`; a mixed
+  citation rejected because every cited message must qualify; a forked copy of a
+  delivered message rejected because the fork carries no turn reference, while a
+  message the user writes in the branch after the fork is accepted.
+- A preference stays editable after its source session is deleted, while a kind
+  change into `preference` / `feedback` is still checked.
 - CAS conflict returns a typed error and leaves the row unchanged.
 - Delete then re-create from the same source is blocked; explicit override
-  succeeds and clears the tombstone.
+  succeeds and clears the tombstone; a deleted row and its full-text index entry
+  are gone, so neither restore nor archive can reach it.
+- `extracted` + `active`, `explicit` + `suggested`, and `user_ui` + `suggested`
+  are rejected; accepting a suggestion is the only way to activate one.
 - Credential samples rejected; the error carries no content.
 - Scope isolation: project A never lists project B; worktree session resolves
   to the main project scope.
 - Project removal cascade.
-- Group lifecycle: upgrading legacy roots into a group re-keys their learned
-  entries, tombstones, and session state to the group, deduplicating by
-  fingerprint; removing a root keeps the group's memory; deleting a group
-  record deletes its group-scoped learned memory.
+- Group lifecycle: a folder that joins a group — through the legacy upgrade, a
+  new group over saved projects, or a stored group gaining a root — brings its
+  entries, tombstones, and session state, deduplicating by fingerprint and
+  merging tombstone source messages; removing a root keeps the group's memory;
+  deleting a group record deletes its group-scoped learned memory.
 - Existing storage E2E: `pnpm test:e2e:storage` (migration path).
 
 Exit: RPCs documented, schema and spec updated, all host tests green, no
@@ -374,7 +393,7 @@ the index and both memory tools; it does not delete data.
 | `docs/spec/04-ux/06-settings-ia.md`, `08-component-spec.md` | M3, M4 |
 | `docs/spec/03-runtime/22-config-sync.md` | M5 |
 | `docs/spec/06-delivery/04-e2e-test-plan.md` (scenarios above) | each |
-| `docs/spec/08-meta/decisions-log.md` (D667) | Done with the ADR |
+| `docs/spec/08-meta/decisions-log.md` (D668) | Done with the ADR |
 | User guide page for memory | M3 |
 
 ## 5. Risks and mitigations
@@ -389,7 +408,7 @@ the index and both memory tools; it does not delete data.
 | Schema downgrade | Existing schema-version policy, migration tests, storage E2E | Older app cannot open v26 |
 | Background cost surprise | Off by default, explicit model, daily budget, visible usage | None expected |
 
-## 6. Resolved decisions (D667)
+## 6. Resolved decisions (D668)
 
 1. "Learn automatically" is off by default and cannot be enabled until an
    extraction model is selected.
