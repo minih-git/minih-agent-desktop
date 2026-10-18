@@ -21,6 +21,7 @@ import {
   isKnownWorkPanelTab,
   parsePluginViewRef,
   pluginWorkPanelTab,
+  sideNotesWorkPanelTab,
   subagentTabDisplayLabels,
   toolWorkPanelTab,
 } from "../../lib/work-panel-tabs";
@@ -33,6 +34,7 @@ import { TooltipButton } from "../ui";
 import type { IconProps } from "../icons";
 import {
   IconBot,
+  IconChat,
   IconClose,
   IconDiff,
   IconFileText,
@@ -45,6 +47,7 @@ import { ReviewTab } from "./ReviewTab";
 import { FilesTab } from "./FilesTab";
 import { PluginViewTab } from "./PluginViewTab";
 import { SubagentTranscriptTab } from "./SubagentTranscriptTab";
+import { SideNotesTab } from "./SideNotesTab";
 import {
   MAIN_PANE_MIN_WIDTH,
   WORK_PANEL_COMPACT_MIN_WIDTH,
@@ -61,6 +64,7 @@ const TAB_ICONS = {
   file: IconFileText,
   plugin: IconPlug,
   subagent: IconBot,
+  sideNotes: IconChat,
 } as const;
 
 type WorkPanelResizeState = {
@@ -124,14 +128,20 @@ function workPanelTools(
   t: (key: string) => string,
   pluginViews: PluginViewMeta[],
 ): WorkPanelTool[] {
-  // Review is the only host-owned launcher. Files, Browser, and every future
-  // tool are plugin-contributed views, so their list stays data-driven.
+  // Review and side notes are host-owned launchers. Files, Browser, and every
+  // future tool are plugin-contributed views, so their list stays data-driven.
   return [
     {
       id: "review",
       tab: toolWorkPanelTab("review"),
       label: t("panel.tabs.review"),
       icon: IconDiff,
+    },
+    {
+      id: "sideNotes",
+      tab: sideNotesWorkPanelTab(),
+      label: t("panel.tabs.sideNotes"),
+      icon: IconChat,
     },
     ...pluginViews.map((view) => {
       const Icon = pluginViewIcon(view.icon);
@@ -926,6 +936,17 @@ function LocalWorkPanel({
               aria-labelledby={`work-panel-tab-${activeTab.id}`}
             >
               <SubagentTranscriptTab delegationId={activeTab.resource ?? ""} />
+            </div>
+          )}
+          {activeTab?.kind === "sideNotes" && (
+            <div
+              key={activeSessionId ?? "none"}
+              id={`work-panel-surface-${activeTab.id}`}
+              className="work-panel-tabpane"
+              role="tabpanel"
+              aria-labelledby={`work-panel-tab-${activeTab.id}`}
+            >
+              <SideNotesTab />
             </div>
           )}
           {activeTab?.kind === "review" && (

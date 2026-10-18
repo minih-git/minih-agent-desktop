@@ -495,6 +495,7 @@ async function handle(method: string, params: any): Promise<unknown> {
         { text: String(params.content ?? ""), attachments: params.attachments, mcpServerIds: parseMcpServerIds(params.mcpServerIds), mcpToolNames: parseMcpToolNames(params.mcpToolNames) },
         expectedTurnId,
         params.message,
+        { sideNote: params.sideNote === true },
       );
     }
     case "agent.executeApprovedPlan": {

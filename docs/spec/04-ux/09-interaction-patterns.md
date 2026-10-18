@@ -860,6 +860,12 @@ may be retained while exactly one workspace supplies the visible shell context.
 - The Send tooltip identifies follow-up and uses the platform's key labels
   for the steering shortcut (`⌥+Enter` on macOS). The
   existing single Send/Stop slot and Host-owned follow-up list are retained.
+- The work panel's side-notes tab sends the same kind of input from the side
+  panel instead of the composer: a note is answered inside the running turn, so
+  the task keeps going. The tab lists the session's own `sideNote` rows, newest
+  last, and its preset sends a progress-summary note in one click. While no
+  turn is running the input is disabled and explains why, because a note has no
+  turn to reach. The transcript marks such a row as a side note.
 
 ## 3A. Context checkpoint lifecycle
 

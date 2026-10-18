@@ -100,6 +100,15 @@ from pi's steering queue so it cannot execute independently on a later turn.
 An ordinary follow-up stays in the separate Host-owned FIFO until durable turn
 finalization. A steering failure must not terminate the active run.
 
+A side note is steering input with a different contract for the model.
+`steer(..., { sideNote: true })` wraps the prompt text in a fixed side-note
+framing that tells the model to answer the note briefly and continue the current
+task, changing direction only when the note asks for it. The framing is
+model-visible only: the persisted user row keeps the user's own words and
+carries `sideNote`, which is what the transcript marker and the work panel's
+side-notes list read after a reload. Admission, the durable turn, tool
+completion, Stop and failure handling are identical to ordinary steering.
+
 ### 4.1 Session title generation
 
 The core keeps new sessions readable without any model call. Sending the first

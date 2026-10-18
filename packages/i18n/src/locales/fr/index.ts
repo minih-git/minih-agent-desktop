@@ -399,6 +399,7 @@ export const fr = {
     "editQueuedPromptBusy": "Videz le champ avant de modifier ce message en attente",
     sendWhileRunning: "Envoyer à la suite · {{shortcut}} pour réorienter",
     steeringUnavailable: "Ce tour ne peut plus recevoir de consignes. Votre brouillon a été conservé.",
+    "sideNote": "Note en passant",
     nativeSessionBusy: "Cette session Pi native répond encore. Arrêtez-la ou attendez la fin de la réponse avant d'envoyer.",
     "stopGenerating": "Arrêter de générer",
     "running": "Travailler…",
@@ -2224,7 +2225,20 @@ sklm: {
       "browser": "Navigateur",
       "file": "Fichiers",
       "plugin": "Vue du plugin",
-      "subagent": "Sous-agent"
+      "subagent": "Sous-agent",
+      "sideNotes": "Notes en passant"
+    },
+    "sideNotes": {
+      "emptyTitle": "Aucune note en passant",
+      "emptyBody": "Les notes envoyées pendant que l’agent travaille apparaissent ici. La tâche en cours continue.",
+      "inputLabel": "Note en passant",
+      "placeholder": "Demandez un résumé de l’avancement ou ajustez la direction…",
+      "idlePlaceholder": "Les notes en passant sont disponibles pendant l’exécution d’une tâche",
+      "idleHint": "Une note en passant reçoit sa réponse à l’intérieur de la tâche en cours : elle ne l’interrompt pas et ne la remplace pas. Aucune tâche n’est en cours.",
+      "hint": "Envoyée dans la tâche en cours et traitée à son prochain point sûr.",
+      "send": "Envoyer",
+      "presetProgressLabel": "Résumer l’avancement",
+      "presetProgress": "Résume brièvement l’avancement actuel, puis poursuis la tâche en cours."
     },
     "pluginView": {
       "failed": "Cette vue n'a pas pu être chargée. Rechargez le plugin et réessayez."

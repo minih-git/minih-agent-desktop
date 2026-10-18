@@ -4119,6 +4119,50 @@ describe("DesktopAgentRuntime session collaboration provenance", () => {
     } finally { await runtime.dispose(); }
   });
 
+  it("frames a side note for the model while the durable row keeps the user's words", async () => {
+    const onEvent = vi.fn();
+    const runtime = createRuntime({ onEvent });
+    const agent = (runtime as any).agent;
+    const handle = (runtime as any).handleAgentEvent.bind(runtime);
+    const note = "How far along are you?";
+    let modelContent: unknown;
+    agent.prompt = vi.fn(async () => {
+      agent.state.isStreaming = true;
+      runtime.steer({ text: note }, "side-turn", {
+        id: "side-note", role: "user", content: note, status: "complete",
+        createdAt: new Date().toISOString(), steering: true, sideNote: true,
+      }, { sideNote: true });
+      agent.state.isStreaming = false;
+      const [queued] = [...(runtime as any).pendingSteering.keys()];
+      modelContent = queued.content;
+      // Consume the note the way pi injects it, so the turn keeps going
+      // instead of re-queueing the same input.
+      await handle({ type: "message_start", message: queued });
+      await handle({ type: "message_end", message: queued });
+    });
+    agent.continue = vi.fn(async () => undefined);
+    agent.waitForIdle = vi.fn(async () => undefined);
+    try {
+      await runtime.prompt(note, "side-note", "side-turn");
+      // The model reads the note inside its framing, with the text verbatim.
+      expect(typeof modelContent).toBe("string");
+      expect(modelContent).toContain(`<side-note>\n${note}\n</side-note>`);
+      expect(modelContent).toContain("side note");
+      // The row the renderer persists is the user's own words, marked as a
+      // side note so the transcript and the panel can tell it apart.
+      expect(eventsOf(onEvent)).toContainEqual(expect.objectContaining({
+        type: "message_end",
+        message: expect.objectContaining({
+          id: "side-note", content: note, sideNote: true, steering: true,
+        }),
+      }));
+      // Sending a note never cancels the turn it was sent to.
+      expect((runtime as any).runCancelled).toBe(false);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
   it("answers user steering after a silent notice reply with full recovery", async () => {
     const onEvent = vi.fn();
     const runtime = createRuntime({ onEvent });

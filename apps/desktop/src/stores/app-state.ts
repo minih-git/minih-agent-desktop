@@ -252,6 +252,8 @@ export type AppState = {
     onAccepted?: (sessionId: string) => void,
   ) => Promise<boolean>;
   steerPrompt: (content: string, draft?: ComposerDraftSnapshot) => Promise<boolean>;
+  /** Accepted input the running turn answers without being redirected by it. */
+  sendSideNote: (content: string) => Promise<boolean>;
   enqueuePrompt: (
     content: string,
     draft?: ComposerDraftSnapshot,

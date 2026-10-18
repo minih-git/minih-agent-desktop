@@ -253,6 +253,7 @@ type AgentSteerRequest = {
  content: string;
  messageId?: string;
  attachments?: AgentPromptAttachment[];
+ sideNote?: boolean;
 };
 ```
 
@@ -272,6 +273,10 @@ workspace, or approved execution. Slash text is literal input on this channel.
 Accepted input is echoed as ordinary user message events with the current
 `turnId`, main-prepared attachment refs, and `UiMessage.steering: true`. This
 persisted marker protects accepted input from Smart Stop after renderer reload.
+The optional `sideNote: true` field marks a side note on the same channel: the
+echoed row carries `UiMessage.sideNote`, and the runtime frames the
+model-visible prompt (see `02-agent-runtime.md` §4.0) while the row keeps the
+user's own words. Admission, attachment handling and persistence are unchanged.
 A native Pi `message_end` may additionally carry the optional additive
 `replacesMessageId`: the provisional streaming row id whose durable SDK entry
 this event publishes. The renderer re-keys exactly that row (active, cache,
