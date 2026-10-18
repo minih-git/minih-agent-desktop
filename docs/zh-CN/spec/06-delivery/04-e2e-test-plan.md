@@ -5858,6 +5858,7 @@ eleven-tool-round desktop paths are verified by
 | 品质（崩溃上报） | E2E-PLUGIN-crash-report-names-the-exit-code |
 | F — 持久化（存储的模型绑定数组） | E2E-PROVIDER-stored-binding-array-reads-entry-by-entry |
 | 品质（存储的模型绑定数组） | E2E-PROVIDER-stored-binding-array-reads-entry-by-entry |
+| C / F — 退出时中断运行中回合 | E2E-SESSION-quit-settles-running-turn-interrupted |
 
 `US-UI-*` 视觉场景（§UI shell 视觉场景）追踪到
 [决策日志 §D](/zh-CN/spec/08-meta/decisions-log) 中的法典平价决策
