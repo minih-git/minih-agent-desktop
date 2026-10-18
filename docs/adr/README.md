@@ -20,6 +20,7 @@ Each ADR includes:
 
 | ID | Title | Status |
 |---|---|---|
+| builtin-session-messaging | [Built-in session messaging tools](builtin-session-messaging.md) | Accepted (D663) |
 | device-local-project-lists-in-config-sync | [Device-local project lists in configuration sync](device-local-project-lists-in-config-sync.md) | Accepted |
 | router-account-configuration-backup | [Router-account hosted configuration backup](router-account-configuration-backup.md) | Accepted; supersedes the S3-only transport decision |
 | s3-only-configuration-backup-sync | [S3-only encrypted configuration backup and synchronization](s3-only-configuration-backup-sync.md) | Superseded by router-account configuration backup |

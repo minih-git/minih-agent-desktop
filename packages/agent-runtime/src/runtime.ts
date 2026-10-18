@@ -16,6 +16,7 @@ import { imageGenerationDescription, imageGenerationParameters } from "./image-g
 import { todoWriteDescription, todoWriteParameters } from "./todo-tool.js";
 import { createJevClassifierTool } from "./jev-classifier-tool.js";
 import { scheduledToolParameters, scheduledToolDescriptions } from "./scheduled-tools.js";
+import { sessionToolParameters, sessionToolDescriptions } from "./session-tools.js";
 import { withPiFileOpToolNames } from "./pi-file-ops.js";
 import { remoteMutationIdentity } from "./remote-workspace.js";
 import { randomUUID } from "node:crypto";
@@ -3243,6 +3244,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     const describe = (toolName: string): string => {
       if (toolName === "GenerateImages") return imageGenerationDescription;
       if (scheduledToolDescriptions[toolName]) return scheduledToolDescriptions[toolName];
+      if (sessionToolDescriptions[toolName]) return sessionToolDescriptions[toolName];
       switch (toolName) {
         case "BrowserPreview":
           return "Open an HTML file in Minih-Agent-Desktop's built-in browser panel. `path` may be relative to a project folder or this session's scratch directory, or an absolute path inside those roots. No project is required for scratch previews. The preview live-reloads on later edits to the file or its sibling assets, so call once per page.";
@@ -3468,7 +3470,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
             })
           : undefined;
         const abort = () => {
-          if ((!isBash && toolName !== "GenerateImages") || abortRequested || settled) return;
+          // These reach the host outside the normal tool path: a shell process,
+          // an image request, or a session delivery that may be waiting on the
+          // approval card. Stopping the turn must retract that pending approval,
+          // otherwise the card outlives the turn that justified it.
+          const hostAbortable = isBash || toolName === "GenerateImages" || toolName === "SessionSend";
+          if (!hostAbortable || abortRequested || settled) return;
           abortRequested = true;
           abortPromise = this.host
             .call("tools.abort", {
@@ -3773,7 +3780,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         label: toolName,
         description: describe(toolName),
         parameters: Type.Object(
-          scheduledToolParameters[toolName] ?? parameters[toolName] ?? { command: Type.String() },
+          scheduledToolParameters[toolName] ?? sessionToolParameters[toolName] ?? parameters[toolName] ?? { command: Type.String() },
         ),
         // Normalizing here, above the write lock, means every consumer below
         // this line — the lock key, the host call, the transcript record — sees
@@ -3862,6 +3869,9 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         : ["Read", "Glob", "Grep", "BrowserPreview", "Bash", "Write", "Edit"];
     if (this.mode === "agent") {
       tools.push("PluginScaffold", "PluginPack", "GenerateImages", ...Object.keys(scheduledToolParameters));
+      // Cross-session delivery (ADR builtin-session-messaging) is Agent-only: a
+      // Plan or Goal turn must not hand work to another Agent.
+      tools.push(...Object.keys(sessionToolParameters));
     }
     const builtins = tools.map(exec);
     const jevTools: AgentTool[] =

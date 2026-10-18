@@ -7,6 +7,22 @@ import type { ProcessExitHandler, StderrHandler } from "./host-process.js";
 // process's last words instead of a bare "agent sidecar exited".
 const SIDECAR_STDERR_TAIL_LINES = 40;
 
+/**
+ * Main-owned tools that must pass host-core's `tools.execute` gate before they
+ * run.
+ *
+ * A local tool executes in Electron main, outside host-core's permission
+ * boundary, so the gate is the only place Ask/Auto and contract-mode rules
+ * apply. `GenerateImages` and the session tools spend real quota, so they are
+ * gated; read-only bridges like `BrowserPreview` are not.
+ */
+const GATED_LOCAL_TOOLS: ReadonlySet<string> = new Set([
+  "GenerateImages",
+  "SessionList",
+  "SessionSend",
+  "SessionResult",
+]);
+
 export type SidecarNotificationHandler = (method: string, params: unknown) => void;
 
 /** Result shape the sidecar's tool executor expects from tools.execute. */
@@ -19,6 +35,14 @@ export type LocalToolResult = {
 
 export type LocalToolHandler = (input: {
   sessionId: string;
+  /**
+   * The turn that requested this call, as the runtime declared it.
+   *
+   * A handler that acts on the user's behalf outside host-core's permission
+   * boundary must bind itself to this exact turn: an approval that outlives its
+   * turn is not a licence for a later one.
+   */
+  turnId?: string;
   toolCallId: string;
   args: unknown;
   signal: AbortSignal;
@@ -269,20 +293,24 @@ export class AgentSidecar {
     if (this.localToolControllers.has(key)) throw new Error("duplicate local tool call");
     const controller = new AbortController();
     this.localToolControllers.set(key, controller);
-    const imageGeneration = params.toolName === "GenerateImages";
+    const toolName = String(params.toolName ?? "");
+    const imageGeneration = toolName === "GenerateImages";
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      if (GATED_LOCAL_TOOLS.has(toolName)) {
+        if (imageGeneration) imageGenerationPrompts(input.args);
+        if (!this.host) throw new Error("host unavailable");
+        // The approval card belongs to the user, not to the tool's work, so it
+        // must not spend the local deadline: an approved send cannot time out
+        // while the user is still deciding. Stopping the turn retracts a pending
+        // approval through `tools.abort`, which reaches the same registration
+        // host-core keeps for `Bash` and `GenerateImages`.
+        const gate = await this.host.call<LocalToolResult>("tools.execute", params);
+        if (!gate.ok) return gate;
+        controller.signal.throwIfAborted();
+      }
       return await Promise.race([
-        (async () => {
-          if (imageGeneration) {
-            imageGenerationPrompts(input.args);
-            if (!this.host) throw new Error("host unavailable");
-            const gate = await this.host.call<LocalToolResult>("tools.execute", params);
-            if (!gate.ok) return gate;
-            controller.signal.throwIfAborted();
-          }
-          return handler({ ...input, signal: controller.signal });
-        })(),
+        handler({ ...input, signal: controller.signal }),
         new Promise<LocalToolResult>((_, reject) => {
           timer = setTimeout(() => {
             controller.abort();
@@ -554,6 +582,9 @@ export class AgentSidecar {
                 }
               : await this.runLocalTool(localTool, {
                   sessionId: String(params.sessionId ?? ""),
+                  ...(typeof params.turnId === "string" && params.turnId
+                    ? { turnId: params.turnId }
+                    : {}),
                   toolCallId: String(params.toolCallId ?? ""),
                   args: params.args,
                 }, params);

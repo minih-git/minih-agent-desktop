@@ -1124,9 +1124,12 @@ pub async fn execute_tool_with_path_access(
         }
     }
     let result: Result<Value, hashline::ToolError> = match tool_name {
-        // Authorize the desktop-owned image request through the normal host gate.
-        // Only the trusted desktop runner performs the external call.
-        "GenerateImages" => Ok(serde_json::json!({ "authorized": true })),
+        // Authorize the desktop-owned operations through the normal host gate.
+        // Only the trusted desktop runner performs the external call: the image
+        // request, and the session deliveries Main's built-in tools start.
+        "GenerateImages" | "SessionList" | "SessionSend" | "SessionResult" => {
+            Ok(serde_json::json!({ "authorized": true }))
+        }
         "Read" | "Glob" | "Grep" | "Write" | "Edit" => {
             run_file_tool(
                 workspace,
@@ -3176,6 +3179,26 @@ mod tests {
                 > MCP_CONNECT_TIMEOUT_MS + MCP_TOOL_DISCOVERY_TIMEOUT_MS + MCP_CALL_TIMEOUT_MS
         );
         assert_eq!(desktop_dispatch_timeout_ms(Some(5_000)), 5_000);
+    }
+
+    #[tokio::test]
+    async fn desktop_owned_tools_are_authorized_without_running_in_host_core() {
+        // The desktop runner performs these calls; host-core's job is the gate.
+        // Session tools must not fall through to a file/shell implementation.
+        for tool in [
+            "GenerateImages",
+            "SessionList",
+            "SessionSend",
+            "SessionResult",
+        ] {
+            let result = execute_tool(None, None, tool, &serde_json::json!({}), 5_000).await;
+            assert!(
+                result.ok,
+                "{tool} was not authorized through the gate: {:?}",
+                result.content
+            );
+            assert_eq!(result.content["authorized"].as_bool(), Some(true));
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

@@ -14595,6 +14595,39 @@ are withdrawn with ADR 0165.
   automated. The live multi-session provider/Electron journey remains runner
   validation under the no-local-E2E policy
 
+#### E2E-SESSION-builtin-send-to-named-session: An Agent hands work to a session the user names
+
+- **Preconditions**: Two existing Agent-mode sessions from the normal New Task
+  flow, one titled for review. The caller session runs with a configured
+  authenticated provider and no `pi.session-orchestrator` plugin installed.
+- **Steps**: 1) In the caller session, ask the Agent to send a review task to
+  the session by its title. 2) Confirm `SessionList` resolved the title to one
+  real Session ID and `SessionSend` delivered to it. 3) Inspect the target
+  transcript, then wait for the completion notice in the caller session. 4)
+  Repeat with Ask permission mode to see the send's approval card, and once in
+  Plan mode.
+- **Expected**: `SessionList` lists other Agent sessions with no transcript or
+  credential content and omits the caller. `SessionSend` starts the target turn
+  with the target's own project, model, context and permissions, records the
+  delivery under the reserved built-in owner, and labels it as a session
+  message rather than user input. Exactly one durable completion notice arrives
+  in the caller session. Ask mode shows one approval card for the send; Plan
+  mode reports the tool as unavailable and delivers nothing. A tool argument
+  naming another sender changes nothing; approving a card after its own turn
+  ended is refused rather than delivered; `SessionResult` reports only the
+  caller's own deliveries.
+- **Specs linked**: `03-runtime/02-agent-runtime.md` (§5f.4),
+  `03-runtime/03-tools-and-permissions.md`, `03-runtime/01-ipc-protocol.md`,
+  ADR builtin-session-messaging
+- **Acceptance**: C (conversation & stream), E (tools & permissions), Security
+- **Milestone**: post-M6
+- **Status**: Sender binding, argument validation, gate order and permission
+  rules are automated by `apps/desktop/test/session-collaboration-service.test.mjs`,
+  `apps/desktop/test/session-messaging-tools.test.mjs`,
+  `packages/host-runtime/src/session-tools-gate.test.ts` and host-core
+  `session_messaging_tests` / `desktop_owned_tools_*`. The packaged Electron
+  journey is NOT RUN.
+
 #### E2E-SESSION-completion-notice-allows-silence: A trusted completion notice may finish without an acknowledgement
 
 - **Preconditions**: A candidate commit has its own built host-core and runtime

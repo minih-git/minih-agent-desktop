@@ -119,8 +119,10 @@ pub struct PermissionManager {
 impl PermissionManager {
     pub fn tool_risk_with_declared(tool_name: &str, declared: Option<&str>) -> Risk {
         match tool_name {
-            "Read" | "Glob" | "Grep" | "ScheduledTaskList" | "TodoWrite" => Risk::Low,
-            "Write" | "Edit" | "Bash" | "GenerateImages" => Risk::High,
+            "Read" | "Glob" | "Grep" | "ScheduledTaskList" | "TodoWrite" | "SessionList"
+            | "SessionResult" => Risk::Low,
+            // Sending starts another session's Agent and spends its quota.
+            "Write" | "Edit" | "Bash" | "GenerateImages" | "SessionSend" => Risk::High,
             name if name.starts_with("plugin_") => match declared {
                 Some("low") => Risk::Low,
                 Some("high") => Risk::High,
@@ -889,6 +891,51 @@ mod image_generation_tests {
                 &grants
             ),
             Some(PermissionDecision::Deny)
+        );
+    }
+}
+
+#[cfg(test)]
+mod session_messaging_tests {
+    use super::*;
+
+    #[test]
+    fn session_reads_stay_low_risk_and_sending_needs_approval() {
+        for tool in ["SessionList", "SessionResult"] {
+            assert!(
+                matches!(
+                    PermissionManager::tool_risk_with_declared(tool, None),
+                    Risk::Low
+                ),
+                "{tool} must stay a free read"
+            );
+        }
+        assert!(matches!(
+            PermissionManager::tool_risk_with_declared("SessionSend", None),
+            Risk::High
+        ));
+    }
+
+    #[test]
+    fn session_tools_never_run_in_contract_modes() {
+        let manager = PermissionManager::default();
+        let grants = HashMap::new();
+        for tool in ["SessionList", "SessionSend", "SessionResult"] {
+            for mode in ["plan", "goal"] {
+                assert_eq!(
+                    manager.evaluate_auto_with_permission_mode("s", tool, mode, "auto", &grants),
+                    Some(PermissionDecision::Deny),
+                    "{tool} must be denied in {mode}"
+                );
+            }
+        }
+        // Ask still needs a card for a send, while reads flow through.
+        assert!(manager
+            .evaluate_auto_with_permission_mode("s", "SessionSend", "agent", "ask", &grants)
+            .is_none());
+        assert_eq!(
+            manager.evaluate_auto_with_permission_mode("s", "SessionList", "agent", "ask", &grants),
+            Some(PermissionDecision::AllowOnce)
         );
     }
 }

@@ -1855,6 +1855,10 @@ Electron 等待主机关闭之前会停止服务，并将清单标记为非活�
 因此会出现在 `pi.desktop.listOperations` 中并可通过 `pi.desktop.invoke` 调用，但被排除在
 MCP 可见目录（`tools/list`、`minih_control_describe` 以及 `minih_agent_invoke` 的操作枚举）之外，
 MCP 调用方无法调用它们。
+内置 Agent 工具 `SessionList`、`SessionSend`、`SessionResult` 不经
+`pi.desktop.invoke`，而是从 Electron Main 进入同一账本。它们是 Main 本地工具：
+渲染器无法调用，MCP 目录不可见，且发送方来自 sidecar 的本地工具上下文而非插件
+上下文。见[Agent 运行时 §5f.4](/zh-CN/spec/03-runtime/02-agent-runtime)。
 
 **变更性** 外部调用成功后，Electron Main 可以通过现有的
 `minih-agent-desktop/session/event/changed` 事件发送附加字段：

@@ -2319,6 +2319,32 @@ describe("DesktopAgentRuntime deferred tool catalog", () => {
     await runtime.dispose();
   });
 
+  it("offers cross-session delivery on demand in Agent mode only", async () => {
+    const agent = createRuntime();
+    const agentNames = (agent as any).agent.state.tools.map((tool: any) => tool.name);
+    // On demand like the scheduled tools: the schemas cost nothing per request
+    // until the model searches for them.
+    expect(agentNames).not.toContain("SessionSend");
+    for (const name of ["SessionList", "SessionSend", "SessionResult"]) {
+      expect((agent as any).deferredToolNames.has(name)).toBe(true);
+    }
+    const prompt = (agent as any).agent.state.systemPrompt as string;
+    expect(prompt).toContain("SessionSend");
+    expect(prompt).toContain("SessionList");
+    await agent.dispose();
+
+    // A Plan or Goal turn must not hand work to another Agent.
+    for (const mode of ["plan", "goal"] as const) {
+      const runtime = createRuntime({ mode });
+      const names = (runtime as any).agent.state.tools.map((tool: any) => tool.name);
+      expect(names).not.toContain("SessionSend");
+      expect((runtime as any).deferredToolNames.has("SessionSend")).toBe(false);
+      expect((runtime as any).deferredToolNames.has("SessionList")).toBe(false);
+      expect((runtime as any).agent.state.systemPrompt).not.toContain("SessionSend");
+      await runtime.dispose();
+    }
+  });
+
   it("pauses asktool until the renderer resolves every question", async () => {
     const onEvent = vi.fn();
     const runtime = createRuntime({ onEvent });

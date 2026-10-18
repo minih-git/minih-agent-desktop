@@ -2429,6 +2429,11 @@ require an authenticated plugin tool invocation context, so they appear in
 they are excluded from the MCP-visible catalog (`tools/list`,
 `minih_control_describe`, and the `minih_agent_invoke` operation enum) and an MCP
 caller cannot invoke them.
+The built-in Agent tools `SessionList`, `SessionSend`, and `SessionResult` reach
+the same ledger from Electron Main rather than through `pi.desktop.invoke`. They
+are Main local tools: the renderer cannot invoke them, they are absent from the
+MCP catalog, and their sender is the sidecar's local-tool context, not a plugin
+context. See [agent runtime §5f.4](02-agent-runtime.md).
 
 After successful **mutating** external calls, Electron Main may emit the existing
 `minih-agent-desktop/session/event/changed` event with additive fields:

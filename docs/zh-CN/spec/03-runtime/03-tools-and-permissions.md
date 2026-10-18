@@ -626,3 +626,15 @@ sidecar 不附加覆盖，委托使用会话的有效权限模式；因此父会
 ## 图片生成与编辑
 
 `GenerateImages` 是仅供 Agent 使用的高风险能力，可信桌面执行请求前必须由 host-core 授权。即使处于 Auto，Plan/Goal 仍被拒绝。取消、限制和结果语义见[图片生成规格](/zh-CN/spec/03-runtime/21-image-generation)。
+
+## 会话消息
+
+`SessionList`、`SessionSend`、`SessionResult` 是把工作交给既有 Agent 会话的
+内置按需工具。`SessionSend` 为高风险，在 Auto 之外走正常审批路径；两个读工具为
+低风险。三者仅限 Agent 模式：Plan 与 Goal 拒绝，`Task` 子代理无法使用，MCP
+控制目录也不暴露。由于调用由 Main 执行，host-core 通过与其他桌面自持工具相同的
+`tools.execute` 闸门授权。发送方绑定的回合必须是该会话当前的活动回合：回合结束
+后再批准旧卡片会被拒绝，停止回合也会撤回待批卡片。两种 kind 都会启动或排队目标
+回合，message 仅用于标注意图；`SessionResult` 只能读到本会话自己发起的投递。
+账本、权限上限、队列与跳数上限、来源标注与完成回调见
+[Agent 运行时 §5f.4](/zh-CN/spec/03-runtime/02-agent-runtime)。

@@ -1291,6 +1291,29 @@ does not automatically trigger another callback. This path does not restore
 the withdrawn `A2A` or `Peer` tools and does not change `Task`, `TaskWait`,
 `TaskList`, or `TaskStop` semantics.
 
+### 5f.4 Built-in session messaging (D663)
+
+The same ledger also backs three built-in, on-demand Agent tools —
+`SessionList`, `SessionSend`, and `SessionResult` — so a user can hand work to
+an existing session by name without installing a plugin. They are Electron main
+local tools. Their sender is bound the same way as the plugin path: the source
+session is the sidecar's local-tool `sessionId`, and the source turn is the
+`turnId` that call declared, which must still be the session's active turn —
+never a tool argument, and never merely "whatever turn runs now". An approval
+that outlives its turn is therefore refused, and stopping the turn retracts the
+pending approval. Deliveries are recorded under the reserved owner
+`builtin:session-messaging`, which the plugin path refuses, so the two senders
+cannot answer each other's callbacks.
+
+Built-in tools execute outside host-core's permission boundary, so all three
+pass the `tools.execute` gate before Main dispatches, with `SessionSend` as
+`High` risk and the two reads as `Low`. `Agent` mode only: Plan and Goal deny
+them, `Task` subagents cannot use them, and the MCP control catalog does not
+expose them. Version one sends `task` (default) or `message` deliveries to
+existing sessions and does not create sessions or cancel deliveries; both kinds
+start or queue the target turn, and the kind only frames intent. `SessionResult`
+reports deliveries the calling session made, never another sender's.
+
 ## 6. Providers & models
 
 > Full policy: `11-provider-model-system.md`, `12-provider-config-schema.md`, `13-model-catalog-and-selection.md`.

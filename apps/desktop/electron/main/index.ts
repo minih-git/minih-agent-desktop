@@ -772,6 +772,7 @@ const sidecarRuntime = createSidecarRuntime({
   disabledBuiltinSkills,
   pluginActiveInProject,
   currentNetworkProxy,
+  sessionCollaboration,
   generateSessionRetitle: createSessionRetitleGenerator({
     getHost,
     resolveAgentRuntimeLaunch: (sessionId, session, settings, overrides) =>

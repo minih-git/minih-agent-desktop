@@ -360,3 +360,191 @@ test("spawn without a model key never selects an un opted-in default model (#118
   );
   assert.deepEqual(methodCalls(host, "session.collaboration.spawn"), []);
 });
+
+test("a built-in send binds the calling session and its live turn", async () => {
+  const stored = sessionMessage({ status: "completed", pluginId: "builtin:session-messaging" });
+  const host = createHost("host-1", (method) => {
+    if (method === "session.collaboration.send") return { message: stored };
+    if (method === "session.collaboration.message") return { message: stored };
+    return {};
+  });
+  const { service } = createService({
+    getHost: () => host,
+    activeTurns: { "source-session": "turn-live" },
+  });
+
+  await service.invokeBuiltin({
+    sessionId: "source-session",
+    turnId: "turn-live",
+    operation: "send",
+    // A model that tries to name its own sender must not be believed.
+    args: {
+      sessionId: "target-session",
+      content: "review the diff",
+      sourceSessionId: "someone-else",
+      pluginId: "someone-else",
+    },
+  });
+
+  const send = methodCalls(host, "session.collaboration.send");
+  assert.equal(send.length, 1);
+  assert.equal(send[0].params.sourceSessionId, "source-session");
+  assert.equal(send[0].params.pluginId, "builtin:session-messaging");
+  assert.equal(send[0].params.sourceTurnId, "turn-live");
+  assert.equal(send[0].params.kind, "task", "a built-in send defaults to a task");
+});
+
+test("a built-in send without a live turn is refused before any host send", async () => {
+  const host = createHost("host-1", () => ({}));
+  const { service } = createService({ getHost: () => host });
+
+  await assert.rejects(
+    service.invokeBuiltin({ sessionId: "source-session", turnId: "turn-live", operation: "send", args: { sessionId: "target-session", content: "hi" } }),
+    { code: "PERMISSION_DENIED" },
+  );
+  await assert.rejects(
+    service.invokeBuiltin({ sessionId: "", turnId: "turn-live", operation: "list", args: {} }),
+    { code: "PERMISSION_DENIED" },
+  );
+  assert.deepEqual(host.calls, []);
+});
+
+test("a built-in send is refused once its own turn has ended", async () => {
+  // The exact shape of a stale approval: the card was raised in turn-1, the
+  // user stopped, and turn-2 now owns the session. Approving the old card must
+  // not deliver under turn-2.
+  const host = createHost("host-1", () => ({ messages: [] }));
+  const { service } = createService({
+    getHost: () => host,
+    activeTurns: { "source-session": "turn-2" },
+  });
+
+  await assert.rejects(
+    service.invokeBuiltin({
+      sessionId: "source-session",
+      turnId: "turn-1",
+      operation: "send",
+      args: { sessionId: "target-session", content: "hi" },
+    }),
+    { code: "PERMISSION_DENIED", message: "The requesting turn is no longer active" },
+  );
+  assert.deepEqual(methodCalls(host, "session.collaboration.send"), []);
+});
+
+test("a built-in read never returns another sender's delivery", async () => {
+  const foreign = sessionMessage({ pluginId: "demo-plugin", sourceSessionId: "other-session" });
+  const host = createHost("host-1", (method) => {
+    if (method === "session.collaboration.result") return { ready: true, message: foreign };
+    return { messages: [] };
+  });
+  const { service } = createService({ getHost: () => host, activeTurns: { "source-session": "turn-1" } });
+
+  // Another sender's latest delivery reads as "nothing of yours", not as content.
+  assert.deepEqual(
+    await service.invokeBuiltin({
+      sessionId: "source-session", turnId: "turn-1", operation: "result", args: { sessionId: "target-session" },
+    }),
+    { ready: false, message: null },
+  );
+  // Naming it explicitly is a refusal, not a silent empty answer.
+  await assert.rejects(
+    service.invokeBuiltin({
+      sessionId: "source-session", turnId: "turn-1", operation: "result",
+      args: { sessionId: "target-session", messageId: foreign.id },
+    }),
+    { code: "PERMISSION_DENIED" },
+  );
+});
+
+test("a built-in read returns this session's own delivery", async () => {
+  const own = sessionMessage({ pluginId: "builtin:session-messaging", sourceSessionId: "source-session" });
+  const host = createHost("host-1", (method) => {
+    if (method === "session.collaboration.result") return { ready: true, message: own };
+    return { messages: [] };
+  });
+  const { service } = createService({ getHost: () => host, activeTurns: { "source-session": "turn-1" } });
+
+  const outcome = await service.invokeBuiltin({
+    sessionId: "source-session", turnId: "turn-1", operation: "result", args: { sessionId: "target-session" },
+  });
+  assert.equal(outcome.ready, true);
+  assert.equal(outcome.message.id, own.id);
+});
+
+test("a plugin cannot claim the built-in delivery owner", async () => {
+  const host = createHost("host-1", () => ({}));
+  const { service } = createService({ getHost: () => host, activeTurns: { "source-session": "turn-1" } });
+
+  await assert.rejects(
+    service.invoke({
+      operation: "session/collaboration/send",
+      source: "plugin",
+      args: [{ sessionId: "target-session", content: "hi" }],
+      pluginContext: {
+        pluginId: "builtin:session-messaging",
+        sessionId: "source-session",
+        turnId: "turn-1",
+        invocationId: "invocation-1",
+      },
+    }),
+    { code: "PERMISSION_DENIED", message: "The session collaboration owner is reserved" },
+  );
+  assert.deepEqual(host.calls, []);
+});
+
+test("a queued built-in delivery is dispatched without a plugin row", async () => {
+  const stored = sessionMessage({ pluginId: "builtin:session-messaging", status: "queued" });
+  const started = [];
+  const host = createHost("host-1", (method) => {
+    if (method === "session.collaboration.send") return { message: stored };
+    if (method === "session.collaboration.message") {
+      return { message: { ...stored, status: started.length ? "running" : "queued" } };
+    }
+    return {};
+  });
+  const { service } = createService({
+    getHost: () => host,
+    activeTurns: { "source-session": "turn-live" },
+    // No plugin is loaded at all: a built-in owner must not be reported as a
+    // disabled plugin.
+    pluginLoaded: false,
+    bridge: {
+      queue: { list: () => [] },
+      agentHost: { startTurn: async (_principal, input) => started.push(input) },
+    },
+  });
+
+  const delivered = await service.invokeBuiltin({
+    sessionId: "source-session",
+    turnId: "turn-live",
+    operation: "send",
+    args: { sessionId: "target-session", content: "review the diff" },
+  });
+
+  assert.equal(started.length, 1);
+  assert.equal(started[0].sessionId, "target-session");
+  assert.equal(started[0].input.sessionMessageId, stored.id);
+  assert.equal(delivered.sessionId, "target-session");
+});
+
+test("a delivery owned by a plugin still fails when that plugin is gone", async () => {
+  const stored = sessionMessage({ pluginId: "demo-plugin", status: "queued" });
+  // drain() reads the completion outbox before dispatching.
+  const host = createHost("host-1", (method) => {
+    if (method === "session.collaboration.pending") return { messages: [stored] };
+    if (method === "session.collaboration.message") return { message: stored };
+    return {};
+  });
+  const { service } = createService({
+    getHost: () => host,
+    activeTurns: { "source-session": "turn-live" },
+    pluginLoaded: false,
+    bridge: { queue: { list: () => [] }, agentHost: { startTurn: async () => assert.fail("must not start") } },
+  });
+
+  await service.drain();
+
+  const failures = methodCalls(host, "session.collaboration.fail");
+  assert.equal(failures.length, 1);
+  assert.match(failures[0].params.error, /^ABORTED/);
+});

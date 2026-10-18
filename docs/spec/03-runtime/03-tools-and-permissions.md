@@ -736,3 +736,15 @@ Naming:
 before the trusted desktop executes the request. Plan/Goal remain denied even
 under Auto. See [image generation](21-image-generation.md) for cancellation,
 limits and result semantics.
+
+## Session messaging
+
+`SessionList`, `SessionSend`, and `SessionResult` are the built-in, on-demand
+tools for handing work to an existing Agent session. `SessionSend` is high risk
+and needs the normal approval path outside Auto; the two reads are low risk.
+All three are Agent-only: Plan and Goal deny them, `Task` subagents cannot use
+them, and the MCP control catalog excludes them. Host-core authorizes them
+through the same `tools.execute` gate as `GenerateImages` because Main performs
+the call. The ledger, permission ceiling, inbox and hop bounds, provenance and
+completion callbacks are the ones in
+[agent runtime §5f.4](02-agent-runtime.md).

@@ -1,0 +1,61 @@
+import { Type } from "@earendil-works/pi-ai";
+
+/**
+ * Built-in cross-session delivery tools (ADR builtin-session-messaging).
+ *
+ * They reach another session's Agent through the host-owned delivery ledger.
+ * The model resolves a session title through `SessionList` and then addresses
+ * the real Session ID, because titles are neither unique nor stable.
+ */
+
+const sessionId = Type.String({
+  minLength: 1,
+  maxLength: 256,
+  description: "A real Session ID from SessionList. Never guess or invent one.",
+});
+
+export const sessionToolParameters: Record<string, Parameters<typeof Type.Object>[0]> = {
+  SessionList: {
+    query: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 200,
+        description: "Case-insensitive substring of a session title. Omit to list every other Agent session.",
+      }),
+    ),
+  },
+  SessionSend: {
+    sessionId,
+    content: Type.String({
+      minLength: 1,
+      maxLength: 65_536,
+      description: "The complete task or message for the target session. It cannot ask the user follow-up questions there.",
+    }),
+    kind: Type.Optional(
+      Type.Union([Type.Literal("task"), Type.Literal("message")], {
+        // Both kinds start the target Agent; the label only frames intent.
+        description: "task hands over work the target should carry out (default); message frames it as a notice. Both start or queue the target turn and spend its model quota.",
+      }),
+    ),
+    notifyOnCompletion: Type.Optional(
+      Type.Boolean({
+        description: "Send this session one durable completion notice when the target turn settles. Defaults to true.",
+      }),
+    ),
+  },
+  SessionResult: {
+    sessionId,
+    messageId: Type.Optional(
+      Type.String({ minLength: 1, maxLength: 256, description: "A delivery ID from a previous SessionSend." }),
+    ),
+  },
+};
+
+export const sessionToolDescriptions: Record<string, string> = {
+  SessionList:
+    "List the other Agent sessions that can receive a delivery, optionally filtered by a title substring. Use it to turn a session name the user said into a real Session ID, and to confirm the target before sending. Titles are not unique: when several sessions match, ask the user which one instead of guessing. Only Agent-mode sessions appear.",
+  SessionSend:
+    "Deliver a task or message to another existing Agent session, which starts (or queues behind its current work) and runs with the target's own project, model, context and permissions. Use it when the user asks to hand work to a session by name: resolve the name with SessionList first, then send to that Session ID. The target receives this as a session message, not as user input, so it cannot ask the user follow-up questions; write a self-contained brief, and expect a durable completion notice in this session unless notifyOnCompletion is false. This tool cannot create a session or cancel another sender's delivery.",
+  SessionResult:
+    "Read the durable outcome of the latest delivery this session made into a session, or of one such delivery by messageId: status, result, error and the task text. Use it after a SessionSend to check a delivery that has not completed, or when the completion notice is not enough. Deliveries sent by other sessions or plugins are not readable here.",
+};

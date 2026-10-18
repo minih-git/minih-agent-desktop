@@ -83,6 +83,30 @@ function delivery(message: SessionCollaborationMessage): SessionCollaborationDel
   };
 }
 
+/**
+ * Ledger owner for a delivery a built-in Agent tool started, never a plugin.
+ *
+ * Rust keys idempotency, ownership and completion callbacks by this value, so
+ * it is reserved: Main's plugin path refuses a plugin context that presents it.
+ */
+export const BUILTIN_SESSION_OWNER = "builtin:session-messaging";
+
+/**
+ * A delivery's real origin.
+ *
+ * `ownerId` becomes the ledger's `plugin_id`, so every part of it must come
+ * from an authenticated invocation context — never from tool arguments.
+ */
+type Sender = { ownerId: string; sourceSessionId: string; sourceTurnId: string };
+
+function senderFields(sender: Sender): Record<string, string> {
+  return {
+    pluginId: sender.ownerId,
+    sourceSessionId: sender.sourceSessionId,
+    sourceTurnId: sender.sourceTurnId,
+  };
+}
+
 /** Coordinates reviewed operations; Rust owns all identity and outcome state. */
 export function createSessionCollaborationService(deps: SessionCollaborationDependencies) {
   const dispatching = new Map<string, Promise<SessionCollaborationDelivery>>();
@@ -104,13 +128,18 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
     if (deps.getHost() !== host) fail("HOST_UNAVAILABLE", "The host restarted during the session operation");
   }
 
-  function sender(input: McpControlInvokeInput): { pluginId: string; sourceSessionId: string; sourceTurnId: string } {
+  function sender(input: McpControlInvokeInput): Sender {
     const context = input.pluginContext;
     if (!context?.sessionId || !context.turnId || !context.invocationId
       || deps.getActiveTurn(context.sessionId) !== context.turnId) {
       fail("PERMISSION_DENIED", "Sending requires an active, host-authenticated Agent tool invocation");
     }
-    return { pluginId: context.pluginId, sourceSessionId: context.sessionId, sourceTurnId: context.turnId };
+    // The built-in owner is Main's own; a plugin adopting it would receive
+    // built-in deliveries' completion callbacks.
+    if (context.pluginId === BUILTIN_SESSION_OWNER) {
+      fail("PERMISSION_DENIED", "The session collaboration owner is reserved");
+    }
+    return { ownerId: context.pluginId, sourceSessionId: context.sessionId, sourceTurnId: context.turnId };
   }
 
   async function dispatch(message: SessionCollaborationMessage, signal?: AbortSignal): Promise<SessionCollaborationDelivery> {
@@ -131,7 +160,11 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
         if (bridge.queue.list(current.targetSessionId).some((entry) => entry.sessionMessageId === current.id)) {
           return delivery(current);
         }
-        if (!deps.isPluginLoaded(current.pluginId)) fail("ABORTED", "The sending plugin is no longer enabled");
+        // A built-in delivery has no plugin row to look up: its sender is the
+        // desktop itself.
+        if (current.pluginId !== BUILTIN_SESSION_OWNER && !deps.isPluginLoaded(current.pluginId)) {
+          fail("ABORTED", "The sending plugin is no longer enabled");
+        }
         // beginTurn rechecks the persisted authorization ceiling at execution,
         // including when a queued turn resumes after settings have changed.
         await bridge.agentHost.startTurn(DESKTOP_PRINCIPAL, {
@@ -305,7 +338,7 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
           checkCurrent(host, input.signal);
           sender(input);
           const response = await host.call<{ message: SessionCollaborationMessage }>(`session.collaboration.${spawn ? "spawn" : "send"}`, {
-            ...source, content,
+            ...senderFields(source), content,
             idempotencyKey: text(data, "idempotencyKey", false) ?? randomUUID(),
             ...(typeof notify === "boolean" ? { notifyOnCompletion: notify } : {}),
             ...(spawn ? { ...model, title: text(data, "title", false) }
@@ -314,6 +347,77 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
           return dispatch(response.message, input.signal);
         }
         default: fail("NOT_FOUND", "Unknown session collaboration operation");
+      }
+    },
+    /**
+     * Delivery path for Main's own Agent tools rather than a plugin.
+     *
+     * The calling session and turn both come from the sidecar's local-tool
+     * context, so a model cannot claim another sender, and an approval that
+     * outlives its turn cannot authorise a later one. Spawning workers and
+     * cancelling another sender's delivery stay plugin-only.
+     */
+    async invokeBuiltin(input: {
+      sessionId: string;
+      turnId: string;
+      operation: "list" | "send" | "result";
+      args: Record<string, unknown>;
+      signal?: AbortSignal;
+    }): Promise<unknown> {
+      const sourceSessionId = input.sessionId.trim();
+      if (!sourceSessionId) fail("PERMISSION_DENIED", "A session tool requires an active Agent session");
+      const sourceTurnId = input.turnId.trim();
+      if (!sourceTurnId) fail("PERMISSION_DENIED", "Sending requires an active Agent turn");
+      // The same rule the plugin path applies: the invocation's own turn must
+      // still own the session. Without it a stale approval would be delivered
+      // under whatever turn happens to run next.
+      if (deps.getActiveTurn(sourceSessionId) !== sourceTurnId) {
+        fail("PERMISSION_DENIED", "The requesting turn is no longer active");
+      }
+      const host = requireHost();
+      checkCurrent(host, input.signal);
+      switch (input.operation) {
+        case "list":
+          await drain();
+          return host.call("session.collaboration.list", {});
+        case "result": {
+          const messageId = text(input.args, "messageId", false);
+          await drain();
+          const outcome = await host.call<{
+            ready?: boolean;
+            message?: SessionCollaborationMessage | null;
+          }>("session.collaboration.result", {
+            sessionId: text(input.args, "sessionId"),
+            messageId,
+          });
+          const message = outcome.message;
+          // A built-in read reports only this session's own deliveries: another
+          // sender's task text is not this session's to read, and it must not
+          // enter this context as if it were.
+          if (message && message.sourceSessionId !== sourceSessionId) {
+            if (messageId) fail("PERMISSION_DENIED", "That delivery was sent by another session");
+            return { ready: false, message: null };
+          }
+          return outcome;
+        }
+        case "send": {
+          const content = text(input.args, "content");
+          const notify = input.args.notifyOnCompletion;
+          if (notify !== undefined && typeof notify !== "boolean") fail("INVALID_ARGUMENT", "notifyOnCompletion must be a boolean");
+          // A task is the reason a user hands work to another session; a plain
+          // message is the explicit exception.
+          const kind = input.args.kind === undefined ? "task" : messageKind(input.args.kind);
+          const sender: Sender = { ownerId: BUILTIN_SESSION_OWNER, sourceSessionId, sourceTurnId };
+          const response = await host.call<{ message: SessionCollaborationMessage }>("session.collaboration.send", {
+            ...senderFields(sender), content, kind,
+            idempotencyKey: text(input.args, "idempotencyKey", false) ?? randomUUID(),
+            ...(typeof notify === "boolean" ? { notifyOnCompletion: notify } : {}),
+            sessionId: text(input.args, "sessionId"),
+          });
+          return dispatch(response.message, input.signal);
+        }
+        default:
+          return fail("NOT_FOUND", "Unknown session tool operation");
       }
     },
     // The session ID stays part of the runtime callback contract; the host
@@ -330,3 +434,6 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
     drain,
   };
 }
+
+/** Surface Main's built-in session tools call; plugins never see it. */
+export type SessionCollaborationService = ReturnType<typeof createSessionCollaborationService>;

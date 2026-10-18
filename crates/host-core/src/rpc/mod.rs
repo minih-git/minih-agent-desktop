@@ -3962,16 +3962,24 @@ async fn handle_request(
             // Register before permission evaluation so tools.abort can cancel
             // an approval wait as well as an already-spawned process.
             let cancellation_receiver = if remote_workspace.is_some()
-                || matches!(p.tool_name.as_str(), "Bash" | "GenerateImages")
-            {
+                || matches!(
+                    p.tool_name.as_str(),
+                    "Bash" | "GenerateImages" | "SessionSend"
+                ) {
                 let mut st = state.lock().await;
                 match st.register_bash_cancellation(&p.session_id, &p.tool_call_id) {
                     Ok(receiver) => Some(receiver),
                     Err(error_code) => {
+                        // Only a duplicate tool call ID reaches this.
+                        let message = if p.tool_name == "Bash" {
+                            "another Bash call is already active for this tool call ID"
+                        } else {
+                            "another call is already active for this tool call ID"
+                        };
                         let result = shell_failure_result(
                             &p,
                             &error_code,
-                            "another Bash call is already active for this tool call ID",
+                            message,
                             command_shell_id.clone(),
                             call_started,
                         );

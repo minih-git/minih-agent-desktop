@@ -12,6 +12,12 @@ import {
   loadBuiltinSkillBody,
 } from "../builtin-skills";
 import { createImageGenerationTool } from "../services/image-generation-service";
+import type { SessionCollaborationService } from "../services/session-collaboration";
+import {
+  createSessionListTool,
+  createSessionResultTool,
+  createSessionSendTool,
+} from "../services/session-messaging-tools";
 import { registerPluginDevTools } from "../plugin-dev-tools";
 import { resolveLocalFile } from "../browser-view";
 import { catalogModelConfigFor } from "../models-dev-catalog";
@@ -77,6 +83,11 @@ export type SidecarRuntimeDependencies = {
     summaryFingerprint: string;
     settings: AppSettings | null | undefined;
   }) => Promise<boolean>;
+  /**
+   * Delivery ledger entry point for Main's built-in session tools (ADR
+   * builtin-session-messaging). Plugin-only operations never come through here.
+   */
+  sessionCollaboration: SessionCollaborationService;
 };
 
 export function createSidecarRuntime({
@@ -104,6 +115,7 @@ export function createSidecarRuntime({
   plugins,
   sessionProjects,
   loadUserSkillBody,
+  sessionCollaboration,
   activeUserSkills,
   disabledBuiltinSkills,
   pluginActiveInProject,
@@ -594,6 +606,12 @@ export function createSidecarRuntime({
       ...(modelConfig ? { modelConfig } : {}),
     };
   });
+  // Cross-session hand-off (ADR builtin-session-messaging): the user names a
+  // session and the Agent delivers a task into it. The ledger, permissions and
+  // callbacks stay in host-core; these handlers only bind the real sender.
+  s.setLocalTool("SessionList", createSessionListTool(sessionCollaboration));
+  s.setLocalTool("SessionSend", createSessionSendTool(sessionCollaboration));
+  s.setLocalTool("SessionResult", createSessionResultTool(sessionCollaboration));
   // Agent-driven work panel preview (D100): open a workspace HTML file in
   // the embedded browser; live reload keeps it current through later edits.
   s.setLocalTool("GenerateImages", createImageGenerationTool({

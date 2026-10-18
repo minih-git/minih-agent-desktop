@@ -13,6 +13,7 @@
 
 | 身份证号 | 主题 | 决定 | 基本原理 |
 |---|---|---|---|
+| D663 | 内置会话消息工具 | **修订 ADR 0165 / ADR 0239 / ADR 0240：在宿主拥有的投递账本之上新增内置按需 Agent 工具 `SessionList`、`SessionSend`、`SessionResult`，实现为 Electron 主进程本地工具。发送方由宿主派生（sidecar 本地工具的 `sessionId` 与该会话的活动回合），不取自工具参数；内置投递使用保留归属 `builtin:session-messaging`，插件路径拒绝冒用。三者都先过 `tools.execute` 闸门（`SessionSend` 高风险，两个读工具低风险）；Plan/Goal、`Task` 子代理与 MCP 目录不可用。第一版只向既有会话发送任务或消息，不创建会话、不取消投递。无 schema、迁移或协议版本变更。见 ADR builtin-session-messaging 与 E2E-SESSION-builtin-send-to-named-session。** | 把工作交给另一个会话是核心桌面流程，此前只能通过安装权限更大的社区编排插件获得，而受审查的账本本已随应用分发。内置路径复用同一套来源标注、权限上限、完成回调与重启栅栏保证。 |
 | D661 | 配置备份/同步存储迁移到 Minih Router 账户 | **配置备份/同步存储从用户自备的 S3 迁移到登录账户名下的 Minih Router 后端（AccessKey Bearer 走网关控制面、按账户命名空间、强制条件写）。S3 传输与连接 UI 被移除；已连接账户的 provider 行属于设备本地、绝不参与同步；旧 S3 配置与云端数据保持原样，不迁移也不删除。见 `docs/adr/router-account-configuration-backup.md` 与 `03-runtime/22-config-sync.md`。** | 一个账户身份已经覆盖聊天与账户读取；加密 vault、合并与激活契约保持不变。 |
 | D001 | Electron ↔ Rust 运输 | **Rust sidecar + stdio JSON-RPC (NDJSON)** | 简单隔离，可调试，后期可更换 |
 | D002 | SQLite 所有权 | **Rust host-core 独家拥有 SQLite** | 单写入者，权限边界更清晰 |
@@ -5483,3 +5484,28 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   i18n 目录测试覆盖。见修订后的 ADR、`04-ux/06-settings-ia.md`、
   `04-ux/08-component-spec.md`、`04-ux/09-interaction-patterns.md` 与
   E2E-CHAT-turn-process-and-thinking-display。
+
+## 2026-10-18 — 内置会话消息工具（D663）
+
+- D663 修订 ADR 0165 / ADR 0239 / ADR 0240：在现有的宿主投递账本之上，新增
+  内置的按需 Agent 工具 `SessionList`、`SessionSend`、`SessionResult`，实现为
+  Electron 主进程的本地工具。发送方由宿主派生（sidecar 本地工具的 `sessionId`
+  加该会话当前活动回合），永不取自工具参数；内置投递使用保留归属值
+  `builtin:session-messaging`，插件路径会拒绝冒用该值，因此双方无法互相收到
+  对方的完成回调。
+- 本地工具在宿主权限边界之外执行，因此三者都先过 `tools.execute` 闸门，主进程
+  才真正下发：`SessionSend` 为高风险，两个读工具为低风险。Plan/Goal、`Task`
+  子代理与 MCP 目录均不可用。第一版只向已存在的会话发送 `task`（默认）或
+  `message`，不创建会话、不取消投递。
+- 发送方回合取调用声明的 `turnId`，且必须仍是该会话的活动回合；回合结束后再批准
+  旧卡片会被拒绝，停止回合会撤回待批卡片。两种 kind 都会启动或排队目标回合，
+  message 仅标注意图；`SessionResult` 只返回本会话自己发起的投递。内置投递的幂等键
+  为 `tool:<turnId>:<toolCallId>`，provider 省略调用 id 时退回随机值。
+- 复用的不变量不变：目标必须为 Agent 会话、目标权限不得高于发送方、目标队列
+  上限 8、自主跳数预算、幂等、以会话消息而非用户输入标注的来源、至多一次的
+  完成回调、重启栅栏。无 schema、迁移或协议版本变更。
+- 由 `apps/desktop/test/session-collaboration-service.test.mjs`、
+  `apps/desktop/test/session-messaging-tools.test.mjs`、
+  `packages/host-runtime/src/session-tools-gate.test.ts` 与 host-core 的
+  `session_messaging_tests` / `desktop_owned_tools_*` 覆盖；打包后的 Electron
+  旅程见 E2E-SESSION-builtin-send-to-named-session（尚未执行）。
