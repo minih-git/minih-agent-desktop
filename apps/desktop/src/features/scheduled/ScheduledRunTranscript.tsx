@@ -59,7 +59,14 @@ function TranscriptMessage({ message }: { message: UiMessage }) {
  * result never costs a conversation switch. The conversation itself stays one
  * explicit action away.
  */
-export function ScheduledRunTranscript({ run }: { run: ScheduledTaskRun }) {
+export function ScheduledRunTranscript({
+  run,
+  live = false,
+}: {
+  run: ScheduledTaskRun;
+  /** A follow-up turn is still writing into this run's conversation. */
+  live?: boolean;
+}) {
   const { t } = useTranslation();
   const sessionId = run.sessionId;
   const [reading, setReading] = useState<Reading>(EMPTY_READING);
@@ -106,15 +113,16 @@ export function ScheduledRunTranscript({ run }: { run: ScheduledTaskRun }) {
 
   // A run that finished after this card opened still carries the answer the
   // reader came for, so the read follows the run's own state, not just its id.
+  // A follow-up turn keeps that conversation live after the ledger settled.
   useEffect(() => {
     void read();
-  }, [read, run.status, run.endedAt]);
+  }, [read, run.status, run.endedAt, live]);
 
   useEffect(() => {
-    if (run.status !== "running" || !sessionId) return;
+    if ((!live && run.status !== "running") || !sessionId) return;
     const timer = setInterval(() => void read(), LIVE_REFRESH_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [read, run.status, sessionId, run.endedAt]);
+  }, [read, run.status, sessionId, run.endedAt, live]);
 
   if (!sessionId) {
     return <p className="scheduled-hint">{t("scheduled.runContentUnavailable")}</p>;

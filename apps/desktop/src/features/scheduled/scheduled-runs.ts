@@ -56,6 +56,22 @@ export function taskIsRunning(
   return runs.some((run) => run.taskId === taskId && run.status === "running");
 }
 
+/**
+ * True while the newest run's conversation is executing a turn the reader
+ * started after that run settled. The run ledger only records admitted runs,
+ * so a follow-up prompt in the result conversation leaves the stored status
+ * terminal; the renderer's per-session turn state is the authority for that
+ * case, and the task is shown as running again without inventing a run row.
+ */
+export function taskHasLiveTurn(
+  run: ScheduledTaskRun | null | undefined,
+  runningSessions: Record<string, boolean | undefined>,
+): boolean {
+  const sessionId = run?.sessionId;
+  if (!sessionId) return false;
+  return runningSessions[sessionId] === true;
+}
+
 /** The run a history view should read: the caller's pick while it still exists,
  * otherwise the newest one. Selection survives a refresh that keeps the row. */
 export function resolveSelectedRun(

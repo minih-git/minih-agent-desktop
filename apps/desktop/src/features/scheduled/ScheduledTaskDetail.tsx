@@ -35,6 +35,7 @@ export function ScheduledTaskDetail({
   runs,
   selectedRunId,
   running,
+  liveFollowUp,
   busy,
   now,
   locale,
@@ -50,6 +51,8 @@ export function ScheduledTaskDetail({
   runs: ScheduledTaskRun[];
   selectedRunId: string | null;
   running: boolean;
+  /** The selected task is live again through its newest run's conversation. */
+  liveFollowUp: boolean;
   busy: boolean;
   now: number;
   locale: string;
@@ -66,11 +69,19 @@ export function ScheduledTaskDetail({
   const [instructionOpen, setInstructionOpen] = useState(false);
   const latest = runs[0] ?? null;
   const latestDuration = runDurationMs(latest);
+  // A follow-up prompt keeps the newest run's conversation executing after the
+  // ledger row settled, so the newest row and its content card read as live.
+  const latestIsLive = latest !== null && liveFollowUp;
   const clock = cadenceHasClock(task.cadence) ? formatScheduleClock(task.schedule) : null;
   const cadence = cadenceLabel(t, task);
   const selectedRun = resolveSelectedRun(runs, selectedRunId);
   const selectedDuration = runDurationMs(selectedRun);
   const selectedSessionId = selectedRun?.sessionId ?? null;
+  // The content card only renders when a run is selected, so the non-live
+  // branch always has a stored status to read.
+  const selectedStatus: ScheduledTaskRun["status"] = selectedRun?.status ?? "completed";
+  const contentStatus: ScheduledTaskRun["status"] =
+    selectedRun && selectedRun.id === latest?.id && latestIsLive ? "running" : selectedStatus;
   const project = task.workspacePath ? shortenPath(task.workspacePath) : "";
   // The stored provider id is a UUID; the facts row shows the provider's name
   // beside the model, and falls back to the model alone when it is unknown.
@@ -119,11 +130,11 @@ export function ScheduledTaskDetail({
       <dl className="scheduled-facts">
         <Fact label={t("scheduled.lastRun")}>
           {latest ? (
-            <span className={cx("scheduled-fact-run", `is-${latest.status}`)}>
-              {t(RUN_STATUS_I18N_KEYS[latest.status])}
+            <span className={cx("scheduled-fact-run", `is-${latestIsLive ? "running" : latest.status}`)}>
+              {t(RUN_STATUS_I18N_KEYS[latestIsLive ? "running" : latest.status])}
               {" · "}
               {formatRelativeMoment(latest.startedAt, now, locale)}
-              {latestDuration === null ? "" : ` · ${formatDuration(latestDuration)}`}
+              {latestIsLive || latestDuration === null ? "" : ` · ${formatDuration(latestDuration)}`}
             </span>
           ) : (
             t("scheduled.neverRun")
@@ -172,6 +183,7 @@ export function ScheduledTaskDetail({
       <ScheduledRunHistory
         runs={runs}
         selectedRunId={selectedRun?.id ?? null}
+        liveRunId={latestIsLive ? (latest?.id ?? null) : null}
         busy={busy}
         locale={locale}
         onSelectRun={onSelectRun}
@@ -185,12 +197,12 @@ export function ScheduledTaskDetail({
               {t("scheduled.runContent")}
             </h3>
             <span className="scheduled-content-meta">
-              <span className={cx("scheduled-fact-run", `is-${selectedRun.status}`)}>
-                {t(RUN_STATUS_I18N_KEYS[selectedRun.status])}
+              <span className={cx("scheduled-fact-run", `is-${contentStatus}`)}>
+                {t(RUN_STATUS_I18N_KEYS[contentStatus])}
               </span>
               {" · "}
               {formatMoment(selectedRun.startedAt, locale)}
-              {selectedDuration === null ? "" : ` · ${formatDuration(selectedDuration)}`}
+              {contentStatus === "running" ? "" : selectedDuration === null ? "" : ` · ${formatDuration(selectedDuration)}`}
             </span>
             {selectedSessionId ? (
               <Button
@@ -204,7 +216,7 @@ export function ScheduledTaskDetail({
               </Button>
             ) : null}
           </div>
-          <ScheduledRunTranscript run={selectedRun} />
+          <ScheduledRunTranscript run={selectedRun} live={contentStatus === "running"} />
         </section>
       ) : null}
     </section>

@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectRecord, ScheduledTask, ScheduledTaskRun } from "@minih-agent/shared";
 import { api } from "../../lib/api";
-import { latestRunByTask, resolveSelectedTaskId, runsForTask, taskIsRunning } from "./scheduled-runs";
+import { useAppStore } from "../../stores/app-store";
+import {
+  latestRunByTask,
+  resolveSelectedTaskId,
+  runsForTask,
+  taskHasLiveTurn,
+  taskIsRunning,
+} from "./scheduled-runs";
 import type { ScheduledDraft } from "./ScheduledEditor";
 import { peekScheduledReturn } from "./scheduled-return";
 
@@ -22,6 +29,8 @@ export type ScheduledWorkspace = {
   runs: ScheduledTaskRun[];
   /** Newest run per task, for the task column. */
   latestRuns: Map<string, ScheduledTaskRun>;
+  /** Tasks whose newest run's conversation is executing a follow-up turn. */
+  liveTaskIds: ReadonlySet<string>;
   selectedRunId: string | null;
   busy: boolean;
   loaded: boolean;
@@ -56,6 +65,9 @@ export function useScheduledWorkspace(
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
+  // A follow-up prompt in a run's conversation does not open a new ledger row,
+  // so the run's stored status stays terminal while its turn is still live.
+  const runningSessions = useAppStore((state) => state.runningSessions);
 
   const mounted = useRef(false);
   const revision = useRef(0);
@@ -148,6 +160,15 @@ export function useScheduledWorkspace(
   );
   const runs = useMemo(() => runsForTask(taskRuns, selectedTaskId), [taskRuns, selectedTaskId]);
   const latestRuns = useMemo(() => latestRunByTask(latestPerTaskRuns), [latestPerTaskRuns]);
+  // The rail and the task page both report a live follow-up turn as running,
+  // even though the ledger row it follows has already settled.
+  const liveTurnTaskIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const run of latestPerTaskRuns) {
+      if (taskHasLiveTurn(run, runningSessions)) ids.add(run.taskId);
+    }
+    return ids;
+  }, [latestPerTaskRuns, runningSessions]);
 
   const action = useCallback(
     async (work: () => Promise<void>): Promise<boolean> => {
@@ -213,8 +234,9 @@ export function useScheduledWorkspace(
   const selectTask = useCallback((taskId: string) => setSelectedTaskId(taskId), []);
   const selectRun = useCallback((runId: string) => setSelectedRunId(runId), []);
   const runningFor = useCallback(
-    (taskId: string) => taskIsRunning(latestPerTaskRuns, taskId),
-    [latestPerTaskRuns],
+    (taskId: string) =>
+      taskIsRunning(latestPerTaskRuns, taskId) || liveTurnTaskIds.has(taskId),
+    [latestPerTaskRuns, liveTurnTaskIds],
   );
 
   return {
@@ -224,6 +246,7 @@ export function useScheduledWorkspace(
     selectedTaskId,
     runs,
     latestRuns,
+    liveTaskIds: liveTurnTaskIds,
     selectedRunId,
     busy,
     loaded,
