@@ -37,6 +37,7 @@ const REASON_KEYS: Record<string, string> = {
   METHOD_NOT_FOUND: "error.reason.unsupported",
   PAIRING_FAILED: "error.reason.pairingFailed",
   PAIRING_TOKEN_EXPIRED: "error.reason.pairingExpired",
+  STORAGE_FAILED: "error.reason.storageFailed",
   INTERNAL: "error.reason.internal",
 };
 

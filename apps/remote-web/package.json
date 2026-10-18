@@ -3,15 +3,22 @@
   "version": "0.21.2",
   "private": true,
   "type": "module",
-  "description": "Browser (H5) client for a self-hosted RACP Gateway (ADR 0331, D665)",
+  "description": "Browser (H5) and Capacitor iOS/Android client for a self-hosted RACP Gateway (ADR 0331, D665)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:native": "vite build --mode native",
     "preview": "vite preview",
+    "cap:sync": "cap sync",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "^8.0.1",
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3",
     "@minih-agent/racp": "workspace:*",
     "@minih-agent/shared": "workspace:*",
     "i18next": "^26.3.6",
@@ -20,6 +27,7 @@
     "react-i18next": "^15.6.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",

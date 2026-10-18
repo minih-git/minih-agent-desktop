@@ -8,6 +8,8 @@
 export const en = {
   "app.name": "Minih Remote",
   "app.loading": "Loading…",
+  "boot.failedTitle": "Minih Remote could not start",
+  "boot.failed": "{{reason}}",
 
   "common.back": "Back",
   "common.refresh": "Refresh",
@@ -33,7 +35,7 @@ export const en = {
   "hosts.add": "Add host",
   "hosts.open": "Open",
   "hosts.forget": "Forget",
-  "hosts.forgetConfirm": "Forget {{label}}? This browser needs a new pairing ticket afterwards.",
+  "hosts.forgetConfirm": "Forget {{label}}? This device needs a new pairing ticket afterwards.",
   "hosts.status.online": "Online",
   "hosts.status.offline": "Offline",
   "hosts.status.revoked": "Pairing revoked",
@@ -41,6 +43,7 @@ export const en = {
   "hosts.status.checking": "Checking…",
   "hosts.pairedAt": "Paired {{date}}",
   "hosts.revokeHint": "The Gateway no longer accepts this device. Forget the host and pair it again.",
+  "hosts.notPaired": "This device no longer holds a credential for this host. Forget it and pair it again.",
 
   "sessions.title": "Sessions",
   "sessions.empty": "This host has no sessions yet.",
@@ -134,6 +137,7 @@ export const en = {
   "error.reason.unsupported": "the host does not offer that operation",
   "error.reason.pairingFailed": "the pairing ticket was refused",
   "error.reason.pairingExpired": "the pairing ticket expired",
+  "error.reason.storageFailed": "the device was paired, but its token could not be stored on this device; revoke it on the desktop and pair it again",
   "error.reason.internal": "the host reported an internal error",
 
   "operation.pair": "Pairing",

@@ -165,6 +165,29 @@ exactly (`--allowed-origin https://gateway.example.com`, repeatable). The SSE
 endpoints must not be buffered, and the stream can stay idle for a long time, so
 the read timeout has to outlast the 15-second keepalive comment.
 
+### Native apps (Capacitor shells)
+
+The iOS and Android builds of `apps/remote-web` (PR-5) are not served by the
+Gateway: the webview loads the bundle from the app itself and calls the Gateway
+cross-origin with the header profile (`Authorization: Bearer`). Allow their
+origins explicitly, together with the public origin the browser build uses:
+
+```sh
+remote-gateway serve \
+  ... \
+  --allowed-origin https://gateway.example.com \
+  --allowed-origin capacitor://localhost \
+  --allowed-origin https://localhost
+```
+
+`capacitor://localhost` is the only custom scheme the allowlist accepts: it is
+the single origin an iOS WKWebView can have for a bundled page. `https://localhost`
+is the default `androidScheme` origin of the Android webview. Both are exact
+strings — no wildcard, no other scheme — and a native client still needs a valid
+bearer token, so allowing them grants nothing to a page without one. The cookie
+profile is unaffected: a cross-site `localhost` page never receives the
+`SameSite=Strict` device cookie.
+
 ```nginx
 server {
   listen 443 ssl http2;

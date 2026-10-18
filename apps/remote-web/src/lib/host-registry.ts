@@ -1,22 +1,39 @@
 /**
- * Local host registry (ADR 0331 §3.4, PR-4).
+ * Local host registry (ADR 0331 §3.4, PR-4 / PR-5).
  *
- * The browser remembers, per paired Host, only what it needs to talk to that
- * Host again: the host id, the device label, the device id, the CSRF token and
- * the pairing time. The device token itself is an `HttpOnly` cookie the
- * Gateway set and JavaScript can never read (security §3.1), and the pairing
- * token is never stored at all — so a hostile script that reads
- * `localStorage` learns nothing that authenticates a request.
+ * The client remembers, per paired Host, only what it needs to talk to that
+ * Host again: the host id, the device label, the device id and the pairing
+ * time. In the browser the device token is an `HttpOnly` cookie the Gateway
+ * set and JavaScript can never read (security §3.1), so the entry also carries
+ * the CSRF token; a native build keeps the device token in the Keychain /
+ * Keystore and the entry carries no credential at all. The pairing token is
+ * never stored — so a hostile script that reads `localStorage` learns nothing
+ * that authenticates a request.
+ *
+ * The storage key stays `minih.remote-web.hosts.v1`: a web entry written by
+ * PR-4 parses and re-serializes byte-for-byte, and an entry without a CSRF
+ * token is still a valid entry (it simply yields no credential to the browser
+ * port).
  */
 
 export const HOST_REGISTRY_STORAGE_KEY = "minih.remote-web.hosts.v1";
+
+/**
+ * Which credential profile paired a Host. Absent on a v1 web entry, which is
+ * always the cookie profile; `"native"` means the device token lives in the
+ * platform secure store instead.
+ */
+export type CredentialProfile = "cookie" | "native";
 
 export type HostRegistryEntry = {
   hostId: string;
   label: string;
   deviceId: string;
-  csrfToken: string;
+  /** Cookie profile only: the value of the `x-csrf-token` header. */
+  csrfToken?: string;
   pairedAt: string;
+  /** Absent for the cookie profile, so a v1 web entry round-trips unchanged. */
+  profile?: CredentialProfile;
 };
 
 /** The slice of `Storage` the registry needs, so tests can pass a plain map. */
@@ -52,18 +69,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Normalize one entry. Fields are composed in the order PR-4 wrote them, so a
+ * web entry serializes to exactly the bytes it was read from; a token written
+ * by a foreign build is dropped rather than carried forward.
+ */
 function toEntry(value: unknown): HostRegistryEntry | undefined {
   if (!isRecord(value)) return undefined;
-  const { hostId, label, deviceId, csrfToken, pairedAt } = value;
+  const { hostId, label, deviceId, csrfToken, pairedAt, profile } = value;
   if (typeof hostId !== "string" || !hostId) return undefined;
-  if (typeof csrfToken !== "string" || !csrfToken) return undefined;
-  return {
+  const native = profile === "native";
+  // A native entry keeps its device token in the Keychain / Keystore and has no
+  // CSRF credential, so a browser's CSRF value is dropped rather than stored.
+  const csrf = !native && typeof csrfToken === "string" && csrfToken ? csrfToken : undefined;
+  const entry: HostRegistryEntry = {
     hostId,
     label: typeof label === "string" && label ? label : hostId,
     deviceId: typeof deviceId === "string" ? deviceId : "",
-    csrfToken,
+    ...(csrf ? { csrfToken: csrf } : {}),
     pairedAt: typeof pairedAt === "string" ? pairedAt : "",
+    ...(profile === "native" ? { profile: "native" as const } : {}),
   };
+  return entry;
 }
 
 /**

@@ -29,7 +29,9 @@ Minih-Agent-Desktop/
 │ │ ├── electron.vite.config.ts
 │ │ └── package.json          # also holds the electron-builder config
 │ ├── remote-gateway/         # self-hosted RACP Gateway: Host link (wss + mTLS) and RACP-HTTP + SSE
-│ └── remote-web/             # H5 browser client: Vite + React SPA on RACP-HTTP (ADR 0331)
+│ └── remote-web/             # H5 browser and Capacitor iOS/Android client on RACP-HTTP (ADR 0331)
+│                             #   (src/, ios/ = SPM Xcode project, android/ = Gradle project,
+│                             #    capacitor.config.ts = app id and webview scheme)
 ├── crates/
 │ └── host-core/              # Rust privileged host (binary minih-agent-desktop-host-core)
 │   ├── Cargo.toml

@@ -53,6 +53,10 @@ const hostEnv = {
   NO_PROXY: "*",
 };
 const ALLOWED_ORIGIN = "https://app.test";
+// The origin an iOS Capacitor webview has (PR-5): WKWebView reserves http(s),
+// so this exact value is what a native app sends on every cross-origin call.
+const WEBVIEW_ORIGIN = "capacitor://localhost";
+const ANDROID_WEBVIEW_ORIGIN = "https://localhost";
 
 // ---------------------------------------------------------------------------
 // Model stub: one tool call, then a final answer. Any replay shows up as extra
@@ -179,6 +183,10 @@ async function startGateway({ hostlinkPort = 0, clientPort = 0 } = {}) {
         `127.0.0.1:${clientPort}`,
         "--allowed-origin",
         ALLOWED_ORIGIN,
+        "--allowed-origin",
+        WEBVIEW_ORIGIN,
+        "--allowed-origin",
+        ANDROID_WEBVIEW_ORIGIN,
       ],
       { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, NODE_OPTIONS: "" } },
     ),
@@ -517,6 +525,47 @@ try {
   assert.equal(hostList[0].online, true);
   console.log("pairing and host listing ok");
 
+  // 4b. A native client shaped like a Capacitor webview (PR-5): its Origin is
+  //     capacitor://localhost, it pairs with client:"ios", and the Gateway
+  //     answers with the token in the body and no cookie at all.
+  const pairingD = JSON.parse(
+    (await hostCliRun(["remote-pair", "--data-dir", hostData])).stdout.trim().slice("AGENT_HOST_CLI_PAIRING_TOKEN ".length),
+  );
+  const deviceD = await pair(hostId, pairingD.token, { deviceLabel: "iPhone D", client: "ios" }, WEBVIEW_ORIGIN);
+  assert.equal(deviceD.status, 200, JSON.stringify(deviceD.payload));
+  assert.ok(deviceD.payload.token?.startsWith("pdt1."), "a native client receives the token in the body");
+  assert.equal(deviceD.setCookie.length, 0, "a native pairing sets no cookie");
+  const tokenD = deviceD.payload.token;
+
+  const nativeRead = await fetch(`${clientBase}/hosts/${hostId}/v1/sessions`, {
+    headers: { authorization: `Bearer ${tokenD}`, origin: WEBVIEW_ORIGIN },
+  });
+  assert.equal(nativeRead.status, 200, "a Bearer read from the webview origin is allowed");
+  assert.equal(nativeRead.headers.get("access-control-allow-origin"), WEBVIEW_ORIGIN, "CORS echoes exactly that origin");
+  assert.equal(nativeRead.headers.getSetCookie?.().length ?? 0, 0, "a native read sets no cookie");
+  assert.ok(!nativeRead.url.includes(tokenD), "the device token never appears in a URL");
+
+  const nativePreflight = await fetch(`${clientBase}/hosts/${hostId}/v1/sessions`, {
+    method: "OPTIONS",
+    headers: {
+      origin: WEBVIEW_ORIGIN,
+      "access-control-request-method": "GET",
+      "access-control-request-headers": "authorization,last-event-id",
+    },
+  });
+  assert.equal(nativePreflight.status, 204, "the webview preflight is answered");
+  assert.equal(nativePreflight.headers.get("access-control-allow-origin"), WEBVIEW_ORIGIN);
+  const preflightHeaders = (nativePreflight.headers.get("access-control-allow-headers") ?? "").toLowerCase();
+  assert.ok(preflightHeaders.includes("authorization"), "the preflight allows authorization");
+  assert.ok(preflightHeaders.includes("last-event-id"), "the preflight allows last-event-id");
+
+  const foreignOrigin = await fetch(`${clientBase}/hosts/${hostId}/v1/sessions`, {
+    headers: { authorization: `Bearer ${tokenD}`, origin: "capacitor://evil.example" },
+  });
+  assert.equal(foreignOrigin.status, 403, "an origin outside the allowlist is refused");
+  assert.equal(foreignOrigin.headers.get("access-control-allow-origin"), null, "a refused origin is never echoed");
+  console.log("native webview origin: pairing, Bearer read, and preflight ok");
+
   // 5. Import a model stub into the Host, then create a session and run a turn.
   const payloadImport = {
     version: 1,
@@ -672,6 +721,32 @@ try {
   restarted.response.body.cancel().catch(() => undefined);
   console.log("gateway restart, reconnect, and cursor resume ok");
 
+  // 9b. The same resume over a native-shaped stream: Bearer + webview Origin +
+  //     Last-Event-ID, with no cookie and no token in the URL.
+  const nativeStream = await openStream(`/hosts/${hostId}/v1/events`, {
+    authorization: `Bearer ${tokenD}`,
+    origin: WEBVIEW_ORIGIN,
+    "last-event-id": fresh.id,
+  });
+  assert.equal(nativeStream.response.headers.get("access-control-allow-origin"), WEBVIEW_ORIGIN);
+  assert.equal(nativeStream.response.headers.getSetCookie?.().length ?? 0, 0, "a native stream sets no cookie");
+  assert.ok(!nativeStream.response.url.includes(tokenD), "the device token never appears in a stream URL");
+  const createdNative = await command(hostId, tokenD, "session/create", { title: "native shell session" });
+  assert.equal(createdNative.status, 200, JSON.stringify(createdNative.payload));
+  const nativeEvent = await nativeStream.reader.nextWhere(
+    (event) => event.data.kind === "session.created",
+    "session.created on the native stream",
+    30_000,
+  );
+  assert.notEqual(nativeEvent.id, fresh.id, "the native resume continues after its cursor");
+  assert.equal(
+    nativeEvent.data.payload.session?.id ?? nativeEvent.data.payload.id,
+    createdNative.payload.result.session.id,
+    "the native stream delivers the new session's event",
+  );
+  nativeStream.response.body.cancel().catch(() => undefined);
+  console.log("native webview origin: SSE resume from Last-Event-ID ok");
+
   // 10. Revocation: on the Gateway for device A, on the Host for device B.
   const streamA = await openStream(streamPath, { authorization: `Bearer ${tokenA}` });
   const devices = JSON.parse((await gatewayCliRun(["devices", "list", "--data-dir", gatewayData])).stdout.trim().slice("GATEWAY_DEVICES ".length));
@@ -737,7 +812,17 @@ try {
   //     and assert the secrets of this run are absent from it.
   const gatewayLog = gateway.stderr();
   const hostLog = host.stderr();
-  for (const secret of [enrollment.code, pairingA.token, pairingB.token, pairingC.token, tokenA, tokenC, deviceCookie?.split("=")[1]]) {
+  for (const secret of [
+    enrollment.code,
+    pairingA.token,
+    pairingB.token,
+    pairingC.token,
+    pairingD.token,
+    tokenA,
+    tokenC,
+    tokenD,
+    deviceCookie?.split("=")[1],
+  ]) {
     assert.ok(secret, "the fixture produced every expected secret");
     assert.equal(gatewayLog.includes(secret), false, "the Gateway log must not contain a credential");
     assert.equal(hostLog.includes(secret), false, "the Host log must not contain a credential");
@@ -749,7 +834,7 @@ try {
   // 13. Attachment relay is deferred (RacpServer declares `attachments: false`);
   //     E2E-227 step 5 stays out of R4 and is enabled when RACP attachments ship.
   assert.equal(fixtureFailure, undefined, "the model fixture saw no unexpected request");
-  console.log("PASS remote gateway: enroll, link, pair (header + cookie), commands, approval across an SSE resume, single execution, gateway restart reconnect, revocation, token isolation");
+  console.log("PASS remote gateway: enroll, link, pair (header + cookie + native webview), commands, approval across an SSE resume, single execution, gateway restart reconnect, native SSE resume, revocation, token isolation");
 } catch (error) {
   console.error(error);
   if (host) console.error(host.stderr());

@@ -10,10 +10,10 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AppShell, Button, Card, FailureBanner } from "../components/Chrome.js";
-import { defaultDeviceLabel } from "../lib/device-label.js";
+import { defaultDeviceLabel, nativeDeviceLabel } from "../lib/device-label.js";
 import type { OperationFailure } from "../lib/errors.js";
-import { credentialPort, gatewayOrigin } from "../lib/runtime.js";
 import type { HostRegistryEntry } from "../lib/host-registry.js";
+import { credentialPort, gatewayOrigin, nativePlatform } from "../lib/runtime.js";
 
 export function PairScreen({
   onPaired,
@@ -24,7 +24,11 @@ export function PairScreen({
 }) {
   const { t } = useTranslation();
   const [ticket, setTicket] = useState("");
-  const [label, setLabel] = useState(() => defaultDeviceLabel(globalThis.navigator?.userAgent ?? ""));
+  const [label, setLabel] = useState(() =>
+    nativePlatform
+      ? nativeDeviceLabel(nativePlatform)
+      : defaultDeviceLabel(globalThis.navigator?.userAgent ?? ""),
+  );
   const [pairing, setPairing] = useState(false);
   const [rejection, setRejection] = useState<PairingTicketRejection | null>(null);
   const [failure, setFailure] = useState<OperationFailure | null>(null);

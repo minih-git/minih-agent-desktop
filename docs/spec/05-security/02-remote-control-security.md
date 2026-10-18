@@ -92,6 +92,23 @@ For the first trusted-device prototype, a one-time pairing code MAY bootstrap
 the identity link. It MUST be short-lived, single-use, displayed out of band,
 and exchanged over TLS. A pairing code MUST NOT become a long-lived API token.
 
+**Native client storage (PR-5).** An iOS or Android build of the client keeps
+the device token only in platform secure storage, never in webview storage:
+
+- iOS: a Keychain item with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
+  (or stricter) and iCloud Keychain sync off, so the token never migrates to
+  another device through a backup or sync.
+- Android: a Keystore-backed store (the key lives in the AndroidKeyStore), with
+  `android:allowBackup="false"` and no data-extraction rule that would copy the
+  wrapped ciphertext, so a restore onto another device cannot yield a usable
+  token.
+- The app writes the token to secure storage before it records the Host, and
+  deletes an orphan item (secure storage survives an app reinstall while
+  webview storage does not) at startup.
+- The header profile is used for every request: the native client sends no
+  ambient cookie, and pairing for `client: "ios"` / `"android"` returns the
+  token in the response body with no `Set-Cookie`.
+
 ### 3.2 Agent Host to Gateway
 
 The Agent Host MUST open the production connection outbound. The Host link
@@ -434,6 +451,14 @@ session grant made remotely is the same by-tool-name grant as a local one
   mutation, including mutations sent over an already-open WebSocket.
 - A bearer token in a URL is always rejected.
 - CORS exposes only the required methods, headers, and response types.
+- A packaged native client (PR-5) is a cross-origin caller too, so its webview
+  origin needs its own allowlist entry: `capacitor://localhost` for an iOS
+  build and `https://localhost` for an Android build. Both are the only values
+  such a webview can have. Allowing them is safe because the header profile
+  still requires the bearer token, while the cookie profile additionally needs
+  a `SameSite=Strict` cookie that a cross-site `localhost` page never sends.
+  `capacitor://localhost` is the only custom scheme the allowlist accepts;
+  a wildcard, a port, or any other custom scheme is refused.
 
 ### 5.3 Request binding and replay protection
 

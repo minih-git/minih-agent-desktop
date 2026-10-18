@@ -302,3 +302,97 @@ describe("gateway client API", () => {
     }
   });
 });
+
+/**
+ * A Capacitor iOS webview is served from `capacitor://localhost` and an
+ * Android one from `https://localhost`; both call the Gateway cross-origin, so
+ * they use the header profile (a bearer token on every request) and need their
+ * exact origin echoed by CORS. The cookie profile is unaffected: a cross-site
+ * `localhost` page never receives the `SameSite=Strict` device cookie, and the
+ * Origin rule still refuses anything outside the allowlist.
+ */
+describe("gateway client API from a Capacitor webview origin", () => {
+  const IOS_ORIGIN = "capacitor://localhost";
+  const ANDROID_ORIGIN = "https://localhost";
+  let gateway: TestGateway;
+  let host: TestHost;
+
+  beforeEach(async () => {
+    gateway = await startTestGateway({ allowedOrigins: [IOS_ORIGIN, ANDROID_ORIGIN] });
+    host = await enrollTestHost(gateway, {});
+  });
+
+  afterEach(async () => {
+    await host?.stop();
+    await gateway?.close();
+  });
+
+  it("pairs an iOS client through its webview origin with the token in the body and no cookie", async () => {
+    const paired = await pairDevice(gateway, host, { client: "ios", label: "iPhone", origin: IOS_ORIGIN });
+    expect(paired.status).toBe(200);
+    expect(paired.token?.startsWith("pdt1.")).toBe(true);
+    expect(paired.csrfToken).toBeUndefined();
+    expect(paired.setCookie).toEqual([]);
+  });
+
+  it("pairs an Android client through https://localhost the same way", async () => {
+    const paired = await pairDevice(gateway, host, { client: "android", label: "Pixel", origin: ANDROID_ORIGIN });
+    expect(paired.status).toBe(200);
+    expect(paired.token?.startsWith("pdt1.")).toBe(true);
+    expect(paired.setCookie).toEqual([]);
+  });
+
+  it("serves a Bearer read and an event stream and echoes exactly that origin", async () => {
+    const paired = await pairDevice(gateway, host, { client: "ios", label: "iPhone", origin: IOS_ORIGIN });
+    const token = paired.token ?? "";
+    const read = await fetch(`${gateway.clientBaseUrl}/hosts/${host.hostId}/v1/sessions`, {
+      headers: { authorization: `Bearer ${token}`, origin: IOS_ORIGIN },
+    });
+    expect(read.status).toBe(200);
+    expect(read.headers.get("access-control-allow-origin")).toBe(IOS_ORIGIN);
+    expect(read.headers.get("access-control-allow-credentials")).toBe("true");
+    // Only the cookie profile sets a device cookie; a native read sets none.
+    expect(read.headers.getSetCookie?.() ?? []).toEqual([]);
+
+    const controller = new AbortController();
+    const stream = await fetch(`${gateway.clientBaseUrl}/hosts/${host.hostId}/v1/events`, {
+      headers: { authorization: `Bearer ${token}`, origin: IOS_ORIGIN, accept: "text/event-stream" },
+      signal: controller.signal,
+    });
+    expect(stream.status).toBe(200);
+    expect(stream.headers.get("content-type")).toContain("text/event-stream");
+    expect(stream.headers.get("access-control-allow-origin")).toBe(IOS_ORIGIN);
+    controller.abort();
+  });
+
+  it("allows authorization and last-event-id on the webview preflight", async () => {
+    const preflight = await fetch(`${gateway.clientBaseUrl}/hosts/${host.hostId}/v1/events`, {
+      method: "OPTIONS",
+      headers: {
+        origin: IOS_ORIGIN,
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "authorization,last-event-id",
+      },
+    });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-origin")).toBe(IOS_ORIGIN);
+    const allowedHeaders = (preflight.headers.get("access-control-allow-headers") ?? "").toLowerCase();
+    expect(allowedHeaders).toContain("authorization");
+    expect(allowedHeaders).toContain("last-event-id");
+  });
+
+  it("refuses a non-allowlisted origin on the native header profile", async () => {
+    const paired = await pairDevice(gateway, host, { client: "ios", label: "iPhone", origin: IOS_ORIGIN });
+    const token = paired.token ?? "";
+    const read = await fetch(`${gateway.clientBaseUrl}/hosts/${host.hostId}/v1/sessions`, {
+      headers: { authorization: `Bearer ${token}`, origin: "capacitor://evil.example" },
+    });
+    expect(read.status).toBe(403);
+    const preflight = await fetch(`${gateway.clientBaseUrl}/hosts/${host.hostId}/v1/sessions`, {
+      method: "OPTIONS",
+      headers: { origin: "https://evil.test", "access-control-request-method": "GET" },
+    });
+    expect(preflight.status).toBe(403);
+    expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+  });
+});

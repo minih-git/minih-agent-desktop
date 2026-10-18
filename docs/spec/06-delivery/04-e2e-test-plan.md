@@ -10269,7 +10269,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | Post-MVP | E2E-022A, E2E-022B, E2E-022C, E2E-024I, E2E-024J, E2E-024K, E2E-024L, E2E-024M (plugin roadmap R2/R3/R6) |
 | Post-baseline local automation | E2E-220 |
 | Post-baseline local automation (MCP `minih_session_get` large compaction) | E2E-MCP-session-get-projects-large-compaction |
-| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory |
+| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory, E2E-REMOTE-MOBILE-native-shell-credential-storage |
 | Trusted extensions (R7 v1) | E2E-DIALOG-long-text-boundaries, E2E-241, E2E-242, E2E-HOOKS-prompt-chain, E2E-HOOKS-cancel-and-dispose, E2E-TRUSTED-EXTENSION-custom-agent-stream-and-binding, E2E-243, E2E-TRUSTED-EXTENSION-temporary-session-cwd-is-scratch, E2E-244, E2E-245, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list, E2E-PLUGIN-provider-catalog-add-service |
 | Trusted extensions (R7 v1 npm recovery) | E2E-PLUGIN-import-extension-recovers-missing-npm |
 | Post-MVP regression coverage (plugin tool dispatch) | E2E-PLUGIN-slow-tool-is-not-cut-off-by-host-dispatch |
@@ -15496,6 +15496,45 @@ acceptance targets.
   server, and it records header *presence* for the credential headers and
   never a value. Screenshots go to `E2E_ARTIFACT_DIR` (default: a temporary
   directory) and are never committed.
+
+#### E2E-REMOTE-MOBILE-native-shell-credential-storage
+
+- **Preconditions**: An operator-built `apps/remote-web` native bundle
+  (`VITE_GATEWAY_ORIGIN` naming a test Gateway, `--mode native`) with its
+  Capacitor `ios/` and `android/` projects; a local test Gateway started with
+  `--allowed-origin capacitor://localhost --allowed-origin https://localhost`;
+  an enrolled `agent-host-cli` Host and a loopback model stub. No real Apple or
+  Google account, no signing identity, and no device farm.
+- **Steps**: 1) Build the native bundle, `cap sync`, and build the simulator app
+  (`xcodebuild ... CODE_SIGNING_ALLOWED=NO`) and the debug APK
+  (`./gradlew assembleDebug`). 2) Launch the iOS app on a simulator and confirm
+  it reaches the Host list without a crash, with a screenshot kept outside the
+  repository. 3) Pair from the app with a `mpt1:` ticket and confirm the request
+  went out as `client: "ios"` / `"android"` with that webview `Origin`, that the
+  response carried the token in the body and no `Set-Cookie`, and that the token
+  is readable from the app only through the secure store. 4) Run the static
+  release-configuration test: no `NSAllowsArbitraryLoads`, no cleartext on
+  Android, `allowBackup="false"`, internet permission only, no push artifact.
+  5) Confirm the web build's `dist/` contains no secure-storage plugin.
+- **Expected**: The app boots to the Host list; the device token never appears in
+  webview storage, a URL, a log, or the registry entry; the native profile
+  receives the token in the body while the browser profile keeps its cookie;
+  every release-configuration rule holds; and the browser build is unchanged.
+- **Specs linked**: `05-security/02-remote-control-security.md` §§3.1 and 5.2,
+  `03-runtime/19-remote-agent-control-protocol.md` §11.4,
+  `06-delivery/07-remote-control-rollout.md` §2 (R6)
+- **Acceptance**: Security, Recovery, Quality
+- **Milestone**: Post-MVP (rollout R6, D665)
+- **Status**: Draft → partially automated. Covered today by
+  `apps/remote-web/src/lib/native-credential-port.test.ts`,
+  `src/lib/native-config.test.ts`, `src/lib/csp.test.ts`,
+  `src/lib/pairing-client.test.ts`, the native leg of
+  `scripts/e2e-remote-gateway.mjs`, and a native build smoke (`build:native`,
+  `cap:sync`, `xcodebuild`, `gradlew assembleDebug`, a simulator launch with one
+  screenshot). Only a real device can confirm Keychain / Keystore behaviour
+  across an app reinstall, foreground resume of the event stream after a long
+  background period, the Android hardware back stack, and pairing over a real
+  Gateway on cellular; those are accepted by the user on their own devices.
 
 ## Trusted extension scenarios (R7 v1)
 

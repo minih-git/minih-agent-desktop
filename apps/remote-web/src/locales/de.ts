@@ -4,6 +4,8 @@ import type { TranslationKey } from "./en.js";
 export const de: Record<TranslationKey, string> = {
   "app.name": "Minih Remote",
   "app.loading": "Wird geladen…",
+  "boot.failedTitle": "Minih Remote konnte nicht starten",
+  "boot.failed": "{{reason}}",
 
   "common.back": "Zurück",
   "common.refresh": "Aktualisieren",
@@ -29,7 +31,7 @@ export const de: Record<TranslationKey, string> = {
   "hosts.add": "Host hinzufügen",
   "hosts.open": "Öffnen",
   "hosts.forget": "Entfernen",
-  "hosts.forgetConfirm": "{{label}} entfernen? Danach braucht dieser Browser ein neues Kopplungsticket.",
+  "hosts.forgetConfirm": "{{label}} entfernen? Danach braucht dieses Gerät ein neues Kopplungsticket.",
   "hosts.status.online": "Online",
   "hosts.status.offline": "Offline",
   "hosts.status.revoked": "Kopplung widerrufen",
@@ -37,6 +39,7 @@ export const de: Record<TranslationKey, string> = {
   "hosts.status.checking": "Wird geprüft…",
   "hosts.pairedAt": "Gekoppelt {{date}}",
   "hosts.revokeHint": "Das Gateway akzeptiert dieses Gerät nicht mehr. Entferne den Host und koppel ihn neu.",
+  "hosts.notPaired": "Dieses Gerät hat keine Zugangsdaten mehr für diesen Host. Entferne den Host und koppel ihn neu.",
 
   "sessions.title": "Sitzungen",
   "sessions.empty": "Dieser Host hat noch keine Sitzungen.",
@@ -130,6 +133,7 @@ export const de: Record<TranslationKey, string> = {
   "error.reason.unsupported": "der Host bietet diese Operation nicht an",
   "error.reason.pairingFailed": "das Kopplungsticket wurde abgelehnt",
   "error.reason.pairingExpired": "das Kopplungsticket ist abgelaufen",
+  "error.reason.storageFailed": "das Gerät wurde gekoppelt, aber sein Token ließ sich auf diesem Gerät nicht speichern; widerrufe es auf dem Desktop und koppel neu",
   "error.reason.internal": "der Host meldet einen internen Fehler",
 
   "operation.pair": "Koppeln",

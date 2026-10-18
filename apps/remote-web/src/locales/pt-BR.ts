@@ -4,6 +4,8 @@ import type { TranslationKey } from "./en.js";
 export const ptBR: Record<TranslationKey, string> = {
   "app.name": "Minih Remote",
   "app.loading": "Carregando…",
+  "boot.failedTitle": "Não foi possível iniciar o Minih Remote",
+  "boot.failed": "{{reason}}",
 
   "common.back": "Voltar",
   "common.refresh": "Atualizar",
@@ -29,7 +31,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "hosts.add": "Adicionar host",
   "hosts.open": "Abrir",
   "hosts.forget": "Esquecer",
-  "hosts.forgetConfirm": "Esquecer {{label}}? Depois disso este navegador precisará de um novo ticket.",
+  "hosts.forgetConfirm": "Esquecer {{label}}? Depois disso este dispositivo precisará de um novo ticket.",
   "hosts.status.online": "Online",
   "hosts.status.offline": "Offline",
   "hosts.status.revoked": "Emparelhamento revogado",
@@ -37,6 +39,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "hosts.status.checking": "Verificando…",
   "hosts.pairedAt": "Emparelhado em {{date}}",
   "hosts.revokeHint": "O Gateway não aceita mais este dispositivo. Esqueça o host e emparelhe novamente.",
+  "hosts.notPaired": "Este dispositivo não tem mais credenciais para este host. Esqueça-o e emparelhe novamente.",
 
   "sessions.title": "Sessões",
   "sessions.empty": "Este host ainda não tem sessões.",
@@ -130,6 +133,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "error.reason.unsupported": "o host não oferece essa operação",
   "error.reason.pairingFailed": "o ticket de emparelhamento foi recusado",
   "error.reason.pairingExpired": "o ticket de emparelhamento expirou",
+  "error.reason.storageFailed": "o dispositivo foi emparelhado, mas o token não pôde ser guardado neste dispositivo; revogue-o no desktop e emparelhe novamente",
   "error.reason.internal": "o host relatou um erro interno",
 
   "operation.pair": "Emparelhamento",

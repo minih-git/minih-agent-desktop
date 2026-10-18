@@ -108,7 +108,7 @@ export function HostsScreen({
           key={entry.hostId}
           entry={entry}
           onOpen={() => onOpenHost(entry)}
-          onForget={() => credentialPort.forget(entry.hostId)}
+          onForget={() => void credentialPort.forget(entry.hostId)}
         />
       ))}
     </AppShell>

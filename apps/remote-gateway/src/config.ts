@@ -238,8 +238,24 @@ export function resolveServeConfig(args: ParsedArgv, env: NodeJS.ProcessEnv = pr
   };
 }
 
-/** A browser origin is scheme + host + optional port, never a path or wildcard. */
+/**
+ * The one origin an iOS Capacitor webview can have. WKWebView reserves the
+ * http and https schemes for remote pages, so a bundled app is served from
+ * `capacitor://localhost` and the value is not configurable. An Android build
+ * uses the ordinary `https://localhost` (the default `androidScheme`), which
+ * already passes the plain-origin rule.
+ */
+export const CAPACITOR_IOS_ORIGIN = "capacitor://localhost";
+
+/**
+ * A browser origin is scheme + host + optional port, never a path or wildcard.
+ * `capacitor://localhost` is accepted beside plain http(s) origins because no
+ * other spelling of the iOS webview origin exists; every other custom scheme
+ * stays refused, the allowlist stays explicit, and a wildcard never matches.
+ */
 export function validateOrigin(origin: string): void {
+  if (origin.includes("*")) throw new GatewayConfigError("an allowed origin must be exact, never a wildcard");
+  if (origin === CAPACITOR_IOS_ORIGIN) return;
   let url: URL;
   try {
     url = new URL(origin);
@@ -249,5 +265,4 @@ export function validateOrigin(origin: string): void {
   if (url.origin !== origin.replace(/\/$/, "") || (url.protocol !== "http:" && url.protocol !== "https:")) {
     throw new GatewayConfigError(`${origin} is not a plain http(s) origin`);
   }
-  if (origin.includes("*")) throw new GatewayConfigError("an allowed origin must be exact, never a wildcard");
 }

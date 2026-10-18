@@ -4,6 +4,8 @@ import type { TranslationKey } from "./en.js";
 export const tr: Record<TranslationKey, string> = {
   "app.name": "Minih Uzak",
   "app.loading": "Yükleniyor…",
+  "boot.failedTitle": "Minih Remote başlatılamadı",
+  "boot.failed": "{{reason}}",
 
   "common.back": "Geri",
   "common.refresh": "Yenile",
@@ -29,7 +31,7 @@ export const tr: Record<TranslationKey, string> = {
   "hosts.add": "Ana makine ekle",
   "hosts.open": "Aç",
   "hosts.forget": "Unut",
-  "hosts.forgetConfirm": "{{label}} unutulsun mu? Bundan sonra bu tarayıcı yeni bir bilet ister.",
+  "hosts.forgetConfirm": "{{label}} unutulsun mu? Bundan sonra bu cihaz yeni bir bilet ister.",
   "hosts.status.online": "Çevrimiçi",
   "hosts.status.offline": "Çevrimdışı",
   "hosts.status.revoked": "Eşleştirme iptal edildi",
@@ -37,6 +39,7 @@ export const tr: Record<TranslationKey, string> = {
   "hosts.status.checking": "Denetleniyor…",
   "hosts.pairedAt": "{{date}} tarihinde eşleştirildi",
   "hosts.revokeHint": "Ağ geçidi bu cihazı artık kabul etmiyor. Ana makineyi unutup yeniden eşleştirin.",
+  "hosts.notPaired": "Bu cihazda artık bu ana makine için kimlik bilgisi yok. Ana makineyi unutup yeniden eşleştirin.",
 
   "sessions.title": "Oturumlar",
   "sessions.empty": "Bu ana makinede henüz oturum yok.",
@@ -130,6 +133,7 @@ export const tr: Record<TranslationKey, string> = {
   "error.reason.unsupported": "ana makine bu işlemi sunmuyor",
   "error.reason.pairingFailed": "eşleştirme bileti reddedildi",
   "error.reason.pairingExpired": "eşleştirme biletinin süresi doldu",
+  "error.reason.storageFailed": "cihaz eşleştirildi ancak belirteci bu cihaza kaydedilemedi; masaüstünde iptal edip yeniden eşleştirin",
   "error.reason.internal": "ana makine iç hata bildirdi",
 
   "operation.pair": "Eşleştirme",

@@ -42,3 +42,12 @@ export function defaultDeviceLabel(userAgent: string): string {
   if (!browser) return platform;
   return `${browser} on ${platform}`;
 }
+
+/**
+ * The native default label: the platform, nothing more. A model name or a
+ * device identifier would need a new permission, and the label is only ever
+ * shown in the Host's paired-device list.
+ */
+export function nativeDeviceLabel(platform: "ios" | "android"): string {
+  return platform === "ios" ? "iOS app" : "Android app";
+}

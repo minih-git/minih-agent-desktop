@@ -4,6 +4,8 @@ import type { TranslationKey } from "./en.js";
 export const zhTW: Record<TranslationKey, string> = {
   "app.name": "Minih 遠端",
   "app.loading": "載入中…",
+  "boot.failedTitle": "Minih 遠端無法啟動",
+  "boot.failed": "{{reason}}",
 
   "common.back": "返回",
   "common.refresh": "重新整理",
@@ -29,7 +31,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "hosts.add": "新增主機",
   "hosts.open": "開啟",
   "hosts.forget": "忘記",
-  "hosts.forgetConfirm": "忘記 {{label}}？之後本瀏覽器需要新的配對票據。",
+  "hosts.forgetConfirm": "忘記 {{label}}？之後本裝置需要新的配對票據。",
   "hosts.status.online": "上線",
   "hosts.status.offline": "離線",
   "hosts.status.revoked": "配對已撤銷",
@@ -37,6 +39,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "hosts.status.checking": "檢查中…",
   "hosts.pairedAt": "配對時間 {{date}}",
   "hosts.revokeHint": "閘道不再接受此裝置。請忘記該主機後重新配對。",
+  "hosts.notPaired": "本裝置已不持有該主機的憑證。請忘記該主機後重新配對。",
 
   "sessions.title": "工作階段",
   "sessions.empty": "此主機尚無工作階段。",
@@ -130,6 +133,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "error.reason.unsupported": "主機不提供該操作",
   "error.reason.pairingFailed": "配對票據被拒絕",
   "error.reason.pairingExpired": "配對票據已過期",
+  "error.reason.storageFailed": "裝置已配對，但權杖無法保存在本裝置上；請先在桌面端撤銷它，再重新配對",
   "error.reason.internal": "主機回報了內部錯誤",
 
   "operation.pair": "配對",
