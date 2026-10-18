@@ -4346,28 +4346,34 @@ window; opening a normal panel afterward must still work.
 - **Milestone**: M5
 - **Status**: Host RPC integration-covered; full UI scenario Draft
 
-#### E2E-048A: Project session lists fold after the ten most recent rows
+#### E2E-048A: Project session lists reveal one page of five rows per click
 
 - **Preconditions**: One retained project contains more than ten durable
   sessions with distinct updated timestamps; the sidebar uses the default
-  Recently updated sort; another retained project has ten or fewer sessions.
+  Recently updated sort; another retained project has five or fewer sessions.
 - **Steps**: 1) Inspect the large project's session rows and count them. 2)
-  Select the **Load N more…** control. 3) Switch the sort to Name and inspect
-  the same group before expanding. 4) Restart the app and inspect the group
-  again.
-- **Expected**: The group shows exactly ten session rows by default plus a
-  **Load N more…** control (N = remaining session count) styled like the
-  time-grouped overflow; the ten rows are the first rows in the active sort
-  order, so pinned rows are never pushed behind unpinned rows and a Name sort
-  folds everything after the first ten alphabetically; selecting Load more
-  expands the full time-grouped list (Yesterday/Previous 7 days/Previous 14
-  days/Older headers appear as applicable) and the control disappears;
-  expansion is per group and resets on restart (not persisted); the project
-  with ten or fewer sessions shows no fold control.
+  Select the **Load N more…** control and inspect the rows and the control again.
+  3) Select **Show less** and inspect the group. 4) Switch the sort to Name and
+  inspect the same group before revealing a page. 5) Restart the app and inspect
+  the group again.
+- **Expected**: The group shows exactly five session rows by default plus a
+  **Load N more…** control whose N is the five-row increment (or the smaller
+  remainder) styled like the time-grouped overflow; the five rows are the first
+  rows in the active sort order, so pinned rows are never pushed behind the fold
+  and a Name sort folds everything after the first five alphabetically. Each
+  click adds one page of five in order and leaves the remaining rows folded; once
+  a group shows more than its initial page a **Show less** control folds it back
+  to the initial five without folding the project, and the group reaches the
+  full time-grouped list (Yesterday/Previous 7 days/Previous 14 days/Older
+  headers appear as applicable) only after repeated clicks, when the load-more
+  control disappears. Page state is per group and resets on restart (not
+  persisted); the project with five or fewer sessions shows no fold control.
 - **Specs linked**: `04-ux/01-ui-ia.md`, `04-ux/09-interaction-patterns.md`
 - **Acceptance**: C (session organization)
 - **Milestone**: M5
-- **Status**: Scenario Documented
+- **Status**: Automated through `pnpm test:e2e:layout`
+  (`scripts/e2e/sidebar-row-states.mjs`) over the twelve-session project, with
+  unit coverage in `sidebar-project-sessions.test.mjs`.
 
 #### E2E-049: Background sessions keep their originating workspace
 
@@ -10033,6 +10039,34 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 - **Status:** Candidate validation required; full checkpoint-recovery fault
   injection is not claimed by the settings or multi-Host happy-path suites.
 
+### E2E-CONFIG-SYNC-skill-package-repository-metadata
+
+- **Preconditions:** A built task candidate with two isolated Host processes and
+  the local S3 fixture, plus a directory-shaped skill whose folder contains a
+  git repository with an object pack larger than the per-resource cap.
+- **Steps:** 1) Place a real resource and a `.git` object pack above 2 MiB
+  beside the skill document on the first device. 2) Sync, approve the skill on
+  the second device, and compare both packages. 3) Repeat with a revision
+  captured by an older build that still lists `.git` resources. 4) Repeat with a
+  genuine resource above the cap.
+- **Expected:** Capture succeeds and ships only real resources; the `.git` pack
+  is neither uploaded nor written on the receiving device, and the sender's
+  repository is untouched. An older revision's `.git` entries are ignored rather
+  than treated as files the local package owes the remote one, so repeated syncs
+  converge instead of conflicting. A genuine oversized resource still fails with
+  `SKILL_LIMIT_EXCEEDED`, now naming the skill, the resource path, the actual
+  size and the limit.
+- **Automation:** Rust `user_skills::package_tests` covers the packager filter,
+  the git pointer file, the `.git` symlink, the legacy revision and the refusal
+  detail; `config_sync::engine::tests::two_devices_sync_credentials_capabilities_and_disjoint_edit`
+  carries a `.git` pack through capture, upload, read-back and apply;
+  `pnpm test:e2e:config-sync` remains the multi-Host harness.
+- **Specs:** `03-runtime/22-config-sync.md`,
+  `docs/adr/0303-skill-package-resource-limits.md`.
+- **Acceptance:** F (persistence), Quality.
+- **Milestone:** Post-M6 desktop shell maintenance.
+- **Status:** Automated at the Rust package and two-device engine level.
+
 **E2E-CHAT-session-todo-checklist: TodoWrite to session-aware TodoDock**
 
 - **Preconditions**: An isolated local Electron profile with a deterministic
@@ -10827,7 +10861,7 @@ This test plan spec is accepted when:
 - Expect one Pinned section above Sessions and Projects, containing all four
   pins with their project names or Temporary space label. Pins have no date
   headers and do not appear a second time in ordinary history. A still shows
-  ten normal rows initially, with its remaining rows behind Load more.
+  five normal rows initially, with each remaining page behind Load more.
 - Change the date across midnight and select each session sort. Pins remain
   above history; sorting changes only their internal order. Selecting B or C's
   pin activates its original conversation and project; selecting the Temporary
@@ -16350,8 +16384,9 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   and keyboard Tab/Shift+Tab focus. Fold and reopen its group. Select pinned and
   standalone conversations. Open Settings and return. Enable reduced motion and
   inspect both row transition durations. In a separate twelve-session project,
-  load the remaining two sessions, fold and reopen the group, and verify only
-  the initial ten sessions remain visible.
+  reveal one page, fold the group back with Show less, reveal the remaining
+  pages, then fold and reopen the group and verify only the initial five
+  sessions remain visible.
 - **Expected**: Project and conversation hover backgrounds, radii and transitions
   match. The title button stays transparent. Only a conversation uses selected
   fill, which wins over hover; workspace identity remains a separate dot with
@@ -16360,9 +16395,12 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   retains an outline, action buttons retain local feedback, drop-target paint
   wins over hover, and blur releases hover without clearing selection. Settings
   replaces sidebar navigation, and returning restores conversation and workspace
-  context without a second selected row. Loading more sessions reveals all
-  twelve; folding and reopening restores the initial ten and the two-session
-  remainder control. Rendered component tests additionally cover no selected
+  context without a second selected row. Each load-more click reveals one page of
+  five, so twelve sessions need two clicks and the label states that increment;
+  Show less folds a partially loaded group back to the initial five without
+  folding the project, and folding and reopening restores the initial five and
+  the seven-session remainder control. Rendered component tests additionally
+  cover no selected
   session, a pending destination and non-chat page state.
 - **Specs linked**: `04-ux/01-ui-ia.md`, `04-ux/08-component-spec.md`,
   `04-ux/09-interaction-patterns.md` §9.1c
@@ -18104,13 +18142,19 @@ renderer's durable transcript reads. No real model or provider is contacted.
 - **Preconditions:** One retained project has at least twelve unpinned sessions,
   and its group can be expanded in the sidebar.
 - **Steps:** 1. Expand the project and confirm the latest five sessions plus a
-  Load more control are visible. 2. Click Load more and confirm all twelve
-  sessions appear. 3. Collapse the project, then expand it again. 4. Inspect the
-  visible sessions and the Load more count.
-- **Expected:** Reopening the project shows only the latest five unpinned
-  sessions, and Load more reports the seven hidden sessions. The collapse clears
-  only that project's loaded-more state; session selection and other project
-  groups remain unchanged.
+  Load more control are visible. 2. Click Load more and confirm one further page
+  appears while the control still reports the remaining increment. 3. Click Show
+  less and confirm the group folds back to the initial five without folding the
+  project. 4. Click Load more twice to reveal all twelve sessions. 5. Collapse
+  the project, then expand it again. 6. Inspect the visible sessions and the Load
+  more count.
+- **Expected:** Each Load more click adds one page of five (or the smaller
+  remainder) and the label states that increment; once a group shows more than
+  its initial page, Show less folds it back to the initial five without folding
+  the project, and the control disappears once every session is visible.
+  Reopening the project shows only the latest five unpinned sessions, and Load
+  more reports the five-row increment. The collapse clears only that project's
+  page state; session selection and other project groups remain unchanged.
 - **Specs:** `04-ux/08-component-spec.md` §3.9;
   `04-ux/09-interaction-patterns.md` §1.6.
 - **Acceptance:** C / D / Quality.

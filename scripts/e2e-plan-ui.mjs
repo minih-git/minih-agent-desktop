@@ -746,9 +746,15 @@ async function selectSession(state, sessionId) {
       for (const toggle of document.querySelectorAll('[data-action="toggle-project-collapse"][aria-expanded="false"]')) {
         toggle.click();
       }
-      for (const more of document.querySelectorAll(".sidebar-load-more")) more.click();
-      await new Promise((resolveWait) => requestAnimationFrame(() => resolveWait()));
-      row = findRow();
+      // A load-more click reveals one page, so keep asking until the row is on
+      // screen or every project has loaded its whole history.
+      for (let page = 0; page < 40 && !row; page += 1) {
+        const more = [...document.querySelectorAll(".sidebar-load-more")];
+        if (!more.length) break;
+        for (const button of more) button.click();
+        await new Promise((resolveWait) => requestAnimationFrame(() => resolveWait()));
+        row = findRow();
+      }
     }
     if (row) {
       row.querySelector("button.thread-item-main")?.click();

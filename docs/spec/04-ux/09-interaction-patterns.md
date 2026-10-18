@@ -297,10 +297,12 @@ may be retained while exactly one workspace supplies the visible shell context.
   ahead of the manual order; projects without an assigned order fall back to
   a stable path order until they are moved.
 - Each project group shows the five most-recent rows in the active sort order
-  by default; the remaining sessions fold behind a **Load N more…** control
-  (the same affordance used for time-grouped overflow). Selecting it expands
-  the full time-grouped list, and the expanded state is per-group, for the
-  current session only, and not persisted.
+  by default. A **Load N more…** control (the same affordance used for
+  time-grouped overflow) reveals one further page of five per click and states
+  that increment, so the full time-grouped list appears only after repeated
+  clicks. Once a group shows more than its initial page a **Show less** control
+  folds it back to the initial five without folding the project, and the page
+  state is per-group, for the current session only, and not persisted.
 - Presentation changes are saved best-effort. Storage failure must not block
   project activation, session selection, or agent execution.
 

@@ -109,7 +109,10 @@ test("sidebar renders global pins once, outside project folding and history limi
     );
     assert.equal(rows(html).length, new Set(rows(html)).size, "pins have no duplicate rows");
     assert.equal(rows(html).filter((id) => id.startsWith("normal-")).length, 5);
-    assert.match(html, /class="sidebar-load-more"[^>]*>Load 6 more…<\/button>/);
+    // The label states the page a click adds, not the whole remainder, and the
+    // initial page has nothing to fold back to.
+    assert.match(html, /class="sidebar-load-more"[^>]*>Load 5 more…<\/button>/);
+    assert.doesNotMatch(html, /sidebar-collapse-more/);
     assert.ok(rows(html).includes("temporary-normal"));
     assert.ok(!rows(html).includes("archived-pin"));
     assert.ok(!rows(html).includes("archived-project-pin"));
