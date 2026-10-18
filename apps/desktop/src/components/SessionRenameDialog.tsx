@@ -50,12 +50,14 @@ function RenameDialog({
   const savingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    requestAnimationFrame(() => {
+    const frameId = requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.select();
     });
@@ -63,7 +65,7 @@ function RenameDialog({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        if (!savingRef.current) onClose();
+        if (!savingRef.current) onCloseRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -84,11 +86,12 @@ function RenameDialog({
 
     window.addEventListener("keydown", onKeyDown);
     return () => {
+      cancelAnimationFrame(frameId);
       window.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
       if (previouslyFocused?.isConnected) previouslyFocused.focus();
     };
-  }, [onClose]);
+  }, []);
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

@@ -120,11 +120,40 @@ again. The naming input is always the first persisted user message, never the
 message that happened to trigger a later send, so resending or continuing a
 conversation cannot rename the session.
 
+Composer file and paste chips serialize to `@path` tokens, so a first prompt can
+be nothing but a reference to a pasted document under
+`<data dir>/scratch/<session>/pasted/`. The fallback therefore strips those
+tokens and keeps only the user's own words; a prompt without any stays a
+placeholder instead of surfacing the scratch path as the task name, and the
+automatic title below names the session from pasted text or the referenced
+file names.
+
+The naming input has four parts. The user's own words come first: the first
+message with its `@path` tokens removed. Pasted material follows when the
+message referenced a paste: Electron main reads at most three regular text files
+from that session's own `pasted/` directory, at most 2,000 code points each and
+3,000 in total, from the head of each file so a multi-megabyte paste still
+contributes its opening instead of being skipped. Only text extensions are read,
+and every step from the data root through `scratch/<session>/pasted/` must stay
+inside the previous one, so neither a file link nor a redirected `pasted/`
+directory can reach another session or an arbitrary path. Referenced workspace
+files contribute their bounded file names next (`@src/login.ts` names the
+session even with no typed text); their contents are never read. The language
+instruction comes last and belongs to the user's own words: the script is named
+outright only when it identifies the language (kana, Hangul, Thai), Han and the
+other shared writing systems are named as scripts so kanji-only Japanese is not
+renamed in Chinese, and the attachment decides only when the prompt has no
+words of its own. Latin-script requests keep the generic "the user's language"
+rule instead of a guess.
+
 The completion writes through a host compare-and-set that succeeds only while
 the exact title it read is still current with the `default` source. Manual
-renames and another generated title therefore win concurrent updates.
-Host-core owns the title source in schema v23; this state survives renderer
-restart and does not expose a general transcript-read API.
+renames and another generated title therefore win concurrent updates. A landed
+write emits one `sessionsChanged` event with reason `session.title`; the
+renderer's session list is its own copy, so without that announcement a
+generated name stayed invisible until the next reload. A refused write emits
+nothing. Host-core owns the title source in schema v23; this state survives
+renderer restart and does not expose a general transcript-read API.
 
 ### 4.2 Re-titling after a context compaction
 
@@ -140,7 +169,25 @@ session keeps following the conversation's current subject — but never a
 fingerprints before spending a model call, so a stale or duplicated event
 costs nothing, and a session is never re-titled twice for the same checkpoint.
 The event carries the fingerprint only, never summary text: everything the
-main process needs about the summary is re-read from the host.
+main process needs about the summary is re-read from the host. The prompt also
+carries the title being replaced, so a refresh keeps the language the session
+is already named in even when the checkpoint was summarized in another one; a
+landed refresh emits the same `sessionsChanged` announcement as a first title.
+
+### 4.3 One composition per session, and a second chance
+
+The send path and the settled-turn retry share one generator instance. Its run
+registry is reserved before the composition's first await, so two triggers can
+never compose the same session concurrently, and the retry waits for a
+composition that is still running instead of skipping it — that one can fail
+after the turn ended, and its retry would otherwise be lost. Only a real attempt
+spends the retry budget (two per session), and an already-named session costs
+one host round-trip and no model call.
+
+The requested model always decides the provider. A caller without a session
+binding (the retry) passes the request's own `providerId/modelId` to the launch
+resolver; omitting it fell back to the default provider, which sent the naming
+input to a service the request never named.
 
 Settings own the built-in generator's model and thinking level
 (`sessionTitle`); the standalone title plugin is superseded (ADR 0323

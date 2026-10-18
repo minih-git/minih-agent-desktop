@@ -32,6 +32,46 @@ const [api, protocol, host, rpc, queueSlice, main, store] = await Promise.all([
   readMainSource(),
   readStoreSource(),
 ]);
+test("a prompt that is only a pasted chip is never named after its path", () => {
+  const pastedChip = "@/Users/minih/.minih-agent-desktop/scratch/e94e3/pasted/pasted-a1b2.txt";
+  // The old fallback sliced the raw prompt, so the sidebar showed the scratch
+  // path as the task name until something else renamed it.
+  assert.equal(promptFallbackSessionTitle(pastedChip, "New task"), "New task");
+  assert.equal(promptFallbackSessionTitle(`${pastedChip} 总结这份文档`, "New task"), "总结这份文档");
+  assert.equal(
+    promptFallbackSessionTitle('@"/tmp/a b/notes.md" compare @src/a.ts', "New task"),
+    "compare",
+  );
+});
+
+test("a generated or refreshed title reaches the sidebar through one event", () => {
+  // The host write alone is invisible: the renderer keeps its own session list,
+  // so Electron main must announce the change after the compare-and-set lands.
+  assert.match(
+    main,
+    /onTitleChanged: \(\) =>\s*sendToRenderer\(IPC\.event\.sessionsChanged, \{ reason: "session\.title" \}\)/,
+  );
+  assert.match(main, /createSessionTitleGenerator\(\{[\s\S]{0,600}dataDir,/);
+  assert.match(main, /createSessionRetitleGenerator\(\{[\s\S]{0,700}onTitleChanged/);
+});
+
+test("one generator instance serves the send path and the settled-turn retry", () => {
+  // Two instances would each hold their own run registry, so a retry could race
+  // the composition it is meant to complete and spend a second model call.
+  // The helper's own declaration is the other match; only index.ts constructs it.
+  assert.equal(main.match(/= createSessionTitleGenerator\(/g)?.length, 1);
+  assert.match(main, /const sessionTitleGenerator = createSessionTitleGenerator\(\{/);
+  assert.equal(main.match(/sessionTitleGenerator\.run,/g)?.length, 2);
+  assert.match(main, /generateSessionTitle: sessionTitleGenerator\.run,/);
+  assert.match(main, /isSessionTitleRunning: sessionTitleGenerator\.isRunning,/);
+  assert.match(main, /whenSessionTitleIdle: sessionTitleGenerator\.whenIdle,/);
+  assert.match(
+    main,
+    /generateSessionTitleJob &&[\s\S]{0,200}event\.type === "agent_end"[\s\S]{0,900}MAX_TITLE_RETRIES/,
+  );
+  assert.match(main, /await whenSessionTitleIdle\?\.\(retrySessionId\)/);
+  assert.match(main, /MAX_TITLE_RETRIES = 2/);
+});
 
 test("the first prompt becomes an immediate title, collapsed and capped", () => {
   assert.equal(promptFallbackSessionTitle("  Fix\n the\tlogin  ", "New task"), "Fix the login");

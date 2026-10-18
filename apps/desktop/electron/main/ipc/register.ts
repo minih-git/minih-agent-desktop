@@ -37,7 +37,7 @@ import { registerComposerIpc } from "./composer-ipc";
 import { registerSpeechIpc } from "./speech-ipc";
 import { registerVoiceIpc } from "./voice-ipc";
 import { registerLiveVoiceIpc } from "./live-voice-ipc";
-import { createSessionTitleGenerator } from "../session-title-service";
+import type { SessionTitleJob } from "../session-title-service";
 import type { LiveCallService } from "../live-voice/call-service";
 import type { LiveVoiceWidget } from "../live-voice/widget-window";
 import type { IpcRegistrar } from "./types";
@@ -45,6 +45,11 @@ import type { createTraySessions } from "../tray-sessions";
 import type { createTaskbarUnreadBadge } from "../taskbar-unread-badge";
 
 export type RegisterIpcDependencies = {
+  /**
+   * Built-in session title generator. One instance is shared with the settled
+   * turn retry so both triggers serialize on the same in-flight guard.
+   */
+  generateSessionTitle: (job: SessionTitleJob) => Promise<boolean>;
   isQuitting: () => boolean;
   ipcMain: IpcMain;
   getMainWindow: () => BrowserWindow | null;
@@ -86,6 +91,7 @@ function wrap<T>(fn: () => Promise<T>): Promise<Result<T>> {
 
 export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
   const {
+    generateSessionTitle,
     ipcMain,
     getMainWindow,
     getHost,
@@ -428,12 +434,9 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     optionalWorkspaceRoot,
     composerCommandService,
     loadComposerTemplatesCached,
-    generateSessionTitle: createSessionTitleGenerator({
-      getHost,
-      resolveAgentRuntimeLaunch,
-      vendorOAuth,
-      logger,
-    }),
+    // One generator instance for the send path and the settled-turn retry, so
+    // both share the in-flight guard and never race each other.
+    generateSessionTitle,
   });
 
   registerPluginIpc({

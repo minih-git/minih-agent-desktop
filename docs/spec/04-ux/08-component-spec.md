@@ -447,7 +447,7 @@ visually distinct from list content.
 | No retained project | Compact Open project entry; standalone Sessions rows remain available |
 | Empty group | Muted one-line empty state; group create action remains available |
 | Default session title | New task/New chat (localized where applicable) until the first prompt, the user, or an installed title plugin sets one |
-| First prompt title | A normalized 48-character prompt fallback appears immediately and is stored as a still-replaceable automatic title |
+| First prompt title | A normalized 48-character prompt fallback appears immediately and is stored as a still-replaceable automatic title; `@path` chips are dropped, and a prompt with no words of its own keeps the placeholder rather than the pasted scratch path |
 | Plugin-generated session title | A title plugin may replace that automatic title after the first completed turn when its permission is granted |
 | Manual session title | User-defined title remains stable across refresh and renderer restart; automatic titles (local fallback or plugin) never overwrite it |
 | Footer idle | Transparent 58px band; build and action controls remain visually quiet |

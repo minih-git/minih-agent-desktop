@@ -50,3 +50,16 @@ update and across restart.
   about an individual task/session, not the workspace identity.
 - Add a command-palette command: deferred; the existing row actions are the
   discoverable surface and no new global command is needed for this operation.
+
+## Amendment 2026-10-18: the dialog survives a streaming parent
+
+The dialog focused the input and selected the whole draft in an effect that
+depended on the `onClose` callback identity. Both callers pass an inline
+callback, and the Sidebar and Project archive re-render while a turn streams,
+so every streamed re-render re-ran the effect: the draft was re-selected in
+full and the next keystroke replaced it. Focus, the initial select-all, the
+keydown listener, and body-overflow handling now run once per mount, the
+latest `onClose` is read through a ref, and the per-frame focus request is
+cancelled on unmount. Typed text, the caret, and a partial selection therefore
+survive streamed re-renders, and the saved title is exactly what the user
+typed.
