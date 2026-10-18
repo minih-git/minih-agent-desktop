@@ -17,8 +17,8 @@ Linux 或 WSL 机器上的项目，即 SSH 隧道远端 Host 拓扑；#100 要�
 出站集成；维护者要求从手机跟进执行过程、处理审批和输入请求，并对
 `agent-host-cli` 常驻机器与运行中的桌面发起、停止和打断回合，这把 Gateway、
 可连接 Host 与浏览器／移动客户端里程碑排期（D665，ADR 0331）。排期顺序为
-R0、R1、R2、R3，随后 R4、R5、R6（D665）；保留的 gRPC 绑定仍不排期，只在有
-明确消费者时由后续记录在案的产品决策交付。
+R0、R1、R2、R3，随后 R4、R5、R6（D665），再之后是 R7——Router 账户绑定（D666，
+规划中）；保留的 gRPC 绑定仍不排期，只在有明确消费者时由后续记录在案的产品决策交付。
 
 ## 2. 里程碑
 
@@ -124,6 +124,40 @@ R0、R1、R2、R3，随后 R4、R5、R6（D665）；保留的 gRPC 绑定仍不�
   Firebase/APNs 文件与后台模式）；仅凭票据即可完成配对（客户端从票据得到 Host 标识，
   两个配对 cookie 都带有限 `Max-Age`，非同源 `GET`/`HEAD` 的 cookie 请求仍须带白名单内的
   `Origin`）。
+- R7（D666，规划中）：Router 账户绑定。在 R4–R6 之上交付 ADR
+  `remote-control-router-account-binding` 的账户模式；R4/R5 的自托管注册与每 Host
+  配对行为不变，账户模式只在 Router 的 bootstrap 应答给出 `remoteGateway` 时启用。
+  工作包（每个一个 PR）：
+
+| # | 仓库 | 工作 | 依赖 |
+|---|---|---|---|
+| A | Desktop | 本决策：ADR、规格更新与决策 D666（仅文档） | — |
+| B | Router | bootstrap 应答新增可选的 `remoteGateway {hostlinkUrl, publicOrigin, caPem}`，含系统设置、测试与文档 | A（契约） |
+| C | Desktop | Gateway 账户目录：按 key 注册、账户登录、账户主机列表、设备申请与确认中继、可信代理客户端 IP、跨账户隔离测试 | A |
+| D | Desktop | `device.request` / `device.grant` 帧、Host 侧确认与授权校验、`agent-host-cli` 支持 | C |
+| E | Desktop | host-core 第二条组网端口转发、按 bootstrap 自动配置、桌面确认对话框、严格模式与 i18n | B、D |
+| F | Desktop | 客户端：`apps/remote-web` 的 AccessKey 登录与主机切换 | C、D |
+| G | Desktop | 在账户之上叠加推送 | F |
+| D-1 | 运维 | 在 Router 旁部署；需要域名与用户授权 | C–F |
+
+B 与 C 可在 A 之后并行。范围说明：Gateway 保持为独立进程，有自己的发布与 `--data-dir`，
+不进入 Router 的单实例平滑升级流程；部署需要 Router 把 Gateway 的 loopback 对端列入
+`TRUSTED_PROXIES` 并把 `CLIENT_IP_HEADER` 设为 Gateway 发送的头，组网地址上的 Host link
+监听需用 `--hostlink-allow-cidr` 放行（组网网段既不属于 RFC1918 也不属于
+`100.64.0.0/10`），H5 客户端需要域名或路径前缀——这些都是部署决定；桌面需要第二条
+No-TUN 转发到组网上的 Host link 地址（provider 配置规格 §3），目前只有一条；新帧只发给
+声明支持的 Host，声明方式由工作包 D 定义。
+
+退出条件：`E2E-REMOTE-ACCOUNT-cross-account-isolation`、
+`E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts`、
+`E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm`、
+`E2E-REMOTE-ACCOUNT-key-rotation-keeps-account` 与
+`E2E-REMOTE-ACCOUNT-disabled-key-blocks-login` 全部通过（被禁用或删除的 key 登录与注册
+都被拒绝，已批准的设备令牌与 Host 证书在撤销前保持有效；组网按 key 签发凭据时，Host
+链路最迟在凭据过期时中断，见 ADR 决策 8）；安全规格验收门 29–33 签核，其中 Gateway 绝不
+持久化原始 AccessKey、绝不把客户端的 key 转发给 Host，客户端在设备交换后不再保留（门
+30）；账户模式不可用（没有 `remoteGateway` 或 bootstrap 返回 `404`）时保持 R4/R5 的
+自托管流程、不报错并隐藏账户模式入口。
 - 保留的 gRPC 绑定仅在有明确消费者时交付，`.proto` 由 typebox 来源生成。
 
 R2 的设计决定（D375，2026-09-10 记录）：远端 Host 的 provider 配置经 SSH 引导通道
@@ -187,10 +221,12 @@ Host 连接健康与引导时长与版本不匹配、认证与授权失败、集
 SSH 隧道拓扑先对 allowlist 用户以 feature flag 启用再普遍开放；集成适配层作为
 默认不配置任何渠道的可选设置启用；R4–R6 作为独立启用的面交付（D665）：Gateway
 是用户自行启动的独立服务，桌面链路与移动客户端是默认关闭的可选设置；保留的
-gRPC 里程碑只由后续记录在案的产品决策排期。kill switch 拒绝新的远程连接并取消远程主体提交的排队回合，不影响
-本地桌面。回滚必须停止接受新的远程连接并停止集成适配层，远端 `agent-host-cli` 进程
-按用户选择保留或停止但绝不删除其 transcript，保持本地 stdio、renderer 与 MCP
-路径可用，保留本地已完成的 transcript，且绝不因远程 feature flag 变化而重放回合。
+gRPC 里程碑只由后续记录在案的产品决策排期；R7（D666）按 Router 启用：只有 Router 返回
+`remoteGateway` 对象时才开启账户模式，移除该对象即回滚，桌面随之保持自托管流程。kill
+switch 拒绝新的远程连接并取消远程主体提交的排队回合，不影响本地桌面。回滚必须停止接受
+新的远程连接并停止集成适配层，远端 `agent-host-cli` 进程按用户选择保留或停止但绝不删除
+其 transcript，保持本地 stdio、renderer 与 MCP 路径可用，保留本地已完成的 transcript，
+且绝不因远程 feature flag 变化而重放回合。
 
 ## 6. 生产准入
 
@@ -205,6 +241,9 @@ R4–R6 准入（D665）：E2E-227、E2E-228、E2E-265 与 E2E-266 针对打包�
 可连接的桌面 Host 与移动客户端全部通过；`05-security/02-remote-control-security.md`
 的安全门 22–27 签核通过（含桌面关闭态回归）；部署 README 的 Nginx 示例经实测透传
 SSE 不缓冲。
+
+R7 准入（D666）：五个 `E2E-REMOTE-ACCOUNT-*` 场景针对本地 Router 测试实例与打包后的
+Gateway 全部通过，且 `05-security/02-remote-control-security.md` 的安全门 29–33 签核。
 
 ## 7. 实现状态
 
@@ -251,6 +290,12 @@ SSE 不缓冲。
   关闭的审批、拒绝 `allow-session`、会话配置、工作区读取与终端、任一侧吊销 5 秒内生效、
   开关关闭与恢复链路、`dispose()` 后无残留定时器与 socket，以及两端日志不含凭据。
 
+- R7 未开始（2026-10-18，D666 / ADR `remote-control-router-account-binding`）：账户模式
+  目前只有规格——协议 §11.5、安全规格 §3.8 与验收门 29–33、provider 配置规格 §3，以及
+  `E2E-REMOTE-ACCOUNT-*` 的 Draft 场景。Gateway 账户目录、`device.request` /
+  `device.grant` 帧、第二条 No-TUN 转发、客户端 key 登录与主机切换、严格模式都还没有
+  任何代码。
+
 ## 8. 修订记录
 
 D374（2026-09-10）用无头 Agent Host 模块替换 Electron facade 里程碑，加入
@@ -274,3 +319,9 @@ D665（2026-10-17，ADR 0331）在维护者要求从手机跟进并操控 `agent
 Host 侧对 Host link 的重新认证；把网关配对主体压在远程权限上限之下、排除在 owner
 角色之外的设备来源规则；Gateway 存储、配对与注册设计；桌面默认关闭的可连接 Host
 设置；以及带可选脱敏推送的 Capacitor 移动打包。gRPC 绑定保持保留、不排期。
+
+D666（2026-10-18，ADR `remote-control-router-account-binding`）在 R4–R6 之上把账户模式
+加入本交付序列（R7）：§1 的排期顺序、工作包 A–G 与在 Router 旁的部署、绑定五个
+`E2E-REMOTE-ACCOUNT-*` 场景与安全规格验收门 29–33 的退出条件、§5 的按 Router 启用、
+§6 的 R7 准入，以及“Router 不返回 `remoteGateway` 时保持 R4/R5 的自托管流程并作为
+回退”这条规则。gRPC 绑定保持保留、不排期。

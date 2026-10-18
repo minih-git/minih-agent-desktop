@@ -290,6 +290,28 @@ Minih Router 是自有的模型网关，排在命名预设的第一位。它是�
 
 同一令牌还用于读取网关中按密钥隔离的控制面，设置页据此显示余额和模型广场（§5，Minih Router 账户）。
 
+- **远程控制的账户绑定（规划中，D666）**：同一个按密钥隔离的 bootstrap 应答新增可选的
+  `remoteGateway { hostlinkUrl, publicOrigin, caPem }` 对象（ADR
+  `remote-control-router-account-binding`、协议 §11.5）：
+
+  - `hostlinkUrl` 是桌面以双向 TLS 拨号的 Gateway `wss://` Host link 端点
+    （协议 §11.4）；
+  - `publicOrigin` 是手机或浏览器访问客户端 API 使用的 HTTPS 源；
+  - `caPem` 是桌面固定的 Gateway CA 证书，取代自托管流程里手工粘贴的 PEM。
+
+  应答缺少该对象或返回 `404`，表示 Router 不提供账户模式：桌面继续走自托管注册流程
+  （网关 URL、CA PEM、一次性注册码），并且不显示账户模式入口。该对象适用上文既有
+  bootstrap 缓存规则——同一 AccessKey 摘要 key、同样至多七天、至少一分钟——因此不会比
+  它所属的应答缓存更久。它不携带机密：CA 证书是公开的，该字段也绝不携带 AccessKey，
+  后者只在注册请求里发给 Gateway。
+- **Host link 的第二条组网转发（规划中，D666）**：当前 No-TUN 模式只安装一条由
+  `routerLanUrl` 推导出的回环转发，指向 Router 的 HTTP 端口（数据面与控制面共用）。要
+  访问同一台机器上的 Gateway Host link 端口需要第二条转发（例如
+  `127.0.0.1:<local_port> -> <router 组网地址>:<hostlink 端口>`），因为桌面从不监听、
+  由 Host 主动外连；TUN 模式可直接访问该端口。转发的配置方式、端口分配与证书校验所用
+  的服务名由实施 PR 定义；校验必须使用 `hostlinkUrl` 中的名字，绝不使用 `127.0.0.1`，
+  因为证书校验必须包含服务身份（安全规格 §5.1）。
+
 ### 命名端点预设
 
 这些行由添加提供商对话框的**服务**下拉框创建。命名服务的常见路径是服务 +
