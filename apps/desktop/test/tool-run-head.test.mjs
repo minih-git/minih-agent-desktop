@@ -23,7 +23,7 @@ const details = await readFile(
 test("only a run row outside the topology gets the three-control head", () => {
   assert.match(
     transcript,
-    /const runHead = action === "run" && variant !== "topology"/,
+    /const runRow = action === "run" && variant !== "topology";\s*\n\s*const runHead = runRow && !dense;/,
   );
   assert.match(transcript, /runHead \? " is-run" : ""/);
   assert.match(styles, /\.tool-row-head\.is-run \{[^}]*display: flex/);
@@ -33,8 +33,11 @@ test("the head copies the command, unsqueezed", () => {
   assert.match(transcript, /\{runHead && command \? <ToolCommandCopy command=\{command\} \/> : null\}/);
   assert.match(
     transcript,
-    /const command = runHead\s*\?\s*getToolSummaryValue\(message\.toolName, message\.toolArgs\)/,
+    /const command = runRow\s*\?\s*getToolSummaryValue\(message\.toolName, message\.toolArgs\)/,
   );
+  // A one-line step row states the action only, so the command it used to show
+  // in the head moves into the opened body instead of disappearing.
+  assert.match(transcript, /hideSummaryArg: !dense,/);
   assert.match(transcript, /onClick=\{\(\) => copy\(command\)\}/);
   assert.match(styles, /\.tool-row-head-copy \{[^}]*opacity: 0;/);
   // Hidden until hover, so tabbing to it has to bring it back.
@@ -60,8 +63,8 @@ test("a run row states what the command did, not what the call did", () => {
   assert.match(styles, /\.tool-row-state\.is-error \.tool-row-state-dot \{\s*background: var\(--ds-text-muted\)/);
   // A row with nothing to claim says nothing rather than claiming success, and
   // hands the announcement back to the hidden live region.
-  assert.match(transcript, /\{runHead && statusLabel \? \(/);
-  assert.match(transcript, /\{runHead && statusLabel \? null : \(\s*<span className="sr-only" role="status"/);
+  assert.match(transcript, /\{\(runHead \|\| runRow\) && statusLabel \? \(/);
+  assert.match(transcript, /\{\(runHead \|\| runRow\) && statusLabel \? null : \(\s*<span className="sr-only" role="status"/);
   assert.match(
     styles,
     /\.tool-row-state\.is-running \.tool-row-state-dot \{[^}]*animation: tool-row-state-pulse/,
