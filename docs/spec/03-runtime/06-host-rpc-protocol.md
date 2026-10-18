@@ -397,6 +397,24 @@ to later refresh and inference; the vendor picker does not collect them.
   contains the latest matching Task tool-call projection from the same canonical
   transcript. It is capped separately and does not widen the window or alter its
   cursors. Ordinary and uncapped reads omit this navigation-only field.
+- `session.delegations({ sessionId })` — read-only roster summaries for the work
+  panel. Returns `{ sessionId, messages }`, where each message is one
+  delegation start reduced to identity, agent, brief, status and timing, plus
+  the `TaskWait`/`TaskList`/`TaskStop` counters that settle a status. The read
+  covers the whole persisted transcript rather than a `session.get` window, so
+  the oldest delegation of a long session stays discoverable, and it never
+  carries a delegate's conversation or report: a single brief is capped, and a
+  lifecycle row is reduced to its counters. The method derives no status and
+  mutates nothing.
+- `session.delegation({ sessionId, delegationId })` — read-only conversation of
+  one delegation chain, resolved through `resume` links (a link may name a
+  prior delegation id or a bare call id). Returns
+  `{ sessionId, delegationId, messages, truncated }`. `messages: null` means the
+  session no longer has that delegation. Each text field is capped and the whole
+  response has a total budget; `truncated` reports that the budget ended the
+  conversation early instead of silently shortening it. Lifecycle rows are
+  filtered to the entries naming this chain, so the detail's status matches the
+  roster row that opened it. An unknown session is `NOT_FOUND`.
 - `session.delete` — for an isolated session, also removes its worktree and
   branch (discarding unmerged work)
 - `session.getScratchPath` — the session's scratch directory (D114), created

@@ -124,6 +124,11 @@ destination, chat as the home surface, tools and permissions inline.
   revealing it without creating a resource tab and collapsing it without
   discarding one; the create trigger remains unavailable while the panel is
   closed. Closing the final tab keeps the panel open and shows the New launcher.
+  When the active conversation has delegations, a collapsible subagent roster
+  sits between the tab strip and the tab body and stays visible across every
+  tab. It indexes the whole session's delegations — not just the loaded
+  reading window — and each row opens that delegate's existing detail tab
+  (spec §9.1). It never opens the panel or switches tabs on its own.
   No agent or tool result opens, activates, or resizes the panel: Review is
   reached only through an explicit user action, so a successful workspace
   Write/Edit leaves the panel exactly as the user left it and shows its

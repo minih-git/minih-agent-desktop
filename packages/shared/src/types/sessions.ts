@@ -263,3 +263,35 @@ export type SessionSearchContextRequest = {
   query: string;
   direction?: "around" | "before" | "after";
 };
+
+/**
+ * Roster summaries for every delegation in one session, derived from the full
+ * persisted transcript rather than the renderer's loaded reading window. A
+ * long session keeps its oldest `Task` rows outside that window, so the roster
+ * cannot be built from `state.messages`.
+ *
+ * These rows are summaries: delegation identity, agent, brief, status and
+ * timing, plus the lifecycle counters that settle a status. A delegate's
+ * conversation is read separately through {@link SessionDelegationDetail}.
+ * Status, resume chains and report parsing stay in the renderer projection
+ * that already owns them.
+ */
+export type SessionDelegationRows = {
+  sessionId: string;
+  messages: UiMessage[];
+};
+
+/**
+ * One delegation chain's conversation, read on demand.
+ *
+ * `messages: null` means the session no longer has that delegation, which the
+ * panel reports as unavailable instead of rendering an empty run. `truncated`
+ * says the response hit its size budget, so the conversation ends early rather
+ * than being silently shortened.
+ */
+export type SessionDelegationDetail = {
+  sessionId: string;
+  delegationId: string;
+  messages: UiMessage[] | null;
+  truncated: boolean;
+};

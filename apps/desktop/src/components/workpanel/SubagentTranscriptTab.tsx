@@ -2,6 +2,7 @@ import { toolResultPayload } from "../../lib/tool-presentation";
 import { SubagentStopButton } from "../../features/chat/transcript/SubagentStopButton";
 import { collectDelegationStatuses, subagentOutcome } from "../../lib/subagent-topology";
 import { Fragment, useLayoutEffect, useMemo } from "react";
+import { useDelegationDetail, mergeDelegationDetail } from "../../hooks/use-delegation-detail";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../../stores/app-store";
 import { useFollowScroll } from "../../hooks/use-follow-scroll";
@@ -48,10 +49,15 @@ export function SubagentTranscriptTab({ delegationId }: { delegationId: string }
 function SubagentTranscriptSurface({ delegationId }: { delegationId: string }) {
   const { t } = useTranslation();
   const activeSessionId = useAppStore((state) => state.activeSessionId);
-  // A tab only renders inside a presented panel, which always has a session;
-  // the empty key keeps the hook's contract while nothing is active.
-  const transcript = useTranscriptView(activeSessionId ?? "");
-  const { messages } = transcript;
+  // A tab only renders inside a presented panel, which always has a session.
+  // The stored chain is the complete history; the live window stays the
+  // freshest source for a delegate that is still streaming.
+  const view = useTranscriptView(activeSessionId ?? "");
+  const detail = useDelegationDetail(activeSessionId, delegationId);
+  const messages = useMemo(
+    () => mergeDelegationDetail(detail.detail?.messages, view.messages),
+    [detail.detail, view.messages],
+  );
   const delegateRunning = useMemo(() => {
     const items = messages
       .filter(message => message.role === "tool")
@@ -98,13 +104,13 @@ function SubagentTranscriptSurface({ delegationId }: { delegationId: string }) {
   // is claimed only by the tab whose own conversation contains the message;
   // the other tabs stay where the reader left them.
   const searchTarget = useMemo(() => {
-    const focus = transcript.focus;
+    const focus = view.focus;
     if (!focus) return null;
     const claimed = transcriptResult?.turns.some((turn) =>
       turn.rows.some((row) => row.message.id === focus.messageId),
     );
     return claimed ? focus : null;
-  }, [transcript.focus, transcriptResult]);
+  }, [view.focus, transcriptResult]);
 
   useTranscriptSearchFocus({
     target: searchTarget,
@@ -185,6 +191,17 @@ function SubagentTranscriptSurface({ delegationId }: { delegationId: string }) {
                   )}
                 </Fragment>
               ))
+            ) : detail.loading ? (
+              <div className="subagent-transcript-empty" role="status">
+                {t("panel.roster.loading")}
+              </div>
+            ) : detail.error ? (
+              <div className="subagent-transcript-empty" role="alert">
+                <span>{t("panel.subagentLoadFailed")}</span>
+                <button type="button" className="subagent-roster-retry" onClick={detail.reload}>
+                  {t("panel.roster.retry")}
+                </button>
+              </div>
             ) : (
               <div className="subagent-transcript-empty" role="status">
                 {t("panel.subagentEmpty")}
