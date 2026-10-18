@@ -2,10 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
-import {
-  inboxNotifications,
-  inboxUnreadCount,
-} from "../src/lib/notification-inbox.ts";
 
 const IPC = {
   invoke: {
@@ -92,7 +88,17 @@ function loadBadgeModule({ renderPng } = {}) {
   new Function("require", "exports", "module", outputText)(
     (id) => {
       if (id === "electron") return electron;
-      if (id === "@minih-agent/shared") return { IPC };
+      if (id === "@minih-agent/shared") {
+        return {
+          IPC,
+          unreadSessionCount: (notifications) =>
+            new Set(
+              notifications
+                .filter((notification) => !notification.readAt)
+                .map((notification) => notification.sessionId),
+            ).size,
+        };
+      }
       if (id === "./taskbar-unread-overlay") return overlay;
       throw new Error(`unexpected dependency: ${id}`);
     },
@@ -140,7 +146,18 @@ function harness({ platform = "linux", unreadCount = 0, windowReady = true, rend
     call: async (method, input) => {
       listCalls.push({ method, input });
       assert.equal(method, "notification.list");
-      return { notifications: [], unreadCount: currentUnread };
+      // One unread row per conversation: the badge counts conversations, so the
+      // fixture gives each counted unit its own session id.
+      const notifications = Array.from({ length: currentUnread }, (_, index) => ({
+        id: `notification-${index}`,
+        kind: "task.completed",
+        sessionId: `session-${index}`,
+        sessionTitle: `Session ${index}`,
+        turnId: `turn-${index}`,
+        createdAt: "2026-09-24T00:00:00.000Z",
+        readAt: null,
+      }));
+      return { notifications, unreadCount: currentUnread };
     },
   };
   let mainWindow = windowReady ? makeWindow(overlayIcons) : null;
@@ -196,7 +213,7 @@ test("observeInvoke on markRead triggers notification.list refresh", async () =>
     h.badge.observeInvoke(IPC.invoke.notificationMarkRead);
     await waitFor(() => h.listCalls.length >= 1);
     assert.equal(h.listCalls[0].method, "notification.list");
-    assert.deepEqual(h.listCalls[0].input, { limit: 1 });
+    assert.deepEqual(h.listCalls[0].input, { limit: 200 });
     await waitFor(() => h.badgeCounts.includes(3));
     assert.equal(h.badgeCounts.at(-1), 3);
   } finally {
@@ -397,7 +414,7 @@ test("badge source has no image.resize and imports the Canvas renderer", () => {
   assert.match(source, /buildTaskbarUnreadOverlayPng/);
 });
 
-test("D295 inbox still counts failures only while shell uses full unreadCount", () => {
+test("D664: the bell and the shell badge read the same unread rows", () => {
   const rows = [
     {
       id: "c1",
@@ -427,11 +444,7 @@ test("D295 inbox still counts failures only while shell uses full unreadCount", 
       readAt: null,
     },
   ];
-  assert.deepEqual(
-    inboxNotifications(rows).map((row) => row.id),
-    ["f1"],
-  );
-  assert.equal(inboxUnreadCount(rows), 1);
-  // Shell badge path reads host unreadCount (completed + failed) — 3 here.
+  // The bell lists these rows and its badge counts the same unread rows, so
+  // the host unreadCount (3 here) is what both surfaces show.
   assert.equal(rows.filter((row) => row.readAt == null).length, 3);
 });

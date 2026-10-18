@@ -513,6 +513,14 @@ export function createTranscriptSlice({
           sessionId,
         ),
       }));
+      // Stopping a turn denies every pending permission, so those reminders
+      // are settled too; a sticky toast must not keep pointing at a request
+      // the runtime has already abandoned.
+      for (const permission of pendingForSession) {
+        void get()
+          .acknowledgePrompt(permission.requestId)
+          .catch(() => undefined);
+      }
       const state = get();
       if (state.activeSessionId !== sessionId) {
         submittedDraft?.resolveAbort?.(false);

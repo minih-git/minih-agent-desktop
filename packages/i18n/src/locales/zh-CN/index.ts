@@ -2877,6 +2877,8 @@ sklm: {
     askTitle: "有问题需要你回答",
     askBody: "{{question}}",
     askBodyFallback: "任务需要您的回答以继续执行。",
+    promptAskTitle: "{{sessionTitle}} 有一个问题待回答",
+    promptAskBody: "打开对话并回答问题，任务才能继续。",
     permissionTitle: "{{sessionTitle}} 需要工具授权",
     permissionBody: "操作 {{toolName}} 需要确认才能执行。",
     planApprovalTitle: "{{sessionTitle}} 计划待审批",

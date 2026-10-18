@@ -167,19 +167,10 @@ CREATE UNIQUE INDEX idx_turn_queue_idempotency
   ON turn_queue(session_id, principal, idempotency_key)
   WHERE idempotency_key IS NOT NULL;
 
-CREATE TABLE notifications (
-  id         TEXT PRIMARY KEY,
-  kind       TEXT NOT NULL CHECK (kind IN ('task.completed', 'task.failed')),
-  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  session_title TEXT NOT NULL,
-  turn_id    TEXT NOT NULL UNIQUE,
-  error_code TEXT,
-  created_at INTEGER NOT NULL,
-  read_at    INTEGER
-);
-CREATE INDEX idx_notifications_created ON notifications(created_at DESC);
-CREATE INDEX idx_notifications_unread
-  ON notifications(created_at DESC) WHERE read_at IS NULL;
+-- `notifications` is defined once, in `NOTIFICATIONS_DDL`, because the v24 ->
+-- v25 migration rebuilds the table; the fresh schema applies the same text
+-- instead of holding a second copy that could drift.
+
 
 CREATE TABLE messages (
   mid          INTEGER PRIMARY KEY,

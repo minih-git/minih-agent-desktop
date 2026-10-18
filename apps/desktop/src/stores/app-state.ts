@@ -66,6 +66,11 @@ export type ToastItem = {
   sound: boolean;
   /** Optional conversation opened when the user activates the toast. */
   sessionId?: string;
+  /**
+   * Set on interactive-request reminders so answering, approving, or
+   * declining the request also closes exactly this toast.
+   */
+  promptRequestId?: string;
 };
 
 export type ToastOptions = {
@@ -76,6 +81,8 @@ export type ToastOptions = {
   sound?: boolean;
   /** Make the toast message an explicit conversation-navigation action. */
   sessionId?: string;
+  /** Tags the reminder with the interactive request it belongs to. */
+  promptRequestId?: string;
 };
 
 export type AgentTurnResult = {
@@ -388,6 +395,12 @@ export type AppState = {
   resolvePlan: (resolution: PlanResolveRequest) => Promise<PlanResolutionResult>;
   showToast: (message: string, options?: ToastOptions) => void;
   dismissToast: (id: number) => void;
+  /**
+   * Mark the durable reminder for one resolved interactive request as read and
+   * drop its sticky toast. Fire-and-forget: a failed acknowledgement must not
+   * undo the answer the user already gave.
+   */
+  acknowledgePrompt: (requestId: string) => Promise<void>;
   composerPrefill: ComposerPrefill | null;
   clearComposerPrefill: () => void;
   workPanelOpen: boolean;

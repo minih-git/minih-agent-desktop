@@ -146,7 +146,13 @@ test("app and plugin notification surfaces share one chime without native double
   assert.match(promptNotificationSource, /get\(\)\.showToast\([\s\S]*sound: false/);
   assert.match(
     shellNotificationSource,
-    /if \(!accepted\) return;\s*playNotificationChime\(\)/,
+    /if \(!accepted\) return;[\s\S]*?playNotificationChime\(\)/,
+  );
+  // Prompt rows have their own sticky toast and interactive banner; replaying
+  // them through the task path would double both the chime and the banner.
+  assert.match(
+    shellNotificationSource,
+    /if \(!notification\.kind\.startsWith\("task\."\)\) return;/,
   );
   assert.match(nativeNotificationSource, /new SystemNotification\(\{ title, body, silent: true \}\)/);
   assert.match(shellNotificationSource, /api\.onNotificationSound\(playNotificationChime\)/);

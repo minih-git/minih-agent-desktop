@@ -5339,21 +5339,24 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   native task banner and a renderer refresh are still in flight, deliver a
   delayed `notification.changed` payload for a cleared/read durable id and a
   duplicate payload for an id that is already present. 13) On Windows, create
-  one unread successful outcome while the bell has no failure rows. Open the
-  empty bell popover, use Mark all read, then create another success and use
-  Clear. 14) Create enough unread outcomes for a two-digit count and inspect
-  the taskbar overlay before and after marking all outcomes read.
+  one unread successful outcome and confirm the bell lists it as a completion
+  row with the matching badge count. Open the popover, use Mark all read, then
+  create another success and use Clear. 14) Create enough unread outcomes for
+  a two-digit count and inspect the taskbar overlay before and after marking
+  all outcomes read.
 - **Expected**: A's visible-current completion creates no row or terminal
   sidebar mark. Restoring/focusing the app with A already visible clears A's
   matching durable outcome and taskbar count without clearing B. Exactly two
   rows exist, newest first: the unfocused A completion and background B failure,
-  with localized labels, snapshotted session titles, and B's stable code.
-  Abort/repeated terminal calls create no row. The former footer Help shortcut
-  is absent; the 32px footer bell and its upward-opening popover replace it.
-  Badge and Unread show the exact unread count without opening implicitly
-  reading rows. Read state and both
-  records survive restart. Row selection marks it read and activates its bound
-  project/session. The fixture retains exactly the newest 200 rows. Mark all
+  with localized labels, snapshotted session titles, and B's stable code — and
+  the bell lists one row per conversation: A (its newest completed turn) and B
+  (the failure), with a badge that counts unread conversations (D664).
+  Abort/repeated terminal calls create no row. The former footer Help
+  shortcut is absent; the 32px footer bell and its upward-opening popover
+  replace it. Badge and Unread show the exact unread count without opening
+  implicitly reading rows. Read state and both records survive restart.
+  Row selection settles every unread row of the conversation and activates its
+  bound project/session. The fixture retains exactly the newest 200 rows. Mark all
   preserves rows with zero unread. Selecting the other session clears its
   terminal sidebar mark and marks its task notification read; neither mark
   returns after refresh or restart. Clear empties only the inbox and leaves
@@ -5365,8 +5368,9 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   duplicate, delayed, and historical rows do not replay it. On Windows, the
   taskbar overlay is a smooth black circular badge with a centered white system-font numeral. Its visual weight matches common
   Windows taskbar badges for both single- and two-digit counts. A success-only
-  outcome increments the taskbar badge without adding a bell row or bell
-  count; both toolbar actions remain enabled when relevant and clear the
+  outcome increments the taskbar badge and appears as one bell row with the
+  same unread count (D664); both toolbar actions remain enabled when relevant
+  and clear the taskbar badge.
   taskbar badge. The badge also clears when no unread outcomes remain. The
   underlying taskbar button keeps the
   Minih-Agent-Desktop `P` icon and Minih-Agent-Desktop name while the overlay is present.
@@ -5377,6 +5381,31 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 - **Acceptance**: C (turn completion), F (persistence), Quality
 - **Milestone**: M5
 - **Status**: Draft
+
+#### E2E-CHAT-interactive-prompt-reminder-survives-a-missed-toast
+
+- **Preconditions**: Sessions A and B exist; the app can be focused on A,
+  switched to B, hidden, or minimized; an ask, a tool permission, and a plan
+  approval can each be triggered on demand.
+- **Steps**: 1) Run a turn in A that stops on an ask and leave A visible and
+  focused. 2) Do not answer; wait past the old auto-dismiss window while the
+  window stays on A. 3) Open the sidebar footer bell. 4) Trigger a permission
+  request in A while the app is minimized. 5) Trigger a plan approval in A
+  while the user is viewing B. 6) Answer the ask, allow the permission, and
+  approve the plan. 7) Clear the inbox and confirm no reminder row returns.
+- **Expected**: Each request adds exactly one unread `prompt.ask` /
+  `prompt.permission` / `prompt.plan` row naming the session (and the tool for
+  a permission request) and none of them auto-dismiss with the toast. The
+  sticky toast stays until the request is answered, declined, or dismissed, and
+  its message opens the originating conversation. A focused visible session
+  still shows only the in-app surfaces — the native banner policy of E2E-065
+  is unchanged — while a minimized window and a focused background request are
+  still native-eligible. Resolving a request marks its row read and removes its
+  toast without touching other reminders; the bell badge and the taskbar badge
+  drop accordingly, and prompt rows never add a session outcome badge. A
+  replayed event produces no second row. Specs: `03-runtime/01-ipc-protocol.md`,
+  `03-runtime/06-host-rpc-protocol.md`, `03-runtime/17-asktool-questions.md`,
+  `04-ux/01-ui-ia.md`; D663.
 
 #### E2E-065: Native task notifications are unfocused-only and activate sessions
 

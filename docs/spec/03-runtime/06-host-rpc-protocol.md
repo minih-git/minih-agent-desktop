@@ -833,19 +833,39 @@ activation-scope filtering (`CAPABILITY_INVALID` for an unknown scope).
 - `notification.markRead`
 - `notification.markAllRead`
 - `notification.clear`
+- `notification.recordPrompt` (D663)
 
 ## 4a. Notification contracts (protocol v4)
 
 ```ts
 type AppNotification = {
   id: string;
-  kind: "task.completed" | "task.failed";
+  kind:
+    | "task.completed"
+    | "task.failed"
+    | "prompt.ask"
+    | "prompt.permission"
+    | "prompt.plan";
   sessionId: string;
   sessionTitle: string;
-  turnId: string;
+  turnId?: string;     // settled-turn rows
+  requestId?: string;  // prompt rows; the runtime's id for the pending request
+  toolName?: string;   // prompt rows that ask about one tool
   errorCode?: string;
   createdAt: string; // ISO-8601 UTC
   readAt?: string | null;
+};
+
+type NotificationRecordPromptParams = {
+  sessionId: string;
+  requestId: string;
+  kind: "ask" | "permission" | "plan";
+  toolName?: string;
+  turnId?: string;
+};
+
+type NotificationRecordPromptResult = {
+  notification: AppNotification | null; // null when replayed or rejected
 };
 
 type SessionEndTurnParams = {
@@ -877,6 +897,14 @@ type NotificationListResult = {
 - `notification.markAllRead({}) -> { ok: true }` updates every unread row in
   one transaction.
 - `notification.clear({}) -> { ok: true }` deletes inbox rows only.
+- `notification.recordPrompt({ sessionId, requestId, kind, toolName?, turnId? })
+  -> { notification }` records one interactive request as an unread
+  `prompt.ask` / `prompt.permission` / `prompt.plan` row. `requestId` is the
+  runtime's id and is unique, so a replayed renderer event inserts nothing
+  (`notification: null`). The row stores the session-title snapshot and the tool
+  name only — never the question or argument text. Unknown kinds, blank request
+  ids, and unknown sessions are rejected rather than stored. Prompt rows share
+  the 200-row retention budget and never produce a session outcome badge.
 - `id` is the stable exactly-once key for renderer and native delivery. A
   client must discard duplicate or delayed records for an id it has already
   acknowledged/cleared; clearing the inbox never makes an old terminal turn

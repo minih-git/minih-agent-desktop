@@ -3456,6 +3456,37 @@ async fn handle_request(
                 .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
             Ok(json!({ "ok": true }))
         }
+
+        // A prompt row is written by the desktop when the runtime asks for the
+        // user, so the reminder survives a missed toast, a hidden window, and a
+        // restart. `requestId` is the runtime's id, which keeps replays
+        // exactly-once.
+        "notification.recordPrompt" => {
+            let session_id = params
+                .get("sessionId")
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| rpc_err(1002, "sessionId required", "INVALID_PARAMS"))?;
+            let request_id = params
+                .get("requestId")
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| rpc_err(1002, "requestId required", "INVALID_PARAMS"))?;
+            let kind = match params.get("kind").and_then(|value| value.as_str()) {
+                Some("ask") => "prompt.ask",
+                Some("permission") => "prompt.permission",
+                Some("plan") => "prompt.plan",
+                _ => return Err(rpc_err(1002, "unknown prompt kind", "INVALID_PARAMS")),
+            };
+            let tool_name = params.get("toolName").and_then(|value| value.as_str());
+            let turn_id = params.get("turnId").and_then(|value| value.as_str());
+            let st = state.lock().await;
+            let notification = notifications::insert_for_prompt(
+                &st.db, kind, session_id, request_id, tool_name, turn_id,
+            )
+            .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            Ok(json!({ "notification": notification }))
+        }
         "notification.clear" => {
             let st = state.lock().await;
             notifications::clear(&st.db).map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;

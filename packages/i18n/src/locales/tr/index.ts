@@ -2902,6 +2902,8 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
     askTitle: "Bir soruyu yanıtlamanız gerekiyor",
     askBody: "{{question}}",
     askBodyFallback: "Görevin devam etmesi için yanıtınız gerekiyor.",
+    promptAskTitle: "{{sessionTitle}} için yanıt bekleyen bir soru var",
+    promptAskBody: "Görevin devam etmesi için sohbeti açıp yanıtlayın.",
     permissionTitle: "{{sessionTitle}} araç onayı bekliyor",
     permissionBody: "{{toolName}} çalıştırmak için izin gerekiyor.",
     planApprovalTitle: "{{sessionTitle}} plan onay bekliyor",

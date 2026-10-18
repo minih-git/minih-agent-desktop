@@ -78,6 +78,7 @@ export * from "./message-stream.js";
 export * from "./session-collaboration.js";
 export * from "./session-presentation.js";
 export * from "./session-outcomes.js";
+export * from "./notification-sessions.js";
 export * from "./tray-sessions.js";
 export * from "./window-chrome.js";
 export * from "./native-web-search.js";

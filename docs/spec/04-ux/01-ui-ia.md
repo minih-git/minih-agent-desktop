@@ -435,7 +435,7 @@ shared capability contract:
 | Command palette | Cmd/Ctrl+K (also Cmd/Ctrl+Shift+P per D014) | builtin + plugin commands |
 | Model menu | Composer-right model × reasoning chip | configured provider/model choices + settings entry (D091) |
 | Account menu | bottom-left sidebar account button | Saved identity, balance/quotas, Manage account, Settings, Cloud sync |
-| Notification inbox | sidebar footer bell | All/Unread views, task failure rows only (successful completions are hidden, D295), mark-all-read and clear actions (D130/D117) |
+| Notification inbox | sidebar footer bell | All/Unread views over every durable row — completed, failed, and pending `prompt.*` reminders (D663/D664) — with mark-all-read and clear actions (D130/D117) |
 | Toasts | events (plugin toast, backend restored, copy) | top-center; 4s default, 8s for errors |
 | Project switcher | empty-home underlined project name | sidebar open projects + search + clone git project + open project |
 
@@ -499,11 +499,21 @@ shared capability contract:
 - Completed/failed turn not already visible → host-core appends one durable
   inbox row. A result shown in the visible, focused current chat and every
   `aborted` turn append none. Background sessions and any turn finishing while
-  the window is unfocused still append. The sidebar footer bell lists only
-  `task.failed` rows and its badge counts only unread failures; successful
-  completions stay in the durable record for the sidebar outcome badge and
-  native notification but never appear in the inbox (D295). Selecting a row
-  marks it read and activates its bound project/session.
+  the window is unfocused still append. The sidebar footer bell is a
+  per-conversation surface: each retained conversation appears once, as its
+  newest notification (completed, failed, or pending reminder), and counts as
+  unread while any of its rows is unread. Its badge counts unread conversations
+  and the taskbar overlay paints the same number (D664, amending D295).
+  Selecting a row settles every unread row of that conversation, then activates
+  its bound project/session.
+- Interactive ask/permission/plan request → host-core appends one unread
+  `prompt.ask` / `prompt.permission` / `prompt.plan` row when the renderer
+  reports the request, before any toast or native banner can be missed. The
+  inbox row names the session (and the tool, for a permission request) and
+  points at the conversation; answering, approving, or declining the request
+  marks the row read automatically. The reminder toast is sticky instead of
+  auto-dismissed, so a pending request cannot scroll away unseen while the
+  window was in the background (D663).
   Electron additionally presents a native task notification only when the
   app window is unfocused, and clicking it focuses the window before activating
   the same session (D117). Interactive ask/permission/plan prompts use their

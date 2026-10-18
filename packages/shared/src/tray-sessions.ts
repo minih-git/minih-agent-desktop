@@ -146,6 +146,7 @@ export function buildTraySessionGroups(
   const outcomes = latestSessionOutcomes(notifications);
   const unreadOrder = new Map<string, number>();
   notifications.forEach((notification, index) => {
+    if (!notification.kind.startsWith("task.")) return;
     if (!unreadOrder.has(notification.sessionId)) unreadOrder.set(notification.sessionId, index);
   });
   const groups: Record<TraySessionGroupKind, SessionSummary[]> = {
