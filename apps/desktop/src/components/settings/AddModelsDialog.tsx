@@ -257,48 +257,50 @@ export function AddModelsDialog({
           <p className="minih-router-price-hint">{t("settings.minihRouterPriceHint")}</p>
         </div>
 
-        {models.state === "error" ? (
-          <div className="minih-router-status is-error" role="alert">
-            <span>{t("settings.minihRouterModelsFailed")}</span>
-            <span className="minih-router-status-detail">{models.message}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setRevision((value) => value + 1)}
+        <div className="add-models-body">
+          {models.state === "error" ? (
+            <div className="minih-router-status is-error" role="alert">
+              <span>{t("settings.minihRouterModelsFailed")}</span>
+              <span className="minih-router-status-detail">{models.message}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setRevision((value) => value + 1)}
+              >
+                {t("settings.minihRouterRetry")}
+              </Button>
+            </div>
+          ) : null}
+          {activePageData === null && models.state === "loading" ? (
+            <p className="minih-router-status">{t("settings.minihRouterLoading")}</p>
+          ) : null}
+          {activePageData && activePageData.items.length === 0 ? (
+            <p className="minih-router-status">{t("settings.minihRouterModelsEmpty")}</p>
+          ) : null}
+          {activePageData && activePageData.items.length > 0 ? (
+            <ul
+              className="minih-router-model-grid add-models-grid"
+              data-model-section="plaza"
+              aria-busy={models.state === "loading" ? "true" : undefined}
             >
-              {t("settings.minihRouterRetry")}
-            </Button>
-          </div>
-        ) : null}
-        {activePageData === null && models.state === "loading" ? (
-          <p className="minih-router-status">{t("settings.minihRouterLoading")}</p>
-        ) : null}
-        {activePageData && activePageData.items.length === 0 ? (
-          <p className="minih-router-status">{t("settings.minihRouterModelsEmpty")}</p>
-        ) : null}
-        {activePageData && activePageData.items.length > 0 ? (
-          <ul
-            className="minih-router-model-grid add-models-grid"
-            data-model-section="plaza"
-            aria-busy={models.state === "loading" ? "true" : undefined}
-          >
-            {activePageData.items.map((model) => (
-              <MinihRouterModelCard
-                key={model.id}
-                model={model}
-                locale={locale}
-                configured={configuredSet.has(model.id.toLowerCase())}
-                selectable
-                selected={selected.has(model.id) || configuredSet.has(model.id.toLowerCase())}
-                busy={busy}
-                onToggle={(candidate) => {
-                  if (configuredSet.has(candidate.id.toLowerCase())) return;
-                  toggle(candidate);
-                }}
-              />
-            ))}
-          </ul>
-        ) : null}
+              {activePageData.items.map((model) => (
+                <MinihRouterModelCard
+                  key={model.id}
+                  model={model}
+                  locale={locale}
+                  configured={configuredSet.has(model.id.toLowerCase())}
+                  selectable
+                  selected={selected.has(model.id) || configuredSet.has(model.id.toLowerCase())}
+                  busy={busy}
+                  onToggle={(candidate) => {
+                    if (configuredSet.has(candidate.id.toLowerCase())) return;
+                    toggle(candidate);
+                  }}
+                />
+              ))}
+            </ul>
+          ) : null}
+        </div>
 
         {activePageData && activePageData.totalPages > 1 ? (
           <nav className="minih-router-pagination" aria-label={t("settings.minihRouterModels")}>

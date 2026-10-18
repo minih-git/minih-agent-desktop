@@ -51,13 +51,12 @@ export function MinihRouterModelCard({
   const vendorLabel = modelVendorLabel(model, t("settings.minihRouterVendorOther"));
   const context = formatContextTokens(model.contextWindow);
   const cache = cachePriceText(model.price, locale, t);
-  const meta = [
-    unpricedLabel ?? null,
+  const metaItems = [
     context ? t("settings.minihRouterContext", { tokens: context }) : null,
-    cache,
     model.tieredPricing ? t("settings.minihRouterTiered") : null,
+    cache,
+    unpricedLabel ?? null,
   ].filter((entry): entry is string => Boolean(entry));
-  const metaText = meta.join(" · ");
   const from = model.multiplePrices ? (
     <span className="minih-router-price-from">{t("settings.minihRouterPriceFrom")}</span>
   ) : null;
@@ -144,10 +143,17 @@ export function MinihRouterModelCard({
         </div>
       </dl>
       <div
-        className={metaText ? "minih-router-model-meta" : "minih-router-model-meta is-empty"}
-        title={metaText || undefined}
+        className={
+          metaItems.length > 0 ? "minih-router-model-meta" : "minih-router-model-meta is-empty"
+        }
       >
-        {metaText || "\u00a0"}
+        {metaItems.length > 0
+          ? metaItems.map((item, index) => (
+              <span key={index} className="minih-router-meta-tag">
+                {item}
+              </span>
+            ))
+          : null}
       </div>
     </li>
   );

@@ -448,7 +448,8 @@
 .settings-panel:has(> .settings-row),
 .settings-panel.shortcut-map,
 .settings-panel.agent-capability-panel,
-.settings-panel.model-provider-panel:has(> .model-provider-list) {
+.settings-panel.model-provider-panel:has(> .model-provider-list),
+.settings-panel.model-provider-panel:has(> .models-vendor-groups) {
   gap: 6px;
   background: transparent;
   overflow: visible;

@@ -310,6 +310,13 @@ window.accountsProbe = async ({ width, height }) => {
   if (cardHeights.size !== 1) {
     throw new Error("Dialog model cards do not have uniform height: " + JSON.stringify([...cardHeights]));
   }
+  const clippedMeta = firstPageNodes.some((node) => {
+    const meta = node.querySelector(".minih-router-model-meta");
+    return meta && meta.scrollHeight > meta.clientHeight + 1;
+  });
+  if (clippedMeta) {
+    throw new Error("Dialog model card metadata is vertically clipped");
+  }
   const openaiVendorPill = await waitFor(
     () => dialog.querySelector('[data-vendor-filter="OpenAI"]'),
     "the OpenAI vendor filter pill did not render",
