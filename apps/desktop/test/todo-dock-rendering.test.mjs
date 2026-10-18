@@ -51,6 +51,8 @@ test("TodoDock renders bounded session progress and cancelled state", async () =
     });
     const html = render();
     assert.match(html, /aria-expanded="false"/);
+    assert.match(html, /aria-controls="[^"]+"/);
+    assert.match(html, /class="todo-dock-header-current"[^>]*>second<\/span>/);
     assert.match(html, /class="todo-dock-content" aria-hidden="true"/);
     assert.match(html, /class="todo-dock-content" aria-hidden="true"><div class="todo-dock-clip">/);
     assert.match(html, /extra-0/);
@@ -86,7 +88,11 @@ test("TodoDock uses a quiet disclosure animation and state surfaces", async () =
   assert.match(css, /\.todo-dock-header:active:not\(:disabled\)\s*\{[\s\S]*?transform:\s*none;/);
   assert.match(css, /\.todo-dock-content\s*\{[\s\S]*?grid-template-rows:\s*0fr;[\s\S]*?opacity:\s*0;/);
   assert.match(css, /\.todo-dock\.is-expanded \.todo-dock-content\s*\{[\s\S]*?grid-template-rows:\s*1fr;/);
-  assert.match(css, /\.todo-dock-row-completed\s*\{[\s\S]*?var\(--ds-success\)/);
+  assert.match(css, /\.todo-dock-row\s*\{[\s\S]*?min-height:\s*24px;[\s\S]*?font-size:/);
+  assert.match(css, /\.todo-dock-row-symbol\s*\{[\s\S]*?border:\s*1px solid var\(--ds-border-default\)/);
+  assert.match(css, /\.todo-dock-row-completed\s*\{[\s\S]*?color:\s*var\(--ds-text-muted\);/);
+  assert.match(css, /\.todo-dock-row-in_progress\s*\{[\s\S]*?font-weight:/);
+  assert.doesNotMatch(css, /\.todo-dock-row(?:-completed|-in_progress)?\s*\{[^}]*background:/);
   // The expanded list is the scrollport (#1319): bounded height, internal
   // scroll, no chaining into the transcript, and reachable from the keyboard.
   assert.match(

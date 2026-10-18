@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SessionTodo, TodoStatus } from "@minih-agent/shared";
 import { Button } from "./ui";
@@ -9,11 +9,11 @@ import { useAppStore } from "../stores/app-store";
 function statusSymbol(status: TodoStatus): string {
   switch (status) {
     case "in_progress":
-      return "◐";
+      return "•";
     case "cancelled":
-      return "⊘";
+      return "−";
     default:
-      return "○";
+      return "";
   }
 }
 
@@ -21,6 +21,7 @@ export function TodoDock({ sessionId }: { sessionId: string }) {
   const { t } = useTranslation();
   const snapshot = useAppStore((state) => state.sessionTodos[sessionId]);
   const [expanded, setExpanded] = useState(false);
+  const contentId = useId();
 
   useEffect(() => {
     setExpanded(false);
@@ -36,13 +37,14 @@ export function TodoDock({ sessionId }: { sessionId: string }) {
   const finished = snapshot.todos.every(
     (todo) => todo.status === "completed" || todo.status === "cancelled",
   );
-  const statusLabel = allCancelled
+  const progressLabel = allCancelled
     ? t("chat.todo.status.cancelled")
     : finished
       ? t("chat.todo.completed", { completed, total: denominator })
-      : current
-        ? t("chat.todo.current", { completed, total: denominator, content: current.content })
-        : t("chat.todo.progress", { completed, total: denominator });
+      : t("chat.todo.progress", { completed, total: denominator });
+  const statusLabel = current
+    ? t("chat.todo.current", { completed, total: denominator, content: current.content })
+    : progressLabel;
 
   return (
     <div className={`todo-dock${expanded ? " is-expanded" : ""}`}>
@@ -50,16 +52,23 @@ export function TodoDock({ sessionId }: { sessionId: string }) {
         type="button"
         variant="ghost"
         className="todo-dock-header"
+        aria-label={statusLabel}
+        aria-controls={contentId}
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
       >
         <span className="todo-dock-header-symbol" aria-hidden>
           {allCancelled ? "⊘" : finished ? "✓" : "◐"}
         </span>
-        <span className="todo-dock-header-text">{statusLabel}</span>
+        <span className="todo-dock-header-text">{progressLabel}</span>
+        {current ? (
+          <span className="todo-dock-header-current" title={current.content}>
+            {current.content}
+          </span>
+        ) : null}
         {expanded ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />}
       </Button>
-      <div className="todo-dock-content" aria-hidden={!expanded}>
+      <div id={contentId} className="todo-dock-content" aria-hidden={!expanded}>
         <div className="todo-dock-clip">
           {/* The expanded dock lists every row (#1319): the list scrolls
               inside its own box instead of truncating to a static "N more"

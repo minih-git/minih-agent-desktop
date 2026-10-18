@@ -492,6 +492,7 @@ section mirrors only marketplace/catalog items still blocking nothing.
 | D152 | Direct runtime stream rendering | **Assistant content renders each runtime stream chunk directly through the incremental Markdown block cache. The renderer does not add a requestAnimationFrame typewriter state loop. KaTeX's Vite-inlined fonts remain local-only assets and are admitted by the narrow `font-src 'self' data:` CSP directive.** | The duplicate animation loop could trip React's nested-update guard during sustained streams, while the previous CSP blocked bundled math fonts and produced console errors. |
 | D153 | Reasoning sessions default to maximum thinking | *(superseded by D303)* **A newly created session whose inherited default model supports reasoning starts at the highest canonical entry in that model's pi-published `supportedThinkingLevels`. Non-reasoning models and missing capability metadata start at `off`; existing sessions retain their durable choice. This refines D096 without adding a provider override.** | Reasoning-capable models should use their strongest available effort by default while preserving explicit per-session choices and pi-ai's model authority. |
 | D264 | Composer typing avoids full sorts and redundant DOM writes | **The `@` file menu picks its visible rows with a bounded top-K selection over the match list instead of sorting every match; the selection returns exactly the row set and order a full sort produced, and the small, kind-grouped command list keeps its full sort. Composer auto-resize and `--composer-dock-height` publication are idempotent: an unchanged height performs no DOM write and no document-wide style invalidation, and the `height: auto` measurement probe is taken only when the box may need to shrink. Growth through seven rows, internal scrolling past the seventh, and contraction on delete or submit are unchanged. Draft file-reference state and the cursor keep their identity and value when a keystroke changes neither, so the draft-cache serialization effect and autocomplete trigger detection stop re-running per keystroke. No IPC, storage, host-protocol, or schema change.** | With a large workspace and the `@` menu open, every keystroke paid a full sort over the whole 8000-entry file index to show 50 rows, plus a forced synchronous reflow from the measurement probe, while a fresh `fileReferences` array identity per keystroke re-ran the draft-cache serialization effect. The cost was typing latency, not correctness; ordering equivalence with the full sort is covered by unit tests. |
+| D658 | Composer file menu rows always show the full relative path | **Amend the `@` file-completion row presentation of D124 (specs `04-ux/08-component-spec.md` §11.8, `04-ux/09-interaction-patterns.md` §8a.1, E2E-102a): every row renders the leaf name — directories keep the trailing `/` — followed by the entry's complete workspace-relative path in a de-emphasized mono span that carries the raw `entry.path` without a trailing slash. The span takes the row's remaining width and ellipsizes before the leaf name can, and no row overflows the menu. The tooltip keeps the complete relative path and the accessible name becomes the path alone, because the visible row already includes the leaf name. D209/D362 chip rendering, completion, insertion, and serialization are unchanged; no earlier decision owned the old leaf-only row wording, so no entry is marked amended.** | Duplicate leaf names in different directories were indistinguishable until hover, and the relative location — often the actual intent of an `@` reference — was invisible in the persistent row. |
 
 
 ## T. Release delivery decisions
@@ -7807,3 +7808,43 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   the i18n catalog tests. See the amended ADR, `04-ux/06-settings-ia.md`,
   `04-ux/08-component-spec.md`, `04-ux/09-interaction-patterns.md`, and
   E2E-CHAT-turn-process-and-thinking-display.
+
+## 2026-10-14 — Composer file menu rows always show the full relative path (D658)
+
+- D658 amends the `@` file-completion row contract in
+  `04-ux/08-component-spec.md` §11.8, `04-ux/09-interaction-patterns.md` §8a.1,
+  and E2E-102a: each row persists the leaf name (directories keep the trailing
+  `/`) followed by the entry's complete workspace-relative path in a
+  de-emphasized mono span that renders the raw `entry.path` without a trailing
+  slash. The span takes the row's remaining width and ellipsizes before the
+  leaf name can, so a short leaf name never truncates and no row overflows the
+  menu.
+- The tooltip still carries the complete relative path, and the accessible
+  name becomes the path alone — the visible row already includes the leaf
+  name, so the old `leaf — path` label would have read it twice.
+- Reference chips (D209/D362, ADR 0024/ADR 0070), completion, insertion, and
+  serialization are unchanged, and no earlier decision owned the old
+  leaf-only row wording, so no entry is marked amended.
+- Covered by `apps/desktop/test/composer-file-reference-display.test.mjs` and
+  the file-mode fixture of `scripts/e2e-composer-autocomplete.mjs`. See
+  `04-ux/08-component-spec.md` and `04-ux/09-interaction-patterns.md`.
+
+## 2026-10-17 — Composer mode control opens a menu instead of cycling (D664)
+
+> Upstream decision number D663 is already taken here by the built-in
+> session-messaging decision; this entry is renumbered to D664.
+
+- The Composer-left Agent/Plan/Goal trigger keeps naming only the committed
+  mode, at a fixed 96px that now includes its caret; clicking it opens one menu
+  whose three rows are radio menu items with the committed mode checked.
+  Choosing a row closes the menu and configures the active session.
+- Cycling was replaced because reaching a specific mode took repeated clicks
+  and never showed the alternatives. A row of three always-visible segmented
+  options was implemented and dropped: it needed roughly 70px more toolbar
+  width per extra state and crowded the approval control beside it.
+- The approval chip keeps its existing fixed-width menu, and opening either
+  menu closes the other. `nextMode` is removed. Covered by
+  `apps/desktop/test/composer-mode-menu.test.mjs`,
+  `apps/desktop/test/composer-chip-descenders.test.mjs`, and the composer
+  slots and thinking contracts. See `04-ux/08-component-spec.md` §11 and
+  US-UI-73.
