@@ -160,7 +160,7 @@ pub async fn run_internal_tun_runner() -> Result<i32> {
     let spec: TunRunnerSpec =
         serde_json::from_str(&spec_raw).context("invalid TunRunnerSpec JSON")?;
 
-    let toml_config = build_toml_config(&spec.settings, false, Some(spec.local_forward_port))
+    let toml_config = build_toml_config(&spec.settings, false, Some(spec.local_forward_port), None)
         .map_err(anyhow::Error::msg)?;
     let instance = match create_native_instance(toml_config) {
         Ok(inst) => inst,

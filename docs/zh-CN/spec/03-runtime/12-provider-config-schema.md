@@ -290,27 +290,47 @@ Minih Router 是自有的模型网关，排在命名预设的第一位。它是�
 
 同一令牌还用于读取网关中按密钥隔离的控制面，设置页据此显示余额和模型广场（§5，Minih Router 账户）。
 
-- **远程控制的账户绑定（规划中，D666）**：同一个按密钥隔离的 bootstrap 应答新增可选的
-  `remoteGateway { hostlinkUrl, publicOrigin, caPem }` 对象（ADR
-  `remote-control-router-account-binding`、协议 §11.5）：
+- **远程控制的账户绑定（D666）**：同一个按密钥隔离的 bootstrap 应答新增可选的
+  `remote_gateway { hostlink_url, public_origin, ca_pem }` 对象（ADR
+  `remote-control-router-account-binding`、协议 §11.5）。Router 写 snake_case，
+  桌面同时接受该拼写与驼峰拼写（`remoteGateway { hostlinkUrl, publicOrigin, caPem }`），
+  逐字段解析，因此 Router 日后改键名仍可用：
 
-  - `hostlinkUrl` 是桌面以双向 TLS 拨号的 Gateway `wss://` Host link 端点
+  - `hostlink_url` 是桌面以双向 TLS 拨号的 Gateway `wss://` Host link 端点
     （协议 §11.4）；
-  - `publicOrigin` 是手机或浏览器访问客户端 API 使用的 HTTPS 源；
-  - `caPem` 是桌面固定的 Gateway CA 证书，取代自托管流程里手工粘贴的 PEM。
+  - `public_origin` 是手机或浏览器访问客户端 API 使用的 HTTPS 源；
+  - `ca_pem` 是桌面固定的 Gateway CA 证书，取代自托管流程里手工粘贴的 PEM。
+- **账户模式对象畸形绝不让 bootstrap 失败**：同一应答里的组网字段遵循“存在但畸形即整体
+  失败”（静默忽略会让节点留在网关不期望的网络上），账户模式对象不同——它是可追加字段、
+  不碰组网。`hostlink_url` 必须是 `wss://`、带主机、不带认证信息与查询串/片段；
+  `public_origin` 必须是 `https://` 源、不带路径/查询串/片段；`ca_pem` 必须是 PEM
+  证书包（只允许 CERTIFICATE 块，正文可解为 DER）。各字段有上限（两个 URL 512 字符、
+  证书包 16 KiB）。违反任一规则时组网身份照常生效，账户模式报告为不可用并给出原因；
+  `ca_pem` 里粘贴私钥会被拒绝，而不是被缓存与展示。
 
-  应答缺少该对象或返回 `404`，表示 Router 不提供账户模式：桌面继续走自托管注册流程
-  （网关 URL、CA PEM、一次性注册码），并且不显示账户模式入口。该对象适用上文既有
+  应答缺少该对象、为 `null` 或返回 `404`，表示 Router 不提供账户模式：桌面继续走自托管
+  注册流程（网关 URL、CA PEM、一次性注册码），并且不显示账户模式入口。该对象适用上文既有
   bootstrap 缓存规则——同一 AccessKey 摘要 key、同样至多七天、至少一分钟——因此不会比
   它所属的应答缓存更久。它不携带机密：CA 证书是公开的，该字段也绝不携带 AccessKey，
   后者只在注册请求里发给 Gateway。
-- **Host link 的第二条组网转发（规划中，D666）**：当前 No-TUN 模式只安装一条由
-  `routerLanUrl` 推导出的回环转发，指向 Router 的 HTTP 端口（数据面与控制面共用）。要
-  访问同一台机器上的 Gateway Host link 端口需要第二条转发（例如
-  `127.0.0.1:<local_port> -> <router 组网地址>:<hostlink 端口>`），因为桌面从不监听、
-  由 Host 主动外连；TUN 模式可直接访问该端口。转发的配置方式、端口分配与证书校验所用
-  的服务名由实施 PR 定义；校验必须使用 `hostlinkUrl` 中的名字，绝不使用 `127.0.0.1`，
-  因为证书校验必须包含服务身份（安全规格 §5.1）。
+- **Host link 的第二条组网转发（D666）**：No-TUN 模式安装一条由 `routerLanUrl` 推导出的
+  回环转发（指向 Router 的 HTTP 端口，数据面与控制面共用），并在 Router 下发账户模式时
+  再安装第二条：`127.0.0.1:<hostlink 本地端口>` 转发到 Gateway 的组网地址与 Host link
+  端口。桌面从不监听组网地址、由 Host 主动外连，因此这条转发是 Host link 可达的前提。
+  目标地址有两条规则：
+
+  - `hostlink_url` 主机已是 IP 字面量时，该地址本身就是组网地址，转发直接指向它；
+  - 主机是域名时无法用 DNS 解析到组网，因此假定 Gateway 与 Router 在同一组网节点上，
+    用同一应答里的 `gatewayVirtualIpv4` 作为地址，域名仅作为 TLS 服务身份。不得硬编码
+    网段：minih 线是 `11.12.0.0/24`，hungraim 线是 `11.123.0.0/24`，两者都来自应答。
+
+  本地端口是第二个回环端口，绝不复用 Router 转发端口。`EasyTierStatus.remoteGateway`
+  向面板与 Host link 客户端暴露：`available`、`hostlinkUrl`、`publicOrigin`、`caPem`、
+  `dialUrl`（No-TUN 为回环转发地址，TUN 为组网地址，不可用时为空）、`tlsServerName`
+  （始终取 `hostlinkUrl` 中的名字，绝不使用 `127.0.0.1`，因为证书校验必须包含服务身份，
+  安全规格 §5.1）、`localForwardPort`（仅 No-TUN 模式有值）与 `unavailableReason`。
+  TUN 模式不装第二条转发：它自行路由组网地址、直连 Gateway。Router 不下发该对象时行为与
+  现在完全一致——只有一条转发，`remoteGateway.available` 为 false。
 
 ### 命名端点预设
 

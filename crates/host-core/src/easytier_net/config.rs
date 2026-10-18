@@ -424,10 +424,22 @@ pub fn validate_easytier_section(section: &Value) -> Result<(), String> {
     Ok(())
 }
 
+/// A loopback TCP forward the overlay stack installs.
+///
+/// The desktop never listens on the mesh, so every overlay service it dials
+/// gets one of these: the EasyTier node binds `127.0.0.1:<local_port>` and
+/// forwards it to the service's address on the overlay.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OverlayForward {
+    pub local_port: u16,
+    pub dst: SocketAddr,
+}
+
 pub fn build_toml_config(
     settings: &EasyTierSettings,
     no_tun: bool,
     local_forward_port: Option<u16>,
+    hostlink_forward: Option<OverlayForward>,
 ) -> Result<TomlConfigLoader, String> {
     let config = if let Some(ipv4) = settings
         .ipv4
@@ -459,15 +471,31 @@ pub fn build_toml_config(
     }
     config.set_peers(peer_configs);
 
+    let mut forwards = Vec::with_capacity(2);
     if let Some(port) = local_forward_port {
         let target = parse_router_lan_target(&settings.router_lan_url)?;
-        let dst_addr = target.dst_socket_addr()?;
-        let bind_addr = SocketAddr::from(([127, 0, 0, 1], port));
-        config.set_port_forwards(vec![PortForwardConfig {
-            bind_addr,
-            dst_addr,
-            proto: "tcp".to_string(),
-        }]);
+        forwards.push(OverlayForward {
+            local_port: port,
+            dst: target.dst_socket_addr()?,
+        });
+    }
+    // The Host-link forward is separate from the Router one: it carries a
+    // different service on the same overlay, and No-TUN mode needs it because
+    // the desktop dials loopback while the Host never listens.
+    if let Some(forward) = hostlink_forward {
+        forwards.push(forward);
+    }
+    if !forwards.is_empty() {
+        config.set_port_forwards(
+            forwards
+                .into_iter()
+                .map(|forward| PortForwardConfig {
+                    bind_addr: SocketAddr::from(([127, 0, 0, 1], forward.local_port)),
+                    dst_addr: forward.dst,
+                    proto: "tcp".to_string(),
+                })
+                .collect(),
+        );
     }
 
     let mut flags = config.get_flags();
@@ -553,7 +581,7 @@ mod tests {
         });
         assert!(validate_easytier_settings(&raw).is_ok());
         let settings = settings_from_app_value(Some(&raw));
-        let toml = build_toml_config(&settings, true, Some(25890)).unwrap();
+        let toml = build_toml_config(&settings, true, Some(25890), None).unwrap();
         assert!(toml.get_flags().no_tun);
         assert_eq!(toml.get_port_forwards().len(), 1);
         assert_eq!(
@@ -564,5 +592,34 @@ mod tests {
             toml.get_port_forwards()[0].dst_addr.to_string(),
             "11.12.0.1:3001"
         );
+    }
+
+    #[test]
+    fn hostlink_forward_is_added_alongside_the_router_forward() {
+        let settings = EasyTierSettings {
+            router_lan_url: "http://11.123.0.1:3001/v1".into(),
+            ..EasyTierSettings::default()
+        };
+        let hostlink = OverlayForward {
+            local_port: 25891,
+            dst: "11.123.0.1:8443".parse().expect("addr"),
+        };
+        let toml = build_toml_config(&settings, true, Some(25890), Some(hostlink)).unwrap();
+        let forwards = toml.get_port_forwards();
+        assert_eq!(forwards.len(), 2);
+        assert_eq!(forwards[0].bind_addr.to_string(), "127.0.0.1:25890");
+        assert_eq!(forwards[0].dst_addr.to_string(), "11.123.0.1:3001");
+        assert_eq!(forwards[1].bind_addr.to_string(), "127.0.0.1:25891");
+        assert_eq!(forwards[1].dst_addr.to_string(), "11.123.0.1:8443");
+        assert_eq!(forwards[1].proto, "tcp");
+
+        // No account mode, no second forward: today's behaviour, byte for byte.
+        let plain = build_toml_config(&settings, true, Some(25890), None).unwrap();
+        assert_eq!(plain.get_port_forwards().len(), 1);
+
+        // TUN mode reaches the overlay directly and installs neither forward.
+        let tun = build_toml_config(&settings, false, None, None).unwrap();
+        assert!(tun.get_port_forwards().is_empty());
+        assert!(!tun.get_flags().no_tun);
     }
 }

@@ -408,7 +408,8 @@ keeps working unchanged; account mode is selected when the Router answers a
 | B | Router | additive `remoteGateway {hostlinkUrl, publicOrigin, caPem}` in the bootstrap answer, its system setting, tests, and docs | A (contract) |
 | C | Desktop | Gateway account directory: enroll-by-key, account login, account host list, trusted-proxy client IP, cross-account isolation tests | A |
 | D | Desktop | device request / confirm relay: `device.request` / `device.grant` Host-link frames, Host-side confirm and grant verification, `agent-host-cli` support | C |
-| E | Desktop | host-core second overlay port forward, auto-configuration from the bootstrap, the desktop confirm dialog, strict mode, and i18n | B, D |
+| E1 | Desktop | host-core: parse the Router's `remote_gateway` object and install the second overlay forward in No-TUN mode | B |
+| E2 | Desktop | Electron main auto-enrollment and Host-link wiring from that endpoint, the desktop confirm dialog, strict mode, and i18n | D, E1 |
 | F | Desktop | clients: AccessKey login and the host switcher in `apps/remote-web` | C, D |
 | G | Desktop | push on top of accounts | F |
 | D-1 | ops | deploy next to the Router; needs the domain and user authorization | C–F |
@@ -424,8 +425,8 @@ Scope notes:
   address allowed with `--hostlink-allow-cidr` (the mesh range is neither
   RFC1918 nor `100.64.0.0/10`), and a domain or path prefix for the H5 client —
   all deployment decisions;
-- the desktop needs a second No-TUN forward to the Host-link address on the
-  overlay (provider-config §3): exactly one forward exists today;
+- E1 installs the second No-TUN forward to the Host-link address on the overlay
+  (provider-config §3); TUN mode needs none;
 - the new frames reach only Hosts that advertise support, and the advertisement
   is defined by package D;
 - the device request / confirm relay moved from package C to package D: relaying
@@ -764,12 +765,30 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   the routes, error codes, session shape, certificate binding, and client-IP
   rule this package settles. Still missing: the `device.request` /
   `device.grant` frames and the capability advertisement (package D), the
-  desktop auto-configuration, second No-TUN forward, confirm dialog, and strict
-  mode (package E), the client login and host switcher (package F), the Router's
-  `remoteGateway` bootstrap object (package B), and the deployment beside the
-  Router (D-1). The `E2E-REMOTE-ACCOUNT-*` scenarios stay Draft: only their
+  Electron main auto-enrollment and Host-link wiring, the confirm dialog, and
+  strict mode (package E2), the client login and host switcher (package F), and
+  the deployment beside the Router (D-1). The `E2E-REMOTE-ACCOUNT-*` scenarios stay Draft: only their
   cross-account isolation steps 1–4 and 6 are covered so far, by the Gateway's
   own integration tests.
+
+- R7 package E1 delivered (2026-10-18, D666 / ADR
+  `remote-control-router-account-binding`): the host-core half of package E. The
+  bootstrap answer's optional `remote_gateway { hostlink_url, public_origin,
+  ca_pem }` object is parsed leniently — both wire spellings, and a malformed
+  object never fails the mesh, which keeps its network identity and reports
+  account mode as unavailable with a reason. The Host-link target is derived from
+  the advertised endpoint, using the answer's `gatewayVirtualIpv4` when the
+  endpoint names a domain instead of an IP, and No-TUN mode installs a second
+  loopback forward to it on a port that never collides with the Router forward;
+  TUN mode installs none. `EasyTierStatus.remoteGateway` reports `available`, the
+  advertised endpoint and CA, the dial address, the certificate service name,
+  the forward port, and why account mode is unavailable. provider-config §3
+  carries the field rules, the destination and port rules, and the status shape.
+  Still missing: the Electron main auto-enrollment and Host-link wiring, the
+  confirm dialog, strict mode and i18n (package E2), the client login and host
+  switcher (package F), and the deployment beside the Router (D-1). The
+  `E2E-REMOTE-ACCOUNT-*` scenarios stay Draft: E1 changes no user-facing flow on
+  its own.
 
 ## 8. Amendment history
 

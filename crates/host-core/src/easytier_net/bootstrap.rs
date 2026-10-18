@@ -28,6 +28,8 @@ use super::config::{
     DEFAULT_EASYTIER_NETWORK_SECRET, DEFAULT_EASYTIER_PEERS,
 };
 
+use super::remote_gateway::{parse_remote_gateway, RemoteGatewayOutcome};
+
 /// Ceiling on how long a response may ask to be trusted for. A gateway that
 /// asks for longer keeps a compromised key valid longer than necessary.
 const MAX_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
@@ -55,6 +57,9 @@ pub struct BootstrapResponse {
     pub peers: Option<Vec<String>>,
     /// How long the caller may reuse this answer.
     pub ttl_seconds: Option<u64>,
+    /// Account-mode endpoint the Router advertised, or why it is unusable.
+    /// Additive: an absent or malformed object never fails the answer.
+    pub remote_gateway: RemoteGatewayOutcome,
 }
 
 /// A validated response plus when it stops being trustworthy.
@@ -160,6 +165,11 @@ impl std::fmt::Display for BootstrapError {
 /// whole response, so a gateway that only rotates the secret still works. A
 /// present-but-malformed field does fail, because silently ignoring it would
 /// leave the node on a network the gateway does not expect.
+///
+/// The account-mode object is the one exception, and deliberately so: it is
+/// additive, it never touches the mesh, and a Router that advertises it badly
+/// must still leave the network identity usable. `parse_remote_gateway` returns
+/// the reason instead of an error, and the caller reports it.
 pub fn parse_bootstrap_payload(payload: &serde_json::Value) -> Result<BootstrapResponse, String> {
     let root_obj = payload
         .as_object()
@@ -281,6 +291,7 @@ pub fn parse_bootstrap_payload(payload: &serde_json::Value) -> Result<BootstrapR
         gateway_virtual_ipv4,
         peers,
         ttl_seconds,
+        remote_gateway: parse_remote_gateway(obj),
     })
 }
 
@@ -529,6 +540,7 @@ mod tests {
             gateway_virtual_ipv4: None,
             peers: None,
             ttl_seconds: Some(0),
+            remote_gateway: RemoteGatewayOutcome::Absent,
         };
         cache.insert(access_key_digest("k"), response.clone(), now);
         // Zero must not disable caching entirely.
@@ -540,6 +552,7 @@ mod tests {
             gateway_virtual_ipv4: None,
             peers: None,
             ttl_seconds: Some(u64::MAX),
+            remote_gateway: RemoteGatewayOutcome::Absent,
         };
         cache.insert(access_key_digest("k2"), absurd, now);
         // A year-long trust window is refused; the entry is still usable now.
@@ -558,6 +571,7 @@ mod tests {
                 gateway_virtual_ipv4: None,
                 peers: None,
                 ttl_seconds: Some(60),
+                remote_gateway: RemoteGatewayOutcome::Absent,
             },
             past,
         );
@@ -576,6 +590,7 @@ mod tests {
                 gateway_virtual_ipv4: None,
                 peers: None,
                 ttl_seconds: None,
+                remote_gateway: RemoteGatewayOutcome::Absent,
             },
             now,
         );
@@ -638,6 +653,7 @@ mod tests {
                 gateway_virtual_ipv4: Some("10.144.144.10".into()),
                 peers: Some(vec!["udp://tier.hmini.org:11010".into()]),
                 ttl_seconds: None,
+                remote_gateway: RemoteGatewayOutcome::Absent,
             },
         );
         assert_eq!(settings.network_name, "minih-net-abc");
@@ -661,6 +677,7 @@ mod tests {
                 gateway_virtual_ipv4: None,
                 peers: None,
                 ttl_seconds: None,
+                remote_gateway: RemoteGatewayOutcome::Absent,
             },
         );
         assert_eq!(settings.router_lan_url, "http://10.144.144.99:3001/v1");
