@@ -446,7 +446,11 @@ implemented as written.
   every device with its own user; it announces `device.confirm` alone, so the
   Gateway never offers it a grant it would refuse, and the client does not count
   it as one that will accept. It keeps the per-device approval of ADR 0331 for
-  an operator who does not want roaming. The setting is per Host and off by
+  an operator who does not want roaming. Because no refresh can ever change that
+  answer, a client that holds an account device must tell the user to ask for a
+  device again and approve it on that computer — the new grant is signed by that
+  Host itself and the account's other Hosts adopt it as usual — instead of
+  offering a retry that cannot succeed. The setting is per Host and off by
   default: `--strict-devices` on `agent-host-cli`, and the desktop's own
   "require confirmation on every terminal" switch (package E2), which is stored
   device-locally beside the remote-control switch and takes effect by rebuilding
@@ -464,10 +468,13 @@ implemented as written.
   desktop's confirmer is a modal in its own window: the request, the device
   label, the client, and the requester's deadline; focus starts on Deny, Escape
   denies, and the dialog closes when `expiresAt` passes. Every way of not
-  answering — a closed window, a reloaded renderer, a stopped link, no window at
-  all — denies whatever was waiting, so a client learns the outcome instead of
-  waiting for its own deadline (gate 33). Every mint, adoption, and revocation
-  produces a notice the settings page lists (ADR decision 6 mitigation), and a
+  answering denies: a closed window, a reloaded renderer, or a stopped link
+  denies at once, and a request no window can show is denied when it expires.
+  A denial sends no frame (protocol §11.5), so the client keeps waiting until
+  its own deadline unless another Host of the account approves; what tells it
+  up front which Hosts can answer at all is the roster (gate 33). Every mint,
+  adoption, and revocation produces a notice the settings page lists (ADR
+  decision 6 mitigation), and a
   device revoked there travels as the signed revocation frame, queued while the
   link is down, so a lost device stops working on every Host of the account.
 - **Unsupported Hosts.** A Host announces what it supports with

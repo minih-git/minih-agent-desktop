@@ -9,12 +9,14 @@
 export type Screen =
   | { kind: "hosts" }
   | { kind: "pair" }
+  /** Account sign-in and device request (protocol §11.5). */
+  | { kind: "account" }
   | { kind: "sessions"; hostId: string }
   | { kind: "session"; hostId: string; sessionId: string; title: string };
 
 /**
- * Session → Sessions → Hosts, and pairing → Hosts. There is nowhere to go back
- * to from the Host list, so hardware back there exits the app.
+ * Session → Sessions → Hosts, and pairing / account → Hosts. There is nowhere to
+ * go back to from the Host list, so hardware back there exits the app.
  */
 export function previousScreen(screen: Screen): Screen | null {
   switch (screen.kind) {
@@ -22,6 +24,7 @@ export function previousScreen(screen: Screen): Screen | null {
       return { kind: "sessions", hostId: screen.hostId };
     case "sessions":
     case "pair":
+    case "account":
       return { kind: "hosts" };
     default:
       return null;

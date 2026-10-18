@@ -147,3 +147,90 @@ describe("native credential port", () => {
     await expect(port.pair(request)).rejects.toThrow(/before its secure store/);
   });
 });
+
+/**
+ * One account device on every Host of the account (protocol §11.5). The native
+ * build is the one profile that receives the token itself, so the token goes
+ * into the Keychain / Keystore — never into the registry — and one Host failing
+ * to store it must not leave the others listed without a credential.
+ */
+describe("native account adoption", () => {
+  const adoption = {
+    deviceId: "dev_account",
+    label: "iPhone",
+    hosts: [
+      { hostId: "host1", label: "desk", requiresOwnConfirmation: false },
+      { hostId: "host2", label: "laptop", requiresOwnConfirmation: true },
+    ],
+    token: "pdt1.account",
+  };
+
+  it("keeps the token in the secure store and only metadata in the registry", async () => {
+    const { registry, store, port } = setup();
+
+    const outcome = await port.adoptAccountDevice(adoption);
+
+    expect(outcome).toEqual({ ok: true, hostIds: ["host1", "host2"] });
+    expect(store.entries()).toEqual({ "device-token.host1": "pdt1.account", "device-token.host2": "pdt1.account" });
+    expect(registry.list()).toEqual([
+      {
+        hostId: "host1",
+        label: "desk",
+        deviceId: "dev_account",
+        pairedAt: "2026-09-18T10:00:00.000Z",
+        profile: "native",
+      },
+      {
+        hostId: "host2",
+        label: "laptop",
+        deviceId: "dev_account",
+        pairedAt: "2026-09-18T10:00:00.000Z",
+        profile: "native",
+        requiresOwnConfirmation: true,
+      },
+    ]);
+    expect(JSON.stringify(registry.list())).not.toContain("pdt1.account");
+    expect(port.credentialFor("host1")).toEqual({ kind: "header", token: "pdt1.account" });
+    expect(port.credentialFor("host2")).toEqual({ kind: "header", token: "pdt1.account" });
+  });
+
+  it("replaces the stored token of every Host when a device is granted again", async () => {
+    const { registry, store, port } = setup();
+    await port.adoptAccountDevice(adoption);
+
+    const second = await port.adoptAccountDevice({ ...adoption, deviceId: "dev_second", token: "pdt1.second" });
+
+    expect(second).toEqual({ ok: true, hostIds: ["host1", "host2"] });
+    // Asking again swaps the device out: the Keychain holds the new token for
+    // every Host, and no entry still names the old device.
+    expect(store.entries()).toEqual({ "device-token.host1": "pdt1.second", "device-token.host2": "pdt1.second" });
+    expect(registry.list().map((entry) => [entry.hostId, entry.deviceId])).toEqual([
+      ["host1", "dev_second"],
+      ["host2", "dev_second"],
+    ]);
+    expect(port.credentialFor("host1")).toEqual({ kind: "header", token: "pdt1.second" });
+  });
+
+  it("lists no Host when the platform store refused the token", async () => {
+    const { registry, store, port } = setup();
+    store.failWrites(new Error("the Keychain is locked"));
+
+    const outcome = await port.adoptAccountDevice(adoption);
+
+    expect(outcome.ok ? null : outcome.failure.code).toBe("STORAGE_FAILED");
+    expect(registry.list()).toEqual([]);
+    expect(store.entries()).toEqual({});
+    expect(port.credentialFor("host1")).toBeNull();
+  });
+
+  it("refuses an adoption that arrived without a token", async () => {
+    const { registry, port } = setup();
+    const outcome = await port.adoptAccountDevice({
+      deviceId: adoption.deviceId,
+      label: adoption.label,
+      hosts: adoption.hosts,
+    });
+    expect(outcome.ok ? null : outcome.failure.message).toContain("no device token");
+    expect(registry.list()).toEqual([]);
+  });
+});

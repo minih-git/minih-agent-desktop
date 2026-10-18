@@ -6,7 +6,8 @@
  * status is read from a Host-scoped route instead. `GET
  * /hosts/{hostId}/v1/sessions` is the cheapest authenticated read: 2xx means
  * online, 503 means the Host link is down, 401 means the device credential is
- * gone (revoked) and the user must pair again.
+ * gone (revoked) and the user must pair again — except `401 HOST_UNAUTHORIZED`,
+ * which means this Host has not adopted the device yet and a retry may fix it.
  */
 import { credentialHeaders, type HostCredential } from "./credential-port.js";
 
@@ -14,6 +15,12 @@ export type HostStatus =
   | { kind: "online" }
   | { kind: "offline" }
   | { kind: "revoked" }
+  /**
+   * The Gateway knows this device, but this Host has not adopted it yet: it was
+   * offline when the grant was issued, or it confirms every device with its own
+   * user. Retrying, or confirming on that computer, is the next step.
+   */
+  | { kind: "unaccepted" }
   | { kind: "error"; code: string; message: string };
 
 export type ProbeHostInput = {
@@ -62,7 +69,22 @@ export async function probeHostStatus(input: ProbeHostInput): Promise<HostStatus
       message: error instanceof Error ? error.message : String(error),
     };
   }
-  if (response.status === 401) return { kind: "revoked" };
+  if (response.status === 401 || response.status === 403) {
+    const payload: unknown = await response.json().catch(() => null);
+    const detail = errorDetail(payload);
+    // The Gateway accepted this device and the Host behind it did not. That is
+    // a different failure from a dead credential: the token is fine, this
+    // computer simply has not adopted it yet (§11.5, account mode), so the
+    // client says "not synced yet" and offers a retry instead of dropping the
+    // device.
+    if (detail.code === "HOST_UNAUTHORIZED") return { kind: "unaccepted" };
+    if (response.status === 401) return { kind: "revoked" };
+    return {
+      kind: "error",
+      code: detail.code ?? `HTTP_${response.status}`,
+      message: detail.message ?? `HTTP ${response.status}`,
+    };
+  }
   if (response.status === 503) return { kind: "offline" };
   if (response.ok) return { kind: "online" };
   const payload: unknown = await response.json().catch(() => null);

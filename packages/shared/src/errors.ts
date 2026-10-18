@@ -35,6 +35,13 @@ export const ErrorCodes = {
   INTERNAL: "INTERNAL",
   INVALID_ARGUMENT: "INVALID_ARGUMENT",
   UNAUTHORIZED: "UNAUTHORIZED",
+  /**
+   * A relayed call reached the Gateway, which accepted the credential, and the
+   * Host behind it refused. Distinct from `UNAUTHORIZED` on purpose: the
+   * credential is still valid elsewhere, and the caller's next step is a local
+   * confirmation or a retry, not a new pairing (protocol §11.5).
+   */
+  HOST_UNAUTHORIZED: "HOST_UNAUTHORIZED",
   NOT_FOUND: "NOT_FOUND",
   /** The operation has no implementation on this surface (spec 16 §9). */
   UNSUPPORTED: "UNSUPPORTED",

@@ -846,6 +846,38 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   `E2E-REMOTE-ACCOUNT-*` scenarios stay Draft because their desktop and webview
   steps need packages E2 and F.
 
+- R7 package F delivered (2026-10-18, D666 / ADR
+  `remote-control-router-account-binding`): the account-mode client in
+  `apps/remote-web`. Account mode is discovered from a credential-free
+  `GET /v1/account/hosts` — only a `401` offers the AccessKey entry, so a Gateway
+  without account mode keeps the pairing flow and shows nothing new; the
+  AccessKey is presented once and is never stored, logged, or put in a URL; the
+  device request shows the account's whole roster up front, including the Hosts
+  that cannot confirm, and offers the §11.4 ticket when none of them can; the
+  status route is polled every two seconds with exponential backoff, an
+  eight-failure ceiling, and the Gateway's own `Retry-After` honoured on
+  `RATE_LIMITED`; the client's own deadline ends the wait without another read.
+  The granted device is stored per profile — one `HttpOnly` cookie per Host for a
+  browser, the platform secure store for a native shell — and the account session
+  is then revoked through the new `POST /v1/account/logout`, which exists because
+  a browser cannot clear an `HttpOnly` cookie itself. The Gateway gained that
+  logout route, the per-Host browser device handover with `csrfTokens`, and the
+  new `HOST_UNAUTHORIZED` (401) answer for a Host that has not adopted the device
+  yet — account-mode devices only, so a §11.4 device that a Host refuses still
+  answers `UNAUTHORIZED`. The client reports that answer as "not ready" with the
+  next step that can work: a refresh for a Host that has not caught up, and "ask
+  again, then approve it on that computer" for a Host the roster reported as one
+  that will never accept a sibling grant, with the new device replacing the
+  previous one on every Host it knows. Protocol §11.5, the `remote-web` README,
+  and the Gateway README carry the client flow, the two credential profiles, the
+  two 401s, and the Hosts a browser handover can reach. With package E2 already
+  delivered, what is still missing is push (package G) and the deployment beside
+  the Router (D-1). The client steps of the `E2E-REMOTE-ACCOUNT-*` scenarios are
+  implemented and were verified interactively in a browser against a real
+  Gateway, a Router stub, and `agent-host-cli` Hosts, but no committed suite
+  drives the web client yet, and the run through a live Router remains the
+  deployment gate.
+
 ## 8. Amendment history
 
 D374 (2026-09-10) replaced the Electron facade milestone with the headless

@@ -355,6 +355,26 @@ Gateway 全部通过，且 `05-security/02-remote-control-security.md` 的安全
   桌面 Host 目前不声明任何设备能力，因此账户模式确认暂只由 `agent-host-cli` 承担；
   `E2E-REMOTE-ACCOUNT-*` 场景仍为 Draft，因为它们的桌面与 webview 步骤需要工作包 E2 与 F。
 
+- R7 工作包 F 已交付（2026-10-18，D666 / ADR `remote-control-router-account-binding`）：
+  `apps/remote-web` 的账户模式客户端。账户模式由一个不带凭据的 `GET /v1/account/hosts`
+  探测——只有 `401` 才显示 AccessKey 入口，因此不支持账户模式的 Gateway 完全保持原有配对
+  流程、不多显示任何东西；AccessKey 只提交一次，绝不写入存储、日志或 URL；申请设备时立即
+  展示账户内完整的 Host 花名册（包括无法确认的主机），一台都确认不了时提供协议 §11.4 的
+  票据；状态路由每两秒轮询一次，失败按指数退避、连续八次失败即结束，`RATE_LIMITED` 时严格
+  遵守 Gateway 给的 `Retry-After`，客户端自己的截止时间也会在不发起新读取的情况下结束等待。
+  拿到授权后按 profile 保存设备——浏览器每台 Host 一个 `HttpOnly` cookie，原生端写入平台
+  安全存储——随后通过新增的 `POST /v1/account/logout` 作废账户会话，因为浏览器无法自己清除
+  `HttpOnly` cookie。Gateway 侧新增了该登出路由、按 Host 的浏览器设备交接（含
+  `csrfTokens`），以及“Host 尚未收编该设备”时新的 `HOST_UNAUTHORIZED`（401）应答——仅限
+  账户模式设备，因此经 §11.4 配对的设备被 Host 拒绝时仍是 `UNAUTHORIZED`。客户端把它显示为
+  “未就绪”，并给出真正可行的下一步：还没追上来的 Host 可以刷新；而花名册已表明永不接受兄弟
+  授权的 Host 则提示“重新申请，并在那台电脑上批准”，新设备会替换掉客户端已知每台 Host 上的
+  旧设备。客户端流程、两种凭据 profile、两个 401 的区别，以及浏览器交接能覆盖到哪些 Host，
+  已写入协议 §11.5、`remote-web` README 与 Gateway README。工作包 E2 已先行交付，
+  仍缺的是推送（工作包 G）与在 Router 旁的部署（D-1）。`E2E-REMOTE-ACCOUNT-*` 场景的客户端
+  步骤已实现，并已在真实 Gateway、Router 桩与 `agent-host-cli` Host 上通过浏览器交互验证，
+  但目前还没有提交进仓库的套件驱动 Web 客户端，经真实 Router 的运行仍是部署门禁。
+
 ## 8. 修订记录
 
 D374（2026-09-10）用无头 Agent Host 模块替换 Electron facade 里程碑，加入

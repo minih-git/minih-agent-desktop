@@ -11,6 +11,12 @@ export type OperationFailure = {
   code: string;
   message: string;
   retriable: boolean;
+  /**
+   * The Gateway's own retry hint, in milliseconds, when the failure carried one
+   * (`Retry-After` on a `RATE_LIMITED` answer). A caller that honors it waits
+   * exactly as long as the server asked instead of guessing.
+   */
+  retryAfterMs?: number;
 };
 
 /** RACP error codes the client maps onto its own catalog; others show the raw reason. */
@@ -36,6 +42,12 @@ const REASON_KEYS: Record<string, string> = {
   PROTOCOL_MISMATCH: "error.reason.protocolMismatch",
   METHOD_NOT_FOUND: "error.reason.unsupported",
   PAIRING_FAILED: "error.reason.pairingFailed",
+  // Account mode (protocol §11.5): the three failures that need their own next
+  // step — a replaced key, an account service that is down, and a Host that has
+  // not synced this device yet.
+  ACCESS_KEY_INVALID: "error.reason.accountKeyInvalid",
+  ACCESS_KEY_UNAVAILABLE: "error.reason.accountServiceUnavailable",
+  HOST_UNAUTHORIZED: "error.reason.hostNotSynced",
   PAIRING_TOKEN_EXPIRED: "error.reason.pairingExpired",
   STORAGE_FAILED: "error.reason.storageFailed",
   INTERNAL: "error.reason.internal",

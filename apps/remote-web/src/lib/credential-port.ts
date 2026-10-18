@@ -11,6 +11,7 @@
  * `pair` and `forget` are async because a secure-storage write or delete is.
  */
 import { defaultDeviceLabel } from "./device-label.js";
+import type { OperationFailure } from "./errors.js";
 import type { HostRegistry, HostRegistryEntry } from "./host-registry.js";
 import { pairDevice, type PairFailure } from "./pairing-client.js";
 
@@ -28,6 +29,33 @@ export type PairRequest = {
 
 export type PairOutcome = { ok: true; entry: HostRegistryEntry } | { ok: false; failure: PairFailure };
 
+/**
+ * One account device, ready to be stored on every Host of the account
+ * (protocol §11.5). A browser never sees `token`: the Gateway set an `HttpOnly`
+ * cookie per Host and handed over `csrfTokens` instead. A native shell never
+ * sees `csrfTokens`: it receives the token in the body and keeps it in the
+ * platform secure store.
+ */
+export type AccountAdoption = {
+  deviceId: string;
+  label: string;
+  hosts: readonly {
+    hostId: string;
+    label: string;
+    /**
+     * The roster said this Host is online and will not accept a sibling's
+     * grant, i.e. it confirms every device with its own user (§11.5). Recorded
+     * so the Hosts screen can tell "ask again and approve there" from "refresh
+     * in a moment" instead of offering a retry that cannot work.
+     */
+    requiresOwnConfirmation: boolean;
+  }[];
+  csrfTokens?: Record<string, string>;
+  token?: string;
+};
+
+export type AccountAdoptionOutcome = { ok: true; hostIds: string[] } | { ok: false; failure: OperationFailure };
+
 export interface CredentialPort {
   /** The credential for every request to this host, or null when it is not paired. */
   credentialFor(hostId: string): HostCredential | null;
@@ -35,6 +63,12 @@ export interface CredentialPort {
   pair(request: PairRequest): Promise<PairOutcome>;
   /** Drop the local credential of one host; the Gateway keeps its own record. */
   forget(hostId: string): Promise<void>;
+  /**
+   * Remember one account device on every Host of the account. The device was
+   * already granted and recorded by the Gateway, so a failure here is a local
+   * storage failure, never a lost device.
+   */
+  adoptAccountDevice(request: AccountAdoption): Promise<AccountAdoptionOutcome>;
 }
 
 /** Headers that carry the credential on a raw `fetch` (the probe, the pairing call). */
@@ -96,5 +130,42 @@ export class WebCookieCredentialPort implements CredentialPort {
 
   async forget(hostId: string): Promise<void> {
     this.options.registry.forget(hostId);
+  }
+
+  /**
+   * The device token is already in this browser as an `HttpOnly` cookie per
+   * Host, so what is stored here is the CSRF value that makes a mutation to
+   * each of those Hosts possible — exactly the shape a paired Host has, which
+   * is why every host-scoped screen works unchanged.
+   */
+  async adoptAccountDevice(request: AccountAdoption): Promise<AccountAdoptionOutcome> {
+    const csrfTokens = request.csrfTokens ?? {};
+    const missing = request.hosts.filter((host) => !csrfTokens[host.hostId]);
+    if (missing.length > 0) {
+      return {
+        ok: false,
+        failure: {
+          code: "STORAGE_FAILED",
+          message: "the Gateway handed over no CSRF token for some Hosts of the account",
+          retriable: false,
+        },
+      };
+    }
+    const pairedAt = (this.options.now?.() ?? new Date()).toISOString();
+    const hostIds: string[] = [];
+    for (const host of request.hosts) {
+      // `save` replaces the entry of that Host, so asking for a device again
+      // swaps the previous device out instead of leaving it behind.
+      this.options.registry.save({
+        hostId: host.hostId,
+        label: host.label,
+        deviceId: request.deviceId,
+        csrfToken: csrfTokens[host.hostId]!,
+        pairedAt,
+        ...(host.requiresOwnConfirmation ? { requiresOwnConfirmation: true as const } : {}),
+      });
+      hostIds.push(host.hostId);
+    }
+    return { ok: true, hostIds };
   }
 }

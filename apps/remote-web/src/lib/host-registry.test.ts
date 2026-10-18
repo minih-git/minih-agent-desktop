@@ -6,6 +6,7 @@ import {
   createMemoryStorage,
   parseRegistry,
   serializeRegistry,
+  unacceptedNextStep,
   type HostRegistryEntry,
 } from "./host-registry.js";
 
@@ -127,5 +128,29 @@ describe("host registry profiles", () => {
     expect(registry.list()).toEqual([nativeEntry]);
     expect(storage.getItem(HOST_REGISTRY_STORAGE_KEY)).not.toContain("pdt1.secret");
     expect(storage.getItem(HOST_REGISTRY_STORAGE_KEY)).not.toContain("csrf-1");
+  });
+});
+
+/**
+ * Account mode records one thing a paired entry never has: whether that Host
+ * will ever adopt the device this client holds (protocol §11.5). A Host that
+ * announced no `device.accept-sibling-grant` confirms every device itself, so
+ * refreshing can never make it ready and the Hosts screen has to say so.
+ */
+describe("a Host that has not adopted the device", () => {
+  it("round-trips the flag and leaves an entry without it untouched", () => {
+    const strict: HostRegistryEntry = { ...entry, requiresOwnConfirmation: true };
+    const raw = JSON.stringify([strict]);
+    expect(serializeRegistry(parseRegistry(raw))).toBe(raw);
+
+    const plain = parseRegistry(JSON.stringify([entry]));
+    expect(plain).toEqual([entry]);
+    expect(plain[0]).not.toHaveProperty("requiresOwnConfirmation");
+  });
+
+  it("asks for a new device when only that computer's own approval can help", () => {
+    expect(unacceptedNextStep(entry)).toBe("retry");
+    expect(unacceptedNextStep({ ...entry, requiresOwnConfirmation: true })).toBe("own-confirmation");
+    expect(unacceptedNextStep({ ...entry, requiresOwnConfirmation: false })).toBe("retry");
   });
 });
