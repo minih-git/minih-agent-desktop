@@ -47,6 +47,17 @@ metadata length before reading it, so an oversized file is refused without being
 loaded into memory first. Package paths, symlinks, collisions, the document cap,
 and the resource-per-object transport are unchanged.
 
+## Amendment
+
+`.git` is no longer part of a package. The packager skips `.git` at any depth
+while it walks a package, and an import ignores `.git` entries that a revision
+captured by an older build still lists, so repository metadata neither fails the
+capture nor reaches another device. The trigger was the same shape of failure as
+the context above: a design-reference skill whose repository carried a 3.3 MiB
+object pack reported `SKILL_LIMIT_EXCEEDED: skill package resource is too large`
+and stopped the sync of every domain. Junk directories such as `__pycache__` and
+`.venv`, and the symlink refusal, are unchanged.
+
 ## Consequences
 
 - A package may now be 32× larger than before (512 KiB → 16 MiB) and hold 4×
@@ -71,11 +82,12 @@ and the resource-per-object transport are unchanged.
   start being accepted.
 - Prompt-facing behavior is unchanged: the editor counter, the market install
   check, and their copy still describe a 128 KiB document, and ADR 0243 stands.
-- Known gaps are not addressed here. Junk directories (`__pycache__`, `.venv`,
-  `.git`) are still packaged and now consume the larger budget, and one symlink
-  anywhere in a package still fails the whole capture rather than being skipped.
-  A device running an older build still enforces 128 KiB per resource on read,
-  so a package accepted here is not readable by it.
+- Known gaps are not addressed here. Junk directories (`__pycache__`, `.venv`)
+  are still packaged and now consume the larger budget, and one symlink anywhere
+  in a package still fails the whole capture rather than being skipped. A device
+  running an older build still enforces 128 KiB per resource on read, so a
+  package accepted here is not readable by it. The `.git` half of the first gap
+  is closed by the amendment above.
 
 ## Alternatives
 

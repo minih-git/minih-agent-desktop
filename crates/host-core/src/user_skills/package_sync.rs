@@ -3,20 +3,45 @@
 use super::*;
 use std::collections::BTreeMap;
 
-fn checked_files(files: &[(String, Vec<u8>)]) -> Result<BTreeMap<&str, &[u8]>> {
+fn checked_files<'a>(
+    skill: &str,
+    files: &'a [(String, Vec<u8>)],
+) -> Result<BTreeMap<&'a str, &'a [u8]>> {
+    // A revision captured by an older build can still list `.git` resources.
+    // They are never written to this device and never treated as files the
+    // local package owes the remote one, so they are dropped here — the same
+    // rule the packager applies while walking a package.
+    let files = files
+        .iter()
+        .filter(|(path, _)| !is_package_metadata_path(path))
+        .map(|(path, bytes)| (path.as_str(), bytes.as_slice()))
+        .collect::<Vec<_>>();
     if files.len() > MAX_SKILL_PACKAGE_FILES {
-        bail!("SKILL_LIMIT_EXCEEDED: skill package contains too many files");
+        bail!(
+            "SKILL_LIMIT_EXCEEDED: skill `{skill}` package contains more than \
+             {MAX_SKILL_PACKAGE_FILES} resources"
+        );
     }
     let mut total = 0usize;
     let mut result = BTreeMap::new();
     for (path, bytes) in files {
-        total = total
-            .checked_add(bytes.len())
-            .ok_or_else(|| anyhow::anyhow!("SKILL_LIMIT_EXCEEDED: skill package is too large"))?;
-        if total > MAX_SKILL_PACKAGE_BYTES || bytes.len() > MAX_SKILL_RESOURCE_BYTES {
-            bail!("SKILL_LIMIT_EXCEEDED: skill package resource or total is too large");
+        total = total.checked_add(bytes.len()).ok_or_else(|| {
+            anyhow::anyhow!("SKILL_LIMIT_EXCEEDED: skill `{skill}` package is too large")
+        })?;
+        if bytes.len() > MAX_SKILL_RESOURCE_BYTES {
+            bail!(
+                "SKILL_LIMIT_EXCEEDED: skill `{skill}` resource `{path}` is {} bytes, \
+                 above the {MAX_SKILL_RESOURCE_BYTES} byte limit",
+                bytes.len()
+            );
         }
-        if result.insert(path.as_str(), bytes.as_slice()).is_some() {
+        if total > MAX_SKILL_PACKAGE_BYTES {
+            bail!(
+                "SKILL_LIMIT_EXCEEDED: skill `{skill}` package exceeds the \
+                 {MAX_SKILL_PACKAGE_BYTES} byte resource limit at `{path}`"
+            );
+        }
+        if result.insert(path, bytes).is_some() {
             bail!("SKILL_INVALID: skill package contains duplicate paths");
         }
     }
@@ -51,8 +76,8 @@ impl UserSkillRegistry {
         expected: &[(String, Vec<u8>)],
         files: &[(String, Vec<u8>)],
     ) -> Result<()> {
-        let expected = checked_files(expected)?;
-        let desired = checked_files(files)?;
+        let expected = checked_files(id, expected)?;
+        let desired = checked_files(id, files)?;
         if expected.is_empty() && desired.is_empty() {
             return Ok(());
         }

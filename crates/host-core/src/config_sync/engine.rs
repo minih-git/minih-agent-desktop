@@ -1223,6 +1223,15 @@ mod tests {
                 Some(&project_a.to_string_lossy()),
                 &[("data/fonts.csv".into(), portable_skill_resource())],
             )?;
+            // Repository metadata beside the document is not a package
+            // resource. A real skill carried a 3.3 MiB git pack, which used to
+            // fail the whole capture, and the receiving device must not gain it.
+            let package_root = Path::new(&portable_skill.path)
+                .parent()
+                .expect("skill package root");
+            fs::create_dir_all(package_root.join(".git/objects/pack"))?;
+            fs::File::create(package_root.join(".git/objects/pack/pack-portable.pack"))?
+                .set_len(crate::user_skills::MAX_SKILL_RESOURCE_BYTES as u64 * 2)?;
             provider.id
         };
 
@@ -1433,6 +1442,14 @@ mod tests {
                 )?,
                 vec![("data/fonts.csv".into(), portable_skill_resource())],
                 "packaged resource did not survive the sync round trip"
+            );
+            assert!(
+                !Path::new(&received_skill.path)
+                    .parent()
+                    .expect("skill package root")
+                    .join(".git")
+                    .exists(),
+                "repository metadata must not travel through sync"
             );
             assert_eq!(
                 state.db.get_setting("app")?.and_then(|value| {

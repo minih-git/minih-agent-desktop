@@ -65,8 +65,12 @@ Directory-shaped skills carry bounded sibling resources as authenticated
 objects. Package paths, symlinks, collisions, file counts, and total size are
 validated by Host before approved resources are written: at most 256 resources
 per package, 2 MiB per resource, and 16 MiB per package, while the skill
-document itself stays capped at 128 KiB because it can reach a prompt. Scripts
-are stored as bytes and are never executed by import.
+document itself stays capped at 128 KiB because it can reach a prompt. Git
+metadata — `.git` at any depth — is repository state a skill directory happens
+to contain, not a skill resource: the packager skips it while walking a package
+and an import ignores it even when a revision still lists it, so a repository
+kept beside a skill neither fails the capture nor travels to another device.
+Scripts are stored as bytes and are never executed by import.
 
 The connected Minih Router account row is device-local, like the project
 lists. It is the sync transport's own identity — each device links its own

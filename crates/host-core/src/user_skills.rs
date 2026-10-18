@@ -528,24 +528,52 @@ fn package_relative_path(root: &Path, path: &Path) -> Result<String> {
     Ok(components.join("/"))
 }
 
+/// `.git` is repository metadata a skill directory happens to sit inside, not a
+/// skill resource. Git regenerates it, no skill reads it, and its object packs
+/// are far larger than any data file a package carries — one 3 MiB pack is
+/// enough to fail the whole capture. Excluded by name at every depth, and
+/// compared case-insensitively because the volume storing it may not
+/// distinguish `.git` from `.GIT`.
+const PACKAGE_METADATA_DIR: &str = ".git";
+
+/// True for `.git` itself and for any path below it, at any depth.
+fn is_package_metadata_path(relative: &str) -> bool {
+    relative
+        .split('/')
+        .any(|component| component.eq_ignore_ascii_case(PACKAGE_METADATA_DIR))
+}
+
 fn collect_package_files(
     root: &Path,
     current: &Path,
+    skill: &str,
     result: &mut Vec<(String, Vec<u8>)>,
     total: &mut usize,
 ) -> Result<()> {
     if result.len() > MAX_SKILL_PACKAGE_FILES {
-        bail!("SKILL_LIMIT_EXCEEDED: skill package contains too many files");
+        bail!(
+            "SKILL_LIMIT_EXCEEDED: skill `{skill}` package contains more than \
+             {MAX_SKILL_PACKAGE_FILES} resources"
+        );
     }
     for entry in fs::read_dir(current)? {
         let entry = entry?;
         let path = entry.path();
+        // Skipped before the metadata lookup: a linked worktree stores `.git`
+        // as a plain file, and a `.git` symlink must not fail the package.
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(is_package_metadata_path)
+        {
+            continue;
+        }
         let metadata = fs::symlink_metadata(&path)?;
         if metadata.file_type().is_symlink() {
             bail!("SKILL_INVALID: skill packages cannot contain symbolic links");
         }
         if metadata.is_dir() {
-            collect_package_files(root, &path, result, total)?;
+            collect_package_files(root, &path, skill, result, total)?;
             continue;
         }
         if !metadata.is_file() {
@@ -563,19 +591,33 @@ fn collect_package_files(
         // multi-gigabyte file in a skill directory must not be pulled into
         // memory only to be refused.
         if metadata.len() > MAX_SKILL_RESOURCE_BYTES as u64 {
-            bail!("SKILL_LIMIT_EXCEEDED: skill package resource is too large");
+            bail!(
+                "SKILL_LIMIT_EXCEEDED: skill `{skill}` resource `{relative}` is \
+                 {} bytes, above the {MAX_SKILL_RESOURCE_BYTES} byte limit",
+                metadata.len()
+            );
         }
         let bytes = fs::read(&path)?;
         if bytes.len() > MAX_SKILL_RESOURCE_BYTES {
-            bail!("SKILL_LIMIT_EXCEEDED: skill package resource is too large");
+            bail!(
+                "SKILL_LIMIT_EXCEEDED: skill `{skill}` resource `{relative}` is \
+                 {} bytes, above the {MAX_SKILL_RESOURCE_BYTES} byte limit",
+                bytes.len()
+            );
         }
         *total = total.saturating_add(bytes.len());
         if *total > MAX_SKILL_PACKAGE_BYTES {
-            bail!("SKILL_LIMIT_EXCEEDED: skill package is too large");
+            bail!(
+                "SKILL_LIMIT_EXCEEDED: skill `{skill}` package exceeds the \
+                 {MAX_SKILL_PACKAGE_BYTES} byte resource limit at `{relative}`"
+            );
         }
         result.push((relative, bytes));
         if result.len() > MAX_SKILL_PACKAGE_FILES {
-            bail!("SKILL_LIMIT_EXCEEDED: skill package contains too many files");
+            bail!(
+                "SKILL_LIMIT_EXCEEDED: skill `{skill}` package contains more than \
+                 {MAX_SKILL_PACKAGE_FILES} resources"
+            );
         }
     }
     Ok(())
@@ -1256,7 +1298,7 @@ impl UserSkillRegistry {
         };
         let mut result = Vec::new();
         let mut total = 0usize;
-        collect_package_files(&root, &root, &mut result, &mut total)?;
+        collect_package_files(&root, &root, id, &mut result, &mut total)?;
         result.sort_by(|left, right| left.0.cmp(&right.0));
         Ok(result)
     }
