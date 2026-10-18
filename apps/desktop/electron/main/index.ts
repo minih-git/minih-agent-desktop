@@ -67,7 +67,10 @@ import { MainProcessState } from "./bootstrap/main-state";
 import { registerApplicationActivation } from "./bootstrap/app-activation";
 import { createHostRuntime } from "./runtime/host";
 import { createSidecarRuntime } from "./runtime/sidecar";
-import { createSessionRetitleGenerator } from "./session-title-service";
+import {
+  createSessionRetitleGenerator,
+  createSessionTitleGenerator,
+} from "./session-title-service";
 import { createEventPersistence } from "./runtime/event-persistence";
 import { createPlanRuntime } from "./runtime/plans";
 import { createRuntimeLifecycle } from "./runtime/lifecycle";
@@ -754,7 +757,32 @@ const eventPersistence = createEventPersistence({
 });
 const { persistAgentEvent } = eventPersistence;
 
+/**
+ * One built-in title generator for both triggers: the send path (IPC) and the
+ * bounded retry after a settled turn. They share the in-flight guard, so a
+ * retry can never race the generation it is meant to complete.
+ */
+const sessionTitleGenerator = createSessionTitleGenerator({
+  getHost,
+  resolveAgentRuntimeLaunch: (sessionId, session, settings, overrides) =>
+    resolveAgentRuntimeLaunch(sessionId, session, settings, {
+      ...(overrides ?? {}),
+      thinkingLevel: overrides?.thinkingLevel
+        ? normalizeThinkingLevel(overrides.thinkingLevel)
+        : undefined,
+    }),
+  vendorOAuth,
+  logger,
+  dataDir,
+  // A title is durable in the host only; the sidebar renders its own copy.
+  onTitleChanged: () =>
+    sendToRenderer(IPC.event.sessionsChanged, { reason: "session.title" }),
+});
+
 const sidecarRuntime = createSidecarRuntime({
+  generateSessionTitle: sessionTitleGenerator.run,
+  isSessionTitleRunning: sessionTitleGenerator.isRunning,
+  whenSessionTitleIdle: sessionTitleGenerator.whenIdle,
   runtimeState,
   steeringReplies,
   logger,
@@ -796,6 +824,9 @@ const sidecarRuntime = createSidecarRuntime({
       }),
     vendorOAuth,
     logger,
+    // A compaction refresh lands in the host; the renderer keeps its own copy.
+    onTitleChanged: () =>
+      sendToRenderer(IPC.event.sessionsChanged, { reason: "session.title" }),
   }),
 });
 emitAgentEvent = sidecarRuntime.emitAgentEvent;
@@ -888,6 +919,7 @@ const liveCallService = createLiveCallService({
 
 function registerIpc() {
   return registerIpcHandlers({
+    generateSessionTitle: sessionTitleGenerator.run,
     restartForStorage: () => {
       shutdownState.quitConfirmed = true;
       app.relaunch({ args: [...process.argv.slice(1).filter((arg) => arg !== "--pi-managed-storage"), "--pi-managed-storage"] });
