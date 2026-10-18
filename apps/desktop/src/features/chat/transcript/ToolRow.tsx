@@ -241,11 +241,11 @@ function HostToolRow({
   const previewTarget = PREVIEWABLE_ACTIONS.has(action)
     ? getToolPreviewTarget(message.toolArgs, root)
     : null;
-  // A run row keeps its command in the head and only its output in the body, so
-  // the head carries the two things the body no longer offers: a copy of the
-  // command, and the outcome (D226). A one-line step row carries the command
-  // beside its action too — like a thinking row carries its last line — so the
-  // step line never reads as a bare verb.
+  // A run row states its outcome and copies its command in the head, because a
+  // full row's body holds only the output (D226). A one-line step row carries
+  // the command beside its action too — like a thinking row carries its last
+  // line — but that hint is cut to the row width, so its body repeats the whole
+  // command rather than leaving it unreadable.
   const runRow = action === "run" && variant !== "topology";
   const runHead = runRow && !dense;
   const command = runRow
@@ -288,10 +288,11 @@ function HostToolRow({
       message,
       nestedReport,
       blocks: buildToolPresentation(message, {
-        // Every row prints the command or the argument summary in its head — a
-        // one-line step row beside its action — so the body must not repeat
-        // what the head already says (D226).
-        hideSummaryArg: true,
+        // A full row prints the command or the argument summary in its head and
+        // copies it there (D226), so its body must not repeat it. A one-line
+        // step row shows the command only as a hint cut to the row width, so
+        // its body is the one place the whole command can be read.
+        hideSummaryArg: !dense,
         ...(nestedReport ? { hideDelegateReport: true } : {}),
       }),
     };
