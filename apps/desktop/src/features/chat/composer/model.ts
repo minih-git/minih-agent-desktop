@@ -1,6 +1,6 @@
 import type {
-  ModelInfo,
   Mode,
+  ModelInfo,
   PermissionMode,
   ProviderPublic,
   SessionThinkingLevel,
@@ -67,11 +67,6 @@ export type ComposerFileReference = {
   plugin?: ComposerPluginPart;
 };
 
-
-export function nextMode(mode: Mode): Mode {
-  const index = MODE_CYCLE.indexOf(mode);
-  return MODE_CYCLE[(index + 1) % MODE_CYCLE.length] ?? "agent";
-}
 
 export function isThinkingLevel(value: unknown): value is SessionThinkingLevel {
   return isSessionThinkingLevel(value);
