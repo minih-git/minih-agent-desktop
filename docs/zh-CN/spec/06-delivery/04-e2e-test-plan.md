@@ -7882,8 +7882,11 @@ Gateway、loopback 模型桩运行；不使用生产 Router、真实 AccessKey �
 - **链接规格**：安全规格 §3.8、门 29、30 与 32；协议 §11.5；交付 §2（R7）
 - **验收**：安全、质量
 - **里程碑**：MVP 后（远程控制交付 R7，D666）
-- **状态**：Draft（R7，D666）——第 1–4 步与第 6 步已由 Gateway 账户集成测试
-  （`apps/remote-gateway/src/account.test.ts`）覆盖；Router 测试实例与桌面步骤等待工作包 B 与 E。
+- **状态**：Partial（R7，D666）——第 1–4 步与第 6 步已由 Gateway 账户集成测试
+  （`apps/remote-gateway/src/account.test.ts`）覆盖；第 1 步的桌面一侧（用 Router key 注册，
+  且 key 绝不进入状态载荷、日志或凭据文件）由
+  `apps/desktop/test/remote-account-desktop.test.mjs` 自动化，真实注册必须满足的服务名校验由
+  `packages/racp/src/hostlink-client.test.ts` 覆盖。Router 测试实例仍是门禁。
 
 #### E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts：确认一次即可在所有 Host 使用
 
@@ -7905,10 +7908,15 @@ Gateway、loopback 模型桩运行；不使用生产 Router、真实 AccessKey �
 - **链接规格**：安全规格 §3.7 与 §3.8、门 25、26、30 与 32；协议 §11.5；交付 §2（R7）
 - **验收**：安全、恢复、质量
 - **里程碑**：MVP 后（远程控制交付 R7，D666）
-- **状态**：Draft（R7，D666）——`agent-host-cli` 那一半（两台 CLI Host、授权时其中一台
+- **状态**：Partial（R7，D666）——`agent-host-cli` 那一半（两台 CLI Host、授权时其中一台
   停止、重连后接受待处理授权、同一令牌在两台上都可用、Gateway 存储 / 审计日志 / Host 日志
   中没有 AccessKey 与原始令牌、撤销在链路断开时作出并因此在恢复后补投到兄弟 Host）已由
-  `pnpm test:e2e:remote-account-device` 自动化；桌面与 webview 步骤等待工作包 E2 与 F。
+  `pnpm test:e2e:remote-account-device` 自动化。工作包 E2 补上桌面那一半：确认对话框可批准、
+  拒绝、在 `expiresAt` 到期时失效，重复投递的申请并入已打开的对话框，窗口消失或收到重载信号
+  时把待处理的申请按拒绝处理；每次铸出与每次吊销都给出通知，链路断开期间作出的吊销会排队到
+  下一条链路。该半边由 `apps/desktop/test/remote-account-desktop.test.mjs` 自动化，并在
+  `apps/desktop/test/remote-account-mode-ui.test.mjs` 中渲染验证。手机 webview 步骤等待
+  工作包 F。
 
 #### E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm：严格模式逐台确认
 
@@ -7924,7 +7932,10 @@ Gateway、loopback 模型桩运行；不使用生产 Router、真实 AccessKey �
 - **链接规格**：安全规格 §3.8（严格模式）与门 32；协议 §11.5；交付 §2（R7）
 - **验收**：安全、质量
 - **里程碑**：MVP 后（远程控制交付 R7，D666）
-- **状态**：Draft（R7，D666）；尚无实现
+- **状态**：Partial（R7，D666）——桌面一侧已自动化：严格模式默认关闭，开关通过重建链路
+  生效，声明的能力中不再包含 `device.accept-sibling-grant`，即使仍收到兄弟签名的授权帧
+  也会拒绝（`apps/desktop/test/remote-account-desktop.test.mjs`）。两台 Host 经真实
+  Router 的运行还需 Router 测试实例，以及工作包 F 提供的客户端视角。
 
 #### E2E-REMOTE-ACCOUNT-key-rotation-keeps-account：密钥轮换保留账户
 
@@ -7940,7 +7951,10 @@ Gateway、loopback 模型桩运行；不使用生产 Router、真实 AccessKey �
   配置规格 §3（`remoteGateway` 与 bootstrap 缓存）；交付 §2（R7）
 - **验收**：安全、恢复
 - **里程碑**：MVP 后（远程控制交付 R7，D666）
-- **状态**：Draft（R7，D666）；尚无实现
+- **状态**：Partial（R7，D666）——桌面一侧已自动化：每次都从已保存的 `minih-router`
+  记录读 key；同一账户内更换 key 时注册仍视为有效，因为判定依据是身份三元组（拨号地址、
+  CA、服务名）而非 key（`apps/desktop/test/remote-account-desktop.test.mjs`）。轮换中
+  Router 一侧需要 Router 测试实例。
 
 #### E2E-REMOTE-ACCOUNT-disabled-key-blocks-login：禁用密钥阻断登录
 
@@ -7959,7 +7973,9 @@ Gateway、loopback 模型桩运行；不使用生产 Router、真实 AccessKey �
   `remote-control-router-account-binding` 决策 8；交付 §2（R7）
 - **验收**：安全、恢复
 - **里程碑**：MVP 后（远程控制交付 R7，D666）
-- **状态**：Draft（R7，D666）；尚无实现
+- **状态**：Partial（R7，D666）——桌面一侧已自动化：被禁用或无令牌的 `minih-router`
+  记录取不到 key，设置页据此把账户模式报为不可用并给出原因，继续显示注册码表单而不注册
+  （`apps/desktop/test/remote-account-desktop.test.mjs`）。第 3–6 步需要 Router 测试实例。
 
 ## 受信任扩展场景（R7 v1）
 

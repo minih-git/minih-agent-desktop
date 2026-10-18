@@ -74,9 +74,38 @@ export function remoteGatewayErrorKey(error: unknown): string {
       return "settings.remoteGateway.errorHostRevoked";
     case "ENROLLMENT_RESPONSE_INVALID":
       return "settings.remoteGateway.errorEnrollmentResponse";
+    // Account mode (D666): the Router refused the key, could not be reached, or
+    // the Host id already belongs to another account.
+    case "ACCESS_KEY_INVALID":
+      return "settings.remoteGateway.errorAccessKeyInvalid";
+    case "ACCESS_KEY_UNAVAILABLE":
+      return "settings.remoteGateway.errorAccessKeyUnavailable";
+    case "HOST_ACCOUNT_MISMATCH":
+      return "settings.remoteGateway.errorAccountMismatch";
+    case "RATE_LIMITED":
+      return "settings.remoteGateway.errorRateLimited";
     default:
       return "settings.remoteGateway.errorUnknown";
   }
+}
+
+/**
+ * Whether the page should show account mode instead of the registration-code
+ * form (D666).
+ *
+ * Only a Router answer that is usable right now replaces the self-hosted flow;
+ * an unavailable one keeps the form and explains itself beside it, so a user
+ * without a Router key is never left without a way to enroll.
+ */
+export function accountModeReplacesEnrollment(
+  status: RemoteGatewayStatus | null,
+): boolean {
+  return status?.accountMode?.available === true;
+}
+
+/** Whether the account-mode section has anything to say. */
+export function accountModeVisible(status: RemoteGatewayStatus | null): boolean {
+  return status?.accountMode !== undefined;
 }
 
 /**

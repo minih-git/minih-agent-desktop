@@ -160,6 +160,8 @@ import type {
   MinihRouterModelDetailsInput,
   MinihRouterModelPage,
   MinihRouterModelsInput,
+  RemoteGatewayDeviceNotice,
+  RemoteGatewayDeviceRequest,
 } from "@minih-agent/shared";
 import {
   defaultCommandShellForPlatform,
@@ -1835,6 +1837,31 @@ export const api = {
     if (!window.minihAgent?.on) return () => undefined;
     return window.minihAgent.on(IPC.event.remoteGatewayStatusChanged, (payload) =>
       listener(payload as RemoteGatewayStatus),
+    );
+  },
+  // --- Account mode (D666) ---------------------------------------------------
+  /** Answer one pending device request; false when it is no longer pending. */
+  answerRemoteGatewayDevice: (requestId: string, approved: boolean) =>
+    invoke<{ answered: boolean }>(IPC.invoke.remoteGatewayDeviceDecision, { requestId, approved }),
+  /** Requests still waiting, so a reloaded renderer re-opens their dialogs. */
+  pendingRemoteGatewayDeviceRequests: () =>
+    invoke<{ requests: RemoteGatewayDeviceRequest[] }>(IPC.invoke.remoteGatewayPendingDeviceRequests),
+  /** Tell main the dialog host mounted (`true`) or went away (`false`). */
+  setRemoteGatewayDevicePresence: (present: boolean) =>
+    invoke<{ denied: number }>(IPC.invoke.remoteGatewayDevicePresence, { present }),
+  /** ADR decision 9: require confirmation on every terminal. */
+  setRemoteGatewayStrictDevices: (strictDevices: boolean) =>
+    invoke<RemoteGatewayStatus>(IPC.invoke.remoteGatewaySetStrictDevices, { strictDevices }),
+  onRemoteGatewayDeviceRequest: (listener: (request: RemoteGatewayDeviceRequest) => void) => {
+    if (!window.minihAgent?.on) return () => undefined;
+    return window.minihAgent.on(IPC.event.remoteGatewayDeviceRequest, (payload) =>
+      listener(payload as RemoteGatewayDeviceRequest),
+    );
+  },
+  onRemoteGatewayDeviceNotice: (listener: (notice: RemoteGatewayDeviceNotice) => void) => {
+    if (!window.minihAgent?.on) return () => undefined;
+    return window.minihAgent.on(IPC.event.remoteGatewayDeviceNotice, (payload) =>
+      listener(payload as RemoteGatewayDeviceNotice),
     );
   },
   onSessionsChanged: (

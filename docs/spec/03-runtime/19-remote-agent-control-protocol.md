@@ -1514,6 +1514,32 @@ written.
   `approver`, `pairedDevice: false`, always under the remote permission ceiling,
   never offered `allow-session`. A Host in strict mode refuses sibling grants
   and confirms every device with its own user.
+- **Desktop Host (package E2).** The desktop is one of these Hosts, and it
+  settles the parts a headless Host leaves to the embedding application. It
+  enrolls itself through the Router account when the Router advertises one
+  (§11.5 "Account login" above; provider-config §3), reading the account
+  AccessKey from the saved `minih-router` provider row inside the main process,
+  using it for that one enrollment request, and then discarding it — it never
+  enters a renderer payload, a log line, an audit record, or the credential
+  file, which keeps only the Host certificate and key. Nothing is enrolled and
+  nothing listens while the user's own remote-control switch is off, and an
+  unavailable advertisement leaves the self-hosted registration-code flow
+  untouched. Its confirmer is the desktop's own window: `device.request` is
+  shown as a modal that names the device and the client, focus starts on Deny,
+  Escape denies, and the dialog closes when the request's `expiresAt` passes.
+  There is no answer that is not a decision: a renderer that reports it is going
+  away (a reload, a closed window) denies everything pending at once, which is
+  what the desktop tells the Gateway through `remoteGateway/devicePresence` and
+  `remoteGateway/deviceDecision`. A request no window can show is not answered
+  early — it stays queued until its `expiresAt` and is refused then, so the
+  client waits out the window instead of being told a dialog nobody saw was
+  dismissed. Every mint, adoption, and revocation produces a notice the settings
+  page lists (ADR decision 6), and a device revoked there goes out as the signed
+  frame above, queued while the link is down. The address this link dials is
+  resolved per connection from the current `EasyTierStatus.remoteGateway`
+  (provider-config §3): the stored credential names the advertised endpoint, so a
+  forward port the overlay re-allocated neither re-enrolls the desktop nor
+  strands it.
 - **Cross-account isolation.** No route, Host listing, device record, pending
   grant, or audit query may cross accounts, and every routing decision and cache
   lookup is scoped by account. The Gateway's per-IP rate limit (ADR decision 10)

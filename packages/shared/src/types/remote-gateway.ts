@@ -52,6 +52,13 @@ export type RemoteGatewayStatus = {
   lastError?: RemoteGatewayFailure;
   /** When the next reconnect attempt is due, while `state` is `backoff`. */
   nextRetryAt?: string;
+  /**
+   * Account mode (D666) when the Router advertised one. Absent means the
+   * self-hosted flow applies and the page shows no account-mode affordance.
+   */
+  accountMode?: RemoteGatewayAccountMode;
+  /** The persisted strict-mode switch (ADR decision 9); off when absent. */
+  strictDevices?: boolean;
 };
 
 /** One device paired to this desktop through the Gateway (never a token hash). */
@@ -105,6 +112,58 @@ export type RemoteGatewayPairingCodeResult = {
 };
 
 /**
+ * Account mode (D666 / ADR `remote-control-router-account-binding`) as the
+ * settings page shows it.
+ *
+ * The Router advertises the endpoint in the bootstrap answer and host-core
+ * reports it as `EasyTierStatus.remoteGateway`; nothing here is a secret — the
+ * CA certificate is public and the AccessKey never leaves the main process.
+ */
+export type RemoteGatewayAccountMode = {
+  /** True when the Router advertised an endpoint this desktop can dial. */
+  available: boolean;
+  /** The Gateway's Host-link URL as advertised. */
+  url?: string;
+  /** HTTPS origin phones and browsers use for the client API. */
+  publicOrigin?: string;
+  /** Why account mode is unavailable, when it is: never carries a key. */
+  reason?: string;
+};
+
+/**
+ * One `device.request` waiting for this desktop's user (protocol §11.5).
+ *
+ * A redacted projection of the frame: the device label and client the Gateway
+ * forwarded, so the person at the machine can decide. No token, no hash, no
+ * account id.
+ */
+export type RemoteGatewayDeviceRequest = {
+  requestId: string;
+  deviceLabel: string;
+  client: string;
+  requestedAt: string;
+  /** The requester's own deadline; the dialog closes with it. */
+  expiresAt: string;
+};
+
+/** The user's answer to one pending `device.request`. */
+export type RemoteGatewayDeviceDecisionRequest = {
+  requestId: string;
+  approved: boolean;
+};
+
+/**
+ * A device this desktop minted, adopted from a sibling Host, or revoked
+ * (ADR decision 6 mitigation: every Host shows a "new device" notice).
+ */
+export type RemoteGatewayDeviceNotice = {
+  kind: "device.minted" | "device.adopted" | "device.revoked";
+  deviceId: string;
+  label: string;
+  at: string;
+};
+
+/**
  * The device-local `remoteGateway` AppSettings field (rollout R5, ADR 0331).
  *
  * Absent means the feature is off, and an old settings row needs no
@@ -116,4 +175,10 @@ export type RemoteGatewaySettings = {
   enabled: boolean;
   /** `wss://` URL of the user's self-hosted Gateway. */
   url: string;
+  /**
+   * ADR decision 9: require confirmation on every terminal. Off by default;
+   * while it is on this Host refuses sibling grants and asks its own user for
+   * every device. Device-local, like the rest of this field.
+   */
+  strictDevices?: boolean;
 };

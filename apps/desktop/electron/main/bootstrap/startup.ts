@@ -305,6 +305,10 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
       },
       serverVersion: APP_VERSION,
       emitStatus: (status) => sendToRenderer(IPC.event.remoteGatewayStatusChanged, status),
+      // Account mode (D666): the confirmation dialog lives in the renderer, so
+      // main pushes the request there and the notice beside it.
+      emitDeviceRequest: (request) => sendToRenderer(IPC.event.remoteGatewayDeviceRequest, request),
+      emitDeviceNotice: (notice) => sendToRenderer(IPC.event.remoteGatewayDeviceNotice, notice),
       log: (level, message, data) =>
         logger.app("runtime", level, message, { data: formatRemoteLogData(data) }),
     });

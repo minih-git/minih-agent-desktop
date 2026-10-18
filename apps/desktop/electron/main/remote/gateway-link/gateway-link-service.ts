@@ -2,6 +2,9 @@ import type { AgentHost } from "@minih-agent/agent-host";
 import type { HostRpc } from "@minih-agent/host-runtime";
 import { DeviceTokenAuthenticator, RacpServer } from "@minih-agent/racp";
 import type {
+  RemoteGatewayAccountMode,
+  RemoteGatewayDeviceNotice,
+  RemoteGatewayDeviceRequest,
   RemoteGatewayDeviceSummary,
   RemoteGatewayEnrollRequest,
   RemoteGatewayFailure,
@@ -10,6 +13,13 @@ import type {
   RemoteGatewayStatus,
 } from "@minih-agent/shared";
 
+import {
+  accountEnrollmentCurrent,
+  createAccountEnroller,
+  readAccountGateway,
+  type AccountGatewayState,
+} from "./account-mode.js";
+import { createDesktopDevices, type DesktopDevices } from "./account-devices.js";
 import { createDesktopHostOperations } from "./desktop-host-operations.js";
 import type { GatewayCredentialStore } from "./gateway-credential-store.js";
 import {
@@ -46,6 +56,8 @@ export type GatewayLinkServiceOptions = {
   port: GatewayLinkPort;
   /** Encrypted credential store; the service opens it, the caller owns it. */
   store: GatewayCredentialStore;
+  /** Data directory: the device revocation queue lives under it. */
+  dataDir: string;
   /** The desktop's existing Agent Host instance; never a new one. */
   agentHost: () => AgentHost;
   /** The same host-core RPC source the bridge uses. */
@@ -58,6 +70,14 @@ export type GatewayLinkServiceOptions = {
   now?: () => number;
   /** Reconnect backoff handed to the transport. */
   backoff?: { baseDelayMs?: number; maxDelayMs?: number };
+  /** Persisted strict-mode switch (ADR decision 9); off when absent. */
+  strictDevices?: boolean;
+  /** Persist the strict-mode switch without touching the other settings. */
+  saveStrictDevices?: (strictDevices: boolean) => Promise<void>;
+  /** Push one `device.request` to the renderer; absent means no window can ask. */
+  emitDeviceRequest?: (request: RemoteGatewayDeviceRequest) => void;
+  /** One notice per mint, adoption, and revocation (ADR decision 6). */
+  emitDeviceNotice?: (notice: RemoteGatewayDeviceNotice) => void;
 };
 
 export type GatewayLinkService = {
@@ -69,6 +89,14 @@ export type GatewayLinkService = {
   createPairingCode(): Promise<RemoteGatewayPairingCodeResult>;
   listDevices(): Promise<RemoteGatewayDeviceSummary[]>;
   revokeDevice(deviceId: string): Promise<boolean>;
+  /** Account mode: answer one pending `device.request`. */
+  answerDeviceRequest(requestId: string, approved: boolean): boolean;
+  /** Account mode: requests still waiting for this desktop's user. */
+  pendingDeviceRequests(): RemoteGatewayDeviceRequest[];
+  /** The dialog host went away: refuse everything waiting. */
+  devicePresence(present: boolean): number;
+  /** ADR decision 9: rebuild the link so the capability list matches. */
+  setStrictDevices(strictDevices: boolean): Promise<RemoteGatewayStatus>;
   /** Status pushes; the returned function removes the listener. */
   onChange(listener: (status: RemoteGatewayStatus) => void): () => void;
   dispose(): Promise<void>;
@@ -116,6 +144,17 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
   let disposed = false;
   let server: RacpServer | null = null;
   let handle: HostLinkHandle | null = null;
+  /** Account mode as the Router answered it last; `undefined` until read. */
+  let accountMode: RemoteGatewayAccountMode | undefined;
+  /** The device directory of the running link; null when not account-bound. */
+  let accountDevices: DesktopDevices | null = null;
+  let strictDevices = options.strictDevices === true;
+  const enroller = createAccountEnroller({
+    port: options.port,
+    store: options.store,
+    getHost: options.getHost,
+    log,
+  });
   let state: {
     name: RemoteGatewayLinkState;
     since: string;
@@ -137,6 +176,10 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
     ...(opened ? { hostId: options.store.hostId() } : {}),
     ...(state.lastError ? { lastError: state.lastError } : {}),
     ...(state.nextRetryAt ? { nextRetryAt: state.nextRetryAt } : {}),
+    // Account mode is reported once the Router answer has been read; until then
+    // the page keeps showing the self-hosted flow.
+    ...(accountMode ? { accountMode } : {}),
+    strictDevices,
   });
 
   const emit = (): void => {
@@ -203,6 +246,20 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
    * authenticator already put on the connection, never a token.
    */
   const revokeStoredDevice = async (deviceId: string): Promise<boolean> => {
+    // Account mode: the revocation must also reach the account's other Hosts,
+    // so it goes through the signed frame — queued while the link is down, so a
+    // device revoked offline still stops working everywhere (protocol §11.5).
+    const current = handle;
+    if (current?.revokeDevice && accountDevices) {
+      const outcome = await current.revokeDevice(deviceId);
+      const closed = server ? server.closeConnectionsForSubject(deviceId, "device revoked") : 0;
+      log("info", "account-mode device revoked", {
+        deviceId,
+        announced: outcome.announced,
+        closedConnections: closed,
+      });
+      return outcome.revoked;
+    }
     const revoked = await options.store.revokeDevice(deviceId, iso(now));
     if (!revoked) return false;
     const closed = server ? server.closeConnectionsForSubject(deviceId, "device revoked") : 0;
@@ -210,14 +267,96 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
     return true;
   };
 
+  /**
+   * Refresh the account-mode answer and, when the Router offers it, make this
+   * desktop's enrollment match it.
+   *
+   * Called before every start, so the link follows the Router: an endpoint that
+   * moved re-enrolls, one that disappeared leaves the stored credentials alone
+   * (a key change revokes nothing by itself, ADR decision 8) and the page
+   * explains why account mode is off.
+   */
+  const syncAccountMode = async (): Promise<AccountGatewayState> => {
+    const previous = accountMode?.available === true;
+    let state_: AccountGatewayState;
+    try {
+      state_ = await readAccountGateway(options.getHost());
+    } catch (error) {
+      state_ = { supported: false, mode: { available: false, reason: String(error) } };
+    }
+    accountMode = state_.mode;
+    if (!state_.gateway) {
+      if (previous) {
+        log("info", "account mode is no longer advertised; keeping the stored enrollment", {
+          reason: state_.mode.reason ?? "",
+        });
+      }
+      return state_;
+    }
+    const outcome = await enroller.ensure();
+    if (outcome.state === "no-access-key") {
+      log("info", "account mode needs a Minih Router key; the self-hosted flow applies");
+      accountMode = {
+        ...state_.mode,
+        available: false,
+        reason: "no Minih Router AccessKey is configured",
+      };
+    } else if (outcome.state === "failed") {
+      const failure = failureOf(outcome.error, GATEWAY_LINK_ENROLL_FAILED);
+      accountMode = { ...state_.mode, available: false, reason: failure.message };
+    }
+    return { ...state_, mode: accountMode ?? state_.mode };
+  };
+  /**
+   * The address this attempt dials: whatever the overlay reaches the Gateway on
+   * right now. No-TUN re-allocates the forward port on every overlay start, so
+   * it is read per connection — the credentials keep only the advertised
+   * endpoint. An answer without a usable endpoint is a transport failure, never
+   * a reason to dial the port that happened to exist at enrollment.
+   */
+  const resolveAccountDialUrl = async (): Promise<string> => {
+    const state = await readAccountGateway(options.getHost());
+    if (!state.gateway) {
+      throw new Error(state.mode.reason ?? "account mode is not available");
+    }
+    return state.gateway.dialUrl;
+  };
+
   const startLink = async (): Promise<void> => {
     if (disposed || !enabled || handle || server) return;
+    accountDevices = null;
+    await syncAccountMode();
     const credentials = options.store.credentials();
     if (!credentials) {
       setState("not-enrolled");
+      emit();
       return;
     }
     setState("starting");
+    // An account-bound certificate is what a sibling Host accepts, so only then
+    // does this desktop advertise `device.confirm` (security gate 33).
+    accountDevices = createDesktopDevices({
+      dataDir: options.dataDir,
+      hostId: credentials.hostId || options.store.hostId(),
+      signer: { certificatePem: credentials.certificatePem, privateKeyPem: credentials.privateKeyPem },
+      gatewayCaPem: credentials.gatewayCaPem,
+      store: options.store,
+      log,
+      ...(options.emitDeviceRequest ? { emitRequest: options.emitDeviceRequest } : {}),
+      strictDevices,
+      ...(options.emitDeviceNotice
+        ? {
+            onNotice: (notice) =>
+              options.emitDeviceNotice?.({
+                kind: notice.kind,
+                deviceId: notice.deviceId,
+                label: notice.label,
+                at: notice.at,
+              }),
+          }
+        : {}),
+      now,
+    });
     const racpServer = new RacpServer({
       agentHost: options.agentHost(),
       operations: createDesktopHostOperations({
@@ -242,19 +381,31 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
         log,
         onStatus: applyTransportStatus,
         ...(options.backoff ? { backoff: options.backoff } : {}),
+        ...(credentials.tlsServerName ? { tlsServerName: credentials.tlsServerName } : {}),
+        // Account mode follows the overlay's current forward port on every
+        // connect and reconnect; the self-hosted flow dials its stored URL.
+        ...(credentials.hostlinkUrl ? { resolveDialUrl: resolveAccountDialUrl } : {}),
+        ...(accountDevices ? { devices: accountDevices.directory } : {}),
+        ...(accountDevices ? { revocations: accountDevices.revocations } : {}),
       });
     } catch (error) {
       // The transport is missing or refused to start: report it, never keep a
       // half-built server around.
       racpServer.close();
+      accountDevices = null;
       log("error", "gateway link transport start failed", { error: String(error) });
       setState("error", { lastError: failureOf(error, GATEWAY_LINK_UNAVAILABLE) });
       return;
     }
     server = racpServer;
     handle = started;
-    log("info", "gateway link started", { hostId: credentials.hostId });
+    log("info", "gateway link started", {
+      hostId: credentials.hostId,
+      accountMode: Boolean(credentials.tlsServerName),
+      capabilities: accountDevices?.capabilities.length ?? 0,
+    });
     applyTransportStatus(started.status());
+    emit();
   };
 
   const stopLink = async (): Promise<void> => {
@@ -262,6 +413,9 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
     const stoppingServer = server;
     handle = null;
     server = null;
+    // A dialog with no link behind it can never be answered meaningfully.
+    accountDevices?.confirmer.denyAll("the gateway link stopped");
+    accountDevices = null;
     if (stopping) {
       try {
         await stopping.stop();
@@ -390,6 +544,34 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
     },
     revokeDevice(deviceId) {
       return revokeStoredDevice(deviceId);
+    },
+    answerDeviceRequest(requestId, approved) {
+      // A dialog for a link that already stopped is refused, not applied.
+      return accountDevices?.confirmer.answer(requestId, approved) ?? false;
+    },
+    pendingDeviceRequests() {
+      return accountDevices?.confirmer.pending() ?? [];
+    },
+    devicePresence(present) {
+      // The window that was asked went away (closed or reloaded): every dialog
+      // it was showing is refused, so no client waits on a dead prompt.
+      if (present) return 0;
+      return accountDevices?.confirmer.denyAll("the confirmation window went away") ?? 0;
+    },
+    async setStrictDevices(next) {
+      if (disposed) return snapshot();
+      if (strictDevices === next) return snapshot();
+      // Persist first: a crash between the two leaves the switch truthful.
+      if (options.saveStrictDevices) await options.saveStrictDevices(next);
+      strictDevices = next;
+      emit();
+      // The capability list is part of what the link announces, so a change
+      // takes effect by rebuilding it. Nothing else about the link changes.
+      await transition(async () => {
+        await stopLink();
+        if (enabled) await startLink();
+      });
+      return snapshot();
     },
     onChange(listener) {
       listeners.add(listener);

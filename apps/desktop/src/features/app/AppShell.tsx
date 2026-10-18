@@ -1,5 +1,6 @@
 import { type CSSProperties, lazy, type ReactNode, Suspense, useEffect } from "react";
 import { ConversationTopbar } from "../../components/ConversationTopbar";
+import { DeviceRequestHost } from "../../components/settings/DeviceRequestHost";
 import { ExtensionPromptHost } from "../../components/ExtensionPromptDialog";
 import { PluginRendererHost } from "../../plugins/renderer-host/PluginRendererHost";
 import {
@@ -347,6 +348,9 @@ export function AppShell() {
         <LiveVoiceStatusHost />
         <PluginRendererHost />
         <ExtensionPromptHost />
+        {/* Account-mode `device.request` dialogs (D666): a phone asking for a
+            device token, answered here on whichever page is open. */}
+        <DeviceRequestHost />
         {page === "settings" ? <UpdateBanner /> : null}
       </>
     );
