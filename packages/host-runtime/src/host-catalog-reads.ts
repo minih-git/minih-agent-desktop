@@ -8,7 +8,7 @@ import { toSessionSummary, type HostRpc, type HostSessionRecord } from "./host-p
 /**
  * The read side of the session and project catalogs, shared by every Host
  * that serves them over RACP: the headless `agent-host-cli` and the desktop
- * Host link (ADR 0330). Both read the same host-core rows and project the
+ * Host link (ADR 0331). Both read the same host-core rows and project the
  * same summaries, so a remote device sees one catalog regardless of which
  * Host answered.
  */

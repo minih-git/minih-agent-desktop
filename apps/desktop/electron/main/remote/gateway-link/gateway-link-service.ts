@@ -20,7 +20,7 @@ import {
 } from "./gateway-link-port.js";
 
 /**
- * The single owner of the desktop Host link's lifecycle (rollout R5, ADR 0330).
+ * The single owner of the desktop Host link's lifecycle (rollout R5, ADR 0331).
  *
  * The desktop dials the user's Gateway over one outbound Host link and never
  * listens. Nothing here runs while the feature is off: `RacpServer` and the

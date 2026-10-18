@@ -242,7 +242,7 @@ sidecar/host 关闭序列在更新程序替换应用程序之前运行。
 Host 是无头模块（`packages/agent-host`），拥有会话与回合准入、回合队列、审批代理和
 事件日志，与 Node pi sidecar、Rust host-core 一起受监督，其上是已认证的 RACP 服务
 （D374）。首个远程部署（D375）把该模块作为无头 `agent-host-cli` 运行在远端机器上，只绑定
-loopback，桌面经 SSH 端口转发连接。Gateway 拓扑（MVP 后，已由 D665 / ADR 0330
+loopback，桌面经 SSH 端口转发连接。Gateway 拓扑（MVP 后，已由 D665 / ADR 0331
 排期为 R4–R6）会增加出站 Host link；
 Gateway 负责路由已认证客户，但不拥有工作区状态。
 

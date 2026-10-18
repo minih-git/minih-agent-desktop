@@ -1,6 +1,6 @@
 /**
  * Desktop-as-connected-Host end-to-end over an in-memory Host link (rollout
- * R5, ADR 0330).
+ * R5, ADR 0331).
  *
  * PR-3 ships no transport; PR-2 provides `createHostLinkHost`. This test wires
  * the real `RacpServer` built by the desktop service to the real

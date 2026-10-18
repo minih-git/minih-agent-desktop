@@ -1,5 +1,5 @@
 /**
- * The renderer may not write `remoteGateway` (rollout R5, ADR 0330).
+ * The renderer may not write `remoteGateway` (rollout R5, ADR 0331).
  *
  * The gateway switch is owned by the main-process link controller: it is the
  * only writer of `AppSettings.remoteGateway`. A renderer keeps its own copy of

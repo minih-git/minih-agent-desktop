@@ -1,5 +1,5 @@
 /**
- * Gateway file store (ADR 0330 §3.5): `--data-dir` holds the CA, the host and
+ * Gateway file store (ADR 0331 §3.5): `--data-dir` holds the CA, the host and
  * device registries, the one-time enrollment codes, the audit log, and the
  * CSRF HMAC secret. Directory mode 0700, file mode 0600, every JSON write is
  * an atomic rename. No SQLite and no native dependency.

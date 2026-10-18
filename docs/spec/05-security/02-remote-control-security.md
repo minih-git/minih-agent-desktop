@@ -110,7 +110,7 @@ Direct LAN or development connections still use TLS and an expiring device
 token. Plain `ws://`, plain HTTP, and static shared tokens in URLs are not
 supported.
 
-Enrollment is a one-time exchange (D665, ADR 0330): an administrator prints a
+Enrollment is a one-time exchange (D665, ADR 0331): an administrator prints a
 15-minute single-use enrollment code on the Gateway, the Host generates its
 key pair locally and sends the CSR and the code to a dedicated enrollment
 endpoint on the Host link port that authenticates by server TLS only, the
@@ -142,7 +142,7 @@ scope before executing any mutation. The Gateway's transport connection is not
 itself authorization for a session, and a route context for one
 `clientConnectionId` cannot be replayed on another.
 
-In the self-hosted, user-local Gateway scenario (D665, ADR 0330) the
+In the self-hosted, user-local Gateway scenario (D665, ADR 0331) the
 integrity of the route context is guaranteed by the authenticated Host link:
 only an enrolled Gateway holding the matching client certificate can send
 Host link frames, so the Host does not verify a second signature on the
@@ -283,7 +283,7 @@ than raw SSH stderr, tokens, password/private-key paths or forwarded URLs.
 ### 3.7 Gateway-paired devices
 
 Device records gain an optional `origin` field with values `"ssh"` or
-`"gateway"` (D665, ADR 0330). Records persisted before D665 have no `origin`
+`"gateway"` (D665, ADR 0331). Records persisted before D665 have no `origin`
 and read as `"ssh"`, so old credential stores need no migration. Every
 authentication input also carries the connection origin: the loopback
 `RACP-WS` binding is `"ssh"` and a Host link logical connection is
@@ -294,7 +294,7 @@ authentication input also carries the connection origin: the loopback
   connection it grants `["viewer", "controller", "approver"]` and records
   `origin: "gateway"`. The Host decides these roles; roles sent by the
   client are ignored.
-- Pairing tokens carry the same origin as the devices they mint (ADR 0330):
+- Pairing tokens carry the same origin as the devices they mint (ADR 0331):
   `PairingRecord` gains an optional `origin` field, and a record
   without the field reads as `"ssh"`. A code issued by `--pair` (SSH
   bootstrap) can be redeemed only on the loopback `RACP-WS` binding; a code
@@ -306,7 +306,7 @@ authentication input also carries the connection origin: the loopback
   an SSH-paired owner: it is not exempt from the remote permission ceiling
   (§4.3), and `allow-session` is never offered to it.
 - For gateway-origin principals these restrictions hold regardless of Host
-  policy and MUST be locked by tests, not left to defaults (ADR 0330):
+  policy and MUST be locked by tests, not left to defaults (ADR 0331):
   `allowRemoteSessionGrants: true` does not make `allow-session`
   available to them; they never carry `approverOverride`; and they stay under
   the remote permission ceiling no matter how `applyCeilingToPairedDevices`
@@ -701,7 +701,7 @@ ADR 0293): the credential-handling rules above and gate 21. It relaxes
 `BatchMode=yes` for a password target only, with `NumberOfPasswordPrompts=1`
 and `PubkeyAuthentication=no`, and keeps a key or agent as the default path.
 
-D665 (2026-10-17, ADR 0330) scheduled the Gateway and browser milestones
+D665 (2026-10-17, ADR 0331) scheduled the Gateway and browser milestones
 (R4–R6): §3.1 and §3.2 lose their unscheduled status and §3.2 records the
 enrollment exchange; §3.3 records that the route context's integrity is
 guaranteed by the authenticated Host link in the self-hosted scenario, with

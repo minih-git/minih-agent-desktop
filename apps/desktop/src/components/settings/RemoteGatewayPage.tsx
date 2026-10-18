@@ -1,5 +1,5 @@
 /**
- * Settings ▸ Remote gateway (rollout R5, ADR 0330).
+ * Settings ▸ Remote gateway (rollout R5, ADR 0331).
  *
  * The desktop as a connected Host: it dials the user's own Gateway over one
  * outbound Host link and never opens a listener. The page steers a link the

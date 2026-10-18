@@ -7,7 +7,7 @@ import {
 import type { RacpHostOperations } from "@minih-agent/racp";
 
 /**
- * The desktop Host's RACP operation surface (rollout R5, ADR 0330).
+ * The desktop Host's RACP operation surface (rollout R5, ADR 0331).
  *
  * A running desktop is a Host for its *own* local sessions, so a remote
  * device may read the session and project catalogs and drive the Agent Host

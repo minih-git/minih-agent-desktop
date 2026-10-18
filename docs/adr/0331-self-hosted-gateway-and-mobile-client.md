@@ -1,4 +1,4 @@
-# ADR 0330: Self-hosted Gateway, connected desktop Host, and mobile client
+# ADR 0331: Self-hosted Gateway, connected desktop Host, and mobile client
 
 - Status: Accepted for implementation (post-MVP)
 - Date: 2026-10-17

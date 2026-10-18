@@ -1,5 +1,5 @@
 /**
- * `RACP-HTTP` + SSE client (protocol spec §11.2, D665 / ADR 0330). Commands go
+ * `RACP-HTTP` + SSE client (protocol spec §11.2, D665 / ADR 0331). Commands go
  * out as `fetch` requests whose method and path derive from the shared
  * `RACP_HTTP_ROUTE_LIST` (GET for reads, POST for mutations); events stream
  * through `fetch`-based SSE so the browser can set headers (the header

@@ -1,5 +1,5 @@
 /**
- * Remote gateway: pure decisions and catalogs (rollout R5, ADR 0330).
+ * Remote gateway: pure decisions and catalogs (rollout R5, ADR 0331).
  *
  * The page's behaviour — the switch gate, enrollment, the pairing code, revoke,
  * unmount cleanup — is covered by rendering it in Electron in

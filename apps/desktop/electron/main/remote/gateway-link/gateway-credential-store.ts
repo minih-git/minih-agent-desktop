@@ -9,7 +9,7 @@ import type { HostLinkCredentials } from "./gateway-link-port.js";
 
 /**
  * Device credentials and mTLS material for the desktop Host link (rollout R5,
- * ADR 0330).
+ * ADR 0331).
  *
  * The file lives under `<userData>/remote-gateway/` and is encrypted as one
  * blob through `EncryptionPort`, the same OS-keychain path the paired-host

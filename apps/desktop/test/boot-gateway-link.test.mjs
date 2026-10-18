@@ -1,5 +1,5 @@
 /**
- * Desktop-as-connected-Host boot and lifecycle (rollout R5, ADR 0330).
+ * Desktop-as-connected-Host boot and lifecycle (rollout R5, ADR 0331).
  *
  * The feature is off by default and must stay inert when it is: security gate
  * 27 says a disabled desktop behaves exactly like today's build — no store

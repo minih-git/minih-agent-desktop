@@ -1,5 +1,5 @@
 /**
- * Settings ▸ Remote gateway user path (rollout R5, ADR 0330).
+ * Settings ▸ Remote gateway user path (rollout R5, ADR 0331).
  *
  * The real page is bundled and rendered in Electron against a fake IPC bridge,
  * the English catalog and a controllable clock: the switch gate, enrollment

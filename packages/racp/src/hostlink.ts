@@ -12,7 +12,7 @@ import type { DeviceTokenAuthenticator } from "./auth.js";
 import type { RacpServer, ServerConnectionTransport } from "./server.js";
 
 /**
- * Host link relay profile (protocol spec §11.4, D665 / ADR 0330). One
+ * Host link relay profile (protocol spec §11.4, D665 / ADR 0331). One
  * authenticated outbound WebSocket carries many logical client connections;
  * each logical connection is an ordinary `ServerConnectionTransport` the
  * `RacpServer.accept()` can serve, with its own initialization state,
@@ -157,7 +157,7 @@ export class HostLinkHost {
         this.closeAll(RACP_HOSTLINK_CLOSE_CODES.protocolError, `unexpected ${parsed.type} frame`);
         return;
       case "attachment.chunk":
-        // Attachment relay is deferred (ADR 0330): RacpServer declares
+        // Attachment relay is deferred (ADR 0331): RacpServer declares
         // `attachments: false`, so the Host refuses the frame and closes the
         // link rather than silently dropping bytes.
         this.options.log("warn", "attachment relay is deferred; closing the link", { uploadId: "redacted" });
@@ -228,7 +228,7 @@ export class HostLinkHost {
     });
   }
 
-  /** Security §3.3: own `hostId`, unexpired, fresh `clientConnectionId` (rule from ADR 0330). */
+  /** Security §3.3: own `hostId`, unexpired, fresh `clientConnectionId` (rule from ADR 0331). */
   private validateRouteContext(context: RacpHostRouteContext): string | null {
     if (context.link !== RACP_HOSTLINK_VERSION) return "route context names another link protocol";
     if (context.hostId !== this.options.hostId) return "route context names another Host";

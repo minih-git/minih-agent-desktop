@@ -10,7 +10,7 @@ import { EnrollmentService } from "./enrollment.js";
 import { GatewayStore } from "./store.js";
 
 /**
- * Enrollment (ADR 0330 §3.6): a one-time code, a verified CSR, and a Host
+ * Enrollment (ADR 0331 §3.6): a one-time code, a verified CSR, and a Host
  * record. Every code is single use, expires, and a revoked Host cannot
  * re-enroll — the security gate 26 requirement.
  */

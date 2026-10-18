@@ -25,7 +25,7 @@ import {
 import type { EncryptionPort } from "../remote/remote-host-registry.js";
 
 /**
- * Desktop-as-connected-Host boot and wiring (rollout R5, ADR 0330).
+ * Desktop-as-connected-Host boot and wiring (rollout R5, ADR 0331).
  *
  * Reads the device-local `remoteGateway` setting and creates the link service
  * *only* when the switch is on: with the feature off nothing is opened, no

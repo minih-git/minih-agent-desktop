@@ -2,7 +2,7 @@ import type { RemoteGatewayLinkState, RemoteGatewayStatus } from "@minih-agent/s
 
 /**
  * Renderer-side rules for the Remote gateway settings page (rollout R5,
- * ADR 0330). Kept out of the component so the decisions the page makes — which
+ * ADR 0331). Kept out of the component so the decisions the page makes — which
  * switch state is allowed, which message a failure earns, when a pairing code
  * stops being usable — are testable without a DOM.
  */

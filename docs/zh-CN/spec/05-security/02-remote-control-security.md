@@ -48,7 +48,7 @@ profile 都禁止把 token 放进 URL。Gateway 与 cookie profile 随 Gateway �
 里程碑交付（R4–R6，D665）；首个远程拓扑使用 header profile，设备 token
 来自 SSH 引导配对。Host 通过出站 mTLS Host link 连接 Gateway，link 只认证
 Gateway，用户权限只来自每个逻辑连接的签名 route context；一次性 enrollment
-credential 必须短期、单次使用。注册（D665，ADR 0330）是一次性交换：管理员在
+credential 必须短期、单次使用。注册（D665，ADR 0331）是一次性交换：管理员在
 网关上打印 15 分钟有效的一次性注册码，Host 本地生成密钥对，把 CSR 与注册码发到
 Host link 端口上仅做服务端 TLS 认证的专用注册接口，用 `--gateway-ca` 固定网关
 身份、指纹不匹配即拒绝，网关签发一年期、CN 为 `hostId` 的客户端证书；Host link
@@ -67,26 +67,26 @@ Releases 下载与桌面同版本、对应远端平台的 `agent-host-cli` 包�
 经 SSH 引导。远端 Host 的 provider 配置由引导步骤经 SSH 通道写入为 Host 本地
 配置，绝不经过 RACP。
 
-自托管、用户本地的网关场景（D665，ADR 0330）下，route context 的完整性由已认证的
+自托管、用户本地的网关场景（D665，ADR 0331）下，route context 的完整性由已认证的
 Host link 保证：只有持有匹配客户端证书的已注册网关能发送 Host link 帧，Host 不再
 对 context 验证第二个签名；Host 仍校验 `hostId` 等于自身 id、context 未过期、同一
 链路上 `clientConnectionId` 不重复使用。最终鉴权方始终是 Host 自己的凭据存储：每条
 中继逻辑连接都用 `client.open` 帧的 `credential` 重新认证（见下），网关缓存的令牌
 哈希只用于路由前快速拒绝和限流；`credential` 绝不出现在日志或审计记录中。
 
-经网关配对的设备（D665，ADR 0330）：设备记录新增可选 `origin` 字段（`"ssh"` 或
+经网关配对的设备（D665，ADR 0331）：设备记录新增可选 `origin` 字段（`"ssh"` 或
 `"gateway"`）；D665 之前持久化的记录没有该字段，按 `"ssh"` 读取，旧凭据文件无需
 迁移。每个认证输入还携带连接来源：loopback `RACP-WS` 绑定为 `"ssh"`，Host link
 逻辑连接为 `"gateway"`。`"ssh"` 连接上的 `connection/pair` 行为不变：授予
 `["owner"]` 并记录 `origin: "ssh"`；`"gateway"` 连接上授予
 `["viewer", "controller", "approver"]` 并记录 `origin: "gateway"`，角色由 Host
-决定，客户端传的 roles 一律忽略。配对令牌与其铸造的设备同源（ADR 0330）：
+决定，客户端传的 roles 一律忽略。配对令牌与其铸造的设备同源（ADR 0331）：
 `PairingRecord` 新增可选 `origin` 字段，缺省按 `"ssh"` 读取；`--pair`（SSH 引导）
 签发的码只能在 loopback `RACP-WS` 上兑换，`remote-pair` 和桌面设置页签发的码只能在
 Host link 上兑换，交叉通道兑换一律失败，SSH 引导的配对码无法经网关消耗。设备令牌认证把 `pairedDevice` 设为
 `device.origin !== "gateway"`，因此网关配对设备绝不是 SSH 配对的 owner：不豁免
 远程权限上限，也拿不到 `allow-session`。对网关来源的主体，以下限制不受 Host 策略
-影响，必须用测试锁住而非依赖默认值（ADR 0330）：即使 Host 配置了
+影响，必须用测试锁住而非依赖默认值（ADR 0331）：即使 Host 配置了
 `allowRemoteSessionGrants: true` 也不能获得 `allow-session`；永远不带
 `approverOverride`；不管 `applyCeilingToPairedDevices` 怎么配都始终受远程权限上限
 约束。网关来源令牌只能在 Host link 上认证，
@@ -207,7 +207,7 @@ D375 同日记录的设计决定把身份源定为 PI 账号服务，`agent-host
 D385（2026-09-10）撤回第一方身份源：远程控制从结构上就是用户本地的，所有凭据由用户
 自己的 Host 签发，Gateway 只能是用户自托管的中继。
 
-D665（2026-10-17，ADR 0330）排期 Gateway 与浏览器里程碑（R4–R6）：§3 的 Gateway 与
+D665（2026-10-17，ADR 0331）排期 Gateway 与浏览器里程碑（R4–R6）：§3 的 Gateway 与
 cookie profile 条款去掉不排期状态并补充注册交换；§3 补记自托管场景下 route context
 的完整性由已认证的 Host link 保证、最终鉴权方是 Host 自己的凭据存储；新增经网关
 配对的设备规则（可追加的 `origin` 字段、网关配对绝不授予 `owner` 与

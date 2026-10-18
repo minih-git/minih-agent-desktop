@@ -254,7 +254,7 @@ export const IPC = {
     remoteHostCreateSession: "minih-agent-desktop/remoteHost/createSession",
     remoteHostSyncProviders: "minih-agent-desktop/remoteHost/syncProviders",
     /**
-     * Desktop as a connected Host (rollout R5, ADR 0330). The desktop dials the
+     * Desktop as a connected Host (rollout R5, ADR 0331). The desktop dials the
      * user's own Gateway over one outbound Host link; it never listens. The
      * main process owns the link, so these channels only read and steer it —
      * no device token, private key, or mTLS material crosses them.

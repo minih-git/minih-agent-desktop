@@ -9,7 +9,7 @@ import {
 } from "@minih-agent/shared";
 
 /**
- * Where a credential came from (security §3.7, D665 / ADR 0330). The loopback
+ * Where a credential came from (security §3.7, D665 / ADR 0331). The loopback
  * `RACP-WS` binding is `"ssh"`; a Host link logical connection is
  * `"gateway"`. Old records predate the field and read as `"ssh"`, so legacy
  * credential stores need no migration.

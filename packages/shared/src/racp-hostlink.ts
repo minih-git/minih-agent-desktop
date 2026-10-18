@@ -9,7 +9,7 @@ import {
 } from "./racp.js";
 
 /**
- * Host link relay profile (protocol spec §11.4, D665 / ADR 0330). The Host
+ * Host link relay profile (protocol spec §11.4, D665 / ADR 0331). The Host
  * link multiplexes logical client connections onto one authenticated outbound
  * WebSocket; every frame names the logical connection it belongs to and the
  * Gateway must never rewrite `message` payloads.
@@ -127,7 +127,7 @@ export function isHostLinkFrame(value: unknown): value is RacpHostLinkFrame {
 }
 
 // ---------------------------------------------------------------------------
-// Enrollment (Host to Gateway, one-time code exchange; ADR 0330)
+// Enrollment (Host to Gateway, one-time code exchange; ADR 0331)
 // ---------------------------------------------------------------------------
 
 export const RacpEnrollRequestSchema = Type.Object({
@@ -163,7 +163,7 @@ export type RacpEnrollErrorCode = Static<typeof RacpEnrollErrorCodeSchema>;
 
 /**
  * RACP-HTTP route table (spec §11.2) including the Gateway-only pair endpoint
- * of ADR 0330. Operation families map onto REST paths; turn verbs and the
+ * of ADR 0331. Operation families map onto REST paths; turn verbs and the
  * pairing call use the `:verb` pseudo-method form.
  */
 export const RACP_HTTP_ROUTE_LIST = {
@@ -332,7 +332,7 @@ export function httpStatusForRacpError(code: string): number {
 }
 
 /**
- * Gateway pairing request/response (ADR 0330). The pairing token itself
+ * Gateway pairing request/response (ADR 0331). The pairing token itself
  * travels only in the `Authorization` header; the response delivers the
  * device token as an `HttpOnly` cookie (browser) or in the body (native),
  * never in a URL.

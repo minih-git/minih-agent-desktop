@@ -13,7 +13,7 @@ import type { IpcRegistrar } from "./types.js";
 
 /**
  * Renderer IPC for the desktop-as-connected-Host settings page (rollout R5,
- * ADR 0330).
+ * ADR 0331).
  *
  * These channels steer a link the main process owns. None of them carries a
  * secret back to the renderer: enrollment returns status only (the mTLS key

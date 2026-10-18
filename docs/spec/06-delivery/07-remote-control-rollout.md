@@ -33,7 +33,7 @@ around transport breadth:
   requests, and start, stop, or interrupt turns from a phone against both an
   always-on `agent-host-cli` machine and the sessions of a running desktop,
   which schedules the Gateway, connected-Host, and browser/mobile-client
-  milestones (D665, ADR 0330).
+  milestones (D665, ADR 0331).
 
 The scheduled order is R0, R1, R2, R3, then R4, R5, and R6 (D665). The
 reserved gRPC binding stays unscheduled: it is delivered only when a named
@@ -245,7 +245,7 @@ commands from an unlinked chat have no effect; the Host has no new listener.
 
 ### R4 — Self-hosted Gateway and Host link (D665)
 
-Deliver `apps/remote-gateway`, the self-hosted Node service (ADR 0330), and
+Deliver `apps/remote-gateway`, the self-hosted Node service (ADR 0331), and
 the `agent-host-cli` outbound enrollment and link:
 
 - the Gateway modules: configuration with the bind-address validations, the
@@ -306,7 +306,7 @@ Exit criteria:
 
 ### R5 — Desktop as a connected Host (D665)
 
-Deliver the desktop's outbound gateway link (ADR 0330):
+Deliver the desktop's outbound gateway link (ADR 0331):
 
 - an Electron-Main `RacpServer` transport over the Host link host running on
   the existing in-process Agent Host: no new AgentHost, no new execution
@@ -343,7 +343,7 @@ Exit criteria:
 
 ### R6 — Browser and mobile clients (D665)
 
-Deliver `apps/remote-web` (ADR 0330):
+Deliver `apps/remote-web` (ADR 0331):
 
 - the React + TypeScript client on the Node-free `@minih-agent/racp/browser`
   entry and the shared typebox contracts, with no dependency on
@@ -691,7 +691,7 @@ D385 (2026-09-10) withdrew the identity-source clause: remote control is
 user-local by construction, and any Gateway is self-hosted and admits clients
 with Host-issued device credentials.
 
-D665 (2026-10-17, ADR 0330) scheduled the Gateway and browser milestones as
+D665 (2026-10-17, ADR 0331) scheduled the Gateway and browser milestones as
 R4–R6 after the maintainer asked to follow and steer turns from a phone
 against both the always-on `agent-host-cli` machine and a running desktop. It
 names `apps/remote-gateway` and `apps/remote-web`; the `credential` field on

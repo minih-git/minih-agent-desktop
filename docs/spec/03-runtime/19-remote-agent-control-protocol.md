@@ -4,7 +4,7 @@
 - Version: `1.0`
 - Status: Target specification; post-MVP. The MVP itself does not include
   remote control; post-MVP the Gateway and browser milestones are scheduled
-  as R4–R6 by D665 (ADR 0330)
+  as R4–R6 by D665 (ADR 0331)
 - Decision: D373 / ADR 0205, amended by D374, D375, and D665
 - Transport profiles: `RACP-WS` (normative v1 binding; first deployed over an
   SSH tunnel), `RACP-HTTP` (browser profile; binds with R4), `RACP-GRPC`
@@ -1116,7 +1116,7 @@ browser client uses it.
 
 #### Gateway mapping
 
-A self-hosted Gateway (`ADR 0330`) fronts one or more Hosts and serves the same
+A self-hosted Gateway (`ADR 0331`) fronts one or more Hosts and serves the same
 table under a Host prefix, so a client sets its base URL to
 `https://<gateway>/hosts/{hostId}` and uses the mapping above unchanged.
 
@@ -1179,7 +1179,7 @@ and one browser profile; the Host link (§11.4) uses `RACP-WS` framing.
 
 ### 11.4 Host link relay profile
 
-The Host link ships with the Gateway milestone R4 (D665, ADR 0330). The
+The Host link ships with the Gateway milestone R4 (D665, ADR 0331). The
 SSH-tunnel topology does not use it.
 
 The Host link is the outbound connection from an Agent Host to a Gateway. It
@@ -1426,7 +1426,7 @@ D375 (2026-09-10) re-sequenced the deployments and extended the catalog:
   30-minute default approval lifetime for remote subscribers, and the
   `applyCeilingToPairedDevices` policy.
 
-D665 (2026-10-17, ADR 0330) scheduled the Gateway and browser milestones
+D665 (2026-10-17, ADR 0331) scheduled the Gateway and browser milestones
 (R4–R6) and refined this contract:
 
 - `RACP-HTTP` (§11.2) binds with R4 and joins the conformance fixture before

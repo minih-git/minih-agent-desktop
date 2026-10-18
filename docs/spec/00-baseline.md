@@ -123,7 +123,7 @@
 > WebSocket binding, a headless Agent Host module, and the full local
 > approval vocabulary, and D375 schedules the SSH-tunnel remote Host first.
 > Post-MVP, the Gateway and browser access are scheduled as R4–R6 by D665
-> (ADR 0330). None of them changes the current exclusion of remote control
+> (ADR 0331). None of them changes the current exclusion of remote control
 > from the MVP itself.
 
 ## Frozen Decisions

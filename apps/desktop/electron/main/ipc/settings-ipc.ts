@@ -34,7 +34,7 @@ export type SettingsIpcDependencies = {
  * Settings fields the main process owns; a renderer write may never carry them.
  *
  * `remoteGateway` has exactly one writer: the gateway link controller (rollout
- * R5, ADR 0330). A renderer keeps the settings it loaded at startup, so a stale
+ * R5, ADR 0331). A renderer keeps the settings it loaded at startup, so a stale
  * `enabled: true` would otherwise ride back on the next unrelated save — a font
  * size, a theme — and `merge_settings_value` in host-core replaces the whole
  * key, silently re-enabling remote control on the following launch.

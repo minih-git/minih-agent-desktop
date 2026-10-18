@@ -1,5 +1,5 @@
 /**
- * Remote gateway IPC surface (rollout R5, ADR 0330).
+ * Remote gateway IPC surface (rollout R5, ADR 0331).
  *
  * The renderer steers a link the main process owns. Two properties matter:
  * the six channels are real IPC channels but never agent-callable MCP tools,

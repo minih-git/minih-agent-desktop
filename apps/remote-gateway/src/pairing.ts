@@ -1,5 +1,5 @@
 /**
- * Gateway pairing relay (ADR 0330 §3.4, protocol §11.4). The Host prints a
+ * Gateway pairing relay (ADR 0331 §3.4, protocol §11.4). The Host prints a
  * single-use pairing code locally; the client posts it to
  * `POST /v1/hosts/{hostId}/pair`, the Gateway opens a logical connection whose
  * credential *is* the pairing token, runs `connection/initialize` and

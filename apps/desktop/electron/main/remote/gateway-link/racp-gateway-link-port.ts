@@ -3,7 +3,7 @@ import { HostLinkError, enrollHostLink, startHostLink } from "@minih-agent/racp"
 import type { GatewayLinkPort } from "./gateway-link-port.js";
 
 /**
- * The production Gateway transport (rollout R5, ADR 0330).
+ * The production Gateway transport (rollout R5, ADR 0331).
  *
  * PR-2 owns enrollment and the Host link itself (`enrollHostLink` /
  * `startHostLink` in `@minih-agent/racp`); this file only adapts the error

@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
 /**
- * Machine check for the browser entry (ADR 0330 / PR-1): bundling
+ * Machine check for the browser entry (ADR 0331 / PR-1): bundling
  * `src/browser.ts` with esbuild on `platform: "browser"` must not reach any
  * `node:` builtin or the `ws` package. The H5 client imports
  * `@minih-agent/racp/browser`; this test keeps the entry Node-free.

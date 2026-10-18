@@ -2,7 +2,7 @@ import type { DeviceTokenAuthenticator, HostLinkLog, RacpServer } from "@minih-a
 
 /**
  * The outbound Gateway transport, injected into the desktop Host (rollout R5,
- * ADR 0330).
+ * ADR 0331).
  *
  * PR-3 ships the desktop side only: enrollment and the Host link transport
  * arrive from `@minih-agent/racp` (PR-2). The signatures here are the shared

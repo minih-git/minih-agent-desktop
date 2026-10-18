@@ -1,5 +1,5 @@
 /**
- * Host enrollment (ADR 0330 §3.6, protocol §11.4): an administrator prints a
+ * Host enrollment (ADR 0331 §3.6, protocol §11.4): an administrator prints a
  * one-time code valid for 15 minutes, the Host posts its CSR plus that code to
  * `POST /v1/enroll` on the Host link port, and the Gateway answers with a
  * one-year client certificate whose CN is the `hostId`.

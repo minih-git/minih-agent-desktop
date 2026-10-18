@@ -31,7 +31,7 @@ D375 fixes the order in which the topologies ship. The first remote
 deployment is the desktop itself acting as the Remote Client of a headless
 Host on another machine over an SSH tunnel, which is what users asked for in
 issues #176 and #140. The second is an outbound messaging integration that
-runs beside the Host (issue #100). D665 (ADR 0330) schedules the remaining
+runs beside the Host (issue #100). D665 (ADR 0331) schedules the remaining
 topologies: the self-hosted Gateway with the Host link is R4, the desktop as
 a connected Host is R5, and the browser and mobile clients are R6.
 
@@ -290,13 +290,13 @@ non-idempotent turn commands while the Agent Host is offline. PI does not
 operate a Gateway: the user runs it on their own infrastructure and it admits
 clients with Host-issued device credentials (D385). Delivery scope, binding
 rules, and exit criteria are the R4 milestone of
-`06-delivery/07-remote-control-rollout.md` (D665, ADR 0330).
+`06-delivery/07-remote-control-rollout.md` (D665, ADR 0331).
 
 ### 5.4 Desktop as a connected Host (R5)
 
 Electron Main may serve its existing in-process Agent Host over the outbound
 Host link, so a phone can observe and control the sessions of a running
-desktop (D665, ADR 0330). The link runs a separate `RacpServer` transport on
+desktop (D665, ADR 0331). The link runs a separate `RacpServer` transport on
 the existing `agent-host-bridge.ts` AgentHost instance: no new AgentHost, no
 new execution path, and no listener. The setting is an optional, device-local
 `remoteGateway` field in `AppSettings` (`enabled`, `url`; absent means off,
@@ -397,7 +397,7 @@ The Gateway owns identity-to-host routing, not workspace state. It may store:
 
 It must not persist provider API keys, raw tool arguments, raw tool results, or
 full transcripts unless a separate product decision explicitly grants that
-retention. ADR 0330 fixes the concrete layout: a `0700` data directory with
+retention. ADR 0331 fixes the concrete layout: a `0700` data directory with
 `0600` files holding the CA material, `hosts.json`, `enrollments.json`,
 `devices.json`, and a daily redacted `audit/YYYY-MM-DD.jsonl`, written
 atomically through rename, with no SQLite and no native dependency.
@@ -617,7 +617,7 @@ D385 (2026-09-10) made remote control user-local by construction: no
 project-operated identity or account service, Host-issued device credentials
 everywhere, and a Gateway only as a self-hosted relay.
 
-D665 (2026-10-17, ADR 0330) scheduled the Gateway and browser topologies:
+D665 (2026-10-17, ADR 0331) scheduled the Gateway and browser topologies:
 R4 is the self-hosted Gateway with the Host link, R5 is the desktop as a
 connected Host, and R6 is the browser and mobile clients. §5.3 loses its
 unscheduled status, §5.4 adds the desktop's connected-Host topology with the

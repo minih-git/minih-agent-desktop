@@ -14,7 +14,7 @@
 | 身份证号 | 主题 | 决定 | 基本原理 |
 |---|---|---|---|
 | D663 | 内置会话消息工具 | **修订 ADR 0165 / ADR 0239 / ADR 0240：在宿主拥有的投递账本之上新增内置按需 Agent 工具 `SessionList`、`SessionSend`、`SessionResult`，实现为 Electron 主进程本地工具。发送方由宿主派生（sidecar 本地工具的 `sessionId` 与该会话的活动回合），不取自工具参数；内置投递使用保留归属 `builtin:session-messaging`，插件路径拒绝冒用。三者都先过 `tools.execute` 闸门（`SessionSend` 高风险，两个读工具低风险）；Plan/Goal、`Task` 子代理与 MCP 目录不可用。第一版只向既有会话发送任务或消息，不创建会话、不取消投递。无 schema、迁移或协议版本变更。见 ADR builtin-session-messaging 与 E2E-SESSION-builtin-send-to-named-session。** | 把工作交给另一个会话是核心桌面流程，此前只能通过安装权限更大的社区编排插件获得，而受审查的账本本已随应用分发。内置路径复用同一套来源标注、权限上限、完成回调与重启栅栏保证。 |
-| D665 | 自托管网关、可连接的桌面 Host 与移动客户端 | **把此前不排期的 Gateway、Host link 与浏览器里程碑排期为交付序列的 R4–R6，并新增 `apps/remote-gateway` 与 `apps/remote-web`（ADR 0330）：用户自托管的 Gateway 中继出站 `racp-hostlink.v1` Host link（WSS + 双向 TLS）并服务 `RACP-HTTP` + SSE，不保存 transcript、provider secret 或持久化回合命令；Host link 监听器只绑定显式配置的私网或组网地址，客户端 API 绑定 loopback（其他地址必须配 TLS），持久化内容只有令牌哈希、路由元数据和脱敏审计日志。`client.open` 帧新增 `credential` 字段，Host 用自己的 `DeviceTokenAuthenticator` 重新验证每条中继的逻辑连接。设备记录新增可追加的 `origin` 字段（缺省按 `"ssh"` 读取）：经网关配对授予 `viewer` / `controller` / `approver`（绝不是 `owner`），`pairedDevice: false` 并始终受远程权限上限约束，网关令牌只能在 Host link 上认证。桌面可在默认关闭的实验性设置下经该链路提供其现有 Agent Host；`apps/remote-web` 交付 H5 与 Capacitor iOS/Android 客户端，令牌存于 `HttpOnly` cookie（浏览器）或 Keychain / Keystore（原生）。见 ADR 0330。** | 维护者需要从手机跟进并操控 `agent-host-cli` 常驻机器与运行中桌面两边的回合；浏览器无法加入组网也无法设置请求头，而 ADR 0205 的 Host 持有状态模型禁止复制 transcript 的有状态中继。 |
+| D665 | 自托管网关、可连接的桌面 Host 与移动客户端 | **把此前不排期的 Gateway、Host link 与浏览器里程碑排期为交付序列的 R4–R6，并新增 `apps/remote-gateway` 与 `apps/remote-web`（ADR 0331）：用户自托管的 Gateway 中继出站 `racp-hostlink.v1` Host link（WSS + 双向 TLS）并服务 `RACP-HTTP` + SSE，不保存 transcript、provider secret 或持久化回合命令；Host link 监听器只绑定显式配置的私网或组网地址，客户端 API 绑定 loopback（其他地址必须配 TLS），持久化内容只有令牌哈希、路由元数据和脱敏审计日志。`client.open` 帧新增 `credential` 字段，Host 用自己的 `DeviceTokenAuthenticator` 重新验证每条中继的逻辑连接。设备记录新增可追加的 `origin` 字段（缺省按 `"ssh"` 读取）：经网关配对授予 `viewer` / `controller` / `approver`（绝不是 `owner`），`pairedDevice: false` 并始终受远程权限上限约束，网关令牌只能在 Host link 上认证。桌面可在默认关闭的实验性设置下经该链路提供其现有 Agent Host；`apps/remote-web` 交付 H5 与 Capacitor iOS/Android 客户端，令牌存于 `HttpOnly` cookie（浏览器）或 Keychain / Keystore（原生）。见 ADR 0331。** | 维护者需要从手机跟进并操控 `agent-host-cli` 常驻机器与运行中桌面两边的回合；浏览器无法加入组网也无法设置请求头，而 ADR 0205 的 Host 持有状态模型禁止复制 transcript 的有状态中继。 |
 | D661 | 配置备份/同步存储迁移到 Minih Router 账户 | **配置备份/同步存储从用户自备的 S3 迁移到登录账户名下的 Minih Router 后端（AccessKey Bearer 走网关控制面、按账户命名空间、强制条件写）。S3 传输与连接 UI 被移除；已连接账户的 provider 行属于设备本地、绝不参与同步；旧 S3 配置与云端数据保持原样，不迁移也不删除。见 `docs/adr/router-account-configuration-backup.md` 与 `03-runtime/22-config-sync.md`。** | 一个账户身份已经覆盖聊天与账户读取；加密 vault、合并与激活契约保持不变。 |
 | D001 | Electron ↔ Rust 运输 | **Rust sidecar + stdio JSON-RPC (NDJSON)** | 简单隔离，可调试，后期可更换 |
 | D002 | SQLite 所有权 | **Rust host-core 独家拥有 SQLite** | 单写入者，权限边界更清晰 |
@@ -5546,7 +5546,7 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
 ## 2026-10-17 —— 自托管网关、可连接的桌面 Host 与移动客户端（D665）
 
 - D665 把此前不排期的 Gateway、Host link 与浏览器里程碑排期为交付序列的 R4–R6，
-  设计记录于 ADR 0330。用户自托管的 `apps/remote-gateway` 中继出站的
+  设计记录于 ADR 0331。用户自托管的 `apps/remote-gateway` 中继出站的
   `racp-hostlink.v1` Host link（WSS + 双向 TLS）并服务 `RACP-HTTP` + SSE；它不保存
   transcript、provider secret，也不持久化回合命令。
 - Host link 监听器只绑定显式配置的私网或组网地址（RFC1918、`100.64.0.0/10` 或显式
@@ -5576,5 +5576,5 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   `hostId` 的客户端证书；Host 用 `--gateway-ca` 固定网关身份，指纹不匹配即拒绝连接。
 - 桌面可在默认关闭、不开启任何监听的实验性设置下经该链路提供其进程内的 Agent Host；
   `apps/remote-web` 基于无 Node 依赖的 `@minih-agent/racp/browser` 入口交付 H5 与
-  Capacitor iOS/Android 客户端。推送在配置后只携带 id 和固定摘要类型。见 ADR 0330 与
+  Capacitor iOS/Android 客户端。推送在配置后只携带 id 和固定摘要类型。见 ADR 0331 与
   `05-security/02-remote-control-security.md` §3.7。

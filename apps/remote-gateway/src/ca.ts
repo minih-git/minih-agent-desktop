@@ -1,5 +1,5 @@
 /**
- * Gateway certificate authority (ADR 0330 §3.6, security §3.2). The CA and
+ * Gateway certificate authority (ADR 0331 §3.6, security §3.2). The CA and
  * the Host link server certificate are created on first start and then kept in
  * `ca/`; a changed listen address or `--public-name` re-issues the server
  * certificate so a Host still reaches a verified identity.

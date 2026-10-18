@@ -118,7 +118,7 @@ implementation hosts the module inside Electron Main, where desktop IPC,
 local MCP, and RACP call it. The first remote deployment (D375) packages the
 same module as a headless `agent-host-cli` on another machine, reached from the
 desktop over an SSH tunnel. Post-MVP the Gateway and browser access are
-scheduled as R4–R6 by D665 (ADR 0330); the MVP exclusion is unchanged.
+scheduled as R4–R6 by D665 (ADR 0331); the MVP exclusion is unchanged.
 
 ## 4. Request path (conversation + tool)
 

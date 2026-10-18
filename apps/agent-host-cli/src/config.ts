@@ -17,7 +17,7 @@ export type AgentHostCliConfig = {
   pair: boolean;
   /**
    * Keep the outbound Host link open using the credentials `enroll` stored
-   * (ADR 0330). The loopback RACP-WS listener stays exactly as it is.
+   * (ADR 0331). The loopback RACP-WS listener stays exactly as it is.
    */
   gateway: boolean;
   pairingLifetimeMs: number;

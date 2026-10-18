@@ -271,7 +271,7 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
       },
       log: (level, message, data) => logger.app("runtime", level, message, { data }),
     });
-    // Desktop as a connected Host (rollout R5, ADR 0330). Creation is side
+    // Desktop as a connected Host (rollout R5, ADR 0331). Creation is side
     // effect free; `open()` below applies the persisted switch and only then
     // creates the link service, its store, and its server.
     const gatewayLink = createGatewayLinkBootstrap({

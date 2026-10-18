@@ -16,7 +16,7 @@ Linux 或 WSL 机器上的项目，即 SSH 隧道远端 Host 拓扑；#100 要�
 审批通知推送到 Telegram、微信、Slack 或 Webhook 并回传简单指令，即 Host 旁的
 出站集成；维护者要求从手机跟进执行过程、处理审批和输入请求，并对
 `agent-host-cli` 常驻机器与运行中的桌面发起、停止和打断回合，这把 Gateway、
-可连接 Host 与浏览器／移动客户端里程碑排期（D665，ADR 0330）。排期顺序为
+可连接 Host 与浏览器／移动客户端里程碑排期（D665，ADR 0331）。排期顺序为
 R0、R1、R2、R3，随后 R4、R5、R6（D665）；保留的 gRPC 绑定仍不排期，只在有
 明确消费者时由后续记录在案的产品决策交付。
 
@@ -84,7 +84,7 @@ R0、R1、R2、R3，随后 R4、R5、R6（D665）；保留的 gRPC 绑定仍不�
   `allow-session`，其令牌在 loopback `RACP-WS` 上被拒（门 25）；任意一侧吊销后新连接
   被拒、已有逻辑连接 5 秒内关闭（门 26）；网关可清空重注册而不丢 Host 会话数据，审计日志不含
   令牌与内容。
-- R5（D665）：桌面作为可连接的 Host。交付桌面的外连网关链路（ADR 0330）：在现有进程内
+- R5（D665）：桌面作为可连接的 Host。交付桌面的外连网关链路（ADR 0331）：在现有进程内
   Agent Host 之上以 Host link host 承载 Electron-Main 的 `RacpServer` 传输——不新建
   AgentHost、不新增执行路径、不开监听；可选的 `remoteGateway` AppSettings 字段
   （`enabled`、`url`；设备本地、不同步、缺失即关闭）与实验性设置页（开关、网关地址、
@@ -98,7 +98,7 @@ R0、R1、R2、R3，随后 R4、R5、R6（D665）；保留的 gRPC 绑定仍不�
   约束、不能修改本地会话权限模式、不能用 `allow-session`，
   `DESKTOP_PRINCIPAL` 不变；吊销桌面设备即断开链路；mTLS 密钥与证书加密存放在设置与
   SQLite 之外。
-- R6（D665）：浏览器与移动客户端。交付 `apps/remote-web`（ADR 0330）：基于无 Node 依赖
+- R6（D665）：浏览器与移动客户端。交付 `apps/remote-web`（ADR 0331）：基于无 Node 依赖
   的 `@minih-agent/racp/browser` 入口与共享 typebox 契约的 React + TypeScript 客户端，
   不依赖 `apps/desktop` 源码；页面包括配对（网关地址、配对码、选择 Host）、带在线状态的
   Host 列表、带运行中／等待审批徽标的会话列表，以及实时时间线（消息行、工具调用摘要、
@@ -255,7 +255,7 @@ Gateway 身份源定为 PI 账号服务。
 D385（2026-09-10）撤回身份源条款：远程控制从结构上就是用户本地的，Gateway 只能由
 用户自托管并以 Host 签发的设备凭据准入。
 
-D665（2026-10-17，ADR 0330）在维护者要求从手机跟进并操控 `agent-host-cli` 常驻
+D665（2026-10-17，ADR 0331）在维护者要求从手机跟进并操控 `agent-host-cli` 常驻
 机器与运行中桌面两边的回合之后，把 Gateway 与浏览器里程碑排期为 R4–R6。它命名了
 `apps/remote-gateway` 与 `apps/remote-web`；`client.open` 的 `credential` 字段与
 Host 侧对 Host link 的重新认证；把网关配对主体压在远程权限上限之下、排除在 owner

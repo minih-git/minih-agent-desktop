@@ -1,5 +1,5 @@
 /**
- * Encrypted credential store for the desktop Host link (rollout R5, ADR 0330).
+ * Encrypted credential store for the desktop Host link (rollout R5, ADR 0331).
  *
  * The file holds this desktop's Host id, its mTLS key material, and the paired
  * devices. It must never be readable without the OS keychain: these tests use

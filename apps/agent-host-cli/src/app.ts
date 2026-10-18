@@ -66,7 +66,7 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
   const authenticator = new DeviceTokenAuthenticator(store);
   // The outbound Host link needs its credentials before anything is spawned:
   // an unenrolled Host fails here, while it still owns no resources at all
-  // (ADR 0330). A corrupt file reports its own `GATEWAY_LINK_INVALID` error.
+  // (ADR 0331). A corrupt file reports its own `GATEWAY_LINK_INVALID` error.
   const gatewayCredentials = config.gateway ? await readGatewayLink(config.dataDir) : null;
   if (config.gateway && !gatewayCredentials) {
     throw Object.assign(new Error("this Host is not enrolled with a gateway; run `agent-host-cli enroll` first"), {
@@ -313,7 +313,7 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
     await state.host?.dispose();
     throw error;
   }
-  // The opt-in outbound Host link (ADR 0330). Its credentials were read before
+  // The opt-in outbound Host link (ADR 0331). Its credentials were read before
   // the first subprocess started; the loopback listener, `--pair`, and the SSH
   // bootstrap are unchanged when `--gateway` stays off.
   let hostLink: HostLinkHandle | null = null;

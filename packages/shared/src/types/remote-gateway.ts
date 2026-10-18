@@ -1,7 +1,7 @@
 import type { RacpRole } from "../racp.js";
 
 /**
- * Desktop as a connected Host (rollout R5, ADR 0330 / D665).
+ * Desktop as a connected Host (rollout R5, ADR 0331 / D665).
  *
  * The desktop dials the user's self-hosted Gateway over one outbound Host
  * link; it never listens. Everything here is a renderer-facing projection:
@@ -98,7 +98,7 @@ export type RemoteGatewayPairingCodeResult = {
 };
 
 /**
- * The device-local `remoteGateway` AppSettings field (rollout R5, ADR 0330).
+ * The device-local `remoteGateway` AppSettings field (rollout R5, ADR 0331).
  *
  * Absent means the feature is off, and an old settings row needs no
  * migration. It is deliberately not part of the portable configuration: the
