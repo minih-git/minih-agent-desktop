@@ -1,6 +1,6 @@
 {
   "name": "@minih-agent/remote-gateway",
-  "version": "0.21.0",
+  "version": "0.21.1",
   "private": true,
   "type": "module",
   "description": "Self-hosted RACP Gateway: Host link (wss + mutual TLS) and the RACP-HTTP + SSE client API",

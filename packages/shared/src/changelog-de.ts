@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.21.1",
+    date: "2026-10-18",
+    highlights: [
+      "Projekt-Gesprächslisten öffnen sich seitenweise: Zuerst erscheinen die fünf neuesten Sitzungen, jedes Mehr laden zeigt fünf weitere, und eine halb geöffnete Liste faltet sich auf die ersten fünf zurück, ohne das Projekt zu schließen.",
+      "Abgeschlossene Sitzungen sind in der Seitenleiste leichter zu erkennen: Eine beendete Unterhaltung nutzt denselben grünen Vollpunkt wie eine laufende, und eine ausgewählte Zeile stapelt keinen zweiten Marker.",
+      "Cloud-Sync scheitert nicht mehr an einem Git-Repository in einem Skill-Ordner; die Repository-Metadaten bleiben auf deinem Rechner und blockieren nicht mehr das gesamte Backup.",
+      "Werkzeugzeilen behalten ihre Identität: Ein Skill- oder Erweiterungsaufruf zeigt den eigenen Namen und das eigene Symbol dieser Fähigkeit, statt in einer generischen Zeile zu verschwinden.",
+    ],
+  },
+  {
     version: "0.21.0",
     date: "2026-10-17",
     highlights: [

@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.21.1",
+    date: "2026-10-18",
+    highlights: [
+      "Proje konuşma listeleri artık sayfa sayfa açılıyor: önce en yeni beş oturum görünür, her Daha fazla göster beş yenisi ekler ve yarım açılmış liste projeyi katlamadan ilk beşe döner.",
+      "Tamamlanan oturumlar kenar çubuğunda daha kolay görünür: biten konuşma, çalışan oturumla aynı yeşil dolu noktayı kullanır ve seçili satır ikinci bir işaret taşımaz.",
+      "Bulut eşitleme artık bir beceri klasöründe git deposu bulunduğu için başarısız olmuyor; depo üst verisi makinenizde kalır ve tüm yedeklemeyi engellemez.",
+      "Araç satırları kimliğini korur: bir beceri veya eklenti çağrısı genel bir satıra karışmak yerine o yeteneğin kendi adını ve simgesini gösterir.",
+    ],
+  },
+  {
     version: "0.21.0",
     date: "2026-10-17",
     highlights: [

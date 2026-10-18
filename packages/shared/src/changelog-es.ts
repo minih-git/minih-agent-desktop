@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "0.21.1",
+    date: "2026-10-18",
+    highlights: [
+      "Las listas de conversaciones de un proyecto se abren por páginas: primero se ven las cinco sesiones más recientes, cada Mostrar más añade cinco y una lista a medio abrir vuelve a las cinco primeras sin plegar el proyecto.",
+      "Las sesiones terminadas se distinguen mejor en la barra lateral: una conversación completada usa el mismo punto verde sólido que una en curso, y la fila seleccionada no apila un segundo marcador.",
+      "La sincronización en la nube ya no falla porque una carpeta de skills contenga un repositorio git; los metadatos del repositorio se quedan en tu equipo y no bloquean toda la copia.",
+      "Las filas de herramientas conservan su identidad: una llamada de skill o extensión muestra el nombre y el icono de esa capacidad en vez de mezclarse en una fila genérica.",
+    ],
+  },
+  {
     version: "0.21.0",
     date: "2026-10-17",
     highlights: [
