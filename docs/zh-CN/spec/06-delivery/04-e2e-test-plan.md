@@ -9869,3 +9869,9 @@ host-created files. The full app's file-preview viewer is covered separately.
   history_search_stays_within_the_cjk_latency_budget_on_a_large_history`，在 1 万会话 / 4 万消息的夹具上
   强制 p95 ≤ 300 ms。在并行主机测试套件内，同一测试只打印分布并守护 5 s 上限，因为那里的采样反映的是主机负载
   而不是查询本身。
+
+### E2E-TOOLING-local-pre-push-gate
+
+运行 `node --test scripts/pre-push-gate.e2e.test.mjs`。套件使用隔离的本地裸仓库和真实 Git pre-push 钩子，以受控检查命令替代用户正在运行的应用或外部服务。
+验证检查成功允许推送、失败阻断推送且不改变远端 ref 并停止后续检查，显式绕过、仅标签推送和删除分支跳过检查；工具缺失必须显示未完整验证，不能显示通过。
+在候选提交上另外运行 `pnpm check:fast`，验证真实检查命令。

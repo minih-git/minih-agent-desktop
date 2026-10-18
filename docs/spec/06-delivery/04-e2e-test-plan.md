@@ -18714,3 +18714,13 @@ host-created files. The full app's file-preview viewer is covered separately.
   the parallel host suite the same test only prints the distribution and guards
   a 5 s ceiling, because there the samples measure the host's load rather than
   the query.
+
+### E2E-TOOLING-local-pre-push-gate
+
+Run `node --test scripts/pre-push-gate.e2e.test.mjs`. The suite uses an
+isolated local bare remote and the real Git pre-push hook, with controlled
+check executables rather than the user's running app or external services.
+Verify a successful check permits the push, a failure leaves the remote ref
+unchanged and stops later checks, and explicit bypass, tags and deletions
+skip checks. Missing tools must report incomplete validation, never success.
+Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
