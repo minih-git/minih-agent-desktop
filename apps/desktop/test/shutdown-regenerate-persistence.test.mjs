@@ -89,11 +89,21 @@ test(`quit settles a regenerated branch when the host is ${outcome}`, async (t) 
     pluginLauncherAccelerator: null, toggleWindowAccelerator: null,
   };
   const dispose = () => undefined;
+  const lockAbortReason = () => {};
   registerShutdownHandlers({
     hasSingleInstanceLock: true, state,
     getHost: () => host,
-    getSidecar: () => ({ dispose: async () => { sidecarStopped.resolve(); } }),
-    getMcpControl: () => null, activeTurns, persistenceOutbox: outbox,
+    getSidecar: () => ({
+      call: async () => ({ ok: true }),
+      dispose: async () => { sidecarStopped.resolve(); },
+    }),
+    getMcpControl: () => null,
+    finishTurn: async (_sessionId, _status, _errorCode, options) => {
+      if (activeTurns.get("session") === options.turnId) activeTurns.clear();
+    },
+    lockAbortReason,
+    getAgentHostBridge: () => null,
+    activeTurns, persistenceOutbox: outbox,
     inflightCheckpointer: checkpoint,
     flushEventPersistence: () => persistence.flush(),
     pluginPanels: { closeAll: async () => {} },

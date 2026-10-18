@@ -9757,3 +9757,15 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **关联规格**：`04-ux/06-settings-ia.md`、`04-ux/09-interaction-patterns.md`、ADR 0294、D659、issue #1653。
 - **验收**：仅在 Host 项目激活成功后，渲染层才恢复该规范化路径的本地归档元数据。
 - **状态**：`apps/desktop/test/app-store-sidebar.test.mjs` 与 `apps/desktop/test/project-create-dialog.test.mjs` 有源码契约覆盖；完整 UI 场景仍为草稿，仅在明确请求且环境可用时运行。
+
+### E2E-SESSION-quit-settles-running-turn-interrupted：退出应用把运行中回合结算为已中断
+
+- **前提条件**：某会话正在执行回合并流式输出回复；另一个会话空闲，且有上一回合的未读 `task.completed` 通知。
+- **步骤**：
+  1. 在第一个回合仍执行时退出应用（Cmd+Q、托盘退出或应用菜单退出），确认退出提示。
+  2. 重新打开应用，检查该会话的回合状态、侧栏标记和通知中心。
+  3. 打开该回合的会话记录。
+- **预期**：被中断的回合为 `aborted`，错误码为 `TURN_ABORTED`；它不是 `completed`，也不会生成 `task.completed` 通知，因此该会话不会把未完成的回复报告为已完成的工作。部分回复连同停止说明保留在会话记录中，另一个会话的既有通知保持不变。
+- **关联规格**：`03-runtime/10-session-state-machine.md`、`03-runtime/04-data-storage.md`。
+- **验收**：C（会话与流）、F（持久化）。
+- **状态**：`apps/desktop/test/quit-interrupts-running-turn.test.mjs` 以真实退出处理、会话协调、回合结算与事件持久化覆盖；完整桌面往返仍待补。

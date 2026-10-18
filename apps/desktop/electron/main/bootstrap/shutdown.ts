@@ -16,6 +16,9 @@ import type { McpOAuthManager } from "../mcp-oauth";
 import { getActiveRemoteHostsBoot, setActiveRemoteHostsBoot } from "./remote-hosts";
 import { getActiveGatewayLink, setActiveGatewayLink } from "./gateway-link";
 import type { LiveCallService } from "../live-voice/call-service";
+import type { AgentHostBridge } from "../agent-host-bridge";
+import type { FinishTurn } from "../runtime/plans";
+import { markTurnInterrupted, settleInterruptedTurn } from "../runtime/turn-interrupt";
 
 const QUIT_TURN_SETTLE_BUDGET_MS = 2_000;
 
@@ -52,6 +55,10 @@ export type ShutdownDependencies = {
   disposePowerSaveBlockers: () => void;
   liveCallService?: Pick<LiveCallService, "endForLifecycle">;
   disposeSystemProxyRelay?: () => Promise<void>;
+  /** Terminal-owner hooks the quit settlement shares with the in-app Stop path. */
+  finishTurn: FinishTurn;
+  lockAbortReason: (sessionId: string, turnId: string | null | undefined) => void;
+  getAgentHostBridge: () => Pick<AgentHostBridge, "markAborting"> | null;
 };
 
 /** Register the last-window and before-quit resource lifecycle handlers. */
@@ -61,6 +68,9 @@ export function registerShutdownHandlers({
   getHost,
   getSidecar,
   getMcpControl,
+  finishTurn,
+  lockAbortReason,
+  getAgentHostBridge,
   activeTurns,
   persistenceOutbox,
   inflightCheckpointer,
@@ -162,6 +172,9 @@ export function registerShutdownHandlers({
         inflightCheckpointer,
         persistenceOutbox,
         logger,
+        finishTurn,
+        lockAbortReason,
+        getAgentHostBridge,
       });
       // Panel windows and docked views are the only pages that call the plugin
       // runtime over the panel bridge. They are torn down, and their pages are
@@ -238,6 +251,11 @@ type TurnSettlementDependencies = {
   inflightCheckpointer: InflightCheckpointer;
   persistenceOutbox: PersistenceOutbox;
   logger: Pick<Logger, "app">;
+  /** The finalizer and cancellation lock every terminal path shares. */
+  finishTurn: FinishTurn;
+  lockAbortReason: (sessionId: string, turnId: string | null | undefined) => void;
+  /** Agent Host's cancellation record; absent when no agent host is running. */
+  getAgentHostBridge: () => Pick<AgentHostBridge, "markAborting"> | null;
 };
 
 async function settleRunningTurnsForQuit({
@@ -247,8 +265,11 @@ async function settleRunningTurnsForQuit({
   inflightCheckpointer,
   persistenceOutbox,
   logger,
+  finishTurn,
+  lockAbortReason,
+  getAgentHostBridge,
 }: TurnSettlementDependencies): Promise<void> {
-  const sessions = [...activeTurns.keys()];
+  const sessions = [...activeTurns.entries()];
   const deadline = Date.now() + QUIT_TURN_SETTLE_BUDGET_MS;
   // The newest snapshot of every streaming reply lands first: it is the
   // fallback if the abort below does not produce a final row in time.
@@ -258,16 +279,36 @@ async function settleRunningTurnsForQuit({
     return;
   }
   const sidecar = getSidecar();
-  if (sidecar) {
-    await Promise.allSettled(
-      sessions.map((sessionId) =>
-        Promise.race([
-          sidecar.call("agent.abort", { sessionId }),
-          new Promise((resolve) => setTimeout(resolve, 800)),
-        ]),
-      ),
-    );
-  }
+  const agentHostBridge = getAgentHostBridge();
+  const interruptDeps = {
+    lockAbortReason,
+    finishTurn,
+    ...(agentHostBridge
+      ? { markAborting: (id: string) => agentHostBridge.markAborting(id) }
+      : {}),
+  };
+  // Quit interrupts every running turn; it never completes one. The reason is
+  // recorded before the cancel request leaves, so the clean `agent_end` that
+  // follows stops settling the turn as `completed` — which also filed a
+  // `task.completed` notification for a reply the user never received. Each
+  // turn is settled here as well, so a terminal event that never lands cannot
+  // leave it `running`.
+  const settlements = sessions.map(async ([sessionId, turnId]) => {
+    markTurnInterrupted(interruptDeps, sessionId, turnId);
+    if (sidecar) {
+      await Promise.race([
+        sidecar.call("agent.abort", { sessionId, turnId }),
+        new Promise((resolve) => setTimeout(resolve, 800)),
+      ]);
+    }
+    await settleInterruptedTurn(interruptDeps, sessionId, turnId);
+  });
+  await Promise.race([
+    Promise.allSettled(settlements),
+    new Promise((resolve) =>
+      setTimeout(resolve, Math.max(0, deadline - Date.now())),
+    ),
+  ]);
   // The abort surfaces as message_end + error/agent_end, which finishTurn
   // turns into a settled turn and an outbox append. Wait for that, bounded.
   while (Date.now() < deadline) {

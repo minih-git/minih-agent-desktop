@@ -1,6 +1,7 @@
 import { expandMcpInvocation } from "../composer-mcp";
 import { IPC, ErrorCodes, compactionRecordId, findSkillMentions, isGlobalPermissionMode, isRpcTimeoutError, type AgentEventEnvelope, type AgentPromptRequest, type AgentSteerRequest, type UiMessage, type AgentQueuePushRequest, type AgentStopRequest, type AgentStopSubagentsRequest, type AskToolResolution, type GlobalPermissionMode, type MessageUsage, type PendingInteractiveRequests, type PlanExecutionFinishStatus, type PlanResolutionResult, type PlanResolveRequest, type VoiceOrigin } from "@minih-agent/shared";
 import type { FinishTurn } from "../runtime/plans";
+import { markTurnInterrupted, settleInterruptedTurn } from "../runtime/turn-interrupt";
 import { expandSlashInvocation, visionFromModelConfig, type ComposerTemplate } from "@minih-agent/agent-runtime";
 import { appendPromptFallbackPaths, durableUserMessageId, preparePromptAttachments, type PreparedPromptAttachment } from "../prompt-attachments";
 import { resolveSessionReferences } from "../session-references";
@@ -658,11 +659,15 @@ export function registerAgentIpc({
     const abortedTurnId = activeTurns.get(req.sessionId);
     if (req.turnId && abortedTurnId !== req.turnId) return { ok: false, aborted: false };
     logger.app("session", "info", "prompt aborted", { sessionId: req.sessionId });
-    agentHostBridge?.markAborting(req.sessionId);
-    // Lock the abort reason before the first await: the cancel RPC can take a
-    // while, and a terminal event arriving in that window must not settle the
-    // turn as completed.
-    lockAbortReason(req.sessionId, abortedTurnId);
+    markTurnInterrupted(
+      {
+        lockAbortReason,
+        markAborting: (sessionId) => agentHostBridge?.markAborting(sessionId),
+        finishTurn,
+      },
+      req.sessionId,
+      abortedTurnId,
+    );
     const executionId =
       approvedExecutionIdsBySession.get(req.sessionId) ??
       [...claimedExecutionSessions].find(
@@ -680,11 +685,7 @@ export function registerAgentIpc({
     } finally {
       // A turn that already stopped owning the session is refused inside the
       // finalizer, so the identity captured above is the only one used here.
-      if (abortedTurnId) {
-        await finishTurn(req.sessionId, "aborted", "TURN_ABORTED", {
-          turnId: abortedTurnId,
-        });
-      }
+      await settleInterruptedTurn({ finishTurn }, req.sessionId, abortedTurnId);
       if (executionId) {
         await finishApprovedExecution(
           executionId,
