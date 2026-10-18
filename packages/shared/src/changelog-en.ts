@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.21.1",
+    date: "2026-10-18",
+    highlights: [
+      "Project conversation lists open in pages: the five most recent sessions appear first, each Load more reveals five more, and a half-opened list folds back to the first five without collapsing the project.",
+      "Completed sessions are easier to spot in the sidebar: a finished conversation uses the same solid green dot as a running one, and a selected row never stacks a second marker.",
+      "Cloud sync no longer fails because a skill folder contains a git repository; repository metadata stays on your machine instead of blocking the whole backup.",
+      "Tool rows keep their identity: a skill or extension call shows that capability's own name and icon instead of blending into a generic row.",
+    ],
+  },
+  {
     version: "0.21.0",
     date: "2026-10-17",
     highlights: [

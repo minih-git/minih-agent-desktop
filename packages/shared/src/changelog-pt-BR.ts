@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "0.21.1",
+    date: "2026-10-18",
+    highlights: [
+      "As listas de conversas de um projeto abrem por páginas: as cinco sessões mais recentes aparecem primeiro, cada Mostrar mais acrescenta cinco e uma lista aberta pela metade volta às cinco primeiras sem recolher o projeto.",
+      "As sessões concluídas ficam mais fáceis de achar na barra lateral: uma conversa finalizada usa o mesmo ponto verde sólido de uma em execução, e a linha selecionada não empilha um segundo marcador.",
+      "A sincronização na nuvem não falha mais porque uma pasta de skill contém um repositório git; os metadados do repositório ficam na sua máquina em vez de bloquear o backup inteiro.",
+      "As linhas de ferramenta mantêm a própria identidade: uma chamada de skill ou extensão mostra o nome e o ícone daquela capacidade em vez de se misturar numa linha genérica.",
+    ],
+  },
+  {
     version: "0.21.0",
     date: "2026-10-17",
     highlights: [

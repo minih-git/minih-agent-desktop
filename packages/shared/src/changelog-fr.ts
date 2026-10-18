@@ -2,6 +2,16 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "0.21.1",
+    date: "2026-10-18",
+    highlights: [
+      "Les listes de conversations d'un projet s'ouvrent par pages : les cinq sessions les plus récentes apparaissent d'abord, chaque Afficher plus en ajoute cinq, et une liste à moitié ouverte revient aux cinq premières sans replier le projet.",
+      "Les sessions terminées se repèrent mieux dans la barre latérale : une conversation achevée utilise le même point vert plein qu'une session en cours, et la ligne sélectionnée n'empile pas un second marqueur.",
+      "La synchronisation cloud n'échoue plus parce qu'un dossier de skill contient un dépôt git ; les métadonnées du dépôt restent sur votre machine au lieu de bloquer toute la sauvegarde.",
+      "Les lignes d'outil gardent leur identité : un appel de skill ou d'extension affiche le nom et l'icône propres à cette capacité au lieu de se fondre dans une ligne générique.",
+    ],
+  },
+  {
     version: "0.21.0",
     date: "2026-10-17",
     highlights: [
