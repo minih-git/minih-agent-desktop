@@ -232,14 +232,18 @@ function HostToolRow({
     : null;
   // A run row keeps its command in the head and only its output in the body, so
   // the head carries the two things the body no longer offers: a copy of the
-  // command, and the outcome (D226).
-  const runHead = action === "run" && variant !== "topology" && !dense;
-  const command = runHead
+  // command, and the outcome (D226). A one-line step row states the action only,
+  // so there the command moves into the body instead of disappearing: opening the
+  // row is exactly the moment the reader wants to know what actually ran.
+  const runRow = action === "run" && variant !== "topology";
+  const runHead = runRow && !dense;
+  const command = runRow
     ? getToolSummaryValue(message.toolName, message.toolArgs)
     : "";
   // A delegation is always expandable: its brief, report and the delegate's
   // own rows all live in the body.
-  const hasDetails = hasToolDetails(message) || Boolean(delegate);
+  const hasDetails =
+    hasToolDetails(message) || Boolean(delegate) || (dense && runRow && Boolean(command));
   const chips = toolResultChips(message);
   // A lifecycle row (ADR 0089) is about subagents, so it is presented as one:
   // the agent names it reports on replace the bare delegation ids it was
@@ -273,7 +277,11 @@ function HostToolRow({
       message,
       nestedReport,
       blocks: buildToolPresentation(message, {
-        hideSummaryArg: true,
+        // A full row prints the command or the argument summary in its head and
+        // copies it there (D226), so the body must not repeat it. A one-line step
+        // row states only the action, so its body is the only place the command
+        // or the argument can be read at all.
+        hideSummaryArg: !dense,
         ...(nestedReport ? { hideDelegateReport: true } : {}),
       }),
     };
@@ -538,8 +546,8 @@ function HostToolRow({
                 {summary}
               </span>
             ) : null}
-            {dense ? null : <ToolChips chips={chips} />}
-            {runHead && statusLabel ? (
+            {dense && !runRow ? null : <ToolChips chips={chips} />}
+            {(runHead || runRow) && statusLabel ? (
               <span
                 className={`tool-row-state ${statusTone}`}
                 role="status"
@@ -561,7 +569,7 @@ function HostToolRow({
             ) : status === "denied" ? (
               <span className="tool-row-status">{t("chat.toolDenied")}</span>
             ) : null}
-            {runHead && statusLabel ? null : (
+            {(runHead || runRow) && statusLabel ? null : (
               <span className="sr-only" role="status" aria-live="polite">
                 {statusLabel}
               </span>
@@ -592,13 +600,15 @@ function HostToolRow({
           {statusLabel}
         </span>
       ) : null}
-      {blocks && blocks.length > 0 ? (
+      {(blocks && blocks.length > 0) || (dense && runRow && Boolean(command)) ? (
         <div className="tool-row-body" id={detailsId} ref={disclosure.bodyRef} {...disclosure.bodyEvents}>
           <DisclosureCollapseRail
             label={t("chat.collapseToolOutput")}
             onCollapse={collapseRow}
           />
-          <ToolDetailBlocks blocks={blocks} plain={runHead} streaming={status === "running"} />
+          {blocks && blocks.length > 0 ? (
+            <ToolDetailBlocks blocks={blocks} plain={runHead} streaming={status === "running"} />
+          ) : null}
         </div>
       ) : null}
       {!imagesInTurn && <GeneratedImages message={message} />}

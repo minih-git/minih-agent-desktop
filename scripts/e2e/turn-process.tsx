@@ -239,6 +239,13 @@ export async function turnProcessProbe() {
         !(row("bash1")?.textContent ?? "").includes("pnpm test"),
       "a step row states the action without echoing the command",
     );
+    // Opening the step row is exactly the moment the reader wants to know what
+    // ran, so the command lives in its body rather than disappearing.
+    flushSync(() => row("bash1")?.querySelector<HTMLElement>(".tool-row-header")?.click());
+    check(
+      (row("bash1")?.textContent ?? "").includes("pnpm test"),
+      "opening a step row reveals the command it ran",
+    );
 
     // Detailed density opens the payloads a reader would otherwise click.
     setSettings({ transcriptDensity: "detailed" });
