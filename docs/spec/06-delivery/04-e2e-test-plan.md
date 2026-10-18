@@ -14721,7 +14721,9 @@ are withdrawn with ADR 0165.
   interrupted turn is not replayed. Repeat the parallel creation step with a
   large existing session list while keeping the parent visible. 11) With one
   model's «Available for AI delegation» left off, ask the parent to spawn a
-  worker on it by `modelKey`, then spawn again with no `modelKey`.
+  worker on it by `modelKey`, then spawn again with no `modelKey`. 12) Start a
+  fresh message chain with completion notifications disabled, forward it between
+  two sessions for 32 deliveries, and attempt a 33rd delivery.
 - **Expected**: Each worker is a real durable session with the parent's
   project/model/thinking/permission ceiling and an independent empty
   transcript at creation. The host ledger binds every delivery to the actual
@@ -14736,7 +14738,11 @@ are withdrawn with ADR 0165.
   interrupts only the selected delivery/turn without deleting the session.
   Sends without an active plugin tool invocation, forged source ids, targets
   above the source permission ceiling, worker fan-out overflow, inbox overflow,
-  and autonomous callback loops fail closed. A `spawn` naming a model the user
+  and autonomous callback loops fail closed. A fresh chain admits 32 deliveries
+  and rejects the 33rd with `LIMIT_EXCEEDED` before inserting a ledger row.
+  Completion callbacks still decrement the inherited budget, existing deliveries
+  retain their stored budget, and the inbox limit stays at eight queued deliveries.
+  A `spawn` naming a model the user
   has not enabled for AI delegation is refused with `PERMISSION_DENIED` before
   a worker exists, while omitting `modelKey` — or naming the default model's
   own key — still inherits. Unrelated sessions and the
