@@ -29,7 +29,7 @@ export type RacpBinding = (typeof RACP_BINDINGS)[number];
 
 /**
  * Bindings this release ships. `RACP-HTTP` joined once its conformance tests
- * against the Gateway passed (rollout R4, D664); `RACP-GRPC` stays in the enum
+ * against the Gateway passed (rollout R4, D665); `RACP-GRPC` stays in the enum
  * as reserved so the contract does not drift.
  */
 export const RACP_SHIPPED_BINDINGS: readonly RacpBinding[] = ["RACP-WS", "RACP-HTTP"];

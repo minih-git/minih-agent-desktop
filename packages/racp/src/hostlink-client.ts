@@ -1,5 +1,5 @@
 /**
- * Host side of the Host link (D664 / ADR 0330, protocol §11.4, security §3.2).
+ * Host side of the Host link (D665 / ADR 0330, protocol §11.4, security §3.2).
  *
  * `enrollHostLink()` generates the Host key pair locally, sends a PKCS#10 CSR
  * and a one-time enrollment code to the Gateway enrollment endpoint, pins the

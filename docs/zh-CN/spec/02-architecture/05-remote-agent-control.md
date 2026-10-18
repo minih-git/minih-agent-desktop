@@ -14,13 +14,13 @@ Electron IPC、`host.proxy` 或 Rust host-core 暴露到网络。
 
 D375 固定了拓扑的交付顺序：首个远程部署是桌面本身作为远端无头 Host 的
 客户端，经 SSH 隧道连接（#176、#140）；第二个是 Host 旁的出站消息集成
-（#100）。D664（ADR 0330）把其余拓扑排期：自托管 Gateway 与 Host link 为
+（#100）。D665（ADR 0330）把其余拓扑排期：自托管 Gateway 与 Host link 为
 R4，桌面作为可连接的 Host 为 R5，浏览器与移动客户端为 R6。
 
 - 客户端可以断开，Agent 回合仍继续。
 - 重连使用快照或 `{ epoch, sequence }` 游标回放，不依赖时间戳。
 - `RACP-WS` 是 v1 唯一规范绑定，首先部署在 SSH 隧道上；`RACP-HTTP` 是
-  浏览器 profile，随 R4 绑定（D664），使用它的浏览器与移动客户端随 R6 交付；
+  浏览器 profile，随 R4 绑定（D665），使用它的浏览器与移动客户端随 R6 交付；
   `RACP-GRPC` 保留。
 - Host 是无头模块：会话与回合准入、回合队列、审批代理、事件日志和快照
   构建都不依赖 Electron，桌面 IPC、本地 MCP、RACP 和消息集成都是它的调用方。
@@ -102,12 +102,12 @@ Client ── HTTPS/WSS ── Gateway
 端口。Host link 是中继 profile，复用多个逻辑客户端连接。PI 不运营 Gateway：
 由用户在自己的基础设施上运行，并以 Host 签发的设备凭据准入（D385）。交付
 范围、绑定规则与退出条件见 `06-delivery/07-remote-control-rollout.md` 的
-R4 里程碑（D664，ADR 0330）。
+R4 里程碑（D665，ADR 0330）。
 
 ### 4.4 桌面作为可连接的 Host（R5）
 
 Electron Main 可以经出站 Host link 提供其进程内的 Agent Host，让手机观察并
-操控运行中桌面的会话（D664，ADR 0330）。链路在现有 `agent-host-bridge.ts`
+操控运行中桌面的会话（D665，ADR 0330）。链路在现有 `agent-host-bridge.ts`
 AgentHost 实例上运行独立的 `RacpServer` 传输：不新建 AgentHost、不新增执行
 路径、不开监听。设置为 `AppSettings` 中可选、设备本地的 `remoteGateway`
 字段（`enabled`、`url`；缺失即关闭、不同步），标记为实验性且默认关闭。设备
@@ -169,9 +169,9 @@ Host   -> turn terminal event, next queued turn starts
 |---|---|---|---|
 | Local stdio JSON-RPC | Electron Main / sidecars | Full duplex | Existing |
 | RACP-WS | 经 SSH 的桌面客户端、Native、Electron | Full duplex | v1 规范绑定，首先部署在 SSH 隧道上 |
-| RACP-HTTP | Browser、simple integrations | Commands + server stream | 浏览器 profile，随 R4 绑定（D664），浏览器与移动客户端随 R6 交付 |
+| RACP-HTTP | Browser、simple integrations | Commands + server stream | 浏览器 profile，随 R4 绑定（D665），浏览器与移动客户端随 R6 交付 |
 | RACP-GRPC | Native service | Unary + server stream | 保留，不在 v1 |
-| Host link `racp-hostlink.v1` | Gateway → Host | Multiplexed full duplex | 基于 RACP-WS 帧的中继 profile，随 R4 交付（D664） |
+| Host link `racp-hostlink.v1` | Gateway → Host | Multiplexed full duplex | 基于 RACP-WS 帧的中继 profile，随 R4 交付（D665） |
 
 ## 7. 故障与迁移
 
@@ -206,7 +206,7 @@ D375）。SSH 隧道里程碑再加两件东西而不改线上契约：`agent-ho
 工具只在桌面执行；会话终端在远端机器的会话根内运行且只对策略允许的主体开放；回放、审批、幂等和
 所有已发布绑定的一致性测试必须通过；无头模块的测试不依赖 Electron。
 
-D664（2026-10-17，ADR 0330）排期 Gateway 与浏览器拓扑：R4 为自托管 Gateway 与
+D665（2026-10-17，ADR 0330）排期 Gateway 与浏览器拓扑：R4 为自托管 Gateway 与
 Host link，R5 为桌面作为可连接的 Host，R6 为浏览器与移动客户端。§4.3 去掉
 不排期状态，§4.4 新增桌面可连接 Host 拓扑（设备本地的 `remoteGateway` 设置、
 `EncryptionPort` 加密凭据），归属一节记录 Gateway 的具体存储布局。

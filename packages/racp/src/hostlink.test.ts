@@ -418,7 +418,7 @@ describe("device origin pairing (security §3.7)", () => {
 
   it("keeps legacy pairing tokens redeemable as ssh origin", async () => {
     const h = await harness();
-    // A pairing token written before D664: no origin field on the record.
+    // A pairing token written before D665: no origin field on the record.
     const token = (await h.authenticator.issuePairingToken(60_000)).token;
     const auth = await h.authenticator.authenticate({ authorization: `Bearer ${token}`, urlHasToken: false, connectionId: "c1", origin: "ssh" });
     expect(auth?.kind).toBe("pairing");

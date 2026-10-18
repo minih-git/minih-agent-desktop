@@ -1,6 +1,6 @@
 # remote-gateway
 
-Self-hosted RACP Gateway (D664 / ADR 0330). It is the public side of the remote
+Self-hosted RACP Gateway (D665 / ADR 0330). It is the public side of the remote
 control topology: agent Hosts dial **out** to it over one mutual-TLS WebSocket
 (the Host link), and phones, browsers, and the desktop reach their Host through
 HTTPS. The Gateway keeps identity records only — never transcripts, provider

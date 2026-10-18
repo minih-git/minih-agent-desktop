@@ -8,7 +8,7 @@ type IdentityFile = { hostId: string; createdAt: string };
 type CredentialFile = { devices: DeviceRecord[]; pairings: PairingRecord[] };
 
 /**
- * Records written before D664 have no `origin`; they read as `"ssh"`
+ * Records written before D665 have no `origin`; they read as `"ssh"`
  * (security §3.7) so this loader keeps the historical behavior untouched.
  */
 function normalizeOrigin<T extends { origin?: "ssh" | "gateway" }>(record: T): T {

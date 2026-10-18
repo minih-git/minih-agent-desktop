@@ -88,7 +88,7 @@
 > 被延后的远程 Gateway / WebUI 范围。
 > ADR 0205 / D373 定义未来 MVP 后 Agent Host、Gateway 和多绑定控制面的目标；
 > D374 将其修订为单一规范 WebSocket 绑定、无头 Agent Host 模块和完整本地审批词汇；
-> D375 将 SSH 隧道远端 Host 排在首位。MVP 后，Gateway 与浏览器访问已由 D664
+> D375 将 SSH 隧道远端 Host 排在首位。MVP 后，Gateway 与浏览器访问已由 D665
 > （ADR 0330）排期为 R4–R6。
 > 当前基线仍排除远程 Gateway / WebUI 控制；这些修订不改变 MVP 本身的排除范围。
 > `0.4.21` 移除了独立的设置「导入」目的地。模型、技能和 MCP 扫描

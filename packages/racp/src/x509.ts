@@ -1,5 +1,5 @@
 /**
- * X.509 helpers for the Host link (D664 / ADR 0330). The Host generates its
+ * X.509 helpers for the Host link (D665 / ADR 0330). The Host generates its
  * key pair and PKCS#10 CSR locally; the Gateway signs with its own CA and
  * issues one-year client certificates whose CN is the `hostId`.
  *

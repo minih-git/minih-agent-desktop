@@ -1,5 +1,5 @@
 /**
- * Browser entry for `@minih-agent/racp` (PR-1, D664 / ADR 0330). Exports only
+ * Browser entry for `@minih-agent/racp` (PR-1, D665 / ADR 0330). Exports only
  * Node-free pieces: the `RacpClient` and its types, the JSON-RPC codec, and
  * the `createHttpSseClient()` transport for the `RACP-HTTP` browser profile.
  *

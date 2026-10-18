@@ -1080,7 +1080,7 @@ describe("AgentHost gateway-principal restrictions (security §3.7)", () => {
 
   it("(a) keeps the ssh path unchanged when grants are disabled", async () => {
     // With grants disabled the approval never offers `allow-session`, so an
-    // ssh approver's attempt fails as INVALID_ARGUMENT — the pre-D664 behavior.
+    // ssh approver's attempt fails as INVALID_ARGUMENT — the pre-D665 behavior.
     const { host, approvals, received } = build();
     host.ingest(envelope("s1", "rt_1", permission()));
     expect(received.find((event) => event.kind === "approval.requested")).toBeTruthy();

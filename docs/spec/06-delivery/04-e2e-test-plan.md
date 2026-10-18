@@ -14793,7 +14793,7 @@ vocabulary, the remote permission ceiling, the Host link relay, and the
 browser cookie profile. D375 re-sequenced the milestones: E2E-231 and
 E2E-232 are the acceptance targets of the scheduled SSH-tunnel and
 integration milestones, while E2E-227 and E2E-228 run when the Gateway and
-browser milestones are scheduled. D664 scheduled those milestones as R4–R6:
+browser milestones are scheduled. D665 scheduled those milestones as R4–R6:
 E2E-227 is the R4 acceptance target, E2E-228's parity steps run with R4 and
 its browser-profile steps with R6, and E2E-265 / E2E-266 are the R5 / R6
 acceptance targets.
@@ -14971,7 +14971,7 @@ acceptance targets.
   `05-security/02-remote-control-security.md` §§3.2, 3.7, and 6,
   `06-delivery/07-remote-control-rollout.md` §2
 - **Acceptance**: Security, Recovery, Quality
-- **Milestone**: Post-MVP (rollout R4, D664)
+- **Milestone**: Post-MVP (rollout R4, D665)
 - **Status**: Draft; acceptance target of R4. Attachment relay is deferred:
   `RacpServer` declares `attachments: false`, so step 5 does
   not run in R4 and is enabled when the RACP attachment capability ships.
@@ -14998,7 +14998,7 @@ acceptance targets.
   and 14, `05-security/02-remote-control-security.md` §§3.1 and 5,
   `06-delivery/07-remote-control-rollout.md` §§3–4
 - **Acceptance**: Quality, Recovery, Security
-- **Milestone**: Post-MVP (rollouts R4 / R6, D664)
+- **Milestone**: Post-MVP (rollouts R4 / R6, D665)
 - **Status**: Draft; the parity steps run when a second binding ships (R4); the browser-profile steps are the acceptance target of R6
 
 #### E2E-229: Attachment and workspace boundaries are enforced remotely
@@ -15336,7 +15336,7 @@ acceptance targets.
   `05-security/02-remote-control-security.md` §§3.3, 3.7, and 12 (gates 25,
   26, 27)
 - **Acceptance**: Security, Recovery, Quality
-- **Milestone**: Post-MVP (rollout R5, D664)
+- **Milestone**: Post-MVP (rollout R5, D665)
 - **Status**: Covered by `scripts/e2e-desktop-gateway-link.mjs`
   (`pnpm test:e2e:desktop-gateway-link`) against the packaged Gateway: the
   desktop's production main-process modules run in Node with a stub host-core
@@ -15367,7 +15367,7 @@ acceptance targets.
   `05-security/02-remote-control-security.md` §§3.1, 3.7, and 12 (gates 24,
   25), `06-delivery/07-remote-control-rollout.md` §2 (R6)
 - **Acceptance**: C (conversation & stream), Security, Recovery
-- **Milestone**: Post-MVP (rollout R6, D664)
+- **Milestone**: Post-MVP (rollout R6, D665)
 - **Status**: Draft; Playwright flow required when R6 ships
 
 ## Trusted extension scenarios (R7 v1)
