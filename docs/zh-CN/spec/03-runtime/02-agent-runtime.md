@@ -1201,8 +1201,9 @@ sidecar 从不直接读取工作区指令。改变的根链
 
 ### 7.4 会话启动时的学习记忆（D668，ADR agent-long-term-memory）
 
-Electron main 启动运行时，会在加载固定项目记忆的旁边读取学习记忆索引：为会话的项目调用一次
-`memory.index`；会话没有项目、或可移植读取开关 `learnedMemory.read` 关闭时跳过。该快照通过
+Electron main 启动运行时，会在加载固定项目记忆的旁边读取学习记忆索引：调用一次 `memory.index`，
+会话有项目时指明该项目，没有项目时只取用户作用域；只有可移植读取开关 `learnedMemoryRead` 关闭时
+才跳过。该快照通过
 `learnedMemoryIndex` 启动参数传给 sidecar，旁边是 `learnedMemoryRead`。这次调用是尽力而为：
 失败时只记录带稳定错误码的 `learned memory index unavailable` 日志，启动照常进行且不带该段落。
 启动的其他环节都不依赖它。
@@ -1220,9 +1221,14 @@ runtime，也不会改变正在运行的会话的系统提示——下一个会�
 重建 runtime。读取开关是配置而非数据，因此 `learnedMemoryRead` *会*参与复用比较：关闭它必须移除
 该段与两个召回工具。
 
+运行时的工具目录按需提供学习记忆工具，从不进入固定声明集：`SessionHistorySearch` 与
+`MemorySearch` 在所有模式可用，`MemoryRemember` 仅在 Agent 可用，因为 Plan 与 Goal 是只读的
+契约协商，不应改变持久记忆。`learnedMemoryRead` 关闭时三者都不可用。
+
 子代理不注入学习记忆：`composeSubagentSystemPrompt` 仍只组合框架、定义提示与指引，且
-`SessionHistorySearch` / `MemorySearch` 位于 `SUBAGENT_INHERIT_DENY_TOOLS`，所以
-`tools: inherit` 也无法把它们借给委托——见 `03-tools-and-permissions.md` §10.2。
+`SessionHistorySearch` / `MemorySearch` / `MemoryRemember` 位于
+`SUBAGENT_INHERIT_DENY_TOOLS`，所以 `tools: inherit` 也无法把它们借给委托——见
+`03-tools-and-permissions.md` §10.2。
 
 ## 8. 并发
 

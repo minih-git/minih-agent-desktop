@@ -13,6 +13,7 @@ Minih-Agent-Desktop 是一个本地优先的 AI 编程代理桌面客户端。�
 |---|---|
 | 应用界面长什么样 | [界面截图](/zh-CN/guide/screenshots) |
 | 如何运行周期任务 | [定时任务](/zh-CN/guide/automations) |
+| 让代理记住你的偏好 | [学习记忆](/zh-CN/guide/memory) |
 | 如何添加 MCP 目录并填写密钥 | [MCP 市场](/zh-CN/guide/mcp-market) |
 | 当前交付了什么 | [产品范围](/zh-CN/spec/01-product/01-product-scope) |
 | 系统如何协作 | [系统架构](/zh-CN/spec/02-architecture/01-architecture) |

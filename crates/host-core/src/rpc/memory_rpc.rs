@@ -23,6 +23,7 @@ pub(super) fn handle(st: &AppState, method: &str, params: Value) -> Result<Value
         "memory.search" => search(&st.db, &params),
         "memory.index" => index(&st.db, &params),
         "memory.create" => create(&st.db, &params),
+        "memory.rememberAgain" => remember_again(&st.db, &params),
         "memory.update" => update(&st.db, &params),
         "memory.archive" => set_status(&st.db, &params, STATUS_ARCHIVED),
         "memory.restore" => set_status(&st.db, &params, STATUS_ACTIVE),
@@ -129,6 +130,61 @@ fn create(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
             override_tombstone: optional_bool(params, "overrideTombstone")?.unwrap_or(false),
         })
         .map_err(internal)?;
+    Ok(match outcome {
+        CreateMemoryOutcome::Created(entry) => json!({ "entry": entry, "duplicate": false }),
+        CreateMemoryOutcome::Duplicate(entry) => json!({ "entry": entry, "duplicate": true }),
+        CreateMemoryOutcome::Rejected(rejection) => json!({ "rejected": rejection }),
+    })
+}
+
+/// The user's own "remember again" action on a receipt.
+///
+/// Reached only from the transcript receipt, never from `tools.execute` or any
+/// other path the model can call. It is the one write that clears a tombstone,
+/// because the user pressing it is the explicit request ADR §6 means. The
+/// provenance still comes from the host: the cited messages are the user
+/// messages of `turnId`, which may have ended by the time the receipt is
+/// answered, and a renderer may never supply a message id of its own.
+fn remember_again(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
+    let session_id = required_str(params, "sessionId")?;
+    let turn_id = required_str(params, "turnId")?;
+    let kind = required_str(params, "kind")?;
+    if !is_known(kind, &KINDS) {
+        return Err(invalid_params("kind is not a supported value"));
+    }
+    let content = required_str(params, "content")?;
+    let basis = optional_str(params, "basis")?.unwrap_or(EVIDENCE_USER_STATED);
+    if !is_known(basis, &EVIDENCES) {
+        return Err(invalid_params("basis is not a supported value"));
+    }
+    let scope_kind = optional_str(params, "scope")?.unwrap_or(SCOPE_PROJECT);
+    if !is_known(scope_kind, &SCOPES) {
+        return Err(invalid_params("scope is not a supported value"));
+    }
+    // A refusal is a value here as well, so the renderer can say why without
+    // parsing a message: the accepted and refused shapes match `memory.create`.
+    let scope = if scope_kind == SCOPE_USER {
+        MemoryScope::user()
+    } else {
+        session_scopes(db, session_id)?
+            .into_iter()
+            .find(|scope| scope.kind == SCOPE_PROJECT)
+            .ok_or_else(|| not_found("session has no project"))?
+    };
+    let source_message_ids =
+        super::memory_tools::turn_user_messages(db, session_id, Some(turn_id), false)?;
+    let outcome = super::memory_tools::write_explicit(
+        db,
+        session_id,
+        content.to_string(),
+        kind.to_string(),
+        scope,
+        basis.to_string(),
+        optional_str(params, "rationale")?.map(str::to_string),
+        source_message_ids,
+        // The user pressed the button; this is the explicit request.
+        true,
+    )?;
     Ok(match outcome {
         CreateMemoryOutcome::Created(entry) => json!({ "entry": entry, "duplicate": false }),
         CreateMemoryOutcome::Duplicate(entry) => json!({ "entry": entry, "duplicate": true }),

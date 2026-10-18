@@ -4168,6 +4168,12 @@ async fn handle_request(
                     // tool's registered low risk describes: the argument decides
                     // the risk, the same way an explicit outside path does.
                     let recall_risk = memory_tools::risk_for(&p.tool_name, &p.args);
+                    // The explicit write carries its own registered medium risk;
+                    // naming the reason here keeps the card honest instead of
+                    // falling through to the generic high-risk wording.
+                    let recall_reason = memory_tools::risk_for(&p.tool_name, &p.args)
+                        .is_some()
+                        .then_some("Reads conversations from every project");
                     let mut auto = st
                         .permissions
                         .evaluate_auto_with_permission_mode_and_risk_and_path(
@@ -4216,7 +4222,9 @@ async fn handle_request(
                     } else {
                         let reason = if external_path_permission {
                             "Accesses a path outside the session workspace"
-                        } else if recall_risk.is_some() {
+                        } else if p.tool_name == "MemoryRemember" {
+                            "Keeps a note that applies to future sessions"
+                        } else if recall_reason.is_some() {
                             "Reads conversations from every project"
                         } else {
                             match p.tool_name.as_str() {

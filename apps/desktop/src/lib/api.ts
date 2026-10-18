@@ -4,8 +4,15 @@ import { guardRemoteInvocation } from "./remote-ipc-safety";
 import { isRemoteSession, safeSessionSummary } from "./remote-session-safety";
 import type {
   ConfigSyncTestResult,
-  ScheduledTaskRun,
+  LearnedMemoryEntry,
+  LearnedMemoryListRequest,
+  LearnedMemoryListResult,
+  LearnedMemoryRememberAgainRequest,
+  LearnedMemorySessionState,
+  LearnedMemoryUpdateRequest,
+  LearnedMemoryUpdateResult,
   ActivationScope,
+  ScheduledTaskRun,
   AgentCapabilityMove,
   AgentCapabilityQuery,
   AgentEventEnvelope,
@@ -1006,6 +1013,33 @@ export const api = {
     invoke<{ memory: ProjectMemory }>(IPC.invoke.projectMemorySave, {
       projectPath,
       entries,
+    }),
+  // Learned memory (ADR agent-long-term-memory). Every call forwards to one host
+  // RPC through the allowlisted channel; the host owns the rules and the
+  // compare-and-set revision, so an edit always carries what it read.
+  listLearnedMemory: (request: LearnedMemoryListRequest) =>
+    invoke<LearnedMemoryListResult>(IPC.invoke.memoryList, request),
+  updateLearnedMemory: (request: LearnedMemoryUpdateRequest) =>
+    invoke<LearnedMemoryUpdateResult>(IPC.invoke.memoryUpdate, request),
+  archiveLearnedMemory: (id: string) =>
+    invoke<{ entry: LearnedMemoryEntry }>(IPC.invoke.memoryArchive, { id }),
+  restoreLearnedMemory: (id: string) =>
+    invoke<{ entry: LearnedMemoryEntry }>(IPC.invoke.memoryRestore, { id }),
+  deleteLearnedMemory: (id: string) => invoke<{ ok: boolean }>(IPC.invoke.memoryDelete, { id }),
+  // The user's own "remember again" on a receipt: the one write that clears a
+  // delete. It sends the turn, never a message id, so the host stays the source
+  // of the cited evidence.
+  rememberLearnedMemoryAgain: (request: LearnedMemoryRememberAgainRequest) =>
+    invoke<{ entry?: LearnedMemoryEntry; duplicate?: boolean; rejected?: { code: string } }>(
+      IPC.invoke.memoryRememberAgain,
+      request,
+    ),
+  getMemorySessionState: (sessionId: string) =>
+    invoke<{ state: LearnedMemorySessionState }>(IPC.invoke.memorySessionGet, { sessionId }),
+  setMemorySessionExcluded: (sessionId: string, excluded: boolean) =>
+    invoke<{ state: LearnedMemorySessionState }>(IPC.invoke.memorySessionSetExcluded, {
+      sessionId,
+      excluded,
     }),
   cloneProject: (url: string) =>
     invoke<{ workspace: ProjectWorkspace | null; canceled?: boolean }>(

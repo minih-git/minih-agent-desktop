@@ -127,6 +127,20 @@ pub(crate) fn validate(
             "only a fact or a reference may be recorded as verified",
         ));
     }
+    // A message another agent or plugin delivered into the session is stored
+    // with role `user`, and the user did not write it. `user_stated` is a claim
+    // about what the user said, so it may not rest on one for any kind: a fact
+    // or reference that came with a delivery is recorded as `verified` instead
+    // (ADR §3.1). A preference already fails the stricter rule above.
+    if write.evidence == EVIDENCE_USER_STATED
+        && !write.source_message_ids.is_empty()
+        && cites_delivered_message(conn, write)?
+    {
+        return Ok(reject(
+            REJECT_PROVENANCE_REQUIRED,
+            "a user_stated memory must not cite a message another agent delivered",
+        ));
+    }
     let fingerprint = tombstones::fingerprint(&write.kind, &write.content);
     let overridden = write.origin == ORIGIN_EXPLICIT && write.override_tombstone;
     if matches!(path, WritePath::Create)
@@ -135,7 +149,7 @@ pub(crate) fn validate(
     {
         return Ok(reject(
             REJECT_TOMBSTONED,
-            "this memory was deleted before and stays forgotten",
+            "the user deleted this memory before, so it stays forgotten. Only the user can bring it back from the conversation receipt; do not try again.",
         ));
     }
     Ok(WriteOutcome::Accepted)
@@ -157,6 +171,21 @@ pub(crate) fn requires_user_statement(kind: &str) -> bool {
 /// session: a fact or a reference (ADR §3.1).
 pub(crate) fn allows_verified(kind: &str) -> bool {
     matches!(kind, KIND_FACT | KIND_REFERENCE)
+}
+
+/// Whether any cited message belongs to a turn another agent delivered into.
+/// A delivered turn is the unit the ledger records, so one delivered message in
+/// the set is enough to withhold the claim.
+fn cites_delivered_message(conn: &Connection, write: &MemoryWrite) -> Result<bool> {
+    let cited = tombstones::encode_ids(&write.source_message_ids);
+    let delivered: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM messages m
+           JOIN session_collaboration_messages delivered ON delivered.turn_id = m.turn_id
+          WHERE m.id IN (SELECT value FROM json_each(?1))",
+        params![cited],
+        |row| row.get(0),
+    )?;
+    Ok(delivered > 0)
 }
 
 fn check_user_provenance(

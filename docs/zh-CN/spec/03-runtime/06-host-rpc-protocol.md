@@ -222,7 +222,7 @@ type ToolBudgetHealth = {
   `sessionId`、`kind`、`content`、可选 `rationale`、`origin`（`explicit` |
   `user_ui`，默认 | `extracted`）、`evidence`（`user_stated`，默认 | `verified` |
   `inferred`）、`status`（`active`，默认 | `suggested`）、`sourceSessionId`、
-  `sourceMessageIds`、`overrideTombstone`。`origin` 与 `status` 必须一致：
+  `sourceMessageIds`、`overrideTombstone`。`overrideTombstone` 会清除删除屏蔽记录，保留给用户本人的动作：桌面端从回执的「仍然记住」发送它，走 `memory.rememberAgain`；`MemoryRemember` 工具永不设置它。`origin` 与 `status` 必须一致：
   `extracted` 必须配 `suggested`，`suggested` 也必须来自 `extracted`，因此抽取只能
   产生建议，建议也只能来自抽取。写入或发现已存在条目时返回
   `{ entry, duplicate }`，被规则拒绝时返回 `{ rejected: { code, message } }`。
@@ -230,6 +230,11 @@ type ToolBudgetHealth = {
   `MEMORY_RATIONALE_TOO_LARGE`、`MEMORY_INVALID_FIELD`、
   `MEMORY_CREDENTIAL_DETECTED`、`MEMORY_PROVENANCE_REQUIRED`、
   `MEMORY_TOMBSTONED`。拒绝信息不会重复被拒原文。
+- `memory.rememberAgain({ sessionId, turnId, kind, content, scope?, basis?, rationale? })`
+  —— 回执上的「仍然记住」，也是唯一会清除删除屏蔽记录的写入。它只由渲染层调用，永不经过
+  `tools.execute`，因此没有任何模型可调用的路径能撤销删除。引用的证据是 `turnId` 的用户消息，
+  由主机解析；该回合可能已经结束，但必须属于 `sessionId`，且调用方从不提供消息 ID。返回
+  `{ entry, duplicate }` 或 `{ rejected: { code, message } }`，与 `memory.create` 相同。
 - `memory.update({ id, revision, content?, rationale?, kind?, scope?, path? })` ——
   编辑条目。对 `revision` 做比较并交换：过期版本返回 1008 /
   `MEMORY_REVISION_CONFLICT`，且该行保持不变。只有当编辑把类型改成
@@ -249,6 +254,16 @@ type ToolBudgetHealth = {
 - `memory.extraction.claim({ sessionId, owner, leaseMs? })` /
   `memory.extraction.complete({ sessionId, owner, cursorSeq })` /
   `memory.extraction.fail({ sessionId, owner, error })` —— 可选抽取使用的游标与租约。
+
+`tools.execute` 配 `toolName: "MemoryRemember"` 即同名工具执行的显式写入。它接受
+`{ content, kind, scope?, basis?, rationale? }`，写入一条 `active` 条目，`origin = explicit`；
+来源就是传输层的 `sessionId` 与 `turnId`，因此任何参数都无法指定会话、回合或消息。结果：
+写入或找到条目时为 `{ entry, duplicate, note }`，其中
+`entry = { id, kind, scope, content, rationale, revision, createdAt }`；规则拒绝时为通常的工具
+结果 `{ error, code }`——`MEMORY_CREDENTIAL_DETECTED`、`MEMORY_PROVENANCE_REQUIRED`、
+`MEMORY_TOMBSTONED`、`MEMORY_INVALID_FIELD`、`MEMORY_CONTENT_TOO_LARGE`、
+`TOOL_TURN_CANCELLED`、`TOOL_DENIED`、`INVALID_ARGUMENT`。被拒写入永不重复被拒原文。条目的
+`revision` 正是回执「编辑」回传给 `memory.update` 的值。
   只有租约持有者可以推进游标或记录失败，且游标永不回退。
 
 ### 秘密

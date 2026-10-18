@@ -1,0 +1,157 @@
+.learned-memory-dialog {
+  width: min(100%, 780px);
+}
+
+.learned-memory-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.learned-memory-filter {
+  display: flex;
+  min-width: 132px;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs-plus);
+}
+
+.learned-memory-conflict {
+  margin: 0;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--ds-warning) 12%, transparent);
+  padding: 8px 10px;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+}
+
+.learned-memory-card {
+  gap: 6px;
+}
+
+.learned-memory-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.learned-memory-kind {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-xs);
+  background: color-mix(in oklab, var(--ds-accent) 12%, transparent);
+  padding: 2px 7px;
+  color: var(--ds-accent);
+  font-size: var(--text-xs);
+}
+
+.learned-memory-meta {
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs-plus);
+  font-variant-numeric: tabular-nums;
+}
+
+.learned-memory-content {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  white-space: pre-wrap;
+}
+
+.learned-memory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.learned-memory-delete {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--ds-error) 10%, transparent);
+  padding: 8px 10px;
+}
+
+.learned-memory-delete p {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+}
+
+.learned-memory-delete-confirm {
+  background: color-mix(in oklab, var(--ds-error) 16%, transparent);
+  color: var(--ds-error);
+}
+
+.learned-memory-delete-confirm:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--ds-error) 24%, transparent);
+}
+
+.learned-memory-receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid color-mix(in oklab, var(--ds-accent) 22%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--ds-accent) 5%, var(--ds-tile));
+  padding: 10px 12px;
+}
+
+.learned-memory-receipt-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs-plus);
+}
+
+.learned-memory-receipt-head > svg {
+  color: var(--ds-accent);
+}
+
+.learned-memory-receipt-scope {
+  border-radius: var(--radius-xs);
+  background: color-mix(in oklab, var(--ds-text-primary) 8%, transparent);
+  padding: 1px 6px;
+  font-size: var(--text-xs);
+}
+
+.learned-memory-receipt-content {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  white-space: pre-wrap;
+}
+
+.learned-memory-receipt-note,
+.learned-memory-receipt-deleted {
+  margin: 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs-plus);
+}
+
+.learned-memory-receipt-refusal {
+  margin: 0;
+  color: var(--ds-error);
+  font-size: var(--text-sm);
+}
+
+.learned-memory-receipt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.learned-memory-receipt-editor {
+  min-height: 64px;
+  resize: vertical;
+}

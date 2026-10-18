@@ -996,6 +996,29 @@ system while preserving their different data ownership:
   actions keep Project archive open even when the active workspace changes
 - Opening an archived project also clears its renderer-local archive state so
   the project becomes visible in the home sidebar; merely selecting its row
+### Learned memory
+
+- The project row's overflow menu carries Learned memory next to Project memory,
+  and Settings offers the same manager for the user scope. The two editors stay
+  separate: the pinned editor above keeps its storage, cap, and behavior, and
+  the manager links to it rather than absorbing it
+- The manager lists the entries of one scope with kind and status filters,
+  shows each entry's text, kind, status, date, and source session when it has
+  one, and offers edit, archive, restore, delete, and open-source-session
+  actions. An empty list renders one quiet empty state, and the dialog opens
+  with focus inside it, closes on Escape, and returns focus to the control that
+  opened it
+- An edit carries the revision it read. When another writer moved past it the
+  manager says the entry changed elsewhere and reloads instead of overwriting
+- Delete asks for confirmation and states that a deleted note cannot be
+  restored; it is the one irreversible action in the manager
+- Settings carries two switches: Use learned memory (the portable
+  `learnedMemoryRead`, on by default; off hides the session-start index and the
+  learned-memory tools without deleting anything) and Learn automatically,
+  shown disabled with a note that it arrives later
+- The session menu carries Don't learn from this conversation, which sets the
+  per-session exclusion the host stores
+
   for inspection does not restore it.
 
 ### Info

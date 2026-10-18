@@ -156,7 +156,7 @@ describe("learned memory at session start", () => {
     }
   });
 
-  it("offers both recall tools on demand in every mode", async () => {
+  it("offers the recall reads in every mode and the write only in Agent", async () => {
     for (const mode of ["agent", "plan", "goal"] as const) {
       const runtime = createRuntime({ mode, learnedMemoryIndex: index([entry()]) });
       // On demand: the schemas cost nothing per request until the model looks
@@ -167,23 +167,28 @@ describe("learned memory at session start", () => {
         expect(deferredNames(runtime).has(tool)).toBe(true);
       }
       expect(systemPrompt(runtime)).toContain("MemorySearch");
+      // The explicit write is Agent-only: a contract negotiation must not
+      // change durable memory.
+      const writable = mode === "agent";
+      expect(deferredNames(runtime).has("MemoryRemember")).toBe(writable);
+      expect((runtime as any).toolCatalog.has("MemoryRemember")).toBe(writable);
       await runtime.dispose();
     }
   });
 
-  it("hides both recall tools when reading is turned off", async () => {
+  it("hides every learned-memory tool when reading is turned off", async () => {
     const runtime = createRuntime({
       learnedMemoryIndex: index([entry()]),
       learnedMemoryRead: false,
     });
-    for (const tool of ["SessionHistorySearch", "MemorySearch"]) {
+    for (const tool of ["SessionHistorySearch", "MemorySearch", "MemoryRemember"]) {
       expect(deferredNames(runtime).has(tool)).toBe(false);
       expect((runtime as any).toolCatalog.has(tool)).toBe(false);
     }
     await runtime.dispose();
   });
 
-  it("keeps a delegate out of learned memory and the recall tools", async () => {
+  it("keeps a delegate out of learned memory and every learned-memory tool", async () => {
     const definition = {
       name: "reader",
       description: "Reads things.",
@@ -205,6 +210,7 @@ describe("learned memory at session start", () => {
     ]);
     expect(inherited).not.toContain("MemorySearch");
     expect(inherited).not.toContain("SessionHistorySearch");
+    expect(inherited).not.toContain("MemoryRemember");
     await runtime.dispose();
   });
 });

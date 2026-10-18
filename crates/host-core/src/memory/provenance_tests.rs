@@ -317,3 +317,53 @@ fn verified_basis_is_refused_for_kinds_that_cannot_be_verified() {
         REJECT_PROVENANCE_REQUIRED
     );
 }
+
+/// `user_stated` is a claim about what the user said, for every kind, not only
+/// for the two that must cite the user. A fact that arrived with another agent's
+/// delivery is recorded as `verified` instead (ADR §3.1).
+#[test]
+fn a_delivered_message_never_supports_a_user_stated_fact() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let project = project_dir(&dir, "app");
+    let scope = db.learned_memory_scope_for_path(&project).unwrap();
+    let sender = session_with_message(&db, &project, "s1", "user");
+    let target = session_with_message(&db, &project, "u1", "user");
+    let delivered = delivered_message(&db, &sender, &target);
+
+    let mut fact = request(
+        &scope,
+        KIND_FACT,
+        "The gateway deploys on Fridays.",
+        ORIGIN_EXPLICIT,
+    );
+    fact.evidence = EVIDENCE_USER_STATED.to_string();
+    fact.source_session_id = Some(target.clone());
+    fact.source_message_ids = vec![delivered.clone()];
+    let refused = db.create_memory_entry(fact).unwrap();
+    let rejection = rejection_of(&refused);
+    assert_eq!(rejection.code, REJECT_PROVENANCE_REQUIRED);
+    assert!(!rejection.message.contains("Review the change"));
+
+    // The same fact, marked as something the agent observed, is accepted: the
+    // delivery is not evidence that the user said it, but it is the session the
+    // agent was working in.
+    let mut verified = request(
+        &scope,
+        KIND_FACT,
+        "The gateway deploys on Fridays.",
+        ORIGIN_EXPLICIT,
+    );
+    verified.evidence = EVIDENCE_VERIFIED.to_string();
+    verified.source_session_id = Some(target.clone());
+    verified.source_message_ids = vec![delivered];
+    created(db.create_memory_entry(verified).unwrap());
+
+    // A reference behaves the same way, and a fact with no delivery among its
+    // citations still counts as user-stated.
+    let mut own = request(&scope, KIND_FACT, "The host core is Rust.", ORIGIN_EXPLICIT);
+    own.evidence = EVIDENCE_USER_STATED.to_string();
+    own.source_session_id = Some(target.clone());
+    own.source_message_ids = vec!["u1".to_string()];
+    created(db.create_memory_entry(own).unwrap());
+}

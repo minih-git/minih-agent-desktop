@@ -23,6 +23,7 @@ import { collectSessionProjects } from "../lib/session-projects";
 import { normalizeProjectPath } from "../lib/sidebar-session-groups";
 import { ProjectInstructionsDialog } from "../components/ProjectInstructionsDialog";
 import { ProjectMemoryDialog } from "../components/ProjectMemoryDialog";
+import { LearnedMemoryDialog } from "../components/LearnedMemoryDialog";
 import { ProjectEditDialog } from "../components/ProjectEditDialog";
 import { ProjectDeleteDialog } from "../components/ProjectDeleteDialog";
 import { SessionRenameDialog } from "../components/SessionRenameDialog";
@@ -94,6 +95,12 @@ export function ProjectsPage() {
   } | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [instructionsFor, setInstructionsFor] = useState<{
+    name: string;
+    path: string;
+    groupId?: string;
+    legacy?: boolean;
+  } | null>(null);
+  const [learnedMemoryFor, setLearnedMemoryFor] = useState<{
     name: string;
     path: string;
     groupId?: string;
@@ -544,6 +551,23 @@ export function ProjectsPage() {
                         <button
                           type="button"
                           role="menuitem"
+                          data-action="learned-memory"
+                          onClick={() => {
+                            setMenuFor(null);
+                            setLearnedMemoryFor({
+                              name: project.name,
+                              path: project.path,
+                              groupId: project.groupId,
+                              legacy: project.legacy,
+                            });
+                          }}
+                        >
+                          <IconSparkles size={14} />
+                          {t("memory.openManager")}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
                           data-action="edit-project"
                           onClick={() => {
                             setMenuFor(null);
@@ -619,6 +643,24 @@ export function ProjectsPage() {
           project={memoryFor}
           onClose={() => setMemoryFor(null)}
           onSaved={() => showToast(t("project.memorySaved"), { variant: "success" })}
+          onError={(error) =>
+            showToast(error instanceof Error ? error.message : String(error), {
+              variant: "error",
+            })
+          }
+        />
+      ) : null}
+      {learnedMemoryFor ? (
+        <LearnedMemoryDialog
+          scope="project"
+          projectPath={learnedMemoryFor.path}
+          projectName={learnedMemoryFor.name}
+          onClose={() => setLearnedMemoryFor(null)}
+          onOpenPinnedMemory={() => {
+            const target = learnedMemoryFor;
+            setLearnedMemoryFor(null);
+            setMemoryFor(target);
+          }}
           onError={(error) =>
             showToast(error instanceof Error ? error.message : String(error), {
               variant: "error",

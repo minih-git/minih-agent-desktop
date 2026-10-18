@@ -34,6 +34,7 @@ import {
   IconMic,
 } from "../../components/icons";
 import { Badge, Button, cx, SegmentedControl, SettingsToggle } from "../../components/ui";
+import { LearnedMemoryDialog } from "../../components/LearnedMemoryDialog";
 import { ModelsPage } from "../../components/settings/ModelConfigPage";
 import { AccountsPage } from "../../components/settings/AccountsPage";
 import { KeyboardShortcutsSection } from "../../components/settings/KeyboardShortcutsSection";
@@ -116,6 +117,7 @@ export function SettingsPage() {
   const [settingsRecoveryFailed, setSettingsRecoveryFailed] = useState(false);
   const [extensions, setExtensions] = useState<PluginScenicThemesDestinationMeta[]>([]);
   const [activeExtension, setActiveExtension] = useState<PluginScenicThemesDestinationMeta | null>(null);
+  const [learnedMemoryOpen, setLearnedMemoryOpen] = useState(false);
   const seenSettingsTabNonce = useRef(settingsTabNonce);
   // setSettingsTab means "show this built-in category", even when the tab id
   // does not change. Dismiss a plugin page before paint; an anchor-only deep
@@ -460,6 +462,47 @@ export function SettingsPage() {
             </div>
           )}
 
+              {settings && (
+                <SettingsCard title={t("settings.learnedMemory")}>
+                <SettingsRow
+                  title={t("settings.learnedMemoryRead")}
+                  description={t("settings.learnedMemoryReadDesc")}
+                >
+                  <SettingsToggle
+                    checked={settings.learnedMemoryRead !== false}
+                    label={t("settings.learnedMemoryRead")}
+                    onChange={() =>
+                      void saveSettings({ learnedMemoryRead: settings.learnedMemoryRead === false })
+                    }
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  title={t("settings.learnedMemoryExtraction")}
+                  description={t("settings.learnedMemoryExtractionDesc")}
+                >
+                  <SettingsToggle
+                    checked={false}
+                    label={t("settings.learnedMemoryExtraction")}
+                    disabled
+                    onChange={() => {}}
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  title={t("settings.learnedMemoryManager")}
+                  description={t("settings.learnedMemoryManagerDesc")}
+                >
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setLearnedMemoryOpen(true)}
+                  >
+                    {t("settings.learnedMemoryOpen")}
+                  </Button>
+                </SettingsRow>
+              </SettingsCard>
+              )}
+
           {tab === "ai" && settings && (
             <div className="settings-stack">
               <SettingsCard title={t("settings.permissions")}>
@@ -648,6 +691,13 @@ export function SettingsPage() {
           </div>
         </div>
       </div>
+      {learnedMemoryOpen ? (
+        <LearnedMemoryDialog
+          scope="user"
+          onClose={() => setLearnedMemoryOpen(false)}
+          onError={(error) => console.warn("learned memory request failed", error)}
+        />
+      ) : null}
     </div>
   );
 }

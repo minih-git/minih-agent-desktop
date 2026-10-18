@@ -17,7 +17,12 @@ import { todoWriteDescription, todoWriteParameters } from "./todo-tool.js";
 import { createJevClassifierTool } from "./jev-classifier-tool.js";
 import { scheduledToolParameters, scheduledToolDescriptions } from "./scheduled-tools.js";
 import { sessionToolParameters, sessionToolDescriptions } from "./session-tools.js";
-import { memoryToolParameters, memoryToolDescriptions } from "./memory-tools.js";
+import {
+  MEMORY_REMEMBER_TOOL_NAME,
+  memoryReadToolNames,
+  memoryToolParameters,
+  memoryToolDescriptions,
+} from "./memory-tools.js";
 import { withPiFileOpToolNames } from "./pi-file-ops.js";
 import { remoteMutationIdentity } from "./remote-workspace.js";
 import { randomUUID } from "node:crypto";
@@ -3916,11 +3921,17 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       // Plan or Goal turn must not hand work to another Agent.
       tools.push(...Object.keys(sessionToolParameters));
     }
-    // Recall reads earlier conversations and learned memory. It is read-only
-    // and on-demand, so every mode may use it: a Plan or Goal turn reads the
-    // same frozen index this session started with. Turning reading off in
-    // Settings removes both tools and the section they serve.
-    if (this.learnedMemoryRead) tools.push(...Object.keys(memoryToolParameters));
+    // Recall reads earlier conversations and learned memory, and the remember
+    // write stores a note the user asked for. Reading is read-only and
+    // on-demand, so every mode may use it: a Plan or Goal turn reads the same
+    // frozen index this session started with. Writing is Agent-only, because a
+    // contract negotiation is not the place to change durable memory. Turning
+    // reading off in Settings removes all three tools and the section they
+    // serve.
+    if (this.learnedMemoryRead) {
+      tools.push(...memoryReadToolNames);
+      if (this.mode === "agent") tools.push(MEMORY_REMEMBER_TOOL_NAME);
+    }
     const builtins = tools.map(exec);
     const jevTools: AgentTool[] =
       this.mode === "agent" && this.jevApiKey
@@ -4108,7 +4119,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       ASK_TOOL_NAME,
       CONTEXT_COMPACTION_TOOL_NAME,
       SUBMIT_TOOL_NAMES[kind],
-      ...Object.keys(memoryToolParameters),
+      ...memoryReadToolNames,
     ]).has(name);
   }
 

@@ -15,6 +15,7 @@ inspectable while still making everyday coding work feel direct.
 |---|---|
 | See what the app looks like | [Screens](/guide/screenshots) |
 | Run recurring local tasks | [Scheduled tasks](/guide/automations) |
+| Teach the agent what to remember | [Learned memory](/guide/memory) |
 | Add an MCP catalog and its key | [MCP market](/guide/mcp-market) |
 | Understand what is shipped | [Product scope](/spec/01-product/01-product-scope) |
 | Learn how the system fits together | [Architecture](/spec/02-architecture/01-architecture) |

@@ -117,11 +117,13 @@ export const SUBAGENT_INHERIT_DENY_TOOLS: readonly string[] = [
   "asktool",
   "new_context",
   "ToolSearch",
-  // Recall reads the user's own history and learned notes. A delegate has no
-  // user and receives no learned memory in its prompt, so it must not read the
-  // session's either (ADR agent-long-term-memory §5).
+  // Learned memory belongs to the user, not to a delegate: a delegate has no
+  // user, receives no learned memory in its prompt, and cannot cite one either,
+  // so it must not read the session's history or notes, and must not write new
+  // ones (ADR agent-long-term-memory §3 and §5).
   "SessionHistorySearch",
   "MemorySearch",
+  "MemoryRemember",
 ];
 
 /**

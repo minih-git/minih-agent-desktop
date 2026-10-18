@@ -18809,3 +18809,83 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
 - **Acceptance**: `apps/desktop/test/subagent-roster.test.mjs` (roster model, including a delegate appearing once with its settled status), `apps/desktop/test/subagent-roster-ui.test.mjs` (locale copy and detail merge), and `pnpm test:e2e:subagent-roster` pass. The E2E renders the real roster and detail tab in Electron and asserts a settled row updates in place, a stored delegation opens its conversation while the main transcript is unchanged, a failed read shows retry, and many rows scroll inside the height cap.
 - **Milestone**: M5.
 - **Status**: Implemented and covered by the three suites above; the real-device walk-through is Draft.
+
+### E2E-MEMORY-explicit-remember-reaches-next-session
+
+- **Preconditions**: A real host-core binary, a temporary data directory, one
+  registered project, and no model, provider, or network call. `tools.execute`
+  is driven directly, which is the gate the runtime's calls pass through, with
+  `defaultPermissionMode` set to `ask` so the write's card is visible.
+- **Steps**:
+  1. Open a turn in a session and append the user message that states a
+     preference.
+  2. Call `MemoryRemember({ content, kind: "preference" })` and answer the
+     permission card it raises.
+  3. Read `memory.index` for the project.
+- **Expected**: The result stores one `active` entry with a project scope, a
+  `duplicate: false` reply, and a note saying it applies from the next session.
+  The card was medium risk and named the action. The project's index now carries
+  exactly that entry, which is the snapshot the next session starts from.
+- **Specs linked**: `03-runtime/03-tools-and-permissions.md` (learned memory),
+  `03-runtime/06-host-rpc-protocol.md` (`tools.execute` / `MemoryRemember`), ADR
+  agent-long-term-memory §3.1.
+- **Acceptance criterion**: A user can ask the agent to remember something and
+  the next session starts with it.
+- **Milestone**: M3.
+- **Status**: Automated — `pnpm test:e2e:memory`
+  (`scripts/e2e-memory-remember.mjs`).
+
+### E2E-MEMORY-mid-session-write-keeps-runtime
+
+- **Preconditions**: The same harness as above.
+- **Steps**:
+  1. Remember a note inside a running turn.
+  2. Read `memory.index` for the same project in the same session.
+  3. Read `memory.list` for the project.
+- **Expected**: The write is durable immediately — `memory.list` returns it — and
+  the index the session started from is not rebuilt into the running prompt: the
+  entry applies from the next session. Nothing about the running turn changes,
+  so a write never retires the runtime.
+- **Specs linked**: `03-runtime/02-agent-runtime.md` §7.4 (the index is frozen
+  for the runtime's lifetime), ADR agent-long-term-memory §5.
+- **Acceptance criterion**: Writing memory mid-session neither loses the note nor
+  disturbs the running prompt.
+- **Milestone**: M3.
+- **Status**: Automated — `pnpm test:e2e:memory`.
+
+### E2E-MEMORY-deleted-memory-stays-forgotten
+
+- **Preconditions**: The same harness as above.
+- **Steps**:
+  1. Remember a note.
+  2. Delete it through `memory.delete`.
+  3. Read `memory.index` and `memory.list`.
+  4. Ask to remember the same content again in the same turn.
+- **Expected**: After the delete the note is gone from both reads. Asking again
+  in so many words is the explicit request that clears the tombstone, so the new
+  entry is stored with a new id; the same content is never resurrected by the
+  write path on its own.
+- **Specs linked**: `03-runtime/06-host-rpc-protocol.md` (learned memory), ADR
+  agent-long-term-memory §6.
+- **Acceptance criterion**: Forgetting is a host guarantee, and only an explicit
+  user request reverses it.
+- **Milestone**: M3.
+- **Status**: Automated — `pnpm test:e2e:memory`.
+
+### E2E-MEMORY-project-scope-isolation
+
+- **Preconditions**: Two registered projects and the same harness.
+- **Steps**:
+  1. Remember a note in the first project.
+  2. Read `memory.index` for the second project.
+  3. Remember a different note in the second project, then call `MemorySearch`
+     from the first project's session.
+- **Expected**: The second project's index never carries the first note, and the
+  first project's search never returns the second note. Each remember call wrote
+  its own project's scope even though no argument named a project.
+- **Specs linked**: `03-runtime/03-tools-and-permissions.md`, ADR
+  agent-long-term-memory §2 (scope identity) and §3.
+- **Acceptance criterion**: One project's learned memory is invisible from
+  another, with no path argument able to redirect it.
+- **Milestone**: M3.
+- **Status**: Automated — `pnpm test:e2e:memory`.

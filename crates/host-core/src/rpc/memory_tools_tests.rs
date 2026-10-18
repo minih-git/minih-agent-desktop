@@ -9,20 +9,24 @@ use crate::db::{canonical_project_path, Database};
 use crate::state::AppState;
 use crate::tools::ToolsExecuteParams;
 
-fn open() -> (tempfile::TempDir, AppState) {
+#[cfg(test)]
+#[path = "memory_tools_remember_tests.rs"]
+mod remember_tests;
+
+pub(super) fn open() -> (tempfile::TempDir, AppState) {
     let dir = tempfile::tempdir().unwrap();
     let state = AppState::open(dir.path()).unwrap();
     (dir, state)
 }
 
 /// A real directory, because project paths are canonicalized on the way in.
-fn project(dir: &tempfile::TempDir, name: &str) -> String {
+pub(super) fn project(dir: &tempfile::TempDir, name: &str) -> String {
     let path = dir.path().join(name);
     std::fs::create_dir_all(&path).unwrap();
     canonical_project_path(path.to_str().unwrap()).unwrap()
 }
 
-fn session(db: &Database, project_path: &str, title: &str) -> String {
+pub(super) fn session(db: &Database, project_path: &str, title: &str) -> String {
     crate::sessions::create_session(
         db,
         Some(title.to_string()),
@@ -48,7 +52,7 @@ fn message(db: &Database, session_id: &str, id: &str, text: &str) {
         .unwrap();
 }
 
-fn params(session_id: &str, tool_name: &str, args: Value) -> ToolsExecuteParams {
+pub(super) fn params(session_id: &str, tool_name: &str, args: Value) -> ToolsExecuteParams {
     serde_json::from_value(json!({
         "sessionId": session_id,
         "turnId": null,
@@ -67,7 +71,7 @@ fn call(state: &AppState, session_id: &str, tool_name: &str, args: Value) -> Val
     result.content
 }
 
-fn error_code(content: &Value) -> String {
+pub(super) fn error_code(content: &Value) -> String {
     content["code"].as_str().unwrap_or_default().to_string()
 }
 

@@ -1,6 +1,7 @@
 import { useChatSessionCapability } from "../../../hooks/use-chat-session-capability";
 import { SubagentStopButton } from "./SubagentStopButton";
 import { PlanHistoryCard } from "./PlanHistoryCard";
+import { MemoryRememberReceipt } from "./MemoryRememberReceipt";
 import { planSubmission } from "../../../lib/plan-history";
 import { GeneratedImages } from "./GeneratedImages";
 import "../../../styles/generated-images.css";
@@ -173,6 +174,11 @@ export const ToolRow = memo(function ToolRow(props: ToolRowProps) {
   const proposal = planSubmission(message);
   if (proposal && variant === "default" && message.toolStatus !== "denied") {
     return <PlanHistoryCard message={message} proposal={proposal} onUserInteraction={props.onUserInteraction} />;
+  }
+  // A saved memory is something the user keeps, so it is a receipt rather than
+  // a generic call row: what was written, where it applies, and Edit/Undo.
+  if (message.toolName === "MemoryRemember" && variant === "default") {
+    return <MemoryRememberReceipt message={message} />;
   }
   const hostRow = <HostToolRow {...props} />;
   return cardEntry ? (
