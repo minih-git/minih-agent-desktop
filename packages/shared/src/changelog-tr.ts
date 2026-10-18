@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.21.2",
+    date: "2026-10-18",
+    highlights: [
+      "Uygulamayı kapatmak, çalışan bir görevi artık tamamlandı olarak bildirmez: kesilen tur durduruldu olarak kaydedilir, kısmi yanıtı korunur ve tamamlanma bildirimi gönderilmez; uygulamayı yeniden açtığınızda gerçekte ne olduğunu görürsünüz.",
+    ],
+  },
+  {
     version: "0.21.1",
     date: "2026-10-18",
     highlights: [

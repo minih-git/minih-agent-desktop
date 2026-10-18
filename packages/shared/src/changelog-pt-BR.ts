@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "0.21.2",
+    date: "2026-10-18",
+    highlights: [
+      "Fechar o aplicativo não marca mais uma tarefa em execução como concluída: o turno interrompido é salvo como parado, mantém a resposta parcial e não envia notificação de conclusão, então ao reabrir o aplicativo você vê o que realmente aconteceu.",
+    ],
+  },
+  {
     version: "0.21.1",
     date: "2026-10-18",
     highlights: [

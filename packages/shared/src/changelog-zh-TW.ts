@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhTWEntries: ChangelogEntry[] = [
   {
+    version: "0.21.2",
+    date: "2026-10-18",
+    highlights: [
+      "關掉應用不再把正在執行的任務回報為已完成：被中斷的回合記為已停止，保留已產生的部分回覆，也不再產生完成通知，重開應用看到的就是實際結果。",
+    ],
+  },
+  {
     version: "0.21.1",
     date: "2026-10-18",
     highlights: [

@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "0.21.2",
+    date: "2026-10-18",
+    highlights: [
+      "Fermer l'application ne présente plus une tâche en cours comme terminée : le tour interrompu est enregistré comme arrêté, conserve sa réponse partielle et n'envoie aucune notification d'achèvement ; en rouvrant l'application, vous voyez ce qui s'est réellement passé.",
+    ],
+  },
+  {
     version: "0.21.1",
     date: "2026-10-18",
     highlights: [

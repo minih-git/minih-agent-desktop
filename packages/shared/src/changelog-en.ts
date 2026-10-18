@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.21.2",
+    date: "2026-10-18",
+    highlights: [
+      "Closing the app no longer reports a running task as finished: the interrupted turn is saved as stopped, keeps its partial reply, and sends no completion notification, so reopening the app shows what actually happened.",
+    ],
+  },
+  {
     version: "0.21.1",
     date: "2026-10-18",
     highlights: [

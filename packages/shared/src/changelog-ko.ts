@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const koEntries: ChangelogEntry[] = [
   {
+    version: "0.21.2",
+    date: "2026-10-18",
+    highlights: [
+      "앱을 종료해도 실행 중이던 작업이 완료된 것으로 표시되지 않습니다: 중단된 턴은 중지됨으로 저장되고 생성된 부분 응답을 유지하며 완료 알림을 보내지 않으므로, 앱을 다시 열면 실제로 일어난 일을 그대로 볼 수 있습니다.",
+    ],
+  },
+  {
     version: "0.21.1",
     date: "2026-10-18",
     highlights: [

@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "0.21.2",
+    date: "2026-10-18",
+    highlights: [
+      "Cerrar la aplicación ya no marca una tarea en ejecución como finalizada: el turno interrumpido se guarda como detenido, conserva su respuesta parcial y no envía ninguna notificación de finalización, así que al reabrir la aplicación ves lo que realmente ocurrió.",
+    ],
+  },
+  {
     version: "0.21.1",
     date: "2026-10-18",
     highlights: [

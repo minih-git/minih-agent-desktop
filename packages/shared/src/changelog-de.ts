@@ -2,6 +2,13 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.21.2",
+    date: "2026-10-18",
+    highlights: [
+      "Das Schließen der App meldet eine laufende Aufgabe nicht mehr als abgeschlossen: Der unterbrochene Durchlauf wird als gestoppt gespeichert, behält seine Teilantwort und erzeugt keine Abschlussbenachrichtigung – nach dem erneuten Öffnen sehen Sie, was tatsächlich passiert ist.",
+    ],
+  },
+  {
     version: "0.21.1",
     date: "2026-10-18",
     highlights: [
