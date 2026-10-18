@@ -334,6 +334,14 @@ Every change follows this sequence. Steps may be iterated if the implementation 
 - Development-time iteration remains risk-based: an E2E run on a stale request
   branch may be used for debugging, but only a run after incorporating
   `origin/main` satisfies this policy.
+- `pnpm check:fast`, installed as the `.githooks/pre-push` hook by
+  `pnpm hooks:install`, is an optional fast gate over the deterministic static
+  half of `CI` (workspace builds, typecheck, lint, architecture budgets, agent
+  policy anchors, token contrast, Rust formatting). It is not the full suite:
+  `pnpm check:fast -- --full` adds local unit tests, bundles and Rust checks,
+  but neither mode replaces required task-candidate E2E or cross-platform CI.
+  Missing executables are reported as incomplete, not passed; the optional
+  hook still allows that push. `PI_SKIP_PREPUSH=1` explicitly bypasses one push.
 - If the environment cannot run a required suite, record the suite, reason,
   alternative validation, and remaining risk as `NOT RUN`. The branch push and
   PR/MR may proceed with that record, but the gate is not satisfied and
