@@ -12,8 +12,8 @@ import { formatDuration, formatRelativeMoment, formatScheduleClock } from "./sch
 import { runDurationMs } from "./scheduled-runs";
 import { cadenceHasClock, cadenceLabel, RUN_STATUS_I18N_KEYS } from "./scheduled-labels";
 
-function RunGlyph({ run }: { run: ScheduledTaskRun }) {
-  switch (run.status) {
+function RunGlyph({ status }: { status: ScheduledTaskRun["status"] }) {
+  switch (status) {
     case "completed":
       return <IconCircleCheck size={13} />;
     case "error":
@@ -31,6 +31,7 @@ function RunGlyph({ run }: { run: ScheduledTaskRun }) {
 export function ScheduledTaskRail({
   tasks,
   latestRuns,
+  liveTaskIds,
   selectedTaskId,
   now,
   locale,
@@ -38,6 +39,8 @@ export function ScheduledTaskRail({
 }: {
   tasks: ScheduledTask[];
   latestRuns: Map<string, ScheduledTaskRun>;
+  /** Tasks whose newest run's conversation is executing a follow-up turn. */
+  liveTaskIds: ReadonlySet<string>;
   selectedTaskId: string | null;
   now: number;
   locale: string;
@@ -57,10 +60,12 @@ export function ScheduledTaskRail({
         {tasks.map((task) => {
           const selected = task.id === selectedTaskId;
           const latest = latestRuns.get(task.id) ?? null;
-          const duration = runDurationMs(latest);
+          const live = liveTaskIds.has(task.id);
+          const status = live ? "running" : (latest?.status ?? null);
+          const duration = live ? null : runDurationMs(latest);
           const clock = cadenceHasClock(task.cadence) ? formatScheduleClock(task.schedule) : null;
           const cadence = cadenceLabel(t, task);
-          const running = latest?.status === "running";
+          const running = status === "running";
           return (
             <li key={task.id}>
               <button
@@ -84,11 +89,11 @@ export function ScheduledTaskRail({
                   <IconClock size={12} aria-hidden />
                   {clock ? `${cadence} · ${clock}` : cadence}
                 </span>
-                {latest ? (
-                  <span className={cx("scheduled-task-last", `is-${latest.status}`)}>
-                    <RunGlyph run={latest} />
+                {latest && status ? (
+                  <span className={cx("scheduled-task-last", `is-${status}`)}>
+                    <RunGlyph status={status} />
                     <span className="scheduled-task-last-text">
-                      {t(RUN_STATUS_I18N_KEYS[latest.status])}
+                      {t(RUN_STATUS_I18N_KEYS[status])}
                       {" · "}
                       {formatRelativeMoment(latest.startedAt, now, locale)}
                       {duration === null ? "" : ` · ${formatDuration(duration)}`}

@@ -27,8 +27,19 @@ export function ScheduledPage() {
   const [editor, setEditor] = useState<ScheduledTask | "new" | null>(null);
   const workspace = useScheduledWorkspace((message) => showToast(message, { variant: "error" }));
   const locale = i18n.resolvedLanguage ?? i18n.language;
-  const { tasks, projects, selectedTask, selectedTaskId, runs, latestRuns, selectedRunId, busy, loaded, error } =
-    workspace;
+  const {
+    tasks,
+    projects,
+    selectedTask,
+    selectedTaskId,
+    runs,
+    latestRuns,
+    liveTaskIds,
+    selectedRunId,
+    busy,
+    loaded,
+    error,
+  } = workspace;
 
   // Remember where the reader came from: the conversation offers the way back,
   // and this page restores the same task and the same run.
@@ -109,6 +120,7 @@ export function ScheduledPage() {
             <ScheduledTaskRail
               tasks={tasks}
               latestRuns={latestRuns}
+              liveTaskIds={liveTaskIds}
               selectedTaskId={selectedTaskId}
               now={now}
               locale={locale}
@@ -120,6 +132,7 @@ export function ScheduledPage() {
                 runs={runs}
                 selectedRunId={selectedRunId}
                 running={workspace.taskIsRunning(selectedTask.id)}
+                liveFollowUp={liveTaskIds.has(selectedTask.id)}
                 busy={busy}
                 now={now}
                 locale={locale}

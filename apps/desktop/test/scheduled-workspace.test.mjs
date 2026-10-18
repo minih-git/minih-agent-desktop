@@ -178,12 +178,12 @@ test("the task column reports each task's own last outcome", async () => {
     const html = await render(server, "/src/features/scheduled/ScheduledTaskRail.tsx", "ScheduledTaskRail", {
       tasks: [TASK_A, TASK_B],
       latestRuns: new Map([["task-a", RUN_FAILED]]),
+      liveTaskIds: new Set(),
       selectedTaskId: "task-a",
       now: NOW,
       locale: "en",
       onSelect() {},
     });
-
     assert.match(html, /Nightly dependency check/);
     assert.match(html, /Daily · 09:05/, "cadence and its clock share one line");
     assert.match(html, /Failed/, "the failing task reports its own outcome");
@@ -203,6 +203,7 @@ test("the task page reads facts, history, and the selected run in place", async 
       runs: [RUN_FAILED, RUN_COMPLETED],
       selectedRunId: RUN_FAILED.id,
       running: false,
+      liveFollowUp: false,
       busy: false,
       now: NOW,
       locale: "en",
@@ -276,6 +277,101 @@ test("the task page reads facts, history, and the selected run in place", async 
   });
 });
 
+test("a follow-up turn in the newest run's conversation shows the task running", async () => {
+  // The run ledger only records admitted runs, so continuing a run's
+  // conversation leaves its stored status terminal. The renderer's live turn
+  // state is what the task must report instead of a stale "Completed".
+  await withVite(async (server) => {
+    const runs = await server.ssrLoadModule("/src/features/scheduled/scheduled-runs.ts");
+    assert.equal(
+      runs.taskHasLiveTurn(RUN_COMPLETED, { "session-completed": true }),
+      true,
+      "a live turn on the run's conversation is the task's live state",
+    );
+    assert.equal(runs.taskHasLiveTurn(RUN_COMPLETED, {}), false);
+    assert.equal(
+      runs.taskHasLiveTurn({ ...RUN_COMPLETED, sessionId: null }, { "session-completed": true }),
+      false,
+      "a run without a conversation cannot be live",
+    );
+    assert.equal(runs.taskHasLiveTurn(null, { "session-completed": true }), false);
+
+    const rail = await render(server, "/src/features/scheduled/ScheduledTaskRail.tsx", "ScheduledTaskRail", {
+      tasks: [TASK_A],
+      latestRuns: new Map([["task-a", RUN_COMPLETED]]),
+      liveTaskIds: new Set(["task-a"]),
+      selectedTaskId: "task-a",
+      now: NOW,
+      locale: "en",
+      onSelect() {},
+    });
+    assert.match(rail, /scheduled-task-live/, "the row keeps its running indicator");
+    assert.ok(rail.includes("Running / awaiting input"), "the row's outcome line reads as running");
+    assert.doesNotMatch(rail, /Completed/, "a settled outcome is not reported while the task is live");
+
+    const idleRail = await render(
+      server,
+      "/src/features/scheduled/ScheduledTaskRail.tsx",
+      "ScheduledTaskRail",
+      {
+        tasks: [TASK_A],
+        latestRuns: new Map([["task-a", RUN_COMPLETED]]),
+        liveTaskIds: new Set(),
+        selectedTaskId: "task-a",
+        now: NOW,
+        locale: "en",
+        onSelect() {},
+      },
+    );
+    assert.doesNotMatch(idleRail, /scheduled-task-live/, "a settled task has no live indicator");
+
+    const props = {
+      task: TASK_A,
+      runs: [RUN_COMPLETED],
+      selectedRunId: RUN_COMPLETED.id,
+      running: true,
+      liveFollowUp: true,
+      busy: false,
+      now: NOW,
+      locale: "en",
+      onSelectRun() {},
+      onOpenSession() {},
+      onRunNow() {},
+      onEdit() {},
+      onToggleEnabled() {},
+      onDelete() {},
+      providerName: "Fixture provider",
+    };
+    const detail = await render(
+      server,
+      "/src/features/scheduled/ScheduledTaskDetail.tsx",
+      "ScheduledTaskDetail",
+      props,
+    );
+    assert.ok(detail.includes("Running / awaiting input"), "the task page reports the live turn");
+    const contentCard = detail.slice(detail.indexOf('id="scheduled-run-content"'));
+    assert.ok(contentCard.includes("Running / awaiting input"), "the run's content header follows it");
+    assert.doesNotMatch(contentCard, /42s/, "a live run has no settled duration");
+    assert.doesNotMatch(detail, /PROVIDER_ERROR/, "no stale failure code is shown as live");
+  });
+});
+
+test("the workspace overlays live follow-up turns onto task rows", async () => {
+  const source = await readFile(
+    new URL("../src/features/scheduled/use-scheduled-workspace.ts", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    source.includes("useAppStore((state) => state.runningSessions)"),
+    "the workspace reads the renderer's per-session turn state",
+  );
+  assert.ok(source.includes("taskHasLiveTurn(run, runningSessions)"));
+  assert.ok(
+    source.includes("taskIsRunning(latestPerTaskRuns, taskId) || liveTurnTaskIds.has(taskId)"),
+    "both an in-flight ledger row and a live follow-up turn read as running",
+  );
+});
+
 test("a run with no stored transcript says so instead of showing an empty pane", async () => {
   await withVite(async (server) => {
     const html = await render(
@@ -333,13 +429,15 @@ test("a run's transcript follows the run, not just its session", async () => {
     new URL("../src/features/scheduled/ScheduledRunTranscript.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(
-    source,
-    /\}, \[read, run\.status, run\.endedAt\]\);/,
-    "a run that finished re-reads its transcript",
+  assert.ok(
+    source.includes("}, [read, run.status, run.endedAt, live]);"),
+    "a run that finished re-reads its transcript, and a live follow-up keeps it followed",
   );
-  assert.match(source, /run\.status !== "running"/, "an in-flight run keeps following it");
-  assert.match(source, /revision\.current\+\+/, "and a late response cannot overwrite a newer read");
+  assert.ok(
+    source.includes("(!live && run.status !== \"running\")"),
+    "an in-flight run or a live follow-up turn keeps following it",
+  );
+  assert.ok(source.includes("revision.current++"), "and a late response cannot overwrite a newer read");
 });
 
 const TASK_INTERVAL = {
@@ -401,6 +499,7 @@ test("an interval task states its own span, never a clock", async () => {
     const rail = await render(server, "/src/features/scheduled/ScheduledTaskRail.tsx", "ScheduledTaskRail", {
       tasks: [TASK_INTERVAL, TASK_B],
       latestRuns: new Map([["task-interval", RUN_COMPLETED]]),
+      liveTaskIds: new Set(),
       selectedTaskId: "task-interval",
       now: NOW,
       locale: "en",

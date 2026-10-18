@@ -31,6 +31,7 @@ function RunStatusGlyph({ status }: { status: ScheduledTaskRun["status"] }) {
 export function ScheduledRunHistory({
   runs,
   selectedRunId,
+  liveRunId,
   busy,
   locale,
   onSelectRun,
@@ -38,6 +39,8 @@ export function ScheduledRunHistory({
 }: {
   runs: ScheduledTaskRun[];
   selectedRunId: string | null;
+  /** The newest run whose conversation is executing a follow-up turn. */
+  liveRunId: string | null;
   busy: boolean;
   locale: string;
   onSelectRun: (runId: string) => void;
@@ -60,12 +63,14 @@ export function ScheduledRunHistory({
           <ol className="scheduled-runs">
             {runs.map((run) => {
               const selected = run.id === selectedRunId;
-              const duration = runDurationMs(run);
+              const live = run.id === liveRunId && run.status !== "running";
+              const status = live ? "running" : run.status;
+              const duration = live ? null : runDurationMs(run);
               const sessionId = run.sessionId;
               const meta = [
                 formatMoment(run.startedAt, locale),
                 duration === null ? "" : formatDuration(duration),
-                run.errorCode ?? "",
+                live ? "" : (run.errorCode ?? ""),
               ].filter(Boolean);
               return (
                 <li key={run.id} className={cx("scheduled-run", selected && "is-selected")}>
@@ -75,11 +80,11 @@ export function ScheduledRunHistory({
                     aria-current={selected ? "true" : undefined}
                     onClick={() => onSelectRun(run.id)}
                   >
-                    <span className={cx("scheduled-run-glyph", `is-${run.status}`)} aria-hidden>
-                      <RunStatusGlyph status={run.status} />
+                    <span className={cx("scheduled-run-glyph", `is-${status}`)} aria-hidden>
+                      <RunStatusGlyph status={status} />
                     </span>
                     <span className="scheduled-run-body">
-                      <span className="scheduled-run-state">{t(RUN_STATUS_I18N_KEYS[run.status])}</span>
+                      <span className="scheduled-run-state">{t(RUN_STATUS_I18N_KEYS[status])}</span>
                       <span className="scheduled-run-meta">{meta.join(" · ")}</span>
                     </span>
                     <IconChevronDown
