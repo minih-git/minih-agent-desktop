@@ -347,6 +347,12 @@ fn relocate_database(roots: &Roots) -> Result<()> {
         // Isolated-session worktrees live under the data directory (ADR 0329);
         // host-core repairs git's back-links on the next start.
         ("worktrees", "path", false),
+        // A learned-memory project scope is keyed by its canonical project path
+        // (ADR agent-long-term-memory), so a moved data directory must re-key it
+        // alongside the projects it belongs to.
+        ("memory_entries", "scope_key", false),
+        ("memory_tombstones", "scope_key", false),
+        ("memory_session_state", "scope_key", false),
     ] {
         if !column_exists(&transaction, table, column)? {
             continue;

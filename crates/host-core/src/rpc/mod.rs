@@ -1,5 +1,6 @@
 mod config_sync_rpc;
 mod easytier_rpc;
+mod memory_rpc;
 mod remote_tools;
 mod scheduled_rpc;
 mod scheduled_tools;
@@ -1802,6 +1803,10 @@ async fn handle_request(
     if method.starts_with("easytier.") {
         return easytier_rpc::handle(state, method, params).await;
     }
+    if method.starts_with("memory.") {
+        let st = state.lock().await;
+        return memory_rpc::handle(&st, method, params);
+    }
 
     match method {
         "tools.remoteComplete" | "tools.workspaceExecute" | "tools.workspaceAbort" => {
@@ -2141,6 +2146,11 @@ async fn handle_request(
                 .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
             st.db
                 .delete_project_memory(&path)
+                .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            // Learned memory of this project goes with it. A stored group's
+            // learned memory is keyed by the group id and stays with the group.
+            st.db
+                .delete_project_learned_memory(&path)
                 .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
             Ok(json!({ "removed": removed, "sessionsRemoved": sessions_removed }))
         }

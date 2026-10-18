@@ -36,6 +36,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = { version = "2.5", features = ["serde"] }
+unicode-normalization = "0.1"
 easytier = { git = "https://github.com/EasyTier/EasyTier.git", rev = "0ca2fde0fb607949d6bcc169342fd74fca51aa12", default-features = false, features = [
     "aes-gcm",
     "dhcp-ipv4",

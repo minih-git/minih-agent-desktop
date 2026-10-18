@@ -342,6 +342,16 @@ ADR 0285）。渲染进程除了一个标识徽章外看不到本地/远程之�
 | `LIVE_AUDIO_BACKPRESSURE` | 否 | PCM 或播放 credit 的有界容量已耗尽 |
 | `LIVE_EXECUTION_NOT_CONNECTED` | 否 | Provider 请求了当前不支持的函数/delegation 执行路径 |
 
+### 3.10 学习记忆
+
+学习记忆 RPC（规格 06 §4）把拒绝作为结果值返回（`{ rejected: { code, message } }`）
+而不是错误，因此下面两个冲突码是其中仅有的错误。两者都不会重复被拒内容。
+
+| code | 可重试 | 含义 |
+|---|---|---|
+| `MEMORY_REVISION_CONFLICT` | 否 | 学习记忆更新携带的 `revision` 已被其他写入者推进；已存储行保持不变 |
+| `MEMORY_DUPLICATE_CONTENT` | 否 | 恢复或编辑会使同一作用域内出现两条内容相同的存活记忆 |
+
 ## 4. 映射规则
 
 ### 主机 RPC 数字 → AppError.code

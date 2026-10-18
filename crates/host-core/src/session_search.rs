@@ -44,7 +44,9 @@ pub struct SearchPage {
 
 /// Unicode lowercase is shared with the renderer. A scalar function keeps
 /// short and non-ASCII queries literal without relying on SQLite's ASCII LIKE.
-fn register_contains(db: &Database) -> Result<()> {
+/// The learned-memory search registers the same function so both projections
+/// match text the same way.
+pub(crate) fn register_contains(db: &Database) -> Result<()> {
     db.conn().create_scalar_function(
         "pi_search_contains",
         2,

@@ -257,12 +257,15 @@ impl Database {
     }
 
     /// Delete a stored project group record together with its group-scoped
-    /// memory and instructions. The underlying project rows are left untouched;
-    /// callers remove those separately when appropriate.
+    /// memory, instructions, and learned memory. The underlying project rows are
+    /// left untouched; callers remove those separately when appropriate.
     pub fn delete_project_group_record(&self, id: &str) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
         self.kv_delete(GROUP_NAMESPACE, id)?;
         self.kv_delete(GROUP_MEMORY_NAMESPACE, id)?;
         self.kv_delete(GROUP_INSTRUCTIONS_NAMESPACE, id)?;
+        crate::memory::delete_learned_scope_tx(&tx, &crate::memory::MemoryScope::project(id))?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -462,6 +465,10 @@ impl Database {
             detached_paths,
             remote: None,
         };
+        // The group record and the learned memory that belonged to its roots
+        // become visible together: an upgrade must never leave entries keyed by a
+        // path the group now owns, and must never drop them either.
+        let tx = self.conn.unchecked_transaction()?;
         if current.legacy {
             // A legacy project may already have path-scoped memory. Merge the
             // memory of every selected legacy root into the new group so
@@ -498,8 +505,10 @@ impl Database {
                     }),
                 )?;
             }
+            crate::memory::rekey_learned_memory_to_group(&tx, &ordered, &group.id)?;
         }
         self.kv_set(GROUP_NAMESPACE, &group.id, &serde_json::to_value(&group)?)?;
+        tx.commit()?;
         Ok(group)
     }
 

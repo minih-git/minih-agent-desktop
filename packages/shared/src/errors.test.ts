@@ -31,6 +31,11 @@ describe("result helpers", () => {
     expect(ErrorCodes.COMMAND_SHELL_INVALID).toBe("COMMAND_SHELL_INVALID");
   });
 
+  it("registers the learned-memory host codes", () => {
+    expect(ErrorCodes.MEMORY_REVISION_CONFLICT).toBe("MEMORY_REVISION_CONFLICT");
+    expect(ErrorCodes.MEMORY_DUPLICATE_CONTENT).toBe("MEMORY_DUPLICATE_CONTENT");
+  });
+
   it("registers newly emitted runtime and Edit error codes", () => {
     const newlyLiveCodes = [
       "CONTEXT_COMPACTION_FAILED",
