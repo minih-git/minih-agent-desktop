@@ -35,9 +35,14 @@ test("the head copies the command, unsqueezed", () => {
     transcript,
     /const command = runRow\s*\?\s*getToolSummaryValue\(message\.toolName, message\.toolArgs\)/,
   );
-  // A one-line step row states the action only, so the command it used to show
-  // in the head moves into the opened body instead of disappearing.
-  assert.match(transcript, /hideSummaryArg: !dense,/);
+  // A one-line step row carries its content beside the action — the command
+  // after "Ran", the path after "Read" — so the line never reads as a bare
+  // verb, and the opened body must not echo what the head already says.
+  assert.match(transcript, /hideSummaryArg: true,/);
+  assert.match(
+    transcript,
+    /\{summary && identity\?\.kind !== "skill" && summary !== identity\?\.name \? \(/,
+  );
   assert.match(transcript, /onClick=\{\(\) => copy\(command\)\}/);
   assert.match(styles, /\.tool-row-head-copy \{[^}]*opacity: 0;/);
   // Hidden until hover, so tabbing to it has to bring it back.
@@ -90,6 +95,16 @@ test("the body is the output, with no card around it", () => {
   );
   // The cap survives the frame: a long build must not bury the transcript.
   assert.match(styles, /\.tool-row-content \{\s*max-height: 260px/);
+});
+
+test("a collapsed step row mounts no body, so steps keep one rhythm", () => {
+  // The dense clause exists so an opened one-line run row can show its command
+  // in the body. Mounted while collapsed, the empty body's own box read as a
+  // blank line between steps, so the row may render it only once opened.
+  assert.match(
+    transcript,
+    /\(blocks && blocks\.length > 0\) \|\| \(open && dense && runRow && Boolean\(command\)\)/,
+  );
 });
 
 test("the head fill covers the controls it now holds", () => {
