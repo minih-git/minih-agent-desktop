@@ -245,14 +245,25 @@ whole-filesystem transaction.
   credentials or query, at most three, validated at startup and applied by Main
   through `setFeedURL` only. The list is build-owned; no renderer message,
   setting, or runtime environment variable can extend it.
-- A mirror serves the same `latest*.yml` and artifacts as the GitHub Release, so
-  its manifest binds the hashes the client verifies. Until Windows packages are
-  code-signed, a configured mirror is a trust anchor for the Windows lane: a
-  release that configures one must control that host.
+- The router additionally publishes a public, credential-free accelerator list
+  (`GET <router origin>/api/desktop-update`), refreshed per TTL before a check.
+  Each `data.sources[].prefix` is validated with the same rules as a compiled
+  mirror and expanded into a generic feed base. A failed fetch is logged as a
+  warning and never blocks, delays, or fails the check, and the list is used
+  only when the brand's packaged feed is GitHub — a hungraim build makes no
+  router request. `MINIH_AGENT_UPDATE_SOURCES_URL` overrides the endpoint URL
+  for local or self-hosted gateway checks.
+- An accelerator serves the same `latest*.yml` and artifacts as the GitHub
+  Release, so its manifest binds the hashes the client verifies. Until Windows
+  packages are code-signed, a configured mirror or accelerator is a trust anchor
+  for the Windows lane: a release that configures one must control that host.
+  The version and hash anchor of an accelerated check therefore sit with the
+  accelerator; the official GitHub feed stays the last source and the canonical
+  artifact origin (D668).
 - A check that fails or times out moves to the next configured source, and a
   download that stops making progress is cancelled and retried once, before the
-  failure is reported. Neither path changes hash verification, and the packaged
-  GitHub feed is always tried first.
+  failure is reported. Neither path changes hash verification, and the official
+  GitHub feed is always the last source tried.
 - Update traffic follows Settings → Network: the updater's own Chromium
   partition is registered with the proxy module, so a proxy change reaches
   update requests without waiting for the next app start.

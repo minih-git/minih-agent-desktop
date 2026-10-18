@@ -316,9 +316,13 @@ curl -fsSL https://dl.example.com/minih/desktop/latest.yml | head
 node scripts/publish-update-mirror.mjs dist --dry-run   # prints the exact uploads
 ```
 
-客户端只在构建编译进了镜像时才会使用镜像；桌面端先尝试打包内置的 GitHub 源，记住给出响应
-的主机，并只在检查失败或下载停滞时回退（ADR 0022 修正案，D659）。Git 标签与 GitHub
-Releases 仍是权威工件来源——镜像绝不是发布 GitHub 未收到版本的地方。
+客户端只在构建编译进了镜像时才会使用镜像；它还会优先尝试路由器在
+`GET <router origin>/api/desktop-update` 下发的加速线路清单（D668）。顺序为：路由器加速
+线路、编译内置镜像，最后才是打包内置的 GitHub 源；桌面端记住给出响应的主机，并只在检查
+失败或下载停滞时回退（ADR 0022 修正案，D659 / D668）。加速检查从加速站读取 `latest*.yml`，
+因此该次检查的版本与哈希锚点位于该站；安装包仍按读到的 yml 中的 `sha512` 校验，Windows 与
+macOS 签名也仍然校验。Git 标签与 GitHub Releases 仍是权威工件来源——镜像或加速站绝不是
+发布 GitHub 未收到版本的地方。
 
 ### 4.7 GitHub Actions 中的 macOS 签名密钥
 

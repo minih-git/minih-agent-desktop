@@ -17,6 +17,7 @@ import {
 import { installInsecureEndpointNotice } from "./network-notice";
 import {
   APP_VERSION,
+  currentBrandProfile,
   IPC,
   IPC_WHITELIST,
   isActiveInProject,
@@ -44,6 +45,7 @@ import {
   AppUpdaterController,
   UPDATER_SESSION_PARTITION,
 } from "./updater";
+import { fetchRemoteUpdateSources } from "./update-source";
 import {
   WINDOW_MIN_HEIGHT,
   WINDOW_MIN_WIDTH,
@@ -248,6 +250,15 @@ const updater = new AppUpdaterController({
   currentVersion: APP_VERSION,
   isPackaged: !isDevelopmentBuild,
   getLocale: () => mainState.updaterLocale,
+  // Router-published update accelerators (ADR 0022 amendment). The URL is
+  // `<router origin>/api/desktop-update`; `MINIH_AGENT_UPDATE_SOURCES_URL`
+  // overrides it so a local or self-hosted gateway can be verified without
+  // repackaging. A brand whose packaged feed is generic (hungraim) keeps its
+  // own host and makes no router request at all.
+  loadRemoteUpdateSources:
+    currentBrandProfile().updateFeed.provider === "github"
+      ? fetchRemoteUpdateSources
+      : undefined,
   readUpdateSettings: async () => {
     const host = getHost();
     if (!host?.isAvailable()) throw new Error("host unavailable");

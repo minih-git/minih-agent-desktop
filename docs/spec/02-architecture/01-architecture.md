@@ -48,11 +48,13 @@ Minih-Agent-Desktop uses a layered desktop architecture:
 - process boot order
 
 Electron Main exclusively owns the update client and its ordered feed list — the
-packaged GitHub Releases target, plus any mirrors compiled into the build
-(`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`, D659 / ADR 0022). The renderer can
-request allowlisted operations and render typed state, but cannot supply a feed
-URL or access the updater directly. App updates do not pass through Rust
-host-core or the agent sidecar (D120 / ADR 0022).
+router-published accelerator list (`GET <router origin>/api/desktop-update`,
+refreshed per TTL and honored for a brand whose packaged feed is GitHub), any
+mirrors compiled into the build (`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`), and
+the packaged GitHub Releases target as the last source (D659 / D668 /
+ADR 0022). The renderer can request allowlisted operations and render typed
+state, but cannot supply a feed URL or access the updater directly. App updates
+do not pass through Rust host-core or the agent sidecar (D120 / ADR 0022).
 
 ### 3.2 UI (React)
 - session UX

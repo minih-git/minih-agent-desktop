@@ -49,11 +49,12 @@ Minih-Agent-Desktop 使用分层桌面架构：
 - 白名单内更新源的 check/download/install 生命周期
 - 处理启动顺序
 
-Electron Main 独占拥有更新客户端及其有序源列表——打包内置的 GitHub Releases
-目标，加上编译进构建的任何镜像（`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`，
-D659 / ADR 0022）。渲染器可以请求白名单内的操作并渲染类型化状态，但不能提供
-提要 URL，也不能直接访问更新器。应用程序更新不经过 Rust host-core 或 agent
-sidecar（D120 / ADR 0022）。
+Electron Main 独占拥有更新客户端及其有序源列表——路由器下发的加速线路清单
+（`GET <router origin>/api/desktop-update`，按 TTL 刷新，仅在打包源为 GitHub 的品牌
+上生效）、编译进构建的镜像（`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`），以及作为
+最后兜底的打包 GitHub Releases 目标（D659 / D668 / ADR 0022）。渲染器可以请求白名单
+内的操作并渲染类型化状态，但不能提供提要 URL，也不能直接访问更新器。应用程序更新
+不经过 Rust host-core 或 agent sidecar（D120 / ADR 0022）。
 
 ### 3. 2 用户界面（React）
 - 会话用户体验

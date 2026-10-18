@@ -19,6 +19,11 @@ class FakeUpdater extends EventEmitter {
   nextVersion = "0.16.1";
   downloadStarts = [];
   cancellations = [];
+  feeds = [];
+
+  setFeedURL(feed) {
+    this.feeds.push(feed);
+  }
 
   async checkForUpdates() {
     this.emit("checking-for-update");
@@ -49,8 +54,13 @@ class FakeUpdater extends EventEmitter {
   quitAndInstall() {}
 }
 
-function createController({ updater, settings = {}, persist = async () => {} }) {
-  const logger = { app: () => {} };
+function createController({
+  updater,
+  settings = {},
+  persist = async () => {},
+  logger = { app: () => {} },
+  ...overrides
+}) {
   const sent = [];
   const controller = new AppUpdaterController({
     logger,
@@ -61,9 +71,33 @@ function createController({ updater, settings = {}, persist = async () => {} }) 
     autoUpdater: updater,
     readUpdateSettings: async () => settings,
     persistDismissedVersion: persist,
+    ...overrides,
   });
   return { controller, sent };
 }
+
+const ACCELERATOR_FEED = {
+  provider: "generic",
+  url: "https://gh-proxy.org/https://github.com/minih-git/minih-agent-desktop/releases/latest/download",
+};
+
+const OFFICIAL_FEED = {
+  provider: "github",
+  owner: "minih-git",
+  repo: "minih-agent-desktop",
+};
+
+const ACCELERATOR_PAYLOAD = {
+  code: 0,
+  message: "success",
+  data: {
+    sources: [
+      { prefix: "https://gh-proxy.org/", label: "gh-proxy.org" },
+      { prefix: "https://ghfast.top/", label: "ghfast.top" },
+    ],
+    ttl_seconds: 3600,
+  },
+};
 
 test("dismissing an in-app update cancels its download and disables install on quit", async () => {
   const updater = new FakeUpdater();
@@ -118,5 +152,102 @@ test("a restored dismissal blocks that release and a newer release resumes autom
   assert.equal(updater.autoInstallOnAppQuit, true);
   assert.equal(controller.getState().dismissed, false);
   assert.deepEqual(persisted, [null]);
+  controller.dispose();
+});
+
+test("the router-published accelerator becomes the first source", async () => {
+  const updater = new FakeUpdater();
+  const { controller } = createController({
+    updater,
+    settings: { updatePreference: "manual" },
+    loadRemoteUpdateSources: async () => ACCELERATOR_PAYLOAD,
+  });
+
+  await controller.check();
+
+  assert.deepEqual(
+    updater.feeds,
+    [ACCELERATOR_FEED],
+    "the accelerator feed is applied before the check, not the official one",
+  );
+  assert.equal(controller.getState().feedHost, "gh-proxy.org");
+  assert.equal(controller.getState().availableVersion, "0.16.1");
+  controller.dispose();
+});
+
+test("a failed accelerator fetch still runs the check on the packaged source", async () => {
+  const updater = new FakeUpdater();
+  const logs = [];
+  const { controller } = createController({
+    updater,
+    settings: { updatePreference: "manual" },
+    logger: { app: (...args) => logs.push(args) },
+    loadRemoteUpdateSources: async () => {
+      throw new Error("router unreachable");
+    },
+  });
+
+  await controller.check();
+
+  assert.deepEqual(updater.feeds, [], "the packaged app-update.yml stays the feed");
+  assert.equal(controller.getState().feedHost, "github.com");
+  assert.equal(controller.getState().availableVersion, "0.16.1");
+  assert.ok(
+    logs.some(([scope, level]) => scope === "updater" && level === "warn"),
+    "the failed fetch is logged as a warning",
+  );
+  controller.dispose();
+});
+
+test("the accelerator list is requested once inside its published TTL", async () => {
+  const updater = new FakeUpdater();
+  let calls = 0;
+  const { controller } = createController({
+    updater,
+    settings: { updatePreference: "manual" },
+    loadRemoteUpdateSources: async () => {
+      calls += 1;
+      return ACCELERATOR_PAYLOAD;
+    },
+  });
+
+  await controller.check();
+  await controller.check();
+
+  assert.equal(calls, 1, "the TTL keeps the second check off the router");
+  assert.equal(controller.getState().feedHost, "gh-proxy.org");
+  controller.dispose();
+});
+
+test("withdrawing every accelerator restores the official GitHub feed", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"] });
+  const updater = new FakeUpdater();
+  let payload = ACCELERATOR_PAYLOAD;
+  const { controller } = createController({
+    updater,
+    settings: { updatePreference: "manual" },
+    loadRemoteUpdateSources: async () => payload,
+  });
+
+  await controller.check();
+  assert.deepEqual(
+    updater.feeds,
+    [ACCELERATOR_FEED],
+    "the check runs against the accelerator the router published",
+  );
+  assert.equal(controller.getState().feedHost, "gh-proxy.org");
+
+  // The router withdraws every accelerator, so the applied feed has to be
+  // revoked explicitly: a feed-less packaged source cannot do that.
+  payload = { code: 0, message: "success", data: { sources: [], ttl_seconds: 3600 } };
+  t.mock.timers.setTime(Date.now() + 3_600_001);
+  await controller.check();
+
+  assert.deepEqual(
+    updater.feeds,
+    [ACCELERATOR_FEED, OFFICIAL_FEED],
+    "the withdrawn accelerator is replaced by the official feed, not kept",
+  );
+  assert.equal(controller.getState().feedHost, "github.com");
   controller.dispose();
 });

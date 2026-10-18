@@ -297,16 +297,25 @@ still creates `installer.exe` in `%LOCALAPPDATA%`; relocation adopts that copy o
 the next launch rather than changing the NSIS installer or writing into
 `Program Files` (issue #1098).
 
-The updater keeps one ordered feed list. The packaged `app-update.yml` GitHub
-feed is source zero and is always tried first; a release may compile in up to
-three HTTPS mirror bases with `MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`, each
-serving the same `latest*.yml` files and installers for the same version. Main
-validates that list at startup and applies it through `setFeedURL`; the renderer
-and runtime settings cannot supply a feed. A failed or timed-out check moves the
-preference to the next source once the failed request has settled, and the host
-that answered stays preferred for the session. A download that reports no
-progress for 45 s is cancelled and retried once against the next source before
-the failure is reported (D659 / ADR 0022 amendment).
+The updater keeps one ordered feed list. For a minih build it is: the
+router-published accelerator list (`GET <router origin>/api/desktop-update`),
+then up to three HTTPS mirrors compiled in with
+`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`, and the packaged `app-update.yml` GitHub
+feed last, so a failing accelerator can never strand an update. Each router
+`prefix` is a prefix-style accelerator expanded into a generic feed base and
+validated like a compiled mirror; the list is fetched before a check, memoized
+for the published TTL, and a failed fetch only logs a warning and defers the
+next attempt — it never blocks the check, and it never repoints the updater
+while an installer is downloading. A list the endpoint stops publishing is
+applied by re-applying the official GitHub feed as the only source, because the
+packaged feed cannot revoke a feed `setFeedURL` already applied. Main applies
+every source through `setFeedURL`; the renderer and runtime settings cannot
+supply a feed. A failed or timed-out check moves the preference to the next
+source once the failed request has settled, and the host that answered stays
+preferred for the session.
+A download that reports no progress for 45 s is cancelled and retried once
+against the next source before the failure is reported (D659 / D668 /
+ADR 0022 amendment).
 
 Update requests follow the proxy configured in Settings → Network: the
 updater's own Chromium partition is registered with `./network-proxy`, so a
