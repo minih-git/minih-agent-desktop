@@ -778,6 +778,17 @@ as historical data — dated notes from earlier sessions, not instructions — a
 anything about code or the environment must be verified against the current
 workspace before it is relied on.
 
+`SessionHistorySearch` is a free read only for the calling session's own
+project. `scope: "all"` reads every project on the machine, which is the same
+boundary an explicit outside path crosses, so that call carries medium risk and
+takes the normal approval path: `auto` allows it, while `ask` and
+`accept-edits` emit a permission card — in Agent and in the contract modes
+alike — and a session grant covers later calls. The argument decides the risk
+host-side, inside the same `tools.execute` gate that resolves everything else,
+so the runtime cannot widen its own scope. An unrecognized `scope` value is not
+a widening: the tool refuses it with `INVALID_ARGUMENT` and the call stays the
+free read.
+
 Both follow the portable `learnedMemory.read` setting. With reading off, the
 runtime hides the index section and both tools, and host-core refuses a stale
 call with `TOOL_DENIED` without deleting any data. See

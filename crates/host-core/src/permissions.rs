@@ -71,6 +71,8 @@ pub struct PermissionRequestParams<'a> {
     pub args_preview: serde_json::Value,
     pub reason: &'a str,
     pub declared_risk: Option<&'a str>,
+    /// Risk this particular call carries when its arguments decide it.
+    pub effective_risk: Option<Risk>,
     pub command_shell_id: Option<&'a str>,
 }
 
@@ -81,6 +83,9 @@ pub struct PermissionEvaluationParams<'a> {
     pub permission_mode: &'a str,
     pub session_grants: &'a HashMap<String, Vec<String>>,
     pub declared_risk: Option<&'a str>,
+    /// Risk this particular call carries when its arguments decide it; the
+    /// registered tool risk stays the default.
+    pub effective_risk: Option<Risk>,
     pub requires_external_path_permission: bool,
     pub plan_safe_actions: Option<&'a [String]>,
 }
@@ -146,6 +151,16 @@ impl PermissionManager {
         }
     }
 
+    /// The risk one call actually carries. A tool's registered risk is its
+    /// default; a call whose arguments cross a boundary that default does not
+    /// cover passes its own — a recall read of every project rather than the
+    /// calling session's own.
+    pub fn call_risk(tool_name: &str, declared: Option<&str>, effective: Option<&Risk>) -> Risk {
+        effective
+            .cloned()
+            .unwrap_or_else(|| Self::tool_risk_with_declared(tool_name, declared))
+    }
+
     /// The shared contract-mode allowlist. Plan and Goal expose the same
     /// read/inspect core plus Bash; only their submit tool differs, and that one
     /// is a sidecar-side tool that never reaches this gate. `new_context` is
@@ -189,6 +204,7 @@ impl PermissionManager {
             permission_mode,
             session_grants,
             declared_risk: None,
+            effective_risk: None,
             requires_external_path_permission: false,
             plan_safe_actions: None,
         })
@@ -217,6 +233,7 @@ impl PermissionManager {
             permission_mode,
             session_grants,
             declared_risk,
+            effective_risk,
             requires_external_path_permission,
             plan_safe_actions,
         } = params;
@@ -261,7 +278,7 @@ impl PermissionManager {
             return None;
         }
 
-        let risk = Self::tool_risk_with_declared(tool_name, declared_risk);
+        let risk = Self::call_risk(tool_name, declared_risk, effective_risk.as_ref());
         if matches!(risk, Risk::Low) {
             return Some(PermissionDecision::AllowOnce);
         }
@@ -302,6 +319,7 @@ impl PermissionManager {
             args_preview,
             reason,
             declared_risk: None,
+            effective_risk: None,
             command_shell_id: None,
         })
     }
@@ -320,6 +338,7 @@ impl PermissionManager {
             args_preview,
             reason,
             declared_risk,
+            effective_risk,
             command_shell_id,
         } = params;
         let request_id = Uuid::new_v4().to_string();
@@ -328,7 +347,7 @@ impl PermissionManager {
             session_id: session_id.to_string(),
             tool_call_id: tool_call_id.to_string(),
             tool_name: tool_name.to_string(),
-            risk: Self::tool_risk_with_declared(tool_name, declared_risk),
+            risk: Self::call_risk(tool_name, declared_risk, effective_risk.as_ref()),
             args_preview: preview_value(&args_preview),
             reason: reason.to_string(),
             command_shell_id: command_shell_id.map(str::to_string),
@@ -665,6 +684,7 @@ mod tests {
                     permission_mode: mode,
                     session_grants: &no_grants(),
                     declared_risk: None,
+                    effective_risk: None,
                     requires_external_path_permission: true,
                     plan_safe_actions: None,
                 },
@@ -682,6 +702,7 @@ mod tests {
                 permission_mode: "auto",
                 session_grants: &no_grants(),
                 declared_risk: None,
+                effective_risk: None,
                 requires_external_path_permission: true,
                 plan_safe_actions: None,
             });
@@ -701,6 +722,7 @@ mod tests {
                 permission_mode: "ask",
                 session_grants: &grants,
                 declared_risk: None,
+                effective_risk: None,
                 requires_external_path_permission: true,
                 plan_safe_actions: None,
             });
@@ -748,6 +770,7 @@ mod tests {
                         permission_mode: mode,
                         session_grants: &no_grants(),
                         declared_risk: declared,
+                        effective_risk: None,
                         requires_external_path_permission: false,
                         plan_safe_actions: None,
                     });
@@ -817,6 +840,7 @@ mod tests {
                 permission_mode: "auto",
                 session_grants: &no_grants(),
                 declared_risk: None,
+                effective_risk: None,
                 requires_external_path_permission: false,
                 plan_safe_actions: None,
             });
@@ -831,6 +855,7 @@ mod tests {
                 permission_mode: "auto",
                 session_grants: &no_grants(),
                 declared_risk: None,
+                effective_risk: None,
                 requires_external_path_permission: false,
                 plan_safe_actions: Some(&empty),
             });
@@ -845,6 +870,7 @@ mod tests {
                 permission_mode: "auto",
                 session_grants: &no_grants(),
                 declared_risk: None,
+                effective_risk: None,
                 requires_external_path_permission: false,
                 plan_safe_actions: Some(&actions),
             });
@@ -957,31 +983,4 @@ mod session_messaging_tests {
 }
 
 #[cfg(test)]
-mod recall_tool_tests {
-    use super::*;
-
-    /// Reading earlier conversations and learned memory changes nothing, so it
-    /// is a free read in every mode — including the read-only contract modes,
-    /// where the session-start index points at `MemorySearch`.
-    #[test]
-    fn recall_reads_are_low_risk_and_allowed_in_every_mode() {
-        let manager = PermissionManager::default();
-        let grants = HashMap::new();
-        for tool in ["SessionHistorySearch", "MemorySearch"] {
-            assert!(
-                matches!(
-                    PermissionManager::tool_risk_with_declared(tool, None),
-                    Risk::Low
-                ),
-                "{tool} must stay a free read"
-            );
-            for mode in ["agent", "plan", "goal"] {
-                assert_eq!(
-                    manager.evaluate_auto_with_permission_mode("s", tool, mode, "ask", &grants),
-                    Some(PermissionDecision::AllowOnce),
-                    "{tool} must run without a card in {mode}"
-                );
-            }
-        }
-    }
-}
+mod recall_tool_tests;

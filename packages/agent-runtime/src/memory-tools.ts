@@ -22,7 +22,7 @@ export const memoryToolParameters: Record<string, Parameters<typeof Type.Object>
     scope: Type.Optional(
       Type.Union([Type.Literal("project"), Type.Literal("all")], {
         description:
-          "project (default) searches only this project's conversations; all searches every project on this machine. Use all only when the user asks about work outside this project.",
+          "project (default) searches only this project's conversations; all searches every project on this machine and asks the user for approval first. Use all only when the user asks about work outside this project.",
       }),
     ),
     limit: Type.Optional(

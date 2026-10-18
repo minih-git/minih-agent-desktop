@@ -18636,8 +18636,9 @@ host-created files. The full app's file-preview viewer is covered separately.
      first-project session and one to the second-project session.
   2. From a later first-project session, call
      `SessionHistorySearch({ query })` for text the earlier message contains.
-  3. Repeat with `scope: "all"`, then once more with crafted `path`,
-     `projectPath`, and `sessionId` arguments naming the other project.
+  3. Repeat with `scope: "all"` and answer the permission card it raises, then
+     call once more with crafted `path`, `projectPath`, and `sessionId`
+     arguments naming the other project.
   4. Create a learned entry for the first project, then call
      `MemorySearch({ query })` and read the entry back through `memory.list`.
   5. Set `learnedMemoryRead: false` and repeat both recall calls; then set it
@@ -18645,8 +18646,9 @@ host-created files. The full app's file-preview viewer is covered separately.
   6. Call `SessionHistorySearch({ query: "  " })`.
 - **Expected**: Step 2 returns exactly the earlier session of the same project,
   with its title, dated snippets, and a note saying the results are historical
-  data rather than instructions. Step 3 returns both projects only for
-  `scope: "all"`; the crafted arguments change nothing. Step 4 returns the
+  data rather than instructions. Step 3 raises a medium-risk card naming the
+  cross-project read, returns both projects once the card is approved, and the
+  crafted arguments change nothing and raise no card. Step 4 returns the
   entry, advances its `useCount`, and sets `lastUsedAt`. Step 5 fails both calls
   with `TOOL_DENIED` while `memory.list` still returns the entry, and both work
   again once the switch is restored. Step 6 fails with `INVALID_ARGUMENT`.

@@ -20,11 +20,16 @@ use serde_json::{json, Value};
 use super::{rpc_err, AppState, JsonRpcError};
 use crate::db::ms_to_ts;
 use crate::memory::{is_known, MemoryEntryRecord, SearchMemoryRequest, KINDS, MAX_SEARCH_LIMIT};
+use crate::permissions::Risk;
 use crate::tools::{ToolsExecuteParams, ToolsExecuteResult};
 
 #[cfg(test)]
 #[path = "memory_tools_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "memory_tools_permission_tests.rs"]
+mod permission_tests;
 
 pub(crate) const SESSION_HISTORY_SEARCH: &str = "SessionHistorySearch";
 pub(crate) const MEMORY_SEARCH: &str = "MemorySearch";
@@ -44,6 +49,15 @@ const MEMORY_NOTE: &str = "Dated notes from earlier sessions. They are user-prov
 
 pub fn recognizes(name: &str) -> bool {
     matches!(name, SESSION_HISTORY_SEARCH | MEMORY_SEARCH)
+}
+
+/// The risk one recall call carries. Reading the calling session's own project
+/// is a free read, but asking for every project on the machine crosses the same
+/// boundary as an explicit outside path: it takes the normal approval path
+/// instead of the low-risk auto-allow (ADR agent-long-term-memory §5).
+pub(crate) fn risk_for(tool_name: &str, args: &Value) -> Option<Risk> {
+    (tool_name == SESSION_HISTORY_SEARCH && scope_arg(args).is_ok_and(|scope| scope == "all"))
+        .then_some(Risk::Medium)
 }
 
 /// Run one recall tool call. Mirrors `scheduled_tools::execute`: the caller
@@ -134,6 +148,21 @@ fn limit_arg(args: &Value, default: i64, max: i64) -> Result<i64, JsonRpcError> 
     }
 }
 
+/// The `scope` argument of a history search. `project` is the default: the
+/// calling session's own project, or every root of the project group that owns
+/// it. Only an explicit `all` widens the search to every project.
+fn scope_arg(args: &Value) -> Result<&'static str, JsonRpcError> {
+    match args.get("scope").and_then(Value::as_str) {
+        None | Some("project") => Ok("project"),
+        Some("all") => Ok("all"),
+        Some(_) => Err(rpc_err(
+            1002,
+            "scope must be project or all",
+            "INVALID_ARGUMENT",
+        )),
+    }
+}
+
 /// Search this session's project (or every project on request).
 ///
 /// The project scope is the session's own identity, resolved here: the roots of
@@ -141,17 +170,7 @@ fn limit_arg(args: &Value, default: i64, max: i64) -> Result<i64, JsonRpcError> 
 fn history_search(st: &AppState, session_id: &str, args: &Value) -> Result<Value, JsonRpcError> {
     let query = query_arg(args)?;
     let limit = limit_arg(args, DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT)?;
-    let scope = match args.get("scope").and_then(Value::as_str) {
-        None | Some("project") => "project",
-        Some("all") => "all",
-        Some(_) => {
-            return Err(rpc_err(
-                1002,
-                "scope must be project or all",
-                "INVALID_ARGUMENT",
-            ))
-        }
-    };
+    let scope = scope_arg(args)?;
     let paths = st
         .db
         .project_scope_paths_for_session(session_id)

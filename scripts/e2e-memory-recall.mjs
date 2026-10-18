@@ -45,6 +45,46 @@ async function recall(sessionId, toolName, args, toolCallId = `call-${randomUUID
   return result;
 }
 
+/** Wait for the permission card the host emits for one tool call. */
+async function waitForPermission(toolCallId) {
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    const [card] = host.matchingNotifications(
+      "permissions.request",
+      (note) => note.params?.toolCallId === toolCallId,
+    );
+    if (card) return card.params;
+    if (Date.now() > deadline) throw new Error(`no permission card for ${toolCallId}`);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+/**
+ * Call a recall tool that needs the user's approval. Reading every project is
+ * medium risk, so the host emits a card and waits: the scenario answers it the
+ * way the renderer does, and asserts what the card said.
+ */
+async function recallWithApproval(sessionId, toolName, args) {
+  host.clearNotifications();
+  const toolCallId = `call-${randomUUID()}`;
+  const pending = host.call("tools.execute", {
+    sessionId,
+    toolCallId,
+    toolName,
+    args,
+    mode: "agent",
+  });
+  const card = await waitForPermission(toolCallId);
+  assert.equal(card.toolName, toolName);
+  assert.equal(card.risk, "medium");
+  assert.equal(card.reason, "Reads conversations from every project");
+  await host.call("permissions.resolve", { requestId: card.requestId, decision: "allow-once" });
+  const result = await pending;
+  assert.equal(result.toolCallId, toolCallId);
+  assert.equal(result.ok, true, JSON.stringify(result.content));
+  return result;
+}
+
 async function expectToolFailure(promise, errorCode) {
   const result = await promise;
   assert.equal(result.ok, false, `expected ${errorCode}, got ${JSON.stringify(result.content)}`);
@@ -55,6 +95,9 @@ async function expectToolFailure(promise, errorCode) {
 try {
   await Promise.all([mkdir(firstProject, { recursive: true }), mkdir(secondProject, { recursive: true })]);
   await host.start();
+  // The scope=all read takes the normal approval path, so the scenario pins the
+  // permission mode that shows a card instead of inheriting the machine's.
+  await host.call("settings.set", { defaultPermissionMode: "ask" });
 
   const { session: prior } = await host.call("session.create", {
     title: "Deploy planning",
@@ -89,8 +132,9 @@ try {
   assert.match(found.content.note, /not instructions/);
   summary.scenario = "E2E-MEMORY-history-search-finds-prior-session";
 
-  // 2. Another project stays out of reach until the caller asks for it.
-  const widened = await recall(later.id, "SessionHistorySearch", {
+  // 2. Another project stays out of reach until the caller asks for it — and
+  //    asking is a medium-risk call the user approves first.
+  const widened = await recallWithApproval(later.id, "SessionHistorySearch", {
     query: "deploys on Friday",
     scope: "all",
   });
@@ -107,6 +151,7 @@ try {
   });
   assert.deepEqual(crafted.content.results.map((row) => row.sessionId), [prior.id]);
   summary.scope = "project-only";
+  summary.scopeApproval = "card-then-allow";
 
   // 3. Learned memory: the project scope plus the user scope, and a read
   //    records that it was used.
