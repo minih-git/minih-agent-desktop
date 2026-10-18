@@ -10,6 +10,7 @@ import {
   normalizeMode,
   trustedExtensionAgentKeyFromProviderId,
   type CommandShellCatalog,
+  type LearnedMemoryIndex,
   type McpServerRecord,
   type ModelBinding,
   type Mode,
@@ -501,6 +502,34 @@ export function createSessionLaunchRuntime({
         }
       }
     }
+    // Learned memory (ADR agent-long-term-memory): the host returns a bounded,
+    // ordered index of the entries this session may read. It is captured once
+    // per launch — the runtime freezes it and never rebuilds a prompt from a
+    // later write — and it is best effort: a failing read degrades to no index
+    // and must never prevent a launch. The portable read switch hides the index
+    // and both recall tools without deleting anything.
+    const learnedMemoryRead = settings.learnedMemoryRead !== false;
+    let learnedMemoryIndex: LearnedMemoryIndex | undefined;
+    if (learnedMemoryRead && projectPath) {
+      try {
+        const result = await runtimeState.host!.call<{ index?: LearnedMemoryIndex }>(
+          "memory.index",
+          { path: projectPath },
+        );
+        if (result.index && result.index.entries.length > 0) {
+          learnedMemoryIndex = result.index;
+        }
+      } catch (error) {
+        // Only the stable error code is logged: a memory read never puts entry
+        // text or host internals into the log.
+        const code = (error as { data?: { errorCode?: string }; errorCode?: string } | null)
+          ?.data?.errorCode ?? (error as { errorCode?: string } | null)?.errorCode;
+        logger.app("session", "warn", "learned memory index unavailable", {
+          sessionId,
+          data: typeof code === "string" && code ? code : "UNAVAILABLE",
+        });
+      }
+    }
     sessionProjects.set(sessionId, projectPath ?? null);
     // Everything below is filtered by activation scope: a plugin, MCP server or
     // skill limited to certain projects must be invisible to a session on any
@@ -772,6 +801,8 @@ export function createSessionLaunchRuntime({
         customSystemPrompt,
         projectInstructions,
         projectMemory,
+        ...(learnedMemoryIndex ? { learnedMemoryIndex } : {}),
+        learnedMemoryRead,
         provider: {
           id: provider.id,
           name: provider.name,

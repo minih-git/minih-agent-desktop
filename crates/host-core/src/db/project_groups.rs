@@ -256,6 +256,19 @@ impl Database {
             .filter(|group| !group.legacy))
     }
 
+    /// Canonical root paths of the project identity that owns `path`: every root
+    /// of the stored group it belongs to, or the canonical path itself for a
+    /// project that is not in one. This is the identity a project-scoped read
+    /// (history search, learned memory) is filtered by.
+    pub fn project_scope_paths_for_path(&self, path: &str) -> Result<Vec<String>> {
+        let canonical = canonical_project_path(path)
+            .ok_or_else(|| anyhow!("project path must not be blank"))?;
+        match self.stored_project_group_for_path(&canonical)? {
+            Some(group) => Ok(group.roots.into_iter().map(|root| root.path).collect()),
+            None => Ok(vec![canonical]),
+        }
+    }
+
     /// Delete a stored project group record together with its group-scoped
     /// memory, instructions, and learned memory. The underlying project rows are
     /// left untouched; callers remove those separately when appropriate.

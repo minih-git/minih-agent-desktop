@@ -210,6 +210,21 @@ impl Database {
         &self,
         session_id: &str,
     ) -> Result<Option<Vec<MemoryScope>>> {
+        let Some(paths) = self.project_scope_paths_for_session(session_id)? else {
+            return Ok(None);
+        };
+        let mut scopes = Vec::with_capacity(paths.len() + 1);
+        if let Some(path) = paths.first() {
+            scopes.push(self.learned_memory_scope_for_path(path)?);
+        }
+        scopes.push(MemoryScope::user());
+        Ok(Some(scopes))
+    }
+
+    /// Canonical root paths of the project identity the session belongs to:
+    /// every root of its project group, or the project's own path. `None` means
+    /// the session does not exist; an empty list means it has no project.
+    pub fn project_scope_paths_for_session(&self, session_id: &str) -> Result<Option<Vec<String>>> {
         let project_path: Option<Option<String>> = self
             .conn()
             .query_row(
@@ -222,12 +237,10 @@ impl Database {
         let Some(project_path) = project_path else {
             return Ok(None);
         };
-        let mut scopes = Vec::with_capacity(2);
-        if let Some(path) = project_path {
-            scopes.push(self.learned_memory_scope_for_path(&path)?);
-        }
-        scopes.push(MemoryScope::user());
-        Ok(Some(scopes))
+        let Some(path) = project_path else {
+            return Ok(Some(Vec::new()));
+        };
+        Ok(Some(self.project_scope_paths_for_path(&path)?))
     }
 
     /// Entries of one scope, newest first. `status` and `kind` are optional

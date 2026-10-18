@@ -92,3 +92,4 @@ export * from "./event-usage.js";
 export * from "./storage.js";
 export * from "./racp-hostlink.js";
 export * from "./racp-pairing-ticket.js";
+export * from "./learned-memory.js";

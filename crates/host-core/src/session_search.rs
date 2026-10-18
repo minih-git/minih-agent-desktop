@@ -3,6 +3,7 @@
 use anyhow::Result;
 use rusqlite::{functions::FunctionFlags, params, OptionalExtension};
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::db::{ms_to_ts, Database};
 use crate::sessions::{self, SessionSummary};
@@ -77,6 +78,22 @@ pub(crate) fn register_contains(db: &Database) -> Result<()> {
 /// per page. On a 40k-message corpus, serving six pages that way was 11 host
 /// calls and 27.4 ms against 6 calls and 19.0 ms for one call per page.
 pub fn search(db: &Database, query: &str, offset: i64, limit: i64) -> Result<SearchPage> {
+    search_in_scope(db, query, offset, limit, None)
+}
+
+/// The same search restricted to a set of canonical project roots: the project
+/// a session belongs to, or every root of the project group that owns it.
+///
+/// `None` searches every project (the global search). The scope is decided by
+/// the host from the calling session's own identity, never by the caller, so a
+/// model cannot widen or redirect it.
+pub fn search_in_scope(
+    db: &Database,
+    query: &str,
+    offset: i64,
+    limit: i64,
+    scope: Option<&[String]>,
+) -> Result<SearchPage> {
     let query = query.trim();
     if query.is_empty() {
         return Ok(SearchPage {
@@ -87,6 +104,8 @@ pub fn search(db: &Database, query: &str, offset: i64, limit: i64) -> Result<Sea
     let offset = offset.max(0);
     let limit = limit.clamp(1, MAX_SEARCH_PAGE) as usize;
     register_contains(db)?;
+    let scope = scope
+        .map(|paths| Value::Array(paths.iter().cloned().map(Value::String).collect()).to_string());
     let quoted = format!("\"{}\"", query.replace('"', "\"\""));
     let fts = if query.chars().count() >= 3
         && !query.contains('\u{0307}')
@@ -113,20 +132,24 @@ pub fn search(db: &Database, query: &str, offset: i64, limit: i64) -> Result<Sea
          FROM sessions s LEFT JOIN projects p ON p.id = s.project_id
          LEFT JOIN matched ON matched.session_id = s.id
          WHERE s.deleted_at IS NULL AND (matched.count > 0 OR metadata_match)
+           AND (?5 IS NULL OR p.path IN (SELECT value FROM json_each(?5)))
          ORDER BY s.updated_at DESC, s.id ASC LIMIT ?4 OFFSET ?3"
     );
     let mut hits = db
         .conn()
         .prepare_cached(&sql)?
-        .query_map(params![query, quoted, offset, limit as i64 + 1], |row| {
-            Ok(SessionMatch {
-                session: sessions::summary_from_row(row)?,
-                project_name: row.get(11)?,
-                message_count: row.get(12)?,
-                metadata_match: row.get(13)?,
-                matches: vec![],
-            })
-        })?
+        .query_map(
+            params![query, quoted, offset, limit as i64 + 1, scope],
+            |row| {
+                Ok(SessionMatch {
+                    session: sessions::summary_from_row(row)?,
+                    project_name: row.get(11)?,
+                    message_count: row.get(12)?,
+                    metadata_match: row.get(13)?,
+                    matches: vec![],
+                })
+            },
+        )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     // One extra row is fetched so the caller learns whether the next page
     // exists without a second query.

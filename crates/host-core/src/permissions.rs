@@ -119,8 +119,15 @@ pub struct PermissionManager {
 impl PermissionManager {
     pub fn tool_risk_with_declared(tool_name: &str, declared: Option<&str>) -> Risk {
         match tool_name {
-            "Read" | "Glob" | "Grep" | "ScheduledTaskList" | "TodoWrite" | "SessionList"
-            | "SessionResult" => Risk::Low,
+            "Read"
+            | "Glob"
+            | "Grep"
+            | "ScheduledTaskList"
+            | "TodoWrite"
+            | "SessionList"
+            | "SessionResult"
+            | "SessionHistorySearch"
+            | "MemorySearch" => Risk::Low,
             // Sending starts another session's Agent and spends its quota.
             "Write" | "Edit" | "Bash" | "GenerateImages" | "SessionSend" => Risk::High,
             name if name.starts_with("plugin_") => match declared {
@@ -146,7 +153,16 @@ impl PermissionManager {
     pub fn plan_mode_allows(tool_name: &str) -> bool {
         matches!(
             tool_name,
-            "Read" | "Glob" | "Grep" | "Bash" | "BrowserPreview" | "new_context"
+            "Read"
+                | "Glob"
+                | "Grep"
+                | "Bash"
+                | "BrowserPreview"
+                | "new_context"
+                // Recall reads host-owned history and learned memory and changes
+                // nothing, so a read-only contract negotiation may use it.
+                | "SessionHistorySearch"
+                | "MemorySearch"
         )
     }
 
@@ -937,5 +953,35 @@ mod session_messaging_tests {
             manager.evaluate_auto_with_permission_mode("s", "SessionList", "agent", "ask", &grants),
             Some(PermissionDecision::AllowOnce)
         );
+    }
+}
+
+#[cfg(test)]
+mod recall_tool_tests {
+    use super::*;
+
+    /// Reading earlier conversations and learned memory changes nothing, so it
+    /// is a free read in every mode — including the read-only contract modes,
+    /// where the session-start index points at `MemorySearch`.
+    #[test]
+    fn recall_reads_are_low_risk_and_allowed_in_every_mode() {
+        let manager = PermissionManager::default();
+        let grants = HashMap::new();
+        for tool in ["SessionHistorySearch", "MemorySearch"] {
+            assert!(
+                matches!(
+                    PermissionManager::tool_risk_with_declared(tool, None),
+                    Risk::Low
+                ),
+                "{tool} must stay a free read"
+            );
+            for mode in ["agent", "plan", "goal"] {
+                assert_eq!(
+                    manager.evaluate_auto_with_permission_mode("s", tool, mode, "ask", &grants),
+                    Some(PermissionDecision::AllowOnce),
+                    "{tool} must run without a card in {mode}"
+                );
+            }
+        }
     }
 }

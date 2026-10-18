@@ -1,6 +1,7 @@
 mod config_sync_rpc;
 mod easytier_rpc;
 mod memory_rpc;
+mod memory_tools;
 mod remote_tools;
 mod scheduled_rpc;
 mod scheduled_tools;
@@ -4477,6 +4478,11 @@ async fn handle_request(
                 } else if scheduled_tools::recognizes(&p.tool_name) {
                     let st = state.lock().await;
                     scheduled_tools::execute(&st, &p)
+                } else if memory_tools::recognizes(&p.tool_name) {
+                    // Recall tools read host-owned history and learned memory,
+                    // so they run here with the calling session's own scope.
+                    let st = state.lock().await;
+                    memory_tools::execute(&st, &p)
                 } else if let Some(remote) = remote_workspace.clone() {
                     remote_tools::execute_remote_tool(
                         &state,
