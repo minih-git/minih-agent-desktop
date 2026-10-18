@@ -53,6 +53,24 @@ export function isHistoryRevealPosition(
   return geometry.scrollTop <= HISTORY_REVEAL_THRESHOLD_PX;
 }
 
+/**
+ * Whether the viewport already shows the bottom, within the re-pin band.
+ *
+ * A reading bookmark is a *position*, not a gesture: a transcript the reader
+ * never left the newest turn of must come back at the tail even if an
+ * interaction released follow mode somewhere along the way. The band is the
+ * same one `reduceTranscriptScroll` re-pins on, so the bookmark cannot disagree
+ * with what the scroller itself considers "at the bottom".
+ */
+export function transcriptSitsAtBottom(
+  geometry: Pick<TranscriptScrollerGeometry, "scrollTop" | "scrollHeight" | "clientHeight">,
+): boolean {
+  return (
+    geometry.scrollHeight - geometry.scrollTop - geometry.clientHeight <
+    TRANSCRIPT_REPIN_THRESHOLD_PX
+  );
+}
+
 export type TranscriptScrollInput = {
   previousScrollTop: number;
   scrollTop: number;
