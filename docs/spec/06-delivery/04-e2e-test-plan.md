@@ -8,6 +8,28 @@
 
 ## 1. Goals
 
+### E2E-CHAT-tool-call-identity
+
+- **Preconditions:** Request worktree with reused dependencies and an isolated
+  Electron/Chromium profile. Production ToolRow and local call fixtures; no
+  model, MCP connection, installed Desktop, or user history is used.
+- **Steps:** Render Skill, MCP, plugin fallback and unknown tools in dense and
+  regular rows in English and Simplified Chinese. Inspect names and icons in
+  running/completed/error/denied states. Open details, finish a running call,
+  then close it. Repeat at 320px with long qualified MCP names.
+- **Expected:** Skill id and extension tool identity remain visible without
+  opening the payload; book/server/plug icons distinguish the sources. Full
+  names remain available on hover, long names do not overflow, arguments stay
+  readable, and completion does not reverse user-owned disclosure or focus.
+  Built-in action rendering and failure/denial feedback are unchanged.
+- **Coverage:** `tool-identity.test.mjs` covers identity boundaries and imported
+  Skill aliases; `tool-row-identity.test.mjs` mounts production SSR rows across
+  status/density/locale combinations. `pnpm test:e2e:transcript` includes
+  `scripts/e2e/tool-identity.tsx` for mounted Chromium interaction and layout.
+- **Specs:** [Component spec §9.2](../04-ux/08-component-spec.md#92-anatomy).
+- **Acceptance:** C / E / Quality.
+- **Milestone:** Post-MVP transcript maintenance.
+
 ### E2E-RELEASE-mirror-recovery
 
 - **Preconditions:** Isolated workspace, production release/recovery workflow
