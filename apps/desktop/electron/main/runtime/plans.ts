@@ -184,6 +184,12 @@ function finishTurn(
   // start while this one unwinds, and everything keyed by the session alone is
   // then its data.
   const reason = peekAbortReason(id, turnId) ?? status;
+  // An interruption can be locked after a clean terminal event already started
+  // finalizing (a quit cancels a runtime that reports no failure). The recorded
+  // reason wins, so the durable row must carry the abort code with it instead of
+  // closing as `aborted` with no explanation.
+  const terminalErrorCode =
+    reason === "aborted" ? (errorCode ?? "TURN_ABORTED") : errorCode;
   const turnUsage = activeTurnUsages.get(id);
   activeTurnUsages.delete(id);
   const runId = scheduledRunsBySession.get(id);
@@ -205,7 +211,7 @@ function finishTurn(
           }>("session.endTurn", {
             turnId,
             status: reason,
-            errorCode,
+            errorCode: terminalErrorCode,
             createNotification,
             ...(turnUsage ? { usage: turnUsage } : {}),
             // The reply can no longer finish on its own: promote its last
@@ -238,7 +244,7 @@ function finishTurn(
 
       if (runId && runtimeState.host) {
         await runtimeState.host
-          .call("scheduled.finishRun", { runId, status: reason, errorCode })
+          .call("scheduled.finishRun", { runId, status: reason, errorCode: terminalErrorCode })
           .catch((e) =>
             logger.app("persistence", "warn", "finishRun failed", {
               sessionId: id,
@@ -300,7 +306,7 @@ function finishTurn(
         id,
         turnId,
         hostTurnStatus(reason),
-        hostTurnError(reason, errorCode),
+        hostTurnError(reason, terminalErrorCode),
       );
       runtimeState.agentHostBridge?.agentHost.kick(id);
     }

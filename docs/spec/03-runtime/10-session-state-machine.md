@@ -77,6 +77,10 @@ A turn reaches one of three terminal reasons — `completed`, `aborted`, or
 `error` — matching the `aborted` / `error` rows in section 1. The terminal
 reason is decided once: an abort records its decision before the cancel request
 is issued, so a later `agent_end` cannot restate an aborted turn as completed.
+App quit is one of those aborts: the quit path records the reason for every
+running turn before it cancels the runtime, then settles that turn as `aborted`
+even when the terminal event never arrives, so closing the app never files a
+`task.completed` notification for a reply the user never saw.
 Terminal events are attributed by turn identity, not by session: a terminal
 event whose turn no longer owns the session changes neither the current turn's
 state nor its resources, and late message and tool rows are still recorded as

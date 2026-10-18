@@ -2001,6 +2001,27 @@ identify the platform validation still needed.
   outstanding
 
 
+#### E2E-SESSION-quit-settles-running-turn-interrupted
+
+- **Preconditions**: A session is mid-turn: the assistant is streaming, or a
+  tool is running, and its reply is incomplete. A second session is idle with an
+  unread `task.completed` notification from an earlier turn.
+- **Steps**: 1) While the first turn streams, quit the app (Cmd+Q, tray Quit, or
+  the application menu) and confirm the quit prompt. 2) Reopen the app. 3)
+  Inspect the interrupted session's turn state, its sidebar mark, and the
+  notification center. 4) Open its transcript.
+- **Expected**: The interrupted turn is `aborted` with error code
+  `TURN_ABORTED`. It is not `completed`, and no `task.completed` notification
+  was created for it, so the session never reports the reply as finished work.
+  The partial reply remains in the transcript with the stopped explanation. The
+  second session's earlier notification is unchanged.
+- **Specs linked**: `03-runtime/10-session-state-machine.md`,
+  `03-runtime/04-data-storage.md`
+- **Acceptance**: C (conversation & stream), F (persistence)
+- **Milestone**: M2
+- **Status**: Unit-covered (`quit-interrupts-running-turn.test.mjs`); desktop
+  journey outstanding
+
 #### E2E-011: Switch between project and temporary sessions
 
 - **Preconditions**: One retained project session and one path-less Temporary
@@ -10191,6 +10212,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | Quality (Session Orchestrator) | E2E-PLUGIN-session-orchestrator-real-workers |
 | C — Conversation & stream (Session list responsiveness) | E2E-SESSION-list-refresh-keeps-desktop-responsive |
 | Quality (Session list responsiveness) | E2E-SESSION-list-refresh-keeps-desktop-responsive |
+| C / F — Quit interrupts a running turn | E2E-SESSION-quit-settles-running-turn-interrupted |
 | Security (imported extension dependencies) | E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency |
 | Quality (imported extension dependencies) | E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency |
 | F / G / Security / Quality — Imported extension npm recovery | E2E-PLUGIN-import-extension-recovers-missing-npm |
