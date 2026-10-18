@@ -243,9 +243,9 @@ function HostToolRow({
     : null;
   // A run row keeps its command in the head and only its output in the body, so
   // the head carries the two things the body no longer offers: a copy of the
-  // command, and the outcome (D226). A one-line step row states the action only,
-  // so there the command moves into the body instead of disappearing: opening the
-  // row is exactly the moment the reader wants to know what actually ran.
+  // command, and the outcome (D226). A one-line step row carries the command
+  // beside its action too — like a thinking row carries its last line — so the
+  // step line never reads as a bare verb.
   const runRow = action === "run" && variant !== "topology";
   const runHead = runRow && !dense;
   const command = runRow
@@ -288,11 +288,10 @@ function HostToolRow({
       message,
       nestedReport,
       blocks: buildToolPresentation(message, {
-        // A full row prints the command or the argument summary in its head and
-        // copies it there (D226), so the body must not repeat it. A one-line step
-        // row states only the action, so its body is the only place the command
-        // or the argument can be read at all.
-        hideSummaryArg: !dense,
+        // Every row prints the command or the argument summary in its head — a
+        // one-line step row beside its action — so the body must not repeat
+        // what the head already says (D226).
+        hideSummaryArg: true,
         ...(nestedReport ? { hideDelegateReport: true } : {}),
       }),
     };
@@ -533,7 +532,7 @@ function HostToolRow({
                 {agentName}
               </span>
             ) : null}
-            {summary && !dense && identity?.kind !== "skill" && summary !== identity?.name ? (
+            {summary && identity?.kind !== "skill" && summary !== identity?.name ? (
               <span
                 className={`tool-row-summary${previewTarget && localToolsAllowed ? " linked" : ""}`}
                 title={
@@ -616,7 +615,7 @@ function HostToolRow({
           {statusLabel}
         </span>
       ) : null}
-      {(blocks && blocks.length > 0) || (dense && runRow && Boolean(command)) ? (
+      {(blocks && blocks.length > 0) || (open && dense && runRow && Boolean(command)) ? (
         <div className="tool-row-body" id={detailsId} ref={disclosure.bodyRef} {...disclosure.bodyEvents}>
           <DisclosureCollapseRail
             label={t("chat.collapseToolOutput")}

@@ -55,7 +55,7 @@ test("tool rows render structured blocks instead of dumping JSON", async () => {
   // No JSON stringify path is left in either surface.
   assert.doesNotMatch(transcriptSource, /getToolSections|hasToolSections/);
   assert.doesNotMatch(permissionSource, /JSON\.stringify|formatToolValue/);
-  assert.match(transcriptSource, /buildToolPresentation\(message, \{[\s\S]{0,400}?hideSummaryArg: !dense,/);
+  assert.match(transcriptSource, /buildToolPresentation\(message, \{[\s\S]{0,400}?hideSummaryArg: true,/);
   // Formatting remains lazy and the cached blocks are read only while visible.
   assert.match(transcriptSource, /if \(variant !== "topology" && open && hasDetails && disclosure\.parentVisible/);
   assert.match(transcriptSource, /const blocks = variant !== "topology" && open && hasDetails \? presentation\.current\?\.blocks : null/);

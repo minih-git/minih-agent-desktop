@@ -234,17 +234,17 @@ export async function turnProcessProbe() {
       visible(row("read")) && visible(row("bash1")),
       "opening the fold reveals a line per step",
     );
+    // A step row carries its content beside the action — the command after
+    // "Ran", the path after "Read" — like a thinking row's last line, so no
+    // step line reads as a bare verb.
     check(
       (row("bash1")?.textContent ?? "").includes("Ran") &&
-        !(row("bash1")?.textContent ?? "").includes("pnpm test"),
-      "a step row states the action without echoing the command",
+        (row("bash1")?.textContent ?? "").includes("pnpm test"),
+      "a run step row states the action with its command beside it",
     );
-    // Opening the step row is exactly the moment the reader wants to know what
-    // ran, so the command lives in its body rather than disappearing.
-    flushSync(() => row("bash1")?.querySelector<HTMLElement>(".tool-row-header")?.click());
     check(
-      (row("bash1")?.textContent ?? "").includes("pnpm test"),
-      "opening a step row reveals the command it ran",
+      (row("read")?.textContent ?? "").includes("src/example.ts"),
+      "a read step row carries the file it read beside the action",
     );
 
     // Detailed density opens the payloads a reader would otherwise click.
