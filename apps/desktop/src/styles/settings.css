@@ -469,7 +469,9 @@
 }
 
 .settings-instruction-editor {
-  min-height: 180px;
+  /* The global instruction file is read and edited in place, so the editor
+     opens at roughly a screen-and-a-half of mono text rather than a peek. */
+  min-height: 320px;
   resize: vertical;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
