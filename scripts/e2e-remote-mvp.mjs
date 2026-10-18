@@ -113,8 +113,8 @@ try {
       let newline;
       while ((newline = output.indexOf("\n")) >= 0) {
         const line = output.slice(0, newline); output = output.slice(newline + 1);
-        if (line.startsWith("AGENT_HOST_CLI_READY ")) found.host = JSON.parse(line.slice(14));
-        if (line.startsWith("AGENT_HOST_CLI_PAIRING_TOKEN ")) found.pairing = JSON.parse(line.slice(22));
+        if (line.startsWith("AGENT_HOST_CLI_READY ")) found.host = JSON.parse(line.slice("AGENT_HOST_CLI_READY ".length));
+        if (line.startsWith("AGENT_HOST_CLI_PAIRING_TOKEN ")) found.pairing = JSON.parse(line.slice("AGENT_HOST_CLI_PAIRING_TOKEN ".length));
       }
       if (found.host && found.pairing) { clearTimeout(timer); resolveReady(found); }
     });
