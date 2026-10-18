@@ -4511,9 +4511,11 @@ eleven-tool-round desktop paths are verified by
   后代、输出事件、审核以及关闭宽限后的状态。
 - **预期**：进程 group/job 树终止，没有后代保留，
   没有后续输出到达，本轮返回 `TURN_ABORTED`，工作空间为
-  不会自动回滚。在 Windows 上，隐藏 runner 会先脱离任何父 Job Object，
-  再进入自己的 kill-on-close job；如果系统拒绝 breakaway，工具会安全失败，
-  不会让 Desktop 进程树成为终止范围。
+  不会自动回滚。在 Windows 上，隐藏 runner 仅当宿主所在的 job 授予
+  `JOB_OBJECT_LIMIT_BREAKAWAY_OK` 时才请求 `CREATE_BREAKAWAY_FROM_JOB`，
+  然后进入自己的 kill-on-close job；若宿主 job 未授予 breakaway，runner
+  改以嵌套 job 运行，而不是让工具安全失败；终止范围仍限定在该 job，
+  因此 Desktop 进程树不会成为终止范围。
 - **链接规格**：`03-runtime/03-tools-and-permissions.md`，
   `03-runtime/07-process-model.md`、`03-runtime/08-error-codes.md`、
   `03-runtime/16-tool-result-limits.md`、`05-security/01-security.md`、ADR 0054
@@ -5187,7 +5189,7 @@ eleven-tool-round desktop paths are verified by
   及完整提供商发送仍需人工验证。应在更新后的任务候选版本运行并记录修订；随后
   按权威 `AGENTS.md` 工作流验证 PR 集成候选，无需先合入本地 main。
 
-#### E2E-102a：Composer 文件引用结果使用紧凑的叶名称
+#### E2E-102a：Composer 文件引用结果显示叶名称与完整相对路径
 
 - **先决条件**：应用程序正在工作区中使用 Agent 会话运行
   包含嵌套文件、不同目录中的重复叶名称，以及
@@ -5199,8 +5201,9 @@ eleven-tool-round desktop paths are verified by
   接受目录结果并继续子文件。 4) 发送完整的引用并检查持久化的用户
   消息。
 - **预期**：
-  - 每个结果持久地仅呈现其叶名称；目录保留一个
-    尾随 `/`，并且没有父路径消耗水平行空间。
+  - 每个结果持久地呈现其叶名称，并在其后以弱化样式显示条目完整的
+    工作区相对路径；目录叶名保留尾随 `/`，该 span 携带原始
+    `entry.path`，并先于叶名截断，行永不溢出菜单。
   - 工具提示和可访问名称保留完整的相对路径，以便
     重复的叶子名称仍然可以区分。
   - 对文件按 Enter/Tab/点击会把 `@` 标记替换为留在草稿中的行内芯片；
@@ -5210,11 +5213,12 @@ eleven-tool-round desktop paths are verified by
     空格引用，代理可以正常读取两个选定的文件。
 - **链接规格**：`04-ux/08-component-spec.md` §11.8，
   `04-ux/09-interaction-patterns.md` §8a、`03-runtime/01-ipc-protocol.md` §13c、
-  `08-meta/decisions-log.md`（D124、D209、D362）、ADR 0024、ADR 0070
+  `08-meta/decisions-log.md`（D124、D209、D362、D658）、ADR 0024、ADR 0070
 - **接受**：C（对话和直播），质量
 - **里程碑**：M5
 - **状态**：单位覆盖
-  （`apps/desktop/test/composer-file-reference-display.test.mjs`）；完整的用户界面
+  （`apps/desktop/test/composer-file-reference-display.test.mjs`）；文件模式行
+  布局由 `scripts/e2e-composer-autocomplete.mjs` 覆盖；完整的用户界面
   旅程草稿（适用变更合入前需在具备条件的环境中运行 E2E）
 
 #### E2E-102b：未答复的停止恢复紧凑的文件参考草稿
@@ -6614,9 +6618,9 @@ eleven-tool-round desktop paths are verified by
 
 ### US-UI-73 Composer 模式选择器具有稳定的宽度
 - 以英语和中文打开空的主页和停靠的线程。
-- 通过Agent/Plan/Goal多次切换Composer模式芯片。
-- 期望模式芯片为最长的内置保持一个固定的宽度尺寸
-  标签（英文“Agent”/zh-CN“智能体”）；相邻的思维和
+- 打开 Composer 模式芯片，在 Agent/Plan/Goal 之间多次切换。
+- 期望芯片以带选中标记的菜单项列出三个模式、只显示当前模式，并为最长内置标签
+  （英文“Agent”/zh-CN“智能体”）加上箭头保留一个固定宽度；相邻的思考与
   权限控件、发送按钮和 Composer shell 不会移动或调整大小。
 - **链接规格**：`04-ux/08-component-spec.md` §11.3
 - **里程碑**：M5
