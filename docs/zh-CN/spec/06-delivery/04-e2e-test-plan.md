@@ -9842,6 +9842,33 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **验收**：C（会话与流）、F（持久化）。
 - **状态**：`apps/desktop/test/quit-interrupts-running-turn.test.mjs` 以真实退出处理、会话协调、回合结算与事件持久化覆盖；完整桌面往返仍待补。
 
+### E2E-MEMORY-history-search-finds-prior-session：后续会话找到先前会话的决定
+
+- **前提条件**：真实 host-core 二进制与临时数据目录，两个已注册项目
+  （`first-project`、`second-project`），不调用模型、provider 或网络。场景直接驱动
+  `tools.execute`，即运行时工具调用所经过的同一道主机闸门。
+- **步骤**：
+  1. 在两个项目中各建一个会话，分别向 first-project 会话和 second-project 会话追加一条用户消息。
+  2. 从 first-project 的另一个较晚会话调用 `SessionHistorySearch({ query })`，查询前一条消息里的文本。
+  3. 用 `scope: "all"` 再调用一次并应答它弹出的确认卡，然后用指向另一个项目的 `path`、`projectPath`、`sessionId` 构造参数再调用一次。
+  4. 为第一个项目创建一条学习条目，然后调用 `MemorySearch({ query })`，并通过 `memory.list` 读回该条目。
+  5. 设置 `learnedMemoryRead: false`，重复两次召回调用；再设回 `true` 并重复一次。
+  6. 调用 `SessionHistorySearch({ query: "  " })`。
+- **预期**：步骤 2 只返回同项目的那条较早会话，带标题、带日期的片段，以及说明结果是历史数据而非指令的备注。
+  步骤 3 弹出中等风险的确认卡并标明这是跨项目读取，批准后返回两个项目；构造的参数不改变任何结果、也不弹卡。步骤 4 返回该条目、递增其 `useCount`
+  并设置 `lastUsedAt`。步骤 5 两次调用都以 `TOOL_DENIED` 失败，而 `memory.list` 仍返回该条目；开关恢复后两次调用
+  重新可用。步骤 6 以 `INVALID_ARGUMENT` 失败。
+- **关联规格**：`03-runtime/03-tools-and-permissions.md`（学习记忆与历史召回）、
+  `03-runtime/02-agent-runtime.md` §7.4、`03-runtime/06-host-rpc-protocol.md`（学习记忆）、
+  ADR agent-long-term-memory。
+- **验收**：代理能找到先前会话的决定，却无法读取它不属于的项目；关闭读取会隐藏该能力而不删除任何数据。
+- **里程碑**：M2。
+- **状态**：已自动化——`pnpm test:e2e:memory`（`scripts/e2e-memory-recall.mjs`）。同一里程碑的中文检索延迟门禁
+  是 `pnpm test:perf:memory`：它单独运行
+  `rpc::memory_tools::tests::
+  history_search_stays_within_the_cjk_latency_budget_on_a_large_history`，在 1 万会话 / 4 万消息的夹具上
+  强制 p95 ≤ 300 ms。在并行主机测试套件内，同一测试只打印分布并守护 5 s 上限，因为那里的采样反映的是主机负载
+  而不是查询本身。
 
 ### E2E-TOOLING-local-pre-push-gate
 

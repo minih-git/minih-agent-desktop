@@ -89,8 +89,12 @@ fn search(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
     Ok(json!({ "entries": entries }))
 }
 
+/// The session-start snapshot. `path` names the session's project; a caller
+/// without one gets the user scope alone, so a session that belongs to no
+/// project still starts with the user's own notes (ADR agent-long-term-memory
+/// §5).
 fn index(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
-    let path = required_str(params, "path")?;
+    let path = optional_str(params, "path")?;
     let index = db.learned_memory_index(path).map_err(internal)?;
     Ok(json!({ "index": index }))
 }

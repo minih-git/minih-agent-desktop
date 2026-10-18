@@ -19,7 +19,11 @@ import {
   type RuntimeProviderConfig,
 } from "./runtime.js";
 import type { PluginSkillDef } from "./plugin-skills-prompt.js";
-import type { SessionMessageOrigin, TrustedExtensionSpec } from "@minih-agent/shared";
+import type {
+  LearnedMemoryIndex,
+  SessionMessageOrigin,
+  TrustedExtensionSpec,
+} from "@minih-agent/shared";
 import type { ProjectInstructions } from "./project-instructions.js";
 import type { CustomSystemPrompt } from "./custom-system-prompt.js";
 import {
@@ -129,6 +133,10 @@ type RuntimeParams = {
   customSystemPrompt?: CustomSystemPrompt;
   projectInstructions?: ProjectInstructions;
   projectMemory?: string;
+  /** Bounded learned-memory index loaded by Electron main at launch. */
+  learnedMemoryIndex?: LearnedMemoryIndex;
+  /** Portable "use learned memory" switch; absent means on. */
+  learnedMemoryRead?: boolean;
   compactionSettings?: ContextCompactionSettings;
   attachmentsDir?: string;
   userMessageId?: string;
@@ -238,6 +246,7 @@ async function runtimeFor(
     projectInstructions: params.projectInstructions,
     customSystemPrompt: params.customSystemPrompt,
     projectMemory: params.projectMemory,
+    learnedMemoryRead: params.learnedMemoryRead,
     projectPath: params.projectPath,
     remoteWorkspace: params.remoteWorkspace,
     workspaceRoot: params.workspaceRoot,
@@ -317,6 +326,8 @@ async function runtimeFor(
     customSystemPrompt: params.customSystemPrompt,
     projectInstructions: params.projectInstructions,
     projectMemory: params.projectMemory,
+    learnedMemoryIndex: params.learnedMemoryIndex,
+    learnedMemoryRead: params.learnedMemoryRead,
     scratchDir:
       typeof params.scratchDir === "string" && params.scratchDir
         ? params.scratchDir

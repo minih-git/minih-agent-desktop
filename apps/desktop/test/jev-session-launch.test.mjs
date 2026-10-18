@@ -57,6 +57,11 @@ test("session launch resolves Jev credentials only for opted-in Agent mode", asy
         if (method === "skills.active") return { skills: [] };
         if (method === "mcp.active") return { servers: [] };
         if (method === "agents.active") return { subagents: [] };
+        // A launch reads the learned-memory index even without a project, where
+        // the host answers with the user scope alone.
+        if (method === "memory.index") {
+          return { index: { entries: [], omittedCount: 0, bytes: 0 } };
+        }
         if (method === "agents.disabledBuiltins") return { disabled: [] };
         if (method === "secrets.getForRuntime") {
           keyReads.push(input);
