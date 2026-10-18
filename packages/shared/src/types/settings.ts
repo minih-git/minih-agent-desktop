@@ -106,6 +106,14 @@ export type AppSettings = {
    */
   fontScale?: number;
   /**
+   * Read learned memory: the session-start index and the recall and remember
+   * tools. Absent means on. Off hides the index section,
+   * `SessionHistorySearch`, `MemorySearch`, and `MemoryRemember` without
+   * deleting anything, and it is a portable application setting, so it travels
+   * with config sync like the rest of this record.
+   */
+  learnedMemoryRead?: boolean;
+  /**
    * Show model reasoning in the transcript. Off keeps the live thinking
    * indicator visible and hides completed reasoning rows and excerpts; absent
    * falls back to the legacy `thinkingDisplayMode`. This is a presentation

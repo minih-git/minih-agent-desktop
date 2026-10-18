@@ -107,6 +107,7 @@ import {
   IconPin,
   IconPencil,
   IconSidebar,
+  IconSparkles,
   IconStar,
   IconTrash,
   IconX,
@@ -301,6 +302,7 @@ export function Sidebar({
   const [sortOpen, setSortOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(defaultActivityOpen);
   const [sessionMenu, setSessionMenu] = useState<string | null>(null);
+  const [learningExcluded, setLearningExcluded] = useState<boolean | null>(null);
   const [renameFor, setRenameFor] = useState<SessionSummary | null>(null);
   const [editProjectFor, setEditProjectFor] = useState<ProjectEntry | null>(null);
   const [deleteProjectFor, setDeleteProjectFor] = useState<ProjectEntry | null>(null);
@@ -1516,10 +1518,48 @@ export function Sidebar({
    * The link another conversation references: pasting it into a Composer draft
    * carries a bounded excerpt of this conversation into that turn (issue #1324).
    */
+  // Opening a session menu reads that session's learning flag once, so the
+  // checkbox shows what the host stored rather than a guess.
+  useEffect(() => {
+    if (!sessionMenu) return;
+    let cancelled = false;
+    setLearningExcluded(null);
+    void api
+      .getMemorySessionState(sessionMenu)
+      .then((result) => {
+        if (!cancelled) setLearningExcluded(result.state.excluded);
+      })
+      .catch(() => {
+        if (!cancelled) setLearningExcluded(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionMenu]);
+
   const copySessionLink = async (session: SessionSummary) => {
     try {
       await navigator.clipboard.writeText(formatSessionLink(session.id));
       showToast(t("chat.copied"));
+    } catch (error) {
+      reportError(error);
+    }
+    closeMenus();
+  };
+
+  /**
+   * The per-session learning switch (ADR agent-long-term-memory §6). The host
+   * stores it, so the menu reads the state back instead of assuming a default.
+   */
+  const toggleSessionLearning = async (session: SessionSummary) => {
+    try {
+      const current = await api.getMemorySessionState(session.id);
+      const next = !current.state.excluded;
+      await api.setMemorySessionExcluded(session.id, next);
+      setLearningExcluded(next);
+      showToast(
+        next ? t("settings.sessionDontLearnOn") : t("settings.sessionDontLearnOff"),
+      );
     } catch (error) {
       reportError(error);
     }
@@ -2345,6 +2385,20 @@ export function Sidebar({
               <IconCopy size={14} />
               {t("nav.copySessionLink")}
             </button>
+            {/* Per-session learning exclusion (ADR agent-long-term-memory §6):
+                the host stores the flag, so its state is read back, not guessed. */}
+            {session.source !== "pi-native" ? (
+              <button
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={learningExcluded === true}
+                data-action="toggle-session-learning"
+                onClick={() => void toggleSessionLearning(session)}
+              >
+                <IconSparkles size={14} />
+                {t("settings.sessionDontLearn")}
+              </button>
+            ) : null}
             {settings?.developerMode === true && !isRemoteSession(session) ? (
               <>
                 <button

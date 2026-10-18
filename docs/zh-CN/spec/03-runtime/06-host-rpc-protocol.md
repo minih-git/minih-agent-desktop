@@ -249,6 +249,16 @@ type ToolBudgetHealth = {
 - `memory.extraction.claim({ sessionId, owner, leaseMs? })` /
   `memory.extraction.complete({ sessionId, owner, cursorSeq })` /
   `memory.extraction.fail({ sessionId, owner, error })` —— 可选抽取使用的游标与租约。
+
+`tools.execute` 配 `toolName: "MemoryRemember"` 即同名工具执行的显式写入。它接受
+`{ content, kind, scope?, basis?, rationale? }`，写入一条 `active` 条目，`origin = explicit`；
+来源就是传输层的 `sessionId` 与 `turnId`，因此任何参数都无法指定会话、回合或消息。结果：
+写入或找到条目时为 `{ entry, duplicate, note }`，其中
+`entry = { id, kind, scope, content, rationale, revision, createdAt }`；规则拒绝时为通常的工具
+结果 `{ error, code }`——`MEMORY_CREDENTIAL_DETECTED`、`MEMORY_PROVENANCE_REQUIRED`、
+`MEMORY_TOMBSTONED`、`MEMORY_INVALID_FIELD`、`MEMORY_CONTENT_TOO_LARGE`、
+`TOOL_TURN_CANCELLED`、`TOOL_DENIED`、`INVALID_ARGUMENT`。被拒写入永不重复被拒原文。条目的
+`revision` 正是回执「编辑」回传给 `memory.update` 的值。
   只有租约持有者可以推进游标或记录失败，且游标永不回退。
 
 ### 秘密

@@ -325,6 +325,19 @@ recall tools.
 - `memory.extraction.claim({ sessionId, owner, leaseMs? })` /
   `memory.extraction.complete({ sessionId, owner, cursorSeq })` /
   `memory.extraction.fail({ sessionId, owner, error })` — the cursor and lease the
+
+`tools.execute` with `toolName: "MemoryRemember"` is the explicit write the tool
+of the same name performs. It takes `{ content, kind, scope?, basis?, rationale? }`
+and stores one `active` entry with `origin = explicit`; the transport's
+`sessionId` and `turnId` are the provenance, so no argument can name a session, a
+turn, or a message. Results: `{ entry, duplicate, note }` with
+`entry = { id, kind, scope, content, rationale, revision, createdAt }` when it
+stored or found the entry, and the usual tool outcome `{ error, code }` when a
+rule refused it — `MEMORY_CREDENTIAL_DETECTED`, `MEMORY_PROVENANCE_REQUIRED`,
+`MEMORY_TOMBSTONED`, `MEMORY_INVALID_FIELD`, `MEMORY_CONTENT_TOO_LARGE`,
+`TOOL_TURN_CANCELLED`, `TOOL_DENIED`, `INVALID_ARGUMENT`. A refused write never
+repeats the refused text. The entry's `revision` is what the receipt's Edit
+passes back to `memory.update`.
   optional extractor uses. Only the lease owner may advance the cursor or record a
   failure, and the cursor never moves backwards.
 

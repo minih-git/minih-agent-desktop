@@ -559,8 +559,8 @@ MVP 可以通过写入 SQLite 或日志文件来启动。
 实时工具目录（ADR 0246 / D415）。`Task` 启动时运行时把 `toolCatalog`
 （含延迟的插件/MCP 工具）与可分配的额外工具取并集，再去掉 `Task` /
 `TaskWait` / `TaskList` / `TaskStop`、`EnterPlanMode` / `EnterGoalMode`、
-`asktool`、`new_context`、`ToolSearch`，以及两个召回读工具
-`SessionHistorySearch` / `MemorySearch`。内置定义不默认开启。`inherit`
+`asktool`、`new_context`、`ToolSearch`，以及学习记忆工具
+`SessionHistorySearch` / `MemorySearch` / `MemoryRemember`。内置定义不默认开启。`inherit`
 写在 Markdown 和设置里；host-core 会保留该标记，因此只有 inherit 的文档
 仍能加载。插件工具、`Skill` 和 MCP 工具只通过这一 opt-in 到达委托，
 不能写进可分配白名单。
@@ -642,12 +642,12 @@ sidecar 不附加覆盖，委托使用会话的有效权限模式；因此父会
 
 ## 学习记忆与历史召回
 
-`SessionHistorySearch` 与 `MemorySearch` 是读取过往会话所学内容的内置按需工具
-（D668、ADR agent-long-term-memory）。两者均为低风险、只读：不修改任何状态，
-因此 Agent、Plan 与 Goal 都允许使用——契约协商读到的正是本会话启动时冻结的同一份
-索引。`Task` 子代理无法使用：委托没有用户，其提示词中也没有学习记忆；MCP 控制目录
-同样不暴露。
-
+`SessionHistorySearch` 与 `MemorySearch` 是读取过往会话所学内容的内置按需工具，
+`MemoryRemember` 是显式写入工具（D668、ADR agent-long-term-memory）。两个读工具为低风险、
+只读：不修改任何状态，因此 Agent、Plan 与 Goal 都允许使用——契约协商读到的正是本会话启动
+时冻结的同一份索引。写工具为中等风险，仅限 Agent，在所有权限模式下都走正常审批路径，因为
+契约协商不应改变持久记忆。`Task` 子代理三者都无法使用：委托没有用户，其提示词中也没有学习
+记忆；MCP 控制目录同样不暴露。
 作用域由 host-core 决定，因为数据以及判定调用方可读范围所需的会话身份都归主机所有：
 
 - `SessionHistorySearch({ query, scope?, limit? })` 封装会话内容检索
@@ -668,7 +668,21 @@ sidecar 不附加覆盖，委托使用会话的有效权限模式；因此父会
 运行时无法自行放宽作用域。无法识别的 `scope` 值不是放宽：工具以 `INVALID_ARGUMENT` 拒绝，
 该调用仍是免确认的读取。
 
-两者都遵循可移植的 `learnedMemory.read` 设置。关闭读取时，运行时隐藏索引段与这两个
+`MemoryRemember({ content, kind, scope?, basis?, rationale? })` 写入一条 `active` 条目，
+`origin = explicit`。它是唯一写学习记忆的工具，且仅限 Agent：Plan 与 Goal 直接拒绝。来源由
+主机掌握——调用会话本身，以及它正在运行的回合中的用户消息——因此任何参数都无法指定会话、
+回合或消息；回合缺失或已结束的调用会以 `TOOL_TURN_CANCELLED` 拒绝。`basis` 为
+`user_stated`（默认）或 `verified`；`verified` 只对 `fact` 与 `reference` 接受。工具结果说明
+该条目从下一个会话开始生效，因为正在运行的会话保留它启动时的快照。对早先删除过的内容再次
+明确要求记住，就是清除删除屏蔽记录的显式请求。
+
+拒绝是带稳定错误码的工具结果，绝不包含被拒原文：`MEMORY_CREDENTIAL_DETECTED`、
+`MEMORY_PROVENANCE_REQUIRED`、`MEMORY_TOMBSTONED`、`MEMORY_INVALID_FIELD`、
+`MEMORY_CONTENT_TOO_LARGE`。重复记住会返回已存条目并带 `duplicate: true`。渲染层显示回执，
+提供编辑（`memory.update`，按 `revision` 做比较交换）与撤销（`memory.delete`，写入删除屏蔽
+记录）。
+
+三者都遵循可移植的 `learnedMemoryRead` 设置。关闭读取时，运行时隐藏索引段与全部学习记忆
 工具，host-core 对过期调用返回 `TOOL_DENIED`，且不删除任何数据。主机面见
 [04. 数据存储](/zh-CN/spec/03-runtime/04-data-storage) §4.15 与
 [06. 主机 RPC 协议](/zh-CN/spec/03-runtime/06-host-rpc-protocol)；会话启动索引及其

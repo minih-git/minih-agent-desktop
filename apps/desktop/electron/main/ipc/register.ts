@@ -26,6 +26,7 @@ import { registerSettingsIpc } from "./settings-ipc";
 import { registerStorageIpc } from "../storage/ipc";
 import { registerConfigSyncIpc } from "./config-sync-ipc";
 import { registerSkillsIpc } from "./skills-ipc";
+import { registerMemoryIpc } from "../memory/memory-ipc";
 import { registerAgentImportIpc } from "./agent-import-ipc";
 import { registerRemoteHostIpc } from "./remote-host-ipc";
 import { registerRemoteGatewayIpc } from "./remote-gateway-ipc";
@@ -464,6 +465,11 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     sendToRenderer,
     searchMcpMarket,
   });
+
+  // Learned memory (ADR agent-long-term-memory): the memory manager and the
+  // per-session "don't learn from this conversation" switch forward to the
+  // host, which owns the rules and the compare-and-set revision.
+  registerMemoryIpc({ registrar, getHost });
 
 
   registerSkillsIpc({

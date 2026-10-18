@@ -2497,6 +2497,16 @@ live status and Stop controls across steering replies and compaction dividers.
 A new ordinary user turn, parent settlement, or history reading ends that live
 projection; terminal Task snapshots still take precedence.
 
+`MemoryRemember` is the one tool row that writes something the user keeps, so it
+is a receipt rather than a generic call row: it carries the saved text, its
+scope (project or user), and two actions. Edit turns the row into an inline
+editor and saves through `memory.update` with the revision the row holds;
+Undo calls `memory.delete` and leaves the row marked as deleted with no further
+action. A refusal — a credential, missing provenance, a tombstone — replaces the
+text with a localized reason chosen by the stable error code, never the tool's
+own message. A duplicate keeps the row, says nothing changed, and offers the
+same actions on the entry that already existed.
+
 The lifecycle rows (`TaskWait`/`TaskList`/`TaskStop`) stay compact tool rows —
 they are not topology nodes and must not inflate the subagent counts — but they
 are presented as subagent rows rather than as generic tool calls (D269). A

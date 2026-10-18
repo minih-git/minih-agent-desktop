@@ -1825,12 +1825,13 @@ merging to the user, and how to resolve a merge conflict).
 ### 7.4 Learned memory at session start (D668, ADR agent-long-term-memory)
 
 Electron main loads the learned-memory index next to the pinned project memory
-when it starts a runtime: one `memory.index` call for the session's project,
-skipped when the session has no project or when the portable read switch
-`learnedMemory.read` is off. The snapshot travels to the sidecar as the
-`learnedMemoryIndex` launch parameter, with `learnedMemoryRead` beside it. The
-call is best effort: a failure logs `learned memory index unavailable` with a
-stable code only, and the launch continues without the section. Nothing else
+when it starts a runtime: one `memory.index` call, naming the session's project
+when it has one and the user scope alone when it does not, skipped only when the
+portable read switch `learnedMemoryRead` is off. The snapshot travels to the
+sidecar as the `learnedMemoryIndex` launch parameter, with `learnedMemoryRead`
+beside it. The call is best effort: a failure logs `learned memory index
+unavailable` with a stable code only, and the launch continues without the
+section. Nothing else about the launch depends on it.
 about the launch depends on it.
 
 `composeSystemPrompt` renders the section after the project instruction chain
@@ -1855,11 +1856,17 @@ switch is configuration rather than data, so `learnedMemoryRead` *is* part of
 the reuse comparison: turning it off must remove the section and both recall
 tools from the catalog.
 
+The runtime's tool catalog carries the learned-memory tools on demand, never in
+the fixed declaration set: `SessionHistorySearch` and `MemorySearch` in every
+mode, and `MemoryRemember` in Agent only, because Plan and Goal are read-only
+contract negotiations and must not change durable memory. All three are
+unavailable while `learnedMemoryRead` is off.
+
 Subagents receive no learned memory: `composeSubagentSystemPrompt` keeps
 composing only the framing, the definition prompt, and guidance, and
-`SessionHistorySearch` / `MemorySearch` are on `SUBAGENT_INHERIT_DENY_TOOLS`, so
-`tools: inherit` cannot lend them either — see §10.2 of
-[03. Tools and permissions](03-tools-and-permissions.md).
+`SessionHistorySearch` / `MemorySearch` / `MemoryRemember` are on
+`SUBAGENT_INHERIT_DENY_TOOLS`, so `tools: inherit` cannot lend them either — see
+§10.2 of [03. Tools and permissions](03-tools-and-permissions.md).
 
 ## 8. Concurrency
 

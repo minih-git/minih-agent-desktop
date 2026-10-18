@@ -54,6 +54,7 @@ pub(crate) const PORTABLE_APPLICATION_FIELDS: &[&str] = &[
     "imageGeneration",
     "imageGenerationModels",
     "speech",
+    "learnedMemoryRead",
 ];
 
 const PROJECT_IDENTITY_NAMESPACE: &str = "configSyncIdentities";
@@ -106,6 +107,7 @@ pub const DOMAIN_ADAPTERS: &[DomainAdapterSpec] = &[
             "keybindings",
             "display bindings",
             "provider/model bindings",
+            "learned memory reading",
         ],
         secret_fields: &[],
         local_overlays: &[
@@ -641,6 +643,10 @@ mod tests {
         // synced bundle (rollout R5, ADR 0331).
         assert!(!PORTABLE_APPLICATION_FIELDS.contains(&"remoteGateway"));
         assert!(PORTABLE_APPLICATION_FIELDS.contains(&"showThinking"));
+        // Reading learned memory is a preference about the user's own devices,
+        // so the switch travels with the application domain while the entries
+        // themselves sync through the memory domain.
+        assert!(PORTABLE_APPLICATION_FIELDS.contains(&"learnedMemoryRead"));
         assert!(PORTABLE_APPLICATION_FIELDS.contains(&"thinkingDisplayMode"));
         let application = adapter_for(DOMAIN_APPLICATION).expect("application adapter");
         assert!(application.exportable_fields.contains(&"showThinking"));

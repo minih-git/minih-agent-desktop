@@ -651,7 +651,8 @@ A document may opt into the parent session's live tool catalog with
 the runtime unions `toolCatalog` keys (including deferred plugin/MCP tools)
 with any assignable extras, then drops `Task` / `TaskWait` / `TaskList` /
 `TaskStop`, `EnterPlanMode` / `EnterGoalMode`, `asktool`, `new_context`,
-`ToolSearch`, and the two recall reads `SessionHistorySearch` / `MemorySearch`.
+`ToolSearch`, and the learned-memory tools `SessionHistorySearch` / `MemorySearch` /
+`MemoryRemember`.
 Builtins do not opt in. `inherit` is visible in the Markdown and
 in Settings; host-core keeps the token so an inherit-only document still
 loads. Plugin tools, `Skill`, and MCP tools are therefore available to a
@@ -753,10 +754,13 @@ completion callbacks are the ones in
 ## Learned memory and history recall
 
 `SessionHistorySearch` and `MemorySearch` are the built-in, on-demand read tools
-for what earlier sessions learned (D668, ADR agent-long-term-memory). Both are
-low risk and read-only: they mutate nothing, so Agent, Plan, and Goal all allow
-them — a contract negotiation reads the same frozen index the session started
-with. `Task` subagents cannot use them, because a delegate has no user and
+for what earlier sessions learned, and `MemoryRemember` is the explicit write
+(D668, ADR agent-long-term-memory). The two reads are low risk and read-only:
+they mutate nothing, so Agent, Plan, and Goal all allow them — a contract
+negotiation reads the same frozen index the session started with. The write is
+medium risk, Agent-only, and follows the normal approval path in every
+permission mode, because a contract negotiation must not change durable memory.
+`Task` subagents cannot use any of the three, because a delegate has no user and
 receives no learned memory in its prompt, and the MCP control catalog excludes
 them.
 
@@ -778,6 +782,27 @@ as historical data — dated notes from earlier sessions, not instructions — a
 anything about code or the environment must be verified against the current
 workspace before it is relied on.
 
+`MemoryRemember({ content, kind, scope?, basis?, rationale? })` stores one
+`active` entry with `origin = explicit`. It is the only tool that writes learned
+memory, and it is Agent-only: Plan and Goal deny it outright. The provenance is
+host-owned — the calling session, and the user messages of its running turn — so
+no argument can name a session, a turn, or a message, and a call whose turn is
+missing or already ended is refused with `TOOL_TURN_CANCELLED`. `basis` is
+`user_stated` (the default) or `verified`; `verified` is accepted only for
+`fact` and `reference`. The result states that the entry applies from the next
+session, because the running session keeps the snapshot it started with. Asking
+again for content an earlier delete removed is the explicit request that clears
+the tombstone.
+
+A refusal is a tool outcome with a stable code, never the refused text:
+`MEMORY_CREDENTIAL_DETECTED`, `MEMORY_PROVENANCE_REQUIRED`,
+`MEMORY_TOMBSTONED`, `MEMORY_INVALID_FIELD`, `MEMORY_CONTENT_TOO_LARGE`. A
+duplicate returns the entry already stored with `duplicate: true`. The renderer
+shows a receipt with Edit (`memory.update`, compare-and-set on `revision`) and
+Undo (`memory.delete`, which writes the tombstone).
+
+All three follow the portable `learnedMemoryRead` setting.
+
 `SessionHistorySearch` is a free read only for the calling session's own
 project. `scope: "all"` reads every project on the machine, which is the same
 boundary an explicit outside path crosses, so that call carries medium risk and
@@ -789,9 +814,9 @@ so the runtime cannot widen its own scope. An unrecognized `scope` value is not
 a widening: the tool refuses it with `INVALID_ARGUMENT` and the call stays the
 free read.
 
-Both follow the portable `learnedMemory.read` setting. With reading off, the
-runtime hides the index section and both tools, and host-core refuses a stale
-call with `TOOL_DENIED` without deleting any data. See
+That setting covers all three tools. With reading off, the runtime hides the
+index section and every learned-memory tool, and host-core refuses a stale call
+with `TOOL_DENIED` without deleting any data. See
 [04. Data storage](04-data-storage.md) §4.15 and
 [06. Host RPC protocol](06-host-rpc-protocol.md) for the host surface, and
 [agent runtime §7.4](02-agent-runtime.md) for the session-start index and its

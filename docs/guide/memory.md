@@ -1,0 +1,78 @@
+---
+title: Learned memory
+description: Ask the agent to remember something, review what it kept, and turn learning off.
+---
+
+# Learned memory
+
+Minih-Agent-Desktop keeps three kinds of durable context apart:
+
+- **Project instructions** (`AGENTS.md` and friends) are rules the agent must
+  follow. They are files in your workspace.
+- **Project memory** (the pinned editor in the project menu) is the full text you
+  curate yourself. It is loaded at every session start.
+- **Learned memory** is a set of short, dated notes: preferences, feedback, facts
+  and references that earlier conversations produced. A new session starts with a
+  bounded index of them, and the agent can search the rest on demand.
+
+## Ask the agent to remember something
+
+Say what you want kept — "remember that I want terse Chinese replies", "note that
+this gateway deploys on Fridays". The agent calls `MemoryRemember`, which asks for
+your approval first, and the conversation shows a receipt with what was saved and
+whether it applies to this project or to you across every project.
+
+The receipt offers two actions:
+
+- **Edit** changes the wording. If something else changed the same note first,
+  you are told and the list reloads instead of overwriting it.
+- **Undo** deletes the note. Deleting is not a hide: the text is erased, and the
+  agent cannot be talked into recreating the same note from the same evidence.
+  Asking it to remember that content again in so many words is the one thing that
+  brings it back.
+
+A note applies from the **next** session. The conversation you are in keeps the
+memory snapshot it started with, so asking the agent to remember something never
+disturbs what it already has.
+
+Notes that look like credentials — API keys, tokens, private keys, passwords in a
+URL — are refused, and the refused text is not stored, logged, or echoed back.
+
+## Review and clean up
+
+Open **Learned memory** from a project's row menu in Settings → Project archive,
+next to **Project memory**. Settings carries the same manager for the notes that
+apply to you across every project.
+
+The manager lists the notes of one scope, filters by kind and status, and lets you
+edit, archive, restore, or delete each one. Archiving hides a note without
+forgetting it, so it can come back; deleting is permanent. When a note came from a
+conversation, the manager can open that conversation.
+
+The pinned memory editor is a separate surface and still works the same way; the
+two link to each other.
+
+## Turn it off
+
+- **Settings → Use learned memory** hides the session-start index and every
+  learned-memory tool. Nothing is deleted, and turning it back on restores them.
+  The switch travels with config sync, so your devices agree.
+- **Session menu → Don't learn from this conversation** keeps this conversation
+  out of future extraction.
+- **Settings → Learn automatically** is not available yet; notes are only created
+  when you ask for them.
+
+## What the agent can do with it
+
+Besides the short index it starts with, the agent has three tools:
+
+- `MemorySearch` reads the notes that apply to this project and to you.
+- `SessionHistorySearch` looks through this project's earlier conversations and
+  returns short snippets. Reading another project's conversations is a separate,
+  approved action.
+- `MemoryRemember` saves a new note.
+
+All three present what they return as dated context, not instructions: the agent
+is expected to check anything about code or the environment against the current
+workspace before relying on it, and to follow your current request over an older
+note.

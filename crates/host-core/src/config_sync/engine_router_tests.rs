@@ -130,6 +130,7 @@ async fn application_show_thinking_roundtrips_and_keeps_local_only_settings() ->
             "showThinking": false,
             "thinkingDisplayMode": "detailed",
             "transcriptDensity": "compact",
+            "learnedMemoryRead": false,
             "defaultPermissionMode": "accept-edits",
         }),
     )?;
@@ -147,6 +148,8 @@ async fn application_show_thinking_roundtrips_and_keeps_local_only_settings() ->
         assert_eq!(settings["thinkingDisplayMode"], "detailed");
         // The transcript density is a portable presentation preference.
         assert_eq!(settings["transcriptDensity"], "compact");
+        // Reading learned memory is portable too, and a false value stays false.
+        assert_eq!(settings["learnedMemoryRead"], false);
         // Local-only settings do not travel: the source value never appears.
         assert!(settings.get("defaultPermissionMode").is_none());
     }
@@ -159,6 +162,7 @@ async fn application_show_thinking_roundtrips_and_keeps_local_only_settings() ->
             "showThinking": false,
             "thinkingDisplayMode": "detailed",
             "transcriptDensity": "compact",
+            "learnedMemoryRead": false,
             "defaultPermissionMode": "ask",
         }),
     )?;
@@ -170,6 +174,7 @@ async fn application_show_thinking_roundtrips_and_keeps_local_only_settings() ->
             "showThinking": true,
             "thinkingDisplayMode": "detailed",
             "transcriptDensity": "detailed",
+            "learnedMemoryRead": true,
             "defaultPermissionMode": "accept-edits",
         }),
     )?;
@@ -180,6 +185,7 @@ async fn application_show_thinking_roundtrips_and_keeps_local_only_settings() ->
     assert_eq!(settings["showThinking"], true);
     assert_eq!(settings["thinkingDisplayMode"], "detailed");
     assert_eq!(settings["transcriptDensity"], "detailed");
+    assert_eq!(settings["learnedMemoryRead"], true);
     assert_eq!(settings["defaultPermissionMode"], "ask");
     Ok(())
 }

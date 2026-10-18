@@ -9900,3 +9900,65 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **关联规格**：`04-ux/01-ui-ia.md`、`04-ux/08-component-spec.md` §5.4、`04-ux/09-interaction-patterns.md` §9.1、`03-runtime/06-host-rpc-protocol.md`（`session.delegations`、`session.delegation`）、`03-runtime/01-ipc-protocol.md`（`sessionDelegations`、`sessionDelegation`）。
 - **验收**：C（会话与流）、F（持久化）、质量。
 - **状态**：已由 `apps/desktop/test/subagent-roster.test.mjs`、`apps/desktop/test/subagent-roster-ui.test.mjs` 与 `pnpm test:e2e:subagent-roster` 覆盖；真机走查为草稿。
+
+### E2E-MEMORY-explicit-remember-reaches-next-session：显式记住在下一个会话生效
+
+- **前提条件**：真实 host-core 二进制、临时数据目录、一个已注册项目，不调用模型、provider 或网络。
+  直接驱动 `tools.execute`（运行时调用所经过的同一道闸门），并设置 `defaultPermissionMode` 为 `ask`，
+  以便看到写入的确认卡。
+- **步骤**：
+  1. 在某会话中开启一个回合，并追加声明偏好的用户消息。
+  2. 调用 `MemoryRemember({ content, kind: "preference" })` 并应答它弹出的确认卡。
+  3. 读取该项目的 `memory.index`。
+- **预期**：结果写入一条项目作用域的 `active` 条目，`duplicate: false`，备注说明它从下一个会话开始生效。
+  确认卡为中等风险并说明了动作。项目索引现在正好带上该条目，也就是下一个会话启动时的快照。
+- **关联规格**：`03-runtime/03-tools-and-permissions.md`（学习记忆）、
+  `03-runtime/06-host-rpc-protocol.md`（`tools.execute` / `MemoryRemember`）、ADR
+  agent-long-term-memory §3.1。
+- **验收**：用户可以要求代理记住某事，且下一个会话带着它启动。
+- **里程碑**：M3。
+- **状态**：已自动化——`pnpm test:e2e:memory`（`scripts/e2e-memory-remember.mjs`）。
+
+### E2E-MEMORY-mid-session-write-keeps-runtime：会话中写入不重建运行时
+
+- **前提条件**：与上一场景相同的夹具。
+- **步骤**：
+  1. 在运行中的回合里记住一条记录。
+  2. 在同一会话中读取同一项目的 `memory.index`。
+  3. 读取该项目的 `memory.list`。
+- **预期**：写入立即持久——`memory.list` 立刻返回它——而会话启动时的索引不会被重建进正在运行的提示词：
+  该条目从下一个会话生效。运行中的回合没有任何变化，因此写入永不重建 runtime。
+- **关联规格**：`03-runtime/02-agent-runtime.md` §7.4（索引在 runtime 生命周期内冻结）、ADR
+  agent-long-term-memory §5。
+- **验收**：会话中写入既不丢失记录，也不打扰正在运行的提示词。
+- **里程碑**：M3。
+- **状态**：已自动化——`pnpm test:e2e:memory`。
+
+### E2E-MEMORY-deleted-memory-stays-forgotten：删除后保持遗忘
+
+- **前提条件**：与上一场景相同的夹具。
+- **步骤**：
+  1. 记住一条记录。
+  2. 通过 `memory.delete` 删除它。
+  3. 读取 `memory.index` 与 `memory.list`。
+  4. 在同一回合中再次要求记住同样的内容。
+- **预期**：删除后两次读取都不再含有该记录。再次明确要求记住，就是清除删除屏蔽记录的显式请求，
+  因此新条目以新的 id 写入；写入路径本身绝不复活相同内容。
+- **关联规格**：`03-runtime/06-host-rpc-protocol.md`（学习记忆）、ADR agent-long-term-memory §6。
+- **验收**：遗忘是主机保证，只有用户显式要求才能撤销。
+- **里程碑**：M3。
+- **状态**：已自动化——`pnpm test:e2e:memory`。
+
+### E2E-MEMORY-project-scope-isolation：项目作用域隔离
+
+- **前提条件**：两个已注册项目与同一夹具。
+- **步骤**：
+  1. 在第一个项目记住一条记录。
+  2. 读取第二个项目的 `memory.index`。
+  3. 在第二个项目记住另一条记录，然后从第一个项目的会话调用 `MemorySearch`。
+- **预期**：第二个项目的索引永不带上第一条记录，第一个项目的检索也永不返回第二条记录。即使没有任何参数
+  指定项目，每次记住都写入了自己项目的作用域。
+- **关联规格**：`03-runtime/03-tools-and-permissions.md`、ADR agent-long-term-memory §2（作用域身份）与 §3。
+- **验收**：一个项目的学习记忆对另一个项目不可见，任何路径参数都无法转移它。
+- **里程碑**：M3。
+- **状态**：已自动化——`pnpm test:e2e:memory`。

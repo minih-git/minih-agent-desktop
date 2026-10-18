@@ -66,6 +66,8 @@ Examples:
 - `minih-agent-desktop/project-group/memory/get` / `save`
 - `minih-agent-desktop/project-group/instructions/get` / `save`
 - `minih-agent-desktop/session/getScratchPath`
+- `minih-agent-desktop/memory/list` / `update` / `archive` / `restore` / `delete`
+- `minih-agent-desktop/memory/session/get` / `setExcluded`
 - `minih-agent-desktop/session/openScratchPath`
 - `minih-agent-desktop/session/collaboration`
 
