@@ -5727,6 +5727,7 @@ eleven-tool-round desktop paths are verified by
 | E / Quality — 浏览器截图超时恢复 | E2E-BROWSER-capture-resize |
 | A / C / Quality — 侧栏材质与设置返回 | E2E-LAYOUT-sidebar-settings |
 | C / Quality — 目的页加载与焦点 | E2E-087b |
+| C / F / 质量 — 会话子代理列表 | E2E-SESSION-subagent-roster-finds-old-delegations |
 | A / H / Quality — 渲染器进程崩溃恢复 | E2E-RUNTIME-renderer-crash-recovery |
 | C / F / Quality — 含聊天的项目文件夹安全分离并删除 | E2E-048c |
 | B / F / Security — 提供商复制 | E2E-PROVIDER-copy-config-without-credentials |
@@ -9875,3 +9876,21 @@ host-created files. The full app's file-preview viewer is covered separately.
 运行 `node --test scripts/pre-push-gate.e2e.test.mjs`。套件使用隔离的本地裸仓库和真实 Git pre-push 钩子，以受控检查命令替代用户正在运行的应用或外部服务。
 验证检查成功允许推送、失败阻断推送且不改变远端 ref 并停止后续检查，显式绕过、仅标签推送和删除分支跳过检查；工具缺失必须显示未完整验证，不能显示通过。
 在候选提交上另外运行 `pnpm check:fast`，验证真实检查命令。
+
+### E2E-SESSION-subagent-roster-finds-old-delegations：子代理列表能找到早期委派
+
+- **ID**：E2E-SESSION-subagent-roster-finds-old-delegations
+- **标题**：工作面板的子代理列表能找到已不在已加载会话记录中的委派。
+- **前提条件**：一个会话最早的 `Task` 行已超出渲染层会话记录阅读窗口，且至少有一个运行中与一个已结束的委派；工作面板打开在审阅或浏览器标签上。
+- **步骤**：
+  1. 运行若干子代理，等最早的结束，再让主对话继续到早先的 `Task` 行离开已加载范围。
+  2. 在非子代理标签激活时打开工作面板，查看标签正文上方的列表。
+  3. 确认最早的委派出现在“已结束”组，并显示任务摘要、代理名与文字状态。
+  4. 点击该行；确认已有的子代理详情标签被打开或激活，且该行显示选中态。
+  5. 再启动一个子代理，切到审阅标签，确认运行中数量更新而当前标签不变。
+  6. 收起列表，切换会话再切回；确认收起选择在该会话内保留且计数正确。
+  7. 删除该会话；确认其列表项不会出现在其他会话下。
+- **预期**：列表索引整段已持久化的会话，而不只是已加载的那一页，因此旧委派仍然可查。运行中的行在前，已结束的行在后，组内均按时间倒序。同名子代理不会合并；被拒绝的 `Task`（没有委派 ID）不出现；已结束的记录不会因为轮次推进而消失。点击会打开已有的详情标签，而不是新的界面。列表不会自行打开面板、切换标签或抢占焦点。读取失败显示重试而不是空列表；详情显示落盘的对话，而不是“详情不可用”。
+- **关联规格**：`04-ux/01-ui-ia.md`、`04-ux/08-component-spec.md` §5.4、`04-ux/09-interaction-patterns.md` §9.1、`03-runtime/06-host-rpc-protocol.md`（`session.delegations`、`session.delegation`）、`03-runtime/01-ipc-protocol.md`（`sessionDelegations`、`sessionDelegation`）。
+- **验收**：C（会话与流）、F（持久化）、质量。
+- **状态**：已由 `apps/desktop/test/subagent-roster.test.mjs`、`apps/desktop/test/subagent-roster-ui.test.mjs` 与 `pnpm test:e2e:subagent-roster` 覆盖；真机走查为草稿。

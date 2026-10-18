@@ -1139,9 +1139,20 @@ entirely inside the plugin's isolated page:
 | New launcher active | The body hosts concise Review and plugin-view buttons. Each row replaces the launcher tab with its destination or activates the existing singleton; the page is independently closeable. |
 | Plugin view active | The body hosts the plugin's own isolated page as a native `WebContentsView`, positioned from the measured surface rect. It remains visible at its full rect while the divider is being resized or a New launcher tab is created; creating a page never pushes the plugin body down or changes its bounds. Embedded plugin documents start with zero root/body margin and border and a transparent background, so the host panel and plugin theme own the visible surface edge. It is hidden whenever the tab is inactive, the panel is animating, or a panel-wide blocking overlay is open — the same rule the Browser preview follows, since both composite above renderer content. A view whose plugin is disabled, uninstalled, reloaded, or crashed is destroyed; the tab stays and re-opens the page on the next lifecycle event (ADR 0104) |
 | Plugin out of scope | A view contributed by a plugin that is not active in the current project disappears from the New launcher when the project changes. Unlike contributed themes, which are one global setting and stay unfiltered, a view is scoped work |
-| Session subagent roster | Present only while the panel is open and the active session has delegations (or the full-history read is still loading or failed). It is a section above the tab body, independent of the active tab, and lists the whole session's delegations rather than the loaded reading window. Collapsed shows one 34px row with total and running counts; expanded caps at `min(240px, 34vh)` and scrolls internally so the tab body keeps its own scroll owner. Rows are full-width buttons with status icon, brief, agent, text status, and duration; the delegation whose detail tab is active carries `aria-current`. The section is absent, not empty, for a session with no delegations. |
 
 ### 5.4 Interactions
+
+- The per-session subagent roster is a section between the tab strip and the
+  tab body, rendered only while the panel is open and the active session has
+  delegations (or the read is still loading or failed). It is independent of
+  the active tab, and it indexes the whole persisted session rather than the
+  loaded reading window, so an older delegation stays reachable. Collapsed, it
+  is one 34px row carrying the total and running counts; expanded, its body is
+  capped at `min(240px, 30vh)` and scrolls internally while the tab body keeps
+  its own scroll owner. Rows are full-width buttons showing a status icon, the
+  `Task` brief, the agent, a text status, and a duration; the delegation whose
+  detail tab is active carries `aria-current`. A session with no delegations
+  renders no section at all, and never renders it as an empty one.
 
 - Native plugin bounds follow the placeholder's complete viewport-relative
   rectangle after every renderer layout commit, not only after the placeholder
