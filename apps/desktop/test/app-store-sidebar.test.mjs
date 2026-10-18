@@ -123,29 +123,41 @@ test("project title toggles its conversation group without forcing it open", () 
   assert.doesNotMatch(sidebarSource, /className="project-collapse-toggle"/);
 });
 
-test("collapsing a project resets its expanded session history", () => {
+test("collapsing a project resets its paged session history", () => {
   const collapseBlock = sidebarSource.match(
     /const setCollapsed = \(path: string, value: boolean\) => \{[\s\S]*?\n  \};/,
   )?.[0] ?? "";
 
   assert.match(
     collapseBlock,
-    /if \(value\) \{[\s\S]*?setExpandedProjectSessions\([\s\S]*?updateProjectSessionExpansion\(previous, normalized, false\)/,
+    /if \(value\) \{[\s\S]*?resetProjectSessionPage\(previous, normalized\)/,
   );
   const loadMoreBlock = sidebarSource.match(
-    /const expandProjectSessions = \(projectKey: string\) => \{[\s\S]*?\n  \};/,
+    /const expandProjectSessions = \(projectKey: string, sessionCount: number\) => \{[\s\S]*?\n  \};/,
   )?.[0] ?? "";
   assert.match(
     loadMoreBlock,
-    /updateProjectSessionExpansion\(previous, projectKey, true\)/,
+    /showMoreProjectSessions\(previous, projectKey, sessionCount\)/,
   );
   const collapseMoreBlock = sidebarSource.match(
     /const collapseProjectSessions = \(projectKey: string\) => \{[\s\S]*?\n  \};/,
   )?.[0] ?? "";
   assert.match(
     collapseMoreBlock,
-    /updateProjectSessionExpansion\(previous, projectKey, false\)/,
+    /resetProjectSessionPage\(previous, projectKey\)/,
   );
+  // The group renders one page, and the two controls are independent: a
+  // partially loaded history keeps its load-more row and gains a fold-back row.
+  const groupBlock = sidebarSource.match(
+    /const history = entry\.sessions\.filter[\s\S]*?return result;\n    \};/,
+  )?.[0] ?? "";
+  assert.match(
+    groupBlock,
+    /projectSessionPage\(history, projectSessionPages, entry\.key\)/,
+  );
+  assert.match(groupBlock, /if \(hiddenCount > 0\) \{/);
+  assert.match(groupBlock, /if \(collapseAvailable\) \{/);
+  assert.doesNotMatch(groupBlock, /else if \(collapseAvailable\)/);
 });
 
 test("global search stays on the conversation topbar, not the sidebar header", () => {

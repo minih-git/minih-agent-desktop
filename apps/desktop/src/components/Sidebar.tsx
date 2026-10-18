@@ -38,9 +38,9 @@ import {
   sessionPinned,
 } from "../lib/sidebar-session-groups";
 import {
-  DEFAULT_VISIBLE_PROJECT_SESSION_COUNT,
-  getVisibleProjectSessions,
-  updateProjectSessionExpansion,
+  projectSessionPage,
+  resetProjectSessionPage,
+  showMoreProjectSessions,
 } from "../lib/sidebar-project-sessions";
 import { listableSessions } from "../lib/session-origin";
 import {
@@ -326,7 +326,9 @@ export function Sidebar({
     keepVisible: keepSessionHoverCardVisible,
     registerDismissGuard: registerSessionHoverCardDismissGuard,
   } = useSessionHoverCard();
-  const [expandedProjectSessions, setExpandedProjectSessions] = useState<Record<string, boolean>>({});
+  // Per-project session page size: absent means the initial page, so a folded
+  // project starts over instead of restoring a long list.
+  const [projectSessionPages, setProjectSessionPages] = useState<Record<string, number>>({});
   const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null);
   const [dropProjectKey, setDropProjectKey] = useState<string | null>(null);
   const [projectsDropActive, setProjectsDropActive] = useState(false);
@@ -1271,8 +1273,8 @@ export function Sidebar({
     const normalized = normalizeProjectPath(path) || path;
     setProjectCollapsed(normalized, value);
     if (value) {
-      setExpandedProjectSessions((previous) =>
-        updateProjectSessionExpansion(previous, normalized, false),
+      setProjectSessionPages((previous) =>
+        resetProjectSessionPage(previous, normalized),
       );
     }
   };
@@ -1289,15 +1291,15 @@ export function Sidebar({
     closeMenus();
   };
 
-  const expandProjectSessions = (projectKey: string) => {
-    setExpandedProjectSessions((previous) =>
-      updateProjectSessionExpansion(previous, projectKey, true),
+  const expandProjectSessions = (projectKey: string, sessionCount: number) => {
+    setProjectSessionPages((previous) =>
+      showMoreProjectSessions(previous, projectKey, sessionCount),
     );
   };
 
   const collapseProjectSessions = (projectKey: string) => {
-    setExpandedProjectSessions((previous) =>
-      updateProjectSessionExpansion(previous, projectKey, false),
+    setProjectSessionPages((previous) =>
+      resetProjectSessionPage(previous, projectKey),
     );
   };
 
@@ -1929,14 +1931,11 @@ export function Sidebar({
           : t("nav.sessionRunning", { defaultValue: "Working" })
       : null;
 
-    // Show the initial page by default; the remaining sessions stay folded
-    // behind the same load-more affordance used for time-group overflow.
-    const sessionsExpanded = expandedProjectSessions[entry.key] ?? false;
+    // One page at a time: the initial page by default, then one more page per
+    // "load more" click, with the same affordance used for time-group overflow.
     const history = entry.sessions.filter((session) => !pinnedSessionIds.has(session.id));
-    const { visibleSessions, hiddenCount } = getVisibleProjectSessions(
-      history,
-      sessionsExpanded,
-    );
+    const { visibleSessions, hiddenCount, loadMoreCount, collapseAvailable } =
+      projectSessionPage(history, projectSessionPages, entry.key);
 
     const renderTimeGroupedSessions = (sessions: SessionSummary[]) => {
       const result: React.ReactNode[] = [];
@@ -1956,19 +1955,21 @@ export function Sidebar({
         }
         result.push(...renderSessionRows(groupSessions, { projectPath: entry.path }));
       }
-      // Add "load more" / "collapse" button when project sessions exceed the default page size
+      // "Load more" adds the next page and "Show less" folds back to the
+      // initial page, so neither control needs the whole history mounted first.
       if (hiddenCount > 0) {
         result.push(
           <button
             key="load-more"
             type="button"
             className="sidebar-load-more"
-            onClick={() => expandProjectSessions(entry.key)}
+            onClick={() => expandProjectSessions(entry.key, history.length)}
           >
-            {t("nav.loadMoreCount", { count: hiddenCount })}
+            {t("nav.loadMoreCount", { count: loadMoreCount })}
           </button>
         );
-      } else if (sessionsExpanded && history.length > DEFAULT_VISIBLE_PROJECT_SESSION_COUNT) {
+      }
+      if (collapseAvailable) {
         result.push(
           <button
             key="collapse-more"

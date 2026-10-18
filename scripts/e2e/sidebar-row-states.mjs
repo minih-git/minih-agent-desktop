@@ -348,10 +348,17 @@ export async function checkSidebarRowStates({ cdp, check, waitFor, seed }) {
     const historyGroup = group(seed.paths.history);
     const historyBody = `${historyGroup} .sidebar-session-group-body`;
     const historyLoadMore = `${historyGroup} .sidebar-load-more`;
+    const historyShowLess = `${historyGroup} .sidebar-collapse-more`;
     const historyRowIds = () => cdp.evaluate(`
       [...document.querySelectorAll(${JSON.stringify(`${historyGroup} [data-sidebar-session-row]`)})]
         .map(element => element.getAttribute('data-sidebar-session-row'))
     `);
+    const historyLoadMoreText = () =>
+      cdp.evaluate(
+        `document.querySelector(${JSON.stringify(historyLoadMore)})?.textContent.trim() ?? null`,
+      );
+    const historyHasShowLess = () =>
+      cdp.evaluate(`!!document.querySelector(${JSON.stringify(historyShowLess)})`);
     const expectedInitialIds = seed.historySessionIds.slice(0, 5);
     await waitFor(
       async () =>
@@ -364,14 +371,59 @@ export async function checkSidebarRowStates({ cdp, check, waitFor, seed }) {
       "project history initially shows the five most recent sessions",
       JSON.stringify(await historyRowIds()),
     );
+    check(
+      !(await historyHasShowLess()) && (await historyLoadMoreText())?.includes("5"),
+      "the initial page states the five-row increment and offers nothing to fold back",
+      JSON.stringify({ text: await historyLoadMoreText() }),
+    );
+
+    // One click reveals one page; the twelve-session history must not mount at once.
+    await click(historyLoadMore);
+    await waitFor(
+      async () => (await historyRowIds()).length === 10,
+      "one load-more click reveals the next page only",
+    );
+    check(
+      JSON.stringify(await historyRowIds()) ===
+        JSON.stringify(seed.historySessionIds.slice(0, 10)),
+      "load more appends one page in order",
+      JSON.stringify(await historyRowIds()),
+    );
+    check(
+      (await historyLoadMoreText())?.includes("2") && (await historyHasShowLess()),
+      "the second page states the two-row increment and can already fold back",
+      JSON.stringify({ text: await historyLoadMoreText() }),
+    );
+
+    // Folding back from the middle returns to the initial page without
+    // folding the project itself.
+    await click(historyShowLess);
+    await waitFor(
+      async () =>
+        (await historyRowIds()).length === 5 && !(await historyHasShowLess()),
+      "show less returns to the initial page",
+    );
+    check(
+      JSON.stringify(await historyRowIds()) === JSON.stringify(expectedInitialIds) &&
+        !(await cdp.evaluate(`document.querySelector(${JSON.stringify(historyBody)}).inert`)),
+      "folding back keeps the project open at its initial page",
+      JSON.stringify({ rowIds: await historyRowIds() }),
+    );
+
+    await click(historyLoadMore);
+    await waitFor(
+      async () => (await historyRowIds()).length === 10,
+      "history project loads a second page",
+    );
     await click(historyLoadMore);
     await waitFor(
       async () => (await historyRowIds()).length === 12,
       "history project loads all twelve sessions",
     );
     check(
-      JSON.stringify(await historyRowIds()) === JSON.stringify(seed.historySessionIds),
-      "Load more reveals the remaining project sessions",
+      JSON.stringify(await historyRowIds()) === JSON.stringify(seed.historySessionIds) &&
+        !(await cdp.evaluate(`!!document.querySelector(${JSON.stringify(historyLoadMore)})`)),
+      "Load more reveals the remaining project sessions and then disappears",
       JSON.stringify(await historyRowIds()),
     );
     await click(title(seed.paths.history));
@@ -386,13 +438,13 @@ export async function checkSidebarRowStates({ cdp, check, waitFor, seed }) {
         (await historyRowIds()).length === 5,
       "history project reopens with its initial session page",
     );
-    const resetLoadMoreText = await cdp.evaluate(
-      `document.querySelector(${JSON.stringify(historyLoadMore)})?.textContent.trim() ?? null`,
-    );
+    const resetLoadMoreText = await historyLoadMoreText();
     check(
       (await historyRowIds()).join() === expectedInitialIds.join() &&
-        resetLoadMoreText?.includes("7"),
-      "folding a project resets its loaded history and restores the seven-session remainder",
+        resetLoadMoreText?.includes("5") &&
+        !resetLoadMoreText?.includes("7") &&
+        !(await historyHasShowLess()),
+      "folding a project resets its loaded history to the initial page",
       JSON.stringify({ rowIds: await historyRowIds(), loadMoreText: resetLoadMoreText }),
     );
   } finally {

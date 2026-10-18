@@ -286,11 +286,11 @@ destination, chat as the home surface, tools and permissions inline.
   to `manual` by dragging a title or using ArrowUp/ArrowDown on that
   title. Session `manual` remains a compatibility value.
 - **Conversation list**: each group shows the five most-recent sessions in the
-  active sort order by default; the remainder folds behind a **Load N more…**
-  row that expands the full time-grouped list on click (with a **Show less**
-  control at the bottom of the expanded list to fold back to the initial five).
+  active sort order by default; every **Load N more…** row reveals one further
+  page of five, and once a group shows more than its initial page a **Show less**
+  row folds it back to the initial five without folding the project itself.
   Pinned rows precede unpinned rows and are never pushed behind the fold; the
-  expansion state is not persisted.
+  page state is per-group, for the current session only, and is not persisted.
 - **Standalone sessions**: path-less sessions remain in the separate Sessions
   section and never inherit the last active project's workspace.
 - **Concurrency**: the shell selects one visible project at a time, while
