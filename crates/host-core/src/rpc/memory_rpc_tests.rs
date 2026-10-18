@@ -445,9 +445,13 @@ async fn finished_turn(
     session_id: &str,
     content: &str,
 ) -> (String, String) {
-    let turn = call(state, "session.beginTurn", json!({ "sessionId": session_id }))
-        .await
-        .unwrap();
+    let turn = call(
+        state,
+        "session.beginTurn",
+        json!({ "sessionId": session_id }),
+    )
+    .await
+    .unwrap();
     let turn_id = turn["turnId"].as_str().unwrap().to_string();
     let message_id = uuid::Uuid::new_v4().to_string();
     call(
@@ -521,8 +525,7 @@ async fn remember_again_restores_a_deleted_note_for_the_user() {
     .await
     .unwrap();
     let session_id = session["session"]["id"].as_str().unwrap().to_string();
-    let (turn_id, message_id) =
-        finished_turn(&state, &session_id, "以后都用中文回答。").await;
+    let (turn_id, message_id) = finished_turn(&state, &session_id, "以后都用中文回答。").await;
 
     let note = create_note(
         &state,
@@ -649,7 +652,10 @@ async fn remember_again_keeps_every_other_write_rule() {
     )
     .await
     .unwrap();
-    assert_eq!(refused["rejected"]["code"], json!("MEMORY_CREDENTIAL_DETECTED"));
+    assert_eq!(
+        refused["rejected"]["code"],
+        json!("MEMORY_CREDENTIAL_DETECTED")
+    );
     assert!(!refused.to_string().contains(secret));
 
     // `verified` stays limited to a fact or a reference.
@@ -666,7 +672,10 @@ async fn remember_again_keeps_every_other_write_rule() {
     )
     .await
     .unwrap();
-    assert_eq!(refused["rejected"]["code"], json!("MEMORY_PROVENANCE_REQUIRED"));
+    assert_eq!(
+        refused["rejected"]["code"],
+        json!("MEMORY_PROVENANCE_REQUIRED")
+    );
 }
 
 #[tokio::test]

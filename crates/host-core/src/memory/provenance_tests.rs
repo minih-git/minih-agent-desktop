@@ -361,12 +361,7 @@ fn a_delivered_message_never_supports_a_user_stated_fact() {
 
     // A reference behaves the same way, and a fact with no delivery among its
     // citations still counts as user-stated.
-    let mut own = request(
-        &scope,
-        KIND_FACT,
-        "The host core is Rust.",
-        ORIGIN_EXPLICIT,
-    );
+    let mut own = request(&scope, KIND_FACT, "The host core is Rust.", ORIGIN_EXPLICIT);
     own.evidence = EVIDENCE_USER_STATED.to_string();
     own.source_session_id = Some(target.clone());
     own.source_message_ids = vec!["u1".to_string()];

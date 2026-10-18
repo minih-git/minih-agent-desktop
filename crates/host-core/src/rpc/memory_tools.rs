@@ -322,8 +322,7 @@ fn remember(st: &AppState, p: &ToolsExecuteParams) -> Result<Value, JsonRpcError
     }
     let rationale = remember_rationale_arg(args)?;
     let scope = remember_scope(st, &p.session_id, scope_kind)?;
-    let source_message_ids =
-        turn_user_messages(&st.db, &p.session_id, p.turn_id.as_deref(), true)?;
+    let source_message_ids = turn_user_messages(&st.db, &p.session_id, p.turn_id.as_deref(), true)?;
     // The model never clears a delete: asking the agent to remember something is
     // not the user's own decision to bring back a note they removed, and a prompt
     // injection inside project content must not be able to do it either. Only
