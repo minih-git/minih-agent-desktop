@@ -9,7 +9,7 @@ import {
 } from "./racp.js";
 
 /**
- * Host link relay profile (protocol spec §11.4, D663 / ADR 0330). The Host
+ * Host link relay profile (protocol spec §11.4, D664 / ADR 0330). The Host
  * link multiplexes logical client connections onto one authenticated outbound
  * WebSocket; every frame names the logical connection it belongs to and the
  * Gateway must never rewrite `message` payloads.
@@ -158,7 +158,7 @@ export const RacpEnrollErrorCodeSchema = Type.Union([
 export type RacpEnrollErrorCode = Static<typeof RacpEnrollErrorCodeSchema>;
 
 // ---------------------------------------------------------------------------
-// Client HTTP contract (RACP-HTTP, protocol spec §11.2; binds with R4, D663)
+// Client HTTP contract (RACP-HTTP, protocol spec §11.2; binds with R4, D664)
 // ---------------------------------------------------------------------------
 
 /**

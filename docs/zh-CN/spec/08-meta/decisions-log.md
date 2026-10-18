@@ -14,6 +14,7 @@
 | 身份证号 | 主题 | 决定 | 基本原理 |
 |---|---|---|---|
 | D663 | 内置会话消息工具 | **修订 ADR 0165 / ADR 0239 / ADR 0240：在宿主拥有的投递账本之上新增内置按需 Agent 工具 `SessionList`、`SessionSend`、`SessionResult`，实现为 Electron 主进程本地工具。发送方由宿主派生（sidecar 本地工具的 `sessionId` 与该会话的活动回合），不取自工具参数；内置投递使用保留归属 `builtin:session-messaging`，插件路径拒绝冒用。三者都先过 `tools.execute` 闸门（`SessionSend` 高风险，两个读工具低风险）；Plan/Goal、`Task` 子代理与 MCP 目录不可用。第一版只向既有会话发送任务或消息，不创建会话、不取消投递。无 schema、迁移或协议版本变更。见 ADR builtin-session-messaging 与 E2E-SESSION-builtin-send-to-named-session。** | 把工作交给另一个会话是核心桌面流程，此前只能通过安装权限更大的社区编排插件获得，而受审查的账本本已随应用分发。内置路径复用同一套来源标注、权限上限、完成回调与重启栅栏保证。 |
+| D664 | 自托管网关、可连接的桌面 Host 与移动客户端 | **把此前不排期的 Gateway、Host link 与浏览器里程碑排期为交付序列的 R4–R6，并新增 `apps/remote-gateway` 与 `apps/remote-web`（ADR 0330）：用户自托管的 Gateway 中继出站 `racp-hostlink.v1` Host link（WSS + 双向 TLS）并服务 `RACP-HTTP` + SSE，不保存 transcript、provider secret 或持久化回合命令；Host link 监听器只绑定显式配置的私网或组网地址，客户端 API 绑定 loopback（其他地址必须配 TLS），持久化内容只有令牌哈希、路由元数据和脱敏审计日志。`client.open` 帧新增 `credential` 字段，Host 用自己的 `DeviceTokenAuthenticator` 重新验证每条中继的逻辑连接。设备记录新增可追加的 `origin` 字段（缺省按 `"ssh"` 读取）：经网关配对授予 `viewer` / `controller` / `approver`（绝不是 `owner`），`pairedDevice: false` 并始终受远程权限上限约束，网关令牌只能在 Host link 上认证。桌面可在默认关闭的实验性设置下经该链路提供其现有 Agent Host；`apps/remote-web` 交付 H5 与 Capacitor iOS/Android 客户端，令牌存于 `HttpOnly` cookie（浏览器）或 Keychain / Keystore（原生）。见 ADR 0330。** | 维护者需要从手机跟进并操控 `agent-host-cli` 常驻机器与运行中桌面两边的回合；浏览器无法加入组网也无法设置请求头，而 ADR 0205 的 Host 持有状态模型禁止复制 transcript 的有状态中继。 |
 | D661 | 配置备份/同步存储迁移到 Minih Router 账户 | **配置备份/同步存储从用户自备的 S3 迁移到登录账户名下的 Minih Router 后端（AccessKey Bearer 走网关控制面、按账户命名空间、强制条件写）。S3 传输与连接 UI 被移除；已连接账户的 provider 行属于设备本地、绝不参与同步；旧 S3 配置与云端数据保持原样，不迁移也不删除。见 `docs/adr/router-account-configuration-backup.md` 与 `03-runtime/22-config-sync.md`。** | 一个账户身份已经覆盖聊天与账户读取；加密 vault、合并与激活契约保持不变。 |
 | D001 | Electron ↔ Rust 运输 | **Rust sidecar + stdio JSON-RPC (NDJSON)** | 简单隔离，可调试，后期可更换 |
 | D002 | SQLite 所有权 | **Rust host-core 独家拥有 SQLite** | 单写入者，权限边界更清晰 |
@@ -59,7 +60,6 @@
 | D660 | 内置会话标题生成 *（修订 ADR 0323 / D652 / D654）* | **恢复 Electron 主进程内的模型标题生成，并取代独立的 Session Titles 插件。在一个仍为默认标题的会话的第一条用户消息持久化后，主进程对该消息的有界摘录发起一次分离的一次性补全（不读取 transcript，不含助手回复），并通过新的主进程 `session.autoTitle` 主机 RPC 写入；该 RPC 复用 schema v23 的 `set_automatic_session_title` 比较并设置语义，因此手动重命名在竞态中始终胜出，模型失败时保留确定性的首条提示兜底标题。设置新增 `sessionTitle`（`enabled`、`modelKey`、`thinkingLevel`）；空模型键使用会话自身模型，未声明该思考级别的模型回退为 `off`。原仅供插件的 `session.autoTitle` 能力保留其主机边界，但不再授予任何插件。见 ADR 0323 修订与 `06-host-rpc-protocol.md`。** | 用户期望不安装插件也能自动命名会话，而插件面板重复了设置已有的模型选择；触发时机提前到发送第一条消息（而非首个回合结束），侧边栏在第一条回复仍在流式输出时即可显示名称。 |
 | D660 | 侧栏"等待决策"状态覆盖提问卡 | **修订 D135 与侧栏状态规则：`sidebarSessionStatus` 与 `sidebarCollapsedProjectStatus` 在 `pendingPermissions` 之外统计 `pendingAsks`（asktool 提问卡），因此暂停在提问上的回合显示紫色决策圆点而不是橙色运行圆点，含提问挂起会话的折叠项目也显示紫色指示。状态 kind 仍为 `permission`（CSS/DOM 契约不变），所有已发货语言包为两种情况新增 `nav.sessionAwaitingDecision`。仅渲染层；不改 Host 协议、存储或权限。见 `04-ux/07-ui-design-system.md` §4.5 与 E2E US-UI-67。** | 提问卡让回合保持 `running`，而运行时实际上在等待用户，于是侧栏显示"进行中"，而不是待处理工具授权早已显示的决策状态。 |
 | D662 | 分段回合过程与独立的思考偏好 | **取代 D633 / D651 与 `turn-process-and-thinking-display` ADR 中记录的 `Detailed` / `Compact` 显示模式行为与单一整体过程披露：回合渲染为按时间顺序排列的可折叠过程片段，Bash 与 run 别名位于所有折叠容器之外（回合级过程披露与任何普通活动组），即使所有组都收起也保持可见，且过程／组折叠默认值不依赖思考偏好。偏好为可选的布尔值 `AppSettings.showThinking`；缺失或非布尔值回退到旧版 `thinkingDisplayMode` 字段（`compact` 隐藏，`detailed`／未知／缺失显示），该旧字段仅为持久化设置兼容性保留。`showThinking` 加入可移植应用字段，因此会像旧字段一样同步；其余 Host 协议、持久化 schema、权限或插件契约不变。见修订后的 ADR、`04-ux/06-settings-ia.md`、`04-ux/08-component-spec.md`、`04-ux/09-interaction-patterns.md` 与 E2E-CHAT-turn-process-and-thinking-display。** | 单一扁平容器让较长的工具／搜索序列难以浏览，并把推理可见性与过程折叠挤进同一个二值开关；独立布尔值加上始终可见的 Bash 行，让命令密集的回合保持可读又不遮挡回答。 |
-| D663 | 自托管网关、可连接的桌面 Host 与移动客户端 | **把此前不排期的 Gateway、Host link 与浏览器里程碑排期为交付序列的 R4–R6，并新增 `apps/remote-gateway` 与 `apps/remote-web`（ADR 0330）：用户自托管的 Gateway 中继出站 `racp-hostlink.v1` Host link（WSS + 双向 TLS）并服务 `RACP-HTTP` + SSE，不保存 transcript、provider secret 或持久化回合命令；Host link 监听器只绑定显式配置的私网或组网地址，客户端 API 绑定 loopback（其他地址必须配 TLS），持久化内容只有令牌哈希、路由元数据和脱敏审计日志。`client.open` 帧新增 `credential` 字段，Host 用自己的 `DeviceTokenAuthenticator` 重新验证每条中继的逻辑连接。设备记录新增可追加的 `origin` 字段（缺省按 `"ssh"` 读取）：经网关配对授予 `viewer` / `controller` / `approver`（绝不是 `owner`），`pairedDevice: false` 并始终受远程权限上限约束，网关令牌只能在 Host link 上认证。桌面可在默认关闭的实验性设置下经该链路提供其现有 Agent Host；`apps/remote-web` 交付 H5 与 Capacitor iOS/Android 客户端，令牌存于 `HttpOnly` cookie（浏览器）或 Keychain / Keystore（原生）。见 ADR 0330。** | 维护者需要从手机跟进并操控 `agent-host-cli` 常驻机器与运行中桌面两边的回合；浏览器无法加入组网也无法设置请求头，而 ADR 0205 的 Host 持有状态模型禁止复制 transcript 的有状态中继。 |
 
 ## B. 辅助实现默认值
 
@@ -5486,9 +5486,34 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   `04-ux/08-component-spec.md`、`04-ux/09-interaction-patterns.md` 与
   E2E-CHAT-turn-process-and-thinking-display。
 
-## 2026-10-17 —— 自托管网关、可连接的桌面 Host 与移动客户端（D663）
+## 2026-10-18 — 内置会话消息工具（D663）
 
-- D663 把此前不排期的 Gateway、Host link 与浏览器里程碑排期为交付序列的 R4–R6，
+- D663 修订 ADR 0165 / ADR 0239 / ADR 0240：在现有的宿主投递账本之上，新增
+  内置的按需 Agent 工具 `SessionList`、`SessionSend`、`SessionResult`，实现为
+  Electron 主进程的本地工具。发送方由宿主派生（sidecar 本地工具的 `sessionId`
+  加该会话当前活动回合），永不取自工具参数；内置投递使用保留归属值
+  `builtin:session-messaging`，插件路径会拒绝冒用该值，因此双方无法互相收到
+  对方的完成回调。
+- 本地工具在宿主权限边界之外执行，因此三者都先过 `tools.execute` 闸门，主进程
+  才真正下发：`SessionSend` 为高风险，两个读工具为低风险。Plan/Goal、`Task`
+  子代理与 MCP 目录均不可用。第一版只向已存在的会话发送 `task`（默认）或
+  `message`，不创建会话、不取消投递。
+- 发送方回合取调用声明的 `turnId`，且必须仍是该会话的活动回合；回合结束后再批准
+  旧卡片会被拒绝，停止回合会撤回待批卡片。两种 kind 都会启动或排队目标回合，
+  message 仅标注意图；`SessionResult` 只返回本会话自己发起的投递。内置投递的幂等键
+  为 `tool:<turnId>:<toolCallId>`，provider 省略调用 id 时退回随机值。
+- 复用的不变量不变：目标必须为 Agent 会话、目标权限不得高于发送方、目标队列
+  上限 8、自主跳数预算、幂等、以会话消息而非用户输入标注的来源、至多一次的
+  完成回调、重启栅栏。无 schema、迁移或协议版本变更。
+- 由 `apps/desktop/test/session-collaboration-service.test.mjs`、
+  `apps/desktop/test/session-messaging-tools.test.mjs`、
+  `packages/host-runtime/src/session-tools-gate.test.ts` 与 host-core 的
+  `session_messaging_tests` / `desktop_owned_tools_*` 覆盖；打包后的 Electron
+  旅程见 E2E-SESSION-builtin-send-to-named-session（尚未执行）。
+
+## 2026-10-17 —— 自托管网关、可连接的桌面 Host 与移动客户端（D664）
+
+- D664 把此前不排期的 Gateway、Host link 与浏览器里程碑排期为交付序列的 R4–R6，
   设计记录于 ADR 0330。用户自托管的 `apps/remote-gateway` 中继出站的
   `racp-hostlink.v1` Host link（WSS + 双向 TLS）并服务 `RACP-HTTP` + SSE；它不保存
   transcript、provider secret，也不持久化回合命令。
@@ -5521,28 +5546,3 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   `apps/remote-web` 基于无 Node 依赖的 `@minih-agent/racp/browser` 入口交付 H5 与
   Capacitor iOS/Android 客户端。推送在配置后只携带 id 和固定摘要类型。见 ADR 0330 与
   `05-security/02-remote-control-security.md` §3.7。
-
-## 2026-10-18 — 内置会话消息工具（D663）
-
-- D663 修订 ADR 0165 / ADR 0239 / ADR 0240：在现有的宿主投递账本之上，新增
-  内置的按需 Agent 工具 `SessionList`、`SessionSend`、`SessionResult`，实现为
-  Electron 主进程的本地工具。发送方由宿主派生（sidecar 本地工具的 `sessionId`
-  加该会话当前活动回合），永不取自工具参数；内置投递使用保留归属值
-  `builtin:session-messaging`，插件路径会拒绝冒用该值，因此双方无法互相收到
-  对方的完成回调。
-- 本地工具在宿主权限边界之外执行，因此三者都先过 `tools.execute` 闸门，主进程
-  才真正下发：`SessionSend` 为高风险，两个读工具为低风险。Plan/Goal、`Task`
-  子代理与 MCP 目录均不可用。第一版只向已存在的会话发送 `task`（默认）或
-  `message`，不创建会话、不取消投递。
-- 发送方回合取调用声明的 `turnId`，且必须仍是该会话的活动回合；回合结束后再批准
-  旧卡片会被拒绝，停止回合会撤回待批卡片。两种 kind 都会启动或排队目标回合，
-  message 仅标注意图；`SessionResult` 只返回本会话自己发起的投递。内置投递的幂等键
-  为 `tool:<turnId>:<toolCallId>`，provider 省略调用 id 时退回随机值。
-- 复用的不变量不变：目标必须为 Agent 会话、目标权限不得高于发送方、目标队列
-  上限 8、自主跳数预算、幂等、以会话消息而非用户输入标注的来源、至多一次的
-  完成回调、重启栅栏。无 schema、迁移或协议版本变更。
-- 由 `apps/desktop/test/session-collaboration-service.test.mjs`、
-  `apps/desktop/test/session-messaging-tools.test.mjs`、
-  `packages/host-runtime/src/session-tools-gate.test.ts` 与 host-core 的
-  `session_messaging_tests` / `desktop_owned_tools_*` 覆盖；打包后的 Electron
-  旅程见 E2E-SESSION-builtin-send-to-named-session（尚未执行）。

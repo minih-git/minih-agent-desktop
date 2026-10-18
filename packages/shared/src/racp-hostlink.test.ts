@@ -54,7 +54,7 @@ describe("host link frames", () => {
     expect(Value.Check(RacpHostLinkFrameSchema, frame)).toBe(true);
   });
 
-  it("rejects client.open without a credential (spec §11.4, D663)", () => {
+  it("rejects client.open without a credential (spec §11.4, D664)", () => {
     const frame = { link: RACP_HOSTLINK_VERSION, type: "client.open", clientConnectionId: "cc_1", routeContext };
     expect(Value.Check(RacpHostLinkFrameSchema, frame)).toBe(false);
   });

@@ -33,9 +33,9 @@ around transport breadth:
   requests, and start, stop, or interrupt turns from a phone against both an
   always-on `agent-host-cli` machine and the sessions of a running desktop,
   which schedules the Gateway, connected-Host, and browser/mobile-client
-  milestones (D663, ADR 0330).
+  milestones (D664, ADR 0330).
 
-The scheduled order is R0, R1, R2, R3, then R4, R5, and R6 (D663). The
+The scheduled order is R0, R1, R2, R3, then R4, R5, and R6 (D664). The
 reserved gRPC binding stays unscheduled: it is delivered only when a named
 consumer needs it, by a later recorded product decision.
 
@@ -243,7 +243,7 @@ inbound listener.
 Exit criteria: E2E-232 passes; payloads contain summaries and ids only;
 commands from an unlinked chat have no effect; the Host has no new listener.
 
-### R4 — Self-hosted Gateway and Host link (D663)
+### R4 — Self-hosted Gateway and Host link (D664)
 
 Deliver `apps/remote-gateway`, the self-hosted Node service (ADR 0330), and
 the `agent-host-cli` outbound enrollment and link:
@@ -304,7 +304,7 @@ Exit criteria:
 6. The Gateway can be wiped and re-enrolled without losing Host session
    data, and the audit log contains no tokens or content.
 
-### R5 — Desktop as a connected Host (D663)
+### R5 — Desktop as a connected Host (D664)
 
 Deliver the desktop's outbound gateway link (ADR 0330):
 
@@ -341,7 +341,7 @@ Exit criteria:
 5. The mTLS key and certificate are stored encrypted outside settings and
    outside SQLite.
 
-### R6 — Browser and mobile clients (D663)
+### R6 — Browser and mobile clients (D664)
 
 Deliver `apps/remote-web` (ADR 0330):
 
@@ -479,7 +479,7 @@ binding may choose its native status and serialization, but it must preserve:
 
 - invalid, expired, revoked, and wrong-Host device tokens;
 - non-loopback peers and non-loopback binds without TLS on a `agent-host-cli`;
-- pairing token reuse, pairing over a non-SSH channel, and, from D663, the
+- pairing token reuse, pairing over a non-SSH channel, and, from D664, the
   cross-channel redemption of pairing codes: an ssh-origin code through the
   Gateway, and a gateway-origin code on the loopback `RACP-WS` binding
   (security §3.7, gates 17 and 28);
@@ -520,7 +520,7 @@ disconnected client does not affect Agent execution on either machine.
    users, then generally.
 4. Enable the integration adapter as an opt-in setting with no channel
    configured by default.
-5. Ship R4–R6 as separately enabled surfaces (D663): the Gateway is a
+5. Ship R4–R6 as separately enabled surfaces (D664): the Gateway is a
    standalone service the user starts; the desktop link and the mobile
    clients are off-by-default opt-in settings. The reserved gRPC milestone
    is scheduled only by a later recorded product decision.
@@ -559,7 +559,7 @@ The scheduled feature set is not production-ready until:
 Binding parity and E2E-227 / E2E-228 become gates when their milestones are
 scheduled.
 
-R4–R6 admission (D663): E2E-227, E2E-228, E2E-265, and E2E-266 are green
+R4–R6 admission (D664): E2E-227, E2E-228, E2E-265, and E2E-266 are green
 against the packaged Gateway, the connected desktop Host, and the mobile
 client; the security gates 22–27 of
 `05-security/02-remote-control-security.md` are signed off, including the
@@ -691,7 +691,7 @@ D385 (2026-09-10) withdrew the identity-source clause: remote control is
 user-local by construction, and any Gateway is self-hosted and admits clients
 with Host-issued device credentials.
 
-D663 (2026-10-17, ADR 0330) scheduled the Gateway and browser milestones as
+D664 (2026-10-17, ADR 0330) scheduled the Gateway and browser milestones as
 R4–R6 after the maintainer asked to follow and steer turns from a phone
 against both the always-on `agent-host-cli` machine and a running desktop. It
 names `apps/remote-gateway` and `apps/remote-web`; the `credential` field on

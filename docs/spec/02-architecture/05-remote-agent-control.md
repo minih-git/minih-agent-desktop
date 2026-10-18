@@ -31,7 +31,7 @@ D375 fixes the order in which the topologies ship. The first remote
 deployment is the desktop itself acting as the Remote Client of a headless
 Host on another machine over an SSH tunnel, which is what users asked for in
 issues #176 and #140. The second is an outbound messaging integration that
-runs beside the Host (issue #100). D663 (ADR 0330) schedules the remaining
+runs beside the Host (issue #100). D664 (ADR 0330) schedules the remaining
 topologies: the self-hosted Gateway with the Host link is R4, the desktop as
 a connected Host is R5, and the browser and mobile clients are R6.
 
@@ -42,7 +42,7 @@ a connected Host is R5, and the browser and mobile clients are R6.
    tab or Electron window.
 2. **The semantic contract is transport-neutral.** `RACP-WS` is the normative
    v1 binding and is first deployed over an SSH tunnel. `RACP-HTTP` is the
-   browser profile of the same contract and binds with R4 (D663); the browser
+   browser profile of the same contract and binds with R4 (D664); the browser
    and mobile clients that use it ship with R6. `RACP-GRPC` is reserved.
    Every shipped binding exposes the same session, turn, event, approval, and
    attachment semantics.
@@ -290,13 +290,13 @@ non-idempotent turn commands while the Agent Host is offline. PI does not
 operate a Gateway: the user runs it on their own infrastructure and it admits
 clients with Host-issued device credentials (D385). Delivery scope, binding
 rules, and exit criteria are the R4 milestone of
-`06-delivery/07-remote-control-rollout.md` (D663, ADR 0330).
+`06-delivery/07-remote-control-rollout.md` (D664, ADR 0330).
 
 ### 5.4 Desktop as a connected Host (R5)
 
 Electron Main may serve its existing in-process Agent Host over the outbound
 Host link, so a phone can observe and control the sessions of a running
-desktop (D663, ADR 0330). The link runs a separate `RacpServer` transport on
+desktop (D664, ADR 0330). The link runs a separate `RacpServer` transport on
 the existing `agent-host-bridge.ts` AgentHost instance: no new AgentHost, no
 new execution path, and no listener. The setting is an optional, device-local
 `remoteGateway` field in `AppSettings` (`enabled`, `url`; absent means off,
@@ -416,9 +416,9 @@ bindings:
 |---|---|---|---|
 | Local stdio JSON-RPC | Electron Main and sidecars | Full duplex | Existing; unchanged |
 | `RACP-WS` JSON-RPC over WSS | Desktop as Remote Client over SSH, native clients, Electron | Full duplex | Normative v1 binding; first deployed over the SSH tunnel |
-| `RACP-HTTP` HTTP/JSON + SSE | Browser and simple integrations | Commands plus server stream | Browser profile; binds with R4 (D663); browser and mobile clients ship with R6 |
+| `RACP-HTTP` HTTP/JSON + SSE | Browser and simple integrations | Commands plus server stream | Browser profile; binds with R4 (D664); browser and mobile clients ship with R6 |
 | `RACP-GRPC` gRPC over TLS | Native service clients | Unary plus server stream | Reserved; not in v1 conformance |
-| Host link `racp-hostlink.v1` | Gateway to Host | Multiplexed full duplex | Relay profile over `RACP-WS` framing; ships with R4 (D663) |
+| Host link `racp-hostlink.v1` | Gateway to Host | Multiplexed full duplex | Relay profile over `RACP-WS` framing; ships with R4 (D664) |
 
 The binding-neutral contract is specified in
 `03-runtime/19-remote-agent-control-protocol.md`. A binding may be added only
@@ -617,7 +617,7 @@ D385 (2026-09-10) made remote control user-local by construction: no
 project-operated identity or account service, Host-issued device credentials
 everywhere, and a Gateway only as a self-hosted relay.
 
-D663 (2026-10-17, ADR 0330) scheduled the Gateway and browser topologies:
+D664 (2026-10-17, ADR 0330) scheduled the Gateway and browser topologies:
 R4 is the self-hosted Gateway with the Host link, R5 is the desktop as a
 connected Host, and R6 is the browser and mobile clients. §5.3 loses its
 unscheduled status, §5.4 adds the desktop's connected-Host topology with the

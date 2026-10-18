@@ -2,7 +2,7 @@
 
 - Status: Accepted for implementation (post-MVP)
 - Date: 2026-10-17
-- Decision: D663
+- Decision: D664
 - Related: ADR 0205 (D373 / D374 / D375), ADR 0285 (D448), ADR 0286 (D449),
   ADR 0292 (D453), D385,
   `02-architecture/05-remote-agent-control.md` §5.3, §5.4,

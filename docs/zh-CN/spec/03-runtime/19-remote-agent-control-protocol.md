@@ -3,8 +3,8 @@
 - 协议：`PI Remote Agent Control Protocol`（`RACP`）
 - 版本：`1.0`
 - 状态：目标规格，属于 MVP 之后。MVP 本身不包含远程控制；MVP 后 Gateway 与浏览器
-  里程碑已由 D663（ADR 0330）排期为 R4–R6
-- 决策：D373 / ADR 0205，经 D374、D375 与 D663 修订
+  里程碑已由 D664（ADR 0330）排期为 R4–R6
+- 决策：D373 / ADR 0205，经 D374、D375 与 D664 修订
 - 英文源规格：[英文源规格](/spec/03-runtime/19-remote-agent-control-protocol)
 
 英文页面是规范源。本页保留协议字段、方法名、错误码和代码结构，便于
@@ -293,7 +293,7 @@ Plan/Goal 审批为带显式 `permissionMode` 的 `approve` 或 `reject`，且�
 `RACP-WS` 是 v1 唯一规范绑定，首个部署（rollout R2）是远端机器上只绑定 loopback
 的 `agent-host-cli`，桌面经 SSH 端口转发以 header profile 和 SSH 引导配对得到的设备 token
 连接，绑定与对端都是 loopback 时才接受明文 `ws://`；`RACP-HTTP` 是浏览器 profile，
-随 Gateway 与浏览器里程碑（R4–R6，D663）交付，绑定在 R4 生效并在任何浏览器客户端
+随 Gateway 与浏览器里程碑（R4–R6，D664）交付，绑定在 R4 生效并在任何浏览器客户端
 使用前与 `RACP-WS` 一起加入一致性 fixture；`RACP-GRPC` 保留，若采用则 `.proto` 由
 typebox 来源生成。
 
@@ -331,7 +331,7 @@ typebox 来源生成。
   `HMAC-SHA256(gateway-secret, deviceId)`。每个修改类请求都要在 `x-csrf-token` 中重放
   该值；cookie 鉴权的请求必须带白名单内的 `Origin`；CORS 绝不返回 `*`。
 - 命令按 `(device, host)` 复用一条逻辑连接，每个事件流单独占一条，每设备最多 4 条流，
-  避免占满 Host 的 `maxConnectedClients`。Host link 随 R4 交付（D663，ADR 0330），SSH 隧道拓扑不使用它。
+  避免占满 Host 的 `maxConnectedClients`。Host link 随 R4 交付（D664，ADR 0330），SSH 隧道拓扑不使用它。
 浏览器
 无法在 WebSocket/EventSource 上设置请求头，因此非浏览器客户端用
 `Authorization` 头（header profile），浏览器客户端用 HttpOnly cookie + Origin 白名单
@@ -415,7 +415,7 @@ idempotency key 时返回原结果；使用相同 key 发送不同输入则失�
 SSH 隧道部署与 loopback 规则、SSH 配对 owner 设备的上限豁免，并把 `RACP-HTTP`、
 cookie profile 与 Host link 标记为不排期；终端流式操作、`tools/advertise` 与
 `tool/execute` 中继、host-core 持久化的队列、远程订阅者 30 分钟默认审批寿命和
-`applyCeilingToPairedDevices` 策略同属该修订。D663（2026-10-17，ADR 0330）排期
+`applyCeilingToPairedDevices` 策略同属该修订。D664（2026-10-17，ADR 0330）排期
 Gateway 与浏览器里程碑（R4–R6）：`RACP-HTTP`（§11.2）随 R4 绑定并在任何浏览器客户端
 使用前加入一致性 fixture，HTTP 映射在既有 `GET /v1/hosts` 旁新增
 `POST /v1/hosts/{hostId}/pair`；Host link（§11.4）随 R4 交付，`client.open` 新增

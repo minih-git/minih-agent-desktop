@@ -4,8 +4,8 @@
 - Version: `1.0`
 - Status: Target specification; post-MVP. The MVP itself does not include
   remote control; post-MVP the Gateway and browser milestones are scheduled
-  as R4–R6 by D663 (ADR 0330)
-- Decision: D373 / ADR 0205, amended by D374, D375, and D663
+  as R4–R6 by D664 (ADR 0330)
+- Decision: D373 / ADR 0205, amended by D374, D375, and D664
 - Transport profiles: `RACP-WS` (normative v1 binding; first deployed over an
   SSH tunnel), `RACP-HTTP` (browser profile; binds with R4), `RACP-GRPC`
   (reserved)
@@ -1076,7 +1076,7 @@ profile with a device token obtained by the SSH bootstrap pairing. Plain
 `ws://` is accepted on that port only when both the bind address and the peer
 address are loopback; the SSH channel provides confidentiality
 (`05-security/02-remote-control-security.md` §5.1). The cookie profile ships
-with the Gateway and browser milestones (R4–R6, D663).
+with the Gateway and browser milestones (R4–R6, D664).
 
 ### 11.2 HTTP/JSON + SSE (`RACP-HTTP`, browser profile)
 
@@ -1110,7 +1110,7 @@ which case it sends `Last-Event-ID` as a request header itself and implements
 its own reconnect.
 
 `RACP-HTTP` is required before any browser client ships. It is delivered by
-the Gateway and browser milestones (R4–R6, D663): the mapping binds when R4
+the Gateway and browser milestones (R4–R6, D664): the mapping binds when R4
 ships and the binding joins the conformance fixture with `RACP-WS` before any
 browser client uses it.
 
@@ -1179,7 +1179,7 @@ and one browser profile; the Host link (§11.4) uses `RACP-WS` framing.
 
 ### 11.4 Host link relay profile
 
-The Host link ships with the Gateway milestone R4 (D663, ADR 0330). The
+The Host link ships with the Gateway milestone R4 (D664, ADR 0330). The
 SSH-tunnel topology does not use it.
 
 The Host link is the outbound connection from an Agent Host to a Gateway. It
@@ -1426,7 +1426,7 @@ D375 (2026-09-10) re-sequenced the deployments and extended the catalog:
   30-minute default approval lifetime for remote subscribers, and the
   `applyCeilingToPairedDevices` policy.
 
-D663 (2026-10-17, ADR 0330) scheduled the Gateway and browser milestones
+D664 (2026-10-17, ADR 0330) scheduled the Gateway and browser milestones
 (R4–R6) and refined this contract:
 
 - `RACP-HTTP` (§11.2) binds with R4 and joins the conformance fixture before

@@ -16,8 +16,8 @@ Linux 或 WSL 机器上的项目，即 SSH 隧道远端 Host 拓扑；#100 要�
 审批通知推送到 Telegram、微信、Slack 或 Webhook 并回传简单指令，即 Host 旁的
 出站集成；维护者要求从手机跟进执行过程、处理审批和输入请求，并对
 `agent-host-cli` 常驻机器与运行中的桌面发起、停止和打断回合，这把 Gateway、
-可连接 Host 与浏览器／移动客户端里程碑排期（D663，ADR 0330）。排期顺序为
-R0、R1、R2、R3，随后 R4、R5、R6（D663）；保留的 gRPC 绑定仍不排期，只在有
+可连接 Host 与浏览器／移动客户端里程碑排期（D664，ADR 0330）。排期顺序为
+R0、R1、R2、R3，随后 R4、R5、R6（D664）；保留的 gRPC 绑定仍不排期，只在有
 明确消费者时由后续记录在案的产品决策交付。
 
 ## 2. 里程碑
@@ -59,7 +59,7 @@ R0、R1、R2、R3，随后 R4、R5、R6（D663）；保留的 gRPC 绑定仍不�
   指令词汇从已关联的聊天映射到 `turn/start`、`turn/stop`、`turn/interrupt`、
   `approval/respond`，以关联主体的角色和同一 Host 策略执行，未关联聊天忽略并审计；
   投递失败有界重试，绝不阻塞回合。
-- R4（D663）：自托管 Gateway 与 Host link。交付 `apps/remote-gateway`（用户自托管的
+- R4（D664）：自托管 Gateway 与 Host link。交付 `apps/remote-gateway`（用户自托管的
   Node 服务）与 `agent-host-cli` 的外连注册和链路：网关模块（含绑定地址校验的配置、
   `--data-dir` 文件存储、本地 CA 与注册/吊销、同 hostId 替换前先校验身份的 wss + mTLS
   Host link 监听器、带 cookie/header 两种 profile 与 Origin、CORS、CSRF 控制的
@@ -84,7 +84,7 @@ R0、R1、R2、R3，随后 R4、R5、R6（D663）；保留的 gRPC 绑定仍不�
   `allow-session`，其令牌在 loopback `RACP-WS` 上被拒（门 25）；任意一侧吊销后新连接
   被拒、已有逻辑连接 5 秒内关闭（门 26）；网关可清空重注册而不丢 Host 会话数据，审计日志不含
   令牌与内容。
-- R5（D663）：桌面作为可连接的 Host。交付桌面的外连网关链路（ADR 0330）：在现有进程内
+- R5（D664）：桌面作为可连接的 Host。交付桌面的外连网关链路（ADR 0330）：在现有进程内
   Agent Host 之上以 Host link host 承载 Electron-Main 的 `RacpServer` 传输——不新建
   AgentHost、不新增执行路径、不开监听；可选的 `remoteGateway` AppSettings 字段
   （`enabled`、`url`；设备本地、不同步、缺失即关闭）与实验性设置页（开关、网关地址、
@@ -98,7 +98,7 @@ R0、R1、R2、R3，随后 R4、R5、R6（D663）；保留的 gRPC 绑定仍不�
   约束、不能修改本地会话权限模式、不能用 `allow-session`，
   `DESKTOP_PRINCIPAL` 不变；吊销桌面设备即断开链路；mTLS 密钥与证书加密存放在设置与
   SQLite 之外。
-- R6（D663）：浏览器与移动客户端。交付 `apps/remote-web`（ADR 0330）：基于无 Node 依赖
+- R6（D664）：浏览器与移动客户端。交付 `apps/remote-web`（ADR 0330）：基于无 Node 依赖
   的 `@minih-agent/racp/browser` 入口与共享 typebox 契约的 React + TypeScript 客户端，
   不依赖 `apps/desktop` 源码；页面包括配对（网关地址、配对码、选择 Host）、带在线状态的
   Host 列表、带运行中／等待审批徽标的会话列表，以及实时时间线（消息行、工具调用摘要、
@@ -159,7 +159,7 @@ host 与 sidecar 路径；不从网络监听器调用 renderer、`host.proxy` �
 浏览器重连和 NAT 下的 Host link 中继。安全验证覆盖无效、过期、撤销、错误 Host
 - 无效、过期、撤销、错误 Host
 的设备 token，`agent-host-cli` 上非 loopback 对端与无 TLS 的非 loopback 绑定，配对 token
-复用与非 SSH 通道配对，以及 D663 起的配对码交叉通道兑换：ssh 来源的码经网关、
+复用与非 SSH 通道配对，以及 D664 起的配对码交叉通道兑换：ssh 来源的码经网关、
 gateway 来源的码在 loopback `RACP-WS` 上（安全规格 §3.7，门 17 与 28），错误角色/会话/Host/revision，含 `workspace/read` 越界的
 SSRF 与路径攻击，超限与哈希不符的上传，试图选择 secret 或权限的注入请求，
 未关联聊天与重放的集成指令，慢读者与连接耗尽，审计脱敏与保留，排期后再覆盖
@@ -172,7 +172,7 @@ Host 连接健康与引导时长与版本不匹配、认证与授权失败、集
 
 先发布 typebox 契约、生成的 fixture 和禁用代码路径；R1 只在开发 profile 启用；
 SSH 隧道拓扑先对 allowlist 用户以 feature flag 启用再普遍开放；集成适配层作为
-默认不配置任何渠道的可选设置启用；R4–R6 作为独立启用的面交付（D663）：Gateway
+默认不配置任何渠道的可选设置启用；R4–R6 作为独立启用的面交付（D664）：Gateway
 是用户自行启动的独立服务，桌面链路与移动客户端是默认关闭的可选设置；保留的
 gRPC 里程碑只由后续记录在案的产品决策排期。kill switch 拒绝新的远程连接并取消远程主体提交的排队回合，不影响
 本地桌面。回滚必须停止接受新的远程连接并停止集成适配层，远端 `agent-host-cli` 进程
@@ -188,7 +188,7 @@ checksum 发布到 GitHub Releases 的 `agent-host-cli` 包且版本不匹配与
 runbook 写明 feature flag、配对撤销路径、远端机器上的数据保留和事件负责人之后，
 才可进入生产。绑定 parity 与 E2E-227 / E2E-228 在其里程碑排期后成为门槛。
 
-R4–R6 准入（D663）：E2E-227、E2E-228、E2E-265 与 E2E-266 针对打包后的 Gateway、
+R4–R6 准入（D664）：E2E-227、E2E-228、E2E-265 与 E2E-266 针对打包后的 Gateway、
 可连接的桌面 Host 与移动客户端全部通过；`05-security/02-remote-control-security.md`
 的安全门 22–27 签核通过（含桌面关闭态回归）；部署 README 的 Nginx 示例经实测透传
 SSE 不缓冲。
@@ -255,7 +255,7 @@ Gateway 身份源定为 PI 账号服务。
 D385（2026-09-10）撤回身份源条款：远程控制从结构上就是用户本地的，Gateway 只能由
 用户自托管并以 Host 签发的设备凭据准入。
 
-D663（2026-10-17，ADR 0330）在维护者要求从手机跟进并操控 `agent-host-cli` 常驻
+D664（2026-10-17，ADR 0330）在维护者要求从手机跟进并操控 `agent-host-cli` 常驻
 机器与运行中桌面两边的回合之后，把 Gateway 与浏览器里程碑排期为 R4–R6。它命名了
 `apps/remote-gateway` 与 `apps/remote-web`；`client.open` 的 `credential` 字段与
 Host 侧对 Host link 的重新认证；把网关配对主体压在远程权限上限之下、排除在 owner

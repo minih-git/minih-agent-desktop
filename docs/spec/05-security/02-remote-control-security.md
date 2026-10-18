@@ -83,7 +83,7 @@ URLs, SSE URLs, attachment names, or event payloads. Bearer-only APIs still
 validate Origin for browser requests.
 
 The Gateway and the cookie profile ship with the Gateway and browser
-milestones (R4–R6, D663). The first remote topology uses the header profile
+milestones (R4–R6, D664). The first remote topology uses the header profile
 with a device token obtained through the SSH bootstrap pairing in §3.4.
 
 For the first trusted-device prototype, a one-time pairing code MAY bootstrap
@@ -110,7 +110,7 @@ Direct LAN or development connections still use TLS and an expiring device
 token. Plain `ws://`, plain HTTP, and static shared tokens in URLs are not
 supported.
 
-Enrollment is a one-time exchange (D663, ADR 0330): an administrator prints a
+Enrollment is a one-time exchange (D664, ADR 0330): an administrator prints a
 15-minute single-use enrollment code on the Gateway, the Host generates its
 key pair locally and sends the CSR and the code to a dedicated enrollment
 endpoint on the Host link port that authenticates by server TLS only, the
@@ -142,7 +142,7 @@ scope before executing any mutation. The Gateway's transport connection is not
 itself authorization for a session, and a route context for one
 `clientConnectionId` cannot be replayed on another.
 
-In the self-hosted, user-local Gateway scenario (D663, ADR 0330) the
+In the self-hosted, user-local Gateway scenario (D664, ADR 0330) the
 integrity of the route context is guaranteed by the authenticated Host link:
 only an enrolled Gateway holding the matching client certificate can send
 Host link frames, so the Host does not verify a second signature on the
@@ -283,7 +283,7 @@ than raw SSH stderr, tokens, password/private-key paths or forwarded URLs.
 ### 3.7 Gateway-paired devices
 
 Device records gain an optional `origin` field with values `"ssh"` or
-`"gateway"` (D663, ADR 0330). Records persisted before D663 have no `origin`
+`"gateway"` (D664, ADR 0330). Records persisted before D664 have no `origin`
 and read as `"ssh"`, so old credential stores need no migration. Every
 authentication input also carries the connection origin: the loopback
 `RACP-WS` binding is `"ssh"` and a Host link logical connection is
@@ -512,7 +512,7 @@ is ephemeral and recoverable only from the terminal's bounded replay ring.
 
 ## 8. Gateway and tenant isolation
 
-The Gateway ships with R4 (D663). These rules bind from R4 onward.
+The Gateway ships with R4 (D664). These rules bind from R4 onward.
 
 - Every route is keyed by `(tenantId, hostId, sessionId)`.
 - A user-local deployment has exactly one tenant, the Host itself; PI never
@@ -649,29 +649,29 @@ separate, explicitly specified credential-management capability is added.
 22. The Host link listener refuses to start on `0.0.0.0`, `::`, or a public
     address; it binds only to a private or overlay address the configuration
     explicitly lists (RFC1918, `100.64.0.0/10`, or a configured CIDR).
-    Applies from R4 (D663).
+    Applies from R4 (D664).
 23. The Gateway's client API binds loopback by default; a non-loopback bind
-    without configured TLS refuses to start. Applies from R4 (D663).
+    without configured TLS refuses to start. Applies from R4 (D664).
 24. Tokens never appear in URLs, query strings, SSE URLs, or event payloads;
     browser sessions use the `HttpOnly; Secure; SameSite=Strict` cookie plus
     a CSRF token on every mutation, and native clients use the header
-    profile. Applies from R4 (D663).
+    profile. Applies from R4 (D664).
 25. A gateway-paired device is never an SSH-paired owner: it holds
     `pairedDevice: false`, never the `owner` role, stays under the remote
     permission ceiling, is never offered `allow-session`, and its token is
     rejected on the loopback `RACP-WS` binding just as an ssh token is
-    rejected on the Host link. Applies from R4 (D663).
+    rejected on the Host link. Applies from R4 (D664).
 26. Revocation on either the Gateway or the Host denies new connections and
     closes existing logical connections within 5 seconds. Applies from R4
-    (D663).
+    (D664).
 27. With the desktop's gateway-link setting disabled, the desktop attempts
     no connection and opens no listener, proven by regression tests.
-    Applies from R5 (D663).
+    Applies from R5 (D664).
 28. A gateway-origin pairing token (issued by `remote-pair` or the desktop
     settings page) is redeemed only over the Host link and never on the
     loopback `RACP-WS` binding, and an ssh-origin pairing token is never
     redeemed through the Gateway; a device minted through the Gateway always
-    carries the gateway origin and never `owner`. Applies from R4 (D663).
+    carries the gateway origin and never `owner`. Applies from R4 (D664).
 ## 13. Amendment history
 
 D374 (2026-09-10) added the browser cookie/header authentication profiles,
@@ -701,7 +701,7 @@ ADR 0293): the credential-handling rules above and gate 21. It relaxes
 `BatchMode=yes` for a password target only, with `NumberOfPasswordPrompts=1`
 and `PubkeyAuthentication=no`, and keeps a key or agent as the default path.
 
-D663 (2026-10-17, ADR 0330) scheduled the Gateway and browser milestones
+D664 (2026-10-17, ADR 0330) scheduled the Gateway and browser milestones
 (R4–R6): §3.1 and §3.2 lose their unscheduled status and §3.2 records the
 enrollment exchange; §3.3 records that the route context's integrity is
 guaranteed by the authenticated Host link in the self-hosted scenario, with
@@ -710,7 +710,7 @@ adds gateway-paired devices (additive `origin` field, gateway pairing never
 grants `owner` or `pairedDevice`, cross-channel tokens rejected); §8 binds
 from R4; and gates 22–27 cover the bind-address rules, the token and cookie
 profile, gateway-paired principal restrictions, 5-second revocation
-propagation, and the desktop-off regression. The D663 review adds the
+propagation, and the desktop-off regression. The D664 review adds the
 pairing-token origin (§3.7, gate 17 narrowed to ssh-origin codes, new gate
 28) and locks the policy-immune restrictions of gateway-origin principals
 (no `allow-session` under `allowRemoteSessionGrants`, no `approverOverride`,

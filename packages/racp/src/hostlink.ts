@@ -12,7 +12,7 @@ import type { DeviceTokenAuthenticator } from "./auth.js";
 import type { RacpServer, ServerConnectionTransport } from "./server.js";
 
 /**
- * Host link relay profile (protocol spec §11.4, D663 / ADR 0330). One
+ * Host link relay profile (protocol spec §11.4, D664 / ADR 0330). One
  * authenticated outbound WebSocket carries many logical client connections;
  * each logical connection is an ordinary `ServerConnectionTransport` the
  * `RacpServer.accept()` can serve, with its own initialization state,

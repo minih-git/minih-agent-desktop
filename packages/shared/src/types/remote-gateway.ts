@@ -1,7 +1,7 @@
 import type { RacpRole } from "../racp.js";
 
 /**
- * Desktop as a connected Host (rollout R5, ADR 0330 / D663).
+ * Desktop as a connected Host (rollout R5, ADR 0330 / D664).
  *
  * The desktop dials the user's self-hosted Gateway over one outbound Host
  * link; it never listens. Everything here is a renderer-facing projection:
