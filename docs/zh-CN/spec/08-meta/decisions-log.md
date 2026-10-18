@@ -14,8 +14,9 @@
 | 身份证号 | 主题 | 决定 | 基本原理 |
 |---|---|---|---|
 | D663 | 内置会话消息工具 | **修订 ADR 0165 / ADR 0239 / ADR 0240：在宿主拥有的投递账本之上新增内置按需 Agent 工具 `SessionList`、`SessionSend`、`SessionResult`，实现为 Electron 主进程本地工具。发送方由宿主派生（sidecar 本地工具的 `sessionId` 与该会话的活动回合），不取自工具参数；内置投递使用保留归属 `builtin:session-messaging`，插件路径拒绝冒用。三者都先过 `tools.execute` 闸门（`SessionSend` 高风险，两个读工具低风险）；Plan/Goal、`Task` 子代理与 MCP 目录不可用。第一版只向既有会话发送任务或消息，不创建会话、不取消投递。无 schema、迁移或协议版本变更。见 ADR builtin-session-messaging 与 E2E-SESSION-builtin-send-to-named-session。** | 把工作交给另一个会话是核心桌面流程，此前只能通过安装权限更大的社区编排插件获得，而受审查的账本本已随应用分发。内置路径复用同一套来源标注、权限上限、完成回调与重启栅栏保证。 |
+| D666 | 远程控制的 Router 账户绑定 | **以可追加的“账户模式”修订 ADR 0331：Minih-Router 的 `access_key_id` 即远程控制账户身份，在桌面上按 D661 规则解析。Host 经 Router 的 EasyTier 组网连到运行在 Router 机器上的独立 Gateway 进程，手机经公网 HTTPS 连接且绝不加入组网。Router 的 bootstrap 应答新增可选的 `remoteGateway {hostlinkUrl, publicOrigin, caPem}`，桌面以 `Bearer <AccessKey>` 加 CSR 注册，Gateway 经 loopback 调用 Router `GET /api/auth/session` 校验，并把调用者真实地址转发过去，使 `allowed_peer_cidrs` 作用于真实调用方；Gateway 绝不持久化原始 key。AccessKey 只用于发现与注册：手机登录后只看到本账户的 Host，任何一个在线 Host 上的首次确认即签发设备授权，同账户的兄弟 Host 接受该签名授权，手机上最终只保留一个可撤销设备令牌而没有 AccessKey。Gateway 只中继请求与签名授权，绝不做审批决定；角色、`pairedDevice: false`、远程权限上限与禁用 `allow-session` 均不变。Gateway 新增显式可信代理客户端 IP 设置，桌面新增严格的“每个终端都需确认”模式，新增的 `device.request` / `device.grant` Host link 帧只发给声明支持的 Host。见 ADR remote-control-router-account-binding、交付 R7 与 E2E-REMOTE-ACCOUNT-* 场景。** | 自托管的一次性注册码加每 Host 的 `mpt1` 票据，对有多个终端的用户意味着每台机器各做一次注册与配对，而在一台机器上受信任的设备在下一台上毫无地位；Router 的 key 已经标识同一个用户，且轮换保留 id，因此轮换后的 key 仍能证明是同一账户；共享组网上的可达性不构成授权边界，真正授权设备的是双向 TLS、经 key 校验的注册与 Host 签名授权。 |
 | D665 | 自托管网关、可连接的桌面 Host 与移动客户端 | **把此前不排期的 Gateway、Host link 与浏览器里程碑排期为交付序列的 R4–R6，并新增 `apps/remote-gateway` 与 `apps/remote-web`（ADR 0331）：用户自托管的 Gateway 中继出站 `racp-hostlink.v1` Host link（WSS + 双向 TLS）并服务 `RACP-HTTP` + SSE，不保存 transcript、provider secret 或持久化回合命令；Host link 监听器只绑定显式配置的私网或组网地址，客户端 API 绑定 loopback（其他地址必须配 TLS），持久化内容只有令牌哈希、路由元数据和脱敏审计日志。`client.open` 帧新增 `credential` 字段，Host 用自己的 `DeviceTokenAuthenticator` 重新验证每条中继的逻辑连接。设备记录新增可追加的 `origin` 字段（缺省按 `"ssh"` 读取）：经网关配对授予 `viewer` / `controller` / `approver`（绝不是 `owner`），`pairedDevice: false` 并始终受远程权限上限约束，网关令牌只能在 Host link 上认证。桌面可在默认关闭的实验性设置下经该链路提供其现有 Agent Host；`apps/remote-web` 交付 H5 与 Capacitor iOS/Android 客户端，令牌存于 `HttpOnly` cookie（浏览器）或 Keychain / Keystore（原生）。见 ADR 0331。** | 维护者需要从手机跟进并操控 `agent-host-cli` 常驻机器与运行中桌面两边的回合；浏览器无法加入组网也无法设置请求头，而 ADR 0205 的 Host 持有状态模型禁止复制 transcript 的有状态中继。 |
-| D666 | 分层、可溯源的长期记忆 | **通过 ADR agent-long-term-memory 修订 ADR 0234：固定项目记忆的存储、编辑器、32 KiB 上限、同步与 runtime 重建行为保持不变。新增 host-core 领域（schema v26）存储类型化的学习记忆（`preference`、`feedback`、`fact`、`reference`），作用域为 `project` 或 `user`，带来源、比较并设置的修订号与删除屏蔽记录。`preference` 与 `feedback` 必须引用经 Host 校验的用户本人消息；工具、网页、MCP、子代理与注入指令内容一律不能作为依据。会话启动时捕获有预算的学习记忆索引，不参与 runtime 复用判断，也不改变运行中会话的系统提示；`SessionHistorySearch` 与 `MemorySearch` 是低风险只读按需工具，`MemoryRemember` 为中风险并走正常权限路径。可选的自动抽取默认关闭，需要用户选定模型与每日预算，不在关键路径上运行，只生成需用户确认的建议。删除与拒绝会写入屏蔽记录，阻止同一依据再次生成。学习记忆沿用固定记忆的项目组生命周期，只通过现有可选的记忆同步类别同步。子代理不注入；v1 不提供 Plugin SDK 接口。** | 此前唯一的持久记忆需要手工维护，用户在每个会话里重复同样的纠正。由 Host 管理来源与屏蔽记录，使学习记忆可追溯、可遗忘，同时不让不可信内容或后台写入变成持久指令；按会话冻结的索引保持 runtime 复用与提示缓存稳定。实施方案见 `docs/project/long-term-memory-implementation-plan.md`。 |
+| D667 | 分层、可溯源的长期记忆 | **通过 ADR agent-long-term-memory 修订 ADR 0234：固定项目记忆的存储、编辑器、32 KiB 上限、同步与 runtime 重建行为保持不变。新增 host-core 领域（schema v26）存储类型化的学习记忆（`preference`、`feedback`、`fact`、`reference`），作用域为 `project` 或 `user`，带来源、比较并设置的修订号与删除屏蔽记录。`preference` 与 `feedback` 必须引用经 Host 校验的用户本人消息；工具、网页、MCP、子代理与注入指令内容一律不能作为依据。会话启动时捕获有预算的学习记忆索引，不参与 runtime 复用判断，也不改变运行中会话的系统提示；`SessionHistorySearch` 与 `MemorySearch` 是低风险只读按需工具，`MemoryRemember` 为中风险并走正常权限路径。可选的自动抽取默认关闭，需要用户选定模型与每日预算，不在关键路径上运行，只生成需用户确认的建议。删除与拒绝会写入屏蔽记录，阻止同一依据再次生成。学习记忆沿用固定记忆的项目组生命周期，只通过现有可选的记忆同步类别同步。子代理不注入；v1 不提供 Plugin SDK 接口。** | 此前唯一的持久记忆需要手工维护，用户在每个会话里重复同样的纠正。由 Host 管理来源与屏蔽记录，使学习记忆可追溯、可遗忘，同时不让不可信内容或后台写入变成持久指令；按会话冻结的索引保持 runtime 复用与提示缓存稳定。实施方案见 `docs/project/long-term-memory-implementation-plan.md`。 |
 | D661 | 配置备份/同步存储迁移到 Minih Router 账户 | **配置备份/同步存储从用户自备的 S3 迁移到登录账户名下的 Minih Router 后端（AccessKey Bearer 走网关控制面、按账户命名空间、强制条件写）。S3 传输与连接 UI 被移除；已连接账户的 provider 行属于设备本地、绝不参与同步；旧 S3 配置与云端数据保持原样，不迁移也不删除。见 `docs/adr/router-account-configuration-backup.md` 与 `03-runtime/22-config-sync.md`。** | 一个账户身份已经覆盖聊天与账户读取；加密 vault、合并与激活契约保持不变。 |
 | D001 | Electron ↔ Rust 运输 | **Rust sidecar + stdio JSON-RPC (NDJSON)** | 简单隔离，可调试，后期可更换 |
 | D002 | SQLite 所有权 | **Rust host-core 独家拥有 SQLite** | 单写入者，权限边界更清晰 |
@@ -5579,3 +5580,42 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   `apps/remote-web` 基于无 Node 依赖的 `@minih-agent/racp/browser` 入口交付 H5 与
   Capacitor iOS/Android 客户端。推送在配置后只携带 id 和固定摘要类型。见 ADR 0331 与
   `05-security/02-remote-control-security.md` §3.7。
+
+## 2026-10-18 —— 远程控制的 Router 账户绑定（D666）
+
+- D666 以修订 ADR 0331 的方式为远程控制增加“账户模式”；没有 Router key 的用户仍走
+  自托管的一次性注册码与每 Host 票据。账户即 Router 的 `access_key_id`，在桌面上按
+  D661 规则解析为“第一个已启用且带 token 的 `minih-router` provider 行”。
+- 网络与部署：Host 经 Router 的 EasyTier 组网连到运行在 Router 机器上的独立 Gateway
+  进程；手机经公网 HTTPS 连接，绝不加入组网（iOS 需要 NetworkExtension VPN 权限）。
+  Gateway 有自己的发布与 `--data-dir`，不进入 Router 的单实例平滑升级流程。
+- 校验：Router 的 bootstrap 应答新增可选的
+  `remoteGateway {hostlinkUrl, publicOrigin, caPem}`。桌面以 `Bearer <AccessKey>` 加
+  CSR 注册，Gateway 经 loopback 调用 `GET /api/auth/session` 校验，并把原始调用者地址
+  放在 Router 的客户端 IP 头里转发，使 `allowed_peer_cidrs` 作用于真实调用方，因此
+  loopback 对端必须是 Router 的可信代理；Gateway 绝不持久化原始 key。字段缺失或 `404`
+  表示账户模式不可用。
+- 信任：key 只用于发现与注册。手机登录后只列出本账户的 Host 并申请设备；账户内每个
+  在线 Host 都会询问“是否批准 \<设备\>？”，首次确认即用该 Host 的密钥签发授权，同账户
+  的兄弟 Host 接受该签名授权，手机上最终只保留一个可撤销设备令牌而没有 AccessKey。
+  授权时离线的 Host 会在链路恢复后收到待处理授权。Gateway 只中继请求与签名授权，绝不
+  做审批决定。
+- 保持不变：角色（`viewer` / `controller` / `approver`）、`pairedDevice: false`、
+  远程权限上限、禁用 `allow-session`，以及 ADR 0331 与安全规格 §3.7 的全部网关来源限制。
+- 密钥生命周期：轮换保留账户（同一 id）；被禁用或删除的 key 阻断新的登录与注册。key
+  状态本身不撤销任何东西：已批准的设备令牌与 Host 证书在经既有撤销路径撤销之前保持有效。
+  组网按 key 签发凭据时，key 被禁用或删除的 Host 无法再刷新 bootstrap，链路只能维持到
+  该凭据过期。
+- 新增接口（仅为规划）：Gateway 的显式可信代理客户端 IP 设置、桌面的“每个终端都需要
+  确认”严格模式，以及 `device.request` / `device.grant` 两个 Host link 帧——Gateway
+  只把它们发给声明支持的 Host；旧 Host 会静默忽略未知帧类型，因此必须告知手机哪些
+  Host 无法确认。
+- 已接受的风险：账户目录（Gateway CA 加 Router 的 key 校验）现在为“兄弟 Host 属于
+  该账户”背书，被攻陷的 Gateway CA 可以把伪造的 Host 注册进某个账户，用它签发被该账户
+  其他 Host 接受的授权，从而在所有这些 Host 上取得设备。必须同时具备的缓解措施：授权由
+  Host 签名、设备权限上限不变、任一 Host 可撤销、每个 Host 显示“新设备”提示、每次授权
+  都审计、严格模式关闭兄弟授权。
+- 品牌顺序：`minih` 线（`11.12.0.0/24` 组网）先行，`hungraim` 线
+  （`11.123.0.0/24`，独立组网）随后按明确提交范围同步。见 ADR
+  remote-control-router-account-binding、协议 §11.5、安全规格 §3.8 与验收门 29–33，
+  以及交付 R7。

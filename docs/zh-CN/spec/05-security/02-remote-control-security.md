@@ -97,6 +97,38 @@ ssh 来源令牌只能在 loopback `RACP-WS` 上认证，交叉通道使用一�
 网关令牌无法借 SSH 隧道提权，owner 令牌也无法经网关重放。任意一侧（网关或 Host）
 吊销后，新连接被拒绝，已有中继逻辑连接在 5 秒内关闭。
 
+账户模式（规划中，D666，ADR `remote-control-router-account-binding`）：Router 的
+AccessKey 只用于发现与注册。客户端的 AccessKey 只交给 Gateway：Gateway 经 loopback
+调用 `GET /api/auth/session` 校验，绝不持久化原始 key，也绝不把它转发给 Host。Host 只
+持有它本来就有、用于注册的本账户 key（桌面上即 D661 的 provider 行；`agent-host-cli`
+如何获得由实施 PR 定义）。客户端在换取设备令牌后即丢弃 key，此后只持设备令牌；key
+不得出现在 Host 设备存储、日志、审计记录、URL 或错误载荷中。Gateway 仅在 TCP 对端位于
+其配置的可信代理集合内时才从配置的头读取调用者地址，否则采用对端地址，并把该地址放进
+Router `CLIENT_IP_HEADER` 指定的头转发；Gateway 的 loopback 对端必须在 Router 的
+`TRUSTED_PROXIES` 内，`allowed_peer_cidrs` 才能作用于真实调用方。密钥生命周期：被禁用
+或删除的 key 校验失败，不能再发起新登录或注册；key 状态本身不撤销任何东西，已批准设备
+与已注册 Host 只能经既有撤销路径撤销（§3.7、门 26）；按 key 签发的组网凭据过期后，
+key 被禁用的 Host 无法刷新 bootstrap，链路会中断——这是网络层边界而不是撤销，禁用 key
+也不是紧急开关。账户目录（网关 CA 加 Router 的 key 校验）现在为“兄弟 Host 属于同一
+账户”背书，因此“确认一次、处处可用”接受如下风险：被攻陷的网关 CA 可以把伪造的 Host
+注册进某个账户，用它签发被该账户其他 Host 接受的授权，从而在所有这些 Host 上取得设备。
+必须同时具备的缓解措施：授权由 Host 签名而不是网关、设备角色与远程权限上限不变、任一
+Host 可撤销、每个 Host 显示“新设备”提示、每次授权都有审计记录、严格模式拒绝兄弟授权。
+跨账户隔离是硬规则：共享组网上的可达性不构成授权（所有用户的终端同处一个组网，classic
+共享密钥模式下每个调用方持有同一个组网密钥）；任何路由、主机列表、设备记录、待处理授权
+与审计查询都不得跨账户，Host 只接受同一账户内由网关 CA 注册的签名者、针对未撤销设备
+签发的授权。Gateway 按 IP 的限流（ADR 决策 10）天然跨账户，按账户的限额彼此独立，任何
+限流应答都不泄露其他账户的数据。两个新帧只发给声明支持的 Host，客户端必须被告知哪些
+Host 无法确认，否则会一直等待；回退方式是每 Host 配对票据（§3.7、协议 §11.4）。
+
+多账户部署：§1、§3.1 与 §8 描述的是用户本地、单租户、链路中没有项目方账号服务的
+Gateway，自托管部署的读法不变；账户模式还允许由运营 Router 的人运行一个服务多个账户的
+Gateway，并让 Router 的账号服务进入链路——但只用于发现与注册，设备凭据仍由 Host 签发。
+每个账户在路由、列表、设备记录、授权、审计查询与按账户限额上都是独立租户。后果明说而非
+隐藏：选择账户模式即信任该运营方中继本账户的流量与授权请求，也接受它可以拒绝服务；但它
+不因此获得审批权——授权仍由 Host 签名——且 §10 仍要求中继消息在传输中携带的 prompt 与
+工具数据不进入日志、审计记录与持久化存储。
+
 | Operation | Viewer | Controller | Approver | Owner |
 |---|---:|---:|---:|---:|
 | List/get/subscribe/history | yes | yes | yes | yes |
@@ -147,7 +179,9 @@ token，不返回 `Set-Cookie`。
 SSRF 都要在边界处校验。附件使用大小、hash、MIME 和过期时间校验，不能接受
 本地路径；经 Gateway 时 Gateway 只校验大小、分块中继到 Host，并在
 `attachment/complete` 成功或过期后删除副本。首个部署为单租户，路由已携带
-`tenantId`，跨租户隔离测试在多租户 harness 就绪后执行。
+`tenantId`，跨租户隔离测试在多租户 harness 就绪后执行。账户模式（规划中，D666，见
+§3）新增一种部署在 Router 旁的多账户形态：每个账户是一个租户，门 29 是它的跨账户隔离
+测试；Gateway 按 IP 的限流按调用者地址而非账户计数，是各账户唯一共享的限额。
 
 打包原生客户端（PR-5）同样是跨源调用方，其 webview origin 需要单独加入白名单：
 iOS 版为 `capacitor://localhost`，Android 版为 `https://localhost`，这两个值是
@@ -211,6 +245,17 @@ link 上兑换，ssh 来源的码绝不经网关兑换），以及网关来源�
 限制（`allowRemoteSessionGrants` 下无 `allow-session`、无 `approverOverride`、
 上限与 `applyCeilingToPairedDevices` 无关），须用测试锁住。
 
+自 D666 起还需覆盖验收门 29–33（均为规划中）：账户模式端到端隔离——一个账户的 key
+不能列出、注册、路由到或取得另一账户 Host 的授权，即使所有用户的终端同处一个组网；
+Gateway 绝不持久化原始 Router AccessKey、绝不把客户端的 key 转发给 Host，客户端在设备
+交换后不再保留，且 key 不出现在 Host 设备存储、日志、审计、URL 或错误载荷中；Gateway
+仅在 TCP 对端位于其可信代理集合内时才从配置头读取客户端地址，并经 Router
+`CLIENT_IP_HEADER` 指定的头、从 Router `TRUSTED_PROXIES` 内的对端转发，使 key 的
+`allowed_peer_cidrs` 拒绝策略外调用方；兄弟 Host 只在签名者属于同一账户、由网关 CA
+注册且设备未被撤销时接受授权，严格模式不接受任何兄弟授权，签发的设备仍为
+`pairedDevice: false`、受远程权限上限约束且无 `allow-session`（沿用门 25）；两个新帧
+只发给声明支持的 Host，且客户端被告知哪些 Host 无法确认。
+
 ## 6. 修订记录
 
 D374（2026-09-10）新增浏览器 cookie/header 认证 profile、两种可接受的身份源、
@@ -238,3 +283,12 @@ cookie profile 条款去掉不排期状态并补充注册交换；§3 补记自�
 只约束 ssh 来源的配对码，新增 gate 28），并把网关来源主体不受 Host 策略放宽的
 限制（`allowRemoteSessionGrants` 下无 `allow-session`、无 `approverOverride`、
 上限与 `applyCeilingToPairedDevices` 无关）锁定为测试规则。
+
+D666（2026-10-18，ADR `remote-control-router-account-binding`）新增规划的账户模式条款
+与验收门 29–33：AccessKey 作为账户身份（桌面按 D661 规则解析），Gateway 经 loopback
+并在仅当对端属于可信代理时转发调用者地址来校验 key；密钥生命周期规则（被禁用或删除的
+key 不能再发起新登录或注册，但本身不撤销任何东西）；以 AccessKey 加 CSR 和 bootstrap
+的 `remoteGateway` 对象完成注册；账户作用域的登录、主机列表，以及经 `device.request` /
+`device.grant` 两个新帧完成的设备申请／确认／授权；多账户部署（并在多租户条款中加入
+指引）；账户目录为兄弟 Host 背书所带来的已接受风险及必须同时具备的缓解措施；以及严格
+模式。§3 的既有条款、D665 的网关来源限制与自托管的注册配对路径均保持不变。

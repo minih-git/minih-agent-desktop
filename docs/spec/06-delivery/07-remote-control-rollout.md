@@ -35,9 +35,10 @@ around transport breadth:
   which schedules the Gateway, connected-Host, and browser/mobile-client
   milestones (D665, ADR 0331).
 
-The scheduled order is R0, R1, R2, R3, then R4, R5, and R6 (D665). The
-reserved gRPC binding stays unscheduled: it is delivered only when a named
-consumer needs it, by a later recorded product decision.
+The scheduled order is R0, R1, R2, R3, then R4, R5, and R6 (D665), followed by
+R7, the Router-account binding (D666, planned). The reserved gRPC binding stays
+unscheduled: it is delivered only when a named consumer needs it, by a later
+recorded product decision.
 
 ### Experimental desktop MVP (narrow acceptance slice)
 
@@ -394,6 +395,63 @@ Exit criteria:
    both pairing cookies carry a finite `Max-Age`, and a cookie request that is
    not a same-origin `GET`/`HEAD` still proves an allowlisted `Origin`.
 
+### R7 — Router-account binding (D666)
+
+Deliver the account mode of ADR `remote-control-router-account-binding` on top of
+R4–R6 (D665). The self-hosted enrollment and per-Host pairing flow of R4 and R5
+keeps working unchanged; account mode is selected when the Router answers a
+`remoteGateway` object in the bootstrap. Work packages, one PR each:
+
+| # | Repository | Work | Depends on |
+|---|---|---|---|
+| A | Desktop | this decision: the ADR, the spec updates, decision D666 (docs only) | — |
+| B | Router | additive `remoteGateway {hostlinkUrl, publicOrigin, caPem}` in the bootstrap answer, its system setting, tests, and docs | A (contract) |
+| C | Desktop | Gateway account directory: enroll-by-key, account login, account host list, device request / confirm relay, trusted-proxy client IP, cross-account isolation tests | A |
+| D | Desktop | `device.request` / `device.grant` Host-link frames, Host-side confirm and grant verification, `agent-host-cli` support | C |
+| E | Desktop | host-core second overlay port forward, auto-configuration from the bootstrap, the desktop confirm dialog, strict mode, and i18n | B, D |
+| F | Desktop | clients: AccessKey login and the host switcher in `apps/remote-web` | C, D |
+| G | Desktop | push on top of accounts | F |
+| D-1 | ops | deploy next to the Router; needs the domain and user authorization | C–F |
+
+B and C can run in parallel after A.
+
+Scope notes:
+
+- the Gateway stays a separate process with its own release and `--data-dir`,
+  and does not join the Router's single-instance smooth-upgrade flow;
+- it needs the Router to list its loopback peer in `TRUSTED_PROXIES` and to set
+  `CLIENT_IP_HEADER` to the header it sends, a Host-link listener on the mesh
+  address allowed with `--hostlink-allow-cidr` (the mesh range is neither
+  RFC1918 nor `100.64.0.0/10`), and a domain or path prefix for the H5 client —
+  all deployment decisions;
+- the desktop needs a second No-TUN forward to the Host-link address on the
+  overlay (provider-config §3): exactly one forward exists today;
+- the new frames reach only Hosts that advertise support, and the advertisement
+  is defined by package D.
+
+Exit criteria:
+
+1. E2E-REMOTE-ACCOUNT-cross-account-isolation passes: a key of one account
+   cannot list, enroll against, or route to another account's Hosts.
+2. E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts passes: one approval on one
+   Host yields a device token the account's other Hosts accept, including a Host
+   that was offline at grant time.
+3. E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm passes: a Host in
+   strict mode refuses a sibling grant and asks its own user.
+4. E2E-REMOTE-ACCOUNT-key-rotation-keeps-account passes: a rotated key resolves
+   to the same account and enrolled Hosts stay enrolled.
+5. E2E-REMOTE-ACCOUNT-disabled-key-blocks-login passes: a disabled or deleted
+   key is refused for login and enrollment, while already approved device
+   tokens and Host certificates stay valid until revoked; with per-key mesh
+   credentials, a Host's link ends no later than its credential's expiry
+   (ADR decision 8).
+6. Security gates 29–33 are signed off; in particular the Gateway never
+   persists a raw AccessKey, never forwards a client's key to a Host, and a
+   client does not retain it after the exchange (gate 30).
+7. A desktop where account mode is unavailable (no `remoteGateway` object, or a
+   `404` from the bootstrap) keeps the self-hosted flow of R4 and R5, reports no
+   error, and hides the account-mode affordances.
+
 ### Reserved — gRPC binding
 
 `RACP-GRPC` is delivered only when a named native service consumer or
@@ -542,6 +600,9 @@ disconnected client does not affect Agent execution on either machine.
    standalone service the user starts; the desktop link and the mobile
    clients are off-by-default opt-in settings. The reserved gRPC milestone
    is scheduled only by a later recorded product decision.
+   R7 (D666) is enabled per Router: account mode turns on only when the Router
+   answers a `remoteGateway` object, and removing that object rolls it back;
+   desktops then keep the self-hosted flow.
 6. Keep a kill switch that rejects new remote connections and cancels queued
    turns submitted by remote principals while preserving already-running
    local desktop sessions.
@@ -583,6 +644,10 @@ client; the security gates 22–27 of
 `05-security/02-remote-control-security.md` are signed off, including the
 desktop-off regression; and the deployment README's Nginx example is
 verified to pass SSE through unbuffered.
+
+R7 admission (D666): the five `E2E-REMOTE-ACCOUNT-*` scenarios are green against
+a local Router test instance and the packaged Gateway, and security gates 29–33
+of `05-security/02-remote-control-security.md` are signed off.
 
 ## 7. Implementation status
 
@@ -685,6 +750,14 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   restoring the link, `dispose()` leaving no timer or socket, and logs free of
   credentials.
 
+- R7 not started (2026-10-18, D666 / ADR
+  `remote-control-router-account-binding`): account mode exists only as a
+  specification — protocol §11.5, security §3.8 with gates 29–33,
+  provider-config §3, and the `E2E-REMOTE-ACCOUNT-*` Draft scenarios. No code
+  exists for the Gateway account directory, the `device.request` /
+  `device.grant` frames, the second No-TUN forward, the client login and host
+  switcher, or strict mode.
+
 ## 8. Amendment history
 
 D374 (2026-09-10) replaced the Electron facade milestone with the headless
@@ -719,3 +792,12 @@ permission ceiling and off the owner role; the Gateway storage, pairing, and
 enrollment design; the desktop's off-by-default connected-Host setting; and
 the Capacitor mobile packaging with optional redacted push. The gRPC binding
 remains reserved and unscheduled.
+
+D666 (2026-10-18, ADR `remote-control-router-account-binding`) adds R7 to this
+rollout as the account mode on top of R4–R6: the schedule order in §1, work
+packages A–G plus the deployment next to the Router, the exit criteria that
+bind the five `E2E-REMOTE-ACCOUNT-*` scenarios and security gates 29–33, the
+per-Router enablement in §5, the R7 admission line in §6, and the rule that the
+self-hosted flow of R4 and R5 is unchanged and remains the fallback whenever the
+Router answers no `remoteGateway` object. The gRPC binding remains reserved and
+unscheduled.

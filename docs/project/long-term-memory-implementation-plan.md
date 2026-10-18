@@ -1,7 +1,7 @@
 # Long-term memory implementation plan
 
 - Decision record: [ADR agent-long-term-memory](../adr/agent-long-term-memory.md)
-  (Accepted for implementation, D666)
+  (Accepted for implementation, D667)
 - Status: Ready; no milestone started
 - Baseline: `main` at `ce48410f4` (v0.21.2), host schema v25
 - Scope: learned memory, history recall, explicit remember, optional
@@ -374,7 +374,7 @@ the index and both memory tools; it does not delete data.
 | `docs/spec/04-ux/06-settings-ia.md`, `08-component-spec.md` | M3, M4 |
 | `docs/spec/03-runtime/22-config-sync.md` | M5 |
 | `docs/spec/06-delivery/04-e2e-test-plan.md` (scenarios above) | each |
-| `docs/spec/08-meta/decisions-log.md` (D666) | Done with the ADR |
+| `docs/spec/08-meta/decisions-log.md` (D667) | Done with the ADR |
 | User guide page for memory | M3 |
 
 ## 5. Risks and mitigations
@@ -389,7 +389,7 @@ the index and both memory tools; it does not delete data.
 | Schema downgrade | Existing schema-version policy, migration tests, storage E2E | Older app cannot open v26 |
 | Background cost surprise | Off by default, explicit model, daily budget, visible usage | None expected |
 
-## 6. Resolved decisions (D666)
+## 6. Resolved decisions (D667)
 
 1. "Learn automatically" is off by default and cannot be enabled until an
    extraction model is selected.

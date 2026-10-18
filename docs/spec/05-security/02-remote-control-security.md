@@ -338,6 +338,76 @@ authentication input also carries the connection origin: the loopback
 - Revocation on either the Gateway or the Host denies new connections and
   closes existing relayed logical connections within 5 seconds.
 
+### 3.8 Account mode: Router key as discovery and enrollment (planned, D666)
+
+Account mode (ADR `remote-control-router-account-binding`, protocol §11.5) lets a
+Minih-Router AccessKey discover and enroll Hosts and bootstrap a device that is
+usable on every Host of the account. It is additive: §3.1–§3.7 keep their
+meaning, and a user without a Router key uses the self-hosted flow. Nothing in
+this subsection is implemented yet.
+
+- **AccessKey handling.** A client's AccessKey is presented only to the Gateway,
+  which verifies it against Router `GET /api/auth/session` over loopback, never
+  persists the raw key, and never forwards it to a Host. A Host only ever holds
+  its own account key, which it already has for enrollment (the D661 provider
+  row on a desktop; how `agent-host-cli` receives one is defined by the
+  implementing PR). A client drops the key after the device exchange and keeps
+  only the device token. The AccessKey MUST NOT appear in a Host device store, a
+  log line, an audit record, a URL, or an error payload.
+- **Client address.** The Gateway learns the caller address from a configured
+  header only when the TCP peer is inside its configured trusted-proxy set, and
+  otherwise from the peer itself. It forwards that address in the header named
+  by the Router's `CLIENT_IP_HEADER`, and its loopback peer must be inside the
+  Router's `TRUSTED_PROXIES`, so `allowed_peer_cidrs` binds to the real caller.
+  Trusting the header from an untrusted peer would let any caller claim any
+  address, so this setting is security-relevant configuration, not a
+  convenience flag.
+- **Key lifecycle.** A disabled or deleted key fails verification, so it starts
+  no new login or enrollment. Key state revokes nothing by itself: approved
+  devices and enrolled Hosts are revoked only through the existing revoke paths
+  (§3.7, gate 26). A Host's link may still end when its per-key mesh credential
+  expires, because a disabled key can no longer refresh the bootstrap; that is a
+  network bound, not a revocation, and a disabled key is not a kill switch.
+- **Multi-account deployment.** §1, §3.1, and §8 describe a user-local Gateway
+  with one tenant and no project-operated account service in the path.
+  Self-hosted deployments keep that reading unchanged. Account mode also allows
+  a Gateway run by whoever operates the Router, which then serves many
+  accounts, and it puts the Router's account service in the path for discovery
+  and enrollment only; device credentials stay Host-issued. Each account is its
+  own tenant for routing, listing, device records, grants, audit queries, and
+  per-account limits. Choosing account mode trusts that operator to route the
+  account's traffic and relay its grant requests, and accepts that the operator
+  can deny service. It gives the operator no approval authority, because grants
+  stay Host-signed, and §10 still keeps prompts and tool data — which relayed
+  messages carry in transit — out of logs, audit records, and durable storage.
+- **Trust model change, stated plainly.** The account directory — the Gateway CA
+  plus Router key verification — now vouches that a sibling Host belongs to the
+  same account. "Confirm once, use everywhere" therefore accepts that a
+  compromised Gateway CA could enroll a forged Host into an account and use it
+  to sign a grant that the account's other Hosts accept, obtaining a device on
+  all of them. Required mitigations: grants are signed by a Host key and never
+  by the Gateway; the device role set and the remote permission ceiling are
+  unchanged; any Host of the account can revoke; every Host shows a "new device"
+  notice; every grant produces an audit record; and strict mode makes a Host
+  refuse sibling grants.
+- **Cross-account isolation is a hard rule.** Reachability on the shared
+  EasyTier mesh is not authorization: every Router user's terminals are on one
+  mesh, and in the classic shared-secret mode every caller holds the same
+  network secret. No route, Host listing, device record, pending grant, or audit
+  query may cross accounts, and a Host accepts a grant only from a signer
+  enrolled in its own account under the Gateway CA, for a device that is not
+  revoked. The Gateway's per-IP rate limit (ADR decision 10) applies across
+  accounts by nature; per-account limits stay independent (§8), and no
+  rate-limit response discloses another account's data (§9).
+- **Strict mode.** A desktop setting makes that Host refuse sibling grants and
+  confirm every device with its own user. It keeps the per-device approval of
+  ADR 0331 for an operator who does not want roaming.
+- **Unsupported Hosts.** The new frames go only to Hosts that advertise support,
+  because today's Host ignores an unknown frame type silently
+  (`packages/racp/src/hostlink.ts` L103-172). A client MUST be told which Hosts
+  of its account cannot confirm instead of waiting for an answer that never
+  arrives; the fallback is the per-Host pairing ticket (§3.7, protocol §11.4).
+
 ## 4. Authorization model
 
 ### 4.1 Role matrix
@@ -555,6 +625,10 @@ The Gateway ships with R4 (D665). These rules bind from R4 onward.
 - The first deployment is single-tenant. Routes already carry `tenantId` so a
   second tenant is an operational change, not a protocol change; cross-tenant
   isolation tests run once a multi-tenant harness exists.
+- Account mode (§3.8, D666, planned) adds a multi-account deployment beside the
+  Router: each account is a tenant, and gate 29 is its cross-account isolation
+  test. The Gateway's per-IP rate limit is the one limit that accounts share,
+  because it keys on the caller address rather than the account (§3.8).
 - A client cannot enumerate Host or Session ids outside its signed scope.
 - Gateway caches contain opaque ids and routing metadata, not provider secrets.
 - A Host reconnect replaces the old connection only after identity and tenant
@@ -709,6 +783,29 @@ separate, explicitly specified credential-management capability is added.
     loopback `RACP-WS` binding, and an ssh-origin pairing token is never
     redeemed through the Gateway; a device minted through the Gateway always
     carries the gateway origin and never `owner`. Applies from R4 (D665).
+29. Account mode isolates accounts end to end: a key of one account cannot
+    list, enroll against, route to, or obtain a grant for a Host of another
+    account, even though every Router user's terminals share one overlay mesh.
+    Planned (D666).
+30. The Gateway never persists a raw Router AccessKey and never forwards a
+    client's key to a Host, and a client does not retain the key after the
+    device exchange; the key appears in no Host device store, log line, audit
+    record, URL, or error payload. Planned (D666).
+31. The Gateway takes the client address from its configured header only when
+    the TCP peer is inside its trusted-proxy set, and forwards the caller's
+    address to Router `/api/auth/session` in the header named by the Router's
+    `CLIENT_IP_HEADER`, from a peer inside the Router's `TRUSTED_PROXIES`, so a
+    key's `allowed_peer_cidrs` rejects a caller outside its policy.
+    Planned (D666).
+32. A confirm-once grant is accepted by a sibling Host only when the signer is
+    enrolled in the same account under the Gateway CA and the device is not
+    revoked; a Host in strict mode accepts no sibling grant. The minted device
+    keeps `pairedDevice: false`, the remote permission ceiling, and no
+    `allow-session`, so gate 25 applies unchanged. Planned (D666).
+33. `device.request` and `device.grant` reach only Hosts that advertise support,
+    and a client is told which Hosts of its account cannot confirm instead of
+    waiting for an answer. Planned (D666).
+
 ## 13. Amendment history
 
 D374 (2026-09-10) added the browser cookie/header authentication profiles,
@@ -752,3 +849,18 @@ pairing-token origin (§3.7, gate 17 narrowed to ssh-origin codes, new gate
 28) and locks the policy-immune restrictions of gateway-origin principals
 (no `allow-session` under `allowRemoteSessionGrants`, no `approverOverride`,
 ceiling regardless of `applyCeilingToPairedDevices`) as test-locked rules.
+
+D666 (2026-10-18, ADR `remote-control-router-account-binding`) adds the planned
+account mode of §3.8 and gates 29–33: the Minih-Router AccessKey as account
+identity that is resolved on the desktop by the D661 rule and verified by the
+Gateway against Router `/api/auth/session` over loopback with the caller address
+forwarded from a trusted peer only; the key-lifecycle rule (a disabled or
+deleted key starts no new login or enrollment but revokes nothing by itself);
+enrollment by AccessKey plus CSR from the additive `remoteGateway` bootstrap
+object; account-scoped login, host listing, and device request / confirm /
+grant relayed over the new `device.request` and `device.grant` Host-link
+frames; the multi-account deployment, with a pointer from §8; the stated
+accepted risk that the account directory now vouches for sibling Hosts, with
+its required mitigations; and strict mode. §3.1–§3.7, the gateway-origin
+restrictions of D665, and the self-hosted enrollment and pairing paths are
+unchanged.

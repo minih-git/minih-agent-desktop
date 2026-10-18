@@ -292,6 +292,14 @@ clients with Host-issued device credentials (D385). Delivery scope, binding
 rules, and exit criteria are the R4 milestone of
 `06-delivery/07-remote-control-rollout.md` (D665, ADR 0331).
 
+Account mode (planned, D666, ADR `remote-control-router-account-binding`) adds
+a second deployment: a Gateway that runs as a separate process beside the
+maintainer's Minih-Router, which Hosts reach over the Router's EasyTier mesh and
+phones over public HTTPS. It serves many accounts, uses the Router AccessKey for
+discovery and enrollment only, and still admits relayed clients with
+Host-issued device credentials. Delivery is the R7 milestone of
+`06-delivery/07-remote-control-rollout.md`.
+
 ### 5.4 Desktop as a connected Host (R5)
 
 Electron Main may serve its existing in-process Agent Host over the outbound
@@ -406,6 +414,11 @@ A Gateway is self-hosted and has no identity source of its own: it admits
 clients with device credentials issued by the user's Host (D385); see
 `05-security/02-remote-control-security.md` §3.1. OIDC federation and the
 pi-backend account service are out of scope.
+
+Account mode (planned, D666, ADR `remote-control-router-account-binding`) is
+the one exception: it lets a Minih-Router AccessKey discover and enroll Hosts
+and bootstrap a device, while device credentials stay Host-issued; see
+`05-security/02-remote-control-security.md` §3.8.
 
 ## 7. Transport profiles
 
