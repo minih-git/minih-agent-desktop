@@ -112,3 +112,34 @@ core regains title generation with a narrower trigger than the pre-0186 flow:
   subject, while a `manual` rename still wins every race; the naming input is
   the compaction summary, matched to the live checkpoint by a fingerprint the
   `compaction_end` event carries.
+- 2026-10-18 refinement: the naming input is the user's own words plus the
+  bounded text behind a pasted reference, the title follows the request's
+  language, and a landed write announces itself. A large paste reaches the
+  first message as an `@path` chip, so naming from the message text alone
+  produced titles about the upload; Electron main now reads at most three
+  regular text files from that session's own `pasted/` directory (2,000 code
+  points each, 3,000 in total) from the head of each file, so a multi-megabyte
+  paste contributes its opening instead of being dropped. Every step from the
+  data root through `scratch/<session>/pasted/` must stay inside the previous
+  one, so neither a file link nor a redirected `pasted/` directory can read
+  another session or an arbitrary path. A prompt that only references workspace
+  files adds their bounded names (contents are never read), so it is nameable
+  instead of skipped. The prompt names a language only when the script
+  identifies it — Han, Cyrillic, Arabic, Hebrew, and Devanagari are named as
+  scripts, so kanji-only Japanese is not renamed in Chinese — and a compaction
+  refresh carries the current title so a summary in another language cannot
+  translate the name. The attachment decides the language only when the request
+  has no words of its own. The deterministic fallback drops `@path` chips and
+  keeps the placeholder when a prompt has no words, and every landed write
+  (first title or refresh) emits one `sessionsChanged` event with reason
+  `session.title`, because the renderer owns its own session list and otherwise
+  kept showing the fallback.
+- 2026-10-18 reliability refinement: the send path and the settled-turn retry
+  share one generator whose run registry is reserved before the first await, so
+  two triggers cannot compose the same session at once, and the retry waits for
+  a running composition instead of skipping it — that composition can still
+  fail after the turn ended. Only a real attempt spends the two-attempt budget.
+  The requested model always decides the provider: a caller without a session
+  binding passes the request's own `providerId/modelId`, because omitting the
+  override fell back to the default provider and sent the naming input to a
+  service the request never named.

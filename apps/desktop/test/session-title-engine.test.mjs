@@ -5,10 +5,12 @@ register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 const {
   buildSessionRetitleRequest,
   buildSessionTitleRequest,
+  detectTitleLanguageHint,
   normalizeGeneratedTitle,
   resolveSessionTitleThinkingLevel,
   selectSessionTitleModel,
   summaryFingerprint,
+  titleLanguageRule,
 } = await import("../electron/main/session-title-engine.ts");
 const { sessionTitleModelsFromProviders } = await import(
   "../electron/main/session-title-service.ts"
@@ -45,12 +47,22 @@ test("buildSessionTitleRequest bounds the prompt and rejects an empty one", () =
   assert.equal(request?.thinkingLevel, "off");
   assert.match(request?.userContent ?? "", /Fix the login bug on Windows/);
   assert.match(request?.userContent ?? "", /User prompt:/);
-  assert.match(request?.userContent ?? "", /imperative verb/);
-  assert.match(request?.userContent ?? "", /user's language/);
-  assert.match(request?.userContent ?? "", /Preserve ticket references exactly/);
+  assert.match(request?.userContent ?? "", /At most five words/);
+  assert.match(request?.userContent ?? "", /Write the title in the user's language/);
+  assert.match(request?.userContent ?? "", /Preserve ticket references, file names/);
   assert.equal(
     buildSessionTitleRequest({ sessionModelKey: null, models, userPrompt: "   " }),
     null,
+  );
+  // A prompt that is only an `@path` chip has no words of its own, but the
+  // pasted text still names the session.
+  assert.ok(
+    buildSessionTitleRequest({
+      sessionModelKey: null,
+      models,
+      userPrompt: "",
+      pastedMaterial: "Quarterly revenue plan for the March export",
+    }),
   );
   const long = "x".repeat(2_000);
   const bounded = buildSessionTitleRequest({ sessionModelKey: null, models, userPrompt: long });
@@ -111,4 +123,113 @@ test("sessionTitleModelsFromProviders flattens ready providers and skips the res
   );
   assert.deepEqual(flat[0].thinkingLevels, ["off", "low"]);
   assert.equal(flat[2].thinkingLevels, undefined);
+});
+
+test("the naming prompt follows the request language and carries pasted material", () => {
+  const chinese = buildSessionTitleRequest({
+    sessionModelKey: null,
+    models,
+    userPrompt: "帮我看看这份需求文档",
+    pastedMaterial: "2026 年第三季度需要在 Windows 上导出报表",
+  });
+  // Han-only text names the script, not a language: kanji-only Japanese shares
+  // it, so asserting "Chinese" renamed Japanese sessions in Chinese.
+  assert.match(chinese?.userContent ?? "", /uses Han script/);
+  assert.match(chinese?.userContent ?? "", /user's own language and script/);
+  assert.match(chinese?.userContent ?? "", /never translated into English/);
+  assert.match(chinese?.userContent ?? "", /Attached material:/);
+  assert.match(chinese?.userContent ?? "", /第三季度需要在 Windows 上导出报表/);
+
+  // Latin text keeps the generic rule instead of guessing a language.
+  const english = buildSessionTitleRequest({
+    sessionModelKey: null,
+    models,
+    userPrompt: "Fix the login bug",
+  });
+  assert.match(english?.userContent ?? "", /Return the title in the language of the user's request text/);
+  assert.doesNotMatch(english?.userContent ?? "", /Attached material:/);
+});
+
+test("a request with its own words ignores the attachment's language", () => {
+  // The naming language belongs to the user's request, never to a document the
+  // request merely attaches: an English ask with a Chinese file is English.
+  const mixed = buildSessionTitleRequest({
+    sessionModelKey: null,
+    models,
+    userPrompt: "Please summarize the attached document",
+    pastedMaterial: "这是中文资料，主题是库存管理。",
+  });
+  assert.match(mixed?.userContent ?? "", /Return the title in the language of the user's request text/);
+  assert.doesNotMatch(mixed?.userContent ?? "", /Han script/);
+
+  // A paste-only prompt has nothing else to go on, so the material speaks.
+  const pasteOnly = buildSessionTitleRequest({
+    sessionModelKey: null,
+    models,
+    userPrompt: "",
+    pastedMaterial: "这是中文资料，主题是库存管理。",
+  });
+  assert.match(pasteOnly?.userContent ?? "", /uses Han script/);
+});
+
+test("detectTitleLanguageHint names only unambiguous scripts", () => {
+  assert.deepEqual(detectTitleLanguageHint("ログインを修正"), { language: "Japanese" });
+  assert.deepEqual(detectTitleLanguageHint("로그인 수정"), { language: "Korean" });
+  assert.deepEqual(detectTitleLanguageHint("帮我修复登录"), { script: "Han" });
+  // Kanji-only Japanese is Han text too; naming it Chinese was the bug.
+  assert.deepEqual(detectTitleLanguageHint("認証情報管理機能の実装"), { script: "Han" });
+  assert.deepEqual(detectTitleLanguageHint("исправить вход"), { script: "Cyrillic" });
+  assert.equal(detectTitleLanguageHint("Fix the login bug"), null);
+  assert.equal(detectTitleLanguageHint(""), null);
+  assert.match(titleLanguageRule({ language: "Japanese" }), /written in Japanese/);
+  assert.match(titleLanguageRule({ script: "Han" }), /uses Han script/);
+  assert.match(titleLanguageRule(null), /never translated into English/);
+});
+
+test("a compaction summary in another language keeps the title's language", () => {
+  const request = buildSessionRetitleRequest({
+    sessionModelKey: null,
+    models,
+    summary: "The user pivoted to exporting the March report",
+    currentTitle: "修复登录",
+  });
+  assert.match(request?.userContent ?? "", /Current title:/);
+  assert.match(request?.userContent ?? "", /修复登录/);
+  assert.match(request?.userContent ?? "", /uses Han script/);
+  assert.match(request?.userContent ?? "", /March report/);
+  // An explicit hint wins over the title's own script.
+  const explicit = buildSessionRetitleRequest({
+    sessionModelKey: null,
+    models,
+    summary: "总结",
+    currentTitle: "修复登录",
+    language: { language: "Korean" },
+  });
+  assert.match(explicit?.userContent ?? "", /written in Korean/);
+});
+
+test("a prompt that only references files still names the session", () => {
+  const request = buildSessionTitleRequest({
+    sessionModelKey: null,
+    models,
+    userPrompt: "",
+    referencedFiles: ["login.ts", "auth/session.ts"],
+  });
+  assert.match(request?.userContent ?? "", /Referenced files:/);
+  assert.match(request?.userContent ?? "", /- login\.ts/);
+  assert.ok(request?.userContent.includes("session.ts"));
+
+  // Bounded: one long name cannot dominate, and the list is capped.
+  const bounded = buildSessionTitleRequest({
+    sessionModelKey: null,
+    models,
+    userPrompt: "",
+    referencedFiles: [
+      "x".repeat(200),
+      ...Array.from({ length: 12 }, (_, index) => `file-${index}.ts`),
+    ],
+  });
+  const names = (bounded?.userContent ?? "").split("\n").filter((line) => line.startsWith("- "));
+  assert.ok(names.length <= 6, String(names.length));
+  assert.ok(names[0].length <= 62, String(names[0].length));
 });

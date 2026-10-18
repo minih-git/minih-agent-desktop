@@ -3184,6 +3184,51 @@ identify the platform validation still needed.
 - **Milestone**: M2
 - **Status**: Draft (run only in a capable environment when this surface changes)
 
+#### E2E-SESSION-title-follows-the-request: A title names the request, keeps its language, and stays editable
+
+- **Preconditions**: Dedicated request worktree with a built workspace and a
+  compatible reused Host binary; a temporary data directory and temporary
+  project; a local SSE model fixture answering the one-shot title completion.
+  No installed app, real provider, or paid service is used.
+- **Steps**: 1) Send a first prompt whose body is a large pasted document —
+  the composer stores it under the session's `scratch/<id>/pasted/` directory
+  and serializes one `@path` chip. 2) Observe the Sidebar name while the first
+  turn runs, then after the completion settles. 3) Repeat with Chinese request
+  text and an English pasted document; then with a Chinese request and an
+  English compaction summary; then with a prompt that only references a
+  workspace file (`@src/login.ts`). 4) While the first turn is streaming, open
+  Rename, place the caret in the middle of the draft, and keep typing. 5) Save.
+- **Expected**: No surface ever shows the pasted scratch path as the title.
+  The prompt fallback keeps only the user's own words, and a prompt that has
+  none stays a placeholder instead of a path. The generated title describes
+  the pasted content, appears in the Sidebar without a restart or reopening
+  the session, and follows the language of the request text even when the pasted
+  document or the compaction summary is in another language; a Han-script prompt
+  is named in the user's own language and script rather than asserted as
+  Chinese. A paste far larger than the excerpt budget still names the session
+  from its opening, a reference-only prompt names it from the referenced file
+  names, and a redirected `pasted/` directory contributes nothing. The rename
+  dialog keeps the typed draft, the caret and any partial selection while the
+  transcript streams, and the saved title is exactly what was typed. A first
+  composition that fails after its turn ended is recovered by the bounded retry
+  without sending the naming input to a provider the request did not name.
+- **Coverage**: `session-title-input.test.mjs` covers the read scope (own
+  `pasted/` directory only, no symlink escape, no binary, bounded bytes and
+  counts); `session-title-engine.test.mjs` covers the language rule and the
+  pasted-material block; `session-title-service.test.mjs` covers the naming
+  input, the language of a compaction refresh, and the renderer refresh after
+  a landed write; `session-title-prompt-fallback.test.mjs` covers the
+  path-free fallback and the single `sessionsChanged` announcement;
+  `session-rename-stream.test.mjs` runs the production dialog in real Electron
+  through parent re-renders with fresh callbacks.
+- **Specs linked**: `03-runtime/02-agent-runtime.md`, `04-ux/08-component-spec.md`,
+  `04-ux/06-settings-ia.md`, ADR 0143, ADR 0323
+- **Acceptance**: F (session metadata persistence), Quality (localized task
+  management)
+- **Milestone**: Post-MVP session maintenance
+- **Status**: Unit- and Electron-covered as listed; the model-fixture journey
+  stays Draft until it has its own runner
+
 #### E2E-021b: Developer mode copies a conversation id and opens session scratch
 
 - **Preconditions**: Developer mode is enabled. A session exists, including one

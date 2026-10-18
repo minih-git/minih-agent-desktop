@@ -214,10 +214,14 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
   when empty), and a thinking-level picker persisting
   `sessionTitle.thinkingLevel` (off when absent). After the first message of a
   still-default-titled session is sent, main composes a title from that
-  message through a detached one-shot completion and writes it only when the
-  deterministic fallback title is still current, so a manual rename always
-  wins and a failure keeps the fallback. Picker rows disabled while the
-  switch is off; the choices stay stored.
+  message — its own words, the bounded text of any pasted document it
+  references, and the names of referenced workspace files — through a detached
+  one-shot completion, and writes it only when the deterministic fallback title
+  is still current, so a manual rename always wins and a failure keeps the
+  fallback. The title follows the language of the request text, and a landed
+  write refreshes the session list immediately. A composition that fails after
+  its turn ended is retried twice at most.
+  Picker rows disabled while the switch is off; the choices stay stored.
 - File-open target, menu-bar behavior, and bottom-panel behavior are not
   rendered until their host-backed settings schemas and runtime effects exist.
 

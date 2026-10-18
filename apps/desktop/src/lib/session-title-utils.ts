@@ -1,3 +1,4 @@
+import { promptTextWithoutReferences } from "@minih-agent/shared";
 import i18n from "i18next";
 
 /**
@@ -46,13 +47,21 @@ export function isDefaultSessionTitle(title?: string | null): boolean {
  * Deterministic title for the first prompt of a still-untitled session.
  * The host keeps the session eligible for an automatic plugin title, so this
  * text is only the immediate, offline-readable fallback.
+ *
+ * Composer file and paste chips serialize to `@path` tokens, so a prompt that
+ * is mostly a large paste would otherwise be named after its scratch path
+ * (`@/Users/…/pasted/pasted-a1b2.txt`). The fallback keeps the user's own
+ * words; a prompt without any stays a placeholder so the automatic title —
+ * which reads the pasted text — names the session instead.
  */
 export function promptFallbackSessionTitle(
   userPrompt: string,
   emptyTitle: string,
 ): string {
   return (
-    userPrompt.trim().replace(/\s+/g, " ").slice(0, PROMPT_FALLBACK_TITLE_LENGTH) ||
-    emptyTitle
+    Array.from(promptTextWithoutReferences(userPrompt))
+      .slice(0, PROMPT_FALLBACK_TITLE_LENGTH)
+      .join("")
+      .trim() || emptyTitle
   );
 }
