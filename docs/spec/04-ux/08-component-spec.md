@@ -2872,11 +2872,13 @@ reasoning-level control.
 - Padding: px-4 py-3 inner textarea
 - Font: text-sm for Agent, Plan, and Goal; mode changes semantics and tool
   controls, not the typography
-- The Agent/Plan/Goal mode chip reserves one fixed 88px width, sized from the
-  longest built-in label in English and zh-CN ("Agent" / "智能体"). Its label
-  stays single-line and ellipsizes if a future locale exceeds that budget, so
-  switching modes never reflows the adjacent Composer controls. Cycling the
-  chip cross-fades the icon and label in place. While the live turn is
+- The Agent/Plan/Goal mode chip reserves one fixed 96px width, sized from the
+  longest built-in label in English and zh-CN ("Agent" / "智能体") plus its
+  menu caret. Its label stays single-line and ellipsizes if a future locale
+  exceeds that budget, so switching modes never reflows the adjacent Composer
+  controls. The chip names the committed mode and opens one menu listing the
+  three modes, each a checked menu item; choosing one closes the menu and
+  configures the active session. While the live turn is
   `planning`, the chip pulses on its icon (purple) instead of leaving a
   second status row parked above the composer; a staged mode choice still
   updates the chip immediately and does not start that pulse until the
@@ -2961,9 +2963,10 @@ reasoning-level control.
 - The Composer stack places TodoDock above Plan/Goal approval surfaces when the
   active session has a non-empty host-owned checklist. An empty checklist does
   not reserve layout space.
-- The collapsed header shows completed/active progress and the current
-  `in_progress` content. A checklist whose items are all cancelled has a clear
-  cancelled label instead of a misleading `0/0 completed` count.
+- The collapsed header separates the completed-task count from the current
+  `in_progress` content, truncating only the task title when space is limited.
+  A checklist whose items are all cancelled has a clear cancelled label
+  instead of a misleading `0/0 completed` count.
 - The disclosure is keyboard accessible, does not take focus on updates, and
   resets closed when the active session changes. The expanded dock lists every
   ordered row and scrolls inside its own box (`max-height: min(280px, 30dvh)`,
@@ -2975,9 +2978,10 @@ reasoning-level control.
   collapsed content is `aria-hidden` and reduced-motion users receive an
   immediate state change. A collapsed dock reserves only its header row: the
   list's inset is clipped, never laid out below the header.
-  Completed rows use a success-tinted tile with a check icon, in-progress rows
-  use the accent tint, and cancelled rows are muted. Each status symbol has a
-  localized accessible name, and each row renders plain text.
+  Expanded rows use a compact, flat checklist layout with square status marks.
+  Completed text and cancelled rows are muted; the in-progress row remains
+  primary and medium-weight. Each status symbol has a localized accessible
+  name, and each row renders plain text.
 - Renderer snapshots are keyed by session id. A `todos.changed` event with an
   older or equal revision is ignored. Session activation and host recovery
   re-read the authoritative snapshot, including already cached checklists; a
@@ -3129,7 +3133,7 @@ reasoning-level control.
   to Off-only. An active pending Plan or Goal approval still disables these
   controls. Approval actions are the exception while awaiting approval. The
   Composer-left Agent/Plan/Goal chip is the sole mode
-  control and cycles Agent → Plan → Goal → Agent on click. The Composer-right
+  control and opens the mode menu on click. The Composer-right
   model × reasoning chip owns both selections. Palette and Composer slash mode commands use the
   same active-session configuration path; after host confirmation resolves an
   approval, the approval surface is removed rather than remaining as a terminal
@@ -3435,9 +3439,13 @@ Anatomy:
   hints can still truncate when they themselves exceed the available row width;
   neither command rows nor file rows overflow the menu.
 - File mode (`@` token at cursor, boundary-preceded): rows persistently show
-  only the leaf file or directory name; directories get a trailing `/` and
-  continue completion on accept. The complete relative path remains available
-  through the row tooltip and accessible name. Accepting a completed file
+  the leaf file or directory name followed by the entry's complete
+  workspace-relative path in a de-emphasized mono span; directories keep a
+  trailing `/` on the leaf name and continue completion on accept, and the
+  path span renders the raw `entry.path` without a trailing slash. The path
+  span takes the row's remaining width and ellipsizes before the leaf name
+  can, while the row tooltip and accessible name still carry the complete
+  relative path. Accepting a completed file
   (Enter, Tab, or click) replaces the `@` token with an inline leaf-name chip
   at the caret — the same sentinel-backed chip as a pasted file — whose
   canonical value is the original `entry.path`; the menu closes and that Enter
@@ -3564,13 +3572,13 @@ Anatomy:
   primary-folder file is addressed to the view as a project-relative path and a
   sibling-folder file as an absolute one, which is also how scratch and
   attachment files are addressed. A reference that matches no file opens nothing
-  and reports itself, as does right-clicking it: the file-reference menu offers
-  that file's own folder in the system file manager and copies its full path or
-  its project-relative path. The same items are offered on a sent `@path` chip,
-  an inline code span, a markdown link, a local image, a tool row's file path,
-  and a path in a tool result's file or match list, through the same completion
-  and the same address; a file outside the project has no relative path to copy
-  and says so instead.
+  and reports itself. Right-clicking a transcript file reference offers Copy
+  full path and Copy relative path on every surface that names it. Unpositioned
+  `.html` and `.htm` references also offer an **Open with** submenu containing
+  File Manager, built-in browser, and default browser. Each choice completes the
+  reference first and opens that exact resolved file. Other file types keep the
+  copy actions only; the transcript menu has no **Show in folder** action. A
+  file outside the project has no relative path to copy and reports that fact.
   The OS default application is no longer what this click does. HTTP(S)
   URLs stay text links. Plain clicks follow the Link open destination setting,
   and right-clicking a URL exposes the same external, work-panel, and copy

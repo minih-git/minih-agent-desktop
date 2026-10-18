@@ -1,12 +1,9 @@
 import type { TFunction } from "i18next";
 import type { ReactNode } from "react";
-import { ComposerModelList } from "./ComposerModelList";
+import { IconBot, IconChevronDown } from "../../../components/icons";
 import { AnchoredMenu } from "../../../components/settings/AnchoredMenu";
-import {
-  IconBot,
-  IconChevronDown,
-} from "../../../components/icons";
 import { TooltipButton } from "../../../components/ui";
+import { ComposerModelList } from "./ComposerModelList";
 import type { useComposerModelMenu } from "./hooks/useComposerModelMenu";
 import { ThinkingLevelSlider } from "./ThinkingLevelSlider";
 
@@ -95,10 +92,7 @@ export function ComposerModelPicker({
           </span>
           <span className="composer-model-thinking-model">{modelLabel}</span>
           {thinkingLevel !== "off" ? (
-            <>
-              <span className="composer-model-thinking-dot" aria-hidden="true">·</span>
-              <span className="composer-model-thinking-level">{thinkingLabel}</span>
-            </>
+            <span className="composer-model-thinking-level">{thinkingLabel}</span>
           ) : null}
           <IconChevronDown size={12} aria-hidden="true" className="composer-model-thinking-chevron" />
         </TooltipButton>
