@@ -446,9 +446,37 @@ implemented as written.
   every device with its own user; it announces `device.confirm` alone, so the
   Gateway never offers it a grant it would refuse, and the client does not count
   it as one that will accept. It keeps the per-device approval of ADR 0331 for
-  an operator who does not want roaming. The setting is per Host
-  (`--strict-devices` on `agent-host-cli`); the desktop's settings UI is package
-  E.
+  an operator who does not want roaming. Because no refresh can ever change that
+  answer, a client that holds an account device must tell the user to ask for a
+  device again and approve it on that computer — the new grant is signed by that
+  Host itself and the account's other Hosts adopt it as usual — instead of
+  offering a retry that cannot succeed. The setting is per Host and off by
+  default: `--strict-devices` on `agent-host-cli`, and the desktop's own
+  "require confirmation on every terminal" switch (package E2), which is stored
+  device-locally beside the remote-control switch and takes effect by rebuilding
+  the Host link, because the capability list is part of what the Host announces.
+- **Desktop Host: the key stays in the main process.** The desktop reads the
+  account AccessKey from the saved `minih-router` provider row through host-core,
+  uses it for the one enrollment request, and drops it (gate 30). It is not in a
+  renderer payload, an IPC event, a status projection, a log line, an audit
+  record, or the credential file — that file holds the Host certificate and key,
+  which is exactly what the self-hosted flow stores. Nothing is enrolled and
+  nothing listens while the user's own remote-control switch is off, and an
+  unavailable account-mode advertisement leaves the registration-code flow
+  untouched.
+- **Desktop Host: confirmation is a window, and no window is a refusal.** The
+  desktop's confirmer is a modal in its own window: the request, the device
+  label, the client, and the requester's deadline; focus starts on Deny, Escape
+  denies, and the dialog closes when `expiresAt` passes. Every way of not
+  answering denies: a closed window, a reloaded renderer, or a stopped link
+  denies at once, and a request no window can show is denied when it expires.
+  A denial sends no frame (protocol §11.5), so the client keeps waiting until
+  its own deadline unless another Host of the account approves; what tells it
+  up front which Hosts can answer at all is the roster (gate 33). Every mint,
+  adoption, and revocation produces a notice the settings page lists (ADR
+  decision 6 mitigation), and a
+  device revoked there travels as the signed revocation frame, queued while the
+  link is down, so a lost device stops working on every Host of the account.
 - **Unsupported Hosts.** A Host announces what it supports with
   `host.capabilities` on every link, and the new frames go only to a Host that
   announced the matching capability, because a Host that predates them ignores

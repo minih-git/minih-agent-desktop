@@ -106,6 +106,7 @@ const PAIR_ROUTE = /^\/v1\/hosts\/([^/]+)\/pair\/?$/;
 /** Account directory routes (protocol §11.5); never host-scoped. */
 const ACCOUNT_LOGIN_ROUTE = /^\/v1\/account\/login\/?$/;
 const ACCOUNT_HOSTS_ROUTE = /^\/v1\/account\/hosts\/?$/;
+const ACCOUNT_LOGOUT_ROUTE = /^\/v1\/account\/logout\/?$/;
 const ACCOUNT_DEVICES_ROUTE = /^\/v1\/account\/devices\/?$/;
 const ACCOUNT_DEVICE_STATUS_ROUTE = /^\/v1\/account\/devices\/([^/]+)\/?$/;
 
@@ -538,6 +539,11 @@ export class ClientHttpServer {
         return;
       }
 
+      if (ACCOUNT_LOGOUT_ROUTE.test(url.pathname)) {
+        await this.handleAccountLogout(request, response, ip, cors, traceId);
+        return;
+      }
+
       if (ACCOUNT_DEVICES_ROUTE.test(url.pathname)) {
         await this.handleAccountDeviceRequest(request, response, ip, cors, traceId);
         return;
@@ -574,7 +580,14 @@ export class ClientHttpServer {
       const auth = this.authenticate(request);
       this.assertCsrf(request, auth.via, auth.deviceId);
       this.assertDeviceReachesHost(auth, hostId);
-      const identity: ConnectionIdentity = { hostId, deviceId: auth.deviceId, credential: auth.token };
+      const identity: ConnectionIdentity = {
+        hostId,
+        deviceId: auth.deviceId,
+        credential: auth.token,
+        // An account-mode device is the only one a Host can legitimately have
+        // not adopted yet (§11.5), and the answer to its refusal differs.
+        ...(auth.accountId ? { accountDevice: true } : {}),
+      };
 
       if (route.stream) {
         const subscription: StreamSubscription =
@@ -766,6 +779,36 @@ export class ClientHttpServer {
   }
 
   /**
+   * `POST /v1/account/logout` (protocol §11.5): end the caller's own account
+   * session. JavaScript cannot delete an `HttpOnly` cookie, so this route is
+   * the only way for a browser to drop the account credential its login left
+   * behind once the device token has been issued. The device token is a
+   * separate credential and is not touched.
+   */
+  private async handleAccountLogout(
+    request: IncomingMessage,
+    response: ServerResponse,
+    ip: string,
+    cors: Record<string, string>,
+    traceId: string,
+  ): Promise<void> {
+    try {
+      if (request.method !== "POST") throw new GatewayRpcError("METHOD_NOT_FOUND", "account logout is a POST endpoint");
+      this.assertOrigin(request, "optional");
+      const { session, via } = this.authenticateAccount(request);
+      this.assertCsrf(request, via, session.sessionId);
+      this.assertRateLimit(`account:${session.sessionId}`, ip);
+      const outcome = await this.accountService().logout({ session, ip });
+      // One Set-Cookie header per cookie: browsers reject a folded value.
+      if (outcome.cookies.length > 0) response.setHeader("set-cookie", outcome.cookies);
+      sendJson(response, outcome.status, outcome.payload, this.accountHeaders(cors));
+    } catch (error) {
+      const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to end the account session");
+      sendError(response, rpc, traceId, cors);
+    }
+  }
+
+  /**
    * `POST /v1/account/devices` (protocol §11.5): ask the account's Hosts to
    * approve a new device. The route takes the account session credential, never
    * a device token, and answers the account's roster, so the client learns at
@@ -815,6 +858,9 @@ export class ClientHttpServer {
       this.assertRateLimit(`account:${session.sessionId}`, ip);
       if (!requestId) throw new GatewayRpcError("INVALID_ARGUMENT", "the request names no device request");
       const outcome = await this.deviceService().status({ session, requestId, ip });
+      // A browser session receives the device token as per-Host `HttpOnly`
+      // cookies here, exactly as the pairing route hands one over.
+      if (outcome.cookies.length > 0) response.setHeader("set-cookie", outcome.cookies);
       sendJson(response, outcome.status, outcome.payload, this.accountHeaders(cors));
     } catch (error) {
       const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to read the device request");

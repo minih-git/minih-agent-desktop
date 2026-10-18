@@ -250,6 +250,36 @@ describe("device request state machine", () => {
     expect(sent.filter((call) => call.frame.type === "device.grant")).toHaveLength(1);
   });
 
+  it("hands a browser session per-Host cookies, and a native session the body token", async () => {
+    const fixture = await signingFixture();
+    const { service: devices } = service({ authority: fixture.authority });
+    const requestId = await requestDevice(devices);
+    const token = newDeviceToken();
+    await devices.handleGrant(
+      signedGrant(fixture.alpha, { requestId, deviceId: "dev_1", token, tokenHash: hashToken(token) }),
+      "host_a1",
+    );
+
+    // Browser: the token becomes one `HttpOnly` cookie per Host of the account,
+    // exactly as pairing sets it for one Host, so JavaScript never reads it.
+    const browser = await devices.status({ session: { ...SESSION_A, client: "web" }, requestId, ip: "127.0.0.1" });
+    const result = (browser.payload as { result: { token?: string; tokenDelivered: boolean; csrfTokens?: Record<string, string> } })
+      .result;
+    expect(result.token).toBeUndefined();
+    expect(result.tokenDelivered).toBe(true);
+    expect(Object.keys(result.csrfTokens ?? {}).sort()).toEqual(["host_a1", "host_a2"]);
+    expect(browser.cookies).toHaveLength(4);
+    expect(browser.cookies.find((value) => value.startsWith(`racp_device=${token};`))).toContain("Path=/hosts/host_a1");
+    expect(browser.cookies.every((value) => value.includes("HttpOnly") || value.startsWith("racp_csrf="))).toBe(true);
+    expect(browser.cookies.every((value) => value.includes("SameSite=Strict"))).toBe(true);
+
+    // Native: the token is in the body for the Keychain / Keystore, and nothing
+    // is set in the webview's cookie jar.
+    const native = await devices.status({ session: SESSION_A, requestId, ip: "127.0.0.1" });
+    expect((native.payload as { result: { token?: string } }).result.token).toBe(token);
+    expect(native.cookies).toEqual([]);
+  });
+
   it("reports expired, and refuses a grant that arrives after the deadline", async () => {
     const fixture = await signingFixture();
     const { service: devices } = service({ authority: fixture.authority });

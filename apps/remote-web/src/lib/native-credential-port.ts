@@ -12,7 +12,14 @@
  * token would be a Host that can never authenticate, while a token without an
  * entry is an orphan the next `ready()` deletes.
  */
-import type { CredentialPort, HostCredential, PairOutcome, PairRequest } from "./credential-port.js";
+import type {
+  AccountAdoption,
+  AccountAdoptionOutcome,
+  CredentialPort,
+  HostCredential,
+  PairOutcome,
+  PairRequest,
+} from "./credential-port.js";
 import { defaultDeviceLabel, nativeDeviceLabel } from "./device-label.js";
 import type { HostRegistry, HostRegistryEntry } from "./host-registry.js";
 import { pairDevice, type PairClient } from "./pairing-client.js";
@@ -131,6 +138,55 @@ export class NativeCredentialPort implements CredentialPort {
     } catch (error) {
       this.options.onStorageError?.(error);
     }
+  }
+
+  /**
+   * One account device on every Host of the account. The token goes into the
+   * platform secure store first and the registry entries second, for the same
+   * reason pairing does it in that order: an entry without its token would be a
+   * Host that can never authenticate, while a token without an entry is an
+   * orphan the next `ready()` deletes.
+   */
+  async adoptAccountDevice(request: AccountAdoption): Promise<AccountAdoptionOutcome> {
+    const store = this.requireStore();
+    const token = request.token;
+    if (!token) {
+      return {
+        ok: false,
+        failure: { code: "STORAGE_FAILED", message: "the Gateway handed over no device token for this account", retriable: false },
+      };
+    }
+    for (const host of request.hosts) {
+      try {
+        await store.set(deviceTokenKey(host.hostId), token);
+      } catch (error) {
+        return {
+          ok: false,
+          failure: {
+            code: "STORAGE_FAILED",
+            message: error instanceof Error ? error.message : String(error),
+            retriable: false,
+          },
+        };
+      }
+    }
+    const pairedAt = (this.options.now?.() ?? new Date()).toISOString();
+    const hostIds: string[] = [];
+    for (const host of request.hosts) {
+      // `save` replaces the entry of that Host, so asking for a device again
+      // swaps the previous device out instead of leaving it behind.
+      this.options.registry.save({
+        hostId: host.hostId,
+        label: host.label,
+        deviceId: request.deviceId,
+        pairedAt,
+        profile: "native",
+        ...(host.requiresOwnConfirmation ? { requiresOwnConfirmation: true as const } : {}),
+      });
+      this.tokens.set(host.hostId, token);
+      hostIds.push(host.hostId);
+    }
+    return { ok: true, hostIds };
   }
 
   private requireStore(): SecureStore {

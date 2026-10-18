@@ -15602,7 +15602,12 @@ acceptance targets.
   `src/lib/pairing-client.test.ts`, the native leg of
   `scripts/e2e-remote-gateway.mjs`, and a native build smoke (`build:native`,
   `cap:sync`, `xcodebuild`, `gradlew assembleDebug`, a simulator launch with one
-  screenshot). Only a real device can confirm Keychain / Keystore behaviour
+  screenshot). Package F extends the same rule to an account device: it is stored
+  exactly like a paired one — one `HttpOnly` cookie per Host of the account in
+  the browser, the platform secure store in a native build — and that path is
+  covered by the same two credential-port test files (one entry per Host, no
+  token in the registry, a refused platform write leaving no Host listed). Only a
+  real device can confirm Keychain / Keystore behaviour
   across an app reinstall, foreground resume of the event stream after a long
   background period, the Android hardware back stack, and pairing over a real
   Gateway on cellular; those are accepted by the user on their own devices.
@@ -15646,9 +15651,13 @@ sibling Hosts is still open for package D.
   `06-delivery/07-remote-control-rollout.md` §2 (R7)
 - **Acceptance**: Security, Quality
 - **Milestone**: Post-MVP (remote-control rollout R7, D666)
-- **Status**: Draft (R7, D666) — steps 1–4 and 6 are automated in the Gateway's
+- **Status**: Partial (R7, D666) — steps 1–4 and 6 are automated in the Gateway's
   account integration tests (`apps/remote-gateway/src/account.test.ts`); the
-  Router test instance and the desktop steps wait on packages B and E.
+  desktop side of step 1 (enrolling with the Router key without ever letting it
+  reach a status payload, a log line, or the credential file) is automated in
+  `apps/desktop/test/remote-account-desktop.test.mjs`, and the service-name check
+  a live enrollment has to satisfy in `packages/racp/src/hostlink-client.test.ts`.
+  The Router test instance remains the gate.
 
 #### E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts
 
@@ -15678,13 +15687,26 @@ sibling Hosts is still open for package D.
   protocol §11.5, rollout §2 (R7)
 - **Acceptance**: Security, Recovery, Quality
 - **Milestone**: Post-MVP (remote-control rollout R7, D666)
-- **Status**: Draft (R7, D666) — the `agent-host-cli` half (two CLI Hosts, one of
-  them stopped at grant time, deferred grant on reconnect, one token on both,
+- **Status**: Partial (R7, D666) — the `agent-host-cli` half (two CLI Hosts, one
+  of them stopped at grant time, deferred grant on reconnect, one token on both,
   no AccessKey or raw token in the Gateway store, the audit log, or the Host
   logs, and the revocation reaching the sibling — made while the Host link was
   down, so the frame had to be queued and re-offered) is automated in
-  `pnpm test:e2e:remote-account-device`; the desktop and webview steps wait on
-  packages E2 and F.
+  `pnpm test:e2e:remote-account-device`. Package E2 adds the desktop half: the
+  confirmation dialog approves, denies, expires at `expiresAt`, joins a
+  re-offered request to the open dialog, and refuses what was pending when the
+  window goes away or a reload is signalled; every mint and every revocation
+  shows a notice, and a revocation given while the link is down is queued for the
+  next link. That half is automated in
+  `apps/desktop/test/remote-account-desktop.test.mjs` and rendered in
+  `apps/desktop/test/remote-account-mode-ui.test.mjs`. The client steps (sign in with the key,
+  read the roster up front, request, wait with a countdown and a cancel, adopt
+  the granted device on every Host of the account, then switch between those
+  Hosts on the same token) are implemented by package F and were verified
+  interactively in a real browser against that same stack — the H5 bundle served
+  through its dev proxy, the Router stub, and one `agent-host-cli` Host approving
+  through its admin socket — but no committed suite drives the web client yet,
+  and the native-shell steps still wait on a phone shell.
 
 #### E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm
 
@@ -15692,21 +15714,37 @@ sibling Hosts is still open for package D.
   Hosts of account A, the desktop Host set to strict mode ("require confirmation
   on every terminal"), and one loopback model stub.
 - **Steps**: 1) Enable strict mode on the desktop Host and enroll both Hosts.
-  2) Log in with key A and request a device; approve on the second Host only.
-  3) Use the token against the strict-mode Host. 4) Confirm the dialog that Host
-  raises and retry. 5) Disable strict mode, request a device for a second client,
-  approve it on the second Host only, and use it against the desktop Host.
-- **Expected**: With strict mode on, the desktop Host refuses the sibling grant,
-  raises its own confirmation, and accepts the token only after that local
-  confirmation; the client does not see that Host as ready until then; the
-  second Host accepts the device through its own approval; with strict mode off
-  a single approval covers both Hosts again; a strict-mode Host never accepts a
-  grant silently.
+  2) Log in with key A and request a device; the roster reports the strict-mode
+  Host as one that will not accept the grant. Approve on the second Host only.
+  3) Use the issued token against the strict-mode Host: it refuses the token, and
+  the client reports that Host as not ready with the next step that can work —
+  ask for a device again — rather than as a device that is gone. 4) Request a
+  device again and approve it on the strict-mode Host itself; the new token works
+  on that Host and on the second Host, and the client's record for each Host now
+  names the new device. 5) Disable strict mode, request a device for a second
+  client, approve it on the second Host only, and use it against the desktop
+  Host.
+- **Expected**: With strict mode on, the desktop Host refuses every sibling grant
+  and never accepts one silently; the client does not count it as ready, tells
+  the user to ask again instead of to refresh, and the token minted by that
+  Host's own approval is accepted by it and by the account's other Hosts, which
+  adopt the grant as usual; asking again replaces the previous device on every
+  Host the client knows instead of leaving both; with strict mode off a single
+  approval covers both Hosts again.
 - **Specs linked**: security §3.8 (strict mode) and gate 32, protocol §11.5,
   rollout §2 (R7)
 - **Acceptance**: Security, Quality
 - **Milestone**: Post-MVP (remote-control rollout R7, D666)
-- **Status**: Draft (R7, D666)
+- **Status**: Partial (R7, D666) — the desktop half is automated: strict mode is
+  off by default, the switch rebuilds the link, the announced capabilities lose
+  `device.accept-sibling-grant`, and a sibling-signed grant is refused even when
+  such a frame still arrives (`apps/desktop/test/remote-account-desktop.test.mjs`).
+  The client half of steps 2–4 is implemented by package F: the roster reports the strict-mode Host as one that will not accept
+  the grant before the wait starts, its later refusal of the token is shown as
+  "not ready" with the next step that can work (ask again) instead of as a lost
+  device, and asking again replaces the previous device on every Host the client
+  knows. The two-Host run through a live Router waits on the Router test
+  instance.
 
 #### E2E-REMOTE-ACCOUNT-key-rotation-keeps-account
 
@@ -15729,7 +15767,12 @@ sibling Hosts is still open for package D.
   rollout §2 (R7)
 - **Acceptance**: Security, Recovery
 - **Milestone**: Post-MVP (remote-control rollout R7, D666)
-- **Status**: Draft (R7, D666)
+- **Status**: Partial (R7, D666) — the desktop side is automated: the key is read
+  from the saved `minih-router` row on each attempt, and an enrollment stays
+  current across a key change of the same account because the identity tuple —
+  dial address, CA, service name — decides that, never the key
+  (`apps/desktop/test/remote-account-desktop.test.mjs`). The Router side of the
+  rotation needs the Router test instance.
 
 #### E2E-REMOTE-ACCOUNT-disabled-key-blocks-login
 
@@ -15756,7 +15799,12 @@ sibling Hosts is still open for package D.
   §2 (R7)
 - **Acceptance**: Security, Recovery
 - **Milestone**: Post-MVP (remote-control rollout R7, D666)
-- **Status**: Draft (R7, D666)
+- **Status**: Partial (R7, D666) — the desktop half of step 2 is automated: a
+  disabled or token-less `minih-router` row yields no key, so the settings page
+  reports account mode as unavailable with its reason and keeps the
+  registration-code form instead of enrolling
+  (`apps/desktop/test/remote-account-desktop.test.mjs`). Steps 3–6 need the
+  Router test instance.
 
 ## Trusted extension scenarios (R7 v1)
 

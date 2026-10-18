@@ -44,6 +44,13 @@ export type ConnectionIdentity = {
   deviceId: string;
   /** Raw device (or pairing) credential; only ever sent inside `client.open`. */
   credential: string;
+  /**
+   * Whether this device was granted through account mode (protocol §11.5).
+   * Only such a device can be "not adopted here yet" by a Host of the same
+   * account; a §11.4 device that a Host refuses is a credential that is gone,
+   * and the two must not be reported as the same failure.
+   */
+  accountDevice?: boolean;
 };
 
 const MAX_STREAM_CONNECTIONS_PER_DEVICE = 4;
@@ -99,7 +106,10 @@ export class LogicalConnection {
     const { mux, identity } = options;
     mux.onHostMessage(this.id, (frame) => this.handleFrame(frame));
     // The Host's close code carries its verdict: `UNAUTHORIZED` means the Host
-    // rejected the credential (S8/S9), which must not read as "offline".
+    // rejected the credential (S8/S9), which must not read as "offline". What
+    // that means to the client depends on the device: an account-mode device a
+    // Host has not adopted yet is `HOST_UNAUTHORIZED` (§11.5), everything else
+    // stays `UNAUTHORIZED`.
     mux.onHostClose(this.id, (code) => this.teardown(code));
     mux.open(this.id, this.routeContext(), identity.credential);
   }
@@ -242,7 +252,7 @@ export class LogicalConnection {
   private teardown(cause: string): void {
     if (this.closed) return;
     this.closed = true;
-    const error = teardownError(cause);
+    const error = teardownError(cause, this.options.identity.accountDevice === true);
     for (const waiter of this.pending.values()) {
       clearTimeout(waiter.timer);
       waiter.reject(error);
@@ -253,9 +263,23 @@ export class LogicalConnection {
   }
 }
 
-/** Map the Host's logical-connection close code onto the RACP error vocabulary. */
-function teardownError(cause: string): GatewayRpcError {
-  if (cause === "UNAUTHORIZED") return new GatewayRpcError("UNAUTHORIZED", "the Host rejected this credential");
+/**
+ * Map the Host's logical-connection close code onto the RACP error vocabulary.
+ *
+ * A Host that refuses an account-mode device is `HOST_UNAUTHORIZED`, not
+ * `UNAUTHORIZED`: the Gateway accepted this device, the Host behind it did not
+ * — it was offline when the grant was issued, or it is in strict mode — and a
+ * client must tell that apart from "your credential is gone", because one needs
+ * a retry or a local confirmation and the other needs a new pairing. Every
+ * other device keeps the §11.4 answer: a Host that refuses a paired device has
+ * revoked it, and the credential really is gone (gate 26).
+ */
+function teardownError(cause: string, accountDevice: boolean): GatewayRpcError {
+  if (cause === "UNAUTHORIZED") {
+    return accountDevice
+      ? new GatewayRpcError("HOST_UNAUTHORIZED", "the Host has not adopted this device yet")
+      : new GatewayRpcError("UNAUTHORIZED", "the Host rejected this credential");
+  }
   if (cause === "CLIENT_TOO_SLOW") return new GatewayRpcError("CLIENT_TOO_SLOW", "the Host dropped a slow client", true);
   if (cause === "ROUTE_CONTEXT_REJECTED") return new GatewayRpcError("FORBIDDEN", "the Host rejected the route context");
   return new GatewayRpcError("AGENT_UNAVAILABLE", `the logical connection closed: ${cause}`, true);

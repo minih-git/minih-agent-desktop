@@ -34,6 +34,14 @@ export type HostRegistryEntry = {
   pairedAt: string;
   /** Absent for the cookie profile, so a v1 web entry round-trips unchanged. */
   profile?: CredentialProfile;
+  /**
+   * Account mode only (§11.5): this Host announced no
+   * `device.accept-sibling-grant`, so it confirms every device with its own
+   * user and will never adopt the device this client already holds. Asking
+   * again and approving on that computer is the only way to reach it; a refresh
+   * cannot help, and the Hosts screen says so.
+   */
+  requiresOwnConfirmation?: boolean;
 };
 
 /** The slice of `Storage` the registry needs, so tests can pass a plain map. */
@@ -76,7 +84,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 function toEntry(value: unknown): HostRegistryEntry | undefined {
   if (!isRecord(value)) return undefined;
-  const { hostId, label, deviceId, csrfToken, pairedAt, profile } = value;
+  const { hostId, label, deviceId, csrfToken, pairedAt, profile, requiresOwnConfirmation } = value;
   if (typeof hostId !== "string" || !hostId) return undefined;
   const native = profile === "native";
   // A native entry keeps its device token in the Keychain / Keystore and has no
@@ -89,6 +97,9 @@ function toEntry(value: unknown): HostRegistryEntry | undefined {
     ...(csrf ? { csrfToken: csrf } : {}),
     pairedAt: typeof pairedAt === "string" ? pairedAt : "",
     ...(profile === "native" ? { profile: "native" as const } : {}),
+    // Written last, and only when true, so an entry from an earlier build
+    // serializes to exactly the bytes it was read from.
+    ...(requiresOwnConfirmation === true ? { requiresOwnConfirmation: true as const } : {}),
   };
   return entry;
 }
@@ -150,4 +161,22 @@ export function createHostRegistry(storage: RegistryStorage): HostRegistry {
       };
     },
   };
+}
+
+/** Which next step a Host that has not adopted this device leaves the user. */
+export type UnacceptedNextStep =
+  /** It requires its own confirmation: ask for a device again, approve there. */
+  | "own-confirmation"
+  /** It has simply not caught up yet: refreshing may be enough. */
+  | "retry";
+
+/**
+ * What a Host that has not adopted this device needs (protocol §11.5). A Host
+ * that announced no `device.accept-sibling-grant` refuses every sibling grant
+ * for good, so no refresh will ever make it ready — the user has to ask for a
+ * device again and approve it on that computer. Every other unready Host is one
+ * that has not caught up yet, and a retry can fix it.
+ */
+export function unacceptedNextStep(entry: HostRegistryEntry): UnacceptedNextStep {
+  return entry.requiresOwnConfirmation === true ? "own-confirmation" : "retry";
 }

@@ -131,6 +131,14 @@ export const RacpDeviceStatusHttpResponseSchema = Type.Object({
   token: Type.Optional(Type.String({ minLength: 1 })),
   /** Whether this response carried the token; false once it has been taken. */
   tokenDelivered: Type.Optional(Type.Boolean()),
+  /**
+   * Browser profile only: the CSRF value for each Host of the account, keyed by
+   * `hostId`. The device token itself travels as an `HttpOnly` cookie scoped to
+   * `Path=/hosts/{hostId}` — one per Host of the account — so a browser never
+   * reads the token, and it needs this value to send the `x-csrf-token` header
+   * on every mutation to that Host. A native client receives `token` instead.
+   */
+  csrfTokens: Type.Optional(Type.Record(Type.String({ minLength: 1 }), Type.String({ minLength: 1 }))),
   roles: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),
   /** The Host whose user approved, for the client's "new device" notice. */
   signerHostId: Type.Optional(Type.String({ minLength: 1 })),

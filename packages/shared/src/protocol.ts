@@ -279,6 +279,21 @@ export const IPC = {
     remoteGatewayCreatePairingCode: "minih-agent-desktop/remoteGateway/createPairingCode",
     remoteGatewayListDevices: "minih-agent-desktop/remoteGateway/listDevices",
     remoteGatewayRevokeDevice: "minih-agent-desktop/remoteGateway/revokeDevice",
+    /**
+     * Account mode (D666). The desktop's answer to one pending `device.request`
+     * and the device-local strict-mode switch. Neither carries a token: the
+     * device directory mints those in main.
+     */
+    remoteGatewayDeviceDecision: "minih-agent-desktop/remoteGateway/deviceDecision",
+    remoteGatewaySetStrictDevices: "minih-agent-desktop/remoteGateway/setStrictDevices",
+    /** Which requests still wait for the dialog after a renderer reload. */
+    remoteGatewayPendingDeviceRequests: "minih-agent-desktop/remoteGateway/pendingDeviceRequests",
+    /**
+     * The confirmation dialog host mounted or unmounted. Unmounting (window
+     * closed, renderer reloaded) refuses everything still waiting, so no client
+     * waits on a dialog nobody can see.
+     */
+    remoteGatewayDevicePresence: "minih-agent-desktop/remoteGateway/devicePresence",
     providersList: "minih-agent-desktop/providers/list",
     providersReorder: "minih-agent-desktop/providers/reorder",
     providersCreate: "minih-agent-desktop/providers/create",
@@ -478,6 +493,15 @@ export const IPC = {
     hostStatus: "minih-agent-desktop/app/event/hostStatus",
     /** One `RemoteGatewayStatus` snapshot per link state change (rollout R5). */
     remoteGatewayStatusChanged: "minih-agent-desktop/remoteGateway/event/statusChanged",
+    /**
+     * A `device.request` awaiting this desktop's user (protocol §11.5). One
+     * event per pending request; the answer goes back over
+     * `remoteGatewayDeviceDecision`, and an unanswered request is denied when
+     * its own `expiresAt` passes.
+     */
+    remoteGatewayDeviceRequest: "minih-agent-desktop/remoteGateway/event/deviceRequest",
+    /** A device minted, adopted from a sibling Host, or revoked (ADR decision 6). */
+    remoteGatewayDeviceNotice: "minih-agent-desktop/remoteGateway/event/deviceNotice",
     toast: "minih-agent-desktop/app/event/toast",
     /**
      * The first plaintext hop to an endpoint the user typed, sent once and only

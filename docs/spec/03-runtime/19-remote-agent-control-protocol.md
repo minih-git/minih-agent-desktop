@@ -1446,13 +1446,15 @@ written.
   credential, never a device token, with a body `{ deviceLabel, client }`, and
   answers `{ result: { requestId, expiresAt, hosts } }` under the §11.2 command
   envelope. `GET /v1/account/devices/{requestId}` answers
-  `{ result: { requestId, status, expiresAt, hosts, deviceId?, token?, roles?,
-  signerHostId?, tokenDelivered? } }`, where `status` is `pending`, `granted`,
-  or `expired`, `tokenDelivered` says whether this response carried the token,
-  and `token` is present exactly while the request is `granted` and its pickup
-  window is open. A request belongs to the account session that created it: an
-  unknown id, a request of another account, and a request of another session of
-  the same account all answer the same `NOT_FOUND`, because the request id
+  `{ result: { requestId, status, expiresAt, hosts, deviceId?, token?,
+  csrfTokens?, roles?, signerHostId?, tokenDelivered? } }`, where `status` is
+  `pending`, `granted`, or `expired`, `tokenDelivered` says whether this
+  response carried the token, and `token` is present exactly while the request
+  is `granted` and its pickup window is open. `csrfTokens` is what a browser
+  session receives instead of `token`: one CSRF value per Host of the account,
+  as described below. A request belongs to the account session that created it:
+  an unknown id, a request of another account, and a request of another session
+  of the same account all answer the same `NOT_FOUND`, because the request id
   travels to every Host and through the Gateway's logs and is therefore not a
   credential (gate 29). Every account response carries
   `Cache-Control: no-store`, because each one carries a session credential, a
@@ -1466,6 +1468,108 @@ written.
   advertised `device.confirm`, and `willAcceptGrant` only for one that
   advertised `device.accept-sibling-grant`, so the client learns immediately
   which Hosts cannot answer (gate 33).
+- **Browser device handover.** A browser session (`client: "web"`) is handed the
+  device token the way it was handed its own session: as cookies. The first
+  status read that reports `granted` sets one `HttpOnly; Secure; SameSite=Strict`
+  device cookie per Host of the account, scoped to `Path=/hosts/{hostId}`, and
+  answers `csrfTokens` in the body — a map from `hostId` to the CSRF value that
+  Host's device cookie pairs with — so the client can record every Host of the
+  account without ever holding the token. `token` is absent from that body and
+  `tokenDelivered` is still `true`, because the token was handed over. A native
+  session (`client: "ios"` / `"android"`) receives the token in the body and no
+  cookie at all. Which of the two happens is decided by the session created at
+  login, never by the caller of the status route, so a status read can never
+  write a cookie into a native webview's jar. Each per-Host cookie is exactly the
+  cookie `POST /v1/hosts/{hostId}/pair` sets, so every host-scoped screen and
+  route of §11.4 works unchanged for a device granted through account mode.
+- **Account logout.** `POST /v1/account/logout` takes the account session
+  credential in either profile and ends that session: the Gateway revokes its own
+  session record and clears the account cookie and its page-readable CSRF
+  companion with `Max-Age=0`. It authorizes no Host operation, answers
+  `{ result: { accountId, revoked } }` under the §11.2 command envelope, and
+  leaves every device token untouched — a device is a separate credential of
+  §11.4. It follows the browser rules of §11.2: an allowlisted `Origin`, and for
+  the cookie profile the CSRF header. The route exists because a browser cannot
+  clear an `HttpOnly` cookie itself: without it a client that has just adopted
+  the device would leave a usable account session behind for up to twelve hours.
+  A client that does not call it is still correct — the session expires on its
+  own — but it holds a credential it no longer needs.
+- **Client flow (rollout R7 package F).** The client half of "confirm once, use
+  everywhere" is a discovery step, one login, one request, one wait, one
+  adoption, and a dropped session:
+  - **Discovery.** Account mode is discovered from a credential-free
+    `GET /v1/account/hosts`: `401` means this Gateway serves account mode (the
+    route exists and wants a session), `404` means it does not, and `403` means
+    this origin is refused — so nothing account-scoped would work from here
+    either. Anything else, including a transport failure, leaves the client
+    undecided. Only a `401` offers the AccessKey entry; every other answer keeps
+    the §11.4 pairing flow and hides it, so a Gateway without account mode
+    behaves exactly as before (rollout exit criterion 7).
+  - **Login.** The AccessKey is presented once, in the `Authorization` header of
+    the login call, and is dropped as soon as that call returns: it is never
+    written to `localStorage`, `sessionStorage`, IndexedDB, a cookie, a native
+    store, a URL, or a log, and it is not part of the session the call produces
+    (gate 30). The client's own text input is cleared on every outcome.
+  - **Roster.** The Hosts of the answered `POST /v1/account/devices` are shown
+    immediately, including the ones that cannot confirm, so a user learns up
+    front which computer can answer. When no Host of the account can confirm,
+    the client says so and offers the per-Host pairing ticket of §11.4 instead of
+    waiting for an answer that cannot come (gate 33).
+  - **Waiting.** The status route is read every two seconds. A failed read backs
+    off exponentially to a fifteen-second ceiling; a `RATE_LIMITED` answer waits
+    exactly as long as its `Retry-After` asked, never less than the normal
+    interval; a run of eight consecutive failures ends the wait as a failure
+    rather than polling forever. The client's own `expiresAt` deadline also ends
+    it, as `expired`, without another read. A `granted` answer that carries
+    neither a token nor `csrfTokens` — the pickup window closed before it was
+    read — is reported as its own outcome, and both it and `expired` let the user
+    ask again under the same session. `NOT_FOUND` means the Gateway no longer
+    knows the request (it expired, or the session changed) and returns the client
+    to sign-in. Because a denial has no frame, the client also offers an explicit
+    cancel, which stops the wait and keeps the account session.
+  - **Adoption.** The client records the device on every Host the Gateway named —
+    one cookie per Host for a browser, the platform secure store for a native
+    shell — and only then drops the account session, revoking it through the
+    logout route above when the Gateway serves one. A storage failure is reported
+    as its own outcome and leaves the account session usable, because the device
+    exists on the Gateway but was not kept here.
+  - **Switching.** A device token of §11.4 is accepted on every Host of the
+    account, so `GET /v1/hosts` on that token lists the account's Hosts and the
+    client switches between them without pairing again.
+- **A Host that has not adopted the device.** A Host that has not accepted this
+  device yet — it was offline when the grant was issued, or it is in strict mode
+  and its own user has not confirmed — refuses the token, and the Gateway reports
+  that refusal to the client as `401 HOST_UNAUTHORIZED`, which is deliberately
+  not the `401 UNAUTHORIZED` of a credential that no longer exists. Only an
+  account-mode device can be reported this way: a device paired through §11.4
+  that a Host refuses has been revoked on that Host, its credential really is
+  gone, and the answer stays `UNAUTHORIZED` (security gate 26). A client MUST
+  keep the two apart: `HOST_UNAUTHORIZED` means the device is intact and this
+  computer has not synced it, so the next step is a retry or a local
+  confirmation on that computer; `UNAUTHORIZED` means the credential is gone —
+  revoked, or never valid — and the only next step is a new pairing or a new
+  device request. A client that reports the first as the second discards a
+  working device.
+  A retry is only a next step for a Host that may still catch up. A Host in
+  strict mode refuses every sibling grant for good (ADR decision 9), so the
+  client must not offer a refresh that can never succeed: when the roster
+  answered `online: true, willAcceptGrant: false` for that Host, the client
+  tells the user to ask for a device again and approve it on that computer, and
+  offers that request as the action. The new grant mints a new device, which the
+  strict Host signs itself and the account's other Hosts adopt as usual, so the
+  new token works everywhere; the client replaces the previous device on every
+  Host it knows (browser cookies, native secure store, registry entries) instead
+  of keeping both. A Host that was offline at grant time is not one of these: it
+  may adopt the deferred grant when it returns, so a retry is honest there.
+- **The Hosts a browser can reach.** A browser receives the device as one
+  `HttpOnly` cookie per Host, and the Gateway sets those for the Hosts of the
+  account that exist when the grant is issued. A Host enrolled into the account
+  afterwards therefore has no cookie in that browser and no registry entry, so
+  it is not reachable from that browser until the user asks for a device again
+  (or pairs that Host with a ticket). A native client is not affected: it holds
+  one account-scoped token and sends it to whichever Host id it is addressing, so
+  a Host enrolled later works without a new request once that Host has adopted
+  the grant.
 - **Capability advertisement.** A Host sends `host.capabilities` on every link,
   as soon as the link is up, with the capability strings it supports:
   `device.confirm` when it has a confirmer wired up, and
@@ -1514,6 +1618,32 @@ written.
   `approver`, `pairedDevice: false`, always under the remote permission ceiling,
   never offered `allow-session`. A Host in strict mode refuses sibling grants
   and confirms every device with its own user.
+- **Desktop Host (package E2).** The desktop is one of these Hosts, and it
+  settles the parts a headless Host leaves to the embedding application. It
+  enrolls itself through the Router account when the Router advertises one
+  (§11.5 "Account login" above; provider-config §3), reading the account
+  AccessKey from the saved `minih-router` provider row inside the main process,
+  using it for that one enrollment request, and then discarding it — it never
+  enters a renderer payload, a log line, an audit record, or the credential
+  file, which keeps only the Host certificate and key. Nothing is enrolled and
+  nothing listens while the user's own remote-control switch is off, and an
+  unavailable advertisement leaves the self-hosted registration-code flow
+  untouched. Its confirmer is the desktop's own window: `device.request` is
+  shown as a modal that names the device and the client, focus starts on Deny,
+  Escape denies, and the dialog closes when the request's `expiresAt` passes.
+  There is no answer that is not a decision: a renderer that reports it is going
+  away (a reload, a closed window) denies everything pending at once, which is
+  what the desktop tells the Gateway through `remoteGateway/devicePresence` and
+  `remoteGateway/deviceDecision`. A request no window can show is not answered
+  early — it stays queued until its `expiresAt` and is refused then, so the
+  client waits out the window instead of being told a dialog nobody saw was
+  dismissed. Every mint, adoption, and revocation produces a notice the settings
+  page lists (ADR decision 6), and a device revoked there goes out as the signed
+  frame above, queued while the link is down. The address this link dials is
+  resolved per connection from the current `EasyTierStatus.remoteGateway`
+  (provider-config §3): the stored credential names the advertised endpoint, so a
+  forward port the overlay re-allocated neither re-enrolls the desktop nor
+  strands it.
 - **Cross-account isolation.** No route, Host listing, device record, pending
   grant, or audit query may cross accounts, and every routing decision and cache
   lookup is scoped by account. The Gateway's per-IP rate limit (ADR decision 10)
@@ -1588,6 +1718,7 @@ Initial RACP codes are:
 | Code | Retriable | Meaning |
 |---|---:|---|
 | `UNAUTHORIZED` | no | Missing, expired, or invalid credential |
+| `HOST_UNAUTHORIZED` | no | The Host behind the Gateway refused an account-mode device it has not adopted yet (§11.5), so a retry or a new request confirmed on that computer is the next step. A §11.4 device that a Host refuses stays `UNAUTHORIZED`, because that credential is gone |
 | `FORBIDDEN` | no | Principal lacks the operation or session scope |
 | `PROTOCOL_MISMATCH` | no | Unsupported major version or required capability |
 | `INVALID_ARGUMENT` | no | Request schema or field value invalid |

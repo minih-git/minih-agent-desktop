@@ -197,6 +197,19 @@ describe("device relay over the host link", () => {
       params: {},
     });
     expect(onApprover.status).toBe(200);
+
+    // A Host that never adopted the device refuses the credential, and the code
+    // says which failure this is: the Gateway accepted the device, so the
+    // credential is fine and this Host simply has not synced it yet. A client
+    // must not treat that as "your credential is gone" (protocol §11.5).
+    const notAdopted = await command(stack.gateway, {
+      hostId: "host_relay_a2",
+      token: granted.token!,
+      method: "session/list",
+      params: {},
+    });
+    expect(notAdopted.status).toBe(401);
+    expect(notAdopted.payload.error?.data?.code).toBe("HOST_UNAUTHORIZED");
   });
 
   it("relays a revocation made while the Host was offline, and the sibling refuses the token", async () => {
@@ -236,6 +249,9 @@ describe("device relay over the host link", () => {
     );
     const refused = await command(stack.gateway, { hostId: "host_relay_a2", token, method: "session/list", params: {} });
     expect([401, 403]).toContain(refused.status);
+    // Revoked at the Gateway: the credential itself is dead, which is the other
+    // half of the distinction the client needs.
+    expect(refused.payload.error?.data?.code).toBe("UNAUTHORIZED");
     // The sibling still holds the record, now revoked: it never authenticates.
     const stored = (await stack.sibling.harness.store.listDevices()).find((device) => device.deviceId === deviceId);
     expect(stored?.revokedAt).toBeDefined();

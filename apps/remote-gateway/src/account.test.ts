@@ -335,6 +335,55 @@ describe("account mode", () => {
     expect((await accountHosts(gateway, { cookie, origin: "https://evil.test" })).status).toBe(403);
   });
 
+  it("ends the caller's own account session, and clears a browser's cookies with it", async () => {
+    stack = await startStack();
+    const { gateway } = stack;
+
+    // Header profile: the session credential is dead server-side afterwards,
+    // so a copy of it somewhere else is worthless.
+    const login = await accountLogin(gateway, { accessKey: KEY_A, client: "ios" });
+    const token = (login.payload["result"] as { token: string }).token;
+    const logout = await fetch(`${gateway.clientBaseUrl}/v1/account/logout`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(logout.status).toBe(200);
+    expect((await logout.json()) as Record<string, unknown>).toMatchObject({
+      result: { accountId: String(ACCOUNT_A), revoked: true },
+    });
+    expect((await accountHosts(gateway, { authorization: `Bearer ${token}` })).status).toBe(401);
+    // Logging out twice is refused like any other dead session.
+    const again = await fetch(`${gateway.clientBaseUrl}/v1/account/logout`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(again.status).toBe(401);
+    const audit = await gateway.gateway.store.audit.read(new Date().toISOString().slice(0, 10));
+    expect(audit.some((record) => record.op === "account.logout" && record.accountId === String(ACCOUNT_A))).toBe(true);
+
+    // Browser profile: clearing the `HttpOnly` cookie is the part JavaScript
+    // cannot do itself, so the route has to.
+    const browserLogin = await accountLogin(gateway, { accessKey: KEY_A, client: "web", origin: "https://app.test" });
+    const sessionCookie = cookieValue(browserLogin.setCookie, "racp_account");
+    const csrf = cookieValue(browserLogin.setCookie, "racp_account_csrf");
+    const cleared = await fetch(`${gateway.clientBaseUrl}/v1/account/logout`, {
+      method: "POST",
+      headers: {
+        origin: "https://app.test",
+        cookie: `racp_account=${encodeURIComponent(sessionCookie ?? "")}; racp_account_csrf=${csrf ?? ""}`,
+        "x-csrf-token": csrf ?? "",
+      },
+    });
+    expect(cleared.status).toBe(200);
+    const setCookie = cleared.headers.getSetCookie();
+    expect(
+      setCookie.some((value) => value.startsWith("racp_account=;") && value.includes("Max-Age=0") && value.includes("HttpOnly")),
+    ).toBe(true);
+    expect(setCookie.some((value) => value.startsWith("racp_account_csrf=;") && value.includes("Max-Age=0"))).toBe(true);
+    const cookie = `racp_account=${encodeURIComponent(sessionCookie ?? "")}`;
+    expect((await accountHosts(gateway, { cookie, "sec-fetch-site": "same-origin" })).status).toBe(401);
+  });
+
   it("never hands a self-hosted Host to an account by key alone", async () => {
     stack = await startStack();
     const { gateway } = stack;

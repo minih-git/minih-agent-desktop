@@ -177,6 +177,23 @@ async function authorityWithServer(): Promise<{ ca: CertificateAuthorityPem; ser
   return { ca, server };
 }
 
+/**
+ * A Gateway whose certificate names `gateway.example.com` only — the shape
+ * account mode produces, where the Host dials a loopback forward but the
+ * certificate identifies the Gateway by name.
+ */
+const ACCOUNT_MODE_SERVER_NAME = "gateway.example.com";
+
+async function namedAuthorityWithServer(): Promise<{ ca: CertificateAuthorityPem; server: { certificatePem: string; privateKeyPem: string } }> {
+  const ca = await createCertificateAuthority({ commonName: "Minih Gateway CA" });
+  const server = await createServerCertificate({
+    ca,
+    subjectCommonName: ACCOUNT_MODE_SERVER_NAME,
+    sans: [{ kind: "dns", value: ACCOUNT_MODE_SERVER_NAME }],
+  });
+  return { ca, server };
+}
+
 /** Sign the CSR of an enroll request the way the Gateway does. */
 async function signEnrollment(ca: CertificateAuthorityPem, body: unknown): Promise<{ status: number; payload: unknown }> {
   const request = body as { hostId: string; csr: string };
@@ -286,6 +303,61 @@ describe("enrollHostLink", () => {
       enrollHostLink({ gatewayUrl: "ws://127.0.0.1:1/v1/hostlink", gatewayCaPem: "-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n", enrollmentCode: "c", hostId: "host_test" }),
     ).rejects.toMatchObject({ code: "GATEWAY_UNREACHABLE" });
   });
+
+  it("validates the explicit service name when the dialled address is not it", { timeout: 20_000 }, async () => {
+    // Account mode (D666): No-TUN dials a loopback forward while the Gateway
+    // certificate names the Gateway. Without the explicit name the identity
+    // check would be against 127.0.0.1 and fail; with it the enrollment works
+    // and the name is kept with the credentials for every later dial.
+    const { ca, server } = await namedAuthorityWithServer();
+    gateway = await startTestGateway({ ca, serverCertificate: server, onEnroll: (body) => signEnrollment(ca, body) });
+    const credentials = await enrollHostLink({
+      gatewayUrl: gateway.hostlinkUrl,
+      gatewayCaPem: ca.certificatePem,
+      accessKey: "sk_placeholder_account_key",
+      hostId: "host_test",
+      tlsServerName: "gateway.example.com",
+    });
+    expect(credentials.tlsServerName).toBe("gateway.example.com");
+    // The stored URL is still the address that was dialled.
+    expect(credentials.gatewayUrl).toBe(gateway.hostlinkUrl);
+    expect(credentials.gatewayUrl.startsWith("wss://127.0.0.1:")).toBe(true);
+  });
+
+  it("fails when the explicit service name does not match the certificate", { timeout: 20_000 }, async () => {
+    const { ca, server } = await namedAuthorityWithServer();
+    gateway = await startTestGateway({ ca, serverCertificate: server, onEnroll: (body) => signEnrollment(ca, body) });
+    // Same Gateway, wrong identity: the certificate is valid and pinned, but it
+    // was not issued for this name, so the handshake must be refused.
+    await expect(
+      enrollHostLink({
+        gatewayUrl: gateway.hostlinkUrl,
+        gatewayCaPem: ca.certificatePem,
+        accessKey: "sk_placeholder_account_key",
+        hostId: "host_test",
+        tlsServerName: "other.example.com",
+      }),
+    ).rejects.toMatchObject({ code: "GATEWAY_IDENTITY_MISMATCH" });
+  });
+  it("stores the advertised endpoint instead of the dial address", { timeout: 20_000 }, async () => {
+    const { ca, server } = await namedAuthorityWithServer();
+    gateway = await startTestGateway({ ca, serverCertificate: server, onEnroll: (body) => signEnrollment(ca, body) });
+    const credentials = await enrollHostLink({
+      // What is reachable right now: the loopback forward.
+      gatewayUrl: gateway.hostlinkUrl,
+      // What the Router advertised: the Gateway the certificate belongs to.
+      hostlinkUrl: "wss://gateway.example.com/hostlink",
+      gatewayCaPem: ca.certificatePem,
+      accessKey: "sk_placeholder_account_key",
+      hostId: "host_test",
+      tlsServerName: ACCOUNT_MODE_SERVER_NAME,
+    });
+    // The credential names the Gateway; the forward port that happened to be
+    // dialled at enrollment is not part of it (a later overlay start moves it).
+    expect(credentials.gatewayUrl).toBe("wss://gateway.example.com/hostlink");
+    expect(credentials.hostlinkUrl).toBe("wss://gateway.example.com/hostlink");
+    expect(credentials.gatewayUrl).not.toContain("127.0.0.1");
+  });
 });
 
 describe("startHostLink", () => {
@@ -375,5 +447,84 @@ describe("startHostLink", () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(gateway?.upgrades).toBe(upgrades);
     expect(handle.status().state).toBe("rejected");
+  });
+
+  it("dials a loopback forward under the Gateway's service name", { timeout: 20_000 }, async () => {
+    // Account mode: the URL is the loopback forward, the certificate names the
+    // Gateway. The link connects only because the explicit name is validated
+    // instead of the dialled address.
+    const { ca, server } = await namedAuthorityWithServer();
+    gateway = await startTestGateway({ ca, serverCertificate: server, onEnroll: (body) => signEnrollment(ca, body) });
+    h = await harness();
+    const credentials: HostLinkCredentials = {
+      ...(await linkCredentials(ca, gateway.hostlinkUrl)),
+      tlsServerName: ACCOUNT_MODE_SERVER_NAME,
+    };
+    handle = startHostLink({ credentials, server: h.server, authenticator: h.authenticator, log: () => undefined });
+    await waitFor(() => handle?.status().state === "connected");
+    expect(handle.status().state).toBe("connected");
+    // An explicit option wins over the stored value, and neither is the address.
+    await handle.stop();
+    const mismatched: HostLinkCredentials = { ...credentials, tlsServerName: "other.example.com" };
+    const observed: HostLinkStatus[] = [];
+    handle = startHostLink({
+      credentials: mismatched,
+      server: h.server,
+      authenticator: h.authenticator,
+      log: () => undefined,
+      backoff: { baseDelayMs: 10, maxDelayMs: 10 },
+      onStatus: (status) => observed.push(status),
+    });
+    // A wrong identity is a TLS failure, so it can never reach "connected".
+    await waitFor(() => observed.some((status) => status.state === "backoff"));
+    expect(observed.some((status) => status.state === "connected")).toBe(false);
+  });
+
+  it("dials the address it resolves for each attempt, not the stored one", { timeout: 30_000 }, async () => {
+    // Account mode: the credential names the Gateway, while the address to dial
+    // is the overlay's current forward port. A moved port must be followed by
+    // the next attempt, with the certificate this Host already holds.
+    const { ca, server } = await authorityWithServer();
+    const first = await startTestGateway({ ca, serverCertificate: server, onEnroll: (body) => signEnrollment(ca, body) });
+    const second = await startTestGateway({ ca, serverCertificate: server, onEnroll: (body) => signEnrollment(ca, body) });
+    h = await harness();
+    try {
+      // The stored URL is the advertised endpoint: it is never dialled, so it
+      // does not have to resolve.
+      const credentials: HostLinkCredentials = {
+        ...(await linkCredentials(ca, "wss://gateway.example.com/hostlink")),
+        hostlinkUrl: "wss://gateway.example.com/hostlink",
+        tlsServerName: undefined,
+      };
+      let current = first.hostlinkUrl;
+      const resolved: string[] = [];
+      handle = startHostLink({
+        credentials,
+        server: h.server,
+        authenticator: h.authenticator,
+        log: () => undefined,
+        backoff: { baseDelayMs: 20, maxDelayMs: 40 },
+        resolveDialUrl: () => {
+          resolved.push(current);
+          return current;
+        },
+      });
+      await waitFor(() => handle?.status().state === "connected");
+      expect(first.upgrades).toBeGreaterThan(0);
+      expect(resolved).toEqual([first.hostlinkUrl]);
+
+      // The overlay restarted: the old forward is gone, a new port exists.
+      current = second.hostlinkUrl;
+      await first.close();
+      await waitFor(() => second.upgrades > 0);
+      await waitFor(() => handle?.status().state === "connected");
+      expect(resolved.at(-1)).toBe(second.hostlinkUrl);
+      expect(resolved.length).toBeGreaterThan(1);
+    } finally {
+      await handle?.stop();
+      handle = null;
+      await second.close();
+      await first.close().catch(() => undefined);
+    }
   });
 });

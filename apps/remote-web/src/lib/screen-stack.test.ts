@@ -15,9 +15,10 @@ describe("previousScreen", () => {
     });
   });
 
-  it("goes from a session list or the pairing screen back to the Host list", () => {
+  it("goes from a session list, the pairing screen, or the account screen back to the Host list", () => {
     expect(previousScreen({ kind: "sessions", hostId: "host1" })).toEqual({ kind: "hosts" });
     expect(previousScreen({ kind: "pair" })).toEqual({ kind: "hosts" });
+    expect(previousScreen({ kind: "account" })).toEqual({ kind: "hosts" });
   });
 
   it("has nowhere to go from the Host list", () => {

@@ -42,6 +42,22 @@ describe("probeHostStatus", () => {
     );
   });
 
+  /**
+   * A Host that has not adopted this device yet refuses the credential with
+   * `HOST_UNAUTHORIZED` — a device the Gateway accepted and this computer did
+   * not, which a retry or a local confirmation can still fix. Reporting it as
+   * "revoked" would send the user to pair again for nothing.
+   */
+  it("reads a Host that has not adopted the device as 'not synced yet'", async () => {
+    const { fetchImpl } = recordingFetch(
+      new Response(
+        JSON.stringify({ error: { code: -32000, message: "refused", data: { code: "HOST_UNAUTHORIZED", message: "the Host rejected this credential" } } }),
+        { status: 401, headers: { "content-type": "application/json" } },
+      ),
+    );
+    expect(await probeHostStatus({ ...input, fetchImpl })).toEqual({ kind: "unaccepted" });
+  });
+
   it("names the reason for any other failure", async () => {
     const { fetchImpl } = recordingFetch(
       new Response(

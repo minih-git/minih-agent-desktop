@@ -81,8 +81,9 @@ the resolved client address is the TCP peer and no account route exists.
   `--router-client-ip-header` must equal the Router's `CLIENT_IP_HEADER`, and
   the Gateway's loopback peer must be in the Router's `TRUSTED_PROXIES`, so a
   key's `allowed_peer_cidrs` is evaluated against the real caller. Account mode
-  adds `POST /v1/account/login`, `GET /v1/account/hosts`,
-  `POST /v1/account/devices`, and `GET /v1/account/devices/{requestId}`;
+  adds `POST /v1/account/login`, `POST /v1/account/logout`,
+  `GET /v1/account/hosts`, `POST /v1/account/devices`, and
+  `GET /v1/account/devices/{requestId}`;
   `GET /v1/hosts` and every `/hosts/{hostId}/...` route still accept device
   tokens only. Account mode
   without the trusted-proxy pair logs a startup warning when the client API
@@ -142,6 +143,30 @@ curl http://127.0.0.1:8788/v1/account/devices/dreq_... -H "authorization: Bearer
   the same account, answer the same `NOT_FOUND` as an unknown one. Every
   `/v1/account/*` response carries `Cache-Control: no-store`, and asking for a
   device is rate limited in its own tighter per-IP bucket.
+* A browser session (`client: "web"`) is handed the device token as cookies, the
+  way it was handed its own session: the status read that reports `granted` sets
+  one `HttpOnly; Secure; SameSite=Strict` device cookie per Host of the account
+  (`Path=/hosts/{hostId}`) and answers `csrfTokens` — one CSRF value per Host —
+  instead of `token`. A native session (`client: "ios"` / `"android"`) receives
+  the token in the body and no cookie at all. Which of the two happens is decided
+  by the session created at login, never by the caller of the status route, so a
+  status read can never write a cookie into a native webview's jar.
+* `POST /v1/account/logout` ends the caller's own account session: the Gateway
+  revokes the session record and clears the account cookie and its CSRF
+  companion with `Max-Age=0`. It authorizes no Host operation and leaves every
+  device token untouched. A browser cannot clear an `HttpOnly` cookie itself, so
+  this is the only way a client drops the account session once it holds the
+  device token; a client that does not call it leaves a usable session behind
+  until it expires.
+* A Host that has not adopted the device yet — it was offline when the grant was
+  issued, or it is in strict mode and its own user has not confirmed — refuses
+  the token, and the Gateway reports that refusal as `401 HOST_UNAUTHORIZED`,
+  deliberately not as the `401 UNAUTHORIZED` of a credential that no longer
+  exists, so a client can tell "this computer has not synced the device" from
+  "this credential is gone" (protocol §11.5). Only an account-mode device is
+  reported this way: a §11.4 device that a Host refuses has been revoked on that
+  Host, so its credential really is gone and the answer stays `401
+  UNAUTHORIZED`.
 
 ```sh
 remote-gateway serve \

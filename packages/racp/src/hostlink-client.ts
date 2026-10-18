@@ -47,6 +47,15 @@ export type HostLinkCredentials = {
   hostId: string;
   /** `wss://<loopback|private|overlay address>:<port>/v1/hostlink` */
   gatewayUrl: string;
+  /**
+   * The endpoint the Gateway advertised for this certificate — the
+   * registration identity. Account mode stores this and never the dial
+   * address, whose forward port host-core re-allocates on every overlay start;
+   * `gatewayUrl` then carries the same value and each connection resolves the
+   * address it dials (`StartHostLinkOptions.resolveDialUrl`). Absent: the
+   * stored `gatewayUrl` is the identity, as in the self-hosted flow.
+   */
+  hostlinkUrl?: string;
   /** Pinned Gateway CA. */
   gatewayCaPem: string;
   /** Host client certificate, CN = hostId. */
@@ -54,6 +63,13 @@ export type HostLinkCredentials = {
   /** Generated locally; never leaves the Host. */
   privateKeyPem: string;
   expiresAt: string;
+  /**
+   * Service identity the Gateway certificate is issued for, when it differs
+   * from the dialled host (account mode dials a loopback forward while the
+   * certificate names the Gateway). Absent: the dialled host is the identity,
+   * which is what the self-hosted flow does.
+   */
+  tlsServerName?: string;
 };
 
 /**
@@ -65,8 +81,22 @@ export type HostLinkCredentials = {
 export type HostLinkEnrollInput = {
   gatewayUrl: string;
   gatewayCaPem: string;
+  /**
+   * The endpoint the Gateway advertised for this enrollment. When present it is
+   * stored as `gatewayUrl` and `hostlinkUrl`, so the credential names the
+   * Gateway instead of the forward port that happened to be dialled: a new
+   * port is not a new Gateway (ADR decision 8).
+   */
+  hostlinkUrl?: string;
   hostId: string;
   label?: string;
+  /**
+   * Certificate identity to validate, for a Gateway reached through an address
+   * its certificate does not name (account mode dials `127.0.0.1`). Security
+   * §5.1: identity validation is never skipped, so this replaces the dialled
+   * host in the check instead of disabling it.
+   */
+  tlsServerName?: string;
 } & ({ enrollmentCode: string; accessKey?: never } | { accessKey: string; enrollmentCode?: never });
 
 /**
@@ -118,6 +148,18 @@ export type StartHostLinkOptions = {
   revocations?: DeviceRevocationQueue | null;
   /** Defaults: 1 s base, 60 s ceiling, half-to-full jitter (protocol §11.4 rule 5). */
   backoff?: { baseDelayMs?: number; maxDelayMs?: number };
+  /**
+   * Certificate identity, when it differs from the dialled host. Defaults to
+   * `credentials.tlsServerName` and then to the dialled host.
+   */
+  tlsServerName?: string;
+  /**
+   * Resolve the address to dial for this attempt. Called before every
+   * connection, including every reconnect, so an overlay that re-allocated its
+   * forward port is followed without re-enrolling. Absent:
+   * `credentials.gatewayUrl` is dialled.
+   */
+  resolveDialUrl?: () => string | Promise<string>;
 };
 
 const ENROLL_TIMEOUT_MS = 15_000;
@@ -183,15 +225,20 @@ function tlsHost(endpoint: URL): string {
   return endpoint.hostname.replace(/^\[/, "").replace(/\]$/, "");
 }
 
-function tlsRequestOptions(endpoint: URL, gatewayCaPem: string) {
+function tlsRequestOptions(endpoint: URL, gatewayCaPem: string, tlsServerName?: string) {
   const host = tlsHost(endpoint);
+  // The identity check follows the name the certificate is issued for. A
+  // Gateway reached through a loopback forward is still named in its own
+  // certificate, so validation uses that name rather than the address that
+  // happens to carry the bytes (security §5.1).
+  const identity = (tlsServerName ?? "").trim() || (isIP(host) ? "" : host);
   return {
     host,
     port: endpoint.port ? Number(endpoint.port) : 443,
     ca: [gatewayCaPem],
     rejectUnauthorized: true,
-    // SNI is not allowed for an IP literal; verification still uses the host.
-    servername: isIP(host) ? "" : host,
+    // SNI is not allowed for an IP literal; verification still uses `identity`.
+    servername: identity,
   };
 }
 
@@ -228,11 +275,12 @@ async function postEnrollment(
   body: string,
   gatewayCaPem: string,
   authorization?: string,
+  tlsServerName?: string,
 ): Promise<{ status: number; payload: unknown }> {
   return new Promise((resolve, reject) => {
     const request = httpsRequest(
       {
-        ...tlsRequestOptions(endpoint, gatewayCaPem),
+        ...tlsRequestOptions(endpoint, gatewayCaPem, tlsServerName),
         method: "POST",
         path: `${endpoint.pathname}${endpoint.search}`,
         headers: {
@@ -311,6 +359,7 @@ export async function enrollHostLink(input: HostLinkEnrollInput): Promise<HostLi
     body,
     input.gatewayCaPem,
     input.accessKey ? `Bearer ${input.accessKey}` : undefined,
+    input.tlsServerName,
   );
   if (status !== 200) {
     if (status >= 500) throw new HostLinkError("GATEWAY_UNREACHABLE", `the Gateway enrollment endpoint returned HTTP ${status}`);
@@ -339,13 +388,21 @@ export async function enrollHostLink(input: HostLinkEnrollInput): Promise<HostLi
     const detail = error instanceof Error ? error.message : String(error);
     throw new HostLinkError("ENROLLMENT_RESPONSE_INVALID", `the enrollment response is not usable: ${detail}`);
   }
+  // The credential names the Gateway, not the address that happened to be
+  // reachable during enrollment: account mode dials a forward the overlay
+  // re-creates on every start, so the dial address is resolved per attempt.
+  const identity = input.hostlinkUrl?.trim() ?? "";
   return {
     hostId: input.hostId,
-    gatewayUrl: input.gatewayUrl,
+    gatewayUrl: identity || input.gatewayUrl,
+    ...(identity ? { hostlinkUrl: identity } : {}),
     gatewayCaPem: input.gatewayCaPem,
     certificatePem: response.certificate,
     privateKeyPem: keys.privateKeyPem,
     expiresAt: response.expiresAt,
+    // Kept with the credentials so every later dial validates the same
+    // identity, whatever address is used to reach the Gateway.
+    ...(input.tlsServerName?.trim() ? { tlsServerName: input.tlsServerName.trim() } : {}),
   };
 }
 
@@ -415,9 +472,24 @@ class WebSocketHostLinkSocket implements HostLinkSocket {
  */
 export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
   const { credentials, server, authenticator, log } = options;
-  const endpoint = gatewayEndpoint(credentials.gatewayUrl, "/v1/hostlink");
   const baseDelayMs = options.backoff?.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
   const maxDelayMs = options.backoff?.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
+  // The identity is stable for the life of the link: every dial validates the
+  // name the enrollment was issued under, whatever address reaches the Gateway.
+  const tlsServerName = (options.tlsServerName ?? credentials.tlsServerName ?? "").trim() || undefined;
+  // A stored URL that cannot be dialled at all is a configuration error, so it
+  // fails now instead of backing off forever. A resolved address is a runtime
+  // fact (the overlay's forward port) and is retried like any transport error.
+  if (!options.resolveDialUrl) gatewayEndpoint(credentials.gatewayUrl, "/v1/hostlink");
+
+  /** The address this attempt dials, and its parsed form for TLS and logs. */
+  const dialTarget = async (): Promise<{ url: string; endpoint: URL }> => {
+    const url = options.resolveDialUrl ? await options.resolveDialUrl() : credentials.gatewayUrl;
+    if (typeof url !== "string" || url.trim() === "") {
+      throw new HostLinkError("GATEWAY_UNREACHABLE", "the Gateway dial address is not available");
+    }
+    return { url, endpoint: gatewayEndpoint(url, "/v1/hostlink") };
+  };
 
   let state: HostLinkState = "connecting";
   let since = new Date().toISOString();
@@ -457,16 +529,28 @@ export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
     log("warn", "host link reconnecting", { attempt, delayMs: delay });
     retry = setTimeout(() => {
       retry = null;
-      connect();
+      void connect();
     }, delay);
     retry.unref?.();
   };
 
-  const connect = (): void => {
+  const connect = async (): Promise<void> => {
     if (stopped || rejected) return;
     publish("connecting");
-    const ws = new WebSocket(credentials.gatewayUrl, {
-      ...tlsRequestOptions(endpoint, credentials.gatewayCaPem),
+    // The address is resolved per attempt: the overlay may have moved its
+    // forward port since the last one, and the stored URL is only the identity.
+    let target: { url: string; endpoint: URL };
+    try {
+      target = await dialTarget();
+    } catch (error) {
+      if (stopped || rejected) return;
+      scheduleRetry(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    if (stopped || rejected) return;
+    const { url, endpoint } = target;
+    const ws = new WebSocket(url, {
+      ...tlsRequestOptions(endpoint, credentials.gatewayCaPem, tlsServerName),
       cert: credentials.certificatePem,
       key: credentials.privateKeyPem,
       handshakeTimeout: HANDSHAKE_TIMEOUT_MS,
@@ -514,7 +598,7 @@ export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
     });
   };
 
-  connect();
+  void connect();
 
   return {
     status,

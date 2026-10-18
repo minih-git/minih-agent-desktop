@@ -125,6 +125,14 @@ export type GatewayAccountSessionRecord = {
   tokenHash: string;
   /** Client-supplied label, for the operator reading the store. */
   label?: string;
+  /**
+   * Which client asked for this session (protocol §11.5). A browser session
+   * receives the account device token as `HttpOnly` cookies scoped to each Host
+   * of the account; a native session receives it in the response body for its
+   * secure store. Absent on a session written before this field existed, which
+   * is treated as non-browser.
+   */
+  client?: "web" | "ios" | "android";
   createdAt: string;
   expiresAt: string;
   revokedAt?: string;
