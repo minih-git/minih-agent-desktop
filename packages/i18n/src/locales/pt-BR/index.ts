@@ -2434,7 +2434,6 @@ export const ptBR = {
     installingVersion: "Instalando a versão v{{version}}",
     installDialogTitle: "Instalando {{name}}",
     installPhase: {
-      resolve: "Resolvendo o endereço de download",
       download: "Baixando",
       verify: "Verificando o pacote",
       install: "Instalando",

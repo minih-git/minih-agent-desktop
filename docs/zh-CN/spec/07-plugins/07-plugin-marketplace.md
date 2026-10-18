@@ -33,98 +33,63 @@
 
 ### B阶段✅
 - Browse/search + 下载安装是针对官方提供商实施的
-- 官方提供商是插件中心 `github.com/minih-git/minih-agent-plugins`（B 阶段最初指向 GitHub 仓库 `minih-git/minih-agent-plugins`；见下方「目录来源」与 [ADR 0276](/adr/0276-official-plugin-channel-and-backup-channels)）
+- 官方提供商是本项目自己的插件分发仓库 `github.com/minih-git/minih-agent-plugins`（B 阶段最初指向外部插件中心；见下方「目录来源」与 [ADR 0332](/adr/0332-own-plugin-distribution-repository)）
 - 默认目录 URL：`https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json`
-- 包 URL 可以是绝对 `https://` / `http://` / `file://`，或相对路径：目录声明了 `artifactBaseUrl` 时按它解析，否则按目录 URL 解析
+- 包 URL 可以是绝对 `https://` / `http://` / `file://`，或相对路径：目录声明了 `artifact_base_url` 时按它解析，否则按目录 URL 解析
 - HTTPS 获取在 host-core 中使用 `curl`
 
 ### 目录来源
 
-「插件 → 市场」始终使用插件中心的官方目录
-`https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json`，页面不提供来源选择器。旧版本持久化的
-`pluginMarketSource` 和 `pluginMarketCustomUrl` 仍保留以兼容设置读取，但会被忽略；
-无需迁移数据。开发与测试仍可通过 `MINIH_AGENT_PLUGIN_MARKET_URL` 指向本地目录，
-但已发布界面不会因此开放目录配置。
+「插件 → 市场」始终使用本项目分发仓库的目录
+`https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json`
+（ADR 0332），页面不提供来源选择器。旧版本持久化的 `pluginMarketSource` 和
+`pluginMarketCustomUrl` 仍保留以兼容设置读取，但会被忽略——`settings.set` 让 host
+的市场选择固定为本仓库——无需迁移数据。开发与测试仍可通过
+`MINIH_AGENT_PLUGIN_MARKET_URL` 指向本地目录，其优先级最高，但已发布界面不会因此
+开放目录配置。
 
 市场目录与安装包下载遵循设置 → 常规 → 网络。系统模式会让 host-core 的 `curl`
 通过 Electron 的认证回环 SOCKS 中继，并按当前操作系统代理/PAC 解析目标。直连模式
 强制市场请求直连；自定义模式使用所配置的代理与绕过列表。中继凭据仅在运行期使用，
 不会传给工作区 Shell。
 
-官方目录是插件中心生成并发布的 `catalog.json`。安装时客户端向平台解析包地址，而不
-是把相对路径拼到基址。如果 resolve 缓慢或不可用，客户端会从官方目录自己的包地址下载，
-并校验目录摘要。官方 resolve 路径仍可使用平台返回的 GitHub 与 CNB 包镜像；这些是
-官方渠道内部的包镜像，不会切换目录来源。每个镜像的字节都会按其声明的摘要校验。
+这个目录背后没有发布平台。仓库里的 `catalog.json` 就是上架契约，它自己给出每个包的
+URL 与 sha256，因此安装只抓取该 URL 一次，并按目录声明的摘要校验。没有 resolve
+请求、没有设备标识、也没有平台返回的镜像列表：安装包由提供目录的 Git 主机（GitHub，
+或同一仓库的 CNB 镜像）提供，相对包 URL 按 `artifact_base_url` 或目录 URL 解析，因此
+换镜像主机不会改变已记录的摘要。
 
-缓存目录通过 `plugins/market/cache-meta.json` 按来源记录。官方目录缓存是市场快照；
-旧来源留下的缓存会被忽略但不会删除。`settings.set` 会让 host 的市场选择保持为官方；
-远程抓取仍由显式的 `market.refresh` 触发，避免设置写入因市场超时而持有 host RPC 状态锁。
+缓存目录通过 `plugins/market/cache-meta.json` 按来源记录。分发仓库的目录缓存是市场
+快照；旧来源留下的缓存会被忽略但不会删除。远程抓取仍由显式的 `market.refresh`
+触发，避免设置写入因市场超时而持有 host RPC 状态锁。
 
-### 设备标识
+### 包下载
 
-官方渠道的 resolve 请求携带 `deviceId`。host-core 从操作系统暴露的机器标识派生：
-Windows 的 `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`、macOS 的平台 UUID，
-或 Linux 的 `/etc/machine-id`（回退 `/var/lib/dbus/machine-id` 与
-`/sys/class/dmi/id/product_uuid`）。上报的是 `sha256("minih-agent-desktop.device.v1:" + 机器码)`
-的 64 位小写十六进制，因此机器码原文不出本机，该摘要也与应用计算的其他哈希做了域
-分隔。读不到机器标识时，host-core 生成一个随机 64 位十六进制 ID，持久化在应用数据
-目录（`plugins/market/device.json`），之后一直复用。该值每个进程只读取一次，跨重启
-对同一安装保持稳定，不显示在界面上，也不是用户可编辑或重置的设置。它是平台的计数与
-限流键（见 [15-plugin-center.md](15-plugin-center.md) §10），不是账号或登录态。
-
-### 官方渠道的 resolve 安装
-
-官方渠道的每一次安装或更新都在刷新目录之后通过平台解析安装包：
-
-1. 刷新目录并选定插件与版本。
-2. `POST {中心 origin}/api/v1/download/resolve`——即提供该官方目录的 origin——JSON
-   body 为 `{ deviceId, pluginId, version }`，用户选定版本时才带 `version`。使用
-   POST 而非 GET，因为平台自己的契约指出设备 ID 出现在查询串里会落到访问日志。
-   元数据请求总时限为三秒且只发起一次，避免慢端点让安装一直停留在 `resolve`。
-3. 按顺序尝试返回的 `downloads` 每一项：下载、校验返回的 `sha256` 与声明的
-   `sizeBytes`，再把字节交给安装器。某个镜像失败——网络错误、HTTP 错误、摘要不符、
-   大小不符——就放弃它并尝试下一个。请求仍限于下文的白名单主机。
-4. resolve 超时、传输失败、返回 `429` 或 `503 NO_DOWNLOAD_SOURCE` 时，立即回退到
-   目录自身的包地址（`artifactBaseUrl` 加相对 `url`）。目录摘要与大小仍会校验，且
-   该次安装不计入统计。如果所有可用镜像都在传输层失败，也使用同一回退。响应格式
-   错误或完整性校验失败不会触发回退。
-5. 每次安装或更新只调用一次 resolve。响应从不缓存，这也是平台发送
-   `Cache-Control: no-store` 的原因；`counted: false` 是正常应答，不是错误。
-
-`200` 响应的 `downloads` 永不为空。拒绝要如实报告，而不是掩盖：
-
-- `403 NOT_PUBLISHED`——该版本尚未发布。报告且不重试。
-- `403 PLUGIN_ARCHIVED`——插件已归档。从安装与更新选择中隐藏它。
-- `404`——平台没有该版本。报告它；字节路由无法承载的版本字符串（例如带 `+` 的构建
-  元数据后缀）属于版本缺失，不能靠猜 URL 绕过。
-- `429`——平台按设备 ID 限流（默认每分钟 600 次）。不等待或重试；改用目录地址，
-  并按目录摘要校验安装包。
-- `503 NO_DOWNLOAD_SOURCE`——平台没有可用镜像时使用目录地址。其他 `503` 部署错误也
-  快速回退到目录地址。
-
-resolve 镜像路径以平台返回的摘要为准；回退路径以目录的 `shasum` 为准。明确的 `403`
-或 `404` 发布拒绝不会回退到其他包来源。回退不会切换目录来源，产品始终使用官方渠道。
-
+市场的每次安装或更新都只走一条路径：刷新目录、下载目录给出的包 URL、校验声明的
+sha256、解包、注册、启用，之前不会先向第二个服务解析。因此安装失败只可能是
+`PLUGIN_NETWORK`、`PLUGIN_INTEGRITY`、`PLUGIN_MARKET_INVALID`、
+`PLUGIN_MARKET_UNTRUSTED_HOST` 或 `PLUGIN_CANCELLED`。
 ### 安装进度与取消
 
 安装或更新是一次请求，因此它在进行期间会报告自己处于哪一步。
-`plugin.installProgress` 通知携带 `pluginId`、`version`、`phase`（`resolve`、
-`download`、`verify`、`install`、`enable`）、`source`（正在使用的镜像）及其从 1 开始的
-`attempt` / `attempts`、`receivedBytes` / `totalBytes`（`totalBytes` 为 `0` 表示大小
-未知），以及 `tried[]`——迄今尝试过的每个镜像，每项为 `{ source, url, error }`。
-以失败结束安装的那一条报告还会带上 `error`。报告被限流为每 200 ms 最多一条，外加每次
-阶段变化与最终报告，因此字节级进度不会淹没界面。
+`plugin.installProgress` 通知携带 `pluginId`、`version`、`phase`（`download`、
+`verify`、`install`、`enable`）、`source` 及其从 1 开始的 `attempt` / `attempts`、
+`receivedBytes` / `totalBytes`（`totalBytes` 为 `0` 表示大小未知），以及 `tried[]`
+（每项为 `{ source, url, error }`）。从分发仓库安装时只有一个包 URL，因此不报告镜像：
+`source` 为 null、`attempt` 为 0、`tried` 为空，这些字段仍保留在协议上以兼容目录驱动的
+列表。以失败结束安装的那一条报告还会带上 `error`。报告被限流为每 200 ms 最多一条，
+外加每次阶段变化与最终报告，因此字节级进度不会淹没界面。
 
 `market.cancelInstall { id }` 返回 `{ cancelled, id }`，且只取消当前正在运行的安装。
-真正能被中断的只有下载：该请求在字节到达时、尝试每个镜像之前，以及写入安装包之前的
-最后一个安全点被检查。被取消的安装以 `PLUGIN_CANCELLED`（JSON-RPC 码 1019）失败，
-对话框静默关闭，而不是报告错误。
+真正能被中断的只有下载：该请求在字节到达时，以及安装包被校验和写入之前的最后一个
+安全点被检查。被取消的安装以 `PLUGIN_CANCELLED`（JSON-RPC 码 1019）失败，对话框
+静默关闭，而不是报告错误。
 
-对话框只用于手动安装或更新，后台自动更新不会打开它。它显示当前阶段、
-`mirror n/N · name`、由 `receivedBytes` / `totalBytes` 得出的确定进度条与传输速度，
-以及仅在 `download` 与 `resolve` 期间可用的取消按钮。安装成功后约 2 秒自动关闭，
-悬停时暂停该倒计时。安装失败时对话框保持打开，显示可读的错误与尝试过的镜像，
-并提供复制与重试操作。
+对话框只用于手动安装或更新，后台自动更新不会打开它。它显示当前阶段、由
+`receivedBytes` / `totalBytes` 得出的确定进度条与传输速度，以及仅在 `download` 期间
+可用的取消按钮。安装成功后约 2 秒自动关闭，悬停时暂停该倒计时。Escape 与取消按钮
+遵循同一规则：正在下载时不能关闭对话框，安装离开 `download` 后即可关闭。安装失败时
+对话框保持打开，显示可读的错误，并提供复制与重试操作。
 
 ### 客户端可见的目录策略
 
@@ -153,7 +118,7 @@ ID 同时由某个构建从 `resources/plugins` 随应用打包的条目仍然�
 
 插件源码迁移到发布者自己的仓库，目录升级到 schema v2（ADR 0102）。客户端用
 同一条代码路径读取 v1 和 v2；v2 增加源码溯源、审查结论、撤回状态和显式声明的
-制品基址。发布侧见 [15-plugin-center.md](15-plugin-center.md)。
+制品基址。发布流程见本文档第 13 节。
 
 ## 3. 市场提供商抽象
 
@@ -185,10 +150,11 @@ interface MarketProvider {
   "catalogId": "pi-plugin-center",
   "generatedAt": "2026-08-18T02:00:00Z",
   "policyVersion": "2026.08.1",
-  // 可选。官方源不声明它：相对包 URL 按目录文件所在目录解析，
-  // 因此 GitHub 与 CNB 镜像各自提供自己的安装包，不会跨提供方。
-  // 把安装包放在别处的镜像或企业源，在这里声明自己的基址。
-  "artifactBaseUrl": null,
+  // 可选。分发仓库的目录会声明自己的基址；目录省略它时，相对包 URL
+  // 按目录文件所在目录解析，因此 GitHub raw 与 CNB 镜像各自提供自己的
+  // 安装包，不会跨提供方。把安装包放在别处的镜像或企业源，在这里声明
+  // 自己的基址。
+  "artifact_base_url": "https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main",
   "plugins": [
     {
       "id": "acme.todo",
@@ -231,17 +197,18 @@ interface MarketProvider {
 
 v2 的客户端规则：
 
-- 解析相对包 URL 时 `artifactBaseUrl` 优先于目录文件所在目录。绝对 URL 按原样
+- 解析相对包 URL 时 `artifact_base_url` 优先于目录文件所在目录。绝对 URL 按原样
   使用，但仍须通过下载域名白名单。
-- `trust` 仅用于展示，绝不从发布者提供的文本推导。客户端无法归因到已配置官方源
-  的取值一律显示为 `unknown`。见 [15-plugin-center.md](15-plugin-center.md) 第 11 节。
+- `trust` 仅用于展示，绝不从发布者提供的文本推导。仅当当前生效的目录就是本项目自己的
+  分发仓库时，`verified` 才会被采信；来自其他目录时降级为 `community`，无法识别的
+  等级显示为 `unknown`。见第 8 节。
 - `yanked: true` 的版本从安装和更新选择中移除，但保留在版本历史里并附带原因；
   已安装该版本的插件会被标记为需要注意。
 - `minMinihAgent` 高于当前应用版本时，在下载前就拒绝安装。
 - `provenance` 随已安装插件一起保存并在详情面板展示，因此可以追溯到具体仓库和
   commit。
 - `signature` 校验规则见 [08-plugin-signing-updates.md](08-plugin-signing-updates.md)，
-  在插件中心签名阶段落地前保持可选。无法验证的签名绝不当作有效签名。
+  在签名阶段落地前保持可选。无法验证的签名绝不当作有效签名。
 
 ### MarketPluginSummary
 ```ts
@@ -352,12 +319,6 @@ URL 描述的是一个受发布者影响的 release，所以宿主还必须约�
 自定义或企业目录只被信任其自身主机——把客户端指向一个私有目录，并不会为任意第三方
 主机放宽白名单。
 
-官方渠道的 resolve 响应给出的是镜像列表，而不是任意 URL 清单，而这些镜像正是上表中的
-分发主机：平台已经发布的 GitHub raw 仓库与 CNB 镜像。位于其他主机的镜像条目会像该
-主机上的包 URL 一样被拒绝，因此客户端会尝试列表中的下一个镜像；如果所有条目都指向
-这类主机，安装就会失败，而不是放宽白名单。因此把镜像迁到本表之外的主机需要客户端
-发版，而不是在平台侧改配置。
-
 白名单之外的包 URL 在任何网络请求发出之前就以 `PLUGIN_MARKET_UNTRUSTED_HOST` 失败，
 错误信息会指出被拒绝的主机，便于运维区分配置错误的私有源和恶意目录条目。
 
@@ -447,10 +408,12 @@ Extensions
 UI 必须使信任级别可见。
 社区不得伪装成经过验证的。
 
-在目录 v2 下，级别由插件中心签发，而不是发布者自行声明。客户端把任何无法归因到
-已配置官方源的条目显示为 `unknown`，也绝不因为目录里这么写就提升级别。v1 目录的
-布尔 `verified` 仍按原义映射为 `verified` / `community`，因为 v1 目录只有市场
-维护者能写入。
+在目录 v2 下，信任等级是对发布者的断言，因此客户端只在能够归因时才采信。仅当当前
+生效的目录就是本项目自己的分发仓库（`OFFICIAL_CHANNEL_CATALOG_URL`）时，
+`verified` 才会被接受；同样的取值来自其他目录时降级为 `community`，无法识别的
+等级显示为 `unknown`，任何目录都不能自我提升等级。本仓库当前重新分发社区插件，
+因此条目声明 `community`。v1 目录的布尔 `verified` 仍按原义映射为 `verified` /
+`community`，因为 v1 目录只有市场维护者能写入。
 
 ## 9. 私有来源（未来的企业支持）
 
@@ -499,43 +462,42 @@ UI 必须使信任级别可见。
 安装在启用之前始终通过校验和验证和权限审查。
 
 
-## 13. 官方市场存储库
+## 13. 分发仓库
 
-### 当前源（目录 v1）
-
-存储库：[minih-git/minih-agent-plugins](https://github.com/minih-git/minih-agent-plugins)
+存储库：[minih-git/minih-agent-plugins](https://github.com/minih-git/minih-agent-plugins)（public）。
+它是市场唯一的来源，也是客户端完整的分发契约（ADR 0332）。布局：
 
 ```text
-catalog.json
-packages/*.piplug
-plugins/<id>/
-scripts/pack_plugin.py
-scripts/rebuild_catalog.py
+catalog.json                 # schemaVersion 1，providerId 为 "official"
+packages/<id>-<version>.piplug
+plugins/<id>/                # 插件源码
+README.md
 ```
 
-维护流程：
+目录声明 `artifact_base_url` 为
+`https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main`（也可写相对值），
+包 URL 使用相对路径，因此无论安装包由 GitHub raw 还是同一仓库的 CNB 镜像提供，
+目录记录的 sha256 都能校验通过。目录不由任何服务生成，由维护者提交。
 
-1.编辑`plugins/<id>`
-2.`python3 scripts/pack_plugin.py plugins/<id>`
-3.`python3 scripts/rebuild_catalog.py`
-4. 提交 + 推送至 `main`
-5. Minih-Agent-Desktop 通过 `market.refresh`/市场 UI 刷新
+本仓库当前重新分发第三方社区插件（由各发布者自己的源码构建），因此条目声明
+`trust: "community"` 与 `verified: false`。再分发方并不认证发布者，第 8 节说明了
+为什么这是正确等级而不是 `verified`。
 
-目前由维护者就地编辑源码、打包、手工重建目录。下面要变的正是这一点，而地址不变。
+### 发布
 
-### 由谁写入（目录 v2）
+一次发布是一次提交，而不是向某个服务提交申请：
 
-存储库：[minih/minih-plugin-center](https://github.com/minih-git/minih-plugin-center)
+1. 用 `packages/plugin-devkit` 把插件打包为 `packages/<id>-<version>.piplug`，
+   再重新生成 `catalog.json`，写入新版本条目及其 sha256、大小、权限与
+   `artifact_base_url`。
+2. 把安装包与重新生成的目录放进**同一个 commit** 提交并推送。目录列出的版本与它
+   指向的字节永远不会分处两个提交，客户端不会看到一个安装包尚未发布的版本。
+3. 发布前用第 4 节的发布闸门对已发布的目录 URL 做一次预检：
+   `pnpm check:marketplace -- --url https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json --plugin <plugin-id>`。
 
-该仓库仍是分发源。变的是谁往里写：插件中心接管 `catalog.json` 的生成和
-`packages/*.piplug` 的发布，第三方插件的源码留在发布者自己的仓库，而不是放进
-`plugins/`。
-
-默认目录 URL、镜像 URL 和相对包 URL 全部不变，因此不需要发布客户端版本，也不需要
-用户操作。由于目录和安装包都是这里以及 CNB Git 镜像上的静态文件，即使插件中心的
-API 不可用，浏览、安装和更新依然可用。
-
-见 [15-plugin-center.md](15-plugin-center.md)。
+市场分发始终是可选的：第 5 节描述了不经过本仓库、直接安装本地打包 `.piplug` 的方式。
+原先负责发布的外部插件中心已退役；[15-plugin-center.md](15-plugin-center.md) 仅作为
+上游背景保留，不再是客户端契约。
 
 使用 env 覆盖目录 URL：
 
@@ -562,7 +524,11 @@ MINIH_AGENT_PLUGIN_MARKET_URL=https://raw.githubusercontent.com/<owner>/<repo>/<
 相对于已安装的版本，因此升级不能默默地扩大访问范围
 （D169）。
 
-贡献文档位于官方仓库：
+插件开发文档随宿主仓库维护，发布则是向分发仓库提交：
 
-- https://github.com/minih-git/minih-agent-plugins/blob/main/CONTRIBUTING.md
-- 实用模板：`plugins/demo.workspace-summary`
+- 宿主指南：`docs/plugin-development.md`
+- 发布：通过第 4 节的 `check:marketplace` 预检后，把打包好的 `.piplug` 与重新生成的
+  `catalog.json` 一起提交到
+  [minih-git/minih-agent-plugins](https://github.com/minih-git/minih-agent-plugins)
+- 内置模板：`panel-basic`、`agent-tool-basic`、`skill-pack`、`full-demo`
+- 贡献指南：分发仓库的 `README.md`

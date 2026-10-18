@@ -2479,7 +2479,6 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
     installingVersion: "v{{version}} sürümü kuruluyor",
     installDialogTitle: "{{name}} kuruluyor",
     installPhase: {
-      resolve: "İndirme adresi çözümleniyor",
       download: "İndiriliyor",
       verify: "Paket doğrulanıyor",
       install: "Kuruluyor",

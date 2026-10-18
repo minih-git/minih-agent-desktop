@@ -1,8 +1,11 @@
 //! Progress an install reports while it runs, and the way a user cancels one.
 //!
-//! The install path is a single request: it resolves where the package is,
-//! downloads it from one mirror after another, verifies it, extracts it and
-//! registers it. Only the last step answers the caller, so a download that takes
+//! The install path is a single request: it downloads the package the catalog
+//! listed, verifies it, extracts it and registers it. Only the last step
+//! answers the caller, so a download that takes a minute looks like a frozen
+//! window unless the work reports itself. That is what an [`InstallObserver`]
+//! is for: the install calls it, and whoever owns the interface decides what
+//! to do with it.
 //! a minute looks like a frozen window unless the work reports itself. That is
 //! what an [`InstallObserver`] is for: the install calls it, and whoever owns
 //! the interface decides what to do with it.
@@ -17,8 +20,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 /// What an install is doing right now.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum InstallPhase {
-    /// Asking the plugin center where the package is (official channel).
-    Resolve,
     /// Downloading from a mirror.
     Download,
     /// Checking the bytes against the digest the catalog or the platform named.
@@ -33,7 +34,6 @@ impl InstallPhase {
     /// Wire name, and the name the dialog shows.
     pub(crate) fn as_str(self) -> &'static str {
         match self {
-            InstallPhase::Resolve => "resolve",
             InstallPhase::Download => "download",
             InstallPhase::Verify => "verify",
             InstallPhase::Install => "install",
@@ -164,11 +164,6 @@ pub(crate) fn cancel_active_install() -> bool {
 /// Its own marker, so the RPC layer can answer "you cancelled this" instead of
 /// an integrity or network failure, and the surface can close quietly.
 pub(crate) const CANCELLED: &str = "PLUGIN_CANCELLED: the install was cancelled";
-
-/// Whether an error is the user's own cancellation.
-pub(crate) fn is_cancelled(error: &anyhow::Error) -> bool {
-    error.to_string().starts_with("PLUGIN_CANCELLED")
-}
 
 /// Everything one download reports against.
 ///
@@ -307,15 +302,6 @@ mod tests {
                 "the user asked to stop after one report"
             );
         }
-    }
-
-    #[test]
-    fn only_a_cancellation_reads_as_one() {
-        let cancelled = anyhow!(CANCELLED);
-        assert!(is_cancelled(&cancelled));
-        assert!(!is_cancelled(&anyhow!(
-            "PLUGIN_INTEGRITY: checksum mismatch"
-        )));
     }
 
     #[test]

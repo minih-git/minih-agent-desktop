@@ -2468,7 +2468,6 @@ sklm: {
     "installingVersion": "Instalando la versión v{{version}}",
     "installDialogTitle": "Instalando {{name}}",
     "installPhase": {
-      "resolve": "Resolviendo la dirección de descarga",
       "download": "Descargando",
       "verify": "Verificando el paquete",
       "install": "Instalando",

@@ -44,14 +44,14 @@ export type PluginInstallJob = {
 const CANCELLED_MARKER = "PLUGIN_CANCELLED";
 
 /**
- * A job that has just been confirmed. The dialog opens on `resolve`, the phase
+ * A job that has just been confirmed. The dialog opens on `download`, the phase
  * the host starts with, so a slow first step never looks like a frozen window.
  */
 export function newInstallJob(request: PluginInstallRequest): PluginInstallJob {
   return {
     request,
     status: "running",
-    phase: "resolve",
+    phase: "download",
     source: null,
     attempt: 0,
     attempts: 0,
@@ -70,11 +70,7 @@ export function newInstallJob(request: PluginInstallRequest): PluginInstallJob {
  * that called it is a "cancelling" state instead of a second request.
  */
 export function canCancelInstall(job: PluginInstallJob): boolean {
-  return (
-    job.status === "running" &&
-    !job.cancelling &&
-    (job.phase === "resolve" || job.phase === "download")
-  );
+  return job.status === "running" && !job.cancelling && job.phase === "download";
 }
 
 /**

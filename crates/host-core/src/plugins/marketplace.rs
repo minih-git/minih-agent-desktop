@@ -3,24 +3,32 @@ use super::*;
 pub mod catalog;
 pub(crate) use catalog::{built_in_catalog_at, bundled_package_bytes};
 
-/// Official channel: the plugin center.
+/// The distribution channel: this project's own plugin repository.
 ///
-/// The catalog it serves is the client's listing contract, and an install asks
-/// the same host where the package is (`plugins::resolve`) instead of resolving
-/// a relative package URL against a git host.
+/// The catalog it serves is the client's listing contract. A package URL in it
+/// is relative to the catalog's `artifact_base_url`, or to the catalog itself, so
+/// a package is fetched from the git host that served the catalog and its
+/// digest is verified before anything is extracted.
 ///
-/// This is the upstream PI-Desktop plugin center: its catalog carries the same
-/// manifest and package contracts this fork accepts (the `engines.piDesktop`
-/// manifest key and the `minPiDesktop` catalog version field are accepted as
-/// aliases of their fork-side names).
-pub const OFFICIAL_CHANNEL_CATALOG_URL: &str = "https://plugins.aiuo.net/catalog.json";
+/// There is no publishing platform behind this channel: no resolve call, no
+/// device identifier, and no second distribution authority. The channel was the
+/// upstream PI-Desktop plugin center until ADR 0332 retired it; its catalog
+/// carried the same manifest and package contracts this fork accepts (the
+/// `engines.piDesktop` manifest key and the `minPiDesktop` catalog version
+/// field are accepted as aliases of their fork-side names).
+///
+/// `github.com/minih-git/minih-agent-plugins` holds plugin source under
+/// `plugins/<id>/`, built packages under `packages/`, and this `catalog.json`.
+pub const OFFICIAL_CHANNEL_CATALOG_URL: &str =
+    "https://raw.githubusercontent.com/minih-git/minih-agent-plugins/main/catalog.json";
 
 /// The catalog source used by the plugin manager.
 ///
-/// Application settings are pinned to `Official`.
+/// Application settings are pinned to `Official`, which is this project's own
+/// distribution repository.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MarketChannel {
-    /// The plugin center (the default).
+    /// This project's own plugin repository (the default).
     Official,
 }
 
@@ -47,7 +55,7 @@ pub(crate) fn market_source_env_override() -> Option<String> {
         .filter(|url| !url.is_empty())
 }
 
-/// Application settings always use the official marketplace.
+/// Application settings always use the project's own distribution channel.
 ///
 /// The legacy fields remain in persisted settings for compatibility, but no
 /// longer select a catalog or a custom URL.
@@ -86,16 +94,6 @@ impl PluginManager {
         _legacy_custom_url: Option<String>,
     ) {
         self.market_channel = channel;
-    }
-
-    /// Whether an install asks the plugin center where the package is.
-    ///
-    /// Only the official channel does, and only when the catalog really is the
-    /// center's: an environment override names a catalog file somebody put
-    /// somewhere, and such a catalog lists packages the way a git host serves
-    /// them, so it keeps the relative-URL path.
-    pub(crate) fn uses_download_resolve(&self) -> bool {
-        self.market_channel == MarketChannel::Official && market_source_env_override().is_none()
     }
 
     /// Make the install that is about to run cancellable.

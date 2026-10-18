@@ -2485,7 +2485,6 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
     installingVersion: "v{{version}} 버전 설치 중",
     installDialogTitle: "{{name}} 설치 중",
     installPhase: {
-      resolve: "다운로드 주소 확인 중",
       download: "다운로드 중",
       verify: "패키지 검사 중",
       install: "설치 중",

@@ -319,6 +319,7 @@ ADR 记录那些不应被静默改变的架构选择。中文入口与英文索�
 | registry-header-variable-spelling | [Remote header variables accept the registry's `{name}` spelling](/adr/registry-header-variable-spelling) | Proposed |
 | 0331 | [自托管网关、可连接的桌面 Host 与移动客户端](/adr/0331-self-hosted-gateway-and-mobile-client) | 已接受待实现（MVP 之后；D665） |
 | agent-long-term-memory | [分层、可溯源的长期记忆](/adr/agent-long-term-memory) | 已接受待实现（D668；修订 ADR 0234） |
+| 0332 | [插件市场由本项目自己的分发仓库提供](/adr/0332-own-plugin-distribution-repository) | 已接受（2026-10-18；取代 ADR 0276 中官方渠道的条款） |
 
 ## 什么时候看 ADR
 

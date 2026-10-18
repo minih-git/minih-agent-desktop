@@ -2463,7 +2463,6 @@ sklm: {
     installingVersion: "將安裝版本 v{{version}}",
     installDialogTitle: "正在安裝 {{name}}",
     installPhase: {
-      resolve: "正在解析下載位址",
       download: "正在下載",
       verify: "正在驗證安裝套件",
       install: "正在安裝",
