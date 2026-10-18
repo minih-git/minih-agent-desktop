@@ -8,8 +8,8 @@
  * them, never hand-maintained beside them.
  *
  * The module is transport-neutral. `RACP-WS` is the normative v1 binding,
- * first deployed over an SSH tunnel; `RACP-HTTP` is the browser profile and
- * unscheduled; `RACP-GRPC` is reserved.
+ * first deployed over an SSH tunnel; `RACP-HTTP` is the browser/mobile profile
+ * delivered by the Gateway (R4); `RACP-GRPC` is reserved.
  */
 import Type from "typebox";
 
@@ -27,9 +27,12 @@ export const RACP_PROTOCOL_VERSION = "1.0" as const;
 export const RACP_BINDINGS = ["RACP-WS", "RACP-HTTP", "RACP-GRPC"] as const;
 export type RacpBinding = (typeof RACP_BINDINGS)[number];
 
-/** Bindings a v1 Host may advertise. HTTP and gRPC stay in the enum so the
- * contract does not drift while their milestones are unscheduled. */
-export const RACP_SHIPPED_BINDINGS: readonly RacpBinding[] = ["RACP-WS"];
+/**
+ * Bindings this release ships. `RACP-HTTP` joined once its conformance tests
+ * against the Gateway passed (rollout R4, D665); `RACP-GRPC` stays in the enum
+ * as reserved so the contract does not drift.
+ */
+export const RACP_SHIPPED_BINDINGS: readonly RacpBinding[] = ["RACP-WS", "RACP-HTTP"];
 
 export const RACP_WS_SUBPROTOCOL = "pi-racp.v1.jsonrpc" as const;
 

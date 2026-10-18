@@ -81,12 +81,13 @@ export async function bindRacpWebSocket(options: WsBindingOptions): Promise<WsBi
         authorization: request.headers.authorization,
         urlHasToken,
         connectionId: "pending",
+        origin: "ssh",
       });
       if (!auth) return reject(401, "Unauthorized");
       wss.handleUpgrade(request, socket, head, (ws) => {
         sockets.add(ws);
         ws.once("close", () => sockets.delete(ws));
-        const connection = options.server.accept(auth, wsTransport(ws));
+        const connection = options.server.accept(auth, wsTransport(ws), "ssh");
         if (!connection) return;
         // Heartbeat (spec §11.1): a peer that stops answering pings is dropped.
         let alive = true;

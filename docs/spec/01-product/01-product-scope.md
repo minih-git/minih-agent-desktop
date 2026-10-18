@@ -86,11 +86,13 @@ synchronizing conversation history or source files.
 ## 5. Out of scope (current phase)
 
 - Remote Gateway / browser remote control; local loopback MCP control is the
-  explicitly bounded exception described by ADR 0203
+  explicitly bounded exception described by ADR 0203. Post-MVP this is
+  scheduled as R4–R6 by D665 (ADR 0331) and remains outside the current phase
 - Full IDE experience
 - Trusted plugin provenance/signatures and a capability sandbox for raw plugin
   Node APIs
-- Mobile clients
+- Mobile clients; post-MVP they are scheduled as R6 by D665 (ADR 0331) and
+  remain outside the current phase
 - Billing systems
 - Computer Use browser takeover
 

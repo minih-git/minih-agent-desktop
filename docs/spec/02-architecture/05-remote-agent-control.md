@@ -31,9 +31,9 @@ D375 fixes the order in which the topologies ship. The first remote
 deployment is the desktop itself acting as the Remote Client of a headless
 Host on another machine over an SSH tunnel, which is what users asked for in
 issues #176 and #140. The second is an outbound messaging integration that
-runs beside the Host (issue #100). Gateway routing and browser access remain
-fully specified here and in the protocol, but they are unscheduled until a
-demand signal or product decision schedules them.
+runs beside the Host (issue #100). D665 (ADR 0331) schedules the remaining
+topologies: the self-hosted Gateway with the Host link is R4, the desktop as
+a connected Host is R5, and the browser and mobile clients are R6.
 
 ## 2. Design principles
 
@@ -42,9 +42,10 @@ demand signal or product decision schedules them.
    tab or Electron window.
 2. **The semantic contract is transport-neutral.** `RACP-WS` is the normative
    v1 binding and is first deployed over an SSH tunnel. `RACP-HTTP` is the
-   browser profile of the same contract and is unscheduled. `RACP-GRPC` is
-   reserved. Every shipped binding exposes the same session, turn, event,
-   approval, and attachment semantics.
+   browser profile of the same contract and binds with R4 (D665); the browser
+   and mobile clients that use it ship with R6. `RACP-GRPC` is reserved.
+   Every shipped binding exposes the same session, turn, event, approval, and
+   attachment semantics.
 3. **Local boundaries remain local.** Rust host-core continues to speak only
    stdio NDJSON JSON-RPC with its trusted Electron Main or headless host
    supervisor, wherever that host runs. The Node pi sidecar continues to
@@ -113,7 +114,7 @@ transport and does not change the remote-control target.
 | Headless Agent Host module (`packages/agent-host`) | Own session/turn admission, the turn queue, the approval broker, the in-memory event log, and the snapshot builder; expose one typed API to desktop IPC, local MCP, RACP, and integrations | Electron, renderer, or transport dependencies; a second permission or persistence implementation |
 | `agent-host-cli` headless bundle | Run the module, the Node pi sidecar, and Rust host-core on a remote machine, bound to loopback, at the same version as the desktop, downloaded from GitHub Releases by the bootstrap script | A desktop UI, plugin panels, another Host's secrets |
 | Messaging integration adapter | Subscribe to host-scope events in the Host process and relay redacted summaries to outbound channels; map a fixed command vocabulary to turn and approval operations | Its own permission policy, an inbound listener, raw transcript content |
-| Self-hosted Gateway (unscheduled) | Admit Host-issued device credentials, authorize routing, maintain Host links, rate-limit, audit, buffer attachment uploads transiently, and (reserved) push redacted summaries | Provider secrets, durable transcript truth, arbitrary host-core access, attachment bytes beyond the upload window |
+| Self-hosted Gateway (R4) | Admit Host-issued device credentials, authorize routing, maintain Host links, rate-limit, audit, buffer attachment uploads transiently, and (reserved) push redacted summaries | Provider secrets, durable transcript truth, arbitrary host-core access, attachment bytes beyond the upload window |
 | Node pi sidecar | Run the pi Agent loop and provider streams | Remote authentication, workspace policy, secret storage |
 | Rust host-core | Own SQLite, tools, workspace boundaries, permissions and the pending permission table, secrets, and durable local records | Public network listeners |
 
@@ -264,7 +265,7 @@ device token is presented, because the SSH channel provides confidentiality
 and the SSH login already proves shell access to the machine. A non-loopback
 bind requires TLS and a device token exactly as before.
 
-### 5.3 Self-hosted Gateway (unscheduled)
+### 5.3 Self-hosted Gateway (R4–R6)
 
 ```text
 Browser / Native Client ── HTTPS or WSS ── Remote Gateway
@@ -286,10 +287,29 @@ the right client and attachment bytes reach the Host without an inbound port.
 The Gateway keeps a short-lived route from a host identity to a live
 connection and may queue control-plane metadata, but it does not queue
 non-idempotent turn commands while the Agent Host is offline. PI does not
-operate a Gateway: if this topology is ever scheduled, the user runs it on
-their own infrastructure and it admits clients with Host-issued device
-credentials (D385). It is specified so the contract does not drift; it is not
-scheduled.
+operate a Gateway: the user runs it on their own infrastructure and it admits
+clients with Host-issued device credentials (D385). Delivery scope, binding
+rules, and exit criteria are the R4 milestone of
+`06-delivery/07-remote-control-rollout.md` (D665, ADR 0331).
+
+### 5.4 Desktop as a connected Host (R5)
+
+Electron Main may serve its existing in-process Agent Host over the outbound
+Host link, so a phone can observe and control the sessions of a running
+desktop (D665, ADR 0331). The link runs a separate `RacpServer` transport on
+the existing `agent-host-bridge.ts` AgentHost instance: no new AgentHost, no
+new execution path, and no listener. The setting is an optional, device-local
+`remoteGateway` field in `AppSettings` (`enabled`, `url`; absent means off,
+never synced), marked Experimental and off by default. Device credentials and
+the mTLS key material live in the main process, encrypted through
+`EncryptionPort` (safeStorage), never in SQLite and never in host-core's
+schema. Relayed principals follow the device-origin rules of security §3.7:
+they are never SSH-paired owners, the remote permission ceiling always
+applies, and they cannot change a local session's permission mode. Disabling
+the setting, app quit, and `before-quit` close the link and cancel pending
+server requests. A renderer reload does not: the link belongs to the main
+process, and the settings page only re-subscribes to its status. Local turns
+continue throughout.
 
 ## 6. Ownership and authority
 
@@ -362,7 +382,7 @@ For a session on a remote Host:
   `terminal/*` operations with a bounded replay ring; the browser preview
   stays local.
 
-### 6.4 Gateway ownership (unscheduled)
+### 6.4 Gateway ownership (R4)
 
 The Gateway owns identity-to-host routing, not workspace state. It may store:
 
@@ -377,7 +397,10 @@ The Gateway owns identity-to-host routing, not workspace state. It may store:
 
 It must not persist provider API keys, raw tool arguments, raw tool results, or
 full transcripts unless a separate product decision explicitly grants that
-retention.
+retention. ADR 0331 fixes the concrete layout: a `0700` data directory with
+`0600` files holding the CA material, `hosts.json`, `enrollments.json`,
+`devices.json`, and a daily redacted `audit/YYYY-MM-DD.jsonl`, written
+atomically through rename, with no SQLite and no native dependency.
 
 A Gateway is self-hosted and has no identity source of its own: it admits
 clients with device credentials issued by the user's Host (D385); see
@@ -393,9 +416,9 @@ bindings:
 |---|---|---|---|
 | Local stdio JSON-RPC | Electron Main and sidecars | Full duplex | Existing; unchanged |
 | `RACP-WS` JSON-RPC over WSS | Desktop as Remote Client over SSH, native clients, Electron | Full duplex | Normative v1 binding; first deployed over the SSH tunnel |
-| `RACP-HTTP` HTTP/JSON + SSE | Browser and simple integrations | Commands plus server stream | Browser profile; unscheduled |
+| `RACP-HTTP` HTTP/JSON + SSE | Browser and simple integrations | Commands plus server stream | Browser profile; binds with R4 (D665); browser and mobile clients ship with R6 |
 | `RACP-GRPC` gRPC over TLS | Native service clients | Unary plus server stream | Reserved; not in v1 conformance |
-| Host link `racp-hostlink.v1` | Gateway to Host | Multiplexed full duplex | Relay profile over `RACP-WS` framing; unscheduled with the Gateway |
+| Host link `racp-hostlink.v1` | Gateway to Host | Multiplexed full duplex | Relay profile over `RACP-WS` framing; ships with R4 (D665) |
 
 The binding-neutral contract is specified in
 `03-runtime/19-remote-agent-control-protocol.md`. A binding may be added only
@@ -593,3 +616,10 @@ fix the Gateway identity source to the PI account service.
 D385 (2026-09-10) made remote control user-local by construction: no
 project-operated identity or account service, Host-issued device credentials
 everywhere, and a Gateway only as a self-hosted relay.
+
+D665 (2026-10-17, ADR 0331) scheduled the Gateway and browser topologies:
+R4 is the self-hosted Gateway with the Host link, R5 is the desktop as a
+connected Host, and R6 is the browser and mobile clients. §5.3 loses its
+unscheduled status, §5.4 adds the desktop's connected-Host topology with the
+device-local `remoteGateway` setting and `EncryptionPort`-encrypted
+credentials, and §6.4 records the concrete Gateway storage layout.

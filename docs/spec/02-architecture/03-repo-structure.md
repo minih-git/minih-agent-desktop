@@ -9,25 +9,26 @@ Two workspaces share one repository: pnpm owns every JavaScript package
 ```text
 Minih-Agent-Desktop/
 ├── apps/
-│ └── desktop/                # Electron product shell
-│   ├── electron/
-│   │ ├── main/               # main process, one module per concern
-│   │ ├── preload/            # renderer and plugin-panel preloads
-│   │ └── shared/             # code both main and preload import
-│   ├── src/                  # React renderer
-│   │ ├── components/         # UI; settings/, workpanel/, plugins/, extensions/
-│   │ ├── hooks/              # React hooks
-│   │ ├── lib/                # framework-free renderer logic and the IPC client
-│   │ ├── pages/              # routed destinations
-│   │ ├── stores/             # zustand app store
-│   │ ├── styles/             # CSS split by surface; tokens.css is the design system
-│   │ └── assets/             # fonts and brand art
-│   ├── test/                 # node --test suites (*.test.mjs) and helpers/
-│   ├── resources/            # packaged extraResources: skills/, plugins/, models.dev/
-│   ├── build/                # icons and macOS entitlements for electron-builder
-│   ├── index.html
-│   ├── electron.vite.config.ts
-│   └── package.json          # also holds the electron-builder config
+│ ├── desktop/                # Electron product shell
+│ │ ├── electron/
+│ │ │ ├── main/               # main process, one module per concern
+│ │ │ ├── preload/            # renderer and plugin-panel preloads
+│ │ │ └── shared/             # code both main and preload import
+│ │ ├── src/                  # React renderer
+│ │ │ ├── components/         # UI; settings/, workpanel/, plugins/, extensions/
+│ │ │ ├── hooks/              # React hooks
+│ │ │ ├── lib/                # framework-free renderer logic and the IPC client
+│ │ │ ├── pages/              # routed destinations
+│ │ │ ├── stores/             # zustand app store
+│ │ │ ├── styles/             # CSS split by surface; tokens.css is the design system
+│ │ │ └── assets/             # fonts and brand art
+│ │ ├── test/                 # node --test suites (*.test.mjs) and helpers/
+│ │ ├── resources/            # packaged extraResources: skills/, plugins/, models.dev/
+│ │ ├── build/                # icons and macOS entitlements for electron-builder
+│ │ ├── index.html
+│ │ ├── electron.vite.config.ts
+│ │ └── package.json          # also holds the electron-builder config
+│ └── remote-gateway/         # self-hosted RACP Gateway: Host link (wss + mTLS) and RACP-HTTP + SSE
 ├── crates/
 │ └── host-core/              # Rust privileged host (binary minih-agent-desktop-host-core)
 │   ├── Cargo.toml

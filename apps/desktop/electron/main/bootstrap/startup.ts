@@ -6,6 +6,7 @@ import {
   ErrorCodes,
   IPC,
   type AppMenuCommand,
+  type AppSettings,
   type CloseBehavior,
   type KeybindingOverrides,
   type NativeMenuAction,
@@ -19,6 +20,8 @@ import { readCloseBehavior } from "../window-preferences";
 import { createAgentHostBridge, type AgentHostBridge } from "../agent-host-bridge";
 import { createBackendRouter, type BackendRouter } from "../remote/backend-router";
 import { createRemoteHostsBoot, setActiveRemoteHostsBoot } from "./remote-hosts";
+import { createGatewayLinkBootstrap, setActiveGatewayLink } from "./gateway-link";
+import { racpGatewayLinkPort } from "../remote/gateway-link/racp-gateway-link-port.js";
 import {
   createMcpControlController,
   McpControlServer,
@@ -268,6 +271,44 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
       },
       log: (level, message, data) => logger.app("runtime", level, message, { data }),
     });
+    // Desktop as a connected Host (rollout R5, ADR 0331). Creation is side
+    // effect free; `open()` below applies the persisted switch and only then
+    // creates the link service, its store, and its server.
+    const gatewayLink = createGatewayLinkBootstrap({
+      dataDir,
+      // The real transport (PR-2): mTLS enrollment and the outbound Host link.
+      port: racpGatewayLinkPort,
+      encryption: {
+        isAvailable: () => safeStorage.isEncryptionAvailable(),
+        encryptString: (plain) => safeStorage.encryptString(plain),
+        decryptString: (buffer) => safeStorage.decryptString(buffer),
+      },
+      getSettings: async () => {
+        const host = getHost();
+        if (!host) return null;
+        return host.call<AppSettings>("settings.get");
+      },
+      saveSettings: async (remoteGateway) => {
+        const host = getHost();
+        if (!host) {
+          throw Object.assign(new Error("host-core is not running"), {
+            errorCode: ErrorCodes.AGENT_UNAVAILABLE,
+          });
+        }
+        await host.call("settings.set", { remoteGateway });
+      },
+      getHost,
+      getAgentHost: () => {
+        const bridge = state.agentHostBridge;
+        if (!bridge) throw new Error("the agent host bridge is not ready");
+        return bridge.agentHost;
+      },
+      serverVersion: APP_VERSION,
+      emitStatus: (status) => sendToRenderer(IPC.event.remoteGatewayStatusChanged, status),
+      log: (level, message, data) =>
+        logger.app("runtime", level, message, { data: formatRemoteLogData(data) }),
+    });
+    setActiveGatewayLink(gatewayLink);
     const control = createMcpControlController({
       invoke: invokeIpc,
       channels: IPC.invoke,
@@ -295,6 +336,14 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
       });
     }
     if (!bootError) planUiProbe.install();
+    // The gateway switch lives in AppSettings, which host-core serves, so the
+    // link boots after the backends. With the feature off it creates nothing:
+    // no store, no `RacpServer`, no socket (S12).
+    if (!bootError) {
+      void gatewayLink.open().catch((error: unknown) => {
+        logger.app("runtime", "warn", "gateway link boot failed", { data: String(error) });
+      });
+    }
     const scheduledRunner = createScheduledRunner({
       getHost,
       execute: (id) => invokeIpc(IPC.invoke.scheduledExecute, [id, true]),

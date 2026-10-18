@@ -244,10 +244,14 @@ test("app quit waits for one idempotent teardown before allowing the follow-up q
     "no panel page may still call a plugin runtime that is stopping",
   );
   assert.match(shutdownSource, /await hostShutdown/);
+  // The desktop Host link (rollout R5) is disposed on the same quit path and
+  // awaited with the other shutdowns, so a remote device sees the link close
+  // before host-core disappears.
   assert.match(
     shutdownSource,
-    /await Promise\.allSettled\(\[\s*pluginShutdown,\s*sidecarShutdown,\s*mcpShutdown,\s*remoteHostsShutdown,\s*\]\)/,
+    /await Promise\.allSettled\(\[\s*pluginShutdown,\s*sidecarShutdown,\s*mcpShutdown,\s*remoteHostsShutdown,\s*gatewayLinkShutdown,\s*\]\)/,
   );
+  assert.match(shutdownSource, /getActiveGatewayLink\(\)\?\.dispose\(\)/);
   const releaseQuit = shutdownSource.match(
     /const releaseQuit = \(\) => \{[\s\S]*?shutdownComplete = true;[\s\S]*?app\.quit\(\);[\s\S]*?\};/,
   );

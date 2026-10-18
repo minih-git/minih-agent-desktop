@@ -1050,3 +1050,71 @@ describe("AgentHost queue extras", () => {
     expect(runtime.prompts.map((prompt) => prompt.content)).toEqual(["later"]);
   });
 });
+
+describe("AgentHost gateway-principal restrictions (security §3.7)", () => {
+  const permission = (requestId = "req_1") => ({
+    type: "tool_permission_request" as const,
+    request: { requestId, sessionId: "s1", toolCallId: "c1", toolName: "Bash", argsPreview: { command: "ls" }, risk: "high" as const, reason: "high risk" },
+  });
+  const gatewayDevice: Principal = {
+    subject: "dev_gateway",
+    roles: ["viewer", "controller", "approver"],
+    pairedDevice: false,
+    origin: "gateway",
+  };
+
+  it("(a) refuses allow-session from a gateway principal even when Host policy allows remote grants", async () => {
+    const { host, approvals, received } = build({ allowRemoteSessionGrants: true });
+    host.ingest(envelope("s1", "rt_1", permission()));
+    const raised = received.find((event) => event.kind === "approval.requested");
+    expect(raised).toBeTruthy();
+    await expect(
+      host.respondApproval(gatewayDevice, { approvalId: "req_1", decision: "allow-session", context: { requestId: "r" } }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(approvals.tool).toEqual([]);
+    // An ssh-origin approver with the same policy still gets the session grant.
+    const sshApprover: Principal = { subject: "dev_ssh", roles: ["approver"], pairedDevice: true, origin: "ssh" };
+    await host.respondApproval(sshApprover, { approvalId: "req_1", decision: "allow-session", context: { requestId: "r2" } });
+    expect(approvals.tool).toEqual([{ requestId: "req_1", decision: "allow-session" }]);
+  });
+
+  it("(a) keeps the ssh path unchanged when grants are disabled", async () => {
+    // With grants disabled the approval never offers `allow-session`, so an
+    // ssh approver's attempt fails as INVALID_ARGUMENT — the pre-D665 behavior.
+    const { host, approvals, received } = build();
+    host.ingest(envelope("s1", "rt_1", permission()));
+    expect(received.find((event) => event.kind === "approval.requested")).toBeTruthy();
+    const sshApprover: Principal = { subject: "dev_ssh", roles: ["approver"], pairedDevice: true, origin: "ssh" };
+    await expect(
+      host.respondApproval(sshApprover, { approvalId: "req_1", decision: "allow-session", context: { requestId: "r" } }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    expect(approvals.tool).toEqual([]);
+  });
+
+  it("(b) clamps a gateway principal carrying approverOverride to the ceiling", async () => {
+    // The Host ceiling is `ask` by default; the session is `auto`, so a policy
+    // override would run at `auto` — a gateway principal must stay at `ask`.
+    const { host, runtime } = build({ permissionMode: "auto" });
+    const gatewayController: Principal = { ...gatewayDevice, roles: ["viewer", "controller", "approver"], approverOverride: true };
+    await host.startTurn(gatewayController, {
+      sessionId: "s1",
+      input: { text: "gateway turn" },
+      context: { requestId: "gw-turn" },
+    });
+    expect(runtime.prompts[0]?.effectivePermissionMode).toBe("ask");
+    // The ssh-paired owner keeps the exemption and runs at the session mode.
+    await host.startTurn(owner, { sessionId: "s1", admission: "queue", input: { text: "owner turn" }, context: { requestId: "own-turn" } });
+    void runtime;
+  });
+
+  it("(c) keeps the ceiling applied when applyCeilingToPairedDevices is false", async () => {
+    // Default policy: remoteMaxPermissionMode "ask", applyCeilingToPairedDevices false.
+    const { host, runtime } = build({ permissionMode: "auto" });
+    await host.startTurn(gatewayDevice, {
+      sessionId: "s1",
+      input: { text: "gateway turn" },
+      context: { requestId: "gw-turn" },
+    });
+    expect(runtime.prompts[0]?.effectivePermissionMode).toBe("ask");
+  });
+});

@@ -10,6 +10,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
+    },
     "./test-harness": {
       "types": "./dist/test-harness.d.ts",
       "import": "./dist/test-harness.js"
@@ -24,6 +28,8 @@
   "dependencies": {
     "@minih-agent/agent-host": "workspace:*",
     "@minih-agent/shared": "workspace:*",
+    "asn1js": "3.0.10",
+    "pkijs": "3.4.0",
     "typebox": "^1.3.13",
     "ws": "8.21.1"
   },

@@ -44,11 +44,15 @@ D385 使远程控制从结构上就是用户本地的：链路中没有任何项
 profile：非浏览器客户端用 `Authorization` 头（header profile）；浏览器客户端用
 HttpOnly、Secure、SameSite cookie + 按租户的 Origin 白名单 + 每次 mutation 的
 CSRF token（cookie profile），也可改用带头部认证的 `fetch` 流式读取。两种
-profile 都禁止把 token 放进 URL。Gateway 与 cookie profile 属于不排期的
-Gateway 与浏览器里程碑（D375）；首个远程拓扑使用 header profile，设备 token
+profile 都禁止把 token 放进 URL。Gateway 与 cookie profile 随 Gateway 与浏览器
+里程碑交付（R4–R6，D665）；首个远程拓扑使用 header profile，设备 token
 来自 SSH 引导配对。Host 通过出站 mTLS Host link 连接 Gateway，link 只认证
 Gateway，用户权限只来自每个逻辑连接的签名 route context；一次性 enrollment
-credential 必须短期、单次使用。
+credential 必须短期、单次使用。注册（D665，ADR 0331）是一次性交换：管理员在
+网关上打印 15 分钟有效的一次性注册码，Host 本地生成密钥对，把 CSR 与注册码发到
+Host link 端口上仅做服务端 TLS 认证的专用注册接口，用 `--gateway-ca` 固定网关
+身份、指纹不匹配即拒绝，网关签发一年期、CN 为 `hostId` 的客户端证书；Host link
+随 R4 交付。
 
 SSH 引导配对（首个远程拓扑）：桌面经用户自己的 SSH 会话在远端启动 `agent-host-cli`，
 SSH 登录已证明对该机器的 shell 访问，配对只是把一个桌面设备绑定到它启动的
@@ -62,6 +66,33 @@ Releases 下载与桌面同版本、对应远端平台的 `agent-host-cli` 包�
 在 Host 上撤销设备 token 或在桌面移除该 Host 即结束配对，重新配对需要重新
 经 SSH 引导。远端 Host 的 provider 配置由引导步骤经 SSH 通道写入为 Host 本地
 配置，绝不经过 RACP。
+
+自托管、用户本地的网关场景（D665，ADR 0331）下，route context 的完整性由已认证的
+Host link 保证：只有持有匹配客户端证书的已注册网关能发送 Host link 帧，Host 不再
+对 context 验证第二个签名；Host 仍校验 `hostId` 等于自身 id、context 未过期、同一
+链路上 `clientConnectionId` 不重复使用。最终鉴权方始终是 Host 自己的凭据存储：每条
+中继逻辑连接都用 `client.open` 帧的 `credential` 重新认证（见下），网关缓存的令牌
+哈希只用于路由前快速拒绝和限流；`credential` 绝不出现在日志或审计记录中。
+
+经网关配对的设备（D665，ADR 0331）：设备记录新增可选 `origin` 字段（`"ssh"` 或
+`"gateway"`）；D665 之前持久化的记录没有该字段，按 `"ssh"` 读取，旧凭据文件无需
+迁移。每个认证输入还携带连接来源：loopback `RACP-WS` 绑定为 `"ssh"`，Host link
+逻辑连接为 `"gateway"`。`"ssh"` 连接上的 `connection/pair` 行为不变：授予
+`["owner"]` 并记录 `origin: "ssh"`；`"gateway"` 连接上授予
+`["viewer", "controller", "approver"]` 并记录 `origin: "gateway"`，角色由 Host
+决定，客户端传的 roles 一律忽略。配对令牌与其铸造的设备同源（ADR 0331）：
+`PairingRecord` 新增可选 `origin` 字段，缺省按 `"ssh"` 读取；`--pair`（SSH 引导）
+签发的码只能在 loopback `RACP-WS` 上兑换，`remote-pair` 和桌面设置页签发的码只能在
+Host link 上兑换，交叉通道兑换一律失败，SSH 引导的配对码无法经网关消耗。设备令牌认证把 `pairedDevice` 设为
+`device.origin !== "gateway"`，因此网关配对设备绝不是 SSH 配对的 owner：不豁免
+远程权限上限，也拿不到 `allow-session`。对网关来源的主体，以下限制不受 Host 策略
+影响，必须用测试锁住而非依赖默认值（ADR 0331）：即使 Host 配置了
+`allowRemoteSessionGrants: true` 也不能获得 `allow-session`；永远不带
+`approverOverride`；不管 `applyCeilingToPairedDevices` 怎么配都始终受远程权限上限
+约束。网关来源令牌只能在 Host link 上认证，
+ssh 来源令牌只能在 loopback `RACP-WS` 上认证，交叉通道使用一律拒绝——被盗的
+网关令牌无法借 SSH 隧道提权，owner 令牌也无法经网关重放。任意一侧（网关或 Host）
+吊销后，新连接被拒绝，已有中继逻辑连接在 5 秒内关闭。
 
 | Operation | Viewer | Controller | Approver | Owner |
 |---|---:|---:|---:|---:|
@@ -144,7 +175,20 @@ profile 与 URL token 拒绝（浏览器里程碑排期后适用）、中继审�
 token 的 loopback 对端且无 TLS 的非 loopback 绑定无法启动、配对 token 单次使用且
 只经 SSH 通道传递、远程会话只暴露远端 Host 的工具目录与配对桌面公布的中继工具、中继工具绝不在 Host
 执行且 Host 审批先于中继请求、会话终端只对 SSH 配对 owner 或持有 `terminal` scope
-的主体开放，以及多租户 harness 就绪后的跨租户隔离。
+的主体开放，以及多租户 harness 就绪后的跨租户隔离。自 D665 起还需覆盖验收门
+22–27：Host link 监听器拒绝 `0.0.0.0`、`::` 与公网地址，只绑定显式配置的私网或
+组网地址（RFC1918、`100.64.0.0/10` 或配置的 CIDR）；客户端 API 默认绑定 loopback，
+未配置 TLS 的非 loopback 绑定拒绝启动；令牌不出现在 URL、query string、SSE URL
+或事件载荷中，浏览器会话用 `HttpOnly; Secure; SameSite=Strict` cookie 加 CSRF
+token，原生客户端用 header profile；网关配对设备绝不是 SSH 配对 owner（无
+`owner` 角色、受权限上限约束、无 `allow-session`，其令牌在 loopback `RACP-WS`
+上被拒，ssh 令牌在 Host link 上被拒）；任意一侧吊销后新连接被拒且已有逻辑连接
+5 秒内关闭；以及桌面网关链路设置关闭时不发起连接、不开监听的回归证明。D665
+补充：gate 17 收窄为只约束 ssh 来源的配对码（交叉通道兑换在任何来源上都失败），
+新增 gate 28 约束网关来源的配对码（`remote-pair` / 桌面设置页签发的码只在 Host
+link 上兑换，ssh 来源的码绝不经网关兑换），以及网关来源主体不受 Host 策略放宽的
+限制（`allowRemoteSessionGrants` 下无 `allow-session`、无 `approverOverride`、
+上限与 `applyCeilingToPairedDevices` 无关），须用测试锁住。
 
 ## 6. 修订记录
 
@@ -162,3 +206,14 @@ D375 同日记录的设计决定把身份源定为 PI 账号服务，`agent-host
 
 D385（2026-09-10）撤回第一方身份源：远程控制从结构上就是用户本地的，所有凭据由用户
 自己的 Host 签发，Gateway 只能是用户自托管的中继。
+
+D665（2026-10-17，ADR 0331）排期 Gateway 与浏览器里程碑（R4–R6）：§3 的 Gateway 与
+cookie profile 条款去掉不排期状态并补充注册交换；§3 补记自托管场景下 route context
+的完整性由已认证的 Host link 保证、最终鉴权方是 Host 自己的凭据存储；新增经网关
+配对的设备规则（可追加的 `origin` 字段、网关配对绝不授予 `owner` 与
+`pairedDevice`、交叉通道令牌拒绝）；多租户隔离条款自 R4 起生效；新增验收门
+22–27，覆盖绑定地址规则、令牌与 cookie profile、网关配对主体限制、吊销 5 秒
+传播，以及桌面关闭态回归。D665 审查补充：配对令牌来源（§3.7；gate 17 收窄为
+只约束 ssh 来源的配对码，新增 gate 28），并把网关来源主体不受 Host 策略放宽的
+限制（`allowRemoteSessionGrants` 下无 `allow-session`、无 `approverOverride`、
+上限与 `applyCeilingToPairedDevices` 无关）锁定为测试规则。

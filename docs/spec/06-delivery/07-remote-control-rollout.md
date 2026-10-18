@@ -29,12 +29,15 @@ around transport breadth:
 - issue #100 asks for task completion and approval notifications on
   Telegram, WeChat, Slack, or a webhook, plus simple commands back, which is
   an outbound integration beside the Host; and
-- no recorded request asks for a browser or phone client of the desktop, so
-  the Gateway and browser milestones are unscheduled.
+- the maintainer asks to follow running turns, answer approvals and input
+  requests, and start, stop, or interrupt turns from a phone against both an
+  always-on `agent-host-cli` machine and the sessions of a running desktop,
+  which schedules the Gateway, connected-Host, and browser/mobile-client
+  milestones (D665, ADR 0331).
 
-The scheduled order is R0, R1, R2, R3. Milestones marked unscheduled keep
-their specifications so the contract does not drift, and they are scheduled
-only by a later product decision.
+The scheduled order is R0, R1, R2, R3, then R4, R5, and R6 (D665). The
+reserved gRPC binding stays unscheduled: it is delivered only when a named
+consumer needs it, by a later recorded product decision.
 
 ### Experimental desktop MVP (narrow acceptance slice)
 
@@ -240,23 +243,140 @@ inbound listener.
 Exit criteria: E2E-232 passes; payloads contain summaries and ids only;
 commands from an unlinked chat have no effect; the Host has no new listener.
 
-### Unscheduled — Gateway and Host link (formerly R3)
+### R4 — Self-hosted Gateway and Host link (D665)
 
-A separate Remote Gateway and the outbound Host link
-(`racp-hostlink.v1`) with identity, routing, rate limits, audit, revocation,
-and transient attachment relay. PI does not operate it: a user runs it on
-their own infrastructure and it admits clients with Host-issued device
-credentials, so there is no identity source beyond the Host (D385). Exit criteria remain those of E2E-227.
+Deliver `apps/remote-gateway`, the self-hosted Node service (ADR 0331), and
+the `agent-host-cli` outbound enrollment and link:
 
-### Unscheduled — Browser profile (formerly R4)
+- the Gateway modules: configuration with the bind-address validations, the
+  `--data-dir` file store, the local CA with enrollment and revocation, the
+  wss + mTLS Host link listener that replaces a same-`hostId` connection only
+  after identity checks, the `RACP-HTTP` + SSE client API with the cookie and
+  header profiles plus Origin, CORS, and CSRF controls, the pairing relay,
+  the HTTP-to-logical-connection router, per-device and per-IP rate limits,
+  the redacted audit log, and the `serve` / `enroll-code` / `hosts list` /
+  `hosts revoke` / `devices list` / `devices revoke` CLI;
+- `agent-host-cli enroll` (local key pair, CSR plus one-time code, Gateway CA
+  pinned with `--gateway-ca`), the opt-in `--gateway <wss-url>` outbound link
+  with 1s–60s jittered exponential backoff, and `remote-pair` over the
+  existing admin socket; the loopback `RACP-WS` listener, `--pair`, and SSH
+  bootstrap are unchanged;
+- the Host link contract of protocol §11.4 with the `credential` field, and
+  the device-origin rules of security §3.7: gateway pairing grants
+  `viewer` / `controller` / `approver`, never `owner`, sets
+  `pairedDevice: false`, and a gateway token authenticates only on the Host
+  link while the Host re-authenticates every relayed logical connection;
+- a standalone packaged Gateway artifact (single directory plus Node entry)
+  and a deployment README with a systemd example, an Nginx reverse-proxy
+  example that passes SSE through unbuffered (`proxy_buffering off`,
+  `X-Accel-Buffering: no`), and the enrollment and revocation steps; and
+- `RACP-HTTP` joins `RACP_SHIPPED_BINDINGS` after its conformance tests
+  pass.
 
-`RACP-HTTP` and the cookie authentication profile for browser clients on
-both `RACP-WS` and SSE. Before it is scheduled, the browser client's first
-needs are already covered by the remote-host profile (`session/configure`,
-history, workspace reads); a Host-issued session cookie for Gateway-less use
-still needs a specification clause. Exit criteria remain those of E2E-228.
+The Gateway holds no transcript, no provider secret, and no durable turn
+command; while the Host is offline it does not queue non-idempotent
+commands. The Host link listener binds only to a configured private or
+overlay address (RFC1918, `100.64.0.0/10`, or an explicitly configured CIDR)
+and refuses to start on `0.0.0.0`, `::`, or a public address; the client API
+binds loopback behind a TLS-terminating reverse proxy, or elsewhere only
+with TLS configured.
 
-### Reserved — gRPC binding (formerly R5)
+Exit criteria:
+
+1. E2E-227 passes against the packaged Gateway and a real `agent-host-cli`:
+   no inbound Host port, a relayed approval answered exactly once,
+   resumable cursors across a link drop, and a revoked credential cannot
+   re-enroll. Attachment relay is deferred: `RacpServer` currently declares
+   `attachments: false`, so E2E-227's step 5 does not run in R4 and its
+   Status records the deferral; it is enabled when the RACP attachment
+   capability ships.
+2. The bind rules hold: a wildcard or public Host link bind and a
+   non-loopback client-API bind without TLS refuse to start (security gates
+   22–23).
+3. Tokens never appear in URLs, query strings, SSE URLs, or event payloads;
+   browser requests pass the Origin allowlist (§5.2, gate 14) and every
+   mutation carries a CSRF token (gate 24).
+4. A gateway-paired device cannot execute owner-only operations, stays under
+   the remote permission ceiling, cannot obtain `allow-session`, and its
+   token is rejected on the loopback `RACP-WS` binding (gate 25).
+5. Revocation on either the Gateway or the Host rejects new connections and
+   closes existing logical connections within 5 seconds (gate 26).
+6. The Gateway can be wiped and re-enrolled without losing Host session
+   data, and the audit log contains no tokens or content.
+
+### R5 — Desktop as a connected Host (D665)
+
+Deliver the desktop's outbound gateway link (ADR 0331):
+
+- an Electron-Main `RacpServer` transport over the Host link host running on
+  the existing in-process Agent Host: no new AgentHost, no new execution
+  path, and no listener;
+- the optional `remoteGateway` AppSettings field (`enabled`, `url`;
+  device-local, never synced, absent means off) and the Experimental
+  settings page: switch, gateway URL, enrollment code, link status, a
+  pairing code shown as copyable text with a 10-minute countdown, and the
+  paired-device list with revoke;
+- main-process device-credential storage encrypted through `EncryptionPort`,
+  never in SQLite and never in host-core's schema; the mTLS key and
+  certificate are stored separately from settings;
+- the `minih-agent-desktop/remoteGateway/*` IPC channels, all added to the
+  MCP control block list; and
+- lifecycle cleanup: disabling the setting, app quit, and `before-quit`
+  close the link and cancel pending server requests without touching local
+  turns; a renderer reload leaves the main-owned link running and only drops
+  that renderer's status subscription.
+
+Exit criteria:
+
+1. With the setting off, behavior is identical to the current desktop: no
+   connection is attempted and no listener opens (regression tests; security
+   gate 27).
+2. Enabling the setting opens exactly one outbound link; disabling and
+   quitting close it and cancel pending server requests, while a renderer
+   reload leaves it running and the settings page re-subscribes to its status.
+3. A gateway-routed principal stays under the remote permission ceiling,
+   cannot change a local session's permission mode, and cannot use
+   `allow-session`; `DESKTOP_PRINCIPAL` is unchanged.
+4. Revoking the desktop's device closes the link.
+5. The mTLS key and certificate are stored encrypted outside settings and
+   outside SQLite.
+
+### R6 — Browser and mobile clients (D665)
+
+Deliver `apps/remote-web` (ADR 0331):
+
+- the React + TypeScript client on the Node-free `@minih-agent/racp/browser`
+  entry and the shared typebox contracts, with no dependency on
+  `apps/desktop` sources;
+- the pages: pairing (gateway address, pairing code, Host choice), the Host
+  list with online state, the session list with running / waiting-for-approval
+  badges, and the live timeline with message rows, tool-call summaries,
+  collapsible tool details, approval and input cards carrying the local
+  decision vocabulary except `allow-session`, and a composer to start,
+  stop, or interrupt a turn;
+- snapshot-plus-cursor state with resume from the last cursor on
+  `visibilitychange`, idempotency keys on mutations, and submit-disabled
+  buttons;
+- mobile adaptation: `env(safe-area-inset-*)`, touch targets of at least
+  44px, dark mode, and a PWA manifest with icons; and
+- the Capacitor iOS and Android packaging with native credentials in the
+  Keychain / Keystore through a `CredentialPort`, and optional redacted push
+  carrying ids and fixed summary kinds only.
+
+Exit criteria:
+
+1. E2E-228 passes with `RACP-HTTP` beside `RACP-WS`: identical semantic
+   results, the cookie profile with Origin and CSRF checks, and URL tokens
+   rejected.
+2. E2E-266 passes: pairing, timeline resume with `Last-Event-ID`, approval,
+   and stop on two mobile viewports, with screenshot artifacts kept out of
+   the repository.
+3. The browser build never stores the token in script-readable storage;
+   native builds keep it only in the iOS Keychain or the Android Keystore.
+4. Push payloads contain ids and event types only, and push is off without
+   operator credentials.
+
+### Reserved — gRPC binding
 
 `RACP-GRPC` is delivered only when a named native service consumer or
 Gateway implementation needs it. Generate the `.proto` and clients from the
@@ -359,7 +479,10 @@ binding may choose its native status and serialization, but it must preserve:
 
 - invalid, expired, revoked, and wrong-Host device tokens;
 - non-loopback peers and non-loopback binds without TLS on a `agent-host-cli`;
-- pairing token reuse and pairing over a non-SSH channel;
+- pairing token reuse, pairing over a non-SSH channel, and, from D665, the
+  cross-channel redemption of pairing codes: an ssh-origin code through the
+  Gateway, and a gateway-origin code on the loopback `RACP-WS` binding
+  (security §3.7, gates 17 and 28);
 - wrong role, wrong Session, wrong Host, and stale revision;
 - SSRF and arbitrary file/path attempts, including `workspace/read` outside
   the session root;
@@ -397,8 +520,10 @@ disconnected client does not affect Agent execution on either machine.
    users, then generally.
 4. Enable the integration adapter as an opt-in setting with no channel
    configured by default.
-5. Schedule the Gateway, browser, and gRPC milestones only by a recorded
-   product decision.
+5. Ship R4–R6 as separately enabled surfaces (D665): the Gateway is a
+   standalone service the user starts; the desktop link and the mobile
+   clients are off-by-default opt-in settings. The reserved gRPC milestone
+   is scheduled only by a later recorded product decision.
 6. Keep a kill switch that rejects new remote connections and cancels queued
    turns submitted by remote principals while preserving already-running
    local desktop sessions.
@@ -433,6 +558,13 @@ The scheduled feature set is not production-ready until:
 
 Binding parity and E2E-227 / E2E-228 become gates when their milestones are
 scheduled.
+
+R4–R6 admission (D665): E2E-227, E2E-228, E2E-265, and E2E-266 are green
+against the packaged Gateway, the connected desktop Host, and the mobile
+client; the security gates 22–27 of
+`05-security/02-remote-control-security.md` are signed off, including the
+desktop-off regression; and the deployment README's Nginx example is
+verified to pass SSE through unbuffered.
 
 ## 7. Implementation status
 
@@ -490,6 +622,50 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   `minih-agent-desktop/remoteHost/bootstrap` joins `list` / `pair` / `remove`. The
   terminal work-panel client, the reverse tool relay, and provider-configuration
   propagation over the SSH channel are not in this slice.
+- R4 delivered in PR-2 (`feat/remote-gateway`): `apps/remote-gateway` runs the
+  self-hosted Gateway — bind-address validation (gates 22–23), the `--data-dir`
+  file store with `0700`/`0600` and atomic renames, the local CA with
+  enrollment and revocation, the `wss` + mutual-TLS Host link listener that
+  replaces a same-`hostId` link only after identity checks, the `RACP-HTTP` +
+  SSE client API with the header and cookie profiles plus Origin, CORS, and
+  CSRF controls, the pairing relay, the HTTP-to-logical-connection router with
+  one command connection per `(device, host)` and at most four streams per
+  device, per-device and per-IP token buckets, the closed-shape audit log, and
+  the `serve` / `enroll-code` / `hosts list|revoke` / `devices list|revoke` CLI
+  over an owner-only admin socket. `agent-host-cli` gained `enroll` (local key
+  pair, CSR, pinned Gateway CA, `gateway-link.json` at `0600`), the opt-in
+  `--gateway` outbound link with 1 s–60 s jittered backoff, `remote-pair` over
+  the existing admin socket, and `RacpServer.closeConnectionsForSubject` wiring
+  for revocation; the loopback listener, `--pair`, and the SSH bootstrap are
+  unchanged. `RACP-SHIPPED_BINDINGS` now lists `RACP-HTTP` — the conformance
+  test runs the same deterministic commands over `RACP-WS` and through the
+  Gateway and compares results, error codes, and session state.
+  `scripts/e2e-remote-gateway.mjs` (`pnpm test:e2e:remote-gateway`) covers
+  E2E-227 against the packaged Gateway and a packaged `agent-host-cli` with the
+  real host-core: enrollment and the outbound link, header and cookie pairing,
+  a relayed approval answered once across an SSE resume, a Gateway restart with
+  Host reconnect and cursor resume, revocation on either side within five
+  seconds, and refusal of a Gateway-issued token on the loopback binding.
+  Attachment relay stays deferred (`RacpServer` declares `attachments: false`),
+  so E2E-227 step 5 does not run in R4.
+- R5 delivered in PR-3 and PR-3b (`feat/desktop-gateway-link`): Electron Main
+  serves its existing Agent Host over one outbound Host link, created only when
+  the device-local `remoteGateway` setting is on and an enrollment exists — a
+  disabled desktop writes no credential file, builds no `RacpServer`, and opens
+  no socket, and the desktop never listens. `racp-gateway-link-port.ts` injects
+  PR-2's `enrollHostLink` / `startHostLink`, translating `HostLinkError.code`
+  into the `errorCode` the IPC layer reports so the settings page can name a
+  wrong CA, a spent code, or a revoked desktop instead of a generic failure.
+  Revoking a device through the settings page or `session/revoke` closes that
+  device's open logical connections immediately. `scripts/e2e-desktop-gateway-link.mjs`
+  (`pnpm test:e2e:desktop-gateway-link`) covers E2E-265 against the packaged
+  Gateway: the off state registers nothing and opens no listener, enrollment
+  and the link, pairing with viewer/controller/approver roles, a relayed
+  approval answered once with the local card closed, refusal of
+  `allow-session`, session configuration, workspace reads, and terminals,
+  revocation on either side within five seconds, the switch closing and
+  restoring the link, `dispose()` leaving no timer or socket, and logs free of
+  credentials.
 
 ## 8. Amendment history
 
@@ -514,3 +690,14 @@ source to the PI account service.
 D385 (2026-09-10) withdrew the identity-source clause: remote control is
 user-local by construction, and any Gateway is self-hosted and admits clients
 with Host-issued device credentials.
+
+D665 (2026-10-17, ADR 0331) scheduled the Gateway and browser milestones as
+R4–R6 after the maintainer asked to follow and steer turns from a phone
+against both the always-on `agent-host-cli` machine and a running desktop. It
+names `apps/remote-gateway` and `apps/remote-web`; the `credential` field on
+`client.open` with Host-side re-authentication on the Host link; the
+device-origin rules that keep gateway-paired principals under the remote
+permission ceiling and off the owner role; the Gateway storage, pairing, and
+enrollment design; the desktop's off-by-default connected-Host setting; and
+the Capacitor mobile packaging with optional redacted push. The gRPC binding
+remains reserved and unscheduled.

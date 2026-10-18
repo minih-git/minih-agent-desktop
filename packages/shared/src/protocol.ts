@@ -253,6 +253,18 @@ export const IPC = {
     remoteHostSessions: "minih-agent-desktop/remoteHost/sessions",
     remoteHostCreateSession: "minih-agent-desktop/remoteHost/createSession",
     remoteHostSyncProviders: "minih-agent-desktop/remoteHost/syncProviders",
+    /**
+     * Desktop as a connected Host (rollout R5, ADR 0331). The desktop dials the
+     * user's own Gateway over one outbound Host link; it never listens. The
+     * main process owns the link, so these channels only read and steer it —
+     * no device token, private key, or mTLS material crosses them.
+     */
+    remoteGatewayStatus: "minih-agent-desktop/remoteGateway/status",
+    remoteGatewaySetEnabled: "minih-agent-desktop/remoteGateway/setEnabled",
+    remoteGatewayEnroll: "minih-agent-desktop/remoteGateway/enroll",
+    remoteGatewayCreatePairingCode: "minih-agent-desktop/remoteGateway/createPairingCode",
+    remoteGatewayListDevices: "minih-agent-desktop/remoteGateway/listDevices",
+    remoteGatewayRevokeDevice: "minih-agent-desktop/remoteGateway/revokeDevice",
     providersList: "minih-agent-desktop/providers/list",
     providersReorder: "minih-agent-desktop/providers/reorder",
     providersCreate: "minih-agent-desktop/providers/create",
@@ -450,6 +462,8 @@ export const IPC = {
     agentMessage: "minih-agent-desktop/agent/event/message",
     agentQueueChanged: "minih-agent-desktop/agent/event/queueChanged",
     hostStatus: "minih-agent-desktop/app/event/hostStatus",
+    /** One `RemoteGatewayStatus` snapshot per link state change (rollout R5). */
+    remoteGatewayStatusChanged: "minih-agent-desktop/remoteGateway/event/statusChanged",
     toast: "minih-agent-desktop/app/event/toast",
     /**
      * The first plaintext hop to an endpoint the user typed, sent once and only

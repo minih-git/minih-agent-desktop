@@ -364,7 +364,8 @@ the approval broker, and the event log, supervised beside the Node pi sidecar
 and Rust host-core, with an authenticated RACP server above it (D374). The
 first remote deployment (D375) runs that module as a headless `agent-host-cli` on a
 remote machine, bound to loopback and reached from the desktop through an SSH
-port forward. The unscheduled Gateway topology would add an outbound Host
+port forward. The Gateway topology (post-MVP, scheduled as R4–R6 by D665 /
+ADR 0331) adds an outbound Host
 link; the Gateway routes authenticated clients and never owns workspace
 state.
 

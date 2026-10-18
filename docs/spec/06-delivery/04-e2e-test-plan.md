@@ -10191,7 +10191,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | Post-MVP | E2E-022A, E2E-022B, E2E-022C, E2E-024I, E2E-024J, E2E-024K, E2E-024L, E2E-024M (plugin roadmap R2/R3/R6) |
 | Post-baseline local automation | E2E-220 |
 | Post-baseline local automation (MCP `minih_session_get` large compaction) | E2E-MCP-session-get-projects-large-compaction |
-| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-REMOTE-HOST-settings-compact-inventory |
+| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory |
 | Trusted extensions (R7 v1) | E2E-DIALOG-long-text-boundaries, E2E-241, E2E-242, E2E-HOOKS-prompt-chain, E2E-HOOKS-cancel-and-dispose, E2E-TRUSTED-EXTENSION-custom-agent-stream-and-binding, E2E-243, E2E-TRUSTED-EXTENSION-temporary-session-cwd-is-scratch, E2E-244, E2E-245, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list, E2E-PLUGIN-provider-catalog-add-service |
 | Trusted extensions (R7 v1 npm recovery) | E2E-PLUGIN-import-extension-recovers-missing-npm |
 | Post-MVP regression coverage (plugin tool dispatch) | E2E-PLUGIN-slow-tool-is-not-cut-off-by-host-dispatch |
@@ -14822,7 +14822,10 @@ vocabulary, the remote permission ceiling, the Host link relay, and the
 browser cookie profile. D375 re-sequenced the milestones: E2E-231 and
 E2E-232 are the acceptance targets of the scheduled SSH-tunnel and
 integration milestones, while E2E-227 and E2E-228 run when the Gateway and
-browser milestones are scheduled.
+browser milestones are scheduled. D665 scheduled those milestones as R4–R6:
+E2E-227 is the R4 acceptance target, E2E-228's parity steps run with R4 and
+its browser-profile steps with R6, and E2E-265 / E2E-266 are the R5 / R6
+acceptance targets.
 
 #### E2E-221: RACP initialization negotiates capabilities and policy
 
@@ -14994,11 +14997,13 @@ browser milestones are scheduled.
   not duplicate the turn; and the revoked credential cannot re-enroll.
 - **Specs linked**: `02-architecture/05-remote-agent-control.md` §5.3,
   `03-runtime/19-remote-agent-control-protocol.md` §§10 and 11.4,
-  `05-security/02-remote-control-security.md` §§3.2 and 6,
+  `05-security/02-remote-control-security.md` §§3.2, 3.7, and 6,
   `06-delivery/07-remote-control-rollout.md` §2
 - **Acceptance**: Security, Recovery, Quality
-- **Milestone**: Post-MVP
-- **Status**: Draft; unscheduled until the Gateway milestone is scheduled (D375)
+- **Milestone**: Post-MVP (rollout R4, D665)
+- **Status**: Draft; acceptance target of R4. Attachment relay is deferred:
+  `RacpServer` declares `attachments: false`, so step 5 does
+  not run in R4 and is enabled when the RACP attachment capability ships.
 
 #### E2E-228: Shipped bindings and browser profiles preserve semantic behavior
 
@@ -15022,8 +15027,8 @@ browser milestones are scheduled.
   and 14, `05-security/02-remote-control-security.md` §§3.1 and 5,
   `06-delivery/07-remote-control-rollout.md` §§3–4
 - **Acceptance**: Quality, Recovery, Security
-- **Milestone**: Post-MVP
-- **Status**: Draft; the browser-profile steps are unscheduled until the browser milestone is scheduled (D375); the parity steps run when a second binding ships
+- **Milestone**: Post-MVP (rollouts R4 / R6, D665)
+- **Status**: Draft; the parity steps run when a second binding ships (R4); the browser-profile steps are the acceptance target of R6
 
 #### E2E-229: Attachment and workspace boundaries are enforced remotely
 
@@ -15325,6 +15330,74 @@ browser milestones are scheduled.
 - **Acceptance**: Security, Quality
 - **Milestone**: Post-MVP (rollout R3)
 - **Status**: Draft; integration fixture required
+
+#### E2E-265: The desktop as a connected Host is observed and approved remotely
+
+- **Preconditions**: The desktop runs with the Experimental gateway link
+  enabled against a local test Gateway and a loopback model stub; a
+  gateway-paired test device holds the gateway device origin (security
+  §3.7); the desktop has one local session running a deterministic turn.
+  No real provider, no production Gateway, and no user desktop instance.
+- **Steps**: 1) With the setting off, start the desktop and assert that no
+  outbound link is attempted and no listener opens. 2) Enable the setting
+  with the test Gateway URL and confirm exactly one outbound Host link.
+  3) Pair the test device through `POST /v1/hosts/{hostId}/pair` and confirm
+  the paired-device list in Settings. 4) From the remote device, observe the
+  local session's timeline, then answer a pending tool approval and an input
+  request. 5) Attempt an owner-only operation, an `allow-session` grant, and
+  a local permission-mode change from the remote device. 6) Revoke the
+  device on the Host, then repeat from the Gateway side. 7) Reload the
+  renderer while the remote device stays attached, then disable the setting
+  and quit the app at separate points.
+- **Expected**: The off state is byte-for-byte identical to the current
+  desktop (no connection, no listener); enabling opens exactly one outbound
+  link; the remote device sees the same ordered timeline and its approval
+  closes the local card; owner-only operations, `allow-session`, and
+  permission-mode changes are rejected while the ceiling applies; revocation
+  on either side rejects new connections and closes the relayed logical
+  connection within 5 seconds; a renderer reload leaves the link and its
+  remote subscribers untouched, while disabling and quitting close the link
+  and cancel pending server requests without touching local turns.
+  `DESKTOP_PRINCIPAL` is unchanged and the mTLS key material never appears in
+  settings or SQLite.
+- **Specs linked**: `02-architecture/05-remote-agent-control.md` §5.4,
+  `06-delivery/07-remote-control-rollout.md` §2 (R5),
+  `05-security/02-remote-control-security.md` §§3.3, 3.7, and 12 (gates 25,
+  26, 27)
+- **Acceptance**: Security, Recovery, Quality
+- **Milestone**: Post-MVP (rollout R5, D665)
+- **Status**: Covered by `scripts/e2e-desktop-gateway-link.mjs`
+  (`pnpm test:e2e:desktop-gateway-link`) against the packaged Gateway: the
+  desktop's production main-process modules run in Node with a stub host-core
+  and the fixture runtime, and the phone side is the Gateway's client API.
+
+#### E2E-266: The mobile / H5 client pairs, resumes the timeline, and approves
+
+- **Preconditions**: A local test Gateway, an enrolled `agent-host-cli` Host,
+  and a loopback model stub; the `apps/remote-web` build served through the
+  Gateway with the cookie profile; Playwright viewports for iPhone 14 and
+  Pixel 7. No real provider and no production Gateway.
+- **Steps**: 1) Pair from the mobile viewport with a Host-displayed pairing
+  code and confirm the cookie is `HttpOnly; Secure; SameSite=Strict`. 2)
+  List Hosts and sessions, then open a session's timeline. 3) Start a turn
+  that raises an approval, disconnect mid-stream, reconnect with
+  `Last-Event-ID`, and confirm the same approval is still pending exactly
+  once. 4) Approve and confirm the tool executes once. 5) Start, stop, and
+  interrupt turns; submit a mutation twice with the same idempotency key.
+  6) Repeat the flow on both viewports and capture a screenshot per step.
+- **Expected**: Pairing succeeds without the token ever appearing in a URL,
+  query string, or event payload; the timeline resumes from the cursor
+  without duplicates or gaps; the approval is submitted once (the disabled
+  button and the idempotency key prevent a second execution); stop and
+  interrupt behave as locally; the repeated mutation returns the stored
+  result; and screenshots are written to the test artifact directory, never
+  committed.
+- **Specs linked**: `03-runtime/19-remote-agent-control-protocol.md` §11.2,
+  `05-security/02-remote-control-security.md` §§3.1, 3.7, and 12 (gates 24,
+  25), `06-delivery/07-remote-control-rollout.md` §2 (R6)
+- **Acceptance**: C (conversation & stream), Security, Recovery
+- **Milestone**: Post-MVP (rollout R6, D665)
+- **Status**: Draft; Playwright flow required when R6 ships
 
 ## Trusted extension scenarios (R7 v1)
 

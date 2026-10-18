@@ -100,15 +100,48 @@ export function summary(id: string, permissionMode: SessionSummary["permissionMo
   };
 }
 
-export function buildHost(limits: Partial<import("@minih-agent/shared").RacpLimits> = {}): { host: AgentHost; runtime: FakeRuntime; sessions: Map<string, SessionSummary>; approvals: { tool: Array<{ requestId: string; decision: string }> } } {
+/**
+ * A session's transcript fixture. `limit` and `beforeItemId` are honored the
+ * way the real session port honors them, so a test can prove that a page
+ * really is smaller than the transcript instead of comparing two identical
+ * empty pages.
+ */
+export type HarnessHistory = {
+  items: import("@minih-agent/shared").RacpItemSummary[];
+  /** Per-session transcript; `s1` by default. */
+  bySession?: Record<string, import("@minih-agent/shared").RacpItemSummary[]>;
+};
+
+function pageOf(
+  all: import("@minih-agent/shared").RacpItemSummary[],
+  options: { limit: number; beforeItemId?: string },
+): { items: import("@minih-agent/shared").RacpItemSummary[]; hasMore: boolean } {
+  // `beforeItemId` is exclusive: the page ends just before that item (newest
+  // first, like the real transcript).
+  const end = options.beforeItemId ? all.findIndex((item) => item.id === options.beforeItemId) : all.length;
+  const cutoff = end < 0 ? all.length : end;
+  const items = all.slice(Math.max(0, cutoff - options.limit), cutoff);
+  return { items, hasMore: cutoff - options.limit > 0 };
+}
+
+export function buildHost(
+  limits: Partial<import("@minih-agent/shared").RacpLimits> = {},
+  history: HarnessHistory = { items: [] },
+): {
+  host: AgentHost;
+  runtime: FakeRuntime;
+  sessions: Map<string, SessionSummary>;
+  approvals: { tool: Array<{ requestId: string; decision: string }> };
+} {
   const runtime = new FakeRuntime();
   const sessions = new Map<string, SessionSummary>([["s1", summary("s1")]]);
   const sessionPort: SessionPort = {
     async get(sessionId) {
       return sessions.get(sessionId) ?? null;
     },
-    async history() {
-      return { items: [], hasMore: false };
+    async history(sessionId, options) {
+      const all = history.bySession?.[sessionId] ?? (sessionId === "s1" ? history.items : []);
+      return pageOf(all, options);
     },
   };
   const approvals = { tool: [] as Array<{ requestId: string; decision: string }> };
@@ -222,8 +255,14 @@ export type Harness = {
   connect(token: string, options?: Partial<ConstructorParameters<typeof RacpClient>[0]>): Promise<{ client: RacpClient; events: import("@minih-agent/shared").RacpEventEnvelope[]; link: () => MemoryLink }>;
 };
 
-export async function harness(options: { limits?: Partial<import("@minih-agent/shared").RacpLimits>; operations?: Partial<RacpHostOperations> } = {}): Promise<Harness> {
-  const { host, runtime, sessions, approvals } = buildHost(options.limits);
+export async function harness(
+  options: {
+    limits?: Partial<import("@minih-agent/shared").RacpLimits>;
+    operations?: Partial<RacpHostOperations>;
+    history?: HarnessHistory;
+  } = {},
+): Promise<Harness> {
+  const { host, runtime, sessions, approvals } = buildHost(options.limits, options.history);
   const { store, authenticator } = await credentialStore();
   const operations = { ...fakeOperations(sessions), ...options.operations };
   const server = new RacpServer({

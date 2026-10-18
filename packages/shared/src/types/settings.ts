@@ -200,6 +200,13 @@ export type AppSettings = {
   voice?: VoiceInputSettings;
   /** Built-in EasyTier virtual LAN settings for Minih Router. */
   easytier?: import("../minih-router.js").EasyTierSettings;
+  /**
+   * Desktop-as-connected-Host settings (rollout R5, ADR 0331). Device-local
+   * and never synced: absent means the feature is off, so an existing
+   * settings row needs no migration. The mTLS certificate and key live in
+   * the encrypted credential file, not here.
+   */
+  remoteGateway?: import("./remote-gateway.js").RemoteGatewaySettings;
   onboardingDismissed: boolean;
 };
 

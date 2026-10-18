@@ -378,6 +378,7 @@ Each ADR includes:
 | 0328 | [Open arbitrary local files in the embedded Browser](0328-browser-arbitrary-local-files.md) | Accepted (D657; amends ADR 0170; issue #1627) |
 | 0329 | [Isolate parallel sessions of one project in git worktrees](0329-session-worktree-isolation.md) | Accepted (Windows E2E pending) |
 | 0330 | [Durable reminders for interactive prompts](0330-durable-interactive-prompt-reminders.md) | Accepted (D663; amends D117/D295/D350 and ADR 0187) |
+| 0331 | [Self-hosted Gateway, connected desktop Host, and mobile client](0331-self-hosted-gateway-and-mobile-client.md) | Accepted for implementation (post-MVP; D665) |
 | plugin-fetch-redirect-policy | [Host-enforced plugin fetch redirect policy](plugin-fetch-redirect-policy.md) | Accepted (implementation candidate for #1475) |
 
 | local-agent-remote-workspace-tools | [Local Agent and model requests for remote workspaces](local-agent-remote-workspace-tools.md) | Accepted for implementation |

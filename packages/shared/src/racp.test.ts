@@ -33,6 +33,7 @@ import {
   type RacpInitializeResult,
   type RacpSessionSnapshot,
 } from "./racp.js";
+import { RACP_HOSTLINK_HTTP_SCHEMAS } from "./racp-hostlink.js";
 
 const session = {
   id: "ses_01J",
@@ -143,7 +144,9 @@ describe("RACP schemas", () => {
   });
 
   it("keeps every named schema in the generated fixture bundle", () => {
-    const bundle = JSON.stringify(RACP_SCHEMAS, null, 2) + "\n";
+    // The hostlink/http schemas join the same bundle so the Gateway and the
+    // H5 client generate from one source (ADR 0331 / PR-1).
+    const bundle = JSON.stringify({ ...RACP_SCHEMAS, ...RACP_HOSTLINK_HTTP_SCHEMAS }, null, 2) + "\n";
     expect(bundle).toMatchFileSnapshot("../fixtures/racp.schema.json");
   });
 });
@@ -321,7 +324,7 @@ describe("catalog and roles", () => {
     for (const operation of Object.keys(RACP_HTTP_ROUTES)) {
       expect(RACP_OPERATIONS).toHaveProperty(operation);
     }
-    expect(RACP_SHIPPED_BINDINGS).toEqual(["RACP-WS"]);
+    expect(RACP_SHIPPED_BINDINGS).toEqual(["RACP-WS", "RACP-HTTP"]);
   });
 
   it("marks every operation with a profile", () => {

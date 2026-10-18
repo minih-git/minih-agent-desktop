@@ -11,6 +11,7 @@ This log freezes previously open questions into concrete decisions.
 | ID | Topic | Decision | Rationale |
 |---|---|---|---|
 | D663 | Built-in session messaging tools | **Amend ADR 0165 / ADR 0239 / ADR 0240: add the built-in, on-demand Agent tools `SessionList`, `SessionSend`, and `SessionResult` as Electron main local tools over the existing host-owned delivery ledger. The sender is host-derived (sidecar local-tool `sessionId` plus the session's active turn) and never taken from tool arguments; built-in deliveries use the reserved ledger owner `builtin:session-messaging`, which the plugin path refuses. All three pass host-core's `tools.execute` gate before Main dispatches (`SessionSend` high risk, the reads low risk); Plan/Goal, `Task` subagents and the MCP catalog exclude them. Version one sends tasks or messages to existing sessions only: no spawn, no cancel. No schema, migration or protocol-version change. See ADR builtin-session-messaging and E2E-SESSION-builtin-send-to-named-session.** | Handing work to another session is a core desktop workflow that was reachable only by installing a community-orchestrator plugin with broader powers (spawn, supervise, polling) than the need, even though the reviewed ledger already ships in every installation. A built-in path reuses the same provenance, permission-ceiling, callback and restart guarantees. |
+| D665 | Self-hosted Gateway, connected desktop Host, and mobile client | **Schedule the previously unscheduled Gateway, Host link, and browser milestones as R4–R6 of the rollout and add `apps/remote-gateway` plus `apps/remote-web` (ADR 0331): the user-operated Gateway relays an outbound `racp-hostlink.v1` Host link (WSS with mutual TLS) and serves `RACP-HTTP` + SSE, holds no transcript, provider secret, or durable turn command, binds the Host link only to configured private or overlay addresses and the client API to loopback (or TLS elsewhere), and persists only token hashes, routing metadata, and a redacted audit log. The `client.open` frame gains a `credential` field and the Host re-authenticates every relayed logical connection with its own `DeviceTokenAuthenticator`. Device records gain an additive `origin` field (absent reads as `"ssh"`): gateway pairing grants `viewer` / `controller` / `approver` (never `owner`), sets `pairedDevice: false` under the remote permission ceiling, and a gateway token authenticates only on the Host link. The desktop may serve its existing Agent Host over the link behind an off-by-default Experimental setting, and `apps/remote-web` ships the H5 plus Capacitor iOS/Android clients with the token in an `HttpOnly` cookie (browser) or the Keychain / Keystore (native). See ADR 0331.** | The maintainer needs to follow and steer turns from a phone against both the always-on `agent-host-cli` machine and a running desktop; a browser cannot join the overlay network or set request headers, and the Host-owned state model of ADR 0205 forbids a stateful relay that copies transcripts. |
 | D661 | Configuration backup/sync storage moves to the Minih Router account | **Configuration backup/sync storage moves from user-provided S3 to the Minih Router backend under the signed-in account (AccessKey Bearer over the gateway control plane, per-account namespace, mandatory conditional writes). The S3 transport and connection UI are removed; the connected account provider row is device-local and never synced; old S3 configuration and cloud data are left inert, not migrated or deleted. See `docs/adr/router-account-configuration-backup.md` and `03-runtime/22-config-sync.md`.** | One account identity already covers chat and account reads; the encrypted vault, merge, and activation contracts are unchanged. |
 | D001 | Electron ↔ Rust transport | **Rust sidecar + stdio JSON-RPC (NDJSON)** | Simple isolation, debuggable, replaceable later |
 | D002 | SQLite ownership | **Rust host-core owns SQLite exclusively** | Single writer, clearer privilege boundary |
@@ -7848,3 +7849,53 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   `apps/desktop/test/composer-chip-descenders.test.mjs`, and the composer
   slots and thinking contracts. See `04-ux/08-component-spec.md` §11 and
   US-UI-73.
+
+## 2026-10-17 — Self-hosted Gateway, connected desktop Host, and mobile client (D665)
+
+- D665 schedules the previously unscheduled Gateway, Host link, and browser
+  milestones as R4–R6 of `06-delivery/07-remote-control-rollout.md` and records
+  the design in ADR 0331. The user-operated `apps/remote-gateway` relays an
+  outbound `racp-hostlink.v1` Host link (WSS with mutual TLS) and serves
+  `RACP-HTTP` with SSE; it holds no transcript, no provider secret, and no
+  durable turn command.
+- The Host link listener binds only to a configured private or overlay address
+  (RFC1918, `100.64.0.0/10`, or an explicitly configured CIDR) and refuses
+  wildcard or public binds; the client API binds loopback behind a
+  TLS-terminating reverse proxy, or elsewhere only with TLS configured.
+- `client.open` gains a `credential` field carrying the client's raw bearer
+  token. The Host re-authenticates every relayed logical connection with its
+  own `DeviceTokenAuthenticator`; the Gateway's cached token hash is only a
+  pre-routing fast reject and a rate-limit key, and revocation on either side
+  closes new and existing relayed connections. In the self-hosted scenario the
+  route context's integrity is guaranteed by the authenticated Host link, and
+  the `credential` never appears in logs or audit records.
+- Device records gain an additive `origin` field (`"ssh"` default, so old
+  credential stores need no migration). Gateway pairing grants
+  `viewer` / `controller` / `approver`, never `owner`; it sets
+  `pairedDevice: false`, so the remote permission ceiling always applies and
+  `allow-session` is unavailable even when `allowRemoteSessionGrants` is
+  true, `approverOverride` never applies, and the ceiling holds regardless of
+  `applyCeilingToPairedDevices`. A gateway token authenticates only on the
+  Host link and an ssh token only on the loopback `RACP-WS` binding; the
+  cross-channel use of either is rejected.
+- Pairing stays Host-issued: the Host displays a single-use code (10-minute
+  validity) locally, the client submits it to
+  `POST /v1/hosts/{hostId}/pair`, the Gateway relays it over the Host link,
+  and the Host returns an `origin: "gateway"` device token. The Gateway stores
+  only the token hash and delivers the token via an `HttpOnly; Secure;
+  SameSite=Strict` cookie plus a CSRF token (browser) or in the response body
+  for Keychain / Keystore storage (native). Pairing tokens carry an origin
+  like devices: a `--pair` code redeems only on the loopback binding and a
+  `remote-pair` / desktop-settings code only over the Host link (gate 28).
+- Gateway storage is `--data-dir` with `0700` directories, `0600` files, and
+  atomic rename writes: the CA, `hosts.json`, `enrollments.json`,
+  `devices.json`, and a daily redacted `audit/YYYY-MM-DD.jsonl`. Host
+  enrollment exchanges a 15-minute one-time code for a one-year client
+  certificate with the `hostId` as CN; the Host pins the Gateway CA with
+  `--gateway-ca` and refuses a fingerprint mismatch.
+- The desktop may serve its existing in-process Agent Host over the link
+  behind an off-by-default Experimental setting that opens no listener, and
+  `apps/remote-web` ships the H5 plus Capacitor iOS/Android clients on the
+  Node-free `@minih-agent/racp/browser` entry. Push, when configured, carries
+  ids and fixed summary kinds only. See ADR 0331 and
+  `05-security/02-remote-control-security.md` §3.7.

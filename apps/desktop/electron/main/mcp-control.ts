@@ -479,6 +479,14 @@ export const MCP_CONTROL_BLOCKED_CHANNEL_KEYS = [
   "easytierConfigure",
   "easytierReconnect",
   "easytierRequestElevation",
+  // Desktop-as-connected-Host (rollout R5): enrollment, pairing codes, and
+  // device revocation are local host controls, never agent-callable tools.
+  "remoteGatewayStatus",
+  "remoteGatewaySetEnabled",
+  "remoteGatewayEnroll",
+  "remoteGatewayCreatePairingCode",
+  "remoteGatewayListDevices",
+  "remoteGatewayRevokeDevice",
   "providersOauthStart",
   "providersOauthRespond",
   "providersOauthCancel",

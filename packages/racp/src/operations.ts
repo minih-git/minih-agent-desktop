@@ -15,7 +15,7 @@ import {
 import Type from "typebox";
 import * as Value from "typebox/value";
 
-import type { DeviceTokenAuthenticator } from "./auth.js";
+import { GATEWAY_PAIR_ROLES, SSH_PAIR_ROLES, type DeviceTokenAuthenticator } from "./auth.js";
 import type { RacpHostOperations } from "./host-operations.js";
 import type { RacpConnection } from "./server.js";
 
@@ -136,10 +136,15 @@ export function createOperations(): Map<RacpOperation, OperationHandler> {
     if (context.connection.auth.kind !== "pairing") {
       throw new RacpError("FORBIDDEN", "connection/pair needs a pairing token on the upgrade request");
     }
+    // Roles come from the connection origin, never from the client (security
+    // §3.7): ssh keeps the historical owner grant, gateway never grants owner.
+    const origin = context.connection.origin ?? "ssh";
+    const roles = origin === "gateway" ? GATEWAY_PAIR_ROLES : SSH_PAIR_ROLES;
     const paired = await context.authenticator.pair(
       context.connection.auth.tokenHash,
       input.deviceLabel?.trim() || "desktop",
-      ["owner"],
+      [...roles],
+      origin,
     ).catch((error: unknown) => {
       const code = (error as { errorCode?: string })?.errorCode;
       if (code === "PAIRING_FAILED" || code === "PAIRING_TOKEN_EXPIRED") {
@@ -149,7 +154,7 @@ export function createOperations(): Map<RacpOperation, OperationHandler> {
     });
     context.log("info", "device paired", { deviceId: paired.deviceId, connectionId: context.connection.id });
     // The pairing connection stays unprivileged: the client reconnects with the device token.
-    return { deviceId: paired.deviceId, deviceToken: paired.token, roles: ["owner"] };
+    return { deviceId: paired.deviceId, deviceToken: paired.token, roles: [...roles] };
   });
   handlers.set("host/list", async () => {
     throw new RacpError("METHOD_NOT_FOUND", "host/list exists only behind a Gateway");

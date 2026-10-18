@@ -636,6 +636,10 @@ mod tests {
         assert!(!PORTABLE_APPLICATION_FIELDS.contains(&"defaultPermissionMode"));
         // The explicit reasoning-display boolean and its legacy fallback are
         // both portable, and both are advertised by the application adapter.
+        // The desktop gateway switch is device-local: the URL names one user's
+        // own Gateway and the credentials behind it must never travel in a
+        // synced bundle (rollout R5, ADR 0331).
+        assert!(!PORTABLE_APPLICATION_FIELDS.contains(&"remoteGateway"));
         assert!(PORTABLE_APPLICATION_FIELDS.contains(&"showThinking"));
         assert!(PORTABLE_APPLICATION_FIELDS.contains(&"thinkingDisplayMode"));
         let application = adapter_for(DOMAIN_APPLICATION).expect("application adapter");

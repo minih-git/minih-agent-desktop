@@ -3,6 +3,7 @@ export * from "./agent-sidecar.js";
 export * from "./runtime-supervisor.js";
 export * from "./host-ports.js";
 export * from "./launch-resolver.js";
+export * from "./host-catalog-reads.js";
 export * from "./session-message-input.js";
 export * from "./inflight-checkpoint.js";
 export * from "./plan-execution.js";

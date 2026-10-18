@@ -14,13 +14,14 @@ Electron IPC、`host.proxy` 或 Rust host-core 暴露到网络。
 
 D375 固定了拓扑的交付顺序：首个远程部署是桌面本身作为远端无头 Host 的
 客户端，经 SSH 隧道连接（#176、#140）；第二个是 Host 旁的出站消息集成
-（#100）。Gateway 路由与浏览器访问保留完整规格，但在有需求信号或产品决策
-之前不排期。
+（#100）。D665（ADR 0331）把其余拓扑排期：自托管 Gateway 与 Host link 为
+R4，桌面作为可连接的 Host 为 R5，浏览器与移动客户端为 R6。
 
 - 客户端可以断开，Agent 回合仍继续。
 - 重连使用快照或 `{ epoch, sequence }` 游标回放，不依赖时间戳。
 - `RACP-WS` 是 v1 唯一规范绑定，首先部署在 SSH 隧道上；`RACP-HTTP` 是
-  浏览器 profile，不排期；`RACP-GRPC` 保留。
+  浏览器 profile，随 R4 绑定（D665），使用它的浏览器与移动客户端随 R6 交付；
+  `RACP-GRPC` 保留。
 - Host 是无头模块：会话与回合准入、回合队列、审批代理、事件日志和快照
   构建都不依赖 Electron，桌面 IPC、本地 MCP、RACP 和消息集成都是它的调用方。
 - 远程会话完全存在于其 Host 上：transcript、工具、工作区、权限和 provider
@@ -47,7 +48,7 @@ Gateway 的模式，服务端经用户自己的 SSH 会话引导，客户端通�
 | 无头 Agent Host 模块（`packages/agent-host`） | 会话/回合准入、回合队列、审批代理、内存事件日志、快照构建；向桌面 IPC、本地 MCP、RACP 和集成暴露同一套 API | Electron、renderer 或传输依赖；第二套权限或持久化实现 |
 | `agent-host-cli` 无头包 | 在远端机器上以桌面同版本运行模块、Node pi sidecar 和 Rust host-core，只绑定 loopback，由引导脚本从 GitHub Releases 下载 | 桌面 UI、插件面板、其他 Host 的 secret |
 | 消息集成适配层 | 在 Host 进程内订阅 Host 范围事件，把脱敏摘要转发到出站渠道；把固定指令词汇映射到回合与审批操作 | 自己的权限策略、入站监听器、原始 transcript 内容 |
-| 自托管 Gateway（不排期） | 以 Host 签发的设备凭据准入、路由、Host link、限流、审计、上传字节的瞬态缓冲、（保留）推送脱敏摘要 | provider secret、完整 transcript、host-core 访问、上传窗口之外的附件字节 |
+| 自托管 Gateway（R4） | 以 Host 签发的设备凭据准入、路由、Host link、限流、审计、上传字节的瞬态缓冲、（保留）推送脱敏摘要 | provider secret、完整 transcript、host-core 访问、上传窗口之外的附件字节 |
 | Node pi sidecar | 运行 pi Agent 和 provider stream | 远程认证、工作区策略、secret storage |
 | Rust host-core | SQLite、工具、工作区、权限及待处理权限表、secret 和本地持久化 | 公网监听器 |
 
@@ -88,7 +89,7 @@ shell 访问。非 loopback 绑定仍要求 TLS 与设备 token。首版无法�
 就绪检查比对的是桌面期望的版本，而不是配对时记录的版本，连接后还会核对远端是否提供远程工作区所需的服务。
 自动升级每个桌面版本每台 Host 只尝试一次，失败后冷却，用户手动重连可再试，升级无效时仍显示原来的升级提示。
 
-### 4.3 自托管 Gateway（不排期）
+### 4.3 自托管 Gateway（R4–R6）
 
 ```text
 Client ── HTTPS/WSS ── Gateway
@@ -98,9 +99,24 @@ Client ── HTTPS/WSS ── Gateway
 ```
 
 生产模式由 Agent Host 主动建立出站 Host link，Gateway 不要求桌面开放入站
-端口。Host link 是中继 profile，复用多个逻辑客户端连接。PI 不运营 Gateway：若日后
-排期，由用户在自己的基础设施上运行，并以 Host 签发的设备凭据准入（D385）。本拓扑
-保留规格以免契约漂移，但不排期。
+端口。Host link 是中继 profile，复用多个逻辑客户端连接。PI 不运营 Gateway：
+由用户在自己的基础设施上运行，并以 Host 签发的设备凭据准入（D385）。交付
+范围、绑定规则与退出条件见 `06-delivery/07-remote-control-rollout.md` 的
+R4 里程碑（D665，ADR 0331）。
+
+### 4.4 桌面作为可连接的 Host（R5）
+
+Electron Main 可以经出站 Host link 提供其进程内的 Agent Host，让手机观察并
+操控运行中桌面的会话（D665，ADR 0331）。链路在现有 `agent-host-bridge.ts`
+AgentHost 实例上运行独立的 `RacpServer` 传输：不新建 AgentHost、不新增执行
+路径、不开监听。设置为 `AppSettings` 中可选、设备本地的 `remoteGateway`
+字段（`enabled`、`url`；缺失即关闭、不同步），标记为实验性且默认关闭。设备
+凭据与 mTLS 密钥材料保存在 main 进程，经 `EncryptionPort`（safeStorage）加密，
+绝不进 SQLite、不改 host-core schema。中继主体遵守安全规格 §3.7 的设备来源
+规则：绝不是 SSH 配对的 owner，始终受远程权限上限约束，不能修改本地会话的
+权限模式。关闭开关、退出应用与 `before-quit` 都会断开链路并取消挂起的服务端
+请求；渲染进程重载不会断开链路——链路归 main 进程所有，设置页重载后重新
+订阅状态。本地回合全程不受影响。
 
 ## 5. 角色、队列、归属与事件同步
 
@@ -153,9 +169,9 @@ Host   -> turn terminal event, next queued turn starts
 |---|---|---|---|
 | Local stdio JSON-RPC | Electron Main / sidecars | Full duplex | Existing |
 | RACP-WS | 经 SSH 的桌面客户端、Native、Electron | Full duplex | v1 规范绑定，首先部署在 SSH 隧道上 |
-| RACP-HTTP | Browser、simple integrations | Commands + server stream | 浏览器 profile，不排期 |
+| RACP-HTTP | Browser、simple integrations | Commands + server stream | 浏览器 profile，随 R4 绑定（D665），浏览器与移动客户端随 R6 交付 |
 | RACP-GRPC | Native service | Unary + server stream | 保留，不在 v1 |
-| Host link `racp-hostlink.v1` | Gateway → Host | Multiplexed full duplex | 基于 RACP-WS 帧的中继 profile，随 Gateway 不排期 |
+| Host link `racp-hostlink.v1` | Gateway → Host | Multiplexed full duplex | 基于 RACP-WS 帧的中继 profile，随 R4 交付（D665） |
 
 ## 7. 故障与迁移
 
@@ -189,5 +205,10 @@ D375）。SSH 隧道里程碑再加两件东西而不改线上契约：`agent-ho
 只保留展示状态；远程会话的目录包含远端 Host 的工具与桌面公布的中继工具，中继
 工具只在桌面执行；会话终端在远端机器的会话根内运行且只对策略允许的主体开放；回放、审批、幂等和
 所有已发布绑定的一致性测试必须通过；无头模块的测试不依赖 Electron。
+
+D665（2026-10-17，ADR 0331）排期 Gateway 与浏览器拓扑：R4 为自托管 Gateway 与
+Host link，R5 为桌面作为可连接的 Host，R6 为浏览器与移动客户端。§4.3 去掉
+不排期状态，§4.4 新增桌面可连接 Host 拓扑（设备本地的 `remoteGateway` 设置、
+`EncryptionPort` 加密凭据），归属一节记录 Gateway 的具体存储布局。
 
 详见英文源规格中的完整组件归属、迁移边界和验收条款。

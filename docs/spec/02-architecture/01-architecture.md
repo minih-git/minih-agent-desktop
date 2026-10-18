@@ -117,8 +117,8 @@ not change the current MVP exclusion of a remote Gateway. The first
 implementation hosts the module inside Electron Main, where desktop IPC,
 local MCP, and RACP call it. The first remote deployment (D375) packages the
 same module as a headless `agent-host-cli` on another machine, reached from the
-desktop over an SSH tunnel; Gateway routing and browser access remain
-specified but unscheduled.
+desktop over an SSH tunnel. Post-MVP the Gateway and browser access are
+scheduled as R4–R6 by D665 (ADR 0331); the MVP exclusion is unchanged.
 
 ## 4. Request path (conversation + tool)
 

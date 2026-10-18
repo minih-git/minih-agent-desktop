@@ -30,6 +30,28 @@ export type SettingsIpcDependencies = {
   liveCallService?: Pick<LiveCallService, "beginSettingsWrite" | "settingsWritten">;
 };
 
+/**
+ * Settings fields the main process owns; a renderer write may never carry them.
+ *
+ * `remoteGateway` has exactly one writer: the gateway link controller (rollout
+ * R5, ADR 0331). A renderer keeps the settings it loaded at startup, so a stale
+ * `enabled: true` would otherwise ride back on the next unrelated save — a font
+ * size, a theme — and `merge_settings_value` in host-core replaces the whole
+ * key, silently re-enabling remote control on the following launch.
+ */
+const HOST_OWNED_SETTINGS_FIELDS = ["remoteGateway"] as const;
+
+/**
+ * The payload without the host-owned fields, on a copy: the object the
+ * renderer serialized is never mutated.
+ */
+function withoutHostOwnedSettings(settings: unknown): unknown {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) return settings;
+  const copy: Record<string, unknown> = { ...(settings as Record<string, unknown>) };
+  for (const field of HOST_OWNED_SETTINGS_FIELDS) delete copy[field];
+  return copy;
+}
+
 /** Register app settings and command-shell channels. */
 export function registerSettingsIpc({
   registrar,
@@ -71,7 +93,10 @@ export function registerSettingsIpc({
 
   handle(IPC.invoke.settingsSet, async (settings: unknown) => {
     if (!host) throw new Error("host unavailable");
-    const validatedSettings = validateSettingsWrite(settings);
+    // The gateway switch belongs to the main process: drop the field from every
+    // renderer write before it can reach host-core, so a stale snapshot cannot
+    // overwrite the value the controller last stored.
+    const validatedSettings = withoutHostOwnedSettings(validateSettingsWrite(settings));
     const currentSettings = await host.call<AppSettings>("settings.get");
     const prospectiveSettings = validatedSettings && typeof validatedSettings === "object" && !Array.isArray(validatedSettings)
       ? { ...currentSettings, ...(validatedSettings as Partial<AppSettings>) }

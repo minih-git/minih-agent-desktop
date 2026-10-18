@@ -82,8 +82,8 @@ In both profiles access tokens MUST NOT be placed in query strings, WebSocket
 URLs, SSE URLs, attachment names, or event payloads. Bearer-only APIs still
 validate Origin for browser requests.
 
-The Gateway and the cookie profile belong to the unscheduled Gateway and
-browser milestones (D375). The first remote topology uses the header profile
+The Gateway and the cookie profile ship with the Gateway and browser
+milestones (R4–R6, D665). The first remote topology uses the header profile
 with a device token obtained through the SSH bootstrap pairing in §3.4.
 
 For the first trusted-device prototype, a one-time pairing code MAY bootstrap
@@ -110,6 +110,14 @@ Direct LAN or development connections still use TLS and an expiring device
 token. Plain `ws://`, plain HTTP, and static shared tokens in URLs are not
 supported.
 
+Enrollment is a one-time exchange (D665, ADR 0331): an administrator prints a
+15-minute single-use enrollment code on the Gateway, the Host generates its
+key pair locally and sends the CSR and the code to a dedicated enrollment
+endpoint on the Host link port that authenticates by server TLS only, the
+Host pins the Gateway identity with `--gateway-ca` and refuses a fingerprint
+mismatch, and the Gateway issues a one-year client certificate with the
+`hostId` as CN. The Host link ships with R4.
+
 ### 3.3 Host capability context
 
 After the Gateway authenticates a user, it issues a short-lived signed route
@@ -133,6 +141,18 @@ The Agent Host verifies the signature, audience, Host id, expiry, and session
 scope before executing any mutation. The Gateway's transport connection is not
 itself authorization for a session, and a route context for one
 `clientConnectionId` cannot be replayed on another.
+
+In the self-hosted, user-local Gateway scenario (D665, ADR 0331) the
+integrity of the route context is guaranteed by the authenticated Host link:
+only an enrolled Gateway holding the matching client certificate can send
+Host link frames, so the Host does not verify a second signature on the
+context. The Host still validates that `hostId` equals its own id, that the
+context has not expired, and that the same `clientConnectionId` is not reused
+on one link. The final authentication authority remains the Host's own
+credential store: every relayed logical connection is re-authenticated with
+the `credential` of the `client.open` frame (§3.7), and the Gateway's cached
+token hash is only a pre-routing fast reject and a rate-limit key. The
+`credential` never appears in logs or audit records.
 
 ### 3.4 SSH bootstrap pairing (first remote topology)
 
@@ -259,6 +279,45 @@ Loss of a Write/Edit/Bash transport reply yields the Desktop-side
 retry or a rollback claim. Readiness for browse/files does not replay tools.
 Remote picker and Settings errors use allowlisted localized categories rather
 than raw SSH stderr, tokens, password/private-key paths or forwarded URLs.
+
+### 3.7 Gateway-paired devices
+
+Device records gain an optional `origin` field with values `"ssh"` or
+`"gateway"` (D665, ADR 0331). Records persisted before D665 have no `origin`
+and read as `"ssh"`, so old credential stores need no migration. Every
+authentication input also carries the connection origin: the loopback
+`RACP-WS` binding is `"ssh"` and a Host link logical connection is
+`"gateway"`.
+
+- `connection/pair` on an `"ssh"` connection keeps its current behavior: it
+  grants `["owner"]` and records `origin: "ssh"`. On a `"gateway"`
+  connection it grants `["viewer", "controller", "approver"]` and records
+  `origin: "gateway"`. The Host decides these roles; roles sent by the
+  client are ignored.
+- Pairing tokens carry the same origin as the devices they mint (ADR 0331):
+  `PairingRecord` gains an optional `origin` field, and a record
+  without the field reads as `"ssh"`. A code issued by `--pair` (SSH
+  bootstrap) can be redeemed only on the loopback `RACP-WS` binding; a code
+  issued by `remote-pair` or the desktop settings page can be redeemed only
+  over the Host link. Redeeming a pairing token on the other channel fails,
+  so an SSH-bootstrap pairing code cannot be consumed through the Gateway.
+- Device-token authentication sets `pairedDevice` to
+  `device.origin !== "gateway"`. A gateway-paired device is therefore never
+  an SSH-paired owner: it is not exempt from the remote permission ceiling
+  (§4.3), and `allow-session` is never offered to it.
+- For gateway-origin principals these restrictions hold regardless of Host
+  policy and MUST be locked by tests, not left to defaults (ADR 0331):
+  `allowRemoteSessionGrants: true` does not make `allow-session`
+  available to them; they never carry `approverOverride`; and they stay under
+  the remote permission ceiling no matter how `applyCeilingToPairedDevices`
+  is configured.
+- A gateway-origin token is accepted only on the Host link; an ssh-origin
+  token is accepted only on the loopback `RACP-WS` binding. Either token on
+  the other channel is rejected, so a stolen gateway token cannot escalate
+  through an SSH tunnel and an SSH-paired owner token cannot be replayed
+  through the Gateway.
+- Revocation on either the Gateway or the Host denies new connections and
+  closes existing relayed logical connections within 5 seconds.
 
 ## 4. Authorization model
 
@@ -453,8 +512,7 @@ is ephemeral and recoverable only from the terminal's bounded replay ring.
 
 ## 8. Gateway and tenant isolation
 
-The Gateway milestone is unscheduled (D375). These rules bind when it is
-scheduled and are retained so the contract does not drift.
+The Gateway ships with R4 (D665). These rules bind from R4 onward.
 
 - Every route is keyed by `(tenantId, hostId, sessionId)`.
 - A user-local deployment has exactly one tenant, the Host itself; PI never
@@ -571,8 +629,10 @@ separate, explicitly specified credential-management capability is added.
     milestone is scheduled.
 16. A `agent-host-cli` bound to loopback accepts only loopback peers with a valid
     device token; a non-loopback bind without TLS fails to start.
-17. A pairing token is single-use, arrives only over the SSH channel, and
-    cannot be exchanged twice or from a non-loopback peer.
+17. An ssh-origin pairing token is single-use, arrives only over the SSH
+    channel, and cannot be exchanged twice or from a non-loopback peer;
+    a pairing token of either origin fails when redeemed on the other
+    channel (§3.7).
 18. A remote session exposes only the remote Host's tool catalog; desktop
     plugin tools and desktop MCP servers never execute against a remote
     workspace, and provider secrets never cross RACP.
@@ -586,6 +646,32 @@ separate, explicitly specified credential-management capability is added.
 21. An SSH login password is supplied only by the user, reaches `ssh` only
     through the askpass helper, is stored only encrypted, and never appears in
     a process argument list, the renderer, or a log line.
+22. The Host link listener refuses to start on `0.0.0.0`, `::`, or a public
+    address; it binds only to a private or overlay address the configuration
+    explicitly lists (RFC1918, `100.64.0.0/10`, or a configured CIDR).
+    Applies from R4 (D665).
+23. The Gateway's client API binds loopback by default; a non-loopback bind
+    without configured TLS refuses to start. Applies from R4 (D665).
+24. Tokens never appear in URLs, query strings, SSE URLs, or event payloads;
+    browser sessions use the `HttpOnly; Secure; SameSite=Strict` cookie plus
+    a CSRF token on every mutation, and native clients use the header
+    profile. Applies from R4 (D665).
+25. A gateway-paired device is never an SSH-paired owner: it holds
+    `pairedDevice: false`, never the `owner` role, stays under the remote
+    permission ceiling, is never offered `allow-session`, and its token is
+    rejected on the loopback `RACP-WS` binding just as an ssh token is
+    rejected on the Host link. Applies from R4 (D665).
+26. Revocation on either the Gateway or the Host denies new connections and
+    closes existing logical connections within 5 seconds. Applies from R4
+    (D665).
+27. With the desktop's gateway-link setting disabled, the desktop attempts
+    no connection and opens no listener, proven by regression tests.
+    Applies from R5 (D665).
+28. A gateway-origin pairing token (issued by `remote-pair` or the desktop
+    settings page) is redeemed only over the Host link and never on the
+    loopback `RACP-WS` binding, and an ssh-origin pairing token is never
+    redeemed through the Gateway; a device minted through the Gateway always
+    carries the gateway origin and never `owner`. Applies from R4 (D665).
 ## 13. Amendment history
 
 D374 (2026-09-10) added the browser cookie/header authentication profiles,
@@ -614,3 +700,18 @@ D454 (2026-09-19) added SSH password authentication for the bootstrap (§3.4,
 ADR 0293): the credential-handling rules above and gate 21. It relaxes
 `BatchMode=yes` for a password target only, with `NumberOfPasswordPrompts=1`
 and `PubkeyAuthentication=no`, and keeps a key or agent as the default path.
+
+D665 (2026-10-17, ADR 0331) scheduled the Gateway and browser milestones
+(R4–R6): §3.1 and §3.2 lose their unscheduled status and §3.2 records the
+enrollment exchange; §3.3 records that the route context's integrity is
+guaranteed by the authenticated Host link in the self-hosted scenario, with
+the Host's own credential store as the final authentication authority; §3.7
+adds gateway-paired devices (additive `origin` field, gateway pairing never
+grants `owner` or `pairedDevice`, cross-channel tokens rejected); §8 binds
+from R4; and gates 22–27 cover the bind-address rules, the token and cookie
+profile, gateway-paired principal restrictions, 5-second revocation
+propagation, and the desktop-off regression. The D665 review adds the
+pairing-token origin (§3.7, gate 17 narrowed to ssh-origin codes, new gate
+28) and locks the policy-immune restrictions of gateway-origin principals
+(no `allow-session` under `allowRemoteSessionGrants`, no `approverOverride`,
+ceiling regardless of `applyCeilingToPairedDevices`) as test-locked rules.
