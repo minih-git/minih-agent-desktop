@@ -104,6 +104,12 @@ Client ── HTTPS/WSS ── Gateway
 范围、绑定规则与退出条件见 `06-delivery/07-remote-control-rollout.md` 的
 R4 里程碑（D665，ADR 0331）。
 
+账户模式（规划中，D666，ADR `remote-control-router-account-binding`）新增第二种部署：
+Gateway 作为独立进程运行在维护者的 Minih-Router 旁，Host 经 Router 的 EasyTier 组网、
+手机经公网 HTTPS 访问它。它服务多个账户，Router 的 AccessKey 只用于发现与注册，中继的
+客户端仍以 Host 签发的设备凭据准入。交付见 `06-delivery/07-remote-control-rollout.md`
+的 R7 里程碑。
+
 ### 4.4 桌面作为可连接的 Host（R5）
 
 Electron Main 可以经出站 Host link 提供其进程内的 Agent Host，让手机观察并

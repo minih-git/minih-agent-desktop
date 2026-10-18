@@ -10269,7 +10269,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | Post-MVP | E2E-022A, E2E-022B, E2E-022C, E2E-024I, E2E-024J, E2E-024K, E2E-024L, E2E-024M (plugin roadmap R2/R3/R6) |
 | Post-baseline local automation | E2E-220 |
 | Post-baseline local automation (MCP `minih_session_get` large compaction) | E2E-MCP-session-get-projects-large-compaction |
-| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory, E2E-REMOTE-MOBILE-native-shell-credential-storage |
+| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory, E2E-REMOTE-MOBILE-native-shell-credential-storage, E2E-REMOTE-ACCOUNT-cross-account-isolation, E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts, E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm, E2E-REMOTE-ACCOUNT-key-rotation-keeps-account, E2E-REMOTE-ACCOUNT-disabled-key-blocks-login |
 | Trusted extensions (R7 v1) | E2E-DIALOG-long-text-boundaries, E2E-241, E2E-242, E2E-HOOKS-prompt-chain, E2E-HOOKS-cancel-and-dispose, E2E-TRUSTED-EXTENSION-custom-agent-stream-and-binding, E2E-243, E2E-TRUSTED-EXTENSION-temporary-session-cwd-is-scratch, E2E-244, E2E-245, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list, E2E-PLUGIN-provider-catalog-add-service |
 | Trusted extensions (R7 v1 npm recovery) | E2E-PLUGIN-import-extension-recovers-missing-npm |
 | Post-MVP regression coverage (plugin tool dispatch) | E2E-PLUGIN-slow-tool-is-not-cut-off-by-host-dispatch |
@@ -15535,6 +15535,141 @@ acceptance targets.
   across an app reinstall, foreground resume of the event stream after a long
   background period, the Android hardware back stack, and pairing over a real
   Gateway on cellular; those are accepted by the user on their own devices.
+
+### Account mode (D666, planned)
+
+These five scenarios are the acceptance targets of ADR
+`remote-control-router-account-binding`, protocol §11.5, and security §3.8 with
+gates 29–33. They run against a local Router (or a local test stub answering
+`/api/auth/session` and `/api/easytier/bootstrap`) plus a local test Gateway with
+loopback model stubs. No production Router, no real AccessKey, and no real
+domain are used. Behaviour that the decision leaves to the implementing PR (error
+codes, route names, how a revocation reaches sibling Hosts) is asserted once that
+PR defines it.
+
+#### E2E-REMOTE-ACCOUNT-cross-account-isolation
+
+- **Preconditions**: A local Router test instance (or stub) that answers
+  `/api/auth/session` with two distinct `access_key_id` values for keys A and B,
+  and `/api/easytier/bootstrap` with a `remoteGateway` object naming the local
+  test Gateway; one enrolled Host per account; two loopback model stubs.
+- **Steps**: 1) Enroll Host A1 with key A and Host B1 with key B; record the
+  account each is recorded under. 2) Log a client in with key A and list the
+  account Hosts. 3) With that client, address B1 by its id on the account host
+  listing, on a Host-scoped route, and in a device request. 4) Send an
+  enrollment whose CSR names A1's `hostId` but presents key B. 5) Relay a grant
+  signed by B1 to A1. 6) Read the Gateway `--data-dir` and its audit log.
+- **Expected**: The key-A listing contains A1 only; every request naming B1 is
+  refused and never routed; the key-B enrollment neither replaces nor joins A1,
+  which keeps its account and its link; A1 refuses the grant signed by B1; B1's
+  Host-link port being reachable on the shared mesh grants nothing; no Host
+  listing, device record, pending grant, or audit query crosses the accounts;
+  neither the data directory nor the audit log contains a raw AccessKey.
+- **Specs linked**: `05-security/02-remote-control-security.md` §3.8 and gates
+  29, 30, and 32, `03-runtime/19-remote-agent-control-protocol.md` §11.5,
+  `06-delivery/07-remote-control-rollout.md` §2 (R7)
+- **Acceptance**: Security, Quality
+- **Milestone**: Post-MVP (remote-control rollout R7, D666)
+- **Status**: Draft (R7, D666)
+
+#### E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts
+
+- **Preconditions**: A local Router test instance with key A, the local test
+  Gateway, and three Hosts of account A: a desktop with the confirmation dialog,
+  an `agent-host-cli` Host, and a third Host that starts stopped. A loopback
+  model stub per Host.
+- **Steps**: 1) Enroll the desktop and the CLI Host; keep the third stopped.
+  2) Log in a phone client (mobile viewport through the same-origin test proxy)
+  with key A and confirm the Host list shows exactly those Hosts. 3) Request a
+  device and approve on the CLI Host only. 4) Use the issued token against the
+  desktop and the CLI Host (list sessions, start and stop a turn on each).
+  5) Start the third Host and use the same token against it. 6) Inspect the
+  client store and the Host logs. 7) Revoke the device on the desktop.
+- **Expected**: The single approval yields one token that all three Hosts accept,
+  including the Host that was offline at grant time; each Host shows a "new
+  device" notice; the device holds `viewer` / `controller` / `approver` with
+  `pairedDevice: false`, stays under the remote permission ceiling, and is never
+  offered `allow-session`; the AccessKey appears in no Host log and is no longer
+  in the client store after the exchange; after step 7 the desktop refuses the
+  token within 5 seconds (gate 26). How that revocation reaches the account's
+  other Hosts is an open item of package D and is asserted once defined.
+- **Specs linked**: security §3.7 and §3.8 with gates 25, 26, 30, and 32,
+  protocol §11.5, rollout §2 (R7)
+- **Acceptance**: Security, Recovery, Quality
+- **Milestone**: Post-MVP (remote-control rollout R7, D666)
+- **Status**: Draft (R7, D666)
+
+#### E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm
+
+- **Preconditions**: The same local stack as the previous scenario with two
+  Hosts of account A, the desktop Host set to strict mode ("require confirmation
+  on every terminal"), and one loopback model stub.
+- **Steps**: 1) Enable strict mode on the desktop Host and enroll both Hosts.
+  2) Log in with key A and request a device; approve on the second Host only.
+  3) Use the token against the strict-mode Host. 4) Confirm the dialog that Host
+  raises and retry. 5) Disable strict mode, request a device for a second client,
+  approve it on the second Host only, and use it against the desktop Host.
+- **Expected**: With strict mode on, the desktop Host refuses the sibling grant,
+  raises its own confirmation, and accepts the token only after that local
+  confirmation; the client does not see that Host as ready until then; the
+  second Host accepts the device through its own approval; with strict mode off
+  a single approval covers both Hosts again; a strict-mode Host never accepts a
+  grant silently.
+- **Specs linked**: security §3.8 (strict mode) and gate 32, protocol §11.5,
+  rollout §2 (R7)
+- **Acceptance**: Security, Quality
+- **Milestone**: Post-MVP (remote-control rollout R7, D666)
+- **Status**: Draft (R7, D666)
+
+#### E2E-REMOTE-ACCOUNT-key-rotation-keeps-account
+
+- **Preconditions**: A local Router test instance whose key can be rotated while
+  keeping its id, the local test Gateway, one enrolled desktop Host, and one
+  paired device.
+- **Steps**: 1) Enroll the Host with the original key and pair a device.
+  2) Rotate the key on the Router and enter the new value in the desktop.
+  3) Refresh the bootstrap and read the answered `remoteGateway` object.
+  4) Restart the Gateway and reconnect the Host link. 5) Pair a second device
+  with the rotated key.
+- **Expected**: The desktop fetches a fresh bootstrap, because its cache is keyed
+  by a digest of the key; the answered account id is unchanged; the Host stays
+  enrolled with no re-enrollment prompt; the already-paired device keeps
+  working; the second device confirms once like the first; the Gateway resolves
+  the rotated key to the same account, so rotation neither orphans the Host nor
+  creates a second account.
+- **Specs linked**: security §3.8 (key lifecycle), protocol §11.5 (key
+  lifecycle), provider-config §3 (`remoteGateway` and the bootstrap cache),
+  rollout §2 (R7)
+- **Acceptance**: Security, Recovery
+- **Milestone**: Post-MVP (remote-control rollout R7, D666)
+- **Status**: Draft (R7, D666)
+
+#### E2E-REMOTE-ACCOUNT-disabled-key-blocks-login
+
+- **Preconditions**: The same local stack as the rotation scenario; the test
+  Router can disable and delete a key and issues per-key mesh credentials with a
+  short credential lifetime; one linked Host with an approved device.
+- **Steps**: 1) Log in with the key and confirm the device works on the linked
+  Host. 2) Disable the key, then immediately attempt a new account login and a
+  new Host enrollment with it. 3) Keep using the existing device token on the
+  linked Host. 4) Delete the key and repeat the attempts of step 2. 5) Revoke the
+  device on the Host and use the token again. 6) Wait past the mesh credential
+  lifetime and observe the Host link.
+- **Expected**: A disabled and a deleted key are both refused for new logins and
+  enrollments with an authentication error, even right after a successful
+  login; the approved device token and the Host certificate stay valid until
+  revoked (ADR decision 8), so the token keeps working while the link is up;
+  after step 5 the Host refuses the token within 5 seconds (gate 26); after
+  step 6 the Host link ends because the disabled key cannot refresh the
+  bootstrap, and the Host certificate is still not revoked. With a classic
+  shared-secret mesh step 6 does not end the link; the run records the mesh
+  mode.
+- **Specs linked**: security §3.8 (key lifecycle), protocol §11.5 (key
+  lifecycle), ADR `remote-control-router-account-binding` decision 8, rollout
+  §2 (R7)
+- **Acceptance**: Security, Recovery
+- **Milestone**: Post-MVP (remote-control rollout R7, D666)
+- **Status**: Draft (R7, D666)
 
 ## Trusted extension scenarios (R7 v1)
 

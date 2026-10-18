@@ -23,7 +23,7 @@ description: >-
 | 角色 | AI 模型网关（服务端）：LLM 请求路由、渠道/订阅管理、计费额度 | 桌面 AI Agent 应用（客户端，Electron，**已发布、有真实用户**） |
 | 技术栈 | Go 单体 + React 前端（`web/`，构建产物内嵌进二进制） | pnpm monorepo：`apps/desktop`（Electron + React）+ `packages/*` + Rust host-core |
 | 本地路径 | `/Users/minih/Projects/minih/Minih-Router` | `/Users/minih/Projects/minih/Minih-Agent-Desktop` |
-| 主分支 | `main`（主仓库 gitea.hungraim.com/minih/Minih-Router） | `main` |
+| 主分支 | `main`（hungraim 线：gitea.hungraim.com/minih/Minih-Router；minih 个人线：github.com/minih-git/minih-router；同名仓库按托管区分品牌线） | `main` |
 
 强关联方式：Desktop 把 Router 作为**第一方网关预设**（provider 行
 `vendorKey: "minih-router"`），通过下面 3 个对接面依赖 Router。
@@ -36,6 +36,7 @@ description: >-
 | 控制面 key-scoped 只读 API：`/api/home`、`/api/usage`、`/api/models`（余额、用量、模型广场价格） | `internal/control/`（`auth.go`、`http_routes.go` 等） | `apps/desktop/electron/main/minih-router-client.ts`（请求与解析）、`ipc/minih-router-ipc.ts`（invoke channel）、`src/components/settings/useMinihRouter.ts`（UI） |
 | 组网 bootstrap：`GET /api/easytier/bootstrap`（下发 networkName / networkSecret / gatewayVirtualIpv4 / peers / ttlSeconds）与 EasyTier 只读监控、接入引导 | `internal/control/` + `internal/easytier/`，文档 `docs/operations/easytier-mesh.md` | Rust host-core 内嵌 EasyTier 节点（networkName `minih-router`，虚拟网段 `11.12.0.0/24`，默认 No-TUN）；端点解析 `resolveMinihRouterEndpoint`（`session-launch.ts` 引用） |
 | 网关预设与设置 UI（默认地址、格式选项、推荐位、账户卡片） | —（Router 不管客户端展示） | `packages/shared/src/provider-presets.ts`、`packages/shared/src/minih-router.ts`（类型）、`apps/desktop/src/components/settings/`（`minih-router-format.ts`、账户/广场组件等） |
+| 远程控制的账户绑定（D666，规划中，ADR `remote-control-router-account-binding`）：桌面用 AccessKey 自动绑定所有终端；Gateway 经 Router `GET /api/auth/session` 校验 key，bootstrap 新增 `remoteGateway {hostlinkUrl, publicOrigin, caPem}` | `internal/control/auth.go`（会话应答与 `allowed_peer_cidrs`）、`internal/state/snapshot.go`（只索引 active 的 key）、`internal/platform/utils/client_ip.go` 与环境变量 `CLIENT_IP_HEADER` / `TRUSTED_PROXIES`（仅在可信代理下取客户端 IP）、`internal/easytier/manager.go`（bootstrap 数据）与承载 `remoteGateway` 的系统设置 | `apps/remote-gateway`（账户目录、按 key 注册、账户登录、主机列表、设备申请/确认中继、可信代理客户端 IP）、桌面 gateway link（`apps/desktop/electron/main/remote/gateway-link/`）、host-core EasyTier 转发（`crates/host-core/src/easytier_net/config.rs`，No-TUN 第二条转发）、`apps/remote-web`（key 登录与主机切换） |
 
 ## 3. 需求 → 仓库判定表
 
@@ -50,6 +51,7 @@ description: >-
 | EasyTier 服务端能力：状态监控展示、接入命令生成、bootstrap 下发参数 | **Minih-Router** |
 | 新增模型协议 / API 风格 | **Minih-Router 为主**（转发内核实现）；Desktop 仅在需要新 UI 格式选项时联动 |
 | 网关部署、发布、更新服务器 | **Minih-Router**（先读 `minih-router-deploy` 技能） |
+| 远程控制账户模式：AccessKey 登录与发现、账户主机列表、设备“确认一次即可漫游”、`remoteGateway` 下发 | **两个仓库联动**：Router 在 bootstrap 增加 `remoteGateway` 字段并维护对应系统设置，部署时把 Gateway 的 loopback 列入 `TRUSTED_PROXIES` 并设置 `CLIENT_IP_HEADER`；账户目录、Host link 新帧、桌面确认与严格模式全在 Desktop。契约以 Desktop 的 `docs/spec/03-runtime/12-provider-config-schema.md` §3、`docs/spec/03-runtime/19-remote-agent-control-protocol.md` §11.5 与 `docs/spec/05-security/02-remote-control-security.md` §3.8 为准 |
 
 ## 4. 跨仓库契约变更流程
 
@@ -86,3 +88,21 @@ description: >-
 - 改 `/api/*` 只改一侧 = 半成品：数据源在 Router，消费在 Desktop，字段变更两边都要动并保持兼容。
 - Desktop 的"Minih Router 预设行为"（vendorKey 匹配、默认地址、推荐位）归 Desktop，不要去 Router 仓库找。
 - 两仓库 `main` 各自独立演进，不要假设提交同步；对接行为以线上 Router 版本与已发布 Desktop 版本为准。
+
+## 7. 双品牌发布线（2026-10-17 起）
+
+Router 与 Desktop 均拆分为 minih（个人）与 hungraim（恒格）两条发布线，仓库与发布目标严格对应：
+
+| 品牌 | Router 仓库 | Desktop 仓库 | 发布目标 |
+|---|---|---|---|
+| minih | github.com/minih-git/minih-router | github.com/minih-git/minih-agent-desktop | Router `deploy.sh --brand minih`；Desktop `DESKTOP_BRAND=minih` |
+| hungraim | gitea.hungraim.com/minih/Minih-Router | gitea.hungraim.com/minih/Minih-Agent-Desktop | Router `deploy.sh --brand hungraim`；Desktop `DESKTOP_BRAND=hungraim` |
+
+规则：
+
+- 公共功能默认在 minih 线开发，验证后按明确提交范围同步到 hungraim 线；公司专属改动不回流个人仓库。
+- 发布必须带品牌：Router 用 `deploy.sh --brand <minih|hungraim>`（跨品牌 `--all-servers` 已移除）；
+  Desktop 构建用 `DESKTOP_BRAND=<minih|hungraim>`。健康/更新/数据路径按品牌隔离，禁止跨品牌回退。
+- Router `/health` 返回 `brand`/`commit`/`build_time`，部署验收必须核对品牌与提交一致。
+- 11.7 的业务 EasyTier 是独立网（`hungraim-router`，11.123.0.0/24），与管理网（11.11.11.0/24）
+  互不连接；见 Router 仓库 `docs/operations/easytier-hungraim-router.md`。
