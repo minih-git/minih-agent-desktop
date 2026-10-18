@@ -14,6 +14,8 @@ import {
   minihRouterHeadlineQuota,
   normalizeEasyTierSettings,
   validateEasyTierSettings,
+  type EasyTierRemoteGatewayStatus,
+  type EasyTierStatus,
   type MinihRouterQuota,
 } from "./minih-router.js";
 import { NAMED_ENDPOINT_PRESETS, matchNamedPreset } from "./provider-presets.js";
@@ -195,6 +197,61 @@ describe("EasyTier virtual LAN settings", () => {
     ).toBeNull();
     expect(validateEasyTierSettings({ mode: "invalid" })).toMatch(/mode/);
     expect(validateEasyTierSettings({ peers: ["http://not-a-peer"] })).toMatch(/invalid EasyTier peer URL/);
+  });
+});
+
+describe("EasyTier remote-control account mode", () => {
+  // The shape host-core serializes (`crates/host-core/src/easytier_net/remote_gateway.rs`).
+  const announced: EasyTierRemoteGatewayStatus = {
+    available: true,
+    hostlinkUrl: "wss://gateway.example.com:8443/hostlink",
+    publicOrigin: "https://gateway.example.com",
+    caPem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+    dialUrl: "wss://127.0.0.1:41234/hostlink",
+    tlsServerName: "gateway.example.com",
+    localForwardPort: 41234,
+    unavailableReason: "",
+  };
+
+  it("dials loopback in No-TUN mode but keeps the advertised service name", () => {
+    expect(announced.dialUrl).toBe("wss://127.0.0.1:41234/hostlink");
+    // Certificate validation uses the name the Gateway certificate is issued
+    // for, never the loopback address that carries the bytes.
+    expect(announced.tlsServerName).toBe("gateway.example.com");
+    expect(announced.hostlinkUrl.startsWith("wss://")).toBe(true);
+    expect(announced.publicOrigin.startsWith("https://")).toBe(true);
+    expect(announced.localForwardPort).toBe(41234);
+  });
+
+  it("uses one shape for the off state: no endpoint, no forward port", () => {
+    const off: EasyTierRemoteGatewayStatus = {
+      available: false,
+      hostlinkUrl: "",
+      publicOrigin: "",
+      caPem: "",
+      dialUrl: "",
+      tlsServerName: "",
+      localForwardPort: null,
+      unavailableReason: "",
+    };
+    expect(off.available).toBe(false);
+    expect(off.dialUrl).toBe("");
+    expect(off.localForwardPort).toBeNull();
+  });
+
+  it("is part of EasyTierStatus and keeps host-core's camelCase spelling", () => {
+    const status = { remoteGateway: announced } satisfies Pick<EasyTierStatus, "remoteGateway">;
+    expect(status.remoteGateway.available).toBe(true);
+    expect(Object.keys(JSON.parse(JSON.stringify(announced)) as object).sort()).toEqual([
+      "available",
+      "caPem",
+      "dialUrl",
+      "hostlinkUrl",
+      "localForwardPort",
+      "publicOrigin",
+      "tlsServerName",
+      "unavailableReason",
+    ]);
   });
 });
 

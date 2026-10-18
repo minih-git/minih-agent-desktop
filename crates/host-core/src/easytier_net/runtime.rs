@@ -13,7 +13,10 @@ use super::bootstrap::{
 };
 use super::config::{
     build_toml_config, parse_router_lan_target, EasyTierConnectionState, EasyTierEffectiveMode,
-    EasyTierMode, EasyTierSettings, DEFAULT_ROUTER_PUBLIC_URL,
+    EasyTierMode, EasyTierSettings, OverlayForward, DEFAULT_ROUTER_PUBLIC_URL,
+};
+use super::remote_gateway::{
+    derive_hostlink_target, status_for, RemoteGatewayReach, RemoteGatewayStatus,
 };
 use super::tun_runner::{
     collect_instance_snapshot, is_current_process_elevated, now_ms, spawn_elevated_tun_runner,
@@ -67,6 +70,10 @@ pub struct EasyTierStatus {
     pub bootstrap_network_name: String,
     /// Why the bootstrap did not apply, empty when it did.
     pub bootstrap_error: String,
+    /// Account-mode endpoint for remote control (ADR D666), or why it is
+    /// unavailable. Additive: a Router that advertises nothing leaves this
+    /// unavailable and every other field untouched.
+    pub remote_gateway: RemoteGatewayStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +94,9 @@ enum ActiveBackend {
         instance: Arc<NativeCoreInstance>,
         effective_mode: EasyTierEffectiveMode,
         local_forward_port: u16,
+        /// Loopback port of the Host-link forward, None when it is not needed
+        /// (TUN mode) or could not be installed.
+        hostlink_forward_port: Option<u16>,
     },
     ElevatedTun {
         spec: TunRunnerSpec,
@@ -160,6 +170,22 @@ fn allocate_loopback_port() -> Result<u16, String> {
     Ok(port)
 }
 
+/// Reserve a loopback port that is not already used by another forward.
+///
+/// The Router forward holds its port for the lifetime of the node, and two
+/// forwards cannot share one bind address. The probe listener is released
+/// before the node binds it, so a collision is retried instead of failing.
+fn allocate_loopback_port_excluding(excluded: &[u16]) -> Result<u16, String> {
+    const ATTEMPTS: usize = 8;
+    for _ in 0..ATTEMPTS {
+        let port = allocate_loopback_port()?;
+        if !excluded.contains(&port) {
+            return Ok(port);
+        }
+    }
+    Err("failed to allocate a distinct loopback port for the Host-link forward".to_string())
+}
+
 fn control_root_from_base_url(base_url: &str) -> String {
     let trimmed = base_url.trim().trim_end_matches('/');
     if let Some(root) = trimmed.strip_suffix("/v1") {
@@ -213,7 +239,11 @@ impl EasyTierManager {
         effective_mode: EasyTierEffectiveMode,
     ) -> Result<(), String> {
         let local_port = allocate_loopback_port()?;
-        let toml_config = build_toml_config(&self.settings, no_tun, Some(local_port))?;
+        // Only No-TUN mode needs the extra forward: TUN mode routes the overlay
+        // address itself, so it reaches the Gateway without help.
+        let hostlink_forward = self.hostlink_forward_for_start(no_tun, local_port);
+        let toml_config =
+            build_toml_config(&self.settings, no_tun, Some(local_port), hostlink_forward)?;
         let instance = create_native_instance(toml_config)
             .map_err(|e| format!("failed to create EasyTier instance: {e}"))?;
         instance
@@ -224,11 +254,25 @@ impl EasyTierManager {
             instance,
             effective_mode,
             local_forward_port: local_port,
+            hostlink_forward_port: hostlink_forward.map(|forward| forward.local_port),
         };
         self.last_error = None;
         Ok(())
     }
 
+    /// The Host-link forward to install for a start in `no_tun` mode.
+    ///
+    /// TUN mode never installs one: it routes the overlay address itself.
+    fn hostlink_forward_for_start(
+        &self,
+        no_tun: bool,
+        router_forward_port: u16,
+    ) -> Option<OverlayForward> {
+        if !no_tun {
+            return None;
+        }
+        self.hostlink_forward(router_forward_port)
+    }
     /// Ask the gateway for the network identity this AccessKey should use.
     ///
     /// A cached answer is reused until its TTL expires. Every failure falls back
@@ -294,6 +338,67 @@ impl EasyTierManager {
             None => defaults_overlay(&mut settings),
         }
         settings
+    }
+
+    /// The loopback forward the Host link needs in No-TUN mode.
+    ///
+    /// `None` whenever account mode is off, the answer was unusable, or the
+    /// target cannot be derived; `remote_gateway_status` derives the same way,
+    /// so the panel gets the precise reason instead of a silent no-op.
+    fn hostlink_forward(&self, router_forward_port: u16) -> Option<OverlayForward> {
+        let response = self.active_bootstrap.as_ref()?;
+        let announcement = response.remote_gateway.announcement()?;
+        let target =
+            match derive_hostlink_target(announcement, response.gateway_virtual_ipv4.as_deref()) {
+                Ok(target) => target,
+                Err(reason) => {
+                    tracing::warn!(
+                        %reason,
+                        "account-mode Host link is not reachable; continuing without it"
+                    );
+                    return None;
+                }
+            };
+        match allocate_loopback_port_excluding(&[router_forward_port]) {
+            Ok(local_port) => Some(OverlayForward {
+                local_port,
+                dst: target.dst,
+            }),
+            Err(error) => {
+                tracing::warn!(%error, "failed to allocate the Host-link forward port");
+                None
+            }
+        }
+    }
+
+    /// Account mode as the panel and the Host-link client see it.
+    ///
+    /// Recomputed per status call: it depends on the answer in effect and on
+    /// which backend is running, and both change without a new fetch. The
+    /// mapping itself lives with the account-mode domain.
+    fn remote_gateway_status(&self) -> RemoteGatewayStatus {
+        let response = self.active_bootstrap.as_ref();
+        let reach = match &self.backend {
+            ActiveBackend::InProcess {
+                effective_mode: EasyTierEffectiveMode::Tun,
+                ..
+            }
+            | ActiveBackend::ElevatedTun { .. } => RemoteGatewayReach::Direct,
+            ActiveBackend::InProcess {
+                hostlink_forward_port,
+                ..
+            } => RemoteGatewayReach::Forwarded {
+                local_port: *hostlink_forward_port,
+            },
+            ActiveBackend::Disabled => RemoteGatewayReach::Unavailable,
+        };
+        status_for(
+            self.settings.enabled,
+            response.map(|answer| &answer.remote_gateway),
+            response.and_then(|answer| answer.gateway_virtual_ipv4.as_deref()),
+            reach,
+            self.bootstrap_error.as_deref().unwrap_or_default(),
+        )
     }
 
     pub async fn apply_settings(
@@ -486,6 +591,7 @@ impl EasyTierManager {
             .as_ref()
             .map(|t| t.normalized_base_url.clone())
             .unwrap_or_else(|| self.settings.router_lan_url.clone());
+        let remote_gateway = self.remote_gateway_status();
 
         if !self.settings.enabled {
             return EasyTierStatus {
@@ -519,6 +625,7 @@ impl EasyTierManager {
                     .map(|b| b.network_name.clone())
                     .unwrap_or_default(),
                 bootstrap_error: self.bootstrap_error.clone().unwrap_or_default(),
+                remote_gateway: remote_gateway.clone(),
             };
         }
 
@@ -554,11 +661,13 @@ impl EasyTierManager {
                     .map(|b| b.network_name.clone())
                     .unwrap_or_default(),
                 bootstrap_error: self.bootstrap_error.clone().unwrap_or_default(),
+                remote_gateway: remote_gateway.clone(),
             },
             ActiveBackend::InProcess {
                 instance,
                 effective_mode,
                 local_forward_port,
+                ..
             } => {
                 let effective_mode = *effective_mode;
                 let local_port = *local_forward_port;
@@ -623,6 +732,7 @@ impl EasyTierManager {
                         .map(|b| b.network_name.clone())
                         .unwrap_or_default(),
                     bootstrap_error: self.bootstrap_error.clone().unwrap_or_default(),
+                    remote_gateway: remote_gateway.clone(),
                 }
             }
             ActiveBackend::ElevatedTun { spec } => {
@@ -681,6 +791,7 @@ impl EasyTierManager {
                             .map(|b| b.network_name.clone())
                             .unwrap_or_default(),
                         bootstrap_error: self.bootstrap_error.clone().unwrap_or_default(),
+                        remote_gateway: remote_gateway.clone(),
                     }
                 } else {
                     // Elevated runner exited unexpectedly; fall back seamlessly to No-TUN mode.
@@ -725,49 +836,5 @@ impl EasyTierManager {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn in_process_no_tun_allocates_forward_port_and_falls_back_until_reachable() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut mgr = EasyTierManager::default();
-        let settings = EasyTierSettings {
-            enabled: true,
-            mode: EasyTierMode::NoTun,
-            network_name: "minih-net-test".to_string(),
-            network_secret: "Minih@9527".to_string(),
-            peers: vec!["tcp://127.0.0.1:65530".to_string()],
-            router_lan_url: "http://10.144.144.10:3001/v1".to_string(),
-            dhcp: true,
-            ipv4: None,
-        };
-        mgr.apply_settings(dir.path(), settings, true).await;
-
-        let status = mgr.status(Some("https://router.hmini.org/v1")).await;
-        assert!(status.enabled);
-        assert_eq!(status.effective_mode, EasyTierEffectiveMode::NoTun);
-        assert!(status.local_forward_port.unwrap_or(0) > 0);
-        assert!(status
-            .local_forward_url
-            .as_deref()
-            .unwrap_or("")
-            .starts_with("http://127.0.0.1:"));
-        assert!(!status.using_lan);
-        assert_eq!(status.active_router_base_url, "https://router.hmini.org/v1");
-
-        let resolved = mgr
-            .resolve_minih_router_endpoint(Some("https://router.hmini.org/v1"))
-            .await;
-        assert!(!resolved.using_lan);
-        assert_eq!(resolved.active_base_url, "https://router.hmini.org/v1");
-        assert_eq!(resolved.fallback_base_url, "https://router.hmini.org/v1");
-
-        let mut disabled = mgr.settings.clone();
-        disabled.enabled = false;
-        mgr.apply_settings(dir.path(), disabled, false).await;
-        let disabled_status = mgr.status(None).await;
-        assert!(!disabled_status.enabled);
-        assert_eq!(disabled_status.state, EasyTierConnectionState::Disabled);
-    }
-}
+#[path = "runtime_tests.rs"]
+mod tests;

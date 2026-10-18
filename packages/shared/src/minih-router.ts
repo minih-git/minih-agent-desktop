@@ -266,6 +266,36 @@ export type EasyTierPeerSummary = {
   txBytes?: number;
 };
 
+/**
+ * Remote-control account mode as host-core reports it (ADR D666).
+ *
+ * The Router advertises this endpoint in its bootstrap answer. `available` is
+ * false whenever account mode is off, the Router advertised nothing usable, or
+ * this machine cannot reach the endpoint yet; `unavailableReason` explains
+ * which, and never carries key material.
+ */
+export type EasyTierRemoteGatewayStatus = {
+  /** True only when the endpoint was advertised and is reachable from here. */
+  available: boolean;
+  /** The advertised `wss://` Host-link endpoint; empty when none arrived. */
+  hostlinkUrl: string;
+  /** The advertised HTTPS origin for phone and browser clients; empty when none arrived. */
+  publicOrigin: string;
+  /** The advertised Gateway CA certificate; empty when none arrived. */
+  caPem: string;
+  /** Address the Host-link client dials: the loopback forward in No-TUN mode. */
+  dialUrl: string;
+  /**
+   * Service identity for certificate validation: always the name in
+   * `hostlinkUrl`, never the loopback address that carries the bytes.
+   */
+  tlsServerName: string;
+  /** Loopback port of the overlay forward; set only in No-TUN mode. */
+  localForwardPort: number | null;
+  /** Why account mode is unavailable; empty when it is available. */
+  unavailableReason: string;
+};
+
 export type EasyTierStatus = {
   enabled: boolean;
   configuredMode: EasyTierMode;
@@ -293,6 +323,8 @@ export type EasyTierStatus = {
   bootstrapNetworkName: string;
   /** Why the bootstrap did not apply, empty when it did. */
   bootstrapError: string;
+  /** Remote-control account mode; `available` is false when it is off. */
+  remoteGateway: EasyTierRemoteGatewayStatus;
   connectedPeers?: EasyTierPeerSummary[];
   networkName: string;
   routerLanUrl: string;

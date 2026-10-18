@@ -494,36 +494,68 @@ address is only a default (`customBaseUrl: true`):
 The same token also reads the gateway's key-scoped control plane, which
 Settings uses for the balance and model plaza (§6, Minih Router account).
 
-- **Remote-control account binding (planned, D666).** The same key-scoped
-  bootstrap answer gains an optional additive
-  `remoteGateway { hostlinkUrl, publicOrigin, caPem }` object (ADR
-  `remote-control-router-account-binding`, protocol §11.5):
+- **Remote-control account binding (D666).** The same key-scoped bootstrap answer
+  gains an optional additive `remote_gateway { hostlink_url, public_origin,
+  ca_pem }` object (ADR `remote-control-router-account-binding`, protocol §11.5).
+  The Router writes snake_case; the desktop accepts that spelling and the
+  camelCase one (`remoteGateway { hostlinkUrl, publicOrigin, caPem }`) field by
+  field, so a Router that renames its keys later still works:
 
-  - `hostlinkUrl` is the Gateway's `wss://` Host-link endpoint the desktop dials
+  - `hostlink_url` is the Gateway's `wss://` Host-link endpoint the desktop dials
     with mutual TLS (protocol §11.4);
-  - `publicOrigin` is the HTTPS origin a phone or browser uses for the client
+  - `public_origin` is the HTTPS origin a phone or browser uses for the client
     API;
-  - `caPem` is the Gateway's CA certificate the desktop pins, replacing the
+  - `ca_pem` is the Gateway's CA certificate the desktop pins, replacing the
     hand-pasted PEM of the self-hosted flow.
+- **A malformed account-mode object never fails the bootstrap.** Unlike the
+  network fields of the same answer — where a present-but-malformed value fails
+  the whole response, because silently ignoring it would leave the node on a
+  network the gateway does not expect — the account-mode object is additive and
+  never touches the mesh. `hostlink_url` must be `wss://` with a host and no
+  credentials, query or fragment; `public_origin` must be an `https://` origin
+  with no path, query or fragment; `ca_pem` must be a PEM bundle whose blocks are
+  all certificates and whose bodies decode as DER. Each field is capped (512
+  characters for the two URLs, 16 KiB for the certificate bundle). A value that
+  breaks any of these leaves the network identity in effect and reports account
+  mode as unavailable with a reason; a private key pasted into `ca_pem` is
+  refused rather than cached and displayed.
 
-  An absent object, or a `404` answer, means the Router does not offer account
-  mode: the desktop keeps the self-hosted enrollment flow (Gateway URL, CA PEM,
-  one-time enrollment code) and shows no account-mode affordances. The object is
-  covered by the bootstrap cache rules above — same AccessKey-digest key, same
-  seven-day ceiling, same one-minute floor — so it is never cached longer than
-  the answer it arrived in. It carries no secret: a CA certificate is public, and
+  An absent object, a `null`, or a `404` answer means the Router does not offer
+  account mode: the desktop keeps the self-hosted enrollment flow (Gateway URL,
+  CA PEM, one-time enrollment code) and shows no account-mode affordances. The
+  object is covered by the bootstrap cache rules above — same AccessKey-digest
+  key, same seven-day ceiling, same one-minute floor — so it is never cached
+  longer than the answer it arrived in. It carries no secret: a CA certificate is public, and
   the field never carries the AccessKey, which goes only to the Gateway in the
   enrollment request.
-- **Second overlay forward for the Host link (planned, D666).** No-TUN mode
-  installs exactly one loopback forward today, derived from `routerLanUrl`, to the
-  Router's HTTP port (data plane and control plane alike). Reaching the Gateway's
-  Host-link port on the same machine needs a second forward (for example
-  `127.0.0.1:<local_port> -> <router mesh address>:<hostlink port>`), because the
-  desktop never listens and the Host dials out; TUN mode reaches the port
-  directly. The forward's configuration, port allocation, and the server name
-  used for certificate validation are defined by the implementing PR. Validation
-  must use the name in `hostlinkUrl`, never `127.0.0.1`, because certificate
-  validation includes the service identity (security §5.1).
+- **Second overlay forward for the Host link (D666).** No-TUN mode installs one
+  loopback forward derived from `routerLanUrl` (to the Router's HTTP port, data
+  plane and control plane alike) and, when the Router advertised account mode, a
+  second one for the Host link: `127.0.0.1:<hostlink_local_port>` forwards to the
+  Gateway's overlay address and Host-link port. The desktop never listens on the
+  mesh and the Host dials out, so that forward is what makes the Host link
+  reachable at all. Two rules fix the destination:
+
+  - a `hostlink_url` host that is already an IP literal is the overlay address
+    itself, so the forward targets that address and port;
+  - a `hostlink_url` host that is a name cannot be resolved onto the overlay by
+    DNS, so the Gateway is taken to sit on the Router's own overlay node and the
+    bootstrap's `gatewayVirtualIpv4` supplies the address; the name stays the
+    service identity for TLS. No subnet is hard-coded: the minih mesh is
+    `11.12.0.0/24`, the hungraim mesh is `11.123.0.0/24`, and both come from the
+    answer.
+
+  The local port is a second loopback port that never reuses the Router
+  forward's. `EasyTierStatus.remoteGateway` reports account mode as the panel and
+  the Host-link client see it: `available`, `hostlinkUrl`, `publicOrigin`,
+  `caPem`, `dialUrl` (the loopback forward in No-TUN mode, the overlay address in
+  TUN mode, empty when unavailable), `tlsServerName` (always the name in
+  `hostlinkUrl`, never `127.0.0.1`, because certificate validation includes the
+  service identity — security §5.1), `localForwardPort` (set only in No-TUN mode)
+  and `unavailableReason`. TUN mode installs no second forward: it routes the
+  overlay address itself and dials the Gateway directly. A Router that advertises
+  nothing leaves the tunnel exactly as it is today — one forward, and
+  `remoteGateway.available` false.
 
 ### Named endpoint presets
 

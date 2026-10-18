@@ -1,6 +1,7 @@
 pub mod bootstrap;
 pub mod config;
 pub mod credentials;
+pub mod remote_gateway;
 pub mod runtime;
 pub mod tun_runner;
 

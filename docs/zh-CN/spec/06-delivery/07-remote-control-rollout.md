@@ -135,7 +135,8 @@ R0、R1、R2、R3，随后 R4、R5、R6（D665），再之后是 R7——Router 
 | B | Router | bootstrap 应答新增可选的 `remoteGateway {hostlinkUrl, publicOrigin, caPem}`，含系统设置、测试与文档 | A（契约） |
 | C | Desktop | Gateway 账户目录：按 key 注册、账户登录、账户主机列表、可信代理客户端 IP、跨账户隔离测试 | A |
 | D | Desktop | 设备申请与确认中继：`device.request` / `device.grant` 帧、Host 侧确认与授权校验、`agent-host-cli` 支持 | C |
-| E | Desktop | host-core 第二条组网端口转发、按 bootstrap 自动配置、桌面确认对话框、严格模式与 i18n | B、D |
+| E1 | Desktop | host-core：解析 Router 的 `remote_gateway` 对象，并在 No-TUN 模式下安装第二条组网转发 | B |
+| E2 | Desktop | Electron main 按该接入点自动注册与 Host link 接线、桌面确认对话框、严格模式与 i18n | D、E1 |
 | F | Desktop | 客户端：`apps/remote-web` 的 AccessKey 登录与主机切换 | C、D |
 | G | Desktop | 在账户之上叠加推送 | F |
 | D-1 | 运维 | 在 Router 旁部署；需要域名与用户授权 | C–F |
@@ -144,8 +145,8 @@ B 与 C 可在 A 之后并行。范围说明：Gateway 保持为独立进程，�
 不进入 Router 的单实例平滑升级流程；部署需要 Router 把 Gateway 的 loopback 对端列入
 `TRUSTED_PROXIES` 并把 `CLIENT_IP_HEADER` 设为 Gateway 发送的头，组网地址上的 Host link
 监听需用 `--hostlink-allow-cidr` 放行（组网网段既不属于 RFC1918 也不属于
-`100.64.0.0/10`），H5 客户端需要域名或路径前缀——这些都是部署决定；桌面需要第二条
-No-TUN 转发到组网上的 Host link 地址（provider 配置规格 §3），目前只有一条；新帧只发给
+`100.64.0.0/10`），H5 客户端需要域名或路径前缀——这些都是部署决定；E1 负责安装第二条
+No-TUN 转发到组网上的 Host link 地址（provider 配置规格 §3），TUN 模式不需要；新帧只发给
 声明支持的 Host，声明方式由工作包 D 定义；设备申请与确认中继从工作包 C 移到工作包 D，
 因为中继设备申请、接受已签名授权依赖 D 定义的 `device.request` / `device.grant` 帧与
 能力声明，C 只负责账户目录，D 负责中继所依赖的全部基础。
@@ -297,11 +298,23 @@ Gateway 全部通过，且 `05-security/02-remote-control-security.md` 的安全
   账户绑定写入签发的证书、账户登录与账户主机列表（会话凭据只存哈希且有界）、按客户端
   IP 的凭据限流，以及针对 stub Router 的跨账户隔离测试。本包确定的路由、错误码、会话
   形态、证书绑定与客户端 IP 规则已写入协议 §11.5、安全规格 §3.8 与 Gateway README。
-  仍缺：`device.request` / `device.grant` 帧与能力声明（工作包 D）、桌面自动配置、第二条
-  No-TUN 转发、确认对话框与严格模式（工作包 E）、客户端 key 登录与主机切换（工作包 F）、
-  Router 的 `remoteGateway` bootstrap 对象（工作包 B），以及在 Router 旁的部署（D-1）。
+  仍缺：`device.request` / `device.grant` 帧与能力声明（工作包 D）、Electron main 自动注册
+  与 Host link 接线、确认对话框与严格模式（工作包 E2）、客户端 key 登录与主机切换（工作包 F），
+  以及在 Router 旁的部署（D-1）。
   `E2E-REMOTE-ACCOUNT-*` 场景仍为 Draft：目前只覆盖了跨账户隔离的第 1–4 步与第 6 步，
   由 Gateway 自身的集成测试承担。
+
+- R7 工作包 E1 已交付（2026-10-18，D666 / ADR `remote-control-router-account-binding`）：
+  工作包 E 的 host-core 部分。bootstrap 应答里可选的
+  `remote_gateway { hostlink_url, public_origin, ca_pem }` 对象采用宽松解析——两种拼写都接受，
+  对象畸形绝不让组网失败：组网身份照常生效，账户模式报告为不可用并给出原因。Host link 目标
+  由该端点推导：端点是域名而非 IP 时用同一应答的 `gatewayVirtualIpv4` 作为组网地址；No-TUN
+  模式为它安装第二条回环转发，端口绝不复用 Router 转发端口；TUN 模式不装。`EasyTierStatus.remoteGateway`
+  暴露 `available`、端点与 CA、拨号地址、证书服务名、转发端口，以及账户模式不可用的原因。
+  字段规则、目标与端口规则、状态形状写入 provider 配置规格 §3。仍缺：Electron main 自动注册
+  与 Host link 接线、确认对话框、严格模式与 i18n（工作包 E2），客户端 key 登录与主机切换
+  （工作包 F），以及在 Router 旁的部署（D-1）。`E2E-REMOTE-ACCOUNT-*` 场景仍为 Draft：
+  E1 自身不改变任何用户可见流程。
 
 ## 8. 修订记录
 
