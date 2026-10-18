@@ -1,6 +1,6 @@
 # ADR agent-long-term-memory: Layered, provenance-tracked long-term memory
 
-- Status: Accepted for implementation (D666)
+- Status: Accepted for implementation (D667)
 - Date: 2026-10-18
 - Amends: ADR 0234 (project memory stays the pinned layer)
 - Related: ADR 0249, ADR 0323, ADR 0329, ADR session-content-search,
@@ -281,7 +281,7 @@ clients show the tools as generic tool rows).
   measured suggestion quality.
 - **Embeddings.** Deferred until literal and FTS recall measurably fails.
 
-## Resolved decisions (D666)
+## Resolved decisions (D667)
 
 - **Learn automatically is off by default.** Extraction needs a model the
   user chooses and spends the user's quota, so it cannot be on before that
