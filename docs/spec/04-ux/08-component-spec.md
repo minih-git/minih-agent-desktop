@@ -1422,7 +1422,7 @@ near-zero duration. A folded group keeps its rows mounted, `aria-hidden`, and
 | Inactive | bg-secondary, text-secondary |
 | Hover (inactive) | bg-tertiary |
 | In progress | warning-orange breathing dot; no motion under reduced-motion |
-| Completed | success-green check mark |
+| Completed | static success-green solid dot, matching the in-progress dot's 7px diameter and 3px soft halo |
 | Failed | error-red circled alert mark |
 | Pinned project | filled accent Star replaces the Folder glyph; ordered before unpinned projects within the selected sort |
 | Pinned conversation | shown once in the global Pinned section, with project context and the selected session sort |

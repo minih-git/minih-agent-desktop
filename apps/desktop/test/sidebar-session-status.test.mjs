@@ -176,7 +176,7 @@ test("opening a conversation acknowledges its outcome badge before loading detai
   assert.match(ackBlock, /markNotificationRead\(item\.id\)/);
 });
 
-test("renders semantic, shape-distinct sidebar status indicators", () => {
+test("renders semantic sidebar status indicators with a solid completion dot", () => {
   const sidebar = fs.readFileSync(
     new URL("../src/components/Sidebar.tsx", import.meta.url),
     "utf8",
@@ -191,10 +191,26 @@ test("renders semantic, shape-distinct sidebar status indicators", () => {
   const main = readMainSourceSync();
 
   assert.match(sidebar, /sessionSelected[\s\S]*sessionCompleted[\s\S]*sessionFailed/);
-  assert.match(sidebar, /IconCheck[\s\S]*IconCircleAlert/);
+  assert.doesNotMatch(sidebar, /IconCheck/);
+  assert.match(sidebar, /IconCircleAlert/);
   assert.match(styles, /thread-item-status\.running::before[\s\S]*--ds-warning/);
   assert.match(styles, /thread-item-status\.selected::before[\s\S]*--ds-accent/);
-  assert.match(styles, /thread-item-status\.completed[\s\S]*--ds-success/);
+  const sharedDot = styles.match(
+    /\.thread-item-status\.running::before,\s*\.thread-item-status\.completed::before\s*\{([^}]+)\}/,
+  )?.[1];
+  assert.ok(sharedDot, "running and completed share the same dot geometry");
+  assert.match(sharedDot, /width: 7px/);
+  assert.match(sharedDot, /height: 7px/);
+  assert.match(sharedDot, /border-radius: var\(--radius-full\)/);
+  assert.match(sharedDot, /content: ""/);
+  assert.doesNotMatch(sharedDot, /animation:/);
+  const completedDot = styles.match(
+    /(?:^|\n)\.thread-item-status\.completed::before\s*\{([^}]+)\}/g,
+  )?.at(-1);
+  assert.ok(completedDot, "completion paints a visible dot");
+  assert.match(completedDot, /background: var\(--ds-success\)/);
+  assert.match(completedDot, /box-shadow: 0 0 0 3px color-mix\(in oklab, var\(--ds-success\) 15%, transparent\)/);
+  assert.doesNotMatch(completedDot, /animation:/);
   assert.match(styles, /thread-item-status\.failed[\s\S]*--ds-error/);
   assert.match(
     styles,

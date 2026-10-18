@@ -309,6 +309,33 @@ test("sidebar renders global pins once, outside project folding and history limi
       "a collapsed project with a question-pending session renders the decision indicator",
     );
     assert.match(collapsedOpenWithAsk, /sidebar-project-status-count[^>]*>2<\/span>/);
+
+    for (const language of ["en", "zh-CN"]) {
+      i18n.addResourceBundle(language, "translation", catalogs[language]);
+      await i18n.changeLanguage(language);
+      const completedLabel = catalogs[language].nav.sessionCompleted;
+      const completionState = {
+        runningSessions: {},
+        pendingPermissions: {},
+        pendingAsks: {},
+        sessionOutcomes: { "normal-00": "completed", "open-pin": "completed" },
+      };
+      for (const activityOpen of [false, true]) {
+        const completedHtml = render(completionState, { defaultActivityOpen: activityOpen });
+        const marks = [...completedHtml.matchAll(
+          /<span class="thread-item-status completed"([^>]*)>([\s\S]*?)<\/span>/g,
+        )];
+        assert.equal(marks.length, 2);
+        for (const [, attributes, contents] of marks) {
+          assert.ok(attributes.includes(`aria-label="${completedLabel}"`));
+          assert.ok(attributes.includes(`title="${completedLabel}"`));
+          assert.equal(contents, "", "completion uses the CSS dot without a check glyph");
+        }
+      }
+      const selectedCompletion = render({ ...completionState, activeSessionId: "normal-00" });
+      assert.equal([...selectedCompletion.matchAll(/thread-item-status completed/g)].length, 1);
+      assert.match(selectedCompletion, /thread-item-status selected/);
+    }
   } finally {
     globalThis.document = previousDocument;
     await server.close();
