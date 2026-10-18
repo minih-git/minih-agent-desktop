@@ -19,7 +19,7 @@
 .scheduled-instruction-input.field-textarea {
   /* A scheduled prompt is usually a paragraph or a short numbered brief, so the
      field opens tall enough to read and edit it without scrolling first. */
-  min-height: 208px;
+  min-height: 240px;
   max-height: none;
   display: block;
   resize: none;
