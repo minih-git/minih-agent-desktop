@@ -2335,10 +2335,11 @@ seconds when non-zero) from one hour onward. Zero-value units are omitted, so
   dedicated runtime indicator; no additional status capsule is rendered.
   Long paths remain in the row summary and are ellipsized.
 - The disclosure chevron is quiet until hover/focus or expansion.
-- A `run` row's head carries two more controls than the others, because its
-  command lives only there (D226, §9.10): the outcome with a toned dot, and a
-  copy control beside the chevron. That outcome comes from the exit code the
-  shell reported, not from the status of the call that carried it (D227).
+- A `run` row's head prints its command and, on a full row, a copy control
+  beside the chevron; a one-line step row has no room for that control, so the
+  copy action is the one on the block in the body it opens (D226, §9.10). The
+  stated outcome comes from the exit code the shell reported, not from the
+  status of the call that carried it (D227).
 
 ### 9.3 Expanded blocks
 
@@ -2352,7 +2353,7 @@ twice.
 | Read | `File content` — syntax highlighted from the file extension |
 | Write | `Written content` — highlighted from the target extension |
 | Edit | `Changes` — compact diff, only when no ReviewChangeCard owns one |
-| Bash | `Output`, `Errors` (error hue), unframed and unlabelled (D227, §9.10); empty channels omitted. The command stays in the head; a PermissionCard, which has no head, still shows it as `Command` (shell) |
+| Bash | `Output`, `Errors` (error hue); empty channels omitted (D227, §9.10). A full row renders them unframed and unlabelled and never repeats the command, which its head prints and copies; a one-line step row opens on a labelled `Command` block instead, because its head only holds a hint cut to the row width. A PermissionCard, which has no head, shows the command as `Command` (shell) too |
 | Glob | `Files` — clickable workspace paths |
 | Grep | `Matches` — grouped by file with a `line` gutter and clickable path headings for `outputMode: content`; a clickable path list for `filesWithMatches`; `path` → hit count fields for `count` |
 | any host `notice` | `Note` — neutral, after the blocks it qualifies (search scoping, clipped long lines, Read window) |
@@ -2663,9 +2664,11 @@ as a conversation:
 ### 9.10 A run row's command lives in its head (D226)
 
 A `run` row is the one row whose primary argument is the whole point of the
-call. Its head already prints that command, so the body opens on the output
-rather than on a `Command` block repeating what the reader just read. The two
-things the body no longer offers move up into the head.
+call. Its head already prints that command, so a full row's body opens on the
+output rather than on a `Command` block repeating what the reader just read,
+and the two things the body no longer offers move up into the head. A one-line
+step row has no such head: it states the command as a hint cut to the row
+width, so its body does open on the command.
 
 ```text
 └─ [terminal] Ran  pnpm test  exit 1   • Failed  [copy] [›]
@@ -2673,17 +2676,22 @@ things the body no longer offers move up into the head.
    1 failing: run head keeps its caret
 ```
 
-- **The command appears once.** The body of a `run` row holds `Output`, `Errors`
-  and any host `notice` — never the command. A PermissionCard has no head of its
-  own, so it keeps showing the command it is asking about.
+- **The command is readable somewhere.** A full row's head prints it and copies
+  it, so its body holds `Output`, `Errors` and any host `notice` and never the
+  command. A one-line step row's head only hints at it, so its body opens on a
+  `Command` block instead. A PermissionCard has no head of its own, so it keeps
+  showing the command it is asking about.
 - **Copy sits beside the chevron** and yields the command as it was written,
-  including newlines the one-line head hint had to squeeze out.
-- **The body is the output, unframed** (D227). A `run` row's blocks drop their
+  including newlines the one-line head hint had to squeeze out. A one-line step
+  row reaches the same text through the copy action on its `Command` block.
+- **The body is the output, unframed** (D227). A full row's blocks drop their
   heading and their card — no border, no fill, no per-block copy button — so the
-  expanded row reads like the terminal the text came from. The 260px height cap
-  and its scroll stay: a long build must not bury the transcript. `Errors` keeps
-  its tint, and each channel's name is carried for assistive technology in place
-  of the heading that used to name it.
+  expanded row reads like the terminal the text came from. A one-line step row
+  keeps its headings and frames: its `Command` block would otherwise be
+  indistinguishable from the output below it. The 260px height cap and its
+  scroll stay: a long build must not bury the transcript. `Errors` keeps its
+  tint, and each channel's name is carried for assistive technology in place of
+  the heading that used to name it.
 - **Streaming keeps one stdout channel.** While Bash is running, the renderer
   accepts the runtime's cumulative `details.output` partial result and presents
   it as stdout. The completed `details.stdout` value takes precedence when both

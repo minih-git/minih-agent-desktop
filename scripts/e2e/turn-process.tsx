@@ -242,6 +242,16 @@ export async function turnProcessProbe() {
         (row("bash1")?.textContent ?? "").includes("pnpm test"),
       "a run step row states the action with its command beside it",
     );
+
+    // That hint is cut to the row width, so the opened body is the only place
+    // the whole command can be read.
+    click(row("bash1")?.querySelector<HTMLElement>(".tool-row-header") ?? null);
+    check(
+      (row("bash1")?.querySelector(".tool-row-body .tool-row-section-head span")
+        ?.textContent ?? "") === "Command",
+      "an opened run step row opens on the command its head only hints at",
+    );
+    click(row("bash1")?.querySelector<HTMLElement>(".tool-row-header") ?? null);
     check(
       (row("read")?.textContent ?? "").includes("src/example.ts"),
       "a read step row carries the file it read beside the action",
