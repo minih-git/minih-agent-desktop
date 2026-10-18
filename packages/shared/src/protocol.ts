@@ -139,6 +139,10 @@ export const IPC = {
     sessionSearch: "minih-agent-desktop/session/search",
     sessionSearchContext: "minih-agent-desktop/session/searchContext",
     sessionGet: "minih-agent-desktop/session/get",
+    /** Read-only delegation summaries for the work panel's session roster. */
+    sessionDelegations: "minih-agent-desktop/session/delegations",
+    /** Read-only conversation of one delegation chain, read on demand. */
+    sessionDelegation: "minih-agent-desktop/session/delegation",
     sessionCollaboration: "minih-agent-desktop/session/collaboration",
     /** Validate and select a durable session from a reviewed host operation. */
     sessionOpen: "minih-agent-desktop/session/open",

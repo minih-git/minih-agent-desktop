@@ -1142,6 +1142,18 @@ entirely inside the plugin's isolated page:
 
 ### 5.4 Interactions
 
+- The per-session subagent roster is a section between the tab strip and the
+  tab body, rendered only while the panel is open and the active session has
+  delegations (or the read is still loading or failed). It is independent of
+  the active tab, and it indexes the whole persisted session rather than the
+  loaded reading window, so an older delegation stays reachable. Collapsed, it
+  is one 34px row carrying the total and running counts; expanded, its body is
+  capped at `min(240px, 30vh)` and scrolls internally while the tab body keeps
+  its own scroll owner. Rows are full-width buttons showing a status icon, the
+  `Task` brief, the agent, a text status, and a duration; the delegation whose
+  detail tab is active carries `aria-current`. A session with no delegations
+  renders no section at all, and never renders it as an empty one.
+
 - Native plugin bounds follow the placeholder's complete viewport-relative
   rectangle after every renderer layout commit, not only after the placeholder
   changes size. Sidebar collapse/expand, preview mode, and ancestor transforms

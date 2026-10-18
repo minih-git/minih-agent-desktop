@@ -1,0 +1,291 @@
+/* ---------- Session subagent roster ------------------------------------- */
+
+/*
+ * The roster is a per-session index above the tab bodies, not a pane of its
+ * own: it has to stay visible while Review, a file, or a browser view owns the
+ * body. Its height is capped so a long session can never squeeze the body; the
+ * rows scroll inside the cap and the body keeps its own scroll owner.
+ */
+.subagent-roster {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  flex-direction: column;
+  background: var(--ds-bg-dock);
+  border-bottom: 1px solid var(--ds-border-subtle);
+}
+
+.subagent-roster-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 34px;
+  flex: 0 0 auto;
+  padding: 0 10px 0 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.subagent-roster-header:hover {
+  background: var(--ds-bg-hover);
+}
+
+.subagent-roster-header:focus-visible {
+  outline: 2px solid var(--ds-text-secondary);
+  outline-offset: -2px;
+}
+
+.subagent-roster-chevron {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--ds-text-faint);
+  transition: transform var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.subagent-roster.is-collapsed .subagent-roster-chevron {
+  transform: rotate(-90deg);
+}
+
+.subagent-roster-heading {
+  flex: 0 0 auto;
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--ds-text-primary);
+}
+
+.subagent-roster-count {
+  display: inline-grid;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--ds-bg-chip);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-3xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.subagent-roster-running {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-3xs);
+  white-space: nowrap;
+}
+
+.subagent-roster-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-full);
+  background: var(--ds-success);
+}
+
+.subagent-roster-hint {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--ds-text-faint);
+  font-size: var(--text-3xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-roster-body {
+  min-height: 0;
+  /* Border-box keeps the cap inclusive of the padding, so the measured height
+     never exceeds the budget the tab body reserved beside it. */
+  max-height: min(240px, 30vh);
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 6px 6px;
+}
+
+.subagent-roster-group + .subagent-roster-group {
+  margin-top: 2px;
+}
+
+.subagent-roster-group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 7px 3px;
+  color: var(--ds-text-faint);
+  font-size: var(--text-3xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.subagent-roster-group-label::after {
+  content: "";
+  height: 1px;
+  flex: 1 1 auto;
+  background: var(--ds-border-subtle);
+}
+
+.subagent-roster-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.subagent-roster-row:hover {
+  background: var(--ds-bg-hover);
+}
+
+.subagent-roster-row:focus-visible {
+  outline: 2px solid var(--ds-text-secondary);
+  outline-offset: -2px;
+}
+
+.subagent-roster-row.is-selected {
+  background: var(--ds-tile-deep);
+}
+
+.subagent-roster-row.is-selected::before {
+  content: "";
+  position: absolute;
+  inset-block: 7px;
+  left: 0;
+  width: 2px;
+  border-radius: var(--radius-full);
+  background: var(--ds-text-secondary);
+}
+
+.subagent-roster-row-icon {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--ds-text-muted);
+}
+
+.subagent-roster-row.is-running .subagent-roster-row-icon {
+  color: var(--ds-success);
+}
+
+.subagent-roster-row.is-failed .subagent-roster-row-icon,
+.subagent-roster-row.is-denied .subagent-roster-row-icon,
+.subagent-roster-row.is-timed_out .subagent-roster-row-icon {
+  color: var(--ds-error);
+}
+
+.subagent-roster-live {
+  display: grid;
+  place-items: center;
+}
+
+.subagent-roster-row-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.subagent-roster-row-title {
+  overflow: hidden;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-compact);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-roster-row.is-failed .subagent-roster-row-title {
+  color: var(--ds-error);
+}
+
+.subagent-roster-row-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-3xs);
+  line-height: var(--leading-compact);
+}
+
+.subagent-roster-agent {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-roster-status {
+  flex: 0 0 auto;
+}
+
+.subagent-roster-duration {
+  flex: 0 0 auto;
+  color: var(--ds-text-faint);
+  font-size: var(--text-3xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.subagent-roster-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+}
+
+.subagent-roster-note.is-error {
+  color: var(--ds-error);
+}
+
+.subagent-roster-note.is-warning {
+  color: var(--ds-warning);
+}
+
+.subagent-roster-retry {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--ds-text-secondary);
+  font: inherit;
+  font-size: var(--text-3xs);
+  cursor: pointer;
+}
+
+.subagent-roster-retry:hover {
+  background: var(--ds-bg-hover);
+  color: var(--ds-text-primary);
+}
+
+/* At the panel's 244px minimum the location hint has no room, and the running
+   count keeps its meaning without it. */
+.work-panel:has(.subagent-roster) .subagent-roster-hint {
+  flex: 0 1 auto;
+}

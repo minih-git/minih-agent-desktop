@@ -1106,6 +1106,16 @@ Minimal interface:
   forwards to `search.context`. This read-only text window is separate from
   `session/get` and must never enter the renderer's live transcript cache.
   Both channels are explicitly included in the preload IPC allowlist.
+- `session/delegations({ sessionId }) -> SessionDelegationRows` is the
+  read-only roster read: delegation summaries for the whole session, never a
+  delegate's conversation. `session/delegation({ sessionId, delegationId }) ->
+  SessionDelegationDetail` reads one chain's conversation on demand, with a
+  per-field and total size budget and a `truncated` flag; `messages: null`
+  means the session no longer has that delegation. Main validates both ids and
+  forwards to the matching host method; a `native-pi:` or `remote:` source is
+  rejected with `UNSUPPORTED` rather than answered with an empty list, because
+  those transcripts belong to another owner. Neither answer enters the live
+  transcript cache or replaces a reading window.
 - `session/delete`
 - `session/rename({ id, title }) -> { ok: boolean }` trims the title and
   accepts 1–80 Unicode code points. Blank or overlong titles are rejected as

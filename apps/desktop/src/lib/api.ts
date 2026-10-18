@@ -84,6 +84,8 @@ import type {
   ProviderUpdateInput,
   Result,
   SessionDetail,
+  SessionDelegationDetail,
+  SessionDelegationRows,
   SessionSearchPage,
   SessionSearchContext,
   SessionSearchContextRequest,
@@ -715,6 +717,22 @@ export const api = {
       ...result,
       session: normalizeSessionDetail(result.session),
     })),
+  /**
+   * Delegation summaries from the full persisted transcript, for the work
+   * panel's session roster. A reading window cannot answer this: the oldest
+   * `Task` rows of a long session are outside it.
+   */
+  getSessionDelegations: (sessionId: string) =>
+    invoke<SessionDelegationRows>(IPC.invoke.sessionDelegations, { sessionId }),
+  /**
+   * One delegation chain's conversation, read on demand. `messages: null`
+   * means the session no longer has that delegation.
+   */
+  getSessionDelegation: (sessionId: string, delegationId: string) =>
+    invoke<SessionDelegationDetail>(IPC.invoke.sessionDelegation, {
+      sessionId,
+      delegationId,
+    }),
   getSessionCollaboration: (sessionId: string) =>
     invoke<SessionCollaborationSummary>(IPC.invoke.sessionCollaboration, { sessionId }),
   deleteSession: (id: string) => invoke(IPC.invoke.sessionDelete, id),

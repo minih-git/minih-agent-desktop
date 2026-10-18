@@ -45,6 +45,7 @@ import { ReviewTab } from "./ReviewTab";
 import { FilesTab } from "./FilesTab";
 import { PluginViewTab } from "./PluginViewTab";
 import { SubagentTranscriptTab } from "./SubagentTranscriptTab";
+import { SessionSubagentRoster } from "./SessionSubagentRoster";
 import {
   MAIN_PANE_MIN_WIDTH,
   WORK_PANEL_COMPACT_MIN_WIDTH,
@@ -916,6 +917,7 @@ function LocalWorkPanel({
             </TooltipButton>
           </div>
         </header>
+        <SessionSubagentRoster />
         <div className="work-panel-body">
           {activeTab?.kind === "subagent" && (
             <div
