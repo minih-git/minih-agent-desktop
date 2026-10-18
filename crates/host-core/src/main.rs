@@ -8,6 +8,7 @@ mod db;
 mod easytier_net;
 mod keyboard;
 mod mcp_servers;
+mod memory;
 mod network_policy;
 mod network_proxy;
 mod notifications;

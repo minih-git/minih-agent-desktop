@@ -1,4 +1,4 @@
-# 04. 数据存储（架构 v23）
+# 04. 数据存储（架构 v26）
 
 > **翻译说明：** 本页是与 [英文源规格](/spec/03-runtime/04-data-storage) 一一对应的机器辅助翻译。代码、协议字段和标识符保持原文；如翻译与英文源事实有歧义，以英文版本为准。
 
@@ -1059,6 +1059,93 @@ CREATE INDEX idx_notifications_unread
   read 是一项索引更新，而clear 仅删除通知行。没有一个
   这些操作会更改会话、回合或记录。
 
+### 4.15 memory_entries + memory_tombstones + memory_session_state — 学习记忆（架构 v26，ADR agent-long-term-memory）
+
+学习层与 §4.1 的固定层并存。`projectMemory` / `projectGroupMemory` 的 `kv`
+记录、它们的编辑器、32 KiB 上限、同步域以及触发运行时重建的行为都保持不变。
+学习记忆是 Agent 可以新增、保留、编辑或遗忘的上下文；每次写入都经过 Host
+RPC 和同一套校验。
+
+```sql
+CREATE TABLE memory_entries (
+  id                 TEXT PRIMARY KEY,
+  scope_kind         TEXT NOT NULL CHECK (scope_kind IN ('project', 'user')),
+  scope_key          TEXT,              -- 项目组 id 或规范路径；user 作用域为 NULL
+  kind               TEXT NOT NULL CHECK (kind IN ('preference', 'feedback', 'fact', 'reference')),
+  content            TEXT NOT NULL CHECK (length(content) > 0),  -- 上限 1 KiB，由 Host 校验
+  rationale          TEXT,              -- 上限 512 字节，由 Host 校验
+  status             TEXT NOT NULL CHECK (status IN ('suggested', 'active', 'archived')),
+  origin             TEXT NOT NULL CHECK (origin IN ('explicit', 'user_ui', 'extracted')),
+  evidence           TEXT NOT NULL CHECK (evidence IN ('user_stated', 'verified', 'inferred')),
+  source_session_id  TEXT,
+  source_message_ids TEXT NOT NULL DEFAULT '[]',
+  fingerprint        TEXT NOT NULL,     -- SHA-256(kind + NFKC 归一化后的内容)
+  revision           INTEGER NOT NULL DEFAULT 1,
+  superseded_by      TEXT,
+  created_at         INTEGER NOT NULL,
+  updated_at         INTEGER NOT NULL,
+  last_used_at       INTEGER,
+  use_count          INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_memory_entries_scope ON memory_entries(scope_kind, scope_key, status);
+CREATE UNIQUE INDEX idx_memory_entries_fingerprint
+  ON memory_entries(scope_kind, IFNULL(scope_key, ''), fingerprint)
+  WHERE status <> 'archived';
+CREATE INDEX idx_memory_entries_recent ON memory_entries(updated_at DESC, id ASC);
+
+CREATE TABLE memory_tombstones (
+  id                 INTEGER PRIMARY KEY,
+  scope_kind         TEXT NOT NULL CHECK (scope_kind IN ('project', 'user')),
+  scope_key          TEXT,
+  fingerprint        TEXT NOT NULL,
+  source_session_id  TEXT,
+  source_message_ids TEXT NOT NULL DEFAULT '[]',
+  created_at         INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX idx_memory_tombstones_fingerprint
+  ON memory_tombstones(scope_kind, IFNULL(scope_key, ''), fingerprint);
+
+CREATE TABLE memory_session_state (
+  session_id  TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  scope_kind  TEXT NOT NULL CHECK (scope_kind IN ('project', 'user')),
+  scope_key   TEXT,
+  cursor_seq  INTEGER NOT NULL DEFAULT 0,
+  lease_owner TEXT,
+  lease_until INTEGER,
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  last_error  TEXT,
+  excluded    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_memory_session_state_scope ON memory_session_state(scope_kind, scope_key);
+-- 另有覆盖 content 和 rationale 的 memory_entries_fts，构建方式同 messages_fts（§4.8）
+```
+
+- **作用域身份。** `scope_key` 是所属项目组的 id（ADR 0249），或对不属于任何
+  已存组的项目而言是其规范路径。隔离 worktree 的会话保持主项目的身份
+  （ADR 0329），远程工作区会话与其固定记忆使用同一身份。只存在 `project` 与
+  `user` 两种作用域；user 作用域没有 key（`NULL`，比较时按 `''` 处理）。
+- **指纹。** 对 kind 与 NFKC 归一化、小写化、折叠空白后的内容做 SHA-256。
+  作用域属于唯一性键而不进入哈希，因此同一句话在两个项目中是两条记忆。
+  同一作用域内每个指纹只有一条存活条目；已归档行不参与该键。
+- **写入规则。** `preference` 与 `feedback` 要求 `evidence = 'user_stated'`，且
+  至少引用一条存在于 `source_session_id` 中、role 为 `user` 的消息；
+  `verified` 只对 `fact` 和 `reference` 生效。工具输出、文件或网页内容、
+  MCP 返回、子代理输出、注入的指令和技能文档都不能作为它们的依据。命中 Host
+  凭据检测的内容会被拒绝，且被拒绝的原文不会进入任何日志。指纹或任一被引用
+  来源消息命中屏蔽记录时写入被拒，除非是带 `overrideTombstone` 的显式请求。
+- **遗忘。** 删除会归档该行并写入不含内容的屏蔽记录；拒绝建议写入同样的
+  屏蔽记录。归档与恢复都不写屏蔽记录，因此隐藏条目不等于遗忘。
+- **更新。** 所有变更都对 `revision` 做比较并交换，因此后台写入者永远无法
+  覆盖用户编辑。
+- **生命周期。** 移除项目（`projects.remove`）时，会与现有的项目记忆清理一起
+  删除以该项目自身路径为键的行；已存组的行以组 id 为键，随组保留。把旧项目
+  升级成组时，会在同一个事务中把这些根目录的条目、屏蔽记录和会话状态重键到
+  该组，并按指纹去重。删除组记录会删除其组作用域的行。删除会话会级联
+  `memory_session_state`。数据迁移会连同所属项目一起重键 `scope_key`。
+- **抽取状态。** `cursor_seq`、`lease_owner`、`lease_until`、`attempts`、
+  `last_error` 和 `excluded` 让可选的抽取在重启、重复触发和渲染器重载后仍然
+  幂等；`last_error` 只保存错误码，从不保存对话文本。
+
 ### 从 v1 中删除
 
 | v1表 | v2首页 |
@@ -1199,6 +1286,8 @@ outbox 排空。渲染器侧的停止绝不重写已有已开始回复的转录
   `default`；其余现有标题保持原样并归类为 `manual`。迁移前保留 v22 备份。
   v15→v16 会话协作步骤现在写入 `16`（它自己的版本）而不是最新的架构常量，
   因此 v15 文件可以在一次启动中走完两个步骤。
+- **架构 v26 是增量的。** 它增加 §4.15 的学习记忆表及其索引、触发器和 FTS 索引。
+  不改动任何已有行，固定项目记忆不受影响，新表从空开始；迁移前保留 v25 备份。
 - **架构 v7 首先到达 v8，然后使用受保护的路径。** v7→v8
   迁移之后是相同的受保护的 v8→v15 迁移；架构-v9 和
   schema-v10 数据库采用相同的受保护路径并接收精确的可读数据

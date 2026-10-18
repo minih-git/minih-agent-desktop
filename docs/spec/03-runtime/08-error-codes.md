@@ -349,6 +349,17 @@ does not trigger automatic provider or billing fallback.
 | `LIVE_AUDIO_BACKPRESSURE` | no | bounded PCM or playback credits were exhausted |
 | `LIVE_EXECUTION_NOT_CONNECTED` | no | a provider requested an unsupported function/delegation execution path |
 
+### 3.10 Learned memory
+
+The learned-memory RPCs (spec 06 §4) report their refusals as result values
+(`{ rejected: { code, message } }`) instead of errors, so only the two conflict
+codes below are errors. Neither repeats the refused content.
+
+| code | retriable | meaning |
+|---|---|---|
+| `MEMORY_REVISION_CONFLICT` | no | a learned-memory update carried a `revision` another writer already moved past; the stored row is unchanged |
+| `MEMORY_DUPLICATE_CONTENT` | no | restoring or editing would leave two live memories with the same content in one scope |
+
 ## 4. Mapping rules
 
 ### Host RPC numeric → AppError.code

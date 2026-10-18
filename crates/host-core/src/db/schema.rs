@@ -170,6 +170,10 @@ CREATE UNIQUE INDEX idx_turn_queue_idempotency
 -- `notifications` is defined once, in `NOTIFICATIONS_DDL`, because the v24 ->
 -- v25 migration rebuilds the table; the fresh schema applies the same text
 -- instead of holding a second copy that could drift.
+--
+-- The learned-memory tables (schema v26, ADR agent-long-term-memory) are
+-- likewise defined once in `LEARNED_MEMORY_DDL` and applied by the fresh-schema
+-- path and the v25 -> v26 migration.
 
 
 CREATE TABLE messages (

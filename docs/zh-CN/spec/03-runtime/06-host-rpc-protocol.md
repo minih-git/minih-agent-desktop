@@ -197,10 +197,51 @@ type ToolBudgetHealth = {
 - `projects.create({ path })` — 创建或复用持久项目记录，不切换当前工作区，
   并返回宿主生成的项目 id
 - `projects.remove({ path })` — 删除一条持久项目行，并连同附加到它的每个会话一起删除，
-  移除这些会话的转录本、scratch 和 review 文件以及该项目的持久记忆，且从不触碰磁盘上的
-  项目文件夹。幂等：未知路径返回 `{ removed: false, sessionsRemoved: 0 }`。作为已存储
+  移除这些会话的转录本、scratch 和 review 文件、该项目的持久记忆，以及以该项目自身路径为键的
+  学习记忆，且从不触碰磁盘上的项目文件夹。幂等：未知路径返回 `{ removed: false, sessionsRemoved: 0 }`。作为已存储
   多文件夹项目组根目录的路径会被拒绝，以便该组保留有效的 Primary 根目录；而只要其中仍有会话
   在运行，调用就会被拒绝（1008 / `CONFLICT`），因此运行中的轮次绝不会丢失它正在写入的转录本。
+
+### 学习记忆（ADR agent-long-term-memory）
+
+固定项目记忆（`project.memory.*`、`project.group.memory.*`）保持不变。以下方法
+管理学习层：会话通过运行时生命周期内冻结的启动快照，以及召回工具来读取它。
+
+- `memory.list({ scope?, path?, sessionId?, status?, kind?, limit?, offset? })` ——
+  某个作用域的条目，最新的在前。`scope` 为 `project`（默认）或 `user`；项目作用域
+  由 `path`（桌面管理器）或调用方指定的会话解析。返回 `{ entries, scope }`。
+- `memory.search({ query, path?, sessionId?, kinds?, limit?, recordUse? })` ——
+  在会话项目作用域加用户作用域的存活条目上做字面搜索，以 trigram FTS 索引作为
+  预过滤。`limit` 默认 8，上限 20。仅在 `recordUse: true` 时命中会刷新
+  `lastUsedAt` 与 `useCount`；启动索引从不刷新。
+- `memory.index({ path })` —— 某项目的启动索引：项目作用域与用户作用域的存活条目，
+  显式条目优先，其次按最近使用时间，上限为 40 条、6 KiB。返回
+  `{ index: { entries, omittedCount, bytes } }`。读取失败时启动会在没有索引的情况下继续。
+- `memory.create({ ... })` —— 唯一的创建路径。参数：`scope`、`path` 或
+  `sessionId`、`kind`、`content`、可选 `rationale`、`origin`（`explicit` |
+  `user_ui`，默认 | `extracted`）、`evidence`（`user_stated`，默认 | `verified` |
+  `inferred`）、`status`（`active`，默认 | `suggested`）、`sourceSessionId`、
+  `sourceMessageIds`、`overrideTombstone`。写入或发现已存在条目时返回
+  `{ entry, duplicate }`，被规则拒绝时返回 `{ rejected: { code, message } }`。
+  拒绝码：`MEMORY_EMPTY_CONTENT`、`MEMORY_CONTENT_TOO_LARGE`、
+  `MEMORY_RATIONALE_TOO_LARGE`、`MEMORY_INVALID_FIELD`、
+  `MEMORY_CREDENTIAL_DETECTED`、`MEMORY_PROVENANCE_REQUIRED`、
+  `MEMORY_TOMBSTONED`。拒绝信息不会重复被拒原文。
+- `memory.update({ id, revision, content?, rationale?, kind?, scope?, path? })` ——
+  编辑条目。对 `revision` 做比较并交换：过期版本返回 1008 /
+  `MEMORY_REVISION_CONFLICT`，且该行保持不变。
+- `memory.archive({ id })` / `memory.restore({ id })` —— 隐藏或取消隐藏。两者都不写
+  屏蔽记录。取消隐藏的内容已被存活条目持有时返回 1008 / `MEMORY_DUPLICATE_CONTENT`。
+- `memory.delete({ id })` —— 遗忘：归档并写入不含内容的屏蔽记录，屏蔽同一指纹与同一
+  来源消息。幂等；返回 `{ ok }`。
+- `memory.suggestions.decide({ id, decision })` —— `accept` 激活建议，`reject`
+  归档建议并写入同样的屏蔽记录。
+- `memory.session.get({ sessionId })` / `memory.session.setExcluded({ sessionId,
+  excluded })` —— 每个会话的抽取状态，包括「不要从这次对话学习」。
+- `memory.extraction.claim({ sessionId, owner, leaseMs? })` /
+  `memory.extraction.complete({ sessionId, owner, cursorSeq })` /
+  `memory.extraction.fail({ sessionId, owner, error })` —— 可选抽取使用的游标与租约。
+  只有租约持有者可以推进游标或记录失败，且游标永不回退。
 
 ### 秘密
 - `secrets.set`
@@ -961,6 +1002,8 @@ JSON-RPC 错误携带一个数字 `code` 以及 `data.errorCode`，后者是来�
 | 1007 | SESSION_NOT_FOUND | 点名的会话不存在；工具请求永远不会回退到全局工作区 |
 | 1008 | CONFLICT | busy/conflict 状态 |
 | 1008 | AGENT_BUSY | 该会话有一个正在运行的回合 |
+| 1008 | MEMORY_REVISION_CONFLICT | 学习记忆更新携带了过期的 `revision` |
+| 1008 | MEMORY_DUPLICATE_CONTENT | 该作用域内已有存活记忆持有相同内容 |
 | 1009 | PLUGIN_INVALID | manifest/validation 失败 |
 | 1010 | PLUGIN_LOAD_FAILED | enable/load 失败 |
 | 1011 | PROTOCOL_MISMATCH | `app.handshake` 协议版本不匹配 |

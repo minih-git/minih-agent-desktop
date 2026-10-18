@@ -222,8 +222,8 @@ type ToolBudgetHealth = {
   changing the active workspace and returns the host-generated project id
 - `projects.remove({ path })` — deletes one durable project row together with
   every session attached to it, removing those sessions' transcript, scratch,
-  and review files and the project's durable memory, and never touching the
-  project folder on disk. Idempotent: an unknown path returns
+  and review files, the project's durable memory, and the project's learned
+  memory keyed by its own path, and never touching the project folder on disk. Idempotent: an unknown path returns
   `{ removed: false, sessionsRemoved: 0 }`. If the path belongs to a stored
   project group, deletion detaches that root in the same flow; deleting the
   primary promotes the first remaining root, and deleting the last root also
@@ -263,6 +263,58 @@ type ToolBudgetHealth = {
   remain authoritative. Builtin tools default to the primary root; absolute
   paths under registered additional roots use the same canonical containment
   resolver and never become arbitrary external access.
+
+### Learned memory (ADR agent-long-term-memory)
+
+Pinned project memory (`project.memory.*`, `project.group.memory.*`) is
+unchanged. These methods own the learned layer, which a session reads through a
+session-start snapshot that is frozen for the runtime's lifetime and through the
+recall tools.
+
+- `memory.list({ scope?, path?, sessionId?, status?, kind?, limit?, offset? })` —
+  entries of one scope, newest first. `scope` is `project` (default) or `user`; a
+  project scope resolves from `path` (the desktop manager) or from the session the
+  caller names. Returns `{ entries, scope }`.
+- `memory.search({ query, path?, sessionId?, kinds?, limit?, recordUse? })` —
+  literal search over the active entries of the session's project scope plus the
+  user scope, with the trigram FTS index as a prefilter. `limit` defaults to 8 and
+  is capped at 20. Hits refresh `lastUsedAt` and `useCount` only with
+  `recordUse: true`; the session-start index never does.
+- `memory.index({ path })` — the session-start index for a project: active entries
+  of the project scope and the user scope, explicit entries first, then by recency
+  of use, bounded to 40 entries and 6 KiB. Returns
+  `{ index: { entries, omittedCount, bytes } }`. A launch that cannot read it
+  continues without an index.
+- `memory.create({ ... })` — the only create path. Params: `scope`, `path` or
+  `sessionId`, `kind`, `content`, optional `rationale`, `origin` (`explicit` |
+  `user_ui`, the default | `extracted`), `evidence` (`user_stated`, the default |
+  `verified` | `inferred`), `status` (`active`, the default | `suggested`),
+  `sourceSessionId`, `sourceMessageIds`, `overrideTombstone`. Returns
+  `{ entry, duplicate }` when it stores the entry or finds the one already there,
+  and `{ rejected: { code, message } }` when a rule refuses it. Rejection codes:
+  `MEMORY_EMPTY_CONTENT`, `MEMORY_CONTENT_TOO_LARGE`, `MEMORY_RATIONALE_TOO_LARGE`,
+  `MEMORY_INVALID_FIELD`, `MEMORY_CREDENTIAL_DETECTED`,
+  `MEMORY_PROVENANCE_REQUIRED`, `MEMORY_TOMBSTONED`. A rejected message never
+  repeats the refused text.
+- `memory.update({ id, revision, content?, rationale?, kind?, scope?, path? })` —
+  edit an entry. Compare-and-set on `revision`: a stale revision fails with 1008 /
+  `MEMORY_REVISION_CONFLICT` and leaves the row unchanged.
+- `memory.archive({ id })` / `memory.restore({ id })` — hide or unhide. Neither
+  writes a tombstone. Unhiding content that a live entry already holds fails with
+  1008 / `MEMORY_DUPLICATE_CONTENT`.
+- `memory.delete({ id })` — forget: archive plus a content-free tombstone that
+  blocks the same fingerprint and the same source messages. Idempotent; returns
+  `{ ok }`.
+- `memory.suggestions.decide({ id, decision })` — `accept` activates a suggestion,
+  `reject` archives it and writes the same tombstone.
+- `memory.session.get({ sessionId })` / `memory.session.setExcluded({ sessionId,
+  excluded })` — per-session extraction state, including "don't learn from this
+  conversation".
+- `memory.extraction.claim({ sessionId, owner, leaseMs? })` /
+  `memory.extraction.complete({ sessionId, owner, cursorSeq })` /
+  `memory.extraction.fail({ sessionId, owner, error })` — the cursor and lease the
+  optional extractor uses. Only the lease owner may advance the cursor or record a
+  failure, and the cursor never moves backwards.
 
 ### Secrets
 - `secrets.set`
@@ -1276,6 +1328,8 @@ numeric slot; the string is the contract, the number is transport detail.
 | 1007 | SESSION_NOT_FOUND | the named session does not exist; tool requests never fall back to the global workspace |
 | 1008 | CONFLICT | busy/conflict state |
 | 1008 | AGENT_BUSY | the session has a running turn |
+| 1008 | MEMORY_REVISION_CONFLICT | a learned-memory update carried a stale `revision` |
+| 1008 | MEMORY_DUPLICATE_CONTENT | a live memory in the scope already holds this content |
 | 1009 | PLUGIN_INVALID | manifest/validation failure |
 | 1010 | PLUGIN_LOAD_FAILED | enable/load failure |
 | 1011 | PROTOCOL_MISMATCH | `app.handshake` protocol version mismatch |

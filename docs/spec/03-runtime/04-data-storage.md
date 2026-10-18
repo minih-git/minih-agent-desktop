@@ -1,4 +1,4 @@
-# 04. Data Storage (Schema v23)
+# 04. Data Storage (Schema v26)
 
 ## 0. Ownership decision
 
@@ -1405,6 +1405,103 @@ CREATE INDEX idx_notifications_unread
   read is one indexed update, and clear deletes notification rows only. None of
   these operations changes sessions, turns, or transcripts.
 
+### 4.15 memory_entries + memory_tombstones + memory_session_state — learned memory (schema v26, ADR agent-long-term-memory)
+
+The learned layer sits beside the pinned layer of §4.1. The `projectMemory` /
+`projectGroupMemory` `kv` records, their editor, their 32 KiB cap, their sync
+domain, and their runtime-retirement behavior are unchanged. Learned memory is
+context the Agent may add, keep, edit, or forget; every write goes through host
+RPC and the same validation.
+
+```sql
+CREATE TABLE memory_entries (
+  id                 TEXT PRIMARY KEY,
+  scope_kind         TEXT NOT NULL CHECK (scope_kind IN ('project', 'user')),
+  scope_key          TEXT,              -- group id or canonical path; NULL for user
+  kind               TEXT NOT NULL CHECK (kind IN ('preference', 'feedback', 'fact', 'reference')),
+  content            TEXT NOT NULL CHECK (length(content) > 0),  -- <= 1 KiB, host-enforced
+  rationale          TEXT,              -- <= 512 bytes, host-enforced
+  status             TEXT NOT NULL CHECK (status IN ('suggested', 'active', 'archived')),
+  origin             TEXT NOT NULL CHECK (origin IN ('explicit', 'user_ui', 'extracted')),
+  evidence           TEXT NOT NULL CHECK (evidence IN ('user_stated', 'verified', 'inferred')),
+  source_session_id  TEXT,
+  source_message_ids TEXT NOT NULL DEFAULT '[]',
+  fingerprint        TEXT NOT NULL,     -- SHA-256(kind + NFKC-folded content)
+  revision           INTEGER NOT NULL DEFAULT 1,
+  superseded_by      TEXT,
+  created_at         INTEGER NOT NULL,
+  updated_at         INTEGER NOT NULL,
+  last_used_at       INTEGER,
+  use_count          INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_memory_entries_scope ON memory_entries(scope_kind, scope_key, status);
+CREATE UNIQUE INDEX idx_memory_entries_fingerprint
+  ON memory_entries(scope_kind, IFNULL(scope_key, ''), fingerprint)
+  WHERE status <> 'archived';
+CREATE INDEX idx_memory_entries_recent ON memory_entries(updated_at DESC, id ASC);
+
+CREATE TABLE memory_tombstones (
+  id                 INTEGER PRIMARY KEY,
+  scope_kind         TEXT NOT NULL CHECK (scope_kind IN ('project', 'user')),
+  scope_key          TEXT,
+  fingerprint        TEXT NOT NULL,
+  source_session_id  TEXT,
+  source_message_ids TEXT NOT NULL DEFAULT '[]',
+  created_at         INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX idx_memory_tombstones_fingerprint
+  ON memory_tombstones(scope_kind, IFNULL(scope_key, ''), fingerprint);
+
+CREATE TABLE memory_session_state (
+  session_id  TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  scope_kind  TEXT NOT NULL CHECK (scope_kind IN ('project', 'user')),
+  scope_key   TEXT,
+  cursor_seq  INTEGER NOT NULL DEFAULT 0,
+  lease_owner TEXT,
+  lease_until INTEGER,
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  last_error  TEXT,
+  excluded    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_memory_session_state_scope ON memory_session_state(scope_kind, scope_key);
+-- plus memory_entries_fts over content and rationale, built like messages_fts (§4.8)
+```
+
+- **Scope identity.** `scope_key` is the owning project group id (ADR 0249) or,
+  for a project that is not in a stored group, its canonical path. An isolated
+  worktree session keeps the main project's identity (ADR 0329), and a remote
+  workspace session uses the same identity as its pinned memory. Only `project`
+  and `user` scopes exist; the user scope has no key (`NULL`, compared as `''`).
+- **Fingerprint.** SHA-256 over the kind and the NFKC-normalized, lowercased,
+  whitespace-collapsed content. The scope is part of the uniqueness key rather
+  than of the hash, so the same sentence in two projects is two memories. One
+  live entry per fingerprint in a scope; archived rows stay out of the key.
+- **Write rules.** `preference` and `feedback` require `evidence = 'user_stated'`
+  and at least one cited message that exists in `source_session_id` with role
+  `user`; `verified` is accepted only for `fact` and `reference`. Tool output,
+  file or web content, MCP responses, subagent output, injected instructions, and
+  skill documents are never valid evidence for them. Content that matches the
+  host credential detector is refused, and the refused text reaches no log. A
+  tombstone match on the fingerprint or on any cited source message blocks the
+  write unless it is an explicit request with `overrideTombstone`.
+- **Forgetting.** Delete archives the row and writes a content-free tombstone;
+  rejecting a suggestion writes the same tombstone. Archive and restore never
+  write one, so hiding an entry is not forgetting it.
+- **Updates.** Every mutation is compare-and-set on `revision`, so a background
+  writer can never overwrite a user edit.
+- **Lifecycle.** Removing a project (`projects.remove`) deletes the rows keyed by
+  its own path together with the existing project-memory cleanup; a stored
+  group's rows are keyed by the group id and stay with the group. Upgrading
+  legacy roots into a group re-keys their entries, tombstones, and session state
+  to the group in one transaction, deduplicating by fingerprint. Deleting a group
+  record deletes its group-scoped rows. Session deletion cascades
+  `memory_session_state`. Data relocation re-keys `scope_key` with the projects it
+  belongs to.
+- **Extraction state.** `cursor_seq`, `lease_owner`, `lease_until`, `attempts`,
+  `last_error`, and `excluded` make the optional extractor idempotent across
+  restarts, duplicate triggers, and renderer reloads; `last_error` holds a code,
+  never transcript text.
+
 ### Dropped from v1
 
 | v1 table | v2 home |
@@ -1644,6 +1741,10 @@ truncating at a guessed position.
 - **Schema v23 is additive.** It adds `sessions.title_source` and classifies
   existing placeholder titles as `default`; every other existing title is
   preserved and classified as `manual`. The migration keeps a v22 backup.
+- **Schema v26 is additive.** It adds the learned-memory tables of §4.15 with
+  their indexes, triggers, and FTS index. No existing row changes, pinned project
+  memory is untouched, and the new tables start empty; the migration keeps a v25
+  backup.
 - **Schema v14 is additive.** It adds nullable `sessions.deleted_at`, the
   partial deletion index, and `session_import_origins`. Existing sessions stay
   active and have no origin rows. The migration runs in the same guarded
