@@ -54,9 +54,31 @@ describe("probeAccountMode", () => {
     expect(await probeAccountMode({ gatewayOrigin: ORIGIN, fetchImpl })).toBe("supported");
     expect(calls[0]!.url).toBe(`${ORIGIN}${ACCOUNT_ROUTES.hosts}`);
     expect(calls[0]!.init.method).toBe("GET");
-    // No credential is sent, and the account cookie is asked for explicitly.
+    // No credential is sent: no Authorization header, and the browser is told
+    // not to attach its session cookie either.
     expect(calls[0]!.init.headers).toEqual({ accept: "application/json" });
-    expect(calls[0]!.init.credentials).toBe("include");
+    expect(calls[0]!.init.credentials).toBe("omit");
+  });
+
+  it("stays supported while a live account cookie sits in the browser", async () => {
+    // A session survives an abandoned device request for its whole lifetime, and
+    // `AccountFlow.dispose()` deliberately does not revoke it. A probe that asks
+    // the browser for the cookie is then authenticated: the Gateway answers
+    // `200`, which is not one of the probe's answers, and the AccessKey entry
+    // disappears until the session expires. The probe must send no credential,
+    // so the same browser still reads the route's `401`.
+    const calls: Array<RequestInit | undefined> = [];
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      calls.push(init);
+      const cookieSent = init?.credentials === "include";
+      return new Response(
+        cookieSent ? JSON.stringify({ result: { hosts: [] } }) : JSON.stringify(errorBody("UNAUTHORIZED", "needs a session")),
+        { status: cookieSent ? 200 : 401, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    expect(await probeAccountMode({ gatewayOrigin: ORIGIN, fetchImpl })).toBe("supported");
+    expect(calls[0]?.credentials).not.toBe("include");
   });
 
   it("treats the Gateway's unknown-path answer as 'no account mode'", async () => {

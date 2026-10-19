@@ -1502,9 +1502,13 @@ written.
     route exists and wants a session), `404` means it does not, and `403` means
     this origin is refused — so nothing account-scoped would work from here
     either. Anything else, including a transport failure, leaves the client
-    undecided. Only a `401` offers the AccessKey entry; every other answer keeps
-    the §11.4 pairing flow and hides it, so a Gateway without account mode
-    behaves exactly as before (rollout exit criterion 7).
+    undecided. "Credential-free" binds the browser too: the probe sends no
+    `Authorization` header **and no session cookie** (`credentials: "omit"`),
+    because a surviving session would authenticate it, and the `200` that comes
+    back is none of the answers above — an authenticated probe therefore hides
+    the entry instead of offering it. Only a `401` offers the AccessKey entry;
+    every other answer keeps the §11.4 pairing flow and hides it, so a Gateway
+    without account mode behaves exactly as before (rollout exit criterion 7).
   - **Login.** The AccessKey is presented once, in the `Authorization` header of
     the login call, and is dropped as soon as that call returns: it is never
     written to `localStorage`, `sessionStorage`, IndexedDB, a cookie, a native
