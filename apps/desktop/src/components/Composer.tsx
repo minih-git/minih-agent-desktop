@@ -528,7 +528,9 @@ export function Composer({
     >
       <div className="composer-stack">
         {activeSessionId && localToolsAllowed ? <TodoDock sessionId={activeSessionId} /> : null}
-        {localToolsAllowed ? <BackgroundTasksBar key={activeSessionId ?? "draft"} /> : null}
+        {activeSessionId && localToolsAllowed ? (
+          <BackgroundTasksBar key={activeSessionId} sessionId={activeSessionId} />
+        ) : null}
         {planCheckpoint?.status === "pending" ? (
           <PlanApprovalBar proposal={planCheckpoint} />
         ) : null}

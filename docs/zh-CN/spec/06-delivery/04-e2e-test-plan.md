@@ -10144,7 +10144,8 @@ host-created files. The full app's file-preview viewer is covered separately.
   隔离环境、关闭后拒绝启动以及正常退出对存活子进程的清理。
 - **预期**：只有已批准命令启动，审批仍可取消；已启动进程跨回合存活但不跨停止/Host 退出；
   各输出流限制 256 KiB 且末尾不丢失；前台和 shell 固定规则不变，远程后台请求明确失败。
-  Composer 最多 12 行，仅轮询展开输出，忽略旧响应、失败可重试、不重播旧完成项。
+  Composer 最多 12 行并按当前会话过滤：切换会话只改变展示、不停止任一会话的进程，
+  草稿页不显示任务栏；仅轮询展开输出，忽略旧响应、失败可重试、不重播旧完成项。
 - **规格**：工具权限、Host RPC、IPC 与 ADR `background-bash-task-ownership`。
 - **验收**：E / F / Quality / Security；Post-M6。
 - **自动化**：`scripts/e2e-background-tasks-host.mjs`、`scripts/e2e-background-tasks.mjs`
