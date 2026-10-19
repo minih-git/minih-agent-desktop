@@ -786,8 +786,9 @@ Dialogs, search spotlight, and modal backdrops use shared enter keyframes:
 - Centered surface: `surface-in` (fade + 8px rise + slight scale)
 - Top-anchored surface (search): `surface-in-top`
 
-Toast enter/exit keep the existing removal contract (`animationend` on
-`toast-out`) while using the motion tokens and a slightly softer scale.
+Notification cards keep the removal contract (`animationend` on `toast-out`)
+while sliding horizontally from/to the right edge with the motion tokens.
+Reduced motion retains near-zero duration so dismissal completes.
 
 ### 8.5 Reduced motion
 
@@ -1256,20 +1257,20 @@ Status badge colors: success (green), warning (amber), error (red), info (indigo
 
 ### 11.8 Toast
 
-Full component contract and usage rules: [08-component-spec.md §17](08-component-spec.md#17-toast).
+Full notification-card contract: [08-component-spec.md §17](08-component-spec.md#17-toast).
 
 | Property | Value |
 |---|---|
-| Position | top-center viewport, 16px from the top edge, `width: min(360px, 100vw − 32px)` |
-| Surface | `bg-elevated-opaque` + 1px `border-subtle` + `shadow-dialog` (same family as floating menus) |
-| Radius | radius-md-plus |
-| Font | text-md, leading-compact-plus |
-| Variants | `info` / `success` / `warning` / `error` — 16px Lucide status icon tinted with the semantic token; surface stays neutral (restraint principle) |
-| Duration | 4s auto-dismiss; error 8s; `duration: 0` = sticky; hover pauses the timer |
-| Stack | vertical, max 4 (oldest dropped), newest nearest the top-center anchor pushing older down; identical message+variant re-raises restart instead of stacking |
-| Dismiss | X button on every toast (`toast.dismiss` i18n label) |
-| Motion | enter 200ms ease-out slide-down/fade, exit 150ms ease-in fade; reduced-motion → near-zero duration (not `none`, removal listens for `animationend`) |
-| Z-index | z-toast (50) |
+| Position | top-right, 56px from top, 16px from right; `width: min(384px, 100vw - 32px)`; window-bounded height |
+| Surface | neutral `bg-elevated-opaque`, `border-subtle`, `shadow-dialog`; 16px padding |
+| Radius | radius-lg |
+| Font | text-md, leading-body; concise selectable text with preserved line breaks |
+| Variants | info / success / warning / error; 20px semantic icon in a softly tinted 32px circle |
+| Duration | info/success 4s; warning/error manual dismissal; explicit overrides supported; hover/focus pauses timers |
+| Stack | newest first, scrollable; all sticky cards plus up to four transient cards; same message+variant+session replaces |
+| Dismiss | X on every card (`toast.dismiss` i18n label) |
+| Motion | enter 200ms ease-out from right, exit 150ms ease-in to right; reduced motion near-zero, not none |
+| Z-index | z-toast (50), body portal above dialogs |
 
 ### 11.9 SettingsToggle
 

@@ -76,7 +76,7 @@ function ask(sessionId: string, question = "Which path should we take?") {
   return request;
 }
 function action(sessionId: string) {
-  const toasts = useAppStore.getState().toasts;
+  const toasts = [...useAppStore.getState().toasts].reverse();
   const index = toasts.findIndex((item) => item.sessionId === sessionId);
   assert(index >= 0, `Missing toast target for session ${sessionId}`);
   const button = document.querySelectorAll(".toast")[index]
@@ -122,7 +122,9 @@ globalThis.questionNotificationProbe = async () => {
         assert(input && typeof input === "object" && "sessionId" in input, "Invalid pending request");
         const request = requests.get(String(input.sessionId));
         data = { permissions: [], asks: request ? [request] : [] };
-      } else if (channel === IPC.invoke.notificationShowNative) data = { shown: false };
+      } else if (channel === IPC.invoke.notificationRecordPrompt) data = { notification: null };
+      else if (channel === IPC.invoke.notificationList) data = { notifications: [] };
+      else if (channel === IPC.invoke.notificationShowNative) data = { shown: false };
       else if (channel === IPC.invoke.askToolResolve) { resolutions.push(input); data = { ok: true }; }
       else {
         unexpected.push(channel);

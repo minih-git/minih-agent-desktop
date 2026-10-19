@@ -1064,17 +1064,17 @@ Running turns and pending approvals continue to gate the controls.
 
 | Scenario | Toast type | Duration | Rationale |
 |---|---|---|---|
-| Provider connection test result | Success/Error | 4s/8s | Transient feedback, not blocking workflow |
+| Provider connection test result | Success/Error | 4s / manual dismiss | Transient feedback, not blocking workflow |
 | Plugin load/unload success | Success | 4s | Confirmation of background action |
 | Settings saved | Success | 4s | Quick confirmation |
-| Manual menu update check failure | Error | 8s | Direct feedback for an explicit command |
-| Context checkpoint completed | Info (Warning before overflow retry) | 4s/8s | Confirms a background context transition without altering transcript rows |
-| Manual context checkpoint failure | Error | 8s | Direct feedback for explicit `/compact`; automatic terminal failures stay inline |
-| Settings or dialog action failure (save, JSON import, endpoint probe) | Error | 8s | Result of an explicit action; the surface keeps the fields to correct and, when it owns one, the retry control |
-| Vendor sign-in failure | Error | 8s | Result of an explicit sign-in; the dialog keeps its status, link, and Cancel |
-| Config-sync or plugin-settings action result | Success / Warning / Error | 4s/8s | Confirmation or failure of an explicit action |
-| Live Voice session or settings failure | Error | 8s | Result of an explicit action; the retry control stays on the surface |
-| Model-list probe result (connected, catalog, refused) | Success / Info / Error | 4s/8s | One answer per settled probe; idle, in flight, and cache-only results are not announced |
+| Manual menu update check failure | Error | Manual dismiss | Direct feedback for an explicit command |
+| Context checkpoint completed | Info (Warning before overflow retry) | 4s / manual dismiss | Confirms a background context transition without altering transcript rows |
+| Manual context checkpoint failure | Error | Manual dismiss | Direct feedback for explicit `/compact`; automatic terminal failures stay inline |
+| Settings or dialog action failure (save, JSON import, endpoint probe) | Error | Manual dismiss | Result of an explicit action; the surface keeps the fields to correct and, when it owns one, the retry control |
+| Vendor sign-in failure | Error | Manual dismiss | Result of an explicit sign-in; the dialog keeps its status, link, and Cancel |
+| Config-sync or plugin-settings action result | Success / Warning / Error | 4s / manual dismiss | Confirmation or failure of an explicit action |
+| Live Voice session or settings failure | Error | Manual dismiss | Result of an explicit action; the retry control stays on the surface |
+| Model-list probe result (connected, catalog, refused) | Success / Info / Error | 4s / manual dismiss | One answer per settled probe; idle, in flight, and cache-only results are not announced |
 
 ### 6.2 Inline errors (use for)
 
@@ -1098,9 +1098,11 @@ Running turns and pending approvals continue to gate the controls.
   `aria-expanded` / `aria-controls`; it is open on first render so the provider
   response is immediately discoverable, and supports copying the redacted text
 - Never use inline error for transient background operations (plugin load, connection test)
-- Toasts stack vertically, newest on top, at top-center
-- Error toasts require manual dismiss or timeout at 8s (longer than success)
-- Success toasts auto-dismiss at 4s
+- Notification cards slide in from the right, newest first below window controls
+- Warning/error cards require manual dismissal; new cards never evict sticky notices
+- Info/success cards auto-dismiss at 4s, pausing while hovered or keyboard-focused; explicit duration overrides remain compatible
+- Overflow scrolls within the window so every retained notice and close control remains reachable
+- Catalog copy states results concisely and preserves useful reasons or next steps; raw external errors are not truncated or rewritten
 - One-off results of an explicit action (save, import, probe, sign-in, connection
   test) report through a toast; the surface they came from keeps the fields,
   state label, and retry control it needs to stay actionable
