@@ -454,6 +454,8 @@ export const ptBR = {
     defaultBrowserOpenFailed: "Não foi possível abrir o arquivo no navegador padrão.",
     copyFullPath: "Copiar caminho completo",
     copyRelativePath: "Copiar caminho relativo",
+    copyAbsolutePath: "Copiar caminho",
+    fileRefRevealFailed: "O gerenciador de arquivos não conseguiu mostrar este item.",
     revealInFileManager: "Revelar no Finder",
     folderRevealFailed: "O gerenciador de arquivos não conseguiu mostrar este item.",
     remoteFolderRevealUnsupported: "Pastas remotas não podem ser mostradas neste computador",

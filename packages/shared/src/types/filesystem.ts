@@ -141,8 +141,26 @@ export type FsChatRefMatch = {
   projectRoot?: FsChatRefProjectRoot;
 };
 
+/**
+ * An entry a reference names outside every allowed root.
+ *
+ * The app will not read it, open it, or preview it — the reference is not a
+ * match — but the user may still want to find it where it lives. Only the
+ * existence and the kind are reported, from a `stat`; no content is read.
+ */
+export type FsChatRefOutside = {
+  /** Native absolute path, after path normalization and nothing else. */
+  absolutePath: string;
+  entryKind: FsChatRefEntryKind;
+};
+
 export type FsChatRefResolveResult = {
   match: FsChatRefMatch | null;
   /** The supplied absolute path is not inside a project, scratch, or attachment root. */
   reason?: "outside-allowed-roots";
+  /**
+   * Present only with `reason: "outside-allowed-roots"`, and only for a local
+   * session: a remote host never reports its own filesystem's existence here.
+   */
+  outside?: FsChatRefOutside;
 };

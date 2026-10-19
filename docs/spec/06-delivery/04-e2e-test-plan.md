@@ -10322,7 +10322,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | G — Plugins (Independent session communication) | E2E-SESSION-independent-top-level-communication |
 | Quality (Independent session communication) | E2E-SESSION-independent-top-level-communication, E2E-SESSION-hover-card-model-and-links |
 | C — Conversation & stream (Hover card model and links) | E2E-SESSION-hover-card-model-and-links |
-| C — Conversation & stream (Chat file references) | E2E-CHAT-shorthand-file-ref-opens-the-matching-file, E2E-CHAT-file-ref-opens-the-surface-that-owns-it, E2E-CHAT-directory-ref-reveals-in-system-file-manager |
+| C — Conversation & stream (Chat file references) | E2E-CHAT-shorthand-file-ref-opens-the-matching-file, E2E-CHAT-file-ref-opens-the-surface-that-owns-it, E2E-CHAT-directory-ref-reveals-in-system-file-manager, E2E-CHAT-outside-root-ref-offers-reveal-and-copy |
 | C / Quality / Security (Conversation MP4 attachments) | E2E-CHAT-mp4-attachment-opens-in-system-player |
 | G — Plugins (Chat file references) | E2E-CHAT-file-ref-opens-the-surface-that-owns-it, E2E-PLUGIN-file-view-collapse-persists |
 | Quality (Chat file references) | E2E-CHAT-shorthand-file-ref-opens-the-matching-file, E2E-CHAT-file-ref-opens-the-surface-that-owns-it, E2E-PLUGIN-file-view-collapse-persists |
@@ -13636,6 +13636,41 @@ are withdrawn with ADR 0165.
   `apps/desktop/test/chat-links.test.mjs`,
   `apps/desktop/test/chat-ref-resolve.test.mjs`); full UI journey Draft (run
   only in a capable environment when this surface changes)
+
+#### E2E-CHAT-outside-root-ref-offers-reveal-and-copy
+
+- **Preconditions**: An open project, a session that may use local tools, and a
+  path that exists outside every allowed root — a file such as
+  `~/Documents/notes.md` and a folder such as `~/Documents`. A remote session
+  shows the same reply. The transcript renders assistant markdown and a user
+  turn.
+- **Steps**: 1) Prompt a turn whose reply names the outside file and click it.
+  2) Click the outside folder reference. 3) Right-click either reference. 4)
+  Prompt a turn that names a path outside the roots that does not exist, and
+  click it. 5) Repeat step 1 in the remote session. 6) In the file manager,
+  confirm nothing was opened or launched.
+- **Expected**:
+  - The outside reference is a link, because the host reported that the entry
+    exists. Its click and its context menu open the same two-item menu:
+    **Reveal in Finder**, which selects the entry in the system file manager, and
+    **Copy path**, which copies the absolute path.
+  - There is no "Copy relative path" (nothing to compute) and no open
+    destination: the file is never opened, previewed, or read, and no work-panel
+    tab is created.
+  - A path that is outside the roots *and* absent still reports the access
+    limit and opens nothing.
+  - The remote session reports that it cannot show something on this computer,
+    never reveals anything locally, and receives no `outside` report — it is not
+    told whether the path exists on the host.
+- **Specs linked**: `03-runtime/01-ipc-protocol.md` § fs,
+  `04-ux/09-interaction-patterns.md` §8a.2, `05-security/01-security.md`,
+  ADR 0333
+- **Acceptance**: C (conversation & stream), D (workspace), Security, Quality
+- **Milestone**: M5
+- **Status**: Unit-covered
+  (`apps/desktop/test/chat-outside-ref-reveal.test.mjs`,
+  `apps/desktop/test/chat-directory-ref-reveal.test.mjs`); full UI journey Draft
+  (run only in a capable environment when this surface changes)
 
 #### E2E-CHAT-spaced-absolute-file-paths
 

@@ -476,6 +476,8 @@ export const en = {
     defaultBrowserOpenFailed: "Could not open the file in the default browser.",
     copyFullPath: "Copy full path",
     copyRelativePath: "Copy relative path",
+    copyAbsolutePath: "Copy path",
+    fileRefRevealFailed: "The file manager could not show this item.",
     revealInFileManager: "Reveal in Finder",
     folderRevealFailed: "The file manager could not show this item.",
     remoteFolderRevealUnsupported: "Remote folders cannot be shown on this computer",

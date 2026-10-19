@@ -568,7 +568,7 @@ function InlineCode({
   const text = typeof children === "string" ? children : null;
   // A folder or an extensionless path is clickable only once the host says the
   // entry exists; until then the run stays the plain `<code>` it was.
-  const { target, entryKind } = useConfirmedChatRefTarget(
+  const { target, entryKind, outsideProject } = useConfirmedChatRefTarget(
     text && !className && !text.includes("\n")
       ? resolvePreviewTarget(text, root, baseDir, "inline-code")
       : null,
@@ -588,9 +588,20 @@ function InlineCode({
       type="button"
       className="chat-code-link"
       title={target.kind === "file" ? fileTitle : urlTitle}
-      onClick={() => {
+      onClick={(event) => {
         if (!localToolsAllowed) return;
         if (target.kind === "file") {
+          // A reference beyond this app's roots has nothing to open. Its click
+          // offers where it lives and its path, at the pointer that asked.
+          if (outsideProject && openFileMenu) {
+            openFileMenu(event, {
+              path: text ?? target.path,
+              baseDir,
+              ...(entryKind ? { entryKind } : {}),
+              outsideProject: true,
+            });
+            return;
+          }
           openFileRef(target.path, baseDir, undefined, {
             line: target.line, column: target.column,
           });
@@ -609,6 +620,7 @@ function InlineCode({
                 path: text ?? target.path,
                 baseDir,
                 ...(entryKind ? { entryKind } : {}),
+                ...(outsideProject ? { outsideProject } : {}),
               })
           : undefined
       }
@@ -638,12 +650,11 @@ function Anchor({
   // A marked reference stays its plain text until the host confirms the entry;
   // the hook owns the decision, and every hook runs before the returns below.
   const marker = unverifiedChatRefMarker(rest as Record<string, unknown>);
-  const { unconfirmed, entryKind: unverifiedEntryKind } = useChatRefLinkState(
-    marker !== null,
-    href,
-    root,
-    baseDir,
-  );
+  const {
+    unconfirmed,
+    entryKind: unverifiedEntryKind,
+    outsideProject: unverifiedOutsideProject,
+  } = useChatRefLinkState(marker !== null, href, root, baseDir);
   const linkProps = marker === null
     ? rest
     : withoutChatRefMarker(rest as Record<string, unknown>);
@@ -693,6 +704,7 @@ function Anchor({
         path: ref,
         baseDir,
         ...(unverifiedEntryKind ? { entryKind: unverifiedEntryKind } : {}),
+        ...(unverifiedOutsideProject ? { outsideProject: unverifiedOutsideProject } : {}),
       });
       return;
     }
@@ -737,6 +749,20 @@ function Anchor({
     if (!localToolsAllowed) { e.preventDefault(); return; }
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     if (!href) return;
+    if (unverifiedOutsideProject && openFileMenu) {
+      // The entry exists but is beyond every root the app reads, so there is
+      // nothing to open: the click offers showing it and copying its path.
+      e.preventDefault();
+      const decoded = safeDecodeUri(href);
+      const resolved = resolvePreviewTarget(decoded, root, baseDir);
+      openFileMenu(e, {
+        path: resolved?.kind === "file" ? resolved.path : decoded,
+        baseDir,
+        ...(unverifiedEntryKind ? { entryKind: unverifiedEntryKind } : {}),
+        outsideProject: true,
+      });
+      return;
+    }
     if (/^https?:\/\//i.test(href)) {
       e.preventDefault();
       openHttpUrl(href);

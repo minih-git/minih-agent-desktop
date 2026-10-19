@@ -2,8 +2,13 @@ import type { MessageAttachment } from "@minih-agent/shared";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { splitChatText } from "../lib/chat-links";
-import type { FsChatRefEntryKind } from "@minih-agent/shared";
-import { chatFileCandidates, createChatFileVerificationQueue, verifiedChatSegments, verifyChatFiles } from "../lib/verified-chat-files";
+import {
+  chatFileCandidates,
+  createChatFileVerificationQueue,
+  verifiedChatSegments,
+  verifyChatFiles,
+  type ChatRefEntryConfirmation,
+} from "../lib/verified-chat-files";
 import { useAppStore } from "../stores/app-store";
 
 const scheduleVerification = createChatFileVerificationQueue();
@@ -21,22 +26,34 @@ export function useVerifiedChatText(text: string, attachments?: readonly Message
   const [result, setResult] = useState<{
     request: typeof request;
     verified: ReadonlySet<string>;
-    entryKinds: ReadonlyMap<string, FsChatRefEntryKind>;
+    entryKinds: ReadonlyMap<string, ChatRefEntryConfirmation>;
   } | null>(null);
   useEffect(() => {
     if (request.paths.length === 0) return;
     const controller = new AbortController();
-    const entryKinds = new Map<string, FsChatRefEntryKind>();
+    const entryKinds = new Map<string, ChatRefEntryConfirmation>();
     void verifyChatFiles(
       request.paths,
       // A folder answers the lookup as readily as a file, and the chip has to
       // know which one it is: a folder is revealed, never opened.
       (path) => scheduleVerification(
         async () => {
-          const match = (await api.fsResolveRef(path, request.sessionId ?? undefined)).match;
-          if (!match) return false;
-          entryKinds.set(path, match.entryKind ?? "file");
-          return true;
+          const result = await api.fsResolveRef(path, request.sessionId ?? undefined);
+          const match = result.match;
+          if (match) {
+            entryKinds.set(path, { entryKind: match.entryKind ?? "file" });
+            return true;
+          }
+          // An entry outside every root is still a reference the chip can act
+          // on: show it, and copy its path.
+          if (result.outside) {
+            entryKinds.set(path, {
+              entryKind: result.outside.entryKind,
+              outsideProject: true,
+            });
+            return true;
+          }
+          return false;
         },
         controller.signal,
       ),

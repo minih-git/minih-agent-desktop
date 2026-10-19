@@ -330,6 +330,12 @@ export type ChatPreviewTarget =
        * shown in the system file manager; it is never opened or previewed.
        */
       entryKind?: FsChatRefEntryKind;
+      /**
+       * The entry lives beyond every root the app reads. It is still a link,
+       * but its click offers "show it" and "copy the path" instead of opening:
+       * nothing here may read that file.
+       */
+      outsideProject?: true;
     }
   | { kind: "url"; url: string }
   | { kind: "session"; sessionId: string };
