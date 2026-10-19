@@ -25,6 +25,7 @@ use crate::agent_capabilities::CapabilityLevel;
 use crate::artifacts;
 use crate::audit;
 use crate::background_tasks;
+use crate::db::PROJECT_MEMORY_TOO_LARGE;
 use crate::delegations;
 use crate::notifications;
 use crate::permissions::{PermissionDecision, PermissionEvaluationParams, PermissionManager};
@@ -702,6 +703,20 @@ fn provider_rpc_err(error: impl ToString) -> JsonRpcError {
         }
     }
     rpc_err(1000, message, "INTERNAL")
+}
+
+/// The project-group writes that can refuse a merge over the pinned-memory cap.
+///
+/// The domain reports the refusal as `PROJECT_MEMORY_TOO_LARGE: …`; the renderer
+/// keys its own localized sentence off that code, so it travels in `errorCode`
+/// exactly like the other coded host failures. Everything else stays
+/// `INVALID_PARAMS`, which is what these handlers have always answered.
+fn project_group_rpc_err(error: impl ToString) -> JsonRpcError {
+    let message = error.to_string();
+    if message.starts_with(&format!("{PROJECT_MEMORY_TOO_LARGE}:")) {
+        return rpc_err(1002, message, PROJECT_MEMORY_TOO_LARGE);
+    }
+    rpc_err(1002, message, "INVALID_PARAMS")
 }
 
 fn session_collaboration_rpc_err(error: impl ToString) -> JsonRpcError {
@@ -1986,7 +2001,7 @@ async fn handle_request(
             let group = st
                 .db
                 .create_project_group(name, &folders)
-                .map_err(|e| rpc_err(1002, e.to_string(), "INVALID_PARAMS"))?;
+                .map_err(project_group_rpc_err)?;
             Ok(json!({ "group": group }))
         }
         "project.group.update" => {
@@ -2011,7 +2026,7 @@ async fn handle_request(
             let group = st
                 .db
                 .update_project_group(group_id, name, &folders, primary)
-                .map_err(|e| rpc_err(1002, e.to_string(), "INVALID_PARAMS"))?;
+                .map_err(project_group_rpc_err)?;
             Ok(json!({ "group": group }))
         }
         "project.group.rename" => {
@@ -6243,6 +6258,56 @@ mod tests {
         .unwrap();
         assert_eq!(updated["group"]["name"], "Adjusted");
         assert_eq!(updated["group"]["roots"].as_array().unwrap().len(), 2);
+    }
+
+    /// A group write refused over the pinned-memory cap reports its own code, so
+    /// the renderer can explain it instead of showing the host's English message.
+    #[tokio::test]
+    async fn project_group_create_reports_the_memory_cap_refusal() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let first = data_dir.path().join("first");
+        let second = data_dir.path().join("second");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let state = Arc::new(Mutex::new(app_state));
+        let half = crate::db::MAX_PROJECT_MEMORY_BYTES / 2;
+        {
+            let guard = state.lock().await;
+            guard
+                .db
+                .set_project_memory(&first.to_string_lossy(), &"a".repeat(half))
+                .unwrap();
+            guard
+                .db
+                .set_project_memory(&second.to_string_lossy(), &"b".repeat(half))
+                .unwrap();
+        }
+
+        let error = handle_request(
+            state.clone(),
+            "project.group.create",
+            json!({ "name": "Too big", "folders": [first, second] }),
+            mpsc::unbounded_channel().0,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            error.data.as_ref().and_then(|data| data.get("errorCode")),
+            Some(&json!(crate::db::PROJECT_MEMORY_TOO_LARGE))
+        );
+        assert!(
+            state
+                .lock()
+                .await
+                .db
+                .list_project_groups()
+                .unwrap()
+                .iter()
+                .all(|group| group.legacy),
+            "a refused create leaves no stored group behind"
+        );
     }
 
     #[tokio::test]

@@ -2195,6 +2195,7 @@ sklm: {
     "memoryHint": "Se usa en los chats de este proyecto. Manténgalo breve y factual.",
     "memorySave": "Guardar memoria",
     "memorySaving": "Guardando…",
+    "memoryTooLarge": "La memoria de proyecto combinada superaría los 32 KiB. Acorte primero la memoria de los proyectos que está agrupando.",
     "noSearchResults": "Ningún proyecto coincide con su búsqueda",
     "noSearchResultsBody": "Pruebe con otro nombre o ruta.",
     "edit": "Editar proyecto",

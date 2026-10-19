@@ -45,3 +45,9 @@
   again on General, Shortcuts, and the rest. The automatic-learning row also
   stopped claiming a model was missing while one was already chosen, and
   settings search now finds the learned-memory rows under AI.
+- Merging folders into a project group now checks the combined pinned memory
+  against the 32 KiB limit before writing anything. A merge that would pass it
+  is refused with a clear message instead of storing an oversized group: the
+  group, its memory, and every folder's own memory stay exactly as they were,
+  and no user text is truncated or dropped. Shorten the memories that are
+  joining and try again.

@@ -2196,6 +2196,7 @@ sklm: {
     "memoryHint": "Utilisée dans les chats de ce projet. Restez concis et factuel.",
     "memorySave": "Enregistrer la mémoire",
     "memorySaving": "Enregistrement…",
+    "memoryTooLarge": "La mémoire de projet fusionnée dépasserait 32 Kio. Raccourcissez d'abord la mémoire des projets que vous regroupez.",
     "noSearchResults": "Aucun projet ne correspond à votre recherche",
     "noSearchResultsBody": "Essayez un autre nom ou un autre chemin.",
     "edit": "Modifier le projet",

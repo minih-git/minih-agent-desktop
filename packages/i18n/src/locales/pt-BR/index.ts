@@ -2165,6 +2165,7 @@ export const ptBR = {
     memoryHint: "Usada nas conversas deste projeto. Seja breve e objetivo.",
     memorySave: "Salvar memória",
     memorySaving: "Salvando…",
+    memoryTooLarge: "A memória de projeto combinada passaria de 32 KiB. Encurte primeiro a memória dos projetos que você está agrupando.",
     noSearchResults: "Nenhum projeto corresponde à sua busca",
     noSearchResultsBody: "Tente outro nome ou caminho.",
     edit: "Editar projeto",

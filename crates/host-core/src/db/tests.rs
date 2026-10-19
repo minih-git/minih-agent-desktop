@@ -2083,3 +2083,348 @@ fn v24_notifications_migrate_to_prompt_kinds() {
     )
     .unwrap_err();
 }
+
+// ---- pinned memory follows a folder into a project group -------------------
+
+/// A group is the identity a session reads its pinned memory through, so a
+/// folder that joins one must bring what the user wrote for it. A project built
+/// into a new group is the first of the three entry points; the legacy upgrade
+/// is the one that already did this.
+#[test]
+fn creating_a_group_keeps_the_pinned_memory_of_its_projects() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first");
+    let second = dir.path().join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    db.set_project_memory(&first.to_string_lossy(), "Remember the first root.")
+        .unwrap();
+    db.set_project_memory(&second.to_string_lossy(), "Remember the second root.")
+        .unwrap();
+
+    let group = db
+        .create_project_group(
+            "Workspace",
+            &[
+                first.to_string_lossy().into(),
+                second.to_string_lossy().into(),
+            ],
+        )
+        .unwrap();
+    let memory = db.get_project_group_memory(&group.id).unwrap();
+    assert!(
+        memory.content.contains("Remember the first root."),
+        "{}",
+        memory.content
+    );
+    assert!(
+        memory.content.contains("Remember the second root."),
+        "{}",
+        memory.content
+    );
+    // The order follows the group's root order, so the primary root's memory
+    // reads first.
+    let entries = memory.entries.expect("entries travel with the content");
+    assert_eq!(entries[0].content, "Remember the first root.");
+    assert_eq!(entries[1].content, "Remember the second root.");
+}
+
+/// A stored group gaining a root keeps what it already had, in order, and the
+/// joining folder's memory is appended behind it.
+#[test]
+fn adding_a_root_to_a_group_appends_its_pinned_memory() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first");
+    let second = dir.path().join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    let group = db
+        .create_project_group("Workspace", &[first.to_string_lossy().into()])
+        .unwrap();
+    db.set_project_group_memory(
+        &group.id,
+        &serde_json::json!([{
+            "id": "group-note",
+            "title": "Group",
+            "content": "Existing group note."
+        }]),
+    )
+    .unwrap();
+    db.set_project_memory(&second.to_string_lossy(), "Remember the second root.")
+        .unwrap();
+
+    db.update_project_group(
+        &group.id,
+        "Workspace",
+        &[
+            first.to_string_lossy().into(),
+            second.to_string_lossy().into(),
+        ],
+        None,
+    )
+    .unwrap();
+    let memory = db.get_project_group_memory(&group.id).unwrap();
+    let entries = memory.entries.expect("entries travel with the content");
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    assert_eq!(entries[0].id, "group-note");
+    assert_eq!(entries[0].content, "Existing group note.");
+    assert_eq!(entries[1].content, "Remember the second root.");
+}
+
+/// Removing a root and adding it back is a reorganisation, not a new note: the
+/// group must not end up holding the same text twice.
+#[test]
+fn moving_a_root_out_and_back_does_not_duplicate_its_pinned_memory() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first");
+    let second = dir.path().join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    db.set_project_memory(&second.to_string_lossy(), "Remember the second root.")
+        .unwrap();
+    let group = db
+        .create_project_group(
+            "Workspace",
+            &[
+                first.to_string_lossy().into(),
+                second.to_string_lossy().into(),
+            ],
+        )
+        .unwrap();
+
+    db.update_project_group(
+        &group.id,
+        "Workspace",
+        &[first.to_string_lossy().into()],
+        None,
+    )
+    .unwrap();
+    db.update_project_group(
+        &group.id,
+        "Workspace",
+        &[
+            first.to_string_lossy().into(),
+            second.to_string_lossy().into(),
+        ],
+        None,
+    )
+    .unwrap();
+    let memory = db.get_project_group_memory(&group.id).unwrap();
+    let entries = memory.entries.expect("entries travel with the content");
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|entry| entry.content == "Remember the second root.")
+            .count(),
+        1,
+        "{entries:?}"
+    );
+}
+
+/// One live user note in `scope`, so a refused group write can prove it left the
+/// learned memory where it was.
+fn store_learned_note(db: &Database, scope: &crate::memory::MemoryScope, content: &str) {
+    let outcome = db
+        .create_memory_entry(crate::memory::CreateMemoryRequest {
+            scope: scope.clone(),
+            kind: "fact".to_string(),
+            content: content.to_string(),
+            rationale: None,
+            origin: crate::memory::ORIGIN_USER_UI.to_string(),
+            evidence: crate::memory::EVIDENCE_USER_STATED.to_string(),
+            status: crate::memory::STATUS_ACTIVE.to_string(),
+            source_session_id: None,
+            source_message_ids: Vec::new(),
+            override_tombstone: false,
+        })
+        .unwrap();
+    assert!(
+        matches!(outcome, crate::memory::CreateMemoryOutcome::Created(_)),
+        "the note must be stored before the group write is attempted"
+    );
+}
+
+/// The 32 KiB pinned-memory cap applies to a merge too: a group whose memory
+/// would pass it is refused whole, so nothing the write would have touched —
+/// group record, re-keyed learned memory, merged pinned memory — is written.
+#[test]
+fn creating_a_group_that_would_pass_the_memory_cap_is_refused_whole() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first");
+    let second = dir.path().join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    let first_path = first.to_string_lossy().to_string();
+    let second_path = second.to_string_lossy().to_string();
+    let first_memory = "a".repeat(MAX_PROJECT_MEMORY_BYTES / 2);
+    let second_memory = "b".repeat(MAX_PROJECT_MEMORY_BYTES / 2);
+    db.set_project_memory(&first_path, &first_memory).unwrap();
+    db.set_project_memory(&second_path, &second_memory).unwrap();
+    let scope = db.learned_memory_scope_for_path(&first_path).unwrap();
+    store_learned_note(&db, &scope, "The host is written in Rust.");
+
+    let error = db
+        .create_project_group("Workspace", &[first_path.clone(), second_path.clone()])
+        .unwrap_err();
+    assert!(
+        error.to_string().contains(PROJECT_MEMORY_TOO_LARGE),
+        "{error}"
+    );
+    // Neither folder was grouped.
+    assert!(db
+        .stored_project_group_for_path(&first_path)
+        .unwrap()
+        .is_none());
+    assert!(db
+        .stored_project_group_for_path(&second_path)
+        .unwrap()
+        .is_none());
+    // Both keep exactly the pinned memory they had.
+    assert_eq!(
+        db.get_project_memory(&first_path).unwrap().content,
+        first_memory
+    );
+    assert_eq!(
+        db.get_project_memory(&second_path).unwrap().content,
+        second_memory
+    );
+    // The learned memory was not re-keyed onto a group: it still reads back in
+    // the folder's own scope.
+    let notes = db.list_memory_entries(&scope, None, None, 50, 0).unwrap();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].content, "The host is written in Rust.");
+}
+
+/// Adding a root whose memory would pass the cap leaves the group exactly as it
+/// was, and the joining folder keeps its own memory and notes.
+#[test]
+fn adding_a_root_that_would_pass_the_memory_cap_leaves_the_group_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first");
+    let second = dir.path().join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    let first_path = first.to_string_lossy().to_string();
+    let second_path = second.to_string_lossy().to_string();
+    let group = db
+        .create_project_group("Workspace", std::slice::from_ref(&first_path))
+        .unwrap();
+    db.set_project_group_memory(
+        &group.id,
+        &serde_json::json!([{
+            "id": "group-note",
+            "title": "Group",
+            "content": "g".repeat(MAX_PROJECT_MEMORY_BYTES - 4096)
+        }]),
+    )
+    .unwrap();
+    let group_memory = db.get_project_group_memory(&group.id).unwrap().content;
+    let second_memory = "b".repeat(MAX_PROJECT_MEMORY_BYTES / 2);
+    db.set_project_memory(&second_path, &second_memory).unwrap();
+    let scope = db.learned_memory_scope_for_path(&second_path).unwrap();
+    store_learned_note(&db, &scope, "The second folder has its own note.");
+
+    let error = db
+        .update_project_group(
+            &group.id,
+            "Workspace",
+            &[first_path.clone(), second_path.clone()],
+            None,
+        )
+        .unwrap_err();
+    assert!(
+        error.to_string().contains(PROJECT_MEMORY_TOO_LARGE),
+        "{error}"
+    );
+    let stored = db
+        .stored_project_group_for_path(&first_path)
+        .unwrap()
+        .expect("the group is still stored");
+    assert_eq!(stored.roots.len(), 1);
+    assert_eq!(
+        stored.roots[0].path,
+        canonical_project_path(&first_path).unwrap()
+    );
+    assert_eq!(
+        db.get_project_group_memory(&group.id).unwrap().content,
+        group_memory
+    );
+    assert_eq!(
+        db.get_project_memory(&second_path).unwrap().content,
+        second_memory
+    );
+    // The folder that did not join keeps its notes on its own path scope, and
+    // was not registered as a project either.
+    let notes = db.list_memory_entries(&scope, None, None, 50, 0).unwrap();
+    assert_eq!(notes.len(), 1);
+    assert!(db
+        .stored_project_group_for_path(&second_path)
+        .unwrap()
+        .is_none());
+}
+
+/// A legacy project whose upgrade would pass the cap keeps its own state: it
+/// stays the single legacy group it was, under its own name.
+#[test]
+fn upgrading_a_legacy_project_that_would_pass_the_memory_cap_keeps_it_legacy() {
+    let dir = tempfile::tempdir().unwrap();
+    let primary = dir.path().join("primary");
+    let extra = dir.path().join("extra");
+    std::fs::create_dir_all(&primary).unwrap();
+    std::fs::create_dir_all(&extra).unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    let primary_path = primary.to_string_lossy().to_string();
+    let extra_path = extra.to_string_lossy().to_string();
+    db.ensure_project(&primary_path, false).unwrap();
+    let primary_memory = "a".repeat(MAX_PROJECT_MEMORY_BYTES / 2);
+    let extra_memory = "b".repeat(MAX_PROJECT_MEMORY_BYTES / 2);
+    db.set_project_memory(&primary_path, &primary_memory)
+        .unwrap();
+    db.set_project_memory(&extra_path, &extra_memory).unwrap();
+    let legacy = db.list_project_groups().unwrap().pop().unwrap();
+    assert!(legacy.legacy);
+    let legacy_name = legacy.name.clone();
+
+    let error = db
+        .update_project_group(
+            &legacy.id,
+            "Upgraded",
+            &[primary_path.clone(), extra_path.clone()],
+            None,
+        )
+        .unwrap_err();
+    assert!(
+        error.to_string().contains(PROJECT_MEMORY_TOO_LARGE),
+        "{error}"
+    );
+    // The folder is still the single legacy group it was, under its old name,
+    // and no stored group was written for it.
+    assert!(db
+        .stored_project_group_for_path(&primary_path)
+        .unwrap()
+        .is_none());
+    let still_legacy = db
+        .project_group_for_path(&primary_path)
+        .unwrap()
+        .expect("the project is still there");
+    assert!(still_legacy.legacy);
+    assert_eq!(still_legacy.name, legacy_name);
+    assert_eq!(still_legacy.roots.len(), 1);
+    assert_eq!(
+        still_legacy.roots[0].path,
+        canonical_project_path(&primary_path).unwrap()
+    );
+    assert_eq!(
+        db.get_project_memory(&primary_path).unwrap().content,
+        primary_memory
+    );
+    assert_eq!(
+        db.get_project_memory(&extra_path).unwrap().content,
+        extra_memory
+    );
+}

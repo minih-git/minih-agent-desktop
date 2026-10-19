@@ -2195,6 +2195,7 @@ sklm: {
     memoryHint: "会用于此项目的聊天。请保持简洁、客观。",
     memorySave: "保存记忆",
     memorySaving: "保存中…",
+    memoryTooLarge: "合并后项目记忆会超过 32 KiB。请先精简要并入的项目记忆。",
     noSearchResults: "没有匹配的项目",
     noSearchResultsBody: "请尝试其他名称或路径。",
     edit: "编辑项目",

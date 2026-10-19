@@ -19184,3 +19184,42 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
 - **Automation**: `scripts/e2e-three-column-layout.mjs`,
   `scripts/e2e-todo-checklist.mjs`, targeted work-panel and TodoDock tests.
 - **Status**: Run on the exact request candidate; native platform testing is separate.
+
+### E2E-PROJECT-group-pinned-memory-follows-its-folders
+
+- **Preconditions**: A built task candidate and three real folders with no
+  project memory of their own.
+- **Steps**: 1) Write pinned memory for the first two folders, create a group
+  around them, and read the group's memory. 2) Write an explicit group entry,
+  give the third folder its own pinned memory, and add it to the group. 3)
+  Remove the third folder from the group and add it back. 4) Read the first
+  folder's own path-scoped memory. 5) Create a group around a folder that has no
+  memory.
+- **Expected**: A group built around saved projects holds both folders' memory in
+  root order, and a stored group gaining a root keeps its existing entries and
+  order and appends the joining folder's memory behind them. Moving a root out and
+  back leaves the group memory unchanged rather than appending the same text
+  twice. The path-scoped record is still readable, so nothing was migrated away or
+  deleted. A group whose roots carry no memory stays empty instead of inventing
+  one. A merge that would push the group past the 32 KiB pinned-memory cap is
+  refused with `PROJECT_MEMORY_TOO_LARGE` and writes nothing at all: no group
+  record, no group memory, no re-keyed learned memory, and every folder keeps its
+  own path-scoped memory.
+- **Automation**: `pnpm test:e2e:project-group-memory` runs the real Host binary
+  through `project.memory.set`, `project.group.create`, `project.group.update`,
+  and `project.group.memory.get`; the db-level merge is covered by
+  `creating_a_group_keeps_the_pinned_memory_of_its_projects`,
+  `adding_a_root_to_a_group_appends_its_pinned_memory`, and
+  `moving_a_root_out_and_back_does_not_duplicate_its_pinned_memory`, with the
+  pre-existing legacy-upgrade behaviour kept by
+  `editing_a_legacy_project_with_an_extra_folder_upgrades_it_to_a_group`. The
+  over-cap refusal is covered by
+  `creating_a_group_that_would_pass_the_memory_cap_is_refused_whole`,
+  `adding_a_root_that_would_pass_the_memory_cap_leaves_the_group_unchanged`,
+  `upgrading_a_legacy_project_that_would_pass_the_memory_cap_keeps_it_legacy`,
+  and the RPC-level `project_group_create_reports_the_memory_cap_refusal`.
+- **Specs linked**: `03-runtime/04-data-storage.md` §4.2, ADR
+  0249-chatgpt-style-logical-project-groups §8.
+- **Acceptance criterion**: F (persistence), Quality.
+- **Milestone**: Post-M6 maintenance.
+- **Status**: Automated.

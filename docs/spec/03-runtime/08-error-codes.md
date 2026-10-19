@@ -363,6 +363,16 @@ codes below are errors. Neither repeats the refused content.
 | `MEMORY_REVISION_CONFLICT` | no | a learned-memory update carried a `revision` another writer already moved past; the stored row is unchanged |
 | `MEMORY_DUPLICATE_CONTENT` | no | restoring or editing would leave two live memories with the same content in one scope |
 
+### 3.11 Project groups
+
+The project-group writes (`project.group.create`, `project.group.update`) refuse
+a merge that would push the group's pinned memory past the 32 KiB cap
+(ADR 0249 §8, spec 04 §4.2). The message never repeats memory text.
+
+| code | retriable | meaning |
+|---|---|---|
+| `PROJECT_MEMORY_TOO_LARGE` | no | merging the selected folders' pinned memory would pass the cap; nothing was written and every folder keeps its own memory |
+
 ## 4. Mapping rules
 
 ### Host RPC numeric → AppError.code

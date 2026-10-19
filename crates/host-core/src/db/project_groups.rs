@@ -13,6 +13,10 @@ const GROUP_MEMORY_NAMESPACE: &str = "projectGroupMemory";
 const GROUP_INSTRUCTIONS_NAMESPACE: &str = "projectGroupInstructions";
 pub const MAX_PROJECT_GROUP_NAME_CHARS: usize = 80;
 pub const MAX_PROJECT_GROUP_INSTRUCTIONS_BYTES: usize = 32 * 1024;
+/// A group write refused because the merged pinned memory would pass
+/// `MAX_PROJECT_MEMORY_BYTES`. The code travels to the renderer so the failure
+/// is explained in the user's language (ADR 0249 §8).
+pub const PROJECT_MEMORY_TOO_LARGE: &str = "PROJECT_MEMORY_TOO_LARGE";
 
 pub const REMOTE_PROJECT_PREFIX: &str = "remote-project:";
 
@@ -315,6 +319,11 @@ impl Database {
         }
 
         let now = now_ms();
+        // The merge is computed and checked before anything is registered:
+        // `ensure_project` runs outside the transaction below, so a refusal
+        // after it would leave a project row behind for a group that was never
+        // created.
+        let merged = self.merged_group_memory(None, &canonical_paths, &canonical_paths, now)?;
         let roots = canonical_paths
             .iter()
             .enumerate()
@@ -340,14 +349,103 @@ impl Database {
             detached_paths: Vec::new(),
             remote: None,
         };
-        // The group and the learned memory keyed by its roots' paths become
-        // visible together: a folder that joins a group must never leave its
-        // memories or tombstones behind on the old path scope.
+        // The group, its pinned memory, and the learned memory keyed by its
+        // roots' paths become visible together: a folder that joins a group must
+        // never leave its memories or tombstones behind on the old path scope.
         let tx = self.conn.unchecked_transaction()?;
         crate::memory::rekey_learned_memory_to_group(&tx, &canonical_paths, &group.id)?;
+        if let Some(memory) = merged {
+            self.kv_set(GROUP_MEMORY_NAMESPACE, &group.id, &memory)?;
+        }
         self.kv_set(GROUP_NAMESPACE, &group.id, &serde_json::to_value(&group)?)?;
         tx.commit()?;
         Ok(group)
+    }
+
+    /// The pinned memory a group holds once some of its roots hand theirs over.
+    ///
+    /// A group is the identity a session reads its pinned memory through, so a
+    /// folder that becomes a root of one must bring what the user wrote for it:
+    /// a legacy project being upgraded, a new group built around saved projects,
+    /// and a stored group gaining a root all merge the joining roots' memory into
+    /// the group's. `ordered` fixes the order — and the entry ids — of the whole
+    /// group, `joining` names the roots being merged, and `existing` is what the
+    /// group already holds. Existing entries and their order are kept and the
+    /// joining entries are appended behind them; content the group already holds
+    /// is not appended again, so moving a root out and back cannot duplicate it.
+    ///
+    /// The path-scoped record itself is left in place, which is what the legacy
+    /// upgrade path has always done. Nothing here deletes or truncates user text.
+    ///
+    /// A merge that would push the group past `MAX_PROJECT_MEMORY_BYTES` is
+    /// refused with `PROJECT_MEMORY_TOO_LARGE` instead of being stored: the
+    /// caller's transaction rolls back, so no group record, no re-keyed learned
+    /// memory, and no merged memory is written, and every folder keeps its own.
+    ///
+    /// `None` means there is nothing to write: either no joining root carries
+    /// memory, or the group already holds everything they carry.
+    fn merged_group_memory(
+        &self,
+        existing: Option<Vec<ProjectMemoryEntryRecord>>,
+        ordered: &[String],
+        joining: &[String],
+        now: i64,
+    ) -> Result<Option<Value>> {
+        let mut entries = existing.unwrap_or_default();
+        let mut added = false;
+        for (root_index, path) in ordered.iter().enumerate() {
+            if !joining.iter().any(|candidate| candidate == path) {
+                continue;
+            }
+            let memory = self.get_project_memory(path)?;
+            let incoming = match memory.entries {
+                Some(entries) => entries
+                    .into_iter()
+                    .map(|entry| ProjectMemoryEntryRecord {
+                        id: format!("root-{root_index}-{}", entry.id),
+                        title: entry.title,
+                        content: entry.content,
+                    })
+                    .collect::<Vec<_>>(),
+                None if !memory.content.is_empty() => vec![ProjectMemoryEntryRecord {
+                    id: format!("root-{root_index}-legacy"),
+                    title: project_display_name(path),
+                    content: memory.content,
+                }],
+                None => Vec::new(),
+            };
+            for entry in incoming {
+                if entries
+                    .iter()
+                    .any(|known| known.content.trim() == entry.content.trim())
+                {
+                    continue;
+                }
+                entries.push(entry);
+                added = true;
+            }
+        }
+        if !added {
+            return Ok(None);
+        }
+        let content = render_project_memory_entries(&entries);
+        // The same cap `set_project_group_memory` enforces, checked before the
+        // record exists. A group whose memory is past the cap cannot be applied
+        // on another device through config sync, so the merge is refused whole
+        // instead of stored: nothing is truncated and no user text is dropped,
+        // the caller's transaction rolls back, and the folders keep their own
+        // path-scoped memory.
+        if content.len() > MAX_PROJECT_MEMORY_BYTES {
+            return Err(anyhow!(
+                "{PROJECT_MEMORY_TOO_LARGE}: merged project memory exceeds {MAX_PROJECT_MEMORY_BYTES} bytes"
+            ));
+        }
+        Ok(Some(serde_json::json!({
+            "format": "entries-v1",
+            "content": content,
+            "entries": entries,
+            "updatedAt": now
+        })))
     }
 
     /// Edits a stored group's display name and ordered roots.
@@ -436,10 +534,8 @@ impl Database {
                 removed_without_sessions.push(*path);
             }
         }
-        for path in &ordered {
-            self.ensure_project(path, false)?;
-        }
-
+        // Renaming a legacy project that keeps its single folder writes no
+        // group, so it stays exactly as it was.
         if current.legacy && ordered.len() == 1 {
             self.conn
                 .prepare_cached("UPDATE projects SET name = ?1 WHERE path = ?2")?
@@ -450,6 +546,36 @@ impl Database {
         }
 
         let now = now_ms();
+        let group_id = if current.legacy {
+            Uuid::new_v4().to_string()
+        } else {
+            current.id.clone()
+        };
+        // The merge is computed and checked before the joining folders are
+        // registered: `ensure_project` below runs outside the transaction, so a
+        // refusal after it would leave project rows behind for a group that was
+        // never written. A legacy upgrade merges every selected root, which is
+        // what it has always done; a stored group merges only the roots that are
+        // joining it, so reorganising a group never re-adds an entry the user
+        // removed from its memory.
+        let existing = if current.legacy {
+            None
+        } else {
+            self.get_project_group_memory(&group_id)?.entries
+        };
+        let joining = if current.legacy {
+            ordered.clone()
+        } else {
+            ordered
+                .iter()
+                .filter(|path| !current.roots.iter().any(|root| &root.path == *path))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let merged = self.merged_group_memory(existing, &ordered, &joining, now)?;
+        for path in &ordered {
+            self.ensure_project(path, false)?;
+        }
         let roots = ordered
             .iter()
             .enumerate()
@@ -468,11 +594,7 @@ impl Database {
         detached_paths.retain(|path| !ordered.iter().any(|candidate| candidate == path));
 
         let group = ProjectGroupRecord {
-            id: if current.legacy {
-                Uuid::new_v4().to_string()
-            } else {
-                current.id
-            },
+            id: group_id,
             name: name.to_string(),
             primary_path: primary,
             roots,
@@ -484,46 +606,13 @@ impl Database {
             detached_paths,
             remote: None,
         };
-        // The group record and the learned memory that belonged to its roots
-        // become visible together: an upgrade must never leave entries keyed by a
-        // path the group now owns, and must never drop them either.
+        // The group record, its pinned memory, and the learned memory that
+        // belonged to its roots become visible together: a folder that joins a
+        // group must never leave its memories or tombstones behind on the old
+        // path scope, and must never look like it forgot what the user wrote.
         let tx = self.conn.unchecked_transaction()?;
-        if current.legacy {
-            // A legacy project may already have path-scoped memory. Merge the
-            // memory of every selected legacy root into the new group so
-            // upgrading a project never silently discards user context.
-            let mut merged_entries = Vec::new();
-            for (root_index, path) in ordered.iter().enumerate() {
-                let memory = self.get_project_memory(path)?;
-                if let Some(entries) = memory.entries {
-                    merged_entries.extend(entries.into_iter().map(|entry| {
-                        ProjectMemoryEntryRecord {
-                            id: format!("root-{root_index}-{}", entry.id),
-                            title: entry.title,
-                            content: entry.content,
-                        }
-                    }));
-                } else if !memory.content.is_empty() {
-                    merged_entries.push(ProjectMemoryEntryRecord {
-                        id: format!("root-{root_index}-legacy"),
-                        title: project_display_name(path),
-                        content: memory.content,
-                    });
-                }
-            }
-            if !merged_entries.is_empty() {
-                let content = render_project_memory_entries(&merged_entries);
-                self.kv_set(
-                    GROUP_MEMORY_NAMESPACE,
-                    &group.id,
-                    &serde_json::json!({
-                        "format": "entries-v1",
-                        "content": content,
-                        "entries": merged_entries,
-                        "updatedAt": now_ms()
-                    }),
-                )?;
-            }
+        if let Some(memory) = merged {
+            self.kv_set(GROUP_MEMORY_NAMESPACE, &group.id, &memory)?;
         }
         // Every folder that is a root of this group hands over the learned memory
         // keyed by its own path — whether the group is new (a legacy upgrade) or

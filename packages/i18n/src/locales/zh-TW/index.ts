@@ -2186,6 +2186,7 @@ sklm: {
     memoryHint: "會用於此專案的聊天。請保持簡潔、客觀。",
     memorySave: "保存記憶",
     memorySaving: "保存中…",
+    memoryTooLarge: "合併後專案記憶會超過 32 KiB。請先精簡要併入的專案記憶。",
     noSearchResults: "沒有匹配的專案",
     noSearchResultsBody: "請嘗試其他名稱或路徑。",
     edit: "編輯專案",
