@@ -2195,6 +2195,7 @@ sklm: {
     "memoryHint": "Wird in Chats dieses Projekts verwendet. Halten Sie ihn kurz und sachlich.",
     "memorySave": "Speicher sichern",
     "memorySaving": "Wird gespeichert…",
+    "memoryTooLarge": "Der zusammengeführte Projekt-Speicher würde 32 KiB überschreiten. Kürzen Sie zuerst den Speicher der Projekte, die Sie gruppieren.",
     "noSearchResults": "Keine Projekte entsprechen Ihrer Suche",
     "noSearchResultsBody": "Versuchen Sie es mit einem anderen Namen oder Pfad.",
     "edit": "Projekt bearbeiten",

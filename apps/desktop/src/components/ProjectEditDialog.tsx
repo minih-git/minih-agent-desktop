@@ -4,6 +4,7 @@ import { portalToBody } from "../lib/portal-visibility";
 import { useTranslation } from "react-i18next";
 import type { ProjectGroupRecord, ProjectGroupRoot } from "@minih-agent/shared";
 import { api } from "../lib/api";
+import { projectGroupWriteError } from "../lib/project-group-errors";
 import { MAX_PROJECT_NAME_CHARS } from "../lib/sidebar-preferences";
 import { OverlayBackdrop, Button, Input, TooltipButton } from "./ui";
 import {
@@ -186,7 +187,7 @@ export function ProjectEditDialog({
       onSaved(result.group);
       onClose();
     } catch (error) {
-      onError(error);
+      onError(projectGroupWriteError(error, t));
     } finally {
       busyRef.current = false;
       setBusy(false);

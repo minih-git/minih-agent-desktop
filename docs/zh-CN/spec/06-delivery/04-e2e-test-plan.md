@@ -10171,7 +10171,9 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **预期**：围绕已存项目创建的项目组按根目录顺序持有两个文件夹的记忆；已存组新增根目录时，
   原有条目及其顺序保持不变，加入的文件夹的记忆追加在后面。把根目录移出再加入后，组记忆保持
   不变，而不会把同一段文字追加两次。按路径的记录仍然可读，因此没有任何内容被迁移走或删除。
-  根目录都没有记忆的组保持为空，而不会凭空生成条目。
+  根目录都没有记忆的组保持为空，而不会凭空生成条目。合并后一旦超过 32 KiB 固定记忆上限，整次写入
+  会以 `PROJECT_MEMORY_TOO_LARGE` 被拒绝，且什么都不写：不写组记录、不写组记忆、不重新挂载学习
+  记忆，各文件夹保留自己按路径的记忆。
 - **自动化**：`pnpm test:e2e:project-group-memory` 用真实 Host 二进制走
   `project.memory.set`、`project.group.create`、`project.group.update` 与
   `project.group.memory.get`；db 层合并由
@@ -10180,6 +10182,11 @@ host-created files. The full app's file-preview viewer is covered separately.
   `moving_a_root_out_and_back_does_not_duplicate_its_pinned_memory` 覆盖，
   既有旧项目升级行为由
   `editing_a_legacy_project_with_an_extra_folder_upgrades_it_to_a_group` 保持。
+  超限拒绝由
+  `creating_a_group_that_would_pass_the_memory_cap_is_refused_whole`、
+  `adding_a_root_that_would_pass_the_memory_cap_leaves_the_group_unchanged`、
+  `upgrading_a_legacy_project_that_would_pass_the_memory_cap_keeps_it_legacy`
+  以及 RPC 层的 `project_group_create_reports_the_memory_cap_refusal` 覆盖。
 - **关联规格**：`03-runtime/04-data-storage.md` §4.2、ADR
   0249-chatgpt-style-logical-project-groups §8。
 - **验收**：F（持久化）、Quality。

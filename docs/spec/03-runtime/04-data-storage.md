@@ -525,11 +525,13 @@ CREATE TABLE projects (
   and content the group already holds is not appended again, so moving a root out
   and back does not duplicate it. The path-scoped `projectMemory` record itself is
   left in place, which is what the legacy upgrade path has always done, so nothing
-  here deletes or truncates user text. Merging several roots' memory can exceed
-  the 32 KiB cap, because that cap is checked against the content of a write and a
-  merge is not a write: an over-limit group record stays readable and can be
-  brought back under the cap by an edit, while an edit that is itself over the cap
-  is still refused.
+  here deletes or truncates user text. A merge that would push the group past the
+  32 KiB cap is refused whole instead of stored: no group record, no group memory,
+  and no re-keyed learned memory is written, the folders keep their own
+  path-scoped memory, and the caller gets `PROJECT_MEMORY_TOO_LARGE`
+  ([08-error-codes](08-error-codes.md)) so the editor can explain it in the user's
+  language. Nothing is truncated or dropped: the user shortens the memories that
+  are joining and retries.
 ### 4.3 providers
 
 Same role as v1; `headers_json` + `compatibility_json` collapse into one

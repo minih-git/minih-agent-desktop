@@ -243,7 +243,9 @@ type ToolBudgetHealth = {
 - `project.group.create({ name, folders })` — validates the display name and
   local directories, stores the ordered roots, and returns the new group
   without changing the active workspace. A non-legacy root cannot belong to a
-  second group.
+  second group. A merge that would push the group's pinned memory past the
+  32 KiB cap is refused with `PROJECT_MEMORY_TOO_LARGE` (spec 08 §3.11) and
+  stores nothing.
 - `project.group.rename({ groupId, name })` — persists the group display name.
 - `project.group.update({ groupId, name, folders, primary? })` — edits the group
   name and ordered roots. The stored primary root must remain first; naming a
@@ -252,7 +254,10 @@ type ToolBudgetHealth = {
   are removed, a `primary` outside `folders` is rejected, roots owned by
   another non-legacy group are rejected, and a root with existing chats cannot
   be detached. Removed roots are retained as suppressed historical paths rather
-  than reappearing as standalone legacy groups.
+  than reappearing as standalone legacy groups. Adding a root whose memory would
+  push the group past the 32 KiB cap is refused with
+  `PROJECT_MEMORY_TOO_LARGE`, leaving the group, its memory, and the joining
+  folders untouched.
 - `project.group.memory.get/set({ groupId, entries })` — reads or normalizes
   shared group memory using the existing 32 KiB entry limit.
 - `project.group.instructions.get/set({ groupId, content })` — reads or stores

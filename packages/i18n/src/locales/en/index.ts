@@ -2221,6 +2221,7 @@ sklm: {
     memoryHint: "Used in chats in this project. Keep it concise and factual.",
     memorySave: "Save memory",
     memorySaving: "Saving…",
+    memoryTooLarge: "Merging these folders' project memory would pass 32 KiB. Shorten the memory of the projects you are grouping first.",
     noSearchResults: "No projects match your search",
     noSearchResultsBody: "Try another name or path.",
     edit: "Edit project",

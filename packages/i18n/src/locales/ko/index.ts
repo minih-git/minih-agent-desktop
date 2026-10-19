@@ -2206,6 +2206,7 @@ sklm: {
     memoryHint: "이 프로젝트의 채팅에 사용됩니다. 간결하고 사실적으로 작성하세요.",
     memorySave: "메모리 저장",
     memorySaving: "저장 중…",
+    memoryTooLarge: "병합된 프로젝트 메모리가 32 KiB를 넘습니다. 먼저 그룹에 넣을 프로젝트의 메모리를 줄여 주세요.",
     noSearchResults: "검색과 일치하는 프로젝트 없음",
     noSearchResultsBody: "다른 이름이나 경로를 사용해 보세요.",
     edit: "프로젝트 편집",

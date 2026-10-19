@@ -38,7 +38,7 @@ pub(crate) use model::PlanWorkRow;
 pub use model::{Database, ProjectMemoryEntryRecord, ProjectMemoryRecord, ProjectRecord};
 pub use project_groups::{
     ProjectGroupContextRecord, ProjectGroupRecord, ProjectGroupRoot, RemoteWorkspace,
-    REMOTE_PROJECT_PREFIX,
+    PROJECT_MEMORY_TOO_LARGE, REMOTE_PROJECT_PREFIX,
 };
 pub(crate) use prompt_notification_migration::{migrate_v24_to_v25, NOTIFICATIONS_DDL};
 pub(crate) use repositories::{

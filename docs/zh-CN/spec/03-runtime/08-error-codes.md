@@ -353,6 +353,15 @@ ADR 0285）。渲染进程除了一个标识徽章外看不到本地/远程之�
 | `MEMORY_REVISION_CONFLICT` | 否 | 学习记忆更新携带的 `revision` 已被其他写入者推进；已存储行保持不变 |
 | `MEMORY_DUPLICATE_CONTENT` | 否 | 恢复或编辑会使同一作用域内出现两条内容相同的存活记忆 |
 
+### 3.11 项目组
+
+项目组写入（`project.group.create`、`project.group.update`）会拒绝使组的固定记忆超过
+32 KiB 上限的合并（ADR 0249 §8、规格 04 §4.2）。错误信息不会重复记忆正文。
+
+| code | 可重试 | 含义 |
+|---|---|---|
+| `PROJECT_MEMORY_TOO_LARGE` | 否 | 合并所选文件夹的固定记忆会超过上限；没有写入任何内容，各文件夹保留自己的记忆 |
+
 ## 4. 映射规则
 
 ### 主机 RPC 数字 → AppError.code

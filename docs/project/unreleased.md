@@ -23,3 +23,9 @@
   the index the last session started with, how many suggestions you kept or
   discarded and at what rate, how often a delete blocked a write, and today's
   extraction spend. None of it is uploaded, and none of it syncs.
+- Merging folders into a project group now checks the combined pinned memory
+  against the 32 KiB limit before writing anything. A merge that would pass it
+  is refused with a clear message instead of storing an oversized group: the
+  group, its memory, and every folder's own memory stay exactly as they were,
+  and no user text is truncated or dropped. Shorten the memories that are
+  joining and try again.

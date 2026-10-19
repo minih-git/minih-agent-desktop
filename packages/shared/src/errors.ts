@@ -284,6 +284,14 @@ export const ErrorCodes = {
   PLAN_WORKSPACE_REQUIRED: "PLAN_WORKSPACE_REQUIRED",
   PLAN_ALREADY_ACTIVE: "PLAN_ALREADY_ACTIVE",
   PLAN_INTERNAL: "PLAN_INTERNAL",
+  // Project-group host codes (ADR 0249 §8).
+  /**
+   * A project-group write was refused because merging its folders' pinned
+   * memory would pass the 32 KiB cap (ADR 0249 §8). Nothing was written: the
+   * group, its memory, and every folder's own memory are unchanged, and the
+   * user has to shorten the memories that are joining.
+   */
+  PROJECT_MEMORY_TOO_LARGE: "PROJECT_MEMORY_TOO_LARGE",
   // Learned-memory host codes (ADR agent-long-term-memory, spec 08 §3.10).
   MEMORY_REVISION_CONFLICT: "MEMORY_REVISION_CONFLICT",
   MEMORY_DUPLICATE_CONTENT: "MEMORY_DUPLICATE_CONTENT",

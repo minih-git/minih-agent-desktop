@@ -2202,6 +2202,7 @@ sklm: {
     memoryHint: "Bu projedeki sohbetlerde kullanılır. Kısa ve gerçeğe dayalı tutun.",
     memorySave: "Belleği kaydet",
     memorySaving: "Kaydediliyor…",
+    memoryTooLarge: "Birleştirilen proje belleği 32 KiB'ı aşacak. Önce gruplandırdığınız projelerin belleğini kısaltın.",
     noSearchResults: "Aramanızla eşleşen proje yok",
     noSearchResultsBody: "Başka bir ad veya yol deneyin.",
     edit: "Projeyi düzenle",

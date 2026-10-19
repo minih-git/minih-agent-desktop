@@ -5,6 +5,7 @@ import { useBlockingOverlay } from "../lib/blocking-overlay";
 import { MAX_PROJECT_NAME_CHARS } from "../lib/sidebar-preferences";
 import { api } from "../lib/api";
 import { parseGitCloneUrl } from "../lib/git-clone-url";
+import { projectGroupWriteError } from "../lib/project-group-errors";
 import { allowInsecureUserEndpoints } from "@minih-agent/shared";
 import {
   defaultProjectName,
@@ -209,7 +210,8 @@ function ProjectCreateDialogContent({ initialRemoteHostKey }: { initialRemoteHos
         });
       }
     } catch (error) {
-      showToast(error instanceof Error ? error.message : String(error), {
+      const failure = projectGroupWriteError(error, t);
+      showToast(failure instanceof Error ? failure.message : String(failure), {
         variant: "error",
       });
     } finally {
