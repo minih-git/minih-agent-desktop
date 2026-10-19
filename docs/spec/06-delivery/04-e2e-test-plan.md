@@ -18985,3 +18985,39 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
   suggestion stays rejected.
 - **Milestone**: M4.
 - **Status**: Automated — `pnpm test:e2e:memory`.
+
+### E2E-MEMORY-sync-travels-with-its-tombstones
+
+- **Preconditions**: Two isolated Host processes on the same router-account
+  vault, both with the opt-in memory category enabled, each with its own
+  registered project folder.
+- **Steps**:
+  1. On the first device write one project-scope note and one user-scope note,
+     add a pending suggestion, and move every device-local counter.
+  2. Sync, map the project's logical id onto the second device's folder,
+     approve, and read both scopes there.
+  3. Forget the user-scope note on the second device, sync, approve on the first
+     device, then try to write the same content there again.
+- **Expected**: Both notes arrive on the second device and the suggestion does
+  not; its own counters stay at zero. After the delete the first device no
+  longer holds the note, the same content is refused with `MEMORY_TOMBSTONED`,
+  and that refused write is counted only on the device that attempted it. A
+  revision carrying a domain this build does not know is still refused at the
+  manifest gate rather than skipped, which is what makes every device of a vault
+  have to run a build that knows `learnedMemory`.
+- **Automation**: `config_sync::engine::router_tests::learned_memory_tests::learned_memory_travels_between_devices_and_its_counters_do_not`
+  (two devices over the in-process router transport fixture), with
+  `learned_memory_round_trips_with_its_tombstones_and_never_its_suggestions`,
+  `a_synced_delete_and_a_remember_again_both_propagate`,
+  `two_devices_that_wrote_the_same_note_merge_into_one`,
+  `an_unmapped_project_defers_one_entity_and_never_fails_the_revision`,
+  `local_counters_never_travel_with_a_revision`, and
+  `a_revision_carrying_an_unknown_domain_is_refused_not_skipped`. The multi-Host
+  `pnpm test:e2e:config-sync` harness still targets the removed S3 backend and
+  fails before any scenario runs; it is not the automation for this scenario.
+- **Specs linked**: `03-runtime/22-config-sync.md` §2, ADR
+  agent-long-term-memory §7.
+- **Acceptance criterion**: A note and its deletion reach the other device,
+  while a suggestion and every device-local number stay where they were made.
+- **Milestone**: M5.
+- **Status**: Automated at the engine level.

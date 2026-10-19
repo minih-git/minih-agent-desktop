@@ -1,23 +1,25 @@
 //! Learned memory in configuration sync (ADR agent-long-term-memory §7).
 //!
-//! **Compatibility finding, verified in this branch.** The plan gives learned
-//! memory its own domain so that a released build ignores it. The *apply* path
-//! would indeed ignore a domain it has no adapter for (`ready_entity` ->
-//! `is_selected` -> `ALL_DOMAINS`), but the *decode* path refuses it first:
-//! `validate_remote_manifest` bails with `CONFIG_SYNC_UNSUPPORTED: remote domain
-//! learnedMemory is not supported`, and v0.21.2 does the same
-//! (`engine_remote.rs`, the `adapter_for` gate in `read_remote_manifest`). A
-//! released device therefore cannot read a revision that carries this domain at
-//! all: its head read fails, and with it every later sync and restore, for as
-//! long as that revision carries the domain. The behaviour is pinned by
-//! `a_revision_carrying_an_unknown_domain_is_refused_not_skipped`.
+//! Learned memory travels in its own domain (`learnedMemory`) rather than inside
+//! the pinned `memory` domain. A released build treats every entity of the
+//! pinned domain as pinned project memory, so reusing it would erase pinned
+//! notes on a deletion, create groups, and refuse a user-scope entity with
+//! `CONFIG_SYNC_MAPPING_REQUIRED`. The gate is the existing opt-in memory
+//! category, so there is no separate user-visible switch.
 //!
-//! This module is therefore complete and tested but **not shipped as it
-//! stands**: the compatibility question needs a decision. Extending the pinned
-//! `memory` domain is not the alternative — a released build treats every entity
-//! there as pinned project memory, so it would erase pinned notes on a deletion,
-//! create groups, and fail a user-scope entity with
-//! `CONFIG_SYNC_MAPPING_REQUIRED`.
+//! **Compatibility: configuration sync requires every device on one version.**
+//! A build that does not know this domain cannot read a revision that carries
+//! it. The *apply* path would skip an entity whose domain has no adapter
+//! (`ready_entity` -> `is_selected` -> `ALL_DOMAINS`), but the *decode* path
+//! refuses it first: `validate_remote_manifest` bails with
+//! `CONFIG_SYNC_UNSUPPORTED: remote domain learnedMemory is not supported`, and
+//! every released build up to v0.21.2 has the same gate (`engine_remote.rs`, the
+//! `adapter_for` check in `read_remote_manifest`). So as soon as one device
+//! publishes learned memory, a device on an older build fails to read the remote
+//! head, and with it every later sync and restore, for as long as that revision
+//! carries the domain. That is an accepted consequence of shipping the domain,
+//! not an accident, and it is pinned by
+//! `a_revision_carrying_an_unknown_domain_is_refused_not_skipped`.
 //!
 //! What is implemented here: capture and apply of `active` and `archived`
 //! entries of both scopes plus their tombstones, the existing project-identity

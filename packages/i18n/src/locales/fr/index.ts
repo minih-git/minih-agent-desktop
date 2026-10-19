@@ -2061,6 +2061,17 @@ sklm: {
     suggestionQuotedFrom: "Vous avez dit",
     suggestionAccept: "Conserver",
     suggestionReject: "Écarter",
+    statsTitle: "Sur cet appareil",
+    statsIndex:
+      "Index au dernier démarrage : {{entries}} entrées · {{size}} ({{omitted}} au-delà du budget)",
+    statsIndexNone: "Index pas encore capturé",
+    statsSuggestions:
+      "Suggestions examinées : {{accepted}} conservées · {{rejected}} écartées · {{percent}} % conservées",
+    statsSuggestionsNone: "Aucune suggestion examinée pour l'instant",
+    statsBlocked:
+      "Bloqué par une suppression : {{extraction}} par l'extraction · {{user}} par vous",
+    statsSpend: "Extraction aujourd'hui : {{tokens}} jetons · {{runs}} exécutions",
+    statsSpendNone: "Rien dépensé pour l'extraction aujourd'hui",
     rememberUndo: "Annuler",
     rememberUndoing: "Annulation…",
     rememberUndone: "Supprimé",

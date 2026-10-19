@@ -9,6 +9,7 @@ import type {
   LearnedMemoryListResult,
   LearnedMemoryRememberAgainRequest,
   LearnedMemoryExtractionStatus,
+  LearnedMemoryLocalStats,
   LearnedMemorySessionState,
   LearnedMemorySuggestionListRequest,
   LearnedMemorySuggestionListResult,
@@ -1051,6 +1052,10 @@ export const api = {
     invoke<{ budget: LearnedMemoryExtractionStatus }>(IPC.invoke.memoryExtractionStatus, {
       day,
     }),
+  // The device-local counters the memory manager shows. They never travel with
+  // configuration sync, so this is this machine's own usage.
+  getLearnedMemoryStats: () =>
+    invoke<{ stats: LearnedMemoryLocalStats }>(IPC.invoke.memoryStats, {}),
   getMemorySessionState: (sessionId: string) =>
     invoke<{ state: LearnedMemorySessionState }>(IPC.invoke.memorySessionGet, { sessionId }),
   setMemorySessionExcluded: (sessionId: string, excluded: boolean) =>

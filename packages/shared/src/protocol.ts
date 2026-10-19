@@ -240,6 +240,9 @@ export const IPC = {
     // Device-local extraction usage, so Settings can show today's spend and
     // whether the daily budget has paused it.
     memoryExtractionStatus: "minih-agent-desktop/memory/extraction/status",
+    // The device-local counters the memory manager shows. They never travel
+    // with configuration sync, so this read is about this machine only.
+    memoryStats: "minih-agent-desktop/memory/stats",
     toolResolvePermission: "minih-agent-desktop/tool/resolvePermission",
     todosGet: "minih-agent-desktop/todos/get",
     askToolResolve: "minih-agent-desktop/agent/askTool/resolve",

@@ -960,3 +960,6 @@ async fn an_extraction_write_resolves_its_scope_from_the_session() {
     .unwrap_err();
     assert_eq!(error_code(&refused), "NOT_FOUND");
 }
+
+#[path = "memory_stats_tests.rs"]
+mod memory_stats_tests;

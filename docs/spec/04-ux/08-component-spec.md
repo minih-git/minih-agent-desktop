@@ -4486,6 +4486,49 @@ Learned memory dialog
 - The inbox is reachable only from the manager: no badge on the sidebar, no
   notification, and no interruption of a turn.
 
+## 20D. Learned-memory usage counters
+
+### 20D.1 Purpose
+
+Show how learned memory is doing on this device, so a user can judge the feature
+without any telemetry: how large the session-start index was at the last launch,
+how many suggestions were kept or discarded and at what rate, how often a delete
+blocked a write, and what extraction has cost today. The numbers are device-local
+and never travel with configuration sync.
+
+### 20D.2 Anatomy
+
+```text
+Learned memory dialog (foot)
+┌──────────────────────────────────────────────────────────────┐
+│ On this device                                               │
+│ · Index at last launch: 12 entries · 3.4 KB (2 over budget)   │
+│ · Suggestions reviewed: 7 kept · 3 discarded · 70% kept       │
+│ · Blocked by a delete: 2 from extraction · 1 from you         │
+│ · Extraction today: 1,234 tokens · 3 runs                     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### 20D.3 States
+
+| State | Appearance |
+|---|---|
+| No session has started yet | "Index not captured yet" instead of a size |
+| No decision yet | "No suggestion reviewed yet"; no rate is shown |
+| Nothing spent today | "Nothing spent on extraction today" |
+| Read failed | The block is absent; the manager works without it |
+
+### 20D.4 Interaction
+
+- The block is read-only: it is context for the notes above it and takes no
+  action of its own. It sits at the foot of the dialog, quieter than the list,
+  and never becomes a card of its own.
+- It is read when the manager opens and again after a suggestion decision, which
+  is the only action inside the dialog that changes a number.
+- A ledger written on an earlier local day reads as unspent, so "today" is the
+  user's own day rather than a host clock the UI cannot see.
+- The counters come from `memory.stats` and are never part of a configuration
+  sync revision, so another device never shows these numbers.
 ## 21. Acceptance criteria (all components)
 
 1. All components use semantic color tokens from [07-ui-design-system.md](07-ui-design-system.md) — no raw hex

@@ -9,6 +9,7 @@
 mod extraction;
 mod extraction_budget;
 mod extraction_input;
+mod local_stats;
 mod model;
 /// Configuration sync applies synced notes through the same row decoder,
 /// tombstone rules, and credential detector every other writer uses, so those
@@ -24,6 +25,9 @@ mod extraction_tests;
 #[cfg(test)]
 #[path = "lifecycle_tests.rs"]
 mod lifecycle_tests;
+#[cfg(test)]
+#[path = "local_stats_tests.rs"]
+mod local_stats_tests;
 #[cfg(test)]
 #[path = "provenance_tests.rs"]
 mod provenance_tests;

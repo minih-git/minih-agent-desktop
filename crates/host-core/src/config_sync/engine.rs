@@ -1062,10 +1062,14 @@ mod tests {
             .env("HOME", agents_dir.path())
             .env("USERPROFILE", agents_dir.path())
             .output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // The child must have run this very test: a name that no longer matches
+        // (a renamed or moved test) would otherwise report zero tests and pass
+        // here without running anything.
         anyhow::ensure!(
-            output.status.success(),
-            "isolated config sync test failed: {}\n{}",
-            String::from_utf8_lossy(&output.stdout),
+            output.status.success() && stdout.contains("1 passed; 0 failed"),
+            "isolated config sync test did not run: {}\n{}",
+            stdout,
             String::from_utf8_lossy(&output.stderr),
         );
         Ok(true)

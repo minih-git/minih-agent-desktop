@@ -42,3 +42,14 @@
   notes into a Suggestions tab, where Keep makes one memory and Discard erases
   it. A daily token budget caps the cost and Settings shows today's usage; the
   switch, the model, and the budget stay on this device.
+- Learned memory syncs with the opt-in Memory category of Cloud sync: the notes
+  you kept, in both scopes, and the deletes that keep a forgotten note from
+  coming back travel between your devices, while suggestions and the counters
+  below stay where they were made. A note written on two devices merges into one.
+  Every device of a vault must run this build or newer: a build that does not
+  know the new domain refuses to read a revision that carries it, so it stops
+  syncing until it is updated.
+- The memory manager shows how the feature is doing on this device: the size of
+  the index the last session started with, how many suggestions you kept or
+  discarded and at what rate, how often a delete blocked a write, and today's
+  extraction spend. None of it is uploaded, and none of it syncs.

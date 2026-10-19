@@ -5,7 +5,7 @@
 //! remember tool, and the optional extractor cannot each invent their own.
 
 use super::{json, rpc_err, AppState, JsonRpcError, Value};
-use crate::db::Database;
+use crate::db::{now_ms, Database};
 
 #[cfg(test)]
 #[path = "memory_rpc_tests.rs"]
@@ -22,6 +22,7 @@ pub(super) fn handle(st: &AppState, method: &str, params: Value) -> Result<Value
         "memory.list" => list(&st.db, &params),
         "memory.search" => search(&st.db, &params),
         "memory.index" => index(&st.db, &params),
+        "memory.stats" => local_stats(&st.db),
         "memory.create" => create(&st.db, &params),
         "memory.rememberAgain" => remember_again(&st.db, &params),
         "memory.update" => update(&st.db, &params),
@@ -100,7 +101,48 @@ fn search(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
 fn index(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
     let path = optional_str(params, "path")?;
     let index = db.learned_memory_index(path).map_err(internal)?;
+    // The launch path records what it captured, so the manager can show the
+    // measured size of the last session start (plan §1). A counter that cannot
+    // be written is not a reason to fail a session launch.
+    if let Err(error) = db.record_memory_index_capture(
+        index.entries.len() as i64,
+        index.bytes as i64,
+        index.omitted_count,
+        now_ms(),
+    ) {
+        tracing::warn!(%error, "learned-memory index counter could not be written");
+    }
     Ok(json!({ "index": index }))
+}
+
+/// The device-local counters the memory manager shows: the last launch's index
+/// size, the suggestion decisions taken on this machine, the writes tombstones
+/// stopped, and today's extraction spend.
+///
+/// None of it travels: configuration sync never captures this `kv` row, so a
+/// second device never inherits these numbers (ADR agent-long-term-memory §7).
+fn local_stats(db: &Database) -> Result<Value, JsonRpcError> {
+    let stats = db.memory_local_stats().map_err(internal)?;
+    let budget = db.memory_extraction_budget().map_err(internal)?;
+    Ok(json!({
+        "stats": {
+            "index": {
+                "entries": stats.index_entries,
+                "bytes": stats.index_bytes,
+                "omitted": stats.index_omitted,
+                "capturedAt": stats.index_captured_at,
+            },
+            "suggestions": {
+                "accepted": stats.suggestions_accepted,
+                "rejected": stats.suggestions_rejected,
+            },
+            "tombstones": {
+                "fromExtraction": stats.blocked_from_extraction,
+                "fromCreate": stats.blocked_from_create,
+            },
+            "extraction": { "day": budget.day, "tokens": budget.tokens, "runs": budget.runs },
+        }
+    }))
 }
 
 fn create(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {

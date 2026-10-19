@@ -287,6 +287,14 @@ recall tools.
   still starts with the user's own notes. Returns
   `{ index: { entries, omittedCount, bytes } }`. A launch that cannot read it
   continues without an index.
+- `memory.stats()` — the device-local counters the memory manager shows:
+  `{ stats: { index: { entries, bytes, omitted, capturedAt }, suggestions:
+  { accepted, rejected }, tombstones: { fromExtraction, fromCreate },
+  extraction: { day, tokens, runs } } }`. The launch path records the index it
+  captured, a suggestion decision records the decision, and a refused write
+  records the tombstone that stopped it, split by whether extraction or a user
+  write attempted it. None of it is part of a configuration-sync revision, so
+  the numbers never leave the device that made them.
 - `memory.create({ ... })` — the only create path. Params: `scope`, `path` or
   `sessionId`, `kind`, `content`, optional `rationale`, `origin` (`explicit` |
   `user_ui`, the default | `extracted`), `evidence` (`user_stated`, the default |

@@ -2031,6 +2031,16 @@ export const ptBR = {
     suggestionQuotedFrom: "Você disse",
     suggestionAccept: "Manter",
     suggestionReject: "Descartar",
+    statsTitle: "Neste dispositivo",
+    statsIndex:
+      "Índice no último início: {{entries}} entradas · {{size}} ({{omitted}} acima do orçamento)",
+    statsIndexNone: "Índice ainda não capturado",
+    statsSuggestions:
+      "Sugestões revisadas: {{accepted}} mantidas · {{rejected}} descartadas · {{percent}}% mantidas",
+    statsSuggestionsNone: "Nenhuma sugestão revisada ainda",
+    statsBlocked: "Bloqueado por uma exclusão: {{extraction}} da extração · {{user}} suas",
+    statsSpend: "Extração hoje: {{tokens}} tokens · {{runs}} execuções",
+    statsSpendNone: "Nada gasto em extração hoje",
     rememberUndo: "Desfazer",
     rememberUndoing: "Desfazendo…",
     rememberUndone: "Excluído",

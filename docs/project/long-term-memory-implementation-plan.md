@@ -2,7 +2,7 @@
 
 - Decision record: [ADR agent-long-term-memory](../adr/agent-long-term-memory.md)
   (Accepted for implementation, D668)
-- Status: Ready; no milestone started
+Status: M1–M4 landed; M5 in review.
 - Baseline: `main` at `ce48410f4` (v0.21.2), host schema v25
 - Scope: learned memory, history recall, explicit remember, optional
   extraction. Pinned project memory (ADR 0234) is unchanged.
@@ -36,6 +36,10 @@ telemetry):
 | History search latency, CJK query | `memory.history.search` timing | p95 ≤ 300 ms on a 10k-session fixture |
 | Suggestion acceptance rate | accept / (accept + reject) | ≥ 50%, else tighten the extraction prompt |
 | Deleted memories re-suggested | tombstone hits | 0 surfaced (hits are blocked and counted) |
+
+The measures above are shown as device-local counters in the memory manager
+(M5); the extraction cost comes from the existing daily ledger, so no number
+leaves the device.
 | Extraction cost | tokens per run, per day | within the user's configured budget |
 
 ## 2. Milestones
@@ -46,7 +50,7 @@ telemetry):
 | M2 | `feat/memory-recall-tools` | `SessionHistorySearch`, `MemorySearch`, session-start index, prompt section | History search tool |
 | M3 | `feat/memory-explicit-remember` | `MemoryRemember`, receipt, memory manager, switches | Yes |
 | M4 | `feat/memory-extraction` | Extraction service, suggestions inbox, budgets | Opt-in |
-| M5 | `feat/memory-config-sync` | Sync payload, local counters, metric review | Sync category |
+| M5 | `feat/memory-config-sync` | Dedicated `learnedMemory` sync domain, local counters, metric review | Sync category |
 
 M2's history search only depends on existing host search RPCs, so it can land
 before M1 if M1 is delayed. M3 depends on M1 and M2; M4 on M3; M5 on M3.
@@ -361,13 +365,24 @@ Tests:
 
 ### M5 — Sync and review
 
-- Extend `capture_memory` / apply in `crates/host-core/src/config_sync/` to
-  carry `active` and `archived` learned entries of both scopes and their
-  tombstones under the existing opt-in memory category, using the existing
-  project mapping; user-scope entries need none. Suggestions, counters, and
-  session state stay local.
-- Older app versions must ignore the new payload fields; add a round-trip
-  test with an old-shape payload.
+- Give learned memory its own config-sync domain (`learnedMemory`) in
+  `crates/host-core/src/config_sync/`, gated by the existing opt-in memory
+  category: `active` and `archived` entries of both scopes plus their
+  tombstones, using the existing project mapping (user-scope entries need
+  none). Suggestions, cursors, session state, the budget ledger, and the
+  device-local counters stay where they were made. Extending the pinned
+  `memory` domain is not an option: a released build treats every entity there
+  as pinned project memory.
+- **Version requirement (accepted).** A build that does not know the domain
+  refuses a revision that carries it at the manifest gate
+  (`CONFIG_SYNC_UNSUPPORTED`), so its head read — and every later sync and
+  restore — fails until it is updated. All devices of a vault must therefore
+  run a build that knows `learnedMemory`; the "older versions ignore unknown
+  payload fields" assumption does not hold and is not claimed.
+- Show the §1 measures as device-local counters in the memory manager: the
+  index size of the last launch, accepted/rejected suggestions and their rate,
+  tombstone blocks split by writer, and today's extraction spend. They never
+  enter a revision.
 - Review the §1 measures with real usage before deciding on corroboration-
   based auto-activation or consolidation (each would need its own ADR
   amendment).
@@ -411,12 +426,15 @@ the index and both memory tools; it does not delete data.
 | CJK history search slow | Scoped pre-filter, measured p95 gate in M2 | Large histories |
 | Schema downgrade | Existing schema-version policy, migration tests, storage E2E | Older app cannot open v26 |
 | Background cost surprise | Off by default, explicit model, daily budget, visible usage | None expected |
+| New sync domain versus older builds | Domain shipped only when every device of a vault is updated; documented in the config-sync spec and pinned by a decode-gate test | A device on an older build stops syncing until it is updated |
 
 ## 6. Resolved decisions (D668)
 
 1. "Learn automatically" is off by default and cannot be enabled until an
    extraction model is selected.
-2. Learned memory of both scopes syncs only through the existing opt-in
-   memory category of configuration sync; there is no separate default.
+2. Learned memory of both scopes syncs through a dedicated `learnedMemory`
+   domain of configuration sync, gated by the existing opt-in memory category;
+   there is no separate default and no separate category. All devices of the
+   vault must run a build that knows the domain.
 3. `MemoryRemember` follows the normal permission path in every mode; no
    message-text heuristic auto-allows it.

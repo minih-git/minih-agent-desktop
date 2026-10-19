@@ -2061,6 +2061,17 @@ sklm: {
     suggestionQuotedFrom: "Du hast gesagt",
     suggestionAccept: "Behalten",
     suggestionReject: "Verwerfen",
+    statsTitle: "Auf diesem Gerät",
+    statsIndex:
+      "Index beim letzten Start: {{entries}} Einträge · {{size}} ({{omitted}} über dem Budget)",
+    statsIndexNone: "Index noch nicht erfasst",
+    statsSuggestions:
+      "Vorschläge geprüft: {{accepted}} behalten · {{rejected}} verworfen · {{percent}} % behalten",
+    statsSuggestionsNone: "Noch kein Vorschlag geprüft",
+    statsBlocked:
+      "Durch ein Löschen blockiert: {{extraction}} aus der Extraktion · {{user}} von dir",
+    statsSpend: "Extraktion heute: {{tokens}} Tokens · {{runs}} Läufe",
+    statsSpendNone: "Heute nichts für die Extraktion ausgegeben",
     rememberUndo: "Rückgängig",
     rememberUndoing: "Wird rückgängig gemacht…",
     rememberUndone: "Gelöscht",

@@ -4,15 +4,18 @@ import test from "node:test";
 
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 const {
+  acceptancePercent,
   badgeCount,
   editConflicted,
   escapeCloses,
   initialManagerTab,
   managerRequest,
+  formatIndexSize,
   memoryErrorCode,
   showsEmptyState,
   sourceSessionOf,
   suggestionSummary,
+  todayExtractionSpend,
 } = await import("../src/lib/learned-memory-manager.ts");
 
 // ADR agent-long-term-memory §3.2: the manager's rules, tested without a DOM.
@@ -81,4 +84,27 @@ test("a suggestion shows the user's own words, and says nothing when it has none
   assert.deepEqual(suggestionSummary({ quotes: [] }), {});
   assert.deepEqual(suggestionSummary({}), {});
   assert.deepEqual(suggestionSummary({ quotes: [{ text: "   " }] }), {});
+});
+
+// Plan §1: the manager reports this device's own usage. Each number has a state
+// before it exists, and none of them may read as a wrong value.
+test("a rate exists only once something was decided", () => {
+  assert.equal(acceptancePercent(0, 0), null);
+  assert.equal(acceptancePercent(3, 1), 75);
+  assert.equal(acceptancePercent(0, 4), 0);
+  assert.equal(acceptancePercent(2, 1), 67);
+});
+
+test("an index size reads in the unit a person can judge", () => {
+  assert.equal(formatIndexSize(0), "0 B");
+  assert.equal(formatIndexSize(512), "512 B");
+  assert.equal(formatIndexSize(1024), "1 KB");
+  assert.equal(formatIndexSize(3584), "3.5 KB");
+  assert.equal(formatIndexSize(20480), "20 KB");
+});
+
+test("a ledger from an earlier day is not today's spend", () => {
+  assert.equal(todayExtractionSpend({ day: "2026-10-20", tokens: 1200 }, "2026-10-20"), 1200);
+  assert.equal(todayExtractionSpend({ day: "2026-10-19", tokens: 1200 }, "2026-10-20"), 0);
+  assert.equal(todayExtractionSpend({ day: "", tokens: 5 }, "2026-10-20"), 0);
 });

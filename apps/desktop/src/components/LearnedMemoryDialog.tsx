@@ -4,18 +4,23 @@ import { useTranslation } from "react-i18next";
 import type {
   LearnedMemoryEntry,
   LearnedMemoryKind,
+  LearnedMemoryLocalStats,
   LearnedMemoryScopeKind,
   LearnedMemoryStatus,
 } from "@minih-agent/shared";
 import { useBlockingOverlay } from "../lib/blocking-overlay";
 import { api } from "../lib/api";
+import { localDay } from "../lib/learned-memory-extraction";
 import {
+  acceptancePercent,
   editConflicted,
   escapeCloses,
+  formatIndexSize,
   initialManagerTab,
   managerRequest,
   showsEmptyState,
   sourceSessionOf,
+  todayExtractionSpend,
 } from "../lib/learned-memory-manager";
 import { SuggestionBadge, SuggestionInbox } from "./LearnedMemorySuggestions";
 import { Button, OverlayBackdrop, SegmentedControl, Select, Textarea, TooltipButton } from "./ui";
@@ -69,6 +74,7 @@ export function LearnedMemoryDialog({
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [stats, setStats] = useState<LearnedMemoryLocalStats | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
@@ -109,6 +115,24 @@ export function LearnedMemoryDialog({
       cancelled = true;
     };
   }, [projectPath, scope]);
+
+  // This device's own counters: read when the manager opens, and again when a
+  // decision changes them. A failed read hides the block, because the numbers
+  // are context and a wrong one would be worse than none.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await api.getLearnedMemoryStats();
+        if (!cancelled) setStats(result.stats);
+      } catch {
+        if (!cancelled) setStats(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingSuggestions]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -184,6 +208,12 @@ export function LearnedMemoryDialog({
   const title = scope === "project"
     ? t("memory.managerTitleProject", { name: projectName ?? "" })
     : t("memory.managerTitleUser");
+
+  // The two numbers the block formats rather than prints raw.
+  const acceptanceRate = stats
+    ? acceptancePercent(stats.suggestions.accepted, stats.suggestions.rejected)
+    : null;
+  const spentToday = stats ? todayExtractionSpend(stats.extraction, localDay()) : 0;
 
   const grouped = useMemo(() => entries ?? [], [entries]);
 
@@ -444,6 +474,45 @@ export function LearnedMemoryDialog({
         )}
           </>
         )}
+        {stats ? (
+          <div className="learned-memory-stats">
+            <h4 className="learned-memory-stats-title">{t("memory.statsTitle")}</h4>
+            <ul className="learned-memory-stats-list">
+              <li>
+                {stats.index.capturedAt === null
+                  ? t("memory.statsIndexNone")
+                  : t("memory.statsIndex", {
+                      entries: stats.index.entries,
+                      size: formatIndexSize(stats.index.bytes),
+                      omitted: stats.index.omitted,
+                    })}
+              </li>
+              <li>
+                {acceptanceRate === null
+                  ? t("memory.statsSuggestionsNone")
+                  : t("memory.statsSuggestions", {
+                      accepted: stats.suggestions.accepted,
+                      rejected: stats.suggestions.rejected,
+                      percent: acceptanceRate,
+                    })}
+              </li>
+              <li>
+                {t("memory.statsBlocked", {
+                  extraction: stats.tombstones.fromExtraction,
+                  user: stats.tombstones.fromCreate,
+                })}
+              </li>
+              <li>
+                {spentToday === 0
+                  ? t("memory.statsSpendNone")
+                  : t("memory.statsSpend", {
+                      tokens: spentToday.toLocaleString(),
+                      runs: stats.extraction.day === localDay() ? stats.extraction.runs : 0,
+                    })}
+              </li>
+            </ul>
+          </div>
+        ) : null}
       </div>
     </OverlayBackdrop>,
     document.body,

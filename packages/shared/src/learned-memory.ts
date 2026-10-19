@@ -185,3 +185,36 @@ export type LearnedMemoryExtractionStatus = {
   tokens: number;
   runs: number;
 };
+
+/**
+ * Device-local counters the memory manager shows (plan §1).
+ *
+ * They describe this machine's own usage — the index the last launch captured,
+ * the suggestions reviewed here, the writes a delete blocked, and today's
+ * extraction spend. None of it travels with configuration sync, so two devices
+ * that only read their notes never diverge over a number.
+ */
+export type LearnedMemoryLocalStats = {
+  index: {
+    /** Active entries the last session start captured. */
+    entries: number;
+    /** Bytes those entries spent of the index budget. */
+    bytes: number;
+    /** Active entries the budget left out. */
+    omitted: number;
+    /** When that capture happened, or null before the first session start. */
+    capturedAt: number | null;
+  };
+  suggestions: {
+    accepted: number;
+    rejected: number;
+  };
+  tombstones: {
+    /** Writes the extractor attempted that a delete blocked. */
+    fromExtraction: number;
+    /** Writes the user or the agent attempted that a delete blocked. */
+    fromCreate: number;
+  };
+  /** The extraction ledger as last written, keyed by the local day. */
+  extraction: LearnedMemoryExtractionStatus;
+};

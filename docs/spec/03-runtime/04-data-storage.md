@@ -1514,6 +1514,13 @@ CREATE INDEX idx_memory_session_state_scope ON memory_session_state(scope_kind, 
   `last_error`, and `excluded` make the optional extractor idempotent across
   restarts, duplicate triggers, and renderer reloads; `last_error` holds a code,
   never transcript text.
+- **Device-local counters.** Two `kv` rows in namespace `memory` hold what
+  belongs to this machine: `extractionBudget` (today's tokens and runs) and
+  `localStats` (the size of the index the last launch captured, accepted and
+  rejected suggestions, and tombstone blocks split by writer). They are not
+  learned memory and are not part of any table here, so they are neither
+  captured by configuration sync nor re-keyed by group lifecycle, and a missing
+  or unreadable row reads as zero.
 
 ### Dropped from v1
 

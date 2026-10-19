@@ -423,6 +423,13 @@ impl Database {
         if let WriteOutcome::Rejected(rejection) =
             validation::validate(&tx, &write, &WritePath::Create)?
         {
+            // Nothing was stored, so the transaction has nothing to keep; the
+            // counter still has to stick, because it is what tells the user how
+            // often a forgotten memory tried to come back.
+            drop(tx);
+            if rejection.code == REJECT_TOMBSTONED {
+                self.record_memory_tombstone_block(write.origin == ORIGIN_EXTRACTED)?;
+            }
             return Ok(CreateMemoryOutcome::Rejected(rejection));
         }
         let fingerprint = tombstones::fingerprint(&request.kind, &request.content);
@@ -603,6 +610,9 @@ impl Database {
                 params![STATUS_ACTIVE, now_ms(), id, STATUS_SUGGESTED],
             )?;
             let updated = entry_by_id(&tx, id)?;
+            // The decision and its counter commit together: the acceptance
+            // rate the manager shows is then never off by one.
+            self.record_memory_suggestion_decision(true)?;
             tx.commit()?;
             return Ok(match updated {
                 Some(entry) => SuggestionOutcome::Accepted(Box::new(entry)),
@@ -621,6 +631,7 @@ impl Database {
             "DELETE FROM memory_entries WHERE id = ?1 AND status = ?2",
             params![id, STATUS_SUGGESTED],
         )?;
+        self.record_memory_suggestion_decision(false)?;
         tx.commit()?;
         Ok(SuggestionOutcome::Rejected)
     }

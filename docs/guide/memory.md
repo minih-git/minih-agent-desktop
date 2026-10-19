@@ -52,6 +52,15 @@ conversation, the manager can open that conversation.
 The pinned memory editor is a separate surface and still works the same way; the
 two link to each other.
 
+## What this device has used
+
+The foot of the manager shows how learned memory is doing **on this device**: the
+size of the index the last session started with, how many suggestions you kept or
+discarded and at what rate, how often a delete stopped a write, and what
+extraction has spent today. These numbers are local. They are not uploaded
+anywhere and they do not travel with config sync, so another device shows its
+own.
+
 ## Turn it off
 
 - **Settings → Use learned memory** hides the session-start index and every
@@ -81,6 +90,23 @@ Each run costs tokens from the model you chose. **Daily token budget** caps that
 and **Used today** shows where you stand; when the ceiling is reached, learning
 pauses until tomorrow and the line says so. Learning settings are per device:
 another machine picks its own model and its own budget.
+
+## Sync
+
+Learned memory travels with **Settings → Cloud sync** when the opt-in **Memory**
+category is on, exactly like pinned project memory: the notes you kept, in both
+scopes, and the deletes that keep a forgotten note from coming back. Suggestions,
+the learning cursor, and the counters above stay on the device that made them. A
+delete you make here is enforced there, so the same sentence cannot be learned
+again from the same conversation on another machine.
+
+Two devices that wrote the same note end up with one note rather than two, because
+a note's identity is its own text and not the device that stored it.
+
+**Every device of a vault must run this version or newer.** A device on an older
+build cannot read a revision that carries learned memory, so it stops syncing —
+and restoring — until it is updated. Update all your devices before you turn the
+memory category on.
 
 ## What the agent can do with it
 

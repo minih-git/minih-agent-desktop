@@ -1205,8 +1205,9 @@ Electron main 启动运行时，会在加载固定项目记忆的旁边读取学
 会话有项目时指明该项目，没有项目时只取用户作用域；只有可移植读取开关 `learnedMemoryRead` 关闭时
 才跳过。该快照通过
 `learnedMemoryIndex` 启动参数传给 sidecar，旁边是 `learnedMemoryRead`。这次调用是尽力而为：
-失败时只记录带稳定错误码的 `learned memory index unavailable` 日志，启动照常进行且不带该段落。
-启动的其他环节都不依赖它。
+失败时只记录带稳定错误码 `learned memory index unavailable` 的日志，启动照常进行且不带该段落。
+启动的其他环节都不依赖它。主机把刚采集的索引规模记为仅本设备的计数，因此记忆管理器可以显示
+上次启动用掉了 6 KiB 预算中的多少。
 
 `composeSystemPrompt` 把该段渲染在项目指令链之后、固定项目记忆之后，让用户自己的笔记保持更强的
 上下文地位，而带日期的索引以它本就较软、可能过期的层次呈现。索引为空时不输出任何段落。渲染器
@@ -1276,6 +1277,11 @@ runtime，也不会改变正在运行的会话的系统提示——下一个会�
 每日 token 台账仅本设备（`kv(memory, extractionBudget)`），按 `completeOneShot` 的 usage 累计
 `totalTokens`；达到配置上限后，功能在当天剩余时间暂停，而新的本地日期读作未消耗，所以暂停无需
 后台重置即可自动解除。
+
+同一处仅本设备的存储还保存记忆管理器展示的计数：上次采集的索引规模、保留与丢弃的建议数，
+以及按写入方区分的屏蔽次数。它们通过 `memory.stats` 读取（见
+[06-host-rpc-protocol.md](/zh-CN/spec/03-runtime/06-host-rpc-protocol)），都不属于配置同步
+修订，因此另一台设备不会显示本机的数字。
 
 **日志。** 只记录错误码与计数（`memory-error`、`host-error`、候选数与 token 数）。消息正文与候选
 内容从不入日志：凭据检测器拒绝的内容恰恰是日志绝不能保留的东西。

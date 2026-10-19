@@ -187,4 +187,8 @@ export function registerMemoryIpc({ registrar, getHost }: MemoryIpcDependencies)
       return forward("memory.extraction.budget", { day });
     },
   );
+
+  // The counters the manager shows. They are this device's own usage, so the
+  // read takes no scope: the host returns the numbers it recorded here.
+  registrar.handle(IPC.invoke.memoryStats, async () => forward("memory.stats", {}));
 }
