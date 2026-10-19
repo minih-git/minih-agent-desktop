@@ -1,5 +1,13 @@
 # Unreleased changes
 
+- Switching a long conversation to another model no longer sends the new model
+  the whole history on every request. On the first message after the switch, a
+  large conversation is summarized once by the new model while the most recent
+  exchanges stay word for word, and a short notice says the context was
+  compacted for the selected model. Short conversations are sent as they are,
+  trying a model and switching back before sending costs nothing, and if the
+  summary cannot be made the message is simply sent with the full history. This
+  compaction does not rename the conversation.
 - The iPhone and Android apps can load the session list again. Their webview
   runs from a cross-origin origin, so the browser preflighted every request and
   dropped it because the Gateway did not allow the `x-minih-racp-client` header
