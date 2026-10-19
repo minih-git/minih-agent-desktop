@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { probeAccountMode, type AccountMode } from "../lib/account-client.js";
 import { AccountFlow, type AccountFlowState } from "../lib/account-flow.js";
 import { defaultDeviceLabel, nativeDeviceLabel } from "../lib/device-label.js";
+import { unregisterPushToken } from "../lib/push.js";
 import { credentialPort, gatewayOrigin, nativePlatform } from "../lib/runtime.js";
 
 export type AccountAvailability = AccountMode | "checking";
@@ -51,6 +52,16 @@ export function useAccountFlow(deviceLabel: () => string): { state: AccountFlowS
         client: nativePlatform ?? "web",
         deviceLabel: () => labelRef.current(),
         adopt: (input) => credentialPort.adoptAccountDevice(input),
+        // Sign-out is the last moment this client can ask the Gateway to stop
+        // pushing to the device, so the unregistration happens here, before the
+        // account session is revoked.
+        onSignOut: async (credential) => {
+          try {
+            await unregisterPushToken({ gatewayOrigin, credential });
+          } catch (error) {
+            console.warn("[remote-web] push unregistration failed", error);
+          }
+        },
       }),
   );
   const [state, setState] = useState<AccountFlowState>(() => flow.getState());

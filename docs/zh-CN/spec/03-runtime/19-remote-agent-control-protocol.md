@@ -603,6 +603,86 @@ Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主
   路由一律返回下一节统一的 `UNAUTHORIZED`，因此列表或路由尝试都不会泄露其他账户的
   Host。
 
+### 脱敏推送（R5 PR-6；ADR 0331 决策 7）
+
+推送是可选的、脱敏的：它只在用户注册过的设备上告诉他“有事需要你”，绝不携带会话里说过
+什么。所有决定都归 Gateway——推送是否存在、该通知谁、通知里写什么——因此 Host 不决定
+受众，客户端也拿不到内容。
+
+- **Host 声明**：会报告事件的 Host 在每条链路的 `host.capabilities`（§11.5）里声明
+  `push.notify`。没有通知器的 Host 什么都不声明，Gateway 也就不期待它发 `host.notify`。
+- **事件帧**：`host.notify` 精确携带
+  `{ link, type: "host.notify", notify: { notifyId, kind, sessionId, approvalId?,
+  occurredAt } }`，其中 `notifyId` 是 Host 对该事件的自身标识（上限 128 字符，使一次重试
+  仍只对应一条推送），`kind` 为 `approval.requested`、`input.requested`、
+  `turn.completed`、`turn.failed` 之一。该对象是封闭的：提示词、工具名、路径、记录、会话
+  标题都加不进去，携带它们的帧会被丢弃而不是投递。所有 id 还额外限定于
+  `^[A-Za-z0-9._:-]{1,128}$`——UUID、`<prefix>_<uuid>` 与十进制 id 都在其中。只限长度
+  会让 Host 有办法把一句话塞进 `sessionId`，再被 Gateway 原样送到锁屏上。早于该帧的
+  Gateway 会丢弃它并保持链路（§11.4 规则 6）；早于它的 Host 不发送，也一切照旧。
+- **哪些事件**：四种就是全部——有人必须对审批作出决定、回答一个问题，或得知回合完成/失败。
+  被中断或取消的回合是用户自己在屏幕上做的动作，因此不通知；消息、工具、token 计数同样都
+  不是通知。
+- **注册**：`PUT /v1/push/registration` 使用**设备令牌**（绝不是账户会话），请求体
+  `{ platform: "ios" | "android", token, appId? }`，按 §11.2 命令信封应答
+  `{ result: { enabled, platform, hostIds } }`。`token` 是服务商令牌（APNs 设备令牌或 FCM
+  注册令牌），上限 4096 字符，使该路由无法被当作存储；它只被保存，绝不回显，也绝不写入
+  日志。注册属于“设备”，受众因此由凭据决定：§11.4 设备只有它配对的那台 Host，账户模式
+  设备（§11.5）是账户内所有在线 Host。`hostIds` 就是 Gateway 解析出的该受众，之后新注册
+  进账户的 Host 不会悄悄扩大它——重新注册才会。一台设备只有一条注册：再次注册替换它的
+  令牌，因为一台设备就是一个平台。设备状态在写入内部复查，因此设备被吊销时已在途的注册
+  请求会得到 `UNAUTHORIZED`，而不是把吊销删掉的注册又写回去。`DELETE
+  /v1/push/registration` 删除调用方自己的注册并应答 `{ result: { removed } }`。两个路由都遵循 §11.2 的浏览器规则（`Origin`
+  必须在允许列表内，cookie profile 需 CSRF 头），并携带 `Cache-Control: no-store`。
+- **推送关闭**：未配置任何服务商时 Gateway 不保存任何东西，注册路由应答
+  `enabled: false` 与空的 `hostIds`，客户端因此可以停止询问，而不是误以为注册已存在。为
+  Gateway 没有服务商的平台注册会得到 `CAPABILITY_UNAVAILABLE`（501）——保存一个永远投递
+  不出去的令牌是一种静默失败。
+- **载荷**：推送只包含 `{ kind, titleKey, bodyKey, hostId, sessionId, approvalId?,
+  notifyId }`，别的一概没有。`titleKey` 与 `bodyKey` 恒为
+  `push.notify.<kind>.title` 和 `push.notify.<kind>.body`，由客户端从自己的词条解析——
+  Gateway 从不发送句子。APNs 收到的是 `aps.alert.title-loc-key` / `loc-key`，FCM 收到
+  `android.notification.title_loc_key` / `body_loc_key`，同一组 id 也在 `data` 里，因此
+  可见文字是应用自己的、用用户的语言，而 id 会随通知到达以驱动点击跳转。HTTP v1 的
+  `message.notification` 只有 `title`、`body`、`image` 三个字段，所以定位键属于 Android
+  块；放在别处会让每一台设备都收到 `400 INVALID_ARGUMENT`。这些键的值是 Android 资源名
+  （`push_notify_<kind>_title`），因为资源名不允许含点号。
+- **渲染发生在应用包内**：应用在后台或已关闭时，通知由**系统**渲染，因此这八个 key 必须
+  存在于应用自己的资源里：`ios/App/App/en.lproj/Localizable.strings`、
+  `ios/App/App/zh-Hans.lproj/Localizable.strings`、
+  `android/app/src/main/res/values/strings.xml` 与 `values-zh-rCN/strings.xml`。它们由
+  `apps/remote-web/scripts/generate-push-strings.mjs` 从客户端词条生成，并有测试守着，
+  所以改词条不会让锁屏显示原始 key。这些文件里只有固定文案，也不属于运营者提供的材料。
+- **受众（门禁 29）**：只有当某台设备能打开某台 Host 时，才会收到关于该 Host 的推送：
+  §11.4 设备只有它自己的 Host，账户模式设备只有它自己账户内的在线 Host。被吊销的设备根本
+  没有注册，因为吊销会删掉它。
+- **一个事件一条推送**：Host 可能重发同一帧（重连、重试的读取），Gateway 对每个
+  `notifyId` 只投递一次，因此重试不会变成第二次打扰。去重按 Host 与 id 进行，窗口有界。
+- **预算**：按 Host 与按设备各有令牌桶，用来约束陷入循环的 Host：先检查 Host 桶，因此吵闹
+  的 Host 花不掉设备的额度；单个设备超预算只丢它自己，不影响其他设备。
+- **清理**：设备被吊销时删除注册——包括 Gateway 自己吊销与从 Host 传播过来的吊销
+  （§11.5）——服务商报告**这个令牌**已消失时也删除：APNs 的 `410` 或原因 `Unregistered`，
+  或 FCM 的 `UNREGISTERED`。除此之外都不删除。`DeviceTokenNotForTopic`
+  （`--apns-topic` 配错，或用另一个 bundle id 的构建）、`BadDeviceToken`（APNs 环境不匹配时，
+  例如生产令牌发到沙箱端点，每个令牌都会得到这个答复）、FCM 的裸 `404`/`NOT_FOUND`
+  （project id 写错、路径写错、代理返回 404）、`PERMISSION_DENIED`，以及服务商凭据被拒，
+  都是配置问题：它们影响 Gateway 持有的每一个令牌，若据此删除，一次调用就能清空整个平台。
+  临时失败同样保留注册。
+- **运营者配置**：`--apns-key-file`、`--apns-key-id`、`--apns-team-id`、`--apns-topic`、
+  `--fcm-service-account-file`；APNs 四个参数必须同进同退，半配置的服务商拒绝启动，两个
+  文件都必须是调用方拥有、权限 0600 的普通文件——与 `--access-key-file` 同一条规则。凭据
+  绝不出现在日志、审计记录或错误信息里；审计记录事件类型、Host 与设备，这正是 §11.6 允许
+  一条推送说出的全部内容。
+- **在途凭据**：APNs 走 HTTP/2 并用 ES256 服务商 JWT（`kid` = key id、`iss` = team id，
+  有效期一小时，远早于到期就刷新）；FCM 走 HTTP v1，用服务账号 RSA 密钥换取 OAuth2 访问
+  令牌，并缓存到到期前一分钟。OAuth2 换取是 single-flight，消息端返回 `401`/`403` 时丢弃
+  缓存的令牌，使下一次推送重新换取。服务商端点必须是绝对 `https:` URL，并在启动时校验。
+- **投递超时**：每次服务商调用都有硬性上限（默认 10 秒）。服务商接受连接后不再应答时，本次
+  尝试在上限处结束，APNs 的会话被销毁而不是复用，因此卡住的服务商只花掉一次超时，而不是
+  泄漏连接。一条通知以固定的小并发（4）投递，单个设备的失败或超时既不会拖住其他设备，
+  也不会跳过审计记录。APNs 会话在两次推送之间复用（Apple 明确要求复用连接），并在出错或
+  收到 `GOAWAY`、空闲五分钟、Gateway 停止时丢弃。
+
 ## 6. 限制和错误
 
 | Limit | Target |
@@ -625,6 +705,12 @@ Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主
 | Terminal output replay ring | 每终端 128 KiB |
 | Open terminals per session | 2 |
 | Relayed tool execution deadline | 工具自身超时 |
+| Push notifications per Host | 突发 20 条，之后每 5 秒一条 |
+| Push notifications per device | 突发 10 条，之后每 10 秒一条 |
+| Remembered push event ids (de-duplication) | 每个 Gateway 进程 4,096 个 |
+| Push provider request deadline | 每个请求 10 秒 |
+| Concurrent push deliveries per event | 每事件 4 台设备 |
+| Idle APNs session reuse | 5 分钟后关闭 |
 
 | Code | Retriable | Meaning |
 |---|---:|---|
@@ -646,7 +732,7 @@ Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主
 | `RATE_LIMITED` | yes | 主体、会话或 Host 超额 |
 | `PAIRING_FAILED` | no | 配对令牌未知或已被兑换 |
 | `PAIRING_TOKEN_EXPIRED` | no | 配对令牌的引导窗口已过 |
-| `CAPABILITY_UNAVAILABLE` | no | Host 未宣告该操作所需的能力 |
+| `CAPABILITY_UNAVAILABLE` | no | Host 未宣告该操作所需的能力；在 `PUT /v1/push/registration` 上表示该 Gateway 未配置该平台的服务商（§11.6） |
 | `REMOTE_PATH_NOT_FOUND` | no | Host 侧路径不存在 |
 | `REMOTE_PATH_FORBIDDEN` | no | Host 侧路径超出主体可达范围 |
 | `INTERNAL` | maybe | 带 trace id 的内部错误 |

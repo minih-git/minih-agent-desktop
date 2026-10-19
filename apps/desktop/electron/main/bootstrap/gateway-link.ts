@@ -1,5 +1,6 @@
 import type { AgentHost } from "@minih-agent/agent-host";
 import type { HostRpc } from "@minih-agent/host-runtime";
+import type { HostNotifier } from "@minih-agent/racp";
 import type {
   AppSettings,
   RemoteGatewayDeviceNotice,
@@ -61,6 +62,14 @@ export type GatewayLinkBootstrapOptions = {
   emitDeviceRequest?: (request: RemoteGatewayDeviceRequest) => void;
   /** One "new device" style notice per mint, adoption, and revocation. */
   emitDeviceNotice?: (notice: RemoteGatewayDeviceNotice) => void;
+  /**
+   * Redacted push (§11.6): the notifier the Agent Host feeds and the link
+   * carries. Absent (or `notifyEnabled: false`) means this desktop advertises
+   * nothing and reports no events.
+   */
+  notifier?: HostNotifier | null;
+  /** Test seam: pretend this Host reports no notification events. */
+  notifyEnabled?: boolean;
   log?: (level: "info" | "warn" | "error", message: string, data?: Record<string, unknown>) => void;
   now?: () => number;
 };
@@ -121,6 +130,10 @@ export function createGatewayLinkBootstrap(
   let disposed = false;
   /** Enrollment probe for the disabled path; failures are reported, not cached as "empty". */
   let enrollmentProbe: Promise<{ enrolled: boolean; hostId?: string; error?: Error }> | null = null;
+  // Redacted push (§11.6): the notifier is owned by the bootstrap that also
+  // owns the Agent Host, so the Host's events and the link's sender are one
+  // object. Absent means this desktop reports no notification events.
+  const notifier = options.notifyEnabled === false ? null : (options.notifier ?? null);
 
   const ensureStore = (): GatewayCredentialStore => {
     store ??= createGatewayCredentialStore({
@@ -156,6 +169,7 @@ export function createGatewayLinkBootstrap(
       log,
       now,
       strictDevices: configuredStrictDevices,
+      ...(notifier ? { notifier } : {}),
       // Persist the strict-mode switch on its own: it is device-local and must
       // not rewrite the link switch or the Gateway URL.
       saveStrictDevices: async (strictDevices) => {

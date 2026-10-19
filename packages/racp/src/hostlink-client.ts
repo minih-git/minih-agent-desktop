@@ -33,6 +33,7 @@ import {
   type HostLinkHost,
   type HostLinkLog,
   type HostLinkSocket,
+  type HostNotifier,
 } from "./hostlink.js";
 import type { RacpServer } from "./server.js";
 import {
@@ -146,6 +147,12 @@ export type StartHostLinkOptions = {
   devices?: HostDeviceDirectory | null;
   /** Where a revocation waits while the link is down (§11.5). */
   revocations?: DeviceRevocationQueue | null;
+  /**
+   * Reports the four notification-worthy events of §11.6 (§11.6, R5 PR-6).
+   * Present: this Host advertises `push.notify` and may send `host.notify` while
+   * the link is up. Absent: it advertises nothing, and no push names it.
+   */
+  notifier?: HostNotifier | null;
   /** Defaults: 1 s base, 60 s ceiling, half-to-full jitter (protocol §11.4 rule 5). */
   backoff?: { baseDelayMs?: number; maxDelayMs?: number };
   /**
@@ -568,6 +575,7 @@ export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
         log,
         devices: options.devices ?? null,
         revocations: options.revocations ?? null,
+        notifier: options.notifier ?? null,
         socket: new WebSocketHostLinkSocket(ws),
       });
       publish("connected");

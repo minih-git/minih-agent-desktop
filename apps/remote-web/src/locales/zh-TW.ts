@@ -183,6 +183,16 @@ export const zhTW: Record<TranslationKey, string> = {
   "operation.accountSignIn": "登入帳戶",
   "operation.accountDevice": "申請裝置",
 
+  "push.notify.approval.requested.title": "需要你處理",
+  "push.notify.approval.requested.body": "有工作階段在等待你核准一項操作。",
+  "push.notify.input.requested.title": "需要你處理",
+  "push.notify.input.requested.body": "有工作階段在等待你的回答。",
+  "push.notify.turn.completed.title": "回合已完成",
+  "push.notify.turn.completed.body": "有工作階段的回合已完成。",
+  "push.notify.turn.failed.title": "回合失敗",
+  "push.notify.turn.failed.body": "有工作階段的回合失敗了。",
+  "push.disabled": "本建置未啟用通知。",
+
   "operation.pair": "配對",
   "operation.sessionList": "載入工作階段清單",
   "operation.sessionAttach": "載入工作階段",

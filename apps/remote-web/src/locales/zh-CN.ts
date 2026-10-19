@@ -183,6 +183,16 @@ export const zhCN: Record<TranslationKey, string> = {
   "operation.accountSignIn": "登录账户",
   "operation.accountDevice": "申请设备",
 
+  "push.notify.approval.requested.title": "需要你处理",
+  "push.notify.approval.requested.body": "有会话在等待你批准一项操作。",
+  "push.notify.input.requested.title": "需要你处理",
+  "push.notify.input.requested.body": "有会话在等待你的回答。",
+  "push.notify.turn.completed.title": "回合已完成",
+  "push.notify.turn.completed.body": "有会话的回合已完成。",
+  "push.notify.turn.failed.title": "回合失败",
+  "push.notify.turn.failed.body": "有会话的回合失败了。",
+  "push.disabled": "本构建未启用通知。",
+
   "operation.pair": "配对",
   "operation.sessionList": "加载会话列表",
   "operation.sessionAttach": "加载会话",

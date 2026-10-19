@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 import { validateHeaderName, validateTrustedProxy } from "./client-ip.js";
+import type { PushServeOptions } from "./push-config.js";
 import { resolveRouterUrl } from "./router-verifier.js";
 
 export type ListenAddress = { host: string; port: number };
@@ -49,6 +50,11 @@ export type GatewayServeConfig = {
   clientIp?: ClientIpOptions;
   /** Present only when `--router-url` and `--router-client-ip-header` are both given. */
   router?: RouterOptions;
+  /**
+   * The push flags as given (protocol §11.6, R5 PR-6). The credential files are
+   * read once at startup; absent means push is off.
+   */
+  push?: PushServeOptions;
 };
 
 export class GatewayConfigError extends Error {
@@ -293,6 +299,7 @@ export function resolveServeConfig(args: ParsedArgv, env: NodeJS.ProcessEnv = pr
   for (const origin of origins) validateOrigin(origin);
   const clientIp = resolveClientIpOptions(args);
   const router = resolveRouterOptions(args);
+  const push = resolvePushOptions(args);
 
   return {
     dataDir,
@@ -304,7 +311,28 @@ export function resolveServeConfig(args: ParsedArgv, env: NodeJS.ProcessEnv = pr
     ...(stringArg(args, "public-name") ? { publicName: stringArg(args, "public-name")! } : {}),
     ...(clientIp ? { clientIp } : {}),
     ...(router ? { router } : {}),
+    ...(push ? { push } : {}),
   };
+}
+
+/**
+ * The push flags, taken as given (protocol §11.6). Reading and validating the
+ * credential files is asynchronous and belongs to startup, so this only gathers
+ * what the operator typed; `resolvePushConfig` turns it into providers or
+ * refuses to start.
+ */
+function resolvePushOptions(args: ParsedArgv): PushServeOptions | undefined {
+  const options: PushServeOptions = {
+    ...(stringArg(args, "apns-key-file") ? { apnsKeyFile: stringArg(args, "apns-key-file") } : {}),
+    ...(stringArg(args, "apns-key-id") ? { apnsKeyId: stringArg(args, "apns-key-id") } : {}),
+    ...(stringArg(args, "apns-team-id") ? { apnsTeamId: stringArg(args, "apns-team-id") } : {}),
+    ...(stringArg(args, "apns-topic") ? { apnsTopic: stringArg(args, "apns-topic") } : {}),
+    ...(stringArg(args, "apns-endpoint") ? { apnsEndpoint: stringArg(args, "apns-endpoint") } : {}),
+    ...(stringArg(args, "fcm-service-account-file") ? { fcmServiceAccountFile: stringArg(args, "fcm-service-account-file") } : {}),
+    ...(stringArg(args, "fcm-endpoint") ? { fcmEndpoint: stringArg(args, "fcm-endpoint") } : {}),
+    ...(stringArg(args, "fcm-token-uri") ? { fcmTokenUri: stringArg(args, "fcm-token-uri") } : {}),
+  };
+  return Object.keys(options).length > 0 ? options : undefined;
 }
 
 /**

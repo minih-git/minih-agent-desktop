@@ -2780,6 +2780,79 @@
             "minLength": 1
           }
         }
+      },
+      {
+        "type": "object",
+        "required": [
+          "link",
+          "type",
+          "notify"
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "const": "racp-hostlink.v1"
+          },
+          "type": {
+            "type": "string",
+            "const": "host.notify"
+          },
+          "notify": {
+            "type": "object",
+            "required": [
+              "notifyId",
+              "kind",
+              "sessionId",
+              "occurredAt"
+            ],
+            "properties": {
+              "notifyId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+              },
+              "kind": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "approval.requested"
+                  },
+                  {
+                    "type": "string",
+                    "const": "input.requested"
+                  },
+                  {
+                    "type": "string",
+                    "const": "turn.completed"
+                  },
+                  {
+                    "type": "string",
+                    "const": "turn.failed"
+                  }
+                ]
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+              },
+              "approvalId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+              },
+              "occurredAt": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "additionalProperties": false
+          }
+        }
       }
     ]
   },
@@ -3007,6 +3080,139 @@
         }
       }
     }
+  },
+  "PushRegistrationRequest": {
+    "type": "object",
+    "required": [
+      "platform",
+      "token"
+    ],
+    "properties": {
+      "platform": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "ios"
+          },
+          {
+            "type": "string",
+            "const": "android"
+          }
+        ]
+      },
+      "token": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "appId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255
+      }
+    }
+  },
+  "PushRegistrationResponse": {
+    "type": "object",
+    "required": [
+      "enabled",
+      "platform",
+      "hostIds"
+    ],
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "platform": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "ios"
+          },
+          {
+            "type": "string",
+            "const": "android"
+          }
+        ]
+      },
+      "hostIds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "PushPayload": {
+    "type": "object",
+    "required": [
+      "kind",
+      "titleKey",
+      "bodyKey",
+      "hostId",
+      "sessionId",
+      "notifyId"
+    ],
+    "properties": {
+      "kind": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "approval.requested"
+          },
+          {
+            "type": "string",
+            "const": "input.requested"
+          },
+          {
+            "type": "string",
+            "const": "turn.completed"
+          },
+          {
+            "type": "string",
+            "const": "turn.failed"
+          }
+        ]
+      },
+      "titleKey": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[A-Za-z0-9._-]+$"
+      },
+      "bodyKey": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[A-Za-z0-9._-]+$"
+      },
+      "hostId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+      },
+      "sessionId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+      },
+      "approvalId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+      },
+      "notifyId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+      }
+    },
+    "additionalProperties": false
   },
   "DeviceRequestHttpRequest": {
     "type": "object",

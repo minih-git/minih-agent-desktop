@@ -104,6 +104,7 @@
     "test:e2e:remote-mvp": "node scripts/e2e-remote-mvp.mjs",
     "test:e2e:remote-gateway": "node scripts/e2e-remote-gateway.mjs",
     "test:e2e:remote-account-device": "node scripts/e2e-remote-account-device.mjs",
+    "test:e2e:remote-account-push": "node scripts/e2e-remote-account-push.mjs",
     "test:e2e:remote-web": "node scripts/e2e-remote-web.mjs",
     "test:e2e:desktop-gateway-link": "node scripts/e2e-desktop-gateway-link.mjs",
     "test:e2e:remote-mvp-ui": "node scripts/e2e-remote-mvp-ui.mjs",

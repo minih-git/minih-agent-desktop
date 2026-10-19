@@ -14,6 +14,7 @@ import type {
   RacpItemSummary,
   RacpItemType,
   RacpLimits,
+  RacpNotifyKind,
   RacpOperation,
   RacpPermissionMode,
   RacpPlanningState,
@@ -76,6 +77,26 @@ export type AgentHostOptions = {
   snapshotItems?: number;
   /** Called after any change to a session's queue, with the new entries. */
   onQueueChange?: (sessionId: string, entries: QueueEntryView[]) => void;
+  /**
+   * Called for the four notification-worthy events of protocol §11.6, with ids
+   * only: `approval.requested`, `input.requested`, `turn.completed`, and
+   * `turn.failed`. This is the one hook a Host link wires to `host.notify`, so
+   * the notification decision lives next to the event that causes it instead of
+   * being re-derived by observing the durable stream.
+   */
+  onNotifyEvent?: (event: NotifyEvent) => void;
+};
+
+/**
+ * One notification-worthy event (protocol §11.6). The shape is ids and a kind
+ * only; nothing about the session's content travels with it, because this is
+ * the value that ends up in a push notification.
+ */
+export type NotifyEvent = {
+  kind: RacpNotifyKind;
+  sessionId: string;
+  approvalId?: string;
+  occurredAt: string;
 };
 
 /** A queued turn together with the prompt it will send. */
@@ -191,6 +212,8 @@ export class AgentHost {
   private readonly allowRemoteSessionGrants: boolean;
   private readonly snapshotItems: number;
   private readonly onQueueChange?: (sessionId: string, entries: QueueEntryView[]) => void;
+  /** The §11.6 notification hook; see `AgentHostOptions.onNotifyEvent`. */
+  private readonly onNotifyEvent?: (event: NotifyEvent) => void;
   private readonly states = new Map<string, SessionState>();
   private readonly turnIndex = new Map<string, string>();
   private readonly runtimeAliases = new Map<string, string>();
@@ -213,6 +236,7 @@ export class AgentHost {
     this.allowRemoteSessionGrants = options.allowRemoteSessionGrants ?? false;
     this.snapshotItems = options.snapshotItems ?? 50;
     this.onQueueChange = options.onQueueChange;
+    this.onNotifyEvent = options.onNotifyEvent;
     this.hub = new EventHub({ clock: this.clock, ids: this.ids, limits: this.limits });
     this.queue = new TurnQueue(options.queueStore ?? new MemoryQueueStore(), this.limits.maxQueuedTurnsPerSession);
     this.approvals = new ApprovalBroker(options.approvals, this.clock);
@@ -331,6 +355,7 @@ export class AgentHost {
           allowSession: this.allowRemoteSessionGrants,
         });
         this.emit(state, "approval.requested", approval, meta2);
+        this.notifyEvent({ kind: "approval.requested", sessionId: state.id, approvalId: approval.id });
         return;
       }
       case "asktool_request": {
@@ -339,6 +364,7 @@ export class AgentHost {
         const request = this.inputFromAsktool(event.request, state, turn?.id ?? turnId ?? "", envelope);
         state.pendingInputs.set(request.id, { request, original: event.request });
         this.emit(state, "input.requested", request, meta2);
+        this.notifyEvent({ kind: "input.requested", sessionId: state.id, approvalId: request.id });
         return;
       }
       case "planning_state": {
@@ -964,7 +990,27 @@ export class AgentHost {
     }
     this.emit(state, outcome.kind, outcome.payload, outcome.meta);
     this.emitSessionChanged(state);
+    // A settled turn is one of the four events a push may report, and only the
+    // two the operator asked for: `turn.completed` and `turn.failed`. An
+    // interrupted or canceled turn is the user's own action — they are looking
+    // at the client — so it is not a notification (protocol §11.6).
+    if (outcome.status === "completed") this.notifyEvent({ kind: "turn.completed", sessionId: state.id });
+    else if (outcome.status === "failed") this.notifyEvent({ kind: "turn.failed", sessionId: state.id });
     void this.drain(state.id);
+  }
+
+  /**
+   * Report one notification-worthy event (§11.6). A listener failure must never
+   * affect the turn or the approval it describes, so it is swallowed: a push is
+   * best-effort by construction.
+   */
+  private notifyEvent(event: { kind: RacpNotifyKind; sessionId: string; approvalId?: string }): void {
+    if (!this.onNotifyEvent) return;
+    try {
+      this.onNotifyEvent({ ...event, occurredAt: new Date(this.clock.now()).toISOString() });
+    } catch {
+      // Never let a notification hook fail a turn.
+    }
   }
 
   private notifyQueue(sessionId: string): void {

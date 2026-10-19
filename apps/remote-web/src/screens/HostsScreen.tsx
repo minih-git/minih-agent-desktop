@@ -11,7 +11,8 @@ import { useTranslation } from "react-i18next";
 import { AppShell, Button, Card, Pill } from "../components/Chrome.js";
 import { useAccountAvailability } from "../hooks/useAccountFlow.js";
 import { useHostStatus } from "../hooks/useHostStatus.js";
-import { credentialPort } from "../lib/runtime.js";
+import { forgetHost } from "../lib/forget.js";
+import { credentialPort, gatewayOrigin, hostRegistry, isNativeApp } from "../lib/runtime.js";
 import { unacceptedNextStep, type HostRegistryEntry } from "../lib/host-registry.js";
 
 function statusKey(kind: "checking" | "online" | "offline" | "revoked" | "unaccepted" | "error"): string {
@@ -145,7 +146,17 @@ export function HostsScreen({
           key={entry.hostId}
           entry={entry}
           onOpen={() => onOpenHost(entry)}
-          onForget={() => void credentialPort.forget(entry.hostId)}
+          // Push is taken away before the credential is, so the phone can still
+          // be told to stop (§11.6). The browser build ships no push and its
+          // device cookie is scoped to `/hosts/{hostId}`, so the registration
+          // route is unreachable from it: only the native app unregisters.
+          onForget={() =>
+            void forgetHost(entry.hostId, {
+              registry: hostRegistry,
+              credentialPort,
+              ...(isNativeApp ? { push: { gatewayOrigin } } : {}),
+            })
+          }
           onAskAgain={onAddAccount}
         />
       ))}

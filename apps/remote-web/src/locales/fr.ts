@@ -183,6 +183,16 @@ export const fr: Record<TranslationKey, string> = {
   "operation.accountSignIn": "Connexion",
   "operation.accountDevice": "Demande de l'appareil",
 
+  "push.notify.approval.requested.title": "En attente de ta décision",
+  "push.notify.approval.requested.body": "Une session attend ton approbation d'une action.",
+  "push.notify.input.requested.title": "En attente de ta décision",
+  "push.notify.input.requested.body": "Une session attend ta réponse.",
+  "push.notify.turn.completed.title": "Tour terminé",
+  "push.notify.turn.completed.body": "Une session a terminé son tour.",
+  "push.notify.turn.failed.title": "Tour échoué",
+  "push.notify.turn.failed.body": "Le tour d'une session a échoué.",
+  "push.disabled": "Les notifications sont désactivées dans cette build.",
+
   "operation.pair": "Association",
   "operation.sessionList": "Chargement des sessions",
   "operation.sessionAttach": "Chargement de la session",

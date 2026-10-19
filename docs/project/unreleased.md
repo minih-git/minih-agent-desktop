@@ -1,5 +1,27 @@
 # Unreleased changes
 
+- Remote control can join your Minih Router account. When the Router offers
+  it, turning on remote control enrolls this computer with the saved Router key
+  instead of a registration code; a phone or browser signs in at the Gateway with
+  the same key, asks for a device, and one approval on any of the account's
+  computers gives it one device that works on all of them. The key stays in the
+  desktop's main process and is dropped by the phone once the device is issued;
+  Routers that do not offer account mode keep the registration-code flow.
+- New device requests appear as a confirmation dialog on the desktop. Settings
+  lists the account's devices with Revoke, shows a notice for every new, adopted,
+  or revoked device, and adds "require confirmation on every terminal" (off by
+  default) for computers that must approve each device themselves. A revocation
+  made while offline is delivered when the link returns.
+- The remote web client signs in with an AccessKey, shows up front which
+  computers can approve, switches between the account's computers on one device,
+  and explains when a computer has not accepted the device yet.
+  `agent-host-cli` can confirm devices through its admin socket
+  (`--confirm-devices`, `--strict-devices`) and enroll with a key read from a
+  0600 file, stdin, or the environment.
+- The remote-control Gateway can send redacted push notifications through APNs
+  and FCM when its operator configures credentials: approval and input requests,
+  finished and failed turns, carrying only the event kind and ids, never
+  conversation content. Push stays off without credentials.
 - Cloud backup retains account display labels and explicit provider reasoning
   settings alongside saved model bindings and defaults. API tokens remain an
   encrypted, explicitly selected credential category; OAuth sessions stay local.

@@ -14,4 +14,5 @@ export * from "./hostlink-client.js";
 export * from "./host-artifact.js";
 export * from "./host-devices.js";
 export * from "./device-revocations.js";
+export * from "./host-notifier.js";
 export type { OperationContext, OperationHandler } from "./operations.js";

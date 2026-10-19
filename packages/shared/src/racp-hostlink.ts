@@ -70,6 +70,13 @@ export const RACP_HOST_CAPABILITIES = {
   deviceConfirm: "device.confirm",
   /** This Host adopts a signed grant from a sibling Host of its own account. */
   deviceAcceptSiblingGrant: "device.accept-sibling-grant",
+  /**
+   * This Host reports the four notification-worthy events of §11.6, so the
+   * Gateway may deliver push for them. A Host that does not announce this is
+   * never expected to send `host.notify`, and the Gateway sends no push on its
+   * behalf (ADR 0331 decision 7).
+   */
+  pushNotify: "push.notify",
 } as const;
 export type RacpHostCapability = (typeof RACP_HOST_CAPABILITIES)[keyof typeof RACP_HOST_CAPABILITIES];
 
@@ -168,6 +175,60 @@ export const RacpDeviceRevokeFrameSchema = Type.Object({
   signerCertificate: Type.String({ minLength: 1 }),
 });
 export type RacpDeviceRevokeFrame = Static<typeof RacpDeviceRevokeFrameSchema>;
+/**
+ * The character set an id in a notification may use (protocol §11.6).
+ *
+ * A length limit alone would not make "a push carries ids only" true: a Host
+ * could put a sentence in `sessionId` and the Gateway would deliver it. Every id
+ * this protocol puts in a notification is a UUID, a `<prefix>_<uuid>`, or a
+ * decimal id, so the allowed set is exactly what those need.
+ */
+export const RACP_NOTIFY_ID_PATTERN = "^[A-Za-z0-9._:-]{1,128}$";
+/** An id a notification may carry: bounded, and never free text. */
+const notifyId = () => Type.String({ minLength: 1, maxLength: 128, pattern: RACP_NOTIFY_ID_PATTERN });
+/**
+ * The four events a notification may report (ADR 0331 decision 7, protocol
+ * §11.6). The list is closed on purpose: a push says that one of these
+ * happened, never what it contained.
+ */
+export const RACP_NOTIFY_KINDS = ["approval.requested", "input.requested", "turn.completed", "turn.failed"] as const;
+export type RacpNotifyKind = (typeof RACP_NOTIFY_KINDS)[number];
+
+/**
+ * One notification-worthy event a Host reports on its link (protocol §11.6).
+ *
+ * This frame carries ids and a fixed kind, and nothing else: no prompt, no tool
+ * name, no transcript, no session title. Every id is additionally restricted to
+ * `RACP_NOTIFY_ID_PATTERN`, so "ids only" is a property of the frame rather than
+ * a promise about how a Host behaves (ADR 0331 decision 7).
+ */
+export const RacpHostNotifySchema = Type.Object(
+  {
+    /** The Host's own id for the event; one push per notifyId. */
+    notifyId: notifyId(),
+    kind: Type.Union([
+      Type.Literal("approval.requested"),
+      Type.Literal("input.requested"),
+      Type.Literal("turn.completed"),
+      Type.Literal("turn.failed"),
+    ]),
+    sessionId: notifyId(),
+    /** Present for the two request kinds; the answer the user is asked for. */
+    approvalId: Type.Optional(notifyId()),
+    /** RFC 3339, minted by the Host; never shown to anyone. */
+    occurredAt: Type.String({ minLength: 1, maxLength: 64 }),
+  },
+  { additionalProperties: false },
+);
+export type RacpHostNotify = Static<typeof RacpHostNotifySchema>;
+
+export const RacpHostNotifyFrameSchema = Type.Object({
+  link: Type.Literal(RACP_HOSTLINK_VERSION),
+  type: Type.Literal("host.notify"),
+  notify: RacpHostNotifySchema,
+});
+export type RacpHostNotifyFrame = Static<typeof RacpHostNotifyFrameSchema>;
+
 export const RacpHostLinkFrameSchema = Type.Union([
   Type.Object({
     link: Type.Literal(RACP_HOSTLINK_VERSION),
@@ -218,6 +279,9 @@ export const RacpHostLinkFrameSchema = Type.Union([
   RacpDeviceRequestFrameSchema,
   RacpDeviceGrantFrameSchema,
   RacpDeviceRevokeFrameSchema,
+  // ---- Redacted push (§11.6, R5 PR-6) ------------------------------------
+  // Host to Gateway only, and only from a Host that advertises `push.notify`.
+  RacpHostNotifyFrameSchema,
 ]);
 export type RacpHostLinkFrame = Static<typeof RacpHostLinkFrameSchema>;
 export type RacpHostLinkFrameType = RacpHostLinkFrame["type"];
@@ -569,6 +633,93 @@ export const RacpAccountHostListResponseSchema = Type.Object({
 });
 export type RacpAccountHostListResponse = Static<typeof RacpAccountHostListResponseSchema>;
 
+// ---------------------------------------------------------------------------
+// Redacted push (protocol §11.6, R5 PR-6, ADR 0331 decision 7)
+// ---------------------------------------------------------------------------
+
+/** The two provider families a client can register a push token with. */
+export const RACP_PUSH_PLATFORMS = ["ios", "android"] as const;
+export type RacpPushPlatform = (typeof RACP_PUSH_PLATFORMS)[number];
+
+/**
+ * `PUT /v1/push/registration`: "deliver push for my device to this provider
+ * token". The token is a provider secret: it is stored, never echoed back, and
+ * never logged.
+ *
+ * The payload shape of the *notification* is not chosen by the client — it is
+ * fixed by §11.6 and carries a localization key plus ids only.
+ */
+export const RacpPushRegistrationRequestSchema = Type.Object({
+  platform: Type.Union([Type.Literal("ios"), Type.Literal("android")]),
+  /**
+   * The provider token (APNs device token, FCM registration token). Bounded so
+   * a client cannot use this route as storage.
+   */
+  token: Type.String({ minLength: 1, maxLength: 4096 }),
+  /** Optional app/bundle id, so one deployment can serve more than one build. */
+  appId: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
+});
+export type RacpPushRegistrationRequest = Static<typeof RacpPushRegistrationRequestSchema>;
+
+/**
+ * The registration answer. `hostIds` is what this registration now covers: one
+ * Host for a §11.4 device, every Host of the account for an account-mode device
+ * (§11.5). `enabled` is false when the operator configured no provider, in
+ * which case the Gateway stores nothing (push is off, and the client can stop
+ * asking).
+ */
+export const RacpPushRegistrationResponseSchema = Type.Object({
+  enabled: Type.Boolean(),
+  platform: Type.Union([Type.Literal("ios"), Type.Literal("android")]),
+  hostIds: Type.Array(Type.String({ minLength: 1 })),
+});
+export type RacpPushRegistrationResponse = Static<typeof RacpPushRegistrationResponseSchema>;
+
+/**
+ * The notification payload, in full. This is the whole contract of a push: a
+ * fixed `kind`, the client-side localization key for its title and body, and
+ * the ids needed to open the right screen. There is no field for a prompt, a
+ * tool, a path, a transcript, or a session title, and the Gateway never copies
+ * one in — `additionalProperties: false` plus `RACP_NOTIFY_ID_PATTERN` keep that
+ * checkable rather than aspirational.
+ */
+export const RacpPushPayloadSchema = Type.Object(
+  {
+    kind: Type.Union([
+      Type.Literal("approval.requested"),
+      Type.Literal("input.requested"),
+      Type.Literal("turn.completed"),
+      Type.Literal("turn.failed"),
+    ]),
+    /** Always `push.notify.<kind>.title` / `.body` in the client's catalog. */
+    titleKey: Type.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9._-]+$" }),
+    bodyKey: Type.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9._-]+$" }),
+    hostId: notifyId(),
+    sessionId: notifyId(),
+    approvalId: Type.Optional(notifyId()),
+    notifyId: notifyId(),
+  },
+  { additionalProperties: false },
+);
+export type RacpPushPayload = Static<typeof RacpPushPayloadSchema>;
+
+/** The localization keys a payload may name, one pair per kind (§11.6). */
+export function pushKeysForKind(kind: RacpNotifyKind): { titleKey: string; bodyKey: string } {
+  return { titleKey: `push.notify.${kind}.title`, bodyKey: `push.notify.${kind}.body` };
+}
+
+/**
+ * The Android resource name of a localization key (§11.6).
+ *
+ * Android resource names are `[a-z0-9_]`, so the dotted key the payload carries
+ * for the app's own catalog becomes `push_notify_<kind>_<field>` in
+ * `android.notification`. Without this, FCM's `title_loc_key` names a resource
+ * that does not exist and the system renders an empty notification.
+ */
+export function androidResourceKey(key: string): string {
+  return key.replace(/[.-]/g, "_");
+}
+
 /** Named schemas that join the generated JSON Schema fixture bundle. */
 export const RACP_HOSTLINK_HTTP_SCHEMAS = {
   HostRouteContext: RacpHostRouteContextSchema,
@@ -581,6 +732,9 @@ export const RACP_HOSTLINK_HTTP_SCHEMAS = {
   AccountLoginRequest: RacpAccountLoginRequestSchema,
   AccountLoginResponse: RacpAccountLoginResponseSchema,
   AccountHostListResponse: RacpAccountHostListResponseSchema,
+  PushRegistrationRequest: RacpPushRegistrationRequestSchema,
+  PushRegistrationResponse: RacpPushRegistrationResponseSchema,
+  PushPayload: RacpPushPayloadSchema,
 } as const;
 export type RacpHostLinkSchemaName = keyof typeof RACP_HOSTLINK_HTTP_SCHEMAS;
 

@@ -60,6 +60,32 @@ export type GatewayDeviceRecord = {
 };
 
 /**
+ * One device's push registration (protocol §11.6, R5 PR-6). The provider token
+ * is a secret: it is written with the store's usual 0600 mode, never returned by
+ * a route, and never placed in an audit record.
+ *
+ * A §11.4 device is pushed about its own Host only; an account-mode device is
+ * pushed about the Hosts of its account, and `hostIds` records the audience
+ * captured at registration so a later Host enrollment cannot silently widen it.
+ */
+export type GatewayPushRegistrationRecord = {
+  deviceId: string;
+  /** Account of an account-mode device (§11.5); absent for a §11.4 device. */
+  accountId?: string;
+  /** The Host a §11.4 device paired with. */
+  hostId: string;
+  /** Every Host this registration covers, resolved at registration time. */
+  hostIds: string[];
+  platform: "ios" | "android";
+  /** APNs device token or FCM registration token. */
+  token: string;
+  /** Optional app/bundle id, so one deployment can serve more than one build. */
+  appId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
  * One signed device grant the Gateway holds for an offline Host (§11.5
  * "Deferred grants", D666). The grant is durable so a Host that was down when
  * its sibling approved still adopts the device when its link comes up. The
@@ -144,6 +170,7 @@ type DevicesFile = { devices: GatewayDeviceRecord[] };
 type AccountSessionsFile = { accountSessions: GatewayAccountSessionRecord[] };
 type DeviceGrantsFile = { deviceGrants: GatewayPendingGrantRecord[] };
 type DeviceRevocationsFile = { deviceRevocations: GatewayPendingRevocationRecord[] };
+type PushRegistrationsFile = { pushRegistrations: GatewayPushRegistrationRecord[] };
 type SecretFile = { secret: string; createdAt: string };
 
 const DIRECTORY_MODE = 0o700;
@@ -191,6 +218,7 @@ export class GatewayStore {
   private accountSessions: GatewayAccountSessionRecord[] = [];
   private deviceGrants: GatewayPendingGrantRecord[] = [];
   private deviceRevocations: GatewayPendingRevocationRecord[] = [];
+  private pushRegistrations: GatewayPushRegistrationRecord[] = [];
   private chain: Promise<void> = Promise.resolve();
   /** Audit appends still in flight, so shutdown can flush them. */
   private readonly pendingAudits = new Set<Promise<void>>();
@@ -229,6 +257,8 @@ export class GatewayStore {
     store.deviceGrants = (await readJson<DeviceGrantsFile>(join(dataDir, "device-grants.json")))?.deviceGrants ?? [];
     store.deviceRevocations =
       (await readJson<DeviceRevocationsFile>(join(dataDir, "device-revocations.json")))?.deviceRevocations ?? [];
+    store.pushRegistrations =
+      (await readJson<PushRegistrationsFile>(join(dataDir, "push-registrations.json")))?.pushRegistrations ?? [];
     return store;
   }
 
@@ -361,9 +391,84 @@ export class GatewayStore {
         revoked = true;
         return { ...device, revokedAt };
       });
+      // A revoked device gets no notifications: the registration goes with it
+      // (protocol §11.6), so a re-paired device starts from a clean slate.
+      if (revoked) {
+        this.pushRegistrations = this.pushRegistrations.filter((record) => record.deviceId !== deviceId);
+        await writeJsonAtomic(join(this.dataDir, "push-registrations.json"), {
+          pushRegistrations: this.pushRegistrations,
+        } satisfies PushRegistrationsFile);
+      }
       await writeJsonAtomic(join(this.dataDir, "devices.json"), { devices: this.devices } satisfies DevicesFile);
     });
     return revoked;
+  }
+
+  // ---------------------------------------------------- push registrations
+
+  listPushRegistrations(): GatewayPushRegistrationRecord[] {
+    return [...this.pushRegistrations];
+  }
+
+  findPushRegistration(deviceId: string): GatewayPushRegistrationRecord | null {
+    return this.pushRegistrations.find((record) => record.deviceId === deviceId) ?? null;
+  }
+
+  /**
+   * One registration per device: registering again replaces the old token.
+   *
+   * The device is re-checked *inside* the write, not before it: a registration
+   * request reads its body first, and a revocation that lands while that read is
+   * in flight must win. Returns false when the device is gone or revoked, so the
+   * route answers `UNAUTHORIZED` instead of resurrecting a registration for a
+   * device that was just taken away.
+   */
+  async savePushRegistration(record: GatewayPushRegistrationRecord): Promise<boolean> {
+    let saved = false;
+    await this.mutate(async () => {
+      const device = this.devices.find((entry) => entry.deviceId === record.deviceId);
+      if (!device || device.revokedAt) return;
+      this.pushRegistrations = [...this.pushRegistrations.filter((entry) => entry.deviceId !== record.deviceId), record];
+      await writeJsonAtomic(join(this.dataDir, "push-registrations.json"), {
+        pushRegistrations: this.pushRegistrations,
+      } satisfies PushRegistrationsFile);
+      saved = true;
+    });
+    return saved;
+  }
+
+  /** `DELETE /v1/push/registration`, and the cleanup a revocation triggers. */
+  async removePushRegistration(deviceId: string): Promise<boolean> {
+    let removed = false;
+    await this.mutate(async () => {
+      const before = this.pushRegistrations.length;
+      this.pushRegistrations = this.pushRegistrations.filter((record) => record.deviceId !== deviceId);
+      removed = this.pushRegistrations.length !== before;
+      if (removed) {
+        await writeJsonAtomic(join(this.dataDir, "push-registrations.json"), {
+          pushRegistrations: this.pushRegistrations,
+        } satisfies PushRegistrationsFile);
+      }
+    });
+    return removed;
+  }
+
+  /** A provider token the provider itself reported as dead. */
+  async removePushRegistrationByToken(platform: "ios" | "android", token: string): Promise<number> {
+    let removed = 0;
+    await this.mutate(async () => {
+      const before = this.pushRegistrations.length;
+      this.pushRegistrations = this.pushRegistrations.filter(
+        (record) => !(record.platform === platform && record.token === token),
+      );
+      removed = before - this.pushRegistrations.length;
+      if (removed > 0) {
+        await writeJsonAtomic(join(this.dataDir, "push-registrations.json"), {
+          pushRegistrations: this.pushRegistrations,
+        } satisfies PushRegistrationsFile);
+      }
+    });
+    return removed;
   }
 
   // --------------------------------------------------- pending device grants

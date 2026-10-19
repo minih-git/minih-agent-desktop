@@ -1663,6 +1663,126 @@ written.
   answers the uniform `UNAUTHORIZED` of §13 instead, so a listing or a routing
   attempt never discloses another account's Hosts.
 
+### 11.6 Redacted push (R5 PR-6; ADR 0331 decision 7)
+
+Push is optional and redacted: it tells a user that something needs them, on a
+device they registered, and it never carries what the session said. The Gateway
+owns every decision — whether push exists, who is told, and what the notification
+says — so a Host never chooses an audience and a client never receives content.
+
+- **Host announcement.** A Host that will report events advertises `push.notify`
+  in its `host.capabilities` frame (§11.5), which it sends on every link. A Host
+  without a notifier advertises nothing, and the Gateway then expects no
+  `host.notify` from it.
+- **The event frame.** `host.notify` carries exactly
+  `{ link, type: "host.notify", notify: { notifyId, kind, sessionId, approvalId?,
+  occurredAt } }`, where `notifyId` is the Host's own id for the event (bounded to
+  128 characters, so one push per event survives a Host retry), and `kind` is one
+  of `approval.requested`, `input.requested`, `turn.completed`, `turn.failed`.
+  The object is closed: no prompt, tool name, path, transcript, or session title
+  can be added, and a frame carrying one is dropped rather than delivered.
+  Every id is additionally restricted to `^[A-Za-z0-9._:-]{1,128}$`, which is
+  what a UUID, a `<prefix>_<uuid>`, or a decimal id needs: a length limit alone
+  would leave a Host free to put a sentence in `sessionId`, and the Gateway would
+  deliver it to a lock screen. A
+  Gateway that predates this frame drops it and keeps the link, exactly as §11.4
+  rule 6 requires; a Host that predates it sends none and nothing changes.
+- **Which events.** The four kinds are the whole list: a person must decide
+  about an approval, answer an input request, or learn that a turn finished or
+  failed. An interrupted or canceled turn is the user's own action on a screen
+  they are looking at, so it is not a notification — and neither is anything
+  about a message, a tool, or a token count.
+- **Registration.** `PUT /v1/push/registration` takes a **device token** — never
+  an account session — with `{ platform: "ios" | "android", token, appId? }` and
+  answers `{ result: { enabled, platform, hostIds } }` under the §11.2 command
+  envelope. `token` is the provider token (an APNs device token or an FCM
+  registration token), bounded to 4096 characters so the route cannot be used as
+  storage; it is stored, never echoed, and never logged. A registration belongs
+  to a device, so its audience follows the credential: one Host for a §11.4
+  device, every live Host of the account for an account-mode device (§11.5).
+  `hostIds` is that audience as the Gateway resolved it, and a later Host
+  enrollment does not silently widen it — registering again does. One device has
+  one registration: registering again replaces its token, because a device is one
+  platform. The device's state is re-checked inside the write, so a registration
+  request that was already in flight when the device was revoked is answered
+  `UNAUTHORIZED` instead of resurrecting a registration the revocation deleted.
+  `DELETE /v1/push/registration` drops the caller's own registration and answers
+  `{ result: { removed } }`. Both routes follow the browser rules of §11.2
+  (allowlisted `Origin`, CSRF header for the cookie profile) and carry
+  `Cache-Control: no-store`.
+- **Push off.** With no provider configured the Gateway stores nothing and the
+  registration route answers `enabled: false` with an empty `hostIds`, so a client
+  can stop asking instead of believing a registration exists. A registration for
+  a platform the Gateway has no provider for is `CAPABILITY_UNAVAILABLE` (501):
+  storing a token nothing can deliver to would be a silent failure.
+- **The payload.** A push contains `{ kind, titleKey, bodyKey, hostId,
+  sessionId, approvalId?, notifyId }` and nothing else. `titleKey` and `bodyKey`
+  are always `push.notify.<kind>.title` and `push.notify.<kind>.body`, resolved by
+  the client from its own catalog — the Gateway never sends a sentence. APNs
+  receives them as `aps.alert.title-loc-key` / `loc-key`, FCM as
+  `android.notification.title_loc_key` / `body_loc_key` plus the same ids in
+  `data`, so the visible text is the app's, in the user's language, and the ids
+  survive to drive the tap. HTTP v1's `message.notification` has only `title`,
+  `body`, and `image`, so the keys belong to the Android block; a message that
+  puts them anywhere else is rejected with `400 INVALID_ARGUMENT` for every
+  device. Their value is the Android resource name
+  (`push_notify_<kind>_title`), because resource names cannot contain dots.
+- **Rendering happens in the app bundle.** When the app is in the background or
+  closed the *system* renders the notification, so the eight keys must exist in
+  the app's own resources: `ios/App/App/en.lproj/Localizable.strings`,
+  `ios/App/App/zh-Hans.lproj/Localizable.strings`,
+  `android/app/src/main/res/values/strings.xml`, and
+  `values-zh-rCN/strings.xml`. They are generated from the client catalogs by
+  `apps/remote-web/scripts/generate-push-strings.mjs` and guarded by a test, so
+  an edit to a catalog cannot leave a lock screen showing a raw key. Neither file
+  carries anything but fixed copy, and neither is an operator-supplied artifact.
+- **Audience (gate 29).** A device is pushed about a Host only when it may open
+  that Host: its own Host for a §11.4 device, a live Host of its own account for
+  an account-mode device. A revoked device has no registration at all, because
+  revoking it deletes one.
+- **One push per event.** A Host may repeat a frame (a reconnect, a retried
+  read); the Gateway delivers one push per `notifyId`, so a retry is not a second
+  buzz. De-duplication is per Host and per id, and the window is bounded.
+- **Budget.** A per-Host token bucket and a per-device one bound a Host that is
+  looping: the Host bucket is checked first, so a noisy Host cannot spend a
+  device's budget, and one device over its own budget is dropped alone rather
+  than blocking the others.
+- **Cleanup.** A registration is deleted when the device is revoked — by the
+  Gateway's own revoke and by a revocation propagated from a Host (§11.5) — and
+  when the provider reports this token as gone: APNs `410` or the reason
+  `Unregistered`, or FCM `UNREGISTERED`. Nothing else deletes a registration.
+  `DeviceTokenNotForTopic` (a wrong `--apns-topic`, or a build of another bundle
+  id), `BadDeviceToken` (also what every token gets on the wrong APNs
+  environment, such as production tokens on the sandbox endpoint), a bare FCM `404`/`NOT_FOUND` (a wrong project id, a wrong
+  endpoint path, a proxy), `PERMISSION_DENIED`, and a refused provider credential
+  are all configuration errors: they affect every token the Gateway holds, so
+  deleting registrations on one would empty the platform in a single call. A
+  transient provider failure keeps the registration as well.
+- **Operator configuration.** `--apns-key-file`, `--apns-key-id`,
+  `--apns-team-id`, `--apns-topic`, and `--fcm-service-account-file`; all four
+  APNs flags are required together or not at all, a half-configured provider
+  refuses to start, and both files must be regular files owned by the caller with
+  mode 0600 — the same rule as `--access-key-file`. The credentials never appear
+  in a log line, an audit record, or an error message; the audit records the
+  event kind, the Host, and the device, which is exactly what §11.6 allows a push
+  to say.
+- **Credentials in flight.** APNs uses HTTP/2 with an ES256 provider JWT
+  (`kid` = key id, `iss` = team id, one-hour validity, refreshed well inside it)
+  and FCM the HTTP v1 API with an OAuth2 access token minted from the service
+  account's RSA key and cached until a minute before it expires. The OAuth2
+  exchange is single-flight, and a `401`/`403` from the messaging endpoint drops
+  the cached token so the next push mints a fresh one. The provider endpoints are
+  absolute `https:` URLs, checked at startup.
+- **Delivery deadline.** Every provider call has a hard deadline (10 seconds by
+  default). A provider that accepts the connection and then says nothing ends
+  the attempt at the deadline, and the APNs session is destroyed rather than
+  reused, so a wedged provider costs one timeout instead of a leaked connection.
+  One notification is delivered with a fixed small concurrency (four), and one
+  device's failure or timeout neither stops the others nor skips the audit
+  record. The APNs session itself is pooled and reused between pushes — Apple
+  asks clients to reuse the connection — and dropped on error or `GOAWAY`, when
+  it has been idle for five minutes, and when the Gateway stops.
+
 ## 12. Limits and deadlines
 
 The initial target limits are:
@@ -1687,6 +1807,12 @@ The initial target limits are:
 | Terminal output replay ring | 128 KiB per terminal |
 | Open terminals per session | 2 |
 | Relayed tool execution deadline | The tool's own timeout |
+| Push notifications per Host | 20 burst, then one every 5 seconds |
+| Push notifications per device | 10 burst, then one every 10 seconds |
+| Remembered push event ids (de-duplication) | 4,096 per Gateway process |
+| Push provider request deadline | 10 seconds per request |
+| Concurrent push deliveries per event | 4 devices |
+| Idle APNs session reuse | 5 minutes, then closed |
 
 The Host MAY advertise stricter limits. It MUST return a structured limit
 error rather than truncating a command silently.
@@ -1735,7 +1861,7 @@ Initial RACP codes are:
 | `RATE_LIMITED` | yes | Principal, session, or host quota exceeded |
 | `PAIRING_FAILED` | no | The pairing token is unknown or was already exchanged |
 | `PAIRING_TOKEN_EXPIRED` | no | The pairing token's bootstrap window passed |
-| `CAPABILITY_UNAVAILABLE` | no | The Host does not advertise the capability the operation needs |
+| `CAPABILITY_UNAVAILABLE` | no | The Host does not advertise the capability the operation needs; on `PUT /v1/push/registration` it means this Gateway has no provider configured for that platform (§11.6) |
 | `REMOTE_PATH_NOT_FOUND` | no | A Host-side path does not exist |
 | `REMOTE_PATH_FORBIDDEN` | no | A Host-side path is outside what the principal may reach |
 | `INTERNAL` | maybe | Unexpected failure with a trace id |

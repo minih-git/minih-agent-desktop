@@ -477,6 +477,33 @@ implemented as written.
   decision 6 mitigation), and a
   device revoked there travels as the signed revocation frame, queued while the
   link is down, so a lost device stops working on every Host of the account.
+- **Redacted push (R5 PR-6).** A push may tell a user that an approval or an
+  input request is waiting, or that a turn finished or failed; it may not carry
+  prompt, tool, transcript, path, or session-title content (ADR 0331 decision 7).
+  The Gateway builds the payload from ids alone — a fixed kind, two localization
+  keys, and the ids needed to open the right screen — and the Host frame it comes
+  from is schema-closed, so a Host cannot add a field even if a later version
+  wanted to. Push is off unless the operator configured a provider: the
+  registration route then answers `enabled: false` and stores nothing. Provider
+  credentials are files read at startup under the same rules as the Router
+  AccessKey (regular file, caller-owned, mode 0600), they are never logged,
+  echoed, audited, or written into a data file, and the audit records only the
+  event kind, the Host, and the device. A registration is per device and its
+  audience is derived from the credential (gate 29), so a §11.4 device is pushed
+  about its own Host and an account device only about its own account's Hosts; a
+  revoked device has no registration, because revoking it deletes one, and a
+  provider that reports *this* token as gone (`410`, `Unregistered`,
+  `UNREGISTERED`) deletes it too. Per-Host and per-device
+  budgets bound a Host that reports in a loop, so a noisy Host cannot turn into a
+  notification storm on someone's phone. Three properties of this path are
+  tested rather than assumed: every id in the frame is restricted to
+  `[A-Za-z0-9._:-]`, so a Host cannot put text in `sessionId` and have the
+  Gateway deliver it; a registration write re-checks the device inside the write,
+  so a request in flight when the device was revoked cannot recreate its
+  registration; and only a per-token answer deletes anything, because a wrong
+  topic or a bare `404` affects every token the Gateway holds. A provider that
+  accepts a connection and never answers is ended by a hard deadline, so a wedged
+  provider cannot stall the Gateway's other work.
 - **Unsupported Hosts.** A Host announces what it supports with
   `host.capabilities` on every link, and the new frames go only to a Host that
   announced the matching capability, because a Host that predates them ignores
@@ -886,6 +913,12 @@ separate, explicitly specified credential-management capability is added.
 33. `device.request` and `device.grant` reach only Hosts that advertise support,
     and a client is told which Hosts of its account cannot confirm instead of
     waiting for an answer. Applies from R7 (D666).
+34. A push carries a fixed event kind, two localization keys, and ids, and no
+    prompt, tool, transcript, or session-title content; it is off with no
+    operator credentials; it reaches only devices that may open the named Host;
+    a revoked device and a provider-reported dead token have no registration;
+    and no provider credential appears in a log, an audit record, or an error
+    message. Applies from R5 PR-6.
 
 ## 13. Amendment history
 
