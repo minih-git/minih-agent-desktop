@@ -132,3 +132,38 @@ test("a plugin string array links its file paths and leaves the rest as text", a
   assert.deepEqual(plainEntries(markup), ["alpha", "beta"], markup);
   assert.deepEqual(linkedEntries(markup).sort(), ["README.md", "src/a.ts"], markup);
 });
+
+/*
+ * The same failure shape through the real row: an interrupted ToolSearch keeps
+ * the row's failed status, so its body must not say that nothing matched, and
+ * nothing on it may look like a file to open.
+ */
+test("an interrupted ToolSearch row does not say that nothing matched", async (t) => {
+  const ssr = await slotSsr(t);
+  const { ToolDetailBlocks } = await ssr.load("/src/components/ToolDetails.tsx");
+  const { buildToolPresentation } = await ssr.load("/src/lib/tool-presentation.ts");
+  const blocks = buildToolPresentation(
+    {
+      id: "tool-search-aborted",
+      role: "tool",
+      content: "",
+      createdAt: "2026-10-19T00:00:00.000Z",
+      status: "complete",
+      toolName: "ToolSearch",
+      toolCallId: "tool-search-call-aborted",
+      toolStatus: "error",
+      toolArgs: { query: "remember" },
+      toolResult: {
+        content: [{ type: "text", text: "Operation aborted" }],
+        details: {},
+      },
+    },
+    { hideSummaryArg: true },
+  );
+  const markup = ssr.render(createElement(ToolDetailBlocks, { blocks }));
+
+  assert.doesNotMatch(markup, /No matching on-demand tool/);
+  assert.doesNotMatch(markup, /Activated for the next model turn|Already available/);
+  assert.deepEqual(linkedEntries(markup), [], markup);
+  assert.deepEqual(plainEntries(markup), [], markup);
+});

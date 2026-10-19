@@ -71,6 +71,7 @@
   an internal bookkeeping list — each rendered as a clickable file, so clicking
   the tool's own name reported that no such file exists. The row now names the
   tools it activated, or the ones that were already available, or says that
-  nothing matched, and a tool name is never a link. A plugin or MCP result's
-  plain string list behaves the same way: only entries that look like file
-  paths open, the rest stay text.
+  nothing matched, and a tool name is never a link. A lookup that failed keeps
+  its failed row and does not claim that nothing matched. A plugin or MCP
+  result's plain string list behaves the same way: only entries that look like
+  file paths open, the rest stay text.
