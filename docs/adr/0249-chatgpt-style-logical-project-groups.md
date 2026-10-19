@@ -53,9 +53,12 @@ policy.
    saved projects, and adding a root to a stored group — merges the memory keyed
    by that folder's path into the group's memory in the same transaction that
    publishes the group, appending behind what the group already holds and never
-   appending content it already has. The path-scoped record is left in place, as
-   the legacy upgrade path has always done, so no entry point deletes or
-   truncates user text. A merge that would push the group past the 32 KiB
+   appending content it already has. A joining entry's id stays unique inside the
+   group — the derived spelling is kept when it is free and gains the first free
+   `-2`, `-3`… suffix otherwise — because a position a root leaves keeps that
+   root's entries and can be filled again. The path-scoped record is left in
+   place, as the legacy upgrade path has always done, so no entry point deletes
+   or truncates user text. A merge that would push the group past the 32 KiB
    pinned-memory cap is refused whole with `PROJECT_MEMORY_TOO_LARGE` instead of
    being stored: the group, its memory, and the re-keyed learned memory are not
    written, and every folder keeps its own. Nothing is truncated, and the same

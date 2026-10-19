@@ -2428,3 +2428,141 @@ fn upgrading_a_legacy_project_that_would_pass_the_memory_cap_keeps_it_legacy() {
         extra_memory
     );
 }
+
+/// The entry ids a merge appends must be unique inside the group.
+///
+/// A group keeps the entries its roots handed over even after a root leaves, so
+/// re-adding that root at the same position produces the same `root-{i}-{id}`
+/// again. Two entries with one id are indistinguishable to the editor, which
+/// updates and deletes by id: editing one would overwrite the other and deleting
+/// one would drop both.
+#[test]
+fn re_adding_an_edited_root_keeps_each_entry_distinct() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first");
+    let second = dir.path().join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    let first_path = first.to_string_lossy().to_string();
+    let second_path = second.to_string_lossy().to_string();
+    db.set_project_memory_entries(
+        &second_path,
+        &serde_json::json!([{ "id": "x", "title": "X", "content": "The first wording." }]),
+    )
+    .unwrap();
+    let group = db
+        .create_project_group("Workspace", &[first_path.clone(), second_path.clone()])
+        .unwrap();
+    assert_eq!(
+        db.get_project_group_memory(&group.id)
+            .unwrap()
+            .entries
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // Take the root out — its entry stays in the group's memory — and rewrite
+    // the same entry in the folder's own memory before putting it back.
+    db.update_project_group(
+        &group.id,
+        "Workspace",
+        std::slice::from_ref(&first_path),
+        None,
+    )
+    .unwrap();
+    db.set_project_memory_entries(
+        &second_path,
+        &serde_json::json!([{ "id": "x", "title": "X", "content": "The second wording." }]),
+    )
+    .unwrap();
+    db.update_project_group(&group.id, "Workspace", &[first_path, second_path], None)
+        .unwrap();
+
+    let entries = db
+        .get_project_group_memory(&group.id)
+        .unwrap()
+        .entries
+        .expect("entries travel with the content");
+    let observed = entries
+        .iter()
+        .map(|entry| {
+            (
+                entry.id.as_str(),
+                entry.title.as_str(),
+                entry.content.as_str(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        observed,
+        vec![
+            ("root-1-x", "X", "The first wording."),
+            ("root-1-x-2", "X", "The second wording."),
+        ],
+        "both wordings survive, under distinct ids"
+    );
+}
+
+/// Two folders that each carried only a legacy plain-text memory can occupy the
+/// same root position in turn, so both would ask for `root-{i}-legacy`.
+#[test]
+fn two_legacy_texts_at_one_position_get_distinct_ids() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first");
+    let second = dir.path().join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    let first_path = first.to_string_lossy().to_string();
+    let second_path = second.to_string_lossy().to_string();
+    db.set_project_memory(&second_path, "Remember the second root.")
+        .unwrap();
+    let group = db
+        .create_project_group("Workspace", &[first_path.clone(), second_path])
+        .unwrap();
+
+    // The second folder leaves, a folder with its own legacy text takes that
+    // position, and both texts have to stay readable side by side.
+    db.update_project_group(
+        &group.id,
+        "Workspace",
+        std::slice::from_ref(&first_path),
+        None,
+    )
+    .unwrap();
+    let third = dir.path().join("third");
+    std::fs::create_dir_all(&third).unwrap();
+    let third_path = third.to_string_lossy().to_string();
+    db.set_project_memory(&third_path, "Remember the third root.")
+        .unwrap();
+    db.update_project_group(&group.id, "Workspace", &[first_path, third_path], None)
+        .unwrap();
+
+    let entries = db
+        .get_project_group_memory(&group.id)
+        .unwrap()
+        .entries
+        .expect("entries travel with the content");
+    let contents = entries
+        .iter()
+        .map(|entry| entry.content.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        contents.contains(&"Remember the second root."),
+        "{entries:?}"
+    );
+    assert!(
+        contents.contains(&"Remember the third root."),
+        "{entries:?}"
+    );
+    let mut ids = entries
+        .iter()
+        .map(|entry| entry.id.as_str())
+        .collect::<Vec<_>>();
+    let total = ids.len();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), total, "every entry id is distinct: {entries:?}");
+}

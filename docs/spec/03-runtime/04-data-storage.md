@@ -523,12 +523,16 @@ CREATE TABLE projects (
   in the same transaction that publishes the group. Existing group entries and
   their order are kept, the joining folders' entries are appended behind them,
   and content the group already holds is not appended again, so moving a root out
-  and back does not duplicate it. The path-scoped `projectMemory` record itself is
-  left in place, which is what the legacy upgrade path has always done, so nothing
-  here deletes or truncates user text. A merge that would push the group past the
-  32 KiB cap is refused whole instead of stored: no group record, no group memory,
-  and no re-keyed learned memory is written, the folders keep their own
-  path-scoped memory, and the caller gets `PROJECT_MEMORY_TOO_LARGE`
+  and back does not duplicate it. A joining entry's id is unique inside the group:
+  the derived `root-{position}-{id}` spelling is kept when it is free, and an
+  occupied one gains the first free `-2`, `-3`… suffix, because a group keeps what
+  a root handed over after that root leaves and the same position can be filled
+  again. The path-scoped `projectMemory` record itself is left in place, which is
+  what the legacy upgrade path has always done, so nothing here deletes or
+  truncates user text. A merge that would push the group past the 32 KiB cap is
+  refused whole instead of stored: no group record, no group memory, and no
+  re-keyed learned memory is written, the folders keep their own path-scoped
+  memory, and the caller gets `PROJECT_MEMORY_TOO_LARGE`
   ([08-error-codes](08-error-codes.md)) so the editor can explain it in the user's
   language. Nothing is truncated or dropped: the user shortens the memories that
   are joining and retries.
