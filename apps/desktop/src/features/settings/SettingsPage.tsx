@@ -46,12 +46,7 @@ import {
   SessionTitleThinkingRow,
   SessionTitleToggleRow,
 } from "../../components/settings/SessionTitleRows";
-import {
-  ExtractionBudgetRow,
-  ExtractionModelRow,
-  ExtractionStatusRow,
-  ExtractionToggleRow,
-} from "../../components/settings/LearnedMemoryRows";
+import { LearnedMemoryCard } from "../../components/settings/LearnedMemoryCard";
 import { FontSizeRow } from "../../components/settings/FontSizeRow";
 import { LanguageRow } from "../../components/settings/LanguageRow";
 import { SettingsMenuSelect } from "../../components/settings/SettingsMenuSelect";
@@ -468,44 +463,6 @@ export function SettingsPage() {
             </div>
           )}
 
-              {settings && (
-                <SettingsCard title={t("settings.learnedMemory")}>
-                <SettingsRow
-                  title={t("settings.learnedMemoryRead")}
-                  description={t("settings.learnedMemoryReadDesc")}
-                >
-                  <SettingsToggle
-                    checked={settings.learnedMemoryRead !== false}
-                    label={t("settings.learnedMemoryRead")}
-                    onChange={() =>
-                      void saveSettings({ learnedMemoryRead: settings.learnedMemoryRead === false })
-                    }
-                  />
-                </SettingsRow>
-                <ExtractionToggleRow settings={settings} saveSettings={saveSettings} />
-                <ExtractionModelRow
-                  settings={settings}
-                  providers={providers}
-                  saveSettings={saveSettings}
-                />
-                <ExtractionBudgetRow settings={settings} saveSettings={saveSettings} />
-                <ExtractionStatusRow settings={settings} />
-                <SettingsRow
-                  title={t("settings.learnedMemoryManager")}
-                  description={t("settings.learnedMemoryManagerDesc")}
-                >
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setLearnedMemoryOpen(true)}
-                  >
-                    {t("settings.learnedMemoryOpen")}
-                  </Button>
-                </SettingsRow>
-              </SettingsCard>
-              )}
-
           {tab === "ai" && settings && (
             <div className="settings-stack">
               <SettingsCard title={t("settings.permissions")}>
@@ -605,6 +562,13 @@ export function SettingsPage() {
                   saveSettings={saveSettings}
                 />
               </SettingsCard>
+
+              <LearnedMemoryCard
+                settings={settings}
+                providers={providers}
+                saveSettings={saveSettings}
+                onOpenManager={() => setLearnedMemoryOpen(true)}
+              />
 
             </div>
           )}

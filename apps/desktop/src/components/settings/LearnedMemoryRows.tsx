@@ -41,7 +41,9 @@ export function ExtractionToggleRow({
     <SettingsRow
       title={t("settings.learnedMemoryExtraction")}
       description={t("settings.learnedMemoryExtractionDesc")}
-      detail={enabled ? undefined : <span>{t("settings.learnedMemoryExtractionNeedsModel")}</span>}
+      detail={
+        hasModel ? undefined : <span>{t("settings.learnedMemoryExtractionNeedsModel")}</span>
+      }
     >
       <SettingsToggle
         checked={enabled}
