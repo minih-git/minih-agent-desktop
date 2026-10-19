@@ -745,7 +745,10 @@
   text-align: left;
 }
 
-.todo-dock-toggle {
+/* The extra `.btn` class beats the bare `.btn` rule (ui-kit.css loads after
+   composer.css, so its `padding: 7px 12px` would otherwise win the tie and
+   squeeze the 28px toggle's content box to 4px, collapsing the chevron). */
+.btn.todo-dock-toggle {
   width: 28px;
   min-width: 28px;
   height: 28px;
