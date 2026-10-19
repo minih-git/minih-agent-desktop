@@ -1250,8 +1250,12 @@ runtime，也不会改变正在运行的会话的系统提示——下一个会�
 
 `turn_start` / `agent_start` 会取消待命运行，会话删除、开关关闭与应用退出（`dispose`）同样如此。
 子代理事件按标题任务相同的 `parentToolCallId` 判断跳过；发现轮次正在运行时不做事。被排除的会话、
-定时任务transcript、隔离 worktree 会话与导入的 transcript 由**主机**拒绝
-（见 `memory.extraction.input`），服务无法误把它们纳入。
+定时任务 transcript 与导入的 transcript 由**主机**拒绝（见 `memory.extraction.input`），服务
+无法误把它们纳入。隔离 worktree 会话（ADR 0329）按普通项目会话抽取：它是正常的工作，并沿用主项目
+的记忆身份，因此它教给代理的东西属于该项目。
+
+本次没有任何用户亲手写的消息时（有摘要但后面没有新内容，或新消息全部由另一个 Agent 投递），
+完全不发起模型调用：候选必须引用本次发送的消息，否则答案无法使用。此时释放租约，且不计为失败。
 
 **输入。** 由主机组装（`crates/host-core/src/memory/extraction_input.rs`），因为"什么算用户亲手写的
 输入"这条规则属于主机：带真实轮次、角色为 `user`、未被 `session_collaboration_messages` 认领、

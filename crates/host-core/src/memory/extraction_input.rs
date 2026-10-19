@@ -25,7 +25,6 @@ pub(crate) const EXTRACTION_MESSAGE_OVERHEAD_BYTES: usize = 48;
 
 pub(crate) const SKIP_EXCLUDED: &str = "excluded";
 pub(crate) const SKIP_SCHEDULED_RUN: &str = "scheduled-run";
-pub(crate) const SKIP_WORKTREE: &str = "isolated-worktree";
 pub(crate) const SKIP_IMPORTED: &str = "imported";
 
 /// One user message the extractor may cite.
@@ -36,6 +35,10 @@ pub(crate) struct ExtractionMessage {
     pub seq: i64,
     pub text: String,
     pub created_at: i64,
+    /// True when the message was cut to fit the input budget. The cut is at the
+    /// start of the message, so a candidate citing it is grounded in text the
+    /// model actually received.
+    pub truncated: bool,
 }
 
 /// The latest compaction summary, as digest context for the same run.
@@ -84,26 +87,19 @@ fn truncate_to_bytes(text: &str, limit: usize) -> (String, bool) {
     (text[..end].to_string(), true)
 }
 
-/// The session's own identity facts, in one read: is it a scheduled run, does
-/// it own an isolated worktree, and was it imported from another tool.
-fn session_shape(
-    conn: &Connection,
-    session_id: &str,
-) -> Result<Option<(bool, bool, Option<String>)>> {
+/// The session's own identity facts, in one read: is it a scheduled run, and
+/// was it imported from another tool.
+///
+/// An isolated worktree session (ADR 0329) is deliberately **not** a skip: it is
+/// ordinary project work, and it carries the main project's memory identity, so
+/// what it teaches belongs to that project.
+fn session_shape(conn: &Connection, session_id: &str) -> Result<Option<(bool, Option<String>)>> {
     conn.query_row(
-        "SELECT (SELECT COUNT(*) FROM task_runs r WHERE r.session_id = s.id),
-                (SELECT COUNT(*) FROM worktrees w WHERE w.session_id = s.id),
-                s.source
+        "SELECT (SELECT COUNT(*) FROM task_runs r WHERE r.session_id = s.id), s.source
            FROM sessions s
           WHERE s.id = ?1 AND s.deleted_at IS NULL",
         params![session_id],
-        |row| {
-            Ok((
-                row.get::<_, i64>(0)? > 0,
-                row.get::<_, i64>(1)? > 0,
-                row.get::<_, Option<String>>(2)?,
-            ))
-        },
+        |row| Ok((row.get::<_, i64>(0)? > 0, row.get::<_, Option<String>>(1)?)),
     )
     .optional()
     .map_err(Into::into)
@@ -155,15 +151,11 @@ impl Database {
         &self,
         session_id: &str,
     ) -> Result<Option<ExtractionInputOutcome>> {
-        let Some((scheduled_run, worktree, source)) = session_shape(self.conn(), session_id)?
-        else {
+        let Some((scheduled_run, source)) = session_shape(self.conn(), session_id)? else {
             return Ok(None);
         };
         if scheduled_run {
             return Ok(Some(ExtractionInputOutcome::Skipped(SKIP_SCHEDULED_RUN)));
-        }
-        if worktree {
-            return Ok(Some(ExtractionInputOutcome::Skipped(SKIP_WORKTREE)));
         }
         if source.is_some() {
             return Ok(Some(ExtractionInputOutcome::Skipped(SKIP_IMPORTED)));
@@ -198,6 +190,30 @@ impl Database {
         for (id, seq, text, created_at) in user_messages_after(self.conn(), session_id, cursor)? {
             let cost = text.len() + EXTRACTION_MESSAGE_OVERHEAD_BYTES;
             if bytes + cost > EXTRACTION_INPUT_MAX_BYTES {
+                // A later message that does not fit waits for the next run. The
+                // **first** one of a range is different: skipping it would leave
+                // the cursor before it forever, so every message after it would
+                // never be read either. Cutting it keeps the range moving, and
+                // what it says is still citable as far as it was sent.
+                if messages.is_empty() {
+                    let Some(budget) = EXTRACTION_INPUT_MAX_BYTES
+                        .checked_sub(bytes + EXTRACTION_MESSAGE_OVERHEAD_BYTES)
+                    else {
+                        break;
+                    };
+                    let (text, _truncated) = truncate_to_bytes(&text, budget);
+                    if text.is_empty() {
+                        break;
+                    }
+                    bytes += text.len() + EXTRACTION_MESSAGE_OVERHEAD_BYTES;
+                    messages.push(ExtractionMessage {
+                        id,
+                        seq,
+                        text,
+                        created_at,
+                        truncated: true,
+                    });
+                }
                 break;
             }
             bytes += cost;
@@ -206,6 +222,7 @@ impl Database {
                 seq,
                 text,
                 created_at,
+                truncated: false,
             });
         }
 

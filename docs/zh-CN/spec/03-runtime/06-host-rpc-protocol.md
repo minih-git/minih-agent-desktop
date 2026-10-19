@@ -263,7 +263,8 @@ type ToolBudgetHealth = {
 - `memory.extraction.input({ sessionId })` —— 一次运行允许读取的内容：
   `{ input: { sessionId, scopeKind, scopeKey, cursorSeq, messages, summary?, bytes } }`，
   或 `{ input: null, skipped }`，`skipped` 取 `excluded`、`scheduled-run`、
-  `isolated-worktree`、`imported` 之一。由主机组装，因为「什么算用户亲手写的输入」
+  `imported` 之一。隔离 worktree 会话（ADR 0329）**不**跳过：它是正常的项目工作，
+  沿用主项目的记忆身份。由主机组装，因为「什么算用户亲手写的输入」
   这条规则属于主机：带真实轮次、角色为 `user`、未被 `session_collaboration_messages`
   认领、位于 `cursorSeq` 及之后的消息，按从旧到新排列，再加上最近一次压缩摘要，全部限制在
   16 KiB 预算内（摘要最多 4 KiB，按字符边界截断）。`cursorSeq` 是下一个要读取的序号，

@@ -292,3 +292,122 @@ fn a_budget_from_another_day_reads_as_unspent() {
     // The stored day is yesterday's, so today has spent nothing.
     assert_eq!(stored.day, "2026-10-20");
 }
+
+// ---- regression: a range that can never advance ----------------------------
+
+#[test]
+fn a_first_message_over_the_budget_is_truncated_so_the_cursor_can_pass_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let project = project_dir(&dir, "app");
+    let session_id = session(&db, &project);
+    // A pasted log: far larger than the whole input budget. Sending nothing and
+    // leaving the cursor before it would strand every later message, so the
+    // first message of a range is cut to fit and stays citable.
+    let huge = format!(
+        "{}{}",
+        "PASSWORDLESS_PREFIX",
+        "x".repeat(EXTRACTION_INPUT_MAX_BYTES * 2)
+    );
+    let huge_id = user_message(&db, &session_id, &huge);
+    let next = user_message(&db, &session_id, "之后的约定：提交信息用中文。");
+
+    let input = input_of(&db, &session_id);
+    assert_eq!(input.messages.len(), 1, "only the oversized message fits");
+    assert_eq!(input.messages[0].id, huge_id);
+    assert!(input.bytes <= EXTRACTION_INPUT_MAX_BYTES);
+    assert!(
+        input.messages[0].text.starts_with("PASSWORDLESS_PREFIX"),
+        "the cut keeps the beginning of the message"
+    );
+    assert!(
+        input.messages[0].text.len() < huge.len(),
+        "the oversized message was cut"
+    );
+
+    // The cursor can now move past it, which is what lets the next run read the
+    // message that came after.
+    db.claim_memory_extraction(&session_id, "run-a", EXTRACTION_LEASE_MS)
+        .unwrap()
+        .expect("the run takes the lease");
+    db.complete_memory_extraction(&session_id, "run-a", input.messages[0].seq + 1)
+        .unwrap()
+        .expect("the lease owner advances the cursor");
+    let resumed = input_of(&db, &session_id);
+    let ids = resumed
+        .messages
+        .iter()
+        .map(|message| message.id.clone())
+        .collect::<Vec<_>>();
+    assert!(
+        ids.contains(&next),
+        "the message after the cut is read next: {ids:?}"
+    );
+}
+
+#[test]
+fn truncation_never_splits_a_multibyte_character() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let project = project_dir(&dir, "app");
+    let session_id = session(&db, &project);
+    // Three-byte characters, so any byte-index cut lands inside one of them.
+    let huge = "中".repeat(EXTRACTION_INPUT_MAX_BYTES);
+    user_message(&db, &session_id, &huge);
+
+    let input = input_of(&db, &session_id);
+    assert_eq!(input.messages.len(), 1);
+    let text = &input.messages[0].text;
+    assert!(input.bytes <= EXTRACTION_INPUT_MAX_BYTES);
+    // A cut inside a character would make this invalid or change the content.
+    assert!(
+        text.chars().all(|character| character == '中'),
+        "no replacement characters"
+    );
+    assert!(std::str::from_utf8(text.as_bytes()).is_ok());
+}
+
+// ---- regression: a worktree session is ordinary project work ----------------
+
+#[test]
+fn a_worktree_session_is_extracted_under_its_main_project() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let project = project_dir(&dir, "app");
+    let session_id = session(&db, &project);
+    // ADR 0329: an isolated session works in its own worktree but keeps the main
+    // project's identity, so its learned memory is the project's learned memory.
+    db.conn()
+        .execute(
+            "INSERT INTO worktrees
+               (id, session_id, path, common_dir, prefix, branch, owner_branch,
+                status, created_at, updated_at)
+             VALUES ('wt-1', ?1, ?2, ?3, '', 'feat/x', 'main', 'active', 1, 1)",
+            params![
+                session_id,
+                dir.path().join("worktree").to_string_lossy(),
+                dir.path().join(".git").to_string_lossy()
+            ],
+        )
+        .unwrap();
+    user_message(&db, &session_id, "worktree 里的约定：用 pnpm。");
+
+    assert_eq!(
+        skip_reason_opt(&db, &session_id),
+        None,
+        "a worktree is not skipped"
+    );
+    let input = input_of(&db, &session_id);
+    assert_eq!(input.messages.len(), 1);
+    let expected = db.learned_memory_scope_for_path(&project).unwrap();
+    assert_eq!(input.scope_kind, SCOPE_PROJECT);
+    assert_eq!(input.scope_key, expected.key);
+}
+
+/// The skip reason, or `None` when the session is read normally.
+fn skip_reason_opt(db: &Database, session_id: &str) -> Option<&'static str> {
+    match db.memory_extraction_input(session_id).unwrap().unwrap() {
+        ExtractionInputOutcome::Input(_) => None,
+        ExtractionInputOutcome::Skipped(reason) => Some(reason),
+    }
+}

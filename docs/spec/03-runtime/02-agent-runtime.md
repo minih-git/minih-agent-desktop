@@ -1897,9 +1897,16 @@ has written the row they refer to:
 A `turn_start` / `agent_start` cancels a pending run, as do a session deletion,
 the switch going off, and app quit (`dispose`). Subagent events are skipped by
 the same `parentToolCallId` test the title jobs use, and a run that finds a turn
-running does nothing. Excluded sessions, scheduled-run transcripts, isolated
-worktree sessions, and imported transcripts are refused by the **host** (§
-`memory.extraction.input`), so the service cannot opt them in by accident.
+running does nothing. Excluded sessions, scheduled-run transcripts, and imported
+transcripts are refused by the **host** (§ `memory.extraction.input`), so the
+service cannot opt them in by accident. An isolated worktree session (ADR 0329)
+is extracted like any other project session: it is ordinary work, and it carries
+the main project's memory identity, so what it teaches belongs there.
+
+A range with no user-authored message — a summary with nothing new after it, or a
+session whose new messages were all delivered by another agent — makes no model
+call at all: candidates must cite a message the run sent, so the answer could
+not be used. The lease is released without recording a failure.
 
 **Input.** The host assembles it (`crates/host-core/src/memory/extraction_input.rs`)
 because the host owns the rule that decides what counts as user-authored input:

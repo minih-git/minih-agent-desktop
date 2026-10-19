@@ -178,7 +178,9 @@ test("a run claims, sends only the input it was given, stores suggestions, and a
   assert.equal(created.length, 1);
   assert.equal(created[0].params.origin, "extracted");
   assert.equal(created[0].params.status, "suggested");
-  assert.equal(created[0].params.path, "/repo/app");
+  // The session decides the scope, host-side: the service never passes a path.
+  assert.equal(created[0].params.sessionId, "s1");
+  assert.equal("path" in created[0].params, false);
   assert.deepEqual(created[0].params.sourceMessageIds, ["m-user-1"]);
 
   // The spend is recorded, and the cursor moves one past the last message sent.
@@ -444,5 +446,218 @@ test("a provider that cannot be resolved fails the run without touching the curs
   assert.equal(result.outcome, "no-model");
   assert.equal(host.called("memory.extraction.fail")[0].params.error, "MODEL_UNAVAILABLE");
   assert.equal(host.called("memory.extraction.complete").length, 0);
+  service.dispose();
+});
+
+// ---- regression: a run that could never advance, and one that could never finish --
+
+test("a summary with no user message never calls the model", async () => {
+  // Every candidate must cite a message this run sent, so with none sent the
+  // answer is unusable by construction. Spending a model call (and a minute of
+  // quota) to learn that is the bug: the run releases the lease instead.
+  const input = userInput([], { text: "## Constraints & Preferences\n- old notes", truncated: false, createdAt: 5 });
+  const host = fakeHost({ input });
+  const { deps: base } = deps(host);
+  let completions = 0;
+  const service = createMemoryExtractionService({
+    ...base,
+    completeOneShot: async () => {
+      completions += 1;
+      return { text: "{}" };
+    },
+  });
+  const result = await service.runOnce("s1");
+  assert.equal(result.outcome, "no-input");
+  assert.equal(completions, 0, "no model call without a single citable message");
+  // A wait is not a failure: the range is not retried with backoff.
+  assert.equal(host.called("memory.extraction.fail").length, 0);
+  assert.equal(host.called("memory.extraction.complete")[0].params.cursorSeq, 0);
+  assert.deepEqual(service.pending(), []);
+  service.dispose();
+});
+
+test("a session whose new messages were all delivered never calls the model", async () => {
+  // The host already filters delivered messages out of the input, so this is the
+  // same case seen from the service: nothing the user wrote, no model call.
+  const input = userInput([]);
+  const host = fakeHost({ input });
+  const { deps: base } = deps(host);
+  let completions = 0;
+  const service = createMemoryExtractionService({
+    ...base,
+    completeOneShot: async () => {
+      completions += 1;
+      return { text: "{}" };
+    },
+  });
+  assert.equal((await service.runOnce("s1")).outcome, "no-input");
+  assert.equal(completions, 0);
+  service.dispose();
+});
+
+test("a project candidate in a session without a project is dropped, not fatal", async () => {
+  // A session with no project can only write user-scope notes. Passing `path:
+  // undefined` used to make the host refuse the whole write, which failed the
+  // run after the spend and left the cursor behind — three times, then the
+  // session was given up on for good.
+  const input = {
+    sessionId: "s1",
+    scopeKind: "user",
+    cursorSeq: 0,
+    messages: [{ id: "m-user-1", seq: 0, text: "Prefer terse replies", createdAt: 1 }],
+    bytes: 200,
+  };
+  const host = fakeHost({ input });
+  const { deps: base } = deps(host);
+  const service = createMemoryExtractionService({
+    ...base,
+    completeOneShot: async () => ({
+      text: JSON.stringify({
+        candidates: [
+          {
+            kind: "preference",
+            scope: "project",
+            content: "Wants terse replies",
+            sourceMessageIds: ["m-user-1"],
+          },
+          {
+            kind: "preference",
+            scope: "user",
+            content: "Wants terse replies everywhere",
+            sourceMessageIds: ["m-user-1"],
+          },
+        ],
+      }),
+      usage: { totalTokens: 700 },
+    }),
+  });
+  const result = await service.runOnce("s1");
+  assert.equal(result.outcome, "stored", JSON.stringify(result));
+  assert.equal(result.stored, 1);
+  const created = host.called("memory.create");
+  assert.equal(created.length, 1, "the project candidate never reaches the host");
+  assert.equal(created[0].params.scope, "user");
+  // The cursor advances, so the range is not retried forever.
+  assert.equal(host.called("memory.extraction.complete").length, 1);
+  service.dispose();
+});
+
+test("a candidate write is resolved by the host from the session, never by a path", async () => {
+  const input = {
+    sessionId: "s1",
+    scopeKind: "project",
+    scopeKey: "group-9",
+    cursorSeq: 0,
+    messages: [{ id: "m-user-1", seq: 0, text: "Use pnpm", createdAt: 1 }],
+    bytes: 200,
+  };
+  const host = fakeHost({ input });
+  const { deps: base } = deps(host);
+  const service = createMemoryExtractionService(base);
+  await service.runOnce("s1");
+  const created = host.called("memory.create")[0].params;
+  // A project group id is not a path: the host resolves the session's own scope,
+  // which is the group for a group session and the project path otherwise.
+  assert.equal(created.sessionId, "s1");
+  assert.equal("path" in created, false);
+  assert.equal("scope" in created, false);
+  service.dispose();
+});
+
+test("one refused candidate does not stop the others or the cursor", async () => {
+  const input = userInput([
+    { id: "m-user-1", seq: 0, text: "Use pnpm and keep logs in English", createdAt: 1 },
+  ]);
+  const host = fakeHost({ input });
+  const calls = [];
+  const rejecting = {
+    ...host,
+    async call(method, params) {
+      calls.push({ method, params });
+      if (method === "memory.create") {
+        if (params.content.includes("pnpm")) {
+          // A policy refusal is a value, like `memory.create` documents.
+          return { rejected: { code: "MEMORY_CREDENTIAL_DETECTED", message: "refused" } };
+        }
+        return { entry: { id: "e2" }, duplicate: false };
+      }
+      return host.call(method, params);
+    },
+  };
+  const { deps: base } = deps(rejecting);
+  const service = createMemoryExtractionService({
+    ...base,
+    completeOneShot: async () => ({
+      text: JSON.stringify({
+        candidates: [
+          { kind: "fact", scope: "project", content: "Uses pnpm", sourceMessageIds: ["m-user-1"] },
+          {
+            kind: "fact",
+            scope: "project",
+            content: "Writes logs in English",
+            sourceMessageIds: ["m-user-1"],
+          },
+        ],
+      }),
+      usage: { totalTokens: 400 },
+    }),
+  });
+  const result = await service.runOnce("s1");
+  assert.equal(result.outcome, "stored", JSON.stringify(result));
+  assert.equal(result.stored, 1);
+  assert.equal(
+    calls.filter((call) => call.method === "memory.create").length,
+    2,
+    "both candidates were attempted",
+  );
+  assert.equal(rejecting.called("memory.extraction.complete").length, 1);
+  service.dispose();
+});
+
+test("evidence follows the kind: a fact is inferred, a preference is user-stated", async () => {
+  const input = userInput([
+    { id: "m-user-1", seq: 0, text: "Use pnpm. The gateway deploys on Fridays.", createdAt: 1 },
+  ]);
+  const host = fakeHost({ input });
+  const { deps: base } = deps(host);
+  const service = createMemoryExtractionService({
+    ...base,
+    completeOneShot: async () => ({
+      text: JSON.stringify({
+        candidates: [
+          {
+            kind: "preference",
+            scope: "project",
+            content: "Uses pnpm",
+            sourceMessageIds: ["m-user-1"],
+          },
+          {
+            kind: "fact",
+            scope: "project",
+            content: "The gateway deploys on Fridays",
+            sourceMessageIds: ["m-user-1"],
+          },
+          {
+            kind: "reference",
+            scope: "project",
+            content: "Deploy dashboard",
+            sourceMessageIds: ["m-user-1"],
+          },
+        ],
+      }),
+      usage: { totalTokens: 500 },
+    }),
+  });
+  await service.runOnce("s1");
+  const byContent = Object.fromEntries(
+    host
+      .called("memory.create")
+      .map((call) => [call.params.content, call.params.evidence]),
+  );
+  assert.equal(byContent["Uses pnpm"], "user_stated");
+  // The agent observed these in the conversation; the user did not state them as
+  // memories, so they are `inferred` rather than a claim about what was said.
+  assert.equal(byContent["The gateway deploys on Fridays"], "inferred");
+  assert.equal(byContent["Deploy dashboard"], "inferred");
   service.dispose();
 });

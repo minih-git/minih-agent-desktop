@@ -26,10 +26,16 @@ export type ExtractionPromptMessage = {
 };
 
 export type ExtractionPromptInput = {
-  /** User-authored messages only: no tool output, no assistant text. */
+  /** User-authored messages only: no tool output or assistant text. */
   messages: ExtractionPromptMessage[];
   /** The latest compaction summary, already capped by the host. */
   summary?: { text: string; truncated: boolean };
+  /**
+   * Whether this session belongs to a project. A session that belongs to none
+   * can only write user-scope notes, so the extractor is told that instead of
+   * being left to propose project notes the service would have to discard.
+   */
+  projectScopeAvailable?: boolean;
 };
 
 export type ExtractionCandidate = {
@@ -116,7 +122,9 @@ export function buildExtractionRequest(input: ExtractionPromptInput): {
       "Each candidate:",
       '{"kind":"preference|feedback|fact|reference","scope":"project|user","content":"...","rationale":"...","sourceMessageIds":["..."]}',
       `At most ${EXTRACTION_MAX_CANDIDATES} candidates. An empty list is a correct answer when nothing is worth keeping.`,
-      "Use \"project\" for something that belongs to this codebase and \"user\" for how the user wants to be worked with.",
+      input.projectScopeAvailable === false
+        ? 'This conversation belongs to no project, so every candidate must use scope "user".'
+        : "Use \"project\" for something that belongs to this codebase and \"user\" for how the user wants to be worked with.",
     ].join("\n"),
   );
   return { system: EXTRACTION_SYSTEM_PROMPT, user: sections.join("\n\n") };

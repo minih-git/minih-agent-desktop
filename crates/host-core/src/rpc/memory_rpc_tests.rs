@@ -870,3 +870,93 @@ async fn memory_rpc_serves_the_extraction_input_and_the_suggestion_inbox() {
     .unwrap();
     assert_eq!(after["count"], json!(0));
 }
+
+#[tokio::test]
+async fn an_extraction_write_resolves_its_scope_from_the_session() {
+    let (dir, state) = open().await;
+    // A group session: the project identity is the group, not the folder path.
+    let folder = dir.path().join("grouped");
+    std::fs::create_dir_all(&folder).unwrap();
+    let project = canonical_project_path(folder.to_str().unwrap()).unwrap();
+    let group = call(
+        &state,
+        "project.group.create",
+        json!({ "name": "Grouped", "folders": [project] }),
+    )
+    .await
+    .unwrap();
+    let group_id = group["group"]["id"].as_str().unwrap().to_string();
+    let grouped_session = call(
+        &state,
+        "session.create",
+        json!({ "projectPath": project, "title": "grouped" }),
+    )
+    .await
+    .unwrap();
+    let grouped_session_id = grouped_session["session"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // A session that belongs to no project at all.
+    let loose_session = call(&state, "session.create", json!({ "title": "loose" }))
+        .await
+        .unwrap();
+    let loose_session_id = loose_session["session"]["id"].as_str().unwrap().to_string();
+
+    // The service never passes a path: a group id is not one, and a session with
+    // no project has none. The host resolves the scope from the session itself.
+    let in_group = call(
+        &state,
+        "memory.create",
+        json!({
+            "sessionId": grouped_session_id,
+            "kind": "fact",
+            "content": "The group deploys on Fridays.",
+            "origin": "extracted",
+            "status": "suggested",
+            "evidence": "inferred"
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(in_group["entry"]["scopeKind"], json!("project"));
+    assert_eq!(in_group["entry"]["scopeKey"], json!(group_id));
+
+    let loose = call(
+        &state,
+        "memory.create",
+        json!({
+            "sessionId": loose_session_id,
+            "scope": "user",
+            "kind": "fact",
+            "content": "Prefers the terminal.",
+            "origin": "extracted",
+            "status": "suggested",
+            "evidence": "inferred"
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(loose["entry"]["scopeKind"], json!("user"));
+    // The user scope stores no key: it is compared as '' internally.
+    assert_eq!(loose["entry"]["scopeKey"], json!(null));
+
+    // And a project-scope write from a session that has no project is refused as
+    // a caller mistake, which is what the service drops before asking.
+    let refused = call(
+        &state,
+        "memory.create",
+        json!({
+            "sessionId": loose_session_id,
+            "kind": "fact",
+            "content": "Nowhere to put this.",
+            "origin": "extracted",
+            "status": "suggested",
+            "evidence": "inferred"
+        }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error_code(&refused), "NOT_FOUND");
+}

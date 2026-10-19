@@ -310,11 +310,15 @@ apps/desktop/electron/main/memory/memory-extraction-prompt.ts
 - Triggers: `compaction_end` (summary sections `Constraints & Preferences`,
   `Key Decisions` from `pi-runtime-compaction-summary.ts` as primary input) and
   idle-after-`agent_end` debounce (initially 10 minutes). Never during a turn,
-  never at shutdown, never for excluded, isolated-scratch, or scheduled-run
-  sessions unless the user opts those in.
+  never at shutdown, and never for excluded, scheduled-run, or imported
+  transcripts. An isolated worktree session (ADR 0329) is *not* skipped: it is
+  ordinary project work and keeps the main project's memory identity.
 - Claim via `memory.extraction.claim` (lease 10 min); input is user-authored
   messages after `cursor_seq` plus the latest compaction summary, capped at
-  16 KiB. Tool output and assistant text are not sent.
+  16 KiB. Tool output and assistant text are not sent. The first message of a
+  range that exceeds the remaining budget is cut to fit, so the cursor can pass
+  it instead of stalling every later message; a range with no user-authored
+  message makes no model call at all.
 - Model call through `completeOneShot`
   (`packages/agent-runtime/src/one-shot-complete.ts`) with the user-selected
   model; per-run and daily token budgets; budget exhaustion pauses until the

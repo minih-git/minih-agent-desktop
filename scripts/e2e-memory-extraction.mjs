@@ -337,6 +337,91 @@ try {
   assert.equal(inboxAfterReject.count, 0, "a rejected suggestion never comes back");
   summary.suggestion = "requires-confirmation";
 
+  // ---- a range that cannot be sent makes no call, and a huge one still moves --
+  // A summary with nothing new after it: candidates must cite a sent message, so
+  // there is nothing a model call could return.
+  await host.call("session.appendCompaction", {
+    sessionId: session.id,
+    compaction: {
+      id: "compact-1",
+      summary: "## Constraints & Preferences\n- commit messages in Chinese",
+      throughMessageId: userMessageId,
+      tokensBefore: 42_000,
+      createdAt: new Date().toISOString(),
+    },
+  });
+  const beforeEmpty = requests.length;
+  const emptyRange = await service.runOnce(session.id);
+  assert.equal(emptyRange.outcome, "no-input", JSON.stringify(emptyRange));
+  assert.equal(requests.length, beforeEmpty, "a summary alone spends no model call");
+
+  // A pasted log larger than the whole budget is cut to fit, so the cursor can
+  // pass it and the message after it is read on the next run.
+  await say(session.id, `日志粘贴：${"y".repeat(40_000)}`);
+  const hugeTurn = await say(session.id, "日志之后：提交时不要署名。");
+  const hugeRange = await host.call("memory.extraction.input", { sessionId: session.id });
+  assert.equal(hugeRange.input.messages.length, 1, JSON.stringify(hugeRange.input));
+  assert.ok(hugeRange.input.bytes <= 16 * 1024);
+  assert.ok(hugeRange.input.messages[0].text.startsWith("日志粘贴："));
+  assert.ok(hugeRange.input.messages[0].text.length < 40_000, "the oversized message was cut");
+  assert.equal(hugeRange.input.messages[0].truncated, true);
+  // The next read after the cursor moves past it sees the later message.
+  const afterHuge = await service.runOnce(session.id);
+  assert.equal(afterHuge.outcome, "empty", JSON.stringify(afterHuge));
+  const nextRange = await host.call("memory.extraction.input", { sessionId: session.id });
+  assert.match(nextRange.input.messages.at(-1)?.text ?? "", /提交时不要署名/);
+  summary.budgetAndCursor = "truncates-the-first-oversized-message";
+  void hugeTurn;
+
+  // ---- a session with no project can only write user-scope notes -----------
+  const loose = await host.call("session.create", { title: "No project" });
+  await say(loose.session.id, "以后回答尽量简短。");
+  nextAnswer = JSON.stringify({
+    candidates: [
+      {
+        kind: "preference",
+        scope: "project",
+        content: "Wants short answers in this codebase.",
+        sourceMessageIds: [],
+      },
+      {
+        kind: "preference",
+        scope: "user",
+        content: "Wants short answers.",
+        sourceMessageIds: [],
+      },
+    ],
+  });
+  const looseRange = await host.call("memory.extraction.input", { sessionId: loose.session.id });
+  const looseEvidence = looseRange.input.messages.at(-1).id;
+  assert.equal(looseRange.input.scopeKind, "user");
+  nextAnswer = JSON.stringify({
+    candidates: [
+      {
+        kind: "preference",
+        scope: "project",
+        content: "Wants short answers in this codebase.",
+        sourceMessageIds: [looseEvidence],
+      },
+      {
+        kind: "preference",
+        scope: "user",
+        content: "Wants short answers.",
+        sourceMessageIds: [looseEvidence],
+      },
+    ],
+  });
+  const looseRun = await service.runOnce(loose.session.id);
+  assert.equal(looseRun.outcome, "stored", JSON.stringify(looseRun));
+  assert.equal(looseRun.stored, 1, "only the user-scope candidate could be stored");
+  const userInbox = await host.call("memory.suggestions.list", { scope: "user" });
+  assert.equal(userInbox.count, 1);
+  assert.equal(userInbox.entries[0].scopeKind, "user");
+  // The run finished: one unusable candidate did not fail it or stall the cursor.
+  const looseAfter = await host.call("memory.extraction.input", { sessionId: loose.session.id });
+  assert.equal(looseAfter.input.messages.length, 0);
+  summary.noProjectSession = "user-scope-only";
+
   // ---- the switch, the model, and the budget -------------------------------
   // Off means off: no claim, no spend, and no request.
   const before = requests.length;

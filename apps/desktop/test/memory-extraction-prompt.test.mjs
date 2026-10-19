@@ -204,3 +204,18 @@ test("an unusable answer is an empty result, not an error", () => {
   assert.deepEqual(extractionCandidates({ candidates: "nope" }, SENT), []);
   assert.deepEqual(extractionCandidates({}, SENT), []);
 });
+
+test("a session without a project is told that only user scope is available", () => {
+  const withProject = buildExtractionRequest({
+    messages: [{ id: "m-1", text: "hi", createdAt: 1 }],
+    projectScopeAvailable: true,
+  });
+  assert.match(withProject.user, /Use "project" for something that belongs to this codebase/);
+
+  const withoutProject = buildExtractionRequest({
+    messages: [{ id: "m-1", text: "hi", createdAt: 1 }],
+    projectScopeAvailable: false,
+  });
+  assert.match(withoutProject.user, /every candidate must use scope "user"/);
+  assert.doesNotMatch(withoutProject.user, /Use "project" for something that belongs/);
+});

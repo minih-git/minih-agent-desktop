@@ -349,7 +349,9 @@ recall tools.
 - `memory.extraction.input({ sessionId })` — what one run may read:
   `{ input: { sessionId, scopeKind, scopeKey, cursorSeq, messages, summary?, bytes } }`
   or `{ input: null, skipped }` with `skipped` one of `excluded`,
-  `scheduled-run`, `isolated-worktree`, `imported`. The host assembles it because
+  `scheduled-run`, `imported`. An isolated worktree session (ADR 0329) is **not**
+  skipped: it is ordinary project work under the main project's memory identity.
+  The host assembles it because
   it owns the rule for user-authored input: messages with a real turn, role
   `user`, not claimed by `session_collaboration_messages`, at or after
   `cursorSeq`, oldest first, plus the latest compaction summary, inside a 16 KiB

@@ -24,6 +24,7 @@ import {
   buildExtractionRequest,
   extractionCandidates,
   parseExtractionAnswer,
+  type ExtractionCandidate,
 } from "./memory-extraction-prompt";
 import type { SessionTitleLaunchResolver } from "../session-title-service";
 
@@ -104,6 +105,14 @@ export type ExtractionRunResult = {
 };
 
 const MODEL_KEY_SEPARATOR = "/";
+
+/**
+ * Kinds that describe the user themselves, which the host only accepts as
+ * `user_stated` citing a message the user wrote (ADR §3).
+ */
+function requiresUserStatement(kind: ExtractionCandidate["kind"]): boolean {
+  return kind === "preference" || kind === "feedback";
+}
 
 function splitModelKey(modelKey: string): { providerId: string; modelId: string } | null {
   const separator = modelKey.indexOf(MODEL_KEY_SEPARATOR);
@@ -312,7 +321,11 @@ export function createMemoryExtractionService(
         return { outcome: "skipped" };
       }
       const input = inputResult.input;
-      if (!input.messages.length && !input.summary) return waitForMore(id, input.cursorSeq);
+      // Every candidate must cite a message this run sent, so a range with no
+      // user message can only produce unusable answers. A summary alone is not
+      // citable — it is model-written prose — so the run stops here instead of
+      // spending a call to learn that.
+      if (!input.messages.length) return waitForMore(id, input.cursorSeq);
 
       const provider = await resolveProvider(id, settings as AppSettings, enabled.modelKey);
       if (!provider) {
@@ -324,6 +337,10 @@ export function createMemoryExtractionService(
         return { outcome: "no-model" };
       }
 
+      // A session that belongs to no project can only write user-scope notes, so
+      // the extractor is told that rather than left to propose project notes
+      // this service would have to throw away.
+      const projectScopeAvailable = input.scopeKind === "project";
       const request = buildExtractionRequest({
         messages: input.messages.map((message) => ({
           id: message.id,
@@ -331,6 +348,7 @@ export function createMemoryExtractionService(
           createdAt: message.createdAt,
         })),
         ...(input.summary ? { summary: input.summary } : {}),
+        projectScopeAvailable,
       });
       let text: string;
       let usageTokens = 0;
@@ -364,22 +382,45 @@ export function createMemoryExtractionService(
       // The spend is recorded even when the answer is unusable: the quota went.
       await host.call("memory.extraction.budget", { day, tokens: usageTokens });
 
+      let droppedOutOfScope = 0;
       const sentIds = new Set(input.messages.map((message) => message.id));
-      const candidates = extractionCandidates(parseExtractionAnswer(text), sentIds);
+      const candidates = extractionCandidates(parseExtractionAnswer(text), sentIds).filter(
+        (candidate) => {
+          // A project note from a session with no project has nowhere to go. It is
+          // dropped here rather than sent to be refused, so one unusable candidate
+          // cannot cost the run its other notes.
+          if (candidate.scope === "project" && !projectScopeAvailable) {
+            droppedOutOfScope += 1;
+            return false;
+          }
+          return true;
+        },
+      );
       let stored = 0;
+      let refused = 0;
       for (const candidate of candidates) {
+        // One candidate's refusal is a value, not a failure: the rest still land
+        // and the cursor still advances. Only a failure of the host itself
+        // reaches the catch below.
         const created = (await host.call("memory.create", {
-          ...(candidate.scope === "user" ? { scope: "user" } : { path: input.scopeKey }),
+          // The session decides the scope, host-side: a project group id is not a
+          // path, and a session without a project has no project scope at all.
+          sessionId: id,
+          ...(candidate.scope === "user" ? { scope: "user" } : {}),
           kind: candidate.kind,
           content: candidate.content,
           ...(candidate.rationale ? { rationale: candidate.rationale } : {}),
           origin: "extracted",
           status: "suggested",
-          evidence: "user_stated",
+          // `user_stated` is a claim about what the user said, so it belongs to
+          // the kinds that describe the user. A fact or reference the agent
+          // observed is `inferred`.
+          evidence: requiresUserStatement(candidate.kind) ? "user_stated" : "inferred",
           sourceSessionId: id,
           sourceMessageIds: candidate.sourceMessageIds,
-        })) as { entry?: unknown; duplicate?: boolean } | undefined;
+        })) as { entry?: unknown; refused?: unknown; rejected?: unknown } | undefined;
         if (created?.entry) stored += 1;
+        else refused += 1;
       }
       // The cursor moves only to what this run actually read, so a message that
       // did not fit the byte budget is picked up next time.
@@ -392,6 +433,8 @@ export function createMemoryExtractionService(
       log("info", "learned memory extraction finished", id, {
         candidates: candidates.length,
         stored,
+        refused,
+        droppedOutOfScope,
         sent: input.messages.length,
         tokens: usageTokens,
       });
