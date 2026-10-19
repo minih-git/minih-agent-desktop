@@ -27,6 +27,8 @@ import type { AddressInfo } from "node:net";
 import {
   RACP_ACCOUNT_SESSION_TOKEN_PREFIX,
   RACP_DEVICE_TOKEN_PREFIX,
+  RACP_HTTP_CORS_ALLOW_HEADERS,
+  RACP_HTTP_CORS_EXPOSE_HEADERS,
   RACP_HTTP_QUERY_PARAMS,
   RACP_HTTP_ROUTE_LIST,
   RACP_METHOD_HTTP_ROUTES,
@@ -354,6 +356,9 @@ export class ClientHttpServer {
     return {
       "access-control-allow-origin": origin,
       "access-control-allow-credentials": "true",
+      // The client reads trace ids off failures; without this a cross-origin
+      // caller sees null and loses the id the payload does not carry.
+      "access-control-expose-headers": RACP_HTTP_CORS_EXPOSE_HEADERS.join(", "),
       vary: "origin",
     };
   }
@@ -528,7 +533,9 @@ export class ClientHttpServer {
         response.writeHead(204, {
           ...cors,
           "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "access-control-allow-headers": "authorization, content-type, x-csrf-token, last-event-id",
+          // One list, shared with the client that sends them: a header the
+          // native app adds must never fail here first.
+          "access-control-allow-headers": RACP_HTTP_CORS_ALLOW_HEADERS.join(", "),
           "access-control-max-age": "600",
         });
         response.end();

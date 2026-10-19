@@ -480,6 +480,42 @@ export const RACP_HTTP_QUERY_PARAMS: Record<RacpHttpRouteName, Readonly<Record<s
   respondInput: {},
 };
 
+/** Header names the RACP HTTP binding uses, lowercase. */
+export const RACP_HTTP_HEADERS = {
+  /** Bearer token, header profile. */
+  authorization: "authorization",
+  /** JSON command bodies. */
+  contentType: "content-type",
+  /** Which client is speaking; every command and stream carries it. */
+  client: "x-minih-racp-client",
+  /** Cookie profile: double-submit token on mutations. */
+  csrf: "x-csrf-token",
+  /** Stream resume cursor (protocol §11.2). */
+  cursor: "last-event-id",
+  /** Per-request trace id the client reads off failures. */
+  trace: "x-trace-id",
+} as const;
+
+/**
+ * Request headers a browser must clear on preflight for a cross-origin RACP
+ * request, in one place.
+ *
+ * The client decides what it sends and the Gateway decides what it allows; a
+ * header added on one side alone fails only on a phone, because the web build is
+ * same-origin and the Node smoke tests are not browsers. Both sides read this
+ * list, so the two cannot drift.
+ */
+export const RACP_HTTP_CORS_ALLOW_HEADERS = [
+  RACP_HTTP_HEADERS.authorization,
+  RACP_HTTP_HEADERS.contentType,
+  RACP_HTTP_HEADERS.client,
+  RACP_HTTP_HEADERS.csrf,
+  RACP_HTTP_HEADERS.cursor,
+] as const;
+
+/** Response headers a cross-origin client may read (failures carry the trace id). */
+export const RACP_HTTP_CORS_EXPOSE_HEADERS = [RACP_HTTP_HEADERS.trace] as const;
+
 /** SSE event format on the stream endpoints (spec §11.2). */
 export const RACP_HTTP_SSE_EVENT = "racp.event" as const;
 

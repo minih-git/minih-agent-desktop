@@ -13,6 +13,7 @@
  * the caller to keep a request open for turn execution").
  */
 import {
+  RACP_HTTP_HEADERS,
   RACP_HTTP_QUERY_PARAMS,
   RACP_HTTP_ROUTE_LIST,
   RACP_HTTP_ROUTE_PARAMS,
@@ -74,13 +75,18 @@ export function createHttpSseClient(options: HttpSseClientOptions): HttpSseClien
   let controller: AbortController | null = null;
 
   function headers(extra?: Record<string, string>): Record<string, string> {
+    // Header names come from the shared contract the Gateway's CORS preflight
+    // reads, so a new header cannot be sent without also being allowed.
     const base: Record<string, string> = {
-      "content-type": "application/json",
-      "x-minih-racp-client": `${options.client.name}/${options.client.version}`,
+      [RACP_HTTP_HEADERS.contentType]: "application/json",
+      [RACP_HTTP_HEADERS.client]: `${options.client.name}/${options.client.version}`,
       ...extra,
     };
-    if (options.auth.kind === "header") base.authorization = `Bearer ${options.auth.token()}`;
-    else base["x-csrf-token"] = options.auth.csrfToken();
+    if (options.auth.kind === "header") {
+      base[RACP_HTTP_HEADERS.authorization] = `Bearer ${options.auth.token()}`;
+    } else {
+      base[RACP_HTTP_HEADERS.csrf] = options.auth.csrfToken();
+    }
     return base;
   }
 
@@ -115,7 +121,7 @@ export function createHttpSseClient(options: HttpSseClientOptions): HttpSseClien
         code: "INTERNAL",
         message: `HTTP ${response.status}`,
         retriable: response.status >= 500 || response.status === 429,
-        traceId: response.headers.get("x-trace-id") ?? "",
+        traceId: response.headers.get(RACP_HTTP_HEADERS.trace) ?? "",
       };
       throw errorFromObject({
         code: 0,
@@ -135,7 +141,9 @@ export function createHttpSseClient(options: HttpSseClientOptions): HttpSseClien
       controller = new AbortController();
       // Spec §11.2: the cursor travels in the Last-Event-ID header as
       // "<epoch>:<sequence>", never in the URL.
-      const cursorHeader: Record<string, string> = lastCursor ? { "last-event-id": formatRacpCursor(lastCursor) } : {};
+      const cursorHeader: Record<string, string> = lastCursor
+        ? { [RACP_HTTP_HEADERS.cursor]: formatRacpCursor(lastCursor) }
+        : {};
       try {
         const response = await fetchImpl(`${options.baseUrl}${options.eventsPath}`, {
           method: "GET",
