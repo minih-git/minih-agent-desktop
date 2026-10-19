@@ -173,3 +173,11 @@ test("the suggestion inbox and the extraction status are allowlisted forwards", 
   );
   assert.equal(calls.length, 4);
 });
+
+// The manager's own counters cross on one read, with no scope: they describe
+// this device, not a project, and the call itself changes nothing.
+test("the device-local counters are one scope-free forward", async () => {
+  const { handlers, calls } = harness();
+  await handlers.get(IPC.invoke.memoryStats)();
+  assert.deepEqual(calls, [["memory.stats", {}]]);
+});

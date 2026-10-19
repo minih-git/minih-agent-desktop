@@ -3,7 +3,11 @@ use super::tests::{
     configure_test_device, configure_test_device_mode, pending_approvals, run_in_isolated_process,
 };
 use super::*;
+use crate::config_sync::domains::{
+    entity as portable_entity, ProjectIdentityOverrides, DOMAIN_LEARNED_MEMORY,
+};
 use crate::config_sync::transport::tests::fixture;
+use crate::memory::MemoryScope;
 
 fn theme(state: &AppState) -> Result<Value> {
     Ok(state.db.get_setting("app")?.unwrap_or_else(|| json!({}))["theme"].clone())
@@ -671,3 +675,6 @@ async fn legacy_project_config_and_pending_approval_do_not_block_sync() -> Resul
     assert!(device.lock().await.db.list_projects()?.is_empty());
     Ok(())
 }
+
+#[path = "learned_memory_tests.rs"]
+mod learned_memory_tests;

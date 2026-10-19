@@ -739,6 +739,11 @@ pub(crate) fn capture(
             .entities
             .extend(capture_memory(st, identities)?);
     }
+    if selection.is_selected(crate::config_sync::domains::DOMAIN_LEARNED_MEMORY) {
+        snapshot.manifest.entities.extend(
+            crate::config_sync::learned_memory::capture_learned_memory(st, identities)?,
+        );
+    }
     snapshot.manifest.entities.sort_by(|left, right| {
         left.domain
             .cmp(&right.domain)

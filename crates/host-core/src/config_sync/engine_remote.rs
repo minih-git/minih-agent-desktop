@@ -181,6 +181,22 @@ pub(super) async fn read_remote_manifest(
     )?;
     let mut manifest: RevisionManifest =
         serde_json::from_slice(&plain).context("decode remote revision")?;
+    validate_remote_manifest(&mut manifest, revision_id)?;
+    Ok(manifest)
+}
+
+/// Everything a decoded remote revision must satisfy before this device looks at
+/// its content.
+///
+/// A domain this build has no adapter for is refused outright rather than
+/// skipped: silently ignoring another device's data would let two devices
+/// diverge without either noticing. That refusal is also why adding a new
+/// portable domain is not backward compatible — see the domain notes in
+/// `config_sync::learned_memory`.
+pub(super) fn validate_remote_manifest(
+    manifest: &mut RevisionManifest,
+    revision_id: &str,
+) -> Result<()> {
     if manifest.format != REVISION_FORMAT
         || manifest.version != 1
         || manifest.revision_id != revision_id
@@ -232,8 +248,8 @@ pub(super) async fn read_remote_manifest(
     for object_id in resource_ids {
         validate_remote_id(&object_id, "object")?;
     }
-    domains::retain_supported_entities(&mut manifest);
-    Ok(manifest)
+    domains::retain_supported_entities(manifest);
+    Ok(())
 }
 
 pub(super) async fn upload_snapshot(

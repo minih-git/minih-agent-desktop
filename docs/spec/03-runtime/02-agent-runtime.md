@@ -1831,7 +1831,9 @@ portable read switch `learnedMemoryRead` is off. The snapshot travels to the
 sidecar as the `learnedMemoryIndex` launch parameter, with `learnedMemoryRead`
 beside it. The call is best effort: a failure logs `learned memory index
 unavailable` with a stable code only, and the launch continues without the
-section. Nothing else about the launch depends on it.
+section. Nothing else about the launch depends on it. The host records the size
+of the index it just captured as a device-local counter, so the memory manager
+can show what the last launch spent of the 6 KiB budget.
 
 `composeSystemPrompt` renders the section after the project instruction chain
 and after the pinned project memory, so the user's own notes stay the stronger
@@ -1938,6 +1940,13 @@ daily token ledger is device-local (`kv(memory, extractionBudget)`), accumulates
 `totalTokens` from `completeOneShot`'s usage, and pauses the feature for the rest
 of the local calendar day once the configured ceiling is reached; a new local day
 reads as unspent, so the pause clears itself without a background reset.
+
+The same device-local store carries the counters the memory manager shows: the
+last captured index size, accepted and rejected suggestions, and tombstone
+blocks split by writer. They are read through `memory.stats` (see
+[06-host-rpc-protocol.md](06-host-rpc-protocol.md)) and none of them is part of
+a configuration-sync revision, so a second device never shows this device's
+numbers.
 
 **Logging.** Only codes and counts (`memory-error`, `host-error`, candidate and
 token counts). Message text and candidate content are never logged: the content a

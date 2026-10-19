@@ -1,6 +1,7 @@
 mod crypto;
 pub(crate) mod domains;
 pub(crate) mod engine;
+pub(crate) mod learned_memory;
 pub(crate) mod merge;
 mod transport;
 

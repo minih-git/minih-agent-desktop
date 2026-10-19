@@ -10074,6 +10074,45 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **里程碑**：M4。
 - **状态**：已自动化——`pnpm test:e2e:memory`。
 
+### E2E-MEMORY-sync-travels-with-its-tombstones：同步带上删除屏蔽记录
+
+- **前置**：同一 router 账户 vault 上的两个隔离 Host 进程，都已开启 opt-in 记忆类别，各自注册了
+  自己的项目文件夹。
+- **步骤**：
+  1. 在第一台设备写一条项目作用域笔记和一条用户作用域笔记，留下一条待审建议，并推动所有仅本设备
+     的计数。
+  2. 同步，把项目的逻辑 ID 映射到第二台设备的文件夹，审批，然后在第二台设备读取两个作用域。
+  3. 在第二台设备删除用户作用域那条笔记，同步，在第一台设备审批，然后尝试在那里再次写入同样内容。
+  4. 在两次同步之间，两台设备在同一项目作用域各写一条不同的笔记；用户作用域同样再做一次，然后让
+     两台设备收敛。
+  5. 两台从未共享过修订、各自已有一条用户作用域笔记的设备进行首次同步。
+  6. 在一台设备删除共享笔记，另一台设备在同步前编辑它，然后用回执的「仍然记住」把它找回来。
+- **预期**：两条笔记都到达第二台设备，建议不到达；第二台设备自己的计数保持为 0。删除之后第一台
+  设备不再持有该笔记，再次写入同样内容返回 `MEMORY_TOMBSTONED`，且这次被拒绝的写入只记在尝试
+  写入的那台设备上。两台各自写下内容的设备都保留双方的笔记，不会出现冲突提示——两个作用域与首次
+  同步同样如此。删除在两台设备上都优先于其后的编辑，且只有用户本人的「仍然记住」能把笔记找回。
+  携带本构建不认识域的修订仍然在 manifest 关卡被拒绝而不是被跳过——这正是同一 vault 的所有设备
+  都必须运行认识 `learnedMemory` 的构建的原因。
+- **自动化**：`config_sync::engine::router_tests::learned_memory_tests::learned_memory_travels_between_devices_and_its_counters_do_not`、
+  `user_notes_written_on_two_devices_between_two_syncs_converge`、
+  `project_notes_written_on_two_devices_between_two_syncs_converge`、
+  `a_first_sync_with_a_note_on_each_device_adopts_both` 与
+  `a_delete_beats_a_later_edit_and_remember_again_restores_the_note`（两台设备，走进程内 router
+  传输夹具），配合
+  `learned_memory_round_trips_with_its_tombstones_and_never_its_suggestions`、
+  `a_synced_delete_and_a_remember_again_both_propagate`、
+  `two_devices_that_wrote_the_same_note_merge_into_one`、
+  `an_unmapped_project_defers_one_entity_and_never_fails_the_revision`、
+  `local_counters_never_travel_with_a_revision` 与
+  `a_revision_carrying_an_unknown_domain_is_refused_not_skipped`。多 Host 的
+  `pnpm test:e2e:config-sync` 仍指向已移除的 S3 后端，在任何场景之前就会失败，因此不是本场景
+  的自动化手段。
+- **关联规格**：`03-runtime/22-config-sync.md` §2、ADR agent-long-term-memory §7。
+- **验收**：笔记及其删除到达另一台设备，而建议与所有仅本设备的数字留在产生它们的地方；两台各写下
+  不同笔记的设备在无冲突的情况下收敛。
+- **里程碑**：M5。
+- **状态**：已在引擎层自动化。
+
 ### E2E-BASH-background-task-lifecycle-and-output
 
 - **前置条件**：本任务构建的 Host、隔离数据/配置和确定性的本地命令；不使用真实模型或用户桌面。

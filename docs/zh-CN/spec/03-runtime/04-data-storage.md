@@ -1157,6 +1157,11 @@ CREATE INDEX idx_memory_session_state_scope ON memory_session_state(scope_kind, 
 - **抽取状态。** `cursor_seq`、`lease_owner`、`lease_until`、`attempts`、
   `last_error` 和 `excluded` 让可选的抽取在重启、重复触发和渲染器重载后仍然
   幂等；`last_error` 只保存错误码，从不保存对话文本。
+- **仅本设备的计数。** 命名空间 `memory` 下的两行 `kv` 保存属于本机的内容：
+  `extractionBudget`（当天的 token 与运行次数）和 `localStats`（上次启动采集的
+  索引规模、保留/丢弃的建议数，以及按写入方区分的屏蔽次数）。它们不是学习记忆，
+  也不在上面任何表里，因此既不会被配置同步采集，也不会随项目组生命周期重键；
+  缺失或无法读取的行按 0 处理。
 
 ### 从 v1 中删除
 

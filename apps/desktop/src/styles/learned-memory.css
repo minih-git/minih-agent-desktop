@@ -208,3 +208,32 @@
 .learned-memory-paused {
   color: var(--ds-warning);
 }
+
+/*
+ * This device's own counters, at the foot of the manager: they are context for
+ * the notes above them, so they read quieter and never take a card of their own.
+ */
+.learned-memory-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--ds-border-subtle);
+  padding-top: 10px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs-plus);
+}
+
+.learned-memory-stats-title {
+  margin: 0;
+  color: var(--ds-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.learned-memory-stats-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding-left: 16px;
+  font-variant-numeric: tabular-nums;
+}

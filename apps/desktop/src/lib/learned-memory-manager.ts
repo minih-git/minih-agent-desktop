@@ -98,3 +98,33 @@ export function badgeCount(count: number): number | null {
 export function initialManagerTab(pendingCount: number): "entries" | "suggestions" {
   return badgeCount(pendingCount) === null ? "entries" : "suggestions";
 }
+
+/**
+ * How the manager reports this device's own usage (plan §1).
+ *
+ * The numbers come from the host; these are the display decisions: a rate only
+ * exists once something was decided, a size reads in the unit a person can
+ * judge, and a ledger written on an earlier day is not today's spend.
+ */
+export function acceptancePercent(accepted: number, rejected: number): number | null {
+  const total = accepted + rejected;
+  if (!Number.isFinite(total) || total <= 0) return null;
+  return Math.round((accepted / total) * 100);
+}
+
+/** Bytes the session-start index spent, in the unit a person can judge. */
+export function formatIndexSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const kib = bytes / 1024;
+  return `${kib >= 10 ? Math.round(kib) : Math.round(kib * 10) / 10} KB`;
+}
+
+/** Today's extraction spend; a ledger from an earlier day reads as unspent. */
+export function todayExtractionSpend(
+  extraction: { day: string; tokens: number },
+  today: string,
+): number {
+  if (extraction.day !== today) return 0;
+  return Number.isFinite(extraction.tokens) ? Math.max(0, Math.trunc(extraction.tokens)) : 0;
+}

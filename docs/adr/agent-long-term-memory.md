@@ -244,11 +244,37 @@ opt-in.
 
 ### 7. Sync
 
-The existing `memory` config-sync domain gains learned entries with status
-`active` or `archived` and their tombstones, using the same project mapping
-as pinned memory; user-scope entries need no mapping. Learned memory syncs
-only when the user has enabled the existing opt-in memory category.
-Suggestions, cursors, usage counters, and session state stay device-local.
+Learned memory gets its own config-sync domain, `learnedMemory`, gated by the
+existing opt-in memory category: one entity per project identity carries that
+scope's `active` and `archived` entries plus its tombstones, using the same
+project mapping as pinned memory, and the user scope is one entity that needs no
+mapping. Identity inside a scope is the entry fingerprint, and that is also the
+merge unit: a scope's payload is unioned by fingerprint, so two devices that
+wrote the same note merge into one and two devices that each wrote their own note
+keep both, instead of a whole scope becoming a conflict the user must resolve.
+The same fingerprint is taken from the newer `updated_at`, and a delete
+propagates as a tombstone that also blocks the evidence behind it. A delete wins
+over an edit of the same note, because an edit moves `updated_at` only, unless
+the note was created after the delete — which is what "remember again" produces.
+Suggestions, cursors, session state, the budget ledger, and the device-local
+counters stay where they were made.
+
+Two limits are accepted with it: a delete and a re-creation are ordered by the
+timestamps the two devices wrote, so a large clock difference between them can
+order a delete and an edit the wrong way; and one scope contributes at most 500
+notes to a revision, so a larger scope syncs its newest 500.
+
+It is a separate domain rather than an extension of the pinned `memory` domain
+because a released build treats every entity of that domain as pinned project
+memory: it would erase pinned notes on a deletion, create groups, and refuse a
+user-scope entity with `CONFIG_SYNC_MAPPING_REQUIRED`.
+
+A build that does not know a domain cannot read a revision that carries it —
+the manifest decode refuses an unknown domain (`CONFIG_SYNC_UNSUPPORTED`) rather
+than skipping it — so shipping this domain requires every device of a vault to
+run a build that knows it. This is the accepted cost of the first new portable
+domain, not an oversight; a device on an older build stops syncing (and
+restoring) until it is updated.
 
 ### 8. Explicitly out of scope for v1
 
@@ -281,6 +307,9 @@ clients show the tools as generic tool rows).
   that case.
 - An older app version cannot open a database migrated to the new schema; the
   existing schema-version policy applies.
+- Configuration sync of learned memory requires every device of a vault to run a
+  build that knows the `learnedMemory` domain, because an older build refuses a
+  revision that carries an unknown domain instead of skipping it.
 
 ## Alternatives
 
@@ -310,7 +339,9 @@ clients show the tools as generic tool rows).
   choice. Settings offers it once a model is selected.
 - **Sync follows the existing opt-in memory category.** When the user enables
   memory in configuration sync, active and archived learned entries of both
-  scopes and their tombstones sync with it; there is no separate default.
+  scopes and their tombstones sync through a dedicated `learnedMemory` domain;
+  there is no separate default and no separate category. All devices of the
+  vault must run a build that knows the domain (see §7).
 - **`MemoryRemember` uses the normal permission path in every mode.** Detecting
   "the user asked to remember" from message text is language-dependent and
   easy to spoof; the receipt with Undo keeps explicit saves low-friction.

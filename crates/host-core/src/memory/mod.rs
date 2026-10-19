@@ -9,10 +9,14 @@
 mod extraction;
 mod extraction_budget;
 mod extraction_input;
+mod local_stats;
 mod model;
-mod repository;
-mod secrets;
-mod tombstones;
+/// Configuration sync applies synced notes through the same row decoder,
+/// tombstone rules, and credential detector every other writer uses, so those
+/// modules are visible to it.
+pub(crate) mod repository;
+pub(crate) mod secrets;
+pub(crate) mod tombstones;
 mod validation;
 
 #[cfg(test)]
@@ -22,16 +26,23 @@ mod extraction_tests;
 #[path = "lifecycle_tests.rs"]
 mod lifecycle_tests;
 #[cfg(test)]
+#[path = "local_stats_tests.rs"]
+mod local_stats_tests;
+#[cfg(test)]
 #[path = "provenance_tests.rs"]
 mod provenance_tests;
 #[cfg(test)]
 mod tests;
 
 pub(crate) use extraction_input::ExtractionInputOutcome;
+/// Configuration sync reads and writes learned memory through these; the rules
+/// stay in this module.
+pub(crate) use model::MemoryTombstoneRecord;
 pub(crate) use model::{
     is_known, MemoryEntryRecord, MemoryScope, EVIDENCES, EVIDENCE_USER_STATED, EVIDENCE_VERIFIED,
     EXTRACTION_LEASE_MS, KINDS, MAX_LIST_LIMIT, MAX_SEARCH_LIMIT, ORIGINS, ORIGIN_EXPLICIT,
     ORIGIN_USER_UI, SCOPES, SCOPE_PROJECT, SCOPE_USER, STATUSES, STATUS_ACTIVE, STATUS_ARCHIVED,
+    STATUS_SUGGESTED,
 };
 pub(crate) use repository::{
     delete_learned_scope_tx, rekey_learned_memory_to_group, CreateMemoryOutcome,

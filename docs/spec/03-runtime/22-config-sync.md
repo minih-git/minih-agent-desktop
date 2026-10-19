@@ -40,8 +40,11 @@ granularity, activation, and recovery policy for every supported domain.
 
 The current adapter set covers application preferences, user-owned providers,
 MCP definitions, user skills, global subagents, app-managed global/project
-instructions, plugin installation intent, scheduled automations,
-and optional project memory. Credentials are opt-in. Provider API keys and MCP
+instructions, plugin installation intent, scheduled automations, optional
+pinned project memory, and learned memory. Credentials are opt-in. Provider API
+keys and MCP environment variables/headers are included only when the
+credential category is selected; OAuth access/refresh tokens and cookies are
+never exported.
 environment variables/headers are included only when the credential category
 is selected; OAuth access/refresh tokens and cookies are never exported.
 The providers category includes a user-owned provider's name, vendor,
@@ -86,6 +89,40 @@ remote revision history. Project-scoped MCP, skills, instructions, memory, and
 automation bindings remain supported through local folder mappings. Receiving
 devices register their own projects and groups when those features require a
 local workspace.
+
+Learned memory is a separate domain (`learnedMemory`) gated by the same opt-in
+memory category as pinned memory; it is not a category of its own. One entity
+per project identity carries that scope's `active` and `archived` notes plus the
+tombstones that make a delete stick, and the user scope travels as one entity
+that needs no folder mapping. A note's identity inside its scope is the
+fingerprint of its kind and content, and that is also the merge unit: two
+devices that wrote the same sentence merge into one row instead of duplicating,
+and two devices that each wrote their own note keep both, because a scope's
+payload is unioned by fingerprint rather than offered as a whole-scope conflict.
+A note the same fingerprint names on both sides is taken from the newer
+`updated_at`, and a delete propagates as a tombstone that blocks both the same
+memory and the same cited evidence from coming back. A delete wins over an edit
+of the same note — an edit moves `updated_at` only — unless the note was created
+after the delete, which is what "remember again" produces. Suggestions, the
+extraction cursor and session state, the daily budget ledger, and the
+device-local usage counters never travel: a merged `use_count` would turn every
+lookup into a sync edit, and another device's numbers are not this device's
+usage. Provenance is not re-checked against local messages on apply — the cited
+messages belong to the device that wrote the note — while the structural, enum,
+bound, and credential checks run on every entry, so a credential that reached
+one database is never written into another.
+
+Two limits follow from that design. Deletes and re-creations are ordered by the
+timestamps the two devices wrote, so a large clock difference between them can
+order a delete and an edit the wrong way. And one scope contributes at most 500
+notes to a revision; a scope with more keeps the newest 500 and leaves the rest
+on the device that holds them.
+
+**Version requirement.** A device whose build does not know a domain cannot read
+a revision that carries it: the manifest decode refuses an unknown domain
+(`CONFIG_SYNC_UNSUPPORTED`) rather than skipping it, so its head read fails, and
+with it every later sync and restore, until it is upgraded. Shipping a new
+domain therefore requires every device of a vault to run a build that knows it.
 
 Project and workspace bindings are represented by opaque logical identifiers.
 Host-core assigns a persistent logical identity to each registered standalone
@@ -314,4 +351,8 @@ The protocol and connection contracts are intentionally router-account-only.
 All devices sharing the vault must use this implementation against the same
 account. The former WebDAV and S3 backends are removed, not emulated; their
 cloud objects remain untouched.
+The learned-memory domain is the first that adds a portable domain to a vault
+whose other devices may predate it: a device on an older build refuses a
+revision carrying `learnedMemory` (see §2), so all devices must be updated
+together.
 See [the router-account decision](../../adr/router-account-configuration-backup.md).

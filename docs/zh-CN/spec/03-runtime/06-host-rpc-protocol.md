@@ -218,6 +218,11 @@ type ToolBudgetHealth = {
   作用域的存活条目，显式条目优先，其次按最近使用时间，上限为 40 条、6 KiB。不传 `path` 时
   快照只包含用户作用域，因此没有项目的会话也能带着用户自己的笔记启动。返回
   `{ index: { entries, omittedCount, bytes } }`。读取失败时启动会在没有索引的情况下继续。
+- `memory.stats()` —— 管理界面展示的仅本设备计数：`{ stats: { index: { entries, bytes,
+  omitted, capturedAt }, suggestions: { accepted, rejected }, tombstones:
+  { fromExtraction, fromCreate }, extraction: { day, tokens, runs } } }`。启动路径会记录
+  本次采集的索引，建议决定会记录这次决定，被拒绝的写入会记录拦下它的屏蔽记录，并按写入方
+  区分是抽取还是用户写入。这些内容都不属于配置同步修订，因此数字不会离开产生它的设备。
 - `memory.create({ ... })` —— 唯一的创建路径。参数：`scope`、`path` 或
   `sessionId`、`kind`、`content`、可选 `rationale`、`origin`（`explicit` |
   `user_ui`，默认 | `extracted`）、`evidence`（`user_stated`，默认 | `verified` |
