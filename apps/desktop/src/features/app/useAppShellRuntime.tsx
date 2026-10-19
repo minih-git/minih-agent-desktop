@@ -615,7 +615,7 @@ export function useAppShellRuntime() {
     const offInsecureEndpoint = api.onInsecureEndpointNotice(() => {
       showToast(
         `${t("settings.networkInsecureNoticeTitle")} — ${t("settings.networkInsecureNoticeBody")}`,
-        { variant: "warning", duration: 12_000 },
+        { variant: "warning" },
       );
       const current = useAppStore.getState().settings;
       if (!current) return;

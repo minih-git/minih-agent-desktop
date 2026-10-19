@@ -75,7 +75,7 @@ export type ToastItem = {
 
 export type ToastOptions = {
   variant?: ToastVariant;
-  /** Override the variant default (4s, error 8s); 0 disables auto-dismiss. */
+  /** Override the variant default (info/success 4s, warning/error sticky); 0 disables auto-dismiss. */
   duration?: number;
   /** Suppress the default soft chime when another notification surface already played it. */
   sound?: boolean;

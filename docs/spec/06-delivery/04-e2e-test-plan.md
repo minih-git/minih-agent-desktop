@@ -5536,6 +5536,29 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 - **Status**: Source-contract covered (`notification-contract.test.mjs`); packaged
   Windows Action Center activation remains runner validation; full UI scenario Draft
 
+#### E2E-NOTIFICATION-right-side-cards: Global feedback slides in from the right
+
+- **Preconditions**: Isolated renderer with production `ToastHost`, app store,
+  and styles; no provider or user-profile access.
+- **Steps**: Raise each variant; pause/resume a transient timer with focus
+  and hover; exceed four sticky and transient entries; dismiss one; repeat
+  with multiline text, EN/zh-CN, dark/light, 360px width, and reduced motion.
+  Navigate and resolve an existing question reminder.
+- **Expected**: Cards enter from right below window controls, newest first.
+  Info/success expire after four unpaused seconds; warnings/errors persist.
+  Explicit durations remain compatible. Every sticky card survives arrivals;
+  at most four transient cards remain. Overflow keeps all close controls
+  reachable. Repeats replace only the same message/variant/session. Text
+  stays selectable and preserves line breaks and readable failure details.
+  Dismiss affects only its card, including under reduced motion. Arrival
+  does not steal focus; existing prompt resolution and session navigation work.
+- **Specs**: `04-ux/08-component-spec.md` §17;
+  `04-ux/07-ui-design-system.md` §11.8; `04-ux/09-interaction-patterns.md` §6.
+- **Acceptance**: C / Quality / Accessibility.
+- **Automation**: `node --test apps/desktop/test/toast-notifications.test.mjs`;
+  `pnpm test:e2e:notification-cards`; `pnpm test:e2e:question-notification`.
+- **Status**: Automated; run results belong to the validated task candidate.
+
 #### E2E-065A: App notifications use one soft chime
 
 - **Preconditions**: A running desktop app with audio output; a second session
@@ -10224,6 +10247,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 
 | Acceptance | Scenarios |
 |---|---|
+| C / Quality / Accessibility — Right-side notification cards | E2E-NOTIFICATION-right-side-cards |
 | C / G / Quality / Security — Account menu and sidebar utilities | E2E-NAV-account-menu-and-sidebar-utilities |
 | C / E / F / Quality / Security — Session Todo checklist | E2E-CHAT-session-todo-checklist |
 | Quality / Security — Selected upstream Bash/layout import | E2E-BASH-background-task-lifecycle-and-output, E2E-LAYOUT-sidebar-reopen-preserves-width-preference |
@@ -10846,8 +10870,8 @@ This test plan spec is accepted when:
 ### US-UI-54 Toast variants + lifecycle (D085)
 - Trigger a success (save provider), an error (run with an invalid key), and an
   info toast from a test plugin.
-- Expect a top-center stack on an elevated plate with a tinted variant icon (green ✓ / red ! / info) and an X dismiss per card; newest enters at the top-center anchor and pushes older cards down.
-- Success/info auto-dismiss ~4s, error lingers ~8s; hovering a card pauses its countdown; X removes it immediately.
+- Expect a top-right notification stack sliding in from the right, with semantic status icons and a close control per card; newest cards come first and overflow remains scrollable.
+- Success/info auto-dismiss after roughly 4s; errors and warnings remain until dismissed. Hover or keyboard focus pauses the timer; X dismisses only its card.
 - With the stack overlapping the frameless titlebar band, hover still pauses
   the countdown and every X remains clickable instead of dragging the window.
 - Repeating the same action restarts the existing toast instead of stacking a duplicate; stack never exceeds 4.
