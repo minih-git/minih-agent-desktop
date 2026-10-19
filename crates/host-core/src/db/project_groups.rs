@@ -106,6 +106,27 @@ fn group_from_value(raw: &str) -> Result<ProjectGroupRecord> {
     Ok(group)
 }
 
+/// The id an entry gets when it joins a group: `preferred` unless the group
+/// already holds it, otherwise the first free `-2`, `-3`… suffix.
+///
+/// Entry ids are how the editor addresses one entry — it updates and deletes by
+/// id — so a merge that reused an occupied id would make two entries the same
+/// entry there, and editing one would overwrite the other. The suffix keeps the
+/// preferred spelling (and therefore every id stored so far) untouched.
+fn unique_entry_id(entries: &[ProjectMemoryEntryRecord], preferred: &str) -> String {
+    if !entries.iter().any(|entry| entry.id == preferred) {
+        return preferred.to_string();
+    }
+    let mut suffix = 2;
+    loop {
+        let candidate = format!("{preferred}-{suffix}");
+        if !entries.iter().any(|entry| entry.id == candidate) {
+            return candidate;
+        }
+        suffix += 1;
+    }
+}
+
 fn legacy_group(project: &ProjectRecord) -> ProjectGroupRecord {
     ProjectGroupRecord {
         id: format!("legacy:{}", project.path),
@@ -398,6 +419,14 @@ impl Database {
                 continue;
             }
             let memory = self.get_project_memory(path)?;
+            // The id a root asks for is derived from its position, and a position
+            // a root leaves keeps that root's entries in the group forever. When
+            // the same position is filled again — the root comes back, or another
+            // folder takes its place — the derived id can already be taken, and
+            // two entries sharing an id are the same entry to the editor, which
+            // updates and deletes by id. An occupied id therefore moves to the
+            // first free `-2`, `-3`… suffix; an unoccupied one is kept exactly as
+            // it is so stored groups keep their ids.
             let incoming = match memory.entries {
                 Some(entries) => entries
                     .into_iter()
@@ -421,7 +450,8 @@ impl Database {
                 {
                     continue;
                 }
-                entries.push(entry);
+                let id = unique_entry_id(&entries, &entry.id);
+                entries.push(ProjectMemoryEntryRecord { id, ..entry });
                 added = true;
             }
         }
