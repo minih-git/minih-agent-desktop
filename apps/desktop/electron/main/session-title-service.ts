@@ -370,6 +370,28 @@ export type SessionRetitleJob = {
 };
 
 /**
+ * The summary fingerprint a runtime event should re-title from, or `undefined`
+ * when it should not trigger a re-title at all.
+ *
+ * Only a persisted, summarized checkpoint qualifies. A `model_switch`
+ * checkpoint is excluded: it summarizes the same conversation for another
+ * model, so the subject the title names has not moved, and re-titling would
+ * spend a model request on a cost optimization.
+ */
+export function retitleFingerprintForCompaction(event: {
+  type: string;
+  ok?: boolean;
+  reason?: string;
+  summaryFingerprint?: unknown;
+}): string | undefined {
+  if (event.type !== "compaction_end" || event.ok !== true) return undefined;
+  if (event.reason === "model_switch") return undefined;
+  return typeof event.summaryFingerprint === "string"
+    ? event.summaryFingerprint
+    : undefined;
+}
+
+/**
  * Re-title a session from its latest compaction summary.
  *
  * Fired after a compaction persists (`compaction_end`): the conversation's

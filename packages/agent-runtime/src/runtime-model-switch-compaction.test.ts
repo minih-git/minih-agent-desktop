@@ -367,5 +367,96 @@ describe("model switch compaction", () => {
     expect(text).not.toContain("Task 0:");
 
     await runtime.dispose();
+    await runtime.dispose();
+  });
+
+  describe("after a checkpoint no reply has followed yet", () => {
+    /** A large recent window model A installed, and a turn that never answered. */
+    function checkpointedSession() {
+      const history: UiMessage[] = [
+        ...historyRows(20),
+        {
+          id: "user-20",
+          role: "user",
+          content: "This turn failed before any reply",
+          createdAt: "2026-10-01T01:00:00.000Z",
+          status: "complete",
+        } as UiMessage,
+      ];
+      const retainedTail: AgentMessage[] = [];
+      for (let index = 0; index < 16; index += 1) {
+        retainedTail.push(
+          index % 2 === 0
+            ? ({
+                role: "user",
+                content: `Kept request ${index}: ${"window ".repeat(2_300)}`,
+                timestamp: index + 1,
+              } as AgentMessage)
+            : assistantReply(`Kept answer ${index}: ${"window ".repeat(2_300)}`),
+        );
+      }
+      const checkpoint = {
+        id: "checkpoint-a",
+        summary: "Summary model A wrote.",
+        throughMessageId: "assistant-19",
+        tokensBefore: 120_000,
+        retainedTail,
+        details: {
+          strategy: "summary",
+          retainedTailMode: "recent_window",
+          retainedTailShape: "recent_window",
+          generation: 1,
+        },
+        providerId: "account-a",
+        modelId: "model-a",
+        createdAt: "2026-10-01T00:59:00.000Z",
+      } as ContextCompactionRecord;
+      return { history, checkpoint };
+    }
+
+    it("reads the switched-away model from the checkpoint itself", async () => {
+      const onEvent = vi.fn();
+      const host = { call: vi.fn(async () => undefined) };
+      const { history, checkpoint } = checkpointedSession();
+      const runtime = createRuntime({ history, compaction: checkpoint, host, onEvent });
+      scriptProvider(runtime);
+
+      const budget = (runtime as any).contextBudget([
+        ...((runtime as any).liveSessionContext().messages),
+      ]);
+      expect(budget.tokens).toBeGreaterThan(48_000);
+      expect(budget.tokens).toBeLessThan(budget.hardLimit * 0.9);
+
+      await runtime.prompt("Continue on model B");
+
+      expect(eventsOf(onEvent)).toContainEqual({
+        type: "compaction_start",
+        reason: "model_switch",
+      });
+      expect(appendedCompactions(host)).toHaveLength(1);
+
+      await runtime.dispose();
+    });
+
+    it("does not compact when the checkpoint's model is still the one in front", async () => {
+      const onEvent = vi.fn();
+      const host = { call: vi.fn(async () => undefined) };
+      const { history, checkpoint } = checkpointedSession();
+      const runtime = createRuntime({
+        provider: providerFor("account-a", "model-a"),
+        history,
+        compaction: checkpoint,
+        host,
+        onEvent,
+      });
+      scriptProvider(runtime);
+
+      await runtime.prompt("Continue on model A");
+
+      expect(eventsOf(onEvent).some((event) => event.type === "compaction_start")).toBe(false);
+      expect(appendedCompactions(host)).toHaveLength(0);
+
+      await runtime.dispose();
+    });
   });
 });

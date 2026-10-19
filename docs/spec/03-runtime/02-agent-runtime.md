@@ -182,6 +182,9 @@ main process needs about the summary is re-read from the host. The prompt also
 carries the title being replaced, so a refresh keeps the language the session
 is already named in even when the checkpoint was summarized in another one; a
 landed refresh emits the same `sessionsChanged` announcement as a first title.
+A `model_switch` checkpoint (D669) never re-titles: it summarizes the same
+conversation for another model, so the subject has not moved and a title
+request would only add cost to a cost optimization.
 
 ### 4.3 One composition per session, and a second chance
 
@@ -687,7 +690,10 @@ row and an assistant error remain durable and no provider request starts.
 the new binding starts with a cold provider cache: its first request re-reads
 whatever is sent no matter what the runtime does. The first prompt therefore asks
 whether the newest assistant message after the active checkpoint was produced by a
-different `providerId`/`modelId`. With `summary` compaction and a context between
+different `providerId`/`modelId`; when nothing has answered since the checkpoint
+(a turn that failed right after compacting), the model recorded on the checkpoint
+itself answers instead, and a legacy checkpoint with no recorded model stays
+undecided. With `summary` compaction and a context between
 `max(48_000, 2 × keepRecentTokens)` and the 90 % trigger, the runtime installs a
 `recent_window` checkpoint through the new model before that request, so the
 savings apply to every later request in the session. A smaller context travels

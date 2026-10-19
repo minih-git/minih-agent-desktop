@@ -82,17 +82,25 @@ export function sameModelIdentity(
 }
 
 /**
- * The model that produced the newest assistant message after the checkpoint's
- * boundary, or `undefined` when that range has no message carrying an identity.
+ * The model that last shaped the context: the producer of the newest assistant
+ * message after the checkpoint's boundary, else the model that wrote the
+ * checkpoint itself. `undefined` when neither recorded an identity.
  *
  * Reading the transcript instead of in-memory state is what makes a switch
  * survive a restart: a rebuilt runtime sees the same rows. A checkpoint whose
  * boundary is no longer in the transcript (a fork or a pruned view) cannot scope
  * the search, so the newest message answers for the whole history.
+ *
+ * The checkpoint fallback covers a range nothing has answered yet — a turn
+ * that failed right after compacting — whose context is the checkpoint the
+ * previous model wrote. Checkpoints written before they recorded a model name
+ * none, and stay undecided.
  */
 export function previousModelSince(
   entries: readonly ModelIdentityEntry[],
-  checkpoint: { throughMessageId?: string } | undefined,
+  checkpoint:
+    | { throughMessageId?: string; providerId?: string; modelId?: string }
+    | undefined,
 ): ModelIdentity | undefined {
   const boundary = checkpoint?.throughMessageId;
   const boundaryIndex = boundary
@@ -109,7 +117,9 @@ export function previousModelSince(
     if (!providerId || !modelId) continue;
     return { providerId, modelId };
   }
-  return undefined;
+  const providerId = checkpoint?.providerId?.trim();
+  const modelId = checkpoint?.modelId?.trim();
+  return providerId && modelId ? { providerId, modelId } : undefined;
 }
 
 /**
