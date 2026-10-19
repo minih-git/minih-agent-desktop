@@ -1,5 +1,15 @@
 # Unreleased changes
 
+- Remote access works on a desktop that has just installed Minih Router. In
+  0.22.0 the Remote gateway page only learned whether account mode was usable
+  once the link started, and the link only starts with the remote-access switch
+  — which the page greyed out until the desktop was registered. A fresh install
+  therefore showed no account-mode section and an unusable switch, leaving only
+  the old registration-code form. The page now checks whether your Router
+  account can register this desktop without registering anything, and the
+  switch is offered when either an enrollment exists or that check passes.
+  Turning it on is still what registers the desktop, so nothing runs and
+  nothing listens while the switch is off.
 - Learned memory syncs with the opt-in Memory category of Cloud sync: the notes
   you kept, in both scopes, and the deletes that keep a forgotten note from
   coming back travel between your devices, while suggestions and the counters

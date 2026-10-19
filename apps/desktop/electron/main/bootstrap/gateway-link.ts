@@ -3,6 +3,7 @@ import type { HostRpc } from "@minih-agent/host-runtime";
 import type { HostNotifier } from "@minih-agent/racp";
 import type {
   AppSettings,
+  RemoteGatewayAccountMode,
   RemoteGatewayDeviceNotice,
   RemoteGatewayDeviceRequest,
   RemoteGatewayDeviceSummary,
@@ -12,6 +13,7 @@ import type {
   RemoteGatewayStatus,
 } from "@minih-agent/shared";
 
+import { readAccountModeAvailability } from "../remote/gateway-link/account-mode.js";
 import {
   createGatewayCredentialStore,
   type GatewayCredentialStore,
@@ -214,10 +216,41 @@ export function createGatewayLinkBootstrap(
     });
     return enrollmentProbe;
   };
+  /**
+   * Whether account mode could work, read without enrolling or dialing.
+   *
+   * A fresh install has no other way in: the switch waits for an enrollment and
+   * the enrollment waits for the switch, so the page needs this answer to offer
+   * the switch at all. It follows the overlay and the Router key, both of which
+   * change without the switch being touched, so this is a single flight and not
+   * a cache: concurrent callers share one read, and the next read asks again.
+   * Nothing here runs on a timer — host-core pushes no EasyTier-state event to
+   * subscribe to, so this runs on the status reads the page already makes.
+   */
+  let accountModeProbe: Promise<RemoteGatewayAccountMode | undefined> | null = null;
+  const probeAccountMode = async (): Promise<RemoteGatewayAccountMode | undefined> => {
+    if (!accountModeProbe) {
+      const read = readAccountModeAvailability(options.getHost()).then(
+        (mode) => mode,
+        (error: unknown) => {
+          log("warn", "account mode availability could not be read", { error: String(error) });
+          return { available: false, reason: String(error) } satisfies RemoteGatewayAccountMode;
+        },
+      );
+      // Released when the read settles: a desktop that finished connecting its
+      // overlay, or that added a Router key, must not keep showing the first
+      // answer for the rest of the session.
+      accountModeProbe = read.finally(() => {
+        accountModeProbe = null;
+      });
+    }
+    return accountModeProbe;
+  };
+
 
   /** The status a disabled feature reports: honest about enrollment, but idle. */
   const disabledStatus = async (): Promise<RemoteGatewayStatus> => {
-    const probe = await probeEnrollment();
+    const [probe, accountMode] = await Promise.all([probeEnrollment(), probeAccountMode()]);
     return {
       state: probe.error ? "error" : "disabled",
       since: new Date(now()).toISOString(),
@@ -226,6 +259,9 @@ export function createGatewayLinkBootstrap(
       ...(probe.hostId ? { hostId: probe.hostId } : {}),
       ...(configuredUrl ? { url: configuredUrl } : {}),
       ...(probe.error ? { lastError: failure(probe.error, GATEWAY_LINK_FAILED) } : {}),
+      // Account mode is what makes the switch usable before any enrollment
+      // exists, so the page needs it even while the feature is off.
+      ...(accountMode ? { accountMode } : {}),
     };
   };
 
@@ -247,8 +283,13 @@ export function createGatewayLinkBootstrap(
 
   const controller: GatewayLinkController = {
     async status() {
-      if (service) return decorate(service.status());
-      return disabledStatus();
+      if (!service) return disabledStatus();
+      // Off: the service re-reads account mode, because that answer is what
+      // would offer the switch again. On: the running link already keeps it
+      // current, so a status read stays a plain snapshot.
+      const current = service.status();
+      if (current.enabled) return decorate(current);
+      return decorate(await service.refreshStatus());
     },
     setEnabled(enabled) {
       return enqueue(async () => {

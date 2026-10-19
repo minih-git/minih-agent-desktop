@@ -821,6 +821,27 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   run against a real desktop Host, while routing through a live Router remains
   the deployment gate.
 
+- R7 account mode reached nobody on a fresh install (fixed 2026-10-19, v0.22.0
+  regression): the settings page only learned the account-mode answer while the
+  link was starting, and the link only starts with the user's remote-control
+  switch — which the page disabled until the desktop held Gateway credentials.
+  A desktop that had just installed Minih Router therefore showed no
+  account-mode section at all, a greyed-out switch, and only the old
+  registration-code form: the switch waited for an enrollment while the
+  automatic enrollment waited for the switch. The page now reads whether
+  account mode could work without enrolling anything — advertised endpoint plus
+  a configured Router key — one `easytier.status` and one `providers.list` per
+  status read, re-read on every one of them (a single flight, never a cache, so
+  a desktop that connects its overlay or adds a key later is picked up), with no
+  timer, no `providers.getSecret`, and no dial — and the switch is offered when
+  the desktop is either enrolled or account mode is usable.
+  Turning it on is still the only thing that enrolls anything, so the security
+  defaults are unchanged: with the switch off nothing is registered and nothing
+  listens (gate 27), and account mode that is unavailable keeps the switch
+  disabled and the registration-code form in place with its reason. A desktop
+  that is available but not yet registered now reads "ready" rather than
+  claiming to be registered, and the enrollment section says the same.
+
 - R7 package D delivered (2026-10-18, D666 / ADR
   `remote-control-router-account-binding`): the account-mode device relay. New
   Host-link frames `host.capabilities`, `device.request`, `device.grant`, and
