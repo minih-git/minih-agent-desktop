@@ -10,6 +10,13 @@ import {
   RACP_HTTP_QUERY_PARAMS,
   RACP_HTTP_ROUTE_LIST,
   RACP_HOSTLINK_HTTP_SCHEMAS,
+  RACP_NOTIFY_KINDS,
+  RACP_PUSH_PLATFORMS,
+  RacpHostNotifyFrameSchema,
+  RacpHostNotifySchema,
+  RacpPushPayloadSchema,
+  RacpPushRegistrationRequestSchema,
+  pushKeysForKind,
   RacpAccountHostListResponseSchema,
   RacpAccountHostSummarySchema,
   RacpAccountLoginRequestSchema,
@@ -372,6 +379,9 @@ describe("generated fixture bundle", () => {
         "HostRouteContext",
         "PairHttpRequest",
         "PairHttpResponse",
+        "PushPayload",
+        "PushRegistrationRequest",
+        "PushRegistrationResponse",
       ].sort(),
     );
     for (const schema of Object.values(RACP_HOSTLINK_HTTP_SCHEMAS)) {
@@ -386,5 +396,110 @@ describe("route context validation", () => {
     // the shape, the helper keeps the link identity.
     expect(Value.Check(RacpHostRouteContextSchema, routeContext)).toBe(true);
     expect(hostLinkRouteContextIsValid(routeContext)).toBe(true);
+  });
+});
+
+describe("redacted push contracts (spec §11.6)", () => {
+  const notify = {
+    notifyId: "ntf_1",
+    kind: "approval.requested" as const,
+    sessionId: "s1",
+    approvalId: "ap_1",
+    occurredAt: "2026-10-18T00:00:00.000Z",
+  };
+
+  it("keeps the frame to ids and one of the four kinds", () => {
+    expect(Value.Check(RacpHostNotifyFrameSchema, { link: RACP_HOSTLINK_VERSION, type: "host.notify", notify })).toBe(true);
+    // No field for content: a Host cannot slip a prompt, a tool, or a title in.
+    expect(Value.Check(RacpHostNotifyFrameSchema, { link: RACP_HOSTLINK_VERSION, type: "host.notify", notify: { ...notify, prompt: "secret" } })).toBe(false);
+    expect(Value.Check(RacpHostNotifyFrameSchema, { link: RACP_HOSTLINK_VERSION, type: "host.notify", notify: { ...notify, kind: "turn.started" } })).toBe(false);
+  });
+
+  it("refuses an id that is not an id, so a push cannot become a text channel", () => {
+    // Without a character set, "a push carries ids only" would be a promise
+    // about the Host's behaviour rather than a property of the frame: a Host
+    // could put a sentence in `sessionId` and the Gateway would deliver it to a
+    // lock screen. Real ids are UUIDs, `<prefix>_<uuid>`, or decimal ids.
+    for (const field of ["notifyId", "sessionId", "approvalId"] as const) {
+      expect(Value.Check(RacpHostNotifySchema, { ...notify, [field]: "the user asked about the secret plans" })).toBe(false);
+      expect(Value.Check(RacpHostNotifySchema, { ...notify, [field]: "会话一" })).toBe(false);
+      expect(Value.Check(RacpHostNotifySchema, { ...notify, [field]: "" })).toBe(false);
+      expect(Value.Check(RacpHostNotifySchema, { ...notify, [field]: "a".repeat(129) })).toBe(false);
+    }
+    // The shapes the Host actually mints all pass.
+    for (const id of [
+      "4f1f7b8c-1d2e-4b6a-9c1d-2e3f4a5b6c7d",
+      "ntf_4f1f7b8c-1d2e-4b6a-9c1d-2e3f4a5b6c7d",
+      "turn_ldx2k3ja9f",
+      "s1",
+      "42",
+      "dev_a.b:c",
+    ]) {
+      expect(Value.Check(RacpHostNotifySchema, { ...notify, sessionId: id })).toBe(true);
+    }
+  });
+
+  it("applies the same id rule to the payload the Gateway builds", () => {
+    const payload = {
+      kind: "approval.requested" as const,
+      titleKey: "push.notify.approval.requested.title",
+      bodyKey: "push.notify.approval.requested.body",
+      hostId: "host_a",
+      sessionId: "s1",
+      approvalId: "ap_1",
+      notifyId: "ntf_1",
+    };
+    expect(Value.Check(RacpPushPayloadSchema, payload)).toBe(true);
+    expect(Value.Check(RacpPushPayloadSchema, { ...payload, sessionId: "look at this prompt" })).toBe(false);
+    expect(Value.Check(RacpPushPayloadSchema, { ...payload, titleKey: "Some inline text" })).toBe(false);
+    expect(Value.Check(RacpPushPayloadSchema, { ...payload, prompt: "secret" })).toBe(false);
+  });
+
+  it("ties the runtime kind lists to the schemas that spell them out", () => {
+    // The schemas list their literals rather than mapping over the arrays
+    // (TypeBox loses the literal through a mapped union), so this is the test
+    // that keeps the two in step.
+    for (const kind of RACP_NOTIFY_KINDS) {
+      expect(
+        Value.Check(RacpHostNotifySchema, { notifyId: "n", kind, sessionId: "s", occurredAt: "t" }),
+        `notify kind ${kind}`,
+      ).toBe(true);
+      expect(
+        Value.Check(RacpPushPayloadSchema, {
+          kind,
+          titleKey: "t",
+          bodyKey: "b",
+          hostId: "h",
+          sessionId: "s",
+          notifyId: "n",
+        }),
+        `payload kind ${kind}`,
+      ).toBe(true);
+    }
+    const platform = RacpPushRegistrationRequestSchema.properties.platform;
+    for (const value of RACP_PUSH_PLATFORMS) {
+      expect(Value.Check(Type.Object({ platform }), { platform: value }), `platform ${value}`).toBe(true);
+    }
+  });
+
+  it("carries a localization key pair and ids, and nothing else", () => {
+    const payload = { kind: "turn.failed" as const, ...pushKeysForKind("turn.failed"), hostId: "h1", sessionId: "s1", notifyId: "n1" };
+    expect(Value.Check(RacpPushPayloadSchema, payload)).toBe(true);
+    expect(pushKeysForKind("turn.failed")).toEqual({
+      titleKey: "push.notify.turn.failed.title",
+      bodyKey: "push.notify.turn.failed.body",
+    });
+    // A field a client would have to redact is a contract violation, not a
+    // judgment call: `additionalProperties: false` refuses it here.
+    expect(Value.Check(RacpPushPayloadSchema, { ...payload, title: "Build finished" })).toBe(false);
+    expect(Value.Check(RacpPushPayloadSchema, { ...payload, prompt: "rm -rf /" })).toBe(false);
+  });
+
+  it("bounds the provider token so the route cannot be used as storage", () => {
+    const base = { platform: "ios", token: "a".repeat(64) };
+    expect(Value.Check(RacpPushRegistrationRequestSchema, base)).toBe(true);
+    expect(Value.Check(RacpPushRegistrationRequestSchema, { ...base, token: "" })).toBe(false);
+    expect(Value.Check(RacpPushRegistrationRequestSchema, { ...base, token: "a".repeat(4097) })).toBe(false);
+    expect(Value.Check(RacpPushRegistrationRequestSchema, { ...base, platform: "web" })).toBe(false);
   });
 });

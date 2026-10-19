@@ -18,7 +18,7 @@ import {
   type AccountFlowState,
   type AccountTimer,
 } from "./account-flow.js";
-import type { AccountAdoption, AccountAdoptionOutcome } from "./credential-port.js";
+import type { AccountAdoption, AccountAdoptionOutcome, HostCredential } from "./credential-port.js";
 
 export const ORIGIN = "https://gateway.example.com";
 export const EXPIRES = "2026-10-18T00:05:00.000Z";
@@ -117,9 +117,11 @@ export function flowFor(options: {
   fetchImpl: typeof fetch;
   timer?: AccountTimer;
   adopt?: (input: AccountAdoption) => Promise<AccountAdoptionOutcome>;
+  onSignOut?: (credential: HostCredential) => Promise<void>;
   now?: () => number;
 }) {
   const adoptions: AccountAdoption[] = [];
+  const signOuts: HostCredential[] = [];
   const flow = new AccountFlow({
     gatewayOrigin: ORIGIN,
     client: "web",
@@ -128,13 +130,19 @@ export function flowFor(options: {
       adoptions.push(input);
       return options.adopt ? options.adopt(input) : { ok: true, hostIds: input.hosts.map((host) => host.hostId) };
     },
+    // Push unregistration on sign-out (§11.6) is recorded, and can be made to
+    // fail: a failed unregistration must not block signing out.
+    onSignOut: async (credential) => {
+      signOuts.push(credential);
+      await options.onSignOut?.(credential);
+    },
     fetchImpl: options.fetchImpl,
     ...(options.timer ? { timer: options.timer } : {}),
     // Pinned so the deadline of a request is measured against the same instant
     // in every run; only the test that ends a wait by the clock overrides it.
     now: options.now ?? (() => START),
   });
-  return { flow, adoptions };
+  return { flow, adoptions, signOuts };
 }
 
 export function statusCalls(calls: readonly Call[]): Call[] {

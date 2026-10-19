@@ -375,3 +375,83 @@ describe("a Gateway that is not answering", () => {
     expect(notified).toBe(0);
   });
 });
+
+describe("push on sign-out (§11.6)", () => {
+  const granted = () => statusOk({ status: "granted", deviceId: "dev_1", token: "pdt1.device", tokenDelivered: true });
+
+  it("unregisters the account device when the account session ends", async () => {
+    const timer = fakeTimer();
+    const seen: Array<{ kind: string; token?: string }> = [];
+    const { flow, signOuts } = await signedInAndRequesting({
+      timer: timer.timer,
+      onSignOut: async (credential) => {
+        seen.push(credential.kind === "header" ? { kind: credential.kind, token: credential.token } : { kind: credential.kind });
+      },
+      route: (url, method) => {
+        if (url.endsWith("/login")) return loginOk();
+        if (url.endsWith("/hosts")) return hostsOk();
+        if (url.endsWith("/logout")) return { status: 200, body: { result: { revoked: true } } };
+        if (method === "POST") return requestOk();
+        return granted();
+      },
+    });
+
+    await timer.fire();
+    expect(flow.getState()).toMatchObject({ kind: "adopted" });
+    // Adopting ends the account session, and that is the moment the device
+    // credential can still stop push: it is used exactly once.
+    expect(seen).toEqual([{ kind: "header", token: "pdt1.device" }]);
+    expect(signOuts).toHaveLength(1);
+  });
+
+  it("still ends the session when the unregistration fails", async () => {
+    const timer = fakeTimer();
+    const { flow, calls } = await signedInAndRequesting({
+      timer: timer.timer,
+      onSignOut: async () => {
+        throw new Error("the gateway refused the DELETE");
+      },
+      route: (url, method) => {
+        if (url.endsWith("/login")) return loginOk();
+        if (url.endsWith("/hosts")) return hostsOk();
+        if (url.endsWith("/logout")) return { status: 200, body: { result: { revoked: true } } };
+        if (method === "POST") return requestOk();
+        return granted();
+      },
+    });
+
+    await timer.fire();
+    // A failed unregistration is reported by the caller's log, never surfaced as
+    // a failure of the adoption, and never leaves the session behind.
+    expect(flow.getState()).toMatchObject({ kind: "adopted" });
+    expect(logoutCalls(calls)).toHaveLength(1);
+  });
+
+  it("takes the registration away on a sign-out after adoption, once", async () => {
+    const timer = fakeTimer();
+    const signOuts: string[] = [];
+    const { flow } = await signedInAndRequesting({
+      timer: timer.timer,
+      onSignOut: async (credential) => {
+        signOuts.push(credential.kind === "header" ? credential.token : "cookie");
+      },
+      route: (url, method) => {
+        if (url.endsWith("/login")) return loginOk();
+        if (url.endsWith("/hosts")) return hostsOk();
+        if (url.endsWith("/logout")) return { status: 200, body: { result: { revoked: true } } };
+        if (method === "POST") return requestOk();
+        return granted();
+      },
+    });
+
+    await timer.fire();
+    expect(flow.getState()).toMatchObject({ kind: "adopted" });
+    expect(signOuts).toHaveLength(1);
+
+    // Signing out after the device was adopted must not register a second
+    // unregistration for the same device; it is one device, one DELETE.
+    await flow.abandon();
+    expect(flow.getState()).toEqual({ kind: "idle" });
+    expect(signOuts).toHaveLength(1);
+  });
+});

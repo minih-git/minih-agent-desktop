@@ -19,6 +19,7 @@ import { resolveGatewayOrigin } from "./gateway-origin.js";
 import { createHostRegistry, createMemoryStorage, type RegistryStorage } from "./host-registry.js";
 import { NativeCredentialPort, type NativePairClient } from "./native-credential-port.js";
 import { dispatchBack } from "./navigation.js";
+import type { PushPlugin } from "./push.js";
 import type { SecureStore } from "./secure-store.js";
 
 /**
@@ -85,6 +86,8 @@ type NativeModules = {
   createSecureStore: () => Promise<SecureStore>;
   appStateSource: () => AppStateSource;
   watchBack: (onBack: () => boolean) => Promise<() => Promise<void>>;
+  /** The push plugin (§11.6). Loaded with the other native adapters. */
+  pushPlugin: () => PushPlugin;
 };
 
 /**
@@ -94,11 +97,16 @@ type NativeModules = {
  */
 async function loadNativeModules(): Promise<NativeModules> {
   if (import.meta.env.MODE === "native") {
-    const [secure, app] = await Promise.all([import("./native-secure-store.js"), import("./native-app.js")]);
+    const [secure, app, push] = await Promise.all([
+      import("./native-secure-store.js"),
+      import("./native-app.js"),
+      import("./native-push.js"),
+    ]);
     return {
       createSecureStore: secure.createNativeSecureStore,
       appStateSource: app.nativeAppStateSource,
       watchBack: app.watchHardwareBack,
+      pushPlugin: push.nativePushPlugin,
     };
   }
   throw new Error("the native modules are only available in a native build (vite build --mode native)");
@@ -116,4 +124,16 @@ export async function boot(): Promise<void> {
   await nativePort.ready();
   appState = modules.appStateSource();
   await modules.watchBack(() => dispatchBack());
+  nativePush = modules.pushPlugin();
+}
+
+let nativePush: PushPlugin | null = null;
+
+/**
+ * The push plugin of this native build, or null in a browser (which has no push
+ * at all: ADR 0331 decision 7 configures push for the app, and the H5 client
+ * deliberately implements no Web Push).
+ */
+export function pushPlugin(): PushPlugin | null {
+  return nativePush;
 }

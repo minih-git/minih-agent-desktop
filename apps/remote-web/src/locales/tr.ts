@@ -183,6 +183,16 @@ export const tr: Record<TranslationKey, string> = {
   "operation.accountSignIn": "Oturum açma",
   "operation.accountDevice": "Cihaz isteği",
 
+  "push.notify.approval.requested.title": "Kararın bekleniyor",
+  "push.notify.approval.requested.body": "Bir oturum bir işlem için onayını bekliyor.",
+  "push.notify.input.requested.title": "Kararın bekleniyor",
+  "push.notify.input.requested.body": "Bir oturum yanıtını bekliyor.",
+  "push.notify.turn.completed.title": "Tur tamamlandı",
+  "push.notify.turn.completed.body": "Bir oturumun turu tamamlandı.",
+  "push.notify.turn.failed.title": "Tur başarısız",
+  "push.notify.turn.failed.body": "Bir oturumun turu başarısız oldu.",
+  "push.disabled": "Bu derlemede bildirimler kapalı.",
+
   "operation.pair": "Eşleştirme",
   "operation.sessionList": "Oturumları yükle",
   "operation.sessionAttach": "Oturumu yükle",

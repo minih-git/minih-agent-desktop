@@ -8,7 +8,7 @@ import type {
   UiMessage,
 } from "@minih-agent/shared";
 
-import { AgentHost } from "./agent-host.js";
+import { AgentHost, type NotifyEvent } from "./agent-host.js";
 import type { ApprovalPort, PendingToolRequest } from "./approvals.js";
 import {
   MemoryQueueStore,
@@ -130,7 +130,14 @@ function envelope(sessionId: string, turnId: string | undefined, event: AgentEve
   return { sessionId, ...(turnId ? { turnId } : {}), ts: Date.parse("2026-09-10T00:00:01.000Z"), event };
 }
 
-function build(options: { permissionMode?: SessionSummary["permissionMode"]; queueStore?: MemoryQueueStore; allowRemoteSessionGrants?: boolean } = {}) {
+function build(
+  options: {
+    permissionMode?: SessionSummary["permissionMode"];
+    queueStore?: MemoryQueueStore;
+    allowRemoteSessionGrants?: boolean;
+    onNotifyEvent?: (event: NotifyEvent) => void;
+  } = {},
+) {
   const runtime = new FakeRuntime();
   const sessions = new FakeSessions();
   sessions.summaries.set("s1", summary("s1", options.permissionMode));
@@ -145,6 +152,7 @@ function build(options: { permissionMode?: SessionSummary["permissionMode"]; que
     queueStore: options.queueStore,
     limits: { maxQueuedTurnsPerSession: 2 },
     allowRemoteSessionGrants: options.allowRemoteSessionGrants,
+    ...(options.onNotifyEvent ? { onNotifyEvent: options.onNotifyEvent } : {}),
   });
   const received: RacpEventEnvelope[] = [];
   const sub = host.subscribe(viewer, { scope: "session", sessionId: "s1" }, { deliver: (event) => received.push(event), close: () => {} });
@@ -1116,5 +1124,87 @@ describe("AgentHost gateway-principal restrictions (security §3.7)", () => {
       context: { requestId: "gw-turn" },
     });
     expect(runtime.prompts[0]?.effectivePermissionMode).toBe("ask");
+  });
+});
+
+describe("AgentHost notification events (protocol §11.6)", () => {
+  const permission = (requestId = "req_1") => ({
+    type: "tool_permission_request" as const,
+    request: {
+      requestId,
+      sessionId: "s1",
+      toolCallId: "c1",
+      toolName: "Bash",
+      argsPreview: { command: "ls" },
+      risk: "high" as const,
+      reason: "high risk",
+    },
+  });
+  const ask = (requestId = "ask_1") => ({
+    type: "asktool_request" as const,
+    request: {
+      requestId,
+      sessionId: "s1",
+      toolCallId: "c9",
+      questions: [{ question: "Which?", options: [{ label: "a" }] }],
+    },
+  });
+
+  it("reports the four events and nothing else, with ids only", async () => {
+    const seen: NotifyEvent[] = [];
+    const { host } = build({ onNotifyEvent: (event) => seen.push(event) });
+
+    const started = await host.startTurn(owner, { sessionId: "s1", input: { text: "go" }, context: { requestId: "s" } });
+    host.ingest(envelope("s1", started.turn.id, permission()));
+    host.ingest(envelope("s1", started.turn.id, ask()));
+    host.endTurn("s1", started.turn.id, "completed");
+
+    expect(seen.map((event) => event.kind)).toEqual(["approval.requested", "input.requested", "turn.completed"]);
+    // Every event is ids plus a timestamp: no prompt, no tool name, no text.
+    for (const event of seen) {
+      expect(Object.keys(event).sort()).toEqual(
+        event.approvalId ? ["approvalId", "kind", "occurredAt", "sessionId"] : ["kind", "occurredAt", "sessionId"],
+      );
+      expect(event.sessionId).toBe("s1");
+      expect(Number.isNaN(Date.parse(event.occurredAt))).toBe(false);
+    }
+    expect(seen[0]!.approvalId).toBe("req_1");
+    expect(seen[1]!.approvalId).toBe("ask_1");
+  });
+
+  it("reports a failed turn as turn.failed", async () => {
+    const seen: NotifyEvent[] = [];
+    const { host } = build({ onNotifyEvent: (event) => seen.push(event) });
+    const started = await host.startTurn(owner, { sessionId: "s1", input: { text: "go" }, context: { requestId: "s" } });
+    host.endTurn("s1", started.turn.id, "failed", {
+      error: { code: "AGENT_UNAVAILABLE", message: "runtime", retriable: true, traceId: "trace-1" },
+    });
+    expect(seen.map((event) => event.kind)).toEqual(["turn.failed"]);
+  });
+
+  it("stays quiet for an interrupted or canceled turn: the user did it themselves", async () => {
+    const seen: NotifyEvent[] = [];
+    const { host } = build({ onNotifyEvent: (event) => seen.push(event) });
+    const started = await host.startTurn(owner, { sessionId: "s1", input: { text: "go" }, context: { requestId: "s" } });
+    host.endTurn("s1", started.turn.id, "interrupted");
+    expect(seen).toEqual([]);
+
+    const cancelled = await host.startTurn(owner, { sessionId: "s1", input: { text: "again" }, context: { requestId: "s2" } });
+    host.endTurn("s1", cancelled.turn.id, "canceled");
+    expect(seen).toEqual([]);
+  });
+
+  it("never lets a failing listener affect the turn or the approval it describes", async () => {
+    const { host, approvals } = build({
+      onNotifyEvent: () => {
+        throw new Error("the notifier is broken");
+      },
+    });
+    const started = await host.startTurn(owner, { sessionId: "s1", input: { text: "go" }, context: { requestId: "s" } });
+    // The approval still lands, and the turn still settles.
+    host.ingest(envelope("s1", started.turn.id, permission()));
+    expect(approvals.pending).toEqual([]);
+    host.endTurn("s1", started.turn.id, "completed");
+    expect(await host.workSnapshot("s1")).toMatchObject({ state: "idle" });
   });
 });

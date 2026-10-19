@@ -25,7 +25,7 @@ import type { AddressInfo } from "node:net";
 import type { PeerCertificate, TLSSocket } from "node:tls";
 
 import { HostLinkGatewayMux, type HostLinkSocket } from "@minih-agent/racp";
-import type { RacpDeviceGrantFrame, RacpDeviceRevokeFrame, RacpHostLinkFrame } from "@minih-agent/shared";
+import type { RacpDeviceGrantFrame, RacpDeviceRevokeFrame, RacpHostLinkFrame, RacpHostNotify } from "@minih-agent/shared";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import type { GatewayAuthority } from "./ca.js";
@@ -79,6 +79,7 @@ export class HostLinkServer implements HostLinkSource {
   private readonly capabilityHandlers: Array<(hostId: string) => void> = [];
   private readonly deviceGrantHandlers: Array<HostFrameHandler<RacpDeviceGrantFrame>> = [];
   private readonly deviceRevokeHandlers: Array<HostFrameHandler<RacpDeviceRevokeFrame>> = [];
+  private readonly hostNotifyHandlers: Array<HostFrameHandler<RacpHostNotify>> = [];
 
   constructor(private readonly options: HostLinkServerOptions) {}
 
@@ -189,6 +190,15 @@ export class HostLinkServer implements HostLinkSource {
     this.deviceRevokeHandlers.push(handler);
   }
 
+  /**
+   * Receive the redacted notification events Hosts report (§11.6). Registered
+   * before `start()`; the handler is given the id of the link that carried the
+   * frame, so the push service can check the Host's own announcement.
+   */
+  onHostNotify(handler: HostFrameHandler<RacpHostNotify>): void {
+    this.hostNotifyHandlers.push(handler);
+  }
+
   /** `hosts revoke`: drop the live link; the certificate is refused from then on. */
   disconnect(hostId: string): boolean {
     const link = this.links.get(hostId);
@@ -292,6 +302,10 @@ export class HostLinkServer implements HostLinkSource {
     mux.onDeviceRevoke((frame) => {
       if (this.links.get(peer.hostId) !== link) return;
       for (const handler of [...this.deviceRevokeHandlers]) handler(frame, peer.hostId);
+    });
+    mux.onHostNotify((notify) => {
+      if (this.links.get(peer.hostId) !== link) return;
+      for (const handler of [...this.hostNotifyHandlers]) handler(notify, peer.hostId);
     });
     // A new link speaks for this Host from scratch: whatever the previous one
     // announced is stale until this one announces something, so a Host that

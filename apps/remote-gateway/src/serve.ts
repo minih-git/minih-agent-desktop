@@ -5,7 +5,7 @@
  */
 import { readFile } from "node:fs/promises";
 
-import { APP_VERSION } from "@minih-agent/shared";
+import { APP_VERSION, type RacpPushPayload } from "@minih-agent/shared";
 
 import { AccountSessionService } from "./account.js";
 import { startGatewayAdminSocket, type AdminResponse, type AdminSocket } from "./admin-socket.js";
@@ -17,6 +17,9 @@ import { DeviceRequestService } from "./device-requests.js";
 import { EnrollmentService } from "./enrollment.js";
 import { HostLinkServer } from "./hostlink-server.js";
 import { PairingService } from "./pairing.js";
+import { PushService } from "./push.js";
+import type { PushDeliveryResult } from "./push-providers.js";
+import { resolvePushConfig } from "./push-config.js";
 import { RateLimiter, type RateLimitPolicy } from "./rate-limit.js";
 import { CommandRouter, GatewayRpcError, LogicalConnection, LogicalConnectionPool, type GatewayLog } from "./router.js";
 import { RouterAccountVerifier } from "./router-verifier.js";
@@ -45,6 +48,11 @@ export type GatewayServer = {
   deviceRequests: DeviceRequestService;
   /** Router AccessKey verifier (D666); `null` when account mode is off. */
   verifier: RouterAccountVerifier | null;
+  /**
+   * Redacted push (§11.6, R5 PR-6). Always present so the Host-Notify relay has
+   * one path; `enabled` is false when the operator configured no provider.
+   */
+  push: PushService;
   close: () => Promise<void>;
 };
 
@@ -57,6 +65,12 @@ export type StartGatewayOptions = {
   heartbeatMs?: number;
   /** Injectable for tests; only used to build the Router verifier. */
   fetchImpl?: typeof fetch;
+  /**
+   * Providers that do not talk to Apple or Google: the E2E run wires local TLS
+   * stubs through here so a real notification path is exercised without a real
+   * credential or a real provider.
+   */
+  pushProviders?: { apns?: { send(token: string, payload: RacpPushPayload): Promise<PushDeliveryResult> }; fcm?: { send(token: string, payload: RacpPushPayload): Promise<PushDeliveryResult> } };
 };
 
 /** Load the client API TLS material once, so a bad path fails before binding. */
@@ -117,6 +131,28 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
   // connects immediately still receives the grants pending for its account
   // (§11.5 "Deferred grants").
   const deviceRequests = new DeviceRequestService({ store, hostLinks, authority: loadAuthority, log, ...(now ? { now } : {}) });
+  // Redacted push (§11.6). The provider credentials are read here, before the
+  // listeners bind, so a bad or too-readable key file fails at startup instead
+  // of on the first notification. No credentials configured: `enabled` is false
+  // and every push path is a no-op.
+  const pushConfig = await resolvePushConfig(config.push);
+  const push = new PushService({
+    store,
+    config: pushConfig,
+    hostLinks,
+    log,
+    ...(now ? { now } : {}),
+    ...(options.pushProviders ? { apns: options.pushProviders.apns, fcm: options.pushProviders.fcm } : {}),
+  });
+  if (push.enabled) {
+    const platforms = push.platforms();
+    log("info", "gateway push enabled", { ios: platforms.ios, android: platforms.android });
+  }
+  hostLinks.onHostNotify((notify, hostId) => {
+    void push.handleNotify(hostId, notify).catch((error: unknown) => {
+      log("warn", "gateway failed to handle a host notification", { hostId, error: String(error) });
+    });
+  });
   hostLinks.onCapabilities((hostId) => {
     void deviceRequests.deliverPending(hostId).catch((error: unknown) => {
       log("warn", "gateway could not deliver pending device frames", { hostId, error: String(error) });
@@ -159,6 +195,7 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
     isHostOnline: (hostId) => hostLinks.isOnline(hostId),
     ...(account ? { account } : {}),
     ...(account ? { deviceRequests } : {}),
+    push,
     // Without `--trusted-proxy`/`--client-ip-header` the resolved address is the
     // TCP peer, exactly as before (ADR decision 10).
     resolveClientIp: config.clientIp ? createClientIpResolver(config.clientIp) : peerAddress,
@@ -245,12 +282,16 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
     account,
     deviceRequests,
     verifier,
+    push,
     close: () => {
       closing ??= (async () => {
         await admin.close();
         pool.closeAll();
         await client.stop();
         await hostLinks.stop();
+        // The providers hold pooled provider connections (an APNs HTTP/2
+        // session); a Gateway that stops must not leave one behind.
+        push.close();
         // Audit records are written asynchronously; do not drop the tail.
         await store.flush();
         log("info", "remote gateway stopped");

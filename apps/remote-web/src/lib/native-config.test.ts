@@ -3,8 +3,11 @@
  *
  * It reads the committed native project files with plain `node:fs` — no jsdom,
  * no simulator — and fails when a rule the client depends on is broken: HTTPS
- * only, no cleartext, no backup of the Keystore-wrapped data, and no push (PR-6
- * adds push separately).
+ * only, no cleartext, and no backup of the Keystore-wrapped data. Push (R5
+ * PR-6) is the native app's, and the two files it needs — the iOS entitlement and
+ * the Android Firebase configuration — are the operator's to provide, never the
+ * repository's, so the rules below keep them out and keep a build without them
+ * working.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -64,7 +67,9 @@ describe("native app identifier", () => {
     expect(config.server?.cleartext).toBeUndefined();
     // `contentInset` stays default: the layout applies env(safe-area-inset-*).
     expect(config.ios?.contentInset).toBeUndefined();
-    // No push configuration of any kind in this PR.
+    // The plugin is present but unconfigured: the operator brings the APNs key
+    // to the Gateway and the Firebase file to the Android build, so nothing
+    // machine-specific is baked into this repository's Capacitor config.
     expect(config.plugins?.PushNotifications).toBeUndefined();
   });
 });
@@ -76,7 +81,9 @@ describe("ios/App/App/Info.plist", () => {
     expect(infoPlist).not.toContain("NSAllowsLocalNetworking");
   });
 
-  it("declares no push or background mode", () => {
+  it("declares no background mode", () => {
+    // A silent push (`content-available`) would need a background mode; this
+    // client only ever receives an alert the user taps, so none is declared.
     expect(infoPlist).not.toContain("UIBackgroundModes");
     expect(infoPlist).not.toContain("aps-environment");
     expect(infoPlist).not.toContain("remote-notification");
@@ -88,7 +95,10 @@ describe("ios/App/App/Info.plist", () => {
     expect(infoPlist).not.toMatch(/DEVELOPMENT_TEAM|ProvisioningProfile|apple-team/i);
   });
 
-  it("has no entitlements file and no push capability", () => {
+  it("commits no entitlements file: the push capability is the operator's", () => {
+    // An `aps-environment` entitlement is only valid inside an App ID the
+    // operator owns, so it is added in Xcode by whoever signs the build (see
+    // the README); committing one would ship somebody else's team setup.
     expect(exists("ios/App/App/App.entitlements")).toBe(false);
     expect(exists("ios/App/App/App.entitlements.plist")).toBe(false);
   });
@@ -113,19 +123,42 @@ describe("android/app/src/main/AndroidManifest.xml", () => {
   });
 });
 
-describe("no push artifacts in the repository", () => {
-  it("ships no Firebase or APNs configuration", () => {
+describe("operator-supplied push artifacts stay out of the repository", () => {
+  it("ships no Firebase configuration and no Apple push material", () => {
     expect(exists("android/app/google-services.json")).toBe(false);
     expect(exists("android/app/src/main/google-services.json")).toBe(false);
     expect(exists("GoogleService-Info.plist")).toBe(false);
     expect(exists("ios/App/App/GoogleService-Info.plist")).toBe(false);
   });
 
-  it("depends on no push plugin", () => {
+  it("depends on the Capacitor push plugin and on no Firebase SDK", () => {
     const dependencies = { ...packageJson.dependencies, ...packageJson.devDependencies };
+    expect(dependencies["@capacitor/push-notifications"]).toBeTruthy();
+    // The native side is a platform plugin, not the Firebase JS SDK: no
+    // Google/Firebase package belongs in a bundle that ships to app stores.
     for (const name of Object.keys(dependencies)) {
-      expect(name, name).not.toMatch(/push|firebase|fcm/i);
+      expect(name, name).not.toMatch(/firebase|fcm/i);
     }
+  });
+});
+
+describe("push notification resources", () => {
+  it("ships the eight localization keys the Gateway can name, in both languages", () => {
+    // A notification is rendered by the system when the app is in the background
+    // or closed (§11.6), so these files — not the JS catalog — are what the user
+    // reads. `push-strings.test.ts` proves they match the catalogs.
+    const iosEnglish = read("ios/App/App/en.lproj/Localizable.strings");
+    const iosChinese = read("ios/App/App/zh-Hans.lproj/Localizable.strings");
+    const androidEnglish = read("android/app/src/main/res/values/strings.xml");
+    const androidChinese = read("android/app/src/main/res/values-zh-rCN/strings.xml");
+    expect(iosEnglish).toContain('"push.notify.turn.completed.title"');
+    expect(iosChinese).toContain('"push.notify.turn.completed.title"');
+    expect(androidEnglish).toContain('name="push_notify_turn_completed_title"');
+    expect(androidChinese).toContain('name="push_notify_turn_completed_title"');
+  });
+
+  it("registers the iOS strings in the app target", () => {
+    expect(xcodeProject).toContain("Localizable.strings in Resources");
   });
 });
 

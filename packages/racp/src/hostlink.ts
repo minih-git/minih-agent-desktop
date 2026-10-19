@@ -2,17 +2,20 @@ import type { Principal } from "@minih-agent/agent-host";
 import * as Value from "typebox/value";
 
 import {
+  RACP_HOST_CAPABILITIES,
   RACP_HOSTLINK_CLOSE_CODES,
   RACP_HOSTLINK_VERSION,
   RacpDeviceGrantFrameSchema,
   RacpDeviceRequestFrameSchema,
   RacpDeviceRevokeFrameSchema,
   RacpHostCapabilitiesFrameSchema,
+  RacpHostNotifyFrameSchema,
   type RacpDeviceGrantFrame,
   type RacpDeviceRequestFrame,
   type RacpDeviceRevokeFrame,
   type RacpHostLinkCloseCode,
   type RacpHostLinkFrame,
+  type RacpHostNotify,
   type RacpHostRouteContext,
 } from "@minih-agent/shared";
 
@@ -75,6 +78,26 @@ export type HostLinkHostOptions = {
    * the account's other Hosts. Absent: a revocation is only sent on a live link.
    */
   revocations?: DeviceRevocationQueue | null;
+  /**
+   * Reports the four notification-worthy events of §11.6 to the Gateway, so it
+   * can push a redacted notification. When present this Host advertises
+   * `push.notify` on every link and may send `host.notify` for each event; when
+   * absent it advertises nothing and no push names it.
+   *
+   * A `LinkNotifier` owns the current sender: `attach` on link-up, `detach` on
+   * link-down, so a notification is never written to a socket that is gone and
+   * nothing is queued. A notification describes something the user could still
+   * act on, and a stale one is worse than none.
+   */
+  notifier?: HostNotifier | null;
+};
+
+/** The Host side of `host.notify` (§11.6): ids and a kind, nothing else. */
+export type HostNotifier = {
+  /** Hand this link its sender; called once per link, before any frame. */
+  attach: (send: (notify: RacpHostNotify) => void) => void;
+  /** The link that owned the current sender is gone. */
+  detach: () => void;
 };
 
 /**
@@ -120,19 +143,38 @@ export class HostLinkHost {
     private readonly socket: HostLinkSocket,
   ) {
     socket.onMessage((frame) => this.handleFrame(frame));
-    socket.onClose(() => this.closeAll(RACP_HOSTLINK_CLOSE_CODES.hostClosed, "the Host link was lost"));
+    socket.onClose(() => {
+      // The link that owned this Host's notification sender is gone: detach
+      // before anything else, so a racing notification cannot be written to a
+      // closed socket.
+      this.options.notifier?.detach();
+      this.closeAll(RACP_HOSTLINK_CLOSE_CODES.hostClosed, "the Host link was lost");
+    });
     socket.onError((error) => {
       this.options.log("error", "host link socket error", { error: String(error) });
     });
     // Announce capabilities on every link, so a Gateway that restarted (or a
     // reconnected link) knows what this Host supports before it sends a device
-    // frame. A Host with no device directory sends nothing and is reported to
-    // the client as unable to confirm (§11.5).
-    if (this.options.devices) {
+    // frame. A Host with no device directory and no notifier sends nothing and
+    // is reported to the client as unable to confirm (§11.5).
+    const capabilities = [
+      ...(this.options.devices ? this.options.devices.capabilities() : []),
+      // §11.6: only a Host that will actually report events advertises this.
+      ...(this.options.notifier ? [RACP_HOST_CAPABILITIES.pushNotify] : []),
+    ];
+    if (capabilities.length > 0 || this.options.devices) {
       this.send({
         link: RACP_HOSTLINK_VERSION,
         type: "host.capabilities",
-        capabilities: this.options.devices.capabilities(),
+        capabilities,
+      });
+    }
+    // §11.6: the notifier is handed a sender for this link, and it never
+    // outlives it — a notification about an event the client already handled
+    // would be noise, so nothing is queued.
+    if (this.options.notifier) {
+      this.options.notifier.attach((notify) => {
+        this.send({ link: RACP_HOSTLINK_VERSION, type: "host.notify", notify });
       });
     }
     // A revocation made while the link was down goes out now, before anything
@@ -271,6 +313,12 @@ export class HostLinkHost {
         // Only a Host sends this; receiving one here is the same protocol
         // violation as the other Gateway-only frames.
         this.closeAll(RACP_HOSTLINK_CLOSE_CODES.protocolError, "unexpected host.capabilities frame");
+        return;
+      case "host.notify":
+        // A notification is Host to Gateway only. A Gateway that sends one is
+        // misconfigured; refuse the frame but keep the link, because dropping a
+        // notification is harmless while dropping the link is not.
+        this.options.log("warn", "host link ignored an unexpected host.notify frame");
         return;
     }
   }
@@ -577,6 +625,7 @@ export class HostLinkGatewayMux {
   private readonly capabilityHandlers: Array<(capabilities: string[]) => void> = [];
   private readonly deviceGrantHandlers: Array<(frame: RacpDeviceGrantFrame) => void> = [];
   private readonly deviceRevokeHandlers: Array<(frame: RacpDeviceRevokeFrame) => void> = [];
+  private readonly hostNotifyHandlers: Array<(notify: RacpHostNotify) => void> = [];
   private socketOpen = true;
 
   constructor(
@@ -598,6 +647,7 @@ export class HostLinkGatewayMux {
       this.capabilityHandlers.length = 0;
       this.deviceGrantHandlers.length = 0;
       this.deviceRevokeHandlers.length = 0;
+      this.hostNotifyHandlers.length = 0;
     });
     socket.onError((error) => this.log("error", "gateway mux socket error", { error: String(error) }));
   }
@@ -622,6 +672,11 @@ export class HostLinkGatewayMux {
   /** Receive a signed device revocation from a Host. */
   onDeviceRevoke(handler: (frame: RacpDeviceRevokeFrame) => void): void {
     this.deviceRevokeHandlers.push(handler);
+  }
+
+  /** Receive one redacted notification event a Host reported (§11.6). */
+  onHostNotify(handler: (notify: RacpHostNotify) => void): void {
+    this.hostNotifyHandlers.push(handler);
   }
 
   open(clientConnectionId: string, routeContext: RacpHostRouteContext, credential: string): void {
@@ -724,6 +779,18 @@ export class HostLinkGatewayMux {
         return;
       }
       for (const handler of [...this.deviceRevokeHandlers]) handler(parsed);
+      return;
+    }
+    // ---- Redacted push (§11.6, R5 PR-6) -----------------------------------
+    // Dropped without closing the link when it is malformed, and ignored
+    // entirely when nothing listens, which is exactly what an older Gateway
+    // does with a newer Host's frame (§11.4 rule 6).
+    if (parsed.type === "host.notify") {
+      if (!Value.Check(RacpHostNotifyFrameSchema, parsed)) {
+        this.log("warn", "gateway mux dropped malformed host.notify frame");
+        return;
+      }
+      for (const handler of [...this.hostNotifyHandlers]) handler(parsed.notify);
     }
   }
 }

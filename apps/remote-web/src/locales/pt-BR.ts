@@ -183,6 +183,16 @@ export const ptBR: Record<TranslationKey, string> = {
   "operation.accountSignIn": "Entrada na conta",
   "operation.accountDevice": "Solicitação do dispositivo",
 
+  "push.notify.approval.requested.title": "Precisa da sua decisão",
+  "push.notify.approval.requested.body": "Uma sessão espera a sua aprovação para uma ação.",
+  "push.notify.input.requested.title": "Precisa da sua decisão",
+  "push.notify.input.requested.body": "Uma sessão espera a sua resposta.",
+  "push.notify.turn.completed.title": "Turno concluído",
+  "push.notify.turn.completed.body": "Uma sessão concluiu o turno.",
+  "push.notify.turn.failed.title": "Turno falhou",
+  "push.notify.turn.failed.body": "O turno de uma sessão falhou.",
+  "push.disabled": "As notificações estão desativadas nesta build.",
+
   "operation.pair": "Emparelhamento",
   "operation.sessionList": "Carregar sessões",
   "operation.sessionAttach": "Carregar a sessão",

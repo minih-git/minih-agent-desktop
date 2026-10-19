@@ -22,6 +22,7 @@ import { createBackendRouter, type BackendRouter } from "../remote/backend-route
 import { createRemoteHostsBoot, setActiveRemoteHostsBoot } from "./remote-hosts";
 import { createGatewayLinkBootstrap, setActiveGatewayLink } from "./gateway-link";
 import { racpGatewayLinkPort } from "../remote/gateway-link/racp-gateway-link-port.js";
+import { HostLinkNotifier } from "@minih-agent/racp";
 import {
   createMcpControlController,
   McpControlServer,
@@ -260,6 +261,13 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
     }).catch((error: unknown) => {
       logger.app("runtime", "warn", "remote host boot failed", { data: String(error) });
     });
+    // Redacted push (§11.6, R5 PR-6): ONE notifier for this desktop. The Agent
+    // Host reports the four events (§11.6) and the Gateway link carries them;
+    // the link core attaches the sender while a link is up and detaches it when
+    // it ends, so a notification never goes into a dead socket.
+    const notifyHost = new HostLinkNotifier({
+      log: (level, message, data) => logger.app("runtime", level, message, { data }),
+    });
     state.agentHostBridge = createAgentHostBridge({
       invoke: invokeIpc,
       channels: IPC.invoke,
@@ -269,6 +277,7 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
         sendToRenderer(IPC.event.agentQueueChanged, event);
         deps.onSessionQueueChange?.();
       },
+      onNotifyEvent: (event) => notifyHost.notify(event),
       log: (level, message, data) => logger.app("runtime", level, message, { data }),
     });
     // Desktop as a connected Host (rollout R5, ADR 0331). Creation is side
@@ -309,6 +318,9 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
       // main pushes the request there and the notice beside it.
       emitDeviceRequest: (request) => sendToRenderer(IPC.event.remoteGatewayDeviceRequest, request),
       emitDeviceNotice: (notice) => sendToRenderer(IPC.event.remoteGatewayDeviceNotice, notice),
+      // Redacted push (§11.6): the link service carries the notifier to
+      // `host.notify`, and the Agent Host above feeds it the four events.
+      notifier: notifyHost,
       log: (level, message, data) =>
         logger.app("runtime", level, message, { data: formatRemoteLogData(data) }),
     });

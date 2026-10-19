@@ -83,7 +83,9 @@ the resolved client address is the TCP peer and no account route exists.
   key's `allowed_peer_cidrs` is evaluated against the real caller. Account mode
   adds `POST /v1/account/login`, `POST /v1/account/logout`,
   `GET /v1/account/hosts`, `POST /v1/account/devices`, and
-  `GET /v1/account/devices/{requestId}`;
+  `GET /v1/account/devices/{requestId}`. `PUT`/`DELETE /v1/push/registration`
+  exist whether or not account mode is on, because push belongs to a device in
+  either flow (see "Redacted push" below).
   `GET /v1/hosts` and every `/hosts/{hostId}/...` route still accept device
   tokens only. Account mode
   without the trusted-proxy pair logs a startup warning when the client API
@@ -181,6 +183,70 @@ remote-gateway serve \
   --router-client-ip-header X-Forwarded-For
 ```
 
+### Redacted push (R5 PR-6, R7 package G)
+
+Push is optional and tells a user that an approval or an input request is waiting,
+or that a turn finished or failed — never what the session said (ADR 0331
+decision 7, protocol §11.6, security gate 34). It is **off** until the operator
+configures a provider: `PUT /v1/push/registration` then answers
+`enabled: false` and stores nothing.
+
+```sh
+remote-gateway serve \
+  --data-dir /var/lib/minih-remote-gateway \
+  --hostlink-listen 11.12.0.1:8787 \
+  --client-listen 127.0.0.1:8788 \
+  --allowed-origin https://gateway.example.com \
+  --apns-key-file /etc/minih-remote-gateway/apns.p8 \
+  --apns-key-id ABCDE12345 \
+  --apns-team-id TEAM123456 \
+  --apns-topic app.example.remote \
+  --fcm-service-account-file /etc/minih-remote-gateway/firebase-service-account.json
+```
+
+* **APNs** needs all four flags or none: the `.p8` signing key, its key id, the
+  Apple team id, and the bundle id notifications belong to. The Gateway speaks
+  HTTP/2 with an ES256 provider JWT and refreshes it well inside Apple's
+  one-hour window.
+* **FCM** takes the service-account JSON (the file Firebase issues, holding
+  `client_email`, `private_key`, and `project_id`). The Gateway exchanges it for
+  an OAuth2 access token and calls the HTTP v1 API; the token is cached until a
+  minute before it expires.
+* Both files are read once at startup and must be regular files, owned by the
+  running user, and not readable by anyone else (`chmod 600`) — the same rule as
+  `--access-key-file`. A half-configured provider refuses to start, and no
+  credential ever appears in a log line, an audit record, or an error message.
+* `--apns-endpoint`, `--fcm-endpoint`, and `--fcm-token-uri` exist so a test
+  deployment can point at a local stub; they are refused without the matching
+  credentials, because a test endpoint alone configures nothing. All three must
+  be absolute `https:` URLs and are validated at startup: an access token or a
+  provider token travels to them.
+* **Every provider call has a deadline** (10 seconds), and the APNs HTTP/2
+  session is pooled between pushes and dropped on error, `GOAWAY`, five idle
+  minutes, or shutdown. A provider that accepts the connection and then goes
+  silent therefore costs one timeout instead of a leaked connection, and one
+  device's failure never delays the others.
+* **A registration belongs to a device.** An account-mode device is pushed about
+  every Host of its account, a §11.4 device only about its own Host. Registering
+  again replaces the token; a revocation, or a provider answer that says *this*
+  token is gone (`410` / `Unregistered`, FCM `UNREGISTERED`), deletes it. A wrong
+  `--apns-topic` (`DeviceTokenNotForTopic`), a token on the wrong APNs environment
+  (`BadDeviceToken`), or a bare FCM `404` is a configuration error that affects
+  every token, so it deletes nothing.
+  The device's state is re-checked inside the write, so a registration request
+  that was in flight when the device was revoked is answered `UNAUTHORIZED`
+  instead of recreating the row. Per-Host and per-device budgets keep a looping
+  Host from becoming a storm on someone's phone.
+* **What a push contains**: a fixed kind, `push.notify.<kind>.title` /
+  `.body` (keys the app resolves from its own catalog), and the Host, session,
+  approval, and event ids — every id restricted to `[A-Za-z0-9._:-]{1,128}` so a
+  Host cannot smuggle text into one. The audit log records the event kind, the
+  Host, and the device — nothing else.
+* **The app renders the text**, including in the background: the eight keys are
+  generated into the app's own iOS `Localizable.strings` and Android
+  `strings.xml` (`apps/remote-web/scripts/generate-push-strings.mjs`), so the
+  operator brings credentials and bundle ids, not translations.
+
 ### Data directory
 
 | Path | Contents |
@@ -193,6 +259,7 @@ remote-gateway serve \
 | `device-grants.json` | Signed grants held for offline Hosts: `grantId`, `requestId`, `accountId`, `signerHostId`, `deviceId`, token **hash**, `roles`, `issuedAt`, the signed `deliverUntil`, the Gateway's own `relayUntil`, signature, signer certificate — never a token |
 | `device-revocations.json` | Signed revocations held for offline Hosts: `revokeId`, `accountId`, `signerHostId`, `deviceId`, `revokedAt`, `relayUntil`, signature, signer certificate |
 | `account-sessions.json` | `sessionId`, `accountId`, session token **hash**, `createdAt`, `expiresAt`, `revokedAt` — never the AccessKey |
+| `push-registrations.json` | One per device: `deviceId`, `accountId` (account mode), `hostId`, `hostIds` (the audience captured at registration), `platform`, provider `token`, `appId`, `createdAt`, `updatedAt`. The provider token is a secret: the file is `0600` and the token is never returned by a route or written to the audit log |
 | `audit/YYYY-MM-DD.jsonl` | `{ts, op, hostId?, deviceId?, accountId?, result, ip}` — never a token or content |
 | `gateway-secret` | Random 32-byte CSRF HMAC secret |
 

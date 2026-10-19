@@ -20,6 +20,7 @@ import {
   RacpServer,
   bindRacpWebSocket,
   readCertificateAccountBinding,
+  HostLinkNotifier,
   startHostLink,
   type HostLinkHandle,
   type RacpHostOperations,
@@ -178,12 +179,19 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
     },
     listPendingTools: (sessionId) => listPendingToolRequests(getHost, sessionId),
   };
+  // Redacted push (§11.6): the Host reports the four notification-worthy events
+  // and the Gateway decides who hears about them. The notifier holds the sender
+  // of the current link, so a notification is never written to a dead socket.
+  const notifier = new HostLinkNotifier({ log: (level, message, data) => log(level, message, data) });
   const agentHost = new AgentHost({
     runtime,
     sessions: createHostSessionPort(getHost),
     approvals,
     queueStore: createHostQueueStore(getHost),
     localApprovalLifetimeMs: APPROVAL_REQUEST_TIMEOUT_MS,
+    onNotifyEvent: (event) => {
+      notifier.notify(event);
+    },
   });
   const plans = new PlanExecutionDispatcher({ getHost, getSidecar, launch, runtime, log });
 
@@ -398,6 +406,7 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
       log: (level, message, data) => log(level, message, data),
       devices,
       revocations,
+      notifier,
       onStatus: (status) => log("info", "gateway link status", { state: status.state, since: status.since }),
     });
   }

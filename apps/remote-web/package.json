@@ -19,6 +19,7 @@
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.5.3",
     "@capacitor/ios": "^8.5.3",
+    "@capacitor/push-notifications": "^8.1.3",
     "@minih-agent/racp": "workspace:*",
     "@minih-agent/shared": "workspace:*",
     "i18next": "^26.3.6",

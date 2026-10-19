@@ -183,6 +183,16 @@ export const es: Record<TranslationKey, string> = {
   "operation.accountSignIn": "Inicio de sesión",
   "operation.accountDevice": "Solicitud del dispositivo",
 
+  "push.notify.approval.requested.title": "Necesita tu decisión",
+  "push.notify.approval.requested.body": "Una sesión espera tu aprobación de una acción.",
+  "push.notify.input.requested.title": "Necesita tu decisión",
+  "push.notify.input.requested.body": "Una sesión espera tu respuesta.",
+  "push.notify.turn.completed.title": "Turno terminado",
+  "push.notify.turn.completed.body": "Una sesión terminó su turno.",
+  "push.notify.turn.failed.title": "Turno fallido",
+  "push.notify.turn.failed.body": "El turno de una sesión falló.",
+  "push.disabled": "Las notificaciones están desactivadas en esta compilación.",
+
   "operation.pair": "Emparejamiento",
   "operation.sessionList": "Cargar sesiones",
   "operation.sessionAttach": "Cargar la sesión",
