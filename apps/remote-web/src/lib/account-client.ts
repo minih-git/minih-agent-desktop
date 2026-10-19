@@ -150,6 +150,13 @@ async function accountRequest(
  * nothing account-scoped would work from here and the AccessKey entry stays
  * hidden. A transport failure is `unknown`: the caller keeps the existing
  * pairing flow rather than showing an entry that cannot work.
+ *
+ * "Without a credential" is enforced, not assumed: `credentials: "omit"` and no
+ * `Authorization` header. Asking the browser for its cookies would make the
+ * probe authenticated whenever a session is still alive — a session outlives an
+ * abandoned device request for twelve hours — and the authenticated answer
+ * (`200`) is none of the probe's answers, which hid the AccessKey entry for the
+ * rest of the session.
  */
 export async function probeAccountMode(options: AccountClientOptions): Promise<AccountMode> {
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -157,7 +164,9 @@ export async function probeAccountMode(options: AccountClientOptions): Promise<A
     const response = await fetchImpl(`${options.gatewayOrigin}${ACCOUNT_ROUTES.hosts}`, {
       method: "GET",
       headers: { accept: "application/json" },
-      credentials: "include",
+      // No cookie, no session: the route's own `401` is the signal this probe
+      // reads, and it is only honest when nothing authenticates the request.
+      credentials: "omit",
     });
     if (response.status === 401) return "supported";
     if (response.status === 403 || response.status === 404) return "unsupported";

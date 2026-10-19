@@ -855,10 +855,12 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   `remote-control-router-account-binding`): the account-mode client in
   `apps/remote-web`. Account mode is discovered from a credential-free
   `GET /v1/account/hosts` — only a `401` offers the AccessKey entry, so a Gateway
-  without account mode keeps the pairing flow and shows nothing new; the
-  AccessKey is presented once and is never stored, logged, or put in a URL; the
-  device request shows the account's whole roster up front, including the Hosts
-  that cannot confirm, and offers the §11.4 ticket when none of them can; the
+  without account mode keeps the pairing flow and shows nothing new, and the
+  probe sends no session cookie either, so a live account session left behind by
+  an abandoned device request cannot hide the entry; the AccessKey is presented
+  once and is never stored, logged, or put in a URL; the device request shows the
+  account's whole roster up front, including the Hosts that cannot confirm, and
+  offers the §11.4 ticket when none of them can; the
   status route is polled every two seconds with exponential backoff, an
   eight-failure ceiling, and the Gateway's own `Retry-After` honoured on
   `RATE_LIMITED`; the client's own deadline ends the wait without another read.

@@ -359,12 +359,13 @@ Gateway 全部通过，且 `05-security/02-remote-control-security.md` 的安全
   `E2E-REMOTE-ACCOUNT-*` 场景仍为 Draft，因为它们的桌面与 webview 步骤需要工作包 E2 与 F。
 
 - R7 工作包 F 已交付（2026-10-18，D666 / ADR `remote-control-router-account-binding`）：
-  `apps/remote-web` 的账户模式客户端。账户模式由一个不带凭据的 `GET /v1/account/hosts`
-  探测——只有 `401` 才显示 AccessKey 入口，因此不支持账户模式的 Gateway 完全保持原有配对
-  流程、不多显示任何东西；AccessKey 只提交一次，绝不写入存储、日志或 URL；申请设备时立即
-  展示账户内完整的 Host 花名册（包括无法确认的主机），一台都确认不了时提供协议 §11.4 的
-  票据；状态路由每两秒轮询一次，失败按指数退避、连续八次失败即结束，`RATE_LIMITED` 时严格
-  遵守 Gateway 给的 `Retry-After`，客户端自己的截止时间也会在不发起新读取的情况下结束等待。
+  `apps/remote-web` 的账户模式客户端。账户模式由一个不带凭据（也不带会话 cookie）的
+  `GET /v1/account/hosts` 探测——只有 `401` 才显示 AccessKey 入口，因此不支持账户模式的
+  Gateway 完全保持原有配对流程、不多显示任何东西；AccessKey 只提交一次，绝不写入存储、
+  日志或 URL；申请设备时立即展示账户内完整的 Host 花名册（包括无法确认的主机），一台都
+  确认不了时提供协议 §11.4 的票据；状态路由每两秒轮询一次，失败按指数退避、连续八次失败
+  即结束，`RATE_LIMITED` 时严格遵守 Gateway 给的 `Retry-After`，客户端自己的截止时间也会
+  在不发起新读取的情况下结束等待。
   拿到授权后按 profile 保存设备——浏览器每台 Host 一个 `HttpOnly` cookie，原生端写入平台
   安全存储——随后通过新增的 `POST /v1/account/logout` 作废账户会话，因为浏览器无法自己清除
   `HttpOnly` cookie。Gateway 侧新增了该登出路由、按 Host 的浏览器设备交接（含
