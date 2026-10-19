@@ -1,27 +1,32 @@
-/**
- * Sessions of one host (PR-4).
- *
- * The list comes from `session/list`; the running state is the Host's own
- * `RacpSession.status`. Creating a session is out of scope: the desktop owns
- * session creation.
- */
 import type { RacpSession } from "@minih-agent/shared";
+import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { AppShell, Button, Card, FailureBanner, Pill } from "../components/Chrome.js";
 import { useHostStatus } from "../hooks/useHostStatus.js";
 import type { HostCredential } from "../lib/credential-port.js";
 import type { OperationFailure } from "../lib/errors.js";
 import { createHostClient, type HostClient } from "../lib/host-client.js";
 import { listSessions } from "../lib/mutations.js";
 import { gatewayOrigin } from "../lib/runtime.js";
+import { groupSessionsByDate } from "../lib/session-format.js";
+import { Banner } from "../components/ui/Banner.js";
+import { Button } from "../components/ui/Button.js";
+import { EmptyState } from "../components/ui/EmptyState.js";
+import { ListGroup } from "../components/ui/ListGroup.js";
+import { NavBar } from "../components/ui/NavBar.js";
+import { Screen, ScreenContent } from "../components/ui/Screen.js";
+import { SectionHeader } from "../components/ui/SectionHeader.js";
+import { Skeleton } from "../components/ui/Skeleton.js";
+import { StatusDot } from "../components/ui/StatusDot.js";
+import { SessionRow } from "../components/sessions/SessionRow.js";
 
-function statusTone(status: RacpSession["status"]): "ok" | "warn" | "bad" | "neutral" {
-  if (status === "running") return "ok";
-  if (status === "waiting_permission") return "warn";
-  if (status === "error") return "bad";
-  return "neutral";
+export interface SessionsScreenProps {
+  hostId: string;
+  hostLabel: string;
+  credential: HostCredential;
+  onOpenSession: (session: RacpSession) => void;
+  onBack: () => void;
 }
 
 export function SessionsScreen({
@@ -30,16 +35,11 @@ export function SessionsScreen({
   credential,
   onOpenSession,
   onBack,
-}: {
-  hostId: string;
-  hostLabel: string;
-  credential: HostCredential;
-  onOpenSession: (session: RacpSession) => void;
-  onBack: () => void;
-}) {
-  const { t, i18n } = useTranslation();
+}: SessionsScreenProps) {
+  const { t } = useTranslation();
   const [sessions, setSessions] = useState<RacpSession[] | null>(null);
   const [failure, setFailure] = useState<OperationFailure | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const clientRef = useRef<HostClient | null>(null);
   const credentialKey = credential.kind === "cookie" ? credential.csrfToken : credential.token;
   const { status } = useHostStatus(hostId, credential);
@@ -62,7 +62,9 @@ export function SessionsScreen({
   const load = useCallback(async (): Promise<void> => {
     const client = clientRef.current;
     if (!client) return;
+    setIsRefreshing(true);
     const result = await listSessions(client);
+    setIsRefreshing(false);
     if (result.ok) {
       setSessions(result.value);
       setFailure(null);
@@ -75,51 +77,108 @@ export function SessionsScreen({
     void load();
   }, [load]);
 
-  return (
-    <AppShell
-      title={hostLabel}
-      onBack={onBack}
-      actions={
-        <>
-          <Pill tone={status.kind === "online" ? "ok" : status.kind === "revoked" ? "bad" : "warn"}>
-            {t(`hosts.status.${status.kind}`)}
-          </Pill>
-          <Button variant="ghost" aria-label={t("common.refresh")} title={t("common.refresh")} onClick={() => void load()}>
-            {t("common.refresh")}
-          </Button>
-        </>
+  // Foreground refresh
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void load();
       }
-    >
-      {failure ? <FailureBanner failure={failure} operationKey="operation.sessionList" onDismiss={() => setFailure(null)} /> : null}
-      <h2 className="text-sm font-semibold">{t("sessions.title")}</h2>
-      {sessions === null ? (
-        <p className="py-4 text-center text-sm text-slate-500 dark:text-slate-400">{t("app.loading")}</p>
-      ) : sessions.length === 0 ? (
-        <Card>
-          <p className="text-sm text-slate-600 dark:text-slate-300">{t("sessions.empty")}</p>
-        </Card>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {sessions.map((session) => (
-            <li key={session.id}>
-              <button
-                type="button"
-                className="app-tap w-full rounded-xl border border-slate-200 bg-white p-3 text-left hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
-                aria-label={`${session.title || session.id}`}
-                onClick={() => onOpenSession(session)}
-              >
-                <span className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{session.title || session.id}</span>
-                  <Pill tone={statusTone(session.status)}>{t(`sessions.status.${session.status}`)}</Pill>
-                </span>
-                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
-                  {t("sessions.updated", { date: new Date(session.updatedAt).toLocaleString(i18n.language) })}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </AppShell>
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [load]);
+
+  const isOnline = status.kind === "online";
+  const subStatus = (
+    <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--rm-text-secondary)]">
+      <StatusDot status={isOnline ? "online" : "offline"} size="small" />
+      <span>{isOnline ? t("hosts.status.online") : t("hosts.status.offline")}</span>
+    </span>
+  );
+
+  const groups = sessions ? groupSessionsByDate(sessions) : [];
+
+  return (
+    <Screen>
+      <NavBar
+        title={hostLabel}
+        subtitle={subStatus}
+                onBack={onBack}
+        trailing={
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={isRefreshing}
+            aria-label={t("common.refresh")}
+            className="flex h-9 w-9 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] active:opacity-60"
+          >
+            <RefreshCw
+              className={`h-5 w-5 ${isRefreshing ? "animate-spin" : ""}`}
+              aria-hidden="true"
+            />
+          </button>
+        }
+      />
+
+      <ScreenContent>
+        {failure ? (
+          <div className="mb-4">
+            <Banner
+              tone="error"
+              action={
+                <Button variant="plain" size="small" onClick={() => void load()}>
+                  {t("common.refresh")}
+                </Button>
+              }
+            >
+              {failure.message || t("operation.sessionList")}
+            </Banner>
+          </div>
+        ) : null}
+
+        {sessions === null ? (
+          <div className="space-y-4">
+            <SectionHeader title=" " />
+            <ListGroup>
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="flex min-h-[56px] items-center gap-3 px-4 py-3">
+                  <Skeleton className="h-2 w-2 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-3/5" />
+                    <Skeleton className="h-3 w-1/3" />
+                  </div>
+                </div>
+              ))}
+            </ListGroup>
+          </div>
+        ) : sessions.length === 0 ? (
+          <EmptyState
+            title={t("session.emptyTitle")}
+            description={t("session.emptyDesc")}
+          />
+        ) : (
+          <div className="space-y-5">
+            {groups.map((group) => (
+              <div key={group.key}>
+                <SectionHeader title={t(group.labelKey)} />
+                <ListGroup>
+                  {group.items.map((session) => (
+                    <SessionRow
+                      key={session.id}
+                      session={session}
+                      onOpen={() => onOpenSession(session)}
+                    />
+                  ))}
+                </ListGroup>
+              </div>
+            ))}
+
+            <p className="pt-2 text-center text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
+              {t("session.computerNotice")}
+            </p>
+          </div>
+        )}
+      </ScreenContent>
+    </Screen>
   );
 }

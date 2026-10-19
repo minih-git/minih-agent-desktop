@@ -27,7 +27,10 @@ const PROBE_LINE = "REMOTE_WEB_PROBE";
 const HELPERS = `(() => {
   const buttons = () => Array.from(document.querySelectorAll("button"));
   const textOf = (element) => (element.textContent || "").trim();
-  const buttonWithText = (text) => buttons().find((candidate) => textOf(candidate) === text) || null;
+  const buttonWithText = (text) => buttons().find((candidate) => {
+    const candidateText = textOf(candidate);
+    return candidateText === text || candidateText.startsWith(text);
+  }) || null;
   globalThis.__rw = {
     body: () => document.body.innerText,
     button: (text) => { const found = buttonWithText(text); return found ? { disabled: found.disabled } : null; },
@@ -36,7 +39,7 @@ const HELPERS = `(() => {
     approvalCards: () => Array.from(document.querySelectorAll("section")).filter((card) => textOf(card).includes("Approval needed")).length,
     approvalButtons: () => buttons().filter((candidate) => (candidate.getAttribute("aria-label") || "").startsWith("Approval needed:")).map((candidate) => candidate.getAttribute("aria-label")),
     toolRows: () => Array.from(document.querySelectorAll("li")).filter((row) => textOf(row).startsWith("Tool")).length,
-    turnLabel: () => Array.from(document.querySelectorAll("span")).map(textOf).find((label) => label.startsWith("Turn ")) || null,
+    turnLabel: () => { const labels = Array.from(document.querySelectorAll("span")).map(textOf); if (labels.includes("Running") || labels.includes("Turn running") || labels.includes("Stopping…")) return "Turn running"; return labels.find((label) => label.startsWith("Turn ")) || null; },
     hasSession: (title) => document.querySelector('[aria-label="' + title + '"]') !== null,
     write: (selector, value) => {
       const field = document.querySelector(selector);
@@ -193,8 +196,16 @@ async function runViewport(view, openWindows) {
     await evaluate(webContents, `(() => { ${HELPERS}; return true; })()`);
 
     // 1. Pair through the UI with the ticket the Host printed.
-    await waitFor(webContents, "__rw.button('Add host') !== null", "the host list");
-    await clickText(webContents, "Add host");
+    await waitFor(
+      webContents,
+      "__rw.button('Use a pairing ticket') !== null || __rw.button('Add host') !== null",
+      "the host list or connect screen",
+    );
+    if (await evaluate(webContents, "__rw.button('Use a pairing ticket') !== null")) {
+      await clickText(webContents, "Use a pairing ticket");
+    } else {
+      await clickText(webContents, "Add host");
+    }
     await waitFor(webContents, "document.querySelector('#pair-ticket') !== null", "the pairing form");
     await evaluate(webContents, `__rw.write('#pair-ticket', ${JSON.stringify(view.ticket)})`);
     await evaluate(webContents, `__rw.write('#pair-label', ${JSON.stringify(view.label)})`);
@@ -242,6 +253,19 @@ async function runViewport(view, openWindows) {
 
     // 4. Approve once; the tool must run once.
     await clickAria(webContents, "Approval needed: Allow once");
+    // High-risk tool calls show a secondary confirmation sheet (Spec O4).
+    await waitFor(
+      webContents,
+      `(() => {
+        const dialog = document.querySelector('[role="dialog"]');
+        if (dialog) {
+          const btn = Array.from(dialog.querySelectorAll("button")).find((b) => (b.textContent || "").trim() === "Allow once");
+          if (btn) { btn.click(); return true; }
+        }
+        return __rw.approvalCards() === 0;
+      })()`,
+      "high-risk confirmation sheet or resolved approval",
+    );
     await waitFor(webContents, "__rw.approvalCards() === 0 && __rw.toolRows() === 1", "the approved tool row");
     await waitFor(webContents, "document.body.innerText.includes('Turn completed')", "the approved turn to complete");
     await capture("05-approved");
@@ -251,13 +275,17 @@ async function runViewport(view, openWindows) {
     await clickText(webContents, "Send");
     await waitFor(webContents, "__rw.turnLabel() === 'Turn running'", "the running turn before Stop");
     await clickText(webContents, "Stop");
+    await waitFor(webContents, "__rw.button('Stop after this step') !== null", "the stop sheet");
+    await clickText(webContents, "Stop after this step");
     await waitFor(webContents, "__rw.turnLabel() !== 'Turn running'", "the stopped turn");
     observed.afterStop = await evaluate(webContents, "__rw.turnLabel()");
     await type("hold the turn open for an interrupt");
     await clickText(webContents, "Send");
     await waitFor(webContents, "__rw.turnLabel() === 'Turn running'", "the running turn before Interrupt");
-    await clickText(webContents, "Interrupt");
-    await waitFor(webContents, "__rw.turnLabel() !== 'Turn running'", "the interrupted turn");
+    await clickText(webContents, "Stop");
+    await waitFor(webContents, "__rw.button('Stop now') !== null", "the stop sheet before interrupt");
+    await clickText(webContents, "Stop now");
+    await waitFor(webContents, "__rw.turnLabel() === 'Turn interrupted'", "the interrupted turn");
     observed.afterInterrupt = await evaluate(webContents, "__rw.turnLabel()");
     await capture("06-stop-interrupt");
 

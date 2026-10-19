@@ -267,6 +267,16 @@ export const en = {
   "session.emptyTitle": "No sessions on this computer yet",
   "session.emptyDesc": "Start a task on the computer and it will show up here. Sessions can't be created from the phone.",
   "session.computerNotice": "Sessions can only be created on the computer.",
+  "timeline.sending": "Sending…",
+  "session.sheet.confirmHighRiskTitle": "High-risk action",
+  "session.sheet.confirmHighRiskMsg": "This command may modify system files or execute network requests. Are you sure you want to allow it?",
+  "session.sheet.confirmHighRiskBtn": "Allow once",
+  "approval.highRiskWarn": "High-risk action: verify the command before allowing.",
+  "approval.sessionGrantDesktopOnly": "\"Allow for session\" is only available on the computer.",
+  "input.questionProgress": "Question {{current}} of {{total}}",
+  "common.justNow": "Just now",
+  "common.yesterday": "Yesterday",
+  "session.untitled": "Untitled session",
 } as const;
 
 export type TranslationKey = keyof typeof en;

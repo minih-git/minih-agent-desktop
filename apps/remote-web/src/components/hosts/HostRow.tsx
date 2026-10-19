@@ -71,6 +71,7 @@ export function HostRow({
           className="flex min-w-0 flex-1 items-center gap-3 text-left active:opacity-70"
           aria-label={`${entry.label}，${statusLine}`}
         >
+          <span className="sr-only">Open </span>
           {/* Laptop icon with status dot badge */}
           <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-[var(--rm-bg-inset)] text-[var(--rm-text-secondary)]">
             <Laptop className="h-4 w-4" aria-hidden="true" />

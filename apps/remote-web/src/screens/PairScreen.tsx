@@ -94,6 +94,7 @@ export function PairScreen({
 
         <div className="space-y-1.5">
           <TicketField
+            id="pair-ticket"
             label={t("pair.ticketLabel")}
             placeholder={t("pair.ticketPlaceholder")}
             value={ticket}
