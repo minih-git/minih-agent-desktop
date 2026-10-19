@@ -384,9 +384,11 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
   erases it and writes the tombstone that keeps the same evidence from proposing
   it again
 - The session menu carries Don't learn from this conversation, which sets the
-  per-session exclusion the host stores. The exclusion also refuses an
-  extraction run that is already queued, so a conversation excluded mid-flight
-  is never learned from
+  per-session exclusion the host stores. Excluding a conversation refuses every
+  later claim and releases a lease it already holds, so that run cannot advance
+  the cursor. A run that had already taken its input and is waiting for the
+  model may still write a suggestion, and a suggestion becomes memory only if
+  the user keeps it
 Speech bindings (`AppSettings.speech`) are **not a Settings surface** (ADR
 0291). The host keeps the speech capability and the `speech/*` IPC for plugins
 and for bindings that are already stored, but nothing here picks a
