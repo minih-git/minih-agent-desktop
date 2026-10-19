@@ -21,6 +21,7 @@ Each ADR includes:
 | ID | Title | Status |
 |---|---|---|
 | background-bash-task-ownership | [Host-owned background Bash tasks](background-bash-task-ownership.md) | Accepted for implementation |
+| network-center-gateway-issued-identity | [Gateway-issued network center identity](network-center-gateway-issued-identity.md) | Accepted for implementation |
 | remote-control-router-account-binding | [Router-account binding for remote control](remote-control-router-account-binding.md) | Accepted for implementation (post-MVP; D666; amends ADR 0331) |
 | builtin-session-messaging | [Built-in session messaging tools](builtin-session-messaging.md) | Accepted (D663) |
 | device-local-project-lists-in-config-sync | [Device-local project lists in configuration sync](device-local-project-lists-in-config-sync.md) | Accepted |

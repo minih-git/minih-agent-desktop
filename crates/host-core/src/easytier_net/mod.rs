@@ -1,6 +1,7 @@
 pub mod bootstrap;
 pub mod config;
 pub mod credentials;
+pub mod identity;
 pub mod remote_gateway;
 pub mod runtime;
 pub mod tun_runner;
@@ -46,6 +47,29 @@ pub fn spawn_from_settings_with(
         handle.spawn(async move {
             let mut mgr = manager().lock().await;
             mgr.apply_settings_with(&dir, settings, false, Some(credentials.as_ref()))
+                .await;
+        });
+    }
+}
+
+/// Re-read the gateway identity after the Router row's credentials changed.
+///
+/// A new endpoint or a rotated AccessKey invalidates the identity in effect:
+/// the cached answer belongs to the old gateway, and the tunnel may be running
+/// on a network this account no longer belongs to. The cache is dropped and the
+/// channel restarts (or holds with the reason) exactly once — never polled or
+/// retried, because the gateway locks an IP after a handful of failures.
+pub fn refresh_after_router_credentials_change(
+    data_dir: &Path,
+    app_settings: Option<&Value>,
+    credentials: Arc<dyn BootstrapCredentialProvider>,
+) {
+    let settings = settings_from_app_value(app_settings);
+    let dir = data_dir.to_path_buf();
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(async move {
+            let mut mgr = manager().lock().await;
+            mgr.refresh_identity_with(&dir, settings, Some(credentials.as_ref()))
                 .await;
         });
     }

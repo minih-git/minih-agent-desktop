@@ -34,15 +34,16 @@ export const MINIH_ROUTER_LOOKUP_MAX_IDS = 200;
 export const MINIH_ROUTER_LOOKUP_MAX_MODELS = 5000;
 
 /**
- * The network identity the gateway issued for this AccessKey, or the local
- * configuration when it did not answer. `null` means the channel is off.
+ * The network identity the gateway issued for this AccessKey.
+ *
+ * `null` means there is nothing to show: the channel is off, the identity is the
+ * one the user typed by hand, or the gateway never answered.
  */
 export function easyTierBootstrapLabel(
   status: Pick<EasyTierStatus, "bootstrapSource" | "bootstrapNetworkName">,
 ): string | null {
-  if (status.bootstrapSource === "disabled") return null;
-  if (status.bootstrapSource === "gateway") return status.bootstrapNetworkName || null;
-  return null;
+  if (status.bootstrapSource !== "gateway") return null;
+  return status.bootstrapNetworkName || null;
 }
 
 export function isMinihRouterVendorKey(vendorKey: string | null | undefined): boolean {
@@ -213,9 +214,15 @@ export function minihRouterHeadlineQuota(
   return best;
 }
 
-/** Built-in EasyTier virtual LAN parameters for Minih Router (minih values). */
+/**
+ * Brand network parameters.
+ *
+ * These exist to prefill developer mode's manual identity: save and serialize
+ * paths use the brand-resolved functions below, and gateway mode never starts
+ * from them. No secret is built in — source is public, so a checked-in key is a
+ * published one.
+ */
 export const EASYTIER_DEFAULT_NETWORK_NAME = "minih-router";
-export const EASYTIER_DEFAULT_NETWORK_SECRET = "Minih@9527";
 export const EASYTIER_DEFAULT_PEERS = [
   "udp://router.hmini.org:11012",
   "tcp://router.hmini.org:11012",
@@ -223,9 +230,9 @@ export const EASYTIER_DEFAULT_PEERS = [
 export const EASYTIER_DEFAULT_ROUTER_LAN_URL = "http://11.12.0.1:3001/v1";
 
 /**
- * Brand-resolved EasyTier defaults. The constants above stay at their
- * pre-branding minih values for backward compatibility; settings normalization
- * and preset registration read these so a hungraim build joins its own mesh.
+ * Brand-resolved defaults. The constants above stay at their pre-branding minih
+ * values for backward compatibility; settings normalization, manual-mode
+ * prefills and preset registration read these instead.
  */
 export function easyTierDefaultNetworkName(): string {
   return currentBrandProfile().easyTierNetworkName;
@@ -241,9 +248,19 @@ export type EasyTierMode = "auto" | "no_tun" | "no-tun" | "tun";
 export type EasyTierEffectiveMode = "disabled" | "no_tun" | "no-tun" | "tun";
 export type EasyTierConnectionState = "disabled" | "connecting" | "connected" | "degraded" | "error";
 
+/**
+ * Where the tunnel's network identity comes from.
+ *
+ * `gateway` (the default) takes it from the Router's bootstrap answer and never
+ * starts without one; `manual` is developer mode's opt-in for a Gateway that
+ * does not serve the endpoint.
+ */
+export type EasyTierIdentity = "gateway" | "manual";
+
 export type EasyTierSettings = {
   enabled?: boolean;
   mode?: EasyTierMode;
+  identity?: EasyTierIdentity;
   networkName?: string;
   networkSecret?: string;
   peers?: string[];
@@ -316,12 +333,19 @@ export type EasyTierStatus = {
   /** True when EasyTier hands out the virtual IPv4; false pins `staticIpv4`. */
   dhcp: boolean;
   /** The configured static virtual IPv4, empty when DHCP is on. */
+  /** The configured static virtual IPv4, empty when DHCP is on. */
   staticIpv4: string;
-  /** Where the network identity in effect came from. */
+  /** Which identity mode the saved settings ask for. */
+  identity: EasyTierIdentity;
+  /**
+   * Where the identity in effect came from. `local` means the user typed it by
+   * hand; a gateway-mode channel that is holding reports `gateway` and explains
+   * itself in `bootstrapError`.
+   */
   bootstrapSource: "gateway" | "local" | "disabled";
   /** The network name the gateway issued, empty when it did not answer. */
   bootstrapNetworkName: string;
-  /** Why the bootstrap did not apply, empty when it did. */
+  /** Why the identity is not in effect, empty when it is. */
   bootstrapError: string;
   /** Remote-control account mode; `available` is false when it is off. */
   remoteGateway: EasyTierRemoteGatewayStatus;
@@ -363,14 +387,17 @@ export function normalizeEasyTierSettings(
   const enabled = input?.enabled ?? true;
   const mode: EasyTierMode =
     input?.mode === "tun" ? "tun" : input?.mode === "auto" ? "auto" : "no_tun";
+  // Absent or unrecognized means gateway, the mode that only starts on a gateway
+  // answer. Nothing may quietly opt a normal install into the other one.
+  const identity: EasyTierIdentity = input?.identity === "manual" ? "manual" : "gateway";
   const networkName =
     typeof input?.networkName === "string" && input.networkName.trim().length > 0
       ? input.networkName.trim()
       : easyTierDefaultNetworkName();
+  // Never invent a secret: gateway mode gets it from the bootstrap answer, and
+  // manual mode requires the user to type one.
   const networkSecret =
-    typeof input?.networkSecret === "string" && input.networkSecret.trim().length > 0
-      ? input.networkSecret.trim()
-      : EASYTIER_DEFAULT_NETWORK_SECRET;
+    typeof input?.networkSecret === "string" ? input.networkSecret.trim() : "";
   const peers = Array.isArray(input?.peers)
     ? input.peers
         .filter((peer): peer is string => typeof peer === "string" && isValidEasyTierPeerUrl(peer))
@@ -383,6 +410,7 @@ export function normalizeEasyTierSettings(
   return {
     enabled,
     mode,
+    identity,
     networkName,
     networkSecret,
     peers: peers.length > 0 ? peers : easyTierDefaultPeers(),
@@ -424,6 +452,9 @@ export function validateEasyTierSettings(input: unknown): string | null {
   ) {
     return "easytier.mode must be auto, no_tun, or tun";
   }
+  if (obj.identity !== undefined && obj.identity !== "gateway" && obj.identity !== "manual") {
+    return "easytier.identity must be gateway or manual";
+  }
   if (obj.networkName !== undefined) {
     if (typeof obj.networkName !== "string") return "easytier.networkName must be a string";
     if (obj.networkName.trim().length > 128) {
@@ -435,6 +466,14 @@ export function validateEasyTierSettings(input: unknown): string | null {
     if (obj.networkSecret.trim().length > 256) {
       return "easytier.networkSecret must not exceed 256 characters";
     }
+  }
+  // A manual identity has no built-in secret to fall back on, so an empty one
+  // would join nothing and must not be saved silently.
+  if (
+    obj.identity === "manual" &&
+    (typeof obj.networkSecret !== "string" || obj.networkSecret.trim().length === 0)
+  ) {
+    return "easytier.networkSecret is required when easytier.identity is manual";
   }
   if (obj.peers !== undefined) {
     if (!Array.isArray(obj.peers)) return "easytier.peers must be an array";

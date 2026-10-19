@@ -260,33 +260,57 @@ Minih Router 是自有的模型网关，排在命名预设的第一位。它是�
 - 添加服务的选择器把它单独放在最前面的**推荐**分组；模型配置页为空时，
   **接入 Minih Router** 是主操作。默认模型规则不变：只有当前没有可用默认值时才设为默认。
 - `vendorKey` 不是 models.dev 的提供商，模型元数据按下文“按哪个发布方读取元数据”的中继规则解析。
-- **内置 EasyTier 虚拟局域网通道**：Rust `host-core` 内嵌一个 EasyTier 虚拟局域网节点
-  （`networkName: "minih-router"`，引导节点 `udp://router.hmini.org:11012` 与
-  `tcp://router.hmini.org:11012`，默认局域网网关 `http://11.12.0.1:3001/v1`，
-  持久化在 `settings.app.easytier`）。以上是 `minih` 品牌默认值；`DESKTOP_BRAND=hungraim`
-  构建会编译自己的默认值（`hungraim-router` 网络、`router-mesh.hungraim.com:11023`
-  引导节点、`http://11.123.0.1:3001/v1` 网关、`https://aiapi.hungraim.com/v1`
-  预设地址），来源与 minih 相同的品牌 profile（`packages/shared/src/brand.ts`）。
-  虚拟网段采用独立的
-  `11.12.0.0/24`，确保不会与用户已有的专用私域网段（`11.11.11.0/24`）重叠；网关位于其他网段时设置
-  `routerLanUrl`，并用 `dhcp: false` 加 `ipv4`（IPv4 字面量，可带 `/32`）
-  固定网关自身地址。网关也可以自行下发身份：带 `Authorization: Bearer <AccessKey>`
-  请求 `GET <root>/api/easytier/bootstrap`，返回 `networkName`、`networkSecret`，
-  以及可选的 `gatewayVirtualIpv4`、`peers` 与 `ttlSeconds`。网关应答优先于本地
-  配置，本地配置优先于内置默认值；只替换网关实际应答的字段，因此部分应答也能
-  升级密钥。网关返回 `404` 表示尚未提供该接口，属于受支持的配置而非失败；其他
-  失败一律回落到本地配置，保证公网 URL 继续可用。应答按 AccessKey 的摘要缓存
-  （不保留密钥本身），有效期至少一分钟、至多七天，因此轮换密钥会自然失效，
-  异常的 `ttlSeconds` 既不能禁用缓存也不能无限期固定一个已泄漏的密钥。
-  `EasyTierStatus` 回报 `bootstrapSource`（`gateway` / `local` / `disabled`）与
-  `bootstrapNetworkName`；网关应答生效时，设置面板将网关所属字段置为只读。
-  默认以用户态 **No-TUN** 模式启动
-  （`no_tun = true`、`dhcp = true`），通过本地回环 TCP 端口转发
-  （`127.0.0.1:<local_port> -> 11.12.0.1:3001`）实现，不需要管理员权限；用户也可以
+- **网络中心（虚拟局域网）通道**：Rust `host-core` 内嵌一个 EasyTier 节点
+  （`identity` 为 `gateway`（默认）或 `manual`，持久化在 `settings.app.easytier`；
+  早于该字段的旧数据读回为 `gateway`）。身份**一律由网关下发**（ADR
+  `network-center-gateway-issued-identity`）。
+- **严格模式：先认证，后启动**：只有带 `Authorization: Bearer <AccessKey>` 的
+  `GET <root>/api/easytier/bootstrap` 成功，才允许启动隧道。应答给出 `networkName`、
+  `networkSecret`，以及可选的 `gatewayVirtualIpv4`、`router_lan_access`、`peers`
+  与 `ttlSeconds`。`router_lan_access`（网关自己的控制面地址，例如
+  `http://11.11.11.10:3001`）规范化为 `/v1` 形式后直接作为 `routerLanUrl`；没有它时
+  才按 `gatewayVirtualIpv4` 推导主机，并保留用户的端口与 API 路径。
+- **没有内置身份，也没有回退**：写死的共享密钥（`DEFAULT_EASYTIER_NETWORK_SECRET`）已从 Rust 与
+  TypeScript 两侧彻底删除——公开源码里的固定密钥就是已公开的密钥，静默加入该网络
+  既破坏隧道保密性，又会把“局域网优先”的请求打到错误的网关。拿不到应答（网关未实现
+  接口的 `404`、密钥被拒的 `401`/`403`、连接失败）就**不启动**隧道，通道进入挂起：
+  backend 停用、状态 `error`、`usingLan: false`、`activeRouterBaseUrl` 为公网端点、
+  原因写入 `EasyTierStatus.bootstrapError`。不做自动重试，因为网关会在若干次认证失败
+  后按 IP 锁定。
+- **身份请求打到 Router 行自身的地址**，该地址必须无需隧道即可访问；只有隧道才能
+  取到的身份构成死锁，因此请求绝不经 No-TUN 转发。
+- **手动身份（仅开发者模式）**：`identity: "manual"` 完全使用用户填写的
+  `networkName`、`networkSecret`、`peers`、`routerLanUrl`，从不询问网关；密钥必填，
+  绝不由内置值代替。其余部分（状态、重连、两种隧道模式）对所有配置可见，但整个区块
+  **只在开发者模式渲染**，普通安装没有可配置的内容。界面标题为「网络中心配置」
+  （en：Network Center），用户可见文案不再出现 EasyTier；内部标识、协议字段与日志名
+  保持不变。
+- **缓存键 = 控制面根地址 + AccessKey 摘要**：摘要保证不保留密钥本身，根地址保证换
+  Router 端点（或同一把密钥打到另一个网关）时自然失效，而不是继续沿用上一个网关的
+  身份。有效期至少一分钟、至多七天，异常的 `ttlSeconds` 既不能禁用缓存也不能无限期
+  固定一个已泄漏的密钥。`providers.create/update/setSecret/delete` 在受影响行（变更
+  前后任一）为 `minih-router` 时，绕过缓存重拉一次（异步、不重试）；其他行不触发。
+- **凭据行取第一条同时具备地址与非空 AccessKey 的 `minih-router` 行**，按创建时间
+  升序，与设置页一致。此前取第一条（不论有无密钥）会让桌面问不到身份，而后面就有一行
+  可用的凭据。
+- **品牌参数仅用于预填**：`networkName: "minih-router"`、引导节点与
+  `http://11.12.0.1:3001/v1` 是 `minih` 品牌值，`DESKTOP_BRAND=hungraim` 构建会替换为
+  自己的（`hungraim-router` 网络、`router-mesh.hungraim.com:11023` 引导节点、
+  `http://11.123.0.1:3001/v1` 网关、`https://aiapi.hungraim.com/v1` 预设地址），来源是
+  同一个品牌 profile（`packages/shared/src/brand.ts`）。它们只用于手动模式预填，
+  gateway 模式绝不据此启动。虚拟网段采用独立的 `11.12.0.0/24`，确保不会与用户已有的
+  专用私域网段（`11.11.11.0/24`）重叠；网关位于其他网段时用 `dhcp: false` 加 `ipv4`
+  （IPv4 字面量，可带 `/32`）固定其地址。
+- `EasyTierStatus` 回报实际使用的模式（`identity`）、`bootstrapSource`
+  （`gateway` / `local` / `disabled`，其中 `local` 现在表示手动身份）与
+  `bootstrapNetworkName`。默认以用户态 **No-TUN** 模式启动（`no_tun = true`、
+  `dhcp = true`），通过本地回环 TCP 端口转发
+  （`127.0.0.1:<local_port> -> <网关组网地址>:3001`）实现，不需要管理员权限；用户也可以
   主动申请管理员提权切换到系统 **TUN** 模式（`--easytier-tun-runner`），提权被拒绝或
-  不可用时自动回退到 `no_tun`。当局域网网关可达时，`minih-router` 控制面（`/api/*`）、
-  模型发现、连接测试，以及聊天/子智能体运行时请求都优先走局域网隧道，遇到传输错误或
-  `502/503/504` 网关错误时自动改用该行配置的公网 `baseUrl` 重试。
+  不可用时自动回退到 `no_tun`。提权运行器只拿到 spec 里已经解析好的身份、自己从不拉取，
+  因此没有身份时不会有特权进程启动。当局域网网关可达时，`minih-router` 控制面
+  （`/api/*`）、模型发现、连接测试，以及聊天/子智能体运行时请求都优先走局域网隧道，
+  遇到传输错误或 `502/503/504` 网关错误时自动改用该行配置的公网 `baseUrl` 重试。
 
 同一令牌还用于读取网关中按密钥隔离的控制面，设置页据此显示余额和模型广场（§5，Minih Router 账户）。
 
@@ -310,7 +334,7 @@ Minih Router 是自有的模型网关，排在命名预设的第一位。它是�
 
   应答缺少该对象、为 `null` 或返回 `404`，表示 Router 不提供账户模式：桌面继续走自托管
   注册流程（网关 URL、CA PEM、一次性注册码），并且不显示账户模式入口。该对象适用上文既有
-  bootstrap 缓存规则——同一 AccessKey 摘要 key、同样至多七天、至少一分钟——因此不会比
+  bootstrap 缓存规则——同一「控制面根地址 + AccessKey 摘要」key、同样至多七天、至少一分钟——因此不会比
   它所属的应答缓存更久。它不携带机密：CA 证书是公开的，该字段也绝不携带 AccessKey，
   后者只在注册请求里发给 Gateway。
 - **Host link 的第二条组网转发（D666）**：No-TUN 模式安装一条由 `routerLanUrl` 推导出的
@@ -338,13 +362,13 @@ Minih Router 是自有的模型网关，排在命名预设的第一位。它是�
   行读出，只用于这一次请求，随后丢弃。下发不可用、密钥缺失或被拒、端点已变更，都会在同
   一页面说明，且注册码表单继续可用，没有 Router key 的用户仍能自行注册。开关仍是安全默认：
   关闭时不注册、不拨号，无论 Router 下发了什么。
-- **何时拉取、从哪里拉取**：每次启动虚拟局域网通道（含开机启动）都会拉取该 bootstrap：
-  请求用已保存的 `minih-router` 行签名，因此从不设置任何选项的桌面也能拿到 Gateway 配置。
-  免驱动（No-TUN）模式无法路由 Router 的组网地址，因此请求打到隧道安装的回环转发；若启动时
-  未取得答案，会在隧道起来后经该转发再询问一次，并只重启一次隧道，让应答中的身份（peer、
-  Router 地址、网络密钥）生效。TUN 模式请求配置的地址。没有生效答案时，账户模式的原因会写明
-  最近一次失败、尚未拉取，或说明 Router 不提供账户模式（应答里没有 `remote_gateway` 对象）
-  ——绝不给出空原因。
+- **何时拉取、从哪里拉取**：每次启动虚拟局域网通道（含开机启动）都会**先**拉取该
+  bootstrap：请求用已保存的 `minih-router` 行签名，打到该行自身的地址（必须无需隧道即可
+  访问，因此不经 No-TUN 转发），拿到应答才启动隧道。换端点或轮换密钥时，凭据写入
+  （`providers.create/update/setSecret/delete` 中受影响行为 `minih-router`）会绕过缓存重拉
+  一次并相应重启或挂起，不做轮询与重试。没有生效答案时，挂起原因写明最近一次失败（网关
+  未实现接口、密钥被拒、连接失败）或尚未拉取——绝不给出空原因。Router 不提供账户模式
+  （应答里没有 `remote_gateway` 对象）时身份照常生效，账户模式单独报告不可用并给出原因。
 - **注册身份与拨号地址是两件事**：注册身份是下发的端点——`hostlinkUrl`、`caPem` 与
   `tlsServerName`；只有这三项之一变化才说明 Gateway 换了，桌面才需要重新注册。`dialUrl`
   不是身份：No-TUN 模式下它是回环转发，其端口由 host-core 在每次组网启动时重新分配，因此

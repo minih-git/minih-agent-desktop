@@ -5,17 +5,12 @@
 //! who reads the repository can join the network and read its traffic, so the
 //! gateway issues a per-key pair instead and this module fetches it.
 //!
-//! Precedence, highest first:
-//!
-//! 1. the bootstrap response for the row's AccessKey,
-//! 2. what the user typed in Settings,
-//! 3. the built-in defaults.
-//!
-//! Every failure path falls back down that chain rather than surfacing an error,
-//! because a gateway that does not serve the endpoint yet must keep working on
-//! the public URL. The response is cached under a digest of the AccessKey — the
-//! key itself is never retained — so a rotated key misses and a stolen cache
-//! cannot be replayed against another account.
+//! The answer is the only identity a gateway-mode start accepts: there is no
+//! built-in fallback, so a gateway that cannot answer leaves the tunnel down
+//! (see `identity`). The response is cached under the control-plane root plus a
+//! digest of the AccessKey — the key itself is never retained — so a rotated key
+//! or a switched endpoint misses, and a stolen cache cannot be replayed against
+//! another account.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -23,10 +18,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::config::{
-    parse_router_lan_target, EasyTierSettings, DEFAULT_EASYTIER_NETWORK_NAME,
-    DEFAULT_EASYTIER_NETWORK_SECRET, DEFAULT_EASYTIER_PEERS,
-};
+use super::config::{parse_router_lan_target, EasyTierSettings};
 
 use super::remote_gateway::{parse_remote_gateway, RemoteGatewayOutcome};
 
@@ -53,6 +45,9 @@ pub struct BootstrapResponse {
     pub network_secret: String,
     /// Virtual address the gateway holds on the tunnel, e.g. `10.144.144.10`.
     pub gateway_virtual_ipv4: Option<String>,
+    /// The Router's own overlay address, spelled as a base URL when the answer
+    /// carries `router_lan_access`. Preferred over deriving it below.
+    pub router_lan_url: Option<String>,
     /// Bootstrap peers to dial; absent keeps the locally configured list.
     pub peers: Option<Vec<String>>,
     /// How long the caller may reuse this answer.
@@ -76,30 +71,32 @@ impl CachedBootstrap {
     }
 }
 
-/// One cached answer per AccessKey digest, so rotating a key naturally misses
-/// and the cache never holds the key material itself.
+/// One cached answer per (control-plane root, AccessKey digest) pair.
+///
+/// Two Router rows on different gateways with the same key must never share an
+/// answer, and the cache never holds key material itself.
 #[derive(Debug, Default)]
 pub struct BootstrapCache {
     entries: Vec<(String, CachedBootstrap)>,
 }
 
 impl BootstrapCache {
-    pub fn get(&self, key_digest: &str, now: Instant) -> Option<&BootstrapResponse> {
+    pub fn get(&self, cache_key: &str, now: Instant) -> Option<&BootstrapResponse> {
         self.entries
             .iter()
-            .find(|(digest, cached)| digest == key_digest && cached.is_fresh(now))
+            .find(|(key, cached)| key == cache_key && cached.is_fresh(now))
             .map(|(_, cached)| &cached.response)
     }
 
-    pub fn insert(&mut self, key_digest: String, response: BootstrapResponse, now: Instant) {
+    pub fn insert(&mut self, cache_key: String, response: BootstrapResponse, now: Instant) {
         let ttl = response
             .ttl_seconds
             .map(Duration::from_secs)
             .unwrap_or(DEFAULT_TTL)
             .clamp(MIN_TTL, MAX_TTL);
-        self.entries.retain(|(digest, _)| digest != &key_digest);
+        self.entries.retain(|(key, _)| key != &cache_key);
         self.entries.push((
-            key_digest,
+            cache_key,
             CachedBootstrap {
                 response,
                 fetched_at: now,
@@ -114,6 +111,11 @@ impl BootstrapCache {
             self.entries.drain(0..excess);
         }
     }
+
+    /// Drop every cached answer, so the next read asks the gateway again.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
 }
 
 /// Digest of the AccessKey. Used only as a cache key, never persisted or logged.
@@ -125,6 +127,17 @@ pub fn access_key_digest(access_key: &str) -> String {
         let _ = write!(hex, "{byte:02x}");
     }
     hex
+}
+
+/// Cache key for one answer: the control-plane root the request went to plus a
+/// digest of the key. Switching endpoints or rotating the key must both miss,
+/// and neither half may leak the key.
+pub fn bootstrap_cache_key(control_root: &str, access_key: &str) -> String {
+    format!(
+        "{}#{}",
+        control_root.trim().trim_end_matches('/'),
+        access_key_digest(access_key)
+    )
 }
 
 /// Why a bootstrap fetch did not produce an answer.
@@ -248,6 +261,25 @@ pub fn parse_bootstrap_payload(payload: &serde_json::Value) -> Result<BootstrapR
         }
     };
 
+    // The Router's own overlay address, when it spells one out. Only the host
+    // and port are authoritative; `apply_bootstrap` normalizes the API path.
+    let router_lan_url = obj
+        .get("routerLanAccess")
+        .or_else(|| obj.get("router_lan_access"))
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| "routerLanAccess must be a string".to_string())
+        })
+        .transpose()?
+        .map(str::trim)
+        .filter(|raw| !raw.is_empty())
+        .map(|raw| {
+            parse_router_lan_target(raw)
+                .map(|target| target.normalized_base_url)
+                .map_err(|error| format!("routerLanAccess is unusable: {error}"))
+        })
+        .transpose()?;
     let peers = match obj.get("peers") {
         None | Some(serde_json::Value::Null) => None,
         Some(serde_json::Value::Array(items)) => {
@@ -289,6 +321,7 @@ pub fn parse_bootstrap_payload(payload: &serde_json::Value) -> Result<BootstrapR
         network_name,
         network_secret,
         gateway_virtual_ipv4,
+        router_lan_url,
         peers,
         ttl_seconds,
         remote_gateway: parse_remote_gateway(obj),
@@ -343,7 +376,11 @@ fn is_peer_url(raw: &str) -> bool {
 pub fn apply_bootstrap(settings: &mut EasyTierSettings, response: &BootstrapResponse) {
     settings.network_name = response.network_name.clone();
     settings.network_secret = response.network_secret.clone();
-    if let Some(gateway) = &response.gateway_virtual_ipv4 {
+    if let Some(lan_url) = &response.router_lan_url {
+        // The gateway spelled its own overlay address out: that is authoritative,
+        // API path and all, and needs no derivation.
+        settings.router_lan_url = lan_url.clone();
+    } else if let Some(gateway) = &response.gateway_virtual_ipv4 {
         if let Ok(target) = parse_router_lan_target(&settings.router_lan_url) {
             // Keep the user's scheme, port and API path; only the host moves,
             // because that is the one thing the gateway is authoritative about.
@@ -362,31 +399,13 @@ pub fn apply_bootstrap(settings: &mut EasyTierSettings, response: &BootstrapResp
     }
 }
 
-/// The local settings with the bootstrap chain resolved.
-///
-/// Used when no bootstrap is available, so the built-in defaults still apply.
-pub fn defaults_overlay(settings: &mut EasyTierSettings) {
-    if settings.network_name.trim().is_empty() {
-        settings.network_name = DEFAULT_EASYTIER_NETWORK_NAME.to_string();
-    }
-    if settings.network_secret.trim().is_empty() {
-        settings.network_secret = DEFAULT_EASYTIER_NETWORK_SECRET.to_string();
-    }
-    if settings.peers.is_empty() {
-        settings.peers = DEFAULT_EASYTIER_PEERS
-            .iter()
-            .map(|p| (*p).to_string())
-            .collect();
-    }
-}
-
 /// Where the network identity in effect came from, for display and diagnosis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BootstrapSource {
     /// The gateway answered and its values are in effect.
     Gateway,
-    /// The gateway was not reachable or served nothing usable.
+    /// The identity is the one the user configured by hand.
     Local,
     /// The channel is off, so nothing was requested.
     Disabled,
@@ -401,13 +420,7 @@ pub async fn fetch_bootstrap(
     base_url: &str,
     access_key: &str,
 ) -> Result<BootstrapResponse, BootstrapError> {
-    let target = parse_router_lan_target(base_url).map_err(|_| BootstrapError::NoAccessKey)?;
-    let root = format!(
-        "{}://{}{}",
-        target.scheme,
-        host_for_url(&target.host),
-        port_suffix(target.scheme.as_str(), target.port)
-    );
+    let root = bootstrap_request_root(base_url).ok_or(BootstrapError::NoAccessKey)?;
     let url = format!("{root}/api/easytier/bootstrap");
 
     let response = client
@@ -446,7 +459,7 @@ pub async fn fetch_bootstrap(
 
 /// A hungraim build must never join a foreign (e.g. minih) mesh: the gateway
 /// answer must name the hungraim network, otherwise the response is unusable
-/// and the caller falls back to local settings rather than the wrong network.
+/// and the caller holds instead of joining the wrong network.
 fn validate_brand_expectation(
     response: BootstrapResponse,
 ) -> Result<BootstrapResponse, BootstrapError> {
@@ -458,6 +471,20 @@ fn validate_brand_expectation(
         ));
     }
     Ok(response)
+}
+
+/// The origin a bootstrap request is sent to.
+///
+/// Also the half of the cache key that tells two gateways apart: the same key
+/// against a different Router must never reuse the previous answer.
+pub fn bootstrap_request_root(base_url: &str) -> Option<String> {
+    let target = parse_router_lan_target(base_url).ok()?;
+    Some(format!(
+        "{}://{}{}",
+        target.scheme,
+        host_for_url(&target.host),
+        port_suffix(target.scheme.as_str(), target.port)
+    ))
 }
 
 /// A host that needs brackets in a URL gets them; one that does not is untouched.
@@ -511,12 +538,25 @@ mod tests {
         EasyTierSettings {
             enabled: true,
             mode: super::super::config::EasyTierMode::NoTun,
+            identity: super::super::config::EasyTierIdentity::Gateway,
             network_name: "local-net".into(),
             network_secret: "local-secret".into(),
             peers: vec!["udp://local:11010".into()],
             router_lan_url: "http://10.144.144.99:3001/v1".into(),
             dhcp: true,
             ipv4: None,
+        }
+    }
+
+    fn answer(name: &str) -> BootstrapResponse {
+        BootstrapResponse {
+            network_name: name.into(),
+            network_secret: "s".into(),
+            gateway_virtual_ipv4: None,
+            router_lan_url: None,
+            peers: None,
+            ttl_seconds: None,
+            remote_gateway: RemoteGatewayOutcome::Absent,
         }
     }
 
@@ -534,48 +574,30 @@ mod tests {
     fn ttl_is_clamped_to_a_sane_window() {
         let now = Instant::now();
         let mut cache = BootstrapCache::default();
-        let response = BootstrapResponse {
-            network_name: "n".into(),
-            network_secret: "s".into(),
-            gateway_virtual_ipv4: None,
-            peers: None,
-            ttl_seconds: Some(0),
-            remote_gateway: RemoteGatewayOutcome::Absent,
-        };
-        cache.insert(access_key_digest("k"), response.clone(), now);
+        let key = bootstrap_cache_key("http://127.0.0.1:3000", "k");
+        let mut short = answer("n");
+        short.ttl_seconds = Some(0);
+        cache.insert(key.clone(), short, now);
         // Zero must not disable caching entirely.
-        assert!(cache.get(&access_key_digest("k"), now).is_some());
+        assert!(cache.get(&key, now).is_some());
 
-        let absurd = BootstrapResponse {
-            network_name: response.network_name,
-            network_secret: response.network_secret,
-            gateway_virtual_ipv4: None,
-            peers: None,
-            ttl_seconds: Some(u64::MAX),
-            remote_gateway: RemoteGatewayOutcome::Absent,
-        };
-        cache.insert(access_key_digest("k2"), absurd, now);
+        let other = bootstrap_cache_key("http://127.0.0.1:3000", "k2");
+        let mut absurd = answer("n");
+        absurd.ttl_seconds = Some(u64::MAX);
+        cache.insert(other.clone(), absurd, now);
         // A year-long trust window is refused; the entry is still usable now.
-        assert!(cache.get(&access_key_digest("k2"), now).is_some());
+        assert!(cache.get(&other, now).is_some());
     }
 
     #[test]
     fn expired_entries_are_not_served() {
         let past = Instant::now() - Duration::from_secs(3600);
         let mut cache = BootstrapCache::default();
-        cache.insert(
-            access_key_digest("k"),
-            BootstrapResponse {
-                network_name: "n".into(),
-                network_secret: "s".into(),
-                gateway_virtual_ipv4: None,
-                peers: None,
-                ttl_seconds: Some(60),
-                remote_gateway: RemoteGatewayOutcome::Absent,
-            },
-            past,
-        );
-        assert!(cache.get(&access_key_digest("k"), Instant::now()).is_none());
+        let key = bootstrap_cache_key("http://127.0.0.1:3000", "k");
+        let mut expiring = answer("n");
+        expiring.ttl_seconds = Some(60);
+        cache.insert(key.clone(), expiring, past);
+        assert!(cache.get(&key, Instant::now()).is_none());
     }
 
     #[test]
@@ -583,18 +605,45 @@ mod tests {
         let now = Instant::now();
         let mut cache = BootstrapCache::default();
         cache.insert(
-            access_key_digest("old"),
-            BootstrapResponse {
-                network_name: "n".into(),
-                network_secret: "s".into(),
-                gateway_virtual_ipv4: None,
-                peers: None,
-                ttl_seconds: None,
-                remote_gateway: RemoteGatewayOutcome::Absent,
-            },
+            bootstrap_cache_key("https://router.hmini.org", "old"),
+            answer("n"),
             now,
         );
-        assert!(cache.get(&access_key_digest("new"), now).is_none());
+        assert!(cache
+            .get(&bootstrap_cache_key("https://router.hmini.org", "new"), now)
+            .is_none());
+    }
+
+    #[test]
+    fn the_same_key_on_another_gateway_misses_the_cache() {
+        // R2: the cache used to key on the key digest alone, so switching the
+        // Router endpoint kept serving the old gateway's identity for up to
+        // seven days.
+        let now = Instant::now();
+        let mut cache = BootstrapCache::default();
+        cache.insert(
+            bootstrap_cache_key("https://router.hmini.org", "same-key"),
+            answer("gateway-a"),
+            now,
+        );
+        let other = bootstrap_cache_key("https://aiapi.hungraim.com", "same-key");
+        assert!(cache.get(&other, now).is_none());
+        assert_eq!(
+            cache
+                .get(
+                    &bootstrap_cache_key("https://router.hmini.org", "same-key"),
+                    now
+                )
+                .map(|response| response.network_name.as_str()),
+            Some("gateway-a")
+        );
+        cache.clear();
+        assert!(cache
+            .get(
+                &bootstrap_cache_key("https://router.hmini.org", "same-key"),
+                now
+            )
+            .is_none());
     }
 
     #[test]
@@ -638,6 +687,7 @@ mod tests {
         assert_eq!(parsed.network_name, "minih-net-abc");
         assert_eq!(parsed.network_secret, "rotated-secret");
         assert_eq!(parsed.gateway_virtual_ipv4, None);
+        assert_eq!(parsed.router_lan_url, None);
         assert_eq!(parsed.peers, None);
         assert_eq!(parsed.ttl_seconds, None);
     }
@@ -651,6 +701,7 @@ mod tests {
                 network_name: "minih-net-abc".into(),
                 network_secret: "rotated".into(),
                 gateway_virtual_ipv4: Some("10.144.144.10".into()),
+                router_lan_url: None,
                 peers: Some(vec!["udp://tier.hmini.org:11010".into()]),
                 ttl_seconds: None,
                 remote_gateway: RemoteGatewayOutcome::Absent,
@@ -675,6 +726,7 @@ mod tests {
                 network_name: "minih-net-abc".into(),
                 network_secret: "rotated".into(),
                 gateway_virtual_ipv4: None,
+                router_lan_url: None,
                 peers: None,
                 ttl_seconds: None,
                 remote_gateway: RemoteGatewayOutcome::Absent,
@@ -685,15 +737,43 @@ mod tests {
     }
 
     #[test]
-    fn defaults_fill_only_what_is_missing() {
+    fn an_issued_router_lan_access_wins_over_the_derived_host() {
+        // R3: the gateway may spell out its own control-plane URL; that spelling
+        // is authoritative, and the local `routerLanUrl` host must not survive.
         let mut settings = base_settings();
-        settings.network_name = String::new();
-        settings.peers = Vec::new();
-        defaults_overlay(&mut settings);
-        assert_eq!(settings.network_name, DEFAULT_EASYTIER_NETWORK_NAME);
-        assert_eq!(settings.peers, DEFAULT_EASYTIER_PEERS);
-        // A secret the user set is never replaced by the built-in one.
-        assert_eq!(settings.network_secret, "local-secret");
+        apply_bootstrap(
+            &mut settings,
+            &BootstrapResponse {
+                network_name: "minih-net-abc".into(),
+                network_secret: "rotated".into(),
+                gateway_virtual_ipv4: Some("10.144.144.10".into()),
+                router_lan_url: Some("http://11.11.11.10:3001/v1".into()),
+                peers: None,
+                ttl_seconds: None,
+                remote_gateway: RemoteGatewayOutcome::Absent,
+            },
+        );
+        assert_eq!(settings.router_lan_url, "http://11.11.11.10:3001/v1");
+    }
+
+    #[test]
+    fn router_lan_access_is_parsed_and_normalized() {
+        let parsed = parse_bootstrap_payload(&json!({
+            "networkName": "n",
+            "networkSecret": "s",
+            "router_lan_access": "http://11.11.11.10:3001"
+        }))
+        .expect("router_lan_access is optional but must parse when present");
+        assert_eq!(
+            parsed.router_lan_url.as_deref(),
+            Some("http://11.11.11.10:3001/v1")
+        );
+        assert!(parse_bootstrap_payload(&json!({
+            "networkName": "n",
+            "networkSecret": "s",
+            "router_lan_access": "not-a-url"
+        }))
+        .is_err());
     }
 
     #[test]
@@ -713,7 +793,7 @@ mod tests {
                 "available": true,
                 "network_name": "minih-net",
                 "network_secret": "per-caller-credential",
-                "shared_network_secret": "Minih@9527",
+                "shared_network_secret": "shared-rotation-placeholder",
                 "secure_mode": false,
                 "gateway_virtual_ipv4": "11.11.11.10",
                 "peers": [
@@ -726,8 +806,13 @@ mod tests {
         }))
         .expect("Minih-Router envelope should parse cleanly");
         assert_eq!(parsed.network_name, "minih-net");
-        assert_eq!(parsed.network_secret, "Minih@9527");
+        assert_eq!(parsed.network_secret, "shared-rotation-placeholder");
         assert_eq!(parsed.gateway_virtual_ipv4.as_deref(), Some("11.11.11.10"));
+        // The envelope's own control-plane spelling arrives normalized.
+        assert_eq!(
+            parsed.router_lan_url.as_deref(),
+            Some("http://11.11.11.10:3001/v1")
+        );
         assert_eq!(
             parsed.peers,
             Some(vec![

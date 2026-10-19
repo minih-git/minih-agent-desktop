@@ -8077,3 +8077,33 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 - See `03-runtime/01-ipc-protocol.md` (compaction reasons and lifecycle),
   `03-runtime/02-agent-runtime.md` section 5.1, and
   E2E-SESSION-model-switch-compacts-large-context.
+
+## 2026-10-19 - The network center identity comes only from the gateway
+
+- The embedded EasyTier node used to fall back to a shared secret compiled into
+  `crates/host-core/src/easytier_net/config.rs` whenever the
+  gateway did not answer the bootstrap endpoint. The repository is public, so
+  that key was public: anyone who read it could join the mesh, and "LAN first"
+  then served a gateway that did not hold the user's account.
+- Threshold: a start now requires a successful
+  `GET <root>/api/easytier/bootstrap` for the row's AccessKey. Any failure leaves
+  the tunnel down, keeps requests on the row's public `baseUrl`, and reports the
+  reason in `EasyTierStatus.bootstrapError`. The request goes to the row's own
+  address, never through the No-TUN forward, because an identity only the tunnel
+  could fetch is a deadlock.
+- `identity: "gateway"` (default, including for data written before the field
+  existed) or `"manual"`. Manual uses exactly what a developer typed, requires a
+  non-empty secret, never asks the gateway, and is reachable only in developer
+  mode; the section itself renders only there.
+- The bootstrap cache key is the control-plane root plus the AccessKey digest, so
+  a changed endpoint or a rotated key misses instead of serving the previous
+  gateway's identity for up to seven days. Credential writes on the
+  `minih-router` row re-read the identity once, asynchronously, with no polling
+  or retry: the gateway locks an IP after repeated authentication failures.
+- The credential row is the first `minih-router` row with both a base URL and a
+  non-empty key, matching what Settings shows.
+- See ADR `network-center-gateway-issued-identity`,
+  `03-runtime/12-provider-config-schema.md` section 3, and
+  E2E-NETWORK-CENTER-hidden-outside-developer-mode /
+  E2E-NETWORK-CENTER-holds-until-gateway-issues-identity /
+  E2E-NETWORK-CENTER-endpoint-change-refreshes-identity.

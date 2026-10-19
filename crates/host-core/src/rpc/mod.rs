@@ -705,6 +705,35 @@ fn provider_rpc_err(error: impl ToString) -> JsonRpcError {
     rpc_err(1000, message, "INTERNAL")
 }
 
+/// True for the row whose AccessKey the network center's bootstrap uses.
+fn is_network_center_row(vendor_key: &str) -> bool {
+    vendor_key
+        .trim()
+        .eq_ignore_ascii_case(providers::MINIH_ROUTER_VENDOR_KEY)
+}
+
+/// Re-read the network center's gateway identity after its Router row changed.
+///
+/// The endpoint or the AccessKey this channel identifies with lives on that row,
+/// so a change there invalidates both the cached answer and the running tunnel.
+/// Fire-and-forget: the RPC answer must not wait for a network round trip, and
+/// the refresh must not be retried — the gateway locks an IP after a handful of
+/// failed authentications.
+fn refresh_network_center_identity(
+    state: &std::sync::Arc<tokio::sync::Mutex<crate::state::AppState>>,
+    st: &crate::state::AppState,
+) {
+    let settings = st.db.get_setting("app").ok().flatten();
+    let credentials = std::sync::Arc::new(crate::easytier_net::AppStateCredentialProvider::new(
+        state.clone(),
+    ));
+    crate::easytier_net::refresh_after_router_credentials_change(
+        &st.data_dir,
+        settings.as_ref(),
+        credentials,
+    );
+}
+
 /// The project-group writes that can refuse a merge over the pinned-memory cap.
 ///
 /// The domain reports the refusal as `PROJECT_MEMORY_TOO_LARGE: …`; the renderer
@@ -2499,14 +2528,29 @@ async fn handle_request(
             let st = state.lock().await;
             let provider =
                 providers::create_provider(&st.db, &st.secrets, input).map_err(provider_rpc_err)?;
+            if is_network_center_row(&provider.vendor_key) {
+                refresh_network_center_identity(&state, &st);
+            }
             Ok(json!({ "provider": provider }))
         }
         "providers.update" => {
             let input: ProviderUpdateInput = serde_json::from_value(params)
                 .map_err(|e| rpc_err(1002, e.to_string(), "INVALID_PARAMS"))?;
             let st = state.lock().await;
+            // Checked before the write as well: converting the Router row into
+            // another service changes the channel just as much as editing it.
+            let was_router = providers::get_provider(&st.db, &st.secrets, &input.id)
+                .ok()
+                .flatten()
+                .is_some_and(|row| is_network_center_row(&row.vendor_key));
             let provider =
                 providers::update_provider(&st.db, &st.secrets, input).map_err(provider_rpc_err)?;
+            let is_router = provider
+                .as_ref()
+                .is_some_and(|row| is_network_center_row(&row.vendor_key));
+            if was_router || is_router {
+                refresh_network_center_identity(&state, &st);
+            }
             Ok(json!({ "provider": provider }))
         }
         "providers.delete" => {
@@ -2515,8 +2559,16 @@ async fn handle_request(
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| rpc_err(1002, "id required", "INVALID_PARAMS"))?;
             let st = state.lock().await;
+            // The row is gone after the delete, so its vendor is read first.
+            let was_router = providers::get_provider(&st.db, &st.secrets, id)
+                .ok()
+                .flatten()
+                .is_some_and(|row| is_network_center_row(&row.vendor_key));
             let ok = providers::delete_provider(&st.db, &st.secrets, id)
                 .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            if ok && was_router {
+                refresh_network_center_identity(&state, &st);
+            }
             Ok(json!({ "ok": ok }))
         }
         "providers.get" => {
@@ -2551,6 +2603,12 @@ async fn handle_request(
             let st = state.lock().await;
             let provider = providers::set_provider_secret(&st.db, &st.secrets, id, secret_value)
                 .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
+            let is_router = provider
+                .as_ref()
+                .is_some_and(|row| is_network_center_row(&row.vendor_key));
+            if is_router {
+                refresh_network_center_identity(&state, &st);
+            }
             Ok(json!({ "provider": provider }))
         }
         "providers.listModels" => {

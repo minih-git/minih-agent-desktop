@@ -10209,3 +10209,42 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **验收**：F（持久化）、Quality。
 - **里程碑**：Post-M6 维护。
 - **状态**：已自动化。
+
+### E2E-NETWORK-CENTER-hidden-outside-developer-mode
+
+- **前置条件**：已连接的 `minih-router` 行，开发者模式关闭。
+- **步骤**：打开 设置 ▸ 账户；再打开开发者模式后回到同一页面。
+- **预期**：开发者模式关闭时整个网络中心区块不渲染——没有状态徽标、没有重连按钮、
+  没有任何身份输入框。打开后区块出现，标题为「网络中心配置」，区块内任何用户可见文案
+  都不出现 EasyTier。默认只显示状态：在打开「手动配置组网身份」之前不存在网络名称与
+  网络密钥输入框。
+- **关联规格**：`03-runtime/12-provider-config-schema.md` §3（网络中心）、ADR
+  `network-center-gateway-issued-identity`。
+- **状态**：已自动化
+  （`apps/desktop/test/network-center-settings-user-path.test.mjs`）。
+
+### E2E-NETWORK-CENTER-holds-until-gateway-issues-identity
+
+- **前置条件**：已保存的 `minih-router` 行，其网关在 `/api/easytier/bootstrap` 返回
+  `404`/`401`，或根本不应答；未配置手动身份。
+- **步骤**：启动应用；在开发者模式下打开账户页；对该行的模型发送一次对话请求。
+- **预期**：不启动隧道：区块显示错误状态，给出网关的原因（接口未提供、密钥被拒或传输
+  失败），并提示 Router 端点必须公网可达。对话请求走该行的公网 `baseUrl`，绝不指向
+  组网地址，`resolveMinihRouterEndpoint` 回报 `usingLan: false`，且不会自动重试。
+- **关联规格**：`03-runtime/12-provider-config-schema.md` §3（严格模式）、ADR
+  `network-center-gateway-issued-identity`。
+- **状态**：已自动化（`crates/host-core/src/easytier_net/boot_bootstrap_tests.rs`、
+  `apps/desktop/test/network-center-settings-user-path.test.mjs`）。
+
+### E2E-NETWORK-CENTER-endpoint-change-refreshes-identity
+
+- **前置条件**：网络中心已连接，身份来自网关 A；另一个网关 B 可为同一 AccessKey 下发身份。
+- **步骤**：编辑 `minih-router` 行指向网关 B 并保存；随后在同一行轮换 AccessKey 再保存。
+- **预期**：每次保存对新端点恰好发起一次 bootstrap 请求（不复用旧端点的缓存应答），
+  通道以网关 B 的身份重启，或带着其原因挂起。不得出现轮询或重试循环——网关会在多次
+  认证失败后按 IP 锁定。编辑非 `minih-router` 行不触发任何刷新。
+- **关联规格**：`03-runtime/12-provider-config-schema.md` §3（缓存键与重拉触发点）、
+  ADR `network-center-gateway-issued-identity`。
+- **状态**：决策层与重拉次数已自动化
+  （`boot_bootstrap_tests::switching_the_endpoint_refetches_the_identity_once`、
+  `a_cached_answer_is_reused_until_the_identity_is_refreshed`）；双网关真机流程待补。

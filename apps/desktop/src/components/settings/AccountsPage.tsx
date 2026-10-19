@@ -105,7 +105,9 @@ export function AccountsPage() {
                   <span className="minih-router-status-detail">{account.message}</span>
                 </p>
               ) : null}
-              <EasyTierLanSection revision={revision} />
+              {/* Developer-only surface: the channel is managed by the gateway,
+                  and its manual identity is an escape hatch, not a setting. */}
+              {developerMode ? <EasyTierLanSection revision={revision} /> : null}
             </>
           ) : (
             <ConnectAccountCard
