@@ -185,16 +185,18 @@
 */
 .toast-viewport {
   position: fixed;
-  top: 16px;
-  left: 50%;
+  top: 56px;
+  right: 16px;
   z-index: 50; /* z-toast */
   display: flex;
-  flex-direction: column-reverse;
-  align-items: center;
-  gap: 8px;
-  width: min(360px, calc(100vw - 32px));
-  transform: translateX(-50%);
-  pointer-events: none;
+  flex-direction: column;
+  gap: 10px;
+  width: min(384px, calc(100vw - 32px));
+  max-height: calc(100dvh - 72px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
 }
 
 /*
@@ -515,14 +517,16 @@
   -webkit-app-region: no-drag;
   pointer-events: auto;
   display: flex;
+  flex: 0 0 auto;
   align-items: flex-start;
-  gap: 10px;
-  max-width: 100%;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
   border: 1px solid var(--ds-border-subtle);
-  border-radius: var(--radius-md-plus);
+  border-radius: var(--radius-lg);
   background: var(--ds-bg-elevated-opaque);
   box-shadow: var(--ds-shadow-dialog);
-  padding: 10px 10px 10px 12px;
+  padding: 16px;
   color: var(--ds-text-primary);
   animation: toast-in var(--motion-duration-normal) var(--motion-ease-out);
 }
@@ -533,8 +537,13 @@
 
 .toast-icon {
   display: inline-flex;
-  flex: 0 0 auto;
-  margin-top: 1px; /* optical center against first text line */
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: color-mix(in oklab, currentColor 10%, transparent);
 }
 
 .toast.info .toast-icon {
@@ -551,10 +560,16 @@
 }
 
 .toast-message {
+  flex: 1;
   min-width: 0;
+  align-self: center;
+  max-height: min(320px, calc(100dvh - 140px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   font-size: var(--text-md);
-  line-height: var(--leading-compact-plus);
+  line-height: var(--leading-body);
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .toast-action.btn {
@@ -563,7 +578,7 @@
   min-width: 0;
   align-items: flex-start;
   justify-content: flex-start;
-  gap: 10px;
+  gap: 12px;
   padding: 0;
   text-align: left;
   color: inherit;
@@ -580,10 +595,10 @@
 
 .toast-dismiss {
   display: inline-flex;
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  margin: -2px 0 -2px 2px;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  margin-top: 4px;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-2xs);
@@ -630,18 +645,18 @@
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(-6px) scale(0.98);
+    transform: translateX(calc(100% + 24px));
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateX(0);
   }
 }
 
 @keyframes toast-out {
   to {
     opacity: 0;
-    transform: translateY(-4px) scale(0.98);
+    transform: translateX(calc(100% + 24px));
   }
 }
 

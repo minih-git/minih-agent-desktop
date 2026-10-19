@@ -18,9 +18,8 @@ import type { SessionRuntime } from "../runtime/session-runtime";
 import type { StoreAccess } from "./types";
 
 const PLAN_APPROVAL_TIMEOUT = "PLAN_APPROVAL_TIMEOUT";
-const TOAST_DURATION_MS = 4000;
-const TOAST_ERROR_DURATION_MS = 8000;
-const TOAST_STACK_LIMIT = 4;
+const TOAST_TRANSIENT_DURATION_MS = 4000;
+const TOAST_TRANSIENT_STACK_LIMIT = 4;
 
 export type InteractionSliceDependencies = StoreAccess & {
   runtime: SessionRuntime;
@@ -223,25 +222,34 @@ export function createInteractionSlice({
       const variant = options?.variant ?? "info";
       const duration =
         options?.duration ??
-        (variant === "error" ? TOAST_ERROR_DURATION_MS : TOAST_DURATION_MS);
+        (variant === "error" || variant === "warning"
+          ? 0
+          : TOAST_TRANSIENT_DURATION_MS);
       set((state) => {
         const kept = state.toasts.filter(
           (item) => item.message !== message || item.variant !== variant ||
             item.sessionId !== options?.sessionId,
         );
-        const next = [
-          ...kept,
-          {
-            id: interactionRuntime.nextToastId(),
-            message,
-            variant,
-            duration,
-            sound: options?.sound !== false,
-            sessionId: options?.sessionId,
-            promptRequestId: options?.promptRequestId,
-          },
-        ];
-        return { toasts: next.slice(-TOAST_STACK_LIMIT) };
+        const newItem = {
+          id: interactionRuntime.nextToastId(),
+          message,
+          variant,
+          duration,
+          sound: options?.sound !== false,
+          sessionId: options?.sessionId,
+          promptRequestId: options?.promptRequestId,
+        };
+        const candidates = [...kept, newItem];
+        const transientItems = candidates.filter((item) => item.duration > 0);
+        const allowedTransientIds = new Set(
+          transientItems
+            .slice(-TOAST_TRANSIENT_STACK_LIMIT)
+            .map((item) => item.id),
+        );
+        const next = candidates.filter(
+          (item) => item.duration === 0 || allowedTransientIds.has(item.id),
+        );
+        return { toasts: next };
       });
     },
     dismissToast: (id) =>

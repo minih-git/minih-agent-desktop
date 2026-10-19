@@ -696,8 +696,8 @@ D419。主题专属取值应写在 `styles/tokens.css` 的标记块里，两套�
 - 居中表面：`surface-in`（淡入淡出 + 8px 上升 + 轻微缩放）
 - 顶部锚定表面（搜索）：`surface-in-top`
 
-Toast enter/exit 保留现有移除合同（`animationend` 于
-`toast-out`），同时使用运动标记和稍微柔和的音阶。
+通知卡片沿右侧水平进入和退出，保留 `toast-out` 的 `animationend` 移除契约。
+减少动态效果时使用近零动画时长，确保关闭仍能完成。
 
 ### 8. 5 减少运动
 
@@ -1076,20 +1076,20 @@ Linux 保留淡入淡出和滑动退出。
 
 ### 11. 8 Toast
 
-完整的组件合同和使用规则：[08-component-spec.md §17](/zh-CN/spec/04-ux/08-component-spec#_17-toast)。
+通知卡片完整契约：[08-component-spec.md §17](/zh-CN/spec/04-ux/08-component-spec#_17-toast)。
 
-| 财产 | 价值 |
+| 属性 | 值 |
 |---|---|
-| 职位 | 顶部中心视口，距顶部边缘 16 像素，`width: min(360px, 100vw − 32px)` |
-| 表面 | `bg-elevated-opaque` + 1px `border-subtle` + `shadow-dialog`（与浮动菜单同族） |
-| 半径 | 半径 md 加 |
-| 字体 | 文本 md、前导紧凑加 |
-| 变体 | `info` / `success` / `warning` / `error` — 16px Lucide 状态图标，带有语义标记；表面保持中立（约束原理） |
-| 持续时间 | 4秒自动关闭；错误8s； `duration: 0` = 粘性；悬停暂停计时器 |
-| 堆栈 | 垂直，最大 4（最旧的掉落），最新的最接近顶部中心锚点，将旧的向下推；相同的消息+变体重新引发重新启动而不是堆叠 |
-| 解雇 | 每个 Toast 上的 X 按钮（`toast.dismiss` i18n 标签） |
-| 运动 | 进入200ms缓出slide-down/fade，退出150ms缓入淡入淡出；减少运动 → 接近零持续时间（不是 `none`，移除监听 `animationend`） |
-| Z 指数 | z-Toast (50) |
+| 位置 | 右上角，距顶部 56px、右侧 16px；宽度 `min(384px, 100vw - 32px)`，高度不超出窗口 |
+| 表面 | 中性 `bg-elevated-opaque`、`border-subtle`、`shadow-dialog`；内边距 16px |
+| 圆角 | radius-lg |
+| 字体 | text-md、leading-body；单段精简文案，可选中且保留换行 |
+| 变体 | info / success / warning / error；20px 语义图标置于柔和着色的 32px 圆形背景内 |
+| 持续时间 | 信息/成功 4 秒；警告/错误手动关闭；保留显式时长覆盖，悬停或聚焦暂停计时 |
+| 堆叠 | 最新在前，可滚动；保留所有常驻卡片及最多四条临时通知；相同消息+变体+会话替换旧条目 |
+| 关闭 | 每张卡片均提供 X（`toast.dismiss` 国际化标签） |
+| 动画 | 200ms ease-out 从右侧进入，150ms ease-in 向右退出；减少动态效果时保留近零时长，而非 none |
+| 层级 | z-toast (50)，通过 body portal 显示在对话框之上 |
 
 ### 11.9 SettingsToggle
 

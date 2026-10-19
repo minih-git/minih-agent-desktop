@@ -367,7 +367,7 @@ export const zhCN = {
     placeholderShortcut: "Shift+Enter 换行 · 点击发送提交",
     addFiles: "添加文件",
     filesAttached: "已将 {{count}} 项加入草稿",
-    filesPasted: "已将 {{count}} 个粘贴文件保存到会话临时目录",
+    filesPasted: "已保存 {{count}} 个文件至会话临时目录",
     largeTextPasted: "已将大段粘贴文本保存为 @{{name}}",
     slashMenu: "指令",
     slashGroupTemplates: "提示词模板",
@@ -3005,7 +3005,7 @@ sklm: {
     retrying: "上下文已压缩，正在重试模型请求",
     recovered: "上下文摘要失败，已保留近期上下文并继续任务",
     failed: "上下文压缩失败",
-    longThreadWarning: "上下文已压缩。每压缩一次都会丢掉更早的细节，无关的新任务建议开新会话。",
+    longThreadWarning: "上下文已压缩。长会话会丢失早期细节，无关任务建议开启新会话。",
   },
   notifications: {
     title: "通知",
