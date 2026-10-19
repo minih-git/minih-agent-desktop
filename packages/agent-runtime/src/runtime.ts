@@ -25,6 +25,7 @@ import {
 } from "./memory-tools.js";
 import { withPiFileOpToolNames } from "./pi-file-ops.js";
 import { remoteMutationIdentity } from "./remote-workspace.js";
+import { sideNoteContent } from "./side-note.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import {
@@ -9110,9 +9111,19 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     return { projectPath: this.projectPath, ...(this.remoteWorkspace ? { remoteWorkspace: this.remoteWorkspace } : {}), supportsVision: this.model.input.includes("image") };
   }
 
-  steer(input: RuntimePrompt, expectedTurnId: string, message: UiMessage): { accepted: boolean; turnId: string } {
+  steer(
+    input: RuntimePrompt,
+    expectedTurnId: string,
+    message: UiMessage,
+    options?: { sideNote?: boolean },
+  ): { accepted: boolean; turnId: string } {
     this.steeringContext(expectedTurnId);
-    const queued: AgentMessage = { role: "user", content: promptContent(input), timestamp: Date.now() };
+    // A side note is answered inside the running turn: the framing reaches the
+    // model, while the persisted row keeps the user's own words.
+    const prompt = options?.sideNote
+      ? { ...input, text: sideNoteContent(input.text) }
+      : input;
+    const queued: AgentMessage = { role: "user", content: promptContent(prompt), timestamp: Date.now() };
     const toolNames = this.selectedMcpTools(input);
     this.pendingSteering.set(queued, { id: message.id, toolNames });
     this.agent.steer(queued);

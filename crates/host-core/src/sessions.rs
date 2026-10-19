@@ -211,6 +211,9 @@ pub struct UiMessage {
     /// Accepted input to an existing turn, preserved by Stop after renderer reload.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub steering: Option<bool>,
+    /// Accepted side note to a running turn, kept so the panel survives reload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side_note: Option<bool>,
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<String>,
@@ -395,6 +398,9 @@ pub(crate) fn ui_to_record(message: &UiMessage) -> (MessageRecord, Option<String
     if let Some(steering) = message.steering {
         meta_obj.insert("steering".into(), json!(steering));
     }
+    if let Some(side_note) = message.side_note {
+        meta_obj.insert("sideNote".into(), json!(side_note));
+    }
     if let Some(status) = &message.status {
         meta_obj.insert("status".into(), json!(status));
     }
@@ -546,6 +552,7 @@ pub(crate) fn record_to_ui(record: MessageRecord) -> UiMessage {
     let session_message = meta.get("sessionMessage").cloned();
     let voice_origin = meta.get("voiceOrigin").cloned();
     let steering = meta.get("steering").and_then(Value::as_bool);
+    let side_note = meta.get("sideNote").and_then(Value::as_bool);
     let status = meta
         .get("status")
         .and_then(|v| v.as_str())
@@ -680,6 +687,7 @@ pub(crate) fn record_to_ui(record: MessageRecord) -> UiMessage {
             voice_origin: voice_origin.clone(),
             attachments: None,
             steering,
+            side_note,
             created_at: record.created_at,
             thinking,
             status,
@@ -734,6 +742,7 @@ pub(crate) fn record_to_ui(record: MessageRecord) -> UiMessage {
             voice_origin,
             attachments,
             steering,
+            side_note,
             created_at: record.created_at,
             thinking,
             status,
@@ -4388,6 +4397,7 @@ mod tests {
             attachments: None,
             voice_origin: None,
             steering: None,
+            side_note: None,
             created_at: ts.into(),
             thinking: None,
             status: None,
@@ -4661,6 +4671,32 @@ mod tests {
             .unwrap()
             .compaction
             .is_none());
+    }
+
+    #[test]
+    fn a_side_note_marker_round_trips_through_message_meta() {
+        let db = test_db();
+        let session = create_session(&db, None, None, None, None, None).unwrap();
+        let mut note = user_msg(
+            "side-note",
+            "How far along are you?",
+            "2026-10-18T00:00:00Z",
+        );
+        note.steering = Some(true);
+        note.side_note = Some(true);
+        append_message(&db, &session.id, &note, None).unwrap();
+
+        let restored = get_session(&db, &session.id).unwrap().unwrap();
+        let stored = restored
+            .messages
+            .iter()
+            .find(|message| message.id == "side-note")
+            .expect("the side note is persisted");
+        // Without the marker the panel and the transcript would show the row as
+        // an ordinary prompt after a reload.
+        assert_eq!(stored.side_note, Some(true));
+        assert_eq!(stored.steering, Some(true));
+        assert_eq!(stored.content, "How far along are you?");
     }
 
     #[test]
@@ -5281,6 +5317,7 @@ mod tests {
             attachments: None,
             voice_origin: None,
             steering: None,
+            side_note: None,
             created_at: "2025-05-01T00:00:02Z".into(),
             thinking: None,
             status: Some("complete".into()),
@@ -5899,6 +5936,7 @@ mod tests {
             attachments: None,
             voice_origin: None,
             steering: None,
+            side_note: None,
             created_at: "2025-05-01T00:00:01Z".into(),
             thinking: Some("first plan\nsecond plan".into()),
             status: Some("complete".into()),
@@ -5988,6 +6026,7 @@ mod tests {
             attachments: None,
             voice_origin: None,
             steering: None,
+            side_note: None,
             created_at: "2025-05-01T00:00:01Z".into(),
             thinking: None,
             status: Some("complete".into()),

@@ -400,6 +400,7 @@ export const ptBR = {
     editQueuedPromptBusy: "Limpe o campo de entrada antes de editar esta mensagem na fila",
     sendWhileRunning: "Enviar acompanhamento · {{shortcut}} para orientar o agente",
     steeringUnavailable: "Não é mais possível orientar esta rodada. Seu rascunho foi mantido.",
+    sideNote: "Nota paralela",
     nativeSessionBusy: "Esta sessão nativa do Pi ainda está respondendo. Interrompa-a ou aguarde a resposta terminar antes de enviar.",
     stopGenerating: "Parar de gerar",
     running: "Em andamento…",
@@ -2354,6 +2355,19 @@ export const ptBR = {
       file: "Arquivos",
       plugin: "Visualização de plugin",
       subagent: "Subagente",
+      sideNotes: "Notas paralelas",
+    },
+    sideNotes: {
+      emptyTitle: "Ainda não há notas paralelas",
+      emptyBody: "As notas que você envia enquanto o agente trabalha aparecem aqui. A tarefa em andamento continua.",
+      inputLabel: "Nota paralela",
+      placeholder: "Peça um resumo do progresso ou ajuste a direção…",
+      idlePlaceholder: "As notas paralelas ficam disponíveis enquanto uma tarefa está em execução",
+      idleHint: "Uma nota paralela é respondida dentro da tarefa em andamento, então não a interrompe nem a substitui. Não há nada em execução agora.",
+      hint: "Enviada para a tarefa em andamento e respondida no próximo ponto seguro.",
+      send: "Enviar",
+      presetProgressLabel: "Resumir o progresso",
+      presetProgress: "Resuma brevemente o progresso até agora e depois continue a tarefa atual.",
     },
     pluginView: {
       failed: "Não foi possível carregar esta visualização. Recarregue o plugin e tente novamente."

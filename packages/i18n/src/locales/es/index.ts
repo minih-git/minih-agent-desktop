@@ -401,6 +401,7 @@ export const es = {
     "editQueuedPromptBusy": "Vacía el campo antes de editar este mensaje en cola",
     sendWhileRunning: "Enviar seguimiento · {{shortcut}} para orientar",
     steeringUnavailable: "Este turno ya no acepta indicaciones. Se conservó el borrador.",
+    "sideNote": "Nota al margen",
     nativeSessionBusy: "Esta sesión nativa de Pi sigue respondiendo. Detenla o espera a que termine antes de enviar.",
     "stopGenerating": "Dejar de generar",
     "running": "Trabajando...",
@@ -2387,7 +2388,20 @@ sklm: {
       "browser": "Navegador",
       "file": "Archivos",
       "plugin": "Vista de complemento",
-      "subagent": "Subagente"
+      "subagent": "Subagente",
+      "sideNotes": "Notas al margen"
+    },
+    "sideNotes": {
+      "emptyTitle": "Aún no hay notas al margen",
+      "emptyBody": "Las notas que envíes mientras el agente trabaja aparecen aquí. La tarea en curso continúa.",
+      "inputLabel": "Nota al margen",
+      "placeholder": "Pide un resumen del progreso o ajusta la dirección…",
+      "idlePlaceholder": "Las notas al margen están disponibles mientras se ejecuta una tarea",
+      "idleHint": "Una nota al margen se responde dentro de la tarea en curso, así que no la interrumpe ni la sustituye. Ahora mismo no hay nada en ejecución.",
+      "hint": "Se envía a la tarea en curso y se responde en su siguiente punto seguro.",
+      "send": "Enviar",
+      "presetProgressLabel": "Resumir el progreso",
+      "presetProgress": "Resume brevemente el progreso hasta ahora y luego continúa con la tarea actual."
     },
     "pluginView": {
       "failed": "Esta vista no se pudo cargar. Vuelva a cargar el complemento e inténtelo de nuevo."

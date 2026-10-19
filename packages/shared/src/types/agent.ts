@@ -80,6 +80,12 @@ export type AgentSteerRequest = Pick<
   "sessionId" | "content" | "attachments" | "messageId" | "voiceOrigin"
 > & {
   expectedTurnId: string;
+  /**
+   * A side note is answered inside the running turn instead of redirecting it:
+   * the runtime frames the note for the model, and the persisted row carries
+   * the marker so the renderer still shows it as a side note after a reload.
+   */
+  sideNote?: boolean;
 };
 
 export type AgentPromptResponse = {

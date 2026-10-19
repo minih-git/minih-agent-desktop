@@ -26,6 +26,7 @@ import { userMessageMenuItems } from "./menu-items";
 import { ActionSlotSide } from "./ActionBarSlots";
 import { slotMessage } from "../../../plugins/renderer-slots/slot-message";
 import { SessionMessageOrigin } from "./SessionMessageOrigin";
+import { SideNoteOrigin } from "./SideNoteOrigin";
 import {
   CopyButton,
   FileRefChip,
@@ -258,6 +259,7 @@ export const MessageRow = memo(function MessageRow({
     >
       <div className="message-col">
         {message.sessionMessage ? <SessionMessageOrigin origin={message.sessionMessage} /> : null}
+        {message.sideNote ? <SideNoteOrigin /> : null}
         {isUser || displayed ? (
           <div className="message-bubble">
             {editing && editableUserMessage ? (
