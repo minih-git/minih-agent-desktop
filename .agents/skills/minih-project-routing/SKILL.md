@@ -64,7 +64,7 @@ description: >-
    - 新增字段可以；删除字段或改语义前，必须评估已发布 Desktop 的行为。
    - bootstrap 返回 `404` 在 Desktop 是**受支持的合法状态**（网关未实现该端点），不是故障。
 3. **Desktop 后消费**，必须优雅降级：
-   - bootstrap 失败/404 → 回退本地配置；LAN 不可达或 502/503/504 → 回退公网 `baseUrl` 重试。
+   - bootstrap 失败/404 → 不启动隧道，请求使用该行公网 `baseUrl`；只有开发者显式选择的手动身份可不依赖网关应答启动。LAN 不可达或 502/503/504 → 回退公网 `baseUrl` 重试。
    - 字段缺失 → 按"网关未提供"处理并隐藏对应展示，不得报错阻断。
 4. **真实链路验证**：本地起 Router（或用测试服务器），Desktop 指向它实测新增/降级两条路径，
    不要只看单侧代码。涉及现场时注意 Router 实际数据库为 `/opt/gpt-load/data/gpt-load.db`。
@@ -108,5 +108,5 @@ Router 与 Desktop 均拆分为 minih（个人）与 hungraim（恒格）两条�
   互不连接；见 Router 仓库 `docs/operations/easytier-hungraim-router.md`。
 - 组网身份只有一个来源：该行 `minih-router` 的 `GET <controlRoot>/api/easytier/bootstrap`。
   桌面不再回退任何内置网络/密钥，拿不到应答就不启动隧道（请求走公网端点，原因写在
-  `bootstrapError`），因此 Router 端点的 `public_endpoint` 必须公网可达；
+  `bootstrapError`），因此该行的 API 端点必须公网可达；`public_endpoint` 仅声明网关下发的引导节点入口；
   未实现该接口的旧网关只能靠开发者模式里的手动身份。

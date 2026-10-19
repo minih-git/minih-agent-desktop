@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.22.1",
+    date: "2026-10-19",
+    highlights: [
+      "Die Router-Vernetzung startet erst, wenn der konfigurierte API-Endpunkt den AccessKey authentifiziert und die Netzwerkidentität bereitstellt. Ein anderer Endpunkt oder Schlüssel ersetzt den bisherigen Tunnel.",
+      "Das Netzwerkzentrum erscheint nur im Entwicklermodus; manuelle Einstellungen bleiben verfügbar. Beim Upgrade muss der Router-Endpunkt öffentlich erreichbar sein. Ohne Bootstrap startet kein integrierter Tunnel automatisch.",
+      "Feste Projektnotizen werden beim Beitritt zu einer Gruppe zusammengeführt; zu große Zusammenführungen werden vollständig abgelehnt und Kennungen bleiben eindeutig. Gelernte Notizen werden einzeln synchronisiert, einschließlich Löschungen.",
+      "Randnotizen lassen sich während laufender Aufgaben ohne Unterbrechung aus dem Arbeitsbereich senden. Entwürfe bleiben beim Senden erhalten und Subagent-Details lassen sich einklappen, ohne den Bereich erneut zu öffnen.",
+      "Beim Modellwechsel wird die Kontextbelegung erneut geprüft und ein zu großer Verlauf vor dem Fortsetzen komprimiert. Die Werkzeugsuche hat eine eigene Darstellung; Fehler werden nicht mehr als fehlende Treffer ausgegeben.",
+      "Die Erkennung des Remote-Kontos beginnt beim Desktop-Start. Native Remote-Clients können Sitzungen über das Gateway laden; Hintergrundausgaben bleiben auf das jeweilige Gespräch beschränkt.",
+    ],
+  },
+  {
     version: "0.22.0",
     date: "2026-10-19",
     highlights: [
