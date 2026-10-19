@@ -198,6 +198,10 @@ import {
   retainedUserMessageBudget,
   type ContextBudget,
 } from "./context-budget.js";
+import {
+  modelSwitchCompactionNeeded,
+  previousModelSince,
+} from "./model-switch-compaction.js";
 import { PathMutex } from "./path-lock.js";
 import { DelegationChainRegistry } from "./delegation-chain.js";
 import {
@@ -1151,7 +1155,16 @@ function boundedText(value: string, maxChars: number): string {
 
 type CheckpointPersistResult = "persisted" | "oversized" | "failed";
 
-type CompactionRetentionMode = "active_turn" | "completed_turn";
+/**
+ * What a successful checkpoint leaves behind. `recent_window` is the
+ * model-switch shape: the older range is summarized while the recent tail
+ * survives verbatim, because the new model is usually asked to continue the
+ * work that tail contains.
+ */
+type CompactionRetentionMode =
+  | "active_turn"
+  | "completed_turn"
+  | "recent_window";
 
 /**
  * A pi preparation plus the anchor the checkpoint is filed against.
@@ -6782,6 +6795,33 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     );
   }
 
+  /**
+   * Whether the first request of a switched model should summarize the older
+   * history first. Both pre-flight positions ask this before the automatic
+   * threshold, so switching models costs nothing until the next prompt.
+   */
+  private modelSwitchCompactionDue(
+    additionalMessages: AgentMessage[] = [],
+  ): boolean {
+    const context = this.liveSessionContext();
+    const messages = [...context.messages, ...additionalMessages];
+    const budget = this.contextBudget(messages);
+    return modelSwitchCompactionNeeded({
+      previous: previousModelSince(this.fullEntries, this.activeCompaction),
+      current: {
+        providerId: this.provider.id,
+        modelId: this.provider.modelId,
+        // pi-ai stamps an assistant message with the vendor key, which still
+        // names this binding.
+        providerAliases: [this.model.provider],
+      },
+      tokens: budget.tokens,
+      budget,
+      compactionEnabled: this.compactionEnabled,
+      strategy: this.compactionStrategy,
+    });
+  }
+
   private automaticCompactionWouldExceedHardLimit(
     additionalMessages: AgentMessage[] = [],
   ): boolean {
@@ -6867,6 +6907,16 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     retainedUserTokens: number,
     retentionMode: CompactionRetentionMode,
   ): ShapedPreparation {
+    // A model switch keeps pi's own split: the range before the cut is
+    // summarized and the recent window is replayed verbatim, because the new
+    // model is usually asked to continue the work that window contains.
+    // Folding it into the summary (the Codex shape below) would drop it.
+    if (retentionMode === "recent_window") {
+      return {
+        ...preparation,
+        firstKeptEntryId: this.firstRetainedEntryId(preparation.retainedTail),
+      };
+    }
     // pi 0.84 replays a previous checkpoint's `retainedTail` as virtual entries
     // at the head of the compactable range, so those messages already arrive in
     // `preparation` — prepending them again (which is what this had to do while
@@ -6889,6 +6939,26 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       isSplitTurn: false,
       retainedTail: selectRetainedUserMessages(candidates, retainedUserTokens),
     };
+  }
+
+  /**
+   * The entry a `recent_window` checkpoint starts keeping. pi's preparation
+   * keeps the retained messages themselves, so the entry carrying the first of
+   * them is the boundary. `withPiFileOpToolNames` copies an assistant message
+   * whose tool names it rewrites, hence the role/timestamp fallback.
+   */
+  private firstRetainedEntryId(retainedTail: AgentMessage[]): string | undefined {
+    const first = retainedTail[0];
+    if (first) {
+      const match = this.fullEntries.find(
+        (entry) =>
+          entry.message === first ||
+          (entry.message.role === first.role &&
+            entry.message.timestamp === first.timestamp),
+      );
+      if (match) return match.id;
+    }
+    return this.fullEntries.at(-1)?.id;
   }
 
   private rebuiltAgentContext(): AgentContext {
@@ -7061,7 +7131,19 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
           { type: "session_before_compact", reason, retentionMode },
           (acc, next) => (acc?.cancel ? acc : next),
         );
-        if (decision?.cancel) return false;
+        if (decision?.cancel) {
+          // A cancelled threshold or manual compaction reports nothing: its
+          // caller owns the refusal. A switch still closes its lifecycle so
+          // the run is not left looking for a checkpoint that never came.
+          if (reason === "model_switch") {
+            this.emitCompactionFailure(
+              reason,
+              undefined,
+              "Context compaction was cancelled by an extension",
+            );
+          }
+          return false;
+        }
       }
       const compacted = await this.performCompaction(reason, willRetry, retentionMode);
       if (runner) {
@@ -7870,6 +7952,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
           ...(isRecord(result.value.details) ? result.value.details : {}),
           strategy: "summary" satisfies CompactionStrategy,
           retainedTailMode: retentionMode,
+          // A switch keeps the real window, so a rebuild has to replay it
+          // whole instead of narrowing it back to one user message.
+          ...(retentionMode === "recent_window"
+            ? { retainedTailShape: COMPACTION_RETAINED_TAIL_SHAPE }
+            : {}),
           ...this.retainedReasoningForCheckpoint(preparation.value),
         },
       ),
@@ -7922,6 +8009,14 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     };
   }
 
+  /** Whether installing `build.checkpoint` lowers the estimated next request. */
+  private checkpointShrinksContext(build: CheckpointBuildSuccess): boolean {
+    const compacted = this.contextBudget(
+      this.liveSessionContext(build.checkpoint).messages,
+    );
+    return compacted.tokens < build.budget.tokens;
+  }
+
   /**
    * Install an already-generated checkpoint on the blocking path. The budget
    * recheck inside `persistCheckpoint` runs against the current transcript, so
@@ -7936,6 +8031,17 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
   ): Promise<boolean> {
     const mustFitSafeBudget =
       reason === "overflow" || build.budget.tokens >= build.budget.hardLimit;
+    // A switch checkpoint is an optimization, so it has to actually shrink
+    // the request: a summary plus a window that costs as much as the original
+    // pays a write and a loss of detail for nothing.
+    if (reason === "model_switch" && !this.checkpointShrinksContext(build)) {
+      this.emitCompactionFailure(
+        reason,
+        build.checkpoint.tokensBefore,
+        "Model switch compaction did not reduce the model context",
+      );
+      return false;
+    }
     const persisted = await this.persistCheckpoint(
       build.checkpoint,
       reason,
@@ -7944,6 +8050,17 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     );
     if (persisted === "persisted" || persisted === "failed") {
       return persisted === "persisted";
+    }
+    if (reason === "model_switch") {
+      // No retained-tail fallback here: the new model already fits this
+      // context, so a lossy checkpoint would pay for an optimization with
+      // real context.
+      this.emitCompactionFailure(
+        reason,
+        build.checkpoint.tokensBefore,
+        "The checkpoint did not reduce context below the safe request budget",
+      );
+      return false;
     }
     return await this.recoverCompactionFailure(
       build.entries,
@@ -7971,7 +8088,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
       this.compactionAbort = undefined;
     }
     if (!build.ok) {
-      if (!build.recoverable) {
+      // A switch never installs the retained-tail fallback: the new model
+      // already fit this context, so a lossy checkpoint would trade real
+      // context for an optimization.
+      if (!build.recoverable || reason === "model_switch") {
         this.emitCompactionFailure(reason, build.tokensBefore, build.message);
         return false;
       }
@@ -8832,6 +8952,20 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     this.appendLiveEntry(internalId, internalMessage);
     this.setAgentActivity({ phase: "starting", since: Date.now() });
     this.setAgentMessages(this.liveSessionContext().messages);
+    if (this.modelSwitchCompactionDue()) {
+      const compacted = await this.runCompaction(
+        "model_switch",
+        false,
+        "recent_window",
+      );
+      if (!compacted && this.compactionAborted) {
+        this.terminateParentTurn();
+        this.finalizeCurrentAssistant("aborted");
+        return { turnId: this.turnId };
+      }
+      // A failed switch compaction is not an error: the new model already
+      // fit this context, so execution continues with all of it.
+    }
     if (this.automaticCompactionNeeded()) {
       const compacted = await this.runCompaction(
         "threshold",
@@ -8936,6 +9070,25 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         content,
         timestamp: Date.now(),
       };
+      // A switched model compacts its older context before the first request:
+      // the new binding re-reads whatever is sent, so this is the cheapest
+      // moment to reduce it. The decision is false once the automatic
+      // threshold applies, so at most one pre-flight compaction runs.
+      if (this.modelSwitchCompactionDue([incomingUserMessage])) {
+        const compacted = await this.runCompaction(
+          "model_switch",
+          false,
+          "recent_window",
+        );
+        if (!compacted && this.compactionAborted) {
+          // Stop landed during the checkpoint: keep the user's message and
+          // end the turn as aborted, exactly as the threshold path does.
+          this.keepPreflightUserMessage(incomingUserMessage);
+          throw turnAbortedError("Turn aborted while compacting context");
+        }
+        // A failed switch compaction is not an error: the new model already
+        // fit this context, so the run continues with all of it.
+      }
       if (this.automaticCompactionNeeded([incomingUserMessage])) {
         const compacted = await this.runCompaction("threshold", false);
         if (!compacted) {

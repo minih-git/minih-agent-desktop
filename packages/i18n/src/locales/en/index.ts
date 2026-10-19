@@ -3077,6 +3077,8 @@ importConfirm: "Imported extensions run inside the agent process with the same a
     dismiss: "Dismiss notification",
   },
   contextCompaction: {
+    modelSwitch:
+      "Context compacted for the selected model",
     completed: "Conversation context compacted",
     retrying: "Context compacted; retrying the model request",
     recovered:

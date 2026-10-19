@@ -2996,6 +2996,7 @@ export const ptBR = {
     dismiss: "Dispensar notificação"
   },
   contextCompaction: {
+    modelSwitch: "Contexto compactado para o modelo selecionado",
     completed: "Contexto de conversa compactado",
     retrying: "Contexto compactado; repetindo a solicitação ao modelo",
     recovered: "Falha ao resumir o contexto; o contexto recente foi mantido e a tarefa continua",
