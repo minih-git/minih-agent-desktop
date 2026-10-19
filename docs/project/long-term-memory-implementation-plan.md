@@ -379,6 +379,12 @@ Tests:
   restore — fails until it is updated. All devices of a vault must therefore
   run a build that knows `learnedMemory`; the "older versions ignore unknown
   payload fields" assumption does not hold and is not claimed.
+- Merge a scope by note, not by entity: `three_way` asks the domain for its own
+  merge, and `learned_memory.rs` unions entries and tombstones by fingerprint
+  (newer `updated_at` wins; cited messages are merged), with one
+  delete-versus-edit rule shared by apply and merge. A whole-scope conflict is
+  therefore never offered. Accepted limits: delete and re-creation are ordered
+  by the devices' own timestamps, and one scope contributes at most 500 notes.
 - Show the §1 measures as device-local counters in the memory manager: the
   index size of the last launch, accepted/rejected suggestions and their rate,
   tombstone blocks split by writer, and today's extraction spend. They never

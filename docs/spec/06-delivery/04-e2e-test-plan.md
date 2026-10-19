@@ -19023,15 +19023,28 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
      approve, and read both scopes there.
   3. Forget the user-scope note on the second device, sync, approve on the first
      device, then try to write the same content there again.
+  4. Between two syncs, write a different note on each device in the same
+     project scope, and again in the user scope, and let both devices converge.
+  5. First sync of two devices that never shared a revision, each already
+     holding its own user-scope note.
+  6. Delete a shared note on one device and edit it on the other before it
+     syncs, then bring it back with the receipt's "remember again".
 - **Expected**: Both notes arrive on the second device and the suggestion does
   not; its own counters stay at zero. After the delete the first device no
   longer holds the note, the same content is refused with `MEMORY_TOMBSTONED`,
-  and that refused write is counted only on the device that attempted it. A
-  revision carrying a domain this build does not know is still refused at the
-  manifest gate rather than skipped, which is what makes every device of a vault
-  have to run a build that knows `learnedMemory`.
-- **Automation**: `config_sync::engine::router_tests::learned_memory_tests::learned_memory_travels_between_devices_and_its_counters_do_not`
-  (two devices over the in-process router transport fixture), with
+  and that refused write is counted only on the device that attempted it. Two
+  devices that each wrote something keep both notes with no conflict offered,
+  in both scopes and on a first sync as well. A delete beats an edit made after
+  it on both devices, and only the user's own "remember again" restores the
+  note. A revision carrying a domain this build does not know is still refused
+  at the manifest gate rather than skipped, which is what makes every device of
+  a vault have to run a build that knows `learnedMemory`.
+- **Automation**: `config_sync::engine::router_tests::learned_memory_tests::learned_memory_travels_between_devices_and_its_counters_do_not`,
+  `user_notes_written_on_two_devices_between_two_syncs_converge`,
+  `project_notes_written_on_two_devices_between_two_syncs_converge`,
+  `a_first_sync_with_a_note_on_each_device_adopts_both`, and
+  `a_delete_beats_a_later_edit_and_remember_again_restores_the_note` (two
+  devices over the in-process router transport fixture), with
   `learned_memory_round_trips_with_its_tombstones_and_never_its_suggestions`,
   `a_synced_delete_and_a_remember_again_both_propagate`,
   `two_devices_that_wrote_the_same_note_merge_into_one`,
@@ -19043,7 +19056,8 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
 - **Specs linked**: `03-runtime/22-config-sync.md` §2, ADR
   agent-long-term-memory §7.
 - **Acceptance criterion**: A note and its deletion reach the other device,
-  while a suggestion and every device-local number stay where they were made.
+  while a suggestion and every device-local number stay where they were made,
+  and two devices that wrote different notes converge without a conflict.
 - **Milestone**: M5.
 - **Status**: Automated at the engine level.
 

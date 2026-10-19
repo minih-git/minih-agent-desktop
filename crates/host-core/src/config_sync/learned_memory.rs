@@ -43,10 +43,12 @@ use anyhow::{anyhow, Result};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 use super::domains::{
-    entity, project_scope, PortableEntity, ProjectIdentityOverrides, DOMAIN_LEARNED_MEMORY,
+    entity, project_scope, refresh_digest, PortableEntity, ProjectIdentityOverrides,
+    DOMAIN_LEARNED_MEMORY,
 };
 use super::engine::{mapped_project_paths, StoredConfig};
 use crate::db::{now_ms, Database};
@@ -263,17 +265,22 @@ pub(crate) fn apply_learned_memory(
     apply_scope(st, &scope, payload)
 }
 
+/// Apply one scope payload.
+///
+/// The delete-versus-edit rule below is the same one the two-device merge asks
+/// (`note_outlives_delete`), so a device that applies a payload and a device
+/// that merges one cannot reach different conclusions about the same note.
 fn apply_scope(st: &AppState, scope: &MemoryScope, payload: &Value) -> Result<()> {
-    let entries = parse_entries(payload);
-    let tombstones = parse_tombstones(payload);
-    for tombstone in &tombstones {
-        // A tombstone that is older than the note this device already holds is
-        // stale: the other device deleted, then the user pressed "remember
-        // again", and that newer note travels as an entry below.
+    let synced = parse_scope(payload);
+    for tombstone in &synced.tombstones {
+        // A note the user brought back with "remember again" was created after
+        // the delete, so it stands; the delete is then not written at all. An
+        // edit of a note deleted elsewhere only moved `updated_at`, so it does
+        // not keep the note alive.
         if st
             .db
             .live_memory_entry_by_fingerprint(scope, &tombstone.fingerprint)?
-            .is_some_and(|entry| entry.updated_at > tombstone.created_at)
+            .is_some_and(|entry| note_outlives_delete(entry.created_at, tombstone.created_at))
         {
             continue;
         }
@@ -290,7 +297,7 @@ fn apply_scope(st: &AppState, scope: &MemoryScope, payload: &Value) -> Result<()
             tombstone.created_at.max(0),
         )?;
     }
-    for entry in &entries {
+    for entry in &synced.entries {
         let local_tombstone = st
             .db
             .memory_tombstone(scope, &entry.fingerprint)?
@@ -299,7 +306,7 @@ fn apply_scope(st: &AppState, scope: &MemoryScope, payload: &Value) -> Result<()
             // The note is newer than the delete this device holds: the user
             // brought it back on the other device, so the delete no longer
             // stands here either.
-            if entry.created_at > created_at {
+            if note_outlives_delete(entry.created_at, created_at) {
                 tombstones::clear(st.db.conn(), scope, &entry.fingerprint)?;
             } else {
                 continue;
@@ -319,30 +326,38 @@ fn apply_scope(st: &AppState, scope: &MemoryScope, payload: &Value) -> Result<()
     Ok(())
 }
 
-fn parse_entries(payload: &Value) -> Vec<SyncedEntry> {
-    payload
-        .get("entries")
-        .and_then(Value::as_array)
-        .map(|raw| {
-            raw.iter()
-                .filter_map(|item| serde_json::from_value::<SyncedEntry>(item.clone()).ok())
-                .filter(is_usable)
-                .collect()
-        })
-        .unwrap_or_default()
+/// Whether a note stands against a delete (ADR agent-long-term-memory §6).
+///
+/// The delete wins unless the note was created after it. "Remember again"
+/// writes a new note with a newer `created_at`, so it comes back; an edit of a
+/// note that was deleted elsewhere only moves `updated_at`, and a delete must
+/// not be undone by it. Apply and the two-device merge both ask this one
+/// function, so they cannot decide the same pair of timestamps differently.
+fn note_outlives_delete(note_created_at: i64, tombstone_created_at: i64) -> bool {
+    note_created_at > tombstone_created_at
 }
 
-fn parse_tombstones(payload: &Value) -> Vec<SyncedTombstone> {
+/// The trusted view of one scope payload: the entries and tombstones this build
+/// can read, with anything the trust boundary refuses dropped.
+fn parse_scope(payload: &Value) -> SyncedScope {
+    SyncedScope {
+        entries: items(payload, "entries")
+            .filter_map(|item| serde_json::from_value::<SyncedEntry>(item.clone()).ok())
+            .filter(is_usable)
+            .collect(),
+        tombstones: items(payload, "tombstones")
+            .filter_map(|item| serde_json::from_value::<SyncedTombstone>(item.clone()).ok())
+            .filter(|tombstone| !tombstone.fingerprint.trim().is_empty())
+            .collect(),
+    }
+}
+
+fn items<'a>(payload: &'a Value, key: &str) -> impl Iterator<Item = &'a Value> {
     payload
-        .get("tombstones")
+        .get(key)
         .and_then(Value::as_array)
-        .map(|raw| {
-            raw.iter()
-                .filter_map(|item| serde_json::from_value::<SyncedTombstone>(item.clone()).ok())
-                .filter(|tombstone| !tombstone.fingerprint.trim().is_empty())
-                .collect()
-        })
-        .unwrap_or_default()
+        .into_iter()
+        .flatten()
 }
 
 /// The trust boundary for one synced entry: structure, enums, bounds, and the
@@ -386,6 +401,134 @@ fn is_usable(entry: &SyncedEntry) -> bool {
         return false;
     }
     true
+}
+
+// ---- merging two devices' view of one scope (ADR §7) --------------------
+
+/// Merge the two devices' payloads for one learned-memory entity.
+///
+/// A scope travels as one entity, so a whole-entity three-way merge would ask
+/// the user to choose between two devices' notes whenever both wrote something
+/// between two syncs. Identity inside a scope is the fingerprint, so the
+/// payloads are unioned instead: notes by fingerprint keeping the newer
+/// `updated_at`, tombstones by fingerprint with their cited messages merged,
+/// and `note_outlives_delete` deciding between a note and a tombstone that name
+/// the same fingerprint.
+///
+/// `None` hands the decision back to the caller's conflict handling. A
+/// whole-entity deletion is such a case: the project itself is gone, which is
+/// not something a note-level union may decide. A payload this build cannot
+/// read is another, so a future shape is reviewed rather than dropped.
+pub(crate) fn merge_learned_memory(
+    local: &PortableEntity,
+    remote: &PortableEntity,
+) -> Option<PortableEntity> {
+    if local.deleted || remote.deleted {
+        return None;
+    }
+    let merged = merge_scopes(&scope_of(local)?, &scope_of(remote)?);
+    let mut result = local.clone();
+    // The payload's other keys (the project identity and name) are this
+    // device's own view of the same project and do not take part in the merge.
+    result
+        .payload
+        .as_object_mut()?
+        .insert("scope".into(), serde_json::to_value(&merged).ok()?);
+    refresh_digest(&mut result);
+    Some(result)
+}
+
+fn scope_of(entity: &PortableEntity) -> Option<SyncedScope> {
+    Some(parse_scope(entity.payload.get("scope")?))
+}
+
+fn merge_scopes(local: &SyncedScope, remote: &SyncedScope) -> SyncedScope {
+    let mut entries: BTreeMap<String, SyncedEntry> = BTreeMap::new();
+    for entry in local.entries.iter().chain(remote.entries.iter()) {
+        entries
+            .entry(entry.fingerprint.clone())
+            .and_modify(|current| *current = newer_entry(current, entry))
+            .or_insert_with(|| entry.clone());
+    }
+    let mut tombstones: BTreeMap<String, SyncedTombstone> = BTreeMap::new();
+    for tombstone in local.tombstones.iter().chain(remote.tombstones.iter()) {
+        tombstones
+            .entry(tombstone.fingerprint.clone())
+            .and_modify(|current| *current = merged_tombstone(current, tombstone))
+            .or_insert_with(|| tombstone.clone());
+    }
+    // One fingerprint cannot be both a live note and a deleted one. The delete
+    // stands unless the note was created after it, and the loser leaves the
+    // payload entirely so the two devices cannot re-derive a different answer.
+    let mut deleted: BTreeSet<String> = BTreeSet::new();
+    let mut revived: BTreeSet<String> = BTreeSet::new();
+    for (fingerprint, entry) in &entries {
+        match tombstones.get(fingerprint) {
+            Some(tombstone) if !note_outlives_delete(entry.created_at, tombstone.created_at) => {
+                deleted.insert(fingerprint.clone());
+            }
+            Some(_) => {
+                revived.insert(fingerprint.clone());
+            }
+            None => {}
+        }
+    }
+    SyncedScope {
+        entries: entries
+            .into_iter()
+            .filter(|(fingerprint, _)| !deleted.contains(fingerprint))
+            .map(|(_, entry)| entry)
+            .collect(),
+        tombstones: tombstones
+            .into_iter()
+            .filter(|(fingerprint, _)| !revived.contains(fingerprint))
+            .map(|(_, tombstone)| tombstone)
+            .collect(),
+    }
+}
+
+/// One fingerprint has one note. Two devices that wrote it independently pick
+/// the same winner: the newer `updated_at`, and on an exact tie the serialized
+/// form, which is identical on both devices, so neither keeps a second copy.
+fn newer_entry(left: &SyncedEntry, right: &SyncedEntry) -> SyncedEntry {
+    if left.updated_at != right.updated_at {
+        return if left.updated_at > right.updated_at {
+            left.clone()
+        } else {
+            right.clone()
+        };
+    }
+    let left_json = serde_json::to_string(left).unwrap_or_default();
+    let right_json = serde_json::to_string(right).unwrap_or_default();
+    if left_json >= right_json {
+        left.clone()
+    } else {
+        right.clone()
+    }
+}
+
+/// One fingerprint has one tombstone. Its cited messages are unioned, exactly
+/// as `tombstones::write` merges them, so neither device's evidence is lost,
+/// and the newest delete is the one that stands. Every field is chosen without
+/// regard to which side was local, so both devices derive the same tombstone.
+fn merged_tombstone(left: &SyncedTombstone, right: &SyncedTombstone) -> SyncedTombstone {
+    let mut ids = left.source_message_ids.clone();
+    for id in &right.source_message_ids {
+        if !ids.contains(id) {
+            ids.push(id.clone());
+        }
+    }
+    ids.sort();
+    SyncedTombstone {
+        fingerprint: left.fingerprint.clone(),
+        source_session_id: match (&left.source_session_id, &right.source_session_id) {
+            (Some(left_id), Some(right_id)) => Some(left_id.min(right_id).clone()),
+            (Some(id), None) | (None, Some(id)) => Some(id.clone()),
+            (None, None) => None,
+        },
+        source_message_ids: ids,
+        created_at: left.created_at.max(right.created_at),
+    }
 }
 
 impl Database {

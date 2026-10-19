@@ -264,10 +264,10 @@ pub const DOMAIN_ADAPTERS: &[DomainAdapterSpec] = &[
             "daily token ledger",
             "usage counters",
         ],
-        identity: "scope (user, or project/group identity) plus fingerprint",
+        identity: "one entity per scope (user, or project/group identity), with notes keyed by fingerprint inside it",
         references: &["project mapping"],
-        merge_granularity: "one note, keyed by fingerprint within its scope",
-        activation_policy: "mapping and approval required",
+        merge_granularity: "one note, keyed by fingerprint within its scope; a scope payload is unioned, never split into conflict candidates",
+        activation_policy: "project scope needs a folder mapping and confirmation; user scope applies directly",
         recovery_policy: "database import journal",
     },
     DomainAdapterSpec {

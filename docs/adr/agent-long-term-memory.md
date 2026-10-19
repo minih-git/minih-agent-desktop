@@ -248,10 +248,21 @@ Learned memory gets its own config-sync domain, `learnedMemory`, gated by the
 existing opt-in memory category: one entity per project identity carries that
 scope's `active` and `archived` entries plus its tombstones, using the same
 project mapping as pinned memory, and the user scope is one entity that needs no
-mapping. Identity inside a scope is the entry fingerprint, so two devices that
-wrote the same note merge instead of duplicating, and a delete propagates as a
-tombstone. Suggestions, cursors, session state, the budget ledger, and the
-device-local counters stay where they were made.
+mapping. Identity inside a scope is the entry fingerprint, and that is also the
+merge unit: a scope's payload is unioned by fingerprint, so two devices that
+wrote the same note merge into one and two devices that each wrote their own note
+keep both, instead of a whole scope becoming a conflict the user must resolve.
+The same fingerprint is taken from the newer `updated_at`, and a delete
+propagates as a tombstone that also blocks the evidence behind it. A delete wins
+over an edit of the same note, because an edit moves `updated_at` only, unless
+the note was created after the delete — which is what "remember again" produces.
+Suggestions, cursors, session state, the budget ledger, and the device-local
+counters stay where they were made.
+
+Two limits are accepted with it: a delete and a re-creation are ordered by the
+timestamps the two devices wrote, so a large clock difference between them can
+order a delete and an edit the wrong way; and one scope contributes at most 500
+notes to a revision, so a larger scope syncs its newest 500.
 
 It is a separate domain rather than an extension of the pinned `memory` domain
 because a released build treats every entity of that domain as pinned project

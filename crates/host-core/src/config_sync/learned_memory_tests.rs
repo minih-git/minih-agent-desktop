@@ -301,7 +301,10 @@ async fn a_synced_delete_and_a_remember_again_both_propagate() -> Result<()> {
 
     // The user presses "remember again" on A: the tombstone is cleared and a
     // new note is created. Both facts must reach B, which still holds the
-    // delete.
+    // delete. The re-creation has to be strictly newer than the delete for the
+    // rule to see it as one, so the two are separated by more than the clock's
+    // resolution instead of racing inside the same millisecond.
+    std::thread::sleep(std::time::Duration::from_millis(5));
     let remembered = {
         let mut state = device_a.lock().await;
         let scope = state.db.learned_memory_scope_for_path(&path_a)?;
@@ -800,3 +803,6 @@ async fn learned_memory_travels_between_devices_and_its_counters_do_not() -> Res
     fixture.task.abort();
     Ok(())
 }
+
+#[path = "learned_memory_merge_tests.rs"]
+mod learned_memory_merge_tests;

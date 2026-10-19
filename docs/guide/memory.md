@@ -101,12 +101,20 @@ delete you make here is enforced there, so the same sentence cannot be learned
 again from the same conversation on another machine.
 
 Two devices that wrote the same note end up with one note rather than two, because
-a note's identity is its own text and not the device that stored it.
+a note's identity is its own text and not the device that stored it. Two devices
+that each wrote a different note keep both: notes are merged one by one, so
+syncing never asks you to choose between two sets of notes.
 
 **Every device of a vault must run this version or newer.** A device on an older
 build cannot read a revision that carries learned memory, so it stops syncing —
 and restoring — until it is updated. Update all your devices before you turn the
 memory category on.
+
+Two things to know about the order and the volume. A delete and a note are
+ordered by the time each device wrote them, so a computer whose clock is far off
+can order a delete and an edit the wrong way; keep device clocks reasonably in
+sync. And at most 500 notes of one scope travel per sync: a project with more
+notes syncs its newest 500, and the rest stay on the device that has them.
 
 ## What the agent can do with it
 

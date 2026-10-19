@@ -1,7 +1,8 @@
 use super::domains::{
     refresh_digest, CategorySelection, LocalSnapshot, PortableEntity, RevisionManifest,
-    DOMAIN_APPLICATION,
+    DOMAIN_APPLICATION, DOMAIN_LEARNED_MEMORY,
 };
+use super::learned_memory;
 use anyhow::{bail, Result};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -54,6 +55,43 @@ fn choose_conflict(
     remote_candidate.entity_id = format!("{}:remote", remote_candidate.entity_id);
     remote_candidate.label = format!("{} (remote)", remote_candidate.label);
     (local_candidate, remote_candidate)
+}
+
+/// Whether both sides are the learned-memory domain, whose scopes merge by note
+/// rather than by whole entity.
+fn is_learned_memory(local: &PortableEntity, remote: &PortableEntity) -> bool {
+    local.domain == DOMAIN_LEARNED_MEMORY && remote.domain == DOMAIN_LEARNED_MEMORY
+}
+
+/// Why two versions of one entity could not be merged without the user.
+fn conflict_reason(local: &PortableEntity, remote: &PortableEntity) -> &'static str {
+    if local.deleted || remote.deleted {
+        "delete-versus-edit"
+    } else {
+        "same-merge-unit-changed-on-both-devices"
+    }
+}
+
+/// Keep both candidates for one entity and record the conflict. `origin` names
+/// the entity (its domain, id, and label) — the base when there is one, because
+/// a `:local`/`:remote` candidate id is temporary.
+fn conflict_candidates(
+    conflicts: &mut Vec<MergeConflict>,
+    origin: &PortableEntity,
+    local: &PortableEntity,
+    remote: &PortableEntity,
+    reason: &str,
+) -> Vec<PortableEntity> {
+    let (local_candidate, remote_candidate) = choose_conflict(local, remote);
+    conflicts.push(MergeConflict {
+        domain: origin.domain.clone(),
+        entity_id: origin.entity_id.clone(),
+        label: origin.label.clone(),
+        local_digest: local.digest.clone(),
+        remote_digest: remote.digest.clone(),
+        reason: reason.to_string(),
+    });
+    vec![local_candidate, remote_candidate]
 }
 
 fn merge_application_fields(
@@ -130,6 +168,20 @@ pub fn three_way(
             (None, Some(local), Some(remote)) if same_version(local, remote) => {
                 vec![local.clone()]
             }
+            (None, Some(local), Some(remote)) if is_learned_memory(local, remote) => {
+                // Two devices that never synced, each with its own notes: the
+                // scope's notes are unioned rather than offered as a choice.
+                match learned_memory::merge_learned_memory(local, remote) {
+                    Some(merged) => vec![merged],
+                    None => conflict_candidates(
+                        &mut conflicts,
+                        local,
+                        local,
+                        remote,
+                        "independent-initial-identities",
+                    ),
+                }
+            }
             (None, Some(local), Some(remote)) => {
                 if local.domain == DOMAIN_APPLICATION
                     && local
@@ -142,28 +194,22 @@ pub fn three_way(
                     if let Some(merged) = merge_application_fields(&empty_base, local, remote) {
                         vec![merged]
                     } else {
-                        let (local_candidate, remote_candidate) = choose_conflict(local, remote);
-                        conflicts.push(MergeConflict {
-                            domain: local.domain.clone(),
-                            entity_id: local.entity_id.clone(),
-                            label: local.label.clone(),
-                            local_digest: local.digest.clone(),
-                            remote_digest: remote.digest.clone(),
-                            reason: "independent-initial-identities".to_string(),
-                        });
-                        vec![local_candidate, remote_candidate]
+                        conflict_candidates(
+                            &mut conflicts,
+                            local,
+                            local,
+                            remote,
+                            "independent-initial-identities",
+                        )
                     }
                 } else {
-                    let (local_candidate, remote_candidate) = choose_conflict(local, remote);
-                    conflicts.push(MergeConflict {
-                        domain: local.domain.clone(),
-                        entity_id: local.entity_id.clone(),
-                        label: local.label.clone(),
-                        local_digest: local.digest.clone(),
-                        remote_digest: remote.digest.clone(),
-                        reason: "independent-initial-identities".to_string(),
-                    });
-                    vec![local_candidate, remote_candidate]
+                    conflict_candidates(
+                        &mut conflicts,
+                        local,
+                        local,
+                        remote,
+                        "independent-initial-identities",
+                    )
                 }
             }
             (Some(_base), Some(local), Some(remote)) if same_version(local, remote) => {
@@ -235,23 +281,31 @@ pub fn three_way(
                 payload: base.payload.clone(),
                 resource_ids: Vec::new(),
             }],
+            (Some(base), Some(local), Some(remote)) if is_learned_memory(local, remote) => {
+                // Both devices changed the same scope, and by now neither side
+                // equals the base. Notes are merged by fingerprint, so two
+                // devices that each wrote something keep both notes.
+                match learned_memory::merge_learned_memory(local, remote) {
+                    Some(merged) => vec![merged],
+                    None => conflict_candidates(
+                        &mut conflicts,
+                        base,
+                        local,
+                        remote,
+                        conflict_reason(local, remote),
+                    ),
+                }
+            }
             (Some(base), local, remote) => {
                 let local = local.ok_or_else(|| anyhow::anyhow!("local merge state missing"))?;
                 let remote = remote.ok_or_else(|| anyhow::anyhow!("remote merge state missing"))?;
-                let (local_candidate, remote_candidate) = choose_conflict(local, remote);
-                conflicts.push(MergeConflict {
-                    domain: base.domain.clone(),
-                    entity_id: base.entity_id.clone(),
-                    label: base.label.clone(),
-                    local_digest: local.digest.clone(),
-                    remote_digest: remote.digest.clone(),
-                    reason: if local.deleted || remote.deleted {
-                        "delete-versus-edit".to_string()
-                    } else {
-                        "same-merge-unit-changed-on-both-devices".to_string()
-                    },
-                });
-                vec![local_candidate, remote_candidate]
+                conflict_candidates(
+                    &mut conflicts,
+                    base,
+                    local,
+                    remote,
+                    conflict_reason(local, remote),
+                )
             }
         };
         entities.extend(selected);
