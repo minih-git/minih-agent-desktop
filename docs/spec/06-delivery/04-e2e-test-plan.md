@@ -10170,7 +10170,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   advances revision, including clear, and emits one committed `todos.changed`
   snapshot. Invalid or unauthorized writes do not mutate or emit. TodoDock
   renders plain text, separates collapsed progress from the current item,
-  uses compact square status marks in a flat expanded list, does not take focus,
+  uses compact outlined status marks in a flat expanded list, does not take focus,
   resets expansion on session changes, lists every ordered row with the dock's
   own list as the scrollport, and keeps a collapsed dock to its header height,
   rejects stale events, and skips local recovery for `remote:` sessions because
@@ -10226,6 +10226,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 |---|---|
 | C / G / Quality / Security — Account menu and sidebar utilities | E2E-NAV-account-menu-and-sidebar-utilities |
 | C / E / F / Quality / Security — Session Todo checklist | E2E-CHAT-session-todo-checklist |
+| Quality / Security — Selected upstream Bash/layout import | E2E-BASH-background-task-lifecycle-and-output, E2E-LAYOUT-sidebar-reopen-preserves-width-preference |
 | C / E / Security / Quality — Live Voice four-stage interaction | E2E-LIVE-VOICE-four-stage-ui |
 | C / F — Hourly task updates | E2E-SCHEDULED-manual-to-hourly |
 | C / F / Quality — Saved project isolation | E2E-SCHEDULED-manual-workspace-binding |
@@ -18985,3 +18986,45 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
   suggestion stays rejected.
 - **Milestone**: M4.
 - **Status**: Automated — `pnpm test:e2e:memory`.
+
+### E2E-BASH-background-task-lifecycle-and-output
+
+- **Preconditions**: The request worktree's built Host and isolated data/profile;
+  deterministic local commands, no real model/provider and no user Desktop.
+- **Steps**: Start an approved background Bash and end/abort its turn; list and
+  expand output, stop a running task, switch sessions, and dismiss a new terminal
+  receipt. Reject an approval and abort another pending approval. Exercise ten
+  output-heavy tasks, final stdout/stderr, isolated-worktree environment, startup
+  after shutdown, and graceful Host exit with a live child.
+- **Expected**: Only approved commands start; pending approval remains cancellable;
+  a started background process survives its turn but not Stop or Host exit.
+  Output is drained and bounded to 256 KiB per stream. Foreground behavior and
+  shell pinning stay unchanged. Remote background requests fail explicitly.
+  Composer lists at most 12 tasks, polls only expanded output, ignores stale
+  responses, retries visible errors, and does not replay historical finished rows.
+- **Specs**: `03-runtime/03-tools-and-permissions.md`,
+  `03-runtime/06-host-rpc-protocol.md`, `03-runtime/01-ipc-protocol.md`,
+  ADR `background-bash-task-ownership`.
+- **Acceptance**: E / F / Quality / Security.
+- **Milestone**: Post-M6 maintenance.
+- **Automation**: `scripts/e2e-background-tasks-host.mjs`,
+  `scripts/e2e-background-tasks.mjs`, runtime and host-core companion tests.
+- **Status**: Run on the exact request candidate; document unrun platforms.
+
+### E2E-LAYOUT-sidebar-reopen-preserves-width-preference
+
+- **Preconditions**: An isolated Electron profile and a saved work-panel width.
+- **Steps**: Reopen the sidebar after layout collapse, collapse it again, enlarge
+  the window, and resize the shown panel by pointer and keyboard. Reload the
+  preference. Expand a TodoDock using only its labelled trailing button.
+- **Expected**: Borrowing never rewrites the saved width; returned space restores
+  the panel before widening MainChat. Saved widths keep the 244px floor; a compact
+  gesture cannot shrink further. Todo progress copy is not a toggle; the single
+  toggle has an explicit localized name, matching ARIA state and Enter/Space.
+- **Specs**: `04-ux/01-ui-ia.md`, `04-ux/08-component-spec.md`,
+  `04-ux/09-interaction-patterns.md`, ADR 0238.
+- **Acceptance**: F / Quality / Accessibility.
+- **Milestone**: Post-M6 maintenance.
+- **Automation**: `scripts/e2e-three-column-layout.mjs`,
+  `scripts/e2e-todo-checklist.mjs`, targeted work-panel and TodoDock tests.
+- **Status**: Run on the exact request candidate; native platform testing is separate.

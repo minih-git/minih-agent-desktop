@@ -1,3 +1,4 @@
+mod background_tasks_rpc;
 mod config_sync_rpc;
 mod easytier_rpc;
 mod memory_rpc;
@@ -23,6 +24,7 @@ use tokio::sync::{mpsc, oneshot, Mutex, Semaphore};
 use crate::agent_capabilities::CapabilityLevel;
 use crate::artifacts;
 use crate::audit;
+use crate::background_tasks;
 use crate::delegations;
 use crate::notifications;
 use crate::permissions::{PermissionDecision, PermissionEvaluationParams, PermissionManager};
@@ -312,6 +314,27 @@ pub async fn serve(state: Arc<Mutex<AppState>>) -> Result<()> {
     // chord. Keep the native fallback beside the host transport so it remains
     // active even when Minih-Agent-Desktop is unfocused.
     crate::keyboard::start(tx.clone());
+    // Fan background-task state changes out to the renderer. The supervisors
+    // bump a static counter (no AppState lock involved); this loop watches it
+    // and emits `backgroundTasks.changed` so the composer bar stays current.
+    let background_change_task = {
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let mut seen = background_tasks::change_counter();
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                let current = background_tasks::change_counter();
+                if current != seen {
+                    seen = current;
+                    send_notification(
+                        &tx,
+                        "backgroundTasks.changed",
+                        json!({ "version": current }),
+                    );
+                }
+            }
+        })
+    };
     let (input_tx, mut input_rx) = mpsc::unbounded_channel::<StdinEvent>();
     let _stdin_reader = match spawn_stdin_reader(input_tx) {
         Ok(handle) => handle,
@@ -462,6 +485,8 @@ pub async fn serve(state: Arc<Mutex<AppState>>) -> Result<()> {
 
     config_sync_scheduler.abort();
     let _ = config_sync_scheduler.await;
+    background_change_task.abort();
+    let _ = background_change_task.await;
     {
         let mut st = state.lock().await;
         st.shutdown();
@@ -545,6 +570,9 @@ fn request_budget_ms(method: &str, params: &Value) -> Option<u64> {
     if !matches!(method, "tools.execute" | "tools.workspaceExecute") {
         return Some(RPC_REQUEST_BUDGET_MS);
     }
+    // Background processes return after registration. Keep the existing
+    // permission-admission budget rather than imposing a shorter spawn budget
+    // on an approval that may still be waiting for the user.
     // `ToolsExecuteParams` is `#[serde(rename_all = "camelCase")]`, so the wire
     // carries `toolName` / `timeoutMs`. Reading the snake_case spellings here
     // would see an empty tool name and no timeout on every real request,
@@ -3984,6 +4012,9 @@ async fn handle_request(
             }
             Ok(json!({ "tools": definitions }))
         }
+        method if method.starts_with("backgroundTasks.") => {
+            background_tasks_rpc::handle(&state, method, params).await
+        }
         "tools.execute" => {
             let call_started = std::time::Instant::now();
             let p: ToolsExecuteParams = serde_json::from_value(params.clone())
@@ -4539,6 +4570,8 @@ async fn handle_request(
                         cancellation,
                         output_tx: Some(tx.clone()),
                         extra_env: worktree_env.clone(),
+                        run_in_background: p.run_in_background,
+                        app_state: Some(state.clone()),
                     });
                 }
 

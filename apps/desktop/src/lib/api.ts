@@ -378,7 +378,32 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   return result.data;
 }
 
-/** `session.create` input: summary fields plus the isolation switch. */
+/** One chat-started background command reported by host-core. */
+export type BackgroundTaskSummary = {
+  id: string;
+  sessionId: string;
+  command: string;
+  commandShellId: string;
+  state: "running" | "exited" | "failed" | "stopped";
+  elapsedMs: number;
+  exitCode?: number;
+};
+
+export type BackgroundTasksListResult = {
+  tasks: BackgroundTaskSummary[];
+  version: number;
+};
+
+export type BackgroundTaskOutput = {
+  id: string;
+  state: "running" | "exited" | "failed" | "stopped";
+  exitCode?: number;
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+};
+
+/** \`session.create\` input: summary fields plus the isolation switch. */
 export type CreateSessionInput = Partial<SessionSummary> & {
   /** Run the session in its own git worktree (ADR 0329). */
   isolated?: boolean;
@@ -813,6 +838,18 @@ export const api = {
    */
   testJevApiKey: (value: string) =>
     invoke<JevKeyCheckResult>(IPC.invoke.jevTest, value),
+  backgroundTasksList: () =>
+    invoke<BackgroundTasksListResult>(IPC.invoke.backgroundTasksList),
+  backgroundTasksOutput: (id: string) =>
+    invoke<BackgroundTaskOutput>(IPC.invoke.backgroundTasksOutput, { id }),
+  backgroundTasksStop: (id: string) =>
+    invoke<{ ok: boolean; found: boolean }>(IPC.invoke.backgroundTasksStop, { id }),
+  onBackgroundTasksChanged: (listener: (payload: { version?: number }) => void) => {
+    if (!window.minihAgent?.on) return () => undefined;
+    return window.minihAgent.on(IPC.event.backgroundTasksChanged, (payload) =>
+      listener((payload ?? {}) as { version?: number }),
+    );
+  },
   configSyncGetState: () => invoke<ConfigSyncState>(IPC.invoke.configSyncGetState),
   configSyncConfigure: (input: ConfigSyncConfigureInput) =>
     invoke<ConfigSyncState>(IPC.invoke.configSyncConfigure, input),
