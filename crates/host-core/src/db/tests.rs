@@ -2083,3 +2083,143 @@ fn v24_notifications_migrate_to_prompt_kinds() {
     )
     .unwrap_err();
 }
+
+// ---- pinned memory follows a folder into a project group -------------------
+
+/// A group is the identity a session reads its pinned memory through, so a
+/// folder that joins one must bring what the user wrote for it. A project built
+/// into a new group is the first of the three entry points; the legacy upgrade
+/// is the one that already did this.
+#[test]
+fn creating_a_group_keeps_the_pinned_memory_of_its_projects() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first");
+    let second = dir.path().join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    db.set_project_memory(&first.to_string_lossy(), "Remember the first root.")
+        .unwrap();
+    db.set_project_memory(&second.to_string_lossy(), "Remember the second root.")
+        .unwrap();
+
+    let group = db
+        .create_project_group(
+            "Workspace",
+            &[
+                first.to_string_lossy().into(),
+                second.to_string_lossy().into(),
+            ],
+        )
+        .unwrap();
+    let memory = db.get_project_group_memory(&group.id).unwrap();
+    assert!(
+        memory.content.contains("Remember the first root."),
+        "{}",
+        memory.content
+    );
+    assert!(
+        memory.content.contains("Remember the second root."),
+        "{}",
+        memory.content
+    );
+    // The order follows the group's root order, so the primary root's memory
+    // reads first.
+    let entries = memory.entries.expect("entries travel with the content");
+    assert_eq!(entries[0].content, "Remember the first root.");
+    assert_eq!(entries[1].content, "Remember the second root.");
+}
+
+/// A stored group gaining a root keeps what it already had, in order, and the
+/// joining folder's memory is appended behind it.
+#[test]
+fn adding_a_root_to_a_group_appends_its_pinned_memory() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first");
+    let second = dir.path().join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    let group = db
+        .create_project_group("Workspace", &[first.to_string_lossy().into()])
+        .unwrap();
+    db.set_project_group_memory(
+        &group.id,
+        &serde_json::json!([{
+            "id": "group-note",
+            "title": "Group",
+            "content": "Existing group note."
+        }]),
+    )
+    .unwrap();
+    db.set_project_memory(&second.to_string_lossy(), "Remember the second root.")
+        .unwrap();
+
+    db.update_project_group(
+        &group.id,
+        "Workspace",
+        &[
+            first.to_string_lossy().into(),
+            second.to_string_lossy().into(),
+        ],
+        None,
+    )
+    .unwrap();
+    let memory = db.get_project_group_memory(&group.id).unwrap();
+    let entries = memory.entries.expect("entries travel with the content");
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    assert_eq!(entries[0].id, "group-note");
+    assert_eq!(entries[0].content, "Existing group note.");
+    assert_eq!(entries[1].content, "Remember the second root.");
+}
+
+/// Removing a root and adding it back is a reorganisation, not a new note: the
+/// group must not end up holding the same text twice.
+#[test]
+fn moving_a_root_out_and_back_does_not_duplicate_its_pinned_memory() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first");
+    let second = dir.path().join("second");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    let db = Database::open(&dir.path().join("pi.sqlite")).unwrap();
+    db.set_project_memory(&second.to_string_lossy(), "Remember the second root.")
+        .unwrap();
+    let group = db
+        .create_project_group(
+            "Workspace",
+            &[
+                first.to_string_lossy().into(),
+                second.to_string_lossy().into(),
+            ],
+        )
+        .unwrap();
+
+    db.update_project_group(
+        &group.id,
+        "Workspace",
+        &[first.to_string_lossy().into()],
+        None,
+    )
+    .unwrap();
+    db.update_project_group(
+        &group.id,
+        "Workspace",
+        &[
+            first.to_string_lossy().into(),
+            second.to_string_lossy().into(),
+        ],
+        None,
+    )
+    .unwrap();
+    let memory = db.get_project_group_memory(&group.id).unwrap();
+    let entries = memory.entries.expect("entries travel with the content");
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|entry| entry.content == "Remember the second root.")
+            .count(),
+        1,
+        "{entries:?}"
+    );
+}

@@ -516,7 +516,20 @@ CREATE TABLE projects (
   untitled entry when opened in the editor. The runtime labels it as
   user-provided context so it cannot become a replacement for safety, tool, or
   collaboration rules.
-
+- Pinned memory follows a folder into a project group. A group is the identity a
+  session reads its pinned memory through, so every folder that becomes a root of
+  one — a legacy project being upgraded, a new group built around saved projects,
+  or a stored group gaining a root — hands over the memory keyed by its own path
+  in the same transaction that publishes the group. Existing group entries and
+  their order are kept, the joining folders' entries are appended behind them,
+  and content the group already holds is not appended again, so moving a root out
+  and back does not duplicate it. The path-scoped `projectMemory` record itself is
+  left in place, which is what the legacy upgrade path has always done, so nothing
+  here deletes or truncates user text. Merging several roots' memory can exceed
+  the 32 KiB cap, because that cap is checked against the content of a write and a
+  merge is not a write: an over-limit group record stays readable and can be
+  brought back under the cap by an edit, while an edit that is itself over the cap
+  is still refused.
 ### 4.3 providers
 
 Same role as v1; `headers_json` + `compatibility_json` collapse into one

@@ -48,6 +48,14 @@ policy.
 7. Group creation, editing, shared instruction editing, and shared memory editing
    are additive IPC capabilities. Legacy path-scoped instruction and memory
    APIs remain available for legacy single-root groups.
+8. Pinned memory follows a folder into a group. Every entry point that makes a
+   folder a root of a group — upgrading a legacy project, creating a group around
+   saved projects, and adding a root to a stored group — merges the memory keyed
+   by that folder's path into the group's memory in the same transaction that
+   publishes the group, appending behind what the group already holds and never
+   appending content it already has. The path-scoped record is left in place, as
+   the legacy upgrade path has always done, so no entry point deletes or
+   truncates user text.
 
 ## Consequences
 

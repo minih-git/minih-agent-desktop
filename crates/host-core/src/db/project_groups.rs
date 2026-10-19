@@ -340,14 +340,88 @@ impl Database {
             detached_paths: Vec::new(),
             remote: None,
         };
-        // The group and the learned memory keyed by its roots' paths become
-        // visible together: a folder that joins a group must never leave its
-        // memories or tombstones behind on the old path scope.
+        // The group, its pinned memory, and the learned memory keyed by its
+        // roots' paths become visible together: a folder that joins a group must
+        // never leave its memories or tombstones behind on the old path scope.
         let tx = self.conn.unchecked_transaction()?;
         crate::memory::rekey_learned_memory_to_group(&tx, &canonical_paths, &group.id)?;
+        if let Some(memory) =
+            self.merged_group_memory(None, &canonical_paths, &canonical_paths, now)?
+        {
+            self.kv_set(GROUP_MEMORY_NAMESPACE, &group.id, &memory)?;
+        }
         self.kv_set(GROUP_NAMESPACE, &group.id, &serde_json::to_value(&group)?)?;
         tx.commit()?;
         Ok(group)
+    }
+
+    /// The pinned memory a group holds once some of its roots hand theirs over.
+    ///
+    /// A group is the identity a session reads its pinned memory through, so a
+    /// folder that becomes a root of one must bring what the user wrote for it:
+    /// a legacy project being upgraded, a new group built around saved projects,
+    /// and a stored group gaining a root all merge the joining roots' memory into
+    /// the group's. `ordered` fixes the order — and the entry ids — of the whole
+    /// group, `joining` names the roots being merged, and `existing` is what the
+    /// group already holds. Existing entries and their order are kept and the
+    /// joining entries are appended behind them; content the group already holds
+    /// is not appended again, so moving a root out and back cannot duplicate it.
+    ///
+    /// The path-scoped record itself is left in place, which is what the legacy
+    /// upgrade path has always done. Nothing here deletes or truncates user text.
+    ///
+    /// `None` means there is nothing to write: either no joining root carries
+    /// memory, or the group already holds everything they carry.
+    fn merged_group_memory(
+        &self,
+        existing: Option<Vec<ProjectMemoryEntryRecord>>,
+        ordered: &[String],
+        joining: &[String],
+        now: i64,
+    ) -> Result<Option<Value>> {
+        let mut entries = existing.unwrap_or_default();
+        let mut added = false;
+        for (root_index, path) in ordered.iter().enumerate() {
+            if !joining.iter().any(|candidate| candidate == path) {
+                continue;
+            }
+            let memory = self.get_project_memory(path)?;
+            let incoming = match memory.entries {
+                Some(entries) => entries
+                    .into_iter()
+                    .map(|entry| ProjectMemoryEntryRecord {
+                        id: format!("root-{root_index}-{}", entry.id),
+                        title: entry.title,
+                        content: entry.content,
+                    })
+                    .collect::<Vec<_>>(),
+                None if !memory.content.is_empty() => vec![ProjectMemoryEntryRecord {
+                    id: format!("root-{root_index}-legacy"),
+                    title: project_display_name(path),
+                    content: memory.content,
+                }],
+                None => Vec::new(),
+            };
+            for entry in incoming {
+                if entries
+                    .iter()
+                    .any(|known| known.content.trim() == entry.content.trim())
+                {
+                    continue;
+                }
+                entries.push(entry);
+                added = true;
+            }
+        }
+        if !added {
+            return Ok(None);
+        }
+        Ok(Some(serde_json::json!({
+            "format": "entries-v1",
+            "content": render_project_memory_entries(&entries),
+            "entries": entries,
+            "updatedAt": now
+        })))
     }
 
     /// Edits a stored group's display name and ordered roots.
@@ -484,46 +558,31 @@ impl Database {
             detached_paths,
             remote: None,
         };
-        // The group record and the learned memory that belonged to its roots
-        // become visible together: an upgrade must never leave entries keyed by a
-        // path the group now owns, and must never drop them either.
+        // The group record, its pinned memory, and the learned memory that
+        // belonged to its roots become visible together: a folder that joins a
+        // group must never leave its memories or tombstones behind on the old
+        // path scope, and must never look like it forgot what the user wrote.
         let tx = self.conn.unchecked_transaction()?;
-        if current.legacy {
-            // A legacy project may already have path-scoped memory. Merge the
-            // memory of every selected legacy root into the new group so
-            // upgrading a project never silently discards user context.
-            let mut merged_entries = Vec::new();
-            for (root_index, path) in ordered.iter().enumerate() {
-                let memory = self.get_project_memory(path)?;
-                if let Some(entries) = memory.entries {
-                    merged_entries.extend(entries.into_iter().map(|entry| {
-                        ProjectMemoryEntryRecord {
-                            id: format!("root-{root_index}-{}", entry.id),
-                            title: entry.title,
-                            content: entry.content,
-                        }
-                    }));
-                } else if !memory.content.is_empty() {
-                    merged_entries.push(ProjectMemoryEntryRecord {
-                        id: format!("root-{root_index}-legacy"),
-                        title: project_display_name(path),
-                        content: memory.content,
-                    });
-                }
-            }
-            if !merged_entries.is_empty() {
-                let content = render_project_memory_entries(&merged_entries);
-                self.kv_set(
-                    GROUP_MEMORY_NAMESPACE,
-                    &group.id,
-                    &serde_json::json!({
-                        "format": "entries-v1",
-                        "content": content,
-                        "entries": merged_entries,
-                        "updatedAt": now_ms()
-                    }),
-                )?;
-            }
+        // A legacy upgrade merges every selected root, which is what it has
+        // always done. A stored group merges only the roots that are joining it,
+        // so reorganising a group never re-adds an entry the user removed from
+        // its memory.
+        let existing = if current.legacy {
+            None
+        } else {
+            self.get_project_group_memory(&group.id)?.entries
+        };
+        let joining = if current.legacy {
+            ordered.clone()
+        } else {
+            ordered
+                .iter()
+                .filter(|path| !current.roots.iter().any(|root| &root.path == *path))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        if let Some(memory) = self.merged_group_memory(existing, &ordered, &joining, now)? {
+            self.kv_set(GROUP_MEMORY_NAMESPACE, &group.id, &memory)?;
         }
         // Every folder that is a root of this group hands over the learned memory
         // keyed by its own path — whether the group is new (a legacy upgrade) or
