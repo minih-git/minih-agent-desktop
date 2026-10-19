@@ -1508,7 +1508,12 @@ Project drag/drop follows these patterns:
   tail.
 - Clicking a delegation topology node opens (or activates) a dedicated
   `subagent` tab in the work panel instead of expanding the transcript or
-  replacing the tab strip. Multiple delegations coexist as independent tabs —
+  replacing the tab strip. Clicking the currently visible delegation node
+  again collapses the panel without closing tabs; clicking it while hidden
+  reopens the retained tab. Clicking a different node activates that
+  delegation instead of collapsing. Node disclosure state follows actual
+  panel visibility, including closure through the global panel toggle.
+  Multiple delegations coexist as independent tabs —
   ten subagents yield ten tabs — with the standard tab affordances (activate,
   drag-reorder, close via ×, middle-click, or Delete, and wheel overflow).
   A tab shows the delegation as a message list: every `Task` call of the

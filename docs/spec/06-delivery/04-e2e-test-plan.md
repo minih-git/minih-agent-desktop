@@ -8120,16 +8120,26 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
      ended tab persists until manually closed.
   7. Switch to another session and back. Verify the tabs are restored per
      session and closed tabs stay closed.
+  8. Click the currently visible delegation node again. Verify the panel
+     collapses, its tabs remain retained, focus stays on the node, and
+     `aria-expanded` becomes false with no hidden `aria-controls` target.
+     Click again to reopen without duplicating the tab; select another node
+     to switch rather than collapse. Collapse through the global panel control
+     and verify the original node can reopen the panel.
 - **Expected**: No auto-open on delegate start; N subagents = N coexisting
   closable tabs with deduplicated `name#n` labels; the tab body is the
   delegation's user/assistant message stream with follow-up prompts as user
   turns; the composer is disabled with the in-field hint and has no send
   path; ended delegates' tabs persist until closed; tabs are session-scoped.
+  Repeated node clicks toggle the visible panel without deleting tabs, and
+  disclosure state follows panel visibility rather than retained selection.
 - **Specs linked**: `04-ux/08-component-spec.md` (delegation tab),
   `04-ux/09-interaction-patterns.md` (work panel tabs)
 - **Acceptance**: Quality
 - **Milestone**: M6
-- **Status**: Draft
+- **Status**: Node open/collapse/reopen, focus, retained-tab switching and external
+  collapse are automated by `pnpm test:e2e:subagent-roster`; the remaining
+  full-shell scenario is Draft.
 
 #### E2E-119: Parallel subagents report back without entering the parent's context
 
@@ -18915,7 +18925,7 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
   7. Delete the session; confirm its roster entries do not reappear for another session.
 - **Expected**: The roster indexes the whole persisted session, not just the loaded transcript page, so an old delegate remains findable. Running rows lead, settled rows follow, both newest first. A same-named delegate is never merged with another; a rejected `Task` (no delegation id) never appears; a settled entry never disappears because the turn advanced. Clicking opens the existing detail tab rather than a new surface. The roster never opens the panel, switches the active tab, or takes focus by itself. A failed host read shows a retry action instead of an empty list, and an incomplete transcript is labelled as such.
 - **Specs**: `04-ux/01-ui-ia.md`, `04-ux/08-component-spec.md` §5.3, `04-ux/09-interaction-patterns.md` §9.1, `03-runtime/06-host-rpc-protocol.md` (`session.delegations`), `03-runtime/01-ipc-protocol.md` (`sessionDelegations`).
-- **Acceptance**: `apps/desktop/test/subagent-roster.test.mjs` (roster model, including a delegate appearing once with its settled status), `apps/desktop/test/subagent-roster-ui.test.mjs` (locale copy and detail merge), and `pnpm test:e2e:subagent-roster` pass. The E2E renders the real roster and detail tab in Electron and asserts a settled row updates in place, a stored delegation opens its conversation while the main transcript is unchanged, a failed read shows retry, and many rows scroll inside the height cap.
+- **Acceptance**: `apps/desktop/test/subagent-roster.test.mjs` (roster model, including a delegate appearing once with its settled status), `apps/desktop/test/subagent-roster-ui.test.mjs` (locale copy and detail merge), and `pnpm test:e2e:subagent-roster` pass. The E2E renders the real roster and detail tab in Electron and asserts a settled row updates in place, a stored delegation opens its conversation while the main transcript is unchanged, a failed read shows retry, and many rows scroll inside the height cap. It also verifies topology-node collapse/reopen, retained-tab switching, focus, disclosure after external closure, and roster collapse/expand across remounts.
 - **Milestone**: M5.
 - **Status**: Implemented and covered by the three suites above; the real-device walk-through is Draft.
 
