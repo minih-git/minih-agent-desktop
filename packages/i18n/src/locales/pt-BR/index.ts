@@ -942,7 +942,6 @@ export const ptBR = {
       subagents: "Subagentes",
       projects: "Projetos",
       sync: "Sincronização",
-      remoteGateway: "Gateway remoto",
       remoteHosts: "Hosts remotos",
       info: "Sobre",
       voice: "Voz"
@@ -1250,6 +1249,8 @@ export const ptBR = {
       accountEnrollBody: "O Router informou o gateway e o certificado, e este desktop se registrou com a chave da sua conta. Não há código de registro para colar.",
       accountEnrollPendingTitle: "Usa seu Minih Router",
       accountEnrollPendingBody: "O Router indica o gateway e o certificado, e este desktop se registra com a chave da sua conta. Não há código de registro para colar.",
+      advancedTitle: "Avançado: gateway próprio",
+      advancedHint: "Apenas para um gateway que você mesmo executa: ele exige o endereço, o certificado CA e um código de registro desse gateway. Com uma conta do Minih Router não há nada para colar.",
       strictTitle: "Confirmação de dispositivos",
       strictLabel: "Exigir confirmação em todos os computadores",
       strictHint: "Enquanto isso estiver ativo, um dispositivo aprovado em outra máquina não é aceito aqui: você confirma cada dispositivo neste desktop. Ativar ou desativar reconecta o link.",

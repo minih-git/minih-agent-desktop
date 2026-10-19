@@ -956,7 +956,6 @@ sklm: {
       "subagents": "Subagentes",
       "projects": "Proyectos",
       "sync": "Sincronización en la nube",
-      "remoteGateway": "Puerta de enlace",
       "remoteHosts": "Hosts remotos",
       "info": "Información",
       "voice": "Voz"
@@ -1420,6 +1419,8 @@ sklm: {
       "accountEnrollBody": "El Router indicó la puerta de enlace y su certificado, y este escritorio se registró con la clave de tu cuenta. No hay código de registro que pegar.",
       "accountEnrollPendingTitle": "Usa tu Minih Router",
       "accountEnrollPendingBody": "El Router indica la puerta de enlace y su certificado, y este escritorio se registra con la clave de tu cuenta. No hay código de registro que pegar.",
+      "advancedTitle": "Avanzado: puerta de enlace propia",
+      "advancedHint": "Solo para una puerta de enlace que ejecutes tú: necesita su dirección, su certificado CA y un código de registro. Con una cuenta de Minih Router no hay nada que pegar.",
       "strictTitle": "Confirmación de dispositivos",
       "strictLabel": "Exigir confirmación en cada equipo",
       "strictHint": "Mientras esté activo, un dispositivo aprobado en otra máquina no se acepta aquí: tú confirmas cada dispositivo en este escritorio. Activarlo o desactivarlo reconecta el enlace.",

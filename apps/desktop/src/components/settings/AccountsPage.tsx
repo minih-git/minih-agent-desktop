@@ -22,6 +22,7 @@ import { endpointLabel } from "./service-catalog";
 import { EasyTierLanSection } from "./EasyTierLanSection";
 import { MinihRouterAccountSummary } from "./MinihRouterAccountSummary";
 import { OtherProvidersSection } from "./OtherProvidersSection";
+import { RemoteControlSection } from "./RemoteControlSection";
 import { useMinihRouterAccount } from "./useMinihRouter";
 
 export function AccountsPage() {
@@ -117,6 +118,10 @@ export function AccountsPage() {
           )}
         </div>
       </section>
+
+      {/* Below the account and its overlay channel: the desktop as a Host that
+          a phone of the same account may reach (D666). */}
+      <RemoteControlSection />
 
       {developerMode ? <OtherProvidersSection defaultOpen /> : null}
     </div>

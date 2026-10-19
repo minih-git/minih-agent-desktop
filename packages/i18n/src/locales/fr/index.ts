@@ -956,7 +956,6 @@ sklm: {
       "subagents": "Sous-agents",
       "projects": "Projets",
       "sync": "Synchronisation cloud",
-      "remoteGateway": "Passerelle distante",
       "remoteHosts": "Hôtes distants",
       "info": "Informations",
       "voice": "Voix"
@@ -1420,6 +1419,8 @@ sklm: {
       "accountEnrollBody": "Le Router a indiqué la passerelle et son certificat, et ce poste s'est enregistré avec la clé de votre compte. Aucun code d'enregistrement n'est à coller.",
       "accountEnrollPendingTitle": "Utilise votre Minih Router",
       "accountEnrollPendingBody": "Le routeur désigne la passerelle et son certificat, et ce bureau s'enregistre avec la clé de votre compte. Il n'y a aucun code d'enregistrement à saisir.",
+      "advancedTitle": "Avancé : passerelle auto-hébergée",
+      "advancedHint": "Uniquement pour une passerelle que vous exploitez vous-même : elle demande son adresse, son certificat CA et un code d'enregistrement. Avec un compte Minih Router, il n'y a rien à saisir.",
       "strictTitle": "Confirmation des appareils",
       "strictLabel": "Exiger une confirmation sur chaque poste",
       "strictHint": "Tant que cette option est active, un appareil approuvé sur une autre machine n'est pas accepté ici : vous confirmez chaque appareil sur ce poste. L'activer ou la désactiver reconnecte le lien.",

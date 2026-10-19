@@ -320,7 +320,7 @@ Gateway 全部通过，且 `05-security/02-remote-control-security.md` 的安全
   E1 自身不改变任何用户可见流程。
 
 - R7 工作包 E2 已交付（2026-10-18，D666 / ADR `remote-control-router-account-binding`）：
-  账户模式的桌面侧。设置 ▸ 远程网关读取 `EasyTierStatus.remoteGateway`，当 Router 公布可用端点
+  账户模式的桌面侧。设置 ▸ 账户 ▸ 远程控制读取 `EasyTierStatus.remoteGateway`，当 Router 公布可用端点
   且用户的远程控制开关已打开时，用账户 AccessKey 完成注册——key 经 host-core 从已保存的
   `minih-router` 记录读入，只用于这一次请求，绝不进入任何 renderer 载荷、日志或凭据文件。桌面端
   改为在公布的服务名下经 No-TUN 转发拨号（`tlsServerName`，安全 §5.1），不再用回环地址。注册
