@@ -3,8 +3,17 @@ import { register } from "node:module";
 import test from "node:test";
 
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
-const { editConflicted, escapeCloses, managerRequest, memoryErrorCode, showsEmptyState, sourceSessionOf } =
-  await import("../src/lib/learned-memory-manager.ts");
+const {
+  badgeCount,
+  editConflicted,
+  escapeCloses,
+  initialManagerTab,
+  managerRequest,
+  memoryErrorCode,
+  showsEmptyState,
+  sourceSessionOf,
+  suggestionSummary,
+} = await import("../src/lib/learned-memory-manager.ts");
 
 // ADR agent-long-term-memory §3.2: the manager's rules, tested without a DOM.
 // Each case is a decision the dialog must get right, and each one is a real
@@ -50,4 +59,26 @@ test("an empty list is a state of its own, and a note knows its conversation", (
   assert.equal(sourceSessionOf({ sourceSessionId: "session-1" }), "session-1");
   assert.equal(sourceSessionOf({ sourceSessionId: "" }), undefined);
   assert.equal(sourceSessionOf({}), undefined);
+});
+
+test("the inbox tab shows a quiet count and opens on whichever tab has work", () => {
+  // Nothing waiting renders no badge at all: the tab must not look like a
+  // notification the user has to clear.
+  assert.equal(badgeCount(0), null);
+  assert.equal(badgeCount(-3), null);
+  assert.equal(badgeCount(Number.NaN), null);
+  assert.equal(badgeCount(2), 2);
+  assert.equal(badgeCount(2.9), 2);
+
+  assert.equal(initialManagerTab(0), "entries");
+  assert.equal(initialManagerTab(3), "suggestions");
+});
+
+test("a suggestion shows the user's own words, and says nothing when it has none", () => {
+  assert.deepEqual(suggestionSummary({ quotes: [{ text: "  Use pnpm  " }] }), {
+    quote: "Use pnpm",
+  });
+  assert.deepEqual(suggestionSummary({ quotes: [] }), {});
+  assert.deepEqual(suggestionSummary({}), {});
+  assert.deepEqual(suggestionSummary({ quotes: [{ text: "   " }] }), {});
 });

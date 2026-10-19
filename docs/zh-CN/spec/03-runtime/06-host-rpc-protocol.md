@@ -246,13 +246,34 @@ type ToolBudgetHealth = {
 - `memory.delete({ id })` —— 遗忘：擦除该条目及其全文索引行，并写入不含内容的屏蔽
   记录，屏蔽同一指纹与同一来源消息；此后正文无法再读出或恢复。幂等；返回 `{ ok }`，
   当该 id 已不存在时为 `false`。
+- `memory.suggestions.list({ scope?, path?, sessionId?, limit? })` —— 某个作用域的
+  建议箱：待决建议按从旧到新排列，外加 `count`（该作用域的全部积压量）。每条都是
+  `memory.list` 的形状，并额外带 `quotes` 数组——该条目自身来源会话中被引用的用户消息，
+  最多三条，每条为 `{ id, seq, createdAt, text }`，正文为展示目的截到 240 个字符。正是它让
+  建议可被审阅：用户看得到它来自哪句原话。若被引用的消息已被擦除，该条引用只是不出现。
 - `memory.suggestions.decide({ id, decision })` —— `accept` 激活建议并返回
   `{ entry }`；`reject` 擦除建议、写入同样的屏蔽记录，并返回 `{ rejected: true }`。
   id 不是待决建议时返回 1007 / `NOT_FOUND`。
 - `memory.session.get({ sessionId })` / `memory.session.setExcluded({ sessionId,
   excluded })` —— 每个会话的抽取状态，包括「不要从这次对话学习」。
-- `memory.extraction.claim({ sessionId, owner, leaseMs? })` /
-  `memory.extraction.complete({ sessionId, owner, cursorSeq })` /
+- `memory.extraction.claim({ sessionId, owner, leaseMs? })` —— 获取该会话的租约。
+  返回 `{ claimed: true, state }`，或 `{ claimed: false, reason }`，其中 `reason` 为
+  `busy`（另一运行持有租约）或 `excluded`（用户设置了「不要从这次对话学习」）。两者都是
+  拒绝，但不是同一件事，所以服务绝不会把用户自己的决定报告成抢占冲突。
+- `memory.extraction.input({ sessionId })` —— 一次运行允许读取的内容：
+  `{ input: { sessionId, scopeKind, scopeKey, cursorSeq, messages, summary?, bytes } }`，
+  或 `{ input: null, skipped }`，`skipped` 取 `excluded`、`scheduled-run`、
+  `imported` 之一。隔离 worktree 会话（ADR 0329）**不**跳过：它是正常的项目工作，
+  沿用主项目的记忆身份。由主机组装，因为「什么算用户亲手写的输入」
+  这条规则属于主机：带真实轮次、角色为 `user`、未被 `session_collaboration_messages`
+  认领、位于 `cursorSeq` 及之后的消息，按从旧到新排列，再加上最近一次压缩摘要，全部限制在
+  16 KiB 预算内（摘要最多 4 KiB，按字符边界截断）。`cursorSeq` 是下一个要读取的序号，
+  因此没放下的消息保持未读。
+- `memory.extraction.budget({ day, tokens? })` —— 仅本设备的每日台账，按调用方的本地
+  `YYYY-MM-DD` 计。不带 `tokens` 时读取 `{ budget: { day, tokens, runs } }`；带 `tokens`
+  时先累加一次运行的用量。库存计数若属于其他日期则读作 `0`，因此用满的预算会在用户本地
+  午夜自动解除，不需要任何重置任务。
+- `memory.extraction.complete({ sessionId, owner, cursorSeq })` /
   `memory.extraction.fail({ sessionId, owner, error })` —— 可选抽取使用的游标与租约。
 
 `tools.execute` 配 `toolName: "MemoryRemember"` 即同名工具执行的显式写入。它接受

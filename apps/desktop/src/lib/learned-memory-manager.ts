@@ -67,3 +67,34 @@ export function sourceSessionOf(entry: LearnedMemoryEntry): string | undefined {
   const id = entry.sourceSessionId;
   return typeof id === "string" && id ? id : undefined;
 }
+
+/**
+ * How the inbox presents one suggestion.
+ *
+ * The citation is the point of the tab: a user cannot judge a note the agent
+ * wrote without seeing the words it came from, so the first cited message is
+ * always shown, and only the kind, scope, and content are needed to decide.
+ */
+export function suggestionSummary(suggestion: {
+  quotes?: { text: string }[];
+}): { quote?: string } {
+  const quote = suggestion.quotes?.[0]?.text?.trim();
+  return quote ? { quote } : {};
+}
+
+/**
+ * Whether the badge should render. A zero count is not a state the user needs
+ * to see, and a quiet tab must not look like a notification.
+ */
+export function badgeCount(count: number): number | null {
+  if (!Number.isFinite(count) || count <= 0) return null;
+  return Math.trunc(count);
+}
+
+/**
+ * The tab a manager opens on. An inbox with something waiting is what the user
+ * came to see when they clicked a badge; otherwise the notes come first.
+ */
+export function initialManagerTab(pendingCount: number): "entries" | "suggestions" {
+  return badgeCount(pendingCount) === null ? "entries" : "suggestions";
+}

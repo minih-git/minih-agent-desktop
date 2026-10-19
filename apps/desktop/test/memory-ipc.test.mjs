@@ -136,3 +136,40 @@ test("a missing host is an error, not a silent success", async () => {
     /host unavailable/,
   );
 });
+
+test("the suggestion inbox and the extraction status are allowlisted forwards", async () => {
+  const { handlers, calls } = harness();
+
+  await handlers.get(IPC.invoke.memorySuggestionsList)({ scope: "project", path: "/repo/app" });
+  await handlers.get(IPC.invoke.memorySuggestionsList)({ scope: "user", limit: 5 });
+  await handlers.get(IPC.invoke.memorySuggestionsDecide)({
+    id: "entry-1",
+    decision: "accept",
+  });
+  await handlers.get(IPC.invoke.memoryExtractionStatus)({ day: "2026-10-20" });
+
+  assert.deepEqual(calls, [
+    ["memory.suggestions.list", { scope: "project", path: "/repo/app" }],
+    ["memory.suggestions.list", { scope: "user", limit: 5 }],
+    // Accepting is the only activation path, and rejecting writes the tombstone;
+    // both go to the host, which owns the rule.
+    ["memory.suggestions.decide", { id: "entry-1", decision: "accept" }],
+    ["memory.extraction.budget", { day: "2026-10-20" }],
+  ]);
+
+  // A project scope needs an identity, and a decision is binary.
+  await assert.rejects(
+    handlers.get(IPC.invoke.memorySuggestionsList)({ scope: "project" }),
+    /a project scope needs a path or a session/,
+  );
+  await assert.rejects(
+    handlers.get(IPC.invoke.memorySuggestionsDecide)({ id: "entry-1", decision: "maybe" }),
+    /invalid suggestion decision/,
+  );
+  // The counter is keyed by a local day, so an unusable one is refused.
+  await assert.rejects(
+    handlers.get(IPC.invoke.memoryExtractionStatus)({ day: "20-10-2026" }),
+    /invalid day/,
+  );
+  assert.equal(calls.length, 4);
+});

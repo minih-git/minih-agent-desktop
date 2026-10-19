@@ -8,7 +8,10 @@ import type {
   LearnedMemoryListRequest,
   LearnedMemoryListResult,
   LearnedMemoryRememberAgainRequest,
+  LearnedMemoryExtractionStatus,
   LearnedMemorySessionState,
+  LearnedMemorySuggestionListRequest,
+  LearnedMemorySuggestionListResult,
   LearnedMemoryUpdateRequest,
   LearnedMemoryUpdateResult,
   ActivationScope,
@@ -1034,6 +1037,20 @@ export const api = {
       IPC.invoke.memoryRememberAgain,
       request,
     ),
+  // The suggestion inbox: what extraction proposed for one scope, plus the count
+  // the manager's badge shows. Accepting is the only activation path.
+  listLearnedMemorySuggestions: (request: LearnedMemorySuggestionListRequest) =>
+    invoke<LearnedMemorySuggestionListResult>(IPC.invoke.memorySuggestionsList, request),
+  decideLearnedMemorySuggestion: (id: string, decision: "accept" | "reject") =>
+    invoke<{ entry?: LearnedMemoryEntry; rejected?: boolean }>(
+      IPC.invoke.memorySuggestionsDecide,
+      { id, decision },
+    ),
+  // Today's device-local extraction spend, for the Settings status line.
+  getMemoryExtractionStatus: (day: string) =>
+    invoke<{ budget: LearnedMemoryExtractionStatus }>(IPC.invoke.memoryExtractionStatus, {
+      day,
+    }),
   getMemorySessionState: (sessionId: string) =>
     invoke<{ state: LearnedMemorySessionState }>(IPC.invoke.memorySessionGet, { sessionId }),
   setMemorySessionExcluded: (sessionId: string, excluded: boolean) =>

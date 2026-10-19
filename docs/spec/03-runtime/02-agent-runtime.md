@@ -1832,7 +1832,6 @@ sidecar as the `learnedMemoryIndex` launch parameter, with `learnedMemoryRead`
 beside it. The call is best effort: a failure logs `learned memory index
 unavailable` with a stable code only, and the launch continues without the
 section. Nothing else about the launch depends on it.
-about the launch depends on it.
 
 `composeSystemPrompt` renders the section after the project instruction chain
 and after the pinned project memory, so the user's own notes stay the stronger
@@ -1867,6 +1866,82 @@ composing only the framing, the definition prompt, and guidance, and
 `SessionHistorySearch` / `MemorySearch` / `MemoryRemember` are on
 `SUBAGENT_INHERIT_DENY_TOOLS`, so `tools: inherit` cannot lend them either — see
 §10.2 of [03. Tools and permissions](03-tools-and-permissions.md).
+
+### 7.5 Optional extraction off the critical path (D668, ADR
+agent-long-term-memory §4)
+
+Automatic learning is a separate Electron main module
+(`apps/desktop/electron/main/memory/memory-extraction-service.ts` plus
+`memory-extraction-prompt.ts`), never code inside `electron/main/index.ts`,
+`runtime.ts`, or `session-launch.ts`: those only wire its three triggers and its
+dispose hook. Nothing in this path is on a user flow's critical path, and no turn
+waits for a model call.
+
+**Gate.** `learnedMemory.learn` is off by default and cannot take effect without
+`learnedMemory.model`. All three fields (`learn`, `model`,
+`dailyTokenBudget`) are device-local and deliberately absent from
+`PORTABLE_APPLICATION_FIELDS`: the model has to be reachable from this machine
+and the spend is this machine's quota. With the switch off, or the model unset,
+the service makes **no** model call and writes nothing — the run returns
+`disabled` or `no-model` before it claims anything.
+
+**Triggers.** Two, both detached and both reached only after `event-persistence`
+has written the row they refer to:
+
+- `compaction_end` with `ok: true` — the summary is the strongest digest signal,
+  so this runs without a delay.
+- `agent_end` — a settled turn starts a 10-minute idle debounce, and a later
+  trigger on the same session replaces the pending timer rather than queueing a
+  second run.
+
+A `turn_start` / `agent_start` cancels a pending run, as do a session deletion,
+the switch going off, and app quit (`dispose`). Subagent events are skipped by
+the same `parentToolCallId` test the title jobs use, and a run that finds a turn
+running does nothing. Excluded sessions, scheduled-run transcripts, and imported
+transcripts are refused by the **host** (§ `memory.extraction.input`), so the
+service cannot opt them in by accident. An isolated worktree session (ADR 0329)
+is extracted like any other project session: it is ordinary work, and it carries
+the main project's memory identity, so what it teaches belongs there.
+
+A range with no user-authored message — a summary with nothing new after it, or a
+session whose new messages were all delivered by another agent — makes no model
+call at all: candidates must cite a message the run sent, so the answer could
+not be used. The lease is released without recording a failure.
+
+**Input.** The host assembles it (`crates/host-core/src/memory/extraction_input.rs`)
+because the host owns the rule that decides what counts as user-authored input:
+messages with a real turn, role `user`, not claimed by
+`session_collaboration_messages`, after the session cursor, oldest first, plus
+the latest compaction summary. Tool output and assistant text never travel. The
+budget is 16 KiB total (the summary may spend 4 KiB of it, cut on a character
+boundary and labelled as truncated in the prompt); the cursor is "next sequence
+to read", so a message that did not fit is picked up by the next run instead of
+being skipped.
+
+**Output contract.** JSON only, at most five candidates of
+`{ kind, scope, content, rationale?, sourceMessageIds }`. The service validates
+the shape before the host sees it, and **discards any candidate whose
+`sourceMessageIds` are not all ids this run actually sent** — the summary is
+model-written prose that may itself rest on tool output, so an old message id
+could otherwise "prove" provenance the run never sent. Survivors go to
+`memory.create` with `origin = extracted` and `status = suggested`; the host
+refuses any other pairing, so this path can only ever propose. An empty answer is
+valid and still advances the cursor.
+
+**Durability and budget.** The host lease (10 minutes) and the cursor make a run
+idempotent across restarts, duplicate triggers, and renderer reloads: only the
+lease owner may advance the cursor, and the cursor never moves backwards. A
+model failure or a host failure records the failure, keeps the cursor, and
+schedules one bounded retry (30 minutes per attempt, at most three attempts, then
+the range is left alone until a new turn or compaction triggers a fresh run). The
+daily token ledger is device-local (`kv(memory, extractionBudget)`), accumulates
+`totalTokens` from `completeOneShot`'s usage, and pauses the feature for the rest
+of the local calendar day once the configured ceiling is reached; a new local day
+reads as unspent, so the pause clears itself without a background reset.
+
+**Logging.** Only codes and counts (`memory-error`, `host-error`, candidate and
+token counts). Message text and candidate content are never logged: the content a
+credential detector refused is exactly what a log must not keep.
 
 ## 8. Concurrency
 

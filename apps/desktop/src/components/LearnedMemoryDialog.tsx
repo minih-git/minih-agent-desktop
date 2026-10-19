@@ -12,11 +12,13 @@ import { api } from "../lib/api";
 import {
   editConflicted,
   escapeCloses,
+  initialManagerTab,
   managerRequest,
   showsEmptyState,
   sourceSessionOf,
 } from "../lib/learned-memory-manager";
-import { Button, OverlayBackdrop, Select, Textarea, TooltipButton } from "./ui";
+import { SuggestionBadge, SuggestionInbox } from "./LearnedMemorySuggestions";
+import { Button, OverlayBackdrop, SegmentedControl, Select, Textarea, TooltipButton } from "./ui";
 import {
   IconArchive,
   IconArchiveRestore,
@@ -57,6 +59,10 @@ export function LearnedMemoryDialog({
   useBlockingOverlay();
   const { t } = useTranslation();
   const [entries, setEntries] = useState<LearnedMemoryEntry[] | null>(null);
+  // The inbox is a tab of this dialog, not a separate surface: a suggestion is
+  // reviewed with the same notes it will join once accepted.
+  const [pendingSuggestions, setPendingSuggestions] = useState(0);
+  const [tab, setTab] = useState<"entries" | "suggestions">("entries");
   const [status, setStatus] = useState<LearnedMemoryStatus | "">("");
   const [kind, setKind] = useState<LearnedMemoryKind | "">("");
   const [editing, setEditing] = useState<{ id: string; content: string } | null>(null);
@@ -80,6 +86,29 @@ export function LearnedMemoryDialog({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // One read decides both the tab that opens and the badge: a user who clicked
+  // "there is something to review" lands on the inbox, and a quiet manager
+  // opens on the notes.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await api.listLearnedMemorySuggestions({
+          scope,
+          ...(scope === "project" && projectPath ? { path: projectPath } : {}),
+        });
+        if (cancelled) return;
+        setPendingSuggestions(result.count);
+        setTab((current) => (current === "entries" ? initialManagerTab(result.count) : current));
+      } catch {
+        // The badge is decoration: a failed read leaves the manager working.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectPath, scope]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -199,6 +228,36 @@ export function LearnedMemoryDialog({
           </TooltipButton>
         </div>
         <p className="project-memory-dialog-description">{t("memory.managerDescription")}</p>
+        <SegmentedControl
+          value={tab}
+          onChange={(next) => setTab(next as "entries" | "suggestions")}
+          label={t("memory.managerTabs")}
+          role="tablist"
+          className="learned-memory-tabs"
+          options={[
+            { value: "entries", label: t("memory.tabEntries") },
+            {
+              value: "suggestions",
+              label: (
+                <span className="learned-memory-tab-label">
+                  {t("memory.tabSuggestions")}
+                  <SuggestionBadge count={pendingSuggestions} />
+                </span>
+              ),
+            },
+          ]}
+        />
+        {tab === "suggestions" ? (
+          <SuggestionInbox
+            scope={scope}
+            projectPath={projectPath}
+            busy={busy}
+            onBusyChange={setBusy}
+            onCountChange={setPendingSuggestions}
+            onError={onError}
+          />
+        ) : (
+          <>
         <div className="learned-memory-filters">
           <label className="learned-memory-filter">
             <span>{t("memory.filterKind")}</span>
@@ -382,6 +441,8 @@ export function LearnedMemoryDialog({
               </article>
             ))}
           </div>
+        )}
+          </>
         )}
       </div>
     </OverlayBackdrop>,

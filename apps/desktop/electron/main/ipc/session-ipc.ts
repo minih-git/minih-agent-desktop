@@ -105,6 +105,12 @@ export type SessionIpcDependencies = {
   };
   forgetTranscriptRewriteHistory: (sessionId: string) => void;
   stripWinLongPrefix: (path: string) => string;
+  /**
+   * Drop any pending extraction for a deleted session, so a debounce timer
+   * cannot outlive the conversation it belonged to
+   * (ADR agent-long-term-memory §4).
+   */
+  cancelMemoryExtraction?: (sessionId: string) => void;
 };
 
 export function registerSessionIpc({
@@ -123,6 +129,7 @@ export function registerSessionIpc({
   beginTranscriptRewrite,
   forgetTranscriptRewriteHistory,
   stripWinLongPrefix,
+  cancelMemoryExtraction,
 }: SessionIpcDependencies): void {
   let host: HostProcess | null = null;
   let sidecar: AgentSidecar | null = null;
@@ -442,6 +449,7 @@ export function registerSessionIpc({
     }
     if (!host) throw new Error("host unavailable");
     const res = await host.call("session.delete", { id });
+    cancelMemoryExtraction?.(id);
     await persistenceOutbox.dropSession(id);
     forgetTranscriptRewriteHistory(id);
     // Drop the session's pi-agent so a later session with the same id (or a

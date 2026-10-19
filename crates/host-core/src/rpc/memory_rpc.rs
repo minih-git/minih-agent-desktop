@@ -32,8 +32,11 @@ pub(super) fn handle(st: &AppState, method: &str, params: Value) -> Result<Value
         "memory.session.get" => session_state(&st.db, &params),
         "memory.session.setExcluded" => set_excluded(&st.db, &params),
         "memory.extraction.claim" => claim_extraction(&st.db, &params),
+        "memory.extraction.input" => extraction_input(&st.db, &params),
         "memory.extraction.complete" => complete_extraction(&st.db, &params),
         "memory.extraction.fail" => fail_extraction(&st.db, &params),
+        "memory.extraction.budget" => extraction_budget(&st.db, &params),
+        "memory.suggestions.list" => list_suggestions(&st.db, &params),
         _ => Err(rpc_err(1007, "unknown memory method", "NOT_FOUND")),
     }
 }
@@ -291,7 +294,16 @@ fn claim_extraction(db: &Database, params: &Value) -> Result<Value, JsonRpcError
         .map_err(internal)?;
     Ok(match claimed {
         Some(state) => json!({ "claimed": true, "state": state }),
-        None => json!({ "claimed": false }),
+        // A refusal says why: a lease another run holds is "busy", but the
+        // user's own "don't learn from this conversation" is "excluded", and
+        // the service must not report the user's decision as a race.
+        None => {
+            let excluded = db
+                .memory_session_state(session_id)
+                .map_err(internal)?
+                .is_some_and(|state| state.excluded);
+            json!({ "claimed": false, "reason": if excluded { "excluded" } else { "busy" } })
+        }
     })
 }
 
@@ -314,6 +326,73 @@ fn fail_extraction(db: &Database, params: &Value) -> Result<Value, JsonRpcError>
         .fail_memory_extraction(session_id, owner, error)
         .map_err(internal)?;
     Ok(json!({ "failed": state.is_some(), "state": state }))
+}
+
+/// What one run may read.
+///
+/// The host assembles it so the extractor can only ever cite messages the
+/// user wrote: Electron main receives the exact set it is allowed to send, and
+/// the service discards any candidate citing an id outside it (ADR §4). A
+/// session that is excluded, a scheduled run, an isolated worktree, or an
+/// imported transcript answers `skipped` with no input at all, so the service
+/// costs nothing on sessions the user never opted into.
+fn extraction_input(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
+    let session_id = required_str(params, "sessionId")?;
+    let outcome = db
+        .memory_extraction_input(session_id)
+        .map_err(internal)?
+        .ok_or_else(|| not_found("session not found"))?;
+    Ok(match outcome {
+        crate::memory::ExtractionInputOutcome::Input(input) => json!({ "input": input }),
+        crate::memory::ExtractionInputOutcome::Skipped(reason) => {
+            json!({ "input": null, "skipped": reason })
+        }
+    })
+}
+
+/// The device-local daily budget: read it, or add one run's usage to it.
+///
+/// `day` is the caller's local calendar day, so the counter resets on the
+/// user's own midnight rather than on a host-side clock it cannot see.
+fn extraction_budget(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
+    let day = required_str(params, "day")?;
+    let stored = match optional_i64(params, "tokens")? {
+        Some(tokens) => db
+            .record_memory_extraction_usage(day, tokens)
+            .map_err(internal)?,
+        None => db.memory_extraction_budget().map_err(internal)?,
+    };
+    let spent = if stored.day == day { stored.tokens } else { 0 };
+    Ok(json!({ "budget": { "day": day, "tokens": spent, "runs": stored.runs } }))
+}
+
+/// The suggestion inbox for one scope: pending proposals, oldest first, each
+/// with the citations extraction stored so the user can read what it was based
+/// on before accepting or rejecting it.
+fn list_suggestions(db: &Database, params: &Value) -> Result<Value, JsonRpcError> {
+    let scope = resolve_scope(db, params)?;
+    let limit = optional_i64(params, "limit")?
+        .unwrap_or(50)
+        .clamp(1, MAX_LIST_LIMIT);
+    let entries = db
+        .list_memory_suggestions(&scope, limit)
+        .map_err(internal)?;
+    let count = db.count_memory_suggestions(&scope).map_err(internal)?;
+    // Each suggestion travels with the user's own words behind it, so the user
+    // can judge it without leaving the inbox. Quotes are display-bounded and
+    // never come from another session than the entry's own.
+    let mut rows = Vec::with_capacity(entries.len());
+    for entry in &entries {
+        let quotes = db
+            .memory_suggestion_quotes(entry, 3, crate::memory::MAX_SUGGESTION_QUOTE_CHARS)
+            .map_err(internal)?;
+        let mut value = serde_json::to_value(entry).map_err(internal)?;
+        if let Some(object) = value.as_object_mut() {
+            object.insert("quotes".into(), json!(quotes));
+        }
+        rows.push(value);
+    }
+    Ok(json!({ "entries": rows, "count": count }))
 }
 
 /// A write scope comes from an explicit `path` (the desktop manager) or from the
