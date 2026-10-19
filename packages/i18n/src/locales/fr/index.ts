@@ -3027,6 +3027,7 @@ sklm: {
     "dismiss": "Ignorer la notification"
   },
   "contextCompaction": {
+    "modelSwitch": "Contexte compacté pour le modèle sélectionné",
     "completed": "Contexte de la conversation compacté",
     "retrying": "Contexte compacté ; nouvelle tentative de demande de modèle",
     "recovered": "Le résumé du contexte a échoué ; le contexte récent a été conservé et la tâche se poursuit",

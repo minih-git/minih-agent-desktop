@@ -3058,6 +3058,7 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
     dismiss: "알림 닫기",
   },
   contextCompaction: {
+    modelSwitch: "선택한 모델에 맞춰 컨텍스트를 압축했습니다",
     completed: "대화 컨텍스트가 압축됨",
     retrying: "컨텍스트가 압축되어 모델 요청을 다시 시도합니다",
     recovered:

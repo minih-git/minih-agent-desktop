@@ -160,7 +160,15 @@ export type ContextCompactionMark = ContextCompactionStatus & {
   fallback?: ContextCompactionFallback;
 };
 
-export type ContextCompactionReason = "manual" | "threshold" | "overflow";
+/**
+ * Why a checkpoint was created. `model_switch` is the optimization that runs at
+ * the first prompt of a newly selected model; it never guards the hard limit.
+ */
+export type ContextCompactionReason =
+  | "manual"
+  | "threshold"
+  | "overflow"
+  | "model_switch";
 export type ContextCompactionFallback = "retained_tail";
 
 export type MessageRevisionSummary = {

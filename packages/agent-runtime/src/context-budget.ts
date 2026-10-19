@@ -64,6 +64,16 @@ export type ContextBudget = {
 export const AUTO_COMPACTION_TRIGGER_RATIO = 0.9;
 
 /**
+ * Floor for compacting a switched model's context before the automatic
+ * threshold. A switch always costs one uncached read of the whole history, so
+ * the summary is only worth its own output tokens and wait once the history is
+ * large enough that later requests save more than the summary spends. Combined
+ * with twice the retained window by `modelSwitchCompactionFloor`: a 128K window
+ * starts at 48K, a 1M window at 128K.
+ */
+export const MODEL_SWITCH_COMPACTION_MIN_TOKENS = 48_000;
+
+/**
  * Start compaction before the hard boundary so estimator drift and one-turn
  * growth do not leave the provider request as the first overflow detector.
  */

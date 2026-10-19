@@ -19223,3 +19223,28 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
 - **Acceptance criterion**: F (persistence), Quality.
 - **Milestone**: Post-M6 maintenance.
 - **Status**: Automated.
+
+### E2E-SESSION-model-switch-compacts-large-context
+
+- **Preconditions:** A session has produced about 60-80K tokens of history on
+  model A: above the fixed 48K switch floor and below 90% of the next model's
+  budget. Model B is a different provider/model with a 128K window, pointed at a
+  scripted or local provider so no real API is called.
+- **Steps:** Switch the session to model B and send one prompt. Send a second
+  prompt without switching again. Restart the app, reopen the session, and send a
+  third prompt. Then switch back to model A and send one prompt.
+- **Expected:** Only the first prompt of model B installs a checkpoint, with
+  reason `model_switch`: the transcript row appears, the toast is the info notice
+  ("context compacted for the selected model") rather than the long-thread
+  warning, and the provider request carries the summary plus the recent window
+  instead of the full history. The second and post-restart prompts install no
+  further checkpoint for that switch, and the recent window is replayed in full
+  after the restart. Switching back to model A is a new switch, but the
+  compacted context is now below the switch floor, so that prompt sends it as is
+  and installs no checkpoint. No host schema migration or IPC shape change
+  appears.
+- **Specs:** `03-runtime/01-ipc-protocol.md`, `03-runtime/02-agent-runtime.md`
+  section 5.1, D669.
+- **Status:** Unit-covered (`model-switch-compaction.test.ts`,
+  `runtime-model-switch-compaction.test.ts`,
+  `apps/desktop/test/context-compaction.test.mjs`); desktop journey outstanding.
