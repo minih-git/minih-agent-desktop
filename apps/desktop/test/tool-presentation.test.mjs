@@ -821,6 +821,45 @@ test("ToolSearch says when nothing matched", () => {
 });
 
 /*
+ * A ToolSearch call can also fail: an interrupted call, a blocked one, or an
+ * execution error arrives as `details: {}` (pi-agent-core's
+ * `createErrorToolResult`). ToolSearch's own answers always carry a `matches`
+ * array, so a payload without one is not this tool's answer — it must not claim
+ * that nothing matched, which would contradict the row's failed status.
+ */
+test("a failed ToolSearch call does not claim that nothing matched", () => {
+  const blocks = buildToolPresentation(
+    {
+      toolName: "ToolSearch",
+      toolStatus: "error",
+      toolArgs: { query: "remember" },
+      toolResult: {
+        content: [{ type: "text", text: "Operation aborted" }],
+        details: {},
+      },
+    },
+    { hideSummaryArg: true },
+  );
+  assert.equal(
+    blocks.some((block) => block.kind === "tools"),
+    false,
+    `a failed call produced a tools block: ${JSON.stringify(blocks)}`,
+  );
+
+  // The same payload shape on a call that did not fail is still not this
+  // tool's answer.
+  const empty = buildToolPresentation(
+    { toolName: "ToolSearch", toolArgs: { query: "remember" }, toolResult: envelope({}) },
+    { hideSummaryArg: true },
+  );
+  assert.equal(
+    empty.some((block) => block.kind === "tools"),
+    false,
+    `a payload without matches produced a tools block: ${JSON.stringify(empty)}`,
+  );
+});
+
+/*
  * A plugin or MCP tool answers with plain string arrays that are not paths
  * (`tags: ["alpha", "beta"]`). Only entries that parse as a file reference may
  * open, while Glob/Grep path lists keep linking every entry they report.

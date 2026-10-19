@@ -477,7 +477,14 @@ function safeJson(value: unknown): string {
  */
 function toolSearchBlock(message: ToolPresentationMessage): ToolBlock | null {
   const details = asRecord(toolResultPayload(message));
-  if (!details) return null;
+  // Only this tool's own answer reaches here. Its `execute` always returns a
+  // `matches` array, empty when nothing matched, so a payload without one is not
+  // an answer at all: an interrupted call, one blocked before execution, or one
+  // that threw arrives as `details: {}` from pi-agent-core's
+  // `createErrorToolResult`. Such a call keeps its failed row and the generic
+  // presentation every other failed tool gets, instead of claiming that nothing
+  // matched.
+  if (!details || !Array.isArray(details.matches)) return null;
   const activated = stringArray(details.activated) ?? [];
   const matches = stringArray(details.matches) ?? [];
   if (activated.length > 0) {
@@ -486,8 +493,6 @@ function toolSearchBlock(message: ToolPresentationMessage): ToolBlock | null {
   if (matches.length > 0) {
     return { kind: "tools", role: "tools", state: "available", names: matches };
   }
-  // A result with neither list is still this tool's answer; say so instead of
-  // falling back to printing the payload.
   return { kind: "tools", role: "tools", state: "empty", names: [] };
 }
 

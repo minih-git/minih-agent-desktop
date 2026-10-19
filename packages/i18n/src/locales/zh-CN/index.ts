@@ -543,7 +543,7 @@ export const zhCN = {
     toolBlockFiles: "文件",
     toolBlockMatches: "匹配",
     toolBlockTools: "按需工具",
-    toolSearchActivated: "已在下一轮对话中启用：",
+    toolSearchActivated: "已启用，下一步即可使用：",
     toolSearchAvailable: "已经可用：",
     toolSearchNoMatch: "没有匹配的按需工具。",
     toolBlockDetails: "详情",
