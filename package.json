@@ -73,6 +73,7 @@
     "test:e2e:supervision": "node scripts/e2e-supervision.mjs",
     "test:e2e:subagents": "node scripts/e2e-subagents.mjs",
     "test:e2e:send-now-subagents": "node scripts/e2e-send-now-subagents.mjs",
+    "test:e2e:side-notes": "node scripts/e2e-side-notes.mjs && node scripts/e2e-send-now-subagents.mjs --side-note",
     "test:e2e:subagent-parent-error": "node scripts/e2e-subagent-parent-error.mjs",
     "test:e2e:subagent-models": "node scripts/e2e-subagent-models.mjs",
     "test:e2e:subagent-roster": "node scripts/e2e-session-subagent-roster.mjs",

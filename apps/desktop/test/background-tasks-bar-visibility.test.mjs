@@ -18,6 +18,7 @@ const {
   nextExpiryAt,
   observeTasks,
   selectVisibleTasks,
+  sessionTasks,
 } = await import("../src/features/chat/background-tasks/bar-visibility.ts");
 
 const task = (id, state, exitCode) => ({
@@ -103,6 +104,20 @@ test("bookkeeping is pruned when the registry drops a task, so it cannot grow", 
   assert.deepEqual([...state.seenRunning], ["b"]);
   assert.deepEqual([...state.dismissed], []);
   assert.equal(state.endedAt.size, 0);
+});
+
+test("a bar only lists tasks started in its own session", () => {
+  const tasks = [
+    { ...task("a", "running"), sessionId: "session-1" },
+    { ...task("b", "running"), sessionId: "session-2" },
+    { ...task("c", "exited", 0), sessionId: "session-1" },
+  ];
+
+  assert.deepEqual(ids(sessionTasks(tasks, "session-1")), ["a", "c"]);
+  assert.deepEqual(ids(sessionTasks(tasks, "session-2")), ["b"]);
+  assert.deepEqual(sessionTasks(tasks, "session-3"), []);
+  // Filtering is display-only: the registry keeps every task.
+  assert.deepEqual(ids(tasks), ["a", "b", "c"]);
 });
 
 test("an unchanged snapshot keeps the previous state object", () => {

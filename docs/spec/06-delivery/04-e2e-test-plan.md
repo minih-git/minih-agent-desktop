@@ -8120,16 +8120,26 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
      ended tab persists until manually closed.
   7. Switch to another session and back. Verify the tabs are restored per
      session and closed tabs stay closed.
+  8. Click the currently visible delegation node again. Verify the panel
+     collapses, its tabs remain retained, focus stays on the node, and
+     `aria-expanded` becomes false with no hidden `aria-controls` target.
+     Click again to reopen without duplicating the tab; select another node
+     to switch rather than collapse. Collapse through the global panel control
+     and verify the original node can reopen the panel.
 - **Expected**: No auto-open on delegate start; N subagents = N coexisting
   closable tabs with deduplicated `name#n` labels; the tab body is the
   delegation's user/assistant message stream with follow-up prompts as user
   turns; the composer is disabled with the in-field hint and has no send
   path; ended delegates' tabs persist until closed; tabs are session-scoped.
+  Repeated node clicks toggle the visible panel without deleting tabs, and
+  disclosure state follows panel visibility rather than retained selection.
 - **Specs linked**: `04-ux/08-component-spec.md` (delegation tab),
   `04-ux/09-interaction-patterns.md` (work panel tabs)
 - **Acceptance**: Quality
 - **Milestone**: M6
-- **Status**: Draft
+- **Status**: Node open/collapse/reopen, focus, retained-tab switching and external
+  collapse are automated by `pnpm test:e2e:subagent-roster`; the remaining
+  full-shell scenario is Draft.
 
 #### E2E-119: Parallel subagents report back without entering the parent's context
 
@@ -15659,12 +15669,16 @@ sibling Hosts is still open for package D.
   `/api/auth/session` with two distinct `access_key_id` values for keys A and B,
   and `/api/easytier/bootstrap` with a `remoteGateway` object naming the local
   test Gateway; one enrolled Host per account; two loopback model stubs.
-- **Steps**: 1) Enroll Host A1 with key A and Host B1 with key B; record the
-  account each is recorded under. 2) Log a client in with key A and list the
-  account Hosts. 3) With that client, address B1 by its id on the account host
-  listing, on a Host-scoped route, and in a device request. 4) Send an
-  enrollment whose CSR names A1's `hostId` but presents key B. 5) Relay a grant
-  signed by B1 to A1. 6) Read the Gateway `--data-dir` and its audit log.
+- **Steps**: 1) On a freshly installed desktop with key A configured and no
+  stored credentials, confirm the Remote gateway page offers the remote-access
+  switch and reports account mode as available; turn it on and record that it
+  enrolled once with key A, with no registration code. Enroll Host B1 with key
+  B; record the account each is recorded under. 2) Log a client in with key A
+  and list the account Hosts. 3) With that client, address B1 by its id on the
+  account host listing, on a Host-scoped route, and in a device request.
+  4) Send an enrollment whose CSR names A1's `hostId` but presents key B.
+  5) Relay a grant signed by B1 to A1. 6) Read the Gateway `--data-dir` and its
+  audit log.
 - **Expected**: The key-A listing contains A1 only; every request naming B1 is
   refused and never routed; the key-B enrollment neither replaces nor joins A1,
   which keeps its account and its link; A1 refuses the grant signed by B1; B1's
@@ -16940,6 +16954,45 @@ plugin-form fixtures in an isolated temporary directory at runtime.
 - **Status**: Draft. Existing regression suites cover surrounding behavior;
   the rendered steering journey has not been run
   (do not run E2E locally unless explicitly requested).
+
+#### E2E-AGENT-side-note-keeps-running-turn: A side note is answered without redirecting the turn
+
+- **Preconditions**: A session with a configured model and a controllable
+  streaming response/tool that stays open long enough to type during.
+- **Steps**:
+  1. Start a prompt, then open the work panel's side-notes tab from the `+`
+     launcher. Confirm the input is enabled and the list is empty.
+  2. Send a note ("How far along are you?") while the turn streams. Confirm the
+     turn keeps its task, the note appears in the tab and as a marked user row
+     in the transcript, and no FIFO row or new public `agent_start` appears.
+  3. Use the preset progress-summary action, then send a note that asks for a
+     direction change. Confirm the model answers each note and continues.
+  4. Send an empty note; then let the turn finish and confirm the input is
+     disabled and explains why.
+  5. Reload the renderer and switch sessions. Confirm the tab lists the same
+     notes for that session and the transcript rows stay marked.
+  6. Stop the turn while a note is still queued, then inspect the persisted
+     rows and the next ordinary turn.
+- **Expected**: A side note is delivered into the running turn, answered at its
+  next safe point, and never cancels the turn, its tools, or its delegates. The
+  persisted row keeps the user's own words plus the `sideNote` marker, while the
+  model-visible prompt carries the side-note framing. An idle session cannot
+  send a note and says so.
+- **Specs linked**: `03-runtime/01-ipc-protocol.md` (§5.1a),
+  `03-runtime/02-agent-runtime.md` (§4.0), `03-runtime/04-data-storage.md`,
+  `04-ux/09-interaction-patterns.md` (§3.5), ADR active-turn-steering
+- **Acceptance**: C (conversation & stream), Quality
+- **Milestone**: M5
+- **Automated coverage**: `pnpm test:e2e:side-notes` mounts the production work
+  panel in isolated Electron and exercises the launcher, preset, pending edits,
+  refusal/retry, Enter/Shift+Enter/IME, session isolation and idle admission.
+  Its process fixture uses production Main IPC, AgentHost, the sidecar and Rust
+  Host with a local SSE provider: a note wakes TaskWait in the same turn, both
+  delegates remain live, ordinary FIFO input is preserved, and the durable row
+  keeps plain text plus `sideNote`/`steering` while only the model sees framing.
+- **Status**: Automated fixture paths covered. Live-model interpretation of a
+  direction-changing note and Stop during pending delivery remain manual
+  acceptance scenarios; these fixtures do not authorize a paid provider run.
 
 #### E2E-SESSION-content-search-and-message-navigation
 
@@ -18876,7 +18929,7 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
   7. Delete the session; confirm its roster entries do not reappear for another session.
 - **Expected**: The roster indexes the whole persisted session, not just the loaded transcript page, so an old delegate remains findable. Running rows lead, settled rows follow, both newest first. A same-named delegate is never merged with another; a rejected `Task` (no delegation id) never appears; a settled entry never disappears because the turn advanced. Clicking opens the existing detail tab rather than a new surface. The roster never opens the panel, switches the active tab, or takes focus by itself. A failed host read shows a retry action instead of an empty list, and an incomplete transcript is labelled as such.
 - **Specs**: `04-ux/01-ui-ia.md`, `04-ux/08-component-spec.md` §5.3, `04-ux/09-interaction-patterns.md` §9.1, `03-runtime/06-host-rpc-protocol.md` (`session.delegations`), `03-runtime/01-ipc-protocol.md` (`sessionDelegations`).
-- **Acceptance**: `apps/desktop/test/subagent-roster.test.mjs` (roster model, including a delegate appearing once with its settled status), `apps/desktop/test/subagent-roster-ui.test.mjs` (locale copy and detail merge), and `pnpm test:e2e:subagent-roster` pass. The E2E renders the real roster and detail tab in Electron and asserts a settled row updates in place, a stored delegation opens its conversation while the main transcript is unchanged, a failed read shows retry, and many rows scroll inside the height cap.
+- **Acceptance**: `apps/desktop/test/subagent-roster.test.mjs` (roster model, including a delegate appearing once with its settled status), `apps/desktop/test/subagent-roster-ui.test.mjs` (locale copy and detail merge), and `pnpm test:e2e:subagent-roster` pass. The E2E renders the real roster and detail tab in Electron and asserts a settled row updates in place, a stored delegation opens its conversation while the main transcript is unchanged, a failed read shows retry, and many rows scroll inside the height cap. It also verifies topology-node collapse/reopen, retained-tab switching, focus, disclosure after external closure, and roster collapse/expand across remounts.
 - **Milestone**: M5.
 - **Status**: Implemented and covered by the three suites above; the real-device walk-through is Draft.
 
@@ -19074,7 +19127,9 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
   a started background process survives its turn but not Stop or Host exit.
   Output is drained and bounded to 256 KiB per stream. Foreground behavior and
   shell pinning stay unchanged. Remote background requests fail explicitly.
-  Composer lists at most 12 tasks, polls only expanded output, ignores stale
+  Composer lists at most 12 tasks, scopes the bar to the conversation on screen
+  (switching sessions changes the listing but stops neither session's processes,
+  and a draft composer shows no bar), polls only expanded output, ignores stale
   responses, retries visible errors, and does not replay historical finished rows.
 - **Specs**: `03-runtime/03-tools-and-permissions.md`,
   `03-runtime/06-host-rpc-protocol.md`, `03-runtime/01-ipc-protocol.md`,

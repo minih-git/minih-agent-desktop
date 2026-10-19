@@ -14,9 +14,11 @@ import type {
 } from "@minih-agent/shared";
 
 import {
+  ACCOUNT_MODE_NO_KEY_REASON,
   accountEnrollmentCurrent,
   createAccountEnroller,
   readAccountGateway,
+  readAccountModeAvailability,
   type AccountGatewayState,
 } from "./account-mode.js";
 import { createDesktopDevices, type DesktopDevices } from "./account-devices.js";
@@ -90,6 +92,13 @@ export type GatewayLinkService = {
   /** Read the stored credentials and apply the persisted switch state. */
   initialize(options: { enabled: boolean }): Promise<void>;
   status(): RemoteGatewayStatus;
+  /**
+   * The same snapshot, with the account-mode answer re-read first while the
+   * switch is off. While it is on, `syncAccountMode` owns that answer and
+   * nothing extra is read; the synchronous `status()` stays unchanged for every
+   * existing caller.
+   */
+  refreshStatus(): Promise<RemoteGatewayStatus>;
   setEnabled(enabled: boolean): Promise<RemoteGatewayLinkState>;
   enroll(input: RemoteGatewayEnrollRequest): Promise<void>;
   createPairingCode(): Promise<RemoteGatewayPairingCodeResult>;
@@ -305,7 +314,7 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
       accountMode = {
         ...state_.mode,
         available: false,
-        reason: "no Minih Router AccessKey is configured",
+        reason: ACCOUNT_MODE_NO_KEY_REASON,
       };
     } else if (outcome.state === "failed") {
       const failure = failureOf(outcome.error, GATEWAY_LINK_ENROLL_FAILED);
@@ -313,6 +322,27 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
     }
     return { ...state_, mode: accountMode ?? state_.mode };
   };
+
+  /**
+   * Refresh the account-mode answer while the switch is off.
+   *
+   * A desktop that has not enrolled has nothing to dial, so the switch is the
+   * only thing that could bring the link up — and the page has to be able to
+   * say whether that switch would work. This reads availability without
+   * enrolling, dialing, or opening anything (see `readAccountModeAvailability`),
+   * and is what makes a fresh install show account mode instead of waiting for
+   * the enrollment the switch was waiting for.
+   */
+  const refreshAccountModeAvailability = async (): Promise<void> => {
+    try {
+      accountMode = await readAccountModeAvailability(options.getHost());
+    } catch (error) {
+      // An unreadable answer is not an unreachable Gateway: report the reason
+      // the page can show and keep the rest of the status untouched.
+      accountMode = { available: false, reason: String(error) };
+    }
+  };
+
   /**
    * The address this attempt dials: whatever the overlay reaches the Gateway on
    * right now. No-TUN re-allocates the forward port on every overlay start, so
@@ -445,13 +475,27 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
         setState("error", { lastError: failureOf(error, GATEWAY_LINK_FAILED) });
         return;
       }
+
       if (!shouldEnable) {
+        // The switch is the only way this desktop could ever enroll, so the
+        // page has to know whether that switch would work — read now, without
+        // enrolling anything.
+        await refreshAccountModeAvailability();
         setState("disabled");
         return;
       }
       await transition(startLink);
     },
     status() {
+      return snapshot();
+    },
+    async refreshStatus() {
+      // Off means nothing is dialed and nothing enrolls, so the only way this
+      // desktop could come back is the switch — and the page has to know
+      // whether that would work right now. On, the running link keeps the
+      // answer current (`syncAccountMode`), and re-reading here would be
+      // duplicated RPCs on every status request.
+      if (!disposed && !enabled) await refreshAccountModeAvailability();
       return snapshot();
     },
     async setEnabled(next) {
@@ -473,6 +517,10 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
       await transition(async () => {
         if (!enabled) {
           await stopLink();
+          // Switched back off: keep reporting whether account mode is usable,
+          // so the page still offers the way back in.
+          await refreshAccountModeAvailability();
+          emit();
           return;
         }
         await startLink();

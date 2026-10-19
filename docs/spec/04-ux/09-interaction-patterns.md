@@ -860,6 +860,16 @@ may be retained while exactly one workspace supplies the visible shell context.
 - The Send tooltip identifies follow-up and uses the platform's key labels
   for the steering shortcut (`⌥+Enter` on macOS). The
   existing single Send/Stop slot and Host-owned follow-up list are retained.
+- The work panel's side-notes tab sends the same kind of input from the side
+  panel instead of the composer: a note is answered inside the running turn, so
+  the task keeps going. The tab lists the session's own `sideNote` rows, newest
+  last, and its preset sends a progress-summary note in one click. While no
+  turn is running the input is disabled and explains why, because a note has no
+  turn to reach. The transcript marks such a row as a side note. A successful
+  submission clears only its unchanged submitted draft, never text edited
+  while awaiting acknowledgement or an unrelated draft when using the preset.
+  Pending submission disables both send actions but leaves the input editable;
+  refusal preserves the draft and reports the error.
 
 ## 3A. Context checkpoint lifecycle
 
@@ -1498,7 +1508,12 @@ Project drag/drop follows these patterns:
   tail.
 - Clicking a delegation topology node opens (or activates) a dedicated
   `subagent` tab in the work panel instead of expanding the transcript or
-  replacing the tab strip. Multiple delegations coexist as independent tabs —
+  replacing the tab strip. Clicking the currently visible delegation node
+  again collapses the panel without closing tabs; clicking it while hidden
+  reopens the retained tab. Clicking a different node activates that
+  delegation instead of collapsing. Node disclosure state follows actual
+  panel visibility, including closure through the global panel toggle.
+  Multiple delegations coexist as independent tabs —
   ten subagents yield ten tabs — with the standard tab affordances (activate,
   drag-reorder, close via ×, middle-click, or Delete, and wheel overflow).
   A tab shows the delegation as a message list: every `Task` call of the

@@ -24,6 +24,19 @@ export const EMPTY_VISIBILITY: BarVisibility = {
   dismissed: new Set(),
 };
 
+/**
+ * The registry is process-wide, so one list holds every local session's tasks.
+ * A bar belongs to one conversation: another conversation's server is not the
+ * work the user is looking at, and its Stop control would end a process this
+ * conversation never started.
+ */
+export function sessionTasks(
+  tasks: readonly BackgroundTaskSummary[],
+  sessionId: string,
+): BackgroundTaskSummary[] {
+  return tasks.filter((task) => task.sessionId === sessionId);
+}
+
 function pruneSet(source: ReadonlySet<string>, liveIds: ReadonlySet<string>): Set<string> {
   const next = new Set<string>();
   for (const id of source) {

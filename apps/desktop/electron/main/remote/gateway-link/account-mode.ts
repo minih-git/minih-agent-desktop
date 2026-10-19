@@ -101,32 +101,29 @@ export async function readAccountGateway(host: HostCaller | null): Promise<Accou
   };
 }
 
+/** The row shape `providers.list` returns, as far as account mode reads it. */
+type ProviderRow = { id?: string; vendorKey?: string; hasSecret?: boolean; enabled?: boolean };
+
+/** Why account mode cannot take over: there is no Router account to join. */
+export const ACCOUNT_MODE_NO_KEY_REASON = "no Minih Router AccessKey is configured";
+
 /**
- * The Minih Router AccessKey main will enroll with, or `null` when the user has
- * no Router row or that row carries no token.
+ * The `minih-router` provider row account mode would enroll with, or `null`
+ * when the user has no such row or it carries no token.
  *
  * The row is chosen the way the D661 rule does — the first enabled
  * `minih-router` row with a token — so account mode joins the account the
- * settings page already shows. The key is returned to main only; the caller
- * must not store it, log it, or put it in a status projection.
+ * settings page already shows. This lists rows only and never decrypts a
+ * secret, so it is safe to call just to answer "could account mode work?".
  */
-export async function resolveAccountAccessKey(
-  host: HostCaller | null,
-): Promise<{ accessKey: string; providerId: string } | null> {
+async function findAccountProviderRow(host: HostCaller | null): Promise<ProviderRow | null> {
   if (!host) return null;
-  let rows: Array<{ id?: string; vendorKey?: string; hasSecret?: boolean; enabled?: boolean }>;
+  let rows: ProviderRow[];
   try {
     const listed = await host.call<{ providers?: unknown[] }>("providers.list", {
       includeDisabled: true,
     });
-    rows = Array.isArray(listed?.providers)
-      ? (listed.providers as Array<{
-          id?: string;
-          vendorKey?: string;
-          hasSecret?: boolean;
-          enabled?: boolean;
-        }>)
-      : [];
+    rows = Array.isArray(listed?.providers) ? (listed.providers as ProviderRow[]) : [];
   } catch {
     return null;
   }
@@ -139,6 +136,21 @@ export async function resolveAccountAccessKey(
       candidate.enabled !== false &&
       isMinihRouterVendorKey(candidate.vendorKey),
   );
+  return row?.id ? row : null;
+}
+
+/**
+ * The Minih Router AccessKey main will enroll with, or `null` when the user has
+ * no Router row or that row carries no token.
+ *
+ * The key is returned to main only; the caller must not store it, log it, or
+ * put it in a status projection.
+ */
+export async function resolveAccountAccessKey(
+  host: HostCaller | null,
+): Promise<{ accessKey: string; providerId: string } | null> {
+  if (!host) return null;
+  const row = await findAccountProviderRow(host);
   if (!row?.id) return null;
   try {
     const secret = await host.call<{ value?: string }>("providers.getSecret", { id: row.id });
@@ -147,6 +159,42 @@ export async function resolveAccountAccessKey(
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether account mode could be used right now — decided without changing
+ * anything.
+ *
+ * The settings page needs this *before* the user turns the remote-control
+ * switch on, because the switch itself needs something to dial: an existing
+ * enrollment, or an account mode that can enroll. Reading it only while
+ * starting the link would leave a freshly installed desktop with a greyed
+ * switch and no visible account mode at all, waiting for an enrollment that
+ * the switch was waiting for.
+ *
+ * So this reads `EasyTierStatus.remoteGateway` and checks that a Router row
+ * exists, and nothing more: it never decrypts the key, never enrolls, never
+ * dials, and never starts a link. Turning the switch on is what enrolls.
+ *
+ * `undefined` means host-core does not report the field at all: the page then
+ * keeps the self-hosted flow with no account-mode affordance, exactly as
+ * before the feature existed.
+ *
+ * Cost: one `easytier.status` and one `providers.list` per call. Both are local
+ * host-core RPCs, and host-core pushes no EasyTier-state event to subscribe to,
+ * so this is called on the reads that already happen — boot and every status
+ * request — and never on a timer.
+ */
+export async function readAccountModeAvailability(
+  host: HostCaller | null,
+): Promise<RemoteGatewayAccountMode | undefined> {
+  const state = await readAccountGateway(host);
+  if (!state.supported) return undefined;
+  if (!state.mode.available) return state.mode;
+  // The endpoint is usable; the missing piece would be the account to join.
+  const row = await findAccountProviderRow(host);
+  if (!row) return { ...state.mode, available: false, reason: ACCOUNT_MODE_NO_KEY_REASON };
+  return state.mode;
 }
 
 /**

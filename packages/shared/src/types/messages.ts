@@ -108,6 +108,8 @@ export type UiMessage = {
   attachments?: MessageAttachment[];
   /** Accepted input to an existing turn; Stop must preserve it after reload. */
   steering?: boolean;
+  /** Accepted side note to a running turn; the row stays marked after reload. */
+  sideNote?: boolean;
   /** Model reasoning kept separate from the answer text. */
   thinking?: string;
   createdAt: string;

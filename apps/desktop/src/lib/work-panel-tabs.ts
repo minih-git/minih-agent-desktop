@@ -3,7 +3,8 @@ export type WorkPanelTabKind =
   | "review"
   | "file"
   | "plugin"
-  | "subagent";
+  | "subagent"
+  | "sideNotes";
 
 export type WorkPanelTab = {
   id: string;
@@ -91,6 +92,17 @@ export function toolWorkPanelTab(
   kind: Exclude<WorkPanelTabKind, "new" | "file" | "plugin" | "subagent">,
 ): WorkPanelTab {
   return { id: kind, kind };
+}
+
+/**
+ * The per-session side-notes tab.
+ *
+ * A singleton like the review tool: every note it lists belongs to the running
+ * turn of the current session, so re-opening it focuses the same tab instead of
+ * stacking duplicates.
+ */
+export function sideNotesWorkPanelTab(): WorkPanelTab {
+  return { id: "side-notes", kind: "sideNotes" };
 }
 
 /**
@@ -248,7 +260,8 @@ export function isKnownWorkPanelTab(tab: WorkPanelTab): boolean {
     Boolean(tab) &&
     (tab.kind === "new" || tab.kind === "review" ||
       tab.kind === "file" || tab.kind === "plugin" ||
-      tab.kind === "subagent")
+      tab.kind === "subagent" ||
+      tab.kind === "sideNotes")
   );
 }
 
