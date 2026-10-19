@@ -865,7 +865,11 @@ may be retained while exactly one workspace supplies the visible shell context.
   the task keeps going. The tab lists the session's own `sideNote` rows, newest
   last, and its preset sends a progress-summary note in one click. While no
   turn is running the input is disabled and explains why, because a note has no
-  turn to reach. The transcript marks such a row as a side note.
+  turn to reach. The transcript marks such a row as a side note. A successful
+  submission clears only its unchanged submitted draft, never text edited
+  while awaiting acknowledgement or an unrelated draft when using the preset.
+  Pending submission disables both send actions but leaves the input editable;
+  refusal preserves the draft and reports the error.
 
 ## 3A. Context checkpoint lifecycle
 

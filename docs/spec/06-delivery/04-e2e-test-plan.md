@@ -16969,9 +16969,16 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   `04-ux/09-interaction-patterns.md` (§3.5), ADR active-turn-steering
 - **Acceptance**: C (conversation & stream), Quality
 - **Milestone**: M5
-- **Status**: Draft. Unit and source-contract suites cover the panel, the store
-  send path, the runtime framing and the host round-trip; the rendered journey
-  has not been run (do not run E2E locally unless explicitly requested).
+- **Automated coverage**: `pnpm test:e2e:side-notes` mounts the production work
+  panel in isolated Electron and exercises the launcher, preset, pending edits,
+  refusal/retry, Enter/Shift+Enter/IME, session isolation and idle admission.
+  Its process fixture uses production Main IPC, AgentHost, the sidecar and Rust
+  Host with a local SSE provider: a note wakes TaskWait in the same turn, both
+  delegates remain live, ordinary FIFO input is preserved, and the durable row
+  keeps plain text plus `sideNote`/`steering` while only the model sees framing.
+- **Status**: Automated fixture paths covered. Live-model interpretation of a
+  direction-changing note and Stop during pending delivery remain manual
+  acceptance scenarios; these fixtures do not authorize a paid provider run.
 
 #### E2E-SESSION-content-search-and-message-navigation
 

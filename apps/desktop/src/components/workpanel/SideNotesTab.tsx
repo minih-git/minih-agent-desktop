@@ -45,7 +45,9 @@ export function SideNotesTab() {
     setSending(true);
     try {
       // A refused note keeps its text so the user can send it again.
-      if (await sendSideNote(note)) setDraft("");
+      if (await sendSideNote(note)) {
+        setDraft((current) => current === text ? "" : current);
+      }
     } finally {
       setSending(false);
     }
@@ -99,7 +101,7 @@ export function SideNotesTab() {
             variant="ghost"
             size="sm"
             className="side-notes-preset"
-            disabled={!ready}
+            disabled={!ready || sending}
             onClick={() => void send(t("panel.sideNotes.presetProgress"))}
           >
             {t("panel.sideNotes.presetProgressLabel")}
@@ -108,7 +110,7 @@ export function SideNotesTab() {
             type="button"
             size="sm"
             className="side-notes-send"
-            disabled={!ready || !draft.trim()}
+            disabled={!ready || sending || !draft.trim()}
             onClick={() => void send(draft)}
           >
             {t("panel.sideNotes.send")}
