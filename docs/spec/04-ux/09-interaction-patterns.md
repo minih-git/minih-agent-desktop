@@ -1396,6 +1396,21 @@ Project drag/drop follows these patterns:
   resolved absolute path after file-reference resolution checks its roots.
   No project is required to open a scratch artifact. Missing workspace state
   is normalized consistently across asynchronous session-change guards.
+  A reference may also name a **folder**, or a path with no extension at all:
+  `apps/desktop/src/`, `/api/v1/users`, `~/notes`. Those shapes are recognized
+  only when something anchors them as a path — a trailing separator, a leading
+  `/`, `~/`, drive letter, or `./` / `../`, or an inline code span containing a
+  separator — and they stay plain text until the host confirms the entry
+  exists, because a reply writes routes and ratios that look the same. A bare
+  relative `foo/bar` in prose is never recognized. Confirmation is one
+  `fs/resolveRef` per distinct workspace, session, and path; a miss is not
+  remembered, so a path a reply says it is about to create becomes a link once
+  it exists, and a session without local tools asks nothing. A folder's click
+  selects it in the system file manager (or reports that a remote folder cannot
+  be shown here) and never opens it: `fs/open` would launch an `.app` bundle,
+  and the bundled file view has no folder location. `~/x` is expanded to the
+  home directory in the main process and then checked against the same allowed
+  roots.
   Local `file:` Markdown URLs are converted to file references before
   sanitization, not admitted as native links. `path:line[:column]` retains
   source navigation in plain text, inline code and Markdown links, including
@@ -1410,8 +1425,11 @@ Project drag/drop follows these patterns:
   references also offer an **Open with** submenu containing File Manager,
   built-in browser, and default browser. Each choice completes the reference
   first and opens that exact resolved file. Other file types keep the copy
-  actions only; the transcript menu has no **Show in folder** action. A file
-  outside the project has no relative path to copy and reports that fact.
+  actions only. A file outside the project has no relative path to copy and
+  reports that fact. A folder reference is the exception on both counts: it
+  offers **Reveal in Finder** — its click destination, since a folder is never
+  opened — together with Copy full path and Copy relative path, and never the
+  HTML open destinations.
 - In the host `file:` tab, a conversation MP4 that cannot be previewed because
   it is binary or exceeds the text preview limit offers **Open with default
   application**. This applies to named `.mp4` files and extensionless

@@ -370,7 +370,7 @@ test("every transcript surface that names a file opens that item", () => {
     shared,
     /const \{ fileMenu, openFileMenu, closeFileMenu \} = useChatFileMenu\(\)/,
   );
-  assert.match(shared, /onContextMenu=\{\(event\) => openFileMenu\(event, \{ path \}\)/);
+  assert.match(shared, /onContextMenu=\{\(event\) => openFileMenu\(event, \{\s*path,/);
   // An image attachment is the same chip as any other attachment now, so that
   // chip carries the file menu and the shared preview card hangs off it.
   assert.match(
@@ -393,8 +393,10 @@ test("every transcript surface that names a file opens that item", () => {
   assert.match(markdown, /<ContextMenu state=\{fileMenu\} onClose=\{closeFileMenu\} \/>/);
   // Inline code, a file link, and a local image each hand their own reference
   // to that surface; `./` and `../` keep the markdown base beside the path.
-  assert.match(markdown, /openFileMenu\(event, \{ path: text \?\? target\.path, baseDir \}\)/);
-  assert.match(markdown, /openFileMenu\(event, \{ path: ref, baseDir \}\)/);
+  // Both pass the entry kind when the reference resolved to a folder, so the
+  // items a folder cannot use are never offered.
+  assert.match(markdown, /path: text \?\? target\.path,\s*baseDir,\s*\.\.\.\(entryKind \? \{ entryKind \} : \{\}\),/);
+  assert.match(markdown, /path: ref,\s*baseDir,\s*\.\.\.\(unverifiedEntryKind \? \{ entryKind: unverifiedEntryKind \} : \{\}\),/);
   assert.match(markdown, /openFileMenu\(event, \{ path: localRef, baseDir \}\)/);
   assert.match(markdown, /onContextMenu=\{onLocalContextMenu\}/);
   // A local image that cannot be shown inline keeps a chip, and both carry the

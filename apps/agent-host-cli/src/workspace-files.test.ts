@@ -20,6 +20,23 @@ describe("sessionless SSH file views", () => {
     expect(resolved).toMatchObject({ match: { relativePath: "src/main.ts", root: "workspace", absolutePath: join(await realpath(path), "src", "main.ts") } });
     expect(await files.read({ path, operation: "read", ref: "src/main.ts" })).toEqual({ kind: "text", content: "remote source", size: 13 });
   });
+  it("resolves a folder reference and reports which kind answered", async () => {
+    const path = await fixture(); const files = createWorkspaceFiles();
+    const root = await realpath(path);
+    expect(await files.read({ path, operation: "resolve", ref: "src" })).toMatchObject({
+      match: { relativePath: "src", root: "workspace", absolutePath: join(root, "src"), entryKind: "directory" },
+    });
+    // The explicit root itself is a reference too, addressed as `.`.
+    expect(await files.read({ path, operation: "resolve", ref: root })).toMatchObject({
+      match: { relativePath: ".", entryKind: "directory" },
+    });
+    // A file keeps reporting its own kind, so the caller can tell them apart.
+    expect(await files.read({ path, operation: "resolve", ref: "src/main.ts" })).toMatchObject({
+      match: { entryKind: "file" },
+    });
+    // A shorthand never completes to a folder: a leaf name only ever names a file.
+    expect(await files.read({ path, operation: "resolve", ref: "nothere" })).toEqual({ match: null });
+  });
   it("does not fall back to this computer or cross symlink containment", async () => {
     const path = await fixture(); const outside = await fixture(); const files = createWorkspaceFiles();
     await symlink(join(outside, "src", "main.ts"), join(path, "escaped.ts"));

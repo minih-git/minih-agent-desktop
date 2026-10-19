@@ -10322,7 +10322,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | G — Plugins (Independent session communication) | E2E-SESSION-independent-top-level-communication |
 | Quality (Independent session communication) | E2E-SESSION-independent-top-level-communication, E2E-SESSION-hover-card-model-and-links |
 | C — Conversation & stream (Hover card model and links) | E2E-SESSION-hover-card-model-and-links |
-| C — Conversation & stream (Chat file references) | E2E-CHAT-shorthand-file-ref-opens-the-matching-file, E2E-CHAT-file-ref-opens-the-surface-that-owns-it |
+| C — Conversation & stream (Chat file references) | E2E-CHAT-shorthand-file-ref-opens-the-matching-file, E2E-CHAT-file-ref-opens-the-surface-that-owns-it, E2E-CHAT-directory-ref-reveals-in-system-file-manager |
 | C / Quality / Security (Conversation MP4 attachments) | E2E-CHAT-mp4-attachment-opens-in-system-player |
 | G — Plugins (Chat file references) | E2E-CHAT-file-ref-opens-the-surface-that-owns-it, E2E-PLUGIN-file-view-collapse-persists |
 | Quality (Chat file references) | E2E-CHAT-shorthand-file-ref-opens-the-matching-file, E2E-CHAT-file-ref-opens-the-surface-that-owns-it, E2E-PLUGIN-file-view-collapse-persists |
@@ -13594,6 +13594,47 @@ are withdrawn with ADR 0165.
 - **Milestone**: M5
 - **Status**: Unit-covered
   (`apps/desktop/test/chat-ref-resolve.test.mjs`); full UI journey Draft (run
+  only in a capable environment when this surface changes)
+
+#### E2E-CHAT-directory-ref-reveals-in-system-file-manager
+
+- **Preconditions**: An open project whose primary folder holds
+  `apps/desktop/src/App.tsx` and a `docs` folder with no extension in its name.
+  The session may use local tools; a second, remote session shows the same
+  reply. The transcript renders assistant markdown and a user turn.
+- **Steps**: 1) Prompt a turn whose reply names `apps/desktop/src/` (with the
+  trailing separator) and click it. 2) Prompt a turn that names the folder
+  without the trailing separator inside inline code and click it. 3) Prompt a
+  turn that names `~/notes` and `~/notes/` and click each. 4) Right-click the
+  folder reference. 5) Repeat step 1 in the remote session. 6) Prompt a turn
+  that writes only prose: `and/or`, `50/50`, `TCP/IP`, `km/h`, `输入/输出`,
+  `A / B`, and a lone `/`.
+- **Expected**:
+  - A folder reference becomes a link only after the host confirms the entry
+    exists, and clicking it selects that folder in the system file manager. It
+    is never opened: `fs/open` would launch an `.app` bundle, and the bundled
+    file view has no folder location.
+  - An extensionless path claimed by inline code and an anchored path
+    (`~/notes`) are confirmed the same way before they are clickable; the
+    confirmation is one `fs/resolveRef` per distinct path per workspace,
+    session, and conversation, however often the reference is repeated.
+  - A path that does not exist yet stays plain text, and becomes a link after
+    the entry is created and the row re-mounts: a miss is not remembered.
+  - The folder's context menu offers **Reveal in Finder** plus Copy full path
+    and Copy relative path, and no HTML open destinations.
+  - In the remote session the click reports that a remote folder cannot be
+    shown on this computer, and no local file-manager call is made. A session
+    without local tools sends no existence lookup at all.
+  - None of the prose shapes becomes a link or costs a lookup, and a routed URL
+    such as `https://example.com/a/b/` stays one URL.
+- **Specs linked**: `03-runtime/01-ipc-protocol.md` § fs,
+  `04-ux/09-interaction-patterns.md` §8a.2, ADR 0262
+- **Acceptance**: C (conversation & stream), D (workspace), Quality
+- **Milestone**: M5
+- **Status**: Unit-covered
+  (`apps/desktop/test/chat-directory-ref-reveal.test.mjs`,
+  `apps/desktop/test/chat-links.test.mjs`,
+  `apps/desktop/test/chat-ref-resolve.test.mjs`); full UI journey Draft (run
   only in a capable environment when this surface changes)
 
 #### E2E-CHAT-spaced-absolute-file-paths

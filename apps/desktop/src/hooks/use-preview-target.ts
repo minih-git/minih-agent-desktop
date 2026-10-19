@@ -3,7 +3,7 @@ import { sessionAllows } from "../lib/remote-session-safety";
 import { useSlotSessionId } from "../plugins/renderer-slots/use-slots";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { isActiveInProject } from "@minih-agent/shared";
+import { isActiveInProject, type FsChatRefEntryKind } from "@minih-agent/shared";
 import { useAppStore } from "../stores/app-store";
 import { api } from "../lib/api";
 import { isHtmlFilePath, toWorkspaceRel, type ChatPreviewTarget } from "../lib/chat-links";
@@ -86,6 +86,8 @@ export type ResolvedChatFileRef = {
   primary: boolean;
   /** Session-owned generated artifacts, rather than imported attachments. */
   scratch: boolean;
+  /** Whether a file or a folder answered; a folder is only ever revealed. */
+  entryKind: FsChatRefEntryKind;
 };
 
 export type ChatFileOpenDestination =
@@ -198,6 +200,7 @@ function useResolveChatFileRef() {
         showToast(t(key, { name: raw }), { variant: "error" });
         return null;
       }
+      const entryKind: FsChatRefEntryKind = match.entryKind ?? "file";
       if (match.root !== "workspace") {
         return {
           path: match.absolutePath,
@@ -206,6 +209,7 @@ function useResolveChatFileRef() {
           inProject: false,
           primary: false,
           scratch: match.sessionScratch === true,
+          entryKind,
         };
       }
       // A project group can hold several folders, and a relative path always
@@ -219,6 +223,7 @@ function useResolveChatFileRef() {
         inProject: true,
         primary,
         scratch: false,
+        entryKind,
       };
     },
     [paneSessionId, sessionId, showToast, t, workspacePath],
@@ -318,6 +323,24 @@ export function useOpenChatFileRef() {
             showToast(t("chat.defaultBrowserOpenFailed"), {
               variant: "error",
             });
+          }
+          return;
+        }
+        // A folder is not opened, it is shown: the system file manager selects
+        // it where it lives. `fsOpen` would launch a `.app` bundle, and the
+        // bundled file view has no folder location. A remote session has no
+        // local folder to show, so it says so instead of doing nothing.
+        if (resolved.entryKind === "directory") {
+          if (current.workspace?.remote) {
+            showToast(t("chat.remoteFolderRevealUnsupported", { name: resolved.absolutePath }), {
+              variant: "error",
+            });
+            return;
+          }
+          try {
+            await api.fsReveal(resolved.absolutePath, sessionId);
+          } catch {
+            showToast(t("chat.folderRevealFailed"), { variant: "error" });
           }
           return;
         }

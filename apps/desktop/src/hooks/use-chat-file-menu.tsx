@@ -21,6 +21,7 @@ import {
   IconFolderOpen,
   IconGlobe,
 } from "../components/icons";
+import type { FsChatRefEntryKind } from "@minih-agent/shared";
 import { isHtmlFilePath } from "../lib/chat-links";
 import { useChatNativeFilesAllowed } from "./use-chat-session-capability";
 import {
@@ -33,6 +34,12 @@ export type ChatFileMenuTarget = {
   path: string;
   /** Markdown file the reference was read from, for `./` and `../`. */
   baseDir?: string;
+  /**
+   * What the reference resolved to, when the surface already knows. A folder
+   * offers only the actions a folder has: show it, and copy its path. HTML open
+   * destinations are about pages, and a folder is not one.
+   */
+  entryKind?: FsChatRefEntryKind;
 };
 
 export function useChatFileMenuItems() {
@@ -41,57 +48,72 @@ export function useChatFileMenuItems() {
   const openFileRef = useOpenChatFileRef();
   const copyFileRef = useCopyChatFileRef();
   return useCallback(
-    ({ path, baseDir }: ChatFileMenuTarget): ContextMenuItem[] => [
-      ...(nativeFilesAllowed && isHtmlFilePath(path)
-        ? [{
-            id: "open-with",
-            label: t("chat.openWith"),
-            icon: <IconExternal size={14} />,
-            submenu: [
-              {
-                id: "open-with-file-manager",
-                label: t("chat.openWithFileManager"),
-                icon: <IconFolderOpen size={14} />,
-                onSelect: () =>
-                  openFileRef(path, baseDir, undefined, {
-                    destination: "file-manager",
-                  }),
-              },
-              {
-                id: "open-with-built-in-browser",
-                label: t("chat.openWithBuiltInBrowser"),
-                icon: <IconBrowser size={14} />,
-                onSelect: () =>
-                  openFileRef(path, baseDir, undefined, {
-                    destination: "built-in-browser",
-                  }),
-              },
-              {
-                id: "open-with-default-browser",
-                label: t("chat.openWithDefaultBrowser"),
-                icon: <IconGlobe size={14} />,
-                onSelect: () =>
-                  openFileRef(path, baseDir, undefined, {
-                    destination: "default-browser",
-                  }),
-              },
-            ],
-          }]
-        : []),
-      {
-        id: "copy-full-path",
-        label: t("chat.copyFullPath"),
-        icon: <IconCopy size={14} />,
-        separatorBefore: nativeFilesAllowed && isHtmlFilePath(path),
-        onSelect: () => copyFileRef(path, baseDir, "absolute"),
-      },
-      {
-        id: "copy-relative-path",
-        label: t("chat.copyRelativePath"),
-        icon: <IconCopy size={14} />,
-        onSelect: () => copyFileRef(path, baseDir, "relative"),
-      },
-    ],
+    ({ path, baseDir, entryKind }: ChatFileMenuTarget): ContextMenuItem[] => {
+      const isDirectory = entryKind === "directory";
+      return [
+        // A folder is shown in place; there is no page to run and no viewer to
+        // hand it to, so the HTML destinations do not apply.
+        ...(nativeFilesAllowed && isDirectory
+          ? [{
+              id: "reveal-in-file-manager",
+              label: t("chat.revealInFileManager"),
+              icon: <IconFolderOpen size={14} />,
+              onSelect: () => openFileRef(path, baseDir),
+            }]
+          : []),
+        ...(nativeFilesAllowed && !isDirectory && isHtmlFilePath(path)
+          ? [{
+              id: "open-with",
+              label: t("chat.openWith"),
+              icon: <IconExternal size={14} />,
+              submenu: [
+                {
+                  id: "open-with-file-manager",
+                  label: t("chat.openWithFileManager"),
+                  icon: <IconFolderOpen size={14} />,
+                  onSelect: () =>
+                    openFileRef(path, baseDir, undefined, {
+                      destination: "file-manager",
+                    }),
+                },
+                {
+                  id: "open-with-built-in-browser",
+                  label: t("chat.openWithBuiltInBrowser"),
+                  icon: <IconBrowser size={14} />,
+                  onSelect: () =>
+                    openFileRef(path, baseDir, undefined, {
+                      destination: "built-in-browser",
+                    }),
+                },
+                {
+                  id: "open-with-default-browser",
+                  label: t("chat.openWithDefaultBrowser"),
+                  icon: <IconGlobe size={14} />,
+                  onSelect: () =>
+                    openFileRef(path, baseDir, undefined, {
+                      destination: "default-browser",
+                    }),
+                },
+              ],
+            }]
+          : []),
+        {
+          id: "copy-full-path",
+          label: t("chat.copyFullPath"),
+          icon: <IconCopy size={14} />,
+          separatorBefore: nativeFilesAllowed && (isDirectory || isHtmlFilePath(path)),
+          onSelect: () => copyFileRef(path, baseDir, "absolute"),
+        },
+        // A folder keeps both copy actions; a folder outside the project simply
+        // has no relative spelling, which the copier already reports.
+        {
+          id: "copy-relative-path",
+          label: t("chat.copyRelativePath"),
+          icon: <IconCopy size={14} />,
+          onSelect: () => copyFileRef(path, baseDir, "relative"),
+        },
+      ];
+    },
     [copyFileRef, nativeFilesAllowed, openFileRef, t],
   );
 }
