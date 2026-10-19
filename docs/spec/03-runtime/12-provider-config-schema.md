@@ -569,6 +569,18 @@ Settings uses for the balance and model plaza (§6, Minih Router account).
   registration-code form stays available so a user without a Router key can
   still enroll. The switch stays the security default: with it off nothing is
   enrolled and no link is dialled, whatever the Router advertises.
+- **When the answer is fetched, and from where.** The desktop asks for this
+  bootstrap on every start of the virtual LAN channel, including the start at
+  boot: the request is signed with the saved `minih-router` row, so a desktop
+  that never touches a setting still learns the Gateway configuration. No-TUN
+  mode cannot route the Router's overlay address, so there the request goes to
+  the loopback forward the tunnel installs, and a start that came up without an
+  answer asks once more through that forward and restarts the tunnel a single
+  time so the answered identity (peers, Router address, network secret) applies.
+  TUN mode asks the configured address. When no answer is in effect the account
+  mode reason names the last failure, states that nothing has been fetched yet,
+  or states that the Router does not offer account mode (it answered without a
+  `remote_gateway` object) — never an empty reason.
 - **Registration identity and dial address are different things.** The identity
   is the advertised endpoint — `hostlinkUrl`, `caPem`, and `tlsServerName` —
   and only one of those changing means the Gateway changed and the desktop has

@@ -1629,7 +1629,10 @@ written.
   AccessKey from the saved `minih-router` provider row inside the main process,
   using it for that one enrollment request, and then discarding it — it never
   enters a renderer payload, a log line, an audit record, or the credential
-  file, which keeps only the Host certificate and key. Nothing is enrolled and
+  file, which keeps only the Host certificate and key. The bootstrap request that
+  carries this answer is made at **startup** with the saved row as its credential
+  source, not only after the user touches a setting: a build that starts without
+  one never learns which Gateway serves the account. Nothing is enrolled and
   nothing listens while the user's own remote-control switch is off, and an
   unavailable advertisement leaves the self-hosted registration-code flow
   untouched. Being off does not make account mode invisible, though: whether it
@@ -1637,7 +1640,14 @@ written.
   without enrolling, dialing, or opening anything, and reported in the status so
   the page can offer the switch at all; every status read asks again (concurrent
   reads share one call, and a settled answer is never reused), because both the
-  overlay and the account key can appear after the page was first opened.
+  overlay and the account key can appear after the page was first opened. In
+  No-TUN mode the request goes to the loopback forward the tunnel installs — the
+  Router's overlay address is not routable there — and once the tunnel is up a
+  start without an answer asks once more through that forward and restarts the
+  tunnel a single time so the answered identity applies. TUN mode asks the
+  configured Router address, which its routing makes reachable. An unavailable
+  account mode always names a reason: the last bootstrap failure when there is
+  one, otherwise that the configuration has not been fetched yet.
   Turning that switch on is what enrolls
   the desktop: a desktop that waited for an enrollment before offering the switch
   while the enrollment waited for the switch had no way in. Its confirmer is the

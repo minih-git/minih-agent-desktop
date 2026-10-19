@@ -112,7 +112,14 @@ async fn main() -> anyhow::Result<()> {
             review::sweep(&data_dir, &live);
         }
         let app_settings = st.db.get_setting("app").unwrap_or_default();
-        easytier_net::spawn_from_settings(&data_dir, app_settings.as_ref());
+        // Drop the guard before the provider reads the same state: the bootstrap
+        // request asks it for the Router row while this task runs.
+        drop(st);
+        easytier_net::spawn_at_boot(
+            &data_dir,
+            app_settings.as_ref(),
+            Arc::new(easytier_net::AppStateCredentialProvider::new(state.clone())),
+        );
     }
     // Drop half-created worktrees, mark vanished ones, repair links after a
     // moved data directory, and remove orphans (ADR 0329).
