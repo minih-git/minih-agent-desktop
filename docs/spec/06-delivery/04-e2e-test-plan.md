@@ -16941,6 +16941,38 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   the rendered steering journey has not been run
   (do not run E2E locally unless explicitly requested).
 
+#### E2E-AGENT-side-note-keeps-running-turn: A side note is answered without redirecting the turn
+
+- **Preconditions**: A session with a configured model and a controllable
+  streaming response/tool that stays open long enough to type during.
+- **Steps**:
+  1. Start a prompt, then open the work panel's side-notes tab from the `+`
+     launcher. Confirm the input is enabled and the list is empty.
+  2. Send a note ("How far along are you?") while the turn streams. Confirm the
+     turn keeps its task, the note appears in the tab and as a marked user row
+     in the transcript, and no FIFO row or new public `agent_start` appears.
+  3. Use the preset progress-summary action, then send a note that asks for a
+     direction change. Confirm the model answers each note and continues.
+  4. Send an empty note; then let the turn finish and confirm the input is
+     disabled and explains why.
+  5. Reload the renderer and switch sessions. Confirm the tab lists the same
+     notes for that session and the transcript rows stay marked.
+  6. Stop the turn while a note is still queued, then inspect the persisted
+     rows and the next ordinary turn.
+- **Expected**: A side note is delivered into the running turn, answered at its
+  next safe point, and never cancels the turn, its tools, or its delegates. The
+  persisted row keeps the user's own words plus the `sideNote` marker, while the
+  model-visible prompt carries the side-note framing. An idle session cannot
+  send a note and says so.
+- **Specs linked**: `03-runtime/01-ipc-protocol.md` (§5.1a),
+  `03-runtime/02-agent-runtime.md` (§4.0), `03-runtime/04-data-storage.md`,
+  `04-ux/09-interaction-patterns.md` (§3.5), ADR active-turn-steering
+- **Acceptance**: C (conversation & stream), Quality
+- **Milestone**: M5
+- **Status**: Draft. Unit and source-contract suites cover the panel, the store
+  send path, the runtime framing and the host round-trip; the rendered journey
+  has not been run (do not run E2E locally unless explicitly requested).
+
 #### E2E-SESSION-content-search-and-message-navigation
 
 - **Scope**: Desktop global search, host search projections, and original

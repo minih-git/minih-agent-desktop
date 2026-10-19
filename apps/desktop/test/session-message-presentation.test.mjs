@@ -73,6 +73,8 @@ function loadComponent(name, extras = {}) {
 const origin = loadComponent("SessionMessageOrigin");
 const { MessageRow } = loadComponent("MessageRow", {
   "./SessionMessageOrigin": origin,
+  // A side note marks its row with the same one-line origin language.
+  "./SideNoteOrigin": loadComponent("SideNoteOrigin"),
   "./extra-attachments": { getExtraMessageAttachments },
 });
 const userMessage = {
@@ -168,4 +170,14 @@ test("an image without a recorded position still follows the body", () => {
   const text = html.indexOf("look at this");
   const image = html.indexOf('data-image="b.png"');
   assert.ok(text >= 0 && image > text, html);
+});
+
+test("a side note row keeps its own words and names itself", () => {
+  const html = render({ ...userMessage, content: "How far along are you?", sideNote: true });
+  // The marker is the row's only claim: the note was answered inside the turn
+  // it was sent to, and the text stays exactly what the user typed.
+  assert.match(html, /class="side-note-origin"/);
+  assert.match(html, /chat\.sideNote/);
+  assert.match(html, /How far along are you\?/);
+  assert.doesNotMatch(html, /<side-note>/);
 });

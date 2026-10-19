@@ -1907,6 +1907,10 @@ columns for anything the host filters, joins, sums, or indexes.
 An accepted steering input is journaled through Electron's existing message
 outbox with `meta.steering: true`, round-tripped as `UiMessage.steering`. Smart
 Stop preserves that input even after renderer reload loses submission state.
+A side note adds `meta.sideNote: true` to that same row, round-tripped as
+`UiMessage.sideNote`. The marker only records that the input was answered
+inside the turn it was sent to; the storage schema and the transcript
+reservation rules are unchanged.
 If an assistant is still streaming, its provisional snapshot is queued
 first to reserve its transcript position before the new user row. The host
 stores the provisional row and an in-flight checkpoint, including an empty
