@@ -66,7 +66,9 @@ event: minih-agent-desktop/<domain>/event/<name>
 - `minih-agent-desktop/project-group/memory/get` / `save`
 - `minih-agent-desktop/project-group/instructions/get` / `save`
 - `minih-agent-desktop/memory/list` / `update` / `archive` / `restore` / `delete`
+- `minih-agent-desktop/memory/suggestions/list` / `decide`
 - `minih-agent-desktop/memory/session/get` / `setExcluded`
+- `minih-agent-desktop/memory/extraction/status`
 - `minih-agent-desktop/session/collaboration`
 
 ## 3.1 逻辑项目组

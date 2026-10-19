@@ -234,6 +234,12 @@ export const IPC = {
     memoryRememberAgain: "minih-agent-desktop/memory/rememberAgain",
     memorySessionGet: "minih-agent-desktop/memory/session/get",
     memorySessionSetExcluded: "minih-agent-desktop/memory/session/setExcluded",
+    // The suggestion inbox: what extraction proposed, and the user's decision.
+    memorySuggestionsList: "minih-agent-desktop/memory/suggestions/list",
+    memorySuggestionsDecide: "minih-agent-desktop/memory/suggestions/decide",
+    // Device-local extraction usage, so Settings can show today's spend and
+    // whether the daily budget has paused it.
+    memoryExtractionStatus: "minih-agent-desktop/memory/extraction/status",
     toolResolvePermission: "minih-agent-desktop/tool/resolvePermission",
     todosGet: "minih-agent-desktop/todos/get",
     askToolResolve: "minih-agent-desktop/agent/askTool/resolve",

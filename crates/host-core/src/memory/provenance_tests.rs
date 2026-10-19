@@ -23,7 +23,7 @@ fn ui(role: &str, content: &str) -> crate::sessions::UiMessage {
 ///
 /// Nothing here writes the transcript by hand: the point of the test it serves is
 /// that the delivered row looks like a user message to a naive provenance check.
-fn delivered_message(db: &Database, source: &str, target: &str) -> String {
+pub(super) fn delivered_message(db: &Database, source: &str, target: &str) -> String {
     let sent = crate::session_collaboration::handle(
         db,
         "session.collaboration.send",

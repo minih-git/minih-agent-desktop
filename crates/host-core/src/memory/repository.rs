@@ -3,6 +3,7 @@
 
 use anyhow::{anyhow, Result};
 use rusqlite::{params, Connection, OptionalExtension, Row};
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::db::{canonical_project_path, now_ms, Database};
@@ -14,6 +15,31 @@ use super::validation::{self, MemoryWrite, WriteOutcome, WritePath};
 const ENTRY_COLUMNS: &str = "id, scope_kind, scope_key, kind, content, rationale, status, origin, \
      evidence, source_session_id, source_message_ids, fingerprint, revision, superseded_by, \
      created_at, updated_at, last_used_at, use_count";
+
+/// Longest quote the inbox shows for one cited message. It is a display bound,
+/// not a storage one: the message itself is unchanged.
+pub(crate) const MAX_SUGGESTION_QUOTE_CHARS: usize = 240;
+
+/// One cited message as the suggestion inbox shows it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemorySuggestionQuote {
+    pub id: String,
+    pub seq: i64,
+    pub created_at: i64,
+    pub text: String,
+}
+
+/// Cut a quote on a character boundary and mark it, so a long message still
+/// reads as a quote rather than a truncated word.
+fn bounded_quote(text: &str, max_chars: usize) -> String {
+    let trimmed = text.trim();
+    if trimmed.chars().count() <= max_chars {
+        return trimmed.to_string();
+    }
+    let cut: String = trimmed.chars().take(max_chars.saturating_sub(1)).collect();
+    format!("{}…", cut.trim_end())
+}
 
 /// A scope slot that matches nothing, used to keep one statement shape for one
 /// or two scopes.
@@ -275,6 +301,98 @@ impl Database {
             entry_from_row,
         )?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Pending suggestions of one scope, oldest first: the inbox reads them in
+    /// the order extraction produced them, and the stored citations travel with
+    /// each row so the renderer can show the user's own words beside it.
+    pub fn list_memory_suggestions(
+        &self,
+        scope: &MemoryScope,
+        limit: i64,
+    ) -> Result<Vec<MemoryEntryRecord>> {
+        let sql = format!(
+            "SELECT {ENTRY_COLUMNS} FROM memory_entries
+             WHERE scope_kind = ?1 AND IFNULL(scope_key, '') = ?2
+               AND status = 'suggested'
+             ORDER BY created_at ASC, id ASC
+             LIMIT ?3"
+        );
+        let mut statement = self.conn().prepare_cached(&sql)?;
+        let rows = statement.query_map(
+            params![
+                scope.kind,
+                scope.stored_key(),
+                limit.clamp(1, MAX_LIST_LIMIT)
+            ],
+            entry_from_row,
+        )?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Count of pending suggestions in one scope, so the manager's badge costs
+    /// one query instead of a full inbox read on every open.
+    pub fn count_memory_suggestions(&self, scope: &MemoryScope) -> Result<i64> {
+        self.conn()
+            .query_row(
+                "SELECT COUNT(*) FROM memory_entries
+                  WHERE scope_kind = ?1 AND IFNULL(scope_key, '') = ?2
+                    AND status = 'suggested'",
+                params![scope.kind, scope.stored_key()],
+                |row| row.get(0),
+            )
+            .map_err(Into::into)
+    }
+
+    /// The user's own words behind one suggestion, bounded for display.
+    ///
+    /// A suggestion is reviewed by reading what it was based on, so the inbox
+    /// shows those messages. Only rows of the entry's own source session are
+    /// returned, and their ids are re-checked here: the stored citation is what
+    /// the host validated, and a message that has since been erased simply does
+    /// not appear.
+    pub fn memory_suggestion_quotes(
+        &self,
+        entry: &MemoryEntryRecord,
+        limit: i64,
+        max_chars: usize,
+    ) -> Result<Vec<MemorySuggestionQuote>> {
+        let Some(session_id) = entry.source_session_id.as_deref() else {
+            return Ok(Vec::new());
+        };
+        if entry.source_message_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let cited = tombstones::encode_ids(&entry.source_message_ids);
+        let mut statement = self.conn().prepare_cached(
+            "SELECT m.id, m.seq, m.created_at, m.text
+               FROM messages m
+              WHERE m.session_id = ?1
+                AND m.role = 'user'
+                AND m.text IS NOT NULL
+                AND m.id IN (SELECT value FROM json_each(?2))
+              ORDER BY m.seq ASC
+              LIMIT ?3",
+        )?;
+        let rows = statement
+            .query_map(
+                params![
+                    session_id,
+                    cited,
+                    limit.clamp(1, MAX_SOURCE_MESSAGE_IDS as i64)
+                ],
+                |row| {
+                    let text: String = row.get(3)?;
+                    Ok(MemorySuggestionQuote {
+                        id: row.get(0)?,
+                        seq: row.get(1)?,
+                        created_at: row.get(2)?,
+                        text: bounded_quote(&text, max_chars),
+                    })
+                },
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
     }
 
     pub fn create_memory_entry(&self, request: CreateMemoryRequest) -> Result<CreateMemoryOutcome> {

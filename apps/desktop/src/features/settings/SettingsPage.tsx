@@ -46,6 +46,12 @@ import {
   SessionTitleThinkingRow,
   SessionTitleToggleRow,
 } from "../../components/settings/SessionTitleRows";
+import {
+  ExtractionBudgetRow,
+  ExtractionModelRow,
+  ExtractionStatusRow,
+  ExtractionToggleRow,
+} from "../../components/settings/LearnedMemoryRows";
 import { FontSizeRow } from "../../components/settings/FontSizeRow";
 import { LanguageRow } from "../../components/settings/LanguageRow";
 import { SettingsMenuSelect } from "../../components/settings/SettingsMenuSelect";
@@ -476,17 +482,14 @@ export function SettingsPage() {
                     }
                   />
                 </SettingsRow>
-                <SettingsRow
-                  title={t("settings.learnedMemoryExtraction")}
-                  description={t("settings.learnedMemoryExtractionDesc")}
-                >
-                  <SettingsToggle
-                    checked={false}
-                    label={t("settings.learnedMemoryExtraction")}
-                    disabled
-                    onChange={() => {}}
-                  />
-                </SettingsRow>
+                <ExtractionToggleRow settings={settings} saveSettings={saveSettings} />
+                <ExtractionModelRow
+                  settings={settings}
+                  providers={providers}
+                  saveSettings={saveSettings}
+                />
+                <ExtractionBudgetRow settings={settings} saveSettings={saveSettings} />
+                <ExtractionStatusRow settings={settings} />
                 <SettingsRow
                   title={t("settings.learnedMemoryManager")}
                   description={t("settings.learnedMemoryManagerDesc")}

@@ -114,6 +114,11 @@ export type AppSettings = {
    */
   learnedMemoryRead?: boolean;
   /**
+   * Automatic extraction: the switch, its model, and its daily ceiling. Absent
+   * means off. Device-local, so it never participates in configuration sync.
+   */
+  learnedMemory?: LearnedMemorySettings;
+  /**
    * Show model reasoning in the transcript. Off keeps the live thinking
    * indicator visible and hides completed reasoning rows and excerpts; absent
    * falls back to the legacy `thinkingDisplayMode`. This is a presentation
@@ -238,7 +243,25 @@ export type LinkOpenTarget = "workpanel" | "external";
  * Built-in session title generation preferences. The prompt template is not
  * user-editable; it lives in the main process next to the code that renders
  * it, and the model output is validated before it reaches the session row.
+/**
+ * Optional automatic extraction (ADR agent-long-term-memory §4).
+ *
+ * Every field here is device-local: `learn` spends this machine's quota with a
+ * model this machine can reach, so it never travels through configuration sync
+ * (unlike `learnedMemoryRead`, which is a portable preference).
  */
+export type LearnedMemorySettings = {
+  /**
+   * Run the extractor. Absent and `false` keep it off; it cannot take effect
+   * until `model` names one, because the feature spends real quota.
+   */
+  learn?: boolean;
+  /** Extraction model as `providerId/modelId`; required before `learn` runs. */
+  model?: string;
+  /** Daily token ceiling; absent or unusable uses 200k. 0 is not a ceiling. */
+  dailyTokenBudget?: number;
+};
+
 export type SessionTitleSettings = {
   /** Absent and true enable generation. `false` keeps fallback titles only. */
   enabled?: boolean;

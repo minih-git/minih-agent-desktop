@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { dialog, shell, type BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from "electron";
-import { err, ErrorCodes, IPC, ok, type Result } from "@minih-agent/shared";
+import { err, ErrorCodes, IPC, ok, type AppSettings, type Result } from "@minih-agent/shared";
 import type { AgentHostBridge } from "../agent-host-bridge";
 import type { AgentSidecar } from "../agent-sidecar";
 import type { HostProcess } from "../host-process";
@@ -51,6 +51,13 @@ export type RegisterIpcDependencies = {
    * turn retry so both triggers serialize on the same in-flight guard.
    */
   generateSessionTitle: (job: SessionTitleJob) => Promise<boolean>;
+  /**
+   * Drop a session's pending extraction: a deleted session must not leave a
+   * debounce timer behind (ADR agent-long-term-memory §4).
+   */
+  cancelMemoryExtraction: (sessionId: string) => void;
+  /** Watch settings writes so turning extraction off cancels pending runs. */
+  onLearnedMemorySettingsChanged: (settings: AppSettings) => void;
   isQuitting: () => boolean;
   ipcMain: IpcMain;
   getMainWindow: () => BrowserWindow | null;
@@ -93,6 +100,8 @@ function wrap<T>(fn: () => Promise<T>): Promise<Result<T>> {
 export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
   const {
     generateSessionTitle,
+    cancelMemoryExtraction,
+    onLearnedMemorySettingsChanged,
     ipcMain,
     getMainWindow,
     getHost,
@@ -281,6 +290,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     beginTranscriptRewrite,
     forgetTranscriptRewriteHistory,
     stripWinLongPrefix,
+    cancelMemoryExtraction,
   });
   registerSettingsIpc({
     registrar,
@@ -298,6 +308,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     applyKeepAwakeWhileRunning,
     applyUpdatePreference: (preference) => updater.setPreference(preference),
     resolveEffectiveCommandShell,
+    onSettingsChanged: onLearnedMemorySettingsChanged,
     liveCallService,
   });
   registerConfigSyncIpc({

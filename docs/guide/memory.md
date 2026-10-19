@@ -58,9 +58,29 @@ two link to each other.
   learned-memory tool. Nothing is deleted, and turning it back on restores them.
   The switch travels with config sync, so your devices agree.
 - **Session menu → Don't learn from this conversation** keeps this conversation
-  out of future extraction.
-- **Settings → Learn automatically** is not available yet; notes are only created
-  when you ask for them.
+  out of extraction, including runs already waiting to start.
+- **Settings → Learn automatically** is off by default, and it cannot be turned on
+  until you choose a **Learning model**. Every run spends that model's quota, so
+  the switch is yours to make; the warning next to it says so.
+
+## Learn automatically (optional)
+
+When learning is on, the app reads your own messages after a conversation
+settles (ten idle minutes) or after it compacts, and asks the chosen model for
+notes worth keeping. Nothing else travels: tool results and the agent's replies
+are never sent, and the request is capped at 16 KiB of your own words plus the
+latest compaction summary.
+
+What comes back is a **suggestion**, never a memory. Open the manager: the
+**Suggestions** tab shows each proposal with its kind, scope, and the sentence of
+yours it came from. **Keep** makes it memory; **Discard** erases it and records
+that this evidence was rejected, so it is not proposed again. The tab carries a
+quiet count and never interrupts you.
+
+Each run costs tokens from the model you chose. **Daily token budget** caps that,
+and **Used today** shows where you stand; when the ceiling is reached, learning
+pauses until tomorrow and the line says so. Learning settings are per device:
+another machine picks its own model and its own budget.
 
 ## What the agent can do with it
 

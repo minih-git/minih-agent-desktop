@@ -1012,12 +1012,25 @@ system while preserving their different data ownership:
   manager says the entry changed elsewhere and reloads instead of overwriting
 - Delete asks for confirmation and states that a deleted note cannot be
   restored; it is the one irreversible action in the manager
-- Settings carries two switches: Use learned memory (the portable
-  `learnedMemoryRead`, on by default; off hides the session-start index and the
-  learned-memory tools without deleting anything) and Learn automatically,
-  shown disabled with a note that it arrives later
+- The manager has two tabs: Notes (the entries) and Suggestions (the inbox).
+  The Suggestions tab shows a quiet count that renders nothing at zero, and a
+  dialog opened while suggestions are pending lands on that tab; the inbox never
+  opens itself, never toasts, and never blocks
+- One suggestion shows its content, kind, scope, date, and the user's own words
+  behind it (the first cited message, bounded for display), plus Keep and
+  Discard. Keeping is the only way a suggestion becomes memory; discarding
+  erases it and writes the tombstone that keeps the same evidence from proposing
+  it again
+- Settings carries Use learned memory (the portable `learnedMemoryRead`, on by
+  default; off hides the session-start index and the learned-memory tools
+  without deleting anything) and the device-local learning rows: Learn
+  automatically (off by default, disabled until a model is chosen, with
+  "Choose a model first" as the reason), Learning model (only providers whose
+  credential this machine holds are offered; clearing it also turns the switch
+  off), Daily token budget, and a Used today line reading "used / budget tokens"
+  that says "Paused until tomorrow" once the ceiling is reached
 - The session menu carries Don't learn from this conversation, which sets the
-  per-session exclusion the host stores
+  per-session exclusion the host stores; from M4 on it also stops extraction
 
   for inspection does not restore it.
 

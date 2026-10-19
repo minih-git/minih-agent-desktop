@@ -109,6 +109,16 @@ export type SidecarRuntimeDependencies = {
    * builtin-session-messaging). Plugin-only operations never come through here.
    */
   sessionCollaboration: SessionCollaborationService;
+  /**
+   * The optional extractor's triggers (ADR agent-long-term-memory §4). Both
+   * fire after the event has been persisted and rendered: a compaction is the
+   * strongest digest signal, and a settled turn starts the idle window. Neither
+   * blocks the turn.
+   */
+  onAgentCompactionEnd?: (sessionId: string) => void;
+  onAgentTurnSettled?: (sessionId: string) => void;
+  /** A turn is starting, or the session is gone: drop any pending extraction. */
+  cancelMemoryExtraction?: (sessionId: string) => void;
 };
 
 export function createSidecarRuntime({
@@ -137,6 +147,9 @@ export function createSidecarRuntime({
   sessionProjects,
   loadUserSkillBody,
   sessionCollaboration,
+  onAgentCompactionEnd,
+  onAgentTurnSettled,
+  cancelMemoryExtraction,
   activeUserSkills,
   disabledBuiltinSkills,
   pluginActiveInProject,
@@ -373,6 +386,20 @@ export function createSidecarRuntime({
           ...envelope,
           event: { type: "message_end", message: persistedMessage },
         } satisfies AgentEventEnvelope);
+      }
+      // The extractor's triggers (ADR agent-long-term-memory §4). Both are
+      // detached and reached after persistence: the row this event produced is
+      // durable before a run can read the range that contains it.
+      // Subagent traffic is skipped by the same test the title jobs use, since
+      // a delegate's compaction says nothing about the user's own session.
+      if (!envelope.parentToolCallId) {
+        if (event.type === "turn_start" || event.type === "agent_start") {
+          cancelMemoryExtraction?.(envelope.sessionId);
+        } else if (event.type === "compaction_end" && event.ok === true) {
+          onAgentCompactionEnd?.(envelope.sessionId);
+        } else if (event.type === "agent_end") {
+          onAgentTurnSettled?.(envelope.sessionId);
+        }
       }
     }
     if (method === "agent.diagnostic") {

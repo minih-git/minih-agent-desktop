@@ -135,4 +135,56 @@ export function registerMemoryIpc({ registrar, getHost }: MemoryIpcDependencies)
       });
     },
   );
+
+  // The suggestion inbox: pending proposals for one scope, with the citations
+  // the host stored. The badge count comes back in the same read, so the
+  // manager does not open twice to show a number.
+  registrar.handle(
+    IPC.invoke.memorySuggestionsList,
+    async (request: Record<string, unknown> = {}) => {
+      const scope = request?.scope;
+      if (scope !== "project" && scope !== "user") throw new Error("invalid memory scope");
+      const path = optionalText(request?.path, "path");
+      const sessionId = optionalText(request?.sessionId, "sessionId");
+      if (scope === "project" && !path && !sessionId) {
+        throw new Error("a project scope needs a path or a session");
+      }
+      const limit = optionalCount(request?.limit, "limit");
+      return forward("memory.suggestions.list", {
+        scope,
+        ...(path ? { path } : {}),
+        ...(sessionId ? { sessionId } : {}),
+        ...(limit === undefined ? {} : { limit }),
+      });
+    },
+  );
+
+  // Accepting is the only way a suggestion becomes active; rejecting erases it
+  // and writes the tombstone that keeps the same evidence from proposing it
+  // again. Both rules live in the host.
+  registrar.handle(
+    IPC.invoke.memorySuggestionsDecide,
+    async (request: Record<string, unknown> = {}) => {
+      const decision = request?.decision;
+      if (decision !== "accept" && decision !== "reject") {
+        throw new Error("invalid suggestion decision");
+      }
+      return forward("memory.suggestions.decide", {
+        id: requiredText(request?.id, "memory id"),
+        decision,
+      });
+    },
+  );
+
+  // Today's spend against the configured budget, read on demand from Settings.
+  // The day is the renderer's local calendar day, so the counter resets on the
+  // user's own midnight rather than on a host clock the UI cannot see.
+  registrar.handle(
+    IPC.invoke.memoryExtractionStatus,
+    async (request: Record<string, unknown> = {}) => {
+      const day = requiredText(request?.day, "day");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error("invalid day");
+      return forward("memory.extraction.budget", { day });
+    },
+  );
 }

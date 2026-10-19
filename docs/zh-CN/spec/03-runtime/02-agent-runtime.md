@@ -1230,6 +1230,56 @@ runtime，也不会改变正在运行的会话的系统提示——下一个会�
 `SUBAGENT_INHERIT_DENY_TOOLS`，所以 `tools: inherit` 也无法把它们借给委托——见
 `03-tools-and-permissions.md` §10.2。
 
+### 7.5 关键路径之外的自动抽取（D668，ADR agent-long-term-memory §4）
+
+自动学习是 Electron main 的一个独立模块（`apps/desktop/electron/main/memory/memory-extraction-service.ts`
+与 `memory-extraction-prompt.ts`），绝不写进 `electron/main/index.ts`、`runtime.ts` 或
+`session-launch.ts`：这些文件只做接线，把三个触发点和 dispose 钩子接上。这条路径不在任何用户
+流程的关键路径上，也没有任何轮次会等待模型调用。
+
+**开关。** `learnedMemory.learn` 默认关闭，且没有 `learnedMemory.model` 就无法生效。三个字段
+（`learn`、`model`、`dailyTokenBudget`）都是仅本设备的设置，刻意不进入
+`PORTABLE_APPLICATION_FIELDS`：模型必须本机可达，消耗的也是本机额度。开关关闭或未选模型时，
+服务**不**发起模型调用、不写入任何内容——在申领之前就返回 `disabled` 或 `no-model`。
+
+**触发点。** 共两个，都是游离的，并且只在 `event-persistence` 写好涉事行之后到达：
+
+- `compaction_end` 且 `ok: true`——摘要是最强的抽取素材，因此不延迟直接运行；
+- `agent_end`——轮次结束后开始 10 分钟空闲防抖，同一会话的后续触发会替换待命的定时器，而不会
+  排队第二次运行。
+
+`turn_start` / `agent_start` 会取消待命运行，会话删除、开关关闭与应用退出（`dispose`）同样如此。
+子代理事件按标题任务相同的 `parentToolCallId` 判断跳过；发现轮次正在运行时不做事。被排除的会话、
+定时任务 transcript 与导入的 transcript 由**主机**拒绝（见 `memory.extraction.input`），服务
+无法误把它们纳入。隔离 worktree 会话（ADR 0329）按普通项目会话抽取：它是正常的工作，并沿用主项目
+的记忆身份，因此它教给代理的东西属于该项目。
+
+本次没有任何用户亲手写的消息时（有摘要但后面没有新内容，或新消息全部由另一个 Agent 投递），
+完全不发起模型调用：候选必须引用本次发送的消息，否则答案无法使用。此时释放租约，且不计为失败。
+
+**输入。** 由主机组装（`crates/host-core/src/memory/extraction_input.rs`），因为"什么算用户亲手写的
+输入"这条规则属于主机：带真实轮次、角色为 `user`、未被 `session_collaboration_messages` 认领、
+位于会话游标之后的消息，按从旧到新排列，再加上最近一次压缩摘要。工具输出与助手正文从不发送。
+预算为总计 16 KiB（其中摘要最多占 4 KiB，按字符边界截断并在提示中标注为已截断）；游标语义是
+"下一个要读取的序号"，因此没放下的消息由下一次运行读取，而不是被跳过。
+
+**输出契约。** 只允许 JSON，最多五个候选，形如
+`{ kind, scope, content, rationale?, sourceMessageIds }`。服务在交给主机之前校验形状，并**丢弃任何
+`sourceMessageIds` 不全属于本次实际发送消息的候选**——摘要是模型写的散文，本身可能源自工具输出，
+否则一条旧消息 id 就能"证明"本次运行从未发送的来源。存活的候选以 `origin = extracted`、
+`status = suggested` 交给 `memory.create`；主机拒绝其他配对，所以这条路径只能提议。空结果同样
+有效，并且同样推进游标。
+
+**持久性与预算。** 主机租约（10 分钟）与游标让运行在重启、重复触发与渲染进程重载下保持幂等：
+只有租约持有者能推进游标，且游标永不后退。模型失败或主机失败会记录失败、保持游标不动，并安排一次
+有界重试（每次退避 30 分钟，最多三次，之后该范围保持原样，直到新的轮次或压缩触发新的一次运行）。
+每日 token 台账仅本设备（`kv(memory, extractionBudget)`），按 `completeOneShot` 的 usage 累计
+`totalTokens`；达到配置上限后，功能在当天剩余时间暂停，而新的本地日期读作未消耗，所以暂停无需
+后台重置即可自动解除。
+
+**日志。** 只记录错误码与计数（`memory-error`、`host-error`、候选数与 token 数）。消息正文与候选
+内容从不入日志：凭据检测器拒绝的内容恰恰是日志绝不能保留的东西。
+
 ## 8. 并发
 
 | 适用范围 | MVP 政策 |

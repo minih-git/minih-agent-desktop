@@ -7,12 +7,17 @@
 //! `extraction` the per-session cursor and lease the optional extractor uses.
 
 mod extraction;
+mod extraction_budget;
+mod extraction_input;
 mod model;
 mod repository;
 mod secrets;
 mod tombstones;
 mod validation;
 
+#[cfg(test)]
+#[path = "extraction_tests.rs"]
+mod extraction_tests;
 #[cfg(test)]
 #[path = "lifecycle_tests.rs"]
 mod lifecycle_tests;
@@ -22,6 +27,7 @@ mod provenance_tests;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use extraction_input::ExtractionInputOutcome;
 pub(crate) use model::{
     is_known, MemoryEntryRecord, MemoryScope, EVIDENCES, EVIDENCE_USER_STATED, EVIDENCE_VERIFIED,
     EXTRACTION_LEASE_MS, KINDS, MAX_LIST_LIMIT, MAX_SEARCH_LIMIT, ORIGINS, ORIGIN_EXPLICIT,
@@ -30,7 +36,7 @@ pub(crate) use model::{
 pub(crate) use repository::{
     delete_learned_scope_tx, rekey_learned_memory_to_group, CreateMemoryOutcome,
     CreateMemoryRequest, SearchMemoryRequest, StatusMemoryOutcome, SuggestionOutcome,
-    UpdateMemoryOutcome, UpdateMemoryRequest,
+    UpdateMemoryOutcome, UpdateMemoryRequest, MAX_SUGGESTION_QUOTE_CHARS,
 };
 /// The same `verified` rule the write path enforces, so the tool refuses it
 /// before the write instead of after.

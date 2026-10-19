@@ -155,3 +155,56 @@
   min-height: 64px;
   resize: vertical;
 }
+
+/* The suggestion inbox (ADR agent-long-term-memory §4). */
+
+.learned-memory-tabs {
+  margin-bottom: 4px;
+}
+
+.learned-memory-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/*
+ * A quiet count, not a notification: no accent fill, no animation, and nothing
+ * at zero. It sits in the tab the user is already looking at.
+ */
+.learned-memory-badge {
+  display: inline-flex;
+  min-width: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--ds-text-secondary) 14%, transparent);
+  padding: 0 5px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-compact-plus);
+}
+
+/*
+ * The citation is what makes a suggestion reviewable: it reads as a quotation
+ * of the user's own words, visually distinct from the note the agent wrote.
+ */
+.learned-memory-quote {
+  margin: 0;
+  border-left: 2px solid color-mix(in oklab, var(--ds-accent) 45%, transparent);
+  padding: 2px 0 2px 10px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+}
+
+.learned-memory-quote-label {
+  display: block;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}
+
+.learned-memory-paused {
+  color: var(--ds-warning);
+}
