@@ -27,6 +27,13 @@ export function useBackgroundTasks(sessionId: string) {
   const pendingStops = useRef(new Set<string>());
   const refreshList = useRef<(() => void) | null>(null);
 
+  // A selection belongs to one conversation's list: switching must not keep
+  // polling the previous conversation's task or pin its row into this bar.
+  useEffect(() => {
+    setExpandedId(null);
+    setOutput(null);
+  }, [sessionId]);
+
   useEffect(() => {
     mounted.current = true;
     let disposed = false;

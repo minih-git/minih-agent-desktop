@@ -146,6 +146,8 @@ test("the bar shows only live work: a finished row expires and can be closed", a
   // One session's bar must not report another session's processes.
   assert.match(composer, /sessionId=\{activeSessionId\}/);
   assert.match(controller, /sessionTasks\(result\.tasks, sessionId\)/);
+  // A selected output must not survive into the next conversation.
+  assert.match(controller, /setExpandedId\(null\);\s*\n\s*setOutput\(null\);\s*\n\s*\}, \[sessionId\]\);/);
   assert.match(controller, /dismissTask\(current, id\)/);
   // A finished row offers closing instead of stopping: it must be able to leave
   // the composer without touching the process lifecycle.
