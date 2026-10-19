@@ -1,6 +1,6 @@
 import type { AgentHost } from "@minih-agent/agent-host";
 import type { HostRpc } from "@minih-agent/host-runtime";
-import { DeviceTokenAuthenticator, RacpServer } from "@minih-agent/racp";
+import { DeviceTokenAuthenticator, RacpServer, type HostNotifier } from "@minih-agent/racp";
 import type {
   RemoteGatewayAccountMode,
   RemoteGatewayDeviceNotice,
@@ -78,6 +78,12 @@ export type GatewayLinkServiceOptions = {
   emitDeviceRequest?: (request: RemoteGatewayDeviceRequest) => void;
   /** One notice per mint, adoption, and revocation (ADR decision 6). */
   emitDeviceNotice?: (notice: RemoteGatewayDeviceNotice) => void;
+  /**
+   * Redacted push (§11.6): the link-bound notifier created by the bootstrap. It
+   * carries the four notification-worthy events to `host.notify` while a link is
+   * up; absent means this desktop reports none, and no push names it.
+   */
+  notifier?: HostNotifier | null;
 };
 
 export type GatewayLinkService = {
@@ -387,6 +393,7 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
         ...(credentials.hostlinkUrl ? { resolveDialUrl: resolveAccountDialUrl } : {}),
         ...(accountDevices ? { devices: accountDevices.directory } : {}),
         ...(accountDevices ? { revocations: accountDevices.revocations } : {}),
+        ...(options.notifier ? { notifier: options.notifier } : {}),
       });
     } catch (error) {
       // The transport is missing or refused to start: report it, never keep a

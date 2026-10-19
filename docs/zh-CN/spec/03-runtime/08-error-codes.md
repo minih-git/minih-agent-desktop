@@ -308,7 +308,7 @@ ADR 0285）。渲染进程除了一个标识徽章外看不到本地/远程之�
 | `REMOTE_PATH_FORBIDDEN` | 否 | 远程路径在主机允许的根之外 |
 | `PAIRING_FAILED` | 否 | `connection/pair` 无法铸造设备凭据 |
 | `PAIRING_TOKEN_EXPIRED` | 否 | 一次性配对令牌在配对完成前已过期 |
-| `CAPABILITY_UNAVAILABLE` | 否 | 请求的操作对应主机声明为不可用的能力（如附件、工具中继） |
+| `CAPABILITY_UNAVAILABLE` | 否 | 请求的操作对应主机声明为不可用的能力（如附件、工具中继）；在 Gateway 的 `PUT /v1/push/registration` 上（HTTP 501）表示该 Gateway 未配置该推送平台的服务商（规格 19 §11.6） |
 
 ### 3.9 实时语音
 

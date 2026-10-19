@@ -111,6 +111,13 @@ export type AccountFlowOptions = {
   deviceLabel: () => string;
   /** Stores the adopted device on every Host of the account. */
   adopt: (input: AccountAdoption) => Promise<AccountAdoptionOutcome>;
+  /**
+   * Called before the account session is revoked, with the device credential the
+   * account handed out. Signing out is the last moment the client can tell the
+   * Gateway to stop pushing to this device (§11.6), so the caller unregisters
+   * here; a failure is the caller's to log and must not block sign-out.
+   */
+  onSignOut?: (credential: HostCredential) => Promise<void>;
   fetchImpl?: typeof fetch;
   timer?: AccountTimer;
   now?: () => number;
@@ -130,6 +137,14 @@ export class AccountFlow {
   private consecutiveFailures = 0;
   /** Set once the flow is done with the account session. */
   private finished = false;
+  /**
+   * The device credential the account handed out. Kept after the session ends so
+   * a later sign-out can unregister push with it (§11.6); it is not a session
+   * credential and authorizes nothing else.
+   */
+  private deviceCredential: HostCredential | null = null;
+  /** Whether the post-adoption sign-out already unregistered push. */
+  private signedOut = false;
   /** What sign-in learned, so a retry can return to the step it can repeat. */
   private accountId = "";
   private accountHosts: AccountHostSummary[] = [];
@@ -266,11 +281,41 @@ export class AccountFlow {
     await this.abandon();
   }
 
-  /** Give up on the account session entirely, revoking it server-side. */
+  /**
+   * Give up on the account session entirely, revoking it server-side and taking
+   * the device's push registration with it. Called from the account screen when
+   * the user signs out; the adopted device keeps working on the Hosts, but the
+   * phone stops being pushed for the account when the user has said so.
+   */
   async abandon(): Promise<void> {
     this.stopPolling();
+    if (this.state.kind === "adopted" && this.deviceCredential && !this.signedOut) {
+      // Post-adoption sign-out: the session is already gone, so only the push
+      // registration is left to take away.
+      const credential = this.deviceCredential;
+      this.signedOut = await this.notifySignOut(credential);
+      this.deviceCredential = null;
+      this.setState({ kind: "idle" });
+      return;
+    }
     await this.finishSession();
     this.setState({ kind: "idle" });
+  }
+
+  /**
+   * Hand the device credential to the caller's unregistration, and report
+   * whether it worked. A failure is logged by the caller and never blocks
+   * sign-out: forgetting a local token is safer than keeping it.
+   */
+  private async notifySignOut(credential: HostCredential): Promise<boolean> {
+    if (!this.options.onSignOut) return false;
+    try {
+      await this.options.onSignOut(credential);
+      return true;
+    } catch (error) {
+      console.warn("[remote-web] push unregistration on sign-out failed", error);
+      return false;
+    }
   }
 
   /** A device can be asked for whenever the session that authorises it is alive. */
@@ -405,6 +450,10 @@ export class AccountFlow {
       this.setState({ kind: "failed", failure: adopted.failure });
       return;
     }
+    // Keep the device credential: the post-adoption sign-out below unregisters
+    // push with it before the account session is revoked (§11.6), and a later
+    // sign-out can retry if that failed.
+    this.deviceCredential = outcome.token ? { kind: "header", token: outcome.token } : this.sessionCredential;
     await this.finishSession();
     this.setState({ kind: "adopted", hostIds: adopted.hostIds });
   }
@@ -414,6 +463,10 @@ export class AccountFlow {
    * credential. A failure here is reported to the caller's log, never to the
    * user — the device token is already stored, and a session that outlives its
    * purpose expires on its own within twelve hours.
+   *
+   * Signing out also takes the account device's push registration away, before
+   * the session that authorizes the `DELETE` goes: otherwise the phone keeps
+   * receiving notifications for an account the user has signed out of.
    */
   private async finishSession(): Promise<void> {
     if (this.finished) return;
@@ -421,6 +474,11 @@ export class AccountFlow {
     const credential = this.credential();
     this.sessionCredential = null;
     if (!credential) return;
+    // The account device keeps its credential after the session ends: the user
+    // may still sign out later (or the app may be reset), and that is the last
+    // moment this client can ask the Gateway to stop pushing to it.
+    const deviceCredential: HostCredential | null = this.deviceCredential;
+    if (deviceCredential) this.signedOut = await this.notifySignOut(deviceCredential);
     await accountLogout({ ...this.clientOptions(), credential });
   }
 

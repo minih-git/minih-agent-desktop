@@ -31,16 +31,20 @@ import {
   RACP_HTTP_ROUTE_LIST,
   RACP_METHOD_HTTP_ROUTES,
   RACP_PAIRING_TOKEN_PREFIX,
+  RacpPushRegistrationRequestSchema,
   type RacpGatewayHostSummary,
   type RacpHttpQueryParamType,
   type RacpHttpRouteName,
+  type RacpPushRegistrationResponse,
 } from "@minih-agent/shared";
+import * as Value from "typebox/value";
 
 import { ACCOUNT_COOKIE, type AccountSessionService } from "./account.js";
 import type { DeviceRequestService } from "./device-requests.js";
 import { peerAddress } from "./client-ip.js";
 import type { ClientTlsOptions, ListenAddress } from "./config.js";
 import { CSRF_COOKIE, DEVICE_COOKIE, csrfTokenFor, hashToken, type PairingService } from "./pairing.js";
+import type { PushService } from "./push.js";
 import type { GatewayLog } from "./router.js";
 import { GatewayRpcError, type CommandRouter, type ConnectionIdentity, type LogicalConnectionPool } from "./router.js";
 import type { AuditResult } from "./audit.js";
@@ -109,6 +113,13 @@ const ACCOUNT_HOSTS_ROUTE = /^\/v1\/account\/hosts\/?$/;
 const ACCOUNT_LOGOUT_ROUTE = /^\/v1\/account\/logout\/?$/;
 const ACCOUNT_DEVICES_ROUTE = /^\/v1\/account\/devices\/?$/;
 const ACCOUNT_DEVICE_STATUS_ROUTE = /^\/v1\/account\/devices\/([^/]+)\/?$/;
+/**
+ * Push registration (protocol §11.6, R5 PR-6). Device-token authenticated and
+ * never host-scoped: a §11.4 device registers for its own Host, an account-mode
+ * device for every Host of its account, and the Gateway decides which from the
+ * credential rather than from anything the client says.
+ */
+const PUSH_REGISTRATION_ROUTE = /^\/v1\/push\/registration\/?$/;
 
 type ResolvedAuth = {
   deviceId: string;
@@ -288,6 +299,12 @@ export type ClientHttpServerOptions = {
    * Host sends is simply not handled.
    */
   deviceRequests?: DeviceRequestService;
+  /**
+   * The redacted push service (§11.6, R5 PR-6). Absent means push is off: both
+   * `/v1/push/registration` routes answer `NOT_FOUND` like any other unknown
+   * path, and no `host.notify` is relayed anywhere.
+   */
+  push?: PushService;
   /** Resolved client address (ADR decision 10); defaults to the TCP peer. */
   resolveClientIp?: (request: IncomingMessage) => string;
   now?: () => number;
@@ -510,7 +527,7 @@ export class ClientHttpServer {
         this.assertOrigin(request, "optional");
         response.writeHead(204, {
           ...cors,
-          "access-control-allow-methods": "GET, POST, OPTIONS",
+          "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
           "access-control-allow-headers": "authorization, content-type, x-csrf-token, last-event-id",
           "access-control-max-age": "600",
         });
@@ -557,6 +574,11 @@ export class ClientHttpServer {
 
       if (url.pathname === "/v1/hosts") {
         await this.handleHostList(request, response, ip, cors, traceId);
+        return;
+      }
+
+      if (PUSH_REGISTRATION_ROUTE.test(url.pathname)) {
+        await this.handlePushRegistration(request, response, ip, cors, traceId);
         return;
       }
 
@@ -660,6 +682,115 @@ export class ClientHttpServer {
         response.end();
         return;
       }
+      sendError(response, rpc, traceId, cors);
+    }
+  }
+
+  /**
+   * `PUT` / `DELETE /v1/push/registration` (protocol §11.6, R5 PR-6).
+   *
+   * A device token is the credential, so this route is not host-scoped: the
+   * Gateway derives the audience from the credential — one Host for a §11.4
+   * device, the account's live Hosts for an account-mode device — instead of
+   * trusting the body. With no provider configured the answer is `enabled:
+   * false` and nothing is stored, which is what "push is off" means to a client.
+   */
+  private async handlePushRegistration(
+    request: IncomingMessage,
+    response: ServerResponse,
+    ip: string,
+    cors: Record<string, string>,
+    traceId: string,
+  ): Promise<void> {
+    try {
+      const method = (request.method ?? "GET").toUpperCase();
+      if (method !== "PUT" && method !== "DELETE") {
+        throw new GatewayRpcError("METHOD_NOT_FOUND", "/v1/push/registration is PUT or DELETE");
+      }
+      this.assertOrigin(request, "optional");
+      const auth = this.authenticate(request);
+      this.assertCsrf(request, auth.via, auth.deviceId);
+      this.assertRateLimit(auth.deviceId, ip);
+      const push = this.options.push;
+      if (!push) throw new GatewayRpcError("NOT_FOUND", "no gateway route for /v1/push/registration");
+
+      if (method === "DELETE") {
+        const removed = await this.options.store.removePushRegistration(auth.deviceId);
+        await this.audit("push.registration.remove", ip, "ok", {
+          deviceId: auth.deviceId,
+          ...(auth.accountId ? { accountId: auth.accountId } : { hostId: auth.hostId }),
+        });
+        sendJson(response, 200, { result: { removed } }, this.accountHeaders(cors));
+        return;
+      }
+
+      const body = await readBody(request);
+      let parsed: unknown = null;
+      try {
+        parsed = body ? (JSON.parse(body) as unknown) : null;
+      } catch {
+        throw new GatewayRpcError("INVALID_ARGUMENT", "the request body is not JSON");
+      }
+      if (!Value.Check(RacpPushRegistrationRequestSchema, parsed)) {
+        throw new GatewayRpcError("INVALID_ARGUMENT", "the push registration is malformed");
+      }
+      const registration = parsed;
+      // Push off: answer the truth and store nothing, so a client can stop
+      // asking instead of believing a registration exists.
+      if (!push.enabled) {
+        await this.audit("push.registration", ip, "denied", { deviceId: auth.deviceId });
+        const answer: RacpPushRegistrationResponse = { enabled: false, platform: registration.platform, hostIds: [] };
+        sendJson(response, 200, { result: answer }, this.accountHeaders(cors));
+        return;
+      }
+      const platforms = push.platforms();
+      if (registration.platform === "ios" ? !platforms.ios : !platforms.android) {
+        // The Gateway is configured for the other family. Registering anyway
+        // would store a token nothing can ever deliver to.
+        await this.audit("push.registration", ip, "denied", { deviceId: auth.deviceId });
+        throw new GatewayRpcError(
+          "CAPABILITY_UNAVAILABLE",
+          `this Gateway is not configured for ${registration.platform} push`,
+        );
+      }
+      const audience = push.registrationAudience({
+        deviceId: auth.deviceId,
+        hostId: auth.hostId,
+        ...(auth.accountId ? { accountId: auth.accountId } : {}),
+      });
+      const now = new Date(this.options.now ? this.options.now() : Date.now()).toISOString();
+      const existing = this.options.store.findPushRegistration(auth.deviceId);
+      const saved = await this.options.store.savePushRegistration({
+        deviceId: auth.deviceId,
+        ...(audience.accountId ? { accountId: audience.accountId } : {}),
+        hostId: audience.hostId,
+        hostIds: audience.hostIds,
+        platform: registration.platform,
+        token: registration.token,
+        ...(registration.appId ? { appId: registration.appId } : {}),
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      });
+      if (!saved) {
+        // The device was revoked while this request's body was being read. Its
+        // registrations went with it, and writing this one back would resume
+        // pushes to a device the user has already taken away.
+        await this.audit("push.registration", ip, "denied", { deviceId: auth.deviceId });
+        throw new GatewayRpcError("UNAUTHORIZED", "the device credential is unknown or revoked");
+      }
+      await this.audit("push.registration", ip, "ok", {
+        deviceId: auth.deviceId,
+        ...(auth.accountId ? { accountId: auth.accountId } : { hostId: auth.hostId }),
+      });
+      const answer: RacpPushRegistrationResponse = {
+        enabled: true,
+        platform: registration.platform,
+        hostIds: audience.hostIds,
+      };
+      sendJson(response, 200, { result: answer }, this.accountHeaders(cors));
+    } catch (error) {
+      const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to handle the push registration");
+      if (!(error instanceof GatewayRpcError)) this.options.log("error", "gateway push registration failed", { traceId, error: String(error) });
       sendError(response, rpc, traceId, cors);
     }
   }

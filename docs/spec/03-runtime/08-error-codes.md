@@ -314,7 +314,7 @@ codes surface through the same error object as any other call.
 | `REMOTE_PATH_FORBIDDEN` | no | a remote path is outside the host's permitted roots |
 | `PAIRING_FAILED` | no | `connection/pair` could not mint a device credential |
 | `PAIRING_TOKEN_EXPIRED` | no | the single-use pairing token expired before pairing completed |
-| `CAPABILITY_UNAVAILABLE` | no | an operation was requested for a capability the host advertised as unavailable (e.g. attachments, tool relay) |
+| `CAPABILITY_UNAVAILABLE` | no | an operation was requested for a capability the host advertised as unavailable (e.g. attachments, tool relay); on the Gateway's `PUT /v1/push/registration` (HTTP 501) it means this Gateway has no provider configured for that push platform (spec 19 §11.6) |
 
 ### 3.9 Live Voice
 

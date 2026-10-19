@@ -10334,7 +10334,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | Post-MVP | E2E-022A, E2E-022B, E2E-022C, E2E-024I, E2E-024J, E2E-024K, E2E-024L, E2E-024M (plugin roadmap R2/R3/R6) |
 | Post-baseline local automation | E2E-220 |
 | Post-baseline local automation (MCP `minih_session_get` large compaction) | E2E-MCP-session-get-projects-large-compaction |
-| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory, E2E-REMOTE-MOBILE-native-shell-credential-storage, E2E-REMOTE-ACCOUNT-cross-account-isolation, E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts, E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm, E2E-REMOTE-ACCOUNT-key-rotation-keeps-account, E2E-REMOTE-ACCOUNT-disabled-key-blocks-login |
+| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory, E2E-REMOTE-MOBILE-native-shell-credential-storage, E2E-REMOTE-ACCOUNT-cross-account-isolation, E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts, E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm, E2E-REMOTE-ACCOUNT-key-rotation-keeps-account, E2E-REMOTE-ACCOUNT-disabled-key-blocks-login, E2E-REMOTE-ACCOUNT-redacted-push |
 | Trusted extensions (R7 v1) | E2E-DIALOG-long-text-boundaries, E2E-241, E2E-242, E2E-HOOKS-prompt-chain, E2E-HOOKS-cancel-and-dispose, E2E-TRUSTED-EXTENSION-custom-agent-stream-and-binding, E2E-243, E2E-TRUSTED-EXTENSION-temporary-session-cwd-is-scratch, E2E-244, E2E-245, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list, E2E-PLUGIN-provider-catalog-add-service |
 | Trusted extensions (R7 v1 npm recovery) | E2E-PLUGIN-import-extension-recovers-missing-npm |
 | Post-MVP regression coverage (plugin tool dispatch) | E2E-PLUGIN-slow-tool-is-not-cut-off-by-host-dispatch |
@@ -15805,6 +15805,51 @@ sibling Hosts is still open for package D.
   registration-code form instead of enrolling
   (`apps/desktop/test/remote-account-desktop.test.mjs`). Steps 3–6 need the
   Router test instance.
+
+#### E2E-REMOTE-ACCOUNT-redacted-push
+
+- **Preconditions**: A local Router test instance with key A, the local test
+  Gateway started with an APNs `.p8` (mode 0600) and an FCM service-account file,
+  and `--apns-endpoint` / `--fcm-endpoint` / `--fcm-token-uri` pointing at local
+  TLS stubs; one enrolled `agent-host-cli` Host of account A with a confirmer and
+  an imported loopback model stub; one account device and one §11.4 device.
+- **Steps**: 1) Enroll the Host and import the model. 2) Log in an account device,
+  request it, approve it on the Host, and register an APNs token for it. 3) Pair
+  a second device with the per-Host ticket (§11.4) and register an FCM token for
+  it. 4) Start a turn that calls a tool; the Host asks its user to approve it.
+  5) Inspect both provider requests, then answer the approval and inspect the
+  second notification. 6) Make the APNs stub accept a request and answer nothing,
+  start a turn, and check that the deadline ends it while the other platform is
+  still pushed. 7) Make the APNs stub answer `410 Unregistered` and start another
+  turn. 8) Revoke the account device; then call `DELETE /v1/push/registration`
+  for the other device. 9) Read the Gateway's data directory and audit log.
+- **Expected**: Each notification is a `host.notify` frame the Gateway accepted
+  only because the Host advertised `push.notify`; the APNs request arrives over
+  HTTP/2 with an ES256 provider JWT the stub verifies (a broken signature, wrong
+  `kid`, or wrong `iss` is refused, so a real provider would refuse it too), and
+  the FCM request arrives over HTTP v1 with an OAuth2 token minted after the
+  stub verified the service-account assertion's signature, `aud`, `iss`, `scope`,
+  and `exp`, and the message is valid HTTP v1 — the keys under
+  `android.notification` as Android resource names, and no field FCM does not
+  define (a `notification.title_loc_key` shape draws `400 INVALID_ARGUMENT`); the
+  payload contains a fixed kind, `push.notify.<kind>.title` / `.body`, and the
+  Host and session ids — and no prompt, tool, transcript, title, or provider
+  token; a provider that never answers is abandoned on the Gateway's deadline
+  without delaying that payload for the other platform; the account device is
+  pushed about the account's Hosts and the §11.4 device about its own; one event
+  produces one push; `410` deletes only that registration; the revoked device
+  has no registration and produces no further push; and no APNs key, provider
+  token, access token, or AccessKey appears in the Gateway's files or audit log.
+- **Specs linked**: protocol §11.6, security gate 34 and §3.8, ADR 0331 decision
+  7, rollout §2 (R5 PR-6, R7 package G)
+- **Acceptance**: Security, Quality
+- **Milestone**: Post-MVP (rollout R5 PR-6 / R7 package G, D666)
+- **Status**: Automated — `pnpm test:e2e:remote-account-push` runs every step
+  against local APNs and FCM stubs (`scripts/e2e/push-provider-stubs.mjs`) with a
+  real Gateway, a real Host, and a local model stub. A real-device acceptance
+  with the operator's own Apple and Firebase material stays with the user, and
+  the notifications' visible text is the app's own localized string, which a
+  device run would show.
 
 ## Trusted extension scenarios (R7 v1)
 

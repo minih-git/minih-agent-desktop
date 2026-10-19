@@ -120,8 +120,11 @@ R0、R1、R2、R3，随后 R4、R5、R6（D665），再之后是 R7——Router 
   条目或 Android Keystore，并设 `allowBackup="false"`，使该密文无法恢复到另一台设备
   （PR-5 已完成：原生 `CredentialPort`、发布配置静态测试与
   `E2E-REMOTE-MOBILE-native-shell-credential-storage` 场景覆盖，真机验收仍由用户完成）；
-  推送载荷只含 id 与事件类型，未配置凭据时推送关闭（推迟到 PR-6：PR-5 不含推送插件、
-  Firebase/APNs 文件与后台模式）；仅凭票据即可完成配对（客户端从票据得到 Host 标识，
+  推送载荷只含 id 与事件类型，未配置凭据时推送关闭（R5 PR-6 已交付：协议 §11.6、安全
+  门禁 34；Gateway 推送固定事件类型、两个本地化键与 id，两种服务商协议都由
+  `pnpm test:e2e:remote-account-push` 用本地桩真实跑通；原生客户端注册服务商令牌并按点击
+  通知中的 id 打开对应 Host 与会话；仓库仍不含 Firebase 文件、Apple 推送 entitlement 与
+  后台模式，这些由运营者自备，方法见 `remote-web` README）；仅凭票据即可完成配对（客户端从票据得到 Host 标识，
   两个配对 cookie 都带有限 `Max-Age`，非同源 `GET`/`HEAD` 的 cookie 请求仍须带白名单内的
   `Origin`）。
 - R7（D666，规划中）：Router 账户绑定。在 R4–R6 之上交付 ADR
@@ -374,6 +377,30 @@ Gateway 全部通过，且 `05-security/02-remote-control-security.md` 的安全
   仍缺的是推送（工作包 G）与在 Router 旁的部署（D-1）。`E2E-REMOTE-ACCOUNT-*` 场景的客户端
   步骤已实现，并已在真实 Gateway、Router 桩与 `agent-host-cli` Host 上通过浏览器交互验证，
   但目前还没有提交进仓库的套件驱动 Web 客户端，经真实 Router 的运行仍是部署门禁。
+
+- R7 工作包 G 已交付（2026-10-18，D666 / ADR 0331 决策 7）：账户模式之上的脱敏推送，
+  它同时就是 R5 PR-6，因此关闭了退出条件 4。Host 通过新的 `host.notify` 帧报告协议 §11.6 的
+  四种事件——`approval.requested`、`input.requested`、`turn.completed`、`turn.failed`——
+  且必须先宣告 `push.notify` 才能发；该帧在 schema 上封闭，提示词、工具、路径、记录、标题都
+  带不进去。Gateway 把它变成一条只含固定事件类型、两个本地化键与 id 的推送，只发给能打开该
+  Host 的设备（§11.4 设备：它自己的 Host；账户设备：本账户的 Host），按事件去重，对 Host 与
+  每个设备分别限额，并在设备被吊销或服务商报告令牌失效时删除注册。`PUT`/`DELETE
+  /v1/push/registration` 是客户端一侧；在运营者配置 `--apns-key-file`/`--apns-key-id`/
+  `--apns-team-id`/`--apns-topic` 或 `--fcm-service-account-file` 之前推送关闭——应答
+  `enabled: false` 且不保存任何东西——这些文件在启动时一次性读取，规则同 `--access-key-file`
+  （0600、调用方拥有）。APNs 走 HTTP/2 配 ES256 服务商 JWT，FCM 走 HTTP v1 并用服务账号换取
+  OAuth2 令牌，两者都只用 Node 自带模块，不引入服务商 SDK。原生客户端申请权限、按设备注册
+  服务商令牌（账户设备一条，每个 §11.4 配对一条）、在授权 `DELETE` 的令牌被删除之前注销，
+  并按点击通知中的 id 打开对应 Host 与会话；浏览器构建不实现 Web Push。通知文案放在应用
+  包内——en 与 zh-Hans 的 `Localizable.strings`、en 与 zh-rCN 的 `strings.xml`——由客户端
+  词条生成并有测试守着，因为应用在后台时是系统在渲染通知。本包的审查关闭了六个漏洞，每个
+  都有测试：HTTP v1 里非法的 `notification.title_loc_key` 结构（它让所有 Android 推送静默
+  失败）、服务商调用没有硬性超时（卡住的服务商泄漏一条 HTTP/2 会话并拖住其余投递）、注册
+  写入可能重建已吊销设备的记录、id 只限长度不限字符、客户端在忘记主机时从不注销，以及把
+  `DeviceTokenNotForTopic` 或裸 `404` 当成死令牌（一次配置错误就会清空一个平台的全部注册）。本包确定的形状与规则写入协议 §11.6、安全门禁 34、两份 README，以及
+  `pnpm test:e2e:remote-account-push`（真实审批、真实 HTTP/2 APNs 桩校验 JWT、真实 OAuth2
+  交换、`410` 清理、被吊销设备不再收到推送）。仍缺：在 Router 旁的部署（D-1）与用运营者
+  自己的 Apple、Firebase 材料做的真机验收。
 
 ## 8. 修订记录
 

@@ -16,6 +16,7 @@ import { HostsScreen } from "./screens/HostsScreen.js";
 import { PairScreen } from "./screens/PairScreen.js";
 import { SessionScreen } from "./screens/SessionScreen.js";
 import { SessionsScreen } from "./screens/SessionsScreen.js";
+import { usePushRegistration } from "./hooks/usePushRegistration.js";
 import { useHostRegistry } from "./hooks/useHostRegistry.js";
 import { setBackHandler } from "./lib/navigation.js";
 import { credentialPort, isNativeApp } from "./lib/runtime.js";
@@ -24,6 +25,23 @@ import { previousScreen, type Screen } from "./lib/screen-stack.js";
 export default function App() {
   const hosts = useHostRegistry();
   const [screen, setScreen] = useState<Screen>({ kind: "hosts" });
+
+  // Push (protocol §11.6): a tap opens the Host and session the ids name. It is
+  // a no-op in the browser, where this client ships no push at all.
+  usePushRegistration(hosts, (destination) => {
+    if (destination.kind === "hosts") {
+      setScreen({ kind: "hosts" });
+      return;
+    }
+    const entry = hosts.find((host) => host.hostId === destination.hostId);
+    if (!entry) {
+      // The notification names a Host this device no longer holds: the Host
+      // list is the honest destination, not an error screen.
+      setScreen({ kind: "hosts" });
+      return;
+    }
+    setScreen({ kind: "session", hostId: entry.hostId, sessionId: destination.sessionId, title: entry.label });
+  });
 
   useEffect(() => {
     if (!isNativeApp) return undefined;

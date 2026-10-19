@@ -3,6 +3,7 @@ import {
   RacpError,
   type ApprovalPort,
   type Principal,
+  type NotifyEvent,
   type QueueEntryView,
   type RuntimePort,
   type SubscriptionSink,
@@ -61,6 +62,12 @@ export type AgentHostBridgeOptions = {
   isSessionBusy?: (sessionId: string) => boolean;
   /** Renderer fan-out for queue changes (`agent/event/queueChanged`). */
   onQueueChange?: (event: AgentQueueChangedEvent) => void;
+  /**
+   * Redacted push (§11.6): the four notification-worthy events, with ids only.
+   * The Gateway link service forwards them to `host.notify`; without a Gateway
+   * link nothing listens and the callback is a no-op.
+   */
+  onNotifyEvent?: (event: NotifyEvent) => void;
   log: (level: "info" | "warn", message: string, data?: Record<string, unknown>) => void;
 };
 
@@ -271,6 +278,7 @@ export function createAgentHostBridge(options: AgentHostBridgeOptions) {
     onQueueChange: (sessionId, entries) => {
       options.onQueueChange?.({ sessionId, entries: entries.map(toQueueSummary) });
     },
+    ...(options.onNotifyEvent ? { onNotifyEvent: options.onNotifyEvent } : {}),
   });
 
   /** The desktop's queue operations, all under the owner principal. */

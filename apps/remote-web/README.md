@@ -112,6 +112,79 @@ computers to approve ONE device, and then use that device on all of them.
   ticket for that Host). A native build is not affected: it holds one
   account-scoped token and addresses whichever Host id it likes.
 
+## Push notifications (native only)
+
+The native app can receive the four notification-worthy events of protocol §11.6
+— an approval or an input request is waiting, a turn completed or failed — as a
+push. The browser build implements **no** Web Push: ADR 0331 decision 7 covers
+the app, and the H5 client has nothing to register.
+
+* **What arrives.** A fixed kind, two localization keys
+  (`push.notify.<kind>.title` / `.body`, resolved from this package's own
+  catalogs), and the Host, session, approval, and event ids. The Gateway never
+  sends a sentence, a prompt, a tool name, or a transcript excerpt, so a
+  notification cannot become a content channel.
+* **Registration.** `src/hooks/usePushRegistration.ts` asks for permission
+  once, registers with APNs or FCM, and hands the provider token to
+  `PUT /v1/push/registration` with every device credential this phone holds: an
+  account device is one credential that covers the whole account, while each
+  §11.4 pairing is its own device and needs its own registration — a phone
+  paired with three Hosts is reachable from all three. The token is never stored
+  by this client — the platform holds it — and a Gateway without a configured
+  provider answers `enabled: false`, which stops the client asking. A failed
+  permission is final for that launch: nothing retries in a loop.
+* **Forgetting a Host unregisters first.** `DELETE /v1/push/registration` needs
+  the device token, so it is sent *before* the token is deleted
+  (`src/lib/forget.ts`); an account device that still covers other Hosts keeps
+  its registration until the last of them goes, and signing out unregisters too.
+  A failed unregistration never blocks forgetting, but it is logged.
+* **A tap** opens the Host and session the ids name; an unknown Host or a payload
+  without ids opens the Host list. The payload's text is never rendered, only
+  resolved as a key, which is why the notification can say "Needs your decision"
+  in the user's language without the Gateway knowing it.
+* **Operator material, never committed.** Two files belong to whoever builds the
+  app, and neither ships in this repository (a test enforces that):
+
+  1. **iOS**: enable the *Push Notifications* capability for your App ID in
+     Xcode (target → Signing & Capabilities), which creates
+     `ios/App/App/App.entitlements` with `aps-environment`. A build without it
+     compiles and runs; it simply receives no notification. Ship the APNs `.p8`
+     key — not this file — to the Gateway (`--apns-key-file`, see the Gateway
+     README).
+  2. **Android**: download `google-services.json` from your Firebase project and
+     place it at `android/app/google-services.json` before
+     `pnpm cap:sync`, and add the Google Services Gradle plugin to the app module
+     as Firebase documents. Without it the app builds and runs and simply
+     receives no notification. Ship the service-account JSON — not this file —
+     to the Gateway (`--fcm-service-account-file`).
+
+  `VITE_APP_ID` optionally tags a registration with the app id, so one Gateway
+  can serve more than one build; absent, the Gateway accepts the registration
+  without one.
+* **The notification text is in the app bundle, not the JS catalog.** When the
+  app is in the background or closed, the *system* renders the notification, so
+  the eight keys also exist as `ios/App/App/en.lproj/Localizable.strings`,
+  `ios/App/App/zh-Hans.lproj/Localizable.strings`,
+  `android/app/src/main/res/values/strings.xml`, and
+  `android/app/src/main/res/values-zh-rCN/strings.xml`. They are generated from
+  `src/locales` and both files are committed:
+
+  ```sh
+  node scripts/generate-push-strings.mjs          # write
+  node scripts/generate-push-strings.mjs --check  # verify, e.g. in CI
+  ```
+
+  `src/lib/push-strings.test.ts` fails when they are stale, and
+  `src/lib/native-config.test.ts` proves the iOS file is in the app target (a
+  `.strings` file outside the Xcode project ships nowhere). Adding a locale to
+  the app means adding it here too, or that language falls back to the raw key.
+* **Nothing background.** The client declares no `UIBackgroundModes`, no
+  `aps-environment` in `Info.plist`, and no push-related Android permission
+  beyond the internet one, because a notification here is an alert the user taps,
+  never a silent data push. `src/lib/native-config.test.ts` keeps it that way.
+  The notification *text* is the one thing that is committed: fixed copy, no
+  content, generated from the catalogs as described above.
+
 ## Building the iOS / Android apps
 
 The operator builds the app for **their own** Gateway: there is no shared

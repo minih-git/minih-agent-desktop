@@ -5823,7 +5823,7 @@ eleven-tool-round desktop paths are verified by
 | 后MVP | E2E-022A、E2E-022B、E2E-022C、E2E-024I、E2E-024J、E2E-024K、E2E-024L、E2E-024M（插件路线图 R2/R3/R6） |
 | 基线后本地自动化 | E2E-220 |
 | 基线后本地自动化（MCP `minih_session_get` 超大 compaction） | E2E-MCP-session-get-projects-large-compaction |
-| MVP 后远程控制 | E2E-221、E2E-222、E2E-223、E2E-224、E2E-225、E2E-226、E2E-227、E2E-228、E2E-229、E2E-230、E2E-231、E2E-232、E2E-265、E2E-266、E2E-REMOTE-HOST-settings-compact-inventory、E2E-REMOTE-MOBILE-native-shell-credential-storage、E2E-REMOTE-ACCOUNT-cross-account-isolation、E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts、E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm、E2E-REMOTE-ACCOUNT-key-rotation-keeps-account、E2E-REMOTE-ACCOUNT-disabled-key-blocks-login |
+| MVP 后远程控制 | E2E-221、E2E-222、E2E-223、E2E-224、E2E-225、E2E-226、E2E-227、E2E-228、E2E-229、E2E-230、E2E-231、E2E-232、E2E-265、E2E-266、E2E-REMOTE-HOST-settings-compact-inventory、E2E-REMOTE-MOBILE-native-shell-credential-storage、E2E-REMOTE-ACCOUNT-cross-account-isolation、E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts、E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm、E2E-REMOTE-ACCOUNT-key-rotation-keeps-account、E2E-REMOTE-ACCOUNT-disabled-key-blocks-login、E2E-REMOTE-ACCOUNT-redacted-push |
 | 受信任扩展（R7 v1） | E2E-DIALOG-long-text-boundaries、E2E-241、E2E-242、E2E-HOOKS-cancel-and-dispose、E2E-243、E2E-TRUSTED-EXTENSION-temporary-session-cwd-is-scratch、E2E-244、E2E-245、E2E-PLUGIN-imported-pi-package-skills、E2E-PLUGIN-import-extension-installs-dependencies、E2E-PLUGIN-import-extension-reports-missing-dependency、E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list |
 | 受信任扩展（R7 v1 npm 恢复） | E2E-PLUGIN-import-extension-recovers-missing-npm |
 | Post-MVP 回归覆盖（插件工具调度） | E2E-PLUGIN-slow-tool-is-not-cut-off-by-host-dispatch |
@@ -7985,6 +7985,38 @@ Gateway、loopback 模型桩运行；不使用生产 Router、真实 AccessKey �
 - **状态**：Partial（R7，D666）——桌面一侧已自动化：被禁用或无令牌的 `minih-router`
   记录取不到 key，设置页据此把账户模式报为不可用并给出原因，继续显示注册码表单而不注册
   （`apps/desktop/test/remote-account-desktop.test.mjs`）。第 3–6 步需要 Router 测试实例。
+
+#### E2E-REMOTE-ACCOUNT-redacted-push：脱敏推送
+
+- **前置条件**：带 key A 的本地 Router 测试实例；本地测试 Gateway，启动参数含一个 0600 的
+  APNs `.p8` 与一个 FCM 服务账号文件，并用 `--apns-endpoint` / `--fcm-endpoint` /
+  `--fcm-token-uri` 指向本地 TLS 桩；账户 A 的一台已注册 `agent-host-cli` Host（带确认器、
+  已导入 loopback 模型桩）；一台账户设备与一台 §11.4 设备。
+- **步骤**：1）注册 Host 并导入模型。2）账户设备登录、申请、由 Host 批准，并为它注册 APNs
+  令牌。3）用每 Host 票据（§11.4）配对第二台设备，并为它注册 FCM 令牌。4）发起一个会调用
+  工具的回合，Host 请它的用户批准。5）检查两个服务商请求，然后回答该审批并检查第二条通知。
+  6）让 APNs 桩接受请求却不应答，发起一个回合，确认超时收束了本次尝试、而另一平台仍收到推送。
+  7）让 APNs 桩对令牌返回 `410 Unregistered`，再发起一个回合。8）吊销账户设备；随后为另一台
+  设备调用 `DELETE /v1/push/registration`。9）读取 Gateway 数据目录与审计日志。
+- **预期**：每条通知都是 Gateway 因为该 Host 宣告了 `push.notify` 才接受的 `host.notify` 帧；
+  APNs 请求以 HTTP/2 抵达，携带桩可验证的 ES256 服务商 JWT（签名、`kid` 或 `iss` 不符会被拒绝，
+  真实服务商同样会拒绝），FCM 请求以 HTTP v1 抵达，携带桩验证服务账号断言的签名、`aud`、
+  `iss`、`scope` 与 `exp` 后签发的 OAuth2 令牌，且消息本身是合法的 HTTP v1——定位键在
+  `android.notification` 下并以 Android 资源名给出，不出现 FCM 未定义的字段（把
+  `notification.title_loc_key` 放在顶层会得到 `400 INVALID_ARGUMENT`）；载荷只含固定事件
+  类型、`push.notify.<kind>.title` / `.body` 与 Host、会话 id，不含提示词、工具、记录、标题或
+  服务商令牌；永不应答的服务商在 Gateway 的期限处被放弃，且不拖慢另一平台的同一条通知；
+  账户设备收到本账户 Host 的推送，§11.4 设备只收到
+  自己 Host 的；一个事件只产生一条推送；`410` 只删除对应注册；被吊销设备没有注册、之后不再
+  收到推送；Gateway 的文件与审计日志中不出现 APNs 私钥、服务商令牌、访问令牌或 AccessKey。
+- **链接规格**：协议 §11.6；安全规格门 34 与 §3.8；ADR 0331 决策 7；交付 §2（R5 PR-6、R7
+  工作包 G）
+- **验收**：安全、质量
+- **里程碑**：MVP 后（交付 R5 PR-6 / R7 工作包 G，D666）
+- **状态**：已自动化——`pnpm test:e2e:remote-account-push` 在真实 Gateway、真实 Host 与本地
+  模型桩之上，用本地 APNs、FCM 桩（`scripts/e2e/push-provider-stubs.mjs`）跑通全部步骤。
+  用运营者自己的 Apple、Firebase 材料做的真机验收仍由用户完成；通知的可见文字是应用自己的
+  本地化词条，需在真机运行时确认。
 
 ## 受信任扩展场景（R7 v1）
 

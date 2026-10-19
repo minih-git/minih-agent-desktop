@@ -183,6 +183,16 @@ export const ko: Record<TranslationKey, string> = {
   "operation.accountSignIn": "로그인",
   "operation.accountDevice": "기기 요청",
 
+  "push.notify.approval.requested.title": "결정이 필요합니다",
+  "push.notify.approval.requested.body": "세션이 작업 승인을 기다리고 있습니다.",
+  "push.notify.input.requested.title": "결정이 필요합니다",
+  "push.notify.input.requested.body": "세션이 답변을 기다리고 있습니다.",
+  "push.notify.turn.completed.title": "턴 완료",
+  "push.notify.turn.completed.body": "세션의 턴이 완료되었습니다.",
+  "push.notify.turn.failed.title": "턴 실패",
+  "push.notify.turn.failed.body": "세션의 턴이 실패했습니다.",
+  "push.disabled": "이 빌드에서는 알림이 꺼져 있습니다.",
+
   "operation.pair": "연결",
   "operation.sessionList": "세션 불러오기",
   "operation.sessionAttach": "세션 불러오기",

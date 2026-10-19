@@ -389,8 +389,13 @@ Exit criteria:
    `E2E-REMOTE-MOBILE-native-shell-credential-storage` scenario cover it; a real
    device acceptance stays with the user.
 4. Push payloads contain ids and event types only, and push is off without
-   operator credentials. Deferred to PR-6: PR-5 ships no push plugin, no
-   Firebase/APNs file, and no background mode.
+   operator credentials. Delivered in R5 PR-6 (protocol §11.6, security gate 34):
+   the Gateway pushes a fixed kind, two localization keys, and ids; both provider
+   protocols are exercised against local stubs by
+   `pnpm test:e2e:remote-account-push`; the native client registers a provider
+   token and opens the Host and session a tap names; and the repository ships no
+   Firebase file, no Apple push entitlement, and no background mode — the
+   operator brings those, as the `remote-web` README explains.
 5. Pairing works from the ticket alone — the client learns the Host id from it,
    both pairing cookies carry a finite `Max-Age`, and a cookie request that is
    not a same-origin `GET`/`HEAD` still proves an allowlisted `Origin`.
@@ -877,6 +882,45 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   Gateway, a Router stub, and `agent-host-cli` Hosts, but no committed suite
   drives the web client yet, and the run through a live Router remains the
   deployment gate.
+
+- R7 package G delivered (2026-10-18, D666 / ADR 0331 decision 7): redacted push
+  on top of account mode, which is also R5 PR-6 and therefore closes exit
+  criterion 4. A Host reports the four notification-worthy events of protocol
+  §11.6 — `approval.requested`, `input.requested`, `turn.completed`,
+  `turn.failed` — over a new `host.notify` frame, only after advertising
+  `push.notify` in `host.capabilities`; the frame is schema-closed, so no prompt,
+  tool, path, transcript, or title can ride along. The Gateway turns it into a
+  push of a fixed kind, two localization keys, and ids, routes it only to devices
+  that may open the named Host (§11.4 device: its own Host; account device: its
+  account's Hosts), de-duplicates per event, budgets the Host and each device
+  separately, and deletes a registration on revocation or on a provider-reported
+  dead token. `PUT`/`DELETE /v1/push/registration` are the client's side, and
+  push is off — answering `enabled: false` and storing nothing — until the
+  operator configures `--apns-key-file`/`--apns-key-id`/`--apns-team-id`/
+  `--apns-topic` or `--fcm-service-account-file`, all read once at startup under
+  the `--access-key-file` rules (0600, caller-owned). APNs speaks HTTP/2 with an
+  ES256 provider JWT and FCM the HTTP v1 API with an OAuth2 token minted from the
+  service account, both with Node's own modules and no provider SDK. The native
+  client requests permission, registers the provider token once per device (one
+  registration for an account device, one for each §11.4 pairing), unregisters it
+  before the token that authorizes the `DELETE` is deleted, and opens the Host and
+  session a tap names; the browser build implements no Web Push. The notification
+  text lives in the app bundle — `Localizable.strings` for en and zh-Hans,
+  `strings.xml` for en and zh-rCN — generated from the client catalogs and guarded
+  by a test, because the system renders a notification when the app is in the
+  background. Review of this package closed six holes, each with a test:
+  HTTP v1's invalid `notification.title_loc_key` shape (which made every Android
+  push fail silently), no hard provider deadline (a wedged provider leaked an
+  HTTP/2 session and stalled the rest), a registration write that could recreate
+  a revoked device's row, ids that were length-bounded but not character-bounded,
+  a client that never unregistered on forget, and a `DeviceTokenNotForTopic` /
+  bare-`404` classification that would have wiped a platform's registrations on
+  one misconfiguration. Protocol §11.6, security gate 34, the two
+  READMEs, and `pnpm test:e2e:remote-account-push` (a real approval, a real
+  HTTP/2 APNs stub verifying the JWT, a real OAuth2 exchange, `410` cleanup, and
+  a revoked device going quiet) carry what this package settles. Still missing:
+  the deployment beside the Router (D-1) and real-device acceptance with the
+  operator's own Apple and Firebase material.
 
 ## 8. Amendment history
 

@@ -187,6 +187,16 @@ export const en = {
   "operation.accountSignIn": "Signing in",
   "operation.accountDevice": "Requesting the device",
 
+  "push.notify.approval.requested.title": "Needs your decision",
+  "push.notify.approval.requested.body": "A session is waiting for you to approve an action.",
+  "push.notify.input.requested.title": "Needs your decision",
+  "push.notify.input.requested.body": "A session is waiting for your answer.",
+  "push.notify.turn.completed.title": "Turn finished",
+  "push.notify.turn.completed.body": "A session finished its turn.",
+  "push.notify.turn.failed.title": "Turn failed",
+  "push.notify.turn.failed.body": "A session's turn failed.",
+  "push.disabled": "Notifications are off for this build.",
+
   "operation.pair": "Pairing",
   "operation.sessionList": "Loading sessions",
   "operation.sessionAttach": "Loading the session",
