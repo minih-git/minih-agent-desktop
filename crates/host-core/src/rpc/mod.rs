@@ -2537,18 +2537,17 @@ async fn handle_request(
             let input: ProviderUpdateInput = serde_json::from_value(params)
                 .map_err(|e| rpc_err(1002, e.to_string(), "INVALID_PARAMS"))?;
             let st = state.lock().await;
-            // Checked before the write as well: converting the Router row into
-            // another service changes the channel just as much as editing it.
-            let was_router = providers::get_provider(&st.db, &st.secrets, &input.id)
-                .ok()
-                .flatten()
-                .is_some_and(|row| is_network_center_row(&row.vendor_key));
+            // Compared before and after the write: only a changed endpoint, key,
+            // or vendor touches the channel. Editing models or the name must not
+            // restart a working tunnel under requests that are using it.
+            let id = input.id.clone();
+            let before =
+                crate::easytier_net::credentials::router_row_identity(&st.db, &st.secrets, &id);
             let provider =
                 providers::update_provider(&st.db, &st.secrets, input).map_err(provider_rpc_err)?;
-            let is_router = provider
-                .as_ref()
-                .is_some_and(|row| is_network_center_row(&row.vendor_key));
-            if was_router || is_router {
+            let after =
+                crate::easytier_net::credentials::router_row_identity(&st.db, &st.secrets, &id);
+            if before != after {
                 refresh_network_center_identity(&state, &st);
             }
             Ok(json!({ "provider": provider }))
@@ -2601,12 +2600,13 @@ async fn handle_request(
                 .ok_or_else(|| rpc_err(1002, "id required", "INVALID_PARAMS"))?;
             let secret_value = params.get("secretValue").and_then(|v| v.as_str());
             let st = state.lock().await;
+            let before =
+                crate::easytier_net::credentials::router_row_identity(&st.db, &st.secrets, id);
             let provider = providers::set_provider_secret(&st.db, &st.secrets, id, secret_value)
                 .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?;
-            let is_router = provider
-                .as_ref()
-                .is_some_and(|row| is_network_center_row(&row.vendor_key));
-            if is_router {
+            let after =
+                crate::easytier_net::credentials::router_row_identity(&st.db, &st.secrets, id);
+            if before != after {
                 refresh_network_center_identity(&state, &st);
             }
             Ok(json!({ "provider": provider }))

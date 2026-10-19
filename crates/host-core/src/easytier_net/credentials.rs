@@ -64,6 +64,39 @@ fn is_minih_router_vendor_key(vendor_key: Option<&str>) -> bool {
         .is_some_and(|key| key.eq_ignore_ascii_case("minih-router"))
 }
 
+/// What one provider row contributes to the network center identity: the
+/// endpoint the bootstrap is asked at and a digest of the key it is asked with.
+///
+/// `None` for a row that is not a Router row, so turning a row into (or out
+/// of) a Router changes it as well. Edits that touch neither the endpoint nor
+/// the key — models, name, default model, headers — compare equal, so they do
+/// not restart a working tunnel. The key itself is never held here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouterRowIdentity {
+    base_url: Option<String>,
+    access_key_digest: Option<String>,
+}
+
+pub fn router_row_identity(
+    db: &crate::db::Database,
+    secrets: &crate::secrets::SecretStore,
+    id: &str,
+) -> Option<RouterRowIdentity> {
+    let row = providers::get_provider(db, secrets, id).ok().flatten()?;
+    if !is_minih_router_vendor_key(Some(row.vendor_key.as_str())) {
+        return None;
+    }
+    let access_key_digest = providers::get_secret_for_provider(db, secrets, id)
+        .ok()
+        .flatten()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| crate::easytier_net::bootstrap::access_key_digest(&value));
+    Some(RouterRowIdentity {
+        base_url: row.base_url.filter(|value| !value.trim().is_empty()),
+        access_key_digest,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,5 +183,68 @@ mod tests {
         create_router(&db, &secrets, "router", "https://router.hmini.org/v1", None);
         let rows = crate::providers::list_providers(&db, &secrets, true).unwrap();
         assert!(select_credential(rows, |_| None).is_none());
+    }
+
+    fn update(
+        db: &crate::db::Database,
+        secrets: &crate::secrets::SecretStore,
+        patch: serde_json::Value,
+    ) {
+        let input: crate::providers::ProviderUpdateInput =
+            serde_json::from_value(patch).expect("update input");
+        crate::providers::update_provider(db, secrets, input).expect("update");
+    }
+
+    #[test]
+    fn only_endpoint_key_or_vendor_edits_change_the_router_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::db::Database::open(&dir.path().join("pi.sqlite")).unwrap();
+        let secrets = crate::secrets::SecretStore::open(dir.path()).unwrap();
+        create_router(
+            &db,
+            &secrets,
+            "router",
+            "https://router.hmini.org/v1",
+            Some("sk-one"),
+        );
+        let id = crate::providers::list_providers(&db, &secrets, true).unwrap()[0]
+            .id
+            .clone();
+        let initial = router_row_identity(&db, &secrets, &id).expect("router row");
+
+        // Renaming the row or editing its models must not restart the tunnel.
+        update(
+            &db,
+            &secrets,
+            serde_json::json!({ "id": id, "name": "renamed" }),
+        );
+        update(
+            &db,
+            &secrets,
+            serde_json::json!({ "id": id, "models": [{ "id": "gpt-x" }] }),
+        );
+        assert_eq!(
+            router_row_identity(&db, &secrets, &id).as_ref(),
+            Some(&initial)
+        );
+
+        update(
+            &db,
+            &secrets,
+            serde_json::json!({ "id": id, "baseUrl": "https://aiapi.hungraim.com/v1" }),
+        );
+        let moved = router_row_identity(&db, &secrets, &id).expect("router row");
+        assert_ne!(moved, initial, "a new endpoint is a new identity");
+
+        crate::providers::set_provider_secret(&db, &secrets, &id, Some("sk-two")).unwrap();
+        let rekeyed = router_row_identity(&db, &secrets, &id).expect("router row");
+        assert_ne!(rekeyed, moved, "a new key is a new identity");
+
+        update(
+            &db,
+            &secrets,
+            serde_json::json!({ "id": id, "vendorKey": "custom" }),
+        );
+        assert_eq!(router_row_identity(&db, &secrets, &id), None);
     }
 }
