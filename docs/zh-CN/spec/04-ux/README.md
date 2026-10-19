@@ -17,3 +17,4 @@
 | [10-workbuddy-benchmark-ux.md](/zh-CN/spec/04-ux/10-workbuddy-benchmark-ux) | WorkBuddy 基准演练 + adopt/adapt/reject 提案 |
 | [11-asktool-question-card.md](/zh-CN/spec/04-ux/11-asktool-question-card) | 内联多问题卡 |
 | [12-prompt-enhancement.md](/zh-CN/spec/04-ux/12-prompt-enhancement) | 可选的输入框文本操作与提示词增强插件迁移 |
+| [13-remote-mobile-client.md](/zh-CN/spec/04-ux/13-remote-mobile-client) | 远程移动客户端（H5 / iOS / Android）UX 重设计 |
