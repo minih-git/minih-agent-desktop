@@ -504,11 +504,15 @@ semantics. Remote background execution is not part of the current contract;
 requests fail explicitly rather than silently running in the foreground.
 
 Composer shows at most 12 matching task rows with localized state, Output, and
-Stop controls. Only an expanded output preview is polled; stale session/selection
-responses are ignored and failed refreshes remain retryable. Existing finished
-tasks do not reappear on a mount or session switch; tasks observed finishing in
-the current view leave a short dismissible receipt. This is not an interactive
-TTY or a durable service manager.
+Stop controls, and scopes them to the conversation on screen: the registry is
+process-wide, so a bar lists only tasks whose `sessionId` matches its own chat,
+offers Stop only for those, and hides itself on a draft composer. Switching
+conversations changes the listing without stopping either session's processes.
+Only an expanded output preview is polled; stale session/selection responses are
+ignored and failed refreshes remain retryable. Existing finished tasks do not
+reappear on a mount or session switch; tasks observed finishing in the current
+view leave a short dismissible receipt. This is not an interactive TTY or a
+durable service manager.
 
 See [background task ownership](../../adr/background-bash-task-ownership.md)
 and [the Host RPC contract](06-host-rpc-protocol.md#background-tasks).

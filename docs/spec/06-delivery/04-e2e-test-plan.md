@@ -19128,7 +19128,9 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
   a started background process survives its turn but not Stop or Host exit.
   Output is drained and bounded to 256 KiB per stream. Foreground behavior and
   shell pinning stay unchanged. Remote background requests fail explicitly.
-  Composer lists at most 12 tasks, polls only expanded output, ignores stale
+  Composer lists at most 12 tasks, scopes the bar to the conversation on screen
+  (switching sessions changes the listing but stops neither session's processes,
+  and a draft composer shows no bar), polls only expanded output, ignores stale
   responses, retries visible errors, and does not replay historical finished rows.
 - **Specs**: `03-runtime/03-tools-and-permissions.md`,
   `03-runtime/06-host-rpc-protocol.md`, `03-runtime/01-ipc-protocol.md`,
