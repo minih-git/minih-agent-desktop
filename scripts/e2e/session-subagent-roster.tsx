@@ -5,6 +5,8 @@ import { I18nextProvider } from "react-i18next";
 import { catalogs } from "@minih-agent/i18n";
 import { SessionSubagentRoster } from "../../apps/desktop/src/components/workpanel/SessionSubagentRoster";
 import { SubagentTranscriptTab } from "../../apps/desktop/src/components/workpanel/SubagentTranscriptTab";
+import { ToolRow } from "../../apps/desktop/src/features/chat/transcript/ToolRow";
+import { SlotSessionProvider } from "../../apps/desktop/src/plugins/renderer-slots/use-slots";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 import { api } from "../../apps/desktop/src/lib/api";
 import type { UiMessage } from "@minih-agent/shared";
@@ -72,15 +74,31 @@ const recentTail = [
   ),
 ];
 
+const otherTask: UiMessage = {
+  ...storedTask,
+  id: "other-task",
+  toolCallId: "call-2",
+  toolResult: { details: { delegationId: "del-2", status: "completed", agent: "explorer" } },
+};
+
 function Harness() {
+  const panelOpen = useAppStore((state) => state.workPanelOpen);
   const active = useAppStore((state) =>
     state.workPanelTabs.find((tab) => tab.id === state.activeWorkPanelTabId),
   );
   return (
     <>
-      <SessionSubagentRoster />
-      {active?.kind === "subagent" ? (
-        <SubagentTranscriptTab delegationId={active.resource ?? ""} />
+      <SlotSessionProvider sessionId="session-roster">
+        <ToolRow message={storedTask} variant="topology" />
+        <ToolRow message={otherTask} variant="topology" />
+      </SlotSessionProvider>
+      {panelOpen ? (
+        <div data-testid="probe-panel">
+          <SessionSubagentRoster />
+          {active?.kind === "subagent" ? (
+            <SubagentTranscriptTab delegationId={active.resource ?? ""} />
+          ) : null}
+        </div>
       ) : null}
     </>
   );
@@ -196,6 +214,33 @@ globalThis.sessionSubagentRosterProbe = async () => {
       "opening a delegation must not rewrite the main transcript",
     );
 
+    // A topology disclosure toggles the visible panel, not the retained tab.
+    const headers = host.querySelectorAll<HTMLButtonElement>(".subagent-topology-node-header");
+    const first = headers[0];
+    const second = headers[1];
+    assert(first.getAttribute("aria-expanded") === "true", "the active visible delegation is expanded");
+    const retainedTabs = useAppStore.getState().workPanelTabs;
+    first.focus();
+    flushSync(() => first.click());
+    assert(!useAppStore.getState().workPanelOpen, "clicking the active topology node again must collapse the panel");
+    assert(first.getAttribute("aria-expanded") === "false", "a hidden retained tab is not expanded");
+    assert(!first.hasAttribute("aria-controls"), "a hidden panel is not an accessible disclosure target");
+    assert(!host.querySelector('[data-testid="probe-panel"]'), "the collapsed panel leaves the layout");
+    assert(useAppStore.getState().workPanelTabs === retainedTabs, "collapse must preserve delegation tabs");
+    assert(document.activeElement === first, "collapsing keeps focus on the node");
+    flushSync(() => first.click());
+    assert(useAppStore.getState().workPanelOpen, "the same node reopens its retained tab");
+    assert(useAppStore.getState().workPanelTabs.length === 1, "reopening must not duplicate the tab");
+    flushSync(() => second.click());
+    assert(useAppStore.getState().workPanelOpen && useAppStore.getState().activeWorkPanelTabId === "subagent:del-2", "another node switches delegations without collapsing");
+    assert(first.getAttribute("aria-expanded") === "false" && second.getAttribute("aria-expanded") === "true", "only the visible delegation is expanded");
+    flushSync(() => first.click());
+    assert(useAppStore.getState().workPanelOpen && useAppStore.getState().activeWorkPanelTabId === "subagent:del-1", "an inactive retained delegation activates instead of collapsing");
+    flushSync(() => useAppStore.getState().collapseWorkPanel());
+    assert(first.getAttribute("aria-expanded") === "false", "external panel collapse clears the node disclosure");
+    flushSync(() => first.click());
+    assert(useAppStore.getState().workPanelOpen && first.getAttribute("aria-expanded") === "true", "a node reopens after external collapse");
+
     // 3. A failed read is visible with a retry, never an empty panel.
     flushSync(() => root.unmount());
     root = createRoot(host, { onUncaughtError: (error) => uncaught.push(error) });
@@ -245,12 +290,25 @@ globalThis.sessionSubagentRosterProbe = async () => {
 
     assert(uncaught.length === 0, `uncaught render error: ${String(uncaught[0])}`);
     const section = host.querySelector(".subagent-roster") as HTMLElement;
-    return {
-      ok: true,
+    const measurements = {
       sectionHeight: Math.round(section.getBoundingClientRect().height),
       bodyHeight: Math.round(body.getBoundingClientRect().height),
       bodyOverflows: body.scrollHeight > body.clientHeight,
     };
+    const rosterHeader = host.querySelector<HTMLButtonElement>(".subagent-roster-header")!;
+    flushSync(() => rosterHeader.click());
+    assert(rosterHeader.getAttribute("aria-expanded") === "false" && !host.querySelector(".subagent-roster-body"), "the roster itself can collapse independently");
+    flushSync(() => root.unmount());
+    root = createRoot(host, { onUncaughtError: (error) => uncaught.push(error) });
+    mount();
+    await until(() => Boolean(host.querySelector(".subagent-roster-header")), "the retained collapsed roster");
+    const restoredHeader = host.querySelector<HTMLButtonElement>(".subagent-roster-header")!;
+    assert(restoredHeader.getAttribute("aria-expanded") === "false", "remounting preserves the session's collapsed roster");
+    flushSync(() => restoredHeader.click());
+    await until(() => host.querySelectorAll(".subagent-roster-row").length === 12, "the expanded roster rows");
+    assert(restoredHeader.getAttribute("aria-expanded") === "true", "the roster reopens after remounting");
+    assert(uncaught.length === 0, `uncaught render error: ${String(uncaught[0])}`);
+    return { ok: true, ...measurements };
   } finally {
     useAppStore.setState(previousStore, true);
     root.unmount();
