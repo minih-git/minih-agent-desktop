@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "0.22.1",
+    date: "2026-10-19",
+    highlights: [
+      "A rede do Router só inicia após o endpoint de API configurado autenticar a AccessKey e fornecer a identidade da rede. Alterar o endpoint ou a chave substitui o túnel anterior.",
+      "A Central de rede aparece apenas no modo desenvolvedor, com configuração manual explícita disponível. Ao atualizar, use um endpoint Router acessível publicamente; sem bootstrap, o túnel integrado não inicia mais automaticamente.",
+      "As memórias fixas são mescladas ao adicionar projetos a um grupo; mesclagens grandes demais são recusadas sem gravações parciais e os identificadores permanecem únicos. A memória aprendida é sincronizada nota por nota e preserva exclusões.",
+      "Envie notas laterais pelo painel de trabalho durante uma tarefa sem interrompê-la. Os rascunhos são preservados durante o envio e os detalhes dos subagentes podem ser recolhidos sem reabrir o painel.",
+      "A troca de modelo verifica novamente o contexto e compacta conversas grandes demais antes de continuar. A busca de ferramentas tem apresentação própria e falhas não são mais mostradas como ausência de resultados.",
+      "A descoberta da conta remota começa na inicialização do desktop. Clientes remotos nativos podem carregar sessões pelo Gateway, e a saída de tarefas em segundo plano fica isolada por conversa.",
+    ],
+  },
+  {
     version: "0.22.0",
     date: "2026-10-19",
     highlights: [

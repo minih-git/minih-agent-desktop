@@ -34,7 +34,7 @@ description: >-
 |---|---|---|
 | 数据面 `/v1/*`：OpenAI Chat Completions / Responses / Anthropic Messages / Gemini 协议转发 | `internal/`（gateway、protocol、channel、subscription、scheduler、ratelimit 等） | 一般无需改：runtime 像普通 provider 行一样调用；仅 Router 行的 Gemini 请求由 Desktop 把 `/v1` 映射为 `/v1beta` |
 | 控制面 key-scoped 只读 API：`/api/home`、`/api/usage`、`/api/models`（余额、用量、模型广场价格） | `internal/control/`（`auth.go`、`http_routes.go` 等） | `apps/desktop/electron/main/minih-router-client.ts`（请求与解析）、`ipc/minih-router-ipc.ts`（invoke channel）、`src/components/settings/useMinihRouter.ts`（UI） |
-| 组网 bootstrap：`GET /api/easytier/bootstrap`（下发 networkName / networkSecret / gatewayVirtualIpv4 / peers / ttlSeconds）与 EasyTier 只读监控、接入引导 | `internal/control/` + `internal/easytier/`，文档 `docs/operations/easytier-mesh.md` | Rust host-core 内嵌 EasyTier 节点（networkName `minih-router`，虚拟网段 `11.12.0.0/24`，默认 No-TUN）；端点解析 `resolveMinihRouterEndpoint`（`session-launch.ts` 引用） |
+| 组网 bootstrap：`GET /api/easytier/bootstrap`（下发 networkName / networkSecret / gatewayVirtualIpv4 / router_lan_access / peers / ttlSeconds）与 EasyTier 只读监控、接入引导 | `internal/control/` + `internal/easytier/`，文档 `docs/operations/easytier-mesh.md` | Rust host-core 内嵌 EasyTier 节点，**身份只认网关下发**（`crates/host-core/src/easytier_net/identity.rs`：只有 bootstrap 成功才启动，否则挂起并写明原因；无内置密钥）；缓存键为「控制面根地址 + AccessKey 摘要」，换端点/轮换密钥经 `providers.create/update/setSecret/delete` 重拉一次；手动身份仅开发者模式可配（ADR `network-center-gateway-issued-identity`）；端点解析 `resolveMinihRouterEndpoint`（`session-launch.ts` 引用） |
 | 网关预设与设置 UI（默认地址、格式选项、推荐位、账户卡片） | —（Router 不管客户端展示） | `packages/shared/src/provider-presets.ts`、`packages/shared/src/minih-router.ts`（类型）、`apps/desktop/src/components/settings/`（`minih-router-format.ts`、账户/广场组件等） |
 | 远程控制的账户绑定（D666，规划中，ADR `remote-control-router-account-binding`）：桌面用 AccessKey 自动绑定所有终端；Gateway 经 Router `GET /api/auth/session` 校验 key，bootstrap 新增 `remoteGateway {hostlinkUrl, publicOrigin, caPem}` | `internal/control/auth.go`（会话应答与 `allowed_peer_cidrs`）、`internal/state/snapshot.go`（只索引 active 的 key）、`internal/platform/utils/client_ip.go` 与环境变量 `CLIENT_IP_HEADER` / `TRUSTED_PROXIES`（仅在可信代理下取客户端 IP）、`internal/easytier/manager.go`（bootstrap 数据）与承载 `remoteGateway` 的系统设置 | `apps/remote-gateway`（账户目录、按 key 注册、账户登录、主机列表、设备申请/确认中继、可信代理客户端 IP）、桌面 gateway link（`apps/desktop/electron/main/remote/gateway-link/`）、host-core EasyTier 转发（`crates/host-core/src/easytier_net/config.rs`，No-TUN 第二条转发）、`apps/remote-web`（key 登录与主机切换） |
 
@@ -47,8 +47,8 @@ description: >-
 | `/api/home` `/api/usage` `/api/models`、bootstrap 的**字段或接口增删改** | **两个仓库联动**：Router 改响应，Desktop 同步改解析与展示（见第 4 节流程） |
 | Desktop 设置页里网关账户/余额/模型广场的展示、文案、布局、交互 | **Minih-Agent-Desktop** |
 | provider 行的默认 baseUrl、API 格式选项、预设注册、vendorKey 匹配行为、模型选择 UI | **Minih-Agent-Desktop** |
-| EasyTier 客户端节点行为：No-TUN/TUN、LAN 优先与公网回退、bootstrap 缓存、本地端口转发 | **Minih-Agent-Desktop** |
-| EasyTier 服务端能力：状态监控展示、接入命令生成、bootstrap 下发参数 | **Minih-Router** |
+| EasyTier 客户端节点行为：身份只认网关下发（先认证后启动）、手动身份、No-TUN/TUN、LAN 优先与公网回退、bootstrap 缓存键与重拉触发点、本地端口转发 | **Minih-Agent-Desktop** |
+| EasyTier 服务端能力：状态监控展示、接入命令生成、bootstrap 下发参数（含 `router_lan_access`）、按 IP 的认证失败锁定 | **Minih-Router** |
 | 新增模型协议 / API 风格 | **Minih-Router 为主**（转发内核实现）；Desktop 仅在需要新 UI 格式选项时联动 |
 | 网关部署、发布、更新服务器 | **Minih-Router**（先读 `minih-router-deploy` 技能） |
 | 远程控制账户模式：AccessKey 登录与发现、账户主机列表、设备“确认一次即可漫游”、`remoteGateway` 下发 | **两个仓库联动**：Router 在 bootstrap 增加 `remoteGateway` 字段并维护对应系统设置，部署时把 Gateway 的 loopback 列入 `TRUSTED_PROXIES` 并设置 `CLIENT_IP_HEADER`；账户目录、Host link 新帧、桌面确认与严格模式全在 Desktop。契约以 Desktop 的 `docs/spec/03-runtime/12-provider-config-schema.md` §3、`docs/spec/03-runtime/19-remote-agent-control-protocol.md` §11.5 与 `docs/spec/05-security/02-remote-control-security.md` §3.8 为准 |
@@ -64,7 +64,7 @@ description: >-
    - 新增字段可以；删除字段或改语义前，必须评估已发布 Desktop 的行为。
    - bootstrap 返回 `404` 在 Desktop 是**受支持的合法状态**（网关未实现该端点），不是故障。
 3. **Desktop 后消费**，必须优雅降级：
-   - bootstrap 失败/404 → 回退本地配置；LAN 不可达或 502/503/504 → 回退公网 `baseUrl` 重试。
+   - bootstrap 失败/404 → 不启动隧道，请求使用该行公网 `baseUrl`；只有开发者显式选择的手动身份可不依赖网关应答启动。LAN 不可达或 502/503/504 → 回退公网 `baseUrl` 重试。
    - 字段缺失 → 按"网关未提供"处理并隐藏对应展示，不得报错阻断。
 4. **真实链路验证**：本地起 Router（或用测试服务器），Desktop 指向它实测新增/降级两条路径，
    不要只看单侧代码。涉及现场时注意 Router 实际数据库为 `/opt/gpt-load/data/gpt-load.db`。
@@ -106,3 +106,7 @@ Router 与 Desktop 均拆分为 minih（个人）与 hungraim（恒格）两条�
 - Router `/health` 返回 `brand`/`commit`/`build_time`，部署验收必须核对品牌与提交一致。
 - 11.7 的业务 EasyTier 是独立网（`hungraim-router`，11.123.0.0/24），与管理网（11.11.11.0/24）
   互不连接；见 Router 仓库 `docs/operations/easytier-hungraim-router.md`。
+- 组网身份只有一个来源：该行 `minih-router` 的 `GET <controlRoot>/api/easytier/bootstrap`。
+  桌面不再回退任何内置网络/密钥，拿不到应答就不启动隧道（请求走公网端点，原因写在
+  `bootstrapError`），因此该行的 API 端点必须公网可达；`public_endpoint` 仅声明网关下发的引导节点入口；
+  未实现该接口的旧网关只能靠开发者模式里的手动身份。

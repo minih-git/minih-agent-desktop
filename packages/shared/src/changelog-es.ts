@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "0.22.1",
+    date: "2026-10-19",
+    highlights: [
+      "La red del Router solo se inicia después de que el endpoint API configurado autentique el AccessKey y proporcione la identidad de red. Cambiar el endpoint o la clave sustituye el túnel anterior.",
+      "El Centro de red solo aparece en modo desarrollador y conserva la configuración manual explícita. Al actualizar, usa un endpoint Router accesible públicamente; sin bootstrap ya no se inicia automáticamente el túnel integrado.",
+      "Las memorias fijas se fusionan al incorporar proyectos a un grupo; las fusiones demasiado grandes se rechazan sin escrituras parciales y los identificadores siguen siendo únicos. La memoria aprendida se sincroniza nota por nota y conserva las eliminaciones.",
+      "Envía notas laterales desde el panel de trabajo durante una tarea sin interrumpirla. Los borradores sobreviven al envío y los detalles de subagentes se pueden contraer sin reabrir el panel.",
+      "Al cambiar de modelo se vuelve a comprobar el contexto y se compactan las conversaciones demasiado grandes antes de continuar. La búsqueda de herramientas tiene presentación propia y los fallos ya no se muestran como ausencia de coincidencias.",
+      "La detección de la cuenta remota comienza al iniciar el escritorio. Los clientes remotos nativos pueden cargar sesiones a través del Gateway y la salida de tareas en segundo plano queda aislada por conversación.",
+    ],
+  },
+  {
     version: "0.22.0",
     date: "2026-10-19",
     highlights: [

@@ -140,7 +140,7 @@ mod tests {
                 "enabled": false,
                 "mode": "no_tun",
                 "networkName": "minih-net",
-                "networkSecret": "Minih@9527",
+                "networkSecret": "typed-by-user",
                 "peers": ["udp://tier.hmini.org:11010", "tcp://tier.hmini.org:11010"],
                 "routerLanUrl": "http://11.11.11.10:3001/v1"
             }),

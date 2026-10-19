@@ -71,6 +71,7 @@ ADR 记录那些不应被静默改变的架构选择。中文入口与英文索�
 
 | 编号 | 标题 | 状态 |
 |---|---|---|
+| network-center-gateway-issued-identity | [组网身份只由网关下发](/adr/network-center-gateway-issued-identity) | 已接受待实现 |
 | remote-control-router-account-binding | [远程控制的 Router 账户绑定](/adr/remote-control-router-account-binding) | 已接受待实现（MVP 之后；D666；修订 ADR 0331） |
 | builtin-session-messaging | [内置会话消息工具](/adr/builtin-session-messaging) | 已接受（D663） |
 | subagent-model-opt-in | [区分子代理模型自动调度许可与定义固定模型](/adr/subagent-model-opt-in) | 已接受待实现 |

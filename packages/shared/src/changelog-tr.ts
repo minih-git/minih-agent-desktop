@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.22.1",
+    date: "2026-10-19",
+    highlights: [
+      "Router ağı, yalnızca yapılandırılmış API uç noktası AccessKey ile kimlik doğrulayıp ağ kimliğini sağladıktan sonra başlar. Uç nokta veya anahtar değiştirildiğinde eski tünel değiştirilir.",
+      "Ağ Merkezi yalnızca geliştirici modunda gösterilir; açıkça seçilen elle yapılandırma korunur. Yükseltirken herkese açık erişilebilir bir Router uç noktası kullanın; bootstrap sağlamayan ağ geçitlerinde yerleşik tünel artık otomatik başlamaz.",
+      "Projeler bir gruba katıldığında sabit bellekler birleştirilir; çok büyük birleşimler kısmi yazma olmadan reddedilir ve kimlikler benzersiz kalır. Öğrenilmiş bellek not başına eşitlenir ve silmeler korunur.",
+      "Bir görev çalışırken çalışma panelinden görevi kesmeden yan notlar gönderin. Gönderim sırasında taslaklar korunur ve alt ajan ayrıntıları paneli yeniden açmadan daraltılabilir.",
+      "Model değiştirildiğinde bağlam kullanımı yeniden denetlenir ve çok büyük konuşmalar devam etmeden önce sıkıştırılır. Araç aramasının kendi sunumu vardır ve arama hataları artık eşleşme yok olarak bildirilmez.",
+      "Uzak hesap keşfi masaüstü başlatıldığında başlar. Yerel uzak istemciler Gateway üzerinden oturumları yükleyebilir; arka plan görevlerinin çıktıları konuşma bazında yalıtılır.",
+    ],
+  },
+  {
     version: "0.22.0",
     date: "2026-10-19",
     highlights: [

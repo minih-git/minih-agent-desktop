@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   EASYTIER_DEFAULT_NETWORK_NAME,
-  EASYTIER_DEFAULT_NETWORK_SECRET,
   EASYTIER_DEFAULT_PEERS,
   EASYTIER_DEFAULT_ROUTER_LAN_URL,
   MINIH_ROUTER_DEFAULT_BASE_URL,
@@ -130,17 +129,50 @@ describe("Minih Router balance headline", () => {
 });
 
 describe("EasyTier virtual LAN settings", () => {
-  it("normalizes empty settings to the built-in Minih Router LAN defaults", () => {
+  it("normalizes empty settings to gateway identity with no built-in secret", () => {
     expect(normalizeEasyTierSettings(undefined)).toEqual({
       enabled: true,
       mode: "no_tun",
+      identity: "gateway",
       networkName: EASYTIER_DEFAULT_NETWORK_NAME,
-      networkSecret: EASYTIER_DEFAULT_NETWORK_SECRET,
+      // Source is public: a checked-in secret would be a published one.
+      networkSecret: "",
       peers: [...EASYTIER_DEFAULT_PEERS],
       routerLanUrl: EASYTIER_DEFAULT_ROUTER_LAN_URL,
       dhcp: true,
       ipv4: "",
     });
+  });
+
+  it("keeps a manual identity and its typed secret", () => {
+    const normalized = normalizeEasyTierSettings({
+      identity: "manual",
+      networkName: "self-hosted-net",
+      networkSecret: "typed-by-user",
+    });
+    expect(normalized.identity).toBe("manual");
+    expect(normalized.networkSecret).toBe("typed-by-user");
+    // An unrecognized value falls back to the strict mode, never to manual.
+    expect(normalizeEasyTierSettings({ identity: "lan" as never }).identity).toBe("gateway");
+    // A blank secret stays blank: nothing may be invented in its place.
+    expect(normalizeEasyTierSettings({ identity: "manual" }).networkSecret).toBe("");
+  });
+
+  it("requires a secret for a manual identity and accepts none for the gateway", () => {
+    expect(validateEasyTierSettings({ identity: "manual" })).toBe(
+      "easytier.networkSecret is required when easytier.identity is manual",
+    );
+    expect(validateEasyTierSettings({ identity: "manual", networkSecret: "   " })).toBe(
+      "easytier.networkSecret is required when easytier.identity is manual",
+    );
+    expect(
+      validateEasyTierSettings({ identity: "manual", networkSecret: "typed-by-user" }),
+    ).toBeNull();
+    // Gateway mode receives its secret from the bootstrap answer.
+    expect(validateEasyTierSettings({ identity: "gateway" })).toBeNull();
+    expect(validateEasyTierSettings({ identity: "bootstrap" })).toBe(
+      "easytier.identity must be gateway or manual",
+    );
   });
 
   it("keeps a static virtual IPv4 and its DHCP switch", () => {
@@ -190,7 +222,7 @@ describe("EasyTier virtual LAN settings", () => {
         enabled: true,
         mode: "tun",
         networkName: "minih-net",
-        networkSecret: "Minih@9527",
+        networkSecret: "typed-by-user",
         peers: ["udp://tier.hmini.org:11010", "tcp://tier.hmini.org:11010"],
         routerLanUrl: "http://11.11.11.10:3001",
       }),

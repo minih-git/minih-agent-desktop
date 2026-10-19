@@ -2,6 +2,18 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "0.22.1",
+    date: "2026-10-19",
+    highlights: [
+      "Le réseau du Router ne démarre qu’après authentification de l’AccessKey par le point d’accès API configuré et réception de l’identité réseau. Changer de point d’accès ou de clé remplace l’ancien tunnel.",
+      "Le Centre réseau apparaît uniquement en mode développeur, avec une configuration manuelle explicite. Après mise à jour, utilisez un point d’accès Router joignable publiquement ; sans bootstrap, le tunnel intégré ne démarre plus automatiquement.",
+      "Les mémoires fixes sont fusionnées lors du rattachement à un groupe ; les fusions trop volumineuses sont refusées sans écriture partielle et les identifiants restent uniques. La mémoire apprise se synchronise note par note et conserve les suppressions.",
+      "Envoyez des apartés depuis le panneau de travail pendant une tâche sans l’interrompre. Les brouillons sont conservés pendant l’envoi et les détails des sous-agents peuvent être repliés sans rouvrir le panneau.",
+      "Un changement de modèle revérifie le contexte et compacte les conversations trop volumineuses avant de poursuivre. La recherche d’outils a sa propre présentation et ses échecs ne sont plus annoncés comme une absence de résultats.",
+      "La découverte du compte distant commence au démarrage du bureau. Les clients distants natifs peuvent charger les sessions via le Gateway, et les sorties des tâches d’arrière-plan restent propres à chaque conversation.",
+    ],
+  },
+  {
     version: "0.22.0",
     date: "2026-10-19",
     highlights: [

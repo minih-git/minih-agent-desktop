@@ -19248,3 +19248,54 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
 - **Status:** Unit-covered (`model-switch-compaction.test.ts`,
   `runtime-model-switch-compaction.test.ts`,
   `apps/desktop/test/context-compaction.test.mjs`); desktop journey outstanding.
+
+### E2E-NETWORK-CENTER-hidden-outside-developer-mode
+
+- **Preconditions:** A connected `minih-router` row and developer mode off.
+- **Steps:** Open Settings ▸ Accounts. Then turn developer mode on and return to
+  the same page.
+- **Expected:** With developer mode off the network center section is absent —
+  no status badge, no reconnect control, no identity fields. With it on the
+  section appears titled "Network Center" (zh-CN: 网络中心配置), and no
+  user-visible string in it names EasyTier. The default state shows status only:
+  no network name or secret input exists until "Configure the network identity
+  manually" is switched on.
+- **Specs:** `03-runtime/12-provider-config-schema.md` §3 (network center),
+  ADR `network-center-gateway-issued-identity`.
+- **Status:** Covered (`apps/desktop/test/network-center-settings-user-path.test.mjs`).
+
+### E2E-NETWORK-CENTER-holds-until-gateway-issues-identity
+
+- **Preconditions:** A saved `minih-router` row whose gateway answers
+  `404`/`401` at `/api/easytier/bootstrap`, or does not answer at all. No manual
+  identity is configured.
+- **Steps:** Start the app. Open the accounts page in developer mode. Send one
+  chat prompt to a model on that row.
+- **Expected:** No tunnel starts: the section reports the error state with the
+  gateway's reason (endpoint not served, key rejected, or the transport failure)
+  and the note that the Router endpoint must be reachable on the public internet.
+  The chat request goes to the row's public `baseUrl` — never to an overlay
+  address — and `resolveMinihRouterEndpoint` reports `usingLan: false`. No
+  request is repeated automatically.
+- **Specs:** `03-runtime/12-provider-config-schema.md` §3 (strict mode),
+  ADR `network-center-gateway-issued-identity`.
+- **Status:** Covered (`crates/host-core/src/easytier_net/boot_bootstrap_tests.rs`,
+  `apps/desktop/test/network-center-settings-user-path.test.mjs`).
+
+### E2E-NETWORK-CENTER-endpoint-change-refreshes-identity
+
+- **Preconditions:** A connected network center whose identity came from gateway
+  A. A second gateway B, serving the same AccessKey, is reachable.
+- **Steps:** Edit the `minih-router` row and point it at gateway B. Save. Then
+  rotate the AccessKey on the same row and save again.
+- **Expected:** Each save triggers exactly one bootstrap request against the new
+  endpoint (the cached answer for the old endpoint is not reused), and the
+  channel restarts with gateway B's identity or holds with its reason. No polling
+  or retry loop is observed, because the gateway locks an IP after repeated
+  failures. Editing a non-`minih-router` row triggers nothing.
+- **Specs:** `03-runtime/12-provider-config-schema.md` §3 (cache key, refresh
+  triggers), ADR `network-center-gateway-issued-identity`.
+- **Status:** Decision layer and refetch count covered
+  (`boot_bootstrap_tests::switching_the_endpoint_refetches_the_identity_once`,
+  `a_cached_answer_is_reused_until_the_identity_is_refreshed`); live two-gateway
+  journey outstanding.

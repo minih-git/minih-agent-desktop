@@ -35,19 +35,14 @@ const fn brand_is_hungraim() -> bool {
     }
 }
 
+/// Brand network name. Used only to prefill manual identity mode: in gateway
+/// mode the name comes from the bootstrap answer and never from here.
 pub const DEFAULT_EASYTIER_NETWORK_NAME: &str = if brand_is_hungraim() {
     "hungraim-router"
 } else {
     "minih-router"
 };
-// A hungraim build ships no fallback credential: its network identity must
-// come from the gateway bootstrap or explicit user settings, never from a
-// secret checked into source.
-pub const DEFAULT_EASYTIER_NETWORK_SECRET: &str = if brand_is_hungraim() {
-    ""
-} else {
-    "Minih@9527"
-};
+/// Brand bootstrap peers. Same rule as the name: a manual-mode prefill only.
 pub const DEFAULT_EASYTIER_PEERS: &[&str] = if brand_is_hungraim() {
     &[
         "tcp://router-mesh.hungraim.com:11023",
@@ -98,6 +93,32 @@ impl EasyTierMode {
     }
 }
 
+/// Where the tunnel's network identity comes from.
+///
+/// `Gateway` is the only mode a normal user gets: the Router's bootstrap answer
+/// supplies the network name, secret, peers and the gateway's overlay address,
+/// and nothing starts until that answer arrives. `Manual` exists for a
+/// self-hosted gateway that does not serve the bootstrap endpoint, and is only
+/// reachable from developer mode in Settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum EasyTierIdentity {
+    #[serde(rename = "gateway")]
+    #[default]
+    Gateway,
+    #[serde(rename = "manual")]
+    Manual,
+}
+
+impl EasyTierIdentity {
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim() {
+            "gateway" => Some(Self::Gateway),
+            "manual" => Some(Self::Manual),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum EasyTierEffectiveMode {
     #[serde(rename = "disabled")]
@@ -125,6 +146,10 @@ pub enum EasyTierConnectionState {
 pub struct EasyTierSettings {
     pub enabled: bool,
     pub mode: EasyTierMode,
+    /// Where the identity comes from. Persisted data written before this field
+    /// existed reads back as `Gateway`, which is the stricter mode.
+    #[serde(default)]
+    pub identity: EasyTierIdentity,
     pub network_name: String,
     pub network_secret: String,
     pub peers: Vec<String>,
@@ -139,8 +164,12 @@ impl Default for EasyTierSettings {
         Self {
             enabled: true,
             mode: EasyTierMode::Auto,
+            identity: EasyTierIdentity::default(),
             network_name: DEFAULT_EASYTIER_NETWORK_NAME.to_string(),
-            network_secret: DEFAULT_EASYTIER_NETWORK_SECRET.to_string(),
+            // No built-in secret: source is public, so a checked-in shared key
+            // is a published one. Gateway mode receives the real secret in the
+            // bootstrap answer; manual mode requires the user to type one.
+            network_secret: String::new(),
             peers: DEFAULT_EASYTIER_PEERS
                 .iter()
                 .map(|peer| (*peer).to_string())
@@ -279,6 +308,13 @@ pub fn settings_from_section(section: Option<&Value>) -> EasyTierSettings {
         .and_then(Value::as_str)
         .and_then(EasyTierMode::parse)
         .unwrap_or(defaults.mode);
+    // A saved value that predates this field has no `identity`: it reads back as
+    // gateway, the mode that only starts on a gateway answer.
+    let identity = obj
+        .get("identity")
+        .and_then(Value::as_str)
+        .and_then(EasyTierIdentity::parse)
+        .unwrap_or(defaults.identity);
     let network_name = obj
         .get("networkName")
         .and_then(Value::as_str)
@@ -329,6 +365,7 @@ pub fn settings_from_section(section: Option<&Value>) -> EasyTierSettings {
     EasyTierSettings {
         enabled,
         mode,
+        identity,
         network_name,
         network_secret,
         peers,
@@ -368,6 +405,14 @@ pub fn validate_easytier_section(section: &Value) -> Result<(), String> {
             return Err("easytier.mode must be auto, no-tun, or tun".into());
         }
     }
+    if let Some(identity) = obj.get("identity") {
+        let Some(identity_str) = identity.as_str() else {
+            return Err("easytier.identity must be a string".into());
+        };
+        if EasyTierIdentity::parse(identity_str).is_none() {
+            return Err("easytier.identity must be gateway or manual".into());
+        }
+    }
     if let Some(name) = obj.get("networkName") {
         let Some(name_str) = name.as_str() else {
             return Err("easytier.networkName must be a string".into());
@@ -384,6 +429,16 @@ pub fn validate_easytier_section(section: &Value) -> Result<(), String> {
         if secret_str.trim().len() > MAX_NETWORK_SECRET_LEN {
             return Err("easytier.networkSecret is too long".into());
         }
+    }
+    // A manual identity carries its own secret; there is no built-in fallback,
+    // so an empty one cannot authenticate and must not be saved silently.
+    if obj.get("identity").and_then(Value::as_str) == Some("manual")
+        && obj
+            .get("networkSecret")
+            .and_then(Value::as_str)
+            .is_none_or(|secret| secret.trim().is_empty())
+    {
+        return Err("easytier.networkSecret is required when identity is manual".into());
     }
     if let Some(peers) = obj.get("peers") {
         let Some(arr) = peers.as_array() else {
@@ -527,10 +582,10 @@ mod tests {
                 "minih-router"
             }
         );
-        assert_eq!(
-            defaults.network_secret,
-            if hungraim { "" } else { "Minih@9527" }
-        );
+        assert_eq!(defaults.identity, EasyTierIdentity::Gateway);
+        // No brand ships a secret: source is public, so a checked-in key would
+        // be a published one. Gateway mode receives it; manual mode requires it.
+        assert_eq!(defaults.network_secret, "");
         assert_eq!(
             defaults.peers,
             if hungraim {
@@ -557,6 +612,54 @@ mod tests {
     }
 
     #[test]
+    fn stored_settings_without_identity_read_back_as_gateway() {
+        // Settings written before the field existed must not start a brand mesh
+        // on their own, and must never yield the retired built-in secret.
+        let raw = json!({
+            "easytier": {
+                "enabled": true,
+                "mode": "no-tun",
+                "networkName": "minih-router",
+                "peers": ["udp://router.hmini.org:11012"],
+                "routerLanUrl": "http://11.12.0.1:3001/v1",
+                "dhcp": true
+            }
+        });
+        let settings = settings_from_app_value(Some(&raw));
+        assert_eq!(settings.identity, EasyTierIdentity::Gateway);
+        assert_eq!(settings.network_secret, "");
+        assert!(settings.network_secret.is_empty());
+    }
+
+    #[test]
+    fn identity_round_trips_and_validates() {
+        let raw = json!({
+            "easytier": { "identity": "manual", "networkSecret": "typed-by-user" }
+        });
+        assert!(validate_easytier_settings(&raw).is_ok());
+        assert_eq!(
+            settings_from_app_value(Some(&raw)).identity,
+            EasyTierIdentity::Manual
+        );
+        // An unknown value is rejected rather than silently downgraded.
+        assert!(validate_easytier_settings(&json!({ "easytier": { "identity": "lan" } })).is_err());
+        // Manual mode has no built-in secret to fall back on.
+        assert!(validate_easytier_settings(&json!({
+            "easytier": { "identity": "manual", "networkSecret": "" }
+        }))
+        .is_err());
+        assert!(validate_easytier_settings(&json!({
+            "easytier": { "identity": "manual" }
+        }))
+        .is_err());
+        // Gateway mode accepts an absent secret: the answer supplies it.
+        assert!(validate_easytier_settings(&json!({
+            "easytier": { "identity": "gateway" }
+        }))
+        .is_ok());
+    }
+
+    #[test]
     fn router_lan_target_normalizes_root_and_v1_paths() {
         let target = parse_router_lan_target("http://11.12.0.1:3001").unwrap();
         assert_eq!(target.host, "11.12.0.1");
@@ -573,7 +676,7 @@ mod tests {
                 "enabled": true,
                 "mode": "no-tun",
                 "networkName": "minih-router",
-                "networkSecret": "Minih@9527",
+                "networkSecret": "typed-by-user",
                 "peers": ["udp://router.hmini.org:11012"],
                  "routerLanUrl": "http://11.12.0.1:3001/v1",
                 "dhcp": true

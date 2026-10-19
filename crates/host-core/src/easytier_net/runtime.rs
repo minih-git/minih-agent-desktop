@@ -8,13 +8,14 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use super::bootstrap::{
-    access_key_digest, apply_bootstrap, bootstrap_client, defaults_overlay, fetch_bootstrap,
-    BootstrapCache, BootstrapError, BootstrapResponse, BootstrapSource, SharedClient,
+    bootstrap_cache_key, bootstrap_client, bootstrap_request_root, fetch_bootstrap, BootstrapCache,
+    BootstrapError, BootstrapResponse, BootstrapSource, SharedClient,
 };
 use super::config::{
     build_toml_config, parse_router_lan_target, EasyTierConnectionState, EasyTierEffectiveMode,
-    EasyTierMode, EasyTierSettings, OverlayForward, DEFAULT_ROUTER_PUBLIC_URL,
+    EasyTierIdentity, EasyTierMode, EasyTierSettings, OverlayForward, DEFAULT_ROUTER_PUBLIC_URL,
 };
+use super::identity::{decide, Decision};
 use super::remote_gateway::{
     derive_hostlink_target, status_for, RemoteGatewayReach, RemoteGatewayStatus,
 };
@@ -80,6 +81,8 @@ pub struct EasyTierStatus {
     /// unavailable. Additive: a Router that advertises nothing leaves this
     /// unavailable and every other field untouched.
     pub remote_gateway: RemoteGatewayStatus,
+    /// Which identity mode the saved settings ask for.
+    pub identity: EasyTierIdentity,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,14 +137,12 @@ pub struct EasyTierManager {
     backend: ActiveBackend,
     last_error: Option<String>,
     probe_cache: Option<ProbeCache>,
-    /// Server-issued network identities, keyed by AccessKey digest.
+    /// Server-issued network identities, keyed by control-plane root + AccessKey
+    /// digest.
     bootstrap_cache: BootstrapCache,
-    /// Why the last bootstrap attempt did not apply.
+    /// Why the last bootstrap attempt did not apply, or why the identity is
+    /// absent. The panel shows it verbatim.
     bootstrap_error: Option<String>,
-    /// The gateway answered 404 for the bootstrap endpoint, which is a supported
-    /// configuration: asking again through the No-TUN forward would only repeat
-    /// an answer that is already known.
-    bootstrap_not_served: bool,
     /// The answer currently in effect, so the panel can show the source.
     active_bootstrap: Option<BootstrapResponse>,
     /// Shared HTTP client, so the TLS session pool survives across calls.
@@ -158,7 +159,6 @@ impl Default for EasyTierManager {
             probe_cache: None,
             bootstrap_cache: BootstrapCache::default(),
             bootstrap_error: None,
-            bootstrap_not_served: false,
             active_bootstrap: None,
             http_client: std::sync::Arc::new(bootstrap_client()),
         }
@@ -246,6 +246,7 @@ impl EasyTierManager {
 
     async fn start_in_process(
         &mut self,
+        settings: &EasyTierSettings,
         no_tun: bool,
         effective_mode: EasyTierEffectiveMode,
     ) -> Result<(), String> {
@@ -253,8 +254,7 @@ impl EasyTierManager {
         // Only No-TUN mode needs the extra forward: TUN mode routes the overlay
         // address itself, so it reaches the Gateway without help.
         let hostlink_forward = self.hostlink_forward_for_start(no_tun, local_port);
-        let toml_config =
-            build_toml_config(&self.settings, no_tun, Some(local_port), hostlink_forward)?;
+        let toml_config = build_toml_config(settings, no_tun, Some(local_port), hostlink_forward)?;
         let instance = create_native_instance(toml_config)
             .map_err(|e| format!("failed to create EasyTier instance: {e}"))?;
         instance
@@ -284,40 +284,52 @@ impl EasyTierManager {
         }
         self.hostlink_forward(router_forward_port)
     }
+
+    /// The settings a start would use right now.
+    ///
+    /// The saved ones, with the gateway answer applied when gateway mode has one.
+    /// Pure: the saved settings are never rewritten by an answer, so a later start
+    /// re-decides from the user's own values instead of layering answer on answer.
+    fn resolved_settings(&self) -> EasyTierSettings {
+        match decide(&self.settings, self.active_bootstrap.as_ref(), None) {
+            Decision::Start(effective) => effective,
+            Decision::Hold(_) => self.settings.clone(),
+        }
+    }
+
     /// Ask the gateway for the network identity this AccessKey should use.
     ///
-    /// A cached answer is reused until its TTL expires. Every failure falls back
-    /// to the local configuration instead of propagating, because a gateway that
-    /// does not serve the endpoint yet must keep working on the public URL. The
-    /// reason is retained only so the panel can explain the source.
+    /// Nothing is started when this fails: the reason is kept so the caller can
+    /// hold with an explanation, and the public endpoint keeps serving requests
+    /// meanwhile. A cached answer is reused until its TTL expires.
     async fn refresh_bootstrap(&mut self, credentials: Option<&dyn BootstrapCredentialProvider>) {
         self.bootstrap_error = None;
         let Some(provider) = credentials else {
-            // No credential source: keep whatever answer is already in effect so
-            // a restart inside the elevated runner does not drop the network. With
-            // nothing in effect the panel still has to say why it is off, or the
-            // user sees an empty state they cannot act on.
+            // No credential source: an answer already in effect stays, so a start
+            // handed resolved settings (the elevated runner, tests) does not drop
+            // the network. With nothing in hand the start holds, and the reason
+            // says why instead of leaving an empty state in the panel.
             if self.active_bootstrap.is_none() {
                 self.bootstrap_error = Some(NO_CREDENTIAL_SOURCE.to_string());
             }
             return;
         };
-        let Some((configured_base_url, access_key)) = provider.minih_router_credential().await
-        else {
+        let Some((base_url, access_key)) = provider.minih_router_credential().await else {
             self.active_bootstrap = None;
             self.bootstrap_error = Some(BootstrapError::NoAccessKey.to_string());
             return;
         };
-        // No-TUN reaches the Router only through the forward the tunnel installs;
-        // asking the configured overlay address there cannot work. TUN routes the
-        // overlay address itself, so it keeps the configured one.
-        let base_url = self
-            .router_forward_base_url()
-            .unwrap_or(configured_base_url);
-
-        let digest = access_key_digest(&access_key);
+        // The request goes to the Router row's own address, which must be
+        // reachable without the tunnel: an identity only the tunnel could fetch
+        // would be a deadlock.
+        let Some(root) = bootstrap_request_root(&base_url) else {
+            self.active_bootstrap = None;
+            self.bootstrap_error = Some(BootstrapError::NoAccessKey.to_string());
+            return;
+        };
+        let cache_key = bootstrap_cache_key(&root, &access_key);
         let now = Instant::now();
-        if let Some(cached) = self.bootstrap_cache.get(&digest, now) {
+        if let Some(cached) = self.bootstrap_cache.get(&cache_key, now) {
             self.active_bootstrap = Some(cached.clone());
             return;
         }
@@ -325,64 +337,35 @@ impl EasyTierManager {
         match fetch_bootstrap(&self.http_client, &base_url, &access_key).await {
             Ok(response) => {
                 self.bootstrap_cache
-                    .insert(digest, response.clone(), Instant::now());
+                    .insert(cache_key, response.clone(), Instant::now());
                 self.active_bootstrap = Some(response);
-                self.bootstrap_not_served = false;
             }
             Err(error) => {
-                // A 404 means the gateway has not shipped the endpoint; that is a
-                // supported configuration and is not worth surfacing as an error.
+                // A 404 means the gateway has not shipped the endpoint, which a
+                // self-hosted gateway may never do; developer mode covers that
+                // with a manual identity. A normal install holds with the reason
+                // instead of joining a network the gateway never issued.
                 self.active_bootstrap = None;
-                self.bootstrap_not_served = matches!(error, BootstrapError::EndpointUnavailable);
-                self.bootstrap_error = match error {
-                    BootstrapError::EndpointUnavailable => None,
-                    other => Some(other.to_string()),
-                };
+                self.bootstrap_error = Some(error.to_string());
             }
         }
-    }
-
-    /// The Router address that is reachable right now, when the running backend
-    /// is a No-TUN forward.
-    ///
-    /// No-TUN modes route nothing but the port they forward, so the overlay
-    /// address in `router_lan_url` is unreachable by definition; the forward is
-    /// the same Router behind `127.0.0.1`. TUN routes the overlay address itself
-    /// and needs no substitute of its own, so this returns `None` there.
-    fn router_forward_base_url(&self) -> Option<String> {
-        let ActiveBackend::InProcess {
-            effective_mode,
-            local_forward_port,
-            ..
-        } = &self.backend
-        else {
-            return None;
-        };
-        if *effective_mode != EasyTierEffectiveMode::NoTun {
-            return None;
-        }
-        let target = parse_router_lan_target(&self.settings.router_lan_url).ok()?;
-        Some(target.forward_base_url(*local_forward_port))
     }
 
     /// Where the identity in effect came from, for the panel and for logs.
+    ///
+    /// `Local` now means a manual identity, i.e. values the user typed. A
+    /// gateway-mode start that is holding has no identity in effect at all, and
+    /// reports `Gateway` with `bootstrapError` explaining the gap.
     fn bootstrap_source(&self) -> BootstrapSource {
         if !self.settings.enabled {
             BootstrapSource::Disabled
         } else if self.active_bootstrap.is_some() {
             BootstrapSource::Gateway
-        } else {
+        } else if self.settings.identity == EasyTierIdentity::Manual {
             BootstrapSource::Local
+        } else {
+            BootstrapSource::Gateway
         }
-    }
-
-    /// The local settings with the bootstrap chain resolved.
-    fn effective_settings(&self, mut settings: EasyTierSettings) -> EasyTierSettings {
-        match &self.active_bootstrap {
-            Some(response) => apply_bootstrap(&mut settings, response),
-            None => defaults_overlay(&mut settings),
-        }
-        settings
     }
 
     /// The loopback forward the Host link needs in No-TUN mode.
@@ -458,9 +441,37 @@ impl EasyTierManager {
 
     /// `apply_settings` with a credential source for the gateway identity.
     ///
-    /// Every caller that owns the database passes one; the elevated TUN runner
-    /// and tests do not, and fall back to the local configuration.
+    /// Every caller that owns the database passes one; a manual identity does not
+    /// need it, and neither does the elevated TUN runner, which receives the
+    /// identity already resolved inside its spec.
     pub async fn apply_settings_with(
+        &mut self,
+        data_dir: &Path,
+        next_settings: EasyTierSettings,
+        force_restart: bool,
+        credentials: Option<&dyn BootstrapCredentialProvider>,
+    ) {
+        self.start_from_settings(data_dir, next_settings, force_restart, credentials)
+            .await;
+    }
+
+    /// Re-read the gateway identity, bypassing the cached answer.
+    ///
+    /// The Router row's endpoint or key changed, so the answer in hand belongs to
+    /// a gateway this account may no longer be bound to. One fetch, one restart:
+    /// a retry loop would only walk into the gateway's per-IP lockout.
+    pub async fn refresh_identity_with(
+        &mut self,
+        data_dir: &Path,
+        next_settings: EasyTierSettings,
+        credentials: Option<&dyn BootstrapCredentialProvider>,
+    ) {
+        self.bootstrap_cache.clear();
+        self.apply_settings_with(data_dir, next_settings, true, credentials)
+            .await;
+    }
+
+    async fn start_from_settings(
         &mut self,
         data_dir: &Path,
         next_settings: EasyTierSettings,
@@ -498,24 +509,42 @@ impl EasyTierManager {
 
         // The gateway identity is fetched once per settings change, not per
         // request: `resolve_minih_router_endpoint` runs on the chat path and
-        // must never pay a network round trip there.
-        self.refresh_bootstrap(credentials).await;
-        // The answer supplies peers and the Router's overlay address, which the
-        // start needs, so it has to be in hand before the tunnel comes up. Keep
-        // the user's settings: a later attempt resolves them again from scratch
-        // instead of layering an answer onto an already-answered set.
-        let raw_settings = self.settings.clone();
-        self.settings = self.effective_settings(raw_settings.clone());
+        // must never pay a network round trip there. It has to be in hand before
+        // the tunnel comes up, because it decides whether the tunnel comes up.
+        if self.settings.identity == EasyTierIdentity::Gateway {
+            self.refresh_bootstrap(credentials).await;
+        } else {
+            // A manual identity is what the user typed; asking the gateway would
+            // only offer an answer this mode deliberately ignores.
+            self.active_bootstrap = None;
+            self.bootstrap_error = None;
+        }
+
+        let effective = match decide(
+            &self.settings,
+            self.active_bootstrap.as_ref(),
+            self.bootstrap_error.as_deref(),
+        ) {
+            Decision::Start(effective) => effective,
+            // Hold: no identity, so no tunnel. The backend stays Disabled and the
+            // reason travels to the panel through `bootstrap_error`, where the
+            // user can act on it instead of seeing an unexplained failure.
+            Decision::Hold(reason) => {
+                self.last_error = None;
+                self.bootstrap_error = Some(reason);
+                return;
+            }
+        };
 
         let elevated = is_current_process_elevated();
-        let try_tun_in_process = match self.settings.mode {
+        let try_tun_in_process = match effective.mode {
             EasyTierMode::Tun | EasyTierMode::Auto => elevated,
             EasyTierMode::NoTun => false,
         };
 
         if try_tun_in_process {
             match self
-                .start_in_process(false, EasyTierEffectiveMode::Tun)
+                .start_in_process(&effective, false, EasyTierEffectiveMode::Tun)
                 .await
             {
                 Ok(()) => return,
@@ -527,7 +556,7 @@ impl EasyTierManager {
         }
 
         if let Err(error) = self
-            .start_in_process(true, EasyTierEffectiveMode::NoTun)
+            .start_in_process(&effective, true, EasyTierEffectiveMode::NoTun)
             .await
         {
             tracing::warn!(%error, "EasyTier no-tun start failed");
@@ -535,37 +564,9 @@ impl EasyTierManager {
             return;
         }
 
-        // A cold start in No-TUN mode has no forward yet, so the request above
-        // went to an overlay address this mode cannot route. Now that the tunnel
-        // is up, ask once through the forward; when it answers, restart once so
-        // the answered identity and the Host-link forward take effect. The answer
-        // is cached, so the restarted start reuses it instead of asking again.
-        // A restart that failed already left its own reason: do not overwrite it
-        // with the TUN notice below, which would hide a broken channel.
-        let mut restart_failed = false;
-        if self.active_bootstrap.is_none()
-            && !self.bootstrap_not_served
-            && self.router_forward_base_url().is_some()
-        {
-            self.refresh_bootstrap(credentials).await;
-            if self.active_bootstrap.is_some() {
-                tracing::info!("bootstrap answered through the no-tun forward; restarting once");
-                self.settings = self.effective_settings(raw_settings);
-                self.stop_current().await;
-                if let Err(error) = self
-                    .start_in_process(true, EasyTierEffectiveMode::NoTun)
-                    .await
-                {
-                    tracing::warn!(%error, "EasyTier no-tun restart failed");
-                    self.last_error = Some(error);
-                    restart_failed = true;
-                }
-            }
-        }
-
-        // Reached after the restart as well: a user who configured TUN without
-        // the privileges it needs is running No-TUN, and has to be told.
-        if !restart_failed && self.settings.mode == EasyTierMode::Tun && !elevated {
+        // A user who configured TUN without the privileges it needs is running
+        // No-TUN, and has to be told.
+        if effective.mode == EasyTierMode::Tun && !elevated {
             self.last_error = Some(
                 "TUN mode requires administrator privileges; running in No-TUN mode until elevated"
                     .to_string(),
@@ -581,10 +582,24 @@ impl EasyTierManager {
             self.settings.enabled = true;
         }
 
+        // Only an already-issued identity may run with privileges: the elevated
+        // runner receives the resolved settings in its spec and never fetches.
+        let resolved = match decide(
+            &self.settings,
+            self.active_bootstrap.as_ref(),
+            self.bootstrap_error.as_deref(),
+        ) {
+            Decision::Start(resolved) => resolved,
+            Decision::Hold(reason) => {
+                self.bootstrap_error = Some(reason);
+                return Ok(self.status(None).await);
+            }
+        };
+
         if is_current_process_elevated() {
             self.stop_current().await;
             self.settings.mode = EasyTierMode::Tun;
-            self.start_in_process(false, EasyTierEffectiveMode::Tun)
+            self.start_in_process(&resolved, false, EasyTierEffectiveMode::Tun)
                 .await?;
             return Ok(self.status(None).await);
         }
@@ -600,10 +615,10 @@ impl EasyTierManager {
         std::fs::write(&control_path, b"active")
             .map_err(|e| format!("failed to write easytier control file: {e}"))?;
 
-        let mut tun_settings = self.settings.clone();
+        let mut tun_settings = self.resolved_settings();
         tun_settings.mode = EasyTierMode::Tun;
         let spec = TunRunnerSpec {
-            settings: tun_settings.clone(),
+            settings: tun_settings,
             local_forward_port: local_port,
             status_path: status_path.clone(),
             control_path: control_path.clone(),
@@ -618,7 +633,6 @@ impl EasyTierManager {
             Ok(_snapshot) => {
                 self.stop_current().await;
                 let _ = std::fs::write(&control_path, b"active");
-                self.settings = tun_settings;
                 self.backend = ActiveBackend::ElevatedTun { spec };
                 self.last_error = None;
                 Ok(self.status(None).await)
@@ -631,7 +645,7 @@ impl EasyTierManager {
                 ));
                 if matches!(self.backend, ActiveBackend::Disabled) {
                     let _ = self
-                        .start_in_process(true, EasyTierEffectiveMode::NoTun)
+                        .start_in_process(&resolved, true, EasyTierEffectiveMode::NoTun)
                         .await;
                 }
                 Ok(self.status(None).await)
@@ -669,83 +683,66 @@ impl EasyTierManager {
             .filter(|s| !s.is_empty())
             .unwrap_or(DEFAULT_ROUTER_PUBLIC_URL)
             .to_string();
-        let target = parse_router_lan_target(&self.settings.router_lan_url).ok();
+        // Report the identity a start would use, not the raw saved row: that is
+        // what the panel shows and what the running tunnel was built from.
+        let resolved = self.resolved_settings();
+        let target = parse_router_lan_target(&resolved.router_lan_url).ok();
         let router_lan_url = target
             .as_ref()
             .map(|t| t.normalized_base_url.clone())
-            .unwrap_or_else(|| self.settings.router_lan_url.clone());
+            .unwrap_or_else(|| resolved.router_lan_url.clone());
         let remote_gateway = self.remote_gateway_status();
-
-        if !self.settings.enabled {
-            return EasyTierStatus {
-                enabled: false,
-                configured_mode: self.settings.mode,
-                effective_mode: EasyTierEffectiveMode::Disabled,
-                state: EasyTierConnectionState::Disabled,
-                tun_privileged: is_current_process_elevated(),
-                virtual_ipv4: None,
-                hostname: None,
-                network_name: self.settings.network_name.clone(),
-                peers: self.settings.peers.clone(),
-                bootstrap_peers: self.settings.peers.clone(),
-                peer_count: 0,
-                connected_peers: Vec::new(),
-                router_lan_url,
-                local_forward_port: None,
-                local_forward_url: None,
-                using_lan: false,
-                active_router_base_url: fallback_url.clone(),
-                fallback_router_base_url: fallback_url,
-                router_lan_reachable: false,
-                last_error: self.last_error.clone(),
-                updated_at_ms: now_ms(),
-                dhcp: self.settings.dhcp,
-                static_ipv4: self.settings.ipv4.clone().unwrap_or_default(),
-                bootstrap_source: self.bootstrap_source(),
-                bootstrap_network_name: self
-                    .active_bootstrap
-                    .as_ref()
-                    .map(|b| b.network_name.clone())
-                    .unwrap_or_default(),
-                bootstrap_error: self.bootstrap_error.clone().unwrap_or_default(),
-                remote_gateway: remote_gateway.clone(),
-            };
+        let enabled = self.settings.enabled;
+        // The shared skeleton: a channel that is on but has no backend has been
+        // held for want of an identity, which is an error the panel can explain.
+        let mut status = EasyTierStatus {
+            enabled,
+            configured_mode: self.settings.mode,
+            effective_mode: EasyTierEffectiveMode::Disabled,
+            state: if enabled {
+                EasyTierConnectionState::Error
+            } else {
+                EasyTierConnectionState::Disabled
+            },
+            tun_privileged: is_current_process_elevated(),
+            virtual_ipv4: None,
+            hostname: None,
+            network_name: resolved.network_name.clone(),
+            peers: resolved.peers.clone(),
+            bootstrap_peers: resolved.peers.clone(),
+            peer_count: 0,
+            connected_peers: Vec::new(),
+            router_lan_url,
+            local_forward_port: None,
+            local_forward_url: None,
+            // No tunnel means no LAN route: requests go to the public endpoint.
+            using_lan: false,
+            active_router_base_url: fallback_url.clone(),
+            fallback_router_base_url: fallback_url.clone(),
+            router_lan_reachable: false,
+            last_error: self.last_error.clone(),
+            updated_at_ms: now_ms(),
+            dhcp: resolved.dhcp,
+            static_ipv4: resolved.ipv4.clone().unwrap_or_default(),
+            bootstrap_source: self.bootstrap_source(),
+            bootstrap_network_name: self
+                .active_bootstrap
+                .as_ref()
+                .map(|b| b.network_name.clone())
+                .unwrap_or_default(),
+            bootstrap_error: self.bootstrap_error.clone().unwrap_or_default(),
+            remote_gateway: remote_gateway.clone(),
+            identity: self.settings.identity,
+        };
+        if !enabled {
+            return status;
         }
 
         match &self.backend {
-            ActiveBackend::Disabled => EasyTierStatus {
-                enabled: true,
-                configured_mode: self.settings.mode,
-                effective_mode: EasyTierEffectiveMode::Disabled,
-                state: EasyTierConnectionState::Error,
-                tun_privileged: is_current_process_elevated(),
-                virtual_ipv4: None,
-                hostname: None,
-                network_name: self.settings.network_name.clone(),
-                peers: self.settings.peers.clone(),
-                bootstrap_peers: self.settings.peers.clone(),
-                peer_count: 0,
-                connected_peers: Vec::new(),
-                router_lan_url,
-                local_forward_port: None,
-                local_forward_url: None,
-                using_lan: false,
-                active_router_base_url: fallback_url.clone(),
-                fallback_router_base_url: fallback_url,
-                router_lan_reachable: false,
-                last_error: self.last_error.clone(),
-                updated_at_ms: now_ms(),
-                dhcp: self.settings.dhcp,
-                static_ipv4: self.settings.ipv4.clone().unwrap_or_default(),
-                bootstrap_source: self.bootstrap_source(),
-                bootstrap_network_name: self
-                    .active_bootstrap
-                    .as_ref()
-                    .map(|b| b.network_name.clone())
-                    .unwrap_or_default(),
-                bootstrap_error: self.bootstrap_error.clone().unwrap_or_default(),
-                remote_gateway: remote_gateway.clone(),
-            },
+            // Held, or a start that never got a node up. Everything above already
+            // describes that state; nothing is reachable and nothing is using the
+            // LAN, so the caller keeps dialling the public endpoint.
+            ActiveBackend::Disabled => status,
             ActiveBackend::InProcess {
                 instance,
                 effective_mode,
@@ -760,10 +757,20 @@ impl EasyTierManager {
                 let local_forward_url = target.as_ref().map(|t| t.forward_base_url(local_port));
                 let candidate_url = local_forward_url
                     .clone()
-                    .unwrap_or_else(|| router_lan_url.clone());
+                    .unwrap_or_else(|| status.router_lan_url.clone());
                 let has_peers = !connected_peers.is_empty() || virtual_ipv4.is_some();
                 let reachable = self.check_lan_reachable(&candidate_url, has_peers).await;
-                let state = if reachable {
+                let active_router_base_url = if !reachable {
+                    fallback_url.clone()
+                } else if effective_mode == EasyTierEffectiveMode::Tun {
+                    local_forward_url
+                        .clone()
+                        .unwrap_or_else(|| status.router_lan_url.clone())
+                } else {
+                    candidate_url
+                };
+                status.effective_mode = effective_mode;
+                status.state = if reachable {
                     EasyTierConnectionState::Connected
                 } else if has_peers {
                     EasyTierConnectionState::Degraded
@@ -772,111 +779,25 @@ impl EasyTierManager {
                 } else {
                     EasyTierConnectionState::Connecting
                 };
-                let active_router_base_url = if reachable {
-                    if effective_mode == EasyTierEffectiveMode::Tun {
-                        local_forward_url
-                            .clone()
-                            .unwrap_or_else(|| router_lan_url.clone())
-                    } else {
-                        candidate_url
-                    }
-                } else {
-                    fallback_url.clone()
-                };
-                EasyTierStatus {
-                    enabled: true,
-                    configured_mode: self.settings.mode,
-                    effective_mode,
-                    state,
-                    tun_privileged: is_current_process_elevated()
-                        || effective_mode == EasyTierEffectiveMode::Tun,
-                    virtual_ipv4,
-                    hostname,
-                    network_name: self.settings.network_name.clone(),
-                    peers: self.settings.peers.clone(),
-                    bootstrap_peers: self.settings.peers.clone(),
-                    peer_count: connected_peers.len(),
-                    connected_peers,
-                    router_lan_url,
-                    local_forward_port: Some(local_port),
-                    local_forward_url,
-                    using_lan: reachable,
-                    active_router_base_url,
-                    fallback_router_base_url: fallback_url,
-                    router_lan_reachable: reachable,
-                    last_error: inst_err.or_else(|| self.last_error.clone()),
-                    updated_at_ms: now_ms(),
-                    dhcp: self.settings.dhcp,
-                    static_ipv4: self.settings.ipv4.clone().unwrap_or_default(),
-                    bootstrap_source: self.bootstrap_source(),
-                    bootstrap_network_name: self
-                        .active_bootstrap
-                        .as_ref()
-                        .map(|b| b.network_name.clone())
-                        .unwrap_or_default(),
-                    bootstrap_error: self.bootstrap_error.clone().unwrap_or_default(),
-                    remote_gateway: remote_gateway.clone(),
-                }
+                status.tun_privileged =
+                    status.tun_privileged || effective_mode == EasyTierEffectiveMode::Tun;
+                status.virtual_ipv4 = virtual_ipv4;
+                status.hostname = hostname;
+                status.peer_count = connected_peers.len();
+                status.connected_peers = connected_peers;
+                status.local_forward_port = Some(local_port);
+                status.local_forward_url = local_forward_url;
+                status.using_lan = reachable;
+                status.active_router_base_url = active_router_base_url;
+                status.router_lan_reachable = reachable;
+                status.last_error = inst_err.or_else(|| self.last_error.clone());
+                status
             }
             ActiveBackend::ElevatedTun { spec } => {
                 let snapshot = std::fs::read_to_string(&spec.status_path)
                     .ok()
                     .and_then(|raw| serde_json::from_str::<TunRunnerStatusSnapshot>(&raw).ok());
-                if let Some(snap) = snapshot {
-                    let local_forward_url = target
-                        .as_ref()
-                        .map(|t| t.forward_base_url(snap.local_forward_port));
-                    let candidate_url = local_forward_url
-                        .clone()
-                        .unwrap_or_else(|| router_lan_url.clone());
-                    let has_peers = !snap.peers.is_empty() || snap.virtual_ipv4.is_some();
-                    let reachable = self.check_lan_reachable(&candidate_url, has_peers).await;
-                    let state = if reachable {
-                        EasyTierConnectionState::Connected
-                    } else if has_peers {
-                        EasyTierConnectionState::Degraded
-                    } else {
-                        snap.state
-                    };
-                    let active_router_base_url = if reachable {
-                        candidate_url
-                    } else {
-                        fallback_url.clone()
-                    };
-                    EasyTierStatus {
-                        enabled: true,
-                        configured_mode: self.settings.mode,
-                        effective_mode: EasyTierEffectiveMode::Tun,
-                        state,
-                        tun_privileged: true,
-                        virtual_ipv4: snap.virtual_ipv4,
-                        hostname: snap.hostname,
-                        network_name: self.settings.network_name.clone(),
-                        peers: self.settings.peers.clone(),
-                        bootstrap_peers: self.settings.peers.clone(),
-                        peer_count: snap.peers.len(),
-                        connected_peers: snap.peers,
-                        router_lan_url,
-                        local_forward_port: Some(snap.local_forward_port),
-                        local_forward_url,
-                        using_lan: reachable,
-                        active_router_base_url,
-                        fallback_router_base_url: fallback_url,
-                        router_lan_reachable: reachable,
-                        last_error: snap.last_error.or_else(|| self.last_error.clone()),
-                        updated_at_ms: snap.updated_at_ms,
-                        dhcp: self.settings.dhcp,
-                        static_ipv4: self.settings.ipv4.clone().unwrap_or_default(),
-                        bootstrap_source: self.bootstrap_source(),
-                        bootstrap_network_name: self
-                            .active_bootstrap
-                            .as_ref()
-                            .map(|b| b.network_name.clone())
-                            .unwrap_or_default(),
-                        bootstrap_error: self.bootstrap_error.clone().unwrap_or_default(),
-                        remote_gateway: remote_gateway.clone(),
-                    }
-                } else {
+                let Some(snap) = snapshot else {
                     // Elevated runner exited unexpectedly; fall back seamlessly to No-TUN mode.
                     let data_dir = self.data_dir.clone();
                     let settings = self.settings.clone();
@@ -885,8 +806,41 @@ impl EasyTierManager {
                     if let Some(dir) = data_dir {
                         self.apply_settings(&dir, settings, true).await;
                     }
-                    Box::pin(self.status(Some(&fallback_url))).await
-                }
+                    return Box::pin(self.status(Some(&fallback_url))).await;
+                };
+                let local_forward_url = target
+                    .as_ref()
+                    .map(|t| t.forward_base_url(snap.local_forward_port));
+                let candidate_url = local_forward_url
+                    .clone()
+                    .unwrap_or_else(|| status.router_lan_url.clone());
+                let has_peers = !snap.peers.is_empty() || snap.virtual_ipv4.is_some();
+                let reachable = self.check_lan_reachable(&candidate_url, has_peers).await;
+                status.effective_mode = EasyTierEffectiveMode::Tun;
+                status.state = if reachable {
+                    EasyTierConnectionState::Connected
+                } else if has_peers {
+                    EasyTierConnectionState::Degraded
+                } else {
+                    snap.state
+                };
+                status.tun_privileged = true;
+                status.virtual_ipv4 = snap.virtual_ipv4;
+                status.hostname = snap.hostname;
+                status.peer_count = snap.peers.len();
+                status.connected_peers = snap.peers;
+                status.local_forward_port = Some(snap.local_forward_port);
+                status.local_forward_url = local_forward_url;
+                status.using_lan = reachable;
+                status.active_router_base_url = if reachable {
+                    candidate_url
+                } else {
+                    fallback_url
+                };
+                status.router_lan_reachable = reachable;
+                status.last_error = snap.last_error.or_else(|| self.last_error.clone());
+                status.updated_at_ms = snap.updated_at_ms;
+                status
             }
         }
     }

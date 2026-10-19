@@ -1,20 +1,25 @@
 /**
- * EasyTier virtual LAN status and configuration section on the accounts page.
+ * Network center (virtual LAN) status and configuration on the accounts page.
  *
- * Displays the current tunnel state (Connected / Connecting / Degraded / Error / Disabled),
- * effective operating mode (Mode 1 No-TUN user-space forwarder vs Mode 2 privileged TUN NIC),
- * virtual IPv4, connected peer count, and active routing path, plus controls to reconnect,
- * request administrator privileges for TUN mode, or customize network parameters.
+ * The identity that joins the mesh is issued by the gateway: the section shows
+ * the connection state, the virtual IPv4, the route in use and the network name
+ * the gateway handed out, plus the controls to reconnect or switch between the
+ * two tunnel modes. It never edits the identity, because nobody types it.
+ *
+ * Only developer mode renders this section, and only there can the identity be
+ * configured by hand — the escape hatch for a self-hosted gateway that does not
+ * serve the bootstrap endpoint.
  */
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { SettingsRow } from "../../features/settings/primitives";
 import {
-  EASYTIER_DEFAULT_NETWORK_NAME,
-  EASYTIER_DEFAULT_NETWORK_SECRET,
-  EASYTIER_DEFAULT_PEERS,
-  EASYTIER_DEFAULT_ROUTER_LAN_URL,
   easyTierBootstrapLabel,
+  easyTierDefaultNetworkName,
+  easyTierDefaultPeers,
+  easyTierDefaultRouterLanUrl,
   type EasyTierConnectionState,
+  type EasyTierSettings,
   type EasyTierStatus,
 } from "@minih-agent/shared";
 import { useAppStore } from "../../stores/app-store";
@@ -59,29 +64,33 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
   const { t } = useTranslation();
   const showToast = useAppStore((state) => state.showToast);
   const { load, busy, configure, reconnect, requestElevation } = useEasyTierStatus(revision);
-  const [editing, setEditing] = useState(false);
-  const [networkName, setNetworkName] = useState(EASYTIER_DEFAULT_NETWORK_NAME);
-  const [networkSecret, setNetworkSecret] = useState(EASYTIER_DEFAULT_NETWORK_SECRET);
-  const [peersInput, setPeersInput] = useState(EASYTIER_DEFAULT_PEERS.join(", "));
-  const [staticIpv4, setStaticIpv4] = useState("");
+  // The manual form is closed unless the saved row already asks for a manual
+  // identity: a normal install never sees an identity it could type.
+  const [manualOpen, setManualOpen] = useState(false);
+  const [networkName, setNetworkName] = useState(easyTierDefaultNetworkName);
+  const [networkSecret, setNetworkSecret] = useState("");
+  const [peersInput, setPeersInput] = useState(() => easyTierDefaultPeers().join(", "));
+  const [routerLanUrl, setRouterLanUrl] = useState(easyTierDefaultRouterLanUrl);
   const [dhcp, setDhcp] = useState(true);
-  const [routerLanUrl, setRouterLanUrl] = useState(EASYTIER_DEFAULT_ROUTER_LAN_URL);
+  const [staticIpv4, setStaticIpv4] = useState("");
 
   const status: EasyTierStatus | null = load.data;
 
   useEffect(() => {
-    if (!status || editing) return;
+    if (!status) return;
     const peers = status.bootstrapPeers ?? status.peers ?? [];
-    setNetworkName(status.networkName || EASYTIER_DEFAULT_NETWORK_NAME);
-    setPeersInput(
-      peers.length > 0
-        ? peers.join(", ")
-        : EASYTIER_DEFAULT_PEERS.join(", "),
-    );
-    setRouterLanUrl(status.routerLanUrl || EASYTIER_DEFAULT_ROUTER_LAN_URL);
+    setNetworkName(status.networkName || easyTierDefaultNetworkName());
+    setPeersInput(peers.length > 0 ? peers.join(", ") : easyTierDefaultPeers().join(", "));
+    setRouterLanUrl(status.routerLanUrl || easyTierDefaultRouterLanUrl());
     setDhcp(status.dhcp !== false);
     setStaticIpv4(status.staticIpv4 ?? "");
-  }, [status, editing]);
+  }, [status]);
+
+  // A saved manual identity is a developer choice: keep its form open so the
+  // parameters it depends on stay visible and editable.
+  useEffect(() => {
+    if (status?.identity === "manual") setManualOpen(true);
+  }, [status?.identity]);
 
   if (!status) {
     if (load.state !== "error") return null;
@@ -94,17 +103,16 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
     );
   }
 
-  const bootstrapPeers = status.bootstrapPeers ?? status.peers ?? [];
   const effectiveMode = status.effectiveMode ?? status.configuredMode;
   const modeLabel =
     effectiveMode === "tun"
       ? t("settings.minihRouterLanModeTun")
       : t("settings.minihRouterLanModeNoTun");
-
-  // The gateway issues the network identity when it answered, so the fields it
-  // owns are shown read-only rather than silently ignored on save.
+  const manualIdentity = status.identity === "manual";
+  // The gateway owns the network name; it is shown read-only, never edited.
   const gatewayNetworkName = easyTierBootstrapLabel(status);
-  const gatewayManaged = gatewayNetworkName !== null;
+  // Nothing joined the mesh: say why, because the fix is the user's to make.
+  const holdReason = status.bootstrapError.trim();
 
   const activeRouteText = status.usingLan
     ? t("settings.minihRouterLanRouteActive", {
@@ -114,87 +122,89 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
         endpoint: endpointLabel(status.fallbackRouterBaseUrl) || status.fallbackRouterBaseUrl,
       });
 
+  const reportError = (error: unknown) => {
+    showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
+  };
+
+  // Mode and switch writes carry only the fields they own: the identity and its
+  // secret stay as stored, so a manual identity survives a reconnect.
   const handleToggleEnabled = () => {
     void configure({
       enabled: !status.enabled,
       mode: status.configuredMode,
-      networkName: status.networkName,
-      peers: bootstrapPeers,
-      routerLanUrl: status.routerLanUrl,
-      dhcp: status.dhcp,
-      ipv4: status.dhcp ? "" : status.staticIpv4,
-    }).catch((error: unknown) => {
-      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
-    });
+    }).catch(reportError);
   };
 
   const handleReconnect = () => {
     void reconnect().then(
       () => showToast(t("settings.minihRouterLanReconnected"), { variant: "success" }),
-      (error: unknown) =>
-        showToast(error instanceof Error ? error.message : String(error), { variant: "error" }),
+      reportError,
     );
   };
 
   const handleRequestTun = () => {
-    void requestElevation().then(
-      (next) => {
-        if (next.effectiveMode === "tun") {
-          showToast(t("settings.minihRouterLanTunEnabled"), { variant: "success" });
-        } else {
-          showToast(t("settings.minihRouterLanTunFallback"), { variant: "info" });
-        }
-      },
-      (error: unknown) =>
-        showToast(error instanceof Error ? error.message : String(error), { variant: "error" }),
-    );
+    void requestElevation().then((next) => {
+      showToast(
+        next.effectiveMode === "tun"
+          ? t("settings.minihRouterLanTunEnabled")
+          : t("settings.minihRouterLanTunFallback"),
+        { variant: next.effectiveMode === "tun" ? "success" : "info" },
+      );
+    }, reportError);
   };
 
   const handleSwitchNoTun = () => {
-    void configure({
-      enabled: status.enabled,
-      mode: "no_tun",
-      networkName: status.networkName,
-      peers: bootstrapPeers,
-      routerLanUrl: status.routerLanUrl,
-      dhcp: status.dhcp,
-      ipv4: status.dhcp ? "" : status.staticIpv4,
-    }).then(
+    void configure({ mode: "no_tun" }).then(
       () => showToast(t("settings.minihRouterLanSaved"), { variant: "success" }),
-      (error: unknown) =>
-        showToast(error instanceof Error ? error.message : String(error), { variant: "error" }),
+      reportError,
     );
   };
 
-  const handleSaveSettings = () => {
+  const handleManualToggle = () => {
+    if (manualOpen) {
+      // Closing the switch returns the channel to the gateway-issued identity,
+      // which is the only mode a normal install ever runs.
+      setManualOpen(false);
+      void configure({ identity: "gateway" }).then(
+        () => showToast(t("settings.minihRouterLanSaved"), { variant: "success" }),
+        reportError,
+      );
+      return;
+    }
+    setManualOpen(true);
+  };
+
+  const handleSaveManual = () => {
+    if (!networkSecret.trim()) {
+      showToast(t("settings.minihRouterLanManualSecretRequired"), { variant: "error" });
+      return;
+    }
     const peers = peersInput
       .split(/[\n,]+/)
       .map((item) => item.trim())
       .filter(Boolean);
-    void configure({
+    const next: EasyTierSettings = {
+      identity: "manual",
       enabled: status.enabled,
       mode: status.configuredMode,
-      networkName: networkName.trim() || EASYTIER_DEFAULT_NETWORK_NAME,
-      networkSecret: networkSecret.trim() || EASYTIER_DEFAULT_NETWORK_SECRET,
-      peers: peers.length > 0 ? peers : [...EASYTIER_DEFAULT_PEERS],
-      routerLanUrl: routerLanUrl.trim() || EASYTIER_DEFAULT_ROUTER_LAN_URL,
+      networkName: networkName.trim() || easyTierDefaultNetworkName(),
+      networkSecret: networkSecret.trim(),
+      peers: peers.length > 0 ? peers : easyTierDefaultPeers(),
+      routerLanUrl: routerLanUrl.trim() || easyTierDefaultRouterLanUrl(),
       dhcp,
       ipv4: dhcp ? "" : staticIpv4.trim(),
-    }).then(
-      () => {
-        setEditing(false);
-        showToast(t("settings.minihRouterLanSaved"), { variant: "success" });
-      },
-      (error: unknown) =>
-        showToast(error instanceof Error ? error.message : String(error), { variant: "error" }),
+    };
+    void configure(next).then(
+      () => showToast(t("settings.minihRouterLanSaved"), { variant: "success" }),
+      reportError,
     );
   };
 
   const handleResetDefaults = () => {
-    setNetworkName(EASYTIER_DEFAULT_NETWORK_NAME);
-    setNetworkSecret(EASYTIER_DEFAULT_NETWORK_SECRET);
-    setPeersInput(EASYTIER_DEFAULT_PEERS.join(", "));
-    setRouterLanUrl(EASYTIER_DEFAULT_ROUTER_LAN_URL);
+    setNetworkName(easyTierDefaultNetworkName());
+    setNetworkSecret("");
+    setPeersInput(easyTierDefaultPeers().join(", "));
+    setRouterLanUrl(easyTierDefaultRouterLanUrl());
     setDhcp(true);
     setStaticIpv4("");
   };
@@ -206,9 +216,11 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
           <h4 className="minih-router-models-title">{t("settings.minihRouterLanTitle")}</h4>
           <Badge tone={stateBadgeTone(status.state)}>{t(stateLabelKey(status.state))}</Badge>
           <Badge tone={effectiveMode === "tun" ? "success" : "neutral"}>{modeLabel}</Badge>
-          {gatewayManaged ? (
-            <Badge tone="neutral">{t("settings.minihRouterLanBootstrapGateway")}</Badge>
-          ) : null}
+          <Badge tone={manualIdentity ? "warning" : "neutral"}>
+            {manualIdentity
+              ? t("settings.minihRouterLanIdentityManual")
+              : t("settings.minihRouterLanIdentityGateway")}
+          </Badge>
         </div>
         <div className="minih-router-lan-actions">
           <SettingsToggle
@@ -226,33 +238,14 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
             {t("settings.minihRouterLanReconnect")}
           </Button>
           {effectiveMode !== "tun" ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={busy}
-              onClick={handleRequestTun}
-            >
+            <Button variant="secondary" size="sm" disabled={busy} onClick={handleRequestTun}>
               {t("settings.minihRouterLanRequestTun")}
             </Button>
           ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={busy}
-              onClick={handleSwitchNoTun}
-            >
+            <Button variant="ghost" size="sm" disabled={busy} onClick={handleSwitchNoTun}>
               {t("settings.minihRouterLanSwitchNoTun")}
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy}
-            aria-expanded={editing}
-            onClick={() => setEditing((current) => !current)}
-          >
-            {t("settings.minihRouterLanConfigure")}
-          </Button>
         </div>
       </div>
 
@@ -269,7 +262,8 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
           <dt>{t("settings.minihRouterLanVirtualIp")}</dt>
           <dd>
             <span className="minih-router-stat-value is-compact">
-              {status.virtualIpv4 ?? (status.localForwardPort ? `127.0.0.1:${status.localForwardPort}` : "—")}
+              {status.virtualIpv4 ??
+                (status.localForwardPort ? `127.0.0.1:${status.localForwardPort}` : "—")}
             </span>
           </dd>
         </div>
@@ -285,7 +279,33 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
             <span className="minih-router-stat-value is-compact">{modeLabel}</span>
           </dd>
         </div>
+        <div className="minih-router-stat">
+          <dt>{t("settings.minihRouterLanNetworkName")}</dt>
+          <dd>
+            <span
+              className="minih-router-stat-value is-compact"
+              data-testid="minih-router-lan-network-name"
+            >
+              {gatewayNetworkName ??
+                (manualIdentity
+                  ? status.networkName || "—"
+                  : t("settings.minihRouterLanIdentityPending"))}
+            </span>
+          </dd>
+        </div>
       </dl>
+
+      {holdReason ? (
+        <p className="minih-router-status is-error" role="alert" data-testid="minih-router-lan-hold">
+          <span>{t("settings.minihRouterLanHoldLabel")}</span>
+          <span className="minih-router-status-detail">{holdReason}</span>
+          {manualIdentity ? null : (
+            <span className="minih-router-status-detail">
+              {t("settings.minihRouterLanHoldEndpointHint")}
+            </span>
+          )}
+        </p>
+      ) : null}
 
       {status.lastError ? (
         <p className="minih-router-status is-error" role="alert">
@@ -293,19 +313,26 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
         </p>
       ) : null}
 
-      {editing ? (
+      <SettingsRow
+        title={t("settings.minihRouterLanManualToggle")}
+        description={t("settings.minihRouterLanManualHint")}
+      >
+        <SettingsToggle
+          checked={manualOpen}
+          busy={busy}
+          label={t("settings.minihRouterLanManualToggle")}
+          onChange={handleManualToggle}
+        />
+      </SettingsRow>
+      <p className="minih-router-price-hint">{t("settings.minihRouterLanManualHint")}</p>
+      {manualOpen ? (
         <div className="minih-router-lan-form" data-testid="minih-router-lan-form">
-          {gatewayManaged ? (
-            <p className="minih-router-price-hint">
-              {t("settings.minihRouterLanBootstrapHint")}
-            </p>
-          ) : null}
           <div className="minih-router-lan-grid">
             <Field label={t("settings.minihRouterLanNetworkName")}>
               <Input
                 value={networkName}
                 aria-label={t("settings.minihRouterLanNetworkName")}
-                disabled={busy || gatewayManaged}
+                disabled={busy}
                 onChange={(event) => setNetworkName(event.target.value)}
               />
             </Field>
@@ -315,7 +342,7 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
                 aria-label={t("settings.minihRouterLanNetworkSecret")}
                 showLabel={t("settings.minihRouterLanShowSecret")}
                 hideLabel={t("settings.minihRouterLanHideSecret")}
-                disabled={busy || gatewayManaged}
+                disabled={busy}
                 onChange={(event) => setNetworkSecret(event.target.value)}
               />
             </Field>
@@ -359,7 +386,7 @@ export function EasyTierLanSection({ revision }: { revision: number }) {
             <Button variant="ghost" size="sm" disabled={busy} onClick={handleResetDefaults}>
               {t("settings.minihRouterLanReset")}
             </Button>
-            <Button variant="primary" size="sm" disabled={busy} onClick={handleSaveSettings}>
+            <Button variant="primary" size="sm" disabled={busy} onClick={handleSaveManual}>
               {t("settings.minihRouterLanSave")}
             </Button>
           </div>

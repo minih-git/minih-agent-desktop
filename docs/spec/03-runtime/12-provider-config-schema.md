@@ -453,39 +453,75 @@ address is only a default (`customBaseUrl: true`):
   becomes the default only when no runnable default exists.
 - `vendorKey` is not a models.dev provider, so model metadata resolves through
   the relay rule in "Which publisher a row is read against" below.
-- **Built-in EasyTier virtual LAN channel**: Rust `host-core` embeds an EasyTier
-  virtual LAN node (`networkName: "minih-router"`, bootstrap peers
-  `udp://router.hmini.org:11012` and `tcp://router.hmini.org:11012`, default LAN
-  gateway `http://11.12.0.1:3001/v1`, persisted under `settings.app.easytier`).
-  These are the `minih` brand defaults; a `DESKTOP_BRAND=hungraim` build
-  compiles its own defaults (`hungraim-router` mesh, `router-mesh.hungraim.com:11023`
-  peers, `http://11.123.0.1:3001/v1` gateway, `https://aiapi.hungraim.com/v1`
-  preset URL) from the same brand profile (`packages/shared/src/brand.ts`).
-  The virtual range is `11.12.0.0/24`, chosen so it
-  cannot overlap a private network (`11.11.11.0/24`) the user already runs; a deployment whose
-  gateway sits on another range sets `routerLanUrl`, and pins the gateway's own
-  address with `dhcp: false` plus `ipv4` (an IPv4 literal, `/32` accepted).
-  The gateway may also issue the identity itself: `GET <root>/api/easytier/bootstrap`
-  with `Authorization: Bearer <AccessKey>` answers `networkName`,
-  `networkSecret`, optional `gatewayVirtualIpv4`, optional `peers`, and an
-  optional `ttlSeconds`. A gateway answer takes precedence over the local
-  configuration, which in turn takes precedence over the built-in defaults;
-  only the fields the gateway actually answered are replaced, so a partial
-  response still upgrades the secret. `404` means the gateway has not shipped
-  the endpoint and is a supported configuration, not a failure, and every other
-  failure falls back to the local configuration so the public URL keeps working.
-  The answer is cached under a digest of the AccessKey — the key itself is never
-  retained — for at most seven days and at least a minute, so a rotated key
-  misses and a broken `ttlSeconds` cannot disable caching or pin a compromised
-  key indefinitely. `EasyTierStatus` reports `bootstrapSource`
-  (`gateway` / `local` / `disabled`) and `bootstrapNetworkName`, and the panel
-  marks the gateway-owned fields read-only while a gateway answer is in effect.
-  By default it starts in user-space **No-TUN** mode (`no_tun = true`,
-  `dhcp = true`) with a local loopback TCP port forward
-  (`127.0.0.1:<local_port> -> 11.12.0.1:3001`) requiring no administrator
+- **Network center (virtual LAN) channel**: Rust `host-core` embeds an EasyTier
+  node whose identity is **issued by the gateway** (ADR
+  `network-center-gateway-issued-identity`). Settings live under
+  `settings.app.easytier`, whose `identity` field is `gateway` (default) or
+  `manual`; persisted data written before the field existed reads back as
+  `gateway`.
+- **Strict mode: authenticate first, start second.** Only a successful
+  `GET <root>/api/easytier/bootstrap` with `Authorization: Bearer <AccessKey>`
+  authorises a start. It answers `networkName`, `networkSecret`, optional
+  `gatewayVirtualIpv4`, optional `router_lan_access`, optional `peers`, and an
+  optional `ttlSeconds`. `router_lan_access` (the gateway's own control-plane
+  URL, e.g. `http://11.11.11.10:3001`) is normalized to its `/v1` spelling and
+  becomes `routerLanUrl`; without it the host is derived from
+  `gatewayVirtualIpv4`, keeping the user's port and API path.
+- **No built-in identity, no fallback.** The retired built-in shared secret
+  (`DEFAULT_EASYTIER_NETWORK_SECRET`) is gone from every layer, Rust and TypeScript alike: a checked-in key in a
+  public source tree is a published key, and silently joining that network both
+  undermined the tunnel's confidentiality and sent "LAN first" traffic to the
+  wrong gateway. A failure to obtain an answer — `404` from a gateway that never
+  shipped the endpoint, `401`/`403` from a rejected key, a transport error — does
+  **not** start the tunnel. The channel holds: backend disabled, state `error`,
+  `usingLan: false`, `activeRouterBaseUrl` = the public endpoint, and
+  `EasyTierStatus.bootstrapError` carries the reason. Nothing is retried
+  automatically, because the gateway locks an IP after a handful of failed
+  authentications.
+- **The identity is fetched from the Router row's own address**, which must be
+  reachable without the tunnel; an identity only the tunnel could fetch would be
+  a deadlock. The request therefore never goes through the No-TUN forward.
+- **Manual identity (developer mode only).** `identity: "manual"` uses exactly
+  the parameters the user typed (`networkName`, `networkSecret`, `peers`,
+  `routerLanUrl`) and never asks the gateway; the secret is required and no
+  built-in value stands in for it. Everything else — the status block, the
+  reconnect control, the two tunnel modes — is shown to every profile, but the
+  section itself renders **only in developer mode**, because a normal install has
+  nothing here to configure. User-visible copy calls it the "Network Center"
+  (zh-CN: 网络中心配置) and never names EasyTier; internal identifiers, protocol
+  fields and log names are unchanged.
+- **Cache key: control-plane root + AccessKey digest.** The digest means the key
+  itself is never retained; the root means switching the Router endpoint (or the
+  same key against another gateway) misses instead of serving the previous
+  gateway's identity. Entries live at most seven days and at least a minute, so a
+  broken `ttlSeconds` can neither disable caching nor pin a compromised key
+  indefinitely. `providers.create/update/setSecret/delete` refresh the identity —
+  bypassing the cache, once, fire-and-forget — when the affected row (before or
+  after the write) is `minih-router`; no other row touches the channel.
+- **The credential row is the first `minih-router` row that has both a base URL
+  and a non-empty AccessKey**, in creation order: the same row Settings shows.
+  Taking the first row regardless left the desktop asking nobody while a
+  credentialed row sat behind it.
+- **Brand parameters are prefills only.** `networkName: "minih-router"`, the
+  bootstrap peers and `http://11.12.0.1:3001/v1` are the `minih` brand values a
+  `DESKTOP_BRAND=hungraim` build replaces with its own (`hungraim-router`,
+  `router-mesh.hungraim.com:11023`, `http://11.123.0.1:3001/v1`,
+  `https://aiapi.hungraim.com/v1`) from the same brand profile
+  (`packages/shared/src/brand.ts`). They prefill manual mode and never start a
+  gateway-mode tunnel. The virtual range is `11.12.0.0/24`, chosen so it cannot
+  overlap a private network (`11.11.11.0/24`) the user already runs; a deployment
+  whose gateway sits on another range pins its address with `dhcp: false` plus
+  `ipv4` (an IPv4 literal, `/32` accepted).
+- `EasyTierStatus` reports the mode it ran in (`identity`), `bootstrapSource`
+  (`gateway` / `local` / `disabled`, where `local` now means a manual identity)
+  and `bootstrapNetworkName`. By default it starts in user-space **No-TUN** mode
+  (`no_tun = true`, `dhcp = true`) with a local loopback TCP port forward
+  (`127.0.0.1:<local_port> -> <gateway overlay>:3001`) requiring no administrator
   privileges; users may optionally request administrator elevation to switch into
   system **TUN** mode (`--easytier-tun-runner`), automatically falling back to
-  `no_tun` if elevation is declined or unavailable. When the LAN gateway is
+  `no_tun` if elevation is declined or unavailable. The elevated runner receives
+  the identity already resolved inside its spec and never fetches one, so no
+  privileged process starts without an identity. When the LAN gateway is
   reachable, `minih-router` control-plane (`/api/*`), model discovery, connection
   test, and chat/subagent runtime requests prefer the LAN tunnel and
   automatically retry against the row's configured public `baseUrl` on transport
@@ -523,8 +559,9 @@ Settings uses for the balance and model plaza (§6, Minih Router account).
   An absent object, a `null`, or a `404` answer means the Router does not offer
   account mode: the desktop keeps the self-hosted enrollment flow (Gateway URL,
   CA PEM, one-time enrollment code) and shows no account-mode affordances. The
-  object is covered by the bootstrap cache rules above — same AccessKey-digest
-  key, same seven-day ceiling, same one-minute floor — so it is never cached
+  object is covered by the bootstrap cache rules above — same
+  control-plane-root-plus-AccessKey-digest key, same seven-day ceiling, same
+  one-minute floor — so it is never cached
   longer than the answer it arrived in. It carries no secret: a CA certificate is public, and
   the field never carries the AccessKey, which goes only to the Gateway in the
   enrollment request.
