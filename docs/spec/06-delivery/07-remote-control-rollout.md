@@ -822,6 +822,29 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   run against a real desktop Host, while routing through a live Router remains
   the deployment gate.
 
+- R7 account mode was unavailable on a real machine, with no reason (fixed
+  2026-10-19, D666): the boot path started the virtual LAN channel **without a
+  credential source**, so the bootstrap request was never made — `main.rs` called
+  the credential-less spawn, `apply_settings` forwarded `None`, and
+  `refresh_bootstrap` returned before sending anything. Account mode therefore
+  reported `available: false` with an empty `unavailableReason` even though the
+  tunnel was connected with peers: only `easytier.configure`, `easytier.reconnect`
+  or a settings write ever passed the database-backed provider. The channel now
+  starts with that provider at boot as well (`spawn_at_boot`), so one start is
+  enough. The second defect was the address: No-TUN modes route nothing but the
+  port they forward, so asking the Router's overlay address there cannot work
+  (`usingLan` already judged reachability by the forward, which is why the page
+  said "connected" while the answer never arrived). The request now goes to the
+  loopback forward in No-TUN mode, and a start that came up without an answer
+  asks once more through that forward and restarts the tunnel a single time so
+  the answered identity applies; TUN mode keeps asking the configured address.
+  Third, an unavailable account mode always names a reason — the last bootstrap
+  failure, that the configuration has not been fetched yet, or that the Router
+  does not offer account mode at all — instead of an empty string; and a TUN
+  start that falls back to No-TUN still reports that it needs administrator
+  privileges even when the identity arrived through the forward. Covered by `crates/host-core/src/easytier_net/boot_bootstrap_tests.rs`
+  (boot path, missing-credential reason, No-TUN forward, TUN unchanged).
+
 - R7 account mode reached nobody on a fresh install (fixed 2026-10-19, v0.22.0
   regression): the settings page only learned the account-mode answer while the
   link was starting, and the link only starts with the user's remote-control

@@ -23,6 +23,12 @@ use super::tun_runner::{
     TunRunnerSpec, TunRunnerStatusSnapshot,
 };
 
+/// Why account mode is off when the host never had a credential source.
+///
+/// A start without one cannot ask the Router anything, and an empty reason left
+/// the panel showing "unavailable" with nothing behind it.
+const NO_CREDENTIAL_SOURCE: &str = "no Router credential source is available to this start";
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EasyTierPeerSummary {
@@ -132,6 +138,10 @@ pub struct EasyTierManager {
     bootstrap_cache: BootstrapCache,
     /// Why the last bootstrap attempt did not apply.
     bootstrap_error: Option<String>,
+    /// The gateway answered 404 for the bootstrap endpoint, which is a supported
+    /// configuration: asking again through the No-TUN forward would only repeat
+    /// an answer that is already known.
+    bootstrap_not_served: bool,
     /// The answer currently in effect, so the panel can show the source.
     active_bootstrap: Option<BootstrapResponse>,
     /// Shared HTTP client, so the TLS session pool survives across calls.
@@ -148,6 +158,7 @@ impl Default for EasyTierManager {
             probe_cache: None,
             bootstrap_cache: BootstrapCache::default(),
             bootstrap_error: None,
+            bootstrap_not_served: false,
             active_bootstrap: None,
             http_client: std::sync::Arc::new(bootstrap_client()),
         }
@@ -283,17 +294,26 @@ impl EasyTierManager {
         self.bootstrap_error = None;
         let Some(provider) = credentials else {
             // No credential source: keep whatever answer is already in effect so
-            // a restart inside the elevated runner does not drop the network.
+            // a restart inside the elevated runner does not drop the network. With
+            // nothing in effect the panel still has to say why it is off, or the
+            // user sees an empty state they cannot act on.
             if self.active_bootstrap.is_none() {
-                self.bootstrap_error = None;
+                self.bootstrap_error = Some(NO_CREDENTIAL_SOURCE.to_string());
             }
             return;
         };
-        let Some((base_url, access_key)) = provider.minih_router_credential().await else {
+        let Some((configured_base_url, access_key)) = provider.minih_router_credential().await
+        else {
             self.active_bootstrap = None;
             self.bootstrap_error = Some(BootstrapError::NoAccessKey.to_string());
             return;
         };
+        // No-TUN reaches the Router only through the forward the tunnel installs;
+        // asking the configured overlay address there cannot work. TUN routes the
+        // overlay address itself, so it keeps the configured one.
+        let base_url = self
+            .router_forward_base_url()
+            .unwrap_or(configured_base_url);
 
         let digest = access_key_digest(&access_key);
         let now = Instant::now();
@@ -307,17 +327,42 @@ impl EasyTierManager {
                 self.bootstrap_cache
                     .insert(digest, response.clone(), Instant::now());
                 self.active_bootstrap = Some(response);
+                self.bootstrap_not_served = false;
             }
             Err(error) => {
                 // A 404 means the gateway has not shipped the endpoint; that is a
                 // supported configuration and is not worth surfacing as an error.
                 self.active_bootstrap = None;
+                self.bootstrap_not_served = matches!(error, BootstrapError::EndpointUnavailable);
                 self.bootstrap_error = match error {
                     BootstrapError::EndpointUnavailable => None,
                     other => Some(other.to_string()),
                 };
             }
         }
+    }
+
+    /// The Router address that is reachable right now, when the running backend
+    /// is a No-TUN forward.
+    ///
+    /// No-TUN modes route nothing but the port they forward, so the overlay
+    /// address in `router_lan_url` is unreachable by definition; the forward is
+    /// the same Router behind `127.0.0.1`. TUN routes the overlay address itself
+    /// and needs no substitute of its own, so this returns `None` there.
+    fn router_forward_base_url(&self) -> Option<String> {
+        let ActiveBackend::InProcess {
+            effective_mode,
+            local_forward_port,
+            ..
+        } = &self.backend
+        else {
+            return None;
+        };
+        if *effective_mode != EasyTierEffectiveMode::NoTun {
+            return None;
+        }
+        let target = parse_router_lan_target(&self.settings.router_lan_url).ok()?;
+        Some(target.forward_base_url(*local_forward_port))
     }
 
     /// Where the identity in effect came from, for the panel and for logs.
@@ -455,7 +500,12 @@ impl EasyTierManager {
         // request: `resolve_minih_router_endpoint` runs on the chat path and
         // must never pay a network round trip there.
         self.refresh_bootstrap(credentials).await;
-        self.settings = self.effective_settings(self.settings.clone());
+        // The answer supplies peers and the Router's overlay address, which the
+        // start needs, so it has to be in hand before the tunnel comes up. Keep
+        // the user's settings: a later attempt resolves them again from scratch
+        // instead of layering an answer onto an already-answered set.
+        let raw_settings = self.settings.clone();
+        self.settings = self.effective_settings(raw_settings.clone());
 
         let elevated = is_current_process_elevated();
         let try_tun_in_process = match self.settings.mode {
@@ -482,7 +532,40 @@ impl EasyTierManager {
         {
             tracing::warn!(%error, "EasyTier no-tun start failed");
             self.last_error = Some(error);
-        } else if self.settings.mode == EasyTierMode::Tun && !elevated {
+            return;
+        }
+
+        // A cold start in No-TUN mode has no forward yet, so the request above
+        // went to an overlay address this mode cannot route. Now that the tunnel
+        // is up, ask once through the forward; when it answers, restart once so
+        // the answered identity and the Host-link forward take effect. The answer
+        // is cached, so the restarted start reuses it instead of asking again.
+        // A restart that failed already left its own reason: do not overwrite it
+        // with the TUN notice below, which would hide a broken channel.
+        let mut restart_failed = false;
+        if self.active_bootstrap.is_none()
+            && !self.bootstrap_not_served
+            && self.router_forward_base_url().is_some()
+        {
+            self.refresh_bootstrap(credentials).await;
+            if self.active_bootstrap.is_some() {
+                tracing::info!("bootstrap answered through the no-tun forward; restarting once");
+                self.settings = self.effective_settings(raw_settings);
+                self.stop_current().await;
+                if let Err(error) = self
+                    .start_in_process(true, EasyTierEffectiveMode::NoTun)
+                    .await
+                {
+                    tracing::warn!(%error, "EasyTier no-tun restart failed");
+                    self.last_error = Some(error);
+                    restart_failed = true;
+                }
+            }
+        }
+
+        // Reached after the restart as well: a user who configured TUN without
+        // the privileges it needs is running No-TUN, and has to be told.
+        if !restart_failed && self.settings.mode == EasyTierMode::Tun && !elevated {
             self.last_error = Some(
                 "TUN mode requires administrator privileges; running in No-TUN mode until elevated"
                     .to_string(),
@@ -838,3 +921,7 @@ impl EasyTierManager {
 #[cfg(test)]
 #[path = "runtime_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "boot_bootstrap_tests.rs"]
+mod boot_bootstrap_tests;
