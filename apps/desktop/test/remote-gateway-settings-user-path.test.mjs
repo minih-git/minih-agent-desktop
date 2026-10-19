@@ -29,7 +29,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
-import { RemoteGatewayPage } from "../../apps/desktop/src/components/settings/RemoteGatewayPage";
+import { RemoteControlSection } from "../../apps/desktop/src/components/settings/RemoteControlSection";
 
 await i18n.use(initReactI18next).init({ lng: "en", keySeparator: false,
   resources: { en: { translation: flattenCatalog(catalogs.en) } }, interpolation: { escapeValue: false } });
@@ -116,7 +116,7 @@ window.minihAgent = { platform: "darwin", channels: IPC,
 
 let view;
 const host = () => document.getElementById("root");
-const mount = () => { view = createRoot(host()); flushSync(() => view.render(React.createElement(RemoteGatewayPage))); };
+const mount = () => { view = createRoot(host()); flushSync(() => view.render(React.createElement(RemoteControlSection))); };
 const frame = () => new Promise(requestAnimationFrame);
 const until = async (condition, message) => {
   const end = performance.now() + 5000;
@@ -156,8 +156,18 @@ window.remoteGatewayProbe = async () => {
   check(switchControl().disabled, "switch must stay disabled before registration");
   check(document.body.textContent.includes(label("stateDisabled")), "disabled state copy missing");
 
+  // (a2) The self-hosted path is folded away by default: a user who never
+  // registered sees the advanced area closed, and opening it is what reveals
+  // the address, CA, and code fields.
+  const advanced = document.querySelector('[data-testid="remote-gateway-advanced"]');
+  check(advanced, "advanced self-hosted area missing");
+  check(advanced.open === false, "the self-hosted area must start collapsed");
+  check(advanced.textContent.includes(label("advancedTitle")), "advanced title missing");
+
   // (b) A failed registration shows the failure; a build without the transport
   // shows its own reason instead of a generic one.
+  await click(advanced.querySelector("summary"), "advanced summary");
+  check(advanced.open === true, "the self-hosted area did not open");
   await fill(label("url"), "wss://gateway.test");
   await fill(label("caPem"), "-----BEGIN CERTIFICATE-----");
   await fill(label("registrationCode"), "registration-code");

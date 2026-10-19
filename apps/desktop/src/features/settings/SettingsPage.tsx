@@ -62,7 +62,6 @@ import { AgentSkillsPage } from "../../components/settings/AgentSkillsPage";
 import { AgentMcpPage } from "../../components/settings/AgentMcpPage";
 import { AgentSubagentsPage } from "../../components/settings/AgentSubagentsPage";
 import { RemoteHostsPage } from "../../components/settings/RemoteHostsPage";
-import { RemoteGatewayPage } from "../../components/settings/RemoteGatewayPage";
 import { VoiceSettingsSection } from "./voice/VoiceSettingsSection";
 import {
   CommandShellRow,
@@ -260,7 +259,6 @@ export function SettingsPage() {
       projects: <IconArchive size={14} />,
       sync: <IconCloudDown size={14} />,
       remoteHosts: <IconGlobe size={14} />,
-      remoteGateway: <IconGlobe size={14} />,
       voice: <IconMic size={14} />,
       about: <IconInfo size={14} />,
     };
@@ -644,8 +642,6 @@ export function SettingsPage() {
           {tab === "sync" && !tabHidden && <ConfigSyncPage />}
 
           {tab === "remoteHosts" && !tabHidden && <RemoteHostsPage />}
-
-          {tab === "remoteGateway" && !tabHidden && <RemoteGatewayPage />}
 
           {tab === "about" && (
             <div className="settings-stack">

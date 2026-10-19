@@ -331,7 +331,7 @@ Minih Router 是自有的模型网关，排在命名预设的第一位。它是�
   安全规格 §5.1）、`localForwardPort`（仅 No-TUN 模式有值）与 `unavailableReason`。
   TUN 模式不装第二条转发：它自行路由组网地址、直连 Gateway。Router 不下发该对象时行为与
   现在完全一致——只有一条转发，`remoteGateway.available` 为 false。
-- **桌面据该状态完成注册（D666，工作包 E2）**：设置 ▸ 远程网关只读
+- **桌面据该状态完成注册（D666，工作包 E2）**：设置 ▸ 账户 ▸ 远程控制只读
   `EasyTierStatus.remoteGateway`，绝不自己解析 bootstrap。Router 下发可用端点**且**用户已
   打开远程控制时，桌面以账户 AccessKey（`Authorization: Bearer` 加 CSR）向 `dialUrl` 注册，
   固定 `caPem`、校验 `tlsServerName`；AccessKey 在主进程内从已保存的 `minih-router` provider
