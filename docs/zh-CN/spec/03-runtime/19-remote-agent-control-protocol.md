@@ -338,6 +338,14 @@ typebox 来源生成。
   `GET`/`HEAD`（`Sec-Fetch-Site: same-origin`，H5 的读取与事件流都是这种形态）。
   `Origin` 存在但不在白名单内一律拒绝，修改类请求永不豁免；CORS 绝不返回 `*`。
   撤销仍在服务端生效：已撤销令牌返回 `401`。
+- 每个命令与每个事件流都会发送 `x-minih-racp-client: <name>/<version>` 与
+  `content-type: application/json`；cookie profile 另加 `x-csrf-token`，header profile
+  另加 `authorization`，续传的事件流另加 `last-event-id`。原生 webview 对这些都是跨域请求，
+  因此预检应答必须放行这一整组头——客户端与 Gateway 共用同一份清单
+  （`RACP_HTTP_CORS_ALLOW_HEADERS`），因为"客户端新加了一个头、网关没放行"只会在手机上
+  失败。CORS 安全列表头（`accept` 等）不属于该清单。凡是白名单内的来源，成功与失败的响应
+  都带 `access-control-expose-headers: x-trace-id`，跨域客户端才能从失败中读到追踪 id，
+  而不是拿到 `null`。
 - 命令按 `(device, host)` 复用一条逻辑连接，每个事件流单独占一条，每设备最多 4 条流，
   避免占满 Host 的 `maxConnectedClients`。Host link 随 R4 交付（D665，ADR 0331），SSH 隧道拓扑不使用它。
 浏览器

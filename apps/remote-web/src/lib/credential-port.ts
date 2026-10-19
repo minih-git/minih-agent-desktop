@@ -10,6 +10,8 @@
  * `credentialFor` is synchronous because screens call it while rendering;
  * `pair` and `forget` are async because a secure-storage write or delete is.
  */
+import { RACP_HTTP_HEADERS } from "@minih-agent/shared";
+
 import { defaultDeviceLabel } from "./device-label.js";
 import type { OperationFailure } from "./errors.js";
 import type { HostRegistry, HostRegistryEntry } from "./host-registry.js";
@@ -71,10 +73,19 @@ export interface CredentialPort {
   adoptAccountDevice(request: AccountAdoption): Promise<AccountAdoptionOutcome>;
 }
 
-/** Headers that carry the credential on a raw `fetch` (the probe, the pairing call). */
+/**
+ * Headers that carry the credential on a raw `fetch` (the probe, the pairing
+ * call).
+ *
+ * The names come from the shared RACP header contract, which is also what the
+ * Gateway allows through its CORS preflight: a native app sends these
+ * cross-origin, so a rename on one side alone breaks every command there.
+ */
 export function credentialHeaders(credential: HostCredential): Record<string, string> {
-  if (credential.kind === "cookie") return { "x-csrf-token": credential.csrfToken };
-  return { authorization: `Bearer ${credential.token}` };
+  if (credential.kind === "cookie") {
+    return { [RACP_HTTP_HEADERS.csrf]: credential.csrfToken };
+  }
+  return { [RACP_HTTP_HEADERS.authorization]: `Bearer ${credential.token}` };
 }
 
 export type WebCookieCredentialPortOptions = {
