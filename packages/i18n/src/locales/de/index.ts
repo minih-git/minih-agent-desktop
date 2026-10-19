@@ -384,6 +384,8 @@ export const de = {
       "completed": "{{completed}}/{{total}} erledigt",
       "updated": "Checkliste aktualisiert",
       "updating": "Checkliste wird aktualisiert",
+      "expand": "Checkliste ausklappen",
+      "collapse": "Checkliste einklappen",
       "status": { "pending": "Offen", "in_progress": "In Bearbeitung", "completed": "Erledigt", "cancelled": "Abgebrochen" }
     },
     "queuedPrompts": "Nachrichten in der Warteschlange",
@@ -683,6 +685,20 @@ export const de = {
     "renameCancel": "Abbrechen",
     "renameSave": "Speichern",
     "renameSaving": "Speichern…"
+  },
+  backgroundTasks: {
+    running: "Läuft",
+    exited: "Beendet",
+    failed: "Fehlgeschlagen",
+    stopped: "Gestoppt",
+    title: "Hintergrundbefehle",
+    loadFailed: "Hintergrundbefehle konnten nicht aktualisiert werden. Erneuter Versuch...",
+    outputFailed: "Die Ausgabe dieses Befehls konnte nicht gelesen werden.",
+    stopFailed: "Dieser Befehl konnte nicht gestoppt werden. Erneut versuchen.",
+    output: "Ausgabe",
+    stop: "Stoppen",
+    stopping: "Stoppe…",
+    dismiss: "Schließen",
   },
   planHistory: {
     pending: "Genehmigung ausstehend",

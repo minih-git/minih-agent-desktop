@@ -2622,3 +2622,17 @@ window, and the owner's own failure code arrives through the main window, which
 is the frame that ran the action. A widget action never changes call state by
 itself: it is forwarded to the owner frame, and the resulting state reaches the
 widget through the same authoritative view the owner receives.
+
+## Background task controls
+
+The existing allowlisted preload invoke/event transport also exposes:
+
+- `minih-agent-desktop/backgroundTasks/list({})`
+- `minih-agent-desktop/backgroundTasks/output({ id })`
+- `minih-agent-desktop/backgroundTasks/stop({ id })`
+- `minih-agent-desktop/backgroundTasks/event/changed({ version })`
+
+Main validates a task id and relays to host-core. Renderer reloads do not own or
+terminate a process; the Host owns output, state, explicit stops, and exit cleanup.
+Payloads follow [Background tasks](06-host-rpc-protocol.md#background-tasks).
+No new renderer filesystem access or transport privilege is granted.
