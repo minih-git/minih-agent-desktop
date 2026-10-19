@@ -7863,6 +7863,40 @@ describe("DesktopAgentRuntime subagents", () => {
     await runtime.dispose();
   });
 
+  it("never hands a delegate the session-messaging tools", async () => {
+    const inheritor: SubagentDefinition = {
+      name: "messenger",
+      description: "Would like to talk to other sessions.",
+      tools: [],
+      inheritTools: true,
+      prompt: "Do the job.",
+      source: "user",
+    };
+    const runtime = createRuntime({ subagents: [inheritor] });
+    // The parent keeps them: handing work to another session is its own
+    // capability, so delegation must not remove it from the session itself.
+    for (const name of ["SessionList", "SessionSend", "SessionResult"]) {
+      expect((runtime as any).deferredToolNames.has(name)).toBe(true);
+    }
+
+    subagentRuns.calls.length = 0;
+    subagentRuns.deferred = false;
+    await taskTool(runtime).execute("no-messaging", {
+      agent: "messenger",
+      task: "Talk to another session.",
+    });
+
+    expect(subagentRuns.calls).toHaveLength(1);
+    const names = subagentRuns.calls[0].tools.map((tool: { name: string }) => tool.name);
+    for (const name of ["SessionList", "SessionSend", "SessionResult"]) {
+      expect(names).not.toContain(name);
+      expect(subagentRuns.calls[0].systemPrompt).not.toContain(name);
+    }
+    expect(names).toContain("Read");
+
+    await runtime.dispose();
+  });
+
   it("keeps a private definition pin out of the override catalog and other delegates (#286)", async () => {
     const remote = { ...provider, id: "remote", name: "Remote", modelId: "remote-model", modelConfig: undefined };
     const host = { call: vi.fn().mockRejectedValue(new Error("not enabled for delegation")) };

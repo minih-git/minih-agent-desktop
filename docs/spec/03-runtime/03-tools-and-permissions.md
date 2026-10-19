@@ -684,13 +684,15 @@ A document may opt into the parent session's live tool catalog with
 `tools: inherit` or `tools: [inherit, Bash]` (ADR 0246 / D415). At `Task` spawn
 the runtime unions `toolCatalog` keys (including deferred plugin/MCP tools)
 with any assignable extras, then drops `Task` / `TaskWait` / `TaskList` /
-`TaskStop`, `EnterPlanMode` / `EnterGoalMode`, `asktool`, `new_context`,
-`ToolSearch`, and the learned-memory tools `SessionHistorySearch` / `MemorySearch` /
-`MemoryRemember`.
-Builtins do not opt in. `inherit` is visible in the Markdown and
-in Settings; host-core keeps the token so an inherit-only document still
-loads. Plugin tools, `Skill`, and MCP tools are therefore available to a
-delegate only through this opt-in, never by putting those names on the
+`tools: inherit` or `tools: [inherit, Bash]` (ADR 0246 / D415). At `Task` spawn
+the runtime unions `toolCatalog` keys (including deferred plugin/MCP tools)
+with any assignable extras, then drops `Task` / `TaskWait` / `TaskList` /
+`TaskStop`, `EnterPlanMode` / `EnterGoalMode`, `TodoWrite`, `asktool`,
+`new_context`, `ToolSearch`, the learned-memory tools `SessionHistorySearch` /
+`MemorySearch` / `MemoryRemember`, and the session-messaging tools `SessionList` /
+`SessionSend` / `SessionResult`. That deny list is the gate in both directions:
+the same names are dropped from a definition's own `tools` list, so naming one
+explicitly cannot grant what `inherit` refuses.
 assignable whitelist.
 
 Without `tools: inherit`, a delegate's available tools are its definition's,

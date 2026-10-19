@@ -45,12 +45,20 @@ tools as a second catalog.
    | Never inherited | Why |
    |---|---|
    | `Task` / `TaskWait` / `TaskList` / `TaskStop` | no nested fan-out |
+   | Never inherited | Why |
+   |---|---|
+   | `Task` / `TaskWait` / `TaskList` / `TaskStop` | no nested fan-out |
    | `EnterPlanMode` / `EnterGoalMode` | mode stays the parent's |
+   | `TodoWrite` | the session checklist is the session's own |
    | `asktool` | a delegate has no user |
    | `new_context` | compaction is a parent-runtime flag |
    | `ToolSearch` | activates deferred tools on the parent catalog |
+   | `SessionHistorySearch` / `MemorySearch` / `MemoryRemember` | learned memory belongs to the user |
+   | `SessionList` / `SessionSend` / `SessionResult` | cross-session delivery is the parent's own capability |
 
-   The child receives the full allowed catalog without `ToolSearch`. Inherit
+   The deny list is the gate in both directions: the same names are dropped from
+   a definition's own `tools` list, so naming one explicitly cannot grant what
+   inherit refuses.
    is stronger than the parent's first-request active set; that is the point
    of handing Skill/MCP/plugin tools to a worker.
 

@@ -100,11 +100,16 @@ export type SubagentAssignableTool = (typeof SUBAGENT_ASSIGNABLE_TOOLS)[number];
 export const SUBAGENT_INHERIT_TOKEN = "inherit";
 
 /**
- * Tools that are never inherited, even with `tools: inherit`. Nested fan-out
- * and mode switches stay with the parent; the user-facing ask tool is out of
- * reach because a delegate has no user. `ToolSearch` and `new_context` mutate
- * the parent runtime's deferred-tool set and compaction flag, so they stay
- * denied even though the child receives the full catalog without searching.
+ * Tools that are never handed to a delegate: not through `tools: inherit`, and
+ * not by naming them in a definition. Nested fan-out and mode switches stay
+ * with the parent; the user-facing ask tool is out of reach because a delegate
+ * has no user. `ToolSearch` and `new_context` mutate the parent runtime's
+ * deferred-tool set and compaction flag, so they stay denied even though the
+ * child receives the full catalog without searching. Handing work to another
+ * session is the parent's own capability: a delegate has no user to confirm an
+ * ambiguous target with and no standing to start another session's turn, so
+ * `SessionList` / `SessionSend` / `SessionResult` stay denied too (ADR
+ * builtin-session-messaging §4, `03-tools-and-permissions.md` §10.2).
  */
 export const SUBAGENT_INHERIT_DENY_TOOLS: readonly string[] = [
   "Task",
@@ -124,6 +129,10 @@ export const SUBAGENT_INHERIT_DENY_TOOLS: readonly string[] = [
   "SessionHistorySearch",
   "MemorySearch",
   "MemoryRemember",
+  // Session messaging: a delegate has no user to confirm a target with.
+  "SessionList",
+  "SessionSend",
+  "SessionResult",
 ];
 
 /**
@@ -133,16 +142,20 @@ export const SUBAGENT_INHERIT_DENY_TOOLS: readonly string[] = [
  * - With `inheritTools`, the parent's live tool catalog is unioned in after
  *   dropping {@link SUBAGENT_INHERIT_DENY_TOOLS}. Explicit assignable extras
  *   are still included so a definition can add Bash on top of inherit.
+ *
+ * The deny list is the gate in both directions: a denied name is dropped from
+ * the declared list too, so naming one explicitly cannot grant what inheritance
+ * refuses.
  */
 export function resolveSubagentToolNames(
   definition: Pick<SubagentDefinition, "tools" | "inheritTools">,
   parentToolNames: readonly string[],
 ): string[] {
+  const deny = new Set(SUBAGENT_INHERIT_DENY_TOOLS);
   const declared = definition.tools.filter(
-    (name) => name !== SUBAGENT_INHERIT_TOKEN,
+    (name) => name !== SUBAGENT_INHERIT_TOKEN && !deny.has(name),
   );
   if (!definition.inheritTools) return [...declared];
-  const deny = new Set(SUBAGENT_INHERIT_DENY_TOOLS);
   const resolved: string[] = [];
   for (const name of [...parentToolNames, ...declared]) {
     if (deny.has(name)) continue;
