@@ -457,7 +457,7 @@ type AgentActivity =
  | { phase: "waiting-model"; since: number }
  | { phase: "preparing"; since: number }
  | { phase: "compacting"; since: number;
-     reason: "manual" | "threshold" | "overflow" }
+     reason: "manual" | "threshold" | "overflow" | "model_switch" }
  | { phase: "recovering"; since: number }
  | { phase: "retrying"; since: number; attempt: number;
      infinite?: boolean; retryDelayMs?: number; error?: AgentActivityError }
@@ -589,9 +589,9 @@ type AgentEvent =
   | ({ type: "planning_state" } & Omit<PlanningStateEvent, "sessionId">)
   | { type: "tool_permission_request"; request: ToolPermissionRequest }
   | { type: "compaction_start";
-     reason: "manual" | "threshold" | "overflow" }
+     reason: "manual" | "threshold" | "overflow" | "model_switch" }
  | { type: "compaction_end";
-     reason: "manual" | "threshold" | "overflow";
+     reason: "manual" | "threshold" | "overflow" | "model_switch";
      ok: boolean; tokensBefore?: number; firstKeptMessageId?: string;
      willRetry: boolean; fallback?: "retained_tail";
      mark?: { id: string; throughMessageId: string;
@@ -618,10 +618,11 @@ type AgentEvent =
 `turn_end` 关闭 model/tool 一轮但不是终端桌面运行事件：
 可能会立即提出另一个提供商的请求。 Renderer 繁忙状态和
 因此，持久回合完成仅在 `agent_end` 或 `error` 上确定。
-压缩始终是内联的：`compaction_start` 使运行保持忙碌，手册
-操作取决于其匹配的 `compaction_end` 和 threshold/overflow
-压实保留在活性剂运行内。没有预先计算的阶段
-区分（D203）。
+压缩始终是内联的：`compaction_start` 使运行保持忙碌，手动压缩
+以其匹配的 `compaction_end` 结束，threshold/overflow 压缩
+留在运行内。没有预先计算的阶段
+区分（D203）。`model_switch` 检查点在同一发送前位置运行，
+即新选中模型的第一个请求之前。
 
 只要安装了检查点，`compaction_end.mark` 就会出现。它是
 渲染器对该压缩的整体视图：`id`，`throughMessageId` 锚定
@@ -636,7 +637,9 @@ type AgentEvent =
 自动摘要失败仍可能产生成功的生命周期事件
 `fallback: "retained_tail"`；这意味着有一个耐用的、有边界的尾巴
 检查点已安装，运行可能会继续，但历史记录会减少
-上下文。手动压实永远不会悄无声息地倒退。
+上下文。手动压缩永远不会静默回退。`model_switch` 失败会报告
+`ok: false` 且不安装任何检查点：新模型本就能容纳该上下文，
+因此本轮带着完整上下文继续。
 
 提供程序 `error` 事件可能包括以下中的有限诊断字段：
 `AppError.details`：`phase`（`request` 或 `stream`）、`providerStatus`、

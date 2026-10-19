@@ -3054,6 +3054,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
     dismiss: "Bildirimi kapat",
   },
   contextCompaction: {
+    modelSwitch: "Bağlam seçilen model için sıkıştırıldı",
     completed: "Sohbet bağlamı sıkıştırıldı",
     retrying: "Bağlam sıkıştırıldı; model isteği yeniden deneniyor",
     recovered:

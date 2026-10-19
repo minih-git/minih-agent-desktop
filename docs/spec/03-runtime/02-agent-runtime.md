@@ -564,6 +564,12 @@ decides what a *successful* checkpoint leaves behind:
   keep the active task's user message as well.
 - The `fresh_window` family remains the deliberate no-summary exception from
   ADR 0064 and always carries an empty tail.
+- A `recent_window` checkpoint is the model-switch shape (D669): the older
+  range is summarized as usual, but the recent tail pi selected — about
+  `keepRecentTokens`, every role — is replayed verbatim instead of being folded
+  into the summary, because the new model is usually asked to continue the work
+  that tail contains. It records the `recent_window` shape marker like a
+  retained-tail fallback, so a rebuild replays the whole window.
 
 The retained-tail mode and shape are stored in the checkpoint's opaque `details`
 field, so a restart preserves the same task boundary and the same treatment of
@@ -676,6 +682,30 @@ mark carries the same `fallback`, so the renderer shows a warning and labels
 the transcript row as a failed summary rather than a false success. If the
 fallback cannot be prepared, persisted, or kept below the safe budget, the user
 row and an assistant error remain durable and no provider request starts.
+
+**Model switch (D669).** A session that changes models keeps its transcript, and
+the new binding starts with a cold provider cache: its first request re-reads
+whatever is sent no matter what the runtime does. The first prompt therefore asks
+whether the newest assistant message after the active checkpoint was produced by a
+different `providerId`/`modelId`. With `summary` compaction and a context between
+`max(48_000, 2 × keepRecentTokens)` and the 90 % trigger, the runtime installs a
+`recent_window` checkpoint through the new model before that request, so the
+savings apply to every later request in the session. A smaller context travels
+whole, because the summary's output tokens and wait would cost more than they
+save; a context already at the trigger is compacted by the threshold path exactly
+as before. A thinking-level change, a return to the previous model before
+prompting, a legacy assistant row with no recorded model, and the `fresh_window`
+family never trigger it, and it fires at most once per switch because the new
+model's reply becomes the newest assistant message. The decision is a pure
+function of the transcript (`model-switch-compaction.ts`), so a restart identifies
+the same switch without any in-memory state.
+
+A failed, cancelled, or non-shrinking switch checkpoint is not an error: no
+checkpoint is installed — in particular no retained-tail fallback — the turn keeps
+its full context, and `compaction_end` reports `ok: false` with the diagnostic
+(`compaction_failure`). A Stop during the checkpoint ends the turn as an abort and
+keeps the pre-flight user message, exactly as a threshold checkpoint does.
+
 Provider-reported context overflow is the last recovery layer: omit the failed
 assistant from model context, compact once, and retry once. A second overflow
 remains terminal and is reported as `CONTEXT_TOO_LARGE`: the error classifier

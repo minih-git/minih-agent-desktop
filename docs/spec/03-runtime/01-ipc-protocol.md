@@ -545,7 +545,7 @@ type AgentActivity =
  | { phase: "waiting-model"; since: number }
  | { phase: "preparing"; since: number }
  | { phase: "compacting"; since: number;
-     reason: "manual" | "threshold" | "overflow" }
+     reason: "manual" | "threshold" | "overflow" | "model_switch" }
  | { phase: "recovering"; since: number }
  | { phase: "retrying"; since: number; attempt: number;
      infinite?: boolean; retryDelayMs?: number; error?: AgentActivityError }
@@ -725,9 +725,9 @@ type AgentEvent =
   | ({ type: "planning_state" } & Omit<PlanningStateEvent, "sessionId">)
   | { type: "tool_permission_request"; request: ToolPermissionRequest }
   | { type: "compaction_start";
-     reason: "manual" | "threshold" | "overflow" }
+     reason: "manual" | "threshold" | "overflow" | "model_switch" }
  | { type: "compaction_end";
-     reason: "manual" | "threshold" | "overflow";
+     reason: "manual" | "threshold" | "overflow" | "model_switch";
      ok: boolean; tokensBefore?: number; firstKeptMessageId?: string;
      willRetry: boolean; fallback?: "retained_tail";
      mark?: { id: string; throughMessageId: string;
@@ -755,9 +755,10 @@ in protocol v11 (D412).
 is active. `starting` is the prompt handoff; `waiting-model` is the interval
 after a provider request is issued and before the first assistant event;
 `preparing` is the gap after a tool batch and before the next provider request;
-`compacting` is an in-progress context checkpoint (threshold, overflow, or
-manual); `recovering` is the silent-turn re-run; `retrying` is an abortable
-provider backoff; and `waiting-subagents` is a parent wait on delegated work,
+`compacting` is an in-progress context checkpoint (threshold, overflow,
+manual, or model switch); `recovering` is the silent-turn re-run; `retrying`
+is an abortable provider backoff; and `waiting-subagents` is a parent wait on
+delegated work,
 with a live running count and each target's latest coarse child action (waiting
 for the model, thinking, or the current tool). The renderer keeps this status
 per session and renders it as a compact inline row. The phase is cleared when
@@ -779,7 +780,9 @@ another provider request may follow immediately. Renderer busy state and
 durable turn completion therefore settle only on `agent_end` or `error`.
 Compaction is always inline: `compaction_start` keeps the run busy, a manual
 operation settles on its matching `compaction_end`, and threshold/overflow
-compaction stays inside the active agent run. There is no pre-computed phase to
+compaction stays inside the active agent run. A `model_switch` checkpoint runs
+in the same pre-flight position, before the first request of a newly selected
+model. There is no pre-computed phase to
 distinguish (D203).
 
 `compaction_end.mark` is present whenever a checkpoint was installed. It is the
@@ -796,7 +799,9 @@ far larger than an event should be — and is instead read from
 Automatic summary failures may still produce a successful lifecycle event with
 `fallback: "retained_tail"`; this means a durable, aggressively bounded tail
 checkpoint was installed and the run may continue with reduced historical
-context. Manual compaction never silently falls back.
+context. Manual compaction never silently falls back. A `model_switch` failure
+reports `ok: false` and installs nothing: the new model already fit the
+context, so the run continues on all of it.
 
 Provider `error` events may include bounded diagnostic fields in
 `AppError.details`: `phase` (`request` or `stream`), `providerStatus`,

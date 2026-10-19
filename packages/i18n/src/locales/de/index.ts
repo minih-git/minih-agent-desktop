@@ -3027,6 +3027,7 @@ sklm: {
     "dismiss": "Benachrichtigung verwerfen"
   },
   "contextCompaction": {
+    "modelSwitch": "Kontext für das ausgewählte Modell komprimiert",
     "completed": "Konversationskontext kompaktiert",
     "retrying": "Kontext komprimiert; Wiederholen der Modellanforderung",
     "recovered": "Kontextzusammenfassung fehlgeschlagen; Der aktuelle Kontext wurde beibehalten und die Aufgabe wird fortgesetzt.",

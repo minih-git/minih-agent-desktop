@@ -198,7 +198,8 @@ test("a checkpoint carries only the active user message past the boundary", () =
   // only its latest user message, while a completed turn carries no naked
   // historical user messages into the next task.
   assert.match(contextBudget, /COMPACTION_RETAINED_USER_MESSAGE_MAX_TOKENS = 20_000/);
-  assert.match(runtime, /type CompactionRetentionMode = "active_turn" \| "completed_turn"/);
+  assert.match(runtime, /type CompactionRetentionMode =/);
+  assert.match(runtime, /\| "recent_window";/);
   assert.match(runtime, /retainedTailMode: retentionMode/);
   assert.match(runtime, /private codexShapedPreparation\(/);
   assert.match(
@@ -299,7 +300,7 @@ test("every compaction announces itself once, on top of the specific toasts", ()
   );
   assert.equal(
     compactionEnd.match(/showToast/g)?.length,
-    5,
+    6,
     "unexpected number of compaction toasts",
   );
   assert.match(enLocale, /longThreadWarning:/);
@@ -389,4 +390,103 @@ test("the transcript shows one row per compaction, the inspector the newest", ()
   assert.match(inspector, /chat\.usageCompaction/);
   assert.match(enLocale, /usageCompaction:/);
   assert.match(enLocale, /compactionRow:/);
+});
+
+// Real slice with synthetic state: what the user actually sees after a
+// compaction, including the one that only exists to save tokens.
+const { register } = await import("node:module");
+register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
+const { createEventsSlice } = await import("../src/stores/slices/events-slice.ts");
+
+function compactionSlice(toasts) {
+  const state = {
+    activeSessionId: "session-1",
+    messages: [],
+    retainedTranscripts: {},
+    runningSessions: {},
+    sessionOutcomes: {},
+    latestTurnResults: {},
+    pendingPermissions: {},
+    pendingAsks: {},
+    planCheckpoints: {},
+    pendingPlans: {},
+    agentStatuses: {},
+    sessionCompactions: {},
+    isRunning: false,
+    showToast: (message, options) => toasts.push({ message, options }),
+    refreshSessions: () => {},
+    refreshQueuedPrompts: () => {},
+    acknowledgePrompt: async () => {},
+  };
+  const harness = {
+    get: () => state,
+    set: (update) => {
+      Object.assign(state, typeof update === "function" ? update(state) : update);
+    },
+  };
+  const runtime = {
+    submittedComposerDrafts: new Map(),
+    liveSessionTranscripts: new Set(),
+    sessionTranscriptCache: new Map(),
+    cacheSessionTranscript: () => {},
+    cacheBackgroundTranscriptEvent: () => {},
+    recordToolStart: () => {},
+    nextPlanSyncGeneration: () => 0,
+  };
+  return createEventsSlice({ ...harness, runtime });
+}
+
+test("a model-switch compaction reports an info notice, not the long-thread warning", async () => {
+  const i18next = (await import("i18next")).default;
+  const translate = i18next.t;
+  i18next.t = (key) => key;
+  try {
+    const toasts = [];
+    compactionSlice(toasts).handleAgentEvent({
+      sessionId: "session-1",
+      ts: 1,
+      event: { type: "compaction_end", reason: "model_switch", ok: true, willRetry: false },
+    });
+
+    assert.deepEqual(
+      toasts.map((toast) => [toast.message, toast.options?.variant]),
+      [["contextCompaction.modelSwitch", "info"]],
+    );
+  } finally {
+    i18next.t = translate;
+  }
+});
+
+test("a failed model-switch compaction stays silent", () => {
+  // The switch compaction is an optimization: when it fails, the turn simply
+  // continues on the full context, so an error toast would misreport a working
+  // turn as broken.
+  const toasts = [];
+  compactionSlice(toasts).handleAgentEvent({
+    sessionId: "session-1",
+    ts: 1,
+    event: {
+      type: "compaction_end",
+      reason: "model_switch",
+      ok: false,
+      willRetry: false,
+      error: { code: "CONTEXT_COMPACTION_FAILED", message: "summarizer unavailable" },
+    },
+  });
+
+  assert.deepEqual(toasts, []);
+});
+
+test("every locale names the model-switch compaction", async () => {
+  const locales = ["de", "en", "es", "fr", "ko", "pt-BR", "tr", "zh-CN", "zh-TW"];
+  for (const locale of locales) {
+    const source = await read(
+      `../../../packages/i18n/src/locales/${locale}/index.ts`,
+    );
+    assert.match(
+      source,
+    /["']?contextCompaction["']?: \{[\s\S]*?["']?modelSwitch["']?:/,
+      `${locale} is missing contextCompaction.modelSwitch`,
+    );
+  }
 });

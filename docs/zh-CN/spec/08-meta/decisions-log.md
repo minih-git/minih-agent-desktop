@@ -13,6 +13,7 @@
 
 | 身份证号 | 主题 | 决定 | 基本原理 |
 |---|---|---|---|
+| D669 | 切换模型时的阈值压缩 | **模型切换后的第一次发送前，上下文较大时先压缩。运行时读取当前检查点之后最新的助手消息；当其 `providerId`/`modelId` 与当前绑定不同，且估算上下文达到 `max(48_000, 2 x keepRecentTokens)` 但低于 90% 自动触发点时，以新模型执行 `summary` 压缩，reason 为 `model_switch`，并安装 `recent_window` 检查点：旧范围照常摘要，近期窗口原样回放，`details.retainedTailShape = recent_window` 让重建时完整回放该窗口。切换动作本身不产生开销，开销从下一次发送开始；只改思考级别、以及未收到回复前 A→B→A 都不算切换；`fresh_window` 不会采用该形态；已经达到触发点的上下文仍走 threshold 路径。摘要失败、被扩展取消或压缩后没有变小的切换检查点不安装任何检查点——尤其不安装 retained-tail 回退——本轮保留完整上下文，`compaction_end` 报告 `ok: false` 并带诊断，渲染层不把它当作错误弹出；压缩期间 Stop 与通常一样中止本轮。宿主 schema、迁移与 IPC 结构均不变。** | 新绑定从冷缓存开始，第一次请求无论如何都要重读整段历史；在那里压缩一次可让之后的每次请求都更小，而阈值下限确保短历史下摘要的输出成本与信息损失不会超过节省。用旧模型压缩以复用缓存被否决：摘要请求会把对话序列化为 `<conversation>` 文本并配专用提示词，其请求前缀永远命中不了原对话的缓存，节省为零。以对话记录为依据的判断还能跨重启识别同一次切换，且在下次发送前不产生任何开销。 |
 | D668 | 路由器下发的更新加速线路 | **修订 ADR 0022 / D120 / D659：minih 构建在每次检查前从 `GET <router origin>/api/desktop-update` 拉取一份公开只读的加速线路清单，并优先尝试它。`data.sources[].prefix` 是前缀式 GitHub 加速站（`https://gh-proxy.org/`），Main 把它展开为 generic 源基址（`<prefix>https://github.com/<owner>/<repo>/releases/latest/download`），并按与编译期镜像完全相同的规则校验（绝对 `https`、无凭据、无查询串或片段、不是 `github.com`、去重、最多三条）；非法条目只丢弃自身。源顺序变为：路由器加速线路 → 编译内置镜像（`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`）→ 官方 GitHub 源，官方源始终是最后兜底，因此加速线路全部失效时更新仍可解析。清单按服务端下发的 `ttl_seconds` 记忆化（限制在 1 分钟至 24 小时，缺省 1 小时）；拉取失败只记警告，并把下一次请求推迟至少 5 分钟，绝不阻断、拖慢或让检查失败；下载进行中到达的新清单留到下一次检查才生效，不会在中途换源。当接口在某条线路服务过更新器之后不再下发任何加速线路时，Main 会把官方 GitHub 源作为唯一源显式重新应用——因为没有 feed 的打包源无法撤销已经通过 `setFeedURL` 应用过的 feed。整个行为以 `currentBrandProfile().updateFeed.provider === \"github\"` 为条件：hungraim 线继续使用 generic 的 `updates.hungraim.com`，且不向路由器发请求。`MINIH_AGENT_UPDATE_SOURCES_URL` 可覆盖接口 URL。渲染器、运行时设置与环境变量都不能提供、扩充或改写源。** | 在限速 `github.com` 的网络里，此前只能靠构建期镜像列表兜底，新增或下线一个加速站都要重新发版；改由服务端下发既让这一决定留在路由器侧，又不给客户端可配置的源，而官方源兜底与每次检查的 `sha512` 校验保证失效或恶意的加速站既不能阻断也不能伪造更新。 |
 | D663 | 内置会话消息工具 | **修订 ADR 0165 / ADR 0239 / ADR 0240：在宿主拥有的投递账本之上新增内置按需 Agent 工具 `SessionList`、`SessionSend`、`SessionResult`，实现为 Electron 主进程本地工具。发送方由宿主派生（sidecar 本地工具的 `sessionId` 与该会话的活动回合），不取自工具参数；内置投递使用保留归属 `builtin:session-messaging`，插件路径拒绝冒用。三者都先过 `tools.execute` 闸门（`SessionSend` 高风险，两个读工具低风险）；Plan/Goal、`Task` 子代理与 MCP 目录不可用。第一版只向既有会话发送任务或消息，不创建会话、不取消投递。无 schema、迁移或协议版本变更。见 ADR builtin-session-messaging 与 E2E-SESSION-builtin-send-to-named-session。** | 把工作交给另一个会话是核心桌面流程，此前只能通过安装权限更大的社区编排插件获得，而受审查的账本本已随应用分发。内置路径复用同一套来源标注、权限上限、完成回调与重启栅栏保证。 |
 | D666 | 远程控制的 Router 账户绑定 | **以可追加的“账户模式”修订 ADR 0331：Minih-Router 的 `access_key_id` 即远程控制账户身份，在桌面上按 D661 规则解析。Host 经 Router 的 EasyTier 组网连到运行在 Router 机器上的独立 Gateway 进程，手机经公网 HTTPS 连接且绝不加入组网。Router 的 bootstrap 应答新增可选的 `remoteGateway {hostlinkUrl, publicOrigin, caPem}`，桌面以 `Bearer <AccessKey>` 加 CSR 注册，Gateway 经 loopback 调用 Router `GET /api/auth/session` 校验，并把调用者真实地址转发过去，使 `allowed_peer_cidrs` 作用于真实调用方；Gateway 绝不持久化原始 key。AccessKey 只用于发现与注册：手机登录后只看到本账户的 Host，任何一个在线 Host 上的首次确认即签发设备授权，同账户的兄弟 Host 接受该签名授权，手机上最终只保留一个可撤销设备令牌而没有 AccessKey。Gateway 只中继请求与签名授权，绝不做审批决定；角色、`pairedDevice: false`、远程权限上限与禁用 `allow-session` 均不变。Gateway 新增显式可信代理客户端 IP 设置，桌面新增严格的“每个终端都需确认”模式，新增的 `device.request` / `device.grant` Host link 帧只发给声明支持的 Host。见 ADR remote-control-router-account-binding、交付 R7 与 E2E-REMOTE-ACCOUNT-* 场景。** | 自托管的一次性注册码加每 Host 的 `mpt1` 票据，对有多个终端的用户意味着每台机器各做一次注册与配对，而在一台机器上受信任的设备在下一台上毫无地位；Router 的 key 已经标识同一个用户，且轮换保留 id，因此轮换后的 key 仍能证明是同一账户；共享组网上的可达性不构成授权边界，真正授权设备的是双向 TLS、经 key 校验的注册与 Host 签名授权。 |
@@ -5684,3 +5685,14 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   重新分发的社区插件保持 `community`。
 - 见 ADR 0332、`07-plugin-marketplace.md` 第 2 节「目录来源」与第 13 节，以及
   E2E-PLUGIN-install-from-the-distribution-repository。
+
+## 2026-10-19 — 切换模型后，在新模型的第一次发送前压缩较大上下文
+
+- 过去切换模型会把整段历史交给新绑定。第一次请求无论如何都按未缓存价格读一遍，但之后的每一次请求都要再付一次，窗口更小时甚至没有余量继续工作。
+- 现在运行时会输入两处发送前预检（`prompt` 与已批准 Plan/Goal 的执行），比较当前检查点之后最新的助手消息与当前 `providerId`/`modelId`。切换那一刻什么都不做，因此连续试几个模型、再切回原模型都不花钱。
+- 上下文高于 `max(48_000, 2 x keepRecentTokens)` 且低于自动触发点时，第一次发送前以新模型执行 `model_switch` 压缩并安装 `recent_window` 检查点：旧范围做摘要、近期窗口原样保留，检查点记录与回退相同的 `retainedTailShape` 标记，重启后完整回放该窗口而不是缩成一条用户消息。
+- 用旧模型趁缓存仍热时压缩被否决：摘要请求会把对话序列化为 `<conversation>` 文本并配专用提示词，永远命中不了原对话的前缀缓存，节省为零。
+- 切换压缩只是一次优化，因此失败要软着陆：摘要失败、被 extension 取消或压缩后没有变小，都不安装任何检查点（尤其不安装 retained-tail 回退），本轮带完整上下文继续，`compaction_end` 报告 `ok: false` 并附 `compaction_failure` 诊断。渲染层成功时弹 info 提示，失败时静默；`longThreadWarning` 会把用户刚做的切换说成会话太长。
+- 见 `03-runtime/01-ipc-protocol.md`（压缩 reason 与生命周期）、
+  `03-runtime/02-agent-runtime.md` 第 5.1 节，以及
+  E2E-SESSION-model-switch-compacts-large-context。

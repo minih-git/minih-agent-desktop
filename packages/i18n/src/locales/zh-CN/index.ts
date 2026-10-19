@@ -3029,6 +3029,7 @@ sklm: {
     dismiss: "关闭通知",
   },
   contextCompaction: {
+    modelSwitch: "已为新模型精简上下文",
     completed: "对话上下文已压缩",
     retrying: "上下文已压缩，正在重试模型请求",
     recovered: "上下文摘要失败，已保留近期上下文并继续任务",

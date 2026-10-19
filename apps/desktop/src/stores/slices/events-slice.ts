@@ -572,23 +572,34 @@ export function createEventsSlice({
         case "compaction_end":
           if (event.reason === "manual") set({ isRunning: false });
           if (event.ok) {
-            get().showToast(i18n.t("contextCompaction.longThreadWarning"), {
-              variant: "warning",
-            });
-            if (event.fallback) {
-              get().showToast(i18n.t("contextCompaction.recovered"), {
-                variant: "warning",
-              });
-            } else if (event.reason === "overflow") {
-              get().showToast(i18n.t("contextCompaction.retrying"), {
-                variant: "warning",
-              });
-            } else if (event.reason === "manual") {
-              get().showToast(i18n.t("contextCompaction.completed"), {
+            if (event.reason === "model_switch") {
+              // The same conversation, now on a different model: the notice
+              // says the history was reduced, and the long-thread warning would
+              // blame the user's thread length for a switch they just made.
+              get().showToast(i18n.t("contextCompaction.modelSwitch"), {
                 variant: "info",
               });
+            } else {
+              get().showToast(i18n.t("contextCompaction.longThreadWarning"), {
+                variant: "warning",
+              });
+              if (event.fallback) {
+                get().showToast(i18n.t("contextCompaction.recovered"), {
+                  variant: "warning",
+                });
+              } else if (event.reason === "overflow") {
+                get().showToast(i18n.t("contextCompaction.retrying"), {
+                  variant: "warning",
+                });
+              } else if (event.reason === "manual") {
+                get().showToast(i18n.t("contextCompaction.completed"), {
+                  variant: "info",
+                });
+              }
             }
           } else if (event.reason === "manual") {
+            // A failed switch compaction reports nothing: the turn continues on
+            // the full context, so an error toast would misreport a working turn.
             get().showToast(
               event.error?.message || i18n.t("contextCompaction.failed"),
               { variant: "error" },
