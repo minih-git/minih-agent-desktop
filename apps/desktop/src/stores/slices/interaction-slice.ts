@@ -4,6 +4,7 @@ import type {
   PlanResolveRequest,
 } from "@minih-agent/shared";
 import { api } from "../../lib/api";
+import { normalizeSettingsTabId } from "../../lib/settings-search";
 import {
   headAsk,
   removeAsk,
@@ -83,7 +84,10 @@ export function createInteractionSlice({
     setSettingsTab: (settingsTab) => {
       get().setPage("settings");
       set((state) => ({
-        settingsTab,
+        // A caller can still name a destination this build folded into another
+        // page (an older automation, a restored selection): land on the page
+        // that owns the surface instead of an empty pane.
+        settingsTab: normalizeSettingsTabId(settingsTab),
         settingsTabNonce: state.settingsTabNonce + 1,
       }));
     },

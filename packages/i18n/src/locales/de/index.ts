@@ -957,7 +957,6 @@ sklm: {
       "subagents": "Subagenten",
       "projects": "Projekte",
       "sync": "Cloud-Synchronisierung",
-      "remoteGateway": "Remote-Gateway",
       "remoteHosts": "Remote-Hosts",
       "info": "Informationen",
       "voice": "Sprache"
@@ -1421,6 +1420,8 @@ sklm: {
       "accountEnrollBody": "Der Router hat Gateway und Zertifikat vorgegeben, und dieser Desktop hat sich mit deinem Kontoschlüssel registriert. Es gibt keinen Registrierungscode zum Einfügen.",
       "accountEnrollPendingTitle": "Nutzt deinen Minih-Router",
       "accountEnrollPendingBody": "Der Router gibt Gateway und Zertifikat vor, und dieser Desktop registriert sich mit deinem Kontoschlüssel. Es gibt keinen Registrierungscode zum Einfügen.",
+      "advancedTitle": "Erweitert: eigenes Gateway",
+      "advancedHint": "Nur für ein Gateway, das du selbst betreibst: Es braucht dessen Adresse, sein CA-Zertifikat und einen Registrierungscode. Mit einem Minih-Router-Konto gibt es nichts einzufügen.",
       "strictTitle": "Gerätebestätigung",
       "strictLabel": "Bestätigung auf jedem Gerät verlangen",
       "strictHint": "Solange dies aktiv ist, wird ein auf einem anderen Rechner freigegebenes Gerät hier nicht akzeptiert: du bestätigst jedes Gerät auf diesem Desktop. Ein- oder Ausschalten verbindet die Verknüpfung neu.",
