@@ -66,3 +66,11 @@
   group, its memory, and every folder's own memory stay exactly as they were,
   and no user text is truncated or dropped. Shorten the memories that are
   joining and try again.
+- An on-demand tool lookup (`ToolSearch`) no longer reads as a file search. It
+  used to list the tool name once per result field — `matches`, `activated`, and
+  an internal bookkeeping list — each rendered as a clickable file, so clicking
+  the tool's own name reported that no such file exists. The row now names the
+  tools it activated, or the ones that were already available, or says that
+  nothing matched, and a tool name is never a link. A plugin or MCP result's
+  plain string list behaves the same way: only entries that look like file
+  paths open, the rest stay text.

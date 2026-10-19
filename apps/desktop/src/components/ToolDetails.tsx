@@ -8,7 +8,7 @@ import { useOpenPreviewTarget } from "../hooks/use-preview-target";
 import { useChatFileMenu } from "../hooks/use-chat-file-menu";
 import { ContextMenu } from "./ContextMenu";
 import { useAppStore } from "../stores/app-store";
-import type { ToolBlock, ToolChip } from "../lib/tool-presentation";
+import { linksToFile, type ToolBlock, type ToolChip } from "../lib/tool-presentation";
 import { AskToolRichText } from "./AskToolRichText";
 
 /*
@@ -27,6 +27,7 @@ const BLOCK_LABEL_KEYS: Record<ToolBlock["role"], string> = {
   diff: "chat.toolBlockDiff",
   files: "chat.toolBlockFiles",
   matches: "chat.toolBlockMatches",
+  tools: "chat.toolBlockTools",
   details: "chat.toolBlockDetails",
   notice: "chat.toolBlockNotice",
   error: "chat.toolBlockError",
@@ -46,6 +47,8 @@ function blockCopyText(block: ToolBlock): string {
       return block.copy;
     case "files":
       return block.paths.join("\n");
+    case "tools":
+      return block.names.join("\n");
     case "matches":
       return block.groups
         .flatMap((group) =>
@@ -130,16 +133,21 @@ function AskToolResult({
   );
 }
 
-/** A workspace path list (Glob results, plugin string arrays). */
-function FileList({ paths }: { paths: string[] }) {
+/**
+ * A block's path list. An entry opens when the block says it may — a list of
+ * real paths (Glob, Grep) links every entry, while a generic payload's string
+ * array links only the entries that are file references, so a plain word stays
+ * text instead of a link that resolves to nothing.
+ */
+function FileList({ block }: { block: Extract<ToolBlock, { kind: "files" }> }) {
   const { t } = useTranslation();
   const root = useAppStore((s) => s.workspace?.path);
   const openTarget = useOpenPreviewTarget();
   const { fileMenu, openFileMenu, closeFileMenu } = useChatFileMenu();
   return (
     <div className="tool-file-list">
-      {paths.map((path, index) => {
-        const rel = toWorkspaceRel(path, root);
+      {block.paths.map((path, index) => {
+        const rel = linksToFile(block, path) ? toWorkspaceRel(path, root) : null;
         if (!rel) {
           return (
             <span className="tool-file-item" key={`${path}-${index}`}>
@@ -165,6 +173,42 @@ function FileList({ paths }: { paths: string[] }) {
   );
 }
 
+/**
+ * The tool names an on-demand lookup touched. A tool is not a file: the names
+ * stay plain text, with no preview tooltip and no file context menu.
+ */
+function ToolNameList({ block }: { block: Extract<ToolBlock, { kind: "tools" }> }) {
+  const { t } = useTranslation();
+  if (block.state === "empty") {
+    return (
+      <div className="tool-note">
+        <IconInfo size={13} />
+        <span className="tool-note-text">{t("chat.toolSearchNoMatch")}</span>
+      </div>
+    );
+  }
+  return (
+    <>
+      <div className="tool-note">
+        <IconInfo size={13} />
+        <span className="tool-note-text">
+          {t(
+            block.state === "activated"
+              ? "chat.toolSearchActivated"
+              : "chat.toolSearchAvailable",
+          )}
+        </span>
+      </div>
+      <div className="tool-file-list">
+        {block.names.map((name, index) => (
+          <span className="tool-file-item" key={`${name}-${index}`}>
+            {name}
+          </span>
+        ))}
+      </div>
+    </>
+  );
+}
 /** Grep hits grouped by file: the path opens, each line keeps its number. */
 function MatchList({ block }: { block: Extract<ToolBlock, { kind: "matches" }> }) {
   const { t } = useTranslation();
@@ -240,10 +284,12 @@ function BlockBody({ block, streaming }: { block: ToolBlock; streaming: boolean 
     case "files":
       return (
         <>
-          <FileList paths={block.paths} />
+          <FileList block={block} />
           <MoreNote hidden={block.hidden} />
         </>
       );
+    case "tools":
+      return <ToolNameList block={block} />;
     case "matches":
       return (
         <>

@@ -12,6 +12,7 @@ const {
   buildToolPresentation,
   hasToolDetails,
   langForPath,
+  linksToFile,
   runOutcome,
   toolResultChips,
   toolResultPayload,
@@ -749,4 +750,119 @@ test("TodoWrite has a checklist action and keeps its arguments visible", () => {
   };
   assert.deepEqual(roles(buildToolPresentation(message)), ["input", "notice"]);
   assert.match(byRole(buildToolPresentation(message), "input").text, /Inspect/);
+});
+
+/*
+ * ToolSearch is an on-demand tool lookup, not a file search. Its result names
+ * tools, so the row lists those names as plain text — the same name appearing
+ * in `matches`, `activated`, and the runtime-only `addedToolNames` is one entry,
+ * not three boxes, and no name may look like a file to open.
+ */
+test("ToolSearch lists the tools it activated", () => {
+  const blocks = buildToolPresentation(
+    {
+      toolName: "ToolSearch",
+      toolArgs: { query: "remember" },
+      toolResult: envelope({
+        query: "remember",
+        matches: ["MemoryRemember"],
+        activated: ["MemoryRemember"],
+        addedToolNames: ["MemoryRemember"],
+      }),
+    },
+    { hideSummaryArg: true },
+  );
+  assert.deepEqual(roles(blocks), ["tools"]);
+  assert.equal(blocks[0].state, "activated");
+  assert.deepEqual(blocks[0].names, ["MemoryRemember"]);
+  assert.ok(!blocks.some((block) => block.kind === "files"));
+  for (const block of blocks) {
+    assert.ok(
+      !["addedToolNames", "activated", "matches", "query"].includes(block.label ?? ""),
+      `no block is labelled after a result field: ${block.label}`,
+    );
+  }
+});
+
+test("ToolSearch says when the matched tools were already available", () => {
+  const blocks = buildToolPresentation(
+    {
+      toolName: "ToolSearch",
+      toolArgs: { query: "preview" },
+      toolResult: envelope({
+        query: "preview",
+        matches: ["BrowserPreview", "PluginCheck"],
+        activated: [],
+      }),
+    },
+    { hideSummaryArg: true },
+  );
+  assert.deepEqual(roles(blocks), ["tools"]);
+  assert.equal(blocks[0].state, "available");
+  assert.deepEqual(blocks[0].names, ["BrowserPreview", "PluginCheck"]);
+});
+
+test("ToolSearch says when nothing matched", () => {
+  const blocks = buildToolPresentation(
+    {
+      toolName: "ToolSearch",
+      toolArgs: { query: "nothing like this" },
+      toolResult: envelope({
+        query: "nothing like this",
+        matches: [],
+        activated: [],
+      }),
+    },
+    { hideSummaryArg: true },
+  );
+  assert.deepEqual(roles(blocks), ["tools"]);
+  assert.equal(blocks[0].state, "empty");
+  assert.deepEqual(blocks[0].names, []);
+});
+
+/*
+ * A plugin or MCP tool answers with plain string arrays that are not paths
+ * (`tags: ["alpha", "beta"]`). Only entries that parse as a file reference may
+ * open, while Glob/Grep path lists keep linking every entry they report.
+ */
+test("a generic string array links only entries that look like file paths", () => {
+  const blocks = buildToolPresentation(
+    {
+      toolName: "pi.some-plugin",
+      toolResult: envelope({
+        tags: ["alpha", "beta"],
+        files: ["src/a.ts", "README.md"],
+        mixed: ["src/a.ts", "alpha"],
+      }),
+    },
+    { hideSummaryArg: true },
+  );
+  const tags = blocks.find((block) => block.label === "tags");
+  assert.equal(tags.kind, "files");
+  assert.deepEqual(tags.paths, ["alpha", "beta"]);
+  assert.equal(linksToFile(tags, "alpha"), false);
+  assert.equal(linksToFile(tags, "beta"), false);
+
+  const files = blocks.find((block) => block.label === "files");
+  assert.equal(linksToFile(files, "src/a.ts"), true);
+  assert.equal(linksToFile(files, "README.md"), true);
+
+  const mixed = blocks.find((block) => block.label === "mixed");
+  assert.equal(linksToFile(mixed, "src/a.ts"), true);
+  assert.equal(linksToFile(mixed, "alpha"), false);
+
+  // Glob and Grep report files, including extension-less ones, so every entry
+  // they list stays clickable.
+  const glob = buildToolPresentation(
+    {
+      toolName: "Glob",
+      toolArgs: { pattern: "*" },
+      toolResult: envelope({ matches: ["Makefile", "LICENSE", "bin/run"], count: 3 }),
+    },
+    { hideSummaryArg: true },
+  );
+  const listed = byRole(glob, "files");
+  for (const path of ["Makefile", "LICENSE", "bin/run"]) {
+    assert.equal(linksToFile(listed, path), true, path);
+  }
 });

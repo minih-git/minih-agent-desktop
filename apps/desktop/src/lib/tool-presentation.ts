@@ -8,6 +8,7 @@ import {
 } from "./tool-display";
 import { reviewChangeFromMessage } from "./workspace-review";
 import { isWithinHighlightLimits } from "./render-content-limits";
+import { parseFileRef } from "./chat-links";
 
 /*
  * Structured presentation of one tool call (D192).
@@ -56,6 +57,7 @@ export type ToolBlockRole =
   | "diff"
   | "files"
   | "matches"
+  | "tools"
   | "details"
   | "output"
   | "input"
@@ -93,7 +95,12 @@ export type ToolBlock =
       hidden: number;
       copy: string;
     })
-  | (BlockBase & { kind: "files"; paths: string[]; hidden: number })
+  | (BlockBase & {
+      kind: "tools";
+      names: string[];
+      state: "activated" | "available" | "empty";
+    })
+  | (BlockBase & { kind: "files"; paths: string[]; hidden: number; plain?: string[] })
   | (BlockBase & { kind: "matches"; groups: ToolMatchGroup[]; hidden: number })
   | (BlockBase & { kind: "fields"; rows: ToolFieldRow[] })
   | (BlockBase & { kind: "note"; text: string; code?: string });
@@ -329,7 +336,12 @@ export function buildDiffLines(
   return lines;
 }
 
-function filesBlock(paths: string[], label?: string): ToolBlock | null {
+/// A path list. `plain` names the entries that are not file references, so a
+/// caller handing over arbitrary strings (a plugin's or MCP server's string
+/// array) can keep them as text instead of turning each entry into a link that
+/// resolves to nothing. A list of real paths — Glob, Grep — passes no `plain`
+/// and keeps every entry clickable, extension-less names included.
+function filesBlock(paths: string[], label?: string, plain?: string[]): ToolBlock | null {
   if (paths.length === 0) return null;
   return {
     kind: "files",
@@ -337,7 +349,19 @@ function filesBlock(paths: string[], label?: string): ToolBlock | null {
     paths: paths.slice(0, MAX_LIST_ITEMS),
     hidden: Math.max(0, paths.length - MAX_LIST_ITEMS),
     ...(label ? { label } : {}),
+    ...(plain && plain.length > 0 ? { plain } : {}),
   };
+}
+
+/**
+ * Whether one entry of a block opens as a file. The renderer asks this instead
+ * of re-deciding what a path looks like, so a block renders with the rule it
+ * was built with.
+ */
+export function linksToFile(block: ToolBlock, entry: string): boolean {
+  if (block.kind !== "files") return false;
+  if (block.plain?.includes(entry)) return false;
+  return block.paths.includes(entry);
 }
 
 /** Group Grep hits by file so repeated paths collapse into one heading. */
@@ -415,7 +439,12 @@ function recordBlocks(
       if (value.length === 0) continue;
       const strings = stringArray(value);
       if (strings) {
-        const block = filesBlock(strings, key);
+        // A generic payload's string array is not necessarily a path list: a
+        // plugin's `tags: ["alpha", "beta"]` is text. Only entries the chat
+        // linker already recognises as file references may open, so a name that
+        // resolves to no file never renders as a link.
+        const plain = strings.filter((entry) => parseFileRef(entry) === null);
+        const block = filesBlock(strings, key, plain);
         if (block) extra.push(block);
         continue;
       }
@@ -436,6 +465,30 @@ function safeJson(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+/**
+ * ToolSearch answers with tool names, not files and not fields: `matches` lists
+ * what the query found, `activated` the subset it just activated, and
+ * `addedToolNames` is the runtime's own record for restoring a session. One row
+ * says what happened — which tools became usable, or that the matches were
+ * already usable, or that nothing matched — and every name stays plain text,
+ * because a tool is not something the transcript can open.
+ */
+function toolSearchBlock(message: ToolPresentationMessage): ToolBlock | null {
+  const details = asRecord(toolResultPayload(message));
+  if (!details) return null;
+  const activated = stringArray(details.activated) ?? [];
+  const matches = stringArray(details.matches) ?? [];
+  if (activated.length > 0) {
+    return { kind: "tools", role: "tools", state: "activated", names: activated };
+  }
+  if (matches.length > 0) {
+    return { kind: "tools", role: "tools", state: "available", names: matches };
+  }
+  // A result with neither list is still this tool's answer; say so instead of
+  // falling back to printing the payload.
+  return { kind: "tools", role: "tools", state: "empty", names: [] };
 }
 
 function askToolResultBlock(
@@ -739,6 +792,14 @@ export function buildToolPresentation(
     const askToolBlock = askToolResultBlock(message);
     if (askToolBlock) return [askToolBlock];
   }
+  // ToolSearch is an on-demand tool lookup whose result is tool names. It is
+  // matched by name, before the suffix rule classifies it as a file search
+  // (its name ends in "search"), and its payload is never printed as fields.
+  if (message.toolName?.split(".").pop()?.toLowerCase() === "toolsearch") {
+    const block = toolSearchBlock(message);
+    if (block) return [block];
+  }
+
 
   const action = getToolAction(message.toolName);
   const args = asRecord(message.toolArgs);

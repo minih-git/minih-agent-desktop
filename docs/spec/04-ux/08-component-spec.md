@@ -2372,9 +2372,10 @@ twice.
 | Bash | `Output`, `Errors` (error hue); empty channels omitted (D227, §9.10). A full row renders them unframed and unlabelled and never repeats the command, which its head prints and copies; a one-line step row opens on a labelled `Command` block instead, because its head only holds a hint cut to the row width. A PermissionCard, which has no head, shows the command as `Command` (shell) too |
 | Glob | `Files` — clickable workspace paths |
 | Grep | `Matches` — grouped by file with a `line` gutter and clickable path headings for `outputMode: content`; a clickable path list for `filesWithMatches`; `path` → hit count fields for `count` |
+| ToolSearch | `On-demand tools` — the tool names the lookup touched, as plain text: the tools it just activated, the matches that were already available, or one sentence when nothing matched. A tool name is never a file link, and the runtime-only `addedToolNames` is never shown |
 | any host `notice` | `Note` — neutral, after the blocks it qualifies (search scoping, clipped long lines, Read window) |
 | any failure | `Error` — message plus code, listed first |
-| unmapped payload | scalar entries as label/value fields; long or multi-line strings as their own labeled block; nested objects as JSON |
+| unmapped payload | scalar entries as label/value fields; a string array as a list whose entries open only when they look like file references (`parseFileRef`) and stay text otherwise; long or multi-line strings as their own labeled block; nested objects as JSON |
 
 - Arguments appear as an `Input` field block only when the result blocks did not
   already carry them, or for opaque tools (`use`, `fork`, `fetch`) whose
