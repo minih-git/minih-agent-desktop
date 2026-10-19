@@ -629,7 +629,13 @@ session grant made remotely is the same by-tool-name grant as a local one
 - Cookie-profile sessions use `SameSite` protection and a CSRF token on every
   mutation, including mutations sent over an already-open WebSocket.
 - A bearer token in a URL is always rejected.
-- CORS exposes only the required methods, headers, and response types.
+- CORS exposes only the required methods, headers, and response types. The
+  allowed request headers are the ones the RACP client actually sends
+  (`authorization`, `content-type`, `x-minih-racp-client`, `x-csrf-token`,
+  `last-event-id`), taken from one shared list so the two sides cannot drift;
+  `x-trace-id` is exposed on both successful and failed responses, because the
+  client reports it with errors. Only allowlisted origins get either header, and
+  `*` is never used.
 - A packaged native client (PR-5) is a cross-origin caller too, so its webview
   origin needs its own allowlist entry: `capacitor://localhost` for an iOS
   build and `https://localhost` for an Android build. Both are the only values

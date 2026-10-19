@@ -1,5 +1,12 @@
 # Unreleased changes
 
+- The iPhone and Android apps can load the session list again. Their webview
+  runs from a cross-origin origin, so the browser preflighted every request and
+  dropped it because the Gateway did not allow the `x-minih-racp-client` header
+  the RACP client sends — the host looked online but any screen behind it failed
+  with "Load failed". The Gateway now allows exactly the headers the client
+  sends, taken from one shared list, and exposes `x-trace-id` so an error in the
+  app still carries the trace id.
 - Remote access now works right after launch. The virtual LAN channel used to
   start without asking your Minih Router for its configuration, so account mode
   stayed "unavailable" — with no reason shown — until you touched a setting or

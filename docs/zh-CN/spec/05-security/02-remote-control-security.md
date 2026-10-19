@@ -46,7 +46,11 @@ HttpOnly、Secure、SameSite=Strict cookie + Origin 规则 + 每次 mutation 的
 （cookie profile；cookie 限定在已配对 Host 的作用域内并带有限 `Max-Age`，最长 400 天，
 因此浏览器重启后配对仍然有效），也可改用带头部认证的 `fetch` 流式读取。cookie 鉴权的请求
 必须带白名单内的 `Origin`；唯一例外是浏览器同源 `GET`/`HEAD`（`Sec-Fetch-Site: same-origin`），
-`Origin` 存在但不在白名单内一律拒绝，修改类请求永不豁免。两种
+`Origin` 存在但不在白名单内一律拒绝，修改类请求永不豁免。CORS 只暴露必要的方法、
+请求头与响应类型：放行的请求头就是 RACP 客户端实际发送的那一组（`authorization`、
+`content-type`、`x-minih-racp-client`、`x-csrf-token`、`last-event-id`），取自同一份
+共享清单，两侧不会漂移；`x-trace-id` 在成功与失败响应上都暴露，因为客户端要在错误里
+带出它；这两类头只发给白名单内的来源，绝不使用 `*`。两种
 profile 都禁止把 token 放进 URL。Gateway 与 cookie profile 随 Gateway 与浏览器
 里程碑交付（R4–R6，D665）；首个远程拓扑使用 header profile，设备 token
 来自 SSH 引导配对。Host 通过出站 mTLS Host link 连接 Gateway，link 只认证
