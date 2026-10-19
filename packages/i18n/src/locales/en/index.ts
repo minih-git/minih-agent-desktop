@@ -372,7 +372,7 @@ export const en = {
     placeholderShortcut: "Shift+Enter for newline · Use Send to submit",
     addFiles: "Add files",
     filesAttached: "Added {{count}} item(s) to the draft",
-    filesPasted: "Saved {{count}} pasted file(s) to the session scratch folder",
+    filesPasted: "Saved {{count}} pasted file(s) to session scratch",
     largeTextPasted: "Saved large pasted text as @{{name}}",
     slashMenu: "Commands",
     slashGroupTemplates: "Prompt templates",
@@ -2014,7 +2014,7 @@ sklm: {
     cancel: "Cancel",
     noProvidersDesc: "Add an AI provider to start.",
     testing: "Testing…",
-    testOk: "Connection looks good",
+    testOk: "Connection verified",
     testFailed: "Connection test failed",
     testFailedStatus: "Connection test failed ({{status}})",
     name: "Name",
@@ -3051,10 +3051,10 @@ importConfirm: "Imported extensions run inside the agent process with the same a
     completed: "Conversation context compacted",
     retrying: "Context compacted; retrying the model request",
     recovered:
-      "Context summary failed; recent context was retained and the task is continuing",
+      "Context summary failed; recent context retained, task continues",
     failed: "Context compaction failed",
     longThreadWarning:
-      "Context compacted. Long threads lose earlier detail with each compaction — start a new session for unrelated work.",
+      "Context compacted. Earlier detail is lost over long threads; start a new session for unrelated tasks.",
   },
   notifications: {
     title: "Notifications",

@@ -57,12 +57,14 @@ function ToastCard({ item }: { item: ToastItem }) {
   };
 
   const Icon = VARIANT_ICON[item.variant];
-  const content = <>
-    <span className="toast-icon" aria-hidden>
-      <Icon size={16} />
-    </span>
-    <span className="toast-message selectable">{item.message}</span>
-  </>;
+  const content = (
+    <>
+      <span className="toast-icon" aria-hidden>
+        <Icon size={20} />
+      </span>
+      <span className="toast-message selectable">{item.message}</span>
+    </>
+  );
   return (
     <div
       className={`toast ${item.variant}${closing ? " closing" : ""}`}
@@ -155,7 +157,7 @@ export function ToastHost() {
   if (!host) return null;
   return createPortal(
     <div className="toast-viewport" aria-live="polite">
-      {toasts.map((item) => (
+      {[...toasts].reverse().map((item) => (
         <ToastCard key={item.id} item={item} />
       ))}
     </div>,

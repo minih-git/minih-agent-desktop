@@ -3855,12 +3855,12 @@ Guidance surfaces when key data is absent. Must always provide an **action link*
 
 ### 17.1 Purpose
 
-Transient, non-blocking feedback for completed actions and failures that have no inline surface (background events, cross-page confirmations). One global stack — never per-page toast markup.
+Non-blocking notification cards for completed actions and failures that have no inline surface. One global right-side stack, never per-page markup. The existing `ToastHost` and `showToast` API names stay compatible; native notifications and the durable inbox are unchanged.
 
 ### 17.2 Anatomy
 
 ```text
-                        ┌  toast-viewport (fixed top-center, z-toast) ┐
+                        ┌  toast-viewport (fixed top-right, z-toast) ┐
                         │  ┌──────────────────────────────────────┐ │
    newest, at anchor →  │  │ (✓)  Provider saved               ✕  │ │
                         │  ├──────────────────────────────────────┤ │
@@ -3870,8 +3870,8 @@ Transient, non-blocking feedback for completed actions and failures that have no
 ```
 
 - `ToastHost` (in `components/Toast.tsx`) renders the stack; mounted once per shell branch in `App.tsx`
-- Each card: 16px variant icon (semantic tint) · message · X dismiss button
-- Surface: `bg-elevated-opaque` + 1px `border-subtle` + `shadow-dialog`, radius-md-plus — same floating family as menus; metrics in [07-ui-design-system.md §11.8](07-ui-design-system.md#118-toast)
+- Each card: 20px variant icon in a softly tinted 32px circle · one concise, selectable message · X dismiss button. Long content preserves line breaks and scrolls without hiding the dismiss control.
+- Surface: `bg-elevated-opaque` + 1px `border-subtle` + `shadow-dialog`, radius-lg — same floating family as menus; metrics in [07-ui-design-system.md §11.8](07-ui-design-system.md#118-toast)
 
 ### 17.3 API
 
@@ -3880,7 +3880,7 @@ State lives in the app store (`useAppStore`):
 ```ts
 showToast(message: string, options?: {
   variant?: "info" | "success" | "warning" | "error"; // default "info"
-  duration?: number; // ms; default 4000 (error 8000); 0 = sticky
+  duration?: number; // ms; info/success default 4000, warning/error default 0 (sticky)
 });
 dismissToast(id: number); // ToastHost internal / tests
 ```
@@ -3899,14 +3899,24 @@ dismissToast(id: number); // ToastHost internal / tests
 
 ### 17.5 Behavior
 
-- Auto-dismiss 4s (error 8s, `duration: 0` sticky); hovering a card pauses its timer, leaving resumes with remaining time
-- Stack caps at 4 — oldest drops first; re-raising an identical message+variant restarts the existing toast instead of stacking a twin
-- Newest toast enters at the top-center anchor (slide-down 200ms ease-out) pushing older cards down; exit is a 150ms ease-in fade
-- Dismiss X always available; every card is an explicit non-drag pointer target
-  so hover pause and dismissal remain interactive where the top-center stack
-  overlaps frameless titlebar drag chrome
-- Reduced motion keeps animations near-zero-duration so removal (bound to
-  `animationend`) still fires
+- Info/success auto-dismiss after 4s; warnings/errors remain until manually
+  dismissed. Explicit duration overrides remain supported, including
+  `duration: 0` interactive reminders. Hover or keyboard focus pauses a timer
+  and resumes its remaining time after both leave.
+- Retain every sticky notification plus the four latest transient entries.
+  New arrivals never evict sticky cards. Re-raising the same message,
+  variant, and session replaces the card with a fresh id and countdown.
+- Newest cards are first in DOM at the top-right, 56px below the top and
+  16px from the right. Enter from beyond the right edge (200ms ease-out);
+  exit right (150ms ease-in).
+- The viewport has a window-bounded height and scrolls vertically when full.
+  Every old card and close control remains reachable in narrow windows.
+  Cards do not shrink to fit a crowded stack.
+- Close controls are always available; cards are non-drag pointer targets.
+  Arrival does not steal focus. Existing session activation, prompt
+  resolution, and one-chime semantics remain unchanged.
+- Reduced motion uses near-zero animation duration so the `toast-out`
+  animation-end removal contract still fires.
 
 ### 17.6 Accessibility
 
@@ -3916,7 +3926,7 @@ dismissToast(id: number); // ToastHost internal / tests
 
 ### 17.7 MVP constraints
 
-- No action buttons inside toasts (post-MVP; use the inline error banner for actionable errors)
+- Existing session-linked reminders retain navigation. Ordinary notices do not become clickable; no arbitrary notification actions are added.
 - No progress/loading toasts — running state belongs to the working indicator
 - No toast history surface
 

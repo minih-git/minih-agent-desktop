@@ -1,5 +1,10 @@
 # Unreleased changes
 
+- App feedback now appears as notification cards sliding in from the right.
+  Errors and warnings stay until dismissed; successful actions and ordinary
+  notices close automatically, pausing while you hover or focus them. Long
+  stacks scroll instead of dropping important messages, and common feedback
+  is more concise without hiding error details.
 - Remote control can join your Minih Router account. When the Router offers
   it, turning on remote control enrolls this computer with the saved Router key
   instead of a registration code; a phone or browser signs in at the Gateway with
