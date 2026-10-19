@@ -115,7 +115,8 @@ destination, chat as the home surface, tools and permissions inline.
   header's 4px control gap) keeps the `+`, maximize, and viewport-fixed
   work-panel toggle one button group, spaced by that same gap, while the trigger
   keeps a distinct hit target. Clicking `+` creates and activates
-  a unique New launcher tab; its body presents the same data-driven Review and
+  a unique New launcher tab; its body presents the same data-driven Review,
+  side-notes, and
   plugin-view rows as buttons, so the user chooses a destination in the page
   instead of opening a dropdown. Selecting a row replaces that launcher tab with
   the destination or activates an existing singleton. File paths stay distinct

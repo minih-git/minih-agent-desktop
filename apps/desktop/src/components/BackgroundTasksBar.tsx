@@ -18,11 +18,15 @@ const MAX_VISIBLE_TASKS = 12;
  * earns a row here: a command that ended long ago is history, not something
  * the user is waiting on, and it must not sit above the composer forever.
  * Running tasks float to the top.
+ *
+ * The registry is process-wide, so the bar is scoped to the conversation it is
+ * mounted for: it lists only `sessionId`'s tasks and never offers Stop for
+ * another session's command.
  */
-export function BackgroundTasksBar(): React.JSX.Element | null {
+export function BackgroundTasksBar({ sessionId }: { sessionId: string }): React.JSX.Element | null {
   const { t } = useTranslation();
   const { tasks, expandedId, output, stoppingIds, error, toggleOutput, stop, dismiss } =
-    useBackgroundTasks();
+    useBackgroundTasks(sessionId);
   const outputText = useMemo(
     () => formatOutput(output, expandedId ?? ""),
     [output, expandedId],

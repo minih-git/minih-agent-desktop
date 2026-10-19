@@ -1632,7 +1632,16 @@ written.
   file, which keeps only the Host certificate and key. Nothing is enrolled and
   nothing listens while the user's own remote-control switch is off, and an
   unavailable advertisement leaves the self-hosted registration-code flow
-  untouched. Its confirmer is the desktop's own window: `device.request` is
+  untouched. Being off does not make account mode invisible, though: whether it
+  could work — an advertised endpoint plus a configured account key — is read
+  without enrolling, dialing, or opening anything, and reported in the status so
+  the page can offer the switch at all; every status read asks again (concurrent
+  reads share one call, and a settled answer is never reused), because both the
+  overlay and the account key can appear after the page was first opened.
+  Turning that switch on is what enrolls
+  the desktop: a desktop that waited for an enrollment before offering the switch
+  while the enrollment waited for the switch had no way in. Its confirmer is the
+  desktop's own window: `device.request` is
   shown as a modal that names the device and the client, focus starts on Deny,
   Escape denies, and the dialog closes when the request's `expiresAt` passes.
   There is no answer that is not a decision: a renderer that reports it is going

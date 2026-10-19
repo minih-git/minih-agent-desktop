@@ -15669,12 +15669,16 @@ sibling Hosts is still open for package D.
   `/api/auth/session` with two distinct `access_key_id` values for keys A and B,
   and `/api/easytier/bootstrap` with a `remoteGateway` object naming the local
   test Gateway; one enrolled Host per account; two loopback model stubs.
-- **Steps**: 1) Enroll Host A1 with key A and Host B1 with key B; record the
-  account each is recorded under. 2) Log a client in with key A and list the
-  account Hosts. 3) With that client, address B1 by its id on the account host
-  listing, on a Host-scoped route, and in a device request. 4) Send an
-  enrollment whose CSR names A1's `hostId` but presents key B. 5) Relay a grant
-  signed by B1 to A1. 6) Read the Gateway `--data-dir` and its audit log.
+- **Steps**: 1) On a freshly installed desktop with key A configured and no
+  stored credentials, confirm the Remote gateway page offers the remote-access
+  switch and reports account mode as available; turn it on and record that it
+  enrolled once with key A, with no registration code. Enroll Host B1 with key
+  B; record the account each is recorded under. 2) Log a client in with key A
+  and list the account Hosts. 3) With that client, address B1 by its id on the
+  account host listing, on a Host-scoped route, and in a device request.
+  4) Send an enrollment whose CSR names A1's `hostId` but presents key B.
+  5) Relay a grant signed by B1 to A1. 6) Read the Gateway `--data-dir` and its
+  audit log.
 - **Expected**: The key-A listing contains A1 only; every request naming B1 is
   refused and never routed; the key-B enrollment neither replaces nor joins A1,
   which keeps its account and its link; A1 refuses the grant signed by B1; B1's
@@ -16950,6 +16954,45 @@ plugin-form fixtures in an isolated temporary directory at runtime.
 - **Status**: Draft. Existing regression suites cover surrounding behavior;
   the rendered steering journey has not been run
   (do not run E2E locally unless explicitly requested).
+
+#### E2E-AGENT-side-note-keeps-running-turn: A side note is answered without redirecting the turn
+
+- **Preconditions**: A session with a configured model and a controllable
+  streaming response/tool that stays open long enough to type during.
+- **Steps**:
+  1. Start a prompt, then open the work panel's side-notes tab from the `+`
+     launcher. Confirm the input is enabled and the list is empty.
+  2. Send a note ("How far along are you?") while the turn streams. Confirm the
+     turn keeps its task, the note appears in the tab and as a marked user row
+     in the transcript, and no FIFO row or new public `agent_start` appears.
+  3. Use the preset progress-summary action, then send a note that asks for a
+     direction change. Confirm the model answers each note and continues.
+  4. Send an empty note; then let the turn finish and confirm the input is
+     disabled and explains why.
+  5. Reload the renderer and switch sessions. Confirm the tab lists the same
+     notes for that session and the transcript rows stay marked.
+  6. Stop the turn while a note is still queued, then inspect the persisted
+     rows and the next ordinary turn.
+- **Expected**: A side note is delivered into the running turn, answered at its
+  next safe point, and never cancels the turn, its tools, or its delegates. The
+  persisted row keeps the user's own words plus the `sideNote` marker, while the
+  model-visible prompt carries the side-note framing. An idle session cannot
+  send a note and says so.
+- **Specs linked**: `03-runtime/01-ipc-protocol.md` (§5.1a),
+  `03-runtime/02-agent-runtime.md` (§4.0), `03-runtime/04-data-storage.md`,
+  `04-ux/09-interaction-patterns.md` (§3.5), ADR active-turn-steering
+- **Acceptance**: C (conversation & stream), Quality
+- **Milestone**: M5
+- **Automated coverage**: `pnpm test:e2e:side-notes` mounts the production work
+  panel in isolated Electron and exercises the launcher, preset, pending edits,
+  refusal/retry, Enter/Shift+Enter/IME, session isolation and idle admission.
+  Its process fixture uses production Main IPC, AgentHost, the sidecar and Rust
+  Host with a local SSE provider: a note wakes TaskWait in the same turn, both
+  delegates remain live, ordinary FIFO input is preserved, and the durable row
+  keeps plain text plus `sideNote`/`steering` while only the model sees framing.
+- **Status**: Automated fixture paths covered. Live-model interpretation of a
+  direction-changing note and Stop during pending delivery remain manual
+  acceptance scenarios; these fixtures do not authorize a paid provider run.
 
 #### E2E-SESSION-content-search-and-message-navigation
 
@@ -19084,7 +19127,9 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
   a started background process survives its turn but not Stop or Host exit.
   Output is drained and bounded to 256 KiB per stream. Foreground behavior and
   shell pinning stay unchanged. Remote background requests fail explicitly.
-  Composer lists at most 12 tasks, polls only expanded output, ignores stale
+  Composer lists at most 12 tasks, scopes the bar to the conversation on screen
+  (switching sessions changes the listing but stops neither session's processes,
+  and a draft composer shows no bar), polls only expanded output, ignores stale
   responses, retries visible errors, and does not replay historical finished rows.
 - **Specs**: `03-runtime/03-tools-and-permissions.md`,
   `03-runtime/06-host-rpc-protocol.md`, `03-runtime/01-ipc-protocol.md`,

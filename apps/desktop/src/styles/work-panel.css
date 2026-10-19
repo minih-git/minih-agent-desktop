@@ -1195,3 +1195,66 @@
 .work-panel:has(.subagent-roster) .subagent-roster-hint {
   flex: 0 1 auto;
 }
+
+/* ---------- Side notes tab --------------------------------------------- */
+
+/*
+ * The notes list scrolls above a fixed composer. The composer keeps its input
+ * in every state — when the session has no running turn the hint below the
+ * actions explains why the input is disabled instead of hiding it.
+ */
+.side-notes-tab {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.side-notes-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 12px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.side-note-row {
+  padding: 8px 10px;
+  background: var(--ds-bg-hover);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-2xs);
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.side-notes-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--ds-border-subtle);
+}
+
+.side-notes-input {
+  width: 100%;
+  resize: none;
+}
+
+.side-notes-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.side-notes-hint {
+  margin: 0;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+}

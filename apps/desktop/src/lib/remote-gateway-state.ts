@@ -109,11 +109,19 @@ export function accountModeVisible(status: RemoteGatewayStatus | null): boolean 
 }
 
 /**
- * The switch is only offered once this desktop holds Gateway credentials: a
- * link without an enrollment has nothing to dial.
+ * The switch is only offered when turning it on would do something: this
+ * desktop already holds Gateway credentials, or account mode can enroll it.
+ *
+ * The second half is what a fresh install depends on. Without it the switch
+ * waits for an enrollment while the enrollment — automatic in account mode —
+ * only happens once the switch is on, so a desktop that has just installed
+ * Minih Router can never get in. Account mode stays "not available" when there
+ * is no Router key, no EasyTier, or no advertised Gateway, and then the switch
+ * keeps waiting for the registration code exactly as before.
  */
 export function remoteGatewaySwitchDisabled(status: RemoteGatewayStatus | null): boolean {
-  return status === null || status.enrolled !== true;
+  if (status === null) return true;
+  return status.enrolled !== true && status.accountMode?.available !== true;
 }
 
 /** `m:ss` for the remaining lifetime; never negative. */

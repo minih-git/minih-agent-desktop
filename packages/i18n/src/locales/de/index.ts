@@ -401,6 +401,7 @@ export const de = {
     "editQueuedPromptBusy": "Leeren Sie das Eingabefeld, bevor Sie diese wartende Nachricht bearbeiten",
     sendWhileRunning: "Folgenachricht senden · {{shortcut}} zum Lenken",
     steeringUnavailable: "Diese Runde nimmt keine weiteren Eingaben an. Dein Entwurf wurde behalten.",
+    "sideNote": "Nebennotiz",
     nativeSessionBusy: "Diese native Pi-Sitzung antwortet noch. Stoppe sie oder warte auf die Antwort, bevor du sendest.",
     "stopGenerating": "Generieren stoppen",
     "running": "Funktioniert…",
@@ -1414,8 +1415,12 @@ sklm: {
       "accountModeUnavailable": "Nicht verfügbar",
       "accountModeActiveHint": "Dieser Desktop ist über dein Minih-Router-Konto registriert, daher kann ein Telefon mit demselben Schlüssel ihn erreichen.",
       "accountModeUnavailableHint": "Das Formular für den Registrierungscode unten funktioniert weiterhin.",
+      "accountModeReady": "Bereit",
+      "accountModeReadyHint": "Dein Minih-Router-Konto steht diesem Desktop zur Verfügung. Schalte den Fernzugriff ein, um ihn mit deinem Kontoschlüssel zu registrieren — ein Registrierungscode ist nicht nötig.",
       "accountEnrollTitle": "Über deinen Minih-Router registriert",
       "accountEnrollBody": "Der Router hat Gateway und Zertifikat vorgegeben, und dieser Desktop hat sich mit deinem Kontoschlüssel registriert. Es gibt keinen Registrierungscode zum Einfügen.",
+      "accountEnrollPendingTitle": "Nutzt deinen Minih-Router",
+      "accountEnrollPendingBody": "Der Router gibt Gateway und Zertifikat vor, und dieser Desktop registriert sich mit deinem Kontoschlüssel. Es gibt keinen Registrierungscode zum Einfügen.",
       "strictTitle": "Gerätebestätigung",
       "strictLabel": "Bestätigung auf jedem Gerät verlangen",
       "strictHint": "Solange dies aktiv ist, wird ein auf einem anderen Rechner freigegebenes Gerät hier nicht akzeptiert: du bestätigst jedes Gerät auf diesem Desktop. Ein- oder Ausschalten verbindet die Verknüpfung neu.",
@@ -2384,7 +2389,20 @@ sklm: {
       "browser": "Browser",
       "file": "Dateien",
       "plugin": "Plugin-Ansicht",
-      "subagent": "Subagent"
+      "subagent": "Subagent",
+      "sideNotes": "Nebennotizen"
+    },
+    "sideNotes": {
+      "emptyTitle": "Noch keine Nebennotizen",
+      "emptyBody": "Notizen, die du während der Arbeit des Agenten sendest, erscheinen hier. Die laufende Aufgabe läuft weiter.",
+      "inputLabel": "Nebennotiz",
+      "placeholder": "Um eine Fortschrittszusammenfassung bitten oder die Richtung anpassen…",
+      "idlePlaceholder": "Nebennotizen sind nur während einer laufenden Aufgabe verfügbar",
+      "idleHint": "Eine Nebennotiz wird innerhalb der laufenden Aufgabe beantwortet und unterbricht sie nicht. Aktuell läuft keine Aufgabe.",
+      "hint": "Wird in die laufende Aufgabe gesendet und am nächsten sicheren Punkt beantwortet.",
+      "send": "Senden",
+      "presetProgressLabel": "Fortschritt zusammenfassen",
+      "presetProgress": "Fasse den bisherigen Fortschritt kurz zusammen und fahre dann mit der aktuellen Aufgabe fort."
     },
     "pluginView": {
       "failed": "Diese Ansicht konnte nicht geladen werden. Laden Sie das Plugin neu und versuchen Sie es erneut."

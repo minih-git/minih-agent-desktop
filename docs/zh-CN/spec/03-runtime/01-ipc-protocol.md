@@ -204,6 +204,7 @@ type AgentSteerRequest = {
  content: string;
  messageId?: string;
  attachments?: AgentPromptAttachment[];
+ sideNote?: boolean;
 };
 ```
 
@@ -219,6 +220,9 @@ type AgentSteerRequest = {
 
 已接收的输入以普通用户消息事件回显，携带当前 `turnId`、主进程准备的附件引用和
 `UiMessage.steering: true`。这个持久标记确保渲染器重载后，Smart Stop 仍保留该输入。
+可选的 `sideNote: true` 字段在同一通道上标记旁注：回显行携带 `UiMessage.sideNote`，
+运行时只对模型可见的提示词加旁注框架（见 `02-agent-runtime.md` §4.0），行本身保留
+用户原话。准入、附件处理和持久化均不变。
 用户 `message_end` 还可携带 `precedingAssistant` 流式快照，在持久化输入前为回复预留
 位置。主进程通过可重放 outbox 写入两者；主机仅以终态快照替换该临时助手行，保留其
 id、顺序和所属回合。图像字节不进入持久消息。这是新增的桌面通道和事件字段，

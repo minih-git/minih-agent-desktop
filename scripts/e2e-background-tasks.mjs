@@ -16,28 +16,49 @@ assert(baselineIndex < 0 || (baseline && !baseline.startsWith("-")), "--baseline
 const artifacts = join(root, ".cache", `background-tasks-e2e${baseline ? "-baseline" : ""}`);
 const original = (path) => execFileSync("git", ["show", `${baseline}:${path}`], { cwd: root, encoding: "utf8" });
 await mkdir(artifacts, { recursive: true });
+const assetPlugin = [{
+  name: "local-url-assets",
+  setup(build) {
+    build.onResolve({ filter: /\?url$/ }, ({ path, resolveDir }) => ({
+      path: join(resolveDir, path.slice(0, -4)), namespace: "local-url-asset",
+    }));
+    build.onLoad({ filter: /.*/, namespace: "local-url-asset" }, async ({ path }) => ({
+      contents: await readFile(path), loader: "file",
+    }));
+  },
+}];
 await build({
   entryPoints: [join(root, "scripts/e2e/background-tasks.tsx")],
   outfile: join(artifacts, "renderer.js"),
   bundle: true, platform: "browser", format: "iife", jsx: "automatic",
   define: { "process.env.NODE_ENV": '"production"', "import.meta.env.DEV": "false" },
-  loader: { ".css": "empty" },
+  loader: { ".css": "empty", ".woff": "file", ".woff2": "file", ".ttf": "file" },
   alias: {
     "@minih-agent/i18n": join(root, "packages/i18n/src/index.ts"),
     react: join(root, "apps/desktop/node_modules/react"),
     "react-dom": join(root, "apps/desktop/node_modules/react-dom"),
   },
   nodePaths: [join(root, "apps/desktop/node_modules")],
-  plugins: baseline ? [{
+  plugins: [...assetPlugin, ...(baseline ? [{
     name: "baseline-background-tasks",
     setup(build) {
-      build.onLoad({ filter: /[\\/]BackgroundTasksBar\.tsx$/ }, () => ({
-        contents: original("apps/desktop/src/components/BackgroundTasksBar.tsx"),
-        loader: "tsx",
-        resolveDir: join(root, "apps/desktop/src/components"),
-      }));
+      // Swap every file this behaviour lives in, so the comparison proves the
+      // new scenario fails on the pre-fix implementation.
+      const originals = [
+        ["apps/desktop/src/components/BackgroundTasksBar.tsx", "tsx", "apps/desktop/src/components"],
+        ["apps/desktop/src/components/Composer.tsx", "tsx", "apps/desktop/src/components"],
+        ["apps/desktop/src/features/chat/background-tasks/bar-visibility.ts", "ts", "apps/desktop/src/features/chat/background-tasks"],
+        ["apps/desktop/src/features/chat/background-tasks/useBackgroundTasks.ts", "ts", "apps/desktop/src/features/chat/background-tasks"],
+      ];
+      for (const [path, loader, dir] of originals) {
+        build.onLoad({ filter: new RegExp(`[\\\\/]${path.split("/").at(-1).replace(".", "\\.")}$`) }, () => ({
+          contents: original(path),
+          loader,
+          resolveDir: join(root, dir),
+        }));
+      }
     },
-  }] : [],
+  }] : [])],
 });
 let styles;
 if (baseline) {

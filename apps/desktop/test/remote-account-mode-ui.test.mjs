@@ -61,6 +61,10 @@ window.minihAgent = { platform: "darwin", channels: IPC,
   },
   async invoke(channel, input) {
     calls.push({ channel, input });
+    if (channel === IPC.invoke.remoteGatewaySetEnabled) {
+      status = { ...status, enabled: input.enabled };
+      return { ok: true, data: status };
+    }
     if (channel === IPC.invoke.remoteGatewayStatus) return { ok: true, data: status };
     if (channel === IPC.invoke.remoteGatewayListDevices) return { ok: true, data: { devices: [] } };
     if (channel === IPC.invoke.remoteGatewaySetStrictDevices) {
@@ -145,8 +149,14 @@ window.accountModeProbe = async () => {
   check1(focusables[1] === approve, "Approve must come second");
 
   // 4. Escape denies, and the answer reaches main.
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  await until(() => !document.querySelector('[role="alertdialog"]'), "dialog did not close on Escape");
+  // The dialog subscribes to the key in an effect, so the key is retried until
+  // it lands: dispatching once on the frame the element appears is a race that
+  // fails under a loaded suite, not a property of the dialog.
+  await until(() => {
+    if (!document.querySelector('[role="alertdialog"]')) return true;
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    return !document.querySelector('[role="alertdialog"]');
+  }, "dialog did not close on Escape");
   const decisions = calls.filter((call) => call.channel === IPC.invoke.remoteGatewayDeviceDecision);
   check1(decisions.length === 1, "Escape did not answer the request");
   check1(decisions[0].input.approved === false, "Escape must deny");
@@ -178,6 +188,62 @@ window.accountModeProbe = async () => {
   flushSync(() => { page.unmount(); dialog.unmount(); });
   return { passed: true };
 };
+/**
+ * The reported defect, rendered: a desktop that has never enrolled, whose
+ * remote-control switch used to be greyed out while the account-mode section
+ * that would explain why stayed hidden — so nothing could ever turn it on.
+ */
+window.freshInstallProbe = async () => {
+  status = {
+    state: "disabled",
+    since: "2026-10-18T00:00:00.000Z",
+    enabled: false,
+    enrolled: false,
+    strictDevices: false,
+    accountMode: {
+      available: true,
+      url: "wss://gateway.example.com/hostlink",
+      publicOrigin: "https://gateway.example.com",
+    },
+  };
+  mount();
+  await until(() => document.querySelector('[data-testid="remote-gateway-account-mode"]'), "a fresh install must show account mode");
+  const section = document.querySelector('[data-testid="remote-gateway-account-mode"]').textContent;
+  // Available is not registered: the page says ready, and explains that turning
+  // the switch on is what registers this desktop.
+  check1(section.includes(text("accountModeReady")), "a fresh install should read as ready: " + section);
+  check1(!section.includes(text("accountModeActive")), "nothing is registered yet, so it must not read as active");
+  check1(section.includes(text("accountModeReadyHint")), "the ready hint should say what turning it on does");
+  check1(section.includes("wss://gateway.example.com/hostlink"), "the advertised endpoint should be shown");
+  // The registration section reflects the pending state too.
+  check1(document.body.textContent.includes(text("accountEnrollPendingTitle")), "the enroll section should say it is pending");
+  check1(!document.body.textContent.includes(text("accountEnrollTitle")), "an unregistered desktop is not registered");
+
+  // The switch that used to be disabled is usable, which is the whole fix.
+  const remoteSwitch = buttons().find((node) => node.getAttribute("role") === "switch" && node.getAttribute("aria-label") === text("enabled"));
+  check1(remoteSwitch, "remote-control switch missing");
+  check1(remoteSwitch.disabled === false, "a fresh install with account mode must be able to turn the switch on");
+  await click(remoteSwitch, "remote-control switch");
+  const toggled = calls.filter((call) => call.channel === IPC.invoke.remoteGatewaySetEnabled);
+  check1(toggled.length === 1, "turning the switch on did not reach main");
+  check1(toggled[0].input.enabled === true, "the switch should have been turned on");
+
+  // What main then reports is an enrolled desktop, and the page follows.
+  status = {
+    ...status,
+    state: "connecting",
+    enabled: true,
+    enrolled: true,
+    hostId: "host_desktop",
+  };
+  emit(IPC.event.remoteGatewayStatusChanged, status);
+  await until(() => document.querySelector('[data-testid="remote-gateway-account-mode"]').textContent.includes(text("accountModeActive")), "the page should follow the enrollment");
+  check1(document.body.textContent.includes(text("accountEnrollTitle")), "the enroll section should now read as registered");
+
+  flushSync(() => { page.unmount(); dialog.unmount(); });
+  return { passed: true };
+};
+
 `;
 
 test(
@@ -193,6 +259,7 @@ test(
         platform: "browser",
         format: "esm",
         jsx: "automatic",
+
         define: { "process.env.NODE_ENV": '"production"' },
         alias: {
           "@minih-agent/i18n": join(root, "packages/i18n/src"),
@@ -228,6 +295,11 @@ app.whenReady().then(async () => {
     // focus so the dialog's focus handling is observable.
     win.webContents.focus();
     console.log("REMOTE_ACCOUNT_UI_PROBE " + JSON.stringify(await win.webContents.executeJavaScript("window.accountModeProbe()")));
+    // A second document for the fresh-install path: the first probe went
+    // through an enrolled desktop and left its own state behind.
+    await win.loadFile(path.join(__dirname, "index.html"));
+    win.webContents.focus();
+    console.log("REMOTE_ACCOUNT_UI_FRESH " + JSON.stringify(await win.webContents.executeJavaScript("window.freshInstallProbe()")));
     app.exit(0);
   } catch (error) { console.error(error?.stack ?? error); app.exit(1); }
 });`,
@@ -257,6 +329,9 @@ app.whenReady().then(async () => {
       }
       assert.equal(code, 0, output.slice(-6000));
       assert.match(output, /REMOTE_ACCOUNT_UI_PROBE \{"passed":true\}/);
+      // The reported defect: a fresh install used to hide account mode and grey
+      // out the switch, so there was no way in.
+      assert.match(output, /REMOTE_ACCOUNT_UI_FRESH \{"passed":true\}/);
     } finally {
       await rm(temp, { recursive: true, force: true });
     }
