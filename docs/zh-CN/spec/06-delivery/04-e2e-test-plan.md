@@ -10137,6 +10137,22 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **里程碑**：M5。
 - **状态**：已在引擎层自动化。
 
+### E2E-SETTINGS-learned-memory-lives-on-the-ai-tab：学习记忆只出现在 AI 选项卡
+
+- **前置条件**：隔离的 Electron 窗口、已构建的渲染层与打桩的 IPC 边界；不使用真实 Host、提供方或
+  用户配置。
+- **步骤**：在「常规」上挂载真实设置页并读取渲染出的卡片标题；切到「AI」再读一次；在已选模型且
+  自动学习开关关闭时读取该行的说明行，然后清空模型再读一次；在设置搜索中检索学习记忆相关行。
+- **预期**：学习记忆卡片不出现在「常规」，而出现在「AI」上，与该目的地的其他卡片并列。已选模型时
+  永不出现「请先选择模型」，该行只在未选模型时说明这一点，此时开关也为禁用。设置搜索能把这些行
+  指向 AI 目的地。
+- **规格**：`04-ux/06-settings-ia.md` §2（AI）、ADR agent-long-term-memory。
+- **验收**：学习记忆开关只出现在一个目的地；已选模型时自动学习行不会声称缺少模型。
+- **自动化**：`apps/desktop/test/learned-memory-settings-placement.test.mjs`（`node --test`），
+  在本任务 worktree 中先执行 `pnpm --filter @minih-agent/desktop build`。
+- **里程碑**：Post-M5 设置修复。
+- **状态**：已自动化 — `node --test apps/desktop/test/learned-memory-settings-placement.test.mjs`。
+
 ### E2E-BASH-background-task-lifecycle-and-output
 
 - **前置条件**：本任务构建的 Host、隔离数据/配置和确定性的本地命令；不使用真实模型或用户桌面。

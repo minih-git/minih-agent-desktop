@@ -40,3 +40,8 @@
   the index the last session started with, how many suggestions you kept or
   discarded and at what rate, how often a delete blocked a write, and today's
   extraction spend. None of it is uploaded, and none of it syncs.
+- The learned-memory settings live on the AI tab of Settings and nowhere else:
+  the card used to render on every destination, so the same switches appeared
+  again on General, Shortcuts, and the rest. The automatic-learning row also
+  stopped claiming a model was missing while one was already chosen, and
+  settings search now finds the learned-memory rows under AI.
