@@ -12,7 +12,10 @@
  *     while `sidebar-out` still occupies flex space;
  *   - the expanded sidebar yields at the threshold and returns when the panel
  *     closes;
- *   - a manual reopen spends work-panel width first, otherwise targeting 460px.
+ *   - a manual reopen spends work-panel width first, otherwise targeting 460px;
+ *     that width is only borrowed: the stored preferred width is unchanged,
+ *     collapsing the sidebar again restores it, and divider drags still stop
+ *     at the 244px minimum.
  *
  * Prereqs: `pnpm --filter @minih-agent/desktop build` (or `pnpm build:js`) and a
  * host-core binary (target/debug, target/release, or MINIH_AGENT_HOST_BIN).
@@ -39,6 +42,7 @@ const electronBin =
 const cdpPort = Number(process.env.MINIH_AGENT_LAYOUT_CDP_PORT || 9336);
 const MAIN_PANE_MIN_WIDTH = 450;
 const MAIN_PANE_REOPEN_TARGET_WIDTH = 460;
+const WORK_PANEL_MIN_WIDTH = 244;
 
 function resolveHostBinary() {
   const candidates = [
@@ -109,6 +113,8 @@ async function seedSidebarProjects(hostBinary, dataDir, tempDirs) {
   ]);
   const alphaSessionIds = [];
 
+  const { seedOfflineHostData } = await import("./e2e/offline-host-data.mjs");
+  seedOfflineHostData(root, dataDir);
   const host = new Host(hostBinary, dataDir);
   try {
     await host.start();
@@ -446,6 +452,45 @@ async function main() {
       await delay(600);
       return { start, after: await measure(), minMain, windowChanged: false };
     };
+    // Moves the inner divider by a signed step per frame; positive steps
+    // narrow the panel. Reports the narrowest panel seen during the preview.
+    const dragDividerBy = async (stepPx, steps) => {
+      const start = await measure();
+      if (!start.handle) throw new Error("divider not found");
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: start.handle.x,
+        y: start.handle.y,
+        button: "left",
+        clickCount: 1,
+        buttons: 1,
+      });
+      let minPanel = Infinity;
+      let x = start.handle.x;
+      for (let index = 1; index <= steps; index += 1) {
+        x = Math.min(start.handle.x + index * stepPx, start.windowWidth - 24);
+        await cdp.send("Input.dispatchMouseEvent", {
+          type: "mouseMoved",
+          x,
+          y: start.handle.y,
+          button: "left",
+          buttons: 1,
+        });
+        await delay(50);
+        const sample = await measure();
+        if (typeof sample.panel === "number") minPanel = Math.min(minPanel, sample.panel);
+      }
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x,
+        y: start.handle.y,
+        button: "left",
+        clickCount: 1,
+        buttons: 0,
+      });
+      await delay(600);
+      return { start, after: await measure(), minPanel };
+    };
 
     await waitFor(
       () => cdp.evaluate(`!!document.querySelector(".main-pane")`),
@@ -640,6 +685,62 @@ async function main() {
       "the constrained reopen lands on the 460px MainChat target",
       `main=${reopened.main} panel=${reopened.panel}`,
     );
+
+    // 3b. A narrow reopen only borrows panel width. An 866px viewport makes
+    // the reopen squeeze the panel below its 244px minimum.
+    const viewportHeight = await cdp.evaluate("window.innerHeight");
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width: 866,
+      height: viewportHeight,
+      deviceScaleFactor: 0,
+      mobile: false,
+    });
+    await delay(500);
+    if ((await measure()).sidebarKind !== "sidebar") await clickSidebarToggle();
+    // 360px does not fit beside the sidebar here, so the layout collapses it.
+    await rig(`window.__MINIH_AGENT__.setWorkPanelWidth(360)`);
+    if ((await measure()).sidebarKind === "sidebar") await clickSidebarToggle();
+    const narrowCollapsed = await measure();
+    await clickSidebarToggle();
+    const narrowReopened = await measure();
+    check(
+      narrowCollapsed.panel === 360 &&
+        narrowReopened.sidebarKind === "sidebar" &&
+        narrowReopened.main === MAIN_PANE_REOPEN_TARGET_WIDTH &&
+        narrowReopened.panel ===
+          narrowReopened.windowWidth -
+            narrowReopened.sidebar -
+            MAIN_PANE_REOPEN_TARGET_WIDTH &&
+        narrowReopened.panel < WORK_PANEL_MIN_WIDTH,
+      "a narrow reopen shows the panel below its regular minimum",
+      JSON.stringify({ narrowCollapsed, narrowReopened }),
+    );
+    const storedAfterNarrowReopen = await cdp.evaluate(
+      `localStorage.getItem("pi.desktop.workPanel")`,
+    );
+    check(
+      JSON.parse(storedAfterNarrowReopen ?? "{}").width === 360,
+      "a narrow reopen keeps the stored preferred panel width",
+      String(storedAfterNarrowReopen),
+    );
+    await clickSidebarToggle();
+    await delay(400);
+    const narrowRecollapsed = await measure();
+    check(
+      narrowRecollapsed.sidebarKind !== "sidebar" && narrowRecollapsed.panel === 360,
+      "collapsing the sidebar again restores the preferred panel width",
+      JSON.stringify(narrowRecollapsed),
+    );
+    const narrowShrink = await dragDividerBy(30, 12);
+    check(
+      narrowShrink.minPanel >= WORK_PANEL_MIN_WIDTH &&
+        narrowShrink.after.panel === WORK_PANEL_MIN_WIDTH,
+      "divider drags still stop at the 244px minimum after a narrow reopen",
+      `min=${narrowShrink.minPanel} after=${narrowShrink.after.panel}`,
+    );
+    await cdp.send("Emulation.clearDeviceMetricsOverride");
+    await delay(500);
+    if ((await measure()).sidebarKind !== "sidebar") await clickSidebarToggle();
 
     // 4. Closing the panel restores a layout-collapsed sidebar only.
     await rig(`window.__MINIH_AGENT__.setWorkPanelWidth(720)`);

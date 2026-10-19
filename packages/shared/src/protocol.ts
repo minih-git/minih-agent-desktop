@@ -180,6 +180,9 @@ export const IPC = {
     settingsGet: "minih-agent-desktop/settings/get",
     settingsSet: "minih-agent-desktop/settings/set",
     configSyncGetState: "minih-agent-desktop/configSync/getState",
+    backgroundTasksList: "minih-agent-desktop/backgroundTasks/list",
+    backgroundTasksOutput: "minih-agent-desktop/backgroundTasks/output",
+    backgroundTasksStop: "minih-agent-desktop/backgroundTasks/stop",
     configSyncConfigure: "minih-agent-desktop/configSync/configure",
     configSyncTest: "minih-agent-desktop/configSync/test",
     configSyncSyncNow: "minih-agent-desktop/configSync/syncNow",
@@ -489,6 +492,8 @@ export const IPC = {
     /** Host-originated app settings mutation (e.g. plugin `app.setTheme`). */
     settingsChanged: "minih-agent-desktop/app/event/settingsChanged",
     configSyncChanged: "minih-agent-desktop/configSync/event/changed",
+    /** A chat-started background task started, exited, or was stopped. */
+    backgroundTasksChanged: "minih-agent-desktop/backgroundTasks/event/changed",
     /** What a running sync is doing, while it is still running. */
     configSyncProgress: "minih-agent-desktop/configSync/event/progress",
     extensionsUiPrompt: "minih-agent-desktop/extensions/event/uiPrompt",

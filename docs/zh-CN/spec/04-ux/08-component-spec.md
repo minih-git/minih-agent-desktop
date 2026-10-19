@@ -2038,6 +2038,11 @@ MainChat 底部的输入区域，用于撰写和发送提示。支持多行输�
 
 **11.3a 会话 TodoDock**
 
+标题文案不再是按钮；独立的尾部折叠按钮是唯一切换入口，提供本地化展开/收起
+清单名称、相同的 `title`、`aria-expanded` 与 `aria-controls`。展开时箭头向下、
+收起时向上，支持原生 Enter/Space，不让进度/当前步骤文案成为额外焦点。
+紧凑行和现有状态符号不变，本次不加入扫光动画。
+
 - 当活动会话拥有非空的主机清单时，TodoDock 位于 Composer 栈中并显示在 Plan/Goal 批准表面上方；空清单不占布局空间。
 - 收起标题显示完成/活动进度和当前 `in_progress` 内容；全部取消时显示明确的取消状态，不显示误导性的 `0/0 completed`。
 - 展开后列出全部条目，并在自身范围内滚动（`max-height: min(280px, 30dvh)`、`overflow-y: auto`、`overscroll-behavior: contain`）：长清单因此保持可读，既不撑高 Composer 栈，滚到底也不会带动背后的转写；该滚动区仅在展开时可被键盘聚焦。
