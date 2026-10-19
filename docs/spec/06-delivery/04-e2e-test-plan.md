@@ -10869,8 +10869,8 @@ This test plan spec is accepted when:
 ### US-UI-54 Toast variants + lifecycle (D085)
 - Trigger a success (save provider), an error (run with an invalid key), and an
   info toast from a test plugin.
-- Expect a top-center stack on an elevated plate with a tinted variant icon (green ✓ / red ! / info) and an X dismiss per card; newest enters at the top-center anchor and pushes older cards down.
-- Success/info auto-dismiss ~4s, error lingers ~8s; hovering a card pauses its countdown; X removes it immediately.
+- Expect a top-right notification stack sliding in from the right, with semantic status icons and a close control per card; newest cards come first and overflow remains scrollable.
+- Success/info auto-dismiss after roughly 4s; errors and warnings remain until dismissed. Hover or keyboard focus pauses the timer; X dismisses only its card.
 - With the stack overlapping the frameless titlebar band, hover still pauses
   the countdown and every X remains clickable instead of dragging the window.
 - Repeating the same action restarts the existing toast instead of stacking a duplicate; stack never exceeds 4.

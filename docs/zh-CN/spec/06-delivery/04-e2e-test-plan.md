@@ -2940,6 +2940,24 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
 - **里程碑**：M5
 - **状态**：草案
 
+#### E2E-NOTIFICATION-right-side-cards：全局反馈从右侧滑入
+
+- **前提：** 隔离 Renderer 使用生产 `ToastHost`、store 和样式，不访问模型或用户数据。
+- **步骤：** 触发各类通知；用悬停和焦点暂停、恢复计时；加入超过四条常驻和临时
+  通知；关闭一条；覆盖多行文本、中英文、深浅色、360px 宽度和减少动态效果，
+  并验证已有提问提醒的跳转及回答。
+- **预期：** 通知从窗口控制区下方的右侧滑入，最新在前；成功和信息在未暂停的
+  四秒后关闭，错误和警告常驻，显式时长兼容。新条目保留全部常驻卡片及最多
+  四条临时卡片，滚动可到达所有关闭控件。只替换相同消息/变体/会话；文本可选择
+  且保留换行和错误详情。关闭只影响指定卡片，减少动态效果时仍有效；不抢焦点，
+  现有会话跳转和请求解决正常。
+- **规格：** `04-ux/08-component-spec.md` §17；`04-ux/07-ui-design-system.md` §11.8；
+  `04-ux/09-interaction-patterns.md` §6。
+- **验收：** C / Quality / Accessibility。
+- **自动化：** `node --test apps/desktop/test/toast-notifications.test.mjs`；
+  `pnpm test:e2e:notification-cards`；`pnpm test:e2e:question-notification`。
+- **状态：** 已自动化，执行结果绑定实际验证的任务候选。
+
 #### E2E-066：提供商模型目录在重启和离线刷新后保持可用
 
 - **先决条件**：已保存的提供商匹配 models.dev 的提供商/API URL，并包含至少两个
@@ -5714,6 +5732,7 @@ eleven-tool-round desktop paths are verified by
 ## 8. 可追溯性矩阵
 | 验收 | 应用场景 |
 |---|---|
+| C / Quality / Accessibility — 右侧通知卡片 | E2E-NOTIFICATION-right-side-cards |
 | C / G / Quality / Security — Account menu and sidebar utilities | E2E-NAV-account-menu-and-sidebar-utilities |
 | C / E / F / Quality / Security — Session Todo checklist | E2E-CHAT-session-todo-checklist |
 | C / E / Security / Quality — Live Voice 四阶段交互 | E2E-LIVE-VOICE-four-stage-ui |
@@ -6288,8 +6307,8 @@ eleven-tool-round desktop paths are verified by
 ### US-UI-54 Toast 变体 + 生命周期 (D085)
 - 触发成功（保存提供程序）、错误（使用无效密钥运行）和
   来自测试插件的信息 toast。
-- 预计顶部中心堆叠在高架板上，带有有色变体图标（绿色✓/红色！/信息）和每张卡的X消除；最新的牌进入顶部中心的锚点并将旧牌推下。
-- Success/info 自动关闭约 4 秒，错误持续约 8 秒；将鼠标悬停在卡片上会暂停倒计时； X 立即将其删除。
+- 通知在窗口右上角从右侧滑入，使用语义状态图标和独立关闭按钮；最新卡片在前，长文案与过多卡片可滚动。
+- Success/info 自动关闭约 4 秒；错误和警告常驻。悬停或键盘聚焦暂停计时，X 关闭指定卡片。
 - 当堆栈与无框标题栏带重叠时，悬停仍然会暂停
   倒计时和每个 X 仍然可点击，而不是拖动窗口。
 - 重复相同的操作会重新启动现有的Toast，而不是堆叠重复的Toast；堆栈永远不会超过 4。

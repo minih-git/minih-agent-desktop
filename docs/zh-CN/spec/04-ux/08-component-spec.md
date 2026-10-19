@@ -2576,12 +2576,12 @@ Live Voice 受现有开发者模式和开发构建门控约束，包含四种展
 
 ### 17.1 目的
 
-针对没有内联表面（后台事件、跨页面确认）的已完成操作和失败的瞬时、非阻塞反馈。一个全局堆栈 — 绝不是每页 Toast 标记。
+针对没有内联展示位置的操作结果和失败，使用全局右侧通知卡片提供非阻塞反馈。保留 `ToastHost` 和 `showToast` 接口，不改变系统通知或持久化通知中心。
 
 ### 17.2 解剖学
 
 ```text
-                        ┌  toast-viewport (fixed top-center, z-toast) ┐
+                        ┌  toast-viewport (fixed top-right, z-toast) ┐
                         │  ┌──────────────────────────────────────┐ │
    newest, at anchor →  │  │ (✓)  Provider saved               ✕  │ │
                         │  ├──────────────────────────────────────┤ │
@@ -2591,8 +2591,8 @@ Live Voice 受现有开发者模式和开发构建门控约束，包含四种展
 ```
 
 - `ToastHost`（在 `components/Toast.tsx` 中）渲染堆栈；在 `App.tsx` 中的每个 shell 分支安装一次
-- 每张卡片：16px 变体图标（语义色调）·消息·X 关闭按钮
-- Surface：`bg-elevated-opaque` + 1px `border-subtle` + `shadow-dialog`，radius-md-plus — 与菜单相同的浮动系列； [07-ui-design-system.md §11.8](/zh-CN/spec/04-ux/07-ui-design-system#_11-8-toast) 中的指标
+- 每张卡片：柔和着色的 32px 圆形内放置 20px 状态图标 · 单段精简、可选择的消息 · X 关闭按钮。长文案保留换行并可滚动，关闭按钮始终可见。
+- Surface：`bg-elevated-opaque` + 1px `border-subtle` + `shadow-dialog`，radius-lg — 与菜单相同的浮动系列； [07-ui-design-system.md §11.8](/zh-CN/spec/04-ux/07-ui-design-system#_11-8-toast) 中的指标
 
 ### 17.3 API
 
@@ -2601,7 +2601,7 @@ Live Voice 受现有开发者模式和开发构建门控约束，包含四种展
 ```ts
 showToast(message: string, options?: {
   variant?: "info" | "success" | "warning" | "error"; // default "info"
-  duration?: number; // ms; default 4000 (error 8000); 0 = sticky
+  duration?: number; // ms; info/success default 4000, warning/error default 0 (sticky)
 });
 dismissToast(id: number); // ToastHost internal / tests
 ```
@@ -2620,14 +2620,18 @@ dismissToast(id: number); // ToastHost internal / tests
 
 ### 17.5 行为
 
-- 自动关闭 4 秒（错误 8 秒，`duration: 0` 粘性）；悬停卡片会暂停其计时器，离开悬停后从剩余时间继续
-- 堆叠上限为 4 — 最旧的掉落优先；重新引发相同的消息+变体会重新启动现有的 toast，而不是堆叠一个双胞胎
-- 最新的 toast 进入顶部中心锚点（向下滑动 200 毫秒缓出），将旧卡向下推；退出是 150 毫秒的渐入淡出
-- 关闭 X 始终可用；每张卡都是明确的非拖动指针目标
-  因此，悬停暂停和关闭保持交互，其中顶部中心堆栈
-  重叠无框标题栏拖动镶边
-- 减少运动使动画持续时间接近于零，因此移除（必然会
-  `animationend`) 仍然会触发
+- 信息和成功默认 4 秒关闭；警告和错误保留到手动关闭。显式 duration 仍受支持，
+  包括交互请求的 `duration: 0` 常驻提醒。悬停或键盘聚焦暂停计时，两者均离开后
+  按剩余时间继续。
+- 保留所有常驻通知，以及最新四条临时通知。新消息不挤掉常驻卡片；相同消息、
+  变体和会话再次出现时，以新 id 替换旧卡片并重新计时。
+- 最新卡片位于 DOM 首位和右上角，距顶部 56px、右侧 16px。进入为右侧滑入
+  200ms ease-out，退出为向右滑出 150ms ease-in。
+- 通知区域高度受窗口限制，过多时纵向滚动。窄窗口内旧卡片与关闭控件仍可到达，
+  不通过压缩卡片高度容纳更多通知。
+- 关闭按钮始终可用；卡片不可用于窗口拖动，新通知不抢焦点。现有会话跳转、
+  请求解决和单次提示音语义保持不变。
+- 减少动态效果时仍使用近零时长，确保 `toast-out` 的动画结束事件触发移除。
 
 ### 17.6 辅助功能
 
@@ -2637,7 +2641,7 @@ dismissToast(id: number); // ToastHost internal / tests
 
 ### 17.7 MVP 约束
 
-- Toast 内没有操作按钮（后 MVP；使用内联错误横幅来显示可操作的错误）
+- 仅保留已有会话提醒的跳转动作；普通通知不变为可点击内容，也不新增任意通知操作。
 - 无 progress/loading toasts — 运行状态属于工作指示器
 - 没有Toast历史表面
 
