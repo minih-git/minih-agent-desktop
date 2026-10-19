@@ -28,7 +28,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
-import { RemoteGatewayPage } from "../../apps/desktop/src/components/settings/RemoteGatewayPage";
+import { RemoteControlSection } from "../../apps/desktop/src/components/settings/RemoteControlSection";
 import { DeviceRequestHost } from "../../apps/desktop/src/components/settings/DeviceRequestHost";
 
 await i18n.use(initReactI18next).init({ lng: "en", keySeparator: false,
@@ -87,7 +87,7 @@ const mount = () => {
   page = createRoot(document.getElementById("page"));
   dialog = createRoot(document.getElementById("dialog"));
   flushSync(() => {
-    page.render(React.createElement(RemoteGatewayPage));
+    page.render(React.createElement(RemoteControlSection));
     dialog.render(React.createElement(DeviceRequestHost));
   });
 };
@@ -180,7 +180,7 @@ window.accountModeProbe = async () => {
 
   // 8. An unavailable account mode keeps the registration-code form.
   status = { ...status, accountMode: { available: false, reason: "the overlay forward is not installed" } };
-  flushSync(() => page.render(React.createElement(RemoteGatewayPage)));
+  flushSync(() => page.render(React.createElement(RemoteControlSection)));
   emit(IPC.event.remoteGatewayStatusChanged, status);
   await until(() => button(text("enroll")), "the self-hosted form should return when account mode is unavailable");
   check1(document.body.textContent.includes("the overlay forward is not installed"), "the reason should be shown");

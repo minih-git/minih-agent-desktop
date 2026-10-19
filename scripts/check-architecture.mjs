@@ -61,7 +61,11 @@ function trackedSourceFiles() {
   return git(["ls-files", "-co", "--exclude-standard"])
     .split("\n")
     .filter(Boolean)
-    .filter(isSourcePath);
+    .filter(isSourcePath)
+    // A tracked file deleted in the worktree is still in the index: it has no
+    // LOC to measure, and reading it would fail this check instead of reporting
+    // a real budget breach.
+    .filter((filePath) => existsSync(resolve(root, filePath)));
 }
 
 function locFor(filePath) {

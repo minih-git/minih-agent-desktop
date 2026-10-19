@@ -15670,8 +15670,9 @@ sibling Hosts is still open for package D.
   and `/api/easytier/bootstrap` with a `remoteGateway` object naming the local
   test Gateway; one enrolled Host per account; two loopback model stubs.
 - **Steps**: 1) On a freshly installed desktop with key A configured and no
-  stored credentials, confirm the Remote gateway page offers the remote-access
-  switch and reports account mode as available; turn it on and record that it
+  stored credentials, confirm the remote-control block on Settings ▸ Accounts
+  offers the remote-access switch and reports account mode as available; turn it
+  on and record that it
   enrolled once with key A, with no registration code. Enroll Host B1 with key
   B; record the account each is recorded under. 2) Log a client in with key A
   and list the account Hosts. 3) With that client, address B1 by its id on the

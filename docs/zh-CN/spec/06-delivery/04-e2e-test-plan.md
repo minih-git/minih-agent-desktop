@@ -7891,7 +7891,8 @@ Gateway、loopback 模型桩运行；不使用生产 Router、真实 AccessKey �
 - **前置条件**：本地 Router 测试实例（或桩）对 key A 与 key B 返回不同的
   `access_key_id`，并通过 `/api/easytier/bootstrap` 给出指向本地测试 Gateway 的
   `remoteGateway`；每个账户各有一台已注册 Host；两个 loopback 模型桩。
-- **步骤**：1）在一台全新安装、已配置 key A 且没有已存凭据的桌面上，确认远程网关页提供
+- **步骤**：1）在一台全新安装、已配置 key A 且没有已存凭据的桌面上，确认设置 ▸ 账户页的
+  远程控制区块提供
   远程控制开关并把账户模式报为可用；打开开关，记录它只用 key A 注册了一次、且没有填写任何
   注册码。用 key B 注册 B1，记录各自所属账户。2）用 key A 登录客户端并列出账户主机。
   3）用该客户端在账户主机列表、Host 作用域路由与设备申请中按 id 访问 B1。4）提交 CSR 名为

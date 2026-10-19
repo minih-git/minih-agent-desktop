@@ -29,7 +29,9 @@ const {
 const { GATEWAY_PAIRING_CODE_LIFETIME_MS } = await import(
   "../electron/main/remote/gateway-link/gateway-link-service.ts"
 );
-const { SETTINGS_NAV, visibleSettingsNav } = await import("../src/lib/settings-search.ts");
+const { SETTINGS_NAV, normalizeSettingsTabId, searchSettings, visibleSettingsNav } = await import(
+  "../src/lib/settings-search.ts"
+);
 const { catalogs, en, flattenCatalog } = await import("@minih-agent/i18n");
 
 const LINK_STATES = [
@@ -224,26 +226,63 @@ test("the pairing ticket has its own copy in all nine locales", () => {
   assert.match(english["settings.remoteGateway.pairingTicketHint"], /ticket/i);
 });
 
-test("the page is an experimental settings destination next to remote hosts", () => {
-  const entries = SETTINGS_NAV.filter((entry) => entry.id === "remoteGateway");
-  assert.equal(entries.length, 1, "remote gateway must be one settings destination");
-  const [entry] = entries;
-  assert.equal(entry.labelKey, "settings.nav.remoteGateway");
-  assert.equal(entry.titleKey, "settings.remoteGateway.title");
-  assert.equal(entry.group, "system");
-  assert.equal(entry.experimentalBadgeKey, "settings.remoteHosts.experimental");
-  // It ships in packaged builds: neither gated on developer mode nor dev-only.
-  assert.equal(entry.developerOnly, undefined);
-  assert.equal(entry.developmentOnly, undefined);
-  // It sits beside Remote Hosts, and both are reachable from the rail.
-  const order = SETTINGS_NAV.map((candidate) => candidate.id);
-  assert.ok(Math.abs(order.indexOf("remoteGateway") - order.indexOf("remoteHosts")) <= 2);
-  assert.ok(visibleSettingsNav(false, false).some((candidate) => candidate.id === "remoteGateway"));
-  // Every key the entry advertises exists in all nine locales.
+test("remote control is part of the accounts destination, not a rail entry", () => {
+  // D666 follow-up: the switch, devices, and folded self-hosted gateway moved
+  // into Settings > Accounts, so the separate rail destination is gone.
+  assert.equal(
+    SETTINGS_NAV.some((entry) => entry.id === "remoteGateway"),
+    false,
+    "remote control must not keep its own settings destination",
+  );
+  const accounts = SETTINGS_NAV.find((entry) => entry.id === "accounts");
+  assert.ok(accounts, "the accounts destination must exist");
+  // The remote-control rows are searchable through that destination, so a
+  // query like "gateway" or "registration code" still lands on them.
+  for (const key of [
+    "settings.remoteGateway.title",
+    "settings.remoteGateway.enabled",
+    "settings.remoteGateway.statusTitle",
+    "settings.remoteGateway.strictTitle",
+    "settings.remoteGateway.devicesTitle",
+    "settings.remoteGateway.pairingTitle",
+    "settings.remoteGateway.advancedTitle",
+    "settings.remoteGateway.registrationCode",
+  ]) {
+    assert.ok(accounts.keywordKeys.includes(key), `accounts must own ${key}`);
+  }
+  // Every advertised key exists in all nine locales.
   for (const [locale, catalog] of Object.entries(catalogs)) {
     const flat = flattenCatalog(catalog);
-    for (const key of [entry.labelKey, entry.titleKey, entry.experimentalBadgeKey, ...entry.keywordKeys]) {
+    for (const key of [accounts.labelKey, accounts.titleKey, ...accounts.keywordKeys]) {
       assert.equal(typeof flat[key], "string", `${locale}: missing ${key}`);
     }
+  }
+});
+
+test("a settings search for remote control lands on accounts", () => {
+  const english = (key) => flattenCatalog(en)[key] ?? key;
+  // Words that only the remote-control rows use must reach it first, because
+  // the block now lives on this page.
+  for (const query of ["gateway", "registration code", "pairing"]) {
+    const hits = searchSettings(query, english);
+    assert.ok(hits.length > 0, `no hit for ${query}`);
+    assert.equal(hits[0].tab, "accounts", `${query} must land on accounts`);
+  }
+  // A generic word may also match other rows (network settings talk about a
+  // remote proxy), but the remote-control block has to be among the hits.
+  assert.ok(
+    searchSettings("remote", english).some((hit) => hit.tab === "accounts"),
+    "remote must offer the accounts page",
+  );
+});
+
+test("a stale remoteGateway destination falls back to the accounts page", () => {
+  // Something still holding the retired id — a restored selection, an
+  // automation call — must land where the surface moved.
+  assert.equal(normalizeSettingsTabId("remoteGateway"), "accounts");
+  assert.equal(normalizeSettingsTabId("accounts"), "accounts");
+  assert.equal(normalizeSettingsTabId("not-a-tab"), "general");
+  for (const entry of SETTINGS_NAV) {
+    assert.equal(normalizeSettingsTabId(entry.id), entry.id, entry.id);
   }
 });

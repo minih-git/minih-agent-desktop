@@ -489,6 +489,28 @@ a usage tab.
   even a profile that still carries other providers' rows.
 - The page keeps one consistent vertical spacing rhythm and reads its rows
   through the same service components as before.
+- **Remote control is part of this page, not its own destination.** The desktop
+  as a Host that a phone of the same account may reach lives directly below the
+  Virtual LAN Channel, so the account and the way its devices connect read in
+  one place. The block carries `settings.remoteHosts.experimental` and shows,
+  always visible: the account-mode state with its badge and reason (or the
+  Router endpoint when it is usable), the **Allow remote devices** switch, the
+  link state with its last error and retry time, the per-terminal confirmation
+  switch, recent device notices, the pairing code, and the paired devices with
+  their revoke action. A fresh install offers the switch as soon as account mode
+  is usable: turning it on is what enrolls the desktop.
+- The self-hosted path — gateway address, CA certificate, registration code and
+  the enroll action — is a **collapsed** `SettingsDisclosure` titled
+  **Advanced: self-hosted gateway**. It opens by itself when the stored
+  credentials came from that path, so a user who registered a gateway of their
+  own always finds the state they set up. While account mode can register this
+  desktop the disclosure explains that instead of showing the form: a
+  registration code would overwrite the account credentials.
+- Settings search indexes the remote-control rows under this destination, so a
+  query for "gateway", "registration code" or "pairing" lands here and flashes
+  the matching row; a hit inside the folded area flashes its summary. The
+  retired `remoteGateway` destination id resolves to `accounts`, never to an
+  empty pane.
 
 ### Models (`agent` tab)
 - The models page groups its sections in this order: the **chosen models** as
