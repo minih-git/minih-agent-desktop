@@ -7,12 +7,13 @@ import {
   nextExpiryAt,
   observeTasks,
   selectVisibleTasks,
+  sessionTasks,
 } from "./bar-visibility";
 
 const REFRESH_MS = 1_000;
 type Failure = "load" | "output" | "stop";
 
-export function useBackgroundTasks() {
+export function useBackgroundTasks(sessionId: string) {
   const [tasks, setTasks] = useState<BackgroundTaskSummary[]>([]);
   // Renderer-local view state: which tasks the bar may show. The registry in
   // host-core stays the source of truth for the processes themselves.
@@ -44,11 +45,13 @@ export function useBackgroundTasks() {
         const result = await api.backgroundTasksList();
         if (disposed) return;
         const observedAt = Date.now();
-        setTasks(result.tasks);
-        setVisibility((current) => observeTasks(current, result.tasks, observedAt));
+        // The list is process-wide; this bar only ever shows its own session.
+        const mine = sessionTasks(result.tasks, sessionId);
+        setTasks(mine);
+        setVisibility((current) => observeTasks(current, mine, observedAt));
         setClock(observedAt);
         setError((current) => current === "load" ? null : current);
-        pollAgain = result.tasks.some((task) => task.state === "running");
+        pollAgain = mine.some((task) => task.state === "running");
       } catch (failure) {
         if (disposed) return;
         console.error("Background task list failed", failure);
@@ -76,7 +79,7 @@ export function useBackgroundTasks() {
       clearTimeout(timer);
       unsubscribe();
     };
-  }, []);
+  }, [sessionId]);
 
   // Only what the bar should render: running tasks, a finished task during its
   // post-exit grace window, and the row whose output the user is reading.

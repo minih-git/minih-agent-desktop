@@ -93,7 +93,10 @@ test("the renderer bar lists tasks, offers output and stop, and mounts above the
   assert.match(controller, /api\.backgroundTasksStop\(id\)/);
   assert.match(bar, /aria-label=\{t\("backgroundTasks\.title"\)\}/);
   assert.match(composer, /import \{ BackgroundTasksBar \} from "\.\/BackgroundTasksBar";/);
-  assert.match(composer, /<BackgroundTasksBar key=/);
+  // The registry is process-wide, so the bar is mounted for, and re-keyed by,
+  // the conversation on screen; a draft composer has no conversation to scope to.
+  assert.match(composer, /activeSessionId && localToolsAllowed \? \(\s*<BackgroundTasksBar key=\{activeSessionId\} sessionId=\{activeSessionId\} \/>/);
+  assert.match(bar, /useBackgroundTasks\(sessionId\)/);
   // The bar renders before the composer shell (above the input, not inside it).
   const barIndex = composer.indexOf("<BackgroundTasksBar key=");
   const shellIndex = composer.indexOf('className={`composer-shell');
@@ -139,7 +142,10 @@ test("the bar shows only live work: a finished row expires and can be closed", a
   // The grace window is a named constant, not a magic number in the component.
   assert.match(visibility, /export const ENDED_VISIBLE_MS = 10_000;/);
   assert.match(controller, /selectVisibleTasks\(visibility, tasks, clock, expandedId\)/);
-  assert.match(controller, /observeTasks\(current, result\.tasks, observedAt\)/);
+  assert.match(controller, /observeTasks\(current, mine, observedAt\)/);
+  // One session's bar must not report another session's processes.
+  assert.match(composer, /sessionId=\{activeSessionId\}/);
+  assert.match(controller, /sessionTasks\(result\.tasks, sessionId\)/);
   assert.match(controller, /dismissTask\(current, id\)/);
   // A finished row offers closing instead of stopping: it must be able to leave
   // the composer without touching the process lifecycle.

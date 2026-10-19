@@ -5,6 +5,7 @@ import { I18nextProvider } from "react-i18next";
 import { en } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
 import { BackgroundTasksBar } from "../../apps/desktop/src/components/BackgroundTasksBar";
+import { Composer } from "../../apps/desktop/src/components/Composer";
 import { TodoDock } from "../../apps/desktop/src/components/TodoDock";
 import { AskToolCard } from "../../apps/desktop/src/components/AskToolCard";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
@@ -14,6 +15,7 @@ const listeners = new Set<() => void>();
 const requests: string[] = [];
 const pending = new Map<string, (value: BackgroundTaskOutput) => void>();
 let tasks: BackgroundTaskSummary[] = [];
+let stoppedIds: string[] = [];
 let revision = 0;
 let deferOutput = false;
 let rejectStop = false;
@@ -53,6 +55,7 @@ Object.defineProperty(window, "minihAgent", {
         }
         if (channel === IPC.invoke.backgroundTasksStop) {
           if (rejectStop) throw new Error("Fixture stop failure");
+          stoppedIds.push(payload!.id);
           tasks = tasks.map((task) => task.id === payload!.id ? { ...task, state: "stopped" } : task);
           for (const listener of listeners) listener();
           return { ok: true, found: true };
@@ -70,10 +73,52 @@ Object.defineProperty(window, "minihAgent", {
   },
 });
 
+function sessionSummary(id: string) {
+  return {
+    id, title: `Session ${id}`, source: "desktop" as const, messageCount: 0,
+    mode: "agent" as const, permissionMode: "ask" as const, thinkingLevel: "off" as const,
+    createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+  };
+}
+
+/** Mount the production Composer so the bar is reached through its real owner. */
+async function mountComposer(sessionId: string | null) {
+  flushSync(() => root?.unmount());
+  pending.clear();
+  requests.length = 0;
+  stoppedIds = [];
+  revision = 0;
+  deferOutput = false;
+  rejectStop = false;
+  document.body.innerHTML = '<main id="root"></main>';
+  useAppStore.setState({
+    activeSessionId: sessionId,
+    sessions: ["session-a", "session-b"].map(sessionSummary),
+    sessionTodos: {},
+    pendingAsks: {},
+    planCheckpoints: {},
+    plugins: [],
+  });
+  root = createRoot(document.getElementById("root")!);
+  flushSync(() => root!.render(<I18nextProvider i18n={i18n}><Composer /></I18nextProvider>));
+  await until(
+    () => document.querySelectorAll(".background-task").length ===
+      (sessionId ? sessionTasksOf(sessionId).length : 0),
+    "session tasks did not render",
+  );
+}
+
+const sessionTasksOf = (sessionId: string) =>
+  tasks.filter((task) => task.sessionId === sessionId);
+/** Session each rendered row belongs to, read from the fixture's command text. */
+const barSessions = () => [...document.querySelectorAll<HTMLElement>(".background-task-command")]
+  .map((command) => /--session=([a-z]+)/.exec(command.textContent ?? "")?.[1] ?? "");
+
 async function mount(count = 10) {
   flushSync(() => root?.unmount());
   pending.clear();
   requests.length = 0;
+  stoppedIds = [];
   revision = 0;
   deferOutput = false;
   rejectStop = false;
@@ -98,7 +143,7 @@ async function mount(count = 10) {
       <div className="composer-dock composer-dock-docked">
         <div className="composer-stack">
           <TodoDock sessionId="fixture" />
-          <BackgroundTasksBar />
+          <BackgroundTasksBar sessionId="fixture" />
           <AskToolCard request={{
             sessionId: "fixture", requestId: "fixture-ask", toolCallId: "fixture-ask",
             questions: [{ question: "Keep the background commands running?", options: ["Continue", "Stop"] }],
@@ -182,6 +227,34 @@ async function probe() {
     await frame();
     await frame();
     assert(document.querySelector("pre")?.textContent?.includes("task-1"), "late first response erased the current output");
+  });
+
+  await check("the bar follows the open conversation and never stops another session's task", async () => {
+    await mount(0);
+    tasks = [
+      { id: "task-a", sessionId: "session-a", command: "npm run dev -- --session=a",
+        commandShellId: "bash", state: "running", elapsedMs: 1_000 },
+      { id: "task-b", sessionId: "session-b", command: "npm run dev -- --session=b",
+        commandShellId: "bash", state: "running", elapsedMs: 1_000 },
+    ];
+    await mountComposer("session-a");
+    assert(JSON.stringify(barSessions()) === JSON.stringify(["a"]),
+      `session-a must not list session-b's task: ${JSON.stringify(barSessions())}`);
+    // Switching conversations only changes what is listed; the running
+    // processes of both sessions stay alive.
+    flushSync(() => useAppStore.setState({ activeSessionId: "session-b" }));
+    await until(() => JSON.stringify(barSessions()) === JSON.stringify(["b"]),
+      `session-b must show only its own task: ${JSON.stringify(barSessions())}`);
+    assert(stoppedIds.length === 0, `switching conversations must not stop anything: ${stoppedIds}`);
+    flushSync(() => useAppStore.setState({ activeSessionId: null }));
+    await until(() => document.querySelectorAll(".background-task").length === 0,
+      "a draft composer has no conversation to scope tasks to");
+    flushSync(() => useAppStore.setState({ activeSessionId: "session-a" }));
+    await until(() => JSON.stringify(barSessions()) === JSON.stringify(["a"]),
+      "returning to session-a must restore only its task");
+    click(0, "Stop");
+    await until(() => stoppedIds.length === 1, "the Stop control did not reach the host");
+    assert(stoppedIds[0] === "task-a", `Stop must target the open conversation's task: ${stoppedIds[0]}`);
   });
 
   await check("Stop failures are visible and retryable", async () => {
