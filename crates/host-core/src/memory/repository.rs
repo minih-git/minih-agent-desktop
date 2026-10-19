@@ -58,6 +58,10 @@ fn qualified_columns(alias: &str) -> String {
         .join(", ")
 }
 
+pub(crate) fn entry_from_row_for_sync(row: &Row<'_>) -> rusqlite::Result<MemoryEntryRecord> {
+    entry_from_row(row)
+}
+
 fn entry_from_row(row: &Row<'_>) -> rusqlite::Result<MemoryEntryRecord> {
     let raw_ids: String = row.get(10)?;
     Ok(MemoryEntryRecord {

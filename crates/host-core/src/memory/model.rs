@@ -205,6 +205,19 @@ impl MemoryRejection {
     }
 }
 
+/// A forgotten memory's identity, without its content (ADR §6). It travels with
+/// configuration sync, so a delete made on one device blocks the same memory on
+/// another.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryTombstoneRecord {
+    pub fingerprint: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_session_id: Option<String>,
+    pub source_message_ids: Vec<String>,
+    pub created_at: i64,
+}
+
 /// Per-session extraction state. `cursor_seq` and the lease make a background
 /// run idempotent across restarts, duplicates, and reloads.
 #[derive(Debug, Clone, Serialize)]

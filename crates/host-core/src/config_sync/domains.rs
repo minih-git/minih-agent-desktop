@@ -27,6 +27,13 @@ pub const DOMAIN_INSTRUCTIONS: &str = "instructions";
 pub const DOMAIN_PLUGINS: &str = "plugins";
 pub const DOMAIN_AUTOMATION: &str = "automation";
 pub const DOMAIN_MEMORY: &str = "memory";
+/// Learned memory travels in its own domain (ADR agent-long-term-memory §7).
+///
+/// It cannot ride the `memory` domain: a released build treats every entity
+/// there as pinned project memory, so it would erase a project's pinned notes on
+/// a deletion, create groups, and fail the whole revision on a user-scope entity
+/// with no mapping. A domain an older build does not know is skipped instead.
+pub const DOMAIN_LEARNED_MEMORY: &str = "learnedMemory";
 
 pub(crate) const PORTABLE_APPLICATION_FIELDS: &[&str] = &[
     "theme",
@@ -61,7 +68,7 @@ const PROJECT_IDENTITY_NAMESPACE: &str = "configSyncIdentities";
 const PROJECT_IDENTITY_KEY: &str = "projects";
 const PROJECT_GROUP_IDENTITY_KEY: &str = "groups";
 
-pub const ALL_DOMAINS: [&str; 9] = [
+pub const ALL_DOMAINS: [&str; 10] = [
     DOMAIN_APPLICATION,
     DOMAIN_PROVIDERS,
     DOMAIN_MCP,
@@ -71,6 +78,7 @@ pub const ALL_DOMAINS: [&str; 9] = [
     DOMAIN_PLUGINS,
     DOMAIN_AUTOMATION,
     DOMAIN_MEMORY,
+    DOMAIN_LEARNED_MEMORY,
 ];
 
 /// Contract metadata for each portable domain. Capture/apply code below is
@@ -240,6 +248,26 @@ pub const DOMAIN_ADAPTERS: &[DomainAdapterSpec] = &[
         references: &["project mapping", "provider/model ids"],
         merge_granularity: "one task",
         activation_policy: "approval plus local execution ownership",
+        recovery_policy: "database import journal",
+    },
+    DomainAdapterSpec {
+        domain: DOMAIN_LEARNED_MEMORY,
+        schema_version: 1,
+        exportable_fields: &[
+            "learned entries with status active or archived",
+            "deletion tombstones",
+        ],
+        secret_fields: &["note content"],
+        local_overlays: &[
+            "suggestions",
+            "extraction cursor and session state",
+            "daily token ledger",
+            "usage counters",
+        ],
+        identity: "scope (user, or project/group identity) plus fingerprint",
+        references: &["project mapping"],
+        merge_granularity: "one note, keyed by fingerprint within its scope",
+        activation_policy: "mapping and approval required",
         recovery_policy: "database import journal",
     },
     DomainAdapterSpec {
@@ -421,7 +449,7 @@ pub fn refresh_digest(entity: &mut PortableEntity) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn entity(
+pub(super) fn entity(
     domain: &str,
     entity_id: impl Into<String>,
     label: impl Into<String>,
@@ -521,7 +549,7 @@ fn project_identity_for_path(st: &mut AppState, path: &str) -> Result<String> {
     Ok(identity)
 }
 
-fn project_scope(
+pub(super) fn project_scope(
     st: &mut AppState,
     path: &str,
     overrides: &ProjectIdentityOverrides,

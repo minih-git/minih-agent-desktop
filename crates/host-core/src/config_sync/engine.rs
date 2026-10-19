@@ -49,7 +49,7 @@ mod remote;
 mod router_tests;
 #[cfg(test)]
 pub(crate) use apply::validate_application_references;
-pub(crate) use apply::{apply_bundle, recover_import_journal};
+pub(crate) use apply::{apply_bundle, mapped_project_paths, recover_import_journal};
 pub(crate) use coordinator::{sync_if_enabled, sync_now};
 pub(crate) use handlers::{
     approve, change_password, configure, disconnect, get_state, list_history, map_project, pause,
@@ -269,6 +269,12 @@ fn selection(config: &StoredConfig) -> CategorySelection {
     );
     values.insert("credentials".to_string(), config.include_secrets);
     values.insert(domains::DOMAIN_MEMORY.to_string(), config.include_memory);
+    // Learned memory is not a second user-facing switch: it follows the memory
+    // opt-in the user already made (ADR agent-long-term-memory §7).
+    values.insert(
+        domains::DOMAIN_LEARNED_MEMORY.to_string(),
+        config.include_memory,
+    );
     CategorySelection(values)
 }
 

@@ -1,6 +1,9 @@
 use super::*;
 
-fn mapped_project_paths(config: &StoredConfig, payload: &Value) -> Result<Option<Vec<String>>> {
+pub(crate) fn mapped_project_paths(
+    config: &StoredConfig,
+    payload: &Value,
+) -> Result<Option<Vec<String>>> {
     let logical_ids = [
         payload.get("projectGroupLogicalId"),
         payload.get("projectLogicalId"),
@@ -391,6 +394,12 @@ fn apply_entity(
         }
         return Ok(());
     }
+    if entity.domain == domains::DOMAIN_LEARNED_MEMORY {
+        // A separate domain on purpose: a released build only applies domains it
+        // knows, so learned memory reaches a new device without an older one
+        // mistaking it for pinned project memory.
+        return crate::config_sync::learned_memory::apply_learned_memory(st, config, entity);
+    }
     if entity.domain == domains::DOMAIN_AUTOMATION {
         let mut payload = entity.payload.clone();
         if let Some(path) = mapped_project_path(config, &payload)? {
@@ -565,6 +574,7 @@ fn apply_priority(domain: &str) -> u8 {
         | domains::DOMAIN_SKILLS
         | domains::DOMAIN_SUBAGENTS
         | domains::DOMAIN_AUTOMATION
+        | domains::DOMAIN_LEARNED_MEMORY
         | domains::DOMAIN_MEMORY => 40,
         domains::DOMAIN_PLUGINS => 50,
         domains::DOMAIN_APPLICATION => 90,
