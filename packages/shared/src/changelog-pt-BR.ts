@@ -2,6 +2,22 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "0.22.0",
+    date: "2026-10-19",
+    highlights: [
+      "A memória de longo prazo pesquisa conversas e notas aprendidas, lembra conteúdo quando solicitado com ações de editar e desfazer e permite gerenciar notas no menu do projeto ou nas configurações; desativar a leitura não apaga as notas.",
+      "O aprendizado automático vem desativado: um modelo escolhido sugere notas apenas das suas mensagens, com opções de manter ou descartar, orçamento diário de tokens e exclusão por sessão.",
+      "O controle remoto aceita contas Minih Router: entre com AccessKey, aprove um dispositivo uma vez para acessar os computadores da conta, revogue dispositivos ou exija confirmação em cada terminal; códigos continuam disponíveis sem o modo de conta.",
+      "O acesso remoto ganha contêineres nativos para iOS e Android com armazenamento seguro de credenciais e notificações APNs/FCM opcionais do Gateway contendo apenas tipos de evento e identificadores; sem credenciais do operador, o push permanece desligado.",
+      "Comandos Bash locais demorados podem continuar em segundo plano após o turno, com prévias limitadas da saída e controles para interromper; o Host limpa os processos ao sair.",
+      "Os avisos aparecem em cartões à direita: erros e alertas aguardam fechamento manual, os demais somem automaticamente e pausam ao passar o mouse ou receber foco; pilhas longas permitem rolagem sem perder mensagens.",
+      "O painel de trabalho lista os subagentes da conversa atual com estado ao vivo e detalhes históricos para acompanhar as tarefas delegadas.",
+      "Históricos detalhados destacam apenas código visível para evitar travamentos, linhas expandidas mantêm o comando completo e reabrir a barra lateral preserva a largura salva do painel.",
+      "Os downloads do aplicativo priorizam fontes aceleradas fornecidas pelo Gateway e o mercado de plugins usa o repositório de distribuição próprio da Minih.",
+      "Títulos automáticos acompanham melhor o tema da conversa e cadeias longas de comunicação entre sessões têm mais margem de execução.",
+    ],
+  },
+  {
     version: "0.21.2",
     date: "2026-10-18",
     highlights: [
