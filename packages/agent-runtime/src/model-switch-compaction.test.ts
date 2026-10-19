@@ -75,13 +75,57 @@ describe("previousModelSince", () => {
     });
   });
 
-  it("ignores the range the active checkpoint already covers", () => {
+  it("ignores the range a checkpoint without a producer already covers", () => {
     const entries = [
       assistant("1", "account-a", "model-a"),
       assistant("2", "account-a", "model-a"),
     ];
 
+    // A checkpoint written before checkpoints recorded their model.
     expect(previousModelSince(entries, { throughMessageId: "2" })).toBeUndefined();
+  });
+
+  it("falls back to the checkpoint's own model when nothing answered after it", () => {
+    const entries = [
+      assistant("1", "account-a", "model-a"),
+      assistant("2", "account-a", "model-a"),
+      assistant("3", undefined, undefined, "user"),
+    ];
+
+    expect(
+      previousModelSince(entries, {
+        throughMessageId: "2",
+        providerId: "account-c",
+        modelId: "model-c",
+      }),
+    ).toEqual({ providerId: "account-c", modelId: "model-c" });
+  });
+
+  it("prefers an assistant reply after the checkpoint over the checkpoint's model", () => {
+    const entries = [
+      assistant("1", "account-a", "model-a"),
+      assistant("2", "account-b", "model-b"),
+    ];
+
+    expect(
+      previousModelSince(entries, {
+        throughMessageId: "1",
+        providerId: "account-a",
+        modelId: "model-a",
+      }),
+    ).toEqual({ providerId: "account-b", modelId: "model-b" });
+  });
+
+  it("ignores a checkpoint model with a blank field", () => {
+    const entries = [assistant("1", "account-a", "model-a")];
+
+    expect(
+      previousModelSince(entries, {
+        throughMessageId: "1",
+        providerId: "account-a",
+        modelId: "  ",
+      }),
+    ).toBeUndefined();
   });
 
   it("has no answer before any assistant message exists", () => {

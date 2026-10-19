@@ -5,7 +5,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { register } from "node:module";
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
-const { createSessionTitleGenerator, generateSessionRetitle, generateSessionTitle } = await import(
+const {
+  createSessionTitleGenerator,
+  generateSessionRetitle,
+  generateSessionTitle,
+  retitleFingerprintForCompaction,
+} = await import(
   "../electron/main/session-title-service.ts"
 );
 const { summaryFingerprint } = await import("../electron/main/session-title-engine.ts");
@@ -623,4 +628,27 @@ test("a later trigger can wait for the running composition instead of skipping",
   assert.equal(await running, false);
   assert.equal(generator.isRunning("s1"), false);
   assert.equal(await generator.whenIdle("s1"), undefined);
+});
+
+test("a persisted compaction re-titles, a model-switch compaction does not", () => {
+  const fingerprint = summaryFingerprint("The user moved on to exporting reports");
+  const ended = (fields) => ({
+    type: "compaction_end",
+    ok: true,
+    willRetry: false,
+    summaryFingerprint: fingerprint,
+    ...fields,
+  });
+  for (const reason of ["threshold", "manual", "overflow"]) {
+    assert.equal(retitleFingerprintForCompaction(ended({ reason })), fingerprint, reason);
+  }
+  // A switch summarizes the same conversation for another model; its subject
+  // did not move, so it must not spend a title request.
+  assert.equal(retitleFingerprintForCompaction(ended({ reason: "model_switch" })), undefined);
+  assert.equal(retitleFingerprintForCompaction(ended({ reason: "threshold", ok: false })), undefined);
+  assert.equal(
+    retitleFingerprintForCompaction(ended({ reason: "threshold", summaryFingerprint: undefined })),
+    undefined,
+  );
+  assert.equal(retitleFingerprintForCompaction({ type: "agent_end" }), undefined);
 });

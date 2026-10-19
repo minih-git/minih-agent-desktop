@@ -34,6 +34,7 @@ import type { RuntimeState } from "./context";
 import type { FinishTurn } from "./plans";
 import { formatSkillToolContent, type LoadedSkillDocument } from "../skill-document";
 import { currentSystemProxyRelayUrl } from "../network-proxy";
+import { retitleFingerprintForCompaction } from "../session-title-service";
 
 export type SidecarRuntimeDependencies = {
   runtimeState: RuntimeState;
@@ -309,16 +310,15 @@ export function createSidecarRuntime({
       // first prompt the title came from. Detached and gated — the job re-reads
       // the host's current summary, compares fingerprints, and the host CAS
       // refuses anything but a default/generated title, so a manual rename
-      // always wins and a failure changes nothing the user sees.
+      // always wins and a failure changes nothing the user sees. A model-switch
+      // checkpoint never qualifies (see `retitleFingerprintForCompaction`).
+      const retitleFingerprint = retitleFingerprintForCompaction(event);
       if (
         generateSessionRetitleJob &&
-        event.type === "compaction_end" &&
-        event.ok === true &&
-        typeof (event as { summaryFingerprint?: unknown }).summaryFingerprint === "string" &&
+        retitleFingerprint !== undefined &&
         !envelope.parentToolCallId
       ) {
         const retitleSessionId = envelope.sessionId;
-        const retitleFingerprint = (event as { summaryFingerprint: string }).summaryFingerprint;
         void (async () => {
           const settings = (await runtimeState.host?.call("settings.get")) as
             | AppSettings
