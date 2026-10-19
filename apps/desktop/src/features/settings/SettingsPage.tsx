@@ -46,12 +46,7 @@ import {
   SessionTitleThinkingRow,
   SessionTitleToggleRow,
 } from "../../components/settings/SessionTitleRows";
-import {
-  ExtractionBudgetRow,
-  ExtractionModelRow,
-  ExtractionStatusRow,
-  ExtractionToggleRow,
-} from "../../components/settings/LearnedMemoryRows";
+import { LearnedMemoryCard } from "../../components/settings/LearnedMemoryCard";
 import { FontSizeRow } from "../../components/settings/FontSizeRow";
 import { LanguageRow } from "../../components/settings/LanguageRow";
 import { SettingsMenuSelect } from "../../components/settings/SettingsMenuSelect";
@@ -62,7 +57,6 @@ import { AgentSkillsPage } from "../../components/settings/AgentSkillsPage";
 import { AgentMcpPage } from "../../components/settings/AgentMcpPage";
 import { AgentSubagentsPage } from "../../components/settings/AgentSubagentsPage";
 import { RemoteHostsPage } from "../../components/settings/RemoteHostsPage";
-import { RemoteGatewayPage } from "../../components/settings/RemoteGatewayPage";
 import { VoiceSettingsSection } from "./voice/VoiceSettingsSection";
 import {
   CommandShellRow,
@@ -260,7 +254,6 @@ export function SettingsPage() {
       projects: <IconArchive size={14} />,
       sync: <IconCloudDown size={14} />,
       remoteHosts: <IconGlobe size={14} />,
-      remoteGateway: <IconGlobe size={14} />,
       voice: <IconMic size={14} />,
       about: <IconInfo size={14} />,
     };
@@ -468,44 +461,6 @@ export function SettingsPage() {
             </div>
           )}
 
-              {settings && (
-                <SettingsCard title={t("settings.learnedMemory")}>
-                <SettingsRow
-                  title={t("settings.learnedMemoryRead")}
-                  description={t("settings.learnedMemoryReadDesc")}
-                >
-                  <SettingsToggle
-                    checked={settings.learnedMemoryRead !== false}
-                    label={t("settings.learnedMemoryRead")}
-                    onChange={() =>
-                      void saveSettings({ learnedMemoryRead: settings.learnedMemoryRead === false })
-                    }
-                  />
-                </SettingsRow>
-                <ExtractionToggleRow settings={settings} saveSettings={saveSettings} />
-                <ExtractionModelRow
-                  settings={settings}
-                  providers={providers}
-                  saveSettings={saveSettings}
-                />
-                <ExtractionBudgetRow settings={settings} saveSettings={saveSettings} />
-                <ExtractionStatusRow settings={settings} />
-                <SettingsRow
-                  title={t("settings.learnedMemoryManager")}
-                  description={t("settings.learnedMemoryManagerDesc")}
-                >
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setLearnedMemoryOpen(true)}
-                  >
-                    {t("settings.learnedMemoryOpen")}
-                  </Button>
-                </SettingsRow>
-              </SettingsCard>
-              )}
-
           {tab === "ai" && settings && (
             <div className="settings-stack">
               <SettingsCard title={t("settings.permissions")}>
@@ -606,6 +561,13 @@ export function SettingsPage() {
                 />
               </SettingsCard>
 
+              <LearnedMemoryCard
+                settings={settings}
+                providers={providers}
+                saveSettings={saveSettings}
+                onOpenManager={() => setLearnedMemoryOpen(true)}
+              />
+
             </div>
           )}
 
@@ -644,8 +606,6 @@ export function SettingsPage() {
           {tab === "sync" && !tabHidden && <ConfigSyncPage />}
 
           {tab === "remoteHosts" && !tabHidden && <RemoteHostsPage />}
-
-          {tab === "remoteGateway" && !tabHidden && <RemoteGatewayPage />}
 
           {tab === "about" && (
             <div className="settings-stack">

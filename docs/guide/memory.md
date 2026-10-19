@@ -41,8 +41,8 @@ URL — are refused, and the refused text is not stored, logged, or echoed back.
 ## Review and clean up
 
 Open **Learned memory** from a project's row menu in Settings → Project archive,
-next to **Project memory**. Settings carries the same manager for the notes that
-apply to you across every project.
+next to **Project memory**. Settings → AI carries the same manager for the notes
+that apply to you across every project.
 
 The manager lists the notes of one scope, filters by kind and status, and lets you
 edit, archive, restore, or delete each one. Archiving hides a note without
@@ -63,12 +63,12 @@ own.
 
 ## Turn it off
 
-- **Settings → Use learned memory** hides the session-start index and every
+- **Settings → AI → Use learned memory** hides the session-start index and every
   learned-memory tool. Nothing is deleted, and turning it back on restores them.
   The switch travels with config sync, so your devices agree.
 - **Session menu → Don't learn from this conversation** keeps this conversation
   out of extraction, including runs already waiting to start.
-- **Settings → Learn automatically** is off by default, and it cannot be turned on
+- **Settings → AI → Learn automatically** is off by default, and it cannot be turned on
   until you choose a **Learning model**. Every run spends that model's quota, so
   the switch is yours to make; the warning next to it says so.
 

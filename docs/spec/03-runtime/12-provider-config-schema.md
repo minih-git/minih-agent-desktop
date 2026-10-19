@@ -556,9 +556,10 @@ Settings uses for the balance and model plaza (§6, Minih Router account).
   overlay address itself and dials the Gateway directly. A Router that advertises
   nothing leaves the tunnel exactly as it is today — one forward, and
   `remoteGateway.available` false.
-- **Desktop enrollment from that status (D666, package E2).** Settings ▸ Remote
-  gateway reads `EasyTierStatus.remoteGateway` and nothing else: the desktop
-  never parses a bootstrap answer itself. When the Router advertises a usable
+- **Desktop enrollment from that status (D666, package E2).** Settings ▸
+  Accounts ▸ Remote control reads `EasyTierStatus.remoteGateway` and nothing
+  else: the desktop never parses a bootstrap answer itself. When the Router
+  advertises a usable
   endpoint **and** the user has switched remote control on, the desktop enrolls
   with the account AccessKey (`Authorization: Bearer`, + CSR) against `dialUrl`,
   pinning `caPem` and validating `tlsServerName`; the key is read from the saved

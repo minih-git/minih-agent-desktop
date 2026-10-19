@@ -792,8 +792,9 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
 
 - R7 package E2 delivered (2026-10-18, D666 / ADR
   `remote-control-router-account-binding`): the desktop side of account mode.
-  Settings ▸ Remote gateway reads `EasyTierStatus.remoteGateway` and enrolls with
-  the account AccessKey when the Router advertises a usable endpoint and the
+  Settings ▸ Accounts ▸ Remote control reads `EasyTierStatus.remoteGateway` and
+  enrolls with the account AccessKey when the Router advertises a usable
+  endpoint and the
   user's remote-control switch is on — the key is read through host-core from the
   saved `minih-router` row, used for that one request, and never reaches a
   renderer payload, a log, or the credential file. The desktop now dials the

@@ -1,5 +1,14 @@
 # Unreleased changes
 
+- Remote access moved onto the Accounts page, right below your Minih Router
+  account and its virtual LAN channel, and the separate Remote gateway entry
+  left the settings list. Everything account mode needs stays visible — whether
+  the Router can register this desktop, the switch that does it, the link state,
+  the per-terminal confirmation switch, and the paired devices. A gateway you
+  run yourself, with its address, CA certificate, and registration code, is now
+  a collapsed **Advanced: self-hosted gateway** area that opens by itself if you
+  registered that way. Searching settings for "gateway", "registration code", or
+  "pairing" lands on the same place.
 - Remote access works on a desktop that has just installed Minih Router. In
   0.22.0 the Remote gateway page only learned whether account mode was usable
   once the link started, and the link only starts with the remote-access switch
@@ -23,6 +32,11 @@
   the index the last session started with, how many suggestions you kept or
   discarded and at what rate, how often a delete blocked a write, and today's
   extraction spend. None of it is uploaded, and none of it syncs.
+- The learned-memory settings live on the AI tab of Settings and nowhere else:
+  the card used to render on every destination, so the same switches appeared
+  again on General, Shortcuts, and the rest. The automatic-learning row also
+  stopped claiming a model was missing while one was already chosen, and
+  settings search now finds the learned-memory rows under AI.
 - Merging folders into a project group now checks the combined pinned memory
   against the 32 KiB limit before writing anything. A merge that would pass it
   is refused with a clear message instead of storing an oversized group: the

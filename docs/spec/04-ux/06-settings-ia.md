@@ -46,7 +46,7 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
 - A compact navigation directory with short, parallel labels and icons, in this
   exact order:
   1. **General / 常规** — Lucide `SlidersHorizontal` (appearance)
-  2. **AI** — Lucide `Sparkles` (permissions, defaults, command shell)
+  2. **AI** — Lucide `Sparkles` (permissions, defaults, command shell, learned memory)
   3. **Shortcuts / 快捷键** — Lucide `Keyboard` (keyboard shortcuts)
   4. **Instructions / 指令** — Lucide `FileText` (global and project instruction files)
   5. **Accounts / 账户** — Lucide `KeyRound` (the Minih Router token and every other provider)
@@ -347,6 +347,48 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
   Manual `/compact` remains available from the command palette for an idle
   session; the transcript shows where each compaction happened and the context
   usage inspector shows whether a checkpoint is installed.
+- **Learned memory** (ADR agent-long-term-memory) is configured on this
+  destination and nowhere else: its card sits with the other model-driven
+  switches, no other tab renders it, and settings search indexes its rows
+  under this tab
+- The card carries Use learned memory (the portable `learnedMemoryRead`, on by
+  default; off hides the session-start index and the learned-memory tools
+  without deleting anything) and the device-local learning rows: Learn
+  automatically (off by default and disabled until a model is chosen, stating
+  "Choose a model first" only while no model is chosen), Learning model (only
+  providers whose credential this machine holds are offered; clearing it also
+  turns the switch off), Daily token budget, and a Used today line reading
+  "used / budget tokens" that says "Paused until tomorrow" once the ceiling is
+  reached
+- The project row's overflow menu carries Learned memory next to Project memory,
+  and the card opens the same manager for the user scope. The two editors stay
+  separate: the pinned editor above keeps its storage, cap, and behavior, and
+  the manager links to it rather than absorbing it
+- The manager lists the entries of one scope with kind and status filters,
+  shows each entry's text, kind, status, date, and source session when it has
+  one, and offers edit, archive, restore, delete, and open-source-session
+  actions. An empty list renders one quiet empty state, and the dialog opens
+  with focus inside it, closes on Escape, and returns focus to the control that
+  opened it
+- An edit carries the revision it read. When another writer moved past it the
+  manager says the entry changed elsewhere and reloads instead of overwriting
+- Delete asks for confirmation and states that a deleted note cannot be
+  restored; it is the one irreversible action in the manager
+- The manager has two tabs: Notes (the entries) and Suggestions (the inbox).
+  The Suggestions tab shows a quiet count that renders nothing at zero, and a
+  dialog opened while suggestions are pending lands on that tab; the inbox never
+  opens itself, never toasts, and never blocks
+- One suggestion shows its content, kind, scope, date, and the user's own words
+  behind it (the first cited message, bounded for display), plus Keep and
+  Discard. Keeping is the only way a suggestion becomes memory; discarding
+  erases it and writes the tombstone that keeps the same evidence from proposing
+  it again
+- The session menu carries Don't learn from this conversation, which sets the
+  per-session exclusion the host stores. Excluding a conversation refuses every
+  later claim and releases a lease it already holds, so that run cannot advance
+  the cursor. A run that had already taken its input and is waiting for the
+  model may still write a suggestion, and a suggestion becomes memory only if
+  the user keeps it
 Speech bindings (`AppSettings.speech`) are **not a Settings surface** (ADR
 0291). The host keeps the speech capability and the `speech/*` IPC for plugins
 and for bindings that are already stored, but nothing here picks a
@@ -447,6 +489,28 @@ a usage tab.
   even a profile that still carries other providers' rows.
 - The page keeps one consistent vertical spacing rhythm and reads its rows
   through the same service components as before.
+- **Remote control is part of this page, not its own destination.** The desktop
+  as a Host that a phone of the same account may reach lives directly below the
+  Virtual LAN Channel, so the account and the way its devices connect read in
+  one place. The block carries `settings.remoteHosts.experimental` and shows,
+  always visible: the account-mode state with its badge and reason (or the
+  Router endpoint when it is usable), the **Allow remote devices** switch, the
+  link state with its last error and retry time, the per-terminal confirmation
+  switch, recent device notices, the pairing code, and the paired devices with
+  their revoke action. A fresh install offers the switch as soon as account mode
+  is usable: turning it on is what enrolls the desktop.
+- The self-hosted path — gateway address, CA certificate, registration code and
+  the enroll action — is a **collapsed** `SettingsDisclosure` titled
+  **Advanced: self-hosted gateway**. It opens by itself when the stored
+  credentials came from that path, so a user who registered a gateway of their
+  own always finds the state they set up. While account mode can register this
+  desktop the disclosure explains that instead of showing the form: a
+  registration code would overwrite the account credentials.
+- Settings search indexes the remote-control rows under this destination, so a
+  query for "gateway", "registration code" or "pairing" lands here and flashes
+  the matching row; a hit inside the folded area flashes its summary. The
+  retired `remoteGateway` destination id resolves to `accounts`, never to an
+  empty pane.
 
 ### Models (`agent` tab)
 - The models page groups its sections in this order: the **chosen models** as
@@ -996,42 +1060,6 @@ system while preserving their different data ownership:
   actions keep Project archive open even when the active workspace changes
 - Opening an archived project also clears its renderer-local archive state so
   the project becomes visible in the home sidebar; merely selecting its row
-### Learned memory
-
-- The project row's overflow menu carries Learned memory next to Project memory,
-  and Settings offers the same manager for the user scope. The two editors stay
-  separate: the pinned editor above keeps its storage, cap, and behavior, and
-  the manager links to it rather than absorbing it
-- The manager lists the entries of one scope with kind and status filters,
-  shows each entry's text, kind, status, date, and source session when it has
-  one, and offers edit, archive, restore, delete, and open-source-session
-  actions. An empty list renders one quiet empty state, and the dialog opens
-  with focus inside it, closes on Escape, and returns focus to the control that
-  opened it
-- An edit carries the revision it read. When another writer moved past it the
-  manager says the entry changed elsewhere and reloads instead of overwriting
-- Delete asks for confirmation and states that a deleted note cannot be
-  restored; it is the one irreversible action in the manager
-- The manager has two tabs: Notes (the entries) and Suggestions (the inbox).
-  The Suggestions tab shows a quiet count that renders nothing at zero, and a
-  dialog opened while suggestions are pending lands on that tab; the inbox never
-  opens itself, never toasts, and never blocks
-- One suggestion shows its content, kind, scope, date, and the user's own words
-  behind it (the first cited message, bounded for display), plus Keep and
-  Discard. Keeping is the only way a suggestion becomes memory; discarding
-  erases it and writes the tombstone that keeps the same evidence from proposing
-  it again
-- Settings carries Use learned memory (the portable `learnedMemoryRead`, on by
-  default; off hides the session-start index and the learned-memory tools
-  without deleting anything) and the device-local learning rows: Learn
-  automatically (off by default, disabled until a model is chosen, with
-  "Choose a model first" as the reason), Learning model (only providers whose
-  credential this machine holds are offered; clearing it also turns the switch
-  off), Daily token budget, and a Used today line reading "used / budget tokens"
-  that says "Paused until tomorrow" once the ceiling is reached
-- The session menu carries Don't learn from this conversation, which sets the
-  per-session exclusion the host stores; from M4 on it also stops extraction
-
   for inspection does not restore it.
 
 ### Info

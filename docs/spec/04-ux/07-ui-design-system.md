@@ -1330,8 +1330,11 @@ Implementation: `components/settings/SettingsDisclosure.tsx`.
 
 Use native `<details>` / `<summary>` for low-frequency settings, with one
 localized title and a decorative chevron. It accepts native details attributes,
-children and `className`; `open` can seed or update the native state. Collapsed
-content stays mounted to retain drafts but is not keyboard-reachable. The
+children, `className` and `titleClassName`; `open` can seed or update the native
+state. `titleClassName` exists so a caller can mark the summary as the row's
+title, which is what settings search flashes when a hit lands inside the folded
+body. Collapsed content stays mounted to retain drafts but is not
+keyboard-reachable. The
 shared summary has a minimum 44px row, token-based hover/focus treatment and
 reduced-motion-compatible chevron feedback. Errors, progress and approvals
 must remain outside optional disclosures.

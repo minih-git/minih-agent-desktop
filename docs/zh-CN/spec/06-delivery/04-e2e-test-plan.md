@@ -7891,7 +7891,8 @@ Gateway、loopback 模型桩运行；不使用生产 Router、真实 AccessKey �
 - **前置条件**：本地 Router 测试实例（或桩）对 key A 与 key B 返回不同的
   `access_key_id`，并通过 `/api/easytier/bootstrap` 给出指向本地测试 Gateway 的
   `remoteGateway`；每个账户各有一台已注册 Host；两个 loopback 模型桩。
-- **步骤**：1）在一台全新安装、已配置 key A 且没有已存凭据的桌面上，确认远程网关页提供
+- **步骤**：1）在一台全新安装、已配置 key A 且没有已存凭据的桌面上，确认设置 ▸ 账户页的
+  远程控制区块提供
   远程控制开关并把账户模式报为可用；打开开关，记录它只用 key A 注册了一次、且没有填写任何
   注册码。用 key B 注册 B1，记录各自所属账户。2）用 key A 登录客户端并列出账户主机。
   3）用该客户端在账户主机列表、Host 作用域路由与设备申请中按 id 访问 B1。4）提交 CSR 名为
@@ -10135,6 +10136,22 @@ host-created files. The full app's file-preview viewer is covered separately.
   不同笔记的设备在无冲突的情况下收敛。
 - **里程碑**：M5。
 - **状态**：已在引擎层自动化。
+
+### E2E-SETTINGS-learned-memory-lives-on-the-ai-tab：学习记忆只出现在 AI 选项卡
+
+- **前置条件**：隔离的 Electron 窗口、已构建的渲染层与打桩的 IPC 边界；不使用真实 Host、提供方或
+  用户配置。
+- **步骤**：在「常规」上挂载真实设置页并读取渲染出的卡片标题；切到「AI」再读一次；在已选模型且
+  自动学习开关关闭时读取该行的说明行，然后清空模型再读一次；在设置搜索中检索学习记忆相关行。
+- **预期**：学习记忆卡片不出现在「常规」，而出现在「AI」上，与该目的地的其他卡片并列。已选模型时
+  永不出现「请先选择模型」，该行只在未选模型时说明这一点，此时开关也为禁用。设置搜索能把这些行
+  指向 AI 目的地。
+- **规格**：`04-ux/06-settings-ia.md` §2（AI）、ADR agent-long-term-memory。
+- **验收**：学习记忆开关只出现在一个目的地；已选模型时自动学习行不会声称缺少模型。
+- **自动化**：`apps/desktop/test/learned-memory-settings-placement.test.mjs`（`node --test`），
+  在本任务 worktree 中先执行 `pnpm --filter @minih-agent/desktop build`。
+- **里程碑**：Post-M5 设置修复。
+- **状态**：已自动化 — `node --test apps/desktop/test/learned-memory-settings-placement.test.mjs`。
 
 ### E2E-BASH-background-task-lifecycle-and-output
 

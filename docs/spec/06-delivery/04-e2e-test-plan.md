@@ -15670,8 +15670,9 @@ sibling Hosts is still open for package D.
   and `/api/easytier/bootstrap` with a `remoteGateway` object naming the local
   test Gateway; one enrolled Host per account; two loopback model stubs.
 - **Steps**: 1) On a freshly installed desktop with key A configured and no
-  stored credentials, confirm the Remote gateway page offers the remote-access
-  switch and reports account mode as available; turn it on and record that it
+  stored credentials, confirm the remote-control block on Settings ▸ Accounts
+  offers the remote-access switch and reports account mode as available; turn it
+  on and record that it
   enrolled once with key A, with no registration code. Enroll Host B1 with key
   B; record the account each is recorded under. 2) Log a client in with key A
   and list the account Hosts. 3) With that client, address B1 by its id on the
@@ -19113,6 +19114,32 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
   and two devices that wrote different notes converge without a conflict.
 - **Milestone**: M5.
 - **Status**: Automated at the engine level.
+
+### E2E-SETTINGS-learned-memory-lives-on-the-ai-tab
+
+- **Preconditions**: An isolated Electron window with the built renderer and a
+  stubbed IPC boundary; no real host, provider, or user profile.
+- **Steps**:
+  1. Mount the real Settings page on General and read the rendered card titles.
+  2. Switch to the AI destination and read the card titles again.
+  3. With a model chosen and the automatic-learning switch off, read the switch
+     row's detail line; then clear the model and read it again.
+  4. Search the settings index for the learned-memory rows.
+- **Expected**: The learned-memory card is absent from General and present on AI
+  beside that destination's other cards. A chosen model never produces the
+  "choose a model" hint, and the row states it only while no model is chosen,
+  when the switch is also disabled. Settings search reaches the AI destination
+  for the card's rows.
+- **Automation**: `apps/desktop/test/learned-memory-settings-placement.test.mjs`
+  (`node --test`), run from the request worktree after
+  `pnpm --filter @minih-agent/desktop build`.
+- **Specs linked**: `04-ux/06-settings-ia.md` §2 (AI), ADR
+  agent-long-term-memory.
+- **Acceptance criterion**: The learned-memory switches appear on exactly one
+  destination, and the automatic-learning row never blames a missing model when
+  one is chosen.
+- **Milestone**: Post-M5 settings fix.
+- **Status**: Automated — `node --test apps/desktop/test/learned-memory-settings-placement.test.mjs`.
 
 ### E2E-BASH-background-task-lifecycle-and-output
 

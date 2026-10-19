@@ -18,7 +18,6 @@ export type SettingsTabId =
   | "projects"
   | "sync"
   | "remoteHosts"
-  | "remoteGateway"
   | "voice"
   | "about";
 
@@ -125,6 +124,23 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "settings.contextUsageDisplayRemaining",
       "settings.contextUsageDisplayUsed",
       "settings.largePasteThreshold",
+      // Learned memory (ADR agent-long-term-memory) is a Global AI decision.
+      "settings.learnedMemory",
+      "settings.learnedMemoryRead",
+      "settings.learnedMemoryReadDesc",
+      "settings.learnedMemoryExtraction",
+      "settings.learnedMemoryExtractionDesc",
+      "settings.learnedMemoryExtractionNeedsModel",
+      "settings.learnedMemoryModel",
+      "settings.learnedMemoryModelDesc",
+      "settings.learnedMemoryModelNone",
+      "settings.learnedMemoryBudget",
+      "settings.learnedMemoryBudgetDesc",
+      "settings.learnedMemoryUsage",
+      "settings.learnedMemoryUsageDesc",
+      "settings.learnedMemoryManager",
+      "settings.learnedMemoryManagerDesc",
+      "settings.learnedMemoryOpen",
     ],
   },
   {
@@ -188,6 +204,21 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "settings.importSourceCodex",
       "settings.importSourcePi",
       "settings.importSourceCcSwitch",
+      // Remote control lives on this page now: the desktop as a Host the
+      // account's phones may reach, plus the folded self-hosted gateway.
+      "settings.remoteGateway.title",
+      "settings.remoteGateway.desc",
+      "settings.remoteGateway.enabled",
+      "settings.remoteGateway.statusTitle",
+      "settings.remoteGateway.strictTitle",
+      "settings.remoteGateway.pairingTitle",
+      "settings.remoteGateway.pairingCreate",
+      "settings.remoteGateway.devicesTitle",
+      "settings.remoteGateway.advancedTitle",
+      "settings.remoteGateway.url",
+      "settings.remoteGateway.caPem",
+      "settings.remoteGateway.registrationCode",
+      "settings.remoteGateway.enroll",
     ],
   },
   {
@@ -329,26 +360,6 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
     ],
   },
   {
-    id: "remoteGateway",
-    labelKey: "settings.nav.remoteGateway",
-    titleKey: "settings.remoteGateway.title",
-    group: "system",
-    experimentalBadgeKey: "settings.remoteHosts.experimental",
-    keywordKeys: [
-      "settings.remoteGateway.title",
-      "settings.remoteGateway.desc",
-      "settings.remoteGateway.enabled",
-      "settings.remoteGateway.url",
-      "settings.remoteGateway.caPem",
-      "settings.remoteGateway.registrationCode",
-      "settings.remoteGateway.enroll",
-      "settings.remoteGateway.statusTitle",
-      "settings.remoteGateway.pairingTitle",
-      "settings.remoteGateway.pairingCreate",
-      "settings.remoteGateway.devicesTitle",
-    ],
-  },
-  {
     id: "about",
     labelKey: "settings.nav.info",
     titleKey: "settings.about",
@@ -390,6 +401,32 @@ export function isSettingsDestinationHidden(
   return !visibleSettingsNav(developerMode, includeDevelopmentOnly).some(
     (entry) => entry.id === tab,
   );
+}
+
+/**
+ * Destinations that used to be their own rail entry and now live inside
+ * another page.
+ *
+ * The id is gone from `SettingsTabId`, but a caller can still hold the old
+ * string: a selection restored by a reload, an automation call through the
+ * capture API, or a plugin that opened the settings page. Rather than landing
+ * on an empty pane they are redirected to the page that now owns the surface.
+ */
+const LEGACY_SETTINGS_TABS: Record<string, SettingsTabId> = {
+  // Remote control moved into the accounts page (D666 follow-up): the switch,
+  // the devices, and the folded self-hosted gateway all live there now.
+  remoteGateway: "accounts",
+};
+
+/**
+ * Resolve a possibly stale destination id to one this build has.
+ *
+ * Anything unknown falls back to General, which is what the settings page
+ * already does with a hidden destination: never an empty pane, never a crash.
+ */
+export function normalizeSettingsTabId(tab: string): SettingsTabId {
+  if (SETTINGS_NAV.some((entry) => entry.id === tab)) return tab as SettingsTabId;
+  return LEGACY_SETTINGS_TABS[tab] ?? "general";
 }
 
 export type SettingsSearchHit = {
