@@ -2550,8 +2550,12 @@ never summarizes from its own arguments:
 
 Clicking a topology node opens a dedicated `subagent` tab in the work panel —
 the same tab strip that hosts Review, files, and plugin views — instead of
-expanding the transcript. Re-opening the same delegation activates its tab;
-parallel delegates coexist as independent tabs. The tab renders the delegation
+expanding the transcript. Clicking the node for the currently visible delegation
+collapses the panel without closing its tabs; clicking it again reopens that
+retained tab. A different node opens or activates its delegation without
+collapsing the panel. Only the visible delegation reports `aria-expanded=true`;
+closing the panel clears that state even while its active tab is retained.
+Parallel delegates coexist as independent tabs. The tab renders the delegation
 as a conversation:
 
 ```text
