@@ -2,6 +2,22 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.22.0",
+    date: "2026-10-19",
+    highlights: [
+      "Uzun süreli bellek eski konuşmaları ve öğrenilen notları arar, isteğinizle içerik hatırlar ve Düzenle ile Geri Al işlemlerini sunar; notlar proje menüsünden veya Ayarlar’dan yönetilir, okumayı kapatmak notları silmez.",
+      "Otomatik öğrenme varsayılan olarak kapalıdır: seçilen model yalnızca sizin mesajlarınızdan not önerir; önerileri saklama veya atma, günlük belirteç bütçesi ve oturum bazında kapsam dışı bırakma desteklenir.",
+      "Uzaktan denetim Minih Router hesabını destekler: AccessKey ile giriş yapın, hesabın bilgisayarlarına erişmek için cihazı bir kez onaylayın, cihazı iptal edin veya her terminalde ayrı onay isteyin; hesap modu yoksa kayıt kodları kullanılmaya devam eder.",
+      "Uzaktan erişim, güvenli kimlik bilgisi saklayan iOS ve Android yerel kabukları ile isteğe bağlı Gateway APNs/FCM bildirimleri kazanır; bildirimler konuşma içeriği yerine yalnızca olay türleri ve kimlikleri taşır, işletmeci kimlik bilgileri yoksa kapalı kalır.",
+      "Uzun süren yerel Bash komutları tur bittikten sonra arka planda devam edebilir; sınırlı çıktı önizlemesi ve Durdur denetimleri sunulur, Host kapanırken süreçleri temizler.",
+      "Geri bildirimler sağda kartlar olarak görünür: hata ve uyarılar kapatılana kadar kalır, sıradan bildirimler otomatik kapanır ve üzerine gelindiğinde veya odaklandığında süre durur; uzun yığınlar mesaj kaybetmeden kaydırılır.",
+      "Çalışma paneli geçerli konuşmanın alt ajanlarını canlı durumları ve geçmiş ayrıntılarıyla listeler; devredilen işleri izlemek kolaylaşır.",
+      "Ayrıntılı konuşmalarda yalnızca görünür kod vurgulanarak donmalar azaltılır, açılan komut satırlarında tam komut okunur ve kenar çubuğunu yeniden açmak kayıtlı çalışma paneli genişliğini korur.",
+      "Uygulama indirmeleri Gateway’in sağladığı hızlandırılmış kaynakları önceler; eklenti pazarı Minih’in kendi dağıtım deposunu kullanır.",
+      "Otomatik oturum başlıkları konuşma konusunu daha doğru izler; oturumlar arası uzun iletişim zincirlerine tamamlanmaları için daha fazla çalışma alanı tanınır.",
+    ],
+  },
+  {
     version: "0.21.2",
     date: "2026-10-18",
     highlights: [
