@@ -415,7 +415,7 @@ Host execution baseline:
 - A project-bound session workspace is required
 - Default cwd = the originating session's `workspaceRoot`
 - Confirmation required by default
-- Set a mandatory 60s timeout; accept a 1s–21,600s override (D329)
+- Foreground calls have a mandatory 60s timeout; accept a 1s–21,600s override (D329)
 - A timeout returns `TOOL_TIMEOUT` with the effective `timeoutMs` budget and
   guidance to raise that budget or split the command
 - Stream stdout and stderr separately, then return bounded final output
@@ -472,12 +472,46 @@ or executable path hash is accepted as shell identity.
   naming the locations that were searched.
 - Git Bash uses the discovered Git for Windows executable.
 - Unix Bash uses an approved system Bash entry.
-- User abort and timeout terminate the complete process tree before returning.
+- For foreground calls, user abort and timeout terminate the complete process tree before returning.
 
 Initial denylist (extensible):
 
 - Directly reading/writing sensitive paths outside the workspace
 - Destructive operations without confirmation (policy governed by the permission layer)
+
+### Background Bash commands
+
+`Bash` accepts optional `runInBackground: true` for local long-lived commands
+such as development servers and watchers. The runtime forwards that explicit
+choice to the Host. Shell identity, durable session mode, workspace containment,
+permission review, and audit rules are the same as for foreground Bash. A pending
+approval remains cancellable; no process starts before permission is granted.
+
+After admission the Host returns a `backgroundTaskId` instead of waiting for
+output. The process belongs to host-core rather than the originating turn:
+finishing or aborting the turn does not stop it, and the foreground timeout does
+not apply. Explicit Stop and graceful Host shutdown terminate its owned process
+tree. Startup and registry admission are serialized with shutdown; a refused
+startup does not execute its command. Isolated sessions retain `PI_PORT`,
+`PI_PROJECT_ROOT`, and `PI_WORKTREE_ROOT`, along with their worktree cwd.
+
+The Host permits at most 32 running tasks and keeps 16 finished entries. Each
+stdout/stderr ring retains at most 256 KiB, reports truncation, and drains the
+final bytes before recording completion. Tasks are process-local, not SQLite
+records: restarting the Host does not restore or replay commands. Ordinary
+foreground Bash keeps its existing timeout, streaming, cancellation, and result
+semantics. Remote background execution is not part of the current contract;
+requests fail explicitly rather than silently running in the foreground.
+
+Composer shows at most 12 matching task rows with localized state, Output, and
+Stop controls. Only an expanded output preview is polled; stale session/selection
+responses are ignored and failed refreshes remain retryable. Existing finished
+tasks do not reappear on a mount or session switch; tasks observed finishing in
+the current view leave a short dismissible receipt. This is not an interactive
+TTY or a durable service manager.
+
+See [background task ownership](../../adr/background-bash-task-ownership.md)
+and [the Host RPC contract](06-host-rpc-protocol.md#background-tasks).
 
 ## 6. Permission Model
 

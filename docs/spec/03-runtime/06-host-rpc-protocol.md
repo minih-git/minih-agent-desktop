@@ -1072,6 +1072,8 @@ type ToolsExecuteParams = {
   expectedCommandShellDialect?: "powershell" | "cmd" | "posix"
   /** Bash only: host default 60000; accepted override 1000..21600000. */
   timeoutMs?: number
+  /** Local Bash only; the foreground timeout does not apply. */
+  runInBackground?: boolean
   /** Isolated `Write`/`Edit` delegate chain id; re-roots the call to that
    * delegate's worktree (ADR 0329). Omitted for every other call. */
   delegationId?: string
@@ -1601,3 +1603,26 @@ supported; there is no old-data detection or migration. Disconnect removes
 only the current account-bound configuration, keys and local sync
 metadata/staging; the account token lives in the providers store, and
 unrelated files and remote objects remain intact. See `22-config-sync.md`.
+
+### Background tasks
+
+The additive local RPC family is `backgroundTasks.list`, `backgroundTasks.output`,
+and `backgroundTasks.stop`; `backgroundTasks.changed` notifies renderer relists.
+
+- `list({})` returns `{ tasks, version }`. A summary contains `id`, `sessionId`,
+  `command`, `commandShellId`, `state`, `elapsedMs`, and optional `exitCode`.
+  States are `running`, `exited`, `failed`, and `stopped`.
+- `output({ id })` returns `id`, `state`, nullable `exitCode`, bounded `stdout`
+  and `stderr`, and `truncated`. An unknown id returns `NOT_FOUND`; a missing or
+  invalid id returns `INVALID_PARAMS`.
+- `stop({ id })` signals the owned tree and returns `{ ok: true, found }`.
+  It is idempotent; an unknown or already stopping/finished task yields
+  `found: false`. The terminal state is published after cleanup and output drain.
+- `changed({ version })` carries the process-local monotonic change counter.
+  A Host restart starts a fresh registry and counter; it never replays tasks.
+
+Only an explicitly requested local Bash startup may use `runInBackground`.
+Normal authorization and shell pin checks precede spawn. Approval is cancellable;
+once a task has been registered, turn abort cannot stop its owned process.
+The request budget bounds startup/relay, not the background process lifetime.
+See [Bash rules](03-tools-and-permissions.md#background-bash-commands).

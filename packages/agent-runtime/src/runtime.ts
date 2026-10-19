@@ -1355,6 +1355,7 @@ function commandShellToolDescription(
     shellSyntaxGuidance(shell),
     `The session scratch directory variable is ${shellScratchVariable(shell)}.`,
     `An optional timeout from 1 to ${MAX_COMMAND_TIMEOUT_SECONDS} seconds may be supplied; without it, the command defaults to a 60-second timeout.`,
+    `Set runInBackground: true for long-lived processes the user needs after the turn ends (dev servers, watchers, builds). A background call returns a backgroundTaskId immediately, survives turn aborts and timeouts, and its output is visible in the composer's running-tasks bar; do not set it for commands whose output the current turn depends on.`,
     ...(formattedScratch ? [`The session scratch directory is ${formattedScratch}.`] : []),
   ].join(" ");
 }
@@ -3443,6 +3444,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
               `Optional command timeout in seconds from 1 to ${MAX_COMMAND_TIMEOUT_SECONDS}; defaults to 60 seconds.`,
           }),
         ),
+        runInBackground: Type.Optional(
+          Type.Boolean({
+            description:
+              "Start the command as a background task that outlives the turn (dev servers, watchers, builds). Returns backgroundTaskId immediately; the foreground timeout does not apply.",
+          }),
+        ),
       },
       PluginScaffold: {
         template: Type.String(),
@@ -3585,6 +3592,9 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
                     expectedCommandShellId: this.commandShell.id,
                     expectedCommandShellDialect: this.commandShell.dialect,
                     timeoutMs,
+                    ...(isRecord(params) && params.runInBackground === true
+                      ? { runInBackground: true }
+                      : {}),
                   }
                 : {}),
               ...(toolName.startsWith("plugin_")

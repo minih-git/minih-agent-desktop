@@ -157,7 +157,8 @@ test("host disposal closes stdin, observes exit, and force-kills only after grac
 test("Bash execution remains bounded while permission transport has no deadline", () => {
   assert.match(runtimeSource, /DEFAULT_COMMAND_TIMEOUT_MS/);
   assert.match(runtimeSource, /defaults to a 60-second timeout/);
-  assert.match(runtimeSource, /timeoutMs,\n\s+}/);
+  assert.ok(runtimeSource.includes("timeoutMs,"));
+  assert.ok(runtimeSource.includes("params.runInBackground === true"));
   assert.doesNotMatch(rpcTimeoutSource, /DEFAULT_BASH_RPC_TIMEOUT_MS/);
   // A tool relay carries its own budget; the transport must not cut it with the
   // flat default. The same holds for the remote workspace counterpart.
