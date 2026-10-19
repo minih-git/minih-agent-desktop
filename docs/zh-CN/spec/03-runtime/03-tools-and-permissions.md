@@ -585,9 +585,13 @@ MVP 可以通过写入 SQLite 或日志文件来启动。
 `TaskWait` / `TaskList` / `TaskStop`、`EnterPlanMode` / `EnterGoalMode`、
 `TodoWrite`、`asktool`、`new_context`、`ToolSearch`、学习记忆工具
 `SessionHistorySearch` / `MemorySearch` / `MemoryRemember`，以及会话消息工具
-`SessionList` / `SessionSend` / `SessionResult`。该拒绝列表对两个方向都是关卡：
-同样这些名称也会从定义自身的 `tools` 列表中删除，因此显式写出某个名称不能授予
-`inherit` 所拒绝的工具。
+`SessionList` / `SessionSend` / `SessionResult`。内置定义不默认开启。`inherit`
+写在 Markdown 和设置里；host-core 会保留该标记，因此只有 inherit 的文档
+仍能加载。插件工具、`Skill` 和 MCP 工具只通过这一 opt-in 到达委托，
+不能写进可分配白名单。
+
+该拒绝列表对两个方向都是关卡：同样这些名称也会从定义自身的 `tools` 列表中删除，
+因此显式写出某个名称不能授予 `inherit` 所拒绝的工具。
 
 没有 `tools: inherit` 时，委托可用的工具来自其定义，而不是其会话：它
 无法因为父级拥有某个工具而获得该工具，会话也不能把修改权限借给只读
