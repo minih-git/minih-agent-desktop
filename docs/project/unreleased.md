@@ -15,3 +15,8 @@
   row menu and in Settings lists, filters, edits, archives, restores, and
   deletes those notes, and Settings gains the reading switch plus a per-session
   "don't learn from this conversation" in the session menu.
+- Automatic learning is available, off by default: after a conversation settles
+  or compacts, the model you choose reads only your own messages and proposes
+  notes into a Suggestions tab, where Keep makes one memory and Discard erases
+  it. A daily token budget caps the cost and Settings shows today's usage; the
+  switch, the model, and the budget stay on this device.

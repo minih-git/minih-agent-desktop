@@ -141,3 +141,47 @@ export type LearnedMemoryRememberAgainRequest = {
   basis?: "user_stated" | "verified";
   rationale?: string;
 };
+
+/**
+ * A cited user message as the inbox shows it. The host bounds the quote for
+ * display; the message itself is untouched.
+ */
+export type LearnedMemorySuggestionQuote = {
+  id: string;
+  seq: number;
+  createdAt: number;
+  text: string;
+};
+
+/** One pending suggestion, as the inbox lists it: an entry plus its citations. */
+export type LearnedMemorySuggestion = LearnedMemoryEntry & {
+  /** The user's own words behind the suggestion, oldest first. */
+  quotes: LearnedMemorySuggestionQuote[];
+};
+
+/** What one inbox read asks for: one scope, optionally bounded. */
+export type LearnedMemorySuggestionListRequest = {
+  scope: LearnedMemoryScopeKind;
+  path?: string;
+  sessionId?: string;
+  limit?: number;
+};
+
+/**
+ * The inbox plus the count the badge shows. `count` is the scope's total, not
+ * the page's length, so a bounded read still reports the real backlog.
+ */
+export type LearnedMemorySuggestionListResult = {
+  entries: LearnedMemorySuggestion[];
+  count: number;
+};
+
+/**
+ * Device-local extraction usage for one local day. Settings renders it as
+ * "today: used / budget" and pauses the switch when the budget is spent.
+ */
+export type LearnedMemoryExtractionStatus = {
+  day: string;
+  tokens: number;
+  runs: number;
+};

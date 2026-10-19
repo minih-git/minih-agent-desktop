@@ -23,6 +23,7 @@ import {
   isActiveInProject,
   type ActivationScope,
   type AgentEventEnvelope,
+  type AppSettings,
   type CloseBehavior,
   type KeybindingOverrides,
   type PlanExecutionFinishStatus,
@@ -71,6 +72,7 @@ import {
   createSessionRetitleGenerator,
   createSessionTitleGenerator,
 } from "./session-title-service";
+import { createMemoryExtractionService } from "./memory/memory-extraction-service";
 import { createEventPersistence } from "./runtime/event-persistence";
 import { createPlanRuntime } from "./runtime/plans";
 import { createRuntimeLifecycle } from "./runtime/lifecycle";
@@ -762,6 +764,33 @@ const { persistAgentEvent } = eventPersistence;
  * bounded retry after a settled turn. They share the in-flight guard, so a
  * retry can never race the generation it is meant to complete.
  */
+/**
+ * The optional extractor (ADR agent-long-term-memory §4). One instance per
+ * process: the compaction and idle triggers share its timers and its in-flight
+ * guard, and quitting disposes it so no run starts while the app is closing.
+ * Every trigger is detached; nothing here can delay a turn.
+ */
+const memoryExtractionService = createMemoryExtractionService({
+  getHost,
+  // Read at trigger time, so a settings change applies without a restart.
+  getSettings: async () =>
+    (await getHost()?.call("settings.get").catch(() => null)) as
+      | AppSettings
+      | null
+      | undefined,
+  resolveAgentRuntimeLaunch: (sessionId, session, settings, overrides) =>
+    resolveAgentRuntimeLaunch(sessionId, session, settings, {
+      ...(overrides ?? {}),
+      thinkingLevel: overrides?.thinkingLevel
+        ? normalizeThinkingLevel(overrides.thinkingLevel)
+        : undefined,
+    }),
+  vendorOAuth,
+  logger,
+  // Extraction never runs during a turn: the transcript is still being written.
+  isTurnRunning: (sessionId) => activeTurns.has(sessionId),
+});
+
 const sessionTitleGenerator = createSessionTitleGenerator({
   getHost,
   resolveAgentRuntimeLaunch: (sessionId, session, settings, overrides) =>
@@ -812,6 +841,10 @@ const sidecarRuntime = createSidecarRuntime({
   pluginActiveInProject,
   currentNetworkProxy,
   sessionCollaboration,
+  onAgentCompactionEnd: (sessionId) =>
+    memoryExtractionService.onCompactionEnd(sessionId),
+  onAgentTurnSettled: (sessionId) => memoryExtractionService.onAgentEnd(sessionId),
+  cancelMemoryExtraction: (sessionId) => memoryExtractionService.cancel(sessionId),
   generateSessionRetitle: createSessionRetitleGenerator({
     getHost,
     resolveAgentRuntimeLaunch: (sessionId, session, settings, overrides) =>
@@ -920,6 +953,11 @@ const liveCallService = createLiveCallService({
 function registerIpc() {
   return registerIpcHandlers({
     generateSessionTitle: sessionTitleGenerator.run,
+    // The extractor's lifecycle is Main's: a deleted session and a switch that
+    // went off both cancel the runs already waiting to start.
+    cancelMemoryExtraction: (sessionId) => memoryExtractionService.cancel(sessionId),
+    onLearnedMemorySettingsChanged: (settings) =>
+      memoryExtractionService.onSettingsChanged(settings),
     restartForStorage: () => {
       shutdownState.quitConfirmed = true;
       app.relaunch({ args: [...process.argv.slice(1).filter((arg) => arg !== "--pi-managed-storage"), "--pi-managed-storage"] });
@@ -1133,6 +1171,7 @@ registerShutdownHandlers({
   disposePowerSaveBlockers,
   liveCallService,
   disposeSystemProxyRelay,
+  disposeMemoryExtraction: () => memoryExtractionService.dispose(),
 });
 
 registerApplicationActivation({

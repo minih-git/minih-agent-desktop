@@ -326,6 +326,14 @@ recall tools.
   and record a content-free tombstone that blocks the same fingerprint and the same
   source messages. The text cannot be read back or restored afterwards. Idempotent;
   returns `{ ok }`, which is `false` when the id is already gone.
+- `memory.suggestions.list({ scope?, path?, sessionId?, limit? })` — the
+  suggestion inbox for one scope: pending proposals oldest first, plus `count`,
+  the scope's whole backlog. Each entry is a normal `memory.list` shape with an
+  extra `quotes` array — up to three of the cited user messages of the entry's own
+  source session, each `{ id, seq, createdAt, text }` with the text
+  display-bounded to 240 characters. This is what makes a suggestion reviewable:
+  the user sees the words it came from. A quote whose message has since been
+  erased simply does not appear.
 - `memory.suggestions.decide({ id, decision })` — `accept` activates a suggestion
   and returns `{ entry }`; `reject` erases it, writes the same tombstone, and
   returns `{ rejected: true }`. An id that is not a pending suggestion answers
@@ -333,8 +341,26 @@ recall tools.
 - `memory.session.get({ sessionId })` / `memory.session.setExcluded({ sessionId,
   excluded })` — per-session extraction state, including "don't learn from this
   conversation".
-- `memory.extraction.claim({ sessionId, owner, leaseMs? })` /
-  `memory.extraction.complete({ sessionId, owner, cursorSeq })` /
+- `memory.extraction.claim({ sessionId, owner, leaseMs? })` — take the per-session
+  lease. Returns `{ claimed: true, state }`, or `{ claimed: false, reason }` where
+  `reason` is `busy` (another run holds the lease) or `excluded` (the user set
+  "don't learn from this conversation"). The two are both refusals but not the
+  same fact, so the service never reports the user's own decision as a race.
+- `memory.extraction.input({ sessionId })` — what one run may read:
+  `{ input: { sessionId, scopeKind, scopeKey, cursorSeq, messages, summary?, bytes } }`
+  or `{ input: null, skipped }` with `skipped` one of `excluded`,
+  `scheduled-run`, `isolated-worktree`, `imported`. The host assembles it because
+  it owns the rule for user-authored input: messages with a real turn, role
+  `user`, not claimed by `session_collaboration_messages`, at or after
+  `cursorSeq`, oldest first, plus the latest compaction summary, inside a 16 KiB
+  budget (summary at most 4 KiB, cut on a character boundary). `cursorSeq` is the
+  next sequence to read, so a message that did not fit stays unread.
+- `memory.extraction.budget({ day, tokens? })` — the device-local daily ledger
+  keyed by the caller's local `YYYY-MM-DD`. Without `tokens` it reads
+  `{ budget: { day, tokens, runs } }`; with `tokens` it adds one run's usage
+  first. A stored counter from another day reads as `0`, so a spent budget
+  clears itself at the user's midnight without a reset job.
+- `memory.extraction.complete({ sessionId, owner, cursorSeq })` /
   `memory.extraction.fail({ sessionId, owner, error })` — the cursor and lease the
 
 `tools.execute` with `toolName: "MemoryRemember"` is the explicit write the tool

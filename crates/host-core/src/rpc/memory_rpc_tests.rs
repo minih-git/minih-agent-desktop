@@ -291,6 +291,9 @@ async fn memory_rpc_keeps_a_session_out_of_the_extractor() {
     .await
     .unwrap();
     assert_eq!(again["claimed"], json!(false));
+    // A held lease and the user's own exclusion are both refusals, and the
+    // caller has to tell them apart: one is a race, the other is a decision.
+    assert_eq!(again["reason"], json!("busy"));
 
     call(
         &state,
@@ -307,6 +310,7 @@ async fn memory_rpc_keeps_a_session_out_of_the_extractor() {
     .await
     .unwrap();
     assert_eq!(excluded["claimed"], json!(false));
+    assert_eq!(excluded["reason"], json!("excluded"));
     let state_value = call(
         &state,
         "memory.session.get",
@@ -730,4 +734,139 @@ async fn memory_index_without_a_project_returns_the_user_scope_alone() {
     assert_eq!(ids.len(), 2, "{scoped}");
     assert!(ids.contains(&project_entry["entry"]["id"].as_str().unwrap()));
     assert!(ids.contains(&user_entry["entry"]["id"].as_str().unwrap()));
+}
+
+#[tokio::test]
+async fn memory_rpc_serves_the_extraction_input_and_the_suggestion_inbox() {
+    let (dir, state) = open().await;
+    let path = dir.path().join("app");
+    std::fs::create_dir_all(&path).unwrap();
+    let project = canonical_project_path(path.to_str().unwrap()).unwrap();
+    let session = call(
+        &state,
+        "session.create",
+        json!({ "projectPath": project, "title": "app" }),
+    )
+    .await
+    .unwrap();
+    let session_id = session["session"]["id"].as_str().unwrap().to_string();
+    let message_id = "user-1".to_string();
+    let started = call(
+        &state,
+        "session.beginTurn",
+        json!({ "sessionId": session_id }),
+    )
+    .await
+    .unwrap();
+    let turn_id = started["turnId"].as_str().unwrap().to_string();
+    call(
+        &state,
+        "session.appendMessage",
+        json!({
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "message": {
+                "id": message_id,
+                "role": "user",
+                "content": "Use pnpm and never npm",
+                "createdAt": "2026-10-20T00:00:00.000Z"
+            }
+        }),
+    )
+    .await
+    .unwrap();
+    call(
+        &state,
+        "session.endTurn",
+        json!({ "sessionId": session_id, "turnId": turn_id }),
+    )
+    .await
+    .unwrap();
+
+    let input = call(
+        &state,
+        "memory.extraction.input",
+        json!({ "sessionId": session_id }),
+    )
+    .await
+    .unwrap();
+    let messages = input["input"]["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 1, "{input}");
+    assert_eq!(messages[0]["id"], json!(message_id));
+    assert_eq!(input["input"]["cursorSeq"], json!(0));
+
+    // The budget endpoint adds one run and answers the same day's total.
+    let spent = call(
+        &state,
+        "memory.extraction.budget",
+        json!({ "day": "2026-10-20", "tokens": 900 }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(spent["budget"]["tokens"], json!(900));
+    let read = call(
+        &state,
+        "memory.extraction.budget",
+        json!({ "day": "2026-10-20" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(read["budget"]["tokens"], json!(900));
+    let tomorrow = call(
+        &state,
+        "memory.extraction.budget",
+        json!({ "day": "2026-10-21" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(tomorrow["budget"]["tokens"], json!(0));
+
+    // A suggestion reaches the inbox with its citations, and the count the
+    // badge reads matches it.
+    let suggestion = call(
+        &state,
+        "memory.create",
+        json!({
+            "path": project,
+            "kind": "preference",
+            "content": "Uses pnpm instead of npm",
+            "origin": "extracted",
+            "status": "suggested",
+            "sourceSessionId": session_id,
+            "sourceMessageIds": [message_id]
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(suggestion["duplicate"], json!(false));
+    let inbox = call(
+        &state,
+        "memory.suggestions.list",
+        json!({ "path": project }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(inbox["count"], json!(1));
+    let entries = inbox["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["status"], json!("suggested"));
+    assert_eq!(entries[0]["origin"], json!("extracted"));
+    assert_eq!(entries[0]["sourceMessageIds"], json!([message_id]));
+
+    // Accepting moves it out of the inbox, which is the only activation path.
+    call(
+        &state,
+        "memory.suggestions.decide",
+        json!({ "id": entries[0]["id"], "decision": "accept" }),
+    )
+    .await
+    .unwrap();
+    let after = call(
+        &state,
+        "memory.suggestions.list",
+        json!({ "path": project }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(after["count"], json!(0));
 }

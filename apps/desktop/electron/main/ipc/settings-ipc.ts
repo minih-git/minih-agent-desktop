@@ -27,6 +27,12 @@ export type SettingsIpcDependencies = {
   applyKeepAwakeWhileRunning: (settings?: { keepAwakeWhileRunning?: unknown } | null) => void;
   applyUpdatePreference: (preference: UpdatePreference) => void;
   resolveEffectiveCommandShell: () => Promise<unknown>;
+  /**
+   * The optional extractor watches this, so turning the feature off (or
+   * clearing its model) cancels the runs already waiting to start
+   * (ADR agent-long-term-memory §4).
+   */
+  onSettingsChanged?: (settings: AppSettings) => void;
   liveCallService?: Pick<LiveCallService, "beginSettingsWrite" | "settingsWritten">;
 };
 
@@ -69,6 +75,7 @@ export function registerSettingsIpc({
   applyKeepAwakeWhileRunning,
   applyUpdatePreference,
   resolveEffectiveCommandShell,
+  onSettingsChanged,
   liveCallService,
 }: SettingsIpcDependencies): void {
   let host: HostProcess | null = null;
@@ -109,6 +116,10 @@ export function registerSettingsIpc({
     } finally {
       releaseSettingsWrite?.();
     }
+    // After the write landed: a switch that turned extraction off must stop
+    // every pending run, and one that turned it on needs nothing until a turn
+    // settles or a compaction persists.
+    onSettingsChanged?.(result);
     const updatePreference = (validatedSettings as { updatePreference?: unknown })
       .updatePreference;
     if (updatePreference === "automatic" || updatePreference === "manual") {

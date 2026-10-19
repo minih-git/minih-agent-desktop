@@ -4433,6 +4433,59 @@ Conversation overflow                    Composer draft (unsent)
 - `minih-agent-desktop://` is not yet an operating-system protocol handler; opening a
   link from outside the app is a separate change (issue #1324, option A). This
   section covers the in-app reference.
+## 20C. Learned-memory suggestion inbox
+
+### 20C.1 Purpose
+
+Let the user decide whether an automatically extracted note becomes memory. The
+inbox exists because extraction may only propose (ADR agent-long-term-memory
+§4): a suggestion is not memory until the user keeps it, and it is reviewable
+only when the words it came from are visible beside it.
+
+### 20C.2 Anatomy
+
+```text
+Learned memory dialog
+┌──────────────────────────────────────────────────────────────┐
+│ [ Notes ] [ Suggestions (2) ]        ← quiet count, none at 0│
+├──────────────────────────────────────────────────────────────┤
+│ ┌ Preference                    This project · 2026-10-20 ┐  │
+│ │ Writes commit messages in Chinese, in two paragraphs.    │  │
+│ │ Why: corrected twice in one conversation                 │  │
+│ │ │ You said                                              │  │
+│ │ │ 提交信息不要写列表，写两段。                            │  │
+│ │ [ Keep ]  [ Discard ]                                     │  │
+│ └───────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### 20C.3 States
+
+| State | Appearance |
+|---|---|
+| No suggestions | An empty state saying there is nothing to review; no badge on the tab |
+| Suggestions pending | One card per suggestion with content, kind, scope, date, rationale when present, and the first cited message as a quotation |
+| No citation | The quotation block is omitted rather than rendered empty |
+| Working | Keep and Discard are disabled while the decision is in flight |
+| Decided | The card leaves the list and the count decreases; nothing else moves |
+
+### 20C.4 Interaction
+
+- The tab count is quiet: it renders nothing at zero, never animates, and never
+  becomes a toast or a modal. A manager opened while suggestions are pending
+  lands on this tab; one opened with an empty inbox lands on Notes.
+- Keep calls `memory.suggestions.decide` with `accept`, which moves the entry to
+  `active`; this is the only path that activates a suggestion.
+- Discard calls the same channel with `reject`, which erases the suggestion and
+  writes the tombstone that blocks the same evidence from proposing it again.
+  It is not reversible and therefore needs no confirmation dialog: the entry was
+  never memory, and no user content is lost.
+- The quotation is the entry's first cited message, bounded for display
+  (240 characters) by the host. It is the user's own text, so it is shown
+  verbatim rather than paraphrased.
+- The inbox is reachable only from the manager: no badge on the sidebar, no
+  notification, and no interruption of a turn.
+
 ## 21. Acceptance criteria (all components)
 
 1. All components use semantic color tokens from [07-ui-design-system.md](07-ui-design-system.md) — no raw hex

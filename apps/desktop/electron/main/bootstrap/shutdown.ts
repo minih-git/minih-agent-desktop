@@ -55,6 +55,12 @@ export type ShutdownDependencies = {
   disposePowerSaveBlockers: () => void;
   liveCallService?: Pick<LiveCallService, "endForLifecycle">;
   disposeSystemProxyRelay?: () => Promise<void>;
+  /**
+   * The optional extractor: quitting cancels its pending runs, so no model call
+   * outlives the app (ADR agent-long-term-memory §4). Absent in a fixture that
+   * exercises no learned memory at all.
+   */
+  disposeMemoryExtraction?: () => void;
   /** Terminal-owner hooks the quit settlement shares with the in-app Stop path. */
   finishTurn: FinishTurn;
   lockAbortReason: (sessionId: string, turnId: string | null | undefined) => void;
@@ -87,6 +93,7 @@ export function registerShutdownHandlers({
   disposePowerSaveBlockers,
   liveCallService,
   disposeSystemProxyRelay,
+  disposeMemoryExtraction,
 }: ShutdownDependencies): void {
   app.on("window-all-closed", () => {
     // The D216 tray is resident on every platform, so its presence says nothing
@@ -139,6 +146,9 @@ export function registerShutdownHandlers({
     // Persist the confirmed shutdown before any awaited cleanup so a forced
     // process termination still leaves an observable lifecycle boundary.
     logger.app("lifecycle", "info", "app shutdown");
+    // Nothing extracts while the app is closing: the pending debounces go now,
+    // before any awaited cleanup, so no model call starts behind the quit.
+    disposeMemoryExtraction?.();
     disposePowerSaveBlockers();
     state.tray?.destroy();
     state.tray = null;

@@ -131,6 +131,14 @@ async fn application_show_thinking_roundtrips_and_keeps_local_only_settings() ->
             "thinkingDisplayMode": "detailed",
             "transcriptDensity": "compact",
             "learnedMemoryRead": false,
+            // Automatic extraction is device-local: the model has to be
+            // reachable from this machine, and the switch spends this machine's
+            // quota, so none of it may ride a revision to another device.
+            "learnedMemory": {
+                "learn": true,
+                "model": "p1/m1",
+                "dailyTokenBudget": 50000
+            },
             "defaultPermissionMode": "accept-edits",
         }),
     )?;
@@ -152,6 +160,7 @@ async fn application_show_thinking_roundtrips_and_keeps_local_only_settings() ->
         assert_eq!(settings["learnedMemoryRead"], false);
         // Local-only settings do not travel: the source value never appears.
         assert!(settings.get("defaultPermissionMode").is_none());
+        assert!(settings.get("learnedMemory").is_none());
     }
     // The receiving device now adopts its own local-only value. Its portable
     // fields stay exactly as synced, so only the local-only value differs.
