@@ -463,7 +463,11 @@ implemented as written.
   which is exactly what the self-hosted flow stores. Nothing is enrolled and
   nothing listens while the user's own remote-control switch is off, and an
   unavailable account-mode advertisement leaves the registration-code flow
-  untouched.
+  untouched. Reading *whether* account mode could work is not enrolling: the
+  status carries that answer — advertised endpoint plus a configured key — so
+  the page can offer the switch, and turning it on is the only thing that
+  enrolls anything (gate 27 still holds: nothing opens, dials, or listens before
+  that).
 - **Desktop Host: confirmation is a window, and no window is a refusal.** The
   desktop's confirmer is a modal in its own window: the request, the device
   label, the client, and the requester's deadline; focus starts on Deny, Escape

@@ -129,6 +129,10 @@ export function RemoteGatewayPage() {
 
   const enrolled = status?.enrolled === true;
   const enabled = status?.enabled === true;
+  // Available is not the same as registered: on a fresh install the Router
+  // offers account mode and this desktop has a key, but nothing has enrolled
+  // yet — turning the switch on is what does.
+  const accountModeAvailable = status?.accountMode?.available === true;
   const remainingMs = pairingCode ? Date.parse(pairingCode.expiresAt) - now : 0;
   const toggle = useCallback(async () => {
     if (!status) return;
@@ -261,26 +265,30 @@ export function RemoteGatewayPage() {
               <span className="text-sm text-text-primary">
                 {t("settings.remoteGateway.accountModeTitle")}
               </span>
-              <Badge tone={status?.accountMode?.available ? "success" : "neutral"}>
-                {status?.accountMode?.available
-                  ? t("settings.remoteGateway.accountModeActive")
-                  : t("settings.remoteGateway.accountModeUnavailable")}
+              <Badge tone={accountModeAvailable ? (enrolled ? "success" : "neutral") : "neutral"}>
+                {!accountModeAvailable
+                  ? t("settings.remoteGateway.accountModeUnavailable")
+                  : enrolled
+                    ? t("settings.remoteGateway.accountModeActive")
+                    : t("settings.remoteGateway.accountModeReady")}
               </Badge>
             </div>
-            {status?.accountMode?.available ? (
+            {!accountModeAvailable ? (
+              <p className="text-xs text-text-secondary">
+                {t("settings.remoteGateway.accountModeUnavailableHint")}
+                {status?.accountMode?.reason ? ` ${status.accountMode.reason}` : ""}
+              </p>
+            ) : (
               <>
                 <p className="text-xs text-text-secondary">
-                  {t("settings.remoteGateway.accountModeActiveHint")}
+                  {enrolled
+                    ? t("settings.remoteGateway.accountModeActiveHint")
+                    : t("settings.remoteGateway.accountModeReadyHint")}
                 </p>
                 {status?.accountMode?.url ? (
                   <p className="font-mono text-xs text-text-secondary">{status.accountMode.url}</p>
                 ) : null}
               </>
-            ) : (
-              <p className="text-xs text-text-secondary">
-                {t("settings.remoteGateway.accountModeUnavailableHint")}
-                {status?.accountMode?.reason ? ` ${status.accountMode.reason}` : ""}
-              </p>
             )}
           </div>
         ) : null}
@@ -307,10 +315,14 @@ export function RemoteGatewayPage() {
           // Router key (D666). A user without a Router key keeps the form.
           <div className="space-y-2" role="status">
             <h3 className="settings-card-heading">
-              {t("settings.remoteGateway.accountEnrollTitle")}
+              {enrolled
+                ? t("settings.remoteGateway.accountEnrollTitle")
+                : t("settings.remoteGateway.accountEnrollPendingTitle")}
             </h3>
             <p className="text-sm text-text-secondary">
-              {t("settings.remoteGateway.accountEnrollBody")}
+              {enrolled
+                ? t("settings.remoteGateway.accountEnrollBody")
+                : t("settings.remoteGateway.accountEnrollPendingBody")}
             </p>
             <p className="text-xs text-text-secondary">
               {t("settings.remoteGateway.enrollHint")}

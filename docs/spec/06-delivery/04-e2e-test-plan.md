@@ -15659,12 +15659,16 @@ sibling Hosts is still open for package D.
   `/api/auth/session` with two distinct `access_key_id` values for keys A and B,
   and `/api/easytier/bootstrap` with a `remoteGateway` object naming the local
   test Gateway; one enrolled Host per account; two loopback model stubs.
-- **Steps**: 1) Enroll Host A1 with key A and Host B1 with key B; record the
-  account each is recorded under. 2) Log a client in with key A and list the
-  account Hosts. 3) With that client, address B1 by its id on the account host
-  listing, on a Host-scoped route, and in a device request. 4) Send an
-  enrollment whose CSR names A1's `hostId` but presents key B. 5) Relay a grant
-  signed by B1 to A1. 6) Read the Gateway `--data-dir` and its audit log.
+- **Steps**: 1) On a freshly installed desktop with key A configured and no
+  stored credentials, confirm the Remote gateway page offers the remote-access
+  switch and reports account mode as available; turn it on and record that it
+  enrolled once with key A, with no registration code. Enroll Host B1 with key
+  B; record the account each is recorded under. 2) Log a client in with key A
+  and list the account Hosts. 3) With that client, address B1 by its id on the
+  account host listing, on a Host-scoped route, and in a device request.
+  4) Send an enrollment whose CSR names A1's `hostId` but presents key B.
+  5) Relay a grant signed by B1 to A1. 6) Read the Gateway `--data-dir` and its
+  audit log.
 - **Expected**: The key-A listing contains A1 only; every request naming B1 is
   refused and never routed; the key-B enrollment neither replaces nor joins A1,
   which keeps its account and its link; A1 refuses the grant signed by B1; B1's

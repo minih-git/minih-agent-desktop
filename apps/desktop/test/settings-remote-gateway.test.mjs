@@ -18,6 +18,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 register(pathToFileURL(join(here, "helpers/ts-import-hooks.mjs")));
 
 const {
+  accountModeVisible,
   pairingCodeExpired,
   pairingCodeRemainingLabel,
   remoteGatewayErrorKey,
@@ -45,14 +46,14 @@ const LINK_STATES = [
 
 const english = flattenCatalog(en);
 
-test("the switch is offered only once the desktop is registered", () => {
+test("the switch is offered once the desktop is registered or account mode can register it", () => {
   assert.equal(remoteGatewaySwitchDisabled(null), true);
   // A registered but disabled link may be turned back on.
   assert.equal(
     remoteGatewaySwitchDisabled({ state: "disabled", since: "", enabled: false, enrolled: true }),
     false,
   );
-  // An unregistered desktop has nothing to dial.
+  // An unregistered desktop with no account mode has nothing to dial.
   assert.equal(
     remoteGatewaySwitchDisabled({ state: "disabled", since: "", enabled: false, enrolled: false }),
     true,
@@ -61,11 +62,56 @@ test("the switch is offered only once the desktop is registered", () => {
     remoteGatewaySwitchDisabled({ state: "not-enrolled", since: "", enabled: false, enrolled: false }),
     true,
   );
+  // Account mode the Router does not offer is not a way in either.
+  assert.equal(
+    remoteGatewaySwitchDisabled({
+      state: "disabled",
+      since: "",
+      enabled: false,
+      enrolled: false,
+      accountMode: { available: false, reason: "the forward is not installed" },
+    }),
+    true,
+  );
+  // A fresh install with a usable account mode can be turned on: turning it on
+  // is what enrolls this desktop (the switch and the enrollment used to wait
+  // for each other, which left the switch greyed out forever).
+  assert.equal(
+    remoteGatewaySwitchDisabled({
+      state: "disabled",
+      since: "",
+      enabled: false,
+      enrolled: false,
+      accountMode: { available: true, url: "wss://gateway.example.com/hostlink" },
+    }),
+    false,
+  );
   // A running link is never hidden behind a disabled switch.
   assert.equal(
     remoteGatewaySwitchDisabled({ state: "error", since: "", enabled: true, enrolled: true }),
     false,
   );
+});
+
+test("account mode is shown whenever host-core reports it", () => {
+  // Unavailable is still worth showing: the page names the reason beside the
+  // registration-code form instead of hiding the whole section.
+  assert.equal(
+    accountModeVisible({
+      state: "disabled",
+      since: "",
+      enabled: false,
+      enrolled: false,
+      accountMode: { available: false, reason: "no Minih Router AccessKey is configured" },
+    }),
+    true,
+  );
+  // An older host-core says nothing at all, so the page shows no affordance.
+  assert.equal(
+    accountModeVisible({ state: "disabled", since: "", enabled: false, enrolled: false }),
+    false,
+  );
+  assert.equal(accountModeVisible(null), false);
 });
 
 test("every link state resolves to copy in all nine locales", () => {
