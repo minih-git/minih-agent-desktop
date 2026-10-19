@@ -135,7 +135,12 @@ async fn without_an_announcement_the_mesh_is_unchanged() {
     assert!(!status.remote_gateway.available);
     assert!(status.remote_gateway.local_forward_port.is_none());
     assert!(status.remote_gateway.dial_url.is_empty());
-    assert!(status.remote_gateway.unavailable_reason.is_empty());
+    // A Router that answered without offering account mode says so: an empty
+    // reason left the panel with an unexplained "unavailable".
+    assert!(status
+        .remote_gateway
+        .unavailable_reason
+        .contains("does not offer"));
     // Today's behaviour: the Router forward is still the only one.
     assert!(status.local_forward_port.unwrap_or(0) > 0);
     assert!(!status.using_lan);

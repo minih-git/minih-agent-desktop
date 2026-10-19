@@ -462,10 +462,25 @@ pub fn status_for(
         return RemoteGatewayStatus::unavailable("the virtual LAN channel is disabled");
     }
     let Some(outcome) = outcome else {
-        return RemoteGatewayStatus::unavailable(bootstrap_error.to_string());
+        // No answer in effect. A bootstrap failure explains itself; without one
+        // the honest statement is that nothing has been fetched yet — an empty
+        // string leaves the panel showing "unavailable" with no reason at all.
+        let reason = match bootstrap_error.trim() {
+            "" => "the gateway configuration has not been fetched from the Router yet",
+            message => message,
+        };
+        return RemoteGatewayStatus::unavailable(reason.to_string());
     };
     let RemoteGatewayOutcome::Announced(announcement) = outcome else {
-        return RemoteGatewayStatus::unavailable(outcome.reason().to_string());
+        // `reason()` stays empty for `Absent` — other callers rely on that — but
+        // the panel needs words: a Router that answered without a
+        // `remote_gateway` object simply does not offer account mode, and an
+        // empty reason leaves the user with an unexplained "unavailable".
+        let reason = match outcome.reason().trim() {
+            "" => "the Router does not offer account mode",
+            detail => detail,
+        };
+        return RemoteGatewayStatus::unavailable(reason.to_string());
     };
     let target = match derive_hostlink_target(announcement, gateway_virtual_ipv4) {
         Ok(target) => target,

@@ -1,5 +1,13 @@
 # Unreleased changes
 
+- Remote access now works right after launch. The virtual LAN channel used to
+  start without asking your Minih Router for its configuration, so account mode
+  stayed "unavailable" — with no reason shown — until you touched a setting or
+  reconnected the channel, even though the channel itself was connected. It now
+  asks at every start, and in No-TUN mode it asks through the local forward that
+  can actually reach the Router; when that answer only arrives after the channel
+  is up, the channel is restarted once so it applies. An unavailable account mode
+  always says why.
 - Remote access moved onto the Accounts page, right below your Minih Router
   account and its virtual LAN channel, and the separate Remote gateway entry
   left the settings list. Everything account mode needs stays visible — whether
