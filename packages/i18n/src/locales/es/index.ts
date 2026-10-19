@@ -384,6 +384,8 @@ export const es = {
       "completed": "{{completed}}/{{total}} completadas",
       "updated": "Lista actualizada",
       "updating": "Actualizando lista",
+      "expand": "Expandir lista de tareas",
+      "collapse": "Contraer lista de tareas",
       "status": { "pending": "Pendiente", "in_progress": "En curso", "completed": "Completada", "cancelled": "Cancelada" }
     },
     "queuedPrompts": "Mensajes en cola",
@@ -683,6 +685,20 @@ export const es = {
     "renameCancel": "Cancelar",
     "renameSave": "Guardar",
     "renameSaving": "Guardando…"
+  },
+  backgroundTasks: {
+    running: "En ejecución",
+    exited: "Finalizado",
+    failed: "Fallido",
+    stopped: "Detenido",
+    title: "Comandos en segundo plano",
+    loadFailed: "No se pudieron actualizar los comandos en segundo plano. Reintentando...",
+    outputFailed: "No se pudo leer la salida de este comando.",
+    stopFailed: "No se pudo detener este comando. Inténtalo de nuevo.",
+    output: "Salida",
+    stop: "Detener",
+    stopping: "Deteniendo…",
+    dismiss: "Cerrar",
   },
   planHistory: {
     pending: "Pendiente de aprobación",

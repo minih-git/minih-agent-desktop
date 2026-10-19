@@ -111,6 +111,14 @@ pub(super) async fn execute_remote_tool(
     mut cancellation: Option<tokio::sync::watch::Receiver<bool>>,
 ) -> tools::ToolsExecuteResult {
     let started = std::time::Instant::now();
+    if p.run_in_background {
+        return failure(
+            p,
+            "CAPABILITY_UNAVAILABLE",
+            "background Bash is unavailable for remote workspaces",
+            started,
+        );
+    }
     if !matches!(
         p.tool_name.as_str(),
         "Read" | "Glob" | "Grep" | "Write" | "Edit" | "Bash"
@@ -279,6 +287,15 @@ pub(super) async fn handle(
     let p: ToolsExecuteParams = serde_json::from_value(input)
         .map_err(|e| rpc_err(1002, e.to_string(), "INVALID_PARAMS"))?;
     let started = std::time::Instant::now();
+    if p.run_in_background {
+        return serde_json::to_value(failure(
+            &p,
+            "CAPABILITY_UNAVAILABLE",
+            "background Bash is unavailable for remote workspaces",
+            started,
+        ))
+        .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"));
+    }
     if !matches!(
         p.tool_name.as_str(),
         "Read" | "Glob" | "Grep" | "Write" | "Edit" | "Bash"
@@ -342,6 +359,8 @@ pub(super) async fn handle(
                 output_tx: Some(tx),
                 // Remote workspaces are never isolated (ADR 0329).
                 extra_env: Vec::new(),
+                run_in_background: false,
+                app_state: None,
             })
         } else {
             None
@@ -367,3 +386,59 @@ pub(super) async fn handle(
 #[cfg(test)]
 #[path = "remote_tools_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod background_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn remote_background_is_rejected_before_forwarding() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = Arc::new(Mutex::new(AppState::open(dir.path()).unwrap()));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let params: ToolsExecuteParams = serde_json::from_value(json!({
+            "sessionId": "session-remote", "toolCallId": "background-remote",
+            "toolName": "Bash", "mode": "agent", "args": {"command": "exit 99"}, "runInBackground": true
+        }))
+        .unwrap();
+        let result = execute_remote_tool(
+            &state,
+            &tx,
+            &params,
+            RemoteWorkspace {
+                host_key: "fixture".into(),
+                path: "/fixture/workspace".into(),
+            },
+            None,
+        )
+        .await;
+        assert!(!result.ok);
+        assert_eq!(result.error_code.as_deref(), Some("CAPABILITY_UNAVAILABLE"));
+        assert!(
+            rx.try_recv().is_err(),
+            "unsupported work must never be forwarded"
+        );
+        assert!(state.lock().await.remote_execs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn workspace_background_is_rejected_without_foreground_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = Arc::new(Mutex::new(AppState::open(dir.path()).unwrap()));
+        let (tx, _) = mpsc::unbounded_channel();
+        let result = handle(
+            state,
+            "tools.workspaceExecute",
+            json!({
+                "sessionId": "session-remote", "toolCallId": "background-workspace",
+                "path": dir.path(), "toolName": "Bash", "args": {"command": "exit 99"},
+                "runInBackground": true,
+            }),
+            tx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result["ok"], false);
+        assert_eq!(result["errorCode"], "CAPABILITY_UNAVAILABLE");
+    }
+}

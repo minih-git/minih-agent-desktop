@@ -384,6 +384,8 @@ export const fr = {
       "completed": "{{completed}}/{{total}} terminées",
       "updated": "Liste mise à jour",
       "updating": "Mise à jour de la liste",
+      "expand": "Développer la liste de tâches",
+      "collapse": "Réduire la liste de tâches",
       "status": { "pending": "En attente", "in_progress": "En cours", "completed": "Terminée", "cancelled": "Annulée" }
     },
     "queuedPrompts": "Messages en file d'attente",
@@ -683,6 +685,20 @@ export const fr = {
     "renameCancel": "Annuler",
     "renameSave": "Enregistrer",
     "renameSaving": "Enregistrer…"
+  },
+  backgroundTasks: {
+    running: "En cours",
+    exited: "Terminé",
+    failed: "Échec",
+    stopped: "Arrêté",
+    title: "Commandes en arrière-plan",
+    loadFailed: "Impossible d'actualiser les commandes en arrière-plan. Nouvelle tentative...",
+    outputFailed: "Impossible de lire la sortie de cette commande.",
+    stopFailed: "Impossible d'arrêter cette commande. Réessayez.",
+    output: "Sortie",
+    stop: "Arrêter",
+    stopping: "Arrêt…",
+    dismiss: "Fermer",
   },
   planHistory: {
     pending: "En attente d’approbation",

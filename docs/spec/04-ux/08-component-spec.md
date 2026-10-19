@@ -3007,6 +3007,13 @@ reasoning-level control.
 
 ### 11.3a Session TodoDock
 
+The header copy is not a button. A separate trailing disclosure button is the
+only toggle and exposes localized Expand checklist / Collapse checklist labels,
+matching `title`, `aria-expanded`, and `aria-controls`. Its chevron is down while
+expanded and up while collapsed, and native Enter/Space activation works without
+making the progress/current-step copy an additional focus target. The compact
+rows and existing state symbols stay unchanged; this amendment adds no shimmer.
+
 - The Composer stack places TodoDock above Plan/Goal approval surfaces when the
   active session has a non-empty host-owned checklist. An empty checklist does
   not reserve layout space.

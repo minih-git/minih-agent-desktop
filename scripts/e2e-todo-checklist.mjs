@@ -63,6 +63,8 @@ app.whenReady().then(async () => {
     const { Host } = await import(${JSON.stringify(pathToFileURL(join(root, "scripts/e2e/host.mjs")).href)});
     ({ DesktopAgentRuntime } = await import(${JSON.stringify(pathToFileURL(join(root, "packages/agent-runtime/dist/index.js")).href)}));
     ({ createAssistantMessageEventStream } = await import(${JSON.stringify(pathToFileURL(join(root, "packages/agent-runtime/node_modules/@earendil-works/pi-ai/dist/index.js")).href)}));
+    const { seedOfflineHostData } = await import(${JSON.stringify(pathToFileURL(join(root, "scripts/e2e/offline-host-data.mjs")).href)});
+    seedOfflineHostData(${JSON.stringify(root)}, path.join(__dirname, "host-data"));
     host = new Host(${JSON.stringify(hostBinary)}, path.join(__dirname, "host-data"));
     await host.start();
     win = new BrowserWindow({ show: false, width: 1000, height: 720,

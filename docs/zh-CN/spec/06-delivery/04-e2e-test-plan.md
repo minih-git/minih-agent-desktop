@@ -5716,6 +5716,7 @@ eleven-tool-round desktop paths are verified by
 |---|---|
 | C / G / Quality / Security — Account menu and sidebar utilities | E2E-NAV-account-menu-and-sidebar-utilities |
 | C / E / F / Quality / Security — Session Todo checklist | E2E-CHAT-session-todo-checklist |
+| Quality / Security — 已选上游 Bash/布局移植 | E2E-BASH-background-task-lifecycle-and-output, E2E-LAYOUT-sidebar-reopen-preserves-width-preference |
 | C / E / Security / Quality — Live Voice 四阶段交互 | E2E-LIVE-VOICE-four-stage-ui |
 | C / F — Hourly task updates | E2E-SCHEDULED-manual-to-hourly |
 | C / F / Quality — Saved project isolation | E2E-SCHEDULED-manual-workspace-binding |
@@ -10081,3 +10082,27 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **验收**：笔记及其删除到达另一台设备，而建议与所有仅本设备的数字留在产生它们的地方。
 - **里程碑**：M5。
 - **状态**：已在引擎层自动化。
+
+### E2E-BASH-background-task-lifecycle-and-output
+
+- **前置条件**：本任务构建的 Host、隔离数据/配置和确定性的本地命令；不使用真实模型或用户桌面。
+- **步骤**：批准后台 Bash 后结束/中止回合，读取输出、停止任务、切换会话并关闭完成回执；
+  拒绝审批并取消另一条待审批命令；运行十个大量输出任务，核对末尾 stdout/stderr、
+  隔离环境、关闭后拒绝启动以及正常退出对存活子进程的清理。
+- **预期**：只有已批准命令启动，审批仍可取消；已启动进程跨回合存活但不跨停止/Host 退出；
+  各输出流限制 256 KiB 且末尾不丢失；前台和 shell 固定规则不变，远程后台请求明确失败。
+  Composer 最多 12 行，仅轮询展开输出，忽略旧响应、失败可重试、不重播旧完成项。
+- **规格**：工具权限、Host RPC、IPC 与 ADR `background-bash-task-ownership`。
+- **验收**：E / F / Quality / Security；Post-M6。
+- **自动化**：`scripts/e2e-background-tasks-host.mjs`、`scripts/e2e-background-tasks.mjs`
+  及 Agent/host-core 配套测试；仅对实际执行的候选和平台报告结果。
+
+### E2E-LAYOUT-sidebar-reopen-preserves-width-preference
+
+- **前置条件**：隔离 Electron 配置、已保存的工作面板宽度。
+- **步骤**：布局收起后重开侧栏、再次收起、放大窗口，以指针/键盘调整实际显示的面板；
+  重读持久偏好。仅通过尾部有明确名称的按钮展开 TodoDock。
+- **预期**：临时借宽不改保存值，增加的空间先还给面板；保存宽度保持 244px 下限，
+  紧凑手势不能继续缩细。进度文案不切换，唯一按钮名称、ARIA 状态和 Enter/Space 一致。
+- **规格**：UI IA、组件、交互与 ADR 0238；F / Quality / Accessibility；Post-M6。
+- **自动化**：三栏布局、Todo 清单 E2E 及相关单测；原生平台验收另记。

@@ -50,6 +50,9 @@ test("TodoDock renders bounded session progress and cancelled state", async () =
       },
     });
     const html = render();
+    assert.match(html, /<div class="todo-dock-header">/);
+    assert.doesNotMatch(html, /<button[^>]*class="todo-dock-header/);
+    assert.match(html, /class="[^"]*todo-dock-toggle[^"]*"[^>]*aria-label="Expand checklist"/);
     assert.match(html, /aria-expanded="false"/);
     assert.match(html, /aria-controls="[^"]+"/);
     assert.match(html, /class="todo-dock-header-current"[^>]*>second<\/span>/);
@@ -61,6 +64,7 @@ test("TodoDock renders bounded session progress and cancelled state", async () =
     assert.equal((html.match(/role="listitem"/g) ?? []).length, 12, "every ordered row renders");
     assert.doesNotMatch(html, /more items/);
     assert.match(html, /class="todo-dock-list" role="list" tabindex="-1"/);
+    assert.match(html, /lucide-chevron-up/);
     assert.match(html, /lucide-check/);
 
     Object.assign(useAppStore.getInitialState(), {
@@ -85,7 +89,9 @@ test("TodoDock renders bounded session progress and cancelled state", async () =
 test("TodoDock uses a quiet disclosure animation and state surfaces", async () => {
   const { readFile } = await import("node:fs/promises");
   const css = await readFile(new URL("../src/styles/composer.css", import.meta.url), "utf8");
-  assert.match(css, /\.todo-dock-header:active:not\(:disabled\)\s*\{[\s\S]*?transform:\s*none;/);
+  assert.match(css, /\.todo-dock-toggle:active:not\(:disabled\)\s*\{[\s\S]*?transform:\s*none;/);
+  assert.match(css, /\.todo-dock-header-copy\s*\{[\s\S]*?flex:\s*1;[\s\S]*?align-items:\s*center;/);
+  assert.match(css, /\.todo-dock-row-completed \.todo-dock-row-content\s*\{[\s\S]*?text-decoration:\s*line-through;/);
   assert.match(css, /\.todo-dock-content\s*\{[\s\S]*?grid-template-rows:\s*0fr;[\s\S]*?opacity:\s*0;/);
   assert.match(css, /\.todo-dock\.is-expanded \.todo-dock-content\s*\{[\s\S]*?grid-template-rows:\s*1fr;/);
   assert.match(css, /\.todo-dock-row\s*\{[\s\S]*?min-height:\s*24px;[\s\S]*?font-size:/);

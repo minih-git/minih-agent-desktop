@@ -718,6 +718,8 @@ type ToolsExecuteParams = {
   expectedCommandShellDialect?: "powershell" | "cmd" | "posix"
   /** Bash only: host default 60000; accepted override 1000..21600000. */
   timeoutMs?: number
+  /** Local Bash only; the foreground timeout does not apply. */
+  runInBackground?: boolean
   /** Isolated `Write`/`Edit` delegate chain id; re-roots the call to that
    * delegate's worktree (ADR 0329). Omitted for every other call. */
   delegationId?: string
@@ -1202,3 +1204,21 @@ schedule，Manual 转 Hourly 继续使用现有默认间隔行为。
 保存和读取工作区绑定时统一使用现有项目路径规范化规则。在 Windows 上，
 斜杠方向、大小写、末尾分隔符和扩展路径前缀的差异不会再让同项目会话看不到任务。
 缺失的旧版绑定与显式 null 仍保持不同语义；其他项目的工具不能查询或修改绑定任务。
+
+### Background tasks
+
+新增本地 `backgroundTasks.list`、`backgroundTasks.output`、`backgroundTasks.stop`
+与 `backgroundTasks.changed` 通知。
+
+- `list({})` 返回 `{ tasks, version }`；摘要含 `id`、`sessionId`、`command`、
+  `commandShellId`、`state`、`elapsedMs` 与可选 `exitCode`。状态为 `running`、
+  `exited`、`failed`、`stopped`。
+- `output({ id })` 返回 `id`、`state`、可空 `exitCode`、有界 `stdout`/`stderr`
+  和 `truncated`；未知 id 为 `NOT_FOUND`，缺失或无效 id 为 `INVALID_PARAMS`。
+- `stop({ id })` 返回 `{ ok: true, found }`，重复停止、已结束或未知任务为
+  `found: false`；清理进程树并排空输出后再发布最终状态。
+- `changed({ version })` 使用进程内单调计数；Host 重启清空注册表，不重放任务。
+
+`runInBackground` 仅用于显式请求的本地 Bash。权限和 shell 固定校验先于启动，
+审批仍可取消；已登记任务不受回合中止影响。RPC 预算限制启动/转发延迟，
+不限制后台进程寿命。参见 [Bash 规则](/spec/03-runtime/03-tools-and-permissions)。

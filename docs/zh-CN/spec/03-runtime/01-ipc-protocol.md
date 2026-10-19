@@ -1963,3 +1963,16 @@ unit and byte counts. There is no cleanup phase. Background polls stay silent.
 只有 owner 验证成功后才会创建 `MessagePort`，之后由 preload 中继到 renderer 窗口。owner 在首个 `hello` 中回送每通电话独有的 nonce；Main 仅在 call ID 和 nonce 均匹配时接受该端口一次。二进制帧包含有界 PCM 音频、采集 epoch、释放确认、播放游标和协议就绪信号。它不是通用 IPC 隧道：不会传输 Provider 凭证、任意命令、工作区路径、Agent 消息或持久化字幕。通话结束或 owner 丢失时会关闭端口。
 
 停靠挂件窗口不是通话 owner，也不可能成为 owner：它在所有经过 owner 校验的通道上都会像任何其他 renderer 一样被以 `PERMISSION_DENIED` 拒绝。Main 只在该窗口作为发送方时响应它的两条通道；owner 自身的错误码经由主窗口传入，因为执行操作的是该 frame。挂件操作本身不会改变通话状态：它被转发给 owner frame，结果状态再通过 owner 收到的同一份权威视图回到挂件。
+
+## 后台任务控件
+
+沿用既有 allowlist preload invoke/event 通道，新增：
+
+- `minih-agent-desktop/backgroundTasks/list({})`
+- `minih-agent-desktop/backgroundTasks/output({ id })`
+- `minih-agent-desktop/backgroundTasks/stop({ id })`
+- `minih-agent-desktop/backgroundTasks/event/changed({ version })`
+
+Main 校验任务 id 并转发给 host-core。渲染器重载不拥有或终止进程；Host 负责
+输出、状态、停止及退出清理。载荷见 [Host RPC](/spec/03-runtime/06-host-rpc-protocol#background-tasks)，
+不增加渲染器文件系统访问或传输特权。

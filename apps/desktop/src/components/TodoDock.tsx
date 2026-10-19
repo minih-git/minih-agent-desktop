@@ -42,32 +42,34 @@ export function TodoDock({ sessionId }: { sessionId: string }) {
     : finished
       ? t("chat.todo.completed", { completed, total: denominator })
       : t("chat.todo.progress", { completed, total: denominator });
-  const statusLabel = current
-    ? t("chat.todo.current", { completed, total: denominator, content: current.content })
-    : progressLabel;
 
   return (
     <div className={`todo-dock${expanded ? " is-expanded" : ""}`}>
-      <Button
-        type="button"
-        variant="ghost"
-        className="todo-dock-header"
-        aria-label={statusLabel}
-        aria-controls={contentId}
-        aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
-      >
+      <div className="todo-dock-header">
         <span className="todo-dock-header-symbol" aria-hidden>
           {allCancelled ? "⊘" : finished ? "✓" : "◐"}
         </span>
-        <span className="todo-dock-header-text">{progressLabel}</span>
-        {current ? (
-          <span className="todo-dock-header-current" title={current.content}>
-            {current.content}
-          </span>
-        ) : null}
-        {expanded ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />}
-      </Button>
+        <div className="todo-dock-header-copy">
+          <span className="todo-dock-header-text">{progressLabel}</span>
+          {current ? (
+            <span className="todo-dock-header-current" title={current.content}>
+              {current.content}
+            </span>
+          ) : null}
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          className="todo-dock-toggle"
+          aria-label={expanded ? t("chat.todo.collapse") : t("chat.todo.expand")}
+          title={expanded ? t("chat.todo.collapse") : t("chat.todo.expand")}
+          aria-controls={contentId}
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? <IconChevronDown size={14} /> : <IconChevronUp size={14} />}
+        </Button>
+      </div>
       <div id={contentId} className="todo-dock-content" aria-hidden={!expanded}>
         <div className="todo-dock-clip">
           {/* The expanded dock lists every row (#1319): the list scrolls
