@@ -206,6 +206,8 @@ function HostToolRow({
   const openTarget = useOpenPreviewTarget();
   const { fileMenu, openFileMenu, closeFileMenu } = useChatFileMenu();
   const openSubagentTab = useAppStore((s) => s.openSubagentTab);
+  const collapseWorkPanel = useAppStore((s) => s.collapseWorkPanel);
+  const workPanelOpen = useAppStore((s) => variant === "topology" && s.workPanelOpen);
   const activeWorkPanelTabId = useAppStore((s) => s.activeWorkPanelTabId);
   const status = message.toolStatus;
   const action = getToolAction(message.toolName);
@@ -354,6 +356,7 @@ function HostToolRow({
       : message.toolCallId || message.id;
   const panelOpen =
     variant === "topology" &&
+    workPanelOpen &&
     activeWorkPanelTabId === `subagent:${panelSelectionId}`;
   const renderedOpen = variant === "topology" ? panelOpen : open;
   const inlineOpen = variant !== "topology" && open;
@@ -441,9 +444,10 @@ function HostToolRow({
           disabled={!hasDetails}
           title={[agentName || rawName, modelLabel, summary].filter(Boolean).join(" · ")}
           onClick={() => {
-            if (!hasDetails) return;
+            if (!hasDetails || !localToolsAllowed) return;
             onUserInteraction?.();
-            localToolsAllowed && openSubagentTab(panelSelectionId, agentName || undefined);
+            if (panelOpen) collapseWorkPanel();
+            else openSubagentTab(panelSelectionId, agentName || undefined);
           }}
         >
           <span className="subagent-topology-avatar" aria-hidden>
