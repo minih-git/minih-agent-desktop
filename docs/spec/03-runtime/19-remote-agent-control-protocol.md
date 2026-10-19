@@ -1168,6 +1168,17 @@ table under a Host prefix, so a client sets its base URL to
   stream; a request whose `Origin` is present but not allowlisted is always
   refused, a mutation is never exempt, and CORS never answers `*`. Revocation
   stays server-side: a revoked token answers `401`.
+- Every command and every event stream sends `x-minih-racp-client:
+  <name>/<version>` and `content-type: application/json`; the cookie profile
+  adds `x-csrf-token`, the header profile adds `authorization`, and a resumed
+  stream adds `last-event-id`. A native webview is a cross-origin caller for all
+  of them, so the preflight answer must allow exactly this set — one list shared
+  by the client and the Gateway (`RACP_HTTP_CORS_ALLOW_HEADERS`), because a
+  header the client adds without the Gateway allowing it fails only on a phone.
+  CORS-safelisted headers (`accept` and friends) are never part of it. Every
+  response to an allowlisted origin also carries
+  `access-control-expose-headers: x-trace-id`, so a cross-origin client can read
+  the trace id off a failure instead of seeing `null`.
 - Commands share one logical connection per `(device, host)`; each event stream
   takes its own, and a device holds at most four streams, so a Gateway cannot
   exhaust the Host's `maxConnectedClients`.
