@@ -561,6 +561,48 @@ describe("resolveSubagentToolNames", () => {
   });
 });
 
+describe("session messaging stays out of delegates", () => {
+  const messaging = ["SessionList", "SessionSend", "SessionResult"];
+  // The parent's own catalog: a session may hand work to another session.
+  const parent = ["Read", "Grep", "SessionList", "SessionSend", "SessionResult"];
+
+  it("never inherits the session-messaging tools, even with tools: inherit", () => {
+    const resolved = resolveSubagentToolNames(
+      { tools: [], inheritTools: true },
+      parent,
+    );
+    for (const name of messaging) expect(resolved).not.toContain(name);
+    expect(resolved).toContain("Read");
+    // Only the delegate's set is filtered: the parent keeps its own tools.
+    expect(parent).toEqual(["Read", "Grep", ...messaging]);
+  });
+
+  it("does not hand a delegate a session-messaging tool it names explicitly", () => {
+    // A document cannot declare one (see the parser test below), but the
+    // resolve step is the gate a delegate's tools pass through, so a definition
+    // built in code must not smuggle one in either.
+    expect(
+      resolveSubagentToolNames({ tools: ["SessionSend", "Read"] }, parent),
+    ).toEqual(["Read"]);
+    expect(
+      resolveSubagentToolNames(
+        { tools: ["SessionSend", "Read"], inheritTools: true },
+        parent,
+      ),
+    ).not.toContain("SessionSend");
+  });
+
+  it("drops an explicitly declared session-messaging tool at parse time", () => {
+    const result = parse(
+      "---\ndescription: Messaging delegate.\ntools: SessionSend, Read\n---\nSend it.",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.definition.tools).toEqual(["Read"]);
+    expect(result.warnings).toEqual(['ignoring unknown tool "SessionSend"']);
+  });
+});
+
 describe("normalizeSubagentName", () => {
   it("turns a file path into a Task argument", () => {
     expect(normalizeSubagentName("/home/.agents/subagents/Code_Reviewer.md")).toBe(
