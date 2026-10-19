@@ -24,6 +24,7 @@ const { createSessionCoordination } = await import("../apps/desktop/electron/mai
 // Rust's Windows known-folder lookup ignores HOME/USERPROFILE. Refuse before
 // Host startup rather than risk touching real global agent documents.
 if (process.platform === "win32") throw new Error("Send now E2E requires Linux/macOS HOME isolation; no Host or registry writes were attempted.");
+const sideNote = process.argv.includes("--side-note");
 const root = mkdtempSync(join(tmpdir(), "pi-send-now-e2e-"));
 const dataDir = join(root, "data");
 const homeDir = join(root, "home");
@@ -103,7 +104,7 @@ async function respondModel(req, res) {
       : ["A", "B"].map((name, index) => ({ index, id: `delegate-${name}`, type: "function",
           function: { name: "Task", arguments: JSON.stringify({ agent: name === "A" ? "explorer" : "reviewer", task: `Delegate ${name} fixture` }) } }));
     reply(res, { tool_calls: toolCalls }, "tool_calls");
-  } else if (lastUser === "Correct the plan now.") {
+  } else if (lastUser === "Correct the plan now." || (sideNote && lastUser.includes("<side-note>"))) {
     reply(res, { content: "Correction handled while delegates are running." });
   } else if (lastUser === "Ordinary follow-up.") {
     reply(res, { content: "Ordinary follow-up processed." });
@@ -175,6 +176,7 @@ try {
     agentExtensions: { cancelPrompts() {} }, cancelSessionTools() {}, persistenceOutbox: { async flush() {} },
     approvedExecutionIdsBySession: new Map(), claimedExecutionSessions: new Map(),
     acquireSessionOperation: coordination.acquireSessionOperation, isTurnDispatchable: coordination.isTurnDispatchable,
+    recordTurnStart: coordination.recordTurnStart,
     lockAbortReason: coordination.lockAbortReason, finishTurn,
     async resolveAgentRuntimeLaunch(id) {
       return { providerId: provider.id, modelId: provider.modelId, projectPath,
@@ -198,21 +200,36 @@ try {
   vite = await createViteServer({ root: fileURLToPath(new URL("../apps/desktop", import.meta.url)), configFile: false,
     server: { middlewareMode: true, hmr: false, ws: false }, appType: "custom", optimizeDeps: { noDiscovery: true, include: [] } });
   const { createQueueSlice } = await vite.ssrLoadModule("/src/stores/slices/queue-slice.ts");
+  const { createSessionRuntime } = await vite.ssrLoadModule("/src/stores/runtime/session-runtime.ts");
+  const helpers = await vite.ssrLoadModule("/src/stores/helpers/store-helpers.ts");
   globalThis.window = { minihAgent: { invoke: async (channel, ...args) => ({ ok: true, data: await invoke(channel, args) }) } };
   state = { activeSessionId: sessionId, sessions: [{ id: sessionId, source: "desktop" }],
-    queuedPrompts: {}, runningSessions: { [sessionId]: true }, pendingPlans: {}, showToast: assert.fail };
-  slice = createQueueSlice({ get: () => state,
-    set: (patch) => { state = { ...state, ...(typeof patch === "function" ? patch(state) : patch) }; }, promptAttachmentsFromDraft: () => [] });
+    queuedPrompts: {}, runningSessions: { [sessionId]: true }, pendingPlans: {}, showToast: assert.fail,
+    messages: [], retainedTranscripts: {}, agentStatuses: {} };
+  const access = { get: () => state,
+    set: (patch) => { state = { ...state, ...(typeof patch === "function" ? patch(state) : patch) }; } };
+  slice = createQueueSlice({ ...access, runtime: createSessionRuntime(access),
+    promptAttachmentsFromDraft: helpers.promptAttachmentsFromDraft,
+    withoutRecordKey: helpers.withoutRecordKey,
+    viewingSessionIdForPrompt: helpers.viewingSessionIdForPrompt,
+    messageErrorFromUnknown: helpers.messageErrorFromUnknown,
+    assistantErrorMessage: helpers.assistantErrorMessage });
   Object.assign(state, slice);
   await invoke(IPC.invoke.agentPrompt, [{ sessionId, content: "Start two delegates and wait." }]);
   await until(() => held.size === 2 && events.some((entry) => entry.event.type === "status" && entry.event.status.activity?.phase === "waiting-subagents"), "Parent did not reach TaskWait with two live delegates");
   const originalTurnId = activeTurns.get(sessionId);
   assert.equal(await slice.sendPrompt("Ordinary follow-up."), true);
-  assert.equal(await slice.sendPrompt("Correct the plan now."), true);
-  const correction = state.queuedPrompts[sessionId].find((entry) => entry.content === "Correct the plan now.");
-  assert.ok(correction);
-  await slice.sendQueuedNow(correction.id);
-  await until(() => events.some((entry) => entry.event.type === "message_end" && entry.event.message.content === "Correction handled while delegates are running."), "Send now did not wake the parent's TaskWait");
+  const publicStarts = calls.filter((method) => method === "agent.start").length;
+  state.agentStatuses[sessionId] = { currentTurnId: originalTurnId };
+  if (sideNote) {
+    assert.equal(await slice.sendSideNote("How far along are you?"), true);
+  } else {
+    assert.equal(await slice.sendPrompt("Correct the plan now."), true);
+    const correction = state.queuedPrompts[sessionId].find((entry) => entry.content === "Correct the plan now.");
+    assert.ok(correction);
+    await slice.sendQueuedNow(correction.id);
+  }
+  await until(() => events.some((entry) => entry.event.type === "message_end" && entry.event.message.content === "Correction handled while delegates are running."), "Active-turn input did not wake the parent's TaskWait");
   assert.equal(activeTurns.get(sessionId), originalTurnId);
   assert.equal(held.size, 2);
   assert.equal(abortedDelegates.size, 0);
@@ -222,10 +239,21 @@ try {
   const durableQueue = await host.call("session.queueList", { sessionId });
   assert.deepEqual(durableQueue.entries.map((entry) => entry.content), ["Ordinary follow-up."]);
   const history = await host.call("session.get", { id: sessionId });
-  assert.equal(history.session.messages.filter((entry) => entry.content === "Correct the plan now.").length, 1);
+  const submittedText = sideNote ? "How far along are you?" : "Correct the plan now.";
+  const durableRows = history.session.messages.filter((entry) => entry.content === submittedText);
+  assert.equal(durableRows.length, 1);
+  assert.equal(calls.filter((method) => method === "agent.start").length, publicStarts);
+  if (sideNote) {
+    assert.equal(durableRows[0].sideNote, true);
+    assert.equal(durableRows[0].steering, true);
+    assert.equal(durableRows[0].content.includes("<side-note>"), false);
+    assert.equal(state.messages.find((entry) => entry.id === durableRows[0].id)?.sideNote, true);
+    assert.ok(requests.some((request) => request.model === "fixture" && request.messages.some((message) =>
+      message.role === "user" && JSON.stringify(message.content).includes("<side-note>") && JSON.stringify(message.content).includes(submittedText))));
+  }
   assert.ok(requests.some((request) => request.model === "fixture" && request.messages.some((message) =>
     message.role === "tool" && String(message.content).includes("Interrupted by new user input"))));
-  console.log("PASS Send now: current turn handles correction; both delegates remain running; ordinary input remains durably queued");
+  console.log(`PASS ${sideNote ? "Side note" : "Send now"}: current turn handles input; both delegates remain running; ordinary input remains durably queued`);
 
   for (const [name, res] of held) reply(res, { content: `${name} completed successfully.` });
   await until(() => events.some((entry) => entry.event.type === "message_end" && entry.event.message.content === "Ordinary follow-up processed."), "Delegate completion did not release the ordinary follow-up");
@@ -235,7 +263,7 @@ try {
   assert.equal(bridge.queue.list(sessionId).length, 0);
   assert.equal((await host.call("session.queueList", { sessionId })).entries.length, 0);
   assert.ok(requests.some((entry) => JSON.stringify(entry.messages).includes("Delegate A fixture completed successfully.") && JSON.stringify(entry.messages).includes("Delegate B fixture completed successfully.")));
-  console.log("PASS Send now: both reports return to the same parent turn; remaining FIFO input runs after settlement");
+  console.log(`PASS ${sideNote ? "Side note" : "Send now"}: both reports return to the same parent turn; remaining FIFO input runs after settlement`);
 } finally {
   globalThis.window = previousWindow;
   await vite?.close();

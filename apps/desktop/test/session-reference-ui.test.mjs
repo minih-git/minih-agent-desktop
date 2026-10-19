@@ -128,6 +128,7 @@ const { MessageRow } = load(new URL("../src/features/chat/transcript/MessageRow.
   "./menu-items": { userMessageMenuItems: () => [] },
   "./ActionBarSlots": { ActionSlotSide: () => null },
   "./SessionMessageOrigin": { SessionMessageOrigin: () => null },
+  "./SideNoteOrigin": { SideNoteOrigin: () => null },
   "./extra-attachments": { getExtraMessageAttachments },
   "./TranscriptMenu": {
     useTranscriptMenu: () => () => {},

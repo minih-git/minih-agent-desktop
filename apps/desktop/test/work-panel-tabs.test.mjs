@@ -21,6 +21,7 @@ const {
   replaceWorkPanelTabState,
   reorderWorkPanelTabsState,
   sanitizeWorkPanelTabsState,
+  sideNotesWorkPanelTab,
   subagentTabDisplayLabels,
   subagentWorkPanelTab,
   switchWorkPanelContextState,
@@ -206,6 +207,28 @@ test("only plugin views are launchable tools", () => {
   assert.equal(isToolWorkPanelTab(pluginWorkPanelTab("pi.file-manager", "manager")), true);
   assert.equal(isKnownWorkPanelTab({ id: "browser", kind: "browser" }), false);
   assert.equal(isKnownWorkPanelTab(newWorkPanelTab()), true);
+});
+
+test("the side-notes tab is one known tab per session", () => {
+  const tab = sideNotesWorkPanelTab();
+  assert.equal(tab.kind, "sideNotes");
+  assert.equal(isKnownWorkPanelTab(tab), true);
+  // It is a session resource, not a plugin-contributed view: the panel opens
+  // and labels it itself.
+  assert.equal(isToolWorkPanelTab(tab), false);
+
+  const opened = openWorkPanelTabState(
+    { tabs: [toolWorkPanelTab("review")], activeTabId: "review" },
+    tab,
+  );
+  const reopened = openWorkPanelTabState(opened, sideNotesWorkPanelTab());
+  assert.deepEqual(
+    reopened.tabs.map((entry) => entry.id),
+    ["review", "side-notes"],
+  );
+  assert.equal(reopened.activeTabId, "side-notes");
+  // The new kind must not weaken the guard that drops unknown kinds.
+  assert.equal(isKnownWorkPanelTab({ id: "side-notes", kind: "notes" }), false);
 });
 
 test("a host-chosen project file prefers the bundled file view", () => {
