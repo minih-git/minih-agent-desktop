@@ -2,6 +2,22 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "0.22.0",
+    date: "2026-10-19",
+    highlights: [
+      "La mémoire à long terme retrouve les conversations et notes apprises, mémorise sur demande avec des actions Modifier et Annuler et se gère depuis le menu du projet ou les réglages ; désactiver la lecture ne supprime pas les notes.",
+      "L’apprentissage automatique est désactivé par défaut : un modèle choisi propose des notes issues uniquement de vos messages, à conserver ou rejeter, avec un budget quotidien de jetons et une exclusion par session.",
+      "Le contrôle à distance prend en charge les comptes Minih Router : connexion par AccessKey, approbation unique d’un appareil pour les ordinateurs du compte, révocation ou confirmation sur chaque terminal ; les codes restent disponibles sans mode compte.",
+      "L’accès distant gagne des enveloppes natives iOS et Android avec stockage sécurisé des identifiants, ainsi que des notifications APNs/FCM facultatives du Gateway contenant seulement les types d’événement et identifiants ; sans configuration opérateur, le push reste désactivé.",
+      "Les longues commandes Bash locales peuvent continuer en arrière-plan après un tour, avec un aperçu de sortie borné et une commande Arrêter ; le Host nettoie les processus à sa fermeture.",
+      "Les retours apparaissent à droite sous forme de cartes : erreurs et avertissements attendent la fermeture manuelle, les autres disparaissent automatiquement avec pause au survol ou au focus, et les longues piles défilent sans perdre de messages.",
+      "Le panneau de travail liste les sous-agents de la conversation en cours, leur état en direct et leurs détails historiques pour mieux suivre les tâches déléguées.",
+      "Les transcriptions détaillées ne colorent que le code visible pour éviter les blocages, les lignes développées conservent la commande complète et rouvrir la barre latérale préserve la largeur enregistrée du panneau.",
+      "Les téléchargements privilégient les sources accélérées fournies par le Gateway et le marché des plugins utilise le dépôt de distribution propre à Minih.",
+      "Les titres automatiques suivent plus fidèlement la conversation et les longues chaînes de communication entre sessions disposent de davantage de marge d’exécution.",
+    ],
+  },
+  {
     version: "0.21.2",
     date: "2026-10-18",
     highlights: [

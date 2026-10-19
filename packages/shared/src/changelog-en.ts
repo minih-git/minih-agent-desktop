@@ -2,6 +2,22 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.22.0",
+    date: "2026-10-19",
+    highlights: [
+      "Long-term memory can recall earlier conversations and learned notes, remember something on request with Edit and Undo receipts, and manage notes in the project menu or Settings; reading can be turned off without deleting them.",
+      "Optional automatic learning is off by default: a chosen model proposes notes from your own messages into Suggestions, with Keep or Discard, a daily token budget, and a per-session opt-out.",
+      "Remote control can use your Minih Router account: sign in with an AccessKey, approve a device once to reach the account’s computers, revoke devices, or require confirmation on every terminal; registration codes remain available when account mode is unsupported.",
+      "Remote access gains iOS and Android native shells with secure credential storage, plus optional Gateway APNs/FCM notifications containing event kinds and identifiers rather than conversation content; push stays off without operator credentials.",
+      "Long-running local Bash commands can continue in the background after a turn, with bounded output previews and explicit Stop controls; the Host cleans them up on exit.",
+      "Feedback appears as right-side notification cards: errors and warnings wait for dismissal, ordinary notices close automatically and pause on hover or focus, and long stacks scroll without dropping messages.",
+      "The work panel lists the current conversation’s subagents, including their live status and historical details, making delegated work easier to follow.",
+      "Detailed transcripts highlight code only when visible to avoid freezes, expanded command rows keep the full command readable, and reopening the sidebar preserves the saved work-panel width.",
+      "App downloads prefer Gateway-provided accelerator sources, and the plugin market uses Minih’s own distribution repository.",
+      "Generated session titles follow the conversation more reliably, and longer inter-session communication chains have more room to finish.",
+    ],
+  },
+  {
     version: "0.21.2",
     date: "2026-10-18",
     highlights: [

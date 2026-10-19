@@ -2,6 +2,22 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.22.0",
+    date: "2026-10-19",
+    highlights: [
+      "Das Langzeitgedächtnis durchsucht frühere Gespräche und gelernte Notizen, merkt sich Inhalte auf Wunsch mit Bearbeiten und Rückgängig und verwaltet Notizen im Projektmenü oder in den Einstellungen; Lesen lässt sich ohne Löschen abschalten.",
+      "Automatisches Lernen ist standardmäßig aus: Ein gewähltes Modell schlägt Notizen nur aus Ihren eigenen Nachrichten vor; Vorschläge lassen sich behalten oder verwerfen, mit täglichem Tokenbudget und Ausschluss einzelner Sitzungen.",
+      "Die Fernsteuerung unterstützt Minih-Router-Konten: mit AccessKey anmelden, ein Gerät einmal für die Computer des Kontos bestätigen, Geräte widerrufen oder jeden Rechner einzeln bestätigen lassen; ohne Kontomodus bleiben Registrierungscodes verfügbar.",
+      "Der Fernzugriff erhält native iOS- und Android-Hüllen mit sicherer Zugangsdatenablage sowie optionale APNs-/FCM-Mitteilungen vom Gateway, die nur Ereignisarten und Kennungen enthalten; ohne Betreiber-Zugangsdaten bleibt Push aus.",
+      "Lange lokale Bash-Befehle können nach einem Durchlauf im Hintergrund weiterlaufen, mit begrenzter Ausgabevorschau und Stopp-Steuerung; beim Beenden räumt der Host die Prozesse auf.",
+      "Rückmeldungen erscheinen als Karten rechts: Fehler und Warnungen bleiben bis zum Schließen, normale Hinweise verschwinden automatisch, pausieren bei Hover oder Fokus und bleiben auch in langen scrollbaren Stapeln erhalten.",
+      "Das Arbeitspanel zeigt die Unteragenten des aktuellen Gesprächs mit Live-Status und historischen Details, damit delegierte Aufgaben leichter nachzuverfolgen sind.",
+      "Detaillierte Verläufe färben Code erst im sichtbaren Bereich ein, aufgeklappte Befehlszeilen zeigen den vollständigen Befehl und das erneute Öffnen der Seitenleiste bewahrt die gespeicherte Arbeitspanelbreite.",
+      "App-Downloads bevorzugen vom Gateway gelieferte Beschleunigungsquellen; der Plugin-Markt nutzt Minihs eigenes Distributions-Repository.",
+      "Automatisch erzeugte Sitzungstitel folgen dem Gespräch zuverlässiger; längere Kommunikationsketten zwischen Sitzungen erhalten mehr Ausführungsspielraum.",
+    ],
+  },
+  {
     version: "0.21.2",
     date: "2026-10-18",
     highlights: [

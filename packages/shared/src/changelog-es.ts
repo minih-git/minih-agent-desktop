@@ -2,6 +2,22 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "0.22.0",
+    date: "2026-10-19",
+    highlights: [
+      "La memoria a largo plazo busca conversaciones anteriores y notas aprendidas, recuerda contenido cuando se lo pides con opciones de editar y deshacer, y permite gestionar notas desde el menú del proyecto o Ajustes; desactivar la lectura no las borra.",
+      "El aprendizaje automático está desactivado por defecto: un modelo elegido propone notas solo de tus mensajes, con opciones de conservar o descartar, presupuesto diario de tokens y exclusión por sesión.",
+      "El control remoto admite cuentas de Minih Router: inicia sesión con AccessKey, aprueba un dispositivo una vez para acceder a los equipos de la cuenta, revócalo o exige confirmación en cada terminal; los códigos siguen disponibles sin modo de cuenta.",
+      "El acceso remoto incorpora contenedores nativos para iOS y Android con almacenamiento seguro de credenciales y avisos APNs/FCM opcionales del Gateway que solo incluyen tipos de evento e identificadores; sin credenciales del operador, los avisos siguen desactivados.",
+      "Los comandos Bash locales de larga duración pueden continuar en segundo plano al terminar el turno, con vista previa de salida limitada y controles para detenerlos; el Host limpia los procesos al salir.",
+      "Los avisos aparecen en tarjetas a la derecha: errores y advertencias esperan a que los cierres, los demás se cierran automáticamente y pausan al pasar el cursor o recibir foco; las pilas largas se desplazan sin perder mensajes.",
+      "El panel de trabajo muestra los subagentes de la conversación actual con estado en vivo y detalles históricos para seguir las tareas delegadas.",
+      "Los historiales detallados resaltan solo el código visible para evitar bloqueos, las filas expandidas muestran el comando completo y reabrir la barra lateral conserva el ancho guardado del panel de trabajo.",
+      "Las descargas de la aplicación prefieren las fuentes aceleradas que entrega el Gateway y el mercado de plugins utiliza el repositorio de distribución propio de Minih.",
+      "Los títulos automáticos siguen mejor el tema de la conversación y las cadenas largas de comunicación entre sesiones disponen de más margen de ejecución.",
+    ],
+  },
+  {
     version: "0.21.2",
     date: "2026-10-18",
     highlights: [
