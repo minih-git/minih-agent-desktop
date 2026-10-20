@@ -74,7 +74,6 @@ export function createQueueSlice({
   | "applyQueueChanged"
   | "sendPrompt"
   | "steerPrompt"
-  | "sendSideNote"
 > {
   const queuedDrafts = new Map<string, ComposerDraftSnapshot>();
   const pendingSubmissions = new Set<string>();
@@ -142,17 +141,14 @@ export function createQueueSlice({
   }
 
   /**
-   * One admission path for Composer steering and for a side note. The target
+   * Admission path for Composer steering. The target
    * turn is checked here and again inside the runtime after all IO, and refused
    * input is retracted instead of degrading into a normal prompt.
    */
   async function submitSteering(
     content: string,
     draft: ComposerDraftSnapshot | undefined,
-    sideNote: boolean,
   ): Promise<boolean> {
-    // A side note is text: an empty one would only reach the model as framing.
-    if (sideNote && !content.trim()) return false;
     const state = get();
     const sessionId = state.activeSessionId;
     if (!sessionAllows(state.sessions.find((session) => session.id === sessionId), "canSteer")) return false;
@@ -168,13 +164,11 @@ export function createQueueSlice({
       crypto.randomUUID(), content, draft?.fileReferences ?? [],
     );
     message.steering = true;
-    if (sideNote) message.sideNote = true;
     runtime.insertOptimisticUserMessage(sessionId, message);
     try {
       await api.steer({
         sessionId, expectedTurnId, content, messageId: message.id,
         attachments: draft ? promptAttachmentsFromDraft(draft.fileReferences) : [],
-        ...(sideNote ? { sideNote: true } : {}),
       });
       return true;
     } catch (error) {
@@ -370,14 +364,7 @@ export function createQueueSlice({
       applyQueueEntries(event.sessionId, event.entries);
     },
 
-    steerPrompt: async (content, draft) => submitSteering(content, draft, false),
-
-    /**
-     * A side note is answered inside the running turn instead of redirecting
-     * it: same admission and same channel as `steerPrompt`, with the model-side
-     * framing and the durable marker on top.
-     */
-    sendSideNote: async (content) => submitSteering(content, undefined, true),
+    steerPrompt: async (content, draft) => submitSteering(content, draft),
 
     sendPrompt: async (content, draft, requestedSessionId, onAccepted) => {
       let sessionId = requestedSessionId ?? get().activeSessionId;

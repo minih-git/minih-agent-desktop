@@ -860,16 +860,20 @@ may be retained while exactly one workspace supplies the visible shell context.
 - The Send tooltip identifies follow-up and uses the platform's key labels
   for the steering shortcut (`⌥+Enter` on macOS). The
   existing single Send/Stop slot and Host-owned follow-up list are retained.
-- The work panel's side-notes tab sends the same kind of input from the side
-  panel instead of the composer: a note is answered inside the running turn, so
-  the task keeps going. The tab lists the session's own `sideNote` rows, newest
-  last, and its preset sends a progress-summary note in one click. While no
-  turn is running the input is disabled and explains why, because a note has no
-  turn to reach. The transcript marks such a row as a side note. A successful
-  submission clears only its unchanged submitted draft, never text edited
-  while awaiting acknowledgement or an unrelated draft when using the preset.
-  Pending submission disables both send actions but leaves the input editable;
-  refusal preserves the draft and reports the error.
+- The work panel's side-notes tab is independent read-only question/answer,
+  not another Composer steering entry. It snapshots the running task, asks the
+  current model without tools, and displays the question and answer only in
+  the side panel. Main-task messages, context and delegation waits stay intact.
+- Completed pairs are durable per session and reload in the panel. Existing
+  marked user rows may appear as legacy questions with no inferred answer.
+  The progress preset asks only for progress; changing the main task still
+  requires ordinary Composer steering.
+- Submission requires a running local steer-capable session, a current turn,
+  and no pending plan approval. A pending answer can finish after the task.
+  Pending submission disables both send actions, not draft editing. Failures
+  preserve the draft and report the cause. Success clears only the unchanged
+  submitted draft, never later edits or an unrelated draft used with a preset.
+  Switching sessions or closing the panel cannot redirect a pending result.
 
 ## 3A. Context checkpoint lifecycle
 

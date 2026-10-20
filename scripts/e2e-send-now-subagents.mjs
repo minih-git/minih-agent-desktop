@@ -91,6 +91,8 @@ async function respondModel(req, res) {
       if (!res.writableEnded) abortedDelegates.add(name);
       changed();
     });
+  } else if (lastUser === "Start two delegates and wait." && payload.messages.some(message => message.role === "tool" && String(message.content).includes("Delegate A fixture completed successfully.") && String(message.content).includes("Delegate B fixture completed successfully."))) {
+    reply(res, { content: "Both delegate reports received." });
   } else if (lastUser === "Start two delegates and wait.") {
     if (requests.length >= 6) {
       eventError = new Error(`Fixture unexpectedly repeated the parent request: ${JSON.stringify(payload.messages).slice(-5000)}`);
@@ -104,7 +106,11 @@ async function respondModel(req, res) {
       : ["A", "B"].map((name, index) => ({ index, id: `delegate-${name}`, type: "function",
           function: { name: "Task", arguments: JSON.stringify({ agent: name === "A" ? "explorer" : "reviewer", task: `Delegate ${name} fixture` }) } }));
     reply(res, { tool_calls: toolCalls }, "tool_calls");
-  } else if (lastUser === "Correct the plan now." || (sideNote && lastUser.includes("<side-note>"))) {
+  } else if (sideNote && payload.messages.some(message => message.role === "system" && JSON.stringify(message.content).includes("read-only task snapshot"))) {
+    assert.equal(payload.tools?.length ?? 0, 0);
+    assert.ok(JSON.stringify(payload.messages).includes("Start two delegates and wait."));
+    reply(res, { content: "Independent side-panel answer." });
+  } else if (lastUser === "Correct the plan now.") {
     reply(res, { content: "Correction handled while delegates are running." });
   } else if (lastUser === "Ordinary follow-up.") {
     reply(res, { content: "Ordinary follow-up processed." });
@@ -200,6 +206,7 @@ try {
   vite = await createViteServer({ root: fileURLToPath(new URL("../apps/desktop", import.meta.url)), configFile: false,
     server: { middlewareMode: true, hmr: false, ws: false }, appType: "custom", optimizeDeps: { noDiscovery: true, include: [] } });
   const { createQueueSlice } = await vite.ssrLoadModule("/src/stores/slices/queue-slice.ts");
+  const { createSideNotesSlice } = await vite.ssrLoadModule("/src/stores/slices/side-notes-slice.ts");
   const { createSessionRuntime } = await vite.ssrLoadModule("/src/stores/runtime/session-runtime.ts");
   const helpers = await vite.ssrLoadModule("/src/stores/helpers/store-helpers.ts");
   globalThis.window = { minihAgent: { invoke: async (channel, ...args) => ({ ok: true, data: await invoke(channel, args) }) } };
@@ -214,6 +221,7 @@ try {
     viewingSessionIdForPrompt: helpers.viewingSessionIdForPrompt,
     messageErrorFromUnknown: helpers.messageErrorFromUnknown,
     assistantErrorMessage: helpers.assistantErrorMessage });
+  slice = { ...slice, ...createSideNotesSlice(access) };
   Object.assign(state, slice);
   await invoke(IPC.invoke.agentPrompt, [{ sessionId, content: "Start two delegates and wait." }]);
   await until(() => held.size === 2 && events.some((entry) => entry.event.type === "status" && entry.event.status.activity?.phase === "waiting-subagents"), "Parent did not reach TaskWait with two live delegates");
@@ -221,6 +229,8 @@ try {
   assert.equal(await slice.sendPrompt("Ordinary follow-up."), true);
   const publicStarts = calls.filter((method) => method === "agent.start").length;
   state.agentStatuses[sessionId] = { currentTurnId: originalTurnId };
+  const parentRequestsBeforeNote = requests.filter(request => request.model === "fixture").length;
+  const eventsBeforeNote = events.length;
   if (sideNote) {
     assert.equal(await slice.sendSideNote("How far along are you?"), true);
   } else {
@@ -229,7 +239,20 @@ try {
     assert.ok(correction);
     await slice.sendQueuedNow(correction.id);
   }
-  await until(() => events.some((entry) => entry.event.type === "message_end" && entry.event.message.content === "Correction handled while delegates are running."), "Active-turn input did not wake the parent's TaskWait");
+  if (sideNote) {
+    const { notes } = await invoke(IPC.invoke.agentSideNotesList, [{ sessionId }]);
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0].question, "How far along are you?");
+    assert.equal(notes[0].answer, "Independent side-panel answer.");
+    assert.equal(requests.filter(request => request.model === "fixture").length, parentRequestsBeforeNote + 1);
+    assert.equal(events.length, eventsBeforeNote, "Side answer must not emit parent events or interrupt TaskWait");
+    assert.equal(calls.includes("agent.steer"), false);
+    assert.equal(calls.includes("agent.steeringContext"), false);
+    assert.ok(!(JSON.stringify(events).includes("Independent side-panel answer.")));
+    assert.equal((await host.call("session.get", { id: sessionId })).session.messages.some(message => message.content === "How far along are you?" || message.content === "Independent side-panel answer."), false);
+  } else {
+    await until(() => events.some((entry) => entry.event.type === "message_end" && entry.event.message.content === "Correction handled while delegates are running."), "Active-turn input did not wake the parent's TaskWait");
+  }
   assert.equal(activeTurns.get(sessionId), originalTurnId);
   assert.equal(held.size, 2);
   assert.equal(abortedDelegates.size, 0);
@@ -241,19 +264,13 @@ try {
   const history = await host.call("session.get", { id: sessionId });
   const submittedText = sideNote ? "How far along are you?" : "Correct the plan now.";
   const durableRows = history.session.messages.filter((entry) => entry.content === submittedText);
-  assert.equal(durableRows.length, 1);
+  assert.equal(durableRows.length, sideNote ? 0 : 1);
   assert.equal(calls.filter((method) => method === "agent.start").length, publicStarts);
-  if (sideNote) {
-    assert.equal(durableRows[0].sideNote, true);
-    assert.equal(durableRows[0].steering, true);
-    assert.equal(durableRows[0].content.includes("<side-note>"), false);
-    assert.equal(state.messages.find((entry) => entry.id === durableRows[0].id)?.sideNote, true);
+  if (!sideNote) {
     assert.ok(requests.some((request) => request.model === "fixture" && request.messages.some((message) =>
-      message.role === "user" && JSON.stringify(message.content).includes("<side-note>") && JSON.stringify(message.content).includes(submittedText))));
+      message.role === "tool" && String(message.content).includes("Interrupted by new user input"))));
   }
-  assert.ok(requests.some((request) => request.model === "fixture" && request.messages.some((message) =>
-    message.role === "tool" && String(message.content).includes("Interrupted by new user input"))));
-  console.log(`PASS ${sideNote ? "Side note" : "Send now"}: current turn handles input; both delegates remain running; ordinary input remains durably queued`);
+  console.log(`PASS ${sideNote ? "Side note: independent answer, parent TaskWait untouched" : "Send now: current turn handles input"}; both delegates remain running; ordinary input remains durably queued`);
 
   for (const [name, res] of held) reply(res, { content: `${name} completed successfully.` });
   await until(() => events.some((entry) => entry.event.type === "message_end" && entry.event.message.content === "Ordinary follow-up processed."), "Delegate completion did not release the ordinary follow-up");
@@ -263,6 +280,14 @@ try {
   assert.equal(bridge.queue.list(sessionId).length, 0);
   assert.equal((await host.call("session.queueList", { sessionId })).entries.length, 0);
   assert.ok(requests.some((entry) => JSON.stringify(entry.messages).includes("Delegate A fixture completed successfully.") && JSON.stringify(entry.messages).includes("Delegate B fixture completed successfully.")));
+  if (sideNote) {
+    const notes = (await host.call("session.sideNotes.list", { sessionId })).notes;
+    assert.equal(notes[0].answer, "Independent side-panel answer.");
+    const ordinary = requests.find(request => request.messages.some(message => message.role === "user" && message.content === "Ordinary follow-up."));
+    assert.ok(ordinary);
+    assert.equal(JSON.stringify(ordinary.messages).includes("Independent side-panel answer."), false);
+    assert.equal(JSON.stringify(ordinary.messages).includes("How far along are you?"), false);
+  }
   console.log(`PASS ${sideNote ? "Side note" : "Send now"}: both reports return to the same parent turn; remaining FIFO input runs after settlement`);
 } finally {
   globalThis.window = previousWindow;

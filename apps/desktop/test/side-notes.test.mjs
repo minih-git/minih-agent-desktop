@@ -41,7 +41,7 @@ test("a side note is only sendable into a running turn", () => {
   assert.equal(sideNoteInputState({ running: true, turnId: "turn-1", planPending: true }), "idle");
 });
 
-test("sending a side note steers the running turn and never stops it", async () => {
+test("side questions use independent IPC, never main transcript or steering", async () => {
   const server = await createServer({
     root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
     server: { middlewareMode: true, hmr: false, ws: false }, appType: "custom",
@@ -49,73 +49,69 @@ test("sending a side note steers the running turn and never stops it", async () 
   });
   const previousWindow = globalThis.window;
   try {
-    const { createQueueSlice } = await server.ssrLoadModule("/src/stores/slices/queue-slice.ts");
+    const { createSideNotesSlice } = await server.ssrLoadModule("/src/stores/slices/side-notes-slice.ts");
     const invoked = [];
+    const notes = [];
+    const toasts = [];
+    let answer;
+    let load;
     globalThis.window = { minihAgent: { invoke: async (channel, payload) => {
       invoked.push([channel, payload]);
-      if (channel === IPC.invoke.agentSteer) return { ok: true, data: { accepted: true, turnId: "turn-1" } };
-      throw new Error(`Unexpected IPC: ${channel}`);
+      if (channel === IPC.invoke.agentSideNote) return await answer(payload);
+      if (channel === IPC.invoke.agentSideNotesList) return load ? await load() : { ok: true, data: { notes: [...notes] } };
+      assert.fail(`Unexpected IPC: ${channel}`);
     } } };
-    const inserted = [];
-    const retracted = [];
     let state = {
       activeSessionId: "session-a",
-      sessions: [{ id: "session-a", source: "desktop" }],
-      pendingPlans: {},
-      runningSessions: { "session-a": true },
-      agentStatuses: { "session-a": { currentTurnId: "turn-1" } },
-      showToast: assert.fail,
+      sessions: ["session-a", "session-b"].map(id => ({ id, source: "desktop" })),
+      pendingPlans: {}, runningSessions: { "session-a": true, "session-b": true },
+      agentStatuses: { "session-a": { currentTurnId: "turn-a" }, "session-b": { currentTurnId: "turn-b" } },
+      messages: [userRow("main", "Keep doing the main task")],
+      showToast: message => toasts.push(message),
     };
-    const slice = createQueueSlice({
-      get: () => state,
-      set: (patch) => { state = { ...state, ...(typeof patch === "function" ? patch(state) : patch) }; },
-      runtime: {
-        insertOptimisticUserMessage: (_sessionId, message) => inserted.push(message),
-        retractOptimisticUserMessage: (_sessionId, message) => retracted.push(message),
-      },
-      promptAttachmentsFromDraft: () => [],
-      withoutRecordKey: (record, key) => {
-        const next = { ...record };
-        delete next[key];
-        return next;
-      },
-      viewingSessionIdForPrompt: () => "session-a",
-      messageErrorFromUnknown: (error) => ({ code: "FAILED", message: String(error) }),
-      assistantErrorMessage: () => ({ role: "assistant", content: "failed" }),
-      materializeDraftSession: async () => null,
-    });
-
-    assert.equal(await slice.sendSideNote("  How far along are you?  "), true);
-    assert.equal(inserted.length, 1);
-    // The optimistic row and the host call agree about what this input is.
-    assert.equal(inserted[0].sideNote, true);
-    assert.equal(inserted[0].steering, true);
-    assert.equal(inserted[0].content, "  How far along are you?  ");
-    assert.deepEqual(
-      invoked.filter(([channel]) => channel === IPC.invoke.agentSteer),
-      [[IPC.invoke.agentSteer, {
-        sessionId: "session-a",
-        expectedTurnId: "turn-1",
-        content: "  How far along are you?  ",
-        messageId: inserted[0].id,
-        attachments: [],
-        sideNote: true,
-      }]],
-    );
-    // A note is input to the running turn: nothing asks the session to stop.
-    assert.equal(invoked.some(([channel]) => channel === IPC.invoke.agentStop), false);
-    assert.deepEqual(retracted, []);
-
-    // An empty note is refused before any IPC, and an idle session reports why.
-    assert.equal(await slice.sendSideNote("   "), false);
+    const access = { get: () => state, set: patch => { state = { ...state, ...(typeof patch === "function" ? patch(state) : patch) }; } };
+    const slice = createSideNotesSlice(access);
+    Object.assign(state, slice);
+    const mainMessages = state.messages;
+    answer = async req => {
+      const note = { id: "note-1", question: req.content, answer: "Independent answer", createdAt: "2026-10-20T00:00:00Z" };
+      notes.push(note);
+      return { ok: true, data: { note } };
+    };
+    assert.equal(await slice.sendSideNote("  Question  "), true);
+    assert.equal(state.sideNotes["session-a"][0].answer, "Independent answer");
+    assert.deepEqual(invoked[0], [IPC.invoke.agentSideNote, { sessionId: "session-a", expectedTurnId: "turn-a", content: "Question" }]);
+    assert.equal(state.messages, mainMessages);
+    assert.deepEqual(state.sideNotePending, {});
+    assert.equal(await slice.sendSideNote("  "), false);
     assert.equal(invoked.length, 1);
-    state = { ...state, runningSessions: {}, showToast: () => {} };
-    assert.equal(await slice.sendSideNote("Anything else?"), false);
-    assert.equal(invoked.length, 1);
-  } finally {
-    globalThis.window = previousWindow;
-    await server.close();
-  }
+
+    let resolveAnswer;
+    answer = req => new Promise(resolve => { resolveAnswer = () => resolve({ ok: true, data: { note: { id: "note-2", question: req.content, answer: "Late answer", createdAt: "2026-10-20T00:00:01Z" } } }); });
+    const pending = slice.sendSideNote("Second question");
+    assert.equal(state.sideNotePending["session-a"], "Second question");
+    assert.equal(await slice.sendSideNote("Duplicate"), false);
+    let resolveLoad;
+    load = () => new Promise(resolve => { resolveLoad = () => resolve({ ok: true, data: { notes: [notes[0]] } }); });
+    const loading = slice.loadSideNotes("session-a");
+    state = { ...state, activeSessionId: "session-b" };
+    resolveAnswer();
+    assert.equal(await pending, true);
+    resolveLoad(); await loading;
+    assert.equal(state.sideNotes["session-a"].length, 2, "late history load must not erase a new answer");
+    assert.equal(state.sideNotes["session-b"], undefined);
+    assert.equal(state.messages, mainMessages);
+
+    answer = async () => { throw new Error("Side provider failed"); };
+    assert.equal(await slice.sendSideNote("Fail independently"), false);
+    assert.match(toasts.at(-1), /Side provider failed/);
+    assert.deepEqual(state.sideNotePending, {});
+    state = { ...state, runningSessions: {} };
+    const count = invoked.length;
+    assert.equal(await slice.sendSideNote("Idle"), false);
+    assert.equal(invoked.length, count);
+    assert.ok(invoked.every(([channel]) => channel !== IPC.invoke.agentSteer && channel !== IPC.invoke.agentStop));
+  } finally { globalThis.window = previousWindow; await server.close(); }
 });
 
 const t = (key) => key;
@@ -136,6 +132,8 @@ function loadSideNotesTab(store, messages) {
     "react-i18next": { useTranslation: () => ({ t }) },
     "../../hooks/use-transcript-view": { useTranscriptView: () => ({ messages }) },
     "../../lib/side-notes": { sideNoteInputState, sideNotesFromMessages },
+    "../../lib/remote-session-safety": { sessionAllows: session => session?.source !== "remote" },
+    "../Markdown": { Markdown: ({ source }) => React.createElement("div", { className: "markdown" }, source) },
     "../../stores/app-store": { useAppStore: (selector) => selector(store) },
     "../icons": new Proxy({}, { get: () => Icon }),
     "../ui": { Button, Textarea },
@@ -155,6 +153,10 @@ function loadSideNotesTab(store, messages) {
 test("the side-notes tab lists the notes and explains an idle session", () => {
   const idleStore = {
     activeSessionId: "session-a",
+    sessions: [{ id: "session-a", source: "desktop" }],
+    sideNotes: { "session-a": [{ id: "new-note", question: "Independent question", answer: "Independent answer", createdAt: "2026-10-20T00:00:00Z" }] },
+    sideNotePending: {},
+    loadSideNotes: async () => {},
     runningSessions: {},
     agentStatuses: {},
     pendingPlans: {},
@@ -163,7 +165,8 @@ test("the side-notes tab lists the notes and explains an idle session", () => {
   const idle = renderToStaticMarkup(
     React.createElement(loadSideNotesTab(idleStore, [])),
   );
-  assert.match(idle, /panel\.sideNotes\.emptyTitle/);
+  assert.match(idle, /Independent question/);
+  assert.match(idle, /Independent answer/);
   assert.match(idle, /panel\.sideNotes\.idlePlaceholder/);
   assert.match(idle, /panel\.sideNotes\.idleHint/);
   // Nothing can be sent while no turn is running.

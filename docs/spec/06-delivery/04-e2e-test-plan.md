@@ -17108,44 +17108,37 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   the rendered steering journey has not been run
   (do not run E2E locally unless explicitly requested).
 
-#### E2E-AGENT-side-note-keeps-running-turn: A side note is answered without redirecting the turn
+#### E2E-AGENT-side-note-keeps-running-turn: Independent answers stay in the side panel
 
-- **Preconditions**: A session with a configured model and a controllable
-  streaming response/tool that stays open long enough to type during.
+- **Preconditions**: Isolated Electron and a local SSE provider, with a main
+  task waiting for two controlled delegates. No paid/real provider is used.
 - **Steps**:
-  1. Start a prompt, then open the work panel's side-notes tab from the `+`
-     launcher. Confirm the input is enabled and the list is empty.
-  2. Send a note ("How far along are you?") while the turn streams. Confirm the
-     turn keeps its task, the note appears in the tab and as a marked user row
-     in the transcript, and no FIFO row or new public `agent_start` appears.
-  3. Use the preset progress-summary action, then send a note that asks for a
-     direction change. Confirm the model answers each note and continues.
-  4. Send an empty note; then let the turn finish and confirm the input is
-     disabled and explains why.
-  5. Reload the renderer and switch sessions. Confirm the tab lists the same
-     notes for that session and the transcript rows stay marked.
-  6. Stop the turn while a note is still queued, then inspect the persisted
-     rows and the next ordinary turn.
-- **Expected**: A side note is delivered into the running turn, answered at its
-  next safe point, and never cancels the turn, its tools, or its delegates. The
-  persisted row keeps the user's own words plus the `sideNote` marker, while the
-  model-visible prompt carries the side-note framing. An idle session cannot
-  send a note and says so.
+  1. Open the work panel's side-notes tab and ask for progress.
+  2. Confirm a separate tool-free model request uses a snapshot, while the main
+     TaskWait, active turn and both delegate requests remain untouched.
+  3. Read the question and answer in the side panel. Neither appears in the
+     main transcript/context or produces main-turn messages/status events.
+  4. Exercise the preset, pending edits, refusal/retry, duplicate prevention,
+     Enter/Shift+Enter/IME, panel remount and session switches.
+  5. Reload/list history and confirm question/answer pairs survive. Idle and
+     unsupported sessions cannot submit. A submitted answer may finish after
+     the main task, without starting another main turn.
+  6. Finish delegates; confirm reports and ordinary queued input still run in
+     order and the next prompt does not contain side-question/answer text.
+- **Expected**: Independent read-only answer only in the side panel; no steer,
+  stop, TaskWait interruption, task redirection or main-context mutation.
+  Errors retain the draft and cannot fail the main task. Session deletion
+  removes its independent history and refuses late persistence.
 - **Specs linked**: `03-runtime/01-ipc-protocol.md` (§5.1a),
   `03-runtime/02-agent-runtime.md` (§4.0), `03-runtime/04-data-storage.md`,
   `04-ux/09-interaction-patterns.md` (§3.5), ADR active-turn-steering
 - **Acceptance**: C (conversation & stream), Quality
 - **Milestone**: M5
-- **Automated coverage**: `pnpm test:e2e:side-notes` mounts the production work
-  panel in isolated Electron and exercises the launcher, preset, pending edits,
-  refusal/retry, Enter/Shift+Enter/IME, session isolation and idle admission.
-  Its process fixture uses production Main IPC, AgentHost, the sidecar and Rust
-  Host with a local SSE provider: a note wakes TaskWait in the same turn, both
-  delegates remain live, ordinary FIFO input is preserved, and the durable row
-  keeps plain text plus `sideNote`/`steering` while only the model sees framing.
-- **Status**: Automated fixture paths covered. Live-model interpretation of a
-  direction-changing note and Stop during pending delivery remain manual
-  acceptance scenarios; these fixtures do not authorize a paid provider run.
+- **Automated coverage**: `pnpm test:e2e:side-notes` uses the production work
+  panel plus production Main IPC/AgentHost/sidecar/Rust Host and local SSE.
+  Runtime/IPC regressions cover failure isolation and stale/duplicate input;
+  Rust tests cover separate storage, torn appends, path safety and deletion.
+- **Status**: Updated acceptance; results are recorded in the task delivery.
 
 #### E2E-SESSION-content-search-and-message-navigation
 

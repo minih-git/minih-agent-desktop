@@ -2414,15 +2414,18 @@ sklm: {
     },
     "sideNotes": {
       "emptyTitle": "Aún no hay notas al margen",
-      "emptyBody": "Las notas que envíes mientras el agente trabaja aparecen aquí. La tarea en curso continúa.",
+      "emptyBody": "Las preguntas y respuestas quedan aquí mientras continúa la tarea principal.",
       "inputLabel": "Nota al margen",
-      "placeholder": "Pide un resumen del progreso o ajusta la dirección…",
+      "placeholder": "Pregunta sobre la tarea actual…",
       "idlePlaceholder": "Las notas al margen están disponibles mientras se ejecuta una tarea",
-      "idleHint": "Una nota al margen se responde dentro de la tarea en curso, así que no la interrumpe ni la sustituye. Ahora mismo no hay nada en ejecución.",
-      "hint": "Se envía a la tarea en curso y se responde en su siguiente punto seguro.",
+      "idleHint": "Pregunta de forma independiente mientras se ejecuta una tarea. Ahora no hay ninguna.",
+      "hint": "Se responde aquí de forma independiente, sin interrumpir la tarea principal.",
       "send": "Enviar",
       "presetProgressLabel": "Resumir el progreso",
-      "presetProgress": "Resume brevemente el progreso hasta ahora y luego continúa con la tarea actual."
+      "presetProgress": "Resume brevemente el progreso según la instantánea de la tarea.",
+      "question": "Pregunta",
+      "answer": "Respuesta",
+      "answering": "Respondiendo de forma independiente…",
     },
     "pluginView": {
       "failed": "Esta vista no se pudo cargar. Vuelva a cargar el complemento e inténtelo de nuevo."

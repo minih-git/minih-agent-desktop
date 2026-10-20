@@ -494,6 +494,14 @@ async function handle(method: string, params: any): Promise<unknown> {
       });
       return { accepted: true, turnId };
     }
+    case "agent.sideNote": {
+      if (typeof params.content !== "string" || !params.content.trim()) {
+        throw Object.assign(new Error("Side-note question required"), { errorCode: "INVALID_ARGUMENT" });
+      }
+      const runtime = runtimes.get(String(params.sessionId ?? ""));
+      if (!runtime) throw Object.assign(new Error("No active task for this side note"), { errorCode: "TURN_NOT_FOUND" });
+      return runtime.answerSideNote(params.content, String(params.expectedTurnId ?? ""), params.history ?? []);
+    }
     case "agent.steeringContext":
     case "agent.steer": {
       const runtime = runtimes.get(String(params.sessionId ?? ""));
