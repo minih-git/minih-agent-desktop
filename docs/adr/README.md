@@ -317,7 +317,7 @@ Each ADR includes:
 | 0270 | [Builtin subagents can be switched off](0270-builtin-subagents-can-be-disabled.md) | Accepted for implementation (amends ADR 0063; ADR 0112) |
 | 0271 | [Rebuild the shared provider transport after repeated unanswered failures](0271-provider-transport-rebuild.md) | Accepted for implementation (issue #234) |
 | 0269 | [Move capability documents between the global and project levels](0269-capability-level-transfer.md) | Accepted for implementation (amends ADR 0112) |
-| 0268 | Remove quotes, annotations, and side chats | Accepted (supersedes message-quotes-and-side-chats / response-annotations / floating-annotation-index) |
+| 0268 | Remove quotes, annotations, and side chats | Accepted (supersedes message-quotes-and-side-chats / response-annotations / floating-annotation-index; item 2 superseded by ADR 0334) |
 | 0272 | [Judge a public-network address on the route the request will dial](0272-connection-time-public-network-route.md) | Accepted for implementation (amends ADR 0243; issue #419 / PR #473) |
 | 0273 | [Git checkout as a Create project source](0273-git-checkout-create-project-source.md) | Accepted for implementation (amends ADR 0233; ADR 0247) |
 | 0274 | [A development plugin is reviewed before it is loaded](0274-development-plugin-permission-review.md) | Accepted for implementation (amends ADR 0005) |
@@ -389,3 +389,4 @@ Each ADR includes:
 | local-agent-remote-workspace-tools | [Local Agent and model requests for remote workspaces](local-agent-remote-workspace-tools.md) | Accepted for implementation |
 | 0332 | [Serve the plugin marketplace from the project's own distribution repository](0332-own-plugin-distribution-repository.md) | Accepted (2026-10-18; supersedes the official-channel half of ADR 0276) |
 | 0333 | [Chat references outside the allowed roots offer reveal and copy](0333-chat-refs-outside-roots-reveal-and-copy.md) | Accepted (2026-10-20; a narrower boundary than ADR 0262's open destinations) |
+| 0334 | [Quote a transcript selection into the composer](0334-selection-quote-into-composer.md) | Accepted (2026-10-20; supersedes ADR 0268 item 2; annotations and side chats stay removed) |

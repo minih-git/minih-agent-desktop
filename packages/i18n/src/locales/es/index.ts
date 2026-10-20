@@ -417,6 +417,8 @@ export const es = {
     "copy": "Copiar",
     "copied": "Copiado",
     "copyFailed": "No se pudo copiar al portapapeles",
+    "quoteSelection": "Añadir al chat",
+    "quoteUnavailable": "Ahora mismo no se puede añadir al cuadro de mensaje.",
     "messageMenu": "Acciones del mensaje",
     "conversationMenu": "Acciones de la conversación",
     "selectMessageText": "Seleccionar el texto del mensaje",

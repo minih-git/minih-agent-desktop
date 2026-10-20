@@ -417,6 +417,8 @@ export const fr = {
     "copy": "Copier",
     "copied": "Copié",
     "copyFailed": "Impossible de copier dans le presse-papiers",
+    "quoteSelection": "Ajouter au chat",
+    "quoteUnavailable": "Impossible d'ajouter ceci à la zone de saisie pour le moment.",
     "messageMenu": "Actions du message",
     "conversationMenu": "Actions de la conversation",
     "selectMessageText": "Sélectionner le texte du message",

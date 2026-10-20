@@ -23,11 +23,12 @@
  * silently rewrite content the platform already got right.
  *
  * ADR 0268 removed the selection overlay and the Quote action and rested that
- * removal on the OS clipboard being the substitute for quoting. This is that
- * substitute made honest, and nothing more: no surface, no store state, no
- * action-row item, and no new way to reach the clipboard. The copy the user
- * already performs writes different bytes when, and only when, the selection
- * contains a formula.
+ * removal on the OS clipboard being the substitute for quoting. ADR 0334 put
+ * the gesture back, and it reads formulas through this module instead of
+ * growing a second reduction — so a copied formula and a quoted one are the
+ * same Markdown. Nothing here depends on that: this module still owns only the
+ * reading, and the copy the user already performs writes different bytes when,
+ * and only when, the selection contains a formula.
  *
  * The delimiters are the renderer's own: `lib/latex-math.ts` normalizes
  * `\(…\)` and `\[…\]` to `$…$` / `$$…$$` before `remark-math` runs, so a
@@ -224,7 +225,7 @@ function replaceKatex(wrapper: Element, doc: Document): HTMLElement[] {
  * itself. Reading the offsets would add a branch only a hand-built `Range`
  * reaches, to trade an over-inclusive copy for a half-formula one.
  */
-function expandRangeToWholeKatex(range: Range): Range {
+export function expandRangeToWholeKatex(range: Range): Range {
   const expanded = range.cloneRange();
   const boundaryFor = (node: Node | null): Element | null => {
     const element =

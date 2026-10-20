@@ -16,6 +16,7 @@ import {
   WorkingIndicator,
 } from "./ActivityGroup";
 import { TranscriptHistory, TranscriptTail } from "./AssistantTurn";
+import { SelectionQuoteButton } from "./SelectionQuoteButton";
 import { collectLiveDelegationEntries } from "../../../lib/live-delegation-entries";
 import { reuseReadonlyMap } from "../../../lib/assistant-turns";
 import { useTranscriptScroll } from "./hooks/useTranscriptScroll";
@@ -257,6 +258,11 @@ function TranscriptBody({
           onRevealEarlier={revealEarlierHistory}
           onReleaseFollow={releaseFollow}
         />
+      ) : null}
+      {/* Quoting follows the selection: the action at the end of a long answer
+        * is the wrong end of the message to reach for (ADR 0334). */}
+      {paneVisible && !veilCovering ? (
+        <SelectionQuoteButton scrollRef={scrollRef} />
       ) : null}
       <div
         className="thread-scroll"

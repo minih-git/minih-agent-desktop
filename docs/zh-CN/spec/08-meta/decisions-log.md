@@ -5753,3 +5753,28 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
 - 见 `03-runtime/02-agent-runtime.md` §5f.4a、
   `03-runtime/03-tools-and-permissions.md`（会话消息、§10.2）、ADR
   session-create-tool，以及 E2E-SESSION-create-missing-target-session。
+
+## 2026-10-20 —— 对话里选中的一段文字引用进输入框（D674）
+
+- 在某一条消息行内选中文字时，选区上方浮出唯一一个胶囊按钮：横向居中于选区，
+  被限制在滚动容器可见区域内、停靠输入框上边缘之上，并在对话滚动时跟随选区。它是
+  挂到 `document.body` 的固定层，不参与转录的布局与滚动高度；不在屏幕上的保留面板
+  不渲染它。
+- 胶囊只有一个动作：把这段文字放进输入框。消息操作行仍维持 ADR 0268 留下的词汇——
+  复制、编辑、删除、分叉、重新生成；批注与渲染器侧边聊天保持删除状态。
+- 摘录在写入草稿前会从渲染后的 DOM 还原为 Markdown 源文本：公式读取
+  `lib/selection-tex.ts`（与剪贴板同一个模块，因此只有一套 TeX 读法与围栏规则），
+  代码块保留语言并自动加长围栏，表格每行还原为一条 `a | b`，任务框还原为 `[x]` / `[ ]`，
+  列表项与标题仅在选区跨越它们时保留标记，行内操作栏等装饰被丢弃而文件引用芯片保留其
+  文本。过程区、工具行、run 行与 meta 芯片同属装饰：从它们开始的选区不弹胶囊，从正文
+  跨入它们的选区只引用正文；代码围栏内的内容原样保留，空行与行尾空格不被压缩。
+- 引用是普通草稿文本：以 Markdown 引用块写入，上限 2000 字符，与用户已输入内容之间
+  留一个空行，落在实时光标处并保留草稿中已有的芯片，随后聚焦输入框。它绝不发送、
+  不新建会话、不写转录，因此按会话的草稿槽与 Smart Stop 的所有权不变。
+- `features/chat/composer/quote-sink.ts` 是唯一写入通道：已挂载的输入框注册 sink，
+  转录不会越过它去改 store 状态。已退役的 prefill 通道（读取延迟缓存的草稿）不再
+  恢复；读实时编辑器才能避免覆盖用户刚输入、尚未落盘的文本。
+- 不改 Host 协议、存储 schema、IPC 通道、权限或 Rust。ADR 0268 退役的
+  `D-LOCAL-message-quotes` / `D-LOCAL-selection-overlay` 及 E2E ID 继续退役。
+  见 ADR 0334、`04-ux/08-component-spec.md` §7.4 / §8.5 与
+  E2E-CHAT-selection-quote-into-composer。

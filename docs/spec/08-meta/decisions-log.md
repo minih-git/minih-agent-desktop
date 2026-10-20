@@ -8211,3 +8211,41 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 - See `03-runtime/02-agent-runtime.md` §5f.4a, `03-runtime/03-tools-and-permissions.md`
   (Session messaging, §10.2), ADR session-create-tool, and
   E2E-SESSION-create-missing-target-session.
+
+## 2026-10-20 — A quoted selection lands in the Composer draft (D674)
+
+- Selecting text inside one transcript row floats one pill above the selection,
+  centered on it, clamped into the scroller's visible band below the docked
+  composer's top edge, and it follows the selection while the thread scrolls.
+  The pill is a body-portaled fixed layer, so it never joins the transcript's
+  layout or scroll extent, and a retained pane that is not on screen renders
+  none.
+- The pill carries one action: put the selection into the message box. The
+  message action rows keep exactly the vocabulary ADR 0268 left them — Copy,
+  Edit, Delete, Fork, Retry/Regenerate — and annotations and renderer-owned side
+  chats stay removed.
+- The excerpt is recovered from the rendered DOM as Markdown source before it
+  becomes draft text: formulas read through `lib/selection-tex.ts` (the module
+  the clipboard uses, so there is one TeX reading and one fence rule), code as a
+  fenced block that keeps its language and outgrows any backtick run inside,
+  tables as one `a | b` line per row, task boxes as `[x]` / `[ ]`, list items
+  and headings with their markers when the selection spans them, and row chrome
+  dropped while file-reference chips keep their text. The turn's process and
+  tool disclosures, standalone run rows and the meta chips are chrome too: a
+  gesture that starts in one of them floats no pill, and one that runs into them
+  from the answer quotes the answer alone. A fenced block's body is reduced
+  verbatim, so blank lines and trailing spaces inside code survive.
+- A quote is plain draft text: a Markdown blockquote capped at 2000 characters,
+  separated from what the user already typed by one blank line, written at the
+  live caret with the draft's chips preserved, and focused. It never sends,
+  never creates a session, and writes nothing to the transcript, so per-session
+  draft slots and Smart Stop keep their owners.
+- `features/chat/composer/quote-sink.ts` is the only write path: the mounted
+  composer registers a sink, and the transcript never reaches into store state
+  to place text. The retired prefill channel (`appendComposerDraftText` reading
+  the lazily cached draft) is not restored; a live-editor read is what keeps a
+  quote from replacing text the user had just typed.
+- No host protocol, storage schema, IPC channel, permission, or Rust change.
+  `D-LOCAL-message-quotes` / `D-LOCAL-selection-overlay` and the E2E IDs retired
+  by ADR 0268 stay retired. See ADR 0334, `04-ux/08-component-spec.md` §7.4 /
+  §8.5, and E2E-CHAT-selection-quote-into-composer.
