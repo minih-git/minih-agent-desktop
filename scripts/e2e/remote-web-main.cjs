@@ -44,8 +44,10 @@ const HELPERS = `(() => {
     approvalButtons: () => buttons().filter((candidate) => (candidate.getAttribute("aria-label") || "").startsWith("Approval needed:")).map((candidate) => candidate.getAttribute("aria-label")),
     toolRows: () => Array.from(document.querySelectorAll("li")).filter((row) => textOf(row).startsWith("Tool")).length,
     turnLabel: () => { const labels = Array.from(document.querySelectorAll("span")).map(textOf); if (labels.includes("Running") || labels.includes("Turn running") || labels.includes("Stopping…")) return "Turn running"; return labels.find((label) => label.startsWith("Turn ")) || null; },
+    /** Every button's text: a failing click says what the page really offers. */
+    buttonTexts: () => Array.from(document.querySelectorAll("button")).map((b) => (b.textContent || "").trim()).filter(Boolean),
     hasSession: (title) => document.querySelector('[aria-label="' + title + '"]') !== null,
-    groupHeadings: () => Array.from(document.querySelectorAll("section[aria-label] > button[aria-expanded]")).map((button) => (button.textContent || "").trim().replace(/\\s+/g, " ")),
+    groupHeadings: () => Array.from(document.querySelectorAll("section[aria-label] button[aria-expanded]")).map((button) => (button.textContent || "").trim().replace(/\\s+/g, " ")),
     groupOf: (title) => {
       const row = document.querySelector('[aria-label="' + title + '"]');
       const section = row ? row.closest("section[aria-label]") : null;
@@ -83,14 +85,17 @@ const HELPERS = `(() => {
     }),
     // A row whose body carries no text at all is the blank box the desktop hides.
     emptyRows: () => Array.from(document.querySelectorAll("main ul > li")).filter((row) => {
-      const body = row.querySelector("p");
-      return !body || (body.textContent || "").trim().length === 0;
+      // A row with nothing a reader can see is the blank box the desktop hides.
+      // Screen-reader-only labels ("Tool") are not visible text.
+      const clone = row.cloneNode(true);
+      clone.querySelectorAll(".sr-only").forEach((element) => element.remove());
+      return (clone.textContent || "").trim().length === 0;
     }).length,
     toolRowNames: () => Array.from(document.querySelectorAll("main ul > li")).filter((row) => {
-      const label = row.querySelector("span");
+      const label = row.querySelector("span.sr-only") || row.querySelector("span");
       return label && (label.textContent || "").trim().toLowerCase() === "tool";
     }).map((row) => {
-      const mono = row.querySelector(".app-mono");
+      const mono = row.querySelector(".font-mono, .app-mono");
       return mono ? (mono.textContent || "").trim() : "";
     }),
     mainText: () => { const main = document.querySelector("main"); return main ? main.innerText : ""; },
@@ -164,7 +169,11 @@ async function waitFor(webContents, expression, label, timeoutMs = 30_000) {
 
 async function clickText(webContents, text, label = text) {
   const clicked = await evaluate(webContents, `__rw.click(${JSON.stringify(text)})`);
-  if (!clicked) throw new Error(`the page has no "${label}" control`);
+  if (!clicked) {
+    const buttons = await evaluate(webContents, "JSON.stringify(__rw.buttonTexts())");
+    const body = await evaluate(webContents, "__rw.body()");
+    throw new Error(`the page has no "${label}" control; buttons=${String(buttons).slice(0, 600)}; page=${String(body).slice(0, 600)}`);
+  }
 }
 
 /**
@@ -581,6 +590,8 @@ async function runLongSession(webContents, view, observed, capture) {
   // 6. The same screen in dark mode, for the visual check. The client follows
   //    `prefers-color-scheme`, so the surface is read off the shell the theme
   //    paints — `document.body` itself stays transparent in both themes.
+  nativeTheme.themeSource = "light";
+  await sleep(200);
   observed.longLightBackground = await evaluate(webContents, SHELL_BACKGROUND);
   observed.longLightPrefers = await evaluate(webContents, DARK_PREFERENCE);
   nativeTheme.themeSource = "dark";

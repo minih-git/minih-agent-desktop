@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from "react";
+import type { HTMLAttributes, ReactNode, Ref } from "react";
 
 export interface ScreenProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
@@ -29,6 +29,11 @@ export interface ScreenContentProps extends HTMLAttributes<HTMLElement> {
   hasDock?: boolean;
   onScroll?: (e: React.UIEvent<HTMLElement>) => void;
   children: ReactNode;
+  /**
+   * The scrolling element itself. A screen that follows its newest row needs to
+   * read and set `scrollTop` on exactly this node (rollout D).
+   */
+  ref?: Ref<HTMLElement>;
 }
 
 export function ScreenContent({

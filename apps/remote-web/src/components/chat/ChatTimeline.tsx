@@ -54,6 +54,7 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
           return (
             <li
               key={item.id || idx}
+              data-item-id={item.id}
               className="my-2 flex items-center gap-2.5 text-[12px] text-[var(--rm-text-muted)] before:h-px before:flex-1 before:bg-[var(--rm-separator)] after:h-px after:flex-1 after:bg-[var(--rm-separator)]"
             >
               <span>
@@ -68,6 +69,7 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
           return (
             <li
               key={item.id || idx}
+              data-item-id={item.id}
               className={`self-end max-w-[85%] rounded-[18px_18px_6px_18px] px-3.5 py-2.5 text-[15px] leading-[22px] bg-[var(--rm-bg-bubble)] text-[var(--rm-text-primary)] break-words whitespace-pre-wrap ${
                 isPending ? "opacity-60" : ""
               }`}
@@ -89,6 +91,7 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
           return (
             <li
               key={item.id || idx}
+              data-item-id={item.id}
               className={`rounded-xl border border-[var(--rm-separator)] bg-[var(--rm-bg-surface)] overflow-hidden ${
                 item.isError ? "border-red-500/40" : ""
               }`}
@@ -132,7 +135,7 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
         const thinkKey = `think-${item.id || idx}`;
         const isThinkOpen = !!openItems[thinkKey];
         return (
-          <li key={item.id || idx} className="flex flex-col self-start max-w-[95%]">
+          <li key={item.id || idx} data-item-id={item.id} className="flex flex-col self-start max-w-[95%]">
             {item.agentName ? (
               <div className="mb-1 text-[12px] text-[var(--rm-text-muted)]">
                 {t("timeline.agent", { agent: item.agentName })}

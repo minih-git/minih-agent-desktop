@@ -58,17 +58,17 @@ export function ConnectScreen({
 
   return (
     <Screen>
-      <ScreenContent hasDock>
-        <div className="pt-8 pb-6 px-1">
+      <ScreenContent hasDock className="pt-[max(20px,env(safe-area-inset-top))]">
+        <div className="pt-8 pb-6 px-2 flex flex-col items-center text-center">
           <img
-            className="w-16 h-16 rounded-2xl block mb-[22px] shadow-[0_1px_0_var(--rm-border-hairline)]"
+            className="w-12 h-12 rounded-[14px] block mb-4 shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
             src="/icon.png"
             alt="Minih"
           />
-          <h1 className="text-[28px] leading-[34px] font-bold text-[var(--rm-text-primary)] tracking-tight whitespace-pre-line">
+          <h1 className="text-[26px] leading-[32px] font-bold text-[var(--rm-text-primary)] tracking-tight whitespace-pre-line">
             {t("connect.title")}
           </h1>
-          <p className="mt-2.5 text-[15px] leading-[22px] text-[var(--rm-text-secondary)]">
+          <p className="mt-2 text-[14px] leading-[20px] text-[var(--rm-text-secondary)] max-w-[300px]">
             {t("connect.subtitle")}
           </p>
         </div>
