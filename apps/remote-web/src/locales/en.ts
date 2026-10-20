@@ -51,6 +51,13 @@ export const en = {
 
   "sessions.title": "Sessions",
   "sessions.empty": "This host has no sessions yet.",
+  "sessions.otherGroup": "Other",
+  "sessions.create": "New session",
+  "sessions.creating": "Creating…",
+  "sessions.chooseProject": "Choose a project",
+  "sessions.createReadOnly": "This device may only read this computer, so it cannot create sessions.",
+  "sessions.noProjects": "No project is available to create a session in.",
+  "sessions.projectsFailed": "The project list could not be loaded, so sessions are shown in one list.",
   "sessions.updated": "Updated {{date}}",
   "sessions.status.idle": "Idle",
   "sessions.status.running": "Running",
@@ -199,6 +206,8 @@ export const en = {
 
   "operation.pair": "Pairing",
   "operation.sessionList": "Loading sessions",
+  "operation.sessionCreate": "Creating the session",
+  "operation.projectList": "Loading projects",
   "operation.sessionAttach": "Loading the session",
   "operation.turnStart": "Sending the message",
   "operation.turnStop": "Stopping the turn",

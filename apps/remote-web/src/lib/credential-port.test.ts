@@ -45,6 +45,9 @@ describe("WebCookieCredentialPort", () => {
         deviceId: "dev_1",
         csrfToken: "csrf-1",
         pairedAt: "2026-09-18T10:00:00.000Z",
+        // The roles the Gateway granted travel with the entry, so a screen can
+        // tell a read-only device from one that may create sessions.
+        roles: ["viewer"],
       },
     });
     expect(registry.get("host1")?.deviceId).toBe("dev_1");
@@ -168,6 +171,42 @@ describe("WebCookieCredentialPort", () => {
       // All or nothing: a Host stored without its CSRF value would be listed
       // and unusable, which is worse than not being listed at all.
       expect(registry.list()).toEqual([]);
+    });
+
+    it("records the roles the grant carried on every Host of the account", async () => {
+      const { credentialPort, registry } = port();
+
+      // The status route's granted answer carries the roles, and an account
+      // device is one principal, so every Host of the account records them.
+      const outcome = await credentialPort.adoptAccountDevice({
+        ...adoption,
+        roles: ["viewer", "controller", "approver"],
+      });
+
+      expect(outcome).toEqual({ ok: true, hostIds: ["host1", "host2"] });
+      expect(registry.list().map((entry) => entry.roles)).toEqual([
+        ["viewer", "controller", "approver"],
+        ["viewer", "controller", "approver"],
+      ]);
+    });
+
+    it("leaves the roles off when the grant reported none", async () => {
+      const { credentialPort, registry } = port();
+
+      await credentialPort.adoptAccountDevice(adoption);
+
+      // "Not reported" must stay distinguishable from "reported, and
+      // `controller` is not one of them": an entry from an earlier build reads
+      // as unknown, which offers the entry point instead of hiding it.
+      expect(registry.list().every((entry) => entry.roles === undefined)).toBe(true);
+    });
+
+    it("drops blank roles instead of recording an unusable list", async () => {
+      const { credentialPort, registry } = port();
+
+      await credentialPort.adoptAccountDevice({ ...adoption, roles: ["", "viewer"] });
+
+      expect(registry.list().map((entry) => entry.roles)).toEqual([["viewer"], ["viewer"]]);
     });
   });
 });

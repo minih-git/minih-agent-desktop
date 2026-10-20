@@ -10,6 +10,7 @@
  */
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import os from "node:os";
 import { register } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -19,9 +20,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 register(pathToFileURL(join(here, "helpers/ts-import-hooks.mjs")));
 
-const { readAccountGateway, resolveAccountAccessKey, accountEnrollmentCurrent } = await import(
-  "../electron/main/remote/gateway-link/account-mode.ts"
-);
+const { readAccountGateway, resolveAccountAccessKey, accountEnrollmentCurrent, desktopEnrollmentLabel } =
+  await import("../electron/main/remote/gateway-link/account-mode.ts");
 const { createDesktopDevices, deviceRevocationQueuePath } = await import(
   "../electron/main/remote/gateway-link/account-devices.ts"
 );
@@ -517,4 +517,93 @@ test("the service reports a missing key instead of silently doing nothing", asyn
   } finally {
     await rm(dataDir, { recursive: true, force: true });
   }
+});
+
+// --- The computer's own name ---------------------------------------------------
+
+test("the enrollment carries a human-readable computer name", async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), "remote-account-label-"));
+  try {
+    const identity = await hostIdentity();
+    const store = createGatewayCredentialStore({
+      dataDir,
+      encryption: fakeEncryption(),
+      log: () => undefined,
+    });
+    await store.open();
+    const enrolled = [];
+    const port = {
+      async enroll(input) {
+        enrolled.push(input);
+        const keys = newKeyPair();
+        const csr = await createHostCsr({ privateKeyPem: keys.privateKeyPem, hostId: "host_desktop" });
+        const issued = await issueCertificateFromCsr({
+          ca: identity.ca,
+          csrPem: csr,
+          purpose: "client",
+          accountId: ACCOUNT_ID,
+        });
+        return {
+          hostId: "host_desktop",
+          gatewayUrl: input.hostlinkUrl ?? input.gatewayUrl,
+          gatewayCaPem: input.gatewayCaPem,
+          certificatePem: issued.certificatePem,
+          privateKeyPem: keys.privateKeyPem,
+          expiresAt: issued.expiresAt,
+          ...(input.tlsServerName ? { tlsServerName: input.tlsServerName } : {}),
+        };
+      },
+      start() {
+        return {
+          status: () => ({ state: "connected", since: new Date().toISOString() }),
+          stop: async () => undefined,
+        };
+      },
+    };
+    const service = createGatewayLinkService({
+      port,
+      store,
+      dataDir,
+      agentHost: () => ({}),
+      getHost: () =>
+        fakeHost({
+          remoteGateway: availableGateway(),
+          providers: [{ id: "router", vendorKey: "minih-router", hasSecret: true, enabled: true }],
+          secretFor: "router",
+          secretValue: PLACEHOLDER_KEY,
+        }),
+      serverVersion: "0.0.0-test",
+      log: () => undefined,
+    });
+    await service.initialize({ enabled: true });
+    assert.equal(enrolled.length, 1);
+    // The phone shows this name instead of `host_<uuid>`: the Gateway falls back
+    // to the id whenever an account-mode enrollment carries no label.
+    assert.equal(typeof enrolled[0].label, "string", "the enrollment must carry a computer name");
+    assert.ok(enrolled[0].label.length > 0);
+    assert.ok(enrolled[0].label.length <= 128);
+    assert.equal(enrolled[0].label.includes(PLACEHOLDER_KEY), false);
+    assert.equal(enrolled[0].label.endsWith(".local"), false);
+    await service.dispose();
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("the computer name is trimmed, bounded, and omitted when unusable", () => {
+  // A real hostname, without the mDNS suffix a phone cannot do anything with.
+  assert.equal(desktopEnrollmentLabel(() => "Studio-Mac.local"), "Studio-Mac");
+  assert.equal(desktopEnrollmentLabel(() => "  Studio-Mac.local  "), "Studio-Mac");
+  // An empty or whitespace-only name leaves the label out, so the Gateway keeps
+  // its own fallback rather than storing a blank.
+  assert.equal(desktopEnrollmentLabel(() => ""), undefined);
+  assert.equal(desktopEnrollmentLabel(() => "   "), undefined);
+  assert.equal(desktopEnrollmentLabel(() => undefined), undefined);
+  // A name the Gateway would reject is cut, not dropped: the desktop keeps a
+  // readable name within `HOST_LABEL_MAX_LENGTH`.
+  assert.equal(desktopEnrollmentLabel(() => "n".repeat(200)).length, 128);
+  assert.equal(desktopEnrollmentLabel(() => `${"n".repeat(200)}.local`).length, 128);
+  // The hostname the test machine actually reports is usable.
+  const own = desktopEnrollmentLabel(() => os.hostname());
+  assert.ok(own === undefined || (own.length > 0 && own.length <= 128));
 });

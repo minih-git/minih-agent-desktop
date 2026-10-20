@@ -429,6 +429,31 @@ Gateway 全部通过，且 `05-security/02-remote-control-security.md` 的安全
   交换、`410` 清理、被吊销设备不再收到推送）。仍缺：在 Router 旁的部署（D-1）与用运营者
   自己的 Apple、Firebase 材料做的真机验收。
 
+- R7 工作包 H 已交付（2026-10-19，D666 真机验收反馈）：补上 iPhone 构建暴露的三处缺口。
+  **手机的会话列表按项目分组**——项目名来自 `project/list`，顺序与电脑端侧栏一致（组内按最近活动、
+  组间按各组最近的会话），没有 `projectId` 或项目已不在目录里的会话放进末尾“其他”分组而不是
+  消失，没有会话的项目不显示，分组可折叠；`project/list` 读不到时退回平铺列表并说明原因，
+  页面始终可用。**持有 `controller` 角色的设备可以新建会话**——只有一个项目时直接进入，否则
+  先选项目；`session/create` 只带 `projectId` 与可选 `title`（即 `SessionCreateParams`，
+  协议 §7.7），新会话直接打开到输入框。角色在配对或接收授权时记入登记表，因为 RACP-HTTP 上
+  没有 `connection/initialize`；记录中明确没有 `controller` 时按钮被换成原因说明，而旧版本写入、
+  没有角色字段的条目仍然给入口，并把 Host 的 `FORBIDDEN` 原样显示。**桌面在账户注册时自报电脑名**
+  ——`os.hostname()` 去掉 `.local`、去空白、按 Gateway 自己的上限 128 截断，为空则不传，
+  让 Gateway 回退到 `host_<uuid>`（也就是手机原先看到的那串）。给已经用 id 注册过的电脑改名
+  需要一次带 label 的重新注册，或者在 `host.capabilities` 里带上 label；两者本次都不做，
+  因为 Gateway 只在新注册时用 `request.label` 覆盖，而第二种是协议帧改动。桌面 Host 仍然拒绝
+  `session/create`（`forbidden()`，“not available to remote devices on the desktop Host”），
+  所以手机的新建会话目前只在 `agent-host-cli` Host 上生效，在桌面上以 `FORBIDDEN` 呈现；
+  放宽这条边界是另一个决定。逻辑落在 `groupSessionsByProject` / `newSessionMode` /
+  `createSession`，覆盖分组、排序、平铺回退、请求体、只读情形与电脑名的测试是
+  `src/lib/session-groups.test.ts`、`src/lib/mutations.test.ts` 与
+  `apps/desktop/test/remote-account-desktop.test.mjs`。
+  本包的审查发现一处漏洞：角色只在 §11.4 配对时记录，账户设备从不记录，而手机全是账户设备
+  ——于是 `newSessionMode` 在它们上永远答“未知”，上文描述的只读情形根本不可能发生。授权的
+  状态应答本来就带 `roles`（`apps/remote-gateway/src/device-requests.ts`），客户端现在把它
+  经 `AccountAdoption` 传下去，账户内每台 Host 的记录都写上同一组角色，且只在列表非空时才写，
+  与配对完全一致（`src/lib/credential-port.ts`、`src/lib/native-credential-port.ts`）。
+
 ## 8. 修订记录
 
 D374（2026-09-10）用无头 Agent Host 模块替换 Electron facade 里程碑，加入

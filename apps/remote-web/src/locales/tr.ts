@@ -47,6 +47,13 @@ export const tr: Record<TranslationKey, string> = {
 
   "sessions.title": "Oturumlar",
   "sessions.empty": "Bu ana makinede henüz oturum yok.",
+  "sessions.otherGroup": "Diğer",
+  "sessions.create": "Yeni oturum",
+  "sessions.creating": "Oluşturuluyor…",
+  "sessions.chooseProject": "Bir proje seçin",
+  "sessions.createReadOnly": "Bu cihaz bu bilgisayarı yalnızca okuyabilir, bu yüzden oturum oluşturamaz.",
+  "sessions.noProjects": "Oturum oluşturmak için kullanılabilir proje yok.",
+  "sessions.projectsFailed": "Proje listesi yüklenemedi, bu yüzden oturumlar tek listede gösteriliyor.",
   "sessions.updated": "{{date}} güncellendi",
   "sessions.status.idle": "Boşta",
   "sessions.status.running": "Çalışıyor",
@@ -195,6 +202,8 @@ export const tr: Record<TranslationKey, string> = {
 
   "operation.pair": "Eşleştirme",
   "operation.sessionList": "Oturumları yükle",
+  "operation.sessionCreate": "Oturum oluşturuluyor",
+  "operation.projectList": "Projeler yükleniyor",
   "operation.sessionAttach": "Oturumu yükle",
   "operation.turnStart": "Mesajı gönder",
   "operation.turnStop": "Turu durdur",

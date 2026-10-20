@@ -47,6 +47,13 @@ export const zhCN: Record<TranslationKey, string> = {
 
   "sessions.title": "会话",
   "sessions.empty": "该主机还没有会话。",
+  "sessions.otherGroup": "其他",
+  "sessions.create": "新建会话",
+  "sessions.creating": "正在创建…",
+  "sessions.chooseProject": "选择项目",
+  "sessions.createReadOnly": "本设备对该电脑只有只读权限，因此不能新建会话。",
+  "sessions.noProjects": "没有可用于新建会话的项目。",
+  "sessions.projectsFailed": "项目列表加载失败，会话因此显示在同一个列表里。",
   "sessions.updated": "更新于 {{date}}",
   "sessions.status.idle": "空闲",
   "sessions.status.running": "运行中",
@@ -195,6 +202,8 @@ export const zhCN: Record<TranslationKey, string> = {
 
   "operation.pair": "配对",
   "operation.sessionList": "加载会话列表",
+  "operation.sessionCreate": "正在新建会话",
+  "operation.projectList": "正在加载项目",
   "operation.sessionAttach": "加载会话",
   "operation.turnStart": "发送消息",
   "operation.turnStop": "停止回合",

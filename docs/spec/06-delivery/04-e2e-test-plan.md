@@ -15648,18 +15648,32 @@ acceptance targets.
   the Host printed, and confirm the device cookie is `HttpOnly; Secure;
   SameSite=Strict` with a `Max-Age`, that `document.cookie` cannot read it,
   and that no device token or ticket is in `localStorage`. 2) List Hosts and
-  sessions, then open a session's timeline. 3) Start a turn that raises an
+  sessions, confirm the list is grouped by project with the session of a project
+  under its heading and a session that has no project under "Other", then create
+  a session from the phone (choose the project, and the new session opens on its
+  composer), go back, and confirm it is listed under the project it was created
+  in. 3) Open a session's timeline. 4) Start a turn that raises an
   approval, drop the proxied event stream, confirm the client reconnected
   with `Last-Event-ID`, and confirm the same approval is still pending exactly
-  once. 4) Approve and confirm the tool executes once. 5) Start, stop, and
+  once. 5) Approve and confirm the tool executes once. 6) Start, stop, and
   interrupt turns; submit the same mutation twice with one idempotency key and
-  confirm the stored result. 6) Repeat the flow on both viewports and capture
-  a screenshot per step. Then scan the same-origin server's request log: no
-  `ppt1.` or `pdt1.` prefix in any URL or query string, at least one
-  same-origin `/hosts/...` GET that carried no `Origin` header, and the
-  pairing POSTs that did.
+  confirm the stored result. 7) Repeat the flow on both viewports — each
+  viewport's session in a different project, so both headings and "Other" are
+  observable — and capture a screenshot per step. Then scan the same-origin
+  server's request log: no `ppt1.` or `pdt1.` prefix in any URL or query string,
+  at least one same-origin `/hosts/...` GET that carried no `Origin` header, and
+  the pairing POSTs that did. Registering the fixture's projects and creating
+  the fixture's own session are `owner`-only, so the runner does both over the
+  Host's loopback socket with its `--pair` code; the browser half only ever
+  performs what a gateway device may.
 - **Expected**: Pairing succeeds without the token ever appearing in a URL,
   query string, or event payload; the timeline resumes from the cursor
+- **Expected (grouping)**: The session list is grouped by project under the
+  names `project/list` returned, the session of each project sits under its own
+  heading, a session with no project sits under "Other", and a session created
+  from the phone appears under the project it was created in. When
+  `project/list` fails the list stays flat and usable and says why (covered at
+  the unit level, `src/lib/session-groups.test.ts`).
   without duplicates or gaps; the approval is submitted once (the disabled
   button and the idempotency key prevent a second execution); stop and
   interrupt behave as locally; the repeated mutation returns the stored
@@ -15677,7 +15691,14 @@ acceptance targets.
   bundle; `scripts/e2e/remote-web-proxy.mjs` is the test-only same-origin
   server, and it records header *presence* for the credential headers and
   never a value. Screenshots go to `E2E_ARTIFACT_DIR` (default: a temporary
-  directory) and are never committed.
+  directory) and are never committed. Since R7 package H the run also covers
+  the session list's project grouping and "new session" from the phone: two
+  projects are registered and one ticket-less session is created over the Host's
+  loopback socket (both are `owner`-only), each viewport's session goes into a
+  different project, and the browser asserts the headings, the "Other" group,
+  the project-by-project placement, and that a session created through the UI
+  lands under the project it was created in. The desktop Host refuses
+  `session/create`, so this path is exercised against the `agent-host-cli` Host.
 
 #### E2E-REMOTE-MOBILE-native-shell-credential-storage
 

@@ -47,6 +47,13 @@ export const de: Record<TranslationKey, string> = {
 
   "sessions.title": "Sitzungen",
   "sessions.empty": "Dieser Host hat noch keine Sitzungen.",
+  "sessions.otherGroup": "Sonstige",
+  "sessions.create": "Neue Sitzung",
+  "sessions.creating": "Wird erstellt…",
+  "sessions.chooseProject": "Projekt wählen",
+  "sessions.createReadOnly": "Dieses Gerät darf diesen Computer nur lesen und kann daher keine Sitzungen erstellen.",
+  "sessions.noProjects": "Es ist kein Projekt verfügbar, in dem eine Sitzung erstellt werden könnte.",
+  "sessions.projectsFailed": "Die Projektliste konnte nicht geladen werden, daher erscheinen die Sitzungen in einer Liste.",
   "sessions.updated": "Aktualisiert {{date}}",
   "sessions.status.idle": "Leerlauf",
   "sessions.status.running": "Läuft",
@@ -195,6 +202,8 @@ export const de: Record<TranslationKey, string> = {
 
   "operation.pair": "Koppeln",
   "operation.sessionList": "Sitzungen laden",
+  "operation.sessionCreate": "Sitzung wird erstellt",
+  "operation.projectList": "Projekte werden geladen",
   "operation.sessionAttach": "Sitzung laden",
   "operation.turnStart": "Nachricht senden",
   "operation.turnStop": "Turn stoppen",

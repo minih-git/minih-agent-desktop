@@ -47,6 +47,13 @@ export const zhTW: Record<TranslationKey, string> = {
 
   "sessions.title": "工作階段",
   "sessions.empty": "此主機尚無工作階段。",
+  "sessions.otherGroup": "其他",
+  "sessions.create": "新增工作階段",
+  "sessions.creating": "正在建立…",
+  "sessions.chooseProject": "選擇專案",
+  "sessions.createReadOnly": "本裝置對這台電腦只有唯讀權限，因此無法新增工作階段。",
+  "sessions.noProjects": "沒有可用於新增工作階段的專案。",
+  "sessions.projectsFailed": "專案清單載入失敗，工作階段因此顯示在同一個清單裡。",
   "sessions.updated": "更新於 {{date}}",
   "sessions.status.idle": "閒置",
   "sessions.status.running": "執行中",
@@ -195,6 +202,8 @@ export const zhTW: Record<TranslationKey, string> = {
 
   "operation.pair": "配對",
   "operation.sessionList": "載入工作階段清單",
+  "operation.sessionCreate": "正在新增工作階段",
+  "operation.projectList": "正在載入專案",
   "operation.sessionAttach": "載入工作階段",
   "operation.turnStart": "傳送訊息",
   "operation.turnStop": "停止回合",

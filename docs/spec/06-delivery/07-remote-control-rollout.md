@@ -969,6 +969,47 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   the deployment beside the Router (D-1) and real-device acceptance with the
   operator's own Apple and Firebase material.
 
+- R7 package H delivered (2026-10-19, D666 follow-up from on-device
+  acceptance): three gaps the iPhone build showed. **The phone's session list is
+  grouped by project** — `project/list` supplies the headings, the order is the
+  desktop sidebar's (most recent activity inside a project, projects by their
+  most recent session), a session with no project or with a project that is no
+  longer in the catalog stays under a trailing "Other" group instead of
+  disappearing, a project holding no session is not shown, and groups collapse.
+  When `project/list` cannot be read the list stays flat and says why, so the
+  screen never becomes unusable. **A device holding the `controller` role can
+  create a session** — the entry goes straight to the only project when there is
+  one and asks otherwise, `session/create` carries exactly `projectId` and an
+  optional `title` (`SessionCreateParams`, protocol §7.7), and the new session
+  opens on its composer. Roles are recorded in the registry when the device is
+  paired or adopted, because `connection/initialize` is not reachable over
+  RACP-HTTP; a recorded absence of `controller` replaces the button with the
+  reason, while an entry from an earlier build that has no roles still offers it
+  and shows the Host's `FORBIDDEN` as itself. **A desktop names itself when it
+  enrolls in account mode** — `os.hostname()` minus `.local`, trimmed, bounded
+  to the Gateway's own 128, omitted when empty so the Gateway keeps its
+  `host_<uuid>` fallback, which is what the phone was showing. Renaming a Host
+  that already enrolled under its id needs either a fresh enrollment with a
+  label or a label on `host.capabilities`; neither is done here, because the
+  Gateway only overwrites a label from `request.label` on a new enrollment and
+  the second option is a protocol frame change. The desktop Host still refuses
+  `session/create` (`forbidden()`, "not available to remote devices on the
+  desktop Host"), so the phone's new-session path reaches the `agent-host-cli`
+  Host today and is reported as `FORBIDDEN` on a desktop; weakening that
+  boundary is a separate decision. `groupSessionsByProject` /
+  `newSessionMode` / `createSession` carry the logic, and
+  `src/lib/session-groups.test.ts`, `src/lib/mutations.test.ts`, and
+  `apps/desktop/test/remote-account-desktop.test.mjs` cover grouping, ordering,
+  the flat fallback, the request body, the read-only case, and the computer name.
+  Review of this package found one hole: the roles were recorded only for a
+  §11.4 pairing, never for an account device, and every phone is an account
+  device — so `newSessionMode` always answered "unknown" there and the
+  read-only case described above could never happen. The grant's status answer
+  already carries `roles` (`apps/remote-gateway/src/device-requests.ts`), so the
+  client now passes them through `AccountAdoption` and each Host of the account
+  records the same set, written only when the list is non-empty, exactly like
+  pairing (`src/lib/credential-port.ts`, `src/lib/native-credential-port.ts`).
+
 ## 8. Amendment history
 
 D374 (2026-09-10) replaced the Electron facade milestone with the headless
