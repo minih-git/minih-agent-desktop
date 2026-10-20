@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdirSync, mkdtempSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, realpathSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { register } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -240,9 +240,17 @@ test("ignored directories are not searched", async () => {
   assert.equal(await resolve("openimage.js", { workspace }), null);
 });
 
-test("a directory with a matching name never matches", async () => {
-  const workspace = tempTree("ws", ["openimage.js/placeholder.txt"]);
+test("an exact relative folder matches, but a shorthand never completes to one", async () => {
+  const workspace = tempTree("ws", ["src/a.ts"]);
+  // The exact path names the folder itself.
+  const exact = await resolve("src", { workspace });
+  assert.equal(exact?.matchedBy, "exact-relative");
+  assert.equal(exact?.relativePath, "src");
+  assert.equal(exact?.entryKind, "directory");
+  // A leaf name is still only ever completed to a file: no evidence says the
+  // token meant this folder rather than a file somewhere else.
   assert.equal(await resolve("openimage.js", { workspace }), null);
+  assert.equal((await resolve("a.ts", { workspace }))?.entryKind, "file");
 });
 
 test("a content-addressed attachment blob resolves against the attachment store", async () => {
@@ -311,8 +319,13 @@ test("the composer sigil and quoting are tolerated", async () => {
   );
 });
 
-test("parseChatRef rejects home paths, escapes, and oversized tokens", () => {
-  assert.equal(parseChatRef("~/secrets.txt"), null);
+test("parseChatRef expands a home path and rejects foreign homes, escapes, and oversized tokens", () => {
+  // `~/x` names a real absolute path on this computer, so it is parsed as one;
+  // `~user/x` would need an account lookup and stays unsupported.
+  const home = parseChatRef("~/secrets.txt");
+  assert.equal(home?.absolute, true);
+  assert.deepEqual(home?.segments, [...homedir().split("/").filter(Boolean), "secrets.txt"]);
+  assert.equal(parseChatRef("~other/secrets.txt"), null);
   assert.equal(parseChatRef("../../etc/passwd"), null);
   assert.equal(parseChatRef(""), null);
   assert.equal(parseChatRef("   "), null);
@@ -419,4 +432,62 @@ test("an absolute path outside every root is still reported as restricted", asyn
   const options = roots({ scratch: null, containment: [{ kind: "scratch", path: store }] });
   assert.equal(await isChatRefOutsideRoots(image, options), true);
   assert.equal(await resolveChatFileRef(image, options), null);
+});
+
+/**
+ * A folder is a reference, not a file that happens to exist. An agent writes
+ * "in `apps/desktop/src`" as readily as it names a file, and a click on it has
+ * to reveal that folder instead of opening something else.
+ */
+test("an absolute folder reference resolves and reports its entry kind", async () => {
+  const workspace = tempTree("ws", ["src/dir/a.ts"]);
+  const absolute = join(workspace, "src", "dir");
+  const match = await resolve(absolute, { workspace });
+  assert.equal(match?.matchedBy, "exact-absolute");
+  assert.equal(match?.entryKind, "directory");
+  assert.equal(match?.relativePath, "src/dir");
+  // The written spelling is what the caller opens; only containment compares
+  // canonical paths.
+  assert.equal(match?.absolutePath, absolute);
+  assert.equal((await resolve(join(workspace, "src", "dir", "a.ts"), { workspace }))?.entryKind, "file");
+});
+
+test("an absolute reference to the project root itself resolves as the root folder", async () => {
+  const workspace = tempTree("ws", ["src/a.ts"]);
+  const match = await resolve(realpathSync(workspace), { workspace });
+  assert.equal(match?.entryKind, "directory");
+  assert.equal(match?.relativePath, ".");
+  assert.equal(await isChatRefOutsideRoots(realpathSync(workspace), roots({ workspace })), false);
+});
+
+test("a trailing separator and a relative folder both name a folder", async () => {
+  const workspace = tempTree("ws", ["src/a.ts"]);
+  for (const ref of ["src/", "src"]) {
+    const match = await resolve(ref, { workspace });
+    assert.equal(match?.entryKind, "directory", ref);
+    assert.equal(match?.relativePath, "src", ref);
+  }
+});
+
+test("a home path expands to this computer's home before any check", async () => {
+  const home = realpathSync(homedir());
+  const project = folder(home);
+  const dir = await resolveChatFileRef("~/", { project: [project] });
+  assert.equal(dir?.entryKind, "directory");
+  assert.equal(dir?.relativePath, ".");
+  assert.equal(await isChatRefOutsideRoots("~/", { project: [project] }), false);
+  // A home path outside the registered roots is reported as restricted, not
+  // rejected as an unparseable token.
+  const elsewhere = tempTree("ws", ["a.ts"]);
+  assert.equal(await isChatRefOutsideRoots("~/secrets.txt", roots({ workspace: elsewhere })), true);
+  assert.equal(await resolve("~other/x", { workspace: elsewhere }), null);
+});
+
+test("a symlinked folder escaping its root is refused, exactly like a file", async () => {
+  const workspace = tempTree("ws", ["safe.md"]);
+  const outside = tempTree("outside", ["page.md"]);
+  symlinkSync(outside, join(workspace, "linked"), process.platform === "win32" ? "junction" : "dir");
+  assert.equal(await resolve("linked", { workspace }), null);
+  assert.equal(await resolve(join(workspace, "linked"), { workspace }), null);
+  assert.equal(await isChatRefOutsideRoots(join(workspace, "linked"), roots({ workspace })), true);
 });

@@ -8,16 +8,30 @@
  * prose (`store.messages`) stay plain text. Explicit `@path` tokens from the
  * composer (D124 / D320) are accepted even when quoted or absolute.
  *
+ * A reference can also name a folder, or a path with no extension at all:
+ * `/api/v1/users`, `apps/desktop/src` and `~/notes` are all things an agent
+ * writes about. Those shapes are recognized only when something makes them
+ * path-like rather than prose — a leading `/`, `~/`, drive letter, `./` / `../`,
+ * a trailing separator, or an inline code span that contains a separator — and
+ * they carry `unverified`, so the transcript confirms the entry exists before it
+ * becomes a link (see `use-chat-ref-exists`). A bare relative `foo/bar` in prose
+ * stays text: nothing there separates a path from ordinary wording.
+ *
  * Path tokens recognize Unicode letters and digits, spaces, and Windows drive
- * paths. Absolute candidates stay whole for main-process resolution, which
- * checks the allowed roots before opening anything. Home paths stay plain.
+ * paths. Absolute and home-relative candidates stay whole for main-process
+ * resolution, which expands `~` and checks the allowed roots before opening
+ * anything.
  *
  * Relative paths are workspace-rooted unless they start with `./` or `../`,
  * in which case they resolve against an optional markdown-file directory and
  * still cannot escape the workspace (D322).
  */
 
-import { formatSessionLink, parseSessionLinkToken } from "@minih-agent/shared";
+import {
+  formatSessionLink,
+  parseSessionLinkToken,
+  type FsChatRefEntryKind,
+} from "@minih-agent/shared";
 import {
   CHAT_LINK_SCAN_LIMITS,
   createChatLinkScanBudget,
@@ -39,7 +53,7 @@ const KNOWN_EXTS = new Set([
 ]);
 
 const FILE_TOKEN_RE =
-  /^(?:(?:[A-Za-z]:[\\/]|~[\\/]|\\\\|\/\/|[\\/])|(?:\.{1,2}[\\/])?)[\p{L}\p{N}_@+. -]+(?:[\\/][\p{L}\p{N}_@+. -]+)*(?::\d+(?::\d+)?)?$/u;
+  /^(?:(?:[A-Za-z]:[\\/]|~[\\/]|\\\\|\/\/|[\\/])|(?:\.{1,2}[\\/])?)[\p{L}\p{N}_@+. -]+(?:[\\/][\p{L}\p{N}_@+. -]+)*[\\/]?(?::\d+(?::\d+)?)?$/u;
 
 const AT_QUOTED_RE = /^@"([^"\n]+)"$/;
 const AT_UNQUOTED_RE = /^@(\/?[^\s]+)$/;
@@ -74,6 +88,27 @@ export function parseFileRefPosition(
 function leafName(path: string): string {
   const normalized = path.replaceAll("\\", "/").replace(/\/+$/, "");
   return normalized.slice(normalized.lastIndexOf("/") + 1) || path;
+}
+
+/** A token that ends at a separator names the folder it names. */
+function hasTrailingSeparator(path: string): boolean {
+  return /[\\/]$/.test(path);
+}
+
+/**
+ * True for the shapes that anchor a path whatever its last segment is: an
+ * absolute path, a home path, a drive or UNC path, or a `.`/`..` relative one.
+ * A bare `foo/bar` is deliberately absent — in prose it is indistinguishable
+ * from a ratio or ordinary wording, so only a code span may claim it.
+ */
+function isAnchoredChatPath(path: string): boolean {
+  return (
+    isAbsoluteFilePath(path) ||
+    path.startsWith("~/") ||
+    path.startsWith("~\\") ||
+    isDotRelative(path.replaceAll("\\", "/")) ||
+    isDotRelative(path)
+  );
 }
 
 function isLikelyFilePath(path: string): boolean {
@@ -128,18 +163,57 @@ function normalizeMarkdownFilePath(url: string): string {
 }
 
 /**
+ * A recognized path, and whether the filesystem still has to agree that it is
+ * one. `unverified` marks the shapes that only exist as a path when it does — a
+ * folder, or a path with no extension.
+ */
+export type ChatFileRefShape = { path: string; unverified?: true };
+
+/**
+ * How the token reached us. Inline code is literal by construction and an `@`
+ * token is an explicit composer mention, so both may name a bare `foo/bar`;
+ * running prose may not, because it could just be using the words.
+ */
+export type ChatRefContext = "prose" | "inline-code" | "at";
+
+/** Recognize one token as a path, or return null. */
+export function parseChatFileRefShape(
+  text: string,
+  context: ChatRefContext = "prose",
+): ChatFileRefShape | null {
+  let raw = text.trim();
+  if (!raw || raw.length > 512) return null;
+  if (raw.startsWith("@")) {
+    raw = raw.slice(1);
+    if (context === "prose") context = "at";
+  }
+  if (!raw || !FILE_TOKEN_RE.test(raw)) return null;
+  const path = stripLineRef(raw);
+  if (!path) return null;
+  // A settled file reference keeps exactly the token it always had.
+  if (isLikelyFilePath(path) && !hasTrailingSeparator(path)) return { path };
+  // The unverified shapes read as paths only through their anchor, so the
+  // punctuation a token carries at the end of a clause is dropped first:
+  // `~/notes.` names `~/notes`, and `report.md.` still names no file at all.
+  const anchored = path.replace(/[.,!?;:，。！？；：]+$/u, "");
+  if (!anchored) return null;
+  if (hasTrailingSeparator(anchored) || isAnchoredChatPath(anchored)) {
+    return { path: anchored, unverified: true };
+  }
+  if (context !== "prose" && /[\\/]/.test(anchored)) {
+    return { path: anchored, unverified: true };
+  }
+  return null;
+}
+
+/**
  * Returns the cleaned path when `text` plausibly names a file (trailing
  * `:line[:col]` refs are stripped), otherwise null. A leading `@` — the
  * composer's file-reference sigil (D124) — is accepted and stripped so
  * `@src/a.ts` previews like `src/a.ts`.
  */
 export function parseFileRef(text: string): string | null {
-  let raw = text.trim();
-  if (!raw || raw.length > 512) return null;
-  if (raw.startsWith("@")) raw = raw.slice(1);
-  if (!raw || !FILE_TOKEN_RE.test(raw)) return null;
-  const path = stripLineRef(raw);
-  return isLikelyFilePath(path) ? path : null;
+  return parseChatFileRefShape(text, "prose")?.path ?? null;
 }
 
 /**
@@ -239,7 +313,24 @@ export function toWorkspaceRel(
 }
 
 export type ChatPreviewTarget =
-  | { kind: "file"; path: string; line?: number; column?: number }
+  | {
+      kind: "file";
+      path: string;
+      line?: number;
+      column?: number;
+      /**
+       * The token only names a path when the filesystem agrees — a folder, or a
+       * path without an extension. The transcript asks the host before showing
+       * it as a link, so `/api/v1/users` stays text in a reply that mentions a
+       * route, and `foo/bar` stays text in one that mentions a ratio.
+       */
+      unverified?: true;
+      /**
+       * What the host found, once a lookup answered. A folder is only ever
+       * shown in the system file manager; it is never opened or previewed.
+       */
+      entryKind?: FsChatRefEntryKind;
+    }
   | { kind: "url"; url: string }
   | { kind: "session"; sessionId: string };
 
@@ -249,11 +340,36 @@ function fileTargetHref(target: Extract<ChatPreviewTarget, { kind: "file" }>): s
   return position ? encodeURIComponent(target.path + position) : encodeWindowsPathForHref(target.path);
 }
 
+/** A home path is expanded by main, so it travels exactly as the author wrote it. */
+function isHomePath(path: string): boolean {
+  return path === "~" || path.startsWith("~/") || path.startsWith("~\\");
+}
+
+/** Turn a recognized path into a target, addressed the way the host accepts it. */
+function fileTargetOf(
+  shape: ChatFileRefShape,
+  position: { line?: number; column?: number } | null,
+  root: string | null | undefined,
+  baseDir: string | null | undefined,
+): ChatPreviewTarget | null {
+  const address = isAbsoluteFilePath(shape.path) || isHomePath(shape.path)
+    ? shape.path
+    : toWorkspaceRel(shape.path, root, baseDir);
+  if (!address) return null;
+  return {
+    kind: "file",
+    path: address,
+    ...(position ?? {}),
+    ...(shape.unverified ? { unverified: true as const } : {}),
+  };
+}
+
 /** Resolve one raw chat token into a previewable target, or null. */
 export function resolvePreviewTarget(
   text: string,
   root?: string | null,
   baseDir?: string | null,
+  context: ChatRefContext = "prose",
 ): ChatPreviewTarget | null {
   const trimmed = text.trim();
   const sessionId = parseSessionLinkToken(trimmed);
@@ -265,18 +381,11 @@ export function resolvePreviewTarget(
     : trimmed;
   const at = unwrapAtFileRef(pathText);
   if (at) {
-    const cleaned = stripLineRef(at);
-    if (isAbsoluteFilePath(cleaned)) {
-      return { kind: "file", path: cleaned, ...(position ?? {}) };
-    }
-    const rel = toWorkspaceRel(cleaned, root, baseDir);
-    return rel ? { kind: "file", path: rel, ...(position ?? {}) } : null;
+    const shape = parseChatFileRefShape(at, "at");
+    if (shape) return fileTargetOf(shape, position, root, baseDir);
   }
-  const file = parseFileRef(pathText);
-  if (!file) return null;
-  if (isAbsoluteFilePath(file)) return { kind: "file", path: file, ...(position ?? {}) };
-  const rel = toWorkspaceRel(file, root, baseDir);
-  return rel ? { kind: "file", path: rel, ...(position ?? {}) } : null;
+  const shape = parseChatFileRefShape(pathText, context);
+  return shape ? fileTargetOf(shape, position, root, baseDir) : null;
 }
 
 /** Route a plain click on a local Markdown link through the existing file opener. */
@@ -431,7 +540,27 @@ export type MdastNode = {
   value?: string;
   url?: string;
   children?: MdastNode[];
+  /** hast properties a remark plugin wants on the rendered element. */
+  data?: { hProperties?: Record<string, string> };
 };
+
+/**
+ * Markup that tells the renderer a link still needs a filesystem answer.
+ * `Markdown`'s `Anchor` reads it, and the sanitizer keeps it on `a`.
+ */
+export const UNVERIFIED_CHAT_REF_ATTRIBUTE = "data-chat-ref";
+
+/** A link node, marked when the renderer must confirm it first. */
+function linkNode(url: string, children: MdastNode[], unverified: boolean): MdastNode {
+  return {
+    type: "link",
+    url,
+    children,
+    ...(unverified
+      ? { data: { hProperties: { [UNVERIFIED_CHAT_REF_ATTRIBUTE]: "unverified" } } }
+      : {}),
+  };
+}
 
 const SKIP_MDAST = new Set([
   "code",
@@ -506,7 +635,7 @@ export function linkifyMdastTree(
           const value = child.value.trim();
           const spacedPathLike = /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("/") || value.startsWith("~/");
           target = spacedPathLike || !value.includes(" ")
-            ? resolvePreviewTarget(value, root, baseDir)
+            ? resolvePreviewTarget(value, root, baseDir, "inline-code")
             : null;
           if (target) budget.links += 1;
         }
@@ -517,11 +646,7 @@ export function linkifyMdastTree(
               : target.kind === "session"
                 ? formatSessionLink(target.sessionId)
                 : fileTargetHref(target);
-          next.push({
-            type: "link",
-            url,
-            children: [child],
-          });
+          next.push(linkNode(url, [child], target.kind === "file" && target.unverified === true));
           continue;
         }
       }
@@ -542,11 +667,13 @@ export function linkifyMdastTree(
               : segment.target.kind === "session"
                 ? formatSessionLink(segment.target.sessionId)
                 : fileTargetHref(segment.target);
-          next.push({
-            type: "link",
-            url,
-            children: [{ type: "text", value: segment.text }],
-          });
+          next.push(
+            linkNode(
+              url,
+              [{ type: "text", value: segment.text }],
+              segment.target.kind === "file" && segment.target.unverified === true,
+            ),
+          );
         }
         continue;
       }

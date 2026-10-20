@@ -5779,7 +5779,7 @@ eleven-tool-round desktop paths are verified by
 | 品质——市场目录查询重试恢复 | E2E-MARKET-CATALOG-RETRY |
 | C — 对话和直播（插件会话导入可见性） | E2E-257 |
 | F——持久化（插件会话导入可见性） | E2E-257 |
-| C — 对话和直播（聊天文件引用） | E2E-CHAT-shorthand-file-ref-opens-the-matching-file、E2E-CHAT-file-ref-opens-the-surface-that-owns-it |
+| C — 对话和直播（聊天文件引用） | E2E-CHAT-shorthand-file-ref-opens-the-matching-file、E2E-CHAT-file-ref-opens-the-surface-that-owns-it、E2E-CHAT-directory-ref-reveals-in-system-file-manager |
 | C / 质量 / 安全（对话 MP4 附件） | E2E-CHAT-mp4-attachment-opens-in-system-player |
 | G——插件（聊天文件引用） | E2E-CHAT-file-ref-opens-the-surface-that-owns-it、E2E-PLUGIN-file-view-collapse-persists |
 | 品质（聊天文件引用） | E2E-CHAT-shorthand-file-ref-opens-the-matching-file、E2E-CHAT-file-ref-opens-the-surface-that-owns-it、E2E-PLUGIN-file-view-collapse-persists |
@@ -7456,6 +7456,22 @@ eleven-tool-round desktop paths are verified by
 - **验收**：C（对话和直播）、G（插件）、质量
 - **里程碑**：M5
 - **状态**：单元已覆盖（`apps/desktop/test/transcript-file-chips.test.mjs`）；完整 UI 旅程仍为草稿（除非用户明确要求，否则不要在本地跑 E2E）
+
+#### E2E-CHAT-directory-ref-reveals-in-system-file-manager
+
+- **前提条件**：打开的项目主文件夹里有 `apps/desktop/src/App.tsx` 和一个名字中没有后缀的 `docs` 文件夹。当前会话允许使用本地工具；另有一个远程会话显示同样的回复。对话可渲染助手 markdown 与用户消息。
+- **步骤**：1）让助手回复里出现带末尾斜杠的 `apps/desktop/src/`，点击它。2）让助手在行内代码里写出不带末尾斜杠的同一文件夹并点击。3）让助手写出 `~/notes` 与 `~/notes/`，分别点击。4）右键该文件夹引用。5）在远程会话里重复第 1 步。6）让助手只写普通文字：`and/or`、`50/50`、`TCP/IP`、`km/h`、`输入/输出`、`A / B`，以及单独一个 `/`。
+- **预期**：
+  - 文件夹引用要等宿主确认该条目存在后才变成链接，点击后在系统文件管理器中选中该文件夹，从不直接打开它：`fs/open` 会启动 `.app` 包，内置文件视图也没有文件夹位置。
+  - 行内代码里没有后缀的路径，以及带锚点的 `~/notes`，同样要先确认才能点击；确认按「工作区 + 会话 + 路径」去重，同一条回复里重复出现也只查一次。
+  - 还不存在的路径保持普通文字；等条目被创建、该行重新挂载后变成链接，因为「不存在」不会被记住。
+  - 文件夹的右键菜单提供「在 Finder 中显示」，以及复制完整路径和复制相对路径，不出现 HTML 专用的打开方式。
+  - 远程会话点击后提示「远程文件夹无法在本机打开」，不发起任何本机文件管理器调用；没有本地工具权限的会话完全不发存在性查询。
+  - 上述普通文字都不会变成链接，也不产生任何查询；`https://example.com/a/b/` 这类带路径的网址仍然是一个完整 URL。
+- **链接规格**：`03-runtime/01-ipc-protocol.md` § fs、`04-ux/09-interaction-patterns.md` §8a.2、ADR 0262
+- **验收**：C（对话和直播）、D（工作区）、质量
+- **里程碑**：M5
+- **状态**：单元已覆盖（`apps/desktop/test/chat-directory-ref-reveal.test.mjs`、`apps/desktop/test/chat-links.test.mjs`、`apps/desktop/test/chat-ref-resolve.test.mjs`）；完整 UI 旅程仍为草稿（除非用户明确要求，否则不要在本地跑 E2E）
 
 #### E2E-CHAT-mp4-attachment-opens-in-system-player
 

@@ -1963,7 +1963,13 @@ Renderer IPC kept for the Plan-safe preview facade and URL fallback:
   `absolutePath`, `matchedBy` (`exact-relative` /
   `exact-absolute` / `path-suffix` / `basename`), and — for a `workspace` match
   — `projectRoot` (`{ path, name, primary }`), which names the project folder
-  that answered); `sessionId` selects the
+  that answered — and `entryKind` (`file` / `directory`), which says whether a
+  file or a folder answered; a host older than this field never returns it and
+  is read as `file`. An exact reference may name a folder, including the root
+  itself (`relativePath: "."`), and a shorthand never does: a tail match has no
+  evidence about which folder was meant. `~` is expanded to the home directory
+  before every containment decision, and `~user/...` stays unsupported);
+  `sessionId` selects the
   session whose scratch store is searched. Completes a file reference the agent
   printed in chat, because the renderer cannot see the session's own scratch
   store: an absolute reference only matches that exact file inside a known
@@ -1977,9 +1983,13 @@ Renderer IPC kept for the Plan-safe preview facade and URL fallback:
   so a shorthand resolves in a sibling folder as readily as in the primary one,
   and the match names the folder that answered. Inside one root an exact path
   beats a shorthand; among shorthands the longest matching tail wins, then the
-  shallowest path. Relative and indexed candidates must resolve to regular files
-  whose real paths remain inside their answering root; an exact path through an
-  escaping or dangling link cannot fall back to a same-name indexed file. The
+  shallowest path. An exact path may name a folder — the folder itself, or the
+  answering root as `.` — and reports that through `entryKind`; a shorthand
+  still completes only to a regular file, because a leaf name is no evidence
+  about which folder was meant. Relative and indexed candidates must resolve to
+  regular files whose real paths remain inside their answering root; an exact
+  path through an escaping or dangling link cannot fall back to a same-name
+  indexed file, whether it names a file or a folder. The
   files-panel ignore set applies. An absolute reference may also name a store
   the app reads without searching it: the whole scratch store
   (`<data_dir>/scratch/`) holds every session's files — a generated image is

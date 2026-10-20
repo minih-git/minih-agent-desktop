@@ -294,7 +294,7 @@ Each ADR includes:
 | 0251 | [Deleting a project removes its owned sessions](0251-project-delete-with-owned-sessions.md) | Accepted |
 | global-sidebar-pins | [Show pinned conversations in a global sidebar section](global-sidebar-pins.md) | Accepted (amends ADR 0016; issue #306) |
 | 0250 | [Structured, bounded, and redacted process logs](0250-structured-bounded-redacted-process-logs.md) | Accepted for implementation |
-| 0262 | [Chat file references complete in main and open in the file view](0262-chat-file-refs-open-in-the-file-view.md) | Accepted (amends ADR 0163 / ADR 0241) |
+| 0262 | [Chat file references complete in main and open in the file view](0262-chat-file-refs-open-in-the-file-view.md) | Accepted (amends ADR 0163 / ADR 0241; folder references revealed, not opened) |
 | 0263 | [Expose a project's folder roots and complete references across them](0263-project-folder-roots-for-plugin-views.md) | Accepted (amends ADR 0262; ADR 0249 §5) |
 | 0264 | [Host-mediated file actions follow the folder a view is browsing](0264-host-mediated-actions-follow-the-browsed-folder.md) | Accepted (amends ADR 0263; ADR 0249 §5) |
 | active-turn-steering | Bind Composer steering to the active durable turn | Accepted (active-turn-steering; issue #164) |

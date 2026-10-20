@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import type {
+  FsChatRefEntryKind,
   MessageAttachment,
   MessageUsage,
   UiMessage,
@@ -448,6 +449,7 @@ export function FileRefChip({
   path,
   kind,
   mimeType,
+  entryKind,
   onOpen,
   line,
   column,
@@ -457,6 +459,12 @@ export function FileRefChip({
   path: string;
   kind?: "image" | "file";
   mimeType?: string;
+  /**
+   * Whether the reference resolved to a folder. The chip's destination already
+   * follows it — a folder is revealed, never opened — but the menu has to know
+   * too, because a folder has no page to run and no preview to hand it to.
+   */
+  entryKind?: FsChatRefEntryKind;
   onOpen: (
     path: string,
     baseDir?: string,
@@ -479,7 +487,10 @@ export function FileRefChip({
         title={`${html ? t("chat.previewUrl") : t("chat.openFile")} — ${path}`}
         aria-label={`${name} — ${path}`}
         onClick={() => onOpen(path, undefined, mimeType, { line, column })}
-        onContextMenu={(event) => openFileMenu(event, { path })}
+        onContextMenu={(event) => openFileMenu(event, {
+          path,
+          ...(entryKind ? { entryKind } : {}),
+        })}
       >
         <span className="composer-chip-icon" aria-hidden>
           <Icon size={13} />
@@ -630,6 +641,7 @@ export function LinkifiedText({
             key={index}
             name={segment.label}
             path={segment.target.path}
+            entryKind={segment.target.entryKind}
             line={segment.target.line}
             column={segment.target.column}
             onOpen={openFileRef}

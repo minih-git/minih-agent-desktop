@@ -81,7 +81,14 @@ import {
   resolvePreviewTarget,
   safeDecodeUri,
   toWorkspaceRel,
+  UNVERIFIED_CHAT_REF_ATTRIBUTE,
 } from "../lib/chat-links";
+import {
+  useChatRefLinkState,
+  useConfirmedChatRefTarget,
+  unverifiedChatRefMarker,
+  withoutChatRefMarker,
+} from "../hooks/use-chat-ref-exists";
 import {
   isClosedFencedCodeBlock,
   MAX_MERMAID_SOURCE_LENGTH,
@@ -559,10 +566,14 @@ function InlineCode({
   const openFileRef = useOpenChatFileRef();
   const openFileMenu = useContext(MarkdownFileMenuContext);
   const text = typeof children === "string" ? children : null;
-  const target =
+  // A folder or an extensionless path is clickable only once the host says the
+  // entry exists; until then the run stays the plain `<code>` it was.
+  const { target, entryKind } = useConfirmedChatRefTarget(
     text && !className && !text.includes("\n")
-      ? resolvePreviewTarget(text, root, baseDir)
-      : null;
+      ? resolvePreviewTarget(text, root, baseDir, "inline-code")
+      : null,
+    localToolsAllowed,
+  );
   const fileTitle = usePreviewTitle("file");
   const urlTitle = usePreviewTitle("url");
   if (!target || !localToolsAllowed) {
@@ -594,7 +605,11 @@ function InlineCode({
       onContextMenu={
         target.kind === "file" && openFileMenu
           ? (event) =>
-              openFileMenu(event, { path: text ?? target.path, baseDir })
+              openFileMenu(event, {
+                path: text ?? target.path,
+                baseDir,
+                ...(entryKind ? { entryKind } : {}),
+              })
           : undefined
       }
     >
@@ -619,6 +634,19 @@ function Anchor({
   const openFileMenu = useContext(MarkdownFileMenuContext);
   const openUrl = useAppStore((s) => s.openUrlInWorkPanel);
   const showToast = useAppStore((s) => s.showToast);
+
+  // A marked reference stays its plain text until the host confirms the entry;
+  // the hook owns the decision, and every hook runs before the returns below.
+  const marker = unverifiedChatRefMarker(rest as Record<string, unknown>);
+  const { unconfirmed, entryKind: unverifiedEntryKind } = useChatRefLinkState(
+    marker !== null,
+    href,
+    root,
+    baseDir,
+  );
+  const linkProps = marker === null
+    ? rest
+    : withoutChatRefMarker(rest as Record<string, unknown>);
 
   const { contextMenu, openContextMenu, closeContextMenu } = useContextMenu();
 
@@ -661,7 +689,11 @@ function Anchor({
       const target = resolvePreviewTarget(decoded, root, baseDir);
       const ref = target?.kind === "file" ? target.path : toWorkspaceRel(decoded, root, baseDir);
       if (!ref || !openFileMenu) return;
-      openFileMenu(event, { path: ref, baseDir });
+      openFileMenu(event, {
+        path: ref,
+        baseDir,
+        ...(unverifiedEntryKind ? { entryKind: unverifiedEntryKind } : {}),
+      });
       return;
     }
     const target = href;
@@ -712,10 +744,13 @@ function Anchor({
     }
     handleMarkdownFileLinkClick(e, href, root, baseDir, openFileRef);
   };
+  if (unconfirmed) {
+    return <>{children}</>;
+  }
   return (
     <>
       <a
-        {...rest}
+        {...linkProps}
         href={localToolsAllowed ? href : undefined}
         onClick={onClick}
         onContextMenu={onContextMenu}
@@ -886,6 +921,8 @@ const sanitizeSchema = {
   ...defaultSchema,
   attributes: {
     ...defaultSchema.attributes,
+    // The linker's "still needs a filesystem answer" marker, read by `Anchor`.
+    a: [...(defaultSchema.attributes?.a || []), UNVERIFIED_CHAT_REF_ATTRIBUTE, "dataChatRef"],
     code: [["className", /^language-./, "math-inline", "math-display"]],
     img: [...(defaultSchema.attributes?.img || []), "src", "alt", "title", "className"],
     audio: ["src", "controls", "preload", "className"],

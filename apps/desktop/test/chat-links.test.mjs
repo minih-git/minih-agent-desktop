@@ -19,6 +19,7 @@ import {
   splitChatText,
   toWorkspaceRel,
 } from "../src/lib/chat-links.ts";
+import { chatFileCandidates } from "../src/lib/verified-chat-files.ts";
 
 const ROOT = "/Users/dev/project";
 
@@ -730,15 +731,20 @@ test("splitChatText resolves a unicode absolute path under the root", () => {
   );
 });
 
-test("splitChatText keeps outside absolute paths whole and home paths plain", () => {
+test("splitChatText keeps outside absolute paths whole and passes home paths through", () => {
   const outside = splitChatText(
     "see /elsewhere/a.ts and ~/Downloads/x.png here",
     ROOT,
   );
-  assert.deepEqual(outside.filter((segment) => segment.kind === "target").map((segment) => segment.text), ["/elsewhere/a.ts"]);
+  // A home path is no longer dropped: main expands `~` and applies the same
+  // containment check, so `~/x` reaches the resolver exactly as written.
+  assert.deepEqual(outside.filter((segment) => segment.kind === "target").map((segment) => segment.text), ["/elsewhere/a.ts", "~/Downloads/x.png"]);
   assert.equal(outside.map((segment) => segment.text).join(""), "see /elsewhere/a.ts and ~/Downloads/x.png here");
   for (const source of ["~/my project/page.md", "see ~/my project/page.md here", "~\\my project\\page.md"]) {
-    assert.deepEqual(splitChatText(source, ROOT), [{ kind: "text", text: source }]);
+    const segments = splitChatText(source, ROOT);
+    assert.deepEqual(segments.filter((segment) => segment.kind === "target").map((segment) => segment.text), [
+      source.startsWith("see ") ? "~/my project/page.md" : source,
+    ]);
   }
   const unc = "\\\\server\\my share\\page.md";
   const segments = splitChatText(`Open ${unc} now`, ROOT);
@@ -929,4 +935,176 @@ test("session links segment as their own target", () => {
   // A remote id and a bare scheme are not local conversations.
   assert.equal(resolvePreviewTarget("minih-agent-desktop://session/remote:abc", ROOT), null);
   assert.equal(resolvePreviewTarget("minih-agent-desktop://session/", ROOT), null);
+});
+
+/**
+ * Folders, extensionless paths, and home paths name things a reader expects to
+ * open, so they are recognized — but only the shapes that cannot be ordinary
+ * prose, and always with `unverified`, because nothing here can know whether
+ * `/api/v1/users` is a route or a directory. The transcript confirms existence
+ * first (see `use-chat-ref-exists`).
+ */
+test("a folder, an extensionless anchored path, and a home path are unverified candidates", () => {
+  const cases = [
+    ["apps/desktop/src/", "apps/desktop/src"],
+    ["/api/v1/users", "/api/v1/users"],
+    ["~/notes", "~/notes"],
+    ["/Users/dev/project/src", "/Users/dev/project/src"],
+    ["./scripts", "scripts"],
+  ];
+  for (const [token, expected] of cases) {
+    assert.deepEqual(
+      resolvePreviewTarget(token, ROOT),
+      { kind: "file", path: expected, unverified: true },
+      token,
+    );
+  }
+});
+
+test("a bare relative path in prose stays text, and inline code may claim it", () => {
+  // In prose nothing separates `foo/bar` from a ratio or ordinary wording.
+  assert.equal(resolvePreviewTarget("foo/bar", ROOT), null);
+  assert.deepEqual(splitChatText("compare a/b vs c/d", ROOT), [
+    { kind: "text", text: "compare a/b vs c/d" },
+  ]);
+  // A code span is marked as literal, so its path is a candidate.
+  assert.deepEqual(resolvePreviewTarget("foo/bar", ROOT, null, "inline-code"), {
+    kind: "file",
+    path: "foo/bar",
+    unverified: true,
+  });
+});
+
+test("known extensions and known bare names keep their settled behavior", () => {
+  for (const token of ["src/a.ts", "docs/Makefile", "~/Downloads/x.png", "@src/App.tsx"]) {
+    const target = resolvePreviewTarget(token, ROOT);
+    assert.ok(target && target.kind === "file", token);
+    assert.equal(target.unverified, undefined, token);
+  }
+});
+
+test("splitChatText marks a folder in prose while keeping the written token", () => {
+  const segments = splitChatText("See apps/desktop/src/ for the renderer", ROOT);
+  const target = segments.find((segment) => segment.kind === "target");
+  assert.equal(target?.text, "apps/desktop/src/");
+  assert.deepEqual(target?.target, {
+    kind: "file",
+    path: "apps/desktop/src",
+    unverified: true,
+  });
+  // A file path that merely contains a folder keeps its whole shape.
+  assert.deepEqual(
+    splitChatText("See apps/desktop/src/App.tsx", ROOT)
+      .filter((segment) => segment.kind === "target")
+      .map((segment) => segment.text),
+    ["apps/desktop/src/App.tsx"],
+  );
+});
+
+test("linkifyMdastTree marks an unverified link and leaves settled links alone", () => {
+  const tree = {
+    type: "root",
+    children: [{
+      type: "paragraph",
+      children: [
+        { type: "text", value: "in " },
+        { type: "inlineCode", value: "/api/v1/users" },
+        { type: "inlineCode", value: "src/a.ts" },
+      ],
+    }],
+  };
+  linkifyMdastTree(tree, ROOT);
+  const links = tree.children[0].children.filter((node) => node.type === "link");
+  assert.equal(links.length, 2);
+  assert.deepEqual(links[0].data, { hProperties: { "data-chat-ref": "unverified" } });
+  assert.equal(links[1].data, undefined);
+});
+
+/**
+ * Widening recognition must not turn ordinary wording into lookups. Each shape
+ * below is text a reply writes for reasons that have nothing to do with files,
+ * and none of them may cost an `fsResolveRef` round trip.
+ */
+test("prose ratios, acronyms, and single slashes produce no file candidate", () => {
+  for (const source of [
+    "and/or",
+    "50/50",
+    "TCP/IP",
+    "km/h",
+    "输入/输出",
+    "A / B",
+    "/",
+    "the answer is and/or, roughly 50/50, over TCP/IP at 100 km/h",
+    "输入/输出 与 A / B 都写在文档里，单独一个 / 不算路径",
+  ]) {
+    assert.deepEqual(
+      splitChatText(source, ROOT).filter((segment) => segment.kind === "target"),
+      [],
+      source,
+    );
+    const tree = { type: "root", children: [{ type: "paragraph", children: [{ type: "text", value: source }] }] };
+    linkifyMdastTree(tree, ROOT);
+    assert.equal(
+      tree.children[0].children.some((node) => node.type === "link"),
+      false,
+      source,
+    );
+  }
+});
+
+test("a routed URL stays one URL and a bare route stays an unverified candidate", () => {
+  const source = "Docs at https://example.com/api/v1/users/ and the handler is /api/v1/users";
+  const segments = splitChatText(source, ROOT);
+  const targets = segments.filter((segment) => segment.kind === "target");
+  // The URL is never split into a file reference, and it keeps its trailing
+  // slash; the route beside it is a candidate, so it is marked unverified.
+  assert.deepEqual(
+    targets.map((segment) => [segment.text, segment.target.kind]),
+    [
+      ["https://example.com/api/v1/users/", "url"],
+      ["/api/v1/users", "file"],
+    ],
+  );
+  const route = targets[1].target;
+  assert.equal(route.kind === "file" && route.unverified, true);
+  // A route is a path only if the filesystem says so; `/api/v1/users` alone
+  // cannot prove it.
+  assert.equal(resolvePreviewTarget("https://example.com/a/b/", ROOT)?.kind, "url");
+});
+
+test("a markdown table of routes keeps each route a candidate and nothing else", () => {
+  const source = [
+    "| route | handler |",
+    "| --- | --- |",
+    "| /api/v1/users | listUsers |",
+    "| /api/v1/files | listFiles |",
+  ].join("\n");
+  const segments = splitChatText(source, ROOT).filter((segment) => segment.kind === "target");
+  assert.deepEqual(
+    segments.map((segment) => segment.text),
+    ["/api/v1/users", "/api/v1/files"],
+  );
+  assert.ok(segments.every((segment) => segment.target.kind === "file" && segment.target.unverified === true));
+});
+
+test("a typical reply costs one lookup per distinct candidate, not one per mention", () => {
+  const reply = [
+    "Implemented the change in apps/desktop/src/lib/chat-links.ts and added tests.",
+    "",
+    "| route | handler |",
+    "| --- | --- |",
+    "| /api/v1/users | listUsers |",
+    "| /api/v1/files | listFiles |",
+    "",
+    "Run `pnpm test`; the handler is /api/v1/users again, see /api/v1/users docs,",
+    "and/or check TCP/IP notes at 50/50, 输入/输出, A / B, km/h.",
+    "Folder: apps/desktop/src/ and ~/notes.",
+  ].join("\n");
+  const segments = splitChatText(reply, ROOT).filter((segment) => segment.kind === "target");
+  // The settled `.ts` file was already a link and needs no confirmation; the
+  // folder, the home path, and the two routes are candidates. `/api/v1/users`
+  // appears three times and is asked about once.
+  const candidates = chatFileCandidates(segments);
+  assert.deepEqual(candidates, ["/api/v1/users", "/api/v1/files", "apps/desktop/src", "~/notes"]);
+  assert.equal(candidates.length, 4);
 });
