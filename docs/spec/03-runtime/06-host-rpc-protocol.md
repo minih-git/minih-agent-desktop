@@ -463,7 +463,16 @@ to later refresh and inference; the vendor picker does not collect them.
   window with `hasMoreBefore: false` rather than the tail, because answering
   with newer messages would replay them into the client's older-page slot.
   The focused user/assistant message retains its complete text; neighboring
-  text and tool fields stay capped. Bounded reads also return exclusive
+  text and tool fields stay capped. `contentLimit` also applies to the
+  compaction records: a display read drops the newest checkpoint from
+  `compaction` (it is the last entry of `compactions`, so sending both sent the
+  same 599 KB record twice on a real session), drops each record's
+  `retainedTail` and `details.systemMessageJson` (model-facing payload no
+  renderer reads), and caps each `summary` at the same budget. The checkpoint
+  identity a renderer uses — `id`, `throughMessageId`,
+  `details.generation`, `details.strategy`, `details.fallback` — survives.
+  An uncapped read keeps every field, because the sidecar rebuilds the model
+  context from them. Bounded reads also return exclusive
   physical `messageEnd` and `hasMoreAfter` to support contiguous forward pages
   (ADR session-content-search).
   When the selected message has `parentToolCallId`, optional `navigationParent`

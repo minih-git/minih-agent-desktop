@@ -221,7 +221,12 @@ item arrived through.
   payload at 64 Ki characters and marks what it clipped in the text itself, so
   one huge tool result cannot arrive whole; a page whose `beforeItemId` the
   transcript no longer holds is empty with `hasMore: false`, which ends the
-  walk instead of replaying the tail into the older-page slot.
+  walk instead of replaying the tail into the older-page slot. Compaction
+  records ride the same cap: a display read sends the newest checkpoint once
+  (not also as `compaction`) without its `retainedTail` or
+  `details.systemMessageJson`, which no client renders. On the same session
+  that took the metadata read from 1.2 MB to 29 KB and the snapshot from
+  1.90 MB to 0.90 MB.
 * **The composer stays in place.** The shell is `h-dvh` and `main` is the scroll
   container, so a long session opens on its newest row with the composer on
   screen; a `visualViewport` resize keeps it above the iOS keyboard. Following

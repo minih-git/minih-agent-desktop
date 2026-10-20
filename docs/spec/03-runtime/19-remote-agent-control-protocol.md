@@ -1849,6 +1849,7 @@ The initial target limits are:
 | JSON request or event frame | 1 MiB |
 | Prompt payload | 256 KiB |
 | Item text or tool payload, display reads (§7.6) | 64 Ki characters per field |
+| Compaction summary or checkpoint payload, display reads (§7.6) | Same field budget as item text |
 | Attachment | 50 MiB |
 | Host link attachment chunk | 256 KiB |
 | Durable session event replay | 10,000 events or 24 hours |
@@ -2058,3 +2059,17 @@ match what a phone actually reads:
   bounded transcript reads already applied; and
 - a page whose `beforeItemId` is gone is an empty page with `hasMore: false`,
   not the tail, so a client never replays newer items into its older-page slot.
+
+The same follow-up caps a display read's compaction records. Measured on a real
+572-message session, the newest checkpoint was 599 KB and was sent twice (once
+as `compaction`, once as the last entry of `compactions`), of which 488 KB was
+the runtime's `retainedTail` and 86 KB a model-facing `systemMessageJson`; the
+metadata read that every attach and every turn admission performs was 1.2 MB
+for that reason and is now 29 KB. The uncapped read is unchanged, because the
+sidecar rebuilds the model context from those fields.
+
+The 64 Ki-character field budget was re-measured against a 16 KiB alternative
+on the same session: the largest field in a 100-item page is 63,626 characters
+and only one item reaches the cap, while 16 KiB saves a further 0.34 MB per
+page at the cost of truncating several ordinary tool results. The budget stays
+at 64 Ki.
