@@ -795,3 +795,65 @@ bootstrap 的 `remoteGateway` 注册 Host；账户作用域的登录与主机列
 设备仍受 D665 的网关来源角色与限制约束。
 
 完整状态机、示例和验收条款见英文源规格。
+
+## 16. R7 提案（等待确认；**尚未实施**）
+
+本节是提案，不是契约：下面没有任何内容存在于现有代码中，上文的规范表格描述的是已部署的协议。
+它记在这里，是为了让移动端的模型选择与附件工作（`docs/spec/04-ux/13-remote-mobile-client.md` 第 15 节）
+有唯一的协议侧依据。获批后，每一条都会变成它所引用章节的修订。
+
+### 16.1 `model/list`——远程设备可选择的模型目录
+
+`session/create` 与 `session/configure` 已经接受 `providerId`、`modelId`、`thinkingLevel`，
+但没有任何操作让客户端得知合法取值，因此手机既无法提供选择，也无法说明一条会话跑在哪个模型上。
+
+提议：新增操作 `model/list`，角色 `viewer`，在 RACP-HTTP 路由表中为 `GET /v1/models`，
+无参数，响应为 `{ models: ModelSummary[] }`：
+
+```ts
+type ModelSummary = {
+  providerId: string;
+  providerLabel: string;
+  modelId: string;
+  label: string;
+  thinkingLevels: string[];
+  defaultThinkingLevel?: string;
+  supportsImages: boolean;
+  isDefault: boolean;
+};
+```
+
+要求，按约束力排序：
+
+- 响应**只能**是元数据。不得出现凭据、API key、base URL、代理、请求头取值或价格；
+  无法在不含这些的前提下描述某个模型的 Host 应省略该模型。
+- `RacpSession`（第 5.1 节）增加可选 `providerId`、`modelId`、`modelLabel`、`thinkingLevel`。
+  字段可选且只增不改：不发送它们的 Host 仍产出合法 session。
+- `session/configure` 形状不变；对运行中回合的会话改模型返回 `AGENT_BUSY`，与桌面端规则一致。
+- Gateway 不需要新代码（它按 `RACP_OPERATIONS` 与共享路由表校验），
+  但**必须**有一条测试证明 `GET /v1/models` 与其他声明路由一样被转发。
+
+### 16.2 附件——第 10 节流程，分两步
+
+第 10 节已定义流程，第 12 节已定义上限，但没有任何 Host 实现，
+因此 `attachment/create`、`attachment/complete` 与带附件的 `turn/start` 当前一律不可用。
+
+第一步（建议先做，也足以覆盖手机上会发的东西）：
+
+- 内联 `turn/start` 附件，受 `maxPromptBytes`（整个请求 256 KiB，远低于 `maxFrameBytes`）约束。
+  声明 `attachments` 的 Host 同时声明它实际执行的內联预算。
+- Host 校验字节而不是声明：仅接受 PNG、JPEG、WebP、GIF 与 UTF-8 文本；声明 MIME 与内容不符者拒绝。
+  第一步拒绝 SVG。
+- Host 把字节存入会话级附件存储，并交给 runtime 它已在使用的磁盘附件形式。
+  存储随会话删除，未被引用的字节按 Host 其他临时数据的节奏清理。
+- 用路径、`file://` URL 或任意 URL 取代上传仍然禁止（第 10 节），包括“文件已在我电脑上”这种引用形式。
+
+第二步（建议随后做）：同一条第 10 节流程，由 Gateway 提供一次性、有时限的上传目标，
+`attachment/complete` 校验大小与 SHA-256，字节以 256 KiB 分块跨 Host link，
+并以代理的请求体上限（参考部署为 `client_max_body_size 10m`）作为真实的每文件上限，
+而不是协议里 50 MiB 的最大值。
+
+### 16.3 不变的部分
+
+角色划分（`viewer` 读、`controller` 写与新建）、会话级与主机级事件模型、游标与重放、
+快照组成、网关来源主体的权限上限、以及审批有效期策略，本提案均不改变。

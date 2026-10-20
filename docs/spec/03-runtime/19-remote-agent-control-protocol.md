@@ -2027,3 +2027,82 @@ Host-link frames, and the rule that those frames reach only Hosts that
 advertise support. The self-hosted enrollment code and per-Host ticket of §11.4
 are unchanged, and account-mode devices keep the gateway-origin roles and
 restrictions of D665.
+
+## 16. R7 proposals (awaiting approval; **not implemented**)
+
+This section is a proposal, not a contract: nothing below exists in the code
+today, and the normative tables above describe the deployed protocol. It is
+recorded here so the model-choice and attachment work of the mobile client
+(`docs/spec/04-ux/13-remote-mobile-client.md` §15) has one protocol-side
+reference. Approval turns each item into an amendment of the sections it names.
+
+### 16.1 `model/list` — the catalog a remote device may choose from
+
+`session/create` and `session/configure` already accept `providerId`,
+`modelId`, and `thinkingLevel`, but no operation lets a client learn the valid
+values, so a phone can neither offer a choice nor name the model a session runs
+on.
+
+Proposed: an operation `model/list`, role `viewer`, `GET /v1/models` in the
+RACP-HTTP route table, parameters none, response
+`{ models: ModelSummary[] }`:
+
+```ts
+type ModelSummary = {
+  providerId: string;
+  providerLabel: string;
+  modelId: string;
+  label: string;
+  thinkingLevels: string[];
+  defaultThinkingLevel?: string;
+  supportsImages: boolean;
+  isDefault: boolean;
+};
+```
+
+Requirements, in the order they bind:
+
+- The response MUST be metadata only. No credential, API key, base URL, proxy,
+  header value, or price may appear; a Host that cannot describe a model without
+  one of those omits the model.
+- `RacpSession` (§5.1) gains optional `providerId`, `modelId`, `modelLabel`,
+  and `thinkingLevel`. Optional and additive: a Host that sends none still
+  produces a valid session.
+- `session/configure` keeps its existing shape; changing the model of a session
+  with a running turn is `AGENT_BUSY`, the same rule the desktop applies.
+- The Gateway needs no new code (it validates against `RACP_OPERATIONS` and the
+  shared route table) but MUST have a test proving `GET /v1/models` is
+  forwarded like every other declared route.
+
+### 16.2 Attachments — the §10 flow, in two steps
+
+§10 already defines the flow and §12 the limits; no Host implements either, so
+`attachment/create`, `attachment/complete`, and `turn/start` with attachments
+are unavailable today.
+
+Step 1 (proposed first, and sufficient for what a phone sends):
+
+- Inline `turn/start` attachments, bounded by `maxPromptBytes` (256 KiB for the
+  whole request, so far under `maxFrameBytes`). A Host advertising `attachments`
+  advertises the inline budget it enforces.
+- The Host validates the bytes, not the claim: PNG, JPEG, WebP, GIF, and UTF-8
+  text only; a declared MIME type that disagrees with the content is refused.
+  SVG is refused in step 1.
+- The Host stores the bytes in session-scoped attachment storage and passes the
+  runtime its existing on-disk attachment form. Storage is removed with the
+  session, and unreferenced bytes are swept like the Host's other scratch data.
+- A path, `file://` URL, or arbitrary URL in place of an upload stays forbidden
+  (§10), including as an "already on my computer" reference.
+
+Step 2 (proposed second): the same §10 flow with a Gateway-served, single-use,
+time-bounded upload target, `attachment/complete` verifying size and SHA-256,
+bytes crossing the Host link in 256 KiB chunks, and the serving proxy's body
+limit (`client_max_body_size`, 10 MiB on the reference deployment) as the real
+per-file ceiling rather than the protocol's 50 MiB maximum.
+
+### 16.3 What does not change
+
+Roles (`viewer` reads, `controller` writes and creates), the session-scoped and
+host-scoped event model, cursors and replay, snapshot composition, the
+permission ceiling for gateway-origin principals, and the approval lifetime
+policy are all untouched by this proposal.
