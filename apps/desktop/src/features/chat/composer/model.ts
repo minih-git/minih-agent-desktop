@@ -61,7 +61,12 @@ export type ComposerFileReference = {
   sessionId: string;
   path: string;
   name: string;
-  kind: "image" | "file" | "session";
+  /**
+   * `session` is a pasted link reference that main resolves into an excerpt of
+   * that conversation; `sessionTarget` is the `#` trigger's lightweight target,
+   * which only names the conversation and its id in the prompt (D673).
+   */
+  kind: "image" | "file" | "session" | "sessionTarget";
   mimeType?: string;
   token?: string;
   plugin?: ComposerPluginPart;

@@ -148,7 +148,10 @@ own window to mount UI slot components:
 
 - `composerControl` — additive controls in the composer toolbar
 - `composerTrigger` — the item list behind one of the composer's trigger
-  symbols (data, not a component: the host draws the list)
+  symbols `@`, `#` or `/` (data, not a component: the host draws the list).
+  The host's own group for that symbol always lists first — for `#` the session
+  targets (D673) — and the plugin's rows follow under its name, exactly as they
+  already do for `@` files (see `04-ux/08-component-spec.md` §11.8)
 - `userAction` / `assistantAction` — additive items on a message's action bar
 - `entryExtra` — an additive block below an assistant reply
 - `toolCard` — the card for calls of one of the plugin's own Agent tools

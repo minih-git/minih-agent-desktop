@@ -28,6 +28,7 @@ import { useAppStore } from "../../../../stores/app-store";
 import { createFileReference, isImageFilePath, nextChipToken } from "../editor";
 import type { ComposerFileReference } from "../model";
 import { placePluginMark } from "../plugins/plugin-marks";
+import { sessionTargetChipInsert } from "../session-targets";
 import {
   askPluginTrigger,
   detectPluginTrigger,
@@ -48,7 +49,7 @@ export type CompletionItem = AutocompleteItem | PluginCompletionItem;
 export type CompletionController = {
   open: boolean;
   /** The host's mode, or `plugin` when only a plugin's group is listed. */
-  mode: "slash" | "file" | "plugin" | null;
+  mode: "slash" | "file" | "session" | "plugin" | null;
   items: CompletionItem[];
   hasItems: boolean;
   highlight: number;
@@ -198,6 +199,27 @@ export function useComposerCompletions({
     // File accept strips the @ token (empty insert) and used to store a
     // token-less chip above the textarea. Inline chips only paint when a
     // sentinel is in the draft, so Enter looked like the reference vanished.
+    const acceptedSessionTarget = result.sessionTarget;
+    if (acceptedSessionTarget) {
+      // A session target is a chip too: the typed query is gone, and the token
+      // plus one space take its place so the caret can keep typing after it.
+      const token = nextChipToken();
+      const insert = sessionTargetChipInsert(token, result.value[result.cursor]);
+      applyEditorDraft(
+        result.value.slice(0, result.cursor) + insert + result.value.slice(result.cursor),
+        [
+          ...fileReferencesRef.current,
+          createFileReference(
+            acceptedSessionTarget.sessionId,
+            acceptedSessionTarget.title,
+            referenceSessionId,
+            { kind: "sessionTarget", token },
+          ),
+        ],
+        result.cursor + insert.length,
+      );
+      return;
+    }
     const acceptedFileReference = result.fileReference;
     if (!acceptedFileReference) {
       applyEditorDraft(result.value, fileReferencesRef.current, result.cursor);
