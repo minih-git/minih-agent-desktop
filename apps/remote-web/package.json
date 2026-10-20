@@ -27,7 +27,9 @@
     "lucide-react": "^1.31.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-i18next": "^15.6.0"
+    "react-i18next": "^15.6.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.3",

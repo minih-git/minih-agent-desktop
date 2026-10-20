@@ -28,6 +28,8 @@
   --rm-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   --rm-scrim: rgba(0, 0, 0, 0.28);
   --rm-navbg: rgba(243, 243, 243, 0.92);
+  --rm-bg-bubble: #ededed;
+  --rm-bubble-border: rgba(26, 28, 31, 0.08);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -53,6 +55,8 @@
     --rm-shadow: 0 0 0 0 transparent;
     --rm-scrim: rgba(0, 0, 0, 0.5);
     --rm-navbg: rgba(24, 24, 24, 0.92);
+    --rm-bg-bubble: #2c2c2c;
+    --rm-bubble-border: rgba(255, 255, 255, 0.14);
   }
 }
 
@@ -78,6 +82,8 @@
   --rm-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   --rm-scrim: rgba(0, 0, 0, 0.28);
   --rm-navbg: rgba(243, 243, 243, 0.92);
+  --rm-bg-bubble: #ededed;
+  --rm-bubble-border: rgba(26, 28, 31, 0.08);
 }
 
 [data-theme="dark"],
@@ -103,6 +109,8 @@
   --rm-shadow: 0 0 0 0 transparent;
   --rm-scrim: rgba(0, 0, 0, 0.5);
   --rm-navbg: rgba(24, 24, 24, 0.92);
+  --rm-bg-bubble: #2c2c2c;
+  --rm-bubble-border: rgba(255, 255, 255, 0.14);
 }
 
 html,
@@ -123,7 +131,7 @@ body {
 @layer utilities {
   /* Safe-area insets per §6.1 */
   .rm-nav {
-    padding-top: env(safe-area-inset-top);
+    padding-top: max(12px, env(safe-area-inset-top));
   }
   .rm-gutter {
     padding-left: max(16px, env(safe-area-inset-left));
@@ -238,4 +246,165 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Markdown prose and table rendering for mobile chat */
+.rm-prose {
+  color: var(--rm-text-primary);
+  font-size: 15px;
+  line-height: 23px;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.rm-prose > :first-child {
+  margin-top: 0 !important;
+}
+
+.rm-prose > :last-child {
+  margin-bottom: 0 !important;
+}
+
+.rm-prose p {
+  margin: 0.5em 0;
+}
+
+.rm-prose p + p {
+  margin-top: 0.65em;
+}
+
+.rm-prose h1,
+.rm-prose h2,
+.rm-prose h3,
+.rm-prose h4,
+.rm-prose h5,
+.rm-prose h6 {
+  margin: 0.9em 0 0.35em;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--rm-text-primary);
+}
+
+.rm-prose h1 { font-size: 18px; }
+.rm-prose h2 { font-size: 17px; }
+.rm-prose h3 { font-size: 16px; }
+.rm-prose h4 { font-size: 15px; }
+
+.rm-prose strong {
+  font-weight: 600;
+  color: var(--rm-text-primary);
+}
+
+.rm-prose em {
+  font-style: italic;
+}
+
+.rm-prose ul,
+.rm-prose ol {
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+}
+
+.rm-prose ul {
+  list-style-type: disc;
+}
+
+.rm-prose ol {
+  list-style-type: decimal;
+}
+
+.rm-prose li {
+  margin: 0.25em 0;
+}
+
+.rm-prose blockquote {
+  margin: 0.6em 0;
+  padding: 0.4em 0.8em;
+  border-left: 3px solid var(--rm-separator);
+  color: var(--rm-text-secondary);
+  background-color: var(--rm-bg-surface);
+  border-radius: 0 6px 6px 0;
+}
+
+.rm-prose code:not(pre code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  background-color: var(--rm-bg-inset);
+  color: var(--rm-link);
+}
+
+.rm-prose pre {
+  margin: 0.7em 0;
+  padding: 0.75em 1em;
+  border-radius: 10px;
+  background-color: var(--rm-bg-surface);
+  border: 1px solid var(--rm-separator);
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 19px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.rm-prose pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* GFM Tables on mobile: scrollable container, crisp borders, themed rows */
+.rm-table-wrap {
+  margin: 0.8em 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--rm-separator);
+  -webkit-overflow-scrolling: touch;
+}
+
+.rm-prose table {
+  margin: 0;
+  width: 100%;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.rm-prose th,
+.rm-prose td {
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--rm-separator);
+}
+
+.rm-prose th {
+  font-weight: 600;
+  background-color: var(--rm-bg-inset);
+  color: var(--rm-text-primary);
+}
+
+.rm-prose tr:last-child td {
+  border-bottom: none;
+}
+
+.rm-prose tbody tr:nth-child(even) td {
+  background-color: color-mix(in srgb, var(--rm-bg-surface) 60%, transparent);
+}
+
+.rm-prose a {
+  color: var(--rm-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.rm-prose hr {
+  margin: 1.2em 0;
+  border: none;
+  border-top: 1px solid var(--rm-separator);
 }
