@@ -1664,6 +1664,13 @@ export const api = {
       ...(sessionId ? { sessionId } : {}),
     }),
   fsReveal: (path: string, sessionId?: string) => invoke(IPC.invoke.fsReveal, { path, ...(sessionId ? { sessionId } : {}) }),
+  /**
+   * Show a chat reference in the system file manager, wherever it lives.
+   * Separate from `fsReveal`: this one accepts a path outside every allowed
+   * root, because locating something is not reading it, and it is local-only.
+   */
+  fsRevealChatRef: (path: string, sessionId?: string) =>
+    invoke(IPC.invoke.fsRevealChatRef, { path, ...(sessionId ? { sessionId } : {}) }),
   fsOpen: (path: string, mimeType?: string, sessionId?: string) =>
     invoke(IPC.invoke.fsOpen, { path, mimeType, ...(sessionId ? { sessionId } : {}) }),
   fsIndex: (sessionId?: string) => invoke<FsIndexResult>(IPC.invoke.fsIndex, { ...(sessionId ? { sessionId } : {}) }),

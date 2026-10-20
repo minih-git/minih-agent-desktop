@@ -8,6 +8,8 @@ import {
   ErrorCodes,
   IPC,
   type ComposerPasteFile,
+  type FsChatRefEntryKind,
+  type FsChatRefOutside,
   type FsChatRefProjectRoot,
   type FsChatRefResolveResult,
   type ProjectGroupRecord,
@@ -672,6 +674,31 @@ export function registerWorkspaceIpc({
   };
   const localFileStores = [join(dataDir, "scratch"), join(dataDir, "attachments")];
   const isLocalStoredFile = async (ref: string) => isAttachmentBlobRef(ref) || !!(await resolveRealOpenablePath(ref, null, localFileStores));
+  /**
+   * What a reference outside every allowed root names, if anything.
+   *
+   * `stat` is the whole probe: no content, no listing, no open. A folder and a
+   * file are the only answers; anything else, or nothing at all, reports
+   * nothing so the caller keeps its "restricted" message.
+   */
+  const statOutsideEntry = async (ref: string): Promise<{ outside?: FsChatRefOutside }> => {
+    const expanded = ref === "~" || /^~[\\/]/.test(ref)
+      ? join(homedir(), ref.slice(1).replace(/^[\\/]+/, ""))
+      : ref;
+    if (!isAbsolute(expanded)) return {};
+    let absolutePath: string;
+    try {
+      absolutePath = resolve(await realpath(expanded));
+      const info = await stat(absolutePath);
+      const entryKind: FsChatRefEntryKind | null = info.isDirectory()
+        ? "directory"
+        : info.isFile() ? "file" : null;
+      if (!entryKind) return {};
+      return { outside: { absolutePath, entryKind } };
+    } catch {
+      return {};
+    }
+  };
 
   handle(IPC.invoke.workspaceDiff, async (input: { sessionId?: string } = {}) => {
     const remote = await remoteFileWorkspace(input.sessionId);
@@ -1012,9 +1039,56 @@ export function registerWorkspaceIpc({
         attachments: join(dataDir, "attachments"),
       };
       if (await isChatRefOutsideRoots(ref, roots)) {
-        return { match: null, reason: "outside-allowed-roots" };
+        // The reference names nothing this app may read, open, or preview — but
+        // the user may still want to find it. `stat` is the whole probe: no
+        // content, no directory listing, no open.
+        return {
+          match: null,
+          reason: "outside-allowed-roots",
+          ...(await statOutsideEntry(ref)),
+        };
       }
       return { match: await resolveChatFileRef(ref, roots) };
+    },
+  );
+
+  /**
+   * Show a chat reference in the system file manager, wherever it lives.
+   *
+   * Deliberately separate from `fs/reveal`, whose containment checks stay
+   * exactly as they are: this one exists because a reference the app will not
+   * read can still be worth locating, and a person asking "where is that?" is
+   * not asking to open it. It resolves the path, confirms it exists, and calls
+   * `shell.showItemInFolder` — never `openPath`, never a read.
+   */
+  handle(
+    IPC.invoke.fsRevealChatRef,
+    async (input: { path?: string; sessionId?: string } = {}) => {
+      const remote = await remoteFileWorkspace(input.sessionId);
+      if (remote) {
+        throw Object.assign(new Error("remote references cannot be revealed on this computer"), {
+          errorCode: ErrorCodes.INVALID_ARGUMENT,
+        });
+      }
+      const requested = String(input.path ?? "").trim();
+      const expanded = requested === "~" || /^~[\\/]/.test(requested)
+        ? join(homedir(), requested.slice(1).replace(/^[\\/]+/, ""))
+        : requested;
+      if (!isAbsolute(expanded)) {
+        throw Object.assign(new Error("a chat reference must be an absolute path"), {
+          errorCode: ErrorCodes.INVALID_ARGUMENT,
+        });
+      }
+      let target: string;
+      try {
+        target = await realpath(resolve(expanded));
+      } catch {
+        throw Object.assign(new Error("no entry at that path"), {
+          errorCode: ErrorCodes.INVALID_ARGUMENT,
+        });
+      }
+      shell.showItemInFolder(stripWinLongPrefix(target));
+      return { ok: true as const };
     },
   );
 

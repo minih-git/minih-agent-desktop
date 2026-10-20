@@ -464,6 +464,8 @@ export const tr = {
     defaultBrowserOpenFailed: "Dosya varsayılan tarayıcıda açılamadı.",
     copyFullPath: "Tam yolu kopyala",
     copyRelativePath: "Göreli yolu kopyala",
+    copyAbsolutePath: "Yolu kopyala",
+    fileRefRevealFailed: "Dosya yöneticisi bu öğeyi gösteremedi.",
     revealInFileManager: "Finder’da göster",
     folderRevealFailed: "Dosya yöneticisi bu öğeyi gösteremedi.",
     remoteFolderRevealUnsupported: "Uzak klasörler bu bilgisayarda gösterilemez",

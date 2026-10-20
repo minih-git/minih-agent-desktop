@@ -452,6 +452,8 @@ export const fr = {
     "defaultBrowserOpenFailed": "Impossible d'ouvrir le fichier dans le navigateur par défaut.",
     "copyFullPath": "Copier le chemin complet",
     "copyRelativePath": "Copier le chemin relatif",
+    "copyAbsolutePath": "Copier le chemin",
+    "fileRefRevealFailed": "Le gestionnaire de fichiers n’a pas pu afficher cet élément.",
     "revealInFileManager": "Afficher dans le Finder",
     "folderRevealFailed": "Le gestionnaire de fichiers n’a pas pu afficher cet élément.",
     "remoteFolderRevealUnsupported": "Les dossiers distants ne peuvent pas être affichés sur cet ordinateur",

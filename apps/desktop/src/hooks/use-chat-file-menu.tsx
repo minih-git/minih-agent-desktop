@@ -40,6 +40,12 @@ export type ChatFileMenuTarget = {
    * destinations are about pages, and a folder is not one.
    */
   entryKind?: FsChatRefEntryKind;
+  /**
+   * True when the entry lives beyond every root the app reads. Such a reference
+   * has exactly two actions — show it, copy its absolute path — and no relative
+   * spelling to offer.
+   */
+  outsideProject?: boolean;
 };
 
 export function useChatFileMenuItems() {
@@ -48,8 +54,25 @@ export function useChatFileMenuItems() {
   const openFileRef = useOpenChatFileRef();
   const copyFileRef = useCopyChatFileRef();
   return useCallback(
-    ({ path, baseDir, entryKind }: ChatFileMenuTarget): ContextMenuItem[] => {
+    ({ path, baseDir, entryKind, outsideProject }: ChatFileMenuTarget): ContextMenuItem[] => {
       const isDirectory = entryKind === "directory";
+      if (outsideProject) {
+        return [
+          {
+            id: "reveal-outside-ref",
+            label: t("chat.revealInFileManager"),
+            icon: <IconFolderOpen size={14} />,
+            onSelect: () => openFileRef(path, baseDir),
+          },
+          {
+            id: "copy-absolute-path",
+            label: t("chat.copyAbsolutePath"),
+            icon: <IconCopy size={14} />,
+            separatorBefore: true,
+            onSelect: () => copyFileRef(path, baseDir, "absolute"),
+          },
+        ];
+      }
       return [
         // A folder is shown in place; there is no page to run and no viewer to
         // hand it to, so the HTML destinations do not apply.

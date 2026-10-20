@@ -36,9 +36,13 @@ import { useChatSessionCapability } from "./use-chat-session-capability";
  */
 
 export type ChatRefExistence =
-  /** Confirmed; `entryKind` says whether a file or a folder answered. */
-  | { state: "exists"; entryKind: FsChatRefEntryKind }
-  /** The host reports nothing at that path, or it is outside the allowed roots. */
+  /**
+   * Confirmed. `entryKind` says whether a file or a folder answered, and
+   * `outsideProject` means the entry lives beyond every root the app reads:
+   * the reference becomes a link, but only to show it and copy its path.
+   */
+  | { state: "exists"; entryKind: FsChatRefEntryKind; outsideProject?: true }
+  /** The host reports nothing at that path. */
   | { state: "absent" }
   /** Not confirmed yet; the caller shows the reference as plain text. */
   | { state: "pending" };
@@ -113,11 +117,21 @@ export async function confirmChatRefExists(
     try {
       const result = await api.fsResolveRef(path, sessionId);
       const match = result.match;
-      if (!match) return { state: "absent" } as ChatRefExistence;
-      return remember(key, {
-        state: "exists",
-        entryKind: match.entryKind ?? "file",
-      });
+      if (match) {
+        return remember(key, { state: "exists", entryKind: match.entryKind ?? "file" });
+      }
+      // A reference the app may not read can still be located. The host stats
+      // it and reports only whether it is a file or a folder, so the link shows
+      // its reveal-and-copy menu instead of a "restricted" message.
+      const outside = result.outside;
+      if (outside) {
+        return remember(key, {
+          state: "exists",
+          entryKind: outside.entryKind,
+          outsideProject: true,
+        });
+      }
+      return { state: "absent" } as ChatRefExistence;
     } catch {
       // A failed lookup is not evidence either way, so it is neither cached nor
       // reported as a miss; the reference keeps rendering as plain text.
@@ -210,7 +224,11 @@ export function useChatRefLinkState(
   href: string | undefined,
   root: string | null | undefined,
   baseDir: string,
-): { unconfirmed: boolean; entryKind: FsChatRefEntryKind | undefined } {
+): {
+  unconfirmed: boolean;
+  entryKind: FsChatRefEntryKind | undefined;
+  outsideProject: boolean;
+} {
   const localToolsAllowed = useChatSessionCapability("canUseLocalTools");
   const candidate = useMemo(
     () => (marked && href ? resolvePreviewTarget(safeDecodeUri(href), root, baseDir) : null),
@@ -220,6 +238,7 @@ export function useChatRefLinkState(
     localToolsAllowed && candidate?.kind === "file" ? candidate : null,
   );
   return {
+    outsideProject: existence.state === "exists" && existence.outsideProject === true,
     // Without local tools nothing can be confirmed, so a marked link stays the
     // text it names; the same is true until a lookup says the entry is there.
     unconfirmed: marked && (
@@ -240,7 +259,11 @@ export function useChatRefLinkState(
 export function useConfirmedChatRefTarget(
   target: ChatPreviewTarget | null,
   allowed: boolean,
-): { target: ChatPreviewTarget | null; entryKind: FsChatRefEntryKind | undefined } {
+): {
+  target: ChatPreviewTarget | null;
+  entryKind: FsChatRefEntryKind | undefined;
+  outsideProject: boolean;
+} {
   const existence = useChatRefExists(
     allowed && target?.kind === "file" ? target : null,
   );
@@ -249,5 +272,6 @@ export function useConfirmedChatRefTarget(
   return {
     target: unconfirmed ? null : target,
     entryKind: existence.state === "exists" ? existence.entryKind : undefined,
+    outsideProject: existence.state === "exists" && existence.outsideProject === true,
   };
 }

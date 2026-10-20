@@ -88,6 +88,12 @@ export type ResolvedChatFileRef = {
   scratch: boolean;
   /** Whether a file or a folder answered; a folder is only ever revealed. */
   entryKind: FsChatRefEntryKind;
+  /**
+   * The reference names an entry beyond every root the app reads. It is not
+   * opened or previewed — `revealRef` shows it and the caller copies the path —
+   * and it never has a project-relative spelling.
+   */
+  outsideProject?: true;
 };
 
 export type ChatFileOpenDestination =
@@ -194,11 +200,26 @@ function useResolveChatFileRef() {
       }
       const match = result.match;
       if (!match) {
-        const key = result.reason === "outside-allowed-roots"
-          ? "chat.fileRefRestricted"
-          : "chat.fileRefMissing";
-        showToast(t(key, { name: raw }), { variant: "error" });
-        return null;
+        const outside = result.outside;
+        if (!outside) {
+          const key = result.reason === "outside-allowed-roots"
+            ? "chat.fileRefRestricted"
+            : "chat.fileRefMissing";
+          showToast(t(key, { name: raw }), { variant: "error" });
+          return null;
+        }
+        // The entry exists outside the app's roots. It is not a match — nothing
+        // here may read it — but a click can still locate it.
+        return {
+          path: outside.absolutePath,
+          absolutePath: outside.absolutePath,
+          relativePath: null,
+          inProject: false,
+          primary: false,
+          scratch: false,
+          entryKind: outside.entryKind,
+          outsideProject: true,
+        };
       }
       const entryKind: FsChatRefEntryKind = match.entryKind ?? "file";
       if (match.root !== "workspace") {
@@ -326,6 +347,19 @@ export function useOpenChatFileRef() {
           }
           return;
         }
+        // An entry outside every allowed root is only ever shown: the app may
+        // not read, open, or preview it, and the reader's request is "where is
+        // that?", which `fsRevealChatRef` answers without touching content.
+        if (resolved.outsideProject) {
+          try {
+            await api.fsRevealChatRef(resolved.absolutePath, sessionId);
+          } catch {
+            showToast(t("chat.fileRefRevealFailed", { name: resolved.absolutePath }), {
+              variant: "error",
+            });
+          }
+          return;
+        }
         // A folder is not opened, it is shown: the system file manager selects
         // it where it lives. `fsOpen` would launch a `.app` bundle, and the
         // bundled file view has no folder location. A remote session has no
@@ -419,7 +453,9 @@ export function useCopyChatFileRef() {
         const resolved = await resolveRef(path, baseDir);
         if (!resolved) return;
         const value =
-          kind === "absolute" ? resolved.absolutePath : resolved.relativePath;
+          kind === "absolute" || resolved.outsideProject
+            ? resolved.absolutePath
+            : resolved.relativePath;
         if (!value) {
           showToast(t("chat.relativePathUnavailable"), { variant: "error" });
           return;

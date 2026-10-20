@@ -457,6 +457,8 @@ export const zhTW = {
     defaultBrowserOpenFailed: "無法在預設瀏覽器中開啟此檔案。",
     copyFullPath: "複製完整位址",
     copyRelativePath: "複製相對位址",
+    copyAbsolutePath: "複製路徑",
+    fileRefRevealFailed: "無法在檔案管理員中顯示該項目",
     revealInFileManager: "在 Finder 中顯示",
     folderRevealFailed: "無法在檔案管理員中顯示該項目",
     remoteFolderRevealUnsupported: "遠端資料夾無法在本機開啟",

@@ -464,6 +464,8 @@ export const ko = {
     defaultBrowserOpenFailed: "기본 브라우저에서 파일을 열 수 없습니다.",
     copyFullPath: "전체 경로 복사",
     copyRelativePath: "상대 경로 복사",
+    copyAbsolutePath: "경로 복사",
+    fileRefRevealFailed: "파일 관리자에서 이 항목을 표시할 수 없습니다.",
     revealInFileManager: "Finder에서 보기",
     folderRevealFailed: "파일 관리자에서 이 항목을 표시할 수 없습니다.",
     remoteFolderRevealUnsupported: "원격 폴더는 이 컴퓨터에서 열 수 없습니다",

@@ -474,6 +474,12 @@ export const IPC = {
     fsReadImageDataUrl: "minih-agent-desktop/fs/readImageDataUrl",
     statsGetTokenUsageHistory: "minih-agent-desktop/stats/getTokenUsageHistory",
     fsReveal: "minih-agent-desktop/fs/reveal",
+    /**
+     * Show one chat reference in the system file manager. Separate from
+     * `fsReveal` on purpose: this one accepts a path outside every allowed root,
+     * because showing where a folder or file lives is not reading it.
+     */
+    fsRevealChatRef: "minih-agent-desktop/fs/revealChatRef",
     fsOpen: "minih-agent-desktop/fs/open",
     fsIndex: "minih-agent-desktop/fs/index",
     fsResolveRef: "minih-agent-desktop/fs/resolveRef",

@@ -18,20 +18,31 @@ function needsVerification(segment: ChatTextSegment): segment is FileSegment {
  * needs to know whether a file or a folder was found, because the two do not
  * share an action.
  */
+export type ChatRefEntryConfirmation = {
+  entryKind: FsChatRefEntryKind;
+  outsideProject?: true;
+};
+
 export function verifiedChatSegments(
   segments: ChatTextSegment[],
   verified: ReadonlySet<string>,
-  entryKinds?: ReadonlyMap<string, FsChatRefEntryKind>,
+  entryKinds?: ReadonlyMap<string, ChatRefEntryConfirmation>,
 ): ChatTextSegment[] {
   return segments.map((segment) => {
     if (segment.kind !== "target" || segment.target.kind !== "file") return segment;
     if (needsVerification(segment) && !verified.has(segment.target.path)) {
       return { kind: "text", text: segment.text };
     }
-    const entryKind = entryKinds?.get(segment.target.path);
-    return entryKind
-      ? { ...segment, target: { ...segment.target, entryKind } as typeof segment.target }
-      : segment;
+    const kind = entryKinds?.get(segment.target.path);
+    if (!kind) return segment;
+    return {
+      ...segment,
+      target: {
+        ...segment.target,
+        entryKind: kind.entryKind,
+        ...(kind.outsideProject ? { outsideProject: true as const } : {}),
+      } as typeof segment.target,
+    };
   });
 }
 

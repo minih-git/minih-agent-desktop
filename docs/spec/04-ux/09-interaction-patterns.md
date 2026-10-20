@@ -1410,7 +1410,14 @@ Project drag/drop follows these patterns:
   be shown here) and never opens it: `fs/open` would launch an `.app` bundle,
   and the bundled file view has no folder location. `~/x` is expanded to the
   home directory in the main process and then checked against the same allowed
-  roots.
+  roots. A reference to a path outside every allowed root is still actionable
+  (ADR 0333): the host stats it, and when it exists the reference becomes a link
+  whose click and context menu offer **Reveal in Finder** and **Copy path** —
+  the absolute path — and nothing else. Nothing there is opened, read, or
+  previewed, there is no relative path to copy, and the "restricted" message
+  now appears only for a path that is both outside the roots and absent. A
+  remote session is told it cannot show something on this computer and never
+  reveals anything, and it is not told whether the path exists on the host.
   Local `file:` Markdown URLs are converted to file references before
   sanitization, not admitted as native links. `path:line[:column]` retains
   source navigation in plain text, inline code and Markdown links, including

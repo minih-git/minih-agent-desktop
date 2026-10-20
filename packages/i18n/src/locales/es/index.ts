@@ -452,6 +452,8 @@ export const es = {
     "defaultBrowserOpenFailed": "No se pudo abrir el archivo en el navegador predeterminado.",
     "copyFullPath": "Copiar ruta completa",
     "copyRelativePath": "Copiar ruta relativa",
+    "copyAbsolutePath": "Copiar ruta",
+    "fileRefRevealFailed": "El gestor de archivos no pudo mostrar este elemento.",
     "revealInFileManager": "Mostrar en Finder",
     "folderRevealFailed": "El gestor de archivos no pudo mostrar este elemento.",
     "remoteFolderRevealUnsupported": "Las carpetas remotas no se pueden mostrar en este equipo",

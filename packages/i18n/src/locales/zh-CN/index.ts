@@ -466,6 +466,8 @@ export const zhCN = {
     defaultBrowserOpenFailed: "无法在默认浏览器中打开此文件。",
     copyFullPath: "复制完整地址",
     copyRelativePath: "复制相对地址",
+    copyAbsolutePath: "复制路径",
+    fileRefRevealFailed: "无法在文件管理器中显示该项",
     revealInFileManager: "在 Finder 中显示",
     folderRevealFailed: "无法在文件管理器中显示该项",
     remoteFolderRevealUnsupported: "远程文件夹无法在本机打开",

@@ -9,7 +9,7 @@ const localOnly = new Set<string>([
   IPC.invoke.agentSteer, IPC.invoke.agentQueuePush, IPC.invoke.agentQueueList,
   IPC.invoke.agentStopSubagents, IPC.invoke.workspaceReviewRollback,
   IPC.invoke.extensionsCommandRun, IPC.invoke.browserNavigate,
-  IPC.invoke.fsResolveRef,
+  IPC.invoke.fsResolveRef, IPC.invoke.fsRevealChatRef,
 ]);
 
 /** Defense in depth for keyboard/service callers that bypass disabled controls. */

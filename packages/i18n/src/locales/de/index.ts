@@ -452,6 +452,8 @@ export const de = {
     "defaultBrowserOpenFailed": "Die Datei konnte nicht im Standardbrowser geöffnet werden.",
     "copyFullPath": "Vollständigen Pfad kopieren",
     "copyRelativePath": "Relativen Pfad kopieren",
+    "copyAbsolutePath": "Pfad kopieren",
+    "fileRefRevealFailed": "Der Dateimanager konnte dieses Element nicht anzeigen.",
     "revealInFileManager": "Im Finder zeigen",
     "folderRevealFailed": "Der Dateimanager konnte dieses Element nicht anzeigen.",
     "remoteFolderRevealUnsupported": "Remote-Ordner können auf diesem Computer nicht gezeigt werden",

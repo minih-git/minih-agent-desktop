@@ -238,9 +238,13 @@ function loadPreviewTarget(calls, match, options = {}) {
         listPlugins: async () => ({ plugins: [] }),
         fsResolveRef: async (ref) => {
           calls.resolved.push(ref);
-          return { match: typeof match === "function" ? match(ref) : match };
+          const answer = typeof match === "function" ? match(ref) : match;
+          // A caller may hand either a match or a whole result object, so a test
+          // can exercise the "outside the roots" answer too.
+          return answer && "match" in answer ? answer : { match: answer };
         },
         fsReveal: async (path, sessionId) => calls.reveals.push([path, sessionId]),
+        fsRevealChatRef: async (path, sessionId) => calls.outsideReveals.push([path, sessionId]),
         fsOpen: async (path) => calls.opens.push(path),
       },
     },
@@ -259,7 +263,7 @@ function loadPreviewTarget(calls, match, options = {}) {
 
 
 async function clickReference(match, options) {
-  const calls = { resolved: [], reveals: [], opens: [], toasts: [] };
+  const calls = { resolved: [], reveals: [], outsideReveals: [], opens: [], toasts: [] };
   const hook = loadPreviewTarget(calls, match, options);
   let open = null;
   function Harness() {
@@ -523,4 +527,75 @@ test("a session that may not use local tools sends no lookup at all", async () =
   assert.deepEqual(lookups, []);
   assert.equal(state?.unconfirmed, true);
   assert.equal(state?.entryKind, undefined);
+});
+
+/* ---------- an entry outside every allowed root ---------- */
+
+const outsideFolderMatch = {
+  match: null,
+  reason: "outside-allowed-roots",
+  outside: { absolutePath: "/elsewhere/notes", entryKind: "directory" },
+};
+
+test("clicking an outside reference offers a menu instead of reporting a restriction", async () => {
+  const calls = { resolved: [], reveals: [], opens: [], toasts: [], outsideReveals: [], menus: [] };
+  const hook = loadPreviewTarget(calls, outsideFolderMatch);
+  let open = null;
+  function Harness() {
+    open = hook.useOpenChatFileRef();
+    return null;
+  }
+  renderToStaticMarkup(createElement(Harness));
+  open("/elsewhere/notes", undefined, undefined, {});
+  await flush();
+  // The reveal goes through the dedicated channel; the guarded `fsReveal` is
+  // never asked about a path it would refuse.
+  assert.deepEqual(calls.outsideReveals, [["/elsewhere/notes", "session-1"]]);
+  assert.deepEqual(calls.reveals, []);
+  assert.deepEqual(calls.opens, []);
+  assert.deepEqual(calls.toasts, []);
+});
+
+test("an outside reference has exactly the actions a path it cannot read has", async () => {
+  const calls = { resolved: [], reveals: [], opens: [], toasts: [], outsideReveals: [], copied: [] };
+  const hook = loadPreviewTarget(calls, outsideFolderMatch);
+  let items = null;
+  const menu = loadModule("../src/hooks/use-chat-file-menu.tsx", {
+    react: reactExports,
+    "react/jsx-runtime": await import("react/jsx-runtime"),
+    "react-i18next": { useTranslation: () => ({ t: (key) => key }) },
+    "@minih-agent/shared": sharedPackage,
+    "../components/icons": {
+      IconBrowser: () => null,
+      IconCopy: () => null,
+      IconExternal: () => null,
+      IconFolderOpen: () => null,
+      IconGlobe: () => null,
+    },
+    "../lib/chat-links": loadModule("../src/lib/chat-links.ts", {
+      "@minih-agent/shared": sharedPackage,
+      "./chat-link-scanner.ts": loadModule("../src/lib/chat-link-scanner.ts", {
+        "./render-diagnostics.ts": { beginRenderDiagnostic: () => () => {} },
+      }),
+      "./render-diagnostics.ts": { beginRenderDiagnostic: () => () => {} },
+    }),
+    "../components/ContextMenu": {
+      useContextMenu: () => ({ contextMenu: null, openContextMenu: () => {}, closeContextMenu: () => {} }),
+    },
+    "./use-preview-target": hook,
+    "./use-chat-session-capability": { useChatNativeFilesAllowed: () => true },
+  });
+  function Harness() {
+    items = menu.useChatFileMenuItems();
+    return null;
+  }
+  renderToStaticMarkup(createElement(Harness));
+  const outsideItems = items({ path: "/elsewhere/notes", outsideProject: true });
+  assert.deepEqual(outsideItems.map((item) => item.id), ["reveal-outside-ref", "copy-absolute-path"]);
+  // A folder inside the project keeps both copy actions and adds the reveal.
+  const folderItems = items({ path: "apps/desktop/src", entryKind: "directory" });
+  assert.deepEqual(
+    folderItems.map((item) => item.id),
+    ["reveal-in-file-manager", "copy-full-path", "copy-relative-path"],
+  );
 });

@@ -1947,6 +1947,14 @@ Renderer IPC kept for the Plan-safe preview facade and URL fallback:
   containment as `fs/read`. Never returns non-image bytes. Renderer-only;
   not a plugin host API.
 - `fs/reveal({path})` → reveal in Finder. Same containment as `fs/read`.
+- `fs/revealChatRef({path, sessionId?})` → `{ ok: true }`. Shows one chat
+  reference in the system file manager (ADR 0333). Accepts an absolute path or
+  `~/…`, which main expands, and refuses anything else. It resolves through
+  `realpath`, requires the entry to exist, and calls `shell.showItemInFolder`
+  only: it never opens, reads, or lists anything, which is why it is a separate
+  channel instead of a widening of `fs/reveal`. Local sessions only — a remote
+  session is refused (`INVALID_ARGUMENT`), and `remote-ipc-safety` marks the
+  channel as uncallable from a remote client.
 - `fs/open({path, mimeType?})` → open an existing regular file with the OS
   default application. It uses the same realpath containment as `fs/read`,
   including rejection of symlink escapes. For a content-addressed
@@ -1999,7 +2007,11 @@ Renderer IPC kept for the Plan-safe preview facade and URL fallback:
   wider store; it still searches the session's own one. A reference that matches
   nothing returns `match: null`; an absolute path outside every allowed root
   also returns `reason: "outside-allowed-roots"`, without trying a same-name
-  file inside a root. Resolving never opens anything (ADR 0262).
+  file inside a root, and — when that path exists — `outside: { absolutePath,
+  entryKind }` from a `stat`, so the renderer can offer to show it (ADR 0333).
+  `match` stays `null` in that case: nothing the app reads is reachable through
+  it. A remote session never receives `outside`. Resolving never opens anything
+  (ADR 0262).
 - `fs/list` stays workspace-only; traversal outside is rejected
   (`INVALID_ARGUMENT`).
 
