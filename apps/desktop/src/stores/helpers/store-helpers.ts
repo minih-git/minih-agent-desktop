@@ -28,6 +28,9 @@ export function promptAttachmentsFromDraft(
     // A session link is prompt text: main resolves it into a conversation
     // reference, and it never travels as a structured attachment.
     if (reference.kind === "session") return [];
+    // A session target is prompt text too: it names a conversation and its id,
+    // and the session tools are how work reaches it.
+    if (reference.kind === "sessionTarget") return [];
     const kind =
       reference.kind ??
       (/\.(avif|bmp|gif|heic|jpe?g|png|tiff?|webp)$/i.test(reference.path)

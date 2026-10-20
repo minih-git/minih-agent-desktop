@@ -14922,6 +14922,43 @@ are withdrawn with ADR 0165.
   automated. The live multi-session provider/Electron journey remains runner
   validation under the no-local-E2E policy
 
+#### E2E-COMPOSER-hash-picks-session-target: `#` in the Composer names the session work goes to
+
+- **Preconditions**: Two Agent-mode sessions in the same project, one titled for
+  review, plus one session in another project and one archived session. A test
+  plugin registers a `#` composer trigger so the composition order is visible.
+- **Steps**: 1) In the first session, type `#rev` into the Composer. 2) Press
+  Enter (or click the row). 3) Submit the prompt. 4) Repeat with `#` alone, with
+  `## Title`, and with `#123` while no session title matches. 5) Type `#` in a
+  draft, then press Escape, then Enter. 6) Type `#` and compose with an IME, then
+  commit the composition. 7) Type `#`, choose the row, then say to hand the work
+  to that session.
+- **Expected**: `#rev` opens the host's group listing only the same-project,
+  unarchived, Agent-mode sessions whose titles match, newest first, with the
+  caller and the other project's session absent; a plugin owning `#` lists its
+  own group after the host's. Accepting the row replaces `#rev` with an inline
+  `#<title>` chip, adds exactly one space, leaves the caret after it, and that
+  Enter does not send. Submitting delivers `#<title> (Session ID: <id>)` as
+  prompt text: the transcript shows that sentence, main attaches no excerpt, and
+  no attachment row appears. With no title match the group does not open at all,
+  so `#`, `## Title` and `#123` submit as ordinary text. Escape closes the group
+  and Enter then sends the literal draft. IME composition leaves the open group
+  unchanged until the composition ends. The model can address the named session
+  through the session tools without any tool-schema change. Deleting the target
+  session afterwards leaves the earlier message readable as plain text.
+- **Specs linked**: `04-ux/08-component-spec.md` (§11.8, §20B.1a),
+  `07-plugins/02-plugin-manifest-schema.md`, `08-meta/decisions-log.md` (D673)
+- **Acceptance**: C (conversation & stream), E (tools & permissions)
+- **Milestone**: post-M6
+- **Status**: Trigger grammar, the candidate filter, the chip rule, dispatch
+  serialization, the no-link guarantee, the attachment-free path, the draft
+  round trip and the localized copy are automated by
+  `packages/shared/src/composer-trigger.test.ts`,
+  `packages/shared/src/session-target.test.ts`,
+  `apps/desktop/test/composer-session-targets.test.mjs` and
+  `apps/desktop/test/composer-session-target-flow.test.mjs`. The packaged
+  Electron journey, including the IME and plugin-group steps, is NOT RUN.
+
 #### E2E-SESSION-builtin-send-to-named-session: An Agent hands work to a session the user names
 
 - **Preconditions**: Two existing Agent-mode sessions from the normal New Task

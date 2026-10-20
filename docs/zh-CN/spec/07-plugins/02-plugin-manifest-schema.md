@@ -116,7 +116,9 @@ locale 声明。扩展页、插件启动器和市场（从 catalog 条目读取�
 `renderer` 指向包内的一个 ES 模块，宿主会在自己的窗口中求值它，用来挂载 UI 插槽组件：
 
 - `composerControl` —— 输入区工具栏上的附加控件
-- `composerTrigger` —— 输入区某个触发符背后的条目列表（是数据不是组件：列表由宿主绘制）
+- `composerTrigger` —— 输入区某个触发符（`@`、`#`、`/`）背后的条目列表（是数据不是组件：列表由宿主绘制）。
+  该符号下宿主自己的分组始终排在前面 —— `#` 是目标会话（D673）—— 插件条目随后按插件名分组，
+  与 `@` 文件既有的组合方式一致（见 `04-ux/08-component-spec.md` §11.8）
 - `userAction` / `assistantAction` —— 消息操作栏左右两侧的附加项
 - `entryExtra` —— 助手回复下方的附加区块
 - `toolCard` —— 插件自有 Agent 工具调用的卡片
