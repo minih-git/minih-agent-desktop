@@ -256,7 +256,10 @@ top inset. The `.app-safe-area` class is removed.
 - S4 uses a large title (28 px) inside the scroll content that collapses into
   the 17 px bar title when scrolled past.
 - An optional subtitle line (Footnote, muted) under the title carries context
-  such as the computer name on S6.
+  such as the computer name on S6. The subtitle is one line: text it carries
+  (a computer name is user data of unknown length) truncates, and a trailing
+  state marker such as S6's "Live" keeps its own width instead of shrinking, so
+  a long name never wraps the fixed-height bar or hides the marker.
 
 ### 6.3 Bottom dock and keyboard
 
@@ -438,6 +441,11 @@ show a neutral banner "Reconnecting…"; they do not reset the ring.
 ### 8.7 S6 Session
 
 **Navigation bar.** Back, title = session title, subtitle = computer label.
+The title is live: a rename on the computer (the user's own, a generated name,
+or a plugin's) arrives as a `session.changed` whose payload carries the session,
+so the bar shows the new task name while the reader stays on the screen. The
+list on S5 does not subscribe to that stream; it re-reads on foreground and on
+pull, per §8.6.
 
 **Connection banner.** Hidden while live. `idle` → neutral "Connecting…";
 `retrying` → running "Reconnecting…"; `exhausted` → error "Live updates
