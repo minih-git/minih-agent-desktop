@@ -7048,6 +7048,17 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   - At the hard boundary a durable checkpoint is created before the next model
     request. The complete visible transcript is unchanged, and the continued
     task stays below the model-aware safe budget.
+  - The automatic trigger compares the provider's own count when the transcript
+    still carries one: a conversation whose last provider request reported a
+    usage below the trigger does not compact, even when the chars/4-plus-CJK
+    estimate of the same request reads above it, and the remaining-context
+    figure the composer shows matches the compaction decision. The
+    full-request estimate still applies before the first usage of a session and
+    right after a checkpoint, where it is what carries the system prompt and
+    the tool schemas. After a checkpoint the budget is unanchored again: a
+    replayed tail's pre-checkpoint usage never anchors it, so the checkpoint's
+    own shrink and fit checks compare like with like. A delegate follows the
+    same rule.
   - After a checkpoint the next provider request contains no assistant or tool
     message from before the boundary — only the summary and, while an active
     turn continues, its latest user message, which may carry the
