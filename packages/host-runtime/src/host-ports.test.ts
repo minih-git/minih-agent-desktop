@@ -34,6 +34,44 @@ describe("host ports", () => {
     });
   });
 
+  /**
+   * The contract a paging client must follow, pinned over a conversation long
+   * enough to need several pages: a page is ordered oldest to newest (protocol
+   * §7.6) and `beforeItemId` is the page's *oldest* row, so each request walks
+   * back exactly `limit` rows. A client that assumes the opposite order reads
+   * the same page repeatedly and inserts it backwards.
+   */
+  it("walks a long transcript back one full page at a time", async () => {
+    const messages = Array.from({ length: 260 }, (_, index) => ({
+      id: `m${String(index).padStart(3, "0")}`,
+      role: "assistant" as const,
+      content: `row ${index}`,
+      createdAt: "2026-09-18T00:00:00.000Z",
+      status: "complete" as const,
+    }));
+    const port = createHostSessionPort(() => ({
+      async call<T>() {
+        return { session: { id: "s1", messages } } as T;
+      },
+    }));
+
+    const collected: string[] = [];
+    let beforeItemId: string | undefined;
+    const sizes: number[] = [];
+    for (;;) {
+      const page = await port.history("s1", { limit: 100, ...(beforeItemId ? { beforeItemId } : {}) });
+      sizes.push(page.items.length);
+      collected.unshift(...page.items.map((item) => item.id));
+      if (!page.hasMore) break;
+      beforeItemId = page.items[0]?.id;
+      expect(beforeItemId).toBeDefined();
+    }
+
+    expect(sizes).toEqual([100, 100, 60]);
+    expect(collected).toEqual(messages.map((message) => message.id));
+    expect(new Set(collected).size).toBe(collected.length);
+  });
+
   it("pages history backwards from an item id", async () => {
     const messages = ["m1", "m2", "m3", "m4"].map((id) => ({
       id,

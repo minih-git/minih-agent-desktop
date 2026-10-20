@@ -1,10 +1,14 @@
 /**
- * Session timeline (PR-4).
+ * Session timeline (PR-4; scroll behaviour in rollout D).
  *
- * The screen renders plain text rows, the pending approval and input cards, the
- * turn status with Stop/Interrupt for the active turn, and the composer. Every
+ * The screen renders the rows, the pending approval and input cards, the turn
+ * status with Stop/Interrupt for the active turn, and the composer. Every
  * in-flight control is disabled, and every failure names the operation it came
  * from plus the reason the Host or the transport gave.
+ *
+ * The transcript is the scrolling part: it opens at the newest row, follows new
+ * ones while the reader is at the bottom, offers a way back down (with a count)
+ * when they are not, and holds their place when older rows are loaded above.
  */
 import { useTranslation } from "react-i18next";
 
@@ -14,6 +18,7 @@ import { Composer } from "../components/Composer.js";
 import { InputCard } from "../components/InputCard.js";
 import { TimelineView } from "../components/Timeline.js";
 import { useSessionScreen } from "../hooks/useSessionScreen.js";
+import { useTimelineScroll } from "../hooks/useTimelineScroll.js";
 import type { HostCredential } from "../lib/credential-port.js";
 import type { StreamState } from "../lib/stream-supervisor.js";
 import { gatewayOrigin } from "../lib/runtime.js";
@@ -49,7 +54,7 @@ export function SessionScreen({
   onBack: () => void;
 }) {
   const { t } = useTranslation();
-  const { timeline, streamState, failure, pending, turnId, actions } = useSessionScreen({
+  const { timeline, streamState, failure, pending, loadingEarlier, turnId, actions } = useSessionScreen({
     hostId,
     sessionId,
     credential,
@@ -58,11 +63,23 @@ export function SessionScreen({
 
   const turnStatus = timeline.activeTurnStatus;
   const active = turnId !== undefined;
+  const attention = timeline.pendingApprovals.length + timeline.pendingInputs.length;
+  const tail = timeline.items.at(-1);
+  const scroll = useTimelineScroll({
+    itemCount: timeline.items.length,
+    firstItemId: timeline.items[0]?.id ?? "",
+    lastItemId: tail?.id ?? "",
+    // A streamed row grows in place rather than adding a row, so its length is
+    // part of what "new content" means.
+    tailKey: tail ? `${tail.id}:${tail.text.length}:${tail.thinking?.length ?? 0}` : "",
+    attention,
+  });
 
   return (
     <AppShell
       title={timeline.session?.title || title || sessionId}
       onBack={onBack}
+      mainRef={scroll.containerRef}
       actions={<Pill tone={streamTone(streamState)}>{t(STREAM_KEYS[streamState])}</Pill>}
       footer={
         <Composer
@@ -132,6 +149,14 @@ export function SessionScreen({
         </p>
       ) : null}
 
+      {timeline.hasMoreHistory ? (
+        <div className="flex justify-center">
+          <Button variant="ghost" className="text-xs" disabled={loadingEarlier} onClick={() => void actions.loadEarlier()}>
+            {loadingEarlier ? t("session.loadingEarlier") : t("session.loadEarlier")}
+          </Button>
+        </div>
+      ) : null}
+
       <TimelineView items={timeline.items} />
 
       {timeline.pendingApprovals.map((request) => (
@@ -153,6 +178,23 @@ export function SessionScreen({
           onSubmit={(answers, attempt) => void actions.respondInput({ inputId: request.id, answers, attempt })}
         />
       ))}
+
+      {scroll.following ? null : (
+        <div className="sticky bottom-2 z-10 flex justify-center">
+          <Button
+            variant="secondary"
+            className="shadow-md"
+            aria-label={t("session.backToLatest")}
+            onClick={() => scroll.scrollToBottom()}
+          >
+            {attention > 0 && scroll.unread === 0
+              ? t("session.needsDecision")
+              : scroll.unread > 0
+                ? t("session.backToLatestCount", { count: scroll.unread })
+                : t("session.backToLatest")}
+          </Button>
+        </div>
+      )}
     </AppShell>
   );
 }

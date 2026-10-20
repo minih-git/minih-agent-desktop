@@ -196,6 +196,39 @@ describe("event stream (fix 5: Last-Event-ID in the header)", () => {
     expect(requests[1]!.url).toBe(`${baseOptions.baseUrl}${baseOptions.eventsPath}`);
   });
 
+  it("opens the stream at the cursor it is given, so a snapshot and its stream agree", async () => {
+    const requests: Request[] = [];
+    const encoder = new TextEncoder();
+    let client: { close: () => void } | null = null;
+    const instance = createHttpSseClient({
+      ...baseOptions,
+      sleep: async () => {
+        // One open is enough: the subscription must start at the given cursor.
+        (client as { close: () => void } | null)?.close();
+      },
+      onEvent: () => undefined,
+      fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push(new Request(input, init));
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(streamController) {
+              streamController.enqueue(encoder.encode(chunk(durableEnvelope)));
+              streamController.close();
+            },
+          }),
+        );
+      }) as unknown as typeof fetch,
+    });
+    client = instance;
+
+    await instance.stream({ epoch: "ep_7f", sequence: 314 });
+
+    // The first request already carries the snapshot's cursor: this is what
+    // makes the stream a continuation of the snapshot rather than of "now".
+    expect(requests[0]!.headers.get("last-event-id")).toBe("ep_7f:314");
+    expect(requests[0]!.url).toBe(`${baseOptions.baseUrl}${baseOptions.eventsPath}`);
+  });
+
   it("keeps the token in the Authorization header and out of every URL", async () => {
     const requests: Request[] = [];
     const client = createHttpSseClient({

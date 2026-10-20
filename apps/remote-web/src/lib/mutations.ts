@@ -24,6 +24,7 @@ import type {
   RacpApprovalDecision,
   RacpApprovalResult,
   RacpCursor,
+  RacpItemSummary,
   RacpPermissionMode,
   RacpProjectSummary,
   RacpSession,
@@ -191,6 +192,36 @@ export function newSessionMode(
   const usable = projects.filter((project) => !project.archived);
   if (usable.length === 0) return "unavailable";
   return usable.length === 1 ? "direct" : "choose";
+}
+
+export type HistoryPage = {
+  items: RacpItemSummary[];
+  /** Whether the Host holds anything older than this page. */
+  hasMore: boolean;
+};
+
+/**
+ * One page of older transcript rows (viewer role, protocol §5.4: "older pages
+ * come from `session/history`").
+ *
+ * The snapshot carries only the newest page, so a long conversation opens with
+ * the last 50 rows — which, in a session full of tool calls, may not include a
+ * single thing the user typed. `beforeItemId` walks backwards from the oldest
+ * row the client holds; `limit` is clamped by the Host to 1–200.
+ */
+export function listHistory(
+  client: CommandClient,
+  sessionId: string,
+  options: { beforeItemId?: string; limit?: number } = {},
+): Promise<MutationResult<HistoryPage>> {
+  return run(async () => {
+    const result = await client.request<{ items?: RacpItemSummary[]; hasMore?: boolean }>("session/history", {
+      sessionId,
+      ...(options.beforeItemId ? { beforeItemId: options.beforeItemId } : {}),
+      ...(options.limit ? { limit: options.limit } : {}),
+    });
+    return { items: result.items ?? [], hasMore: result.hasMore === true };
+  });
 }
 
 export function attachSession(client: CommandClient, sessionId: string): Promise<MutationResult<SessionAttachResult>> {

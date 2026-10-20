@@ -13,13 +13,17 @@
  * the screenshot directory. The single stdout line `REMOTE_WEB_PROBE {json}` is
  * the only thing the runner parses, and no ticket or token is ever printed.
  */
-const { app, BrowserWindow, session } = require("electron");
+const { app, BrowserWindow, nativeTheme, session } = require("electron");
 const { mkdirSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 
 const ORIGIN = process.env.REMOTE_WEB_E2E_ORIGIN ?? "";
 const HOST_ID = process.env.REMOTE_WEB_E2E_HOST_ID ?? "";
 const ARTIFACT_DIR = process.env.REMOTE_WEB_E2E_ARTIFACT_DIR ?? "";
+
+/** The shell the theme paints: `document.body` stays transparent in both themes. */
+const SHELL_BACKGROUND = "getComputedStyle(document.querySelector('#root > div')).backgroundColor";
+const DARK_PREFERENCE = "matchMedia('(prefers-color-scheme: dark)').matches";
 const VIEWPORTS = JSON.parse(process.env.REMOTE_WEB_E2E_VIEWPORTS ?? "[]");
 const PROBE_LINE = "REMOTE_WEB_PROBE";
 
@@ -53,6 +57,81 @@ const HELPERS = `(() => {
       return true;
     },
     registry: () => { const raw = localStorage.getItem("minih.remote-web.hosts.v1"); return raw ? JSON.parse(raw) : null; },
+    scroller: () => document.querySelector("main"),
+    scrollState: () => {
+      const main = document.querySelector("main");
+      if (!main) return null;
+      return {
+        scrollTop: Math.round(main.scrollTop),
+        scrollHeight: main.scrollHeight,
+        clientHeight: main.clientHeight,
+        distanceFromBottom: Math.round(main.scrollHeight - main.clientHeight - main.scrollTop),
+      };
+    },
+    atBottom: () => {
+      const main = document.querySelector("main");
+      return main ? main.scrollHeight - main.clientHeight - main.scrollTop <= 8 : false;
+    },
+    scrollToTop: () => { const main = document.querySelector("main"); if (!main) return false; main.scrollTop = 0; main.dispatchEvent(new Event("scroll")); return true; },
+    rowCount: () => Array.from(document.querySelectorAll("main ul > li")).length,
+    rowLabels: () => Array.from(document.querySelectorAll("main ul > li")).map((row) => {
+      const label = row.querySelector("span");
+      return label ? (label.textContent || "").trim() : "";
+    }),
+    // A row whose body carries no text at all is the blank box the desktop hides.
+    emptyRows: () => Array.from(document.querySelectorAll("main ul > li")).filter((row) => {
+      const body = row.querySelector("p");
+      return !body || (body.textContent || "").trim().length === 0;
+    }).length,
+    toolRowNames: () => Array.from(document.querySelectorAll("main ul > li")).filter((row) => {
+      const label = row.querySelector("span");
+      return label && (label.textContent || "").trim().toLowerCase() === "tool";
+    }).map((row) => {
+      const mono = row.querySelector(".app-mono");
+      return mono ? (mono.textContent || "").trim() : "";
+    }),
+    mainText: () => { const main = document.querySelector("main"); return main ? main.innerText : ""; },
+    /**
+     * The order the conversation's own prompts appear in, in document order.
+     *
+     * The long fixture types "filler turn N", so the sequence is a direct
+     * reading of whether older pages were inserted in the right order.
+     */
+    fillerIndices: () => Array.from(document.querySelectorAll("main ul > li")).flatMap((row) => {
+      const text = row.textContent || "";
+      const marker = "filler turn ";
+      const at = text.indexOf(marker);
+      if (at < 0) return [];
+      const digits = text.slice(at + marker.length).match(/[0-9]+/);
+      return digits ? [Number(digits[0])] : [];
+    }),
+    /**
+     * The first row's text and its position on screen.
+     *
+     * Comparing the same row's position before and after older rows are inserted
+     * what "the reader keeps their place" means; it is measured in the browser
+     * rather than inferred from the scroll offset, so an engine that does its own
+     * anchoring cannot hide a missing compensation.
+     */
+    anchorRow: () => {
+      const row = document.querySelector("main ul > li");
+      return row ? { id: row.getAttribute("data-item-id"), top: Math.round(row.getBoundingClientRect().top) } : null;
+    },
+    /** The same row's position, found by its own id: text is not unique. */
+    rowTopFor: (id) => {
+      const row = document.querySelector('[data-item-id="' + id + '"]');
+      return row ? Math.round(row.getBoundingClientRect().top) : null;
+    },
+    backButton: () => {
+      const found = Array.from(document.querySelectorAll("button")).find((candidate) => (candidate.getAttribute("aria-label") || "") === "Back to latest ↓");
+      return found ? (found.textContent || "").trim() : null;
+    },
+    clickBackToLatest: () => {
+      const found = Array.from(document.querySelectorAll("button")).find((candidate) => (candidate.getAttribute("aria-label") || "") === "Back to latest ↓");
+      if (!found) return false;
+      found.click();
+      return true;
+    },
     storage: () => JSON.stringify(Object.fromEntries(Object.entries(localStorage))),
     visibleCookies: () => document.cookie,
   };
@@ -85,6 +164,16 @@ async function clickText(webContents, text, label = text) {
   if (!clicked) throw new Error(`the page has no "${label}" control`);
 }
 
+/**
+ * Click a control if the page offers it, and say whether it did.
+ *
+ * The long-session steps after this one are worth reporting even when the
+ * control is missing, so the runner can show every defect one run saw.
+ */
+async function clickTextIfPresent(webContents, text) {
+  return (await evaluate(webContents, `__rw.click(${JSON.stringify(text)})`)) === true;
+}
+
 async function clickAria(webContents, prefix, label = prefix) {
   const clicked = await evaluate(webContents, `__rw.clickAria(${JSON.stringify(prefix)})`);
   if (!clicked) throw new Error(`the page has no "${label}" control`);
@@ -94,6 +183,24 @@ async function proxyLog() {
   const response = await fetch(`${ORIGIN}/__control/log`);
   if (!response.ok) throw new Error(`the proxy log endpoint answered ${response.status}`);
   return (await response.json()).entries;
+}
+
+/**
+ * Wait for something, but keep going if it never happens.
+ *
+ * The long-session steps record what they saw and let the runner report every
+ * defect at once; a load that does not arrive is a defect to report, not a
+ * reason to lose the observations after it.
+ */
+async function waitForOrNull(webContents, expression, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await evaluate(webContents, expression);
+    if (typeof value === "string" && value.startsWith("__rw_error:")) return false;
+    if (value) return true;
+    if (Date.now() > deadline) return false;
+    await sleep(150);
+  }
 }
 
 /** Drop only this session's proxied stream: another viewport's window may still be open. */
@@ -114,6 +221,36 @@ async function waitForResumedStream(sessionId, timeoutMs = 30_000) {
     if (Date.now() > deadline) throw new Error(`no event stream was resumed with Last-Event-ID for ${sessionId}`);
     await sleep(200);
   }
+}
+
+/**
+ * Start one turn the way the client itself does: a same-origin POST with the
+ * device cookie plus the CSRF header the registry holds. Used to make new rows
+ * arrive while the reader is deliberately scrolled up.
+ */
+function startTurnScript(hostId, sessionId, text, requestId) {
+  const host = JSON.stringify(hostId);
+  const session = JSON.stringify(sessionId);
+  return `(async () => {
+    const entry = (__rw.registry() || []).find((candidate) => candidate.hostId === ${host});
+    if (!entry) return { error: "the browser registry has no entry for this host" };
+    const response = await fetch("/hosts/" + ${host} + "/v1/sessions/" + ${session} + "/turns", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-csrf-token": entry.csrfToken },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "e2e-" + ${JSON.stringify(requestId)},
+        method: "turn/start",
+        params: {
+          sessionId: ${session},
+          admission: "reject_if_busy",
+          input: { text: ${JSON.stringify(text)} },
+          context: { requestId: ${JSON.stringify(requestId)} },
+        },
+      }),
+    });
+    return { status: response.status, payload: await response.json() };
+  })()`;
 }
 
 /**
@@ -321,6 +458,8 @@ async function runViewport(view, openWindows) {
     observed.duplicate = await evaluate(webContents, duplicateTurnScript(HOST_ID, view.sessionId));
     await waitFor(webContents, "document.body.innerText.includes('answer once')", "the idempotent turn in the timeline");
     await capture("11-idempotent");
+
+    await runLongSession(webContents, view, observed, capture);
     return observed;
   } finally {
     // Electron 43 cannot navigate a freshly created window once an earlier one
@@ -328,6 +467,101 @@ async function runViewport(view, openWindows) {
     // whole run is over and closed here only after the probe line is printed.
     openWindows.push(window);
   }
+}
+
+/**
+ * A conversation longer than one snapshot page (rollout D).
+ *
+ * Opening it must land on the newest row (the whole document used to scroll, so
+ * a long session opened at its oldest row with the composer below the fold), the
+ * rows the desktop hides must stay hidden, older rows must be loadable without
+ * the reader losing their place, and a row that arrives while they are scrolled
+ * up must be announced rather than silently missed.
+ */
+async function runLongSession(webContents, view, observed, capture) {
+  await clickAria(webContents, "Back", "Back (to the session list)");
+  await waitFor(webContents, `__rw.hasSession(${JSON.stringify(view.longTitle)})`, "the long session row");
+  await evaluate(webContents, `document.querySelector('[aria-label=${JSON.stringify(view.longTitle)}]').click()`);
+  await waitFor(webContents, "document.body.innerText.includes('Live')", "the long session's event stream");
+
+  // 1. It opens at the newest row, and the newest prompt is on screen.
+  await waitFor(webContents, "__rw.atBottom()", "the timeline to open at the bottom");
+  await waitFor(
+    webContents,
+    `__rw.mainText().includes(${JSON.stringify(view.longLastPrompt)})`,
+    "the newest user message to be visible",
+  );
+  observed.longOpenedAtBottom = await evaluate(webContents, "__rw.scrollState()");
+  observed.longRowCount = await evaluate(webContents, "__rw.rowCount()");
+  observed.longOpenedOrder = JSON.parse(await evaluate(webContents, "JSON.stringify(__rw.fillerIndices())"));
+  await capture("12-long-session");
+
+  // 2. No blank rows, and tool rows carry their tool's name.
+  observed.longEmptyRows = await evaluate(webContents, "__rw.emptyRows()");
+  observed.longRowLabels = JSON.parse(await evaluate(webContents, "JSON.stringify(__rw.rowLabels())"));
+  observed.longToolNames = JSON.parse(await evaluate(webContents, "JSON.stringify(__rw.toolRowNames())"));
+
+  // 3. Older rows load in order, in one page-sized step, without moving the
+  //    reader. The anchor is a row that is on screen before and after, so the
+  //    comparison is what scroll anchoring would otherwise be doing for us.
+  //    Every step below records what it saw and lets the runner report all of
+  //    it, so a defect early on does not hide the ones after it.
+  const beforeRows = observed.longRowCount;
+  const beforeLoad = await evaluate(webContents, "__rw.scrollState()");
+  observed.longLoadEarlierOffered = await clickTextIfPresent(webContents, "Load earlier");
+  observed.longFirstLoadGrew = observed.longLoadEarlierOffered
+    ? await waitForOrNull(webContents, `__rw.rowCount() > ${beforeRows}`)
+    : false;
+  observed.longAfterLoad = await evaluate(webContents, "__rw.scrollState()");
+  observed.longBeforeLoad = beforeLoad;
+  observed.longRowsAfterLoad = await evaluate(webContents, "__rw.rowCount()");
+  observed.longAfterLoadOrder = JSON.parse(await evaluate(webContents, "JSON.stringify(__rw.fillerIndices())"));
+  await capture("13-long-after-load");
+  // While the reader is at the bottom there is nothing to jump back to.
+  observed.longBackButtonBefore = await evaluate(webContents, "__rw.backButton()");
+
+  // 4. Loading older rows while reading further up is not "new messages": the
+  //    control that takes the reader back must not claim a count.
+  await evaluate(webContents, "__rw.scrollToTop()");
+  await waitFor(webContents, "__rw.atBottom() === false", "the reader to leave the bottom");
+  observed.longScrollAfterTop = await evaluate(webContents, "__rw.scrollState()");
+  observed.longAnchorBefore = JSON.parse(await evaluate(webContents, "JSON.stringify(__rw.anchorRow())"));
+  observed.longBeforeSecond = JSON.parse(await evaluate(webContents, "JSON.stringify({ state: __rw.scrollState(), rows: __rw.rowCount(), first: __rw.anchorRow() })"));
+  const rowsBeforeSecondLoad = await evaluate(webContents, "__rw.rowCount()");
+  observed.longSecondLoadOffered = await clickTextIfPresent(webContents, "Load earlier");
+  observed.longSecondLoadGrew = observed.longSecondLoadOffered
+    ? await waitForOrNull(webContents, `__rw.rowCount() > ${rowsBeforeSecondLoad}`)
+    : false;
+  observed.longAnchorAfter = await evaluate(webContents, `__rw.rowTopFor(${JSON.stringify((observed.longAnchorBefore ?? {}).id ?? "")})`);
+  observed.longAfterSecond = JSON.parse(await evaluate(webContents, "JSON.stringify({ state: __rw.scrollState(), rows: __rw.rowCount(), first: __rw.anchorRow() })"));
+  observed.longBackButtonWhileReading = await evaluate(webContents, "__rw.backButton()");
+  observed.longOrderAfterSecondLoad = JSON.parse(await evaluate(webContents, "JSON.stringify(__rw.fillerIndices())"));
+
+  // 5. A row that arrives while the reader is scrolled up is announced.
+  const started = await evaluate(webContents, startTurnScript(HOST_ID, view.longSessionId, "answer once", "e2e-long-scroll"));
+  observed.longTurnStarted = started.status;
+  await waitFor(webContents, "__rw.backButton() !== null", "the back-to-latest control");
+  observed.longScrollWhileReading = await evaluate(webContents, "__rw.scrollState()");
+  await waitFor(webContents, "String(__rw.backButton()) !== 'Back to latest ↓'", "the count on the back-to-latest control");
+  observed.longBackButtonAfter = await evaluate(webContents, "__rw.backButton()");
+  await capture("14-long-scrolled-up");
+
+  await evaluate(webContents, "__rw.clickBackToLatest()");
+  await waitFor(webContents, "__rw.atBottom()", "the jump back to the newest row");
+  observed.longBackAtBottom = await evaluate(webContents, "__rw.scrollState()");
+
+  // 6. The same screen in dark mode, for the visual check. The client follows
+  //    `prefers-color-scheme`, so the surface is read off the shell the theme
+  //    paints — `document.body` itself stays transparent in both themes.
+  observed.longLightBackground = await evaluate(webContents, SHELL_BACKGROUND);
+  observed.longLightPrefers = await evaluate(webContents, DARK_PREFERENCE);
+  nativeTheme.themeSource = "dark";
+  await sleep(200);
+  await capture("15-long-dark");
+  observed.longDarkBackground = await evaluate(webContents, SHELL_BACKGROUND);
+  observed.longDarkPrefers = await evaluate(webContents, DARK_PREFERENCE);
+  nativeTheme.themeSource = "light";
+  await sleep(100);
 }
 
 app.commandLine.appendSwitch("lang", "en-US");

@@ -411,7 +411,10 @@ the Host builds them from the same in-flight state that feeds the local
 inflight checkpoint (D299). `pendingApprovals` and `pendingInputs` let a
 late-attaching client render open requests that were raised before it
 subscribed. A snapshot is valid only together with its `cursor` and
-`revision`.
+`revision`: a client that attaches and then opens the stream must start that
+stream at the snapshot's `cursor` (or attach after subscribing), because the
+snapshot does not say where the stream begins and the events between the two
+calls are otherwise lost.
 
 ### 5.5 Approval and input request
 

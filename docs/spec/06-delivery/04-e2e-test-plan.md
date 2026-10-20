@@ -15680,10 +15680,20 @@ acceptance targets.
   observable — and capture a screenshot per step. Then scan the same-origin
   server's request log: no `ppt1.` or `pdt1.` prefix in any URL or query string,
   at least one same-origin `/hosts/...` GET that carried no `Origin` header, and
-  the pairing POSTs that did. Registering the fixture's projects and creating
-  the fixture's own session are `owner`-only, so the runner does both over the
-  Host's loopback socket with its `--pair` code; the browser half only ever
-  performs what a gateway device may.
+  the pairing POSTs that did. 8) Open a conversation several pages long (80
+  turns, two of them tool calls approved through the same client API the phone
+  uses): confirm it opens on the newest row, that no row is blank, that every
+  tool row carries its tool's name, that internal model instructions are never a
+  row, that one press of "Load earlier" brings in a whole page in order and
+  without duplicates, that a second press brings in another page, that the row
+  the reader is looking at does not move (by that row's `data-item-id`, measured
+  around the press that happens while they are scrolled up), that loading older
+  rows raises no unread count, that a row arriving while the reader is scrolled
+  up is announced by the back-to-latest control, and that jumping back lands on
+  the newest row.
+  Registering the fixture's projects and creating the fixture's own session are
+  `owner`-only, so the runner does both over the Host's loopback socket with its
+  `--pair` code; the browser half only ever performs what a gateway device may.
 - **Expected**: Pairing succeeds without the token ever appearing in a URL,
   query string, or event payload; the timeline resumes from the cursor
 - **Expected (grouping)**: The session list is grouped by project under the
@@ -15692,6 +15702,14 @@ acceptance targets.
   from the phone appears under the project it was created in. When
   `project/list` fails the list stays flat and usable and says why (covered at
   the unit level, `src/lib/session-groups.test.ts`).
+- **Expected (long conversation)**: A session longer than one snapshot page
+  opens on its newest row — the whole document used to scroll, so a long
+  session opened at its oldest row with the composer below the fold — the rows
+  the desktop hides stay hidden, a tool row names its tool, a press of "Load
+  earlier" advances a whole page in the Host's own order, loading older rows
+  leaves the reader where they were and is not counted as new messages, and a
+  row that arrives while they are scrolled up is announced instead of silently
+  missed.
   without duplicates or gaps; the approval is submitted once (the disabled
   button and the idempotency key prevent a second execution); stop and
   interrupt behave as locally; the repeated mutation returns the stored
@@ -15715,8 +15733,19 @@ acceptance targets.
   loopback socket (both are `owner`-only), each viewport's session goes into a
   different project, and the browser asserts the headings, the "Other" group,
   the project-by-project placement, and that a session created through the UI
-  lands under the project it was created in. The desktop Host refuses
-  `session/create`, so this path is exercised against the `agent-host-cli` Host.
+  lands under the project it was created in. Since R7 follow-up package D2 (the
+  session timeline) the same run also drives an 80-turn conversation with tool
+  calls, so the timeline's projection, its older-row loading, and its scroll
+  behaviour are asserted in the browser rather than only in unit tests: that the
+  conversation opens on its newest row, that one press loads a whole page in
+  order without duplicates (a page inserted backwards, or a cursor pointing at
+  the page's newest row, shows up as a one-row step), that a second press loads
+  another page, that the row the reader is looking at does not move (measured by
+  that row's `data-item-id`, around a load that happens while they are reading
+  further up), that loading older rows raises no unread count, that an off-screen
+  row is announced, and that jumping back lands on the newest row. The desktop
+  Host refuses `session/create`, so this path is exercised against the
+  `agent-host-cli` Host.
 
 #### E2E-REMOTE-MOBILE-native-shell-credential-storage
 

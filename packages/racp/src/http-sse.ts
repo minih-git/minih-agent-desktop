@@ -55,8 +55,16 @@ export type HttpSseClientOptions = {
 export type HttpSseClient = {
   /** Send one RACP command; resolves with the JSON result or throws the mapped `RacpError`. */
   request(method: string, params: Record<string, unknown>, idempotencyKey?: string): Promise<unknown>;
-  /** (Re)open the SSE stream from the given cursor. */
-  stream(): Promise<void>;
+  /**
+   * (Re)open the SSE stream.
+   *
+   * `from` sets the cursor this stream starts at, which is how a client
+   * subscribes *at its snapshot* (protocol §5.4: a snapshot is valid only
+   * together with its `cursor`) instead of from "now" and losing whatever
+   * happened in between. Omitting it resumes from the last delivered event,
+   * which is what a reconnect wants.
+   */
+  stream(from?: RacpCursor): Promise<void>;
   /** Stop streaming and abort in-flight reconnects. */
   close(): void;
   get lastCursor(): RacpCursor | null;
@@ -132,7 +140,10 @@ export function createHttpSseClient(options: HttpSseClientOptions): HttpSseClien
     return payload.result;
   }
 
-  async function stream(): Promise<void> {
+  async function stream(from?: RacpCursor): Promise<void> {
+    // A caller-provided cursor is where this subscription begins; the running
+    // cursor then advances with every durable event the stream delivers.
+    if (from) lastCursor = { epoch: from.epoch, sequence: from.sequence };
     generation += 1;
     const myGeneration = generation;
     closed = false;

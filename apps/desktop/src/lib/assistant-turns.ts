@@ -4,7 +4,7 @@ import type {
   MessageUsage,
   UiMessage,
 } from "@minih-agent/shared";
-import { addUsage, hostedSearchRounds } from "@minih-agent/shared";
+import { addUsage, hostedSearchRounds, isVisibleMessage, messageThinking } from "@minih-agent/shared";
 import { getToolAction, isDelegationStartTool } from "./tool-display";
 import { messageContentFacts } from "./transcript-summary";
 
@@ -63,21 +63,7 @@ export type TranscriptEntry =
   | { kind: "compaction"; mark: ContextCompactionMark }
   | AssistantTurnEntry;
 
-export function messageThinking(message: UiMessage): string {
-  if (typeof message.thinking !== "string") return "";
-  return message.thinking.trim() ? message.thinking : "";
-}
-
-function isVisibleMessage(message: UiMessage): boolean {
-  if (message.role === "system" && message.modelSystem) return false;
-  return !(
-    message.role === "assistant" &&
-    !messageContentFacts(message).hasContent &&
-    !messageThinking(message) &&
-    !message.hostedSearch &&
-    !message.error
-  );
-}
+export { messageThinking } from "@minih-agent/shared";
 
 /** A `Task` start call belongs on the delegation card; parent thinking, workspace
  * tools, and lifecycle rows (TaskWait/TaskList/TaskStop) do not (D319). */

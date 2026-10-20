@@ -5,6 +5,15 @@
  * The client, the supervisor and the visibility listener are all created in one
  * effect and torn down together, so switching host or session, unmounting, or a
  * React StrictMode remount cannot leave a stream or a timer behind.
+ *
+ * **Order matters (rollout D).** `session/attach` runs first and the stream is
+ * then opened *at the snapshot's cursor*, because a snapshot is valid only
+ * together with its cursor (protocol §5.4). Subscribing at the same time as
+ * attaching, with no cursor, loses whatever happened in between: the event is
+ * applied to an empty state, the snapshot then replaces the items without it,
+ * and the event id is already remembered — so the turn can stay "running" with
+ * its last reply missing. Every later subscription (a reconnect, or the reopen
+ * after a resync snapshot) starts from the newest cursor for the same reason.
  */
 import type { RacpApprovalDecision, RacpPermissionMode, RacpTurnAdmission } from "@minih-agent/shared";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
@@ -17,6 +26,7 @@ import { probeHostStatus } from "../lib/host-status.js";
 import {
   attachSession,
   interruptTurn,
+  listHistory,
   respondApproval as respondApprovalCommand,
   respondInput as respondInputCommand,
   startTurn,
@@ -25,7 +35,10 @@ import {
 } from "../lib/mutations.js";
 import { appStateSource } from "../lib/runtime.js";
 import { StreamSupervisor, type StreamState } from "../lib/stream-supervisor.js";
-import { createInitialTimelineState, timelineReducer, type TimelineState } from "../lib/timeline.js";
+import { createStartCursor } from "../lib/stream-cursor.js";
+import { loadOlderPages, singleFlight } from "../lib/timeline-history.js";
+import { createInitialTimelineState, snapshotItems, timelineReducer, type TimelineState } from "../lib/timeline.js";
+import type { TimelineItem } from "../lib/timeline-types.js";
 
 
 export type TurnAttempt = {
@@ -53,6 +66,11 @@ export type SessionActions = {
   stop: () => Promise<boolean>;
   interrupt: () => Promise<boolean>;
   resync: () => Promise<void>;
+  /**
+   * Load one more page of older rows (`manual`), or run the automatic top-up
+   * that fills the opening view (see `loadEarlier` in the hook).
+   */
+  loadEarlier: () => Promise<void>;
   /** Restart a stream that exhausted its retry budget. */
   reconnect: () => void;
   dismissFailure: () => void;
@@ -63,6 +81,8 @@ export type SessionScreenState = {
   streamState: StreamState;
   failure: { failure: OperationFailure; operationKey: string } | null;
   pending: Record<string, boolean>;
+  /** Whether a history page is in flight, so the button can say so. */
+  loadingEarlier: boolean;
   turnId?: string;
   actions: SessionActions;
 };
@@ -80,9 +100,69 @@ export function useSessionScreen(options: {
   const [streamState, setStreamState] = useState<StreamState>("idle");
   const [failure, setFailure] = useState<{ failure: OperationFailure; operationKey: string } | null>(null);
   const [pending, setPending] = useState<Record<string, boolean>>({});
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
   const clientRef = useRef<HostClient | null>(null);
   const supervisorRef = useRef<StreamSupervisor | null>(null);
   const attachRef = useRef<() => Promise<void>>(async () => undefined);
+  /** The cursor the next stream open uses, armed by each snapshot and used once. */
+  const startCursorRef = useRef(createStartCursor());
+  /**
+   * The newest timeline state, for the history loop: the effect that loads older
+   * pages runs outside React's render, so it cannot read `timeline` directly
+   * without seeing a stale snapshot.
+   */
+  const timelineRef = useRef<TimelineState>(timeline);
+  timelineRef.current = timeline;
+  /** Whether the effect's client is still the live one (unmount, session switch). */
+  const cancelledRef = useRef(false);
+  type LoadEarlierOptions = { manual?: boolean; items?: TimelineItem[]; hasMoreHistory?: boolean };
+  const loadEarlierRef = useRef<(options?: LoadEarlierOptions) => Promise<void>>(async () => undefined);
+  /**
+   * The single-flight entry point: the automatic top-up on open and a press of
+   * **Load earlier** must never walk from the same cursor at the same time.
+   */
+  const loadEarlierRunRef = useRef<(options?: LoadEarlierOptions) => Promise<void>>((options) => loadEarlierRef.current(options));
+
+  /**
+   * Older rows, one page at a time.
+   *
+   * The automatic pass runs when a conversation opens: it keeps asking while the
+   * transcript still shows fewer than the user's last two messages and fewer
+   * than about thirty rows, and stops after `MAX_HISTORY_PAGES` so opening a
+   * very long session cannot become an unbounded download. A manual press loads
+   * exactly one page, because that is what the person pressing it expects.
+   */
+  const loadEarlier = useCallback(
+    async (options: { manual?: boolean; items?: TimelineItem[]; hasMoreHistory?: boolean } = {}): Promise<void> => {
+      const client = clientRef.current;
+      if (!client) return;
+      const manual = options.manual === true;
+      setLoadingEarlier(true);
+      try {
+        // The walk keeps its own view of the transcript, because a dispatch does
+        // not update `timelineRef` until React re-renders; the opening call hands
+        // it the snapshot it was just given for the same reason.
+        const load = await loadOlderPages({
+          items: options.items ?? timelineRef.current.items,
+          hasMoreHistory: options.hasMoreHistory ?? timelineRef.current.hasMoreHistory,
+          manual,
+          fetchPage: (request) => listHistory(client, sessionId, request),
+        });
+        if (cancelledRef.current) return;
+        if (!load.ok) {
+          setFailure({ failure: load.failure, operationKey: "operation.sessionHistory" });
+          return;
+        }
+        for (const page of load.value.pages) {
+          dispatch({ type: "prepend", items: page.items, hasMoreHistory: page.hasMoreHistory });
+        }
+      } finally {
+        if (!cancelledRef.current) setLoadingEarlier(false);
+      }
+    },
+    [sessionId],
+  );
+  loadEarlierRef.current = loadEarlier;
 
   useEffect(() => {
     const client = createHostClient({
@@ -100,27 +180,17 @@ export function useSessionScreen(options: {
     });
     clientRef.current = client;
     let cancelled = false;
+    cancelledRef.current = false;
 
-    const attach = async (): Promise<void> => {
-      const result = await attachSession(client, sessionId);
-      if (cancelled) return;
-      if (!result.ok) {
-        setFailure({ failure: result.failure, operationKey: "operation.sessionAttach" });
-        return;
-      }
-      dispatch({
-        type: "attach",
-        session: result.value.session,
-        ...(result.value.snapshot ? { snapshot: result.value.snapshot } : {}),
-        ...(result.value.replayComplete === undefined ? {} : { replayComplete: result.value.replayComplete }),
-        ...(result.value.resyncReason ? { resyncReason: result.value.resyncReason } : {}),
-      });
-    };
-    attachRef.current = attach;
-    void attach();
-
+    // One load at a time for this client: a press of **Load earlier** while the
+    // opening top-up is still running joins it instead of walking from the same
+    // cursor again.
+    loadEarlierRunRef.current = singleFlight((options: LoadEarlierOptions = {}) => loadEarlierRef.current(options));
     const supervisor = new StreamSupervisor({
-      openStream: () => client.stream(sessionEventsPath(sessionId)),
+      // The snapshot's cursor opens the first subscription; every later open (a
+      // reconnect, or the reopen after a fresh snapshot) resumes from the last
+      // event the stream delivered, which is what `take()` leaves behind.
+      openStream: () => client.stream(sessionEventsPath(sessionId), startCursorRef.current.take()),
       closeStream: () => client.closeStream(sessionEventsPath(sessionId)),
       probe: () => probeHostStatus({ gatewayOrigin, hostId, credential }),
       sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
@@ -133,7 +203,44 @@ export function useSessionScreen(options: {
       },
     });
     supervisorRef.current = supervisor;
-    supervisor.start();
+
+    const attach = async (): Promise<void> => {
+      const result = await attachSession(client, sessionId);
+      if (cancelled) return;
+      if (!result.ok) {
+        setFailure({ failure: result.failure, operationKey: "operation.sessionAttach" });
+        // Nothing to subscribe at without a snapshot; the supervisor keeps
+        // running so a later retry (the Resync control) can still start it.
+        return;
+      }
+      startCursorRef.current.set(result.value.snapshot?.cursor ?? null);
+      dispatch({
+        type: "attach",
+        session: result.value.session,
+        ...(result.value.snapshot ? { snapshot: result.value.snapshot } : {}),
+        ...(result.value.replayComplete === undefined ? {} : { replayComplete: result.value.replayComplete }),
+        ...(result.value.resyncReason ? { resyncReason: result.value.resyncReason } : {}),
+      });
+      // Subscribe only now: the snapshot is applied and the cursor is armed.
+      if (firstAttach) {
+        firstAttach = false;
+        supervisor.start();
+        // The snapshot is the newest page only; top the view up to something
+        // readable (protocol §5.4: older pages come from `session/history`). The
+        // reducer has not re-rendered, so the snapshot goes in as it arrived.
+        void loadEarlierRunRef.current({
+          items: snapshotItems(result.value.snapshot),
+          hasMoreHistory: result.value.snapshot?.hasMoreHistory === true,
+        });
+        return;
+      }
+      // A re-attach moved the cursor, so the open stream is subscribed from an
+      // older one: reopen it at the new cursor without spending a retry.
+      supervisor.reopen();
+    };
+    attachRef.current = attach;
+    let firstAttach = true;
+    void attach();
     // Two foreground sources: the page visibility (web and webview) and the
     // native app state (a backgrounded webview does not always report
     // `visibilitychange`). Both resume the supervisor through one call.
@@ -151,6 +258,7 @@ export function useSessionScreen(options: {
 
     return () => {
       cancelled = true;
+      cancelledRef.current = true;
       stopWatching();
       supervisor.stop();
       supervisorRef.current = null;
@@ -236,6 +344,9 @@ export function useSessionScreen(options: {
     resync: async () => {
       await attachRef.current();
     },
+    loadEarlier: async () => {
+      await loadEarlierRunRef.current({ manual: true });
+    },
     reconnect: () => {
       setPending((current) => ({ ...current, "stream/reconnect": true }));
       supervisorRef.current?.start();
@@ -248,6 +359,7 @@ export function useSessionScreen(options: {
     streamState,
     failure,
     pending,
+    loadingEarlier,
     ...(activeTurnId ? { turnId: activeTurnId } : {}),
     actions,
   };

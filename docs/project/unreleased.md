@@ -1,4 +1,14 @@
 # Unreleased changes
+- The phone's conversation screen now matches your desktop. Tool calls are
+  listed by name together with whether they are still running, finished,
+  failed, or were denied, and with what they were asked to do, instead of
+  appearing as empty boxes, and a message that arrived while the app was
+  catching up no longer disappears. A long conversation opens at its newest
+  message with the message box on screen — it used to open at the very
+  beginning, with the box below the fold — **Load earlier** brings in older
+  messages without moving what you are reading, and messages that arrive while
+  you are reading further up are announced by a button that says how many you
+  have missed and takes you back to them.
 - A Host started with `agent-host-cli` only registers projects inside
   `--browse-root` (your home directory by default), the same limit the folder
   picker always had. Registering a folder elsewhere needs a `--browse-root` that

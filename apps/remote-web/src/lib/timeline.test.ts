@@ -90,6 +90,20 @@ function attach(state: TimelineState, snapshotValue: RacpSessionSnapshot, replay
   });
 }
 
+
+/**
+ * A state that has already applied a snapshot, which is where a real client is
+ * before any event arrives: the stream is opened at the snapshot's cursor
+ * (rollout D). A durable event that arrives *before* the snapshot is dropped by
+ * design, and `timeline-subscribe-order.test.ts` covers that case.
+ */
+function attached(cursorSequence = counter): TimelineState {
+  return attach(
+    createInitialTimelineState(),
+    snapshot({ cursor: { epoch: "ep", sequence: cursorSequence }, revision: cursorSequence }),
+  );
+}
+
 describe("timeline attach", () => {
   it("applies the snapshot items, active items, pending cards and cursor", () => {
     const state = attach(
@@ -142,7 +156,7 @@ describe("timeline attach", () => {
 
 describe("timeline items", () => {
   it("streams a message through started, delta and completed", () => {
-    let state = createInitialTimelineState();
+    let state = attached();
     state = apply(
       state,
       event("item.started", { itemType: "message", itemId: "m1", event: { type: "message_start", message: message("m1", "assistant", "") } }, { turnId: "t1" }),
@@ -156,7 +170,7 @@ describe("timeline items", () => {
   });
 
   it("applies a delta-only update onto an existing item", () => {
-    let state = createInitialTimelineState();
+    let state = attached();
     state = apply(
       state,
       event("item.started", { itemType: "message", itemId: "m1", event: { type: "message_start", message: message("m1", "assistant", "Hello") } }),
@@ -166,7 +180,7 @@ describe("timeline items", () => {
   });
 
   it("keeps tool args and the final result on one row", () => {
-    let state = createInitialTimelineState();
+    let state = attached();
     state = apply(
       state,
       event("item.started", { itemType: "tool", itemId: "t1", event: { type: "tool_start", toolCallId: "t1", toolName: "Read", args: { path: "/tmp" } } }),
@@ -178,14 +192,14 @@ describe("timeline items", () => {
 
   it("marks a failed tool row", () => {
     const state = apply(
-      createInitialTimelineState(),
+      attached(),
       event("item.completed", { itemType: "tool", itemId: "t1", event: { type: "tool_end", toolCallId: "t1", result: "boom", isError: true } }),
     );
     expect(state.items[0]!.isError).toBe(true);
   });
 
   it("shows a compaction row", () => {
-    let state = createInitialTimelineState();
+    let state = attached();
     state = apply(
       state,
       event("item.started", { itemType: "compaction", itemId: "c1", event: { type: "compaction_start", reason: "auto" } }),
@@ -195,7 +209,7 @@ describe("timeline items", () => {
   });
 
   it("replaces the optimistic user row with the durable one", () => {
-    let state = createInitialTimelineState();
+    let state = attached();
     state = apply(
       state,
       event("item.started", { itemType: "message", itemId: "optimistic", event: { type: "message_start", message: message("optimistic", "user", "hi") } }),
@@ -210,7 +224,7 @@ describe("timeline items", () => {
 
   it("renders a bounded preview for a truncated payload", () => {
     const state = apply(
-      createInitialTimelineState(),
+      attached(),
       event("item.completed", { truncated: true, itemType: "message", itemId: "m1", event: { type: "message_end" }, preview: "0123456789" }),
     );
     expect(state.items[0]).toMatchObject({ id: "m1", text: "0123456789", truncated: true, status: "completed" });
@@ -218,7 +232,7 @@ describe("timeline items", () => {
 
   it("keeps subagent provenance from the envelope", () => {
     const state = apply(
-      createInitialTimelineState(),
+      attached(),
       event(
         "item.started",
         { itemType: "message", itemId: "m1", event: { type: "message_start", message: message("m1", "assistant", "delegated") } },
@@ -232,7 +246,7 @@ describe("timeline items", () => {
 describe("timeline dedupe and resync", () => {
   it("ignores a replayed event with the same id", () => {
     const started = event("item.started", { itemType: "message", itemId: "m1", event: { type: "message_start", message: message("m1", "assistant", "once") } });
-    const once = apply(createInitialTimelineState(), started);
+    const once = apply(attached(started.sequence! - 1), started);
     const twice = apply(once, started);
     expect(twice.items).toEqual(once.items);
     expect(twice.seenEventIds).toEqual(once.seenEventIds);
@@ -240,7 +254,7 @@ describe("timeline dedupe and resync", () => {
 
   it("ignores a durable event at or below the applied cursor", () => {
     const first = event("item.started", { itemType: "message", itemId: "m1", event: { type: "message_start", message: message("m1", "assistant", "a") } });
-    const state = apply(createInitialTimelineState(), first);
+    const state = apply(attached(first.sequence! - 1), first);
     const stale = event(
       "item.started",
       { itemType: "message", itemId: "m2", event: { type: "message_start", message: message("m2", "assistant", "b") } },
@@ -251,7 +265,7 @@ describe("timeline dedupe and resync", () => {
 
   it("raises needsResync on a sequence gap but still applies the event", () => {
     const first = event("item.started", { itemType: "message", itemId: "m1", event: { type: "message_start", message: message("m1", "assistant", "a") } });
-    const state = apply(createInitialTimelineState(), first);
+    const state = apply(attached(first.sequence! - 1), first);
     const jumped = event(
       "item.started",
       { itemType: "message", itemId: "m2", event: { type: "message_start", message: message("m2", "assistant", "b") } },
@@ -265,7 +279,7 @@ describe("timeline dedupe and resync", () => {
 
   it("raises needsResync when the epoch changes", () => {
     const first = event("turn.started", {});
-    const state = apply(createInitialTimelineState(), first);
+    const state = apply(attached(first.sequence! - 1), first);
     const newEpoch = event("turn.started", {}, { epoch: "ep2", sequence: 1 });
     const next = apply(state, newEpoch);
     expect(next.needsResync).toBe(true);
@@ -273,34 +287,34 @@ describe("timeline dedupe and resync", () => {
   });
 
   it("clears needsResync when a fresh snapshot is attached", () => {
-    const state = apply(createInitialTimelineState(), event("resync.required", {}));
+    const state = apply(attached(), event("resync.required", {}));
     expect(state.needsResync).toBe(true);
     expect(attach(state, snapshot()).needsResync).toBe(false);
   });
 
   it("keeps the dedupe memory across a re-attach", () => {
     const started = event("item.started", { itemType: "message", itemId: "m1", event: { type: "message_start", message: message("m1", "assistant", "once") } });
-    const state = attach(apply(createInitialTimelineState(), started), snapshot());
+    const state = attach(apply(attached(started.sequence! - 1), started), snapshot());
     expect(apply(state, started).items).toEqual(state.items);
   });
 
   it("does not move the cursor on an ephemeral event", () => {
     const durable = event("item.started", { itemType: "message", itemId: "m1", event: { type: "message_start", message: message("m1", "assistant", "") } });
-    const state = apply(createInitialTimelineState(), durable);
+    const state = apply(attached(durable.sequence! - 1), durable);
     const next = apply(state, ephemeral("item.delta", { itemType: "message", itemId: "m1", event: { type: "message_update", stream: "delta", message: message("m1", "assistant", ""), deltaText: "x" } }));
     expect(next.lastSequence).toBe(state.lastSequence);
     expect(next.needsResync).toBe(false);
   });
 
   it("ignores a kind it does not render", () => {
-    const state = apply(createInitialTimelineState(), event("tool.progress", { itemType: "tool", itemId: "t1", event: { type: "tool_update", toolCallId: "t1" } }));
+    const state = apply(attached(), event("tool.progress", { itemType: "tool", itemId: "t1", event: { type: "tool_update", toolCallId: "t1" } }));
     expect(state.items).toEqual([]);
   });
 });
 
 describe("timeline turns, approvals and inputs", () => {
   it("tracks the queued and running turns", () => {
-    let state = createInitialTimelineState();
+    let state = attached();
     state = apply(
       state,
       event("turn.queued", { turn: { id: "t1", sessionId: "s1", status: "queued", admission: "queue", effectivePermissionMode: "ask" } }, { turnId: "t1" }),
@@ -319,7 +333,7 @@ describe("timeline turns, approvals and inputs", () => {
   });
 
   it("does not relabel the running turn when a queued turn closes", () => {
-    let state = createInitialTimelineState();
+    let state = attached();
     state = apply(
       state,
       event("turn.started", {}, { turnId: "t1" }),
@@ -332,7 +346,7 @@ describe("timeline turns, approvals and inputs", () => {
   });
 
   it("records a failed turn with its reason and drops its cards", () => {
-    let state = createInitialTimelineState();
+    let state = attached();
     state = apply(
       state,
       event("turn.started", {}, { turnId: "t1" }),
@@ -354,7 +368,7 @@ describe("timeline turns, approvals and inputs", () => {
   });
 
   it("adds and removes approval and input cards", () => {
-    let state = createInitialTimelineState();
+    let state = attached();
     const approval = { id: "a1", sessionId: "s1", turnId: "t1", kind: "tool", summary: "run ls", expiresAt: "", revision: 1, allowedDecisions: ["allow-once", "deny"] };
     const input = { id: "i1", sessionId: "s1", turnId: "t1", expiresAt: "", questions: [{ id: "q1", question: "Which?", options: ["A", "B"], multiSelect: true }] };
     state = apply(state, event("approval.requested", approval, { turnId: "t1" }), event("input.requested", input, { turnId: "t1" }));
@@ -372,7 +386,7 @@ describe("timeline turns, approvals and inputs", () => {
   });
 
   it("ignores a malformed approval or input payload", () => {
-    const state = apply(createInitialTimelineState(), event("approval.requested", { summary: "no id" }), event("input.requested", { id: "i1" }));
+    const state = apply(attached(), event("approval.requested", { summary: "no id" }), event("input.requested", { id: "i1" }));
     expect(state.pendingApprovals).toEqual([]);
     expect(state.pendingInputs).toEqual([]);
   });

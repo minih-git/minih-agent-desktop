@@ -171,6 +171,64 @@ The session screen leads with projects, the way the desktop sidebar does.
   (`POST /v1/projects`, `GET /v1/projects:browse`), otherwise the phone gets
   `NOT_FOUND` for them.
 
+## The session timeline
+
+The session screen renders one row per item, from one projection, whatever the
+item arrived through.
+
+* **One projection.** A history row is a whole `UiMessage` and a live row is an
+  event, so the two used to be narrowed differently and disagreed: a tool call
+  recorded before the client attached had no name and no body, while the same
+  call arriving live was rendered by name. `src/lib/timeline-items.ts`
+  (`projectMessage`) projects both, and a row carries the tool's name and status
+  (`running` / `success` / `error` / `denied`), its arguments and result, and —
+  for a user row — the command, the attachment names, and the side-note marker.
+* **The rows the desktop hides stay hidden.** `isVisibleMessage`,
+  `messageThinking`, and `messageContentFacts` live in
+  `packages/shared/src/transcript-visibility.ts` and are imported by the desktop
+  app as well, so internal model instructions (`system` + `modelSystem`) and an
+  empty assistant row are dropped in one place for both clients. What a user row
+  reads as stays in `src/lib/timeline-items.ts` (`userMessageText`), because the
+  desktop's editable row adds an edit-mode condition of its own.
+* **Attach first, then subscribe.** The screen attaches, arms the snapshot's
+  `cursor` (`src/lib/stream-cursor.ts`), and opens the event stream from it
+  (`useSessionScreen`, `RacpClient.stream`); durable events that arrive before
+  that snapshot are dropped, because the snapshot's replay is the only source for
+  them. The cursor is handed out once: every later open — a reconnect after a
+  drop, or the reopen after a fresh snapshot — resumes from the last event the
+  stream delivered, so a drop never replays the page again. Protocol §5.4 states
+  the rule: the snapshot does not say where the stream begins.
+* **Older rows on demand.** `session/history` returns a page of 100 items,
+  ordered oldest to newest (protocol §7.6). Opening a session loads at most three
+  pages (`MAX_HISTORY_PAGES`) until the view holds the reader's last two messages
+  or about 30 rows, and **Load earlier** loads exactly one more page; the walk
+  advances with the page's oldest row, and the automatic top-up and a press share
+  one in-flight load (`singleFlight`). A prepend never trims; only an append
+  trims from the oldest end (`MAX_TIMELINE_ITEMS`) — and because a row dropped
+  that way came from history, the entry stays offered (`appendItem`).
+* **The composer stays in place.** The shell is `h-dvh` and `main` is the scroll
+  container, so a long session opens on its newest row with the composer on
+  screen; a `visualViewport` resize keeps it above the iOS keyboard. Following
+  stops as soon as the reader scrolls away, and a sticky control returns them —
+  with the number of rows they missed, or a "needs your decision" prompt — while
+  `prefers-reduced-motion` turns that jump into an instant one. Rows loaded above
+  are not "new messages" (`appendedRows`), so they never raise that number.
+* **The reader keeps their place.** A layout effect in `useTimelineScroll` puts
+  the row the reader was looking at back where it was after older rows arrive,
+  found by `data-item-id`; what it compares is the row's offset inside the
+  content, so the reader's own scrolling and the "back to latest" jump are never
+  undone. Rows also carry `[overflow-anchor:none]`, so the browser does not add a
+  second, engine-specific correction on top of it — iOS WebKit has no scroll
+  anchoring at all, and the phone is the target.
+* **Coverage.** `timeline-projection.test.ts`, `timeline-subscribe-order.test.ts`,
+  `timeline-history.test.ts`, and `scroll.test.ts` cover the projection, the
+  subscription order, the paging rules, the single flight, and the scroll
+  arithmetic. This package has no DOM test environment (`environment: "node"`),
+  so the screen's user path is covered end to end instead:
+  `pnpm test:e2e:remote-web` opens an 80-turn session in real Chromium and
+  asserts the order of the loaded pages, that the row being read does not move,
+  and that loading older rows raises no unread count.
+
 ## Push notifications (native only)
 
 The native app can receive the four notification-worthy events of protocol §11.6
