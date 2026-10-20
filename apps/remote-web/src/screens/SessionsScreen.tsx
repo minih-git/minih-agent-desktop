@@ -12,11 +12,11 @@
  * `session/create` takes instead of a path.
  */
 import type { RacpProjectSummary, RacpSession } from "@minih-agent/shared";
+import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AddProjectPanel } from "./AddProjectPanel.js";
-import { AppShell, Button, Card, FailureBanner, Pill } from "../components/Chrome.js";
 import { useHostStatus } from "../hooks/useHostStatus.js";
 import type { HostCredential } from "../lib/credential-port.js";
 import type { OperationFailure } from "../lib/errors.js";
@@ -24,12 +24,25 @@ import { createHostClient, type HostClient } from "../lib/host-client.js";
 import { createSession, listProjects, listSessions, newSessionMode } from "../lib/mutations.js";
 import { gatewayOrigin } from "../lib/runtime.js";
 import { groupSessionsByProject, soleProjectForNewSession, type SessionGroup } from "../lib/session-groups.js";
+import { Banner } from "../components/ui/Banner.js";
+import { Button } from "../components/ui/Button.js";
+import { EmptyState } from "../components/ui/EmptyState.js";
+import { ListGroup } from "../components/ui/ListGroup.js";
+import { NavBar } from "../components/ui/NavBar.js";
+import { Screen, ScreenContent } from "../components/ui/Screen.js";
+import { SectionHeader } from "../components/ui/SectionHeader.js";
+import { Skeleton } from "../components/ui/Skeleton.js";
+import { StatusDot } from "../components/ui/StatusDot.js";
+import { SessionRow } from "../components/sessions/SessionRow.js";
 
-function statusTone(status: RacpSession["status"]): "ok" | "warn" | "bad" | "neutral" {
-  if (status === "running") return "ok";
-  if (status === "waiting_permission") return "warn";
-  if (status === "error") return "bad";
-  return "neutral";
+export interface SessionsScreenProps {
+  hostId: string;
+  hostLabel: string;
+  credential: HostCredential;
+  /** Roles the Gateway granted this device; absent means "not recorded yet". */
+  roles?: readonly string[];
+  onOpenSession: (session: RacpSession) => void;
+  onBack: () => void;
 }
 
 export function SessionsScreen({
@@ -39,18 +52,11 @@ export function SessionsScreen({
   roles,
   onOpenSession,
   onBack,
-}: {
-  hostId: string;
-  hostLabel: string;
-  credential: HostCredential;
-  /** Roles the Gateway granted this device; absent means "not recorded yet". */
-  roles?: readonly string[];
-  onOpenSession: (session: RacpSession) => void;
-  onBack: () => void;
-}) {
-  const { t, i18n } = useTranslation();
+}: SessionsScreenProps) {
+  const { t } = useTranslation();
   const [sessions, setSessions] = useState<RacpSession[] | null>(null);
   const [failure, setFailure] = useState<OperationFailure | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [projects, setProjects] = useState<RacpProjectSummary[] | null>(null);
   const [projectsFailure, setProjectsFailure] = useState<OperationFailure | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -89,7 +95,9 @@ export function SessionsScreen({
   const load = useCallback(async (): Promise<void> => {
     const client = clientRef.current;
     if (!client) return;
+    setIsRefreshing(true);
     const result = await listSessions(client);
+    setIsRefreshing(false);
     if (result.ok) {
       setSessions(result.value);
       setFailure(null);
@@ -119,9 +127,31 @@ export function SessionsScreen({
     void load();
   }, [load]);
 
+  // The project catalog supplies the headings and the new-session choices, so it
+  // loads with the list rather than on first use.
   useEffect(() => {
     void loadProjects();
   }, [loadProjects]);
+
+  // Foreground refresh: coming back to the app re-reads the list, which is the
+  // only way a phone learns about a session the computer started meanwhile.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void load();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [load]);
+
+  const isOnline = status.kind === "online";
+  const subStatus = (
+    <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--rm-text-secondary)]">
+      <StatusDot status={isOnline ? "online" : "offline"} size="small" />
+      <span>{isOnline ? t("hosts.status.online") : t("hosts.status.offline")}</span>
+    </span>
+  );
 
   const groups: SessionGroup[] = sessions === null ? [] : groupSessionsByProject(sessions, projects ?? []);
 
@@ -145,22 +175,16 @@ export function SessionsScreen({
 
   const newSessionButton = () => {
     if (mode === "hidden") {
-      // A read-only device has no entry at all; the hint explains why instead
-      // of leaving a disabled button with no reason.
-      return (
-        <span className="text-xs text-slate-500 dark:text-slate-400">
-          {t("sessions.createReadOnly")}
-        </span>
-      );
+      // A read-only device gets the reason instead of a disabled button.
+      return <span className="text-[13px] text-[var(--rm-text-muted)]">{t("sessions.createReadOnly")}</span>;
     }
     if (mode === "unavailable") {
-      return (
-        <span className="text-xs text-slate-500 dark:text-slate-400">{t("sessions.noProjects")}</span>
-      );
+      return <span className="text-[13px] text-[var(--rm-text-muted)]">{t("sessions.noProjects")}</span>;
     }
     return (
       <Button
-        variant="secondary"
+        variant="plain"
+        size="small"
         disabled={creating !== null || (mode !== "unknown" && projects === null)}
         onClick={() => {
           const sole = soleProjectForNewSession(projects ?? []);
@@ -177,165 +201,157 @@ export function SessionsScreen({
   };
 
   return (
-    <AppShell
-      title={hostLabel}
-      onBack={onBack}
-      actions={
-        <>
-          <Pill tone={status.kind === "online" ? "ok" : status.kind === "revoked" ? "bad" : "warn"}>
-            {t(`hosts.status.${status.kind}`)}
-          </Pill>
-          <Button
-            variant="ghost"
-            aria-label={t("common.refresh")}
-            title={t("common.refresh")}
+    <Screen>
+      <NavBar
+        title={hostLabel}
+        subtitle={subStatus}
+        onBack={onBack}
+        trailing={
+          <button
+            type="button"
             onClick={() => {
               void load();
               void loadProjects();
             }}
+            disabled={isRefreshing}
+            aria-label={t("common.refresh")}
+            className="flex h-9 w-9 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] active:opacity-60"
           >
-            {t("common.refresh")}
-          </Button>
-        </>
-      }
-    >
-      {failure ? (
-        <FailureBanner failure={failure} operationKey="operation.sessionList" onDismiss={() => setFailure(null)} />
-      ) : null}
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">{t("sessions.title")}</h2>
-        {newSessionButton()}
-      </div>
+            <RefreshCw className={`h-5 w-5 ${isRefreshing ? "animate-spin" : ""}`} aria-hidden="true" />
+          </button>
+        }
+      />
 
-      {choosing && canCreate ? (
-        <Card>
-          {addingProject ? (
-            <AddProjectPanel
-              client={() => clientRef.current}
-              onRegistered={(project) => {
-                // The folder is a project now: open a session in it directly, so
-                // the user does not have to find it again in the list.
-                setAddingProject(false);
-                void loadProjects();
-                void startNewSession(project.id);
-              }}
-              onCancel={() => setAddingProject(false)}
-            />
-          ) : (
-            <>
-              <p className="mb-2 text-sm font-medium">{t("sessions.chooseProject")}</p>
-              {(projects ?? []).filter((project) => !project.archived).length === 0 ? (
-                <p className="text-sm text-slate-600 dark:text-slate-300">{t("sessions.noProjects")}</p>
-              ) : (
-                <ul className="flex flex-col gap-2">
+      <ScreenContent>
+        {failure ? (
+          <div className="mb-4">
+            <Banner
+              tone="error"
+              action={
+                <Button variant="plain" size="small" onClick={() => void load()}>
+                  {t("common.refresh")}
+                </Button>
+              }
+            >
+              {failure.message || t("operation.sessionList")}
+            </Banner>
+          </div>
+        ) : null}
+
+        {projectsFailure ? (
+          <div className="mb-4">
+            <Banner tone="neutral">{t("sessions.projectsFailed")}</Banner>
+          </div>
+        ) : null}
+
+        {createFailure ? (
+          <div className="mb-4">
+            <Banner tone="error">{createFailure.message || t("operation.sessionCreate")}</Banner>
+          </div>
+        ) : null}
+
+        <SectionHeader title={t("sessions.title")} action={newSessionButton()} />
+
+        {choosing && canCreate ? (
+          <div className="mb-4">
+            {addingProject ? (
+              <AddProjectPanel
+                client={() => clientRef.current}
+                onRegistered={(project) => {
+                  // The folder is a project now: open a session in it directly, so
+                  // the user does not have to find it again in the list.
+                  setAddingProject(false);
+                  void loadProjects();
+                  void startNewSession(project.id);
+                }}
+                onCancel={() => setAddingProject(false)}
+              />
+            ) : (
+              <>
+                <SectionHeader title={t("sessions.chooseProject")} />
+                <ListGroup>
                   {(projects ?? [])
                     .filter((project) => !project.archived)
                     .map((project) => (
-                      <li key={project.id}>
-                        <Button
-                          variant="secondary"
-                          className="w-full justify-start"
-                          disabled={creating !== null}
-                          onClick={() => void startNewSession(project.id)}
-                        >
-                          {project.label}
-                        </Button>
-                      </li>
+                      <button
+                        key={project.id}
+                        type="button"
+                        disabled={creating !== null}
+                        onClick={() => void startNewSession(project.id)}
+                        className="flex min-h-[56px] w-full items-center gap-3 px-4 py-3 text-left text-[15px] text-[var(--rm-text-primary)] transition-colors active:bg-[var(--rm-bg-inset)]"
+                      >
+                        {project.label}
+                      </button>
                     ))}
-                </ul>
-              )}
-              <Button
-                variant="secondary"
-                className="mt-2 w-full justify-start"
-                disabled={creating !== null}
-                onClick={() => setAddingProject(true)}
-              >
-                {t("sessions.addProject")}
-              </Button>
-              <Button variant="ghost" className="mt-2" onClick={() => setChoosing(false)}>
-                {t("common.cancel")}
-              </Button>
-            </>
-          )}
-        </Card>
-      ) : null}
+                </ListGroup>
+                <div className="mt-2 flex flex-col gap-2">
+                  <Button variant="secondary" size="medium" disabled={creating !== null} onClick={() => setAddingProject(true)}>
+                    {t("sessions.addProject")}
+                  </Button>
+                  <Button variant="plain" size="medium" onClick={() => setChoosing(false)}>
+                    {t("common.cancel")}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
 
-      {createFailure ? (
-        <FailureBanner
-          failure={createFailure}
-          operationKey="operation.sessionCreate"
-          onDismiss={() => setCreateFailure(null)}
-        />
-      ) : null}
+        {sessions === null ? (
+          <div className="space-y-4">
+            <SectionHeader title=" " />
+            <ListGroup>
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="flex min-h-[56px] items-center gap-3 px-4 py-3">
+                  <Skeleton className="h-2 w-2 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-3/5" />
+                    <Skeleton className="h-3 w-1/3" />
+                  </div>
+                </div>
+              ))}
+            </ListGroup>
+          </div>
+        ) : sessions.length === 0 ? (
+          <EmptyState title={t("session.emptyTitle")} description={t("session.emptyDesc")} />
+        ) : (
+          <div className="space-y-5">
+            {groups.map((group) => {
+              const isCollapsed = collapsed[group.key] === true;
+              const heading = group.label ?? t("sessions.otherGroup");
+              return (
+                <section key={group.key} aria-label={heading}>
+                  <SectionHeader
+                    title={
+                      <button
+                        type="button"
+                        aria-expanded={!isCollapsed}
+                        onClick={() => setCollapsed((current) => ({ ...current, [group.key]: !isCollapsed }))}
+                        className="flex items-center gap-2 text-left"
+                      >
+                        <span aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
+                        <span>{heading}</span>
+                        <span className="text-[var(--rm-text-faint)]">{group.sessions.length}</span>
+                      </button>
+                    }
+                  />
+                  {isCollapsed ? null : (
+                    <ListGroup>
+                      {group.sessions.map((session) => (
+                        <SessionRow key={session.id} session={session} onOpen={() => onOpenSession(session)} />
+                      ))}
+                    </ListGroup>
+                  )}
+                </section>
+              );
+            })}
 
-      {projectsFailure ? (
-        <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-100">
-          {t("sessions.projectsFailed")}
-        </p>
-      ) : null}
-
-      {sessions === null ? (
-        <p className="py-4 text-center text-sm text-slate-500 dark:text-slate-400">{t("app.loading")}</p>
-      ) : sessions.length === 0 ? (
-        <Card>
-          <p className="text-sm text-slate-600 dark:text-slate-300">{t("sessions.empty")}</p>
-        </Card>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {groups.map((group) => {
-            const isCollapsed = collapsed[group.key] === true;
-            const heading = group.label ?? t("sessions.otherGroup");
-            return (
-              <section key={group.key} aria-label={heading} className="flex flex-col gap-2">
-                <button
-                  type="button"
-                  className="app-tap flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-left"
-                  aria-expanded={!isCollapsed}
-                  onClick={() =>
-                    setCollapsed((current) => ({ ...current, [group.key]: !isCollapsed }))
-                  }
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
-                    <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                      {heading}
-                    </span>
-                  </span>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">{group.sessions.length}</span>
-                </button>
-                {isCollapsed ? null : (
-                  <ul className="flex flex-col gap-2">
-                    {group.sessions.map((session) => (
-                      <li key={session.id}>
-                        <button
-                          type="button"
-                          className="app-tap w-full rounded-xl border border-slate-200 bg-white p-3 text-left hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
-                          aria-label={`${session.title || session.id}`}
-                          onClick={() => onOpenSession(session)}
-                        >
-                          <span className="flex items-center gap-2">
-                            <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                              {session.title || session.id}
-                            </span>
-                            <Pill tone={statusTone(session.status)}>
-                              {t(`sessions.status.${session.status}`)}
-                            </Pill>
-                          </span>
-                          <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
-                            {t("sessions.updated", {
-                              date: new Date(session.updatedAt).toLocaleString(i18n.language),
-                            })}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            );
-          })}
-        </div>
-      )}
-    </AppShell>
+            <p className="pt-2 text-center text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
+              {t("session.computerNotice")}
+            </p>
+          </div>
+        )}
+      </ScreenContent>
+    </Screen>
   );
 }

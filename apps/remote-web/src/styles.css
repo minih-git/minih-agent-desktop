@@ -1,14 +1,108 @@
 @import "tailwindcss";
 
 /*
- * Mobile-first base for the H5 client. Tailwind v4 ships the utilities; this
- * file only adds what the design needs beyond them: safe-area insets (the
- * viewport meta sets `viewport-fit=cover`), 44px touch targets, and a
- * text-only transcript rhythm.
+ * Mobile-first base for the H5 and Capacitor client.
+ * Design tokens and safe-area utilities per docs/spec/04-ux/13-remote-mobile-client.md §5 & §6.
  */
 
 :root {
   color-scheme: light dark;
+  --rm-bg-page: #f3f3f3;
+  --rm-bg-surface: #ffffff;
+  --rm-bg-raised: #ffffff;
+  --rm-bg-inset: #ededed;
+  --rm-text-primary: #1a1c1f;
+  --rm-text-secondary: rgba(26, 28, 31, 0.74);
+  --rm-text-muted: #5d5d5d;
+  --rm-text-faint: #afafaf;
+  --rm-separator: rgba(26, 28, 31, 0.08);
+  --rm-accent: #1a1c1f;
+  --rm-on-accent: #ffffff;
+  --rm-running: #c2410c;
+  --rm-decision: #7c3aed;
+  --rm-on-decision: #ffffff;
+  --rm-success: #00802f;
+  --rm-error: #d42a26;
+  --rm-link: #1c64c8;
+  --rm-tint: 10%;
+  --rm-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --rm-scrim: rgba(0, 0, 0, 0.28);
+  --rm-navbg: rgba(243, 243, 243, 0.92);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --rm-bg-page: #181818;
+    --rm-bg-surface: #212121;
+    --rm-bg-raised: #282828;
+    --rm-bg-inset: #0d0d0d;
+    --rm-text-primary: #ffffff;
+    --rm-text-secondary: rgba(255, 255, 255, 0.7);
+    --rm-text-muted: #9b9b9b;
+    --rm-text-faint: #5d5d5d;
+    --rm-separator: rgba(255, 255, 255, 0.08);
+    --rm-accent: #ffffff;
+    --rm-on-accent: #1a1c1f;
+    --rm-running: #ff8549;
+    --rm-decision: #c27aff;
+    --rm-on-decision: #1a1c1f;
+    --rm-success: #40c977;
+    --rm-error: #ff6764;
+    --rm-link: #63a8f8;
+    --rm-tint: 16%;
+    --rm-shadow: 0 0 0 0 transparent;
+    --rm-scrim: rgba(0, 0, 0, 0.5);
+    --rm-navbg: rgba(24, 24, 24, 0.92);
+  }
+}
+
+[data-theme="light"] {
+  --rm-bg-page: #f3f3f3;
+  --rm-bg-surface: #ffffff;
+  --rm-bg-raised: #ffffff;
+  --rm-bg-inset: #ededed;
+  --rm-text-primary: #1a1c1f;
+  --rm-text-secondary: rgba(26, 28, 31, 0.74);
+  --rm-text-muted: #5d5d5d;
+  --rm-text-faint: #afafaf;
+  --rm-separator: rgba(26, 28, 31, 0.08);
+  --rm-accent: #1a1c1f;
+  --rm-on-accent: #ffffff;
+  --rm-running: #c2410c;
+  --rm-decision: #7c3aed;
+  --rm-on-decision: #ffffff;
+  --rm-success: #00802f;
+  --rm-error: #d42a26;
+  --rm-link: #1c64c8;
+  --rm-tint: 10%;
+  --rm-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --rm-scrim: rgba(0, 0, 0, 0.28);
+  --rm-navbg: rgba(243, 243, 243, 0.92);
+}
+
+[data-theme="dark"],
+.dark {
+  --rm-bg-page: #181818;
+  --rm-bg-surface: #212121;
+  --rm-bg-raised: #282828;
+  --rm-bg-inset: #0d0d0d;
+  --rm-text-primary: #ffffff;
+  --rm-text-secondary: rgba(255, 255, 255, 0.7);
+  --rm-text-muted: #9b9b9b;
+  --rm-text-faint: #5d5d5d;
+  --rm-separator: rgba(255, 255, 255, 0.08);
+  --rm-accent: #ffffff;
+  --rm-on-accent: #1a1c1f;
+  --rm-running: #ff8549;
+  --rm-decision: #c27aff;
+  --rm-on-decision: #1a1c1f;
+  --rm-success: #40c977;
+  --rm-error: #ff6764;
+  --rm-link: #63a8f8;
+  --rm-tint: 16%;
+  --rm-shadow: 0 0 0 0 transparent;
+  --rm-scrim: rgba(0, 0, 0, 0.5);
+  --rm-navbg: rgba(24, 24, 24, 0.92);
 }
 
 html,
@@ -18,23 +112,130 @@ body {
 }
 
 body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Segoe UI", Roboto, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  background-color: var(--rm-bg-page);
+  color: var(--rm-text-primary);
+  -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: 100%;
   overscroll-behavior-y: none;
 }
 
-/* Keep content clear of the notch, the home indicator and rounded corners. */
-.app-safe-area {
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+@layer utilities {
+  /* Safe-area insets per §6.1 */
+  .rm-nav {
+    padding-top: env(safe-area-inset-top);
+  }
+  .rm-gutter {
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+  .rm-dock {
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+  .rm-scroll-end {
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+
+  /* Interactive minimum tap target */
+  .rm-tap {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .app-tap {
+    min-height: 44px;
+  }
+
+  /* Typography role helpers */
+  .rm-title-large {
+    font-size: 1.75rem; /* 28px */
+    line-height: 2.125rem; /* 34px */
+    font-weight: 700;
+  }
+  .rm-title {
+    font-size: 1.0625rem; /* 17px */
+    line-height: 1.375rem; /* 22px */
+    font-weight: 600;
+  }
+  .rm-headline {
+    font-size: 1rem; /* 16px */
+    line-height: 1.375rem; /* 22px */
+    font-weight: 600;
+  }
+  .rm-body {
+    font-size: 1rem; /* 16px */
+    line-height: 1.5rem; /* 24px */
+    font-weight: 400;
+  }
+  .rm-callout {
+    font-size: 0.9375rem; /* 15px */
+    line-height: 1.375rem; /* 22px */
+    font-weight: 400;
+  }
+  .rm-subhead {
+    font-size: 0.875rem; /* 14px */
+    line-height: 1.25rem; /* 20px */
+    font-weight: 400;
+  }
+  .rm-footnote {
+    font-size: 0.8125rem; /* 13px */
+    line-height: 1.125rem; /* 18px */
+    font-weight: 400;
+  }
+  .rm-caption {
+    font-size: 0.75rem; /* 12px */
+    line-height: 1rem; /* 16px */
+    font-weight: 500;
+  }
+  .rm-mono {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.8125rem; /* 13px */
+    line-height: 1.25rem; /* 20px */
+    font-weight: 400;
+  }
+  .app-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
 }
 
-/* 44px is the smallest reliable touch target on both iOS and Android. */
-.app-tap {
-  min-height: 44px;
+/* Animations */
+@keyframes rm-breathe {
+  50% { opacity: 0.35; }
 }
 
-.app-mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+@keyframes rm-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--rm-decision) 55%, transparent); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+@keyframes rm-fade-down {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes rm-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes rm-skel {
+  50% { opacity: 0.5; }
+}
+
+@keyframes rm-push {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@keyframes rm-pop {
+  from { transform: translateX(-24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

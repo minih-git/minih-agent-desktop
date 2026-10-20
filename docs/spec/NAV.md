@@ -63,6 +63,7 @@
 - [10-workbuddy-benchmark-ux.md](04-ux/10-workbuddy-benchmark-ux.md)
 - [11-asktool-question-card.md](04-ux/11-asktool-question-card.md)
 - [12-prompt-enhancement.md](04-ux/12-prompt-enhancement.md)
+- [13-remote-mobile-client.md](04-ux/13-remote-mobile-client.md)
 
 ## 5. Security
 - [README.md](05-security/README.md)

@@ -31,7 +31,10 @@ const PROBE_LINE = "REMOTE_WEB_PROBE";
 const HELPERS = `(() => {
   const buttons = () => Array.from(document.querySelectorAll("button"));
   const textOf = (element) => (element.textContent || "").trim();
-  const buttonWithText = (text) => buttons().find((candidate) => textOf(candidate) === text) || null;
+  const buttonWithText = (text) => buttons().find((candidate) => {
+    const candidateText = textOf(candidate);
+    return candidateText === text || candidateText.startsWith(text);
+  }) || null;
   globalThis.__rw = {
     body: () => document.body.innerText,
     button: (text) => { const found = buttonWithText(text); return found ? { disabled: found.disabled } : null; },
@@ -40,9 +43,11 @@ const HELPERS = `(() => {
     approvalCards: () => Array.from(document.querySelectorAll("section")).filter((card) => textOf(card).includes("Approval needed")).length,
     approvalButtons: () => buttons().filter((candidate) => (candidate.getAttribute("aria-label") || "").startsWith("Approval needed:")).map((candidate) => candidate.getAttribute("aria-label")),
     toolRows: () => Array.from(document.querySelectorAll("li")).filter((row) => textOf(row).startsWith("Tool")).length,
-    turnLabel: () => Array.from(document.querySelectorAll("span")).map(textOf).find((label) => label.startsWith("Turn ")) || null,
+    turnLabel: () => { const labels = Array.from(document.querySelectorAll("span")).map(textOf); if (labels.includes("Running") || labels.includes("Turn running") || labels.includes("Stopping…")) return "Turn running"; return labels.find((label) => label.startsWith("Turn ")) || null; },
+    /** Every button's text: a failing click says what the page really offers. */
+    buttonTexts: () => Array.from(document.querySelectorAll("button")).map((b) => (b.textContent || "").trim()).filter(Boolean),
     hasSession: (title) => document.querySelector('[aria-label="' + title + '"]') !== null,
-    groupHeadings: () => Array.from(document.querySelectorAll("section[aria-label] > button[aria-expanded]")).map((button) => (button.textContent || "").trim().replace(/\\s+/g, " ")),
+    groupHeadings: () => Array.from(document.querySelectorAll("section[aria-label] button[aria-expanded]")).map((button) => (button.textContent || "").trim().replace(/\\s+/g, " ")),
     groupOf: (title) => {
       const row = document.querySelector('[aria-label="' + title + '"]');
       const section = row ? row.closest("section[aria-label]") : null;
@@ -80,14 +85,17 @@ const HELPERS = `(() => {
     }),
     // A row whose body carries no text at all is the blank box the desktop hides.
     emptyRows: () => Array.from(document.querySelectorAll("main ul > li")).filter((row) => {
-      const body = row.querySelector("p");
-      return !body || (body.textContent || "").trim().length === 0;
+      // A row with nothing a reader can see is the blank box the desktop hides.
+      // Screen-reader-only labels ("Tool") are not visible text.
+      const clone = row.cloneNode(true);
+      clone.querySelectorAll(".sr-only").forEach((element) => element.remove());
+      return (clone.textContent || "").trim().length === 0;
     }).length,
     toolRowNames: () => Array.from(document.querySelectorAll("main ul > li")).filter((row) => {
-      const label = row.querySelector("span");
+      const label = row.querySelector("span.sr-only") || row.querySelector("span");
       return label && (label.textContent || "").trim().toLowerCase() === "tool";
     }).map((row) => {
-      const mono = row.querySelector(".app-mono");
+      const mono = row.querySelector(".font-mono, .app-mono");
       return mono ? (mono.textContent || "").trim() : "";
     }),
     mainText: () => { const main = document.querySelector("main"); return main ? main.innerText : ""; },
@@ -161,7 +169,11 @@ async function waitFor(webContents, expression, label, timeoutMs = 30_000) {
 
 async function clickText(webContents, text, label = text) {
   const clicked = await evaluate(webContents, `__rw.click(${JSON.stringify(text)})`);
-  if (!clicked) throw new Error(`the page has no "${label}" control`);
+  if (!clicked) {
+    const buttons = await evaluate(webContents, "JSON.stringify(__rw.buttonTexts())");
+    const body = await evaluate(webContents, "__rw.body()");
+    throw new Error(`the page has no "${label}" control; buttons=${String(buttons).slice(0, 600)}; page=${String(body).slice(0, 600)}`);
+  }
 }
 
 /**
@@ -336,8 +348,16 @@ async function runViewport(view, openWindows) {
     await evaluate(webContents, `(() => { ${HELPERS}; return true; })()`);
 
     // 1. Pair through the UI with the ticket the Host printed.
-    await waitFor(webContents, "__rw.button('Add host') !== null", "the host list");
-    await clickText(webContents, "Add host");
+    await waitFor(
+      webContents,
+      "__rw.button('Use a pairing ticket') !== null || __rw.button('Add host') !== null",
+      "the host list or connect screen",
+    );
+    if (await evaluate(webContents, "__rw.button('Use a pairing ticket') !== null")) {
+      await clickText(webContents, "Use a pairing ticket");
+    } else {
+      await clickText(webContents, "Add host");
+    }
     await waitFor(webContents, "document.querySelector('#pair-ticket') !== null", "the pairing form");
     await evaluate(webContents, `__rw.write('#pair-ticket', ${JSON.stringify(view.ticket)})`);
     await evaluate(webContents, `__rw.write('#pair-label', ${JSON.stringify(view.label)})`);
@@ -435,6 +455,19 @@ async function runViewport(view, openWindows) {
 
     // 4. Approve once; the tool must run once.
     await clickAria(webContents, "Approval needed: Allow once");
+    // High-risk tool calls show a secondary confirmation sheet (Spec O4).
+    await waitFor(
+      webContents,
+      `(() => {
+        const dialog = document.querySelector('[role="dialog"]');
+        if (dialog) {
+          const btn = Array.from(dialog.querySelectorAll("button")).find((b) => (b.textContent || "").trim() === "Allow once");
+          if (btn) { btn.click(); return true; }
+        }
+        return __rw.approvalCards() === 0;
+      })()`,
+      "high-risk confirmation sheet or resolved approval",
+    );
     await waitFor(webContents, "__rw.approvalCards() === 0 && __rw.toolRows() === 1", "the approved tool row");
     await waitFor(webContents, "document.body.innerText.includes('Turn completed')", "the approved turn to complete");
     await capture("09-approved");
@@ -444,13 +477,17 @@ async function runViewport(view, openWindows) {
     await clickText(webContents, "Send");
     await waitFor(webContents, "__rw.turnLabel() === 'Turn running'", "the running turn before Stop");
     await clickText(webContents, "Stop");
+    await waitFor(webContents, "__rw.button('Stop after this step') !== null", "the stop sheet");
+    await clickText(webContents, "Stop after this step");
     await waitFor(webContents, "__rw.turnLabel() !== 'Turn running'", "the stopped turn");
     observed.afterStop = await evaluate(webContents, "__rw.turnLabel()");
     await type("hold the turn open for an interrupt");
     await clickText(webContents, "Send");
     await waitFor(webContents, "__rw.turnLabel() === 'Turn running'", "the running turn before Interrupt");
-    await clickText(webContents, "Interrupt");
-    await waitFor(webContents, "__rw.turnLabel() !== 'Turn running'", "the interrupted turn");
+    await clickText(webContents, "Stop");
+    await waitFor(webContents, "__rw.button('Stop now') !== null", "the stop sheet before interrupt");
+    await clickText(webContents, "Stop now");
+    await waitFor(webContents, "__rw.turnLabel() === 'Turn interrupted'", "the interrupted turn");
     observed.afterInterrupt = await evaluate(webContents, "__rw.turnLabel()");
     await capture("10-stop-interrupt");
 
@@ -553,6 +590,8 @@ async function runLongSession(webContents, view, observed, capture) {
   // 6. The same screen in dark mode, for the visual check. The client follows
   //    `prefers-color-scheme`, so the surface is read off the shell the theme
   //    paints — `document.body` itself stays transparent in both themes.
+  nativeTheme.themeSource = "light";
+  await sleep(200);
   observed.longLightBackground = await evaluate(webContents, SHELL_BACKGROUND);
   observed.longLightPrefers = await evaluate(webContents, DARK_PREFERENCE);
   nativeTheme.themeSource = "dark";
