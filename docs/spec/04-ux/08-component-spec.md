@@ -3432,10 +3432,10 @@ See [Live Voice](../03-runtime/live-voice.md) and
 [Live Work](../03-runtime/live-work-session.md) for the unchanged ownership,
 permission, and call-scoped work contracts.
 
-### 11.8 Slash commands, @ file references, and clipboard files (D123–D125, D197, D209, D262, D362, D397, ADR 0024, ADR 0059, ADR 0070, ADR 0131, ADR 0221, ADR 0222)
+### 11.8 Slash commands, @ file references, # session targets, and clipboard files (D123–D125, D197, D209, D262, D362, D397, D673, ADR 0024, ADR 0059, ADR 0070, ADR 0131, ADR 0221, ADR 0222)
 
-The composer owns an inline autocomplete menu — one component serving two
-modes. Focus never leaves the textarea (D125).
+The composer owns an inline autocomplete menu — one component serving three
+host modes. Focus never leaves the textarea (D125).
 
 Anatomy:
 
@@ -3523,12 +3523,37 @@ Anatomy:
   main selects image blocks or path fallbacks from the exact model capability.
   Reference-only drafts are sendable. Builtin/plugin dispatch still bypasses
   the model-ready gate when no prompt text or file reference is sent.
-- A `minih-agent-desktop://session/<id>` link in the draft is the reference itself: no
-  new trigger symbol joins `@` files and `/` commands, and the link stays
-  visible plaintext while the draft is unsent. Immediately before dispatch,
-  main resolves each link to another conversation in the same project into a
-  bounded excerpt attachment (§20B). An unknown id, a self-reference, and a
-  conversation in another project stay plaintext.
+- Session target mode (`#` token at cursor, boundary-preceded): the host's own
+  group of the sessions work can be handed to (D673). The `#` symbol is one
+  trigger with two halves — the host's target group first, then the group of a
+  plugin that registered `#`, exactly as `@` already composes with a plugin
+  owning it. Rows come from the session list the renderer already holds: local,
+  Agent-mode, not archived, in the caller's project (the home's selected project
+  before any session exists), never the calling session itself, newest first,
+  capped at 50. A query matches titles case-insensitively (substring or
+  subsequence) and highlights the matched characters; an empty query lists the
+  most recently updated sessions; the row's detail is the relative update time.
+  The group refuses to open with no match, so `#123`, `## heading` and a bare
+  `#` stay ordinary draft text and Enter still sends them. IME composition
+  freezes the group like the other modes, and Esc dismisses this token only.
+- Accepting a session target inserts an inline `#title` chip at the caret with
+  one trailing space, and that Enter does not send. The chip is not a session
+  *link*: it carries no excerpt and stays visually distinct from the pasted-link
+  chip. Immediately before dispatch it serializes to the plain sentence
+  `#<title> (Session ID: <id>)` — title whitespace folded, trimmed, 80 characters
+  at most, an empty title falling back to the id's first eight characters — and
+  it never matches the session-link pattern, so main attaches no excerpt of that
+  conversation. A target produces no structured attachment. Sending it is how a
+  prompt names the session that `SessionSend` should receive the work; the tool
+  definitions are unchanged. V1 limitation: the sent message renders that
+  sentence as ordinary transcript text rather than a chip.
+- A `minih-agent-desktop://session/<id>` link in the draft is the reference itself:
+  a reference symbol of its own is not needed, and the link stays visible
+  plaintext while the draft is unsent. Immediately before dispatch, main resolves
+  each link to another conversation in the same project into a bounded excerpt
+  attachment (§20B). An unknown id, a self-reference, and a conversation in
+  another project stay plaintext. §20B states how this differs from a `#` target:
+  a link brings the conversation's content, a target only names it.
 - The Agent/Plan/Goal mode aliases can prefix a prompt in the same draft:
   `/agent-mode <prompt>`, `/plan-mode <prompt>`, and `/goal-mode <prompt>` apply
   the mode first, then send `<prompt>` plus any serialized references through
@@ -4384,6 +4409,23 @@ Carry another conversation into a turn without retyping it. The
 `minih-agent-desktop://session/<id>` link is the whole interaction: a reader copies it
 from the conversation overflow menu and pastes it into a Composer draft (issue
 #1324, option B). Copy conversation ID stays the developer-mode identifier.
+
+### 20B.1a A reference versus a `#` target (D673)
+
+The Composer names another conversation in two ways, and they are not
+interchangeable:
+
+| | Reference (pasted link) | Target (`#` trigger) |
+|---|---|---|
+| How it starts | paste `minih-agent-desktop://session/<id>` | type `#` and pick a row |
+| What the model receives | bounded excerpt of that transcript, as an attachment (§20B.3) | the sentence `#<title> (Session ID: <id>)`, as plain text |
+| What the user sees while drafting | the chip over the link text | an inline `#title` chip |
+| What it is for | reading and quoting that conversation | telling the session tools which session should receive the work |
+
+A target therefore carries no content and produces no attachment, and the
+sentence it sends deliberately never matches the session-link pattern, so main
+resolves nothing from it. Choosing a row is the only way to make a target; a
+pasted link never becomes one, and a target never becomes a reference.
 
 ### 20B.2 Anatomy
 

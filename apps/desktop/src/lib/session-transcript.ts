@@ -11,7 +11,7 @@ import {
 type OptimisticFileReference = {
   path: string;
   name: string;
-  kind?: "image" | "file" | "session";
+  kind?: "image" | "file" | "session" | "sessionTarget";
   mimeType?: string;
   /** Large-text paste tokens travel inline in the text, not as attachments. */
   token?: string;
@@ -35,8 +35,11 @@ export function optimisticUserMessage(
 ): UiMessage {
   // A plain file chip travels as `@path` text and needs no attachment row, but
   // an image chip is one: it also records where its path sits, so the row shows
-  // the image in place before the durable echo arrives (D288).
+  // the image in place before the durable echo arrives (D288). A session target
+  // is prompt text only — it names a conversation — so it has no attachment row
+  // either.
   const rendered = fileReferences.flatMap((reference) => {
+    if (reference.kind === "sessionTarget") return [];
     const kind =
       reference.kind ??
       (IMAGE_PATH_PATTERN.test(reference.path) ? ("image" as const) : ("file" as const));

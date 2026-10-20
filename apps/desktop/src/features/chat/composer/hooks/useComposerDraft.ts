@@ -252,7 +252,9 @@ export function useComposerDraft({
   const openSessionReferenceRef = useRef<(token: string) => void>(() => {});
   openSessionReferenceRef.current = (token) => {
     const reference = referenceByTokenRef.current.get(token);
-    if (!reference || reference.kind !== "session") return;
+    // A session target names a conversation exactly like a pasted reference
+    // does, so activating either chip opens (and selects) that session.
+    if (!reference || (reference.kind !== "session" && reference.kind !== "sessionTarget")) return;
     void useAppStore.getState().selectSession(reference.path).catch(() => undefined);
   };
   const pendingEditorCaretRef = useRef<number | null>(
@@ -282,6 +284,8 @@ export function useComposerDraft({
         t(isPluginMark(reference) ? "chat.removePluginMark" : "chat.removeFileReference", {
           name: reference.name,
         }),
+      // The session-target chip's own copy: what the mark means, in this locale.
+      t("chat.sessionTargetChip"),
       (token) => removeChipByTokenRef.current(token),
       (token) => expandTextReferenceRef.current(token),
       (token) => openImageReferenceRef.current(token),
@@ -474,11 +478,13 @@ export function useComposerDraft({
     if (previousWorkspacePathRef.current === workspacePath) return;
     previousWorkspacePathRef.current = workspacePath;
     const current = fileReferencesRef.current;
-    // Plugin marks carry their text, not a workspace path, and a session
-    // reference names a conversation rather than a file in this project.
+    // Plugin marks carry their text, not a workspace path; a session reference
+    // and a session target name a conversation rather than a file in this
+    // project, so a workspace switch keeps them.
     const survives = (fileReference: ComposerFileReference) =>
       Boolean(fileReference.plugin) ||
       fileReference.kind === "session" ||
+      fileReference.kind === "sessionTarget" ||
       isPersistedScratchReference(fileReference.path);
     const kept = current.filter(survives);
     if (kept.length === current.length) return;

@@ -117,6 +117,7 @@ test("paintEditorValue preserves line breaks across DOM rendering", async () => 
     "line 1\n\nline 2",
     new Map(),
     () => "",
+    "Session target",
     () => {},
     () => {},
   );

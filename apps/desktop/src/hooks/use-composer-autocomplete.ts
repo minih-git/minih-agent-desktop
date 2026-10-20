@@ -13,6 +13,7 @@ import {
   type ComposerTrigger,
   type FsIndexEntry,
   type FuzzyMatch,
+  type SessionSummary,
 } from "@minih-agent/shared";
 import { api } from "../lib/api";
 import {
@@ -21,12 +22,14 @@ import {
   readComposerCommandsCache,
 } from "../lib/composer-command-source";
 import { useAppStore } from "../stores/app-store";
+import { sessionTargetCandidates } from "../features/chat/composer/session-targets";
 
 /**
- * Composer autocomplete state machine (D123–D125): trigger detection over
- * draft+cursor, lazily fetched command/file sources, local fuzzy filtering,
- * and insert-on-accept. IME freezing and key routing live in the Composer;
- * this hook only refuses to update while `composing` is true.
+ * Composer autocomplete state machine (D123–D125, D673): trigger detection
+ * over draft+cursor, lazily fetched command/file sources, the session targets
+ * the store already holds, local fuzzy filtering, and insert-on-accept. IME
+ * freezing and key routing live in the Composer; this hook only refuses to
+ * update while `composing` is true.
  */
 
 const MAX_FILE_ITEMS = 50;
@@ -34,7 +37,8 @@ const SOURCE_TTL_MS = 10_000;
 
 export type AutocompleteItem =
   | { kind: "command"; command: ComposerCommand; match: FuzzyMatch }
-  | { kind: "path"; entry: FsIndexEntry; match: FuzzyMatch };
+  | { kind: "path"; entry: FsIndexEntry; match: FuzzyMatch }
+  | { kind: "session"; session: SessionSummary; match: FuzzyMatch };
 
 /**
  * Module-level TTL cache so re-triggering stays IPC-free. The `/` command
@@ -169,6 +173,11 @@ export function useComposerAutocomplete({
   const workspaceKey = useAppStore((s) => s.workspace?.path ?? "");
   const hasWorkspace = workspaceKey !== "";
   const ready = useAppStore((s) => s.ready);
+  // The session targets come from the store, not from the host: the list is
+  // already there, so a `#` never waits for a round trip.
+  const sessions = useAppStore((s) => s.sessions);
+  const sessionMeta = useAppStore((s) => s.sessionMeta);
+  const activeProjectPath = useAppStore((s) => s.activeProjectPath);
   const [commands, setCommands] = useState<ComposerCommand[] | null>(null);
   const [files, setFiles] = useState<{
     entries: FsIndexEntry[];
@@ -197,9 +206,11 @@ export function useComposerAutocomplete({
     if (dismissedKey && triggerKey !== dismissedKey) setDismissedKey(null);
   }, [triggerKey, dismissedKey]);
 
-  // Lazy source fetch with a short TTL, keyed by workspace.
+  // Lazy source fetch with a short TTL, keyed by workspace. A `#` group reads
+  // the session list the store already holds, so it must not pay for a file
+  // index round trip.
   useEffect(() => {
-    if (!trigger || dismissed) return;
+    if (!trigger || dismissed || trigger.mode === "session") return;
     const now = Date.now();
     if (trigger.mode === "slash") {
       const cached = readComposerCommandsCache(workspaceKey);
@@ -265,8 +276,17 @@ export function useComposerAutocomplete({
     if (trigger.mode === "slash") {
       return commands ? filterCommands(commands, trigger.query, trigger.tokenStart > 0) : [];
     }
+    if (trigger.mode === "session") {
+      return sessionTargetCandidates({
+        sessions,
+        sessionMeta,
+        activeSessionId: sessionId,
+        activeProjectPath,
+        query: trigger.query,
+      }).map(({ session, match }) => ({ kind: "session", session, match }));
+    }
     return files ? filterFiles(files.entries, trigger.query) : [];
-  }, [trigger, dismissed, commands, files]);
+  }, [trigger, dismissed, commands, files, sessions, sessionMeta, sessionId, activeProjectPath]);
 
   // New query or mode restarts keyboard navigation at the top hit.
   const itemsKey = trigger ? `${trigger.mode}:${trigger.query}` : "";
@@ -274,9 +294,16 @@ export function useComposerAutocomplete({
     setHighlight(0);
   }, [itemsKey]);
 
+  // The session source is the store itself, so it is ready as soon as a trigger
+  // exists; a target group with no match never opens at all, which keeps
+  // `#123`, `## heading` and the like as the ordinary text they are.
   const sourceReady =
     !!trigger &&
-    (trigger.mode === "slash" ? commands !== null : files !== null);
+    (trigger.mode === "slash"
+      ? commands !== null
+      : trigger.mode === "session"
+        ? items.length > 0
+        : files !== null);
   const open = !!trigger && !dismissed && sourceReady;
 
   const close = useCallback(() => {
@@ -291,11 +318,21 @@ export function useComposerAutocomplete({
           value: string;
           cursor: number;
           fileReference?: { path: string; name: string };
+          sessionTarget?: { sessionId: string; title: string };
         }
       | null => {
       if (!trigger) return null;
       const item = items[index];
       if (!item) return null;
+      if (item.kind === "session") {
+        // The target becomes an inline chip, so accepting replaces the typed
+        // query with nothing here; the caller splices the chip token and the
+        // one space that lets the user keep typing after it.
+        return {
+          ...applyCompletion(value, trigger, ""),
+          sessionTarget: { sessionId: item.session.id, title: item.session.title },
+        };
+      }
       if (item.kind === "path" && item.entry.kind === "file") {
         return {
           ...applyCompletion(value, trigger, ""),

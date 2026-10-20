@@ -1,9 +1,10 @@
 import { formatSessionLink } from "./session-link.js";
+import { formatSessionTargetText } from "./session-target.js";
 
 /**
  * Trigger detection and completion insertion for the composer autocomplete
- * (D123–D125). Pure string/cursor math so the exact "/"+"@" grammar is unit
- * tested away from React and IME timing.
+ * (D123–D125, D673). Pure string/cursor math so the exact "/"+"@"+"#" grammar
+ * is unit tested away from React and IME timing.
  *
  * Grammar mirrors the pi CLI editor:
  * - "/" opens all commands in the first token. Later whitespace-delimited
@@ -12,15 +13,20 @@ import { formatSessionLink } from "./session-link.js";
  *   "@" and the character before it is start-of-input, whitespace, or one
  *   of the pi delimiters (" ' =). A `@"` prefix starts a quoted token that
  *   may contain spaces until its closing quote.
+ * - "#" opens the host's session-target mode on the same boundary rule, and
+ *   its full-width form counts as the ASCII symbol. It has no quoted form. The
+ *   mode carries no placeholder: the Composer only opens that group when a
+ *   session actually matches, so a Markdown heading or an issue number typed in
+ *   a draft stays ordinary text.
  */
 
-export type ComposerTriggerMode = "slash" | "file";
+export type ComposerTriggerMode = "slash" | "file" | "session";
 
 export type ComposerTrigger = {
   mode: ComposerTriggerMode;
-  /** Filter text (after "/" or "@", quotes stripped). */
+  /** Filter text (after "/", "@" or "#", quotes stripped). */
   query: string;
-  /** Index of the trigger character ("/" or "@") in the draft. */
+  /** Index of the trigger character ("/", "@" or "#") in the draft. */
   tokenStart: number;
   /** End of the replaced region — always the cursor position. */
   tokenEnd: number;
@@ -49,6 +55,9 @@ const DELIMITERS = new Set([" ", "\t", "\n", "\r", '"', "'", "="]);
 
 /** U+3001 IDEOGRAPHIC COMMA — the mark a Chinese IME gives for "/" (D405). */
 export const IDEOGRAPHIC_COMMA = "、";
+
+/** U+FF03 FULLWIDTH NUMBER SIGN — the mark a full-width IME gives for "#". */
+export const FULL_WIDTH_HASH = "\uFF03";
 
 /**
  * A Chinese IME types "、" where an ASCII "/" is meant, and switching input
@@ -115,19 +124,25 @@ export function detectTrigger(
     if (ch === "\n") break;
   }
 
-  // File mode, plain token: scan back to the nearest delimiter.
+  // Plain token: scan back to the nearest delimiter. The symbol at its start
+  // decides the mode — `@` files, `#` the host's session target.
   let start = cursor;
   while (start > 0 && !DELIMITERS.has(value[start - 1])) start -= 1;
+  const symbol = value[start];
   const token = value.slice(start, cursor);
-  if (token.startsWith("@") && isBoundary(value, start)) {
+  if ((symbol === "@" || symbol === "#" || symbol === FULL_WIDTH_HASH) && isBoundary(value, start)) {
+    // The caret must sit after the symbol: accepting a row replaces the query
+    // between them, and a caret in front of its own symbol has nothing to
+    // replace — it would splice the reference before the symbol and leave it
+    // in the draft.
+    if (cursor === start) return null;
     return {
-      mode: "file",
+      mode: symbol === "@" ? "file" : "session",
       query: token.slice(1),
       tokenStart: start,
       tokenEnd: cursor,
     };
   }
-
   return null;
 }
 
@@ -182,11 +197,18 @@ type ComposerReferencePluginPart = { readonly kind?: string; readonly send?: str
  */
 export function serializeComposerFileReferences(
   draft: string,
-  references: ReadonlyArray<{ path: string; kind?: string; token?: string; plugin?: ComposerReferencePluginPart }>,
+  references: ReadonlyArray<{ path: string; name?: string; kind?: string; token?: string; plugin?: ComposerReferencePluginPart }>,
 ): string {
   const content = serializeInlineComposerFileReferences(draft, references);
   const paths = references
-    .filter((reference) => !reference.token && reference.kind !== "session")
+    // A session reference is a link and a target is a sentence; neither is a
+    // path, and neither may reach the model as one.
+    .filter(
+      (reference) =>
+        !reference.token &&
+        reference.kind !== "session" &&
+        reference.kind !== "sessionTarget",
+    )
     .map((reference) => formatFileInsert(reference.path, "file"))
     .join("")
     .trim();
@@ -199,12 +221,14 @@ export function serializeComposerFileReferences(
  * Resolve only inline generated tokens (legacy @name strings or single
  * sentinel characters backing atomic chips). Each resolved token keeps one
  * separating space so adjacent chips never fuse their @paths together. A
- * plugin mark's token resolves to the text it sends (`plugin.send`) instead
- * of a path, and a session reference resolves to its `minih-agent-desktop://` link.
+ * plugin mark's token resolves to the text it sends (`plugin.send`), a session
+ * reference to its `minih-agent-desktop://` link, and a session target to the
+ * plain `#<title> (Session ID: <id>)` sentence that names it without attaching
+ * any of its content.
  */
 export function serializeInlineComposerFileReferences(
   draft: string,
-  references: ReadonlyArray<{ path: string; kind?: string; token?: string; plugin?: ComposerReferencePluginPart }>,
+  references: ReadonlyArray<{ path: string; name?: string; kind?: string; token?: string; plugin?: ComposerReferencePluginPart }>,
 ): string {
   let content = draft;
   for (const reference of references) {
@@ -215,7 +239,9 @@ export function serializeInlineComposerFileReferences(
       ? send
       : reference.kind === "session"
         ? formatSessionLink(reference.path)
-        : formatFileInsert(reference.path, "file").trim();
+        : reference.kind === "sessionTarget"
+          ? formatSessionTargetText(reference.name ?? "", reference.path)
+          : formatFileInsert(reference.path, "file").trim();
     let index = content.indexOf(token);
     while (index !== -1) {
       const nextChar = content[index + token.length];
