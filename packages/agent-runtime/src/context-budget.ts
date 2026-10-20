@@ -166,13 +166,60 @@ function estimateContextTokensFor(
     : estimateContextTokens(messages);
 }
 
-/** Thresholds for a model window, plus the estimated size of `messages`. */
+/** Whether a projection anchors on a provider-reported usage. */
+export function contextEstimateAnchored(estimate: {
+  usageTokens: number;
+  lastUsageIndex: number | null;
+}): boolean {
+  return estimate.lastUsageIndex !== null && estimate.usageTokens > 0;
+}
+
+/**
+ * The token count a budget decision compares against its thresholds.
+ *
+ * `messageTokens` is the projection of the messages as the target model will
+ * carry them: pi-ai's estimate, or the runtime's calibrated form of it.
+ * `requestTokens` is the output-cap estimate of the complete request, and it
+ * exists to cover what a projection cannot see for itself — the system prompt
+ * and the tool schemas. A projection anchored on a provider-reported usage
+ * already contains that request's prompt and schemas, so charging them again
+ * on top of it inflates the total: a conversation with most of its window
+ * still free compacted early because the crude estimate of the same context
+ * read higher than the number the provider reported for it. The full-request
+ * estimate therefore only ever raises an *unanchored* projection, which is
+ * exactly the start of a session and the window right after a checkpoint.
+ */
+export function contextBudgetTokens(input: {
+  messageTokens: number;
+  anchored: boolean;
+  requestTokens: number;
+}): number {
+  return input.anchored
+    ? input.messageTokens
+    : Math.max(input.messageTokens, input.requestTokens);
+}
+
+/**
+ * Thresholds for a model window, plus the token count for `messages`.
+ *
+ * Passing `requestTokens` applies `contextBudgetTokens`; omitting it keeps the
+ * projection's own count, for callers with no full-request estimate.
+ */
 export function contextBudgetFor(
   model: ContextBudgetModelInput,
   messages: AgentMessage[],
+  requestTokens?: number,
 ): ContextBudget {
+  const estimate = estimateContextTokensFor(model, messages);
   return {
-    tokens: estimateContextTokensFor(model, messages).tokens,
+    tokens:
+      requestTokens === undefined
+        ? estimate.tokens
+        : contextBudgetTokens({
+            messageTokens: estimate.tokens,
+            anchored: contextEstimateAnchored(estimate),
+            requestTokens,
+          }),
     ...contextBudgetLimitsFor(model),
   };
 }

@@ -195,6 +195,8 @@ import {
   contextBudgetFor,
   automaticCompactionThresholdFor,
   contextBudgetLimitsFor,
+  contextBudgetTokens,
+  contextEstimateAnchored,
   retainedUserMessageBudget,
   type ContextBudget,
 } from "./context-budget.js";
@@ -6718,12 +6720,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     const budget = contextBudgetFor(this.model, messages);
     // Calibration learns from message usage; the output-cap estimator adds the
     // active system prompt and tool schemas that the provider also receives.
-    // Taking the larger full-request estimate avoids double-counting overhead
-    // once unanchored calibration has learned it, while keeping that overhead as
-    // a hard floor before the first usable sample.
-    const calibratedMessageTokens = this.contextCalibration.correct(
-      estimateContextTokens(messages, this.model),
-    );
+    // The two are combined by `contextBudgetTokens`: the full-request estimate
+    // is the floor of a projection with no usage anchor, and an anchored
+    // projection already carries that request's prompt and schemas.
+    const estimate = estimateContextTokens(messages, this.model);
+    const calibratedMessageTokens = this.contextCalibration.correct(estimate);
     const requestTokens = estimateOutputCapInputTokens(
       {
         messages: messages.filter(
@@ -6739,7 +6740,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     );
     return {
       ...budget,
-      tokens: Math.max(calibratedMessageTokens, requestTokens),
+      tokens: contextBudgetTokens({
+        messageTokens: calibratedMessageTokens,
+        anchored: contextEstimateAnchored(estimate),
+        requestTokens,
+      }),
     };
   }
 

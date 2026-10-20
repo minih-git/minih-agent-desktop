@@ -635,10 +635,19 @@ anchor, the budget also computes the output-cap estimator
 over non-system conversation messages plus the current system prompt and active
 tool schemas. System-transcript rows are chronological updates, already covered by that
 folded prompt/tool floor, and are excluded from this component, so the request estimate counts the prompt
-and schemas exactly once. The budget uses the larger of this full-request
-estimate and the calibrated message estimate. This is a hard floor before the
-first calibration sample and prevents counting overhead twice after an
-unanchored residual has learned it.
+and schemas exactly once. `contextBudgetTokens()` combines the two: the
+full-request estimate raises the calibrated message estimate only while the
+projection has **no** usage anchor, because that is when nothing else carries
+the prompt and the schemas — the start of a session, and the window right after
+a checkpoint cleared the anchor. A projection anchored on a provider-reported
+usage already contains that request's prompt and schemas, so its own count
+stands: charging the same context a second time through the crude estimate made
+a conversation with most of its window still free compact early (D671). Both
+the session runtime and a delegate resolve their budget through this one rule. An anchor also has to belong to *this*
+context: the projection tracks the newest checkpoint summary's timestamp across
+every message, because that summary is a desktop-only role the provider
+estimator never sees, and a usage reported before it — a replayed tail's, for
+instance — would otherwise anchor a context the checkpoint already replaced.
 
 The calibration still measures the two errors separately — per-character bias
 as a scale-free ratio over the guessed tail, and an unanchored residual as a
@@ -1267,7 +1276,10 @@ from the model the run actually resolved — a `Task.model` override, a
 definition pin, or the inherited session model — through the shared
 derivation of §5.1, so `hardLimit` is that window minus the same request
 headroom and a per-definition `maxTokens` cap participates as the output
-budget. At a delegate turn boundary the run re-estimates its own context and
+budget. Its budget follows the session's anchored-estimate rule as well, so a
+delegate whose provider reported a small usage is not compacted by the
+full-request estimate alone. At a delegate turn boundary the run re-estimates
+its own context and
 starts compaction at `floor(hardLimit * 0.9)`, before the next provider
 request. A compaction result must still fit below `hardLimit`; that remains
 the non-negotiable provider-request guard. The retention mode follows the

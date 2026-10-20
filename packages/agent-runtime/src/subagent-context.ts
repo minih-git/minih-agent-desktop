@@ -241,7 +241,6 @@ function delegateContextBudgetFor(
   tools?: unknown[],
 ): ContextBudget {
   const requestMessages = [...messages, ...additionalMessages];
-  const estimate = contextBudgetFor(model, requestMessages);
   const requestTokens = estimateOutputCapInputTokens(
     {
       messages: outputCapContextMessages(requestMessages),
@@ -250,7 +249,9 @@ function delegateContextBudgetFor(
     },
     outputCapReplayTarget(model),
   );
-  return { ...estimate, tokens: Math.max(estimate.tokens, requestTokens) };
+  // The shared rule: a projection anchored on the delegate's own
+  // provider-reported usage already carries that request's prompt and schemas.
+  return contextBudgetFor(model, requestMessages, requestTokens);
 }
 
 /**

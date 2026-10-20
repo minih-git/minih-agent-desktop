@@ -232,3 +232,48 @@ describe("hosted search target model threading", () => {
     );
   });
 });
+
+describe("contextBudgetFor with a full-request estimate", () => {
+  const window = { contextWindow: 32_000, maxTokens: 8_000 };
+  const anchored = (inputTokens: number): AssistantMessage => ({
+    role: "assistant",
+    api: "openai-completions",
+    provider: "local",
+    model: "local-model",
+    stopReason: "stop",
+    timestamp: 2,
+    content: [{ type: "text", text: "ok" }],
+    usage: {
+      input: inputTokens,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: inputTokens + 1,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+  });
+  const conversation = (assistant?: AssistantMessage): AgentMessage[] => [
+    { role: "user", content: "上".repeat(15_000), timestamp: 1 },
+    ...(assistant ? [assistant] : []),
+  ];
+
+  it("trusts a provider-reported usage over the full-request estimate", () => {
+    // The provider's own count for the request that produced it already covers
+    // that request's prompt and schemas, so the crude estimate cannot raise it.
+    const budget = contextBudgetFor(window, conversation(anchored(13_000)), 20_000);
+
+    expect(budget.tokens).toBe(13_001);
+    expect(budget.tokens).toBeLessThan(automaticCompactionThresholdFor(budget));
+  });
+
+  it("keeps the full-request estimate as the floor before any usage anchor", () => {
+    const budget = contextBudgetFor(window, conversation(), 20_000);
+
+    expect(budget.tokens).toBe(20_000);
+    expect(budget.tokens).toBeGreaterThanOrEqual(automaticCompactionThresholdFor(budget));
+  });
+
+  it("applies no floor when the caller passes no request estimate", () => {
+    expect(contextBudgetFor(window, conversation()).tokens).toBeLessThan(20_000);
+  });
+});

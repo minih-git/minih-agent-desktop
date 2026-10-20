@@ -28,6 +28,7 @@ import {
   type RuntimeProviderConfig,
 } from "./runtime.js";
 import { estimateOutputCapInputTokens } from "./output-cap.js";
+import { automaticCompactionThresholdFor } from "./context-budget.js";
 
 import { COMPACTION_SUMMARY_MAX_RETRIES } from "./compaction-summary-input.js";
 import { loadInstructionChain, type ProjectInstructions } from "./project-instructions.js";
@@ -12359,5 +12360,80 @@ describe("isolated-session subagent worktrees (ADR 0329)", () => {
     expect(delegateWorktreeNote({ result: "noChanges" }, resume)).toContain("no file changes");
     expect(delegateWorktreeNote({ result: "notMerged", reason: "busy" }, resume)).toContain("busy");
     expect(delegateWorktreeNote({ result: "none" }, resume)).toBe("");
+  });
+});
+
+describe("the context budget follows a provider-reported usage", () => {
+  /**
+   * The reported defect: a conversation whose provider usage still left plenty
+   * of the window, compacted anyway because the chars/4-plus-CJK estimate of
+   * the whole request read higher than the number the provider reported for it.
+   */
+  const smallWindowProvider = () => ({
+    ...provider,
+    modelConfig: { ...provider.modelConfig!, contextWindow: 32_000, maxTokens: 8_000 },
+  });
+
+  it("does not compact a context the provider reported as small", async () => {
+    const runtime = createRuntime({ provider: smallWindowProvider() });
+    const internal = runtime as any;
+    // 13 001 tokens of real usage behind a message the crude estimate charges
+    // 15 000 for on its own; the threshold for this window is 14 400.
+    const messages = [
+      { role: "user", content: "上".repeat(15_000), timestamp: 1 },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        api: "openai-completions",
+        provider: "local",
+        model: "local-model",
+        stopReason: "stop",
+        timestamp: 2,
+        usage: {
+          input: 13_000,
+          output: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 13_001,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      },
+    ] as never;
+    const budget = internal.contextBudget(messages);
+    const threshold = automaticCompactionThresholdFor(budget);
+    const requestEstimate = estimateOutputCapInputTokens(
+      {
+        messages: (messages as any[]).filter((message) => message.role !== "system"),
+        systemPrompt: internal.agent.state.systemPrompt,
+        tools: internal.declaredTools(),
+      },
+      internal.model,
+    );
+
+    // Guard the fixture: the full-request estimate alone would have crossed it.
+    expect(requestEstimate).toBeGreaterThan(threshold);
+    expect(threshold).toBe(14_400);
+    expect(budget.tokens).toBe(13_001);
+    vi.spyOn(internal, "liveSessionContext").mockReturnValue({ messages });
+    expect(internal.automaticCompactionNeeded()).toBe(false);
+
+    await runtime.dispose();
+  });
+
+  it("still uses the full-request estimate before any usage exists", async () => {
+    const runtime = createRuntime({ provider: smallWindowProvider() });
+    const internal = runtime as any;
+    const messages = [
+      { role: "user", content: "上".repeat(15_000), timestamp: 1 },
+    ] as never;
+    const budget = internal.contextBudget(messages);
+
+    expect(budget.tokens).toBeGreaterThanOrEqual(
+      automaticCompactionThresholdFor(budget),
+    );
+    vi.spyOn(internal, "liveSessionContext").mockReturnValue({ messages });
+    expect(internal.automaticCompactionNeeded()).toBe(true);
+
+    await runtime.dispose();
   });
 });

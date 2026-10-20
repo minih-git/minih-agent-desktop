@@ -61,6 +61,30 @@ export function estimateTokens(
   }
 }
 
+/**
+ * Newest timestamp of a checkpoint summary in the projection, or `-Infinity`.
+ *
+ * pi-ai invalidates a usage that a later prefix was inserted ahead of: its
+ * `getLastAssistantUsageInfo` compares each candidate against the newest
+ * timestamp it has already passed. It can only do that for messages it can
+ * estimate, and a `compactionSummary` is a desktop-only role — so the
+ * projection below filters it out and the boundary it draws becomes invisible
+ * to that rule. A replayed tail then stands as the anchor for the context
+ * *before* the checkpoint that retained it, and the budget describes a context
+ * that no longer exists. Tracking the boundary over every message restores it.
+ */
+function checkpointBoundaryTimestamp(messages: readonly AgentMessage[]): number {
+  let boundary = Number.NEGATIVE_INFINITY;
+  for (const message of messages) {
+    if (message.role !== "compactionSummary" && message.role !== "branchSummary") continue;
+    const timestamp = (message as { timestamp?: unknown }).timestamp;
+    if (typeof timestamp === "number" && Number.isFinite(timestamp)) {
+      boundary = Math.max(boundary, timestamp);
+    }
+  }
+  return boundary;
+}
+
 /** Preserve the provider-usage anchor, estimating only messages after it. */
 export function estimateContextTokens(
   messages: AgentMessage[],
@@ -80,7 +104,14 @@ export function estimateContextTokens(
   });
   validateHostedSearchMessages(providerMessages);
   const usageInfo = getLastAssistantUsageInfo(providerMessages);
-  if (!usageInfo) {
+  const anchorTimestamp = usageInfo
+    ? (providerMessages[usageInfo.index] as { timestamp?: unknown } | undefined)?.timestamp
+    : undefined;
+  const anchorApplies =
+    usageInfo !== undefined &&
+    typeof anchorTimestamp === "number" &&
+    anchorTimestamp >= checkpointBoundaryTimestamp(messages);
+  if (!usageInfo || !anchorApplies) {
     const tokens = messages.reduce((sum, message) => sum + estimateTokens(message, model), 0);
     return { tokens, usageTokens: 0, trailingTokens: tokens, lastUsageIndex: null };
   }
