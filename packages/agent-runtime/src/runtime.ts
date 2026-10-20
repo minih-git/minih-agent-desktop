@@ -3543,7 +3543,8 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
           // an image request, or a session delivery that may be waiting on the
           // approval card. Stopping the turn must retract that pending approval,
           // otherwise the card outlives the turn that justified it.
-          const hostAbortable = isBash || toolName === "GenerateImages" || toolName === "SessionSend";
+          const hostAbortable = isBash || toolName === "GenerateImages"
+            || toolName === "SessionSend" || toolName === "SessionCreate";
           if (!hostAbortable || abortRequested || settled) return;
           abortRequested = true;
           abortPromise = this.host

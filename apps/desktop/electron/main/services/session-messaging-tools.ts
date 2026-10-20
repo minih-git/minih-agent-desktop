@@ -115,8 +115,8 @@ export function createSessionListTool(service: SessionCollaborationService): Loc
       if (matched.length === 0) {
         return success(
           query
-            ? `No Agent session title matches "${query}". ${others.length} other Agent session(s) exist; call SessionList without \`query\` to see them.`
-            : "No other Agent-mode session exists. Cross-session delivery needs an existing Agent session; this tool cannot create one.",
+            ? `No Agent session title matches "${query}". ${others.length} other Agent session(s) exist; call SessionList without \`query\` to see them, or create a new session with SessionCreate.`
+            : "No other Agent-mode session exists. Create one with SessionCreate, then deliver the task to its Session ID with SessionSend.",
         );
       }
       const shown = matched.slice(0, MAX_LISTED_SESSIONS);
@@ -178,6 +178,35 @@ export function createSessionSendTool(service: SessionCollaborationService): Loc
         notify === false ? " No completion notice will be sent." : " A completion notice will arrive in this session.";
       return success(
         `Delivered ${kind === "message" ? "message" : "task"} ${delivered.messageId} to session ${delivered.sessionId} (${queued ? "queued behind its current work" : `status ${delivered.status}`}).${notice}`,
+      );
+    } catch (error) {
+      return failure(errorCodeOf(error), errorMessageOf(error));
+    }
+  };
+}
+
+/**
+ * Create the Agent session a hand-off needs when no target exists yet.
+ *
+ * Creation is its own step: the model names the session the user will see, and
+ * receives the real Session ID to address afterwards. Everything the model
+ * must not choose — the sender, the project, the model, the permission mode —
+ * comes from the host and the user's settings.
+ */
+export function createSessionCreateTool(service: SessionCollaborationService): LocalToolHandler {
+  return async ({ sessionId, turnId, args, signal }) => {
+    const parsed = parseArgs(args, ["title"]);
+    if ("rejected" in parsed) return parsed.rejected;
+    try {
+      const created = (await service.invokeBuiltin({
+        sessionId,
+        turnId: turnId ?? "",
+        operation: "create",
+        args: { title: stringArg(parsed.record, "title") },
+        signal,
+      })) as { sessionId: string; title: string };
+      return success(
+        `Created Agent session ${created.sessionId} titled "${created.title}". It runs no turn until you deliver to it: call SessionSend with sessionId=${created.sessionId} and the task.`,
       );
     } catch (error) {
       return failure(errorCodeOf(error), errorMessageOf(error));

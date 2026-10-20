@@ -233,6 +233,7 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "settings.modelsConfigure",
       "settings.modelApiStyle",
       "settings.imageModel",
+      "settings.sessionCreateModel",
       "settings.thinkingProtocol",
       "settings.defaultThinkingLevel",
       "settings.modelCapabilities",

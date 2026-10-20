@@ -585,7 +585,7 @@ MVP 可以通过写入 SQLite 或日志文件来启动。
 `TaskWait` / `TaskList` / `TaskStop`、`EnterPlanMode` / `EnterGoalMode`、
 `TodoWrite`、`asktool`、`new_context`、`ToolSearch`、学习记忆工具
 `SessionHistorySearch` / `MemorySearch` / `MemoryRemember`，以及会话消息工具
-`SessionList` / `SessionSend` / `SessionResult`。内置定义不默认开启。`inherit`
+`SessionList` / `SessionSend` / `SessionResult` / `SessionCreate`。内置定义不默认开启。`inherit`
 写在 Markdown 和设置里；host-core 会保留该标记，因此只有 inherit 的文档
 仍能加载。插件工具、`Skill` 和 MCP 工具只通过这一 opt-in 到达委托，
 不能写进可分配白名单。
@@ -659,12 +659,24 @@ sidecar 不附加覆盖，委托使用会话的有效权限模式；因此父会
 ## 会话消息
 
 `SessionList`、`SessionSend`、`SessionResult` 是把工作交给既有 Agent 会话的
-内置按需工具。`SessionSend` 为高风险，在 Auto 之外走正常审批路径；两个读工具为
-低风险。三者仅限 Agent 模式：Plan 与 Goal 拒绝，`Task` 子代理无法使用，MCP
-控制目录也不暴露。由于调用由 Main 执行，host-core 通过与其他桌面自持工具相同的
-`tools.execute` 闸门授权。发送方绑定的回合必须是该会话当前的活动回合：回合结束
-后再批准旧卡片会被拒绝，停止回合也会撤回待批卡片。两种 kind 都会启动或排队目标
-回合，message 仅用于标注意图；`SessionResult` 只能读到本会话自己发起的投递。
+内置按需工具，`SessionCreate` 则在用户点名的会话还不存在时把它建出来
+（D672，ADR session-create-tool）。`SessionSend` 与 `SessionCreate` 为高风险，
+在 Auto 之外走正常审批路径；两个读工具为低风险。四者仅限 Agent 模式：Plan 与
+Goal 拒绝，`Task` 子代理无法使用，MCP 控制目录也不暴露。由于调用由 Main 执行，
+host-core 通过与其他桌面自持工具相同的 `tools.execute` 闸门授权。发送方绑定的
+回合必须是该会话当前的活动回合：回合结束后再批准旧卡片会被拒绝，停止回合也会
+撤回待批卡片。两种 kind 都会启动或排队目标回合，message 仅用于标注意图；
+`SessionResult` 只能读到本会话自己发起的投递。
+
+`SessionCreate({ title })` 在调用方会话的项目里建一个普通 Agent 模式会话，
+沿用调用方的思考等级与权限模式，使用 AI 设置里的 provider/model 绑定
+（`sessionCreateModel`）运行，并返回其 Session ID 供随后的 `SessionSend`
+投递。该设置未配置时调用以 `MODEL_NOT_CONFIGURED` 失败；绑定不在设置行提供的
+可选集合内时以 `MODEL_UNAVAILABLE` 失败；不会回退到应用默认模型。两侧用同一套
+规则解析这个集合：启用且已配置凭据、至少配置一个模型的提供方，再排除设置页排除
+的全部生图模型（`imageGenerationModels` 候选与当前生效的 `imageGeneration`
+默认合并而成）。创建本身不
+投递的跳数上限与八条收件箱约束。
 账本、权限上限、队列与跳数上限、来源标注与完成回调见
 [Agent 运行时 §5f.4](/zh-CN/spec/03-runtime/02-agent-runtime)。
 

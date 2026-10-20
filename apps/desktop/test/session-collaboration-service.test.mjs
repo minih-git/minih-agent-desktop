@@ -30,6 +30,10 @@ const pluginAgentComplete = load("../electron/main/plugin-agent-complete.ts", {
 
 const { createSessionCollaborationService } = load("../electron/main/services/session-collaboration.ts", {
   "node:crypto": crypto,
+  // The real shared helpers, not a stub: the model-identity comparison that
+  // decides whether the configured session creation model still resolves has
+  // to survive the whole way from the picker's binding into the create call.
+  "@minih-agent/shared": await import("@minih-agent/shared"),
   "../agent-host-bridge": { DESKTOP_PRINCIPAL: { kind: "desktop" } },
   "../plugin-agent-complete": pluginAgentComplete,
 });
@@ -547,4 +551,147 @@ test("a delivery owned by a plugin still fails when that plugin is gone", async 
   const failures = methodCalls(host, "session.collaboration.fail");
   assert.equal(failures.length, 1);
   assert.match(failures[0].params.error, /^ABORTED/);
+});
+
+// --- Built-in session creation (ADR session-create-tool) -------------------
+
+/** The ready-model catalog and settings every create path reads first. */
+function createHostFor(settings, providers) {
+  return createHost("host-1", (method) => {
+    if (method === "settings.get") return settings;
+    if (method === "providers.list") return { providers };
+    if (method === "session.get") return { session: { projectPath: "/work/app", thinkingLevel: "high" } };
+    if (method === "session.create") return { session: { id: "created-session", title: "Review the diff" } };
+    return {};
+  });
+}
+
+const READY_PROVIDER = {
+  id: "p1",
+  name: "Provider one",
+  enabled: true,
+  hasSecret: true,
+  models: [{ id: "m1" }],
+};
+
+function invokeBuiltinCreate(service, args = { title: "Review the diff" }) {
+  return service.invokeBuiltin({
+    sessionId: "source-session",
+    turnId: "turn-1",
+    operation: "create",
+    args,
+  });
+}
+
+test("a built-in create makes a session on the user's model and reports its id", async () => {
+  const host = createHostFor({ sessionCreateModel: { providerId: "p1", modelId: "m1" } }, [READY_PROVIDER]);
+  const { service, changes } = createService({
+    getHost: () => host,
+    activeTurns: { "source-session": "turn-1" },
+  });
+
+  const created = await invokeBuiltinCreate(service, {
+    title: "Review the diff",
+    // A model that tries to name the model, the project or the sender must not
+    // be believed: those come from settings and the host.
+    providerId: "someone-else",
+    modelId: "someone-else",
+    projectPath: "/somewhere/else",
+    sourceSessionId: "someone-else",
+  });
+
+  assert.deepEqual(created, { sessionId: "created-session", title: "Review the diff" });
+  const calls = methodCalls(host, "session.create");
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].params, {
+    title: "Review the diff",
+    mode: "agent",
+    providerId: "p1",
+    modelId: "m1",
+    projectPath: "/work/app",
+    thinkingLevel: "high",
+    inheritPermissionFromSessionId: "source-session",
+  });
+  // The project and thinking level are all the create path needs, so the read
+  // must not pull the whole transcript along with them.
+  const reads = methodCalls(host, "session.get");
+  assert.deepEqual(reads[0].params, { id: "source-session", messageLimit: 1 });
+  // The session list has to learn about a session it did not create itself.
+  assert.equal(changes.length, 1);
+});
+
+test("a built-in create refuses a model the user marked for image generation", async () => {
+  // The settings row excludes image models, so a pairing it shows as
+  // unavailable must not create a session either: the model would fail at
+  // launch, after the session already exists in the user's list.
+  const host = createHostFor(
+    {
+      sessionCreateModel: { providerId: "p1", modelId: "m1" },
+      imageGenerationModels: [{ providerId: "p1", modelId: "m1" }],
+    },
+    [READY_PROVIDER],
+  );
+  const { service } = createService({
+    getHost: () => host,
+    activeTurns: { "source-session": "turn-1" },
+  });
+
+  await assert.rejects(invokeBuiltinCreate(service), { code: "MODEL_UNAVAILABLE" });
+  assert.deepEqual(methodCalls(host, "session.create"), []);
+
+  // The active default counts too, not only the stored candidate list.
+  const activeOnly = createHostFor(
+    {
+      sessionCreateModel: { providerId: "p1", modelId: "m1" },
+      imageGeneration: { providerId: "p1", modelId: "m1" },
+    },
+    [READY_PROVIDER],
+  );
+  const second = createService({
+    getHost: () => activeOnly,
+    activeTurns: { "source-session": "turn-1" },
+  });
+  await assert.rejects(invokeBuiltinCreate(second.service), { code: "MODEL_UNAVAILABLE" });
+  assert.deepEqual(methodCalls(activeOnly, "session.create"), []);
+});
+
+test("a built-in create refuses while no session creation model is configured", async () => {
+  const host = createHostFor({}, [READY_PROVIDER]);
+  const { service } = createService({
+    getHost: () => host,
+    activeTurns: { "source-session": "turn-1" },
+  });
+
+  await assert.rejects(invokeBuiltinCreate(service), { code: "MODEL_NOT_CONFIGURED" });
+  assert.deepEqual(methodCalls(host, "session.create"), []);
+});
+
+test("a built-in create refuses a configured model the runtime cannot launch", async () => {
+  const host = createHostFor({ sessionCreateModel: { providerId: "p1", modelId: "removed" } }, [READY_PROVIDER]);
+  const { service } = createService({
+    getHost: () => host,
+    activeTurns: { "source-session": "turn-1" },
+  });
+
+  await assert.rejects(invokeBuiltinCreate(service), { code: "MODEL_UNAVAILABLE" });
+  assert.deepEqual(methodCalls(host, "session.create"), []);
+});
+
+test("a built-in create is refused once its own turn has ended", async () => {
+  const host = createHostFor({ sessionCreateModel: { providerId: "p1", modelId: "m1" } }, [READY_PROVIDER]);
+  const { service } = createService({
+    getHost: () => host,
+    activeTurns: { "source-session": "turn-2" },
+  });
+
+  await assert.rejects(
+    service.invokeBuiltin({
+      sessionId: "source-session",
+      turnId: "turn-1",
+      operation: "create",
+      args: { title: "Review the diff" },
+    }),
+    { code: "PERMISSION_DENIED", message: "The requesting turn is no longer active" },
+  );
+  assert.deepEqual(methodCalls(host, "session.create"), []);
 });

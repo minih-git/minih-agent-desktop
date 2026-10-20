@@ -2,7 +2,8 @@
  * The models settings page: the Minih Router row's chosen models as cards, an
  * add-models dialog over the gateway catalog, per-model configuration (the
  * shared binding editor, including the per-model protocol override), the
- * image-generation default, and the models.dev enrichment snapshot status.
+ * image-generation default, the model a session the Agent creates for itself
+ * runs on, and the models.dev enrichment snapshot status.
  *
  * Accounts — the token, endpoint, balance and the other providers — live on
  * the accounts page; this page only reads the connected router row.
@@ -11,11 +12,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   isMinihRouterVendorKey,
+  modelWireIdsEqual,
   publishedThinkingLevels,
   sortThinkingLevels,
   type ImageGenerationBinding,
   type ModelBinding,
   type ModelInfo,
+  type SessionCreateModelBinding,
 } from "@minih-agent/shared";
 import { useAppStore } from "../../stores/app-store";
 import { api } from "../../lib/api";
@@ -32,6 +35,10 @@ import { ModelConfigureDialog } from "./ModelConfigureDialog";
 import { MinihRouterModelCard } from "./MinihRouterModelCard";
 import { groupModelsByVendor, inferModelVendor } from "./minih-router-format";
 import { ImageGenerationModelRow } from "./ImageGenerationModelRow";
+import {
+  SessionCreateModelRow,
+  sessionCreateModelCandidates,
+} from "./SessionCreateModelRow";
 import {
   bindingAfterRemoval,
   mergeAddedBindings,
@@ -81,6 +88,7 @@ export function ModelsPage() {
    */
   const [draftImageIds, setDraftImageIds] = useState<string[] | null>(null);
   const [changingImageModel, setChangingImageModel] = useState(false);
+  const [changingSessionCreateModel, setChangingSessionCreateModel] = useState(false);
   const [refreshingCatalog, setRefreshingCatalog] = useState(false);
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(null);
 
@@ -154,6 +162,11 @@ export function ModelsPage() {
       providers,
     ),
     [settings?.imageGenerationModels, settings?.imageGeneration, providers],
+  );
+
+  const sessionCreateCandidates = useMemo(
+    () => sessionCreateModelCandidates(settings, providers),
+    [settings, providers],
   );
 
   if (!settings) return null;
@@ -316,6 +329,45 @@ export function ModelsPage() {
       showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
     } finally {
       setChangingImageModel(false);
+    }
+  };
+
+  /**
+   * The model a session the Agent creates for itself runs on.
+   *
+   * `null` is a real choice: it turns the built-in `SessionCreate` tool off, so
+   * the write is never rejected for being empty — only for naming a pairing the
+   * picker no longer offers.
+   */
+  const setSessionCreateModel = async (binding: SessionCreateModelBinding | null) => {
+    setChangingSessionCreateModel(true);
+    try {
+      const current = await api.getSettings();
+      // Exactly the list the row offered, so a choice the user could make is
+      // always one this page accepts.
+      const candidates = sessionCreateModelCandidates(current, providers);
+      if (
+        binding &&
+        !candidates.some((candidate) =>
+          candidate.provider.id === binding.providerId &&
+          modelWireIdsEqual(candidate.modelId, binding.modelId),
+        )
+      ) {
+        // The row offered this pairing when it rendered, but the read above no
+        // longer lists it: another window or a concurrent provider edit changed
+        // the candidates in between. Report the refusal instead of storing a
+        // model the runtime cannot launch.
+        showToast(t("settings.sessionCreateModelSaveFailed"), { variant: "error" });
+        return;
+      }
+      const nextSettings = { ...current, sessionCreateModel: binding };
+      await api.setSettings(nextSettings);
+      useAppStore.setState({ settings: nextSettings });
+      showToast(t("settings.sessionCreateModelSelected"), { variant: "success" });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
+    } finally {
+      setChangingSessionCreateModel(false);
     }
   };
 
@@ -542,6 +594,19 @@ export function ModelsPage() {
               providers={providers}
               busy={changingImageModel}
               onChange={setImageGenerationDefault}
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {sessionCreateCandidates.length > 0 ? (
+        <section className="settings-card-block">
+          <div className="settings-panel model-default-panel">
+            <SessionCreateModelRow
+              settings={settings}
+              providers={providers}
+              busy={changingSessionCreateModel}
+              onChange={setSessionCreateModel}
             />
           </div>
         </section>

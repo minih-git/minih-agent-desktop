@@ -14992,6 +14992,51 @@ are withdrawn with ADR 0165.
   `session_messaging_tests` / `desktop_owned_tools_*`. The packaged Electron
   journey is NOT RUN.
 
+#### E2E-SESSION-create-missing-target-session: An Agent creates the session a hand-off names
+
+- **Preconditions**: One Agent-mode session from the normal New Task flow. AI
+  settings has no session creation model configured, the provider used for it is
+  authenticated, and no `pi.session-orchestrator` plugin is installed.
+- **Steps**: 1) In the caller session, ask the Agent to hand a review task to a
+  session that does not exist yet. 2) Confirm `SessionList` reported no match and
+  that the Agent called `SessionCreate`, then delivered with `SessionSend` to the
+  returned Session ID. 3) Run the same request in Ask mode and stop the turn
+  while the creation approval card is pending. 4) Configure a session creation
+  model in AI settings and repeat the request. 5) Delete that provider row and
+  repeat once more.
+- **Expected**: With no configured model, `SessionCreate` fails with
+  `MODEL_NOT_CONFIGURED`, adds no session, and tells the model where to configure
+  one. With a configured model, exactly one Agent-mode session appears in the
+  session list (through `sessionsChanged`), carries the title the call asked for,
+  runs in the caller's project with the caller's thinking level and permission
+  mode, and runs on the configured provider/model — never the app default.
+  Creation alone starts no turn and sends no task; the target runs only after the
+  `SessionSend` that follows, and its transcript labels that input as a session
+  message. Stopping the turn retracts a pending creation approval and adds no
+  session. Plan mode reports the tool as unavailable, a `Task` subagent never
+  sees it, and after the provider row is deleted the call fails with
+  `MODEL_UNAVAILABLE`. The Agent-created session is an ordinary session: it can
+  be renamed, archived and deleted, and it may itself create sessions under the
+  same gate.
+- **Specs linked**: `03-runtime/02-agent-runtime.md` (§5f.4a),
+  `03-runtime/03-tools-and-permissions.md`, ADR session-create-tool
+- **Acceptance**: C (conversation & stream), E (tools & permissions), Security
+- **Milestone**: post-M6
+- **Status**: Sender binding, the configured-model requirement, argument
+  validation and the created session's inherited project/permission mode are
+  automated by `apps/desktop/test/session-collaboration-service.test.mjs` and
+  `apps/desktop/test/session-messaging-tools.test.mjs` and
+  `apps/desktop/test/session-create-model-row.test.mjs` (which also pins that
+  the row excludes the same image models the rest of the settings page does, and
+  that the create path refuses one with `MODEL_UNAVAILABLE`); the Plan fence and
+  the gate order by `packages/host-runtime/src/session-tools-gate.test.ts`, the
+  risk table and contract-mode denial by host-core `session_messaging_tests`, the
+  settings shape by host-core `session_create_model_setting_*`, and on-demand
+  loading, Agent-only visibility and the subagent deny list by
+  `packages/agent-runtime/src/runtime.test.ts` and
+  `packages/shared/src/subagent-definition.test.ts`. The packaged Electron
+  journey is NOT RUN.
+
 #### E2E-SESSION-completion-notice-allows-silence: A trusted completion notice may finish without an acknowledgement
 
 - **Preconditions**: A candidate commit has its own built host-core and runtime

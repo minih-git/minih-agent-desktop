@@ -133,8 +133,11 @@ impl PermissionManager {
             | "SessionResult"
             | "SessionHistorySearch"
             | "MemorySearch" => Risk::Low,
-            // Sending starts another session's Agent and spends its quota.
-            "Write" | "Edit" | "Bash" | "GenerateImages" | "SessionSend" => Risk::High,
+            // Sending starts another session's Agent and spends its quota;
+            // creating one brings a durable session into the user's list.
+            "Write" | "Edit" | "Bash" | "GenerateImages" | "SessionSend" | "SessionCreate" => {
+                Risk::High
+            }
             name if name.starts_with("plugin_") => match declared {
                 Some("low") => Risk::Low,
                 Some("high") => Risk::High,
@@ -952,17 +955,24 @@ mod session_messaging_tests {
                 "{tool} must stay a free read"
             );
         }
-        assert!(matches!(
-            PermissionManager::tool_risk_with_declared("SessionSend", None),
-            Risk::High
-        ));
+        for tool in ["SessionSend", "SessionCreate"] {
+            assert!(matches!(
+                PermissionManager::tool_risk_with_declared(tool, None),
+                Risk::High
+            ));
+        }
     }
 
     #[test]
     fn session_tools_never_run_in_contract_modes() {
         let manager = PermissionManager::default();
         let grants = HashMap::new();
-        for tool in ["SessionList", "SessionSend", "SessionResult"] {
+        for tool in [
+            "SessionList",
+            "SessionSend",
+            "SessionResult",
+            "SessionCreate",
+        ] {
             for mode in ["plan", "goal"] {
                 assert_eq!(
                     manager.evaluate_auto_with_permission_mode("s", tool, mode, "auto", &grants),
@@ -971,10 +981,13 @@ mod session_messaging_tests {
                 );
             }
         }
-        // Ask still needs a card for a send, while reads flow through.
-        assert!(manager
-            .evaluate_auto_with_permission_mode("s", "SessionSend", "agent", "ask", &grants)
-            .is_none());
+        // Ask still needs a card for a send or a creation, while reads flow
+        // through.
+        for tool in ["SessionSend", "SessionCreate"] {
+            assert!(manager
+                .evaluate_auto_with_permission_mode("s", tool, "agent", "ask", &grants)
+                .is_none());
+        }
         assert_eq!(
             manager.evaluate_auto_with_permission_mode("s", "SessionList", "agent", "ask", &grants),
             Some(PermissionDecision::AllowOnce)
