@@ -454,10 +454,18 @@ to later refresh and inference; the vendor picker does not collect them.
   first selected line instead of scanning the history before it.
   Optional `messageAround` centers that window on a stable message ID resolved
   against the canonical file, requires `messageLimit`, and excludes
-  `messageBefore`. Missing IDs return no session. The focused user/assistant
-  message retains its complete text; neighboring text and tool fields stay
-  capped. Bounded reads also return exclusive physical `messageEnd` and
-  `hasMoreAfter` to support contiguous forward pages (ADR session-content-search).
+  `messageBefore`. Missing IDs return no session. Optional `messageBeforeId`
+  ends the window where a stable message ID begins — the `messageLimit`
+  messages immediately older than it — which is the shape a backwards paging
+  client has (`beforeItemId`); it requires `messageLimit` and excludes both
+  `messageAround` and `messageBefore`. An ID the transcript no longer holds
+  (a compaction rewrote it after the caller read a page) returns an empty
+  window with `hasMoreBefore: false` rather than the tail, because answering
+  with newer messages would replay them into the client's older-page slot.
+  The focused user/assistant message retains its complete text; neighboring
+  text and tool fields stay capped. Bounded reads also return exclusive
+  physical `messageEnd` and `hasMoreAfter` to support contiguous forward pages
+  (ADR session-content-search).
   When the selected message has `parentToolCallId`, optional `navigationParent`
   contains the latest matching Task tool-call projection from the same canonical
   transcript. It is capped separately and does not widen the window or alter its

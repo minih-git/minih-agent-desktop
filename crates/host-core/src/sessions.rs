@@ -324,6 +324,12 @@ pub struct SessionDetail {
 pub struct SessionReadOptions {
     /// Center a bounded UI read on this stable message ID.
     pub message_around: Option<String>,
+    /// Exclusive window end named by a stable message ID: the page is the
+    /// `message_limit` messages immediately older than that one. The ID is
+    /// resolved against the transcript itself, so a window named by an ID and
+    /// one named by a sequence agree even when the index lags the file.
+    /// Ignored when `message_around` is set.
+    pub message_before_id: Option<String>,
     /// Exclusive message sequence before which the window ends. When omitted,
     /// the window is taken from the end of the canonical transcript.
     pub message_before: Option<i64>,
@@ -1595,6 +1601,16 @@ pub fn get_session_with_options(
                         return Ok(None);
                     };
                     (position + limit / 2 + 1).min(total)
+                } else if let Some(message_id) = options.message_before_id.as_deref() {
+                    // A page named by an ID ends where that message begins. The
+                    // ID is gone when a compaction rewrote the transcript after
+                    // the caller read it; there is then no older page to name,
+                    // and answering with the tail would replay newer rows.
+                    match transcripts::find_message_position(db.data_dir(), id, layout, message_id)?
+                    {
+                        Some(position) => position.min(total),
+                        None => 0,
+                    }
                 } else {
                     match options.message_before {
                         Some(value) => (value.max(0) as usize).min(total),
@@ -5610,6 +5626,7 @@ mod tests {
                 &session.id,
                 SessionReadOptions {
                     message_around: None,
+                    message_before_id: None,
                     message_before: before,
                     message_limit: Some(2),
                     content_limit: None,
@@ -5643,6 +5660,7 @@ mod tests {
             &session.id,
             SessionReadOptions {
                 message_around: None,
+                message_before_id: None,
                 message_before: None,
                 message_limit: Some(2),
                 content_limit: None,
@@ -5699,6 +5717,7 @@ mod tests {
             &session.id,
             SessionReadOptions {
                 message_around: None,
+                message_before_id: None,
                 message_before: None,
                 message_limit: Some(2),
                 content_limit: None,
@@ -5722,6 +5741,7 @@ mod tests {
                 &session.id,
                 SessionReadOptions {
                     message_around: None,
+                    message_before_id: None,
                     message_before: Some(start),
                     message_limit: Some(2),
                     content_limit: None,
@@ -5771,6 +5791,7 @@ mod tests {
             &session.id,
             SessionReadOptions {
                 message_around: Some("m5".to_string()),
+                message_before_id: None,
                 message_before: None,
                 message_limit: Some(4),
                 content_limit: None,
@@ -5833,6 +5854,7 @@ mod tests {
             &session.id,
             SessionReadOptions {
                 message_around: None,
+                message_before_id: None,
                 message_before: None,
                 message_limit: Some(1),
                 content_limit: Some(128),
@@ -5848,6 +5870,100 @@ mod tests {
 
         let full = get_session(&db, &session.id).unwrap().unwrap();
         assert_eq!(full.messages[1].content.len(), 80_000);
+    }
+
+    #[test]
+    fn a_window_named_by_message_id_pages_older_history() {
+        let db = test_db();
+        let session = create_session(&db, None, None, None, None, None).unwrap();
+        for index in 0..6 {
+            append_message(
+                &db,
+                &session.id,
+                &user_msg(
+                    &format!("m{index}"),
+                    &format!("body {index}"),
+                    "2025-05-01T00:00:00Z",
+                ),
+                None,
+            )
+            .unwrap();
+        }
+
+        // `beforeItemId` is what RACP `session/history` pages with: the page is
+        // the two messages immediately older than the named one.
+        let page = get_session_with_options(
+            &db,
+            &session.id,
+            SessionReadOptions {
+                message_around: None,
+                message_before_id: Some("m4".into()),
+                message_before: None,
+                message_limit: Some(2),
+                content_limit: None,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let ids: Vec<&str> = page.messages.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["m2", "m3"]);
+        assert_eq!(page.message_start, Some(2));
+        assert_eq!(page.has_more_before, Some(true));
+
+        // Walking to the head with the same parameter reaches the oldest line
+        // and then stops, which is what the client's "Load earlier" needs.
+        let head = get_session_with_options(
+            &db,
+            &session.id,
+            SessionReadOptions {
+                message_around: None,
+                message_before_id: Some("m2".into()),
+                message_before: None,
+                message_limit: Some(2),
+                content_limit: None,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let head_ids: Vec<&str> = head.messages.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(head_ids, ["m0", "m1"]);
+        assert_eq!(head.has_more_before, Some(false));
+    }
+
+    #[test]
+    fn a_window_named_by_a_forgotten_message_id_is_empty() {
+        let db = test_db();
+        let session = create_session(&db, None, None, None, None, None).unwrap();
+        for index in 0..3 {
+            append_message(
+                &db,
+                &session.id,
+                &user_msg(&format!("m{index}"), "body", "2025-05-01T00:00:00Z"),
+                None,
+            )
+            .unwrap();
+        }
+
+        // A compaction can rewrite the transcript after a client read a page.
+        // The named row is then gone; answering with the tail would replay
+        // newer rows into the client's older-page slot, so the window is empty
+        // and the client stops walking.
+        let page = get_session_with_options(
+            &db,
+            &session.id,
+            SessionReadOptions {
+                message_around: None,
+                message_before_id: Some("gone".into()),
+                message_before: None,
+                message_limit: Some(2),
+                content_limit: None,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        assert!(page.messages.is_empty());
+        assert_eq!(page.message_start, Some(0));
+        assert_eq!(page.has_more_before, Some(false));
     }
 
     #[test]

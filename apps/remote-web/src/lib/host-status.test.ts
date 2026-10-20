@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hostSessionsPath, probeHostStatus } from "./host-status.js";
+import { hostSessionsPath, hostStatusFromFailure, probeHostStatus } from "./host-status.js";
 
 type Call = { url: string; init: RequestInit | undefined };
 
@@ -99,5 +99,27 @@ describe("probeHostStatus", () => {
 
   it("encodes the host id", () => {
     expect(hostSessionsPath("host/1")).toBe("/hosts/host%2F1/v1/sessions");
+  });
+});
+
+/**
+ * The sessions screen reads its status off the list it already made, so the
+ * three states the probe distinguishes have to survive that path: a Host link
+ * that is down, a Host that has not adopted this device, and a credential that
+ * is gone. Any other failure keeps its own reason, as the probe reports it.
+ */
+describe("hostStatusFromFailure", () => {
+  it("maps the three states a real read can report", () => {
+    expect(hostStatusFromFailure({ code: "AGENT_UNAVAILABLE", message: "HTTP 503" })).toEqual({ kind: "offline" });
+    expect(hostStatusFromFailure({ code: "HOST_UNAUTHORIZED", message: "not adopted" })).toEqual({ kind: "unaccepted" });
+    expect(hostStatusFromFailure({ code: "UNAUTHORIZED", message: "revoked" })).toEqual({ kind: "revoked" });
+  });
+
+  it("keeps any other reason as itself", () => {
+    expect(hostStatusFromFailure({ code: "RATE_LIMITED", message: "slow down" })).toEqual({
+      kind: "error",
+      code: "RATE_LIMITED",
+      message: "slow down",
+    });
   });
 });
