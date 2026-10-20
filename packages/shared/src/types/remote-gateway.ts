@@ -153,11 +153,23 @@ export type RemoteGatewayDeviceDecisionRequest = {
 };
 
 /**
- * A device this desktop minted, adopted from a sibling Host, or revoked
- * (ADR decision 6 mitigation: every Host shows a "new device" notice).
+ * One thing this desktop or a remote device did that the person at the computer
+ * has to see (ADR decision 6; extended by rollout A2).
+ *
+ * The device kinds are the ADR's "new device"/"device gone" notices. The two
+ * `device.session-created` and `device.project-registered` kinds are the A2
+ * amendment: a phone may now start a conversation here and register a folder, so
+ * the desktop says which device did it and names the session id or the path.
  */
 export type RemoteGatewayDeviceNotice = {
-  kind: "device.minted" | "device.adopted" | "device.revoked";
+  kind:
+    | "device.minted"
+    | "device.adopted"
+    | "device.revoked"
+    /** `label` is the new session's id. */
+    | "device.session-created"
+    /** `label` is the registered directory. */
+    | "device.project-registered";
   deviceId: string;
   label: string;
   at: string;

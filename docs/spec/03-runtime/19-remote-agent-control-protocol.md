@@ -599,8 +599,8 @@ session root as working directory and stream through `terminal.output`.
 | `terminal/resize` | controller | Resize an open terminal |
 | `terminal/close` | controller | Close a terminal; idempotent |
 | `connection/pair` | authenticated | Exchange the single-use pairing token presented on the upgrade for a device credential (security §3.4); only valid on a pairing connection (D448) |
-| `project/register` | owner | Register a Host directory as a project: the Host canonicalizes and validates the path and returns the project id (D448) |
-| `project/browse` | owner | List directories under a Host path, bounded, for the remote folder picker (D448) |
+| `project/register` | controller | Register a Host directory as a project: the Host canonicalizes the path, confines it to its browse root (the user's home directory), and returns the project id (D448; role lowered from owner by the D666 amendment of 2026-10-19) |
+| `project/browse` | controller | List directories under a Host path, bounded, confined to the same browse root, for the remote folder picker (D448; role lowered from owner by the D666 amendment of 2026-10-19) |
 
 ### 6.2.1 Local-Agent workspace services
 
@@ -1085,6 +1085,8 @@ with the Gateway and browser milestones (R4–R6, D665).
 | Capabilities | `GET /v1/capabilities` |
 | List hosts (Gateway only) | `GET /v1/hosts` |
 | List projects | `GET /v1/projects` |
+| Register project | `POST /v1/projects` (body `{ path }`) |
+| Browse folders | `GET /v1/projects:browse?path=...` (`path` optional; omitted means the browse root) |
 | List sessions | `GET /v1/sessions` |
 | Create session | `POST /v1/sessions` |
 | Get/attach session | `GET /v1/sessions/{sessionId}` / `POST ...:attach` |

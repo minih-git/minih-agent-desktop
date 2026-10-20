@@ -454,6 +454,23 @@ Gateway 全部通过，且 `05-security/02-remote-control-security.md` 的安全
   经 `AccountAdoption` 传下去，账户内每台 Host 的记录都写上同一组角色，且只在列表非空时才写，
   与配对完全一致（`src/lib/credential-port.ts`、`src/lib/native-credential-port.ts`）。
 
+- R7 工作包 A2 已交付（2026-10-19，D666 修订 1，D670）：电脑端 Host 现在让手机**开始**
+  工作，而不只是接管。`sessions.create`、`projects.register`、`projects.browse` 改为走
+  host-core，不再直接 `forbidden()`；`project/register` 与 `project/browse` 在共享角色表里
+  由 `owner` 降为 `controller`——网关与账户设备仍然永远不获 `owner`，因此工作区工具面、
+  shell 与会话删除依旧不可达。两个项目操作都限制在用户主目录内：先 `realpath`，根外一律
+  拒绝（`..`、相对路径、指向外部的符号链接），不存在的目录报缺失而不是被创建；浏览上限
+  500 个目录，到根就没有 `parent`。规则只有一份，落在 `packages/host-runtime`
+  （`createProjectCatalog`、`createHostSession`），桌面 Host 与 `agent-host-cli` 不会各写一套；
+  `agent-host-cli` 的 `--browse-root` 语义不变，并且现在也约束注册（此前不约束）。
+  两条新路由承载这部分——`POST /v1/projects` 与 `GET /v1/projects:browse?path=…`——由
+  Gateway 据以生成 host-scoped 转发的同一张共享路由表派生。每次改状态都会写入既有设备通知
+  通道与 Host 日志，写明设备、会话 id 或注册路径。手机在新建会话的项目选择里得到
+  **添加项目**：从根目录逐级浏览、注册一个、会话直接在其中打开；路径显示为 `~/…`，
+  手机不打印账户名，而请求仍使用 Host 自己的绝对拼写。这个 UI 依赖工作包 H 的分组会话列表，
+  因此 A2 在其之后落地。仅合并对桌面不够：桌面改动随下一个桌面版本发布，用户装上新版本后
+  手机才能在他的电脑上用这三个功能。
+
 ## 8. 修订记录
 
 D374（2026-09-10）用无头 Agent Host 模块替换 Electron facade 里程碑，加入

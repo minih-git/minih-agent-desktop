@@ -378,6 +378,17 @@ export const RACP_HTTP_ROUTE_LIST = {
   hosts: "GET /v1/hosts",
   pairDevice: "POST /v1/hosts/{hostId}/pair",
   projects: "GET /v1/projects",
+  /**
+   * Register one directory as a project (rollout A2). The path travels in the
+   * body, not the URL: it is user data, and a body keeps it out of request logs
+   * and browser history.
+   */
+  registerProject: "POST /v1/projects",
+  /**
+   * Walk directories for the remote folder picker (rollout A2). `path` is the
+   * only query parameter; omitting it means the Host's browse root.
+   */
+  browseProjects: "GET /v1/projects:browse",
   sessions: "GET /v1/sessions",
   createSession: "POST /v1/sessions",
   getSession: "GET /v1/sessions/{sessionId}",
@@ -406,6 +417,8 @@ export type RacpHttpRouteName = keyof typeof RACP_HTTP_ROUTE_LIST;
 export const RACP_METHOD_HTTP_ROUTES: Partial<Record<string, RacpHttpRouteName>> = {
   "host/list": "hosts",
   "project/list": "projects",
+  "project/register": "registerProject",
+  "project/browse": "browseProjects",
   "session/list": "sessions",
   "session/create": "createSession",
   "session/get": "getSession",
@@ -427,6 +440,8 @@ export const RACP_HTTP_ROUTE_PARAMS: Record<RacpHttpRouteName, readonly string[]
   hosts: [],
   pairDevice: ["hostId"],
   projects: [],
+  registerProject: [],
+  browseProjects: [],
   sessions: [],
   createSession: [],
   getSession: ["sessionId"],
@@ -461,6 +476,10 @@ export const RACP_HTTP_QUERY_PARAMS: Record<RacpHttpRouteName, Readonly<Record<s
   hosts: {},
   pairDevice: {},
   projects: {},
+  // The registration path travels in the POST body, so no query parameter.
+  registerProject: {},
+  // `browse(path?)`: the directory to list, absolute and inside the root.
+  browseProjects: { path: "string" },
   sessions: {},
   createSession: {},
   getSession: {},

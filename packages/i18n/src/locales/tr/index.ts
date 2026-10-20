@@ -1440,6 +1440,8 @@ sklm: {
       noticeMinted: "{{label}} bu masaüstünde onaylandı.",
       noticeAdopted: "{{label}} hesabınızın başka bir makinesinde onaylandı.",
       noticeRevoked: "{{label}} iptal edildi.",
+      noticeSessionCreated: "{{device}} bu bilgisayarda yeni bir oturum başlattı ({{label}}).",
+      noticeProjectRegistered: "{{device}} {{label}} klasörünü bu bilgisayarda proje olarak ekledi.",
       deviceRequestTitle: "Bir cihaz erişim istiyor",
       deviceRequestBody: "{{label}} bu masaüstüne erişim istiyor.",
       deviceRequestClient: "İstemci: {{client}}",

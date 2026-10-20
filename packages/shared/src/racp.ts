@@ -602,10 +602,17 @@ export const RACP_OPERATIONS = {
   "terminal/close": { role: "controller", profile: "remote-host", mutation: true },
   /** Exchange a single-use pairing token for a device credential (security §3.4). */
   "connection/pair": { role: "authenticated", profile: "remote-host", mutation: true },
-  /** Register a Host directory as a project; the Host canonicalizes and validates the path. */
-  "project/register": { role: "owner", profile: "remote-host", mutation: true },
-  /** List directories under a Host path, for the remote folder picker; bounded and owner-only. */
-  "project/browse": { role: "owner", profile: "remote-host", mutation: false },
+  /**
+   * Register a Host directory as a project; the Host canonicalizes and validates
+   * the path and confines it to its browse root (D666 amendment, rollout A2).
+   *
+   * `controller`, not `owner`: a device that may drive turns may also start one
+   * in a project it can see. `owner` carries far more than that — the workspace
+   * tool surface, shell access, and session deletion.
+   */
+  "project/register": { role: "controller", profile: "remote-host", mutation: true },
+  /** List directories under a Host path, for the remote folder picker; bounded and root-confined. */
+  "project/browse": { role: "controller", profile: "remote-host", mutation: false },
 } as const satisfies Record<string, RacpOperationSpec>;
 export type RacpOperation = keyof typeof RACP_OPERATIONS;
 
@@ -662,6 +669,8 @@ export { ROLE_RANK as RACP_ROLE_RANK };
 export const RACP_HTTP_ROUTES: Partial<Record<RacpOperation, { method: "GET" | "POST"; path: string }>> = {
   "host/list": { method: "GET", path: "/v1/hosts" },
   "project/list": { method: "GET", path: "/v1/projects" },
+  "project/register": { method: "POST", path: "/v1/projects" },
+  "project/browse": { method: "GET", path: "/v1/projects:browse" },
   "session/list": { method: "GET", path: "/v1/sessions" },
   "session/create": { method: "POST", path: "/v1/sessions" },
   "session/get": { method: "GET", path: "/v1/sessions/{sessionId}" },

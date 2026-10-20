@@ -15,6 +15,7 @@ import type { RacpProjectSummary, RacpSession } from "@minih-agent/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { AddProjectPanel } from "./AddProjectPanel.js";
 import { AppShell, Button, Card, FailureBanner, Pill } from "../components/Chrome.js";
 import { useHostStatus } from "../hooks/useHostStatus.js";
 import type { HostCredential } from "../lib/credential-port.js";
@@ -54,6 +55,7 @@ export function SessionsScreen({
   const [projectsFailure, setProjectsFailure] = useState<OperationFailure | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [choosing, setChoosing] = useState(false);
+  const [addingProject, setAddingProject] = useState(false);
   const [creating, setCreating] = useState<string | null>(null);
   const [createFailure, setCreateFailure] = useState<OperationFailure | null>(null);
   const clientRef = useRef<HostClient | null>(null);
@@ -207,30 +209,54 @@ export function SessionsScreen({
 
       {choosing && canCreate ? (
         <Card>
-          <p className="mb-2 text-sm font-medium">{t("sessions.chooseProject")}</p>
-          {(projects ?? []).filter((project) => !project.archived).length === 0 ? (
-            <p className="text-sm text-slate-600 dark:text-slate-300">{t("sessions.noProjects")}</p>
+          {addingProject ? (
+            <AddProjectPanel
+              client={() => clientRef.current}
+              onRegistered={(project) => {
+                // The folder is a project now: open a session in it directly, so
+                // the user does not have to find it again in the list.
+                setAddingProject(false);
+                void loadProjects();
+                void startNewSession(project.id);
+              }}
+              onCancel={() => setAddingProject(false)}
+            />
           ) : (
-            <ul className="flex flex-col gap-2">
-              {(projects ?? [])
-                .filter((project) => !project.archived)
-                .map((project) => (
-                  <li key={project.id}>
-                    <Button
-                      variant="secondary"
-                      className="w-full justify-start"
-                      disabled={creating !== null}
-                      onClick={() => void startNewSession(project.id)}
-                    >
-                      {project.label}
-                    </Button>
-                  </li>
-                ))}
-            </ul>
+            <>
+              <p className="mb-2 text-sm font-medium">{t("sessions.chooseProject")}</p>
+              {(projects ?? []).filter((project) => !project.archived).length === 0 ? (
+                <p className="text-sm text-slate-600 dark:text-slate-300">{t("sessions.noProjects")}</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {(projects ?? [])
+                    .filter((project) => !project.archived)
+                    .map((project) => (
+                      <li key={project.id}>
+                        <Button
+                          variant="secondary"
+                          className="w-full justify-start"
+                          disabled={creating !== null}
+                          onClick={() => void startNewSession(project.id)}
+                        >
+                          {project.label}
+                        </Button>
+                      </li>
+                    ))}
+                </ul>
+              )}
+              <Button
+                variant="secondary"
+                className="mt-2 w-full justify-start"
+                disabled={creating !== null}
+                onClick={() => setAddingProject(true)}
+              >
+                {t("sessions.addProject")}
+              </Button>
+              <Button variant="ghost" className="mt-2" onClick={() => setChoosing(false)}>
+                {t("common.cancel")}
+              </Button>
+            </>
           )}
-          <Button variant="ghost" className="mt-2" onClick={() => setChoosing(false)}>
-            {t("common.cancel")}
-          </Button>
         </Card>
       ) : null}
 

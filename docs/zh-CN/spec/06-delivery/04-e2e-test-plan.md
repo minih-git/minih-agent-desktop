@@ -7941,6 +7941,32 @@ Gateway、loopback 模型桩运行；不使用生产 Router、真实 AccessKey �
   `apps/desktop/test/remote-account-desktop.test.mjs` 自动化，真实注册必须满足的服务名校验由
   `packages/racp/src/hostlink-client.test.ts` 覆盖。Router 测试实例仍是门禁。
 
+#### E2E-REMOTE-ACCOUNT-start-work-from-the-phone：从手机开始工作
+
+- **前置条件**：与账户场景相同的本地栈：本地测试 Gateway、一台已注册的
+  `agent-host-cli` Host（浏览根指向测试运行目录）、loopback 模型桩，以及用网关配对码
+  配对的手机客户端（角色为 `viewer` / `controller` / `approver`，永不 `owner`）。浏览根下
+  有一个已经是项目的文件夹，以及一个还不是项目的文件夹。
+- **步骤**：1）在会话列表打开**新建会话**。2）选择**添加项目**，确认选择器从 Host 的根开始
+  （显示为 `~`，没有上一级）。3）进入那个还不是项目的文件夹并确认。4）确认会话在输入框上
+  打开，返回后确认该文件夹已成为一个项目标题。5）向 Host 请求浏览根之外的路径
+  （`project/browse` 与 `project/register`）。6）检查电脑端自己的通知列表与 Host 日志。
+- **预期**：选择器只列根目录下的目录，且手机以根为起点显示（`~/…`），绝不显示主目录的绝对
+  路径；确认一个文件夹会注册它并打开其会话；`..`、相对路径、指向根外的符号链接一律
+  `REMOTE_PATH_FORBIDDEN`，不存在的目录报 `REMOTE_PATH_NOT_FOUND` 而不是被创建；
+  网关设备调用 `configure`、`fork`、`rename`、`delete`、工作区读取与终端仍然得到
+  `FORBIDDEN` / `CAPABILITY_UNAVAILABLE`；每次注册与新建会话都会以“哪台设备”的通知出现，
+  并有一条写明设备 id 与会话 id 或路径的 Host 日志。
+- **链接规格**：安全规格 §3.7（D666 修订）、协议 §6.2 与 §11.2、
+  ADR `remote-control-router-account-binding` 修订 1、交付 §2（R7 A2）
+- **验收**：安全、质量
+- **里程碑**：MVP 后（远程控制交付 R7，D666）
+- **状态**：Partial——浏览器步骤（1–4）在 `pnpm test:e2e:remote-web` 中运行：选择器的根、
+  被注册的文件夹、它打开的会话、以及新出现的标题都在每个手机视口上断言。电脑端半边（5–6）
+  由 `apps/desktop/test/desktop-gateway-link.test.mjs` 自动化，共享的根规则由
+  `packages/host-runtime/src/project-catalog.test.ts` 覆盖。对真实 Router 与已发布桌面版本的
+  运行仍是部署门禁。
+
 #### E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts：确认一次即可在所有 Host 使用
 
 - **前置条件**：带 key A 的本地 Router 测试实例、本地测试 Gateway，以及账户 A 的三台

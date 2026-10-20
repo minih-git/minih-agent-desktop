@@ -330,6 +330,42 @@ authentication input also carries the connection origin: the loopback
   available to them; they never carry `approverOverride`; and they stay under
   the remote permission ceiling no matter how `applyCeilingToPairedDevices`
   is configured.
+- **D666 amendment (2026-10-19, rollout A2): what a gateway device may change.**
+  The maintainer decided a phone signed into the user's own account may do what
+  the person at the computer does for three things: start a session
+  (`session/create`, already `controller`), register one of this computer's
+  folders as a project (`project/register`), and walk the folders to pick one
+  (`project/browse`). Those two project operations required `owner` before this
+  amendment and now require `controller`; nothing else in the role table moved.
+  `owner` is still never granted to a gateway or account device, so the
+  operations that restructure or expose the machine — `workspace/toolExecute`,
+  `workspace/toolShell`, `workspace/files`, `session/delete`, `session/archive`,
+  `session/revoke`, `tools/advertise` — stay out of reach.
+  Both operations are confined to one root, the user's home directory: the Host
+  canonicalizes the path with `realpath` first, then refuses anything that is not
+  inside that root, so `..`, a relative path, and a symlink pointing outside are
+  all `REMOTE_PATH_FORBIDDEN`, and a missing path is `REMOTE_PATH_NOT_FOUND`
+  rather than being created. A registration answers the picker's own canonical
+  path; a browse answer lists only directories, bounded to 500 entries, with the
+  parent omitted at the root.
+  Every state-changing call reports what happened — which device, and the session
+  id or the registered path — on the same notice channel the settings page
+  already renders for device mint/adopt/revoke, and into the Host log, so the
+  person at the machine learns a phone started a conversation or added a folder.
+  **Where a path can end up in a log.** A registration carries its path in the
+  request body (`POST /v1/projects`), so it does not appear in a reverse proxy's
+  access log; a browse carries it in the query string
+  (`GET /v1/projects:browse?path=…`), so the absolute path — including the user
+  name in the home directory — does appear there. GET is still the right verb
+  (the call reads a directory and changes nothing), and the path is the user's
+  own, sent by their own device over the same TLS connection the Gateway already
+  terminates; what an operator must know is that the browse path is visible in
+  the access log while the registered path is not, so log retention and access
+  apply to it.
+  Rejected alternative: granting gateway devices `owner`. It is one word in a
+  role list, but it would also hand a phone the workspace tool surface, shell
+  access, and session deletion, which the user did not ask for and which the
+  remote permission ceiling was never designed to mediate.
 - A gateway-origin token is accepted only on the Host link; an ssh-origin
   token is accepted only on the loopback `RACP-WS` binding. Either token on
   the other channel is rejected, so a stolen gateway token cannot escalate

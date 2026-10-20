@@ -1,12 +1,13 @@
 import { createWorkspaceFiles } from "./workspace-files.js";
 import { createWorkspaceTools } from "./workspace-tools.js";
 import { readdir, realpath, stat } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { RacpError, type Principal, type SessionSummary } from "@minih-agent/agent-host";
 import {
   collectWorkspaceDiff,
+  createHostSession,
+  createProjectCatalog as createSharedProjectCatalog,
   listDir,
   listProjectSummaries,
   listSessionSummariesWithProjectIds,
@@ -20,10 +21,6 @@ import {
   type RuntimeService,
 } from "@minih-agent/host-runtime";
 import type { RacpHostOperations, RacpProjectCatalog, RacpSessionCatalog, RacpWorkspaceAccess } from "@minih-agent/racp";
-
-/** Directory names never offered by the folder picker. */
-const HIDDEN_BROWSE_NAMES = new Set([".git", "node_modules", "__pycache__", ".Trash"]);
-const MAX_BROWSE_ENTRIES = 500;
 
 /**
  * host-core error mapping, shared with the desktop Host. Every catalog method
@@ -51,13 +48,6 @@ function requireHost(getHost: () => HostRpc | null): HostRpc {
 /** Session catalog over host-core RPC. */
 export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatalog {
   const { getHost } = deps;
-  async function projectPathFor(projectId: string | undefined, host: HostRpc): Promise<string | undefined> {
-    if (!projectId) return undefined;
-    const { projects } = await host.call<{ projects: HostProjectRow[] }>("projects.list", {});
-    const project = projects.find((row) => String(row.id) === projectId);
-    if (!project) throw new RacpError("NOT_FOUND", `project ${projectId} is unknown`);
-    return project.path;
-  }
   async function get(host: HostRpc, sessionId: string): Promise<SessionSummary> {
     const result = await host.call<{ session?: HostSessionRecord | null }>("session.get", { id: sessionId, messageLimit: 1 }).catch(hostError);
     if (!result.session) throw new RacpError("NOT_FOUND", `session ${sessionId} is unknown`);
@@ -67,26 +57,9 @@ export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatal
     async list() {
       return listSessionSummariesWithProjectIds(requireHost(getHost));
     },
-    async create(input, _principal: Principal) {
-      const host = requireHost(getHost);
-      const projectPath = await projectPathFor(input.projectId, host);
-      const result = await host
-        .call<{ session?: HostSessionRecord | null }>("session.create", {
-          ...(input.title ? { title: input.title } : {}),
-          ...(input.mode ? { mode: input.mode } : {}),
-          ...(input.providerId ? { providerId: input.providerId } : {}),
-          ...(input.modelId ? { modelId: input.modelId } : {}),
-          ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
-          ...(projectPath ? { projectPath } : {}),
-        })
-        .catch(hostError);
-      if (!result.session) throw new RacpError("INTERNAL", "session.create returned no session");
-      if (input.permissionMode) {
-        await host
-          .call("session.configure", { id: result.session.id, mode: result.session.mode ?? input.mode ?? "agent", permissionMode: input.permissionMode })
-          .catch(hostError);
-      }
-      return get(host, result.session.id);
+    async create(input, principal: Principal) {
+      // Shared with the desktop Host: one project lookup, one field mapping.
+      return createHostSession(getHost, input, principal);
     },
     async configure(sessionId, input) {
       const host = requireHost(getHost);
@@ -140,54 +113,13 @@ export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatal
   };
 }
 
-async function canonicalDirectory(path: string): Promise<string> {
-  if (!isAbsolute(path)) throw new RacpError("INVALID_ARGUMENT", "path must be absolute");
-  let real: string;
-  try {
-    real = await realpath(path);
-  } catch {
-    throw new RacpError("REMOTE_PATH_NOT_FOUND", `no such directory: ${path}`);
-  }
-  const info = await stat(real).catch(() => null);
-  if (!info?.isDirectory()) throw new RacpError("REMOTE_PATH_NOT_FOUND", `not a directory: ${path}`);
-  return real;
+/**
+ * The project catalog is shared with the desktop Host (`packages/host-runtime`
+ * `createProjectCatalog`): one root rule, one browse answer, one registration.
+ */
+export function createHostProjectCatalog(deps: HostOperationsDeps): RacpProjectCatalog {
+  return createSharedProjectCatalog({ getHost: deps.getHost, ...(deps.browseRoot ? { browseRoot: deps.browseRoot } : {}) });
 }
-
-/** Projects over host-core: registration canonicalizes on the Host (D448). */
-export function createProjectCatalog(deps: HostOperationsDeps): RacpProjectCatalog {
-  const { getHost } = deps;
-  const browseRoot = resolve(deps.browseRoot ?? homedir());
-  return {
-    async list() {
-      return listProjectSummaries(requireHost(getHost));
-    },
-    async register(path) {
-      const host = requireHost(getHost);
-      const real = await canonicalDirectory(path);
-      const result = await host.call<{ project?: HostProjectRow | null }>("projects.create", { path: real }).catch(hostError);
-      if (!result.project) throw new RacpError("INTERNAL", "projects.create returned no project");
-      return { ...toProjectSummary(result.project), path: result.project.path };
-    },
-    async browse(path) {
-      const target = await canonicalDirectory(path ?? browseRoot);
-      const rootReal = await realpath(browseRoot).catch(() => browseRoot);
-      if (target !== rootReal && !target.startsWith(rootReal.endsWith("/") ? rootReal : `${rootReal}/`)) {
-        throw new RacpError("REMOTE_PATH_FORBIDDEN", "path is outside the browsable root");
-      }
-      const dirents = await readdir(target, { withFileTypes: true }).catch(() => {
-        throw new RacpError("REMOTE_PATH_FORBIDDEN", `cannot read ${target}`);
-      });
-      const entries = dirents
-        .filter((dirent) => dirent.isDirectory() && !HIDDEN_BROWSE_NAMES.has(dirent.name) && !dirent.name.startsWith("."))
-        .map((dirent) => ({ name: dirent.name, path: join(target, dirent.name) }))
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .slice(0, MAX_BROWSE_ENTRIES);
-      const parent = target === rootReal ? undefined : dirname(target);
-      return { path: target, ...(parent ? { parent } : {}), entries };
-    },
-  };
-}
-
 /** Workspace reads against the session's durable root, on the Host's filesystem. */
 export function createWorkspaceAccess(deps: HostOperationsDeps): RacpWorkspaceAccess {
   const { getHost } = deps;
@@ -224,7 +156,7 @@ export function createWorkspaceAccess(deps: HostOperationsDeps): RacpWorkspaceAc
 export function createHostOperations(deps: HostOperationsDeps): Omit<RacpHostOperations, "terminal"> {
   return {
     sessions: createSessionCatalog(deps),
-    projects: createProjectCatalog(deps),
+    projects: createHostProjectCatalog(deps),
     workspace: createWorkspaceAccess(deps),
     workspaceTools: createWorkspaceTools(deps.getHost),
     workspaceFiles: createWorkspaceFiles(),

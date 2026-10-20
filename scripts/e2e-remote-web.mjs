@@ -31,7 +31,7 @@ import { resolveElectronBinary } from "./e2e/boot.mjs";
 import { startRemoteWebProxy } from "./e2e/remote-web-proxy.mjs";
 
 // The RACP client drives the Host's own loopback socket for the two fixture
-// steps a gateway device may not perform (registering a project is owner-only).
+// steps that set the run up rather than exercise the phone (a project to open).
 import { RacpClient, wsClientTransport } from "../packages/racp/dist/index.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -357,11 +357,12 @@ async function mintTicket() {
 /**
  * The owner the Host's `--pair` code mints over its own loopback socket.
  *
- * Registering a project is `owner`-only (`project/register`, protocol §7.7), and
- * a gateway device never holds that role. So the fixture registers the two
- * projects the way a person at the machine would — over loopback, with the
- * ssh-origin device — and the browser half of the run only ever sees what a
- * phone may see.
+ * The fixture registers its projects the way a person at the machine would —
+ * over loopback, with the ssh-origin device. Since the D666 amendment
+ * `project/register` is `controller` (protocol §7.7), so a gateway device could
+ * call it too; the fixture still uses the machine's own device because it is
+ * setting the run up, not exercising the phone. The browser half of the run only
+ * ever sees what a phone may see.
  */
 async function ownerClient() {
   assert.ok(host?.pairing, "the Host did not print its --pair code");
@@ -478,8 +479,12 @@ try {
   //    Host prints it; the client pastes it).
   const alphaDir = join(runRoot, "alpha");
   const betaDir = join(runRoot, "beta");
+  // A folder that is deliberately NOT a project: the browser registers it
+  // through the picker, which is the A2 path under test.
+  const newProjectDir = join(runRoot, "e2e-new-project");
   mkdirSync(alphaDir, { recursive: true });
   mkdirSync(betaDir, { recursive: true });
+  mkdirSync(newProjectDir, { recursive: true });
   const owner = await ownerClient();
   const alpha = (await owner.request("project/register", { path: alphaDir })).project;
   const beta = (await owner.request("project/register", { path: betaDir })).project;
@@ -605,9 +610,25 @@ try {
       String(observed.sessionsAfterCreate).includes(view.projectLabel),
       `${view.name}: the heading is still there: ${observed.sessionsAfterCreate}`,
     );
-    assert.ok(observed.screenshots.length >= 9, `${view.name}: one screenshot per step`);
+    // The A2 path: the folder picker walked the Host's root and registered a
+    // folder that was not a project, and the session for it opened.
+    assert.equal(observed.newProjectComposer, true, `${view.name}: the new project's session opened on its composer`);
+    assert.ok(
+      String(observed.pickerRoot).includes("This is the top folder."),
+      `${view.name}: the picker started at the Host's browse root: ${String(observed.pickerRoot).slice(0, 200)}`,
+    );
+    assert.equal(
+      String(observed.pickerRoot).includes("\nUp\n"),
+      false,
+      `${view.name}: the root has no way up`,
+    );
+    assert.ok(
+      (observed.headingsWithNewProject ?? []).some((heading) => heading.includes("e2e-new-project")),
+      `${view.name}: the registered folder became a project heading: ${JSON.stringify(observed.headingsWithNewProject)}`,
+    );
+    assert.ok(observed.screenshots.length >= 11, `${view.name}: one screenshot per step`);
+    assert.ok(observed.screenshots.length >= 11, `${view.name}: one screenshot per step`);
   }
-
   // 7. The model stub proves single execution: two approval turns per viewport,
   //    each delivering exactly one tool result, and no extra model call.
   const toolResultObservations = modelRequests.filter((entry) => entry.trailingToolResults > 0).map((entry) => entry.trailingToolResults);
@@ -660,7 +681,7 @@ try {
   assert.equal(interruptRequests.length, VIEWPORTS.length, "every viewport's Interrupt reached the Host");
 
   console.log(
-    `PASS remote web: ${VIEWPORTS.length} viewports paired (cookie profile), grouped sessions by project (including "Other" and a session created from the phone), listed hosts and sessions, resumed a dropped stream with Last-Event-ID, approved once, ran the tool once, stopped and interrupted a turn, and answered a repeated mutation with the stored turn`,
+    `PASS remote web: ${VIEWPORTS.length} viewports paired (cookie profile), grouped sessions by project (including "Other", a session created from the phone, and a folder registered through the picker), listed hosts and sessions, resumed a dropped stream with Last-Event-ID, approved once, ran the tool once, stopped and interrupted a turn, and answered a repeated mutation with the stored turn`,
   );
   console.log(`screenshots: ${artifactDir}`);
 } catch (error) {

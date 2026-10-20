@@ -139,8 +139,10 @@ export function useRemoteControl(): RemoteControl {
     // a device that was approved on another Host shows up here too.
     const unsubscribeNotices = api.onRemoteGatewayDeviceNotice((notice) => {
       setNotices((prev) => [notice, ...prev].slice(0, MAX_VISIBLE_NOTICES));
-      // A new device changes this Host's device list.
-      if (notice.kind !== "device.minted") void loadDevices();
+      // A new device changes this Host's device list; a notice about what a
+      // remote device did (a session it started, a project it registered) does
+      // not, so the list is reloaded only for the device kinds.
+      if (notice.kind === "device.adopted" || notice.kind === "device.revoked") void loadDevices();
     });
     return () => {
       unsubscribe();

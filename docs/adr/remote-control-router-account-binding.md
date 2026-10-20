@@ -278,3 +278,72 @@ decision, and it is accepted with mitigations that are all required:
    Gateway never decides an approval. A Host signature also names the approving
    Host in every audit record; a Gateway signature would leave no Host-side
    record of which terminal a human approved on.
+
+## Amendment 1 — a phone may start the work, not just steer it (2026-10-19)
+
+Status: accepted. Scope: this decision's account-mode device surface.
+
+### Context
+
+On-device acceptance of account mode showed the phone could follow and steer
+turns but could not begin one: `session/create` was refused by the desktop Host,
+and both project operations it needs were `owner`-only, a role no account or
+gateway device ever receives. The user's decision, verbatim: "完全放开（含注册
+项目、浏览文件夹）".
+
+### Decision
+
+A device holding `controller` may now do the three things a person at the
+computer does to start work on it:
+
+1. `session/create` — unchanged (`controller`).
+2. `project/register` — role lowered from `owner` to `controller`.
+3. `project/browse` — role lowered from `owner` to `controller`.
+
+Nothing else in the role table moved. `owner` is still never granted to a
+gateway or account device, so `workspace/toolExecute`, `workspace/toolShell`,
+`workspace/files`, `session/delete`, `session/archive`, `session/revoke`, and
+`tools/advertise` remain out of reach. The two project operations are also
+confined to the Host's browse root (the user's home directory): the path is
+canonicalized with `realpath` and anything outside the root — including `..` and
+a symlink pointing out — is refused, while a missing directory is reported as
+missing rather than created. The desktop Host implements all three over the same
+shared `host-runtime` catalogs as the headless Host, and reports each
+state-changing call — device, session id or path — on the existing device-notice
+channel and the Host log.
+
+Two HTTP routes were added for the project operations (`POST /v1/projects`,
+`GET /v1/projects:browse?path=…`), derived from the same shared route table the
+Gateway uses to build its host-scoped forwarding.
+
+### Rejected alternatives
+
+- **Grant gateway devices `owner`.** One word in a role list, but it would also
+  hand the phone the workspace tool surface, shell access, and session deletion.
+  The user asked for three operations, not for a remote shell, and the remote
+  permission ceiling was never designed to arbitrate those.
+- **Leave the desktop Host refusing `session/create`.** The phone could then
+  start work only on an always-on headless Host and not on the computer it was
+  looking at, which is the case the acceptance run exercised.
+- **Let the phone pass an absolute path outside the root.** Registration would
+  become an arbitrary-directory grant; the root check is what keeps this
+  amendment from widening into filesystem access.
+
+### Consequences
+
+- Security §3.7 carries the role change, the root rule, and the rejected
+  alternative; protocol §6 and §11.2 carry the role and route tables.
+- The change is additive for clients and Hosts that do not use it. A Gateway
+  without these routes keeps answering `NOT_FOUND`, and a Host that refuses the
+  operations keeps answering `FORBIDDEN`, which the phone shows as itself.
+- The desktop application must ship a release containing the Host change before
+  a phone can use the three operations against a desktop; a headless
+  `agent-host-cli` Host gets them from the same shared implementation.
+- **The headless Host's registration is now bounded too.** `project/register`
+  used to canonicalize a path without any root check; `project/browse` was the
+  only bounded operation. Sharing one implementation makes both bounded by
+  `--browse-root` (the user's home directory by default) **for every caller,
+  including the local owner over the loopback binding**. This is a published
+  behavior change: a script that registered a directory outside the home
+  directory must now pass a `--browse-root` that contains it. It is recorded in
+  `apps/agent-host-cli/README.md` and in `docs/project/unreleased.md`.

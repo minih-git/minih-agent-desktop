@@ -1309,6 +1309,8 @@ sklm: {
       noticeMinted: "{{label}} was approved on this desktop.",
       noticeAdopted: "{{label}} was approved on another machine of your account.",
       noticeRevoked: "{{label}} was revoked.",
+      noticeSessionCreated: "{{device}} started a new session on this computer ({{label}}).",
+      noticeProjectRegistered: "{{device}} added {{label}} as a project on this computer.",
       deviceRequestTitle: "A device wants access",
       deviceRequestBody: "{{label}} asks for access to this desktop.",
       deviceRequestClient: "Client: {{client}}",

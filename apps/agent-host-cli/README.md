@@ -145,6 +145,23 @@ link: the command still revokes locally, and it reports
 `{"announced":false}` plus a note on stderr instead of claiming the account has
 been told.
 
+## Projects and the folder picker
+
+`project/list`, `project/register`, and `project/browse` serve the session
+catalog: a remote device may start a session in one of this Host's registered
+projects and, since the D666 amendment (rollout A2), register a project and walk
+folders to pick one.
+
+**`--browse-root <dir>` (default: your home directory) bounds both
+`project/browse` and `project/register`.** Before A2 it bounded browsing only, so
+a registration could name any directory on this machine; the two Hosts (this one
+and the desktop) now share one implementation, and the root applies to every
+caller, including the local owner on the loopback binding. A path outside the root
+is refused with `REMOTE_PATH_FORBIDDEN` whether or not it exists — the answer
+never reveals whether something is there — while a path inside the root that does
+not exist is `REMOTE_PATH_NOT_FOUND`. Paths are compared after `realpath`, so
+`..`, a relative path, and a symlink that leaves the root are all refused.
+
 ## Local-Agent workspace service
 
 The Host advertises additive `workspaceTools` / `workspaceFiles` capabilities.
