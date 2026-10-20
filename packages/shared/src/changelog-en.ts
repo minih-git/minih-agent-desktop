@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.23.0",
+    date: "2026-10-20",
+    highlights: [
+      "The mobile app has a brand-new design, with refreshed screens for connecting to your computers, managing hosts, and chatting, plus a rebuilt conversation timeline and clearer high-risk and stop confirmations.",
+      "Your phone can now start new sessions on your computer — with project registration and folder browsing when adding one — sessions there are grouped by project, and computers show their real names instead of a host ID.",
+      "A phone session now opens at the newest message and loads earlier history on demand, shows the same rows as the desktop, and keeps the input above the keyboard on iOS.",
+      "Type # in the composer to target another session: suggestions appear as you type, and the chosen target becomes a clickable chip in your message.",
+      "When you ask the agent to hand work to a session that does not exist yet, it can now create one for you, and you can pick the model used for those hand-offs in Settings.",
+      "Side notes now answer from a read-only snapshot of the conversation without nudging a running task, and each question keeps its answer in the side panel.",
+      "Automatic context compaction no longer pops up a notification; it appears as an inline marker in the transcript instead, while a failed manual compaction still shows the real error.",
+      "Paths the agent mentions now become links even for folders and extensionless files, and references outside the project offer reveal-in-file-manager or copy path instead of a dead \"restricted\" message.",
+    ],
+  },
+  {
     version: "0.22.1",
     date: "2026-10-19",
     highlights: [

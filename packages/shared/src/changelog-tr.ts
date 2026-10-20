@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.23.0",
+    date: "2026-10-20",
+    highlights: [
+      "Mobil uygulama tamamen yenilendi: bilgisayarlarınıza bağlanma, ana bilgisayarları yönetme ve sohbet ekranları tazelendi; konuşma zaman çizelgesi yeniden inşa edildi ve yüksek riskli ile durdurma onayları netleşti.",
+      "Telefonunuz artık bilgisayarınızda yeni oturumlar başlatabilir — bir tane eklerken proje kaydı ve klasör gezinme ile birlikte; oturumlar projeye göre gruplanır ve bilgisayarlar ana bilgisayar kimliği yerine gerçek adlarını gösterir.",
+      "Bir telefon oturumu artık en yeni mesajdan açılır, önceki geçmişi istek üzerine yükler, masaüstüyle aynı satırları gösterir ve iOS'ta girişi klavyenin üzerinde tutar.",
+      "Başka bir oturumu hedeflemek için bestecide # yazın: yazarken öneriler görünür ve seçilen hedef mesajınızda tıklanabilir bir rozete dönüşür.",
+      "Ajandan, henüz var olmayan bir oturuma iş devretmesini istediğinizde artık sizin için bir tane oluşturabilir; bu teslimatlar için kullanılan modeli Ayarlar'dan seçebilirsiniz.",
+      "Yan notlar artık çalışan bir görevi dürtmeden, konuşmanın salt okunur bir anlık görüntüsünden yanıtlar ve her soru yanıtını yan panelde saklar.",
+      "Otomatik bağlam sıkıştırması artık bildirim açmaz; bunun yerine transkriptte satır içi bir işaret olarak görünür, başarısız manuel sıkıştırma yine de gerçek hatayı gösterir.",
+      "Ajanın bahsettiği yollar artık klasörler ve uzantısız dosyalar için bile bağlantı olur; proje dışındaki referanslar ölü bir \"kısıtlı\" mesajı yerine dosya yöneticisinde gösterme veya yolu kopyalama sunar.",
+    ],
+  },
+  {
     version: "0.22.1",
     date: "2026-10-19",
     highlights: [

@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.23.0",
+    date: "2026-10-20",
+    highlights: [
+      "Die mobile App ist komplett neu gestaltet: Bildschirme zum Verbinden mit Ihren Computern, zur Host-Verwaltung und zum Chatten sind aufgefrischt, der Konversationsverlauf wurde neu aufgebaut und Bestätigungen für hohe Risiken und Stoppen sind klarer.",
+      "Ihr Telefon kann jetzt neue Sitzungen auf Ihrem Computer starten — mit Projektregistrierung und Ordnerdurchsuchung beim Hinzufügen; Sitzungen werden nach Projekt gruppiert und Computer zeigen ihren echten Namen statt einer Host-ID.",
+      "Eine Telefonsitzung öffnet jetzt bei der neuesten Nachricht und lädt frühere Historie bei Bedarf, zeigt dieselben Zeilen wie der Desktop und hält die Eingabe auf iOS über der Tastatur.",
+      "Tippen Sie im Composer ein #, um eine andere Sitzung anzusprechen: Vorschläge erscheinen beim Tippen, und das gewählte Ziel wird zu einem anklickbaren Chip in Ihrer Nachricht.",
+      "Wenn Sie den Agenten bitten, Arbeit an eine noch nicht vorhandene Sitzung zu übergeben, kann er jetzt eine für Sie erstellen; das Modell für diese Übergaben wählen Sie in den Einstellungen.",
+      "Randnotizen antworten jetzt aus einem schreibgeschützten Schnappschuss der Konversation, ohne eine laufende Aufgabe zu beeinflussen, und jede Frage behält ihre Antwort im Seitenpanel.",
+      "Automatische Kontextkomprimierung zeigt kein Benachrichtigungsfenster mehr; stattdessen erscheint eine Inline-Markierung im Verlauf, während eine fehlgeschlagene manuelle Komprimierung weiterhin den echten Fehler zeigt.",
+      "Pfade, die der Agent erwähnt, werden jetzt auch für Ordner und Dateien ohne Endung zu Links; Referenzen außerhalb des Projekts bieten „Im Dateimanager anzeigen“ oder „Pfad kopieren“ statt einer toten „Eingeschränkt“-Meldung.",
+    ],
+  },
+  {
     version: "0.22.1",
     date: "2026-10-19",
     highlights: [

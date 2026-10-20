@@ -8,7 +8,7 @@ export const SCHEMA_VERSION = 16 as const;
  */
 export const APP_ID = "org.hmini.agent";
 export const APP_NAME = "Minih-Agent-Desktop";
-export const APP_VERSION = "0.22.1";
+export const APP_VERSION = "0.23.0";
 
 export const APP_MENU_COMMANDS = [
   "newTask",
