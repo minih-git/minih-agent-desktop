@@ -7,6 +7,7 @@ import { ToastHost } from "../../apps/desktop/src/components/Toast";
 import { Button } from "../../apps/desktop/src/components/ui";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 import type { ToastVariant } from "../../apps/desktop/src/stores/app-state";
+import type { ContextCompactionReason } from "@minih-agent/shared";
 
 function check(value: unknown, message: string): asserts value {
   if (!value) throw new Error(message);
@@ -40,6 +41,34 @@ async function finishAnimations() {
   }
   await settle();
 }
+const compactionCases: { reason: ContextCompactionReason; fallback?: boolean }[] = [
+  { reason: "threshold" }, { reason: "overflow" }, { reason: "manual" },
+  { reason: "model_switch" }, { reason: "threshold", fallback: true },
+  { reason: "overflow", fallback: true }, { reason: "manual", fallback: true },
+];
+let checkpointSequence = 0;
+function completeCompaction(reason: ContextCompactionReason, fallback = false, ok = true) {
+  const sessionId = "isolated-compaction";
+  const generation = ++checkpointSequence;
+  flushSync(() => {
+    useAppStore.setState({ activeSessionId: sessionId });
+    useAppStore.getState().handleAgentEvent({
+      sessionId, ts: generation * 2, event: { type: "compaction_start", reason },
+    });
+    useAppStore.getState().handleAgentEvent({
+      sessionId, ts: generation * 2 + 1,
+      event: {
+        type: "compaction_end", reason, ok, willRetry: reason === "overflow",
+        ...(ok ? { mark: {
+          id: `checkpoint-${generation}`, throughMessageId: "fixture-message",
+          generation, summaryTokens: fallback ? 0 : 1200, summarized: !fallback,
+          ...(fallback ? { fallback: "retained_tail" as const } : {}),
+        } } : { error: { code: "CONTEXT_COMPACTION_FAILED", message: "Fixture summarizer unavailable" } }),
+        ...(fallback ? { fallback: "retained_tail" as const } : {}),
+      },
+    });
+  });
+}
 function Demo() {
   return <main className="notification-demo">
     <p>MINIH AGENT · NOTIFICATIONS</p>
@@ -51,6 +80,11 @@ function Demo() {
       <Button onClick={() => notify(i18n.t("contextCompaction.longThreadWarning"), "warning")}>上下文提醒</Button>
       <Button onClick={() => notify("剪贴板内容已复制")}>普通信息</Button>
       <Button onClick={reset}>清空演示</Button>
+      {compactionCases.map(({ reason, fallback }, index) => <Button
+        key={index} data-compaction-case={index}
+        onClick={() => completeCompaction(reason, fallback)}
+      >{reason}{fallback ? " fallback" : ""}</Button>)}
+      <Button data-compaction-failure onClick={() => completeCompaction("manual", false, false)}>Manual failure</Button>
     </div>
     <p>悬停或聚焦可暂停计时。通知内容可选中复制。</p>
     <ToastHost />
@@ -77,6 +111,31 @@ globalThis.notificationCardsReady = (async () => {
 globalThis.notificationCardsProbe = async () => {
   await globalThis.notificationCardsReady;
   reset();
+  for (const language of ["en", "zh-CN"]) {
+    await i18n.changeLanguage(language);
+    notify("Keep existing notice", "warning");
+    const existing = useAppStore.getState().toasts[0].id;
+    for (const [index, scenario] of compactionCases.entries()) {
+      const button = document.querySelector<HTMLButtonElement>(`[data-compaction-case="${index}"]`);
+      check(button, "Missing compaction action");
+      button.click(); await settle();
+      check(useAppStore.getState().toasts.length === 1, "Routine compaction added a notification");
+      check(useAppStore.getState().toasts[0].id === existing, "Compaction removed an unrelated notification");
+      check(messages().join() === "Keep existing notice", "A compaction card reached the DOM");
+      check(!document.querySelector("[role=dialog]"), "Compaction opened a dialog");
+      const mark = useAppStore.getState().sessionCompactions["isolated-compaction"]?.at(-1);
+      check(mark?.generation === checkpointSequence, "Checkpoint mark was lost");
+      check(Boolean(mark.fallback) === Boolean(scenario.fallback), "Fallback label metadata was lost");
+      check(useAppStore.getState().isRunning === (scenario.reason !== "manual"), "Compaction settled the wrong lifecycle");
+    }
+    reset();
+    const failure = document.querySelector<HTMLButtonElement>("[data-compaction-failure]");
+    check(failure, "Missing manual failure action"); failure.click();
+    await until(() => messages().includes("Fixture summarizer unavailable"), "Manual failure feedback disappeared");
+    check(document.querySelectorAll(".toast.error[role=alert]").length === 1, "Manual failure is not one visible error");
+    check(!useAppStore.getState().isRunning, "Manual failure left the session busy");
+    reset();
+  }
   const browser: Window = window;
   const nativeSetTimeout = browser.setTimeout;
   const nativeClearTimeout = browser.clearTimeout;
@@ -145,7 +204,7 @@ globalThis.notificationCardsProbe = async () => {
     check(messages()[0] === i18n.t("contextCompaction.longThreadWarning"), "Notification copy changed at render time");
     reset();
   }
-  return { ok: true, sticky: true, autoDismiss: true, focusPause: true, cleanup: true, rightEntry: true, retainedQueue: true, localized: true };
+  return { ok: true, quietCompaction: true, preservedCompactionErrors: true, sticky: true, autoDismiss: true, focusPause: true, cleanup: true, rightEntry: true, retainedQueue: true, localized: true };
 };
 
 globalThis.notificationLayoutProbe = async () => {
