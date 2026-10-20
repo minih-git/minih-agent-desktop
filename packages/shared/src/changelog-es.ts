@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "0.23.0",
+    date: "2026-10-20",
+    highlights: [
+      "La app móvil tiene un diseño totalmente nuevo: pantallas renovadas para conectarte a tus ordenadores, gestionar hosts y chatear, una línea de tiempo de conversación reconstruida y confirmaciones más claras para acciones de alto riesgo y detención.",
+      "Tu teléfono ya puede iniciar nuevas sesiones en tu ordenador — con registro de proyectos y navegación de carpetas al añadir uno — las sesiones se agrupan por proyecto y los ordenadores muestran su nombre real en lugar de un ID de host.",
+      "Una sesión del teléfono ahora se abre en el mensaje más reciente y carga el historial anterior a demanda, muestra las mismas filas que el escritorio y mantiene la entrada sobre el teclado en iOS.",
+      "Escribe # en el compositor para dirigirte a otra sesión: las sugerencias aparecen mientras escribes y el objetivo elegido se convierte en una etiqueta clicable en tu mensaje.",
+      "Cuando pides al agente que entregue trabajo a una sesión que aún no existe, ahora puede crearla por ti; el modelo usado para esas entregas se elige en Ajustes.",
+      "Las notas laterales ahora responden desde una instantánea de solo lectura de la conversación sin molestar a una tarea en curso, y cada pregunta conserva su respuesta en el panel lateral.",
+      "La compactación automática de contexto ya no muestra una notificación; aparece como un marcador en línea en la transcripción, mientras que una compactación manual fallida sigue mostrando el error real.",
+      "Las rutas que menciona el agente ahora se convierten en enlaces incluso para carpetas y archivos sin extensión, y las referencias fuera del proyecto ofrecen mostrar en el explorador de archivos o copiar la ruta en lugar de un mensaje de \"restringido\".",
+    ],
+  },
+  {
     version: "0.22.1",
     date: "2026-10-19",
     highlights: [

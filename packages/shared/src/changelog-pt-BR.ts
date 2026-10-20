@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "0.23.0",
+    date: "2026-10-20",
+    highlights: [
+      "O aplicativo móvel tem um design totalmente novo: telas renovadas para conectar aos seus computadores, gerenciar hosts e conversar, uma linha do tempo de conversas reconstruída e confirmações mais claras para ações de alto risco e de parada.",
+      "Seu telefone agora pode iniciar novas sessões no seu computador — com registro de projetos e navegação de pastas ao adicionar um — as sessões são agrupadas por projeto e os computadores mostram o nome real em vez de um ID de host.",
+      "Uma sessão do telefone agora abre na mensagem mais recente e carrega o histórico anterior sob demanda, mostra as mesmas linhas do desktop e mantém a entrada acima do teclado no iOS.",
+      "Digite # no compositor para direcionar a outra sessão: sugestões aparecem enquanto você digita e o alvo escolhido vira uma etiqueta clicável na sua mensagem.",
+      "Quando você pede ao agente para entregar trabalho a uma sessão que ainda não existe, ele agora pode criá-la para você; o modelo usado nessas entregas é escolhido nas Configurações.",
+      "As notas laterais agora respondem a partir de um instantâneo somente leitura da conversa sem cutucar uma tarefa em andamento, e cada pergunta mantém a resposta no painel lateral.",
+      "A compactação automática de contexto não abre mais uma notificação; ela aparece como um marcador embutido na transcrição, enquanto uma compactação manual com falha ainda mostra o erro real.",
+      "Os caminhos que o agente menciona agora viram links mesmo para pastas e arquivos sem extensão, e referências fora do projeto oferecem mostrar no gerenciador de arquivos ou copiar o caminho em vez de uma mensagem de \"restrito\".",
+    ],
+  },
+  {
     version: "0.22.1",
     date: "2026-10-19",
     highlights: [
