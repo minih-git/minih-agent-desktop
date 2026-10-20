@@ -112,6 +112,48 @@ computers to approve ONE device, and then use that device on all of them.
   ticket for that Host). A native build is not affected: it holds one
   account-scoped token and addresses whichever Host id it likes.
 
+## Sessions by project, and new sessions
+
+The session screen leads with projects, the way the desktop sidebar does.
+
+* **Headings.** `project/list` (viewer role, protocol §7.7) supplies the project
+  names; `src/lib/session-groups.ts` turns the two lists into the groups the
+  screen renders. A project's sessions are ordered by most recent activity
+  (then newest created, then id), and the projects themselves are ordered by
+  their most recent session — the same order the desktop sidebar uses. A
+  project that holds no session is not shown, because an empty heading is
+  something the user cannot act on.
+* **Nothing disappears.** A session with no `projectId`, or with a project that
+  is no longer in the catalog, lands in one trailing "Other" group. Archiving a
+  project hides it from the new-session choice but not its history, so its
+  sessions keep their project's name.
+* **When `project/list` fails.** The list stays flat, every session falls under
+  "Other", and an amber line says the project list could not be loaded. The
+  screen never becomes unusable because a heading could not be read.
+* **New session.** `session/create` (controller role, `POST /v1/sessions`) takes
+  the *project id* the catalog named, not a path, which is exactly why
+  `project/list` exists. `src/lib/mutations.ts` sends `projectId` and, only when
+  it is not blank, a trimmed `title` — the rest of `SessionCreateParams` (mode,
+  permission mode, provider, model) is left to the Host's own defaults rather
+  than invented here. With one usable project the button goes straight to it;
+  with several it asks which one, and archived projects are not offered at all.
+  The created session opens on its composer, so the first message can be sent
+  immediately.
+* **Who may create.** The roles the Gateway granted the device are recorded in
+  the registry entry when the device is paired **or adopted as an account
+  device** (`src/lib/credential-port.ts`, `src/lib/native-credential-port.ts`),
+  because `connection/initialize` has no RACP-HTTP mapping. Account adoption
+  reads them from the grant's status answer and writes the same set on every
+  Host of the account — one grant is one principal. A recorded absence of
+  `controller` replaces the button with the reason; an entry written before that
+  field existed is treated as unknown, so the button is offered and the Host's
+  own `FORBIDDEN` is shown as itself.
+* **The desktop Host refuses this.** `session/create` is implemented by the
+  `agent-host-cli` Host; the desktop Host answers `FORBIDDEN` ("not available to
+  remote devices on the desktop Host"), and the screen shows that answer. The
+  phone can therefore create sessions on an always-on Host today, not on a
+  desktop.
+
 ## Push notifications (native only)
 
 The native app can receive the four notification-worthy events of protocol §11.6

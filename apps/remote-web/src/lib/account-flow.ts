@@ -405,6 +405,7 @@ export class AccountFlow {
         expiresAt: outcome.expiresAt,
         hosts: outcome.hosts,
         ...(outcome.signerHostId ? { signerHostId: outcome.signerHostId } : {}),
+        ...(outcome.roles ? { roles: outcome.roles } : {}),
       });
       await this.adoptDevice(outcome);
       return;
@@ -421,6 +422,8 @@ export class AccountFlow {
     hosts: AccountDeviceHost[];
     token?: string;
     csrfTokens?: Record<string, string>;
+    /** The roles the Gateway recorded for the granted device (§11.4/§11.5). */
+    roles?: string[];
   }): Promise<void> {
     let adopted: AccountAdoptionOutcome;
     try {
@@ -437,6 +440,7 @@ export class AccountFlow {
         })),
         ...(outcome.csrfTokens ? { csrfTokens: outcome.csrfTokens } : {}),
         ...(outcome.token ? { token: outcome.token } : {}),
+        ...(outcome.roles && outcome.roles.length > 0 ? { roles: outcome.roles } : {}),
       });
     } catch (error) {
       // A storage backend that throws (a full `localStorage`, a Keychain the

@@ -47,6 +47,13 @@ export const ko: Record<TranslationKey, string> = {
 
   "sessions.title": "세션",
   "sessions.empty": "이 호스트에는 아직 세션이 없습니다.",
+  "sessions.otherGroup": "기타",
+  "sessions.create": "새 세션",
+  "sessions.creating": "만드는 중…",
+  "sessions.chooseProject": "프로젝트 선택",
+  "sessions.createReadOnly": "이 기기는 이 컴퓨터를 읽기만 할 수 있어 세션을 만들 수 없습니다.",
+  "sessions.noProjects": "세션을 만들 수 있는 프로젝트가 없습니다.",
+  "sessions.projectsFailed": "프로젝트 목록을 불러오지 못해 세션을 하나의 목록으로 표시합니다.",
   "sessions.updated": "{{date}} 업데이트",
   "sessions.status.idle": "대기",
   "sessions.status.running": "실행 중",
@@ -195,6 +202,8 @@ export const ko: Record<TranslationKey, string> = {
 
   "operation.pair": "연결",
   "operation.sessionList": "세션 불러오기",
+  "operation.sessionCreate": "세션을 만드는 중",
+  "operation.projectList": "프로젝트를 불러오는 중",
   "operation.sessionAttach": "세션 불러오기",
   "operation.turnStart": "메시지 보내기",
   "operation.turnStop": "턴 중지",

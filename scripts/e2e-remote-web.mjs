@@ -30,6 +30,10 @@ import { fileURLToPath } from "node:url";
 import { resolveElectronBinary } from "./e2e/boot.mjs";
 import { startRemoteWebProxy } from "./e2e/remote-web-proxy.mjs";
 
+// The RACP client drives the Host's own loopback socket for the two fixture
+// steps a gateway device may not perform (registering a project is owner-only).
+import { RacpClient, wsClientTransport } from "../packages/racp/dist/index.js";
+
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 assert.ok(process.env.AGENT_HOST_CLI_E2E_BUNDLE, "AGENT_HOST_CLI_E2E_BUNDLE must name the packaged Host directory");
 assert.ok(process.env.REMOTE_GATEWAY_E2E_BUNDLE, "REMOTE_GATEWAY_E2E_BUNDLE must name the packaged Gateway directory");
@@ -278,7 +282,7 @@ async function startGateway(allowedOrigin) {
 
 async function startHost() {
   const child = track(
-    spawn(process.execPath, [hostCli, "--data-dir", hostData, "--gateway", "--log-level", "warn", "--browse-root", runRoot], {
+    spawn(process.execPath, [hostCli, "--data-dir", hostData, "--gateway", "--pair", "--log-level", "warn", "--browse-root", runRoot], {
       cwd: hostData,
       env: hostEnv,
       stdio: ["ignore", "pipe", "pipe"],
@@ -303,9 +307,10 @@ async function startHost() {
         const line = output.slice(0, newline);
         output = output.slice(newline + 1);
         if (line.startsWith("AGENT_HOST_CLI_READY ")) found.host = JSON.parse(line.slice("AGENT_HOST_CLI_READY ".length));
+        // `--pair` prints the ssh-origin code; only it may register a project.
+        if (line.startsWith("AGENT_HOST_CLI_PAIRING_TOKEN ")) found.pairing = JSON.parse(line.slice("AGENT_HOST_CLI_PAIRING_TOKEN ".length));
       }
-      if (found.host) {
-        clearTimeout(timer);
+      if (found.host && found.pairing) {
         resolveReady();
       }
     });
@@ -347,6 +352,38 @@ async function mintTicket() {
   const issued = JSON.parse((await hostCliRun(["remote-pair", "--data-dir", hostData])).stdout.trim().slice("AGENT_HOST_CLI_PAIRING_TOKEN ".length));
   secrets.push(issued.token, issued.ticket);
   return issued;
+}
+
+/**
+ * The owner the Host's `--pair` code mints over its own loopback socket.
+ *
+ * Registering a project is `owner`-only (`project/register`, protocol §7.7), and
+ * a gateway device never holds that role. So the fixture registers the two
+ * projects the way a person at the machine would — over loopback, with the
+ * ssh-origin device — and the browser half of the run only ever sees what a
+ * phone may see.
+ */
+async function ownerClient() {
+  assert.ok(host?.pairing, "the Host did not print its --pair code");
+  const pairing = new RacpClient({
+    transport: wsClientTransport({ url: `ws://127.0.0.1:${host.host.port}/v1/racp/ws`, token: host.pairing.token }),
+    client: { name: "remote-web-e2e-fixture", version: "0.0.0" },
+    onEvent: () => undefined,
+    requestTimeoutMs: 30_000,
+  });
+  secrets.push(host.pairing.token);
+  await pairing.connect();
+  const paired = await pairing.request("connection/pair", { deviceLabel: "remote-web e2e fixture" });
+  secrets.push(paired.deviceToken);
+  await pairing.close();
+  const owner = new RacpClient({
+    transport: wsClientTransport({ url: `ws://127.0.0.1:${host.host.port}/v1/racp/ws`, token: paired.deviceToken }),
+    client: { name: "remote-web-e2e-fixture", version: "0.0.0" },
+    onEvent: () => undefined,
+    requestTimeoutMs: 30_000,
+  });
+  await owner.connect();
+  return owner;
 }
 
 // ---------------------------------------------------------------------------
@@ -435,16 +472,33 @@ try {
   assert.equal(importCode, 0, "the Host imports the model through its admin socket");
   assert.ok(importOut.startsWith("AGENT_HOST_CLI_PROVIDERS "), importOut);
 
-  // 4. One session per viewport (the desktop owns session creation) and one
-  //    pairing ticket per viewport (the Host prints it; the client pastes it).
+  // 4. Two projects, one of them holding a session, so the client's headings and
+  //    its "Other" group both have something to show, plus one session per
+  //    viewport (the fixture owns it) and one pairing ticket per viewport (the
+  //    Host prints it; the client pastes it).
+  const alphaDir = join(runRoot, "alpha");
+  const betaDir = join(runRoot, "beta");
+  mkdirSync(alphaDir, { recursive: true });
+  mkdirSync(betaDir, { recursive: true });
+  const owner = await ownerClient();
+  const alpha = (await owner.request("project/register", { path: alphaDir })).project;
+  const beta = (await owner.request("project/register", { path: betaDir })).project;
+  // A session with no project: it belongs under "Other", not under a heading.
+  const looseSession = (await owner.request("session/create", { title: "Loose session" })).session;
+  await owner.close();
+
   const views = [];
-  for (const viewport of VIEWPORTS) {
+  for (const [index, viewport] of VIEWPORTS.entries()) {
     const title = `Remote web ${viewport.name}`;
-    const created = await command(clientBase, hostId, harnessToken, "session/create", { title, permissionMode: "ask" });
+    // The first viewport's session sits in "alpha", the second in "beta", so
+    // each project has one row and the grouping is observable per viewport.
+    const projectId = index === 0 ? alpha.id : beta.id;
+    const created = await command(clientBase, hostId, harnessToken, "session/create", { title, permissionMode: "ask", projectId });
     assert.equal(created.status, 200, JSON.stringify(created.payload));
     const sessionId = created.payload.result.session.id;
+    assert.equal(created.payload.result.session.projectId, projectId, "the Host reports the session's project");
     const ticket = await mintTicket();
-    views.push({ ...viewport, title, sessionId, ticket: ticket.ticket });
+    views.push({ ...viewport, title, sessionId, projectId, projectLabel: projectId === alpha.id ? alpha.label : beta.label, ticket: ticket.ticket });
   }
 
   // 5. Drive both viewports in real Chromium.
@@ -506,6 +560,15 @@ try {
     assert.equal(observed.registry.length, 1, `${view.name}: the browser remembers the paired host`);
     assert.equal(observed.registry[0].hostId, hostId);
     assert.ok(observed.registry[0].csrfToken.length > 0, "the registry holds the CSRF token, not the device token");
+    // The list is grouped by project. A heading is the arrow, the project name,
+    // and a count ("▾alpha1"), so the name is matched inside the heading text.
+    // A heading is the arrow, the project name, and a count ("▾alpha1").
+    assert.ok(
+      observed.groups.some((heading) => heading.includes(view.projectLabel)),
+      `${view.name}: the project heading names the project (${view.projectLabel}): ${JSON.stringify(observed.groups)}`,
+    );
+    assert.equal(observed.groupOfOwnSession, view.projectLabel, `${view.name}: the session sits under its project`);
+    assert.equal(observed.groupOfLooseSession, "Other", `${view.name}: a session with no project is under Other`);
 
     // The approval card offers only the decisions a gateway device may make.
     assert.ok(observed.approvalButtons.some((label) => label.includes("Allow once")), `${view.name}: the approval offers Allow once`);
@@ -534,7 +597,15 @@ try {
       false,
       `${view.name}: the client threw: ${observed.consoleErrors.join(" | ")}`,
     );
-    assert.equal(observed.screenshots.length, 7, `${view.name}: one screenshot per step`);
+    // The session created from the phone is listed under the project it was
+    // created in — the whole point of the grouping.
+    assert.equal(typeof observed.groupOfCreatedSession, "string", `${view.name}: the created session is listed`);
+    assert.equal(observed.groupOfCreatedSession, view.projectLabel, `${view.name}: the new session landed in its project`);
+    assert.ok(
+      String(observed.sessionsAfterCreate).includes(view.projectLabel),
+      `${view.name}: the heading is still there: ${observed.sessionsAfterCreate}`,
+    );
+    assert.ok(observed.screenshots.length >= 9, `${view.name}: one screenshot per step`);
   }
 
   // 7. The model stub proves single execution: two approval turns per viewport,
@@ -589,7 +660,7 @@ try {
   assert.equal(interruptRequests.length, VIEWPORTS.length, "every viewport's Interrupt reached the Host");
 
   console.log(
-    `PASS remote web: ${VIEWPORTS.length} viewports paired (cookie profile), listed hosts and sessions, resumed a dropped stream with Last-Event-ID, approved once, ran the tool once, stopped and interrupted a turn, and answered a repeated mutation with the stored turn`,
+    `PASS remote web: ${VIEWPORTS.length} viewports paired (cookie profile), grouped sessions by project (including "Other" and a session created from the phone), listed hosts and sessions, resumed a dropped stream with Last-Event-ID, approved once, ran the tool once, stopped and interrupted a turn, and answered a repeated mutation with the stored turn`,
   );
   console.log(`screenshots: ${artifactDir}`);
 } catch (error) {

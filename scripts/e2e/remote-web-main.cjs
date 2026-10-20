@@ -38,6 +38,12 @@ const HELPERS = `(() => {
     toolRows: () => Array.from(document.querySelectorAll("li")).filter((row) => textOf(row).startsWith("Tool")).length,
     turnLabel: () => Array.from(document.querySelectorAll("span")).map(textOf).find((label) => label.startsWith("Turn ")) || null,
     hasSession: (title) => document.querySelector('[aria-label="' + title + '"]') !== null,
+    groupHeadings: () => Array.from(document.querySelectorAll("section[aria-label] > button[aria-expanded]")).map((button) => (button.textContent || "").trim().replace(/\\s+/g, " ")),
+    groupOf: (title) => {
+      const row = document.querySelector('[aria-label="' + title + '"]');
+      const section = row ? row.closest("section[aria-label]") : null;
+      return section ? section.getAttribute("aria-label") : null;
+    },
     write: (selector, value) => {
       const field = document.querySelector(selector);
       if (!field) return false;
@@ -217,17 +223,39 @@ async function runViewport(view, openWindows) {
     observed.registry = JSON.parse(await evaluate(webContents, "JSON.stringify(__rw.registry())"));
     await capture("01-paired");
 
+    // The list is grouped: this viewport's session sits under its project's
+    // heading, and the session with no project under "Other".
+    observed.groups = JSON.parse(await evaluate(webContents, "JSON.stringify(__rw.groupHeadings())"));
+    observed.groupOfOwnSession = await evaluate(webContents, `__rw.groupOf(${JSON.stringify(view.title)})`);
+    observed.groupOfLooseSession = await evaluate(webContents, `__rw.groupOf("Loose session")`);
+    await capture("02-groups");
+
+    // The phone can create a session: pick the project, and the composer of the
+    // new session is what opens, ready for the first message.
+    await clickText(webContents, "New session");
+    await waitFor(webContents, "document.body.innerText.includes('Choose a project')", "the project picker");
+    await capture("03-choose-project");
+    await clickText(webContents, view.projectLabel);
+    await waitFor(webContents, "document.querySelector('textarea[aria-label=\"Message the agent\"]') !== null", "the new session's composer");
+    observed.createdSession = await evaluate(webContents, "__rw.turnLabel()");
+    await capture("04-new-session");
+    await clickAria(webContents, "Back", "Back (to the session list)");
+    // The list reloads on arrival, so wait for the new session's own row (the
+    // Host's default title) instead of reading the headings while it loads.
+    await waitFor(webContents, "__rw.hasSession('New task')", "the created session in the list");
+    observed.sessionsAfterCreate = await evaluate(webContents, "JSON.stringify(__rw.groupHeadings())");
+    observed.groupOfCreatedSession = await evaluate(webContents, "__rw.groupOf('New task')");
     // 2. The host list, its sessions, then one session's timeline.
     await clickAria(webContents, "Back", "Back (to the host list)");
     await waitFor(webContents, "document.body.innerText.includes('Online')", "the host to probe as online");
     observed.hostList = await evaluate(webContents, "__rw.body()");
-    await capture("02-hosts");
+    await capture("05-hosts");
     await clickText(webContents, "Open");
     await waitFor(webContents, `__rw.hasSession(${JSON.stringify(view.title)})`, "the session list");
     observed.sessions = await evaluate(webContents, "__rw.body()");
     await evaluate(webContents, `document.querySelector('[aria-label=${JSON.stringify(view.title)}]').click()`);
     await waitFor(webContents, "document.body.innerText.includes('Live')", "the session event stream to go live");
-    await capture("03-timeline");
+    await capture("06-timeline");
 
     // 3. A turn that raises an approval, then a forced drop of its stream.
     await type("run the approval fixture");
@@ -238,13 +266,13 @@ async function runViewport(view, openWindows) {
     observed.resumed = await waitForResumedStream(view.sessionId);
     await waitFor(webContents, "__rw.approvalCards() === 1", "exactly one approval card after the reconnect");
     observed.approvalCardsAfterReconnect = await evaluate(webContents, "__rw.approvalCards()");
-    await capture("04-approval-reconnect");
+    await capture("07-approval-reconnect");
 
     // 4. Approve once; the tool must run once.
     await clickAria(webContents, "Approval needed: Allow once");
     await waitFor(webContents, "__rw.approvalCards() === 0 && __rw.toolRows() === 1", "the approved tool row");
     await waitFor(webContents, "document.body.innerText.includes('Turn completed')", "the approved turn to complete");
-    await capture("05-approved");
+    await capture("08-approved");
 
     // 5. Start + stop, then start + interrupt.
     await type("hold the turn open for a stop");
@@ -259,12 +287,12 @@ async function runViewport(view, openWindows) {
     await clickText(webContents, "Interrupt");
     await waitFor(webContents, "__rw.turnLabel() !== 'Turn running'", "the interrupted turn");
     observed.afterInterrupt = await evaluate(webContents, "__rw.turnLabel()");
-    await capture("06-stop-interrupt");
+    await capture("09-stop-interrupt");
 
     // 6. The same mutation twice with one idempotency key.
     observed.duplicate = await evaluate(webContents, duplicateTurnScript(HOST_ID, view.sessionId));
     await waitFor(webContents, "document.body.innerText.includes('answer once')", "the idempotent turn in the timeline");
-    await capture("07-idempotent");
+    await capture("10-idempotent");
     return observed;
   } finally {
     // Electron 43 cannot navigate a freshly created window once an earlier one

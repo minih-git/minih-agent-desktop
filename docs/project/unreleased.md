@@ -1,4 +1,16 @@
 # Unreleased changes
+- The phone shows conversations by project and can start a new one. The session
+  list is grouped under the project names your computer reports, in the same
+  order the desktop sidebar uses, and a conversation that belongs to no project
+  (or to one that no longer exists) stays under "Other" instead of disappearing.
+  Groups collapse. When the project list cannot be read the conversations stay
+  in one list with a note saying why. A device that may control this computer
+  gets a **New session** button: it goes straight to your only project, or asks
+  which one, and the new conversation opens ready for the first message. A
+  read-only device sees the reason instead of the button.
+- Computers registered for remote access now report their own name, so the phone
+  lists "Studio-Mac" instead of `host_11c73275-…`. A computer that was registered
+  before this build keeps the id it registered with.
 
 - Switching a long conversation to another model no longer sends the new model
   the whole history on every request. On the first message after the switch, a

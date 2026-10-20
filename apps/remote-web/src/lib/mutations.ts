@@ -25,6 +25,7 @@ import type {
   RacpApprovalResult,
   RacpCursor,
   RacpPermissionMode,
+  RacpProjectSummary,
   RacpSession,
   RacpSessionSnapshot,
   RacpTurn,
@@ -66,6 +67,77 @@ export function listSessions(client: CommandClient): Promise<MutationResult<Racp
     const result = await client.request<{ sessions?: RacpSession[] }>("session/list", {});
     return result.sessions ?? [];
   });
+}
+
+/**
+ * The projects this device may create sessions under (viewer role).
+ *
+ * `project/list` exists exactly so `session/create` never needs a path
+ * (protocol §7.7), which is also why the phone shows the catalog instead of a
+ * folder picker.
+ */
+export function listProjects(client: CommandClient): Promise<MutationResult<RacpProjectSummary[]>> {
+  return run(async () => {
+    const result = await client.request<{ projects?: RacpProjectSummary[] }>("project/list", {});
+    return result.projects ?? [];
+  });
+}
+
+export type SessionCreateInput = {
+  /** Required: a session belongs to one of the projects `project/list` named. */
+  projectId: string;
+  title?: string;
+};
+
+/**
+ * Create a session under one authorized project (controller role).
+ *
+ * The body is the Host's own contract (`SessionCreateParams` in
+ * `packages/racp/src/operations.ts`): only `projectId` and an optional `title`
+ * are sent, so nothing is invented here. The Host applies its own defaults for
+ * mode, permission mode, and model.
+ */
+export function createSession(
+  client: CommandClient,
+  input: SessionCreateInput,
+): Promise<MutationResult<RacpSession>> {
+  return run(async () => {
+    // A whitespace-only title is the same as none: the Host would otherwise
+    // store a blank name that no sidebar can show.
+    const title = input.title?.trim();
+    const result = await client.request<{ session?: RacpSession }>("session/create", {
+      projectId: input.projectId,
+      ...(title ? { title } : {}),
+    });
+    if (!result.session) throw new Error("the host created no session");
+    return result.session;
+  });
+}
+
+/**
+ * How the "new session" entry point behaves for this device.
+ *
+ * - `hidden`: the Gateway recorded roles and `controller` is not one of them, so
+ *   the device may only read; the screen explains that instead of offering an
+ *   action that would be refused.
+ * - `direct`: exactly one project is available, so the choice is not worth a
+ *   dialog.
+ * - `choose`: several projects; the screen asks which one.
+ * - `unavailable`: no project the device may create a session under.
+ * - `unknown`: no roles were recorded (an entry from an earlier build) or the
+ *   catalog has not loaded yet, so nothing is decided and the action is offered.
+ */
+export type NewSessionMode = "hidden" | "direct" | "choose" | "unavailable" | "unknown";
+
+export function newSessionMode(
+  roles: readonly string[] | undefined,
+  projects: readonly RacpProjectSummary[] | null,
+): NewSessionMode {
+  if (roles && !roles.includes("controller")) return "hidden";
+  if (projects === null || !roles) return "unknown";
+  const usable = projects.filter((project) => !project.archived);
+  if (usable.length === 0) return "unavailable";
+  return usable.length === 1 ? "direct" : "choose";
 }
 
 export function attachSession(client: CommandClient, sessionId: string): Promise<MutationResult<SessionAttachResult>> {

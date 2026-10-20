@@ -47,6 +47,13 @@ export const fr: Record<TranslationKey, string> = {
 
   "sessions.title": "Sessions",
   "sessions.empty": "Cet hôte n'a pas encore de session.",
+  "sessions.otherGroup": "Autres",
+  "sessions.create": "Nouvelle session",
+  "sessions.creating": "Création…",
+  "sessions.chooseProject": "Choisir un projet",
+  "sessions.createReadOnly": "Cet appareil ne peut que consulter cet ordinateur, il ne peut donc pas créer de session.",
+  "sessions.noProjects": "Aucun projet n'est disponible pour créer une session.",
+  "sessions.projectsFailed": "La liste des projets n'a pas pu être chargée, les sessions sont donc affichées dans une seule liste.",
   "sessions.updated": "Mise à jour {{date}}",
   "sessions.status.idle": "Inactive",
   "sessions.status.running": "En cours",
@@ -195,6 +202,8 @@ export const fr: Record<TranslationKey, string> = {
 
   "operation.pair": "Association",
   "operation.sessionList": "Chargement des sessions",
+  "operation.sessionCreate": "Création de la session",
+  "operation.projectList": "Chargement des projets",
   "operation.sessionAttach": "Chargement de la session",
   "operation.turnStart": "Envoi du message",
   "operation.turnStop": "Arrêt du tour",

@@ -1,3 +1,5 @@
+import os from "node:os";
+
 import type { EasyTierStatus, RemoteGatewayAccountMode } from "@minih-agent/shared";
 
 import { isMinihRouterVendorKey } from "@minih-agent/shared";
@@ -100,6 +102,30 @@ export async function readAccountGateway(host: HostCaller | null): Promise<Accou
     },
   };
 }
+
+/**
+ * The name a phone shows for this computer, or `undefined` when there is none.
+ *
+ * The Gateway stores exactly what the Host reports and falls back to the
+ * `host_<uuid>` id, which is what the phone was showing. `os.hostname()` is the
+ * name the user gave the machine and the one every other tool on it shows; the
+ * `.local` suffix is mDNS plumbing a phone cannot use, so it is dropped. The
+ * value is trimmed, bounded to the Gateway's own limit (128) so a long name is
+ * cut rather than rejected, and an empty result is left out entirely so the
+ * Gateway keeps its fallback. Nothing else is derived or sent: the name must
+ * never carry a key or an account identifier.
+ */
+export function desktopEnrollmentLabel(
+  hostname: () => string | undefined = () => os.hostname(),
+): string | undefined {
+  const raw = (hostname() ?? "").trim();
+  if (!raw) return undefined;
+  const withoutSuffix = raw.replace(/\.local\.?$/i, "").trim() || raw;
+  return withoutSuffix.slice(0, HOST_LABEL_MAX_LENGTH);
+}
+
+/** The Gateway's own bound on a Host label (`apps/remote-gateway/src/enrollment.ts`). */
+const HOST_LABEL_MAX_LENGTH = 128;
 
 /** The row shape `providers.list` returns, as far as account mode reads it. */
 type ProviderRow = { id?: string; vendorKey?: string; hasSecret?: boolean; enabled?: boolean };
@@ -248,6 +274,8 @@ export type AccountEnrollerOptions = {
   store: Pick<GatewayCredentialStore, "credentials" | "hostId" | "saveCredentials">;
   getHost: () => HostCaller | null;
   log: (level: "info" | "warn" | "error", message: string, data?: Record<string, unknown>) => void;
+  /** Test seam: the machine name reported to the Gateway. */
+  hostname?: () => string | undefined;
 };
 
 export function createAccountEnroller(options: AccountEnrollerOptions): AccountEnroller {
@@ -287,6 +315,10 @@ export function createAccountEnroller(options: AccountEnrollerOptions): AccountE
       return { state: "no-access-key" };
     }
     try {
+      // Account mode has no registration code, so this Host names itself: the
+      // phone lists computers by this label, and the Gateway falls back to the
+      // host id when it is missing.
+      const label = desktopEnrollmentLabel(options.hostname);
       const credentials = await options.port.enroll({
         gatewayUrl: gateway.dialUrl,
         hostlinkUrl: gateway.hostlinkUrl,
@@ -294,6 +326,7 @@ export function createAccountEnroller(options: AccountEnrollerOptions): AccountE
         accessKey: resolved.accessKey,
         hostId: options.store.hostId(),
         tlsServerName: gateway.tlsServerName,
+        ...(label ? { label } : {}),
       });
       await options.store.saveCredentials(credentials);
       failedFor = null;

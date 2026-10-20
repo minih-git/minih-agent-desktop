@@ -47,6 +47,13 @@ export const es: Record<TranslationKey, string> = {
 
   "sessions.title": "Sesiones",
   "sessions.empty": "Este host todavía no tiene sesiones.",
+  "sessions.otherGroup": "Otros",
+  "sessions.create": "Nueva sesión",
+  "sessions.creating": "Creando…",
+  "sessions.chooseProject": "Elige un proyecto",
+  "sessions.createReadOnly": "Este dispositivo solo puede leer este ordenador, así que no puede crear sesiones.",
+  "sessions.noProjects": "No hay ningún proyecto disponible para crear una sesión.",
+  "sessions.projectsFailed": "No se pudo cargar la lista de proyectos, así que las sesiones se muestran en una sola lista.",
   "sessions.updated": "Actualizada {{date}}",
   "sessions.status.idle": "Inactiva",
   "sessions.status.running": "En ejecución",
@@ -195,6 +202,8 @@ export const es: Record<TranslationKey, string> = {
 
   "operation.pair": "Emparejamiento",
   "operation.sessionList": "Cargar sesiones",
+  "operation.sessionCreate": "Creando la sesión",
+  "operation.projectList": "Cargando proyectos",
   "operation.sessionAttach": "Cargar la sesión",
   "operation.turnStart": "Enviar el mensaje",
   "operation.turnStop": "Detener el turno",

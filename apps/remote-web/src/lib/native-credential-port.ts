@@ -12,13 +12,14 @@
  * token would be a Host that can never authenticate, while a token without an
  * entry is an orphan the next `ready()` deletes.
  */
-import type {
-  AccountAdoption,
-  AccountAdoptionOutcome,
-  CredentialPort,
-  HostCredential,
-  PairOutcome,
-  PairRequest,
+import {
+  grantedRoles,
+  type AccountAdoption,
+  type AccountAdoptionOutcome,
+  type CredentialPort,
+  type HostCredential,
+  type PairOutcome,
+  type PairRequest,
 } from "./credential-port.js";
 import { defaultDeviceLabel, nativeDeviceLabel } from "./device-label.js";
 import type { HostRegistry, HostRegistryEntry } from "./host-registry.js";
@@ -117,12 +118,14 @@ export class NativeCredentialPort implements CredentialPort {
         failure: { code: "STORAGE_FAILED", message: error instanceof Error ? error.message : String(error) },
       };
     }
+    const roles = grantedRoles(result.device.roles);
     const entry: HostRegistryEntry = {
       hostId: request.hostId,
       label,
       deviceId: result.device.deviceId,
       pairedAt: (this.options.now?.() ?? new Date()).toISOString(),
       profile: "native",
+      ...(roles ? { roles } : {}),
     };
     this.options.registry.save(entry);
     this.tokens.set(request.hostId, token);
@@ -171,6 +174,8 @@ export class NativeCredentialPort implements CredentialPort {
       }
     }
     const pairedAt = (this.options.now?.() ?? new Date()).toISOString();
+    // Same rule as the browser port: one grant, the same roles on every Host.
+    const roles = grantedRoles(request.roles);
     const hostIds: string[] = [];
     for (const host of request.hosts) {
       // `save` replaces the entry of that Host, so asking for a device again
@@ -182,6 +187,7 @@ export class NativeCredentialPort implements CredentialPort {
         pairedAt,
         profile: "native",
         ...(host.requiresOwnConfirmation ? { requiresOwnConfirmation: true as const } : {}),
+        ...(roles ? { roles } : {}),
       });
       this.tokens.set(host.hostId, token);
       hostIds.push(host.hostId);

@@ -9,11 +9,13 @@ import {
   respondInput,
   startTurn,
   stopTurn,
+  createSession,
+  listProjects,
+  newSessionMode,
   type CommandClient,
 } from "./mutations.js";
 
 type Call = { method: string; params: Record<string, unknown>; idempotencyKey?: string };
-
 function recordingClient(result: unknown = {}): { client: CommandClient; calls: Call[] } {
   const calls: Call[] = [];
   const client: CommandClient = {
@@ -125,5 +127,88 @@ describe("mutations", () => {
       ok: false,
       failure: { code: "AGENT_BUSY", message: "another turn is running", retriable: false },
     });
+  });
+
+  it("reads the project catalog", async () => {
+    const { client, calls } = recordingClient({ projects: [{ id: "p1", label: "Desktop", archived: false }] });
+    expect(await listProjects(client)).toEqual({
+      ok: true,
+      value: [{ id: "p1", label: "Desktop", archived: false }],
+    });
+    expect(calls).toEqual([{ method: "project/list", params: {} }]);
+  });
+
+  it("creates a session with the project id and nothing the Host did not define", async () => {
+    const session = { id: "s_new", title: "New session", projectId: "p1" };
+    const { client, calls } = recordingClient({ session });
+
+    expect(await createSession(client, { projectId: "p1" })).toEqual({ ok: true, value: session });
+    // `SessionCreateParams` is `{ title?, projectId?, mode?, ... }`; the Host
+    // fills in mode, permission mode and model, so sending them would be an
+    // invented contract.
+    expect(calls).toEqual([{ method: "session/create", params: { projectId: "p1" } }]);
+  });
+
+  it("sends a title only when one was given", async () => {
+    const titled = recordingClient({ session: { id: "s1" } });
+    await createSession(titled.client, { projectId: "p1", title: "  " });
+    expect(titled.calls[0]!.params).toEqual({ projectId: "p1" });
+
+    const named = recordingClient({ session: { id: "s1" } });
+    await createSession(named.client, { projectId: "p1", title: "Fix the flaky test" });
+    expect(named.calls[0]!.params).toEqual({ projectId: "p1", title: "Fix the flaky test" });
+  });
+
+  it("reports a refused create as the Host's own code", async () => {
+    const forbidden: CommandClient = {
+      request: () =>
+        Promise.reject(
+          new RacpError("FORBIDDEN", "not available to remote devices on the desktop Host"),
+        ),
+    };
+    expect(await createSession(forbidden, { projectId: "p1" })).toEqual({
+      ok: false,
+      failure: {
+        code: "FORBIDDEN",
+        message: "not available to remote devices on the desktop Host",
+        retriable: false,
+      },
+    });
+  });
+
+  it("treats an answer without a session as a failure instead of an empty success", async () => {
+    const { client } = recordingClient({});
+    const result = await createSession(client, { projectId: "p1" });
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.failure.code).toBe("INTERNAL");
+  });
+});
+
+describe("newSessionMode", () => {
+  const project = (id: string, archived = false) => ({ id, label: id, archived });
+
+  it("hides the entry when the Gateway recorded roles without controller", () => {
+    expect(newSessionMode(["viewer"], [project("p1")])).toBe("hidden");
+    expect(newSessionMode([], [project("p1")])).toBe("hidden");
+  });
+
+  it("offers the entry when the roles are unknown or include controller", () => {
+    // No roles recorded (an entry from an earlier build): the entry is offered
+    // and a FORBIDDEN answer is shown as itself.
+    expect(newSessionMode(undefined, null)).toBe("unknown");
+    expect(newSessionMode(["viewer", "controller"], null)).toBe("unknown");
+  });
+
+  it("goes straight to the only usable project", () => {
+    expect(newSessionMode(["controller"], [project("p1"), project("p2", true)])).toBe("direct");
+  });
+
+  it("asks which project when there is a real choice", () => {
+    expect(newSessionMode(["controller"], [project("p1"), project("p2")])).toBe("choose");
+  });
+
+  it("reports that nothing can be created when no usable project is left", () => {
+    expect(newSessionMode(["controller"], [])).toBe("unavailable");
+    expect(newSessionMode(["controller"], [project("p1", true)])).toBe("unavailable");
   });
 });

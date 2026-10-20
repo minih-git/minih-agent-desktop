@@ -89,6 +89,7 @@ export default function App() {
         hostId={host.hostId}
         hostLabel={host.label}
         credential={credential}
+        {...(host.roles ? { roles: host.roles } : {})}
         onOpenSession={(session: RacpSession) =>
           setScreen({ kind: "session", hostId: host.hostId, sessionId: session.id, title: session.title })
         }
