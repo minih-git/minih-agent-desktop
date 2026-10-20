@@ -1,4 +1,16 @@
 # Unreleased changes
+- A Host started with `agent-host-cli` only registers projects inside
+  `--browse-root` (your home directory by default), the same limit the folder
+  picker always had. Registering a folder elsewhere needs a `--browse-root` that
+  contains it.
+- A phone can now start work on your computer, not just steer it. Opening the
+  new-session picker offers **Add a project**: it walks your folders from your
+  home directory down, and picking one registers it and opens a conversation
+  there, so a folder no longer has to be set up on the desktop first. The
+  folders it may reach are the ones under your home directory; a path that tries
+  to leave it is refused. Your computer shows a notice naming the device that
+  started the conversation or added the folder. This needs the new desktop
+  version: the desktop is what serves these operations to the phone.
 - The phone shows conversations by project and can start a new one. The session
   list is grouped under the project names your computer reports, in the same
   order the desktop sidebar uses, and a conversation that belongs to no project

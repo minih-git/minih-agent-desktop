@@ -156,8 +156,12 @@ export function RemoteControlSection() {
                     ? "settings.remoteGateway.noticeMinted"
                     : notice.kind === "device.adopted"
                       ? "settings.remoteGateway.noticeAdopted"
-                      : "settings.remoteGateway.noticeRevoked",
-                  { label: notice.label, time: notice.at },
+                      : notice.kind === "device.revoked"
+                        ? "settings.remoteGateway.noticeRevoked"
+                        : notice.kind === "device.session-created"
+                          ? "settings.remoteGateway.noticeSessionCreated"
+                          : "settings.remoteGateway.noticeProjectRegistered",
+                  { label: notice.label, time: notice.at, device: notice.deviceId },
                 )}
               </li>
             ))}

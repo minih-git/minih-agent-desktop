@@ -12,6 +12,8 @@ import {
   createSession,
   listProjects,
   newSessionMode,
+  browseProjects,
+  registerProject,
   type CommandClient,
 } from "./mutations.js";
 
@@ -210,5 +212,62 @@ describe("newSessionMode", () => {
   it("reports that nothing can be created when no usable project is left", () => {
     expect(newSessionMode(["controller"], [])).toBe("unavailable");
     expect(newSessionMode(["controller"], [project("p1", true)])).toBe("unavailable");
+  });
+});
+
+describe("project browse and register", () => {
+  it("asks for the browse root when no path is named", async () => {
+    const { client, calls } = recordingClient({
+      path: "/home/user",
+      entries: [{ name: "work", path: "/home/user/work" }],
+    });
+
+    expect(await browseProjects(client)).toEqual({
+      ok: true,
+      value: { path: "/home/user", entries: [{ name: "work", path: "/home/user/work" }] },
+    });
+    expect(calls).toEqual([{ method: "project/browse", params: {} }]);
+  });
+
+  it("walks one level down and keeps the way back up", async () => {
+    const { client, calls } = recordingClient({
+      path: "/home/user/work",
+      parent: "/home/user",
+      entries: [],
+    });
+
+    const result = await browseProjects(client, "/home/user/work");
+
+    expect(result.ok && result.value.parent).toBe("/home/user");
+    expect(calls[0]!.params).toEqual({ path: "/home/user/work" });
+  });
+
+  it("surfaces a refused directory as the Host's own code", async () => {
+    const forbidden: CommandClient = {
+      request: () => Promise.reject(new RacpError("REMOTE_PATH_FORBIDDEN", "path is outside the browsable root")),
+    };
+    expect(await browseProjects(forbidden, "/etc")).toEqual({
+      ok: false,
+      failure: { code: "REMOTE_PATH_FORBIDDEN", message: "path is outside the browsable root", retriable: false },
+    });
+  });
+
+  it("registers a folder with the path the picker offered", async () => {
+    const { client, calls } = recordingClient({
+      project: { id: "8", label: "app", archived: false, path: "/home/user/work/app" },
+    });
+
+    expect(await registerProject(client, "/home/user/work/app")).toEqual({
+      ok: true,
+      value: { id: "8", label: "app", archived: false, path: "/home/user/work/app" },
+    });
+    expect(calls).toEqual([{ method: "project/register", params: { path: "/home/user/work/app" } }]);
+  });
+
+  it("treats a registration answer without a project as a failure", async () => {
+    const { client } = recordingClient({});
+    const result = await registerProject(client, "/home/user/work/app");
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.failure.code).toBe("INTERNAL");
   });
 });

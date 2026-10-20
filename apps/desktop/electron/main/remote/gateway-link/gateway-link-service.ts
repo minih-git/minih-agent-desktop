@@ -398,6 +398,27 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
       operations: createDesktopHostOperations({
         getHost: options.getHost,
         revokeDevice: revokeStoredDevice,
+        // A phone that starts a conversation here or registers a folder changed
+        // this computer's state, so the person sitting at it has to learn about
+        // it at once. It travels on the notice channel the settings page
+        // already renders (ADR decision 6) and through the Host log with the
+        // device id, so it is auditable without a second mechanism.
+        reportRemoteAction: (action) => {
+          const at = new Date(now()).toISOString();
+          options.emitDeviceNotice?.({
+            kind: action.kind === "project.registered" ? "device.project-registered" : "device.session-created",
+            deviceId: action.deviceId,
+            label: action.path ?? action.sessionId ?? "",
+            at,
+          });
+          log("info", "remote device changed local state", {
+            kind: action.kind,
+            deviceId: action.deviceId,
+            ...(action.projectId ? { projectId: action.projectId } : {}),
+            ...(action.sessionId ? { sessionId: action.sessionId } : {}),
+            ...(action.path ? { path: action.path } : {}),
+          });
+        },
       }),
       authenticator,
       hostId: credentials.hostId || options.store.hostId(),

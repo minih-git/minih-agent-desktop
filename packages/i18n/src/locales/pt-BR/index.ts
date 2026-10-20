@@ -1269,6 +1269,8 @@ export const ptBR = {
       noticeMinted: "{{label}} foi aprovado neste desktop.",
       noticeAdopted: "{{label}} foi aprovado em outra máquina da sua conta.",
       noticeRevoked: "{{label}} foi revogado.",
+      noticeSessionCreated: "{{device}} iniciou uma nova sessão neste computador ({{label}}).",
+      noticeProjectRegistered: "{{device}} adicionou {{label}} como projeto neste computador.",
       deviceRequestTitle: "Um dispositivo quer acesso",
       deviceRequestBody: "{{label}} solicita acesso a este desktop.",
       deviceRequestClient: "Cliente: {{client}}",

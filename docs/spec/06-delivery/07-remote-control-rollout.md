@@ -1010,6 +1010,33 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   records the same set, written only when the list is non-empty, exactly like
   pairing (`src/lib/credential-port.ts`, `src/lib/native-credential-port.ts`).
 
+- R7 package A2 delivered (2026-10-19, D666 amendment 1, D670): the desktop Host
+  now lets a phone start work, not only steer it. `sessions.create`,
+  `projects.register`, and `projects.browse` are implemented over host-core
+  instead of answering `forbidden()`, and `project/register` / `project/browse`
+  drop from `owner` to `controller` in the shared role table — `owner` is still
+  never granted to a gateway or account device, so the workspace tool surface,
+  shell access, and session deletion stay out of reach. Both project operations
+  are confined to the user's home directory: `realpath` first, then a refusal for
+  anything outside the root (`..`, a relative path, or a symlink that leaves it),
+  with a missing directory reported as missing rather than created; a browse
+  answer is bounded to 500 directories and has no `parent` at the root. The rules
+  live once, in `packages/host-runtime` (`createProjectCatalog`,
+  `createHostSession`), so the desktop Host and `agent-host-cli` cannot drift;
+  `agent-host-cli`'s `--browse-root` keeps its meaning and now also gates
+  registration, which it did not do before. Two routes carry this over
+  RACP-HTTP — `POST /v1/projects` and `GET /v1/projects:browse?path=…` — derived
+  from the shared route table the Gateway builds its host-scoped forwarding from.
+  Every state-changing call is reported on the existing device-notice channel and
+  the Host log, naming the device and the session id or registered path. The phone
+  gets **Add a project** in the new-session picker: walk the Host's folders from
+  the root, register one, and the session opens in it; paths are displayed as
+  `~/…` so the phone never prints the account name, while the request keeps the
+  Host's own absolute spelling. That UI depends on package H's grouped session
+  list, so A2 landed after it. Merging is not enough for a desktop: the desktop
+  change ships with the next desktop release, so a phone reaches these three
+  operations on a desktop only once the user installs that build.
+
 ## 8. Amendment history
 
 D374 (2026-09-10) replaced the Electron facade milestone with the headless

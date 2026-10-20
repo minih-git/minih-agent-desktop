@@ -15796,6 +15796,43 @@ sibling Hosts is still open for package D.
   a live enrollment has to satisfy in `packages/racp/src/hostlink-client.test.ts`.
   The Router test instance remains the gate.
 
+#### E2E-REMOTE-ACCOUNT-start-work-from-the-phone
+
+- **Preconditions**: The same local stack as the account scenarios: a local test
+  Gateway, an enrolled `agent-host-cli` Host whose browse root is the test run
+  directory, a loopback model stub, and a phone client paired with a gateway
+  ticket (so `viewer` / `controller` / `approver`, never `owner`). One folder
+  under the browse root is a project already; one is not.
+- **Steps**: 1) From the session list, open **New session**. 2) Choose **Add a
+  project** and confirm the picker starts at the Host's root (shown as `~`, with
+  no way up). 3) Walk into the folder that is not a project yet and confirm it.
+  4) Confirm a session opens on its composer, go back, and check the folder is
+  now a project heading. 5) Ask the Host for a path outside the browse root
+  (`project/browse` and `project/register`). 6) Check the desktop's own notice
+  list and the Host log.
+- **Expected**: The picker lists only directories under the root and the phone
+  shows them from the root (`~/…`), never the absolute home path; confirming a
+  folder registers it and opens its session; `..`, a relative path, and a symlink
+  pointing outside are refused with `REMOTE_PATH_FORBIDDEN`, and a missing
+  directory is `REMOTE_PATH_NOT_FOUND` rather than created; `configure`,
+  `fork`, `rename`, `delete`, the workspace reads, and the terminal still answer
+  `FORBIDDEN`/`CAPABILITY_UNAVAILABLE` for a gateway device; and each registration
+  and session creation appears as a notice naming the device, plus a Host log
+  line with the device id and the session id or path.
+- **Specs linked**: security §3.7 (D666 amendment), protocol §6.2 and §11.2,
+  ADR `remote-control-router-account-binding` amendment 1, rollout §2 (R7 A2)
+- **Acceptance**: Security, Quality
+- **Milestone**: Post-MVP (remote control rollout R7, D666)
+- **Status**: Partial — the browser steps (1–4) run in
+  `pnpm test:e2e:remote-web`: the picker's root, the registered folder, the
+  session it opened, and the new heading are asserted per mobile viewport. The
+  desktop half (5–6) is automated in
+  `apps/desktop/test/desktop-gateway-link.test.mjs` (`the desktop Host creates a
+  session, registers a project, and browses within the browse root`), and the
+  shared root rule in `packages/host-runtime/src/project-catalog.test.ts`. A run
+  against a live Router and a released desktop build remains the deployment
+  gate.
+
 #### E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts
 
 - **Preconditions**: A local Router test instance with key A, the local test

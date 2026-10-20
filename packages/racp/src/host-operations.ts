@@ -48,10 +48,19 @@ export type ProjectBrowseEntry = { name: string; path: string };
 
 export interface RacpProjectCatalog {
   list(): Promise<RacpProjectSummary[]>;
-  /** Canonicalize and validate a Host directory, register it, return its id. */
-  register(path: string): Promise<RacpProjectSummary & { path: string }>;
+  /**
+   * Canonicalize and validate a Host directory, register it, return its id.
+   *
+   * `principal` is the device that asked. It is optional because the catalog is
+   * also called by a Host's own code; a Host that reports what a remote device
+   * did uses it.
+   */
+  register(path: string, principal?: Principal): Promise<RacpProjectSummary & { path: string }>;
   /** Directories under `path` (or the user's home when omitted), bounded. */
-  browse(path?: string): Promise<{ path: string; parent?: string; entries: ProjectBrowseEntry[] }>;
+  browse(
+    path?: string,
+    principal?: Principal,
+  ): Promise<{ path: string; parent?: string; entries: ProjectBrowseEntry[] }>;
 }
 
 export interface RacpWorkspaceAccess {

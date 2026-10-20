@@ -1439,6 +1439,8 @@ sklm: {
       "noticeMinted": "{{label}} wurde auf diesem Desktop freigegeben.",
       "noticeAdopted": "{{label}} wurde auf einem anderen Rechner deines Kontos freigegeben.",
       "noticeRevoked": "{{label}} wurde widerrufen.",
+      "noticeSessionCreated": "{{device}} hat auf diesem Computer eine neue Sitzung gestartet ({{label}}).",
+      "noticeProjectRegistered": "{{device}} hat {{label}} auf diesem Computer als Projekt hinzugefügt.",
       "deviceRequestTitle": "Ein Gerät möchte Zugriff",
       "deviceRequestBody": "{{label}} bittet um Zugriff auf diesen Desktop.",
       "deviceRequestClient": "Client: {{client}}",

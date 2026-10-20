@@ -69,6 +69,59 @@ export function listSessions(client: CommandClient): Promise<MutationResult<Racp
   });
 }
 
+/** One directory the Host offered in its folder picker. */
+export type BrowseEntry = { name: string; path: string };
+
+export type ProjectBrowseResult = {
+  /** The directory that was listed, in the Host's canonical spelling. */
+  path: string;
+  /** The parent directory, absent when `path` is the Host's browse root. */
+  parent?: string;
+  entries: BrowseEntry[];
+};
+
+/**
+ * Walk the Host's directories (controller role, rollout A2).
+ *
+ * Omitting `path` asks for the Host's browse root — the user's home directory —
+ * which is also the boundary the Host enforces: a path outside it is refused
+ * with `REMOTE_PATH_FORBIDDEN`.
+ */
+export function browseProjects(
+  client: CommandClient,
+  path?: string,
+): Promise<MutationResult<ProjectBrowseResult>> {
+  return run(async () => {
+    const result = await client.request<ProjectBrowseResult>("project/browse", {
+      ...(path ? { path } : {}),
+    });
+    return {
+      path: result.path,
+      ...(result.parent ? { parent: result.parent } : {}),
+      entries: result.entries ?? [],
+    };
+  });
+}
+
+/**
+ * Register one of the Host's directories as a project (controller role,
+ * rollout A2). The Host canonicalizes the path again and refuses anything
+ * outside its browse root, so the picker is a convenience, not the boundary.
+ */
+export function registerProject(
+  client: CommandClient,
+  path: string,
+): Promise<MutationResult<RacpProjectSummary & { path: string }>> {
+  return run(async () => {
+    const result = await client.request<{ project?: RacpProjectSummary & { path?: string } }>(
+      "project/register",
+      { path },
+    );
+    if (!result.project) throw new Error("the host registered no project");
+    return { ...result.project, path: result.project.path ?? path };
+  });
+}
+
 /**
  * The projects this device may create sessions under (viewer role).
  *

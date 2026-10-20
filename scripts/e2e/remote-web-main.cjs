@@ -245,17 +245,45 @@ async function runViewport(view, openWindows) {
     await waitFor(webContents, "__rw.hasSession('New task')", "the created session in the list");
     observed.sessionsAfterCreate = await evaluate(webContents, "JSON.stringify(__rw.groupHeadings())");
     observed.groupOfCreatedSession = await evaluate(webContents, "__rw.groupOf('New task')");
+
+    // The folder picker: walk from the Host's root, register a folder that is
+    // not a project yet, and land in a session created in it.
+    await clickText(webContents, "New session");
+    await waitFor(webContents, "document.body.innerText.includes('Choose a project')", "the project picker");
+    await clickText(webContents, "Add a project");
+    // The picker starts at the Host's browse root: it shows `~`, offers no way
+    // up, and lists the folders the Host allows.
+    await waitFor(webContents, "__rw.button('e2e-new-project') !== null", "the folder picker at the root");
+    observed.pickerRoot = await evaluate(webContents, "__rw.body()");
+    await clickText(webContents, "e2e-new-project");
+    await waitFor(webContents, "__rw.button('Use this folder') !== null", "the chosen folder");
+    await capture("05-add-project");
+    await clickText(webContents, "Use this folder");
+    await waitFor(webContents, "document.querySelector('textarea[aria-label=\\\"Message the agent\\\"]') !== null", "the session of the new project");
+    observed.newProjectComposer = await evaluate(
+      webContents,
+      'document.querySelector(\'textarea[aria-label="Message the agent"]\') !== null',
+    );
+    await clickAria(webContents, "Back", "Back (to the session list)");
+    // The heading is styled uppercase, so it is matched on the section's own
+    // label rather than on `innerText`.
+    await waitFor(
+      webContents,
+      "Array.from(document.querySelectorAll('section[aria-label]')).some((section) => (section.getAttribute('aria-label') || '') === 'e2e-new-project')",
+      "the new project's heading",
+    );
+    observed.headingsWithNewProject = JSON.parse(await evaluate(webContents, "JSON.stringify(__rw.groupHeadings())"));
     // 2. The host list, its sessions, then one session's timeline.
     await clickAria(webContents, "Back", "Back (to the host list)");
     await waitFor(webContents, "document.body.innerText.includes('Online')", "the host to probe as online");
     observed.hostList = await evaluate(webContents, "__rw.body()");
-    await capture("05-hosts");
+    await capture("06-hosts");
     await clickText(webContents, "Open");
     await waitFor(webContents, `__rw.hasSession(${JSON.stringify(view.title)})`, "the session list");
     observed.sessions = await evaluate(webContents, "__rw.body()");
     await evaluate(webContents, `document.querySelector('[aria-label=${JSON.stringify(view.title)}]').click()`);
     await waitFor(webContents, "document.body.innerText.includes('Live')", "the session event stream to go live");
-    await capture("06-timeline");
+    await capture("07-timeline");
 
     // 3. A turn that raises an approval, then a forced drop of its stream.
     await type("run the approval fixture");
@@ -266,13 +294,13 @@ async function runViewport(view, openWindows) {
     observed.resumed = await waitForResumedStream(view.sessionId);
     await waitFor(webContents, "__rw.approvalCards() === 1", "exactly one approval card after the reconnect");
     observed.approvalCardsAfterReconnect = await evaluate(webContents, "__rw.approvalCards()");
-    await capture("07-approval-reconnect");
+    await capture("08-approval-reconnect");
 
     // 4. Approve once; the tool must run once.
     await clickAria(webContents, "Approval needed: Allow once");
     await waitFor(webContents, "__rw.approvalCards() === 0 && __rw.toolRows() === 1", "the approved tool row");
     await waitFor(webContents, "document.body.innerText.includes('Turn completed')", "the approved turn to complete");
-    await capture("08-approved");
+    await capture("09-approved");
 
     // 5. Start + stop, then start + interrupt.
     await type("hold the turn open for a stop");
@@ -287,12 +315,12 @@ async function runViewport(view, openWindows) {
     await clickText(webContents, "Interrupt");
     await waitFor(webContents, "__rw.turnLabel() !== 'Turn running'", "the interrupted turn");
     observed.afterInterrupt = await evaluate(webContents, "__rw.turnLabel()");
-    await capture("09-stop-interrupt");
+    await capture("10-stop-interrupt");
 
     // 6. The same mutation twice with one idempotency key.
     observed.duplicate = await evaluate(webContents, duplicateTurnScript(HOST_ID, view.sessionId));
     await waitFor(webContents, "document.body.innerText.includes('answer once')", "the idempotent turn in the timeline");
-    await capture("10-idempotent");
+    await capture("11-idempotent");
     return observed;
   } finally {
     // Electron 43 cannot navigate a freshly created window once an earlier one

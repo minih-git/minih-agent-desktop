@@ -1439,6 +1439,8 @@ sklm: {
       "noticeMinted": "{{label}} se aprobó en este escritorio.",
       "noticeAdopted": "{{label}} se aprobó en otra máquina de tu cuenta.",
       "noticeRevoked": "{{label}} se revocó.",
+      "noticeSessionCreated": "{{device}} inició una sesión nueva en este ordenador ({{label}}).",
+      "noticeProjectRegistered": "{{device}} añadió {{label}} como proyecto en este ordenador.",
       "deviceRequestTitle": "Un dispositivo quiere acceso",
       "deviceRequestBody": "{{label}} solicita acceso a este escritorio.",
       "deviceRequestClient": "Cliente: {{client}}",

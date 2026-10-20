@@ -410,6 +410,127 @@ test("revoking a device closes its open connection and refuses the token", async
   }
 });
 
+/**
+ * The A2 amendment: a phone may now start a session here, register a folder,
+ * and walk directories to pick one. Everything else stays refused, and what it
+ * does do has to show up for the person at this computer.
+ */
+test("the desktop Host creates a session, registers a project, and browses within the browse root", async () => {
+  const { mkdir, mkdtemp, realpath, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const base = await realpath(await mkdtemp(join(tmpdir(), "desktop-host-a2-")));
+  const browseRoot = join(base, "home");
+  const projectDir = join(browseRoot, "work", "app");
+  const outside = join(base, "outside");
+  await mkdir(projectDir, { recursive: true });
+  await mkdir(outside, { recursive: true });
+
+  const calls = [];
+  const reported = [];
+  try {
+    const host = {
+      async call(method, params = {}) {
+        calls.push({ method, params });
+        if (method === "projects.list") return { projects: [{ id: 7, path: await realpath(projectDir), name: "app" }] };
+        if (method === "projects.create") return { project: { id: 8, path: params.path, name: "app" } };
+        if (method === "session.create") {
+          return { session: { id: "s_new", title: "New task", mode: "agent", projectPath: params.projectPath } };
+        }
+        if (method === "session.configure") return {};
+        if (method === "session.get") {
+          return {
+            session: {
+              id: "s_new",
+              title: "New task",
+              projectPath: params.projectPath ?? (await realpath(projectDir)),
+              mode: "agent",
+              createdAt: "2026-10-19T00:00:00.000Z",
+              updatedAt: "2026-10-19T00:00:00.000Z",
+            },
+          };
+        }
+        if (method === "session.list") return { sessions: [] };
+        throw new Error(`unexpected host-core call ${method}`);
+      },
+    };
+    const operations = createDesktopHostOperations({
+      getHost: () => host,
+      revokeDevice: async () => true,
+      browseRoot,
+      reportRemoteAction: (action) => reported.push(action),
+    });
+    const principal = { subject: "dev_phone", roles: ["viewer", "controller", "approver"], pairedDevice: false };
+
+    const browsed = await operations.projects.browse(undefined, principal);
+    assert.equal(browsed.path, await realpath(browseRoot));
+    assert.deepEqual(browsed.entries.map((entry) => entry.name), ["work"]);
+
+    const nested = await operations.projects.browse(projectDir, principal);
+    assert.equal(nested.path, await realpath(projectDir));
+    assert.equal(nested.parent, await realpath(join(browseRoot, "work")));
+
+    const project = await operations.projects.register(projectDir, principal);
+    assert.equal(project.id, "8");
+    assert.equal(project.path, await realpath(projectDir));
+
+    const session = await operations.sessions.create({ projectId: "7", title: "From the phone" }, principal);
+    assert.equal(session.id, "s_new");
+    assert.equal(session.projectId, "7");
+
+    // The person at this computer is told what happened, by which device, and
+    // which project or session it touched.
+    assert.deepEqual(
+      reported.map((action) => action.kind),
+      ["project.registered", "session.created"],
+    );
+    assert.equal(reported[0].deviceId, "dev_phone");
+    // The notice names the folder from the home directory, not absolutely.
+    assert.equal(reported[0].path, "~/work/app");
+    assert.equal(reported[1].sessionId, "s_new");
+    assert.equal(reported[1].projectId, "7");
+
+    // The rest of the machine is still off limits, and a path outside the root
+    // never reaches host-core.
+    await assert.rejects(operations.sessions.configure("s1", { permissionMode: "auto" }), (error) => error.code === "FORBIDDEN");
+    await assert.rejects(operations.sessions.delete("s1"), (error) => error.code === "FORBIDDEN");
+    await assert.rejects(operations.sessions.rename("s1", "x"), (error) => error.code === "FORBIDDEN");
+    await assert.rejects(operations.sessions.fork("s1", {}), (error) => error.code === "FORBIDDEN");
+    await assert.rejects(operations.workspace.read("s1", "a"), (error) => error.code === "FORBIDDEN");
+    await assert.rejects(operations.projects.browse(outside, principal), (error) => error.code === "REMOTE_PATH_FORBIDDEN");
+    await assert.rejects(operations.projects.register(outside, principal), (error) => error.code === "REMOTE_PATH_FORBIDDEN");
+    assert.equal(
+      calls.some((call) => call.method === "projects.create" && call.params.path === outside),
+      false,
+    );
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
+test("a gateway device reaches the desktop Host's project routes with a controller role", async () => {
+  const desktop = await startDesktopLink();
+  try {
+    const { mux } = desktop.starts[0];
+    const hostId = desktop.starts[0].credentials.hostId;
+    const pairingCode = await desktop.service.createPairingCode();
+    const pairingClient = muxClient(mux, hostId, pairingCode.code);
+    await pairingClient.connect();
+    const paired = await pairingClient.request("connection/pair", { deviceLabel: "phone with projects" });
+    pairingClient.close();
+
+    const deviceClient = muxClient(mux, hostId, paired.deviceToken);
+    await deviceClient.connect();
+    // The role table decides this: `project/browse` and `project/register` are
+    // `controller`, so a gateway device may call them.
+    const browsed = await deviceClient.request("project/browse", {});
+    assert.ok(Array.isArray(browsed.entries));
+    assert.ok(typeof browsed.path === "string" && browsed.path.length > 0);
+    deviceClient.close();
+  } finally {
+    await desktop.cleanup();
+  }
+});
+
 test("the RACP revoke operation runs the same closer as the settings page", async () => {
   // `session/revoke` is owner-only, so a gateway-paired device can never reach
   // it through the Host link; what has to hold is that the operation the server

@@ -148,11 +148,28 @@ The session screen leads with projects, the way the desktop sidebar does.
   `controller` replaces the button with the reason; an entry written before that
   field existed is treated as unknown, so the button is offered and the Host's
   own `FORBIDDEN` is shown as itself.
-* **The desktop Host refuses this.** `session/create` is implemented by the
-  `agent-host-cli` Host; the desktop Host answers `FORBIDDEN` ("not available to
-  remote devices on the desktop Host"), and the screen shows that answer. The
-  phone can therefore create sessions on an always-on Host today, not on a
-  desktop.
+* **Adding a project.** When the project the user wants is not in the list yet,
+  **Add a project** opens the Host's folder picker (`project/browse`,
+  controller role): it starts at the Host's browse root — the user's home
+  directory — walks down a level at a time, and offers **Up** until it is back
+  at the root. Picking a folder registers it (`project/register`) and opens a
+  session in it, so the folder does not have to be created on the desktop first.
+  Both operations are `controller`, and the Host confines them to that root: a
+  `..` detour, a relative path, or a symlink pointing outside is refused with
+  `REMOTE_PATH_FORBIDDEN`, and a directory that does not exist is reported as
+  missing rather than created. Paths are *shown* from the root (`~/Projects/app`)
+  so a phone screen never prints the account name; the request still carries the
+  Host's own absolute spelling.
+* **Known limit.** A browse answer carries at most 500 directories and has no
+  "more" affordance, so a folder with more than 500 sub-folders shows only the
+  first 500 (alphabetically). The root and every level are bounded the same way;
+  filtering or search inside the picker is not implemented.
+* **Which Hosts offer it.** A `controller` device may call all three operations;
+  a `viewer`-only device may not, and the Host answers `FORBIDDEN`, which the
+  screen shows as itself. A desktop must run a build that includes the A2 Host
+  change; a self-hosted Gateway must be new enough to expose the two new routes
+  (`POST /v1/projects`, `GET /v1/projects:browse`), otherwise the phone gets
+  `NOT_FOUND` for them.
 
 ## Push notifications (native only)
 

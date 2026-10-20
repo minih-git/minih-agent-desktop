@@ -1439,6 +1439,8 @@ sklm: {
       "noticeMinted": "{{label}} a été approuvé sur ce poste.",
       "noticeAdopted": "{{label}} a été approuvé sur une autre machine de votre compte.",
       "noticeRevoked": "{{label}} a été révoqué.",
+      "noticeSessionCreated": "{{device}} a démarré une nouvelle session sur cet ordinateur ({{label}}).",
+      "noticeProjectRegistered": "{{device}} a ajouté {{label}} comme projet sur cet ordinateur.",
       "deviceRequestTitle": "Un appareil demande l'accès",
       "deviceRequestBody": "{{label}} demande l'accès à ce poste.",
       "deviceRequestClient": "Client : {{client}}",

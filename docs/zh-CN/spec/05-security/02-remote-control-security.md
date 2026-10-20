@@ -101,6 +101,30 @@ ssh 来源令牌只能在 loopback `RACP-WS` 上认证，交叉通道使用一�
 网关令牌无法借 SSH 隧道提权，owner 令牌也无法经网关重放。任意一侧（网关或 Host）
 吊销后，新连接被拒绝，已有中继逻辑连接在 5 秒内关闭。
 
+- **D666 修订（2026-10-19，工作包 A2）：网关设备可以改什么。** 维护者决定：登录用户
+  自己账户的手机，可以像坐在电脑前的人一样做三件事——新建会话（`session/create`，
+  本来就是 `controller`）、把这台电脑的某个文件夹注册为项目（`project/register`）、
+  逐级浏览文件夹来选一个（`project/browse`）。后两个操作原本要求 `owner`，本次降为
+  `controller`；角色表里其余条目一律不动。网关与账户设备仍然永远拿不到 `owner`，因此
+  会重组或暴露这台机器的操作——`workspace/toolExecute`、`workspace/toolShell`、
+  `workspace/files`、`session/delete`、`session/archive`、`session/revoke`、
+  `tools/advertise`——依旧不可达。
+  两个操作都限制在一个根目录（用户主目录）内：Host 先用 `realpath` 规范化路径，再拒绝
+  不在该根内的路径，因此 `..`、相对路径、指向根外的符号链接一律 `REMOTE_PATH_FORBIDDEN`，
+  不存在的路径报 `REMOTE_PATH_NOT_FOUND` 而不是被创建。注册返回选择器自己使用的规范路径；
+  浏览只列目录、上限 500 条，到了根目录就不再给 `parent`。
+  每次改状态都会报告发生了什么——哪台设备、以及会话 id 或注册的路径——走的正是设置页
+  已经在渲染的设备通知通道（铸造/收编/吊销），同时写入 Host 日志，因此坐在电脑前的人
+  会知道手机在这里开了会话或加了文件夹。
+  **路径可能落到哪些日志里。** 注册把路径放在请求体（`POST /v1/projects`），因此不会出现在
+  反向代理的访问日志里；浏览把路径放在查询串（`GET /v1/projects:browse?path=…`），所以
+  那条绝对路径——含主目录里的用户名——会出现在访问日志中。GET 仍然是对的动词（该调用只读目录、
+  不改变任何状态），而且路径是用户自己的、由其自己的设备在同一条已由 Gateway 终止的 TLS 连接上
+  发出；运营者需要知道的是：浏览路径在访问日志里可见，注册路径不可见，因此日志保留与访问权限
+  同样适用于它。
+  被否决的方案：给网关设备 `owner`。它只是角色列表里的一个词，但同时会把工作区工具面、
+  shell 访问和会话删除交给手机，这既是用户没有要求的，也不是远程权限上限设计来仲裁的。
+
 账户模式（D666，ADR `remote-control-router-account-binding`）：Router 的
 AccessKey 只用于发现与注册。客户端的 AccessKey 只交给 Gateway：Gateway 经 loopback
 调用 `GET /api/auth/session` 校验，绝不持久化原始 key，也绝不把它转发给 Host。Host 只

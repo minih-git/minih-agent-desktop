@@ -189,12 +189,12 @@ export function createOperations(): Map<RacpOperation, OperationHandler> {
   handlers.set("project/list", async (context) => ({ projects: await context.operations.projects.list() }));
   handlers.set("project/register", async (context, params) => {
     const input = check(Type.Object({ path: Type.String({ minLength: 1 }) }), params);
-    const project = await context.operations.projects.register(input.path);
+    const project = await context.operations.projects.register(input.path, context.principal);
     return { project };
   });
   handlers.set("project/browse", async (context, params) => {
     const input = check(Type.Object({ path: Type.Optional(Type.String()) }), params);
-    return context.operations.projects.browse(input.path);
+    return context.operations.projects.browse(input.path, context.principal);
   });
 
   handlers.set("session/list", async (context) => {

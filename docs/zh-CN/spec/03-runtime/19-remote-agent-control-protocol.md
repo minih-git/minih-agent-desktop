@@ -216,8 +216,8 @@ owner，工作区读取都按会话持久根、Host 忽略规则和 `PATH_OUTSID
 | `terminal/resize` | controller | 调整已打开终端尺寸 |
 | `terminal/close` | controller | 关闭终端，幂等 |
 | `connection/pair` | authenticated | 用升级请求携带的一次性配对令牌换取设备凭证（安全规格 §3.4）；仅在配对连接上有效（D448） |
-| `project/register` | owner | 将 Host 上的目录注册为项目：Host 规范化并校验路径，返回项目 id（D448） |
-| `project/browse` | owner | 列出 Host 某路径下的目录，有界，供远程目录选择器使用（D448） |
+| `project/register` | controller | 将 Host 上的目录注册为项目：Host 规范化路径、限制在其浏览根（用户主目录）内，返回项目 id（D448；角色由 owner 降为 controller，D666 修订，2026-10-19） |
+| `project/browse` | controller | 列出 Host 某路径下的目录，有界，且同样限制在浏览根内，供远程目录选择器使用（D448；角色由 owner 降为 controller，D666 修订，2026-10-19） |
 
 仍推迟的本地操作：
 
@@ -276,6 +276,8 @@ Plan/Goal 审批为带显式 `permissionMode` 的 `approve` 或 `reject`，且�
 | Capabilities | `GET /v1/capabilities` |
 | List hosts (Gateway only) | `GET /v1/hosts` |
 | List projects | `GET /v1/projects` |
+| Register project | `POST /v1/projects`（body `{ path }`） |
+| Browse folders | `GET /v1/projects:browse?path=...`（`path` 可省略，省略即为浏览根） |
 | List sessions | `GET /v1/sessions` |
 | Create session | `POST /v1/sessions` |
 | Get/attach session | `GET /v1/sessions/{sessionId}` / `POST ...:attach` |

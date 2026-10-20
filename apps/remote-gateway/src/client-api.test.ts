@@ -53,6 +53,44 @@ describe("gateway client API", () => {
     expect(listed.payload.result).toMatchObject({ sessions: [{ id: "s1" }] });
   });
 
+  it("forwards the project routes a phone uses to start a session somewhere new", async () => {
+    // Rollout A2 added these two routes; the Gateway derives its host-scoped
+    // routes from the shared table, so this proves the wiring and the query
+    // parameter rather than a hand-written copy.
+    const browsed = await command(gateway, {
+      hostId: host.hostId,
+      token: deviceToken,
+      method: "project/browse",
+      params: { path: "/home/user" },
+    });
+    expect(browsed.status).toBe(200);
+    expect(browsed.payload.result).toMatchObject({
+      path: "/home/user",
+      entries: [{ name: "work", path: "/home/user/work" }],
+    });
+
+    const registered = await command(gateway, {
+      hostId: host.hostId,
+      token: deviceToken,
+      method: "project/register",
+      params: { path: "/home/user/work/app" },
+    });
+    expect(registered.status).toBe(200);
+    expect(registered.payload.result).toMatchObject({ project: { label: "app", path: "/home/user/work/app" } });
+  });
+
+  it("refuses a query parameter the route does not declare", async () => {
+    const response = await command(gateway, {
+      hostId: host.hostId,
+      token: deviceToken,
+      method: "project/browse",
+      params: {},
+      query: "?recursive=true",
+    });
+    expect(response.status).toBe(400);
+    expect(response.payload.error?.data?.code).toBe("INVALID_ARGUMENT");
+  });
+
   it("refuses a request without a credential and one with an unknown credential", async () => {
     const missing = await fetch(`${gateway.clientBaseUrl}/hosts/${host.hostId}/v1/sessions`);
     expect(missing.status).toBe(401);
