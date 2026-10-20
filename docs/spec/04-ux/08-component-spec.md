@@ -1550,7 +1550,7 @@ storage but compose into one assistant turn until the next user message.
 | Running planning | Compact animated-dot Planning / Goal row in that same slot throughout the planning turn; a runtime phase takes precedence, and pending user interaction or turn completion hides it. The Composer mode chip pulses |
 | Idle | Scrollable; no auto-scroll |
 | Permission pending | PermissionCard inserted inline; transcript continues after resolution |
-| Context checkpoint | Existing transcript remains visible; compaction adds one divider row after the message it covers and one warning toast |
+| Context checkpoint | Existing transcript remains visible; compaction adds one divider row after the message it covers, without a routine toast or dialog; fallback remains labelled as a failed summary |
 | Error | Error MessageBubble with actionable retry link |
 
 ### 7.4 Interactions
@@ -3059,7 +3059,7 @@ rows and existing state symbols stay unchanged; this amendment adds no shimmer.
 | New session (reasoning model) | Combined model × reasoning chip shows the model and its binding default thinking level; an unmatched model starts at Off while keeping the manual ladder available | User may select any level enabled in the model binding, or any canonical level for an unmatched model |
 | New session / switch while another session is running | textarea active, send button enabled for the destination session's own run state | Send active, Stop hidden unless the destination session itself is running with an empty draft |
 | Running | textarea and mode/model × reasoning/permission controls remain editable for the next turn; the single submit slot shows Stop only with an empty draft | Send queues text or attachments; Stop when both are empty |
-| Context checkpoint | Same as Running until durable checkpoint completion; intermediate `turn_end` does not reactivate controls. A retained-tail fallback remains Running and shows a warning toast | Same single-slot Stop/Send behavior as Running |
+| Context checkpoint | Same as Running until durable checkpoint completion; intermediate `turn_end` does not reactivate controls. A retained-tail fallback remains Running without a toast | Same single-slot Stop/Send behavior as Running |
 | Permission pending | textarea disabled (per [03-permission-ux.md](03-permission-ux.md) §7) | Send disabled; Stop remains active whenever the running empty-draft condition is met |
 | Plan / Goal / planning | textarea active while idle; contract badge and permission chip visible; mode chip pulses while the live turn projects `planning` | inspect, send, or submit a contract |
 | Plan / Goal / awaiting approval | approval surface shows only the title and artifact opener for the exact `.pi/<kind>/*.md` approval; draft is preserved read-only and composer controls remain blocked for that session | approve or reject |

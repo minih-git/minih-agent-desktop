@@ -7031,9 +7031,11 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
     hook on a terminating turn); a new user prompt still compacts before its
     first provider request.
   - Every successful compaction adds exactly one divider row to the transcript,
-    positioned immediately after the last message that checkpoint covers, and
-    raises exactly one warning toast. Two checkpoints produce two rows, in
-    order, and neither row replaces or hides a message.
+    positioned immediately after the last message that checkpoint covers, with
+    no routine toast, dialog, or notification. This includes threshold,
+    model-requested, model-switch, overflow, and manual checkpoints in active
+    and background sessions. Two checkpoints produce two rows, in order, and
+    neither row replaces or hides a message.
   - The `new_context` call appears as a normal tool activity row, returns
     immediately, and the checkpoint is created at the following turn boundary
     rather than mid-turn.
@@ -7064,9 +7066,9 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
     error message or `error` event; only a failed retry (or failed compaction)
     closes the bubble with `CONTEXT_TOO_LARGE` / the actual terminal error.
   - If automatic summary generation fails, a durable retained-tail fallback
-    checkpoint is appended, the run stays active, and one warning explains
-    that older model context was reduced; the transcript row for that
-    checkpoint reads "summary generation failed · recent context retained",
+    checkpoint is appended, the run stays active, and no warning toast is
+    raised; the transcript row for that checkpoint explains the reduction as
+    "summary generation failed · recent context retained",
     never `summary ≈N tokens` (ADR 0282). Before that fallback, the summary
     request retries transient provider failures up to three times with
     2s/4s/8s backoff, Stop cancels the backoff, deterministic failures do not
@@ -7080,10 +7082,11 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
     reporting that there is no new context to compact.
   - The budget reminders appear at most once each per checkpoint window, never
     in the transcript, and never in a persisted system prompt.
-  - Idle `/compact` succeeds and shows its own informational toast on top of the
-    compaction warning, because the user asked for it. Compaction failures
-    surface once through `CONTEXT_COMPACTION_FAILED` without duplicate error
-    toasts.
+  - Idle `/compact` succeeds without an informational or warning toast; its
+    inline status settles and its checkpoint row remains visible. Manual
+    compaction failures retain one error toast with the actual failure, while
+    automatic terminal failures surface through `CONTEXT_COMPACTION_FAILED`
+    on the failed turn without duplicate error toasts.
   - Settings contains no context-management card and Settings search returns no
     compaction rows.
 - **Specs linked**: `03-runtime/01-ipc-protocol.md`,
@@ -7096,7 +7099,11 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 - **Milestone**: M5
 - **Status**: Partially automated (`runtime.test.ts`,
   `context-compaction.test.mjs`, `assistant-turns.test.mjs`, host-core
-  transcript/session unit tests); full provider/UI journey Draft
+  transcript/session unit tests). `pnpm test:e2e:notification-cards` clicks
+  every successful compaction reason and retained-tail recovery through the
+  production store and ToastHost in isolated Chromium, verifies existing
+  notices survive and manual failure remains visible in English and Chinese.
+  Full provider/transcript UI journey remains Draft.
 
 #### E2E-PROVIDER-custom-endpoint-session-identity: A self-hosted endpoint receives the session id
 

@@ -881,13 +881,14 @@ may be retained while exactly one workspace supplies the visible shell context.
 - `compaction_start` keeps the session running. Threshold and overflow
   `compaction_end` events remain inside the active run; only `agent_end` or
   `error` settles it. A manual-only checkpoint settles on `compaction_end`.
-- Every successful compaction shows one warning toast: earlier detail is gone,
-  and starting a fresh session is a decision only the user can make. The three
-  more specific toasts stay on top of it — a successful manual `/compact`
-  result, a warning before an overflow retry, and the fallback warning below.
+- Routine compaction never raises a toast, dialog, or separate notification.
+  Threshold/model-requested checkpoints, model switches, successful manual
+  `/compact`, and overflow recovery use the existing inline activity,
+  transcript divider, and context usage inspector instead.
 - If automatic summary generation fails but a retained-tail checkpoint is
-  persisted, `compaction_end.fallback = "retained_tail"` shows one warning
-  toast and the active run continues with reduced historical context.
+  persisted, `compaction_end.fallback = "retained_tail"` labels the divider
+  as a failed summary with recent context retained. The active run continues
+  without a warning toast; the degradation is not presented as a real summary.
 - Manual failure shows one error toast. Automatic hard/overflow failure does
   not duplicate the assistant error with a toast; the terminal error remains
   attached to the failed turn.

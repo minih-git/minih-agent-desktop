@@ -589,7 +589,8 @@ an oversized request still cannot pass the guard. A fallback also records
 provider error text, which can carry endpoint details.
 
 **Two compaction families.** Both run the same lifecycle — budget
-re-estimation, host-core append, `compaction_end`, transcript row, warning:
+re-estimation, host-core append, `compaction_end`, and transcript row without a
+routine toast or dialog:
 
 - `summary` (the default) requests a summary from the model;
 - `fresh_window` requests nothing and installs a checkpoint with an empty
@@ -681,8 +682,8 @@ previous summary (when available) and the bounded recent window described above.
 The complete transcript remains durable and visible, while the next model
 request receives only that recovery checkpoint and applicable tail. The
 lifecycle event marks this as `fallback: "retained_tail"`, and the checkpoint's
-mark carries the same `fallback`, so the renderer shows a warning and labels
-the transcript row as a failed summary rather than a false success. If the
+mark carries the same `fallback`, so the renderer labels the transcript row
+as a failed summary rather than a false success, without a warning toast. If the
 fallback cannot be prepared, persisted, or kept below the safe budget, the user
 row and an assistant error remain durable and no provider request starts.
 
@@ -1294,7 +1295,7 @@ request.
 
 Delegate compaction affects the delegate's model context only. It rewrites no
 persisted transcript row, writes no host-core checkpoint, and adds no
-compaction row, warning toast, or context-inspector line; the delegate keeps
+compaction row or context-inspector line; the delegate keeps
 its complete visible rows and the parent still sees only reports. Compaction
 is entirely automatic: `new_context` remains denied to delegates, because
 executing it would set the parent runtime's pending-compaction flag.
