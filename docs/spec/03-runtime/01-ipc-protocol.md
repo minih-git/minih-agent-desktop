@@ -277,10 +277,17 @@ workspace, or approved execution. Slash text is literal input on this channel.
 Accepted input is echoed as ordinary user message events with the current
 `turnId`, main-prepared attachment refs, and `UiMessage.steering: true`. This
 persisted marker protects accepted input from Smart Stop after renderer reload.
-The optional `sideNote: true` field marks a side note on the same channel: the
-echoed row carries `UiMessage.sideNote`, and the runtime frames the
-model-visible prompt (see `02-agent-runtime.md` §4.0) while the row keeps the
-user's own words. Admission, attachment handling and persistence are unchanged.
+Legacy `sideNote: true` steering is rejected with `INVALID_ARGUMENT`. Side
+questions use separate channels: `agent/sideNote` takes
+`{ sessionId, expectedTurnId, content }` and returns `{ note }`, where the
+completed note has `id`, `question`, `answer`, `createdAt`, and optional `usage`.
+`agent/sideNotesList` takes `{ sessionId }` and returns `{ notes }`. Both are
+local Desktop only. The ask channel validates the active turn and rejects
+duplicates, then calls the existing runtime's `agent.sideNote` method without
+starting/steering a turn. It emits no main-turn messages or status events.
+The independent model request has a 120-second deadline under the existing
+130-second transport deadline, no tools, and a distinct request identity.
+
 A native Pi `message_end` may additionally carry the optional additive
 `replacesMessageId`: the provisional streaming row id whose durable SDK entry
 this event publishes. The renderer re-keys exactly that row (active, cache,

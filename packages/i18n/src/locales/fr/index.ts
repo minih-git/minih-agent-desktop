@@ -2415,15 +2415,18 @@ sklm: {
     },
     "sideNotes": {
       "emptyTitle": "Aucune note en passant",
-      "emptyBody": "Les notes envoyées pendant que l’agent travaille apparaissent ici. La tâche en cours continue.",
+      "emptyBody": "Les questions et réponses restent ici pendant que la tâche principale continue.",
       "inputLabel": "Note en passant",
-      "placeholder": "Demandez un résumé de l’avancement ou ajustez la direction…",
+      "placeholder": "Poser une question sur la tâche…",
       "idlePlaceholder": "Les notes en passant sont disponibles pendant l’exécution d’une tâche",
-      "idleHint": "Une note en passant reçoit sa réponse à l’intérieur de la tâche en cours : elle ne l’interrompt pas et ne la remplace pas. Aucune tâche n’est en cours.",
-      "hint": "Envoyée dans la tâche en cours et traitée à son prochain point sûr.",
+      "idleHint": "Posez une question indépendante pendant une tâche. Aucune tâche en cours.",
+      "hint": "Réponse indépendante ici, sans interrompre la tâche principale.",
       "send": "Envoyer",
       "presetProgressLabel": "Résumer l’avancement",
-      "presetProgress": "Résume brièvement l’avancement actuel, puis poursuis la tâche en cours."
+      "presetProgress": "Résume brièvement la progression à partir de cet instantané.",
+      "question": "Question",
+      "answer": "Réponse",
+      "answering": "Réponse indépendante en cours…",
     },
     "pluginView": {
       "failed": "Cette vue n'a pas pu être chargée. Rechargez le plugin et réessayez."

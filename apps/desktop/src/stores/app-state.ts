@@ -2,6 +2,7 @@ import type { RecentModel } from "../lib/recent-models";
 import type { RemoteProjectTarget } from "../lib/remote-project-session";
 import type {
   AgentEventEnvelope,
+  SideNote,
   BrowserState,
   AgentQueueChangedEvent,
   AgentStatus,
@@ -252,7 +253,10 @@ export type AppState = {
     onAccepted?: (sessionId: string) => void,
   ) => Promise<boolean>;
   steerPrompt: (content: string, draft?: ComposerDraftSnapshot) => Promise<boolean>;
-  /** Accepted input the running turn answers without being redirected by it. */
+  /** Isolated read-only questions; never main transcript or steering state. */
+  sideNotes: Record<string, SideNote[]>;
+  sideNotePending: Record<string, string>;
+  loadSideNotes: (sessionId: string) => Promise<void>;
   sendSideNote: (content: string) => Promise<boolean>;
   enqueuePrompt: (
     content: string,

@@ -8,7 +8,7 @@ export const enEntries: ChangelogEntry[] = [
       "Router networking starts only after the configured API endpoint authenticates your AccessKey and supplies its network identity. Changing the endpoint or key replaces the old tunnel instead of keeping the wrong gateway.",
       "Network Center is shown only in developer mode, where explicit manual settings remain available. Upgrade note: use a publicly reachable Router endpoint; gateways without bootstrap no longer start the built-in tunnel automatically.",
       "Fixed project memories merge when projects join a group, reject oversized merges without partial writes, and keep note identifiers unique. Learned memory sync merges individual notes and preserves deletions.",
-      "Send side notes from the work panel without interrupting a running task; drafts survive submission and subagent details can be collapsed without reopening the panel.",
+      "Side notes now answer independently in the work panel instead of steering the main task. Questions and answers stay in the panel; drafts survive submission, and subagent details can be collapsed without reopening it.",
       "Switching models rechecks context usage and compacts oversized conversations before continuing. Tool discovery has its own presentation and failed searches no longer claim that nothing matched.",
       "Remote account discovery begins at desktop startup, native remote clients can load sessions through the Gateway, and background task output stays scoped to its conversation.",
     ],

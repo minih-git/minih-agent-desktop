@@ -31,7 +31,9 @@ app.whenReady().then(async () => {
   window.webContents.on("console-message", (event) => console.error(event.message));
   try {
     await window.loadFile(path.join(__dirname, "index.html"));
-    const result = await window.webContents.executeJavaScript("globalThis.sideNotesProbe()");
+    const result = await window.webContents.executeJavaScript("globalThis.sideNotesProbe(true)");
+    const screenshot = await window.webContents.capturePage();
+    require("node:fs").writeFileSync(path.join(process.env.PI_SCRATCH_DIR || __dirname, "side-notes-acceptance.png"), screenshot.toPNG());
     console.log("SIDE_NOTES_PROBE " + JSON.stringify(result));
     app.exit(result?.ok === true ? 0 : 1);
   } catch (error) {

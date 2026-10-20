@@ -50,6 +50,8 @@ export type OneShotCompleteStream = (
 
 export type OneShotCompleteOptions = {
   signal?: AbortSignal;
+  /** Preserve a runtime-selected extension model when supplying its stream. */
+  model?: Model<Api>;
   stream?: OneShotCompleteStream;
   /** Optional hard cap for callers whose response schema has a small bound. */
   maxOutputTokens?: number;
@@ -86,7 +88,7 @@ export async function completeOneShot(
   thinkingLevel: ThinkingLevel,
   options: OneShotCompleteOptions = {},
 ): Promise<OneShotCompleteResult> {
-  const model = buildProviderModel(provider);
+  const model = options.model ?? buildProviderModel(provider);
   const models = createProviderModels(provider, model);
   const streamSimple =
     options.stream ??

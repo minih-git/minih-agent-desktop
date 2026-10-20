@@ -81,12 +81,28 @@ export type AgentSteerRequest = Pick<
 > & {
   expectedTurnId: string;
   /**
-   * A side note is answered inside the running turn instead of redirecting it:
-   * the runtime frames the note for the model, and the persisted row carries
-   * the marker so the renderer still shows it as a side note after a reload.
+   * @deprecated Side notes use the dedicated independent ask channel.
+   * True is rejected to prevent older callers from interrupting the task.
    */
   sideNote?: boolean;
 };
+
+/** Independent read-only answer, stored outside the main transcript. */
+export type SideNote = {
+  id: string;
+  question: string;
+  answer: string;
+  createdAt: string;
+  usage?: MessageUsage;
+};
+
+export type AgentSideNoteRequest = {
+  sessionId: string;
+  expectedTurnId: string;
+  content: string;
+};
+
+export type AgentSideNoteResponse = { note: SideNote };
 
 export type AgentPromptResponse = {
   accepted: boolean;

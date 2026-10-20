@@ -2380,15 +2380,18 @@ export const ptBR = {
     },
     sideNotes: {
       emptyTitle: "Ainda não há notas paralelas",
-      emptyBody: "As notas que você envia enquanto o agente trabalha aparecem aqui. A tarefa em andamento continua.",
+      emptyBody: "Perguntas e respostas ficam aqui enquanto a tarefa principal continua.",
       inputLabel: "Nota paralela",
-      placeholder: "Peça um resumo do progresso ou ajuste a direção…",
+      placeholder: "Pergunte sobre a tarefa atual…",
       idlePlaceholder: "As notas paralelas ficam disponíveis enquanto uma tarefa está em execução",
-      idleHint: "Uma nota paralela é respondida dentro da tarefa em andamento, então não a interrompe nem a substitui. Não há nada em execução agora.",
-      hint: "Enviada para a tarefa em andamento e respondida no próximo ponto seguro.",
+      idleHint: "Pergunte de forma independente durante uma tarefa. Nenhuma tarefa em execução.",
+      hint: "Resposta independente aqui, sem interromper a tarefa principal.",
       send: "Enviar",
       presetProgressLabel: "Resumir o progresso",
-      presetProgress: "Resuma brevemente o progresso até agora e depois continue a tarefa atual.",
+      presetProgress: "Resuma brevemente o progresso com base no retrato da tarefa.",
+      question: "Pergunta",
+      answer: "Resposta",
+      answering: "Respondendo de forma independente…",
     },
     pluginView: {
       failed: "Não foi possível carregar esta visualização. Recarregue o plugin e tente novamente."

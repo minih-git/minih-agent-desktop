@@ -32,6 +32,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub mod layout;
+pub mod side_notes;
 #[cfg(test)]
 use layout::refresh_layout;
 pub use layout::TranscriptLayout;
@@ -1482,6 +1483,7 @@ pub fn remove_session_files(data_dir: &Path, session_id: &str) {
     let Ok(inflight) = inflight_path(data_dir, session_id) else {
         return;
     };
+    let side_notes_file = transcript.with_extension("side-notes.jsonl");
     for path in [
         transcript.with_extension("jsonl.tmp"),
         transcript.with_extension("jsonl.layout"),
@@ -1489,6 +1491,7 @@ pub fn remove_session_files(data_dir: &Path, session_id: &str) {
         transcript.with_extension("layout.tmp"),
         transcript,
         revisions,
+        side_notes_file,
         inflight.with_extension("json.tmp"),
         inflight,
     ] {

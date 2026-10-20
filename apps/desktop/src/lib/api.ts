@@ -24,6 +24,9 @@ import type {
   AgentCompactResponse,
   AgentPromptRequest,
   AgentSteerRequest,
+  AgentSideNoteRequest,
+  AgentSideNoteResponse,
+  SideNote,
   UiMessage,
   MessageRevisionSummary,
   AgentPromptResponse,
@@ -1193,6 +1196,10 @@ export const api = {
     prefix: UiMessage[];
   }) =>
     invoke<{ messages: UiMessage[] }>(IPC.invoke.sessionActivateRevision, input),
+  askSideNote: (req: AgentSideNoteRequest) =>
+    invoke<AgentSideNoteResponse>(IPC.invoke.agentSideNote, req),
+  listSideNotes: (sessionId: string) =>
+    invoke<{ notes: SideNote[] }>(IPC.invoke.agentSideNotesList, { sessionId }),
   steer: (req: AgentSteerRequest) =>
     invoke<AgentPromptResponse>(IPC.invoke.agentSteer, req),
   prompt: (req: AgentPromptRequest) =>

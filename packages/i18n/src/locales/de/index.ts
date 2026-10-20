@@ -2415,15 +2415,18 @@ sklm: {
     },
     "sideNotes": {
       "emptyTitle": "Noch keine Nebennotizen",
-      "emptyBody": "Notizen, die du während der Arbeit des Agenten sendest, erscheinen hier. Die laufende Aufgabe läuft weiter.",
+      "emptyBody": "Fragen und Antworten bleiben hier, während die Hauptaufgabe weiterläuft.",
       "inputLabel": "Nebennotiz",
-      "placeholder": "Um eine Fortschrittszusammenfassung bitten oder die Richtung anpassen…",
+      "placeholder": "Zur aktuellen Aufgabe fragen…",
       "idlePlaceholder": "Nebennotizen sind nur während einer laufenden Aufgabe verfügbar",
-      "idleHint": "Eine Nebennotiz wird innerhalb der laufenden Aufgabe beantwortet und unterbricht sie nicht. Aktuell läuft keine Aufgabe.",
-      "hint": "Wird in die laufende Aufgabe gesendet und am nächsten sicheren Punkt beantwortet.",
+      "idleHint": "Während einer Aufgabe unabhängig fragen. Aktuell läuft keine Aufgabe.",
+      "hint": "Hier unabhängig beantwortet. Die Hauptaufgabe wird nicht unterbrochen.",
       "send": "Senden",
       "presetProgressLabel": "Fortschritt zusammenfassen",
-      "presetProgress": "Fasse den bisherigen Fortschritt kurz zusammen und fahre dann mit der aktuellen Aufgabe fort."
+      "presetProgress": "Fasse den Fortschritt anhand der Momentaufnahme kurz zusammen.",
+      "question": "Frage",
+      "answer": "Antwort",
+      "answering": "Unabhängige Antwort wird erstellt…",
     },
     "pluginView": {
       "failed": "Diese Ansicht konnte nicht geladen werden. Laden Sie das Plugin neu und versuchen Sie es erneut."

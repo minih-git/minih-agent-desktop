@@ -6,6 +6,7 @@ mod memory_tools;
 mod remote_tools;
 mod scheduled_rpc;
 mod scheduled_tools;
+mod side_notes_rpc;
 mod todos;
 mod window_corner_rpc;
 mod worktree_rpc;
@@ -1890,6 +1891,11 @@ async fn handle_request(
     if method.starts_with("memory.") {
         let st = state.lock().await;
         return memory_rpc::handle(&st, method, params);
+    }
+
+    if method.starts_with("session.sideNotes.") {
+        let st = state.lock().await;
+        return side_notes_rpc::handle(&st, method, params);
     }
 
     match method {

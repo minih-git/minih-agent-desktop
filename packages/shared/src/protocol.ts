@@ -90,6 +90,8 @@ export const IPC = {
     notificationSetViewingSession: "minih-agent-desktop/notification/setViewingSession",
     agentPrompt: "minih-agent-desktop/agent/prompt",
     agentSteer: "minih-agent-desktop/agent/steer",
+    agentSideNote: "minih-agent-desktop/agent/sideNote",
+    agentSideNotesList: "minih-agent-desktop/agent/sideNotesList",
     speechTranscribe: "minih-agent-desktop/speech/transcribe",
     speechSynthesize: "minih-agent-desktop/speech/synthesize",
     speechGetStatus: "minih-agent-desktop/speech/getStatus",

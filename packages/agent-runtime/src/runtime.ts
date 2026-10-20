@@ -25,7 +25,7 @@ import {
 } from "./memory-tools.js";
 import { withPiFileOpToolNames } from "./pi-file-ops.js";
 import { remoteMutationIdentity } from "./remote-workspace.js";
-import { sideNoteContent } from "./side-note.js";
+import { SideNoteAnswers } from "./side-note-answer.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import {
@@ -1825,6 +1825,7 @@ export function isolatedWorkspaceGuidance(): string {
 export class DesktopAgentRuntime {
   private agent: Agent;
   private models: Models;
+  private readonly sideNoteAnswers = new SideNoteAnswers();
   private model: Model<Api>;
   private turnId?: string;
   private disposed = false;
@@ -9275,13 +9276,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     message: UiMessage,
     options?: { sideNote?: boolean },
   ): { accepted: boolean; turnId: string } {
+    if (options?.sideNote) {
+      throw Object.assign(new Error("Side notes require the independent ask channel"), { errorCode: "INVALID_ARGUMENT" });
+    }
     this.steeringContext(expectedTurnId);
-    // A side note is answered inside the running turn: the framing reaches the
-    // model, while the persisted row keeps the user's own words.
-    const prompt = options?.sideNote
-      ? { ...input, text: sideNoteContent(input.text) }
-      : input;
-    const queued: AgentMessage = { role: "user", content: promptContent(prompt), timestamp: Date.now() };
+    const queued: AgentMessage = { role: "user", content: promptContent(input), timestamp: Date.now() };
     const toolNames = this.selectedMcpTools(input);
     this.pendingSteering.set(queued, { id: message.id, toolNames });
     this.agent.steer(queued);
@@ -9294,6 +9293,20 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         ? { precedingAssistant: { ...this.currentAssistant } } : {}),
     });
     return { accepted: true, turnId: this.turnId! };
+  }
+
+  /** A synchronous snapshot followed by a tool-free, independently owned call. */
+  answerSideNote(question: string, expectedTurnId: string, history: import("@minih-agent/shared").SideNote[] = []) {
+    this.steeringContext(expectedTurnId);
+    if (!question.trim()) {
+      throw Object.assign(new Error("Side-note question required"), { errorCode: "INVALID_ARGUMENT" });
+    }
+    return this.sideNoteAnswers.answer({
+      provider: this.provider, model: this.model, models: this.models,
+      messages: [...this.agent.state.messages], question, history,
+      activity: JSON.stringify(this.agentActivity),
+      thinkingLevel: this.thinkingLevel === "omit" ? "off" : this.thinkingLevel,
+    });
   }
 
   private retainPendingSteering(): void {
@@ -9415,6 +9428,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     this.extensionRunner = undefined;
     const closingExtensions = runner?.dispose();
     this.streamSink.dispose();
+    this.sideNoteAnswers.dispose();
     this.disposed = true;
     this.acceptingSteering = false;
     this.runCancelled = true;

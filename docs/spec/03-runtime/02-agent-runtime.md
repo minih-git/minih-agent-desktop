@@ -100,14 +100,14 @@ from pi's steering queue so it cannot execute independently on a later turn.
 An ordinary follow-up stays in the separate Host-owned FIFO until durable turn
 finalization. A steering failure must not terminate the active run.
 
-A side note is steering input with a different contract for the model.
-`steer(..., { sideNote: true })` wraps the prompt text in a fixed side-note
-framing that tells the model to answer the note briefly and continue the current
-task, changing direction only when the note asks for it. The framing is
-model-visible only: the persisted user row keeps the user's own words and
-carries `sideNote`, which is what the transcript marker and the work panel's
-side-notes list read after a reload. Admission, the durable turn, tool
-completion, Stop and failure handling are identical to ordinary steering.
+A side note is an independent one-shot completion, never steering.
+`agent.sideNote` validates the named active turn, snapshots its model context,
+and answers with the same provider/model and no tools. A separate request
+identity, 120-second deadline and disposal signal do not wake TaskWait, cancel
+a tool/delegate, mutate main context/activity/usage, or emit main-turn events.
+Rust Host persists the question/answer separately; only the side panel reads
+it. Ordinary steering is unchanged. Legacy `sideNote: true` steering is
+rejected rather than silently injecting a question into the main task.
 
 ### 4.1 Session title generation
 

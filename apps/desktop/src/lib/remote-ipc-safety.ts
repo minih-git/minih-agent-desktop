@@ -6,7 +6,7 @@ const localOnly = new Set<string>([
   IPC.invoke.sessionReplaceMessages, IPC.invoke.sessionSaveRevision,
   IPC.invoke.sessionListRevisions, IPC.invoke.sessionActivateRevision,
   IPC.invoke.sessionGetScratchPath, IPC.invoke.sessionOpenScratchPath,
-  IPC.invoke.agentSteer, IPC.invoke.agentQueuePush, IPC.invoke.agentQueueList,
+  IPC.invoke.agentSteer, IPC.invoke.agentSideNote, IPC.invoke.agentSideNotesList, IPC.invoke.agentQueuePush, IPC.invoke.agentQueueList,
   IPC.invoke.agentStopSubagents, IPC.invoke.workspaceReviewRollback,
   IPC.invoke.extensionsCommandRun, IPC.invoke.browserNavigate,
   IPC.invoke.fsResolveRef, IPC.invoke.fsRevealChatRef,
