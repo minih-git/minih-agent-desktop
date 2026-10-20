@@ -515,8 +515,20 @@ a usage tab.
 ### Models (`agent` tab)
 - The models page groups its sections in this order: the **chosen models** as
   cards, the image-generation model selector (rendered once at least one model
-  is designated as an image model), then the model-catalog status and refresh
-  row. The sections use one consistent vertical spacing rhythm.
+  is designated as an image model), the **session creation model** selector,
+  then the model-catalog status and refresh row. The sections use one consistent
+  vertical spacing rhythm.
+- The **session creation model** row names the model a session the Agent
+  creates for itself runs on (ADR session-create-tool). It renders only while at
+  least one provider can run a chat model right now — enabled, credentialed, and
+  offering a model that is not one of the user's image models — so it never
+  offers a pairing the runtime would refuse to launch a session on. Its options
+  are those runnable models plus an explicit **Do not create sessions**, which
+  is what an unset setting reads as and is the only way back to it: choosing it
+  stores no model, and while none is stored the built-in `SessionCreate` tool
+  refuses, so the Agent cannot create a session at all. A stored pairing the
+  provider list no longer serves keeps showing as currently unavailable, so the
+  user can see what changed and pick another one.
 - Each chosen card shows the gateway's published record (vendor, category,
   copyable id, input/output prices per 1M tokens, context window, cache price,
   tiered-pricing marker) with the app's default marked, plus **Configure** and

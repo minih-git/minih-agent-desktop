@@ -2355,7 +2355,7 @@ describe("DesktopAgentRuntime deferred tool catalog", () => {
     // On demand like the scheduled tools: the schemas cost nothing per request
     // until the model searches for them.
     expect(agentNames).not.toContain("SessionSend");
-    for (const name of ["SessionList", "SessionSend", "SessionResult"]) {
+    for (const name of ["SessionList", "SessionSend", "SessionResult", "SessionCreate"]) {
       expect((agent as any).deferredToolNames.has(name)).toBe(true);
     }
     const prompt = (agent as any).agent.state.systemPrompt as string;
@@ -7934,7 +7934,7 @@ describe("DesktopAgentRuntime subagents", () => {
     const runtime = createRuntime({ subagents: [inheritor] });
     // The parent keeps them: handing work to another session is its own
     // capability, so delegation must not remove it from the session itself.
-    for (const name of ["SessionList", "SessionSend", "SessionResult"]) {
+    for (const name of ["SessionList", "SessionSend", "SessionResult", "SessionCreate"]) {
       expect((runtime as any).deferredToolNames.has(name)).toBe(true);
     }
 
@@ -7947,7 +7947,7 @@ describe("DesktopAgentRuntime subagents", () => {
 
     expect(subagentRuns.calls).toHaveLength(1);
     const names = subagentRuns.calls[0].tools.map((tool: { name: string }) => tool.name);
-    for (const name of ["SessionList", "SessionSend", "SessionResult"]) {
+    for (const name of ["SessionList", "SessionSend", "SessionResult", "SessionCreate"]) {
       expect(names).not.toContain(name);
       expect(subagentRuns.calls[0].systemPrompt).not.toContain(name);
     }

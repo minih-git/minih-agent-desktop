@@ -107,9 +107,11 @@ export const SUBAGENT_INHERIT_TOKEN = "inherit";
  * deferred-tool set and compaction flag, so they stay denied even though the
  * child receives the full catalog without searching. Handing work to another
  * session is the parent's own capability: a delegate has no user to confirm an
- * ambiguous target with and no standing to start another session's turn, so
- * `SessionList` / `SessionSend` / `SessionResult` stay denied too (ADR
- * builtin-session-messaging §4, `03-tools-and-permissions.md` §10.2).
+ * ambiguous target with, no standing to start another session's turn, and no
+ * user who opted into spending the session-creation model, so `SessionList` /
+ * `SessionSend` / `SessionResult` / `SessionCreate` stay denied too (ADR
+ * builtin-session-messaging §4, ADR session-create-tool,
+ * `03-tools-and-permissions.md` §10.2).
  */
 export const SUBAGENT_INHERIT_DENY_TOOLS: readonly string[] = [
   "Task",
@@ -133,6 +135,7 @@ export const SUBAGENT_INHERIT_DENY_TOOLS: readonly string[] = [
   "SessionList",
   "SessionSend",
   "SessionResult",
+  "SessionCreate",
 ];
 
 /**

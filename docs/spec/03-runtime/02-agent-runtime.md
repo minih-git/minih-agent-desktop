@@ -1403,28 +1403,57 @@ the inherited budget by one; a send that would reduce it below one fails with
 their persisted remaining budget; increasing the default does not refill them.
 The separate target inbox limit remains eight queued deliveries.
 
-### 5f.4 Built-in session messaging (D663)
+### 5f.4 Built-in session messaging (D663, D672)
 
-The same ledger also backs three built-in, on-demand Agent tools —
-`SessionList`, `SessionSend`, and `SessionResult` — so a user can hand work to
-an existing session by name without installing a plugin. They are Electron main
-local tools. Their sender is bound the same way as the plugin path: the source
-session is the sidecar's local-tool `sessionId`, and the source turn is the
-`turnId` that call declared, which must still be the session's active turn —
-never a tool argument, and never merely "whatever turn runs now". An approval
-that outlives its turn is therefore refused, and stopping the turn retracts the
-pending approval. Deliveries are recorded under the reserved owner
-`builtin:session-messaging`, which the plugin path refuses, so the two senders
-cannot answer each other's callbacks.
+The same ledger also backs the built-in, on-demand Agent tools `SessionList`,
+`SessionSend`, and `SessionResult` — so a user can hand work to an existing
+session by name without installing a plugin — plus `SessionCreate`, which makes
+the target when no session exists yet. They are Electron main local tools. Their
+sender is bound the same way as the plugin path: the source session is the
+sidecar's local-tool `sessionId`, and the source turn is the `turnId` that call
+declared, which must still be the session's active turn — never a tool argument,
+and never merely "whatever turn runs now". An approval that outlives its turn is
+therefore refused, and stopping the turn retracts the pending approval.
+Deliveries are recorded under the reserved owner `builtin:session-messaging`,
+which the plugin path refuses, so the two senders cannot answer each other's
+callbacks.
 
-Built-in tools execute outside host-core's permission boundary, so all three
-pass the `tools.execute` gate before Main dispatches, with `SessionSend` as
-`High` risk and the two reads as `Low`. `Agent` mode only: Plan and Goal deny
-them, `Task` subagents cannot use them, and the MCP control catalog does not
-expose them. Version one sends `task` (default) or `message` deliveries to
-existing sessions and does not create sessions or cancel deliveries; both kinds
-start or queue the target turn, and the kind only frames intent. `SessionResult`
-reports deliveries the calling session made, never another sender's.
+Built-in tools execute outside host-core's permission boundary, so all four pass
+the `tools.execute` gate before Main dispatches, with `SessionSend` and
+`SessionCreate` as `High` risk and the two reads as `Low`. `Agent` mode only:
+Plan and Goal deny them, `Task` subagents cannot use them, and the MCP control
+catalog does not expose them. Sends are `task` (default) or `message` deliveries
+to existing sessions; both kinds start or queue the target turn, and the kind
+only frames intent. `SessionResult` reports deliveries the calling session made,
+never another sender's. Cancelling another sender's delivery stays plugin-only.
+
+#### 5f.4a Session creation (D672)
+
+`SessionCreate({ title })` creates one ordinary Agent-mode session and returns
+its Session ID; the delivery follows as a separate `SessionSend`, so creation
+never starts a turn, sends content, or spends quota on its own. The session runs
+on `settings.sessionCreateModel` — a provider/model binding the user selects in
+AI settings — and inherits the sending session's project, thinking level and
+permission mode. While that setting is unset the tool fails with
+`MODEL_NOT_CONFIGURED`; while the binding is not one the settings row offers, it
+fails with `MODEL_UNAVAILABLE`. Both sides resolve that offer list the same way:
+a provider that is enabled, credentialed and configuring at least one model,
+minus every image model the settings page excludes — the stored
+`imageGenerationModels` candidates merged with the active `imageGeneration`
+default through the shared image helper. A pairing the row shows as
+currently unavailable therefore never creates a session. There is no fallback to
+the app default model. Only the title (1–80 characters) comes from the call: the
+model, project, permission mode and sender are all host- or settings-derived.
+
+Creation is `session.create`, so the new session is an ordinary session with no
+collaboration link and no plugin ownership. It appears in the session list, can
+be renamed, archived or deleted like any other session, and may itself create
+sessions under the same gate. Autonomous fan-out stays bounded by the delivery
+path: a created session does no work until a delivery arrives, and every
+delivery spends the hop budget and the eight-delivery inbox. Creation is not
+capped per turn — the approval card in Ask mode, or the user's Auto setting, is
+what governs how many sessions one turn may add. See ADR
+[session-create-tool](../../adr/session-create-tool.md).
 
 ## 6. Providers & models
 

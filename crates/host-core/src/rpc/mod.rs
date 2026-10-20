@@ -1072,6 +1072,25 @@ fn validate_settings_value(value: &Value) -> Result<(), JsonRpcError> {
             ));
         }
     }
+    // The model a session the Agent creates for itself runs on. Shape only:
+    // whether the provider still resolves is decided when `SessionCreate`
+    // reads it, because a disabled or credential-less provider stays a state
+    // the user repairs in Settings.
+    if let Some(binding) = object.get("sessionCreateModel").filter(|v| !v.is_null()) {
+        for (key, max) in [("providerId", 128), ("modelId", 256)] {
+            if !binding
+                .get(key)
+                .and_then(Value::as_str)
+                .is_some_and(|s| !s.trim().is_empty() && s.len() <= max)
+            {
+                return Err(rpc_err(
+                    1002,
+                    "invalid session create model binding",
+                    "INVALID_PARAMS",
+                ));
+            }
+        }
+    }
     if let Some(binding) = object.get("imageGeneration").filter(|v| !v.is_null()) {
         for (key, max) in [("providerId", 128), ("modelId", 256)] {
             if !binding
@@ -4171,7 +4190,7 @@ async fn handle_request(
             let cancellation_receiver = if remote_workspace.is_some()
                 || matches!(
                     p.tool_name.as_str(),
-                    "Bash" | "GenerateImages" | "SessionSend"
+                    "Bash" | "GenerateImages" | "SessionSend" | "SessionCreate"
                 ) {
                 let mut st = state.lock().await;
                 match st.register_bash_cancellation(&p.session_id, &p.tool_call_id) {
@@ -7875,6 +7894,58 @@ mod tests {
         assert!(content.contains("temporary"), "{content}");
         assert_eq!(read.content["tag"].as_str().unwrap().len(), 4);
         assert!(!active_project.join("notes.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn session_create_model_setting_roundtrips_and_validates_shape() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let state = Arc::new(Mutex::new(app_state));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        // No provider row is required here: the binding only has to carry a
+        // shape the session-create path can resolve when it reads it.
+        handle_request(
+            state.clone(),
+            "settings.set",
+            json!({ "sessionCreateModel": { "providerId": "p1", "modelId": "m1" } }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let stored = handle_request(state.clone(), "settings.get", json!({}), tx.clone())
+            .await
+            .unwrap();
+        assert_eq!(stored["sessionCreateModel"]["providerId"], "p1");
+        assert_eq!(stored["sessionCreateModel"]["modelId"], "m1");
+
+        // Clearing the choice is a real value, not an invalid one: it is how
+        // the user turns Agent-created sessions off again.
+        handle_request(
+            state.clone(),
+            "settings.set",
+            json!({ "sessionCreateModel": null }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let cleared = handle_request(state.clone(), "settings.get", json!({}), tx.clone())
+            .await
+            .unwrap();
+        assert!(cleared["sessionCreateModel"].is_null());
+
+        for invalid in [
+            json!({ "sessionCreateModel": { "providerId": "", "modelId": "m1" } }),
+            json!({ "sessionCreateModel": { "providerId": "p1" } }),
+            json!({ "sessionCreateModel": { "providerId": "p1", "modelId": 7 } }),
+            json!({ "sessionCreateModel": "p1/m1" }),
+        ] {
+            let error = handle_request(state.clone(), "settings.set", invalid, tx.clone())
+                .await
+                .unwrap_err();
+            assert_eq!(error.data.unwrap()["errorCode"], "INVALID_PARAMS");
+        }
     }
 
     #[tokio::test]

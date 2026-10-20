@@ -562,9 +562,10 @@ describe("resolveSubagentToolNames", () => {
 });
 
 describe("session messaging stays out of delegates", () => {
-  const messaging = ["SessionList", "SessionSend", "SessionResult"];
-  // The parent's own catalog: a session may hand work to another session.
-  const parent = ["Read", "Grep", "SessionList", "SessionSend", "SessionResult"];
+  const messaging = ["SessionList", "SessionSend", "SessionResult", "SessionCreate"];
+  // The parent's own catalog: a session may hand work to another session, and
+  // may create the target when the user names one that does not exist yet.
+  const parent = ["Read", "Grep", ...messaging];
 
   it("never inherits the session-messaging tools, even with tools: inherit", () => {
     const resolved = resolveSubagentToolNames(

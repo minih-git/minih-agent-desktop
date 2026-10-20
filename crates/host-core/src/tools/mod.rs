@@ -1195,8 +1195,9 @@ pub async fn execute_tool_with_path_access(
     let result: Result<Value, hashline::ToolError> = match tool_name {
         // Authorize the desktop-owned operations through the normal host gate.
         // Only the trusted desktop runner performs the external call: the image
-        // request, and the session deliveries Main's built-in tools start.
-        "GenerateImages" | "SessionList" | "SessionSend" | "SessionResult" => {
+        // request, and the delivery or session creation Main's built-in session
+        // tools start.
+        "GenerateImages" | "SessionList" | "SessionSend" | "SessionResult" | "SessionCreate" => {
             Ok(serde_json::json!({ "authorized": true }))
         }
         "Read" | "Glob" | "Grep" | "Write" | "Edit" => {
@@ -3288,6 +3289,7 @@ mod tests {
             "SessionList",
             "SessionSend",
             "SessionResult",
+            "SessionCreate",
         ] {
             let result = execute_tool(None, None, tool, &serde_json::json!({}), 5_000).await;
             assert!(

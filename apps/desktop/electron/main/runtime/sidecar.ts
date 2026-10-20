@@ -14,6 +14,7 @@ import {
 import { createImageGenerationTool } from "../services/image-generation-service";
 import type { SessionCollaborationService } from "../services/session-collaboration";
 import {
+  createSessionCreateTool,
   createSessionListTool,
   createSessionResultTool,
   createSessionSendTool,
@@ -709,6 +710,11 @@ export function createSidecarRuntime({
   s.setLocalTool("SessionList", createSessionListTool(sessionCollaboration));
   s.setLocalTool("SessionSend", createSessionSendTool(sessionCollaboration));
   s.setLocalTool("SessionResult", createSessionResultTool(sessionCollaboration));
+  // A hand-off to a session that does not exist yet: the Agent creates the
+  // session the user will see (ADR session-create-tool), then delivers to it
+  // through SessionSend. The model names only the title; the sender, project,
+  // model and permission mode come from the host and the user's settings.
+  s.setLocalTool("SessionCreate", createSessionCreateTool(sessionCollaboration));
   // Agent-driven work panel preview (D100): open a workspace HTML file in
   // the embedded browser; live reload keeps it current through later edits.
   s.setLocalTool("GenerateImages", createImageGenerationTool({

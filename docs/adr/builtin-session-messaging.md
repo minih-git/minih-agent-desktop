@@ -5,6 +5,7 @@
 - Decision: D663
 - Amends: ADR 0165, ADR 0239 (D409), ADR 0240 (D410)
 - Design: [Built-in session messaging design](../superpowers/specs/2026-10-18-builtin-session-messaging-design.md)
+- Amended by: [Agent-created sessions for a hand-off with no target](session-create-tool.md) (D672)
 
 ## Context
 
@@ -62,10 +63,12 @@ host ledger, its schema, and its invariants are reused unchanged.
 5. **Narrow scope.** Version one sends `task` or `message` deliveries to
    existing sessions only, with `notifyOnCompletion` defaulting to true. Both
    kinds start or queue the target turn; the kind only frames intent. It does
-   not create sessions (`spawn`) or cancel deliveries. Name-to-session resolution
-   is done by the model through `SessionList`; an ambiguous match must be
-   confirmed with the user rather than guessed. Reads are limited to deliveries
-   the calling session made: another sender's task text is not readable this way.
+   not create sessions (`spawn`) or cancel deliveries. Creation was added later
+   as its own step by D672 (`SessionCreate`, ADR session-create-tool);
+   `SessionSend` still refuses to create. Name-to-session resolution is done by
+   the model through `SessionList`; an ambiguous match must be confirmed with
+   the user rather than guessed. Reads are limited to deliveries the calling
+   session made: another sender's task text is not readable this way.
 6. **Reused invariants.** Target must be an Agent-mode session; the target's
    effective permission mode must not exceed the sender's; at most eight queued
    deliveries per target; the autonomous hop budget; idempotency; transcript

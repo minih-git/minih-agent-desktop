@@ -24,6 +24,7 @@ Each ADR includes:
 | network-center-gateway-issued-identity | [Gateway-issued network center identity](network-center-gateway-issued-identity.md) | Accepted for implementation |
 | remote-control-router-account-binding | [Router-account binding for remote control](remote-control-router-account-binding.md) | Accepted for implementation (post-MVP; D666; amends ADR 0331) |
 | builtin-session-messaging | [Built-in session messaging tools](builtin-session-messaging.md) | Accepted (D663) |
+| session-create-tool | [Agent-created sessions for a hand-off with no target](session-create-tool.md) | Accepted (D672; amends D663) |
 | device-local-project-lists-in-config-sync | [Device-local project lists in configuration sync](device-local-project-lists-in-config-sync.md) | Accepted |
 | router-account-configuration-backup | [Router-account hosted configuration backup](router-account-configuration-backup.md) | Accepted; supersedes the S3-only transport decision |
 | s3-only-configuration-backup-sync | [S3-only encrypted configuration backup and synchronization](s3-only-configuration-backup-sync.md) | Superseded by router-account configuration backup |

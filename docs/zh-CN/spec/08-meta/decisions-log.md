@@ -14,6 +14,7 @@
 | 身份证号 | 主题 | 决定 | 基本原理 |
 |---|---|---|---|
 | D673 | 输入区 `#` 选定目标会话 | **在输入区补全中新增一个宿主模式：符号前满足与 `@` 相同的边界规则（行首、空白，或 pi 分隔符 `"`、`'`、`=`）的 `#` token（全角 `\uFF03` 等价）列出可以交付工作的会话，选中一行插入内联 `#标题` chip。该符号与插件的组合方式与 `@` 完全一致：宿主分组在前，注册了 `#` 的插件分组随后，插件的超时与失败隔离行为不变。候选来自渲染层已持有的会话列表 —— 本地、Agent 模式、未归档、非自动化转录、与调用方同一项目（尚无会话时用首页选中的项目），且不含调用方自身 —— 按更新时间从新到旧、最多 50 条；query 对标题做大小写不敏感的子串或子序列匹配并带高亮区间，query 为空时列出最近的会话。没有匹配时该分组不打开，因此 `#123`、`## 标题` 和孤立的 `#` 仍是普通草稿文本、Enter 照常发送；IME 组词期间冻结该分组，Esc 只关闭当前 token。`ComposerFileReference.kind` 在既有 `session` 链接之外新增 `sessionTarget`：path 存 Session ID，name 存标题快照，chip 显示 `#标题` 并使用自己的图标而不是会话引用气泡。派发前该 chip 序列化为纯文本句子 `#<标题> (Session ID: <id>)` —— 标题空白折叠去尾、最多 80 字符、标题为空时回退到 id 前 8 位、并剥离本应用自己的 `minih-agent-desktop://` scheme —— 刻意不匹配 `SESSION_LINK_PATTERN`，因此 Main 不会附带摘录；目标不产生任何结构化附件，`promptAttachmentsFromDraft` 对它返回空。不改 IPC、不新增持久化附件、不改工具 schema 与工具描述，`SessionSend` / `SessionList` 契约不变：目标只是点明模型应当寻址哪个会话。草稿会保存并恢复新的 kind，不含它的旧草稿不受影响。v1 把发出的句子按普通转录文本显示，不渲染成 chip。见 E2E-COMPOSER-hash-picks-session-target。** | 把工作交给另一个会话此前只有两条路：粘贴链接 —— 会改变模型收到的内容、附带用户并未要求的摘录；或者凭记忆打出标题、无法确认 id。基于渲染层已有会话列表的专用 `#` 分组让目标显式可选，让提示保持最小且与 chip 显示完全一致，并复用既有触发语法、chip 模型、Esc 关闭与 IME 行为，而不是另造一套机制。 |
+| D672 | 为没有目标的派发新建会话 | **修订 ADR builtin-session-messaging（D663）：新增第四个内置按需 Agent 工具 `SessionCreate({ title })`。它通过宿主既有的 `session.create` 创建一个普通 Agent 模式会话 —— 不写协作链接、不归属插件、不套用工作会话的扩散上限 —— 继承调用方会话的项目、思考等级与权限模式，运行在用户在 AI 设置里选定的 `settings.sessionCreateModel` 提供方/模型绑定上，并返回 Session ID 供随后的 `SessionSend` 投递。该设置未配置时调用失败并返回 `MODEL_NOT_CONFIGURED`；绑定不在设置行给出的可选集合内（可用提供方的非生图模型，因此设置行与工具不会互相矛盾）时失败并返回 `MODEL_UNAVAILABLE`；不会回退到应用默认模型。调用只接受 `title`（1–80 字符）。创建本身不启动回合、不发送内容、不消耗额度，因此投递路径的跳数上限与八条收件箱仍是 Agent 所建会话的唯一约束；创建本身不设每回合上限。风险等级为 `High`，走同一 `tools.execute` 闸门，仅限 Agent 模式，Plan 与 Goal 拒绝，`Task` 子代理与 MCP 控制目录都不可见，并且可中止 —— 停止回合会撤回待批卡片。`sessionCreateModel` 不进入可携带的应用字段；`SessionSend` 不变，`SessionList` 在无匹配时改为指向 `SessionCreate`。不改 schema、迁移或协议版本。见 ADR session-create-tool 与 E2E-SESSION-create-missing-target-session。** | 用户要的派发往往正是目标尚不存在的那种，而 D663 有意的排除让模型只能回答「无法创建会话」，用户必须离开对话、手动建好会话再重复请求。让新会话运行在用户自己配置的模型上、并把创建与投递分成两步，既让面向模型的契约保持无歧义，也不改变委派 opt-in、权限上限与自主花费的约束。 |
 | D671 | 上下文预算信任提供程序报告的用量 | **修订 D606 / ADR 0061：`contextBudgetTokens()` 只在投影没有用量锚点（`lastUsageIndex === null` 或 `usageTokens === 0`）时才用整请求的输出上限估算抬高校准后的消息估算。锚定在提供程序报告用量上的投影本身就是那次请求的真实计数，已包含该请求的系统提示与工具结构；再用粗略的字符估算加上同一份上下文等于重复计费，会让窗口仍剩大半的对话提前压缩。投影还会遍历所有消息记录最新的检查点摘要时间戳：`compactionSummary` 是提供程序估算器看不到的桌面专有角色，否则回放尾部携带的压缩前用量会成为锚点。阈值、比例、预留、schema 与 IPC 均未改动。** | 报告中的缺陷是对话在窗口仍剩 43 % 时压缩：提供程序对该上下文报告了 573 232 个输入 token，而同一份上下文的整请求估算为 654 332 个文本 token 加上约 21 000 的提示与工具结构，越过了 100 万窗口的 675 000 触发点。锚点是比启发式更好的信息，安全方向不变——请求层仍按整请求估算收紧输出预算，硬上限仍守下一次请求，过期的锚点会被下一次提供程序报告刷新。 |
 | D669 | 切换模型时的阈值压缩 | **模型切换后的第一次发送前，上下文较大时先压缩。运行时读取当前检查点之后最新的助手消息，检查点之后尚无回复时改用检查点自身记录的模型；当该 `providerId`/`modelId` 与当前绑定不同，且估算上下文达到 `max(48_000, 2 x keepRecentTokens)` 但低于 90% 自动触发点时，以新模型执行 `summary` 压缩，reason 为 `model_switch`，并安装 `recent_window` 检查点：旧范围照常摘要，近期窗口原样回放，`details.retainedTailShape = recent_window` 让重建时完整回放该窗口。切换动作本身不产生开销，开销从下一次发送开始；只改思考级别、以及未收到回复前 A→B→A 都不算切换；`fresh_window` 不会采用该形态；已经达到触发点的上下文仍走 threshold 路径。摘要失败、被扩展取消或压缩后没有变小的切换检查点不安装任何检查点——尤其不安装 retained-tail 回退——本轮保留完整上下文，`compaction_end` 报告 `ok: false` 并带诊断，渲染层不把它当作错误弹出；压缩期间 Stop 与通常一样中止本轮。切换检查点不会触发会话重命名。宿主 schema、迁移与 IPC 结构均不变。** | 新绑定从冷缓存开始，第一次请求无论如何都要重读整段历史；在那里压缩一次可让之后的每次请求都更小，而阈值下限确保短历史下摘要的输出成本与信息损失不会超过节省。用旧模型压缩以复用缓存被否决：摘要请求会把对话序列化为 `<conversation>` 文本并配专用提示词，其请求前缀永远命中不了原对话的缓存，节省为零。以对话记录为依据的判断还能跨重启识别同一次切换，且在下次发送前不产生任何开销。 |
 | D668 | 路由器下发的更新加速线路 | **修订 ADR 0022 / D120 / D659：minih 构建在每次检查前从 `GET <router origin>/api/desktop-update` 拉取一份公开只读的加速线路清单，并优先尝试它。`data.sources[].prefix` 是前缀式 GitHub 加速站（`https://gh-proxy.org/`），Main 把它展开为 generic 源基址（`<prefix>https://github.com/<owner>/<repo>/releases/latest/download`），并按与编译期镜像完全相同的规则校验（绝对 `https`、无凭据、无查询串或片段、不是 `github.com`、去重、最多三条）；非法条目只丢弃自身。源顺序变为：路由器加速线路 → 编译内置镜像（`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`）→ 官方 GitHub 源，官方源始终是最后兜底，因此加速线路全部失效时更新仍可解析。清单按服务端下发的 `ttl_seconds` 记忆化（限制在 1 分钟至 24 小时，缺省 1 小时）；拉取失败只记警告，并把下一次请求推迟至少 5 分钟，绝不阻断、拖慢或让检查失败；下载进行中到达的新清单留到下一次检查才生效，不会在中途换源。当接口在某条线路服务过更新器之后不再下发任何加速线路时，Main 会把官方 GitHub 源作为唯一源显式重新应用——因为没有 feed 的打包源无法撤销已经通过 `setFeedURL` 应用过的 feed。整个行为以 `currentBrandProfile().updateFeed.provider === \"github\"` 为条件：hungraim 线继续使用 generic 的 `updates.hungraim.com`，且不向路由器发请求。`MINIH_AGENT_UPDATE_SOURCES_URL` 可覆盖接口 URL。渲染器、运行时设置与环境变量都不能提供、扩充或改写源。** | 在限速 `github.com` 的网络里，此前只能靠构建期镜像列表兜底，新增或下线一个加速站都要重新发版；改由服务端下发既让这一决定留在路由器侧，又不给客户端可配置的源，而官方源兜底与每次检查的 `sha512` 校验保证失效或恶意的加速站既不能阻断也不能伪造更新。 |
@@ -5728,3 +5729,27 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   Main 不会附带摘录。不产生结构化附件，也不改 IPC、持久化附件、工具 schema 或工具描述。
 - v1 限制：发出的句子按普通转录文本显示，不渲染为 chip。
 - 见 `04-ux/08-component-spec.md` §11.8 与 §20B.1a，以及 E2E-COMPOSER-hash-picks-session-target。
+
+## 2026-10-20 —— 为没有目标的派发新建会话（D672）
+
+- D672 修订 ADR builtin-session-messaging（D663）。第四个内置按需 Agent 工具
+  `SessionCreate({ title })` 通过宿主既有的 `session.create` 调用创建一个普通
+  Agent 模式会话，因此不写协作链接、不归属插件，也不套用工作会话的扩散上限。
+  投递仍是独立的 `SessionSend`，保持「一个工具一个含义」：创建是创建，投递是投递。
+- 新会话运行在 `settings.sessionCreateModel`（用户在 AI 设置里选定的
+  provider/model 绑定）上，以 `agent` 模式创建，并继承调用方的项目、思考等级与
+  权限模式（`inheritPermissionFromSessionId`）。设置未配置时工具以
+  `MODEL_NOT_CONFIGURED` 失败；绑定在模型选择器提供的可用目录里不再可解析时以
+  `MODEL_UNAVAILABLE` 失败。不会回退到应用默认模型，与插件 spawn 路径立场一致。
+- `SessionCreate` 以 `High` 风险通过 host-core 的 `tools.execute` 闸门，仅限
+  Agent 模式，Plan 与 Goal 拒绝，不会交给 `Task` 子代理，也不出现在 MCP 控制
+  目录中，并且可中止 —— 停止回合会撤回待批卡片。新会话通过既有
+  `sessionsChanged` 事件出现在会话列表里，可像其他会话一样重命名、归档或删除。
+- 创建本身不启动回合、不发送内容、不消耗额度，因此一串 Agent 所建会话能做多少
+  事，仍只受投递路径的跳数上限与八条收件箱约束。创建本身不设每回合上限：Ask
+  模式下的审批卡片、或用户自己选择的 Auto，才决定一个回合能新增多少会话。
+  `sessionCreateModel` 保持本地，不进入可携带的应用字段；host-core 在
+  `settings.set` 上校验其形状。
+- 见 `03-runtime/02-agent-runtime.md` §5f.4a、
+  `03-runtime/03-tools-and-permissions.md`（会话消息、§10.2）、ADR
+  session-create-tool，以及 E2E-SESSION-create-missing-target-session。
