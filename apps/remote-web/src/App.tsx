@@ -12,6 +12,7 @@ import type { RacpSession } from "@minih-agent/shared";
 import { useEffect, useState } from "react";
 
 import { AccountScreen } from "./screens/AccountScreen.js";
+import { ConnectScreen } from "./screens/ConnectScreen.js";
 import { HostsScreen } from "./screens/HostsScreen.js";
 import { PairScreen } from "./screens/PairScreen.js";
 import { SessionScreen } from "./screens/SessionScreen.js";
@@ -50,14 +51,20 @@ export default function App() {
     return () => setBackHandler(null);
   }, [screen]);
 
-  const hostList = (
-    <HostsScreen
-      hosts={hosts}
-      onOpenHost={(entry) => setScreen({ kind: "sessions", hostId: entry.hostId })}
-      onAddHost={() => setScreen({ kind: "pair" })}
-      onAddAccount={() => setScreen({ kind: "account" })}
-    />
-  );
+  const hostList =
+    hosts.length === 0 ? (
+      <ConnectScreen
+        onAddHost={() => setScreen({ kind: "pair" })}
+        onAddAccount={() => setScreen({ kind: "account" })}
+      />
+    ) : (
+      <HostsScreen
+        hosts={hosts}
+        onOpenHost={(entry) => setScreen({ kind: "sessions", hostId: entry.hostId })}
+        onAddHost={() => setScreen({ kind: "pair" })}
+        onAddAccount={() => setScreen({ kind: "account" })}
+      />
+    );
 
   if (screen.kind === "account") {
     return (

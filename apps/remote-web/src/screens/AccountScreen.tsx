@@ -1,37 +1,103 @@
-/**
- * Account sign-in and device request (protocol §11.5, rollout R7 package F).
- *
- * One AccessKey sign-in, one device request, one approval on any computer of
- * the account, and the device then works on all of them. The screen is a thin
- * renderer over `AccountFlow`: it owns the AccessKey input (which never leaves
- * this component), the device name, and the countdown, and it hands every
- * decision — polling, retries, adoption, dropping the account session — to the
- * flow, which is tested without a DOM.
- */
-import { useEffect, useState } from "react";
+import { Check, Lock, Phone, User } from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { AppShell, Button, Card, FailureBanner, Pill } from "../components/Chrome.js";
+import { Banner } from "../components/ui/Banner.js";
+import { Button } from "../components/ui/Button.js";
+import { Callout } from "../components/ui/Callout.js";
+import { ResultState } from "../components/ui/EmptyState.js";
+import { SecureField } from "../components/ui/Fields.js";
+import { ListGroup, ListRow } from "../components/ui/ListGroup.js";
+import { NavBar } from "../components/ui/NavBar.js";
+import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
+import { SectionHeader } from "../components/ui/SectionHeader.js";
+import { StatusDot } from "../components/ui/StatusDot.js";
 import { defaultAccountDeviceLabel, useAccountFlow } from "../hooks/useAccountFlow.js";
-import { rosterSummary, remainingMs } from "../lib/account-flow.js";
+import { remainingMs, rosterSummary } from "../lib/account-flow.js";
 import { formatRemaining, retrySeconds } from "../lib/account-format.js";
-import type { AccountDeviceHost } from "../lib/account-client.js";
 import type { OperationFailure } from "../lib/errors.js";
 
-/** One Host of the roster, with what it can and cannot do for this device. */
-function HostRow({ host }: { host: AccountDeviceHost }) {
+function Stepper({ currentStep }: { currentStep: 0 | 1 | 2 }) {
   const { t } = useTranslation();
+  const steps = [
+    t("account.step.signIn"),
+    t("account.step.request"),
+    t("account.step.confirm"),
+  ];
+
   return (
-    <li className="flex flex-wrap items-center gap-2 border-t border-slate-200 py-2 first:border-t-0 dark:border-slate-800">
-      <span className="min-w-0 flex-1 truncate text-sm font-medium">{host.label}</span>
-      <Pill tone={host.online ? "ok" : "neutral"}>{host.online ? t("account.hosts.online") : t("account.hosts.offline")}</Pill>
-      <Pill tone={host.canConfirm ? "ok" : "warn"}>
-        {host.canConfirm ? t("account.hosts.canConfirm") : t("account.hosts.cannotConfirm")}
-      </Pill>
-      <Pill tone={host.willAcceptGrant ? "ok" : "warn"}>
-        {host.willAcceptGrant ? t("account.hosts.willAccept") : t("account.hosts.willNotAccept")}
-      </Pill>
-    </li>
+    <div className="flex items-center gap-2 py-2 px-1 text-[13px] text-[var(--rm-text-muted)] mb-2">
+      {steps.map((label, index) => {
+        const isCurrent = index === currentStep;
+        const isDone = index < currentStep;
+        return (
+          <Fragment key={label}>
+            <span
+              className={`flex items-center gap-1 font-medium ${
+                isCurrent
+                  ? "text-[var(--rm-text-primary)] font-semibold"
+                  : isDone
+                    ? "text-[var(--rm-text-secondary)]"
+                    : "text-[var(--rm-text-muted)]"
+              }`}
+            >
+              {isDone && <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
+              {label}
+            </span>
+            {index < steps.length - 1 && (
+              <span className="flex-1 h-px bg-[var(--rm-separator)]" />
+            )}
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function CountdownRing({
+  remainingSeconds,
+  totalSeconds = 300,
+}: {
+  remainingSeconds: number;
+  totalSeconds?: number;
+}) {
+  const radius = 46;
+  const circumference = 2 * Math.PI * radius;
+  const fraction = Math.max(0, Math.min(1, remainingSeconds / totalSeconds));
+  const offset = circumference * (1 - fraction);
+
+  const m = Math.floor(remainingSeconds / 60);
+  const s = remainingSeconds % 60;
+  const formatted = `${m}:${String(s).padStart(2, "0")}`;
+
+  return (
+    <div className="relative w-[104px] h-[104px] my-2">
+      <svg width="104" height="104" className="-rotate-90">
+        <circle
+          cx="52"
+          cy="52"
+          r={radius}
+          fill="none"
+          stroke="var(--rm-bg-inset)"
+          strokeWidth="6"
+        />
+        <circle
+          cx="52"
+          cy="52"
+          r={radius}
+          fill="none"
+          stroke="var(--rm-status-decision)"
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          className="transition-all duration-1000 ease-linear"
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-[20px] font-semibold text-[var(--rm-text-primary)]">
+        {formatted}
+      </div>
+    </div>
   );
 }
 
@@ -41,7 +107,6 @@ export function AccountScreen({
   onBack,
 }: {
   onAdopted: () => void;
-  /** Falls back to the single-computer pairing ticket of §11.4. */
   onUseTicket: () => void;
   onBack: () => void;
 }) {
@@ -51,7 +116,6 @@ export function AccountScreen({
   const { state, flow } = useAccountFlow(() => label);
   const [now, setNow] = useState(() => Date.now());
 
-  // A one-second tick keeps the countdown honest; it never talks to the Gateway.
   useEffect(() => {
     if (state.kind !== "requesting") return undefined;
     const ticker = setInterval(() => setNow(Date.now()), 1000);
@@ -62,217 +126,361 @@ export function AccountScreen({
     const key = accessKey.trim();
     if (!key) return;
     await flow.signIn(key);
-    // The key is done the moment the Gateway has verified it: drop it from the
-    // component either way, so a failed attempt does not leave it on screen.
     setAccessKey("");
   };
 
   const signingIn = state.kind === "signing-in";
   const failure: OperationFailure | null =
-    state.kind === "sign-in-failed" ? state.failure : state.kind === "failed" ? state.failure : null;
-  const roster = state.kind === "requesting" ? state.hosts : [];
+    state.kind === "sign-in-failed"
+      ? state.failure
+      : state.kind === "failed"
+        ? state.failure
+        : null;
 
-  return (
-    <AppShell title={t("account.title")} onBack={onBack}>
-      {state.kind === "idle" || state.kind === "signing-in" || state.kind === "sign-in-failed" ? (
-        <Card>
-          <p className="text-sm text-slate-600 dark:text-slate-300">{t("account.intro")}</p>
-          <label className="mt-3 block text-sm font-medium" htmlFor="account-key">
-            {t("account.keyLabel")}
-          </label>
-          <input
-            id="account-key"
-            name="minih-account-access-key"
-            type="password"
-            value={accessKey}
-            autoComplete="off"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            placeholder={t("account.keyPlaceholder")}
-            onChange={(event) => setAccessKey(event.target.value)}
-            className="app-mono app-tap mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-sm dark:border-slate-700 dark:bg-slate-950"
-          />
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("account.keyNotStored")}</p>
-          <div className="mt-4 flex gap-2">
-            <Button variant="primary" disabled={signingIn || accessKey.trim().length === 0} onClick={() => void submit()}>
-              {signingIn ? t("account.signingIn") : t("account.signIn")}
+  // Step 1: Sign in
+  if (
+    state.kind === "idle" ||
+    state.kind === "signing-in" ||
+    state.kind === "sign-in-failed"
+  ) {
+    const retrySec = failure ? retrySeconds(failure) : null;
+    const isRateLimited = retrySec !== null && retrySec > 0;
+
+    return (
+      <Screen>
+        <NavBar title={t("account.title")} onBack={onBack} />
+        <ScreenContent hasDock>
+          <Stepper currentStep={0} />
+
+          <div className="space-y-4 pt-1">
+            <SecureField
+              label={t("account.keyLabel")}
+              value={accessKey}
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder={t("account.keyPlaceholder")}
+              onChange={(e) => setAccessKey(e.target.value)}
+            />
+
+            <p className="flex items-center gap-1.5 text-xs text-[var(--rm-text-muted)] ml-1">
+              <Lock className="w-3.5 h-3.5 flex-none" />
+              <span>{t("account.keyNotStored")}</span>
+            </p>
+
+            <Callout>
+              {t("account.introBox")}
+            </Callout>
+
+            {failure ? (
+              <Banner tone="error">
+                {failure.message ||
+                  (failure.code
+                    ? `${t("operation.accountSignIn")}: ${failure.code}`
+                    : t("operation.accountSignIn"))}
+              </Banner>
+            ) : null}
+          </div>
+        </ScreenContent>
+
+        <ScreenDock>
+          <div className="flex flex-col gap-2.5">
+            <Button
+              variant="primary"
+              size="large"
+              loading={signingIn}
+              disabled={signingIn || accessKey.trim().length === 0 || isRateLimited}
+              onClick={() => void submit()}
+            >
+              {isRateLimited
+                ? t("account.retryIn", { seconds: retrySec })
+                : signingIn
+                  ? t("account.signingIn")
+                  : t("account.signIn")}
             </Button>
-            <Button variant="ghost" onClick={onUseTicket}>
+            <Button variant="plain" size="large" onClick={onUseTicket}>
               {t("account.device.useTicket")}
             </Button>
           </div>
-        </Card>
-      ) : null}
+        </ScreenDock>
+      </Screen>
+    );
+  }
 
-      {state.kind === "signed-in" ? (
-        <>
-          <Card>
-            <p className="text-sm text-slate-600 dark:text-slate-300">{t("account.signedIn", { accountId: state.accountId })}</p>
-            <h2 className="mt-3 text-sm font-semibold">{t("account.hosts.title")}</h2>
+  // Step 2: Request device
+  if (state.kind === "signed-in") {
+    return (
+      <Screen>
+        <NavBar title={t("account.title")} onBack={onBack} />
+        <ScreenContent hasDock>
+          <Stepper currentStep={1} />
+
+          <ListGroup className="mt-2">
+            <ListRow
+              compact
+              leading={
+                <div className="w-8 h-8 rounded-[8px] bg-[var(--rm-bg-inset)] text-[var(--rm-text-secondary)] flex items-center justify-center">
+                  <User className="w-4 h-4" />
+                </div>
+              }
+              title={
+                <span className="font-semibold text-[15px]">
+                  {t("account.signedIn", { accountId: state.accountId })}
+                </span>
+              }
+              trailing={
+                <Button
+                  variant="plain"
+                  size="small"
+                  onClick={() => void flow.abandon()}
+                >
+                  {t("account.signOut")}
+                </Button>
+              }
+            />
+          </ListGroup>
+
+          <SectionHeader title={t("account.hosts.title")} />
+
+          <ListGroup>
             {state.hosts.length === 0 ? (
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t("account.hosts.empty")}</p>
+              <div className="py-4 px-4 text-sm text-[var(--rm-text-muted)] text-center">
+                {t("account.hosts.empty")}
+              </div>
             ) : (
-              <ul className="mt-1">
-                {state.hosts.map((host) => (
-                  <li
-                    key={host.hostId}
-                    className="flex items-center gap-2 border-t border-slate-200 py-2 first:border-t-0 dark:border-slate-800"
-                  >
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{host.label}</span>
-                    <Pill tone={host.online ? "ok" : "neutral"}>
-                      {host.online ? t("account.hosts.online") : t("account.hosts.offline")}
-                    </Pill>
-                  </li>
-                ))}
-              </ul>
+              state.hosts.map((host) => (
+                <ListRow
+                  key={host.hostId}
+                  compact
+                  leading={
+                    <div className="w-6 flex items-center justify-center">
+                      <StatusDot
+                        status={host.online ? "online" : "offline"}
+                      />
+                    </div>
+                  }
+                  title={host.label}
+                  subtitle={
+                    host.online
+                      ? t("account.hosts.online")
+                      : t("account.hosts.offline")
+                  }
+                />
+              ))
             )}
-          </Card>
-          <Card>
-            <label className="block text-sm font-medium" htmlFor="account-device-label">
+          </ListGroup>
+
+          <div className="mt-5 space-y-1.5">
+            <label
+              htmlFor="device-name"
+              className="ml-1 block text-[13px] font-normal leading-[18px] text-[var(--rm-text-muted)]"
+            >
               {t("account.device.labelLabel")}
             </label>
-            <input
-              id="account-device-label"
-              value={label}
-              maxLength={128}
-              placeholder={t("account.device.labelPlaceholder")}
-              onChange={(event) => setLabel(event.target.value)}
-              className="app-tap mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-sm dark:border-slate-700 dark:bg-slate-950"
-            />
-            <div className="mt-4 flex gap-2">
-              <Button variant="primary" onClick={() => void flow.requestDevice()}>
-                {t("account.device.request")}
-              </Button>
-              <Button variant="ghost" onClick={() => void flow.abandon()}>
-                {t("account.signOut")}
-              </Button>
+            <div className="flex min-h-[52px] w-full items-center gap-2.5 rounded-[12px] bg-[var(--rm-bg-surface)] px-3.5 shadow-[inset_0_0_0_1px_var(--rm-separator)] transition-shadow focus-within:shadow-[inset_0_0_0_2px_var(--rm-accent)]">
+              <Phone className="w-4 h-4 text-[var(--rm-text-muted)] flex-none" />
+              <input
+                id="device-name"
+                value={label}
+                maxLength={128}
+                placeholder={t("account.device.labelPlaceholder")}
+                onChange={(e) => setLabel(e.target.value)}
+                className="w-full bg-transparent text-[16px] leading-[24px] text-[var(--rm-text-primary)] outline-none"
+              />
             </div>
-          </Card>
-        </>
-      ) : null}
-
-      {state.kind === "requesting" ? (
-        <>
-          <Card>
-            <div className="flex items-baseline justify-between gap-2">
-              <p className="text-sm font-medium">{t("account.device.waiting")}</p>
-              <span className="app-mono text-xs text-slate-500 dark:text-slate-400">
-                {t("account.device.remaining", { time: formatRemaining(remainingMs(state.expiresAt, now)) })}
-              </span>
-            </div>
-            <ul className="mt-2">
-              {roster.map((host) => (
-                <HostRow key={host.hostId} host={host} />
-              ))}
-            </ul>
-            <div className="mt-4 flex gap-2">
-              <Button variant="ghost" onClick={() => flow.cancel()}>
-                {t("common.cancel")}
-              </Button>
-            </div>
-          </Card>
-          {!rosterSummary(roster).anyCanConfirm ? (
-            <Card className="border-amber-300 dark:border-amber-800">
-              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">{t("account.device.noConfirmer")}</p>
-              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{t("account.device.noConfirmerHint")}</p>
-              <div className="mt-3">
-                <Button variant="warning" onClick={onUseTicket}>
-                  {t("account.device.useTicket")}
-                </Button>
-              </div>
-            </Card>
-          ) : null}
-        </>
-      ) : null}
-
-      {state.kind === "granted" ? (
-        <Card>
-          <p className="text-sm text-slate-600 dark:text-slate-300">
-            {state.signerHostId
-              ? t("account.device.approvedBy", {
-                  host: state.hosts.find((host) => host.hostId === state.signerHostId)?.label ?? state.signerHostId,
-                })
-              : t("account.device.waiting")}
-          </p>
-        </Card>
-      ) : null}
-
-      {state.kind === "adopted" ? (
-        <Card>
-          <p className="text-sm text-slate-700 dark:text-slate-200">{t("account.device.adopted", { count: state.hostIds.length })}</p>
-          <div className="mt-3">
-            <Button variant="primary" onClick={onAdopted}>
-              {t("account.device.openHosts")}
-            </Button>
           </div>
-        </Card>
-      ) : null}
+        </ScreenContent>
 
-      {state.kind === "expired" || state.kind === "lost" ? (
-        <Card>
-          <p className="text-sm text-slate-700 dark:text-slate-200">
-            {state.kind === "expired" ? t("account.device.expired") : t("account.device.lost")}
-          </p>
-          <div className="mt-2">
-            <ul>
-              {state.hosts.map((host) => (
-                <HostRow key={host.hostId} host={host} />
-              ))}
-            </ul>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <Button variant="primary" onClick={() => void flow.requestDevice()}>
-              {t("account.device.askAgain")}
-            </Button>
-            <Button variant="ghost" onClick={onUseTicket}>
-              {t("account.device.useTicket")}
-            </Button>
-          </div>
-        </Card>
-      ) : null}
+        <ScreenDock>
+          <Button
+            variant="primary"
+            size="large"
+            className="w-full"
+            onClick={() => void flow.requestDevice()}
+          >
+            {t("account.device.request")}
+          </Button>
+        </ScreenDock>
+      </Screen>
+    );
+  }
 
-      {state.kind === "gone" ? (
-        <Card>
-          <p className="text-sm text-slate-700 dark:text-slate-200">{t("account.device.gone")}</p>
-          <div className="mt-3 flex gap-2">
-            <Button variant="primary" onClick={() => void flow.abandon()}>
-              {t("account.device.signInAgain")}
-            </Button>
-            <Button variant="ghost" onClick={onUseTicket}>
-              {t("account.device.useTicket")}
-            </Button>
-          </div>
-        </Card>
-      ) : null}
+  // Step 3: Waiting for confirmation
+  if (state.kind === "requesting") {
+    const leftSec = Math.max(0, Math.round(remainingMs(state.expiresAt, now) / 1000));
+    const summary = rosterSummary(state.hosts);
+    const anyCanConfirm = summary.anyCanConfirm;
 
-      {state.kind === "failed" ? (
-        <Card>
-          <p className="text-sm text-slate-700 dark:text-slate-200">{t("account.device.failedHint")}</p>
-          <div className="mt-3 flex gap-2">
-            <Button variant="primary" onClick={() => void flow.retry()}>
-              {t("account.device.retry")}
-            </Button>
-            <Button variant="ghost" onClick={onUseTicket}>
-              {t("account.device.useTicket")}
-            </Button>
-          </div>
-        </Card>
-      ) : null}
+    return (
+      <Screen>
+        <NavBar title={t("account.title")} />
+        <ScreenContent hasDock>
+          <Stepper currentStep={2} />
 
-      {failure ? (
-        <>
-          <FailureBanner
-            failure={failure}
-            operationKey={state.kind === "sign-in-failed" ? "operation.accountSignIn" : "operation.accountDevice"}
-          />
-          {retrySeconds(failure) !== null ? (
-            <p className="px-3 text-xs text-slate-500 dark:text-slate-400">
-              {t("account.retryIn", { seconds: retrySeconds(failure) })}
+          <div className="flex flex-col items-center text-center py-6 px-3">
+            <CountdownRing remainingSeconds={leftSec} />
+            <h2 className="text-[20px] font-semibold leading-[26px] text-[var(--rm-text-primary)] mt-3">
+              {t("account.device.waiting")}
+            </h2>
+            <p className="mt-2 text-[15px] leading-[22px] text-[var(--rm-text-secondary)] whitespace-pre-line">
+              {t("account.waitingHint", { device: label })}
             </p>
+          </div>
+
+          {!anyCanConfirm ? (
+            <Callout tone="error" className="mb-4">
+              <div className="font-semibold text-sm">
+                {t("account.device.noConfirmer")}
+              </div>
+              <div className="text-xs mt-0.5 opacity-90">
+                {t("account.device.noConfirmerHint")}
+              </div>
+            </Callout>
           ) : null}
-        </>
-      ) : null}
-    </AppShell>
+
+          <SectionHeader title={t("account.waitingSentTitle")} />
+
+          <ListGroup>
+            {state.hosts.map((host) => {
+              const sub = !host.online
+                ? t("account.hosts.offline")
+                : host.canConfirm
+                  ? t("account.hosts.canConfirm")
+                  : t("account.hosts.cannotConfirm");
+
+              return (
+                <ListRow
+                  key={host.hostId}
+                  compact
+                  leading={
+                    <div className="w-6 flex items-center justify-center">
+                      <StatusDot status="decision" />
+                    </div>
+                  }
+                  title={host.label}
+                  subtitle={sub}
+                />
+              );
+            })}
+          </ListGroup>
+        </ScreenContent>
+
+        <ScreenDock>
+          <div className="flex flex-col gap-2.5">
+            {!anyCanConfirm ? (
+              <Button
+                variant="primary"
+                size="large"
+                className="w-full"
+                onClick={onUseTicket}
+              >
+                {t("account.device.useTicket")}
+              </Button>
+            ) : null}
+            <Button
+              variant="plain"
+              size="large"
+              className="w-full"
+              onClick={() => flow.cancel()}
+            >
+              {t("common.cancel")}
+            </Button>
+          </div>
+        </ScreenDock>
+      </Screen>
+    );
+  }
+
+  // Result: Adopted
+  if (state.kind === "adopted") {
+    return (
+      <Screen>
+        <NavBar title="" />
+        <ScreenContent hasDock>
+          <ResultState
+            status="success"
+            title={t("account.device.adopted", { count: state.hostIds.length })}
+            description={t("account.adoptedDesc")}
+            action={
+              <Button
+                variant="primary"
+                size="large"
+                className="w-full"
+                onClick={onAdopted}
+              >
+                {t("account.device.openHosts")}
+              </Button>
+            }
+          />
+        </ScreenContent>
+      </Screen>
+    );
+  }
+
+  // Result: Expired or Lost
+  if (state.kind === "expired" || state.kind === "lost") {
+    return (
+      <Screen>
+        <NavBar title={t("account.title")} onBack={onBack} />
+        <ScreenContent hasDock>
+          <ResultState
+            status="error"
+            title={
+              state.kind === "expired"
+                ? t("account.device.expired")
+                : t("account.device.lost")
+            }
+            description={t("account.device.failedHint")}
+            action={
+              <Button
+                variant="primary"
+                size="large"
+                onClick={() => void flow.requestDevice()}
+              >
+                {t("account.device.askAgain")}
+              </Button>
+            }
+            secondaryAction={
+              <Button variant="secondary" size="large" onClick={onUseTicket}>
+                {t("account.device.useTicket")}
+              </Button>
+            }
+          />
+        </ScreenContent>
+      </Screen>
+    );
+  }
+
+  // Result: Gone or other failure
+  return (
+    <Screen>
+      <NavBar title={t("account.title")} onBack={onBack} />
+      <ScreenContent hasDock>
+        <ResultState
+          status="error"
+          title={
+            state.kind === "gone"
+              ? t("account.device.gone")
+              : t("account.device.failedHint")
+          }
+          action={
+            <Button
+              variant="primary"
+              size="large"
+              onClick={() => void (state.kind === "gone" ? flow.abandon() : flow.retry())}
+            >
+              {state.kind === "gone"
+                ? t("account.device.signInAgain")
+                : t("account.device.retry")}
+            </Button>
+          }
+          secondaryAction={
+            <Button variant="secondary" size="large" onClick={onUseTicket}>
+              {t("account.device.useTicket")}
+            </Button>
+          }
+        />
+      </ScreenContent>
+    </Screen>
   );
 }
