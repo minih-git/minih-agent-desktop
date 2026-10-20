@@ -857,3 +857,67 @@
     transform: translateY(0) scale(1);
   }
 }
+
+/*
+ * Floating selection overlay (ADR 0334): one pill above the selection, carrying
+ * the quote action. Fixed, and in the body-portaled popover layer, so it clears
+ * the docked composer without pushing the passage around (04-ux/07 §9
+ * `z-command-palette`). It is measured and placed from viewport coordinates by
+ * `SelectionQuoteButton`, so nothing here may add an offset of its own.
+ *
+ * The action is the shared `Button` primitive; this class only takes over the
+ * metrics a 22px pill needs, and it is declared after `ui-kit.css` so the `btn`
+ * base loses the tie on padding, radius and font size.
+ */
+.selection-quote {
+  position: fixed;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border: 1px solid var(--ds-border-default);
+  border-radius: var(--radius-full);
+  background: var(--ds-bg-elevated-opaque);
+  color: var(--ds-text-primary);
+  font-size: var(--text-xs-plus);
+  line-height: var(--leading-compact);
+  box-shadow: var(--ds-shadow-dialog);
+  animation: selection-quote-in var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.selection-quote-action {
+  gap: 5px;
+  min-height: 22px;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-xs-plus);
+  white-space: nowrap;
+}
+
+.selection-quote-action:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.selection-quote-action:focus-visible {
+  outline: 2px solid var(--ds-accent);
+  outline-offset: 1px;
+}
+
+@keyframes selection-quote-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .selection-quote {
+    animation: none;
+  }
+}

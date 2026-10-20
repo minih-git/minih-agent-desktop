@@ -416,6 +416,8 @@ export const ptBR = {
     copy: "Copiar",
     copied: "Copiado",
     copyFailed: "Não foi possível copiar para a área de transferência",
+    quoteSelection: "Adicionar ao chat",
+    quoteUnavailable: "Não é possível adicionar isto à caixa de mensagem agora.",
     messageMenu: "Ações da mensagem",
     conversationMenu: "Ações da conversa",
     selectMessageText: "Selecionar texto da mensagem",

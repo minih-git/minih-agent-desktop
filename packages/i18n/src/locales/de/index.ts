@@ -417,6 +417,8 @@ export const de = {
     "copy": "Kopieren",
     "copied": "Kopiert",
     "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen",
+    "quoteSelection": "Zum Chat hinzufügen",
+    "quoteUnavailable": "Das lässt sich gerade nicht in das Eingabefeld einfügen.",
     "messageMenu": "Nachrichtenaktionen",
     "conversationMenu": "Gesprächsaktionen",
     "selectMessageText": "Nachrichtentext auswählen",

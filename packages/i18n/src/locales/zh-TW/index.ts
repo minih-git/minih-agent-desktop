@@ -419,6 +419,8 @@ export const zhTW = {
     copy: "複製",
     copied: "已複製",
     copyFailed: "複製到剪貼簿失敗",
+    quoteSelection: "加入對話",
+    quoteUnavailable: "現在無法加入輸入框。",
     messageMenu: "訊息操作",
     entryExtraExpand: "展開完整內容",
     entryExtraCollapse: "收起內容",

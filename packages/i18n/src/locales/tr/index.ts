@@ -426,6 +426,8 @@ export const tr = {
     copy: "Kopyala",
     copied: "Kopyalandı",
     copyFailed: "Panoya kopyalanamadı",
+    quoteSelection: "Sohbete ekle",
+    quoteUnavailable: "Bu şu anda mesaj kutusuna eklenemiyor.",
     entryExtraExpand: "Bloğun tamamını göster",
     entryExtraCollapse: "Bloğu daralt",
     actionSlotMore: "Diğer işlemler",

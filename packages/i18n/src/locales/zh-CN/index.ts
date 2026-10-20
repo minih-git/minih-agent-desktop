@@ -428,6 +428,8 @@ export const zhCN = {
     copy: "复制",
     copied: "已复制",
     copyFailed: "复制到剪贴板失败",
+    quoteSelection: "加入对话",
+    quoteUnavailable: "现在无法加入输入框。",
     messageMenu: "消息操作",
     entryExtraExpand: "展开完整内容",
     entryExtraCollapse: "收起内容",

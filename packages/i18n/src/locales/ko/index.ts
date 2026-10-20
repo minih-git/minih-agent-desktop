@@ -426,6 +426,8 @@ export const ko = {
     copy: "복사",
     copied: "복사됨",
     copyFailed: "클립보드에 복사하지 못했습니다",
+    quoteSelection: "대화에 추가",
+    quoteUnavailable: "지금은 입력창에 추가할 수 없습니다.",
     messageMenu: "메시지 작업",
     entryExtraExpand: "전체 콘텐츠 보기",
     entryExtraCollapse: "콘텐츠 접기",

@@ -438,6 +438,8 @@ export const en = {
     copy: "Copy",
     copied: "Copied",
     copyFailed: "Couldn't copy to the clipboard",
+    quoteSelection: "Add to chat",
+    quoteUnavailable: "Can't add this to the message box right now.",
     messageMenu: "Message actions",
     conversationMenu: "Conversation actions",
     selectMessageText: "Select message text",
