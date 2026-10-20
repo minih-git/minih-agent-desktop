@@ -36,8 +36,11 @@ export type HostClient = {
   readonly baseUrl: string;
   /** One RACP command; `idempotencyKey` rides the command body (`turn/start`). */
   request<T = unknown>(method: string, params?: Record<string, unknown>, idempotencyKey?: string): Promise<T>;
-  /** Open (or resume) one event stream; resolves when it ends. */
-  stream(eventsPath: string): Promise<void>;
+  /**
+   * Open one event stream, optionally starting at a cursor (the snapshot's own
+   * cursor on the first subscription); resolves when the stream ends.
+   */
+  stream(eventsPath: string, from?: RacpCursor): Promise<void>;
   /** Abort one event stream and its in-flight reconnect. */
   closeStream(eventsPath: string): void;
   close(): void;
@@ -92,7 +95,7 @@ export function createHostClient(options: HostClientOptions): HostClient {
     baseUrl,
     request: <T,>(method: string, params: Record<string, unknown> = {}, idempotencyKey?: string): Promise<T> =>
       commandClient.request(method, params, idempotencyKey) as Promise<T>,
-    stream: (eventsPath) => streamFor(eventsPath).stream(),
+    stream: (eventsPath, from) => streamFor(eventsPath).stream(from),
     closeStream: (eventsPath) => {
       streams.get(eventsPath)?.close();
     },

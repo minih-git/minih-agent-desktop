@@ -50,6 +50,47 @@ function harness(overrides: HarnessOptions = {}): Harness {
 }
 
 describe("StreamSupervisor", () => {
+  it("reopens at once after a fresh snapshot, without spending a retry", async () => {
+    // A stream that stays open until it is closed: this is what lets the test
+    // observe a deliberate reopen rather than a drop.
+    let release: (() => void) | null = null;
+    let opens = 0;
+    const delays: number[] = [];
+    const supervisor = new StreamSupervisor({
+      openStream: () =>
+        new Promise<void>((resolve) => {
+          opens += 1;
+          release = resolve;
+        }),
+      closeStream: () => {
+        release?.();
+        release = null;
+      },
+      sleep: async (ms) => {
+        delays.push(ms);
+      },
+      random: () => 0.5,
+      policy,
+    });
+    const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    supervisor.start();
+    await tick();
+    expect(opens).toBe(1);
+
+    // The snapshot moved the cursor: the open stream is behind it.
+    supervisor.reopen();
+    await tick();
+
+    expect(opens).toBe(2);
+    // No backoff and no probe: a reopen is not a drop.
+    expect(delays).toEqual([]);
+    expect(supervisor.retryAttempts).toBe(0);
+    supervisor.stop();
+    await supervisor.settled();
+  });
+
+
   it("retries with a growing jittered backoff and then gives up", async () => {
     const h = harness();
     h.supervisor.start();

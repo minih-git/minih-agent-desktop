@@ -1,18 +1,13 @@
+import { messageContentFacts as sharedContentFacts } from "@minih-agent/shared";
 import type { MessageUsage, UiMessage } from "@minih-agent/shared";
 import type { AssistantActivityItem, AssistantTurnEntry, AssistantTurnPart } from "./assistant-turns";
 
-const contentFacts = new WeakMap<UiMessage, { trimmedContent: string; hasContent: boolean }>();
-
-/** Renderer snapshots are immutable; a same-id replacement is a new cache key. */
-export function messageContentFacts(message: UiMessage) {
-  let facts = contentFacts.get(message);
-  if (!facts) {
-    const trimmedContent = (message.content || "").trim();
-    facts = { trimmedContent, hasContent: Boolean(trimmedContent) };
-    contentFacts.set(message, facts);
-  }
-  return facts;
-}
+/**
+ * The rule lives in `@minih-agent/shared` so the phone timeline answers the same
+ * question about the same message; this module only keeps the name its callers
+ * already use.
+ */
+export const messageContentFacts = sharedContentFacts;
 
 export type AssistantTurnSummary = {
   messages: UiMessage[];

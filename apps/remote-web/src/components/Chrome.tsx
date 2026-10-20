@@ -43,23 +43,35 @@ export function Button({
   );
 }
 
+/**
+ * The app frame: a fixed header, one scrolling body, and an optional footer.
+ *
+ * The body is the scroll container (`mainRef` hands it to a screen that needs to
+ * know where it is scrolled), and the frame is exactly one viewport tall
+ * (`h-dvh`) rather than at least one (`min-h-dvh`). Before rollout D the whole
+ * document scrolled, so a long conversation opened at its oldest row with the
+ * composer far below the fold and new rows arriving off-screen.
+ */
 export function AppShell({
   title,
   onBack,
   actions,
   children,
   footer,
+  mainRef,
 }: {
   title: string;
   onBack?: () => void;
   actions?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
+  /** The scrolling element, for a screen that follows its newest row. */
+  mainRef?: (element: HTMLElement | null) => void;
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex min-h-dvh flex-col bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <header className="app-safe-area sticky top-0 z-10 flex items-center gap-1 border-b border-slate-200 bg-white/95 px-2 py-1 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+    <div className="flex h-dvh flex-col bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      <header className="app-safe-area z-10 flex shrink-0 items-center gap-1 border-b border-slate-200 bg-white/95 px-2 py-1 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
         {onBack ? (
           <Button variant="ghost" aria-label={t("common.back")} title={t("common.back")} onClick={onBack} className="px-3">
             <span aria-hidden="true">←</span>
@@ -68,7 +80,16 @@ export function AppShell({
         <h1 className="min-w-0 flex-1 truncate px-1 text-base font-semibold">{title}</h1>
         {actions}
       </header>
-      <main className="app-safe-area flex min-h-0 flex-1 flex-col gap-3 px-3 py-3">{children}</main>
+      {/* `[overflow-anchor:none]` turns off the engine's own scroll anchoring:
+          the compensation below is the only mechanism, so a browser that lacks
+          anchoring (WebKit on iOS) behaves the same and the E2E proves the code
+          rather than the engine. */}
+      <main
+        ref={mainRef}
+        className="app-safe-area flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 py-3 [overflow-anchor:none]"
+      >
+        {children}
+      </main>
       {footer}
     </div>
   );

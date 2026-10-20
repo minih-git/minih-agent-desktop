@@ -1037,6 +1037,65 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   change ships with the next desktop release, so a phone reaches these three
   operations on a desktop only once the user installs that build.
 
+- R7 follow-up package D2 delivered (2026-10-20, D666 follow-up from on-device
+  acceptance): the phone's session screen showed a timeline that disagreed with
+  the desktop. **One projection now serves both paths.** A history row is a whole
+  `UiMessage` and a live row is an event, and they were narrowed by two different
+  readers: history kept `role`, `content`, and `thinking` only, so every tool
+  call became an unnamed, empty box, while the live path rendered the same call
+  by name. `projectMessage` projects both, carries the tool's name, status
+  (`running` / `success` / `error` / `denied`), arguments and result, and a user
+  row's command, attachment names, and side-note marker. The rows the desktop
+  hides are dropped by the same predicates, which moved into
+  `packages/shared/src/transcript-visibility.ts` (`isVisibleMessage`,
+  `messageThinking`, `messageContentFacts`) and are imported by `apps/desktop` —
+  an import-only change there, so the desktop's rendering and its suite are
+  untouched — which is what keeps the two clients from drifting again. **A client
+  attaches before it subscribes.** The screen opened its event stream and
+  attached afterwards, so every event in between was lost: the live path then
+  replayed nothing and the rows never appeared. `RacpClient.stream` takes a start
+  cursor, `useSessionScreen` attaches first and opens the stream at the
+  snapshot's `cursor`, and durable events that arrive before that snapshot are
+  dropped because the replay is the only source. That cursor is armed by a
+  snapshot and handed out exactly once (`lib/stream-cursor.ts`): every later open
+  — a reconnect after a drop, or the reopen after a fresh snapshot — resumes from
+  the last event the stream delivered, because passing the snapshot's cursor
+  again would replay the page on every drop. Protocol §5.4 states the rule for
+  other clients. **A long conversation opens at its newest row and loads its past
+  on demand.** The whole document used to scroll, so a long session opened at its
+  oldest row with the composer below the fold; the shell is `h-dvh` and `main` is
+  the scroll container, which also keeps the composer above the iOS keyboard
+  (`visualViewport`). Older rows come from `session/history` in pages of 100, at
+  most three pages automatically until the view holds the reader's last two
+  messages or about 30 rows, and one page per press of "Load earlier"; a prepend
+  never trims, only an append trims from the oldest end — and a row the cap drops
+  came from history, so the entry stays offered (`appendItem` reports it). A page
+  is ordered oldest to newest (protocol §7.6) and the walk advances with the
+  page's *oldest* row, which is the only cursor that moves a full page at a time.
+  The automatic top-up and a press share one in-flight load
+  (`singleFlight`), and the arguments reach the wrapped call. Following stops as
+  soon as the reader scrolls away, and a sticky control returns them with the
+  number of rows they missed (or a "needs your decision" prompt); older rows
+  loaded above are not "new messages", so they never raise that number
+  (`appendedRows`), and reduced-motion preference turns the jump into an instant
+  one. The reader keeps their place through a prepend because a layout effect
+  puts the row they were looking at back where it was, found by `data-item-id` —
+  the row's position inside the content is what is compared, so the reader's own
+  scrolling and the "back to latest" jump are never undone. Measured against
+  synthetic sessions through host-core: one history page is 17 KB where the whole
+  `session.get` is 346 KB for 2 000 rows (1.4 MB for 8 000), which is what the
+  old screen re-read per turn. `timeline-projection.test.ts`,
+  `timeline-subscribe-order.test.ts`, `timeline-history.test.ts`,
+  `scroll.test.ts`, and `packages/shared/src/transcript-visibility.test.ts` cover
+  the projection, the order, the paging rules, the single flight, the scroll
+  arithmetic, and the visibility predicates. E2E-266 drives an 80-turn session
+  with tool calls in real Chromium and asserts that it opens on the newest row,
+  that one press loads a whole page in order without duplicates, that a second
+  press loads another page, that the row the reader was looking at does not move,
+  that loading older rows raises no unread count, that an off-screen row is
+  announced, and that jumping back lands on the newest row. The client is static,
+  so this reaches the phone with the next H5 release.
+
 ## 8. Amendment history
 
 D374 (2026-09-10) replaced the Electron facade milestone with the headless

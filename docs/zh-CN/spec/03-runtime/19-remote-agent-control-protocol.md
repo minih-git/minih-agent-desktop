@@ -230,7 +230,9 @@ owner，工作区读取都按会话持久根、Host 忽略规则和 `PATH_OUTSID
 
 客户端重连时发送 `after: { epoch, sequence }`。游标仍在当前 epoch 的窗口内
 则只回放持久事件，epoch 变化或游标被驱逐则返回 `resync.required` 和完整快照，
-不能猜测丢失事件。首个实现把持久日志放在 Host 进程内存，Host 重启即开启新
+不能猜测丢失事件。先 `session/attach` 再打开事件流的客户端必须把快照的 `cursor`
+作为流的起点（或先订阅再 attach）：快照本身不表示流从何处开始，两次调用之间
+发生的事件否则会丢失。首个实现把持久日志放在 Host 进程内存，Host 重启即开启新
 epoch；把日志放入 host-core 需要单独的 ADR。
 
 `turn/start` 默认 `reject_if_busy`，忙时返回 `AGENT_BUSY`；`admission: "queue"`
