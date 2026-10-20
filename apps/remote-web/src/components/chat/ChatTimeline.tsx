@@ -1,6 +1,9 @@
 import { AlertCircle, Check, ChevronDown, ChevronUp, Clock, Loader2 } from "lucide-react";
+import type { ComponentProps } from "react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import type { TimelineFailure, TimelineItem } from "../../lib/timeline-types.js";
 
@@ -9,6 +12,22 @@ export interface ChatTimelineProps {
   lastFailure?: TimelineFailure;
   pendingText?: string | null;
 }
+
+/*
+  `react-markdown` hands every custom component its own hast `node` alongside
+  the DOM props. Destructuring it out is not cosmetic: spreading it writes
+  `node="[object Object]"` into the markup. A table needs a scroll container on
+  a phone, because `.rm-prose` cannot clip a wide one on its own.
+*/
+type MarkdownTableProps = ComponentProps<"table"> & { node?: unknown };
+
+const markdownComponents = {
+  table: ({ children, node: _node, ...props }: MarkdownTableProps) => (
+    <div className="rm-table-wrap">
+      <table {...props}>{children}</table>
+    </div>
+  ),
+};
 
 function renderInlineCode(text: string) {
   const parts = text.split(/`([^`]+)`/g);
@@ -70,7 +89,7 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
             <li
               key={item.id || idx}
               data-item-id={item.id}
-              className={`self-end max-w-[85%] rounded-[18px_18px_6px_18px] px-3.5 py-2.5 text-[15px] leading-[22px] bg-[var(--rm-bg-bubble)] text-[var(--rm-text-primary)] break-words whitespace-pre-wrap ${
+              className={`self-end max-w-[85%] rounded-[18px_18px_6px_18px] px-3.5 py-2.5 text-[15px] leading-[22px] bg-[var(--rm-bg-bubble)] border border-[var(--rm-bubble-border)] text-[var(--rm-text-primary)] break-words whitespace-pre-wrap ${
                 isPending ? "opacity-60" : ""
               }`}
             >
@@ -142,8 +161,10 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
               </div>
             ) : null}
             {item.text ? (
-              <div className="text-[15px] leading-[22px] text-[var(--rm-text-primary)] break-words whitespace-pre-wrap">
-                {renderInlineCode(item.text)}
+              <div className="rm-prose">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {item.text}
+                </ReactMarkdown>
               </div>
             ) : null}
             {item.thinking ? (
@@ -170,7 +191,7 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
 
       {/* Optimistic pending message if provided */}
       {pendingText ? (
-        <li className="self-end max-w-[85%] rounded-[18px_18px_6px_18px] px-3.5 py-2.5 text-[15px] leading-[22px] bg-[var(--rm-bg-bubble)] text-[var(--rm-text-primary)] break-words whitespace-pre-wrap opacity-60">
+        <li className="self-end max-w-[85%] rounded-[18px_18px_6px_18px] px-3.5 py-2.5 text-[15px] leading-[22px] bg-[var(--rm-bg-bubble)] border border-[var(--rm-bubble-border)] text-[var(--rm-text-primary)] break-words whitespace-pre-wrap opacity-60">
           {renderInlineCode(pendingText)}
           <div className="mt-1 flex items-center justify-end gap-1 text-[12px] text-[var(--rm-text-muted)]">
             <Clock size={12} />

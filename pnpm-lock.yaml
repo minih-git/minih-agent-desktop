@@ -481,6 +481,12 @@ importers:
       react-i18next:
         specifier: ^15.6.0
         version: 15.7.4(i18next@26.3.6(typescript@5.9.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.9.3)
+      react-markdown:
+        specifier: ^10.1.0
+        version: 10.1.0(@types/react@19.2.18)(react@19.2.8)(supports-color@7.2.0)
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1(supports-color@7.2.0)
     devDependencies:
       '@capacitor/cli':
         specifier: ^8.5.3

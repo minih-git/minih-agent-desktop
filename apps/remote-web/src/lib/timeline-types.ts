@@ -23,7 +23,11 @@ export type TimelineItem = {
   itemType: RacpItemType;
   status: "streaming" | "completed";
   role?: UiMessageRole;
-  /** Plain text only: the H5 client renders no markdown. */
+  /**
+   * Markdown source for an answer, and the user's own text for their turn: the
+   * timeline renders an answer through `react-markdown` and a user turn
+   * verbatim (only its inline-code spans are decorated).
+   */
   text: string;
   thinking?: string;
   toolName?: string;
