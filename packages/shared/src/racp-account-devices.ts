@@ -110,7 +110,18 @@ export const RACP_ACCOUNT_DEVICE_ROUTES = {
    * client signs the answer and presents it on `request` (ADR decision 2).
    */
   desktopProof: "POST /v1/account/desktop-proof",
+  /**
+   * The path half of each route, for a client that already knows the verb. A
+   * desktop caller builds a URL from these rather than splitting the strings
+   * above, so the two forms cannot drift.
+   */
+  requestPath: "/v1/account/devices",
+  statusPath: "/v1/account/devices/{requestId}",
+  desktopProofPath: "/v1/account/desktop-proof",
 } as const;
+
+/** The account session route a desktop logs in on (`RACP_ACCOUNT_ROUTES.login`). */
+export const RACP_ACCOUNT_LOGIN_PATH = "/v1/account/login";
 
 /**
  * `POST /v1/account/devices`: ask the account's Hosts to approve a new device.

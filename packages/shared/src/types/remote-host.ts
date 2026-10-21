@@ -20,8 +20,31 @@ import type { AskToolRequest, ToolPermissionRequest } from "./agent.js";
  * - `ssh`: a host the desktop bootstrapped itself and keeps a port forward
  *   open for (spec §5.2). The stored URL is derived from that forward, so the
  *   SSH descriptor is the durable half of the record.
+ * - `account`: a computer of the user's own account, reached through the
+ *   Gateway over `RACP-WS` at `GET /v1/hosts/{hostId}/ws` with a device token
+ *   the Gateway issued (ADR amendment 3, decision 8). The record keeps the
+ *   Gateway origin and the sibling's `hostId`; the URL is derived from them.
  */
-export type RemoteHostTransport = "direct" | "ssh";
+export type RemoteHostTransport = "direct" | "ssh" | "account";
+
+/**
+ * The account descriptor a sibling computer reconnects through.
+ *
+ * It names the Gateway and the sibling's own `hostId`, never a device token:
+ * the token is a separate encrypted record field, exactly as it is for an
+ * SSH-paired host. Nothing here is a secret — the origin is public and the
+ * `hostId` is what the account directory already shows.
+ */
+export type RemoteHostAccountMetadata = {
+  /** The sibling computer, as the Gateway named it at enrollment. */
+  hostId: string;
+  /** `https://` origin the desktop dials `GET /v1/hosts/{hostId}/ws` on. */
+  publicOrigin: string;
+  /** The Gateway's advertised Host-link URL; the enrollment identity. */
+  hostlinkUrl?: string;
+  /** Label the account directory reported, for the host list. */
+  label?: string;
+};
 
 /**
  * How the desktop authenticates the SSH session itself.
