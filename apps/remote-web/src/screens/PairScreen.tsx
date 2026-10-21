@@ -5,10 +5,11 @@
  * and apps/remote-web/design/prototype/index.html.
  */
 import { parsePairingTicket } from "@minih-agent/shared";
-import { AlertCircle, Check, Smartphone } from "lucide-react";
+import { AlertCircle, Check, Globe, Smartphone } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { GatewaySheet } from "../components/hosts/HostSheets.js";
 import { Banner } from "../components/ui/Banner.js";
 import { Button } from "../components/ui/Button.js";
 import { Callout } from "../components/ui/Callout.js";
@@ -36,6 +37,7 @@ export function PairScreen({
   );
   const [pairing, setPairing] = useState(false);
   const [failure, setFailure] = useState<OperationFailure | null>(null);
+  const [gatewayOpen, setGatewayOpen] = useState(false);
 
   const parsedTicket = useMemo<ReturnType<typeof parsePairingTicket> | null>(() => {
     const trimmed = ticket.trim();
@@ -85,6 +87,19 @@ export function PairScreen({
     <Screen>
       <NavBar title={t("pair.title")} onBack={onBack} />
       <ScreenContent hasDock={true} className="pt-3 space-y-4">
+        <div className="flex items-center justify-between gap-2 rounded-xl bg-[var(--rm-bg-surface)] px-3 py-2 text-[12px] ring-1 ring-[var(--rm-separator)]">
+          <div className="flex min-w-0 items-center gap-1.5 text-[var(--rm-text-secondary)]">
+            <Globe className="h-3.5 w-3.5 shrink-0 text-[var(--rm-accent)]" aria-hidden="true" />
+            <span className="truncate font-mono">{gatewayOrigin}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setGatewayOpen(true)}
+            className="shrink-0 font-medium text-[var(--rm-link)] active:opacity-70"
+          >
+            切换网关
+          </button>
+        </div>
         <Callout tone="neutral">
           <ol className="list-decimal pl-4 space-y-1 text-[13px] leading-[18px]">
             <li>{t("pair.step1")}</li>
@@ -167,6 +182,7 @@ export function PairScreen({
           {pairing ? t("pair.pairing") : t("pair.submit")}
         </Button>
       </ScreenDock>
+      <GatewaySheet open={gatewayOpen} onClose={() => setGatewayOpen(false)} />
     </Screen>
   );
 }

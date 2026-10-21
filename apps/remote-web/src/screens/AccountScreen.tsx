@@ -1,7 +1,8 @@
-import { Check, Laptop, Lock, Phone, User } from "lucide-react";
+import { Check, Globe, Laptop, Lock, Phone, User } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { GatewaySheet } from "../components/hosts/HostSheets.js";
 import { Banner } from "../components/ui/Banner.js";
 import { Button } from "../components/ui/Button.js";
 import { Callout } from "../components/ui/Callout.js";
@@ -16,6 +17,7 @@ import { defaultAccountDeviceLabel, useAccountFlow } from "../hooks/useAccountFl
 import { remainingMs, rosterSummary } from "../lib/account-flow.js";
 import { formatRemaining, retrySeconds } from "../lib/account-format.js";
 import type { OperationFailure } from "../lib/errors.js";
+import { gatewayOrigin } from "../lib/runtime.js";
 
 function Stepper({ currentStep }: { currentStep: 0 | 1 | 2 }) {
   const { t } = useTranslation();
@@ -115,6 +117,7 @@ export function AccountScreen({
   const [label, setLabel] = useState(() => defaultAccountDeviceLabel());
   const { state, flow } = useAccountFlow(() => label);
   const [now, setNow] = useState(() => Date.now());
+  const [gatewayOpen, setGatewayOpen] = useState(false);
 
   useEffect(() => {
     if (state.kind !== "requesting") return undefined;
@@ -152,6 +155,19 @@ export function AccountScreen({
         <ScreenContent hasDock>
           <Stepper currentStep={0} />
 
+          <div className="mb-3 flex items-center justify-between gap-2 rounded-xl bg-[var(--rm-bg-surface)] px-3 py-2 text-[12px] ring-1 ring-[var(--rm-separator)]">
+            <div className="flex min-w-0 items-center gap-1.5 text-[var(--rm-text-secondary)]">
+              <Globe className="h-3.5 w-3.5 shrink-0 text-[var(--rm-accent)]" aria-hidden="true" />
+              <span className="truncate font-mono">{gatewayOrigin}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setGatewayOpen(true)}
+              className="shrink-0 font-medium text-[var(--rm-link)] active:opacity-70"
+            >
+              切换网关
+            </button>
+          </div>
           <div className="space-y-4 pt-1">
             <SecureField
               label={t("account.keyLabel")}
@@ -203,6 +219,7 @@ export function AccountScreen({
             </Button>
           </div>
         </ScreenDock>
+        <GatewaySheet open={gatewayOpen} onClose={() => setGatewayOpen(false)} />
       </Screen>
     );
   }
