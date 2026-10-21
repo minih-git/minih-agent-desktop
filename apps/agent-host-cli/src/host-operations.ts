@@ -1,25 +1,22 @@
 import { createWorkspaceFiles } from "./workspace-files.js";
 import { createWorkspaceTools } from "./workspace-tools.js";
-import { readdir, realpath, stat } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { RacpError, type Principal, type SessionSummary } from "@minih-agent/agent-host";
 import {
-  collectWorkspaceDiff,
+  configureSession,
   createHostSession,
   createProjectCatalog as createSharedProjectCatalog,
-  listDir,
+  createWorkspaceAccess,
+  deleteSession,
   listModelSummaries,
-  listProjectSummaries,
   listSessionSummariesWithProjectIds,
-  readWorkspaceFile,
-  toProjectSummary,
+  renameSession,
   toRacpHostError,
   withSessionProjectIds,
-  type HostProjectRow,
   type HostRpc,
   type HostSessionRecord,
   type RuntimeService,
+  type SessionMutationDeps,
 } from "@minih-agent/host-runtime";
 import type {
   RacpHostOperations,
@@ -55,6 +52,16 @@ function requireHost(getHost: () => HostRpc | null): HostRpc {
 /** Session catalog over host-core RPC. */
 export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatalog {
   const { getHost } = deps;
+  /**
+   * The three mutations `packages/host-runtime` implements for both Hosts:
+   * idle-only configure and delete (busy answers `AGENT_BUSY`), and the
+   * sidecar's own session disposal after a deleted row.
+   */
+  const session: SessionMutationDeps = {
+    getHost,
+    isBusy: (sessionId: string) => deps.runtime.isBusy(sessionId),
+    ...(deps.disposeSession ? { disposeSession: deps.disposeSession } : {}),
+  };
   async function get(host: HostRpc, sessionId: string): Promise<SessionSummary> {
     const result = await host.call<{ session?: HostSessionRecord | null }>("session.get", { id: sessionId, messageLimit: 1 }).catch(hostError);
     if (!result.session) throw new RacpError("NOT_FOUND", `session ${sessionId} is unknown`);
@@ -69,20 +76,9 @@ export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatal
       return createHostSession(getHost, input, principal);
     },
     async configure(sessionId, input) {
-      const host = requireHost(getHost);
-      if (deps.runtime.isBusy(sessionId)) throw new RacpError("CONFLICT", "the session has an active turn");
-      const current = await get(host, sessionId);
-      await host
-        .call("session.configure", {
-          id: sessionId,
-          mode: input.mode ?? current.mode,
-          ...(input.providerId !== undefined ? { providerId: input.providerId } : {}),
-          ...(input.modelId !== undefined ? { modelId: input.modelId } : {}),
-          ...(input.thinkingLevel !== undefined ? { thinkingLevel: input.thinkingLevel } : {}),
-          ...(input.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
-        })
-        .catch(hostError);
-      return get(host, sessionId);
+      // Shared with the desktop Host: idle-only, and a running turn answers
+      // AGENT_BUSY rather than being reconfigured underneath itself.
+      return configureSession(session, sessionId, input);
     },
     async fork(sessionId, input) {
       const host = requireHost(getHost);
@@ -97,7 +93,7 @@ export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatal
       return get(host, result.session.id);
     },
     async rename(sessionId, title) {
-      await requireHost(getHost).call("session.rename", { id: sessionId, title }).catch(hostError);
+      await renameSession(session, sessionId, title);
     },
     async deriveTitle(sessionId, title) {
       const result = await requireHost(getHost)
@@ -106,9 +102,9 @@ export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatal
       return result.updated === true;
     },
     async delete(sessionId) {
-      if (deps.runtime.isBusy(sessionId)) throw new RacpError("CONFLICT", "the session has an active turn");
-      await requireHost(getHost).call("session.delete", { id: sessionId }).catch(hostError);
-      await deps.disposeSession?.(sessionId).catch(() => undefined);
+      // Deleting runs the sidecar's own session disposal after the row is gone,
+      // so no runtime keeps answering for a conversation that no longer exists.
+      await deleteSession(session, sessionId);
     },
     async compact(sessionId) {
       try {
@@ -127,37 +123,13 @@ export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatal
 export function createHostProjectCatalog(deps: HostOperationsDeps): RacpProjectCatalog {
   return createSharedProjectCatalog({ getHost: deps.getHost, ...(deps.browseRoot ? { browseRoot: deps.browseRoot } : {}) });
 }
-/** Workspace reads against the session's durable root, on the Host's filesystem. */
-export function createWorkspaceAccess(deps: HostOperationsDeps): RacpWorkspaceAccess {
-  const { getHost } = deps;
-  async function sessionRoot(sessionId: string): Promise<string> {
-    const host = requireHost(getHost);
-    const result = await host.call<{ session?: HostSessionRecord | null }>("session.get", { id: sessionId, messageLimit: 1 }).catch(hostError);
-    if (!result.session) throw new RacpError("NOT_FOUND", `session ${sessionId} is unknown`);
-    const root = result.session.projectPath?.trim();
-    if (!root) throw new RacpError("CONFLICT", "the session has no project root");
-    return root;
-  }
-  const forbidden = (error: unknown): never => {
-    const message = error instanceof Error ? error.message : String(error);
-    if (/escapes workspace root|outside allowed roots/.test(message)) throw new RacpError("REMOTE_PATH_FORBIDDEN", message);
-    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") throw new RacpError("REMOTE_PATH_NOT_FOUND", message);
-    if (/not a file/.test(message)) throw new RacpError("INVALID_ARGUMENT", message);
-    throw new RacpError("INTERNAL", message);
-  };
-  return {
-    async list(sessionId, path) {
-      const root = await sessionRoot(sessionId);
-      return { entries: await listDir(root, path).catch(forbidden) };
-    },
-    async read(sessionId, path) {
-      const root = await sessionRoot(sessionId);
-      return readWorkspaceFile(root, path).catch(forbidden);
-    },
-    async diff(sessionId) {
-      return collectWorkspaceDiff(await sessionRoot(sessionId));
-    },
-  };
+/**
+ * Workspace reads are shared with the desktop Host
+ * (`packages/host-runtime` `createWorkspaceAccess`): one session-root rule, one
+ * realpath containment check, one set of size caps.
+ */
+export function createHostWorkspaceAccess(deps: HostOperationsDeps): RacpWorkspaceAccess {
+  return createWorkspaceAccess(deps.getHost);
 }
 
 /** The model catalog: the Host's provider rows, projected to metadata only. */
@@ -174,7 +146,7 @@ export function createHostOperations(deps: HostOperationsDeps): Omit<RacpHostOpe
     sessions: createSessionCatalog(deps),
     projects: createHostProjectCatalog(deps),
     models: createModelCatalog(deps),
-    workspace: createWorkspaceAccess(deps),
+    workspace: createHostWorkspaceAccess(deps),
     workspaceTools: createWorkspaceTools(deps.getHost),
     workspaceFiles: createWorkspaceFiles(),
     ...(deps.revokeDevice ? { revokeDevice: deps.revokeDevice } : {}),
