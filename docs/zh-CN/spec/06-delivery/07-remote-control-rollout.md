@@ -556,11 +556,16 @@ D666（2026-10-18，ADR `remote-control-router-account-binding`）在 R4–R6 �
 
 - WebSocket 路由用 Bearer 设备 token 鉴权（仅 header profile；浏览器无法在 WebSocket 上设置
   该头，继续使用 `RACP-HTTP` + SSE），并复用现有的 hash 快速拒绝、限流与审计；它只是传输，
-  不是第二条授权路径。**工作包 B 已实现**，其余工作包尚未实现；
+  不是第二条授权路径。**工作包 A–D 已实现**（契约、Gateway 的 proof 签发与转发、Host 自己
+  校验并自动授予、桌面端的 `account` 传输与开关三态），工作包 E–F 尚未实现；
 - 自动接入的证明由**目标 Host 自己校验**（证书链到它固定的 Gateway CA、账户绑定、签名、
   未用过且未过期的 nonce）并检查自己的开关；Gateway 只做预检与快速拒绝，不做授权依据；
 - 证明缺失、nonce 过期或重放、目标电脑未声明 `device.desktop-auto` 时一律拒绝或退回人工
   确认，绝不静默放行；
+- 账号内每台电脑都会收到同一请求与同一证明，可能同时自动批准、各自铸造令牌；Gateway 只保留
+  第一份 grant、客户端只拿到那一个令牌，因此也批准过的那台会吊销自己铸造的设备并采纳存活的
+  那份（一个请求一个设备）；nonce 按「每个请求一次」判定，同一证明用于该电脑从未批准过的
+  另一个请求仍算重放；
 - **Gateway 路径不需要 `workspace/toolExecute`**：Agent 在 B 上跑，工具由 B 自己的 Agent
   在本机执行；A 只用会话／turn／审批操作与 `workspace/list|read|diff`（文件面板），走工作包
   B 的 `RACP-WS` 路由，不走 `RACP-HTTP` 路由表。`workspace/toolExecute` 仍只属于 SSH 的

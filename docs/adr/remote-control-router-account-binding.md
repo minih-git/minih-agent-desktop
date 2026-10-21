@@ -515,11 +515,27 @@ certificate proves it. This amendment lets a computer say so, and join.
    would otherwise keep working, so it needs no Host signature. A device record
    written before these fields existed has neither, and behaves exactly as it
    did.
+   **One request, one device.** Every computer of the account is asked the same
+   request with the same proof, so more than one of them can admit it at the
+   same moment, each minting its own token. The Gateway keeps the first grant
+   and the client receives only that token, so a computer that also admitted
+   the request revokes the device it minted and adopts the surviving grant:
+   otherwise the account would carry a device nobody can use, and the machine
+   that approved first would be the one where the token does not work. The
+   nonce stays single-use per request rather than per Host — a proof presented
+   for a request that computer never admitted is still refused as a replay.
 5. **Account mode defaults the remote switch on.** When the Router advertises
    a `remoteGateway` object and the account key resolves, the desktop's
    remote-control switch starts on for a user who has never chosen; a user who
    turned it off keeps it off. This amends security §3.8 and gate 27, whose
-   "off by default" reading was written for the self-hosted flow.
+   "off by default" reading was written for the self-hosted flow. Three states
+   therefore have to be stored, not two: the settings row gains an optional
+   `decided`, so `enabled: true` means the user turned it on, `enabled: false`
+   with `decided: true` means they turned it off and no default may re-enable
+   it, and a row without `decided` — including every row written before the
+   field — is "never chosen". Choosing the default writes `decided: true`, so
+   the decision is made once and read afterwards rather than re-derived on every
+   boot. A row that cannot be written leaves the switch off rather than half-on.
 6. **A capability, so an old Host is visible.** The new frames go only to a
    Host that advertises `device.desktop-auto` on its `host.capabilities` frame
    (protocol §11.4 rule 6), which is that Host's own claim that it can verify a

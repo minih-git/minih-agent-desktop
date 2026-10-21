@@ -486,8 +486,10 @@ Scope notes:
 - the WebSocket route authenticates with the device token in the header profile
   (a browser cannot set that header on a WebSocket and keeps `RACP-HTTP` + SSE)
   and reuses the existing hash fast-reject, rate limit, and audit; it is a
-  transport, not a second authorization path. **Packages B and C are
-  implemented**; the other packages are not;
+  transport, not a second authorization path. **Packages A–D are implemented**
+  (the contract, the Gateway's proof minting and relays, the Host's own
+  verification with automatic admission, and the desktop's `account` transport
+  with the switch's three states); packages E–F are not;
 - automatic admission is refused, never silently ignored, when the proof is
   missing, when its nonce was reused or expired, or when the target computer
   does not advertise `device.desktop-auto`;
@@ -495,6 +497,13 @@ Scope notes:
   its own pinned Gateway CA: a target Host has no other way to obtain that
   certificate, and its integrity rests on the chain plus the account and
   `hostId` binding, not on the Gateway being honest;
+- every computer of the account receives the same request and the same proof, so
+  more than one of them can admit it at once, each minting its own token. The
+  Gateway keeps only the first grant and the client receives only that token,
+  so a computer that also admitted the request revokes the device it minted and
+  adopts the surviving one: one request, one device, one token everywhere. The
+  proof's nonce is single-use per request, not per Host — a proof presented for
+  a request that computer never admitted is still refused as a replay;
 - the proof is verified by the target Host itself, with the Gateway's check as a
   fast reject only: a compromised Gateway must not be able to mint an `owner`
   device on its own (ADR 0331's "the Gateway never decides an approval");

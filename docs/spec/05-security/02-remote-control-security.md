@@ -407,6 +407,16 @@ authentication input also carries the connection origin: the loopback
   revoking a device that would otherwise keep working, never widening access. A
   device without proof keeps the phone rules of this section unchanged, and the
   desktop Host still decides per operation which desktop operations it opens.
+  **One request, one device.** Every computer of the account is asked the same
+  request with the same proof, so several of them can admit it at once and each
+  mints its own token. The Gateway keeps the first grant and the client receives
+  only that token, so a computer that also admitted the request revokes the
+  device it minted and adopts the surviving grant — the alternative leaves a
+  device nobody can use and makes the first approver the one machine where the
+  account's token fails. The proof's nonce stays single-use per request, not per
+  Host: a proof presented for a request that computer never admitted is still
+  refused as a replay.
+  desktop Host still decides per operation which desktop operations it opens.
 - Revocation on either the Gateway or the Host denies new connections and
   closes existing relayed logical connections within 5 seconds.
 
