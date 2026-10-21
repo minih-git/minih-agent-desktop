@@ -416,7 +416,13 @@ authentication input also carries the connection origin: the loopback
   account's token fails. The proof's nonce stays single-use per request, not per
   Host: a proof presented for a request that computer never admitted is still
   refused as a replay.
-  desktop Host still decides per operation which desktop operations it opens.
+  **Replay memory is per process.** The nonce table and the own-admission table
+  are in-memory: a Host restart forgets the nonces it spent. A proof replayed
+  after a restart is still bounded by the request's five-minute lifetime, and
+  only a Gateway that can already forge certificates could present one, so this
+  does not widen the accepted risk (ADR `remote-control-router-account-binding`,
+  Accepted risk); it is stated so the in-memory scope is not mistaken for durable
+  replay protection. Both tables are bounded and pruned by their deadlines.
 - Revocation on either the Gateway or the Host denies new connections and
   closes existing relayed logical connections within 5 seconds.
 

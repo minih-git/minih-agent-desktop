@@ -58,7 +58,13 @@ async function fixture(options: { accountId?: string; otherAccountId?: string } 
 function directoryFor(
   f: Fixture,
   which: "alpha" | "beta",
-  options: { confirmer?: DeviceConfirmer | null; strictMode?: boolean; now?: number; desktopAutoAdmission?: boolean } = {},
+  options: {
+    confirmer?: DeviceConfirmer | null;
+    strictMode?: boolean;
+    now?: number;
+    desktopAutoAdmission?: boolean;
+    maxOwnDesktopDevices?: number;
+  } = {},
 ): HostDeviceDirectory {
   return new HostDeviceDirectory({
     hostId: f[which].hostId,
@@ -69,6 +75,7 @@ function directoryFor(
     ...(options.confirmer === undefined ? {} : { confirmer: options.confirmer }),
     ...(options.strictMode ? { strictMode: true } : {}),
     ...(options.desktopAutoAdmission === undefined ? {} : { desktopAutoAdmission: options.desktopAutoAdmission }),
+    ...(options.maxOwnDesktopDevices === undefined ? {} : { maxOwnDesktopDevices: options.maxOwnDesktopDevices }),
     now: () => options.now ?? NOW,
     onNotice: (notice) => f.notices.push(notice),
   });
@@ -835,6 +842,42 @@ describe("Host device directory: desktop-class devices", () => {
       deviceId: "dev_replayed",
     });
     expect(await alpha.handleGrant(replay)).toBe("refused");
+  });
+
+  it("keeps its own-admission table bounded and prunes it past the grant window", async () => {
+    // Every admission adds one entry that only matters until the surviving grant
+    // could still arrive. Without a bound a long-lived Host would keep one entry
+    // per request forever. The bound is observable: an evicted request is no
+    // longer exempt from the replay check, so its sibling grant is refused.
+    const f = await fixture();
+    const alphaSent: RacpDeviceGrantFrame[] = [];
+    const betaSent: RacpDeviceGrantFrame[] = [];
+    const alpha = directoryFor(f, "alpha", {
+      confirmer: { confirm: async () => "approved" },
+      maxOwnDesktopDevices: 2,
+    });
+    const beta = directoryFor(f, "beta", { confirmer: { confirm: async () => "approved" } });
+
+    // Three requests, one more than the bound: the oldest entry is dropped, so
+    // only the two most recent can still be replaced by a sibling's grant.
+    for (const [index, requestId] of ["req_1", "req_2", "req_3"].entries()) {
+      const desktopRequest = request({ client: "desktop", requestId });
+      // A distinct nonce per request: a proof is single-use, so reusing one
+      // would be refused as a replay before the table is even consulted.
+      desktopRequest.hostProof = proofFor(f.beta, desktopRequest, { nonce: `dn_nonce_${index}` });
+      expect(await alpha.handleRequest(desktopRequest, (frame) => alphaSent.push(frame))).toBe("granted");
+      expect(await beta.handleRequest(desktopRequest, (frame) => betaSent.push(frame))).toBe("granted");
+    }
+    expect(alphaSent).toHaveLength(3);
+    expect(betaSent).toHaveLength(3);
+
+    // The Gateway relays the surviving (beta's) grant back to the other computer.
+    // The evicted request is no longer exempt from the replay check, so its own
+    // nonce reads as a replay: the ordinary refusal, not a crash.
+    expect(await alpha.handleGrant(asRelayed(betaSent[0]!))).toBe("refused");
+    // The retained ones still converge on the account's device.
+    expect(await alpha.handleGrant(asRelayed(betaSent[1]!))).toBe("adopted");
+    expect(await alpha.handleGrant(asRelayed(betaSent[2]!))).toBe("adopted");
   });
 });
 

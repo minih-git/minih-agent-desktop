@@ -56,6 +56,8 @@ const TOMBSTONE_TOKEN_HASH = "revoked";
 export const DEFAULT_GRANT_DELIVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** How many used desktop nonces one Host remembers before pruning the oldest. */
 const DEFAULT_MAX_REMEMBERED_NONCES = 4096;
+/** How many own desktop admissions one Host remembers before pruning the oldest. */
+const DEFAULT_MAX_OWN_DESKTOP_DEVICES = 1024;
 /** Clock tolerance when a sibling checks that a grant was not issued in the future. */
 const DEFAULT_MAX_CLOCK_SKEW_MS = 60_000;
 
@@ -131,6 +133,13 @@ export type HostDeviceDirectoryOptions = {
    */
   maxRememberedNonces?: number;
   /**
+   * How many own desktop admissions this Host remembers while waiting for the
+   * account's surviving grant. Pruned by the grant's delivery deadline and
+   * bounded like the nonce table, so an approving Host cannot accumulate one
+   * entry per request forever.
+   */
+  maxOwnDesktopDevices?: number;
+  /**
    * Tolerance for a sibling's clock when it checks that a grant was not issued
    * in the future. Defaults to 60 seconds, the same tolerance the Host link
    * applies to a route context.
@@ -170,6 +179,7 @@ export class HostDeviceDirectory {
    */
   private desktopAutoAdmission: boolean;
   private readonly maxRememberedNonces: number;
+  private readonly maxOwnDesktopDevices: number;
   private readonly maxClockSkewMs: number;
   /**
    * The desktop nonces this Host has already accepted, with the deadline of the
@@ -180,7 +190,8 @@ export class HostDeviceDirectory {
    */
   private readonly usedNonces = new Map<string, number>();
   /**
-   * The device this Host minted for a desktop request, by `requestId`.
+   * The device this Host minted for a desktop request, by `requestId`, with the
+   * deadline of the grant it could still be replaced by.
    *
    * Every computer of the account is asked the same request, so two of them can
    * admit it at the same moment — each minting its own token. The Gateway keeps
@@ -189,8 +200,11 @@ export class HostDeviceDirectory {
    * the one everybody else will hold. Without this, the computer that approved
    * first would refuse the surviving grant as a replayed nonce and be the one
    * machine where the account's device does not work.
+   *
+   * Pruned by deadline and bounded: past `deliverUntil` no grant can arrive to
+   * replace the entry, so keeping it would only grow the table.
    */
-  private readonly ownDesktopDevices = new Map<string, string>();
+  private readonly ownDesktopDevices = new Map<string, { deviceId: string; deadline: number }>();
 
   constructor(private readonly options: HostDeviceDirectoryOptions) {
     const accountId = readCertificateAccountBinding(options.signer.certificatePem);
@@ -207,6 +221,7 @@ export class HostDeviceDirectory {
     this.deliveryWindowMs = options.grantDeliveryWindowMs ?? DEFAULT_GRANT_DELIVERY_WINDOW_MS;
     this.desktopAutoAdmission = options.desktopAutoAdmission ?? true;
     this.maxRememberedNonces = options.maxRememberedNonces ?? DEFAULT_MAX_REMEMBERED_NONCES;
+    this.maxOwnDesktopDevices = options.maxOwnDesktopDevices ?? DEFAULT_MAX_OWN_DESKTOP_DEVICES;
     this.maxClockSkewMs = options.maxClockSkewMs ?? DEFAULT_MAX_CLOCK_SKEW_MS;
   }
 
@@ -376,6 +391,23 @@ export class HostDeviceDirectory {
       for (const [key] of idle.slice(0, this.usedNonces.size - this.maxRememberedNonces)) this.usedNonces.delete(key);
     }
   }
+  /**
+   * Remember the device this Host minted for a desktop request, pruned by the
+   * grant's delivery deadline and bounded like the nonce table. Past that
+   * deadline no sibling grant for the same request can still arrive, so the
+   * entry has nothing left to do.
+   */
+  private rememberOwnDevice(requestId: string, deviceId: string, deliverUntil: string): void {
+    const now = this.now();
+    for (const [key, entry] of [...this.ownDesktopDevices]) if (entry.deadline <= now) this.ownDesktopDevices.delete(key);
+    this.ownDesktopDevices.set(requestId, { deviceId, deadline: Date.parse(deliverUntil) });
+    if (this.ownDesktopDevices.size > this.maxOwnDesktopDevices) {
+      const idle = [...this.ownDesktopDevices].sort((left, right) => left[1].deadline - right[1].deadline);
+      for (const [key] of idle.slice(0, this.ownDesktopDevices.size - this.maxOwnDesktopDevices)) {
+        this.ownDesktopDevices.delete(key);
+      }
+    }
+  }
 
   /**
    * Mint the device token for an approved request, keep its hash locally, and
@@ -394,6 +426,7 @@ export class HostDeviceDirectory {
     const at = new Date(this.now()).toISOString();
     const deviceId = `dev_${randomUUID()}`;
     const token = newDeviceToken();
+    const deliverUntil = new Date(this.now() + this.deliveryWindowMs).toISOString();
     await this.options.store.saveDevice({
       deviceId,
       label: request.deviceLabel,
@@ -407,7 +440,9 @@ export class HostDeviceDirectory {
     });
     // Remembered so a sibling's grant for the same request can replace it: only
     // one of the account's computers ends up holding the token the client got.
-    if (desktop) this.ownDesktopDevices.set(request.requestId, deviceId);
+    // The entry lives no longer than the grant itself could be delivered, and the
+    // table is bounded, so approving cannot grow it without limit.
+    if (desktop) this.rememberOwnDevice(request.requestId, deviceId, deliverUntil);
     const grant: RacpDeviceGrant = {
       grantId: `grant_${randomUUID()}`,
       requestId: request.requestId,
@@ -419,7 +454,7 @@ export class HostDeviceDirectory {
       roles: [...roles],
       origin: "gateway",
       issuedAt: at,
-      deliverUntil: new Date(this.now() + this.deliveryWindowMs).toISOString(),
+      deliverUntil,
       ...(desktop && proof
         ? {
             deviceClass: "desktop" as const,
@@ -594,7 +629,7 @@ export class HostDeviceDirectory {
     // everybody else will hold — otherwise the account would carry a second
     // device nobody can use.
     if (desktop) {
-      const own = this.ownDesktopDevices.get(grant.requestId);
+      const own = this.ownDesktopDevices.get(grant.requestId)?.deviceId;
       if (own && own !== grant.deviceId) {
         await this.options.store.revokeDevice(own, new Date(this.now()).toISOString());
         this.ownDesktopDevices.delete(grant.requestId);

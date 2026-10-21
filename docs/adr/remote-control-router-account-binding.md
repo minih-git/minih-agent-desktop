@@ -165,6 +165,14 @@ decision, and it is accepted with mitigations that are all required:
 - every grant produces an audit record;
 - strict mode makes one Host refuse sibling grants entirely.
 
+The desktop-proof nonce table and the own-admission table (amendment 3) live in
+Host process memory only, so a Host restart forgets which nonces it already
+spent. A replayed proof after a restart is bounded by the request's own
+five-minute lifetime, and only a compromised Gateway — which can already forge
+certificates under the risk above — could present one. This does not widen the
+accepted risk; it is recorded so the in-memory scope is not mistaken for
+durable replay protection.
+
 ## Consequences
 
 ### Positive

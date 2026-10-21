@@ -298,6 +298,7 @@ test("strict mode stops advertising sibling grants and cannot be bypassed", asyn
   assert.deepEqual(relaxed.capabilities.sort(), [
     RACP_HOST_CAPABILITIES.deviceAcceptSiblingGrant,
     RACP_HOST_CAPABILITIES.deviceConfirm,
+    RACP_HOST_CAPABILITIES.deviceDesktopAuto,
   ].sort());
   assert.equal(relaxed.directory.isStrict, false);
 
@@ -313,8 +314,13 @@ test("strict mode stops advertising sibling grants and cannot be bypassed", asyn
   });
   assert.ok(strict);
   // The capability list is the announcement: a strict Host never says it
-  // accepts a sibling grant.
-  assert.deepEqual(strict.capabilities, [RACP_HOST_CAPABILITIES.deviceConfirm]);
+  // accepts a sibling grant, but it still declares that it can admit a
+  // same-account desktop (the switch, not the announcement, decides — ADR
+  // amendment 3, decision 3).
+  assert.deepEqual(strict.capabilities.sort(), [
+    RACP_HOST_CAPABILITIES.deviceConfirm,
+    RACP_HOST_CAPABILITIES.deviceDesktopAuto,
+  ].sort());
   assert.equal(strict.directory.isStrict, true);
 });
 
