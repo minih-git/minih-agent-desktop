@@ -17,6 +17,7 @@ export * from "./certificate-errors.js";
 export * from "./types.js";
 export * from "./transcript-truncation.js";
 export * from "./transcript-visibility.js";
+export * from "./tool-presentation.js";
 export * from "./keyboard-shortcuts.js";
 export * from "./changelog.js";
 export * from "./composer-trigger.js";

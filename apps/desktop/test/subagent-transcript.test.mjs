@@ -31,8 +31,11 @@ const topologySource = await readFile(
   new URL("../src/lib/subagent-topology.ts", import.meta.url),
   "utf8",
 );
+// The rules moved to `packages/shared/src/tool-presentation.ts` so the phone
+// timeline reads a call the same way; `src/lib/tool-display.ts` is now a
+// re-export, so the source contract has to look at the one implementation.
 const toolDisplaySource = await readFile(
-  new URL("../src/lib/tool-display.ts", import.meta.url),
+  new URL("../../../packages/shared/src/tool-presentation.ts", import.meta.url),
   "utf8",
 );
 const englishCatalogSource = await readFile(
