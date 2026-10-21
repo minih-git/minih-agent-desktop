@@ -119,13 +119,19 @@ describe("gateway client WebSocket route", () => {
   });
 
   /** Open a relay and resolve once the upgrade succeeded (or reject on refusal). */
-  function openRelay(target: TestGateway, hostId: string, options: { token?: string | null; url?: string; origin?: string } = {}): Relay {
+  function openRelay(
+    target: TestGateway,
+    hostId: string,
+    options: { token?: string | null; url?: string; origin?: string; autoPong?: boolean } = {},
+  ): Relay {
     const url = options.url ?? `ws://${target.gateway.client.host}:${target.gateway.client.port}/v1/hosts/${encodeURIComponent(hostId)}/ws`;
     const headers: Record<string, string> = {};
     const token = options.token === undefined ? "" : options.token;
     if (token) headers.authorization = `Bearer ${token}`;
     if (options.origin) headers.origin = options.origin;
-    const socket = new WebSocket(url, { headers });
+    // `autoPong: false` is how a test plays a client that stopped answering
+    // pings without closing its socket (a sleeping laptop).
+    const socket = new WebSocket(url, { headers, ...(options.autoPong === false ? { autoPong: false } : {}) });
     const frames: Array<Record<string, unknown>> = [];
     let closedInfo: { code: number; reason: string } | null = null;
     const closed = new Promise<{ code: number; reason: string }>((resolve) => {
@@ -478,5 +484,56 @@ describe("gateway client WebSocket route", () => {
     const retryAfter = Number(limited.headers["retry-after"]);
     expect(Number.isInteger(retryAfter)).toBe(true);
     expect(retryAfter).toBeGreaterThan(0);
+  });
+
+  it("drops a client that stops answering pings and frees its slot", async () => {
+    const warnings: string[] = [];
+    const target = await startTestGateway(
+      {},
+      { clientWsHeartbeatMs: 60, log: (level, message) => (level === "warn" ? warnings.push(message) : undefined) },
+    );
+    gateway = target;
+    const host = await enrollTestHost(target);
+    hosts.push(host);
+    const paired = await pairDevice(target, host, { client: "ios", label: "phone" });
+    expect(paired.status).toBe(200);
+    const token = paired.token ?? "";
+
+    const relay = openRelay(target, host.hostId, { token, autoPong: false });
+    await relayOpened(relay);
+    relay.send({ jsonrpc: "2.0", id: "c1", method: "connection/initialize", params: INITIALIZE });
+    await relay.waitForFrame((frame) => frame["id"] === "c1", "the initialize result");
+    expect(target.gateway.pool.size).toBe(1);
+
+    // The client never answers a ping, so the socket is half-open: the Gateway
+    // must drop it rather than hold the Host-side logical connection and one of
+    // the device's four relayed-connection slots forever.
+    await relay.closed;
+    expect(warnings).toContain("gateway ws client stopped answering pings");
+    expect(target.gateway.pool.size).toBe(0);
+
+    // The slot is genuinely free: the same device relays again.
+    const again = openRelay(target, host.hostId, { token });
+    await relayOpened(again);
+    again.send({ jsonrpc: "2.0", id: "c2", method: "connection/initialize", params: INITIALIZE });
+    const initialized = await again.waitForFrame((frame) => frame["id"] === "c2", "the initialize result");
+    expect((initialized["result"] as { server: { hostId: string } }).server.hostId).toBe(host.hostId);
+  });
+
+  it("tells a client the truth when it already holds its maximum relays", async () => {
+    const stack = await selfHostedStack();
+    // Four is the per-device bound the relay shares with the event streams.
+    for (let index = 0; index < 4; index += 1) {
+      const held = openRelay(stack.gateway, stack.host.hostId, { token: stack.token });
+      await relayOpened(held);
+      held.send({ jsonrpc: "2.0", id: `h${index}`, method: "connection/initialize", params: INITIALIZE });
+      await held.waitForFrame((frame) => frame["id"] === `h${index}`, "the initialize result");
+    }
+
+    const extra = openRelay(stack.gateway, stack.host.hostId, { token: stack.token });
+    await relayOpened(extra);
+    const closed = await extra.closed;
+    expect(closed.code).toBe(1013);
+    expect(closed.reason).toMatch(/maximum relayed connections/);
   });
 });

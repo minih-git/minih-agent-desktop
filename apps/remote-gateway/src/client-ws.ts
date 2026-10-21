@@ -30,6 +30,12 @@
  * it from the Host side; the client closing closes it from this side. A slow
  * client is closed with `CLIENT_TOO_SLOW` rather than buffered without bound,
  * which keeps the resumable-cursor rule of §11.4 rule 3.
+ *
+ * One Gateway-side rule applies to what travels over the socket: a heartbeat
+ * (protocol §11.1, 30 seconds) drops a client that stops answering pings. A
+ * laptop that sleeps leaves a half-open socket the Gateway would otherwise
+ * never notice, holding a Host-side logical connection and one of the device's
+ * four relayed-connection slots forever.
  */
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
@@ -41,7 +47,7 @@ import { peerAddress } from "./client-ip.js";
 import { bearerToken, hasUrlCredential } from "./client-request-rules.js";
 import { hashToken } from "./pairing.js";
 import type { RateLimiter } from "./rate-limit.js";
-import type { GatewayLog, LogicalConnection, LogicalConnectionPool } from "./router.js";
+import { GatewayRpcError, type GatewayLog, type LogicalConnection, type LogicalConnectionPool } from "./router.js";
 import type { GatewayStore } from "./store.js";
 
 const WS_ROUTE = /^\/v1\/hosts\/([^/]+)\/ws\/?$/;
@@ -55,6 +61,17 @@ const WS_TRY_AGAIN_LATER = 1013;
 /** Causes this module and the pool produce; the Host link never sends them. */
 const DEVICE_REVOKED = "device revoked";
 const GATEWAY_STOPPING = "gateway stopping";
+/**
+ * A client that stopped answering pings. Nothing can be told to a half-open
+ * socket, so the close frame is best-effort; what matters is that the Host-side
+ * logical connection is released and the device's slot is freed.
+ */
+const CLIENT_UNRESPONSIVE = "client unresponsive";
+/** Protocol §11.1 heartbeat target. */
+const DEFAULT_HEARTBEAT_MS = 30_000;
+/** Why a relay is refused: the device's own limit, or a Host that is not there. */
+const CONNECTION_LIMIT_REASON = "this device already holds its maximum relayed connections";
+const HOST_UNAVAILABLE_REASON = "the Host is unavailable";
 /** Reason text of a WebSocket close is capped at 123 bytes by the frame. */
 const MAX_CLOSE_REASON = 120;
 
@@ -76,6 +93,8 @@ export type ClientWsOptions = {
   resolveClientIp?: (request: IncomingMessage) => string;
   /** Per-client outbound buffer bound in bytes before the socket is closed. */
   maxBufferedBytes?: number;
+  /** Protocol §11.1 heartbeat interval; injectable so a test need not wait 30s. */
+  heartbeatMs?: number;
 };
 
 export type ClientWsServer = {
@@ -139,15 +158,25 @@ function closeCodeFor(cause: string): number {
     case RACP_HOSTLINK_CLOSE_CODES.duplicateConnection:
     case DEVICE_REVOKED:
       return WS_POLICY_VIOLATION;
+    case CLIENT_UNRESPONSIVE:
+      return WS_INTERNAL_ERROR;
     default:
       return WS_INTERNAL_ERROR;
   }
 }
 
+/** One relayed client: the socket, its logical connection, and its heartbeat. */
+type LiveRelay = {
+  socket: WebSocket;
+  connection: LogicalConnection;
+  stopHeartbeat: () => void;
+};
+
 export function createClientWsServer(options: ClientWsOptions): ClientWsServer {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
-  const live = new Set<{ socket: WebSocket; connection: LogicalConnection }>();
+  const live = new Set<LiveRelay>();
   const maxBufferedBytes = options.maxBufferedBytes ?? DEFAULT_MAX_BUFFERED_BYTES;
+  const heartbeatMs = options.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
   const resolveIp = (request: IncomingMessage) => (options.resolveClientIp ?? peerAddress)(request);
 
   function refuse(socket: Duplex, refusal: Refusal): void {
@@ -173,10 +202,10 @@ export function createClientWsServer(options: ClientWsOptions): ClientWsServer {
     return options.allowedOrigins.some((allowed) => allowed.replace(/\/$/, "").toLowerCase() === value.replace(/\/$/, "").toLowerCase());
   }
 
-  function accept(request: IncomingMessage, socket: Duplex, head: Buffer, hostId: string, deviceId: string, token: string, accountId?: string): void {
+  function accept(request: IncomingMessage, socket: Duplex, head: Buffer, hostId: string, deviceId: string, token: string, ip: string, accountId?: string): void {
     wss.handleUpgrade(request, socket, head, (ws) => {
       let connection: LogicalConnection | null = null;
-      let entry: { socket: WebSocket; connection: LogicalConnection } | null = null;
+      let entry: LiveRelay | null = null;
       // The message listener is registered synchronously with the socket, so a
       // frame the client sends while `pool.relay()` is in flight is buffered
       // (bounded) and flushed in order instead of being dropped: the relay
@@ -214,11 +243,13 @@ export function createClientWsServer(options: ClientWsOptions): ClientWsServer {
       });
       ws.on("close", () => {
         if (entry) live.delete(entry);
+        entry?.stopHeartbeat();
         connection?.close(RACP_HOSTLINK_CLOSE_CODES.clientClosed);
       });
       ws.on("error", (error) => {
         options.log("warn", "gateway ws socket error", { hostId, deviceId, error: String(error) });
         if (entry) live.delete(entry);
+        entry?.stopHeartbeat();
         connection?.close("client error");
       });
 
@@ -231,9 +262,18 @@ export function createClientWsServer(options: ClientWsOptions): ClientWsServer {
             credential: token,
             ...(accountId ? { accountDevice: true } : {}),
           });
-        } catch {
-          // The Host link went away between the check and the upgrade.
-          ws.close(WS_TRY_AGAIN_LATER, "the Host is unavailable");
+        } catch (error) {
+          // The relay failed for a reason the client must be able to tell
+          // apart: its own connection count, or a Host that is not there.
+          const limited = error instanceof GatewayRpcError && error.code === "RATE_LIMITED";
+          const reason = limited ? CONNECTION_LIMIT_REASON : HOST_UNAVAILABLE_REASON;
+          options.log(limited ? "warn" : "info", "gateway ws relay refused", {
+            hostId,
+            deviceId,
+            reason,
+            ...(error instanceof Error ? { error: error.message } : {}),
+          });
+          if (ws.readyState === ws.OPEN) ws.close(WS_TRY_AGAIN_LATER, reason.slice(0, MAX_CLOSE_REASON));
           return;
         }
         // The client may have gone while the relay was being opened; the
@@ -243,7 +283,27 @@ export function createClientWsServer(options: ClientWsOptions): ClientWsServer {
           return;
         }
         connection = opened;
-        entry = { socket: ws, connection: opened };
+        // Heartbeat (protocol §11.1): a client that stops answering pings has
+        // gone away without closing the socket — a sleeping laptop, a network
+        // switch, a NAT that dropped the flow — and the Gateway would otherwise
+        // hold its logical connection and its slot forever.
+        let alive = true;
+        const heartbeat = setInterval(() => {
+          if (ws.readyState !== ws.OPEN) return;
+          if (!alive) {
+            options.log("warn", "gateway ws client stopped answering pings", { hostId, deviceId, clientConnectionId: opened.id });
+            opened.close(CLIENT_UNRESPONSIVE);
+            ws.terminate();
+            return;
+          }
+          alive = false;
+          ws.ping();
+        }, heartbeatMs);
+        heartbeat.unref?.();
+        ws.on("pong", () => {
+          alive = true;
+        });
+        entry = { socket: ws, connection: opened, stopHeartbeat: () => clearInterval(heartbeat) };
         live.add(entry);
         options.log("info", "gateway ws relay established", { hostId, deviceId, clientConnectionId: opened.id });
         opened.attachRelay({
@@ -334,14 +394,15 @@ export function createClientWsServer(options: ClientWsOptions): ClientWsServer {
       void options.store
         .appendAudit({ op: "hosts.ws", ip, result: "ok", hostId, deviceId: device.deviceId })
         .catch(() => undefined);
-      accept(request, socket, head, hostId, device.deviceId, token, device.accountId);
+      accept(request, socket, head, hostId, device.deviceId, token, ip, device.accountId);
       return true;
     },
     closeAll() {
       for (const entry of [...live]) {
         live.delete(entry);
+        entry.stopHeartbeat();
         entry.connection.close(GATEWAY_STOPPING);
-        if (entry.socket.readyState === entry.socket.OPEN) entry.socket.close(WS_TRY_AGAIN_LATER, "gateway stopping");
+        if (entry.socket.readyState === entry.socket.OPEN) entry.socket.close(WS_TRY_AGAIN_LATER, GATEWAY_STOPPING);
       }
     },
     size: () => live.size,

@@ -64,6 +64,12 @@ export type StartGatewayOptions = {
   ipLimit?: RateLimitPolicy;
   credentialLimit?: RateLimitPolicy;
   heartbeatMs?: number;
+  /**
+   * The `RACP-WS` client route's heartbeat (protocol §11.1). Injectable so a
+   * test does not have to wait 30 seconds to see a half-open client dropped;
+   * it is deliberately not the Host link's own `heartbeatMs`.
+   */
+  clientWsHeartbeatMs?: number;
   /** Injectable for tests; only used to build the Router verifier. */
   fetchImpl?: typeof fetch;
   /**
@@ -201,6 +207,7 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
     allowedOrigins: config.allowedOrigins,
     log,
     ...(config.clientIp ? { resolveClientIp: createClientIpResolver(config.clientIp) } : {}),
+    ...(options.clientWsHeartbeatMs !== undefined ? { heartbeatMs: options.clientWsHeartbeatMs } : {}),
   });
   const client = new ClientHttpServer({
     store,
