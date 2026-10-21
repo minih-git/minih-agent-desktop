@@ -87,6 +87,41 @@ describe("native CSP builder", () => {
     }
   });
 
+  it("adds exactly one more origin when direct chat has a model gateway", () => {
+    const model = "https://models.example.test";
+    const rewritten = withGatewayOrigin(source, { gatewayOrigin: origin, modelGatewayOrigin: model });
+    expect(directives(rewritten).find((directive) => directive.startsWith("connect-src"))).toBe(
+      `connect-src 'self' ${origin} ${model}`,
+    );
+    // The remote-control Gateway's own allowance is untouched; only connect-src
+    // grows, and only by one exact origin.
+    expect(exceptConnectSrc(rewritten)).toEqual(exceptConnectSrc(source));
+    expect(rewritten).not.toContain("*");
+  });
+
+  it("adds nothing when the build has no model gateway", () => {
+    const rewritten = withGatewayOrigin(source, { gatewayOrigin: origin, modelGatewayOrigin: null });
+    expect(directives(rewritten).find((directive) => directive.startsWith("connect-src"))).toBe(
+      `connect-src 'self' ${origin}`,
+    );
+  });
+
+  it("never lists the same origin twice when both gateways share a host", () => {
+    const rewritten = withGatewayOrigin(source, {
+      gatewayOrigin: origin,
+      modelGatewayOrigin: `${origin}/`,
+    });
+    expect(directives(rewritten).find((directive) => directive.startsWith("connect-src"))).toBe(
+      `connect-src 'self' ${origin}`,
+    );
+  });
+
+  it("refuses a model gateway that is not an exact https origin", () => {
+    for (const bad of ["http://models.example.test", "https://*.example.test", "https://models.example.test/v1"]) {
+      expect(() => withGatewayOrigin(source, { gatewayOrigin: origin, modelGatewayOrigin: bad }), bad).toThrow();
+    }
+  });
+
   it("rewrites the document's meta tag and nothing else", () => {
     const rewritten = withGatewayOriginInHtml(html, origin);
     expect(rewritten).toContain(`connect-src 'self' ${origin}`);

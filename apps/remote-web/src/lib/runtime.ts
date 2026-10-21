@@ -27,6 +27,7 @@ import {
   createMemoryStorage,
   type RegistryStorage,
 } from "./host-registry.js";
+import { resolveModelGatewayOrigin } from "./model-gateway-origin.js";
 import { NativeCredentialPort, type NativePairClient } from "./native-credential-port.js";
 import { dispatchBack } from "./navigation.js";
 import type { PushPlugin } from "./push.js";
@@ -179,6 +180,15 @@ const nativePort =
 export const credentialPort: CredentialPort =
   nativePort ?? new WebCookieCredentialPort({ registry: hostRegistry, userAgent });
 
+/**
+ * The model gateway direct chat streams from (ADR mobile-direct-gateway-chat
+ * §2). It is its own build-time origin, and it is optional: `null` means this
+ * build has no direct chat, which the Chats root explains instead of failing.
+ * Only a native build has one — the browser client keeps its single hierarchy.
+ */
+export const modelGatewayOrigin = nativePlatform
+  ? resolveModelGatewayOrigin(import.meta.env.VITE_MODEL_GATEWAY_ORIGIN)
+  : null;
 let appState: AppStateSource | null = null;
 
 /** The native app-state feed, available after `boot()` resolved. */
