@@ -37,7 +37,8 @@ import { setBackHandler } from "./lib/navigation.js";
 import { credentialPort, isNativeApp, nativePlatform } from "./lib/runtime.js";
 import { consumeNotificationTap, setNotificationBadge } from "./lib/native-notify.js";
 import { createScreenHistory, sameScreen } from "./lib/screen-history.js";
-import { isRootScreen, previousScreen, type RootKind, type Screen } from "./lib/screen-stack.js";
+import { previousScreen, type RootKind, type Screen } from "./lib/screen-stack.js";
+import { tabBarVisible } from "./lib/tab-bar.js";
 import { createSessionViews } from "./lib/session-state.js";
 
 /** The history port the app drives; kept out of the component for testability. */
@@ -397,14 +398,14 @@ export default function App() {
   })();
 
   // The bar on the two roots of a native build only (§4); every pushed page and
-  // the whole browser build go without it. `isRootScreen` narrows the kind for
-  // the bar's `root` prop.
-  const tabs =
-    isNativeApp && isRootScreen(screen) ? <TabBar root={screen.kind} onSwitch={switchRoot} /> : null;
+  // the whole browser build go without it. The rule is its own module because
+  // the visibility and the root's name have to agree.
+  const showTabBar = tabBarVisible(screen, { isNativeApp });
+  const tabs = showTabBar ? <TabBar root={screen.kind} onSwitch={switchRoot} /> : null;
 
   return (
     <div
-      className="relative flex h-dvh flex-col overflow-hidden"
+      className={`relative flex h-dvh flex-col overflow-hidden${showTabBar ? " rm-has-tabbar" : ""}`}
       data-gesture={swipe.state}
       style={
         swipe.offset > 0

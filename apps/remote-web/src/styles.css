@@ -152,6 +152,18 @@ body {
   .rm-tabbar {
     padding-bottom: env(safe-area-inset-bottom);
   }
+  /*
+   * The bar already sits above the home indicator, so a root that shows it must
+   * not reserve the bottom inset a second time: only the page's own padding
+   * stays, and the bar's padding covers the indicator. Pushed pages keep the
+   * inset because no bar is there.
+   */
+  .rm-has-tabbar .rm-dock {
+    padding-bottom: 8px;
+  }
+  .rm-has-tabbar .rm-scroll-end {
+    padding-bottom: 24px;
+  }
   .rm-scroll-end {
     padding-bottom: calc(24px + env(safe-area-inset-bottom));
   }
