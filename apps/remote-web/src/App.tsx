@@ -32,6 +32,7 @@ import { TabBar } from "./components/TabBar.js";
 import { useEdgeSwipe } from "./hooks/useEdgeSwipe.js";
 import { usePushRegistration } from "./hooks/usePushRegistration.js";
 import { useHostRegistry } from "./hooks/useHostRegistry.js";
+import { registryHasHosts } from "./lib/host-registry.js";
 import { launchRoot, storeLastRoot } from "./lib/launch-root.js";
 import { setBackHandler } from "./lib/navigation.js";
 import { credentialPort, isNativeApp, nativePlatform } from "./lib/runtime.js";
@@ -52,26 +53,27 @@ const screenHistory = createScreenHistory({
 const sessionViews = createSessionViews(window.localStorage);
 
 /**
+ * The store the launch decision reads and writes; `null` when the platform
+ * blocks `localStorage`. Read once, so both the decision and the memory of it
+ * use the same store.
+ */
+const launchStorage = (() => {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+})();
+
+/**
  * The root this device opens on (§4, ADR mobile-direct-gateway-chat): the
  * remembered root, or the launch decision for the first run. The browser build
  * has one root and never sees Chats.
  */
 const initialRoot = launchRoot({
   isNativeApp,
-  hasHosts: (() => {
-    try {
-      return window.localStorage.getItem("minih.remote-web.hosts.v1") !== null;
-    } catch {
-      return false;
-    }
-  })(),
-  storage: (() => {
-    try {
-      return window.localStorage;
-    } catch {
-      return null;
-    }
-  })(),
+  hasHosts: launchStorage !== null && registryHasHosts(launchStorage),
+  storage: launchStorage,
 });
 
 export default function App() {
