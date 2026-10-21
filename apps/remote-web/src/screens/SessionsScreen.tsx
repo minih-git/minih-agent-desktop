@@ -374,9 +374,14 @@ export function SessionsScreen({
               );
             })}
 
-            <p className="pt-2 text-center text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
-              {t("session.computerNotice")}
-            </p>
+            {/* Only a device that cannot start a session is told where to start
+                one; a controller that sees this line would read a rule the
+                screen itself contradicts. */}
+            {canCreate ? null : (
+              <p className="pt-2 text-center text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
+                {t("session.computerNotice")}
+              </p>
+            )}
           </div>
         )}
       </ScreenContent>

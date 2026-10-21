@@ -42,7 +42,10 @@ const HELPERS = `(() => {
     clickAria: (prefix) => { const found = buttons().find((candidate) => (candidate.getAttribute("aria-label") || "").startsWith(prefix)); if (!found) return false; found.click(); return true; },
     approvalCards: () => Array.from(document.querySelectorAll("section")).filter((card) => textOf(card).includes("Approval needed")).length,
     approvalButtons: () => buttons().filter((candidate) => (candidate.getAttribute("aria-label") || "").startsWith("Approval needed:")).map((candidate) => candidate.getAttribute("aria-label")),
-    toolRows: () => Array.from(document.querySelectorAll("li")).filter((row) => textOf(row).startsWith("Tool")).length,
+    // A tool row is the button that folds one call open: an icon, the tool's own
+    // name and a one-line summary, which is what the phone draws in place of a
+    // "Tool" label and a full paragraph of arguments.
+    toolRows: () => Array.from(document.querySelectorAll("li")).filter((row) => row.querySelector(":scope > button[aria-expanded]")).length,
     turnLabel: () => { const labels = Array.from(document.querySelectorAll("span")).map(textOf); if (labels.includes("Running") || labels.includes("Turn running") || labels.includes("Stopping…")) return "Turn running"; return labels.find((label) => label.startsWith("Turn ")) || null; },
     /** Every button's text: a failing click says what the page really offers. */
     buttonTexts: () => Array.from(document.querySelectorAll("button")).map((b) => (b.textContent || "").trim()).filter(Boolean),
@@ -91,13 +94,12 @@ const HELPERS = `(() => {
       clone.querySelectorAll(".sr-only").forEach((element) => element.remove());
       return (clone.textContent || "").trim().length === 0;
     }).length,
-    toolRowNames: () => Array.from(document.querySelectorAll("main ul > li")).filter((row) => {
-      const label = row.querySelector("span.sr-only") || row.querySelector("span");
-      return label && (label.textContent || "").trim().toLowerCase() === "tool";
-    }).map((row) => {
-      const mono = row.querySelector(".font-mono, .app-mono");
-      return mono ? (mono.textContent || "").trim() : "";
-    }),
+    toolRowNames: () => Array.from(document.querySelectorAll("main ul > li"))
+      .filter((row) => row.querySelector(":scope > button[aria-expanded]"))
+      .map((row) => {
+        const name = row.querySelector(":scope > button > span");
+        return name ? (name.textContent || "").trim() : "";
+      }),
     mainText: () => { const main = document.querySelector("main"); return main ? main.innerText : ""; },
     /**
      * The order the conversation's own prompts appear in, in document order.
@@ -387,12 +389,17 @@ async function runViewport(view, openWindows) {
     observed.groupOfLooseSession = await evaluate(webContents, `__rw.groupOf("Loose session")`);
     await capture("02-groups");
 
-    // The phone can create a session: pick the project, and the composer of the
-    // new session is what opens, ready for the first message.
+    // The phone can create a session: the sheet opens on the project, the model,
+    // the mode and the permission mode, and the composer of the new session is
+    // what opens once it starts.
     await clickText(webContents, "New session");
-    await waitFor(webContents, "document.body.innerText.includes('Choose a project')", "the project picker");
-    await capture("03-choose-project");
+    await waitFor(webContents, "__rw.button('Start') !== null", "the new-session sheet");
+    observed.newSessionSheet = await evaluate(webContents, "__rw.body()");
+    await capture("03-new-session-sheet");
+    await clickText(webContents, "Project");
+    await waitFor(webContents, "document.querySelectorAll('button[role=\"radio\"]').length > 0", "the project list");
     await clickText(webContents, view.projectLabel);
+    await clickText(webContents, "Start");
     await waitFor(webContents, "document.querySelector('textarea[aria-label=\"Message the agent\"]') !== null", "the new session's composer");
     observed.createdSession = await evaluate(webContents, "__rw.turnLabel()");
     await capture("04-new-session");
@@ -406,7 +413,9 @@ async function runViewport(view, openWindows) {
     // The folder picker: walk from the Host's root, register a folder that is
     // not a project yet, and land in a session created in it.
     await clickText(webContents, "New session");
-    await waitFor(webContents, "document.body.innerText.includes('Choose a project')", "the project picker");
+    await waitFor(webContents, "__rw.button('Start') !== null", "the new-session sheet");
+    await clickText(webContents, "Project");
+    await waitFor(webContents, "__rw.button('Add a project') !== null", "the project list with its add-project entry");
     await clickText(webContents, "Add a project");
     // The picker starts at the Host's browse root: it shows `~`, offers no way
     // up, and lists the folders the Host allows.
@@ -416,6 +425,11 @@ async function runViewport(view, openWindows) {
     await waitFor(webContents, "__rw.button('Use this folder') !== null", "the chosen folder");
     await capture("05-add-project");
     await clickText(webContents, "Use this folder");
+    // The sheet comes back on the folder that was just registered; starting the
+    // session is the last step, exactly as it is for an existing project.
+    await waitFor(webContents, "__rw.button('Start') !== null", "the sheet on the new project");
+    observed.addedProjectSheet = await evaluate(webContents, "__rw.body()");
+    await clickText(webContents, "Start");
     await waitFor(webContents, "document.querySelector('textarea[aria-label=\\\"Message the agent\\\"]') !== null", "the session of the new project");
     observed.newProjectComposer = await evaluate(
       webContents,
@@ -565,6 +579,7 @@ async function runLongSession(webContents, view, observed, capture) {
   observed.longAnchorBefore = JSON.parse(await evaluate(webContents, "JSON.stringify(__rw.anchorRow())"));
   observed.longBeforeSecond = JSON.parse(await evaluate(webContents, "JSON.stringify({ state: __rw.scrollState(), rows: __rw.rowCount(), first: __rw.anchorRow() })"));
   const rowsBeforeSecondLoad = await evaluate(webContents, "__rw.rowCount()");
+  observed.longHeldIds = JSON.parse(await evaluate(webContents, "JSON.stringify(Array.from(document.querySelectorAll('main ul > li')).slice(0,3).map((row) => row.getAttribute('data-item-id')))"));
   observed.longSecondLoadOffered = await clickTextIfPresent(webContents, "Load earlier");
   observed.longSecondLoadGrew = observed.longSecondLoadOffered
     ? await waitForOrNull(webContents, `__rw.rowCount() > ${rowsBeforeSecondLoad}`)
