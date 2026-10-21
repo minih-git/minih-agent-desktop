@@ -49,6 +49,10 @@ try {
     lifecycle.applyNativeThemeSource({ theme: "light" });
     await lifecycle.createWindowForLifecycle();
     const window = state.mainWindow;
+    // The production window can still be hidden while ready-to-show is pending.
+    // Keep animation-frame waits live without changing production window policy.
+    window.webContents.setBackgroundThrottling(false);
+    assert.equal(window.webContents.getBackgroundThrottling(), false);
     const handlers = new Map();
     registerWindowIpc({
       registrar: {
