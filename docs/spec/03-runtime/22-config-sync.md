@@ -283,6 +283,16 @@ preview, mappings and security/connection maintenance expand on demand;
 errors, manual progress and pending approvals stay visible. Collapsing content
 does not reset form values or issue a Host request.
 
+A merge conflict is one decision, not two approvals. The Host reports both
+each with the canonical entity id and its side (`local` or `remote`); the
+item's label stays side-neutral, so accepting a side never publishes a side
+suffix to other devices. The page folds the pair into one row that names the
+never publishes a side suffix to other devices. The page folds the pair into
+one row that names the conflicting item and offers "accept this device" and
+"accept the vault" — approving one side is what dismisses its sibling. A pair
+whose other side is already dismissed keeps a single acceptance plus the
+ordinary rejection.
+
 Reopening the page paints cached redacted state/history and a validated,
 non-sensitive draft, then refreshes in the background. The draft key is
 `pi.desktop.configSyncRouterDraft.v1`; the legacy S3 draft key is removed on

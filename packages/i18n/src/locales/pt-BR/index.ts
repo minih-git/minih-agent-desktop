@@ -1445,6 +1445,9 @@ export const ptBR = {
       approvalsDescription: "As configurações importadas que podem ser executadas ou afetar a segurança ficam pendentes até você aprová-las neste dispositivo.",
       approve: "Aprovar",
       reject: "Rejeitar",
+      conflictChoiceHint: "Este item mudou neste dispositivo e no cofre. Mantenha um lado.",
+      conflictAcceptLocal: "Aceitar este dispositivo",
+      conflictAcceptRemote: "Aceitar o cofre",
       mapFolder: "Mapear pasta",
       approvalReason: {
         newDevice: "Novo dispositivo",

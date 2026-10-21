@@ -1086,6 +1086,9 @@ sklm: {
         "Imported executable or security-sensitive configuration is staged until you approve it on this device.",
       approve: "Approve",
       reject: "Reject",
+      conflictChoiceHint: "Este elemento cambió en este dispositivo y en la bóveda. Conserva un lado.",
+      conflictAcceptLocal: "Aceptar este dispositivo",
+      conflictAcceptRemote: "Aceptar la bóveda",
       mapFolder: "Asignar carpeta",
       approvalReason: {
         newDevice: "New device",

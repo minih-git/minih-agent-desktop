@@ -1089,6 +1089,9 @@ sklm: {
       approvalsDescription: "İçe aktarılan çalıştırılabilir veya güvenlik açısından hassas yapılandırma, bu cihazda onaylanana kadar bekletilir.",
       approve: "Onayla",
       reject: "Reddet",
+      conflictChoiceHint: "Bu öğe hem bu cihazda hem kasada değişti. Bir tarafı koruyun.",
+      conflictAcceptLocal: "Bu cihazı kabul et",
+      conflictAcceptRemote: "Kasayı kabul et",
       mapFolder: "Klasörü eşle",
       approvalReason: {
         newDevice: "Yeni cihaz",

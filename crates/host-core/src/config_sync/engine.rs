@@ -174,6 +174,15 @@ fn default_journal_state() -> String {
     "staged".into()
 }
 
+/// Which side of a merge conflict an approval carries: `local` is this
+/// device's candidate, `remote` the vault's, and both replace `baseId`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicConflictSide {
+    base_id: String,
+    side: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PublicPendingApproval {
@@ -186,6 +195,8 @@ struct PublicPendingApproval {
     created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     mapping_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    conflict: Option<PublicConflictSide>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -398,6 +409,20 @@ fn conflict_base_id(entity_id: &str) -> Option<&str> {
         .or_else(|| entity_id.strip_suffix(":remote"))
 }
 
+/// The conflict pair an approval belongs to, if any.
+fn conflict_side(entity_id: &str) -> Option<PublicConflictSide> {
+    let base_id = conflict_base_id(entity_id)?;
+    Some(PublicConflictSide {
+        base_id: base_id.to_string(),
+        side: if entity_id.ends_with(":local") {
+            "local"
+        } else {
+            "remote"
+        }
+        .to_string(),
+    })
+}
+
 fn manifest_map(manifest: Option<&RevisionManifest>) -> BTreeMap<(String, String), PortableEntity> {
     manifest
         .map(|value| {
@@ -560,6 +585,7 @@ fn public_pending(bundle: Option<&PendingBundle>) -> Vec<PublicPendingApproval> 
                         .or_else(|| item.entity.payload.get("logicalId"))
                         .and_then(Value::as_str)
                         .map(str::to_string),
+                    conflict: conflict_side(&item.entity.entity_id),
                 })
                 .collect()
         })

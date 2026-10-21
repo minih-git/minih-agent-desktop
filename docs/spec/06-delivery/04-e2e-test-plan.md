@@ -10174,7 +10174,8 @@ selection already in place shows it without waiting for another event.
      without changing local group names, roots or ordering. Existing vault
      `projects` entities are ignored on sync/restore, preserving local projects
      and cloud history. Exercise disjoint edits,
-     same-entity conflicts and explicit choice convergence, remote deletion
+     same-entity conflicts (shown as one row with "accept this device" and
+     "accept the vault"), explicit choice convergence, remote deletion
      versus offline edit, and repeated polling. Credential opt-out must not
      manufacture local edits or prevent deletion convergence. No real executable
      capability is run.

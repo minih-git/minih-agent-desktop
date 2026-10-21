@@ -440,6 +440,32 @@ async fn chosen_conflict_is_published_without_reopening_old_candidates() -> Resu
         .set_setting("app", &json!({"theme":"system"}))?;
     sync_now(a.clone(), tx.clone()).await?;
     let conflict = sync_now(b.clone(), tx.clone()).await?;
+    let sides: std::collections::BTreeMap<String, (String, String)> = conflict["pendingApprovals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| {
+            Some((
+                item["conflict"]["side"].as_str()?.to_string(),
+                (
+                    item["conflict"]["baseId"].as_str()?.to_string(),
+                    item["label"].as_str()?.to_string(),
+                ),
+            ))
+        })
+        .collect();
+    assert_eq!(sides.len(), 2, "one approval per side: {conflict}");
+    assert_eq!(
+        sides["local"].0, sides["remote"].0,
+        "both sides name the same entity"
+    );
+    // The side is reported separately, so no candidate label carries a suffix
+    // that an accepted version would publish to every device.
+    for (base_id, label) in sides.values() {
+        assert_eq!(base_id, "application");
+        assert_eq!(label, "Application preferences");
+        assert!(!label.contains("(local)") && !label.contains("(remote)"));
+    }
     let item = conflict["pendingApprovals"]
         .as_array()
         .unwrap()

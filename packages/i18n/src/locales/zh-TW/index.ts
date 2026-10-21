@@ -1080,6 +1080,9 @@ sklm: {
       approvalsDescription: "匯入的可執行或安全敏感設定會暫存，直到你在此裝置上核准。",
       approve: "核准",
       reject: "拒絕",
+      conflictChoiceHint: "這一項在本機和雲端都改動過，保留一側即可。",
+      conflictAcceptLocal: "接受本機",
+      conflictAcceptRemote: "接受遠端",
       mapFolder: "對應資料夾",
       approvalReason: {
         newDevice: "新裝置",
