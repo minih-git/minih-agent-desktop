@@ -38,7 +38,8 @@ describe("screenFromHistoryState", () => {
       { kind: "chats" } as Screen,
       { kind: "chat" } as Screen,
       { kind: "chatArchive" } as Screen,
-      { kind: "modelGateway" } as Screen,
+      { kind: "modelGateway", from: "chats" } as Screen,
+      { kind: "modelGateway", from: "hosts", viaSettings: true } as Screen,
       { kind: "settings", from: "hosts" } as Screen,
     ]) {
       expect(screenFromHistoryState({ screen })).toEqual(screen);

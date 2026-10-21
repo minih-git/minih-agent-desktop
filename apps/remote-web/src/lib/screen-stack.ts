@@ -70,8 +70,16 @@ export type Screen =
   | { kind: "chat" }
   /** D4: archived direct conversations (native builds only). */
   | { kind: "chatArchive" }
-  /** D2: connect a model gateway account (native builds only). */
-  | { kind: "modelGateway" }
+  /**
+   * D2: connect a model gateway account (native builds only).
+   *
+   * `from` records the root it was opened from, because the ADR's table says back
+   * goes "where it was opened from": D1's empty state, a new chat without a key,
+   * or S8. `viaSettings` says the door was Settings, so back lands on Settings
+   * rather than on the root — the same shape `projectSessions.viaProjects` uses
+   * for a page reached without visiting the level above it.
+   */
+  | { kind: "modelGateway"; from: RootKind; viaSettings?: boolean }
   /**
    * S8: Settings, pushed from the gear on either root. `from` records the root
    * the gear was opened from, the way `projectSessions.viaProjects` records its
@@ -123,8 +131,11 @@ export function previousScreen(screen: Screen): Screen | null {
       return { kind: "hosts" };
     case "chat":
     case "chatArchive":
-    case "modelGateway":
       return { kind: "chats" };
+    case "modelGateway":
+      return screen.viaSettings === true
+        ? { kind: "settings", from: screen.from }
+        : { kind: screen.from };
     case "settings":
       return { kind: screen.from };
     case "chats":

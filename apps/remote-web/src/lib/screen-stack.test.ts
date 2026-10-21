@@ -59,7 +59,20 @@ describe("previousScreen", () => {
   it("goes from a direct-chat page back to the Chats root", () => {
     expect(previousScreen({ kind: "chat" })).toEqual({ kind: "chats" });
     expect(previousScreen({ kind: "chatArchive" })).toEqual({ kind: "chats" });
-    expect(previousScreen({ kind: "modelGateway" })).toEqual({ kind: "chats" });
+  });
+
+  it("returns D2 to the page it was opened from", () => {
+    // From D1's empty state, or a new chat without a key: back is Chats.
+    expect(previousScreen({ kind: "modelGateway", from: "chats" })).toEqual({ kind: "chats" });
+    // From Settings: back is Settings, which itself returns to its own root.
+    expect(previousScreen({ kind: "modelGateway", from: "chats", viaSettings: true })).toEqual({
+      kind: "settings",
+      from: "chats",
+    });
+    expect(previousScreen({ kind: "modelGateway", from: "hosts", viaSettings: true })).toEqual({
+      kind: "settings",
+      from: "hosts",
+    });
   });
 
   it("returns Settings to the root its gear was opened from", () => {

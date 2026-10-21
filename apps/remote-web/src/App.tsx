@@ -319,7 +319,7 @@ export default function App() {
         <ChatsScreen
           connection={connection}
           gatewayConfigured={modelGatewayOrigin !== null}
-          onConnect={() => navigate({ kind: "modelGateway" })}
+          onConnect={() => navigate({ kind: "modelGateway", from: "chats" })}
           onOpenSettings={() => navigate({ kind: "settings", from: "chats" })}
           onOpenModels={() => setModelsOpen(true)}
         />
@@ -351,7 +351,9 @@ export default function App() {
           connection={connection}
           gatewayConfigured={modelGatewayOrigin !== null}
           onBack={goBack}
-          onConnect={() => navigate({ kind: "modelGateway" })}
+          onConnect={() =>
+            navigate({ kind: "modelGateway", from: screen.from, viaSettings: true })
+          }
           onDisconnect={async () => {
             await directChatService().disconnect();
             reloadConnection();
@@ -367,7 +369,7 @@ export default function App() {
         <ChatsScreen
           connection={connection}
           gatewayConfigured={modelGatewayOrigin !== null}
-          onConnect={() => navigate({ kind: "modelGateway" })}
+          onConnect={() => navigate({ kind: "modelGateway", from: "chats" })}
           onOpenSettings={() => navigate({ kind: "settings", from: "chats" })}
           onOpenModels={() => setModelsOpen(true)}
         />

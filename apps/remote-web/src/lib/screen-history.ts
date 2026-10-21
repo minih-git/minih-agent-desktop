@@ -58,8 +58,16 @@ export function screenFromHistoryState(state: unknown): Screen | null {
     case "account":
     case "chat":
     case "chatArchive":
-    case "modelGateway":
       return { kind: screen.kind };
+    case "modelGateway":
+      // Both halves of the origin are needed to restore the same back step.
+      return isRootKind(screen.from)
+        ? {
+            kind: "modelGateway",
+            from: screen.from,
+            ...(screen.viaSettings === true ? { viaSettings: true } : {}),
+          }
+        : null;
     case "settings":
       return isRootKind(screen.from) ? { kind: "settings", from: screen.from } : null;
     case "projects":
