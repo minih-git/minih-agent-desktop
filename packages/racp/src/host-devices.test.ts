@@ -782,6 +782,60 @@ describe("Host device directory: desktop-class devices", () => {
     // A computer that never admitted anything is a no-op, not an error.
     expect(await beta.handleHostRevoked("host_unrelated", revokedAt)).toBe(0);
   });
+
+  it("converges on the account's grant when two computers admit the same request", async () => {
+    // Every computer of the account receives the same request and the same
+    // proof, so both can admit it at once. The Gateway keeps only the first
+    // grant and the client receives only that token, so the computer that also
+    // approved must drop its own device and adopt the surviving one — otherwise
+    // the account would carry a token that works nowhere.
+    const f = await fixture();
+    const alphaSent: RacpDeviceGrantFrame[] = [];
+    const betaSent: RacpDeviceGrantFrame[] = [];
+    const alpha = directoryFor(f, "alpha", { confirmer: { confirm: async () => "denied" } });
+    const beta = directoryFor(f, "beta", { confirmer: { confirm: async () => "denied" } });
+    const desktopRequest = request({ client: "desktop" });
+    desktopRequest.hostProof = proofFor(f.beta, desktopRequest);
+
+    // Both verify the same proof themselves, and each mints its own token.
+    expect(await alpha.handleRequest(desktopRequest, (frame) => alphaSent.push(frame))).toBe("granted");
+    expect(await beta.handleRequest(desktopRequest, (frame) => betaSent.push(frame))).toBe("granted");
+    const own = alphaSent[0]!;
+    const survivor = betaSent[0]!;
+    expect(own.grant.deviceId).not.toBe(survivor.grant.deviceId);
+
+    // The Gateway relays only the survivor back to the other computer.
+    expect(await alpha.handleGrant(asRelayed(survivor))).toBe("adopted");
+
+    // Its own token is gone, the survivor's works, and exactly one device of
+    // this request is live here.
+    expect(await authenticate(f.alphaStore, own.deviceToken!)).toBeNull();
+    expect(await authenticate(f.alphaStore, survivor.deviceToken!)).not.toBeNull();
+    const live = (await alpha.devices()).filter((device) => device.deviceClass === "desktop" && !device.revokedAt);
+    expect(live.map((device) => device.deviceId)).toEqual([survivor.grant.deviceId]);
+    // The dropped device is revoked, not deleted, so a re-delivered grant for it
+    // cannot resurrect it.
+    expect((await alpha.devices()).find((device) => device.deviceId === own.grant.deviceId)?.revokedAt).toBeTruthy();
+  });
+
+  it("still refuses a nonce it spent on a different request", async () => {
+    // The exemption is per request, not per nonce: the same proof presented for
+    // another request this Host never admitted is still a replay.
+    const f = await fixture();
+    const sent: RacpDeviceGrantFrame[] = [];
+    const alpha = directoryFor(f, "alpha", { confirmer: { confirm: async () => "approved" } });
+    const first = request({ client: "desktop", requestId: "req_1" });
+    first.hostProof = proofFor(f.beta, first);
+    await alpha.handleRequest(first, (frame) => sent.push(frame));
+
+    const replay = signedGrant(f.beta, {
+      ...asRelayed(sent[0]!).grant,
+      requestId: "req_2",
+      grantId: "grant_replayed",
+      deviceId: "dev_replayed",
+    });
+    expect(await alpha.handleGrant(replay)).toBe("refused");
+  });
 });
 
 /** Build one signed revocation frame from a Host identity. */

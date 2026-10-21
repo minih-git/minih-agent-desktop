@@ -19,7 +19,7 @@ import { createSshBootstrap, type SshBootstrapDeps } from "../remote/ssh-bootstr
 import { createSshTunnelManager, type SshTunnelManager } from "../remote/ssh-tunnel.js";
 import { createRemoteHostConnection, type RemoteHostConnection } from "../remote/remote-host-connection.js";
 import { createRemoteHostRegistry, type EncryptionPort, type RemoteHostRecord, type RemoteHostRegistry } from "../remote/remote-host-registry.js";
-import { sshMetadataOf, sshHostRecord, transportOf } from "../remote/remote-host-metadata.js";
+import { accountMetadataOf, sshMetadataOf, sshHostRecord, transportOf } from "../remote/remote-host-metadata.js";
 import { createRemoteSessionCatalog } from "../remote/remote-session-catalog.js";
 import { syncRemoteProviders } from "../remote/remote-provider-transfer.js";
 import { workspaceExecutionError } from "../remote/remote-workspace-outcome.js";
@@ -160,6 +160,10 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
   const buildAdapter = options.buildAdapter ?? ((record: RemoteHostRecord) => {
     let first = true;
     const ssh = sshMetadataOf(record);
+    // A sibling computer of the same account is dialled directly over the
+    // Gateway's `RACP-WS` route, so its identity is the `hostId` the account
+    // directory named — not an SSH descriptor's (ADR amendment 3, decision 8).
+    const account = accountMetadataOf(record);
     return createRacpRemoteHostClient({
       transport: async () => {
         assertOpen();
@@ -177,7 +181,7 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
         first = false;
         return wsClientTransport({ url, token: record.deviceToken })();
       },
-      expectedHostId: ssh?.hostId,
+      expectedHostId: ssh?.hostId ?? account?.hostId,
       onStateChange: () => { if (!closed) changed(); },
       clientInfo: options.clientInfo,
       reconnect: { enabled: true, baseDelayMs: 500, maxDelayMs: 15_000, maxAttempts: 10 },
@@ -226,6 +230,13 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
     const ssh = sshMetadataOf(record);
     if (record.metadata?.transport === "ssh" && !ssh) {
       throw Object.assign(new Error("invalid SSH host metadata"), { errorCode: "INVALID_ARGUMENT" });
+    }
+    // The same rule for an account record: a descriptor that does not validate
+    // reads as `direct` (which is what `transportOf` reports), so a record that
+    // *claims* to be an account computer but cannot be one is refused here
+    // rather than dialled with a URL nothing verified.
+    if (record.metadata?.transport === "account" && !accountMetadataOf(record)) {
+      throw Object.assign(new Error("invalid account host metadata"), { errorCode: "INVALID_ARGUMENT" });
     }
     // Readiness compares the running Host against the release this desktop
     // expects, not the version recorded at pairing time: a stale descriptor

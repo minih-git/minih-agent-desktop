@@ -179,6 +179,18 @@ export class HostDeviceDirectory {
    * device request window.
    */
   private readonly usedNonces = new Map<string, number>();
+  /**
+   * The device this Host minted for a desktop request, by `requestId`.
+   *
+   * Every computer of the account is asked the same request, so two of them can
+   * admit it at the same moment — each minting its own token. The Gateway keeps
+   * only the first grant and relays that one to the others, so this Host has to
+   * converge on it: it revokes the token it minted for that request and adopts
+   * the one everybody else will hold. Without this, the computer that approved
+   * first would refuse the surviving grant as a replayed nonce and be the one
+   * machine where the account's device does not work.
+   */
+  private readonly ownDesktopDevices = new Map<string, string>();
 
   constructor(private readonly options: HostDeviceDirectoryOptions) {
     const accountId = readCertificateAccountBinding(options.signer.certificatePem);
@@ -393,6 +405,9 @@ export class HostDeviceDirectory {
       // ceiling-exempt and what a Host revocation cascades through (decision 4).
       ...(desktop && proof ? { deviceClass: "desktop" as const, applicantHostId: proof.applicantHostId } : {}),
     });
+    // Remembered so a sibling's grant for the same request can replace it: only
+    // one of the account's computers ends up holding the token the client got.
+    if (desktop) this.ownDesktopDevices.set(request.requestId, deviceId);
     const grant: RacpDeviceGrant = {
       grantId: `grant_${randomUUID()}`,
       requestId: request.requestId,
@@ -456,7 +471,13 @@ export class HostDeviceDirectory {
     if (!grant.applicantHostId || !grant.hostProofNonce || !grant.requestExpiresAt || !grant.applicantCertificate) {
       return "proof_missing";
     }
-    if (this.usedNonces.has(grant.hostProofNonce)) return "proof_replayed";
+    // A nonce this Host used itself for THIS request is not a replay: every
+    // computer of the account receives the same request and the same proof, so
+    // two of them admitting it is the normal case. The Gateway keeps only the
+    // first grant and this Host converges on it in `handleGrant`.
+    if (this.usedNonces.has(grant.hostProofNonce) && !this.ownDesktopDevices.has(grant.requestId)) {
+      return "proof_replayed";
+    }
     // The grant's own window is the only thing that can expire by the time it
     // reaches this Host.
     if (Date.parse(grant.deliverUntil) <= this.now()) return "expired";
@@ -565,6 +586,24 @@ export class HostDeviceDirectory {
       // and its own switch (ADR amendment 3, decision 3).
       const refusal = this.reverifyDesktopGrant(grant);
       if (refusal) return this.refuseGrant(refusal, grant.deviceId);
+    }
+    // This Host may have admitted the same request itself a moment ago: every
+    // computer of the account is asked, and each minted its own token. The
+    // Gateway keeps only the first grant and the client receives only that
+    // token, so this Host drops the device it minted and adopts the one
+    // everybody else will hold — otherwise the account would carry a second
+    // device nobody can use.
+    if (desktop) {
+      const own = this.ownDesktopDevices.get(grant.requestId);
+      if (own && own !== grant.deviceId) {
+        await this.options.store.revokeDevice(own, new Date(this.now()).toISOString());
+        this.ownDesktopDevices.delete(grant.requestId);
+        this.options.log("info", "replaced this Host's own admission with the account's", {
+          requestId: grant.requestId,
+          dropped: own,
+          adopted: grant.deviceId,
+        });
+      }
     }
     const existing = await this.findDevice(grant.deviceId);
     if (existing) {
