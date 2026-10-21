@@ -669,6 +669,119 @@ describe("Host device directory: desktop-class devices", () => {
     // Switch off: the same refusal, because the sibling did not decide to admit it.
     expect(await directoryFor(f, "beta", { desktopAutoAdmission: false }).handleGrant(relayed)).toBe("refused");
   });
+
+  it("adopts a desktop grant on a sibling that was offline past the request's expiry", async () => {
+    const f = await fixture();
+    const sent: RacpDeviceGrantFrame[] = [];
+    const alpha = directoryFor(f, "alpha", { confirmer: { confirm: async () => "approved" } });
+    const desktopRequest = request({ client: "desktop" });
+    desktopRequest.hostProof = proofFor(f.beta, desktopRequest);
+    await alpha.handleRequest(desktopRequest, (frame) => sent.push(frame));
+    const relayed = asRelayed(sent[0]!);
+
+    // The sibling was asleep while the device was admitted, and only reconnects
+    // after the five-minute request has expired but inside the grant's own
+    // delivery window. D666 decision 6 requires this to work.
+    const later = directoryFor(f, "beta", { now: NOW + 60 * 60 * 1000 });
+    expect(await later.handleGrant(relayed)).toBe("adopted");
+    const adopted = (await later.devices()).find((device) => device.deviceId === relayed.grant.deviceId);
+    expect(adopted?.roles).toEqual(["owner"]);
+    expect(adopted?.deviceClass).toBe("desktop");
+    expect(adopted?.applicantHostId).toBe("host_beta");
+  });
+
+  it("refuses a desktop grant past its delivery window, and one issued after its request expired", async () => {
+    const f = await fixture();
+    const sent: RacpDeviceGrantFrame[] = [];
+    const alpha = directoryFor(f, "alpha", { confirmer: { confirm: async () => "approved" } });
+    const desktopRequest = request({ client: "desktop" });
+    desktopRequest.hostProof = proofFor(f.beta, desktopRequest);
+    await alpha.handleRequest(desktopRequest, (frame) => sent.push(frame));
+    const relayed = asRelayed(sent[0]!);
+
+    // Past `deliverUntil` the grant is no longer deliverable at all.
+    const tooLate = directoryFor(f, "beta", { now: Date.parse(relayed.grant.deliverUntil) + 1000 });
+    expect(await tooLate.handleGrant(relayed)).toBe("refused");
+
+    // A grant that claims it was issued after its own request expired was never
+    // fresh, whatever its signature says.
+    const lateIssue = {
+      ...relayed,
+      grant: { ...relayed.grant, issuedAt: new Date(Date.parse(relayed.grant.requestExpiresAt!) + 1000).toISOString() },
+    };
+    expect(await directoryFor(f, "beta").handleGrant(signedGrant(f.alpha, lateIssue.grant))).toBe("refused");
+  });
+
+  it("gives a desktop device the ceiling exemption, and leaves a phone device under it", async () => {
+    const f = await fixture();
+    // A desktop-class device: the proof was verified, so it stands where an
+    // SSH-paired owner stands (ADR amendment 3, decision 4).
+    const desktopToken = "pdt1.desktop-device";
+    await f.alphaStore.saveDevice({
+      deviceId: "dev_desktop",
+      label: "sibling desktop",
+      roles: ["owner"],
+      tokenHash: hashToken(desktopToken),
+      createdAt: new Date(NOW).toISOString(),
+      origin: "gateway",
+      deviceClass: "desktop",
+      applicantHostId: "host_beta",
+    });
+    const desktop = await authenticate(f.alphaStore, desktopToken);
+    expect(desktop?.principal.roles).toEqual(["owner"]);
+    expect(desktop?.principal.pairedDevice).toBe(true);
+
+    // A phone device is unchanged: gateway origin, no owner, ceiling applies.
+    const phoneToken = "pdt1.phone-device";
+    await f.alphaStore.saveDevice({
+      deviceId: "dev_phone",
+      label: "phone",
+      roles: ["viewer", "controller", "approver"],
+      tokenHash: hashToken(phoneToken),
+      createdAt: new Date(NOW).toISOString(),
+      origin: "gateway",
+    });
+    const phone = await authenticate(f.alphaStore, phoneToken);
+    expect(phone?.principal.pairedDevice).toBe(false);
+
+    // A record that *claims* owner without the desktop class is still under the
+    // ceiling: the class is what the proof earned, not the role string alone.
+    const forgedToken = "pdt1.owner-without-proof";
+    await f.alphaStore.saveDevice({
+      deviceId: "dev_forged_owner",
+      label: "not a desktop",
+      roles: ["owner"],
+      tokenHash: hashToken(forgedToken),
+      createdAt: new Date(NOW).toISOString(),
+      origin: "gateway",
+    });
+    const forged = await authenticate(f.alphaStore, forgedToken);
+    expect(forged?.principal.pairedDevice).toBe(false);
+  });
+
+  it("revokes the desktop devices of a computer the Gateway revoked", async () => {
+    const f = await fixture();
+    const sent: RacpDeviceGrantFrame[] = [];
+    const alpha = directoryFor(f, "alpha", { confirmer: { confirm: async () => "approved" } });
+    const desktopRequest = request({ client: "desktop" });
+    desktopRequest.hostProof = proofFor(f.beta, desktopRequest);
+    await alpha.handleRequest(desktopRequest, (frame) => sent.push(frame));
+    const relayed = asRelayed(sent[0]!);
+
+    const beta = directoryFor(f, "beta", { confirmer: { confirm: async () => "approved" } });
+    expect(await beta.handleGrant(relayed)).toBe("adopted");
+
+    // The operator revokes the applicant on the Gateway; its devices lose their
+    // standing here too, and the token stops authenticating.
+    const revokedAt = new Date(NOW + 1000).toISOString();
+    expect(await beta.handleHostRevoked("host_beta", revokedAt)).toBe(1);
+    const device = (await beta.devices()).find((entry) => entry.deviceId === relayed.grant.deviceId);
+    expect(device?.revokedAt).toBe(revokedAt);
+    expect(await authenticate(f.betaStore, sent[0]!.deviceToken!)).toBeNull();
+
+    // A computer that never admitted anything is a no-op, not an error.
+    expect(await beta.handleHostRevoked("host_unrelated", revokedAt)).toBe(0);
+  });
 });
 
 /** Build one signed revocation frame from a Host identity. */

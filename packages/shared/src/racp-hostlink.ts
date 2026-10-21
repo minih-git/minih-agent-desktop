@@ -302,6 +302,34 @@ export const RacpHostJoinedFrameSchema = Type.Object({
 export type RacpHostJoinedFrame = Static<typeof RacpHostJoinedFrameSchema>;
 
 /**
+ * "This computer was revoked on the Gateway" (ADR amendment 3, decision 4).
+ *
+ * `owner` follows the applicant's certificate: when the operator revokes a Host
+ * with `hosts revoke`, every desktop-class device that computer's proof
+ * admitted loses its standing with it. Only the Gateway observes a Host
+ * revocation, so it is the one that tells the account's other computers.
+ *
+ * Trusting this frame is safe because it only ever *removes* authority: the
+ * worst a forged one can do is revoke a device that would otherwise keep
+ * working. A frame that could grant something would need a Host signature; this
+ * one needs none.
+ */
+export const RacpHostRevokedSchema = Type.Object({
+  /** The revoked computer; also the applicant whose devices lose `owner`. */
+  hostId: notifyId(),
+  accountId: Type.String({ minLength: 1 }),
+  revokedAt: Type.String(),
+});
+export type RacpHostRevoked = Static<typeof RacpHostRevokedSchema>;
+
+export const RacpHostRevokedFrameSchema = Type.Object({
+  link: Type.Literal(RACP_HOSTLINK_VERSION),
+  type: Type.Literal("host.revoked"),
+  revocation: RacpHostRevokedSchema,
+});
+export type RacpHostRevokedFrame = Static<typeof RacpHostRevokedFrameSchema>;
+
+/**
  * The four events a notification may report (ADR 0331 decision 7, protocol
  * §11.6). The list is closed on purpose: a push says that one of these
  * happened, never what it contained.
@@ -402,6 +430,7 @@ export const RacpHostLinkFrameSchema = Type.Union([
   RacpDeviceGrantFrameSchema,
   RacpDeviceRevokeFrameSchema,
   RacpHostJoinedFrameSchema,
+  RacpHostRevokedFrameSchema,
   // ---- Redacted push (§11.6, R5 PR-6) ------------------------------------
   // Host to Gateway only, and only from a Host that advertises `push.notify`.
   RacpHostNotifyFrameSchema,

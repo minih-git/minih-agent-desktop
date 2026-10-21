@@ -250,12 +250,18 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
           return { ok: true, enrollment: code };
         }
         case "hosts.revoke": {
-          const revoked = await store.revokeHost(request.payload.hostId, new Date(now ? now() : Date.now()).toISOString());
+          const revokedAt = new Date(now ? now() : Date.now()).toISOString();
+          const revoked = await store.revokeHost(request.payload.hostId, revokedAt);
           if (!revoked) return { ok: false, code: "NOT_FOUND" };
           const disconnected = hostLinks.disconnect(request.payload.hostId);
+          // `owner` follows the applicant's certificate: the account's other
+          // computers are told so they revoke the desktop devices this computer's
+          // proof admitted (ADR amendment 3, decision 4). Stored first, so an
+          // offline computer receives it when its link comes up.
+          const cascaded = await deviceRequests.announceHostRevoked({ hostId: request.payload.hostId, revokedAt });
           await store.appendAudit({ op: "hosts.revoke", hostId: request.payload.hostId, ip: "admin", result: "ok" });
-          log("info", "gateway revoked a Host", { hostId: request.payload.hostId, disconnected });
-          return { ok: true, revoked: true };
+          log("info", "gateway revoked a Host", { hostId: request.payload.hostId, disconnected, cascaded: cascaded.length });
+          return { ok: true, revoked: true, cascaded: cascaded.length };
         }
         case "devices.revoke": {
           const revoked = await store.revokeDevice(request.payload.deviceId, new Date(now ? now() : Date.now()).toISOString());

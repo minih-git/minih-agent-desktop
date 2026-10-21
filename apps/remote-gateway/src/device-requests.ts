@@ -806,6 +806,62 @@ export class DeviceRequestService {
         if (this.options.hostLinks.sendToHost(hostId, frame)) delivered += 1;
       }
     }
+    // A computer that was offline when another was revoked still applies it, for
+    // the same reason a missed device revocation is re-offered.
+    for (const notice of this.options.store.listHostRevoked(host.accountId)) {
+      const frame = {
+        link: RACP_HOSTLINK_VERSION as typeof RACP_HOSTLINK_VERSION,
+        type: "host.revoked" as const,
+        revocation: { hostId: notice.hostId, accountId: notice.accountId, revokedAt: notice.revokedAt },
+      };
+      if (hostAdvertisesCapability(this.options.hostLinks.capabilitiesFor(hostId), RACP_HOST_CAPABILITIES.deviceDesktopAuto)) {
+        if (this.options.hostLinks.sendToHost(hostId, frame)) delivered += 1;
+      }
+    }
+  }
+
+  /**
+   * Tell the account's computers that one of them was revoked on the Gateway
+   * (ADR amendment 3, decision 4). Each of them revokes the desktop devices that
+   * computer's proof admitted, so `owner` really does follow the certificate.
+   *
+   * Stored first and re-offered on reconnect, exactly like `host.joined`: a
+   * computer that was asleep when the revocation happened still applies it. Only
+   * a Host that advertises `device.desktop-auto` is told, because only such a
+   * Host can hold a desktop-class device at all.
+   */
+  async announceHostRevoked(input: { hostId: string; revokedAt: string }): Promise<string[]> {
+    const host = this.options.store.findHost(input.hostId);
+    if (!host?.accountId) return [];
+    await this.options.store.saveHostRevoked({
+      noticeId: `revoked_${input.hostId}`,
+      accountId: host.accountId,
+      hostId: input.hostId,
+      revokedAt: input.revokedAt,
+      relayUntil: new Date(this.nowMs() + GRANT_DELIVERY_WINDOW_MS).toISOString(),
+    });
+    const relayed = this.relayHostRevoked(host.accountId, input.hostId);
+    await this.audit("account.host.revoked", "admin", "ok", host.accountId, { hostId: input.hostId });
+    this.options.log("info", "gateway announced a revoked account computer", { hostId: input.hostId, relayed: relayed.length });
+    return relayed;
+  }
+
+  /** Send the account's host-revoked notices to the Hosts that can act on them. */
+  private relayHostRevoked(accountId: string, exceptHostId?: string): string[] {
+    const relayed: string[] = [];
+    for (const sibling of this.options.store.listHostsForAccount(accountId)) {
+      if (sibling.hostId === exceptHostId) continue;
+      if (!hostAdvertisesCapability(this.options.hostLinks.capabilitiesFor(sibling.hostId), RACP_HOST_CAPABILITIES.deviceDesktopAuto)) continue;
+      for (const notice of this.options.store.listHostRevoked(accountId)) {
+        const frame = {
+          link: RACP_HOSTLINK_VERSION as typeof RACP_HOSTLINK_VERSION,
+          type: "host.revoked" as const,
+          revocation: { hostId: notice.hostId, accountId: notice.accountId, revokedAt: notice.revokedAt },
+        };
+        if (this.options.hostLinks.sendToHost(sibling.hostId, frame)) relayed.push(sibling.hostId);
+      }
+    }
+    return relayed;
   }
 
   private async audit(

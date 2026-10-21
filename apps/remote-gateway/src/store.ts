@@ -176,6 +176,20 @@ export type GatewayHostJoinedRecord = {
 };
 
 /**
+ * One "this computer was revoked on the Gateway" notice, held for the account's
+ * other computers (ADR amendment 3, decision 4). They revoke the desktop
+ * devices that computer's proof admitted; a computer that was offline when the
+ * revocation happened receives it when its link comes up.
+ */
+export type GatewayHostRevokedRecord = {
+  noticeId: string;
+  accountId: string;
+  hostId: string;
+  revokedAt: string;
+  relayUntil: string;
+};
+
+/**
  * One account login (protocol §11.5, D666). The Router AccessKey is never
  * stored: only the hash of the session credential the Gateway minted from a
  * verified key, with a bounded lifetime. Revocation is server-side, so a
@@ -210,6 +224,7 @@ type DeviceGrantsFile = { deviceGrants: GatewayPendingGrantRecord[] };
 type DeviceRevocationsFile = { deviceRevocations: GatewayPendingRevocationRecord[] };
 type PushRegistrationsFile = { pushRegistrations: GatewayPushRegistrationRecord[] };
 type HostJoinedFile = { hostJoined: GatewayHostJoinedRecord[] };
+type HostRevokedFile = { hostRevoked: GatewayHostRevokedRecord[] };
 type SecretFile = { secret: string; createdAt: string };
 
 const DIRECTORY_MODE = 0o700;
@@ -260,6 +275,7 @@ export class GatewayStore {
   private deviceRevocations: GatewayPendingRevocationRecord[] = [];
   private pushRegistrations: GatewayPushRegistrationRecord[] = [];
   private chain: Promise<void> = Promise.resolve();
+  private hostRevoked: GatewayHostRevokedRecord[] = [];
   /** Audit appends still in flight, so shutdown can flush them. */
   private readonly pendingAudits = new Set<Promise<void>>();
 
@@ -291,6 +307,7 @@ export class GatewayStore {
     }
     const store = new GatewayStore(dataDir, secret, now);
     store.hosts = (await readJson<HostsFile>(join(dataDir, "hosts.json")))?.hosts ?? [];
+    store.hostRevoked = (await readJson<HostRevokedFile>(join(dataDir, "host-revoked.json")))?.hostRevoked ?? [];
     store.enrollments = (await readJson<EnrollmentsFile>(join(dataDir, "enrollments.json")))?.enrollments ?? [];
     store.hostJoined = (await readJson<HostJoinedFile>(join(dataDir, "host-joined.json")))?.hostJoined ?? [];
     store.devices = (await readJson<DevicesFile>(join(dataDir, "devices.json")))?.devices ?? [];
@@ -612,6 +629,24 @@ export class GatewayStore {
 
   findAccountSessionByTokenHash(tokenHash: string): GatewayAccountSessionRecord | null {
     return this.accountSessions.find((session) => session.tokenHash === tokenHash) ?? null;
+  }
+  /** The "this computer was revoked" notices still deliverable to an account. */
+  listHostRevoked(accountId?: string): GatewayHostRevokedRecord[] {
+    const now = this.now();
+    return this.hostRevoked.filter(
+      (notice) => Date.parse(notice.relayUntil) > now && (accountId === undefined || notice.accountId === accountId),
+    );
+  }
+
+  async saveHostRevoked(record: GatewayHostRevokedRecord): Promise<void> {
+    await this.mutate(async () => {
+      const now = this.now();
+      this.hostRevoked = [
+        ...this.hostRevoked.filter((notice) => notice.noticeId !== record.noticeId && Date.parse(notice.relayUntil) > now),
+        record,
+      ];
+      await writeJsonAtomic(join(this.dataDir, "host-revoked.json"), { hostRevoked: this.hostRevoked } satisfies HostRevokedFile);
+    });
   }
 
   /**

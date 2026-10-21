@@ -10,6 +10,7 @@ import {
   RacpDeviceRevokeFrameSchema,
   RacpHostCapabilitiesFrameSchema,
   RacpHostJoinedFrameSchema,
+  RacpHostRevokedFrameSchema,
   RacpHostNotifyFrameSchema,
   type RacpHostJoined,
   type RacpDeviceGrantFrame,
@@ -342,7 +343,21 @@ export class HostLinkHost {
           this.options.log("warn", "host joined notice handler failed", { error: String(error) });
         }
         return;
+      case "host.revoked": {
+        // "This computer was revoked on the Gateway": its desktop devices lose
+        // their standing here too (ADR amendment 3, decision 4). The frame only
+        // removes authority, so it needs no signature.
+        if (!Value.Check(RacpHostRevokedFrameSchema, parsed)) {
+          this.options.log("warn", "host link dropped a malformed host.revoked frame");
+          return;
+        }
+        const devices = this.options.devices;
+        if (!devices) return;
+        void devices
+          .handleHostRevoked(parsed.revocation.hostId, parsed.revocation.revokedAt)
+          .catch((error: unknown) => this.options.log("error", "host revocation cascade failed", { error: String(error) }));
         return;
+      }
     }
   }
 

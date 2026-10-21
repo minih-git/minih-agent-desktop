@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   HostDeviceDirectory,
   MemoryCredentialStore,
+  hashToken,
   signHostArtifact,
   startHostLink,
   type HostLinkCredentials,
@@ -463,6 +464,60 @@ describe("account device relay", () => {
       expect(gateway.gateway.store.listHostJoined(String(ACCOUNT_B)).map((notice) => notice.hostId)).not.toContain("host_a3");
     } finally {
       await joined.stop();
+    }
+  });
+
+  it("tells the account's computers when one of them is revoked, and repeats it when they come back", async () => {
+    stack = await startStack();
+    const { gateway } = stack;
+
+    // Revoking a Host on the Gateway is what makes its desktop devices lose
+    // their standing elsewhere (ADR amendment 3, decision 4).
+    const revokedAt = new Date().toISOString();
+    const cascaded = await gateway.gateway.deviceRequests.announceHostRevoked({ hostId: "host_a1", revokedAt });
+    // host_a2 is online and advertises the capability, so it is told now.
+    expect(cascaded).toContain("host_a2");
+    const notices = gateway.gateway.store.listHostRevoked(String(ACCOUNT_A));
+    expect(notices.map((notice) => notice.hostId)).toContain("host_a1");
+    // Another account hears nothing about it.
+    expect(gateway.gateway.store.listHostRevoked(String(ACCOUNT_B))).toHaveLength(0);
+  });
+
+  it("revokes a revoked computer's desktop devices on a sibling, including one that was offline", async () => {
+    stack = await startStack();
+    const { gateway, hostA2 } = stack;
+    const store = hostA2.harness.store;
+    // A desktop device that host_a1's proof admitted on this sibling: `owner`,
+    // and tied to the computer whose certificate signed the proof.
+    await store.saveDevice({
+      deviceId: "dev_a1_desktop",
+      label: "desk A1",
+      roles: ["owner"],
+      tokenHash: hashToken("pdt1.desktop-from-a1"),
+      createdAt: new Date().toISOString(),
+      origin: "gateway",
+      deviceClass: "desktop",
+      applicantHostId: "host_a1",
+    });
+
+    // The sibling is asleep when the operator revokes host_a1, so the notice is
+    // kept rather than lost, and nothing is revoked before it hears about it.
+    const credentials = hostA2.credentials;
+    await hostA2.stop();
+    await gateway.gateway.deviceRequests.announceHostRevoked({ hostId: "host_a1", revokedAt: new Date().toISOString() });
+    expect((await store.listDevices()).find((device) => device.deviceId === "dev_a1_desktop")?.revokedAt).toBeUndefined();
+
+    // It comes back and applies the revocation it missed: `owner` followed the
+    // applicant's certificate.
+    const resumed = await resumeHost(gateway, hostA2.harness, credentials, store);
+    try {
+      const revoked = await waitForAsync(
+        () => store.listDevices().then((devices) => devices.find((device) => device.deviceId === "dev_a1_desktop" && device.revokedAt)),
+        "the resumed Host to revoke the revoked computer's desktop device",
+      );
+      expect(revoked.revokedAt).toBeDefined();
+    } finally {
+      await resumed.stop();
     }
   });
 });

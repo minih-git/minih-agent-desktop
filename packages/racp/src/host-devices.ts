@@ -55,6 +55,8 @@ const TOMBSTONE_TOKEN_HASH = "revoked";
 export const DEFAULT_GRANT_DELIVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** How many used desktop nonces one Host remembers before pruning the oldest. */
 const DEFAULT_MAX_REMEMBERED_NONCES = 4096;
+/** Clock tolerance when a sibling checks that a grant was not issued in the future. */
+const DEFAULT_MAX_CLOCK_SKEW_MS = 60_000;
 
 export type DeviceDecision = "approved" | "denied";
 
@@ -127,6 +129,12 @@ export type HostDeviceDirectoryOptions = {
    * Host from growing this table without limit.
    */
   maxRememberedNonces?: number;
+  /**
+   * Tolerance for a sibling's clock when it checks that a grant was not issued
+   * in the future. Defaults to 60 seconds, the same tolerance the Host link
+   * applies to a route context.
+   */
+  maxClockSkewMs?: number;
 };
 
 /** The gateway-origin role set, which a phone-class grant must carry exactly (gate 25). */
@@ -155,6 +163,7 @@ export class HostDeviceDirectory {
   private readonly deliveryWindowMs: number;
   private readonly desktopAutoAdmission: boolean;
   private readonly maxRememberedNonces: number;
+  private readonly maxClockSkewMs: number;
   /**
    * The desktop nonces this Host has already accepted, with the deadline of the
    * request each belonged to. A proof is single-use: the second presentation of
@@ -179,6 +188,7 @@ export class HostDeviceDirectory {
     this.deliveryWindowMs = options.grantDeliveryWindowMs ?? DEFAULT_GRANT_DELIVERY_WINDOW_MS;
     this.desktopAutoAdmission = options.desktopAutoAdmission ?? true;
     this.maxRememberedNonces = options.maxRememberedNonces ?? DEFAULT_MAX_REMEMBERED_NONCES;
+    this.maxClockSkewMs = options.maxClockSkewMs ?? DEFAULT_MAX_CLOCK_SKEW_MS;
   }
 
   /**
@@ -362,6 +372,9 @@ export class HostDeviceDirectory {
       tokenHash: hashToken(token),
       origin: "gateway",
       createdAt: at,
+      // The class and the applicant are what later make this device
+      // ceiling-exempt and what a Host revocation cascades through (decision 4).
+      ...(desktop && proof ? { deviceClass: "desktop" as const, applicantHostId: proof.applicantHostId } : {}),
     });
     const grant: RacpDeviceGrant = {
       grantId: `grant_${randomUUID()}`,
@@ -410,6 +423,15 @@ export class HostDeviceDirectory {
    * this, but a sibling must not take that on trust: the Gateway relays the
    * grant, and the Gateway is never the authorization.
    *
+   * **Freshness is judged at the moment of the grant, not now.** A device
+   * request lives five minutes, while a grant is deliverable for a day, so a
+   * sibling that was offline when the device was admitted could otherwise never
+   * adopt it — exactly the case D666 decision 6 requires to work ("including a
+   * Host that was offline at grant time"). The proof therefore has to be fresh
+   * *when the approving Host saw it* — that Host made the judgement itself —
+   * and what this Host checks against the present is the grant's own delivery
+   * window.
+   *
    * Returns the refusal reason, or `null` when the grant may be adopted.
    */
   private reverifyDesktopGrant(grant: RacpDeviceGrant): DeviceRefusal | null {
@@ -418,7 +440,16 @@ export class HostDeviceDirectory {
       return "proof_missing";
     }
     if (this.usedNonces.has(grant.hostProofNonce)) return "proof_replayed";
-    if (Date.parse(grant.requestExpiresAt) <= this.now()) return "expired";
+    // The grant's own window is the only thing that can expire by the time it
+    // reaches this Host.
+    if (Date.parse(grant.deliverUntil) <= this.now()) return "expired";
+    // The proof was made for a request that was still alive when this grant was
+    // issued: a proof signed after its request expired was never fresh.
+    const issuedAt = Date.parse(grant.issuedAt);
+    if (!Number.isFinite(issuedAt)) return "expired";
+    if (issuedAt > Date.parse(grant.requestExpiresAt)) return "expired";
+    // …and a grant cannot claim to have been issued in the future.
+    if (issuedAt > this.now() + this.maxClockSkewMs) return "expired";
     const verdict = verifyHostArtifact({
       payload: hostProofSigningPayload({
         requestId: grant.requestId,
@@ -437,8 +468,48 @@ export class HostDeviceDirectory {
     if (!verdict.ok) return verdict.reason;
     if (verdict.accountId !== this.accountId) return "account_mismatch";
     if (verdict.signerHostId !== grant.applicantHostId) return "proof_applicant_mismatch";
-    this.rememberNonce(grant.hostProofNonce, grant.requestExpiresAt);
+
+    // Kept until the grant itself stops being deliverable, so a second delivery
+    // of the same proof is still a replay for as long as it could arrive.
+    this.rememberNonce(grant.hostProofNonce, grant.deliverUntil);
     return null;
+  }
+
+  /**
+   * Apply a Gateway-reported Host revocation (ADR amendment 3, decision 4).
+   *
+   * `owner` follows the applicant's certificate: when a computer is revoked on
+   * the Gateway, every desktop-class device whose proof it signed loses its
+   * standing here too, so a stolen laptop's access does not outlive the laptop.
+   * Devices are revoked locally (not deleted) so a re-delivered grant cannot
+   * resurrect one, exactly as a sibling revocation does.
+   *
+   * No signature is required, and none would help: this frame only ever removes
+   * authority, so the worst a forged one achieves is revoking a device that
+   * would otherwise keep working.
+   */
+  async handleHostRevoked(hostId: string, revokedAt: string): Promise<number> {
+    let revoked = 0;
+    for (const device of await this.options.store.listDevices()) {
+      if (device.deviceClass !== "desktop" || device.applicantHostId !== hostId) continue;
+      if (device.revokedAt) continue;
+      if (await this.options.store.revokeDevice(device.deviceId, revokedAt)) {
+        revoked += 1;
+        this.notice({
+          kind: "device.revoked",
+          deviceId: device.deviceId,
+          label: device.label,
+          roles: device.roles,
+          signerHostId: hostId,
+          at: revokedAt,
+          ...(device.deviceClass ? { deviceClass: device.deviceClass } : {}),
+        });
+      }
+    }
+    if (revoked > 0) {
+      this.options.log("info", "revoked the desktop devices of a revoked computer", { applicantHostId: hostId, revoked });
+    }
+    return revoked;
   }
 
   /**
@@ -493,6 +564,9 @@ export class HostDeviceDirectory {
       tokenHash: grant.tokenHash,
       origin: "gateway",
       createdAt: new Date(this.now()).toISOString(),
+      ...(desktop && grant.applicantHostId
+        ? { deviceClass: "desktop" as const, applicantHostId: grant.applicantHostId }
+        : {}),
     });
     this.notice({
       kind: "device.adopted",
