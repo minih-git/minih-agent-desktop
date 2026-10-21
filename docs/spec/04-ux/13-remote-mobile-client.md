@@ -1460,11 +1460,13 @@ created. In order, once:
    notifications belong to, `app.minih.remote` (from `capacitor.config.ts` and
    `PRODUCT_BUNDLE_IDENTIFIER`). That bundle id is `--apns-topic`; a wrong topic
    rejects every token with `DeviceTokenNotForTopic`.
-3. **Turn the capabilities on in Xcode.** `open apps/remote-web/ios/App/App.xcodeproj`,
-   select the `App` target, Signing & Capabilities, **+ Capability**, *Push
-   Notifications*. Add *App Groups* and *Keychain Sharing* with
-   `group.app.minih.remote` for the extension of §17.6.2. A build without them
-   compiles, runs, and receives nothing.
+3. **Sign the build.** The Push Notifications capability is already committed
+   (`apps/remote-web/ios/App/App/App.entitlements`, wired into both
+   configurations), so `open apps/remote-web/ios/App/App.xcodeproj`, select the
+   `App` target, and choose your own Team under Signing & Capabilities;
+   automatic signing enables the capability for the App ID on the first build.
+   *App Groups* and *Keychain Sharing* with `group.app.minih.remote` are added
+   with the extension of §17.6.2, because nothing before it needs them.
 4. **Add the Notification Service Extension** (§17.9, P3): bundle id
    `app.minih.remote.notificationservice`, embedded in the app, carrying the same
    App Group and keychain access group.
@@ -1534,7 +1536,7 @@ Four steps, each buildable and shippable on its own, in dependency order.
 |---|---|---|---|
 | **P1** | S5 projects, S5b sessions, the status vocabulary, the nav stack and push restore, the local `lastViewedAt`, the foreground notice, the S8 notification rows that need no new data | `apps/remote-web` only: a web deploy and a new app build; no Gateway, no protocol change | choosing a session costs one tap fewer, every state is legible in monochrome, and a push opens the right place |
 | **P2** | `onlyActionable` on the registration route (field, record, echo, kind gate), `thread-id` and `tag` grouping, the eight copy values | shared schema, Gateway store, `push.ts` gate, `push-providers.ts`; a Gateway deploy, no desktop release | "only things that need me" is enforceable, and one session's events group |
-| **P3** | iOS: entitlements (push, App Group, keychain sharing), the Notification Service Extension with its 8 s deadline and fallback, the shared-keychain mirror and its cleanup, the badge, the title switch | Xcode project and extension target; `native-config.test.ts` relaxed from "no entitlements file" to "no team id, no `.p8`, no token"; the mirror code in `apps/remote-web` | a lock screen names the session, and a forgotten Host loses its credential copy |
+| **P3** | iOS: entitlements (push now; App Group and keychain sharing with the extension), the Notification Service Extension with its 8 s deadline and fallback, the shared-keychain mirror and its cleanup, the badge, the title switch | Xcode project and extension target; `native-config.test.ts` changed from "no entitlements file" to "only the declared keys, no team id, no `.p8`, no token" (the push key alone is already committed); the mirror code in `apps/remote-web` | a lock screen names the session, and a forgotten Host loses its credential copy |
 | **P4** | follow-ups, not scheduled: `waiting_input` (or a pending count) in `session/list`; Android title enrichment; a server-computed badge | a protocol and desktop change, or a new Android background path | each accepted on its own |
 
 P1 is the whole of the owner's first two complaints and needs nothing from anyone

@@ -1065,9 +1065,11 @@ Apple 账号是付费的 Apple Developer Program 会员（Team `CQ8XQD6L2J`，�
 2. **记下另外两个值**：Team ID `CQ8XQD6L2J`，以及通知所属的 bundle id `app.minih.remote`
    （来自 `capacitor.config.ts` 与 `PRODUCT_BUNDLE_IDENTIFIER`）。这个 bundle id 就是 `--apns-topic`；
    写错 topic 会让每个令牌都被判 `DeviceTokenNotForTopic`。
-3. **在 Xcode 里打开能力。** `open apps/remote-web/ios/App/App.xcodeproj`，选中 `App` target，
-   Signing & Capabilities，**+ Capability**，*Push Notifications*。再为 §17.6.2 的扩展加上 *App Groups*
-   与 *Keychain Sharing*，标识为 `group.app.minih.remote`。缺这些能力时，构建能编过、能运行，就是收不到通知。
+3. **签名即可。** 推送能力已经提交在仓库里（`apps/remote-web/ios/App/App/App.entitlements`，
+   两套配置都指向它），所以只需 `open apps/remote-web/ios/App/App.xcodeproj`，选中 `App` target，
+   在 Signing & Capabilities 里选你自己的 Team；自动签名会在首次构建时为该 App ID 开启能力。
+   *App Groups* 与 *Keychain Sharing*（`group.app.minih.remote`）随 §17.6.2 的扩展一起加，
+   在扩展之前它们还没有用处。
 4. **添加通知服务扩展**（§17.9 P3）：bundle id `app.minih.remote.notificationservice`，内嵌进应用，
    带同一个 App Group 与同一个钥匙串访问组。
 5. **把 `.p8` 放到服务器上。** 不要把它贴进对话、issue 或仓库；直接传文件，再修正属主与权限：
@@ -1122,7 +1124,7 @@ Android 需要时：把 Firebase 的 `google-services.json` 放到 `android/app/
 |---|---|---|---|
 | **P1** | S5 项目、S5b 会话、状态词汇、导航栈与推送恢复、本地 `lastViewedAt`、前台提示、不需要新数据的 S8 通知行 | 只动 `apps/remote-web`：一次 Web 部署和一次应用构建；不动 Gateway，不改协议 | 选一条会话少一次点击；每种状态在黑白下也读得懂；推送能打开正确的位置 |
 | **P2** | 注册路由上的 `onlyActionable`（字段、记录、回显、类型闸门）、`thread-id` 与 `tag` 分组、八条文案 | shared schema、Gateway 存储、`push.ts` 闸门、`push-providers.ts`；部署 Gateway，不发桌面版 | “只通知需要我处理的”真正生效；同一会话的事件会分组 |
-| **P3** | iOS：entitlements（推送、App Group、钥匙串共享）、带 8 秒期限与兜底的通知服务扩展、共享钥匙串镜像及其清理、角标、标题开关 | Xcode 工程与扩展 target；`native-config.test.ts` 从“不得存在 entitlements 文件”放宽为“不得含 team id、`.p8`、令牌”；`apps/remote-web` 的镜像代码 | 锁屏能点出会话；被忘记的电脑失去凭据副本 |
+| **P3** | iOS：entitlements（推送先做；App Group 与钥匙串共享随扩展一起加）、带 8 秒期限与兜底的通知服务扩展、共享钥匙串镜像及其清理、角标、标题开关 | Xcode 工程与扩展 target；`native-config.test.ts` 从“不得存在 entitlements 文件”改为“只允许已声明的键，且不含 team id、`.p8`、令牌”（推送这一个键已提交）；`apps/remote-web` 的镜像代码 | 锁屏能点出会话；被忘记的电脑失去凭据副本 |
 | **P4** | 后续，不排期：`session/list` 增加 `waiting_input`（或待回答计数）；Android 标题富化；服务端角标 | 协议与桌面端改动，或一条新的 Android 后台路径 | 各自单独验收 |
 
 P1 覆盖负责人前两个诉求的全部，不需要任何人配合。P3 是通知设计，卡在 §17.7 的 Apple 步骤上，
