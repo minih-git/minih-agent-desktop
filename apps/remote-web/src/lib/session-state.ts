@@ -153,6 +153,7 @@ export function sessionStateOf(
   local?: SessionLocalState,
 ): SessionStateView {
   if (session.status === "waiting_permission" || session.planningState === "awaiting_approval") return "approval";
+  if (session.status === "waiting_input") return "input";
   if (session.status === "error") return "error";
   if (session.status === "running") return local?.inputPendingAt ? "input" : "running";
   if (session.status === "idle" || session.status === "aborted") {

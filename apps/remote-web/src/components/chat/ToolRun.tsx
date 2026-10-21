@@ -122,7 +122,7 @@ export function ToolRun({ items, active }: { items: TimelineItem[]; active: bool
         <button
           type="button"
           onClick={() => setOpenItems((current) => ({ ...current, [key]: !expanded }))}
-          className="flex min-h-[40px] w-full items-center gap-2 py-1.5 text-left active:opacity-60"
+          className="flex min-h-[32px] w-full items-center gap-2 py-1 text-left active:opacity-60"
           aria-expanded={expanded}
         >
           <Icon size={14} className="shrink-0 text-[var(--rm-text-muted)]" aria-hidden="true" />
@@ -157,7 +157,7 @@ export function ToolRun({ items, active }: { items: TimelineItem[]; active: bool
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="flex min-h-[40px] w-full items-center gap-2 py-1 text-left active:opacity-60"
+        className="flex min-h-[32px] w-full items-center gap-2 py-1 text-left active:opacity-60"
         aria-expanded={open}
       >
         <Wrench size={14} className="shrink-0 text-[var(--rm-text-muted)]" aria-hidden="true" />

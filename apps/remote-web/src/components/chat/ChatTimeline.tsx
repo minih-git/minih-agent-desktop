@@ -79,8 +79,8 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
   }
 
   return (
-    <ul className="flex flex-col gap-3.5 py-4 list-none p-0 m-0">
-      {rows.map((row) => {
+    <ul className="flex flex-col gap-2 py-3 list-none p-0 m-0">
+      {rows.map((row, rowIndex) => {
         if (row.kind === "run") {
           const burst = items.slice(row.start, row.end);
           return (
@@ -93,6 +93,8 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
         const item = items[idx];
         const isUser = item.role === "user";
         const isCompaction = item.itemType === "compaction" || item.role === "system";
+        const prevRow = rowIndex > 0 ? rows[rowIndex - 1] : undefined;
+        const prevIsUser = prevRow?.kind === "single" && items[prevRow.index]?.role === "user";
 
         if (isCompaction) {
           return (
@@ -114,11 +116,19 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
             <li
               key={item.id || idx}
               data-item-id={item.id}
-              className={`self-end max-w-[85%] rounded-[18px_18px_6px_18px] px-3.5 py-2.5 text-[15px] leading-[22px] bg-[var(--rm-bg-bubble)] border border-[var(--rm-bubble-border)] text-[var(--rm-text-primary)] break-words whitespace-pre-wrap ${
+              className={`${rowIndex > 0 ? "mt-2 " : ""}self-end max-w-[85%] rounded-[18px_18px_6px_18px] px-3.5 py-2.5 text-[15px] leading-[22px] bg-[var(--rm-bg-bubble)] border border-[var(--rm-bubble-border)] text-[var(--rm-text-primary)] break-words whitespace-pre-wrap ${
                 isPending ? "opacity-60" : ""
               }`}
             >
-              {renderInlineCode(item.text)}
+              {item.text ? renderInlineCode(item.text) : null}
+              {item.attachments && item.attachments.length > 0 ? (
+                <div className={`${item.text ? "mt-1.5 " : ""}text-[12px] leading-[16px] text-[var(--rm-text-secondary)]`}>
+                  {t("timeline.attachments", {
+                    count: item.attachments.length,
+                    names: item.attachments.map((attachment) => attachment.name).join(", "),
+                  })}
+                </div>
+              ) : null}
               {isPending && (
                 <div className="mt-1 flex items-center justify-end gap-1 text-[12px] text-[var(--rm-text-muted)]">
                   <Clock size={12} />
@@ -129,11 +139,19 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
           );
         }
 
-        // Assistant / Agent response
+        // Assistant / Agent response: skip completely empty placeholder items so
+        // they do not add an empty flex gap in the middle of a turn.
+        if (!item.text && !item.thinking) {
+          return null;
+        }
         const thinkKey = `think-${item.id || idx}`;
         const isThinkOpen = !!openItems[thinkKey];
         return (
-          <li key={item.id || idx} data-item-id={item.id} className="flex flex-col self-start max-w-[95%]">
+          <li
+            key={item.id || idx}
+            data-item-id={item.id}
+            className={`${prevIsUser ? "mt-1.5 " : ""}flex flex-col self-start max-w-[95%]`}
+          >
             {item.agentName ? (
               <div className="mb-1 text-[12px] text-[var(--rm-text-muted)]">
                 {t("timeline.agent", { agent: item.agentName })}
@@ -147,11 +165,11 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
               </div>
             ) : null}
             {item.thinking ? (
-              <div className="mt-2">
+              <div className={item.text ? "mt-1.5" : ""}>
                 <button
                   type="button"
                   onClick={() => toggle(thinkKey)}
-                  className="flex items-center gap-1 py-1 text-[13px] text-[var(--rm-text-muted)] hover:text-[var(--rm-text-secondary)] cursor-pointer"
+                  className="flex items-center gap-1 py-0.5 text-[13px] text-[var(--rm-text-muted)] hover:text-[var(--rm-text-secondary)] cursor-pointer"
                   aria-expanded={isThinkOpen}
                 >
                   <span>{t("timeline.thinking")}</span>
