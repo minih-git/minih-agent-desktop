@@ -1,15 +1,17 @@
 # 13. Remote Mobile Client UX
 
-- Status: **Accepted design, partially implemented, revised by §15.** Decisions
-  O1–O6 resolved on 2026-10-19 (section 14). Sections 1–14 are the accepted
-  design of record; §15 (R7 revision, 2026-10-20) is **proposed and awaiting
-  owner approval**, and covers the capabilities that appeared after this
-  document was written (starting a session with a chosen model, sending images
-  and files, per-session model and mode, settings). Where §15 and §8 disagree,
-  §15 wins once approved. Implemented today: S1–S6 as described here, S6's
-  Markdown answers, and the project-grouped session list; the clickable prototype
-  `apps/remote-web/design/prototype/index.html` (open the file directly; data is
-  simulated) is the visual reference and was reviewed at 320×568 through 430×932.
+- Status: **Accepted design, partially implemented, extended by §15.** Decisions
+  O1–O6 resolved on 2026-10-19 (section 14) and R7-1–R7-3 on 2026-10-21
+  (section 15.10). Sections 1–14 are the accepted design of record; §15 is the
+  R7 revision and is now **decided and being implemented**, covering the
+  capabilities that appeared after this document was written (choosing a model,
+  sending images and files, per-session model and mode, settings, and tool calls
+  that read as actions rather than output). Where §15 and §8 disagree, §15 wins.
+  Implemented today: S1–S6 as described here, S6's Markdown answers, the
+  project-grouped session list, and the tool-call presentation of §15.11; the
+  clickable prototype `apps/remote-web/design/prototype/index.html` (open the
+  file directly; data is simulated) is the visual reference and was reviewed at
+  320×568 through 430×932.
 - Scope: `apps/remote-web`, i.e. the browser (H5) build and the Capacitor iOS
   and Android builds. They share one React codebase, so every rule here applies
   to all three unless a section names a platform.
@@ -939,15 +941,52 @@ oversized payload, and a path masquerading as an attachment), client tests for
 the choosers and chips, and `pnpm test:e2e:remote-web` for the two screens that
 gain a real user path.
 
-### 15.10 Open questions for the owner
+### 15.10 Decisions (resolved 2026-10-21)
 
-1. **Model chooser scope** — should the phone be able to change an existing
-   session's model, or only choose one when starting a session? (Recommendation:
-   both, idle-only, because starting a session on the wrong model is the failure
-   this issue is about.)
-2. **Attachment step 1 only, or step 1 + 2 in one go?** (Recommendation: step 1
-   first — it covers screenshots and small logs, which is what a phone actually
-   sends, and it needs no upload route, no Gateway storage, and no chunking.)
-3. **Where do the settings live** — a fourth screen behind S4's trailing icon,
-   or a section at the bottom of S4? (Recommendation: the screen, because
-   notifications and appearance do not belong to one computer.)
+The owner approved all three recommendations on 2026-10-21 and authorised
+implementation. They are decisions now, not questions.
+
+| ID | Question | Decision |
+|---|---|---|
+| R7-1 | Model chooser scope | The phone may both choose a model when starting a session **and** change an existing session's model, the latter only while the session is idle (`AGENT_BUSY` otherwise, the same rule the desktop applies) |
+| R7-2 | Attachment scope | Step 1 only, for now: inline images and text under the request budget, no Gateway upload route, no chunking. Step 2 stays designed and unscheduled |
+| R7-3 | Where settings live | A fourth screen (S8) behind S4's trailing icon, because notifications and appearance do not belong to one computer |
+
+### 15.11 Tool calls read as actions, not output
+
+The phone drew every tool call as its own bordered card: a 44 px row with the
+state icon, the raw tool name in Mono, and one truncated line of the tool's own
+output. A dozen consecutive calls became a dozen near-identical cards — the
+widest, tallest, least informative content on a screen that only shows a handful
+of rows at a time. The output is what a reader opens deliberately, not what a
+row should be made of.
+
+Rules, and they are the desktop transcript's rules rather than a second set:
+
+- **One classification, one summary, one burst sentence.** They live in
+  `packages/shared/src/tool-presentation.ts`, which the desktop transcript also
+  imports (`toolIconCategory`, `getToolSummary`, `describeToolRun`,
+  `groupConsecutiveToolRuns`). A call reads the same on both clients by
+  construction, not by convention.
+- **A row is a category icon, the tool's short name, one line of what it acted
+  on, and its state.** No raw output. The category drives the icon (read, list,
+  search, write, edit, command, web, subagent, plan), so a reader recognizes the
+  kind of work before reading the words.
+- **Consecutive calls fold into one row.** Collapsed it says what the burst did,
+  one clause per kind of work, at most three clauses so the line cannot wrap
+  ("4 commands, 2 files edited, 1 file written"), plus a failure count when any.
+  Expanded it lists each call as a row above; expanding one of those shows that
+  call's output. Two taps is the depth: "what happened here", then "show me that
+  one".
+- **A burst of one call is a plain row**, not a fold with one child.
+- **All of it is localized.** The clause keys and the failure count are catalog
+  entries in the nine shipped locales; no sentence is assembled from English
+  fragments.
+
+Acceptance: at 390×844, a twelve-call burst that occupied 14 rows and 827 px of
+timeline occupies 3 rows and 161 px, with no horizontal page scroll, and the
+expanded rows keep their per-call summaries. The before/after screenshot pair is
+the evidence; the shared rules are covered by
+`packages/shared/src/tool-presentation.test.ts` and the desktop's existing
+`tool-display`, `tool-identity` and `tool-presentation` suites (unchanged, which
+is what proves the extraction was behaviour-preserving).
