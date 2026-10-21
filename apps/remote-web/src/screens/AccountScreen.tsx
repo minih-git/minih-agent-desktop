@@ -1,4 +1,4 @@
-import { Check, Lock, Phone, User } from "lucide-react";
+import { Check, Laptop, Lock, Phone, User } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -242,34 +242,43 @@ export function AccountScreen({
 
           <SectionHeader title={t("account.hosts.title")} />
 
-          <ListGroup>
-            {state.hosts.length === 0 ? (
-              <div className="py-4 px-4 text-sm text-[var(--rm-text-muted)] text-center">
-                {t("account.hosts.empty")}
-              </div>
-            ) : (
-              state.hosts.map((host) => (
-                <ListRow
+          {state.hosts.length === 0 ? (
+            <div className="rounded-2xl bg-[var(--rm-bg-surface)] py-5 px-4 text-sm text-[var(--rm-text-muted)] text-center ring-1 ring-[var(--rm-separator)]">
+              {t("account.hosts.empty")}
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {state.hosts.map((host) => (
+                <div
                   key={host.hostId}
-                  compact
-                  leading={
-                    <div className="w-6 flex items-center justify-center">
-                      <StatusDot
-                        status={host.online ? "online" : "offline"}
-                      />
+                  className="flex items-center gap-3 rounded-2xl bg-[var(--rm-bg-surface)] px-4 py-3.5 shadow-[var(--rm-shadow)] ring-1 ring-[var(--rm-separator)]"
+                >
+                  <div
+                    className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--rm-bg-inset)] ${
+                      host.online ? "text-[var(--rm-text-primary)]" : "text-[var(--rm-text-muted)]"
+                    }`}
+                  >
+                    <Laptop className="h-5 w-5" aria-hidden="true" />
+                    <span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[var(--rm-bg-surface)]">
+                      <StatusDot status={host.online ? "online" : "offline"} size="small" />
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[16px] font-semibold leading-[22px] text-[var(--rm-text-primary)]">
+                      {host.label}
                     </div>
-                  }
-                  title={host.label}
-                  subtitle={
-                    host.online
-                      ? t("account.hosts.online")
-                      : t("account.hosts.offline")
-                  }
-                />
-              ))
-            )}
-          </ListGroup>
-
+                    <div
+                      className={`mt-0.5 truncate text-[13px] leading-[18px] ${
+                        host.online ? "text-[var(--rm-success)]" : "text-[var(--rm-text-secondary)]"
+                      }`}
+                    >
+                      {host.online ? t("account.hosts.online") : t("account.hosts.offline")}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="mt-5 space-y-1.5">
             <label
               htmlFor="device-name"
@@ -340,7 +349,7 @@ export function AccountScreen({
 
           <SectionHeader title={t("account.waitingSentTitle")} />
 
-          <ListGroup>
+          <div className="space-y-2.5">
             {state.hosts.map((host) => {
               const sub = !host.online
                 ? t("account.hosts.offline")
@@ -349,20 +358,28 @@ export function AccountScreen({
                   : t("account.hosts.cannotConfirm");
 
               return (
-                <ListRow
+                <div
                   key={host.hostId}
-                  compact
-                  leading={
-                    <div className="w-6 flex items-center justify-center">
-                      <StatusDot status="decision" />
+                  className="flex items-center gap-3 rounded-2xl bg-[var(--rm-bg-surface)] px-4 py-3.5 shadow-[var(--rm-shadow)] ring-1 ring-[var(--rm-separator)]"
+                >
+                  <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--rm-bg-inset)] text-[var(--rm-text-primary)]">
+                    <Laptop className="h-5 w-5" aria-hidden="true" />
+                    <span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[var(--rm-bg-surface)]">
+                      <StatusDot status={host.online ? "decision" : "offline"} size="small" />
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[16px] font-semibold leading-[22px] text-[var(--rm-text-primary)]">
+                      {host.label}
                     </div>
-                  }
-                  title={host.label}
-                  subtitle={sub}
-                />
+                    <div className="mt-0.5 truncate text-[13px] leading-[18px] text-[var(--rm-text-secondary)]">
+                      {sub}
+                    </div>
+                  </div>
+                </div>
               );
             })}
-          </ListGroup>
+          </div>
         </ScreenContent>
 
         <ScreenDock>

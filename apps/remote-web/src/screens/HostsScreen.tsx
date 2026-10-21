@@ -16,9 +16,9 @@ import {
 } from "../components/hosts/HostSheets.js";
 import { Button } from "../components/ui/Button.js";
 import { Callout } from "../components/ui/Callout.js";
-import { ListGroup } from "../components/ui/ListGroup.js";
 import { NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent } from "../components/ui/Screen.js";
+import { SectionHeader } from "../components/ui/SectionHeader.js";
 import { Toast } from "../components/ui/Toast.js";
 import { useAccountAvailability } from "../hooks/useAccountFlow.js";
 import { forgetHost } from "../lib/forget.js";
@@ -112,17 +112,22 @@ export function HostsScreen({
         }
       />
 
-      <ScreenContent className="pt-3 space-y-4">
-        <h1 className="px-1 text-[28px] font-bold tracking-tight text-[var(--rm-text-primary)] leading-[34px]">
-          {t("hosts.title")}
-        </h1>
+      <ScreenContent className="pt-2 space-y-3">
+        <SectionHeader
+          title={t("hosts.title")}
+          action={
+            hosts.length > 0 ? (
+              <span className="text-[var(--rm-text-muted)]">{hosts.length}</span>
+            ) : undefined
+          }
+        />
 
         {hosts.length === 0 ? (
           <Callout tone="neutral">
             {t("hosts.empty")}
           </Callout>
         ) : (
-          <ListGroup key={refreshKey} className="overflow-hidden">
+          <div key={refreshKey} className="space-y-3">
             {hosts.map((entry) => (
               <HostRow
                 key={entry.hostId}
@@ -142,9 +147,8 @@ export function HostsScreen({
                 }}
               />
             ))}
-          </ListGroup>
+          </div>
         )}
-
         <div className="flex items-center gap-1.5 px-1 pt-2 pb-6 text-[12px] leading-[16px] text-[var(--rm-text-muted)]">
           <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span>
