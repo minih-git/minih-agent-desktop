@@ -1,0 +1,1036 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Minih 移动端 · 直连对话入口与页面框架（原型）</title>
+<style>
+  /*
+   * Prototype for docs/adr/mobile-direct-gateway-chat.md: two roots (Chats and
+   * Computers) in one stack, the direct-chat pages D1-D4, and Settings (S8).
+   *
+   * The shell styles and every `--rm-*` token below are copied verbatim from
+   * projects-notifications.html, which copies them from
+   * apps/remote-web/src/styles.css. Simulated data only; nothing here talks to
+   * a gateway or a Host. Status: proposal, awaiting confirmation.
+   */
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Segoe UI",Roboto,"Noto Sans CJK SC","Microsoft YaHei",sans-serif;
+    background:#e7e7ea;color:#1a1c1f;min-height:100vh;
+    display:flex;gap:40px;justify-content:center;align-items:flex-start;padding:28px 24px 48px;
+    -webkit-font-smoothing:antialiased;
+  }
+  body.page-dark{background:#0e0e10;color:#e9e9ea}
+
+  /* ---------- side panel: prototype controls, not part of the design ---------- */
+  .panel{width:252px;flex:none;position:sticky;top:28px;font-size:13px}
+  .panel h1{font-size:17px;margin:0 0 4px}
+  .panel p.lead{margin:0 0 16px;color:#6b6b70;line-height:1.5}
+  body.page-dark .panel p.lead{color:#9b9b9f}
+  .panel h2{font-size:12px;font-weight:600;color:#6b6b70;margin:16px 0 8px;letter-spacing:.02em}
+  body.page-dark .panel h2{color:#9b9b9f}
+  .seg{display:flex;background:rgba(0,0,0,.06);border-radius:10px;padding:2px}
+  body.page-dark .seg{background:rgba(255,255,255,.08)}
+  .seg button{flex:1;border:0;background:transparent;padding:7px 6px;border-radius:8px;font:inherit;color:inherit;cursor:pointer}
+  .seg button.on{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.12);font-weight:600}
+  body.page-dark .seg button.on{background:#3a3a3e}
+  .jump{display:flex;flex-direction:column;gap:2px}
+  .jump button{text-align:left;border:0;background:transparent;padding:7px 10px;border-radius:8px;font:inherit;color:inherit;cursor:pointer}
+  .jump button:hover{background:rgba(0,0,0,.06)}
+  body.page-dark .jump button:hover{background:rgba(255,255,255,.08)}
+  .jump button.on{background:rgba(0,0,0,.08);font-weight:600}
+  body.page-dark .jump button.on{background:rgba(255,255,255,.12)}
+  .panel .reset{margin-top:16px;width:100%;border:1px solid rgba(0,0,0,.14);background:transparent;padding:8px;border-radius:10px;font:inherit;color:inherit;cursor:pointer}
+  body.page-dark .panel .reset{border-color:rgba(255,255,255,.18)}
+  .panel .tip{margin-top:14px;color:#6b6b70;line-height:1.55}
+  body.page-dark .panel .tip{color:#9b9b9f}
+  .panel code{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+
+  /* ---------- device ---------- */
+  .phone{
+    width:390px;height:844px;border-radius:55px;position:relative;overflow:hidden;flex:none;
+    box-shadow:0 0 0 11px #18181a,0 0 0 13px #3b3b3f,0 34px 80px rgba(0,0,0,.33);
+    --sat:47px;--sab:34px;
+  }
+  /* the client's own tokens (apps/remote-web/src/styles.css) */
+  .phone[data-theme=light]{
+    --rm-bg-page:#f3f3f3;--rm-bg-surface:#ffffff;--rm-bg-raised:#ffffff;--rm-bg-inset:#ededed;
+    --rm-text-primary:#1a1c1f;--rm-text-secondary:rgba(26,28,31,.74);--rm-text-muted:#5d5d5d;--rm-text-faint:#afafaf;
+    --rm-separator:rgba(26,28,31,.08);--rm-accent:#1a1c1f;--rm-on-accent:#ffffff;
+    --rm-running:#c2410c;--rm-decision:#7c3aed;--rm-on-decision:#ffffff;
+    --rm-success:#00802f;--rm-error:#d42a26;--rm-link:#1c64c8;
+    --rm-tint:10%;--rm-shadow:0 8px 24px rgba(0,0,0,.08);--rm-scrim:rgba(0,0,0,.28);
+    --rm-navbg:rgba(243,243,243,.92);--rm-bubble:#ededed;
+  }
+  .phone[data-theme=dark]{
+    --rm-bg-page:#181818;--rm-bg-surface:#212121;--rm-bg-raised:#282828;--rm-bg-inset:#0d0d0d;
+    --rm-text-primary:#ffffff;--rm-text-secondary:rgba(255,255,255,.7);--rm-text-muted:#9b9b9b;--rm-text-faint:#5d5d5d;
+    --rm-separator:rgba(255,255,255,.08);--rm-accent:#ffffff;--rm-on-accent:#1a1c1f;
+    --rm-running:#ff8549;--rm-decision:#c27aff;--rm-on-decision:#1a1c1f;
+    --rm-success:#40c977;--rm-error:#ff6764;--rm-link:#63a8f8;
+    --rm-tint:16%;--rm-shadow:0 0 0 0 transparent;--rm-scrim:rgba(0,0,0,.5);
+    --rm-navbg:rgba(24,24,24,.92);--rm-bubble:#2c2c2c;
+  }
+  .statusbar{position:absolute;left:0;right:0;top:0;height:var(--sat);z-index:90;display:flex;align-items:center;justify-content:space-between;padding:6px 30px 0 40px;color:var(--rm-text-primary);font-weight:600;font-size:16px;pointer-events:none}
+  .island{position:absolute;left:50%;top:11px;width:124px;height:36px;margin-left:-62px;background:#000;border-radius:20px;z-index:95}
+  .sb-right{display:flex;gap:6px;align-items:center}
+  .bars{display:flex;gap:2px;align-items:flex-end;height:11px}
+  .bars i{display:block;width:3px;background:currentColor;border-radius:1px}
+  .battery{width:25px;height:12px;border:1.5px solid currentColor;border-radius:4px;opacity:.9;position:relative;padding:1.5px}
+  .battery::after{content:"";display:block;height:100%;width:78%;background:currentColor;border-radius:1.5px}
+  .homebar{position:absolute;left:50%;bottom:8px;width:134px;height:5px;margin-left:-67px;border-radius:3px;background:var(--rm-text-primary);z-index:90;pointer-events:none;opacity:.85}
+
+  #app{position:absolute;inset:0;background:var(--rm-bg-page)}
+
+  /* ---------- screen shell (spec §6) ---------- */
+  .scr{position:absolute;inset:0;display:flex;flex-direction:column;background:var(--rm-bg-page);color:var(--rm-text-primary)}
+  .scr.enter-push{animation:push .28s cubic-bezier(.2,0,0,1)}
+  .scr.enter-pop{animation:pop .28s cubic-bezier(.2,0,0,1)}
+  @keyframes push{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
+  @keyframes pop{from{transform:translateX(-24px);opacity:0}to{transform:none;opacity:1}}
+  .nav{flex:none;padding-top:var(--sat);background:var(--rm-navbg);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);position:relative;z-index:5;transition:box-shadow .2s}
+  .nav-row{height:44px;display:grid;grid-template-columns:96px 1fr 96px;align-items:center;padding:0 4px}
+  .nav-l{display:flex}.nav-r{display:flex;justify-content:flex-end}
+  .nav-c{text-align:center;min-width:0}
+  .nav-title{font-size:17px;line-height:22px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nav-sub{font-size:12px;line-height:15px;color:var(--rm-text-muted);display:flex;align-items:center;justify-content:center;gap:5px;min-width:0}
+  .nav-sub span.nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .content{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 16px calc(24px + var(--sab));scrollbar-width:none;min-width:0}
+  .content::-webkit-scrollbar{display:none}
+  .scr.has-dock .content{padding-bottom:12px}
+  .dock{flex:none;padding:10px 16px calc(10px + var(--sab));background:var(--rm-bg-page);position:relative;z-index:4}
+  .dock.lift{box-shadow:0 -1px 0 var(--rm-separator)}
+
+  /* ---------- type (spec §5.2) ---------- */
+  .large-title{font-size:28px;line-height:34px;font-weight:700;margin:0;letter-spacing:-.01em}
+  .headline{font-size:16px;line-height:22px;font-weight:600}
+  .callout{font-size:15px;line-height:22px;color:var(--rm-text-secondary);margin:0}
+  .subhead{font-size:14px;line-height:20px;color:var(--rm-text-secondary)}
+  .footnote{font-size:13px;line-height:18px;color:var(--rm-text-muted)}
+  .caption{font-size:12px;line-height:16px;font-weight:500}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+
+  /* ---------- controls ---------- */
+  .ic{display:block;flex:none}
+  .iconbtn{width:44px;height:44px;display:grid;place-items:center;border:0;background:transparent;color:var(--rm-text-primary);border-radius:12px;cursor:pointer;padding:0}
+  .iconbtn:active{opacity:.55}
+  .iconbtn.muted{color:var(--rm-text-muted)}
+  .btn{height:44px;border-radius:12px;font:600 16px/1 inherit;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;padding:0 16px;cursor:pointer;transition:transform .12s ease-out,opacity .12s;white-space:nowrap}
+  .btn:active{transform:scale(.98)}
+  .btn-lg{height:52px;width:100%;font-size:17px}
+  .btn-primary{background:var(--rm-accent);color:var(--rm-on-accent)}
+  .btn-secondary{background:var(--rm-bg-surface);color:var(--rm-text-primary);box-shadow:inset 0 0 0 1px var(--rm-separator)}
+  .btn-plain{background:transparent;color:var(--rm-text-primary)}
+  .btn-sm{height:34px;padding:0 12px;font-size:14px;border-radius:10px}
+
+  .group{background:var(--rm-bg-surface);border-radius:16px;overflow:hidden}
+  .row{display:flex;align-items:center;gap:12px;min-height:64px;padding:10px 8px 10px 16px;position:relative;width:100%;border:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}
+  .row:active{background:color-mix(in srgb,var(--rm-text-primary) 4%,transparent)}
+  .group > * + *::before{content:"";position:absolute;top:0;right:0;left:var(--inset-left,52px);height:1px;background:var(--rm-separator)}
+  .row-main{flex:1;min-width:0}
+  .row-title{font-size:16px;line-height:22px;font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .row-sub{font-size:13px;line-height:18px;color:var(--rm-text-secondary);margin-top:2px;display:flex;align-items:center;gap:6px;min-width:0;white-space:nowrap}
+  .row-sub .t{flex:none}
+  .row-sub .m{overflow:hidden;text-overflow:ellipsis;min-width:0;color:var(--rm-text-muted)}
+  .row-trail{display:flex;align-items:center;color:var(--rm-text-faint);flex:none}
+  .slot{width:20px;display:grid;place-items:center;flex:none}
+  .tile{width:32px;height:32px;border-radius:9px;background:var(--rm-bg-inset);display:grid;place-items:center;color:var(--rm-text-primary);flex:none}
+  .sh{font-size:13px;line-height:18px;color:var(--rm-text-muted);padding:22px 16px 8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .sh:first-child{padding-top:10px}
+
+  /* ---------- status vocabulary (spec §17.4) ----------
+     One set, three places: a session row, a navigation subtitle, a project card.
+     Colour never carries a state alone: each weight pairs its hue with a word
+     and a shape. */
+  .dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
+  .dot.running{background:var(--rm-running);animation:breathe 1.6s ease-in-out 2}
+  .dot.muted{background:var(--rm-text-faint)}
+  .dot.online{background:var(--rm-success)}
+  @keyframes breathe{50%{opacity:.35}}
+  /* state glyph: 16-20px, tone coloured */
+  .glyph{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;flex:none}
+  .glyph.decision{color:var(--rm-decision)}
+  .glyph.error{color:var(--rm-error)}
+  .glyph.success{color:var(--rm-success)}
+  /* the "not yet looked at" cue: same mark inside a ring, a shape difference */
+  .glyph.success.unseen{box-shadow:inset 0 0 0 1.5px var(--rm-success);background:color-mix(in srgb,var(--rm-success) var(--rm-tint),transparent)}
+  /* the attention pill: the only filled status mark in the product */
+  .pill{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:999px;font-size:12px;line-height:16px;font-weight:600;white-space:nowrap;flex:none}
+  .pill.decision{background:color-mix(in srgb,var(--rm-decision) var(--rm-tint),var(--rm-bg-surface));color:var(--rm-decision)}
+  .pill.running{background:color-mix(in srgb,var(--rm-running) var(--rm-tint),var(--rm-bg-surface));color:var(--rm-running)}
+  .pill.neutral{background:var(--rm-bg-inset);color:var(--rm-text-secondary)}
+  .state-word{font-weight:500;flex:none}
+  .state-word.running{color:var(--rm-running)}
+  .state-word.error{color:var(--rm-error)}
+  .state-word.success{color:var(--rm-success)}
+
+  /* ---------- project card (S5) ---------- */
+  .cards{display:flex;flex-direction:column;gap:10px;padding:2px 0 4px}
+  .card{display:block;width:100%;text-align:left;font:inherit;color:inherit;background:var(--rm-bg-surface);border:0;border-radius:16px;padding:14px 12px 13px 16px;cursor:pointer;position:relative;overflow:hidden}
+  .card:active{background:color-mix(in srgb,var(--rm-text-primary) 4%,var(--rm-bg-surface))}
+  /* a project with something waiting gets a 3px rail; the pill says the same
+     thing in words, so the rail is a second cue, never the only one */
+  .card.attention::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--rm-decision)}
+  .card-top{display:flex;align-items:center;gap:8px;min-width:0}
+  .card-name{font-size:16px;line-height:22px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .card-n{font-size:12px;color:var(--rm-text-muted);flex:none}
+  .card-top .row-trail{margin-left:auto}
+  .card-line{display:flex;align-items:center;gap:6px;margin-top:5px;min-width:0;overflow:hidden}
+  .card-line .footnote{flex:none}
+  .card-line .grow{flex:1;min-width:0}
+
+  /* ---------- empty / result ---------- */
+  .empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:56px 12px 8px}
+  .empty .big{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--rm-bg-inset);color:var(--rm-text-muted);margin-bottom:18px}
+  .empty h2{font-size:20px;line-height:26px;font-weight:700;margin:0 0 8px}
+  .empty .callout{max-width:300px}
+
+  /* ---------- in-app notice (foreground, spec §17.6) ---------- */
+  .notice{position:absolute;left:12px;right:12px;top:calc(var(--sat) + 52px);z-index:40;display:flex;align-items:center;gap:10px;
+    background:var(--rm-bg-raised);border-radius:14px;padding:10px 8px 10px 12px;
+    box-shadow:0 0 0 1px var(--rm-separator),var(--rm-shadow);animation:fadeDown .2s cubic-bezier(.2,0,0,1)}
+  .notice .glyph{width:22px;height:22px}
+  .notice .btn{height:44px;padding:0 12px;border-radius:10px}
+  .notice-main{flex:1;min-width:0}
+  .notice-title{font-size:14px;line-height:19px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .notice-body{font-size:13px;line-height:18px;color:var(--rm-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  @keyframes fadeDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+
+  /* ---------- session (S6, reduced: enough to prove the stack) ---------- */
+  .tl{display:flex;flex-direction:column;gap:14px;padding:14px 0 6px}
+  .m-user{align-self:flex-end;max-width:85%;background:var(--rm-bubble);border-radius:18px 18px 6px 18px;padding:9px 13px;font-size:15px;line-height:23px;white-space:pre-wrap;word-break:break-word}
+  .m-ai{font-size:15px;line-height:23px;white-space:pre-wrap;word-break:break-word}
+  .m-ai code{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--rm-link);background:var(--rm-bg-inset);padding:1px 5px;border-radius:5px}
+  .m-note{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--rm-text-muted)}
+  .m-note::before,.m-note::after{content:"";flex:1;height:1px;background:var(--rm-separator)}
+  .decision{border-radius:16px;background:var(--rm-bg-surface);box-shadow:inset 0 0 0 1px var(--rm-separator);padding:12px 14px 12px}
+  .decision-head{display:flex;align-items:center;gap:8px;color:var(--rm-decision);font-size:15px;line-height:22px;font-weight:600}
+  .decision-body{margin:6px 0 12px;font-size:14px;line-height:21px;color:var(--rm-text-secondary)}
+  .decision-actions{display:flex;gap:8px}
+  .decision-actions .btn{flex:1;height:44px;font-size:15px}
+  .composer{display:flex;align-items:flex-end;gap:8px;background:var(--rm-bg-surface);border-radius:22px;box-shadow:inset 0 0 0 1px var(--rm-separator);padding:7px 7px 7px 16px;min-height:44px}
+  .composer .ph{flex:1;font-size:16px;line-height:24px;color:var(--rm-text-faint);padding:4px 0}
+  .composer .send{width:36px;height:36px;border-radius:50%;border:0;background:var(--rm-accent);color:var(--rm-on-accent);display:grid;place-items:center;opacity:.4;flex:none}
+
+  /* ---------- sheet ---------- */
+  .scrim{position:absolute;inset:0;background:var(--rm-scrim);z-index:60;animation:fade .2s ease-out}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .sheet{position:absolute;left:0;right:0;bottom:0;z-index:61;background:var(--rm-bg-raised);border-radius:20px 20px 0 0;padding:8px 16px calc(16px + var(--sab));animation:rise .28s cubic-bezier(.2,0,0,1)}
+  @keyframes rise{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
+  .grabber{width:36px;height:5px;border-radius:3px;background:var(--rm-text-faint);opacity:.5;margin:0 auto 10px}
+  .sheet h3{margin:0 0 12px;font-size:17px;line-height:22px;font-weight:600}
+  .kv{display:flex;align-items:center;gap:10px;min-height:52px;border-top:1px solid var(--rm-separator)}
+  .kv:first-of-type{border-top:0}
+  .kv .k{font-size:15px;color:var(--rm-text-secondary);flex:none}
+  .kv .v{flex:1;text-align:right;font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kv .v.muted{font-weight:400;color:var(--rm-text-secondary)}
+
+  @media (prefers-reduced-motion:reduce){
+    *,::before,::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+  }
+
+  /* ---------- additions for direct chat (this file only) ---------- */
+  .panel.map{width:268px}
+  .scr.no-anim{animation:none}
+  .scr.has-tabs .content{padding-bottom:16px}
+  .tabbar{flex:none;display:flex;background:var(--rm-navbg);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:0 -1px 0 var(--rm-separator);padding:4px 0 var(--sab);position:relative;z-index:5}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:49px;border:0;background:transparent;color:var(--rm-text-faint);font:500 11px/14px inherit;font-family:inherit;cursor:pointer}
+  .tab.on{color:var(--rm-text-primary);font-weight:600}
+  .search{display:flex;align-items:center;gap:8px;height:38px;background:var(--rm-bg-inset);border-radius:12px;padding:0 12px;color:var(--rm-text-muted);margin:0 0 4px}
+  .search input{flex:1;min-width:0;border:0;background:transparent;font:inherit;font-size:16px;color:var(--rm-text-primary);outline:none}
+  .group.flat{--inset-left:16px}
+  .row.static{cursor:default}
+  .row.static:active{background:transparent}
+  .row.danger .row-title{color:var(--rm-error)}
+  .row.dim{opacity:.5}
+  .row-title .pin{display:inline-block;vertical-align:-3px;margin-right:4px;color:var(--rm-text-muted)}
+  .row-prev{display:block;font-size:14px;line-height:20px;color:var(--rm-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+  .link-row{display:flex;align-items:center;justify-content:center;gap:6px;margin:14px auto 0;border:0;background:transparent;color:var(--rm-text-secondary);font:inherit;font-size:14px;cursor:pointer;padding:8px 12px}
+  .banner{display:flex;align-items:center;gap:10px;background:var(--rm-bg-surface);border-radius:14px;padding:12px;margin:2px 0 6px;box-shadow:inset 0 0 0 1px var(--rm-separator)}
+  .banner .row-main{font-size:14px;line-height:20px}
+  .hero{display:flex;flex-direction:column;align-items:center;text-align:center;padding:20px 12px 4px}
+  .hero .big{width:56px;height:56px;border-radius:16px;display:grid;place-items:center;background:var(--rm-bg-inset);margin-bottom:14px}
+  .hero h2{font-size:20px;line-height:26px;margin:0 0 6px}
+  .field{display:flex;align-items:center;gap:6px;height:52px;background:var(--rm-bg-surface);border-radius:14px;padding:0 4px 0 14px;box-shadow:inset 0 0 0 1px var(--rm-separator)}
+  .field input{flex:1;min-width:0;border:0;background:transparent;font:inherit;font-size:16px;color:var(--rm-text-primary);outline:none}
+  .field.err{box-shadow:inset 0 0 0 1.5px var(--rm-error)}
+  .err-line{color:var(--rm-error);font-size:13px;line-height:18px;margin:8px 4px 0}
+  .chip-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;min-height:30px}
+  .chip{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 9px;border-radius:999px;border:0;background:var(--rm-bg-surface);box-shadow:inset 0 0 0 1px var(--rm-separator);font:600 13px/1 inherit;font-family:inherit;color:var(--rm-text-primary);cursor:pointer}
+  .chip[disabled]{opacity:.5;cursor:default}
+  .composer textarea{flex:1;border:0;background:transparent;resize:none;font:inherit;font-size:16px;line-height:24px;color:var(--rm-text-primary);padding:4px 0;outline:none;height:32px}
+  .composer textarea::placeholder{color:var(--rm-text-faint)}
+  .composer .send.on{opacity:1;cursor:pointer}
+  .m-model{font-size:12px;line-height:16px;color:var(--rm-text-muted);margin-bottom:4px;font-weight:600}
+  .m-state{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px;line-height:18px;color:var(--rm-text-muted)}
+  .m-state.bad{color:var(--rm-error)}
+  .caret{display:inline-block;width:7px;height:15px;background:var(--rm-text-primary);vertical-align:-2px;margin-left:2px;animation:breathe 1s steps(1) infinite}
+  .blank{display:flex;flex-direction:column;align-items:center;text-align:center;padding:150px 20px 0;color:var(--rm-text-muted)}
+  .blank .headline{color:var(--rm-text-primary);margin-bottom:6px}
+  .toast{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--sab) + 92px);z-index:70;background:var(--rm-text-primary);color:var(--rm-bg-page);font-size:14px;line-height:19px;padding:10px 14px;border-radius:12px;width:max-content;max-width:330px;text-align:center;animation:fade .2s ease-out}
+  .sheet .list{max-height:420px;overflow:auto;margin:0 -6px}
+  .opt{display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;text-align:left;font:inherit;color:inherit;padding:8px;border-radius:12px;cursor:pointer;min-height:52px}
+  .opt:active{background:var(--rm-bg-inset)}
+  .opt[disabled]{opacity:.45;cursor:default}
+  .opt .check{color:var(--rm-text-primary);flex:none}
+  .btn-danger{background:var(--rm-error);color:#fff}
+  .sheet-actions{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+  .kv button.v{border:0;background:transparent;font:inherit;font-size:15px;font-weight:600;color:var(--rm-text-primary);cursor:pointer;display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:0}
+  .card-note{background:var(--rm-bg-surface);border-radius:16px;padding:14px 16px;font-size:14px;line-height:21px;color:var(--rm-text-secondary);margin-top:8px}
+  .map-tree{display:flex;flex-direction:column;gap:1px}
+  .map-tree button{display:flex;align-items:center;gap:6px;text-align:left;border:0;background:transparent;padding:6px 10px;border-radius:8px;font:inherit;color:inherit;cursor:pointer}
+  .map-tree button:hover{background:rgba(0,0,0,.06)}
+  body.page-dark .map-tree button:hover{background:rgba(255,255,255,.08)}
+  .map-tree button.on{background:rgba(0,0,0,.08);font-weight:600}
+  body.page-dark .map-tree button.on{background:rgba(255,255,255,.12)}
+  .map-tree .root{font-weight:600;margin-top:6px}
+  .map-tree .lv2{padding-left:24px;color:#4b4b50}
+  body.page-dark .map-tree .lv2{color:#c2c2c6}
+  .map-tree .tag{font-size:11px;font-weight:600;padding:1px 6px;border-radius:6px;background:rgba(0,0,0,.07);color:#6b6b70}
+  body.page-dark .map-tree .tag{background:rgba(255,255,255,.1);color:#b0b0b4}
+  .now{background:rgba(0,0,0,.05);border-radius:10px;padding:10px 12px;line-height:1.7}
+  body.page-dark .now{background:rgba(255,255,255,.07)}
+  .rules{margin:0;padding-left:18px;line-height:1.6;color:#4b4b50}
+  body.page-dark .rules{color:#c2c2c6}
+  .rules li+li{margin-top:4px}
+</style>
+</head>
+<body>
+
+<aside class="panel">
+  <h1>移动端 · 直连对话入口</h1>
+  <p class="lead">ADR「Mobile direct gateway chat」的可视参照。数据是模拟的，交互是真的：可以新建对话、发送、切换模型、归档、切到「电脑」。</p>
+
+  <h2>场景（首次打开落在哪里）</h2>
+  <div class="jump" id="scenes">
+    <button data-scene="daily" class="on">日常使用 · 已连接，有历史</button>
+    <button data-scene="fresh">新安装 · 首次打开</button>
+    <button data-scene="upgrade">老用户升级后首次打开</button>
+  </div>
+
+  <h2>运行环境</h2>
+  <div class="seg" id="platformSeg">
+    <button data-platform="native" class="on">原生 App</button>
+    <button data-platform="web">浏览器 H5</button>
+  </div>
+
+  <h2>外观</h2>
+  <div class="seg" id="themeSeg">
+    <button data-theme="light" class="on">浅色</button>
+    <button data-theme="dark">深色</button>
+  </div>
+
+  <h2>事件演示</h2>
+  <div class="jump" id="demos">
+    <button data-demo="push">点击电脑通知（从「对话」里）</button>
+    <button data-demo="background">生成中切到后台</button>
+  </div>
+
+  <button class="reset" id="reset">重置</button>
+  <p class="tip">底部导航只在两个首页出现，进入任何下一级页面都会隐藏；返回只走一条规则，两个首页再返回就是退出 App。</p>
+</aside>
+
+<div class="phone" id="phone" data-theme="light">
+  <div class="island"></div>
+  <div class="statusbar">
+    <span>9:41</span>
+    <span class="sb-right">
+      <span class="bars"><i style="height:5px"></i><i style="height:7px"></i><i style="height:9px"></i><i style="height:11px"></i></span>
+      <span class="battery"></span>
+    </span>
+  </div>
+  <div id="app"></div>
+  <div class="homebar"></div>
+</div>
+
+<aside class="panel map">
+  <h1>页面框架</h1>
+  <p class="lead">点任一页面直接跳过去。</p>
+  <div class="map-tree" id="map">
+    <button class="root" data-to="chats">对话 <span class="tag">首页 · D1</span></button>
+    <button class="lv2" data-to="gateway">连接模型网关 <span class="tag">D2</span></button>
+    <button class="lv2" data-to="chat-new">新对话 <span class="tag">D3</span></button>
+    <button class="lv2" data-to="chat">对话页 <span class="tag">D3</span></button>
+    <button class="lv2" data-to="chat-broken">回复中断 <span class="tag">D3</span></button>
+    <button class="lv2" data-to="archive">已归档 <span class="tag">D4</span></button>
+    <button class="root" data-to="computers">电脑 <span class="tag">首页 · S1/S4</span></button>
+    <button class="lv2" data-to="projects">项目 ▸ 会话 <span class="tag">沿用</span></button>
+    <button class="lv2" data-to="session">远程会话 <span class="tag">S6 沿用</span></button>
+    <button class="root" data-to="settings">设置 <span class="tag">S8 · 两个首页的齿轮</span></button>
+  </div>
+
+  <h2>当前</h2>
+  <div class="now" id="now"></div>
+
+  <h2>规则</h2>
+  <ul class="rules">
+    <li>「对话」不需要电脑；「电脑」以下页面完全沿用。</li>
+    <li>切换底部导航 = 替换首页，不叠加返回记录。</li>
+    <li>新安装进「对话」；有电脑的老用户升级后先进「电脑」；之后记住上次的首页。</li>
+    <li>电脑通知点击后切到「电脑」并恢复会话路径，对话草稿已自动保存。</li>
+    <li>浏览器 H5 保持现状：没有底部导航，也没有「对话」。</li>
+  </ul>
+</aside>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ icons */
+const ICONS = {
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  alert:'<circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+  shield:'<path d="M20 13c0 5-3.5 7.4-7.6 8.9a1 1 0 0 1-.7 0C7.5 20.4 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  chevR:'<path d="m9 18 6-6-6-6"/>',
+  chevL:'<path d="m15 18-6-6 6-6"/>',
+  chevD:'<path d="m6 9 6 6 6-6"/>',
+  plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+  laptop:'<rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 20h20"/>',
+  chat:'<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/>',
+  compose:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  pin:'<path d="M12 17v5"/><path d="M9 4h6l-1 6 3 3v2H7v-2l3-3z"/>',
+  archive:'<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/>',
+  trash:'<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/>',
+  copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
+  more:'<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>',
+  key:'<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3"/><path d="m16 7 3 3"/>',
+  eye:'<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  arrowUp:'<path d="M12 19V5"/><path d="M5 12l7-7 7 7"/>',
+  stop:'<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/>',
+  refresh:'<path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M21 4v5h-5"/>',
+  router:'<rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01"/><path d="M11 16.5h.01"/><path d="M8.5 9.5a5 5 0 0 1 7 0"/><path d="M6 7a8.5 8.5 0 0 1 12 0"/>'
+};
+function icon(name, size = 20, sw = 2) {
+  return `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
+}
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/* ------------------------------------------------------------------ data
+ * Models are what the key-scoped `/api/models` catalog would declare. Only
+ * Chat Completions and Responses models are chat choices (ADR §3); the image
+ * model is listed disabled with its reason instead of being hidden.
+ */
+const MODELS = [
+  { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", proto: "Chat Completions" },
+  { id: "gpt-6-luna", label: "GPT-6 Luna", proto: "Responses" },
+  { id: "deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash", proto: "Chat Completions" },
+  { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", proto: "Chat Completions" },
+  { id: "glm-5.3-flash", label: "GLM 5.3 Flash", proto: "Chat Completions" },
+  { id: "gpt-image-2.5", label: "GPT Image 2.5", proto: "", disabled: "图像模型，暂不支持对话" }
+];
+function modelLabel(id) { const m = MODELS.find((x) => x.id === id); return m ? m.label : id; }
+
+function seedConversations() {
+  return [
+    { id: "c1", title: "周报润色：三段合成一段", pinned: true, time: "刚刚", model: "gpt-6-luna", msgs: [
+      { role: "user", text: "帮我把这三段周报合成一段，语气正式一点。" },
+      { role: "ai", model: "claude-sonnet-5-5", text: "可以。合并后：本周完成登录流程重构并补齐回归用例，移动端安全区问题已定位，下周计划发布 v0.22。" },
+      { role: "note", text: "已切换到 GPT-6 Luna · 下一轮生效" },
+      { role: "user", text: "再短一点，控制在 40 字以内。" },
+      { role: "ai", model: "gpt-6-luna", text: "本周完成登录重构与回归用例，定位安全区问题，下周发布 v0.22。" }
+    ]},
+    { id: "c2", title: "SSE 和 WebSocket 有什么区别", time: "14:20", model: "gpt-6-luna", msgs: [
+      { role: "user", text: "SSE 和 WebSocket 有什么区别？" },
+      { role: "ai", model: "gpt-6-luna", text: "SSE 是服务器到客户端的单向文本流，基于普通 HTTP，断线可自动重连；WebSocket 是双向通道，需要单独的握手和协议。只需要服务端推送时，SSE 更简单。" }
+    ]},
+    { id: "c3", title: "给 5 岁孩子讲光合作用", time: "昨天", model: "deepseek-v4.1-flash", msgs: [
+      { role: "user", text: "怎么给 5 岁孩子讲光合作用？" },
+      { role: "ai", model: "deepseek-v4.1-flash", text: "可以说：叶子是植物的小厨房，阳光是火，水和空气是食材，做出来的饭让植物长高，还会顺便吐出我们呼吸的氧气。" }
+    ]},
+    { id: "c4", title: "东京 4 天行程", time: "10月18日", model: "gemini-3.8-flash", msgs: [
+      { role: "user", text: "帮我排一个东京 4 天的行程，节奏轻松一点。" },
+      { role: "ai", model: "gemini-3.8-flash", text: "第 1 天：浅草寺、隅田川散步，晚上去晴空塔看夜景。\n第 2 天：上午明治神宫，下午原宿和", state: "interrupted" }
+    ]},
+    { id: "c5", title: "老项目命名讨论", archived: true, time: "10月2日", model: "glm-5.3-flash", msgs: [
+      { role: "user", text: "给一个内部工具起几个名字。" },
+      { role: "ai", model: "glm-5.3-flash", text: "可以考虑：Relay、Hearth、Ledger。" }
+    ]}
+  ];
+}
+
+/* ------------------------------------------------------------- state */
+const SCENES = {
+  daily: { connected: true, hasHosts: true, root: "chats", seed: true },
+  fresh: { connected: false, hasHosts: false, root: "chats", seed: false },
+  upgrade: { connected: false, hasHosts: true, root: "computers", seed: false }
+};
+function initialState(scene = "daily", keep = {}) {
+  const s = SCENES[scene];
+  return {
+    theme: keep.theme || "light",
+    platform: keep.platform || "native",
+    scene,
+    connected: s.connected,
+    hasHosts: s.hasHosts,
+    root: s.root,
+    screen: s.root,
+    stack: [],
+    dir: "none",
+    convId: null,
+    draft: "",
+    lastModel: "claude-sonnet-5-5",
+    sheet: null,
+    query: "",
+    keyError: "",
+    verifying: false,
+    gatewayThen: "chat",
+    toast: null,
+    convs: s.seed ? seedConversations() : []
+  };
+}
+let S = initialState();
+let streamTimer = null;
+let toastTimer = null;
+
+const ROOTS = ["chats", "computers"];
+function isRoot(screen) { return ROOTS.includes(screen); }
+function conv(id) { return S.convs.find((c) => c.id === id) || null; }
+function activeConvs() { return S.convs.filter((c) => !c.archived); }
+function archivedConvs() { return S.convs.filter((c) => c.archived); }
+function ordered(list) { return list.filter((c) => c.pinned).concat(list.filter((c) => !c.pinned)); }
+function preview(c) { const m = c.msgs.filter((x) => x.role !== "note").slice(-1)[0]; return m ? m.text.replace(/\n/g, " ") : ""; }
+function matches(c, q) { if (!q) return true; q = q.toLowerCase(); return c.title.toLowerCase().includes(q) || c.msgs.some((m) => m.text.toLowerCase().includes(q)); }
+function streamingIn(c) { return !!(c && c.msgs.some((m) => m.state === "streaming")); }
+
+/* ------------------------------------------------------------- chrome */
+function backBtn() { return `<button class="iconbtn" data-act="back" aria-label="返回">${icon("chevL", 22, 2.2)}</button>`; }
+function spacer() { return `<span style="width:44px"></span>`; }
+function nav(o) {
+  const sub = o.sub ? `<div class="nav-sub">${o.sub}</div>` : "";
+  return `<div class="nav"><div class="nav-row">
+    <div class="nav-l">${o.left || spacer()}</div>
+    <div class="nav-c"><div class="nav-title">${esc(o.title)}</div>${sub}</div>
+    <div class="nav-r">${o.trailing || ""}</div>
+  </div></div>`;
+}
+function gearBtn() { return S.platform === "native" ? `<button class="iconbtn" data-act="settings" aria-label="设置">${icon("gear", 21, 1.9)}</button>` : spacer(); }
+function tabbar() {
+  if (S.platform !== "native") return "";
+  const tab = (id, ic, label) => `<button class="tab${S.root === id ? " on" : ""}" data-act="tab" data-id="${id}"${S.root === id ? ' aria-current="page"' : ""}>${icon(ic, 24, S.root === id ? 2.2 : 1.8)}<span>${label}</span></button>`;
+  return `<nav class="tabbar" aria-label="主导航">${tab("chats", "chat", "对话")}${tab("computers", "laptop", "电脑")}</nav>`;
+}
+function shell(content, o) {
+  const anim = S.dir === "push" ? "enter-push" : S.dir === "pop" ? "enter-pop" : "no-anim";
+  const tabs = isRoot(S.screen) ? tabbar() : "";
+  return `<div class="scr ${anim}${tabs ? " has-tabs" : ""}${o.dock ? " has-dock" : ""}">
+    ${o.nav}
+    <div class="content" id="content">${content}</div>
+    ${o.dock ? `<div class="dock lift">${o.dock}</div>` : ""}
+    ${tabs}
+  </div>`;
+}
+
+/* ------------------------------------------------------------- D1 Chats */
+function convRow(c) {
+  const pin = c.pinned ? `<span class="pin">${icon("pin", 14, 2)}</span>` : "";
+  const broken = c.msgs.some((m) => m.state === "interrupted") ? `<span class="pill neutral">已中断</span>` : "";
+  const running = streamingIn(c) ? `<span class="pill running"><span class="dot running" style="width:6px;height:6px"></span>回复中</span>` : "";
+  return `<button class="row" data-act="open-chat" data-id="${c.id}">
+    <span class="row-main">
+      <span class="row-title" style="-webkit-line-clamp:1">${pin}${esc(c.title)}</span>
+      <span class="row-prev">${esc(preview(c))}</span>
+      <span class="row-sub"><span class="t">${esc(c.time)}</span><span class="m">· ${esc(modelLabel(c.model))}</span>${running}${broken}</span>
+    </span>
+    <span class="row-trail">${icon("chevR", 18)}</span>
+  </button>`;
+}
+function scrChats() {
+  const list = activeConvs();
+  const trailing = `<button class="iconbtn" data-act="new-chat" aria-label="新对话">${icon("compose", 21, 1.9)}</button>`;
+  let body = `<h1 class="large-title" style="padding:6px 4px 12px">对话</h1>`;
+  if (!S.connected && list.length === 0) {
+    body += `<div class="empty" style="padding-top:64px">
+      <span class="big">${icon("chat", 28, 1.8)}</span>
+      <h2>直接和模型对话</h2>
+      <p class="callout">不需要电脑在线。连接模型网关后就能开始，对话保存在这台手机上。</p>
+      <button class="btn btn-primary" style="margin-top:22px;min-width:200px" data-act="connect">连接模型网关</button>
+    </div>`;
+  } else if (list.length === 0) {
+    body += `<div class="empty" style="padding-top:64px">
+      <span class="big">${icon("chat", 28, 1.8)}</span>
+      <h2>还没有对话</h2>
+      <p class="callout">发出第一条消息后，这里会出现历史。</p>
+      <button class="btn btn-primary" style="margin-top:22px;min-width:200px" data-act="new-chat">新对话</button>
+    </div>`;
+  } else {
+    if (!S.connected) {
+      body += `<div class="banner"><span class="tile">${icon("key", 18)}</span>
+        <span class="row-main">未连接模型网关<br><span class="footnote">历史可以阅读，连接后才能继续发送。</span></span>
+        <button class="btn btn-primary btn-sm" data-act="connect">连接</button></div>`;
+    }
+    body += `<label class="search">${icon("search", 17)}<input id="search-input" placeholder="搜索标题和内容" value="${esc(S.query)}" /></label>`;
+    const shown = ordered(list).filter((c) => matches(c, S.query));
+    const pinned = shown.filter((c) => c.pinned);
+    const rest = shown.filter((c) => !c.pinned);
+    if (S.query && shown.length === 0) body += `<p class="footnote" style="text-align:center;padding:40px 0">没有匹配“${esc(S.query)}”的对话</p>`;
+    if (pinned.length) body += `<div class="sh"><span>置顶</span></div><div class="group flat">${pinned.map(convRow).join("")}</div>`;
+    if (rest.length) body += `<div class="sh"><span>最近</span></div><div class="group flat">${rest.map(convRow).join("")}</div>`;
+    const n = archivedConvs().length;
+    if (n && !S.query) body += `<button class="link-row" data-act="open-archive">${icon("archive", 16)}已归档 ${n} 个${icon("chevR", 15)}</button>`;
+    body += `<p class="footnote" style="text-align:center;padding:10px 12px 0">对话只保存在这台手机上，不经过电脑。</p>`;
+  }
+  return shell(body, { nav: nav({ title: "对话", left: gearBtn(), trailing }) });
+}
+
+/* ------------------------------------------------------------- D2 Connect */
+function scrGateway() {
+  const err = S.keyError ? `<p class="err-line">${esc(S.keyError)}</p>` : "";
+  const body = `
+    <div class="hero"><span class="big">${icon("router", 26, 1.8)}</span>
+      <h2>连接模型网关</h2>
+      <p class="callout">手机直接请求模型，不经过电脑，也不需要配对。</p></div>
+    <div class="sh">网关</div>
+    <div class="group flat"><div class="row static">
+      <span class="row-main"><span class="row-title">Minih Router</span>
+      <span class="row-sub"><span class="m mono">https://router.example.com（构建时固定）</span></span></span>
+    </div></div>
+    <div class="sh">AccessKey</div>
+    <label class="field${S.keyError ? " err" : ""}"><input id="key-input" type="password" placeholder="粘贴 AccessKey" autocomplete="off" />
+      <button class="iconbtn muted" data-act="toggle-key" aria-label="显示或隐藏">${icon("eye", 19)}</button></label>
+    ${err}
+    <p class="footnote" style="padding:10px 4px 0;line-height:19px">保存在本机钥匙串（Keychain / Keystore），只用于这台手机直连模型。和电脑配对用的设备令牌相互独立，断开任一方不影响另一方。</p>`;
+  const dock = `<button class="btn btn-primary btn-lg" data-act="do-connect"${S.verifying ? " disabled style=\"opacity:.6\"" : ""}>${S.verifying ? "正在验证…" : "连接"}</button>`;
+  return shell(body, { nav: nav({ title: "连接模型网关", left: backBtn() }), dock });
+}
+
+/* ------------------------------------------------------------- D3 Conversation */
+function msgHtml(m) {
+  if (m.role === "user") return `<div class="m-user">${esc(m.text)}</div>`;
+  if (m.role === "note") return `<div class="m-note">${esc(m.text)}</div>`;
+  const caret = m.state === "streaming" ? `<span class="caret"></span>` : "";
+  let foot = "";
+  if (m.state === "stopped") foot = `<div class="m-state">${icon("stop", 14)}已停止，保留已收到的内容</div>`;
+  if (m.state === "interrupted") foot = `<div class="m-state bad">${icon("alert", 15)}已中断（App 进入后台或网络断开）<button class="btn btn-secondary btn-sm" data-act="retry" style="margin-left:auto">重试</button></div>`;
+  if (m.state === "superseded") foot = `<div class="m-state">${icon("clock", 14)}这次回复已中断，下面是重试结果</div>`;
+  return `<div><div class="m-model">${esc(modelLabel(m.model))}</div><div class="m-ai">${esc(m.text)}${caret}</div>${foot}</div>`;
+}
+function scrChat() {
+  const c = conv(S.convId);
+  const busy = !!streamTimer;
+  const here = streamingIn(c);
+  const model = c ? c.model : S.lastModel;
+  const title = c ? c.title : "新对话";
+  const trailing = c ? `<button class="iconbtn" data-act="info" aria-label="对话信息">${icon("more", 22)}</button>` : spacer();
+  const body = c
+    ? `<div class="tl">${c.msgs.map(msgHtml).join("")}</div>`
+    : `<div class="blank"><div class="headline">想聊点什么？</div><div class="footnote">将使用 ${esc(modelLabel(model))}，可在下方切换</div></div>`;
+  let dock;
+  if (!S.connected) {
+    dock = `<button class="btn btn-primary btn-lg" data-act="connect">连接模型网关后继续</button>`;
+  } else if (c && c.archived) {
+    dock = `<button class="btn btn-secondary btn-lg" data-act="restore">恢复到对话列表后继续</button>`;
+  } else {
+    const lock = busy ? (here ? "回复完成后可切换模型" : "另一个对话正在回复") : "";
+    const action = here
+      ? `<button class="send on" data-act="stop" aria-label="停止">${icon("stop", 16, 2.4)}</button>`
+      : `<button class="send${S.draft.trim() && !busy ? " on" : ""}" data-act="send" aria-label="发送">${icon("arrowUp", 18, 2.4)}</button>`;
+    dock = `<div class="chip-row"><button class="chip" data-act="model-sheet"${busy ? " disabled" : ""}>${icon("chat", 14, 2.2)}${esc(modelLabel(model))}${icon("chevD", 14, 2.2)}</button>
+        <span class="footnote">${lock}</span></div>
+      <div class="composer"><textarea id="composer-input" rows="1" placeholder="发消息">${esc(S.draft)}</textarea>${action}</div>`;
+  }
+  const sub = `<span class="nm">直连 · Minih Router${c && c.archived ? " · 已归档" : ""}</span>`;
+  return shell(body, { nav: nav({ title, left: backBtn(), sub, trailing }), dock });
+}
+
+/* ------------------------------------------------------------- D4 Archived */
+function scrArchive() {
+  const list = archivedConvs();
+  const body = list.length
+    ? `<div class="group flat" style="margin-top:10px">${list.map(convRow).join("")}</div>
+       <p class="footnote" style="text-align:center;padding:14px 12px 0">归档只是从列表隐藏，内容完整保留，可随时恢复。</p>`
+    : `<div class="empty"><span class="big">${icon("archive", 26, 1.8)}</span><h2>没有归档的对话</h2></div>`;
+  return shell(body, { nav: nav({ title: "已归档", left: backBtn() }) });
+}
+
+/* ------------------------------------------------------------- Computers (S1 / S4) */
+function scrComputers() {
+  const trailing = S.hasHosts ? `<button class="iconbtn" data-act="toast" data-msg="沿用现有：账号登录 / 配对码" aria-label="连接电脑">${icon("plus", 22, 2.2)}</button>` : spacer();
+  let body = `<h1 class="large-title" style="padding:6px 4px 16px">我的电脑</h1>`;
+  if (S.hasHosts) {
+    body += `<div class="group flat"><button class="row" data-act="open-host">
+        <span class="row-main"><span class="row-title">MacBook Pro</span>
+        <span class="row-sub"><span class="dot online"></span><span class="t">在线</span></span></span>
+        <span class="row-trail">${icon("chevR", 18)}</span></button></div>
+      <p class="footnote" style="padding:16px 4px 0;line-height:19px">这一栏以下的页面全部沿用现有设计：电脑 ▸ 项目 ▸ 项目会话 ▸ 会话。</p>`;
+  } else {
+    body += `<div class="empty" style="padding-top:40px">
+      <span class="big">${icon("laptop", 28, 1.8)}</span>
+      <h2>连接你的电脑</h2>
+      <p class="callout">在电脑上的 Minih 里开启远程控制，然后用账号登录或配对码连接。</p>
+      <div class="sheet-actions" style="width:100%;max-width:300px">
+        <button class="btn btn-primary" data-act="toast" data-msg="沿用现有 S2 账号登录">用 Minih 账号登录</button>
+        <button class="btn btn-secondary" data-act="toast" data-msg="沿用现有 S3 配对码">使用配对码</button>
+      </div>
+      <p class="footnote" style="margin-top:18px">不连接电脑，也可以在「对话」里直接和模型聊天。</p>
+    </div>`;
+  }
+  return shell(body, { nav: nav({ title: "我的电脑", left: gearBtn(), trailing }) });
+}
+function scrProjects() {
+  const body = `<div class="card-note">这里沿用现有的「项目」和「项目会话」两层页面，本方案不做改动。可视参照见 <span class="mono">projects-notifications.html</span>。</div>
+    <div class="sh">示例会话</div>
+    <div class="group flat"><button class="row" data-act="open-remote">
+      <span class="row-main"><span class="row-title">重构登录流程，失败时只清空密码</span>
+      <span class="row-sub"><span class="pill decision">${icon("shield", 12, 2.4)}等你批准</span><span class="m">web 应用</span></span></span>
+      <span class="row-trail">${icon("chevR", 18)}</span></button></div>`;
+  return shell(body, { nav: nav({ title: "MacBook Pro", left: backBtn(), sub: `<span class="dot online"></span><span class="nm">在线</span>` }) });
+}
+function scrRemote() {
+  const body = `<div class="tl">
+      <div class="m-user">登录失败时只清空密码，别清用户名。</div>
+      <div class="m-ai">我会修改 LoginForm 的失败分支，并补一条回归用例。</div>
+      <div class="decision"><div class="decision-head">${icon("shield", 18, 2.2)}等你批准</div>
+        <div class="decision-body">编辑 src/auth/LoginForm.tsx</div>
+        <div class="decision-actions"><button class="btn btn-secondary">拒绝</button><button class="btn btn-primary">允许</button></div></div>
+    </div>
+    <p class="footnote" style="text-align:center;padding:6px 12px 0">远程会话保留审批、工具和电脑状态；直连对话页没有这些。</p>`;
+  const dock = `<div class="composer"><span class="ph">给 Agent 发消息</span><button class="send">${icon("arrowUp", 18, 2.4)}</button></div>`;
+  return shell(body, { nav: nav({ title: "重构登录流程，失败时只清空密码", left: backBtn(), sub: `<span class="dot online"></span><span class="nm">MacBook Pro · web 应用</span>` }), dock });
+}
+
+/* ------------------------------------------------------------- S8 Settings */
+function scrSettings() {
+  const n = activeConvs().length + archivedConvs().length;
+  const gateway = S.connected
+    ? `<div class="row static"><span class="tile">${icon("router", 18)}</span><span class="row-main"><span class="row-title">Minih Router</span>
+         <span class="row-sub"><span class="dot online"></span><span class="t">已连接</span><span class="m">· 密钥「我的手机」</span></span></span></div>
+       <button class="row danger" data-act="unlink" style="--inset-left:16px"><span class="row-main"><span class="row-title">断开模型网关</span></span></button>`
+    : `<button class="row" data-act="connect-from-settings"><span class="tile">${icon("router", 18)}</span><span class="row-main"><span class="row-title">连接模型网关</span>
+         <span class="row-sub"><span class="m">未连接</span></span></span><span class="row-trail">${icon("chevR", 18)}</span></button>`;
+  const later = ["电脑与设备", "通知", "外观", "关于"].map((t) => `<button class="row dim" data-act="toast" data-msg="按 S8 规格另行实现" style="min-height:52px"><span class="row-main"><span class="row-title">${t}</span></span><span class="row-trail">${icon("chevR", 18)}</span></button>`).join("");
+  const body = `
+    <div class="sh">模型网关</div>
+    <div class="group">${gateway}</div>
+    <p class="footnote" style="padding:8px 16px 0">断开只删除本机保存的密钥，不影响已配对的电脑，也不删除对话。</p>
+    <div class="sh">对话历史</div>
+    <div class="group flat">
+      <div class="row static"><span class="row-main"><span class="row-title">保存在这台手机</span>
+        <span class="row-sub"><span class="m">${n} 个对话 · 不会同步到其他设备</span></span></span></div>
+      <button class="row danger" data-act="clear-history"${n ? "" : " disabled style=\"opacity:.4\""}><span class="row-main"><span class="row-title">清除这个账号的对话历史</span></span></button>
+    </div>
+    <p class="footnote" style="padding:8px 16px 0;line-height:18px">卸载 App 或清除应用数据会删除这些对话。换成其他账号后，旧账号的历史在这里只读查看，不会用新账号发送。</p>
+    <div class="sh">其他（按 S8 规格另行实现）</div>
+    <div class="group flat">${later}</div>`;
+  return shell(body, { nav: nav({ title: "设置", left: backBtn() }) });
+}
+
+/* ------------------------------------------------------------- sheets */
+function sheetHtml() {
+  const c = conv(S.convId);
+  let inner = "";
+  if (S.sheet === "model") {
+    const current = c ? c.model : S.lastModel;
+    inner = `<h3>选择模型</h3>
+      <div class="list">${MODELS.map((m) => `<button class="opt" data-act="pick-model" data-id="${m.id}"${m.disabled ? " disabled" : ""}>
+        <span class="row-main"><span class="row-title" style="-webkit-line-clamp:1">${esc(m.label)}</span>
+        <span class="row-sub"><span class="m">${m.disabled ? esc(m.disabled) : esc(m.proto) + " · Minih Router"}</span></span></span>
+        ${m.id === current ? `<span class="check">${icon("check", 20, 2.6)}</span>` : ""}</button>`).join("")}</div>
+      <p class="footnote" style="margin:10px 2px 0">切换只影响下一轮，之前的回复保留原来的模型标记。</p>`;
+  } else if (S.sheet === "info" && c) {
+    inner = `<h3>${esc(c.title)}</h3>
+      <div class="kv"><span class="k">模型</span><button class="v" data-act="model-sheet"${streamTimer ? " disabled" : ""}>${esc(modelLabel(c.model))}${icon("chevR", 16)}</button></div>
+      <div class="kv"><span class="k">网关</span><span class="v muted">Minih Router · 直连</span></div>
+      <div class="kv"><span class="k">保存位置</span><span class="v muted">这台手机</span></div>
+      <div class="group flat" style="margin-top:12px;background:var(--rm-bg-surface)">
+        <button class="row" data-act="toast" data-msg="重命名（原型中省略）" style="min-height:50px"><span class="tile">${icon("compose", 17)}</span><span class="row-main"><span class="row-title">重命名</span></span></button>
+        <button class="row" data-act="toggle-pin" style="min-height:50px"><span class="tile">${icon("pin", 17)}</span><span class="row-main"><span class="row-title">${c.pinned ? "取消置顶" : "置顶"}</span></span></button>
+        <button class="row" data-act="toast" data-msg="已复制为 Markdown（含模型标记，不含密钥）" style="min-height:50px"><span class="tile">${icon("copy", 17)}</span><span class="row-main"><span class="row-title">复制为 Markdown</span></span></button>
+        <button class="row" data-act="${c.archived ? "restore" : "archive"}" style="min-height:50px"><span class="tile">${icon("archive", 17)}</span><span class="row-main"><span class="row-title">${c.archived ? "恢复到对话列表" : "归档"}</span></span></button>
+        <button class="row danger" data-act="ask-delete" style="min-height:50px"><span class="tile" style="color:var(--rm-error)">${icon("trash", 17)}</span><span class="row-main"><span class="row-title">删除</span></span></button>
+      </div>`;
+  } else if (S.sheet === "delete" && c) {
+    const blocked = streamingIn(c);
+    inner = `<h3>删除这个对话？</h3>
+      <p class="callout">消息、回复和草稿会从这台手机上删除，无法恢复。</p>
+      ${blocked ? `<p class="err-line">正在回复，请先停止再删除。</p>` : ""}
+      <div class="sheet-actions"><button class="btn btn-danger btn-lg" data-act="do-delete"${blocked ? " disabled style=\"opacity:.5\"" : ""}>删除</button>
+      <button class="btn btn-secondary btn-lg" data-act="sheet-close">取消</button></div>`;
+  } else if (S.sheet === "unlink") {
+    inner = `<h3>断开模型网关？</h3>
+      <p class="callout">本机保存的 AccessKey 会被删除。这个账号的对话仍然可以阅读，重新连接同一个账号后可以继续。</p>
+      <div class="sheet-actions"><button class="btn btn-danger btn-lg" data-act="do-unlink">断开</button>
+      <button class="btn btn-secondary btn-lg" data-act="sheet-close">取消</button></div>`;
+  } else if (S.sheet === "clear") {
+    inner = `<h3>清除对话历史？</h3>
+      <p class="callout">这个账号在这台手机上的全部对话都会删除，包括已归档的，无法恢复。不影响电脑上的会话。</p>
+      <div class="sheet-actions"><button class="btn btn-danger btn-lg" data-act="do-clear">全部清除</button>
+      <button class="btn btn-secondary btn-lg" data-act="sheet-close">取消</button></div>`;
+  }
+  return `<div class="scrim" data-act="sheet-close"></div><div class="sheet" role="dialog"><div class="grabber"></div>${inner}</div>`;
+}
+
+/* ------------------------------------------------------------- render */
+const app = document.getElementById("app");
+const phone = document.getElementById("phone");
+const SCREENS = { chats: scrChats, gateway: scrGateway, chat: scrChat, archive: scrArchive, computers: scrComputers, projects: scrProjects, session: scrRemote, settings: scrSettings };
+const NAMES = {
+  chats: "D1 对话（首页）", gateway: "D2 连接模型网关", chat: "D3 对话页", archive: "D4 已归档",
+  computers: "S1/S4 电脑（首页）", projects: "S5 项目（沿用）", session: "S6 远程会话（沿用）", settings: "S8 设置"
+};
+function render(opts = {}) {
+  const content = document.getElementById("content");
+  const keepScroll = opts.keepScroll && content ? content.scrollTop : null;
+  app.innerHTML = SCREENS[S.screen]();
+  if (S.sheet) app.insertAdjacentHTML("beforeend", sheetHtml());
+  if (S.toast) app.insertAdjacentHTML("beforeend", `<div class="toast" role="status">${esc(S.toast)}</div>`);
+  const next = document.getElementById("content");
+  if (S.screen === "chat" && next) next.scrollTop = next.scrollHeight;
+  else if (keepScroll !== null && next) next.scrollTop = keepScroll;
+  phone.dataset.theme = S.theme;
+  document.body.classList.toggle("page-dark", S.theme === "dark");
+  syncPanels();
+  S.dir = "none";
+}
+function mapKey() {
+  if (S.screen === "chat") {
+    if (!S.convId) return "chat-new";
+    return S.convId === "c4" ? "chat-broken" : "chat";
+  }
+  return S.screen;
+}
+function syncPanels() {
+  document.querySelectorAll("#themeSeg button").forEach((b) => b.classList.toggle("on", b.dataset.theme === S.theme));
+  document.querySelectorAll("#platformSeg button").forEach((b) => b.classList.toggle("on", b.dataset.platform === S.platform));
+  document.querySelectorAll("#scenes button").forEach((b) => b.classList.toggle("on", b.dataset.scene === S.scene));
+  document.querySelectorAll("#map button").forEach((b) => {
+    b.classList.toggle("on", b.dataset.to === mapKey());
+    const chatPage = ["chats", "gateway", "chat-new", "chat", "chat-broken", "archive", "settings"].includes(b.dataset.to);
+    b.style.opacity = S.platform === "web" && chatPage ? ".35" : "";
+  });
+  const prev = S.stack.length ? NAMES[S.stack[S.stack.length - 1].screen] : "退出 App（这是首页）";
+  const tabs = S.platform === "native" && isRoot(S.screen) ? "显示" : "隐藏";
+  document.getElementById("now").innerHTML = `页面：<b>${esc(NAMES[S.screen])}</b><br>返回到：${esc(prev)}<br>底部导航：${tabs}<br>当前首页：${S.root === "chats" ? "对话" : "电脑"}`;
+}
+function toast(msg) {
+  S.toast = msg;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { S.toast = null; render({ keepScroll: true }); }, 2200);
+  render({ keepScroll: true });
+}
+
+/* ------------------------------------------------------------- navigation
+ * One stack. A root (chats / computers) has nothing beneath it, so Back there
+ * exits; switching the tab replaces the root instead of stacking it.
+ */
+function go(to, extra) {
+  S.stack.push({ screen: S.screen, convId: S.convId });
+  S.screen = to;
+  S.dir = "push";
+  S.sheet = null;
+  Object.assign(S, extra || {});
+  render();
+}
+function back() {
+  if (!S.stack.length) { toast("首页再返回：退出 App"); return; }
+  const prev = S.stack.pop();
+  S.screen = prev.screen;
+  S.convId = prev.convId;
+  S.dir = "pop";
+  S.sheet = null;
+  S.keyError = "";
+  render();
+}
+function setRoot(root) {
+  S.root = root;
+  S.screen = root;
+  S.stack = [];
+  S.sheet = null;
+  S.dir = "none";
+  render();
+}
+function openGateway(then) { S.keyError = ""; go("gateway", { gatewayThen: then }); }
+
+/* ------------------------------------------------------------- simulated streaming */
+function cannedReply(text) {
+  return `好的。这是模拟的模型回复，关于“${text.slice(0, 20)}”：直连模式下，这段内容由手机直接向模型网关请求，边生成边保存在本机；切换模型只影响下一轮。`;
+}
+function startStream(c, reply, full) {
+  let i = 0;
+  streamTimer = setInterval(() => {
+    i += 2;
+    reply.text = full.slice(0, i);
+    if (i >= full.length) { clearInterval(streamTimer); streamTimer = null; delete reply.state; }
+    if (S.screen === "chat" || S.screen === "chats") render({ keepScroll: true });
+  }, 45);
+}
+function send() {
+  const text = S.draft.trim();
+  if (!text || streamTimer) return;
+  let c = conv(S.convId);
+  if (!c) {
+    /* A conversation enters history with its first saved message, never before. */
+    c = { id: "n" + Date.now(), title: text.slice(0, 18), time: "刚刚", model: S.lastModel, msgs: [] };
+    S.convs.unshift(c);
+    S.convId = c.id;
+  } else {
+    S.convs = [c].concat(S.convs.filter((x) => x !== c));
+  }
+  c.time = "刚刚";
+  c.msgs.push({ role: "user", text });
+  const reply = { role: "ai", model: c.model, text: "", state: "streaming" };
+  c.msgs.push(reply);
+  S.draft = "";
+  startStream(c, reply, cannedReply(text));
+  render();
+}
+function stopStream(state) {
+  if (!streamTimer) return false;
+  clearInterval(streamTimer);
+  streamTimer = null;
+  for (const c of S.convs) for (const m of c.msgs) if (m.state === "streaming") m.state = state;
+  return true;
+}
+
+/* ------------------------------------------------------------- events */
+app.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]");
+  if (!el || el.disabled) return;
+  const act = el.dataset.act;
+  const id = el.dataset.id;
+  const c = conv(S.convId);
+  if (act === "back") back();
+  else if (act === "tab") setRoot(id);
+  else if (act === "settings") go("settings");
+  else if (act === "toast") toast(el.dataset.msg);
+  else if (act === "new-chat") S.connected ? go("chat", { convId: null }) : openGateway("chat");
+  else if (act === "connect") openGateway(S.screen === "chat" ? "back" : "chat");
+  else if (act === "connect-from-settings") openGateway("back");
+  else if (act === "open-chat") go("chat", { convId: id });
+  else if (act === "open-archive") go("archive");
+  else if (act === "open-host") go("projects");
+  else if (act === "open-remote") go("session");
+  else if (act === "toggle-key") { const k = document.getElementById("key-input"); if (k) k.type = k.type === "password" ? "text" : "password"; }
+  else if (act === "do-connect") {
+    const k = document.getElementById("key-input");
+    const v = k ? k.value.trim() : "";
+    if (!v) { S.keyError = "请输入 AccessKey。"; return render(); }
+    if (v.length < 6) { S.keyError = "这个 AccessKey 无效或已停用，请换一个再试。"; return render(); }
+    S.keyError = ""; S.verifying = true; render();
+    setTimeout(() => {
+      S.verifying = false; S.connected = true;
+      if (S.gatewayThen === "chat") { S.screen = "chat"; S.convId = null; S.dir = "push"; render(); }
+      else back();
+      toast("已连接 · 密钥「我的手机」");
+    }, 700);
+  }
+  else if (act === "send") send();
+  else if (act === "stop") { stopStream("stopped"); render(); }
+  else if (act === "retry" && c) {
+    const old = c.msgs.filter((m) => m.state === "interrupted").slice(-1)[0];
+    const user = c.msgs.filter((m) => m.role === "user").slice(-1)[0];
+    if (!old || streamTimer) return;
+    old.state = "superseded";
+    const reply = { role: "ai", model: c.model, text: "", state: "streaming" };
+    c.msgs.push(reply);
+    startStream(c, reply, cannedReply(user ? user.text : ""));
+    render();
+  }
+  else if (act === "model-sheet") { S.sheet = "model"; render({ keepScroll: true }); }
+  else if (act === "pick-model") {
+    if (c && c.model !== id) {
+      c.model = id;
+      if (c.msgs.length) c.msgs.push({ role: "note", text: `已切换到 ${modelLabel(id)} · 下一轮生效` });
+    }
+    S.lastModel = id;
+    S.sheet = null;
+    render();
+  }
+  else if (act === "info") { S.sheet = "info"; render({ keepScroll: true }); }
+  else if (act === "sheet-close") { S.sheet = null; render({ keepScroll: true }); }
+  else if (act === "toggle-pin" && c) { c.pinned = !c.pinned; S.sheet = null; toast(c.pinned ? "已置顶" : "已取消置顶"); }
+  else if (act === "archive" && c) { c.archived = true; c.pinned = false; back(); toast("已归档，可在「已归档」里恢复"); }
+  else if (act === "restore" && c) { c.archived = false; S.sheet = null; toast("已恢复到对话列表"); }
+  else if (act === "ask-delete") { S.sheet = "delete"; render({ keepScroll: true }); }
+  else if (act === "do-delete" && c) { S.convs = S.convs.filter((x) => x !== c); back(); toast("已删除"); }
+  else if (act === "unlink") { S.sheet = "unlink"; render({ keepScroll: true }); }
+  else if (act === "do-unlink") { stopStream("stopped"); S.connected = false; S.sheet = null; toast("已断开，本机密钥已删除"); }
+  else if (act === "clear-history") { S.sheet = "clear"; render({ keepScroll: true }); }
+  else if (act === "do-clear") { stopStream("stopped"); S.convs = []; S.sheet = null; toast("已清除"); }
+});
+app.addEventListener("input", (e) => {
+  if (e.target.id === "composer-input") {
+    S.draft = e.target.value;
+    const btn = app.querySelector('[data-act="send"]');
+    if (btn) btn.classList.toggle("on", !!S.draft.trim() && !streamTimer);
+  } else if (e.target.id === "search-input") {
+    S.query = e.target.value;
+    render({ keepScroll: true });
+    const input = document.getElementById("search-input");
+    if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+  }
+});
+
+/* ------------------------------------------------------------- panels */
+document.getElementById("themeSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  S.theme = b.dataset.theme; render({ keepScroll: true });
+});
+document.getElementById("platformSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  stopStream("stopped");
+  S.platform = b.dataset.platform;
+  setRoot(S.platform === "web" ? "computers" : S.root);
+  if (S.platform === "web") toast("浏览器版本保持现状：没有底部导航和「对话」");
+});
+document.getElementById("scenes").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  stopStream("stopped");
+  S = initialState(b.dataset.scene, { theme: S.theme, platform: "native" });
+  render();
+});
+document.getElementById("map").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  const to = b.dataset.to;
+  const chatSide = ["chats", "gateway", "chat-new", "chat", "chat-broken", "archive"].includes(to);
+  if (S.platform === "web" && (chatSide || to === "settings")) { toast("浏览器版本不提供这个页面"); return; }
+  if (chatSide && to !== "gateway" && to !== "chats" && !S.connected) { S.connected = true; }
+  if ((to === "chat" || to === "chat-broken" || to === "archive") && !S.convs.length) S.convs = seedConversations();
+  S.sheet = null;
+  if (chatSide) { S.root = "chats"; S.stack = to === "chats" ? [] : [{ screen: "chats", convId: null }]; }
+  if (to === "computers" || to === "projects" || to === "session") {
+    S.root = "computers"; S.hasHosts = true;
+    S.stack = to === "computers" ? [] : to === "projects" ? [{ screen: "computers" }] : [{ screen: "computers" }, { screen: "projects" }];
+  }
+  if (to === "settings") S.stack = [{ screen: S.root, convId: null }];
+  const screen = { "chat-new": "chat", "chat-broken": "chat" }[to] || to;
+  S.convId = to === "chat" ? "c1" : to === "chat-broken" ? "c4" : null;
+  S.screen = screen;
+  S.gatewayThen = "chat";
+  S.dir = "push";
+  render();
+});
+document.getElementById("demos").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (S.platform !== "native") { toast("浏览器版本没有这项演示"); return; }
+  if (b.dataset.demo === "push") {
+    /* A computer notification owns its path: switch the root, restore
+       S4 ▸ S5 ▸ S6. The direct draft is already persisted. */
+    S.sheet = null;
+    S.root = "computers"; S.hasHosts = true;
+    S.stack = [{ screen: "computers" }, { screen: "projects" }];
+    S.screen = "session"; S.dir = "push";
+    toast("已切到「电脑」，对话草稿已保存");
+  } else if (b.dataset.demo === "background") {
+    if (stopStream("interrupted")) toast("回到前台：回复已中断，保留已收到的内容，可重试");
+    else toast("先在对话页发一条消息，再点这里");
+  }
+});
+document.getElementById("reset").addEventListener("click", () => {
+  stopStream("stopped");
+  S = initialState("daily", { theme: S.theme });
+  render();
+});
+
+/* ------------------------------------------------------------- boot */
+const params = new URLSearchParams(location.search);
+if (params.get("theme") === "dark") S.theme = "dark";
+if (SCENES[params.get("scene")]) S = initialState(params.get("scene"), { theme: S.theme });
+render();
+</script>
+</body>
+</html>
