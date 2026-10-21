@@ -21,6 +21,10 @@ export type HostSessionRecord = {
   title?: string;
   projectId?: string;
   projectPath?: string;
+  providerId?: string;
+  modelId?: string;
+  modelLabel?: string;
+  thinkingLevel?: string;
   mode?: string;
   permissionMode?: string;
   planningState?: string;
@@ -46,20 +50,41 @@ export function requireHostRpc(getHost: () => HostRpc | null): HostRpc {
   return host;
 }
 
-export function toSessionSummary(record: HostSessionRecord): SessionSummary {
+export function toSessionSummary(
+  record: HostSessionRecord,
+  defaults?: { permissionMode?: RacpPermissionMode },
+): SessionSummary {
   const mode = record.mode === "plan" || record.mode === "goal" ? record.mode : "agent";
   const permissionMode: RacpPermissionMode =
-    record.permissionMode === "accept-edits" || record.permissionMode === "auto" ? record.permissionMode : "ask";
+    record.permissionMode === "accept-edits" || record.permissionMode === "auto" || record.permissionMode === "ask"
+      ? record.permissionMode
+      : record.permissionMode === "inherit" && defaults?.permissionMode
+        ? defaults.permissionMode
+        : "ask";
   const planningState =
     record.planningState === "planning" || record.planningState === "awaiting_approval"
       ? record.planningState
       : "inactive";
+  const modelId = typeof record.modelId === "string" && record.modelId.trim() ? record.modelId.trim() : undefined;
+  const providerId = typeof record.providerId === "string" && record.providerId.trim() ? record.providerId.trim() : undefined;
+  const modelLabel =
+    typeof record.modelLabel === "string" && record.modelLabel.trim()
+      ? record.modelLabel.trim()
+      : modelId;
+  const thinkingLevel =
+    typeof record.thinkingLevel === "string" && record.thinkingLevel.trim()
+      ? record.thinkingLevel.trim()
+      : undefined;
   return {
     id: record.id,
     title: record.title ?? "",
     ...(record.projectId ? { projectId: record.projectId } : {}),
     workspaceIdentity: sessionWorkspaceIdentity(record),
     ...(record.projectPath ? { workspaceLabel: basename(record.projectPath) } : {}),
+    ...(providerId ? { providerId } : {}),
+    ...(modelId ? { modelId } : {}),
+    ...(modelLabel ? { modelLabel } : {}),
+    ...(thinkingLevel ? { thinkingLevel } : {}),
     mode,
     permissionMode,
     planningState,
@@ -114,7 +139,19 @@ export function createHostSessionPort(getHost: () => HostRpc | null): SessionPor
       // 12 MB, 572-message session — to answer a question the index row already
       // holds, on every attach and every turn admission.
       const record = await fetchSession(sessionId, { messageLimit: 1 });
-      return record ? toSessionSummary(record) : null;
+      if (!record) return null;
+      let defaultPermissionMode: RacpPermissionMode | undefined;
+      if (record.permissionMode === "inherit") {
+        const host = getHost();
+        const settings = await host
+          ?.call<{ defaultPermissionMode?: string }>("settings.get", {})
+          .catch(() => null);
+        const pm = settings?.defaultPermissionMode;
+        if (pm === "ask" || pm === "accept-edits" || pm === "auto") {
+          defaultPermissionMode = pm;
+        }
+      }
+      return toSessionSummary(record, defaultPermissionMode ? { permissionMode: defaultPermissionMode } : undefined);
     },
     async history(sessionId, { limit, beforeItemId }) {
       // One bounded window instead of the whole transcript, walked from the

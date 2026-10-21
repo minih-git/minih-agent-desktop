@@ -11,7 +11,10 @@ import {
   listSessionSummariesWithProjectIds,
   projectBrowseRoot,
   shortenHomePath,
+  toRacpHostError,
+  withSessionProjectIds,
   type HostRpc,
+  type HostSessionRecord,
 } from "@minih-agent/host-runtime";
 import type { RacpHostOperations } from "@minih-agent/racp";
 
@@ -114,14 +117,35 @@ export function createDesktopHostOperations(
         });
         return session;
       },
-      async configure() {
-        forbidden();
+      async configure(sessionId, input) {
+        const host = requireHost(options.getHost);
+        const currentResult = await host
+          .call<{ session?: HostSessionRecord | null }>("session.get", { id: sessionId, messageLimit: 1 })
+          .catch(toRacpHostError);
+        if (!currentResult.session) throw new RacpError("NOT_FOUND", `session ${sessionId} is unknown`);
+        const current = (await withSessionProjectIds(host, [currentResult.session]))[0]!;
+        await host
+          .call("session.configure", {
+            id: sessionId,
+            mode: input.mode ?? current.mode,
+            ...(input.providerId !== undefined ? { providerId: input.providerId } : {}),
+            ...(input.modelId !== undefined ? { modelId: input.modelId } : {}),
+            ...(input.thinkingLevel !== undefined ? { thinkingLevel: input.thinkingLevel } : {}),
+            ...(input.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
+          })
+          .catch(toRacpHostError);
+        const updatedResult = await host
+          .call<{ session?: HostSessionRecord | null }>("session.get", { id: sessionId, messageLimit: 1 })
+          .catch(toRacpHostError);
+        if (!updatedResult.session) throw new RacpError("NOT_FOUND", `session ${sessionId} is unknown`);
+        return (await withSessionProjectIds(host, [updatedResult.session]))[0]!;
       },
       async fork() {
         forbidden();
       },
-      async rename() {
-        forbidden();
+      async rename(sessionId, title) {
+        const host = requireHost(options.getHost);
+        await host.call("session.rename", { id: sessionId, title }).catch(toRacpHostError);
       },
       async deriveTitle() {
         forbidden();

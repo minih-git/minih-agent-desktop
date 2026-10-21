@@ -204,12 +204,16 @@ export function projectMessage(
     };
   }
   const attachments = attachmentsOf(message);
+  const providerId = typeof message.providerId === "string" && message.providerId.trim() ? message.providerId.trim() : undefined;
+  const modelId = typeof message.modelId === "string" && message.modelId.trim() ? message.modelId.trim() : undefined;
   return {
     id,
     turnId,
     itemType: "message",
     status: options.status ?? "completed",
     ...messageFields(message),
+    ...(providerId ? { providerId } : {}),
+    ...(modelId ? { modelId } : {}),
     ...(typeof message.command === "string" && message.command ? { command: message.command } : {}),
     ...(attachments ? { attachments } : {}),
     ...(message.sideNote === true ? { sideNote: true } : {}),

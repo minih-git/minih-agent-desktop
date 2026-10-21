@@ -79,8 +79,21 @@ export async function withSessionProjectIds(
   if (needsLookup) {
     for (const project of await listProjectRows(host)) byPath.set(project.path, String(project.id));
   }
+  let defaultPermissionMode: "ask" | "accept-edits" | "auto" | undefined;
+  if (records.some((record) => record.permissionMode === "inherit")) {
+    const settings = await host
+      .call<{ defaultPermissionMode?: string }>("settings.get", {})
+      .catch(() => null);
+    const pm = settings?.defaultPermissionMode;
+    if (pm === "ask" || pm === "accept-edits" || pm === "auto") {
+      defaultPermissionMode = pm;
+    }
+  }
   return records.map((record) => {
-    const summary = toSessionSummary(record);
+    const summary = toSessionSummary(
+      record,
+      defaultPermissionMode ? { permissionMode: defaultPermissionMode } : undefined,
+    );
     const projectId = record.projectPath ? byPath.get(record.projectPath) : undefined;
     return projectId ? { ...summary, projectId } : summary;
   });

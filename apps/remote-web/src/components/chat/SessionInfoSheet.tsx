@@ -55,9 +55,13 @@ export function SessionInfoSheet({
   // affordances; an entry from before roles existed is treated as unknown.
   const editable = !roles || roles.includes("controller");
   const locked = modelSwitchBlockedReason({ running, hasPendingDecision });
-  const currentModel = models.find(
-    (model) => model.providerId === session?.providerId && model.modelId === session?.modelId,
-  );
+  const currentModel =
+    models.find(
+      (model) =>
+        (session?.providerId && model.providerId === session.providerId && model.modelId === session?.modelId) ||
+        (!session?.providerId && session?.modelId && model.modelId === session.modelId),
+    ) ??
+    (!session?.modelId ? (models.find((model) => model.isDefault) ?? models[0]) : undefined);
 
   const row = (label: string, value: string, onClick?: () => void) => (
     <div className="flex min-h-[48px] items-center gap-3 border-t border-[var(--rm-separator)] px-1">
@@ -191,8 +195,10 @@ export function SessionInfoSheet({
           {row(t("session.computer"), computerLabel)}
           {row(
             t("sessions.new.model"),
-            currentModel ? describeModel(currentModel) : session?.modelLabel || t("model.hostDefault"),
-            editable && models.length > 0 ? () => setPicker("model") : undefined,
+            currentModel
+              ? describeModel(currentModel)
+              : session?.modelLabel || session?.modelId || t("model.hostDefault"),
+            editable ? () => setPicker("model") : undefined,
           )}
           {row(t("sessions.new.mode"), t(`mode.${session?.mode ?? "agent"}.title`), editable ? () => setPicker("mode") : undefined)}
           {row(

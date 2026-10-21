@@ -257,6 +257,12 @@ export function useSessionScreen(options: {
       if (firstAttach) {
         firstAttach = false;
         supervisor.start();
+        if (!modelsLoadedRef.current) {
+          modelsLoadedRef.current = true;
+          void listModels(client).then((res) => {
+            if (!cancelled && res.ok) setModels(res.value);
+          });
+        }
         // The snapshot is the newest page only; top the view up to something
         // readable (protocol §5.4: older pages come from `session/history`). The
         // reducer has not re-rendered, so the snapshot goes in as it arrived.
