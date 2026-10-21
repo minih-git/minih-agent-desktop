@@ -10350,7 +10350,7 @@ selection already in place shows it without waiting for another event.
 | C / E / Security / Quality — Live Voice four-stage interaction | E2E-LIVE-VOICE-four-stage-ui |
 | C / F — Hourly task updates | E2E-SCHEDULED-manual-to-hourly |
 | C / F / Quality — Saved project isolation | E2E-SCHEDULED-manual-workspace-binding |
-| C / F / Quality — Desktop automations | E2E-SCHEDULED-desktop-automation-lifecycle |
+| C / F / Quality — Desktop automations | E2E-SCHEDULED-desktop-automation-lifecycle, E2E-SCHEDULED-run-in-activity-feed |
 | F / Security / Quality — Portable configuration sync | E2E-CONFIG-SYNC-router-account |
 | A / C — Unicode stdio framing | E2E-RPC-unicode-separators |
 | C / G / Quality — Plugins navigation | E2E-NAV-plugins-button-goes-back |
@@ -18590,6 +18590,12 @@ the latest destination. These assertions measure work counts, not device FPS.
 - **Scenario:** Workspace identity.
 - **Expected:** Stored workspace bindings use the existing project canonicalization contract on both write and read. On Windows, slash direction, case, trailing separators and extended path prefixes do not hide a task from its own project's conversation. The distinction between missing legacy bindings and explicit null remains unchanged. Foreign-project tools cannot list or mutate bound tasks.
 - **Automation:** `node --experimental-strip-types scripts/e2e-scheduled-paths.mjs` uses an isolated real Host and SQLite profile. Inference is not sent to a live provider.
+
+### E2E-SCHEDULED-run-in-activity-feed
+
+- **Scenario:** An executing run is the only scheduled transcript the Activity feed lists.
+- **Expected:** Admitting a run creates its session inside the host, so Main announces that session to the renderer as soon as the run is admitted; without that announcement no list would know the row. The sidebar Activity feed then lists that conversation while its turn is executing and drops the row again once the turn settles. Project groups, pinned rows, global session search and the tray still never list a scheduled transcript. A refused dispatch announces no session.
+- **Automation:** `node --test apps/desktop/test/scheduled-session-fanout.test.mjs apps/desktop/test/sidebar-session-groups.test.mjs` covers the announcement and the feed's own rule with a stubbed host. No automated scenario drives the sidebar's Activity panel itself, so that wiring is reviewed from source only; the row's click path is the same `selectSession` call the Scheduled page's Open conversation already uses.
 
 ### E2E-MARKDOWN-table-actions
 

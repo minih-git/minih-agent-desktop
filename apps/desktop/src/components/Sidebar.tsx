@@ -1066,15 +1066,22 @@ export function Sidebar({
   const remoteProjectGroups = useMemo(() => groupRemoteProjectSessions(
     filtered.filter((session) => isRemoteSession(session) && !pinnedSessionIds.has(session.id)), compareSessions,
   ), [filtered, pinnedSessionIds, compareSessions]);
+  const runningSessionIds = useMemo(
+    () => new Set(Object.keys(runningSessions).filter((id) => runningSessions[id])),
+    [runningSessions],
+  );
+  // The feed reads the store rather than `filtered`: it is the one list that
+  // shows a scheduled run's own session, and only while that run executes.
   const activitySessions = useMemo(
     () =>
       getSidebarActivitySessions({
-        sessions: filtered,
+        sessions,
         sessionMeta,
         projectMeta,
         showArchived,
+        runningSessionIds,
       }),
-    [filtered, sessionMeta, projectMeta, showArchived],
+    [sessions, sessionMeta, projectMeta, showArchived, runningSessionIds],
   );
   // Flat ordered list of every visible session id — used for Shift+click range selection.
   const flatSessionOrder = useMemo(() => {
