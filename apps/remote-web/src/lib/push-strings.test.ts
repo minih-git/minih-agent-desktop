@@ -65,8 +65,8 @@ describe("push string resources", () => {
       expect(xml).not.toMatch(/name="[^"]*[.-][^"]*"/);
     }
     // The Chinese file must actually be the Chinese copy.
-    expect(chinese).toContain("需要你处理");
-    expect(english).not.toContain("需要你处理");
+    expect(chinese).toContain("等你批准");
+    expect(english).not.toContain("等你批准");
   });
 
   it("registers the iOS strings with the app target, or they ship nowhere", async () => {
@@ -76,6 +76,6 @@ describe("push string resources", () => {
     expect(project).toContain("Localizable.strings in Resources");
     expect(project).toContain('"zh-Hans",');
     const english = await readFile(join(appRoot, PUSH_STRING_TARGETS["ios-en"]), "utf8");
-    expect(english).toContain('"push.notify.approval.requested.title" = "Needs your decision";');
+    expect(english).toContain('"push.notify.approval.requested.title" = "Needs your approval";');
   });
 });
