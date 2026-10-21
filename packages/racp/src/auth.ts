@@ -5,6 +5,7 @@ import type { Principal } from "@minih-agent/agent-host";
 import {
   RACP_DEVICE_TOKEN_PREFIX,
   RACP_PAIRING_TOKEN_PREFIX,
+  isDesktopClassDevice,
   type RacpRole,
 } from "@minih-agent/shared";
 
@@ -214,8 +215,11 @@ export class DeviceTokenAuthenticator {
       // account, which is the same standing an SSH-paired owner has (ADR
       // amendment 3, decision 4; security §3.7). Everything else — every phone,
       // every browser, and every record written before this field existed —
-      // keeps `pairedDevice: false` and the ceiling.
-      const desktopOwner = device.deviceClass === "desktop" && device.roles.length === 1 && device.roles[0] === "owner";
+      // keeps `pairedDevice: false` and the ceiling. The rule itself lives in
+      // `isDesktopClassDevice` so the ceiling, `allow-session`, and
+      // `approverOverride` cannot drift apart.
+      const deviceClass = device.deviceClass === "desktop" ? "desktop" : undefined;
+      const desktopOwner = isDesktopClassDevice({ deviceClass, roles: device.roles });
       return {
         kind: "device",
         device,
@@ -223,9 +227,11 @@ export class DeviceTokenAuthenticator {
           subject: device.deviceId,
           roles: [...device.roles],
           pairedDevice: desktopOwner || origin !== "gateway",
-          // AgentHost reads this to enforce the policy-immune restrictions:
-          // no allow-session, no approverOverride, ceiling always applies.
+          // AgentHost reads these two to enforce the policy-immune
+          // restrictions: a gateway-origin principal gets no allow-session and
+          // no approverOverride, unless it is desktop-class.
           origin,
+          ...(deviceClass ? { deviceClass } : {}),
           connectionId: input.connectionId,
         },
       };

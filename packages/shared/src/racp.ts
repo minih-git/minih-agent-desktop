@@ -909,6 +909,38 @@ export type RacpCeilingInput = {
 };
 
 /**
+ * The role set a desktop-class device holds (ADR amendment 3, decision 4):
+ * `owner`, and nothing a phone would hold.
+ */
+export const RACP_DESKTOP_DEVICE_ROLES: readonly RacpRole[] = ["owner"];
+
+/**
+ * Whether a principal stands where an SSH-paired desktop owner stands.
+ *
+ * This is the ONE place the desktop-class rule lives. A gateway-origin device
+ * is otherwise policy-immune (security §3.7): no `allow-session`, no
+ * `approverOverride`, always under the ceiling. A desktop-class device is the
+ * single exception, because the target Host verified a proof signed by a
+ * certificate the account's own Gateway issued to that computer — the same
+ * standing an SSH-paired owner has (ADR amendment 3, decision 4).
+ *
+ * The class is what the proof earned, never the role string alone: a record
+ * that merely claims `owner` without `deviceClass: "desktop"` is still a
+ * phone-grade device under the ceiling. `packages/racp/src/auth.ts` sets the
+ * field from the stored device record, and `agent-host` reads it here.
+ */
+export function isDesktopClassDevice(input: {
+  deviceClass?: "phone" | "desktop";
+  roles: readonly RacpRole[];
+}): boolean {
+  return (
+    input.deviceClass === "desktop" &&
+    input.roles.length === RACP_DESKTOP_DEVICE_ROLES.length &&
+    RACP_DESKTOP_DEVICE_ROLES.every((role) => input.roles.includes(role))
+  );
+}
+
+/**
  * The mode a remote-initiated turn actually runs under: the lower of the
  * session mode and the ceiling, unless the principal is exempt.
  */

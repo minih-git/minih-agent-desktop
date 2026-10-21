@@ -1122,7 +1122,7 @@ describe("AgentHost gateway-principal restrictions (security §3.7)", () => {
     origin: "gateway",
   };
 
-  it("(a) refuses allow-session from a gateway principal even when Host policy allows remote grants", async () => {
+  it("(a) refuses allow-session from a gateway principal without the desktop class", async () => {
     const { host, approvals, received } = build({ allowRemoteSessionGrants: true });
     host.ingest(envelope("s1", "rt_1", permission()));
     const raised = received.find((event) => event.kind === "approval.requested");
@@ -1175,6 +1175,53 @@ describe("AgentHost gateway-principal restrictions (security §3.7)", () => {
       context: { requestId: "gw-turn" },
     });
     expect(runtime.prompts[0]?.effectivePermissionMode).toBe("ask");
+  });
+
+  it("(d) lets a desktop-class device use allow-session and the approver override, as an SSH owner does", async () => {
+    // ADR amendment 3, decision 4: a device the target Host admitted after
+    // verifying a same-account computer's proof stands where an SSH-paired
+    // owner stands, so the two gateway-origin restrictions do not apply to it.
+    const desktopOwner: Principal = {
+      subject: "dev_desktop",
+      roles: ["owner"],
+      pairedDevice: true,
+      origin: "gateway",
+      deviceClass: "desktop",
+    };
+    const { host, approvals, received, runtime } = build({ allowRemoteSessionGrants: true, permissionMode: "auto" });
+    host.ingest(envelope("s1", "rt_1", permission()));
+    expect(received.find((event) => event.kind === "approval.requested")).toBeTruthy();
+    await host.respondApproval(desktopOwner, {
+      approvalId: "req_1",
+      decision: "allow-session",
+      context: { requestId: "r" },
+    });
+    expect(approvals.tool).toEqual([{ requestId: "req_1", decision: "allow-session" }]);
+    // …and it runs at the session mode rather than being clamped to the ceiling.
+    await host.startTurn(
+      { ...desktopOwner, approverOverride: true },
+      { sessionId: "s1", admission: "queue", input: { text: "desktop turn" }, context: { requestId: "desk-turn" } },
+    );
+    expect(runtime.prompts.at(-1)?.effectivePermissionMode).toBe("auto");
+  });
+
+  it("(d) keeps a phone-grade device refused even when it claims the desktop class", async () => {
+    // The class is what the proof earned, not a field a caller can set: the
+    // desktop role set is required too, so a phone carrying `deviceClass` and
+    // `owner` is still a phone for both restrictions.
+    const { host, approvals } = build({ allowRemoteSessionGrants: true });
+    host.ingest(envelope("s1", "rt_1", permission()));
+    const forged: Principal = {
+      subject: "dev_forged",
+      roles: ["viewer", "controller", "approver"],
+      pairedDevice: false,
+      origin: "gateway",
+      deviceClass: "desktop",
+    };
+    await expect(
+      host.respondApproval(forged, { approvalId: "req_1", decision: "allow-session", context: { requestId: "r" } }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(approvals.tool).toEqual([]);
   });
 });
 

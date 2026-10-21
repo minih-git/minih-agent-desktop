@@ -37,6 +37,7 @@ import {
   askToolOptionLabel,
   deltaStreamPayloadFits,
   effectiveRemotePermissionMode,
+  isDesktopClassDevice,
   racpKindForAgentEvent,
   rolesAllowOperation,
 } from "@minih-agent/shared";
@@ -549,7 +550,10 @@ export class AgentHost {
       // Security §3.7: a gateway-origin principal never gets the approver
       // override, and the ceiling applies no matter how the Host configures
       // `applyCeilingToPairedDevices` (pairedDevice is false for it already).
-      approverOverride: principal.origin === "gateway" ? false : principal.approverOverride ?? false,
+      // A desktop-class device is the one exception (ADR amendment 3,
+      // decision 4): it stands where an SSH-paired owner stands.
+      approverOverride:
+        principal.origin === "gateway" && !isDesktopClassDevice(principal) ? false : principal.approverOverride ?? false,
     });
     const admission: RacpTurnAdmission = forceQueue ? "queue" : params.admission ?? "reject_if_busy";
     const busy = this.isBusy(state);
@@ -808,8 +812,12 @@ export class AgentHost {
     }
     // Security §3.7 (gate 25): a gateway-origin principal never grants
     // `allow-session`, regardless of `allowRemoteSessionGrants`. This is not a
-    // default; Host policy cannot widen it.
-    if (response.decision === "allow-session" && principal.origin === "gateway") {
+    // default; Host policy cannot widen it. A desktop-class device is the one
+    // exception (ADR amendment 3, decision 4): the target Host verified a
+    // same-account computer's proof, so it stands where an SSH-paired owner
+    // stands. A phone or browser device, and any record written before the
+    // class existed, stays refused.
+    if (response.decision === "allow-session" && principal.origin === "gateway" && !isDesktopClassDevice(principal)) {
       throw racpError("FORBIDDEN", "gateway-paired devices cannot grant allow-session");
     }
     const result = await this.approvals.resolve(response, principal, state.revision + 1);

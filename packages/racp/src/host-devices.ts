@@ -17,6 +17,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  RACP_DESKTOP_DEVICE_ROLES,
   RACP_HOSTLINK_VERSION,
   RACP_HOST_CAPABILITIES,
   deviceGrantSigningPayload,
@@ -41,7 +42,7 @@ import { readCertificateAccountBinding } from "./x509.js";
  * principal that is exempt from the remote permission ceiling. It is granted
  * only to a device whose proof this Host verified itself.
  */
-export const DESKTOP_DEVICE_ROLES: readonly RacpRole[] = ["owner"];
+export const DESKTOP_DEVICE_ROLES: readonly RacpRole[] = RACP_DESKTOP_DEVICE_ROLES;
 
 /**
  * The `tokenHash` of a tombstone: a device this Host was told about but never
@@ -161,7 +162,13 @@ export class HostDeviceDirectory {
   private readonly confirmer: DeviceConfirmer | null;
   private readonly strictMode: boolean;
   private readonly deliveryWindowMs: number;
-  private readonly desktopAutoAdmission: boolean;
+  /**
+   * "Allow same-account computers to join automatically". Not `readonly`: the
+   * switch is device-local and may be flipped while the link is up, and unlike
+   * strict mode it changes no advertised capability — the Host still verifies
+   * proofs, it just asks its user before adopting one.
+   */
+  private desktopAutoAdmission: boolean;
   private readonly maxRememberedNonces: number;
   private readonly maxClockSkewMs: number;
   /**
@@ -222,6 +229,16 @@ export class HostDeviceDirectory {
    */
   get admitsDesktopAutomatically(): boolean {
     return this.desktopAutoAdmission && !this.strictMode;
+  }
+
+  /**
+   * Flip the device-local switch while the link stays up. Unlike strict mode it
+   * changes no advertised capability — the Host still verifies proofs and still
+   * receives sibling grants, it just asks its own user before adopting one — so
+   * nothing needs rebuilding and no relayed connection is dropped.
+   */
+  setDesktopAutoAdmission(enabled: boolean): void {
+    this.desktopAutoAdmission = enabled;
   }
 
   /**
