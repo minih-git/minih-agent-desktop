@@ -1341,6 +1341,12 @@ Enrollment and pairing run against the same listener:
   Max-Age=34560000` cookie plus a CSRF token for browsers, or as
   `{ deviceId, token }` in the response body for native clients to store in the
   iOS Keychain or the Android Keystore.
+  The response also carries `hostLabel`, the Host's own name as its owner
+  registered it. It is optional and additive, and it is the only occasion a
+  device learns that name: `GET /v1/hosts` is unreachable from the browser
+  profile (§11.2) and a device has no per-Host credential yet. A client that
+  receives none shows the host id; it must not substitute the device label,
+  which names the phone that paired, not the computer.
 
 ### 11.5 Account mode (D666; the account directory is implemented)
 

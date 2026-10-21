@@ -445,7 +445,8 @@ try {
   console.log(`gateway ready: hostlink ${gateway.ready.hostlink.port}, client ${gateway.ready.client.port}, client origin ${proxy.origin}`);
 
   // 2. Enroll and run the Host with its outbound link.
-  const issued = await gatewayCliRun(["enroll-code", "--data-dir", gatewayData, "--label", "remote-web e2e host"]);
+  const hostLabel = "remote-web e2e host";
+  const issued = await gatewayCliRun(["enroll-code", "--data-dir", gatewayData, "--label", hostLabel]);
   assert.equal(issued.code, 0, issued.stderr);
   const enrollment = JSON.parse(issued.stdout.trim().slice("ENROLLMENT_CODE ".length));
   secrets.push(enrollment.code);
@@ -460,7 +461,7 @@ try {
     "--code",
     enrollment.code,
     "--label",
-    "remote-web e2e host",
+    hostLabel,
   ]);
   assert.ok(enrolled.stdout.includes("AGENT_HOST_CLI_ENROLLED"), enrolled.stdout);
   host = await startHost();
@@ -704,6 +705,18 @@ try {
     );
     assert.equal(observed.groupOfOwnSession, view.projectLabel, `${view.name}: the session sits under its project`);
     assert.equal(observed.groupOfLooseSession, "Other", `${view.name}: a session with no project is under Other`);
+
+    // The bar over the conversation names the computer the person paired, not the
+    // id the Gateway minted for it. (`check` is declared below, with the rest of
+    // the collected failures, so these read as plain assertions here.)
+    assert.ok(
+      String(observed.sessionHeader).includes(hostLabel),
+      `${view.name}: the session header names the computer (${hostLabel}): ${JSON.stringify(String(observed.sessionHeader))}`,
+    );
+    assert.ok(
+      !String(observed.sessionHeader).includes(observed.sessionHeaderHost),
+      `${view.name}: the session header does not print the computer id`,
+    );
 
     // The approval card offers only the decisions a gateway device may make.
     assert.ok(observed.approvalButtons.some((label) => label.includes("Allow once")), `${view.name}: the approval offers Allow once`);

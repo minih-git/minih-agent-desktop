@@ -121,7 +121,10 @@ export default function App() {
       kind: "session",
       hostId: entry.hostId,
       sessionId: destination.sessionId,
-      title: entry.label,
+      // The computer's name has its own place in the bar, so the title starts
+      // empty and the loaded session supplies it; using the label here printed
+      // the computer as the conversation's name.
+      title: "",
     });
   });
 
@@ -205,6 +208,7 @@ export default function App() {
           sessionId={screen.sessionId}
           title={screen.title}
           credential={credential}
+          hostLabel={host.label}
           onBack={goBack}
         />
       );

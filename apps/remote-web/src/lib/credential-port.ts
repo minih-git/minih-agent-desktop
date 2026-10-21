@@ -155,7 +155,11 @@ export class WebCookieCredentialPort implements CredentialPort {
     const roles = grantedRoles(result.device.roles);
     const entry: HostRegistryEntry = {
       hostId: request.hostId,
-      label,
+      // The computer's name, not this device's: `label` above names the phone
+      // (the person typed it to recognise it on the computer), and the header over
+      // a conversation shows this field. A Gateway that sends no name leaves it
+      // empty, and the registry falls back to the host id.
+      label: result.device.hostLabel ?? "",
       deviceId: result.device.deviceId,
       csrfToken: result.device.csrfToken,
       pairedAt: (this.options.now?.() ?? new Date()).toISOString(),

@@ -41,7 +41,14 @@ export interface SessionScreenProps {
   sessionId: string;
   title: string;
   credential: HostCredential;
-  hostLabel?: string;
+  /**
+   * The name the person gave the computer. Required on purpose: it is what the
+   * header shows, and an optional field is what let the one path that reaches
+   * this screen forget it and print `host_10ed0253-…` over a conversation.
+   * Empty is allowed and falls back to the id, for a registration written before
+   * the desktop reported a name.
+   */
+  hostLabel: string;
   onBack: () => void;
   onForget?: () => void;
 }

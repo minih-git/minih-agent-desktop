@@ -25,6 +25,8 @@ type PairedDeviceBase = {
   deviceId: string;
   hostId: string;
   roles: string[];
+  /** The computer's own name, when the Gateway sent one with the answer. */
+  hostLabel?: string;
 };
 
 /** The cookie profile's result: the Gateway set a cookie, the body has the CSRF token. */
@@ -81,10 +83,14 @@ function pairedBase(input: PairDeviceInput, payload: Record<string, unknown>): P
   if (typeof hostId === "string" && hostId && hostId !== input.hostId) {
     return { code: "PAIRING_FAILED", message: "the Gateway paired a different Host than requested" };
   }
+  const hostLabel = payload.hostLabel;
   return {
     deviceId,
     hostId: input.hostId,
     roles: Array.isArray(roles) ? roles.filter((role): role is string => typeof role === "string") : [],
+    // A Gateway that predates the field sends nothing; the registry then falls
+    // back to the host id, which at least matches what the computer calls itself.
+    ...(typeof hostLabel === "string" && hostLabel ? { hostLabel } : {}),
   };
 }
 

@@ -168,6 +168,16 @@ describe("gateway client API", () => {
     expect(asPairing.status).toBe(401);
   });
 
+  it("answers a pairing with the computer's own name", async () => {
+    // The device has no per-Host credential yet, and the browser profile cannot
+    // reach `GET /v1/hosts` at all, so this answer is the only chance a phone has
+    // to learn what the computer is called. Without it the bar over a conversation
+    // fell back to the host id — or, worse, to the phone's own label.
+    const paired = await pairDevice(gateway, host, { client: "ios", label: "my phone" });
+    expect(paired.status).toBe(200);
+    expect(paired.hostLabel).toBe("test host");
+  });
+
   it("keeps the browser profile behind cookies, CSRF, and the Origin allowlist", async () => {
     const paired = await pairDevice(gateway, host, { client: "web", label: "browser", origin: "https://app.test" });
     expect(paired.status).toBe(200);

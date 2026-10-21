@@ -3031,6 +3031,10 @@
         },
         "minItems": 1
       },
+      "hostLabel": {
+        "type": "string",
+        "maxLength": 128
+      },
       "token": {
         "type": "string",
         "minLength": 1
