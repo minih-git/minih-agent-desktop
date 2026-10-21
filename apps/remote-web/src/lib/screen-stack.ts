@@ -92,9 +92,13 @@ export function isRootKind(value: unknown): value is RootKind {
 /**
  * Session → its project's list → the project list → the computer list, and
  * pairing / account → the computer list. There is nowhere to go back to from
- * either root, so hardware back there exits the app. Pushed direct-chat pages
- * return to the root they were opened from; a chat opened from the archive
- * returns to the archive.
+ * either root, so hardware back there exits the app.
+ *
+ * The direct-chat pages all return to the Chats root for now. D3 will record
+ * where a conversation was opened from — the archive is the first such origin —
+ * with the field that arrives with the history stage; until then `chat` and
+ * `chatArchive` have no origin to consult, and inventing one here would be a
+ * second source of truth for the same question.
  */
 export function previousScreen(screen: Screen): Screen | null {
   switch (screen.kind) {
