@@ -23,9 +23,21 @@ export const DIRECT_PROTOCOLS = ["openai-completions", "openai-responses"] as co
 
 export type DirectProtocol = (typeof DIRECT_PROTOCOLS)[number];
 
+/**
+ * Protocols a gateway declares for work that is not a conversation. Router names
+ * these explicitly, so "not a chat model" is the gateway's statement, never a
+ * guess from the model's name.
+ */
+const NON_CHAT_PROTOCOLS: ReadonlySet<string> = new Set([
+  "openai-images",
+  "openai-embeddings",
+  "rerank",
+  "ocr",
+]);
+
 /** Why a listed model cannot be used, as the sheet explains it. */
 export type ModelUnavailableReason =
-  /** The model's category is not a chat choice (image, embedding, video). */
+  /** The model declares only non-conversation protocols (image, embedding, …). */
   | "not-chat"
   /** The model declares no protocol this client implements. */
   | "unsupported-protocol";
@@ -35,20 +47,21 @@ export type DirectModelChoice =
   | { usable: false; model: MinihRouterModel; reason: ModelUnavailableReason; protocols: string[] };
 
 /**
- * Decide one catalog row.
+ * Decide one catalog row from its declared protocols alone.
  *
- * The order is the ADR's: category first (an embedding model with a chat
- * protocol is still not a conversation), then the declared protocols.
+ * `model.category` is not consulted: the shared parser derives it partly from
+ * the model's name for the desktop catalog's grouping, and a name such as
+ * `qwen-vl` or `omni` would otherwise disable a model the gateway serves over
+ * Chat Completions. When none of the two protocols is declared, the reason says
+ * whether the gateway declared only non-conversation work or something else.
  */
 export function resolveDirectModel(model: MinihRouterModel): DirectModelChoice {
   const protocols = model.protocols.map((protocol) => protocol.trim()).filter(Boolean);
-  if (model.category !== "chat" && model.category !== "code") {
-    return { usable: false, model, reason: "not-chat", protocols };
-  }
   for (const candidate of DIRECT_PROTOCOLS) {
     if (protocols.includes(candidate)) return { usable: true, model, protocol: candidate };
   }
-  return { usable: false, model, reason: "unsupported-protocol", protocols };
+  const notChat = protocols.length > 0 && protocols.every((protocol) => NON_CHAT_PROTOCOLS.has(protocol));
+  return { usable: false, model, reason: notChat ? "not-chat" : "unsupported-protocol", protocols };
 }
 
 export type DirectModelList = {

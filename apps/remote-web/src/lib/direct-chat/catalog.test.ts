@@ -72,17 +72,27 @@ describe("choosing a protocol", () => {
 });
 
 describe("models that are not chat choices", () => {
-  it("disables image, embedding and video models even when they declare a chat protocol", () => {
-    for (const category of ["vision", "embedding", "video"] as const) {
-      const choice = resolveDirectModel(model({ id: `${category}-model`, category }));
-      expect(choice.usable, category).toBe(false);
+  it("disables a model that declares only non-conversation protocols", () => {
+    for (const protocols of [["openai-images"], ["openai-embeddings"], ["rerank"], ["ocr"], ["openai-images", "ocr"]]) {
+      const choice = resolveDirectModel(model({ id: "m", protocols }));
+      expect(choice.usable, protocols.join(",")).toBe(false);
       if (!choice.usable) expect(choice.reason).toBe("not-chat");
     }
   });
 
-  it("keeps a code model usable, since it is still a conversation", () => {
-    const choice = resolveDirectModel(model({ id: "codestral", category: "code" }));
-    expect(choice.usable).toBe(true);
+  it("never disables a model because of its name or a category derived from it", () => {
+    // The shared parser files `qwen-vl` and `gpt-4o-omni` under vision by name;
+    // the gateway still serves them over Chat Completions.
+    for (const category of ["vision", "embedding", "video"] as const) {
+      const choice = resolveDirectModel(model({ id: "qwen-vl-max", category }));
+      expect(choice.usable, category).toBe(true);
+    }
+  });
+
+  it("calls a model with an unimplemented chat protocol unsupported, not non-chat", () => {
+    const choice = resolveDirectModel(model({ id: "claude", protocols: ["anthropic", "openai-images"] }));
+    expect(choice.usable).toBe(false);
+    if (!choice.usable) expect(choice.reason).toBe("unsupported-protocol");
   });
 });
 
@@ -90,7 +100,7 @@ describe("splitting a catalog for the sheet", () => {
   it("lists usable models and explains the rest", () => {
     const list = splitDirectModels([
       model({ id: "gpt-4.1" }),
-      model({ id: "dall-e-3", category: "vision" }),
+      model({ id: "dall-e-3", category: "vision", protocols: ["openai-images"] }),
       model({ id: "claude", protocols: ["anthropic-messages"] }),
       model({ id: "o4", protocols: ["openai-responses"] }),
     ]);
