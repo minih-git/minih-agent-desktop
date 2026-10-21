@@ -22,12 +22,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ForegroundNoticeBar, type ForegroundNotice } from "./components/ForegroundNotice.js";
 import { AccountScreen } from "./screens/AccountScreen.js";
 import { ChatsScreen } from "./screens/ChatsScreen.js";
+import { ConnectGatewayScreen } from "./screens/ConnectGatewayScreen.js";
+import { SettingsScreen } from "./screens/SettingsScreen.js";
 import { ConnectScreen } from "./screens/ConnectScreen.js";
 import { HostsScreen } from "./screens/HostsScreen.js";
 import { PairScreen } from "./screens/PairScreen.js";
 import { ProjectSessionsScreen } from "./screens/ProjectSessionsScreen.js";
 import { ProjectsScreen } from "./screens/ProjectsScreen.js";
 import { SessionScreen } from "./screens/SessionScreen.js";
+import { ModelSheet } from "./components/ModelSheet.js";
 import { TabBar } from "./components/TabBar.js";
 import { useEdgeSwipe } from "./hooks/useEdgeSwipe.js";
 import { usePushRegistration } from "./hooks/usePushRegistration.js";
@@ -35,7 +38,8 @@ import { useHostRegistry } from "./hooks/useHostRegistry.js";
 import { registryHasHosts } from "./lib/host-registry.js";
 import { resolveLaunchRoot, storeLastRoot } from "./lib/launch-root.js";
 import { setBackHandler } from "./lib/navigation.js";
-import { credentialPort, isNativeApp, nativePlatform } from "./lib/runtime.js";
+import { readConnection, type DirectChatConnection } from "./lib/direct-chat/connection.js";
+import { credentialPort, directChatService, isNativeApp, modelGatewayOrigin, nativePlatform } from "./lib/runtime.js";
 import { consumeNotificationTap, setNotificationBadge } from "./lib/native-notify.js";
 import { createScreenHistory, sameScreen } from "./lib/screen-history.js";
 import { previousScreen, type RootKind, type Screen } from "./lib/screen-stack.js";
@@ -79,6 +83,16 @@ const initialRoot = resolveLaunchRoot({
 export default function App() {
   const hosts = useHostRegistry();
   const [screen, setScreen] = useState<Screen>({ kind: initialRoot });
+  /**
+   * The model connection this device holds, or null. Read once at mount and
+   * refreshed after connecting or unlinking, because every direct-chat screen
+   * decides what to show from it.
+   */
+  const [connection, setConnection] = useState<DirectChatConnection | null>(() =>
+    readConnection(launchStorage),
+  );
+  /** The model sheet, opened from D1 today and from D3's chip later. */
+  const [modelsOpen, setModelsOpen] = useState(false);
   /** A notification that arrived while the app was open (§17.6.4). */
   const [notice, setNotice] = useState<ForegroundNotice | null>(null);
   /**
@@ -274,6 +288,7 @@ export default function App() {
       <ConnectScreen
         onAddHost={() => navigate({ kind: "pair" })}
         onAddAccount={() => navigate({ kind: "account" })}
+        onOpenSettings={() => navigate({ kind: "settings", from: "hosts" })}
       />
     ) : (
       <HostsScreen
@@ -281,6 +296,7 @@ export default function App() {
         onOpenHost={(entry) => navigate({ kind: "projects", hostId: entry.hostId })}
         onAddHost={() => navigate({ kind: "pair" })}
         onAddAccount={() => navigate({ kind: "account" })}
+        onOpenSettings={() => navigate({ kind: "settings", from: "hosts" })}
       />
     );
 
@@ -294,19 +310,68 @@ export default function App() {
       projectLabel: project.label,
     });
 
+  /** The connection record is what every direct-chat screen reads. */
+  const reloadConnection = useCallback(() => setConnection(readConnection(launchStorage)), []);
+
   const body = (() => {
-    if (
-      screen.kind === "chats" ||
-      screen.kind === "chat" ||
-      screen.kind === "chatArchive" ||
-      screen.kind === "modelGateway" ||
-      screen.kind === "settings"
-    ) {
-      // First stage: placeholders for the direct-chat pages and Settings. The
-      // launch rule and the stack contract ship now (§17.3); the real D1–D4 and
-      // S8 screens, and the entries that push these kinds, come with their own
-      // stages. Nothing here touches the network or a credential.
-      return <ChatsScreen />;
+    if (screen.kind === "chats") {
+      return (
+        <ChatsScreen
+          connection={connection}
+          gatewayConfigured={modelGatewayOrigin !== null}
+          onConnect={() => navigate({ kind: "modelGateway" })}
+          onOpenSettings={() => navigate({ kind: "settings", from: "chats" })}
+          onOpenModels={() => setModelsOpen(true)}
+        />
+      );
+    }
+
+    if (screen.kind === "modelGateway") {
+      return (
+        <ConnectGatewayScreen
+          gatewayOrigin={modelGatewayOrigin}
+          onBack={goBack}
+          onConnected={() => {
+            reloadConnection();
+            goBack();
+          }}
+          onConnect={async (key) => {
+            const outcome = await directChatService().connect(key);
+            if (!outcome.ok) return { failure: outcome.failure, restricted: false };
+            reloadConnection();
+            return { failure: null, restricted: outcome.restricted };
+          }}
+        />
+      );
+    }
+
+    if (screen.kind === "settings") {
+      return (
+        <SettingsScreen
+          connection={connection}
+          gatewayConfigured={modelGatewayOrigin !== null}
+          onBack={goBack}
+          onConnect={() => navigate({ kind: "modelGateway" })}
+          onDisconnect={async () => {
+            await directChatService().disconnect();
+            reloadConnection();
+          }}
+        />
+      );
+    }
+
+    if (screen.kind === "chat" || screen.kind === "chatArchive") {
+      // D3 and D4 arrive with the history stage: sending cannot precede saved
+      // history (§6), so these kinds render the Chats root until then.
+      return (
+        <ChatsScreen
+          connection={connection}
+          gatewayConfigured={modelGatewayOrigin !== null}
+          onConnect={() => navigate({ kind: "modelGateway" })}
+          onOpenSettings={() => navigate({ kind: "settings", from: "chats" })}
+          onOpenModels={() => setModelsOpen(true)}
+        />
+      );
     }
     if (screen.kind === "account") {
       return (
@@ -417,6 +482,16 @@ export default function App() {
     >
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{body}</div>
       {tabs}
+      <ModelSheet
+        open={modelsOpen}
+        models={connection?.models ?? []}
+        selectedId={connection?.lastModelId ?? null}
+        onClose={() => setModelsOpen(false)}
+        onSelect={(model) => {
+          directChatService().rememberModel(model.id);
+          reloadConnection();
+        }}
+      />
       {notice ? (
         <ForegroundNoticeBar
           notice={notice}

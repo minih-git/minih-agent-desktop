@@ -1,4 +1,4 @@
-import { CircleHelp, Globe, Lock, Shield, Square, Ticket, User } from "lucide-react";
+import { CircleHelp, Globe, Lock, Settings as SettingsIcon, Shield, Square, Ticket, User } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -39,9 +39,12 @@ function ValueRow({
 export function ConnectScreen({
   onAddHost,
   onAddAccount,
+  onOpenSettings,
 }: {
   onAddHost: () => void;
   onAddAccount: () => void;
+  /** The gear on this root (ADR mobile-direct-gateway-chat §1: two gears). */
+  onOpenSettings: () => void;
 }) {
   const { t } = useTranslation();
   const accountMode = useAccountAvailability();
@@ -60,6 +63,19 @@ export function ConnectScreen({
   return (
     <Screen>
       <ScreenContent hasDock className="pt-[max(20px,env(safe-area-inset-top))]">
+        {/* The Computers root keeps its gear even with no computer: Settings is
+            reachable from either root (§1). */}
+        <div className="flex justify-start px-2 pt-1">
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            aria-label={t("hosts.settings")}
+            title={t("hosts.settings")}
+            className="flex h-10 w-10 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] transition-opacity active:opacity-60"
+          >
+            <SettingsIcon className="h-5 w-5 stroke-[1.8]" aria-hidden="true" />
+          </button>
+        </div>
         <div className="pt-8 pb-6 px-2 flex flex-col items-center text-center">
           <img
             className="w-12 h-12 rounded-[14px] block mb-4 shadow-[0_4px_12px_rgba(0,0,0,0.08)]"

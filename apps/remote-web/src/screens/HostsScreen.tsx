@@ -4,7 +4,7 @@
  * Implements S4 My Computers per docs/spec/04-ux/13-remote-mobile-client.md §8.5
  * and apps/remote-web/design/prototype/index.html.
  */
-import { Globe, Lock, Plus } from "lucide-react";
+import { Globe, Lock, Plus, Settings as SettingsIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -37,11 +37,14 @@ export function HostsScreen({
   onOpenHost,
   onAddHost,
   onAddAccount,
+  onOpenSettings,
 }: {
   hosts: HostRegistryEntry[];
   onOpenHost: (entry: HostRegistryEntry) => void;
   onAddHost: () => void;
   onAddAccount: () => void;
+  /** The gear on this root (ADR mobile-direct-gateway-chat §1: two gears). */
+  onOpenSettings: () => void;
 }) {
   const { t } = useTranslation();
   const accountMode = useAccountAvailability();
@@ -102,14 +105,19 @@ export function HostsScreen({
       <NavBar
         title={t("hosts.title")}
         trailing={
-          <Button
-            variant="plain"
-            size="icon"
-            aria-label={t("hosts.add")}
-            onClick={() => setActiveSheet("connect")}
-          >
-            <Plus className="h-6 w-6 stroke-[2]" aria-hidden="true" />
-          </Button>
+          <span className="flex items-center">
+            <Button variant="plain" size="icon" aria-label={t("hosts.settings")} onClick={onOpenSettings}>
+              <SettingsIcon className="h-5 w-5 stroke-[1.8]" aria-hidden="true" />
+            </Button>
+            <Button
+              variant="plain"
+              size="icon"
+              aria-label={t("hosts.add")}
+              onClick={() => setActiveSheet("connect")}
+            >
+              <Plus className="h-6 w-6 stroke-[2]" aria-hidden="true" />
+            </Button>
+          </span>
         }
       />
 
