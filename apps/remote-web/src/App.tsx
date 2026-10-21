@@ -11,7 +11,10 @@
  * `previousScreen` is the single rule every back path uses: the header button,
  * the Android hardware back button, the browser's `popstate`, and the iOS swipe.
  * §17 added the two layers between a computer and its sessions, so the stack is
- * now `hosts ▸ projects ▸ projectSessions ▸ session`.
+ * now `hosts ▸ projects ▸ projectSessions ▸ session`. ADR
+ * mobile-direct-gateway-chat adds the Chats root with a root-only tab bar: the
+ * frame below is one column, so the screen area and the bar share the viewport
+ * and a screen can never cover the bar.
  */
 import type { RacpSession } from "@minih-agent/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -409,7 +412,7 @@ export default function App() {
           : undefined
       }
     >
-      <div className="min-h-0 flex-1">{body}</div>
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{body}</div>
       {tabs}
       {notice ? (
         <ForegroundNoticeBar

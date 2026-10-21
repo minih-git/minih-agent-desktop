@@ -16,6 +16,7 @@ export function TabBar({ root, onSwitch }: { root: RootKind; onSwitch: (root: Ro
   const tab = (id: RootKind, label: string, Icon: typeof Laptop) => (
     <button
       type="button"
+      data-tab={id}
       className={`flex min-h-[49px] flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 border-0 bg-transparent pt-1 text-[11px] leading-[14px] font-medium ${
         root === id ? "font-semibold text-[var(--rm-text-primary)]" : "text-[var(--rm-text-faint)]"
       }`}

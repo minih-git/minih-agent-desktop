@@ -118,6 +118,15 @@ body {
   margin: 0;
   min-height: 100%;
 }
+/*
+ * The app frame owns the viewport height and every screen fills its parent
+ * (`h-full`), so the shell decides how tall a screen is. App already sizes
+ * itself to one viewport; this gives the same definite height to a screen
+ * rendered without App (the boot failure) instead of collapsing to auto.
+ */
+#root {
+  height: 100dvh;
+}
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Segoe UI", Roboto, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
