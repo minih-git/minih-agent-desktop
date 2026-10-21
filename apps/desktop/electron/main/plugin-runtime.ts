@@ -449,6 +449,12 @@ export type PluginHostServices = {
   /** Work-panel guest + CDP, gated by `browser.cdp` in the runtime. */
   browser?: {
     reveal: (sessionId?: string) => Promise<void>;
+    /**
+     * Show a local file in the work panel's Browser view. The caller passes its
+     * plugin id so the host can allow the plugin's own data directory, and no
+     * session: the renderer opens the tab in the session it is showing.
+     */
+    openInPanel: (pluginId: string, path: string) => Promise<{ path: string }>;
     navigate: (
       input: { url?: string; path?: string },
       sessionId?: string,
@@ -552,6 +558,7 @@ const HOST_API_ALLOWLIST = new Set([
   "bus.subscribe",
   "bus.unsubscribe",
   "browser.reveal",
+  "browser.openInPanel",
   "browser.navigate",
   "browser.action",
   "browser.setBounds",
@@ -2478,6 +2485,8 @@ export class PluginRuntime {
       case "models.list":
         this.assertPermission(loaded, "models.list");
         return this.dispatchHostCall(loaded, "models.list", []);
+      case "browser.openInPanel":
+        return this.invokeBrowser(loaded, "openInPanel", payload);
       case "browser.navigate":
         return this.invokeBrowser(loaded, "navigate", payload);
       case "browser.action":
@@ -4555,6 +4564,10 @@ export class PluginRuntime {
       ? { sessionId: payload.sessionId, tabId: payload.tabId } : undefined;
     const api = this.hostApi(loaded, context).browser;
     switch (method) {
+      case "openInPanel":
+        // No session of the caller's own: the renderer opens the tab in the
+        // session the user is looking at, which is the point of the call.
+        return api.openInPanel({ path: payload?.path != null ? String(payload.path) : "" });
       case "navigate":
         return api.navigate({
           url: payload?.url != null ? String(payload.url) : undefined,
@@ -5992,6 +6005,23 @@ export class PluginRuntime {
             ok: true,
             ts: Date.now(),
           });
+        },
+        openInPanel: async (input: { path?: string } = {}) => {
+          this.assertPermission(loaded, "browser.cdp");
+          if (!this.services.browser) {
+            throw apiError("UNAVAILABLE", "browser host missing");
+          }
+          const result = await this.services.browser.openInPanel(
+            loaded.manifest.id,
+            String(input.path ?? ""),
+          );
+          this.services.audit?.({
+            pluginId,
+            api: "browser.openInPanel",
+            ok: true,
+            ts: Date.now(),
+          });
+          return result;
         },
         navigate: async (input: { url?: string; path?: string } = {}) => {
           this.assertPermission(loaded, "browser.cdp");

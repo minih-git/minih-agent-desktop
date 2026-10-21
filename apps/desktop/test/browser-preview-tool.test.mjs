@@ -75,6 +75,9 @@ test("main serves BrowserPreview from its originating session workspace", async 
 });
 
 test("renderer routes browser preview events to the originating session", () => {
+  // The originating session still wins. A preview request without one comes from
+  // `pi.browser.openInPanel`, where the caller has no session of its own
+  // (ADR 0335): the tab then belongs to the session the window is showing.
   assert.match(
     apiSource,
     /onBrowserPreview:[\s\S]*event: \{[\s\S]*sessionId: string;[\s\S]*tabId\?: string;[\s\S]*revealOnly\?: boolean/,
@@ -84,8 +87,9 @@ test("renderer routes browser preview events to the originating session", () => 
   assert.ok(previewHandler, "browser preview renderer handler exists");
   assert.match(
     previewHandler,
-    /openWorkPanelTabForSession\(\s*event\.sessionId,[\s\S]*browserPluginTabForReveal/,
+    /const sessionId = event\.sessionId \|\| state\.activeSessionId \|\| "";/,
   );
+  assert.match(previewHandler, /openWorkPanelTabForSession\(\s*sessionId,[\s\S]*browserPluginTabForReveal/);
   assert.doesNotMatch(
     appSource,
     /api\.onBrowserPreview\(\(\) => \{\s*useAppStore\.getState\(\)\.openWorkPanelTab/,
