@@ -5246,6 +5246,107 @@ describe("DesktopAgentRuntime assistant thinking events", () => {
     await runtime.dispose();
   });
 
+  it("retries from a compacted transcript when the failed assistant is gone (issue #1768)", async () => {
+    const runtime = createRuntime({ onEvent: vi.fn() });
+    const agent = (runtime as any).agent;
+    const user = { role: "user", content: "hello", timestamp: 1 };
+    const compactedTail = {
+      role: "compactionSummary",
+      summary: "Earlier work was summarized.",
+      tokensBefore: 42,
+      timestamp: 2,
+    };
+    agent.state.messages = [user, compactedTail];
+    agent.continue = vi.fn(async () => undefined);
+    agent.waitForIdle = vi.fn(async () => undefined);
+    (runtime as any).pendingProviderRetry = {
+      code: "STREAM_FAILED",
+      message: "stream terminated",
+      retriable: true,
+    };
+    (runtime as any).providerTransientRetryAttempt = 1;
+
+    vi.useFakeTimers();
+    try {
+      const retry = (runtime as any).retryPendingProviderFailure();
+      await vi.runAllTimersAsync();
+      await retry;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(agent.state.messages).toEqual([user, compactedTail]);
+    expect(agent.continue).toHaveBeenCalledOnce();
+    await runtime.dispose();
+  });
+
+  it("retries a compacted transcript through the public prompt wiring (issue #1768)", async () => {
+    const onEvent = vi.fn();
+    const runtime = createRuntime({ onEvent });
+    const agent = (runtime as any).agent;
+    const handleAgentEvent = (runtime as any).handleAgentEvent.bind(runtime);
+    const user = { role: "user", content: "hello", timestamp: 1 };
+    // Compaction already replaced the failed assistant with a summary, so the
+    // retry has no assistant tail to consume.
+    const compactedTail = {
+      role: "compactionSummary",
+      summary: "Earlier work was summarized.",
+      tokensBefore: 42,
+      timestamp: 2,
+    };
+    const failed = {
+      ...assistantMessage({
+        content: [{ type: "text", text: "partial response" }],
+        stopReason: "error",
+      }),
+      errorMessage: "terminated",
+    };
+
+    agent.prompt = vi.fn(async () => {
+      agent.state.messages = [user, compactedTail];
+      await handleAgentEvent({ type: "message_start", message: failed });
+      await handleAgentEvent({ type: "message_end", message: failed });
+      await handleAgentEvent({ type: "turn_end" });
+      await handleAgentEvent({ type: "agent_end", messages: [] });
+    });
+    agent.waitForIdle = vi.fn(async () => undefined);
+    agent.continue = vi.fn(async () => {
+      expect(
+        agent.state.messages.filter((message: any) => message.role !== "system"),
+      ).toEqual([user, compactedTail]);
+      await handleAgentEvent({ type: "agent_start" });
+      await handleAgentEvent({ type: "turn_start" });
+      await handleAgentEvent({
+        type: "message_start",
+        message: { role: "assistant", content: [] },
+      });
+      await handleAgentEvent({
+        type: "message_end",
+        message: assistantMessage({
+          content: [{ type: "text", text: "recovered response" }],
+        }),
+      });
+      await handleAgentEvent({ type: "turn_end" });
+      await handleAgentEvent({ type: "agent_end", messages: [] });
+    });
+
+    vi.useFakeTimers();
+    try {
+      const prompt = runtime.prompt("hello", "user-1");
+      await vi.runAllTimersAsync();
+      await prompt;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(agent.continue).toHaveBeenCalledOnce();
+    const events = onEvent.mock.calls.map(([envelope]) => (envelope as any).event);
+    expect(events.some((event) => event.type === "error")).toBe(false);
+    expect(events.filter((event) => event.type === "agent_end")).toHaveLength(1);
+
+    await runtime.dispose();
+  });
+
   it("does not continue steering after a recovery becomes pending", async () => {
     const runtime = createRuntime({ onEvent: vi.fn() });
     const agent = (runtime as any).agent;

@@ -69,6 +69,8 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "settings.storage.clearCache",
       "settings.storage.backup",
       "settings.theme",
+      "settings.windowTranslucency",
+      "settings.windowTranslucencyDesc",
       "settings.language",
       "settings.languageAuto",
       "settings.font",

@@ -1983,3 +1983,13 @@ unit and byte counts. There is no cleanup phase. Background polls stay silent.
 Main 校验任务 id 并转发给 host-core。渲染器重载不拥有或终止进程；Host 负责
 输出、状态、停止及退出清理。载荷见 [Host RPC](/spec/03-runtime/06-host-rpc-protocol#background-tasks)，
 不增加渲染器文件系统访问或传输特权。
+
+### Applied macOS surface in window state
+
+The existing `windowControl("getState")` response adds
+`macosWindowTranslucency: boolean` for the surface the main window was created
+with. Non-macOS platforms report false. An omitted field is unknown to the
+renderer for compatibility, not a guessed surface. This is applied state, not
+the current saved preference; other window actions and `maximized` are
+unchanged. The settings boundary accepts the optional stored translucency
+field only when it is a boolean.

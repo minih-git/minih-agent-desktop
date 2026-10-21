@@ -165,6 +165,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     getWorkPanelChatWidthSetter,
     applyCloseBehavior,
     getCloseBehavior,
+    isMacosWindowTranslucent,
     markMenuRendererReady,
     traySessions,
     taskbarUnreadBadge,
@@ -373,6 +374,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     getWorkPanelChatWidthSetter,
     applyCloseBehavior,
     getCloseBehavior,
+    isMacosWindowTranslucent,
     markMenuRendererReady,
     executeNativeMenuAction,
   });

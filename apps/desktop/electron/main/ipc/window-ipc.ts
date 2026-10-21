@@ -37,6 +37,7 @@ export type WindowIpcDependencies = {
   markMenuRendererReady: (window: BrowserWindow) => boolean;
   executeNativeMenuAction: (action: NativeMenuAction) => unknown;
   setTraySessionPreferences: (preferences: TraySessionPreferences) => Promise<void>;
+  isMacosWindowTranslucent: () => boolean;
 };
 
 /** Register renderer-drawn window chrome and work-panel geometry channels. */
@@ -52,6 +53,7 @@ export function registerWindowIpc({
   markMenuRendererReady,
   executeNativeMenuAction,
   setTraySessionPreferences,
+  isMacosWindowTranslucent,
 }: WindowIpcDependencies): void {
   const { handle, handleWithEvent } = registrar;
   handleWithEvent(IPC.invoke.traySetSessionPreferences, async (event, input: unknown) => {
@@ -128,7 +130,9 @@ export function registerWindowIpc({
         errorCode: ErrorCodes.INVALID_ARGUMENT,
       });
     }
-    if (process.platform === "darwin") return { applied: false, theme };
+    if (process.platform === "darwin" && isMacosWindowTranslucent()) {
+      return { applied: false, theme };
+    }
     const mainWindow = getMainWindow();
     if (!mainWindow || mainWindow.isDestroyed()) {
       throw new Error("main window unavailable");
@@ -163,8 +167,12 @@ export function registerWindowIpc({
     ) {
       throw new Error("unsupported window control action");
     }
+    const macosWindowTranslucency =
+      process.platform === "darwin" && isMacosWindowTranslucent();
     const mainWindow = getMainWindow();
-    if (!mainWindow || mainWindow.isDestroyed()) return { maximized: false };
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { maximized: false, macosWindowTranslucency };
+    }
     switch (input.action as WindowControlAction) {
       case "getState":
         break;
@@ -181,6 +189,7 @@ export function registerWindowIpc({
     }
     return {
       maximized: !mainWindow.isDestroyed() && mainWindow.isMaximized(),
+      macosWindowTranslucency,
     };
   });
 

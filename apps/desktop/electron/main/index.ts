@@ -96,14 +96,12 @@ import { createWorkPanelRuntime } from "./bootstrap/work-panel";
 import { createCloseBehaviorRuntime } from "./bootstrap/close-behavior";
 import { registerShutdownHandlers } from "./bootstrap/shutdown";
 import { stripWinLongPrefix } from "./path-utils";
-
 // Native resize streams can pause briefly while the pointer crosses a display
 // scale boundary. Keep recovery out of that gesture and only run it after the
 // bounds have been stable for one short interaction window.
 const WINDOW_BOUNDS_SETTLE_MS = 300;
 const WORK_PANEL_NATIVE_RESIZE_SETTLE_MS = 180;
 const WORK_PANEL_CHAT_RESIZE_SETTLE_MS = WINDOW_BOUNDS_SETTLE_MS + 120;
-
 const mainState = new MainProcessState();
 const {
   launcherState,
@@ -116,7 +114,6 @@ const {
   shutdownState,
   windowsAllowedToClose,
 } = mainState;
-
 const getHost = () => mainState.host;
 const getMainWindow = () => mainState.mainWindow;
 const getSidecar = () => mainState.sidecar;
@@ -581,6 +578,7 @@ const {
   executeNativeMenuAction,
   dispatchNativeMenuAction,
   applyDeveloperMode,
+  applyMacosWindowTranslucency,
   applyPreventScreenSleep,
   applyKeepAwakeWhileRunning,
   disposePowerSaveBlockers,
@@ -1045,6 +1043,7 @@ function registerIpc() {
     getWorkPanelChatWidthSetter: () => mainState.setWorkPanelChatWidthForWindow,
     applyCloseBehavior,
     getCloseBehavior: () => mainState.closeBehavior,
+    isMacosWindowTranslucent: () => mainState.macosWindowTranslucency,
     markMenuRendererReady,
     executeNativeMenuAction,
     scheduledRunsBySession,
@@ -1153,6 +1152,7 @@ registerApplicationStartup({
   planUiProbe,
   applyApplicationMenuSettings,
   applyDeveloperMode,
+  applyMacosWindowTranslucency,
   applyPreventScreenSleep,
   applyKeepAwakeWhileRunning,
   applyPluginLauncherShortcut,

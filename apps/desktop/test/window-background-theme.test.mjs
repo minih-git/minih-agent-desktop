@@ -14,7 +14,7 @@ const apiSource = await readFile(
 );
 const appSource = await readAppSource();
 
-test("theme changes synchronize the native non-macOS window background", () => {
+test("theme changes synchronize opaque window backgrounds without painting over macOS glass", () => {
   assert.match(
     protocolSource,
     /windowSetBackgroundColor:\s*"minih-agent-desktop\/window\/setBackgroundColor"/,
@@ -47,7 +47,7 @@ test("theme changes synchronize the native non-macOS window background", () => {
   );
   assert.match(
     mainSource,
-    /process\.platform === "darwin"\) return \{ applied: false, theme \};/,
+    /process\.platform === "darwin" && isMacosWindowTranslucent\(\)\) \{\s*return \{ applied: false, theme \};/,
   );
   assert.match(
     appSource,

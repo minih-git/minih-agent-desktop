@@ -2675,3 +2675,13 @@ Main validates a task id and relays to host-core. Renderer reloads do not own or
 terminate a process; the Host owns output, state, explicit stops, and exit cleanup.
 Payloads follow [Background tasks](06-host-rpc-protocol.md#background-tasks).
 No new renderer filesystem access or transport privilege is granted.
+
+### Applied macOS surface in window state
+
+The existing `windowControl("getState")` response adds
+`macosWindowTranslucency: boolean` for the surface the main window was created
+with. Non-macOS platforms report false. An omitted field is unknown to the
+renderer for compatibility, not a guessed surface. This is applied state, not
+the current saved preference; other window actions and `maximized` are
+unchanged. The settings boundary accepts the optional stored translucency
+field only when it is a boolean.
