@@ -31,22 +31,33 @@
  * client is closed with `CLIENT_TOO_SLOW` rather than buffered without bound,
  * which keeps the resumable-cursor rule of §11.4 rule 3.
  *
- * One Gateway-side rule applies to what travels over the socket: a heartbeat
- * (protocol §11.1, 30 seconds) drops a client that stops answering pings. A
+ * Two Gateway-side rules apply to what travels over the socket. A heartbeat
+ * (protocol §11.1, 30 seconds) drops a client that stops answering pings: a
  * laptop that sleeps leaves a half-open socket the Gateway would otherwise
  * never notice, holding a Host-side logical connection and one of the device's
- * four relayed-connection slots forever.
+ * four relayed-connection slots forever. And each request frame spends one
+ * token of the device's bucket, exactly as one command does on the
+ * `RACP-HTTP` routes; a response or a notification does not, because refusing
+ * one would stall the approval it answers.
  */
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 
-import { RACP_DEVICE_TOKEN_PREFIX, RACP_HOSTLINK_CLOSE_CODES, isRacpHostId } from "@minih-agent/shared";
+import { JSON_RPC_CODES, encodeFrame, isRequest, parseFrame, type JsonRpcId } from "@minih-agent/racp";
+import {
+  RACP_DEVICE_TOKEN_PREFIX,
+  RACP_HOSTLINK_CLOSE_CODES,
+  isRacpHostId,
+  isRacpTraceId,
+  type RacpRemoteError,
+} from "@minih-agent/shared";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import { peerAddress } from "./client-ip.js";
 import { bearerToken, hasUrlCredential } from "./client-request-rules.js";
 import { hashToken } from "./pairing.js";
-import type { RateLimiter } from "./rate-limit.js";
+import { retryMessage, type RateLimiter } from "./rate-limit.js";
 import { GatewayRpcError, type GatewayLog, type LogicalConnection, type LogicalConnectionPool } from "./router.js";
 import type { GatewayStore } from "./store.js";
 
@@ -165,6 +176,33 @@ function closeCodeFor(cause: string): number {
   }
 }
 
+/**
+ * The id of a request frame and the trace id to answer it with, or `null` when
+ * the frame is not one. Only the JSON envelope is read, and a frame the Gateway
+ * cannot read as a JSON-RPC request is `null` too: it is forwarded unchanged,
+ * so the Host stays the judge of it (rule 6). A response to a server-initiated
+ * request and a notification are deliberately not requests — refusing either
+ * would stall the approval it answers.
+ */
+function asRequestFrame(frame: string): { id: JsonRpcId; traceId: string } | null {
+  const message = parseFrame(frame);
+  if (!message || !isRequest(message)) return null;
+  const candidate = (message as { traceId?: unknown }).traceId;
+  return { id: message.id, traceId: isRacpTraceId(candidate) ? candidate : randomUUID() };
+}
+
+/**
+ * The Gateway's own answer to one over-limit request frame. The shape is the
+ * one every RACP failure uses — `error.data` carries the `RemoteError` — so a
+ * client reads it exactly like a refusal from the Host; the retry hint travels
+ * in `details`, which is where the protocol puts a value no code can carry.
+ */
+function rateLimitedFrame(id: JsonRpcId, retryAfterMs: number, traceId: string): string {
+  const error = new GatewayRpcError("RATE_LIMITED", retryMessage(retryAfterMs), true, retryAfterMs);
+  const remote: RacpRemoteError = { ...error.toRemoteError(traceId), details: { retryAfterMs } };
+  return encodeFrame({ jsonrpc: "2.0", id, error: { code: JSON_RPC_CODES.application, message: error.message, data: remote } });
+}
+
 /** One relayed client: the socket, its logical connection, and its heartbeat. */
 type LiveRelay = {
   socket: WebSocket;
@@ -229,6 +267,21 @@ export function createClientWsServer(options: ClientWsOptions): ClientWsServer {
           return;
         }
         const frame = typeof data === "string" ? data : Buffer.isBuffer(data) ? data.toString("utf8") : Buffer.concat(data as Buffer[]).toString("utf8");
+        // One request frame spends one token of the device's bucket, exactly as
+        // one command does on the `RACP-HTTP` routes. An over-limit request is
+        // answered here and never reaches the Host; a response to a
+        // server-initiated request and a notification are not requests, so an
+        // approval the client is answering keeps moving while the bucket is
+        // empty.
+        const envelope = asRequestFrame(frame);
+        if (envelope) {
+          const decision = options.rateLimiter.check(deviceId, ip);
+          if (!decision.allowed) {
+            options.log("warn", "gateway ws request rate limited", { hostId, deviceId, retryAfterMs: decision.retryAfterMs });
+            if (ws.readyState === ws.OPEN) ws.send(rateLimitedFrame(envelope.id, decision.retryAfterMs, envelope.traceId));
+            return;
+          }
+        }
         if (connection) {
           connection.sendRaw(frame);
           return;

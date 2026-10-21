@@ -918,8 +918,16 @@ type ModelSummary = {
   不是 Host id 的值，在任何凭据之前就是 `400 INVALID_ARGUMENT`；缺失／未知／已吊销设备为
   `401`，跨 Host、已吊销 Host 与非白名单 `Origin` 为 `403`，按设备限流为 `429 RATE_LIMITED`
   并带与 §11.2 各路由相同的 `Retry-After`。升级完成后 socket 镜像逻辑连接的关闭：Host 正常
-  结束为 `1000`，凭据／路由／协议拒绝为 `1008`，值得稍后重试的（慢客户端、Gateway 关闭）
-  为 `1013`。该路由本身已实现
+  结束为 `1000`，凭据／路由／协议拒绝为 `1008`，值得稍后重试的（慢客户端、Gateway 关闭、
+  设备已达中继连接数上限）为 `1013`。限流不止于升级这一步：客户端在这条 socket 上每发一个
+  JSON-RPC **请求**帧，就扣同一个按设备桶的一个 token（与一条 `RACP-HTTP` 命令相同）；
+  超额时由 Gateway 自己回一个 JSON-RPC 错误——`RATE_LIMITED`、`retriable: true`，重试提示
+  在 `error.data.details.retryAfterMs`——且**这条请求不转发给 Host**，连接保持。**响应**帧
+  （客户端回答服务端请求）与**通知**帧不扣 token、也绝不被拒：拦住任何一个都会卡住它携带的
+  审批。Gateway 无法读成 JSON-RPC 的帧原样转发，由 Host 判定。这条连接带 §11.1 心跳：
+  Gateway 每 30 秒 ping 一次，不应答的客户端被丢弃，所以变成半开的 socket（电脑睡眠、
+  切换网络）不会继续占着 Host 侧的逻辑连接，也不会继续占着设备四条中继连接中的一个。
+  该路由本身已实现
   （rollout R8 工作包 B，测试见 `apps/remote-gateway/src/client-ws.test.ts`）；本条中
   桌面类设备的部分（`desktop` 类别、`hostProof`、`device.desktop-auto` 与随之而来的
   自动授予）尚未实现。

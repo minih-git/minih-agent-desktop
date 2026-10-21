@@ -1162,7 +1162,24 @@ and a disallowed `Origin` are `403`, and the per-device rate limit is
 `429 RATE_LIMITED` with the same `Retry-After` the routes above send. After the
 upgrade the socket mirrors the logical connection's close: `1000` when the Host
 ends it normally, `1008` for a credential, route, or protocol refusal, and
-`1013` when retrying later is worthwhile (a slow client, a Gateway shutdown).
+`1013` when retrying later is worthwhile (a slow client, a Gateway shutdown, or
+the device already holding its maximum relayed connections).
+
+The rate limit does not end at the upgrade. Every JSON-RPC **request** frame the
+client sends over the relayed socket spends one token of the same per-device
+bucket, exactly as one `RACP-HTTP` command does; an over-limit request is
+answered by the Gateway itself with a JSON-RPC error — `RATE_LIMITED`,
+`retriable: true`, and the hint under `error.data.details.retryAfterMs` — and is
+never forwarded to the Host, while the connection stays open. A **response**
+frame (the client answering a server-initiated request) and a **notification**
+frame spend no token and are never refused: blocking either would stall the
+approval it carries. A frame the Gateway cannot read as JSON-RPC is forwarded
+unchanged, and the Host stays its judge.
+
+The connection carries the §11.1 heartbeat: the Gateway pings every 30 seconds
+and drops a client that does not answer, so a socket that went half-open (a
+sleeping computer, a changed network) does not keep holding a Host-side logical
+connection or one of the device's four relayed-connection slots.
 
 The event endpoints MUST support `Last-Event-ID` with the `"<epoch>:<sequence>"`
 form. Commands return JSON and never require the caller to keep a request open

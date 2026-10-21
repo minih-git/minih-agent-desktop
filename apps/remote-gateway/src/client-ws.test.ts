@@ -536,4 +536,83 @@ describe("gateway client WebSocket route", () => {
     expect(closed.code).toBe(1013);
     expect(closed.reason).toMatch(/maximum relayed connections/);
   });
+
+
+  it("rate-limits each request frame and never forwards an over-limit one", async () => {
+    // Two tokens, refilling one per second: the upgrade spends one and
+    // `connection/initialize` the other, so the request after them is over the
+    // limit until a token comes back.
+    const target = await startTestGateway({}, { deviceLimit: { capacity: 2, refillPerSecond: 1 } });
+    gateway = target;
+    const host = await enrollTestHost(target, { history: { items: transcriptFixture(4) } });
+    hosts.push(host);
+    const paired = await pairDevice(target, host, { client: "ios", label: "phone" });
+    expect(paired.status).toBe(200);
+    const token = paired.token ?? "";
+
+    const relay = openRelay(target, host.hostId, { token });
+    await relayOpened(relay);
+    relay.send({ jsonrpc: "2.0", id: "c1", method: "connection/initialize", params: INITIALIZE });
+    await relay.waitForFrame((frame) => frame["id"] === "c1", "the initialize result");
+
+    relay.send({ jsonrpc: "2.0", id: "c2", method: "session/create", params: { title: "must-not-exist" } });
+    const denied = await relay.waitForFrame((frame) => frame["id"] === "c2", "the refusal");
+    const refusal = denied["error"] as { code: number; data: { code: string; retriable: boolean; details?: { retryAfterMs?: number } } };
+    expect(refusal.data.code).toBe("RATE_LIMITED");
+    expect(refusal.data.retriable).toBe(true);
+    expect(refusal.data.details?.retryAfterMs).toBeGreaterThan(0);
+    // The Gateway answered it; a Host answer to this request would be a result.
+    expect(denied["result"]).toBeUndefined();
+
+    // The Host never saw it: once the bucket refills, the session the refused
+    // request asked for is not in the Host's own list, and the same connection
+    // still relays. A refused request spends no token, so retrying is free.
+    const listed = await waitForAsync(async () => {
+      relay.send({ jsonrpc: "2.0", id: "list", method: "session/list", params: {} });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      return relay.frames.find((frame) => frame["id"] === "list" && frame["error"] === undefined);
+    }, "the rate-limit window to refill", 10_000);
+    const result = listed["result"] as { sessions: Array<{ id: string; title: string }> };
+    expect(result.sessions.map((session) => session.id)).toContain("s1");
+    expect(result.sessions.map((session) => session.title)).not.toContain("must-not-exist");
+  });
+
+  it("neither counts nor answers a frame that is not a request", async () => {
+    // Three tokens, no refill: the upgrade and `connection/initialize` leave
+    // exactly one, so a request still succeeding afterwards is only possible if
+    // the frames below spent nothing.
+    const target = await startTestGateway({}, { deviceLimit: { capacity: 3, refillPerSecond: 0 } });
+    gateway = target;
+    const host = await enrollTestHost(target);
+    hosts.push(host);
+    const paired = await pairDevice(target, host, { client: "ios", label: "phone" });
+    expect(paired.status).toBe(200);
+    const token = paired.token ?? "";
+
+    const relay = openRelay(target, host.hostId, { token });
+    await relayOpened(relay);
+    relay.send({ jsonrpc: "2.0", id: "c1", method: "connection/initialize", params: INITIALIZE });
+    await relay.waitForFrame((frame) => frame["id"] === "c1", "the initialize result");
+
+    // The client answering server-initiated requests, and a notification:
+    // neither is a request, so neither may spend the last token.
+    for (let index = 0; index < 5; index += 1) relay.send({ jsonrpc: "2.0", id: `srv_${index}`, result: { decision: "allow-once" } });
+    relay.send({ jsonrpc: "2.0", method: "notifications/initialized", params: {} });
+    relay.send({ jsonrpc: "2.0", id: "c2", method: "session/list", params: {} });
+    const listed = await relay.waitForFrame((frame) => frame["id"] === "c2", "the session list");
+    expect(Array.isArray((listed["result"] as { sessions: unknown[] }).sessions)).toBe(true);
+
+    // The bucket is empty now (upgrade, initialize, list), so a request is
+    // refused — which is what proves the frames above really were free. The
+    // same treatment for a non-request is what keeps an approval moving.
+    relay.send({ jsonrpc: "2.0", id: "srv_99", result: { decision: "allow-once" } });
+    relay.send({ jsonrpc: "2.0", method: "notifications/initialized", params: {} });
+    relay.send({ jsonrpc: "2.0", id: "c3", method: "session/list", params: {} });
+    const refused = await relay.waitForFrame((frame) => frame["id"] === "c3", "the refusal");
+    expect((refused["error"] as { data: { code: string } }).data.code).toBe("RATE_LIMITED");
+    // Not answered, not closed: the client's own answer is not the Gateway's to
+    // refuse, and the socket survives being over the limit.
+    expect(relay.frames.some((frame) => frame["id"] === "srv_99")).toBe(false);
+    expect(relay.socket.readyState).toBe(relay.socket.OPEN);
+  });
 });
