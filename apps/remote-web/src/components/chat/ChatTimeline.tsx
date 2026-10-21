@@ -1,6 +1,7 @@
-import { ChevronDown, ChevronUp, Clock, Code, ExternalLink, Globe, Maximize2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Clock, Code, ExternalLink, Globe, Maximize2, X } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { isValidElement, useMemo, useState } from "react";
+import { isValidElement, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -8,7 +9,6 @@ import remarkGfm from "remark-gfm";
 import { groupConsecutiveToolRuns } from "@minih-agent/shared";
 
 import type { TimelineFailure, TimelineItem } from "../../lib/timeline-types.js";
-import { Sheet } from "../ui/Sheet.js";
 import { ToolRun } from "./ToolRun.js";
 
 export interface ChatTimelineProps {
@@ -21,8 +21,19 @@ type MarkdownTableProps = ComponentProps<"table"> & { node?: unknown };
 type MarkdownPreProps = ComponentProps<"pre"> & { node?: unknown };
 type MarkdownAnchorProps = ComponentProps<"a"> & { node?: unknown };
 
-function stripEmbeddedCsp(html: string): string {
-  return html.replace(/<meta[^>]*http-equiv=["']Content-Security-Policy["'][^>]*>/gi, "");
+const MOBILE_FIT_STYLE = `<style id="minih-mobile-fit">
+html, body { max-width: 100% !important; overflow-x: hidden !important; box-sizing: border-box !important; }
+.am-bar, header { flex-wrap: wrap !important; max-width: 100% !important; }
+svg, canvas, img, table { max-width: 100% !important; height: auto !important; }
+</style>`;
+
+function prepareHtmlForFrame(html: string): string {
+  const withoutCsp = html.replace(/<meta[^>]*http-equiv=["']Content-Security-Policy["'][^>]*>/gi, "");
+  if (withoutCsp.includes("minih-mobile-fit")) return withoutCsp;
+  if (/<\/head>/i.test(withoutCsp)) {
+    return withoutCsp.replace(/<\/head>/i, `${MOBILE_FIT_STYLE}</head>`);
+  }
+  return `${MOBILE_FIT_STYLE}${withoutCsp}`;
 }
 
 function extractHtmlTitle(html: string): string | null {
@@ -57,14 +68,13 @@ function isHtmlSource(lang: string, code: string): boolean {
 }
 
 function findHtmlInMarkdown(text: string): string | null {
-  const match = /```(?:html|htm)\s*\n([\s\S]*?)```/i.exec(text);
-  if (match?.[1]?.trim()) return match[1].trim();
+  const match = /(`{3,})(?:html|htm)\s*\n([\s\S]*?)\1/i.exec(text);
+  if (match?.[2]?.trim()) return match[2].trim();
   return null;
 }
 
 function findHtmlAcrossItems(items: readonly TimelineItem[], href?: string): { title: string; code: string } | null {
   const fileName = href ? href.split("/").pop()?.replace(/[?#].*$/, "") : undefined;
-  // 1. Check Write tool calls matching the filename or any .html file
   for (let i = items.length - 1; i >= 0; i -= 1) {
     const item = items[i]!;
     if (item.toolName === "Write" && item.toolArgs && typeof item.toolArgs === "object") {
@@ -97,11 +107,11 @@ function HtmlPreviewCard({
   onExpand: (preview: { title: string; code: string }) => void;
 }) {
   const [showSource, setShowSource] = useState(false);
-  const cleanHtml = useMemo(() => stripEmbeddedCsp(code), [code]);
-  const title = useMemo(() => extractHtmlTitle(cleanHtml) ?? "HTML", [cleanHtml]);
+  const frameHtml = useMemo(() => prepareHtmlForFrame(code), [code]);
+  const title = useMemo(() => extractHtmlTitle(frameHtml) ?? "HTML", [frameHtml]);
 
   return (
-    <div className="my-2 overflow-hidden rounded-2xl border border-[var(--rm-separator)] bg-[var(--rm-bg-surface)] shadow-[var(--rm-shadow)]">
+    <div className="my-2 w-full overflow-hidden rounded-2xl border border-[var(--rm-separator)] bg-[var(--rm-bg-surface)] shadow-[var(--rm-shadow)]">
       <div className="flex items-center justify-between gap-2 border-b border-[var(--rm-separator)] bg-[var(--rm-bg-inset)] px-3 py-2 text-[12px] text-[var(--rm-text-secondary)]">
         <span className="flex min-w-0 items-center gap-1.5 font-medium text-[var(--rm-text-primary)]">
           <Globe size={13} className="shrink-0 text-[var(--rm-link)]" aria-hidden="true" />
@@ -110,7 +120,11 @@ function HtmlPreviewCard({
         <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
-            onClick={() => setShowSource((prev) => !prev)}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setShowSource((prev) => !prev);
+            }}
             className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] text-[var(--rm-text-secondary)] active:bg-[var(--rm-bg-surface)]"
           >
             <Code size={12} aria-hidden="true" />
@@ -118,8 +132,12 @@ function HtmlPreviewCard({
           </button>
           <button
             type="button"
-            onClick={() => onExpand({ title, code: cleanHtml })}
-            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] text-[var(--rm-link)] active:bg-[var(--rm-bg-surface)]"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onExpand({ title, code: frameHtml });
+            }}
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-medium text-[var(--rm-link)] active:bg-[var(--rm-bg-surface)]"
           >
             <Maximize2 size={12} aria-hidden="true" />
             <span>全屏</span>
@@ -134,8 +152,8 @@ function HtmlPreviewCard({
         <iframe
           title={title}
           sandbox="allow-scripts"
-          srcDoc={cleanHtml}
-          className="block h-[360px] w-full border-0 bg-[var(--rm-bg-surface)]"
+          srcDoc={frameHtml}
+          className="block h-[420px] w-full border-0 bg-[var(--rm-bg-surface)]"
           loading="lazy"
         />
       )}
@@ -181,13 +199,19 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
   const { t } = useTranslation();
   const [openItems, setOpenItems] = useState<Record<string, boolean>>({});
   const [expandedHtml, setExpandedHtml] = useState<{ title: string; code: string } | null>(null);
+  const [expandedShowSource, setExpandedShowSource] = useState(false);
 
   const toggle = (key: string) => {
     setOpenItems((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   // Drop empty assistant placeholders first so they never split consecutive tool calls.
-  const visibleItems = items.filter((item) => !isEmptyAssistantPlaceholder(item));
+  const visibleItems = useMemo(
+    () => items.filter((item) => !isEmptyAssistantPlaceholder(item)),
+    [items],
+  );
+  const visibleItemsRef = useRef<readonly TimelineItem[]>(visibleItems);
+  visibleItemsRef.current = visibleItems;
 
   const markdownComponents = useMemo(
     () => ({
@@ -199,7 +223,15 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
       pre: ({ children, node: _node, ...props }: MarkdownPreProps) => {
         const extracted = extractCodeBlock(children);
         if (extracted && isHtmlSource(extracted.lang, extracted.code)) {
-          return <HtmlPreviewCard code={extracted.code} onExpand={setExpandedHtml} />;
+          return (
+            <HtmlPreviewCard
+              code={extracted.code}
+              onExpand={(preview) => {
+                setExpandedShowSource(false);
+                setExpandedHtml(preview);
+              }}
+            />
+          );
         }
         return <pre {...props}>{children}</pre>;
       },
@@ -214,9 +246,13 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                const found = findHtmlAcrossItems(visibleItems, rawHref);
+                const found = findHtmlAcrossItems(visibleItemsRef.current, rawHref);
                 if (found) {
-                  setExpandedHtml({ title: found.title, code: stripEmbeddedCsp(found.code) });
+                  setExpandedShowSource(false);
+                  setExpandedHtml({
+                    title: found.title,
+                    code: prepareHtmlForFrame(found.code),
+                  });
                 }
               }}
               className="my-1 inline-flex max-w-full items-center gap-1.5 rounded-xl bg-[var(--rm-bg-surface)] px-3 py-1.5 text-left text-[14px] font-medium text-[var(--rm-link)] shadow-[var(--rm-shadow)] ring-1 ring-[var(--rm-separator)] active:bg-[var(--rm-bg-inset)]"
@@ -247,14 +283,9 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
         );
       },
     }),
-    [visibleItems],
+    [],
   );
 
-  /**
-   * Rows in the order the timeline draws them: consecutive tool calls and any
-   * silent thinking steps between them become one `ToolRun`, while everything
-   * else stays its own row.
-   */
   const rows = groupConsecutiveToolRuns(visibleItems, (item) =>
     isToolItem(item) ? "tool" : isThinkingOnlyItem(item) ? "thinking" : "other",
   );
@@ -266,6 +297,60 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
       </div>
     );
   }
+
+  const fullscreenModal =
+    expandedHtml && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={expandedHtml.title}
+            className="fixed inset-0 z-50 flex flex-col bg-[var(--rm-bg-page)] text-[var(--rm-text-primary)]"
+          >
+            <header className="rm-nav rm-gutter flex min-h-[52px] shrink-0 items-center justify-between gap-2 border-b border-[var(--rm-separator)] bg-[var(--rm-bg-surface)] pb-2.5">
+              <div className="flex min-w-0 items-center gap-2">
+                <Globe size={16} className="shrink-0 text-[var(--rm-link)]" aria-hidden="true" />
+                <span className="truncate text-[16px] font-semibold leading-[22px]">
+                  {expandedHtml.title}
+                </span>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setExpandedShowSource((prev) => !prev)}
+                  className="inline-flex h-8 items-center gap-1 rounded-lg bg-[var(--rm-bg-inset)] px-2.5 text-[13px] font-medium text-[var(--rm-text-secondary)] active:opacity-75"
+                >
+                  <Code size={14} aria-hidden="true" />
+                  <span>{expandedShowSource ? "预览" : "代码"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpandedHtml(null)}
+                  aria-label={t("common.close")}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--rm-bg-inset)] text-[var(--rm-text-primary)] active:opacity-75"
+                >
+                  <X size={18} aria-hidden="true" />
+                </button>
+              </div>
+            </header>
+            <div className="relative flex-1 overflow-hidden bg-[var(--rm-bg-surface)]">
+              {expandedShowSource ? (
+                <pre className="m-0 h-full w-full overflow-auto p-4 font-mono text-[12px] leading-[18px] text-[var(--rm-text-secondary)]">
+                  <code>{expandedHtml.code}</code>
+                </pre>
+              ) : (
+                <iframe
+                  title={expandedHtml.title}
+                  sandbox="allow-scripts"
+                  srcDoc={expandedHtml.code}
+                  className="block h-full w-full border-0 bg-[var(--rm-bg-surface)]"
+                />
+              )}
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <>
@@ -292,7 +377,6 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
                 </li>
               );
             }
-            // A run of only thinking steps (no tool calls yet) renders its latest thinking toggle.
             const item = burst[burst.length - 1]!;
             const thinkKey = `think-${item.id || row.start}`;
             const isThinkOpen = !!openItems[thinkKey];
@@ -378,7 +462,7 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
             <li
               key={item.id || idx}
               data-item-id={item.id}
-              className={`${topGap}flex flex-col self-start w-full max-w-[96%]`}
+              className={`${topGap}flex flex-col self-start w-full max-w-full`}
             >
               {item.agentName ? (
                 <div className="mb-0.5 text-[12px] text-[var(--rm-text-muted)]">
@@ -436,23 +520,7 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
           </li>
         ) : null}
       </ul>
-
-      <Sheet
-        open={expandedHtml !== null}
-        onClose={() => setExpandedHtml(null)}
-        title={expandedHtml?.title ?? "HTML"}
-      >
-        {expandedHtml ? (
-          <div className="overflow-hidden rounded-xl border border-[var(--rm-separator)] bg-[var(--rm-bg-surface)]">
-            <iframe
-              title={expandedHtml.title}
-              sandbox="allow-scripts"
-              srcDoc={expandedHtml.code}
-              className="block h-[72dvh] w-full border-0 bg-[var(--rm-bg-surface)]"
-            />
-          </div>
-        ) : null}
-      </Sheet>
+      {fullscreenModal}
     </>
   );
 }

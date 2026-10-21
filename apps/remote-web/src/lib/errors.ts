@@ -27,7 +27,7 @@ const REASON_KEYS: Record<string, string> = {
   INVALID_ARGUMENT: "error.reason.invalidArgument",
   AGENT_BUSY: "error.reason.busy",
   AGENT_UNAVAILABLE: "error.reason.unavailable",
-  CAPABILITY_UNAVAILABLE: "error.reason.unavailable",
+  CAPABILITY_UNAVAILABLE: "error.reason.unsupported",
   RATE_LIMITED: "error.reason.rateLimited",
   CLIENT_TOO_SLOW: "error.reason.rateLimited",
   CURSOR_EXPIRED: "error.reason.cursorExpired",

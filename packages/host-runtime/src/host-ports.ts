@@ -108,13 +108,13 @@ function inlineLocalHtmlIfLinked(message: UiMessage): UiMessage {
     if (!existsSync(filePath)) return message;
     const st = statSync(filePath);
     if (!st.isFile() || st.size <= 0 || st.size > MAX_INLINE_HTML_BYTES) return message;
-    const rawHtml = readFileSync(filePath, "utf8").replace(
-      /<meta[^>]*http-equiv=["']Content-Security-Policy["'][^>]*>/gi,
-      "",
-    );
+    const rawHtml = readFileSync(filePath, "utf8")
+      .replace(/<meta[^>]*http-equiv=["']Content-Security-Policy["'][^>]*>/gi, "")
+      .replace(/<textarea[^>]*id=["']am-source["'][^>]*>[\s\S]*?<\/textarea>/gi, "");
+    const fence = "`````";
     return {
       ...message,
-      content: `${message.content}\n\n\`\`\`html\n${rawHtml}\n\`\`\``,
+      content: `${message.content}\n\n${fence}html\n${rawHtml}\n${fence}`,
     };
   } catch {
     return message;

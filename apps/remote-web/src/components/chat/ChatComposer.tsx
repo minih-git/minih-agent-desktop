@@ -75,7 +75,6 @@ function formatSize(bytes: number): string {
 export function ChatComposer({ sending, disabled, archived, queued, onSend }: ChatComposerProps) {
   const { t } = useTranslation();
   const [text, setText] = useState("");
-  const [retrying, setRetrying] = useState(false);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [rejection, setRejection] = useState<AttachmentRejection | null>(null);
   const attemptRef = useRef<TurnAttempt | null>(null);
@@ -150,7 +149,6 @@ export function ChatComposer({ sending, disabled, archived, queued, onSend }: Ch
     const sent = await onSend(attempt);
     if (sent) {
       attemptRef.current = null;
-      setRetrying(false);
       setText("");
       setAttachments([]);
       setRejection(null);
@@ -159,7 +157,6 @@ export function ChatComposer({ sending, disabled, archived, queued, onSend }: Ch
       }
       return;
     }
-    setRetrying(true);
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -190,10 +187,6 @@ export function ChatComposer({ sending, disabled, archived, queued, onSend }: Ch
         <div className="flex items-center gap-1.5 px-2 text-[12px] text-[var(--rm-error)]">
           <span>{rejectionText(rejection)}</span>
         </div>
-      ) : retrying ? (
-        <div className="flex items-center gap-1.5 px-2 text-[12px] text-[var(--rm-error)]">
-          <span>{t("composer.retryHint")}</span>
-        </div>
       ) : queued && !isBlank ? (
         <div className="flex items-center gap-1.5 px-2 text-[12px] text-[var(--rm-text-muted)]">
           <Clock size={13} />
@@ -221,7 +214,10 @@ export function ChatComposer({ sending, disabled, archived, queued, onSend }: Ch
               <span className="shrink-0 text-[11px] text-[var(--rm-text-faint)]">{formatSize(attachment.size)}</span>
               <button
                 type="button"
-                onClick={() => setAttachments((current) => current.filter((entry) => entry.id !== attachment.id))}
+                onClick={() => {
+                  setRejection(null);
+                  setAttachments((current) => current.filter((entry) => entry.id !== attachment.id));
+                }}
                 aria-label={t("composer.removeAttachment", { name: attachment.name })}
                 className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[var(--rm-text-muted)] active:opacity-60"
               >
