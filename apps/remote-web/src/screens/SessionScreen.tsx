@@ -124,10 +124,14 @@ export function SessionScreen({
       <NavBar
         title={sessionTitle}
         subtitle={
-          <span className="inline-flex items-center gap-1.5">
-            <span>{hostName}</span>
+          // The computer's name is user data of unknown length: it takes the
+          // pressure (one truncated line) and the live marker keeps its width,
+          // so a long name cannot wrap the fixed-height bar or push the state
+          // out of sight.
+          <span className="inline-flex min-w-0 items-center justify-center gap-1.5">
+            <span className="truncate">{hostName}</span>
             {streamState === "open" ? (
-              <span className="inline-flex items-center gap-1 text-[var(--rm-success)]">
+              <span className="inline-flex shrink-0 items-center gap-1 text-[var(--rm-success)]">
                 <span className="h-1.5 w-1.5 rounded-full bg-[var(--rm-success)]" />
                 <span>{t("session.live")}</span>
               </span>

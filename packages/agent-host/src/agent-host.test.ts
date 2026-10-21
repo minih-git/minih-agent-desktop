@@ -961,6 +961,30 @@ describe("AgentHost attach and subscribe", () => {
     host.ingest(envelope("s1", "rt_1", { type: "agent_end", messageIds: [] }));
     expect(kinds).toEqual(["session.created", "session.changed"]);
   });
+
+  /**
+   * A title change is announced by a session-scoped event, not only by the host
+   * list: a client that holds the session — a phone on its session screen —
+   * refreshes its header from `payload.session`, and it is not subscribed to the
+   * host list. Without this the desktop's rename left the phone showing the old
+   * name until something else changed the session.
+   */
+  it("carries the renamed session to a subscriber of that session", () => {
+    const { host } = build();
+    const seen: Array<{ kind: string; payload: Record<string, unknown> }> = [];
+    host.subscribe(
+      viewer,
+      { scope: "session", sessionId: "s1" },
+      {
+        deliver: (event) => seen.push({ kind: event.kind, payload: event.payload as Record<string, unknown> }),
+        close: () => {},
+      },
+    );
+    const renamed: SessionSummary = { ...summary("s1"), title: "Renamed on the desktop" };
+    host.publishSessionChange("session.changed", renamed);
+    const change = seen.find((event) => event.kind === "session.changed");
+    expect(change?.payload.session).toMatchObject({ id: "s1", title: "Renamed on the desktop" });
+  });
 });
 
 describe("AgentHost queue extras", () => {
