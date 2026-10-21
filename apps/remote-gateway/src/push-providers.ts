@@ -175,13 +175,32 @@ export class ApnsClient {
 
   /** Deliver one notification to one APNs device token. */
   async send(deviceToken: string, payload: RacpPushPayload): Promise<PushDeliveryResult> {
-    // The alert text is a *resource key*, resolved by iOS from the app's own
-    // strings files: the Gateway never sends a sentence, let alone content
-    // (ADR 0331 decision 7). The ids ride beside it so a tap opens the right
-    // screen.
+    const primary = await this.sendToEndpoint(this.config.endpoint, deviceToken, payload);
+    if (
+      !primary.ok &&
+      primary.status === 400 &&
+      this.config.endpoint.replace(/\/+$/, "") === "https://api.push.apple.com"
+    ) {
+      return this.sendToEndpoint("https://api.sandbox.push.apple.com", deviceToken, payload, true);
+    }
+    return primary;
+  }
+
+  private async sendToEndpoint(
+    endpointUrl: string,
+    deviceToken: string,
+    payload: RacpPushPayload,
+    ephemeralSession = false,
+  ): Promise<PushDeliveryResult> {
     const body = JSON.stringify(apnsBody(payload));
+    let tempSession: ClientHttp2Session | null = null;
     try {
-      const session = this.connectedSession();
+      const session = ephemeralSession
+        ? (tempSession = http2Connect(endpointUrl.replace(/\/+$/, ""), {
+            ...(this.options.ca ? { ca: this.options.ca } : {}),
+          }))
+        : this.connectedSession();
+      if (tempSession) tempSession.on("error", () => undefined);
       this.inFlight += 1;
       return await new Promise<PushDeliveryResult>((resolve) => {
         // One resolution per attempt, whatever fires first.
@@ -247,7 +266,15 @@ export class ApnsClient {
       return { ok: false, reason: "transient", status: 0 };
     } finally {
       this.inFlight -= 1;
-      this.markIdle();
+      if (tempSession) {
+        try {
+          tempSession.destroy();
+        } catch {
+          // Already closed.
+        }
+      } else {
+        this.markIdle();
+      }
     }
   }
 
