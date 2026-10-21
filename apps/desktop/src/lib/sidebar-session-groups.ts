@@ -1,5 +1,6 @@
 import type { SessionSummary } from "@minih-agent/shared";
 import { isRemoteSession } from "./remote-session-safety.ts";
+import { isAutomationSession } from "./session-origin.ts";
 import type { ProjectMeta, SessionMeta } from "./sidebar-preferences";
 
 export function normalizeProjectPath(projectPath?: string | null): string | null {
@@ -179,21 +180,29 @@ function optionalSessionTimestamp(value?: string | null): number | null {
 /**
  * Return all visible sessions across all projects and temporary chats ordered
  * by latest activity (`updatedAt` descending) for the sidebar Activity panel.
+ *
+ * A scheduled run owns its transcript, so the Scheduled page is its entry point
+ * and every other list keeps it out (issue #1291). This feed is the one
+ * exception, and only while the run is still executing: live work belongs in
+ * the stream, a settled run does not.
  */
 export function getSidebarActivitySessions({
   sessions,
   sessionMeta,
   projectMeta,
   showArchived,
+  runningSessionIds,
 }: {
   sessions: readonly SessionSummary[];
   sessionMeta: Record<string, SessionMeta>;
   projectMeta: Record<string, ProjectMeta>;
   showArchived: boolean;
+  /** Sessions executing a turn right now, as the renderer knows them. */
+  runningSessionIds: ReadonlySet<string>;
 }): SessionSummary[] {
   return sessions
     .filter((session) => {
-      if (session.scheduledRun) return false;
+      if (isAutomationSession(session) && !runningSessionIds.has(session.id)) return false;
       const path = normalizeProjectPath(session.projectPath);
       const project = path ? (projectMeta[path] ?? projectMeta[session.projectPath!]) : undefined;
       return (

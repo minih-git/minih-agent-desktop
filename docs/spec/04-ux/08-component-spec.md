@@ -1363,8 +1363,9 @@ sessions, not a replacement persistence model.
 A scheduled-task run's transcript is never part of this list: the run owns its
 session (`task_runs.session_id`), the host reports that ownership as
 `scheduledRun` on every session summary, and the Scheduled route is its entry
-point. Global session search hides the same rows. Deleting the task releases the
-transcript back into the ordinary lists (issue #1291).
+point. Global session search hides the same rows. The sidebar's Activity stream
+is the one exception, and only while the run is still executing. Deleting the
+task releases the transcript back into the ordinary lists (issue #1291).
 
 ### 6.2 Anatomy
 

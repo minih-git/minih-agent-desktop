@@ -9,6 +9,8 @@ export type ScheduledIpcDependencies = {
   scheduledRunsBySession: Map<string, string>;
   invoke: (channel: string, args: readonly unknown[]) => Promise<unknown>;
   isQuitting: () => boolean;
+  /** A run opens its own session, so the session list has to hear about it. */
+  sendToRenderer: (channel: string, payload?: unknown) => void;
 };
 
 export function registerScheduledIpc({
@@ -17,6 +19,7 @@ export function registerScheduledIpc({
   scheduledRunsBySession,
   invoke,
   isQuitting,
+  sendToRenderer,
 }: ScheduledIpcDependencies): void {
   // The Scheduled workspace renders one task's own history and one newest run
   // per task for the column, so the caller may scope or summarize the read. The
@@ -43,11 +46,17 @@ export function registerScheduledIpc({
     if (typeof id !== "string" || typeof automatic !== "boolean") throw new Error("invalid task request");
     const host = getHost();
     if (!host) throw new Error("host unavailable");
-    return executeScheduledTask({
+    const launch = await executeScheduledTask({
       host, id, automatic, runs: scheduledRunsBySession,
       isCurrent: () => !isQuitting() && getHost() === host,
       prompt: (sessionId, content) => invoke(IPC.invoke.agentPrompt, [{ sessionId, content }]),
     });
+    // The host creates the run's session on its own, so no renderer state has
+    // the row yet. The Activity feed is the one list that shows a scheduled run
+    // while it executes (issue #1291 keeps the other lists free of those
+    // transcripts), and it can only show it once the session is in the store.
+    sendToRenderer(IPC.event.sessionsChanged, { reason: "scheduled.run" });
+    return launch;
   });
   const handle = (channel: string, fn: (...args: any[]) => Promise<any>) => {
     registrar.handle(channel, async (...args) => fn(getHost(), ...args));

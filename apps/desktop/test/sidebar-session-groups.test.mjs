@@ -180,6 +180,7 @@ test("activity feed orders sessions across all projects by updatedAt descending 
       sessionMeta,
       projectMeta,
       showArchived: false,
+      runningSessionIds: new Set(),
     }).map((item) => item.id),
     ["newest-temp", "middle-proj", "older-proj"],
   );
@@ -190,9 +191,30 @@ test("activity feed orders sessions across all projects by updatedAt descending 
       sessionMeta,
       projectMeta,
       showArchived: true,
+      runningSessionIds: new Set(),
     }).map((item) => item.id),
     ["archived-project-session", "archived-session", "newest-temp", "middle-proj", "older-proj"],
   );
+});
+
+test("activity feed lists a scheduled run only while its turn executes", () => {
+  const rows = [
+    session({ id: "ordinary", projectPath: "/proj-a", updatedAt: "2026-09-13T12:00:00Z" }),
+    session({ id: "settled-run", projectPath: "/proj-a", updatedAt: "2026-09-13T13:00:00Z", scheduledRun: true }),
+    session({ id: "executing-run", projectPath: "/proj-b", updatedAt: "2026-09-13T14:00:00Z", scheduledRun: true }),
+  ];
+  const feed = (runningSessionIds) =>
+    getSidebarActivitySessions({
+      sessions: rows,
+      sessionMeta: {},
+      projectMeta: {},
+      showArchived: false,
+      runningSessionIds,
+    }).map((item) => item.id);
+
+  assert.deepEqual(feed(new Set(["executing-run"])), ["executing-run", "ordinary"]);
+  // The same run leaves the feed again as soon as its turn settles.
+  assert.deepEqual(feed(new Set()), ["ordinary"]);
 });
 
 test("resolveSessionActivityPreview prefers live and retained transcript messages over summary preview", () => {
