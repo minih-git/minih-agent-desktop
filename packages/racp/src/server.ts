@@ -10,6 +10,7 @@ import {
   RACP_PROTOCOL_VERSION,
   RACP_SUBSCRIPTION_CLOSED_NOTIFICATION,
   RacpInitializeParamsSchema,
+  isRacpTraceId,
   protocolVersionsCompatible,
   rolesAllowOperation,
   type RacpEventEnvelope,
@@ -327,10 +328,13 @@ export class RacpServer {
       if (isNotification(message) && message.method === RACP_INITIALIZED_NOTIFICATION) connection.initialized = true;
       return;
     }
-    const traceId =
-      typeof (message as { traceId?: unknown }).traceId === "string"
-        ? (message as { traceId: string }).traceId
-        : this.traceId();
+    // A client-supplied trace id is untrusted input that ends up in log lines,
+    // audit records, and error payloads. A value that is not a bounded,
+    // log-safe id is replaced with a locally generated one: never sanitized,
+    // never echoed.
+    const traceId = isRacpTraceId((message as { traceId?: unknown }).traceId)
+      ? (message as { traceId: string }).traceId
+      : this.traceId();
     const startedAt = Date.now();
     try {
       const result = await this.dispatch(connection, message.method, message.params, traceId);

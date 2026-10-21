@@ -154,6 +154,44 @@ describe("gateway client API", () => {
     }
   });
 
+  /**
+   * The header is untrusted input: a value outside the shared trace-id rule is
+   * replaced, never echoed back and never written to a log line.
+   */
+  it("replaces an unusable x-trace-id instead of echoing it", async () => {
+    const entries: Array<{ message: string; data?: Record<string, unknown> }> = [];
+    const measured = await startTestGateway(
+      {},
+      {
+        latencyTrace: true,
+        log: (_level, message, data) => {
+          entries.push({ message, ...(data ? { data } : {}) });
+        },
+      },
+    );
+    const measuredHost = await enrollTestHost(measured, { latencyTrace: true });
+    try {
+      const paired = await pairDevice(measured, measuredHost, { client: "ios", label: "phone" });
+      // A newline or a control character cannot even be sent by `fetch`; the
+      // raw-frame case is covered by `packages/racp/src/latency-trace.test.ts`.
+      for (const bad of ["short", "with space", "x".repeat(4096)]) {
+        const response = await fetch(`${measured.clientBaseUrl}/hosts/${measuredHost.hostId}/v1/sessions`, {
+          headers: { authorization: `Bearer ${paired.token ?? ""}`, "x-trace-id": bad },
+        });
+        expect(response.status).toBe(200);
+        const echoed = response.headers.get("x-trace-id") ?? "";
+        expect(echoed).not.toBe(bad);
+        expect(echoed).toMatch(/^[A-Za-z0-9._:-]{8,128}$/);
+      }
+      const logged = JSON.stringify(entries);
+      expect(logged).not.toContain("with space");
+      expect(logged).not.toContain("x".repeat(64));
+    } finally {
+      await measuredHost.stop();
+      await measured.close();
+    }
+  });
+
   it("forwards the project routes a phone uses to start a session somewhere new", async () => {
     // Rollout A2 added these two routes; the Gateway derives its host-scoped
     // routes from the shared table, so this proves the wiring and the query

@@ -178,9 +178,18 @@ export class RacpClient {
       timer.unref?.();
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer, method, traceId, startedAt });
       try {
-        // The trace id is an optional JSON-RPC member (P0 latency measurement).
-        // A Host that predates it ignores the member; no operation schema sees it.
-        transport.send(encodeFrame({ jsonrpc: "2.0", id, method, params, traceId }));
+        // The trace id travels only in measurement mode, so a normal run sends
+        // the same frame it always did. When it does travel it is an optional
+        // JSON-RPC member a Host that predates it ignores.
+        transport.send(
+          encodeFrame({
+            jsonrpc: "2.0",
+            id,
+            method,
+            params,
+            ...(this.options.latencyTrace === true ? { traceId } : {}),
+          }),
+        );
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(id);

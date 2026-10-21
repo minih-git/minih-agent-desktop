@@ -120,6 +120,24 @@ export const RacpRequestContextSchema = Type.Object({
 });
 export type RacpRequestContext = Static<typeof RacpRequestContextSchema>;
 
+/**
+ * The character set and length of a diagnostic trace id (P0 measurement).
+ *
+ * One definition, because two peers validate the same value: the Gateway
+ * accepts a caller's `x-trace-id` header, and a Host accepts the `traceId` an
+ * untrusted client put in a request frame. A value that does not match is
+ * replaced with a locally generated id — never echoed, never sanitized — so an
+ * unbounded or control-character-laden string can never reach a log line, an
+ * audit record, or an error payload.
+ */
+export const RACP_TRACE_ID_PATTERN = "^[A-Za-z0-9._:-]{8,128}$";
+const RACP_TRACE_ID_RE = new RegExp(RACP_TRACE_ID_PATTERN);
+
+/** Whether a value may be used as a trace id: a bounded, log-safe string. */
+export function isRacpTraceId(value: unknown): value is string {
+  return typeof value === "string" && RACP_TRACE_ID_RE.test(value);
+}
+
 export const WorkspaceFilesRequestSchema = Type.Object({
   path: Type.String({ minLength: 1, maxLength: 4096 }),
   operation: Type.Union([Type.Literal("list"), Type.Literal("read"), Type.Literal("index"), Type.Literal("resolve"), Type.Literal("image"), Type.Literal("diff"), Type.Literal("instructions")]),

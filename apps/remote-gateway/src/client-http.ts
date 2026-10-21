@@ -34,6 +34,7 @@ import {
   RACP_METHOD_HTTP_ROUTES,
   RACP_PAIRING_TOKEN_PREFIX,
   RacpPushRegistrationRequestSchema,
+  isRacpTraceId,
   type RacpGatewayHostSummary,
   type RacpHttpQueryParamType,
   type RacpHttpRouteName,
@@ -59,18 +60,17 @@ const CREDENTIAL_QUERY = /(token|credential|secret|password|api[-_]?key|authoriz
 const JSON_RPC_APPLICATION_ERROR = -32000;
 /** Query-string values that are a signed decimal integer, not `20.5` or `1e3`. */
 const INTEGER_QUERY = /^-?\d+$/;
-/** A client-supplied diagnostic trace id: bounded and log-safe. */
-const TRACE_ID_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
 
 /**
- * Use the caller's `x-trace-id` when it is well formed, so one request can be
- * followed across the client, this Gateway, and the Host. An untrusted value is
- * never echoed: it is replaced, not sanitized.
+ * Use the caller's `x-trace-id` when it is a well-formed trace id, so one
+ * request can be followed across the client, this Gateway, and the Host. The
+ * rule lives in `packages/shared` because a Host validates the same value in a
+ * request frame; an untrusted value is replaced, never echoed or sanitized.
  */
 function requestTraceId(request: IncomingMessage): string {
   const header = request.headers["x-trace-id"];
   const value = Array.isArray(header) ? header[0] : header;
-  return value && TRACE_ID_PATTERN.test(value) ? value : randomUUID();
+  return isRacpTraceId(value) ? value : randomUUID();
 }
 
 type HostRoute = {
