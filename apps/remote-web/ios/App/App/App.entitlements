@@ -17,5 +17,20 @@
 	-->
 	<key>aps-environment</key>
 	<string>development</string>
+	<!--
+	  The notification service extension reads what this app writes: the Gateway
+	  origin and the "show the session title" switch travel in the App Group, the
+	  device token in a shared Keychain access group (spec §17.6.2). Both groups are
+	  the same identifier so there is one thing to enable in the portal, and both
+	  targets must carry it — an extension in its own group sees nothing.
+	-->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.app.minih.remote</string>
+	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)group.app.minih.remote</string>
+	</array>
 </dict>
 </plist>

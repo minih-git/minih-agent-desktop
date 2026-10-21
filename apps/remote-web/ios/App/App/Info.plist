@@ -66,5 +66,11 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!--
+	  The Keychain access group both targets share (spec §17.6.2), expanded at
+	  build time: the team prefix cannot be a constant in source.
+	-->
+	<key>MinihKeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)group.app.minih.remote</string>
 </dict>
 </plist>

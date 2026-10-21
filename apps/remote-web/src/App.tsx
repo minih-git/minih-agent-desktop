@@ -25,6 +25,7 @@ import { usePushRegistration } from "./hooks/usePushRegistration.js";
 import { useHostRegistry } from "./hooks/useHostRegistry.js";
 import { setBackHandler } from "./lib/navigation.js";
 import { credentialPort, isNativeApp, nativePlatform } from "./lib/runtime.js";
+import { setNotificationBadge } from "./lib/native-notify.js";
 import { createScreenHistory, sameScreen } from "./lib/screen-history.js";
 import { previousScreen, type Screen } from "./lib/screen-stack.js";
 
@@ -70,6 +71,15 @@ export default function App() {
     // browser's own Back, the header button, and the edge swipe agree: the pop
     // arrives as `popstate` and is applied there, exactly once.
     window.history.back();
+  }, []);
+
+  /**
+   * Opening the app clears the badge: it counts what happened while the user was
+   * away, and they are looking now (§17.6.2). The Gateway sets it per push from
+   * the count the Host reports.
+   */
+  useEffect(() => {
+    void setNotificationBadge(0);
   }, []);
 
   // The first screen replaces whatever the browser loaded, so the entry the user
