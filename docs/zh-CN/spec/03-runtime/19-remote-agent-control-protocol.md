@@ -677,7 +677,8 @@ Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主
   `push.notify.<kind>.title` 和 `push.notify.<kind>.body`，由客户端从自己的词条解析——
   Gateway 从不发送句子。APNs 收到的是 `aps.alert.title-loc-key` / `loc-key`，FCM 收到
   `android.notification.title_loc_key` / `body_loc_key`，同一组 id 也在 `data` 里，因此
-  可见文字是应用自己的、用用户的语言，而 id 会随通知到达以驱动点击跳转。`attentionCount` 是宿主说
+  可见文字是应用自己的、用用户的语言，而 id 会随通知到达以驱动点击跳转。Android 收到的是
+  **data-only** 消息（没有 `notification` 块），由应用自己构造通知，因此能在送达之后再点名会话。`attentionCount` 是宿主说
   该会话在这一刻还有多少件事等用户决定；Gateway 把它抄进 `aps.badge` 与 Android 的
   `notification_count`，宿主没计数时就不带角标，而不是自己编一个数字。HTTP v1 的
   `message.notification` 只有 `title`、`body`、`image` 三个字段，所以定位键属于 Android

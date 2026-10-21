@@ -1808,8 +1808,10 @@ says — so a Host never chooses an audience and a client never receives content
   the client from its own catalog — the Gateway never sends a sentence. APNs
   receives them as `aps.alert.title-loc-key` / `loc-key`, FCM as
   `android.notification.title_loc_key` / `body_loc_key` plus the same ids in
-  `data`, so the visible text is the app's, in the user's language, and the ids
-  survive to drive the tap. `attentionCount` is the number of decisions the Host
+  `data`. Android gets a **data-only** message (no `notification` block) so the
+  app builds the notification itself and can name the session after delivery; the
+  visible text is therefore the app's, in the user's language, and the ids survive
+  to drive the tap. `attentionCount` is the number of decisions the Host
   says the session still holds for the user at the moment of the event; the
   Gateway copies it into `aps.badge` and Android's `notification_count`, and omits
   the badge when the Host did not count rather than inventing a number. HTTP v1's `message.notification` has only `title`,

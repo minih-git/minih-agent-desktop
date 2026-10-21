@@ -394,13 +394,10 @@ describe("provider transport", () => {
     // `notification` only takes title/body/image; the location keys belong to
     // `android.notification`, and Android resource names have no dots.
     expect(message["notification"]).toBeUndefined();
-    expect(message["android"]).toEqual({
-      priority: "high",
-      notification: {
-        title_loc_key: "push_notify_turn_completed_title",
-        body_loc_key: "push_notify_turn_completed_body",
-      },
-    });
+    // Data-only: no `notification` block, so the system does not render it and the
+    // app is called in both states (spec §17.6.6). Every value is a string.
+    expect(message["android"]).toEqual({ priority: "high" });
+    expect((message as { data: Record<string, string> }).data["titleKey"]).toBe("push.notify.turn.completed.title");
     expect(Object.keys(message).sort()).toEqual(["android", "data", "token"]);
   });
 });

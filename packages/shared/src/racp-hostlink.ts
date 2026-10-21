@@ -788,9 +788,10 @@ export function pushKeysForKind(kind: RacpNotifyKind): { titleKey: string; bodyK
  * The Android resource name of a localization key (§11.6).
  *
  * Android resource names are `[a-z0-9_]`, so the dotted key the payload carries
- * for the app's own catalog becomes `push_notify_<kind>_<field>` in
- * `android.notification`. Without this, FCM's `title_loc_key` names a resource
- * that does not exist and the system renders an empty notification.
+ * becomes `push_notify_<kind>_<field>` in `strings.xml`. The mapping lives here
+ * because the generator that writes that file and the app that resolves a name at
+ * runtime must agree on it. The Gateway no longer sends the resource form itself:
+ * Android notifications are built by the app from a data-only message (§17.6.6).
  */
 export function androidResourceKey(key: string): string {
   return key.replace(/[.-]/g, "_");
