@@ -41,7 +41,14 @@ export interface RacpSessionCatalog {
   rename(sessionId: string, title: string): Promise<void>;
   /** Apply the Host's first-prompt fallback title; false when it was refused. */
   deriveTitle(sessionId: string, title: string): Promise<boolean>;
-  delete(sessionId: string): Promise<void>;
+  /**
+   * Delete one idle session.
+   *
+   * `principal` is the device that asked. A Host that gates an operation by
+   * device class reads it here; one that does not can ignore it, which is how
+   * `agent-host-cli` behaves (protocol §6.2).
+   */
+  delete(sessionId: string, principal?: Principal): Promise<void>;
   compact(sessionId: string): Promise<{ accepted: boolean }>;
 }
 
@@ -65,9 +72,14 @@ export interface RacpProjectCatalog {
 }
 
 export interface RacpWorkspaceAccess {
-  list(sessionId: string, path: string): Promise<{ entries: FsEntry[] }>;
-  read(sessionId: string, path: string): Promise<FsReadResult>;
-  diff(sessionId: string): Promise<WorkspaceDiff>;
+  /**
+   * The read-only file panel (protocol §6.2). `principal` is the device that
+   * asked, so a Host can answer per device class; the RACP server already
+   * refuses the operation when the connection's `workspaceRead` is false.
+   */
+  list(sessionId: string, path: string, principal?: Principal): Promise<{ entries: FsEntry[] }>;
+  read(sessionId: string, path: string, principal?: Principal): Promise<FsReadResult>;
+  diff(sessionId: string, principal?: Principal): Promise<WorkspaceDiff>;
 }
 
 export type TerminalOpenResult = {
@@ -131,6 +143,19 @@ export type RacpHostOperations = {
   models?: RacpModelCatalog;
   projects: RacpProjectCatalog;
   workspace: RacpWorkspaceAccess;
+  /**
+   * Whether this connection may read the session workspace
+   * (`workspace/list|read|diff`, protocol §6.2).
+   *
+   * The answer is per principal, not per server: the desktop Host offers the
+   * read-only file panel to a desktop-class device of the same account and
+   * withholds it from a phone. Asking the Host keeps that rule where the device
+   * class is known, instead of teaching the server what a form factor is.
+   *
+   * Absent means the answer the operation catalog implies: every principal that
+   * holds `viewer` may read, which is how `agent-host-cli` has always behaved.
+   */
+  workspaceRead?: (principal: Principal) => boolean;
   terminal?: RacpTerminalAccess;
   workspaceFiles?: { read(input: WorkspaceFilesRequest): Promise<unknown> };
   workspaceTools?: {

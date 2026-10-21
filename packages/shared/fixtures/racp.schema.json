@@ -2125,6 +2125,9 @@
           "workspaceFiles": {
             "type": "boolean"
           },
+          "workspaceRead": {
+            "type": "boolean"
+          },
           "notifications": {
             "type": "boolean"
           },

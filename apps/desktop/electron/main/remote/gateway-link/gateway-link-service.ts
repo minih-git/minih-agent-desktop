@@ -64,6 +64,16 @@ export type GatewayLinkServiceOptions = {
   agentHost: () => AgentHost;
   /** The same host-core RPC source the bridge uses. */
   getHost: () => HostRpc | null;
+  /**
+   * Whether a session has an active turn; configuration and deletion are
+   * idle-only (package D).
+   */
+  isSessionBusy?: (sessionId: string) => boolean;
+  /**
+   * Remove a session the way the app's own delete does, after the row is gone:
+   * cancel derived work, drop queued persistence, dispose the runtime session.
+   */
+  removeSession?: (sessionId: string) => Promise<void>;
   /** `server.name` reported to a remote client. */
   serverName?: string;
   serverVersion: string;
@@ -419,6 +429,11 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
         // Inline attachments from a phone land in the same content-addressed
         // store the desktop itself uses for the files it attaches.
         dataDir: options.dataDir,
+        // Package D: the two questions a desktop-class device's session
+        // controls ask. Busy means AGENT_BUSY, and a deleted row is cleaned up
+        // exactly as the local delete does.
+        ...(options.isSessionBusy ? { isSessionBusy: options.isSessionBusy } : {}),
+        ...(options.removeSession ? { removeSession: options.removeSession } : {}),
         // A phone that starts a conversation here or registers a folder changed
         // this computer's state, so the person sitting at it has to learn about
         // it at once. It travels on the notice channel the settings page

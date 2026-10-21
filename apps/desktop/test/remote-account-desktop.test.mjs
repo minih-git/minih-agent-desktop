@@ -9,7 +9,7 @@
  * leaves the machine.
  */
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { register } from "node:module";
 import { tmpdir } from "node:os";
@@ -612,4 +612,184 @@ test("the computer name is trimmed, bounded, and omitted when unusable", () => {
   // The hostname the test machine actually reports is usable.
   const own = desktopEnrollmentLabel(() => os.hostname());
   assert.ok(own === undefined || (own.length > 0 && own.length <= 128));
+});
+
+// --- Package D: the session controls and the file panel ----------------------
+
+/**
+ * host-core as the desktop Host's operations see it: one session row with a
+ * project path, the three mutations, and nothing else.
+ */
+function packageDHost(projectPath) {
+  const calls = [];
+  const row = {
+    id: "s1",
+    title: "old title",
+    mode: "agent",
+    permissionMode: "ask",
+    status: "idle",
+    projectPath,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  return {
+    calls,
+    host: {
+      binaryPath: "/fake/host-core",
+      async call(method, params) {
+        calls.push({ method, params });
+        if (method === "session.get") return { session: { ...row } };
+        if (method === "projects.list") return { projects: [] };
+        if (method === "session.configure") {
+          Object.assign(row, params);
+          return { ok: true };
+        }
+        if (method === "session.rename" || method === "session.delete") return { ok: true };
+        throw new Error(`unexpected ${method}`);
+      },
+    },
+  };
+}
+
+/** A desktop-class device of this account, and a phone that is not one. */
+const DESKTOP_DEVICE = { subject: "dev_desktop_sibling", roles: ["owner"], pairedDevice: true, deviceClass: "desktop" };
+const PHONE_DEVICE = { subject: "dev_phone", roles: ["owner"], pairedDevice: true };
+
+test("a desktop-class device drives the session controls and the file panel", async () => {
+  const root = await mkdtemp(join(tmpdir(), "desktop-package-d-"));
+  await mkdir(join(root, "src"), { recursive: true });
+  await writeFile(join(root, "README.md"), "hello", "utf8");
+  try {
+    const { createDesktopHostOperations } = await import(
+      "../electron/main/remote/gateway-link/desktop-host-operations.ts"
+    );
+    const fake = packageDHost(root);
+    const removed = [];
+    const operations = createDesktopHostOperations({
+      getHost: () => fake.host,
+      revokeDevice: async () => true,
+      dataDir: root,
+      reportRemoteAction: () => undefined,
+      isSessionBusy: () => false,
+      removeSession: async (sessionId) => void removed.push(sessionId),
+    });
+
+    // The capability is answered per connection, and only this class sees it.
+    assert.equal(operations.workspaceRead(DESKTOP_DEVICE), true);
+    assert.equal(operations.workspaceRead(PHONE_DEVICE), false);
+
+    // Session controls.
+    await operations.sessions.rename("s1", "a new name");
+    assert.ok(fake.calls.some((call) => call.method === "session.rename"));
+    const configured = await operations.sessions.configure("s1", { permissionMode: "accept-edits" });
+    assert.equal(configured.permissionMode, "accept-edits");
+    await operations.sessions.delete("s1", DESKTOP_DEVICE);
+    assert.ok(fake.calls.some((call) => call.method === "session.delete"));
+    assert.deepEqual(removed, ["s1"], "the local delete cleanup ran");
+
+    // The read-only file panel.
+    const listed = await operations.workspace.list("s1", "", DESKTOP_DEVICE);
+    assert.deepEqual(listed.entries.map((entry) => entry.name).sort(), ["README.md", "src"]);
+    const read = await operations.workspace.read("s1", "README.md", DESKTOP_DEVICE);
+    assert.equal(read.kind, "text");
+    assert.equal(read.content, "hello");
+    const diff = await operations.workspace.diff("s1", DESKTOP_DEVICE);
+    assert.equal(diff.repo, false, "a plain directory has no git diff");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a phone keeps the operations it had and gains none of package D", async () => {
+  const root = await mkdtemp(join(tmpdir(), "desktop-package-d-phone-"));
+  try {
+    const { createDesktopHostOperations } = await import(
+      "../electron/main/remote/gateway-link/desktop-host-operations.ts"
+    );
+    const fake = packageDHost(root);
+    const operations = createDesktopHostOperations({
+      getHost: () => fake.host,
+      revokeDevice: async () => true,
+      dataDir: root,
+      reportRemoteAction: () => undefined,
+      isSessionBusy: () => false,
+      removeSession: async () => {
+        throw new Error("a phone may not reach the delete cleanup");
+      },
+    });
+
+    // Refused: deleting and reading the workspace were never a phone's to do.
+    await assert.rejects(operations.sessions.delete("s1", PHONE_DEVICE), { code: "FORBIDDEN" });
+    await assert.rejects(operations.workspace.list("s1", "", PHONE_DEVICE), { code: "FORBIDDEN" });
+    await assert.rejects(operations.workspace.read("s1", "README.md", PHONE_DEVICE), { code: "FORBIDDEN" });
+    await assert.rejects(operations.workspace.diff("s1", PHONE_DEVICE), { code: "FORBIDDEN" });
+    assert.equal(fake.calls.some((call) => call.method === "session.delete"), false);
+
+    // Unchanged: renaming and configuring are what the phone's own sheet does.
+    await operations.sessions.rename("s1", "from the phone");
+    assert.equal((await operations.sessions.configure("s1", { permissionMode: "auto" })).permissionMode, "auto");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("configuration and deletion are idle-only", async () => {
+  const root = await mkdtemp(join(tmpdir(), "desktop-package-d-busy-"));
+  try {
+    const { createDesktopHostOperations } = await import(
+      "../electron/main/remote/gateway-link/desktop-host-operations.ts"
+    );
+    const fake = packageDHost(root);
+    const operations = createDesktopHostOperations({
+      getHost: () => fake.host,
+      revokeDevice: async () => true,
+      dataDir: root,
+      reportRemoteAction: () => undefined,
+      isSessionBusy: () => true,
+    });
+
+    await assert.rejects(operations.sessions.configure("s1", { mode: "plan" }), { code: "AGENT_BUSY" });
+    await assert.rejects(operations.sessions.delete("s1", DESKTOP_DEVICE), { code: "AGENT_BUSY" });
+    // A running turn does not stop a rename: a title is presentation.
+    await operations.sessions.rename("s1", "still allowed");
+    assert.equal(fake.calls.some((call) => call.method === "session.configure"), false);
+    assert.equal(fake.calls.some((call) => call.method === "session.delete"), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the file panel stays inside the session root and inside its size caps", async () => {
+  const root = await mkdtemp(join(tmpdir(), "desktop-package-d-root-"));
+  const outside = await mkdtemp(join(tmpdir(), "desktop-package-d-outside-"));
+  try {
+    await writeFile(join(outside, "secret.txt"), "secret", "utf8");
+    await writeFile(join(root, "big.txt"), "x".repeat(600 * 1024), "utf8");
+    await symlink(join(outside, "secret.txt"), join(root, "escape.txt"));
+
+    const { createDesktopHostOperations } = await import(
+      "../electron/main/remote/gateway-link/desktop-host-operations.ts"
+    );
+    const fake = packageDHost(root);
+    const operations = createDesktopHostOperations({
+      getHost: () => fake.host,
+      revokeDevice: async () => true,
+      dataDir: root,
+      reportRemoteAction: () => undefined,
+    });
+
+    await assert.rejects(operations.workspace.read("s1", "../etc/passwd", DESKTOP_DEVICE), {
+      code: "REMOTE_PATH_FORBIDDEN",
+    });
+    await assert.rejects(operations.workspace.list("s1", "..", DESKTOP_DEVICE), {
+      code: "REMOTE_PATH_FORBIDDEN",
+    });
+    await assert.rejects(operations.workspace.read("s1", "escape.txt", DESKTOP_DEVICE), {
+      code: "REMOTE_PATH_FORBIDDEN",
+    });
+    assert.equal((await operations.workspace.read("s1", "big.txt", DESKTOP_DEVICE)).kind, "tooLarge");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  }
 });

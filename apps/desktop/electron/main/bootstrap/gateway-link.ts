@@ -70,6 +70,18 @@ export type GatewayLinkBootstrapOptions = {
    * nothing and reports no events.
    */
   notifier?: HostNotifier | null;
+  /**
+   * Whether a session has an active turn; configuration and deletion are
+   * idle-only (package D). Absent means this Host cannot tell.
+   */
+  isSessionBusy?: (sessionId: string) => boolean;
+  /**
+   * Remove a session the way this desktop's own delete does: drop the runtime
+   * session, pending persistence, and derived work after the row is gone. A
+   * desktop-class device may call `session/delete`; without this the row would
+   * disappear while the runtime kept answering for it (§9).
+   */
+  removeSession?: (sessionId: string) => Promise<void>;
   /** Test seam: pretend this Host reports no notification events. */
   notifyEnabled?: boolean;
   log?: (level: "info" | "warn" | "error", message: string, data?: Record<string, unknown>) => void;
@@ -209,6 +221,11 @@ export function createGatewayLinkBootstrap(
       strictDevices: configuredStrictDevices,
       desktopAutoAdmission: configuredDesktopAuto,
       ...(notifier ? { notifier } : {}),
+      // Package D: the session controls and the read-only file panel a
+      // desktop-class device of this account may use, wired exactly as the
+      // app's own IPC does.
+      ...(options.isSessionBusy ? { isSessionBusy: options.isSessionBusy } : {}),
+      ...(options.removeSession ? { removeSession: options.removeSession } : {}),
       // Each sub-switch save writes the whole row through `persist()`: host-core
       // replaces the `remoteGateway` object wholesale, so a partial write would
       // drop the sibling switches (see the comment on `persist`).

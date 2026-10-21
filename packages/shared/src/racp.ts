@@ -536,6 +536,17 @@ export const RacpServerCapabilitiesSchema = Type.Object({
   terminal: Type.Boolean(),
   workspaceTools: Type.Optional(Type.Boolean()),
   workspaceFiles: Type.Optional(Type.Boolean()),
+  /**
+   * Whether this connection may read the session's workspace
+   * (`workspace/list|read|diff`, the read-only file panel).
+   *
+   * Separate from `workspaceFiles` on purpose: that one is the owner-grade
+   * `workspace/files` surface, while this is the viewer-grade panel a
+   * same-account desktop is allowed to open. A Host sets it per connection, so
+   * one deployment can offer the panel to a desktop and withhold it from a
+   * phone (rollout R8 package D, protocol §6.2).
+   */
+  workspaceRead: Type.Optional(Type.Boolean()),
   notifications: Type.Boolean(),
   bindings: Type.Array(Type.Union([Type.Literal("RACP-WS"), Type.Literal("RACP-HTTP"), Type.Literal("RACP-GRPC")])),
 });
