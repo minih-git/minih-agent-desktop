@@ -19,6 +19,8 @@ export type NativeNotifyPlugin = {
   forget(input: { hostId: string }): Promise<{ removed?: boolean }>;
   setBadge(input: { count: number }): Promise<{ count?: number }>;
   setTitleEnrichment(input: { enabled: boolean }): Promise<{ enabled?: boolean }>;
+  /** Android only: the ids of the notification that opened the app, once. */
+  consumeTap(): Promise<{ hostId?: string; sessionId?: string; approvalId?: string }>;
 };
 
 type CapacitorWindow = {
@@ -81,6 +83,23 @@ export function setNotificationBadge(
   return plugin.setBadge({ count }).then(
     () => undefined,
     () => undefined,
+  );
+}
+
+/**
+ * The tap that opened the app, once (§17.6.6).
+ *
+ * Android notifications are drawn by the app itself, so they cannot travel through
+ * Capacitor's `pushNotificationActionPerformed`; the intent carries the ids and
+ * this reads them. iOS never draws its own notification and answers nothing.
+ */
+export function consumeNotificationTap(
+  plugin: NativeNotifyPlugin | null = nativeNotifyPlugin(),
+): Promise<{ hostId?: string; sessionId?: string; approvalId?: string }> {
+  if (!plugin?.consumeTap) return Promise.resolve({});
+  return plugin.consumeTap().then(
+    (tap) => tap ?? {},
+    () => ({}),
   );
 }
 

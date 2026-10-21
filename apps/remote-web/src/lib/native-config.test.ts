@@ -161,17 +161,25 @@ describe("android/app/src/main/AndroidManifest.xml", () => {
     expect(exists("android/app/src/main/res/xml/network_security_config.xml")).toBe(false);
   });
 
-  it("requests the internet permission only", () => {
+  it("requests the internet permission, and the notification permission Android 13 asks for", () => {
     const permissions = [...androidManifest.matchAll(/<uses-permission android:name="([^"]+)"/g)].map((match) => match[1]);
-    expect(permissions).toEqual(["android.permission.INTERNET"]);
+    // POST_NOTIFICATIONS is not a runtime capability grab: it is the prompt the
+    // system shows before an app may post, and it exists because the app now draws
+    // its own notifications (§17.6.6).
+    expect(permissions).toEqual(["android.permission.POST_NOTIFICATIONS", "android.permission.INTERNET"]);
   });
 });
 
 describe("operator-supplied push artifacts stay out of the repository", () => {
-  it("ships no Firebase configuration and no Apple push material", () => {
-    expect(exists("android/app/google-services.json")).toBe(false);
+  it("keeps the Firebase configuration out of the repository", () => {
+    // The operator drops `android/app/google-services.json` in place for a local
+    // build (spec §17.7), so its presence proves nothing. What must hold is that
+    // git never sees it: the file names an app registration, and a build that
+    // ships someone else's would be rejected by FCM.
+    for (const ignored of ["google-services.json", "GoogleService-Info.plist", "firebase-adminsdk"]) {
+      expect(rootGitignore).toContain(ignored);
+    }
     expect(exists("android/app/src/main/google-services.json")).toBe(false);
-    expect(exists("GoogleService-Info.plist")).toBe(false);
     expect(exists("ios/App/App/GoogleService-Info.plist")).toBe(false);
   });
 
