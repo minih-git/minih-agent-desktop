@@ -103,7 +103,9 @@ export default function App() {
       if (!tap.hostId || !tap.sessionId) return;
       const host = hosts.find((entry) => entry.hostId === tap.hostId);
       if (!host) return;
-      screenHistory.sync({ kind: "sessions", hostId: host.hostId });
+      // A push carries no project id, so the stack is the honest shallow one
+      // (§17.3): the computer's projects, then the session.
+      screenHistory.sync({ kind: "projects", hostId: host.hostId });
       navigate({ kind: "session", hostId: host.hostId, sessionId: tap.sessionId, title: "" });
     });
     return () => {
