@@ -98,11 +98,31 @@ export async function serveEventStream(options: ServeStreamOptions): Promise<voi
   response.flushHeaders?.();
 
   try {
-    const result = await connection.request<{ subscriptionId: string }>("events/subscribe", {
+    const result = await connection.request<{
+      subscriptionId: string;
+      replayComplete?: boolean;
+      resyncReason?: string;
+      starting?: RacpCursor;
+    }>("events/subscribe", {
       ...subscription,
       ...(after ? { after } : {}),
     });
     subscriptionId = result.subscriptionId;
+    if (result.replayComplete === false && subscription.scope === "session") {
+      writeChunk(
+        response,
+        formatSseEvent({
+          eventId: `evt_resync_${Date.now()}`,
+          scope: "session",
+          sessionId: subscription.sessionId,
+          epoch: result.starting?.epoch ?? after?.epoch ?? "ep_0",
+          revision: 0,
+          occurredAt: new Date().toISOString(),
+          kind: "resync.required",
+          payload: { reason: result.resyncReason ?? "evicted" },
+        }),
+      );
+    }
   } catch (error) {
     const code = error instanceof GatewayRpcError ? error.code : "INTERNAL";
     log("warn", "gateway could not subscribe", { code, clientConnectionId: connection.id });

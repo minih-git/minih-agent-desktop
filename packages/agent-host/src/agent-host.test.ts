@@ -876,6 +876,33 @@ describe("AgentHost approvals and inputs", () => {
     expect(host.pendingApprovals("s1")[0]!.expiresAt).toBe("2026-09-10T00:02:00.000Z");
   });
 
+  it("keeps an unattached approval open across status heartbeats and extends it on late attach", async () => {
+    const runtime = new FakeRuntime();
+    const sessions = new FakeSessions();
+    sessions.summaries.set("s1", summary("s1"));
+    const approvals = new FakeApprovals();
+    const clock = new FixedClock();
+    const host = new AgentHost({ runtime, sessions, approvals, clock, ids: new SeqIds() });
+    host.ingest(envelope("s1", "rt_1", { type: "agent_start" }));
+    const permEvent = permission("req_bg");
+    approvals.pending = [{ ...permEvent.request, createdAt: new Date(clock.now()).toISOString() }];
+    host.ingest(envelope("s1", "rt_1", permEvent));
+    // Sidecar status heartbeats always report pendingToolConfirmations: 0; the
+    // open approval in host-core must keep the session in waiting_permission.
+    host.ingest(
+      envelope("s1", "rt_1", {
+        type: "status",
+        status: { sessionId: "s1", isRunning: true, pendingToolConfirmations: 0 },
+      }),
+    );
+    expect(host.describeSession(summary("s1")).status).toBe("waiting_permission");
+    // Advance past the 2-minute local lifetime before the phone opens the session.
+    clock.current += 5 * 60_000;
+    const attached = await host.attach(controller, { sessionId: "s1" });
+    expect(attached.session.status).toBe("waiting_permission");
+    expect(attached.snapshot?.pendingApprovals.map((approval) => approval.id)).toEqual(["req_bg"]);
+  });
+
   it("routes contract approvals through the contract port with a permission mode", async () => {
     const { host, approvals, received } = build();
     host.ingest(envelope("s1", "rt_1", { type: "agent_start" }));
