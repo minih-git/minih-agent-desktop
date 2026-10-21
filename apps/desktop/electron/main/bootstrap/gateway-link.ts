@@ -128,6 +128,12 @@ export function createGatewayLinkBootstrap(
   let configuredEnabled = false;
   let configuredUrl = "";
   let configuredStrictDevices = false;
+  /**
+   * Whether the stored row records a choice the user made. It is never the
+   * input to the default decision (that reads `enabled`; see `open()`), only
+   * something a save has to preserve.
+   */
+  let configuredDecided = false;
   /** On by default: absent in a stored setting means automatic admission is on. */
   let configuredDesktopAuto = true;
   let store: GatewayCredentialStore | null = null;
@@ -163,6 +169,32 @@ export function createGatewayLinkBootstrap(
     }
   };
 
+  /**
+   * Write the whole device-local `remoteGateway` row from the current state.
+   *
+   * host-core's `settings.set` shallow-merges the top level only
+   * (`merge_settings_value` in `crates/host-core/src/rpc/mod.rs`), so an incoming
+   * `remoteGateway` object replaces the stored one outright. Every save path must
+   * therefore carry every field: a save that wrote only the switch would drop the
+   * strict-mode and automatic-admission switches, and a save that wrote only a
+   * sub-switch would drop `decided` — which is exactly the security downgrade and
+   * the re-opened switch the three-state rule exists to prevent. One writer, one
+   * complete row.
+   *
+   * Optional fields are written only when they are on, matching the shape the
+   * reader treats as the default (`strictDevices` absent = off, and
+   * `desktopAutoAdmission` absent = on). `decided` is written whenever this
+   * desktop is recording a real choice.
+   */
+  const persist = async (): Promise<void> => {
+    await options.saveSettings({
+      enabled: configuredEnabled,
+      url: configuredUrl,
+      ...(configuredDecided ? { decided: true } : {}),
+      ...(configuredStrictDevices ? { strictDevices: true } : {}),
+      ...(configuredDesktopAuto ? {} : { desktopAutoAdmission: false }),
+    });
+  };
   const ensureService = (): GatewayLinkService => {
     if (service) return service;
     const created = createGatewayLinkService({
@@ -177,26 +209,19 @@ export function createGatewayLinkBootstrap(
       strictDevices: configuredStrictDevices,
       desktopAutoAdmission: configuredDesktopAuto,
       ...(notifier ? { notifier } : {}),
-      // Persist the strict-mode switch on its own: it is device-local and must
-      // not rewrite the link switch or the Gateway URL.
+      // Each sub-switch save writes the whole row through `persist()`: host-core
+      // replaces the `remoteGateway` object wholesale, so a partial write would
+      // drop the sibling switches (see the comment on `persist`).
       saveStrictDevices: async (strictDevices) => {
         configuredStrictDevices = strictDevices;
-        await options.saveSettings({
-          enabled: configuredEnabled,
-          url: configuredUrl,
-          strictDevices,
-          ...(configuredDesktopAuto ? {} : { desktopAutoAdmission: false }),
-        });
+        configuredDecided = true;
+        await persist();
       },
       // Same rule for the automatic-admission switch (ADR amendment 3).
       saveDesktopAutoAdmission: async (desktopAutoAdmission) => {
         configuredDesktopAuto = desktopAutoAdmission;
-        await options.saveSettings({
-          enabled: configuredEnabled,
-          url: configuredUrl,
-          ...(configuredStrictDevices ? { strictDevices: true } : {}),
-          desktopAutoAdmission,
-        });
+        configuredDecided = true;
+        await persist();
       },
       ...(options.emitDeviceRequest ? { emitDeviceRequest: options.emitDeviceRequest } : {}),
       ...(options.emitDeviceNotice ? { emitDeviceNotice: options.emitDeviceNotice } : {}),
@@ -278,6 +303,12 @@ export function createGatewayLinkBootstrap(
       // Account mode is what makes the switch usable before any enrollment
       // exists, so the page needs it even while the feature is off.
       ...(accountMode ? { accountMode } : {}),
+      // The sub-switches are persisted device-local choices, and the page shows
+      // them whenever account mode is present — including while the link is
+      // off. Omitting them here would draw the user's strict mode and
+      // automatic-admission choices as their defaults.
+      strictDevices: configuredStrictDevices,
+      desktopAutoAdmission: configuredDesktopAuto,
     };
   };
 
@@ -315,11 +346,12 @@ export function createGatewayLinkBootstrap(
           });
         }
         // Persist first: a crash between the two leaves the switch truthful
-        // and the next boot dials (or stays off) accordingly. `decided` records
-        // that this was the user's own choice, so an explicit off is never
-        // re-enabled by the account-mode default (gate 27).
-        await options.saveSettings({ enabled, url: configuredUrl, decided: true });
+        // and the next boot dials (or stays off) accordingly. The row carries
+        // the sibling switches too, so turning the link off cannot silently
+        // reset strict mode or re-enable automatic admission.
         configuredEnabled = enabled;
+        configuredDecided = true;
+        await persist();
         if (!enabled) {
           if (service) {
             await service.setEnabled(false);
@@ -339,7 +371,8 @@ export function createGatewayLinkBootstrap(
         // and the link starts the next time the switch is on.
         await created.enroll(input);
         configuredUrl = input.url.trim();
-        await options.saveSettings({ enabled: configuredEnabled, url: configuredUrl, decided: true });
+        configuredDecided = true;
+        await persist();
         return decorate(created.status());
       });
     },
@@ -402,15 +435,17 @@ export function createGatewayLinkBootstrap(
       configuredEnabled = configured?.enabled === true;
       configuredUrl = typeof configured?.url === "string" ? configured.url : "";
       configuredStrictDevices = configured?.strictDevices === true;
+      configuredDecided = configured?.decided === true;
+      configuredDesktopAuto = configured?.desktopAutoAdmission !== false;
 
-      // Security §3.8 / gate 27. "Never chosen" is narrow on purpose: only a
-      // missing `remoteGateway` object, or one without an `enabled` field, is a
-      // user who has not answered. **A record that carries `enabled: false` is
-      // an explicit off, with or without `decided`** — every row written before
-      // that field existed came from a build whose only way to write
-      // `enabled: false` was the user turning the switch off (or a save that
-      // carried the switch's current state), so re-enabling one of those would
-      // silently override a decision the user already made.
+      // Security §3.8 / gate 27. "Never chosen" is defined by what is on disk,
+      // not by a marker added later: only a missing `remoteGateway` object, or
+      // one without an `enabled` field, is a user who has not answered. **A row
+      // that carries `enabled: false` is an explicit off, with or without
+      // `decided`** — every build that could write such a row wrote it from the
+      // switch's own state, so treating it as a first visit would let an upgrade
+      // override a decision the user already made (and the switch's own saves
+      // would then re-enable it).
       //
       // Account mode defaults the "never chosen" case on — the account already
       // names this desktop — while the self-hosted flow keeps its "off by
@@ -419,17 +454,14 @@ export function createGatewayLinkBootstrap(
       if (!configuredEnabled && configured?.enabled === undefined) {
         const mode = await probeAccountMode();
         if (mode?.available === true) {
+          configuredEnabled = true;
+          configuredDecided = true;
           try {
-            await options.saveSettings({
-              enabled: true,
-              url: configuredUrl,
-              decided: true,
-              ...(configuredStrictDevices ? { strictDevices: true } : {}),
-            });
-            configuredEnabled = true;
+            await persist();
           } catch (error) {
             // A settings write that fails must not leave the link half-on: the
             // next boot would read "never chosen" again and re-decide.
+            configuredEnabled = false;
             log("warn", "account-mode default could not be stored", { error: String(error) });
             return;
           }

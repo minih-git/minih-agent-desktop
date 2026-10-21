@@ -462,6 +462,181 @@ test("a self-hosted desktop with no account mode keeps its off default", async (
   }
 });
 
+
+/**
+ * A settings store that merges exactly the way host-core does
+ * (`merge_settings_value` in `crates/host-core/src/rpc/mod.rs`): top-level keys
+ * only, so an incoming `remoteGateway` object replaces the stored one whole.
+ * Anything that writes a partial row loses the fields it left out, which is the
+ * bug these tests exist for.
+ */
+function shallowMergeSettings(initial = null) {
+  let stored = initial ?? {};
+  return {
+    get: async () => stored,
+    // `saveSettings` receives the `remoteGateway` row itself, and host-core's
+    // `settings.set` merges the *settings* object at the top level only, so the
+    // row is replaced whole. Nothing below this line is preserved.
+    set: async (remoteGateway) => {
+      stored = { ...stored, remoteGateway };
+    },
+    remoteGateway: () => stored.remoteGateway,
+  };
+}
+
+test("saving one sub-switch never drops another field of the row", async () => {
+  // host-core replaces `remoteGateway` wholesale, so a save that writes only
+  // part of it silently resets the rest. The two dangerous resets are a strict
+  // mode that quietly turns off (a security downgrade) and automatic admission
+  // that quietly turns back on.
+  const dataDir = await mkdtemp(join(tmpdir(), "remote-partial-write-"));
+  const settings = shallowMergeSettings();
+  try {
+    const host = fakeHost();
+    const { port, calls } = recordingPort(await accountCertificate());
+    const bootstrap = createGatewayLinkBootstrap({
+      dataDir,
+      encryption: fakeEncryption(),
+      port,
+      getSettings: settings.get,
+      saveSettings: settings.set,
+      getHost: () => host,
+      getAgentHost: () => ({}),
+      serverVersion: "0.0.0-test",
+      emitStatus: () => undefined,
+      log: () => undefined,
+    });
+    try {
+      await bootstrap.open();
+      const controller = bootstrap.controller();
+
+      // 1. Turn the link on, then harden it: strict mode on, automatic
+      //    admission off. Both are device-local safety switches.
+      await controller.setEnabled(true);
+      assert.equal(settings.remoteGateway().enabled, true);
+      await controller.setStrictDevices(true);
+      assert.equal(settings.remoteGateway().strictDevices, true);
+      await controller.setDesktopAutoAdmission(false);
+      assert.equal(settings.remoteGateway().desktopAutoAdmission, false, "automatic admission is off");
+      // Saving the second switch must not have dropped the first.
+      assert.equal(settings.remoteGateway().strictDevices, true, "strict mode survives the other switch's save");
+
+      // 2. Turning the link off and on again must carry both switches. This is
+      //    the path that used to write `{enabled, url}` only.
+      await controller.setEnabled(false);
+      assert.equal(settings.remoteGateway().enabled, false);
+      assert.equal(settings.remoteGateway().strictDevices, true, "strict mode survives the link being turned off");
+      assert.equal(settings.remoteGateway().desktopAutoAdmission, false, "automatic admission stays off");
+      assert.equal(settings.remoteGateway().decided, true, "the switch decision is still recorded");
+
+      await controller.setEnabled(true);
+      assert.equal(settings.remoteGateway().enabled, true);
+      assert.equal(settings.remoteGateway().strictDevices, true);
+      assert.equal(settings.remoteGateway().desktopAutoAdmission, false);
+
+      // 3. Enrolling writes the URL; it must not reset the rest either.
+      //    Turning the switch on in account mode already enrolls through the
+      //    account, so count the delta rather than the total.
+      const beforeEnroll = calls.enroll;
+      await controller.enroll({
+        url: "wss://gateway.example.com/hostlink",
+        caPem: "ca-pem",
+        code: "code-1",
+      });
+      const row = settings.remoteGateway();
+      assert.equal(row.url, "wss://gateway.example.com/hostlink");
+      assert.equal(row.strictDevices, true, "strict mode survives enrollment");
+      assert.equal(row.desktopAutoAdmission, false, "automatic admission survives enrollment");
+      assert.equal(row.decided, true, "the switch decision survives enrollment");
+      assert.ok(calls.enroll > beforeEnroll, "the explicit enrollment ran");
+    } finally {
+      await bootstrap.dispose();
+    }
+
+    // 4. Reboot on the same store: everything the user set is still there.
+    const rebooted = createGatewayLinkBootstrap({
+      dataDir,
+      encryption: fakeEncryption(),
+      port: recordingPort(await accountCertificate()).port,
+      getSettings: settings.get,
+      saveSettings: settings.set,
+      getHost: () => fakeHost(),
+      getAgentHost: () => ({}),
+      serverVersion: "0.0.0-test",
+      emitStatus: () => undefined,
+      log: () => undefined,
+    });
+    try {
+      await rebooted.open();
+      const status = await rebooted.controller().status();
+      assert.equal(status.enabled, true);
+      assert.equal(status.strictDevices, true, "strict mode survives a restart");
+      assert.equal(status.desktopAutoAdmission, false, "automatic admission survives a restart");
+    } finally {
+      await rebooted.dispose();
+    }
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("an explicit off is not undone by touching a sub-switch", async () => {
+  // The two defects compound: a save that drops `decided` plus a boot rule that
+  // reads a missing `decided` as "never chosen" would turn the switch back on.
+  // With the row rule (an `enabled: false` row is a decision) and one complete
+  // writer, neither half can happen.
+  const dataDir = await mkdtemp(join(tmpdir(), "remote-off-then-strict-"));
+  const settings = shallowMergeSettings();
+  try {
+    const { port } = recordingPort(await accountCertificate());
+    const bootstrap = createGatewayLinkBootstrap({
+      dataDir,
+      encryption: fakeEncryption(),
+      port,
+      getSettings: settings.get,
+      saveSettings: settings.set,
+      getHost: () => fakeHost(),
+      getAgentHost: () => ({}),
+      serverVersion: "0.0.0-test",
+      emitStatus: () => undefined,
+      log: () => undefined,
+    });
+    try {
+      await bootstrap.open();
+      // Account mode defaults it on, then the user turns it off and hardens.
+      await bootstrap.controller().setEnabled(false);
+      await bootstrap.controller().setStrictDevices(true);
+      assert.equal(settings.remoteGateway().enabled, false);
+      assert.equal(settings.remoteGateway().decided, true, "the off decision survives the strict save");
+    } finally {
+      await bootstrap.dispose();
+    }
+
+    const rebooted = createGatewayLinkBootstrap({
+      dataDir,
+      encryption: fakeEncryption(),
+      port: recordingPort(await accountCertificate()).port,
+      getSettings: settings.get,
+      saveSettings: settings.set,
+      getHost: () => fakeHost(),
+      getAgentHost: () => ({}),
+      serverVersion: "0.0.0-test",
+      emitStatus: () => undefined,
+      log: () => undefined,
+    });
+    try {
+      await rebooted.open();
+      const status = await rebooted.controller().status();
+      assert.equal(status.enabled, false, "the switch stays off after a restart");
+      assert.equal(status.strictDevices, true);
+    } finally {
+      await rebooted.dispose();
+    }
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("a later status read sees an account mode that became available", async () => {
   const dataDir = await mkdtemp(join(tmpdir(), "remote-account-reread-"));
   try {
