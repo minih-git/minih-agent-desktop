@@ -478,10 +478,20 @@ Toast confirms ("Stopped", "Run finished").
   preserved line breaks; links use `--rm-link`. A small caption "From
   {agent}" precedes messages attributed to a sub-agent.
 - Thinking: collapsed disclosure "Thinking" (Footnote, muted, chevron).
-- Tool call: compact row in an inset container — state icon (spinner, check,
-  or alert), tool name in Mono, one-line summary, chevron. Expanding reveals
-  the detail in Mono 13 inside `--rm-bg-inset`, horizontally scrollable, capped
-  at 320 px with "Show all".
+- Tool call: a compact row, not a card. A category icon (read, list, search,
+  write, edit, command, web, subagent, plan), the tool's short name, one line
+  saying what it acted on, and its state mark. The tool's own output is never
+  the row's text: it is what a reader opens on purpose. Tapping the row reveals
+  that output in Mono 13 inside `--rm-bg-inset`, horizontally scrollable, capped
+  at 220 px. The category, the summary and the burst sentence come from
+  `packages/shared/src/tool-presentation.ts`, the same functions the desktop
+  transcript uses, so the two clients describe one call identically.
+- Consecutive tool calls fold into one row: icon, one line ("4 commands, 2 files
+  edited, 1 file written", at most three clauses so it stays one line), a count
+  of failures when any, and a chevron. Expanding lists each call as the row
+  above; expanding one of those shows its output. Two taps is the depth: the
+  first answers "what happened here", the second "show me that one". A burst of
+  one call is drawn as a plain row with no fold.
 - System and compaction notes: centered Footnote between two hairlines
   ("Context compacted").
 - "Truncated" marks a shortened item with a Caption chip.
