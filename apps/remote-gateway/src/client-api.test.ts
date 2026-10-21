@@ -53,6 +53,41 @@ describe("gateway client API", () => {
     expect(listed.payload.result).toMatchObject({ sessions: [{ id: "s1" }] });
   });
 
+  /**
+   * "The phone is slow" needs a per-operation number: a byte count says how
+   * much crossed the network, not how long the Host took to answer. The
+   * duration rides the completion line the operator already reads.
+   */
+  it("logs how long each command took", async () => {
+    const entries: Array<{ message: string; data?: Record<string, unknown> }> = [];
+    const measured = await startTestGateway(
+      {},
+      {
+        log: (_level, message, data) => {
+          entries.push({ message, ...(data ? { data } : {}) });
+        },
+      },
+    );
+    const measuredHost = await enrollTestHost(measured, { history: { items: transcriptFixture(2) } });
+    try {
+      const paired = await pairDevice(measured, measuredHost, { client: "ios", label: "phone" });
+      const sent = await command(measured, {
+        hostId: measuredHost.hostId,
+        token: paired.token ?? "",
+        method: "session/list",
+        params: {},
+      });
+      expect(sent.status).toBe(200);
+      const completed = entries.find((entry) => entry.message === "gateway command completed");
+      expect(completed?.data).toMatchObject({ method: "session/list", hostId: measuredHost.hostId });
+      expect(completed?.data?.durationMs).toBeTypeOf("number");
+      expect(completed?.data?.durationMs as number).toBeGreaterThanOrEqual(0);
+    } finally {
+      await measuredHost.stop();
+      await measured.close();
+    }
+  });
+
   it("forwards the project routes a phone uses to start a session somewhere new", async () => {
     // Rollout A2 added these two routes; the Gateway derives its host-scoped
     // routes from the shared table, so this proves the wiring and the query

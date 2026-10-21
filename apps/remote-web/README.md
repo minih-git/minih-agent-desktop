@@ -29,6 +29,13 @@ pnpm --filter @minih-agent/remote-web test       # pure-logic vitest suite (no D
 * The browser's device cookie is scoped to `Path=/hosts/{hostId}`, so
   `GET /v1/hosts` is deliberately not used: host status is probed with
   `GET /hosts/{hostId}/v1/sessions` (2xx online, 503 offline, 401 revoked).
+  The sessions screen does not probe on top of that: it already calls
+  `session/list`, which answers 503 while the Host link is down and 401 before
+  this Host has adopted the device, so it reads its status off that answer
+  (`hostStatusFromFailure`) instead of spending a second round trip on the same
+  question. Its project catalog is read once per visit too — the effect that
+  loads it is keyed on the device's recorded roles, not on the catalog it
+  fills.
 * Pairing posts to `POST /v1/hosts/{hostId}/pair` with the pairing token in the
   `Authorization` header. The browser sends `client: "web"` and receives the
   `HttpOnly` device cookie plus a CSRF token in the body; a native build sends
@@ -206,6 +213,20 @@ item arrived through.
   one in-flight load (`singleFlight`). A prepend never trims; only an append
   trims from the oldest end (`MAX_TIMELINE_ITEMS`) — and because a row dropped
   that way came from history, the entry stays offered (`appendItem`).
+* **A page is a window, not the transcript.** The Host reads the `limit` items
+  that end where `beforeItemId` names and reports `hasMore` from the transcript
+  itself (`packages/host-runtime/src/host-ports.ts`), so a 12 MB, 572-message
+  session costs one bounded read per page instead of a full parse and
+  re-serialization per page. The same read caps each item's text and tool
+  payload at 64 Ki characters and marks what it clipped in the text itself, so
+  one huge tool result cannot arrive whole; a page whose `beforeItemId` the
+  transcript no longer holds is empty with `hasMore: false`, which ends the
+  walk instead of replaying the tail into the older-page slot. Compaction
+  records ride the same cap: a display read sends the newest checkpoint once
+  (not also as `compaction`) without its `retainedTail` or
+  `details.systemMessageJson`, which no client renders. On the same session
+  that took the metadata read from 1.2 MB to 29 KB and the snapshot from
+  1.90 MB to 0.90 MB.
 * **The composer stays in place.** The shell is `h-dvh` and `main` is the scroll
   container, so a long session opens on its newest row with the composer on
   screen; a `visualViewport` resize keeps it above the iOS keyboard. Following

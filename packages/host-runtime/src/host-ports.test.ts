@@ -49,11 +49,8 @@ describe("host ports", () => {
       createdAt: "2026-09-18T00:00:00.000Z",
       status: "complete" as const,
     }));
-    const port = createHostSessionPort(() => ({
-      async call<T>() {
-        return { session: { id: "s1", messages } } as T;
-      },
-    }));
+    const calls: Array<Record<string, unknown>> = [];
+    const port = createHostSessionPort(() => windowedHost(messages, calls));
 
     const collected: string[] = [];
     let beforeItemId: string | undefined;
@@ -70,6 +67,9 @@ describe("host ports", () => {
     expect(sizes).toEqual([100, 100, 60]);
     expect(collected).toEqual(messages.map((message) => message.id));
     expect(new Set(collected).size).toBe(collected.length);
+    // The walk costs one bounded window per page: the port never asks for the
+    // transcript, which is what made a phone wait on a 12 MB parse per page.
+    expect(calls.every((params) => params.messageLimit === 100)).toBe(true);
   });
 
   it("pages history backwards from an item id", async () => {
@@ -80,20 +80,39 @@ describe("host ports", () => {
       createdAt: "2026-09-18T00:00:00.000Z",
       status: "complete" as const,
     }));
-    const port = createHostSessionPort(() => ({
-      async call<T>() {
-        return { session: { id: "s1", messages } } as T;
-      },
-    }));
+    const calls: Array<Record<string, unknown>> = [];
+    const port = createHostSessionPort(() => windowedHost(messages, calls));
     const page = await port.history("s1", { limit: 2, beforeItemId: "m4" });
     expect(page.items.map((item) => item.id)).toEqual(["m2", "m3"]);
     expect(page.hasMore).toBe(true);
+    expect(calls[0]).toEqual({ id: "s1", messageLimit: 2, messageBeforeId: "m4", contentLimit: 64 * 1024 });
     const tail = await port.history("s1", { limit: 10 });
     expect(tail.items.map((item) => item.id)).toEqual(["m1", "m2", "m3", "m4"]);
     expect(tail.hasMore).toBe(false);
+    expect(calls[1]).toEqual({ id: "s1", messageLimit: 10, contentLimit: 64 * 1024 });
     expect(await createHostSessionPort(() => null).get("s1")).toBeNull();
   });
 
+  it("reads session metadata without a transcript", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const port = createHostSessionPort(() => ({
+      async call<T>(_method: string, params: Record<string, unknown> = {}) {
+        calls.push(params);
+        return {
+          session: {
+            id: "s1",
+            title: "Fix build",
+            mode: "plan",
+            permissionMode: "auto",
+            messages: [{ id: "m1" }],
+          },
+        } as T;
+      },
+    }));
+    const summary = await port.get("s1");
+    expect(calls[0]).toEqual({ id: "s1", messageLimit: 1, contentLimit: 64 * 1024 });
+    expect(summary).toMatchObject({ id: "s1", title: "Fix build", mode: "plan", permissionMode: "auto" });
+  });
   it("round-trips queue records through the host-core RPC shape", async () => {
     const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
     const store = createHostQueueStore(() => ({
@@ -140,3 +159,33 @@ describe("host ports", () => {
     await expect(store.remove("q1")).rejects.toMatchObject({ code: "AGENT_UNAVAILABLE" });
   });
 });
+
+/**
+ * host-core's bounded read, as the port now depends on it: a window of at most
+ * `messageLimit` messages ending where `messageBeforeId` names, plus the two
+ * cursors the port reads instead of slicing in JavaScript. A missing id is the
+ * empty window the Rust side answers, not the tail.
+ */
+function windowedHost(
+  messages: Array<{ id: string } & Record<string, unknown>>,
+  calls: Array<Record<string, unknown>>,
+) {
+  return {
+    async call<T>(_method: string, params: Record<string, unknown> = {}) {
+      calls.push(params);
+      const limit = Number(params.messageLimit ?? 0);
+      const beforeItemId = typeof params.messageBeforeId === "string" ? params.messageBeforeId : undefined;
+      const named = beforeItemId ? messages.findIndex((message) => message.id === beforeItemId) : messages.length;
+      const cut = named === -1 ? 0 : named;
+      const start = Math.max(0, cut - limit);
+      return {
+        session: {
+          id: "s1",
+          messages: messages.slice(start, cut),
+          messageStart: start,
+          hasMoreBefore: start > 0,
+        },
+      } as T;
+    },
+  };
+}
