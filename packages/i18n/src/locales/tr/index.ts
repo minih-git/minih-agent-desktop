@@ -991,6 +991,7 @@ sklm: {
       voice: "Ses",
     },
     configSync: {
+      globalScopeNote: "Yalnızca genel yapılandırma taşınır: hesaplar ve model bağlantıları, genel yetenekler, MCP sunucuları, alt ajanlar, talimatlar, eklentiler ve otomasyonlar ile senkronize etmeyi seçtiğiniz bellek. Proje klasörleri, proje yetenekleri, proje MCP sunucuları, proje belleği ve klasöre bağlı otomasyonlar her cihazda kalır; bir projeyi arşiv dışa/içe aktarmayla taşıyın.",
       title: "Bulut senkronizasyonu",
       experimental: "Deneysel",
       connectionTitle: "Bağlantı ayarları",
@@ -2158,7 +2159,20 @@ sklm: {
       INTERNAL: "bir şeyler ters gitti",
     },
   },
+  projectArchive: {
+    exportTitle: "Proje arşivini dışa aktar",
+    importTitle: "Proje arşivi seç",
+    importParentTitle: "Projenin geri yükleneceği yeri seç",
+    zipFilter: "Proje arşivi",
+    busy: "Başka bir proje arşivi işlemi sürüyor.",
+  },
   project: {
+    exportArchive: "Arşiv dosyasını dışa aktar…",
+    importArchive: "Arşiv dosyasını içe aktar…",
+    archiveExported: "Proje {{path}} konumuna aktarıldı",
+    archiveImported: "{{name}} içe aktarıldı ({{files}} dosya)",
+    archiveProgress: "{{done}} / {{total}}",
+    archiveSensitiveHint: "Arşiv, gizli dosyalar ve .git dahil proje klasörünün tamamını kopyalar. Paylaşmak istemediğiniz dosyalar için klasörü kontrol edin.",
     open: "Proje aç",
     openFolder: "Klasörü aç",
     none: "Proje yok",

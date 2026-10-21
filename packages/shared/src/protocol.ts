@@ -197,6 +197,9 @@ export const IPC = {
     configSyncRestore: "minih-agent-desktop/configSync/restore",
     configSyncChangePassword: "minih-agent-desktop/configSync/changePassword",
     configSyncDisconnect: "minih-agent-desktop/configSync/disconnect",
+    /** Explicit project archive: one logical project or group as a ZIP file. */
+    projectArchiveExport: "minih-agent-desktop/projectArchive/export",
+    projectArchiveImport: "minih-agent-desktop/projectArchive/import",
     networkProxyTest: "minih-agent-desktop/network/testProxy",
     commandShellList: "minih-agent-desktop/commandShell/list",
     secretsSet: "minih-agent-desktop/secrets/set",
@@ -507,6 +510,8 @@ export const IPC = {
     backgroundTasksChanged: "minih-agent-desktop/backgroundTasks/event/changed",
     /** What a running sync is doing, while it is still running. */
     configSyncProgress: "minih-agent-desktop/configSync/event/progress",
+    /** What a running project archive export or import is doing. */
+    projectArchiveProgress: "minih-agent-desktop/projectArchive/event/progress",
     extensionsUiPrompt: "minih-agent-desktop/extensions/event/uiPrompt",
     extensionsStatus: "minih-agent-desktop/extensions/event/status",
     pluginLauncherShown: "minih-agent-desktop/pluginLauncher/event/shown",

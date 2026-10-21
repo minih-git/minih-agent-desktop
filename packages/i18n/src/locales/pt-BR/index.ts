@@ -1347,6 +1347,7 @@ export const ptBR = {
       experimental: "Experimental"
     },
     configSync: {
+      globalScopeNote: "Somente a configuração global viaja: contas e vínculos de modelo, skills globais, servidores MCP, subagentes, instruções, plugins e automações, além da memória que você ativou. Pastas de projeto, skills de projeto, servidores MCP de projeto, memória de projeto e automações ligadas a uma pasta ficam em cada máquina; mova um projeto com a exportação e a importação do seu arquivo.",
       title: "Sincronização na nuvem",
       experimental: "Experimental",
       connectionTitle: "Configurações de conexão",
@@ -2120,7 +2121,20 @@ export const ptBR = {
       INTERNAL: "algo deu errado",
     },
   },
+  projectArchive: {
+    exportTitle: "Exportar arquivo do projeto",
+    importTitle: "Escolher um arquivo de projeto",
+    importParentTitle: "Escolher onde restaurar o projeto",
+    zipFilter: "Arquivo de projeto",
+    busy: "Outra operação de arquivo de projeto está em andamento.",
+  },
   project: {
+    exportArchive: "Exportar arquivo…",
+    importArchive: "Importar arquivo…",
+    archiveExported: "Projeto exportado para {{path}}",
+    archiveImported: "{{name}} importado ({{files}} arquivos)",
+    archiveProgress: "{{done}} / {{total}}",
+    archiveSensitiveHint: "O arquivo copia a pasta inteira do projeto, incluindo ocultos e .git. Verifique a pasta para arquivos que você não queira compartilhar.",
     open: "Abrir projeto",
     openFolder: "Abrir pasta",
     none: "Sem projeto",

@@ -88,6 +88,10 @@ import type {
   PluginInstallProgress,
   ProjectRecord,
   ProjectGroupRecord,
+  ProjectArchiveExportOutcome,
+  ProjectArchiveExportRequest,
+  ProjectArchiveImportOutcome,
+  ProjectArchiveProgress,
   ProjectMemory,
   ProjectMemoryEntry,
   ProjectWorkspace,
@@ -884,6 +888,14 @@ export const api = {
   configSyncChangePassword: (input: ConfigSyncChangePasswordInput) =>
     invoke<ConfigSyncState>(IPC.invoke.configSyncChangePassword, input),
   configSyncDisconnect: () => invoke<ConfigSyncState>(IPC.invoke.configSyncDisconnect),
+  /**
+   * Explicit project archive. Electron main shows the native picker and passes
+   * only the chosen paths; the Host reads and writes the registered project.
+   */
+  projectArchiveExport: (input: ProjectArchiveExportRequest) =>
+    invoke<ProjectArchiveExportOutcome>(IPC.invoke.projectArchiveExport, input),
+  projectArchiveImport: () =>
+    invoke<ProjectArchiveImportOutcome>(IPC.invoke.projectArchiveImport),
   testNetworkProxy: (settings: unknown) =>
     invoke<{ ok: boolean; error?: string }>(IPC.invoke.networkProxyTest, settings),
   /** Installed system font families (Electron main, cached briefly). */
@@ -2044,6 +2056,12 @@ export const api = {
     if (!window.minihAgent?.on) return () => undefined;
     return window.minihAgent.on(IPC.event.configSyncProgress, (payload) =>
       listener(payload as ConfigSyncProgress),
+    );
+  },
+  onProjectArchiveProgress: (listener: (progress: ProjectArchiveProgress) => void) => {
+    if (!window.minihAgent?.on) return () => undefined;
+    return window.minihAgent.on(IPC.event.projectArchiveProgress, (payload) =>
+      listener(payload as ProjectArchiveProgress),
     );
   },
   onPluginLauncherShown: (listener: () => void) => {

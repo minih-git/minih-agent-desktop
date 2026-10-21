@@ -164,7 +164,6 @@ pub(super) async fn restore(
             &selection(&config),
             config.include_secrets,
             &config.plugin_intents,
-            &identity_overrides(&config),
         )?;
         let account = configured_account(&st, &config)?;
         (config, key, base, local, account)

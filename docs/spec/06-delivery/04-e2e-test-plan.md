@@ -10165,15 +10165,16 @@ selection already in place shows it without waiting for another event.
      update, stale-write rejection and server-side probe cleanup.
      Reject ignored preconditions, weak ETags, redirects, public HTTP and 403;
      never interpret 502 as a missing object. LAN HTTP follows network policy.
-  3. Configure two sync devices. Publish a provider and mapped packaged skill,
-     receive them as pending where approval is required, approve, and verify
-     visible persisted configuration and resource bytes. Verify there is no
-     projects category and publishing project/group metadata neither registers
-     nor changes projects/groups on the receiving device. Register its workspace
-     locally, then map and approve the project skill; its resources must arrive
-     without changing local group names, roots or ordering. Existing vault
-     `projects` entities are ignored on sync/restore, preserving local projects
-     and cloud history. Exercise disjoint edits,
+  3. Configure two sync devices. Publish a provider and a **global** packaged
+     skill, receive them as pending where approval is required, approve, and
+     verify visible persisted configuration and resource bytes. Verify there is
+     no projects category and that publishing a project's `AGENTS.md`, group
+     instruction text, project and group memory, project MCP server, project
+     skill and folder-bound automation produces **no approval at all** on the
+     receiving device and changes none of its own project settings. Existing
+     vault `projects` entities and project-scoped records are ignored on
+     sync/restore, preserving local projects and cloud history. Exercise disjoint
+     edits,
      same-entity conflicts and explicit choice convergence, remote deletion
      versus offline edit, and repeated polling. Credential opt-out must not
      manufacture local edits or prevent deletion convergence. No real executable
@@ -10227,10 +10228,15 @@ selection already in place shows it without waiting for another event.
   it is empty afterward. Never use an existing backup account or the
   production desktop profile. Record tested base/candidate and distinguish
   this run from a standalone SDK probe.
-- **Automation:** `pnpm test:e2e:config-sync` is the multi-Host harness.
-  Rust `config_sync::` and `user_skills::` suites cover transport, merge,
-  application and resource safety, using an in-process router HTTP fixture
-  for the transport/engine tests rather than an S3 fixture.
+- **Automation:** `pnpm test:e2e:config-sync` is the multi-Host harness; its
+  journey covers the global-only scope, global-skill deletion convergence and
+  plugin-uninstall convergence. Rust `config_sync::` and `user_skills::` suites
+  cover transport, merge, application and resource safety, using an in-process
+  router HTTP fixture for the transport/engine tests rather than an S3 fixture;
+  `router_tests::project_records_are_not_captured_for_the_cloud_copy`,
+  `router_tests::uninstalled_plugin_intent_deletion_reaches_the_peer` and
+  `router_tests::deleted_global_skill_stays_deleted_on_the_peer` pin the new
+  boundaries.
   `config-sync-user-path.test.mjs` runs the real settings page and shared
   checkbox with a mocked external IPC boundary, actual styles and isolated
   Electron input, without network access; `config-sync-ipc.test.mjs` covers
@@ -10242,6 +10248,42 @@ selection already in place shows it without waiting for another event.
 - **Acceptance:** F (persistence), Security, Quality. **Milestone:** M6+.
 - **Status:** Candidate validation required; full checkpoint-recovery fault
   injection is not claimed by the settings or multi-Host happy-path suites.
+
+### E2E-PROJECT-archive-cross-device-import
+
+- **Preconditions:** A built task candidate, two isolated Host processes with
+  separate data/HOME/agent directories, and a project folder on the first
+  device that holds ordinary files, a hidden `.git` config, an `AGENTS.md`, a
+  project skill with a packaged resource, a project MCP server with an `env`
+  value, pinned project memory and one automation bound to the folder.
+- **Steps:** 1) Export the project from its detail menu through a native save
+  dialog and confirm the progress indicator and the completion toast.
+  2) Inspect the archive: `manifest.json` plus `roots/0/…` only; no absolute
+  source path; no MCP env value. 3) On the second device, import the archive
+  through the Projects page toolbar, choosing a destination parent folder.
+  4) Confirm the project appears in the index with its files, and that the
+  restored MCP definition is present, disabled and without values, while the
+  automation is present and disabled. 5) Import the same archive again into the
+  same parent and confirm the conflict error, with no second copy and no
+  half-imported folder. 6) Cancel each picker once and confirm no request is
+  sent and no toast appears.
+- **Expected:** The archive carries the project files and its app-managed
+  configuration, never chat history, credentials, MCP values or plugin grants.
+  The import is one-time and creates a local project; the two copies are
+  independent afterwards. An existing non-empty destination is refused with a
+  visible Host error, and a failed or cancelled operation leaves nothing behind.
+  Every string, including native dialog titles, is localized.
+- **Automation:** Rust `project_archive::tests` covers the round trip, group
+  archives, conflict refusal, path/entry/limit rejection, the source-symlink
+  skip and version rejection; the multi-Host journey
+  (`pnpm test:e2e:config-sync`, step `project-archive-cross-device-import`)
+  exercises export, cross-device import, secret exclusion, the disabled
+  automation and the duplicate-import conflict through real Host processes.
+  The Projects page rendering is covered by the desktop typecheck and the
+  shared component/styles tests; its pickers live in Electron main and are
+  asserted by the channel contracts rather than by a mocked page test.
+- **Specs:** `03-runtime/23-project-archive.md`, `04-ux/06-settings-ia.md`,
+  `docs/adr/0336-global-config-sync-and-project-archive.md`.
 
 ### E2E-CONFIG-SYNC-skill-package-repository-metadata
 

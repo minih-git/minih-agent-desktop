@@ -278,13 +278,6 @@ fn selection(config: &StoredConfig) -> CategorySelection {
     CategorySelection(values)
 }
 
-fn identity_overrides(config: &StoredConfig) -> domains::ProjectIdentityOverrides {
-    domains::ProjectIdentityOverrides::from_mappings(
-        &config.project_mappings,
-        &config.project_group_mappings,
-    )
-}
-
 fn config_dir(st: &AppState) -> Result<PathBuf> {
     let config =
         load_config(st)?.ok_or_else(|| anyhow!("CONFIG_SYNC_LOCKED: sync is not configured"))?;
@@ -371,6 +364,47 @@ fn load_config(st: &AppState) -> Result<Option<StoredConfig>> {
 fn save_config(st: &AppState, config: &StoredConfig) -> Result<()> {
     st.db
         .kv_set(CONFIG_NS, CONFIG_KEY, &serde_json::to_value(config)?)
+}
+
+/// Take the configuration-sync lock and then the host state lock, in the one
+/// order `sync_once` uses.
+///
+/// A handler that edits configuration sync state while a sync may be running
+/// (the plugin-uninstall path) must use this: a sync captures the configuration
+/// before it awaits the remote and saves it afterwards, so a later intent edit
+/// that did not hold the sync lock could be overwritten by that stale save.
+pub(crate) async fn sync_locked_state<'a>(
+    state: &'a Arc<Mutex<AppState>>,
+) -> (
+    tokio::sync::OwnedMutexGuard<()>,
+    tokio::sync::MutexGuard<'a, AppState>,
+) {
+    let lock = {
+        let st = state.lock().await;
+        st.config_sync_lock.clone()
+    };
+    let guard = lock.lock_owned().await;
+    let st = state.lock().await;
+    (guard, st)
+}
+
+/// Drop a retained plugin installation intent after the user uninstalls that
+/// plugin.
+///
+/// The intent is what makes this account's other devices install a plugin from
+/// the cloud copy. Clearing it lets the next ordinary sync publish a deletion
+/// tombstone from the existing baseline instead of re-advertising a plugin the
+/// user removed here. Disabling a plugin is not uninstalling it and never
+/// reaches this path.
+pub(crate) fn forget_plugin_intent(st: &AppState, plugin_id: &str) -> Result<bool> {
+    let Some(mut config) = load_config(st)? else {
+        return Ok(false);
+    };
+    if config.plugin_intents.remove(plugin_id).is_none() {
+        return Ok(false);
+    }
+    save_config(st, &config)?;
+    Ok(true)
 }
 
 fn secret_ref_for_vault(vault_id: &str) -> String {
@@ -704,7 +738,6 @@ pub fn public_state(st: &mut AppState) -> Result<Value> {
             &selection(config_ref),
             config_ref.include_secrets,
             &config_ref.plugin_intents,
-            &identity_overrides(config_ref),
         )?;
         Some(domains::preview(&snapshot, &selection(config_ref)))
     } else {
@@ -725,7 +758,6 @@ pub fn public_state(st: &mut AppState) -> Result<Value> {
                     &selection(config_ref),
                     config_ref.include_secrets,
                     &config_ref.plugin_intents,
-                    &identity_overrides(config_ref),
                 )?;
                 domains::snapshot_digest(&snapshot) != expected
             }
@@ -812,13 +844,17 @@ fn load_pending(st: &AppState, key: &VaultKey) -> Result<Option<PendingBundle>> 
     let pending: Option<PendingBundle> =
         load_encrypted(st, key, "local-pending", &local_path(st, "pending.bin")?)?;
     Ok(pending.map(|mut bundle| {
-        domains::retain_supported_entities(&mut bundle.manifest);
+        domains::retain_portable_entities(&mut bundle.manifest);
         if let Some(local) = &mut bundle.local_before {
-            domains::retain_supported_entities(local);
+            domains::retain_portable_entities(local);
         }
-        bundle
-            .approvals
-            .retain(|item| domains::adapter_for(&item.entity.domain).is_some());
+        // An approval staged by an older build for a project record must not
+        // keep waiting: nothing would ever apply it, and its presence alone
+        // stops a sync from running.
+        bundle.approvals.retain(|item| {
+            domains::adapter_for(&item.entity.domain).is_some()
+                && !domains::is_project_scoped(&item.entity)
+        });
         bundle
             .conflicts
             .retain(|item| domains::adapter_for(&item.domain).is_some());
@@ -1164,17 +1200,10 @@ mod tests {
             Some(&json!(format!("{}/v1", fixture.endpoint)))
         );
         assert_eq!(device_a_state.get("mode"), Some(&json!("sync")));
+        // A device keeps its own project; nothing about it travels.
         let project_a = device_a_dir.path().join("project");
-        let project_b = device_b_dir.path().join("project");
         std::fs::create_dir_all(&project_a)?;
-        std::fs::create_dir_all(&project_b)?;
         let project_a = project_a.canonicalize()?;
-        let project_b = project_b.canonicalize()?;
-        device_b
-            .lock()
-            .await
-            .db
-            .ensure_project(&project_b.to_string_lossy(), false)?;
 
         let provider_id = {
             let mut state = device_a.lock().await;
@@ -1207,8 +1236,7 @@ mod tests {
             state.mcp_servers.upsert(McpServerInput {
                 id: "portable-server".into(),
                 label: Some("Portable MCP".into()),
-                level: Some("project".into()),
-                project_path: Some(project_a.to_string_lossy().into_owned()),
+                level: Some("global".into()),
                 transport: Some("stdio".into()),
                 command: Some("portable-mcp".into()),
                 args: Some(vec!["--safe".into()]),
@@ -1218,9 +1246,8 @@ mod tests {
             let portable_skill = state.user_skills.create(UserSkillInput {
                 id: Some("portable-skill".into()),
                 name: Some("Portable Skill".into()),
-                level: Some("project".into()),
-                project_path: Some(project_a.to_string_lossy().into_owned()),
-                body: Some("Use the portable project workflow.".into()),
+                level: Some("global".into()),
+                body: Some("Use the portable workflow.".into()),
                 enabled: Some(true),
                 shape: Some("dir".into()),
                 ..UserSkillInput::default()
@@ -1229,8 +1256,8 @@ mod tests {
             // survive capture, upload, read-back, and apply.
             state.user_skills.write_package_files(
                 &portable_skill.id,
-                CapabilityLevel::Project,
-                Some(&project_a.to_string_lossy()),
+                CapabilityLevel::Global,
+                None,
                 &[("data/fonts.csv".into(), portable_skill_resource())],
             )?;
             // Repository metadata beside the document is not a package
@@ -1255,7 +1282,6 @@ mod tests {
                 &selection(&config),
                 config.include_secrets,
                 &config.plugin_intents,
-                &identity_overrides(&config),
             )?;
             let captured = snapshot
                 .manifest
@@ -1384,28 +1410,16 @@ mod tests {
             .map(|(_, _, domain)| domain.as_str())
             .collect::<std::collections::BTreeSet<_>>();
         assert!(domains.contains(DOMAIN_PROVIDERS), "domains: {domains:?}");
-        assert!(domains.contains(DOMAIN_MCP), "domains: {domains:?}");
-        assert!(domains.contains(DOMAIN_SKILLS), "domains: {domains:?}");
         assert!(!domains.contains("projects"), "domains: {domains:?}");
-        let mapping_key = received
+        // Global capabilities live in one directory per process, so both test
+        // devices already see the same skill and MCP server; their cross-device
+        // transfer is asserted by the multi-Host E2E journey.
+        // Nothing project-scoped reaches the approval inbox; every remaining
+        // approval is global configuration.
+        assert!(!received
             .get("pendingApprovals")
             .and_then(Value::as_array)
-            .and_then(|items| {
-                items.iter().find_map(|item| {
-                    item.get("mappingKey")
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                })
-            })
-            .expect("project mapping approval");
-        map_project(
-            device_b.clone(),
-            json!({
-                "logicalId": mapping_key,
-                "paths": [project_b.to_string_lossy()]
-            }),
-        )
-        .await?;
+            .is_some_and(|items| items.iter().any(|item| item.get("mappingKey").is_some())));
 
         for (approval_id, digest, domain) in initial_approvals {
             let result = approve(
@@ -1430,37 +1444,9 @@ mod tests {
             assert!(provider.has_secret);
             assert!(state
                 .mcp_servers
-                .list(CapabilityLevel::Project, Some(&project_b.to_string_lossy()),)?
+                .list(CapabilityLevel::Global, None)?
                 .iter()
                 .any(|record| record.id == "portable-server"));
-            assert!(state
-                .user_skills
-                .list(CapabilityLevel::Project, Some(&project_b.to_string_lossy()),)?
-                .iter()
-                .any(|record| record.id == "portable-skill"));
-            let received_skill = state
-                .user_skills
-                .list(CapabilityLevel::Project, Some(&project_b.to_string_lossy()))?
-                .into_iter()
-                .find(|record| record.id == "portable-skill")
-                .expect("portable skill imported");
-            assert_eq!(
-                state.user_skills.package_files(
-                    &received_skill.id,
-                    CapabilityLevel::Project,
-                    Some(&project_b.to_string_lossy()),
-                )?,
-                vec![("data/fonts.csv".into(), portable_skill_resource())],
-                "packaged resource did not survive the sync round trip"
-            );
-            assert!(
-                !Path::new(&received_skill.path)
-                    .parent()
-                    .expect("skill package root")
-                    .join(".git")
-                    .exists(),
-                "repository metadata must not travel through sync"
-            );
             assert_eq!(
                 state.db.get_setting("app")?.and_then(|value| {
                     value

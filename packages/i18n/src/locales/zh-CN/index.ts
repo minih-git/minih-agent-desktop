@@ -991,6 +991,7 @@ sklm: {
       voice: "语音",
     },
     configSync: {
+      globalScopeNote: "只同步全局配置：账户与模型绑定、全局技能、MCP、子代理、指令、插件与自动化，以及你已选择同步的记忆。项目文件夹、项目技能、项目 MCP、项目记忆和绑定项目的自动化留在各自设备上；迁移项目请用归档导出与导入。",
       title: "云同步",
       experimental: "实验性",
       connectionTitle: "连接设置",
@@ -2150,7 +2151,20 @@ sklm: {
       INTERNAL: "出了点问题",
     },
   },
+  projectArchive: {
+    exportTitle: "导出项目归档",
+    importTitle: "选择项目归档文件",
+    importParentTitle: "选择项目的恢复位置",
+    zipFilter: "项目归档",
+    busy: "已有另一个项目归档操作正在进行。",
+  },
   project: {
+    exportArchive: "导出归档文件…",
+    importArchive: "导入归档文件…",
+    archiveExported: "项目已导出到 {{path}}",
+    archiveImported: "已导入 {{name}}（{{files}} 个文件）",
+    archiveProgress: "{{done}} / {{total}}",
+    archiveSensitiveHint: "归档会复制整个项目文件夹，包括隐藏文件和 .git。请先确认文件夹里没有不想外传的内容。",
     open: "打开项目",
     openFolder: "打开文件夹",
     none: "无项目",

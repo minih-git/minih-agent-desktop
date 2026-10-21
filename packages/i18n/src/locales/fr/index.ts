@@ -984,6 +984,7 @@ sklm: {
       "voice": "Voix"
     },
     "configSync": {
+      globalScopeNote: "Seule la configuration globale voyage : comptes et liaisons de modèle, skills globaux, serveurs MCP, sous-agents, instructions, plugins et automatisations, ainsi que la mémoire que vous avez activée. Les dossiers de projet, les skills de projet, les serveurs MCP de projet, la mémoire de projet et les automatisations liées à un dossier restent sur chaque appareil ; déplacez un projet avec l’export et l’import de son archive.",
       title: "Cloud sync",
       experimental: "Expérimental",
       connectionTitle: "Paramètres de connexion",
@@ -2151,7 +2152,20 @@ sklm: {
       INTERNAL: "quelque chose s'est mal passé",
     },
   },
+  projectArchive: {
+    exportTitle: "Exporter l’archive du projet",
+    importTitle: "Choisir une archive de projet",
+    importParentTitle: "Choisir où restaurer le projet",
+    zipFilter: "Archive de projet",
+    busy: "Une autre opération d’archive de projet est en cours.",
+  },
   "project": {
+    exportArchive: "Exporter un fichier d’archive…",
+    importArchive: "Importer un fichier d’archive…",
+    archiveExported: "Projet exporté vers {{path}}",
+    archiveImported: "{{name}} importé ({{files}} fichiers)",
+    archiveProgress: "{{done}} / {{total}}",
+    archiveSensitiveHint: "L’archive copie tout le dossier du projet, y compris les fichiers cachés et .git. Vérifiez le dossier pour des fichiers que vous ne voulez pas partager.",
     "open": "Ouvrir le projet",
     "openFolder": "Ouvrir le dossier",
     "none": "Aucun projet",

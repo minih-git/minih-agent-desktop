@@ -991,6 +991,7 @@ sklm: {
       voice: "음성",
     },
     configSync: {
+      globalScopeNote: "전역 설정만 이동합니다: 계정과 모델 바인딩, 전역 스킬, MCP 서버, 서브에이전트, 지침, 플러그인과 자동화, 그리고 동기화를 선택한 기억입니다. 프로젝트 폴더, 프로젝트 스킬, 프로젝트 MCP 서버, 프로젝트 기억, 폴더에 묶인 자동화는 각 기기에 남습니다. 프로젝트는 보관 파일 내보내기와 가져오기로 옮기세요.",
       title: "Cloud sync",
       experimental: "실험적",
       connectionTitle: "연결 설정",
@@ -2162,7 +2163,20 @@ sklm: {
       INTERNAL: "문제가 발생했습니다",
     },
   },
+  projectArchive: {
+    exportTitle: "프로젝트 보관 파일 내보내기",
+    importTitle: "프로젝트 보관 파일 선택",
+    importParentTitle: "프로젝트를 복원할 위치 선택",
+    zipFilter: "프로젝트 보관 파일",
+    busy: "다른 프로젝트 보관 작업이 이미 실행 중입니다.",
+  },
   project: {
+    exportArchive: "보관 파일 내보내기…",
+    importArchive: "보관 파일 가져오기…",
+    archiveExported: "프로젝트를 {{path}}에 내보냈습니다",
+    archiveImported: "{{name}}을(를) 가져왔습니다 (파일 {{files}}개)",
+    archiveProgress: "{{done}} / {{total}}",
+    archiveSensitiveHint: "보관 파일은 숨김 파일과 .git을 포함한 프로젝트 폴더 전체를 복사합니다. 공유하고 싶지 않은 파일이 있는지 먼저 확인하세요.",
     open: "프로젝트 열기",
     openFolder: "폴더 열기",
     none: "프로젝트 없음",
