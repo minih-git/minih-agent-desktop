@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  The Push Notifications capability (protocol §11.6).
+
+	  This file is committed on purpose: the capability is not a secret, and a
+	  build without it compiles, runs, and silently receives no notification.
+	  What stays out of the repository is the signing material — the APNs .p8
+	  key belongs to the Gateway host (apps/remote-gateway/README.md,
+	  "Redacted push"), and the team and provisioning profile stay in Xcode.
+
+	  `development` matches the Debug configuration below. A TestFlight or App
+	  Store build needs `production` here, because APNs rejects a token whose
+	  environment disagrees with the entitlement and reports BadDeviceToken.
+	-->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>
