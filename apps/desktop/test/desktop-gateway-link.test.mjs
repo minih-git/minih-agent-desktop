@@ -341,9 +341,8 @@ test("a paired phone reads desktop sessions and answers an approval", async () =
     // 5. Local authority stays local: configuring a session, reading the
     //    workspace, and the terminal are all refused on the desktop Host.
     await assert.rejects(
-      deviceClient.request("session/configure", {
+      deviceClient.request("session/fork", {
         sessionId: "s1",
-        permissionMode: "auto",
       }),
       (error) => error.code === "FORBIDDEN",
     );
@@ -492,9 +491,9 @@ test("the desktop Host creates a session, registers a project, and browses withi
 
     // The rest of the machine is still off limits, and a path outside the root
     // never reaches host-core.
-    await assert.rejects(operations.sessions.configure("s1", { permissionMode: "auto" }), (error) => error.code === "FORBIDDEN");
+    const configured = await operations.sessions.configure("s_new", { permissionMode: "auto" });
+    assert.equal(configured.id, "s_new");
     await assert.rejects(operations.sessions.delete("s1"), (error) => error.code === "FORBIDDEN");
-    await assert.rejects(operations.sessions.rename("s1", "x"), (error) => error.code === "FORBIDDEN");
     await assert.rejects(operations.sessions.fork("s1", {}), (error) => error.code === "FORBIDDEN");
     await assert.rejects(operations.workspace.read("s1", "a"), (error) => error.code === "FORBIDDEN");
     await assert.rejects(operations.projects.browse(outside, principal), (error) => error.code === "REMOTE_PATH_FORBIDDEN");

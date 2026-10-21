@@ -127,6 +127,10 @@ export type SessionSummary = {
   workspaceLabel?: string;
   /** Private session-root identity used only for final local admission checks. */
   workspaceIdentity?: string | null;
+  providerId?: string;
+  modelId?: string;
+  modelLabel?: string;
+  thinkingLevel?: string;
   mode: "agent" | "plan" | "goal";
   permissionMode: RacpPermissionMode;
   planningState?: RacpPlanningState;

@@ -728,6 +728,8 @@ export const RACP_HTTP_ROUTES: Partial<Record<RacpOperation, { method: "GET" | "
   "session/list": { method: "GET", path: "/v1/sessions" },
   "session/create": { method: "POST", path: "/v1/sessions" },
   "session/get": { method: "GET", path: "/v1/sessions/{sessionId}" },
+  "session/configure": { method: "POST", path: "/v1/sessions/{sessionId}:configure" },
+  "session/rename": { method: "POST", path: "/v1/sessions/{sessionId}:rename" },
   "session/attach": { method: "POST", path: "/v1/sessions/{sessionId}:attach" },
   "session/history": { method: "GET", path: "/v1/sessions/{sessionId}/history" },
   "turn/start": { method: "POST", path: "/v1/sessions/{sessionId}/turns" },

@@ -79,6 +79,33 @@ export function SessionScreen({
       gatewayOrigin,
     });
 
+  const latestModelItem = [...timeline.items].reverse().find((item) => item.modelId);
+  const effectiveSession = timeline.session
+    ? {
+        ...timeline.session,
+        ...(timeline.session.providerId || latestModelItem?.providerId
+          ? { providerId: timeline.session.providerId || latestModelItem?.providerId }
+          : {}),
+        ...(timeline.session.modelId || latestModelItem?.modelId
+          ? { modelId: timeline.session.modelId || latestModelItem?.modelId }
+          : {}),
+        ...(timeline.session.modelLabel || timeline.session.modelId || latestModelItem?.modelId
+          ? { modelLabel: timeline.session.modelLabel || timeline.session.modelId || latestModelItem?.modelId }
+          : {}),
+      }
+    : null;
+  const matchedModel =
+    models.find(
+      (m) =>
+        (effectiveSession?.providerId && m.providerId === effectiveSession.providerId && m.modelId === effectiveSession?.modelId) ||
+        (!effectiveSession?.providerId && effectiveSession?.modelId && m.modelId === effectiveSession.modelId),
+    ) ?? (!effectiveSession?.modelId ? (models.find((m) => m.isDefault) ?? models[0]) : undefined);
+  const modelDisplay =
+    matchedModel?.label ||
+    effectiveSession?.modelLabel ||
+    effectiveSession?.modelId ||
+    t("model.hostDefault");
+
   const active = turnId !== undefined;
   const attention = timeline.pendingApprovals.length + timeline.pendingInputs.length;
   const tail = timeline.items.at(-1);
@@ -280,6 +307,25 @@ export function SessionScreen({
             />
           ) : null}
 
+          {!timeline.archived ? (
+            <div className="flex items-center gap-1.5 overflow-x-auto px-1 text-[12px] leading-[16px] text-[var(--rm-text-secondary)]">
+              <button
+                type="button"
+                onClick={() => {
+                  setInfoOpen(true);
+                  void actions.loadModels();
+                }}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--rm-bg-surface)] px-2.5 py-1 ring-1 ring-[var(--rm-separator)] active:bg-[var(--rm-bg-inset)]"
+              >
+                <span className="max-w-[160px] truncate font-medium text-[var(--rm-text-primary)]">{modelDisplay}</span>
+                <span className="text-[var(--rm-text-faint)]">·</span>
+                <span>{t(`mode.${effectiveSession?.mode ?? "agent"}.title`)}</span>
+                <span className="text-[var(--rm-text-faint)]">·</span>
+                <span>{t(`permission.${effectiveSession?.permissionMode ?? "ask"}.title`)}</span>
+              </button>
+            </div>
+          ) : null}
+
           <ChatComposer
             sending={pending["turn/start"] === true}
             disabled={timeline.archived}
@@ -307,7 +353,7 @@ export function SessionScreen({
       {/* R7: what this session runs on, and the one place to change it. */}
       <SessionInfoSheet
         open={infoOpen}
-        session={timeline.session}
+        session={effectiveSession}
         computerLabel={hostName}
         models={models}
         running={active}
