@@ -11,7 +11,7 @@
  * creates it under one of the projects `project/list` returned, which is what
  * `session/create` takes instead of a path.
  */
-import type { RacpProjectSummary, RacpSession } from "@minih-agent/shared";
+import type { RacpModelSummary, RacpProjectSummary, RacpSession } from "@minih-agent/shared";
 import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -22,9 +22,9 @@ import type { HostCredential } from "../lib/credential-port.js";
 import type { OperationFailure } from "../lib/errors.js";
 import { createHostClient, type HostClient } from "../lib/host-client.js";
 import { hostStatusFromFailure } from "../lib/host-status.js";
-import { createSession, listProjects, listSessions, newSessionMode } from "../lib/mutations.js";
+import { createSession, listModels, listProjects, listSessions, newSessionMode } from "../lib/mutations.js";
 import { gatewayOrigin } from "../lib/runtime.js";
-import { groupSessionsByProject, soleProjectForNewSession, type SessionGroup } from "../lib/session-groups.js";
+import { groupSessionsByProject, type SessionGroup } from "../lib/session-groups.js";
 import { Banner } from "../components/ui/Banner.js";
 import { Button } from "../components/ui/Button.js";
 import { EmptyState } from "../components/ui/EmptyState.js";
@@ -34,6 +34,7 @@ import { Screen, ScreenContent } from "../components/ui/Screen.js";
 import { SectionHeader } from "../components/ui/SectionHeader.js";
 import { Skeleton } from "../components/ui/Skeleton.js";
 import { StatusDot } from "../components/ui/StatusDot.js";
+import { NewSessionSheet, type NewSessionChoice } from "../components/sessions/NewSessionSheet.js";
 import { SessionRow } from "../components/sessions/SessionRow.js";
 
 export interface SessionsScreenProps {
@@ -72,6 +73,16 @@ export function SessionsScreen({
   const [addingProject, setAddingProject] = useState(false);
   const [creating, setCreating] = useState<string | null>(null);
   const [createFailure, setCreateFailure] = useState<OperationFailure | null>(null);
+  /**
+   * The models this Host offers (R7). Read once when the new-session sheet
+   * opens: the catalog is small and static, and a phone should not pay for it on
+   * every visit to the list.
+   */
+  const [models, setModels] = useState<RacpModelSummary[]>([]);
+  /** A project the user just registered, preselected in the sheet. */
+  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+  const [modelsFailure, setModelsFailure] = useState<string | null>(null);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
   const clientRef = useRef<HostClient | null>(null);
   const credentialKey = credential.kind === "cookie" ? credential.csrfToken : credential.token;
   /**
@@ -170,14 +181,16 @@ export function SessionsScreen({
   const groups: SessionGroup[] = sessions === null ? [] : groupSessionsByProject(sessions, projects ?? []);
 
   const startNewSession = useCallback(
-    async (projectId: string) => {
+    async (choice: NewSessionChoice) => {
       const client = clientRef.current;
       if (!client) return;
-      setCreating(projectId);
+      setCreating(choice.projectId);
       setCreateFailure(null);
-      const result = await createSession(client, { projectId });
+      const result = await createSession(client, choice);
       setCreating(null);
       if (!result.ok) {
+        // The sheet stays open so the choice can be corrected; a model that
+        // disappeared between the list and the create is exactly this case.
         setCreateFailure(result.failure);
         return;
       }
@@ -186,6 +199,25 @@ export function SessionsScreen({
     },
     [onOpenSession],
   );
+
+  /** Read the model catalog once per sheet open, and remember a failure. */
+  const openNewSessionSheet = useCallback(async () => {
+    setChoosing(true);
+    setCreateFailure(null);
+    const client = clientRef.current;
+    if (!client || modelsLoaded) return;
+    const result = await listModels(client);
+    setModelsLoaded(true);
+    if (result.ok) {
+      setModels(result.value);
+      setModelsFailure(null);
+    } else {
+      // A Host without the operation is not an error the user can act on: the
+      // session is then created on the computer's own default.
+      setModels([]);
+      setModelsFailure(result.failure.code === "CAPABILITY_UNAVAILABLE" ? null : result.failure.message);
+    }
+  }, [modelsLoaded]);
 
   const newSessionButton = () => {
     if (mode === "hidden") {
@@ -200,14 +232,7 @@ export function SessionsScreen({
         variant="plain"
         size="small"
         disabled={creating !== null || (mode !== "unknown" && projects === null)}
-        onClick={() => {
-          const sole = soleProjectForNewSession(projects ?? []);
-          if (sole) {
-            void startNewSession(sole.id);
-            return;
-          }
-          setChoosing((current) => !current);
-        }}
+        onClick={() => void openNewSessionSheet()}
       >
         {creating ? t("sessions.creating") : t("sessions.create")}
       </Button>
@@ -267,48 +292,37 @@ export function SessionsScreen({
         <SectionHeader title={t("sessions.title")} action={newSessionButton()} />
 
         {choosing && canCreate ? (
-          <div className="mb-4">
-            {addingProject ? (
+          addingProject ? (
+            <div className="mb-4">
               <AddProjectPanel
                 client={() => clientRef.current}
                 onRegistered={(project) => {
-                  // The folder is a project now: open a session in it directly, so
-                  // the user does not have to find it again in the list.
+                  // The folder is a project now: open the sheet on it, so the
+                  // model and mode can still be chosen before the session starts.
                   setAddingProject(false);
                   void loadProjects();
-                  void startNewSession(project.id);
+                  setPendingProjectId(project.id);
                 }}
                 onCancel={() => setAddingProject(false)}
               />
-            ) : (
-              <>
-                <SectionHeader title={t("sessions.chooseProject")} />
-                <ListGroup>
-                  {(projects ?? [])
-                    .filter((project) => !project.archived)
-                    .map((project) => (
-                      <button
-                        key={project.id}
-                        type="button"
-                        disabled={creating !== null}
-                        onClick={() => void startNewSession(project.id)}
-                        className="flex min-h-[56px] w-full items-center gap-3 px-4 py-3 text-left text-[15px] text-[var(--rm-text-primary)] transition-colors active:bg-[var(--rm-bg-inset)]"
-                      >
-                        {project.label}
-                      </button>
-                    ))}
-                </ListGroup>
-                <div className="mt-2 flex flex-col gap-2">
-                  <Button variant="secondary" size="medium" disabled={creating !== null} onClick={() => setAddingProject(true)}>
-                    {t("sessions.addProject")}
-                  </Button>
-                  <Button variant="plain" size="medium" onClick={() => setChoosing(false)}>
-                    {t("common.cancel")}
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
+            </div>
+          ) : (
+            <NewSessionSheet
+              open
+              projects={projects ?? []}
+              models={models}
+              modelsFailure={modelsFailure}
+              initialProjectId={pendingProjectId}
+              creating={creating !== null}
+              failure={createFailure ? createFailure.message || t("operation.sessionCreate") : null}
+              onCancel={() => {
+                setChoosing(false);
+                setPendingProjectId(null);
+              }}
+              onAddProject={() => setAddingProject(true)}
+              onCreate={(choice) => void startNewSession(choice)}
+            />
+          )
         ) : null}
 
         {sessions === null ? (

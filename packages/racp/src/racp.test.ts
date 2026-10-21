@@ -427,3 +427,39 @@ describe("owner-only workspace tool boundary", () => {
     await client.close();
   });
 });
+
+describe("model/list (R7, protocol §16.1)", () => {
+  const models = [
+    {
+      providerId: "anthropic",
+      providerLabel: "Anthropic",
+      modelId: "claude-sonnet-5",
+      label: "Claude Sonnet 5",
+      thinkingLevels: ["off", "low"],
+      supportsImages: true,
+      isDefault: true,
+    },
+  ];
+
+  it("answers with the Host's catalog, and a viewer may read it", async () => {
+    const h = await harness({ operations: { models: { list: async () => models } } });
+    // A viewer is the role a phone has: reading models is not a controller action,
+    // because a read-only device still shows which model a session runs on.
+    const { client } = await h.connect(VIEWER_TOKEN);
+    const answer = await client.request<{ models: typeof models }>("model/list", {});
+    expect(answer.models).toEqual(models);
+    await client.close();
+    await h.server.close();
+  });
+
+  it("is unavailable rather than empty when the Host cannot describe its models", async () => {
+    // A Host built before this operation existed has no catalog at all.
+    const h = await harness({ operations: { models: undefined } });
+    const { client } = await h.connect(VIEWER_TOKEN);
+    await expect(client.request("model/list", {})).rejects.toMatchObject({
+      code: "CAPABILITY_UNAVAILABLE",
+    });
+    await client.close();
+    await h.server.close();
+  });
+});

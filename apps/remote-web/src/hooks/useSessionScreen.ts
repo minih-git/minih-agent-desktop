@@ -15,7 +15,7 @@
  * its last reply missing. Every later subscription (a reconnect, or the reopen
  * after a resync snapshot) starts from the newest cursor for the same reason.
  */
-import type { RacpApprovalDecision, RacpPermissionMode, RacpTurnAdmission } from "@minih-agent/shared";
+import type { RacpApprovalDecision, RacpModelSummary, RacpPermissionMode, RacpTurnAdmission } from "@minih-agent/shared";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import { watchForeground } from "../lib/app-state.js";
@@ -25,8 +25,11 @@ import { createHostClient, sessionEventsPath, type HostClient } from "../lib/hos
 import { probeHostStatus } from "../lib/host-status.js";
 import {
   attachSession,
+  configureSession,
   interruptTurn,
   listHistory,
+  listModels,
+  renameSession,
   respondApproval as respondApprovalCommand,
   respondInput as respondInputCommand,
   startTurn,
@@ -74,6 +77,22 @@ export type SessionActions = {
   /** Restart a stream that exhausted its retry budget. */
   reconnect: () => void;
   dismissFailure: () => void;
+  /**
+   * Change what this session runs on (R7). The Host owns the rule that a turn in
+   * progress blocks it, so a refusal comes back as `AGENT_BUSY` and is shown as
+   * itself rather than guessed at here.
+   */
+  configure: (input: {
+    providerId?: string;
+    modelId?: string;
+    thinkingLevel?: string;
+    mode?: "agent" | "plan" | "goal";
+    permissionMode?: RacpPermissionMode;
+  }) => Promise<void>;
+  /** Rename this session (controller role). */
+  rename: (title: string) => Promise<void>;
+  /** Read the Host's model catalog once; later calls are no-ops. */
+  loadModels: () => Promise<void>;
 };
 
 export type SessionScreenState = {
@@ -84,6 +103,8 @@ export type SessionScreenState = {
   /** Whether a history page is in flight, so the button can say so. */
   loadingEarlier: boolean;
   turnId?: string;
+  /** The Host's model catalog, empty until `actions.loadModels` ran (R7). */
+  models: RacpModelSummary[];
   actions: SessionActions;
 };
 
@@ -101,6 +122,9 @@ export function useSessionScreen(options: {
   const [failure, setFailure] = useState<{ failure: OperationFailure; operationKey: string } | null>(null);
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [loadingEarlier, setLoadingEarlier] = useState(false);
+  /** R7: the Host's model catalog, and whether it was asked for already. */
+  const [models, setModels] = useState<RacpModelSummary[]>([]);
+  const modelsLoadedRef = useRef(false);
   const clientRef = useRef<HostClient | null>(null);
   const supervisorRef = useRef<StreamSupervisor | null>(null);
   const attachRef = useRef<() => Promise<void>>(async () => undefined);
@@ -347,6 +371,60 @@ export function useSessionScreen(options: {
     loadEarlier: async () => {
       await loadEarlierRunRef.current({ manual: true });
     },
+    configure: async (input) => {
+      const client = clientRef.current;
+      if (!client) return;
+      setPending((current) => ({ ...current, "session/configure": true }));
+      const result = await configureSession(client, { sessionId, ...input });
+      setPending((current) => {
+        const next = { ...current };
+        delete next["session/configure"];
+        return next;
+      });
+      if (!result.ok) {
+        setFailure({ failure: result.failure, operationKey: "operation.sessionConfigure" });
+        return;
+      }
+      // The Host answers with the session it now has: adopting it is what
+      // makes the sheet and the composer label agree with the server.
+      dispatch({ type: "event", envelope: {
+        kind: "session.changed",
+        sessionId,
+        payload: { session: result.value },
+      } as never });
+      setFailure(null);
+    },
+    rename: async (title) => {
+      const client = clientRef.current;
+      if (!client) return;
+      setPending((current) => ({ ...current, "session/rename": true }));
+      const result = await renameSession(client, sessionId, title);
+      setPending((current) => {
+        const next = { ...current };
+        delete next["session/rename"];
+        return next;
+      });
+      if (!result.ok) {
+        setFailure({ failure: result.failure, operationKey: "operation.sessionRename" });
+        return;
+      }
+      dispatch({ type: "event", envelope: {
+        kind: "session.changed",
+        sessionId,
+        payload: { session: { id: sessionId, title: result.value } },
+      } as never });
+      setFailure(null);
+    },
+    loadModels: async () => {
+      if (modelsLoadedRef.current) return;
+      const client = clientRef.current;
+      if (!client) return;
+      modelsLoadedRef.current = true;
+      const result = await listModels(client);
+      // A Host too old to list models is not an error the user can act on: the
+      // session then keeps showing whatever model it already reported.
+      if (result.ok) setModels(result.value);
+    },
     reconnect: () => {
       setPending((current) => ({ ...current, "stream/reconnect": true }));
       supervisorRef.current?.start();
@@ -361,6 +439,7 @@ export function useSessionScreen(options: {
     pending,
     loadingEarlier,
     ...(activeTurnId ? { turnId: activeTurnId } : {}),
+    models,
     actions,
   };
 }

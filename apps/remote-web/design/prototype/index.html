@@ -285,6 +285,61 @@
   .toast{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--toast-bottom,120px));z-index:70;background:var(--tp);color:var(--page);padding:10px 16px;border-radius:999px;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px;white-space:nowrap;animation:toast .2s cubic-bezier(.2,0,0,1);box-shadow:0 8px 24px rgba(0,0,0,.2)}
   @keyframes toast{from{opacity:0;transform:translate(-50%,8px)}}
 
+
+  /* ---------- R7 additions: Markdown answers, attachments, choosers ---------- */
+  .nav-sub{display:flex;align-items:center;justify-content:center;gap:6px;min-width:0}
+  .nav-sub-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .nav-sub-live{display:inline-flex;align-items:center;gap:4px;flex:none;color:var(--success)}
+
+  .md-p{margin:0 0 8px}
+  .md-p:last-child{margin-bottom:0}
+  .md-p + .md-p{margin-top:9px}
+  .md-h{font-weight:600;margin:12px 0 4px}
+  .md-list{margin:6px 0;padding-left:20px}
+  .md-list li{margin:3px 0}
+  .md-quote{margin:8px 0;padding:6px 12px;border-left:3px solid var(--sep);color:var(--ts)}
+  .md-code{margin:8px 0;border:1px solid var(--sep);border-radius:10px;overflow:hidden;background:var(--surface)}
+  .md-code-head{display:flex;align-items:center;gap:8px;padding:5px 8px 5px 10px;font-size:11px;color:var(--tm);border-bottom:1px solid var(--sep)}
+  .md-code-head span{flex:1;text-transform:lowercase}
+  .md-copy{border:0;background:transparent;color:var(--tm);font:inherit;display:inline-flex;align-items:center;gap:4px;padding:4px 6px;border-radius:6px;cursor:pointer}
+  .md-copy:hover{background:var(--inset)}
+  .md-code pre{margin:0;padding:9px 10px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:18px}
+  .md-code code{white-space:pre;background:transparent;padding:0;color:inherit;font-size:inherit}
+  .md-table-wrap{margin:8px 0;max-width:100%;overflow-x:auto;border:1px solid var(--sep);border-radius:8px}
+  .md-table-wrap table{border-collapse:collapse;font-size:12.5px;line-height:18px;white-space:nowrap}
+  .md-table-wrap th,.md-table-wrap td{padding:7px 11px;text-align:left;border-bottom:1px solid var(--sep)}
+  .md-table-wrap th{background:var(--inset);font-weight:600}
+  .md-table-wrap tr:last-child td{border-bottom:0}
+  .m-ai a{color:var(--link)}
+
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+  .chip-att{display:flex;align-items:center;gap:8px;background:var(--inset);border-radius:12px;padding:6px 6px 6px 9px;max-width:100%}
+  .chip-att.bad{background:color-mix(in srgb,var(--error) 12%,var(--inset))}
+  .chip-ic{display:inline-flex;color:var(--ts);flex:none}
+  .chip-main{display:flex;flex-direction:column;min-width:0}
+  .chip-name{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}
+  .chip-sub{font-size:11px;color:var(--tm)}
+  .chip-att.bad .chip-sub{color:var(--error)}
+  .chip-x{border:0;background:transparent;color:var(--tm);padding:2px;display:inline-flex;cursor:pointer;flex:none}
+
+  .c-labels{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+  .c-label{font-size:11.5px;color:var(--tm);background:var(--inset);border-radius:999px;padding:3px 9px;cursor:pointer}
+  .composer .attach{border:0;background:transparent;color:var(--tm);padding:6px 2px 6px 6px;display:inline-flex;align-items:center;cursor:pointer;flex:none}
+
+  .sheet-row{display:flex;align-items:center;gap:12px;width:100%;border:0;background:transparent;color:inherit;font:inherit;text-align:left;padding:11px 2px;border-radius:10px;cursor:pointer}
+  .sheet-row + .sheet-row{border-top:1px solid var(--sep)}
+  .sheet-row[disabled]{cursor:default}
+  .sheet-row .row-main{display:flex;flex-direction:column;min-width:0;flex:1}
+  .sheet-row .headline{font-size:15px;font-weight:600}
+  .sheet-row .row-sub{font-size:12.5px;color:var(--ts);line-height:17px;margin-top:2px}
+  .sheet-row .tile{width:28px;height:28px;border-radius:8px;background:var(--inset);display:flex;align-items:center;justify-content:center;color:var(--ts);flex:none}
+  .sheet-list{display:flex;flex-direction:column;max-height:46vh;overflow-y:auto;margin-bottom:10px}
+  .sheet-list .opt{margin:2px 0}
+  .sheet .seg{display:flex;background:rgba(0,0,0,.06);border-radius:10px;padding:2px;max-width:260px}
+  body.page-dark .sheet .seg{background:rgba(255,255,255,.08)}
+  .sheet .seg button{flex:1;border:0;background:transparent;padding:6px 4px;border-radius:8px;font:inherit;font-size:12.5px;color:inherit;cursor:pointer}
+  .sheet .seg button.on{background:var(--surface);font-weight:600}
+  .sheet .field{width:100%;border:1px solid var(--sep);background:var(--inset);border-radius:10px;padding:10px 12px;font:inherit;color:inherit}
   @media (prefers-reduced-motion: reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 </style>
 </head>
@@ -302,6 +357,10 @@
       <button data-to="computers">S4 我的电脑</button>
       <button data-to="sessions">S5 会话列表</button>
       <button data-to="session">S6 会话（待你批准）</button>
+      <button data-to="session">S6 会话（待你批准）</button>
+      <button data-to="settings">S8 设置</button>
+      <button data-sheet="new-session">S5a 新建会话</button>
+      <button data-sheet="info">S6a 会话信息</button>
     </div>
     <h2>演示场景</h2>
     <div class="seg" id="acctSeg"><button data-v="1" class="on">支持账户登录</button><button data-v="0">仅票据配对</button></div>
@@ -309,6 +368,7 @@
     <div class="seg" id="connSeg"><button data-v="live" class="on">实时</button><button data-v="retrying">重连中</button><button data-v="exhausted">已中断</button></div>
     <button class="reset" id="reset">重置演示</button>
     <p class="tip">建议体验路径：在 S6 先点“允许一次”（高风险会再确认一次）→ 回答问题 → 看运行完成；或点右上“停止”看两种停止方式。</p>
+    <p class="tip">R7 新增（第 15 节）：S5 的“新建会话”→ 选项目、<b>模型</b>、模式、权限 → 开始；S6 输入框左侧回形针 → 加图片/文件（选“拍照”演示超出单次上限）；输入框上方的模型标签或右上 ⓘ → S6a；S4 底部的“设置”→ S8。</p>
   </aside>
 
   <div class="phone" id="phone" data-theme="light">
@@ -348,6 +408,15 @@ const I = {
   phone:'<rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/>',
   user:'<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
   x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  paperclip:'<path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>',
+  image:'<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+  file:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  camera:'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
+  copy:'<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  pencil:'<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>',
+  sliders:'<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+  bell:'<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
+  info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
   fileText:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
   folderOpen:'<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
   search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
@@ -356,7 +425,6 @@ const I = {
   users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   listChecks:'<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
   wrench:'<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
-  pencil:'<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>',
 };
 function icon(n,s=20,sw=2,cls=''){return `<svg class="ic ${cls}" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]}</svg>`}
 const spinner=(s=18)=>icon('loader',s,2.2,'spin');
@@ -380,6 +448,10 @@ function initialSession(){
       {k:'tool',name:'Bash',sum:'pnpm --filter web test LoginForm',st:'ok',body:'PASS  apps/web/src/auth/LoginForm.test.tsx\nTests: 12 passed'},
       {k:'think',text:'失败分支调用了 clearForm()，应改为只清空密码字段；RegisterForm 的行为不在本次范围内。'},
       {k:'ai',text:'找到原因了：`LoginForm` 在任何失败时都会调用 `clearForm()`。我会改成只清空密码，并补一个回归测试。\n\n改之前要先清理构建缓存，再完整构建一次。'},
+      /* A Markdown answer, as the shipped client renders it (#108, spec §15.5):
+         a fenced code block with a copy button, and a GFM table in a scroll
+         wrapper, so the design can be reviewed against real content. */
+      {k:'ai',text:'改动很小，关键是别动注册页：\n\n```ts\nasync function onSubmit(values: FormValues) {\n  try {\n    await signIn(values)\n  } catch (error) {\n    setPassword(\'\')        // 只清空密码\n    setError(error)\n  }\n}\n```\n\n涉及的三个文件：\n\n| 文件 | 改动 | 风险 |\n| --- | --- | --- |\n| `LoginForm.tsx` | 失败时只清空密码 | 低 |\n| `useAuthForm.ts` | 抽出 `resetPasswordOnly` | 低 |\n| `LoginForm.test.tsx` | 新增回归用例 | 无 |'},
       {k:'tool',name:'Bash',sum:'rm -rf apps/web/.next && pnpm --filter web build',st:'dec',body:'等待你的批准…'},
     ],
     decisions:[
@@ -388,6 +460,22 @@ function initialSession(){
     open:{},
   };
 }
+const PROJECTS=[
+  {id:'p-web',label:'web 应用'},
+  {id:'p-mobile',label:'移动端'},
+  {id:'p-docs',label:'发布文档'},
+];
+const PROJECT_LABEL=Object.fromEntries(PROJECTS.map(p=>[p.id,p.label]));
+const MODELS=[
+  {id:'anthropic/claude-sonnet-5',label:'Claude Sonnet 5',vendor:'Anthropic',levels:['off','low','medium','high'],def:true,images:true,isDefault:true},
+  {id:'anthropic/claude-opus-5',label:'Claude Opus 5',vendor:'Anthropic',levels:['off','low','medium','high','max'],images:true},
+  {id:'openai/gpt-6-luna',label:'GPT-6 Luna',vendor:'OpenAI',levels:['off','low','medium','high'],images:true},
+  {id:'minih-router/deepseek-v4.1-flash',label:'DeepSeek 4.1 Flash',vendor:'Minih Router',levels:['off','low','high'],images:false},
+];
+const modelOf=id=>MODELS.find(m=>m.id===id)||MODELS[0];
+const MODES=[{id:'agent',t:'直接干活',d:'直接读取、修改文件并运行命令'},{id:'plan',t:'先出计划',d:'先给方案，等你批准后再动手'},{id:'goal',t:'按目标推进',d:'围绕目标持续推进，直到达成或预算用尽'}];
+const PERMISSIONS=[{id:'ask',t:'每次询问',d:'每个敏感操作都要你批准'},{id:'accept-edits',t:'自动改文件',d:'文件编辑自动允许，命令仍需批准'},{id:'auto',t:'全部自动',d:'不再询问，风险操作自行判断'}];
+
 function initialState(){
   return {
     theme:document.getElementById('phone').dataset.theme||'light',
@@ -401,7 +489,11 @@ function initialState(){
       {id:'h4',name:'旧笔记本',status:'revoked'},
     ],
     expanded:null, hostId:'h1', sessionsLoading:false,
-    session:initialSession(), draft:'',
+    session:initialSession(), draft:'', attachments:[], composerModel:MODELS[0].id,
+    /* S5a choices. A real client fills these from `project/list` + `model/list`
+       (spec §15.3); the prototype ships the same shape with fixed data. */
+    newSession:{project:PROJECTS[0].id, model:MODELS[0].id, mode:'agent', permission:'ask', creating:false, failure:''},
+    settings:{theme:'system', push:'on'},
     sheet:null, toast:null,
   };
 }
@@ -575,20 +667,29 @@ function scrComputers(){
     <div class="content" id="scroller">
       <h1 class="large-title" style="padding:4px 4px 16px">我的电脑</h1>
       ${S.hosts.length?`<div class="group" style="--inset-left:60px">${rows}</div>`:`<div class="calloutbox">还没有电脑。点右上角“+”连接一台。</div>`}
+      <div class="group" style="--inset-left:60px;margin-top:18px">
+        <button class="row" data-act="go" data-to="settings"><span class="tile">${icon('sliders',18)}</span><span class="row-main"><span class="headline">设置</span><span class="row-sub">账户、通知、外观</span></span><span class="row-trail">${icon('chevronRight',18)}</span></button>
+      </div>
       <p class="foot" style="justify-content:flex-start;padding:14px 4px 0;line-height:17px">${icon('lock',13,2)}网关 ${GATEWAY} · 访问权限保存在这台手机的钥匙串中</p>
     </div></div>`;
 }
 
+/* S5 groups by project, the way the desktop sidebar does and the client now
+   does (`src/lib/session-groups.ts`): a project's sessions by most recent
+   activity, the projects by their most recent session, one trailing "其他" for
+   a session with no project. */
 const sessionsData=[
-  {sec:'需要你处理',rows:[{t:'重构登录流程',time:'2 分钟前',st:'decision',word:'等你批准'}]},
-  {sec:'运行中',rows:[{t:'修复移动端安全区布局',time:'刚刚',st:'running',word:''}]},
-  {sec:'最近',rows:[
-    {t:'整理 v0.22 发布说明',time:'1 小时前',st:'done',word:''},
-    {t:'排查推送注册失败',time:'昨天',st:'error',word:'失败'},
-    {t:'升级 Capacitor 到 8.5',time:'10月12日',st:'stopped',word:'已停止'},
-    {t:'未命名会话',time:'10月9日',st:'idle',word:''},
+  {key:'p-web',sec:'web 应用',rows:[{t:'重构登录流程',time:'2 分钟前',st:'decision',word:'等你批准',model:'Claude Sonnet 5'}]},
+  {key:'p-mobile',sec:'移动端',rows:[
+    {t:'修复移动端安全区布局',time:'刚刚',st:'running',word:'',model:'Claude Sonnet 5'},
+    {t:'排查推送注册失败',time:'昨天',st:'error',word:'失败',model:'GPT-6 Luna'},
+    {t:'升级 Capacitor 到 8.5',time:'10月12日',st:'stopped',word:'已停止',model:'GPT-6 Luna'},
   ]},
+  {key:'p-docs',sec:'发布文档',rows:[{t:'整理 v0.22 发布说明',time:'1 小时前',st:'done',word:'',model:'DeepSeek 4.1 Flash'}]},
+  {key:'other',sec:'其他',rows:[{t:'未命名会话',time:'10月9日',st:'idle',word:'',model:''}]},
 ];
+/* What `model/list` would return (spec §15.3): metadata only, no credential and
+   no base URL, because the phone has no use for either. */
 function slot(st){
   if(st==='decision')return '<span class="dot s-decision"></span>';
   if(st==='running')return '<span class="dot s-running"></span>';
@@ -606,11 +707,39 @@ function scrSessions(){
   } else {
     body=sessionsData.map(g=>`<div class="sh">${g.sec}</div><div class="group" style="--inset-left:40px">${g.rows.map(r=>{
       const live = r.t==='重构登录流程' ? sessionWord() : {st:r.st,word:r.word};
-      return `<button class="row" data-act="session-open" data-t="${r.t}"><span class="slot">${slot(live.st)}</span><div class="row-main"><div class="row-title"${r.t==='未命名会话'?' style="color:var(--ts)"':''}>${r.t}</div><div class="row-sub">${r.time}${live.word?` · <span style="color:${live.st==='decision'?'var(--decision)':live.st==='error'?'var(--error)':'var(--ts)'}">${live.word}</span>`:''}</div></div><span class="row-trail" style="padding-right:8px">${icon('chevronRight',18)}</span></button>`}).join('')}</div>`).join('');
+      return `<button class="row" data-act="session-open" data-t="${r.t}"><span class="slot">${slot(live.st)}</span><div class="row-main"><div class="row-title"${r.t==='未命名会话'?' style="color:var(--ts)"':''}>${r.t}</div><div class="row-sub">${r.time}${live.word?` · <span style="color:${live.st==='decision'?'var(--decision)':live.st==='error'?'var(--error)':'var(--ts)'}">${live.word}</span>`:''}${r.model?` · ${r.model}`:''}</div></div><span class="row-trail" style="padding-right:8px">${icon('chevronRight',18)}</span></button>`}).join('')}</div>`).join('');
   }
+  // The section header carries the one primary action of the screen (spec §8.6).
+  const head=`<div class="sh" style="display:flex;align-items:center;gap:8px">会话<span class="grow"></span><button class="btn btn-plain btn-sm" data-act="new-session" style="display:flex;align-items:center;gap:4px">${icon('plus',16,2.4)}新建会话</button></div>`;
   return `<div class="scr">
     ${nav({title:h.name,sub:'<span class="dot s-online" style="width:6px;height:6px"></span>在线',trailing:refresh})}
-    <div class="content">${body}<p class="footnote" style="text-align:center;margin-top:18px">会话只能在电脑上新建。</p></div></div>`;
+    <div class="content">${head}${body}<p class="footnote" style="text-align:center;margin-top:18px">会话可以在手机上新建，任务始终在电脑上运行。</p></div></div>`;
+}
+
+/* S8 Settings (spec §15.7). One screen for what this phone remembers and how it
+   looks: account, computers and devices, notifications, appearance, build. */
+function scrSettings(){
+  const signedIn=S.accountMode&&S.hosts.length>0;
+  const pushMeta={
+    on:{t:'已开启',d:'批准和提问会推送到这台手机'},
+    denied:{t:'未允许',d:'请在系统设置里允许通知'},
+    off:{t:'未配置',d:'这个 Gateway 没有配置推送'},
+  }[S.settings.push];
+  const section=(title,inner)=>`<div class="sh">${title}</div><div class="group" style="--inset-left:60px">${inner}</div>`;
+  const row=(ic,title,sub,trail='')=>`<div class="row"><span class="tile">${icon(ic,18)}</span><span class="row-main"><span class="headline">${title}</span><span class="row-sub">${sub}</span></span>${trail}</div>`;
+  return `<div class="scr">
+    ${nav({title:'设置',trailing:`<button class="iconbtn" data-act="go" data-to="computers" aria-label="关闭">${icon('x',20)}</button>`})}
+    <div class="content">
+      ${section('账户',row('user',signedIn?'已用 Minih 账户登录':'未登录',signedIn?`${S.hosts.filter(h=>h.status==='online'||h.status==='unaccepted').length} 台电脑可用`:'用账户一次登录，所有电脑都能用',
+        `<button class="btn btn-plain btn-sm" data-act="settings-signout">${signedIn?'退出登录':'去登录'}</button>`))}
+      ${section('电脑与设备', S.hosts.length? S.hosts.map(h=>row('laptop',h.name,statusMeta[h.status].line,
+        `<button class="btn btn-plain btn-sm" data-act="host-more" data-id="${h.id}" style="color:var(--tm)">管理</button>`)).join('')
+        : '<div class="calloutbox">还没有配对任何电脑。回到连接页开始。</div>')}
+      ${section('通知',row('bell',pushMeta.t,pushMeta.d,
+        S.settings.push==='denied'?`<button class="btn btn-plain btn-sm" data-act="settings-push">打开设置</button>`:''))}
+      ${section('外观',`<div class="row" style="align-items:flex-start"><span class="tile">${icon('sliders',18)}</span><span class="row-main"><span class="headline">主题</span><span class="row-sub">跟随系统、浅色或深色</span><span class="seg" style="margin-top:10px">${['system','light','dark'].map(k=>`<button class="${S.settings.theme===k?'on':''}" data-act="settings-theme" data-id="${k}">${k==='system'?'跟随系统':k==='light'?'浅色':'深色'}</button>`).join('')}</span></span></div>`)}
+      ${section('关于',row('info','版本','0.23.0 · 构建 2026-10-20')+row('lock','Gateway',GATEWAY))}
+    </div></div>`;
 }
 function sessionWord(){
   const s=S.session;
@@ -655,16 +784,58 @@ function scrSession(){
   const dec=s.decisions.length?decisionHtml():'';
   const hint = s.sendFail?`<div class="c-hint err">${icon('alert',14)}发送失败，点按发送重试。</div>`
     : (tl&&S.draft.trim())?`<div class="c-hint">${icon('clock',14)}电脑正在运行，这条消息会排队。</div>`:'';
+  const model=modelOf(S.composerModel);
+  const info=`<button class="iconbtn" data-act="open-info" aria-label="会话信息">${icon('info',20)}</button>`;
   return `<div class="scr has-dock">
-    ${nav({title:s.title,sub:'MacBook Pro'})}
+    ${nav({title:s.title,sub:`<span class="nav-sub-name">MacBook Pro</span><span class="nav-sub-live"><span class="dot s-online" style="width:6px;height:6px"></span>实时</span>`,trailing:info})}
     ${banner}${runbar}
     <div class="content" id="scroller"><div class="tl">${items}</div></div>
     <div class="dock lift" id="dock">
       ${dec}${hint}
-      <div class="composer"><textarea id="composer" rows="1" placeholder="给 Agent 发消息" data-input="composer">${S.draft}</textarea><button class="send" id="sendBtn" data-act="send" aria-label="发送" ${S.draft.trim()?'':'disabled'}>${icon('arrowUp',20,2.4)}</button></div>
+      ${attachmentChips()}
+      <div class="c-labels"><span class="c-label" data-act="open-info">${model.label} · ${S.session.mode||'agent'}</span></div>
+      <div class="composer"><button class="attach" data-act="attach" aria-label="添加图片或文件">${icon('paperclip',20)}</button><textarea id="composer" rows="1" placeholder="给 Agent 发消息" data-input="composer">${S.draft}</textarea><button class="send" id="sendBtn" data-act="send" aria-label="发送" ${(S.draft.trim()||S.attachments.length)&&!S.attachments.some(a=>a.state==='too-large'||a.state==='preparing')?'':'disabled'}>${icon('arrowUp',20,2.4)}</button></div>
     </div></div>`;
 }
-function md(t){return t.replace(/`([^`]+)`/g,'<code>$1</code>')}
+/*
+  A deliberately small Markdown renderer, because the prototype is a design
+  reference and the shipped client uses react-markdown + remark-gfm (#108). It
+  covers what the screens must show: fenced code with a copy button, GFM tables
+  in a horizontally scrolling wrapper, inline code, bold, lists, quotes and
+  http(s) links. An unterminated fence still renders, which is what a streaming
+  answer looks like.
+*/
+function md(t){
+  const blocks=[]; const hold='\u0000';
+  let text=String(t)
+    .replace(/```([a-zA-Z0-9+-]*)\n([\s\S]*?)(?:```|$)/g,(_,lang,code)=>{
+      const id=blocks.length;
+      blocks.push(`<div class="md-code"><div class="md-code-head"><span>${lang||'code'}</span><button class="md-copy" data-act="copy-code" data-i="${id}">${icon('copy',13,2)}复制</button></div><pre><code>${esc(code.replace(/\n$/,''))}</code></pre></div>`);
+      return hold+id+hold;
+    });
+  // GFM tables: a header row, a delimiter row, then body rows.
+  text=text.replace(/(^\|.*\|\s*\n\|[-: |]+\|\s*\n(?:\|.*\|\s*(?:\n|$))+)/gm,(table)=>{
+    const rows=table.trim().split('\n').map(r=>r.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim()));
+    const head=rows[0]; const body=rows.slice(2);
+    return `<div class="md-table-wrap"><table><thead><tr>${head.map(c=>`<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${body.map(r=>`<tr>${r.map(c=>`<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  });
+  text=text.split(/\n{2,}/).map(part=>{
+    if(part.startsWith(hold)||part.startsWith('<div class="md-table-wrap">'))return part;
+    if(/^#{1,6}\s/.test(part)) return `<div class="md-h">${inline(part.replace(/^#{1,6}\s/,''))}</div>`;
+    if(/^>\s/.test(part)) return `<div class="md-quote">${inline(part.replace(/^>\s?/gm,''))}</div>`;
+    if(/^[-*]\s/.test(part)) return `<ul class="md-list">${part.split('\n').map(line=>`<li>${inline(line.replace(/^[-*]\s/,''))}</li>`).join('')}</ul>`;
+    if(/^\d+\.\s/.test(part)) return `<ol class="md-list">${part.split('\n').map(line=>`<li>${inline(line.replace(/^\d+\.\s/,''))}</li>`).join('')}</ol>`;
+    return `<div class="md-p">${inline(part).replace(/\n/g,'<br>')}</div>`;
+  }).join('');
+  return text.replace(new RegExp(hold+'(\\d+)'+hold,'g'),(_,id)=>blocks[Number(id)]);
+}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function inline(s){
+  return esc(s)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/(https?:\/\/[^\s<)]+)/g,'<a href="$1" rel="noreferrer noopener" target="_blank">$1</a>');
+}
 /** Which icon a tool call draws, by the same categories the shared rules use. */
 function toolIconName(name){
   const n=(name||'').toLowerCase();
@@ -697,7 +868,10 @@ function toolRunParts(burst){
 function itemHtml(it,i){
   const s=S.session;
   if(it.k==='note')return `<div class="m-note">${it.text}</div>`;
-  if(it.k==='user')return `<div class="m-user${it.pending?' pending':''}">${md(it.text)}${it.pending?`<div class="pend">${icon('clock',12)}发送中</div>`:''}</div>`;
+  if(it.k==='user'){
+    const files=(it.files||[]).length?`<div class="chips" style="margin:0 0 6px">${it.files.map(n=>`<span class="chip-att"><span class="chip-ic">${icon('image',14)}</span><span class="chip-main"><span class="chip-name">${esc(n)}</span></span></span>`).join('')}</div>`:'';
+    return `<div class="m-user${it.pending?' pending':''}">${files}${md(it.text)}${it.pending?`<div class="pend">${icon('clock',12)}发送中</div>`:''}</div>`;
+  }
   if(it.k==='ai')return `<div>${it.agent?`<div class="m-agent">来自 ${it.agent}</div>`:''}<div class="m-ai">${md(it.text)}</div></div>`;
   if(it.k==='answer')return `<div class="m-user" style="background:color-mix(in srgb,var(--decision) var(--tint),var(--surface))"><div class="caption" style="color:var(--decision);margin-bottom:2px">你的回答</div>${it.text}</div>`;
   if(it.k==='fail')return `<div class="m-fail">${it.text}</div>`;
@@ -708,6 +882,27 @@ function itemHtml(it,i){
     return `<li class="tool-row"><button class="tool-row-head" data-act="toggle" data-key="k${i}" aria-expanded="${!!o}"><span class="tool-ic">${icon(toolIconName(it.name),14)}</span><span class="tool-row-name">${it.name}</span><span class="tool-row-sum">${it.sum}</span>${st}${it.body?`<span style="color:var(--tf)">${icon(o?'chevronUp':'chevronDown',13)}</span>`:''}</button>${o&&it.body?`<pre class="tool-row-body">${it.body}</pre>`:''}</li>`;
   }
   return '';
+}
+/*
+  Attachment chips (spec §15.4). Each chip carries its own state, because the
+  phone has to admit three different things: still preparing, ready to send, and
+  too large for what one request may carry. The inline budget is the protocol's
+  `maxPromptBytes`; the prototype shows the same ceiling the Host would advertise.
+*/
+const INLINE_BUDGET=180*1024;
+function fmtSize(n){return n>=1024*1024?`${(n/1024/1024).toFixed(1)} MB`:`${Math.max(1,Math.round(n/1024))} KB`}
+function attachmentChips(){
+  const list=S.attachments; if(!list.length)return '';
+  return `<div class="chips">${list.map((a,i)=>`<div class="chip-att${a.state==='too-large'?' bad':''}">
+    <span class="chip-ic">${a.kind==='image'?icon('image',16):icon('file',16)}</span>
+    <span class="chip-main"><span class="chip-name">${esc(a.name)}</span><span class="chip-sub">${a.state==='preparing'?'准备中…':a.state==='too-large'?`超出单次上限 ${fmtSize(INLINE_BUDGET)}`:fmtSize(a.size)}</span></span>
+    <button class="chip-x" data-act="drop-att" data-i="${i}" aria-label="移除 ${esc(a.name)}">${icon('x',14,2.4)}</button>
+  </div>`).join('')}</div>`;
+}
+function addAttachment(a){
+  S.attachments.push(a);
+  if(a.state==='preparing') later(()=>{a.state='ready';render()},900);
+  render();
 }
 function expiresText(ms){const sec=Math.max(0,Math.round((ms-Date.now())/1000));return sec>=60?`${Math.ceil(sec/60)} 分钟后过期`:`${sec} 秒后过期`}
 function decisionHtml(){
@@ -773,6 +968,70 @@ function sheetHtml(){
     <div class="d-sum" style="margin:0 0 16px">${d.cmd}</div><div class="sheet-actions">
     <button class="btn btn-primary btn-lg" data-act="allow-confirm">允许一次</button>
     <button class="btn btn-plain btn-lg" data-act="sheet-close">取消</button></div>`;}
+  if(sh.type==='new-session'){
+    const ns=S.newSession;
+    const project=PROJECTS.find(p=>p.id===ns.project)||PROJECTS[0];
+    const model=modelOf(ns.model);
+    const mode=MODES.find(m=>m.id===ns.mode)||MODES[0];
+    const perm=PERMISSIONS.find(x=>x.id===ns.permission)||PERMISSIONS[0];
+    const row=(ic,title,value,act)=>`<button class="sheet-row" data-act="${act}"><span class="tile">${icon(ic,18)}</span><span class="row-main"><span class="headline">${title}</span><span class="row-sub">${value}</span></span>${icon('chevronRight',18)}</button>`;
+    const chooser = sh.choose==='model'
+      ? `<div class="sheet-list">${MODELS.map(m=>`<button class="opt${m.id===ns.model?' sel':''}" role="radio" aria-checked="${m.id===ns.model}" data-act="ns-model" data-id="${m.id}"><span class="mark-r">${m.id===ns.model?icon('check',13,3):''}</span><span class="row-main"><span class="headline">${m.label}${m.isDefault?'<span class="chip neutral" style="margin-left:6px">电脑默认</span>':''}</span><span class="row-sub">${m.vendor}${m.images?' · 可读图片':''}</span></span></button>`).join('')}</div>`
+      : sh.choose==='project'
+        ? `<div class="sheet-list">${PROJECTS.map(p=>`<button class="opt${p.id===ns.project?' sel':''}" role="radio" aria-checked="${p.id===ns.project}" data-act="ns-project" data-id="${p.id}"><span class="mark-r">${p.id===ns.project?icon('check',13,3):''}</span>${p.label}</button>`).join('')}</div>`
+        : sh.choose==='mode'
+          ? `<div class="sheet-list">${MODES.map(m=>`<button class="opt${m.id===ns.mode?' sel':''}" role="radio" aria-checked="${m.id===ns.mode}" data-act="ns-mode" data-id="${m.id}"><span class="mark-r">${m.id===ns.mode?icon('check',13,3):''}</span><span class="row-main"><span class="headline">${m.t}</span><span class="row-sub">${m.d}</span></span></button>`).join('')}</div>`
+          : sh.choose==='permission'
+            ? `<div class="sheet-list">${PERMISSIONS.map(p=>`<button class="opt${p.id===ns.permission?' sel':''}" role="radio" aria-checked="${p.id===ns.permission}" data-act="ns-permission" data-id="${p.id}"><span class="mark-r">${p.id===ns.permission?icon('check',13,3):''}</span><span class="row-main"><span class="headline">${p.t}</span><span class="row-sub">${p.d}</span></span></button>`).join('')}</div>`
+            : '';
+    if(sh.choose){
+      inner=`<div class="sheet-title">${sh.choose==='model'?'选择模型':sh.choose==='project'?'选择项目':sh.choose==='mode'?'选择模式':'选择权限模式'}</div>${chooser}<div class="sheet-actions"><button class="btn btn-plain btn-lg" data-act="ns-back">返回</button></div>`;
+    } else {
+      inner=`<div class="sheet-title">新建会话</div>
+        ${row('laptop','项目',project.label,'ns-pick-project')}
+        ${row('sliders','模型',`${model.label} · ${model.vendor}`,'ns-pick-model')}
+        ${row('info','模式',`${mode.t} · ${mode.d}`,'ns-pick-mode')}
+        ${row('shield','权限模式',`${perm.t} · ${perm.d}`,'ns-pick-permission')}
+        ${ns.failure?`<div class="banner error" style="margin:12px 0 0">${icon('alert',16)}<span class="grow">${ns.failure}</span></div>`:''}
+        <div class="sheet-actions" style="margin-top:14px">
+          <button class="btn btn-primary btn-lg" data-act="ns-start" ${ns.creating?'disabled':''}>${ns.creating?spinner(16):''}开始</button>
+          <button class="btn btn-plain btn-lg" data-act="sheet-close">取消</button>
+        </div>`;
+    }
+  }
+  if(sh.type==='attach'){
+    inner=`<div class="sheet-title">添加图片或文件</div><p class="sheet-msg">单次最多 ${fmtSize(INLINE_BUDGET)}，支持 PNG、JPEG、WebP、GIF 和文本文件。</p>
+    <div class="sheet-actions">
+      <button class="sheet-opt" data-act="attach-add" data-kind="image" data-name="screenshot.png" data-size="148000">${icon('image',22)}<div><div class="t">照片图库</div><div class="d">从相册选择</div></div></button>
+      <button class="sheet-opt" data-act="attach-add" data-kind="image" data-name="photo-2026-10-20.jpg" data-size="2400000">${icon('camera',22)}<div><div class="t">拍照</div><div class="d">直接拍一张（演示：会显示超限）</div></div></button>
+      <button class="sheet-opt" data-act="attach-add" data-kind="file" data-name="build.log" data-size="42000">${icon('file',22)}<div><div class="t">选择文件</div><div class="d">文本文件与日志</div></div></button>
+      <button class="btn btn-plain btn-lg" data-act="sheet-close">取消</button>
+    </div>`;
+  }
+  if(sh.type==='info'){
+    const model=modelOf(S.composerModel);
+    const row=(title,value,act)=>`<button class="sheet-row" ${act?`data-act="${act}"`:'disabled'}><span class="row-main"><span class="headline">${title}</span><span class="row-sub">${value}</span></span>${act?icon('chevronRight',18):''}</button>`;
+    inner=`<div class="sheet-title" style="display:flex;align-items:center;gap:8px">${esc(S.session.title)}<button class="iconbtn" data-act="rename" aria-label="重命名">${icon('pencil',16)}</button></div>
+    ${S.renaming?`<div class="sheet-actions" style="margin-bottom:10px"><input class="field" id="renameField" value="${esc(S.session.title)}" data-input="rename" /><button class="btn btn-primary btn-sm" data-act="rename-save">完成</button></div>`:''}
+    ${row('电脑','MacBook Pro')}
+    ${row('模型',`${model.label} · ${model.vendor}`,'info-model')}
+    ${row('思考档位',`${model.levels.includes(S.session.thinking||'high')?S.session.thinking||'high':model.def||'off'}`)}
+    ${row('模式',`${(MODES.find(m=>m.id===(S.session.mode||'agent'))||MODES[0]).t}`)}
+    ${row('权限模式',`${(PERMISSIONS.find(p=>p.id==='ask')||PERMISSIONS[0]).t}`)}
+    ${row('消息数','128')}
+    ${row('创建时间','2026-10-20 19:02')}
+    ${row('会话 ID','58a08fb8…b35dfc')}
+    <div class="sheet-actions"><button class="btn btn-plain btn-lg" data-act="sheet-close">完成</button></div>`;
+  }
+  if(sh.type==='info-model'){
+    const cur=modelOf(S.composerModel);
+    // A running turn locks the model, exactly as the desktop refuses it: the
+    // reason is shown instead of a disabled list (spec §15.3).
+    const busy=S.session.turn==='running'||S.session.decisions.length>0;
+    inner=`<div class="sheet-title">选择模型</div>${busy?`<div class="banner neutral" style="margin:0 0 10px">${icon('clock',16)}<span class="grow">这条会话正在运行，等它停下才能换模型。</span></div>`:''}
+    <div class="sheet-list">${MODELS.map(m=>`<button class="opt${m.id===cur.id?' sel':''}" role="radio" aria-checked="${m.id===cur.id}" data-act="set-model" data-id="${m.id}" ${busy?'disabled':''}><span class="mark-r">${m.id===cur.id?icon('check',13,3):''}</span><span class="row-main"><span class="headline">${m.label}</span><span class="row-sub">${m.vendor} · 思考档位 ${m.levels.join(' / ')}</span></span></button>`).join('')}</div>
+    <div class="sheet-actions"><button class="btn btn-plain btn-lg" data-act="sheet-close">取消</button></div>`;
+  }
   return `<div class="scrim" data-act="sheet-close"></div><div class="sheet" role="dialog" aria-modal="true"><div class="grabber"></div>${inner}</div>`;
 }
 
@@ -784,7 +1043,7 @@ function render(){
   const nearBottom = prevScroller ? (prevScroller.scrollHeight-prevScroller.scrollTop-prevScroller.clientHeight<120) : true;
   const prevTop = prevScroller?prevScroller.scrollTop:0;
   const focusId=document.activeElement&&document.activeElement.id;
-  const map={connect:scrConnect,account:scrAccount,pair:scrPair,computers:scrComputers,sessions:scrSessions,session:scrSession};
+  const map={connect:scrConnect,account:scrAccount,pair:scrPair,computers:scrComputers,sessions:scrSessions,session:scrSession,settings:scrSettings};
   let html=map[S.screen]();
   const changed=lastScreen!==S.screen;
   if(changed) html=html.replace('class="scr','class="scr enter-'+S.dir+' ');
@@ -883,6 +1142,45 @@ app.addEventListener('click',e=>{
     case 'host-forget': { const h=host(ds.id); S.hosts=S.hosts.filter(x=>x.id!==ds.id); S.sheet=null; S.expanded=null; if(!S.hosts.length){resetTo('connect')} toast(`已忘记 ${h.name}`); break; }
     case 'sessions-refresh': enterScreen('sessions'); render(); break;
     case 'session-open': if(ds.t!=='重构登录流程'){toast('原型只演示“重构登录流程”这个会话')} else go('session'); break;
+    /* S5a / S6a / attachments (spec §15.2, §15.4, §15.6). */
+    case 'new-session': S.sheet={type:'new-session'}; render(); break;
+    case 'ns-pick-project': S.sheet={type:'new-session',choose:'project'}; render(); break;
+    case 'ns-pick-model': S.sheet={type:'new-session',choose:'model'}; render(); break;
+    case 'ns-pick-mode': S.sheet={type:'new-session',choose:'mode'}; render(); break;
+    case 'ns-pick-permission': S.sheet={type:'new-session',choose:'permission'}; render(); break;
+    case 'ns-project': S.newSession.project=ds.id; S.sheet={type:'new-session'}; render(); break;
+    case 'ns-model': S.newSession.model=ds.id; S.sheet={type:'new-session'}; render(); break;
+    case 'ns-mode': S.newSession.mode=ds.id; S.sheet={type:'new-session'}; render(); break;
+    case 'ns-permission': S.newSession.permission=ds.id; S.sheet={type:'new-session'}; render(); break;
+    case 'ns-back': S.sheet={type:'new-session'}; render(); break;
+    case 'ns-start': {
+      const ns=S.newSession;
+      ns.creating=true; ns.failure=''; render();
+      // A real client sends `session/create` with the four values and shows the
+      // Host's own refusal; the prototype simulates the success path only.
+      later(()=>{
+        ns.creating=false;
+        S.session={...initialSession(), title:'未命名会话', mode:ns.mode, decisions:[], items:[
+          {k:'note',text:`已在“${(PROJECTS.find(p=>p.id===ns.project)||PROJECTS[0]).label}”上新建 · ${modelOf(ns.model).label} · ${ns.mode} · ${ns.permission}`},
+        ], turn:null};
+        S.composerModel=ns.model; S.sheet=null; go('session');
+      },800);
+      break; }
+    case 'open-info': S.sheet={type:'info'}; S.renaming=false; render(); break;
+    case 'info-model': S.sheet={type:'info-model'}; render(); break;
+    case 'set-model': S.composerModel=ds.id; S.sheet={type:'info'}; render(); toast(`已切换到 ${modelOf(ds.id).label}`); break;
+    case 'rename': S.renaming=true; render(); break;
+    case 'rename-save': { S.renaming=false; S.sheet={type:'info'}; render(); toast('已重命名'); break; }
+    case 'attach': S.sheet={type:'attach'}; render(); break;
+    case 'attach-add': {
+      const size=Number(ds.size);
+      addAttachment({name:ds.name,kind:ds.kind,size,state:size>INLINE_BUDGET?'too-large':'preparing'});
+      S.sheet=null; render(); break; }
+    case 'drop-att': S.attachments=S.attachments.filter((_,i)=>i!==+ds.i); render(); break;
+    case 'copy-code': toast('已复制代码'); break;
+    case 'settings-theme': S.settings.theme=ds.id; document.getElementById('phone').dataset.theme=ds.id==='dark'?'dark':'light'; render(); break;
+    case 'settings-push': S.settings.push=S.settings.push==='denied'?'on':'denied'; render(); break;
+    case 'settings-signout': toast(S.accountMode?'已退出登录（设备令牌保留）':'演示中未接入账户登录'); break;
     case 'toggle': s.open[ds.key]=!s.open[ds.key]; render(); break;
     case 'stop': S.sheet={type:'stop'}; render(); break;
     case 'do-stop': {
@@ -924,9 +1222,16 @@ function refreshHost(id){
   later(()=>{h.status=prev; render(); toast(prev==='offline'?'仍然离线':'状态已更新', prev!=='offline')},900);
 }
 function sendMessage(){
-  const s=S.session; const text=S.draft.trim(); if(!text) return;
+  const s=S.session;
+  // A file that no single request may carry blocks the send, and says why; a
+  // chip still preparing only holds the message back for a moment.
+  if(S.attachments.some(a=>a.state==='too-large')){ toast('有附件超过单次上限，请先移除', false); return; }
+  if(S.attachments.some(a=>a.state==='preparing')){ toast('附件还在准备…', false); return; }
+  const text=S.draft.trim(); const names=S.attachments.map(a=>a.name);
+  if(!text&&!names.length) return;
   const busy=!!turnLabel(s);
-  const item={k:'user',text,pending:true}; pushItem(item); S.draft=''; s.sendFail=false; render();
+  const item={k:'user',text:text||'（仅附件）',files:names,pending:true}; pushItem(item);
+  S.draft=''; S.attachments=[]; s.sendFail=false; render();
   later(()=>{ item.pending=false;
     if(busy){ s.queued++; toast('已加入队列'); }
     else { s.turn='running'; later(()=>{ if(S.session!==s)return; pushItem({k:'ai',text:'收到。我会按这个方向继续，有需要你决定的地方会再问你。'}); s.turn=null; render(); },2200); }
@@ -938,6 +1243,7 @@ app.addEventListener('input',e=>{
   if(k==='dname'){S.account.deviceName=v}
   if(k==='pname'){S.pair.deviceName=v}
   if(k==='ticket'){S.pair.ticket=v; if(!v.trim()) S.pair.valid=null}
+  if(k==='rename'){S.session.title=v;}
   if(k==='composer'){
     const had=!!S.draft.trim(); S.draft=v; autosize(e.target);
     document.getElementById('sendBtn').disabled=!v.trim();
@@ -958,7 +1264,7 @@ setInterval(()=>{
 
 /* ---------------- panel ---------------- */
 function syncPanel(){
-  document.querySelectorAll('#jump button').forEach(b=>b.classList.toggle('on',b.dataset.to===S.screen));
+  document.querySelectorAll('#jump button').forEach(b=>{const on=b.dataset.sheet?S.sheet&&S.sheet.type===b.dataset.sheet:b.dataset.to===S.screen;b.classList.toggle('on',!!on)});
   document.querySelectorAll('#themeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.theme===S.theme));
   document.querySelectorAll('#acctSeg button').forEach(b=>b.classList.toggle('on',(b.dataset.v==='1')===S.accountMode));
   document.querySelectorAll('#connSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===S.session.conn));
@@ -966,16 +1272,25 @@ function syncPanel(){
 document.getElementById('themeSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S.theme=b.dataset.theme;document.getElementById('phone').dataset.theme=S.theme;document.body.classList.toggle('page-dark',S.theme==='dark');render()});
 document.getElementById('acctSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S.accountMode=b.dataset.v==='1';render()});
 document.getElementById('connSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S.session.conn=b.dataset.v;if(S.screen!=='session'){S.hostId='h1';resetTo('session',['computers','sessions'])}else render()});
-document.getElementById('jump').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const to=b.dataset.to;
+document.getElementById('jump').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  // A sheet entry opens the screen it belongs to, then the sheet itself: that is
+  // how a reader reaches S5a and S6a in the real client too.
+  if(b.dataset.sheet){
+    const to=b.dataset.sheet==='new-session'?'sessions':'session';
+    const stacks={sessions:['computers'],session:['computers','sessions']};
+    S.hostId='h1'; if(!host('h1'))S.hosts.unshift({id:'h1',name:'MacBook Pro',status:'online'});
+    resetTo(to,stacks[to]); S.sheet={type:b.dataset.sheet}; S.renaming=false; render(); return;
+  }
+  const to=b.dataset.to;
   if(to==='account'){S.account.step='signin';S.account.key=''}
-  const stacks={connect:[],account:['connect'],pair:['connect'],computers:[],sessions:['computers'],session:['computers','sessions']};
+  const stacks={connect:[],account:['connect'],pair:['connect'],computers:[],sessions:['computers'],session:['computers','sessions'],settings:['computers']};
   if(to==='sessions'||to==='session'){S.hostId='h1'; if(!host('h1'))S.hosts.unshift({id:'h1',name:'MacBook Pro',status:'online'})}
   resetTo(to,stacks[to]);});
 document.getElementById('reset').addEventListener('click',()=>{clearTimers();const th=S.theme;S=initialState();S.theme=th;lastScreen=null;render()});
 
 const params=new URLSearchParams(location.search);
 if(params.get('theme')==='dark'){S.theme='dark';document.getElementById('phone').dataset.theme='dark';document.body.classList.add('page-dark')}
-if(params.get('screen')){const to=params.get('screen');const stacks={connect:[],account:['connect'],pair:['connect'],computers:[],sessions:['computers'],session:['computers','sessions']};S.screen=to;S.stack=stacks[to]||[];enterScreen(to)}
+if(params.get('screen')){const to=params.get('screen');const stacks={connect:[],account:['connect'],pair:['connect'],computers:[],sessions:['computers'],session:['computers','sessions'],settings:['computers']};S.screen=to;S.stack=stacks[to]||[];enterScreen(to)}
 const phoneEl=document.getElementById('phone');
 new ResizeObserver(()=>phoneEl.style.setProperty('--ph',phoneEl.clientHeight+'px')).observe(phoneEl);
 render();

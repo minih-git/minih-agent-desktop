@@ -378,6 +378,8 @@ export const RACP_HTTP_ROUTE_LIST = {
   hosts: "GET /v1/hosts",
   pairDevice: "POST /v1/hosts/{hostId}/pair",
   projects: "GET /v1/projects",
+  /** The model catalog a controller may start a session on (R7, protocol §16.1). */
+  models: "GET /v1/models",
   /**
    * Register one directory as a project (rollout A2). The path travels in the
    * body, not the URL: it is user data, and a body keeps it out of request logs
@@ -417,6 +419,7 @@ export type RacpHttpRouteName = keyof typeof RACP_HTTP_ROUTE_LIST;
 export const RACP_METHOD_HTTP_ROUTES: Partial<Record<string, RacpHttpRouteName>> = {
   "host/list": "hosts",
   "project/list": "projects",
+  "model/list": "models",
   "project/register": "registerProject",
   "project/browse": "browseProjects",
   "session/list": "sessions",
@@ -440,6 +443,7 @@ export const RACP_HTTP_ROUTE_PARAMS: Record<RacpHttpRouteName, readonly string[]
   hosts: [],
   pairDevice: ["hostId"],
   projects: [],
+  models: [],
   registerProject: [],
   browseProjects: [],
   sessions: [],
@@ -476,6 +480,8 @@ export const RACP_HTTP_QUERY_PARAMS: Record<RacpHttpRouteName, Readonly<Record<s
   hosts: {},
   pairDevice: {},
   projects: {},
+  // `model/list` takes no parameter: the catalog is small and static per Host.
+  models: {},
   // The registration path travels in the POST body, so no query parameter.
   registerProject: {},
   // `browse(path?)`: the directory to list, absolute and inside the root.

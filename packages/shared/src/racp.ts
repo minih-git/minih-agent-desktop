@@ -143,6 +143,15 @@ export const RacpSessionSchema = Type.Object({
   title: Type.String(),
   projectId: Type.Optional(Type.String()),
   workspaceLabel: Type.Optional(Type.String()),
+  /**
+   * What this session runs on (R7). Optional and additive, so a Host that does
+   * not describe a model still produces a valid session and the client hides
+   * the row.
+   */
+  providerId: Type.Optional(Type.String()),
+  modelId: Type.Optional(Type.String()),
+  modelLabel: Type.Optional(Type.String()),
+  thinkingLevel: Type.Optional(Type.String()),
   mode: RacpSessionModeSchema,
   status: RacpSessionStatusSchema,
   planningState: RacpPlanningStateSchema,
@@ -154,6 +163,28 @@ export const RacpSessionSchema = Type.Object({
   updatedAt: Type.String(),
 });
 export type RacpSession = Static<typeof RacpSessionSchema>;
+
+/**
+ * One model a remote device may choose (R7, protocol §16.1).
+ *
+ * Metadata only: no credential, base URL, proxy, header, or price crosses this
+ * boundary. The Host builds it from the same catalog it launches a turn with and
+ * drops anything it would not print on the desktop's model picker.
+ */
+export const RacpModelSummarySchema = Type.Object({
+  providerId: Type.String({ minLength: 1 }),
+  /** The provider's display name only. */
+  providerLabel: Type.String(),
+  modelId: Type.String({ minLength: 1 }),
+  label: Type.String(),
+  /** Ordered as the provider advertises them. */
+  thinkingLevels: Type.Array(Type.String()),
+  defaultThinkingLevel: Type.Optional(Type.String()),
+  supportsImages: Type.Boolean(),
+  /** The Host's default for a new session. */
+  isDefault: Type.Boolean(),
+});
+export type RacpModelSummary = Static<typeof RacpModelSummarySchema>;
 
 export const RacpRemoteErrorSchema = Type.Object({
   code: Type.String({ minLength: 1 }),
@@ -561,6 +592,8 @@ export const RACP_OPERATIONS = {
   "connection/ping": { role: "authenticated", profile: "v1", mutation: false },
   "host/list": { role: "authenticated", profile: "v1", mutation: false },
   "project/list": { role: "viewer", profile: "v1", mutation: false },
+  /** The models a controller may start a session on (R7, §16.1). */
+  "model/list": { role: "viewer", profile: "v1", mutation: false },
   "session/list": { role: "viewer", profile: "v1", mutation: false },
   "session/get": { role: "viewer", profile: "v1", mutation: false },
   "session/create": { role: "controller", profile: "v1", mutation: true },
@@ -669,6 +702,7 @@ export { ROLE_RANK as RACP_ROLE_RANK };
 export const RACP_HTTP_ROUTES: Partial<Record<RacpOperation, { method: "GET" | "POST"; path: string }>> = {
   "host/list": { method: "GET", path: "/v1/hosts" },
   "project/list": { method: "GET", path: "/v1/projects" },
+  "model/list": { method: "GET", path: "/v1/models" },
   "project/register": { method: "POST", path: "/v1/projects" },
   "project/browse": { method: "GET", path: "/v1/projects:browse" },
   "session/list": { method: "GET", path: "/v1/sessions" },
@@ -900,6 +934,7 @@ export function racpErrorIsRegistered(code: RacpErrorCode): boolean {
 export const RACP_SCHEMAS = {
   RequestContext: RacpRequestContextSchema,
   Session: RacpSessionSchema,
+  ModelSummary: RacpModelSummarySchema,
   Turn: RacpTurnSchema,
   Cursor: RacpCursorSchema,
   EventEnvelope: RacpEventEnvelopeSchema,

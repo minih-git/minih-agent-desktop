@@ -2,6 +2,7 @@ import { RacpError } from "@minih-agent/agent-host";
 import {
   createHostSession,
   createProjectCatalog,
+  listModelSummaries,
   listProjectSummaries,
   listSessionSummariesWithProjectIds,
   projectBrowseRoot,
@@ -119,6 +120,13 @@ export function createDesktopHostOperations(
       },
       async compact() {
         forbidden();
+      },
+    },
+    // R7: the models a phone may start a session on. Metadata only, read from
+    // the same provider rows the desktop's own picker uses.
+    models: {
+      async list() {
+        return listModelSummaries(requireHost(options.getHost));
       },
     },
     projects: {

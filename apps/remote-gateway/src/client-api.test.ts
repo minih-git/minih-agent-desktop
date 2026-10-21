@@ -54,6 +54,17 @@ describe("gateway client API", () => {
   });
 
   /**
+   * R7: the model catalog is a declared route, so the Gateway forwards it like
+   * every other one. The Gateway has no model-specific code: this proves the
+   * shared table is enough and that no allowlist kept the path out.
+   */
+  it("forwards the model catalog a phone chooses a model from", async () => {
+    const listed = await command(gateway, { hostId: host.hostId, token: deviceToken, method: "model/list", params: {} });
+    expect(listed.status).toBe(200);
+    expect(listed.payload.result).toMatchObject({ models: expect.any(Array) });
+  });
+
+  /**
    * "The phone is slow" needs a per-operation number: a byte count says how
    * much crossed the network, not how long the Host took to answer. The
    * duration rides the completion line the operator already reads.

@@ -1,10 +1,17 @@
 # 13. Remote Mobile Client UX
 
-- Status: **Accepted design, not implemented** — decisions O1–O6 resolved on
-  2026-10-19 (section 14); the shipped `apps/remote-web` UI does not follow it
-  yet. The clickable prototype `apps/remote-web/design/prototype/index.html`
-  (open the file directly; data is simulated) was reviewed at 320×568 through
-  430×932 and is the visual reference for implementation.
+- Status: **Accepted design, partially implemented, extended by §15.** Decisions
+  O1–O6 resolved on 2026-10-19 (section 14) and R7-1–R7-3 on 2026-10-21
+  (section 15.10). Sections 1–14 are the accepted design of record; §15 is the
+  R7 revision and is now **decided and being implemented**, covering the
+  capabilities that appeared after this document was written (choosing a model,
+  sending images and files, per-session model and mode, settings, and tool calls
+  that read as actions rather than output). Where §15 and §8 disagree, §15 wins.
+  Implemented today: S1–S6 as described here, S6's Markdown answers, the
+  project-grouped session list, and the tool-call presentation of §15.11; the
+  clickable prototype `apps/remote-web/design/prototype/index.html` (open the
+  file directly; data is simulated) is the visual reference and was reviewed at
+  320×568 through 430×932.
 - Scope: `apps/remote-web`, i.e. the browser (H5) build and the Capacitor iOS
   and Android builds. They share one React codebase, so every rule here applies
   to all three unless a section names a platform.
@@ -101,10 +108,40 @@ Push tap ──────────▶ S6 Session, with S4 ▸ S5 restored b
 | S6 | Session | Tap a session, or a push | `SessionScreen` |
 | S7 | Sheets and dialogs | Contextual | Inline confirm rows |
 
-Back behavior: the header back control and the Android hardware back button
-pop one level (existing `previousScreen`); iOS additionally supports the edge
-swipe through the standard history gesture in the WebView only when it does
-not conflict with horizontal scrolling inside code blocks.
+Back behavior — one rule, four paths: the header back control, the Android
+hardware back button, the browser's own Back, and the iOS edge swipe all pop
+exactly one level through `previousScreen` (`src/lib/screen-stack.ts`), so they
+cannot disagree.
+
+- **The browser's history is the stack.** Every forward navigation writes one
+  entry (`src/lib/screen-history.ts`: `pushState` for a new level,
+  `replaceState` for the level already shown), and `popstate` adopts the screen
+  the entry names — or, for an entry written by an older build, falls back to
+  `previousScreen`. A browser Back and Safari's edge gesture therefore step up
+  one level instead of leaving the site, a Forward returns to the entry it
+  names, and the entry the user arrived on is replaced rather than stacked.
+- **iOS uses this client's own edge gesture, not the WebView's.** Capacitor's
+  `allowsBackForwardNavigationGestures` is deliberately left off: it shows a
+  static snapshot of the page it returns to, while a session screen is live —
+  a stream, a pending decision, a running turn — so the snapshot and the state
+  would visibly disagree, and the gesture would also drive the history
+  underneath the app's own sheet state. `src/hooks/useEdgeSwipe.ts` instead
+  tracks a drag and calls the same back path, so there is one behaviour to
+  reason about. Its rules: a touch must start within `EDGE_WIDTH` (20 px) of the
+  left edge; a mostly-vertical or leftward drag is released untouched, which is
+  what keeps the timeline's scroll and a code block's horizontal pan working; the
+  screen follows the finger with the page beneath at a third of the distance; on
+  release it completes past `COMPLETE_FRACTION` (1/3 of the width) or a flick
+  past `COMPLETE_VELOCITY` that has travelled at least
+  `MIN_FLICK_DISTANCE_FRACTION` (15%), and otherwise springs back. A gesture
+  starting off the edge, with nowhere to go, or while a sheet is open
+  (`[role="dialog"][aria-modal="true"]` is present) is never intercepted.
+- **A browser never mounts the JS gesture.** It already has one, and running both
+  would pop two levels per swipe.
+- **Push restores the stack (§8.8) and the history with it**: opening the named
+  session writes the computer's session list as one entry and the session as the
+  next, so a back swipe from a pushed session lands on that list rather than on
+  the Host list.
 
 ## 5. Visual system
 
@@ -422,17 +459,28 @@ show a neutral banner "Reconnecting…"; they do not reset the ring.
 ### 8.6 S5 Sessions
 
 - Navigation title = computer label; subtitle = computer status.
-- Grouped by section, each omitted when empty: "Needs you" (status
-  `waiting_permission`), "Running" (`running`), "Recent" (everything else),
-  newest first within each section.
+- Grouped by project, the way the desktop sidebar groups them: a project's
+  sessions ordered by most recent activity, the projects themselves ordered by
+  their most recent session. A session with no project, or with a project the
+  catalog no longer holds, falls into one trailing "Other" group, so nothing
+  disappears. A project holding no session is not shown, because an empty
+  heading is something the user cannot act on. When the project catalog cannot
+  be read the list stays flat under "Other" and an amber line says so.
 - Row: leading 12 px status slot (section 5.6), title up to two lines (session
   title, falling back to "Untitled session" rather than the raw id), subtitle
   "3 min ago" plus the state word for non-idle states ("Stopped", "Failed").
   Relative time uses `Intl.RelativeTimeFormat`; older than 7 days shows a date.
-- Loading: six skeleton rows. Refresh: pull to refresh and on foreground.
+- Loading: six skeleton rows. Refresh: pull to refresh and on foreground; a
+  refresh does not repeat the reachability probe it can answer itself, and it
+  reads the project catalog once per visit (both implemented).
+- New session: a `controller` device gets "New session" in the section header,
+  which opens S5a (§15.2). A device whose recorded roles exclude `controller`
+  gets the reason instead of a disabled button; an entry written before roles
+  were recorded is treated as unknown and offered.
 - Empty: EmptyState "No sessions on this computer yet", Callout "Start a task
-  on the computer and it will show up here. Sessions can't be created from the
-  phone."
+  here, or on the computer — it will show up in this list."
+- Offline or failed load: error Banner with "Retry"; the last loaded list stays
+  visible but dimmed to 60%.
 - Offline or failed load: error Banner with "Retry"; the last loaded list stays
   visible but dimmed to 60%.
 - Revoked: ResultState "This phone's access was revoked" with primary "Forget
@@ -474,8 +522,12 @@ Toast confirms ("Stopped", "Run finished").
 
 - User message: right aligned, max 85% width, `--rm-bg-inset` (light) or
   `--rm-bg-raised` (dark) bubble, radius 18 with a 6 px tail corner.
-- Assistant message: left aligned, no bubble, full width, Body text with
-  preserved line breaks; links use `--rm-link`. A small caption "From
+- Assistant message: left aligned, no bubble, full width, rendered as Markdown
+  (paragraphs, lists, quotes, headings, inline code, links to http/https/mailto
+  only, fenced code in its own horizontally scrolling block, GFM tables in a
+  horizontally scrolling wrapper), with no raw HTML and no remote images. A
+  partially streamed answer renders what has arrived, including an unterminated
+  code fence. Implementation and its checks: §15.5. A small caption "From
   {agent}" precedes messages attributed to a sub-agent.
 - Thinking: collapsed disclosure "Thinking" (Footnote, muted, chevron).
 - Tool call: a compact row, not a card. A category icon (read, list, search,
@@ -668,3 +720,321 @@ option.
 | O4 | Confirmation for high-risk approvals | One confirmation sheet for `high` risk only; no press-and-hold gesture, for accessibility |
 | O5 | zh-CN vocabulary 电脑 instead of 主机 | Adopted for user-facing copy; the protocol, code, and specs keep "Host" |
 | O6 | Cross-computer "Needs you" section | Deferred to phase 4; polls the existing session list of each online computer on foreground only, no protocol change |
+
+## 15. R7 revision — pages, model choice, attachments
+
+- Status: **Proposed design, awaiting owner approval. Nothing in this section is
+  implemented.** Where it contradicts §8, this section wins once approved.
+- Why: the client grew past the scope §8 was written for. §8.6 still says a
+  phone cannot start a session, §8.7 still describes answers as plain text, and
+  three capabilities the owner asked for have no design at all: choosing a model
+  when starting a session, sending images and files, and a per-session place to
+  see and change model, mode, and permissions. §8.7's navigation bar and S5's
+  grouping are already implemented as described (`SessionsScreen`,
+  `SessionScreen`); the rest of §8 remains the visual and interaction
+  reference.
+- Scope of the change: presentation and interaction in `apps/remote-web`, plus
+  two contract additions that a phone cannot invent for itself (a model catalog
+  read, and the attachment upload the protocol already specifies but no Host
+  implements). Nothing else in RACP changes.
+
+### 15.1 Page inventory
+
+Every screen answers one question and has exactly one primary action. A
+screen's states are the ones its own data can be in; the empty state says what
+to do next, never why the screen is useless.
+
+| Screen | The question it answers | Content | Primary action | States | Empty |
+|---|---|---|---|---|---|
+| S1 Connect | "How do I start?" | Brand mark, one sentence of purpose, sign-in with a Minih account, pairing ticket | Sign in with Minih account (or Use a pairing ticket) | Account mode absent / present / refused origin | n/a |
+| S2 Account sign-in | "Can this phone reach my computers?" | AccessKey field, device name, then the roster of computers that can approve, then the wait | Approve on the computer / Ask again | Key rejected, service unavailable, waiting, expired, granted-but-not-delivered, rate limited | No computer can approve → offers the pairing ticket |
+| S3 Pairing ticket | "How do I connect one computer?" | Ticket field, device name, what happens next | Connect | Expired ticket, refused device, unreachable Gateway | n/a |
+| S4 My computers | "Which computer do I work on?" | One row per computer: label, status line, unread attention | Open a computer | Online / offline / not synced yet / revoked / never paired | "No computers yet" → Connect a computer |
+| S5 Sessions | "What ran, and what needs me?" | Search, project groups (or "Needs you"/"Running"/"Recent" when search is empty), one row per session, new-session entry | New session (when the device may create) or open the session that needs you | Loading skeletons, stale list dimmed with Retry, Host offline, revoked, no projects | "No sessions on this computer yet — start one here, or on the computer" |
+| S5a New session | "With which model, in which project?" | Project choice, model choice, mode, permission mode | Start | No projects, no models, creating, refused (read-only device), project list failed | No project → Add a project; no model → the Host's default |
+| S6 Session | "What is it doing, and what does it need?" | Navigation bar, connection banner, run bar, timeline (Markdown, tool cards, thinking), decision dock, composer | Decide (approve / answer) or send a message | Live, reconnecting, live updates stopped, disconnected, archived, replay incomplete, resync, truncated items | "No messages yet" |
+| S6a Session info | "Which model and mode is this, and what is it called?" | Title (renameable), computer, model, thinking level, mode, permission mode, message count, created | Done | Read-only device (no edit affordances), turn running (model/mode locked), rename refused | n/a |
+| S7 Push entry | "Why did this open?" | Opens S6 at the decision dock, S4 and S5 beneath | Decide | Already handled, unknown computer | Falls back to S4 |
+| S8 Settings | "What does this phone remember, and how does it look?" | Account, computers and devices, notifications, appearance, build | (no single action; each row opens one) | Signed in / signed out, push not configured, permission refused, no device | "Nothing paired yet" → back to S1 |
+
+Rationale for the two rules the table implies: a screen whose primary action is
+missing must replace it with the reason and the next step (a read-only device
+gets "This phone may only watch", not a disabled button), and a screen never
+shows a control it cannot honour — the composer of an archived session is a
+muted bar, not a disabled field.
+
+### 15.2 S5a New session (issue: no model choice)
+
+A sheet over S5 with four rows, in the order the decision is actually made:
+
+1. **Project** — the Host's project catalog, archived projects hidden. With one
+   usable project the row is pre-filled and reads as a value; with several it
+   opens a list. "Add a project" stays at the bottom of that list (existing
+   `project/browse` + `project/register`).
+2. **Model** — the row shows the model that will be used and the provider's
+   name ("Claude Sonnet 5 · Anthropic"). Tapping it opens the model list
+   (§15.3). Until `model/list` has answered, the row says "Computer default" and
+   the session is created without a model, which is what the Host would have
+   chosen anyway.
+3. **Mode** — `agent` / `plan` / `goal`, with one line each ("Works and edits",
+   "Plans first", "Works until the goal or the budget").
+4. **Permission mode** — `ask` / `accept-edits` / `auto`, with the same wording
+   the desktop uses.
+
+The primary button is "Start"; it creates the session with the four values, and
+the client then opens S6 on that session with the composer focused. Creating is
+`controller`; a `viewer`-only device never sees the sheet (S5 replaces the
+entry with the reason, as today).
+
+States: creating (button spinner, all rows disabled), refused (`FORBIDDEN`,
+`NOT_FOUND` for a project deleted meanwhile, `INVALID_ARGUMENT` for a model that
+disappeared between the list and the create) — each shown inline above the
+button with the Host's own reason, and the sheet stays open so the choice can be
+corrected.
+
+### 15.3 Model list and model identity (contract addition)
+
+Today `session/create` and `session/configure` accept `providerId`, `modelId`,
+and `thinkingLevel`, but a phone has no way to learn which values exist, and
+`RacpSession` carries no model at all — so neither a chooser nor a "which model
+is this session on" label can be built on the client alone.
+
+**`model/list`** (viewer role, `GET /v1/models` via the RACP-HTTP route table):
+
+```ts
+type ModelSummary = {
+  providerId: string;
+  providerLabel: string;   // display name only
+  modelId: string;
+  label: string;
+  thinkingLevels: string[];  // ordered, as the provider advertises them
+  defaultThinkingLevel?: string;
+  supportsImages: boolean;   // what §15.4 gates on
+  isDefault: boolean;        // the Host's default for a new session
+};
+// { models: ModelSummary[] }
+```
+
+Rules, in the order they constrain the design:
+
+- **Metadata only.** The response carries no credential, API key, base URL,
+  proxy, header, or price. The Host builds it from the same catalog it already
+  uses to launch a turn, and drops anything it would not print on the desktop's
+  model picker.
+- **One read per visit, not per keystroke.** The list is small and static for
+  the lifetime of a session; S5a reads it once when the sheet opens.
+- **A model that is not listed cannot be chosen, but a listed model is not
+  guaranteed** — a provider can be removed between the read and the create, so
+  `session/create` keeps validating and the sheet shows the refusal.
+- **Existing sessions.** `RacpSession` gains optional `providerId`, `modelId`,
+  `modelLabel`, and `thinkingLevel`, so S6a can show what the session runs on.
+  Optional and additive: a Host that does not send them still produces a valid
+  session, and the client hides the row.
+- **Changing a session's model** is `session/configure` with `providerId` +
+  `modelId` (+ `thinkingLevel`), `controller` role, and **only while the session
+  is idle**: the desktop already refuses to change the model under a running
+  turn, and the phone must show the same reason (`AGENT_BUSY`) rather than
+  appearing to succeed. A thinking level that the new model does not advertise
+  resets to the model's default.
+- **Both sides implement it.** The desktop Host (`desktop-host-operations.ts`)
+  and `agent-host-cli` each get the catalog read, the shared contract and route
+  table get the operation, and the Gateway needs no new code because it
+  validates against those tables — but it does need a test proving
+  `GET /v1/models` is forwarded like every other declared route.
+
+### 15.4 Images and files (issue: cannot send them)
+
+The protocol already defines the flow (§10) and nothing implements it: the Host
+advertises `attachments: false`, both operations answer `CAPABILITY_UNAVAILABLE`,
+and `turn/start` refuses an attachment. Two steps, smallest first.
+
+**Step 1 — inline, bounded by what one request may carry.** A small image or a
+small text file travels inside `turn/start`, which is the protocol's own first
+case ("small text and image inputs MAY be embedded … below `maxPromptBytes`").
+
+- Budget: the whole JSON-RPC request stays under `maxPromptBytes` (256 KiB) and
+  therefore far under `maxFrameBytes` (1 MiB). One attachment at a time is
+  therefore at most ~180 KiB encoded; the composer refuses a larger file with
+  the size and the limit, and offers nothing fake.
+- Accepted types, decided by **content sniffing on the Host**: PNG, JPEG, WebP,
+  GIF images, and `text/plain`-family text (UTF-8, no NUL bytes). A declared
+  MIME type that disagrees with the bytes is refused; an unknown type is
+  refused. SVG is **not** accepted in step 1 (an SVG is a script container, and
+  the client would have to render it).
+- Where the bytes go: the Host decodes the attachment, writes it under its data
+  directory in a session-scoped folder, and converts it to the
+  `AgentPromptAttachment` the runtime already accepts, so the agent reads it
+  from disk with no new runtime path.
+- **Never a path or a URL.** The Host accepts no `file://`, no absolute path, no
+  remote URL, and no "reference this file on my computer" form: an upload it did
+  not receive is an upload it cannot vouch for (protocol §10 already forbids
+  this; step 1 keeps the rule at the schema level).
+- Cleanup: the folder belongs to the session and is removed with it; bytes that
+  a failed turn never referenced are swept on the same schedule the Host already
+  uses for scratch data.
+- The Host advertises `attachments: true` and a
+  `maxInlineAttachmentBytes` in capabilities, so a client never guesses the
+  budget.
+
+**Step 2 — larger files through the Gateway, chunked.** `attachment/create`
+returns an opaque id plus a single-purpose, short-lived, principal- and
+session-scoped upload target; `attachment/complete` carries size and SHA-256;
+the Host verifies both and only then marks the attachment `ready`, and
+`turn/start` references the ready id. Chunks cross the Host link at 256 KiB.
+The Gateway holds bytes only until completion and verifies nothing but size.
+Two bounds decide what "large" means here:
+
+- Nginx serves this origin with `client_max_body_size 10m`, so a step-2 upload
+  is capped at 10 MiB per file unless that limit is raised for the upload route
+  alone — and a phone photo is usually smaller once the picker resizes it.
+- The protocol's 50 MiB per-attachment ceiling stays a ceiling, not a promise.
+
+**Client (both steps).** A paperclip button in the composer opens one sheet:
+"Photo library", "Take photo", "Choose file". Chosen items appear as chips above
+the field (image thumbnail or file-type tile, name, size, remove); each chip has
+its own state — preparing, ready, too large (with the limit), failed (with
+retry). Sending is allowed with chips still preparing (they are held) and
+refused while any chip is failed. A thumbnail in the timeline row opens a
+full-screen viewer with a close button; a file chip is not tappable, because the
+phone has no way to open a Host file.
+
+**Native permissions.** Picking needs no permission; taking a photo needs the
+camera, and reading the library needs the photo library. Both usage strings are
+added to `Info.plist` and the Android manifest equivalent, and the existing
+native-config test learns about them. A refused permission is reported where the
+sheet opened, with a link to the system settings — never as a silent no-op.
+
+### 15.5 S6 additions
+
+Baseline is §8.7. Three additions, all of them consequences of what the client
+can now do:
+
+- **Answers are Markdown** (already implemented, `#108`): fenced code in a
+  monospace block that scrolls horizontally inside its own box, with a copy
+  button; GFM tables inside a horizontally scrollable wrapper; inline code,
+  links (http/https/mailto only), lists, quotes, headings. A partially streamed
+  answer renders what has arrived, including an unterminated code fence — the
+  reader is watching work in progress, not reading a document. No raw HTML, no
+  remote images.
+- **A truncated item says so** (implemented with the transcript window read): the
+  Host caps one field at 64 Ki characters and marks the cut in the text itself;
+  the row carries a "Shortened" chip and the copy button copies what is shown.
+- **The composer names the model and the mode** it will send with: two small
+  labels above the field ("Claude Sonnet 5 · agent"), tappable to open S6a. This
+  is the only place a user is reminded that the phone is driving a real model,
+  so it does not hide behind a menu.
+
+### 15.6 S6a Session info sheet
+
+A sheet, not a screen: the reader is looking at a conversation and wants one
+fact or one change, then to be back.
+
+- Header: the session title, with a rename affordance (pencil) for a
+  `controller` device. Renaming is a field plus Done; a refused rename shows the
+  Host's reason inline and keeps the typed text.
+- Rows: computer (label), model (opens the same model list as S5a — `controller`
+  only, and only while idle; a running turn shows the current model with the
+  reason it cannot change), thinking level (the new model's levels), mode
+  (agent/plan/goal), permission mode (ask/accept-edits/auto), messages, created,
+  and the session id with a copy button for support.
+- Foot: "Done".
+- Every edit is a `session/configure` (or `session/rename`) round trip; nothing
+  is applied optimistically, and the sheet keeps the previous value visible
+  until the Host answers.
+
+### 15.7 S8 Settings
+
+The client's fourth tab, reachable from S4's trailing icon (not a tab bar — the
+phone has three working surfaces and a tab bar would imply a fourth that does
+nothing most of the time).
+
+- **Account** — signed in with a Minih account, or not; "Sign out" revokes the
+  account session only (§11.5) and leaves device tokens alone. No key or token
+  is ever displayed.
+- **Computers and devices** — one row per paired computer: label, last used,
+  this-device marker, "Forget this computer" (which unregisters push first,
+  existing `forget.ts`), and "Add a computer" → S1.
+- **Notifications** — push registration state ("On", "Not allowed", "This
+  Gateway has no push configured"), a button to open the system settings when
+  permission was refused, and a note that the notification text never carries
+  conversation content.
+- **Appearance** — System / Light / Dark, applied immediately.
+- **About** — build version, the Gateway origin, and the client version line
+  already shown on S4.
+
+Empty: nothing paired — one line and a button back to S1. States: every row that
+calls the Host can fail, and fails in place with its reason.
+
+### 15.8 Prototype
+
+`apps/remote-web/design/prototype/index.html` gains: the new-session sheet with
+a populated model list, the composer's model/mode labels and attachment chips,
+a code block with a copy button and a table in a session, S6a, and S8. The
+prototype stays a single file with simulated data, opened directly, and it is
+the visual reference for implementation until the screens ship.
+
+### 15.9 Implementation order and what it costs
+
+| Step | Scope | Contract work | Exit |
+|---|---|---|---|
+| R7-1 | S5a + `model/list` + session model fields + S6a | shared schemas and route table, racp handler, both Host catalogs, Gateway forwarding test, ADR amendment | A session can be started on a chosen model, and its model can be read and changed while idle |
+| R7-2 | Attachments step 1 (inline) + composer chips + timeline viewer | capability advertisement, `turn/start` attachment path, MIME and size validation, session-scoped storage and cleanup, iOS/Android usage strings | A photo or a small text file can be sent from the phone |
+| R7-3 | S8 + S5 search + S6 Markdown copy button | none | Settings reachable; the list searchable |
+| R7-4 | Attachments step 2 (chunked through the Gateway) | `attachment/create` + `attachment/complete`, upload route, Host link chunking | A file larger than a frame can be sent |
+
+Each step is its own change, keeps the client buildable, and lands with tests at
+the level of the risk: contract tests for the schemas and routes, Host tests for
+the model catalog and the attachment validation (including a refused MIME, an
+oversized payload, and a path masquerading as an attachment), client tests for
+the choosers and chips, and `pnpm test:e2e:remote-web` for the two screens that
+gain a real user path.
+
+### 15.10 Decisions (resolved 2026-10-21)
+
+The owner approved all three recommendations on 2026-10-21 and authorised
+implementation. They are decisions now, not questions.
+
+| ID | Question | Decision |
+|---|---|---|
+| R7-1 | Model chooser scope | The phone may both choose a model when starting a session **and** change an existing session's model, the latter only while the session is idle (`AGENT_BUSY` otherwise, the same rule the desktop applies) |
+| R7-2 | Attachment scope | Step 1 only, for now: inline images and text under the request budget, no Gateway upload route, no chunking. Step 2 stays designed and unscheduled |
+| R7-3 | Where settings live | A fourth screen (S8) behind S4's trailing icon, because notifications and appearance do not belong to one computer |
+
+### 15.11 Tool calls read as actions, not output
+
+The phone drew every tool call as its own bordered card: a 44 px row with the
+state icon, the raw tool name in Mono, and one truncated line of the tool's own
+output. A dozen consecutive calls became a dozen near-identical cards — the
+widest, tallest, least informative content on a screen that only shows a handful
+of rows at a time. The output is what a reader opens deliberately, not what a
+row should be made of.
+
+Rules, and they are the desktop transcript's rules rather than a second set:
+
+- **One classification, one summary, one burst sentence.** They live in
+  `packages/shared/src/tool-presentation.ts`, which the desktop transcript also
+  imports (`toolIconCategory`, `getToolSummary`, `describeToolRun`,
+  `groupConsecutiveToolRuns`). A call reads the same on both clients by
+  construction, not by convention.
+- **A row is a category icon, the tool's short name, one line of what it acted
+  on, and its state.** No raw output. The category drives the icon (read, list,
+  search, write, edit, command, web, subagent, plan), so a reader recognizes the
+  kind of work before reading the words.
+- **Consecutive calls fold into one row.** Collapsed it says what the burst did,
+  one clause per kind of work, at most three clauses so the line cannot wrap
+  ("4 commands, 2 files edited, 1 file written"), plus a failure count when any.
+  Expanded it lists each call as a row above; expanding one of those shows that
+  call's output. Two taps is the depth: "what happened here", then "show me that
+  one".
+- **A burst of one call is a plain row**, not a fold with one child.
+- **All of it is localized.** The clause keys and the failure count are catalog
+  entries in the nine shipped locales; no sentence is assembled from English
+  fragments.
+
+Acceptance: at 390×844, a twelve-call burst that occupied 14 rows and 827 px of
+timeline occupies 3 rows and 161 px, with no horizontal page scroll, and the
+expanded rows keep their per-call summaries. The before/after screenshot pair is
+the evidence; the shared rules are covered by
+`packages/shared/src/tool-presentation.test.ts` and the desktop's existing
+`tool-display`, `tool-identity` and `tool-presentation` suites (unchanged, which
+is what proves the extraction was behaviour-preserving).

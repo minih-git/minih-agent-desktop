@@ -550,6 +550,7 @@ to this same catalog.
 | `connection/ping` | authenticated | Return connection health and server time |
 | `host/list` | authenticated | List Hosts visible to the principal; Gateway deployments only |
 | `project/list` | viewer | List projects the principal may create sessions under |
+| `model/list` | viewer | List the models the principal may start a session on (§16.1) |
 | `session/list` | viewer | List sessions visible to the principal |
 | `session/get` | viewer | Return metadata and current state |
 | `session/create` | controller | Create a session under an authorized project id |
@@ -2073,3 +2074,83 @@ on the same session: the largest field in a 100-item page is 63,626 characters
 and only one item reaches the cap, while 16 KiB saves a further 0.34 MB per
 page at the cost of truncating several ordinary tool results. The budget stays
 at 64 Ki.
+
+## 16. R7 additions (§16.1 implemented; §16.2 still proposed)
+
+§16.1 (`model/list`) was approved on 2026-10-21 and is implemented; the
+normative catalog in §6.1 and the HTTP route table carry it, and the amendment
+that records the decision is
+[ADR `remote-control-router-account-binding` amendment 2](../../adr/remote-control-router-account-binding.md).
+§16.2 (attachments beyond the inline case) remains a proposal: nothing below it
+exists in code.
+
+### 16.1 `model/list` — the catalog a remote device may choose from
+
+`session/create` and `session/configure` already accept `providerId`,
+`modelId`, and `thinkingLevel`, but no operation lets a client learn the valid
+values, so a phone can neither offer a choice nor name the model a session runs
+on.
+
+Implemented: the operation `model/list`, role `viewer`, `GET /v1/models` in
+the RACP-HTTP route table, parameters none, response
+`{ models: ModelSummary[] }`:
+
+```ts
+type ModelSummary = {
+  providerId: string;
+  providerLabel: string;
+  modelId: string;
+  label: string;
+  thinkingLevels: string[];
+  defaultThinkingLevel?: string;
+  supportsImages: boolean;
+  isDefault: boolean;
+};
+```
+
+Requirements, in the order they bind:
+
+- The response MUST be metadata only. No credential, API key, base URL, proxy,
+  header value, or price may appear; a Host that cannot describe a model without
+  one of those omits the model.
+- `RacpSession` (§5.1) gains optional `providerId`, `modelId`, `modelLabel`,
+  and `thinkingLevel`. Optional and additive: a Host that sends none still
+  produces a valid session.
+- `session/configure` keeps its existing shape; changing the model of a session
+  with a running turn is `AGENT_BUSY`, the same rule the desktop applies.
+- The Gateway needs no new code (it validates against `RACP_OPERATIONS` and the
+  shared route table) but MUST have a test proving `GET /v1/models` is
+  forwarded like every other declared route.
+
+### 16.2 Attachments — the §10 flow, in two steps
+
+§10 already defines the flow and §12 the limits; no Host implements either, so
+`attachment/create`, `attachment/complete`, and `turn/start` with attachments
+are unavailable today.
+
+Step 1 (proposed first, and sufficient for what a phone sends):
+
+- Inline `turn/start` attachments, bounded by `maxPromptBytes` (256 KiB for the
+  whole request, so far under `maxFrameBytes`). A Host advertising `attachments`
+  advertises the inline budget it enforces.
+- The Host validates the bytes, not the claim: PNG, JPEG, WebP, GIF, and UTF-8
+  text only; a declared MIME type that disagrees with the content is refused.
+  SVG is refused in step 1.
+- The Host stores the bytes in session-scoped attachment storage and passes the
+  runtime its existing on-disk attachment form. Storage is removed with the
+  session, and unreferenced bytes are swept like the Host's other scratch data.
+- A path, `file://` URL, or arbitrary URL in place of an upload stays forbidden
+  (§10), including as an "already on my computer" reference.
+
+Step 2 (proposed second): the same §10 flow with a Gateway-served, single-use,
+time-bounded upload target, `attachment/complete` verifying size and SHA-256,
+bytes crossing the Host link in 256 KiB chunks, and the serving proxy's body
+limit (`client_max_body_size`, 10 MiB on the reference deployment) as the real
+per-file ceiling rather than the protocol's 50 MiB maximum.
+
+### 16.3 What does not change
+
+Roles (`viewer` reads, `controller` writes and creates), the session-scoped and
+host-scoped event model, cursors and replay, snapshot composition, the
+permission ceiling for gateway-origin principals, and the approval lifetime
+policy are all untouched by this proposal.

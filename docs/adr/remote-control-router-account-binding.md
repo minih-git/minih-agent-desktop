@@ -347,3 +347,64 @@ Gateway uses to build its host-scoped forwarding.
   behavior change: a script that registered a directory outside the home
   directory must now pass a `--browse-root` that contains it. It is recorded in
   `apps/agent-host-cli/README.md` and in `docs/project/unreleased.md`.
+
+## Amendment 2 — the phone may choose what a session runs on (2026-10-21)
+
+Status: accepted. Scope: this decision's device surface, and the RACP operation
+catalog it is validated against.
+
+### Context
+
+Amendment 1 let a phone start work, but not choose what that work runs on:
+`session/create` accepts `providerId`, `modelId`, and `thinkingLevel`, and no
+operation let a client learn the valid values. A session could therefore only
+start on whatever the computer happened to default to, and a phone could not
+even name the model of a session it was watching. R7-1 of
+`docs/spec/04-ux/13-remote-mobile-client.md` §15.10 records the owner's
+decision, verbatim: the phone may choose a model when starting a session **and**
+change an existing session's model, the latter only while idle.
+
+### Decision
+
+One new read operation, `model/list`, role `viewer`, `GET /v1/models`:
+
+- It returns `RacpModelSummary[]`: `providerId`, `providerLabel`, `modelId`,
+  `label`, `thinkingLevels`, an optional `defaultThinkingLevel`,
+  `supportsImages`, and `isDefault`. **Metadata only** — no credential, API key,
+  base URL, proxy, header, or price. The projection lives in one place
+  (`packages/host-runtime/src/host-catalog-reads.ts`), so a field that must not
+  cross the boundary has one function to be removed from rather than two.
+- `RacpSession` gains optional `providerId`, `modelId`, `modelLabel`, and
+  `thinkingLevel`. Optional and additive: a Host that sends none still produces
+  a valid session, and a client hides the row.
+- Changing an existing session's model stays `session/configure` with
+  `providerId` + `modelId` (+ `thinkingLevel`), `controller` role. The Host
+  refuses it while a turn is running (`AGENT_BUSY`), the same rule the desktop
+  applies; the phone shows that reason instead of a control that would be
+  rejected.
+- Both Hosts implement the catalog — the desktop Host link and
+  `agent-host-cli` — over the same shared read. The Gateway needed no new code
+  because it validates against `RACP_OPERATIONS` and the shared route table, and
+  a test now proves `GET /v1/models` is forwarded like every other declared
+  route.
+
+Why `viewer` rather than `controller`: a read-only device already sees which
+model a session runs on, and a model list is not a capability. Choosing one
+still requires `controller`, because it creates work.
+
+### Rejected alternatives
+
+- **Return the raw `providers.list` rows.** They carry `baseUrl`, `headers`, and
+  `hasSecret`, i.e. exactly the machine's provider configuration. A projection is
+  the point, not an optimization.
+- **A phone-side model list.** It would drift from the Host's own catalog within
+  one provider release and offer models the Host cannot launch.
+- **Let the client pass a model key without a provider id.** Two providers can
+  advertise the same model id, and the Host resolves a launch by the pair.
+
+### Consequences
+
+A Host older than this amendment answers `CAPABILITY_UNAVAILABLE`, which the
+client treats as "no choice available" and creates the session on the Host's
+default: no version negotiation is needed and no client upgrade is required
+first.

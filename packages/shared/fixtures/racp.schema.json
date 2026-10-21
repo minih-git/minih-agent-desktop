@@ -50,6 +50,18 @@
       "workspaceLabel": {
         "type": "string"
       },
+      "providerId": {
+        "type": "string"
+      },
+      "modelId": {
+        "type": "string"
+      },
+      "modelLabel": {
+        "type": "string"
+      },
+      "thinkingLevel": {
+        "type": "string"
+      },
       "mode": {
         "anyOf": [
           {
@@ -140,6 +152,49 @@
       },
       "updatedAt": {
         "type": "string"
+      }
+    }
+  },
+  "ModelSummary": {
+    "type": "object",
+    "required": [
+      "providerId",
+      "providerLabel",
+      "modelId",
+      "label",
+      "thinkingLevels",
+      "supportsImages",
+      "isDefault"
+    ],
+    "properties": {
+      "providerId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "providerLabel": {
+        "type": "string"
+      },
+      "modelId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "label": {
+        "type": "string"
+      },
+      "thinkingLevels": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "defaultThinkingLevel": {
+        "type": "string"
+      },
+      "supportsImages": {
+        "type": "boolean"
+      },
+      "isDefault": {
+        "type": "boolean"
       }
     }
   },
@@ -546,6 +601,18 @@
             "type": "string"
           },
           "workspaceLabel": {
+            "type": "string"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "modelId": {
+            "type": "string"
+          },
+          "modelLabel": {
+            "type": "string"
+          },
+          "thinkingLevel": {
             "type": "string"
           },
           "mode": {
