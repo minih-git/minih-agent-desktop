@@ -1307,6 +1307,9 @@ type HostLinkFrame =
       signerCertificate: string; deviceToken?: string }
   | { link: "racp-hostlink.v1"; type: "device.revoke"; revoke: DeviceRevoke; signature: string;
       signerCertificate: string }
+  // Account mode, R8: notices the Gateway sends about the account's computers.
+  | { link: "racp-hostlink.v1"; type: "host.joined"; notice: HostJoined }
+  | { link: "racp-hostlink.v1"; type: "host.revoked"; revocation: HostRevoked }
 ```
 
 Rules:
@@ -1339,38 +1342,53 @@ Rules:
 5. Loss of the link closes every logical connection with a resumable cursor.
    The Host reconnects with bounded exponential backoff; local turns continue
    throughout.
-6. `host.capabilities`, `device.request`, `device.grant`, and `device.revoke`
-   exist for account mode only, and §11.5 defines what they carry. The Host
-   sends `host.capabilities` on every link as soon as it is up, and the Gateway
-   MUST NOT send a `device.request` or a relayed `device.grant` to a Host that
-   has not announced the matching capability: a Host that predates these frames
-   ignores an unknown `type` silently, so a frame sent to it would leave the
-   client waiting forever. Unknown capability strings are ignored by the reader,
-   so a newer Host may advertise more than an older Gateway understands. A
-   malformed frame and an unknown `type` are dropped without closing the link,
-   in both directions.
+6. `host.capabilities`, `device.request`, `device.grant`, `device.revoke`,
+   `host.joined`, and `host.revoked` exist for account mode only, and §11.5
+   defines what they carry. The Host sends `host.capabilities` on every link as
+   soon as it is up, and the Gateway MUST NOT send a `device.request`, a relayed
+   `device.grant`, or one of the two notices to a Host that has not announced
+   the matching capability: a Host that predates these frames ignores an
+   unknown `type` silently, so a frame sent to it would leave the client waiting
+   forever. `host.joined` and `host.revoked` are information and revocation
+   only — neither grants anything — so a Host that cannot use one drops it and
+   keeps its link. Unknown capability strings are ignored by the reader, so a
+   newer Host may advertise more than an older Gateway understands. A malformed
+   frame and an unknown `type` are dropped without closing the link, in both
+   directions.
 
-7. **Desktop-class devices and the sibling-desktop route (planned, R8; ADR
-   `remote-control-router-account-binding` amendment 3).** `device.request` and
+7. **Desktop-class devices and the sibling-desktop route (R8; ADR
+   `remote-control-router-account-binding` amendment 3; contract, Gateway, and
+   Host verification implemented, desktop Host surfaces not).** `device.request` and
    the account login/device bodies gain `client: "desktop"` beside `web` /
    `ios` / `android`. A desktop request also carries `hostProof`: the
-   applicant's `hostId`, the request's `nonce`, and a signature over
+   applicant's `hostId`, the request's `nonce`, a signature over
    `{requestId, nonce, applicantHostId, accountId, expiresAt}` made with the
-   private key of the Host certificate this Gateway issued to that computer.
-   The nonce is minted by the Gateway when it creates the device request, is
-   single-use, and expires with the request; a Host refuses a proof whose nonce
-   it has already seen or whose `expiresAt` has passed. **The target Host
-   verifies the proof itself** — chain to its own pinned Gateway CA, the
-   `OU=account:<accountId>` binding against the account of the request, the
-   signature, and the freshness — and checks its own "allow same-account
-   computers to join automatically" switch before it admits the device with
-   `owner`. The Gateway may pre-check and fast-reject but is never the
-   authorization: a Host link frame that claims an admission the Host has not
-   verified is refused. A sibling `device.grant` for a desktop-class device is
-   re-verified by every Host that receives it, together with its own switch; a
-   Host whose switch is off, or that is in strict mode, does not adopt it as a
-   desktop-class device and falls back to asking its own user. A verified
-   desktop request whose target computer advertises `device.desktop-auto` and
+   private key of the Host certificate this Gateway issued to that computer,
+   and that certificate itself. The nonce is minted by the Gateway when it
+   creates the device request, is single-use, and expires with the request; a
+   Host refuses a proof whose nonce it has already seen or whose `expiresAt`
+   has passed. **The target Host verifies the proof itself** — chain to its
+   own pinned Gateway CA, the `OU=account:<accountId>` binding against the
+   account of the request, the signature, and the freshness — and checks its
+   own "allow same-account computers to join automatically" switch before it
+   admits the device with `owner`. The proof carries the certificate because
+   the target Host has no other way to obtain it — the Gateway is the only
+   party that saw it at enrollment — and presenting it is the same shape as
+   TLS client authentication: the integrity comes from the chain verifying to
+   the CA this Host already pins and from the account and `hostId` in the
+   certificate matching the request, not from the Gateway being honest. The
+   Gateway may pre-check and fast-reject but is never the authorization: a
+   Host link frame that claims an admission the Host has not verified is
+   refused. A sibling `device.grant` for a desktop-class device is re-verified
+   by every Host that receives it, together with its own switch; a Host whose
+   switch is off, or that is in strict mode, does not adopt it as a
+   desktop-class device and falls back to asking its own user. A sibling judges
+   the proof's freshness as of the grant, not as of the moment it reads the
+   frame: it requires `issuedAt` not after the request's `expiresAt` and not
+   beyond a small clock tolerance into its own future, and checks only
+   `deliverUntil` against the present, so a computer that was offline while the
+   request lived still adopts the device. A verified desktop request whose
+   target computer advertises `device.desktop-auto` and
    has automatic admission on is granted without a human answer. Without the
    capability the Gateway MUST NOT send the new frames — an old Host drops an
    unknown `type` silently (rule 6) — and the requesting desktop reports that
@@ -1387,10 +1405,13 @@ Rules:
    buffered without bound, so the resume-by-cursor rule still holds. Phones keep
    `RACP-HTTP` + SSE unchanged; this route's refusal statuses and WebSocket
    close codes are in §11.2. The WebSocket route itself is implemented
-   (rollout R8 package B, tested in `apps/remote-gateway/src/client-ws.test.ts`);
-   the desktop-class device parts of this rule — the `desktop` client class,
-   `hostProof`, `device.desktop-auto`, and the automatic admission that follows —
-   are not.
+   (rollout R8 package B, tested in `apps/remote-gateway/src/client-ws.test.ts`),
+   and so are the desktop-class device parts of this rule — the `desktop` client
+   class, `hostProof` with its certificate, `device.desktop-auto`, and the
+   automatic admission that follows (rollout R8 package C, tested in
+   `apps/remote-gateway/src/device-requests.test.ts` and
+   `packages/racp/src/host-devices.test.ts`). The desktop Host surfaces that use
+   them are rollout R8 packages D–F.
 
 Enrollment and pairing run against the same listener:
 
@@ -1827,17 +1848,29 @@ written.
   answers the uniform `UNAUTHORIZED` of §13 instead, so a listing or a routing
   attempt never discloses another account's Hosts.
 
-- **Desktop-class devices (planned, R8).** A device granted to a
+- **Desktop-class devices (R8; contract, Gateway, and Host verification
+  implemented, desktop Host surfaces not).** A device granted to a
   `client: "desktop"` request whose proof the target Host itself verified is a
   desktop-class device: it holds `owner`, is exempt from the remote permission
   ceiling exactly like an SSH-paired desktop device, and reaches the Host over
-  the WebSocket route above. Admission is automatic when the target computer
+  the WebSocket route above. The device record keeps the class it was admitted
+  under and the `applicantHostId` whose proof admitted it — both optional, so a
+  record written before they existed reads and behaves exactly as before — and
+  `owner` follows that certificate: revoking the computer on the Gateway
+  (`host.revoked`) revokes the desktop devices it admitted on every computer of
+  the account, including one that was offline and applies the notice when its
+  link comes up. Admission is automatic when the target computer
   advertises `device.desktop-auto` and its "allow same-account computers to
   join automatically" switch is on (default on); with the switch off, or in
   strict mode, the request falls back to the ordinary confirmation of this
   section and the device is not adopted as desktop-class. A sibling grant for
   such a device is re-verified by every receiving Host, together with its own
-  switch, before it adopts the device with `owner`. The Gateway verifies
+  switch, before it adopts the device with `owner`; the sibling judges the
+  proof's freshness as of the grant (`issuedAt` not after the request's
+  `expiresAt`, and not in its own future beyond a small clock tolerance) and
+  checks only `deliverUntil` against the present, so a computer that was
+  offline while the five-minute request lived still adopts a grant that stays
+  deliverable for a day. The Gateway verifies
   nothing on the Host's behalf: it may pre-check and fast-reject, but a Host
   link frame that claims an admission the Host has not verified is refused.
   Every new Host enrollment notifies the account's other Hosts ("a new

@@ -896,15 +896,24 @@ type ModelSummary = {
 
 - **桌面类设备与兄弟桌面路由。** `device.request` 与账户登录／设备请求的 body 在
   `web` / `ios` / `android` 之外新增 `client: "desktop"`。桌面类请求还带 `hostProof`：
-  申请方 `hostId`、Gateway 为本次请求签发的一次性 nonce，以及用本 Gateway 签发给该电脑的
-  Host 证书私钥、对 `{requestId, nonce, applicantHostId, accountId, expiresAt}` 的签名。
-  nonce 由 Gateway 在创建设备请求时签发，一次性使用、随请求过期；Host 拒绝已用过或已过期
-  的 nonce。**由目标 Host 自己校验**：证书链到它固定的 Gateway CA、`OU=account:<accountId>`
-  与本账号一致、签名正确、时效有效；Gateway 的预检只是快速拒绝，绝不是授权依据。
+  申请方 `hostId`、Gateway 为本次请求签发的一次性 nonce、用本 Gateway 签发给该电脑的
+  Host 证书私钥对 `{requestId, nonce, applicantHostId, accountId, expiresAt}` 的签名，
+  以及**该申请方证书本身**。nonce 由 Gateway 在创建设备请求时签发，一次性使用、随请求过期；
+  Host 拒绝已用过或已过期的 nonce。**由目标 Host 自己校验**：证书链到它固定的 Gateway CA、
+  `OU=account:<accountId>` 与本账号一致、证书里的 `hostId` 与申请方一致、签名正确、时效有效；
+  Gateway 的预检只是快速拒绝，绝不是授权依据。证明必须携带证书，因为目标 Host 没有别的途径
+  拿到它（只有 Gateway 在注册时见过），这与 TLS 客户端出示证书是同一形状：可信性来自证书链
+  能验到本机已固定的 CA、以及证书里的账号与 `hostId` 与请求一致，而不是来自 Gateway 诚实。
+  Gateway 持有该 CA 私钥，因此被攻破的 Gateway 能为不存在的电脑签发证书——这正是 D666
+  「Accepted risk」已记录的「CA 被攻破」风险，不是新增风险，缓解手段也相同。
 - **自动授予。** 证明经目标 Host 校验、且该 Host 声明 `device.desktop-auto`、其
   「允许同账号电脑自动接入」开关打开（默认开）时无需人工确认即授予，设备持有 `owner`；
   开关关闭或处于 strict mode 时回落到 §11.5 既有的逐设备确认，且不按桌面类采纳。兄弟
   `device.grant` 由每台接收的 Host 重新校验证明并检查自己的开关后才以 `owner` 采纳。
+  兄弟判断的是**授予时刻**的新鲜度而非当前时刻：请求只活 5 分钟而 grant 可投递 24 小时，
+  否则授予时离线的那台电脑永远无法采纳（D666 决策 6 要求它能采纳）。具体是要求
+  `issuedAt` 不晚于请求的 `expiresAt`、也不超出本机时钟容差地晚于当前时间，当前时间只用来
+  判断 `deliverUntil`；审批方 Host 仍按自己的时钟判断它收到的证明，不变。
   目标电脑未声明该能力时，Gateway 绝不发送新帧（旧 Host 会静默丢弃未知 `type`），申请方把
   该电脑报告为「需要升级」。
 - **WebSocket 客户端路由。** 桌面类设备经 `GET /v1/hosts/{hostId}/ws` 使用 `RACP-WS`，
@@ -927,12 +936,19 @@ type ModelSummary = {
   审批。Gateway 无法读成 JSON-RPC 的帧原样转发，由 Host 判定。这条连接带 §11.1 心跳：
   Gateway 每 30 秒 ping 一次，不应答的客户端被丢弃，所以变成半开的 socket（电脑睡眠、
   切换网络）不会继续占着 Host 侧的逻辑连接，也不会继续占着设备四条中继连接中的一个。
-  该路由本身已实现
-  （rollout R8 工作包 B，测试见 `apps/remote-gateway/src/client-ws.test.ts`）；本条中
-  桌面类设备的部分（`desktop` 类别、`hostProof`、`device.desktop-auto` 与随之而来的
-  自动授予）尚未实现。
+  该路由本身已实现（rollout R8 工作包 B，测试见
+  `apps/remote-gateway/src/client-ws.test.ts`），本条中的桌面类设备部分（`desktop`
+  类别、携带证书的 `hostProof`、`device.desktop-auto` 与随之而来的自动授予）也已实现
+  （工作包 C，测试见 `apps/remote-gateway/src/device-requests.test.ts` 与
+  `packages/racp/src/host-devices.test.ts`）；使用它们的是桌面 Host 侧的工作包 D–F。
 - **角色与操作。** 桌面类设备持有 `owner`，与 SSH 配对的桌面设备同级、豁免远程权限上限
-  （ADR 0331 网关来源限制的唯一例外，已记录在该 ADR）；`owner` 依附于申请方的证书。
+  （ADR 0331 网关来源限制的唯一例外，已记录在该 ADR）；`owner` 依附于申请方的证书：设备
+  记录会保存它被采纳时的类别与申请方 `applicantHostId`（两者均为可选字段，旧记录没有它们，
+  读取行为与以前完全一致），那台电脑的 Host 证书被吊销时，它接入的设备一并失去 `owner`。
+  只有 Gateway 能看到 Host 吊销，因此由它通知账号内其他电脑（`host.revoked` 帧，只发给声明
+  了 `device.desktop-auto` 的 Host；离线的那台重连后补发），收到的一方吊销
+  `applicantHostId` 等于该电脑的桌面类设备。该帧不需要 Host 签名，因为它只做收权：伪造它
+  最坏的结果是错误吊销一个本来还能用的设备，不会扩大权限。
   手机／浏览器设备仍是 `viewer` / `controller` / `approver`、`pairedDevice: false`、
   始终受上限约束、不给 `allow-session`。桌面 Host 逐项决定开放哪些桌面操作，未开放的对
   两类设备都仍返回 `FORBIDDEN`。每次自动接入都会像人工确认那样产生「新设备」通知与审计

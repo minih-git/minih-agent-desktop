@@ -486,11 +486,15 @@ Scope notes:
 - the WebSocket route authenticates with the device token in the header profile
   (a browser cannot set that header on a WebSocket and keeps `RACP-HTTP` + SSE)
   and reuses the existing hash fast-reject, rate limit, and audit; it is a
-  transport, not a second authorization path. **Package B is implemented**;
-  the other packages are not;
+  transport, not a second authorization path. **Packages B and C are
+  implemented**; the other packages are not;
 - automatic admission is refused, never silently ignored, when the proof is
   missing, when its nonce was reused or expired, or when the target computer
   does not advertise `device.desktop-auto`;
+- the proof carries the applicant's certificate and the target Host chains it to
+  its own pinned Gateway CA: a target Host has no other way to obtain that
+  certificate, and its integrity rests on the chain plus the account and
+  `hostId` binding, not on the Gateway being honest;
 - the proof is verified by the target Host itself, with the Gateway's check as a
   fast reject only: a compromised Gateway must not be able to mint an `owner`
   device on its own (ADR 0331's "the Gateway never decides an approval");
@@ -516,7 +520,9 @@ Exit criteria:
 2. Security gates 25, 27, and 35 are signed off: a phone still never receives
    `owner`, an explicitly disabled switch stays off, a desktop device without a
    Host-verified proof (or with a reused or expired nonce) is refused automatic
-   admission, and a new Host enrollment notifies the account's other computers.
+   admission, a computer that was offline when the device was admitted adopts it
+   on reconnect, a revoked computer's desktop devices lose their standing
+   elsewhere, and a new Host enrollment notifies the account's other computers.
 3. The P0 measurement is re-run and P7 is chosen from its numbers, not from the
    plan's assumptions. On the P0 evidence, P7 keeps only the confirmed item —
    bounded-parallel session attach plus paged `session/history` on open and

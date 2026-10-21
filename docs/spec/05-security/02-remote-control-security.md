@@ -375,20 +375,38 @@ authentication input also carries the connection origin: the loopback
 - **Planned (R8, ADR `remote-control-router-account-binding` amendment 3):
   desktop-class devices are owners.** A device admitted through account mode
   with a proof **the target Host itself verifies** (a `desktop` device request
-  carrying the request's nonce and a signature over
+  carrying the request's nonce, a signature over
   `{requestId, nonce, applicantHostId, accountId, expiresAt}` by the private
-  key of a certificate this Gateway issued to a computer of the same account)
-  is treated like an SSH-paired desktop device: it holds `owner` and is exempt
-  from the remote permission ceiling. This is the only way a gateway-origin
-  principal may hold `owner`; the proof is the condition, not the client class.
-  The Gateway may pre-check and fast-reject, but it is never the authorization
-  — a Host must not grant `owner` on a frame whose proof it has not verified
-  itself, because the Gateway never decides an approval (ADR 0331). A proof
-  whose nonce was already used or whose deadline passed is refused. `owner`
-  follows the applicant's certificate: revoking that Host certificate removes
-  the `owner` standing of the devices it admitted. A device without proof
-  keeps the phone rules of this section unchanged, and the desktop Host still
-  decides per operation which desktop operations it opens.
+  key of a certificate this Gateway issued to a computer of the same account,
+  and that certificate itself) is treated like an SSH-paired desktop device: it
+  holds `owner` and is exempt from the remote permission ceiling. This is the
+  only way a gateway-origin principal may hold `owner`; the proof is the
+  condition, not the client class. The proof carries the certificate because
+  the target Host has no other way to obtain it — only the Gateway saw it at
+  enrollment — and presenting it is the same shape as TLS client
+  authentication: what makes it trustworthy is the chain verifying to the CA
+  this Host already pins plus the account and `hostId` in the certificate
+  matching the request, not the Gateway's honesty. The Gateway does hold that
+  CA's private key, so a compromised Gateway can mint a certificate for a
+  computer that does not exist; that is the "compromised Gateway CA" risk D666
+  records, unchanged, and it is bounded by the same mitigations. The Gateway
+  may pre-check and fast-reject, but it is never the authorization — a Host
+  must not grant `owner` on a frame whose proof it has not verified itself,
+  because the Gateway never decides an approval (ADR 0331). A proof whose nonce
+  was already used or whose deadline passed is refused. The device record keeps
+  the class it was admitted under and the `applicantHostId` whose proof admitted
+  it, both optional and absent on every older record, so a store written before
+  this exists reads and behaves exactly as before. `owner` follows the
+  applicant's certificate: revoking that Host certificate removes the `owner`
+  standing of the devices it admitted. Because only the Gateway observes that
+  revocation, it tells the account's other computers (`host.revoked`, only to a
+  Host that advertises `device.desktop-auto`, stored and re-offered to one that
+  was offline), and each of them revokes the desktop devices whose applicant is
+  that computer. That frame needs no Host signature and is safe to trust
+  because it only ever removes authority: the worst a forged one achieves is
+  revoking a device that would otherwise keep working, never widening access. A
+  device without proof keeps the phone rules of this section unchanged, and the
+  desktop Host still decides per operation which desktop operations it opens.
 - Revocation on either the Gateway or the Host denies new connections and
   closes existing relayed logical connections within 5 seconds.
 
@@ -1032,16 +1050,27 @@ separate, explicitly specified credential-management capability is added.
     own pinned Gateway CA, the account binding, the signature over the request
     payload, and an unused, unexpired nonce — and only while that Host's own
     automatic-admission switch is on; the Gateway's pre-check is never the
-    authorization. A request without a valid proof, a proof whose nonce was
+    authorization. The proof carries the applicant's certificate, and a Host
+    that cannot chain it to its pinned CA, or whose certificate names another
+    account or another `hostId`, refuses it: presenting the certificate is what
+    lets a target Host verify a computer it has never talked to, and its
+    integrity rests on that chain and binding rather than on the Gateway. A
+    request without a valid proof, a proof whose nonce was
     already used or whose deadline passed, a phone or browser device, a Host in
     strict mode, and a target computer that has not announced
     `device.desktop-auto` are all refused or fall back to the per-device
     confirmation, never admitted silently. Every new Host enrollment notifies
     the account's other computers and is audited, and every automatic admission
-    produces a device notice and an audit record. A phone or browser device
-    still never holds `owner` and never leaves the remote permission ceiling.
-    Applies from R8 (D675, ADR `remote-control-router-account-binding`
-    amendment 3).
+    produces a device notice and an audit record. A sibling Host re-verifies the
+    grant's proof itself and judges its freshness as of the grant, not as of the
+    moment it reads the frame, so a computer that was offline while the request
+    lived still adopts the device; a grant past its own delivery window, or one
+    whose `issuedAt` is after its request's `expiresAt`, is refused. A revoked
+    Host cascades: the account's other computers revoke the desktop devices that
+    computer's proof admitted, and a `host.revoked` frame only ever removes
+    authority. A phone or browser device still never holds `owner` and never
+    leaves the remote permission ceiling. Applies from R8 (D675, ADR
+    `remote-control-router-account-binding` amendment 3).
 
 ## 13. Amendment history
 
@@ -1105,9 +1134,15 @@ unchanged.
 D675 (2026-10-21, ADR `remote-control-router-account-binding` amendment 3) adds
 the desktop-class device: §3.7 records that a device admitted with a verified
 Host-certificate proof holds `owner` and is exempt from the remote permission
-ceiling, as the only way a gateway-origin principal may hold `owner`; §3.8
-records automatic admission of a same-account computer with its per-computer
-switch, the `device.desktop-auto` capability gate, and the account-mode default
-of the remote-control switch; gate 27 is restated for "never chosen" versus
-"explicitly disabled", and gate 35 covers the proof and the refusals. Phones,
-browsers, the self-hosted flow, and gates 25, 26, and 28 are unchanged.
+ceiling, as the only way a gateway-origin principal may hold `owner`; that the
+proof carries the applicant's certificate and the target Host chains it to its
+own pinned Gateway CA; that the device record keeps the class and the
+`applicantHostId` as optional fields; and that a revoked Host cascades to the
+desktop devices its proof admitted, through a `host.revoked` frame that only
+removes authority. §3.8 records automatic admission of a same-account computer
+with its per-computer switch, the `device.desktop-auto` capability gate, and the
+account-mode default of the remote-control switch; gate 27 is restated for
+"never chosen" versus "explicitly disabled", and gate 35 covers the proof, the
+certificate chain and binding, the freshness at grant time that lets an offline
+sibling adopt a device, and the refusals. Phones, browsers, the self-hosted
+flow, and gates 25, 26, and 28 are unchanged.

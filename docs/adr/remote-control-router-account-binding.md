@@ -415,8 +415,10 @@ Status: accepted for implementation. Scope: this decision's account-mode device
 surface, the Host link frames of protocol §11.4/§11.5, the desktop's account-mode
 defaults, and — for the proven desktop-class device only — the gateway-origin
 restrictions of [ADR 0331](0331-self-hosted-gateway-and-mobile-client.md), whose
-"Device origin" section records the exception. Nothing here is implemented yet:
-this amendment records the target design, and rollout R8 delivers it.
+"Device origin" section records the exception. The contract, the Gateway's
+proof minting and relays, and the Host's own proof verification with automatic
+admission are implemented (rollout R8 packages A–C); the desktop Host surfaces
+of packages D–F are not.
 
 ### Context
 
@@ -443,21 +445,34 @@ certificate proves it. This amendment lets a computer say so, and join.
    is asking to reach its siblings, not a phone.
 2. **Proof, not just a key — and the target Host verifies it.** A desktop
    request carries `hostProof`: the applicant's `hostId`, the request's
-   `nonce`, and a signature made with the private key of the Host certificate
-   this Gateway issued to that computer. The signature covers
-   `{requestId, nonce, applicantHostId, accountId, expiresAt}`. The nonce is
-   minted by the Gateway when it creates the device request, is single-use, and
-   is short-lived (its exact lifetime is chosen at implementation and is
-   bounded by the request's own `expiresAt`); a Host refuses a proof whose
-   nonce it has already seen or whose `expiresAt` has passed. **Every target
-   Host verifies the proof itself** — the certificate chain to its own pinned
+   `nonce`, a signature made with the private key of the Host certificate this
+   Gateway issued to that computer, and that certificate itself. The signature
+   covers `{requestId, nonce, applicantHostId, accountId, expiresAt}`. The nonce
+   is minted by the Gateway when it creates the device request, is single-use,
+   and is short-lived (its exact lifetime is chosen at implementation and is
+   bounded by the request's own `expiresAt`); a Host refuses a proof whose nonce
+   it has already seen or whose `expiresAt` has passed. **Every target Host
+   verifies the proof itself** — the certificate chain to its own pinned
    Gateway CA, the `OU=account:<accountId>` binding against the account of the
    request, the signature over the canonical payload, and the freshness — and
    checks its own "allow same-account computers to join automatically" switch.
-   The Gateway may pre-check and fast-reject, but it is not the authorization:
-   ADR 0331's rule that the Gateway never decides an approval still holds, so a
-   compromised Gateway must not be able to mint an `owner` device on its own.
-   An AccessKey alone proves an account, never a computer.
+   The proof carries the applicant's certificate because the target Host has no
+   other way to obtain it: the Gateway is the only party that saw that
+   certificate at enrollment, and a proof that merely named a `hostId` would
+   have to take the Gateway's word for the key behind it. Presenting the
+   certificate is the same shape as TLS client authentication, and its
+   integrity does not depend on the Gateway being honest — it depends on the
+   chain verifying to the CA this Host already pins and on the account and
+   `hostId` in the certificate matching the request. The Gateway does hold that
+   CA's private key, so a compromised Gateway can mint a certificate for a
+   computer that does not exist; that is the "compromised Gateway CA" risk
+   D666's Accepted risk already records, not a new one, and the mitigations
+   there (enrollment notices, audit records, `hosts revoke`, per-computer
+   switch, strict mode) are what bound it. The Gateway may pre-check and
+   fast-reject, but it is not the authorization: ADR 0331's rule that the
+   Gateway never decides an approval still holds, so a compromised Gateway must
+   not be able to mint an `owner` device on its own. An AccessKey alone proves
+   an account, never a computer.
 3. **Automatic admission, per computer, on by default.** A desktop request
    whose proof the target Host verifies is admitted without a human answer,
    provided that Host has "allow same-account computers to join automatically"
@@ -469,7 +484,15 @@ certificate proves it. This amendment lets a computer say so, and join.
    of the account, that Host re-verifies the proof and checks its own switch
    before adopting the device with `owner`; a Host whose switch is off, or that
    is in strict mode, adopts it as a phone-grade device at most, or asks its own
-   user.
+   user. A sibling judges the proof's freshness **as of the grant**, not as of
+   the moment it reads the frame: a request lives five minutes while a grant
+   stays deliverable for a day, so a computer that was offline when the device
+   was admitted would otherwise never adopt it, which decision 6 requires it to
+   do. Concretely, the sibling accepts a grant whose `issuedAt` is not after the
+   request's `expiresAt` and not in its own future beyond a small clock
+   tolerance, and checks only the grant's `deliverUntil` against the present;
+   the approving Host still judges the proof it receives against its own clock,
+   unchanged.
 4. **`owner`, with the ceiling exemption.** A desktop-class device holds the
    same role set an SSH-paired desktop device holds: `owner`, exempt from the
    remote permission ceiling, because the target Host verified a proof made
@@ -480,8 +503,18 @@ certificate proves it. This amendment lets a computer say so, and join.
    the ceiling, never offered `allow-session`. Which operations a desktop-class
    device may actually call is rollout R8 package C, not this amendment: the
    desktop Host must open them explicitly and keep refusing them to a phone.
-   `owner` follows the applicant's certificate: when that Host certificate is
-   revoked, the devices it admitted lose their `owner` standing with it.
+   `owner` follows the applicant's certificate: the device record keeps the
+   class it was admitted under and the computer whose proof admitted it, and
+   when that Host certificate is revoked the devices it admitted lose their
+   `owner` standing with it. The Gateway is the only party that observes a Host
+   revocation, so it tells the account's other computers (`host.revoked`, only
+   to a Host that advertises `device.desktop-auto`, stored and re-offered to one
+   that was offline), and each of them revokes the desktop devices whose
+   applicant is that computer. Trusting that frame is safe because it only ever
+   removes authority: the worst a forged one achieves is revoking a device that
+   would otherwise keep working, so it needs no Host signature. A device record
+   written before these fields existed has neither, and behaves exactly as it
+   did.
 5. **Account mode defaults the remote switch on.** When the Router advertises
    a `remoteGateway` object and the account key resolves, the desktop's
    remote-control switch starts on for a user who has never chosen; a user who
@@ -558,11 +591,22 @@ behavior this amendment exists to remove. Required mitigations, all of them:
 - the first step can be undone where it happened: the operator revokes the
   enrolled Host on the Gateway (`hosts revoke`), and any computer of the
   account can revoke the admitted device, with the revocation reaching the
-  others as the signed frame of §11.5;
+  others as the signed frame of §11.5. A Host revocation also cascades: the
+  Gateway tells the account's other computers (`host.revoked`), and each of
+  them revokes the desktop devices that computer's proof admitted, so the
+  attacker's certificate stops buying access the moment it is revoked;
 - the per-computer switch turns automatic admission off, after which the
   ordinary confirmation is required; strict mode does the same;
 - `owner` follows the proof, and a device without a verified proof is still a
   phone-grade `viewer` / `controller` / `approver` under the ceiling.
+
+The proof's own certificate does not add a risk beyond the one above: a
+compromised Gateway CA can mint a certificate for a computer that does not
+exist, which is exactly the "compromised Gateway CA" risk D666 already records
+under its Accepted risk. The chain this Host pins, the account and `hostId`
+binding, and the requirement that the proof be verified by the target Host are
+what keep that risk from becoming a Gateway-only approval path; they do not
+make a compromised CA harmless, and nothing in this amendment claims they do.
 
 ### Consequences
 
