@@ -370,9 +370,9 @@ mapping is fixed:
 the terminal's bounded replay ring (§6.2), never from the event log.
 
 An event payload that would exceed `maxFrameBytes` is emitted with
-`payload.truncated: true` and a bounded preview; the complete item is
-retrievable through `session/history` by `itemId`. Events are never dropped
-to satisfy the frame limit.
+`payload.truncated: true` and a bounded preview; `session/history` returns the
+item `itemId` names, capped for display the way §7.6 describes. Events are
+never dropped to satisfy the frame limit.
 
 ### 5.4 Snapshot
 
@@ -884,6 +884,24 @@ The response is `{ items: ItemSummary[], hasMore: boolean, revision: number }`
 ordered oldest to newest. `limit` is capped at 200. Omitting `beforeItemId`
 returns the page that precedes the snapshot's `items`. The same operation
 returns a single complete item when a truncated event points at it.
+
+A page is one bounded window of the transcript, not the whole file: the Host
+reads `limit` items ending where `beforeItemId` names and reports `hasMore`
+from the transcript itself, so a client pages a long conversation without the
+Host materializing it. `hasMore` is the only signal that older items exist;
+when the named item is gone (a compaction rewrote the transcript after the
+client read a page) the Host answers an empty page with `hasMore: false`
+instead of the tail, because the tail would be replayed into the client's
+older-page slot.
+
+The Host MAY cap the display size of an item's text and tool payload. The cap
+is per field and counts characters, `limit` counts items and is never affected
+by it, and what was clipped is marked inside the returned text
+(`[truncated for display; the full content remains in the transcript]`), which
+is the same cap and the same marker the desktop renderer's own bounded
+transcript reads use. A capped item is therefore self-describing: a client
+renders the marker instead of guessing. §5.3's truncated-event preview is
+served by this operation and inherits the cap.
 
 ### 7.7 `host/list` and `project/list`
 
@@ -1830,6 +1848,8 @@ The initial target limits are:
 |---|---:|
 | JSON request or event frame | 1 MiB |
 | Prompt payload | 256 KiB |
+| Item text or tool payload, display reads (§7.6) | 64 Ki characters per field |
+| Compaction summary or checkpoint payload, display reads (§7.6) | Same field budget as item text |
 | Attachment | 50 MiB |
 | Host link attachment chunk | 256 KiB |
 | Durable session event replay | 10,000 events or 24 hours |
@@ -2027,3 +2047,29 @@ Host-link frames, and the rule that those frames reach only Hosts that
 advertise support. The self-hosted enrollment code and per-Host ticket of §11.4
 are unchanged, and account-mode devices keep the gateway-origin roles and
 restrictions of D665.
+
+R7 follow-up (2026-10-20, no new decision) made §5.3, §7.6, and the §12 table
+match what a phone actually reads:
+
+- `session/history` is defined as one bounded window of the transcript ending
+  where `beforeItemId` names, and `hasMore` as the transcript's own answer, so
+  a long conversation pages without the Host materializing the whole file;
+- the display cap on an item's text and tool payload is stated with its
+  in-band marker and its limit, which is the cap the desktop renderer's
+  bounded transcript reads already applied; and
+- a page whose `beforeItemId` is gone is an empty page with `hasMore: false`,
+  not the tail, so a client never replays newer items into its older-page slot.
+
+The same follow-up caps a display read's compaction records. Measured on a real
+572-message session, the newest checkpoint was 599 KB and was sent twice (once
+as `compaction`, once as the last entry of `compactions`), of which 488 KB was
+the runtime's `retainedTail` and 86 KB a model-facing `systemMessageJson`; the
+metadata read that every attach and every turn admission performs was 1.2 MB
+for that reason and is now 29 KB. The uncapped read is unchanged, because the
+sidecar rebuilds the model context from those fields.
+
+The 64 Ki-character field budget was re-measured against a 16 KiB alternative
+on the same session: the largest field in a 100-item page is 63,626 characters
+and only one item reaches the cap, while 16 KiB saves a further 0.34 MB per
+page at the cost of truncating several ordinary tool results. The budget stays
+at 64 Ki.

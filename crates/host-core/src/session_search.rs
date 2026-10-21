@@ -429,6 +429,7 @@ mod tests {
         assert_eq!(hit.hits[0].matches[0].message_id, "child");
         let options = sessions::SessionReadOptions {
             message_around: Some("child".into()),
+            message_before_id: None,
             message_limit: Some(60),
             content_limit: Some(64 * 1024),
             ..Default::default()
@@ -530,6 +531,7 @@ mod tests {
             &session.id,
             sessions::SessionReadOptions {
                 message_around: Some("m20".into()),
+                message_before_id: None,
                 message_limit: Some(10),
                 content_limit: Some(64 * 1024),
                 ..Default::default()
@@ -578,6 +580,7 @@ mod tests {
             &session.id,
             sessions::SessionReadOptions {
                 message_around: Some("deleted".into()),
+                message_before_id: None,
                 message_limit: Some(60),
                 ..Default::default()
             },

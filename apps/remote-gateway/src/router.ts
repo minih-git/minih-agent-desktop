@@ -417,8 +417,16 @@ export class CommandRouter {
     const forwarded = idempotencyKey ? { ...params, idempotencyKey } : params;
     const connection = await this.pool.command(input.identity);
     const timeoutMs = operation === "turn/start" ? TURN_START_TIMEOUT_MS : DEFAULT_REQUEST_TIMEOUT_MS;
+    const startedAt = Date.now();
     const result = await connection.request(operation, forwarded, timeoutMs);
-    this.log("info", "gateway command completed", { method: operation, hostId: input.identity.hostId });
+    // The duration is what makes "the phone is slow" measurable per operation:
+    // a byte count says how much crossed the network, not how long the Host
+    // took to answer.
+    this.log("info", "gateway command completed", {
+      method: operation,
+      hostId: input.identity.hostId,
+      durationMs: Date.now() - startedAt,
+    });
     return { status: 200, payload: { result } };
   }
 
