@@ -1271,12 +1271,23 @@ export class AgentHost {
   }
 
   private async syncPendingApprovals(state: SessionState): Promise<void> {
-    await this.approvals.syncPendingTools(state.id, {
+    const synced = await this.approvals.syncPendingTools(state.id, {
       turnId: state.activeTurnId ?? "",
       revision: state.revision,
-      lifetimeMs: this.approvalLifetime(state),
+      lifetimeMs: this.policy.approvalLifetimeMs,
       allowSession: this.allowRemoteSessionGrants,
     });
+    const remoteExpiresAt = new Date(this.clock.now() + this.policy.approvalLifetimeMs).toISOString();
+    for (const entry of state.pendingInputs.values()) {
+      if (remoteExpiresAt > entry.request.expiresAt) {
+        entry.request.expiresAt = remoteExpiresAt;
+      }
+    }
+    if (synced.length > 0 || this.approvals.list(state.id).length > 0) {
+      state.status = "waiting_permission";
+      const turn = state.activeTurnId ? state.turns.get(state.activeTurnId) : undefined;
+      if (turn && isActive(turn.status)) turn.status = "waiting_approval";
+    }
   }
 
   private approvalLifetime(state: SessionState): number {
@@ -1284,10 +1295,15 @@ export class AgentHost {
   }
 
   private applyStatus(state: SessionState, status: AgentStatus): void {
-    // A pending question outranks what the runtime reports (§17.4.1): the agent is
-    // still "running" while it waits for an answer, so without this the status
-    // written by `asktool_request` would be overwritten a moment later and the
-    // phone would never see it.
+    // Pending approvals and questions outrank what the runtime reports (§17.4.1):
+    // tool permissions live in host-core and asktool inputs live in the Host, so
+    // the runtime's `status` event reports `pendingToolConfirmations: 0` while a
+    // card is still open.
+    if (status.isRunning && this.approvals.list(state.id).length > 0) {
+      state.status = "waiting_permission";
+      if (status.planningState) state.planningState = status.planningState;
+      return;
+    }
     if (state.pendingInputs.size > 0) {
       state.status = "waiting_input";
       if (status.planningState) state.planningState = status.planningState;

@@ -285,8 +285,13 @@ export function useSessionScreen(options: {
     const stopWatching = watchForeground(
       {
         onHidden: () => supervisor.pause(),
-        // Visible again: resume a paused loop, or restart one that gave up.
-        onVisible: () => supervisor.onVisible(),
+        // Visible again: resume a paused loop, or restart one that gave up, and
+        // refresh the attach snapshot so approvals/inputs raised while hidden
+        // appear immediately.
+        onVisible: () => {
+          supervisor.onVisible();
+          void attachRef.current();
+        },
       },
       {
         appState: appStateSource(),

@@ -30,6 +30,7 @@ import { useSessionScreen } from "../hooks/useSessionScreen.js";
 
 import { useTimelineScroll } from "../hooks/useTimelineScroll.js";
 import type { HostCredential } from "../lib/credential-port.js";
+import { failureReasonText } from "../lib/i18n.js";
 import { gatewayOrigin } from "../lib/runtime.js";
 import {
   resolveConnectionBanner,
@@ -359,7 +360,7 @@ export function SessionScreen({
         running={active}
         hasPendingDecision={hasDecision}
         pending={pending["session/configure"] === true || pending["session/rename"] === true}
-        failure={failure?.failure.message ?? null}
+        failure={failure ? failureReasonText(t, failure.failure) : null}
         onClose={() => setInfoOpen(false)}
         onRename={(title) => void actions.rename(title)}
         onConfigure={(input) => void actions.configure(input)}

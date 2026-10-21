@@ -142,6 +142,7 @@ export function createHostRuntime({
       });
       const envelope: AgentEventEnvelope = {
         sessionId: permission.sessionId,
+        ...(asking?.turnId ? { turnId: asking.turnId } : {}),
         ts: Date.now(),
         event: {
           type: "tool_permission_request",
