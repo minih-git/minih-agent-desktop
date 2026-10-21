@@ -248,7 +248,7 @@ describe("account device relay", () => {
     const roster = (started.payload["result"] as { hosts: Array<{ hostId: string; online: boolean; canConfirm: boolean; willAcceptGrant: boolean }> })
       .hosts;
     expect(roster).toEqual([
-      { hostId: "host_a1", label: "desk A1", online: true, canConfirm: true, willAcceptGrant: true, supportsDesktopAuto: false },
+      { hostId: "host_a1", label: "desk A1", online: true, canConfirm: true, willAcceptGrant: true, supportsDesktopAuto: true },
       { hostId: "host_a2", label: "desk A2", online: false, canConfirm: false, willAcceptGrant: false, supportsDesktopAuto: false },
     ]);
   });
@@ -389,14 +389,12 @@ describe("account device relay", () => {
       expiresAt: string;
       hosts: Array<{ hostId: string; supportsDesktopAuto: boolean }>;
     };
-    expect(challenge.nonce.startsWith("dn_")).toBe(true);
-    expect(challenge.applicantHostId).toBe("host_a1");
-    expect(challenge.accountId).toBe(String(ACCOUNT_A));
-    // No Host here advertises `device.desktop-auto` yet, so the requesting
-    // desktop is told up front that none of them can admit it — the alternative
-    // is waiting for a frame that will never come.
-    expect(challenge.hosts.every((host) => host.supportsDesktopAuto === false)).toBe(true);
-
+    // Both Hosts advertise `device.desktop-auto`: they have a device directory,
+    // so they can verify a proof and hold the switch. The capability claims the
+    // ability and the decision, never the outcome.
+    const byId = new Map(challenge.hosts.map((host) => [host.hostId, host.supportsDesktopAuto]));
+    expect(byId.get("host_a1")).toBe(true);
+    expect(byId.get("host_a2")).toBe(true);
     const proof = {
       requestId: challenge.requestId,
       hostProof: {
@@ -412,14 +410,15 @@ describe("account device relay", () => {
           }),
           hostA1.credentials.privateKeyPem,
         ),
+        certificate: hostA1.certificatePem,
       },
     };
     const presented = await accountDeviceRequest(gateway, { token, body: { deviceLabel: "Mac A1", client: "desktop", ...proof } });
-    expect(presented.status).toBe(200);
-    // Nothing was asked: no Host advertised the capability, so the request must
-    // not be silently fanned out to one that would drop the frame.
-    const status = await accountDeviceStatus(gateway, { token, requestId: challenge.requestId });
-    expect((status.payload["result"] as { status: string }).status).toBe("pending");
+    // host_a1 verifies the proof itself and admits the device without asking its
+    // user: the request never waits for a confirmation that nobody would answer.
+    const granted = await waitForOutcome(gateway, token, challenge.requestId);
+    expect(granted.status).toBe("granted");
+    expect(granted.token?.startsWith("pdt1.")).toBe(true);
 
     // The same nonce presented again is a replay, not a second request.
     const replayed = await accountDeviceRequest(gateway, { token, body: { deviceLabel: "Mac A1", client: "desktop", ...proof } });
@@ -501,6 +500,7 @@ async function resumeHost(
   h: Awaited<ReturnType<typeof harness>>,
   credentials: HostLinkCredentials,
   store: MemoryCredentialStore,
+  log: (level: string, message: string, data?: unknown) => void = () => undefined,
 ): Promise<{ stop: () => Promise<void> }> {
   const devices = newDeviceDirectory({
     gatewayCaPem: gateway.caPem,
@@ -512,7 +512,7 @@ async function resumeHost(
     credentials,
     server: h.server,
     authenticator: h.authenticator,
-    log: () => undefined,
+    log,
     devices,
     backoff: { baseDelayMs: 50, maxDelayMs: 100 },
   });

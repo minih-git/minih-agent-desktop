@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   RACP_HOST_CAPABILITIES,
   deviceGrantSigningPayload,
+  hostProofSigningPayload,
   deviceRevokeSigningPayload,
   type RacpDeviceGrantFrame,
   type RacpDeviceRequest,
@@ -57,7 +58,7 @@ async function fixture(options: { accountId?: string; otherAccountId?: string } 
 function directoryFor(
   f: Fixture,
   which: "alpha" | "beta",
-  options: { confirmer?: DeviceConfirmer | null; strictMode?: boolean; now?: number } = {},
+  options: { confirmer?: DeviceConfirmer | null; strictMode?: boolean; now?: number; desktopAutoAdmission?: boolean } = {},
 ): HostDeviceDirectory {
   return new HostDeviceDirectory({
     hostId: f[which].hostId,
@@ -67,6 +68,7 @@ function directoryFor(
     log: () => undefined,
     ...(options.confirmer === undefined ? {} : { confirmer: options.confirmer }),
     ...(options.strictMode ? { strictMode: true } : {}),
+    ...(options.desktopAutoAdmission === undefined ? {} : { desktopAutoAdmission: options.desktopAutoAdmission }),
     now: () => options.now ?? NOW,
     onNotice: (notice) => f.notices.push(notice),
   });
@@ -176,18 +178,25 @@ describe("Host device directory: approval", () => {
 });
 
 describe("Host device directory: capability advertisement", () => {
-  it("advertises nothing without a confirmer, one capability in strict mode, both otherwise", async () => {
+  it("advertises nothing without a confirmer, and the desktop capability in both modes", async () => {
     const f = await fixture();
     const confirmer: DeviceConfirmer = { confirm: async () => "approved" };
 
     expect(directoryFor(f, "alpha").capabilities()).toEqual([]);
+    // `device.desktop-auto` claims the ability to verify a proof and to decide,
+    // never the outcome, so it is advertised whatever the switch says.
     expect(directoryFor(f, "alpha", { confirmer }).capabilities()).toEqual([
       RACP_HOST_CAPABILITIES.deviceConfirm,
       RACP_HOST_CAPABILITIES.deviceAcceptSiblingGrant,
+      RACP_HOST_CAPABILITIES.deviceDesktopAuto,
     ]);
     const strict = directoryFor(f, "alpha", { confirmer, strictMode: true });
-    expect(strict.capabilities()).toEqual([RACP_HOST_CAPABILITIES.deviceConfirm]);
+    expect(strict.capabilities()).toEqual([RACP_HOST_CAPABILITIES.deviceConfirm, RACP_HOST_CAPABILITIES.deviceDesktopAuto]);
     expect(strict.isStrict).toBe(true);
+    // Strict mode turns automatic admission off even with the switch on.
+    expect(strict.admitsDesktopAutomatically).toBe(false);
+    expect(directoryFor(f, "alpha", { confirmer }).admitsDesktopAutomatically).toBe(true);
+    expect(directoryFor(f, "alpha", { confirmer, desktopAutoAdmission: false }).admitsDesktopAutomatically).toBe(false);
   });
 });
 
@@ -285,12 +294,18 @@ describe("Host device directory: sibling grant", () => {
 
     const expired = { ...grantFor(), deliverUntil: new Date(NOW - 1).toISOString() };
     expect(await beta.handleGrant(signedGrant(f.alpha, expired))).toBe("refused");
-
-    // An owner role would break the remote permission ceiling (gate 25).
+    // A phone-class grant must carry the phone role set exactly: `owner` here
+    // would give a gateway origin the ceiling-exempt role without any proof
+    // (gate 25). Only a desktop-class grant, whose proof this Host re-verified
+    // itself, may carry `owner`.
     const ownerRoles = { ...grantFor(), roles: ["owner"] };
     expect(await beta.handleGrant(signedGrant(f.alpha, ownerRoles))).toBe("refused");
-
+    // …and a grant that *claims* desktop-class without a proof is refused too.
+    const ownerClaim = { ...grantFor(), roles: ["owner"], deviceClass: "desktop" as const };
+    expect(await beta.handleGrant(signedGrant(f.alpha, ownerClaim))).toBe("refused");
+    expect(await beta.handleGrant(signedGrant(f.alpha, ownerRoles))).toBe("refused");
     const adopted = signedGrant(f.alpha, grantFor());
+
     expect(await beta.handleGrant(adopted)).toBe("adopted");
     expect(await beta.revoke(adopted.grant.deviceId)).not.toBeNull();
     expect(await beta.handleGrant(adopted)).toBe("refused");
@@ -464,6 +479,195 @@ describe("Host device directory: construction", () => {
           signer: { certificatePem: bound.certificatePem, privateKeyPem: selfHosted.privateKeyPem },
         }),
     ).toThrow(/private key/);
+  });
+});
+
+/**
+ * Desktop-class devices (ADR amendment 3, rollout R8 package C).
+ *
+ * The rule these tests hold to: **the target Host verifies the proof itself**.
+ * The Gateway pre-checks and fast-rejects, but it is never the authorization, so
+ * every test here signs with a real Host certificate and lets the directory
+ * decide on its own.
+ */
+describe("Host device directory: desktop-class devices", () => {
+  /** A proof made the way the applicant makes it: sign the Gateway's values. */
+  function proofFor(
+    applicant: HostIdentity,
+    request: RacpDeviceRequest,
+    overrides: Partial<{ nonce: string; applicantHostId: string; accountId: string; expiresAt: string }> = {},
+  ): { applicantHostId: string; nonce: string; signature: string; certificate: string } {
+    const nonce = overrides.nonce ?? "dn_nonce_1";
+    const applicantHostId = overrides.applicantHostId ?? applicant.hostId;
+    return {
+      applicantHostId,
+      nonce,
+      certificate: applicant.certificatePem,
+      signature: signHostArtifact(
+        hostProofSigningPayload({
+          requestId: request.requestId,
+          nonce,
+          applicantHostId,
+          accountId: overrides.accountId ?? request.accountId,
+          expiresAt: overrides.expiresAt ?? request.expiresAt,
+        }),
+        applicant.privateKeyPem,
+      ),
+    };
+  }
+
+  it("admits a verified proof without asking, with owner and no ceiling", async () => {
+    const f = await fixture();
+    const sent: RacpDeviceGrantFrame[] = [];
+    const asked: RacpDeviceRequest[] = [];
+    const alpha = directoryFor(f, "alpha", {
+      confirmer: {
+        confirm: async (incoming) => {
+          asked.push(incoming);
+          return "approved";
+        },
+      },
+    });
+    const desktopRequest = request({ client: "desktop" });
+    desktopRequest.hostProof = proofFor(f.beta, desktopRequest);
+
+    const outcome = await alpha.handleRequest(desktopRequest, (frame) => sent.push(frame));
+
+    expect(outcome).toBe("granted");
+    // Nobody was asked: the proof is the decision.
+    expect(asked).toHaveLength(0);
+    expect(sent).toHaveLength(1);
+    const grant = sent[0]!.grant;
+    expect(grant.roles).toEqual(["owner"]);
+    expect(grant.deviceClass).toBe("desktop");
+    expect(grant.applicantHostId).toBe("host_beta");
+    expect(grant.hostProofNonce).toBe("dn_nonce_1");
+    expect(f.notices.at(-1)).toMatchObject({ kind: "device.minted", deviceClass: "desktop" });
+
+    // The minted token authenticates as `owner`, which is the one gateway origin
+    // allowed to hold it.
+    const auth = await authenticate(f.alphaStore, sent[0]!.deviceToken!);
+    expect(auth?.principal.roles).toContain("owner");
+  });
+
+  it("refuses a forged signature, another account's certificate, and an expired request", async () => {
+    const f = await fixture();
+    const alpha = directoryFor(f, "alpha", { confirmer: { confirm: async () => "approved" } });
+    const sent: RacpDeviceGrantFrame[] = [];
+
+    // Signed by a computer whose key is not the certificate's.
+    const forged = request({ client: "desktop" });
+    const stranger = await enrollHost(f.ca, "host_stranger", "42");
+    forged.hostProof = { ...proofFor(f.beta, forged), signature: signHostArtifact(hostProofSigningPayload({
+      requestId: forged.requestId,
+      nonce: "dn_nonce_1",
+      applicantHostId: "host_beta",
+      accountId: "42",
+      expiresAt: forged.expiresAt,
+    }), stranger.privateKeyPem) };
+    expect(await alpha.handleRequest(forged, (frame) => sent.push(frame))).toBe("denied");
+
+    // A certificate of another account cannot vouch for this one.
+    const foreign = await fixture({ accountId: "99" });
+    const crossAccount = request({ client: "desktop", requestId: "req_2" });
+    crossAccount.hostProof = proofFor(foreign.beta, crossAccount);
+    expect(await alpha.handleRequest(crossAccount, (frame) => sent.push(frame))).toBe("denied");
+
+    // A proof whose request already expired is refused even when it verifies.
+    const expired = directoryFor(f, "alpha", { confirmer: { confirm: async () => "approved" }, now: NOW + 10 * 60 * 1000 });
+    const stale = request({ client: "desktop", requestId: "req_3" });
+    stale.hostProof = proofFor(f.beta, stale);
+    // An expired request is ignored before any proof is looked at — the same
+    // answer the phone flow gives, and nothing is minted.
+    expect(await expired.handleRequest(stale, (frame) => sent.push(frame))).toBe("ignored");
+    expect(sent).toHaveLength(0);
+  });
+
+  it("refuses a replayed nonce, and a proof whose applicant does not match its certificate", async () => {
+    const f = await fixture();
+    const alpha = directoryFor(f, "alpha", { confirmer: { confirm: async () => "approved" } });
+    const sent: RacpDeviceGrantFrame[] = [];
+
+    const first = request({ client: "desktop", requestId: "req_1" });
+    first.hostProof = proofFor(f.beta, first);
+    expect(await alpha.handleRequest(first, (frame) => sent.push(frame))).toBe("granted");
+
+    // The same nonce in a second request is a replay, however valid the bytes.
+    const replay = request({ client: "desktop", requestId: "req_2" });
+    replay.hostProof = proofFor(f.beta, replay, { nonce: "dn_nonce_1" });
+    expect(await alpha.handleRequest(replay, (frame) => sent.push(frame))).toBe("denied");
+
+    // A proof that names one computer but is signed by another's certificate.
+    const mislabelled = request({ client: "desktop", requestId: "req_3" });
+    mislabelled.hostProof = { ...proofFor(f.beta, mislabelled, { nonce: "dn_nonce_3", applicantHostId: "host_alpha" }) };
+    expect(await alpha.handleRequest(mislabelled, (frame) => sent.push(frame))).toBe("denied");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("falls back to the ordinary confirmation when the switch is off or in strict mode", async () => {
+    const f = await fixture();
+    const asked: string[] = [];
+    const sent: RacpDeviceGrantFrame[] = [];
+    const confirmer: DeviceConfirmer = {
+      confirm: async (incoming) => {
+        asked.push(incoming.requestId);
+        return "approved";
+      },
+    };
+
+    const off = directoryFor(f, "alpha", { confirmer, desktopAutoAdmission: false });
+    const withSwitchOff = request({ client: "desktop", requestId: "req_off" });
+    withSwitchOff.hostProof = proofFor(f.beta, withSwitchOff);
+    expect(await off.handleRequest(withSwitchOff, (frame) => sent.push(frame))).toBe("granted");
+    // The user answered, and the device is phone-grade: no proof, no `owner`.
+    expect(asked).toEqual(["req_off"]);
+    expect(sent[0]!.grant.roles).toEqual([...GATEWAY_PAIR_ROLES]);
+    expect(sent[0]!.grant.deviceClass).toBeUndefined();
+
+    const strict = directoryFor(f, "alpha", { confirmer, strictMode: true });
+    const inStrictMode = request({ client: "desktop", requestId: "req_strict" });
+    inStrictMode.hostProof = proofFor(f.beta, inStrictMode);
+    expect(await strict.handleRequest(inStrictMode, (frame) => sent.push(frame))).toBe("granted");
+    expect(asked).toEqual(["req_off", "req_strict"]);
+    expect(sent[1]!.grant.roles).toEqual([...GATEWAY_PAIR_ROLES]);
+    expect(sent[1]!.grant.deviceClass).toBeUndefined();
+  });
+
+  it("re-verifies a sibling's desktop grant before adopting it with owner", async () => {
+    const f = await fixture();
+    const sent: RacpDeviceGrantFrame[] = [];
+    const alpha = directoryFor(f, "alpha", { confirmer: { confirm: async () => "approved" } });
+    const desktopRequest = request({ client: "desktop" });
+    desktopRequest.hostProof = proofFor(f.beta, desktopRequest);
+    await alpha.handleRequest(desktopRequest, (frame) => sent.push(frame));
+    const relayed = asRelayed(sent[0]!);
+
+    // A sibling with its switch on adopts it, as `owner`.
+    const beta = directoryFor(f, "beta", { confirmer: { confirm: async () => "approved" } });
+    expect(await beta.handleGrant(relayed)).toBe("adopted");
+    const adopted = (await beta.devices()).find((device) => device.deviceId === relayed.grant.deviceId);
+    expect(adopted?.roles).toEqual(["owner"]);
+    const auth = await authenticate(f.betaStore, sent[0]!.deviceToken!);
+    expect(auth?.principal.roles).toContain("owner");
+  });
+
+  it("refuses a desktop grant a sibling cannot re-verify, and one in strict mode", async () => {
+    const f = await fixture();
+    const sent: RacpDeviceGrantFrame[] = [];
+    const alpha = directoryFor(f, "alpha", { confirmer: { confirm: async () => "approved" } });
+    const desktopRequest = request({ client: "desktop" });
+    desktopRequest.hostProof = proofFor(f.beta, desktopRequest);
+    await alpha.handleRequest(desktopRequest, (frame) => sent.push(frame));
+    const relayed = asRelayed(sent[0]!);
+
+    // A grant stripped of the proof it claims to carry is not adoptable.
+    const stripped = { ...relayed, grant: { ...relayed.grant, hostProofSignature: undefined, applicantCertificate: undefined } };
+    expect(await directoryFor(f, "beta").handleGrant(signedGrant(f.alpha, stripped.grant))).toBe("refused");
+
+    // Strict mode never adopts a desktop-class device on someone else's word.
+    expect(await directoryFor(f, "beta", { strictMode: true }).handleGrant(relayed)).toBe("refused");
+    // Switch off: the same refusal, because the sibling did not decide to admit it.
+    expect(await directoryFor(f, "beta", { desktopAutoAdmission: false }).handleGrant(relayed)).toBe("refused");
   });
 });
 

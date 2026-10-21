@@ -197,7 +197,7 @@ describe("host link frames", () => {
         request: {
           ...deviceRequestFrame().request,
           client: "desktop",
-          hostProof: { applicantHostId: "host_a", nonce: "dn_1", signature: "sig" },
+          hostProof: { applicantHostId: "host_a", nonce: "dn_1", signature: "sig", certificate: "-----BEGIN CERTIFICATE-----" },
         },
       }),
     ).toBe(true);

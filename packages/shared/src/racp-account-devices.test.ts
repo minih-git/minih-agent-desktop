@@ -150,7 +150,7 @@ describe("account device routes", () => {
         deviceLabel: "mac",
         client: "desktop",
         requestId: "dreq_1",
-        hostProof: { applicantHostId: "host_a", nonce: "dn_1", signature: "sig" },
+        hostProof: { applicantHostId: "host_a", nonce: "dn_1", signature: "sig", certificate: "-----BEGIN CERTIFICATE-----" },
       }),
     ).toBe(true);
     // A proof missing any of its three parts is malformed, whatever the class.

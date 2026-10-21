@@ -55,6 +55,8 @@ export function deviceGrantSigningPayload(grant: RacpDeviceGrant): string {
     applicantHostId: grant.applicantHostId,
     hostProofNonce: grant.hostProofNonce,
     requestExpiresAt: grant.requestExpiresAt,
+    hostProofSignature: grant.hostProofSignature,
+    applicantCertificate: grant.applicantCertificate,
   });
 }
 

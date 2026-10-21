@@ -166,7 +166,7 @@ describe("host link device frames", () => {
     expect(announcements[0]).toEqual({
       link: RACP_HOSTLINK_VERSION,
       type: "host.capabilities",
-      capabilities: [RACP_HOST_CAPABILITIES.deviceConfirm, RACP_HOST_CAPABILITIES.deviceAcceptSiblingGrant],
+      capabilities: [RACP_HOST_CAPABILITIES.deviceConfirm, RACP_HOST_CAPABILITIES.deviceAcceptSiblingGrant, RACP_HOST_CAPABILITIES.deviceDesktopAuto],
     });
   });
 

@@ -133,6 +133,9 @@ export type GatewayPendingGrantRecord = {
   applicantHostId?: string;
   hostProofNonce?: string;
   requestExpiresAt?: string;
+  /** Desktop-class only: the applicant's certificate and proof signature, as signed. */
+  applicantCertificate?: string;
+  hostProofSignature?: string;
 };
 
 /**

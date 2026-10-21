@@ -119,6 +119,15 @@ export const RacpDeviceHostProofSchema = Type.Object({
   nonce: Type.String({ minLength: 1, maxLength: 128 }),
   /** base64url ECDSA P-256 / SHA-256 over `hostProofSigningPayload(...)`. */
   signature: Type.String({ minLength: 1 }),
+  /**
+   * PEM of the applicant's own Host certificate. A target Host has no other way
+   * to obtain it: a proof is bytes, and only the Gateway knows which
+   * certificate it issued to which computer. The Host chains it to its own
+   * pinned Gateway CA and requires the `OU=account:` binding and the `hostId`
+   * common name to match, so a certificate that does not belong to this account
+   * cannot vouch for anything.
+   */
+  certificate: Type.String({ minLength: 1 }),
 });
 export type RacpDeviceHostProof = Static<typeof RacpDeviceHostProofSchema>;
 
@@ -192,6 +201,20 @@ export const RacpDeviceGrantSchema = Type.Object({
   hostProofNonce: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
   /** Desktop-class only: the request's own deadline, part of the proof payload. */
   requestExpiresAt: Type.Optional(Type.String()),
+  /**
+   * Desktop-class only: the applicant's own Host certificate, PEM. A sibling has
+   * no other way to re-verify the proof — it chains this certificate to its own
+   * pinned Gateway CA and checks the account binding itself (ADR amendment 3,
+   * decision 3). It is inside the signature, so the Gateway cannot swap it for
+   * another computer's.
+   */
+  applicantCertificate: Type.Optional(Type.String({ minLength: 1 })),
+  /**
+   * Desktop-class only: the applicant's proof signature over the payload above.
+   * A sibling re-verifies these exact bytes, so it must travel inside the grant
+   * (and inside the grant's own signature, so the Gateway cannot substitute it).
+   */
+  hostProofSignature: Type.Optional(Type.String({ minLength: 1 })),
 });
 export type RacpDeviceGrant = Static<typeof RacpDeviceGrantSchema>;
 

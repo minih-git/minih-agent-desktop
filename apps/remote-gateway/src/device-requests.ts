@@ -674,6 +674,15 @@ export class DeviceRequestService {
       relayUntil: new Date(Math.min(Date.parse(grant.deliverUntil), this.nowMs() + GRANT_DELIVERY_WINDOW_MS)).toISOString(),
       signature: frame.signature,
       signerCertificate: frame.signerCertificate,
+      // Desktop-class grants carry the proof inside the approving Host's
+      // signature; a sibling re-verifies it, so the Gateway relays it as signed
+      // and never reconstructs it.
+      ...(grant.deviceClass ? { deviceClass: grant.deviceClass } : {}),
+      ...(grant.applicantHostId ? { applicantHostId: grant.applicantHostId } : {}),
+      ...(grant.hostProofNonce ? { hostProofNonce: grant.hostProofNonce } : {}),
+      ...(grant.requestExpiresAt ? { requestExpiresAt: grant.requestExpiresAt } : {}),
+      ...(grant.applicantCertificate ? { applicantCertificate: grant.applicantCertificate } : {}),
+      ...(grant.hostProofSignature ? { hostProofSignature: grant.hostProofSignature } : {}),
     };
     await this.options.store.savePendingGrant(pending);
     const relayed = relayToSiblings({

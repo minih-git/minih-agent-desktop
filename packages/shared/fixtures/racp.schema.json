@@ -2714,7 +2714,8 @@
                 "required": [
                   "applicantHostId",
                   "nonce",
-                  "signature"
+                  "signature",
+                  "certificate"
                 ],
                 "properties": {
                   "applicantHostId": {
@@ -2727,6 +2728,10 @@
                     "maxLength": 128
                   },
                   "signature": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "certificate": {
                     "type": "string",
                     "minLength": 1
                   }
@@ -2841,6 +2846,14 @@
               },
               "requestExpiresAt": {
                 "type": "string"
+              },
+              "applicantCertificate": {
+                "type": "string",
+                "minLength": 1
+              },
+              "hostProofSignature": {
+                "type": "string",
+                "minLength": 1
               }
             }
           },
@@ -3472,7 +3485,8 @@
         "required": [
           "applicantHostId",
           "nonce",
-          "signature"
+          "signature",
+          "certificate"
         ],
         "properties": {
           "applicantHostId": {
@@ -3485,6 +3499,10 @@
             "maxLength": 128
           },
           "signature": {
+            "type": "string",
+            "minLength": 1
+          },
+          "certificate": {
             "type": "string",
             "minLength": 1
           }

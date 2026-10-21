@@ -70,6 +70,8 @@ export function relayGrantFrame(pending: GatewayPendingGrantRecord): RacpDeviceG
       ...(pending.applicantHostId ? { applicantHostId: pending.applicantHostId } : {}),
       ...(pending.hostProofNonce ? { hostProofNonce: pending.hostProofNonce } : {}),
       ...(pending.requestExpiresAt ? { requestExpiresAt: pending.requestExpiresAt } : {}),
+      ...(pending.applicantCertificate ? { applicantCertificate: pending.applicantCertificate } : {}),
+      ...(pending.hostProofSignature ? { hostProofSignature: pending.hostProofSignature } : {}),
     },
     signature: pending.signature,
     signerCertificate: pending.signerCertificate,
