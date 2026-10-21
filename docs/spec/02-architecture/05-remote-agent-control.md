@@ -300,6 +300,20 @@ discovery and enrollment only, and still admits relayed clients with
 Host-issued device credentials. Delivery is the R7 milestone of
 `06-delivery/07-remote-control-rollout.md`.
 
+**Planned: a computer as a client of its sibling (R8, ADR
+`remote-control-router-account-binding` amendment 3).** A second desktop of the
+same account reaches the Gateway over `RACP-WS`
+(`GET /v1/hosts/{hostId}/ws`) instead of `RACP-HTTP` + SSE, so commands, events,
+and server-initiated requests share one connection. It presents a `desktop`
+device request carrying a signature made with its own Host certificate; when
+that proof verifies against the Gateway CA and the account binding, and the
+target computer allows it, the device is admitted without a human answer and
+holds `owner` with the ceiling exemption of an SSH-paired desktop device. A
+phone keeps `viewer` / `controller` / `approver` under the ceiling. The
+transport is recorded as `transport: "account"` on the desktop's remote-host
+record, and the Host must advertise `device.desktop-auto` before any of these
+frames are sent to it.
+
 ### 5.4 Desktop as a connected Host (R5)
 
 Electron Main may serve its existing in-process Agent Host over the outbound
@@ -308,7 +322,9 @@ desktop (D665, ADR 0331). The link runs a separate `RacpServer` transport on
 the existing `agent-host-bridge.ts` AgentHost instance: no new AgentHost, no
 new execution path, and no listener. The setting is an optional, device-local
 `remoteGateway` field in `AppSettings` (`enabled`, `url`; absent means off,
-never synced), marked Experimental and off by default. Device credentials and
+never synced), marked Experimental and off by default for the self-hosted flow
+(account mode defaults it on once the Router advertises a Gateway and an account
+key resolves; see the paragraph below and security §3.8). Device credentials and
 the mTLS key material live in the main process, encrypted through
 `EncryptionPort` (safeStorage), never in SQLite and never in host-core's
 schema. Relayed principals follow the device-origin rules of security §3.7:
@@ -318,6 +334,15 @@ the setting, app quit, and `before-quit` close the link and cancel pending
 server requests. A renderer reload does not: the link belongs to the main
 process, and the settings page only re-subscribes to its status. Local turns
 continue throughout.
+
+**Planned: a desktop as a client, not only as a Host (R8).** The same desktop
+build is both: it serves its own Agent Host over the link for its siblings and
+phones, and it acts as a Remote Client of a sibling's Host over the account
+route. Selecting a project of the other computer runs the turn there, with that
+machine's provider configuration and its own Router account for model calls;
+the local desktop renders the session and never executes it. The account-mode
+remote-control switch defaults on once the Router advertises a Gateway and an
+account key resolves, and an explicit off is preserved (security §3.8, gate 27).
 
 ## 6. Ownership and authority
 
@@ -362,6 +387,15 @@ paired through the SSH bootstrap holds `owner` and is exempt from the
 ceiling, because SSH access to the machine already exceeds anything the
 ceiling withholds; the Host policy `applyCeilingToPairedDevices` (default
 off) re-applies it.
+
+**Planned (R8): a desktop-class device is an owner.** A device admitted through
+the account route with a verified Host-certificate proof is treated like an
+SSH-paired desktop device: `owner`, exempt from the remote permission ceiling,
+because the account's own Gateway issued the certificate that proves the
+machine. A phone or browser device is untouched by this rule. Which operations
+the desktop Host opens to that device is explicit per operation (R8 package C);
+the ones it does not open keep answering `FORBIDDEN`, and a phone keeps
+receiving `FORBIDDEN` for all of them.
 
 ### 6.3 Remote session ownership split
 

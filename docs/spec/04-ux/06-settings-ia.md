@@ -519,6 +519,21 @@ a usage tab.
   retired `remoteGateway` destination id resolves to `accounts`, never to an
   empty pane.
 
+- **Planned (R8): one Accounts page, in this order.** The page becomes the
+  single entry for the account and everything that hangs off it, top to bottom:
+  **Minih Router account** (sign in once, as above) → **This computer** (the
+  computer's own name and the **Allow same-account computers to join
+  automatically** switch, default on, device-local) → **My devices** (the
+  computers and phones of the account with their online state and revoke
+  action) → **Configuration sync** (the existing `ConfigSyncPage`, embedded,
+  vault password entered once per device) → **Advanced** (SSH hosts, the
+  self-hosted gateway form, and the network center while developer mode is on).
+  A sibling computer admitted through the account route appears in the host
+  list of the New project dialog as an account computer, marked offline or
+  "needs an update" when that applies. The Remote Hosts destination keeps its
+  id and content as the Advanced → SSH hosts entry; it is not deleted. Every
+  new row, switch, and state string goes through i18n like the rest of the page.
+
 ### Models (`agent` tab)
 - The models page groups its sections in this order: the **chosen models** as
   cards, the image-generation model selector (rendered once at least one model

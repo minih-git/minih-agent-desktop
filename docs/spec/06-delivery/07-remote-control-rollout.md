@@ -462,7 +462,51 @@ Exit criteria:
    `404` from the bootstrap) keeps the self-hosted flow of R4 and R5, reports no
    error, and hides the account-mode affordances.
 
+### R8 — Same-account computers join automatically (D675)
+
+Deliver the desktop-class device surface of ADR
+`remote-control-router-account-binding` amendment 3 on top of R7: a computer of
+the account reaches its siblings through the Gateway without SSH, holds
+`owner`, and can start work on the other machine. The self-hosted flow, the
+phone's device confirmation, and the phone's role set are unchanged. Work
+packages, one PR each:
+
+| # | Repository | Work | Depends on |
+|---|---|---|---|
+| A | Desktop | this decision: the ADR amendment, the spec updates, decision D675, and the P0 measurement (docs and instrumentation) | — |
+| B | Desktop | `apps/remote-gateway`: the `RACP-WS` client route `GET /v1/hosts/{hostId}/ws`, upgraded from the same Bearer device token, mapped 1:1 onto the Host link logical connection | A |
+| C | Desktop | `desktop` client class and `hostProof` verification, `device.desktop-auto`, automatic admission with the per-computer switch, `owner` for a proven desktop device | A |
+| D | Desktop | desktop Host operations a desktop-class device needs (session rename/delete/archive/configure, workspace list/read/diff), shared with `packages/host-runtime`; a phone keeps `FORBIDDEN` | C |
+| E | Desktop | renderer: account computers in the host list and New project dialog, sidebar groups per computer, offline and "needs an update" states, i18n | B, D |
+| F | Desktop | the unified Accounts page: account, this computer, my devices, configuration sync, advanced | E |
+| G | ops | the Nginx `Upgrade` header for `/v1/hosts/*/ws`; needs user authorization | B |
+
+Scope notes:
+
+- the WebSocket route authenticates with the device token exactly like the
+  command routes and reuses the existing hash fast-reject, rate limit, and
+  audit; it is a transport, not a second authorization path;
+- automatic admission is refused, never silently ignored, when the proof is
+  missing or the target computer does not advertise `device.desktop-auto`;
+- the Agent runs on the computer that owns the project, with that machine's
+  provider configuration and its own Router account for model calls; no
+  credential crosses machines;
+- SSH-paired hosts keep the local-Agent + remote-workspace-tools shape and are
+  shown as a separate kind of host.
+
+Exit criteria:
+
+1. `E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop` passes: two desktops
+   and a Gateway, A sees B without a confirmation dialog, opens B's project,
+   runs a turn on B, and receives the streamed answer and any approval.
+2. Security gates 25, 27, and 35 are signed off: a phone still never receives
+   `owner`, an explicitly disabled switch stays off, and a desktop device
+   without proof is refused automatic admission.
+3. The P0 measurement is re-run and the P7 changes are chosen from its numbers,
+   not from the plan's assumptions.
+
 ### Reserved — gRPC binding
+
 
 `RACP-GRPC` is delivered only when a named native service consumer or
 Gateway implementation needs it. Generate the `.proto` and clients from the

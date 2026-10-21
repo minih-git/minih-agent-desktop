@@ -501,3 +501,13 @@ saves. Read/save failures show the failed operation and reason without faking
 success; unknown applied state never invents a restart hint. Other platforms
 do not render the switch. No GPU-saving amount
 is promised without local measurement. See [the decision](/adr/macos-window-translucency-preference).
+
+## 账户页统一（R8 / D675，目标设计，尚未实现）
+
+「账户」页成为账号及其一切附属设置的唯一入口，自上而下依次为：**Minih Router 账号**
+（登录一次）→ **本机**（电脑名，以及「允许同账号电脑自动接入」开关，默认开、设备本地）
+→ **我的设备**（账号下的电脑与手机、在线状态、撤销）→ **配置同步**（内嵌现有
+`ConfigSyncPage`，保管库密码每台设备输入一次）→ **高级**（SSH 主机、自托管 Gateway 表单，
+以及开发者模式下的网络中心）。经账号路由接入的兄弟电脑会出现在「新建项目」对话框的主机
+列表里，离线或「需要升级」时明确标注。现有「远程主机」目的地保留其 id 与内容，作为
+「高级 → SSH 主机」入口，不删除。新增的行、开关与状态文案一律走 i18n。

@@ -408,3 +408,141 @@ A Host older than this amendment answers `CAPABILITY_UNAVAILABLE`, which the
 client treats as "no choice available" and creates the session on the Host's
 default: no version negotiation is needed and no client upgrade is required
 first.
+
+## Amendment 3 — a sibling desktop joins as itself (2026-10-21)
+
+Status: accepted for implementation. Scope: this decision's account-mode device
+surface, the Host link frames of protocol §11.4/§11.5, and the desktop's
+account-mode defaults. Nothing here is implemented yet: this amendment records
+the target design, and rollout R8 delivers it.
+
+### Context
+
+Account mode binds the user's phone to every Host of the account, but the
+user's *computers* still reach each other only over SSH: the desktop as a
+Remote Client supports `transport: "direct" | "ssh"`
+(`packages/shared/src/types/remote-host.ts`), so using a second computer means
+entering a host, a user, a key or password, and installing `agent-host-cli`
+there. Even when that works, a computer paired this way is a phone-grade
+device: `desktop-host-operations.ts` refuses session rename/delete/configure,
+workspace reads, and terminals to a remote device, and
+`packages/racp/src/operations.ts` never grants `owner` to a gateway origin, so
+the full desktop experience is unreachable from another computer.
+
+The same account already answers "is this computer mine?" — the sibling Host
+certificate proves it. This amendment lets a computer say so, and join.
+
+### Decision
+
+1. **A `desktop` device class.** `device.request` gains
+   `client: "desktop"` beside `web` / `ios` / `android`
+   (`packages/shared/src/racp-hostlink.ts`,
+   `racp-account-devices.ts`). The class names a computer of the account that
+   is asking to reach its siblings, not a phone.
+2. **Proof, not just a key.** A desktop request carries `hostProof`: the
+   applicant's `hostId` plus a signature over the request id and a nonce, made
+   with the private key of the Host certificate the Gateway itself issued to
+   that computer. The Gateway verifies the certificate chains to its own CA
+   and carries `OU=account:<accountId>` for the account of the presented
+   AccessKey, and verifies the signature before it treats the request as a
+   desktop request at all. An AccessKey alone proves an account, never a
+   computer.
+3. **Automatic admission, per computer, on by default.** A desktop request
+   with valid proof is granted without a human answer, provided the target
+   computer has "allow same-account computers to join automatically" on
+   (default on, stored device-locally beside the remote-control switch). With
+   the switch off, the same request falls back to the ordinary per-device
+   confirmation of decision 6, and the user answers it.
+4. **`owner`, with the ceiling exemption.** A desktop-class device holds the
+   same role set an SSH-paired desktop device holds: `owner`, exempt from the
+   remote permission ceiling, because the proof is a certificate the account's
+   own Gateway issued to that machine. A phone or browser device is unchanged:
+   `viewer` / `controller` / `approver`, `pairedDevice: false`, always under
+   the ceiling, never offered `allow-session`. Which operations a desktop-class
+   device may actually call is rollout R8 package C, not this amendment: the
+   desktop Host must open them explicitly and keep refusing them to a phone.
+5. **Account mode defaults the remote switch on.** When the Router advertises
+   a `remoteGateway` object and the account key resolves, the desktop's
+   remote-control switch starts on for a user who has never chosen; a user who
+   turned it off keeps it off. This amends security §3.8 and gate 27, whose
+   "off by default" reading was written for the self-hosted flow.
+6. **A capability, so an old Host is visible.** The new frames go only to a
+   Host that advertises `device.desktop-auto` on its `host.capabilities` frame
+   (protocol §11.4 rule 6). A computer running an older build never receives
+   them, and the requesting desktop shows "this computer needs an update"
+   instead of waiting for a frame that will never come — the silent-drop trap
+   the Compatibility section below already names.
+7. **The Agent runs on the computer that owns the project.** Selecting a
+   project of computer B runs the turn on B, with B's own provider
+   configuration and B's own Router account for model calls; A is a remote
+   view. Credentials never cross machines. This is not a change of model for
+   SSH hosts: an SSH-paired host keeps the existing "local Agent, remote
+   workspace tools" shape of ADR `local-agent-remote-workspace-tools`, which
+   stays for users who prefer it and for Hosts that cannot enroll.
+8. **The client transport.** A desktop reaches a sibling through the Gateway
+   over `RACP-WS` (`GET /v1/hosts/{hostId}/ws`), not `RACP-HTTP` + SSE: the
+   desktop already speaks `RacpClient` and `wsClientTransport`, and one
+   long-lived connection carries commands, events, and server requests without
+   a request per command. `RemoteHostTransport` gains `"account"` and the
+   record's `url` names that route. The phone keeps `RACP-HTTP` + SSE
+   unchanged.
+
+### Rejected alternatives
+
+- **Keep per-computer manual confirmation for desktops.** It is the safe
+  default and it stays as the switch-off behavior, but as the only behavior it
+  makes "my computers just work together" a setup ritual, which is the
+  complaint this amendment answers.
+- **Trust an AccessKey alone, for every client class.** One key would then
+  auto-approve a new device on every machine, including a phone that only
+  holds a key. The proof is what keeps automatic admission scoped to a
+  computer the account has already enrolled.
+- **Give every gateway device `owner`.** It would hand a phone the workspace
+  tool surface, shell access, and session deletion, which the remote
+  permission ceiling was never designed to mediate (amendment 1's rejected
+  alternative, unchanged).
+- **Have the desktop client reuse `RACP-HTTP` + SSE.** Every command would be
+  a new HTTP request through a reverse proxy, so each one pays the proxy hop
+  and a fresh round trip (the P0 measurement measures the two segments on a
+  local loopback, where they are 0–1 ms of Gateway queue and 3–18 ms of host
+  round trip, and cannot measure the proxy or the Gateway host's own RTT), and
+  server-initiated approvals would need a second channel. A WebSocket route is
+  one connection and the protocol the desktop already implements.
+- **Require SSH between computers forever.** It is the only path today, but it
+  needs credentials and an install on the other machine and it deliberately
+  withholds the desktop surface; it stays as an option, not as the answer.
+
+### Accepted risk
+
+Automatic admission widens what a leaked AccessKey can reach: a key alone
+cannot join as a desktop (the proof needs an already-enrolled Host
+certificate), but an attacker who also holds a computer's Host certificate
+private key could admit that computer to its own account's siblings. That is
+the same key that machine uses to serve its own Host link, so the compromise is
+already the machine's, not the account's. Required mitigations, all of them:
+
+- admission requires a Gateway-CA certificate with the account binding and a
+  signature over the request, never a bare key;
+- every automatic admission produces a "new device" notice on every computer of
+  the account and an audit record, so a silent join is not possible;
+- the per-computer switch turns automatic admission off, after which the
+  ordinary confirmation is required;
+- any computer of the account can revoke the device, and the revocation reaches
+  the others as the signed frame of §11.5;
+- `owner` follows the proof, and a device without proof is still a phone-grade
+  `viewer` / `controller` / `approver` under the ceiling.
+
+### Consequences
+
+- A new client class, a new capability string, a new device-proof payload, a
+  per-computer switch, and a WebSocket client route are all new code and new
+  failure modes (rollout R8).
+- The remote-control switch default changes for account-mode users. A user who
+  never touched the switch starts with a link; a user who turned it off is not
+  re-enabled.
+- Security §3.7 gains the desktop-class role rule and §3.8 the default, and
+  gate 27 is restated for the two cases.
+- A computer that predates this amendment is reported as needing an update
+  rather than silently unreachable.
+- SSH-paired hosts keep their behavior; the two shapes coexist, and the
+  desktop shows which one a host uses.

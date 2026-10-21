@@ -371,6 +371,18 @@ authentication input also carries the connection origin: the loopback
   the other channel is rejected, so a stolen gateway token cannot escalate
   through an SSH tunnel and an SSH-paired owner token cannot be replayed
   through the Gateway.
+
+- **Planned (R8, ADR `remote-control-router-account-binding` amendment 3):
+  desktop-class devices are owners.** A device admitted through account mode
+  with a verified Host-certificate proof (a `desktop` device request carrying a
+  signature over the request id and a nonce by the private key of a certificate
+  this Gateway issued to a computer of the same account) is treated like an
+  SSH-paired desktop device: it holds `owner` and is exempt from the remote
+  permission ceiling, because the certificate proves the machine to the
+  account's own Gateway. This is the only way a gateway-origin principal may
+  hold `owner`; the proof is the condition, not the client class. A device
+  without proof keeps the phone rules of this section unchanged, and the
+  desktop Host still decides per operation which desktop operations it opens.
 - Revocation on either the Gateway or the Host denies new connections and
   closes existing relayed logical connections within 5 seconds.
 
@@ -552,6 +564,23 @@ implemented as written.
   an answer that never arrives; the fallback is the per-Host pairing ticket
   (§3.7, protocol §11.4). The advertisement is a Host's own claim: a Host with no
   confirmer advertises nothing rather than promising an answer no one can give.
+
+- **Desktop-class devices and automatic admission (planned, R8).** A computer of
+  the account may join its siblings automatically, without a human answer, but
+  only with proof: the request must carry a `desktop` client class and a
+  signature by the private key of a Host certificate the Gateway issued to a
+  computer of the same account, verified against the Gateway CA and the
+  certificate's account binding before the request is treated as a desktop
+  request. Automatic admission is a per-computer switch ("allow same-account
+  computers to join automatically", default on, device-local, never synced);
+  with it off, the request falls back to the per-device confirmation above.
+  Every automatic admission produces the same "new device" notice and audit
+  record a confirmed one does, and any Host of the account can revoke it. A
+  computer that has not announced `device.desktop-auto` is never sent the new
+  frames and is reported to the requesting desktop as needing an update. The
+  desktop's account-mode remote-control switch defaults **on** once the Router
+  advertises a Gateway and an account key resolves; a user who turned it off
+  keeps it off, and the self-hosted flow still starts off. This amends gate 27.
 
 ## 4. Authorization model
 
@@ -926,9 +955,14 @@ separate, explicitly specified credential-management capability is added.
 26. Revocation on either the Gateway or the Host denies new connections and
     closes existing logical connections within 5 seconds. Applies from R4
     (D665).
-27. With the desktop's gateway-link setting disabled, the desktop attempts
-    no connection and opens no listener, proven by regression tests.
-    Applies from R5 (D665).
+27. The desktop attempts no connection and opens no listener while its
+    remote-control switch is off, and an explicitly disabled switch is never
+    re-enabled by an account-mode default. With account mode available (the
+    Router advertises a `remoteGateway` object and an account key resolves) the
+    switch starts on for a user who has never chosen, and only then; with the
+    switch off, no enrollment, no link, and no listener, proven by regression
+    tests. Applies from R5 (D665); the account-mode default is R8 (ADR
+    `remote-control-router-account-binding` amendment 3).
 28. A gateway-origin pairing token (issued by `remote-pair` or the desktop
     settings page) is redeemed only over the Host link and never on the
     loopback `RACP-WS` binding, and an ssh-origin pairing token is never
@@ -965,6 +999,15 @@ separate, explicitly specified credential-management capability is added.
     a revoked device and a provider-reported dead token have no registration;
     and no provider credential appears in a log, an audit record, or an error
     message. Applies from R5 PR-6.
+35. Automatic admission of a same-account computer happens only for a `desktop`
+    request whose Host-certificate proof verifies against the Gateway CA and
+    the account binding; a request without valid proof, a phone or browser
+    device, and a target computer that has not announced `device.desktop-auto`
+    are all refused or fall back to the per-device confirmation, never admitted
+    silently; every automatic admission produces a device notice and an audit
+    record; and a phone or browser device still never holds `owner` and never
+    leaves the remote permission ceiling. Applies from R8 (D675, ADR
+    `remote-control-router-account-binding` amendment 3).
 
 ## 13. Amendment history
 
@@ -1024,3 +1067,13 @@ accepted risk that the account directory now vouches for sibling Hosts, with
 its required mitigations; and strict mode. §3.1–§3.7, the gateway-origin
 restrictions of D665, and the self-hosted enrollment and pairing paths are
 unchanged.
+
+D675 (2026-10-21, ADR `remote-control-router-account-binding` amendment 3) adds
+the desktop-class device: §3.7 records that a device admitted with a verified
+Host-certificate proof holds `owner` and is exempt from the remote permission
+ceiling, as the only way a gateway-origin principal may hold `owner`; §3.8
+records automatic admission of a same-account computer with its per-computer
+switch, the `device.desktop-auto` capability gate, and the account-mode default
+of the remote-control switch; gate 27 is restated for "never chosen" versus
+"explicitly disabled", and gate 35 covers the proof and the refusals. Phones,
+browsers, the self-hosted flow, and gates 25, 26, and 28 are unchanged.

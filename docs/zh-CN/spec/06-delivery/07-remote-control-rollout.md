@@ -535,3 +535,23 @@ D666（2026-10-18，ADR `remote-control-router-account-binding`）在 R4–R6 �
 `E2E-REMOTE-ACCOUNT-*` 场景与安全规格验收门 29–33 的退出条件、§5 的按 Router 启用、
 §6 的 R7 准入，以及“Router 不返回 `remoteGateway` 时保持 R4/R5 的自托管流程并作为
 回退”这条规则。gRPC 绑定保持保留、不排期。
+
+### R8 —— 同账号电脑自动接入（D675）
+
+在 R7 之上交付 ADR `remote-control-router-account-binding` 修订 3 的桌面类设备面：账号内的
+一台电脑无需 SSH 即可接入兄弟电脑、持有 `owner`，并可在另一台机器上开始工作。自托管流程、
+手机的设备确认流程与手机角色集合均不变。工作包（每个一个 PR）：
+
+| # | 仓库 | 工作 | 依赖 |
+|---|---|---|---|
+| A | Desktop | 本决策：ADR 修订、规格同步、决策号 D675，以及 P0 测量（文档与埋点） | — |
+| B | Desktop | `apps/remote-gateway`：`GET /v1/hosts/{hostId}/ws` 客户端 WebSocket 路由，沿用同一 Bearer 设备 token，1:1 映射到 Host link 逻辑连接 | A |
+| C | Desktop | `desktop` 客户端类别与 `hostProof` 校验、`device.desktop-auto`、带每机开关的自动授予、经证明的桌面设备授予 `owner` | A |
+| D | Desktop | 桌面 Host 为桌面类设备补齐的操作（会话改名/删除/归档/配置、工作区 list/read/diff），与 `packages/host-runtime` 共用；手机仍 `FORBIDDEN` | C |
+| E | Desktop | 渲染层：主机列表与新建项目对话框中的账号电脑、按电脑分组的侧边栏、离线与「需要升级」状态、i18n | B、D |
+| F | Desktop | 统一「账户」页：账号、本机、我的设备、配置同步、高级 | E |
+| G | ops | Nginx 为 `/v1/hosts/*/ws` 增加 `Upgrade` 头；需要用户授权 | B |
+
+退出条件：`E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop` 通过；安全 gate 25、27、35
+签署（手机仍不获得 `owner`、明确关闭的开关保持关闭、无证明的桌面设备被拒绝自动授予）；
+P7 的改动依据重跑后的 P0 实测数据决定，而不是依据方案里的假设。

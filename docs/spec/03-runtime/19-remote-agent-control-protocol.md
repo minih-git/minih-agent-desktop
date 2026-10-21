@@ -1315,6 +1315,26 @@ Rules:
    malformed frame and an unknown `type` are dropped without closing the link,
    in both directions.
 
+7. **Desktop-class devices and the sibling-desktop route (planned, R8; ADR
+   `remote-control-router-account-binding` amendment 3).** `device.request` and
+   the account login/device bodies gain `client: "desktop"` beside `web` /
+   `ios` / `android`. A desktop request also carries `hostProof`: the
+   applicant's `hostId` and a signature over the request id and a nonce, made
+   with the private key of the Host certificate this Gateway issued to that
+   computer. The Gateway verifies the chain to its own CA, the
+   `OU=account:<accountId>` binding against the account of the presented
+   AccessKey, and the signature; only then is the request a desktop request. A
+   verified desktop request whose target computer advertises
+   `device.desktop-auto` and has automatic admission on is granted without a
+   human answer, and the device holds `owner`. Without the capability the
+   Gateway MUST NOT send the new frames — an old Host drops an unknown `type`
+   silently (rule 6) — and the requesting desktop reports that computer as
+   needing an update. A `desktop` client reaches the Host over
+   `RACP-WS` at `GET /v1/hosts/{hostId}/ws`, authenticated by its device token
+   exactly like the device-token routes of §11.2, and the Gateway relays
+   `RACP-WS` frames byte for byte onto the same logical connection a
+   `RACP-HTTP` command uses. Phones keep `RACP-HTTP` + SSE unchanged.
+
 Enrollment and pairing run against the same listener:
 
 - **Enrollment (Host to Gateway).** An administrator prints a one-time
@@ -1749,6 +1769,20 @@ written.
   it reveals only that the `hostId` is enrolled. Every account-scoped route
   answers the uniform `UNAUTHORIZED` of §13 instead, so a listing or a routing
   attempt never discloses another account's Hosts.
+
+- **Desktop-class devices (planned, R8).** A device granted to a
+  `client: "desktop"` request with a verified Host-certificate proof is a
+  desktop-class device: it holds `owner`, is exempt from the remote permission
+  ceiling exactly like an SSH-paired desktop device, and reaches the Host over
+  the WebSocket route above. Admission is automatic when the target computer
+  advertises `device.desktop-auto` and its "allow same-account computers to
+  join automatically" switch is on (default on); with the switch off the
+  request falls back to the ordinary confirmation of this section. Every
+  automatic admission produces the same "new device" notice and audit record a
+  confirmed one does, and any Host of the account can revoke it. Which
+  operations the device may call is decided per operation by the desktop Host:
+  it opens the desktop surface explicitly and keeps refusing it to a phone. A
+  phone or browser device is unchanged by this clause.
 
 ### 11.6 Redacted push (R5 PR-6; ADR 0331 decision 7)
 

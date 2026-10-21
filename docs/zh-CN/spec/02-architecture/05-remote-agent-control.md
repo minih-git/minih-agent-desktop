@@ -218,3 +218,32 @@ Host link，R5 为桌面作为可连接的 Host，R6 为浏览器与移动客户
 `EncryptionPort` 加密凭据），归属一节记录 Gateway 的具体存储布局。
 
 详见英文源规格中的完整组件归属、迁移边界和验收条款。
+
+## 2026-10-21 新增：同账号电脑自动接入（R8，D675）
+
+ADR `remote-control-router-account-binding` 修订 3 在 R7 之上加一条拓扑：同一账号的
+另一台电脑不再依赖 SSH，而是经 Gateway 接入兄弟电脑。
+
+- **客户端传输**：桌面作为 Remote Client 走 `RACP-WS`
+  （`GET /v1/hosts/{hostId}/ws`），命令、事件与服务端请求共用一条连接；`RemoteHostTransport`
+  新增 `"account"`。手机继续用 `RACP-HTTP` + SSE，不变。
+- **设备类别与证明**：`device.request` 新增 `client: "desktop"` 与 `hostProof`（申请方
+  `hostId` 加上用本机 Host 证书私钥对 requestId 与 nonce 的签名）。Gateway 校验证书链
+  到自己的 CA、且 `OU=account:<accountId>` 与本账号一致后，才把请求当作桌面类请求。
+- **自动接入与开关**：目标电脑开启「允许同账号电脑自动接入」（默认开、设备本地、不同步）
+  时无需人工确认即授予；关闭时回落到 R7 的逐设备确认。目标电脑须先声明
+  `device.desktop-auto`，否则不发新帧，申请方显示「该电脑需要升级」。
+- **角色**：桌面类设备持有 `owner` 并豁免远程权限上限（与 SSH 配对的桌面设备同级）；
+  手机与浏览器设备仍是 `viewer` / `controller` / `approver`，仍受上限约束、仍不给
+  `allow-session`。具体开放哪些桌面操作由 Host 逐项决定（R8 工作包 D）。
+- **Agent 运行位置**：选中 B 的项目时回合在 B 上运行，使用 B 自己的 provider 配置与
+  B 自己的 Router 账号调用模型；A 只是远程界面，凭据不跨机器。SSH 主机保留既有
+  「本地 Agent + 远程工具」形态。
+- **默认开关**：Router 公布 Gateway 且账号 key 可解析时，桌面的远程控制开关对「从未选择
+  过」的用户默认开启；用户明确关闭过的保持关闭。自托管流程仍默认关闭（安全规范 §3.8 与
+  gate 27 相应修订，新增 gate 35）。
+
+本页仍是英文源规格的中文导读；完整的帧定义、退出条件与验收场景见英文
+`02-architecture/05-remote-agent-control.md` §5.3/§5.4/§6、`03-runtime/19-…` §11.4/§11.5、
+`06-delivery/07-remote-control-rollout.md` R8 与
+`E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop`。

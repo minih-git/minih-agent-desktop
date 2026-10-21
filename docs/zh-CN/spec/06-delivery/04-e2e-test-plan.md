@@ -10367,3 +10367,28 @@ host-created files. The full app's file-preview viewer is covered separately.
   isolated native-window lifecycle checks
   (`pnpm test:e2e:upstream-reliability-ui`); `pnpm test:e2e:boot`. GPU measurement
   is not implied by visual/functional acceptance.
+
+#### E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop
+
+- **前置**：本地 Router 测试实例（key A）、本地测试 Gateway，以及账号 A 的两台桌面 Host
+  （A 与 B）：都打开账号模式远程控制开关、都打开默认开启的「允许同账号电脑自动接入」开关，
+  各有一个回环模型 stub。两台桌面各自完成账号注册，B 有一个项目与一个待读取的文件。
+- **步骤**：1) 启动两台桌面，等两条链路就绪。2) 在 A 上直接打开主机列表，确认 B 作为账号
+  电脑出现，且两台机器都没有弹确认框。3) 在 B 上查看设备通知，确认自动接入以 A 的名称被
+  记录。4) 在 A 上浏览 B 的目录并注册一个项目。5) 在该项目里发起一轮对话，让模型调用
+  `Read`。6) 确认流式答复到达 A，同时 B 自己的会话列表里出现同一会话。7) 关闭 B 的自动
+  接入开关，再从第三台桌面申请设备，确认 B 改为询问本机用户而不是自动授予。8) 停止 B，
+  确认 A 显示其离线且不在本地执行该会话。
+- **预期**：A 的设备因 Host 证书证明有效而被 B 自动授予；A 持有 `owner`，可执行手机仍
+  被拒绝的桌面操作（`session/configure`、工作区读取）；回合在 B 上运行，使用 B 的 provider
+  配置与 B 自己的 Router 账号，跨 Gateway 的只有事件；B 为自动接入显示「新设备」通知并写
+  审计记录；开关关闭后同一请求改为由 B 的用户确认；同账号手机仍是
+  `viewer` / `controller` / `approver`、仍受远程权限上限约束、仍被拒绝桌面专属操作；未声明
+  `device.desktop-auto` 的旧桌面被标记为需要升级；停止 B 后 A 只报告离线，不在本地执行。
+- **关联规格**：ADR `remote-control-router-account-binding` 修订 3，安全 §3.7 / §3.8 与
+  gate 25、27、35，协议 §11.4 / §11.5，rollout §2（R8）
+- **验收**：Security、Quality、Recovery
+- **里程碑**：Post-MVP（remote-control rollout R8，D675）
+- **状态**：Planned（R8，D675）—— 该场景尚未自动化。它依赖的两条传输由 P0 测量脚本
+  （`scripts/measure-remote-latency.mjs`）在本地覆盖：回环 `RACP-WS` 上的 owner，以及
+  `RACP-HTTP` + SSE 上的账号设备。

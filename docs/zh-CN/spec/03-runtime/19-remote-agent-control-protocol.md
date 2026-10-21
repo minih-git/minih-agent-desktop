@@ -891,3 +891,26 @@ type ModelSummary = {
 
 角色划分（`viewer` 读、`controller` 写与新建）、会话级与主机级事件模型、游标与重放、
 快照组成、网关来源主体的权限上限、以及审批有效期策略，本提案均不改变。
+
+## 11.4 / 11.5 补充（R8 / D675，目标设计，尚未实现）
+
+- **桌面类设备与兄弟桌面路由。** `device.request` 与账户登录／设备请求的 body 在
+  `web` / `ios` / `android` 之外新增 `client: "desktop"`。桌面类请求还带 `hostProof`：
+  申请方 `hostId` 加上用本 Gateway 签发给该电脑的 Host 证书私钥、对 requestId 与 nonce
+  的签名。Gateway 先校验证书链到自己的 CA、校验 `OU=account:<accountId>` 与本账号一致、
+  再校验签名，通过后该请求才算桌面类请求。
+- **自动授予。** 证明有效的桌面类请求，在目标电脑声明 `device.desktop-auto` 且其
+  「允许同账号电脑自动接入」开关打开（默认开）时无需人工确认即授予，设备持有 `owner`；
+  开关关闭时回落到 §11.5 既有的逐设备确认。目标电脑未声明该能力时，Gateway 绝不发送
+  新帧（旧 Host 会静默丢弃未知 `type`），申请方把该电脑报告为「需要升级」。
+- **WebSocket 客户端路由。** 桌面类设备经 `GET /v1/hosts/{hostId}/ws` 使用 `RACP-WS`，
+  鉴权方式与 §11.2 的设备 token 路由一致，Gateway 把 `RACP-WS` 帧原样转发到同一条逻辑
+  连接上；手机继续使用 `RACP-HTTP` + SSE，不变。
+- **角色与操作。** 桌面类设备持有 `owner`，与 SSH 配对的桌面设备同级、豁免远程权限上限；
+  手机／浏览器设备仍是 `viewer` / `controller` / `approver`、`pairedDevice: false`、
+  始终受上限约束、不给 `allow-session`。桌面 Host 逐项决定开放哪些桌面操作，未开放的对
+  两类设备都仍返回 `FORBIDDEN`。每次自动接入都会像人工确认那样产生「新设备」通知与审计
+  记录，且账号内任何 Host 都可以撤销它。
+
+完整帧定义与退出条件见英文源规格 §11.4 规则 7、§11.5 的「Desktop-class devices」，以及
+rollout R8 与 `E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop`。
