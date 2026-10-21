@@ -15,7 +15,7 @@
  * ids and titles only — never a credential, a token, or a transcript — so a
  * history entry is safe to leave in the browser's session store.
  */
-import { previousScreen, type Screen } from "./screen-stack.js";
+import { isRootKind, previousScreen, type Screen } from "./screen-stack.js";
 
 /** The `history.state` payload this client writes. */
 export type ScreenHistoryState = { screen: Screen };
@@ -39,6 +39,8 @@ export function sameScreen(a: Screen, b: Screen): boolean {
         a.title === (b as typeof a).title &&
         a.projectId === (b as typeof a).projectId
       );
+    case "settings":
+      return a.from === (b as typeof a).from;
     default:
       return true;
   }
@@ -51,9 +53,15 @@ export function screenFromHistoryState(state: unknown): Screen | null {
   if (!screen || typeof screen !== "object") return null;
   switch (screen.kind) {
     case "hosts":
+    case "chats":
     case "pair":
     case "account":
+    case "chat":
+    case "chatArchive":
+    case "modelGateway":
       return { kind: screen.kind };
+    case "settings":
+      return isRootKind(screen.from) ? { kind: "settings", from: screen.from } : null;
     case "projects":
       return typeof screen.hostId === "string" && screen.hostId ? { kind: "projects", hostId: screen.hostId } : null;
     case "projectSessions":

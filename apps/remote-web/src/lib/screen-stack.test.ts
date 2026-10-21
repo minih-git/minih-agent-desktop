@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { previousScreen } from "./screen-stack.js";
+import { isRootKind, isRootScreen, previousScreen } from "./screen-stack.js";
 
 /**
  * Every back path — the header button, Android's hardware back, the browser's
@@ -54,5 +54,32 @@ describe("previousScreen", () => {
 
   it("has nowhere to go from the computer list", () => {
     expect(previousScreen({ kind: "hosts" })).toBeNull();
+  });
+
+  it("goes from a direct-chat page back to the Chats root", () => {
+    expect(previousScreen({ kind: "chat" })).toEqual({ kind: "chats" });
+    expect(previousScreen({ kind: "chatArchive" })).toEqual({ kind: "chats" });
+    expect(previousScreen({ kind: "modelGateway" })).toEqual({ kind: "chats" });
+  });
+
+  it("returns Settings to the root its gear was opened from", () => {
+    expect(previousScreen({ kind: "settings", from: "chats" })).toEqual({ kind: "chats" });
+    expect(previousScreen({ kind: "settings", from: "hosts" })).toEqual({ kind: "hosts" });
+  });
+
+  it("has nowhere to go from either root, so hardware back there exits", () => {
+    expect(previousScreen({ kind: "chats" })).toBeNull();
+    expect(previousScreen({ kind: "hosts" })).toBeNull();
+  });
+
+  it("recognizes exactly the two roots", () => {
+    expect(isRootScreen({ kind: "chats" })).toBe(true);
+    expect(isRootScreen({ kind: "hosts" })).toBe(true);
+    expect(isRootScreen({ kind: "session", hostId: "h1", sessionId: "s1", title: "" })).toBe(false);
+    expect(isRootScreen({ kind: "settings", from: "chats" })).toBe(false);
+    expect(isRootKind("chats")).toBe(true);
+    expect(isRootKind("hosts")).toBe(true);
+    expect(isRootKind("session")).toBe(false);
+    expect(isRootKind("nope")).toBe(false);
   });
 });
