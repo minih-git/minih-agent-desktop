@@ -77,6 +77,12 @@ export type PluginServicesDependencies = {
   getWorkspacePath: () => string | null;
   resolveAgentRuntimeLaunch: (...args: any[]) => Promise<any>;
   vendorOAuth: VendorOAuth;
+  /**
+   * Announce a session title a plugin wrote to the RACP Host. The renderer
+   * fan-out below is local; a phone holding the session only learns the new name
+   * from a `session.changed` event.
+   */
+  announceTitleChange?: (sessionId: string) => void;
 };
 
 export function createPluginServices({
@@ -97,6 +103,7 @@ export function createPluginServices({
   getWorkspacePath,
   resolveAgentRuntimeLaunch,
   vendorOAuth,
+  announceTitleChange,
 }: PluginServicesDependencies) {
   // A plugin request can lose its race with host shutdown or restart.
   const isHostUnavailable = (error: unknown): boolean =>
@@ -145,6 +152,13 @@ export function createPluginServices({
         (result as { deleted?: unknown })?.deleted === true);
     if (changed) {
       sendToRenderer(IPC.event.sessionsChanged, { reason: method, pluginId });
+      // A title a plugin wrote is durable in the host too: a phone holding the
+      // session needs the same `session.changed` the desktop sidebar gets.
+      const titled =
+        (method === "plugin.session.rename" || method === "plugin.session.setAutoTitle") &&
+        (result as { updated?: unknown })?.updated === true;
+      const sessionId = typeof input.sessionId === "string" ? input.sessionId : "";
+      if (titled && sessionId) announceTitleChange?.(sessionId);
     }
     return result;
   };
