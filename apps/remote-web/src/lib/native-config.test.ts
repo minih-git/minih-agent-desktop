@@ -4,10 +4,12 @@
  * It reads the committed native project files with plain `node:fs` — no jsdom,
  * no simulator — and fails when a rule the client depends on is broken: HTTPS
  * only, no cleartext, and no backup of the Keystore-wrapped data. Push (R5
- * PR-6) is the native app's, and the two files it needs — the iOS entitlement and
- * the Android Firebase configuration — are the operator's to provide, never the
- * repository's, so the rules below keep them out and keep a build without them
- * working.
+ * PR-6) is the native app's: the iOS entitlement is committed and wired into
+ * both configurations, because the capability is not a secret and a build
+ * without it compiles, runs, and silently receives nothing. Every piece of
+ * signing material — the APNs key, the team, the profiles — and the Android
+ * Firebase configuration stay the operator's, so the rules below keep those
+ * out.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -95,12 +97,19 @@ describe("ios/App/App/Info.plist", () => {
     expect(infoPlist).not.toMatch(/DEVELOPMENT_TEAM|ProvisioningProfile|apple-team/i);
   });
 
-  it("commits no entitlements file: the push capability is the operator's", () => {
-    // An `aps-environment` entitlement is only valid inside an App ID the
-    // operator owns, so it is added in Xcode by whoever signs the build (see
-    // the README); committing one would ship somebody else's team setup.
-    expect(exists("ios/App/App/App.entitlements")).toBe(false);
-    expect(exists("ios/App/App/App.entitlements.plist")).toBe(false);
+  it("commits the push entitlement, and only the push entitlement", () => {
+    // The capability is not a secret, and a build without it compiles, runs and
+    // silently receives nothing, so the file is committed and referenced by both
+    // configurations. What stays out is the signing material: the APNs `.p8`
+    // belongs to the Gateway host, and the team, profiles, and tokens belong to
+    // whoever signs the build. The list of keys is the whole rule — a later
+    // capability (an App Group for the notification extension) has to update
+    // this test on purpose rather than slip in.
+    const entitlements = read("ios/App/App/App.entitlements");
+    expect(xcodeProject).toContain("CODE_SIGN_ENTITLEMENTS = App/App.entitlements;");
+    const keys = [...entitlements.matchAll(/<key>([^<]+)<\/key>/g)].map((match) => match[1]);
+    expect(keys).toEqual(["aps-environment"]);
+    expect(entitlements).toContain("<string>development</string>");
   });
 });
 
