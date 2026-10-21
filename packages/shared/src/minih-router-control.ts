@@ -206,11 +206,14 @@ export function parseMinihRouterKeySession(data: unknown): MinihRouterKeySession
   if (row.authenticated !== true) return null;
   if (text(row.principal_type) !== "access_key") return null;
   const rawId = row.access_key_id;
+  // The id is an account identity, so it is normalised as decimal text: going
+  // through `Number` would round two large string ids onto the same value.
+  const digits = typeof rawId === "string" ? rawId.trim().replace(/^0+(?=\d)/, "") : "";
   const id =
     typeof rawId === "number" && Number.isSafeInteger(rawId) && rawId > 0
       ? String(rawId)
-      : typeof rawId === "string" && /^\d+$/.test(rawId.trim()) && Number(rawId.trim()) > 0
-        ? String(Number(rawId.trim()))
+      : /^[1-9]\d*$/.test(digits)
+        ? digits
         : null;
   if (!id) return null;
   return {

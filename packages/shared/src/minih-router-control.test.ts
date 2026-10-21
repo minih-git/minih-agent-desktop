@@ -48,6 +48,12 @@ describe("parseMinihRouterKeySession", () => {
   it("accepts the id as a decimal string, normalised", () => {
     expect(parseMinihRouterKeySession({ ...answer, access_key_id: "42" })?.accessKeyId).toBe("42");
     expect(parseMinihRouterKeySession({ ...answer, access_key_id: "0042" })?.accessKeyId).toBe("42");
+    // Ids beyond the safe integer range stay distinct instead of rounding together.
+    const big = parseMinihRouterKeySession({ ...answer, access_key_id: "9007199254740993" });
+    const next = parseMinihRouterKeySession({ ...answer, access_key_id: "9007199254740992" });
+    expect(big?.accessKeyId).toBe("9007199254740993");
+    expect(next?.accessKeyId).toBe("9007199254740992");
+    expect(parseMinihRouterKeySession({ ...answer, access_key_id: "000" })).toBeNull();
   });
 
   it("refuses anything that is not an authenticated access key", () => {
