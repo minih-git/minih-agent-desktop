@@ -331,6 +331,98 @@ test("the three switch states: never chosen defaults on, an explicit off stays o
   }
 });
 
+/**
+ * Boot a desktop that already has a stored `remoteGateway` row, the way an
+ * upgrade finds it. The rows below are exactly what the pre-amendment build
+ * wrote: `setEnabled` wrote `{enabled, url}`, the enrollment wrote
+ * `{enabled, url}`, and the strict-mode save wrote `{enabled, url,
+ * strictDevices}` — none of them carried `decided`, which did not exist yet.
+ */
+async function bootWithStoredRow(remoteGateway, hostState) {
+  const dataDir = await mkdtemp(join(tmpdir(), "remote-upgrade-"));
+  const host = fakeHost(hostState);
+  const { port, calls } = recordingPort(await accountCertificate());
+  const saved = [];
+  const bootstrap = createGatewayLinkBootstrap({
+    dataDir,
+    encryption: fakeEncryption(),
+    port,
+    getSettings: async () => (remoteGateway === undefined ? null : { remoteGateway }),
+    saveSettings: async (next) => {
+      saved.push(next);
+    },
+    getHost: () => host,
+    getAgentHost: () => ({}),
+    serverVersion: "0.0.0-test",
+    emitStatus: () => undefined,
+    log: () => undefined,
+  });
+  await bootstrap.open();
+  return {
+    status: await bootstrap.controller().status(),
+    saved,
+    calls,
+    setEnabled: async (enabled) => {
+      const next = await bootstrap.controller().setEnabled(enabled);
+      return next;
+    },
+    close: async () => {
+      await bootstrap.dispose();
+      await rm(dataDir, { recursive: true, force: true });
+    },
+  };
+}
+
+test("a switch turned off before this release stays off after the upgrade", async () => {
+  // Gate 27: "an explicitly disabled switch is never re-enabled". The rows a
+  // previous build could leave behind carry `enabled: false` and no `decided`,
+  // so reading `decided` alone would treat a deliberate off as "never chosen"
+  // and turn it back on the first time account mode became available. A record
+  // that exists with an `enabled` field is a decision, whatever else it holds.
+  const switchedOff = await bootWithStoredRow({ enabled: false, url: "wss://gateway.example.com/hostlink" });
+  try {
+    assert.equal(switchedOff.status.enabled, false, "an old explicit off must stay off");
+    assert.equal(switchedOff.calls.start, 0, "nothing dials");
+    assert.deepEqual(switchedOff.saved, [], "the upgrade must not rewrite the user's decision");
+  } finally {
+    await switchedOff.close();
+  }
+
+  // The same row with the strict switch on: still off, and the strict switch
+  // survives — turning the link on later must not read as a first visit.
+  const strictOff = await bootWithStoredRow({
+    enabled: false,
+    url: "wss://gateway.example.com/hostlink",
+    strictDevices: true,
+  });
+  try {
+    assert.equal(strictOff.status.enabled, false);
+    assert.deepEqual(strictOff.saved, [], "an upgrade never rewrites a decided row");
+    const turnedOn = await strictOff.setEnabled(true);
+    assert.equal(turnedOn.enabled, true);
+    assert.equal(turnedOn.strictDevices, true, "the strict switch survives the upgrade");
+  } finally {
+    await strictOff.close();
+  }
+
+  // A row that says it was on stays on.
+  const switchedOn = await bootWithStoredRow({ enabled: true, url: "wss://gateway.example.com/hostlink" });
+  try {
+    assert.equal(switchedOn.status.enabled, true);
+  } finally {
+    await switchedOn.close();
+  }
+
+  // Only a genuinely absent record is "never chosen", and only then does the
+  // account-mode default apply.
+  const neverChosen = await bootWithStoredRow(undefined);
+  try {
+    assert.equal(neverChosen.status.enabled, true, "a fresh install still defaults on in account mode");
+  } finally {
+    await neverChosen.close();
+  }
+});
+
 test("a self-hosted desktop with no account mode keeps its off default", async () => {
   // The "off by default" reading was written for the self-hosted flow and stays
   // exactly as it was: a Gateway the user must configure first is not an

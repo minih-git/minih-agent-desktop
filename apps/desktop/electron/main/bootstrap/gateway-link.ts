@@ -403,14 +403,20 @@ export function createGatewayLinkBootstrap(
       configuredUrl = typeof configured?.url === "string" ? configured.url : "";
       configuredStrictDevices = configured?.strictDevices === true;
 
-      // Security §3.8 / gate 27, three states. `enabled: true` means the user
-      // turned it on; `enabled: false` with `decided: true` means they turned it
-      // off and must stay off; anything else is a user who has never chosen.
-      // Account mode defaults that third case on — the account already names
-      // this desktop, and a computer the user signed in is one they expect to
-      // reach — while the self-hosted flow keeps its "off by default" reading,
-      // which was written for a Gateway the user has to configure first.
-      if (!configuredEnabled && configured?.decided !== true) {
+      // Security §3.8 / gate 27. "Never chosen" is narrow on purpose: only a
+      // missing `remoteGateway` object, or one without an `enabled` field, is a
+      // user who has not answered. **A record that carries `enabled: false` is
+      // an explicit off, with or without `decided`** — every row written before
+      // that field existed came from a build whose only way to write
+      // `enabled: false` was the user turning the switch off (or a save that
+      // carried the switch's current state), so re-enabling one of those would
+      // silently override a decision the user already made.
+      //
+      // Account mode defaults the "never chosen" case on — the account already
+      // names this desktop — while the self-hosted flow keeps its "off by
+      // default" reading, which was written for a Gateway the user has to
+      // configure first.
+      if (!configuredEnabled && configured?.enabled === undefined) {
         const mode = await probeAccountMode();
         if (mode?.available === true) {
           try {

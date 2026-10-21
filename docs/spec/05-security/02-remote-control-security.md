@@ -634,9 +634,15 @@ implemented as written.
   operator can revoke the enrolled Host on the Gateway. A computer that has not
   announced `device.desktop-auto` is never sent the new frames and is reported
   to the requesting desktop as needing an update. The desktop's account-mode
+  to the requesting desktop as needing an update. The desktop's account-mode
   remote-control switch defaults **on** once the Router advertises a Gateway and
   an account key resolves; a user who turned it off keeps it off, and the
-  self-hosted flow still starts off. This amends gate 27.
+  self-hosted flow still starts off. **A stored decision is a decision**: the
+  default applies only when there is no `remoteGateway` object at all, or one
+  with no `enabled` field. A record that carries `enabled: false` counts as an
+  explicit off even when it predates the `decided` marker, because every build
+  that wrote such a row could only write it from the switch's own state — so an
+  upgrade never re-enables a switch a user had turned off. This amends gate 27.
 
 ## 4. Authorization model
 
@@ -1015,10 +1021,14 @@ separate, explicitly specified credential-management capability is added.
     remote-control switch is off, and an explicitly disabled switch is never
     re-enabled by an account-mode default. With account mode available (the
     Router advertises a `remoteGateway` object and an account key resolves) the
-    switch starts on for a user who has never chosen, and only then; with the
+    switch starts on for a user who has never chosen, and only then: a stored
+    `remoteGateway` object that carries an `enabled` field is a decision, so
+    `enabled: false` stays off whether or not the row also carries the
+    `decided` marker — a row written by an earlier build counts, which is what
+    keeps an upgrade from re-enabling a switch a user had turned off. With the
     switch off, no enrollment, no link, and no listener, proven by regression
-    tests. Applies from R5 (D665); the account-mode default is R8 (ADR
-    `remote-control-router-account-binding` amendment 3).
+    tests including the upgrade rows. Applies from R5 (D665); the account-mode
+    default is R8 (ADR `remote-control-router-account-binding` amendment 3).
 28. A gateway-origin pairing token (issued by `remote-pair` or the desktop
     settings page) is redeemed only over the Host link and never on the
     loopback `RACP-WS` binding, and an ssh-origin pairing token is never

@@ -528,14 +528,18 @@ certificate proves it. This amendment lets a computer say so, and join.
    a `remoteGateway` object and the account key resolves, the desktop's
    remote-control switch starts on for a user who has never chosen; a user who
    turned it off keeps it off. This amends security §3.8 and gate 27, whose
-   "off by default" reading was written for the self-hosted flow. Three states
-   therefore have to be stored, not two: the settings row gains an optional
-   `decided`, so `enabled: true` means the user turned it on, `enabled: false`
-   with `decided: true` means they turned it off and no default may re-enable
-   it, and a row without `decided` — including every row written before the
-   field — is "never chosen". Choosing the default writes `decided: true`, so
-   the decision is made once and read afterwards rather than re-derived on every
-   boot. A row that cannot be written leaves the switch off rather than half-on.
+   "off by default" reading was written for the self-hosted flow. "Never
+   chosen" is therefore defined narrowly, by what is on disk rather than by a
+   new marker: a missing `remoteGateway` object, or one with no `enabled` field.
+   **A row that carries `enabled: false` is an explicit off, with or without
+   `decided`** — every build that could write such a row wrote it from the
+   switch's own state, so treating it as a first visit would let an upgrade
+   override a decision the user already made, and the switch's own saves would
+   then re-enable it. The optional `decided` marker records that a choice came
+   from the user, which keeps a later save from having to re-derive the state;
+   it never widens the default. Choosing the default writes `enabled: true`
+   together with `decided: true`, and a row that cannot be written leaves the
+   switch off rather than half-on.
 6. **A capability, so an old Host is visible.** The new frames go only to a
    Host that advertises `device.desktop-auto` on its `host.capabilities` frame
    (protocol §11.4 rule 6), which is that Host's own claim that it can verify a
