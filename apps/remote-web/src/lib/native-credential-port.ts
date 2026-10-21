@@ -44,6 +44,8 @@ export type NativeCredentialPortOptions = {
    * than a pairing failure, and `ready()` retries it on the next launch.
    */
   onStorageError?: (error: unknown) => void;
+  /** Additional host ids (e.g. from other saved Gateway profiles) whose Keychain tokens must not be pruned on startup. */
+  preserveHostIds?: () => Iterable<string>;
 };
 
 export class NativeCredentialPort implements CredentialPort {
@@ -66,7 +68,10 @@ export class NativeCredentialPort implements CredentialPort {
    */
   async ready(): Promise<void> {
     const store = this.requireStore();
-    const known = new Set(this.options.registry.list().map((entry) => entry.hostId));
+    const known = new Set([
+      ...this.options.registry.list().map((entry) => entry.hostId),
+      ...(this.options.preserveHostIds ? this.options.preserveHostIds() : []),
+    ]);
     this.tokens.clear();
     for (const key of await store.keys()) {
       const hostId = hostIdFromKey(key);

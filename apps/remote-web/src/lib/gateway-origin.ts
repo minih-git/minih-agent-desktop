@@ -30,3 +30,26 @@ export function resolveGatewayOrigin(raw: string | undefined | null): string {
   if (url.origin !== value) throw new Error(`the Gateway origin must be a bare origin, without a path: ${value}`);
   return url.origin;
 }
+
+export const CUSTOM_GATEWAY_STORAGE_KEY = "minih.remote-web.gateway-origin.v1";
+export const SAVED_GATEWAYS_STORAGE_KEY = "minih.remote-web.saved-gateways.v1";
+
+/**
+ * Normalize a user-entered Gateway address into a bare `https:` or `http:`
+ * origin, or `null` when it is not a valid origin. A bare host (`rc.example.com`
+ * or `rc.example.com:8443`) defaults to `https://`.
+ */
+export function normalizeUserGatewayOrigin(raw: string | undefined | null): string | null {
+  const trimmed = (raw ?? "").trim().replace(/\/+$/, "");
+  if (!trimmed || trimmed.includes("*")) return null;
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if (!url.hostname || url.origin !== candidate) return null;
+  return url.origin;
+}

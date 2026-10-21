@@ -15,8 +15,18 @@ import { Capacitor } from "@capacitor/core";
 
 import type { AppStateSource } from "./app-state.js";
 import { WebCookieCredentialPort, type CredentialPort } from "./credential-port.js";
-import { resolveGatewayOrigin } from "./gateway-origin.js";
-import { createHostRegistry, createMemoryStorage, type RegistryStorage } from "./host-registry.js";
+import {
+  CUSTOM_GATEWAY_STORAGE_KEY,
+  SAVED_GATEWAYS_STORAGE_KEY,
+  normalizeUserGatewayOrigin,
+  resolveGatewayOrigin,
+} from "./gateway-origin.js";
+import {
+  HOST_REGISTRY_STORAGE_KEY,
+  createHostRegistry,
+  createMemoryStorage,
+  type RegistryStorage,
+} from "./host-registry.js";
 import { NativeCredentialPort, type NativePairClient } from "./native-credential-port.js";
 import { dispatchBack } from "./navigation.js";
 import type { PushPlugin } from "./push.js";
@@ -47,7 +57,109 @@ function detectNativePlatform(): NativePairClient | null {
 export const nativePlatform = detectNativePlatform();
 export const isNativeApp = nativePlatform !== null;
 
-export const hostRegistry = createHostRegistry(browserStorage());
+const rawStorage = browserStorage();
+
+/**
+ * The default Gateway origin baked into a native build (`VITE_GATEWAY_ORIGIN`)
+ * or served by the browser's own origin.
+ */
+export const defaultGatewayOrigin = nativePlatform
+  ? resolveGatewayOrigin(import.meta.env.VITE_GATEWAY_ORIGIN)
+  : (globalThis.location?.origin ?? "");
+
+function readCustomGatewayOrigin(): string | null {
+  const raw = rawStorage.getItem(CUSTOM_GATEWAY_STORAGE_KEY);
+  return normalizeUserGatewayOrigin(raw);
+}
+
+/**
+ * The active Gateway origin. Uses a user-configured origin when one is stored,
+ * otherwise falls back to `defaultGatewayOrigin`.
+ */
+export const gatewayOrigin = readCustomGatewayOrigin() ?? defaultGatewayOrigin;
+
+function registryKeyForGateway(origin: string): string {
+  if (!origin || origin === defaultGatewayOrigin) return HOST_REGISTRY_STORAGE_KEY;
+  return `${HOST_REGISTRY_STORAGE_KEY}::${origin}`;
+}
+
+function scopedRegistryStorage(origin: string): RegistryStorage {
+  const mappedKey = registryKeyForGateway(origin);
+  return {
+    getItem: (key) => rawStorage.getItem(key === HOST_REGISTRY_STORAGE_KEY ? mappedKey : key),
+    setItem: (key, value) => rawStorage.setItem(key === HOST_REGISTRY_STORAGE_KEY ? mappedKey : key, value),
+    removeItem: (key) => rawStorage.removeItem(key === HOST_REGISTRY_STORAGE_KEY ? mappedKey : key),
+  };
+}
+
+export function getSavedGatewayOrigins(): string[] {
+  const list = new Set<string>();
+  if (defaultGatewayOrigin) list.add(defaultGatewayOrigin);
+  if (gatewayOrigin) list.add(gatewayOrigin);
+  try {
+    const raw = rawStorage.getItem(SAVED_GATEWAYS_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    if (Array.isArray(parsed)) {
+      for (const item of parsed) {
+        if (typeof item === "string") {
+          const norm = normalizeUserGatewayOrigin(item);
+          if (norm) list.add(norm);
+        }
+      }
+    }
+  } catch {
+    // Ignore malformed saved list.
+  }
+  return [...list];
+}
+
+function saveGatewayToHistory(origin: string): void {
+  const all = new Set(getSavedGatewayOrigins());
+  all.add(origin);
+  rawStorage.setItem(SAVED_GATEWAYS_STORAGE_KEY, JSON.stringify([...all]));
+}
+
+export function removeSavedGatewayOrigin(origin: string): void {
+  const norm = normalizeUserGatewayOrigin(origin);
+  if (!norm || norm === defaultGatewayOrigin) return;
+  const remaining = getSavedGatewayOrigins().filter((item) => item !== norm);
+  rawStorage.setItem(SAVED_GATEWAYS_STORAGE_KEY, JSON.stringify(remaining));
+}
+
+/**
+ * Switch the active Gateway origin (or pass `null` / `defaultGatewayOrigin` to
+ * restore the default) and reload the app so every screen and stream reconnects
+ * against the chosen Gateway. Each Gateway keeps its own paired-host list and
+ * Keychain credentials.
+ */
+export function switchGatewayOrigin(rawOrigin: string | null): { ok: true; origin: string } | { ok: false } {
+  if (rawOrigin === null || rawOrigin.trim() === "") {
+    rawStorage.removeItem(CUSTOM_GATEWAY_STORAGE_KEY);
+    if (typeof window !== "undefined") window.location.reload();
+    return { ok: true, origin: defaultGatewayOrigin };
+  }
+  const normalized = normalizeUserGatewayOrigin(rawOrigin);
+  if (!normalized) return { ok: false };
+  saveGatewayToHistory(normalized);
+  if (normalized === defaultGatewayOrigin) {
+    rawStorage.removeItem(CUSTOM_GATEWAY_STORAGE_KEY);
+  } else {
+    rawStorage.setItem(CUSTOM_GATEWAY_STORAGE_KEY, normalized);
+  }
+  if (typeof window !== "undefined") window.location.reload();
+  return { ok: true, origin: normalized };
+}
+
+function allKnownHostIdsAcrossGateways(): Set<string> {
+  const ids = new Set<string>();
+  for (const origin of getSavedGatewayOrigins()) {
+    const reg = createHostRegistry(scopedRegistryStorage(origin));
+    for (const entry of reg.list()) ids.add(entry.hostId);
+  }
+  return ids;
+}
+
+export const hostRegistry = createHostRegistry(scopedRegistryStorage(gatewayOrigin));
 
 const userAgent = globalThis.navigator?.userAgent ?? "";
 
@@ -57,6 +169,7 @@ const nativePort =
         registry: hostRegistry,
         client: nativePlatform,
         userAgent,
+        preserveHostIds: allKnownHostIdsAcrossGateways,
         // The Host is already forgotten, so the token is unreachable; the next
         // `ready()` retries the deletion.
         onStorageError: (error) => console.warn("[remote-web] the secure store did not delete an item", error),
@@ -65,15 +178,6 @@ const nativePort =
 
 export const credentialPort: CredentialPort =
   nativePort ?? new WebCookieCredentialPort({ registry: hostRegistry, userAgent });
-
-/**
- * The Gateway origin. A browser is served by its Gateway, so `'self'` is the
- * Gateway; a native build is served from the webview bundle, so the operator
- * bakes the origin in and there is deliberately no fallback.
- */
-export const gatewayOrigin = nativePlatform
-  ? resolveGatewayOrigin(import.meta.env.VITE_GATEWAY_ORIGIN)
-  : (globalThis.location?.origin ?? "");
 
 let appState: AppStateSource | null = null;
 

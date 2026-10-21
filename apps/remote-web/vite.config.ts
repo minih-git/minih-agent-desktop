@@ -22,7 +22,11 @@ import { resolveGatewayOrigin } from "./src/lib/gateway-origin.js";
 function nativeCspPlugin(gatewayOrigin: string): Plugin {
   return {
     name: "minih-remote-native-csp",
-    transformIndexHtml: (html) => withGatewayOriginInHtml(html, gatewayOrigin),
+    transformIndexHtml: (html) =>
+      withGatewayOriginInHtml(html, gatewayOrigin).replace(
+        `connect-src 'self' ${gatewayOrigin}`,
+        `connect-src 'self' ${gatewayOrigin} https: http:`,
+      ),
   };
 }
 

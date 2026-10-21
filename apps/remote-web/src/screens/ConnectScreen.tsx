@@ -1,7 +1,8 @@
-import { CircleHelp, Lock, Shield, Square, Ticket, User } from "lucide-react";
-import type { ReactNode } from "react";
+import { CircleHelp, Globe, Lock, Shield, Square, Ticket, User } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { GatewaySheet } from "../components/hosts/HostSheets.js";
 import { Button } from "../components/ui/Button.js";
 import { ListGroup } from "../components/ui/ListGroup.js";
 import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
@@ -44,7 +45,7 @@ export function ConnectScreen({
 }) {
   const { t } = useTranslation();
   const accountMode = useAccountAvailability();
-
+  const [gatewayOpen, setGatewayOpen] = useState(false);
   let gatewayHost = "rc.hmini.org";
   try {
     if (gatewayOrigin) {
@@ -132,12 +133,18 @@ export function ConnectScreen({
             </Button>
           )}
 
-          <p className="flex items-center justify-center gap-1.5 text-xs text-[var(--rm-text-muted)] mt-2">
-            <Lock className="w-3.5 h-3.5 flex-none" />
+          <button
+            type="button"
+            onClick={() => setGatewayOpen(true)}
+            className="mx-auto mt-2 inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--rm-bg-surface)] px-3 py-1.5 text-xs text-[var(--rm-text-secondary)] ring-1 ring-[var(--rm-separator)] active:bg-[var(--rm-bg-inset)]"
+          >
+            <Lock className="w-3.5 h-3.5 flex-none text-[var(--rm-text-muted)]" />
             <span>{t("connect.viaGateway", { gateway: gatewayHost })}</span>
-          </p>
+            <span className="text-[var(--rm-link)] font-medium ml-0.5">切换</span>
+          </button>
         </div>
       </ScreenDock>
+      <GatewaySheet open={gatewayOpen} onClose={() => setGatewayOpen(false)} />
     </Screen>
   );
 }
