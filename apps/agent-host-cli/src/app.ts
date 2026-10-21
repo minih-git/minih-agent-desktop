@@ -137,6 +137,7 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
         log: (level, message, data) => log(level, message, data),
         confirmer,
         strictMode: config.strictDevices,
+        desktopAutoAdmission: config.desktopAuto,
         onNotice: (notice) => log("info", `device ${notice.kind}`, { deviceId: notice.deviceId, label: notice.label }),
       });
       // A revocation made while the link is down waits here and is re-offered
@@ -417,6 +418,11 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
       devices,
       revocations,
       notifier,
+      // "A new computer joined the account" is information for the person who
+      // owns the account: it is logged here so a headless Host's operator sees
+      // the attacker's first step even though this Host has no window to show
+      // it in (ADR amendment 3, Accepted risk).
+      onHostJoined: (notice) => log("info", "a new computer joined the account", { hostId: notice.hostId, label: notice.label }),
       onStatus: (status) => log("info", "gateway link status", { state: status.state, since: status.since }),
     });
   }

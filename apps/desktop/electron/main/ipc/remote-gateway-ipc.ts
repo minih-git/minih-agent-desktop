@@ -142,4 +142,14 @@ export function registerRemoteGatewayIpc(options: RegisterRemoteGatewayIpcOption
       return requireController(getGatewayLink).setStrictDevices(request.strictDevices);
     },
   );
+
+  registrar.handle(
+    IPC.invoke.remoteGatewaySetDesktopAuto,
+    async (request: { enabled?: unknown }): Promise<RemoteGatewayStatus> => {
+      if (typeof request?.enabled !== "boolean") {
+        throw invalid("enabled must be a boolean", "enabled");
+      }
+      return requireController(getGatewayLink).setDesktopAutoAdmission(request.enabled);
+    },
+  );
 }

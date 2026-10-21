@@ -71,6 +71,10 @@ window.minihAgent = { platform: "darwin", channels: IPC,
       status = { ...status, strictDevices: input.strictDevices };
       return { ok: true, data: status };
     }
+    if (channel === IPC.invoke.remoteGatewaySetDesktopAuto) {
+      status = { ...status, desktopAutoAdmission: input.enabled };
+      return { ok: true, data: status };
+    }
     if (channel === IPC.invoke.remoteGatewayPendingDeviceRequests) return { ok: true, data: { requests: pending } };
     if (channel === IPC.invoke.remoteGatewayDeviceDecision) return { ok: true, data: { answered: true } };
     if (channel === IPC.invoke.remoteGatewayDevicePresence) return { ok: true, data: { denied: 0 } };
@@ -122,14 +126,29 @@ window.accountModeProbe = async () => {
   check1(section.includes("wss://gateway.example.com/hostlink"), "the advertised endpoint should be shown");
   check1(!button(text("enroll")), "the registration-code form must be replaced by account mode");
 
-  // 2. Strict mode is a switch, off by default, and turning it on reaches main.
-  const strict = [...document.querySelectorAll('button[role="switch"]')].pop();
+  // 2. Both device switches are real switches. Strict mode is off by default;
+  // automatic admission of a same-account computer is ON by default (ADR
+  // amendment 3), so an untouched install reads as "on".
+  const switchFor = (label) => document.querySelector('button[role="switch"][aria-label="' + label + '"]');
+  const strict = switchFor(text("strictLabel"));
   check1(strict, "strict-mode switch missing");
   check1(strict.getAttribute("aria-checked") === "false", "strict mode must default to off");
+  const desktopAuto = switchFor(text("desktopAutoLabel"));
+  check1(desktopAuto, "automatic-admission switch missing");
+  check1(desktopAuto.getAttribute("aria-checked") === "true", "automatic admission must default to on");
+
+  // Turning strict mode on reaches main…
   await click(strict, "strict toggle");
   const setStrict = calls.filter((call) => call.channel === IPC.invoke.remoteGatewaySetStrictDevices);
   check1(setStrict.length === 1, "strict mode did not reach main");
   check1(setStrict[0].input.strictDevices === true, "strict mode should have been turned on");
+
+  // …and so does turning automatic admission off, which is the one switch whose
+  // default is "on" and whose payload is the new state.
+  await click(desktopAuto, "automatic-admission toggle");
+  const setAuto = calls.filter((call) => call.channel === IPC.invoke.remoteGatewaySetDesktopAuto);
+  check1(setAuto.length === 1, "automatic admission did not reach main");
+  check1(setAuto[0].input.enabled === false, "automatic admission should have been turned off");
 
   // 3. A device request opens the dialog, focused on the safe answer.
   emit(IPC.event.remoteGatewayDeviceRequest, request());

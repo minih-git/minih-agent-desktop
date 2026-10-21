@@ -1979,6 +1979,9 @@ export const api = {
   /** ADR decision 9: require confirmation on every terminal. */
   setRemoteGatewayStrictDevices: (strictDevices: boolean) =>
     invoke<RemoteGatewayStatus>(IPC.invoke.remoteGatewaySetStrictDevices, { strictDevices }),
+  /** ADR amendment 3: allow same-account computers to join automatically. */
+  setRemoteGatewayDesktopAuto: (enabled: boolean) =>
+    invoke<RemoteGatewayStatus>(IPC.invoke.remoteGatewaySetDesktopAuto, { enabled }),
   onRemoteGatewayDeviceRequest: (listener: (request: RemoteGatewayDeviceRequest) => void) => {
     if (!window.minihAgent?.on) return () => undefined;
     return window.minihAgent.on(IPC.event.remoteGatewayDeviceRequest, (payload) =>

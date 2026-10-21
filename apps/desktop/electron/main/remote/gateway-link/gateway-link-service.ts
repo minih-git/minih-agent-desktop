@@ -76,6 +76,14 @@ export type GatewayLinkServiceOptions = {
   strictDevices?: boolean;
   /** Persist the strict-mode switch without touching the other settings. */
   saveStrictDevices?: (strictDevices: boolean) => Promise<void>;
+  /**
+   * "Allow same-account computers to join automatically" (ADR amendment 3,
+   * decision 3). On when absent. Unlike strict mode it is not part of the
+   * capability list, so flipping it needs no link rebuild.
+   */
+  desktopAutoAdmission?: boolean;
+  /** Persist that switch without touching the other settings. */
+  saveDesktopAutoAdmission?: (desktopAutoAdmission: boolean) => Promise<void>;
   /** Push one `device.request` to the renderer; absent means no window can ask. */
   emitDeviceRequest?: (request: RemoteGatewayDeviceRequest) => void;
   /** One notice per mint, adoption, and revocation (ADR decision 6). */
@@ -112,6 +120,12 @@ export type GatewayLinkService = {
   devicePresence(present: boolean): number;
   /** ADR decision 9: rebuild the link so the capability list matches. */
   setStrictDevices(strictDevices: boolean): Promise<RemoteGatewayStatus>;
+  /**
+   * ADR amendment 3: allow or refuse automatic admission of a same-account
+   * computer. The capability list does not change, so the link is not rebuilt —
+   * only the decision the directory makes for the next proof.
+   */
+  setDesktopAutoAdmission(enabled: boolean): Promise<RemoteGatewayStatus>;
   /** Status pushes; the returned function removes the listener. */
   onChange(listener: (status: RemoteGatewayStatus) => void): () => void;
   dispose(): Promise<void>;
@@ -164,6 +178,7 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
   /** The device directory of the running link; null when not account-bound. */
   let accountDevices: DesktopDevices | null = null;
   let strictDevices = options.strictDevices === true;
+  let desktopAutoAdmission = options.desktopAutoAdmission !== false;
   const enroller = createAccountEnroller({
     port: options.port,
     store: options.store,
@@ -195,6 +210,7 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
     // the page keeps showing the self-hosted flow.
     ...(accountMode ? { accountMode } : {}),
     strictDevices,
+    desktopAutoAdmission,
   });
 
   const emit = (): void => {
@@ -380,6 +396,7 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
       log,
       ...(options.emitDeviceRequest ? { emitRequest: options.emitDeviceRequest } : {}),
       strictDevices,
+      desktopAutoAdmission,
       ...(options.emitDeviceNotice
         ? {
             onNotice: (notice) =>
@@ -388,6 +405,7 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
                 deviceId: notice.deviceId,
                 label: notice.label,
                 at: notice.at,
+                ...(notice.deviceClass ? { deviceClass: notice.deviceClass } : {}),
               }),
           }
         : {}),
@@ -448,6 +466,20 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
         ...(accountDevices ? { devices: accountDevices.directory } : {}),
         ...(accountDevices ? { revocations: accountDevices.revocations } : {}),
         ...(options.notifier ? { notifier: options.notifier } : {}),
+        // "A new computer joined the account" is information for the person at
+        // this machine, never an authorization, so it becomes the same notice a
+        // device gets (ADR amendment 3, Accepted risk).
+        ...(options.emitDeviceNotice
+          ? {
+              onHostJoined: (notice) =>
+                options.emitDeviceNotice?.({
+                  kind: "host.joined",
+                  deviceId: notice.hostId,
+                  label: notice.label,
+                  at: notice.joinedAt,
+                }),
+            }
+          : {}),
       });
     } catch (error) {
       // The transport is missing or refused to start: report it, never keep a
@@ -650,6 +682,19 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
         await stopLink();
         if (enabled) await startLink();
       });
+      return snapshot();
+    },
+    async setDesktopAutoAdmission(next) {
+      if (disposed) return snapshot();
+      if (desktopAutoAdmission === next) return snapshot();
+      // Persist first, for the same reason as the strict switch.
+      if (options.saveDesktopAutoAdmission) await options.saveDesktopAutoAdmission(next);
+      desktopAutoAdmission = next;
+      // The capability list does not change, so no link rebuild is needed and no
+      // relayed connection is dropped: the directory simply stops (or starts)
+      // admitting a verified proof without asking.
+      accountDevices?.directory.setDesktopAutoAdmission(next);
+      emit();
       return snapshot();
     },
     onChange(listener) {

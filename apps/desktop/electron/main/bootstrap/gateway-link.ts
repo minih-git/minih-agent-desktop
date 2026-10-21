@@ -92,6 +92,8 @@ export type GatewayLinkController = {
   devicePresence(present: boolean): Promise<number>;
   /** ADR decision 9: require confirmation on every terminal. */
   setStrictDevices(strictDevices: boolean): Promise<RemoteGatewayStatus>;
+  /** ADR amendment 3: allow or refuse automatic admission of a same-account computer. */
+  setDesktopAutoAdmission(enabled: boolean): Promise<RemoteGatewayStatus>;
 };
 
 export type GatewayLinkBootstrap = {
@@ -126,6 +128,8 @@ export function createGatewayLinkBootstrap(
   let configuredEnabled = false;
   let configuredUrl = "";
   let configuredStrictDevices = false;
+  /** On by default: absent in a stored setting means automatic admission is on. */
+  let configuredDesktopAuto = true;
   let store: GatewayCredentialStore | null = null;
   let service: GatewayLinkService | null = null;
   let serviceInitialized = false;
@@ -171,6 +175,7 @@ export function createGatewayLinkBootstrap(
       log,
       now,
       strictDevices: configuredStrictDevices,
+      desktopAutoAdmission: configuredDesktopAuto,
       ...(notifier ? { notifier } : {}),
       // Persist the strict-mode switch on its own: it is device-local and must
       // not rewrite the link switch or the Gateway URL.
@@ -180,6 +185,17 @@ export function createGatewayLinkBootstrap(
           enabled: configuredEnabled,
           url: configuredUrl,
           strictDevices,
+          ...(configuredDesktopAuto ? {} : { desktopAutoAdmission: false }),
+        });
+      },
+      // Same rule for the automatic-admission switch (ADR amendment 3).
+      saveDesktopAutoAdmission: async (desktopAutoAdmission) => {
+        configuredDesktopAuto = desktopAutoAdmission;
+        await options.saveSettings({
+          enabled: configuredEnabled,
+          url: configuredUrl,
+          ...(configuredStrictDevices ? { strictDevices: true } : {}),
+          desktopAutoAdmission,
         });
       },
       ...(options.emitDeviceRequest ? { emitDeviceRequest: options.emitDeviceRequest } : {}),
@@ -358,6 +374,17 @@ export function createGatewayLinkBootstrap(
         }
         const created = await activate();
         return decorate(await created.setStrictDevices(strictDevices));
+      });
+    },
+    setDesktopAutoAdmission(enabled) {
+      return enqueue(async () => {
+        if (disposed) {
+          throw Object.assign(new Error("the gateway link is shutting down"), {
+            errorCode: GATEWAY_LINK_UNAVAILABLE,
+          });
+        }
+        const created = await activate();
+        return decorate(await created.setDesktopAutoAdmission(enabled));
       });
     },
   };

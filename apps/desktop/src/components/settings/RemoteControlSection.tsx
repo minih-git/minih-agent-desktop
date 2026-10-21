@@ -12,7 +12,7 @@
  * not a self-hosted-only concern.
  */
 import { useTranslation } from "react-i18next";
-import { formatPairingTicket } from "@minih-agent/shared";
+import { formatPairingTicket, type RemoteGatewayDeviceNotice } from "@minih-agent/shared";
 import {
   accountModeVisible,
   pairingCodeRemainingLabel,
@@ -145,24 +145,34 @@ export function RemoteControlSection() {
         </div>
       ) : null}
 
+      {accountModeVisible(status) ? (
+        <div className="flex items-center justify-between gap-4 py-2">
+          <div className="space-y-1">
+            <div className="settings-row-title">{t("settings.remoteGateway.desktopAutoTitle")}</div>
+            <div className="text-sm text-text-primary">{t("settings.remoteGateway.desktopAutoLabel")}</div>
+            <div className="text-xs text-text-secondary">{t("settings.remoteGateway.desktopAutoHint")}</div>
+            {control.desktopAuto.error ? (
+              <div className="text-xs text-danger" role="alert">
+                {control.desktopAuto.error}
+              </div>
+            ) : null}
+          </div>
+          <SettingsToggle
+            checked={status?.desktopAutoAdmission !== false}
+            busy={control.desktopAuto.busy}
+            label={t("settings.remoteGateway.desktopAutoLabel")}
+            onChange={() => void control.onToggleDesktopAuto()}
+          />
+        </div>
+      ) : null}
+
       {control.notices.length > 0 ? (
         <div className="space-y-1 py-2" aria-live="polite">
           <div className="settings-row-title">{t("settings.remoteGateway.noticesTitle")}</div>
           <ul className="space-y-1 text-xs text-text-secondary" role="list">
             {control.notices.map((notice) => (
               <li key={`${notice.kind}-${notice.deviceId}-${notice.at}`} role="listitem">
-                {t(
-                  notice.kind === "device.minted"
-                    ? "settings.remoteGateway.noticeMinted"
-                    : notice.kind === "device.adopted"
-                      ? "settings.remoteGateway.noticeAdopted"
-                      : notice.kind === "device.revoked"
-                        ? "settings.remoteGateway.noticeRevoked"
-                        : notice.kind === "device.session-created"
-                          ? "settings.remoteGateway.noticeSessionCreated"
-                          : "settings.remoteGateway.noticeProjectRegistered",
-                  { label: notice.label, time: notice.at, device: notice.deviceId },
-                )}
+                {t(noticeKey(notice), { label: notice.label, time: notice.at, device: notice.deviceId })}
               </li>
             ))}
           </ul>
@@ -174,6 +184,31 @@ export function RemoteControlSection() {
       <SelfHostedGatewaySection control={control} />
     </section>
   );
+}
+/**
+ * The catalog key for one notice. A desktop-class device is announced as a
+ * computer rather than a phone, and `host.joined` names another computer of the
+ * account (ADR amendment 3) — both are the same notice channel the page already
+ * renders, so the person at this machine sees them without a new surface.
+ */
+function noticeKey(notice: RemoteGatewayDeviceNotice): string {
+  if (notice.kind === "host.joined") return "settings.remoteGateway.noticeHostJoined";
+  if (notice.deviceClass === "desktop") {
+    if (notice.kind === "device.adopted") return "settings.remoteGateway.noticeDesktopAdopted";
+    if (notice.kind === "device.revoked") return "settings.remoteGateway.noticeDesktopRevoked";
+  }
+  switch (notice.kind) {
+    case "device.minted":
+      return "settings.remoteGateway.noticeMinted";
+    case "device.adopted":
+      return "settings.remoteGateway.noticeAdopted";
+    case "device.revoked":
+      return "settings.remoteGateway.noticeRevoked";
+    case "device.session-created":
+      return "settings.remoteGateway.noticeSessionCreated";
+    case "device.project-registered":
+      return "settings.remoteGateway.noticeProjectRegistered";
+  }
 }
 
 /** One-time pairing code plus the ticket a phone can paste instead. */

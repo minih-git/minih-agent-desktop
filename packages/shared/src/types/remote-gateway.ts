@@ -59,6 +59,12 @@ export type RemoteGatewayStatus = {
   accountMode?: RemoteGatewayAccountMode;
   /** The persisted strict-mode switch (ADR decision 9); off when absent. */
   strictDevices?: boolean;
+  /**
+   * "Allow same-account computers to join automatically" (ADR amendment 3,
+   * decision 3). On when absent, and device-local: it never travels in a synced
+   * bundle. Only meaningful while the link is on.
+   */
+  desktopAutoAdmission?: boolean;
 };
 
 /** One device paired to this desktop through the Gateway (never a token hash). */
@@ -169,10 +175,18 @@ export type RemoteGatewayDeviceNotice = {
     /** `label` is the new session's id. */
     | "device.session-created"
     /** `label` is the registered directory. */
-    | "device.project-registered";
+    | "device.project-registered"
+    /** `label` is the other computer's label; `deviceId` is its Host id. */
+    | "host.joined";
   deviceId: string;
   label: string;
   at: string;
+  /**
+   * `"desktop"` when the device was admitted with a verified proof, so the page
+   * can say a computer joined rather than a phone. Absent on older notices and
+   * on every phone or browser device.
+   */
+  deviceClass?: "phone" | "desktop";
 };
 
 /**
@@ -193,4 +207,11 @@ export type RemoteGatewaySettings = {
    * every device. Device-local, like the rest of this field.
    */
   strictDevices?: boolean;
+  /**
+   * "Allow same-account computers to join automatically" (ADR amendment 3,
+   * decision 3). On when absent: a computer of the account whose proof this Host
+   * verifies is admitted without a confirmation. Device-local like the rest of
+   * this field, and never synced.
+   */
+  desktopAutoAdmission?: boolean;
 };

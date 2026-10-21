@@ -303,6 +303,11 @@ export const IPC = {
      */
     remoteGatewayDeviceDecision: "minih-agent-desktop/remoteGateway/deviceDecision",
     remoteGatewaySetStrictDevices: "minih-agent-desktop/remoteGateway/setStrictDevices",
+    /**
+     * ADR amendment 3: "allow same-account computers to join automatically".
+     * Device-local like the strict switch, and it never carries a credential.
+     */
+    remoteGatewaySetDesktopAuto: "minih-agent-desktop/remoteGateway/setDesktopAuto",
     /** Which requests still wait for the dialog after a renderer reload. */
     remoteGatewayPendingDeviceRequests: "minih-agent-desktop/remoteGateway/pendingDeviceRequests",
     /**
