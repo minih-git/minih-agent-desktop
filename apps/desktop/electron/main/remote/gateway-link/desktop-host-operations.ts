@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { RacpError } from "@minih-agent/agent-host";
 import {
   createHostSession,
@@ -45,6 +49,13 @@ export type DesktopHostOperationsOptions = {
   getHost: () => HostRpc | null;
   /** Revoke one paired device in the encrypted credential store. */
   revokeDevice: (deviceId: string) => Promise<boolean>;
+  /**
+   * The desktop data directory. An inline attachment from a phone is stored
+   * under `attachments/<sha256>` — the same content-addressed blob the desktop
+   * writes when the person at this computer attaches a file — so the runtime and
+   * a later replay of the transcript read the same bytes from the same place.
+   */
+  dataDir: string;
   /**
    * Root the folder picker and project registration may not leave. Defaults to
    * the user's home directory inside the shared catalog.
@@ -127,6 +138,27 @@ export function createDesktopHostOperations(
     models: {
       async list() {
         return listModelSummaries(requireHost(options.getHost));
+      },
+    },
+    // R7 step 1 (§16.2): the bytes a phone sends inside `turn/start`. The RACP
+    // layer has already sniffed the type and enforced the budget; this writes the
+    // blob and answers with the path the runtime resolves.
+    inlineAttachments: {
+      async store(input) {
+        const hash = createHash("sha256").update(input.bytes).digest("hex");
+        const directory = join(options.dataDir, "attachments");
+        mkdirSync(directory, { recursive: true, mode: 0o700 });
+        const target = join(directory, hash);
+        if (!existsSync(target)) {
+          try {
+            writeFileSync(target, input.bytes, { flag: "wx", mode: 0o600 });
+          } catch (error) {
+            // Two devices sending the same picture at once is a race, not a
+            // failure: the first writer wins and both prompts read those bytes.
+            if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") throw error;
+          }
+        }
+        return { path: `attachments/${hash}` };
       },
     },
     projects: {

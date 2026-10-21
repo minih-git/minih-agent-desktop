@@ -185,6 +185,12 @@ export const ptBR: Record<TranslationKey, string> = {
   "composer.sending": "Enviando…",
   "composer.queueHint": "Seu computador está ocupado — esta mensagem entrará na fila.",
   "composer.retryHint": "Não enviado. Toque em enviar para tentar novamente.",
+  "composer.attach": "Anexar imagem ou arquivo",
+  "composer.attachments": "Anexos",
+  "composer.removeAttachment": "Remover {{name}}",
+  "composer.attachmentTooLarge": "Esse arquivo é grande demais — tente uma imagem menor.",
+  "composer.attachmentUnsupported": "Não é possível enviar esse tipo de arquivo — apenas imagens e arquivos de texto.",
+  "composer.attachmentLimit": "Até {{count}} arquivos por mensagem.",
 
   "approval.title": "Aprovação necessária",
   "approval.plan": "Aprovação do plano",

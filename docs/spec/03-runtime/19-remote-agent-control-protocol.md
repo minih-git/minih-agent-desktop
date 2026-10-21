@@ -1049,7 +1049,9 @@ confirmation rules and responds with `{ result, isError }` bounded by
 ## 10. Attachments
 
 Small text and image inputs MAY be embedded in `turn/start` when their encoded
-request remains below `maxPromptBytes`. Larger inputs use this flow:
+request remains below `maxPromptBytes`. This inline form is implemented
+(§16.2 step 1) and is the only form a Host is required to accept; larger inputs
+use the two-phase flow below, which no Host implements yet:
 
 1. `attachment/create` returns an opaque attachment id and an upload target.
 2. The client uploads bytes over an authenticated HTTPS request.
@@ -1060,7 +1062,18 @@ request remains below `maxPromptBytes`. Larger inputs use this flow:
 
 Upload targets MUST be single-purpose, size-bounded, short-lived, and scoped to
 one principal and session. A remote path, `file://` URL, or arbitrary URL MUST
-not be accepted as a substitute for an upload.
+not be accepted as a substitute for an upload, and the same holds for the inline
+form: there is no way to say "the file is already on my computer".
+
+Inline entries carry `name`, an optional declared `mimeType`, and base64 `data`
+without a data-URL prefix. The Host validates the bytes, never the label: the
+type is read from the content, and a declared type that disagrees with it is
+`INVALID_ARGUMENT`. PNG, JPEG, WebP, GIF, and UTF-8 text are accepted; SVG is
+refused on both paths, because it is markup that can carry script. Anything else,
+including bytes with a NUL or an invalid UTF-8 sequence, is `INVALID_ARGUMENT`.
+The bytes are then stored where the agent runtime already reads attachments from
+and the runtime receives their path — a prompt never carries a path the client
+chose.
 
 Behind a Gateway the Host has no inbound port, so the upload target is served
 by the Gateway and the bytes cross the Host link in bounded chunks (§11.4).
@@ -1849,6 +1862,8 @@ The initial target limits are:
 |---|---:|
 | JSON request or event frame | 1 MiB |
 | Prompt payload | 256 KiB |
+| Inline attachment, one entry (§10) | 160 KiB of raw bytes |
+| Inline attachments, one prompt (§10) | 224 KiB encoded, at most 6 entries |
 | Item text or tool payload, display reads (§7.6) | 64 Ki characters per field |
 | Compaction summary or checkpoint payload, display reads (§7.6) | Same field budget as item text |
 | Attachment | 50 MiB |
@@ -2081,8 +2096,9 @@ at 64 Ki.
 normative catalog in §6.1 and the HTTP route table carry it, and the amendment
 that records the decision is
 [ADR `remote-control-router-account-binding` amendment 2](../../adr/remote-control-router-account-binding.md).
-§16.2 (attachments beyond the inline case) remains a proposal: nothing below it
-exists in code.
+§16.2 step 1 (inline attachments) was approved on 2026-10-21 and is
+implemented; step 2 (the two-phase upload of §10) remains a proposal, and nothing
+of it exists in code.
 
 ### 16.1 `model/list` — the catalog a remote device may choose from
 
@@ -2128,19 +2144,29 @@ Requirements, in the order they bind:
 `attachment/create`, `attachment/complete`, and `turn/start` with attachments
 are unavailable today.
 
-Step 1 (proposed first, and sufficient for what a phone sends):
+Step 1 (implemented 2026-10-21), the form a phone actually sends:
 
 - Inline `turn/start` attachments, bounded by `maxPromptBytes` (256 KiB for the
-  whole request, so far under `maxFrameBytes`). A Host advertising `attachments`
-  advertises the inline budget it enforces.
+  whole request, so far under `maxFrameBytes`), with the per-entry and per-prompt
+  budgets of §12. A Host advertising `attachments` advertises the inline budget
+  it enforces as `limits.maxInlineAttachmentBytes`.
 - The Host validates the bytes, not the claim: PNG, JPEG, WebP, GIF, and UTF-8
-  text only; a declared MIME type that disagrees with the content is refused.
-  SVG is refused in step 1.
-- The Host stores the bytes in session-scoped attachment storage and passes the
-  runtime its existing on-disk attachment form. Storage is removed with the
-  session, and unreferenced bytes are swept like the Host's other scratch data.
+  text only; a declared MIME type that disagrees with the content is
+  `INVALID_ARGUMENT`. SVG is refused.
+- The Host stores the bytes in its content-addressed attachment store — the same
+  place, and the same `attachments/<sha256>` name, that the desktop uses for the
+  files its own user attaches — and passes the runtime the path it already reads.
+  Content addressing means two devices sending the same picture cost one copy;
+  the store is shared with local attachments, so it is deliberately not swept
+  when one session is deleted.
 - A path, `file://` URL, or arbitrary URL in place of an upload stays forbidden
   (§10), including as an "already on my computer" reference.
+- The client is not obliged to ask first: it downscales a picture until it fits,
+  so what crosses the wire is what a model reads rather than what the camera
+  wrote, and a file it cannot fit is refused in the composer with a reason.
+- A Host that cannot take the bytes advertises `attachments: false` and answers
+  `CAPABILITY_UNAVAILABLE`; it never accepts a prompt and silently drops the
+  attachment.
 
 Step 2 (proposed second): the same §10 flow with a Gateway-served, single-use,
 time-bounded upload target, `attachment/complete` verifying size and SHA-256,

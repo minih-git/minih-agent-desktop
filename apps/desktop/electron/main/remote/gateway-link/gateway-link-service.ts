@@ -398,6 +398,9 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
       operations: createDesktopHostOperations({
         getHost: options.getHost,
         revokeDevice: revokeStoredDevice,
+        // Inline attachments from a phone land in the same content-addressed
+        // store the desktop itself uses for the files it attaches.
+        dataDir: options.dataDir,
         // A phone that starts a conversation here or registers a folder changed
         // this computer's state, so the person sitting at it has to learn about
         // it at once. It travels on the notice channel the settings page

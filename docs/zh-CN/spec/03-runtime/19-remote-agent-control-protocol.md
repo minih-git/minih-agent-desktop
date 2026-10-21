@@ -267,6 +267,11 @@ Plan/Goal 审批为带显式 `permissionMode` 的 `approve` 或 `reject`，且�
 取消或关闭；有远程订阅者接入时，远程审批记录默认 30 分钟（D375），Host 可在上限内调整，
 断线不会延长它。
 
+内联形式已经实现（§16.2 第一步）：附件放进取值范围内的 `turn/start`，Host 按内容
+而不是按声明判定类型，不一致即拒绝，只接受 PNG、JPEG、WebP、GIF 与 UTF-8 文本，SVG
+两条路径都不接受。字节落到与桌面端相同的内容寻址存储（`attachments/<sha256>`），
+运行时只拿到路径；不支持的内联附件一律 `CAPABILITY_UNAVAILABLE`，不会静默丢弃。
+
 大附件使用 `attachment/create`、HTTPS 上传和 `attachment/complete`；
 远程本地路径、`file://` 和任意 URL 都不允许作为附件来源。经 Gateway 时上传
 目标由 Gateway 提供，字节以有界分块经 Host link 到达 Host，Gateway 在
@@ -714,6 +719,8 @@ Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主
 |---|---:|
 | JSON request or event frame | 1 MiB |
 | Prompt payload | 256 KiB |
+| Inline attachment, one entry（§10 内联附件，单条）| 原始字节 160 KiB |
+| Inline attachments, one prompt（§10 内联附件，单次提示）| 编码后 224 KiB，最多 6 条 |
 | Item text or tool payload, display reads（`session/history` 显示读取）| 每字段 64 Ki 字符 |
 | Compaction summary or checkpoint payload, display reads（`session/history` 显示读取）| 与条目文本同一字段预算 |
 | Attachment | 50 MiB |

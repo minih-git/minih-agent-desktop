@@ -185,6 +185,12 @@ export const de: Record<TranslationKey, string> = {
   "composer.sending": "Wird gesendet…",
   "composer.queueHint": "Dein Computer ist beschäftigt — diese Nachricht wird eingereiht.",
   "composer.retryHint": "Nicht gesendet. Tippe auf Senden, um es erneut zu versuchen.",
+  "composer.attach": "Bild oder Datei anhängen",
+  "composer.attachments": "Anhänge",
+  "composer.removeAttachment": "{{name}} entfernen",
+  "composer.attachmentTooLarge": "Diese Datei ist zu groß — bitte ein kleineres Bild.",
+  "composer.attachmentUnsupported": "Dieser Dateityp kann nicht gesendet werden — nur Bilder und Textdateien.",
+  "composer.attachmentLimit": "Bis zu {{count}} Dateien pro Nachricht.",
 
   "approval.title": "Freigabe nötig",
   "approval.plan": "Planfreigabe",

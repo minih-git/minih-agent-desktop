@@ -456,6 +456,7 @@ test("the desktop Host creates a session, registers a project, and browses withi
     const operations = createDesktopHostOperations({
       getHost: () => host,
       revokeDevice: async () => true,
+      dataDir: base,
       browseRoot,
       reportRemoteAction: (action) => reported.push(action),
     });
@@ -531,6 +532,42 @@ test("a gateway device reaches the desktop Host's project routes with a controll
   }
 });
 
+test("an inline attachment lands in the content-addressed store the runtime reads", async () => {
+  const { mkdtemp, readFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const dataDir = await mkdtemp(join(tmpdir(), "desktop-host-inline-"));
+  try {
+    const operations = createDesktopHostOperations({
+      getHost: () => stubHost(),
+      revokeDevice: async () => true,
+      dataDir,
+    });
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
+    const first = await operations.inlineAttachments.store({
+      sessionId: "s1",
+      name: "shot.png",
+      mimeType: "image/png",
+      kind: "image",
+      bytes,
+    });
+    // The path is data-root relative and names the content, which is the form the
+    // runtime resolves and the form a replayed transcript still finds.
+    assert.match(first.path, /^attachments\/[0-9a-f]{64}$/);
+    assert.deepEqual(new Uint8Array(await readFile(join(dataDir, first.path))), bytes);
+    // The same picture from a second device costs one copy, not two.
+    const second = await operations.inlineAttachments.store({
+      sessionId: "s2",
+      name: "screenshot.png",
+      mimeType: "image/png",
+      kind: "image",
+      bytes,
+    });
+    assert.equal(second.path, first.path);
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("the RACP revoke operation runs the same closer as the settings page", async () => {
   // `session/revoke` is owner-only, so a gateway-paired device can never reach
   // it through the Host link; what has to hold is that the operation the server
@@ -538,6 +575,7 @@ test("the RACP revoke operation runs the same closer as the settings page", asyn
   const revoked = [];
   const operations = createDesktopHostOperations({
     getHost: () => stubHost(),
+    dataDir: await mkdtemp(join(tmpdir(), "desktop-host-revoke-")),
     revokeDevice: async (deviceId) => {
       revoked.push(deviceId);
       return true;

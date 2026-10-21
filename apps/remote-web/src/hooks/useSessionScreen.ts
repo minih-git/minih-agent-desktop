@@ -15,7 +15,13 @@
  * its last reply missing. Every later subscription (a reconnect, or the reopen
  * after a resync snapshot) starts from the newest cursor for the same reason.
  */
-import type { RacpApprovalDecision, RacpModelSummary, RacpPermissionMode, RacpTurnAdmission } from "@minih-agent/shared";
+import type {
+  RacpApprovalDecision,
+  RacpInlineAttachment,
+  RacpModelSummary,
+  RacpPermissionMode,
+  RacpTurnAdmission,
+} from "@minih-agent/shared";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import { watchForeground } from "../lib/app-state.js";
@@ -46,6 +52,8 @@ import type { TimelineItem } from "../lib/timeline-types.js";
 
 export type TurnAttempt = {
   text: string;
+  /** Inline files for this prompt (§10 step 1); absent means text only. */
+  attachments?: RacpInlineAttachment[];
   /** Created once per user action; a retry of the same action reuses it. */
   idempotencyKey: string;
   requestId: string;
@@ -324,6 +332,7 @@ export function useSessionScreen(options: {
         startTurn(client, {
           sessionId,
           text: attempt.text,
+          ...(attempt.attachments ? { attachments: attempt.attachments } : {}),
           admission,
           idempotencyKey: attempt.idempotencyKey,
           requestId: attempt.requestId,

@@ -185,6 +185,12 @@ export const zhTW: Record<TranslationKey, string> = {
   "composer.sending": "傳送中…",
   "composer.queueHint": "電腦正在運行，這條訊息會排隊。",
   "composer.retryHint": "發送失敗，點按發送重試。",
+  "composer.attach": "加入圖片或檔案",
+  "composer.attachments": "附件",
+  "composer.removeAttachment": "移除 {{name}}",
+  "composer.attachmentTooLarge": "檔案太大，無法傳送；請改用更小的圖片。",
+  "composer.attachmentUnsupported": "無法傳送這種檔案，只支援圖片和文字檔。",
+  "composer.attachmentLimit": "每則訊息最多 {{count}} 個檔案。",
 
   "approval.title": "需要授權",
   "approval.plan": "計畫授權",
