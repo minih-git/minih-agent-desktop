@@ -9,6 +9,8 @@
   S1–S6 如本文所述、S6 的 Markdown 回答、按项目分组的会话列表、以及第 15.11 节的工具调用呈现；
   可点击原型 `apps/remote-web/design/prototype/index.html`（直接打开该文件；数据为模拟）
   已在 320×568 至 430×932 尺寸下评审，是实施时的视觉基准。
+  第 17 节已于 2026-10-21 采纳：用两层页面取代第 8.6 节的项目分组、统一状态词汇、并设计通知；
+  它与第 8 节或第 15 节冲突时以第 17 节为准。
 - 范围：`apps/remote-web`，即浏览器（H5）版本以及 Capacitor iOS、Android 版本。
   三者共用一套 React 代码，除非某节点名某个平台，本文规则对三者同时适用。
 - 相关文档：[ADR 0331](/adr/0331-self-hosted-gateway-and-mobile-client)、
@@ -776,3 +778,383 @@ Host 侧模型目录与附件校验测试（包含被拒的 MIME、超大负载�
 `packages/shared/src/tool-presentation.test.ts` 覆盖，桌面端原有的
 `tool-display`、`tool-identity`、`tool-presentation` 三套测试保持不变——
 “保持不变”本身就是这次抽取行为无变化的证明。
+
+## 17. 项目、状态与通知（R7 后续）
+
+- 状态：**2026-10-21 已采纳（N1–N4 于 §17.11 确定），部分实施。** 与第 8 节或第 15 节冲突时以本节为准；
+  P3 里的 iOS 推送 entitlement 已提交，P1–P3 其余部分尚未实施。
+- 原因：负责人 2026-10-21 的诉求是同一个页面的三个问题。会话列表按项目分组、组还要折叠，选一条会话要先读四个组标题和八行；
+  一行的状态只是一个 12 px 圆点，“运行中”和“等你批准”只靠颜色区分；手机在用户不看它的时候没有任何办法告知情况。
+  本节把分组换成两层导航，让每种状态只有一种形状和一个词，并把 Gateway 本来就能发、但没人开通过的通知设计完。
+- 范围：`apps/remote-web` 的呈现与交互、现有注册接口上的一个可选字段、iOS 原生配置，以及运维步骤。
+  RACP 的操作与脱敏推送负载保持不变；第 15.3 节的 `model/list` 与附件流程不动。
+
+### 17.1 改什么，代价是什么
+
+| 现状（有据可查） | 改后 |
+|---|---|
+| S5 把一台电脑的会话按项目分组、组可折叠（`SessionsScreen.tsx`、`session-groups.ts`） | S5 列出项目；进入项目才是该项目的会话列表（S5b） |
+| 行内状态是一个 12 px 圆点加副标题里的一个词，“等待”和“运行”只差颜色（`SessionRow.tsx`、`StatusDot.tsx`） | 一套词汇，两种分量：需要你处理的**胶囊**（图标＋文字），或字形＋文字（§17.4） |
+| 用户不在应用内时，完成或待批准的事完全无法告知 | 四种通知；锁屏正文点出会话名，而标题不经过 Apple；前台用应用内提示；三个设置开关（§17.6） |
+
+代价先说清楚：两个页面与重写后的导航栈（只动 H5，部署即生效）；一个可选的注册字段与一个分组键（Gateway）；
+entitlements、一个通知服务扩展，以及设备令牌的共享钥匙串副本（iOS 构建）；以及第 17.7 节的运维步骤。
+全部不需要新增 RACP 操作。
+
+### 17.2 页面
+
+两个页面取代 S5 上的分组。两者都只回答一个问题，都只有一个主操作，延续第 15.1 节已定的规则。
+
+| 编号 | 页面 | 它回答的问题 | 主操作 |
+|---|---|---|---|
+| S5 | 一台电脑的项目 | “哪个项目需要我？” | 打开一个项目 |
+| S5b | 某个项目的会话 | “这个项目里发生了什么？” | 打开一条会话，或新建一条 |
+
+S6 保持原样，本节不给它加东西。S8 保留第 15.7 节，并加上第 17.6.5 节的通知行。
+
+#### S5，一台电脑的项目
+
+- 导航栏：电脑名，副标题＝电脑状态（用第 5.6 节的圆点与用词）。右侧：浏览器版本放刷新（网页版没有下拉刷新）。
+  不使用大标题：栏里已经写了电脑名，页面直接从分区标题（“项目”＋数量）开始，而不是再来一个说同一件事的标题。
+- 每个项目一张卡片，卡片之间 10 px。卡片三行：项目名与会话数；聚合后的状态胶囊；最近活动时间，右对齐、弱化。
+- 没有待处理事项的项目不显示胶囊，改为一行中性文字（“没有需要你的会话”）；会话数始终显示，卡片不会只剩一个名字。
+- 有待处理事项的卡片左边有一条 3 px 的 `--rm-decision` 竖条。竖条是第二个线索，绝不是唯一线索：旁边的胶囊用文字说了同一件事。
+- **聚合在客户端完成。** `project/list` 返回 `{id, label, archived}`（`packages/shared/src/racp.ts:436`），
+  `session/list` 返回带 `projectId`、`status`、`updatedAt` 的会话。按项目计数、取最新的 `updatedAt`、统计
+  `running` 与 `waiting_permission`，都不需要新字段，也不需要第二个请求——两个列表本来就在这个页面上。
+  唯一算不出来的是“有几条在等你**回答**”（§17.4.1）。
+- **排序**：先按下面四档，再按最近会话时间。
+  1. 至少有一条会话在等用户的项目；
+  2. 至少有一条会话在运行的项目；
+  3. 有会话但没有在跑的项目；
+  4. 一条会话都没有的项目。
+
+  第四档由同一个比较自然落到底：项目的“最近”取它最新的会话，而没有会话就没有最近。所以规则是一个比较器，不是四个分支。
+  同档按名称排序，刷新两次顺序不变。
+- **“其他”**——没有 `projectId` 的会话，或项目已不在目录里的会话——单独一张末尾卡片，标题“其他”，
+  副标题“不属于项目的会话”。它是真实目的地（进 S5b 能看到它们），且永不上浮，一条游离的会话不会把真实项目挤下去。
+- **没有会话的项目要显示**，这与第 8.6 节隐藏空分组不同：它现在是一个带操作的目的地（可以在那里新建会话），
+  而不是一个用户无法操作的空标题。已归档项目仍然隐藏，同第 15.2 节。
+- 状态：加载（三张形状像卡片的骨架，不是行骨架）；读取失败（错误横幅带“重试”，重试期间旧卡片保持 60% 可见，即第 8.6 节的规则）；
+  项目目录读不到（仅靠 `session/list` 仍能出卡片，所有会话落到“其他”，并有一行中性文字说明原因）；
+  一条会话都没有（空状态“这台电脑还没有跑过任何会话”，主操作“新建会话”）；访问被撤销（第 8.6 节的结果页，不变）。
+
+#### S5b，某个项目的会话
+
+- 导航栏：项目名作标题；副标题＝电脑与它的状态，因为只有项目名的话，从推送进来就答不出“这是哪台电脑”。
+  右侧：`+`（新建会话，项目已预选），浏览器版本另有刷新。
+- 分区顺序固定，空分区隐藏：“需要你处理”（待批准或待回答）、“运行中”、“最近”（其余，按新到旧）。分区标题带数量。
+- 行结构：行首 20 px 状态位（§17.4）；标题最多两行；副标题＝相对时间、状态词或待处理胶囊、模型标签
+  （`modelLabel`，宿主给了才显示）。模型标签先被截断，因为它是这一行里最不重要的事实。
+- `+` 打开第 15.2 节的弹层，项目已填好并作为“值”显示而不是“选择器”，因为用户就站在这个项目里。
+- 空状态：点名项目的空状态（“web 应用 还没有会话”）、说明“在电脑上开始的任务会出现在这里”的句子，以及底部主按钮“新建会话”。
+  这一层比一个空标题真正有用的地方就在这里。
+
+### 17.3 导航与返回
+
+页面栈变成四层。`src/lib/screen-stack.ts` 增加两个页面类型，`previousScreen` 仍是唯一规则，
+所以导航栏返回键、Android 硬件返回键、浏览器后退与 iOS 边缘滑动仍然不可能互相矛盾（第 4 节）。
+
+```text
+S4 我的电脑  >  S5 项目  >  S5b 某个项目的会话  >  S6 会话
+```
+
+- **只有一个项目时不当作列表。** 电脑只有一个可用项目时，点电脑直接进 S5b，S5 不进栈，返回就回 S4。
+  这个跳过在导航发生的那一刻依据 S5 本来要渲染的数据决定（`session-groups.ts` 里的 `soleProjectForNewSession`
+  已经在为新建会话弹层回答同一个问题），所以 `previousScreen` 永远不需要问“我上面原来有没有一层列表”。
+- **只有一台电脑时不跳过 S4。** 连接、忘记、设置都属于 S4，所有关于这台电脑的失败也在 S4 解释。
+  替代做法是：启动时如果恰好有一台**就绪**的电脑，直接打开它的 S5，并把 `computers` 先放到底下——
+  返回仍然落在 S4，同时不必每次启动都穿过一个只有一行的页面。离线、未接受、已撤销的电脑不享受这个处理：
+  启动页仍是 S4，因为那正是能解释问题的页面。
+- **推送会恢复页面栈**（第 8.8 节的扩展）。负载里带 `hostId` 与 `sessionId`；应用在它本来就要读取的列表里找到
+  这条会话的 `projectId`，把 `computers > projects > sessions` 写在 S6 底下。于是从推送进来的会话右滑返回，
+  落在这个项目的会话列表，而不是电脑列表。只有一个可用项目时省略 `projects` 一层，与点击进来完全一致。
+  如果这条会话还不在列表里（刚在电脑上新建），`projectId` 未知：应用打开 S6，下面只放 `computers > projects`，
+  并在背后刷新列表——栈浅一点比编造一层更好。
+- 边缘滑动沿用第 4 节规则：手指从左侧 20 px 内开始、松手时超过三分之一宽度，就走同一个返回路径弹一层；
+  以纵向为主的拖动交给列表自己的滚动。
+
+### 17.4 一套状态词汇
+
+六种状态、三种分量，每种一个形状、一个词。颜色用第 5.1 节已有的令牌，也就是桌面端的颜色
+（`apps/desktop/src/styles/tokens.css`：`--ds-warning` 即 `--rm-running`，`--ds-purple` 即 `--rm-decision`，
+`--ds-success` 与 `--ds-error` 同样对应）。
+
+| 状态 | 依据 | 形状 | 用词 | 动效 |
+|---|---|---|---|---|
+| 等你批准 | `status === "waiting_permission"`，或 `planningState === "awaiting_approval"` | `--rm-decision` 的盾牌（或计划）字形＋待处理胶囊 | 等你批准 / Needs your approval | 1.6 s 脉冲，两次 |
+| 等你回答 | 今天的列表里没有这个事实（§17.4.1） | `--rm-decision` 的问号字形＋同一个胶囊 | 等你回答 / Needs your answer | 同上 |
+| 运行中 | `status === "running"` | `--rm-running` 的 8 px 实心点 | 运行中 / Running | 1.6 s 呼吸，两次后静止 |
+| 失败 | `status === "error"` | `--rm-error` 的圆圈感叹号 | 失败 / Failed | 无 |
+| 已完成·没看过 | `status` 为 `idle` 或 `aborted`，且 `updatedAt` 晚于本机记录的 `lastViewedAt` | 带外圈的对勾（用形状区分，不用透明度） | 已完成 / Finished | 无 |
+| 空闲，或已完成且看过 | `status` 为 `idle` 或 `aborted`，且已查看 | 一个更弱的点 | 不用文字 | 无 |
+
+以下规则在三个位置都成立（会话行、导航副标题、项目卡片）：
+
+- **颜色从不单独表意。** 每种状态都把色相与字形、与一个词配在一起：胶囊自带文字，终态把文字放进行的副标题。
+  一张黑白截图仍然读得懂。
+- **只有“需要你处理”带底色。** 运行中与终态都是平的，正是这个例外让“需要你处理”有意义（第 3 节：决定优先）。
+- **项目卡片只说两件事**：有几条会话在等用户（带数字的待处理胶囊）、有几条在跑（带数字的运行胶囊）。
+  卡片上再多一个数字只会被当成噪音，终态的数量点进去就能看到。
+- 动效遵守第 5.5 节：脉冲与呼吸各跑两轮就停；`prefers-reduced-motion` 下直接呈现静止标记；
+  没有任何状态会“只要工作持续就一直动”——那是 S6 顶部的运行条专用。
+- 无障碍：胶囊里的词就是可访问名称；行的 `aria-label` 读作“标题、状态、时间”，读屏不必依赖字形；
+  当前屏幕上的状态变化通过第 9 节定义的礼貌实时区域播报一次。
+
+#### 17.4.1 数据表达不了的那一个状态
+
+`RacpSession.status` 是封闭集合：`idle`、`running`、`waiting_permission`、`aborted`、`error`
+（`packages/shared/src/racp.ts:55`）。工具授权会把会话置为 `waiting_permission`
+（`packages/agent-host/src/agent-host.ts:350`），而输入请求只把**回合**状态置为 `waiting_input`，
+会话仍是 `running`（`agent-host.ts:361`）。因此在 `session/list` 里，一条在等你回答的会话和一条正在忙的会话无法区分。
+设计因此做两件事，并说明哪一件是临时的：
+
+1. **现在**：收到 `input.requested` 推送时，在设备本地记下这条会话为“等你回答”，打开或回答后清除。
+   只要通知送到了就准确，同时坦白它的边界：把通知关掉的人看到的是“运行中”。
+2. **后续**（需要桌面端发版与契约补充）：给 `RacpSessionStatus` 加 `waiting_input`，或在 `queuedTurnIds`
+   旁边加一个 `pendingInput` 计数。宿主其实已经知道答案（`agent-host.ts:671` 为工作快照算出 `waiting-input`），
+   所以这是契约补充而不是新逻辑。本轮不排期。
+
+“已完成·没看过”不需要改协议：它是设备本地的 `lastViewedAt`，打开 S6 时写入，存在注册表条目旁边。
+它的边界要写进设计：这是按手机算的，重装应用后每条会话都算“看过”。
+
+### 17.5 空、加载与失败
+
+| 页面 | 加载 | 空 | 失败 | 离线 |
+|---|---|---|---|---|
+| S5 | 三张卡片形状的骨架 | “这台电脑还没有跑过任何会话”＋新建会话 | 错误横幅带重试，旧卡片保持变暗 | 第 8.5 / 8.6 节的规则，不变 |
+| S5b | 六行骨架 | 点名项目，并提供新建会话 | 错误横幅带重试 | 旧列表保持 60%，同第 8.6 节 |
+
+两个页面都不渲染“底下什么都没有”的标题，也都不显示自己无法兑现的控件（第 15.1 节的两条规则）。
+
+### 17.6 通知
+
+这条链路已经端到端存在，只是没开通。按顺序：桌面宿主在 `host.notify` 上报告四种事件
+（`apps/desktop/electron/main/bootstrap/startup.ts`）；Gateway 做受众校验、去重、限速，再调用 APNs 或 FCM
+（`apps/remote-gateway/src/push.ts`）；负载是一个封闭对象，只有类型、两个本地化键和若干 id
+（`RacpPushPayloadSchema`，`packages/shared/src/racp-hostlink.ts:747`）；客户端按凭据注册令牌
+（`apps/remote-web/src/hooks/usePushRegistration.ts`），并只凭 id 把点击解析成一个页面
+（`apps/remote-web/src/lib/push.ts`）。让它一直黑着的，是 Gateway 上没配的一组参数，与 iOS 工程里缺的 entitlement（§17.7）。
+
+#### 17.6.1 类型与文案
+
+八个键名保持 `push.notify.<kind>.title` / `.body`（`pushKeysForKind`，`racp-hostlink.ts:768`），
+因为它们同时会被生成到应用包的 `Localizable.strings` 与 `strings.xml`，应用关闭时由**系统**渲染。
+只改它们的值。zh-CN 与 en 为准，其余七种语言从 en 翻译。
+
+| 键 | 今天（zh-CN） | 建议 zh-CN | 建议 en |
+|---|---|---|---|
+| `push.notify.approval.requested.title` | 需要你处理 | 等你批准 | Needs your approval |
+| `push.notify.approval.requested.body` | 有会话在等待你批准一项操作。 | 有会话在等你批准一项操作。 | A session is waiting for your approval. |
+| `push.notify.input.requested.title` | 需要你处理 | 等你回答 | Needs your answer |
+| `push.notify.input.requested.body` | 有会话在等待你的回答。 | 有会话在等你回答一个问题。 | A session is waiting for your answer. |
+| `push.notify.turn.completed.title` | 回合已完成 | 已完成 | Finished |
+| `push.notify.turn.completed.body` | 有会话的回合已完成。 | 有会话运行完成了。 | A session finished running. |
+| `push.notify.turn.failed.title` | 回合失败 | 运行失败 | Run failed |
+| `push.notify.turn.failed.body` | 有会话的回合失败了。 | 有会话运行失败了。 | A session's run failed. |
+
+把“回合”改成“运行”是第 10 节自己的规则：面向用户的文案里不出现协议词汇。标题与正文都停留在类型层面，
+所以两类请求和两类结果的口气不同，却不透露任何内容。
+
+#### 17.6.2 正文点出会话，而标题不离开手机
+
+负责人已于 2026-10-21 决定：显示会话标题，但标题不能经过 Apple。机制是 iOS 的通知服务扩展。
+这里便宜的原因只有一个，值得记下来：Gateway 已经在发 `aps.mutable-content: 1`
+（`apps/remote-gateway/src/push-providers.ts:162`），所以扩展一旦存在就会被调用，**触发它不需要改 Gateway**。
+
+```text
+宿主 --host.notify{kind, sessionId}--> Gateway --脱敏 aps--> APNs --> 手机
+                                                                      |
+                  服务扩展：GET {origin}/v1/sessions/{sessionId}
+                  +-- 200 -> 正文 := 会话标题
+                  +-- 超时 / 401 / 404 / 读不到凭据 -> 正文保持固定文案
+                                                                      |
+                                                                  锁屏
+```
+
+- **APNs 承载的内容不变**：`title-loc-key` 是类型标签，`loc-key` 是固定的正文键，另加 id
+  （`sessionId`、`hostId`、`approvalId`）。Apple 只经手键名，不经手任何句子与标题。
+- **扩展发哪个请求**：`GET /v1/sessions/{sessionId}`，即现有的 `session/get`——`viewer` 角色、只读一条、
+  不含对话记录（`packages/shared/src/racp.ts:604` 与 `:716`）。它返回 `{ session: { title, ... } }`
+  （`packages/racp/src/operations.ts:288`）；扩展只取 `title`，其余丢弃且不落盘。`viewer` 就够，
+  所以只读手机也能拿到带标题的通知。
+- **认证**：用 `hostId` 对应的设备令牌，从**共享的钥匙串访问组**读取，按原生 profile 发
+  `Authorization: Bearer ...`。Gateway 源站也从同一个共享存储里取，因为扩展读不到应用编译时写死的常量。
+- **时间预算。** 系统给服务扩展约 30 秒，然后调用 `serviceExtensionTimeWillExpire`。扩展自设更短的期限——
+  **8 秒**（5 秒请求超时加余量）——并且两条路都要交付：超时、`401`、`403`、`404` 或读不到凭据时，
+  用**未修改**的内容调用 content handler，用户看到的就是固定文案。
+  `serviceExtensionTimeWillExpire` 也必须用手里已有的内容调用 handler，因为 handler 没被调用等于通知不出现。
+- **钥匙串共享，以及它需要的迁移。** 今天的令牌存在 `@aparajita/capacitor-secure-storage`
+  （`apps/remote-web/src/lib/native-secure-store.ts`），它是 Capacitor 背后的 KeychainSwift，**不设访问组**——
+  插件源码从不设置 `kSecAttrAccessGroup`，条目落在应用私有组里，另一个进程读不到。迁移因此要写清楚，但很小：
+  1. 两个 target 都在 entitlements 里列出 `keychain-access-groups` =
+     `$(AppIdentifierPrefix)group.app.minih.remote`，并都带 App Group `group.app.minih.remote`；
+  2. 应用按每个已配对电脑，往该组写一条通用密码项 `{ origin, hostId, token }`，
+     可用性 `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`（与应用现有保护等级一致）；
+  3. 写入时机：配对、账户采纳、`ready()`；删除时机：忘记电脑、退出登录。应用自己的存储仍是唯一事实来源，
+     镜像写失败只损失标题，不影响应用运行。
+
+  这是扩展唯一真正约束客户端的地方，所以它是独立的一步（§17.9 P3），并有自己的测试：
+  被忘记的电脑必须失去镜像项，退出的账户设备也必须失去。
+- **扩展遵守的一个开关。**“显示会话标题”是 App Group `UserDefaults` 里的一个标志。关闭时扩展根本不发请求。
+  关闭是一种隐私选择而不是降级，所以设置行要用一句话说明。
+- **隐私边界性质不变。** 标题只在这台手机与用户自己的 Gateway 之间、走 TLS、由手机以自己的身份认证后传输。
+  它不会进入推送负载、APNs 或 FCM 报文、Gateway 日志或审计记录。ADR 0331 决定 7 的脱敏规则因此完好无损，
+  新的只是“客户端从哪里拿到这些字”。
+- **分组。** iOS 的 `thread-id` ＝ 会话 id，同一会话的多条事件叠成一组；Android 用 FCM 的 `tag` ＝ 同一个 id。
+  两者都由负载里已有的 `sessionId` 派生，所以封闭的负载 schema 不变——这只是 `push-providers.ts` 里的改动（§17.9 P2）。
+- **角标。** 不发 `aps.badge`，这是有意的：正确的角标是“等**这个用户**处理的事有几件”，
+  而 Gateway 与宿主都不知道用户已经看过什么，由 Gateway 编出来的数字几分钟内就会错。
+  改为应用用它本来就算出的聚合值调 `UNUserNotificationCenter.setBadgeCount`（P3），打开应用时清零。
+  这个边界要说清：应用关着的时候角标不动。要服务端算角标，得在 `host.notify` 里加待处理计数，那是协议改动，本轮不提。
+
+#### 17.6.3 点击
+
+`destinationForTap` 已经从 id 解析出页面；§17.3 补上要恢复的栈。两处补充：带 `approvalId` 时打开 S6 并滚到
+决策区（第 8.7 节）；批准已在别处处理时显示“已处理”并在时间线里给出结果——第 8.8 节已经有这条规则。
+
+#### 17.6.4 前台：应用内提示，不是系统横幅
+
+应用开着的时候，通知不能盖住用户正在操作的页面。iOS 插件在构建未配置展示选项时，
+`willPresent` 本来就返回空的展示选项——`@capacitor/push-notifications` 返回空集，同时仍然通知 JS——
+所以今天系统什么都不显示，缺的是 JS 侧的监听。因此：
+
+- 应用订阅 `pushNotificationReceived`，在导航栏正下方渲染一条提示：状态字形、类型作标题、会话标题作第二行、
+  “查看”和关闭按钮。它是 `role="status"` 加 `aria-live="polite"`，读屏只读一次；
+- 待处理类（批准或回答）的提示一直留到用户打开或关闭它，因为那正是手机开口的原因；
+  完成与失败类 6 秒后消失；
+- “查看”推入 S6，恢复的栈与点击通知完全相同，两条路径不可能分叉；
+- 不响铃、不振动，也不在决策区上方再叠一张卡片：用户已经在那里了。
+
+#### 17.6.5 设置开关，以及它们放在哪
+
+| 开关 | 由谁执行 | 代价 |
+|---|---|---|
+| 通知总开关 | 系统：只问一次，“不允许”对本次启动即为最终结果；该行显示状态（“已开启”“未允许”“这个 Gateway 没有配置推送”），被拒绝时提供打开系统设置的入口 | 无 |
+| 只通知需要我处理的 | **Gateway**，因为系统已经投递的通知应用收不回来；现有注册接口上一个可选字段 | P2 |
+| 显示会话标题 | **应用**，由扩展从 App Group 读取 | P3 |
+
+按“尽量复用现有注册接口”的要求：`PUT /v1/push/registration` 增加一个可选字段
+`onlyActionable?: boolean`，存进 `GatewayPushRegistrationRecord`，`PushService` 的类型闸门对设了它的注册
+丢弃 `turn.completed` 与 `turn.failed`。路由、方法、第 11.5 节的受众规则、去重都不动；
+不传这个字段的客户端行为与今天完全一致。该请求 schema 自身没有封闭对象约束，所以旧 Gateway 会**容忍**这个字段并忽略它——
+用户体验就是一个什么都没做的开关。因此应用只在注册应答里回显了它时才显示这个开关，
+并在 `RacpPushRegistrationResponseSchema` 里增加 `preferences?: { onlyActionable: boolean }` 专门用于回显。
+
+首个版本的默认值：过滤器**关闭**，四种类型都发，因为在它显出吵闹之前，“你的活干完了”正是人们想要的通知。
+打开过滤器只需一次点击。
+
+#### 17.6.6 Android 与网页版
+
+- **Android** 拿到同样的脱敏负载、四种类型、通过 `tag` 的按会话分组、点击目的地，以及同一条应用内提示（同一个 JS 监听）。
+  它本轮**不**拿到会话标题：那里的等价物是一条 data-only FCM 消息加一条在应用被杀后仍要生效的
+  `onMessageReceived` 路径，也就是常驻服务加可被唤醒的进程——比一个扩展大得多。
+  Android 用户看到的是固定文案，标题开关在该平台直接隐藏，而不是显示成一个谎。
+- **网页版**本轮仍然没有任何推送，并建议保持如此。Web Push 需要一对 VAPID 密钥（又一个运维机密）、
+  一个 service worker，以及第二套凭据故事——cookie profile 的 `SameSite=Strict` cookie 不会被推送订阅的后台请求带上；
+  在 iOS 上还要先把站点“添加到主屏幕”才可用，那是与“打开网址”不同的产品形态。
+  ADR 0331 决定 7 把推送限定在应用内，本节不扩大它。
+
+### 17.7 开通清单（用户自己要做的步骤）
+
+Apple 账号是付费的 Apple Developer Program 会员（Team `CQ8XQD6L2J`，负责人 2026-10-21 已确认），因此可以创建 APNs Auth Key。
+按顺序，只做一次：
+
+1. **创建 APNs Auth Key。** Apple Developer → Certificates, Identifiers & Profiles → Keys → **+**。
+   起个名字（例如 `Minih Remote APNs`），勾选 *Apple Push Notifications service (APNs)*，Continue，Register。
+   `.p8` **只能下载一次**——Apple 不会让你再下——同时记下它旁边的 **Key ID**（10 个字符）。
+2. **记下另外两个值**：Team ID `CQ8XQD6L2J`，以及通知所属的 bundle id `app.minih.remote`
+   （来自 `capacitor.config.ts` 与 `PRODUCT_BUNDLE_IDENTIFIER`）。这个 bundle id 就是 `--apns-topic`；
+   写错 topic 会让每个令牌都被判 `DeviceTokenNotForTopic`。
+3. **签名即可。** 推送能力已经提交在仓库里（`apps/remote-web/ios/App/App/App.entitlements`，
+   两套配置都指向它），所以只需 `open apps/remote-web/ios/App/App.xcodeproj`，选中 `App` target，
+   在 Signing & Capabilities 里选你自己的 Team；自动签名会在首次构建时为该 App ID 开启能力。
+   *App Groups* 与 *Keychain Sharing*（`group.app.minih.remote`）随 §17.6.2 的扩展一起加，
+   在扩展之前它们还没有用处。
+4. **添加通知服务扩展**（§17.9 P3）：bundle id `app.minih.remote.notificationservice`，内嵌进应用，
+   带同一个 App Group 与同一个钥匙串访问组。
+5. **把 `.p8` 放到服务器上。** 不要把它贴进对话、issue 或仓库；直接传文件，再修正属主与权限：
+
+```sh
+# 在下载它的机器上
+scp AuthKey_ABCDE12345.p8 <user>@<host>:/tmp/apns.p8
+# 在服务器上
+sudo install -o minih-gateway -g minih-gateway -m 600 /tmp/apns.p8 \
+  /etc/minih-remote-gateway/apns.p8
+rm -f /tmp/apns.p8
+```
+
+   `0600` 与属主为服务用户不是可选项：别的用户能读的密钥文件，Gateway 会直接拒绝
+   （`apps/remote-gateway/README.md` 的“Redacted push”）。
+6. **用四个 APNs 参数启动 Gateway**——四个都给，或者一个都不给，否则拒绝启动
+   （`apps/remote-gateway/src/push-config.ts:143`）：
+
+```sh
+remote-gateway serve ... \
+  --apns-key-file /etc/minih-remote-gateway/apns.p8 \
+  --apns-key-id  ABCDE12345 \
+  --apns-team-id CQ8XQD6L2J \
+  --apns-topic   app.minih.remote
+```
+
+7. **从手机验证，而不是从服务器。** 装上新构建，打开一次（注册就发生在这时），确认注册应答是
+   `enabled: true` 且 `hostIds` 非空；然后把应用切到后台，在电脑上跑完一个回合。
+   锁屏上出现会话名，说明第 1–6 步全对；只看到固定文案、没有标题，问题在扩展或钥匙串镜像，不在 APNs。
+
+Android 需要时：把 Firebase 的 `google-services.json` 放到 `android/app/`，加 Google Services Gradle 插件，
+并把 FCM 服务账号 JSON 以 `--fcm-service-account-file` 交给 Gateway，同样 `0600`。
+
+### 17.8 原型与证据
+
+`apps/remote-web/design/prototype/projects-notifications.html`，是 `index.html`（保留 S1–S8）的兄弟文件：
+单文件、数据模拟、使用客户端自己的 `--rm-*` 令牌、浅色与深色都有。它演示：S4 → S5 → S5b → S6 与逐层返回；
+六种状态在三个位置的样子；没有待处理事项的项目；一条会话都没有的项目；“其他”；项目已预选的新建会话弹层；
+带富化标题、同一会话分组、以及固定文案兜底的锁屏；点击通知后落在 S6 且页面栈已恢复；以及前台的应用内提示。
+
+核对方式写在这里，便于读者自行判断证据力：真实 Chromium、390×844 视口、通过 `playwright-cli` 驱动；
+每个状态都由点击一个已渲染的元素到达，目标不存在则整轮失败；每个状态一张截图；
+并断言——每个页面上 `document.documentElement.scrollWidth === 390`、滚动内容内部无横向溢出、
+没有元素越过手机左右边界、除第 8.7 节已规定的 36 px 发送键外没有小于 44 px 的可交互元素、控制台无报错。
+每一步之后都回读页面栈，这正是“点击推送会恢复 `computers > projects > sessions`、再退一步落在该项目的会话列表”的证据。
+
+### 17.9 实施顺序
+
+四步，各自可构建、可单独发布，按依赖排序。
+
+| 步骤 | 范围 | 必须一起交付 | 完成标志 |
+|---|---|---|---|
+| **P1** | S5 项目、S5b 会话、状态词汇、导航栈与推送恢复、本地 `lastViewedAt`、前台提示、不需要新数据的 S8 通知行 | 只动 `apps/remote-web`：一次 Web 部署和一次应用构建；不动 Gateway，不改协议 | 选一条会话少一次点击；每种状态在黑白下也读得懂；推送能打开正确的位置 |
+| **P2** | 注册路由上的 `onlyActionable`（字段、记录、回显、类型闸门）、`thread-id` 与 `tag` 分组、八条文案 | shared schema、Gateway 存储、`push.ts` 闸门、`push-providers.ts`；部署 Gateway，不发桌面版 | “只通知需要我处理的”真正生效；同一会话的事件会分组 |
+| **P3** | iOS：entitlements（推送先做；App Group 与钥匙串共享随扩展一起加）、带 8 秒期限与兜底的通知服务扩展、共享钥匙串镜像及其清理、角标、标题开关 | Xcode 工程与扩展 target；`native-config.test.ts` 从“不得存在 entitlements 文件”改为“只允许已声明的键，且不含 team id、`.p8`、令牌”（推送这一个键已提交）；`apps/remote-web` 的镜像代码 | 锁屏能点出会话；被忘记的电脑失去凭据副本 |
+| **P4** | 后续，不排期：`session/list` 增加 `waiting_input`（或待回答计数）；Android 标题富化；服务端角标 | 协议与桌面端改动，或一条新的 Android 后台路径 | 各自单独验收 |
+
+P1 覆盖负责人前两个诉求的全部，不需要任何人配合。P3 是通知设计，卡在 §17.7 的 Apple 步骤上，
+那些步骤属于负责人，不属于代码。
+
+### 17.10 验收
+
+| 维度 | 用例 |
+|---|---|
+| 导航 | 320×568 与 390×844 下 S4→S5→S5b→S6 及逐层返回；单项目跳过；单电脑启动；推送点击恢复页面栈；会话不在列表里 |
+| 状态 | §17.4 的每一行，在会话行、导航副标题、项目卡片三处，浅色、深色、灰度（黑白截图仍要读得懂） |
+| 排序 | 待处理优先于运行中、再优先于最近、最后是空项目；“其他”永不上浮；两次刷新顺序一致 |
+| 空与失败 | 没有会话、项目没有会话、只有“其他”、项目目录读不到、访问被撤销、离线 |
+| 通知 | 四种类型的锁屏、分组与不分组、固定文案兜底、点击直达 S6 决策区、前台提示对待处理类（常驻）与结果类（6 秒） |
+| 设置 | 总开关各状态；“只通知需要我处理的”在 Gateway 未回显时隐藏；标题开关关闭时显示固定文案 |
+| 字号与语言 | 100% 与 200% 下无横向页面滚动；zh-CN、en、de（最长串）下标题、胶囊、计数都不被裁切 |
+
+自动化覆盖：新增的纯函数（聚合、分区）在相邻位置配 Vitest 测试；两个页面与前台提示走
+`pnpm test:e2e:remote-web`（E2E-266），两个移动视口，截图产物不进仓库；Gateway 的字段与类型闸门配路由与单元测试；
+扩展的期限与兜底路径用注入的传输做单元测试；整链的真机验收仍由运维按 R6 的方式完成。
+
+### 17.11 决定（2026-10-21 已定）
+
+负责人于 2026-10-21 采纳了全部四条建议，并整体通过第 17 节。它们现在是决定而不是问题；
+上文 §17.3、§17.6.5、§17.6.6 的写法已经是按各自决定写下的。
+
+| 编号 | 问题 | 决定 |
+|---|---|---|
+| N1 | 只有一台就绪电脑时，启动落在该电脑的项目页，还是落在电脑列表？ | 落在项目页，电脑列表放在底下（§17.3）：少一次点击，返回仍能到电脑页 |
+| N2 | “等你回答”现在就做（靠推送，未开通通知时不完整），还是等契约加上 `waiting_input` 之后？ | 现在就靠推送做，同时把契约后续排上（§17.4.1）；另一种做法在桌面版发版前什么都不显示 |
+| N3 | 项目页用卡片，还是用一个分组列表？ | 卡片：聚合胶囊需要宽度，卡片读起来是目的地而不是一行 |
+| N4 | 首个版本除了待决策，是否也通知“跑完了”？ | 是，四种类型都发，过滤器就在一次点击之外（§17.6.5） |
