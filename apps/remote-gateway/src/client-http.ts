@@ -1053,7 +1053,6 @@ export class ClientHttpServer {
     } catch (error) {
       const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to read the device request");
       sendError(response, rpc, traceId, cors);
-      sendError(response, rpc, traceId, cors);
     }
   }
 
