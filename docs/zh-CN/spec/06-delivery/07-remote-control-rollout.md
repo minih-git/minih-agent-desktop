@@ -554,6 +554,9 @@ D666（2026-10-18，ADR `remote-control-router-account-binding`）在 R4–R6 �
 
 范围说明：
 
+- WebSocket 路由用 Bearer 设备 token 鉴权（仅 header profile；浏览器无法在 WebSocket 上设置
+  该头，继续使用 `RACP-HTTP` + SSE），并复用现有的 hash 快速拒绝、限流与审计；它只是传输，
+  不是第二条授权路径。**工作包 B 已实现**，其余工作包尚未实现；
 - 自动接入的证明由**目标 Host 自己校验**（证书链到它固定的 Gateway CA、账户绑定、签名、
   未用过且未过期的 nonce）并检查自己的开关；Gateway 只做预检与快速拒绝，不做授权依据；
 - 证明缺失、nonce 过期或重放、目标电脑未声明 `device.desktop-auto` 时一律拒绝或退回人工

@@ -12,6 +12,7 @@ import { startGatewayAdminSocket, type AdminResponse, type AdminSocket } from ".
 import { loadOrCreateGatewayAuthority, type GatewayAuthority } from "./ca.js";
 import { createClientIpResolver, peerAddress } from "./client-ip.js";
 import { ClientHttpServer } from "./client-http.js";
+import { createClientWsServer } from "./client-ws.js";
 import { isLoopbackBind, type GatewayServeConfig } from "./config.js";
 import { DeviceRequestService } from "./device-requests.js";
 import { EnrollmentService } from "./enrollment.js";
@@ -190,6 +191,17 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
   const account = verifier
     ? new AccountSessionService({ store, verifier: () => verifier, rateLimiter, ...(now ? { now } : {}) })
     : null;
+  // The `RACP-WS` client route (protocol §11.4 rule 7): its own module, sharing
+  // the client listener, the device-token check, the rate limiter, and the pool
+  // so a revoked device closes a relayed socket too.
+  const clientWs = createClientWsServer({
+    store,
+    pool,
+    rateLimiter,
+    allowedOrigins: config.allowedOrigins,
+    log,
+    ...(config.clientIp ? { resolveClientIp: createClientIpResolver(config.clientIp) } : {}),
+  });
   const client = new ClientHttpServer({
     store,
     pool,
@@ -207,6 +219,7 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
     // TCP peer, exactly as before (ADR decision 10).
     resolveClientIp: config.clientIp ? createClientIpResolver(config.clientIp) : peerAddress,
     latencyTrace,
+    webSocket: clientWs,
   });
   const clientTls = await loadClientTls(config);
   const clientAddress = await client.start(config.client, config.clientTls, clientTls);
@@ -294,6 +307,7 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
     close: () => {
       closing ??= (async () => {
         await admin.close();
+        clientWs.closeAll();
         pool.closeAll();
         await client.stop();
         await hostLinks.stop();

@@ -94,6 +94,14 @@ export class LogicalConnection {
   private closed = false;
   private notificationHandler: ((method: string, params: unknown) => void) | null = null;
   private closeHandler: (() => void) | null = null;
+  /**
+   * Set when a client that speaks `RACP-WS` itself owns this logical
+   * connection (the `/v1/hosts/{hostId}/ws` route). Every frame from the Host
+   * is then handed over verbatim, and the client's own frames are written to
+   * the link with `sendRaw`; the Gateway relays and never interprets, renumbers,
+   * or answers on the client's behalf.
+   */
+  private relay: { onFrame: (frame: string) => void; onClose: (cause: string) => void } | null = null;
 
   constructor(
     private readonly options: {
@@ -199,6 +207,32 @@ export class LogicalConnection {
     this.teardown(reason);
   }
 
+  /**
+   * Hand every Host frame to a client that speaks `RACP-WS` itself, verbatim
+   * (protocol §11.4 rule 3). Called once, right after the logical connection is
+   * created and before any frame can arrive from the client, so no frame is
+   * ever both relayed and interpreted.
+   */
+  attachRelay(relay: { onFrame: (frame: string) => void; onClose: (cause: string) => void }): void {
+    this.relay = relay;
+  }
+
+  /**
+   * Write one client frame onto the Host link unchanged. Relay mode only: the
+   * client owns the JSON-RPC ids, so the Gateway never rewrites them.
+   */
+  sendRaw(frame: string): void {
+    if (this.closed) return;
+    try {
+      this.options.mux.message(this.id, frame);
+    } catch (error) {
+      this.options.log("warn", "gateway could not send on a relayed logical connection", {
+        clientConnectionId: this.id,
+        error: String(error),
+      });
+    }
+  }
+
   private send(message: JsonRpcMessage): void {
     if (this.closed) return;
     try {
@@ -213,6 +247,13 @@ export class LogicalConnection {
 
   private handleFrame(raw: string): void {
     if (this.closed) return;
+    // Relay mode: the client speaks the protocol, so the Gateway forwards the
+    // frame as it arrived, including a server-initiated request it must answer
+    // itself (§11.4 rule 2).
+    if (this.relay) {
+      this.relay.onFrame(raw);
+      return;
+    }
     const message = parseFrame(raw);
     if (!message) {
       this.options.log("warn", "gateway dropped a malformed Host frame", { clientConnectionId: this.id });
@@ -259,6 +300,7 @@ export class LogicalConnection {
     }
     this.pending.clear();
     this.closeHandler?.();
+    this.relay?.onClose(cause);
     this.options.log("info", "gateway logical connection closed", { clientConnectionId: this.id, cause });
   }
 }
@@ -346,6 +388,34 @@ export class LogicalConnectionPool {
       throw new GatewayRpcError("RATE_LIMITED", `a device may hold at most ${MAX_STREAM_CONNECTIONS_PER_DEVICE} event streams`, true);
     }
     const connection = await this.connect(identity);
+    open.add(connection);
+    this.streams.set(identity.deviceId, open);
+    connection.onClose(() => open.delete(connection));
+    return connection;
+  }
+
+  /**
+   * A logical connection owned by a client that speaks `RACP-WS` itself (the
+   * `/v1/hosts/{hostId}/ws` route). It is created exactly like a stream — so a
+   * revoked device closes it and the per-device bound applies — but it is
+   * deliberately NOT initialized here: the client sends its own
+   * `connection/initialize`, and a second one from the Gateway would be a
+   * `CONFLICT` on the Host.
+   */
+  async relay(identity: ConnectionIdentity): Promise<LogicalConnection> {
+    const mux = this.options.links.muxFor(identity.hostId);
+    if (!mux) throw new GatewayRpcError("AGENT_UNAVAILABLE", "the Host is offline", true);
+    const open = this.streams.get(identity.deviceId) ?? new Set<LogicalConnection>();
+    for (const connection of [...open]) if (connection.isClosed) open.delete(connection);
+    if (open.size >= MAX_STREAM_CONNECTIONS_PER_DEVICE) {
+      throw new GatewayRpcError("RATE_LIMITED", `a device may hold at most ${MAX_STREAM_CONNECTIONS_PER_DEVICE} relayed connections`, true);
+    }
+    let connection: LogicalConnection;
+    try {
+      connection = new LogicalConnection({ identity, mux, log: this.options.log, ...(this.options.now ? { now: this.options.now } : {}) });
+    } catch (error) {
+      throw new GatewayRpcError("AGENT_UNAVAILABLE", error instanceof Error ? error.message : "the Host is offline", true);
+    }
     open.add(connection);
     this.streams.set(identity.deviceId, open);
     connection.onClose(() => open.delete(connection));

@@ -23,6 +23,7 @@ import { randomUUID } from "node:crypto";
 import { createServer as createHttpServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
+import type { Duplex } from "node:stream";
 
 import {
   RACP_ACCOUNT_SESSION_TOKEN_PREFIX,
@@ -45,6 +46,7 @@ import * as Value from "typebox/value";
 import { ACCOUNT_COOKIE, type AccountSessionService } from "./account.js";
 import type { DeviceRequestService } from "./device-requests.js";
 import { peerAddress } from "./client-ip.js";
+import { CREDENTIAL_QUERY, bearerToken, hasUrlCredential } from "./client-request-rules.js";
 import type { ClientTlsOptions, ListenAddress } from "./config.js";
 import { CSRF_COOKIE, DEVICE_COOKIE, csrfTokenFor, hashToken, type PairingService } from "./pairing.js";
 import type { PushService } from "./push.js";
@@ -56,7 +58,6 @@ import type { GatewayAccountSessionRecord, GatewayStore } from "./store.js";
 import { serveEventStream, type StreamSubscription } from "./sse.js";
 
 const MAX_BODY_BYTES = 1024 * 1024;
-const CREDENTIAL_QUERY = /(token|credential|secret|password|api[-_]?key|authorization)/i;
 const JSON_RPC_APPLICATION_ERROR = -32000;
 /** Query-string values that are a signed decimal integer, not `20.5` or `1e3`. */
 const INTEGER_QUERY = /^-?\d+$/;
@@ -257,11 +258,6 @@ function parseQueryParams(url: URL, route: HostRoute): Record<string, unknown> {
   return params;
 }
 
-function bearer(header: string | undefined): string | null {
-  if (!header) return null;
-  const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
-  return match?.[1] ?? null;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -325,8 +321,13 @@ export type ClientHttpServerOptions = {
   now?: () => number;
   /** Emit opt-in per-command segment timings (P0 measurement). */
   latencyTrace?: boolean;
+  /**
+   * The `RACP-WS` client route (protocol §11.4 rule 7). It lives in
+   * `client-ws.ts`; this server only owns the socket it upgrades, so the two
+   * client surfaces share one listener and one TLS configuration.
+   */
+  webSocket?: { handleUpgrade: (request: IncomingMessage, socket: Duplex, head: Buffer) => boolean };
 };
-
 export class ClientHttpServer {
   private server: HttpServer | null = null;
 
@@ -344,6 +345,12 @@ export class ClientHttpServer {
     const server = certificate ? createHttpsServer({ cert: certificate.certificatePem, key: certificate.privateKeyPem }, handler) : createHttpServer(handler);
     server.keepAliveTimeout = 65_000;
     server.requestTimeout = 0;
+    // An upgrade the WebSocket route does not own is closed here: a client that
+    // upgrades an unknown path must not be left holding a half-open socket.
+    server.on("upgrade", (request, socket, head) => {
+      const owned = this.options.webSocket?.handleUpgrade(request, socket, head) ?? false;
+      if (!owned) socket.destroy();
+    });
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(listen.port, listen.host, () => {
@@ -398,28 +405,17 @@ export class ClientHttpServer {
     return null;
   }
 
-  /** A credential never travels in the URL (security §3.1, gate 24). */
+  /**
+   * A credential never travels in the URL (security §3.1, gate 24). The rule
+   * itself is shared with the WebSocket route, so the two surfaces cannot
+   * drift apart.
+   */
   private assertNoUrlCredential(rawUrl: string): void {
-    const url = new URL(rawUrl, "http://gateway.local");
-    const carriesCredential = (value: string): boolean =>
-      value.includes(RACP_DEVICE_TOKEN_PREFIX) ||
-      value.includes(RACP_PAIRING_TOKEN_PREFIX) ||
-      value.includes(RACP_ACCOUNT_SESSION_TOKEN_PREFIX);
-    if (url.search === "") {
-      if (carriesCredential(url.pathname)) {
-        throw new GatewayRpcError("UNAUTHORIZED", "a credential must never appear in a URL");
-      }
-      return;
-    }
-    for (const key of url.searchParams.keys()) {
-      if (CREDENTIAL_QUERY.test(key) || [...url.searchParams.values()].some(carriesCredential)) {
-        throw new GatewayRpcError("UNAUTHORIZED", "a credential must never appear in a URL");
-      }
-    }
+    if (hasUrlCredential(rawUrl)) throw new GatewayRpcError("UNAUTHORIZED", "a credential must never appear in a URL");
   }
 
   private authenticate(request: IncomingMessage): ResolvedAuth {
-    const headerToken = bearer(request.headers.authorization);
+    const headerToken = bearerToken(request.headers.authorization);
     const cookieToken = request.headers.cookie ? parseCookies(request.headers.cookie)[DEVICE_COOKIE] : undefined;
     const token = headerToken ?? cookieToken;
     if (!token) throw new GatewayRpcError("UNAUTHORIZED", "this request needs a device credential");
@@ -478,7 +474,7 @@ export class ClientHttpServer {
    */
   private authenticateAccount(request: IncomingMessage): { session: GatewayAccountSessionRecord; via: "header" | "cookie" } {
     const account = this.accountService();
-    const headerToken = bearer(request.headers.authorization);
+    const headerToken = bearerToken(request.headers.authorization);
     const cookieToken = request.headers.cookie ? parseCookies(request.headers.cookie)[ACCOUNT_COOKIE] : undefined;
     const token = headerToken ?? cookieToken;
     if (!token) throw new GatewayRpcError("UNAUTHORIZED", "this request needs an account session credential");
@@ -892,7 +888,7 @@ export class ClientHttpServer {
   ): Promise<void> {
     try {
       if (request.method !== "POST") throw new GatewayRpcError("METHOD_NOT_FOUND", "account login is a POST endpoint");
-      const accessKey = bearer(request.headers.authorization);
+      const accessKey = bearerToken(request.headers.authorization);
       if (!accessKey) {
         throw new GatewayRpcError("UNAUTHORIZED", "account login needs the Router AccessKey in the Authorization header");
       }
@@ -1048,7 +1044,7 @@ export class ClientHttpServer {
   ): Promise<void> {
     try {
       if (request.method !== "POST") throw new GatewayRpcError("METHOD_NOT_FOUND", "pairing is a POST endpoint");
-      const token = bearer(request.headers.authorization);
+      const token = bearerToken(request.headers.authorization);
       if (!token || !token.startsWith(RACP_PAIRING_TOKEN_PREFIX)) {
         throw new GatewayRpcError("UNAUTHORIZED", "pairing needs the Host's pairing token in the Authorization header");
       }

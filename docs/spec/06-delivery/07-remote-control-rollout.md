@@ -483,9 +483,11 @@ packages, one commit range each:
 
 Scope notes:
 
-- the WebSocket route authenticates with the device token exactly like the
-  command routes and reuses the existing hash fast-reject, rate limit, and
-  audit; it is a transport, not a second authorization path;
+- the WebSocket route authenticates with the device token in the header profile
+  (a browser cannot set that header on a WebSocket and keeps `RACP-HTTP` + SSE)
+  and reuses the existing hash fast-reject, rate limit, and audit; it is a
+  transport, not a second authorization path. **Package B is implemented**;
+  the other packages are not;
 - automatic admission is refused, never silently ignored, when the proof is
   missing, when its nonce was reused or expired, or when the target computer
   does not advertise `device.desktop-auto`;

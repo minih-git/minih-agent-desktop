@@ -908,8 +908,15 @@ type ModelSummary = {
   目标电脑未声明该能力时，Gateway 绝不发送新帧（旧 Host 会静默丢弃未知 `type`），申请方把
   该电脑报告为「需要升级」。
 - **WebSocket 客户端路由。** 桌面类设备经 `GET /v1/hosts/{hostId}/ws` 使用 `RACP-WS`，
-  鉴权方式与 §11.2 的设备 token 路由一致，Gateway 把 `RACP-WS` 帧原样转发到同一条逻辑
-  连接上；手机继续使用 `RACP-HTTP` + SSE，不变。
+  用 Bearer 设备 token 鉴权（仅 header profile；浏览器无法在 WebSocket 上设置该头，
+  因此继续使用 `RACP-HTTP` + SSE），Gateway 把 `RACP-WS` 帧原样转发到同一条逻辑连接上，
+  双向都通，包括必须由客户端自己回答的服务端请求（`approval/request`、`input/request`、
+  `tool/execute`）：这条路由上 Gateway 绝不代客户端作答，也不重编号、合并或改写帧。
+  跟不上的客户端以 `CLIENT_TOO_SLOW` 关闭而不是无界缓冲，因此按游标续传的规则仍然成立。
+  URL 里的凭据、Origin、限流与审计规则与 §11.2 的路由一致。该路由本身已实现
+  （rollout R8 工作包 B，测试见 `apps/remote-gateway/src/client-ws.test.ts`）；本条中
+  桌面类设备的部分（`desktop` 类别、`hostProof`、`device.desktop-auto` 与随之而来的
+  自动授予）尚未实现。
 - **角色与操作。** 桌面类设备持有 `owner`，与 SSH 配对的桌面设备同级、豁免远程权限上限
   （ADR 0331 网关来源限制的唯一例外，已记录在该 ADR）；`owner` 依附于申请方的证书。
   手机／浏览器设备仍是 `viewer` / `controller` / `approver`、`pairedDevice: false`、

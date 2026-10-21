@@ -1146,6 +1146,14 @@ with the Gateway and browser milestones (R4–R6, D665).
 | Resolve approval | `POST /v1/approvals/{approvalId}:respond` |
 | Resolve input | `POST /v1/inputs/{inputId}:respond` |
 
+One Gateway route is not `RACP-HTTP`: `GET /v1/hosts/{hostId}/ws` upgrades to
+`RACP-WS` for a client that speaks the protocol itself (the desktop as a Remote
+Client of a sibling computer; §11.4 rule 7). It authenticates with the Bearer
+device token in the header profile only — the cookie profile exists for a
+browser that cannot set headers, and a browser keeps `RACP-HTTP` + SSE — and it
+applies the same URL-credential, Origin, rate-limit, and audit rules as the
+routes above.
+
 The event endpoints MUST support `Last-Event-ID` with the `"<epoch>:<sequence>"`
 form. Commands return JSON and never require the caller to keep a request open
 for turn execution.
@@ -1340,10 +1348,23 @@ Rules:
    capability the Gateway MUST NOT send the new frames — an old Host drops an
    unknown `type` silently (rule 6) — and the requesting desktop reports that
    computer as needing an update. A `desktop` client reaches the Host over
-   `RACP-WS` at `GET /v1/hosts/{hostId}/ws`, authenticated by its device token
-   exactly like the device-token routes of §11.2, and the Gateway relays
-   `RACP-WS` frames byte for byte onto the same logical connection a
-   `RACP-HTTP` command uses. Phones keep `RACP-HTTP` + SSE unchanged.
+   `RACP-WS` at `GET /v1/hosts/{hostId}/ws`, authenticated by the Bearer device
+   token (the header profile; a browser, which cannot set that header on a
+   WebSocket, keeps `RACP-HTTP` + SSE), and the Gateway relays `RACP-WS` frames
+   byte for byte onto the same logical connection a `RACP-HTTP` command uses.
+   Both directions are relayed, including a server-initiated request
+   (`approval/request`, `input/request`, `tool/execute`) that the client must
+   answer itself: the Gateway never answers on the client's behalf on this
+   route, and it never renumbers, coalesces, or re-keys a frame (rule 3). A
+   client that cannot keep up is closed with `CLIENT_TOO_SLOW` instead of being
+   buffered without bound, so the resume-by-cursor rule still holds. Phones keep
+   `RACP-HTTP` + SSE unchanged. The WebSocket route itself is implemented
+   (rollout R8 package B, tested in `apps/remote-gateway/src/client-ws.test.ts`);
+   the desktop-class device parts of this rule — the `desktop` client class,
+   `hostProof`, `device.desktop-auto`, and the automatic admission that follows —
+   are not.
+   buffered without bound, so the resume-by-cursor rule still holds. Phones keep
+   `RACP-HTTP` + SSE unchanged.
 
 Enrollment and pairing run against the same listener:
 
