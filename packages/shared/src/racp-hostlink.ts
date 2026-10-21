@@ -619,6 +619,12 @@ export const RacpPairHttpResponseSchema = Type.Object({
   hostId: Type.String({ minLength: 1 }),
   roles: Type.Array(Type.String(), { minItems: 1 }),
   /**
+   * The computer's own name, as its owner registered it. Additive and optional:
+   * a Gateway that predates it simply omits it, and the client then shows the
+   * host id rather than inventing a name.
+   */
+  hostLabel: Type.Optional(Type.String({ maxLength: 128 })),
+  /**
    * Present for native clients only: the token to store in the Keychain /
    * Keystore. Browsers receive it as an `HttpOnly; Secure; SameSite=Strict`
    * cookie and must never read it from the body.

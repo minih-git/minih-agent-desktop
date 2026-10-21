@@ -382,6 +382,10 @@ Host 签发网关来源（安全规格 §3.7）的设备令牌，网关只记录
 `HttpOnly; Secure; SameSite=Strict; Path=/hosts/{hostId}; Max-Age=34560000` cookie
 加 CSRF token（浏览器）或在响应体中返回 `{ deviceId, token }`（原生，存入 Keychain /
 Keystore）交付令牌。
+响应还带 `hostLabel`，即 Host 主人给它起的名字。该字段可选且为增补：这是设备唯一一次
+能拿到它的机会——浏览器档本身就够不到 `GET /v1/hosts`（§11.2），而设备此时还没有任何
+Host 级凭据。拿不到 `hostLabel` 的客户端显示 host id，绝不能拿设备名顶替：设备名指的是
+配对的那台手机，不是电脑。
 
 ### 账户模式（D666，账户目录已实现）
 

@@ -162,7 +162,7 @@ export async function pairDevice(
   gateway: TestGateway,
   host: TestHost,
   options: { client: "web" | "ios" | "android"; label?: string; origin?: string } = { client: "ios" },
-): Promise<{ deviceId: string; token?: string; csrfToken?: string; setCookie: string[]; status: number }> {
+): Promise<{ deviceId: string; token?: string; csrfToken?: string; hostLabel?: string; setCookie: string[]; status: number }> {
   const pairing = await host.harness.authenticator.issuePairingToken(10 * 60 * 1000, "gateway");
   const response = await fetch(`${gateway.clientBaseUrl}/v1/hosts/${host.hostId}/pair`, {
     method: "POST",
@@ -174,12 +174,13 @@ export async function pairDevice(
     body: JSON.stringify({ deviceLabel: options.label ?? "test device", client: options.client }),
   });
   const setCookie = response.headers.getSetCookie?.() ?? [];
-  const payload = (await response.json()) as { deviceId?: string; token?: string; csrfToken?: string };
+  const payload = (await response.json()) as { deviceId?: string; token?: string; csrfToken?: string; hostLabel?: string };
   return {
     status: response.status,
     deviceId: payload.deviceId ?? "",
     ...(payload.token ? { token: payload.token } : {}),
     ...(payload.csrfToken ? { csrfToken: payload.csrfToken } : {}),
+    ...(payload.hostLabel ? { hostLabel: payload.hostLabel } : {}),
     setCookie,
   };
 }
