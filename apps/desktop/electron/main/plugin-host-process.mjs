@@ -388,6 +388,7 @@ function buildApi() {
     },
     browser: {
       reveal: () => call("browser.reveal"),
+      openInPanel: (input) => call("browser.openInPanel", [input ?? {}]),
       navigate: (input) => call("browser.navigate", [input ?? {}]),
       action: (input) => call("browser.action", [input]),
       setBounds: (hole) => call("browser.setBounds", [hole]),
