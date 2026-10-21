@@ -665,7 +665,11 @@ Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主
   设备（§11.5）是账户内所有在线 Host。`hostIds` 就是 Gateway 解析出的该受众，之后新注册
   进账户的 Host 不会悄悄扩大它——重新注册才会。一台设备只有一条注册：再次注册替换它的
   令牌，因为一台设备就是一个平台。设备状态在写入内部复查，因此设备被吊销时已在途的注册
-  请求会得到 `UNAUTHORIZED`，而不是把吊销删掉的注册又写回去。`DELETE
+  请求会得到 `UNAUTHORIZED`，而不是把吊销删掉的注册又写回去。注册还可以带
+  `onlyActionable: true`，要求 Gateway 只投递需要用户处理的两类请求（`approval.requested`、
+  `input.requested`），对该设备丢弃 `turn.completed` 与 `turn.failed`；应答通过
+  `preferences: { onlyActionable }` 回显，之后的一次注册若不带该字段，保留已存的值而不是重置。
+  早于该字段的 Gateway 会忽略它且不回显，客户端因此知道不该显示那个开关。`DELETE
   /v1/push/registration` 删除调用方自己的注册并应答 `{ result: { removed } }`。两个路由都遵循 §11.2 的浏览器规则（`Origin`
   必须在允许列表内，cookie profile 需 CSRF 头），并携带 `Cache-Control: no-store`。
 - **推送关闭**：未配置任何服务商时 Gateway 不保存任何东西，注册路由应答
@@ -677,7 +681,10 @@ Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主
   `push.notify.<kind>.title` 和 `push.notify.<kind>.body`，由客户端从自己的词条解析——
   Gateway 从不发送句子。APNs 收到的是 `aps.alert.title-loc-key` / `loc-key`，FCM 收到
   `android.notification.title_loc_key` / `body_loc_key`，同一组 id 也在 `data` 里，因此
-  可见文字是应用自己的、用用户的语言，而 id 会随通知到达以驱动点击跳转。HTTP v1 的
+  可见文字是应用自己的、用用户的语言，而 id 会随通知到达以驱动点击跳转。APNs 另外收到
+  `aps.thread-id`、Android 收到 `android.notification.tag`，两者都填 `sessionId`，
+  于是同一个会话的多条事件在锁屏上归成一组；两者都由负载里已有的 id 派生，分组不增加任何字段。
+  HTTP v1 的
   `message.notification` 只有 `title`、`body`、`image` 三个字段，所以定位键属于 Android
   块；放在别处会让每一台设备都收到 `400 INVALID_ARGUMENT`。这些键的值是 Android 资源名
   （`push_notify_<kind>_title`），因为资源名不允许含点号。

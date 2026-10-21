@@ -1787,7 +1787,14 @@ says — so a Host never chooses an audience and a client never receives content
   one registration: registering again replaces its token, because a device is one
   platform. The device's state is re-checked inside the write, so a registration
   request that was already in flight when the device was revoked is answered
-  `UNAUTHORIZED` instead of resurrecting a registration the revocation deleted.
+  `UNAUTHORIZED` instead of resurrecting a registration the revocation deleted. A
+  registration may also carry `onlyActionable: true`, which asks the Gateway to
+  deliver only the two requests that need the user (`approval.requested`,
+  `input.requested`) and to drop `turn.completed` and `turn.failed` for that
+  device; the answer echoes `preferences: { onlyActionable }`, and omitting the
+  field on a later registration keeps the stored value rather than resetting it. A
+  Gateway that predates the field ignores it and echoes nothing, which is how a
+  client knows not to offer the switch.
   `DELETE /v1/push/registration` drops the caller's own registration and answers
   `{ result: { removed } }`. Both routes follow the browser rules of §11.2
   (allowlisted `Origin`, CSRF header for the cookie profile) and carry
@@ -1804,7 +1811,11 @@ says — so a Host never chooses an audience and a client never receives content
   receives them as `aps.alert.title-loc-key` / `loc-key`, FCM as
   `android.notification.title_loc_key` / `body_loc_key` plus the same ids in
   `data`, so the visible text is the app's, in the user's language, and the ids
-  survive to drive the tap. HTTP v1's `message.notification` has only `title`,
+  survive to drive the tap. APNs also receives `aps.thread-id` and Android
+  `android.notification.tag`, both carrying `sessionId`, so several events about
+  one session group together on the lock screen; both are derived from an id the
+  payload already carries, so grouping adds no field to this contract. HTTP v1's
+  `message.notification` has only `title`,
   `body`, and `image`, so the keys belong to the Android block; a message that
   puts them anywhere else is rejected with `400 INVALID_ARGUMENT` for every
   device. Their value is the Android resource name

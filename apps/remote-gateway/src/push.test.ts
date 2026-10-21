@@ -122,7 +122,15 @@ function service(options: {
 /** A registration as the route would write it. */
 async function register(
   store: GatewayStore,
-  input: { deviceId: string; hostId: string; accountId?: string; hostIds?: string[]; platform?: "ios" | "android"; token?: string },
+  input: {
+    deviceId: string;
+    hostId: string;
+    accountId?: string;
+    hostIds?: string[];
+    platform?: "ios" | "android";
+    token?: string;
+    onlyActionable?: boolean;
+  },
 ) {
   await store.saveDevice({
     deviceId: input.deviceId,
@@ -139,6 +147,7 @@ async function register(
     hostIds: input.hostIds ?? [input.hostId],
     platform: input.platform ?? "ios",
     token: input.token ?? `token_${input.deviceId}`,
+    ...(input.onlyActionable === undefined ? {} : { onlyActionable: input.onlyActionable }),
     createdAt: "2026-10-18T00:00:00.000Z",
     updatedAt: "2026-10-18T00:00:00.000Z",
   });
@@ -237,6 +246,45 @@ describe("push service", () => {
     providers.sent.length = 0;
     await push.handleNotify("host_b1", notify({ notifyId: "n_b" }));
     expect(providers.sent).toEqual([]);
+  });
+
+  it("skips the outcome kinds for a device that asked for actionable only", async () => {
+    const store = await newStore([{ hostId: "host_a" }]);
+    await register(store, { deviceId: "dev_1", hostId: "host_a", onlyActionable: true });
+    const { push, providers } = service({ store, hostLinks: capabilitiesOf({ host_a: [PUSH] }) });
+
+    const completed = await push.handleNotify("host_a", {
+      notifyId: "n_completed",
+      kind: "turn.completed",
+      sessionId: "session_1",
+      occurredAt: "2026-10-18T00:00:00.000Z",
+    });
+    expect(completed).toEqual({ status: "sent", delivered: 0 });
+    expect(providers.sent).toHaveLength(0);
+
+    // The same device still hears about the things it has to act on.
+    const approval = await push.handleNotify("host_a", {
+      notifyId: "n_approval",
+      kind: "approval.requested",
+      sessionId: "session_1",
+      occurredAt: "2026-10-18T00:00:00.000Z",
+    });
+    expect(approval).toEqual({ status: "sent", delivered: 1 });
+    expect(providers.sent.map((entry) => entry.payload.kind)).toEqual(["approval.requested"]);
+  });
+
+  it("still sends every kind to a device that never set the preference", async () => {
+    const store = await newStore([{ hostId: "host_a" }]);
+    await register(store, { deviceId: "dev_1", hostId: "host_a" });
+    const { push, providers } = service({ store, hostLinks: capabilitiesOf({ host_a: [PUSH] }) });
+
+    await push.handleNotify("host_a", {
+      notifyId: "n_completed",
+      kind: "turn.completed",
+      sessionId: "session_1",
+      occurredAt: "2026-10-18T00:00:00.000Z",
+    });
+    expect(providers.sent).toHaveLength(1);
   });
 
   it("sends one push per event, however often the Host repeats it", async () => {

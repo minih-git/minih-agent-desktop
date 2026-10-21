@@ -64,7 +64,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 export async function registerPushToken(
   transport: PushRegistrationTransport,
-  input: { platform: RacpPushPlatform; token: string; appId?: string },
+  input: {
+    platform: RacpPushPlatform;
+    token: string;
+    appId?: string;
+    /**
+     * "Only notify me about things that need me" (§17.6.5). Absent keeps every
+     * kind, which is what a Gateway without the field also does.
+     */
+    onlyActionable?: boolean;
+  },
 ): Promise<PushRegistrationResult> {
   const fetchImpl = transport.fetchImpl ?? fetch;
   let response: Response;
@@ -76,7 +85,12 @@ export async function registerPushToken(
         "content-type": "application/json",
         ...credentialHeaders(transport.credential),
       },
-      body: JSON.stringify({ platform: input.platform, token: input.token, ...(input.appId ? { appId: input.appId } : {}) }),
+      body: JSON.stringify({
+        platform: input.platform,
+        token: input.token,
+        ...(input.appId ? { appId: input.appId } : {}),
+        ...(input.onlyActionable === undefined ? {} : { onlyActionable: input.onlyActionable }),
+      }),
       credentials: transport.credential.kind === "cookie" ? "include" : "omit",
     });
   } catch (error) {

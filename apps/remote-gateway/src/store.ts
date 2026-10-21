@@ -81,6 +81,11 @@ export type GatewayPushRegistrationRecord = {
   token: string;
   /** Optional app/bundle id, so one deployment can serve more than one build. */
   appId?: string;
+  /**
+   * "Only notify me about things that need me" (§17.6.5). Absent means every kind,
+   * which is how every registration written before this field behaves.
+   */
+  onlyActionable?: boolean;
   createdAt: string;
   updatedAt: string;
 };

@@ -3190,6 +3190,9 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 255
+      },
+      "onlyActionable": {
+        "type": "boolean"
       }
     }
   },
@@ -3221,6 +3224,17 @@
         "items": {
           "type": "string",
           "minLength": 1
+        }
+      },
+      "preferences": {
+        "type": "object",
+        "required": [
+          "onlyActionable"
+        ],
+        "properties": {
+          "onlyActionable": {
+            "type": "boolean"
+          }
         }
       }
     }

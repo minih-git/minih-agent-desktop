@@ -59,6 +59,21 @@ describe("registerPushToken", () => {
     expect(calls[0]!.body).toEqual({ platform: "ios", token: "apns-token" });
   });
 
+  it("carries the 'only things that need me' preference, and omits it when unset", async () => {
+    const { calls, fetchImpl } = recording();
+    await registerPushToken(
+      { gatewayOrigin: ORIGIN, credential: HEADER, fetchImpl },
+      { platform: "ios", token: "apns-token", onlyActionable: true },
+    );
+    expect(calls[0]!.body).toEqual({ platform: "ios", token: "apns-token", onlyActionable: true });
+
+    // Absent means "ask for nothing in particular": the Gateway keeps its stored
+    // preference, and a Gateway without the field behaves exactly as before.
+    const second = recording();
+    await registerPushToken({ gatewayOrigin: ORIGIN, credential: HEADER, fetchImpl: second.fetchImpl }, { platform: "ios", token: "apns-token" });
+    expect(second.calls[0]!.body).toEqual({ platform: "ios", token: "apns-token" });
+  });
+
   it("sends the CSRF value instead of a bearer token for the cookie profile", async () => {
     const { calls, fetchImpl } = recording();
     await registerPushToken(
