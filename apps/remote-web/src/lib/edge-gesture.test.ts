@@ -10,7 +10,7 @@ import {
   mayStartEdgeGesture,
 } from "./edge-gesture.js";
 
-/** A touch on a phone screen, near the left edge or not. */
+/** A touch on a phone screen. */
 const touch = (startX: number, overrides: Partial<Parameters<typeof mayStartEdgeGesture>[0]> = {}) => ({
   startX,
   sheetOpen: false,
@@ -19,17 +19,13 @@ const touch = (startX: number, overrides: Partial<Parameters<typeof mayStartEdge
   ...overrides,
 });
 
-/**
- * The iOS edge swipe is ours rather than the WebView's history gesture, so its
- * two failure modes are pinned here: intercepting a scroll or a code block's
- * horizontal pan, and popping when the user only brushed the screen.
- */
 describe("mayStartEdgeGesture", () => {
-  it("only starts within the edge band", () => {
+  it("starts anywhere on the screen for a valid touch", () => {
     expect(mayStartEdgeGesture(touch(0))).toBe(true);
     expect(mayStartEdgeGesture(touch(EDGE_WIDTH))).toBe(true);
-    expect(mayStartEdgeGesture(touch(EDGE_WIDTH + 1))).toBe(false);
-    expect(mayStartEdgeGesture(touch(120))).toBe(false);
+    expect(mayStartEdgeGesture(touch(EDGE_WIDTH + 1))).toBe(true);
+    expect(mayStartEdgeGesture(touch(180))).toBe(true);
+    expect(mayStartEdgeGesture(touch(-1))).toBe(false);
   });
 
   it("never takes a touch from a sheet, from a mouse, or with nowhere to go", () => {
@@ -53,7 +49,7 @@ describe("classifyDrag", () => {
     expect(classifyDrag({ dx: -20, dy: 2 })).toEqual({ kind: "reject" });
   });
 
-  it("tracks a rightward drag from the edge, clamped at zero", () => {
+  it("tracks a rightward drag, clamped at zero", () => {
     expect(classifyDrag({ dx: 40, dy: 3 })).toEqual({ kind: "drag", offset: 40 });
   });
 });
@@ -61,7 +57,7 @@ describe("classifyDrag", () => {
 describe("completesOnRelease", () => {
   const width = 390;
 
-  it("completes past a third of the screen", () => {
+  it("completes past the completion fraction of the screen", () => {
     expect(completesOnRelease({ offset: width * COMPLETE_FRACTION, velocity: 0, viewportWidth: width })).toBe(true);
     expect(completesOnRelease({ offset: width * COMPLETE_FRACTION - 1, velocity: 0, viewportWidth: width })).toBe(false);
   });
@@ -72,12 +68,9 @@ describe("completesOnRelease", () => {
   });
 
   it("springs back a short drag whatever speed it reports", () => {
-    // A touch event one millisecond after the previous one makes an
-    // instantaneous velocity enormous; the distance guard is what stops a
-    // brushed screen from popping a level.
     const tooShort = width * MIN_FLICK_DISTANCE_FRACTION - 1;
     expect(completesOnRelease({ offset: tooShort, velocity: 6.7, viewportWidth: width })).toBe(false);
-    expect(completesOnRelease({ offset: 40, velocity: 40, viewportWidth: width })).toBe(false);
+    expect(completesOnRelease({ offset: 20, velocity: 40, viewportWidth: width })).toBe(false);
   });
 
   it("cancels a long drag the user flicked back", () => {
@@ -92,7 +85,6 @@ describe("completesOnRelease", () => {
 describe("dragFrame", () => {
   it("moves the screen with the finger and the one beneath at a third", () => {
     expect(dragFrame({ offset: 195, viewportWidth: 390 })).toEqual({ progress: 0.5, parallax: 0.5 / 3 });
-    // Past the screen width the outgoing page stops at a full screen.
     expect(dragFrame({ offset: 900, viewportWidth: 390 })).toEqual({ progress: 1, parallax: 1 / 3 });
     expect(dragFrame({ offset: 0, viewportWidth: 390 })).toEqual({ progress: 0, parallax: 0 });
   });
