@@ -889,7 +889,12 @@ returns a single complete item when a truncated event points at it.
 A page is one bounded window of the transcript, not the whole file: the Host
 reads `limit` items ending where `beforeItemId` names and reports `hasMore`
 from the transcript itself, so a client pages a long conversation without the
-Host materializing it. `hasMore` is the only signal that older items exist;
+Host materializing it.
+A row that appears on more than one physical line — a retried append, a
+rewritten row — resolves to the position it is rendered at, which is its first
+occurrence, so "the page before it" is strictly older than it. Resolving a later
+duplicate instead makes the window overlap the rows the client already holds, and
+a client that deduplicates then sees a page with nothing new in it. `hasMore` is the only signal that older items exist;
 when the named item is gone (a compaction rewrote the transcript after the
 client read a page) the Host answers an empty page with `hasMore: false`
 instead of the tail, because the tail would be replayed into the client's
