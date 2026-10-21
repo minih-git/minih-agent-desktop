@@ -127,11 +127,20 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
     ...(options.credentialLimit ? { credential: options.credentialLimit } : {}),
     ...(now ? { now } : {}),
   });
+  // The device relay is wired after the enrollment service, and the enrollment
+  // service needs to tell the account's computers about a new Host, so the
+  // callback reads a holder that is filled in as soon as the relay exists.
+  let deviceRequestsRef: DeviceRequestService | null = null;
   const enrollment = new EnrollmentService(
     store,
     loadAuthority,
     now,
     verifier ? { verifier: () => verifier, rateLimiter } : null,
+    async (joined) => {
+      // Nothing to tell before the relay exists: enrollment cannot complete
+      // before the listeners are up, so this is only a guard.
+      await deviceRequestsRef?.announceHostJoined(joined);
+    },
   );
   const hostLinks = new HostLinkServer({
     store,
@@ -145,6 +154,7 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
   // connects immediately still receives the grants pending for its account
   // (§11.5 "Deferred grants").
   const deviceRequests = new DeviceRequestService({ store, hostLinks, authority: loadAuthority, log, ...(now ? { now } : {}) });
+  deviceRequestsRef = deviceRequests;
   // Redacted push (§11.6). The provider credentials are read here, before the
   // listeners bind, so a bad or too-readable key file fails at startup instead
   // of on the first notification. No credentials configured: `enabled` is false

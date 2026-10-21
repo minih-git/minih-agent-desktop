@@ -130,6 +130,12 @@ const ACCOUNT_LOGOUT_ROUTE = /^\/v1\/account\/logout\/?$/;
 const ACCOUNT_DEVICES_ROUTE = /^\/v1\/account\/devices\/?$/;
 const ACCOUNT_DEVICE_STATUS_ROUTE = /^\/v1\/account\/devices\/([^/]+)\/?$/;
 /**
+ * The desktop-class proof route (ADR amendment 3, decision 2): the Gateway
+ * mints the nonce a computer signs, so only it can bind one to a single request
+ * and one deadline.
+ */
+const ACCOUNT_DESKTOP_PROOF_ROUTE = /^\/v1\/account\/desktop-proof\/?$/;
+/**
  * Push registration (protocol §11.6, R5 PR-6). Device-token authenticated and
  * never host-scoped: a §11.4 device registers for its own Host, an account-mode
  * device for every Host of its account, and the Gateway decides which from the
@@ -597,6 +603,11 @@ export class ClientHttpServer {
         return;
       }
 
+      if (ACCOUNT_DESKTOP_PROOF_ROUTE.test(url.pathname)) {
+        await this.handleAccountDesktopProof(request, response, ip, cors, traceId);
+        return;
+      }
+
       const deviceStatus = ACCOUNT_DEVICE_STATUS_ROUTE.exec(url.pathname);
       if (deviceStatus) {
         await this.handleAccountDeviceStatus(request, response, decodeURIComponent(deviceStatus[1] ?? ""), ip, cors, traceId);
@@ -1041,6 +1052,35 @@ export class ClientHttpServer {
       sendJson(response, outcome.status, outcome.payload, this.accountHeaders(cors));
     } catch (error) {
       const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to read the device request");
+      sendError(response, rpc, traceId, cors);
+      sendError(response, rpc, traceId, cors);
+    }
+  }
+
+  /**
+   * `POST /v1/account/desktop-proof` (ADR amendment 3, decision 2): mint the
+   * values a computer signs to prove it is a registered machine of this
+   * account. The route takes the account session credential, never a device
+   * token, and answers the request id, the nonce, and the roster so the client
+   * knows which computers could admit it at all.
+   */
+  private async handleAccountDesktopProof(
+    request: IncomingMessage,
+    response: ServerResponse,
+    ip: string,
+    cors: Record<string, string>,
+    traceId: string,
+  ): Promise<void> {
+    try {
+      if (request.method !== "POST") throw new GatewayRpcError("METHOD_NOT_FOUND", "a desktop proof is a POST endpoint");
+      this.assertOrigin(request, "optional");
+      const { session, via } = this.authenticateAccount(request);
+      this.assertCsrf(request, via, session.sessionId);
+      this.assertRateLimit(`account:${session.sessionId}`, ip);
+      const outcome = await this.deviceService().desktopProof({ session, body: await readJsonBody(request), ip });
+      sendJson(response, outcome.status, outcome.payload, this.accountHeaders(cors));
+    } catch (error) {
+      const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to start the desktop proof");
       sendError(response, rpc, traceId, cors);
     }
   }

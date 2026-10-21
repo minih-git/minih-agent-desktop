@@ -9,7 +9,7 @@ import {
   type HostLinkCredentials,
 } from "@minih-agent/racp";
 import { harness } from "@minih-agent/racp/test-harness";
-import { RACP_HOSTLINK_VERSION, deviceGrantSigningPayload } from "@minih-agent/shared";
+import { RACP_HOSTLINK_VERSION, deviceGrantSigningPayload, hostProofSigningPayload } from "@minih-agent/shared";
 import {
   afterEach,
   describe,
@@ -19,6 +19,7 @@ import {
 
 import type { GatewayLog } from "./router.js";
 import {
+  accountDesktopProof,
   accountDeviceRequest,
   accountDeviceStatus,
   accountLogin,
@@ -247,8 +248,8 @@ describe("account device relay", () => {
     const roster = (started.payload["result"] as { hosts: Array<{ hostId: string; online: boolean; canConfirm: boolean; willAcceptGrant: boolean }> })
       .hosts;
     expect(roster).toEqual([
-      { hostId: "host_a1", label: "desk A1", online: true, canConfirm: true, willAcceptGrant: true },
-      { hostId: "host_a2", label: "desk A2", online: false, canConfirm: false, willAcceptGrant: false },
+      { hostId: "host_a1", label: "desk A1", online: true, canConfirm: true, willAcceptGrant: true, supportsDesktopAuto: false },
+      { hostId: "host_a2", label: "desk A2", online: false, canConfirm: false, willAcceptGrant: false, supportsDesktopAuto: false },
     ]);
   });
 
@@ -367,11 +368,103 @@ describe("account device relay", () => {
     expect(malformed.status).toBe(400);
     expect(errorCode(malformed.payload)).toBe("INVALID_ARGUMENT");
 
+
     const wrongMethod = await fetch(`${gateway.clientBaseUrl}/v1/account/devices`, {
       method: "GET",
       headers: { authorization: `Bearer ${token}` },
     });
     expect(wrongMethod.status).toBe(405);
+  });
+  it("mints a desktop nonce, refuses it twice, and never sends it to a computer that cannot verify", async () => {
+    stack = await startStack();
+    const { gateway, token, hostA1 } = stack;
+
+    const minted = await accountDesktopProof(gateway, { token, body: { deviceLabel: "Mac A1", applicantHostId: "host_a1" } });
+    expect(minted.status).toBe(200);
+    const challenge = minted.payload["result"] as {
+      requestId: string;
+      nonce: string;
+      applicantHostId: string;
+      accountId: string;
+      expiresAt: string;
+      hosts: Array<{ hostId: string; supportsDesktopAuto: boolean }>;
+    };
+    expect(challenge.nonce.startsWith("dn_")).toBe(true);
+    expect(challenge.applicantHostId).toBe("host_a1");
+    expect(challenge.accountId).toBe(String(ACCOUNT_A));
+    // No Host here advertises `device.desktop-auto` yet, so the requesting
+    // desktop is told up front that none of them can admit it — the alternative
+    // is waiting for a frame that will never come.
+    expect(challenge.hosts.every((host) => host.supportsDesktopAuto === false)).toBe(true);
+
+    const proof = {
+      requestId: challenge.requestId,
+      hostProof: {
+        applicantHostId: "host_a1",
+        nonce: challenge.nonce,
+        signature: signHostArtifact(
+          hostProofSigningPayload({
+            requestId: challenge.requestId,
+            nonce: challenge.nonce,
+            applicantHostId: "host_a1",
+            accountId: String(ACCOUNT_A),
+            expiresAt: challenge.expiresAt,
+          }),
+          hostA1.credentials.privateKeyPem,
+        ),
+      },
+    };
+    const presented = await accountDeviceRequest(gateway, { token, body: { deviceLabel: "Mac A1", client: "desktop", ...proof } });
+    expect(presented.status).toBe(200);
+    // Nothing was asked: no Host advertised the capability, so the request must
+    // not be silently fanned out to one that would drop the frame.
+    const status = await accountDeviceStatus(gateway, { token, requestId: challenge.requestId });
+    expect((status.payload["result"] as { status: string }).status).toBe("pending");
+
+    // The same nonce presented again is a replay, not a second request.
+    const replayed = await accountDeviceRequest(gateway, { token, body: { deviceLabel: "Mac A1", client: "desktop", ...proof } });
+    expect(replayed.status).toBe(400);
+    expect(errorCode(replayed.payload)).toBe("INVALID_ARGUMENT");
+  });
+
+  it("refuses a desktop proof for another account's computer, and a desktop request without one", async () => {
+    stack = await startStack();
+    const { gateway, token } = stack;
+
+    // host_b1 belongs to account B: the same answer as an unknown computer, so
+    // the caller learns nothing about the other account (gate 29).
+    const foreign = await accountDesktopProof(gateway, { token, body: { deviceLabel: "Mac", applicantHostId: "host_b1" } });
+    expect(foreign.status).toBe(403);
+
+    // A bare `desktop` class is never an admission.
+    const bare = await accountDeviceRequest(gateway, { token, body: { deviceLabel: "Mac", client: "desktop" } });
+    expect(bare.status).toBe(400);
+    expect(errorCode(bare.payload)).toBe("INVALID_ARGUMENT");
+  });
+
+  it("reports a new account computer to the others, and never across accounts", async () => {
+    stack = await startStack();
+    const { gateway } = stack;
+
+    const joined = await enrollTestHostByKey(gateway, {
+      hostId: "host_a3",
+      accessKey: KEY_A,
+      label: "desk A3",
+      devices: ({ credentials: c, store: s }) =>
+        newDeviceDirectory({ gatewayCaPem: gateway.caPem, store: s, credentials: c, config: { confirm: "denied" } }),
+    });
+    try {
+      // The notice is recorded for the account's computers — including the ones
+      // that were not listening when this Host enrolled.
+      const notices = gateway.gateway.store.listHostJoined(String(ACCOUNT_A));
+      expect(notices.map((notice) => notice.hostId)).toContain("host_a3");
+      expect(notices.find((notice) => notice.hostId === "host_a3")?.label).toBe("desk A3");
+      // Another account never hears about this computer, though its own
+      // enrollments are reported there.
+      expect(gateway.gateway.store.listHostJoined(String(ACCOUNT_B)).map((notice) => notice.hostId)).not.toContain("host_a3");
+    } finally {
+      await joined.stop();
+    }
   });
 });
 

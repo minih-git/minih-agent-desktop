@@ -495,6 +495,23 @@ export async function accountLogin(
   };
 }
 
+
+/** `POST /v1/account/desktop-proof`: the values a desktop signs. */
+export async function accountDesktopProof(
+  gateway: TestGateway,
+  input: { token: string; body: unknown; origin?: string },
+): Promise<{ status: number; payload: Record<string, unknown> }> {
+  const response = await fetch(`${gateway.clientBaseUrl}/v1/account/desktop-proof`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${input.token}`,
+      ...(input.origin ? { origin: input.origin } : {}),
+    },
+    body: JSON.stringify(input.body),
+  });
+  return { status: response.status, payload: (await response.json()) as Record<string, unknown> };
+}
 /** `POST /v1/account/devices`: ask the account's Hosts to approve a device. */
 export async function accountDeviceRequest(
   gateway: TestGateway,

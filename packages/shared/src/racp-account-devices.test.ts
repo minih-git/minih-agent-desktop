@@ -142,11 +142,29 @@ describe("account device routes", () => {
     expect(Value.Check(RacpDeviceRequestHttpRequestSchema, { deviceLabel: "phone", client: "ios" })).toBe(true);
     expect(Value.Check(RacpDeviceRequestHttpRequestSchema, { deviceLabel: "", client: "ios" })).toBe(false);
     expect(Value.Check(RacpDeviceRequestHttpRequestSchema, { deviceLabel: "x".repeat(129), client: "ios" })).toBe(false);
-    expect(Value.Check(RacpDeviceRequestHttpRequestSchema, { deviceLabel: "phone", client: "desktop" })).toBe(false);
+    // A desktop request is well-formed on its own; the Gateway refuses one
+    // without a proof, because the class alone is never an admission.
+    expect(Value.Check(RacpDeviceRequestHttpRequestSchema, { deviceLabel: "mac", client: "desktop" })).toBe(true);
+    expect(
+      Value.Check(RacpDeviceRequestHttpRequestSchema, {
+        deviceLabel: "mac",
+        client: "desktop",
+        requestId: "dreq_1",
+        hostProof: { applicantHostId: "host_a", nonce: "dn_1", signature: "sig" },
+      }),
+    ).toBe(true);
+    // A proof missing any of its three parts is malformed, whatever the class.
+    expect(
+      Value.Check(RacpDeviceRequestHttpRequestSchema, {
+        deviceLabel: "mac",
+        client: "desktop",
+        hostProof: { applicantHostId: "host_a", nonce: "dn_1" },
+      }),
+    ).toBe(false);
   });
 
   it("validates the host report and the status answer", () => {
-    const host = { hostId: "host_a", label: "desk", online: true, canConfirm: true, willAcceptGrant: false };
+    const host = { hostId: "host_a", label: "desk", online: true, canConfirm: true, willAcceptGrant: false, supportsDesktopAuto: true };
     expect(Value.Check(RacpDeviceRequestHttpResponseSchema, { requestId: "req_1", expiresAt: "2026-10-18T00:10:00.000Z", hosts: [host] })).toBe(true);
     expect(Value.Check(RacpDeviceStatusHttpResponseSchema, { requestId: "req_1", status: "pending", expiresAt: "x", hosts: [host] })).toBe(true);
     expect(
@@ -162,8 +180,16 @@ describe("account device routes", () => {
       }),
     ).toBe(true);
     expect(Value.Check(RacpDeviceStatusHttpResponseSchema, { requestId: "req_1", status: "waiting", expiresAt: "x", hosts: [] })).toBe(false);
-    // A host report must state both capabilities: the client distinguishes
-    // "can be asked" from "will accept the token".
+    // A host report must state every capability: the client distinguishes
+    // "can be asked" from "will accept the token" from "can admit a desktop".
     expect(Value.Check(RacpDeviceStatusHttpResponseSchema, { requestId: "r", status: "pending", expiresAt: "x", hosts: [{ hostId: "h", label: "l", online: true }] })).toBe(false);
+    expect(
+      Value.Check(RacpDeviceStatusHttpResponseSchema, {
+        requestId: "r",
+        status: "pending",
+        expiresAt: "x",
+        hosts: [{ hostId: "h", label: "l", online: true, canConfirm: true, willAcceptGrant: true }],
+      }),
+    ).toBe(false);
   });
 });
