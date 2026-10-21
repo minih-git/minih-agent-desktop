@@ -16297,18 +16297,22 @@ sibling Hosts is still open for package D.
   off, request a device again from a third desktop, and confirm B asks its own
   user instead of admitting automatically. 8) Stop B and confirm A shows it
   offline and does not run the session locally.
-- **Expected**: A's device is admitted by B without a human answer because its
-  Host-certificate proof verifies; A holds `owner` and reaches B's workspace
-  operations that a phone still cannot (`session/configure`, workspace reads);
-  the turn runs on B, with B's provider configuration and B's own Router
-  account, and only the events cross the Gateway; B shows a "new device" notice
-  and writes an audit record for the automatic admission; with the switch off,
-  the same request is confirmed by B's user rather than admitted; a phone of the
-  same account still holds `viewer` / `controller` / `approver`, stays under the
-  remote permission ceiling, and is refused the desktop-only operations; an
-  older desktop that does not announce `device.desktop-auto` is shown as
-  needing an update; stopping B leaves A reporting it offline rather than
-  running anything locally.
+- **Expected**: A's device is admitted by B without a human answer because B
+  itself verifies A's Host-certificate proof — chain to its pinned Gateway CA,
+  account binding, signature, and an unused, unexpired nonce — and B's
+  automatic-admission switch is on; a proof with a reused or expired nonce is
+  refused instead; A holds `owner` and reaches B's workspace operations that a
+  phone still cannot (`session/configure`, workspace reads); the turn runs on B,
+  with B's provider configuration and B's own Router account, and only the
+  events cross the Gateway; B shows a "new device" notice and writes an audit
+  record for the automatic admission, and every other computer of the account
+  shows a "new computer joined the account" notice for A's own enrollment; with
+  the switch off, the same request is confirmed by B's user rather than
+  admitted; a phone of the same account still holds `viewer` / `controller` /
+  `approver`, stays under the remote permission ceiling, and is refused the
+  desktop-only operations; an older desktop that does not announce
+  `device.desktop-auto` is shown as needing an update; stopping B leaves A
+  reporting it offline rather than running anything locally.
 - **Specs linked**: ADR `remote-control-router-account-binding` amendment 3,
   security §3.7 and §3.8 with gates 25, 27, and 35, protocol §11.4 and §11.5,
   rollout §2 (R8)

@@ -1319,17 +1319,27 @@ Rules:
    `remote-control-router-account-binding` amendment 3).** `device.request` and
    the account login/device bodies gain `client: "desktop"` beside `web` /
    `ios` / `android`. A desktop request also carries `hostProof`: the
-   applicant's `hostId` and a signature over the request id and a nonce, made
-   with the private key of the Host certificate this Gateway issued to that
-   computer. The Gateway verifies the chain to its own CA, the
-   `OU=account:<accountId>` binding against the account of the presented
-   AccessKey, and the signature; only then is the request a desktop request. A
-   verified desktop request whose target computer advertises
-   `device.desktop-auto` and has automatic admission on is granted without a
-   human answer, and the device holds `owner`. Without the capability the
-   Gateway MUST NOT send the new frames — an old Host drops an unknown `type`
-   silently (rule 6) — and the requesting desktop reports that computer as
-   needing an update. A `desktop` client reaches the Host over
+   applicant's `hostId`, the request's `nonce`, and a signature over
+   `{requestId, nonce, applicantHostId, accountId, expiresAt}` made with the
+   private key of the Host certificate this Gateway issued to that computer.
+   The nonce is minted by the Gateway when it creates the device request, is
+   single-use, and expires with the request; a Host refuses a proof whose nonce
+   it has already seen or whose `expiresAt` has passed. **The target Host
+   verifies the proof itself** — chain to its own pinned Gateway CA, the
+   `OU=account:<accountId>` binding against the account of the request, the
+   signature, and the freshness — and checks its own "allow same-account
+   computers to join automatically" switch before it admits the device with
+   `owner`. The Gateway may pre-check and fast-reject but is never the
+   authorization: a Host link frame that claims an admission the Host has not
+   verified is refused. A sibling `device.grant` for a desktop-class device is
+   re-verified by every Host that receives it, together with its own switch; a
+   Host whose switch is off, or that is in strict mode, does not adopt it as a
+   desktop-class device and falls back to asking its own user. A verified
+   desktop request whose target computer advertises `device.desktop-auto` and
+   has automatic admission on is granted without a human answer. Without the
+   capability the Gateway MUST NOT send the new frames — an old Host drops an
+   unknown `type` silently (rule 6) — and the requesting desktop reports that
+   computer as needing an update. A `desktop` client reaches the Host over
    `RACP-WS` at `GET /v1/hosts/{hostId}/ws`, authenticated by its device token
    exactly like the device-token routes of §11.2, and the Gateway relays
    `RACP-WS` frames byte for byte onto the same logical connection a
@@ -1771,18 +1781,27 @@ written.
   attempt never discloses another account's Hosts.
 
 - **Desktop-class devices (planned, R8).** A device granted to a
-  `client: "desktop"` request with a verified Host-certificate proof is a
+  `client: "desktop"` request whose proof the target Host itself verified is a
   desktop-class device: it holds `owner`, is exempt from the remote permission
   ceiling exactly like an SSH-paired desktop device, and reaches the Host over
   the WebSocket route above. Admission is automatic when the target computer
   advertises `device.desktop-auto` and its "allow same-account computers to
-  join automatically" switch is on (default on); with the switch off the
-  request falls back to the ordinary confirmation of this section. Every
-  automatic admission produces the same "new device" notice and audit record a
-  confirmed one does, and any Host of the account can revoke it. Which
-  operations the device may call is decided per operation by the desktop Host:
-  it opens the desktop surface explicitly and keeps refusing it to a phone. A
-  phone or browser device is unchanged by this clause.
+  join automatically" switch is on (default on); with the switch off, or in
+  strict mode, the request falls back to the ordinary confirmation of this
+  section and the device is not adopted as desktop-class. A sibling grant for
+  such a device is re-verified by every receiving Host, together with its own
+  switch, before it adopts the device with `owner`. The Gateway verifies
+  nothing on the Host's behalf: it may pre-check and fast-reject, but a Host
+  link frame that claims an admission the Host has not verified is refused.
+  Every new Host enrollment notifies the account's other Hosts ("a new
+  computer joined the account") and every automatic admission produces the
+  same "new device" notice and audit record a confirmed one does; any Host of
+  the account can revoke the device, and the operator can revoke the enrolled
+  Host on the Gateway. A proof whose nonce was already used or whose
+  `expiresAt` has passed is refused. Which operations the device may call is
+  decided per operation by the desktop Host: it opens the desktop surface
+  explicitly and keeps refusing it to a phone. A phone or browser device is
+  unchanged by this clause.
 
 ### 11.6 Redacted push (R5 PR-6; ADR 0331 decision 7)
 

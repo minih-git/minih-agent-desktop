@@ -1,7 +1,7 @@
 # ADR 0331: Self-hosted Gateway, connected desktop Host, and mobile client
 
 - Status: Accepted for implementation (post-MVP)
-- Amended by: [Router-account binding for remote control](remote-control-router-account-binding.md) (D666)
+- Amended by: [Router-account binding for remote control](remote-control-router-account-binding.md) (D666), including its amendment 3 (D675), which excepts a *proven* desktop-class device from the gateway-origin restrictions below
 - Date: 2026-10-17
 - Decision: D665
 - Related: ADR 0205 (D373 / D374 / D375), ADR 0285 (D448), ADR 0286 (D449),
@@ -145,6 +145,18 @@ authentication input also carries the connection origin: the existing loopback
   makes `allow-session` available to them, they never carry
   `approverOverride`, and the remote permission ceiling applies no matter how
   `applyCeilingToPairedDevices` is configured.
+
+**Amendment 3 of ADR `remote-control-router-account-binding` (D675) excepts one
+case.** A `desktop`-class device admitted with a proof the target Host verifies
+itself — a signature by the private key of a Host certificate the Gateway
+issued to a computer of the same account — holds `owner` and is exempt from the
+remote permission ceiling. Everything else in this section is unchanged, and
+the rule is now: a gateway-origin principal *without a verified proof* is never
+a paired device, never an owner, and always under the ceiling. The tests locked
+for that rule keep their meaning for every unproven gateway device. `owner`
+follows the applicant's certificate: when that Host certificate is revoked, the
+desktop-class devices it admitted lose their `owner` standing with it, because
+the proof can no longer be reproduced or re-verified.
 
 ### Credential forwarding on the Host link
 

@@ -374,15 +374,21 @@ authentication input also carries the connection origin: the loopback
 
 - **Planned (R8, ADR `remote-control-router-account-binding` amendment 3):
   desktop-class devices are owners.** A device admitted through account mode
-  with a verified Host-certificate proof (a `desktop` device request carrying a
-  signature over the request id and a nonce by the private key of a certificate
-  this Gateway issued to a computer of the same account) is treated like an
-  SSH-paired desktop device: it holds `owner` and is exempt from the remote
-  permission ceiling, because the certificate proves the machine to the
-  account's own Gateway. This is the only way a gateway-origin principal may
-  hold `owner`; the proof is the condition, not the client class. A device
-  without proof keeps the phone rules of this section unchanged, and the
-  desktop Host still decides per operation which desktop operations it opens.
+  with a proof **the target Host itself verifies** (a `desktop` device request
+  carrying the request's nonce and a signature over
+  `{requestId, nonce, applicantHostId, accountId, expiresAt}` by the private
+  key of a certificate this Gateway issued to a computer of the same account)
+  is treated like an SSH-paired desktop device: it holds `owner` and is exempt
+  from the remote permission ceiling. This is the only way a gateway-origin
+  principal may hold `owner`; the proof is the condition, not the client class.
+  The Gateway may pre-check and fast-reject, but it is never the authorization
+  — a Host must not grant `owner` on a frame whose proof it has not verified
+  itself, because the Gateway never decides an approval (ADR 0331). A proof
+  whose nonce was already used or whose deadline passed is refused. `owner`
+  follows the applicant's certificate: revoking that Host certificate removes
+  the `owner` standing of the devices it admitted. A device without proof
+  keeps the phone rules of this section unchanged, and the desktop Host still
+  decides per operation which desktop operations it opens.
 - Revocation on either the Gateway or the Host denies new connections and
   closes existing relayed logical connections within 5 seconds.
 
@@ -460,6 +466,21 @@ implemented as written.
   unchanged; any Host of the account can revoke, and that revocation reaches the
   others as a signed frame; every Host shows a "new device" notice; every grant
   produces an audit record; and strict mode makes a Host refuse sibling grants.
+  **D675 sharpens this for desktop-class devices.** A leaked AccessKey is
+  enough to reach `owner` on every computer of the account that has automatic
+  admission on: the key can enroll a new Host (decision 5 of the ADR), that
+  enrollment returns a Gateway-CA certificate carrying the account binding, and
+  the attacker can sign a valid proof with it. This is the accepted cost of
+  "same-account computers join automatically, without a confirmation", recorded
+  as such in ADR `remote-control-router-account-binding` amendment 3. The
+  mitigations that address it: the proof is verified by each target Host and
+  never by the Gateway alone; **every new Host enrollment notifies the
+  account's other computers and writes an audit record**, so the attacker's
+  first step is visible before any device is admitted; the operator can revoke
+  the enrolled Host on the Gateway (`hosts revoke`) and any computer can revoke
+  the admitted device; the per-computer switch, and strict mode, turn automatic
+  admission back into a confirmation; and a proof whose nonce was reused or
+  whose deadline passed is refused.
   The raw device token is a separate matter from the CA: it travels only on the
   approving Host to Gateway leg, the Gateway strips it before relaying the grant
   and never logs, audits, or persists it, and the siblings adopt the device by
@@ -567,20 +588,27 @@ implemented as written.
 
 - **Desktop-class devices and automatic admission (planned, R8).** A computer of
   the account may join its siblings automatically, without a human answer, but
-  only with proof: the request must carry a `desktop` client class and a
-  signature by the private key of a Host certificate the Gateway issued to a
-  computer of the same account, verified against the Gateway CA and the
-  certificate's account binding before the request is treated as a desktop
-  request. Automatic admission is a per-computer switch ("allow same-account
-  computers to join automatically", default on, device-local, never synced);
-  with it off, the request falls back to the per-device confirmation above.
+  only with proof, and only after **the target Host verifies it**: the request
+  carries a `desktop` client class, the request's nonce, and a signature over
+  `{requestId, nonce, applicantHostId, accountId, expiresAt}` by the private key
+  of a Host certificate the Gateway issued to a computer of the same account.
+  The Host checks the chain against its own pinned Gateway CA, the certificate's
+  account binding, the signature, and the freshness (an unused, unexpired
+  nonce); the Gateway's own pre-check is a fast reject, never the authorization.
+  Automatic admission is a per-computer switch ("allow same-account computers
+  to join automatically", default on, device-local, never synced); with it off,
+  or in strict mode, the request falls back to the per-device confirmation above
+  and the device is not adopted as desktop-class. A sibling grant for such a
+  device is re-verified by every receiving Host together with its own switch.
   Every automatic admission produces the same "new device" notice and audit
-  record a confirmed one does, and any Host of the account can revoke it. A
-  computer that has not announced `device.desktop-auto` is never sent the new
-  frames and is reported to the requesting desktop as needing an update. The
-  desktop's account-mode remote-control switch defaults **on** once the Router
-  advertises a Gateway and an account key resolves; a user who turned it off
-  keeps it off, and the self-hosted flow still starts off. This amends gate 27.
+  record a confirmed one does, and any Host of the account can revoke it; a new
+  Host enrollment notifies the account's other computers and is audited, and the
+  operator can revoke the enrolled Host on the Gateway. A computer that has not
+  announced `device.desktop-auto` is never sent the new frames and is reported
+  to the requesting desktop as needing an update. The desktop's account-mode
+  remote-control switch defaults **on** once the Router advertises a Gateway and
+  an account key resolves; a user who turned it off keeps it off, and the
+  self-hosted flow still starts off. This amends gate 27.
 
 ## 4. Authorization model
 
@@ -1000,14 +1028,20 @@ separate, explicitly specified credential-management capability is added.
     and no provider credential appears in a log, an audit record, or an error
     message. Applies from R5 PR-6.
 35. Automatic admission of a same-account computer happens only for a `desktop`
-    request whose Host-certificate proof verifies against the Gateway CA and
-    the account binding; a request without valid proof, a phone or browser
-    device, and a target computer that has not announced `device.desktop-auto`
-    are all refused or fall back to the per-device confirmation, never admitted
-    silently; every automatic admission produces a device notice and an audit
-    record; and a phone or browser device still never holds `owner` and never
-    leaves the remote permission ceiling. Applies from R8 (D675, ADR
-    `remote-control-router-account-binding` amendment 3).
+    request whose proof **the target Host verifies itself** — the chain to its
+    own pinned Gateway CA, the account binding, the signature over the request
+    payload, and an unused, unexpired nonce — and only while that Host's own
+    automatic-admission switch is on; the Gateway's pre-check is never the
+    authorization. A request without a valid proof, a proof whose nonce was
+    already used or whose deadline passed, a phone or browser device, a Host in
+    strict mode, and a target computer that has not announced
+    `device.desktop-auto` are all refused or fall back to the per-device
+    confirmation, never admitted silently. Every new Host enrollment notifies
+    the account's other computers and is audited, and every automatic admission
+    produces a device notice and an audit record. A phone or browser device
+    still never holds `owner` and never leaves the remote permission ceiling.
+    Applies from R8 (D675, ADR `remote-control-router-account-binding`
+    amendment 3).
 
 ## 13. Amendment history
 

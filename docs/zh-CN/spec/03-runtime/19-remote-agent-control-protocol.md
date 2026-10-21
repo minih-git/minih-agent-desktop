@@ -896,21 +896,27 @@ type ModelSummary = {
 
 - **桌面类设备与兄弟桌面路由。** `device.request` 与账户登录／设备请求的 body 在
   `web` / `ios` / `android` 之外新增 `client: "desktop"`。桌面类请求还带 `hostProof`：
-  申请方 `hostId` 加上用本 Gateway 签发给该电脑的 Host 证书私钥、对 requestId 与 nonce
-  的签名。Gateway 先校验证书链到自己的 CA、校验 `OU=account:<accountId>` 与本账号一致、
-  再校验签名，通过后该请求才算桌面类请求。
-- **自动授予。** 证明有效的桌面类请求，在目标电脑声明 `device.desktop-auto` 且其
+  申请方 `hostId`、Gateway 为本次请求签发的一次性 nonce，以及用本 Gateway 签发给该电脑的
+  Host 证书私钥、对 `{requestId, nonce, applicantHostId, accountId, expiresAt}` 的签名。
+  nonce 由 Gateway 在创建设备请求时签发，一次性使用、随请求过期；Host 拒绝已用过或已过期
+  的 nonce。**由目标 Host 自己校验**：证书链到它固定的 Gateway CA、`OU=account:<accountId>`
+  与本账号一致、签名正确、时效有效；Gateway 的预检只是快速拒绝，绝不是授权依据。
+- **自动授予。** 证明经目标 Host 校验、且该 Host 声明 `device.desktop-auto`、其
   「允许同账号电脑自动接入」开关打开（默认开）时无需人工确认即授予，设备持有 `owner`；
-  开关关闭时回落到 §11.5 既有的逐设备确认。目标电脑未声明该能力时，Gateway 绝不发送
-  新帧（旧 Host 会静默丢弃未知 `type`），申请方把该电脑报告为「需要升级」。
+  开关关闭或处于 strict mode 时回落到 §11.5 既有的逐设备确认，且不按桌面类采纳。兄弟
+  `device.grant` 由每台接收的 Host 重新校验证明并检查自己的开关后才以 `owner` 采纳。
+  目标电脑未声明该能力时，Gateway 绝不发送新帧（旧 Host 会静默丢弃未知 `type`），申请方把
+  该电脑报告为「需要升级」。
 - **WebSocket 客户端路由。** 桌面类设备经 `GET /v1/hosts/{hostId}/ws` 使用 `RACP-WS`，
   鉴权方式与 §11.2 的设备 token 路由一致，Gateway 把 `RACP-WS` 帧原样转发到同一条逻辑
   连接上；手机继续使用 `RACP-HTTP` + SSE，不变。
-- **角色与操作。** 桌面类设备持有 `owner`，与 SSH 配对的桌面设备同级、豁免远程权限上限；
+- **角色与操作。** 桌面类设备持有 `owner`，与 SSH 配对的桌面设备同级、豁免远程权限上限
+  （ADR 0331 网关来源限制的唯一例外，已记录在该 ADR）；`owner` 依附于申请方的证书。
   手机／浏览器设备仍是 `viewer` / `controller` / `approver`、`pairedDevice: false`、
   始终受上限约束、不给 `allow-session`。桌面 Host 逐项决定开放哪些桌面操作，未开放的对
   两类设备都仍返回 `FORBIDDEN`。每次自动接入都会像人工确认那样产生「新设备」通知与审计
-  记录，且账号内任何 Host 都可以撤销它。
+  记录，账号内有新电脑注册时其他每台电脑都会收到通知并写审计；账号内任何 Host 都可以撤销
+  设备，运维也可以在 Gateway 上吊销那台已注册的 Host。
 
 完整帧定义与退出条件见英文源规格 §11.4 规则 7、§11.5 的「Desktop-class devices」，以及
 rollout R8 与 `E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop`。

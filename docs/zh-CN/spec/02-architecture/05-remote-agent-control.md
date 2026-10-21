@@ -228,20 +228,28 @@ ADR `remote-control-router-account-binding` 修订 3 在 R7 之上加一条拓�
   （`GET /v1/hosts/{hostId}/ws`），命令、事件与服务端请求共用一条连接；`RemoteHostTransport`
   新增 `"account"`。手机继续用 `RACP-HTTP` + SSE，不变。
 - **设备类别与证明**：`device.request` 新增 `client: "desktop"` 与 `hostProof`（申请方
-  `hostId` 加上用本机 Host 证书私钥对 requestId 与 nonce 的签名）。Gateway 校验证书链
-  到自己的 CA、且 `OU=account:<accountId>` 与本账号一致后，才把请求当作桌面类请求。
+  `hostId`、Gateway 为本次请求签发的一次性 nonce，以及用本机 Host 证书私钥对
+  `{requestId, nonce, applicantHostId, accountId, expiresAt}` 的签名）。**由目标 Host
+  自己校验**：证书链到它固定的 Gateway CA、`OU=account:<accountId>` 与本账号一致、
+  签名正确、nonce 未用过且未过期；Gateway 的预检只是快速拒绝，不是授权依据（ADR 0331
+  「Gateway 从不做批准决定」仍然成立），被攻破的 Gateway 不能凭空造出 `owner` 设备。
 - **自动接入与开关**：目标电脑开启「允许同账号电脑自动接入」（默认开、设备本地、不同步）
-  时无需人工确认即授予；关闭时回落到 R7 的逐设备确认。目标电脑须先声明
-  `device.desktop-auto`，否则不发新帧，申请方显示「该电脑需要升级」。
-- **角色**：桌面类设备持有 `owner` 并豁免远程权限上限（与 SSH 配对的桌面设备同级）；
-  手机与浏览器设备仍是 `viewer` / `controller` / `approver`，仍受上限约束、仍不给
-  `allow-session`。具体开放哪些桌面操作由 Host 逐项决定（R8 工作包 D）。
+  时无需人工确认即授予；关闭时或处于 strict mode 时回落到 R7 的逐设备确认，且不按桌面类
+  采纳。兄弟 `device.grant` 由每台接收的 Host 重新校验证明并检查自己的开关后才以 `owner`
+  采纳。目标电脑须先声明 `device.desktop-auto`，否则不发新帧，申请方显示「该电脑需要升级」。
+  每次自动接入都会通知并写审计；账号内有新电脑注册时，其他每台电脑都显示「有新电脑加入
+  账号」并写审计。
+- **角色**：桌面类设备持有 `owner` 并豁免远程权限上限（与 SSH 配对的桌面设备同级），这是
+  ADR 0331 网关来源限制的唯一例外，已记录在该 ADR；`owner` 依附于申请方的证书，证书被
+  吊销则其接入的设备一并失去。手机与浏览器设备仍是 `viewer` / `controller` / `approver`，
+  仍受上限约束、仍不给 `allow-session`。具体开放哪些桌面操作由 Host 逐项决定（R8 工作包 D）。
 - **Agent 运行位置**：选中 B 的项目时回合在 B 上运行，使用 B 自己的 provider 配置与
-  B 自己的 Router 账号调用模型；A 只是远程界面，凭据不跨机器。SSH 主机保留既有
+  B 自己的 Router 账号调用模型；A 只是远程界面，凭据不跨机器。Gateway 路径不需要
+  `workspace/toolExecute`：工具由 B 自己的 Agent 在 B 上执行。SSH 主机保留既有
   「本地 Agent + 远程工具」形态。
 - **默认开关**：Router 公布 Gateway 且账号 key 可解析时，桌面的远程控制开关对「从未选择
-  过」的用户默认开启；用户明确关闭过的保持关闭。自托管流程仍默认关闭（安全规范 §3.8 与
-  gate 27 相应修订，新增 gate 35）。
+  过」的用户默认开启；用户明确关闭过的保持关闭。自托管流程仍默认关闭（安全规范 §3.7/§3.8
+  与 gate 27 相应修订，新增 gate 35）。
 
 本页仍是英文源规格的中文导读；完整的帧定义、退出条件与验收场景见英文
 `02-architecture/05-remote-agent-control.md` §5.3/§5.4/§6、`03-runtime/19-…` §11.4/§11.5、

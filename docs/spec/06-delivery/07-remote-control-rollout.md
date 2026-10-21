@@ -469,7 +469,7 @@ Deliver the desktop-class device surface of ADR
 the account reaches its siblings through the Gateway without SSH, holds
 `owner`, and can start work on the other machine. The self-hosted flow, the
 phone's device confirmation, and the phone's role set are unchanged. Work
-packages, one PR each:
+packages, one commit range each:
 
 | # | Repository | Work | Depends on |
 |---|---|---|---|
@@ -487,10 +487,22 @@ Scope notes:
   command routes and reuses the existing hash fast-reject, rate limit, and
   audit; it is a transport, not a second authorization path;
 - automatic admission is refused, never silently ignored, when the proof is
-  missing or the target computer does not advertise `device.desktop-auto`;
+  missing, when its nonce was reused or expired, or when the target computer
+  does not advertise `device.desktop-auto`;
+- the proof is verified by the target Host itself, with the Gateway's check as a
+  fast reject only: a compromised Gateway must not be able to mint an `owner`
+  device on its own (ADR 0331's "the Gateway never decides an approval");
 - the Agent runs on the computer that owns the project, with that machine's
   provider configuration and its own Router account for model calls; no
   credential crosses machines;
+- **the Gateway path needs no `workspace/toolExecute`.** The Agent runs on B, so
+  B's own Agent executes B's tools locally; A uses session, turn, and approval
+  operations plus `workspace/list|read|diff` for the file panel, over the
+  `RACP-WS` route of package B, not through the `RACP-HTTP` route table.
+  `workspace/toolExecute` stays what it is today: the SSH topology's
+  "local Agent + remote workspace tools" shape. The P0 measurement reporting
+  `n = 0` for a small Bash call over the Gateway path is therefore expected, not
+  a gap;
 - SSH-paired hosts keep the local-Agent + remote-workspace-tools shape and are
   shown as a separate kind of host.
 
@@ -500,10 +512,17 @@ Exit criteria:
    and a Gateway, A sees B without a confirmation dialog, opens B's project,
    runs a turn on B, and receives the streamed answer and any approval.
 2. Security gates 25, 27, and 35 are signed off: a phone still never receives
-   `owner`, an explicitly disabled switch stays off, and a desktop device
-   without proof is refused automatic admission.
-3. The P0 measurement is re-run and the P7 changes are chosen from its numbers,
-   not from the plan's assumptions.
+   `owner`, an explicitly disabled switch stays off, a desktop device without a
+   Host-verified proof (or with a reused or expired nonce) is refused automatic
+   admission, and a new Host enrollment notifies the account's other computers.
+3. The P0 measurement is re-run and P7 is chosen from its numbers, not from the
+   plan's assumptions. On the P0 evidence, P7 keeps only the confirmed item —
+   bounded-parallel session attach plus paged `session/history` on open and
+   reconnect — and **drops the streamed-delta coalescing**: the local stub's 40
+   provider chunks produced 11–13 `item.delta` events, so deltas are already
+   coalesced somewhere between the provider stream and the RACP event, and a
+   second merge would be added blind. If an online measurement later shows a
+   delta problem, the existing merge point is located first.
 
 ### Reserved — gRPC binding
 

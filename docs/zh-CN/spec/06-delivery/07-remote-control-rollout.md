@@ -540,7 +540,7 @@ D666（2026-10-18，ADR `remote-control-router-account-binding`）在 R4–R6 �
 
 在 R7 之上交付 ADR `remote-control-router-account-binding` 修订 3 的桌面类设备面：账号内的
 一台电脑无需 SSH 即可接入兄弟电脑、持有 `owner`，并可在另一台机器上开始工作。自托管流程、
-手机的设备确认流程与手机角色集合均不变。工作包（每个一个 PR）：
+手机的设备确认流程与手机角色集合均不变。工作包（每个一个 commit range，本机直接合并 main）：
 
 | # | 仓库 | 工作 | 依赖 |
 |---|---|---|---|
@@ -552,6 +552,22 @@ D666（2026-10-18，ADR `remote-control-router-account-binding`）在 R4–R6 �
 | F | Desktop | 统一「账户」页：账号、本机、我的设备、配置同步、高级 | E |
 | G | ops | Nginx 为 `/v1/hosts/*/ws` 增加 `Upgrade` 头；需要用户授权 | B |
 
+范围说明：
+
+- 自动接入的证明由**目标 Host 自己校验**（证书链到它固定的 Gateway CA、账户绑定、签名、
+  未用过且未过期的 nonce）并检查自己的开关；Gateway 只做预检与快速拒绝，不做授权依据；
+- 证明缺失、nonce 过期或重放、目标电脑未声明 `device.desktop-auto` 时一律拒绝或退回人工
+  确认，绝不静默放行；
+- **Gateway 路径不需要 `workspace/toolExecute`**：Agent 在 B 上跑，工具由 B 自己的 Agent
+  在本机执行；A 只用会话／turn／审批操作与 `workspace/list|read|diff`（文件面板），走工作包
+  B 的 `RACP-WS` 路由，不走 `RACP-HTTP` 路由表。`workspace/toolExecute` 仍只属于 SSH 的
+  「本地 Agent + 远程工具」模式，因此 P0 测量中 Gateway 路径的小 Bash `n = 0` 是预期结果；
+- SSH 配对主机保留「本地 Agent + 远程工具」形态，并在界面上与账号电脑区分显示。
+
 退出条件：`E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop` 通过；安全 gate 25、27、35
-签署（手机仍不获得 `owner`、明确关闭的开关保持关闭、无证明的桌面设备被拒绝自动授予）；
-P7 的改动依据重跑后的 P0 实测数据决定，而不是依据方案里的假设。
+签署（手机仍不获得 `owner`、明确关闭的开关保持关闭、无 Host 校验证明或 nonce 过期/重放的
+桌面设备被拒绝自动授予、新电脑注册会通知账号内其他电脑）；P7 依据重跑后的 P0 实测数据决定，
+其中只保留已被确证的一项——有上限的并行 attach 加 `session/history` 分页——并**删去「流式
+delta 合并」**：本地 stub 的 40 个 provider chunk 只产生 11–13 个 `item.delta`，说明 provider
+流到 RACP 事件之间已经存在合并，再合并一次等于盲改；若线上测量再发现 delta 问题，先定位
+现有合并点。

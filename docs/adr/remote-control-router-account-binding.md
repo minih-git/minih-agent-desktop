@@ -412,9 +412,11 @@ first.
 ## Amendment 3 — a sibling desktop joins as itself (2026-10-21)
 
 Status: accepted for implementation. Scope: this decision's account-mode device
-surface, the Host link frames of protocol §11.4/§11.5, and the desktop's
-account-mode defaults. Nothing here is implemented yet: this amendment records
-the target design, and rollout R8 delivers it.
+surface, the Host link frames of protocol §11.4/§11.5, the desktop's account-mode
+defaults, and — for the proven desktop-class device only — the gateway-origin
+restrictions of [ADR 0331](0331-self-hosted-gateway-and-mobile-client.md), whose
+"Device origin" section records the exception. Nothing here is implemented yet:
+this amendment records the target design, and rollout R8 delivers it.
 
 ### Context
 
@@ -439,28 +441,47 @@ certificate proves it. This amendment lets a computer say so, and join.
    (`packages/shared/src/racp-hostlink.ts`,
    `racp-account-devices.ts`). The class names a computer of the account that
    is asking to reach its siblings, not a phone.
-2. **Proof, not just a key.** A desktop request carries `hostProof`: the
-   applicant's `hostId` plus a signature over the request id and a nonce, made
-   with the private key of the Host certificate the Gateway itself issued to
-   that computer. The Gateway verifies the certificate chains to its own CA
-   and carries `OU=account:<accountId>` for the account of the presented
-   AccessKey, and verifies the signature before it treats the request as a
-   desktop request at all. An AccessKey alone proves an account, never a
-   computer.
+2. **Proof, not just a key — and the target Host verifies it.** A desktop
+   request carries `hostProof`: the applicant's `hostId`, the request's
+   `nonce`, and a signature made with the private key of the Host certificate
+   this Gateway issued to that computer. The signature covers
+   `{requestId, nonce, applicantHostId, accountId, expiresAt}`. The nonce is
+   minted by the Gateway when it creates the device request, is single-use, and
+   is short-lived (its exact lifetime is chosen at implementation and is
+   bounded by the request's own `expiresAt`); a Host refuses a proof whose
+   nonce it has already seen or whose `expiresAt` has passed. **Every target
+   Host verifies the proof itself** — the certificate chain to its own pinned
+   Gateway CA, the `OU=account:<accountId>` binding against the account of the
+   request, the signature over the canonical payload, and the freshness — and
+   checks its own "allow same-account computers to join automatically" switch.
+   The Gateway may pre-check and fast-reject, but it is not the authorization:
+   ADR 0331's rule that the Gateway never decides an approval still holds, so a
+   compromised Gateway must not be able to mint an `owner` device on its own.
+   An AccessKey alone proves an account, never a computer.
 3. **Automatic admission, per computer, on by default.** A desktop request
-   with valid proof is granted without a human answer, provided the target
-   computer has "allow same-account computers to join automatically" on
-   (default on, stored device-locally beside the remote-control switch). With
-   the switch off, the same request falls back to the ordinary per-device
-   confirmation of decision 6, and the user answers it.
+   whose proof the target Host verifies is admitted without a human answer,
+   provided that Host has "allow same-account computers to join automatically"
+   on (default on, stored device-locally beside the remote-control switch). With
+   the switch off, or in strict mode, that Host does not adopt the device as a
+   desktop-class device: it falls back to the ordinary per-device confirmation
+   of decision 6, and its own user answers it. The same rule governs a sibling
+   grant: when a `device.grant` for a desktop-class device reaches another Host
+   of the account, that Host re-verifies the proof and checks its own switch
+   before adopting the device with `owner`; a Host whose switch is off, or that
+   is in strict mode, adopts it as a phone-grade device at most, or asks its own
+   user.
 4. **`owner`, with the ceiling exemption.** A desktop-class device holds the
    same role set an SSH-paired desktop device holds: `owner`, exempt from the
-   remote permission ceiling, because the proof is a certificate the account's
-   own Gateway issued to that machine. A phone or browser device is unchanged:
+   remote permission ceiling, because the target Host verified a proof made
+   with a certificate the account's own Gateway issued to that machine. This is
+   the one exception to ADR 0331's gateway-origin restrictions, and it is
+   recorded there. A phone or browser device is unchanged:
    `viewer` / `controller` / `approver`, `pairedDevice: false`, always under
    the ceiling, never offered `allow-session`. Which operations a desktop-class
    device may actually call is rollout R8 package C, not this amendment: the
    desktop Host must open them explicitly and keep refusing them to a phone.
+   `owner` follows the applicant's certificate: when that Host certificate is
+   revoked, the devices it admitted lose their `owner` standing with it.
 5. **Account mode defaults the remote switch on.** When the Router advertises
    a `remoteGateway` object and the account key resolves, the desktop's
    remote-control switch starts on for a user who has never chosen; a user who
@@ -468,10 +489,11 @@ certificate proves it. This amendment lets a computer say so, and join.
    "off by default" reading was written for the self-hosted flow.
 6. **A capability, so an old Host is visible.** The new frames go only to a
    Host that advertises `device.desktop-auto` on its `host.capabilities` frame
-   (protocol §11.4 rule 6). A computer running an older build never receives
-   them, and the requesting desktop shows "this computer needs an update"
-   instead of waiting for a frame that will never come — the silent-drop trap
-   the Compatibility section below already names.
+   (protocol §11.4 rule 6), which is that Host's own claim that it can verify a
+   proof and that its switch is part of the decision. A computer running an
+   older build never receives them, and the requesting desktop shows "this
+   computer needs an update" instead of waiting for a frame that will never
+   come — the silent-drop trap the Compatibility section below already names.
 7. **The Agent runs on the computer that owns the project.** Selecting a
    project of computer B runs the turn on B, with B's own provider
    configuration and B's own Router account for model calls; A is a remote
@@ -514,23 +536,33 @@ certificate proves it. This amendment lets a computer say so, and join.
 
 ### Accepted risk
 
-Automatic admission widens what a leaked AccessKey can reach: a key alone
-cannot join as a desktop (the proof needs an already-enrolled Host
-certificate), but an attacker who also holds a computer's Host certificate
-private key could admit that computer to its own account's siblings. That is
-the same key that machine uses to serve its own Host link, so the compromise is
-already the machine's, not the account's. Required mitigations, all of them:
+A leaked AccessKey is enough to obtain `owner` on every computer of the account
+that has automatic admission on. Decision 5 lets anyone holding the account's
+key enroll a **new** Host, and that enrollment returns a Gateway-CA certificate
+with `OU=account:<accountId>`; an attacker who holds the key can therefore
+register a fake computer, sign a proof with its certificate, and be admitted
+without a human answer wherever the switch is on — shell-equivalent access to
+those machines. This is the direct cost of decision 1 ("same-account computers
+join automatically, without a confirmation") and it is accepted with that cost
+stated: the alternative is a confirmation on every computer, which is the
+behavior this amendment exists to remove. Required mitigations, all of them:
 
-- admission requires a Gateway-CA certificate with the account binding and a
-  signature over the request, never a bare key;
-- every automatic admission produces a "new device" notice on every computer of
-  the account and an audit record, so a silent join is not possible;
+- admission requires a proof verified by the target Host — a Gateway-CA
+  certificate with the account binding, a signature over the request payload,
+  and an unused, unexpired nonce — never a bare key;
+- **every new Host enrollment notifies the account's other computers**: each of
+  them shows a "a new computer joined the account" notice and writes an audit
+  record, so the attacker's first step is visible even before any device is
+  admitted. Every automatic admission produces its own "new device" notice and
+  audit record as well;
+- the first step can be undone where it happened: the operator revokes the
+  enrolled Host on the Gateway (`hosts revoke`), and any computer of the
+  account can revoke the admitted device, with the revocation reaching the
+  others as the signed frame of §11.5;
 - the per-computer switch turns automatic admission off, after which the
-  ordinary confirmation is required;
-- any computer of the account can revoke the device, and the revocation reaches
-  the others as the signed frame of §11.5;
-- `owner` follows the proof, and a device without proof is still a phone-grade
-  `viewer` / `controller` / `approver` under the ceiling.
+  ordinary confirmation is required; strict mode does the same;
+- `owner` follows the proof, and a device without a verified proof is still a
+  phone-grade `viewer` / `controller` / `approver` under the ceiling.
 
 ### Consequences
 
@@ -540,8 +572,9 @@ already the machine's, not the account's. Required mitigations, all of them:
 - The remote-control switch default changes for account-mode users. A user who
   never touched the switch starts with a link; a user who turned it off is not
   re-enabled.
-- Security §3.7 gains the desktop-class role rule and §3.8 the default, and
-  gate 27 is restated for the two cases.
+- Security §3.7 gains the desktop-class role rule and §3.8 the default and the
+  proof-verification rule, gate 27 is restated for the two cases, and gate 35
+  covers the proof, the refusals, and expired or replayed nonces.
 - A computer that predates this amendment is reported as needing an update
   rather than silently unreachable.
 - SSH-paired hosts keep their behavior; the two shapes coexist, and the

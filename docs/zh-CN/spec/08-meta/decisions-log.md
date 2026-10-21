@@ -13,7 +13,7 @@
 
 | 身份证号 | 主题 | 决定 | 基本原理 |
 |---|---|---|---|
-| D675 | 同账号电脑自动接入 | **修订 D666 / ADR `remote-control-router-account-binding`（修订 3，2026-10-21）：账号内的一台电脑不再依赖 SSH，而是经 Gateway 接入兄弟电脑。`device.request` 新增 `client: "desktop"` 与 `hostProof`（申请方 `hostId` 加上用本 Gateway 签发给该电脑的 Host 证书私钥、对 requestId 与 nonce 的签名）；Gateway 先校验证书链到自己的 CA 与 `OU=account:<accountId>` 绑定，通过后该请求才算桌面类请求。证明有效的桌面类请求，在目标电脑声明新的 `device.desktop-auto` 能力且其「允许同账号电脑自动接入」开关打开（默认开、设备本地、不同步）时无需人工确认即授予；开关关闭时回落到 D666 的逐设备确认。桌面类设备持有 `owner` 并豁免远程权限上限，与 SSH 配对的桌面设备同级；手机与浏览器设备仍是 `viewer` / `controller` / `approver`、`pairedDevice: false`、受上限约束、不给 `allow-session`。桌面经 `RACP-WS` 的 `GET /v1/hosts/{hostId}/ws` 接入兄弟电脑（`RemoteHostTransport` 新增 `"account"`），而不是 `RACP-HTTP` + SSE。选中 B 的项目时回合在 B 上运行，使用 B 自己的 provider 配置与 B 自己的 Router 账号调用模型；A 只是远程界面，凭据不跨机器。SSH 配对的「本地 Agent + 远程工具」形态不变。账号模式下远程控制开关在 Router 公布 Gateway 且账号 key 可解析时默认开启，用户明确关闭过的保持关闭：安全 §3.8 与 gate 27 相应修订，新增 gate 35，并由 rollout R8 与 E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop 承载。见 ADR 修订 3。** | 用户的电脑之间此前只能走 SSH，需要凭据并在另一台机器上安装，而且这样配对出来的电脑只是手机级设备：不能改会话名、不能读工作区、不能开终端。账号本身已经知道哪些电脑属于它——兄弟 Host 证书就是证明——所以让电脑自证并接入，而只持有 AccessKey 的手机仍然需要在已受信任的机器上由人来确认。Agent 始终留在拥有项目的那台机器上，凭据与模型调用都不跨机器。 |
+| D675 | 同账号电脑自动接入 | **修订 D666 / ADR `remote-control-router-account-binding`（修订 3，2026-10-21）：账号内的一台电脑不再依赖 SSH，而是经 Gateway 接入兄弟电脑。`device.request` 新增 `client: "desktop"` 与 `hostProof`（申请方 `hostId`、Gateway 为本次请求签发的一次性 nonce，以及用本 Gateway 签发给该电脑的 Host 证书私钥、对 `{requestId, nonce, applicantHostId, accountId, expiresAt}` 的签名）。**由目标 Host 自己校验**：证书链到它固定的 Gateway CA、`OU=account:<accountId>` 绑定、签名、nonce 未用过且未过期，并检查自己的开关；Gateway 的预检只是快速拒绝、不是授权依据，因为 ADR 0331「Gateway 从不做批准决定」仍然成立，被攻破的 Gateway 不能凭空造出 `owner` 设备。证明经 Host 校验、且目标电脑声明新的 `device.desktop-auto` 能力、其「允许同账号电脑自动接入」开关打开（默认开、设备本地、不同步）时无需人工确认即授予；开关关闭或 strict mode 时回落到 D666 的逐设备确认且不按桌面类采纳，兄弟 `device.grant` 由每台接收的 Host 重新校验证明并检查自己的开关后才以 `owner` 采纳。桌面类设备持有 `owner` 并豁免远程权限上限，与 SSH 配对的桌面设备同级，这是 ADR 0331 网关来源限制的唯一例外（已记录在该 ADR）；`owner` 依附于申请方的证书，证书被吊销则其接入的设备一并失去。手机与浏览器设备仍是 `viewer` / `controller` / `approver`、`pairedDevice: false`、受上限约束、不给 `allow-session`。已接受风险如实写明：**泄露的 AccessKey 可以注册一台假电脑（决策 5 允许凭 key 注册 Host），再用它的证书在所有开着自动接入的电脑上拿到 `owner`** —— 这是自动接入的直接代价；缓解措施为 Host 侧校验证明、新电脑注册时通知账号内其他每台电脑并写审计、可在 Gateway 上 `hosts revoke`、可在任一台电脑撤销设备、关闭每机开关或 strict mode、以及拒绝过期或重放的 nonce。桌面经 `RACP-WS` 的 `GET /v1/hosts/{hostId}/ws` 接入兄弟电脑（`RemoteHostTransport` 新增 `"account"`），而不是 `RACP-HTTP` + SSE。选中 B 的项目时回合在 B 上运行，使用 B 自己的 provider 配置与 B 自己的 Router 账号调用模型；A 只是远程界面，凭据不跨机器；Gateway 路径不需要 `workspace/toolExecute`。SSH 配对的「本地 Agent + 远程工具」形态不变。账号模式下远程控制开关在 Router 公布 Gateway 且账号 key 可解析时默认开启，用户明确关闭过的保持关闭：安全 §3.7/§3.8 与 gate 27 相应修订，新增 gate 35，并由 rollout R8 与 E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop 承载。见 ADR 修订 3。** | 用户的电脑之间此前只能走 SSH，需要凭据并在另一台机器上安装，而且这样配对出来的电脑只是手机级设备：不能改会话名、不能读工作区、不能开终端。账号本身已经知道哪些电脑属于它——兄弟 Host 证书就是证明——所以让电脑自证并接入，而只持有 AccessKey 的手机仍然需要在已受信任的机器上由人来确认。Agent 始终留在拥有项目的那台机器上，凭据与模型调用都不跨机器。代价是明确的：只凭账号 key 就能进入所有开着自动接入的电脑，因此接入必须由 Host 校验、每次注册与接入都要通知并写审计，且注册的 Host 与接入的设备都可以撤销。 |
 | D673 | 输入区 `#` 选定目标会话 | **在输入区补全中新增一个宿主模式：符号前满足与 `@` 相同的边界规则（行首、空白，或 pi 分隔符 `"`、`'`、`=`）的 `#` token（全角 `\uFF03` 等价）列出可以交付工作的会话，选中一行插入内联 `#标题` chip。该符号与插件的组合方式与 `@` 完全一致：宿主分组在前，注册了 `#` 的插件分组随后，插件的超时与失败隔离行为不变。候选来自渲染层已持有的会话列表 —— 本地、Agent 模式、未归档、非自动化转录、与调用方同一项目（尚无会话时用首页选中的项目），且不含调用方自身 —— 按更新时间从新到旧、最多 50 条；query 对标题做大小写不敏感的子串或子序列匹配并带高亮区间，query 为空时列出最近的会话。没有匹配时该分组不打开，因此 `#123`、`## 标题` 和孤立的 `#` 仍是普通草稿文本、Enter 照常发送；IME 组词期间冻结该分组，Esc 只关闭当前 token。`ComposerFileReference.kind` 在既有 `session` 链接之外新增 `sessionTarget`：path 存 Session ID，name 存标题快照，chip 显示 `#标题` 并使用自己的图标而不是会话引用气泡。派发前该 chip 序列化为纯文本句子 `#<标题> (Session ID: <id>)` —— 标题空白折叠去尾、最多 80 字符、标题为空时回退到 id 前 8 位、并剥离本应用自己的 `minih-agent-desktop://` scheme —— 刻意不匹配 `SESSION_LINK_PATTERN`，因此 Main 不会附带摘录；目标不产生任何结构化附件，`promptAttachmentsFromDraft` 对它返回空。不改 IPC、不新增持久化附件、不改工具 schema 与工具描述，`SessionSend` / `SessionList` 契约不变：目标只是点明模型应当寻址哪个会话。草稿会保存并恢复新的 kind，不含它的旧草稿不受影响。v1 把发出的句子按普通转录文本显示，不渲染成 chip。见 E2E-COMPOSER-hash-picks-session-target。** | 把工作交给另一个会话此前只有两条路：粘贴链接 —— 会改变模型收到的内容、附带用户并未要求的摘录；或者凭记忆打出标题、无法确认 id。基于渲染层已有会话列表的专用 `#` 分组让目标显式可选，让提示保持最小且与 chip 显示完全一致，并复用既有触发语法、chip 模型、Esc 关闭与 IME 行为，而不是另造一套机制。 |
 | D672 | 为没有目标的派发新建会话 | **修订 ADR builtin-session-messaging（D663）：新增第四个内置按需 Agent 工具 `SessionCreate({ title })`。它通过宿主既有的 `session.create` 创建一个普通 Agent 模式会话 —— 不写协作链接、不归属插件、不套用工作会话的扩散上限 —— 继承调用方会话的项目、思考等级与权限模式，运行在用户在 AI 设置里选定的 `settings.sessionCreateModel` 提供方/模型绑定上，并返回 Session ID 供随后的 `SessionSend` 投递。该设置未配置时调用失败并返回 `MODEL_NOT_CONFIGURED`；绑定不在设置行给出的可选集合内（可用提供方的非生图模型，因此设置行与工具不会互相矛盾）时失败并返回 `MODEL_UNAVAILABLE`；不会回退到应用默认模型。调用只接受 `title`（1–80 字符）。创建本身不启动回合、不发送内容、不消耗额度，因此投递路径的跳数上限与八条收件箱仍是 Agent 所建会话的唯一约束；创建本身不设每回合上限。风险等级为 `High`，走同一 `tools.execute` 闸门，仅限 Agent 模式，Plan 与 Goal 拒绝，`Task` 子代理与 MCP 控制目录都不可见，并且可中止 —— 停止回合会撤回待批卡片。`sessionCreateModel` 不进入可携带的应用字段；`SessionSend` 不变，`SessionList` 在无匹配时改为指向 `SessionCreate`。不改 schema、迁移或协议版本。见 ADR session-create-tool 与 E2E-SESSION-create-missing-target-session。** | 用户要的派发往往正是目标尚不存在的那种，而 D663 有意的排除让模型只能回答「无法创建会话」，用户必须离开对话、手动建好会话再重复请求。让新会话运行在用户自己配置的模型上、并把创建与投递分成两步，既让面向模型的契约保持无歧义，也不改变委派 opt-in、权限上限与自主花费的约束。 |
 | D671 | 上下文预算信任提供程序报告的用量 | **修订 D606 / ADR 0061：`contextBudgetTokens()` 只在投影没有用量锚点（`lastUsageIndex === null` 或 `usageTokens === 0`）时才用整请求的输出上限估算抬高校准后的消息估算。锚定在提供程序报告用量上的投影本身就是那次请求的真实计数，已包含该请求的系统提示与工具结构；再用粗略的字符估算加上同一份上下文等于重复计费，会让窗口仍剩大半的对话提前压缩。投影还会遍历所有消息记录最新的检查点摘要时间戳：`compactionSummary` 是提供程序估算器看不到的桌面专有角色，否则回放尾部携带的压缩前用量会成为锚点。阈值、比例、预留、schema 与 IPC 均未改动。** | 报告中的缺陷是对话在窗口仍剩 43 % 时压缩：提供程序对该上下文报告了 573 232 个输入 token，而同一份上下文的整请求估算为 654 332 个文本 token 加上约 21 000 的提示与工具结构，越过了 100 万窗口的 675 000 触发点。锚点是比启发式更好的信息，安全方向不变——请求层仍按整请求估算收紧输出预算，硬上限仍守下一次请求，过期的锚点会被下一次提供程序报告刷新。 |
@@ -5779,3 +5779,36 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   `D-LOCAL-message-quotes` / `D-LOCAL-selection-overlay` 及 E2E ID 继续退役。
   见 ADR 0334、`04-ux/08-component-spec.md` §7.4 / §8.5 与
   E2E-CHAT-selection-quote-into-composer。
+
+## 2026-10-21 —— 同账号电脑自动接入（D675）
+
+- D675 修订 D666 / ADR `remote-control-router-account-binding`（修订 3）。账号内的一台电脑
+  不再依赖 SSH，而是经 Gateway 接入兄弟电脑：`device.request` 新增 `client: "desktop"` 与
+  `hostProof` —— 本次请求由 Gateway 签发的一次性 nonce，加上用该电脑的 Host 证书私钥对
+  `{requestId, nonce, applicantHostId, accountId, expiresAt}` 的签名。
+- **证明由目标 Host 自己校验**：证书链到它固定的 Gateway CA、账户绑定、签名、nonce 未用过
+  且未过期，并检查自己的开关。Gateway 只做预检与快速拒绝，不做授权依据；ADR 0331
+  「Gateway 从不做批准决定」仍然成立，被攻破的 Gateway 不能凭空造出 `owner` 设备。
+- 自动接入是每台电脑的开关（「允许同账号电脑自动接入」，默认开、设备本地、不同步）。关闭或
+  strict mode 时回落到 D666 的逐设备确认，且不按桌面类采纳；兄弟 `device.grant` 由每台接收
+  的 Host 重新校验证明并检查自己的开关。每次自动接入都会通知并写审计；账号内有新电脑注册时
+  其他每台电脑都会收到通知并写审计；账号内任何 Host 都可以撤销设备，运维可以在 Gateway 上
+  `hosts revoke` 那台 Host。
+- 桌面类设备持有 `owner` 并豁免远程权限上限，这是 ADR 0331 网关来源限制的唯一例外（已记录
+  在该 ADR）；`owner` 依附于申请方的证书，证书被吊销则其接入的设备一并失去。手机与浏览器
+  设备不变：`viewer` / `controller` / `approver`、`pairedDevice: false`、受上限约束、不给
+  `allow-session`。
+- 已接受的风险如实写明：只凭泄露的 AccessKey 就能注册一台假电脑（决策 5 允许凭 key 注册
+  Host），再用它的证书在所有开着自动接入的电脑上拿到 `owner`。这是「同账号电脑自动接入」的
+  直接代价，缓解措施见上。
+- 客户端传输是 `RACP-WS` 的 `GET /v1/hosts/{hostId}/ws`，`RemoteHostTransport` 新增
+  `"account"`；手机继续用 `RACP-HTTP` + SSE。选中 B 的项目时回合在 B 上运行，使用 B 自己的
+  provider 配置与 B 自己的 Router 账号，凭据不跨机器；Gateway 路径不需要
+  `workspace/toolExecute`。
+- 账号模式下远程控制开关在 Router 公布 Gateway 且账号 key 可解析时默认开启，用户明确关闭
+  过的保持关闭。安全 §3.7/§3.8、gate 27 与新增的 gate 35 相应修订，rollout R8 与
+  E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop 承载其余部分。
+- P0 测量（`scripts/measure-remote-latency.mjs`）另外确认了 P7 的两项取舍：有上限的串行
+  attach 与 `session/history` 分页成立；**流式 delta 合并被删去**，因为本地 stub 的 40 个
+  provider chunk 只产生 11–13 个 `item.delta`，说明 provider 流到 RACP 事件之间已经存在
+  合并。
