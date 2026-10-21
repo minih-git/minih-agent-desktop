@@ -17,10 +17,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AddProjectPanel } from "./AddProjectPanel.js";
-import { useHostStatus } from "../hooks/useHostStatus.js";
+import type { HostStatusView } from "../hooks/useHostStatus.js";
 import type { HostCredential } from "../lib/credential-port.js";
 import type { OperationFailure } from "../lib/errors.js";
 import { createHostClient, type HostClient } from "../lib/host-client.js";
+import { hostStatusFromFailure } from "../lib/host-status.js";
 import { createSession, listModels, listProjects, listSessions, newSessionMode } from "../lib/mutations.js";
 import { gatewayOrigin } from "../lib/runtime.js";
 import { groupSessionsByProject, type SessionGroup } from "../lib/session-groups.js";
@@ -56,6 +57,13 @@ export function SessionsScreen({
 }: SessionsScreenProps) {
   const { t } = useTranslation();
   const [sessions, setSessions] = useState<RacpSession[] | null>(null);
+  /**
+   * The list read is also this screen's reachability probe: `session/list`
+   * answers 503 while the Host link is down and 401 before this Host has
+   * adopted the device, so a second request to ask the same question cost a
+   * round trip per visit and could disagree with the list on screen.
+   */
+  const [status, setStatus] = useState<HostStatusView>({ kind: "checking" });
   const [failure, setFailure] = useState<OperationFailure | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [projects, setProjects] = useState<RacpProjectSummary[] | null>(null);
@@ -77,7 +85,6 @@ export function SessionsScreen({
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const clientRef = useRef<HostClient | null>(null);
   const credentialKey = credential.kind === "cookie" ? credential.csrfToken : credential.token;
-  const { status } = useHostStatus(hostId, credential);
   /**
    * `roles` is what the Gateway granted this device when it was paired or
    * adopted. An entry written before that field existed has none, so the answer
@@ -87,6 +94,8 @@ export function SessionsScreen({
   const mode = newSessionMode(roles, projects);
   /** A recorded absence of `controller` is the only thing that hides the entry. */
   const canCreate = mode !== "hidden";
+  /** Stable, unlike `mode`, which also depends on the catalog the read fills. */
+  const readOnly = roles !== undefined && !roles.includes("controller");
 
   useEffect(() => {
     const client = createHostClient({
@@ -112,8 +121,10 @@ export function SessionsScreen({
     if (result.ok) {
       setSessions(result.value);
       setFailure(null);
+      setStatus({ kind: "online" });
     } else {
       setFailure(result.failure);
+      setStatus(hostStatusFromFailure(result.failure));
     }
   }, []);
 
@@ -123,7 +134,10 @@ export function SessionsScreen({
    */
   const loadProjects = useCallback(async (): Promise<void> => {
     const client = clientRef.current;
-    if (!client || mode === "hidden") return;
+    // `readOnly` and not `mode`: `mode` also depends on the catalog this read
+    // fills, so keying the effect on it asked the Host for the project list a
+    // second time the moment the first answer landed.
+    if (!client || readOnly) return;
     const result = await listProjects(client);
     if (result.ok) {
       setProjects(result.value);
@@ -132,7 +146,7 @@ export function SessionsScreen({
       setProjects([]);
       setProjectsFailure(result.failure);
     }
-  }, [mode]);
+  }, [readOnly]);
 
   useEffect(() => {
     void load();

@@ -2843,15 +2843,23 @@ async fn handle_request(
                 .get("messageAround")
                 .and_then(|v| v.as_str())
                 .map(str::to_owned);
+            let message_before_id = params
+                .get("messageBeforeId")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned);
             let message_limit = params.get("messageLimit").and_then(|v| v.as_i64());
             if message_before.is_some_and(|value| value < 0)
                 || message_limit.is_some_and(|value| value <= 0)
                 || (message_around.is_some()
+                    && (message_before.is_some()
+                        || message_before_id.is_some()
+                        || message_limit.is_none()))
+                || (message_before_id.is_some()
                     && (message_before.is_some() || message_limit.is_none()))
             {
                 return Err(rpc_err(
                     1002,
-                    "session read window must use non-negative messageBefore and positive messageLimit",
+                    "session read window takes one of messageAround, messageBeforeId, or messageBefore, with a positive messageLimit",
                     "INVALID_PARAMS",
                 ));
             }
@@ -2876,6 +2884,7 @@ async fn handle_request(
                 id,
                 sessions::SessionReadOptions {
                     message_around,
+                    message_before_id,
                     message_before,
                     message_limit,
                     content_limit,
@@ -9818,6 +9827,81 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(missing.data.unwrap()["errorCode"], "NOT_FOUND");
+    }
+
+    /// `messageBeforeId` is how the RACP `session/history` window reaches
+    /// host-core: the remote client pages with `beforeItemId`, which is a
+    /// message id, while the window reader speaks physical offsets.
+    #[tokio::test]
+    async fn session_get_pages_a_window_named_by_message_id() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let session = sessions::create_session(
+            &app_state.db,
+            Some("Window".into()),
+            Some("agent".into()),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        for index in 0..4 {
+            let message: sessions::UiMessage = serde_json::from_value(json!({
+                "id": format!("m{index}"),
+                "role": "user",
+                "content": format!("body {index}"),
+                "createdAt": "2025-05-01T00:00:00Z"
+            }))
+            .unwrap();
+            sessions::append_message(&app_state.db, &session.id, &message, None).unwrap();
+        }
+        let state = Arc::new(Mutex::new(app_state));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let page = handle_request(
+            state.clone(),
+            "session.get",
+            json!({ "id": session.id, "messageLimit": 2, "messageBeforeId": "m2" }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let ids: Vec<String> = page["session"]["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|message| message["id"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(ids, ["m0", "m1"]);
+        assert_eq!(page["session"]["messageStart"], json!(0));
+        assert_eq!(page["session"]["hasMoreBefore"], json!(false));
+
+        // A page named by an id the transcript no longer holds is empty rather
+        // than the tail: the client asked for older rows, not newer ones.
+        let forgotten = handle_request(
+            state.clone(),
+            "session.get",
+            json!({ "id": session.id, "messageLimit": 2, "messageBeforeId": "gone" }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            forgotten["session"]["messages"].as_array().unwrap().len(),
+            0
+        );
+
+        // One window at a time: the two spellings of a start cannot be mixed.
+        let mixed = handle_request(
+            state,
+            "session.get",
+            json!({ "id": session.id, "messageLimit": 2, "messageBeforeId": "m2", "messageBefore": 1 }),
+            mpsc::unbounded_channel().0,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(mixed.data.unwrap()["errorCode"], "INVALID_PARAMS");
     }
 
     #[tokio::test]

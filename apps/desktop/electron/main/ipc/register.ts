@@ -59,6 +59,12 @@ export type RegisterIpcDependencies = {
   cancelMemoryExtraction: (sessionId: string) => void;
   /** Watch settings writes so turning extraction off cancels pending runs. */
   onLearnedMemorySettingsChanged: (settings: AppSettings) => void;
+  /**
+   * Announce a title written inside Main to the RACP Host, so an attached
+   * remote client refreshes its header instead of keeping the old name. The
+   * renderer fan-out stays the caller's own concern; this is the RACP side.
+   */
+  announceSessionTitleChanged?: (sessionId: string) => void;
   isQuitting: () => boolean;
   ipcMain: IpcMain;
   getMainWindow: () => BrowserWindow | null;
@@ -103,6 +109,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     generateSessionTitle,
     cancelMemoryExtraction,
     onLearnedMemorySettingsChanged,
+    announceSessionTitleChanged,
     ipcMain,
     getMainWindow,
     getHost,
@@ -291,6 +298,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     beginTranscriptRewrite,
     forgetTranscriptRewriteHistory,
     stripWinLongPrefix,
+    announceTitleChange: announceSessionTitleChanged,
     cancelMemoryExtraction,
   });
   registerSettingsIpc({

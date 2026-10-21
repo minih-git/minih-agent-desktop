@@ -714,6 +714,8 @@ Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主
 |---|---:|
 | JSON request or event frame | 1 MiB |
 | Prompt payload | 256 KiB |
+| Item text or tool payload, display reads（`session/history` 显示读取）| 每字段 64 Ki 字符 |
+| Compaction summary or checkpoint payload, display reads（`session/history` 显示读取）| 与条目文本同一字段预算 |
 | Attachment | 50 MiB |
 | Host link attachment chunk | 256 KiB |
 | Durable session event replay | 10,000 events or 24 hours |
@@ -794,6 +796,19 @@ bootstrap 的 `remoteGateway` 注册 Host；账户作用域的登录与主机列
 `device.request` 与 `device.grant` 两个新帧完成的设备申请／确认／授权；以及这两个帧
 只发给声明支持该能力的 Host 的强制要求。自托管注册码与每 Host 票据保持不变，账户模式
 设备仍受 D665 的网关来源角色与限制约束。
+
+R7 后续（2026-10-20，无新决策）让规格描述与手机实际读取一致：
+
+- `session/history` 定义为一段有界窗口，结束于 `beforeItemId` 指定的位置，`hasMore` 由
+  记录本身回答，长会话因此能分页而无需 Host 把整份记录物化；
+- 条目的文本与工具载荷有了显示上限，上限内联标记且按字段计数，`limit` 只计条目数，
+  与桌面端自身的有界记录读取使用同一上限与同一标记；
+- 若 `beforeItemId` 指向的条目已被压缩重写而消失，返回空页且 `hasMore: false`，
+  而不是返回尾部，避免把较新的条目回放进客户端的旧页位置；
+- 显示读取同时裁剪压缩记录：真实会话实测最新检查点 599 KB 且被发送两次（一次在
+  `compaction`，一次在 `compactions` 末项），其中 488 KB 是 runtime 的 `retainedTail`、
+  86 KB 是面向模型的 `systemMessageJson`，每次接入与每次回合准入都会做的元数据读取因此
+  是 1.2 MB，现为 29 KB。无上限的读取保持不变，因为 sidecar 依赖这些字段重建模型上下文。
 
 完整状态机、示例和验收条款见英文源规格。
 

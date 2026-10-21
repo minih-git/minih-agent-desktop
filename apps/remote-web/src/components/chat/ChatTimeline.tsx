@@ -1,11 +1,14 @@
-import { AlertCircle, Check, ChevronDown, ChevronUp, Clock, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Clock } from "lucide-react";
 import type { ComponentProps } from "react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { groupConsecutiveToolRuns } from "@minih-agent/shared";
+
 import type { TimelineFailure, TimelineItem } from "../../lib/timeline-types.js";
+import { ToolRun } from "./ToolRun.js";
 
 export interface ChatTimelineProps {
   items: TimelineItem[];
@@ -46,6 +49,12 @@ function renderInlineCode(text: string) {
   );
 }
 
+
+/** Whether a row is a tool call (the desktop's own test, kept in one place). */
+function isToolItem(item: TimelineItem): boolean {
+  return item.itemType === "tool" || item.role === "tool";
+}
+
 export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelineProps) {
   const { t } = useTranslation();
   const [openItems, setOpenItems] = useState<Record<string, boolean>>({});
@@ -53,6 +62,13 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
   const toggle = (key: string) => {
     setOpenItems((prev) => ({ ...prev, [key]: !prev[key] }));
   };
+
+  /**
+   * Rows in the order the timeline draws them: a burst of consecutive tool calls
+   * becomes one `ToolRun`, everything else stays its own row. The grouping rule
+   * is the shared one, so the phone and the desktop fold a burst identically.
+   */
+  const rows = groupConsecutiveToolRuns(items, (item) => (isToolItem(item) ? "tool" : "other"));
 
   if (items.length === 0 && !pendingText && !lastFailure) {
     return (
@@ -64,9 +80,18 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
 
   return (
     <ul className="flex flex-col gap-3.5 py-4 list-none p-0 m-0">
-      {items.map((item, idx) => {
+      {rows.map((row) => {
+        if (row.kind === "run") {
+          const burst = items.slice(row.start, row.end);
+          return (
+            <li key={`run-${burst[0]?.id ?? row.start}`} className="flex flex-col self-start max-w-[95%]">
+              <ToolRun items={burst} active={burst.some((entry) => entry.status === "streaming")} />
+            </li>
+          );
+        }
+        const idx = row.index;
+        const item = items[idx];
         const isUser = item.role === "user";
-        const isTool = item.itemType === "tool" || item.role === "tool";
         const isCompaction = item.itemType === "compaction" || item.role === "system";
 
         if (isCompaction) {
@@ -98,52 +123,6 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
                 <div className="mt-1 flex items-center justify-end gap-1 text-[12px] text-[var(--rm-text-muted)]">
                   <Clock size={12} />
                   <span>{t("timeline.sending")}</span>
-                </div>
-              )}
-            </li>
-          );
-        }
-
-        if (isTool) {
-          const toolKey = `tool-${item.id || idx}`;
-          const isOpen = !!openItems[toolKey];
-          return (
-            <li
-              key={item.id || idx}
-              data-item-id={item.id}
-              className={`rounded-xl border border-[var(--rm-separator)] bg-[var(--rm-bg-surface)] overflow-hidden ${
-                item.isError ? "border-red-500/40" : ""
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => toggle(toolKey)}
-                className="flex items-center gap-2.5 w-full p-2.5 min-h-[44px] text-left hover:bg-[var(--rm-bg-inset)]/40 transition-colors cursor-pointer"
-                aria-expanded={isOpen}
-              >
-                <span className="sr-only">Tool </span>
-                {item.status === "streaming" ? (
-                  <Loader2 size={16} className="text-[var(--rm-running)] animate-spin shrink-0" />
-                ) : item.isError ? (
-                  <AlertCircle size={16} className="text-[var(--rm-error)] shrink-0" />
-                ) : (
-                  <Check size={16} className="text-[var(--rm-success)] stroke-[2.5] shrink-0" />
-                )}
-                <span className="font-mono text-[13px] font-semibold text-[var(--rm-text-primary)]">
-                  {item.toolName || t("timeline.tool")}
-                </span>
-                <span className="flex-1 min-w-0 text-[13px] text-[var(--rm-text-secondary)] truncate">
-                  {item.text}
-                </span>
-                {isOpen ? (
-                  <ChevronUp size={16} className="text-[var(--rm-text-faint)] shrink-0" />
-                ) : (
-                  <ChevronDown size={16} className="text-[var(--rm-text-faint)] shrink-0" />
-                )}
-              </button>
-              {isOpen && item.text && (
-                <div className="m-2.5 mt-0 rounded-lg bg-[var(--rm-bg-inset)] p-2.5 font-mono text-[12px] leading-[18px] text-[var(--rm-text-secondary)] whitespace-pre overflow-x-auto max-h-[220px]">
-                  {item.text}
                 </div>
               )}
             </li>

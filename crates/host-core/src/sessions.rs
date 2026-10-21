@@ -324,6 +324,12 @@ pub struct SessionDetail {
 pub struct SessionReadOptions {
     /// Center a bounded UI read on this stable message ID.
     pub message_around: Option<String>,
+    /// Exclusive window end named by a stable message ID: the page is the
+    /// `message_limit` messages immediately older than that one. The ID is
+    /// resolved against the transcript itself, so a window named by an ID and
+    /// one named by a sequence agree even when the index lags the file.
+    /// Ignored when `message_around` is set.
+    pub message_before_id: Option<String>,
     /// Exclusive message sequence before which the window ends. When omitted,
     /// the window is taken from the end of the canonical transcript.
     pub message_before: Option<i64>,
@@ -885,6 +891,26 @@ fn cap_record_blocks_for_display(record: &mut MessageRecord, limit: usize) {
             _ => {}
         }
     }
+}
+
+/// One compaction record as a display read may send it.
+///
+/// The renderer reads the checkpoint's identity and a summary; it never reads
+/// `retained_tail` (the runtime's model messages) or the large members of
+/// `details` (`systemMessageJson` alone is 86 KB on a real session). Both are
+/// dropped, and the summary is capped like every other display field, so a
+/// display read of a compacted session costs kilobytes instead of a megabyte.
+/// The uncapped path is untouched: the sidecar rebuilds the model context from
+/// the whole record.
+fn compaction_for_display(mut record: CompactionRecord, limit: usize) -> CompactionRecord {
+    record.retained_tail = None;
+    if let Some(details) = record.details.as_mut().and_then(Value::as_object_mut) {
+        // Identity the UI needs survives; the model-facing payload does not.
+        details.remove("systemMessageJson");
+    }
+    let (summary, _) = truncate_display_text(record.summary, limit);
+    record.summary = summary;
+    record
 }
 
 fn record_to_ui_for_display(mut record: MessageRecord, limit: usize) -> UiMessage {
@@ -1595,6 +1621,16 @@ pub fn get_session_with_options(
                         return Ok(None);
                     };
                     (position + limit / 2 + 1).min(total)
+                } else if let Some(message_id) = options.message_before_id.as_deref() {
+                    // A page named by an ID ends where that message begins. The
+                    // ID is gone when a compaction rewrote the transcript after
+                    // the caller read it; there is then no older page to name,
+                    // and answering with the tail would replay newer rows.
+                    match transcripts::find_message_position(db.data_dir(), id, layout, message_id)?
+                    {
+                        Some(position) => position.min(total),
+                        None => 0,
+                    }
                 } else {
                     match options.message_before {
                         Some(value) => (value.max(0) as usize).min(total),
@@ -1697,8 +1733,23 @@ pub fn get_session_with_options(
         has_more_after,
         has_more_before,
         messages,
-        compaction: compactions.last().cloned(),
-        compactions,
+        // `compaction` is the newest checkpoint of the same `compactions` array,
+        // so a display read sends it once: a real session's record is 599 KB,
+        // mostly `retainedTail` and `details.systemMessageJson`, which no
+        // renderer reads (measured on 58a08fb8). An uncapped read keeps both,
+        // because the sidecar rebuilds the model context from them.
+        compaction: options
+            .content_limit
+            .is_none()
+            .then(|| compactions.last().cloned())
+            .flatten(),
+        compactions: match options.content_limit {
+            Some(limit) => compactions
+                .into_iter()
+                .map(|record| compaction_for_display(record, limit))
+                .collect(),
+            None => compactions,
+        },
     }))
 }
 
@@ -4484,6 +4535,20 @@ mod tests {
         );
     }
 
+    /// A checkpoint with the two payloads a display read must not send: the
+    /// runtime's retained tail and the model-facing system message.
+    fn heavy_checkpoint() -> CompactionRecord {
+        let mut record = checkpoint("m1", "m2");
+        record.summary = "s".repeat(4_000);
+        record.retained_tail = Some(json!([{ "role": "user", "content": "x".repeat(2_000) }]));
+        record.details = Some(json!({
+            "generation": 3,
+            "strategy": "summary",
+            "systemMessageJson": "y".repeat(3_000),
+        }));
+        record
+    }
+
     fn checkpoint(first: &str, through: &str) -> CompactionRecord {
         CompactionRecord {
             id: Uuid::new_v4().to_string(),
@@ -5610,6 +5675,7 @@ mod tests {
                 &session.id,
                 SessionReadOptions {
                     message_around: None,
+                    message_before_id: None,
                     message_before: before,
                     message_limit: Some(2),
                     content_limit: None,
@@ -5643,6 +5709,7 @@ mod tests {
             &session.id,
             SessionReadOptions {
                 message_around: None,
+                message_before_id: None,
                 message_before: None,
                 message_limit: Some(2),
                 content_limit: None,
@@ -5699,6 +5766,7 @@ mod tests {
             &session.id,
             SessionReadOptions {
                 message_around: None,
+                message_before_id: None,
                 message_before: None,
                 message_limit: Some(2),
                 content_limit: None,
@@ -5722,6 +5790,7 @@ mod tests {
                 &session.id,
                 SessionReadOptions {
                     message_around: None,
+                    message_before_id: None,
                     message_before: Some(start),
                     message_limit: Some(2),
                     content_limit: None,
@@ -5771,6 +5840,7 @@ mod tests {
             &session.id,
             SessionReadOptions {
                 message_around: Some("m5".to_string()),
+                message_before_id: None,
                 message_before: None,
                 message_limit: Some(4),
                 content_limit: None,
@@ -5833,6 +5903,7 @@ mod tests {
             &session.id,
             SessionReadOptions {
                 message_around: None,
+                message_before_id: None,
                 message_before: None,
                 message_limit: Some(1),
                 content_limit: Some(128),
@@ -5848,6 +5919,186 @@ mod tests {
 
         let full = get_session(&db, &session.id).unwrap().unwrap();
         assert_eq!(full.messages[1].content.len(), 80_000);
+    }
+
+    #[test]
+    fn a_window_named_by_message_id_pages_older_history() {
+        let db = test_db();
+        let session = create_session(&db, None, None, None, None, None).unwrap();
+        for index in 0..6 {
+            append_message(
+                &db,
+                &session.id,
+                &user_msg(
+                    &format!("m{index}"),
+                    &format!("body {index}"),
+                    "2025-05-01T00:00:00Z",
+                ),
+                None,
+            )
+            .unwrap();
+        }
+
+        // `beforeItemId` is what RACP `session/history` pages with: the page is
+        // the two messages immediately older than the named one.
+        let page = get_session_with_options(
+            &db,
+            &session.id,
+            SessionReadOptions {
+                message_around: None,
+                message_before_id: Some("m4".into()),
+                message_before: None,
+                message_limit: Some(2),
+                content_limit: None,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let ids: Vec<&str> = page.messages.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["m2", "m3"]);
+        assert_eq!(page.message_start, Some(2));
+        assert_eq!(page.has_more_before, Some(true));
+
+        // Walking to the head with the same parameter reaches the oldest line
+        // and then stops, which is what the client's "Load earlier" needs.
+        let head = get_session_with_options(
+            &db,
+            &session.id,
+            SessionReadOptions {
+                message_around: None,
+                message_before_id: Some("m2".into()),
+                message_before: None,
+                message_limit: Some(2),
+                content_limit: None,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let head_ids: Vec<&str> = head.messages.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(head_ids, ["m0", "m1"]);
+        assert_eq!(head.has_more_before, Some(false));
+    }
+
+    #[test]
+    fn a_window_named_by_a_forgotten_message_id_is_empty() {
+        let db = test_db();
+        let session = create_session(&db, None, None, None, None, None).unwrap();
+        for index in 0..3 {
+            append_message(
+                &db,
+                &session.id,
+                &user_msg(&format!("m{index}"), "body", "2025-05-01T00:00:00Z"),
+                None,
+            )
+            .unwrap();
+        }
+
+        // A compaction can rewrite the transcript after a client read a page.
+        // The named row is then gone; answering with the tail would replay
+        // newer rows into the client's older-page slot, so the window is empty
+        // and the client stops walking.
+        let page = get_session_with_options(
+            &db,
+            &session.id,
+            SessionReadOptions {
+                message_around: None,
+                message_before_id: Some("gone".into()),
+                message_before: None,
+                message_limit: Some(2),
+                content_limit: None,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        assert!(page.messages.is_empty());
+        assert_eq!(page.message_start, Some(0));
+        assert_eq!(page.has_more_before, Some(false));
+    }
+
+    /// A display read must not ship the model-facing halves of a checkpoint,
+    /// and must not send the newest checkpoint twice.
+    #[test]
+    fn a_display_read_caps_and_deduplicates_the_checkpoint() {
+        let db = test_db();
+        let session = create_session(&db, None, None, None, None, None).unwrap();
+        // The checkpoint precedes the window, so a bounded read carries it as the
+        // divider in force at that window (the same shape a real session has).
+        append_compaction(&db, &session.id, &heavy_checkpoint()).unwrap();
+        append_message(
+            &db,
+            &session.id,
+            &user_msg("m1", "old", "2025-05-01T00:00:00Z"),
+            None,
+        )
+        .unwrap();
+        append_message(
+            &db,
+            &session.id,
+            &user_msg("m2", "new", "2025-05-01T00:00:01Z"),
+            None,
+        )
+        .unwrap();
+
+        let display = get_session_with_options(
+            &db,
+            &session.id,
+            SessionReadOptions {
+                message_around: None,
+                message_before_id: None,
+                message_before: None,
+                message_limit: Some(1),
+                content_limit: Some(64),
+            },
+        )
+        .unwrap()
+        .unwrap();
+        // The newest checkpoint travels in `compactions` only.
+        assert!(display.compaction.is_none());
+        assert_eq!(display.compactions.len(), 1);
+        let record = &display.compactions[0];
+        assert!(
+            record.retained_tail.is_none(),
+            "the runtime tail is not display data"
+        );
+        assert!(
+            record
+                .details
+                .as_ref()
+                .and_then(Value::as_object)
+                .is_some_and(|details| !details.contains_key("systemMessageJson")),
+            "the model-facing system message is not display data"
+        );
+        // Identity the UI reads survives the projection.
+        assert_eq!(
+            record
+                .details
+                .as_ref()
+                .and_then(|details| details["generation"].as_i64()),
+            Some(3)
+        );
+        assert_eq!(
+            record
+                .details
+                .as_ref()
+                .and_then(|details| details["strategy"].as_str()),
+            Some("summary")
+        );
+        assert!(record.summary.chars().count() <= 64);
+        assert!(record.summary.contains("truncated for display"));
+
+        // The uncapped read stays lossless for model reconstruction.
+        let whole = get_session(&db, &session.id).unwrap().unwrap();
+        let full = whole
+            .compaction
+            .expect("the newest checkpoint is still sent");
+        assert_eq!(full.summary.chars().count(), 4_000);
+        assert!(full.retained_tail.is_some());
+        assert!(full
+            .details
+            .as_ref()
+            .and_then(Value::as_object)
+            .is_some_and(|details| details.contains_key("systemMessageJson")));
+        assert_eq!(whole.compactions.len(), 1);
     }
 
     #[test]

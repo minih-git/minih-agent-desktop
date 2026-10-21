@@ -58,7 +58,10 @@ export function NavBar({
             </h1>
           ) : null}
           {subtitle ? (
-            <div className="flex items-center justify-center gap-1 text-[12px] leading-[15px] text-[var(--rm-text-muted)]">
+            // One line, and the bar's own height is fixed: a subtitle wider than
+            // the center column must shrink and clip rather than wrap, which
+            // pushed the fixed-height bar out of shape (a long computer name).
+            <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden text-[12px] leading-[15px] text-[var(--rm-text-muted)]">
               {subtitle}
             </div>
           ) : null}

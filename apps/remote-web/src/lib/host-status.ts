@@ -34,6 +34,23 @@ export function hostSessionsPath(hostId: string): string {
   return `/hosts/${encodeURIComponent(hostId)}/v1/sessions`;
 }
 
+/**
+ * The status a failed host-scoped read already reports, so a screen that made a
+ * real request does not have to probe again to ask the same question.
+ *
+ * The codes are the ones the Gateway sends for the three states the probe
+ * distinguishes: `AGENT_UNAVAILABLE` is the Host link being down (HTTP 503),
+ * `HOST_UNAUTHORIZED` is this Host not having adopted the device yet (401), and
+ * `UNAUTHORIZED` is a credential that is gone (401). Anything else stays an
+ * error with its own reason, exactly as `probeHostStatus` reports it.
+ */
+export function hostStatusFromFailure(failure: { code: string; message: string }): HostStatus {
+  if (failure.code === "HOST_UNAUTHORIZED") return { kind: "unaccepted" };
+  if (failure.code === "UNAUTHORIZED") return { kind: "revoked" };
+  if (failure.code === "AGENT_UNAVAILABLE") return { kind: "offline" };
+  return { kind: "error", code: failure.code, message: failure.message };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
