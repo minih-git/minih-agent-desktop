@@ -290,6 +290,9 @@ export async function streamDirectReply(
   const key = input.authKey.trim();
   if (!key) return { ok: false, failure: { kind: "unauthorized", message: "no AccessKey is configured" } };
 
+  // A stop that landed before this call is still a stop: no request, no bill.
+  if (signal?.aborted) return { ok: true, text: "", usage: null, stopped: true };
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
   const onAbort = () => controller.abort();
@@ -298,6 +301,9 @@ export async function streamDirectReply(
   let accumulated = "";
   let usage: { inputTokens: number | null; outputTokens: number | null } | null = null;
   const emit = (event: DirectStreamEvent) => {
+    // Bytes already read when Stop lands belong to nobody: a stopped reply never
+    // grows, and the caller never sees an event after it asked to stop.
+    if (controller.signal.aborted) return;
     if (event.type === "text") accumulated += event.text;
     if (event.type === "usage") usage = { inputTokens: event.inputTokens, outputTokens: event.outputTokens };
     options.onEvent?.(event);
@@ -332,6 +338,10 @@ export async function streamDirectReply(
     }
 
     const reader = response.body.getReader();
+    // A stop must end the read even when the transport does not error the body
+    // on abort: cancelling the reader settles the pending `read()`.
+    const cancelRead = () => void reader.cancel().catch(() => {});
+    controller.signal.addEventListener("abort", cancelRead, { once: true });
     const decoder = new SseDecoder();
     let failed: string | null = null;
     let finished = false;
@@ -353,7 +363,9 @@ export async function streamDirectReply(
     for (;;) {
       const chunk = await reader.read();
       const events = chunk.done ? decoder.end() : decoder.push(chunk.value);
+      if (controller.signal.aborted) break;
       for (const event of events) {
+        if (controller.signal.aborted) break;
         const outcome = applyEvent(event);
         if (outcome.error) {
           failed = outcome.error;
@@ -361,7 +373,7 @@ export async function streamDirectReply(
         }
         if (outcome.terminal) finished = true;
       }
-      if (chunk.done) break;
+      if (chunk.done || controller.signal.aborted) break;
       if (failed || finished) {
         // Nothing more is wanted: release the connection instead of reading a
         // stream whose answer can no longer change anything.

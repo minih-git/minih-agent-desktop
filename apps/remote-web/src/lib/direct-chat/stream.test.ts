@@ -254,6 +254,56 @@ describe("streaming a reply", () => {
     }
   });
 
+  it("sends nothing when the stop landed before the call", async () => {
+    const { fetchImpl, calls } = streamingFetch(completionsChunks);
+    const controller = new AbortController();
+    controller.abort();
+    const events: DirectStreamEvent[] = [];
+    const result = await streamDirectReply(
+      request,
+      { origin: ORIGIN, fetchImpl, onEvent: (event) => events.push(event) },
+      controller.signal,
+    );
+    expect(calls).toHaveLength(0);
+    expect(events).toHaveLength(0);
+    expect(result).toEqual({ ok: true, text: "", usage: null, stopped: true });
+  });
+
+  it("emits nothing read after the stop, even from the same chunk", async () => {
+    const controller = new AbortController();
+    const fetchImpl = (async () => {
+      // One chunk, two deltas: Stop lands while the first one is delivered.
+      const body = new ReadableStream<Uint8Array>({
+        start(streamController) {
+          streamController.enqueue(
+            bytes(
+              'data: {"choices":[{"delta":{"content":"one"}}]}\n\n' +
+                'data: {"choices":[{"delta":{"content":"two"}}]}\n\n',
+            ),
+          );
+        },
+      });
+      return new Response(body, { status: 200 });
+    }) as unknown as typeof fetch;
+    const texts: string[] = [];
+    const result = await streamDirectReply(
+      request,
+      {
+        origin: ORIGIN,
+        fetchImpl,
+        onEvent: (event) => {
+          if (event.type !== "text") return;
+          texts.push(event.text);
+          controller.abort();
+        },
+      },
+      controller.signal,
+    );
+    expect(texts).toEqual(["one"]);
+    expect(result.ok && result.text).toBe("one");
+    expect(result.ok && result.stopped).toBe(true);
+  });
+
   it("keeps the partial text when the body stream errors", async () => {
     const fetchImpl = (async () => {
       const body = new ReadableStream<Uint8Array>({
