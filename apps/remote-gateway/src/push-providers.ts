@@ -120,6 +120,27 @@ function errorText(body: string): Record<string, unknown> {
  * armed per request so a provider that accepts the connection and then goes
  * silent ends the attempt instead of stalling the caller.
  */
+/**
+ * The whole APNs request body, as a pure function.
+ *
+ * Extracted so the one property that matters is checkable without a socket: the
+ * visible text is two *keys* (ADR 0331 decision 7), the ids ride beside them, and
+ * nothing else is added. `thread-id` groups several events about one session on
+ * the lock screen (§17.6.2) and is derived from the `sessionId` already in the
+ * payload, so grouping costs no field in the contract.
+ */
+export function apnsBody(payload: RacpPushPayload): Record<string, unknown> {
+  return {
+    aps: {
+      alert: { "title-loc-key": payload.titleKey, "loc-key": payload.bodyKey },
+      sound: "default",
+      "mutable-content": 1,
+      "thread-id": payload.sessionId,
+    },
+    ...payload,
+  };
+}
+
 export class ApnsClient {
   private cachedJwt: { value: string; issuedAt: number } | null = null;
   private session: ClientHttp2Session | null = null;
@@ -155,14 +176,7 @@ export class ApnsClient {
     // strings files: the Gateway never sends a sentence, let alone content
     // (ADR 0331 decision 7). The ids ride beside it so a tap opens the right
     // screen.
-    const body = JSON.stringify({
-      aps: {
-        alert: { "title-loc-key": payload.titleKey, "loc-key": payload.bodyKey },
-        sound: "default",
-        "mutable-content": 1,
-      },
-      ...payload,
-    });
+    const body = JSON.stringify(apnsBody(payload));
     try {
       const session = this.connectedSession();
       this.inFlight += 1;
@@ -417,6 +431,8 @@ export class FcmClient {
           notification: {
             title_loc_key: androidResourceKey(payload.titleKey),
             body_loc_key: androidResourceKey(payload.bodyKey),
+            // The Android equivalent of `thread-id`: one group per session.
+            tag: payload.sessionId,
           },
         },
       },

@@ -10,14 +10,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { PushConfigError, resolvePushConfig } from "./push-config.js";
-import {
-  ApnsClient,
-  FcmClient,
-  apnsProviderJwt,
-  classifyApns,
-  classifyFcm,
-  fcmAssertionJwt,
-} from "./push-providers.js";
+import { ApnsClient, FcmClient, apnsProviderJwt, classifyApns, classifyFcm, fcmAssertionJwt, apnsBody } from "./push-providers.js";
 
 /**
  * The push providers and their operator configuration (protocol §11.6, R5
@@ -406,6 +399,9 @@ describe("provider transport", () => {
       notification: {
         title_loc_key: "push_notify_turn_completed_title",
         body_loc_key: "push_notify_turn_completed_body",
+        // One group per session, derived from the id the payload already carries
+        // (§17.6.2), so grouping adds no field to the contract.
+        tag: payload().sessionId,
       },
     });
     expect(Object.keys(message).sort()).toEqual(["android", "data", "token"]);
@@ -499,5 +495,41 @@ describe("APNs session sharing", () => {
     // A second push opens a fresh session rather than reusing a dead one.
     expect(await client.send("two", payload())).toEqual({ ok: false, reason: "transient", status: 0 });
     client.close();
+  });
+});
+
+describe("the APNs body", () => {
+  const payload = {
+    kind: "approval.requested" as const,
+    titleKey: "push.notify.approval.requested.title",
+    bodyKey: "push.notify.approval.requested.body",
+    hostId: "host_a",
+    sessionId: "session_1",
+    approvalId: "ap_1",
+    notifyId: "ntf_1",
+  };
+
+  it("carries keys and ids, groups by session, and adds nothing of its own", () => {
+    const body = apnsBody(payload);
+    expect(body).toEqual({
+      aps: {
+        alert: { "title-loc-key": payload.titleKey, "loc-key": payload.bodyKey },
+        sound: "default",
+        "mutable-content": 1,
+        "thread-id": "session_1",
+      },
+      ...payload,
+    });
+    // The contract in one assertion: no prompt, no tool, no title, no sentence.
+    expect(Object.keys(body).sort()).toEqual(["approvalId", "aps", "bodyKey", "hostId", "kind", "notifyId", "sessionId", "titleKey"]);
+  });
+
+  it("groups two events about one session together, and two sessions apart", () => {
+    const first = apnsBody(payload);
+    const second = apnsBody({ ...payload, notifyId: "ntf_2", kind: "turn.completed" });
+    const other = apnsBody({ ...payload, sessionId: "session_2" });
+    const threadOf = (body: Record<string, unknown>) => (body["aps"] as { "thread-id": string })["thread-id"];
+    expect(threadOf(first)).toBe(threadOf(second));
+    expect(threadOf(first)).not.toBe(threadOf(other));
   });
 });
