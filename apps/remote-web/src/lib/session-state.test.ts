@@ -16,11 +16,10 @@ describe("sessionStateOf", () => {
     expect(sessionStateOf({ status: "running", planningState: "awaiting_approval" })).toBe("approval");
   });
 
-  it("reads an answer learned from a push, because the session itself stays running", () => {
+  it("reads waiting_input directly from the Host status, and keeps the push flag for older Hosts", () => {
+    expect(sessionStateOf({ status: "waiting_input" })).toBe("input");
     const local = { inputPendingAt: "2026-10-21T09:59:00.000Z" };
     expect(sessionStateOf({ status: "running" }, local)).toBe("input");
-    // Without the push the same session is indistinguishable from a busy one: that
-    // is the documented limit of §17.4.1, not a bug.
     expect(sessionStateOf({ status: "running" })).toBe("running");
   });
 
