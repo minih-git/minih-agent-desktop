@@ -13,7 +13,12 @@
  */
 import { Capacitor } from "@capacitor/core";
 
-import type { AppStateSource } from "./app-state.js";
+import { watchAppState, watchVisibility, type AppStateSource } from "./app-state.js";
+import { createDirectChatHistory, type DirectChatHistory } from "./direct-chat/history.js";
+import type { DirectChatStore } from "./direct-chat/history-store.js";
+import { createIndexedDbDirectChatStore } from "./direct-chat/indexeddb-store.js";
+import { createMemoryDirectChatStore } from "./direct-chat/memory-store.js";
+import { createDirectChatRunner, type DirectChatRunner } from "./direct-chat/runner.js";
 import { createControlClient } from "./direct-chat/control.js";
 import { capacitorHttpTransport } from "./direct-chat/native-transport.js";
 import { createDirectChatSecret, createUnavailableSecretStore } from "./direct-chat/secret.js";
@@ -31,6 +36,7 @@ import {
   createMemoryStorage,
   type RegistryStorage,
 } from "./host-registry.js";
+import { readConnection } from "./direct-chat/connection.js";
 import { resolveModelGatewayOrigin } from "./model-gateway-origin.js";
 import { NativeCredentialPort, type NativePairClient } from "./native-credential-port.js";
 import { dispatchBack } from "./navigation.js";
@@ -213,6 +219,107 @@ export function secureStore(): SecureStore {
  * platform store are the real ones; only a test replaces them.
  */
 let directChat: DirectChatService | null = null;
+
+/**
+ * The history and the reply runner, built on first use.
+ *
+ * Both are app-runtime singletons for the same reason the connection is: the
+ * screens are views over them, and a reply must keep running when the screen
+ * that started it is gone. The store is IndexedDB when the WebView has one and
+ * an in-memory store otherwise, so a blocked database costs durability for the
+ * session instead of failing to start.
+ */
+let historyInstance: DirectChatHistory | null = null;
+let runnerInstance: DirectChatRunner | null = null;
+/** One connection for both: the runner writes what the screens read. */
+let storeInstance: DirectChatStore | null = null;
+/** Set when the last screen changed something, so the views can re-read. */
+const directChatListeners = new Set<() => void>();
+
+export function directChatStore(): DirectChatStore {
+  storeInstance ??= createIndexedDbDirectChatStore({
+    onError: (error) => console.warn("[remote-web] direct chat history is unavailable", error.message),
+  });
+  return storeInstance;
+}
+
+export function directChatHistory(): DirectChatHistory {
+  historyInstance ??= createDirectChatHistory(directChatStore());
+  return historyInstance;
+}
+
+export function directChatRunner(): DirectChatRunner {
+  runnerInstance ??= createDirectChatRunner({
+    store: directChatStore(),
+    history: directChatHistory(),
+    origin: modelGatewayOrigin,
+    onChange: () => {
+      for (const listener of directChatListeners) listener();
+    },
+  });
+  return runnerInstance;
+}
+
+/**
+ * Subscribe to "something about direct chat changed".
+ *
+ * `null` when this build has no model gateway, so a caller does not have to ask
+ * twice whether direct chat exists.
+ */
+export function subscribeDirectChat(listener: () => void): (() => void) | null {
+  if (modelGatewayOrigin === null) return null;
+  directChatListeners.add(listener);
+  return () => {
+    directChatListeners.delete(listener);
+  };
+}
+
+/**
+ * Make an in-memory history the one the app uses.
+ *
+ * Only tests call this; a real build always opens IndexedDB.
+ */
+export function useMemoryDirectChatHistory(): void {
+  storeInstance = createMemoryDirectChatStore();
+  historyInstance = createDirectChatHistory(storeInstance);
+  runnerInstance = null;
+}
+
+/** The scope the current connection writes into, or null when unlinked. */
+export function directChatScope(): { gatewayRoot: string; accessKeyId: string } | null {
+  if (!modelGatewayOrigin) return null;
+  const connection = readConnection(browserStorage());
+  if (!connection) return null;
+  return { gatewayRoot: connection.gatewayRoot, accessKeyId: connection.accessKeyId };
+}
+
+/**
+ * Start the direct-chat runtime: mark replies that a previous process left live
+ * as interrupted, then keep doing that whenever the app leaves the foreground.
+ *
+ * Both signals are subscribed, because `visibilitychange` is unreliable in some
+ * WebViews and `appStateChange` does not fire in a browser. Returning a cleanup
+ * function keeps this testable and keeps the listeners owned.
+ */
+export async function startDirectChatRuntime(): Promise<() => void> {
+  if (!nativePlatform) return () => {};
+  const runner = directChatRunner();
+  // A reply whose process died is interrupted, never completed: a false finish
+  // is worse than an honest one.
+  try {
+    await directChatHistory().interruptLive(new Date().toISOString());
+  } catch (error) {
+    console.warn("[remote-web] direct chat history could not be opened", error);
+  }
+  const onHidden = () => void runner.interrupt("backgrounded");
+  const stopVisibility = watchVisibility({ onHidden, onVisible: () => {} });
+  const stopAppState = appState ? watchAppState({ onHidden, onVisible: () => {} }, appState) : () => {};
+  return () => {
+    stopVisibility();
+    stopAppState();
+    runner.dispose();
+  };
+}
 
 export function directChatService(): DirectChatService {
   directChat ??= createDirectChatService({
