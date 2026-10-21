@@ -125,9 +125,11 @@ function errorText(body: string): Record<string, unknown> {
  *
  * Extracted so the one property that matters is checkable without a socket: the
  * visible text is two *keys* (ADR 0331 decision 7), the ids ride beside them, and
- * the only other thing added is the badge — the count of decisions the Host says
- * are still open (§17.6.2), omitted rather than guessed when the Host did not
- * count.
+ * the only other things added are the badge — the count of decisions the Host
+ * says are still open (§17.6.2), omitted rather than guessed when the Host did
+ * not count — and `thread-id`, which groups several events about one session on
+ * the lock screen from the `sessionId` the payload already carries, so grouping
+ * costs no field in the contract.
  */
 export function apnsBody(payload: RacpPushPayload): Record<string, unknown> {
   return {
@@ -136,6 +138,7 @@ export function apnsBody(payload: RacpPushPayload): Record<string, unknown> {
       sound: "default",
       "mutable-content": 1,
       ...(payload.attentionCount === undefined ? {} : { badge: payload.attentionCount }),
+      "thread-id": payload.sessionId,
     },
     ...payload,
   };

@@ -27,7 +27,7 @@
  * - **Cleanup.** Only a provider answer that means "this token is gone" deletes
  *   a registration; a revocation deletes it as well.
  */
-import type { RacpHostNotify, RacpPushPayload } from "@minih-agent/shared";
+import type { RacpHostNotify, RacpNotifyKind, RacpPushPayload } from "@minih-agent/shared";
 import { RACP_HOST_CAPABILITIES, pushKeysForKind } from "@minih-agent/shared";
 
 import type { GatewayLog } from "./router.js";
@@ -86,6 +86,12 @@ export type PushNotificationOutcome =
   | { status: "ignored"; reason: "capability" | "audience" | "duplicate" | "rate-limited" }
   /** Delivered (or accepted by the provider) to this many registrations. */
   | { status: "sent"; delivered: number };
+
+/**
+ * The two kinds that require the user (§17.6.5). A registration that asked for
+ * "only things that need me" still receives these, and no others.
+ */
+export const PUSH_ACTIONABLE_KINDS: readonly RacpNotifyKind[] = ["approval.requested", "input.requested"];
 
 /**
  * The one payload a push may carry. Built here, from ids only, so every caller
@@ -214,6 +220,17 @@ export class PushService {
     // so the budget is spent once per device rather than once per attempt.
     const targets: GatewayPushRegistrationRecord[] = [];
     for (const registration of audience) {
+      // The device's own preference (§17.6.5): "only things that need me" drops the
+      // two outcome kinds. Filtered here rather than on the phone because a
+      // delivered notification cannot be recalled, and counted as a skip rather
+      // than a failure: this device simply did not want this one.
+      if (registration.onlyActionable === true && !PUSH_ACTIONABLE_KINDS.includes(notify.kind)) {
+        this.options.log("info", "gateway skipped a notification: this device asked for actionable only", {
+          deviceId: registration.deviceId,
+          kind: notify.kind,
+        });
+        continue;
+      }
       if (!this.allowed(`device:${registration.deviceId}`, this.deviceBuckets, deviceLimit, now)) {
         this.options.log("warn", "gateway dropped a notification for one device: it is over its push budget", {
           deviceId: registration.deviceId,

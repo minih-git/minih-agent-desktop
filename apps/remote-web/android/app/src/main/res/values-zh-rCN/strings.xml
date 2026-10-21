@@ -2,12 +2,12 @@
 <resources>
     <string name="app_name">Minih Remote</string>
     <string name="title_activity_main">Minih Remote</string>
-    <string name="push_notify_approval_requested_title">需要你处理</string>
-    <string name="push_notify_approval_requested_body">有会话在等待你批准一项操作。</string>
-    <string name="push_notify_input_requested_title">需要你处理</string>
+    <string name="push_notify_approval_requested_title">等你批准</string>
+    <string name="push_notify_approval_requested_body">有会话在等你批准一项操作。</string>
+    <string name="push_notify_input_requested_title">等你回答</string>
     <string name="push_notify_input_requested_body">有会话在等待你的回答。</string>
-    <string name="push_notify_turn_completed_title">回合已完成</string>
-    <string name="push_notify_turn_completed_body">有会话的回合已完成。</string>
-    <string name="push_notify_turn_failed_title">回合失败</string>
-    <string name="push_notify_turn_failed_body">有会话的回合失败了。</string>
+    <string name="push_notify_turn_completed_title">已完成</string>
+    <string name="push_notify_turn_completed_body">有会话运行完成了。</string>
+    <string name="push_notify_turn_failed_title">运行失败</string>
+    <string name="push_notify_turn_failed_body">有会话运行失败了。</string>
 </resources>

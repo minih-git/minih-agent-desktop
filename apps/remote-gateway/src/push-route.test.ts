@@ -81,10 +81,31 @@ describe("push registration route", () => {
     const answer = await register(paired.token!, { platform: "ios", token: "apns-token-1" });
 
     expect(answer.status).toBe(200);
-    expect(answer.payload["result"]).toEqual({ enabled: true, platform: "ios", hostIds: [host.hostId] });
+    expect(answer.payload["result"]).toEqual({
+      enabled: true,
+      platform: "ios",
+      hostIds: [host.hostId],
+      preferences: { onlyActionable: false },
+    });
     const stored = gateway.gateway.store.findPushRegistration(paired.deviceId);
     expect(stored).toMatchObject({ hostId: host.hostId, hostIds: [host.hostId], platform: "ios", token: "apns-token-1" });
     expect(stored?.accountId).toBeUndefined();
+  });
+
+  it("stores and echoes 'only things that need me', and keeps it when a re-registration omits it", async () => {
+    const paired = await pairDevice(gateway, host, { client: "ios" });
+    const answer = await register(paired.token!, { platform: "ios", token: "apns-token-1", onlyActionable: true });
+    expect(answer.payload["result"]).toMatchObject({ preferences: { onlyActionable: true } });
+    expect(gateway.gateway.store.findPushRegistration(paired.deviceId)).toMatchObject({ onlyActionable: true });
+
+    // A re-registration without the field is not a request to change it.
+    const again = await register(paired.token!, { platform: "ios", token: "apns-token-2" });
+    expect(again.payload["result"]).toMatchObject({ preferences: { onlyActionable: true } });
+    expect(gateway.gateway.store.findPushRegistration(paired.deviceId)).toMatchObject({ onlyActionable: true });
+
+    // Turning it off is explicit.
+    const off = await register(paired.token!, { platform: "ios", token: "apns-token-3", onlyActionable: false });
+    expect(off.payload["result"]).toMatchObject({ preferences: { onlyActionable: false } });
   });
 
   it("never echoes the provider token back", async () => {

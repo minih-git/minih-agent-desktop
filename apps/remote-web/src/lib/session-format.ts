@@ -33,6 +33,22 @@ export function formatRelativeTime(
   return date.toLocaleDateString();
 }
 
+
+/**
+ * The relative time a row shows, with the two words `formatRelativeTime` returns
+ * as keys translated by the caller. Two screens show this line (§17.2's project
+ * card and §17.4's session row), so it lives here rather than in both.
+ */
+export function relativeTimeText(
+  timestamp: number | string | Date,
+  labels: { justNow: string; yesterday: string },
+  nowTimestamp: number = Date.now(),
+): string {
+  const raw = formatRelativeTime(timestamp, nowTimestamp);
+  if (raw === "justNow") return labels.justNow;
+  if (raw === "yesterday") return labels.yesterday;
+  return raw;
+}
 export type SessionDateGroup<T> = {
   key: "today" | "yesterday" | "pastWeek" | "earlier";
   labelKey: string;

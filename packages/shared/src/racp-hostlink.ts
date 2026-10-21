@@ -732,6 +732,17 @@ export const RacpPushRegistrationRequestSchema = Type.Object({
   token: Type.String({ minLength: 1, maxLength: 4096 }),
   /** Optional app/bundle id, so one deployment can serve more than one build. */
   appId: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
+  /**
+   * "Only tell me about things that need me" (§17.6.5).
+   *
+   * Additive and optional: absent means today's behaviour, every kind is sent, and
+   * a Gateway that predates the field ignores it. The Gateway cannot filter this
+   * on the phone's behalf any other way — once a notification is delivered, the app
+   * cannot recall it — so the preference lives where the audience is decided. The
+   * answer echoes it (`preferences`), because a client that cannot see the echo
+   * would be showing a switch that does nothing.
+   */
+  onlyActionable: Type.Optional(Type.Boolean()),
 });
 export type RacpPushRegistrationRequest = Static<typeof RacpPushRegistrationRequestSchema>;
 
@@ -746,6 +757,16 @@ export const RacpPushRegistrationResponseSchema = Type.Object({
   enabled: Type.Boolean(),
   platform: Type.Union([Type.Literal("ios"), Type.Literal("android")]),
   hostIds: Type.Array(Type.String({ minLength: 1 })),
+  /**
+   * The preferences this Gateway actually stored (§17.6.5). Absent means the
+   * Gateway ignored the request's field — it predates it — and the client must not
+   * offer a switch it cannot honour.
+   */
+  preferences: Type.Optional(
+    Type.Object({
+      onlyActionable: Type.Boolean(),
+    }),
+  ),
 });
 export type RacpPushRegistrationResponse = Static<typeof RacpPushRegistrationResponseSchema>;
 

@@ -391,11 +391,10 @@ describe("provider transport", () => {
       globalThis.fetch = originalFetch;
     }
     const message = (sent as { message: Record<string, unknown> }).message;
-    // `notification` only takes title/body/image; the location keys belong to
-    // `android.notification`, and Android resource names have no dots.
+    // Data-only on purpose (§17.6.6): with no `notification` block the system never
+    // renders the message, so the app is called in both states and draws the
+    // notification itself. Every data value is a string, which HTTP v1 requires.
     expect(message["notification"]).toBeUndefined();
-    // Data-only: no `notification` block, so the system does not render it and the
-    // app is called in both states (spec §17.6.6). Every value is a string.
     expect(message["android"]).toEqual({ priority: "high" });
     expect((message as { data: Record<string, string> }).data["titleKey"]).toBe("push.notify.turn.completed.title");
     expect(Object.keys(message).sort()).toEqual(["android", "data", "token"]);
@@ -492,15 +491,40 @@ describe("APNs session sharing", () => {
   });
 });
 
-describe("the badge", () => {
+describe("the APNs body", () => {
   const payload = {
     kind: "approval.requested" as const,
     titleKey: "push.notify.approval.requested.title",
     bodyKey: "push.notify.approval.requested.body",
     hostId: "host_a",
     sessionId: "session_1",
+    approvalId: "ap_1",
     notifyId: "ntf_1",
   };
+
+  it("carries keys and ids, groups by session, and adds nothing of its own", () => {
+    const body = apnsBody(payload);
+    expect(body).toEqual({
+      aps: {
+        alert: { "title-loc-key": payload.titleKey, "loc-key": payload.bodyKey },
+        sound: "default",
+        "mutable-content": 1,
+        "thread-id": "session_1",
+      },
+      ...payload,
+    });
+    // The contract in one assertion: no prompt, no tool, no title, no sentence.
+    expect(Object.keys(body).sort()).toEqual(["approvalId", "aps", "bodyKey", "hostId", "kind", "notifyId", "sessionId", "titleKey"]);
+  });
+
+  it("groups two events about one session together, and two sessions apart", () => {
+    const first = apnsBody(payload);
+    const second = apnsBody({ ...payload, notifyId: "ntf_2", kind: "turn.completed" });
+    const other = apnsBody({ ...payload, sessionId: "session_2" });
+    const threadOf = (body: Record<string, unknown>) => (body["aps"] as { "thread-id": string })["thread-id"];
+    expect(threadOf(first)).toBe(threadOf(second));
+    expect(threadOf(first)).not.toBe(threadOf(other));
+  });
 
   it("carries the count the Host reported, and no badge when it did not count", () => {
     const counted = apnsBody({ ...payload, attentionCount: 3 }) as { aps: { badge?: number } };

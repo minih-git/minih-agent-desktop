@@ -33,6 +33,12 @@ export type NewSessionSheetProps = {
   modelsFailure?: string | null;
   /** A project to preselect, e.g. a folder the user just registered. */
   initialProjectId?: string | null;
+  /**
+   * The project cannot be changed here. Used by S5b, where the user is standing
+   * in a project and starting a session elsewhere would be a surprise (§17.2):
+   * the row then reads as a value, not as a chooser.
+   */
+  projectLocked?: boolean;
   creating: boolean;
   failure?: string | null;
   onCancel: () => void;
@@ -49,6 +55,7 @@ export function NewSessionSheet({
   models,
   modelsFailure,
   initialProjectId,
+  projectLocked = false,
   creating,
   failure,
   onCancel,
@@ -203,8 +210,11 @@ export function NewSessionSheet({
 
       {picking === null ? (
         <>
-          {row(t("sessions.new.project"), selectedProject?.label ?? t("sessions.noProjects"), () =>
-            usable.length > 0 ? setPicking("project") : onAddProject(),
+          {row(
+            t("sessions.new.project"),
+            selectedProject?.label ?? t("sessions.noProjects"),
+            () => (usable.length > 0 ? setPicking("project") : onAddProject()),
+            projectLocked,
           )}
           {row(t("sessions.new.model"), modelValue, () => setPicking("model"))}
           {row(t("sessions.new.mode"), t(`mode.${mode}.title`), () => setPicking("mode"))}

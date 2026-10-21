@@ -767,6 +767,9 @@ export class ClientHttpServer {
       });
       const now = new Date(this.options.now ? this.options.now() : Date.now()).toISOString();
       const existing = this.options.store.findPushRegistration(auth.deviceId);
+      // A registration that omits the field keeps the device's previous
+      // preference: a re-registration is not a request to change it.
+      const onlyActionable = registration.onlyActionable ?? existing?.onlyActionable;
       const saved = await this.options.store.savePushRegistration({
         deviceId: auth.deviceId,
         ...(audience.accountId ? { accountId: audience.accountId } : {}),
@@ -775,6 +778,7 @@ export class ClientHttpServer {
         platform: registration.platform,
         token: registration.token,
         ...(registration.appId ? { appId: registration.appId } : {}),
+        ...(onlyActionable === undefined ? {} : { onlyActionable }),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       });
@@ -793,6 +797,9 @@ export class ClientHttpServer {
         enabled: true,
         platform: registration.platform,
         hostIds: audience.hostIds,
+        // Echoed so a client can tell "this Gateway understood" from "it ignored
+        // the field", and hide the switch in the second case (§17.6.5).
+        preferences: { onlyActionable: onlyActionable === true },
       };
       sendJson(response, 200, { result: answer }, this.accountHeaders(cors));
     } catch (error) {
