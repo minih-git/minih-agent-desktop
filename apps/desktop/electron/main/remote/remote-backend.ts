@@ -238,7 +238,9 @@ export function createRemoteBackend(options: RemoteBackendOptions): RemoteBacken
         });
         const status: AgentStatus = {
           sessionId: remoteSessionId,
-          isRunning: session.status === "running",
+          // A session waiting for an answer is still busy: the agent holds the turn
+          // open until the question is answered (§17.4.1).
+          isRunning: session.status === "running" || session.status === "waiting_input",
           ...(session.activeTurnId ? { currentTurnId: session.activeTurnId } : {}),
           pendingToolConfirmations: session.status === "waiting_permission" ? 1 : 0,
           planningState: session.planningState,

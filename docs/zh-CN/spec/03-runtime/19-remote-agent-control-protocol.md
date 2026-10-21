@@ -647,7 +647,7 @@ Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主
   `push.notify`。没有通知器的 Host 什么都不声明，Gateway 也就不期待它发 `host.notify`。
 - **事件帧**：`host.notify` 精确携带
   `{ link, type: "host.notify", notify: { notifyId, kind, sessionId, approvalId?,
-  occurredAt } }`，其中 `notifyId` 是 Host 对该事件的自身标识（上限 128 字符，使一次重试
+  attentionCount?, occurredAt } }`，其中 `notifyId` 是 Host 对该事件的自身标识（上限 128 字符，使一次重试
   仍只对应一条推送），`kind` 为 `approval.requested`、`input.requested`、
   `turn.completed`、`turn.failed` 之一。该对象是封闭的：提示词、工具名、路径、记录、会话
   标题都加不进去，携带它们的帧会被丢弃而不是投递。所有 id 还额外限定于
@@ -673,11 +673,13 @@ Gateway 账户目录——key 校验、按 key 注册、账户登录、账户主
   Gateway 没有服务商的平台注册会得到 `CAPABILITY_UNAVAILABLE`（501）——保存一个永远投递
   不出去的令牌是一种静默失败。
 - **载荷**：推送只包含 `{ kind, titleKey, bodyKey, hostId, sessionId, approvalId?,
-  notifyId }`，别的一概没有。`titleKey` 与 `bodyKey` 恒为
+  attentionCount?, notifyId }`，别的一概没有。`titleKey` 与 `bodyKey` 恒为
   `push.notify.<kind>.title` 和 `push.notify.<kind>.body`，由客户端从自己的词条解析——
   Gateway 从不发送句子。APNs 收到的是 `aps.alert.title-loc-key` / `loc-key`，FCM 收到
   `android.notification.title_loc_key` / `body_loc_key`，同一组 id 也在 `data` 里，因此
-  可见文字是应用自己的、用用户的语言，而 id 会随通知到达以驱动点击跳转。HTTP v1 的
+  可见文字是应用自己的、用用户的语言，而 id 会随通知到达以驱动点击跳转。`attentionCount` 是宿主说
+  该会话在这一刻还有多少件事等用户决定；Gateway 把它抄进 `aps.badge` 与 Android 的
+  `notification_count`，宿主没计数时就不带角标，而不是自己编一个数字。HTTP v1 的
   `message.notification` 只有 `title`、`body`、`image` 三个字段，所以定位键属于 Android
   块；放在别处会让每一台设备都收到 `400 INVALID_ARGUMENT`。这些键的值是 Android 资源名
   （`push_notify_<kind>_title`），因为资源名不允许含点号。

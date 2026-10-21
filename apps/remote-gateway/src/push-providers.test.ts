@@ -10,14 +10,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { PushConfigError, resolvePushConfig } from "./push-config.js";
-import {
-  ApnsClient,
-  FcmClient,
-  apnsProviderJwt,
-  classifyApns,
-  classifyFcm,
-  fcmAssertionJwt,
-} from "./push-providers.js";
+import { ApnsClient, FcmClient, apnsProviderJwt, classifyApns, classifyFcm, fcmAssertionJwt, apnsBody } from "./push-providers.js";
 
 /**
  * The push providers and their operator configuration (protocol §11.6, R5
@@ -499,5 +492,33 @@ describe("APNs session sharing", () => {
     // A second push opens a fresh session rather than reusing a dead one.
     expect(await client.send("two", payload())).toEqual({ ok: false, reason: "transient", status: 0 });
     client.close();
+  });
+});
+
+describe("the badge", () => {
+  const payload = {
+    kind: "approval.requested" as const,
+    titleKey: "push.notify.approval.requested.title",
+    bodyKey: "push.notify.approval.requested.body",
+    hostId: "host_a",
+    sessionId: "session_1",
+    notifyId: "ntf_1",
+  };
+
+  it("carries the count the Host reported, and no badge when it did not count", () => {
+    const counted = apnsBody({ ...payload, attentionCount: 3 }) as { aps: { badge?: number } };
+    expect(counted.aps.badge).toBe(3);
+
+    // No count, no badge: a number this Gateway invented would be wrong within
+    // minutes (§17.6.2).
+    const uncounted = apnsBody(payload) as { aps: Record<string, unknown> };
+    expect("badge" in uncounted.aps).toBe(false);
+  });
+
+  it("keeps the count out of the payload's text surface", () => {
+    // The closed payload may carry the number, and only the number.
+    const body = apnsBody({ ...payload, attentionCount: 2 }) as Record<string, unknown>;
+    expect(body["attentionCount"]).toBe(2);
+    expect(typeof body["attentionCount"]).toBe("number");
   });
 });

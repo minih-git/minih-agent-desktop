@@ -903,17 +903,15 @@ S4 我的电脑  >  S5 项目  >  S5b 某个项目的会话  >  S6 会话
 
 #### 17.4.1 数据表达不了的那一个状态
 
-`RacpSession.status` 是封闭集合：`idle`、`running`、`waiting_permission`、`aborted`、`error`
-（`packages/shared/src/racp.ts:55`）。工具授权会把会话置为 `waiting_permission`
-（`packages/agent-host/src/agent-host.ts:350`），而输入请求只把**回合**状态置为 `waiting_input`，
-会话仍是 `running`（`agent-host.ts:361`）。因此在 `session/list` 里，一条在等你回答的会话和一条正在忙的会话无法区分。
-设计因此做两件事，并说明哪一件是临时的：
+`RacpSession.status` 曾经是封闭集合：`idle`、`running`、`waiting_permission`、`aborted`、`error`，
+而输入请求只改**回合**状态，所以在 `session/list` 里一条在等你回答的会话和一条正在忙的会话无法区分。
+这一点已在源头修好：**宿主现在直接在会话上报告 `waiting_input`**（协议 §5.1），
+包括运行时仍认为 Agent 在跑的时候；问题全部答完后清除。列表因此不需要任何本地推断就能说“等你回答”。
+有两点值得写清：
 
-1. **现在**：收到 `input.requested` 推送时，在设备本地记下这条会话为“等你回答”，打开或回答后清除。
-   只要通知送到了就准确，同时坦白它的边界：把通知关掉的人看到的是“运行中”。
-2. **后续**（需要桌面端发版与契约补充）：给 `RacpSessionStatus` 加 `waiting_input`，或在 `queuedTurnIds`
-   旁边加一个 `pendingInput` 计数。宿主其实已经知道答案（`agent-host.ts:671` 为工作快照算出 `waiting-input`），
-   所以这是契约补充而不是新逻辑。本轮不排期。
+1. 本节早期版本描述的设备本地标记只保留作兜底：宿主版本较老时，由 `input.requested` 推送写入，打开会话时清除。
+2. `waiting_input` 与 `waiting_permission` 是两个值，不是同义词：一个在表单里回答，一个是允许/拒绝，
+   手机不能对两者打印同一个词。
 
 “已完成·没看过”不需要改协议：它是设备本地的 `lastViewedAt`，打开 S6 时写入，存在注册表条目旁边。
 它的边界要写进设计：这是按手机算的，重装应用后每条会话都算“看过”。

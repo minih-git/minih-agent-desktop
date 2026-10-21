@@ -215,6 +215,13 @@ export const RacpHostNotifySchema = Type.Object(
     sessionId: notifyId(),
     /** Present for the two request kinds; the answer the user is asked for. */
     approvalId: Type.Optional(notifyId()),
+    /**
+     * How many decisions this session still holds for the user, at the moment the
+     * Host reported the event (§17.6.2). The Gateway copies it into the push as the
+     * app badge, because only the Host knows what is still open — a number the
+     * Gateway invented would be wrong within minutes.
+     */
+    attentionCount: Type.Optional(Type.Integer({ minimum: 0, maximum: 10_000 })),
     /** RFC 3339, minted by the Host; never shown to anyone. */
     occurredAt: Type.String({ minLength: 1, maxLength: 64 }),
   },
@@ -764,6 +771,8 @@ export const RacpPushPayloadSchema = Type.Object(
     hostId: notifyId(),
     sessionId: notifyId(),
     approvalId: Type.Optional(notifyId()),
+    /** Copied from the Host's `host.notify`; becomes `aps.badge`. */
+    attentionCount: Type.Optional(Type.Integer({ minimum: 0, maximum: 10_000 })),
     notifyId: notifyId(),
   },
   { additionalProperties: false },

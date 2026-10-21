@@ -96,6 +96,8 @@ export type NotifyEvent = {
   kind: RacpNotifyKind;
   sessionId: string;
   approvalId?: string;
+  /** Decisions this session still holds for the user, including this event. */
+  attentionCount?: number;
   occurredAt: string;
 };
 
@@ -361,6 +363,11 @@ export class AgentHost {
       case "asktool_request": {
         const turn = turnId ? state.turns.get(turnId) : undefined;
         if (turn) turn.status = "waiting_input";
+        // The session reports the question too (§17.4.1): a phone reading
+        // `session/list` could not otherwise tell an agent waiting for an answer
+        // from one that is simply busy, and the list is the only screen most
+        // users look at.
+        state.status = "waiting_input";
         const request = this.inputFromAsktool(event.request, state, turn?.id ?? turnId ?? "", envelope);
         state.pendingInputs.set(request.id, { request, original: event.request });
         this.emit(state, "input.requested", request, meta2);
@@ -833,6 +840,11 @@ export class AgentHost {
     state.pendingInputs.delete(response.inputId);
     const turn = state.turns.get(entry.request.turnId);
     if (turn && turn.status === "waiting_input") turn.status = "running";
+    // One answered question among several leaves the session waiting: the status
+    // follows what is still open, not what was just closed.
+    if (state.status === "waiting_input" && state.pendingInputs.size === 0) {
+      state.status = state.activeTurnId ? "running" : "idle";
+    }
     this.emit(state, "input.resolved", { inputId: response.inputId, status: "resolved", by: principal.subject }, { turnId: entry.request.turnId });
     return { inputId: response.inputId, status: "resolved" };
   }
@@ -1006,8 +1018,13 @@ export class AgentHost {
    */
   private notifyEvent(event: { kind: RacpNotifyKind; sessionId: string; approvalId?: string }): void {
     if (!this.onNotifyEvent) return;
+    // How much still waits for the user in this session, right now, including the
+    // event being reported. The phone shows it as the app badge, and only the Host
+    // can count it (§17.6.2).
+    const state = this.states.get(event.sessionId);
+    const attentionCount = state ? this.approvals.list(event.sessionId).length + state.pendingInputs.size : 1;
     try {
-      this.onNotifyEvent({ ...event, occurredAt: new Date(this.clock.now()).toISOString() });
+      this.onNotifyEvent({ ...event, attentionCount, occurredAt: new Date(this.clock.now()).toISOString() });
     } catch {
       // Never let a notification hook fail a turn.
     }
@@ -1247,7 +1264,9 @@ export class AgentHost {
       turn.status = "running";
     }
     if (state.status === "waiting_permission" && this.approvals.list(state.id).length === 0) {
-      state.status = state.activeTurnId ? "running" : "idle";
+      // An open question still holds the session, so answering an approval cannot
+      // quietly resume it (§17.4: the two attention states are separate).
+      state.status = state.pendingInputs.size > 0 ? "waiting_input" : state.activeTurnId ? "running" : "idle";
     }
   }
 
@@ -1265,6 +1284,15 @@ export class AgentHost {
   }
 
   private applyStatus(state: SessionState, status: AgentStatus): void {
+    // A pending question outranks what the runtime reports (§17.4.1): the agent is
+    // still "running" while it waits for an answer, so without this the status
+    // written by `asktool_request` would be overwritten a moment later and the
+    // phone would never see it.
+    if (state.pendingInputs.size > 0) {
+      state.status = "waiting_input";
+      if (status.planningState) state.planningState = status.planningState;
+      return;
+    }
     if (status.isRunning) {
       state.status = status.pendingToolConfirmations > 0 ? "waiting_permission" : "running";
     } else if (state.status === "running" || state.status === "waiting_permission") {
