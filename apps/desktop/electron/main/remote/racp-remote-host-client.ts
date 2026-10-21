@@ -86,6 +86,11 @@ export type RacpRemoteHostClientOptions = {
   onStateChange?: (state: RacpClientState) => void;
   /** Optional structured log; defaults to a no-op. */
   log?: (level: "info" | "warn", message: string, data?: Record<string, unknown>) => void;
+  /**
+   * Emit the opt-in per-request/event `remote latency` records (P0
+   * measurement). Defaults to `MINIH_REMOTE_LATENCY_TRACE=1`.
+   */
+  latencyTrace?: boolean;
 };
 
 export type RacpRemoteHostClient = {
@@ -203,6 +208,7 @@ export function createRacpRemoteHostClient(
     ...(options.requestTimeoutMs !== undefined ? { requestTimeoutMs: options.requestTimeoutMs } : {}),
     ...(options.reconnect ? { reconnect: options.reconnect } : {}),
     ...(options.log ? { log: options.log } : {}),
+    latencyTrace: options.latencyTrace ?? process.env.MINIH_REMOTE_LATENCY_TRACE === "1",
   });
   const client: RemoteHostClient = {
     async request<T = unknown>(method: string, params?: unknown, timeoutMs?: number): Promise<T> {

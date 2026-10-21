@@ -380,7 +380,17 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
     }),
     ...(terminal ? { terminal } : {}),
   };
-  server = new RacpServer({ agentHost, operations, authenticator, hostId, serverVersion: APP_VERSION, log });
+  server = new RacpServer({
+    agentHost,
+    operations,
+    authenticator,
+    hostId,
+    serverVersion: APP_VERSION,
+    log,
+    // Opt-in P0 measurement; the logging spec forbids a per-request timing
+    // stream in a normal run, so this is off unless explicitly requested.
+    latencyTrace: process.env.MINIH_REMOTE_LATENCY_TRACE === "1",
+  });
   let binding: WsBinding;
   try {
     binding = await bindRacpWebSocket({ server, authenticator, host: config.host, port: config.port, log });

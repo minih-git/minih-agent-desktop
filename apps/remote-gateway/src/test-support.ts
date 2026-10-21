@@ -96,6 +96,10 @@ export async function enrollTestHost(
     enrollmentCode?: string;
     /** Transcript fixture the harness serves for `s1` (session/history paging). */
     history?: HarnessHistory;
+    /** Collect the Host's own log records, e.g. opt-in latency entries. */
+    log?: (level: "info" | "warn" | "error", message: string, data?: Record<string, unknown>) => void;
+    /** Enable the opt-in per-request latency records on the Host. */
+    latencyTrace?: boolean;
   } = {},
 ): Promise<TestHost> {
   const hostId = options.hostId ?? "host_test";
@@ -107,7 +111,11 @@ export async function enrollTestHost(
     hostId,
     ...(options.label ? { label: options.label } : {}),
   });
-  const h = await harness(options.history ? { history: options.history } : {});
+  const h = await harness({
+    ...(options.history ? { history: options.history } : {}),
+    ...(options.log ? { log: options.log } : {}),
+    ...(options.latencyTrace !== undefined ? { latencyTrace: options.latencyTrace } : {}),
+  });
   const handle = startHostLink({
     credentials,
     // The harness server identity must equal the enrolled host id.
@@ -242,6 +250,8 @@ export async function command(
     path?: string;
     /** Raw query string, for tests that deliberately send an invalid one. */
     query?: string;
+    /** Diagnostic trace id, forwarded as the client's `x-trace-id`. */
+    traceId?: string;
   },
 ): Promise<{ status: number; payload: { result?: unknown; error?: { data?: { code?: string } } } }> {
   const route = httpRouteFor(input.method, input.params);
@@ -249,7 +259,11 @@ export async function command(
   const query = input.query ?? queryFor(route.routeName, input.params);
   const response = await fetch(`${gateway.clientBaseUrl}/hosts/${input.hostId}${path}${query}`, {
     method: route.httpMethod,
-    headers: { "content-type": "application/json", authorization: `Bearer ${input.token}` },
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${input.token}`,
+      ...(input.traceId ? { "x-trace-id": input.traceId } : {}),
+    },
     ...(route.httpMethod === "POST"
       ? {
           body: JSON.stringify({

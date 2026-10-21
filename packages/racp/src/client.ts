@@ -22,6 +22,16 @@ import {
   type JsonRpcId,
 } from "./jsonrpc.js";
 
+/**
+ * A diagnostic trace id. `crypto.randomUUID` exists in browsers and Node, and
+ * this entry stays Node-free (the browser bundle check proves it).
+ */
+function newTraceId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === "function") return cryptoApi.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
 /** One client-side transport connection: the thing `ws` (or a test pair) provides. */
 export interface ClientTransport {
   send(frame: string): void;
@@ -53,6 +63,12 @@ export type RacpClientOptions = {
   /** Re-establish subscriptions after a reconnect. */
   onReconnected?: (client: RacpClient) => Promise<void> | void;
   log?: (level: "info" | "warn", message: string, data?: Record<string, unknown>) => void;
+  /**
+   * Emit opt-in per-request and per-event latency records (P0 measurement).
+   * Off by default: a normal run must not grow a per-request latency stream.
+   * Records carry the method name, a trace id, and durations only.
+   */
+  latencyTrace?: boolean;
   requestTimeoutMs?: number;
   reconnect?: { enabled: boolean; baseDelayMs?: number; maxDelayMs?: number; maxAttempts?: number };
   sleep?: (ms: number) => Promise<void>;
@@ -63,6 +79,8 @@ type Pending = {
   reject: (error: RacpError) => void;
   timer: ReturnType<typeof setTimeout>;
   method: string;
+  traceId: string;
+  startedAt: number;
 };
 
 /**
@@ -150,15 +168,19 @@ export class RacpClient {
   private send<T>(transport: ClientTransport, method: string, params: unknown, timeoutMs?: number): Promise<T> {
     this.counter += 1;
     const id = `c${this.counter}`;
+    const traceId = newTraceId();
+    const startedAt = Date.now();
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new RacpError("TIMEOUT", `${method} timed out`, { retriable: true }));
       }, timeoutMs ?? this.options.requestTimeoutMs ?? 15_000);
       timer.unref?.();
-      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer, method });
+      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer, method, traceId, startedAt });
       try {
-        transport.send(encodeFrame({ jsonrpc: "2.0", id, method, params }));
+        // The trace id is an optional JSON-RPC member (P0 latency measurement).
+        // A Host that predates it ignores the member; no operation schema sees it.
+        transport.send(encodeFrame({ jsonrpc: "2.0", id, method, params, traceId }));
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(id);
@@ -210,6 +232,7 @@ export class RacpClient {
       if (!pending) return;
       this.pending.delete(String(message.id));
       clearTimeout(pending.timer);
+      this.logLatency("client.request", pending.method, pending.traceId, Date.now() - pending.startedAt);
       if (message.error) pending.reject(errorFromObject(message.error));
       else pending.resolve(message.result);
       return;
@@ -222,12 +245,37 @@ export class RacpClient {
     if (message.method === RACP_EVENT_NOTIFICATION) {
       const envelope = message.params as RacpEventEnvelope;
       this.track(envelope);
+      this.logEventLatency(envelope);
       this.options.onEvent?.(envelope);
     } else if (message.method === RACP_SUBSCRIPTION_CLOSED_NOTIFICATION) {
       this.options.onSubscriptionClosed?.(message.params as SubscriptionClosedNotice);
     }
   }
 
+
+  /** One opt-in timing record; method name and durations only, never params. */
+  private logLatency(stage: "client.request", method: string, traceId: string, durationMs: number): void {
+    if (this.options.latencyTrace !== true) return;
+    this.options.log?.("info", "remote latency", { stage, method, traceId, durationMs });
+  }
+
+  /**
+   * Event-stream latency measured from the Host's own `occurredAt`, so it
+   * includes the Host-to-Gateway leg and any queueing on the way to this
+   * client. The envelope content is never logged.
+   */
+  private logEventLatency(envelope: RacpEventEnvelope): void {
+    if (this.options.latencyTrace !== true) return;
+    const occurredAt = Date.parse(envelope.occurredAt);
+    if (!Number.isFinite(occurredAt)) return;
+    this.options.log?.("info", "remote latency", {
+      stage: "client.event",
+      kind: envelope.kind,
+      scope: envelope.scope,
+      ...(envelope.sessionId ? { sessionId: envelope.sessionId } : {}),
+      deliveryMs: Math.max(0, Date.now() - occurredAt),
+    });
+  }
   private track(envelope: RacpEventEnvelope): void {
     if (!isDurableEventKind(envelope.kind) || typeof envelope.sequence !== "number") return;
     const cursor = { epoch: envelope.epoch, sequence: envelope.sequence };

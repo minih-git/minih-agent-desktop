@@ -59,6 +59,19 @@ const CREDENTIAL_QUERY = /(token|credential|secret|password|api[-_]?key|authoriz
 const JSON_RPC_APPLICATION_ERROR = -32000;
 /** Query-string values that are a signed decimal integer, not `20.5` or `1e3`. */
 const INTEGER_QUERY = /^-?\d+$/;
+/** A client-supplied diagnostic trace id: bounded and log-safe. */
+const TRACE_ID_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
+
+/**
+ * Use the caller's `x-trace-id` when it is well formed, so one request can be
+ * followed across the client, this Gateway, and the Host. An untrusted value is
+ * never echoed: it is replaced, not sanitized.
+ */
+function requestTraceId(request: IncomingMessage): string {
+  const header = request.headers["x-trace-id"];
+  const value = Array.isArray(header) ? header[0] : header;
+  return value && TRACE_ID_PATTERN.test(value) ? value : randomUUID();
+}
 
 type HostRoute = {
   routeName: RacpHttpRouteName;
@@ -310,6 +323,8 @@ export type ClientHttpServerOptions = {
   /** Resolved client address (ADR decision 10); defaults to the TCP peer. */
   resolveClientIp?: (request: IncomingMessage) => string;
   now?: () => number;
+  /** Emit opt-in per-command segment timings (P0 measurement). */
+  latencyTrace?: boolean;
 };
 
 export class ClientHttpServer {
@@ -519,7 +534,8 @@ export class ClientHttpServer {
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const traceId = randomUUID();
+    const receivedAt = Date.now();
+    const traceId = requestTraceId(request);
     response.setHeader("x-trace-id", traceId);
     const rawUrl = request.url ?? "/";
     const url = new URL(rawUrl, "http://gateway.local");
@@ -642,6 +658,8 @@ export class ClientHttpServer {
           lastEventId: Array.isArray(lastEventId) ? (lastEventId[0] ?? null) : (lastEventId ?? null),
           log: this.options.log,
           corsHeaders: cors,
+          traceId,
+          ...(this.options.latencyTrace === true ? { latencyTrace: true } : {}),
         });
         return;
       }
@@ -682,6 +700,8 @@ export class ClientHttpServer {
         method: route.operation,
         params: forwarded,
         ...(typeof idempotencyKey === "string" ? { idempotencyKey } : {}),
+        traceId,
+        receivedAt,
       });
       await this.audit(route.operation, ip, "ok", { hostId, deviceId: auth.deviceId });
       sendJson(response, outcome.status, outcome.payload, cors);

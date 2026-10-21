@@ -192,3 +192,32 @@ MVP 不包含远程遥测管道或云崩溃分析。
 5. 当 stdout 是断开的管道时，日志或控制台镜像绝不能让主进程崩溃。
 6. 主机重启、权限失败、shell 超时和进程中止仍可通过稳定的生命周期记录和
    错误码诊断。
+
+## 7b. 可选开启的远程链路耗时记录（P0 测量）
+
+远程链路耗时靠测量而不是感觉。测量默认关闭：只有桌面、Gateway 或 `agent-host-cli`
+的环境变量里有 `MINIH_REMOTE_LATENCY_TRACE=1` 时，进程才会为每条远程命令和每个转发
+事件写一条 `remote latency` 的 `info` 记录；没有该变量时什么都不写，因此第 5 节的
+「正常运行不产生逐请求耗时记录」依然成立。
+
+记录只含阶段、方法名或事件类型、trace id 与耗时，绝不含参数、结果、路径、提示词或
+任何凭据：
+
+- `stage: "client.request"` —— 一次客户端请求及其应答（`method`、`traceId`、`durationMs`）。
+- `stage: "client.event"` —— 客户端收到的一个事件，从 Host 自己的 `occurredAt` 起算
+  （`kind`、`scope`、`sessionId`、`deliveryMs`）。
+- `stage: "gateway.command"` —— Gateway 在 Host link 两侧的两段耗时（`queueMs`：
+  收到 HTTP 到转发帧；`hostRoundTripMs`：转发到 Host 回包；`totalMs`）。
+- `stage: "gateway.event"` —— 转发给 SSE 客户端的一个事件，从 `occurredAt` 起算。
+- `stage: "host.execute"` —— Host 自身从收到到发出的耗时（`method`、`origin`、
+  `connectionId`、`durationMs`）。
+
+一个 `x-trace-id` 把三个进程串起来：客户端自带 trace id（`RacpClient` 每个请求生成一个，
+放在 JSON-RPC 可选成员 `traceId` 里，旧对端会忽略；HTTP 客户端放在 `x-trace-id` 头），
+Gateway 接受格式合法的调用方值或自行生成，在响应头回显，并在请求帧里转发给 Host；
+格式非法的调用方值会被替换、绝不回显。trace id 只是诊断标识，不是授权输入，缺失也不改变
+任何行为。
+
+`scripts/measure-remote-latency.mjs` 在本地拉起真实 Gateway、Router stub、两条传输各一个
+Host 和回环模型 stub，设置该变量并输出各工作负载的 p50/p95；它不连接生产 Gateway、
+真实 Router、付费模型，也不动用户正在运行的桌面。

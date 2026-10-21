@@ -167,7 +167,7 @@ export class LogicalConnection {
     return result;
   }
 
-  request<T = unknown>(method: string, params: unknown, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<T> {
+  request<T = unknown>(method: string, params: unknown, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, traceId?: string): Promise<T> {
     if (this.closed) return Promise.reject(new GatewayRpcError("AGENT_UNAVAILABLE", "the Host link is closed", true));
     this.counter += 1;
     const id = `gw_${this.counter}`;
@@ -179,7 +179,7 @@ export class LogicalConnection {
       timer.unref?.();
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
       try {
-        this.options.mux.message(this.id, encodeFrame({ jsonrpc: "2.0", id, method, params }));
+        this.options.mux.message(this.id, encodeFrame({ jsonrpc: "2.0", id, method, params, ...(traceId ? { traceId } : {}) }));
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(id);
@@ -389,6 +389,10 @@ export type CommandInput = {
   method: string;
   params: Record<string, unknown>;
   idempotencyKey?: string;
+  /** Diagnostic correlation id from the client request (P0 measurement). */
+  traceId?: string;
+  /** When the Gateway began handling the HTTP request, for the queue segment. */
+  receivedAt?: number;
 };
 
 export type CommandOutcome = { status: number; payload: unknown };
@@ -402,6 +406,8 @@ export class CommandRouter {
   constructor(
     private readonly pool: LogicalConnectionPool,
     private readonly log: GatewayLog,
+    /** Emit opt-in per-command segment timings (P0 measurement). */
+    private readonly latencyTrace = false,
   ) {}
 
   async run(input: CommandInput): Promise<CommandOutcome> {
@@ -416,17 +422,31 @@ export class CommandRouter {
     const idempotencyKey = this.idempotencyKeyFor(operation, params, input.idempotencyKey);
     const forwarded = idempotencyKey ? { ...params, idempotencyKey } : params;
     const connection = await this.pool.command(input.identity);
+    const forwardedAt = Date.now();
     const timeoutMs = operation === "turn/start" ? TURN_START_TIMEOUT_MS : DEFAULT_REQUEST_TIMEOUT_MS;
     const startedAt = Date.now();
-    const result = await connection.request(operation, forwarded, timeoutMs);
+    const result = await connection.request(operation, forwarded, timeoutMs, input.traceId);
+    const finishedAt = Date.now();
     // The duration is what makes "the phone is slow" measurable per operation:
     // a byte count says how much crossed the network, not how long the Host
     // took to answer.
     this.log("info", "gateway command completed", {
       method: operation,
       hostId: input.identity.hostId,
-      durationMs: Date.now() - startedAt,
+      durationMs: finishedAt - startedAt,
     });
+    if (this.latencyTrace) {
+      // Segments: HTTP accepted → frame forwarded, then forwarded → Host reply.
+      this.log("info", "remote latency", {
+        stage: "gateway.command",
+        method: operation,
+        hostId: input.identity.hostId,
+        ...(input.traceId ? { traceId: input.traceId } : {}),
+        queueMs: input.receivedAt === undefined ? 0 : Math.max(0, forwardedAt - input.receivedAt),
+        hostRoundTripMs: Math.max(0, finishedAt - forwardedAt),
+        totalMs: input.receivedAt === undefined ? Math.max(0, finishedAt - forwardedAt) : Math.max(0, finishedAt - input.receivedAt),
+      });
+    }
     return { status: 200, payload: { result } };
   }
 

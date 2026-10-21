@@ -99,6 +99,61 @@ describe("gateway client API", () => {
     }
   });
 
+  /**
+   * P0 measurement: one client-supplied `x-trace-id` reaches the Host, and the
+   * Gateway and the Host each record their own segment under it. The records
+   * carry method and durations only.
+   */
+  it("joins one trace across the Gateway and the Host when latency tracing is on", async () => {
+    const gatewayEntries: Array<{ message: string; data?: Record<string, unknown> }> = [];
+    const hostEntries: Array<{ message: string; data?: Record<string, unknown> }> = [];
+    const measured = await startTestGateway(
+      {},
+      {
+        latencyTrace: true,
+        log: (_level, message, data) => {
+          gatewayEntries.push({ message, ...(data ? { data } : {}) });
+        },
+      },
+    );
+    const measuredHost = await enrollTestHost(measured, {
+      latencyTrace: true,
+      log: (_level, message, data) => {
+        hostEntries.push({ message, ...(data ? { data } : {}) });
+      },
+    });
+    try {
+      const paired = await pairDevice(measured, measuredHost, { client: "ios", label: "phone" });
+      const traceId = "trace-fixture-0001";
+      const response = await fetch(`${measured.clientBaseUrl}/hosts/${measuredHost.hostId}/v1/sessions`, {
+        headers: { authorization: `Bearer ${paired.token ?? ""}`, "x-trace-id": traceId },
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-trace-id")).toBe(traceId);
+
+      const gatewayRecord = gatewayEntries.find(
+        (entry) => entry.message === "remote latency" && entry.data?.stage === "gateway.command",
+      );
+      expect(gatewayRecord?.data).toMatchObject({ method: "session/list", traceId });
+      expect(gatewayRecord?.data?.queueMs).toBeTypeOf("number");
+      expect(gatewayRecord?.data?.hostRoundTripMs).toBeTypeOf("number");
+      expect(gatewayRecord?.data?.totalMs).toBeTypeOf("number");
+
+      const hostRecord = hostEntries.find(
+        (entry) =>
+          entry.message === "remote latency" &&
+          entry.data?.stage === "host.execute" &&
+          entry.data?.method === "session/list",
+      );
+      expect(hostRecord?.data?.traceId).toBe(traceId);
+      expect(hostRecord?.data?.origin).toBe("gateway");
+      expect(hostRecord?.data).not.toHaveProperty("params");
+    } finally {
+      await measuredHost.stop();
+      await measured.close();
+    }
+  });
+
   it("forwards the project routes a phone uses to start a session somewhere new", async () => {
     // Rollout A2 added these two routes; the Gateway derives its host-scoped
     // routes from the shared table, so this proves the wiring and the query

@@ -58,6 +58,12 @@ export type RacpServerOptions = {
   now?: () => number;
   /** Deadline for `connection/initialize` after the socket opened (spec §12). */
   initializeTimeoutMs?: number;
+  /**
+   * Emit opt-in per-request execution latency records (P0 measurement). Off by
+   * default; a record carries the method, trace id, connection id, and duration
+   * only — never params or result content.
+   */
+  latencyTrace?: boolean;
 };
 
 type Subscription = { id: string; sessionId?: string };
@@ -321,16 +327,35 @@ export class RacpServer {
       if (isNotification(message) && message.method === RACP_INITIALIZED_NOTIFICATION) connection.initialized = true;
       return;
     }
-    const traceId = this.traceId();
+    const traceId =
+      typeof (message as { traceId?: unknown }).traceId === "string"
+        ? (message as { traceId: string }).traceId
+        : this.traceId();
+    const startedAt = Date.now();
     try {
       const result = await this.dispatch(connection, message.method, message.params, traceId);
       connection.send({ jsonrpc: "2.0", id: message.id, result });
+      this.logLatency(connection, message.method, traceId, Date.now() - startedAt);
     } catch (error) {
       if (!(error instanceof RacpError)) {
         this.options.log("error", "racp operation failed", { method: message.method, traceId, error: String(error) });
       }
       connection.send({ jsonrpc: "2.0", id: message.id, error: errorObjectFrom(error, traceId) });
+      this.logLatency(connection, message.method, traceId, Date.now() - startedAt);
     }
+  }
+
+  /** One opt-in timing record at the Host: receive → dispatch complete → send. */
+  private logLatency(connection: RacpConnection, method: string, traceId: string, durationMs: number): void {
+    if (this.options.latencyTrace !== true) return;
+    this.options.log("info", "remote latency", {
+      stage: "host.execute",
+      method,
+      traceId,
+      connectionId: connection.id,
+      origin: connection.origin,
+      durationMs,
+    });
   }
 
   private async dispatch(connection: RacpConnection, method: string, params: unknown, traceId: string): Promise<unknown> {

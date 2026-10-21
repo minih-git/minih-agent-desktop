@@ -71,6 +71,12 @@ export type StartGatewayOptions = {
    * credential or a real provider.
    */
   pushProviders?: { apns?: { send(token: string, payload: RacpPushPayload): Promise<PushDeliveryResult> }; fcm?: { send(token: string, payload: RacpPushPayload): Promise<PushDeliveryResult> } };
+  /**
+   * Emit the opt-in per-command and per-event `remote latency` records (P0
+   * measurement). Defaults to `MINIH_REMOTE_LATENCY_TRACE=1`; off in a normal
+   * run, where the logging spec forbids a per-request timing stream.
+   */
+  latencyTrace?: boolean;
 };
 
 /** Load the client API TLS material once, so a bad path fails before binding. */
@@ -85,6 +91,7 @@ async function loadClientTls(config: GatewayServeConfig): Promise<{ certificateP
 
 export async function startGateway(config: GatewayServeConfig, options: StartGatewayOptions = {}): Promise<GatewayServer> {
   const log = options.log ?? createJsonLogger();
+  const latencyTrace = options.latencyTrace ?? process.env.MINIH_REMOTE_LATENCY_TRACE === "1";
   const now = options.now;
   const store = await GatewayStore.open(config.dataDir, now);
   let authority: GatewayAuthority | null = null;
@@ -170,7 +177,7 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
   });
   const hostlink = await hostLinks.start(config.hostlink);
   const pool = new LogicalConnectionPool({ links: hostLinks, log, ...(now ? { now } : {}) });
-  const commands = new CommandRouter(pool, log);
+  const commands = new CommandRouter(pool, log, latencyTrace);
   const pairing = new PairingService({
     store,
     log,
@@ -199,6 +206,7 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
     // Without `--trusted-proxy`/`--client-ip-header` the resolved address is the
     // TCP peer, exactly as before (ADR decision 10).
     resolveClientIp: config.clientIp ? createClientIpResolver(config.clientIp) : peerAddress,
+    latencyTrace,
   });
   const clientTls = await loadClientTls(config);
   const clientAddress = await client.start(config.client, config.clientTls, clientTls);
