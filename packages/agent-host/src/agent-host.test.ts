@@ -1183,7 +1183,7 @@ describe("AgentHost notification events (protocol §11.6)", () => {
     // §17.4.1: a phone reading `session/list` can tell a question from a busy turn.
     expect((await host.snapshot("s1")).session.status).toBe("waiting_input");
 
-    await host.respondInput(owner, { inputId: "ask_1", answers: [{ questionId: "q1", selected: ["a"] }] });
+    await host.respondInput(owner, { inputId: "ask_1", answers: [["a"]], context: { requestId: "r" } });
     expect((await host.snapshot("s1")).session.status).toBe("running");
   });
 
@@ -1191,9 +1191,9 @@ describe("AgentHost notification events (protocol §11.6)", () => {
     const { host } = build({});
     const started = await host.startTurn(owner, { sessionId: "s1", input: { text: "go" }, context: { requestId: "s" } });
     host.ingest(envelope("s1", started.turn.id, ask()));
-    host.ingest(envelope("s1", started.turn.id, ask({ requestId: "ask_2" })));
+    host.ingest(envelope("s1", started.turn.id, ask("ask_2")));
 
-    await host.respondInput(owner, { inputId: "ask_1", answers: [{ questionId: "q1", selected: ["a"] }] });
+    await host.respondInput(owner, { inputId: "ask_1", answers: [["a"]], context: { requestId: "r" } });
     expect((await host.snapshot("s1")).session.status).toBe("waiting_input");
   });
 
