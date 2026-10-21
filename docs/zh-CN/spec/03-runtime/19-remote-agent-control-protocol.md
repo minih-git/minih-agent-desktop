@@ -913,7 +913,13 @@ type ModelSummary = {
   双向都通，包括必须由客户端自己回答的服务端请求（`approval/request`、`input/request`、
   `tool/execute`）：这条路由上 Gateway 绝不代客户端作答，也不重编号、合并或改写帧。
   跟不上的客户端以 `CLIENT_TOO_SLOW` 关闭而不是无界缓冲，因此按游标续传的规则仍然成立。
-  URL 里的凭据、Origin、限流与审计规则与 §11.2 的路由一致。该路由本身已实现
+  URL 里的凭据、Origin、限流与审计规则与 §11.2 的路由一致。拒绝一律是 upgrade socket 上的
+  HTTP 状态码、绝不以异常抛出（任何请求目标都不能让 Gateway 退出）：无法解码的请求目标或
+  不是 Host id 的值，在任何凭据之前就是 `400 INVALID_ARGUMENT`；缺失／未知／已吊销设备为
+  `401`，跨 Host、已吊销 Host 与非白名单 `Origin` 为 `403`，按设备限流为 `429 RATE_LIMITED`
+  并带与 §11.2 各路由相同的 `Retry-After`。升级完成后 socket 镜像逻辑连接的关闭：Host 正常
+  结束为 `1000`，凭据／路由／协议拒绝为 `1008`，值得稍后重试的（慢客户端、Gateway 关闭）
+  为 `1013`。该路由本身已实现
   （rollout R8 工作包 B，测试见 `apps/remote-gateway/src/client-ws.test.ts`）；本条中
   桌面类设备的部分（`desktop` 类别、`hostProof`、`device.desktop-auto` 与随之而来的
   自动授予）尚未实现。

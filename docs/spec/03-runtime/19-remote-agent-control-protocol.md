@@ -1154,6 +1154,16 @@ browser that cannot set headers, and a browser keeps `RACP-HTTP` + SSE — and i
 applies the same URL-credential, Origin, rate-limit, and audit rules as the
 routes above.
 
+A refusal on this route is an HTTP status on the upgrade socket and never an
+exception, so no request target can end the Gateway: one it cannot decode, or a
+Host id that is not one, is `400 INVALID_ARGUMENT` before any credential is
+read; a missing, unknown, or revoked device is `401`, a foreign or revoked Host
+and a disallowed `Origin` are `403`, and the per-device rate limit is
+`429 RATE_LIMITED` with the same `Retry-After` the routes above send. After the
+upgrade the socket mirrors the logical connection's close: `1000` when the Host
+ends it normally, `1008` for a credential, route, or protocol refusal, and
+`1013` when retrying later is worthwhile (a slow client, a Gateway shutdown).
+
 The event endpoints MUST support `Last-Event-ID` with the `"<epoch>:<sequence>"`
 form. Commands return JSON and never require the caller to keep a request open
 for turn execution.
@@ -1358,13 +1368,12 @@ Rules:
    route, and it never renumbers, coalesces, or re-keys a frame (rule 3). A
    client that cannot keep up is closed with `CLIENT_TOO_SLOW` instead of being
    buffered without bound, so the resume-by-cursor rule still holds. Phones keep
-   `RACP-HTTP` + SSE unchanged. The WebSocket route itself is implemented
+   `RACP-HTTP` + SSE unchanged; this route's refusal statuses and WebSocket
+   close codes are in §11.2. The WebSocket route itself is implemented
    (rollout R8 package B, tested in `apps/remote-gateway/src/client-ws.test.ts`);
    the desktop-class device parts of this rule — the `desktop` client class,
    `hostProof`, `device.desktop-auto`, and the automatic admission that follows —
    are not.
-   buffered without bound, so the resume-by-cursor rule still holds. Phones keep
-   `RACP-HTTP` + SSE unchanged.
 
 Enrollment and pairing run against the same listener:
 

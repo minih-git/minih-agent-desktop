@@ -347,8 +347,19 @@ export class ClientHttpServer {
     server.requestTimeout = 0;
     // An upgrade the WebSocket route does not own is closed here: a client that
     // upgrades an unknown path must not be left holding a half-open socket.
+    // The guard is the last line of defence for the whole process: this
+    // listener runs synchronously off the HTTP parser, so an exception escaping
+    // a handler would be an `uncaughtException` and would end the Gateway —
+    // whatever a caller sends. It must never happen, and it must never matter.
     server.on("upgrade", (request, socket, head) => {
-      const owned = this.options.webSocket?.handleUpgrade(request, socket, head) ?? false;
+      let owned = false;
+      try {
+        owned = this.options.webSocket?.handleUpgrade(request, socket, head) ?? false;
+      } catch (error) {
+        this.options.log("error", "gateway client upgrade handler failed", { error: String(error) });
+        socket.destroy();
+        return;
+      }
       if (!owned) socket.destroy();
     });
     await new Promise<void>((resolve, reject) => {

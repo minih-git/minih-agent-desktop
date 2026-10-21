@@ -1,4 +1,6 @@
+import { randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,7 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 
 import { sendAdminRequest } from "./admin-socket.js";
-import { LogicalConnection } from "./router.js";
+import { LogicalConnection, type GatewayLog } from "./router.js";
 
 /**
  * A Host link socket the test drives by hand: it records what the mux sends and
@@ -53,8 +55,7 @@ class FakeHostLinkSocket implements HostLinkSocket {
     // No error path is exercised here.
   }
 }
-import { sendAdminRequest } from "./admin-socket.js";
-import type { GatewayLog } from "./router.js";
+
 import {
   accountDeviceRequest,
   accountDeviceStatus,
@@ -161,6 +162,44 @@ describe("gateway client WebSocket route", () => {
       relay.socket.once("open", () => resolve());
       relay.socket.once("error", (error) => reject(error));
       relay.socket.once("unexpected-response", (_request, response) => reject(new Error(`upgrade refused: ${response.statusCode}`)));
+    });
+  }
+
+  /**
+   * One raw HTTP upgrade, so a test can send a request target the `ws` client
+   * would never build and read the status and headers the Gateway answered
+   * with. A `101` is resolved too, so a caller can tell acceptance from a
+   * refusal without keeping a socket open.
+   */
+  function rawUpgrade(
+    target: TestGateway,
+    path: string,
+    headers: Record<string, string> = {},
+  ): Promise<{ status: number; headers: Record<string, string | string[] | undefined> }> {
+    return new Promise((resolve, reject) => {
+      const request = httpRequest({
+        host: target.gateway.client.host,
+        port: target.gateway.client.port,
+        path,
+        method: "GET",
+        headers: {
+          connection: "Upgrade",
+          upgrade: "websocket",
+          "sec-websocket-key": randomBytes(16).toString("base64"),
+          "sec-websocket-version": "13",
+          ...headers,
+        },
+      });
+      request.on("upgrade", (_response, socket) => {
+        socket.destroy();
+        resolve({ status: 101, headers: {} });
+      });
+      request.on("response", (response) => {
+        response.resume();
+        resolve({ status: response.statusCode ?? 0, headers: response.headers });
+      });
+      request.on("error", reject);
+      request.end();
     });
   }
 
@@ -316,7 +355,9 @@ describe("gateway client WebSocket route", () => {
     const revoked = await sendAdminRequest(stack.gateway.dataDir, { op: "devices.revoke", payload: { deviceId: stack.deviceId } });
     expect(revoked.ok).toBe(true);
     const closed = await relay.closed;
-    expect(closed.code).toBeGreaterThan(1000);
+    // A revoked credential is a policy refusal, not a normal end.
+    expect(closed.code).toBe(1008);
+    expect(closed.reason).toBe("device revoked");
   });
 
   it("resumes a subscription from its cursor after the socket drops", async () => {
@@ -370,5 +411,72 @@ describe("gateway client WebSocket route", () => {
     const replayedCursor = replayed["params"] as { sequence: number; kind: string };
     expect(replayedCursor.sequence).toBeGreaterThan(cursor.sequence);
     expect(second.frames.some((frame) => frame["method"] === "session/event" && (frame["params"] as { sequence?: number }).sequence === cursor.sequence)).toBe(false);
+  });
+
+  it("closes the relayed socket normally when the Host link ends", async () => {
+    const stack = await selfHostedStack();
+    const relay = openRelay(stack.gateway, stack.host.hostId, { token: stack.token });
+    await relayOpened(relay);
+    relay.send({ jsonrpc: "2.0", id: "c1", method: "connection/initialize", params: INITIALIZE });
+    await relay.waitForFrame((frame) => frame["id"] === "c1", "the initialize result");
+
+    // The Host going away is not a policy refusal of the client: a client that
+    // sees 1008 here would report a protocol violation to its user.
+    await stack.host.stop();
+    const closed = await relay.closed;
+    expect(closed.code).toBe(1000);
+    expect(closed.reason).toBe("HOST_CLOSED");
+  });
+
+  it("answers a malformed path with 400 and keeps relaying afterwards", async () => {
+    const stack = await selfHostedStack();
+    // None of these carries a credential: a path the Gateway cannot decode must
+    // not be able to end the process.
+    const paths = [
+      // A malformed percent-escape: `decodeURIComponent` raises `URIError`.
+      "/v1/hosts/%E0%A4%A/ws",
+      // Decodes, but is not a Host id.
+      "/v1/hosts/not-a-host-id/ws",
+      // Decodes to a character a Host id cannot carry.
+      "/v1/hosts/host_%3Cscript%3E/ws",
+      // Longer than the bound on a Host id.
+      `/v1/hosts/${"host_".padEnd(4096, "a")}/ws`,
+    ];
+    for (const path of paths) {
+      const answer = await rawUpgrade(stack.gateway, path);
+      expect(answer.status, path).toBe(400);
+    }
+
+    // The process is still serving and the audit trail recorded every refusal
+    // with the client address.
+    const relay = openRelay(stack.gateway, stack.host.hostId, { token: stack.token });
+    await relayOpened(relay);
+    relay.send({ jsonrpc: "2.0", id: "c1", method: "connection/initialize", params: INITIALIZE });
+    const initialized = await relay.waitForFrame((frame) => frame["id"] === "c1", "the initialize result");
+    expect((initialized["result"] as { server: { hostId: string } }).server.hostId).toBe(stack.host.hostId);
+
+    const audit = await stack.gateway.gateway.store.audit.read(new Date().toISOString().slice(0, 10));
+    const denied = audit.filter((record) => record.op === "hosts.ws" && record.result === "denied");
+    expect(denied.length).toBeGreaterThanOrEqual(paths.length);
+    expect(denied.every((record) => record.ip.length > 0)).toBe(true);
+  });
+
+  it("answers 429 with Retry-After when the device is over its limit", async () => {
+    const target = await startTestGateway({}, { deviceLimit: { capacity: 1, refillPerSecond: 0.5 } });
+    gateway = target;
+    const host = await enrollTestHost(target);
+    hosts.push(host);
+    const paired = await pairDevice(target, host, { client: "ios", label: "phone" });
+    expect(paired.status).toBe(200);
+    const token = paired.token ?? "";
+    const path = `/v1/hosts/${host.hostId}/ws`;
+
+    const first = await rawUpgrade(target, path, { authorization: `Bearer ${token}` });
+    expect(first.status).toBe(101);
+    const limited = await rawUpgrade(target, path, { authorization: `Bearer ${token}` });
+    expect(limited.status).toBe(429);
+    const retryAfter = Number(limited.headers["retry-after"]);
+    expect(Number.isInteger(retryAfter)).toBe(true);
+    expect(retryAfter).toBeGreaterThan(0);
   });
 });

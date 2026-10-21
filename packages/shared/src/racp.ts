@@ -138,6 +138,24 @@ export function isRacpTraceId(value: unknown): value is string {
   return typeof value === "string" && RACP_TRACE_ID_RE.test(value);
 }
 
+/**
+ * The character set and length of a Host id: `host_<uuid>` for a desktop Host,
+ * `host_<base64url>` for a headless one (both far below the bound).
+ *
+ * One definition, because three peers validate the same value: the pairing
+ * ticket a user pastes, the Host id a client puts in a Gateway URL path, and
+ * the record a Gateway stores at enrollment. A value that does not match is a
+ * caller error — never a name to look up — and the bound keeps an unbounded
+ * path segment from reaching a log line, an audit record, or a lookup.
+ */
+export const RACP_HOST_ID_PATTERN = "^host_[A-Za-z0-9._-]{1,128}$";
+const RACP_HOST_ID_RE = new RegExp(RACP_HOST_ID_PATTERN);
+
+/** Whether a value is a syntactically valid Host id. */
+export function isRacpHostId(value: unknown): value is string {
+  return typeof value === "string" && RACP_HOST_ID_RE.test(value);
+}
+
 export const WorkspaceFilesRequestSchema = Type.Object({
   path: Type.String({ minLength: 1, maxLength: 4096 }),
   operation: Type.Union([Type.Literal("list"), Type.Literal("read"), Type.Literal("index"), Type.Literal("resolve"), Type.Literal("image"), Type.Literal("diff"), Type.Literal("instructions")]),
