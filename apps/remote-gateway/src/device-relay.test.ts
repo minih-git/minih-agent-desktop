@@ -274,8 +274,15 @@ describe("device relay over the host link", () => {
     await waitForAsync(() => Promise.resolve(gateway!.gateway.store.findDevice(deviceId)?.revokedAt), "the gateway to record the revocation");
 
     await resumeLink(stack.gateway, stack.sibling.harness, stack.sibling.credentials, stack.sibling.devices, stack.queue);
+    // Wait for the tombstone itself, not for the record: a record written by the
+    // adoption path also matches "the device exists", and the revocation lands a
+    // moment later. Waiting on existence alone made this assertion fail
+    // intermittently on a loaded CI runner while the code was correct.
     const stored = await waitForAsync(
-      () => stack.sibling.harness.store.listDevices().then((list) => list.find((device) => device.deviceId === deviceId)),
+      () =>
+        stack.sibling.harness.store
+          .listDevices()
+          .then((list) => list.find((device) => device.deviceId === deviceId && device.revokedAt)),
       "the sibling to record the revoked device",
     );
     // A tombstone, not an adoption: the device is revoked on this Host too.
