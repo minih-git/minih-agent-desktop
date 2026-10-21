@@ -266,6 +266,11 @@ export function directChatRunner(): DirectChatRunner {
  * `null` when this build has no model gateway, so a caller does not have to ask
  * twice whether direct chat exists.
  */
+/** Tell every subscribed view to re-read. Used after a direct store write. */
+export function notifyDirectChatChanged(): void {
+  for (const listener of directChatListeners) listener();
+}
+
 export function subscribeDirectChat(listener: () => void): (() => void) | null {
   if (modelGatewayOrigin === null) return null;
   directChatListeners.add(listener);

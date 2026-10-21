@@ -6,15 +6,23 @@
  *
  * - Model gateway: connected (the gateway, the key's label, when it was verified)
  *   or a row that opens D2; unlinking asks first, because it deletes a secret.
- * - Chat history: a placeholder that says where history will live and that it
- *   stays on this phone. The repository arrives with the history stage; showing a
- *   count now would be a number the app cannot produce.
+ * - Chat history: the count on this phone, clearing the current account's
+ *   history behind a confirmation that names the account, and a read-only way
+ *   into older accounts' conversations. A scope's history is never merged with
+ *   another's, and the clear action says which one it deletes.
  */
 import { ChevronRight, History, Router } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { DirectChatConnection } from "../lib/direct-chat/connection.js";
+import { scopeKey, type DirectChatScope } from "../lib/direct-chat/history-store.js";
+import {
+  directChatHistory,
+  directChatScope as currentScope,
+  notifyDirectChatChanged,
+  subscribeDirectChat,
+} from "../lib/runtime.js";
 import { Button } from "../components/ui/Button.js";
 import { Callout } from "../components/ui/Callout.js";
 import { ListGroup, ListRow } from "../components/ui/ListGroup.js";
@@ -42,6 +50,52 @@ export function SettingsScreen({
   const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [clearingConfirm, setClearingConfirm] = useState(false);
+  const [count, setCount] = useState(0);
+  const [olderScopes, setOlderScopes] = useState<Array<{ scope: DirectChatScope; count: number }>>([]);
+  const history = directChatHistory();
+  const scope = currentScope();
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!scope) {
+        setCount(0);
+        setOlderScopes([]);
+        return;
+      }
+      const mine = await history.list(scope);
+      const archived = await history.list(scope, { archived: true });
+      // Every other scope that has history: read-only, never sent under this key.
+      const others: Array<{ scope: DirectChatScope; count: number }> = [];
+      for (const other of await history.scopes()) {
+        if (scopeKey(other) === scopeKey(scope)) continue;
+        const rows = await history.list(other);
+        if (rows.length > 0) others.push({ scope: other, count: rows.length });
+      }
+      if (cancelled) return;
+      setCount(mine.length + archived.length);
+      setOlderScopes(others);
+    };
+    void load();
+    const unsubscribe = subscribeDirectChat(() => void load());
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [history, scope]);
+
+  /** Clear this account's conversations, one conversation at a time. */
+  async function clearHistory() {
+    if (!scope) return;
+    setClearing(true);
+    for (const row of await history.list(scope)) await history.remove(row.conversation.id);
+    for (const row of await history.list(scope, { archived: true })) await history.remove(row.conversation.id);
+    setClearing(false);
+    setClearingConfirm(false);
+    notifyDirectChatChanged();
+  }
   /** Unlink failed: the key may still be on this phone, and the user must know. */
   const [unlinkFailed, setUnlinkFailed] = useState(false);
 
@@ -105,12 +159,38 @@ export function SettingsScreen({
           <ListRow
             leading={<History className="h-5 w-5 text-[var(--rm-text-secondary)]" aria-hidden="true" />}
             title={t("settings.history.local")}
-            subtitle={t("settings.history.localHint")}
+            subtitle={
+              count > 0 ? t("settings.history.count", { count }) : t("settings.history.none")
+            }
+          />
+          <ListRow
+            title={<span className="text-[var(--rm-error)]">{t("settings.history.clear")}</span>}
+            subtitle={scope ? scope.accessKeyId : undefined}
+            chevron
+            onClick={count > 0 ? () => setClearingConfirm(true) : undefined}
           />
         </ListGroup>
-        <div className="mt-2 px-4">
-          <Callout>{t("settings.history.comingSoon")}</Callout>
-        </div>
+        <p className="mt-2 px-4 text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
+          {t("settings.history.localHint")}
+        </p>
+
+        {olderScopes.length > 0 ? (
+          <>
+            <SectionHeader title={t("settings.history.otherAccounts")} />
+            <ListGroup>
+              {olderScopes.map(({ scope: older, count: olderCount }) => (
+                <ListRow
+                  key={scopeKey(older)}
+                  title={t("settings.history.otherAccountRow", {
+                    account: older.accessKeyId,
+                    count: olderCount,
+                  })}
+                  subtitle={<span className="break-all font-mono">{older.gatewayRoot}</span>}
+                />
+              ))}
+            </ListGroup>
+          </>
+        ) : null}
 
         <SectionHeader title={t("settings.other.section")} />
         <ListGroup>
@@ -120,6 +200,24 @@ export function SettingsScreen({
           <ListRow title={t("settings.other.about")} subtitle={t("settings.other.later")} />
         </ListGroup>
       </ScreenContent>
+
+      <Sheet
+        open={clearingConfirm}
+        onClose={() => setClearingConfirm(false)}
+        title={t("settings.history.clearTitle")}
+      >
+        <p className="px-1 pb-4 text-[15px] leading-[22px] text-[var(--rm-text-secondary)]">
+          {t("settings.history.clearBody", { account: scope?.accessKeyId ?? "" })}
+        </p>
+        <div className="flex flex-col gap-2">
+          <Button variant="destructive" size="large" disabled={clearing} onClick={() => void clearHistory()}>
+            {t("settings.history.clear")}
+          </Button>
+          <Button variant="secondary" size="large" disabled={clearing} onClick={() => setClearingConfirm(false)}>
+            {t("common.cancel")}
+          </Button>
+        </div>
+      </Sheet>
 
       <Sheet open={confirming} onClose={() => setConfirming(false)} title={t("settings.modelGateway.disconnectTitle")}>
         <p className="px-1 pb-4 text-[15px] leading-[22px] text-[var(--rm-text-secondary)]">

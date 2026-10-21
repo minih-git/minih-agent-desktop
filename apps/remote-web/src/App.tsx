@@ -21,7 +21,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ForegroundNoticeBar, type ForegroundNotice } from "./components/ForegroundNotice.js";
 import { AccountScreen } from "./screens/AccountScreen.js";
+import { ChatArchiveScreen } from "./screens/ChatArchiveScreen.js";
 import { ChatsScreen } from "./screens/ChatsScreen.js";
+import { DirectChatScreen } from "./screens/DirectChatScreen.js";
 import { ConnectGatewayScreen } from "./screens/ConnectGatewayScreen.js";
 import { SettingsScreen } from "./screens/SettingsScreen.js";
 import { ConnectScreen } from "./screens/ConnectScreen.js";
@@ -30,7 +32,6 @@ import { PairScreen } from "./screens/PairScreen.js";
 import { ProjectSessionsScreen } from "./screens/ProjectSessionsScreen.js";
 import { ProjectsScreen } from "./screens/ProjectsScreen.js";
 import { SessionScreen } from "./screens/SessionScreen.js";
-import { ModelSheet } from "./components/ModelSheet.js";
 import { TabBar } from "./components/TabBar.js";
 import { useEdgeSwipe } from "./hooks/useEdgeSwipe.js";
 import { usePushRegistration } from "./hooks/usePushRegistration.js";
@@ -39,7 +40,14 @@ import { registryHasHosts } from "./lib/host-registry.js";
 import { resolveLaunchRoot, storeLastRoot } from "./lib/launch-root.js";
 import { setBackHandler } from "./lib/navigation.js";
 import type { DirectChatConnection } from "./lib/direct-chat/connection.js";
-import { credentialPort, directChatService, isNativeApp, modelGatewayOrigin, nativePlatform } from "./lib/runtime.js";
+import {
+  credentialPort,
+  directChatService,
+  isNativeApp,
+  modelGatewayOrigin,
+  nativePlatform,
+  notifyDirectChatChanged,
+} from "./lib/runtime.js";
 import { consumeNotificationTap, setNotificationBadge } from "./lib/native-notify.js";
 import { createScreenHistory, sameScreen, screenFromHistoryState } from "./lib/screen-history.js";
 import { previousScreen, type RootKind, type Screen } from "./lib/screen-stack.js";
@@ -91,8 +99,7 @@ export default function App() {
   const [connection, setConnection] = useState<DirectChatConnection | null>(() =>
     isNativeApp ? directChatService().connection() : null,
   );
-  /** The model sheet, opened from D1 today and from D3's chip later. */
-  const [modelsOpen, setModelsOpen] = useState(false);
+
   /** A notification that arrived while the app was open (§17.6.4). */
   const [notice, setNotice] = useState<ForegroundNotice | null>(null);
   /**
@@ -321,7 +328,39 @@ export default function App() {
           gatewayConfigured={modelGatewayOrigin !== null}
           onConnect={() => navigate({ kind: "modelGateway", from: "chats" })}
           onOpenSettings={() => navigate({ kind: "settings", from: "chats" })}
-          onOpenModels={() => setModelsOpen(true)}
+          onOpenConversation={(conversationId) => navigate({ kind: "chat", conversationId })}
+          onNewConversation={(modelId) => {
+            // The account remembers the explicit choice, and the conversation
+            // itself does not exist until its first message is saved.
+            directChatService().rememberModel(modelId);
+            reloadConnection();
+            navigate({ kind: "chat", conversationId: `conv-${Date.now().toString(36)}` });
+          }}
+          onOpenArchive={() => navigate({ kind: "chatArchive" })}
+        />
+      );
+    }
+
+    if (screen.kind === "chatArchive") {
+      return (
+        <ChatArchiveScreen
+          onBack={goBack}
+          onOpenConversation={(conversationId) =>
+            navigate({ kind: "chat", conversationId, fromArchive: true })
+          }
+          onRestored={notifyDirectChatChanged}
+        />
+      );
+    }
+
+    if (screen.kind === "chat") {
+      return (
+        <DirectChatScreen
+          conversationId={screen.conversationId}
+          onBack={goBack}
+          connection={connection}
+          onConnect={() => navigate({ kind: "modelGateway", from: "chats" })}
+          onChanged={notifyDirectChatChanged}
         />
       );
     }
@@ -364,19 +403,6 @@ export default function App() {
       );
     }
 
-    if (screen.kind === "chat" || screen.kind === "chatArchive") {
-      // D3 and D4 arrive with the history stage: sending cannot precede saved
-      // history (§6), so these kinds render the Chats root until then.
-      return (
-        <ChatsScreen
-          connection={connection}
-          gatewayConfigured={modelGatewayOrigin !== null}
-          onConnect={() => navigate({ kind: "modelGateway", from: "chats" })}
-          onOpenSettings={() => navigate({ kind: "settings", from: "chats" })}
-          onOpenModels={() => setModelsOpen(true)}
-        />
-      );
-    }
     if (screen.kind === "account") {
       return (
         <AccountScreen
@@ -486,16 +512,6 @@ export default function App() {
     >
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{body}</div>
       {tabs}
-      <ModelSheet
-        open={modelsOpen}
-        models={connection?.models ?? []}
-        selectedId={connection?.lastModelId ?? null}
-        onClose={() => setModelsOpen(false)}
-        onSelect={(model) => {
-          directChatService().rememberModel(model.id);
-          reloadConnection();
-        }}
-      />
       {notice ? (
         <ForegroundNoticeBar
           notice={notice}

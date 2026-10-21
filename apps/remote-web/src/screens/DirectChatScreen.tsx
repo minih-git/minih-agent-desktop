@@ -60,6 +60,8 @@ export function DirectChatScreen({
   const scope = directChatScope();
 
   const [transcript, setTranscript] = useState<DirectChatTranscript | null>(null);
+  /** False until the first read finishes, so "new" is not a guess. */
+  const [loaded, setLoaded] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -68,6 +70,7 @@ export function DirectChatScreen({
 
   const reload = useCallback(async () => {
     setTranscript(await history.transcript(conversationId));
+    setLoaded(true);
   }, [history, conversationId]);
 
   useEffect(() => {
@@ -92,14 +95,24 @@ export function DirectChatScreen({
   const live = view?.liveAttempt ?? null;
   const archived = conversation?.archived === true;
 
-  /** The model the next send uses, resolved from the cached catalog. */
+  /**
+   * The model the next send uses, resolved from the cached catalog. A new
+   * conversation starts on the account's last explicit choice, and a stored one
+   * on what it remembered.
+   */
   const catalog: MinihRouterModel[] = connection?.models ?? [];
-  const nextModel = catalog.find((model) => model.id === conversation?.nextModelId) ?? null;
+  const wantedModelId = conversation?.nextModelId ?? connection?.lastModelId ?? null;
+  const nextModel = catalog.find((model) => model.id === wantedModelId) ?? null;
+  /** True for a conversation opened before its first message exists. */
+  const isNew = loaded && transcript === null;
   const nextChoice = nextModel ? resolveDirectModel(nextModel) : null;
   const usable = nextChoice?.usable === true;
 
   async function send(text: string): Promise<boolean> {
-    if (!connection || !scope || !conversation || !nextModel || nextChoice?.usable !== true) return false;
+    if (!connection || !scope || !nextModel || nextChoice?.usable !== true) return false;
+    // A new conversation has no record until this save: the ADR puts history's
+    // start at the first user message, not at opening the screen.
+    if (!conversation && !isNew) return false;
     setSending(true);
     setNotice(null);
     const key = await createDirectChatSecret(secureStore()).read();
@@ -109,14 +122,14 @@ export function DirectChatScreen({
       return false;
     }
     const saved = await history.beginTurn({
-      conversationId: conversation.id,
+      conversationId: conversation?.id ?? null,
       scope,
       text,
       modelId: nextModel.id,
       modelLabel: nextModel.id,
       protocol: nextChoice.protocol,
       now: new Date().toISOString(),
-      newConversationId: conversation.id,
+      newConversationId: conversationId,
       newMessageId: `msg-${createRequestId()}`,
       newAttemptId: `att-${createIdempotencyKey()}`,
     });
@@ -134,7 +147,7 @@ export function DirectChatScreen({
     }
     await reload();
     const started = await runner.start({
-      conversationId: conversation.id,
+      conversationId: saved.conversation.id,
       attempt: saved.attempt,
       model: nextModel,
       protocol: nextChoice.protocol,
@@ -144,6 +157,10 @@ export function DirectChatScreen({
     if (!started.ok) {
       setNotice(started.reason === "busy" ? t("directChat.busy") : null);
       return false;
+    }
+    // The new conversation now exists: read it back under its own id.
+    if (saved.conversation.id !== conversationId) {
+      await history.setNextModel(saved.conversation.id, nextModel.id, nextChoice.protocol, new Date().toISOString());
     }
     await reload();
     onChanged?.();
@@ -278,7 +295,7 @@ export function DirectChatScreen({
         ) : (
           <ChatComposer
             sending={sending}
-            disabled={!conversation}
+            disabled={!loaded}
             archived={false}
             queued={false}
             hideAttachments
