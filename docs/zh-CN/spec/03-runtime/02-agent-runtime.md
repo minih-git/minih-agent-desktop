@@ -1403,3 +1403,11 @@ retries and images retain physical account/model attribution. Nested immediate
 parent and owning Task remain distinct. The migration does not add coding-agent
 AgentSession, Codemode or virtual routing. See the coding-agent design review for
 future adoption conditions.
+
+### Compacted provider retry transcripts
+
+Main-session and built-in subagent provider retries use the current compacted
+transcript when compaction already replaced a failed assistant with a summary
+or retained user message. Remove trailing assistant rows if present; do not
+require an assistant tail before `continue()`. Retry budgets, cancellation,
+fallback selection, usage and the visible transcript remain unchanged.

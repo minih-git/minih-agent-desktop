@@ -41,7 +41,7 @@ import {
   installWindows11CornerController,
   usesWindows11NativeCorners,
 } from "../window-native-corners";
-import { applyMainWindowBackground, mainWindowBackgroundOptions } from "../window-background";
+import { applyMainWindowBackground, macosWindowSurfaceOptions, mainWindowBackgroundOptions } from "../window-background";
 import { recoverRendererAfterGone } from "../renderer-recovery";
 
 function windowsIconPath(): string | undefined {
@@ -76,6 +76,8 @@ export type WindowLifecycleState = {
   tray: Tray | null;
   closeBehavior: CloseBehavior;
   developerMode: boolean;
+  /** Applied at launch, distinct from the persisted preference. */
+  macosWindowTranslucency: boolean;
   pluginLauncherWindow: BrowserWindow | null;
   host: HostProcess | null;
 };
@@ -196,10 +198,10 @@ export async function createWindow({
       ? {
           titleBarStyle: "hiddenInset" as const,
           trafficLightPosition: MAC_TRAFFIC_LIGHT_POSITION,
-          vibrancy: "sidebar" as const,
-          visualEffectState: "followWindow" as const,
-          transparent: true,
-          backgroundColor: "#00000000",
+          ...macosWindowSurfaceOptions(
+            windowState.macosWindowTranslucency,
+            initialWindowBackground,
+          ),
         }
       : {
           frame: false,
@@ -241,13 +243,16 @@ export async function createWindow({
       installWindowShape(window, DEFAULT_WINDOW_CORNER_RADIUS, screen);
     }
   }
-  applyMainWindowBackground(
-    window,
-    process.platform,
-    initialWindowBackground,
-    windows11NativeCorners,
-    initialWindowBackground,
-  );
+  // Do not paint over the transparent backing of the native vibrancy material.
+  if (!(process.platform === "darwin" && windowState.macosWindowTranslucency)) {
+    applyMainWindowBackground(
+      window,
+      process.platform,
+      initialWindowBackground,
+      windows11NativeCorners,
+      initialWindowBackground,
+    );
+  }
   suppressLinuxFramelessSystemMenu(window);
   const initialBounds = window.getBounds();
   windowState.workPanelBaseBounds = restoredBounds

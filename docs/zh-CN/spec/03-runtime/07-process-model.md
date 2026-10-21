@@ -282,3 +282,15 @@ only the last organization copy, which is replaced after renderer bootstrap.
 Menu command readiness is acknowledged after bootstrap's initial navigation,
 so a tray click cannot be overwritten by the startup draft or pending-plan
 selection. See [ADR tray-session-shortcuts](/adr/tray-session-shortcuts).
+
+### Optional client certificates in provider metadata probes
+
+Model-list and connection probes recover from the exact Electron
+`net::ERR_SSL_CLIENT_AUTH_CERT_NEEDED` error with one replayable HTTPS
+GET/OPTIONS request through the existing authenticated relay and active
+Chromium proxy route. The retry sends no client identity, keeps the original
+cancellation budget and manual redirect/origin guards, and verifies the server
+certificate and hostname using default plus OS CA roots. Mandatory client
+authentication still fails. HTTP responses, other TLS/network errors and
+cancelled work do not trigger this retry. Agent turns are never replayed by
+this path. See [the transport decision](../../adr/provider-metadata-client-certificate-retry.md).

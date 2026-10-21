@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   applyMainWindowBackground,
   mainWindowBackgroundOptions,
+  macosWindowSurfaceOptions,
   toElectronBackgroundColor,
 } from "../electron/main/window-background.ts";
 
@@ -35,7 +36,9 @@ test("constructor background options keep only the Windows outer surface transpa
   assert.deepEqual(mainWindowBackgroundOptions("linux", "#12345680"), {
     backgroundColor: "rgba(18, 52, 86, 0.5019607843137255)",
   });
-  assert.deepEqual(mainWindowBackgroundOptions("darwin", "#ffffff"), {});
+  assert.deepEqual(mainWindowBackgroundOptions("darwin", "#ffffff"), {
+    transparent: false, backgroundColor: "rgba(255, 255, 255, 1)",
+  });
 });
 
 test("Windows 11 uses an opaque top-level background", () => {
@@ -62,6 +65,17 @@ test("background updates target the rounded content view on Windows and native w
   assert.deepEqual(linux.calls, [["window", "rgba(18, 52, 86, 1)"]]);
 
   const mac = makeWindow();
-  assert.equal(applyMainWindowBackground(mac, "darwin", "#123456"), false);
-  assert.deepEqual(mac.calls, []);
+  assert.equal(applyMainWindowBackground(mac, "darwin", "#123456"), true);
+  assert.deepEqual(mac.calls, [["window", "rgba(18, 52, 86, 1)"]]);
+});
+
+
+test("macOS surface options preserve the default glass and explicit opaque opt-out", () => {
+  assert.deepEqual(macosWindowSurfaceOptions(true, "#ffffff"), {
+    vibrancy: "sidebar", visualEffectState: "followWindow",
+    transparent: true, backgroundColor: "#00000000",
+  });
+  assert.deepEqual(macosWindowSurfaceOptions(false, "#181818"), {
+    transparent: false, backgroundColor: "rgba(24, 24, 24, 1)",
+  });
 });
