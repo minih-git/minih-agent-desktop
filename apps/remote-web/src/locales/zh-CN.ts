@@ -369,6 +369,7 @@ export const zhCN: Record<TranslationKey, string> = {
   "settings.modelGateway.disconnect": "断开模型网关",
   "settings.modelGateway.disconnectTitle": "断开模型网关？",
   "settings.modelGateway.disconnectBody": "本机保存的 AccessKey 会被删除，之后不再发送模型请求。已配对的电脑不受影响。",
+  "settings.modelGateway.disconnectFailed": "无法从这台手机删除 AccessKey，请重试。",
   "settings.modelGateway.note": "断开只删除本机保存的密钥，不影响已配对的电脑，也不删除对话。",
   "settings.history.section": "对话历史",
   "settings.history.local": "保存在这台手机",

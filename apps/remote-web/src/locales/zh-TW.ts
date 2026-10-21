@@ -369,6 +369,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "settings.modelGateway.disconnect": "中斷模型閘道",
   "settings.modelGateway.disconnectTitle": "中斷模型閘道？",
   "settings.modelGateway.disconnectBody": "本機保存的 AccessKey 會被刪除，之後不再送出模型請求。已配對的電腦不受影響。",
+  "settings.modelGateway.disconnectFailed": "無法從這支手機刪除 AccessKey，請再試一次。",
   "settings.modelGateway.note": "中斷只刪除本機保存的金鑰，不影響已配對的電腦，也不刪除對話。",
   "settings.history.section": "對話歷史",
   "settings.history.local": "保存在這台手機",

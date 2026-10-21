@@ -369,6 +369,7 @@ export const fr: Record<TranslationKey, string> = {
   "settings.modelGateway.disconnect": "Déconnecter la passerelle de modèles",
   "settings.modelGateway.disconnectTitle": "Déconnecter la passerelle de modèles ?",
   "settings.modelGateway.disconnectBody": "L'AccessKey enregistrée sur ce téléphone est supprimée et aucune requête au modèle n'est plus envoyée. Les ordinateurs appairés ne sont pas affectés.",
+  "settings.modelGateway.disconnectFailed": "Impossible de supprimer l'AccessKey de ce téléphone. Réessayez.",
   "settings.modelGateway.note": "Déconnecter ne supprime que la clé enregistrée sur ce téléphone. Les ordinateurs appairés ne sont pas affectés et les discussions ne sont pas supprimées.",
   "settings.history.section": "Historique des discussions",
   "settings.history.local": "Enregistré sur ce téléphone",

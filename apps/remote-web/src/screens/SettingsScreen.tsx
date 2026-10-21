@@ -42,12 +42,20 @@ export function SettingsScreen({
   const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** Unlink failed: the key may still be on this phone, and the user must know. */
+  const [unlinkFailed, setUnlinkFailed] = useState(false);
 
   async function unlink() {
     setBusy(true);
-    await onDisconnect();
-    setBusy(false);
-    setConfirming(false);
+    setUnlinkFailed(false);
+    try {
+      await onDisconnect();
+      setConfirming(false);
+    } catch {
+      setUnlinkFailed(true);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -117,6 +125,11 @@ export function SettingsScreen({
         <p className="px-1 pb-4 text-[15px] leading-[22px] text-[var(--rm-text-secondary)]">
           {t("settings.modelGateway.disconnectBody")}
         </p>
+        {unlinkFailed ? (
+          <p role="alert" className="px-1 pb-4 text-[14px] leading-[20px] text-[var(--rm-error)]">
+            {t("settings.modelGateway.disconnectFailed")}
+          </p>
+        ) : null}
         <div className="flex flex-col gap-2">
           <Button variant="destructive" size="large" disabled={busy} onClick={() => void unlink()}>
             {t("settings.modelGateway.disconnect")}

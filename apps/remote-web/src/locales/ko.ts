@@ -369,6 +369,7 @@ export const ko: Record<TranslationKey, string> = {
   "settings.modelGateway.disconnect": "모델 게이트웨이 연결 해제",
   "settings.modelGateway.disconnectTitle": "모델 게이트웨이 연결을 해제할까요?",
   "settings.modelGateway.disconnectBody": "이 휴대폰에 저장된 AccessKey가 삭제되고 더 이상 모델 요청을 보내지 않습니다. 페어링된 컴퓨터는 영향을 받지 않습니다.",
+  "settings.modelGateway.disconnectFailed": "이 휴대폰에서 AccessKey를 삭제하지 못했습니다. 다시 시도하세요.",
   "settings.modelGateway.note": "연결 해제는 이 휴대폰에 저장된 키만 삭제합니다. 페어링된 컴퓨터에 영향이 없고 대화도 삭제되지 않습니다.",
   "settings.history.section": "대화 기록",
   "settings.history.local": "이 휴대폰에 저장",

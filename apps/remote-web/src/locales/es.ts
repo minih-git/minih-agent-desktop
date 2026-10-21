@@ -369,6 +369,7 @@ export const es: Record<TranslationKey, string> = {
   "settings.modelGateway.disconnect": "Desconectar la pasarela de modelos",
   "settings.modelGateway.disconnectTitle": "¿Desconectar la pasarela de modelos?",
   "settings.modelGateway.disconnectBody": "Se borra el AccessKey guardado en este teléfono y no se enviarán más peticiones al modelo. Los ordenadores emparejados no se ven afectados.",
+  "settings.modelGateway.disconnectFailed": "No se pudo eliminar la AccessKey de este teléfono. Inténtalo de nuevo.",
   "settings.modelGateway.note": "Desconectar solo borra la clave guardada en este teléfono. No afecta a los ordenadores emparejados ni borra conversaciones.",
   "settings.history.section": "Historial de chat",
   "settings.history.local": "Guardado en este teléfono",

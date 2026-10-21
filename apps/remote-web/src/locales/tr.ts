@@ -369,6 +369,7 @@ export const tr: Record<TranslationKey, string> = {
   "settings.modelGateway.disconnect": "Model ağ geçidinin bağlantısını kes",
   "settings.modelGateway.disconnectTitle": "Model ağ geçidinin bağlantısı kesilsin mi?",
   "settings.modelGateway.disconnectBody": "Bu telefonda saklanan AccessKey silinir ve artık model isteği gönderilmez. Eşleştirilmiş bilgisayarlar etkilenmez.",
+  "settings.modelGateway.disconnectFailed": "AccessKey bu telefondan kaldırılamadı. Yeniden deneyin.",
   "settings.modelGateway.note": "Bağlantıyı kesmek yalnızca bu telefonda saklanan anahtarı siler. Eşleştirilmiş bilgisayarları etkilemez, sohbetleri silmez.",
   "settings.history.section": "Sohbet geçmişi",
   "settings.history.local": "Bu telefonda saklanır",

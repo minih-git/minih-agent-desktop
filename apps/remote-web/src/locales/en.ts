@@ -373,6 +373,7 @@ export const en = {
   "settings.modelGateway.disconnect": "Disconnect model gateway",
   "settings.modelGateway.disconnectTitle": "Disconnect the model gateway?",
   "settings.modelGateway.disconnectBody": "The AccessKey saved on this phone is deleted and no further model requests are sent. Paired computers are unaffected.",
+  "settings.modelGateway.disconnectFailed": "The AccessKey could not be removed from this phone. Try again.",
   "settings.modelGateway.note": "Disconnecting deletes only the key saved on this phone. It does not affect paired computers or delete conversations.",
   "settings.history.section": "Chat history",
   "settings.history.local": "Saved on this phone",

@@ -369,6 +369,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "settings.modelGateway.disconnect": "Desconectar o gateway de modelos",
   "settings.modelGateway.disconnectTitle": "Desconectar o gateway de modelos?",
   "settings.modelGateway.disconnectBody": "O AccessKey salvo neste celular é apagado e nenhuma outra requisição ao modelo é enviada. Computadores pareados não são afetados.",
+  "settings.modelGateway.disconnectFailed": "Não foi possível remover a AccessKey deste telefone. Tente novamente.",
   "settings.modelGateway.note": "Desconectar apaga apenas a chave salva neste celular. Não afeta computadores pareados nem apaga conversas.",
   "settings.history.section": "Histórico de conversas",
   "settings.history.local": "Salvo neste celular",

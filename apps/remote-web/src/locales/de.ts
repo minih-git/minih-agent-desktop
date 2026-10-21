@@ -369,6 +369,7 @@ export const de: Record<TranslationKey, string> = {
   "settings.modelGateway.disconnect": "Modell-Gateway trennen",
   "settings.modelGateway.disconnectTitle": "Modell-Gateway trennen?",
   "settings.modelGateway.disconnectBody": "Der auf diesem Telefon gespeicherte AccessKey wird gelöscht und es werden keine Modellanfragen mehr gesendet. Gekoppelte Computer sind nicht betroffen.",
+  "settings.modelGateway.disconnectFailed": "Der AccessKey konnte nicht von diesem Telefon entfernt werden. Bitte erneut versuchen.",
   "settings.modelGateway.note": "Trennen löscht nur den auf diesem Telefon gespeicherten Schlüssel. Gekoppelte Computer bleiben unberührt, Unterhaltungen bleiben erhalten.",
   "settings.history.section": "Chatverlauf",
   "settings.history.local": "Auf diesem Telefon gespeichert",
