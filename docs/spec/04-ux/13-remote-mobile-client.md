@@ -7,10 +7,9 @@
   capabilities that appeared after this document was written (choosing a model,
   sending images and files, per-session model and mode, settings, and tool calls
   that read as actions rather than output). Where §15 and §8 disagree, §15 wins.
-  §17 is a further proposal (awaiting approval) that replaces §8.6's project
-  grouping with two pages of navigation, unifies the status vocabulary, and
-  designs notifications; where it disagrees with §8 or §15, §17 wins once
-  approved.
+  §17 was accepted on 2026-10-21 and replaces §8.6's project grouping with two
+  pages of navigation, unifies the status vocabulary, and designs notifications;
+  where it disagrees with §8 or §15, §17 wins.
   Implemented today: S1–S6 as described here, S6's Markdown answers, the
   project-grouped session list, and the tool-call presentation of §15.11; the
   clickable prototype `apps/remote-web/design/prototype/index.html` (open the
@@ -1046,8 +1045,9 @@ is what proves the extraction was behaviour-preserving).
 
 ## 17. Projects, status, and notifications (R7 follow-on)
 
-- Status: **Proposed design, awaiting owner approval. Nothing in this section is
-  implemented.** Where it contradicts §8 or §15, this section wins once approved.
+- Status: **Accepted 2026-10-21 (N1–N4 resolved in §17.11); partially implemented.**
+  Where it contradicts §8 or §15, this section wins. The iOS push entitlement of
+  P3 is committed; the rest of P1–P3 is not implemented yet.
 - Why: the owner's request of 2026-10-21 was three complaints about one screen.
   The session list groups sessions under collapsible project headings, so choosing
   a session means reading four headings and eight rows; a row carries its state in
@@ -1563,13 +1563,15 @@ and unit tests; the extension's deadline and fallback path is unit-tested agains
 an injected transport, and real-device acceptance of the whole chain stays with the
 operator, as in R6.
 
-### 17.11 Open questions for the owner
+### 17.11 Decisions (resolved 2026-10-21)
 
-Each is designed above with a recommendation; none blocks P1.
+The owner approved all four recommendations on 2026-10-21 and accepted §17 as a
+whole. They are decisions now, not questions; §17.3, §17.6.5, and §17.6.6 above
+already read the way each was decided.
 
-| ID | Question | Recommendation |
+| ID | Question | Decision |
 |---|---|---|
 | N1 | With one ready computer, land on that computer's projects or on the computer list? | Land on the projects with the computer list beneath (§17.3): one tap fewer, and back still reaches the computer screen |
-| N2 | "Needs your answer" now (from a push, incomplete without notifications) or after the contract gains `waiting_input`? | Now, and schedule the contract follow-up; the alternative shows nothing until a desktop release |
+| N2 | "Needs your answer" now (from a push, incomplete without notifications) or after the contract gains `waiting_input`? | Now, from the push, and schedule the contract follow-up (§17.4.1); the alternative would show nothing until a desktop release |
 | N3 | The project page as cards or as one grouped list? | Cards: the aggregate pills need the width, and a card reads as a destination rather than a row |
 | N4 | Does the first release notify on finished runs as well as pending decisions? | Yes, all four kinds, with the filter one tap away (§17.6.5) |
