@@ -341,13 +341,13 @@ export async function streamDirectReply(
      * assigning it from inside the loop keeps the reader loop's own state in one
      * place: a closure that mutates it is invisible to the type narrowing.
      */
-    const applyEvent = (event: { event: string; data: string }): { error: string | null; done: boolean } => {
+    const applyEvent = (event: { event: string; data: string }): { error: string | null; terminal: boolean } => {
       const decoded = decodeStreamEvent(input.protocol, event);
       for (const piece of decoded.events) {
-        if (piece.type === "error") return { error: piece.message, done: false };
+        if (piece.type === "error") return { error: piece.message, terminal: true };
         emit(piece);
       }
-      return { error: null, done: decoded.terminal };
+      return { error: null, terminal: decoded.terminal };
     };
 
     for (;;) {
@@ -359,7 +359,7 @@ export async function streamDirectReply(
           failed = outcome.error;
           break;
         }
-        if (outcome.done) finished = true;
+        if (outcome.terminal) finished = true;
       }
       if (chunk.done) break;
       if (failed || finished) {

@@ -14,6 +14,10 @@
 import { Capacitor } from "@capacitor/core";
 
 import type { AppStateSource } from "./app-state.js";
+import { createControlClient } from "./direct-chat/control.js";
+import { capacitorHttpTransport } from "./direct-chat/native-transport.js";
+import { createDirectChatSecret, createUnavailableSecretStore } from "./direct-chat/secret.js";
+import { createDirectChatService, type DirectChatService } from "./direct-chat/service.js";
 import { WebCookieCredentialPort, type CredentialPort } from "./credential-port.js";
 import {
   CUSTOM_GATEWAY_STORAGE_KEY,
@@ -189,6 +193,37 @@ export const credentialPort: CredentialPort =
 export const modelGatewayOrigin = nativePlatform
   ? resolveModelGatewayOrigin(import.meta.env.VITE_MODEL_GATEWAY_ORIGIN)
   : null;
+
+/**
+ * The platform secure store, once `boot()` created it. Kept here so direct chat
+ * can reach the same store the device tokens live in without a second adapter:
+ * the two secrets share the Keychain but never the item name (`./direct-chat/secret.ts`).
+ */
+let platformStore: SecureStore | null = null;
+
+export function secureStore(): SecureStore {
+  return platformStore ?? createUnavailableSecretStore();
+}
+
+/**
+ * The direct-chat service, built on first use.
+ *
+ * One instance for the app: the screens are views over it, and the record it
+ * writes is the same one Settings and Chats read. The control plane and the
+ * platform store are the real ones; only a test replaces them.
+ */
+let directChat: DirectChatService | null = null;
+
+export function directChatService(): DirectChatService {
+  directChat ??= createDirectChatService({
+    control: createControlClient({ origin: modelGatewayOrigin, transport: capacitorHttpTransport }),
+    secret: createDirectChatSecret(secureStore()),
+    storage: browserStorage(),
+    gatewayRoot: modelGatewayOrigin,
+  });
+  return directChat;
+}
+
 let appState: AppStateSource | null = null;
 
 /** The native app-state feed, available after `boot()` resolved. */
@@ -234,7 +269,8 @@ async function loadNativeModules(): Promise<NativeModules> {
 export async function boot(): Promise<void> {
   if (!nativePort) return;
   const modules = await loadNativeModules();
-  nativePort.attach(await modules.createSecureStore());
+  platformStore = await modules.createSecureStore();
+  nativePort.attach(platformStore);
   await nativePort.ready();
   appState = modules.appStateSource();
   await modules.watchBack(() => dispatchBack());
