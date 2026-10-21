@@ -239,6 +239,15 @@ describe("connecting a model account", () => {
     expect(readConnection(storage)?.accessKeyId).toBe("7");
   });
 
+  it("names the connection it stored, from its own store", async () => {
+    const { service } = harness({ models: { ok: true, value: page([model("gpt-4.1")], 1) } });
+    expect(service.connection()).toBeNull();
+    await service.connect(KEY);
+    expect(service.connection()).toMatchObject({ gatewayRoot: ROOT, accessKeyId: "7" });
+    await service.disconnect();
+    expect(service.connection()).toBeNull();
+  });
+
   it("keeps the cached catalog across a rotation of the same account", async () => {
     const storage = memoryStorage();
     const store = createMemorySecureStore();

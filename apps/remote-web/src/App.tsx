@@ -38,10 +38,10 @@ import { useHostRegistry } from "./hooks/useHostRegistry.js";
 import { registryHasHosts } from "./lib/host-registry.js";
 import { resolveLaunchRoot, storeLastRoot } from "./lib/launch-root.js";
 import { setBackHandler } from "./lib/navigation.js";
-import { readConnection, type DirectChatConnection } from "./lib/direct-chat/connection.js";
+import type { DirectChatConnection } from "./lib/direct-chat/connection.js";
 import { credentialPort, directChatService, isNativeApp, modelGatewayOrigin, nativePlatform } from "./lib/runtime.js";
 import { consumeNotificationTap, setNotificationBadge } from "./lib/native-notify.js";
-import { createScreenHistory, sameScreen } from "./lib/screen-history.js";
+import { createScreenHistory, sameScreen, screenFromHistoryState } from "./lib/screen-history.js";
 import { previousScreen, type RootKind, type Screen } from "./lib/screen-stack.js";
 import { tabBarVisible } from "./lib/tab-bar.js";
 import { createSessionViews } from "./lib/session-state.js";
@@ -89,7 +89,7 @@ export default function App() {
    * decides what to show from it.
    */
   const [connection, setConnection] = useState<DirectChatConnection | null>(() =>
-    readConnection(launchStorage),
+    isNativeApp ? directChatService().connection() : null,
   );
   /** The model sheet, opened from D1 today and from D3's chip later. */
   const [modelsOpen, setModelsOpen] = useState(false);
@@ -187,8 +187,8 @@ export default function App() {
 
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
-      const state = event.state as unknown;
-      const restored = state && typeof state === "object" ? (state as { screen?: Screen }).screen : undefined;
+      // A history entry is untrusted input: only a screen that parses is adopted.
+      const restored = screenFromHistoryState(event.state as unknown);
       if (restored) {
         navigate(restored, true);
         return;
@@ -311,7 +311,7 @@ export default function App() {
     });
 
   /** The connection record is what every direct-chat screen reads. */
-  const reloadConnection = useCallback(() => setConnection(readConnection(launchStorage)), []);
+  const reloadConnection = useCallback(() => setConnection(directChatService().connection()), []);
 
   const body = (() => {
     if (screen.kind === "chats") {
@@ -333,7 +333,9 @@ export default function App() {
           onBack={goBack}
           onConnected={() => {
             reloadConnection();
-            goBack();
+            // The verification is async: a user who already left this page must
+            // not be moved again when it finishes.
+            if (screenRef.current.kind === "modelGateway") goBack();
           }}
           onConnect={async (key) => {
             const outcome = await directChatService().connect(key);

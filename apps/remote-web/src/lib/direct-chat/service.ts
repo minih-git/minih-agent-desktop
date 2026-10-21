@@ -54,6 +54,12 @@ export type DirectChatServiceOptions = {
 export type DirectChatService = {
   /** What the screens show, without reading the key. */
   status(): Promise<DirectChatStatus>;
+  /**
+   * The stored record, read synchronously from the service's own store. Screens
+   * read the connection through this so they and the service can never look at
+   * two different stores (a blocked `localStorage` falls back to memory).
+   */
+  connection(): DirectChatConnection | null;
   /** Verify a key, then store it and its credential-free record. */
   connect(key: string): Promise<ConnectOutcome>;
   /** Refresh the cached catalog for the current key. */
@@ -92,6 +98,10 @@ export function createDirectChatService(options: DirectChatServiceOptions): Dire
   }
 
   return {
+    connection() {
+      return readConnection(options.storage);
+    },
+
     async status() {
       const connection = readConnection(options.storage);
       if (!connection) return { state: "disconnected" };
