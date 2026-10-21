@@ -161,6 +161,23 @@ export function buildHost(
 export function fakeOperations(sessions: Map<string, SessionSummary>): RacpHostOperations {
   let counter = 0;
   return {
+    // A Host that offers one model, so the catalog read has something to answer.
+    // A test that needs "no catalog" overrides this with `operations`.
+    models: {
+      async list() {
+        return [
+          {
+            providerId: "test-provider",
+            providerLabel: "Test provider",
+            modelId: "test-model",
+            label: "Test model",
+            thinkingLevels: ["off", "low"],
+            supportsImages: true,
+            isDefault: true,
+          },
+        ];
+      },
+    },
     sessions: {
       async list() {
         return [...sessions.values()];

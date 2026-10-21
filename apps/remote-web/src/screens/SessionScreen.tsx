@@ -10,6 +10,7 @@
  * ones while the reader is at the bottom, offers a way back down (with a count)
  * when they are not, and holds their place when older rows are loaded above.
  */
+import { Info } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -18,6 +19,7 @@ import { ChatComposer } from "../components/chat/ChatComposer.js";
 import { ChatTimeline } from "../components/chat/ChatTimeline.js";
 import { DecisionArea } from "../components/chat/DecisionArea.js";
 import { RunBar } from "../components/chat/RunBar.js";
+import { SessionInfoSheet } from "../components/chat/SessionInfoSheet.js";
 import { StopSheet } from "../components/chat/StopSheet.js";
 import { Banner } from "../components/ui/Banner.js";
 import { Button } from "../components/ui/Button.js";
@@ -25,6 +27,7 @@ import { ResultState } from "../components/ui/EmptyState.js";
 import { NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
 import { useSessionScreen } from "../hooks/useSessionScreen.js";
+
 import { useTimelineScroll } from "../hooks/useTimelineScroll.js";
 import type { HostCredential } from "../lib/credential-port.js";
 import { gatewayOrigin } from "../lib/runtime.js";
@@ -54,8 +57,14 @@ export function SessionScreen({
 }: SessionScreenProps) {
   const { t } = useTranslation();
   const [stopSheetOpen, setStopSheetOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  /**
+   * The model catalog, read the first time the info sheet opens (R7): small,
+   * static per Host, and useless on a screen nobody opened.
+   */
 
-  const { timeline, streamState, failure, pending, loadingEarlier, turnId, actions } =
+
+  const { timeline, streamState, failure, pending, loadingEarlier, turnId, models, actions } =
     useSessionScreen({
       hostId,
       sessionId,
@@ -133,6 +142,19 @@ export function SessionScreen({
               </span>
             ) : null}
           </span>
+        }
+        trailing={
+          <button
+            type="button"
+            onClick={() => {
+              setInfoOpen(true);
+              void actions.loadModels();
+            }}
+            aria-label={t("session.info")}
+            className="flex h-9 w-9 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] active:opacity-60"
+          >
+            <Info size={20} aria-hidden="true" />
+          </button>
         }
         onBack={onBack}
       />
@@ -269,6 +291,21 @@ export function SessionScreen({
           setStopSheetOpen(false);
           void actions.interrupt();
         }}
+      />
+
+      {/* R7: what this session runs on, and the one place to change it. */}
+      <SessionInfoSheet
+        open={infoOpen}
+        session={timeline.session}
+        computerLabel={hostName}
+        models={models}
+        running={active}
+        hasPendingDecision={hasDecision}
+        pending={pending["session/configure"] === true || pending["session/rename"] === true}
+        failure={failure?.failure.message ?? null}
+        onClose={() => setInfoOpen(false)}
+        onRename={(title) => void actions.rename(title)}
+        onConfigure={(input) => void actions.configure(input)}
       />
     </Screen>
   );

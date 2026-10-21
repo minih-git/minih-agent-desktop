@@ -2,6 +2,7 @@ import type { Principal, SessionSummary } from "@minih-agent/agent-host";
 import type {
   FsEntry,
   FsReadResult,
+  RacpModelSummary,
   RacpProjectSummary,
   WorkspaceDiff,
   WorkspaceToolExecute, WorkspaceToolAbort, WorkspaceToolResult, CommandShellOption, WorkspaceFilesRequest,
@@ -91,8 +92,25 @@ export interface RacpTerminalAccess {
   detach(terminalId: string): void;
 }
 
+/**
+ * The models this Host offers a remote client (R7, protocol §16.1).
+ *
+ * Metadata only. The implementation reads the Host's own provider catalog and
+ * drops anything it would not print on the desktop's model picker, so this port
+ * is the one place a credential could leak, and the one place it is refused.
+ */
+export interface RacpModelCatalog {
+  list(): Promise<RacpModelSummary[]>;
+}
+
 export type RacpHostOperations = {
   sessions: RacpSessionCatalog;
+  /**
+   * Absent on a Host that cannot describe its models; the operation then answers
+   * `CAPABILITY_UNAVAILABLE`, which is what tells a client to fall back to the
+   * Host's default instead of guessing.
+   */
+  models?: RacpModelCatalog;
   projects: RacpProjectCatalog;
   workspace: RacpWorkspaceAccess;
   terminal?: RacpTerminalAccess;

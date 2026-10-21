@@ -550,6 +550,7 @@ to this same catalog.
 | `connection/ping` | authenticated | Return connection health and server time |
 | `host/list` | authenticated | List Hosts visible to the principal; Gateway deployments only |
 | `project/list` | viewer | List projects the principal may create sessions under |
+| `model/list` | viewer | List the models the principal may start a session on (§16.1) |
 | `session/list` | viewer | List sessions visible to the principal |
 | `session/get` | viewer | Return metadata and current state |
 | `session/create` | controller | Create a session under an authorized project id |
@@ -2028,13 +2029,14 @@ advertise support. The self-hosted enrollment code and per-Host ticket of §11.4
 are unchanged, and account-mode devices keep the gateway-origin roles and
 restrictions of D665.
 
-## 16. R7 proposals (awaiting approval; **not implemented**)
+## 16. R7 additions (§16.1 implemented; §16.2 still proposed)
 
-This section is a proposal, not a contract: nothing below exists in the code
-today, and the normative tables above describe the deployed protocol. It is
-recorded here so the model-choice and attachment work of the mobile client
-(`docs/spec/04-ux/13-remote-mobile-client.md` §15) has one protocol-side
-reference. Approval turns each item into an amendment of the sections it names.
+§16.1 (`model/list`) was approved on 2026-10-21 and is implemented; the
+normative catalog in §6.1 and the HTTP route table carry it, and the amendment
+that records the decision is
+[ADR `remote-control-router-account-binding` amendment 2](../../adr/remote-control-router-account-binding.md).
+§16.2 (attachments beyond the inline case) remains a proposal: nothing below it
+exists in code.
 
 ### 16.1 `model/list` — the catalog a remote device may choose from
 
@@ -2043,8 +2045,8 @@ reference. Approval turns each item into an amendment of the sections it names.
 values, so a phone can neither offer a choice nor name the model a session runs
 on.
 
-Proposed: an operation `model/list`, role `viewer`, `GET /v1/models` in the
-RACP-HTTP route table, parameters none, response
+Implemented: the operation `model/list`, role `viewer`, `GET /v1/models` in
+the RACP-HTTP route table, parameters none, response
 `{ models: ModelSummary[] }`:
 
 ```ts

@@ -25,6 +25,7 @@ import type {
   RacpApprovalResult,
   RacpCursor,
   RacpItemSummary,
+  RacpModelSummary,
   RacpPermissionMode,
   RacpProjectSummary,
   RacpSession,
@@ -137,10 +138,30 @@ export function listProjects(client: CommandClient): Promise<MutationResult<Racp
   });
 }
 
+/**
+ * The models this Host offers (R7, protocol §16.1).
+ *
+ * A Host too old to implement `model/list` answers `CAPABILITY_UNAVAILABLE`;
+ * the caller then creates the session without a model, which is exactly what the
+ * Host's own default would have done.
+ */
+export function listModels(client: CommandClient): Promise<MutationResult<RacpModelSummary[]>> {
+  return run(async () => {
+    const result = await client.request<{ models?: RacpModelSummary[] }>("model/list", {});
+    return result.models ?? [];
+  });
+}
+
 export type SessionCreateInput = {
   /** Required: a session belongs to one of the projects `project/list` named. */
   projectId: string;
   title?: string;
+  /** R7: the model the user chose. Absent means the Host's own default. */
+  providerId?: string;
+  modelId?: string;
+  thinkingLevel?: string;
+  mode?: "agent" | "plan" | "goal";
+  permissionMode?: "ask" | "accept-edits" | "auto";
 };
 
 /**
@@ -162,6 +183,11 @@ export function createSession(
     const result = await client.request<{ session?: RacpSession }>("session/create", {
       projectId: input.projectId,
       ...(title ? { title } : {}),
+      ...(input.providerId ? { providerId: input.providerId } : {}),
+      ...(input.modelId ? { modelId: input.modelId } : {}),
+      ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
+      ...(input.mode ? { mode: input.mode } : {}),
+      ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
     });
     if (!result.session) throw new Error("the host created no session");
     return result.session;
@@ -300,4 +326,45 @@ export function stopTurn(client: CommandClient, turnId: string): Promise<Mutatio
 
 export function interruptTurn(client: CommandClient, turnId: string): Promise<MutationResult<RacpTurn>> {
   return run(async () => (await client.request<{ turn: RacpTurn }>("turn/interrupt", { turnId })).turn);
+}
+
+/**
+ * Change what a session runs on (controller role, R7).
+ *
+ * The Host refuses this under a running turn (`AGENT_BUSY`), which is why the
+ * screen asks `modelSwitchBlockedReason` first and shows the reason rather than
+ * a control that would be rejected.
+ */
+export function configureSession(
+  client: CommandClient,
+  input: {
+    sessionId: string;
+    providerId?: string;
+    modelId?: string;
+    thinkingLevel?: string;
+    mode?: "agent" | "plan" | "goal";
+    permissionMode?: "ask" | "accept-edits" | "auto";
+  },
+): Promise<MutationResult<RacpSession>> {
+  return run(async () => {
+    const { sessionId, ...rest } = input;
+    const result = await client.request<{ session?: RacpSession }>("session/configure", {
+      sessionId,
+      ...rest,
+    });
+    if (!result.session) throw new Error("the host returned no session");
+    return result.session;
+  });
+}
+
+/** Rename a session (controller role). */
+export function renameSession(
+  client: CommandClient,
+  sessionId: string,
+  title: string,
+): Promise<MutationResult<string>> {
+  return run(async () => {
+    await client.request("session/rename", { sessionId, title: title.trim() });
+    return title.trim();
+  });
 }

@@ -342,6 +342,9 @@ describe("catalog and roles", () => {
         "events/ack",
         "events/subscribe",
         "events/unsubscribe",
+        // R7: reading the model catalog is not a capability, so a read-only
+        // device may list model names; choosing one is still `controller`.
+        "model/list",
         "project/list",
         "session/attach",
         "session/get",

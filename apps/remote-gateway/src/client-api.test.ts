@@ -53,6 +53,17 @@ describe("gateway client API", () => {
     expect(listed.payload.result).toMatchObject({ sessions: [{ id: "s1" }] });
   });
 
+  /**
+   * R7: the model catalog is a declared route, so the Gateway forwards it like
+   * every other one. The Gateway has no model-specific code: this proves the
+   * shared table is enough and that no allowlist kept the path out.
+   */
+  it("forwards the model catalog a phone chooses a model from", async () => {
+    const listed = await command(gateway, { hostId: host.hostId, token: deviceToken, method: "model/list", params: {} });
+    expect(listed.status).toBe(200);
+    expect(listed.payload.result).toMatchObject({ models: expect.any(Array) });
+  });
+
   it("forwards the project routes a phone uses to start a session somewhere new", async () => {
     // Rollout A2 added these two routes; the Gateway derives its host-scoped
     // routes from the shared table, so this proves the wiring and the query

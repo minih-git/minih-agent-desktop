@@ -9,6 +9,7 @@ import {
   createHostSession,
   createProjectCatalog as createSharedProjectCatalog,
   listDir,
+  listModelSummaries,
   listProjectSummaries,
   listSessionSummariesWithProjectIds,
   readWorkspaceFile,
@@ -20,7 +21,13 @@ import {
   type HostSessionRecord,
   type RuntimeService,
 } from "@minih-agent/host-runtime";
-import type { RacpHostOperations, RacpProjectCatalog, RacpSessionCatalog, RacpWorkspaceAccess } from "@minih-agent/racp";
+import type {
+  RacpHostOperations,
+  RacpModelCatalog,
+  RacpProjectCatalog,
+  RacpSessionCatalog,
+  RacpWorkspaceAccess,
+} from "@minih-agent/racp";
 
 /**
  * host-core error mapping, shared with the desktop Host. Every catalog method
@@ -153,10 +160,20 @@ export function createWorkspaceAccess(deps: HostOperationsDeps): RacpWorkspaceAc
   };
 }
 
+/** The model catalog: the Host's provider rows, projected to metadata only. */
+function createModelCatalog(deps: HostOperationsDeps): RacpModelCatalog {
+  return {
+    async list() {
+      return listModelSummaries(requireHost(deps.getHost));
+    },
+  };
+}
+
 export function createHostOperations(deps: HostOperationsDeps): Omit<RacpHostOperations, "terminal"> {
   return {
     sessions: createSessionCatalog(deps),
     projects: createHostProjectCatalog(deps),
+    models: createModelCatalog(deps),
     workspace: createWorkspaceAccess(deps),
     workspaceTools: createWorkspaceTools(deps.getHost),
     workspaceFiles: createWorkspaceFiles(),

@@ -173,6 +173,7 @@ Host 队列；持久事件使用每 epoch 递增且不复用的 `sequence`；附
 | `connection/ping` | authenticated | 返回连接健康和服务器时间 |
 | `host/list` | authenticated | 列出主体可见的 Host，仅 Gateway 部署 |
 | `project/list` | viewer | 列出主体可在其下创建会话的项目 |
+| `model/list` | viewer | 列出主体可用于新建会话的模型（第 16.1 节） |
 | `session/list` | viewer | 列出主体可见会话 |
 | `session/get` | viewer | 返回会话元数据和状态 |
 | `session/create` | controller | 在授权项目 id 下创建会话 |
@@ -796,11 +797,11 @@ bootstrap 的 `remoteGateway` 注册 Host；账户作用域的登录与主机列
 
 完整状态机、示例和验收条款见英文源规格。
 
-## 16. R7 提案（等待确认；**尚未实施**）
+## 16. R7 增补（第 16.1 节已实施；第 16.2 节仍为提案）
 
-本节是提案，不是契约：下面没有任何内容存在于现有代码中，上文的规范表格描述的是已部署的协议。
-它记在这里，是为了让移动端的模型选择与附件工作（`docs/spec/04-ux/13-remote-mobile-client.md` 第 15 节）
-有唯一的协议侧依据。获批后，每一条都会变成它所引用章节的修订。
+第 16.1 节（`model/list`）已于 2026-10-21 获批并实施：第 6.1 节的规范目录与 HTTP 路由表都已包含它，
+记录该决定的修订见 [ADR `remote-control-router-account-binding` 第 2 号修订](/adr/remote-control-router-account-binding)。
+第 16.2 节（内联之外的附件）仍为提案：其下内容在代码中均不存在。
 
 ### 16.1 `model/list`——远程设备可选择的模型目录
 

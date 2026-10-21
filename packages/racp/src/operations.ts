@@ -197,6 +197,12 @@ export function createOperations(): Map<RacpOperation, OperationHandler> {
     return context.operations.projects.browse(input.path, context.principal);
   });
 
+  handlers.set("model/list", async (context) => {
+    const models = context.operations.models;
+    if (!models) throw new RacpError("CAPABILITY_UNAVAILABLE", "this host does not list its models");
+    return { models: await models.list() };
+  });
+
   handlers.set("session/list", async (context) => {
     const sessions = await context.operations.sessions.list();
     return { sessions: sessions.map((summary) => context.agentHost.describeSession(summary)) };
