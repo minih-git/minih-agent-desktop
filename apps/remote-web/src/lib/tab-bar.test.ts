@@ -18,7 +18,7 @@ describe("tabBarVisible", () => {
   it("hides on every pushed page of a native build", () => {
     expect(tabBarVisible({ kind: "session", hostId: "h1", sessionId: "s1", title: "" }, { isNativeApp: true })).toBe(false);
     expect(tabBarVisible({ kind: "projects", hostId: "h1" }, { isNativeApp: true })).toBe(false);
-    expect(tabBarVisible({ kind: "chat" }, { isNativeApp: true })).toBe(false);
+    expect(tabBarVisible({ kind: "chat", conversationId: "c1" }, { isNativeApp: true })).toBe(false);
     expect(tabBarVisible({ kind: "chatArchive" }, { isNativeApp: true })).toBe(false);
     expect(tabBarVisible({ kind: "modelGateway", from: "chats" }, { isNativeApp: true })).toBe(false);
     expect(tabBarVisible({ kind: "settings", from: "chats" }, { isNativeApp: true })).toBe(false);

@@ -56,9 +56,18 @@ export function screenFromHistoryState(state: unknown): Screen | null {
     case "chats":
     case "pair":
     case "account":
-    case "chat":
     case "chatArchive":
       return { kind: screen.kind };
+    case "chat":
+      // A conversation id is required: an entry without one cannot open a
+      // thread, and trusting it would land the user on an empty screen.
+      return typeof screen.conversationId === "string" && screen.conversationId
+        ? {
+            kind: "chat",
+            conversationId: screen.conversationId,
+            ...(screen.fromArchive === true ? { fromArchive: true } : {}),
+          }
+        : null;
     case "modelGateway":
       // Both halves of the origin are needed to restore the same back step.
       return isRootKind(screen.from)

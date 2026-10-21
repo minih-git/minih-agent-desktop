@@ -56,8 +56,13 @@ describe("previousScreen", () => {
     expect(previousScreen({ kind: "hosts" })).toBeNull();
   });
 
-  it("goes from a direct-chat page back to the Chats root", () => {
-    expect(previousScreen({ kind: "chat" })).toEqual({ kind: "chats" });
+  it("goes from a direct-chat page back to the list it was opened from", () => {
+    // Opened from D1: back is the Chats root.
+    expect(previousScreen({ kind: "chat", conversationId: "c1" })).toEqual({ kind: "chats" });
+    // Opened from D4: back is the archive, not the root it sits under.
+    expect(previousScreen({ kind: "chat", conversationId: "c1", fromArchive: true })).toEqual({
+      kind: "chatArchive",
+    });
     expect(previousScreen({ kind: "chatArchive" })).toEqual({ kind: "chats" });
   });
 

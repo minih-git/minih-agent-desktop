@@ -63,11 +63,13 @@ export type Screen =
       projectLabel?: string;
     }
   /**
-   * D3: one direct conversation (native builds only). First stage renders a
-   * placeholder; the record the screen must show is a direct-chat concern and
-   * is added with the history stage, not here.
+   * D3: one direct conversation (native builds only).
+   *
+   * `fromArchive` says the user opened it from D4 rather than D1, so back
+   * returns to the list they actually came from. The conversation itself is a
+   * local record, and its id is what the screen reads it by.
    */
-  | { kind: "chat" }
+  | { kind: "chat"; conversationId: string; fromArchive?: boolean }
   /** D4: archived direct conversations (native builds only). */
   | { kind: "chatArchive" }
   /**
@@ -130,6 +132,7 @@ export function previousScreen(screen: Screen): Screen | null {
     case "account":
       return { kind: "hosts" };
     case "chat":
+      return screen.fromArchive === true ? { kind: "chatArchive" } : { kind: "chats" };
     case "chatArchive":
       return { kind: "chats" };
     case "modelGateway":

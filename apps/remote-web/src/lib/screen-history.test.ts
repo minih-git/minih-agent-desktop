@@ -36,7 +36,8 @@ describe("screenFromHistoryState", () => {
       { kind: "pair" } as Screen,
       { kind: "account" } as Screen,
       { kind: "chats" } as Screen,
-      { kind: "chat" } as Screen,
+      { kind: "chat", conversationId: "c1" } as Screen,
+      { kind: "chat", conversationId: "c1", fromArchive: true } as Screen,
       { kind: "chatArchive" } as Screen,
       { kind: "modelGateway", from: "chats" } as Screen,
       { kind: "modelGateway", from: "hosts", viaSettings: true } as Screen,
@@ -44,6 +45,12 @@ describe("screenFromHistoryState", () => {
     ]) {
       expect(screenFromHistoryState({ screen })).toEqual(screen);
     }
+  });
+
+  it("refuses a conversation entry with no id", () => {
+    // A thread cannot be opened without one, so the entry is not trusted.
+    expect(screenFromHistoryState({ screen: { kind: "chat" } })).toBeNull();
+    expect(screenFromHistoryState({ screen: { kind: "chat", conversationId: "" } })).toBeNull();
   });
 
   it("refuses a settings entry whose origin is not a root", () => {
