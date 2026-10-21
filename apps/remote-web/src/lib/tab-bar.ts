@@ -7,11 +7,16 @@
  * reachable from a root, so there is no hidden per-tab stack to keep or
  * restore.
  *
- * Pure over the two facts the renderer already knows, so the condition is
- * unit-tested without a DOM.
+ * A type guard on the screen rather than a plain boolean: the one caller draws
+ * the bar and needs the root's name, so the rule and the narrowing cannot
+ * drift apart. Pure over the two facts the renderer already knows, so the
+ * condition is unit-tested without a DOM.
  */
-import { isRootScreen, type Screen } from "./screen-stack.js";
+import { isRootScreen, type RootKind, type Screen } from "./screen-stack.js";
 
-export function tabBarVisible(input: { isNativeApp: boolean; screen: Screen }): boolean {
-  return input.isNativeApp && isRootScreen(input.screen);
+/** A screen that is one of the two tab-bar roots. */
+export type RootScreen = Screen & { kind: RootKind };
+
+export function tabBarVisible(screen: Screen, options: { isNativeApp: boolean }): screen is RootScreen {
+  return options.isNativeApp && isRootScreen(screen);
 }
