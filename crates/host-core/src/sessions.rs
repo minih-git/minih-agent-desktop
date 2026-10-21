@@ -5641,6 +5641,99 @@ mod tests {
         assert!(blocks[1].get("data").is_none());
     }
 
+    /// A retried append can leave one id on two physical lines, and the phone
+    /// pages with the id of the oldest row it holds. Such a walk must still reach
+    /// the head in bounded pages and must never answer with a page the client
+    /// already has — a page that repeats itself leaves "Load earlier" on screen
+    /// forever while nothing loads, which is what an old Host did when it ignored
+    /// `messageBeforeId` and returned the tail every time.
+    #[test]
+    fn a_walk_named_by_ids_reaches_the_head_with_a_duplicated_id() {
+        let db = test_db();
+        let session = create_session(&db, None, None, None, None, None).unwrap();
+        for index in 0..12 {
+            append_message(
+                &db,
+                &session.id,
+                &user_msg(
+                    &format!("m{index:02}"),
+                    &format!("body {index}"),
+                    "2025-05-01T00:00:00Z",
+                ),
+                None,
+            )
+            .unwrap();
+        }
+        // The retried line is physically last, so the id the phone may hold is on
+        // two lines that sit far apart.
+        let (record, _) = ui_to_record(&user_msg("m02", "body 2 retried", "2025-05-01T00:00:01Z"));
+        transcripts::append_message(db.data_dir(), &session.id, "2025-05-01T00:00:00Z", &record)
+            .unwrap();
+
+        let mut held: Vec<String> = get_session_with_options(
+            &db,
+            &session.id,
+            SessionReadOptions {
+                message_around: None,
+                message_before_id: None,
+                message_before: None,
+                message_limit: Some(4),
+                content_limit: None,
+            },
+        )
+        .unwrap()
+        .unwrap()
+        .messages
+        .iter()
+        .map(|message| message.id.clone())
+        .collect();
+
+        for _page in 0..10 {
+            let oldest = held.first().cloned().unwrap();
+            let page = get_session_with_options(
+                &db,
+                &session.id,
+                SessionReadOptions {
+                    message_around: None,
+                    message_before_id: Some(oldest.clone()),
+                    message_before: None,
+                    message_limit: Some(4),
+                    content_limit: None,
+                },
+            )
+            .unwrap()
+            .unwrap();
+            let ids: Vec<String> = page
+                .messages
+                .iter()
+                .map(|message| message.id.clone())
+                .collect();
+            let fresh: Vec<String> = ids
+                .into_iter()
+                .filter(|id| !held.iter().any(|known| known == id))
+                .collect();
+            assert!(
+                !fresh.is_empty(),
+                "a page named by {oldest} must carry something older: {held:?}"
+            );
+            let mut next = fresh;
+            next.extend(held.iter().cloned());
+            held = next;
+            if page.has_more_before == Some(false) {
+                break;
+            }
+        }
+
+        let missing: Vec<String> = (0..12)
+            .map(|index| format!("m{index:02}"))
+            .filter(|id| !held.iter().any(|seen| seen == id))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "unreachable by paging: {missing:?} in {held:?}"
+        );
+    }
+
     #[test]
     fn a_window_over_a_duplicated_id_stays_complete_and_reaches_the_head() {
         // Physical lines can exceed distinct messages: a retried append leaves
