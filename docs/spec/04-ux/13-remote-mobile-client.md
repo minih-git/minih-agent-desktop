@@ -108,10 +108,40 @@ Push tap ──────────▶ S6 Session, with S4 ▸ S5 restored b
 | S6 | Session | Tap a session, or a push | `SessionScreen` |
 | S7 | Sheets and dialogs | Contextual | Inline confirm rows |
 
-Back behavior: the header back control and the Android hardware back button
-pop one level (existing `previousScreen`); iOS additionally supports the edge
-swipe through the standard history gesture in the WebView only when it does
-not conflict with horizontal scrolling inside code blocks.
+Back behavior — one rule, four paths: the header back control, the Android
+hardware back button, the browser's own Back, and the iOS edge swipe all pop
+exactly one level through `previousScreen` (`src/lib/screen-stack.ts`), so they
+cannot disagree.
+
+- **The browser's history is the stack.** Every forward navigation writes one
+  entry (`src/lib/screen-history.ts`: `pushState` for a new level,
+  `replaceState` for the level already shown), and `popstate` adopts the screen
+  the entry names — or, for an entry written by an older build, falls back to
+  `previousScreen`. A browser Back and Safari's edge gesture therefore step up
+  one level instead of leaving the site, a Forward returns to the entry it
+  names, and the entry the user arrived on is replaced rather than stacked.
+- **iOS uses this client's own edge gesture, not the WebView's.** Capacitor's
+  `allowsBackForwardNavigationGestures` is deliberately left off: it shows a
+  static snapshot of the page it returns to, while a session screen is live —
+  a stream, a pending decision, a running turn — so the snapshot and the state
+  would visibly disagree, and the gesture would also drive the history
+  underneath the app's own sheet state. `src/hooks/useEdgeSwipe.ts` instead
+  tracks a drag and calls the same back path, so there is one behaviour to
+  reason about. Its rules: a touch must start within `EDGE_WIDTH` (20 px) of the
+  left edge; a mostly-vertical or leftward drag is released untouched, which is
+  what keeps the timeline's scroll and a code block's horizontal pan working; the
+  screen follows the finger with the page beneath at a third of the distance; on
+  release it completes past `COMPLETE_FRACTION` (1/3 of the width) or a flick
+  past `COMPLETE_VELOCITY` that has travelled at least
+  `MIN_FLICK_DISTANCE_FRACTION` (15%), and otherwise springs back. A gesture
+  starting off the edge, with nowhere to go, or while a sheet is open
+  (`[role="dialog"][aria-modal="true"]` is present) is never intercepted.
+- **A browser never mounts the JS gesture.** It already has one, and running both
+  would pop two levels per swipe.
+- **Push restores the stack (§8.8) and the history with it**: opening the named
+  session writes the computer's session list as one entry and the session as the
+  next, so a back swipe from a pushed session lands on that list rather than on
+  the Host list.
 
 ## 5. Visual system
 
