@@ -7,11 +7,16 @@
   capabilities that appeared after this document was written (choosing a model,
   sending images and files, per-session model and mode, settings, and tool calls
   that read as actions rather than output). Where §15 and §8 disagree, §15 wins.
+  §17 is a further proposal (awaiting approval) that replaces §8.6's project
+  grouping with two pages of navigation, unifies the status vocabulary, and
+  designs notifications; where it disagrees with §8 or §15, §17 wins once
+  approved.
   Implemented today: S1–S6 as described here, S6's Markdown answers, the
   project-grouped session list, and the tool-call presentation of §15.11; the
   clickable prototype `apps/remote-web/design/prototype/index.html` (open the
   file directly; data is simulated) is the visual reference and was reviewed at
-  320×568 through 430×932.
+  320×568 through 430×932; `apps/remote-web/design/prototype/projects-notifications.html`
+  is the second prototype, for the §17 proposal only.
 - Scope: `apps/remote-web`, i.e. the browser (H5) build and the Capacitor iOS
   and Android builds. They share one React codebase, so every rule here applies
   to all three unless a section names a platform.
@@ -1038,3 +1043,531 @@ the evidence; the shared rules are covered by
 `packages/shared/src/tool-presentation.test.ts` and the desktop's existing
 `tool-display`, `tool-identity` and `tool-presentation` suites (unchanged, which
 is what proves the extraction was behaviour-preserving).
+
+## 17. Projects, status, and notifications (R7 follow-on)
+
+- Status: **Proposed design, awaiting owner approval. Nothing in this section is
+  implemented.** Where it contradicts §8 or §15, this section wins once approved.
+- Why: the owner's request of 2026-10-21 was three complaints about one screen.
+  The session list groups sessions under collapsible project headings, so choosing
+  a session means reading four headings and eight rows; a row carries its state in
+  a 12 px dot whose only difference between "running" and "needs your approval" is
+  hue; and the phone cannot tell the user anything while they are not looking at
+  it. This section replaces the grouping with two layers of navigation, gives every
+  state one shape and one word, and designs the notifications the Gateway can
+  already send but no operator has switched on.
+- Scope: presentation and interaction in `apps/remote-web`, one additive field on
+  an existing registration route, iOS native configuration, and operator steps.
+  RACP keeps its operations and its redacted push payload; §15.3's `model/list`
+  and the attachment flow are untouched.
+
+### 17.1 What changes, and what it costs
+
+| Today (evidence) | After |
+|---|---|
+| S5 lists one computer's sessions grouped under collapsible project headings (`SessionsScreen.tsx`, `session-groups.ts`) | S5 lists projects; a project opens its own session list (S5b) |
+| A row's state is a 12 px dot plus a word in the subtitle; "waiting" and "running" differ by hue (`SessionRow.tsx`, `StatusDot.tsx`) | One vocabulary with two weights: an attention pill with an icon and a word, or a glyph plus a word (§17.4) |
+| Nothing tells the user about a finished turn or a pending approval away from the app | Four notification kinds, a lock-screen body that names the session without that title ever transiting to Apple, in-app notices in the foreground, three settings switches (§17.6) |
+
+Costs, stated up front: two pages and a rewritten nav stack (H5 only, ships with a
+deploy); one additive registration field and a grouping key (Gateway);
+entitlements, a Notification Service Extension, and a shared-keychain mirror of the
+device token (iOS build); and the operator steps of §17.7. Nothing here needs a new
+RACP operation.
+
+### 17.2 Pages
+
+Two pages replace the grouping on S5. Both answer one question, and both have one
+primary action, following the rule §15.1 already states.
+
+| ID | Page | The question it answers | Primary action |
+|---|---|---|---|
+| S5 | Projects of one computer | "Which project needs me?" | Open a project |
+| S5b | Sessions of one project | "What happened in this project?" | Open a session, or start one |
+
+S6 keeps its identity and gains nothing new here. S8 keeps §15.7 and gains the
+notification rows of §17.6.5.
+
+#### S5, projects of one computer
+
+- Navigation bar: computer label, subtitle = computer state (the dot and word of
+  §5.6). Trailing: refresh in browser builds, which have no pull to refresh. There
+  is no large title: the bar already names the computer, so the page starts with a
+  section header ("Projects", count) rather than a second heading saying the same
+  thing.
+- One card per project, stacked with 10 px between cards. A card is three lines:
+  project label and session count; the aggregated state pills; the last-activity
+  time, right aligned and muted.
+- A project with nothing waiting shows a neutral line instead of pills ("No session
+  needs you"), and the session count is always present, so a card is never just a
+  name.
+- A project with something waiting carries a 3 px `--rm-decision` rail on its left
+  edge. The rail is a second cue and never the only one: the pill beside it says
+  the same thing in words.
+- **Aggregation is client-side.** `project/list` returns `{id, label, archived}`
+  (`packages/shared/src/racp.ts:436`) and `session/list` returns the sessions with
+  `projectId`, `status`, and `updatedAt`. Counting sessions per project, taking the
+  newest `updatedAt`, and counting `running` and `waiting_permission` needs no new
+  field and no second request, because the page already holds both lists. The one
+  number it cannot compute is how many sessions wait for an *answer* (§17.4.1).
+- **Order**: first by the four bands below, then by the newest session.
+  1. projects with at least one session waiting for the user;
+  2. projects with at least one session running;
+  3. projects with sessions but nothing live;
+  4. projects with no session at all.
+
+  The fourth band falls out of the same comparison, because a project's recency is
+  its newest session and it has none, so the rule stays one comparator rather than
+  four cases. Ties break by label, so the order is stable across refreshes.
+- **"Other"** — sessions with no `projectId`, or whose project left the catalog —
+  is one trailing card labelled "Other", subtitle "Sessions without a project". It
+  is a real destination (its S5b lists them) and it never sorts upward, so one
+  stray session cannot push a real project down.
+- **A project with no session is shown**, unlike §8.6's empty group, because it is
+  now a destination with an action (start a session there) rather than a heading
+  the user cannot act on. Archived projects stay hidden, as in §15.2.
+- States: loading (three skeleton cards shaped like cards, not rows); read failure
+  (error banner with Retry, the last cards kept at 60% while retrying, exactly
+  §8.6's rule); project catalog unreadable (`session/list` alone still produces the
+  cards, every session lands under "Other", and a neutral line says why); no
+  sessions at all (empty state "Nothing has run on this computer yet", primary
+  "Start a session"); revoked (§8.6's result state, unchanged).
+
+#### S5b, sessions of one project
+
+- Navigation bar: project label as title; subtitle = the computer and its state,
+  because the project name alone leaves "which computer is this" unanswered after
+  a push. Trailing: `+` for a new session (project pre-selected), and refresh in
+  browser builds.
+- Sections in this order, each hidden when empty: "Needs you" (an approval or an
+  answer is pending), "Running", "Recent" (everything else, newest first). A
+  section header carries the count.
+- Row anatomy: leading 20 px status slot (§17.4); title up to two lines; subtitle =
+  relative time, then the state word or attention pill, then the model label
+  (`modelLabel`, when the Host sent one). The model label truncates first, because
+  it is the least important fact on the line.
+- The `+` opens §15.2's sheet with the project pre-filled and shown as a value
+  rather than a chooser, because the user is standing in that project.
+- Empty: an empty state naming the project ("web app has no sessions yet"), the
+  sentence that work started on the computer appears here, and a dock primary
+  "Start a session". This is where the layer earns its keep over a heading.
+
+### 17.3 Navigation and back
+
+The stack becomes four levels. `src/lib/screen-stack.ts` gains two screen kinds and
+`previousScreen` stays the single rule, so the header back control, the Android
+hardware back button, the browser's Back, and the iOS edge swipe still cannot
+disagree (§4).
+
+```text
+S4 My computers  >  S5 Projects  >  S5b Sessions of one project  >  S6 Session
+```
+
+- **One project is not a list.** When the computer has exactly one usable project,
+  tapping the computer pushes S5b directly and S5 is never in the stack, so back
+  goes to S4. The skip is decided at the moment of navigation, from the same data
+  S5 would render (`soleProjectForNewSession` in `session-groups.ts` already answers
+  that question for the new-session sheet), so `previousScreen` never has to ask
+  "was there a list above me".
+- **One computer does not skip S4.** S4 owns connecting, forgetting, and settings,
+  and it is where every failure that concerns the computer is explained. Instead,
+  launching with exactly one *ready* computer opens that computer's S5 with
+  `computers` already beneath it, so back still lands on S4 and nobody taps through
+  a one-row screen on every launch. A computer that is offline, unaccepted, or
+  revoked does not get this: the launch screen stays S4, because that is the screen
+  that explains what is wrong.
+- **A push restores the stack** (§8.8, extended). The payload names `hostId` and
+  `sessionId`; the app finds the session's `projectId` in the list it reads anyway
+  and writes `computers > projects > sessions` beneath S6. A back swipe from a
+  pushed session therefore lands on that project's session list, not on the
+  computer list. With one usable project the `projects` entry is omitted, exactly
+  as a tap would have done. If the session is not in the list yet (created on the
+  computer a moment ago) the `projectId` is unknown: the app opens S6 with
+  `computers > projects` beneath and refreshes the list behind it, because a
+  slightly shallower stack is better than a fabricated one.
+- The edge swipe keeps §4's rules unchanged: a touch starting inside 20 px of the
+  left edge and released past a third of the width pops one level through the same
+  back path, and a mostly vertical drag is left to the list's own scroll.
+
+### 17.4 One status vocabulary
+
+Six states, three weights, one shape and one word each. The colours are the tokens
+§5.1 already defines, which are the desktop's colours
+(`apps/desktop/src/styles/tokens.css`: `--ds-warning` is `--rm-running`,
+`--ds-purple` is `--rm-decision`, `--ds-success` and `--ds-error` match too).
+
+| State | Derived from | Mark | Word | Motion |
+|---|---|---|---|---|
+| Needs your approval | `status === "waiting_permission"`, or `planningState === "awaiting_approval"` | shield (or plan) glyph in `--rm-decision` plus an attention pill | 等你批准 / Needs your approval | one 1.6 s pulse, twice |
+| Needs your answer | not in the list today (§17.4.1) | question glyph in `--rm-decision` plus the same pill | 等你回答 / Needs your answer | the same pulse |
+| Running | `status === "running"` | 8 px filled dot in `--rm-running` | 运行中 / Running | two 1.6 s breathing cycles, then steady |
+| Failed | `status === "error"` | circled alert in `--rm-error` | 失败 / Failed | none |
+| Finished, not looked at | `status` is `idle` or `aborted`, and `updatedAt` is newer than this device's `lastViewedAt` for the session | check inside a success ring (a shape difference, not an opacity difference) | 已完成 / Finished | none |
+| Idle, or finished and looked at | `status` is `idle` or `aborted`, already viewed | a faint dot | no word | none |
+
+The rules that hold in all three placements (a session row, a navigation subtitle,
+a project card):
+
+- **Never colour alone.** Every state pairs its hue with a glyph and a word: the
+  pill carries the word, and a settled state puts the word in the row subtitle. A
+  monochrome screenshot still reads.
+- **Attention is the only filled mark.** "Needs you" is the one state with a tinted
+  background; running and settled states stay flat, which is what makes the
+  exception mean something (§3, decisions first).
+- **A project card shows two facts**: how many sessions need the user (attention
+  pill with a count) and how many are running (running pill with a count). A sixth
+  count on a card would read as noise, and the settled ones are one tap away.
+- Motion follows §5.5: the pulse and the breathing run two cycles and stop,
+  `prefers-reduced-motion` renders the steady mark, and no status animates for as
+  long as work lasts — that is reserved for S6's run bar.
+- Accessibility: the pill's word is the accessible name, a row's `aria-label` reads
+  "title, state, time" so a screen reader hears the state without the glyph, and a
+  change on the visible screen is announced through the polite live region §9
+  defines.
+
+#### 17.4.1 The one state the data cannot express
+
+`RacpSession.status` is a closed union of `idle`, `running`,
+`waiting_permission`, `aborted`, and `error` (`packages/shared/src/racp.ts:55`). A
+tool approval sets `waiting_permission` (`packages/agent-host/src/agent-host.ts:350`),
+while an input request sets only the *turn's* status to `waiting_input` and leaves
+the session at `running` (`agent-host.ts:361`), so a session waiting for an answer
+is indistinguishable from a busy one in `session/list`. The design therefore does
+two things and says which one is temporary:
+
+1. **Now**: an `input.requested` push marks that session as "Needs your answer" in
+   a device-local map, cleared when the session is opened or answered. Accurate
+   whenever a notification was delivered, and honest about its limit: a user with
+   notifications off sees "Running".
+2. **Follow-up** (needs a desktop release and a contract addition): add
+   `waiting_input` to `RacpSessionStatus`, or a `pendingInput` count beside
+   `queuedTurnIds`. The Host already knows the answer (`agent-host.ts:671` derives
+   `waiting-input` for its work snapshot), so this is a contract change rather than
+   new logic. Not scheduled here.
+
+"Finished, not looked at" needs no protocol change: it is a device-local
+`lastViewedAt` per session, written when S6 opens and stored beside the registry
+entry. Its limit belongs in the design: it is per phone, and a reinstall makes
+every session "looked at".
+
+### 17.5 Empty, loading, and failure
+
+| Page | Loading | Empty | Failure | Offline |
+|---|---|---|---|---|
+| S5 | three skeleton cards | "Nothing has run on this computer yet" and Start a session | error banner with Retry, cards kept dimmed | §8.5 / §8.6 rules, unchanged |
+| S5b | six skeleton rows | names the project and offers Start a session | error banner with Retry | last list kept at 60%, as §8.6 |
+
+Neither page renders a heading with nothing under it, and neither shows a control
+it cannot honour (§15.1's two rules).
+
+### 17.6 Notifications
+
+The chain exists end to end and is switched off. In order: the desktop Host reports
+the four kinds on `host.notify` (`apps/desktop/electron/main/bootstrap/startup.ts`);
+the Gateway checks audience, dedupes, budgets, and calls APNs or FCM
+(`apps/remote-gateway/src/push.ts`); the payload is a closed object of a kind, two
+localization keys, and ids (`RacpPushPayloadSchema`,
+`packages/shared/src/racp-hostlink.ts:747`); the client registers a token per
+credential (`apps/remote-web/src/hooks/usePushRegistration.ts`) and resolves a tap
+to a screen from the ids alone (`apps/remote-web/src/lib/push.ts`). What keeps it
+dark is a missing flag set on the Gateway and a missing entitlement in the iOS
+build (§17.7).
+
+#### 17.6.1 Kinds and copy
+
+The eight keys stay `push.notify.<kind>.title` / `.body` (`pushKeysForKind`,
+`racp-hostlink.ts:768`), because they are also generated into the app bundle's
+`Localizable.strings` and `strings.xml` and the *system* renders them while the app
+is closed. Only their values change. zh-CN and en are normative; the other seven
+locales translate from en.
+
+| Key | Today (zh-CN) | Proposed zh-CN | Proposed en |
+|---|---|---|---|
+| `push.notify.approval.requested.title` | 需要你处理 | 等你批准 | Needs your approval |
+| `push.notify.approval.requested.body` | 有会话在等待你批准一项操作。 | 有会话在等你批准一项操作。 | A session is waiting for your approval. |
+| `push.notify.input.requested.title` | 需要你处理 | 等你回答 | Needs your answer |
+| `push.notify.input.requested.body` | 有会话在等待你的回答。 | 有会话在等你回答一个问题。 | A session is waiting for your answer. |
+| `push.notify.turn.completed.title` | 回合已完成 | 已完成 | Finished |
+| `push.notify.turn.completed.body` | 有会话的回合已完成。 | 有会话运行完成了。 | A session finished running. |
+| `push.notify.turn.failed.title` | 回合失败 | 运行失败 | Run failed |
+| `push.notify.turn.failed.body` | 有会话的回合失败了。 | 有会话运行失败了。 | A session's run failed. |
+
+The move from 回合 to 运行 is §10's own rule: no protocol vocabulary in
+user-facing copy. Both titles and bodies stay kind-level, so the two requests read
+differently from the two outcomes without naming anything.
+
+#### 17.6.2 The body names the session, and the title never leaves the phone
+
+The owner decided on 2026-10-21: show the session title, and keep it away from
+Apple. The mechanism is iOS's Notification Service Extension, and it is cheap here
+for one reason worth recording: the Gateway already sends `aps.mutable-content: 1`
+(`apps/remote-gateway/src/push-providers.ts:162`), so the extension is invoked as
+soon as it exists and no Gateway change is needed to trigger it.
+
+```text
+Host --host.notify{kind, sessionId}--> Gateway --redacted aps--> APNs --> phone
+                                                                           |
+                     Service Extension: GET {origin}/v1/sessions/{sessionId}
+                     +-- 200 -> body := the session title
+                     +-- timeout / 401 / 404 / no credential -> body stays
+                                                              the fixed key
+                                                                           |
+                                                                     lock screen
+```
+
+- **What APNs carries is unchanged**: `title-loc-key` = the kind label, `loc-key` =
+  the fixed body key, plus the ids (`sessionId`, `hostId`, `approvalId`). Apple
+  transports no sentence and no title.
+- **Which request the extension makes**: `GET /v1/sessions/{sessionId}`, the
+  existing `session/get` — `viewer` role, one record, no transcript
+  (`packages/shared/src/racp.ts:604` and `:716`). It answers
+  `{ session: { title, ... } }` (`packages/racp/src/operations.ts:288`); the
+  extension reads `title` and discards the rest without persisting it. `viewer` is
+  enough, so a read-only phone still gets a titled notification.
+- **Authentication**: the device token for `hostId`, read from a shared Keychain
+  access group, sent as the native profile's `Authorization: Bearer ...`. The
+  Gateway origin comes from the same shared store, because the extension cannot
+  read the app's baked-in build constant.
+- **The time budget.** The system gives a service extension about 30 s and then
+  calls `serviceExtensionTimeWillExpire`. The extension imposes its own shorter
+  deadline — 8 s (a 5 s request timeout plus margin) — and delivers either way: on
+  timeout, `401`, `403`, `404`, or an unreadable credential it calls the content
+  handler with the unmodified content, so the user sees the fixed sentence.
+  `serviceExtensionTimeWillExpire` must also call the handler with whatever it has,
+  because a handler that is never called is a notification that never appears.
+- **Keychain sharing, and the migration it needs.** Today's token lives in
+  `@aparajita/capacitor-secure-storage` (`apps/remote-web/src/lib/native-secure-store.ts`),
+  which is KeychainSwift behind Capacitor with no keychain access group — the
+  plugin's source never sets `kSecAttrAccessGroup`, so its items live in the app's
+  private group where a second process cannot read them. The migration is explicit
+  and small:
+  1. both targets list `keychain-access-groups` =
+     `$(AppIdentifierPrefix)group.app.minih.remote`, and both carry the App Group
+     `group.app.minih.remote`;
+  2. the app mirrors, per paired Host, one generic-password item
+     `{ origin, hostId, token }` into that group with
+     `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, the protection class the
+     app already uses;
+  3. the mirror is written on pair, on account adoption, and on `ready()`, and
+     deleted on forget and on sign-out; the app's own store stays the source of
+     truth, and a failed mirror write only costs the title, never the app.
+
+  This is the one place where the extension constrains the client, so it is its own
+  step (§17.9, P3) with its own test: a forgotten Host loses its mirrored item, and
+  a signed-out account device loses it too.
+- **A switch the extension honours.** "Show the session title" is a flag in the App
+  Group's `UserDefaults`. Off, the extension never makes the request. Off is a
+  privacy answer rather than a degraded mode, so the row explains it in one line.
+- **The privacy boundary is unchanged in kind.** The title travels between this
+  phone and the user's own Gateway, over TLS, on a request the phone authenticates
+  as itself. It never enters the push payload, an APNs or FCM message, a Gateway
+  log, or an audit record. ADR 0331 decision 7's redaction rule is therefore
+  intact, and the only thing that is new is *where the client gets the words*.
+- **Grouping.** `thread-id` on iOS = the session id, so several events about one
+  session stack into one group; FCM's `tag` = the same id on Android. Both are
+  derived from `sessionId`, which the payload already carries, so the closed
+  payload schema does not change — this is a change in `push-providers.ts` only
+  (§17.9, P2).
+- **Badge.** No `aps.badge`, deliberately: a correct badge is a count of what is
+  waiting for *this user*, and neither the Gateway nor the Host knows what the user
+  has already seen, so a number the Gateway invented would be wrong within minutes.
+  The app sets `UNUserNotificationCenter.setBadgeCount` from the aggregate it
+  already computes (P3) and clears it when it opens. The limit is stated: while the
+  app is closed the badge does not move. A server-computed badge needs a
+  pending-attention count in `host.notify`, which is a protocol change and is not
+  proposed here.
+
+#### 17.6.3 A tap
+
+`destinationForTap` already resolves the ids to a screen; §17.3 supplies the stack
+to restore. Two additions: an `approvalId`, when present, opens S6 scrolled to the
+decision dock (§8.7); and a notification whose approval was handled elsewhere shows
+"Already handled" with the outcome in the timeline, which §8.8 already specifies.
+
+#### 17.6.4 Foreground: an in-app notice, not a system banner
+
+When the app is open, a notification must not cover the screen the user is working
+in. The iOS plugin's `willPresent` already returns no presentation options when the
+build configures none — `@capacitor/push-notifications` returns an empty set and
+still notifies JS — so nothing is shown by the system today, and what is missing is
+the JS listener. Therefore:
+
+- the app subscribes to `pushNotificationReceived` and renders a notice bar
+  directly under the navigation bar: state glyph, the kind as its title, the session
+  title as its line, "查看" and a dismiss button. It is `role="status"` with
+  `aria-live="polite"`, so a screen reader reads it once;
+- an attention notice (approval or answer) stays until the user opens or dismisses
+  it, because it is the reason the phone spoke; completed and failed notices leave
+  after 6 s;
+- "查看" pushes S6 with the same restored stack a tap builds, so the two paths
+  cannot diverge;
+- no sound, no vibration, and no card over the decision dock: the user is already
+  there.
+
+#### 17.6.5 Settings switches, and where they live
+
+| Switch | Enforced by | Cost |
+|---|---|---|
+| Notifications on or off (master) | the OS: asked once, and "no" is final for that launch; the row shows the state ("On", "Not allowed", "This Gateway has no push configured") and opens system settings when refused | none |
+| Only notify me about things that need me | the **Gateway**, because the OS delivers a notification the app cannot recall; one optional field on the existing registration route | P2 |
+| Show the session title | the **app**, read by the extension from the App Group | P3 |
+
+Reusing the registration route, as asked: `PUT /v1/push/registration` gains one
+optional field, `onlyActionable?: boolean`, stored on
+`GatewayPushRegistrationRecord`, and `PushService`'s kind gate drops
+`turn.completed` and `turn.failed` for a registration that set it. The route, the
+method, the audience rule of §11.5, and the dedupe are untouched; a client that
+does not send the field keeps today's behaviour exactly. The request schema has no
+closed-object boundary of its own, so an older Gateway would tolerate the field and
+ignore it — which the user would experience as a switch that does nothing. The app
+therefore shows the switch only when the registration answer echoes it, and
+`RacpPushRegistrationResponseSchema` gains
+`preferences?: { onlyActionable: boolean }` for exactly that.
+
+Default for the first release: the filter is **off**, so all four kinds are sent,
+because "your work finished" is the notification people want until it proves
+noisy. Turning the filter on is one tap.
+
+#### 17.6.6 Android and the browser
+
+- **Android** gets the same redacted payload, the four kinds, per-session grouping
+  through `tag`, a tap destination, and the in-app notice (the same JS listener).
+  It does **not** get the session title in this round: the equivalent of a service
+  extension there is a data-only FCM message plus an `onMessageReceived` path that
+  has to work while the app is dead, which is a background service and a revivable
+  process — a much larger change than one extension. The fixed sentence is what
+  Android shows, and the title switch is hidden on that platform rather than shown
+  as a lie.
+- **The browser build** gets nothing, and is recommended to keep getting nothing.
+  Web Push needs a VAPID key pair (another operator secret), a service worker, and a
+  second credential story — the cookie profile's `SameSite=Strict` cookie is not
+  sent by a push subscription's background fetch — and on iOS it only works after
+  the site is added to the Home Screen, which is a different product than "open the
+  URL". ADR 0331 decision 7 scopes push to the app; this section does not widen it.
+
+### 17.7 Operator checklist
+
+The Apple account is a paid Apple Developer Program membership (team
+`CQ8XQD6L2J`), confirmed by the owner on 2026-10-21, so an APNs Auth Key can be
+created. In order, once:
+
+1. **Create the APNs Auth Key.** Apple Developer → Certificates, Identifiers &
+   Profiles → Keys → **+**. Name it (for example `Minih Remote APNs`), tick *Apple
+   Push Notifications service (APNs)*, Continue, Register. Download the `.p8` once
+   — Apple will not let you download it again — and write down the **Key ID**
+   shown beside it (10 characters).
+2. **Note the other two values**: Team ID `CQ8XQD6L2J`, and the bundle id
+   notifications belong to, `app.minih.remote` (from `capacitor.config.ts` and
+   `PRODUCT_BUNDLE_IDENTIFIER`). That bundle id is `--apns-topic`; a wrong topic
+   rejects every token with `DeviceTokenNotForTopic`.
+3. **Turn the capabilities on in Xcode.** `open apps/remote-web/ios/App/App.xcodeproj`,
+   select the `App` target, Signing & Capabilities, **+ Capability**, *Push
+   Notifications*. Add *App Groups* and *Keychain Sharing* with
+   `group.app.minih.remote` for the extension of §17.6.2. A build without them
+   compiles, runs, and receives nothing.
+4. **Add the Notification Service Extension** (§17.9, P3): bundle id
+   `app.minih.remote.notificationservice`, embedded in the app, carrying the same
+   App Group and keychain access group.
+5. **Put the `.p8` on the Gateway.** Never paste it into a chat, an issue, or the
+   repository; copy the file itself and then fix its owner and mode:
+
+```sh
+# from the machine that downloaded it
+scp AuthKey_ABCDE12345.p8 <user>@<host>:/tmp/apns.p8
+# on the server
+sudo install -o minih-gateway -g minih-gateway -m 600 /tmp/apns.p8 \
+  /etc/minih-remote-gateway/apns.p8
+rm -f /tmp/apns.p8
+```
+
+   `0600` and ownership by the service user are not optional: the Gateway refuses a
+   key file anyone else can read (`apps/remote-gateway/README.md`, "Redacted push").
+6. **Start the Gateway with all four APNs flags** — all four or none, or it refuses
+   to start (`apps/remote-gateway/src/push-config.ts:143`):
+
+```sh
+remote-gateway serve ... \
+  --apns-key-file /etc/minih-remote-gateway/apns.p8 \
+  --apns-key-id  ABCDE12345 \
+  --apns-team-id CQ8XQD6L2J \
+  --apns-topic   app.minih.remote
+```
+
+7. **Check it from the phone, not the server.** Install the build, open it once
+   (that is when it registers), confirm the registration answers `enabled: true`
+   with a non-empty `hostIds`, then finish a turn on the computer with the app
+   backgrounded. A lock screen naming the session means steps 1–6 are all right;
+   the fixed sentence with no title means the extension or the keychain mirror is
+   at fault, not APNs.
+
+For Android when that build matters: `google-services.json` from the Firebase
+project into `android/app/`, the Google Services Gradle plugin, and the FCM
+service-account JSON as `--fcm-service-account-file` under the same `0600` rule.
+
+### 17.8 Prototype and evidence
+
+`apps/remote-web/design/prototype/projects-notifications.html`, a sibling of
+`index.html` (which keeps S1–S8): one file, simulated data, the client's own
+`--rm-*` tokens, light and dark. It demonstrates S4 → S5 → S5b → S6 and back; the
+six states in all three placements; a project with nothing waiting; a project with
+no session; "Other"; the new-session sheet with the project pre-filled; a lock
+screen with the enriched title, with a same-session group, and with the fixed
+fallback; a tap that lands on S6 with the stack restored; and the foreground
+in-app notice.
+
+How it was checked, so the reader can weigh the claim: real Chromium at 390×844
+through `playwright-cli`; every state reached by clicking a rendered element, with
+a missing target failing the run; one screenshot per state; and these assertions —
+`document.documentElement.scrollWidth === 390` on every screen, no horizontal
+overflow inside the scroll content, no element crossing the phone's left or right
+edge, no interactive element under 44 px other than the composer's 36 px send
+button that §8.7 already specifies, and no console error. The navigation stack was
+read back after every step, which is what proves a push tap restores
+`computers > projects > sessions` and that one back step from it lands on that
+project's session list.
+
+### 17.9 Implementation order
+
+Four steps, each buildable and shippable on its own, in dependency order.
+
+| Step | Scope | What ships with it | Exit |
+|---|---|---|---|
+| **P1** | S5 projects, S5b sessions, the status vocabulary, the nav stack and push restore, the local `lastViewedAt`, the foreground notice, the S8 notification rows that need no new data | `apps/remote-web` only: a web deploy and a new app build; no Gateway, no protocol change | choosing a session costs one tap fewer, every state is legible in monochrome, and a push opens the right place |
+| **P2** | `onlyActionable` on the registration route (field, record, echo, kind gate), `thread-id` and `tag` grouping, the eight copy values | shared schema, Gateway store, `push.ts` gate, `push-providers.ts`; a Gateway deploy, no desktop release | "only things that need me" is enforceable, and one session's events group |
+| **P3** | iOS: entitlements (push, App Group, keychain sharing), the Notification Service Extension with its 8 s deadline and fallback, the shared-keychain mirror and its cleanup, the badge, the title switch | Xcode project and extension target; `native-config.test.ts` relaxed from "no entitlements file" to "no team id, no `.p8`, no token"; the mirror code in `apps/remote-web` | a lock screen names the session, and a forgotten Host loses its credential copy |
+| **P4** | follow-ups, not scheduled: `waiting_input` (or a pending count) in `session/list`; Android title enrichment; a server-computed badge | a protocol and desktop change, or a new Android background path | each accepted on its own |
+
+P1 is the whole of the owner's first two complaints and needs nothing from anyone
+else. P3 is the notification design, gated on the Apple steps of §17.7, which are
+the owner's rather than the code's.
+
+### 17.10 Acceptance
+
+| Dimension | Cases |
+|---|---|
+| Navigation | S4→S5→S5b→S6 and back at 320×568 and 390×844; the one-project skip; the one-computer launch; a push tap that restores the stack; a session missing from the list |
+| States | every row of §17.4 in a session row, a navigation subtitle, and a project card, in light, dark, and monochrome (a grayscale screenshot must still read) |
+| Sorting | waiting before running before recent before empty; "Other" never sorts up; the order is stable across two refreshes |
+| Empty and failure | no sessions, a project with no session, "Other" alone, an unreadable project catalog, revoked, offline |
+| Notifications | four kinds on a lock screen, grouped and ungrouped; the fixed fallback; a tap to S6 at the decision dock; the in-app notice for an attention kind (persistent) and an outcome kind (6 s) |
+| Settings | the master switch states; "only things that need me" hidden when the Gateway does not echo it; the title switch off yields the fixed copy |
+| Text size and locales | 100% and 200% with no horizontal page scroll; zh-CN, en, and de (longest strings) with no clipped title, pill, or count |
+
+Automated coverage: the new pure helpers (aggregation, sectioning) get Vitest
+tests beside them; the two pages and the foreground notice go through
+`pnpm test:e2e:remote-web` (E2E-266) at two mobile viewports with screenshot
+artifacts kept out of the repository; the Gateway field and the kind gate get route
+and unit tests; the extension's deadline and fallback path is unit-tested against
+an injected transport, and real-device acceptance of the whole chain stays with the
+operator, as in R6.
+
+### 17.11 Open questions for the owner
+
+Each is designed above with a recommendation; none blocks P1.
+
+| ID | Question | Recommendation |
+|---|---|---|
+| N1 | With one ready computer, land on that computer's projects or on the computer list? | Land on the projects with the computer list beneath (§17.3): one tap fewer, and back still reaches the computer screen |
+| N2 | "Needs your answer" now (from a push, incomplete without notifications) or after the contract gains `waiting_input`? | Now, and schedule the contract follow-up; the alternative shows nothing until a desktop release |
+| N3 | The project page as cards or as one grouped list? | Cards: the aggregate pills need the width, and a card reads as a destination rather than a row |
+| N4 | Does the first release notify on finished runs as well as pending decisions? | Yes, all four kinds, with the filter one tap away (§17.6.5) |
