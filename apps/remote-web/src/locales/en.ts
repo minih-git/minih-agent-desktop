@@ -189,6 +189,12 @@ export const en = {
   "composer.sending": "Sending…",
   "composer.queueHint": "Your computer is busy — this message will queue.",
   "composer.retryHint": "Didn't send. Tap send to retry.",
+  "composer.attach": "Attach a picture or file",
+  "composer.attachments": "Attachments",
+  "composer.removeAttachment": "Remove {{name}}",
+  "composer.attachmentTooLarge": "That file is too large to send — try a smaller picture.",
+  "composer.attachmentUnsupported": "That file type can't be sent — pictures and text files only.",
+  "composer.attachmentLimit": "Up to {{count}} files per message.",
 
   "approval.title": "Approval needed",
   "approval.plan": "Plan approval",

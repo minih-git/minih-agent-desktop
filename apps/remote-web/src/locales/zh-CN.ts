@@ -185,6 +185,12 @@ export const zhCN: Record<TranslationKey, string> = {
   "composer.sending": "发送中…",
   "composer.queueHint": "电脑正在运行，这条消息会排队。",
   "composer.retryHint": "发送失败，点按发送重试。",
+  "composer.attach": "添加图片或文件",
+  "composer.attachments": "附件",
+  "composer.removeAttachment": "移除 {{name}}",
+  "composer.attachmentTooLarge": "文件太大，无法发送；请换一张更小的图片。",
+  "composer.attachmentUnsupported": "无法发送这种文件，只支持图片和文本文件。",
+  "composer.attachmentLimit": "每条消息最多 {{count}} 个文件。",
 
   "approval.title": "需要授权",
   "approval.plan": "计划授权",

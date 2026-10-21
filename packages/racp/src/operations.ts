@@ -1,7 +1,13 @@
 import type { AgentHost, Principal } from "@minih-agent/agent-host";
 import { RacpError } from "@minih-agent/agent-host";
 import {
+  declaredMimeMatches,
+  decodeInlineAttachmentData,
   RacpApprovalResponseSchema,
+  RACP_INLINE_ATTACHMENT_MAX_BYTES,
+  RACP_INLINE_ATTACHMENT_MAX_COUNT,
+  RacpInlineAttachmentSchema,
+  sniffInlineAttachment,
   WorkspaceToolExecuteSchema, WorkspaceToolAbortSchema, WorkspaceFilesRequestSchema,
   RacpCursorSchema,
   RacpInputResponseSchema,
@@ -10,9 +16,10 @@ import {
   type RacpLimits,
   type RacpOperation,
   type RacpServerCapabilities,
+  type AgentPromptAttachment,
   type RacpEventEnvelope,
 } from "@minih-agent/shared";
-import Type from "typebox";
+import Type, { type Static } from "typebox";
 import * as Value from "typebox/value";
 
 import { GATEWAY_PAIR_ROLES, SSH_PAIR_ROLES, type DeviceTokenAuthenticator } from "./auth.js";
@@ -55,7 +62,14 @@ const TurnStartParams = Type.Object({
   admission: Type.Optional(Type.Union([Type.Literal("reject_if_busy"), Type.Literal("queue")])),
   input: Type.Object({
     text: Type.String(),
-    attachments: Type.Optional(Type.Array(Type.Unknown())),
+    /**
+     * Inline attachments (§10 step 1, §16.2). Bounded twice: each entry carries
+     * at most `maxInlineAttachmentBytes` of bytes, and the encoded prompt as a
+     * whole still has to fit `maxPromptBytes`.
+     */
+    attachments: Type.Optional(
+      Type.Array(RacpInlineAttachmentSchema, { maxItems: RACP_INLINE_ATTACHMENT_MAX_COUNT }),
+    ),
     sessionMessageId: Type.Optional(Type.String()),
     /** Client-chosen id for the durable user row (D288). */
     messageId: Type.Optional(Type.String()),
@@ -121,6 +135,70 @@ function unavailable(capability: string): OperationHandler {
   return async () => {
     throw new RacpError("CAPABILITY_UNAVAILABLE", `${capability} is not offered by this Host`);
   };
+}
+
+/**
+ * Turn the wire form of an inline attachment into the on-disk form the runtime
+ * already reads (§10 step 1).
+ *
+ * Three checks, in the order that matters: the label may not disagree with the
+ * bytes; the bytes may not exceed the budget; and the bytes have to be something
+ * a model can read at all. Only then do they reach storage, so a refused upload
+ * never writes to the Host disk. Each failure names its own rule, because the
+ * phone has to tell the person what to do differently.
+ */
+async function storeInlineAttachments(
+  context: OperationContext,
+  sessionId: string,
+  attachments: readonly Static<typeof RacpInlineAttachmentSchema>[],
+): Promise<AgentPromptAttachment[]> {
+  if (attachments.length === 0) return [];
+  const store = context.operations.inlineAttachments;
+  if (!store || !context.capabilities.attachments) {
+    throw new RacpError("CAPABILITY_UNAVAILABLE", "attachments are not offered by this Host");
+  }
+  const perAttachment = Math.min(context.limits.maxInlineAttachmentBytes, RACP_INLINE_ATTACHMENT_MAX_BYTES);
+  const stored: AgentPromptAttachment[] = [];
+  let encodedBytes = 0;
+  for (const attachment of attachments) {
+    const bytes = decodeInlineAttachmentData(attachment.data);
+    if (!bytes) {
+      throw new RacpError("INVALID_ARGUMENT", "attachment data is not base64 bytes");
+    }
+    const sniffed = sniffInlineAttachment(bytes);
+    if (!sniffed) {
+      throw new RacpError("INVALID_ARGUMENT", "attachment is not a PNG, JPEG, WebP, GIF, or UTF-8 text file");
+    }
+    if (!declaredMimeMatches(attachment.mimeType, sniffed)) {
+      throw new RacpError("INVALID_ARGUMENT", "attachment content does not match its declared type");
+    }
+    if (bytes.byteLength > perAttachment) {
+      throw new RacpError("PAYLOAD_TOO_LARGE", "attachment exceeds the inline budget", {
+        details: { limit: perAttachment, size: bytes.byteLength },
+      });
+    }
+    // Several small files can still add up past the prompt budget, so the sum is
+    // what the ceiling applies to; the prompt text has its own check.
+    encodedBytes += Buffer.byteLength(attachment.data, "utf8");
+    if (encodedBytes > context.limits.maxPromptBytes) {
+      throw new RacpError("PAYLOAD_TOO_LARGE", "attachments exceed maxPromptBytes");
+    }
+    const written = await store.store({
+      sessionId,
+      name: attachment.name,
+      mimeType: sniffed.mimeType,
+      kind: sniffed.kind,
+      bytes,
+    });
+    stored.push({
+      path: written.path,
+      name: attachment.name,
+      kind: sniffed.kind,
+      mimeType: sniffed.mimeType,
+      size: bytes.byteLength,
+    });
+  }
+  return stored;
 }
 
 /** The operation catalog bound to the Agent Host module and the Host operations. */
@@ -274,15 +352,14 @@ export function createOperations(): Map<RacpOperation, OperationHandler> {
     if (Buffer.byteLength(input.input.text, "utf8") > context.limits.maxPromptBytes) {
       throw new RacpError("PAYLOAD_TOO_LARGE", "prompt exceeds maxPromptBytes");
     }
-    if (input.input.attachments?.length) {
-      throw new RacpError("CAPABILITY_UNAVAILABLE", "attachments are not offered by this Host");
-    }
+    const attachments = await storeInlineAttachments(context, input.sessionId, input.input.attachments ?? []);
     return context.agentHost.startTurn(context.principal, {
       sessionId: input.sessionId,
       ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
       ...(input.admission ? { admission: input.admission } : {}),
       input: {
         text: input.input.text,
+        ...(attachments.length > 0 ? { attachments } : {}),
         ...(input.input.sessionMessageId ? { sessionMessageId: input.input.sessionMessageId } : {}),
         ...(input.input.messageId ? { userMessageId: input.input.messageId } : {}),
       },

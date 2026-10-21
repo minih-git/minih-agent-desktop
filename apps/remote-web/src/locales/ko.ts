@@ -185,6 +185,12 @@ export const ko: Record<TranslationKey, string> = {
   "composer.sending": "보내는 중…",
   "composer.queueHint": "컴퓨터가 작업 중입니다. 이 메시지는 대기열에 추가됩니다.",
   "composer.retryHint": "전송되지 않았습니다. 다시 시도하려면 전송을 누르세요.",
+  "composer.attach": "이미지 또는 파일 첨부",
+  "composer.attachments": "첨부 파일",
+  "composer.removeAttachment": "{{name}} 제거",
+  "composer.attachmentTooLarge": "파일이 너무 커서 보낼 수 없습니다. 더 작은 이미지를 사용해 주세요.",
+  "composer.attachmentUnsupported": "이 파일 형식은 보낼 수 없습니다. 이미지와 텍스트 파일만 가능합니다.",
+  "composer.attachmentLimit": "메시지당 최대 {{count}}개 파일.",
 
   "approval.title": "승인이 필요합니다",
   "approval.plan": "계획 승인",

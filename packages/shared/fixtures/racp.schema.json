@@ -2147,6 +2147,7 @@
           "maxFrameBytes",
           "maxPromptBytes",
           "maxAttachmentBytes",
+          "maxInlineAttachmentBytes",
           "maxSubscriptionsPerConnection",
           "maxQueuedTurnsPerSession",
           "replayWindowEvents",
@@ -2167,6 +2168,10 @@
           "maxAttachmentBytes": {
             "type": "integer",
             "minimum": 1
+          },
+          "maxInlineAttachmentBytes": {
+            "type": "integer",
+            "minimum": 0
           },
           "maxSubscriptionsPerConnection": {
             "type": "integer",
@@ -2264,6 +2269,7 @@
       "maxFrameBytes",
       "maxPromptBytes",
       "maxAttachmentBytes",
+      "maxInlineAttachmentBytes",
       "maxSubscriptionsPerConnection",
       "maxQueuedTurnsPerSession",
       "replayWindowEvents",
@@ -2284,6 +2290,10 @@
       "maxAttachmentBytes": {
         "type": "integer",
         "minimum": 1
+      },
+      "maxInlineAttachmentBytes": {
+        "type": "integer",
+        "minimum": 0
       },
       "maxSubscriptionsPerConnection": {
         "type": "integer",

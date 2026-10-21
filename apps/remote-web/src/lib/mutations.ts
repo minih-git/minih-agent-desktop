@@ -24,6 +24,7 @@ import type {
   RacpApprovalDecision,
   RacpApprovalResult,
   RacpCursor,
+  RacpInlineAttachment,
   RacpItemSummary,
   RacpModelSummary,
   RacpPermissionMode,
@@ -257,6 +258,8 @@ export function attachSession(client: CommandClient, sessionId: string): Promise
 export type TurnStartInput = {
   sessionId: string;
   text: string;
+  /** Inline files for this prompt (§10 step 1); absent means text only. */
+  attachments?: RacpInlineAttachment[];
   admission: RacpTurnAdmission;
   idempotencyKey: string;
   requestId: string;
@@ -269,7 +272,10 @@ export function startTurn(client: CommandClient, input: TurnStartInput): Promise
       {
         sessionId: input.sessionId,
         admission: input.admission,
-        input: { text: input.text },
+        input: {
+          text: input.text,
+          ...(input.attachments && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
+        },
         context: { requestId: input.requestId },
       },
       input.idempotencyKey,

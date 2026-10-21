@@ -103,6 +103,24 @@ export interface RacpModelCatalog {
   list(): Promise<RacpModelSummary[]>;
 }
 
+/**
+ * Where the bytes of an inline `turn/start` attachment go (protocol §10 step 1).
+ *
+ * The RACP layer validates and sniffs; only this port touches a filesystem. It
+ * returns the path the agent runtime reads, relative to the Host data root — the
+ * same form the desktop stores an attachment under — so the runtime and a later
+ * replay of the transcript read the same bytes.
+ */
+export interface RacpInlineAttachmentStore {
+  store(input: {
+    sessionId: string;
+    name: string;
+    mimeType: string;
+    kind: "image" | "file";
+    bytes: Uint8Array;
+  }): Promise<{ path: string }>;
+}
+
 export type RacpHostOperations = {
   sessions: RacpSessionCatalog;
   /**
@@ -121,6 +139,15 @@ export type RacpHostOperations = {
     shell(): Promise<CommandShellOption>;
     disconnect(connectionId: string): Promise<void>;
   };
+  /**
+   * Inline attachments for `turn/start` (`RacpInlineAttachmentStore`).
+   *
+   * Absent on a Host that cannot put the bytes where the runtime will read them
+   * later. The capability then advertises `attachments: false` and the operation
+   * answers `CAPABILITY_UNAVAILABLE`, instead of accepting a prompt it would have
+   * to drop the attachment from.
+   */
+  inlineAttachments?: RacpInlineAttachmentStore;
   /** Owner-only: revoke a paired device (spec `session/revoke`). */
   revokeDevice?: (deviceId: string) => Promise<boolean>;
 };

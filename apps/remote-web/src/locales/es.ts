@@ -185,6 +185,12 @@ export const es: Record<TranslationKey, string> = {
   "composer.sending": "Enviando…",
   "composer.queueHint": "Tu equipo está ocupado: este mensaje se pondrá en cola.",
   "composer.retryHint": "No se envió. Toca enviar para reintentar.",
+  "composer.attach": "Adjuntar imagen o archivo",
+  "composer.attachments": "Adjuntos",
+  "composer.removeAttachment": "Quitar {{name}}",
+  "composer.attachmentTooLarge": "Ese archivo es demasiado grande; prueba con una imagen más pequeña.",
+  "composer.attachmentUnsupported": "No se puede enviar ese tipo de archivo: solo imágenes y archivos de texto.",
+  "composer.attachmentLimit": "Hasta {{count}} archivos por mensaje.",
 
   "approval.title": "Se necesita aprobación",
   "approval.plan": "Aprobación del plan",

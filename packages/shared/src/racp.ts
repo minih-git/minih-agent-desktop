@@ -495,6 +495,11 @@ export const RacpLimitsSchema = Type.Object({
   maxFrameBytes: Type.Integer({ minimum: 1 }),
   maxPromptBytes: Type.Integer({ minimum: 1 }),
   maxAttachmentBytes: Type.Integer({ minimum: 1 }),
+  /**
+   * Raw bytes one inline `turn/start` attachment may carry (§16.2). The whole
+   * prompt, text included, still has to fit `maxPromptBytes`.
+   */
+  maxInlineAttachmentBytes: Type.Integer({ minimum: 0 }),
   maxSubscriptionsPerConnection: Type.Integer({ minimum: 1 }),
   maxQueuedTurnsPerSession: Type.Integer({ minimum: 0 }),
   replayWindowEvents: Type.Integer({ minimum: 1 }),
@@ -510,6 +515,7 @@ export const RACP_DEFAULT_LIMITS: RacpLimits = {
   maxFrameBytes: 1024 * 1024,
   maxPromptBytes: 256 * 1024,
   maxAttachmentBytes: 50 * 1024 * 1024,
+  maxInlineAttachmentBytes: 160 * 1024,
   maxSubscriptionsPerConnection: 8,
   maxQueuedTurnsPerSession: 8,
   replayWindowEvents: 10_000,

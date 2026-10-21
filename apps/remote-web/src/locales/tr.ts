@@ -185,6 +185,12 @@ export const tr: Record<TranslationKey, string> = {
   "composer.sending": "Gönderiliyor…",
   "composer.queueHint": "Bilgisayarınız meşgul — bu ileti sıraya alınacak.",
   "composer.retryHint": "Gönderilemedi. Tekrar denemek için göndere dokunun.",
+  "composer.attach": "Görsel veya dosya ekle",
+  "composer.attachments": "Ekler",
+  "composer.removeAttachment": "{{name}} kaldır",
+  "composer.attachmentTooLarge": "Bu dosya göndermek için çok büyük — daha küçük bir görsel deneyin.",
+  "composer.attachmentUnsupported": "Bu dosya türü gönderilemez — yalnızca görseller ve metin dosyaları.",
+  "composer.attachmentLimit": "Mesaj başına en fazla {{count}} dosya.",
 
   "approval.title": "Onay gerekli",
   "approval.plan": "Plan onayı",

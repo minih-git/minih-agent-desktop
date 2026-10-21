@@ -179,7 +179,7 @@ export class RacpServer {
       snapshot: true,
       approvals: true,
       inputRequests: true,
-      attachments: false,
+      attachments: Boolean(options.operations.inlineAttachments),
       serverRequests: true,
       turnQueue: true,
       hostEvents: true,
