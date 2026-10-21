@@ -134,10 +134,18 @@ export function NewSessionSheet({
       {picking === "project"
         ? picker(
             t("sessions.new.project"),
-            usable.map((project) => option(project.label, null, project.id === selectedProject?.id, () => {
-              setProjectId(project.id);
-              setPicking(null);
-            })),
+            <div className="flex flex-col">
+              {usable.map((project) => option(project.label, null, project.id === selectedProject?.id, () => {
+                setProjectId(project.id);
+                setPicking(null);
+              }))}
+              {/* Registering a folder is part of choosing where a session goes,
+                  so it stays on this list rather than on the sheet: with two or
+                  more projects the row only opens the picker. */}
+              <Button variant="secondary" size="medium" onClick={onAddProject}>
+                {t("sessions.addProject")}
+              </Button>
+            </div>,
           )
         : null}
 
@@ -196,7 +204,7 @@ export function NewSessionSheet({
       {picking === null ? (
         <>
           {row(t("sessions.new.project"), selectedProject?.label ?? t("sessions.noProjects"), () =>
-            usable.length > 1 ? setPicking("project") : onAddProject(),
+            usable.length > 0 ? setPicking("project") : onAddProject(),
           )}
           {row(t("sessions.new.model"), modelValue, () => setPicking("model"))}
           {row(t("sessions.new.mode"), t(`mode.${mode}.title`), () => setPicking("mode"))}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createScreenHistory,
+  screenChain,
   resolvePop,
   sameScreen,
   screenFromHistoryState,
@@ -92,6 +93,42 @@ describe("createScreenHistory", () => {
     expect(calls.filter((call) => call.kind === "push")).toHaveLength(0);
   });
 
+  it("leaves the level a navigation skipped, so a back step lands on it", () => {
+    const { calls, port: history } = port();
+    const writer = createScreenHistory(history);
+    const pair: Screen = { kind: "pair" };
+    writer.sync(hosts);
+    writer.sync(pair);
+    // Pairing one computer opens its session list without visiting the host
+    // list; the entry a back step needs has to be written anyway.
+    writer.sync(sessions);
+    expect(calls.map((call) => call.kind)).toEqual(["replace", "push", "replace"]);
+    expect(calls.at(-1)?.screen).toEqual(sessions);
+    expect(writer.peek()).toEqual(sessions);
+  });
+
+  it("pushes every level a notification shortcut jumps over", () => {
+    const { calls, port: history } = port();
+    const writer = createScreenHistory(history);
+    writer.sync(hosts);
+    writer.sync(session);
+    expect(calls.map((call) => call.kind)).toEqual(["replace", "push", "push"]);
+    expect(calls[1]?.screen).toEqual(sessions);
+    expect(calls[2]?.screen).toEqual(session);
+  });
+
+  it("replaces instead of pushing when the app steps up without a pop", () => {
+    const { calls, port: history } = port();
+    const writer = createScreenHistory(history);
+    writer.sync(hosts);
+    writer.sync(sessions);
+    writer.sync(session);
+    writer.sync(sessions);
+    expect(calls.at(-1)?.kind).toBe("replace");
+    expect(calls.at(-1)?.screen).toEqual(sessions);
+    expect(writer.peek()).toEqual(sessions);
+  });
+
   it("adopting a popped screen does not write history again", () => {
     const { calls, port: history } = port();
     const writer = createScreenHistory(history);
@@ -104,6 +141,15 @@ describe("createScreenHistory", () => {
     // The next forward navigation pushes, because it moved away from the entry.
     writer.sync(sessions);
     expect(calls.at(-1)?.kind).toBe("push");
+  });
+});
+
+describe("screenChain", () => {
+  it("names every level above a screen, root first", () => {
+    expect(screenChain(hosts)).toEqual([hosts]);
+    expect(screenChain(sessions)).toEqual([hosts, sessions]);
+    expect(screenChain(session)).toEqual([hosts, sessions, session]);
+    expect(screenChain({ kind: "pair" })).toEqual([hosts, { kind: "pair" }]);
   });
 });
 

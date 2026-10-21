@@ -99,36 +99,72 @@ export type HistoryPort = {
 };
 
 /**
+ * Every level a screen sits on, root first.
+ *
+ * `previousScreen` names one level above a screen, so a navigation that skips a
+ * level still has to leave that level in the history. Pairing one computer lands
+ * on its session list without visiting the host list, and a notification opens a
+ * session directly; without the skipped entry a back step pops to whatever entry
+ * happens to sit underneath, which is how a phone ended up on the pairing screen
+ * instead of the computer list.
+ */
+export function screenChain(screen: Screen): Screen[] {
+  const chain: Screen[] = [];
+  let step: Screen | null = screen;
+  while (step) {
+    chain.unshift(step);
+    step = previousScreen(step);
+  }
+  return chain;
+}
+
+/**
  * Drive the history from the screen stack.
  *
- * `navigate` is the only place a screen change becomes an entry, and it is
- * idempotent: navigating to the screen already shown replaces the entry instead
- * of stacking a second one, which is what the browser would otherwise show as a
- * duplicate step back.
+ * The history mirrors the chain of the screen being shown: every level the back
+ * rule can reach has exactly one entry, and a navigation that moves sideways
+ * (the pairing screen is superseded by one computer's session list) reuses the
+ * entry it replaces, because history cannot pop a level the app never visited.
  */
 export function createScreenHistory(port: HistoryPort) {
-  let current: Screen | null = null;
+  let mirrored: Screen[] = [];
+  const current = (): Screen | null => (mirrored.length ? mirrored[mirrored.length - 1]! : null);
   return {
     /** Record `next` as the current screen. */
     sync(next: Screen): void {
-      if (current && sameScreen(current, next)) {
-        port.replace(next);
-      } else if (current) {
-        port.push(next);
-      } else {
+      const chain = screenChain(next);
+      if (mirrored.length === 0) {
         // The first screen replaces whatever the browser loaded, so the entry
         // the user arrived on is not a level they can go back to.
         port.replace(next);
+        mirrored = chain;
+        return;
       }
-      current = next;
+      let shared = 0;
+      while (shared < mirrored.length && shared < chain.length && sameScreen(mirrored[shared]!, chain[shared]!)) {
+        shared += 1;
+      }
+      let level = mirrored.length;
+      if (level > shared) {
+        // A level the app did not visit is replaced rather than stacked, so the
+        // entry the back step lands on is the destination's own parent.
+        const target = chain[Math.min(shared, chain.length - 1)]!;
+        port.replace(target);
+        mirrored = chain.slice(0, Math.min(shared, chain.length - 1) + 1);
+        level = mirrored.length;
+      }
+      for (let index = level; index < chain.length; index += 1) {
+        port.push(chain[index]!);
+        mirrored.push(chain[index]!);
+      }
     },
     /** Adopt a screen that came from history rather than from a navigation. */
     adopt(next: Screen): void {
-      current = next;
+      mirrored = screenChain(next);
     },
     /** The screen this writer believes is current; `null` before the first sync. */
     peek(): Screen | null {
-      return current;
+      return current();
     },
   };
 }
