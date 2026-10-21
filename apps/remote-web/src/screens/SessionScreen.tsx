@@ -272,7 +272,7 @@ export function SessionScreen({
           instead of silently missed: the count is the rows they have not seen,
           and an open decision takes precedence over it. */}
       {scroll.following ? null : (
-        <div className="pointer-events-none absolute inset-x-0 bottom-24 z-20 flex justify-center">
+        <div className="pointer-events-none absolute inset-x-0 bottom-32 z-20 flex justify-center">
           <Button
             variant="secondary"
             size="small"
