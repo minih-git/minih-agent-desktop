@@ -44,7 +44,7 @@ export function ScreenContent({
 }: ScreenContentProps) {
   return (
     <main
-      className={`rm-gutter flex-1 overflow-x-hidden overflow-y-auto ${
+      className={`rm-gutter flex-1 touch-pan-y overflow-x-hidden overflow-y-auto ${
         hasDock ? "pb-4" : "rm-scroll-end"
       } ${className}`}
       {...rest}
