@@ -804,6 +804,7 @@ hrefs (D330 / ADR 0168). Other schemes fail with `INVALID_ARGUMENT`.
 ### browser (requires `browser.cdp`)
 ```ts
 pi.browser.reveal(): Promise<void>
+pi.browser.openInPanel(input: { path: string }): Promise<{ path: string }>
 pi.browser.navigate(input: { url?: string; path?: string }): Promise<BrowserState | null>
 pi.browser.action(input: { action: "back" | "forward" | "reload" | "stop" }): Promise<void>
 pi.browser.setBounds(hole: { x: number; y: number; width: number; height: number }): Promise<unknown>
@@ -828,6 +829,17 @@ With the high-risk `browser.cdp` permission, `navigate` may open an existing
 local file through an absolute path or `file:` URL. Relative paths remain
 workspace-scoped. A local file page may navigate to other existing local files;
 web pages retain only the prior in-workspace file-navigation allowance.
+
+`openInPanel` shows one existing local file in the work panel's Browser view
+without needing the panel to be open and without a session of the caller's own:
+the renderer opens the tab in the session the window is looking at, so a reply
+card or a panel button — which are not tool calls — can hand a rendered page to
+the user. The path must be absolute and resolve inside one of: the open project's
+folder roots, a session scratch directory (`<dataDir>/scratch/...`), or the
+calling plugin's own data directory; anything else fails with `INVALID_ARGUMENT`,
+so a plugin cannot push arbitrary files from the disk into the user's panel.
+Prefer this over `navigate` for local files: `navigate` requires the Browser view
+to be the visible work-panel tab and a session of the caller's.
 
 The current guest page is a host-owned `WebContentsView` (`persist:work-browser`).
 Each resource tab retains its own page. A navigation for a background session is
