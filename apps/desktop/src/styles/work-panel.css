@@ -1215,22 +1215,85 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   margin: 0;
-  padding: 12px;
+  padding: 14px;
   overflow-y: auto;
   list-style: none;
 }
 
 .side-note-row {
-  padding: 8px 10px;
-  background: var(--ds-bg-hover);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--ds-tile);
   border: 1px solid var(--ds-border-subtle);
-  border-radius: var(--radius-2xs);
+  border-radius: var(--radius-md);
   color: var(--ds-text-primary);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.side-note-question {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--ds-bg-hover);
+}
+
+.side-note-question > strong,
+.side-note-answer > strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-compact);
+}
+
+.side-note-question-text {
+  color: var(--ds-text-primary);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-body);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.side-note-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 2px 0;
+  white-space: normal;
+}
+
+.side-note-answer-body.prose-chat {
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
+}
+
+.side-note-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-compact);
+}
+
+.side-note-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--ds-accent);
+  animation: voice-pulse 1.2s ease-in-out infinite;
 }
 
 .side-notes-composer {
@@ -1239,11 +1302,43 @@
   gap: 6px;
   padding: 10px 12px 12px;
   border-top: 1px solid var(--ds-border-subtle);
+  background: var(--ds-bg-dock);
 }
 
-.side-notes-input {
+.side-notes-composer-shell {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--ds-border-subtle);
+  background: var(--ds-bg-composer);
+  box-shadow: var(--ds-shadow-composer);
+  transition:
+    border-color var(--motion-duration-fast) var(--motion-ease-out),
+    box-shadow var(--motion-duration-normal) var(--motion-ease-out);
+}
+
+.side-notes-composer-shell:focus-within {
+  border-color: color-mix(in oklab, var(--ds-accent) 32%, var(--ds-border-default));
+  box-shadow: 0 6px 20px color-mix(in oklab, var(--ds-text-primary) 8%, transparent);
+}
+
+.field-textarea.side-notes-input {
   width: 100%;
+  min-height: 44px;
+  padding: 10px 12px 4px;
+  border: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ds-text-primary);
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
   resize: none;
+}
+
+.field-textarea.side-notes-input:focus {
+  background: transparent;
+  box-shadow: none;
 }
 
 .side-notes-actions {
@@ -1251,14 +1346,48 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  padding: 4px 8px 8px;
+}
+
+.btn.side-notes-preset {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  background: var(--ds-tile-hover);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs-plus);
+  font-weight: var(--font-weight-medium);
+  gap: 5px;
+}
+
+.btn.side-notes-preset:hover:not(:disabled) {
+  background: var(--ds-tile-deep);
+  color: var(--ds-text-primary);
+}
+
+.btn.side-notes-preset:disabled {
+  opacity: 0.5;
+}
+
+.btn.side-notes-send {
+  height: 26px;
+  padding: 0 10px 0 11px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs-plus);
+  font-weight: var(--font-weight-medium);
+  gap: 4px;
+}
+
+.btn.side-notes-send:disabled {
+  opacity: 1;
+  background: var(--ds-send-disabled-bg);
+  color: var(--ds-send-disabled-fg);
 }
 
 .side-notes-hint {
   margin: 0;
+  padding: 0 4px;
   color: var(--ds-text-muted);
-  font-size: var(--text-xs);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-compact);
 }
-
-.side-note-question { margin-bottom: 10px; }
-.side-note-answer { border-top: 1px solid var(--ds-border-subtle); padding-top: 8px; white-space: normal; }
-.side-note-question > strong, .side-note-answer > strong { color: var(--ds-text-secondary); font-size: var(--text-xs); }

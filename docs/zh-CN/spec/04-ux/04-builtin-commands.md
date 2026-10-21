@@ -4,7 +4,7 @@
 
 ## 1. 目标
 
-定义无需插件即可使用的五条第一方命令。它们也会出现在输入框的 `/` 菜单中。
+定义无需插件即可使用的六条第一方命令。它们也会出现在输入框的 `/` 菜单中。
 
 快捷键：**Cmd/Ctrl + Shift + P**（D014）
 
@@ -16,22 +16,22 @@ builtin.<domain>.<action>
 
 ## 3. 核心内置目录
 
-内置 registry 有意只包含以下五条命令。插件命令会动态扩展可搜索的命令列表；
+内置 registry 有意只包含以下六条命令。插件命令会动态扩展可搜索的命令列表；
 应用导航、项目管理、设置、插件管理和诊断不属于内置命令契约。
 
 | id | 标题 | 关键词 | 类别 | 风险 | 行为 |
 |---|---|---|---|---|---|
 | `builtin.session.new` | 新建任务 | new、chat、task | Session | 低 | 复用当前分组最新空会话，否则立即露出空首页并创建持久空会话，然后聚焦输入框 |
 | `builtin.agent.compact` | 压缩对话上下文 | compact、context、tokens | Session | 低 | 为当前空闲会话创建模型上下文检查点 |
+| `builtin.agent.sideNote` | 旁注提问 | btw、side、note、question、progress | Session | 低 | 打开工作面板的旁注标签页（以 `/btw <问题>` 发送时直接提交独立旁注提问） |
 | `builtin.mode.agent` | 切换到 Agent | mode、agent | Session | 低 | 将空闲会话模式设为 Agent |
 | `builtin.mode.plan` | 切换到 Plan | mode、plan、planning | Session | 低 | 将空闲会话模式设为 Plan |
 | `builtin.mode.goal` | 切换到 Goal | mode、goal、objective、autonomous | Session | 低 | 将空闲会话模式设为 Goal |
 
 ## 4. 可见性与执行规则
 
-- 五个 ID 构成完整的第一方 registry。移除的 ID 不会出现在命令面板结果中，
+- 六个 ID 构成完整的第一方 registry。移除的 ID 不会出现在命令面板结果中，
   也不再有渲染器 dispatch case；插件命令仍可独立发现。
-- `New Task` 使用当前项目或临时分组。若该组最新会话为空则选中复用；否则
   在第一帧露出空首页并创建持久空会话。同一分组内该操作是幂等的。
 - `Compact Conversation Context` 在当前会话空闲时可用；活动回合或检查点期间
   继续遵循既有的忙碌与压缩契约。
@@ -55,7 +55,7 @@ type CommandExecutionResult =
 
 ## 6. 验收
 
-1. 内置 registry 恰好包含五个唯一且带前缀的 ID。
+1. 内置 registry 恰好包含六个唯一且带前缀的 ID。
 2. 命令面板搜索可匹配每条命令的标题和关键词。
 3. 模式切换命令立即更新空闲会话模式；Plan、Goal 和 Agent 使用同一个 pi Agent。
 4. Compact 在空闲时可用，在活动回合/检查点期间返回 `AGENT_BUSY`。
@@ -71,17 +71,17 @@ type CommandExecutionResult =
 |---|---|
 | `/new` | `builtin.session.new` |
 | `/compact` | `builtin.agent.compact` |
+| `/btw` | `builtin.agent.sideNote` |
 | `/agent-mode` | `builtin.mode.agent` |
 | `/plan-mode` | `builtin.mode.plan` |
 | `/goal-mode` | `builtin.mode.goal` |
 
 别名与模板和插件命令名称共享一个命名空间；冲突时优先使用内置别名，其次是项目模板、
-用户模板和插件命令。选择别名会插入 `/alias `；单独发送 `/new` 或 `/compact` 时，
-会在本地执行，不会创建空提示。Agent/Plan/Goal 别名支持附带提示词：
+用户模板和插件命令。选择别名会插入 `/alias `；单独发送 `/new`、`/compact` 或 `/btw` 时，
+会在本地执行，不会创建空提示。`/btw <问题>` 会打开工作面板的旁注标签页并通过独立旁注通道提交该问题，不会向主任务插话或打断当前回合。Agent/Plan/Goal 别名支持附带提示词：
 `/agent-mode <prompt>`、`/plan-mode <prompt>` 或 `/goal-mode <prompt>` 会切换空闲会话
 （或下一个会话默认值），并通过正常提示路径发送 `<prompt>`。不带正文的模式别名仍然
 只执行本地切换。提示正文仍是可见的用户回合；dispatch 失败不会清除输入框草稿。
-旧的内置别名不再解析，除非由其他命令来源提供，否则会作为普通未知斜杠文本处理。
 
 命令完成时，只清除提交时的草稿，且前提是该草稿此后没有被编辑。之后发生的任何编辑都必须保留，
 即使文字或附件后来又恢复成与提交时完全相同的内容；用户在完成前切换会话也一样。未编辑的命令草稿

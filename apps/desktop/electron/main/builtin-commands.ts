@@ -12,11 +12,11 @@ export type BuiltinCommandDef = CommandItem & {
 export const BUILTIN_COMMANDS: BuiltinCommandDef[] = [
   { id: "builtin.session.new", title: "New task", category: "Session", keywords: ["new", "chat", "task"], source: "builtin", slash: "new" },
   { id: "builtin.agent.compact", title: "Compact conversation context", category: "Session", keywords: ["compact", "context", "tokens"], source: "builtin", slash: "compact" },
+  { id: "builtin.agent.sideNote", title: "Ask side note", category: "Session", keywords: ["btw", "side", "note", "question", "progress"], source: "builtin", slash: "btw" },
   { id: "builtin.mode.agent", title: "Switch to Agent mode", category: "Session", keywords: ["mode", "agent"], source: "builtin", slash: "agent-mode" },
   { id: "builtin.mode.plan", title: "Switch to Plan mode", category: "Session", keywords: ["mode", "plan", "planning"], source: "builtin", slash: "plan-mode" },
   { id: "builtin.mode.goal", title: "Switch to Goal mode", category: "Session", keywords: ["mode", "goal", "objective", "autonomous"], source: "builtin", slash: "goal-mode" },
 ];
-
 /** Palette-shaped items (no slash field leaks into the palette contract). */
 export function builtinPaletteItems(): CommandItem[] {
   return BUILTIN_COMMANDS.map(({ slash: _slash, ...item }) => item);

@@ -5,7 +5,7 @@ import {
 } from "@minih-agent/shared";
 import type { AppState } from "../../../../stores/app-store";
 import { api } from "../../../../lib/api";
-import { runExtensionCommand, runPaletteCommand } from "../../../../lib/commands";
+import { runExtensionCommand, runPaletteCommand, runSideNoteCommand } from "../../../../lib/commands";
 import { resolveComposerCommand } from "../../../../hooks/use-composer-autocomplete";
 import {
   parseSlashSubmission,
@@ -100,8 +100,10 @@ export function useComposerSubmit({
     // command source that cannot be read is a third case: the composer cannot
     // prove `/compact` is not a builtin, so it refuses the submission and keeps
     // the text out of the model's input (issue #795).
-    if (!steering && localCommandsAllowed) {
-      const slashSubmission = parseSlashSubmission(serializedContent);
+    const slashSubmission = localCommandsAllowed
+      ? parseSlashSubmission(serializedContent)
+      : null;
+    if (localCommandsAllowed && (!steering || slashSubmission?.name === "btw")) {
       const resolution = slashSubmission
         ? await resolveComposerCommand(slashSubmission.name)
         : null;
@@ -115,6 +117,25 @@ export function useComposerSubmit({
       if (dispatch.action === "dispatch") {
         const command = dispatch.command;
         const commandBody = dispatch.body;
+        if (command.id === "builtin.agent.sideNote" && commandBody) {
+          const visibleDraft = rawText.trim();
+          const visibleCommandEnd = visibleDraft.search(/\s/);
+          const visibleCommandBody =
+            visibleCommandEnd === -1
+              ? ""
+              : visibleDraft.slice(visibleCommandEnd).trim();
+          const noteQuestion =
+            serializeInlineComposerFileReferences(
+              visibleCommandBody,
+              activeFileReferences,
+            ).trim() || commandBody;
+          const accepted = await runSideNoteCommand(noteQuestion);
+          if (accepted) {
+            draft.clearDraftForKey(submittedDraftKey, submittedDraftRevision, submittedDraft);
+            remember();
+          }
+          return;
+        }
         const isModeCommand =
           command.id === "builtin.mode.agent" ||
           command.id === "builtin.mode.plan" ||
