@@ -315,8 +315,10 @@ export function createGatewayLinkBootstrap(
           });
         }
         // Persist first: a crash between the two leaves the switch truthful
-        // and the next boot dials (or stays off) accordingly.
-        await options.saveSettings({ enabled, url: configuredUrl });
+        // and the next boot dials (or stays off) accordingly. `decided` records
+        // that this was the user's own choice, so an explicit off is never
+        // re-enabled by the account-mode default (gate 27).
+        await options.saveSettings({ enabled, url: configuredUrl, decided: true });
         configuredEnabled = enabled;
         if (!enabled) {
           if (service) {
@@ -337,7 +339,7 @@ export function createGatewayLinkBootstrap(
         // and the link starts the next time the switch is on.
         await created.enroll(input);
         configuredUrl = input.url.trim();
-        await options.saveSettings({ enabled: configuredEnabled, url: configuredUrl });
+        await options.saveSettings({ enabled: configuredEnabled, url: configuredUrl, decided: true });
         return decorate(created.status());
       });
     },
@@ -388,7 +390,6 @@ export function createGatewayLinkBootstrap(
       });
     },
   };
-
   const result: GatewayLinkBootstrap = {
     async open() {
       let settings: AppSettings | null = null;
@@ -401,6 +402,34 @@ export function createGatewayLinkBootstrap(
       configuredEnabled = configured?.enabled === true;
       configuredUrl = typeof configured?.url === "string" ? configured.url : "";
       configuredStrictDevices = configured?.strictDevices === true;
+
+      // Security §3.8 / gate 27, three states. `enabled: true` means the user
+      // turned it on; `enabled: false` with `decided: true` means they turned it
+      // off and must stay off; anything else is a user who has never chosen.
+      // Account mode defaults that third case on — the account already names
+      // this desktop, and a computer the user signed in is one they expect to
+      // reach — while the self-hosted flow keeps its "off by default" reading,
+      // which was written for a Gateway the user has to configure first.
+      if (!configuredEnabled && configured?.decided !== true) {
+        const mode = await probeAccountMode();
+        if (mode?.available === true) {
+          try {
+            await options.saveSettings({
+              enabled: true,
+              url: configuredUrl,
+              decided: true,
+              ...(configuredStrictDevices ? { strictDevices: true } : {}),
+            });
+            configuredEnabled = true;
+          } catch (error) {
+            // A settings write that fails must not leave the link half-on: the
+            // next boot would read "never chosen" again and re-decide.
+            log("warn", "account-mode default could not be stored", { error: String(error) });
+            return;
+          }
+          log("info", "account mode turned the remote-control switch on for a user who never chose");
+        }
+      }
       // S12: an absent or disabled setting must not create a store, a server,
       // or a socket. The switch flips this through `setEnabled`.
       if (!configuredEnabled) return;

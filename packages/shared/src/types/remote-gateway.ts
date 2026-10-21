@@ -214,4 +214,14 @@ export type RemoteGatewaySettings = {
    * this field, and never synced.
    */
   desktopAutoAdmission?: boolean;
+  /**
+   * Whether the user has ever made a decision about the remote-control switch.
+   *
+   * Security §3.8 / gate 27 needs three states, not two: "never chosen",
+   * "chosen on", and "chosen off". Absent on every row written before this
+   * field, which reads as "never chosen" — and account mode then defaults the
+   * switch on, because the account already names this desktop. An explicit off
+   * (`decided: true, enabled: false`) is never re-enabled by a default.
+   */
+  decided?: boolean;
 };

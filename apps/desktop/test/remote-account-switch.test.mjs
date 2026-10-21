@@ -252,17 +252,98 @@ test("a host-core that does not report account mode keeps the self-hosted page",
   );
 });
 
-test("a switched-off desktop boots with account mode read, still inert", async () => {
-  const dataDir = await mkdtemp(join(tmpdir(), "remote-account-boot-"));
+test("the three switch states: never chosen defaults on, an explicit off stays off", async () => {
+  // Security §3.8 / gate 27. Account mode changed the default for the one state
+  // that used to be indistinguishable from "off": a user who has never touched
+  // the switch. The account already names this desktop, so it starts on — and
+  // the choice is written down, which is what keeps it from being re-decided.
+  const neverChosen = await mkdtemp(join(tmpdir(), "remote-account-never-"));
   try {
     const host = fakeHost();
+    const { port, calls } = recordingPort(await accountCertificate());
+    const saved = [];
+    const bootstrap = createGatewayLinkBootstrap({
+      dataDir: neverChosen,
+      encryption: fakeEncryption(),
+      port,
+      // No stored row at all: the user has never opened this page.
+      getSettings: async () => null,
+      saveSettings: async (remoteGateway) => {
+        saved.push(remoteGateway);
+      },
+      getHost: () => host,
+      getAgentHost: () => ({}),
+      serverVersion: "0.0.0-test",
+      emitStatus: () => undefined,
+      log: () => undefined,
+    });
+    try {
+      await bootstrap.open();
+      const status = await bootstrap.controller().status();
+      assert.equal(status.enabled, true, "account mode defaults the switch on");
+      assert.equal(status.accountMode?.available, true);
+      // The decision is persisted, so the next boot reads a choice rather than
+      // deciding again.
+      assert.deepEqual(saved, [{ enabled: true, url: "", decided: true }]);
+      assert.equal(calls.enroll, 1, "turning it on is what enrolls this desktop");
+      assert.equal(calls.start, 1);
+    } finally {
+      await bootstrap.dispose();
+    }
+  } finally {
+    await rm(neverChosen, { recursive: true, force: true });
+  }
+
+  // An explicit off is never re-enabled, even with account mode available: the
+  // user already answered this question.
+  const chosenOff = await mkdtemp(join(tmpdir(), "remote-account-off-"));
+  try {
+    const host = fakeHost();
+    const { port, calls } = recordingPort(await accountCertificate());
+    const saved = [];
+    const bootstrap = createGatewayLinkBootstrap({
+      dataDir: chosenOff,
+      encryption: fakeEncryption(),
+      port,
+      getSettings: async () => ({ remoteGateway: { enabled: false, url: "", decided: true } }),
+      saveSettings: async (remoteGateway) => {
+        saved.push(remoteGateway);
+      },
+      getHost: () => host,
+      getAgentHost: () => ({}),
+      serverVersion: "0.0.0-test",
+      emitStatus: () => undefined,
+      log: () => undefined,
+    });
+    try {
+      await bootstrap.open();
+      const status = await bootstrap.controller().status();
+      assert.equal(status.enabled, false, "an explicitly disabled switch stays off");
+      assert.equal(status.accountMode?.available, true);
+      assert.equal(calls.enroll, 0);
+      assert.equal(calls.start, 0);
+      assert.deepEqual(saved, [], "nothing is written for a decision already made");
+    } finally {
+      await bootstrap.dispose();
+    }
+  } finally {
+    await rm(chosenOff, { recursive: true, force: true });
+  }
+});
+
+test("a self-hosted desktop with no account mode keeps its off default", async () => {
+  // The "off by default" reading was written for the self-hosted flow and stays
+  // exactly as it was: a Gateway the user must configure first is not an
+  // account that already names this desktop.
+  const dataDir = await mkdtemp(join(tmpdir(), "remote-self-hosted-"));
+  try {
+    const host = fakeHost({ remoteGateway: undefined });
     const { port, calls } = recordingPort(await accountCertificate());
     const saved = [];
     const bootstrap = createGatewayLinkBootstrap({
       dataDir,
       encryption: fakeEncryption(),
       port,
-      // The user has never opened this page: no setting is stored at all.
       getSettings: async () => null,
       saveSettings: async (remoteGateway) => {
         saved.push(remoteGateway);
@@ -277,10 +358,7 @@ test("a switched-off desktop boots with account mode read, still inert", async (
       await bootstrap.open();
       const status = await bootstrap.controller().status();
       assert.equal(status.enabled, false);
-      assert.equal(status.enrolled, false);
-      assert.equal(status.accountMode?.available, true);
-      assert.equal(remoteGatewaySwitchDisabled(status), false);
-      // Inert: no enrollment, no link, no settings write.
+      assert.equal(status.accountMode, undefined);
       assert.equal(calls.enroll, 0);
       assert.equal(calls.start, 0);
       assert.deepEqual(saved, []);
