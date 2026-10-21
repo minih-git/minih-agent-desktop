@@ -1174,6 +1174,29 @@ describe("AgentHost notification events (protocol §11.6)", () => {
     },
   });
 
+  it("reports a pending question as the session's own status, and clears it when answered", async () => {
+    const { host } = build({});
+    const started = await host.startTurn(owner, { sessionId: "s1", input: { text: "go" }, context: { requestId: "s" } });
+    expect((await host.snapshot("s1")).session.status).toBe("running");
+
+    host.ingest(envelope("s1", started.turn.id, ask()));
+    // §17.4.1: a phone reading `session/list` can tell a question from a busy turn.
+    expect((await host.snapshot("s1")).session.status).toBe("waiting_input");
+
+    await host.respondInput(owner, { inputId: "ask_1", answers: [["a"]], context: { requestId: "r" } });
+    expect((await host.snapshot("s1")).session.status).toBe("running");
+  });
+
+  it("keeps the session waiting while a second question is still open", async () => {
+    const { host } = build({});
+    const started = await host.startTurn(owner, { sessionId: "s1", input: { text: "go" }, context: { requestId: "s" } });
+    host.ingest(envelope("s1", started.turn.id, ask()));
+    host.ingest(envelope("s1", started.turn.id, ask("ask_2")));
+
+    await host.respondInput(owner, { inputId: "ask_1", answers: [["a"]], context: { requestId: "r" } });
+    expect((await host.snapshot("s1")).session.status).toBe("waiting_input");
+  });
+
   it("reports the four events and nothing else, with ids only", async () => {
     const seen: NotifyEvent[] = [];
     const { host } = build({ onNotifyEvent: (event) => seen.push(event) });
@@ -1184,16 +1207,21 @@ describe("AgentHost notification events (protocol §11.6)", () => {
     host.endTurn("s1", started.turn.id, "completed");
 
     expect(seen.map((event) => event.kind)).toEqual(["approval.requested", "input.requested", "turn.completed"]);
-    // Every event is ids plus a timestamp: no prompt, no tool name, no text.
+    // Every event is ids, a count, and a timestamp: no prompt, no tool name, no text.
     for (const event of seen) {
       expect(Object.keys(event).sort()).toEqual(
-        event.approvalId ? ["approvalId", "kind", "occurredAt", "sessionId"] : ["kind", "occurredAt", "sessionId"],
+        event.approvalId
+          ? ["approvalId", "attentionCount", "kind", "occurredAt", "sessionId"]
+          : ["attentionCount", "kind", "occurredAt", "sessionId"],
       );
       expect(event.sessionId).toBe("s1");
       expect(Number.isNaN(Date.parse(event.occurredAt))).toBe(false);
     }
     expect(seen[0]!.approvalId).toBe("req_1");
     expect(seen[1]!.approvalId).toBe("ask_1");
+    // The count is what the badge shows: one approval; approval plus question;
+    // then nothing left to decide (§17.6.2).
+    expect(seen.map((event) => event.attentionCount)).toEqual([1, 2, 0]);
   });
 
   it("reports a failed turn as turn.failed", async () => {

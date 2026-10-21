@@ -391,19 +391,12 @@ describe("provider transport", () => {
       globalThis.fetch = originalFetch;
     }
     const message = (sent as { message: Record<string, unknown> }).message;
-    // `notification` only takes title/body/image; the location keys belong to
-    // `android.notification`, and Android resource names have no dots.
+    // Data-only on purpose (§17.6.6): with no `notification` block the system never
+    // renders the message, so the app is called in both states and draws the
+    // notification itself. Every data value is a string, which HTTP v1 requires.
     expect(message["notification"]).toBeUndefined();
-    expect(message["android"]).toEqual({
-      priority: "high",
-      notification: {
-        title_loc_key: "push_notify_turn_completed_title",
-        body_loc_key: "push_notify_turn_completed_body",
-        // One group per session, derived from the id the payload already carries
-        // (§17.6.2), so grouping adds no field to the contract.
-        tag: payload().sessionId,
-      },
-    });
+    expect(message["android"]).toEqual({ priority: "high" });
+    expect((message as { data: Record<string, string> }).data["titleKey"]).toBe("push.notify.turn.completed.title");
     expect(Object.keys(message).sort()).toEqual(["android", "data", "token"]);
   });
 });
@@ -531,5 +524,22 @@ describe("the APNs body", () => {
     const threadOf = (body: Record<string, unknown>) => (body["aps"] as { "thread-id": string })["thread-id"];
     expect(threadOf(first)).toBe(threadOf(second));
     expect(threadOf(first)).not.toBe(threadOf(other));
+  });
+
+  it("carries the count the Host reported, and no badge when it did not count", () => {
+    const counted = apnsBody({ ...payload, attentionCount: 3 }) as { aps: { badge?: number } };
+    expect(counted.aps.badge).toBe(3);
+
+    // No count, no badge: a number this Gateway invented would be wrong within
+    // minutes (§17.6.2).
+    const uncounted = apnsBody(payload) as { aps: Record<string, unknown> };
+    expect("badge" in uncounted.aps).toBe(false);
+  });
+
+  it("keeps the count out of the payload's text surface", () => {
+    // The closed payload may carry the number, and only the number.
+    const body = apnsBody({ ...payload, attentionCount: 2 }) as Record<string, unknown>;
+    expect(body["attentionCount"]).toBe(2);
+    expect(typeof body["attentionCount"]).toBe("number");
   });
 });

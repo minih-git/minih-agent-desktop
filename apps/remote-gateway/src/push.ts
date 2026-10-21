@@ -106,6 +106,7 @@ export function buildPushPayload(input: { notify: RacpHostNotify; hostId: string
     hostId: input.hostId,
     sessionId: input.notify.sessionId,
     ...(input.notify.approvalId ? { approvalId: input.notify.approvalId } : {}),
+    ...(input.notify.attentionCount === undefined ? {} : { attentionCount: input.notify.attentionCount }),
     notifyId: input.notify.notifyId,
   };
 }

@@ -1227,23 +1227,21 @@ a project card):
 
 #### 17.4.1 The one state the data cannot express
 
-`RacpSession.status` is a closed union of `idle`, `running`,
-`waiting_permission`, `aborted`, and `error` (`packages/shared/src/racp.ts:55`). A
-tool approval sets `waiting_permission` (`packages/agent-host/src/agent-host.ts:350`),
-while an input request sets only the *turn's* status to `waiting_input` and leaves
-the session at `running` (`agent-host.ts:361`), so a session waiting for an answer
-is indistinguishable from a busy one in `session/list`. The design therefore does
-two things and says which one is temporary:
+`RacpSession.status` was a closed union of `idle`, `running`,
+`waiting_permission`, `aborted`, and `error`, and an input request set only the
+*turn's* status, so a session waiting for an answer was indistinguishable from a
+busy one in `session/list`. That is fixed at the source: **the Host now reports
+`waiting_input` on the session itself** (protocol §5.1), including while the
+runtime says the agent is still running, and answers clear it once no question is
+open. The list can therefore say "Needs your answer" without any local
+inference. Two consequences are worth stating:
 
-1. **Now**: an `input.requested` push marks that session as "Needs your answer" in
-   a device-local map, cleared when the session is opened or answered. Accurate
-   whenever a notification was delivered, and honest about its limit: a user with
-   notifications off sees "Running".
-2. **Follow-up** (needs a desktop release and a contract addition): add
-   `waiting_input` to `RacpSessionStatus`, or a `pendingInput` count beside
-   `queuedTurnIds`. The Host already knows the answer (`agent-host.ts:671` derives
-   `waiting-input` for its work snapshot), so this is a contract change rather than
-   new logic. Not scheduled here.
+1. The device-local marker an earlier revision of this section described remains
+   only as a fallback for a Host that predates the status: an `input.requested`
+   push sets it, opening the session clears it.
+2. `waiting_input` is a separate value from `waiting_permission`, not a synonym:
+   one is answered in a form, the other with allow/deny, and a phone must not
+   print the same word for both.
 
 "Finished, not looked at" needs no protocol change: it is a device-local
 `lastViewedAt` per session, written when S6 opens and stored beside the registry

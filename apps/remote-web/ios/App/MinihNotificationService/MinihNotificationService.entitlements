@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  The extension's half of the sharing described in App/App.entitlements: the
+	  same App Group and the same Keychain access group. A service extension runs
+	  in its own process, so without these it cannot read the device token the app
+	  stored, and every notification falls back to the fixed sentence.
+	-->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.app.minih.remote</string>
+	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)group.app.minih.remote</string>
+	</array>
+</dict>
+</plist>

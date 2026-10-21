@@ -526,6 +526,7 @@ export class ClientHttpServer {
     const ip = this.resolveIp(request);
     const cors = this.corsHeaders(request);
 
+    let operation = "";
     try {
       this.assertNoUrlCredential(rawUrl);
       if (request.method === "OPTIONS") {
@@ -596,6 +597,9 @@ export class ClientHttpServer {
         const allowed = candidates.map((candidate) => candidate.httpMethod).join(" or ");
         throw new GatewayRpcError("METHOD_NOT_FOUND", `${url.pathname} is ${allowed}`);
       }
+      // Named here so the catch below can say which operation failed: a denial
+      // that does not name the operation cannot be told apart from noise.
+      operation = route.operation;
       const match = route.pattern.exec(url.pathname);
       const values = (match?.slice(1) ?? []).map((value) => decodeURIComponent(value));
       const pathParams = Object.fromEntries(route.params.map((name, index) => [name, values[index] ?? ""]));
@@ -684,6 +688,7 @@ export class ClientHttpServer {
     } catch (error) {
       const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to handle the request");
       if (!(error instanceof GatewayRpcError)) this.options.log("error", "gateway request failed", { traceId, error: String(error) });
+      else this.options.log("info", "gateway request denied", { traceId, code: rpc.code, message: rpc.message, operation: operation || "unknown" });
       await this.audit("request", ip, rpc.code === "INTERNAL" ? "error" : "denied", {});
       if (response.headersSent) {
         response.end();

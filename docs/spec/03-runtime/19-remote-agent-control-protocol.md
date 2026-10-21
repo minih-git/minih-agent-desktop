@@ -217,7 +217,7 @@ type Session = {
   projectId?: string
   workspaceLabel?: string
   mode: "agent" | "plan" | "goal"
-  status: "idle" | "running" | "waiting_permission" | "aborted" | "error"
+  status: "idle" | "running" | "waiting_permission" | "waiting_input" | "aborted" | "error"
   planningState: "inactive" | "planning" | "awaiting_approval"
   permissionMode: "ask" | "accept-edits" | "auto"
   activeTurnId?: string
@@ -231,7 +231,12 @@ type Session = {
 `status` and `planningState` mirror the local session state machine
 (`10-session-state-machine.md` §0–§1): `planningState` is the Plan/Goal
 projection and `awaiting_approval` means a pending contract approval exists
-even though no turn is running. An absolute workspace path MUST NOT be
+even though no turn is running. `waiting_input` means the agent asked a question
+and holds the turn open until it is answered; it is distinct from
+`waiting_permission`, which is a tool call waiting to be allowed, because the two
+are answered on different surfaces (a form versus an allow/deny decision). A
+client that lists sessions must show the two separately — a phone that cannot
+tell them apart reads a question as a busy turn (UX spec §17.4.1). An absolute workspace path MUST NOT be
 included unless the principal has an explicit path-disclosure scope. A
 `workspaceLabel` is display-only.
 
@@ -1758,7 +1763,7 @@ says — so a Host never chooses an audience and a client never receives content
   `host.notify` from it.
 - **The event frame.** `host.notify` carries exactly
   `{ link, type: "host.notify", notify: { notifyId, kind, sessionId, approvalId?,
-  occurredAt } }`, where `notifyId` is the Host's own id for the event (bounded to
+  attentionCount?, occurredAt } }`, where `notifyId` is the Host's own id for the event (bounded to
   128 characters, so one push per event survives a Host retry), and `kind` is one
   of `approval.requested`, `input.requested`, `turn.completed`, `turn.failed`.
   The object is closed: no prompt, tool name, path, transcript, or session title
@@ -1805,21 +1810,24 @@ says — so a Host never chooses an audience and a client never receives content
   a platform the Gateway has no provider for is `CAPABILITY_UNAVAILABLE` (501):
   storing a token nothing can deliver to would be a silent failure.
 - **The payload.** A push contains `{ kind, titleKey, bodyKey, hostId,
-  sessionId, approvalId?, notifyId }` and nothing else. `titleKey` and `bodyKey`
+  sessionId, approvalId?, attentionCount?, notifyId }` and nothing else. `titleKey` and `bodyKey`
   are always `push.notify.<kind>.title` and `push.notify.<kind>.body`, resolved by
   the client from its own catalog — the Gateway never sends a sentence. APNs
-  receives them as `aps.alert.title-loc-key` / `loc-key`, FCM as
-  `android.notification.title_loc_key` / `body_loc_key` plus the same ids in
-  `data`, so the visible text is the app's, in the user's language, and the ids
-  survive to drive the tap. APNs also receives `aps.thread-id` and Android
-  `android.notification.tag`, both carrying `sessionId`, so several events about
-  one session group together on the lock screen; both are derived from an id the
-  payload already carries, so grouping adds no field to this contract. HTTP v1's
-  `message.notification` has only `title`,
-  `body`, and `image`, so the keys belong to the Android block; a message that
-  puts them anywhere else is rejected with `400 INVALID_ARGUMENT` for every
-  device. Their value is the Android resource name
-  (`push_notify_<kind>_title`), because resource names cannot contain dots.
+  receives them as `aps.alert.title-loc-key` / `loc-key` plus the ids beside them;
+  Android gets a **data-only** FCM message (no `notification` block) whose every
+  value is a string, so the app is called in both states and draws the
+  notification itself — which is what lets it name the session after delivery.
+  The visible text is therefore the app's, in the user's language, and the ids
+  survive to drive the tap. `attentionCount` is the number of decisions the Host
+  says the session still holds for the user at the moment of the event; the
+  Gateway copies it into `aps.badge` and into Android's `attentionCount` data
+  field, and omits the badge when the Host did not count rather than inventing a
+  number. APNs also receives `aps.thread-id`, and the Android app groups its own
+  notifications by `sessionId`, so several events about one session stay together
+  on the lock screen; both are derived from an id the payload already carries, so
+  grouping adds no field to this contract. The keys are the app's to resolve:
+  Android resource names cannot contain dots, so they are generated as
+  `push_notify_<kind>_title`.
 - **Rendering happens in the app bundle.** When the app is in the background or
   closed the *system* renders the notification, so the eight keys must exist in
   the app's own resources: `ios/App/App/en.lproj/Localizable.strings`,

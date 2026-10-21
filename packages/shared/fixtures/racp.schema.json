@@ -94,6 +94,10 @@
           },
           {
             "type": "string",
+            "const": "waiting_input"
+          },
+          {
+            "type": "string",
             "const": "aborted"
           },
           {
@@ -644,6 +648,10 @@
               {
                 "type": "string",
                 "const": "waiting_permission"
+              },
+              {
+                "type": "string",
+                "const": "waiting_input"
               },
               {
                 "type": "string",
@@ -2921,6 +2929,11 @@
                 "maxLength": 128,
                 "pattern": "^[A-Za-z0-9._:-]{1,128}$"
               },
+              "attentionCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000
+              },
               "occurredAt": {
                 "type": "string",
                 "minLength": 1,
@@ -3299,6 +3312,11 @@
         "minLength": 1,
         "maxLength": 128,
         "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+      },
+      "attentionCount": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10000
       },
       "notifyId": {
         "type": "string",

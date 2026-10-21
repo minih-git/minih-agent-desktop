@@ -24,7 +24,7 @@
 import { createSign, sign as cryptoSign } from "node:crypto";
 import { connect as http2Connect, constants as http2Constants, type ClientHttp2Session } from "node:http2";
 
-import { androidResourceKey, type RacpPushPayload } from "@minih-agent/shared";
+import type { RacpPushPayload } from "@minih-agent/shared";
 
 import type { ApnsPushConfig, FcmPushConfig } from "./push-config.js";
 
@@ -125,9 +125,11 @@ function errorText(body: string): Record<string, unknown> {
  *
  * Extracted so the one property that matters is checkable without a socket: the
  * visible text is two *keys* (ADR 0331 decision 7), the ids ride beside them, and
- * nothing else is added. `thread-id` groups several events about one session on
- * the lock screen (§17.6.2) and is derived from the `sessionId` already in the
- * payload, so grouping costs no field in the contract.
+ * the only other things added are the badge — the count of decisions the Host
+ * says are still open (§17.6.2), omitted rather than guessed when the Host did
+ * not count — and `thread-id`, which groups several events about one session on
+ * the lock screen from the `sessionId` the payload already carries, so grouping
+ * costs no field in the contract.
  */
 export function apnsBody(payload: RacpPushPayload): Record<string, unknown> {
   return {
@@ -135,6 +137,7 @@ export function apnsBody(payload: RacpPushPayload): Record<string, unknown> {
       alert: { "title-loc-key": payload.titleKey, "loc-key": payload.bodyKey },
       sound: "default",
       "mutable-content": 1,
+      ...(payload.attentionCount === undefined ? {} : { badge: payload.attentionCount }),
       "thread-id": payload.sessionId,
     },
     ...payload,
@@ -407,12 +410,14 @@ export class FcmClient {
     }
     const endpoint = this.config.endpoint.replace(/\/+$/, "");
     const url = `${endpoint}/v1/projects/${encodeURIComponent(this.config.projectId)}/messages:send`;
-    // Same rule as APNs: the visible text is a resource key the app resolves.
-    // HTTP v1's `notification` carries only `title`/`body`/`image`, so the
-    // localization keys belong to `android.notification`; anywhere else FCM
-    // answers 400 INVALID_ARGUMENT for every device, which is what the E2E's
-    // strict stub now refuses. The name is the Android resource form
-    // (`push_notify_<kind>_title`), because a dotted key would not resolve.
+    // **Data-only, on purpose** (§17.6.6). A message that carries a `notification`
+    // block is rendered by the system while the app is in the background, and the
+    // app is never called — which would make it impossible to name the session,
+    // because the title is fetched *after* delivery. The app therefore builds the
+    // notification itself, from these fields, in both states.
+    //
+    // Every data value is a string: HTTP v1 rejects a non-string value for the
+    // whole message, which the E2E's strict stub also refuses.
     const data: Record<string, string> = {
       kind: payload.kind,
       titleKey: payload.titleKey,
@@ -421,19 +426,17 @@ export class FcmClient {
       sessionId: payload.sessionId,
       notifyId: payload.notifyId,
       ...(payload.approvalId ? { approvalId: payload.approvalId } : {}),
+      // The app renders the badge as the launcher dot count.
+      ...(payload.attentionCount === undefined ? {} : { attentionCount: String(payload.attentionCount) }),
     };
     const message = {
       message: {
         token: deviceToken,
         data,
         android: {
+          // High priority is what lets a data-only message wake a backgrounded
+          // app; without it the notification would wait for the next app start.
           priority: "high",
-          notification: {
-            title_loc_key: androidResourceKey(payload.titleKey),
-            body_loc_key: androidResourceKey(payload.bodyKey),
-            // The Android equivalent of `thread-id`: one group per session.
-            tag: payload.sessionId,
-          },
         },
       },
     };

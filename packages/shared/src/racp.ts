@@ -56,11 +56,25 @@ export const RACP_SESSION_STATUSES = [
   "idle",
   "running",
   "waiting_permission",
+  /**
+   * The agent asked a question and the session is idle until it is answered
+   * (§17.4.1 of the UX spec). A separate value rather than `waiting_permission`
+   * because the two decisions are made by different screens: an approval is a
+   * tool call to allow, an answer is a question to fill in.
+   */
+  "waiting_input",
   "aborted",
   "error",
 ] as const;
 export type RacpSessionStatus = (typeof RACP_SESSION_STATUSES)[number];
-export const RacpSessionStatusSchema = Type.Union([Type.Literal("idle"), Type.Literal("running"), Type.Literal("waiting_permission"), Type.Literal("aborted"), Type.Literal("error")]);
+export const RacpSessionStatusSchema = Type.Union([
+  Type.Literal("idle"),
+  Type.Literal("running"),
+  Type.Literal("waiting_permission"),
+  Type.Literal("waiting_input"),
+  Type.Literal("aborted"),
+  Type.Literal("error"),
+]);
 
 export const RACP_PLANNING_STATES = ["inactive", "planning", "awaiting_approval"] as const;
 export type RacpPlanningState = (typeof RACP_PLANNING_STATES)[number];

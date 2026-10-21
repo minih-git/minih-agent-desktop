@@ -58,7 +58,12 @@ describe("native app identifier", () => {
     );
     const applicationId = /applicationId\s+"([^"]+)"/.exec(androidAppGradle)?.[1];
     expect(bundleIdentifiers.length).toBeGreaterThan(0);
-    expect([...new Set(bundleIdentifiers)]).toEqual([config.appId]);
+    // The app, plus the notification service extension it embeds: an extension
+    // must carry a bundle id of its own, and it has to sit inside the app's id so
+    // Apple treats it as part of the same product.
+    const unique = [...new Set(bundleIdentifiers)].sort();
+    expect(unique).toEqual([config.appId, `${config.appId}.notificationservice`].sort());
+    expect(xcodeProject).toContain(`PRODUCT_BUNDLE_IDENTIFIER = ${config.appId}.notificationservice;`);
     expect(applicationId).toBe(config.appId);
   });
 
@@ -107,9 +112,39 @@ describe("ios/App/App/Info.plist", () => {
     // this test on purpose rather than slip in.
     const entitlements = read("ios/App/App/App.entitlements");
     expect(xcodeProject).toContain("CODE_SIGN_ENTITLEMENTS = App/App.entitlements;");
+    // The list is the whole rule: a capability has to be added here on purpose.
     const keys = [...entitlements.matchAll(/<key>([^<]+)<\/key>/g)].map((match) => match[1]);
-    expect(keys).toEqual(["aps-environment"]);
+    expect(keys).toEqual(["aps-environment", "com.apple.security.application-groups", "keychain-access-groups"]);
     expect(entitlements).toContain("<string>development</string>");
+  });
+});
+
+describe("the notification service extension", () => {
+  const appEntitlements = read("ios/App/App/App.entitlements");
+  const extensionEntitlements = read("ios/App/MinihNotificationService/MinihNotificationService.entitlements");
+
+  it("shares the same App Group and keychain group as the app", () => {
+    // A service extension runs in its own process: without both groups it cannot
+    // read the device token the app stored, and every notification falls back to
+    // the fixed sentence (spec §17.6.2).
+    for (const group of ["group.app.minih.remote"]) {
+      expect(appEntitlements).toContain(`<string>${group}</string>`);
+      expect(extensionEntitlements).toContain(`<string>${group}</string>`);
+    }
+    expect(appEntitlements).toContain("<string>$(AppIdentifierPrefix)group.app.minih.remote</string>");
+    expect(extensionEntitlements).toContain("<string>$(AppIdentifierPrefix)group.app.minih.remote</string>");
+  });
+
+  it("is embedded in the app, or it never runs", () => {
+    expect(xcodeProject).toContain("MinihNotificationService.appex in Embed Foundation Extensions");
+    expect(xcodeProject).toContain('productType = "com.apple.product-type.app-extension"');
+    expect(xcodeProject).toContain("MinihNotificationService/Info.plist");
+  });
+
+  it("declares the service extension point, or the system will not call it", () => {
+    const info = read("ios/App/MinihNotificationService/Info.plist");
+    expect(info).toContain("com.apple.usernotifications.service");
+    expect(info).toContain("NotificationService");
   });
 });
 
@@ -126,17 +161,25 @@ describe("android/app/src/main/AndroidManifest.xml", () => {
     expect(exists("android/app/src/main/res/xml/network_security_config.xml")).toBe(false);
   });
 
-  it("requests the internet permission only", () => {
+  it("requests the internet permission, and the notification permission Android 13 asks for", () => {
     const permissions = [...androidManifest.matchAll(/<uses-permission android:name="([^"]+)"/g)].map((match) => match[1]);
-    expect(permissions).toEqual(["android.permission.INTERNET"]);
+    // POST_NOTIFICATIONS is not a runtime capability grab: it is the prompt the
+    // system shows before an app may post, and it exists because the app now draws
+    // its own notifications (§17.6.6).
+    expect(permissions).toEqual(["android.permission.POST_NOTIFICATIONS", "android.permission.INTERNET"]);
   });
 });
 
 describe("operator-supplied push artifacts stay out of the repository", () => {
-  it("ships no Firebase configuration and no Apple push material", () => {
-    expect(exists("android/app/google-services.json")).toBe(false);
+  it("keeps the Firebase configuration out of the repository", () => {
+    // The operator drops `android/app/google-services.json` in place for a local
+    // build (spec §17.7), so its presence proves nothing. What must hold is that
+    // git never sees it: the file names an app registration, and a build that
+    // ships someone else's would be rejected by FCM.
+    for (const ignored of ["google-services.json", "GoogleService-Info.plist", "firebase-adminsdk"]) {
+      expect(rootGitignore).toContain(ignored);
+    }
     expect(exists("android/app/src/main/google-services.json")).toBe(false);
-    expect(exists("GoogleService-Info.plist")).toBe(false);
     expect(exists("ios/App/App/GoogleService-Info.plist")).toBe(false);
   });
 
