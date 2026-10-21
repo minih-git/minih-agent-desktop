@@ -70,6 +70,30 @@ describe("host ports", () => {
     // The walk costs one bounded window per page: the port never asks for the
     // transcript, which is what made a phone wait on a 12 MB parse per page.
     expect(calls.every((params) => params.messageLimit === 100)).toBe(true);
+    // Every page after the first is named. A request without the id is the tail,
+    // which is the page the client already has: it would look like a load that
+    // never happens, which is exactly how an old Host failed.
+    expect(calls[0]).not.toHaveProperty("messageBeforeId");
+    expect(calls.slice(1).every((params) => typeof params.messageBeforeId === "string")).toBe(true);
+  });
+
+  it("stops the page when the Host no longer resolves the held id", async () => {
+    const messages = ["m1", "m2", "m3"].map((id) => ({
+      id,
+      role: "assistant" as const,
+      content: id,
+      createdAt: "2026-09-18T00:00:00.000Z",
+      status: "complete" as const,
+    }));
+    const calls: Array<Record<string, unknown>> = [];
+    const port = createHostSessionPort(() => windowedHost(messages, calls));
+    // A compaction rewrote the transcript after the client read its page: the
+    // named row is gone, so the answer is the empty page that ends the walk, not
+    // the tail that would replay newer rows into the older-page slot.
+    const page = await port.history("s1", { limit: 2, beforeItemId: "gone" });
+    expect(page.items).toEqual([]);
+    expect(page.hasMore).toBe(false);
+    expect(calls[0]).toEqual({ id: "s1", messageLimit: 2, messageBeforeId: "gone", contentLimit: 64 * 1024 });
   });
 
   it("pages history backwards from an item id", async () => {

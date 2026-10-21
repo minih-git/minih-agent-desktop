@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 11 as const;
+export const PROTOCOL_VERSION = 12 as const;
 export const SCHEMA_VERSION = 16 as const;
 /**
  * Pre-branding constants, kept for backward compatibility: persisted schema
