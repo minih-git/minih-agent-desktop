@@ -109,3 +109,12 @@
   its failed row and does not claim that nothing matched. A plugin or MCP
   result's plain string list behaves the same way: only entries that look like
   file paths open, the rest stay text.
+
+- Main sessions and subagents can retry a failed response after context
+  compaction has already removed the failed assistant message. Explicit empty
+  quoted prompt-template arguments keep their positional slots.
+- Activating an overflowing work-panel tab keeps its close action visible.
+- Provider model-list and connection probes can recover from optional client
+  certificate requests without weakening server certificate verification.
+- On macOS, Appearance offers a translucent-window switch. Glass stays on by
+  default; turning it off uses an opaque native surface after relaunch.

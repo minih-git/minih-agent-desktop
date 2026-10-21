@@ -485,3 +485,19 @@ Token 用量**不是设置目的地**（D335 / ADR 0173）。已完成回合历�
 | 卡半径 | ~14px 升高行程 |
 | 切换 | **32×20** 拇指 16，中性重音（非绿色） |
 | 开放靶点药丸 | 前导 VS Code 字形 |
+
+### macOS translucent window preference
+
+General → Appearance includes a macOS-only **Translucent window** switch.
+Absent or `true` preserves the shipped native sidebar vibrancy and transparent
+backing. Explicit `false` requests an opaque native window on the next launch.
+The optional boolean `AppSettings.macosWindowTranslucency` uses the existing
+Host-owned settings JSON; no schema migration or default rewrite is needed.
+Electron fixes transparency at creation, so saving never pretends to change the
+running surface. Compare the saved preference with the applied surface from
+`windowControl("getState")` to show a pending-restart hint only on mismatch;
+reverting the preference clears that hint. A busy switch prevents concurrent
+saves. Read/save failures show the failed operation and reason without faking
+success; unknown applied state never invents a restart hint. Other platforms
+do not render the switch. No GPU-saving amount
+is promised without local measurement. See [the decision](/adr/macos-window-translucency-preference).

@@ -10311,3 +10311,59 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **状态**：决策层与重拉次数已自动化
   （`boot_bootstrap_tests::switching_the_endpoint_refetches_the_identity_once`、
   `a_cached_answer_is_reused_until_the_identity_is_refreshed`）；双网关真机流程待补。
+
+## Selected upstream reliability acceptance (2026-10-21)
+
+### E2E-RUNTIME-compacted-transcript-retries
+
+- **Steps:** Start a main session and a built-in subagent through the runtime
+  test seam, compact away a failed assistant, then recover a transient provider
+  failure. Also Stop during backoff and preserve ordinary assistant-tail retry.
+- **Expected:** Current summary/user context is retained, no missing-assistant
+  exception, one recovered response and unchanged cancellation/retry budgets.
+- **Coverage:** Runtime/subagent regression and public prompt-path tests;
+  `pnpm test:e2e` and `pnpm test:e2e:subagents` for surrounding process contracts.
+
+### E2E-COMMAND-empty-quoted-arguments-keep-position
+
+- **Steps:** Expand a real prompt template with an empty quoted first argument
+  followed by a nonempty argument, using both quote styles.
+- **Expected:** Positional arguments do not shift; existing defaults and
+  nonempty template expansion remain unchanged.
+- **Coverage:** Prompt-template parser and invocation regressions.
+
+### E2E-WORKPANEL-active-tab-close-visible
+
+- **Steps:** Add enough tabs to overflow the production strip, activate tabs at
+  either end, reorder/switch sessions, then click the active close action.
+- **Expected:** The close action stays inside the visible strip and closes the
+  intended resource without changing another session's tabs.
+- **Coverage:** Component contracts and an isolated real-renderer user path
+  with screenshots (`pnpm test:e2e:upstream-reliability-ui`) and
+  `pnpm test:e2e:work-panel-reorder`. Windows native drag hit testing is a separate
+  platform lane.
+
+### E2E-PROVIDERS-optional-client-certificate-metadata
+
+- **Steps:** Use a local TLS provider with optional client authentication. Load
+  its models and probe its connection through the production discovery wiring.
+  Exercise required authentication, untrusted/hostname errors, redirects, abort
+  during connect/body and a nonmatching error.
+- **Expected:** Exact optional-client-certificate failure retries metadata once
+  on the selected proxy route; validation/origin/cancellation remain enforced.
+  Other failures never start this fallback and no agent request is replayed.
+- **Coverage:** Metadata transport tests and
+  `pnpm test:e2e:provider-client-certificate` (isolated Electron TLS fixture).
+
+### E2E-MACOS-translucency-preference-next-launch
+
+- **Steps:** With an isolated profile on macOS, open General → Appearance with
+  no saved preference, turn transparency off, inspect the restart hint, revert
+  it, then save off and relaunch. Toggle theme on both surfaces.
+- **Expected:** Missing/true keeps existing glass, false creates opaque next
+  launch, the running surface does not change on save, and the hint tracks only
+  saved/applied mismatch. Non-macOS has no switch and reports false applied state.
+- **Coverage:** Settings/window contracts, real-component interaction and
+  isolated native-window lifecycle checks
+  (`pnpm test:e2e:upstream-reliability-ui`); `pnpm test:e2e:boot`. GPU measurement
+  is not implied by visual/functional acceptance.

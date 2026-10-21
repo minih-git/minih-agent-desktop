@@ -35,8 +35,31 @@ export function mainWindowBackgroundOptions(
     }
     return { transparent: true, backgroundColor: "#00000000" };
   }
-  if (platform === "darwin") return {};
+  if (platform === "darwin") return macosWindowSurfaceOptions(false, color);
   return { backgroundColor: toElectronBackgroundColor(color) };
+}
+
+/** The default macOS surface is translucent. An opt-out is applied only when
+ * creating a window because Electron fixes transparency at creation. */
+export function macosWindowSurfaceOptions(
+  translucent: boolean,
+  color: string,
+): Pick<
+  BrowserWindowConstructorOptions,
+  "vibrancy" | "visualEffectState" | "transparent" | "backgroundColor"
+> {
+  if (translucent) {
+    return {
+      vibrancy: "sidebar",
+      visualEffectState: "followWindow",
+      transparent: true,
+      backgroundColor: "#00000000",
+    };
+  }
+  return {
+    transparent: false,
+    backgroundColor: toElectronBackgroundColor(color),
+  };
 }
 
 /** Apply a theme background to its platform-owned surface. */
@@ -47,8 +70,6 @@ export function applyMainWindowBackground(
   windows11NativeCorners = false,
   opaqueFallbackColor = color,
 ): boolean {
-  if (platform === "darwin") return false;
-
   const useOpaqueWindowsSurface = platform === "win32" && windows11NativeCorners;
   const electronColor = useOpaqueWindowsSurface
     ? toOpaqueElectronBackgroundColor(color, opaqueFallbackColor)

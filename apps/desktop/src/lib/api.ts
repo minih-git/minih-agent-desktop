@@ -541,6 +541,14 @@ export function validateSettingsWrite(settings: AppSettings): AppSettings {
     }
   }
   if (
+    Object.prototype.hasOwnProperty.call(value, "macosWindowTranslucency") &&
+    typeof value.macosWindowTranslucency !== "boolean"
+  ) {
+    throw Object.assign(new Error("macosWindowTranslucency is invalid"), {
+      errorCode: "INVALID_PARAMS",
+    });
+  }
+  if (
     Object.prototype.hasOwnProperty.call(value, "infiniteProviderRetry") &&
     typeof value.infiniteProviderRetry !== "boolean"
   ) {
@@ -1709,7 +1717,7 @@ export const api = {
       { theme, color, cornerRadius },
     ),
   windowControl: (action: WindowControlAction) =>
-    invoke<{ maximized: boolean }>(IPC.invoke.windowControl, { action }),
+    invoke<{ maximized: boolean; macosWindowTranslucency?: boolean }>(IPC.invoke.windowControl, { action }),
   getCloseBehavior: () =>
     invoke<{ behavior: CloseBehavior; supported: boolean }>(
       IPC.invoke.closeBehaviorGet,

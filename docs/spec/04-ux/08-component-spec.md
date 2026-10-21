@@ -4680,3 +4680,14 @@ Input, selection, submission and dismissal semantics remain unchanged.
 Project-delete descriptions and plugin dialog headings/outcomes also wrap long
 project or plugin names instead of overflowing their existing widths. Project
 instructions, memory and OAuth dialogs retain their existing bounded layouts.
+
+### macOS native window surface selection
+
+The main window keeps the shipped transparent backing and `sidebar` vibrancy
+unless the persisted macOS translucency preference is explicitly false. Read
+that preference before creating the window. An opaque window paints the host
+palette; a translucent window must not be painted over by post-creation or
+renderer background updates. Theme changes reapply vibrancy only to the running
+translucent surface. Startup splash tint, sheen, traffic lights and layout are
+unchanged; Windows/Linux keep their existing surfaces. The applied surface is
+fixed for the running process, independent of later preference saves.

@@ -3180,3 +3180,14 @@ default nor provider configuration. OAuth accounts remain in their separate sect
 
 项目删除说明和插件弹窗标题、安装结果中的长名称也在现有宽度内换行。
 项目指令、项目记忆和 OAuth 弹窗维持已有的边界处理。
+
+### macOS native window surface selection
+
+The main window keeps the shipped transparent backing and `sidebar` vibrancy
+unless the persisted macOS translucency preference is explicitly false. Read
+that preference before creating the window. An opaque window paints the host
+palette; a translucent window must not be painted over by post-creation or
+renderer background updates. Theme changes reapply vibrancy only to the running
+translucent surface. Startup splash tint, sheen, traffic lights and layout are
+unchanged; Windows/Linux keep their existing surfaces. The applied surface is
+fixed for the running process, independent of later preference saves.

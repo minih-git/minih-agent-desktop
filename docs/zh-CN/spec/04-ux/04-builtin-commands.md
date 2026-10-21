@@ -107,3 +107,11 @@ Skill ID。同名的未加前缀命令或模板继续保留原名称。
 
 只有空草稿的第 1 个字符会被改写。出现在草稿其他位置的「、」属于普通标点，始终不会
 被改动；该别名对 `@` 文件菜单没有影响。
+
+### Empty quoted prompt-template arguments
+
+Prompt-template command argument parsing preserves explicit empty single- or
+double-quoted tokens. For example, `/review "" src/main.ts` supplies an empty
+first argument and `src/main.ts` as the second; an empty token must not shift
+later positional substitutions. Other quoting, placeholder and command
+precedence rules are unchanged.
