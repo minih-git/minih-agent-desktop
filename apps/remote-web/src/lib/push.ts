@@ -32,6 +32,16 @@ export type PushPlugin = {
     event: "pushNotificationActionPerformed",
     handler: (action: { notification: { data?: unknown } }) => void,
   ): Promise<{ remove: () => Promise<void> }>;
+  /**
+   * Fired while the app is in the foreground. The plugin's own `willPresent`
+   * returns no presentation options when the build configures none, so the system
+   * shows nothing and this listener is the only way the user hears about it
+   * (§17.6.4).
+   */
+  addListener(
+    event: "pushNotificationReceived",
+    handler: (notification: { data?: unknown }) => void,
+  ): Promise<{ remove: () => Promise<void> }>;
 };
 
 export type PushRegistrationTransport = {
@@ -185,7 +195,19 @@ export async function enablePush(
 
 /** Where a tap should land, from the ids a notification carries. */
 export type PushDestination =
-  | { kind: "session"; hostId: string; sessionId: string; approvalId?: string }
+  | {
+      kind: "session";
+      hostId: string;
+      sessionId: string;
+      approvalId?: string;
+      /**
+       * Which of the four events this was (`RACP_NOTIFY_KINDS`). The client uses
+       * it for one thing: an `input.requested` is the only place a phone learns a
+       * session is waiting for an answer, because the Host leaves the session
+       * `running` (§17.4.1). Absent when a payload names something else.
+       */
+      notifyKind?: string;
+    }
   /** The payload named no Host or session: open the Host list and say nothing. */
   | { kind: "hosts" };
 
@@ -200,11 +222,13 @@ export function destinationForTap(data: unknown): PushDestination {
   const sessionId = data["sessionId"];
   if (typeof hostId !== "string" || !hostId || typeof sessionId !== "string" || !sessionId) return { kind: "hosts" };
   const approvalId = data["approvalId"];
+  const notifyKind = data["kind"];
   return {
     kind: "session",
     hostId,
     sessionId,
     ...(typeof approvalId === "string" && approvalId ? { approvalId } : {}),
+    ...(typeof notifyKind === "string" && notifyKind ? { notifyKind } : {}),
   };
 }
 
@@ -218,6 +242,8 @@ export async function attachPushListeners(
   handlers: {
     onToken: (token: string) => void;
     onTap: (destination: PushDestination) => void;
+    /** A notification that arrived while the app was open (§17.6.4). */
+    onForeground?: (destination: PushDestination) => void;
     onError?: (message: string) => void;
   },
 ): Promise<() => Promise<void>> {
@@ -226,6 +252,9 @@ export async function attachPushListeners(
     await plugin.addListener("registrationError", (error) => handlers.onError?.(error.error)),
     await plugin.addListener("pushNotificationActionPerformed", (action) =>
       handlers.onTap(destinationForTap(action.notification.data)),
+    ),
+    await plugin.addListener("pushNotificationReceived", (notification) =>
+      handlers.onForeground?.(destinationForTap(notification.data)),
     ),
   ];
   return async () => {

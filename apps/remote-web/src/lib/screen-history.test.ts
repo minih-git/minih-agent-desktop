@@ -10,8 +10,16 @@ import {
 import type { Screen } from "./screen-stack.js";
 
 const hosts: Screen = { kind: "hosts" };
-const sessions: Screen = { kind: "sessions", hostId: "h1" };
-const session: Screen = { kind: "session", hostId: "h1", sessionId: "s1", title: "one" };
+const projects: Screen = { kind: "projects", hostId: "h1" };
+const sessions: Screen = { kind: "projectSessions", hostId: "h1", projectId: "p1", projectLabel: "Desktop" };
+const session: Screen = {
+  kind: "session",
+  hostId: "h1",
+  sessionId: "s1",
+  title: "one",
+  projectId: "p1",
+  projectLabel: "Desktop",
+};
 
 /**
  * The screen stack is written into the browser's history, so a browser Back and
@@ -56,7 +64,7 @@ describe("resolvePop", () => {
   it("falls back to previousScreen for an entry written by an older build", () => {
     expect(resolvePop({ state: null, current: session })).toEqual({
       kind: "restored",
-      screen: { kind: "sessions", hostId: "h1" },
+      screen: { kind: "projectSessions", hostId: "h1", projectId: "p1", projectLabel: "Desktop" },
     });
     expect(resolvePop({ state: null, current: hosts })).toEqual({ kind: "leave" });
   });
@@ -81,7 +89,8 @@ describe("createScreenHistory", () => {
     writer.sync(hosts);
     writer.sync(sessions);
     writer.sync(session);
-    expect(calls.map((call) => call.kind)).toEqual(["replace", "push", "push"]);
+    expect(calls.map((call) => call.kind)).toEqual(["replace", "push", "push", "push"]);
+    expect(calls.map((call) => call.screen.kind)).toEqual(["hosts", "projects", "projectSessions", "session"]);
   });
 
   it("never stacks a duplicate entry for the screen already shown", () => {
@@ -102,8 +111,11 @@ describe("createScreenHistory", () => {
     // Pairing one computer opens its session list without visiting the host
     // list; the entry a back step needs has to be written anyway.
     writer.sync(sessions);
-    expect(calls.map((call) => call.kind)).toEqual(["replace", "push", "replace"]);
+    // Pairing is replaced, not stacked: the project list is the level a back step
+    // from those sessions has to land on (§17.3), and the pairing screen is not.
+    expect(calls.map((call) => call.kind)).toEqual(["replace", "push", "replace", "push"]);
     expect(calls.at(-1)?.screen).toEqual(sessions);
+    expect(calls.map((call) => call.screen.kind)).toEqual(["hosts", "pair", "projects", "projectSessions"]);
     expect(writer.peek()).toEqual(sessions);
   });
 
@@ -112,9 +124,10 @@ describe("createScreenHistory", () => {
     const writer = createScreenHistory(history);
     writer.sync(hosts);
     writer.sync(session);
-    expect(calls.map((call) => call.kind)).toEqual(["replace", "push", "push"]);
-    expect(calls[1]?.screen).toEqual(sessions);
-    expect(calls[2]?.screen).toEqual(session);
+    expect(calls.map((call) => call.kind)).toEqual(["replace", "push", "push", "push"]);
+    expect(calls[1]?.screen).toEqual(projects);
+    expect(calls[2]?.screen).toEqual(sessions);
+    expect(calls[3]?.screen).toEqual(session);
   });
 
   it("replaces instead of pushing when the app steps up without a pop", () => {
@@ -147,18 +160,20 @@ describe("createScreenHistory", () => {
 describe("screenChain", () => {
   it("names every level above a screen, root first", () => {
     expect(screenChain(hosts)).toEqual([hosts]);
-    expect(screenChain(sessions)).toEqual([hosts, sessions]);
-    expect(screenChain(session)).toEqual([hosts, sessions, session]);
+    expect(screenChain(projects)).toEqual([hosts, projects]);
+    expect(screenChain(sessions)).toEqual([hosts, projects, sessions]);
+    expect(screenChain(session)).toEqual([hosts, projects, sessions, session]);
     expect(screenChain({ kind: "pair" })).toEqual([hosts, { kind: "pair" }]);
   });
 });
 
 describe("sameScreen", () => {
   it("compares by destination, not by object identity", () => {
-    expect(sameScreen({ kind: "sessions", hostId: "h1" }, { kind: "sessions", hostId: "h1" })).toBe(true);
-    expect(sameScreen({ kind: "sessions", hostId: "h1" }, { kind: "sessions", hostId: "h2" })).toBe(false);
+    expect(sameScreen(sessions, { ...sessions })).toBe(true);
+    expect(sameScreen(projects, { kind: "projects", hostId: "h2" })).toBe(false);
+    expect(sameScreen(sessions, { ...sessions, projectId: "p2" })).toBe(false);
     expect(sameScreen(session, { ...session })).toBe(true);
     expect(sameScreen(session, { ...session, title: "renamed" })).toBe(false);
-    expect(sameScreen(hosts, sessions)).toBe(false);
+    expect(sameScreen(hosts, projects)).toBe(false);
   });
 });

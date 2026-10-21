@@ -1,8 +1,8 @@
-"push.notify.approval.requested.title" = "需要你处理";
-"push.notify.approval.requested.body" = "有会话在等待你批准一项操作。";
-"push.notify.input.requested.title" = "需要你处理";
+"push.notify.approval.requested.title" = "等你批准";
+"push.notify.approval.requested.body" = "有会话在等你批准一项操作。";
+"push.notify.input.requested.title" = "等你回答";
 "push.notify.input.requested.body" = "有会话在等待你的回答。";
-"push.notify.turn.completed.title" = "回合已完成";
-"push.notify.turn.completed.body" = "有会话的回合已完成。";
-"push.notify.turn.failed.title" = "回合失败";
-"push.notify.turn.failed.body" = "有会话的回合失败了。";
+"push.notify.turn.completed.title" = "已完成";
+"push.notify.turn.completed.body" = "有会话运行完成了。";
+"push.notify.turn.failed.title" = "运行失败";
+"push.notify.turn.failed.body" = "有会话运行失败了。";
