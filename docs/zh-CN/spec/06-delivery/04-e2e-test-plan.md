@@ -5740,7 +5740,7 @@ eleven-tool-round desktop paths are verified by
 | C / E / Security / Quality — Live Voice 四阶段交互 | E2E-LIVE-VOICE-four-stage-ui |
 | C / F — Hourly task updates | E2E-SCHEDULED-manual-to-hourly |
 | C / F / Quality — Saved project isolation | E2E-SCHEDULED-manual-workspace-binding |
-| C / F / Quality — 桌面定时任务 | E2E-SCHEDULED-desktop-automation-lifecycle |
+| C / F / Quality — 桌面定时任务 | E2E-SCHEDULED-desktop-automation-lifecycle, E2E-SCHEDULED-run-in-activity-feed |
 | F / Security / Quality — Portable configuration sync | E2E-CONFIG-SYNC-router-account |
 | A / C — Unicode stdio 成帧 | E2E-RPC-unicode-separators |
 | C / G / Quality — Plugins navigation | E2E-NAV-plugins-button-goes-back |
@@ -9709,6 +9709,12 @@ Follow the [current router-account acceptance scenario](/spec/06-delivery/04-e2e
   缺失的旧版绑定与显式 null 保持不同语义，其他项目不能查询或修改绑定任务。
 - **自动化**：`node --experimental-strip-types scripts/e2e-scheduled-paths.mjs`
   使用隔离的真实 Host 与 SQLite 配置，不向真实提供商发送推理请求。
+
+### E2E-SCHEDULED-run-in-activity-feed
+
+- **场景**：执行中的定时任务运行是活动流唯一列出的自动化转写。
+- **预期**：运行准入由宿主创建其会话，因此 Main 在准入完成后立即通知渲染层刷新会话列表；没有该通知任何列表都不知道这一行。侧边栏活动流在该次运行的回合执行期间列出该会话，回合结束后该行再次离开。项目分组、置顶行、全局会话搜索与托盘仍不会列出任何定时任务转写。被拒绝的派发不通知任何会话。
+- **自动化**：`node --test apps/desktop/test/scheduled-session-fanout.test.mjs apps/desktop/test/sidebar-session-groups.test.mjs` 以打桩宿主覆盖该通知与活动流规则本身。目前没有自动化场景驱动侧边栏活动面板本身，因此该段接线仅经源码复核；行的点击路径与定时任务页「打开会话」使用的是同一个 `selectSession` 调用。
 
 ### E2E-MARKDOWN-table-actions
 

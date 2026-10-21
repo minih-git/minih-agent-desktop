@@ -250,7 +250,9 @@ destination, chat as the home surface, tools and permissions inline.
   descending, grouped by time (`Today`, `Yesterday`, `Previous 7 days`, `Previous 14 days`,
   `Older`), with each row displaying a two-line card (line 1: status indicator, task title,
   and owning project/workspace label; line 2: 2-line clamped preview of the latest user or
-  assistant message).
+  assistant message). A scheduled run's own conversation joins the stream only
+  while that run is executing: this is the one list that shows those
+  transcripts, and the row leaves again once the turn settles (issue #1291).
 - **Project actions**: open folder reveals the primary project directory; Edit
   project changes the host-owned logical group name and adjusts eligible
   non-primary roots (keeping renderer metadata in sync); pin/unpin changes
@@ -332,7 +334,8 @@ occurrence, project, permission and model, its instruction behind a disclosure,
 its own run history newest first (status, start time, duration, stable error
 code), and the transcript of the selected run read in the page through a bounded
 read. A run's transcript belongs to this route: the SessionList and global
-session search never list it, and Open conversation is the explicit action that
+session search never list it — the sidebar Activity stream shows it only while
+the run is still executing — and Open conversation is the explicit action that
 carries it into the chat route, and the chat top bar then offers that
 conversation's own way back: the row names the task it belongs to, and returning
 restores the same task and the same run, reusing the navigation history when
