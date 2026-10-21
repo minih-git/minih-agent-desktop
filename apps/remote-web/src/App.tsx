@@ -33,7 +33,7 @@ import { useEdgeSwipe } from "./hooks/useEdgeSwipe.js";
 import { usePushRegistration } from "./hooks/usePushRegistration.js";
 import { useHostRegistry } from "./hooks/useHostRegistry.js";
 import { registryHasHosts } from "./lib/host-registry.js";
-import { launchRoot, storeLastRoot } from "./lib/launch-root.js";
+import { resolveLaunchRoot, storeLastRoot } from "./lib/launch-root.js";
 import { setBackHandler } from "./lib/navigation.js";
 import { credentialPort, isNativeApp, nativePlatform } from "./lib/runtime.js";
 import { consumeNotificationTap, setNotificationBadge } from "./lib/native-notify.js";
@@ -70,7 +70,7 @@ const launchStorage = (() => {
  * remembered root, or the launch decision for the first run. The browser build
  * has one root and never sees Chats.
  */
-const initialRoot = launchRoot({
+const initialRoot = resolveLaunchRoot({
   isNativeApp,
   hasHosts: launchStorage !== null && registryHasHosts(launchStorage),
   storage: launchStorage,

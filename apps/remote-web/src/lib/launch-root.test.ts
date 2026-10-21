@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { LAST_ROOT_STORAGE_KEY, launchRoot, storeLastRoot, type RootStorage } from "./launch-root.js";
+import { LAST_ROOT_STORAGE_KEY, launchRoot, resolveLaunchRoot, storeLastRoot, type RootStorage } from "./launch-root.js";
 
 /**
  * The launch rule (ADR mobile-direct-gateway-chat, spec §4): a fresh native
@@ -53,6 +53,51 @@ describe("storeLastRoot", () => {
     };
     expect(() => storeLastRoot("chats", throwing)).not.toThrow();
     expect(() => storeLastRoot("chats", null)).not.toThrow();
+  });
+});
+
+/**
+ * The opening root is also the first thing remembered, so a user who never
+ * touches the bar still reopens where they were. Without this, an installation
+ * that started on Chats and later paired a computer would jump to Computers on
+ * the next launch.
+ */
+describe("resolveLaunchRoot", () => {
+  it("remembers the root it opened on a fresh native install", () => {
+    const storage = fakeStorage({});
+    expect(resolveLaunchRoot({ isNativeApp: true, hasHosts: false, storage })).toBe("chats");
+    expect(storage.get(LAST_ROOT_STORAGE_KEY)).toBe("chats");
+  });
+
+  it("remembers Computers for an upgrade that already holds computers", () => {
+    const storage = fakeStorage({});
+    expect(resolveLaunchRoot({ isNativeApp: true, hasHosts: true, storage })).toBe("hosts");
+    expect(storage.get(LAST_ROOT_STORAGE_KEY)).toBe("hosts");
+  });
+
+  it("keeps a stored root instead of rewriting it", () => {
+    const storage = fakeStorage({ [LAST_ROOT_STORAGE_KEY]: "hosts" });
+    expect(resolveLaunchRoot({ isNativeApp: true, hasHosts: false, storage })).toBe("hosts");
+    expect(storage.get(LAST_ROOT_STORAGE_KEY)).toBe("hosts");
+  });
+
+  it("writes nothing in the browser build, which has one root", () => {
+    const storage = fakeStorage({});
+    expect(resolveLaunchRoot({ isNativeApp: false, hasHosts: false, storage })).toBe("hosts");
+    expect(storage.get(LAST_ROOT_STORAGE_KEY)).toBeNull();
+  });
+
+  it("opens and keeps working when the store is blocked", () => {
+    const blocked: RootStorage = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    expect(resolveLaunchRoot({ isNativeApp: true, hasHosts: false, storage: blocked })).toBe("chats");
+    expect(resolveLaunchRoot({ isNativeApp: true, hasHosts: false, storage: null })).toBe("chats");
   });
 });
 

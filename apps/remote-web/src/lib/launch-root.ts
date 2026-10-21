@@ -32,12 +32,26 @@ export type LaunchRootInput = {
 /** The default install has no computers and no remembered root: Chats. */
 export function launchRoot(input: LaunchRootInput): RootKind {
   if (!input.isNativeApp) return "hosts";
-  const remembered = input.storage?.getItem(LAST_ROOT_STORAGE_KEY) ?? null;
-  if (remembered === "chats" || remembered === "hosts") return remembered;
+  const remembered = readLastRoot(input.storage);
+  if (remembered !== null) return remembered;
   // An upgrade keeps its computers: the launch these users know must not move.
   // Without the flag there is nothing to distinguish from a fresh install, so
   // the one observation available at first launch decides.
   return input.hasHosts ? "hosts" : "chats";
+}
+
+/**
+ * The remembered root, or null when none was written or the store refuses to
+ * answer. The launch is the first thing that runs, so this read must not be the
+ * thing that stops the app.
+ */
+function readLastRoot(storage: RootStorage | null): RootKind | null {
+  try {
+    const remembered = storage?.getItem(LAST_ROOT_STORAGE_KEY) ?? null;
+    return remembered === "chats" || remembered === "hosts" ? remembered : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Remember the root the user switched to; a blocked store simply forgets it. */
@@ -48,4 +62,20 @@ export function storeLastRoot(root: RootKind, storage: RootStorage | null): void
     // Quota errors and blocked storage keep the session working without the
     // preference, the same trade the host registry makes.
   }
+}
+
+/**
+ * The root this launch opens on, remembering it for the next one.
+ *
+ * The decision alone is not enough: a user who never switches tabs would never
+ * write the preference, so an installation that started on Chats and later
+ * paired a computer would jump to Computers on the next launch. Recording the
+ * opening root the first time makes "reopen where I was" true from the first
+ * run, without changing the decision itself. Only a native build has a
+ * preference to keep, and a stored one is never overwritten here.
+ */
+export function resolveLaunchRoot(input: LaunchRootInput): RootKind {
+  const root = launchRoot(input);
+  if (input.isNativeApp && readLastRoot(input.storage) === null) storeLastRoot(root, input.storage);
+  return root;
 }
