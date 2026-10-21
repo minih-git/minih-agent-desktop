@@ -187,6 +187,58 @@ describe("connecting a model account", () => {
     expect(store.entries()).toEqual({});
   });
 
+  it("fails without storing the key when the account record cannot be saved", async () => {
+    const storage = memoryStorage();
+    storage.setItem = () => {
+      throw new Error("quota exceeded");
+    };
+    const store = createMemorySecureStore();
+    const service = createDirectChatService({
+      control: fakeControl({ models: { ok: true, value: page([model("gpt-4.1")], 1) } }).control,
+      secret: createDirectChatSecret(store),
+      storage,
+      gatewayRoot: ROOT,
+    });
+    const outcome = await service.connect(KEY);
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.failure.kind).toBe("gateway");
+    expect(store.entries()).toEqual({});
+    expect((await service.status()).state).toBe("disconnected");
+  });
+
+  it("puts the previous account back when the new key cannot be stored", async () => {
+    const storage = memoryStorage();
+    const store = createMemorySecureStore();
+    const first = createDirectChatService({
+      control: fakeControl({ models: { ok: true, value: page([model("gpt-4.1")], 1) } }).control,
+      secret: createDirectChatSecret(store),
+      storage,
+      gatewayRoot: ROOT,
+    });
+    await first.connect(KEY);
+    const before = storage.getItem(DIRECT_CHAT_CONNECTION_KEY);
+
+    // A different account whose key the secure store refuses.
+    const control = fakeControl({ models: { ok: true, value: page([model("other")], 1) } }).control;
+    const verifyKey = control.verifyKey;
+    control.verifyKey = async (key) => {
+      const result = await verifyKey(key);
+      return result.ok ? { ok: true, value: { ...result.value, accessKeyId: "8", keyName: "other" } } : result;
+    };
+    const refusing = { ...store, set: async () => Promise.reject(new Error("keychain locked")) };
+    const second = createDirectChatService({
+      control,
+      secret: createDirectChatSecret(refusing),
+      storage,
+      gatewayRoot: ROOT,
+    });
+    const outcome = await second.connect("sk-other");
+    expect(outcome.ok).toBe(false);
+    expect(storage.getItem(DIRECT_CHAT_CONNECTION_KEY)).toBe(before);
+    expect(store.entries()).toEqual({ [DIRECT_CHAT_KEY_ITEM]: KEY });
+    expect(readConnection(storage)?.accessKeyId).toBe("7");
+  });
+
   it("keeps the cached catalog across a rotation of the same account", async () => {
     const storage = memoryStorage();
     const store = createMemorySecureStore();

@@ -93,18 +93,47 @@ function isCachedModel(value: unknown): value is MinihRouterModel {
   return isRecord(value) && typeof value.id === "string" && Array.isArray(value.protocols);
 }
 
-export function writeConnection(storage: DirectChatStorage | null, connection: DirectChatConnection): void {
-  if (!storage) return;
+/**
+ * Store the record; `false` when the store refused.
+ *
+ * Callers decide what a refusal means. A catalog refresh or a remembered model
+ * can lose the write and recover on the next read, but a new connection cannot:
+ * the record names the account the stored key belongs to, so `connect` treats a
+ * refusal as a failed connection rather than leaving a key under a stale name.
+ */
+export function writeConnection(storage: DirectChatStorage | null, connection: DirectChatConnection): boolean {
+  if (!storage) return false;
   const trimmed: DirectChatConnection = {
     ...connection,
     models: connection.models.slice(0, MAX_CACHED_MODELS),
   };
   try {
     storage.setItem(DIRECT_CHAT_CONNECTION_KEY, JSON.stringify(trimmed));
+    return true;
   } catch {
-    // A blocked or full store costs the cache and the remembered model, not the
-    // connection: the key is in the secure store and the next read of the
-    // catalog refills this.
+    return false;
+  }
+}
+
+/** Put back exactly what was stored before, or nothing when nothing was. */
+export function restoreConnection(storage: DirectChatStorage | null, previous: string | null): void {
+  if (!storage) return;
+  try {
+    if (previous === null) storage.removeItem(DIRECT_CHAT_CONNECTION_KEY);
+    else storage.setItem(DIRECT_CHAT_CONNECTION_KEY, previous);
+  } catch {
+    // The secret write already failed and nothing new was stored under it; a
+    // record that cannot be restored names the account whose key is still there.
+  }
+}
+
+/** The raw stored record, kept so a failed connect can put it back unchanged. */
+export function readRawConnection(storage: DirectChatStorage | null): string | null {
+  if (!storage) return null;
+  try {
+    return storage.getItem(DIRECT_CHAT_CONNECTION_KEY);
+  } catch {
+    return null;
   }
 }
 

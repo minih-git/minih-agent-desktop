@@ -19,6 +19,8 @@ import type { MinihRouterModel } from "@minih-agent/shared";
 
 import {
   clearConnection,
+  readRawConnection,
+  restoreConnection,
   isSameAccount,
   readConnection,
   writeConnection,
@@ -137,16 +139,27 @@ export function createDirectChatService(options: DirectChatServiceOptions): Dire
         models: catalog.models,
       };
 
+      // The record goes first and must land: it names the account the key
+      // belongs to, so a key stored under a stale record would show one account
+      // and send as another. If the key then cannot be stored, the previous
+      // record is put back, so the pair on this phone never disagrees.
+      const previousRaw = readRawConnection(options.storage);
+      if (!writeConnection(options.storage, connection)) {
+        return {
+          ok: false,
+          failure: { kind: "gateway", message: "the connection could not be saved on this device" },
+        };
+      }
       try {
         await options.secret.write(trimmed);
       } catch (cause) {
+        restoreConnection(options.storage, previousRaw);
         const message = cause instanceof Error ? cause.message : String(cause);
         return {
           ok: false,
           failure: { kind: "gateway", message: `the AccessKey could not be saved on this device: ${message}` },
         };
       }
-      writeConnection(options.storage, connection);
 
       return {
         ok: true,
