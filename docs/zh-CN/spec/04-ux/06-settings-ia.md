@@ -500,4 +500,4 @@ reverting the preference clears that hint. A busy switch prevents concurrent
 saves. Read/save failures show the failed operation and reason without faking
 success; unknown applied state never invents a restart hint. Other platforms
 do not render the switch. No GPU-saving amount
-is promised without local measurement. See [the decision](../../adr/macos-window-translucency-preference.md).
+is promised without local measurement. See [the decision](/adr/macos-window-translucency-preference).

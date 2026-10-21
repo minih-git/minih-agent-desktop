@@ -293,4 +293,4 @@ cancellation budget and manual redirect/origin guards, and verifies the server
 certificate and hostname using default plus OS CA roots. Mandatory client
 authentication still fails. HTTP responses, other TLS/network errors and
 cancelled work do not trigger this retry. Agent turns are never replayed by
-this path. See [the transport decision](../../adr/provider-metadata-client-certificate-retry.md).
+this path. See [the transport decision](/adr/provider-metadata-client-certificate-retry).
