@@ -10,8 +10,18 @@ const sync = (host) => rpc(host, "configSync.syncNow");
 const settings = (host) => rpc(host, "settings.get");
 const provider = async (host, id) => (await rpc(host, "providers.get", { id })).provider;
 
-export function config(connection, deviceLabel, extra = {}) {
-  return { ...connection, deviceLabel, backupPassword: PASSWORD, categories: { ...categories, memory: false }, includeSecrets: true, includeMemory: false, automaticSync: false, mode: "sync", ...extra };
+export function config(deviceLabel, extra = {}) {
+  return { deviceLabel, backupPassword: PASSWORD, categories: { ...categories, memory: false }, includeSecrets: true, includeMemory: false, automaticSync: false, mode: "sync", ...extra };
+}
+
+// Link the Minih Router account the backup transport authenticates with. The
+// row is device-local: every Host stores its own copy of the same account.
+export async function connectRouter(host, router) {
+  await rpc(host, "providers.create", {
+    name: "Minih Router test account", vendorKey: "minih-router", type: "openai_compatible",
+    protocol: "openai_compatible", authKind: "api_key_and_base_url",
+    baseUrl: `${router.endpoint}/v1`, secretValue: router.accessKey, models: [],
+  });
 }
 
 export async function approveAll(host, state, projectPath) {
@@ -35,17 +45,17 @@ async function choose(host, state, suffix) {
   return rpc(host, "configSync.approve", { approvalId: item.id, digest: item.digest });
 }
 
-export async function runSyncJourney({ a, b, connection, store, step }) {
-  const configA = config(connection, "Device A");
-  const configB = config(connection, "Device B", { includeSecrets: false });
+export async function runSyncJourney({ a, b, router, store, step }) {
+  const configA = config("Device A");
+  const configB = config("Device B", { includeSecrets: false });
   step("configure-and-credential-reuse");
-  assert.deepEqual(await rpc(a, "configSync.test", configA), { ok: true, conditionalWrites: true });
+  assert.deepEqual(await rpc(a, "configSync.test"), { ok: true, conditionalWrites: true });
   assert.equal((await rpc(a, "configSync.configure", configA)).mode, "sync");
-  const { secretAccessKey: _secret, sessionToken: _token, ...reuse } = configA;
-  assert.equal((await rpc(a, "configSync.configure", { ...reuse, backupPassword: "" })).configured, true);
+  // The vault password is entered once; a later save reuses the unlocked key.
+  assert.equal((await rpc(a, "configSync.configure", { ...configA, backupPassword: "" })).configured, true);
   await rpc(a, "settings.set", { theme: "light", language: "en", networkPolicy: { mode: "strict" } });
   // Strict mode is device-local. Local HTTP is tested under relaxed policy only.
-  if (connection.endpoint.startsWith("http:")) await rpc(a, "settings.set", { networkPolicy: { mode: "relaxed" } });
+  if (router.endpoint.startsWith("http:")) await rpc(a, "settings.set", { networkPolicy: { mode: "relaxed" } });
   await sync(a);
   const { provider: shared } = await rpc(a, "providers.create", {
     name: MARKERS[0], vendorKey: "s3-fixture", type: "openai_compatible", protocol: "openai_compatible",
@@ -297,17 +307,17 @@ export async function runSyncJourney({ a, b, connection, store, step }) {
   return { projectA, projectB };
 }
 
-export async function runBackupJourney({ a, b, c, d, connection, step }) {
+export async function runBackupJourney({ a, b, c, d, step }) {
   step("backup-isolation-and-local-only-restore");
-  const backupConfig = config(connection, "Backup C", { mode: "backup" });
+  const backupConfig = config("Backup C", { mode: "backup" });
   await rpc(c, "configSync.configure", backupConfig);
   await rpc(c, "settings.set", { theme: "system" });
   const syncHead = (await rpc(a, "configSync.listHistory"))[0].revisionId;
   const first = (await sync(c)).lastRevisionId;
   assert.equal((await settings(c)).theme, "system");
-  assert.equal((await rpc(c, "providers.list")).providers.length, 0);
+  assert.equal((await rpc(c, "providers.list")).providers.filter((row) => row.vendorKey !== "minih-router").length, 0);
   assert.equal((await sync(c)).lastRevisionId, first, "unchanged backup must not duplicate revisions");
-  await rpc(d, "configSync.configure", config(connection, "Backup D", { mode: "backup" }));
+  await rpc(d, "configSync.configure", config("Backup D", { mode: "backup" }));
   await rpc(d, "settings.set", { theme: "light" });
   const second = (await sync(d)).lastRevisionId;
   assert.notEqual(second, first);
@@ -325,8 +335,10 @@ export async function runBackupJourney({ a, b, c, d, connection, step }) {
   assert.equal((await settings(a)).theme, "dark");
 
   step("account-model-configuration-backup-and-fresh-device-restore");
+  // An ordinary provider account. The connected Minih Router row is the backup
+  // transport's own identity, stays device-local, and is deliberately not here.
   const { provider: router } = await rpc(c, "providers.create", {
-    name: MARKERS[7], vendorKey: "minih-router", type: "openai_compatible",
+    name: MARKERS[7], vendorKey: "fixture-cloud", type: "openai_compatible",
     protocol: "openai_compatible", authKind: "api_key_and_base_url",
     baseUrl: "http://127.0.0.1:9/v1", secretValue: MARKERS[6],
     oauthAccountLabel: "Fixture account label", apiStyle: "responses",
@@ -385,7 +397,7 @@ export async function runBackupJourney({ a, b, c, d, connection, step }) {
   await rpc(a, "configSync.changePassword", { currentPassword: PASSWORD, newPassword: nextPassword });
   await sync(b); // An unlocked peer retains the data key: rewrap is not revocation.
   await rpc(d, "configSync.disconnect");
-  await assert.rejects(rpc(d, "configSync.configure", config(connection, "Fresh D")), /CONFIG_SYNC_CRYPTO/);
-  await rpc(d, "configSync.configure", config(connection, "Fresh D", { backupPassword: nextPassword, mode: "backup" }));
+  await assert.rejects(rpc(d, "configSync.configure", config("Fresh D")), /CONFIG_SYNC_CRYPTO/);
+  await rpc(d, "configSync.configure", config("Fresh D", { backupPassword: nextPassword, mode: "backup" }));
   assert.equal((await rpc(d, "configSync.getState")).configured, true);
 }
