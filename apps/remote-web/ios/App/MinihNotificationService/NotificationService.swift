@@ -22,7 +22,7 @@ final class NotificationService: UNNotificationServiceExtension {
     private static let deadline: TimeInterval = 8
     /// One request, shorter than the deadline so the answer still has time to
     /// reach the screen.
-    private static let requestTimeout: TimeInterval = 5
+    private static let requestTimeout: TimeInterval = 1.5
 
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var delivered = false
@@ -62,7 +62,7 @@ final class NotificationService: UNNotificationServiceExtension {
               let sessionId = userInfo["sessionId"] as? String, !sessionId.isEmpty
         else { return }
         guard let token = SharedNotifyStore.token(hostId: hostId) else { return }
-        guard let url = URL(string: "\(origin)/v1/sessions/\(sessionId)") else { return }
+        guard let url = URL(string: "\(origin)/hosts/\(hostId)/v1/sessions") else { return }
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -73,7 +73,7 @@ final class NotificationService: UNNotificationServiceExtension {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return }
-            guard let title = Self.sessionTitle(from: data), !title.isEmpty else { return }
+            guard let title = Self.sessionTitle(from: data, sessionId: sessionId), !title.isEmpty else { return }
             // The title is the body; the alert's title stays the kind's own label,
             // so "Needs your approval" is followed by what it is about.
             content.body = title
@@ -87,12 +87,19 @@ final class NotificationService: UNNotificationServiceExtension {
     }
 
     /// `{ "session": { "title": "…" } }` — one field, and nothing else is kept.
-    private static func sessionTitle(from data: Data) -> String? {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let session = root["session"] as? [String: Any],
-              let title = session["title"] as? String
-        else { return nil }
-        return title
+    private static func sessionTitle(from data: Data, sessionId: String) -> String? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if let session = root["session"] as? [String: Any],
+           let title = session["title"] as? String {
+            return title
+        }
+        let container = (root["result"] as? [String: Any]) ?? root
+        if let sessions = container["sessions"] as? [[String: Any]],
+           let matched = sessions.first(where: { ($0["id"] as? String) == sessionId }),
+           let title = matched["title"] as? String {
+            return title
+        }
+        return nil
     }
 
     // MARK: - Delivery

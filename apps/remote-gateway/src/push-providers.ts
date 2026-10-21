@@ -150,6 +150,7 @@ export class ApnsClient {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   /** Requests using the current session; the session is only dropped when idle. */
   private inFlight = 0;
+  private readonly sandboxTokens = new Set<string>();
 
   constructor(
     private readonly config: ApnsPushConfig,
@@ -175,13 +176,15 @@ export class ApnsClient {
 
   /** Deliver one notification to one APNs device token. */
   async send(deviceToken: string, payload: RacpPushPayload): Promise<PushDeliveryResult> {
-    const primary = await this.sendToEndpoint(this.config.endpoint, deviceToken, payload);
-    if (
-      !primary.ok &&
-      primary.status === 400 &&
-      this.config.endpoint.replace(/\/+$/, "") === "https://api.push.apple.com"
-    ) {
+    const isDefaultProd = this.config.endpoint.replace(/\/+$/, "") === "https://api.push.apple.com";
+    if (isDefaultProd && this.sandboxTokens.has(deviceToken)) {
       return this.sendToEndpoint("https://api.sandbox.push.apple.com", deviceToken, payload, true);
+    }
+    const primary = await this.sendToEndpoint(this.config.endpoint, deviceToken, payload);
+    if (!primary.ok && primary.status === 400 && isDefaultProd) {
+      const fallback = await this.sendToEndpoint("https://api.sandbox.push.apple.com", deviceToken, payload, true);
+      if (fallback.ok) this.sandboxTokens.add(deviceToken);
+      return fallback;
     }
     return primary;
   }
