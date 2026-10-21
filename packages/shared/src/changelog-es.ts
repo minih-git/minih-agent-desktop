@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "0.24.0",
+    date: "2026-10-21",
+    highlights: [
+      "El teléfono ahora separa proyectos de conversaciones: eliges un proyecto y, dentro, una conversación, con un único vocabulario para cada estado y un aviso claro al volver la aplicación al primer plano.",
+      "Una conversación informa cuando espera tu respuesta, así que el teléfono ya no muestra una pregunta pendiente como un turno ocupado.",
+      "Las notificaciones nombran la conversación en la pantalla de bloqueo y llevan el número de decisiones pendientes; en Android la aplicación dibuja su propia notificación, así que tocarla abre esa conversación.",
+      "Las notificaciones push pueden limitarse a los eventos que te necesitan, varios eventos de una conversación se agrupan y la compilación de iPhone ya incluye el permiso de notificaciones.",
+      "Un teléfono puede enviar imágenes y archivos pequeños a una conversación que se ejecuta en tu computadora.",
+      "Un teléfono puede ver qué modelo usa una conversación y cambiarlo.",
+      "Las respuestas se muestran como Markdown en la línea de tiempo del teléfono, los historiales largos se cargan por ventanas sin mover lo que estás leyendo y volver atrás se comporta igual en todos los caminos.",
+      "Al seleccionar texto en una respuesta del escritorio se cita en el cuadro de entrada, y un plugin puede abrir un archivo local directamente en la vista de navegador del panel de trabajo.",
+    ],
+  },
+  {
     version: "0.23.0",
     date: "2026-10-20",
     highlights: [

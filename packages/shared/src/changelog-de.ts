@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.24.0",
+    date: "2026-10-21",
+    highlights: [
+      "Das Telefon trennt jetzt Projekte von Unterhaltungen: Sie wählen ein Projekt und darin eine Unterhaltung, mit einer einheitlichen Sprache für jeden Zustand und einem klaren Hinweis, wenn die App wieder in den Vordergrund kommt.",
+      "Eine Unterhaltung meldet, wenn sie auf Ihre Antwort wartet, sodass das Telefon eine offene Frage nicht mehr als laufenden Durchgang anzeigt.",
+      "Benachrichtigungen nennen die Unterhaltung auf dem Sperrbildschirm und tragen die Zahl der noch offenen Entscheidungen; unter Android zeichnet die App ihre Benachrichtigung selbst, sodass ein Tippen direkt in diese Unterhaltung führt.",
+      "Push lässt sich auf die Ereignisse begrenzen, die Sie brauchen, mehrere Ereignisse einer Unterhaltung werden gruppiert, und der iPhone-Build bringt jetzt die Push-Berechtigung mit.",
+      "Ein Telefon kann Bilder und kleine Dateien in eine auf dem Computer laufende Unterhaltung senden.",
+      "Ein Telefon kann sehen, welches Modell eine Unterhaltung nutzt, und es wechseln.",
+      "Antworten werden in der Telefon-Zeitleiste als Markdown dargestellt, lange Verläufe laden fensterweise, ohne Ihre Leseposition zu verschieben, und Zurück verhält sich auf jedem Weg gleich.",
+      "Markieren Sie Text in einer Antwort am Rechner, wird er in das Eingabefeld übernommen; ein Plugin kann eine lokale Datei direkt in der Browser-Ansicht des Arbeitsbereichs öffnen.",
+    ],
+  },
+  {
     version: "0.23.0",
     date: "2026-10-20",
     highlights: [
