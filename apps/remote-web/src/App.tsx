@@ -18,20 +18,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ForegroundNoticeBar, type ForegroundNotice } from "./components/ForegroundNotice.js";
 import { AccountScreen } from "./screens/AccountScreen.js";
+import { ChatsScreen } from "./screens/ChatsScreen.js";
 import { ConnectScreen } from "./screens/ConnectScreen.js";
 import { HostsScreen } from "./screens/HostsScreen.js";
 import { PairScreen } from "./screens/PairScreen.js";
 import { ProjectSessionsScreen } from "./screens/ProjectSessionsScreen.js";
 import { ProjectsScreen } from "./screens/ProjectsScreen.js";
 import { SessionScreen } from "./screens/SessionScreen.js";
+import { TabBar } from "./components/TabBar.js";
 import { useEdgeSwipe } from "./hooks/useEdgeSwipe.js";
 import { usePushRegistration } from "./hooks/usePushRegistration.js";
 import { useHostRegistry } from "./hooks/useHostRegistry.js";
+import { launchRoot, storeLastRoot } from "./lib/launch-root.js";
 import { setBackHandler } from "./lib/navigation.js";
 import { credentialPort, isNativeApp, nativePlatform } from "./lib/runtime.js";
 import { consumeNotificationTap, setNotificationBadge } from "./lib/native-notify.js";
 import { createScreenHistory, sameScreen } from "./lib/screen-history.js";
-import { previousScreen, type Screen } from "./lib/screen-stack.js";
+import { isRootScreen, previousScreen, type RootKind, type Screen } from "./lib/screen-stack.js";
 import { createSessionViews } from "./lib/session-state.js";
 
 /** The history port the app drives; kept out of the component for testability. */
@@ -44,9 +47,32 @@ const screenHistory = createScreenHistory({
 /** What this device has opened, which is half of the "needs you" vocabulary (§17.4). */
 const sessionViews = createSessionViews(window.localStorage);
 
+/**
+ * The root this device opens on (§4, ADR mobile-direct-gateway-chat): the
+ * remembered root, or the launch decision for the first run. The browser build
+ * has one root and never sees Chats.
+ */
+const initialRoot = launchRoot({
+  isNativeApp,
+  hasHosts: (() => {
+    try {
+      return window.localStorage.getItem("minih.remote-web.hosts.v1") !== null;
+    } catch {
+      return false;
+    }
+  })(),
+  storage: (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })(),
+});
+
 export default function App() {
   const hosts = useHostRegistry();
-  const [screen, setScreen] = useState<Screen>({ kind: "hosts" });
+  const [screen, setScreen] = useState<Screen>({ kind: initialRoot });
   /** A notification that arrived while the app was open (§17.6.4). */
   const [notice, setNotice] = useState<ForegroundNotice | null>(null);
   /**
@@ -71,6 +97,20 @@ export default function App() {
       return next;
     });
   }, []);
+
+  /**
+   * Switching tabs replaces the root instead of stacking it (§4): the entry the
+   * previous root occupied is reused, so Back never alternates between tabs and
+   * Android Back on either root still exits. The choice is remembered so the
+   * next launch reopens this root.
+   */
+  const switchRoot = useCallback(
+    (root: RootKind) => {
+      storeLastRoot(root, window.localStorage);
+      navigate({ kind: root });
+    },
+    [navigate],
+  );
 
   const screenRef = useRef(screen);
   screenRef.current = screen;
@@ -103,8 +143,10 @@ export default function App() {
       if (!tap.hostId || !tap.sessionId) return;
       const host = hosts.find((entry) => entry.hostId === tap.hostId);
       if (!host) return;
-      // A push carries no project id, so the stack is the honest shallow one
-      // (§17.3): the computer's projects, then the session.
+      // A computer notification owns its path (ADR): the root becomes Computers.
+      // `sync` moves sideways, so the entry the Chats root occupied is reused
+      // for `hosts`, and a push carries no project id, so the stack is the
+      // honest shallow one (§17.3): the computer's projects, then the session.
       screenHistory.sync({ kind: "projects", hostId: host.hostId });
       navigate({ kind: "session", hostId: host.hostId, sessionId: tap.sessionId, title: "" });
     });
@@ -221,6 +263,8 @@ export default function App() {
 
   const hostList =
     hosts.length === 0 ? (
+      // S1 Connect is the empty state of the Computers root (§17.3): a missing
+      // computer never gates the rest of the app, because Chats lives beside it.
       <ConnectScreen
         onAddHost={() => navigate({ kind: "pair" })}
         onAddAccount={() => navigate({ kind: "account" })}
@@ -245,6 +289,19 @@ export default function App() {
     });
 
   const body = (() => {
+    if (
+      screen.kind === "chats" ||
+      screen.kind === "chat" ||
+      screen.kind === "chatArchive" ||
+      screen.kind === "modelGateway" ||
+      screen.kind === "settings"
+    ) {
+      // First stage: placeholders for the direct-chat pages and Settings. The
+      // launch rule and the stack contract ship now (§17.3); the real D1–D4 and
+      // S8 screens, and the entries that push these kinds, come with their own
+      // stages. Nothing here touches the network or a credential.
+      return <ChatsScreen />;
+    }
     if (screen.kind === "account") {
       return (
         <AccountScreen
@@ -336,9 +393,15 @@ export default function App() {
     return hostList;
   })();
 
+  // The bar on the two roots of a native build only (§4); every pushed page and
+  // the whole browser build go without it. `isRootScreen` narrows the kind for
+  // the bar's `root` prop.
+  const tabs =
+    isNativeApp && isRootScreen(screen) ? <TabBar root={screen.kind} onSwitch={switchRoot} /> : null;
+
   return (
     <div
-      className="relative h-dvh overflow-hidden"
+      className="relative flex h-dvh flex-col overflow-hidden"
       data-gesture={swipe.state}
       style={
         swipe.offset > 0
@@ -346,7 +409,8 @@ export default function App() {
           : undefined
       }
     >
-      {body}
+      <div className="min-h-0 flex-1">{body}</div>
+      {tabs}
       {notice ? (
         <ForegroundNoticeBar
           notice={notice}

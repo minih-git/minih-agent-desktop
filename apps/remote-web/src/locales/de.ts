@@ -325,6 +325,13 @@ export const de: Record<TranslationKey, string> = {
   "operation.inputRespond": "Antwort senden",
   "operation.probe": "Host prüfen",
 
+  "tabs.label": "Hauptnavigation",
+  "tabs.chats": "Chats",
+  "tabs.computers": "Computer",
+  "chats.title": "Chats",
+  "chats.placeholderTitle": "Direkter Chat kommt bald",
+  "chats.placeholderHint": "Unterhaltungen mit dem Modell-Gateway öffnen sich hier – direkt auf diesem Telefon.",
+
   "connect.title": "Steuere deine Agenten von deinem Telefon aus",
   "connect.subtitle": "Fortschritt prüfen, Aktionen genehmigen und die Unterhaltung fortsetzen. Die Arbeit läuft auf deinem Computer weiter.",
   "connect.feature.shield.title": "Tool-Anfragen genehmigen oder ablehnen",

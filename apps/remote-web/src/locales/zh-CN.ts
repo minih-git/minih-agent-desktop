@@ -325,6 +325,13 @@ export const zhCN: Record<TranslationKey, string> = {
   "operation.inputRespond": "提交回答",
   "operation.probe": "检查主机",
 
+  "tabs.label": "主导航",
+  "tabs.chats": "对话",
+  "tabs.computers": "电脑",
+  "chats.title": "对话",
+  "chats.placeholderTitle": "直连对话即将推出",
+  "chats.placeholderHint": "与模型网关的对话将在这里打开，直接在手机上进行。",
+
   "connect.title": "在手机上接管你的 Agent",
   "connect.subtitle": "查看进度、批准操作、继续对话。任务仍在你的电脑上运行。",
   "connect.feature.shield.title": "批准或拒绝工具请求",

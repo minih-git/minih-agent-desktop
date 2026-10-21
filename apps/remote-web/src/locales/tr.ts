@@ -325,6 +325,13 @@ export const tr: Record<TranslationKey, string> = {
   "operation.inputRespond": "Yanıtı gönder",
   "operation.probe": "Ana makineyi denetle",
 
+  "tabs.label": "Ana gezinme",
+  "tabs.chats": "Sohbetler",
+  "tabs.computers": "Bilgisayarlar",
+  "chats.title": "Sohbetler",
+  "chats.placeholderTitle": "Doğrudan sohbet yakında",
+  "chats.placeholderHint": "Model ağ geçidiyle konuşmalar burada açılacak, doğrudan bu telefonda.",
+
   "connect.title": "Agent'larınızı telefonunuzdan kontrol edin",
   "connect.subtitle": "İlerlemeyi kontrol edin, eylemleri onaylayın ve sohbete devam edin. İşler bilgisayarınızda çalışmaya devam eder.",
   "connect.feature.shield.title": "Araç isteklerini onaylayın veya reddedin",

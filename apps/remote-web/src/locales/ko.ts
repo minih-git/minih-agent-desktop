@@ -325,6 +325,13 @@ export const ko: Record<TranslationKey, string> = {
   "operation.inputRespond": "응답 보내기",
   "operation.probe": "호스트 확인",
 
+  "tabs.label": "기본 탐색",
+  "tabs.chats": "대화",
+  "tabs.computers": "컴퓨터",
+  "chats.title": "대화",
+  "chats.placeholderTitle": "직접 대화가 곧 제공됩니다",
+  "chats.placeholderHint": "모델 게이트웨이와의 대화가 이 휴대폰에서 바로 여기에 열립니다.",
+
   "connect.title": "휴대폰에서 에이전트를 제어하세요",
   "connect.subtitle": "진행 상황을 확인하고, 작업을 승인하며 대화를 이어가세요. 작업은 컴퓨터에서 계속 실행됩니다.",
   "connect.feature.shield.title": "도구 요청 승인 또는 거부",

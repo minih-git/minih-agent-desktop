@@ -325,6 +325,13 @@ export const es: Record<TranslationKey, string> = {
   "operation.inputRespond": "Enviar la respuesta",
   "operation.probe": "Comprobar el host",
 
+  "tabs.label": "Navegación principal",
+  "tabs.chats": "Chats",
+  "tabs.computers": "Equipos",
+  "chats.title": "Chats",
+  "chats.placeholderTitle": "El chat directo llegará pronto",
+  "chats.placeholderHint": "Las conversaciones con la pasarela de modelos se abrirán aquí, directamente en este teléfono.",
+
   "connect.title": "Controla tus agentes desde tu teléfono",
   "connect.subtitle": "Consulta el progreso, aprueba acciones y continúa la conversación. El trabajo sigue ejecutándose en tu ordenador.",
   "connect.feature.shield.title": "Aprobar o denegar solicitudes de herramientas",

@@ -325,6 +325,13 @@ export const ptBR: Record<TranslationKey, string> = {
   "operation.inputRespond": "Enviar a resposta",
   "operation.probe": "Verificar o host",
 
+  "tabs.label": "Navegação principal",
+  "tabs.chats": "Conversas",
+  "tabs.computers": "Computadores",
+  "chats.title": "Conversas",
+  "chats.placeholderTitle": "O chat direto chega em breve",
+  "chats.placeholderHint": "As conversas com o gateway de modelos serão abertas aqui, direto neste celular.",
+
   "connect.title": "Controle seus agentes do seu celular",
   "connect.subtitle": "Acompanhe o progresso, aprove ações e continue a conversa. O trabalho continua rodando no seu computador.",
   "connect.feature.shield.title": "Aprovar ou recusar solicitações de ferramentas",

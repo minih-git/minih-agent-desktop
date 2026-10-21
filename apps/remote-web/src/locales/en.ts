@@ -329,6 +329,13 @@ export const en = {
   "operation.inputRespond": "Sending the answer",
   "operation.probe": "Checking the host",
 
+  "tabs.label": "Main navigation",
+  "tabs.chats": "Chats",
+  "tabs.computers": "Computers",
+  "chats.title": "Chats",
+  "chats.placeholderTitle": "Direct chat is coming soon",
+  "chats.placeholderHint": "Conversations with the model gateway, right on this phone, will open here.",
+
   "connect.title": "Control your agents from your phone",
   "connect.subtitle": "Check progress, approve actions, and keep the conversation going. Work keeps running on your computer.",
   "connect.feature.shield.title": "Approve or deny tool requests",

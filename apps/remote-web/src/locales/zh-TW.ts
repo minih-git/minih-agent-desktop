@@ -325,6 +325,13 @@ export const zhTW: Record<TranslationKey, string> = {
   "operation.inputRespond": "送出回答",
   "operation.probe": "檢查主機",
 
+  "tabs.label": "主導覽",
+  "tabs.chats": "對話",
+  "tabs.computers": "電腦",
+  "chats.title": "對話",
+  "chats.placeholderTitle": "直連對話即將推出",
+  "chats.placeholderHint": "與模型閘道的對話將在這裡開啟，直接在手機上進行。",
+
   "connect.title": "在手機上接管你的 Agent",
   "connect.subtitle": "查看進度、批准操作、繼續對話。任務仍在你的電腦上運行。",
   "connect.feature.shield.title": "批准或拒絕工具請求",

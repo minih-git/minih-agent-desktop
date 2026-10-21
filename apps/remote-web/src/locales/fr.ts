@@ -325,6 +325,13 @@ export const fr: Record<TranslationKey, string> = {
   "operation.inputRespond": "Envoi de la réponse",
   "operation.probe": "Vérification de l'hôte",
 
+  "tabs.label": "Navigation principale",
+  "tabs.chats": "Discussions",
+  "tabs.computers": "Ordinateurs",
+  "chats.title": "Discussions",
+  "chats.placeholderTitle": "La discussion directe arrive bientôt",
+  "chats.placeholderHint": "Les conversations avec la passerelle de modèles s'ouvriront ici, directement sur ce téléphone.",
+
   "connect.title": "Contrôlez vos agents depuis votre téléphone",
   "connect.subtitle": "Suivez la progression, approuvez les actions et poursuivez la conversation. Le travail continue de s'exécuter sur votre ordinateur.",
   "connect.feature.shield.title": "Approuver ou refuser les requêtes d'outils",
