@@ -4,12 +4,12 @@
     <string name="title_activity_main">Minih Remote</string>
     <string name="package_name">app.minih.remote</string>
     <string name="custom_url_scheme">app.minih.remote</string>
-    <string name="push_notify_approval_requested_title">Needs your decision</string>
-    <string name="push_notify_approval_requested_body">A session is waiting for you to approve an action.</string>
-    <string name="push_notify_input_requested_title">Needs your decision</string>
+    <string name="push_notify_approval_requested_title">Needs your approval</string>
+    <string name="push_notify_approval_requested_body">A session is waiting for your approval.</string>
+    <string name="push_notify_input_requested_title">Needs your answer</string>
     <string name="push_notify_input_requested_body">A session is waiting for your answer.</string>
-    <string name="push_notify_turn_completed_title">Turn finished</string>
-    <string name="push_notify_turn_completed_body">A session finished its turn.</string>
-    <string name="push_notify_turn_failed_title">Turn failed</string>
-    <string name="push_notify_turn_failed_body">A session\'s turn failed.</string>
+    <string name="push_notify_turn_completed_title">Finished</string>
+    <string name="push_notify_turn_completed_body">A session finished running.</string>
+    <string name="push_notify_turn_failed_title">Run failed</string>
+    <string name="push_notify_turn_failed_body">A session\'s run failed.</string>
 </resources>

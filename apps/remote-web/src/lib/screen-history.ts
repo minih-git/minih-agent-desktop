@@ -24,13 +24,20 @@ export type ScreenHistoryState = { screen: Screen };
 export function sameScreen(a: Screen, b: Screen): boolean {
   if (a.kind !== b.kind) return false;
   switch (a.kind) {
-    case "sessions":
+    case "projects":
       return a.hostId === (b as typeof a).hostId;
+    case "projectSessions":
+      return (
+        a.hostId === (b as typeof a).hostId &&
+        a.projectId === (b as typeof a).projectId &&
+        a.viaProjects === (b as typeof a).viaProjects
+      );
     case "session":
       return (
         a.hostId === (b as typeof a).hostId &&
         a.sessionId === (b as typeof a).sessionId &&
-        a.title === (b as typeof a).title
+        a.title === (b as typeof a).title &&
+        a.projectId === (b as typeof a).projectId
       );
     default:
       return true;
@@ -47,9 +54,20 @@ export function screenFromHistoryState(state: unknown): Screen | null {
     case "pair":
     case "account":
       return { kind: screen.kind };
-    case "sessions":
-      return typeof screen.hostId === "string" && screen.hostId
-        ? { kind: "sessions", hostId: screen.hostId }
+    case "projects":
+      return typeof screen.hostId === "string" && screen.hostId ? { kind: "projects", hostId: screen.hostId } : null;
+    case "projectSessions":
+      return typeof screen.hostId === "string" &&
+        screen.hostId &&
+        typeof screen.projectId === "string" &&
+        screen.projectId
+        ? {
+            kind: "projectSessions",
+            hostId: screen.hostId,
+            projectId: screen.projectId,
+            projectLabel: typeof screen.projectLabel === "string" ? screen.projectLabel : "",
+            ...(screen.viaProjects === false ? { viaProjects: false as const } : {}),
+          }
         : null;
     case "session":
       return typeof screen.hostId === "string" &&
@@ -61,6 +79,10 @@ export function screenFromHistoryState(state: unknown): Screen | null {
             hostId: screen.hostId,
             sessionId: screen.sessionId,
             title: typeof screen.title === "string" ? screen.title : "",
+            ...(typeof screen.projectId === "string" && screen.projectId ? { projectId: screen.projectId } : {}),
+            ...(typeof screen.projectLabel === "string" && screen.projectLabel
+              ? { projectLabel: screen.projectLabel }
+              : {}),
           }
         : null;
     default:

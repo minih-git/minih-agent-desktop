@@ -1342,6 +1342,15 @@ export type PluginHostApi = {
   browser: {
     /** Reveal the Browser view for the calling session and wait until it is ready. */
     reveal: () => Promise<void>;
+    /**
+     * Show one existing local file in the work panel's Browser view, for the
+     * session the user is looking at. Unlike `navigate`, this needs neither the
+     * panel to be open nor a session of the caller's own: the renderer picks the
+     * session it is showing and opens the tab. The file must be absolute and
+     * inside the project, a session scratch directory, or this plugin's data
+     * directory; anything else is refused with `INVALID_ARGUMENT`.
+     */
+    openInPanel: (input: { path: string }) => Promise<{ path: string }>;
     navigate: (input: { url?: string; path?: string }) => Promise<unknown>;
     action: (input: { action: "back" | "forward" | "reload" | "stop" }) => Promise<void>;
     setBounds: (hole: { x: number; y: number; width: number; height: number }) => Promise<unknown>;

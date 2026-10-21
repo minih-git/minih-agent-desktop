@@ -365,7 +365,8 @@ describe("attachPushListeners", () => {
     const plugin = fakePlugin(null);
     const taps: unknown[] = [];
     const dispose = await attachPushListeners(plugin, { onToken: () => undefined, onTap: (tap) => taps.push(tap) });
-    expect(plugin.listeners()).toBe(3);
+    // registration, registrationError, the tap, and the foreground event (§17.6.4).
+    expect(plugin.listeners()).toBe(4);
     await dispose();
     expect(plugin.listeners()).toBe(0);
     expect(taps).toEqual([]);
