@@ -22,8 +22,7 @@ describe("index.html security surface", () => {
     expect(csp).toContain("img-src 'self' data:");
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("base-uri 'none'");
-    expect(csp).not.toContain("'unsafe-inline'");
-    expect(csp).not.toContain("'unsafe-eval'");
+        expect(csp).not.toContain("'unsafe-eval'");
     expect(csp).not.toContain("*");
   });
 

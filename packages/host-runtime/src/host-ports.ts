@@ -1,5 +1,7 @@
-import { basename } from "node:path";
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { basename } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type {
   PendingToolRequest,
@@ -93,18 +95,45 @@ export function toSessionSummary(
   };
 }
 
+const FILE_HTML_LINK_RE = /\[[^\]]*\]\((file:\/\/\/[^)\s]+?\.html?)\)/i;
+const MAX_INLINE_HTML_BYTES = 200 * 1024;
+
+function inlineLocalHtmlIfLinked(message: UiMessage): UiMessage {
+  if (message.role !== "assistant" || typeof message.content !== "string") return message;
+  if (/```html\b/i.test(message.content)) return message;
+  const match = FILE_HTML_LINK_RE.exec(message.content);
+  if (!match?.[1]) return message;
+  try {
+    const filePath = fileURLToPath(match[1]);
+    if (!existsSync(filePath)) return message;
+    const st = statSync(filePath);
+    if (!st.isFile() || st.size <= 0 || st.size > MAX_INLINE_HTML_BYTES) return message;
+    const rawHtml = readFileSync(filePath, "utf8").replace(
+      /<meta[^>]*http-equiv=["']Content-Security-Policy["'][^>]*>/gi,
+      "",
+    );
+    return {
+      ...message,
+      content: `${message.content}\n\n\`\`\`html\n${rawHtml}\n\`\`\``,
+    };
+  } catch {
+    return message;
+  }
+}
+
 export function toRacpItem(message: UiMessage): RacpItemSummary {
   const turnId = (message as { turnId?: string }).turnId ?? "";
+  const enriched = inlineLocalHtmlIfLinked(message);
   return {
-    id: message.id,
+    id: enriched.id,
     turnId,
     itemType: "message",
-    status: message.status === "streaming" ? "streaming" : "completed",
-    createdAt: message.createdAt,
-    ...(message.parentToolCallId ? { parentToolCallId: message.parentToolCallId } : {}),
-    ...(message.nestedParentToolCallId ? { nestedParentToolCallId: message.nestedParentToolCallId } : {}),
-    ...(message.agentName ? { agentName: message.agentName } : {}),
-    content: message,
+    status: enriched.status === "streaming" ? "streaming" : "completed",
+    createdAt: enriched.createdAt,
+    ...(enriched.parentToolCallId ? { parentToolCallId: enriched.parentToolCallId } : {}),
+    ...(enriched.nestedParentToolCallId ? { nestedParentToolCallId: enriched.nestedParentToolCallId } : {}),
+    ...(enriched.agentName ? { agentName: enriched.agentName } : {}),
+    content: enriched,
   };
 }
 

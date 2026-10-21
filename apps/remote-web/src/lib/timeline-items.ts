@@ -29,7 +29,7 @@ import {
 import type { TimelineItem } from "./timeline-types.js";
 
 export const MAX_TIMELINE_ITEMS = 400;
-export const MAX_ITEM_TEXT_CHARS = 20_000;
+export const MAX_ITEM_TEXT_CHARS = 200_000;
 /** Names shown for the attachments of one row; the rest are counted, not listed. */
 export const MAX_ITEM_ATTACHMENTS = 8;
 
