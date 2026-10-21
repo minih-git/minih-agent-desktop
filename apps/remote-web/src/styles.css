@@ -140,6 +140,9 @@ body {
   .rm-dock {
     padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
+  .rm-tabbar {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
   .rm-scroll-end {
     padding-bottom: calc(24px + env(safe-area-inset-bottom));
   }
