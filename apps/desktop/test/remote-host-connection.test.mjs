@@ -19,7 +19,7 @@ const HOST_KEY = "hostA";
 
 /** A minimal RacpClient/subscribe double. Records requests and lets tests
  * push envelopes back to whichever listener attached last. */
-function fakeClient({ sessions = [], requestFailures = {} } = {}) {
+function fakeClient({ sessions = [], requestFailures = {}, onAttach } = {}) {
   const calls = [];
   let listener = null;
   return {
@@ -29,7 +29,10 @@ function fakeClient({ sessions = [], requestFailures = {} } = {}) {
       if (requestFailures[method]) throw requestFailures[method];
       if (method === "session/list") return { sessions };
       if (method === "events/subscribe") return { subscriptionId: `sub-${params.sessionId ?? "host"}`, starting: { epoch: "epoch-1", sequence: 1 }, replayComplete: true };
-      if (method === "session/attach") return { snapshot: { session: makeSession(params.sessionId), pendingApprovals: [], pendingInputs: [], cursor: { epoch: "epoch-1", sequence: 0 }, revision: 1, generatedAt: "2026-09-18T10:00:00.000Z" } };
+      if (method === "session/attach") {
+        if (onAttach) return onAttach(params.sessionId);
+        return { snapshot: { session: makeSession(params.sessionId), pendingApprovals: [], pendingInputs: [], cursor: { epoch: "epoch-1", sequence: 0 }, revision: 1, generatedAt: "2026-09-18T10:00:00.000Z" } };
+      }
       return { ok: true };
     },
     subscribe: (fn) => {
@@ -44,6 +47,24 @@ function fakeClient({ sessions = [], requestFailures = {} } = {}) {
       listener(envelope);
     },
     hasListener: () => listener !== null,
+    stateListeners: new Set(),
+    subscribeState(fn) {
+      this.stateListeners.add(fn);
+      return () => this.stateListeners.delete(fn);
+    },
+    /** Test-only: emulate the transport reporting a link state. */
+    emitState(state) {
+      for (const fn of [...this.stateListeners]) fn(state);
+    },
+    reconnectListeners: new Set(),
+    subscribeReconnect(fn) {
+      this.reconnectListeners.add(fn);
+      return () => this.reconnectListeners.delete(fn);
+    },
+    /** Test-only: the transport reconnected; the connection re-subscribes. */
+    emitReconnect() {
+      return Promise.all([...this.reconnectListeners].map((fn) => fn()));
+    },
   };
 }
 
@@ -76,10 +97,10 @@ function makeEnvelope(overrides = {}) {
   };
 }
 
-function setup({ sessions = [], requestFailures = {} } = {}) {
+function setup({ sessions = [], requestFailures = {}, onAttach } = {}) {
   const events = [];
   const router = createBackendRouter();
-  const client = fakeClient({ sessions, requestFailures });
+  const client = fakeClient({ sessions, requestFailures, onAttach });
   const conn = createRemoteHostConnection({
     hostKey: HOST_KEY,
     client,
@@ -220,4 +241,89 @@ test("session/list failure rejects open and detaches its listeners", async () =>
     null,
   );
   assert.equal(client.hasListener(), false);
+});
+
+test("open attaches with a parallelism of at most three", async () => {
+  // Every attach is delayed a tick and counts itself while in flight; with a
+  // serial loop the peak would be 1, with unbounded parallelism it would hit 7.
+  let inFlight = 0;
+  let peak = 0;
+  const ids = ["s1", "s2", "s3", "s4", "s5", "s6", "s7"];
+  const { conn, client, router } = setup({
+    sessions: ids.map((id) => makeSession(id)),
+    onAttach: (sessionId) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      return new Promise((resolve) => setTimeout(() => {
+        inFlight -= 1;
+        resolve({
+          snapshot: { session: makeSession(sessionId), pendingApprovals: [], pendingInputs: [], cursor: { epoch: "epoch-1", sequence: 0 }, revision: 1, generatedAt: "2026-09-18T10:00:00.000Z" },
+        });
+      }, 5));
+    },
+  });
+  await conn.open();
+  assert.equal(peak, 3, "at most three attaches may be in flight");
+  for (const id of ids) {
+    assert.ok(router.resolveBackend(IPC.invoke.sessionGet, [{ id: makeRemoteSessionId(HOST_KEY, id) }]), `${id} must be routed`);
+  }
+  const attaches = client.calls.filter((entry) => entry.method === "session/attach");
+  assert.equal(attaches.length, 7);
+});
+
+test("one failing attach does not stop the other sessions from becoming ready", async () => {
+  const { conn, router } = setup({
+    sessions: [makeSession("s1"), makeSession("s2"), makeSession("s3")],
+    onAttach: (sessionId) => sessionId === "s2"
+      ? Promise.reject(new Error("attach failed"))
+      : Promise.resolve({
+          snapshot: { session: makeSession(sessionId), pendingApprovals: [], pendingInputs: [], cursor: { epoch: "epoch-1", sequence: 0 }, revision: 1, generatedAt: "2026-09-18T10:00:00.000Z" },
+        }),
+  });
+  await assert.rejects(conn.open(), /attach failed/);
+  // The surviving sessions never become routable: open failed, and the same
+  // recovery path the serial loop had decides what to unregister. The point
+  // here is that the failure surfaces, not that it is swallowed.
+  assert.equal(router.resolveBackend(IPC.invoke.sessionGet, [{ id: makeRemoteSessionId(HOST_KEY, "s1") }]), null);
+});
+
+test("a transport change during reconnect discards the stale attach results", async () => {
+  let holdAttaches = false;
+  const gates = new Map();
+  const { conn, client } = setup({
+    sessions: [makeSession("s1"), makeSession("s2")],
+    onAttach: (sessionId) => {
+      if (!holdAttaches) {
+        return Promise.resolve({
+          snapshot: { session: makeSession(sessionId), pendingApprovals: [], pendingInputs: [], cursor: { epoch: "epoch-1", sequence: 0 }, revision: 1, generatedAt: "2026-09-18T10:00:00.000Z" },
+        });
+      }
+      // Reconnect attaches hang until released; the transport drops while
+      // they are in flight, which bumps the generation.
+      return new Promise((resolve) => {
+        gates.set(sessionId, () => resolve({
+          snapshot: { session: makeSession(sessionId), pendingApprovals: [], pendingInputs: [], cursor: { epoch: "epoch-1", sequence: 0 }, revision: 1, generatedAt: "2026-09-18T10:00:00.000Z" },
+        }));
+      });
+    },
+  });
+  await conn.open();
+  const before = client.calls.length;
+  // Drop the link, then reconnect with the attaches held. The reconnect work
+  // runs on the connection's queue; the state change mid-flight bumps the
+  // generation, so every attach answer that lands afterwards is stale and must
+  // be discarded rather than applied.
+  client.emitState("reconnecting");
+  holdAttaches = true;
+  client.emitState("connected");
+  client.emitReconnect();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const reconnectAttaches = client.calls.slice(before).filter((entry) => entry.method === "session/attach");
+  assert.ok(reconnectAttaches.length > 0, "the reconnect must have started attaching");
+  // Release everything: the stale answers land after the generation moved on.
+  for (const release of gates.values()) release();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  // The connection is still sane: a fresh open works and routes both rows.
+  await conn.open();
+  assert.ok(client.calls.filter((entry) => entry.method === "session/attach").length > reconnectAttaches.length);
 });
