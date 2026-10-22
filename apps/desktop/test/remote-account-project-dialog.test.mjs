@@ -75,6 +75,8 @@ window.minihAgent = { platform: "darwin", channels: IPC, on() { return () => {};
       case IPC.invoke.sessionList: return { sessions: [{ id: "remote:account-host_b:s1", source: "remote", remoteHostKey: "account-host_b", remoteProjectId: "42", title: "Chat", updatedAt: "2026-10-21T00:00:00Z" }] };
       case IPC.invoke.projectSet: return { workspace: { path: input, name: group.name, remote: { hostKey: "ssh:studio", path: "/srv/app" } } };
       case IPC.invoke.appGetOnboarding: return { completed: true };
+      // The account flow reads this desktop's default permission mode first.
+      case IPC.invoke.settingsGet: return { defaultPermissionMode: "ask" };
       default: unexpectedCalls.push(channel); throw new Error("Unexpected IPC: " + channel);
     } })();
     return { ok: true, data };
@@ -167,8 +169,10 @@ window.accountProjectProbe = async () => {
   // Register on the sibling, then open a session there. No local project group:
   // the project belongs to that computer, and recording a local group would make
   // this desktop run a local Agent with tools over there — the SSH shape.
-  check(created[0] === IPC.invoke.remoteHostRegisterProject, "project was not registered on the sibling first: " + created.join(","));
-  check(created[1] === IPC.invoke.remoteHostCreateSession, "session was not created on the sibling: " + created.join(","));
+  const registerAt = created.indexOf(IPC.invoke.remoteHostRegisterProject);
+  const sessionAt = created.indexOf(IPC.invoke.remoteHostCreateSession);
+  check(registerAt >= 0, "project was not registered on the sibling: " + created.join(","));
+  check(sessionAt > registerAt, "session was not created on the sibling after registering: " + created.join(","));
   check(!created.includes(IPC.invoke.projectGroupCreateRemote), "an account project recorded a local project group: " + created.join(","));
   const register = calls.find((entry) => entry.channel === IPC.invoke.remoteHostRegisterProject);
   check(register.input.hostKey === "account-host_b" && register.input.path === "/Users/b/app", "registered the wrong folder");
