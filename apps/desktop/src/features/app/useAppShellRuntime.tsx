@@ -635,17 +635,21 @@ export function useAppShellRuntime() {
     const offBrowserState = api.onBrowserState((event) => useAppStore.getState().updateBrowserWorkPanelTab(event));
     const offBrowserPreview = api.onBrowserPreview((event) => {
       const state = useAppStore.getState();
+      // A plugin asking to show a file (`browser.openInPanel`) has no session of
+      // its own; the tab belongs to whatever this window is looking at.
+      const sessionId = event.sessionId || state.activeSessionId || "";
+      if (!sessionId) return;
       if (event.revealOnly) {
-        const context = state.activeSessionId === event.sessionId
+        const context = state.activeSessionId === sessionId
           ? { tabs: state.workPanelTabs, activeTabId: state.activeWorkPanelTabId }
-          : state.workPanelContexts[event.sessionId];
+          : state.workPanelContexts[sessionId];
         state.openWorkPanelTabForSession(
-          event.sessionId,
+          sessionId,
           browserPluginTabForReveal(context?.tabs ?? [], context?.activeTabId ?? null, event.tabId),
         );
         return;
       }
-      state.openWorkPanelTabForSession(event.sessionId, {
+      state.openWorkPanelTabForSession(sessionId, {
         ...browserPluginTab(event.path ?? event.url),
       });
     });

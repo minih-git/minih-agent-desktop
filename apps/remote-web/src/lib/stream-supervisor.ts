@@ -46,6 +46,8 @@ export class StreamSupervisor {
   private attempts = 0;
   private resumeWaiters: Array<() => void> = [];
   private loop: Promise<void> | null = null;
+  /** Set by `reopen()`: the next loop iteration skips the drop accounting. */
+  private reopenRequested = false;
 
   constructor(private readonly options: StreamSupervisorOptions) {}
 
@@ -64,6 +66,7 @@ export class StreamSupervisor {
     this.paused = false;
     this.attempts = 0;
     this.delivered = false;
+    this.reopenRequested = false;
     this.setState("idle");
     const loop = this.run().catch(() => undefined);
     this.loop = loop;
@@ -112,6 +115,20 @@ export class StreamSupervisor {
     this.delivered = true;
   }
 
+  /**
+   * Reopen the stream immediately, without spending a retry.
+   *
+   * Used after a fresh snapshot: the cursor has moved to the snapshot's own
+   * cursor, and the current stream is subscribed from an older one. Closing it
+   * is not a drop, so the loop must not probe, back off, or count an attempt —
+   * the next open simply starts from the new cursor.
+   */
+  reopen(): void {
+    if (!this.running) return;
+    this.reopenRequested = true;
+    this.options.closeStream();
+  }
+
   stop(): void {
     if (!this.running) return;
     this.running = false;
@@ -158,6 +175,11 @@ export class StreamSupervisor {
       }
       if (!this.running) return;
       if (this.paused) continue;
+      if (this.reopenRequested) {
+        // A deliberate reopen is not a drop: no probe, no backoff, no attempt.
+        this.reopenRequested = false;
+        continue;
+      }
       if (this.delivered) {
         // A healthy stream earns a fresh budget: a phone that changes networks
         // all day must not spend one session's whole allowance of drops.

@@ -138,3 +138,11 @@ insertion, filtering, and send behavior described above.
 Only the first character of an empty draft is rewritten. A `、` anywhere else in
 the draft is ordinary punctuation and is never touched, and the alias has no
 effect on the `@` file menu.
+
+### Empty quoted prompt-template arguments
+
+Prompt-template command argument parsing preserves explicit empty single- or
+double-quoted tokens. For example, `/review "" src/main.ts` supplies an empty
+first argument and `src/main.ts` as the second; an empty token must not shift
+later positional substitutions. Other quoting, placeholder and command
+precedence rules are unchanged.

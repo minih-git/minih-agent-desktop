@@ -116,17 +116,19 @@ retained-tail recovery, ADR 0061's model-window-derived budgets, and ADR 0061's
    `compactions: Vec<CompactionRecord>` to the session detail payload, keeping
    `compaction` as its last element. One transcript row per compaction requires
    the chain to survive restart, late truncation, and forks.
-7. **One transcript row per compaction, and a warning every time.**
+7. **One transcript row per compaction, without routine notifications.**
    `compaction_end` carries `mark?: ContextCompactionMark`
    (`id`, `throughMessageId`, `generation`, `summaryTokens`, `summarized`)
    instead of ADR 0061's `status`, and drops `phase` entirely; the durable
    records supply the same marks on session open or fork.
    `buildTranscriptEntries()` inserts a `kind: "compaction"` entry after the
    anchor message, ending whatever assistant turn contains it, and discards a
-   mark whose anchor no longer exists. A successful compaction also raises an
-   unconditional warning toast; the fallback, overflow, and manual toasts stay,
-   because each says something more specific. The context inspector keeps its
-   line, now reading the newest mark.
+   mark whose anchor no longer exists. The 2026-10-20 notification amendment
+   removes routine compaction toasts, including model-switch, overflow,
+   retained-tail recovery, and manual-success notices. Inline activity, the
+   divider, and the newest-mark inspector line remain; retained-tail recovery
+   stays labelled as a failed summary. Manual failures retain one error toast,
+   and terminal automatic failures remain attached to their failed turn.
 
 Manual `/compact` is unchanged and remains fail-fast. Settings still exposes no
 compaction controls and still ignores persisted `contextCompaction` values

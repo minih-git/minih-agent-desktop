@@ -13,10 +13,15 @@
 
 | 身份证号 | 主题 | 决定 | 基本原理 |
 |---|---|---|---|
+| D675 | 同账号电脑自动接入 | **修订 D666 / ADR `remote-control-router-account-binding`（修订 3，2026-10-21）：账号内的一台电脑不再依赖 SSH，而是经 Gateway 接入兄弟电脑。`device.request` 新增 `client: "desktop"` 与 `hostProof`（申请方 `hostId`、Gateway 为本次请求签发的一次性 nonce，以及用本 Gateway 签发给该电脑的 Host 证书私钥、对 `{requestId, nonce, applicantHostId, accountId, expiresAt}` 的签名）。**由目标 Host 自己校验**：证书链到它固定的 Gateway CA、`OU=account:<accountId>` 绑定、签名、nonce 未用过且未过期，并检查自己的开关；Gateway 的预检只是快速拒绝、不是授权依据，因为 ADR 0331「Gateway 从不做批准决定」仍然成立，被攻破的 Gateway 不能凭空造出 `owner` 设备。证明经 Host 校验、且目标电脑声明新的 `device.desktop-auto` 能力、其「允许同账号电脑自动接入」开关打开（默认开、设备本地、不同步）时无需人工确认即授予；开关关闭或 strict mode 时回落到 D666 的逐设备确认且不按桌面类采纳，兄弟 `device.grant` 由每台接收的 Host 重新校验证明并检查自己的开关后才以 `owner` 采纳。桌面类设备持有 `owner` 并豁免远程权限上限，与 SSH 配对的桌面设备同级，这是 ADR 0331 网关来源限制的唯一例外（已记录在该 ADR）；`owner` 依附于申请方的证书，证书被吊销则其接入的设备一并失去。手机与浏览器设备仍是 `viewer` / `controller` / `approver`、`pairedDevice: false`、受上限约束、不给 `allow-session`。已接受风险如实写明：**泄露的 AccessKey 可以注册一台假电脑（决策 5 允许凭 key 注册 Host），再用它的证书在所有开着自动接入的电脑上拿到 `owner`** —— 这是自动接入的直接代价；缓解措施为 Host 侧校验证明、新电脑注册时通知账号内其他每台电脑并写审计、可在 Gateway 上 `hosts revoke`、可在任一台电脑撤销设备、关闭每机开关或 strict mode、以及拒绝过期或重放的 nonce。桌面经 `RACP-WS` 的 `GET /v1/hosts/{hostId}/ws` 接入兄弟电脑（`RemoteHostTransport` 新增 `"account"`），而不是 `RACP-HTTP` + SSE。选中 B 的项目时回合在 B 上运行，使用 B 自己的 provider 配置与 B 自己的 Router 账号调用模型；A 只是远程界面，凭据不跨机器；Gateway 路径不需要 `workspace/toolExecute`。SSH 配对的「本地 Agent + 远程工具」形态不变。账号模式下远程控制开关在 Router 公布 Gateway 且账号 key 可解析时默认开启，用户明确关闭过的保持关闭：安全 §3.7/§3.8 与 gate 27 相应修订，新增 gate 35，并由 rollout R8 与 E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop 承载。见 ADR 修订 3。** | 用户的电脑之间此前只能走 SSH，需要凭据并在另一台机器上安装，而且这样配对出来的电脑只是手机级设备：不能改会话名、不能读工作区、不能开终端。账号本身已经知道哪些电脑属于它——兄弟 Host 证书就是证明——所以让电脑自证并接入，而只持有 AccessKey 的手机仍然需要在已受信任的机器上由人来确认。Agent 始终留在拥有项目的那台机器上，凭据与模型调用都不跨机器。代价是明确的：只凭账号 key 就能进入所有开着自动接入的电脑，因此接入必须由 Host 校验、每次注册与接入都要通知并写审计，且注册的 Host 与接入的设备都可以撤销。 |
+| D673 | 输入区 `#` 选定目标会话 | **在输入区补全中新增一个宿主模式：符号前满足与 `@` 相同的边界规则（行首、空白，或 pi 分隔符 `"`、`'`、`=`）的 `#` token（全角 `\uFF03` 等价）列出可以交付工作的会话，选中一行插入内联 `#标题` chip。该符号与插件的组合方式与 `@` 完全一致：宿主分组在前，注册了 `#` 的插件分组随后，插件的超时与失败隔离行为不变。候选来自渲染层已持有的会话列表 —— 本地、Agent 模式、未归档、非自动化转录、与调用方同一项目（尚无会话时用首页选中的项目），且不含调用方自身 —— 按更新时间从新到旧、最多 50 条；query 对标题做大小写不敏感的子串或子序列匹配并带高亮区间，query 为空时列出最近的会话。没有匹配时该分组不打开，因此 `#123`、`## 标题` 和孤立的 `#` 仍是普通草稿文本、Enter 照常发送；IME 组词期间冻结该分组，Esc 只关闭当前 token。`ComposerFileReference.kind` 在既有 `session` 链接之外新增 `sessionTarget`：path 存 Session ID，name 存标题快照，chip 显示 `#标题` 并使用自己的图标而不是会话引用气泡。派发前该 chip 序列化为纯文本句子 `#<标题> (Session ID: <id>)` —— 标题空白折叠去尾、最多 80 字符、标题为空时回退到 id 前 8 位、并剥离本应用自己的 `minih-agent-desktop://` scheme —— 刻意不匹配 `SESSION_LINK_PATTERN`，因此 Main 不会附带摘录；目标不产生任何结构化附件，`promptAttachmentsFromDraft` 对它返回空。不改 IPC、不新增持久化附件、不改工具 schema 与工具描述，`SessionSend` / `SessionList` 契约不变：目标只是点明模型应当寻址哪个会话。草稿会保存并恢复新的 kind，不含它的旧草稿不受影响。v1 把发出的句子按普通转录文本显示，不渲染成 chip。见 E2E-COMPOSER-hash-picks-session-target。** | 把工作交给另一个会话此前只有两条路：粘贴链接 —— 会改变模型收到的内容、附带用户并未要求的摘录；或者凭记忆打出标题、无法确认 id。基于渲染层已有会话列表的专用 `#` 分组让目标显式可选，让提示保持最小且与 chip 显示完全一致，并复用既有触发语法、chip 模型、Esc 关闭与 IME 行为，而不是另造一套机制。 |
+| D672 | 为没有目标的派发新建会话 | **修订 ADR builtin-session-messaging（D663）：新增第四个内置按需 Agent 工具 `SessionCreate({ title })`。它通过宿主既有的 `session.create` 创建一个普通 Agent 模式会话 —— 不写协作链接、不归属插件、不套用工作会话的扩散上限 —— 继承调用方会话的项目、思考等级与权限模式，运行在用户在 AI 设置里选定的 `settings.sessionCreateModel` 提供方/模型绑定上，并返回 Session ID 供随后的 `SessionSend` 投递。该设置未配置时调用失败并返回 `MODEL_NOT_CONFIGURED`；绑定不在设置行给出的可选集合内（可用提供方的非生图模型，因此设置行与工具不会互相矛盾）时失败并返回 `MODEL_UNAVAILABLE`；不会回退到应用默认模型。调用只接受 `title`（1–80 字符）。创建本身不启动回合、不发送内容、不消耗额度，因此投递路径的跳数上限与八条收件箱仍是 Agent 所建会话的唯一约束；创建本身不设每回合上限。风险等级为 `High`，走同一 `tools.execute` 闸门，仅限 Agent 模式，Plan 与 Goal 拒绝，`Task` 子代理与 MCP 控制目录都不可见，并且可中止 —— 停止回合会撤回待批卡片。`sessionCreateModel` 不进入可携带的应用字段；`SessionSend` 不变，`SessionList` 在无匹配时改为指向 `SessionCreate`。不改 schema、迁移或协议版本。见 ADR session-create-tool 与 E2E-SESSION-create-missing-target-session。** | 用户要的派发往往正是目标尚不存在的那种，而 D663 有意的排除让模型只能回答「无法创建会话」，用户必须离开对话、手动建好会话再重复请求。让新会话运行在用户自己配置的模型上、并把创建与投递分成两步，既让面向模型的契约保持无歧义，也不改变委派 opt-in、权限上限与自主花费的约束。 |
+| D671 | 上下文预算信任提供程序报告的用量 | **修订 D606 / ADR 0061：`contextBudgetTokens()` 只在投影没有用量锚点（`lastUsageIndex === null` 或 `usageTokens === 0`）时才用整请求的输出上限估算抬高校准后的消息估算。锚定在提供程序报告用量上的投影本身就是那次请求的真实计数，已包含该请求的系统提示与工具结构；再用粗略的字符估算加上同一份上下文等于重复计费，会让窗口仍剩大半的对话提前压缩。投影还会遍历所有消息记录最新的检查点摘要时间戳：`compactionSummary` 是提供程序估算器看不到的桌面专有角色，否则回放尾部携带的压缩前用量会成为锚点。阈值、比例、预留、schema 与 IPC 均未改动。** | 报告中的缺陷是对话在窗口仍剩 43 % 时压缩：提供程序对该上下文报告了 573 232 个输入 token，而同一份上下文的整请求估算为 654 332 个文本 token 加上约 21 000 的提示与工具结构，越过了 100 万窗口的 675 000 触发点。锚点是比启发式更好的信息，安全方向不变——请求层仍按整请求估算收紧输出预算，硬上限仍守下一次请求，过期的锚点会被下一次提供程序报告刷新。 |
 | D669 | 切换模型时的阈值压缩 | **模型切换后的第一次发送前，上下文较大时先压缩。运行时读取当前检查点之后最新的助手消息，检查点之后尚无回复时改用检查点自身记录的模型；当该 `providerId`/`modelId` 与当前绑定不同，且估算上下文达到 `max(48_000, 2 x keepRecentTokens)` 但低于 90% 自动触发点时，以新模型执行 `summary` 压缩，reason 为 `model_switch`，并安装 `recent_window` 检查点：旧范围照常摘要，近期窗口原样回放，`details.retainedTailShape = recent_window` 让重建时完整回放该窗口。切换动作本身不产生开销，开销从下一次发送开始；只改思考级别、以及未收到回复前 A→B→A 都不算切换；`fresh_window` 不会采用该形态；已经达到触发点的上下文仍走 threshold 路径。摘要失败、被扩展取消或压缩后没有变小的切换检查点不安装任何检查点——尤其不安装 retained-tail 回退——本轮保留完整上下文，`compaction_end` 报告 `ok: false` 并带诊断，渲染层不把它当作错误弹出；压缩期间 Stop 与通常一样中止本轮。切换检查点不会触发会话重命名。宿主 schema、迁移与 IPC 结构均不变。** | 新绑定从冷缓存开始，第一次请求无论如何都要重读整段历史；在那里压缩一次可让之后的每次请求都更小，而阈值下限确保短历史下摘要的输出成本与信息损失不会超过节省。用旧模型压缩以复用缓存被否决：摘要请求会把对话序列化为 `<conversation>` 文本并配专用提示词，其请求前缀永远命中不了原对话的缓存，节省为零。以对话记录为依据的判断还能跨重启识别同一次切换，且在下次发送前不产生任何开销。 |
 | D668 | 路由器下发的更新加速线路 | **修订 ADR 0022 / D120 / D659：minih 构建在每次检查前从 `GET <router origin>/api/desktop-update` 拉取一份公开只读的加速线路清单，并优先尝试它。`data.sources[].prefix` 是前缀式 GitHub 加速站（`https://gh-proxy.org/`），Main 把它展开为 generic 源基址（`<prefix>https://github.com/<owner>/<repo>/releases/latest/download`），并按与编译期镜像完全相同的规则校验（绝对 `https`、无凭据、无查询串或片段、不是 `github.com`、去重、最多三条）；非法条目只丢弃自身。源顺序变为：路由器加速线路 → 编译内置镜像（`MAIN_VITE_MINIH_AGENT_UPDATE_MIRRORS`）→ 官方 GitHub 源，官方源始终是最后兜底，因此加速线路全部失效时更新仍可解析。清单按服务端下发的 `ttl_seconds` 记忆化（限制在 1 分钟至 24 小时，缺省 1 小时）；拉取失败只记警告，并把下一次请求推迟至少 5 分钟，绝不阻断、拖慢或让检查失败；下载进行中到达的新清单留到下一次检查才生效，不会在中途换源。当接口在某条线路服务过更新器之后不再下发任何加速线路时，Main 会把官方 GitHub 源作为唯一源显式重新应用——因为没有 feed 的打包源无法撤销已经通过 `setFeedURL` 应用过的 feed。整个行为以 `currentBrandProfile().updateFeed.provider === \"github\"` 为条件：hungraim 线继续使用 generic 的 `updates.hungraim.com`，且不向路由器发请求。`MINIH_AGENT_UPDATE_SOURCES_URL` 可覆盖接口 URL。渲染器、运行时设置与环境变量都不能提供、扩充或改写源。** | 在限速 `github.com` 的网络里，此前只能靠构建期镜像列表兜底，新增或下线一个加速站都要重新发版；改由服务端下发既让这一决定留在路由器侧，又不给客户端可配置的源，而官方源兜底与每次检查的 `sha512` 校验保证失效或恶意的加速站既不能阻断也不能伪造更新。 |
 | D663 | 内置会话消息工具 | **修订 ADR 0165 / ADR 0239 / ADR 0240：在宿主拥有的投递账本之上新增内置按需 Agent 工具 `SessionList`、`SessionSend`、`SessionResult`，实现为 Electron 主进程本地工具。发送方由宿主派生（sidecar 本地工具的 `sessionId` 与该会话的活动回合），不取自工具参数；内置投递使用保留归属 `builtin:session-messaging`，插件路径拒绝冒用。三者都先过 `tools.execute` 闸门（`SessionSend` 高风险，两个读工具低风险）；Plan/Goal、`Task` 子代理与 MCP 目录不可用。第一版只向既有会话发送任务或消息，不创建会话、不取消投递。无 schema、迁移或协议版本变更。见 ADR builtin-session-messaging 与 E2E-SESSION-builtin-send-to-named-session。** | 把工作交给另一个会话是核心桌面流程，此前只能通过安装权限更大的社区编排插件获得，而受审查的账本本已随应用分发。内置路径复用同一套来源标注、权限上限、完成回调与重启栅栏保证。 |
 | D666 | 远程控制的 Router 账户绑定 | **以可追加的“账户模式”修订 ADR 0331：Minih-Router 的 `access_key_id` 即远程控制账户身份，在桌面上按 D661 规则解析。Host 经 Router 的 EasyTier 组网连到运行在 Router 机器上的独立 Gateway 进程，手机经公网 HTTPS 连接且绝不加入组网。Router 的 bootstrap 应答新增可选的 `remoteGateway {hostlinkUrl, publicOrigin, caPem}`，桌面以 `Bearer <AccessKey>` 加 CSR 注册，Gateway 经 loopback 调用 Router `GET /api/auth/session` 校验，并把调用者真实地址转发过去，使 `allowed_peer_cidrs` 作用于真实调用方；Gateway 绝不持久化原始 key。AccessKey 只用于发现与注册：手机登录后只看到本账户的 Host，任何一个在线 Host 上的首次确认即签发设备授权，同账户的兄弟 Host 接受该签名授权，手机上最终只保留一个可撤销设备令牌而没有 AccessKey。Gateway 只中继请求与签名授权，绝不做审批决定；角色、`pairedDevice: false`、远程权限上限与禁用 `allow-session` 均不变。Gateway 新增显式可信代理客户端 IP 设置，桌面新增严格的“每个终端都需确认”模式，新增的 `device.request` / `device.grant` Host link 帧只发给声明支持的 Host。见 ADR remote-control-router-account-binding、交付 R7 与 E2E-REMOTE-ACCOUNT-* 场景。** | 自托管的一次性注册码加每 Host 的 `mpt1` 票据，对有多个终端的用户意味着每台机器各做一次注册与配对，而在一台机器上受信任的设备在下一台上毫无地位；Router 的 key 已经标识同一个用户，且轮换保留 id，因此轮换后的 key 仍能证明是同一账户；共享组网上的可达性不构成授权边界，真正授权设备的是双向 TLS、经 key 校验的注册与 Host 签名授权。 |
+| D670 | 手机可以开始工作，而不只是接管 | **修订 D666 / ADR `remote-control-router-account-binding`（修订 1，2026-10-19）：持有 `controller` 的设备可以在这台电脑上做三件启动工作的事——`session/create`（原样）、`project/register`、`project/browse`。后两者的角色由 `owner` 降为 `controller`，角色表其余条目一律不动；网关与账户设备仍永远不获 `owner`，因此 `workspace/toolExecute`、`workspace/toolShell`、`workspace/files`、`session/delete`、`session/archive`、`session/revoke`、`tools/advertise` 依旧不可达。两个项目操作都限制在 Host 的浏览根（用户主目录）内：先 `realpath` 规范化，根外路径（含 `..` 与指向外部的符号链接）一律拒绝，不存在的目录报缺失而不是被创建；浏览上限 500 个目录，到了根就没有 `parent`。桌面 Host 与 `agent-host-cli` 共用 `packages/host-runtime` 中的同一实现，桌面端每次改状态都会以“哪台设备、会话 id 或路径”写入既有设备通知通道与 Host 日志。两条 HTTP 路由承载它：`POST /v1/projects` 与 `GET /v1/projects:browse?path=…`，由共享路由表派生。被否决：给网关设备 `owner`——那会一并交出工作区工具面、shell 与会话删除。见安全规格 §3.7、协议 §6.2 与 §11.2、交付 R7。** | 用户在 iPhone 实机验收账户模式时要求“完全放开（含注册项目、浏览文件夹）”：手机能接管回合却不能开始一个，而它需要的两个项目操作原本是 owner 专属，网关设备又永远拿不到 owner。只放开这三个操作、把路径钉在主目录内，既满足“和坐在电脑前一样开始工作”，又不把远程权限上限扩展到它设计之外。 |
 | D665 | 自托管网关、可连接的桌面 Host 与移动客户端 | **把此前不排期的 Gateway、Host link 与浏览器里程碑排期为交付序列的 R4–R6，并新增 `apps/remote-gateway` 与 `apps/remote-web`（ADR 0331）：用户自托管的 Gateway 中继出站 `racp-hostlink.v1` Host link（WSS + 双向 TLS）并服务 `RACP-HTTP` + SSE，不保存 transcript、provider secret 或持久化回合命令；Host link 监听器只绑定显式配置的私网或组网地址，客户端 API 绑定 loopback（其他地址必须配 TLS），持久化内容只有令牌哈希、路由元数据和脱敏审计日志。`client.open` 帧新增 `credential` 字段，Host 用自己的 `DeviceTokenAuthenticator` 重新验证每条中继的逻辑连接。设备记录新增可追加的 `origin` 字段（缺省按 `"ssh"` 读取）：经网关配对授予 `viewer` / `controller` / `approver`（绝不是 `owner`），`pairedDevice: false` 并始终受远程权限上限约束，网关令牌只能在 Host link 上认证。桌面可在默认关闭的实验性设置下经该链路提供其现有 Agent Host；`apps/remote-web` 交付 H5 与 Capacitor iOS/Android 客户端，令牌存于 `HttpOnly` cookie（浏览器）或 Keychain / Keystore（原生）。见 ADR 0331。** | 维护者需要从手机跟进并操控 `agent-host-cli` 常驻机器与运行中桌面两边的回合；浏览器无法加入组网也无法设置请求头，而 ADR 0205 的 Host 持有状态模型禁止复制 transcript 的有状态中继。 |
 | D668 | 分层、可溯源的长期记忆 | **通过 ADR agent-long-term-memory 修订 ADR 0234：固定项目记忆的存储、编辑器、32 KiB 上限、同步与 runtime 重建行为保持不变。新增 host-core 领域（schema v26）存储类型化的学习记忆（`preference`、`feedback`、`fact`、`reference`），作用域为 `project` 或 `user`，带来源、比较并设置的修订号与删除屏蔽记录。`preference` 与 `feedback` 必须引用经 Host 校验的用户本人消息——每一条被引用消息都要属于会话的真实轮次，且其他 Agent 或插件投递进会话的消息、丢失轮次引用的副本（fork 前缀、导入）都不算用户本人消息；工具、网页、MCP、子代理与注入指令内容一律不能作为依据。会话启动时捕获有预算的学习记忆索引，不参与 runtime 复用判断，也不改变运行中会话的系统提示；`SessionHistorySearch` 与 `MemorySearch` 是低风险只读按需工具，`MemoryRemember` 为中风险并走正常权限路径。可选的自动抽取默认关闭，需要用户选定模型与每日预算，不在关键路径上运行，只生成需用户确认的建议（Host 要求 `origin = extracted` 与 `status = suggested` 同时成立）。删除与拒绝会擦除条目并写入屏蔽记录，阻止同一依据再次生成。学习记忆沿用固定记忆的项目组生命周期，只通过现有可选的记忆同步类别同步。子代理不注入；v1 不提供 Plugin SDK 接口。** | 此前唯一的持久记忆需要手工维护，用户在每个会话里重复同样的纠正。由 Host 管理来源与屏蔽记录，使学习记忆可追溯、可遗忘，同时不让不可信内容或后台写入变成持久指令；按会话冻结的索引保持 runtime 复用与提示缓存稳定。实施方案见 `docs/project/long-term-memory-implementation-plan.md`。 |
 | D661 | 配置备份/同步存储迁移到 Minih Router 账户 | **配置备份/同步存储从用户自备的 S3 迁移到登录账户名下的 Minih Router 后端（AccessKey Bearer 走网关控制面、按账户命名空间、强制条件写）。S3 传输与连接 UI 被移除；已连接账户的 provider 行属于设备本地、绝不参与同步；旧 S3 配置与云端数据保持原样，不迁移也不删除。见 `docs/adr/router-account-configuration-backup.md` 与 `03-runtime/22-config-sync.md`。** | 一个账户身份已经覆盖聊天与账户读取；加密 vault、合并与激活契约保持不变。 |
@@ -366,7 +371,7 @@
 | D200 | 难以察觉的后台上下文压缩*（后台预计算、增量触发、静默和由 D203 取代的无模型工具子句）* | **压缩成为主机拥有的后台活动，没有用户可见的表面。 `contextBudget()` 保留 D158 硬限制和请求余量，从模型窗口（`clamp(hardLimit * 0.2, 8k, 64k)`，仍然上限为硬预算的一半）而不是设置导出保留尾部目标，并添加 `backgroundLimit = floor(hardLimit * 0.7)` 作为预计算触发器；软边界被删除。检查点生成与安装分开：`buildCheckpoint` 生成一个而不保留或激活它，安装重新估计，通过 host-core 附加，并发出 `compaction_end`。预计算仅在提供程序空闲窗口中运行 - 当工具执行时和运行结束后 - 并且仅当上下文超过后台限制**并且**自最新检查点的基线以来至少增长了保留尾部目标，因此大尾部不能每次都触发摘要。仅当其底座仍处于活动状态、其 `throughMessageId` 锚点仍然存在且仍符合当前模型的预算时，预先计算的检查点才会安装在下一回合边界或提示处；任何未命中都会进入未更改的阻塞路径，并且失败的后台构建将被丢弃，没有事件，没有持久性，也没有 ADR 0049 回退。 `CompactContext` 工具、`<context_management>` 微移和主机无确认白名单条目均已删除，因此触发完全是确定性的。 `compaction_start`/`compaction_end` 获得可选的 `phase` (`background` \| `blocking`，缺席意味着 `blocking`)，并且 `compaction_end` 获得可选的 `status { generation, summaryTokens }`；两者都是协议 v9 中的附加内容。成功的自动压缩不会产生任何提示，不会发生运行状态更改，也不会产生转录行；只有 `retained_tail` 回退、溢出重试和手动 `/compact` 仍会通知。上下文使用检查器是单个可见跟踪，读取 `status` 和持久的 `SessionDetail.compaction`，生成计数器包含在检查点的不透明 `details` 内，因此不需要更改记录模式。设置不公开任何压缩控件，并且持久的 `contextCompaction` 值将被忽略 (ADR 0061)。** | 压缩是正确的，但具有侵入性：它进行烘烤，移动运行状态，在工具调用上花费模型转动，留下记录行，并且总是在用户等待时运行。 Codex 的分级触发和增量范围阈值显示可以在关键路径之外支付摘要，并且其仅主机触发消除了一类浪费的回合。从模型窗口导出预算还修复了将一对绝对令牌计数应用于 32k 和 1M 窗口的问题；保持硬边界不受影响意味着这一切都不会牺牲用户体验的提供商安全。 |
 | D201 | `Task` 工具背后的有界子代理 | **当目录包含四个内置函数之一或 `~/.agents/subagents/*.md` 下的已启用全局文档时，Agent 模式提供 `Task`。Electron main 为下一次提示加载目录，上限为 16，并且委托报告不会进入父级模型上下文。没有项目级子代理能力目录；不会扫描 `.pi/agents`。** | 将委托保留为有界工具可以保持父级对上下文和权限的所有权，而全局用户目录使个人委托可跨项目使用 (ADR 0062、ADR 0112)。 |
 | D202 | 管理全局子代理定义 | *(页面形态条款已由 D257 / ADR 0126 取代；全局唯一的数据边界依然有效)* **host-core 扫描 `~/.agents/subagents` 下的全局 Markdown 文档，把启用状态存入 `<data>/agent-capabilities/subagents.json`，并通过设置 > 智能体 > 子代理页面暴露。页面是固定高度的单个全局列表，没有项目选择器或项目级来源。运行时把已启用的全局文档与内置定义合并；格式错误或删除的文档产生诊断或在扫描后消失，能力状态不写入 Markdown 文件。** | 个人委托可以跟随用户而不会修改仓库；明确的全局边界避免第二套项目优先级模型，并让扩展页专注于已安装和市场 (ADR 0063、ADR 0112)。  |
-| D203 | Codex 奇偶校验上下文压缩 | **压缩被重建以匹配 Codex 的机制，反转四个 D200 条款并保留其余部分。所有后台预计算和增量触发范围都被删除：当总上下文跨越 `hardLimit` 或模型要求新窗口时，`prepareNextTurn()` 同步压缩。检查点仅携带摘要和最近的 **用户** 消息 - pi 的切割点仍然标记边界，但其分叉前缀和最近的尾部被折叠回摘要输入中，因此摘要覆盖整个范围，并且保留的尾部是从最多 20,000 个令牌（上限为硬预算的一半）的用户消息中最新先重建的，交叉消息被截断而不是丢弃，然后恢复到时间顺序。两个系列运行相同的生命周期：`summary` 和 `fresh_window` 翻转，不请求摘要并存储固定标记文本，由构造选项或 `MINIH_AGENT_COMPACTION_STRATEGY` 选择，并且既不在设置中也不在 i18n 中公开。面向模型的 `new_context` 工具返回（无参数，Codex 的逐字描述，在主机上无确认白名单，永远不可分配给子代理）以及附加到当前回合系统提示的两个每个窗口预算提醒 - 一个在 `clamp(hardLimit * 0.15, 8k, 32k)` 剩余，一个在 2,000 - 每个声明一次并在安装时重置。 host-core 保留整个检查点链（`read_compactions`、`write_transcript_with_compactions`、每条记录分叉验证、`SessionDetail.compactions`），并将 `compaction` 保留为其最新元素。 `compaction_start`/`compaction_end` 删除 `phase`，并且 `compaction_end` 将 `status` 替换为 `mark { id, throughMessageId, generation, summaryTokens, summarized }`；记录在其覆盖的消息之后为每次压缩绘制一个分隔行，结束其落在内部的辅助回合并删除锚消失的标记，并且每次成功的压缩都会在 fallback/overflow/manual toast 之上引发一个警告 toast。故意偏离 Codex：摘要位于保留用户之前，因为 `buildSessionContext` 修复了该顺序，`hardLimit` 保持“窗口 - 输出保留”而不是窗口的 90%，该工具已在两个系列中注册，并且提醒是系统提示附加我们自己的阈值和措辞 (ADR 0064)。** | 上一轮引用了 Codex，同时在四个方面实现了相反的结果，其上下文部分声称，当 `new_context` 存在时，Codex 没有模型端压缩工具。用户在被告知 Codex 的机制会逆转不可察觉目标后，特别询问了 Codex 的机制。 Parity 还根据其自身优点购买了三件东西：仅保留用户消息的检查点要便宜得多，并且在没有结果的情况下无法搁置工具调用，可见行使有损操作可以再次从记录中进行审核，并且警告将“改为开始新会话”决策放在其所属的位置。成本被接受：用户再次等待压缩。 |
+| D203 | Codex 奇偶校验上下文压缩 | **压缩被重建以匹配 Codex 的机制，反转四个 D200 条款并保留其余部分。所有后台预计算和增量触发范围都被删除：当总上下文跨越 `hardLimit` 或模型要求新窗口时，`prepareNextTurn()` 同步压缩。检查点仅携带摘要和最近的 **用户** 消息 - pi 的切割点仍然标记边界，但其分叉前缀和最近的尾部被折叠回摘要输入中，因此摘要覆盖整个范围，并且保留的尾部是从最多 20,000 个令牌（上限为硬预算的一半）的用户消息中最新先重建的，交叉消息被截断而不是丢弃，然后恢复到时间顺序。两个系列运行相同的生命周期：`summary` 和 `fresh_window` 翻转，不请求摘要并存储固定标记文本，由构造选项或 `MINIH_AGENT_COMPACTION_STRATEGY` 选择，并且既不在设置中也不在 i18n 中公开。面向模型的 `new_context` 工具返回（无参数，Codex 的逐字描述，在主机上无确认白名单，永远不可分配给子代理）以及附加到当前回合系统提示的两个每个窗口预算提醒 - 一个在 `clamp(hardLimit * 0.15, 8k, 32k)` 剩余，一个在 2,000 - 每个声明一次并在安装时重置。 host-core 保留整个检查点链（`read_compactions`、`write_transcript_with_compactions`、每条记录分叉验证、`SessionDetail.compactions`），并将 `compaction` 保留为其最新元素。 `compaction_start`/`compaction_end` 删除 `phase`，并且 `compaction_end` 将 `status` 替换为 `mark { id, throughMessageId, generation, summaryTokens, summarized }`；记录在其覆盖的消息之后为每次压缩绘制一个分隔行，结束其落在内部的辅助回合并删除锚消失的标记，并且每次成功的压缩都会在 fallback/overflow/manual toast 之上引发一个警告 toast（2026-10-20 修订：包含这一条在内的常规压缩 toast 均已移除，见 ADR 0064）。故意偏离 Codex：摘要位于保留用户之前，因为 `buildSessionContext` 修复了该顺序，`hardLimit` 保持“窗口 - 输出保留”而不是窗口的 90%，该工具已在两个系列中注册，并且提醒是系统提示附加我们自己的阈值和措辞 (ADR 0064)。** | 上一轮引用了 Codex，同时在四个方面实现了相反的结果，其上下文部分声称，当 `new_context` 存在时，Codex 没有模型端压缩工具。用户在被告知 Codex 的机制会逆转不可察觉目标后，特别询问了 Codex 的机制。 Parity 还根据其自身优点购买了三件东西：仅保留用户消息的检查点要便宜得多，并且在没有结果的情况下无法搁置工具调用，可见行使有损操作可以再次从记录中进行审核，并且警告将“改为开始新会话”决策放在其所属的位置。成本被接受：用户再次等待压缩。 |
 | D186 | 有界提供商流恢复和诊断 | **提供程序请求设置使用一次有界 pi-ai 重试。流式传输开始后的瞬态 `STREAM_FAILED`、`NETWORK_ERROR` 或 `TIMEOUT` 在可中止退避后的同一回合中重播一次；失败的助手将从模型上下文中删除，并重用其可见消息 ID。第二次失败是致命的。提供程序 `AppError.details` 仅携带有界阶段、计时、提供程序 status/code 和重试诊断。突变指导在 `Edit` 不匹配后使用一个新的 read/regeneration；同一路径的第二个失败的 `Edit` 或第二个失败的 shell patch 命令会返回终止工具提示，而不是修复旧的补丁工件。** | 无界或重新生成驱动的恢复使得瞬态流终止变得昂贵，并且使得补丁循环在没有新信息的情况下消耗轮次；有限的运行时间预算保留上下文和用户控制，同时保持故障可诊断（ADR 0050）。 |
 
 | D187 | 资源隔离主机 RPC stdio | **host-core 通过每个方向的一个专用命名操作系统线程读取 stdin 并序列化 stdout，而不是通过 Tokio 的动态阻塞池。线程重试中断和瞬态 `STREAM_FAILED`/`NETWORK_ERROR` 错误，同时保留 NDJSON 帧；无法创建控制线程是结构化启动失败。登录 shell 路径探测还将帮助程序线程创建视为尽力而为，并回退到继承的路径。 RPC/tool 入场限制保持不变。** | 当操作系统线程创建返回 `Resource temporarily unavailable`（macOS 上的错误号 35）时，Tokio stdio 可能会出现恐慌，从而将临时资源压力转变为 `HOST_UNAVAILABLE`；隔离控制管道会删除该进程级崩溃路径，同时保留有限的过载行为 (ADR 0051)。 |
@@ -5697,3 +5702,122 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
 - 见 `03-runtime/01-ipc-protocol.md`（压缩 reason 与生命周期）、
   `03-runtime/02-agent-runtime.md` 第 5.1 节，以及
   E2E-SESSION-model-switch-compacts-large-context。
+
+## 2026-10-20 —— 上下文预算信任提供程序报告的用量（D671）
+
+- 所有压缩阈值都对着同一个数字比较。此前该数字取「校准后的消息估算」与「整请求输出上限估算」中的较大值，于是粗略估算会盖过提供程序自己报告的数字：100 万窗口的对话在仍剩 43 % 时就压缩，因为同一份上下文的整请求估算（654 332 个文本 token 加上约 21 000 的提示与工具结构）越过了 675 000 的触发点，而提供程序对该上下文报告的是 573 232 个输入 token。
+- 现在 `contextBudgetTokens()` 只在投影**没有**用量锚点时使用整请求估算。锚定在提供程序报告用量上的投影本身就是那次请求的真实计数，已包含该请求的系统提示与工具结构，因此直接采用。下限只保留在真正需要它的地方：会话第一次用量之前，以及检查点清掉锚点之后。
+- 会话运行时与委派预算共用这条规则（`contextBudgetFor(model, messages, requestTokens)`），因此提供程序报告用量很小的委派也不会再被整请求估算推去压缩或降级。
+- 其余不变：90 % 触发点、预留公式、保留尾部目标、检查点结构、存储 schema 与 IPC 面都没有改动。请求层仍按整请求估算收紧输出预算，硬上限仍守下一次提供程序请求，因此估算偏低最多把压缩推迟到下一次提供程序报告刷新锚点。
+- 见 `03-runtime/02-agent-runtime.md` 第 5.1 节与 E2E-084。
+- 锚点还必须属于它所描述的那份上下文。投影现在遍历所有消息记录最新的检查点摘要时间戳：`compactionSummary` 是提供程序估算器会过滤掉的桌面专有角色，这曾让 pi-ai 自身的「新插入的前缀使旧用量失效」规则看不到边界，从而让回放尾部携带的压缩前用量成为锚点。检查点之后预算重新变为无锚点，因此检查点自身的收缩与容量检查比较的是同一种估算。
+
+## 2026-10-20 —— 输入区 `#` 选定目标会话（D673）
+
+- 输入区新增一个宿主模式：符号前满足与 `@` 相同边界规则（行首、空白，或 `"`、`'`、`=`）的
+  `#` token（全角 `＃` 等价）列出可以交付工作的会话。`detectTrigger` 在与 `@` 相同的边界规则上返回 `mode: "session"`；面板把宿主分组与
+  占用 `#` 的插件分组组合起来，方式与 `@` 既有一致 —— 宿主在前，插件在后。
+- 候选来自渲染层已持有的会话：本地、Agent 模式、未归档、非自动化转录、与调用方同一项目
+  （尚无会话时用首页选中的项目），不含调用方自身，按更新时间从新到旧，最多 50 条。
+  `apps/desktop/src/features/chat/composer/session-targets.ts` 以纯函数承载该过滤、
+  标题模糊匹配与「chip 后补一个空格」的规则，hook 只负责接线。
+- 没有匹配时该分组不打开，因此 `#123`、`## 标题` 和孤立的 `#` 仍是普通草稿文本，Enter 照常发送。
+  IME 组词期间与其他模式一样冻结，Esc 通过既有机制只关闭当前 token。
+- `ComposerFileReference.kind` 在 `session` 链接之外新增 `sessionTarget`：chip 显示 `#标题`、
+  使用自己的图标、点击打开该会话，且不是可编辑文本；选中后光标停在 chip 之后。
+- 派发时该 chip 序列化为 `#<标题> (Session ID: <id>)` —— 空白折叠、最多 80 字符、标题为空时
+  回退到 id 前 8 位、剥离深链 scheme —— 对这段文本调用 `parseSessionLinks` 始终为空，因此
+  Main 不会附带摘录。不产生结构化附件，也不改 IPC、持久化附件、工具 schema 或工具描述。
+- v1 限制：发出的句子按普通转录文本显示，不渲染为 chip。
+- 见 `04-ux/08-component-spec.md` §11.8 与 §20B.1a，以及 E2E-COMPOSER-hash-picks-session-target。
+
+## 2026-10-20 —— 为没有目标的派发新建会话（D672）
+
+- D672 修订 ADR builtin-session-messaging（D663）。第四个内置按需 Agent 工具
+  `SessionCreate({ title })` 通过宿主既有的 `session.create` 调用创建一个普通
+  Agent 模式会话，因此不写协作链接、不归属插件，也不套用工作会话的扩散上限。
+  投递仍是独立的 `SessionSend`，保持「一个工具一个含义」：创建是创建，投递是投递。
+- 新会话运行在 `settings.sessionCreateModel`（用户在 AI 设置里选定的
+  provider/model 绑定）上，以 `agent` 模式创建，并继承调用方的项目、思考等级与
+  权限模式（`inheritPermissionFromSessionId`）。设置未配置时工具以
+  `MODEL_NOT_CONFIGURED` 失败；绑定在模型选择器提供的可用目录里不再可解析时以
+  `MODEL_UNAVAILABLE` 失败。不会回退到应用默认模型，与插件 spawn 路径立场一致。
+- `SessionCreate` 以 `High` 风险通过 host-core 的 `tools.execute` 闸门，仅限
+  Agent 模式，Plan 与 Goal 拒绝，不会交给 `Task` 子代理，也不出现在 MCP 控制
+  目录中，并且可中止 —— 停止回合会撤回待批卡片。新会话通过既有
+  `sessionsChanged` 事件出现在会话列表里，可像其他会话一样重命名、归档或删除。
+- 创建本身不启动回合、不发送内容、不消耗额度，因此一串 Agent 所建会话能做多少
+  事，仍只受投递路径的跳数上限与八条收件箱约束。创建本身不设每回合上限：Ask
+  模式下的审批卡片、或用户自己选择的 Auto，才决定一个回合能新增多少会话。
+  `sessionCreateModel` 保持本地，不进入可携带的应用字段；host-core 在
+  `settings.set` 上校验其形状。
+- 见 `03-runtime/02-agent-runtime.md` §5f.4a、
+  `03-runtime/03-tools-and-permissions.md`（会话消息、§10.2）、ADR
+  session-create-tool，以及 E2E-SESSION-create-missing-target-session。
+
+## 2026-10-20 —— 对话里选中的一段文字引用进输入框（D674）
+
+- 在某一条消息行内选中文字时，选区上方浮出唯一一个胶囊按钮：横向居中于选区，
+  被限制在滚动容器可见区域内、停靠输入框上边缘之上，并在对话滚动时跟随选区。它是
+  挂到 `document.body` 的固定层，不参与转录的布局与滚动高度；不在屏幕上的保留面板
+  不渲染它。
+- 胶囊只有一个动作：把这段文字放进输入框。消息操作行仍维持 ADR 0268 留下的词汇——
+  复制、编辑、删除、分叉、重新生成；批注与渲染器侧边聊天保持删除状态。
+- 摘录在写入草稿前会从渲染后的 DOM 还原为 Markdown 源文本：公式读取
+  `lib/selection-tex.ts`（与剪贴板同一个模块，因此只有一套 TeX 读法与围栏规则），
+  代码块保留语言并自动加长围栏，表格每行还原为一条 `a | b`，任务框还原为 `[x]` / `[ ]`，
+  列表项与标题仅在选区跨越它们时保留标记，行内操作栏等装饰被丢弃而文件引用芯片保留其
+  文本。过程区、工具行、run 行与 meta 芯片同属装饰：从它们开始的选区不弹胶囊，从正文
+  跨入它们的选区只引用正文；代码围栏内的内容原样保留，空行与行尾空格不被压缩。
+- 引用是普通草稿文本：以 Markdown 引用块写入，上限 2000 字符，与用户已输入内容之间
+  留一个空行，落在实时光标处并保留草稿中已有的芯片，随后聚焦输入框。它绝不发送、
+  不新建会话、不写转录，因此按会话的草稿槽与 Smart Stop 的所有权不变。
+- `features/chat/composer/quote-sink.ts` 是唯一写入通道：已挂载的输入框注册 sink，
+  转录不会越过它去改 store 状态。已退役的 prefill 通道（读取延迟缓存的草稿）不再
+  恢复；读实时编辑器才能避免覆盖用户刚输入、尚未落盘的文本。
+- 不改 Host 协议、存储 schema、IPC 通道、权限或 Rust。ADR 0268 退役的
+  `D-LOCAL-message-quotes` / `D-LOCAL-selection-overlay` 及 E2E ID 继续退役。
+  见 ADR 0334、`04-ux/08-component-spec.md` §7.4 / §8.5 与
+  E2E-CHAT-selection-quote-into-composer。
+
+## 2026-10-21 —— 同账号电脑自动接入（D675）
+
+- D675 修订 D666 / ADR `remote-control-router-account-binding`（修订 3）。账号内的一台电脑
+  不再依赖 SSH，而是经 Gateway 接入兄弟电脑：`device.request` 新增 `client: "desktop"` 与
+  `hostProof` —— 本次请求由 Gateway 签发的一次性 nonce，加上用该电脑的 Host 证书私钥对
+  `{requestId, nonce, applicantHostId, accountId, expiresAt}` 的签名。
+- **证明由目标 Host 自己校验**：证书链到它固定的 Gateway CA、账户绑定、签名、nonce 未用过
+  且未过期，并检查自己的开关。Gateway 只做预检与快速拒绝，不做授权依据；ADR 0331
+  「Gateway 从不做批准决定」仍然成立，被攻破的 Gateway 不能凭空造出 `owner` 设备。
+- 自动接入是每台电脑的开关（「允许同账号电脑自动接入」，默认开、设备本地、不同步）。关闭或
+  strict mode 时回落到 D666 的逐设备确认，且不按桌面类采纳；兄弟 `device.grant` 由每台接收
+  的 Host 重新校验证明并检查自己的开关。每次自动接入都会通知并写审计；账号内有新电脑注册时
+  其他每台电脑都会收到通知并写审计；账号内任何 Host 都可以撤销设备，运维可以在 Gateway 上
+  `hosts revoke` 那台 Host。
+- 桌面类设备持有 `owner` 并豁免远程权限上限，这是 ADR 0331 网关来源限制的唯一例外（已记录
+  在该 ADR）；`owner` 依附于申请方的证书，证书被吊销则其接入的设备一并失去。手机与浏览器
+  设备不变：`viewer` / `controller` / `approver`、`pairedDevice: false`、受上限约束、不给
+  `allow-session`。
+- 已接受的风险如实写明：只凭泄露的 AccessKey 就能注册一台假电脑（决策 5 允许凭 key 注册
+  Host），再用它的证书在所有开着自动接入的电脑上拿到 `owner`。这是「同账号电脑自动接入」的
+  直接代价，缓解措施见上。
+- 客户端传输是 `RACP-WS` 的 `GET /v1/hosts/{hostId}/ws`，`RemoteHostTransport` 新增
+  `"account"`；手机继续用 `RACP-HTTP` + SSE。选中 B 的项目时回合在 B 上运行，使用 B 自己的
+  provider 配置与 B 自己的 Router 账号，凭据不跨机器；Gateway 路径不需要
+  `workspace/toolExecute`。
+- 账号模式下远程控制开关在 Router 公布 Gateway 且账号 key 可解析时默认开启，用户明确关闭
+  过的保持关闭。安全 §3.7/§3.8、gate 27 与新增的 gate 35 相应修订，rollout R8 与
+  E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop 承载其余部分。
+- P0 测量（`scripts/measure-remote-latency.mjs`）另外确认了 P7 的两项取舍：有上限的串行
+  attach 与 `session/history` 分页成立；**流式 delta 合并被删去**，因为本地 stub 的 40 个
+  provider chunk 只产生 11–13 个 `item.delta`，说明 provider 流到 RACP 事件之间已经存在
+  合并。
+- D676 修订 ADR 0331（修订 4）。中继主体——手机、浏览器或 desktop 类设备——可以通过
+  `session/configure` 修改会话的持久权限模式：代码一直如此（`controller` 角色、
+  `packages/host-runtime` 的普通 patch、手机的会话面板），决策 5 的「不能提高本地会话
+  权限模式」是代码从未实现过的承诺，现在文档如实陈述行为。远程权限上限仍然约束设备自己
+  发起的每一个回合（网关来源主体永远没有 `approverOverride`，生效模式按回合计算）。
+  已接受的风险：修改后的持久模式会约束在这台电脑上发起的回合以及同账户 desktop 类设备
+  发起的回合，以任意账户设备可吊销来缓解；修改会被报告——`session.configured` 设备通知
+  带设备 id 与被改字段（只有字段名与新值），Host 日志行带设备 id，落地时记录的通知缺口
+  已补上。

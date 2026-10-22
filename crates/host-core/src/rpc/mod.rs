@@ -6,6 +6,7 @@ mod memory_tools;
 mod remote_tools;
 mod scheduled_rpc;
 mod scheduled_tools;
+mod side_notes_rpc;
 mod todos;
 mod window_corner_rpc;
 mod worktree_rpc;
@@ -558,14 +559,19 @@ fn require_session(db: &crate::db::Database, session_id: &str) -> Result<(), Jso
 /// so the cap matches that order.
 const RPC_PERMISSION_WAIT_CAP_MS: u64 = 120_000;
 
-/// Budget for one request. `configSync.syncNow` has no aggregate wall-clock
-/// deadline because the Host owns a multi-step cloud operation. `tools.execute`
-/// follows its own effective tool timeout (plus permission cap and grace); all
-/// other methods use the fixed budget.
+/// Budget for one request. `configSync.syncNow` and the project archive
+/// operations have no aggregate wall-clock deadline because the Host owns a
+/// multi-step or unbounded file operation. `tools.execute` follows its own
+/// effective tool timeout (plus permission cap and grace); all other methods use
+/// the fixed budget.
 fn request_budget_ms(method: &str, params: &Value) -> Option<u64> {
-    if method == "configSync.syncNow" {
+    if matches!(
+        method,
+        "configSync.syncNow" | "project.archive.export" | "project.archive.import"
+    ) {
         // One sync may contain arbitrarily many individually bounded S3
-        // requests. Keep the Host-owned workflow alive across renderer routes.
+        // requests, and one project archive may copy an arbitrarily large
+        // folder. Keep these Host-owned workflows alive across renderer routes.
         return None;
     }
     if !matches!(method, "tools.execute" | "tools.workspaceExecute") {
@@ -777,6 +783,38 @@ fn plugin_session_rpc_err(error: impl ToString) -> JsonRpcError {
     rpc_err(rpc_code, message, &code)
 }
 
+/// Project archives are one host-owned file operation each. Their failures name
+/// the step that failed, so the renderer can show the message as-is.
+fn project_archive_rpc_err(error: anyhow::Error) -> JsonRpcError {
+    let message = error.to_string();
+    if message.starts_with("PROJECT_ARCHIVE_INVALID") {
+        return rpc_err(1002, message, "INVALID_PARAMS");
+    }
+    if message.starts_with("PROJECT_ARCHIVE_CONFLICT") {
+        return rpc_err(1008, message, "CONFLICT");
+    }
+    if message.starts_with("PROJECT_ARCHIVE_LIMIT_EXCEEDED") {
+        return rpc_err(1002, message, "LIMIT_EXCEEDED");
+    }
+    rpc_err(1000, message, "INTERNAL")
+}
+
+/// One archive operation may copy an arbitrarily large folder. The Host owns
+/// the work, so the request keeps running while the renderer shows progress.
+fn archive_progress(
+    tx: &mpsc::UnboundedSender<String>,
+) -> impl Fn(&'static str, u64, u64) + Sync + '_ {
+    move |phase, done, total| {
+        let note = json!({
+            "jsonrpc": "2.0",
+            "method": "projectArchive.progress",
+            "params": { "phase": phase, "done": done, "total": total },
+        });
+        if let Ok(raw) = serde_json::to_string(&note) {
+            let _ = tx.send(format!("{raw}\n"));
+        }
+    }
+}
 /// Parse the optional session thinking selector at the RPC boundary.  A
 /// missing/null value keeps the backwards-compatible default; present values
 /// must be strings from the host's allowlist rather than being silently
@@ -1069,6 +1107,25 @@ fn validate_settings_value(value: &Value) -> Result<(), JsonRpcError> {
                 "insecureNoticeAcknowledged must be a boolean",
                 "INVALID_PARAMS",
             ));
+        }
+    }
+    // The model a session the Agent creates for itself runs on. Shape only:
+    // whether the provider still resolves is decided when `SessionCreate`
+    // reads it, because a disabled or credential-less provider stays a state
+    // the user repairs in Settings.
+    if let Some(binding) = object.get("sessionCreateModel").filter(|v| !v.is_null()) {
+        for (key, max) in [("providerId", 128), ("modelId", 256)] {
+            if !binding
+                .get(key)
+                .and_then(Value::as_str)
+                .is_some_and(|s| !s.trim().is_empty() && s.len() <= max)
+            {
+                return Err(rpc_err(
+                    1002,
+                    "invalid session create model binding",
+                    "INVALID_PARAMS",
+                ));
+            }
         }
     }
     if let Some(binding) = object.get("imageGeneration").filter(|v| !v.is_null()) {
@@ -1892,6 +1949,11 @@ async fn handle_request(
         return memory_rpc::handle(&st, method, params);
     }
 
+    if method.starts_with("session.sideNotes.") {
+        let st = state.lock().await;
+        return side_notes_rpc::handle(&st, method, params);
+    }
+
     match method {
         "tools.remoteComplete" | "tools.workspaceExecute" | "tools.workspaceAbort" => {
             remote_tools::handle(state, method, params, tx).await
@@ -2157,6 +2219,47 @@ async fn handle_request(
                 .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?
                 .ok_or_else(|| rpc_err(1000, "project disappeared after creation", "INTERNAL"))?;
             Ok(json!({ "project": project }))
+        }
+
+        // Project archives: one logical project or group, explicitly exported
+        // and imported. The Host reads the registered project and its
+        // app-managed configuration; Electron main only passes the paths the
+        // user picked in a native dialog.
+        "project.archive.export" => {
+            let plan = {
+                let mut st = state.lock().await;
+                let progress = archive_progress(&tx);
+                crate::project_archive::export_plan(&mut st, &params, &progress)
+                    .map_err(project_archive_rpc_err)?
+            };
+            let progress_tx = tx.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                let progress = archive_progress(&progress_tx);
+                crate::project_archive::export_write(&plan, &progress)
+            })
+            .await
+            .map_err(|error| rpc_err(1000, error.to_string(), "INTERNAL"))?
+            .map_err(project_archive_rpc_err)?;
+            Ok(result)
+        }
+        "project.archive.import" => {
+            let data_dir = {
+                let st = state.lock().await;
+                st.data_dir.clone()
+            };
+            let staging_tx = tx.clone();
+            let staged = tokio::task::spawn_blocking(move || {
+                let progress = archive_progress(&staging_tx);
+                let staged = crate::project_archive::stage_import(&data_dir, &params, &progress)?;
+                Ok::<_, anyhow::Error>(staged)
+            })
+            .await
+            .map_err(|error| rpc_err(1000, error.to_string(), "INTERNAL"))?
+            .map_err(project_archive_rpc_err)?;
+            let mut st = state.lock().await;
+            let progress = archive_progress(&tx);
+            crate::project_archive::apply_import(&mut st, &staged, &progress)
+                .map_err(project_archive_rpc_err)
         }
 
         "projects.remove" => {
@@ -2818,15 +2921,23 @@ async fn handle_request(
                 .get("messageAround")
                 .and_then(|v| v.as_str())
                 .map(str::to_owned);
+            let message_before_id = params
+                .get("messageBeforeId")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned);
             let message_limit = params.get("messageLimit").and_then(|v| v.as_i64());
             if message_before.is_some_and(|value| value < 0)
                 || message_limit.is_some_and(|value| value <= 0)
                 || (message_around.is_some()
+                    && (message_before.is_some()
+                        || message_before_id.is_some()
+                        || message_limit.is_none()))
+                || (message_before_id.is_some()
                     && (message_before.is_some() || message_limit.is_none()))
             {
                 return Err(rpc_err(
                     1002,
-                    "session read window must use non-negative messageBefore and positive messageLimit",
+                    "session read window takes one of messageAround, messageBeforeId, or messageBefore, with a positive messageLimit",
                     "INVALID_PARAMS",
                 ));
             }
@@ -2851,6 +2962,7 @@ async fn handle_request(
                 id,
                 sessions::SessionReadOptions {
                     message_around,
+                    message_before_id,
                     message_before,
                     message_limit,
                     content_limit,
@@ -4165,7 +4277,7 @@ async fn handle_request(
             let cancellation_receiver = if remote_workspace.is_some()
                 || matches!(
                     p.tool_name.as_str(),
-                    "Bash" | "GenerateImages" | "SessionSend"
+                    "Bash" | "GenerateImages" | "SessionSend" | "SessionCreate"
                 ) {
                 let mut st = state.lock().await;
                 match st.register_bash_cancellation(&p.session_id, &p.tool_call_id) {
@@ -5074,7 +5186,12 @@ async fn handle_request(
                 .get("id")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| rpc_err(1002, "id required", "INVALID_PARAMS"))?;
-            let mut st = state.lock().await;
+            // Hold the configuration-sync lock while the intent is cleared: a
+            // running sync captured the settings before awaiting the remote and
+            // would otherwise save that stale copy afterwards, resurrecting the
+            // intent this uninstall removed. The lock order is the same one
+            // `sync_once` uses (sync lock, then host state).
+            let (_sync_guard, mut st) = crate::config_sync::sync_locked_state(&state).await;
             let ok = st
                 .plugins
                 .uninstall(id)
@@ -5083,6 +5200,14 @@ async fn handle_request(
                 if let Err(error) = crate::plugins::remove_plugin_providers(&st.db, &st.secrets, id)
                 {
                     tracing::warn!(plugin = id, %error, "plugin provider removal failed");
+                }
+                // The retained install intent is what reinstalls this plugin
+                // from the cloud copy on another device. Without it the next
+                // sync publishes a deletion tombstone from the existing
+                // baseline instead of advertising the plugin again. Disabling
+                // a plugin never reaches this path.
+                if let Err(error) = crate::config_sync::forget_plugin_intent(&st, id) {
+                    tracing::warn!(plugin = id, %error, "plugin install intent cleanup failed");
                 }
             }
             Ok(json!({ "ok": ok }))
@@ -7872,6 +7997,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn session_create_model_setting_roundtrips_and_validates_shape() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let state = Arc::new(Mutex::new(app_state));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        // No provider row is required here: the binding only has to carry a
+        // shape the session-create path can resolve when it reads it.
+        handle_request(
+            state.clone(),
+            "settings.set",
+            json!({ "sessionCreateModel": { "providerId": "p1", "modelId": "m1" } }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let stored = handle_request(state.clone(), "settings.get", json!({}), tx.clone())
+            .await
+            .unwrap();
+        assert_eq!(stored["sessionCreateModel"]["providerId"], "p1");
+        assert_eq!(stored["sessionCreateModel"]["modelId"], "m1");
+
+        // Clearing the choice is a real value, not an invalid one: it is how
+        // the user turns Agent-created sessions off again.
+        handle_request(
+            state.clone(),
+            "settings.set",
+            json!({ "sessionCreateModel": null }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let cleared = handle_request(state.clone(), "settings.get", json!({}), tx.clone())
+            .await
+            .unwrap();
+        assert!(cleared["sessionCreateModel"].is_null());
+
+        for invalid in [
+            json!({ "sessionCreateModel": { "providerId": "", "modelId": "m1" } }),
+            json!({ "sessionCreateModel": { "providerId": "p1" } }),
+            json!({ "sessionCreateModel": { "providerId": "p1", "modelId": 7 } }),
+            json!({ "sessionCreateModel": "p1/m1" }),
+        ] {
+            let error = handle_request(state.clone(), "settings.set", invalid, tx.clone())
+                .await
+                .unwrap_err();
+            assert_eq!(error.data.unwrap()["errorCode"], "INVALID_PARAMS");
+        }
+    }
+
+    #[tokio::test]
     async fn command_shell_settings_and_catalog_roundtrip() {
         let data_dir = tempfile::tempdir().unwrap();
         let mut app_state = AppState::open(data_dir.path()).unwrap();
@@ -9741,6 +9918,81 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(missing.data.unwrap()["errorCode"], "NOT_FOUND");
+    }
+
+    /// `messageBeforeId` is how the RACP `session/history` window reaches
+    /// host-core: the remote client pages with `beforeItemId`, which is a
+    /// message id, while the window reader speaks physical offsets.
+    #[tokio::test]
+    async fn session_get_pages_a_window_named_by_message_id() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut app_state = AppState::open(data_dir.path()).unwrap();
+        app_state.handshook = true;
+        let session = sessions::create_session(
+            &app_state.db,
+            Some("Window".into()),
+            Some("agent".into()),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        for index in 0..4 {
+            let message: sessions::UiMessage = serde_json::from_value(json!({
+                "id": format!("m{index}"),
+                "role": "user",
+                "content": format!("body {index}"),
+                "createdAt": "2025-05-01T00:00:00Z"
+            }))
+            .unwrap();
+            sessions::append_message(&app_state.db, &session.id, &message, None).unwrap();
+        }
+        let state = Arc::new(Mutex::new(app_state));
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let page = handle_request(
+            state.clone(),
+            "session.get",
+            json!({ "id": session.id, "messageLimit": 2, "messageBeforeId": "m2" }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let ids: Vec<String> = page["session"]["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|message| message["id"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(ids, ["m0", "m1"]);
+        assert_eq!(page["session"]["messageStart"], json!(0));
+        assert_eq!(page["session"]["hasMoreBefore"], json!(false));
+
+        // A page named by an id the transcript no longer holds is empty rather
+        // than the tail: the client asked for older rows, not newer ones.
+        let forgotten = handle_request(
+            state.clone(),
+            "session.get",
+            json!({ "id": session.id, "messageLimit": 2, "messageBeforeId": "gone" }),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            forgotten["session"]["messages"].as_array().unwrap().len(),
+            0
+        );
+
+        // One window at a time: the two spellings of a start cannot be mixed.
+        let mixed = handle_request(
+            state,
+            "session.get",
+            json!({ "id": session.id, "messageLimit": 2, "messageBeforeId": "m2", "messageBefore": 1 }),
+            mpsc::unbounded_channel().0,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(mixed.data.unwrap()["errorCode"], "INVALID_PARAMS");
     }
 
     #[tokio::test]

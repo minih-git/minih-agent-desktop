@@ -33,7 +33,9 @@ export function racpSessionToSummary(
     remoteWorkspaceLabel: session.workspaceLabel,
     capabilities: {
       canPrompt: true, canStop: true, canRefresh: true,
-      canConfigureModel: false, canAttach: false, canSteer: false,
+      // The Host owns the session's model through `session/configure` +
+      // `model/list`; the connected state gates it in the session catalog.
+      canConfigureModel: true, canAttach: false, canSteer: false,
       canEditMessages: false, canUseLocalTools: false, canUseTerminal: false,
       canReadWorkspace: true,
     },

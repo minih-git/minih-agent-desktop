@@ -2,6 +2,34 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.24.0",
+    date: "2026-10-21",
+    highlights: [
+      "Das Telefon trennt jetzt Projekte von Unterhaltungen: Sie wählen ein Projekt und darin eine Unterhaltung, mit einer einheitlichen Sprache für jeden Zustand und einem klaren Hinweis, wenn die App wieder in den Vordergrund kommt.",
+      "Eine Unterhaltung meldet, wenn sie auf Ihre Antwort wartet, sodass das Telefon eine offene Frage nicht mehr als laufenden Durchgang anzeigt.",
+      "Benachrichtigungen nennen die Unterhaltung auf dem Sperrbildschirm und tragen die Zahl der noch offenen Entscheidungen; unter Android zeichnet die App ihre Benachrichtigung selbst, sodass ein Tippen direkt in diese Unterhaltung führt.",
+      "Push lässt sich auf die Ereignisse begrenzen, die Sie brauchen, mehrere Ereignisse einer Unterhaltung werden gruppiert, und der iPhone-Build bringt jetzt die Push-Berechtigung mit.",
+      "Ein Telefon kann Bilder und kleine Dateien in eine auf dem Computer laufende Unterhaltung senden.",
+      "Ein Telefon kann sehen, welches Modell eine Unterhaltung nutzt, und es wechseln.",
+      "Antworten werden in der Telefon-Zeitleiste als Markdown dargestellt, lange Verläufe laden fensterweise, ohne Ihre Leseposition zu verschieben, und Zurück verhält sich auf jedem Weg gleich.",
+      "Markieren Sie Text in einer Antwort am Rechner, wird er in das Eingabefeld übernommen; ein Plugin kann eine lokale Datei direkt in der Browser-Ansicht des Arbeitsbereichs öffnen.",
+    ],
+  },
+  {
+    version: "0.23.0",
+    date: "2026-10-20",
+    highlights: [
+      "Die mobile App ist komplett neu gestaltet: Bildschirme zum Verbinden mit Ihren Computern, zur Host-Verwaltung und zum Chatten sind aufgefrischt, der Konversationsverlauf wurde neu aufgebaut und Bestätigungen für hohe Risiken und Stoppen sind klarer.",
+      "Ihr Telefon kann jetzt neue Sitzungen auf Ihrem Computer starten — mit Projektregistrierung und Ordnerdurchsuchung beim Hinzufügen; Sitzungen werden nach Projekt gruppiert und Computer zeigen ihren echten Namen statt einer Host-ID.",
+      "Eine Telefonsitzung öffnet jetzt bei der neuesten Nachricht und lädt frühere Historie bei Bedarf, zeigt dieselben Zeilen wie der Desktop und hält die Eingabe auf iOS über der Tastatur.",
+      "Tippen Sie im Composer ein #, um eine andere Sitzung anzusprechen: Vorschläge erscheinen beim Tippen, und das gewählte Ziel wird zu einem anklickbaren Chip in Ihrer Nachricht.",
+      "Wenn Sie den Agenten bitten, Arbeit an eine noch nicht vorhandene Sitzung zu übergeben, kann er jetzt eine für Sie erstellen; das Modell für diese Übergaben wählen Sie in den Einstellungen.",
+      "Randnotizen antworten jetzt aus einem schreibgeschützten Schnappschuss der Konversation, ohne eine laufende Aufgabe zu beeinflussen, und jede Frage behält ihre Antwort im Seitenpanel.",
+      "Automatische Kontextkomprimierung zeigt kein Benachrichtigungsfenster mehr; stattdessen erscheint eine Inline-Markierung im Verlauf, während eine fehlgeschlagene manuelle Komprimierung weiterhin den echten Fehler zeigt.",
+      "Pfade, die der Agent erwähnt, werden jetzt auch für Ordner und Dateien ohne Endung zu Links; Referenzen außerhalb des Projekts bieten „Im Dateimanager anzeigen“ oder „Pfad kopieren“ statt einer toten „Eingeschränkt“-Meldung.",
+    ],
+  },
+  {
     version: "0.22.1",
     date: "2026-10-19",
     highlights: [

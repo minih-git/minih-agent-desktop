@@ -104,6 +104,9 @@ export type StartupDependencies = {
     developerMode?: unknown;
   } | null) => void;
   applyDeveloperMode: (settings?: { developerMode?: unknown } | null) => void;
+  applyMacosWindowTranslucency: (
+    settings?: { macosWindowTranslucency?: unknown } | null,
+  ) => void;
   applyPreventScreenSleep: (settings?: { preventScreenSleep?: unknown } | null) => void;
   applyKeepAwakeWhileRunning: (settings?: { keepAwakeWhileRunning?: unknown } | null) => void;
   applyPluginLauncherShortcut: (keybindings?: KeybindingOverrides) => void;
@@ -164,6 +167,7 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
       planUiProbe,
       applyApplicationMenuSettings,
       applyDeveloperMode,
+      applyMacosWindowTranslucency,
       applyPreventScreenSleep,
       applyKeepAwakeWhileRunning,
       applyPluginLauncherShortcut,
@@ -306,6 +310,17 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
         }
         await host.call("settings.set", { remoteGateway });
       },
+      // Package D: a desktop-class device may configure and delete a session
+      // here. Configuration and deletion are idle-only, and the app's own turn
+      // bookkeeping is the only source of that answer.
+      isSessionBusy: (sessionId: string) => isSessionBusy(sessionId),
+      // The delete itself reuses the local handler (`session/delete` IPC), so a
+      // remote delete runs the same cleanup the person at this computer gets:
+      // cancelling a pending memory extraction, dropping queued persistence,
+      // forgetting rewrite history, disposing the runtime session.
+      removeSession: async (sessionId: string) => {
+        await invokeIpc(IPC.invoke.sessionDelete, [sessionId]);
+      },
       getHost,
       getAgentHost: () => {
         const bridge = state.agentHostBridge;
@@ -384,11 +399,13 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
           theme?: unknown;
           keybindings?: unknown;
           developerMode?: unknown;
+          macosWindowTranslucency?: unknown;
           preventScreenSleep?: unknown;
           keepAwakeWhileRunning?: unknown;
         } | null;
         applyApplicationMenuSettings(stored);
         applyDeveloperMode(stored);
+        applyMacosWindowTranslucency(stored);
         applyPreventScreenSleep(stored);
         applyKeepAwakeWhileRunning(stored);
         await applyNetworkProxyFromAppSettings(stored);

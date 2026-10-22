@@ -41,6 +41,15 @@ export type PairOutcome = { ok: true; entry: HostRegistryEntry } | { ok: false; 
 export type AccountAdoption = {
   deviceId: string;
   label: string;
+  /**
+   * The roles the Gateway recorded for this account device (§11.4/§11.5). The
+   * grant response carries them (`apps/remote-gateway/src/device-requests.ts`),
+   * and every Host of the account is written with the same set — an account
+   * device is one principal on all of them. Absent or empty means "not
+   * reported", which the screens treat as unknown rather than as "no
+   * controller"; only a non-empty list is stored, exactly like `pair`.
+   */
+  roles?: readonly string[];
   hosts: readonly {
     hostId: string;
     label: string;
@@ -55,6 +64,21 @@ export type AccountAdoption = {
   csrfTokens?: Record<string, string>;
   token?: string;
 };
+
+/**
+ * The roles to store on a registry entry, or `undefined` when the Gateway
+ * reported none.
+ *
+ * Both credential ports use it so pairing and account adoption cannot drift:
+ * only a non-empty list of non-empty strings is written, so an entry that never
+ * had roles round-trips unchanged and "no roles reported" stays distinguishable
+ * from "reported, and `controller` is not one of them".
+ */
+export function grantedRoles(roles: readonly string[] | undefined): string[] | undefined {
+  if (!roles) return undefined;
+  const usable = roles.filter((role) => typeof role === "string" && role.length > 0);
+  return usable.length > 0 ? [...usable] : undefined;
+}
 
 export type AccountAdoptionOutcome = { ok: true; hostIds: string[] } | { ok: false; failure: OperationFailure };
 
@@ -128,12 +152,18 @@ export class WebCookieCredentialPort implements CredentialPort {
         },
       };
     }
+    const roles = grantedRoles(result.device.roles);
     const entry: HostRegistryEntry = {
       hostId: request.hostId,
-      label,
+      // The computer's name, not this device's: `label` above names the phone
+      // (the person typed it to recognise it on the computer), and the header over
+      // a conversation shows this field. A Gateway that sends no name leaves it
+      // empty, and the registry falls back to the host id.
+      label: result.device.hostLabel ?? "",
       deviceId: result.device.deviceId,
       csrfToken: result.device.csrfToken,
       pairedAt: (this.options.now?.() ?? new Date()).toISOString(),
+      ...(roles ? { roles } : {}),
     };
     this.options.registry.save(entry);
     return { ok: true, entry };
@@ -163,6 +193,9 @@ export class WebCookieCredentialPort implements CredentialPort {
       };
     }
     const pairedAt = (this.options.now?.() ?? new Date()).toISOString();
+    // One grant, one set of roles: the device is the same principal on every
+    // Host of the account, so each entry records the same roles.
+    const roles = grantedRoles(request.roles);
     const hostIds: string[] = [];
     for (const host of request.hosts) {
       // `save` replaces the entry of that Host, so asking for a device again
@@ -174,6 +207,7 @@ export class WebCookieCredentialPort implements CredentialPort {
         csrfToken: csrfTokens[host.hostId]!,
         pairedAt,
         ...(host.requiresOwnConfirmation ? { requiresOwnConfirmation: true as const } : {}),
+        ...(roles ? { roles } : {}),
       });
       hostIds.push(host.hostId);
     }

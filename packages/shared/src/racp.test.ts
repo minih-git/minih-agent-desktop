@@ -321,6 +321,76 @@ describe("catalog and roles", () => {
     expect(rolesAllowOperation([], "session/get")).toBe(false);
   });
 
+  it("opens exactly the three project operations to a controller, and nothing else", () => {
+    // The D666 amendment (rollout A2): a controller may create a session,
+    // register a project, and browse directories. Everything that restructures
+    // or exposes this machine stays owner-only.
+    for (const operation of ["session/create", "project/register", "project/browse"] as const) {
+      expect(rolesAllowOperation(["viewer", "controller", "approver"], operation)).toBe(true);
+      expect(rolesAllowOperation(["viewer", "approver"], operation)).toBe(false);
+    }
+    // The snapshot locks the rest of the table: a stray role change on any other
+    // operation fails this test instead of silently widening access.
+    const byRole: Record<string, string[]> = {};
+    for (const [operation, spec] of Object.entries(RACP_OPERATIONS)) {
+      (byRole[spec.role] ??= []).push(operation);
+    }
+    for (const operations of Object.values(byRole)) operations.sort();
+    expect(byRole).toEqual({
+      authenticated: ["connection/initialize", "connection/pair", "connection/ping", "host/list"],
+      viewer: [
+        "events/ack",
+        "events/subscribe",
+        "events/unsubscribe",
+        // R7: reading the model catalog is not a capability, so a read-only
+        // device may list model names; choosing one is still `controller`.
+        "model/list",
+        "project/list",
+        "session/attach",
+        "session/get",
+        "session/history",
+        "session/list",
+        "turn/get",
+        "workspace/diff",
+        "workspace/list",
+        "workspace/read",
+      ],
+      controller: [
+        "attachment/complete",
+        "attachment/create",
+        "input/respond",
+        "project/browse",
+        "project/register",
+        "session/compact",
+        "session/configure",
+        "session/create",
+        "session/deriveTitle",
+        "session/fork",
+        "session/rename",
+        "terminal/close",
+        "terminal/input",
+        "terminal/open",
+        "terminal/resize",
+        "turn/cancel",
+        "turn/interrupt",
+        "turn/prioritize",
+        "turn/start",
+        "turn/stop",
+      ],
+      approver: ["approval/respond"],
+      owner: [
+        "session/archive",
+        "session/delete",
+        "session/revoke",
+        "tools/advertise",
+        "workspace/files",
+        "workspace/toolAbort",
+        "workspace/toolExecute",
+        "workspace/toolShell",
+      ],
+    });
+  });
+
   it("maps every HTTP route to a catalog operation", () => {
     for (const operation of Object.keys(RACP_HTTP_ROUTES)) {
       expect(RACP_OPERATIONS).toHaveProperty(operation);

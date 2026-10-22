@@ -87,6 +87,29 @@ it("gates the read-only session tools too, so a host refusal is authoritative", 
   }
 });
 
+it("gates a session creation through the host before the local handler runs", async () => {
+  const { sidecar, calls, execute } = harness();
+  sidecar.setLocalTool("SessionCreate", async () => {
+    calls.push("created");
+    return { ok: true, content: "created" };
+  });
+
+  expect((await execute("agent", "SessionCreate")).ok).toBe(true);
+  expect(calls).toEqual(["tools.execute", "created"]);
+});
+
+it("fails a session creation closed in Plan mode without asking the host", async () => {
+  // Creating a session is a durable write that spends a model the user opted
+  // into, so Plan must refuse it the way it refuses a send.
+  const { sidecar, calls, execute } = harness();
+  const create = vi.fn().mockResolvedValue({ ok: true, content: "created" });
+  sidecar.setLocalTool("SessionCreate", create);
+
+  expect((await execute("plan", "SessionCreate")).errorCode).toBe("TOOL_DISABLED_IN_PLAN");
+  expect(calls).toEqual([]);
+  expect(create).not.toHaveBeenCalled();
+});
+
 it("hands the declared turn to the local handler", async () => {
   // The handler binds an approval to the turn that asked for it, so the turn
   // has to cross the boundary rather than be re-derived from session state.

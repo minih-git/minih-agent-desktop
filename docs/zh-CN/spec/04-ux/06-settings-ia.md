@@ -485,3 +485,33 @@ Token 用量**不是设置目的地**（D335 / ADR 0173）。已完成回合历�
 | 卡半径 | ~14px 升高行程 |
 | 切换 | **32×20** 拇指 16，中性重音（非绿色） |
 | 开放靶点药丸 | 前导 VS Code 字形 |
+
+### macOS translucent window preference
+
+General → Appearance includes a macOS-only **Translucent window** switch.
+Absent or `true` preserves the shipped native sidebar vibrancy and transparent
+backing. Explicit `false` requests an opaque native window on the next launch.
+The optional boolean `AppSettings.macosWindowTranslucency` uses the existing
+Host-owned settings JSON; no schema migration or default rewrite is needed.
+Electron fixes transparency at creation, so saving never pretends to change the
+running surface. Compare the saved preference with the applied surface from
+`windowControl("getState")` to show a pending-restart hint only on mismatch;
+reverting the preference clears that hint. A busy switch prevents concurrent
+saves. Read/save failures show the failed operation and reason without faking
+success; unknown applied state never invents a restart hint. Other platforms
+do not render the switch. No GPU-saving amount
+is promised without local measurement. See [the decision](/adr/macos-window-translucency-preference).
+
+## 账户页统一（R8 / D675，已实现）
+
+「账户」页是账号及其一切附属设置的唯一入口，自上而下依次为：**Minih Router 账号**
+（登录一次）→ **本机**（电脑名，以及远程开关、严格模式与「允许同账号电脑自动接入」
+开关）→ **我的设备**（账号下的电脑与已授予设备、类别、在线状态、撤销）→ **配置同步**
+（内嵌现有 `ConfigSyncPage`，行为不变，保管库密码每台设备输入一次）→ **高级**
+（折叠：SSH 主机入口——「远程主机」目的地保留其 id，自托管 Gateway 表单随原「自托管」
+折叠区一起移入）。经账号路由接入的兄弟电脑会出现在「新建项目」对话框的主机列表里，
+离线或「需要升级」时明确标注。新增的行、开关与状态文案一律走 i18n。
+
+与目标设计的偏差：开发者模式下的**网络中心仍在 Minih Router 面板内**（既有用户路径
+测试按面板内位置锁定），未移入高级区；高级区的 SSH 入口通过按钮跳转到原目的地，而不是
+把 RemoteHostsPage 内嵌进账户页。

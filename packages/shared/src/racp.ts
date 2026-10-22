@@ -56,11 +56,25 @@ export const RACP_SESSION_STATUSES = [
   "idle",
   "running",
   "waiting_permission",
+  /**
+   * The agent asked a question and the session is idle until it is answered
+   * (§17.4.1 of the UX spec). A separate value rather than `waiting_permission`
+   * because the two decisions are made by different screens: an approval is a
+   * tool call to allow, an answer is a question to fill in.
+   */
+  "waiting_input",
   "aborted",
   "error",
 ] as const;
 export type RacpSessionStatus = (typeof RACP_SESSION_STATUSES)[number];
-export const RacpSessionStatusSchema = Type.Union([Type.Literal("idle"), Type.Literal("running"), Type.Literal("waiting_permission"), Type.Literal("aborted"), Type.Literal("error")]);
+export const RacpSessionStatusSchema = Type.Union([
+  Type.Literal("idle"),
+  Type.Literal("running"),
+  Type.Literal("waiting_permission"),
+  Type.Literal("waiting_input"),
+  Type.Literal("aborted"),
+  Type.Literal("error"),
+]);
 
 export const RACP_PLANNING_STATES = ["inactive", "planning", "awaiting_approval"] as const;
 export type RacpPlanningState = (typeof RACP_PLANNING_STATES)[number];
@@ -106,6 +120,42 @@ export const RacpRequestContextSchema = Type.Object({
 });
 export type RacpRequestContext = Static<typeof RacpRequestContextSchema>;
 
+/**
+ * The character set and length of a diagnostic trace id (P0 measurement).
+ *
+ * One definition, because two peers validate the same value: the Gateway
+ * accepts a caller's `x-trace-id` header, and a Host accepts the `traceId` an
+ * untrusted client put in a request frame. A value that does not match is
+ * replaced with a locally generated id — never echoed, never sanitized — so an
+ * unbounded or control-character-laden string can never reach a log line, an
+ * audit record, or an error payload.
+ */
+export const RACP_TRACE_ID_PATTERN = "^[A-Za-z0-9._:-]{8,128}$";
+const RACP_TRACE_ID_RE = new RegExp(RACP_TRACE_ID_PATTERN);
+
+/** Whether a value may be used as a trace id: a bounded, log-safe string. */
+export function isRacpTraceId(value: unknown): value is string {
+  return typeof value === "string" && RACP_TRACE_ID_RE.test(value);
+}
+
+/**
+ * The character set and length of a Host id: `host_<uuid>` for a desktop Host,
+ * `host_<base64url>` for a headless one (both far below the bound).
+ *
+ * One definition, because three peers validate the same value: the pairing
+ * ticket a user pastes, the Host id a client puts in a Gateway URL path, and
+ * the record a Gateway stores at enrollment. A value that does not match is a
+ * caller error — never a name to look up — and the bound keeps an unbounded
+ * path segment from reaching a log line, an audit record, or a lookup.
+ */
+export const RACP_HOST_ID_PATTERN = "^host_[A-Za-z0-9._-]{1,128}$";
+const RACP_HOST_ID_RE = new RegExp(RACP_HOST_ID_PATTERN);
+
+/** Whether a value is a syntactically valid Host id. */
+export function isRacpHostId(value: unknown): value is string {
+  return typeof value === "string" && RACP_HOST_ID_RE.test(value);
+}
+
 export const WorkspaceFilesRequestSchema = Type.Object({
   path: Type.String({ minLength: 1, maxLength: 4096 }),
   operation: Type.Union([Type.Literal("list"), Type.Literal("read"), Type.Literal("index"), Type.Literal("resolve"), Type.Literal("image"), Type.Literal("diff"), Type.Literal("instructions")]),
@@ -143,6 +193,15 @@ export const RacpSessionSchema = Type.Object({
   title: Type.String(),
   projectId: Type.Optional(Type.String()),
   workspaceLabel: Type.Optional(Type.String()),
+  /**
+   * What this session runs on (R7). Optional and additive, so a Host that does
+   * not describe a model still produces a valid session and the client hides
+   * the row.
+   */
+  providerId: Type.Optional(Type.String()),
+  modelId: Type.Optional(Type.String()),
+  modelLabel: Type.Optional(Type.String()),
+  thinkingLevel: Type.Optional(Type.String()),
   mode: RacpSessionModeSchema,
   status: RacpSessionStatusSchema,
   planningState: RacpPlanningStateSchema,
@@ -154,6 +213,28 @@ export const RacpSessionSchema = Type.Object({
   updatedAt: Type.String(),
 });
 export type RacpSession = Static<typeof RacpSessionSchema>;
+
+/**
+ * One model a remote device may choose (R7, protocol §16.1).
+ *
+ * Metadata only: no credential, base URL, proxy, header, or price crosses this
+ * boundary. The Host builds it from the same catalog it launches a turn with and
+ * drops anything it would not print on the desktop's model picker.
+ */
+export const RacpModelSummarySchema = Type.Object({
+  providerId: Type.String({ minLength: 1 }),
+  /** The provider's display name only. */
+  providerLabel: Type.String(),
+  modelId: Type.String({ minLength: 1 }),
+  label: Type.String(),
+  /** Ordered as the provider advertises them. */
+  thinkingLevels: Type.Array(Type.String()),
+  defaultThinkingLevel: Type.Optional(Type.String()),
+  supportsImages: Type.Boolean(),
+  /** The Host's default for a new session. */
+  isDefault: Type.Boolean(),
+});
+export type RacpModelSummary = Static<typeof RacpModelSummarySchema>;
 
 export const RacpRemoteErrorSchema = Type.Object({
   code: Type.String({ minLength: 1 }),
@@ -455,6 +536,17 @@ export const RacpServerCapabilitiesSchema = Type.Object({
   terminal: Type.Boolean(),
   workspaceTools: Type.Optional(Type.Boolean()),
   workspaceFiles: Type.Optional(Type.Boolean()),
+  /**
+   * Whether this connection may read the session's workspace
+   * (`workspace/list|read|diff`, the read-only file panel).
+   *
+   * Separate from `workspaceFiles` on purpose: that one is the owner-grade
+   * `workspace/files` surface, while this is the viewer-grade panel a
+   * same-account desktop is allowed to open. A Host sets it per connection, so
+   * one deployment can offer the panel to a desktop and withhold it from a
+   * phone (rollout R8 package D, protocol §6.2).
+   */
+  workspaceRead: Type.Optional(Type.Boolean()),
   notifications: Type.Boolean(),
   bindings: Type.Array(Type.Union([Type.Literal("RACP-WS"), Type.Literal("RACP-HTTP"), Type.Literal("RACP-GRPC")])),
 });
@@ -464,6 +556,11 @@ export const RacpLimitsSchema = Type.Object({
   maxFrameBytes: Type.Integer({ minimum: 1 }),
   maxPromptBytes: Type.Integer({ minimum: 1 }),
   maxAttachmentBytes: Type.Integer({ minimum: 1 }),
+  /**
+   * Raw bytes one inline `turn/start` attachment may carry (§16.2). The whole
+   * prompt, text included, still has to fit `maxPromptBytes`.
+   */
+  maxInlineAttachmentBytes: Type.Integer({ minimum: 0 }),
   maxSubscriptionsPerConnection: Type.Integer({ minimum: 1 }),
   maxQueuedTurnsPerSession: Type.Integer({ minimum: 0 }),
   replayWindowEvents: Type.Integer({ minimum: 1 }),
@@ -479,6 +576,7 @@ export const RACP_DEFAULT_LIMITS: RacpLimits = {
   maxFrameBytes: 1024 * 1024,
   maxPromptBytes: 256 * 1024,
   maxAttachmentBytes: 50 * 1024 * 1024,
+  maxInlineAttachmentBytes: 160 * 1024,
   maxSubscriptionsPerConnection: 8,
   maxQueuedTurnsPerSession: 8,
   replayWindowEvents: 10_000,
@@ -561,6 +659,8 @@ export const RACP_OPERATIONS = {
   "connection/ping": { role: "authenticated", profile: "v1", mutation: false },
   "host/list": { role: "authenticated", profile: "v1", mutation: false },
   "project/list": { role: "viewer", profile: "v1", mutation: false },
+  /** The models a controller may start a session on (R7, §16.1). */
+  "model/list": { role: "viewer", profile: "v1", mutation: false },
   "session/list": { role: "viewer", profile: "v1", mutation: false },
   "session/get": { role: "viewer", profile: "v1", mutation: false },
   "session/create": { role: "controller", profile: "v1", mutation: true },
@@ -602,10 +702,17 @@ export const RACP_OPERATIONS = {
   "terminal/close": { role: "controller", profile: "remote-host", mutation: true },
   /** Exchange a single-use pairing token for a device credential (security §3.4). */
   "connection/pair": { role: "authenticated", profile: "remote-host", mutation: true },
-  /** Register a Host directory as a project; the Host canonicalizes and validates the path. */
-  "project/register": { role: "owner", profile: "remote-host", mutation: true },
-  /** List directories under a Host path, for the remote folder picker; bounded and owner-only. */
-  "project/browse": { role: "owner", profile: "remote-host", mutation: false },
+  /**
+   * Register a Host directory as a project; the Host canonicalizes and validates
+   * the path and confines it to its browse root (D666 amendment, rollout A2).
+   *
+   * `controller`, not `owner`: a device that may drive turns may also start one
+   * in a project it can see. `owner` carries far more than that — the workspace
+   * tool surface, shell access, and session deletion.
+   */
+  "project/register": { role: "controller", profile: "remote-host", mutation: true },
+  /** List directories under a Host path, for the remote folder picker; bounded and root-confined. */
+  "project/browse": { role: "controller", profile: "remote-host", mutation: false },
 } as const satisfies Record<string, RacpOperationSpec>;
 export type RacpOperation = keyof typeof RACP_OPERATIONS;
 
@@ -662,9 +769,14 @@ export { ROLE_RANK as RACP_ROLE_RANK };
 export const RACP_HTTP_ROUTES: Partial<Record<RacpOperation, { method: "GET" | "POST"; path: string }>> = {
   "host/list": { method: "GET", path: "/v1/hosts" },
   "project/list": { method: "GET", path: "/v1/projects" },
+  "model/list": { method: "GET", path: "/v1/models" },
+  "project/register": { method: "POST", path: "/v1/projects" },
+  "project/browse": { method: "GET", path: "/v1/projects:browse" },
   "session/list": { method: "GET", path: "/v1/sessions" },
   "session/create": { method: "POST", path: "/v1/sessions" },
   "session/get": { method: "GET", path: "/v1/sessions/{sessionId}" },
+  "session/configure": { method: "POST", path: "/v1/sessions/{sessionId}:configure" },
+  "session/rename": { method: "POST", path: "/v1/sessions/{sessionId}:rename" },
   "session/attach": { method: "POST", path: "/v1/sessions/{sessionId}:attach" },
   "session/history": { method: "GET", path: "/v1/sessions/{sessionId}/history" },
   "turn/start": { method: "POST", path: "/v1/sessions/{sessionId}/turns" },
@@ -808,6 +920,38 @@ export type RacpCeilingInput = {
 };
 
 /**
+ * The role set a desktop-class device holds (ADR amendment 3, decision 4):
+ * `owner`, and nothing a phone would hold.
+ */
+export const RACP_DESKTOP_DEVICE_ROLES: readonly RacpRole[] = ["owner"];
+
+/**
+ * Whether a principal stands where an SSH-paired desktop owner stands.
+ *
+ * This is the ONE place the desktop-class rule lives. A gateway-origin device
+ * is otherwise policy-immune (security §3.7): no `allow-session`, no
+ * `approverOverride`, always under the ceiling. A desktop-class device is the
+ * single exception, because the target Host verified a proof signed by a
+ * certificate the account's own Gateway issued to that computer — the same
+ * standing an SSH-paired owner has (ADR amendment 3, decision 4).
+ *
+ * The class is what the proof earned, never the role string alone: a record
+ * that merely claims `owner` without `deviceClass: "desktop"` is still a
+ * phone-grade device under the ceiling. `packages/racp/src/auth.ts` sets the
+ * field from the stored device record, and `agent-host` reads it here.
+ */
+export function isDesktopClassDevice(input: {
+  deviceClass?: "phone" | "desktop";
+  roles: readonly RacpRole[];
+}): boolean {
+  return (
+    input.deviceClass === "desktop" &&
+    input.roles.length === RACP_DESKTOP_DEVICE_ROLES.length &&
+    RACP_DESKTOP_DEVICE_ROLES.every((role) => input.roles.includes(role))
+  );
+}
+
+/**
  * The mode a remote-initiated turn actually runs under: the lower of the
  * session mode and the ceiling, unless the principal is exempt.
  */
@@ -891,6 +1035,7 @@ export function racpErrorIsRegistered(code: RacpErrorCode): boolean {
 export const RACP_SCHEMAS = {
   RequestContext: RacpRequestContextSchema,
   Session: RacpSessionSchema,
+  ModelSummary: RacpModelSummarySchema,
   Turn: RacpTurnSchema,
   Cursor: RacpCursorSchema,
   EventEnvelope: RacpEventEnvelopeSchema,

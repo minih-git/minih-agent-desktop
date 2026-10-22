@@ -1,0 +1,166 @@
+import { CircleHelp, Globe, Lock, Settings as SettingsIcon, Shield, Square, Ticket, User } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+
+import { GatewaySheet } from "../components/hosts/HostSheets.js";
+import { Button } from "../components/ui/Button.js";
+import { ListGroup } from "../components/ui/ListGroup.js";
+import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
+import { Skeleton } from "../components/ui/Skeleton.js";
+import { useAccountAvailability } from "../hooks/useAccountFlow.js";
+import { gatewayOrigin } from "../lib/runtime.js";
+
+function ValueRow({
+  icon,
+  title,
+  description,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex items-center gap-3.5 py-3 px-4 min-h-[56px]">
+      <div className="flex-none w-9 h-9 rounded-[10px] bg-[var(--rm-bg-inset)] text-[var(--rm-text-secondary)] flex items-center justify-center">
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[15px] font-semibold text-[var(--rm-text-primary)] leading-tight">
+          {title}
+        </div>
+        <div className="text-[13px] text-[var(--rm-text-muted)] leading-snug mt-0.5">
+          {description}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ConnectScreen({
+  onAddHost,
+  onAddAccount,
+  onOpenSettings,
+}: {
+  onAddHost: () => void;
+  onAddAccount: () => void;
+  /** The gear on this root (ADR mobile-direct-gateway-chat §1: two gears). */
+  onOpenSettings: () => void;
+}) {
+  const { t } = useTranslation();
+  const accountMode = useAccountAvailability();
+  const [gatewayOpen, setGatewayOpen] = useState(false);
+  let gatewayHost = "rc.hmini.org";
+  try {
+    if (gatewayOrigin) {
+      gatewayHost = new URL(gatewayOrigin).host;
+    } else if (typeof window !== "undefined" && window.location.host) {
+      gatewayHost = window.location.host;
+    }
+  } catch {
+    gatewayHost = gatewayOrigin || "rc.hmini.org";
+  }
+
+  return (
+    <Screen>
+      <ScreenContent hasDock className="pt-[max(20px,env(safe-area-inset-top))]">
+        {/* The Computers root keeps its gear even with no computer: Settings is
+            reachable from either root (§1). */}
+        <div className="flex justify-start px-2 pt-1">
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            aria-label={t("hosts.settings")}
+            title={t("hosts.settings")}
+            className="flex h-10 w-10 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] transition-opacity active:opacity-60"
+          >
+            <SettingsIcon className="h-5 w-5 stroke-[1.8]" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="pt-8 pb-6 px-2 flex flex-col items-center text-center">
+          <img
+            className="w-12 h-12 rounded-[14px] block mb-4 shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
+            src="/icon.png"
+            alt="Minih"
+          />
+          <h1 className="text-[26px] leading-[32px] font-bold text-[var(--rm-text-primary)] tracking-tight whitespace-pre-line">
+            {t("connect.title")}
+          </h1>
+          <p className="mt-2 text-[14px] leading-[20px] text-[var(--rm-text-secondary)] max-w-[300px]">
+            {t("connect.subtitle")}
+          </p>
+        </div>
+
+        <ListGroup>
+          <ValueRow
+            icon={<Shield className="w-5 h-5" />}
+            title={t("connect.feature.shield.title")}
+            description={t("connect.feature.shield.desc")}
+          />
+          <ValueRow
+            icon={<CircleHelp className="w-5 h-5" />}
+            title={t("connect.feature.help.title")}
+            description={t("connect.feature.help.desc")}
+          />
+          <ValueRow
+            icon={<Square className="w-5 h-5" />}
+            title={t("connect.feature.square.title")}
+            description={t("connect.feature.square.desc")}
+          />
+        </ListGroup>
+      </ScreenContent>
+
+      <ScreenDock>
+        <div className="flex flex-col gap-2.5">
+          {accountMode === "checking" ? (
+            <div className="flex flex-col gap-2.5">
+              <Skeleton className="h-[52px] w-full rounded-[12px]" />
+              <Skeleton className="h-[52px] w-full rounded-[12px]" />
+            </div>
+          ) : accountMode === "supported" ? (
+            <>
+              <Button
+                variant="primary"
+                size="large"
+                className="w-full"
+                onClick={onAddAccount}
+              >
+                <User className="w-5 h-5" />
+                <span>{t("account.entry")}</span>
+              </Button>
+              <Button
+                variant="secondary"
+                size="large"
+                className="w-full"
+                onClick={onAddHost}
+              >
+                <Ticket className="w-5 h-5" />
+                <span>{t("connect.useTicket")}</span>
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="primary"
+              size="large"
+              className="w-full"
+              onClick={onAddHost}
+            >
+              <Ticket className="w-5 h-5" />
+              <span>{t("connect.useTicket")}</span>
+            </Button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setGatewayOpen(true)}
+            className="mx-auto mt-2 inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--rm-bg-surface)] px-3 py-1.5 text-xs text-[var(--rm-text-secondary)] ring-1 ring-[var(--rm-separator)] active:bg-[var(--rm-bg-inset)]"
+          >
+            <Lock className="w-3.5 h-3.5 flex-none text-[var(--rm-text-muted)]" />
+            <span>{t("connect.viaGateway", { gateway: gatewayHost })}</span>
+            <span className="text-[var(--rm-link)] font-medium ml-0.5">切换</span>
+          </button>
+        </div>
+      </ScreenDock>
+      <GatewaySheet open={gatewayOpen} onClose={() => setGatewayOpen(false)} />
+    </Screen>
+  );
+}

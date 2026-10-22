@@ -3,14 +3,21 @@ import { describe, expect, it } from "vitest";
 import { WebCookieCredentialPort, credentialHeaders } from "./credential-port.js";
 import { HOST_REGISTRY_STORAGE_KEY, createHostRegistry, createMemoryStorage } from "./host-registry.js";
 
-function port(storage = createMemoryStorage()) {
+function port(storage = createMemoryStorage(), answer: Record<string, unknown> = {}) {
   const registry = createHostRegistry(storage);
   const fetchImpl = (() =>
     Promise.resolve(
-      new Response(JSON.stringify({ deviceId: "dev_1", hostId: "host1", roles: ["viewer"], csrfToken: "csrf-1" }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify({
+          deviceId: "dev_1",
+          hostId: "host1",
+          roles: ["viewer"],
+          csrfToken: "csrf-1",
+          hostLabel: "minih-mbp",
+          ...answer,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
     )) as typeof fetch;
   return {
     storage,
@@ -41,10 +48,15 @@ describe("WebCookieCredentialPort", () => {
       ok: true,
       entry: {
         hostId: "host1",
-        label: "Safari on macOS",
+        // The computer's name from the pairing answer, not this browser's own
+        // label: the header over a conversation names the computer.
+        label: "minih-mbp",
         deviceId: "dev_1",
         csrfToken: "csrf-1",
         pairedAt: "2026-09-18T10:00:00.000Z",
+        // The roles the Gateway granted travel with the entry, so a screen can
+        // tell a read-only device from one that may create sessions.
+        roles: ["viewer"],
       },
     });
     expect(registry.get("host1")?.deviceId).toBe("dev_1");
@@ -53,15 +65,41 @@ describe("WebCookieCredentialPort", () => {
     expect(storage.getItem(HOST_REGISTRY_STORAGE_KEY)).not.toContain("pdt1.");
   });
 
-  it("honours an explicit device label", async () => {
-    const { credentialPort, registry } = port();
+  it("sends the device label but keeps the computer's name on the entry", async () => {
+    const sent: unknown[] = [];
+    const registry = createHostRegistry(createMemoryStorage());
+    const credentialPort = new WebCookieCredentialPort({
+      registry,
+      fetchImpl: ((_url: string, init: RequestInit) => {
+        sent.push(JSON.parse(String(init.body)));
+        return Promise.resolve(
+          new Response(JSON.stringify({ deviceId: "dev_1", hostId: "host1", roles: ["viewer"], csrfToken: "csrf-1", hostLabel: "minih-mbp" }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }) as unknown as typeof fetch,
+      userAgent: "Mozilla/5.0 (Macintosh) Safari/605.1",
+      now: () => new Date("2026-09-18T10:00:00.000Z"),
+    });
     await credentialPort.pair({
       gatewayOrigin: "https://gw.example.com",
       hostId: "host1",
       pairingToken: "ppt1.secret",
       deviceLabel: "  Pixel 9  ",
     });
-    expect(registry.get("host1")?.label).toBe("Pixel 9");
+    // The phone names itself so its owner can recognise it on the computer…
+    expect(sent[0]).toMatchObject({ deviceLabel: "Pixel 9" });
+    // …and the entry keeps the computer's name, which is what the bar shows.
+    expect(registry.get("host1")?.label).toBe("minih-mbp");
+  });
+
+  it("falls back to the host id when the Gateway sends no computer name", async () => {
+    // A Gateway older than the field answers without it; an empty bar over a
+    // conversation is worse than the id the person can match in the terminal.
+    const { credentialPort, registry } = port(createMemoryStorage(), { hostLabel: undefined });
+    await credentialPort.pair({ gatewayOrigin: "https://gw.example.com", hostId: "host1", pairingToken: "ppt1.secret" });
+    expect(registry.get("host1")?.label).toBe("host1");
   });
 
   it("forgets a host credential", async () => {
@@ -168,6 +206,42 @@ describe("WebCookieCredentialPort", () => {
       // All or nothing: a Host stored without its CSRF value would be listed
       // and unusable, which is worse than not being listed at all.
       expect(registry.list()).toEqual([]);
+    });
+
+    it("records the roles the grant carried on every Host of the account", async () => {
+      const { credentialPort, registry } = port();
+
+      // The status route's granted answer carries the roles, and an account
+      // device is one principal, so every Host of the account records them.
+      const outcome = await credentialPort.adoptAccountDevice({
+        ...adoption,
+        roles: ["viewer", "controller", "approver"],
+      });
+
+      expect(outcome).toEqual({ ok: true, hostIds: ["host1", "host2"] });
+      expect(registry.list().map((entry) => entry.roles)).toEqual([
+        ["viewer", "controller", "approver"],
+        ["viewer", "controller", "approver"],
+      ]);
+    });
+
+    it("leaves the roles off when the grant reported none", async () => {
+      const { credentialPort, registry } = port();
+
+      await credentialPort.adoptAccountDevice(adoption);
+
+      // "Not reported" must stay distinguishable from "reported, and
+      // `controller` is not one of them": an entry from an earlier build reads
+      // as unknown, which offers the entry point instead of hiding it.
+      expect(registry.list().every((entry) => entry.roles === undefined)).toBe(true);
+    });
+
+    it("drops blank roles instead of recording an unusable list", async () => {
+      const { credentialPort, registry } = port();
+
+      await credentialPort.adoptAccountDevice({ ...adoption, roles: ["", "viewer"] });
+
+      expect(registry.list().map((entry) => entry.roles)).toEqual([["viewer"], ["viewer"]]);
     });
   });
 });

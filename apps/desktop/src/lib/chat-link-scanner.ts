@@ -615,8 +615,16 @@ const FILE_SCAN_SOURCE = [
   String.raw`${SPACED_START}[\\/](?:${PATH_SEGMENT}[\\/])*?${FILE_NAME}`,
   String.raw`${SPACED_START}(?:\.[A-Za-z0-9_-]+)*${FILE_END}`,
   String.raw`(?:${PATH_WORD}[\\/])+(?:${PATH_SEGMENT}[\\/])*?${FILE_NAME}`,
+  // A folder is written with a trailing separator, and the separator has to end
+  // the token: `apps/desktop/src/` is a folder, while the same text inside
+  // `apps/desktop/src/App.tsx` is still one file path — that form matched above.
+  String.raw`(?:${PATH_WORD}[\\/])+(?![\p{L}\p{N}_@+.-])`,
   String.raw`(?:~[\\/])?\/?\.{1,2}[\\/](?:${PATH_WORD}\/)*${PATH_WORD}(?::\d+(?::\d+)?)?`,
   String.raw`(?:~[\\/])?\/?(?:${PATH_WORD}\/)+${PATH_WORD}(?::\d+(?::\d+)?)?`,
   String.raw`[\p{L}\p{N}_@+-][\p{L}\p{N}_@+.-]*${FILE_END}`,
+  // An anchored path needs no extension to read as a path: `/api/v1/users`,
+  // `~/notes`, `./src`, `C:\Users\me\Documents`. It comes last so every file
+  // form above wins first and keeps its exact shape.
+  String.raw`(?:[A-Za-z]:[\\/]|${UNC_PREFIX}|\/|~[\\/]|\.{1,2}[\\/])(?:${PATH_SEGMENT}[\\/])*${PATH_WORD}[\\/]?(?::\d+(?::\d+)?)?`,
 ].join("|");
 const FILE_SCAN_RE = new RegExp(FILE_SCAN_SOURCE, "uy");

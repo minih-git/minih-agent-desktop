@@ -20,10 +20,12 @@ Each ADR includes:
 
 | ID | Title | Status |
 |---|---|---|
+| mobile-direct-gateway-chat | [Mobile direct gateway chat alongside remote computers](mobile-direct-gateway-chat.md) | Accepted |
 | background-bash-task-ownership | [Host-owned background Bash tasks](background-bash-task-ownership.md) | Accepted for implementation |
 | network-center-gateway-issued-identity | [Gateway-issued network center identity](network-center-gateway-issued-identity.md) | Accepted for implementation |
 | remote-control-router-account-binding | [Router-account binding for remote control](remote-control-router-account-binding.md) | Accepted for implementation (post-MVP; D666; amends ADR 0331) |
 | builtin-session-messaging | [Built-in session messaging tools](builtin-session-messaging.md) | Accepted (D663) |
+| session-create-tool | [Agent-created sessions for a hand-off with no target](session-create-tool.md) | Accepted (D672; amends D663) |
 | device-local-project-lists-in-config-sync | [Device-local project lists in configuration sync](device-local-project-lists-in-config-sync.md) | Accepted |
 | router-account-configuration-backup | [Router-account hosted configuration backup](router-account-configuration-backup.md) | Accepted; supersedes the S3-only transport decision |
 | s3-only-configuration-backup-sync | [S3-only encrypted configuration backup and synchronization](s3-only-configuration-backup-sync.md) | Superseded by router-account configuration backup |
@@ -294,7 +296,7 @@ Each ADR includes:
 | 0251 | [Deleting a project removes its owned sessions](0251-project-delete-with-owned-sessions.md) | Accepted |
 | global-sidebar-pins | [Show pinned conversations in a global sidebar section](global-sidebar-pins.md) | Accepted (amends ADR 0016; issue #306) |
 | 0250 | [Structured, bounded, and redacted process logs](0250-structured-bounded-redacted-process-logs.md) | Accepted for implementation |
-| 0262 | [Chat file references complete in main and open in the file view](0262-chat-file-refs-open-in-the-file-view.md) | Accepted (amends ADR 0163 / ADR 0241) |
+| 0262 | [Chat file references complete in main and open in the file view](0262-chat-file-refs-open-in-the-file-view.md) | Accepted (amends ADR 0163 / ADR 0241; folder references revealed, not opened) |
 | 0263 | [Expose a project's folder roots and complete references across them](0263-project-folder-roots-for-plugin-views.md) | Accepted (amends ADR 0262; ADR 0249 §5) |
 | 0264 | [Host-mediated file actions follow the folder a view is browsing](0264-host-mediated-actions-follow-the-browsed-folder.md) | Accepted (amends ADR 0263; ADR 0249 §5) |
 | active-turn-steering | Bind Composer steering to the active durable turn | Accepted (active-turn-steering; issue #164) |
@@ -316,7 +318,7 @@ Each ADR includes:
 | 0270 | [Builtin subagents can be switched off](0270-builtin-subagents-can-be-disabled.md) | Accepted for implementation (amends ADR 0063; ADR 0112) |
 | 0271 | [Rebuild the shared provider transport after repeated unanswered failures](0271-provider-transport-rebuild.md) | Accepted for implementation (issue #234) |
 | 0269 | [Move capability documents between the global and project levels](0269-capability-level-transfer.md) | Accepted for implementation (amends ADR 0112) |
-| 0268 | Remove quotes, annotations, and side chats | Accepted (supersedes message-quotes-and-side-chats / response-annotations / floating-annotation-index) |
+| 0268 | Remove quotes, annotations, and side chats | Accepted (supersedes message-quotes-and-side-chats / response-annotations / floating-annotation-index; item 2 superseded by ADR 0334) |
 | 0272 | [Judge a public-network address on the route the request will dial](0272-connection-time-public-network-route.md) | Accepted for implementation (amends ADR 0243; issue #419 / PR #473) |
 | 0273 | [Git checkout as a Create project source](0273-git-checkout-create-project-source.md) | Accepted for implementation (amends ADR 0233; ADR 0247) |
 | 0274 | [A development plugin is reviewed before it is loaded](0274-development-plugin-permission-review.md) | Accepted for implementation (amends ADR 0005) |
@@ -388,3 +390,10 @@ Each ADR includes:
 
 | local-agent-remote-workspace-tools | [Local Agent and model requests for remote workspaces](local-agent-remote-workspace-tools.md) | Accepted for implementation |
 | 0332 | [Serve the plugin marketplace from the project's own distribution repository](0332-own-plugin-distribution-repository.md) | Accepted (2026-10-18; supersedes the official-channel half of ADR 0276) |
+| 0333 | [Chat references outside the allowed roots offer reveal and copy](0333-chat-refs-outside-roots-reveal-and-copy.md) | Accepted (2026-10-20; a narrower boundary than ADR 0262's open destinations) |
+| 0334 | [Quote a transcript selection into the composer](0334-selection-quote-into-composer.md) | Accepted (2026-10-20; supersedes ADR 0268 item 2; annotations and side chats stay removed) |
+| 0335 | [Plugins may show a local file in the work-panel Browser view](0335-plugin-open-local-file-in-work-panel.md) | Accepted (2026-10-21; reuses the browser.cdp permission) |
+| 0336 | [Global-only configuration sync and an explicit project archive](0336-global-config-sync-and-project-archive.md) | Accepted (2026-10-21; supersedes the project-scoped half of ADR 0301) |
+
+| provider-metadata-client-certificate-retry | [Retry optional client-certificate failures only for provider metadata](provider-metadata-client-certificate-retry.md) | Accepted for implementation |
+| macos-window-translucency-preference | [Preserve macOS glass with a restart-bound opaque preference](macos-window-translucency-preference.md) | Accepted for implementation |

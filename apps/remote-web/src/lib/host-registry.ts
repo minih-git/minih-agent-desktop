@@ -42,6 +42,14 @@ export type HostRegistryEntry = {
    * cannot help, and the Hosts screen says so.
    */
   requiresOwnConfirmation?: boolean;
+  /**
+   * The roles the Gateway granted this device (§11.4): `viewer`,
+   * `controller`, `approver`. Recorded so a screen can tell "this device may
+   * create sessions" from "it may only read" without a round trip. Absent on an
+   * entry written before the field existed, which is treated as unknown rather
+   * than as "no controller".
+   */
+  roles?: string[];
 };
 
 /** The slice of `Storage` the registry needs, so tests can pass a plain map. */
@@ -84,7 +92,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 function toEntry(value: unknown): HostRegistryEntry | undefined {
   if (!isRecord(value)) return undefined;
-  const { hostId, label, deviceId, csrfToken, pairedAt, profile, requiresOwnConfirmation } = value;
+  const { hostId, label, deviceId, csrfToken, pairedAt, profile, requiresOwnConfirmation, roles } = value;
   if (typeof hostId !== "string" || !hostId) return undefined;
   const native = profile === "native";
   // A native entry keeps its device token in the Keychain / Keystore and has no
@@ -100,6 +108,11 @@ function toEntry(value: unknown): HostRegistryEntry | undefined {
     // Written last, and only when true, so an entry from an earlier build
     // serializes to exactly the bytes it was read from.
     ...(requiresOwnConfirmation === true ? { requiresOwnConfirmation: true as const } : {}),
+    // Same rule: written only when present and non-empty, so an entry that
+    // never had roles round-trips unchanged.
+    ...(Array.isArray(roles) && roles.some((role) => typeof role === "string" && role)
+      ? { roles: roles.filter((role): role is string => typeof role === "string" && role.length > 0) }
+      : {}),
   };
   return entry;
 }
@@ -128,6 +141,24 @@ export function parseRegistry(raw: string | null): HostRegistryEntry[] {
 
 export function serializeRegistry(entries: readonly HostRegistryEntry[]): string {
   return JSON.stringify(entries.map((entry) => toEntry(entry) ?? entry));
+}
+
+/**
+ * Whether this device holds at least one computer right now.
+ *
+ * The launch rule asks this before any screen runs, so it reads the stored
+ * registry rather than the hook. Counting parsed entries matters: forgetting the
+ * last computer leaves `"[]"` behind, and a stored-but-empty registry is not an
+ * installation that has computers.
+ */
+export function registryHasHosts(storage: RegistryStorage): boolean {
+  try {
+    return parseRegistry(storage.getItem(HOST_REGISTRY_STORAGE_KEY)).length > 0;
+  } catch {
+    // A blocked store is indistinguishable from an empty one here, and the
+    // launch rule treats both as a fresh install.
+    return false;
+  }
 }
 
 export function createHostRegistry(storage: RegistryStorage): HostRegistry {

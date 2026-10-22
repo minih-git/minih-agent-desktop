@@ -72,14 +72,6 @@ fn conflict_ids(state: &Value) -> Vec<String> {
         .collect()
 }
 
-/// The logical id a device is waiting to map onto a local folder.
-fn mapping_key(state: &Value) -> Option<String> {
-    state["pendingApprovals"]
-        .as_array()?
-        .iter()
-        .find_map(|item| item["mappingKey"].as_str().map(str::to_string))
-}
-
 /// Two devices that each write a user-scope note between two syncs end up with
 /// both notes. The user scope is one entity, so a whole-entity conflict would
 /// ask the user to choose between two notes that never disagreed.
@@ -125,105 +117,6 @@ async fn user_notes_written_on_two_devices_between_two_syncs_converge() -> Resul
     for device in [&device_a, &device_b] {
         let notes = user_notes(device).await?;
         assert_eq!(notes.len(), 3, "{notes:?}");
-    }
-    fixture.task.abort();
-    Ok(())
-}
-
-/// The same in a project scope: the receiving device mapped the project's
-/// logical identity onto its own folder, so both devices capture the same
-/// entity and their note sets must be unioned.
-#[tokio::test]
-async fn project_notes_written_on_two_devices_between_two_syncs_converge() -> Result<()> {
-    if run_in_isolated_process(
-        "config_sync::engine::router_tests::learned_memory_tests::learned_memory_merge_tests::project_notes_written_on_two_devices_between_two_syncs_converge",
-    )? {
-        return Ok(());
-    }
-    let fixture = fixture(false).await;
-    let directory_a = tempfile::tempdir()?;
-    let directory_b = tempfile::tempdir()?;
-    let device_a = configure_memory_device(directory_a.path(), &fixture.endpoint).await?;
-    let device_b = configure_memory_device(directory_b.path(), &fixture.endpoint).await?;
-    let project_a = directory_a.path().join("app");
-    let project_b = directory_b.path().join("app");
-    fs::create_dir_all(&project_a)?;
-    fs::create_dir_all(&project_b)?;
-    let path_a = project_a.canonicalize()?.to_string_lossy().into_owned();
-    let path_b = project_b.canonicalize()?.to_string_lossy().into_owned();
-    device_b.lock().await.db.ensure_project(&path_b, false)?;
-    let (tx, _rx) = mpsc::unbounded_channel();
-
-    // Round 1: A writes a note, B adopts the project identity and the note.
-    {
-        let state = device_a.lock().await;
-        state.db.ensure_project(&path_a, false)?;
-        learned_note(&state, &path_a, "The gateway is Rust.", "active")?;
-    }
-    sync_now(device_a.clone(), tx.clone()).await?;
-    let received = sync_now(device_b.clone(), tx.clone()).await?;
-    let mapping = mapping_key(&received).expect("the project note needs a local folder");
-    map_project(
-        device_b.clone(),
-        json!({ "logicalId": mapping, "paths": [path_b] }),
-    )
-    .await?;
-    approve_all(&device_b, &tx).await?;
-    sync_now(device_b.clone(), tx.clone()).await?;
-    sync_now(device_a.clone(), tx.clone()).await?;
-    let scope_a = device_a
-        .lock()
-        .await
-        .db
-        .learned_memory_scope_for_path(&path_a)?;
-    let scope_b = device_b
-        .lock()
-        .await
-        .db
-        .learned_memory_scope_for_path(&path_b)?;
-    assert_eq!(notes_of(&device_b, &scope_b).await?.len(), 1);
-
-    // Round 2: each device adds its own note to the same project.
-    {
-        let state = device_a.lock().await;
-        learned_note(&state, &path_a, "Deploys on Fridays.", "active")?;
-    }
-    {
-        let state = device_b.lock().await;
-        learned_note(&state, &path_b, "Reviews on Fridays.", "active")?;
-    }
-    sync_now(device_a.clone(), tx.clone()).await?;
-    let merged = sync_now(device_b.clone(), tx.clone()).await?;
-    assert!(conflict_ids(&merged).is_empty(), "{merged}");
-    // A project-scoped entity is confirmed on the receiving device, exactly as
-    // the pinned-memory flow asks. The folder mapping already exists, so this
-    // is the same confirmation the first round needed.
-    assert!(
-        !pending_approvals(&merged).is_empty(),
-        "a changed project scope is confirmed before it applies"
-    );
-    approve_all(&device_b, &tx).await?;
-    sync_now(device_b.clone(), tx.clone()).await?;
-    // A owns the same logical project, so it maps that identity onto its own
-    // folder before the merged note set can be applied.
-    let received = sync_now(device_a.clone(), tx.clone()).await?;
-    assert!(conflict_ids(&received).is_empty(), "{received}");
-    if let Some(mapping) = mapping_key(&received) {
-        map_project(
-            device_a.clone(),
-            json!({ "logicalId": mapping, "paths": [path_a] }),
-        )
-        .await?;
-    }
-    approve_all(&device_a, &tx).await?;
-    sync_now(device_a.clone(), tx.clone()).await?;
-    sync_now(device_b.clone(), tx.clone()).await?;
-    sync_now(device_a.clone(), tx.clone()).await?;
-
-    for (label, device, scope) in [("A", &device_a, &scope_a), ("B", &device_b, &scope_b)] {
-        let mut notes = notes_of(device, scope).await?;
-        notes.sort();
-        assert_eq!(notes.len(), 3, "{label}: {notes:?}");
     }
     fixture.task.abort();
     Ok(())

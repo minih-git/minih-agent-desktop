@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { readNdjsonLines } from "../../packages/shared/dist/ndjson.js";
+import { PROTOCOL_VERSION } from "../../packages/shared/dist/protocol.js";
 import { assert, shortJson } from "./assert.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -75,7 +76,7 @@ export class Host {
     this.exitPromise = Promise.resolve();
   }
 
-  async start(protocolVersion = 11) {
+  async start(protocolVersion = PROTOCOL_VERSION) {
     if (this.child) throw new Error("host is already running");
     this.pending = new Map();
     this.notifications = [];
@@ -206,7 +207,7 @@ export class Host {
     if (!this.exited) throw new Error("host did not exit during cleanup");
   }
 
-  async restart(protocolVersion = 11) {
+  async restart(protocolVersion = PROTOCOL_VERSION) {
     await this.stop();
     await this.start(protocolVersion);
   }

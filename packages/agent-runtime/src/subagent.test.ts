@@ -1170,6 +1170,41 @@ describe("SubagentRun retries before fallback", () => {
     expect(continued).toHaveBeenCalledOnce();
   });
 
+  it("retries from a compacted transcript when the failed assistant is gone (issue #1768)", async () => {
+    const { run } = createRun();
+    const user = { role: "user", content: "task", timestamp: 1 };
+    const compactedTail = {
+      role: "compactionSummary",
+      summary: "Earlier work was summarized.",
+      tokensBefore: 42,
+      timestamp: 2,
+    };
+    const continued = vi.fn(async () => undefined);
+    run.agent = {
+      state: { ...run.agent.state, messages: [user, compactedTail] },
+      continue: continued,
+      waitForIdle: async () => {},
+    };
+    run.pendingProviderRetry = {
+      code: "STREAM_FAILED",
+      message: "stream terminated",
+      retriable: true,
+    };
+    run.providerTransientRetryAttempt = 1;
+
+    vi.useFakeTimers();
+    try {
+      const retry = run.retryPendingProviderFailure();
+      await vi.runAllTimersAsync();
+      await retry;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(run.agent.state.messages).toEqual([user, compactedTail]);
+    expect(continued).toHaveBeenCalledOnce();
+  });
+
   it.each([429, 503])("exhausts the shared retry budget before switching after HTTP %s", async (status) => {
     const fallback = { ...provider, id: "backup", modelId: "backup-model" };
     const { run } = createRun({ fallbackModels: [{ key: "backup/backup-model", provider: fallback }] });

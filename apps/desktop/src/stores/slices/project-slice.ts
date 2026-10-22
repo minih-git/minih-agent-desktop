@@ -2,6 +2,7 @@ import { forgetTranscriptReadingState } from "../../lib/transcript-reading-posit
 import i18n from "i18next";
 import type { ProjectWorkspace } from "@minih-agent/shared";
 import { api } from "../../lib/api";
+import { createAccountProject } from "../../lib/account-project-create";
 import {
   rememberProject,
   removeRecentProject,
@@ -238,6 +239,7 @@ export function createProjectSlice({
   | "createProjectFromFolders"
   | "createProjectFromRemote"
   | "createProjectFromGit"
+  | "createProjectOnAccount"
   | "clearProject"
   | "deleteProject"
   | "toggleSessionPinned"
@@ -414,6 +416,19 @@ export function createProjectSlice({
       const onboarding = await api.getOnboarding();
       if (!runtime.navigationIntentIsCurrent(intent)) return;
       set({ createProjectDialogOpen: false, createProjectDialogRemoteHostKey: undefined, onboarding, page: "chat" });
+    },
+    createProjectOnAccount: async ({ name, hostKey, path }) => {
+      const normalizedName = normalizeProjectName(name);
+      if (!normalizedName) throw new Error(i18n.t("errors.projectNameLength"));
+      const intent = runtime.beginNavigationIntent();
+      const created = await createAccountProject(normalizedName, { hostKey, path });
+      // The session was created on that computer. Listing sessions here first is
+      // what makes it selectable: the sidebar and the selection path both read
+      // this list, and a row that only exists over there would open an empty pane.
+      await get().refreshSessions();
+      if (!runtime.navigationIntentIsCurrent(intent)) return;
+      set({ createProjectDialogOpen: false, createProjectDialogRemoteHostKey: undefined });
+      await get().selectSession(created.sessionId, { navigationIntent: intent });
     },
     createProjectFromGit: async ({ name, url, parentPath }) => {
       // Clone first, then create the project through the same group path, so a

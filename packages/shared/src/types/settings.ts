@@ -47,6 +47,18 @@ export type JevKeyCheckResult = {
  */
 export type CloseBehavior = "ask" | "tray" | "quit";
 
+/**
+ * The model a session the Agent creates for itself runs on.
+ *
+ * Naming a provider and model is the user's explicit opt-in: `SessionCreate`
+ * refuses to create a session while this is unset, so an Agent hand-off can
+ * never silently spend the app default model.
+ */
+export type SessionCreateModelBinding = {
+  providerId: string;
+  modelId: string;
+};
+
 export type AppSettings = {
   imageGeneration?: import("../image-generation.js").ImageGenerationBinding | null;
   /** All models marked for image generation; absent falls back to imageGeneration. */
@@ -76,6 +88,12 @@ export type AppSettings = {
    * deterministic fallback title, so manual renames always win.
    */
   sessionTitle?: SessionTitleSettings;
+  /**
+   * Model a session the Agent creates through `SessionCreate` runs on. Absent
+   * means the Agent may not create sessions: the tool fails with
+   * `MODEL_NOT_CONFIGURED` rather than falling back to the app default.
+   */
+  sessionCreateModel?: SessionCreateModelBinding | null;
   /** Prevent idle system sleep while this desktop app runs; off when absent. */
   keepAwakeWhileRunning?: boolean;
   /** Configured command shell for the agent Bash protocol tool. */
@@ -92,6 +110,15 @@ export type AppSettings = {
   promptEnhancementThinkingLevel?: ThinkingLevel;
   defaultPermissionMode?: GlobalPermissionMode;
   theme: ThemePreference;
+  /**
+   * macOS only: keep the native `sidebar` vibrancy material behind a
+   * transparent window surface. This is the shipped look, so absent and `true`
+   * both mean translucent; `false` paints an opaque surface without desktop
+   * blur. Other platforms ignore it. Electron fixes
+   * `transparent` when the window is created, so a change applies on the next
+   * launch.
+   */
+  macosWindowTranslucency?: boolean;
   /** UI language; `auto` (and absent) follows the OS locale. */
   language?: "auto" | "en" | "zh-CN" | "zh-TW" | "tr" | "de" | "es" | "fr" | "ko" | "pt-BR";
   /**

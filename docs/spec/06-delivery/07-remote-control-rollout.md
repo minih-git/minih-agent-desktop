@@ -336,8 +336,10 @@ Exit criteria:
    quitting close it and cancel pending server requests, while a renderer
    reload leaves it running and the settings page re-subscribes to its status.
 3. A gateway-routed principal stays under the remote permission ceiling,
-   cannot change a local session's permission mode, and cannot use
-   `allow-session`; `DESKTOP_PRINCIPAL` is unchanged.
+   cannot use `allow-session`, and may change a session's persistent
+   permission mode through `session/configure` (ADR 0331 amendment 4; the
+   ceiling still binds every relay-initiated turn). `DESKTOP_PRINCIPAL` is
+   unchanged.
 4. Revoking the desktop's device closes the link.
 5. The mTLS key and certificate are stored encrypted outside settings and
    outside SQLite.
@@ -462,7 +464,134 @@ Exit criteria:
    `404` from the bootstrap) keeps the self-hosted flow of R4 and R5, reports no
    error, and hides the account-mode affordances.
 
+### R8 — Same-account computers join automatically (D675)
+
+Deliver the desktop-class device surface of ADR
+`remote-control-router-account-binding` amendment 3 on top of R7: a computer of
+the account reaches its siblings through the Gateway without SSH, holds
+`owner`, and can start work on the other machine. The self-hosted flow, the
+phone's device confirmation, and the phone's role set are unchanged. Work
+packages, one commit range each:
+
+| # | Repository | Work | Depends on |
+|---|---|---|---|
+| A | Desktop | this decision: the ADR amendment, the spec updates, decision D675, and the P0 measurement (docs and instrumentation) | — |
+| B | Desktop | `apps/remote-gateway`: the `RACP-WS` client route `GET /v1/hosts/{hostId}/ws`, upgraded from the same Bearer device token, mapped 1:1 onto the Host link logical connection | A |
+| C | Desktop | `desktop` client class and `hostProof` verification, `device.desktop-auto`, automatic admission with the per-computer switch, `owner` for a proven desktop device | A |
+| D | Desktop | desktop Host operations a desktop-class device needs (session rename/delete/archive/configure, workspace list/read/diff), shared with `packages/host-runtime`; a phone keeps `FORBIDDEN` | C |
+| E | Desktop | renderer: account computers in the host list and New project dialog, sidebar groups per computer, offline and "needs an update" states, i18n | B, D |
+| F | Desktop | the unified Accounts page: account, this computer, my devices, configuration sync, advanced | E |
+| G | ops | the Nginx `Upgrade` header for `/v1/hosts/*/ws`; needs user authorization | B |
+
+Scope notes:
+
+- the WebSocket route authenticates with the device token in the header profile
+  (a browser cannot set that header on a WebSocket and keeps `RACP-HTTP` + SSE)
+  and reuses the existing hash fast-reject, rate limit, and audit; it is a
+  transport, not a second authorization path. **Packages A–D are implemented**
+  (the contract, the Gateway's proof minting and relays, the Host's own
+  verification with automatic admission, the desktop's `account` transport with
+  the switch's three states, and package D's session delete plus the read-only
+  file panel behind the per-connection `workspaceRead` capability). Package E is
+  implemented in three layers: the account computers reach the host list with
+  their capabilities and upgrade state, New project offers them as their own
+  source (below), the sidebar groups remote projects per computer with the
+  offline and needs-an-update reasons stated there, and a remote conversation
+  picks its model from the owning computer's catalog (`model/list` +
+  `session/configure`), shows the read-only file panel, deletes through
+  `session/delete`, and refuses sending while that computer is offline with the
+  reason shown. Package F is not;
+- package D opens `session/delete` and `workspace/list|read|diff` to a
+  desktop-class device only, reuses the shared `packages/host-runtime`
+  implementations (one idle rule answering `AGENT_BUSY`, one session-root
+  containment check, one set of size caps), and wires a remote delete through
+  the desktop's own delete IPC so the runtime cleanup runs exactly once.
+  `session/archive` is **not** part of this package after all: session archival
+  is renderer presentation state with no authoritative Host record, so opening
+  it would mean inventing Host-side persistence the renderer does not read
+  (protocol §6.2). Each client archives in its own sidebar instead — package E
+  archives a sibling's session under that remote session id, locally.
+  `session/rename` and `session/configure` stay available to a phone, because
+  the phone's own session sheet uses them today;
+- automatic admission is refused, never silently ignored, when the proof is
+  missing, when its nonce was reused or expired, or when the target computer
+  does not advertise `device.desktop-auto`;
+- the proof carries the applicant's certificate and the target Host chains it to
+  its own pinned Gateway CA: a target Host has no other way to obtain that
+  certificate, and its integrity rests on the chain plus the account and
+  `hostId` binding, not on the Gateway being honest;
+- every computer of the account receives the same request and the same proof, so
+  more than one of them can admit it at once, each minting its own token. The
+  Gateway keeps only the first grant and the client receives only that token,
+  so a computer that also admitted the request revokes the device it minted and
+  adopts the surviving one: one request, one device, one token everywhere. The
+  proof's nonce is single-use per request, not per Host — a proof presented for
+  a request that computer never admitted is still refused as a replay;
+- the proof is verified by the target Host itself, with the Gateway's check as a
+  fast reject only: a compromised Gateway must not be able to mint an `owner`
+  device on its own (ADR 0331's "the Gateway never decides an approval");
+- the Agent runs on the computer that owns the project, with that machine's
+  provider configuration and its own Router account for model calls; no
+  credential crosses machines;
+- **the Gateway path needs no `workspace/toolExecute`.** The Agent runs on B, so
+  B's own Agent executes B's tools locally; A uses session, turn, and approval
+  operations plus `workspace/list|read|diff` for the file panel, over the
+  `RACP-WS` route of package B, not through the `RACP-HTTP` route table.
+  `workspace/toolExecute` stays what it is today: the SSH topology's
+  "local Agent + remote workspace tools" shape. The P0 measurement reporting
+  `n = 0` for a small Bash call over the Gateway path is therefore expected, not
+  a gap;
+- SSH-paired hosts keep the local-Agent + remote-workspace-tools shape and are
+  shown as a separate kind of host.
+- New project offers **three** sources, and the two remote ones are different
+  shapes: an **account computer** registers the folder there and opens a session
+  whose Agent runs there, while an **SSH host** keeps the local Agent with remote
+  tools. The dialog states which one the user is choosing. An account project
+  records **no local project group**: a group would bind this desktop's
+  workspace to a folder on another machine and turn the account computer back
+  into the SSH shape. The session reference is what this desktop keeps, and the
+  sidebar groups it under the computer it runs on. A computer that is offline or
+  behind this release is still listed and says why, because hiding a machine the
+  user knows about explains nothing;
+- the account computer list and the SSH host list never overlap: only an
+  explicit `account` transport is an account computer, so a pairing written
+  before this release stays on the SSH side where it has always been.
+
+Exit criteria:
+
+1. `E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop` passes: two desktops
+   and a Gateway, A sees B without a confirmation dialog, opens B's project,
+   runs a turn on B, and receives the streamed answer and any approval.
+2. Security gates 25, 27, and 35 are signed off: a phone still never receives
+   `owner`, an explicitly disabled switch stays off, a desktop device without a
+   Host-verified proof (or with a reused or expired nonce) is refused automatic
+   admission, a computer that was offline when the device was admitted adopts it
+   on reconnect, a revoked computer's desktop devices lose their standing
+   elsewhere, and a new Host enrollment notifies the account's other computers.
+3. The P0 measurement is re-run and P7 is chosen from its numbers, not from the
+   plan's assumptions. On the P0 evidence, P7 keeps only the confirmed item —
+   bounded-parallel session attach plus paged `session/history` on open and
+   reconnect — and **drops the streamed-delta coalescing**: the local stub's 40
+   provider chunks produced 11–13 `item.delta` events, so deltas are already
+   coalesced somewhere between the provider stream and the RACP event, and a
+   second merge would be added blind. If an online measurement later shows a
+   delta problem, the existing merge point is located first. **Delivered
+   (2026-10-22) with its own measurement** (`scripts/measure-p7-attach.mjs`,
+   loopback RACP-WS, one real Host, seven sessions, 40 iterations per
+   strategy, attach-to-all-ready): the pre-P7 serial full-snapshot path
+   measured p50 4.9 ms / p95 5.5 ms, the parallelism alone p50 2.3 ms /
+   p95 2.9 ms, and the shipped combination (parallelism three plus
+   `snapshotHistoryLimit: 0`) p50 1.8 ms / p95 2.3 ms — a 2.1× open gain from
+   the structure and a further ~20% from not shipping transcript pages the
+   connection never reads. Loopback understates the win: on a real network the
+   serial path pays seven round trips where the shipped one pays about three.
+   The measured sessions were empty, so the snapshot-boundary gain shown here
+   is the parameter handling, not transcript bytes; a Host caps a snapshot at
+   its own default page regardless of conversation length, which is why the
+   2000-line scenario costs the same as this one on the attach path.
+
 ### Reserved — gRPC binding
+
 
 `RACP-GRPC` is delivered only when a named native service consumer or
 Gateway implementation needs it. Generate the `.proto` and clients from the
@@ -968,6 +1097,133 @@ Recorded on the `feat/remote-agent-host` branch, 2026-09-10:
   a revoked device going quiet) carry what this package settles. Still missing:
   the deployment beside the Router (D-1) and real-device acceptance with the
   operator's own Apple and Firebase material.
+
+- R7 package H delivered (2026-10-19, D666 follow-up from on-device
+  acceptance): three gaps the iPhone build showed. **The phone's session list is
+  grouped by project** — `project/list` supplies the headings, the order is the
+  desktop sidebar's (most recent activity inside a project, projects by their
+  most recent session), a session with no project or with a project that is no
+  longer in the catalog stays under a trailing "Other" group instead of
+  disappearing, a project holding no session is not shown, and groups collapse.
+  When `project/list` cannot be read the list stays flat and says why, so the
+  screen never becomes unusable. **A device holding the `controller` role can
+  create a session** — the entry goes straight to the only project when there is
+  one and asks otherwise, `session/create` carries exactly `projectId` and an
+  optional `title` (`SessionCreateParams`, protocol §7.7), and the new session
+  opens on its composer. Roles are recorded in the registry when the device is
+  paired or adopted, because `connection/initialize` is not reachable over
+  RACP-HTTP; a recorded absence of `controller` replaces the button with the
+  reason, while an entry from an earlier build that has no roles still offers it
+  and shows the Host's `FORBIDDEN` as itself. **A desktop names itself when it
+  enrolls in account mode** — `os.hostname()` minus `.local`, trimmed, bounded
+  to the Gateway's own 128, omitted when empty so the Gateway keeps its
+  `host_<uuid>` fallback, which is what the phone was showing. Renaming a Host
+  that already enrolled under its id needs either a fresh enrollment with a
+  label or a label on `host.capabilities`; neither is done here, because the
+  Gateway only overwrites a label from `request.label` on a new enrollment and
+  the second option is a protocol frame change. The desktop Host still refuses
+  `session/create` (`forbidden()`, "not available to remote devices on the
+  desktop Host"), so the phone's new-session path reaches the `agent-host-cli`
+  Host today and is reported as `FORBIDDEN` on a desktop; weakening that
+  boundary is a separate decision. `groupSessionsByProject` /
+  `newSessionMode` / `createSession` carry the logic, and
+  `src/lib/session-groups.test.ts`, `src/lib/mutations.test.ts`, and
+  `apps/desktop/test/remote-account-desktop.test.mjs` cover grouping, ordering,
+  the flat fallback, the request body, the read-only case, and the computer name.
+  Review of this package found one hole: the roles were recorded only for a
+  §11.4 pairing, never for an account device, and every phone is an account
+  device — so `newSessionMode` always answered "unknown" there and the
+  read-only case described above could never happen. The grant's status answer
+  already carries `roles` (`apps/remote-gateway/src/device-requests.ts`), so the
+  client now passes them through `AccountAdoption` and each Host of the account
+  records the same set, written only when the list is non-empty, exactly like
+  pairing (`src/lib/credential-port.ts`, `src/lib/native-credential-port.ts`).
+
+- R7 package A2 delivered (2026-10-19, D666 amendment 1, D670): the desktop Host
+  now lets a phone start work, not only steer it. `sessions.create`,
+  `projects.register`, and `projects.browse` are implemented over host-core
+  instead of answering `forbidden()`, and `project/register` / `project/browse`
+  drop from `owner` to `controller` in the shared role table — `owner` is still
+  never granted to a gateway or account device, so the workspace tool surface,
+  shell access, and session deletion stay out of reach. Both project operations
+  are confined to the user's home directory: `realpath` first, then a refusal for
+  anything outside the root (`..`, a relative path, or a symlink that leaves it),
+  with a missing directory reported as missing rather than created; a browse
+  answer is bounded to 500 directories and has no `parent` at the root. The rules
+  live once, in `packages/host-runtime` (`createProjectCatalog`,
+  `createHostSession`), so the desktop Host and `agent-host-cli` cannot drift;
+  `agent-host-cli`'s `--browse-root` keeps its meaning and now also gates
+  registration, which it did not do before. Two routes carry this over
+  RACP-HTTP — `POST /v1/projects` and `GET /v1/projects:browse?path=…` — derived
+  from the shared route table the Gateway builds its host-scoped forwarding from.
+  Every state-changing call is reported on the existing device-notice channel and
+  the Host log, naming the device and the session id or registered path. The phone
+  gets **Add a project** in the new-session picker: walk the Host's folders from
+  the root, register one, and the session opens in it; paths are displayed as
+  `~/…` so the phone never prints the account name, while the request keeps the
+  Host's own absolute spelling. That UI depends on package H's grouped session
+  list, so A2 landed after it. Merging is not enough for a desktop: the desktop
+  change ships with the next desktop release, so a phone reaches these three
+  operations on a desktop only once the user installs that build.
+
+- R7 follow-up package D2 delivered (2026-10-20, D666 follow-up from on-device
+  acceptance): the phone's session screen showed a timeline that disagreed with
+  the desktop. **One projection now serves both paths.** A history row is a whole
+  `UiMessage` and a live row is an event, and they were narrowed by two different
+  readers: history kept `role`, `content`, and `thinking` only, so every tool
+  call became an unnamed, empty box, while the live path rendered the same call
+  by name. `projectMessage` projects both, carries the tool's name, status
+  (`running` / `success` / `error` / `denied`), arguments and result, and a user
+  row's command, attachment names, and side-note marker. The rows the desktop
+  hides are dropped by the same predicates, which moved into
+  `packages/shared/src/transcript-visibility.ts` (`isVisibleMessage`,
+  `messageThinking`, `messageContentFacts`) and are imported by `apps/desktop` —
+  an import-only change there, so the desktop's rendering and its suite are
+  untouched — which is what keeps the two clients from drifting again. **A client
+  attaches before it subscribes.** The screen opened its event stream and
+  attached afterwards, so every event in between was lost: the live path then
+  replayed nothing and the rows never appeared. `RacpClient.stream` takes a start
+  cursor, `useSessionScreen` attaches first and opens the stream at the
+  snapshot's `cursor`, and durable events that arrive before that snapshot are
+  dropped because the replay is the only source. That cursor is armed by a
+  snapshot and handed out exactly once (`lib/stream-cursor.ts`): every later open
+  — a reconnect after a drop, or the reopen after a fresh snapshot — resumes from
+  the last event the stream delivered, because passing the snapshot's cursor
+  again would replay the page on every drop. Protocol §5.4 states the rule for
+  other clients. **A long conversation opens at its newest row and loads its past
+  on demand.** The whole document used to scroll, so a long session opened at its
+  oldest row with the composer below the fold; the shell is `h-dvh` and `main` is
+  the scroll container, which also keeps the composer above the iOS keyboard
+  (`visualViewport`). Older rows come from `session/history` in pages of 100, at
+  most three pages automatically until the view holds the reader's last two
+  messages or about 30 rows, and one page per press of "Load earlier"; a prepend
+  never trims, only an append trims from the oldest end — and a row the cap drops
+  came from history, so the entry stays offered (`appendItem` reports it). A page
+  is ordered oldest to newest (protocol §7.6) and the walk advances with the
+  page's *oldest* row, which is the only cursor that moves a full page at a time.
+  The automatic top-up and a press share one in-flight load
+  (`singleFlight`), and the arguments reach the wrapped call. Following stops as
+  soon as the reader scrolls away, and a sticky control returns them with the
+  number of rows they missed (or a "needs your decision" prompt); older rows
+  loaded above are not "new messages", so they never raise that number
+  (`appendedRows`), and reduced-motion preference turns the jump into an instant
+  one. The reader keeps their place through a prepend because a layout effect
+  puts the row they were looking at back where it was, found by `data-item-id` —
+  the row's position inside the content is what is compared, so the reader's own
+  scrolling and the "back to latest" jump are never undone. Measured against
+  synthetic sessions through host-core: one history page is 17 KB where the whole
+  `session.get` is 346 KB for 2 000 rows (1.4 MB for 8 000), which is what the
+  old screen re-read per turn. `timeline-projection.test.ts`,
+  `timeline-subscribe-order.test.ts`, `timeline-history.test.ts`,
+  `scroll.test.ts`, and `packages/shared/src/transcript-visibility.test.ts` cover
+  the projection, the order, the paging rules, the single flight, the scroll
+  arithmetic, and the visibility predicates. E2E-266 drives an 80-turn session
+  with tool calls in real Chromium and asserts that it opens on the newest row,
+  that one press loads a whole page in order without duplicates, that a second
+  press loads another page, that the row the reader was looking at does not move,
+  that loading older rows raises no unread count, that an off-screen row is
+  announced, and that jumping back lands on the newest row. The client is static,
+  so this reaches the phone with the next H5 release.
 
 ## 8. Amendment history
 

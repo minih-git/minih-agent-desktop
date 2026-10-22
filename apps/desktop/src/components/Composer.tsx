@@ -50,10 +50,13 @@ import { useComposerCompletions } from "../features/chat/composer/hooks/useCompo
 import { useComposerDraft } from "../features/chat/composer/hooks/useComposerDraft";
 import { useComposerInputHistory } from "../features/chat/composer/hooks/useComposerInputHistory";
 import { usePluginComposerBridge } from "../features/chat/composer/hooks/usePluginComposerBridge";
+import { useComposerQuoteSink } from "../features/chat/composer/hooks/useComposerQuoteSink";
 import { useComposerSubmit } from "../features/chat/composer/hooks/useComposerSubmit";
 import { useComposerTransforms } from "../features/chat/composer/hooks/useComposerTransforms";
 import { ComposerInput } from "../features/chat/composer/ComposerInput";
 import { useComposerModelMenu } from "../features/chat/composer/hooks/useComposerModelMenu";
+import { useRemoteModelCatalog } from "../features/chat/composer/hooks/useRemoteModelCatalog";
+import { useRemotePromptGate } from "../hooks/use-remote-prompt-gate";
 import { useVoiceInput } from "../features/voice/useVoiceInput";
 import { ComposerToolbar } from "../features/chat/composer/ComposerToolbar";
 import { ComposerStatus } from "../features/chat/composer/ComposerStatus";
@@ -106,13 +109,15 @@ export function Composer({
     [plugins, activeSessionSummary, activeSessionId],
   );
   const remoteSession = isRemoteSession(capabilitySession);
+  const remoteModelCatalog = useRemoteModelCatalog(remoteSession ? activeSessionId : null);
+  const remotePromptGate = useRemotePromptGate(activeSessionId, activeSessionSummary?.remoteHostKey);
   const localToolsAllowed = sessionAllows(capabilitySession, "canUseLocalTools");
   const attachmentsAllowed = sessionAllows(capabilitySession, "canAttach");
   const promptAllowed = sessionAllows(capabilitySession, "canPrompt");
   const nativeSession = activeSessionSummary?.source === "pi-native";
   const nativeReadOnly =
     nativeSession && activeSessionSummary.capabilities?.canPrompt !== true;
-  const nativeInputBlocked = nativeReadOnly || !promptAllowed || ((nativeSession || remoteSession) && isRunning);
+  const nativeInputBlocked = nativeReadOnly || !promptAllowed || remotePromptGate.offline || ((nativeSession || remoteSession) && isRunning);
   const localWorkspacePath = useAppStore((s) => s.workspace?.path ?? "");
   const workspacePath = remoteSession ? "" : localWorkspacePath;
   const providers = useAppStore((s) => s.providers);
@@ -403,6 +408,7 @@ export function Composer({
     thinkingProvider,
     thinkingLevel,
     controlsBlocked,
+    remoteCatalog: remoteSession ? remoteModelCatalog : undefined,
   });
   const modelReady = remoteSession ? promptAllowed : nativeSession
     ? activeSessionSummary.capabilities?.canPrompt === true
@@ -496,6 +502,9 @@ export function Composer({
   // Plugin draft and attachment actions reach this composer while it takes input.
   usePluginComposerBridge({ ...draft, inputBlocked, enabled: localToolsAllowed });
 
+  // A selection quoted from the transcript lands at this draft's caret.
+  useComposerQuoteSink({ ...draft, inputBlocked });
+
   // Keep the transcript's bottom reserve in sync with the composer's real
   // height (it grows with multi-line input) so the last message sits just
   // above the box instead of far below it.
@@ -541,6 +550,9 @@ export function Composer({
           <div className="composer-status" role="status">
             Native Pi session is read-only: {activeSessionSummary?.readOnlyReason ?? "continuation unavailable"}.
           </div>
+        ) : null}
+        {remotePromptGate.offline ? (
+          <div className="composer-status" role="status">{t(remotePromptGate.reasonKey ?? "chat.remoteSendOffline")}</div>
         ) : null}
         <ComposerStatus
           t={t}

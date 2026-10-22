@@ -1,3 +1,4 @@
+import type { FsChatRefEntryKind } from "@minih-agent/shared";
 import type { ChatTextSegment } from "./chat-links";
 
 const MAX_MESSAGE_CANDIDATES = 32;
@@ -12,15 +13,37 @@ function needsVerification(segment: ChatTextSegment): segment is FileSegment {
     !segment.text.startsWith("@");
 }
 
+/**
+ * Keep the references the host confirmed and carry what answered: a chip's menu
+ * needs to know whether a file or a folder was found, because the two do not
+ * share an action.
+ */
+export type ChatRefEntryConfirmation = {
+  entryKind: FsChatRefEntryKind;
+  outsideProject?: true;
+};
+
 export function verifiedChatSegments(
   segments: ChatTextSegment[],
   verified: ReadonlySet<string>,
+  entryKinds?: ReadonlyMap<string, ChatRefEntryConfirmation>,
 ): ChatTextSegment[] {
-  return segments.map((segment) =>
-    needsVerification(segment) && !verified.has(segment.target.path)
-      ? { kind: "text", text: segment.text }
-      : segment,
-  );
+  return segments.map((segment) => {
+    if (segment.kind !== "target" || segment.target.kind !== "file") return segment;
+    if (needsVerification(segment) && !verified.has(segment.target.path)) {
+      return { kind: "text", text: segment.text };
+    }
+    const kind = entryKinds?.get(segment.target.path);
+    if (!kind) return segment;
+    return {
+      ...segment,
+      target: {
+        ...segment.target,
+        entryKind: kind.entryKind,
+        ...(kind.outsideProject ? { outsideProject: true as const } : {}),
+      } as typeof segment.target,
+    };
+  });
 }
 
 /** Deduplicate and bound speculative work before starting any IPC. */
@@ -59,25 +82,31 @@ export async function verifyChatFiles(
   return verified;
 }
 
-/** Share a small IPC budget across visible message rows; abort queued work. */
-export function createChatFileVerificationQueue() {
+/**
+ * Share a small IPC budget across visible message rows; abort queued work.
+ *
+ * Cancelled work settles with `cancelled` rather than a normal answer, so a
+ * caller that resolves something richer than a boolean — an entry kind, say —
+ * does not have to invent a value that looks like a real result.
+ */
+export function createChatFileVerificationQueue<T = boolean>(cancelled = false as T) {
   let active = 0;
   const pending: Array<() => void> = [];
   const drain = () => {
     while (active < MAX_CONCURRENT_LOOKUPS && pending.length) pending.shift()?.();
   };
-  return (resolve: () => Promise<boolean>, signal: AbortSignal): Promise<boolean> =>
+  return (resolve: () => Promise<T>, signal: AbortSignal): Promise<T> =>
     new Promise((accept, reject) => {
-      if (signal.aborted) { accept(false); return; }
+      if (signal.aborted) { accept(cancelled); return; }
       const cancel = () => {
         const index = pending.indexOf(run);
         if (index >= 0) pending.splice(index, 1);
-        accept(false);
+        accept(cancelled);
       };
       const run = () => {
         signal.removeEventListener("abort", cancel);
         active += 1;
-        Promise.resolve().then(() => signal.aborted ? false : resolve()).then(accept, reject).finally(() => {
+        Promise.resolve().then(() => signal.aborted ? cancelled : resolve()).then(accept, reject).finally(() => {
           active -= 1;
           drain();
         });

@@ -161,6 +161,23 @@ export function buildHost(
 export function fakeOperations(sessions: Map<string, SessionSummary>): RacpHostOperations {
   let counter = 0;
   return {
+    // A Host that offers one model, so the catalog read has something to answer.
+    // A test that needs "no catalog" overrides this with `operations`.
+    models: {
+      async list() {
+        return [
+          {
+            providerId: "test-provider",
+            providerLabel: "Test provider",
+            modelId: "test-model",
+            label: "Test model",
+            thinkingLevels: ["off", "low"],
+            supportsImages: true,
+            isDefault: true,
+          },
+        ];
+      },
+    },
     sessions: {
       async list() {
         return [...sessions.values()];
@@ -260,6 +277,10 @@ export async function harness(
     limits?: Partial<import("@minih-agent/shared").RacpLimits>;
     operations?: Partial<RacpHostOperations>;
     history?: HarnessHistory;
+    /** Collect server logs, e.g. the opt-in `remote latency` records. */
+    log?: (level: "info" | "warn" | "error", message: string, data?: Record<string, unknown>) => void;
+    /** Enable the opt-in per-request latency records on the harness server. */
+    latencyTrace?: boolean;
   } = {},
 ): Promise<Harness> {
   const { host, runtime, sessions, approvals } = buildHost(options.limits, options.history);
@@ -272,7 +293,8 @@ export async function harness(
     hostId: "host_test",
     serverVersion: "0.15.0",
     limits: options.limits,
-    log: () => undefined,
+    log: options.log ?? (() => undefined),
+    ...(options.latencyTrace !== undefined ? { latencyTrace: options.latencyTrace } : {}),
     initializeTimeoutMs: 1_000,
   });
   const links: MemoryLink[] = [];

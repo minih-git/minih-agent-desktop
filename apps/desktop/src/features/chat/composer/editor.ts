@@ -39,7 +39,7 @@ export function createFileReference(
   preferredName?: string,
   sessionId = "",
   metadata?: {
-    kind?: "image" | "file" | "session";
+    kind?: "image" | "file" | "session" | "sessionTarget";
     mimeType?: string;
     token?: string;
     plugin?: ComposerPluginPart;
@@ -50,11 +50,12 @@ export function createFileReference(
     id: `composer-file-${composerFileReferenceSequence}`,
     sessionId,
     path,
-    // A plugin mark's label is shown as given; it is no path.
-    // A plugin mark's label is shown as given, and a session reference is
-    // named by its conversation; neither is a path.
+    // A plugin mark's label is shown as given, and a session reference or
+    // target is named by its conversation; none of them is a path.
     name:
-      isPluginMark(metadata) || metadata?.kind === "session"
+      isPluginMark(metadata) ||
+      metadata?.kind === "session" ||
+      metadata?.kind === "sessionTarget"
         ? (preferredName ?? "")
         : fileReferenceLabel(path, preferredName),
     kind: metadata?.kind ?? (isImageFilePath(path) ? "image" : "file"),
@@ -250,6 +251,10 @@ const CHIP_ICON_SVG: Record<string, string> = {
     '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
   file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
   session: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  // A crosshair: a target names where work should go, unlike the `session`
+  // bubble which opens a conversation whose content travels with it.
+  sessionTarget:
+    '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/>',
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   plugin:
     '<path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z"/>',
@@ -260,6 +265,9 @@ function chipIconKey(reference: ComposerFileReference): string {
   if (reference.plugin?.kind === "mark") return "plugin";
   if (reference.plugin?.kind === "fold") return "fold";
   if (reference.kind === "session") return "session";
+  // A target is a session chip's sibling, not the same thing: it points at a
+  // conversation the prompt only names, so it gets its own mark.
+  if (reference.kind === "sessionTarget") return "sessionTarget";
   const mime = reference.mimeType ?? "";
   if (reference.kind === "image" || mime.startsWith("image/")) return "image";
   const name = reference.name;
@@ -279,6 +287,9 @@ function chipSvg(key: string, size = 13): string {
 
 export function isEditableTextReference(reference: ComposerFileReference): boolean {
   if (isPluginMark(reference)) return false;
+  // A target's name is a conversation title, not a file name that could look
+  // like a text file.
+  if (reference.kind === "sessionTarget") return false;
   return reference.mimeType?.toLowerCase() === "text/plain" || /\.txt$/i.test(reference.name);
 }
 
@@ -287,6 +298,7 @@ function buildChipElement(
   reference: ComposerFileReference,
   token: string,
   removeLabel: string,
+  sessionTargetLabel: string,
   onRemove: (token: string) => void,
   onExpandText: (token: string) => void,
   onOpenImage: (token: string) => void,
@@ -299,12 +311,16 @@ function buildChipElement(
   // A mark names the plugin that put it there where a file names its path.
   const origin = isPluginMark(reference) ? (reference.plugin?.pluginId ?? "") : reference.path;
   if (isPluginMark(reference)) chip.dataset.pluginMark = reference.plugin?.kind;
-  chip.title = origin;
-  // An image keeps the compact chip and opens its preview, a session chip opens
-  // that conversation, and only plain text expands into editable draft text.
+  // A target is not a file, so its hover text names what it is and the session
+  // it points at instead of only showing a bare id.
+  const target = reference.kind === "sessionTarget";
+  chip.title = target ? `${sessionTargetLabel} · ${origin}` : origin;
+  // An image keeps the compact chip and opens its preview, a session chip and a
+  // session target open that conversation, and only plain text expands into
+  // editable draft text.
   const image = chipIconKey(reference) === "image";
   if (image) chip.dataset.image = "";
-  const session = reference.kind === "session";
+  const session = reference.kind === "session" || target;
   if (session) chip.dataset.sessionId = reference.path;
   const editableText = !image && !session && isEditableTextReference(reference);
   const activate = editableText
@@ -315,11 +331,14 @@ function buildChipElement(
         ? () => onOpenSession(token)
         : undefined;
   chip.setAttribute("role", activate ? "button" : "listitem");
-  chip.setAttribute("aria-label", `${reference.name} — ${origin}`);
+  chip.setAttribute(
+    "aria-label",
+    target ? `${sessionTargetLabel} · ${reference.name}` : `${reference.name} — ${origin}`,
+  );
   if (activate) {
     chip.tabIndex = 0;
     // Only a text reference expands into editable text; an image chip opens
-    // its preview and a session chip opens that conversation instead.
+    // its preview and a session chip or target opens that conversation instead.
     chip.dataset.action = editableText
       ? "expand-text-reference"
       : image
@@ -341,7 +360,8 @@ function buildChipElement(
 
   const nameSpan = document.createElement("span");
   nameSpan.className = "composer-chip-name";
-  nameSpan.textContent = reference.name;
+  // The chip shows the `#` the user typed, like a file chip shows its `@`.
+  nameSpan.textContent = target ? `#${reference.name}` : reference.name;
 
   const remove = document.createElement("button");
   remove.type = "button";
@@ -364,12 +384,18 @@ function buildChipElement(
   return chip;
 }
 
-/** Paint the contenteditable from the draft string. */
+/**
+ * Paint the contenteditable from the draft string.
+ *
+ * `removeLabelFor` and `sessionTargetLabel` are the chip's only copy, so both
+ * come from the caller's translations.
+ */
 export function paintEditorValue(
   el: HTMLElement,
   value: string,
   referenceByToken: Map<string, ComposerFileReference>,
   removeLabelFor: (reference: ComposerFileReference) => string,
+  sessionTargetLabel: string,
   onRemove: (token: string) => void,
   onExpandText: (token: string) => void,
   onOpenImage: (token: string) => void,
@@ -393,6 +419,7 @@ export function paintEditorValue(
             reference,
             char,
             removeLabelFor(reference),
+            sessionTargetLabel,
             onRemove,
             onExpandText,
             onOpenImage,

@@ -1507,3 +1507,10 @@ adjacent form inputs; dense surfaces may override that metric locally.
   selected global/project scope. Settings has no session-import destination;
   plugins retain session ingestion through their existing API.
 - Light destination cards use white elevated plates (not flat gray fills)
+
+### Active work-panel close visibility
+
+Activating an overflowing work-panel tab scrolls its wrapper, label and close
+action into the existing visible strip. The close action remains reachable by
+pointer and keyboard; session-scoped tabs, reorder behavior, the fixed add
+trigger, sidebar width loans and subagent controls remain unchanged.

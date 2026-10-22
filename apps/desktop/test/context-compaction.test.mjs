@@ -61,7 +61,7 @@ const [
 ]);
 
 test("context compaction is wired through protocol v11 and the manual IPC path", () => {
-  assert.match(protocol, /PROTOCOL_VERSION = 11/);
+  assert.match(protocol, /PROTOCOL_VERSION = 12/);
   assert.match(protocol, /agentCompact:\s*"minih-agent-desktop\/agent\/compact"/);
   assert.match(types, /type ContextCompactionRecord/);
   assert.match(types, /type: "compaction_start"/);
@@ -272,38 +272,20 @@ test("compaction lifecycle keeps the renderer busy until its actual terminal eve
     store,
     /case "compaction_end":[\s\S]*event\.reason === "manual"\) set\(\{ isRunning: false \}\)/,
   );
-  assert.match(store, /contextCompaction\.recovered/);
+  assert.match(store, /contextCompaction\.failed/);
 });
 
-test("every compaction announces itself once, on top of the specific toasts", () => {
+test("compaction notifications are limited to actionable manual failures", () => {
   const compactionEnd =
     events.match(/case "compaction_end":[\s\S]*?\n        case "agent_end":/)?.[0] ??
     "";
   assert.ok(compactionEnd.length > 0, "compaction_end handler not found");
-  // Codex warns after every compaction; ours is unconditional and lands before
-  // the three that describe something more specific.
-  assert.match(
+  assert.match(compactionEnd, /!event\.ok && event\.reason === "manual"/);
+  assert.doesNotMatch(
     compactionEnd,
-    /if \(event\.ok\) \{[\s\S]*?get\(\)\.showToast\(i18n\.t\("contextCompaction\.longThreadWarning"\), \{\s*variant: "warning",\s*\}\);/,
+    /contextCompaction\.(longThreadWarning|modelSwitch|recovered|retrying|completed)/,
   );
-  assert.match(
-    compactionEnd,
-    /if \(event\.fallback\) \{\s*get\(\)\.showToast\(i18n\.t\("contextCompaction\.recovered"\)/,
-  );
-  assert.match(
-    compactionEnd,
-    /else if \(event\.reason === "overflow"\) \{\s*get\(\)\.showToast\(\s*i18n\.t\("contextCompaction\.retrying"\)/,
-  );
-  assert.match(
-    compactionEnd,
-    /else if \(event\.reason === "manual"\) \{\s*get\(\)\.showToast\(i18n\.t\("contextCompaction\.completed"\)/,
-  );
-  assert.equal(
-    compactionEnd.match(/showToast/g)?.length,
-    6,
-    "unexpected number of compaction toasts",
-  );
-  assert.match(enLocale, /longThreadWarning:/);
+  assert.equal(compactionEnd.match(/showToast/g)?.length, 1);
 });
 
 test("a failed compaction checkpoint still restores a non-empty context", () => {
@@ -397,8 +379,9 @@ test("the transcript shows one row per compaction, the inspector the newest", ()
 const { register } = await import("node:module");
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 const { createEventsSlice } = await import("../src/stores/slices/events-slice.ts");
+const { withCompactionMark } = await import("../src/stores/helpers/store-helpers.ts");
 
-function compactionSlice(toasts) {
+function compactionSlice(toasts, stateOverrides = {}) {
   const state = {
     activeSessionId: "session-1",
     messages: [],
@@ -417,6 +400,7 @@ function compactionSlice(toasts) {
     refreshSessions: () => {},
     refreshQueuedPrompts: () => {},
     acknowledgePrompt: async () => {},
+    ...stateOverrides,
   };
   const harness = {
     get: () => state,
@@ -433,29 +417,103 @@ function compactionSlice(toasts) {
     recordToolStart: () => {},
     nextPlanSyncGeneration: () => 0,
   };
-  return createEventsSlice({ ...harness, runtime });
+  const slice = createEventsSlice({
+    ...harness,
+    runtime,
+    withoutRecordKey: (record, key) => {
+      const next = { ...record };
+      delete next[key];
+      return next;
+    },
+    withCompactionMark,
+    flushPendingSessionConfiguration: async () => {},
+  });
+  return { ...slice, getState: () => state };
 }
 
-test("a model-switch compaction reports an info notice, not the long-thread warning", async () => {
-  const i18next = (await import("i18next")).default;
-  const translate = i18next.t;
-  i18next.t = (key) => key;
-  try {
-    const toasts = [];
-    compactionSlice(toasts).handleAgentEvent({
-      sessionId: "session-1",
-      ts: 1,
-      event: { type: "compaction_end", reason: "model_switch", ok: true, willRetry: false },
-    });
+const successfulCompactions = [
+  { reason: "threshold" },
+  { reason: "overflow" },
+  { reason: "manual" },
+  { reason: "model_switch" },
+  { reason: "threshold", fallback: "retained_tail" },
+  { reason: "overflow", fallback: "retained_tail" },
+  { reason: "manual", fallback: "retained_tail" },
+];
 
-    assert.deepEqual(
-      toasts.map((toast) => [toast.message, toast.options?.variant]),
-      [["contextCompaction.modelSwitch", "info"]],
-    );
-  } finally {
-    i18next.t = translate;
+for (const active of [true, false]) {
+  for (const { reason, fallback } of successfulCompactions) {
+    test(`${active ? "active" : "background"} ${reason} compaction${fallback ? " fallback" : ""} stays quiet and preserves its checkpoint`, () => {
+      const toasts = [];
+      const slice = compactionSlice(toasts, {
+        activeSessionId: active ? "session-1" : "other-session",
+      });
+      const envelope = { sessionId: "session-1", ts: 1 };
+      slice.handleAgentEvent({ ...envelope, event: { type: "compaction_start", reason } });
+      assert.equal(slice.getState().runningSessions["session-1"], true);
+      assert.equal(slice.getState().isRunning, active);
+      assert.deepEqual(toasts, []);
+
+      const mark = {
+        id: "checkpoint-1",
+        throughMessageId: "message-1",
+        generation: 1,
+        summaryTokens: fallback ? 0 : 1200,
+        summarized: !fallback,
+        ...(fallback ? { fallback } : {}),
+      };
+      const event = {
+        type: "compaction_end", reason, ok: true, willRetry: reason === "overflow",
+        mark, ...(fallback ? { fallback } : {}),
+      };
+      slice.handleAgentEvent({ ...envelope, event });
+      // A replay replaces the same mark instead of duplicating the divider.
+      slice.handleAgentEvent({ ...envelope, event });
+
+      assert.deepEqual(toasts, []);
+      assert.deepEqual(slice.getState().sessionCompactions["session-1"], [{ ...mark, summary: undefined }]);
+      assert.equal(slice.getState().runningSessions["session-1"], reason !== "manual");
+      assert.equal(slice.getState().isRunning, active && reason !== "manual");
+    });
   }
+}
+
+test("a failed manual compaction still reports the real error and settles its lifecycle", () => {
+  const toasts = [];
+  const slice = compactionSlice(toasts);
+  slice.handleAgentEvent({
+    sessionId: "session-1", ts: 1,
+    event: { type: "compaction_start", reason: "manual" },
+  });
+  slice.handleAgentEvent({
+    sessionId: "session-1", ts: 2,
+    event: {
+      type: "compaction_end", reason: "manual", ok: false, willRetry: false,
+      error: { code: "CONTEXT_COMPACTION_FAILED", message: "summarizer unavailable" },
+    },
+  });
+
+  assert.deepEqual(toasts, [{ message: "summarizer unavailable", options: { variant: "error" } }]);
+  assert.equal(slice.getState().isRunning, false);
+  assert.equal(slice.getState().runningSessions["session-1"], false);
+  assert.deepEqual(slice.getState().sessionCompactions, {});
 });
+
+for (const reason of ["threshold", "overflow"]) {
+  test(`a failed ${reason} compaction does not duplicate the terminal turn error`, () => {
+    const toasts = [];
+    const slice = compactionSlice(toasts);
+    slice.handleAgentEvent({
+      sessionId: "session-1", ts: 1,
+      event: {
+        type: "compaction_end", reason, ok: false, willRetry: false,
+        error: { code: "CONTEXT_COMPACTION_FAILED", message: "summarizer unavailable" },
+      },
+    });
+    assert.deepEqual(toasts, []);
+    assert.deepEqual(slice.getState().sessionCompactions, {});
+  });
+}
 
 test("a failed model-switch compaction stays silent", () => {
   // The switch compaction is an optimization: when it fails, the turn simply

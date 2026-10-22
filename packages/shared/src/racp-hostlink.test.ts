@@ -187,7 +187,26 @@ describe("host link frames", () => {
     expect(Value.Check(RacpHostLinkFrameSchema, { ...capabilities, capabilities: [""] })).toBe(false);
 
     expect(Value.Check(RacpHostLinkFrameSchema, deviceRequestFrame())).toBe(true);
-    expect(Value.Check(RacpHostLinkFrameSchema, { ...deviceRequestFrame(), request: { ...deviceRequestFrame().request, client: "desktop" } })).toBe(false);
+    // A desktop request is a valid frame — the Gateway decides whether it may
+    // be sent, and the target Host decides whether to admit it.
+    expect(Value.Check(RacpHostLinkFrameSchema, { ...deviceRequestFrame(), request: { ...deviceRequestFrame().request, client: "desktop" } })).toBe(true);
+    // A proof must be complete: a signature over nothing is not a proof.
+    expect(
+      Value.Check(RacpHostLinkFrameSchema, {
+        ...deviceRequestFrame(),
+        request: {
+          ...deviceRequestFrame().request,
+          client: "desktop",
+          hostProof: { applicantHostId: "host_a", nonce: "dn_1", signature: "sig", certificate: "-----BEGIN CERTIFICATE-----" },
+        },
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(RacpHostLinkFrameSchema, {
+        ...deviceRequestFrame(),
+        request: { ...deviceRequestFrame().request, client: "desktop", hostProof: { applicantHostId: "host_a" } },
+      }),
+    ).toBe(false);
     expect(Value.Check(RacpHostLinkFrameSchema, { ...deviceRequestFrame(), request: { ...deviceRequestFrame().request, deviceLabel: "x".repeat(129) } })).toBe(false);
 
     expect(Value.Check(RacpHostLinkFrameSchema, deviceGrantFrame())).toBe(true);
@@ -284,9 +303,11 @@ describe("RACP-HTTP contracts (spec §11.2)", () => {
   });
 
   it("declares GET query parameters only where the operation schema has them", () => {
-    // The one GET route with non-path parameters: `HistoryParams` carries
-    // `beforeItemId` (string) and `limit` (integer, minimum 1).
+    // Two GET routes carry non-path parameters: `HistoryParams` has
+    // `beforeItemId` (string) and `limit` (integer, minimum 1), and
+    // `project/browse` names the `path` it is listing.
     expect(RACP_HTTP_QUERY_PARAMS.sessionHistory).toEqual({ beforeItemId: "string", limit: "integer" });
+    expect(RACP_HTTP_QUERY_PARAMS.browseProjects).toEqual({ path: "string" });
     expect(Value.Check(HistoryParamsShape, { sessionId: "s1", beforeItemId: "item_02", limit: 20 })).toBe(true);
     for (const [key, type] of Object.entries(RACP_HTTP_QUERY_PARAMS.sessionHistory)) {
       const value = type === "integer" ? 20 : "item_02";
@@ -296,7 +317,7 @@ describe("RACP-HTTP contracts (spec §11.2)", () => {
     }
     // Every other route has no query parameters to forward.
     const withQuery = Object.entries(RACP_HTTP_QUERY_PARAMS).filter(([, params]) => Object.keys(params).length > 0);
-    expect(withQuery.map(([route]) => route)).toEqual(["sessionHistory"]);
+    expect(withQuery.map(([route]) => route).sort()).toEqual(["browseProjects", "sessionHistory"]);
   });
 
   it("lists a query-parameter entry for every route and only for GET routes", () => {

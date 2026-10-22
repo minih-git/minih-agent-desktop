@@ -18,6 +18,7 @@ import {
   failureOf,
 } from "./account-flow.js";
 import type { AccountAdoptionOutcome } from "./credential-port.js";
+import { newSessionMode } from "./mutations.js";
 import {
   EXPIRES,
   START,
@@ -136,6 +137,49 @@ describe("the outcome of a request", () => {
       csrfTokens: { host1: "csrf-device-1", host2: "csrf-device-2" },
     });
     expect(adoptions[0]!.token).toBeUndefined();
+    expect(adoptions[0]!.token).toBeUndefined();
+    expect(flow.getState()).toEqual({ kind: "adopted", hostIds: ["host1", "host2"] });
+  });
+
+  /**
+   * The grant carries the roles the Gateway recorded (`device-requests.ts`
+   * `roles: granted.roles`). Without them every account device would read as
+   * "roles unknown" and the session screen could never hide the new-session
+   * entry from a read-only phone.
+   */
+  it("passes the roles of the grant into the adoption", async () => {
+    const timer = fakeTimer();
+    const { flow, adoptions } = await signedInAndRequesting({
+      timer: timer.timer,
+      route: grantedRoute({
+        csrfTokens: { host1: "csrf-device-1", host2: "csrf-device-2" },
+        roles: ["viewer", "controller", "approver"],
+      }),
+    });
+
+    await timer.fire();
+
+    expect(adoptions[0]!.roles).toEqual(["viewer", "controller", "approver"]);
+    expect(flow.getState()).toEqual({ kind: "adopted", hostIds: ["host1", "host2"] });
+  });
+
+  it("describes a read-only grant as hidden for new sessions", async () => {
+    const timer = fakeTimer();
+    const { flow, adoptions } = await signedInAndRequesting({
+      timer: timer.timer,
+      route: grantedRoute({
+        csrfTokens: { host1: "csrf-device-1", host2: "csrf-device-2" },
+        roles: ["viewer"],
+      }),
+    });
+
+    await timer.fire();
+
+    // What the screen does with the recorded entry: a recorded list without
+    // `controller` means the entry point is hidden with a reason, not offered
+    // and then refused.
+    const mode = newSessionMode(adoptions[0]!.roles, [{ id: "p1", label: "Desktop", archived: false }]);
+    expect(mode).toBe("hidden");
     expect(flow.getState()).toEqual({ kind: "adopted", hostIds: ["host1", "host2"] });
   });
 

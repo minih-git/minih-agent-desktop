@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEventEnvelope, RacpEventEnvelope, RacpInitializeResult, RacpSessionSnapshot, RacpTurn, UiMessage } from "@minih-agent/shared";
 
-import { hashToken, newPairingToken } from "./auth.js";
+import { hashToken, newDeviceToken, newPairingToken } from "./auth.js";
 import { OWNER_TOKEN, VIEWER_TOKEN, flush, harness } from "./test-harness.js";
 
 function envelope(sessionId: string, turnId: string, event: AgentEventEnvelope["event"]): AgentEventEnvelope {
@@ -378,6 +378,50 @@ describe("RACP-WS remote-host profile", () => {
     await expect(client.request("attachment/create", {})).rejects.toMatchObject({ code: "CAPABILITY_UNAVAILABLE" });
   });
 
+  it("answers the workspace panel per device class when the Host asks", async () => {
+    // Rollout R8 package D: the desktop Host offers the read-only file panel to
+    // a desktop-class device of the same account and withholds it from a phone.
+    // The server owns neither rule, so it asks the Host once per connection and
+    // reports the answer as a capability — and refuses the operations when the
+    // answer is no, so a client that ignores the capability cannot read anyway.
+    const h = await harness({
+      operations: { workspaceRead: (principal) => principal.deviceClass === "desktop" },
+    });
+    const desktopToken = newDeviceToken();
+    await h.store.saveDevice({
+      deviceId: "dev_desktop",
+      label: "sibling desktop",
+      roles: ["owner"],
+      tokenHash: hashToken(desktopToken),
+      createdAt: "2026-09-18T00:00:00.000Z",
+      deviceClass: "desktop",
+    });
+
+    const desktop = await h.connect(desktopToken);
+    expect(desktop.client.initialized?.capabilities.workspaceRead).toBe(true);
+    // An owner holds `viewer` too, so the role check passes and the class decides.
+    const listed = await desktop.client.request<{ entries: Array<{ name: string }> }>("workspace/list", {
+      sessionId: "s1",
+      path: "",
+    });
+    expect(listed.entries[0]?.name).toBe("README.md");
+
+    // The phone sees the same server, and both halves of the answer say no.
+    const phone = await h.connect(OWNER_TOKEN);
+    expect(phone.client.initialized?.capabilities.workspaceRead).toBe(false);
+    await expect(phone.client.request("workspace/list", { sessionId: "s1", path: "" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(
+      phone.client.request("workspace/read", { sessionId: "s1", path: "README.md" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(phone.client.request("workspace/diff", { sessionId: "s1" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    // Everything else is unaffected: the phone still lists projects.
+    expect((await phone.client.request<{ projects: unknown[] }>("project/list")).projects).toHaveLength(1);
+  });
+
   it("rejects malformed params and oversized frames with typed errors", async () => {
     const h = await harness({ limits: { maxFrameBytes: 512 } });
     const { client, link } = await h.connect(OWNER_TOKEN);
@@ -425,5 +469,41 @@ describe("owner-only workspace tool boundary", () => {
     const h = await harness(); const { client } = await h.connect(OWNER_TOKEN);
     await expect(client.request("workspace/toolShell", {})).rejects.toMatchObject({ code: "CAPABILITY_UNAVAILABLE" });
     await client.close();
+  });
+});
+
+describe("model/list (R7, protocol §16.1)", () => {
+  const models = [
+    {
+      providerId: "anthropic",
+      providerLabel: "Anthropic",
+      modelId: "claude-sonnet-5",
+      label: "Claude Sonnet 5",
+      thinkingLevels: ["off", "low"],
+      supportsImages: true,
+      isDefault: true,
+    },
+  ];
+
+  it("answers with the Host's catalog, and a viewer may read it", async () => {
+    const h = await harness({ operations: { models: { list: async () => models } } });
+    // A viewer is the role a phone has: reading models is not a controller action,
+    // because a read-only device still shows which model a session runs on.
+    const { client } = await h.connect(VIEWER_TOKEN);
+    const answer = await client.request<{ models: typeof models }>("model/list", {});
+    expect(answer.models).toEqual(models);
+    await client.close();
+    await h.server.close();
+  });
+
+  it("is unavailable rather than empty when the Host cannot describe its models", async () => {
+    // A Host built before this operation existed has no catalog at all.
+    const h = await harness({ operations: { models: undefined } });
+    const { client } = await h.connect(VIEWER_TOKEN);
+    await expect(client.request("model/list", {})).rejects.toMatchObject({
+      code: "CAPABILITY_UNAVAILABLE",
+    });
+    await client.close();
+    await h.server.close();
   });
 });

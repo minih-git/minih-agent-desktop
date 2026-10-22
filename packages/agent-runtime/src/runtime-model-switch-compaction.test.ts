@@ -384,6 +384,11 @@ describe("model switch compaction", () => {
         } as UiMessage,
       ];
       const retainedTail: AgentMessage[] = [];
+      // A replayed tail predates the checkpoint that retained it, so the
+      // summary inserted ahead of it invalidates every usage those messages
+      // carry (pi-ai's "a newly inserted prefix invalidates older usage"). A
+      // tail stamped `Date.now()` would keep an anchor no production transcript
+      // can hold, and the budget would read that anchor instead of the window.
       for (let index = 0; index < 16; index += 1) {
         retainedTail.push(
           index % 2 === 0
@@ -392,7 +397,10 @@ describe("model switch compaction", () => {
                 content: `Kept request ${index}: ${"window ".repeat(2_300)}`,
                 timestamp: index + 1,
               } as AgentMessage)
-            : assistantReply(`Kept answer ${index}: ${"window ".repeat(2_300)}`),
+            : {
+                ...assistantReply(`Kept answer ${index}: ${"window ".repeat(2_300)}`),
+                timestamp: index + 1,
+              },
         );
       }
       const checkpoint = {

@@ -95,7 +95,8 @@ R0、R1、R2、R3，随后 R4、R5、R6（D665），再之后是 R7——Router 
   服务端请求，不影响本地回合；渲染进程重载保持 main 持有的链路，只让设置页重新订阅状态。
   退出条件：关闭状态下行为与现状完全一致，不发起连接也不开监听（回归测试，安全门 27）；
   开启后只建立一条外连链路，关闭与退出会清理，重载不影响链路；网关主体受远程权限上限
-  约束、不能修改本地会话权限模式、不能用 `allow-session`，
+  约束、不能用 `allow-session`，可以经 `session/configure` 修改会话的持久权限模式
+  （ADR 0331 修订 4；上限仍约束每一个由中继发起的回合），
   `DESKTOP_PRINCIPAL` 不变；吊销桌面设备即断开链路；mTLS 密钥与证书加密存放在设置与
   SQLite 之外。
 - R6（D665）：浏览器与移动客户端。交付 `apps/remote-web`（ADR 0331）：基于无 Node 依赖
@@ -429,6 +430,83 @@ Gateway 全部通过，且 `05-security/02-remote-control-security.md` 的安全
   交换、`410` 清理、被吊销设备不再收到推送）。仍缺：在 Router 旁的部署（D-1）与用运营者
   自己的 Apple、Firebase 材料做的真机验收。
 
+- R7 工作包 H 已交付（2026-10-19，D666 真机验收反馈）：补上 iPhone 构建暴露的三处缺口。
+  **手机的会话列表按项目分组**——项目名来自 `project/list`，顺序与电脑端侧栏一致（组内按最近活动、
+  组间按各组最近的会话），没有 `projectId` 或项目已不在目录里的会话放进末尾“其他”分组而不是
+  消失，没有会话的项目不显示，分组可折叠；`project/list` 读不到时退回平铺列表并说明原因，
+  页面始终可用。**持有 `controller` 角色的设备可以新建会话**——只有一个项目时直接进入，否则
+  先选项目；`session/create` 只带 `projectId` 与可选 `title`（即 `SessionCreateParams`，
+  协议 §7.7），新会话直接打开到输入框。角色在配对或接收授权时记入登记表，因为 RACP-HTTP 上
+  没有 `connection/initialize`；记录中明确没有 `controller` 时按钮被换成原因说明，而旧版本写入、
+  没有角色字段的条目仍然给入口，并把 Host 的 `FORBIDDEN` 原样显示。**桌面在账户注册时自报电脑名**
+  ——`os.hostname()` 去掉 `.local`、去空白、按 Gateway 自己的上限 128 截断，为空则不传，
+  让 Gateway 回退到 `host_<uuid>`（也就是手机原先看到的那串）。给已经用 id 注册过的电脑改名
+  需要一次带 label 的重新注册，或者在 `host.capabilities` 里带上 label；两者本次都不做，
+  因为 Gateway 只在新注册时用 `request.label` 覆盖，而第二种是协议帧改动。桌面 Host 仍然拒绝
+  `session/create`（`forbidden()`，“not available to remote devices on the desktop Host”），
+  所以手机的新建会话目前只在 `agent-host-cli` Host 上生效，在桌面上以 `FORBIDDEN` 呈现；
+  放宽这条边界是另一个决定。逻辑落在 `groupSessionsByProject` / `newSessionMode` /
+  `createSession`，覆盖分组、排序、平铺回退、请求体、只读情形与电脑名的测试是
+  `src/lib/session-groups.test.ts`、`src/lib/mutations.test.ts` 与
+  `apps/desktop/test/remote-account-desktop.test.mjs`。
+  本包的审查发现一处漏洞：角色只在 §11.4 配对时记录，账户设备从不记录，而手机全是账户设备
+  ——于是 `newSessionMode` 在它们上永远答“未知”，上文描述的只读情形根本不可能发生。授权的
+  状态应答本来就带 `roles`（`apps/remote-gateway/src/device-requests.ts`），客户端现在把它
+  经 `AccountAdoption` 传下去，账户内每台 Host 的记录都写上同一组角色，且只在列表非空时才写，
+  与配对完全一致（`src/lib/credential-port.ts`、`src/lib/native-credential-port.ts`）。
+
+- R7 工作包 A2 已交付（2026-10-19，D666 修订 1，D670）：电脑端 Host 现在让手机**开始**
+  工作，而不只是接管。`sessions.create`、`projects.register`、`projects.browse` 改为走
+  host-core，不再直接 `forbidden()`；`project/register` 与 `project/browse` 在共享角色表里
+  由 `owner` 降为 `controller`——网关与账户设备仍然永远不获 `owner`，因此工作区工具面、
+  shell 与会话删除依旧不可达。两个项目操作都限制在用户主目录内：先 `realpath`，根外一律
+  拒绝（`..`、相对路径、指向外部的符号链接），不存在的目录报缺失而不是被创建；浏览上限
+  500 个目录，到根就没有 `parent`。规则只有一份，落在 `packages/host-runtime`
+  （`createProjectCatalog`、`createHostSession`），桌面 Host 与 `agent-host-cli` 不会各写一套；
+  `agent-host-cli` 的 `--browse-root` 语义不变，并且现在也约束注册（此前不约束）。
+  两条新路由承载这部分——`POST /v1/projects` 与 `GET /v1/projects:browse?path=…`——由
+  Gateway 据以生成 host-scoped 转发的同一张共享路由表派生。每次改状态都会写入既有设备通知
+  通道与 Host 日志，写明设备、会话 id 或注册路径。手机在新建会话的项目选择里得到
+  **添加项目**：从根目录逐级浏览、注册一个、会话直接在其中打开；路径显示为 `~/…`，
+  手机不打印账户名，而请求仍使用 Host 自己的绝对拼写。这个 UI 依赖工作包 H 的分组会话列表，
+  因此 A2 在其之后落地。仅合并对桌面不够：桌面改动随下一个桌面版本发布，用户装上新版本后
+  手机才能在他的电脑上用这三个功能。
+
+- R7 后续工作包 D2 已交付（2026-10-20，D666 后续，来自真机验收）：手机会话页的时间线与桌面
+  不一致。**两条路径现在共用一份投影。** 历史行是整个 `UiMessage`，直播行是事件，两者原先
+  由两个不同的读取器收窄：历史只读 `role`、`content`、`thinking`，于是每个工具调用都变成
+  一个没有名字的空盒子；直播路径却能按名字渲染同一个调用。`projectMessage` 同时投影两者，
+  带出工具名、状态（`running` / `success` / `error` / `denied`）、参数与结果，以及用户行的
+  命令、附件名与旁注标记。桌面会隐藏的行由同一组判定丢弃，这组判定搬到
+  `packages/shared/src/transcript-visibility.ts`（`isVisibleMessage`、`messageThinking`、
+  `messageContentFacts`），由 `apps/desktop` 直接引入——那边只改 import，渲染与整套测试
+  不受影响——这也是两端不再漂移的原因。**客户端先 attach 再订阅。** 原先会话页先打开事件流、
+  后 attach，中间发生的事件全部丢失：直播路径没有回放，行也就永远不出现。`RacpClient.stream`
+  现在接受起始游标，`useSessionScreen` 先 attach，再以快照的 `cursor` 打开流；快照之前到达的
+  持久事件被丢弃，因为回放才是唯一来源。该游标由快照装载、只发放一次
+  （`lib/stream-cursor.ts`）：之后每次打开——掉线重连、或重新快照后的重开——都从流最后送达的
+  事件续传，因为再传一次快照游标会让每次掉线都重放整页。协议 §5.4 现在把这个规则写给其它
+  客户端。**长会话在新的一行打开，历史按需加载。** 原先整个文档滚动，长会话打开时停在最早
+  一行、输入框被挤到屏幕外；现在外壳是 `h-dvh`，`main` 是滚动容器，这也让输入框在 iOS 键盘
+  弹出时保持在键盘之上（`visualViewport`）。更早的行来自 `session/history`，每页 100 条，自动
+  最多加载三页，直到视图里包含读者最后两条消息或约 30 行；“加载更早”每次只加载一页；前置
+  插入永不裁剪，只有追加才从最旧一端裁剪——而被上限丢掉的正是来自历史的行，所以入口必须继续
+  提供（`appendItem` 会报告）。一页按协议 §7.6 是最旧在前，游标取该页**最旧**的行，这是唯一
+  能一次前进整页的取法。自动补页与手动点击共用同一个进行中的加载（`singleFlight`），并且参数
+  会真正传到被包裹的调用。读者一旦向上滚动就停止跟随，一个吸底控件带他们回到最新并显示错过
+  的行数（或“需要你决定”）；加载到上面的更早行不算“新消息”，因此不会抬高这个数字
+  （`appendedRows`）；系统开启“减少动态效果”时跳转改为瞬时。前置插入时读者仍停在原处：一个
+  layout effect 把读者正在看的那一行（用 `data-item-id` 找到）放回原位——比较的是该行在内容
+  中的偏移，因此读者自己的滚动与“回到最新”的跳转都不会被撤销。用 host-core 造出的合成会话
+  实测：一整页历史 17 KB，而 2 000 行时的整份 `session.get` 是 346 KB（8 000 行 1.4 MB），这
+  正是旧会话页每回合都要重读的量。`timeline-projection.test.ts`、
+  `timeline-subscribe-order.test.ts`、`timeline-history.test.ts`、`scroll.test.ts` 与
+  `packages/shared/src/transcript-visibility.test.ts` 覆盖投影、顺序、分页规则、单飞、滚动
+  计算与可见性判定。E2E-266 在真实 Chromium 里驱动一个含工具调用的 80 回合会话，断言它停在
+  最新一行、一次点击按顺序加载整页且无重复、第二次点击再加载一页、读者正在看的那一行不动、
+  加载更早不会产生未读数、屏幕外到达的行会被提示，以及跳回后落在最新一行。客户端是静态的，
+  因此随下一次 H5 发布到达手机。
+
 ## 8. 修订记录
 
 D374（2026-09-10）用无头 Agent Host 模块替换 Electron facade 里程碑，加入
@@ -458,3 +536,74 @@ D666（2026-10-18，ADR `remote-control-router-account-binding`）在 R4–R6 �
 `E2E-REMOTE-ACCOUNT-*` 场景与安全规格验收门 29–33 的退出条件、§5 的按 Router 启用、
 §6 的 R7 准入，以及“Router 不返回 `remoteGateway` 时保持 R4/R5 的自托管流程并作为
 回退”这条规则。gRPC 绑定保持保留、不排期。
+
+### R8 —— 同账号电脑自动接入（D675）
+
+在 R7 之上交付 ADR `remote-control-router-account-binding` 修订 3 的桌面类设备面：账号内的
+一台电脑无需 SSH 即可接入兄弟电脑、持有 `owner`，并可在另一台机器上开始工作。自托管流程、
+手机的设备确认流程与手机角色集合均不变。工作包（每个一个 commit range，本机直接合并 main）：
+
+| # | 仓库 | 工作 | 依赖 |
+|---|---|---|---|
+| A | Desktop | 本决策：ADR 修订、规格同步、决策号 D675，以及 P0 测量（文档与埋点） | — |
+| B | Desktop | `apps/remote-gateway`：`GET /v1/hosts/{hostId}/ws` 客户端 WebSocket 路由，沿用同一 Bearer 设备 token，1:1 映射到 Host link 逻辑连接 | A |
+| C | Desktop | `desktop` 客户端类别与 `hostProof` 校验、`device.desktop-auto`、带每机开关的自动授予、经证明的桌面设备授予 `owner` | A |
+| D | Desktop | 桌面 Host 为桌面类设备补齐的操作（会话改名/删除/归档/配置、工作区 list/read/diff），与 `packages/host-runtime` 共用；手机仍 `FORBIDDEN` | C |
+| E | Desktop | 渲染层：主机列表与新建项目对话框中的账号电脑、按电脑分组的侧边栏、离线与「需要升级」状态、i18n | B、D |
+| F | Desktop | 统一「账户」页：账号、本机、我的设备、配置同步、高级 | E |
+| G | ops | Nginx 为 `/v1/hosts/*/ws` 增加 `Upgrade` 头；需要用户授权 | B |
+
+范围说明：
+
+- WebSocket 路由用 Bearer 设备 token 鉴权（仅 header profile；浏览器无法在 WebSocket 上设置
+  该头，继续使用 `RACP-HTTP` + SSE），并复用现有的 hash 快速拒绝、限流与审计；它只是传输，
+  不是第二条授权路径。**工作包 A–D 已实现**（契约、Gateway 的 proof 签发与转发、Host 自己
+  校验并自动授予、桌面端的 `account` 传输与开关三态，以及工作包 D 的会话删除与按连接
+  `workspaceRead` 能力门禁的只读文件面板）。工作包 E 已分三层实现：账号电脑带着能力与升级
+  状态进入主机列表；新建项目把它们作为独立来源（见下）；侧栏按电脑分组远程项目并写明
+  离线与「需要升级」原因；远程会话从所属电脑的模型目录选择模型（`model/list` +
+  `session/configure`），显示只读文件面板，删除走 `session/delete`，且该电脑离线时
+  禁止发送并说明原因。工作包 F 尚未实现；
+- 工作包 D 只对 desktop 类设备开放 `session/delete` 与 `workspace/list|read|diff`，复用
+  `packages/host-runtime` 的共享实现（同一「空闲才可改」规则返回 `AGENT_BUSY`、同一会话根
+  包含校验、同一体积上限），并把远程删除接到桌面自己的删除 IPC，使运行时清理只跑一次。
+  `session/archive` 最终**不在**本次范围内：会话归档是 renderer 的表现状态，Host 侧没有权威
+  记录，开放它等于发明一份 renderer 不读的 Host 持久化（协议 §6.2）。归档改由各客户端在
+  本机侧栏完成——包 E 把兄弟电脑的会话按那个 remote session id 在本机归档。
+  `session/rename` 与 `session/configure` 仍对手机可用，因为手机自己的会话面板今天就在用；
+- 自动接入的证明由**目标 Host 自己校验**（证书链到它固定的 Gateway CA、账户绑定、签名、
+  未用过且未过期的 nonce）并检查自己的开关；Gateway 只做预检与快速拒绝，不做授权依据；
+- 证明缺失、nonce 过期或重放、目标电脑未声明 `device.desktop-auto` 时一律拒绝或退回人工
+  确认，绝不静默放行；
+- 账号内每台电脑都会收到同一请求与同一证明，可能同时自动批准、各自铸造令牌；Gateway 只保留
+  第一份 grant、客户端只拿到那一个令牌，因此也批准过的那台会吊销自己铸造的设备并采纳存活的
+  那份（一个请求一个设备）；nonce 按「每个请求一次」判定，同一证明用于该电脑从未批准过的
+  另一个请求仍算重放；
+- **Gateway 路径不需要 `workspace/toolExecute`**：Agent 在 B 上跑，工具由 B 自己的 Agent
+  在本机执行；A 只用会话／turn／审批操作与 `workspace/list|read|diff`（文件面板），走工作包
+  B 的 `RACP-WS` 路由，不走 `RACP-HTTP` 路由表。`workspace/toolExecute` 仍只属于 SSH 的
+  「本地 Agent + 远程工具」模式，因此 P0 测量中 Gateway 路径的小 Bash `n = 0` 是预期结果；
+- SSH 配对主机保留「本地 Agent + 远程工具」形态，并在界面上与账号电脑区分显示；
+- 新建项目提供**三种**来源，两种远程来源是不同的形态：**账号电脑**把文件夹注册在那台机器
+  上并打开一个 Agent 也在那台机器上运行的会话；**SSH 主机**保留「本地 Agent + 远程工具」。
+  对话框会写明用户选的是哪一种。账号电脑的项目**不记录本地项目组**：记录项目组会把本机
+  workspace 绑定到另一台机器上的文件夹，从而把账号电脑退回 SSH 形态。本机保留的是会话引用，
+  侧栏按它所在的电脑分组。离线或版本过旧的电脑仍然列出并说明原因——藏起一台用户已知的机器
+  什么也解释不了；
+- 账号电脑列表与 SSH 主机列表永不重叠：只有显式 `account` 传输才是账号电脑，因此本次发布
+  之前写入的配对仍留在它一直所在的 SSH 一侧。
+
+退出条件：`E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop` 通过；安全 gate 25、27、35
+签署（手机仍不获得 `owner`、明确关闭的开关保持关闭、无 Host 校验证明或 nonce 过期/重放的
+桌面设备被拒绝自动授予、新电脑注册会通知账号内其他电脑）；P7 依据重跑后的 P0 实测数据决定，
+其中只保留已被确证的一项——有上限的并行 attach 加 `session/history` 分页——并**删去「流式
+delta 合并」**：本地 stub 的 40 个 provider chunk 只产生 11–13 个 `item.delta`，说明 provider
+流到 RACP 事件之间已经存在合并，再合并一次等于盲改；若线上测量再发现 delta 问题，先定位
+现有合并点。**P7 已于 2026-10-22 交付并自带实测**（`scripts/measure-p7-attach.mjs`，
+loopback RACP-WS、一台真实 Host、七个会话、每策略 40 次迭代，从开始 attach 到全部就绪）：
+改前串行完整快照 p50 4.9 ms / p95 5.5 ms，仅并行化 p50 2.3 ms / p95 2.9 ms，交付组合
+（并发 3 + `snapshotHistoryLimit: 0`）p50 1.8 ms / p95 2.3 ms——结构带来 2.1× 提升，
+不再传输连接层不读的转录页又省约 20%。loopback 低估了收益：真实网络上串行路径要付七次
+往返，交付方案约三次。实测会话为空，所以这里的快照边界收益只是参数处理本身；Host 的
+快照本来就按自身默认页封顶、与会话长度无关，这正是 2000 行场景在 attach 路径上与本测试
+等价的原因。

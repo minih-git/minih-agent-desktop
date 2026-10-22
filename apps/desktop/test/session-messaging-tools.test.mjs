@@ -22,6 +22,7 @@ function load(relative) {
 }
 
 const {
+  createSessionCreateTool,
   createSessionListTool,
   createSessionResultTool,
   createSessionSendTool,
@@ -121,6 +122,9 @@ test("the session list explains an empty result instead of guessing", async () =
   });
   assert.equal(alone.ok, true);
   assert.match(alone.content, /No other Agent-mode session exists/);
+  // The empty result must point at the tool that can make a target, because
+  // "no session exists" is exactly the case a hand-off starts from.
+  assert.match(alone.content, /Create one with SessionCreate/);
 });
 
 test("a send scopes its idempotency key to the turn and never takes it from args", async () => {
@@ -275,4 +279,59 @@ test("a result with no delivery of its own says so", async () => {
 
   assert.equal(result.ok, true);
   assert.match(result.content, /No delivery from this session has been sent to that session yet/);
+});
+
+test("a create names the new session and returns the real id", async () => {
+  const fake = service(() => ({ sessionId: "created-session", title: "Review the diff" }));
+  const result = await createSessionCreateTool(fake)({
+    sessionId: "source-session",
+    toolCallId: "call-20",
+    turnId: "turn-1",
+    // A model must not be able to pick the model, the project or the sender.
+    args: { title: "Review the diff", providerId: "someone-else", modelId: "someone-else" },
+    signal: new AbortController().signal,
+  });
+
+  assert.equal(result.ok, true);
+  assert.match(result.content, /Created Agent session created-session titled "Review the diff"/);
+  // The new session runs nothing until the delivery follows, so the result has
+  // to say how to address it.
+  assert.match(result.content, /SessionSend with sessionId=created-session/);
+  assert.deepEqual(fake.calls[0].args, { title: "Review the diff" });
+  assert.equal(fake.calls[0].operation, "create");
+  assert.equal(fake.calls[0].sessionId, "source-session");
+  assert.equal(fake.calls[0].turnId, "turn-1");
+});
+
+test("a create without a title is rejected before any host call", async () => {
+  const fake = service(() => assert.fail("must not reach the host"));
+  const create = createSessionCreateTool(fake);
+  const signal = new AbortController().signal;
+
+  for (const args of [undefined, {}, { title: "   " }, { title: 7 }, "nope", ["x"]]) {
+    const result = await create({ sessionId: "source-session", toolCallId: "c", turnId: "turn-1", args, signal });
+    assert.equal(result.ok, false, `expected a rejection for ${JSON.stringify(args)}`);
+    assert.equal(result.errorCode, "INVALID_ARGUMENT");
+  }
+  assert.deepEqual(fake.calls, []);
+});
+
+test("a create refusal keeps the host's error code", async () => {
+  const fake = service(() => {
+    throw Object.assign(new Error("No session creation model is configured"), {
+      code: "MODEL_NOT_CONFIGURED",
+    });
+  });
+  const result = await createSessionCreateTool(fake)({
+    sessionId: "source-session",
+    toolCallId: "call-21",
+    turnId: "turn-1",
+    args: { title: "Review the diff" },
+    signal: new AbortController().signal,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.isError, true);
+  assert.equal(result.errorCode, "MODEL_NOT_CONFIGURED");
+  assert.match(result.content, /MODEL_NOT_CONFIGURED/);
 });

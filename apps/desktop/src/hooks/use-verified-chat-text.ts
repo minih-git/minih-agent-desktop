@@ -2,7 +2,13 @@ import type { MessageAttachment } from "@minih-agent/shared";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { splitChatText } from "../lib/chat-links";
-import { chatFileCandidates, createChatFileVerificationQueue, verifiedChatSegments, verifyChatFiles } from "../lib/verified-chat-files";
+import {
+  chatFileCandidates,
+  createChatFileVerificationQueue,
+  verifiedChatSegments,
+  verifyChatFiles,
+  type ChatRefEntryConfirmation,
+} from "../lib/verified-chat-files";
 import { useAppStore } from "../stores/app-store";
 
 const scheduleVerification = createChatFileVerificationQueue();
@@ -20,24 +26,49 @@ export function useVerifiedChatText(text: string, attachments?: readonly Message
   const [result, setResult] = useState<{
     request: typeof request;
     verified: ReadonlySet<string>;
+    entryKinds: ReadonlyMap<string, ChatRefEntryConfirmation>;
   } | null>(null);
   useEffect(() => {
     if (request.paths.length === 0) return;
     const controller = new AbortController();
+    const entryKinds = new Map<string, ChatRefEntryConfirmation>();
     void verifyChatFiles(
       request.paths,
+      // A folder answers the lookup as readily as a file, and the chip has to
+      // know which one it is: a folder is revealed, never opened.
       (path) => scheduleVerification(
-        async () => (await api.fsResolveRef(path, request.sessionId ?? undefined)).match != null,
+        async () => {
+          const result = await api.fsResolveRef(path, request.sessionId ?? undefined);
+          const match = result.match;
+          if (match) {
+            entryKinds.set(path, { entryKind: match.entryKind ?? "file" });
+            return true;
+          }
+          // An entry outside every root is still a reference the chip can act
+          // on: show it, and copy its path.
+          if (result.outside) {
+            entryKinds.set(path, {
+              entryKind: result.outside.entryKind,
+              outsideProject: true,
+            });
+            return true;
+          }
+          return false;
+        },
         controller.signal,
       ),
       controller.signal,
       // Avoid logging the message, path, or an arbitrary IPC error payload.
       () => console.warn("Chat file reference verification failed"),
     ).then((verified) => {
-      if (!controller.signal.aborted) setResult({ request, verified });
+      if (!controller.signal.aborted) setResult({ request, verified, entryKinds });
     });
     return () => controller.abort();
   }, [request]);
   const verified = new Set([...request.trusted, ...(result?.request === request ? result.verified : EMPTY)]);
-  return verifiedChatSegments(request.segments, verified);
+  return verifiedChatSegments(
+    request.segments,
+    verified,
+    result?.request === request ? result.entryKinds : undefined,
+  );
 }

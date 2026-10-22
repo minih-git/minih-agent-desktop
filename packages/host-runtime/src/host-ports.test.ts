@@ -34,6 +34,68 @@ describe("host ports", () => {
     });
   });
 
+  /**
+   * The contract a paging client must follow, pinned over a conversation long
+   * enough to need several pages: a page is ordered oldest to newest (protocol
+   * §7.6) and `beforeItemId` is the page's *oldest* row, so each request walks
+   * back exactly `limit` rows. A client that assumes the opposite order reads
+   * the same page repeatedly and inserts it backwards.
+   */
+  it("walks a long transcript back one full page at a time", async () => {
+    const messages = Array.from({ length: 260 }, (_, index) => ({
+      id: `m${String(index).padStart(3, "0")}`,
+      role: "assistant" as const,
+      content: `row ${index}`,
+      createdAt: "2026-09-18T00:00:00.000Z",
+      status: "complete" as const,
+    }));
+    const calls: Array<Record<string, unknown>> = [];
+    const port = createHostSessionPort(() => windowedHost(messages, calls));
+
+    const collected: string[] = [];
+    let beforeItemId: string | undefined;
+    const sizes: number[] = [];
+    for (;;) {
+      const page = await port.history("s1", { limit: 100, ...(beforeItemId ? { beforeItemId } : {}) });
+      sizes.push(page.items.length);
+      collected.unshift(...page.items.map((item) => item.id));
+      if (!page.hasMore) break;
+      beforeItemId = page.items[0]?.id;
+      expect(beforeItemId).toBeDefined();
+    }
+
+    expect(sizes).toEqual([100, 100, 60]);
+    expect(collected).toEqual(messages.map((message) => message.id));
+    expect(new Set(collected).size).toBe(collected.length);
+    // The walk costs one bounded window per page: the port never asks for the
+    // transcript, which is what made a phone wait on a 12 MB parse per page.
+    expect(calls.every((params) => params.messageLimit === 100)).toBe(true);
+    // Every page after the first is named. A request without the id is the tail,
+    // which is the page the client already has: it would look like a load that
+    // never happens, which is exactly how an old Host failed.
+    expect(calls[0]).not.toHaveProperty("messageBeforeId");
+    expect(calls.slice(1).every((params) => typeof params.messageBeforeId === "string")).toBe(true);
+  });
+
+  it("stops the page when the Host no longer resolves the held id", async () => {
+    const messages = ["m1", "m2", "m3"].map((id) => ({
+      id,
+      role: "assistant" as const,
+      content: id,
+      createdAt: "2026-09-18T00:00:00.000Z",
+      status: "complete" as const,
+    }));
+    const calls: Array<Record<string, unknown>> = [];
+    const port = createHostSessionPort(() => windowedHost(messages, calls));
+    // A compaction rewrote the transcript after the client read its page: the
+    // named row is gone, so the answer is the empty page that ends the walk, not
+    // the tail that would replay newer rows into the older-page slot.
+    const page = await port.history("s1", { limit: 2, beforeItemId: "gone" });
+    expect(page.items).toEqual([]);
+    expect(page.hasMore).toBe(false);
+    expect(calls[0]).toEqual({ id: "s1", messageLimit: 2, messageBeforeId: "gone", contentLimit: 64 * 1024 });
+  });
+
   it("pages history backwards from an item id", async () => {
     const messages = ["m1", "m2", "m3", "m4"].map((id) => ({
       id,
@@ -42,20 +104,39 @@ describe("host ports", () => {
       createdAt: "2026-09-18T00:00:00.000Z",
       status: "complete" as const,
     }));
-    const port = createHostSessionPort(() => ({
-      async call<T>() {
-        return { session: { id: "s1", messages } } as T;
-      },
-    }));
+    const calls: Array<Record<string, unknown>> = [];
+    const port = createHostSessionPort(() => windowedHost(messages, calls));
     const page = await port.history("s1", { limit: 2, beforeItemId: "m4" });
     expect(page.items.map((item) => item.id)).toEqual(["m2", "m3"]);
     expect(page.hasMore).toBe(true);
+    expect(calls[0]).toEqual({ id: "s1", messageLimit: 2, messageBeforeId: "m4", contentLimit: 64 * 1024 });
     const tail = await port.history("s1", { limit: 10 });
     expect(tail.items.map((item) => item.id)).toEqual(["m1", "m2", "m3", "m4"]);
     expect(tail.hasMore).toBe(false);
+    expect(calls[1]).toEqual({ id: "s1", messageLimit: 10, contentLimit: 64 * 1024 });
     expect(await createHostSessionPort(() => null).get("s1")).toBeNull();
   });
 
+  it("reads session metadata without a transcript", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const port = createHostSessionPort(() => ({
+      async call<T>(_method: string, params: Record<string, unknown> = {}) {
+        calls.push(params);
+        return {
+          session: {
+            id: "s1",
+            title: "Fix build",
+            mode: "plan",
+            permissionMode: "auto",
+            messages: [{ id: "m1" }],
+          },
+        } as T;
+      },
+    }));
+    const summary = await port.get("s1");
+    expect(calls[0]).toEqual({ id: "s1", messageLimit: 1, contentLimit: 64 * 1024 });
+    expect(summary).toMatchObject({ id: "s1", title: "Fix build", mode: "plan", permissionMode: "auto" });
+  });
   it("round-trips queue records through the host-core RPC shape", async () => {
     const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
     const store = createHostQueueStore(() => ({
@@ -102,3 +183,33 @@ describe("host ports", () => {
     await expect(store.remove("q1")).rejects.toMatchObject({ code: "AGENT_UNAVAILABLE" });
   });
 });
+
+/**
+ * host-core's bounded read, as the port now depends on it: a window of at most
+ * `messageLimit` messages ending where `messageBeforeId` names, plus the two
+ * cursors the port reads instead of slicing in JavaScript. A missing id is the
+ * empty window the Rust side answers, not the tail.
+ */
+function windowedHost(
+  messages: Array<{ id: string } & Record<string, unknown>>,
+  calls: Array<Record<string, unknown>>,
+) {
+  return {
+    async call<T>(_method: string, params: Record<string, unknown> = {}) {
+      calls.push(params);
+      const limit = Number(params.messageLimit ?? 0);
+      const beforeItemId = typeof params.messageBeforeId === "string" ? params.messageBeforeId : undefined;
+      const named = beforeItemId ? messages.findIndex((message) => message.id === beforeItemId) : messages.length;
+      const cut = named === -1 ? 0 : named;
+      const start = Math.max(0, cut - limit);
+      return {
+        session: {
+          id: "s1",
+          messages: messages.slice(start, cut),
+          messageStart: start,
+          hasMoreBefore: start > 0,
+        },
+      } as T;
+    },
+  };
+}

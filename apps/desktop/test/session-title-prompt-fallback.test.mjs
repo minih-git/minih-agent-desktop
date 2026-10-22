@@ -44,15 +44,20 @@ test("a prompt that is only a pasted chip is never named after its path", () => 
   );
 });
 
-test("a generated or refreshed title reaches the sidebar through one event", () => {
+test("a generated or refreshed title reaches the sidebar and the remote client", () => {
   // The host write alone is invisible: the renderer keeps its own session list,
   // so Electron main must announce the change after the compare-and-set lands.
+  // A phone holding the session learns it from RACP instead, so the same
+  // callback also announces it to the Agent Host through the notifier.
   assert.match(
     main,
-    /onTitleChanged: \(\) =>\s*sendToRenderer\(IPC\.event\.sessionsChanged, \{ reason: "session\.title" \}\)/,
+    /onTitleChanged: \(sessionId\) => \{\s*sendToRenderer\(IPC\.event\.sessionsChanged, \{ reason: "session\.title" \}\);\s*void sessionChangeNotifier\.titleChanged\(sessionId\);\s*\}/,
   );
   assert.match(main, /createSessionTitleGenerator\(\{[\s\S]{0,600}dataDir,/);
   assert.match(main, /createSessionRetitleGenerator\(\{[\s\S]{0,700}onTitleChanged/);
+  // Every entrance that writes a title in Main goes through one path: the two
+  // generators, the plugin service hook, and the rename/derive IPC hook.
+  assert.equal(main.match(/sessionChangeNotifier\.titleChanged\(/g)?.length, 4);
 });
 
 test("one generator instance serves the send path and the settled-turn retry", () => {

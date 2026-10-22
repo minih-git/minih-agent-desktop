@@ -17,6 +17,7 @@ import { Button } from "../ui";
 import { IconPlus } from "../icons";
 import { SettingsDisclosure } from "./SettingsDisclosure";
 import { providerServesChatModels } from "./default-model";
+import { planImageGenerationDefaults } from "./image-generation-default";
 import { imageCandidates, chatModelOptions } from "./provider-list-helpers";
 import { copyProviderConfiguration, type ProviderCopyDraft } from "./provider-copy";
 import { OAuthLoginDialog } from "./OAuthLoginDialog";
@@ -90,8 +91,19 @@ export function OtherProvidersSection({ defaultOpen = false }: OtherProvidersSec
    * Preserve the selected app defaults unless they were removed from the
    * provider or no longer resolve, and let a newly added provider claim a
    * default only while none resolves.
+   *
+   * The dialog reports the image-model designation apart from the chat
+   * bindings. Dropping that argument is why a checked "Set as image model"
+   * stored nothing, so every later GenerateImages answered
+   * IMAGE_NOT_CONFIGURED. Both are settings, so they land in one write: a
+   * second write would carry this render's stale snapshot of the other field
+   * back over what the first one stored.
    */
-  const afterSaved = async (saved: ProviderPublic, models: ModelBinding[]) => {
+  const afterSaved = async (
+    saved: ProviderPublic,
+    models: ModelBinding[],
+    imageModelIds?: string[],
+  ) => {
     const selectedImageIds = imageGenerationCandidates
       .filter((entry) => entry.providerId === saved.id)
       .map((entry) => entry.modelId);
@@ -155,6 +167,24 @@ export function OtherProvidersSection({ defaultOpen = false }: OtherProvidersSec
           useAppStore.setState({ settings: nextSettings });
         }
         showToast(t("settings.providerUpdated"), { variant: "success" });
+      }
+      // The dialog reports the image-model designation apart from the chat
+      // bindings. Dropping that argument is why a checked "Set as image model"
+      // stored nothing, so every later GenerateImages answered
+      // IMAGE_NOT_CONFIGURED. It is planned against a fresh read so the chat
+      // default written above is never overwritten, and against the row as just
+      // saved, which a provider created here is not yet part of.
+      if (imageModelIds !== undefined) {
+        const current = await api.getSettings();
+        const imagePlan = planImageGenerationDefaults(
+          current,
+          saved.id,
+          imageModelIds,
+          [...providers.filter((provider) => provider.id !== saved.id), { ...saved, models }],
+        );
+        const nextSettings = { ...current, ...imagePlan };
+        await api.setSettings(nextSettings);
+        useAppStore.setState({ settings: nextSettings });
       }
       setSetupFor(null);
       setCopyDraft(null);

@@ -100,14 +100,14 @@ from pi's steering queue so it cannot execute independently on a later turn.
 An ordinary follow-up stays in the separate Host-owned FIFO until durable turn
 finalization. A steering failure must not terminate the active run.
 
-A side note is steering input with a different contract for the model.
-`steer(..., { sideNote: true })` wraps the prompt text in a fixed side-note
-framing that tells the model to answer the note briefly and continue the current
-task, changing direction only when the note asks for it. The framing is
-model-visible only: the persisted user row keeps the user's own words and
-carries `sideNote`, which is what the transcript marker and the work panel's
-side-notes list read after a reload. Admission, the durable turn, tool
-completion, Stop and failure handling are identical to ordinary steering.
+A side note is an independent one-shot completion, never steering.
+`agent.sideNote` validates the named active turn, snapshots its model context,
+and answers with the same provider/model and no tools. A separate request
+identity, 120-second deadline and disposal signal do not wake TaskWait, cancel
+a tool/delegate, mutate main context/activity/usage, or emit main-turn events.
+Rust Host persists the question/answer separately; only the side panel reads
+it. Ordinary steering is unchanged. Legacy `sideNote: true` steering is
+rejected rather than silently injecting a question into the main task.
 
 ### 4.1 Session title generation
 
@@ -589,7 +589,8 @@ an oversized request still cannot pass the guard. A fallback also records
 provider error text, which can carry endpoint details.
 
 **Two compaction families.** Both run the same lifecycle — budget
-re-estimation, host-core append, `compaction_end`, transcript row, warning:
+re-estimation, host-core append, `compaction_end`, and transcript row without a
+routine toast or dialog:
 
 - `summary` (the default) requests a summary from the model;
 - `fresh_window` requests nothing and installs a checkpoint with an empty
@@ -634,10 +635,19 @@ anchor, the budget also computes the output-cap estimator
 over non-system conversation messages plus the current system prompt and active
 tool schemas. System-transcript rows are chronological updates, already covered by that
 folded prompt/tool floor, and are excluded from this component, so the request estimate counts the prompt
-and schemas exactly once. The budget uses the larger of this full-request
-estimate and the calibrated message estimate. This is a hard floor before the
-first calibration sample and prevents counting overhead twice after an
-unanchored residual has learned it.
+and schemas exactly once. `contextBudgetTokens()` combines the two: the
+full-request estimate raises the calibrated message estimate only while the
+projection has **no** usage anchor, because that is when nothing else carries
+the prompt and the schemas — the start of a session, and the window right after
+a checkpoint cleared the anchor. A projection anchored on a provider-reported
+usage already contains that request's prompt and schemas, so its own count
+stands: charging the same context a second time through the crude estimate made
+a conversation with most of its window still free compact early (D671). Both
+the session runtime and a delegate resolve their budget through this one rule. An anchor also has to belong to *this*
+context: the projection tracks the newest checkpoint summary's timestamp across
+every message, because that summary is a desktop-only role the provider
+estimator never sees, and a usage reported before it — a replayed tail's, for
+instance — would otherwise anchor a context the checkpoint already replaced.
 
 The calibration still measures the two errors separately — per-character bias
 as a scale-free ratio over the guessed tail, and an unanchored residual as a
@@ -681,8 +691,8 @@ previous summary (when available) and the bounded recent window described above.
 The complete transcript remains durable and visible, while the next model
 request receives only that recovery checkpoint and applicable tail. The
 lifecycle event marks this as `fallback: "retained_tail"`, and the checkpoint's
-mark carries the same `fallback`, so the renderer shows a warning and labels
-the transcript row as a failed summary rather than a false success. If the
+mark carries the same `fallback`, so the renderer labels the transcript row
+as a failed summary rather than a false success, without a warning toast. If the
 fallback cannot be prepared, persisted, or kept below the safe budget, the user
 row and an assistant error remain durable and no provider request starts.
 
@@ -1266,7 +1276,10 @@ from the model the run actually resolved — a `Task.model` override, a
 definition pin, or the inherited session model — through the shared
 derivation of §5.1, so `hardLimit` is that window minus the same request
 headroom and a per-definition `maxTokens` cap participates as the output
-budget. At a delegate turn boundary the run re-estimates its own context and
+budget. Its budget follows the session's anchored-estimate rule as well, so a
+delegate whose provider reported a small usage is not compacted by the
+full-request estimate alone. At a delegate turn boundary the run re-estimates
+its own context and
 starts compaction at `floor(hardLimit * 0.9)`, before the next provider
 request. A compaction result must still fit below `hardLimit`; that remains
 the non-negotiable provider-request guard. The retention mode follows the
@@ -1294,7 +1307,7 @@ request.
 
 Delegate compaction affects the delegate's model context only. It rewrites no
 persisted transcript row, writes no host-core checkpoint, and adds no
-compaction row, warning toast, or context-inspector line; the delegate keeps
+compaction row or context-inspector line; the delegate keeps
 its complete visible rows and the parent still sees only reports. Compaction
 is entirely automatic: `new_context` remains denied to delegates, because
 executing it would set the parent runtime's pending-compaction flag.
@@ -1390,28 +1403,57 @@ the inherited budget by one; a send that would reduce it below one fails with
 their persisted remaining budget; increasing the default does not refill them.
 The separate target inbox limit remains eight queued deliveries.
 
-### 5f.4 Built-in session messaging (D663)
+### 5f.4 Built-in session messaging (D663, D672)
 
-The same ledger also backs three built-in, on-demand Agent tools —
-`SessionList`, `SessionSend`, and `SessionResult` — so a user can hand work to
-an existing session by name without installing a plugin. They are Electron main
-local tools. Their sender is bound the same way as the plugin path: the source
-session is the sidecar's local-tool `sessionId`, and the source turn is the
-`turnId` that call declared, which must still be the session's active turn —
-never a tool argument, and never merely "whatever turn runs now". An approval
-that outlives its turn is therefore refused, and stopping the turn retracts the
-pending approval. Deliveries are recorded under the reserved owner
-`builtin:session-messaging`, which the plugin path refuses, so the two senders
-cannot answer each other's callbacks.
+The same ledger also backs the built-in, on-demand Agent tools `SessionList`,
+`SessionSend`, and `SessionResult` — so a user can hand work to an existing
+session by name without installing a plugin — plus `SessionCreate`, which makes
+the target when no session exists yet. They are Electron main local tools. Their
+sender is bound the same way as the plugin path: the source session is the
+sidecar's local-tool `sessionId`, and the source turn is the `turnId` that call
+declared, which must still be the session's active turn — never a tool argument,
+and never merely "whatever turn runs now". An approval that outlives its turn is
+therefore refused, and stopping the turn retracts the pending approval.
+Deliveries are recorded under the reserved owner `builtin:session-messaging`,
+which the plugin path refuses, so the two senders cannot answer each other's
+callbacks.
 
-Built-in tools execute outside host-core's permission boundary, so all three
-pass the `tools.execute` gate before Main dispatches, with `SessionSend` as
-`High` risk and the two reads as `Low`. `Agent` mode only: Plan and Goal deny
-them, `Task` subagents cannot use them, and the MCP control catalog does not
-expose them. Version one sends `task` (default) or `message` deliveries to
-existing sessions and does not create sessions or cancel deliveries; both kinds
-start or queue the target turn, and the kind only frames intent. `SessionResult`
-reports deliveries the calling session made, never another sender's.
+Built-in tools execute outside host-core's permission boundary, so all four pass
+the `tools.execute` gate before Main dispatches, with `SessionSend` and
+`SessionCreate` as `High` risk and the two reads as `Low`. `Agent` mode only:
+Plan and Goal deny them, `Task` subagents cannot use them, and the MCP control
+catalog does not expose them. Sends are `task` (default) or `message` deliveries
+to existing sessions; both kinds start or queue the target turn, and the kind
+only frames intent. `SessionResult` reports deliveries the calling session made,
+never another sender's. Cancelling another sender's delivery stays plugin-only.
+
+#### 5f.4a Session creation (D672)
+
+`SessionCreate({ title })` creates one ordinary Agent-mode session and returns
+its Session ID; the delivery follows as a separate `SessionSend`, so creation
+never starts a turn, sends content, or spends quota on its own. The session runs
+on `settings.sessionCreateModel` — a provider/model binding the user selects in
+AI settings — and inherits the sending session's project, thinking level and
+permission mode. While that setting is unset the tool fails with
+`MODEL_NOT_CONFIGURED`; while the binding is not one the settings row offers, it
+fails with `MODEL_UNAVAILABLE`. Both sides resolve that offer list the same way:
+a provider that is enabled, credentialed and configuring at least one model,
+minus every image model the settings page excludes — the stored
+`imageGenerationModels` candidates merged with the active `imageGeneration`
+default through the shared image helper. A pairing the row shows as
+currently unavailable therefore never creates a session. There is no fallback to
+the app default model. Only the title (1–80 characters) comes from the call: the
+model, project, permission mode and sender are all host- or settings-derived.
+
+Creation is `session.create`, so the new session is an ordinary session with no
+collaboration link and no plugin ownership. It appears in the session list, can
+be renamed, archived or deleted like any other session, and may itself create
+sessions under the same gate. Autonomous fan-out stays bounded by the delivery
+path: a created session does no work until a delivery arrives, and every
+delivery spends the hop budget and the eight-delivery inbox. Creation is not
+capped per turn — the approval card in Ask mode, or the user's Auto setting, is
+what governs how many sessions one turn may add. See ADR
+[session-create-tool](../../adr/session-create-tool.md).
 
 ## 6. Providers & models
 
@@ -2151,3 +2193,11 @@ retries and images retain physical account/model attribution. Nested immediate
 parent and owning Task remain distinct. The migration does not add coding-agent
 AgentSession, Codemode or virtual routing. See the coding-agent design review for
 future adoption conditions.
+
+### Compacted provider retry transcripts
+
+Main-session and built-in subagent provider retries use the current compacted
+transcript when compaction already replaced a failed assistant with a summary
+or retained user message. Remove trailing assistant rows if present; do not
+require an assistant tail before `continue()`. Retry budgets, cancellation,
+fallback selection, usage and the visible transcript remain unchanged.

@@ -1,4 +1,38 @@
 # Unreleased changes
+- The phone's conversation screen now matches your desktop. Tool calls are
+  listed by name together with whether they are still running, finished,
+  failed, or were denied, and with what they were asked to do, instead of
+  appearing as empty boxes, and a message that arrived while the app was
+  catching up no longer disappears. A long conversation opens at its newest
+  message with the message box on screen — it used to open at the very
+  beginning, with the box below the fold — **Load earlier** brings in older
+  messages without moving what you are reading, and messages that arrive while
+  you are reading further up are announced by a button that says how many you
+  have missed and takes you back to them.
+- A Host started with `agent-host-cli` only registers projects inside
+  `--browse-root` (your home directory by default), the same limit the folder
+  picker always had. Registering a folder elsewhere needs a `--browse-root` that
+  contains it.
+- A phone can now start work on your computer, not just steer it. Opening the
+  new-session picker offers **Add a project**: it walks your folders from your
+  home directory down, and picking one registers it and opens a conversation
+  there, so a folder no longer has to be set up on the desktop first. The
+  folders it may reach are the ones under your home directory; a path that tries
+  to leave it is refused. Your computer shows a notice naming the device that
+  started the conversation or added the folder. This needs the new desktop
+  version: the desktop is what serves these operations to the phone.
+- The phone shows conversations by project and can start a new one. The session
+  list is grouped under the project names your computer reports, in the same
+  order the desktop sidebar uses, and a conversation that belongs to no project
+  (or to one that no longer exists) stays under "Other" instead of disappearing.
+  Groups collapse. When the project list cannot be read the conversations stay
+  in one list with a note saying why. A device that may control this computer
+  gets a **New session** button: it goes straight to your only project, or asks
+  which one, and the new conversation opens ready for the first message. A
+  read-only device sees the reason instead of the button.
+- Computers registered for remote access now report their own name, so the phone
+  lists "Studio-Mac" instead of `host_11c73275-…`. A computer that was registered
+  before this build keeps the id it registered with.
 
 - Switching a long conversation to another model no longer sends the new model
   the whole history on every request. On the first message after the switch, a
@@ -75,3 +109,12 @@
   its failed row and does not claim that nothing matched. A plugin or MCP
   result's plain string list behaves the same way: only entries that look like
   file paths open, the rest stay text.
+
+- Main sessions and subagents can retry a failed response after context
+  compaction has already removed the failed assistant message. Explicit empty
+  quoted prompt-template arguments keep their positional slots.
+- Activating an overflowing work-panel tab keeps its close action visible.
+- Provider model-list and connection probes can recover from optional client
+  certificate requests without weakening server certificate verification.
+- On macOS, Appearance offers a translucent-window switch. Glass stays on by
+  default; turning it off uses an opaque native surface after relaunch.

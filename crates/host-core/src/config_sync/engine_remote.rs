@@ -192,7 +192,9 @@ pub(super) async fn read_remote_manifest(
 /// skipped: silently ignoring another device's data would let two devices
 /// diverge without either noticing. That refusal is also why adding a new
 /// portable domain is not backward compatible — see the domain notes in
-/// `config_sync::learned_memory`.
+/// `config_sync::learned_memory`. Project- and group-scoped records are the one
+/// exception: they are authenticated like everything else, then dropped, because
+/// they belong to the device that owns the folder rather than to the account.
 pub(super) fn validate_remote_manifest(
     manifest: &mut RevisionManifest,
     revision_id: &str,
@@ -248,7 +250,7 @@ pub(super) fn validate_remote_manifest(
     for object_id in resource_ids {
         validate_remote_id(&object_id, "object")?;
     }
-    domains::retain_supported_entities(manifest);
+    domains::retain_portable_entities(manifest);
     Ok(())
 }
 

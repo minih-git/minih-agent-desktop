@@ -25,6 +25,8 @@ const entry: HostRegistryEntry = {
   deviceId: "dev_1",
   pairedAt: "2026-09-18T10:00:00.000Z",
   profile: "native",
+  // The roles the Gateway granted are recorded on the entry.
+  roles: ["viewer"],
 };
 
 function setup(options: { response?: Response; registry?: HostRegistryEntry[]; items?: Record<string, string> } = {}) {
@@ -192,6 +194,28 @@ describe("native account adoption", () => {
     expect(JSON.stringify(registry.list())).not.toContain("pdt1.account");
     expect(port.credentialFor("host1")).toEqual({ kind: "header", token: "pdt1.account" });
     expect(port.credentialFor("host2")).toEqual({ kind: "header", token: "pdt1.account" });
+  });
+
+  it("records the roles of the grant on every Host of the account", async () => {
+    const { registry, port } = setup();
+
+    await port.adoptAccountDevice({ ...adoption, roles: ["viewer", "controller", "approver"] });
+
+    // The same rule as the browser port: one grant, the same roles everywhere,
+    // written only when the response actually carried some.
+    expect(registry.list().map((entry) => entry.roles)).toEqual([
+      ["viewer", "controller", "approver"],
+      ["viewer", "controller", "approver"],
+    ]);
+    expect(registry.list().every((entry) => entry.profile === "native")).toBe(true);
+  });
+
+  it("writes no roles when the grant reported none", async () => {
+    const { registry, port } = setup();
+
+    await port.adoptAccountDevice(adoption);
+
+    expect(registry.list().every((entry) => entry.roles === undefined)).toBe(true);
   });
 
   it("replaces the stored token of every Host when a device is granted again", async () => {

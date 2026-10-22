@@ -691,7 +691,7 @@ with any assignable extras, then drops `Task` / `TaskWait` / `TaskList` /
 `TaskStop`, `EnterPlanMode` / `EnterGoalMode`, `TodoWrite`, `asktool`,
 `new_context`, `ToolSearch`, the learned-memory tools `SessionHistorySearch` /
 `MemorySearch` / `MemoryRemember`, and the session-messaging tools `SessionList` /
-`SessionSend` / `SessionResult`.
+`SessionSend` / `SessionResult` / `SessionCreate`.
 Builtins do not opt in. `inherit` is visible in the Markdown and
 in Settings; host-core keeps the token so an inherit-only document still
 loads. Plugin tools, `Skill`, and MCP tools are therefore available to a
@@ -785,13 +785,26 @@ limits and result semantics.
 ## Session messaging
 
 `SessionList`, `SessionSend`, and `SessionResult` are the built-in, on-demand
-tools for handing work to an existing Agent session. `SessionSend` is high risk
-and needs the normal approval path outside Auto; the two reads are low risk.
-All three are Agent-only: Plan and Goal deny them, `Task` subagents cannot use
-them, and the MCP control catalog excludes them. Host-core authorizes them
-through the same `tools.execute` gate as `GenerateImages` because Main performs
-the call. The ledger, permission ceiling, inbox and hop bounds, provenance and
-completion callbacks are the ones in
+tools for handing work to an existing Agent session, and `SessionCreate` makes
+that session when the user names one that does not exist yet (D672, ADR
+session-create-tool). `SessionSend` and `SessionCreate` are high risk and need
+the normal approval path outside Auto; the two reads are low risk. All four are
+Agent-only: Plan and Goal deny them, `Task` subagents cannot use them, and the
+MCP control catalog excludes them. Host-core authorizes them through the same
+`tools.execute` gate as `GenerateImages` because Main performs the call.
+
+`SessionCreate({ title })` creates one ordinary Agent-mode session in the
+caller's project with the caller's thinking level and permission mode, runs it
+on the provider/model binding in AI settings (`sessionCreateModel`), and returns
+its Session ID for a following `SessionSend`. While that setting is unset the
+call fails with `MODEL_NOT_CONFIGURED`, and while the binding is not one the
+settings row offers it fails with `MODEL_UNAVAILABLE`; there is no fallback to
+the app default model. Both sides resolve that offer list the same way: an
+enabled, credentialed provider configuring at least one model, minus every image
+model the settings page excludes (the stored `imageGenerationModels` candidates
+merged with the active `imageGeneration` default). The
+ledger, permission ceiling,
+inbox and hop bounds, provenance and completion callbacks are the ones in
 [agent runtime §5f.4](02-agent-runtime.md).
 
 ## Learned memory and history recall

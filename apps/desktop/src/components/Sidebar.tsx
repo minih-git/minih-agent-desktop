@@ -1,6 +1,7 @@
 import { IconActivity, IconClock } from "./icons";
 import { RemoteProjectGroups } from "./remote/RemoteProjectGroups";
 import { groupRemoteProjectSessions } from "../lib/remote-project-catalog";
+import { useRemoteHostStates } from "../hooks/use-remote-host-states";
 import { isRemoteSession, sessionAllows } from "../lib/remote-session-safety";
 import {
   useCallback,
@@ -1063,18 +1064,33 @@ export function Sidebar({
     () => temporarySessions.filter((session) => !pinnedSessionIds.has(session.id)),
     [temporarySessions, pinnedSessionIds],
   );
+  const remoteSessionRows = useMemo(
+    () => filtered.filter((session) => isRemoteSession(session) && !pinnedSessionIds.has(session.id)),
+    [filtered, pinnedSessionIds],
+  );
+  // Host state (offline / needs an update) comes from the host list keyed by the
+  // computers these rows mention; the group header states the reason and takes no
+  // new work while the computer cannot serve it.
+  const remoteHostStates = useRemoteHostStates(remoteSessionRows.map((session) => session.remoteHostKey ?? ""));
   const remoteProjectGroups = useMemo(() => groupRemoteProjectSessions(
-    filtered.filter((session) => isRemoteSession(session) && !pinnedSessionIds.has(session.id)), compareSessions,
-  ), [filtered, pinnedSessionIds, compareSessions]);
+    remoteSessionRows, compareSessions, remoteHostStates,
+  ), [remoteSessionRows, compareSessions, remoteHostStates]);
+  const runningSessionIds = useMemo(
+    () => new Set(Object.keys(runningSessions).filter((id) => runningSessions[id])),
+    [runningSessions],
+  );
+  // The feed reads the store rather than `filtered`: it is the one list that
+  // shows a scheduled run's own session, and only while that run executes.
   const activitySessions = useMemo(
     () =>
       getSidebarActivitySessions({
-        sessions: filtered,
+        sessions,
         sessionMeta,
         projectMeta,
         showArchived,
+        runningSessionIds,
       }),
-    [filtered, sessionMeta, projectMeta, showArchived],
+    [sessions, sessionMeta, projectMeta, showArchived, runningSessionIds],
   );
   // Flat ordered list of every visible session id — used for Shift+click range selection.
   const flatSessionOrder = useMemo(() => {
@@ -1321,6 +1337,23 @@ export function Sidebar({
   const archiveSession = async (session: SessionSummary) => {
     const archived = sessionArchived(session, sessionMeta[session.id]);
     const wasActive = activeSessionId === session.id;
+    // A remote conversation archives under its remote session id in this
+    // desktop's own sidebar preferences; the Host is never told (protocol §6.2,
+    // no authoritative archive record there). The sibling conversation keeps its
+    // history, and this pane either moves to another conversation of the same
+    // project or keeps the archived one open — creating a local session in its
+    // place would quietly turn a remote project into a local one.
+    if (isRemoteSession(session) && !archived) {
+      closeMenus(false);
+      archiveSessionAction(session.id);
+      if (!wasActive) return;
+      const sibling = remoteProjectGroups
+        .find((group) => group.project.hostKey === session.remoteHostKey
+          && group.project.projectId === session.remoteProjectId)
+        ?.sessions.find((item) => item.id !== session.id && !sessionArchived(item, sessionMeta[item.id]));
+      if (sibling) await selectProjectSession(sibling);
+      return;
+    }
     const next =
       !archived && wasActive
         ? session.projectPath

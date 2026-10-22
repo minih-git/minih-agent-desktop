@@ -46,14 +46,30 @@ message persistence. Existing regression suites cover surrounding behavior;
 E2E-AGENT-alt-enter-steers-active-turn specifies the full journey and remains
 Draft until rendered E2E validation is performed.
 
-## Side notes (2026-10-18)
+## Side notes (2026-10-20 correction)
 
-The same channel also carries side notes: user input the running turn answers
-without being redirected by it. `AgentSteerRequest.sideNote` marks the request,
-main echoes `UiMessage.sideNote` on the durable row, and the runtime frames only
-the model-visible prompt, so "summarize progress" or "adjust direction" reaches
-the turn without replacing its task while the transcript keeps the user's own
-words. The work panel's side-notes tab is the entry point; it lists the
-session's marked rows and disables its input when no turn can receive a note.
-No new channel, event kind, storage schema, or migration is introduced.
-E2E-AGENT-side-note-keeps-running-turn specifies the journey and remains Draft.
+Side notes are independent read-only questions, not active-turn steering.
+The shared steering channel interrupted TaskWait and mixed answers into the
+main transcript. Asking the model to continue was not execution isolation.
+
+Dedicated ask/list IPC reads the running task's context synchronously and uses
+the existing tool-free one-shot completion, current model and authentication.
+It has a separate request identity, timeout and disposal signal. It never calls
+Agent.steer or mutates main messages, activity, usage, queues or turn lifecycle.
+No new model-facing tool, agent type or provider transport is introduced.
+
+Rust Host persists completed question/answer pairs in a per-session
+`.side-notes.jsonl` companion, outside the main transcript and its model
+context. Session deletion removes the companion. Existing transcript sideNote
+markers remain readable legacy questions; replies are never inferred or moved.
+No SQLite migration or destructive history rewrite is needed.
+
+The panel requires an active steer-capable local turn on submission. A submitted
+answer can finish after the main task, and stays bound to its original session.
+Pending requests prevent duplicates across panel remounts. Failures preserve
+the draft; success clears only its unchanged submitted draft. Questions and
+answers reload in the panel only. Direction-changing questions here only get
+an explanation; actual steering remains in the normal Composer.
+
+E2E-AGENT-side-note-keeps-running-turn checks a side-panel answer while the
+parent stays in TaskWait and both delegates continue.

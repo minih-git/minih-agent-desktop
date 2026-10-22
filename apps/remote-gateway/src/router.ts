@@ -94,6 +94,14 @@ export class LogicalConnection {
   private closed = false;
   private notificationHandler: ((method: string, params: unknown) => void) | null = null;
   private closeHandler: (() => void) | null = null;
+  /**
+   * Set when a client that speaks `RACP-WS` itself owns this logical
+   * connection (the `/v1/hosts/{hostId}/ws` route). Every frame from the Host
+   * is then handed over verbatim, and the client's own frames are written to
+   * the link with `sendRaw`; the Gateway relays and never interprets, renumbers,
+   * or answers on the client's behalf.
+   */
+  private relay: { onFrame: (frame: string) => void; onClose: (cause: string) => void } | null = null;
 
   constructor(
     private readonly options: {
@@ -167,7 +175,7 @@ export class LogicalConnection {
     return result;
   }
 
-  request<T = unknown>(method: string, params: unknown, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<T> {
+  request<T = unknown>(method: string, params: unknown, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, traceId?: string): Promise<T> {
     if (this.closed) return Promise.reject(new GatewayRpcError("AGENT_UNAVAILABLE", "the Host link is closed", true));
     this.counter += 1;
     const id = `gw_${this.counter}`;
@@ -179,7 +187,7 @@ export class LogicalConnection {
       timer.unref?.();
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
       try {
-        this.options.mux.message(this.id, encodeFrame({ jsonrpc: "2.0", id, method, params }));
+        this.options.mux.message(this.id, encodeFrame({ jsonrpc: "2.0", id, method, params, ...(traceId ? { traceId } : {}) }));
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(id);
@@ -199,6 +207,32 @@ export class LogicalConnection {
     this.teardown(reason);
   }
 
+  /**
+   * Hand every Host frame to a client that speaks `RACP-WS` itself, verbatim
+   * (protocol §11.4 rule 3). Called once, right after the logical connection is
+   * created and before any frame can arrive from the client, so no frame is
+   * ever both relayed and interpreted.
+   */
+  attachRelay(relay: { onFrame: (frame: string) => void; onClose: (cause: string) => void }): void {
+    this.relay = relay;
+  }
+
+  /**
+   * Write one client frame onto the Host link unchanged. Relay mode only: the
+   * client owns the JSON-RPC ids, so the Gateway never rewrites them.
+   */
+  sendRaw(frame: string): void {
+    if (this.closed) return;
+    try {
+      this.options.mux.message(this.id, frame);
+    } catch (error) {
+      this.options.log("warn", "gateway could not send on a relayed logical connection", {
+        clientConnectionId: this.id,
+        error: String(error),
+      });
+    }
+  }
+
   private send(message: JsonRpcMessage): void {
     if (this.closed) return;
     try {
@@ -213,6 +247,13 @@ export class LogicalConnection {
 
   private handleFrame(raw: string): void {
     if (this.closed) return;
+    // Relay mode: the client speaks the protocol, so the Gateway forwards the
+    // frame as it arrived, including a server-initiated request it must answer
+    // itself (§11.4 rule 2).
+    if (this.relay) {
+      this.relay.onFrame(raw);
+      return;
+    }
     const message = parseFrame(raw);
     if (!message) {
       this.options.log("warn", "gateway dropped a malformed Host frame", { clientConnectionId: this.id });
@@ -259,6 +300,7 @@ export class LogicalConnection {
     }
     this.pending.clear();
     this.closeHandler?.();
+    this.relay?.onClose(cause);
     this.options.log("info", "gateway logical connection closed", { clientConnectionId: this.id, cause });
   }
 }
@@ -352,6 +394,34 @@ export class LogicalConnectionPool {
     return connection;
   }
 
+  /**
+   * A logical connection owned by a client that speaks `RACP-WS` itself (the
+   * `/v1/hosts/{hostId}/ws` route). It is created exactly like a stream — so a
+   * revoked device closes it and the per-device bound applies — but it is
+   * deliberately NOT initialized here: the client sends its own
+   * `connection/initialize`, and a second one from the Gateway would be a
+   * `CONFLICT` on the Host.
+   */
+  async relay(identity: ConnectionIdentity): Promise<LogicalConnection> {
+    const mux = this.options.links.muxFor(identity.hostId);
+    if (!mux) throw new GatewayRpcError("AGENT_UNAVAILABLE", "the Host is offline", true);
+    const open = this.streams.get(identity.deviceId) ?? new Set<LogicalConnection>();
+    for (const connection of [...open]) if (connection.isClosed) open.delete(connection);
+    if (open.size >= MAX_STREAM_CONNECTIONS_PER_DEVICE) {
+      throw new GatewayRpcError("RATE_LIMITED", `a device may hold at most ${MAX_STREAM_CONNECTIONS_PER_DEVICE} relayed connections`, true);
+    }
+    let connection: LogicalConnection;
+    try {
+      connection = new LogicalConnection({ identity, mux, log: this.options.log, ...(this.options.now ? { now: this.options.now } : {}) });
+    } catch (error) {
+      throw new GatewayRpcError("AGENT_UNAVAILABLE", error instanceof Error ? error.message : "the Host is offline", true);
+    }
+    open.add(connection);
+    this.streams.set(identity.deviceId, open);
+    connection.onClose(() => open.delete(connection));
+    return connection;
+  }
+
   /** Close every logical connection of a revoked device (S9: within 5 seconds). */
   closeForDevice(deviceId: string): number {
     let closed = 0;
@@ -389,6 +459,10 @@ export type CommandInput = {
   method: string;
   params: Record<string, unknown>;
   idempotencyKey?: string;
+  /** Diagnostic correlation id from the client request (P0 measurement). */
+  traceId?: string;
+  /** When the Gateway began handling the HTTP request, for the queue segment. */
+  receivedAt?: number;
 };
 
 export type CommandOutcome = { status: number; payload: unknown };
@@ -402,6 +476,8 @@ export class CommandRouter {
   constructor(
     private readonly pool: LogicalConnectionPool,
     private readonly log: GatewayLog,
+    /** Emit opt-in per-command segment timings (P0 measurement). */
+    private readonly latencyTrace = false,
   ) {}
 
   async run(input: CommandInput): Promise<CommandOutcome> {
@@ -416,9 +492,31 @@ export class CommandRouter {
     const idempotencyKey = this.idempotencyKeyFor(operation, params, input.idempotencyKey);
     const forwarded = idempotencyKey ? { ...params, idempotencyKey } : params;
     const connection = await this.pool.command(input.identity);
+    const forwardedAt = Date.now();
     const timeoutMs = operation === "turn/start" ? TURN_START_TIMEOUT_MS : DEFAULT_REQUEST_TIMEOUT_MS;
-    const result = await connection.request(operation, forwarded, timeoutMs);
-    this.log("info", "gateway command completed", { method: operation, hostId: input.identity.hostId });
+    const startedAt = Date.now();
+    const result = await connection.request(operation, forwarded, timeoutMs, input.traceId);
+    const finishedAt = Date.now();
+    // The duration is what makes "the phone is slow" measurable per operation:
+    // a byte count says how much crossed the network, not how long the Host
+    // took to answer.
+    this.log("info", "gateway command completed", {
+      method: operation,
+      hostId: input.identity.hostId,
+      durationMs: finishedAt - startedAt,
+    });
+    if (this.latencyTrace) {
+      // Segments: HTTP accepted → frame forwarded, then forwarded → Host reply.
+      this.log("info", "remote latency", {
+        stage: "gateway.command",
+        method: operation,
+        hostId: input.identity.hostId,
+        ...(input.traceId ? { traceId: input.traceId } : {}),
+        queueMs: input.receivedAt === undefined ? 0 : Math.max(0, forwardedAt - input.receivedAt),
+        hostRoundTripMs: Math.max(0, finishedAt - forwardedAt),
+        totalMs: input.receivedAt === undefined ? Math.max(0, finishedAt - forwardedAt) : Math.max(0, finishedAt - input.receivedAt),
+      });
+    }
     return { status: 200, payload: { result } };
   }
 

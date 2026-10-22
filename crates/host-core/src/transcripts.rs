@@ -32,6 +32,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub mod layout;
+pub mod side_notes;
 #[cfg(test)]
 use layout::refresh_layout;
 pub use layout::TranscriptLayout;
@@ -176,8 +177,16 @@ pub struct TranscriptRead {
     pub compactions: Vec<CompactionRecord>,
 }
 
-/// Resolve a stable ID without materializing historical message bodies. The
-/// reverse scan agrees with last-write-wins transcript deduplication.
+/// Resolve a stable ID without materializing historical message bodies.
+///
+/// The FIRST line carrying the id wins, because that is the position
+/// deduplication gives the row: `dedupe_records` keeps the first place it saw an
+/// id and the last content it read for it. A retried append therefore leaves the
+/// row where it always was, and "the page before this row" stays strictly older
+/// than the row. Resolving the last line instead moved the cursor forward past
+/// the caller's own row, and a phone asking for the page before the oldest row it
+/// held got a window that overlapped what it already had — a page it then
+/// deduplicated away, so "Load earlier" appeared to do nothing at all.
 pub fn find_message_position(
     data_dir: &Path,
     session_id: &str,
@@ -191,7 +200,7 @@ pub fn find_message_position(
     let mut reader = BufReader::new(File::open(transcript_path(data_dir, session_id)?)?);
     let mut raw = Vec::new();
     let mut line = String::new();
-    for (position, offset) in layout.message_offsets.iter().enumerate().rev() {
+    for (position, offset) in layout.message_offsets.iter().enumerate() {
         let invalid_utf8 = read_layout_line(&mut reader, *offset, "message", &mut raw, &mut line)?;
         match serde_json::from_str::<Identity>(&line) {
             Ok(identity) if identity.id == message_id => return Ok(Some(position)),
@@ -1482,6 +1491,7 @@ pub fn remove_session_files(data_dir: &Path, session_id: &str) {
     let Ok(inflight) = inflight_path(data_dir, session_id) else {
         return;
     };
+    let side_notes_file = transcript.with_extension("side-notes.jsonl");
     for path in [
         transcript.with_extension("jsonl.tmp"),
         transcript.with_extension("jsonl.layout"),
@@ -1489,6 +1499,7 @@ pub fn remove_session_files(data_dir: &Path, session_id: &str) {
         transcript.with_extension("layout.tmp"),
         transcript,
         revisions,
+        side_notes_file,
         inflight.with_extension("json.tmp"),
         inflight,
     ] {

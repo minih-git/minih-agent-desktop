@@ -277,10 +277,17 @@ workspace, or approved execution. Slash text is literal input on this channel.
 Accepted input is echoed as ordinary user message events with the current
 `turnId`, main-prepared attachment refs, and `UiMessage.steering: true`. This
 persisted marker protects accepted input from Smart Stop after renderer reload.
-The optional `sideNote: true` field marks a side note on the same channel: the
-echoed row carries `UiMessage.sideNote`, and the runtime frames the
-model-visible prompt (see `02-agent-runtime.md` §4.0) while the row keeps the
-user's own words. Admission, attachment handling and persistence are unchanged.
+Legacy `sideNote: true` steering is rejected with `INVALID_ARGUMENT`. Side
+questions use separate channels: `agent/sideNote` takes
+`{ sessionId, expectedTurnId, content }` and returns `{ note }`, where the
+completed note has `id`, `question`, `answer`, `createdAt`, and optional `usage`.
+`agent/sideNotesList` takes `{ sessionId }` and returns `{ notes }`. Both are
+local Desktop only. The ask channel validates the active turn and rejects
+duplicates, then calls the existing runtime's `agent.sideNote` method without
+starting/steering a turn. It emits no main-turn messages or status events.
+The independent model request has a 120-second deadline under the existing
+130-second transport deadline, no tools, and a distinct request identity.
+
 A native Pi `message_end` may additionally carry the optional additive
 `replacesMessageId`: the provisional streaming row id whose durable SDK entry
 this event publishes. The renderer re-keys exactly that row (active, cache,
@@ -1947,6 +1954,14 @@ Renderer IPC kept for the Plan-safe preview facade and URL fallback:
   containment as `fs/read`. Never returns non-image bytes. Renderer-only;
   not a plugin host API.
 - `fs/reveal({path})` → reveal in Finder. Same containment as `fs/read`.
+- `fs/revealChatRef({path, sessionId?})` → `{ ok: true }`. Shows one chat
+  reference in the system file manager (ADR 0333). Accepts an absolute path or
+  `~/…`, which main expands, and refuses anything else. It resolves through
+  `realpath`, requires the entry to exist, and calls `shell.showItemInFolder`
+  only: it never opens, reads, or lists anything, which is why it is a separate
+  channel instead of a widening of `fs/reveal`. Local sessions only — a remote
+  session is refused (`INVALID_ARGUMENT`), and `remote-ipc-safety` marks the
+  channel as uncallable from a remote client.
 - `fs/open({path, mimeType?})` → open an existing regular file with the OS
   default application. It uses the same realpath containment as `fs/read`,
   including rejection of symlink escapes. For a content-addressed
@@ -1963,7 +1978,13 @@ Renderer IPC kept for the Plan-safe preview facade and URL fallback:
   `absolutePath`, `matchedBy` (`exact-relative` /
   `exact-absolute` / `path-suffix` / `basename`), and — for a `workspace` match
   — `projectRoot` (`{ path, name, primary }`), which names the project folder
-  that answered); `sessionId` selects the
+  that answered — and `entryKind` (`file` / `directory`), which says whether a
+  file or a folder answered; a host older than this field never returns it and
+  is read as `file`. An exact reference may name a folder, including the root
+  itself (`relativePath: "."`), and a shorthand never does: a tail match has no
+  evidence about which folder was meant. `~` is expanded to the home directory
+  before every containment decision, and `~user/...` stays unsupported);
+  `sessionId` selects the
   session whose scratch store is searched. Completes a file reference the agent
   printed in chat, because the renderer cannot see the session's own scratch
   store: an absolute reference only matches that exact file inside a known
@@ -1977,9 +1998,13 @@ Renderer IPC kept for the Plan-safe preview facade and URL fallback:
   so a shorthand resolves in a sibling folder as readily as in the primary one,
   and the match names the folder that answered. Inside one root an exact path
   beats a shorthand; among shorthands the longest matching tail wins, then the
-  shallowest path. Relative and indexed candidates must resolve to regular files
-  whose real paths remain inside their answering root; an exact path through an
-  escaping or dangling link cannot fall back to a same-name indexed file. The
+  shallowest path. An exact path may name a folder — the folder itself, or the
+  answering root as `.` — and reports that through `entryKind`; a shorthand
+  still completes only to a regular file, because a leaf name is no evidence
+  about which folder was meant. Relative and indexed candidates must resolve to
+  regular files whose real paths remain inside their answering root; an exact
+  path through an escaping or dangling link cannot fall back to a same-name
+  indexed file, whether it names a file or a folder. The
   files-panel ignore set applies. An absolute reference may also name a store
   the app reads without searching it: the whole scratch store
   (`<data_dir>/scratch/`) holds every session's files — a generated image is
@@ -1989,7 +2014,11 @@ Renderer IPC kept for the Plan-safe preview facade and URL fallback:
   wider store; it still searches the session's own one. A reference that matches
   nothing returns `match: null`; an absolute path outside every allowed root
   also returns `reason: "outside-allowed-roots"`, without trying a same-name
-  file inside a root. Resolving never opens anything (ADR 0262).
+  file inside a root, and — when that path exists — `outside: { absolutePath,
+  entryKind }` from a `stat`, so the renderer can offer to show it (ADR 0333).
+  `match` stays `null` in that case: nothing the app reads is reachable through
+  it. A remote session never receives `outside`. Resolving never opens anything
+  (ADR 0262).
 - `fs/list` stays workspace-only; traversal outside is rejected
   (`INVALID_ARGUMENT`).
 
@@ -2646,3 +2675,13 @@ Main validates a task id and relays to host-core. Renderer reloads do not own or
 terminate a process; the Host owns output, state, explicit stops, and exit cleanup.
 Payloads follow [Background tasks](06-host-rpc-protocol.md#background-tasks).
 No new renderer filesystem access or transport privilege is granted.
+
+### Applied macOS surface in window state
+
+The existing `windowControl("getState")` response adds
+`macosWindowTranslucency: boolean` for the surface the main window was created
+with. Non-macOS platforms report false. An omitted field is unknown to the
+renderer for compatibility, not a guessed surface. This is applied state, not
+the current saved preference; other window actions and `maximized` are
+unchanged. The settings boundary accepts the optional stored translucency
+field only when it is a boolean.

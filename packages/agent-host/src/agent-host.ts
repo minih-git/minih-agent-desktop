@@ -37,6 +37,7 @@ import {
   askToolOptionLabel,
   deltaStreamPayloadFits,
   effectiveRemotePermissionMode,
+  isDesktopClassDevice,
   racpKindForAgentEvent,
   rolesAllowOperation,
 } from "@minih-agent/shared";
@@ -96,6 +97,8 @@ export type NotifyEvent = {
   kind: RacpNotifyKind;
   sessionId: string;
   approvalId?: string;
+  /** Decisions this session still holds for the user, including this event. */
+  attentionCount?: number;
   occurredAt: string;
 };
 
@@ -145,6 +148,15 @@ export type AttachParams = {
   role?: RacpRole;
   after?: RacpCursor;
   includeSnapshot?: boolean;
+  /**
+   * How many history items the snapshot should carry at most (protocol §16.3).
+   * Absent keeps the Host's default page; 0 asks for the recovery boundary
+   * only — approvals, inputs, and the event cursor, no transcript items — for
+   * a client whose transcript comes from `session/history` paging. The Host
+   * clamps the value to its own default; a Host that predates the parameter
+   * ignores it and sends the default page, which every caller must accept.
+   */
+  snapshotHistoryLimit?: number;
 };
 
 export type AttachResult = {
@@ -361,6 +373,11 @@ export class AgentHost {
       case "asktool_request": {
         const turn = turnId ? state.turns.get(turnId) : undefined;
         if (turn) turn.status = "waiting_input";
+        // The session reports the question too (§17.4.1): a phone reading
+        // `session/list` could not otherwise tell an agent waiting for an answer
+        // from one that is simply busy, and the list is the only screen most
+        // users look at.
+        state.status = "waiting_input";
         const request = this.inputFromAsktool(event.request, state, turn?.id ?? turnId ?? "", envelope);
         state.pendingInputs.set(request.id, { request, original: event.request });
         this.emit(state, "input.requested", request, meta2);
@@ -452,7 +469,9 @@ export class AgentHost {
       replayComplete,
       ...(decision.status === "resync" ? { resyncReason: decision.reason } : {}),
     };
-    if (params.includeSnapshot !== false) result.snapshot = await this.snapshot(state.id, summary);
+    if (params.includeSnapshot !== false) {
+      result.snapshot = await this.snapshot(state.id, summary, params.snapshotHistoryLimit);
+    }
     return result;
   }
 
@@ -542,7 +561,10 @@ export class AgentHost {
       // Security §3.7: a gateway-origin principal never gets the approver
       // override, and the ceiling applies no matter how the Host configures
       // `applyCeilingToPairedDevices` (pairedDevice is false for it already).
-      approverOverride: principal.origin === "gateway" ? false : principal.approverOverride ?? false,
+      // A desktop-class device is the one exception (ADR amendment 3,
+      // decision 4): it stands where an SSH-paired owner stands.
+      approverOverride:
+        principal.origin === "gateway" && !isDesktopClassDevice(principal) ? false : principal.approverOverride ?? false,
     });
     const admission: RacpTurnAdmission = forceQueue ? "queue" : params.admission ?? "reject_if_busy";
     const busy = this.isBusy(state);
@@ -801,8 +823,12 @@ export class AgentHost {
     }
     // Security §3.7 (gate 25): a gateway-origin principal never grants
     // `allow-session`, regardless of `allowRemoteSessionGrants`. This is not a
-    // default; Host policy cannot widen it.
-    if (response.decision === "allow-session" && principal.origin === "gateway") {
+    // default; Host policy cannot widen it. A desktop-class device is the one
+    // exception (ADR amendment 3, decision 4): the target Host verified a
+    // same-account computer's proof, so it stands where an SSH-paired owner
+    // stands. A phone or browser device, and any record written before the
+    // class existed, stays refused.
+    if (response.decision === "allow-session" && principal.origin === "gateway" && !isDesktopClassDevice(principal)) {
       throw racpError("FORBIDDEN", "gateway-paired devices cannot grant allow-session");
     }
     const result = await this.approvals.resolve(response, principal, state.revision + 1);
@@ -833,6 +859,11 @@ export class AgentHost {
     state.pendingInputs.delete(response.inputId);
     const turn = state.turns.get(entry.request.turnId);
     if (turn && turn.status === "waiting_input") turn.status = "running";
+    // One answered question among several leaves the session waiting: the status
+    // follows what is still open, not what was just closed.
+    if (state.status === "waiting_input" && state.pendingInputs.size === 0) {
+      state.status = state.activeTurnId ? "running" : "idle";
+    }
     this.emit(state, "input.resolved", { inputId: response.inputId, status: "resolved", by: principal.subject }, { turnId: entry.request.turnId });
     return { inputId: response.inputId, status: "resolved" };
   }
@@ -851,10 +882,19 @@ export class AgentHost {
     return { ...page, revision: state.revision };
   }
 
-  async snapshot(sessionId: string, summary?: SessionSummary): Promise<RacpSessionSnapshot> {
+  async snapshot(sessionId: string, summary?: SessionSummary, snapshotHistoryLimit?: number): Promise<RacpSessionSnapshot> {
     const resolved = summary ?? (await this.requireSession(sessionId));
     const state = this.state(sessionId);
-    const page = await this.sessions.history(sessionId, { limit: this.snapshotItems });
+    // A client that only needs the recovery boundary (approvals, inputs, the
+    // event cursor) asks for zero history items: the transcript reaches it
+    // through `session/history` paging, as it does for a phone. The clamp keeps
+    // an unknown caller from raising the Host's own default.
+    const limit = snapshotHistoryLimit === undefined
+      ? this.snapshotItems
+      : Math.max(0, Math.min(snapshotHistoryLimit, this.snapshotItems));
+    const page = limit > 0
+      ? await this.sessions.history(sessionId, { limit })
+      : { items: [], hasMore: true };
     const activeTurn = state.activeTurnId ? state.turns.get(state.activeTurnId) : undefined;
     return {
       session: this.toRacpSession(resolved, state),
@@ -1006,8 +1046,13 @@ export class AgentHost {
    */
   private notifyEvent(event: { kind: RacpNotifyKind; sessionId: string; approvalId?: string }): void {
     if (!this.onNotifyEvent) return;
+    // How much still waits for the user in this session, right now, including the
+    // event being reported. The phone shows it as the app badge, and only the Host
+    // can count it (§17.6.2).
+    const state = this.states.get(event.sessionId);
+    const attentionCount = state ? this.approvals.list(event.sessionId).length + state.pendingInputs.size : 1;
     try {
-      this.onNotifyEvent({ ...event, occurredAt: new Date(this.clock.now()).toISOString() });
+      this.onNotifyEvent({ ...event, attentionCount, occurredAt: new Date(this.clock.now()).toISOString() });
     } catch {
       // Never let a notification hook fail a turn.
     }
@@ -1247,17 +1292,30 @@ export class AgentHost {
       turn.status = "running";
     }
     if (state.status === "waiting_permission" && this.approvals.list(state.id).length === 0) {
-      state.status = state.activeTurnId ? "running" : "idle";
+      // An open question still holds the session, so answering an approval cannot
+      // quietly resume it (§17.4: the two attention states are separate).
+      state.status = state.pendingInputs.size > 0 ? "waiting_input" : state.activeTurnId ? "running" : "idle";
     }
   }
 
   private async syncPendingApprovals(state: SessionState): Promise<void> {
-    await this.approvals.syncPendingTools(state.id, {
+    const synced = await this.approvals.syncPendingTools(state.id, {
       turnId: state.activeTurnId ?? "",
       revision: state.revision,
-      lifetimeMs: this.approvalLifetime(state),
+      lifetimeMs: this.policy.approvalLifetimeMs,
       allowSession: this.allowRemoteSessionGrants,
     });
+    const remoteExpiresAt = new Date(this.clock.now() + this.policy.approvalLifetimeMs).toISOString();
+    for (const entry of state.pendingInputs.values()) {
+      if (remoteExpiresAt > entry.request.expiresAt) {
+        entry.request.expiresAt = remoteExpiresAt;
+      }
+    }
+    if (synced.length > 0 || this.approvals.list(state.id).length > 0) {
+      state.status = "waiting_permission";
+      const turn = state.activeTurnId ? state.turns.get(state.activeTurnId) : undefined;
+      if (turn && isActive(turn.status)) turn.status = "waiting_approval";
+    }
   }
 
   private approvalLifetime(state: SessionState): number {
@@ -1265,6 +1323,20 @@ export class AgentHost {
   }
 
   private applyStatus(state: SessionState, status: AgentStatus): void {
+    // Pending approvals and questions outrank what the runtime reports (§17.4.1):
+    // tool permissions live in host-core and asktool inputs live in the Host, so
+    // the runtime's `status` event reports `pendingToolConfirmations: 0` while a
+    // card is still open.
+    if (status.isRunning && this.approvals.list(state.id).length > 0) {
+      state.status = "waiting_permission";
+      if (status.planningState) state.planningState = status.planningState;
+      return;
+    }
+    if (state.pendingInputs.size > 0) {
+      state.status = "waiting_input";
+      if (status.planningState) state.planningState = status.planningState;
+      return;
+    }
     if (status.isRunning) {
       state.status = status.pendingToolConfirmations > 0 ? "waiting_permission" : "running";
     } else if (state.status === "running" || state.status === "waiting_permission") {
@@ -1402,6 +1474,10 @@ export class AgentHost {
       title: summary.title,
       ...(summary.projectId ? { projectId: summary.projectId } : {}),
       ...(summary.workspaceLabel ? { workspaceLabel: summary.workspaceLabel } : {}),
+      ...(summary.providerId ? { providerId: summary.providerId } : {}),
+      ...(summary.modelId ? { modelId: summary.modelId } : {}),
+      ...(summary.modelLabel ? { modelLabel: summary.modelLabel } : {}),
+      ...(summary.thinkingLevel ? { thinkingLevel: summary.thinkingLevel } : {}),
       mode: summary.mode,
       status: state.status,
       planningState: state.planningState,

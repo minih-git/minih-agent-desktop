@@ -111,15 +111,28 @@ export type FsChatRefMatchKind =
   | "path-suffix"
   | "basename";
 
+/**
+ * What answered a chat reference. A chat token can name a folder as readily as
+ * a file (`apps/desktop/src`, a trailing slash, or the project root itself), and
+ * the two do not share a destination: a file opens, a folder is only revealed in
+ * the system file manager.
+ */
+export type FsChatRefEntryKind = "file" | "directory";
+
 export type FsChatRefMatch = {
   root: FsChatRefRoot;
   /** The match belongs to this session's scratch, not the wider read-only store. */
   sessionScratch?: boolean;
-  /** POSIX path relative to the matched root. */
+  /** POSIX path relative to the matched root; `.` when the root itself matched. */
   relativePath: string;
-  /** Native absolute path of the matched regular file. */
+  /** Native absolute path of the matched entry. */
   absolutePath: string;
   matchedBy: FsChatRefMatchKind;
+  /**
+   * Whether a file or a folder answered. Absent means `"file"`: a remote host
+   * older than this field only ever resolved regular files.
+   */
+  entryKind?: FsChatRefEntryKind;
   /**
    * Which folder of the project answered, for `root: "workspace"`. The caller
    * needs it to decide how to address the file: relative for the primary
@@ -128,8 +141,26 @@ export type FsChatRefMatch = {
   projectRoot?: FsChatRefProjectRoot;
 };
 
+/**
+ * An entry a reference names outside every allowed root.
+ *
+ * The app will not read it, open it, or preview it — the reference is not a
+ * match — but the user may still want to find it where it lives. Only the
+ * existence and the kind are reported, from a `stat`; no content is read.
+ */
+export type FsChatRefOutside = {
+  /** Native absolute path, after path normalization and nothing else. */
+  absolutePath: string;
+  entryKind: FsChatRefEntryKind;
+};
+
 export type FsChatRefResolveResult = {
   match: FsChatRefMatch | null;
   /** The supplied absolute path is not inside a project, scratch, or attachment root. */
   reason?: "outside-allowed-roots";
+  /**
+   * Present only with `reason: "outside-allowed-roots"`, and only for a local
+   * session: a remote host never reports its own filesystem's existence here.
+   */
+  outside?: FsChatRefOutside;
 };

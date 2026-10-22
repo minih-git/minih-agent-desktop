@@ -1,6 +1,6 @@
 {
   "name": "@minih-agent/remote-web",
-  "version": "0.22.1",
+  "version": "0.24.0",
   "private": true,
   "type": "module",
   "description": "Browser (H5) and Capacitor iOS/Android client for a self-hosted RACP Gateway (ADR 0331, D665)",
@@ -19,13 +19,17 @@
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.5.3",
     "@capacitor/ios": "^8.5.3",
+    "@capacitor/keyboard": "^8.0.6",
     "@capacitor/push-notifications": "^8.1.3",
     "@minih-agent/racp": "workspace:*",
     "@minih-agent/shared": "workspace:*",
     "i18next": "^26.3.6",
+    "lucide-react": "^1.31.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-i18next": "^15.6.0"
+    "react-i18next": "^15.6.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.3",

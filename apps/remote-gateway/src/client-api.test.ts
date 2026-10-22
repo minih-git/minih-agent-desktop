@@ -53,6 +53,183 @@ describe("gateway client API", () => {
     expect(listed.payload.result).toMatchObject({ sessions: [{ id: "s1" }] });
   });
 
+  /**
+   * R7: the model catalog is a declared route, so the Gateway forwards it like
+   * every other one. The Gateway has no model-specific code: this proves the
+   * shared table is enough and that no allowlist kept the path out.
+   */
+  it("forwards the model catalog a phone chooses a model from", async () => {
+    const listed = await command(gateway, { hostId: host.hostId, token: deviceToken, method: "model/list", params: {} });
+    expect(listed.status).toBe(200);
+    expect(listed.payload.result).toMatchObject({ models: expect.any(Array) });
+  });
+
+  /**
+   * "The phone is slow" needs a per-operation number: a byte count says how
+   * much crossed the network, not how long the Host took to answer. The
+   * duration rides the completion line the operator already reads.
+   */
+  it("logs how long each command took", async () => {
+    const entries: Array<{ message: string; data?: Record<string, unknown> }> = [];
+    const measured = await startTestGateway(
+      {},
+      {
+        log: (_level, message, data) => {
+          entries.push({ message, ...(data ? { data } : {}) });
+        },
+      },
+    );
+    const measuredHost = await enrollTestHost(measured, { history: { items: transcriptFixture(2) } });
+    try {
+      const paired = await pairDevice(measured, measuredHost, { client: "ios", label: "phone" });
+      const sent = await command(measured, {
+        hostId: measuredHost.hostId,
+        token: paired.token ?? "",
+        method: "session/list",
+        params: {},
+      });
+      expect(sent.status).toBe(200);
+      const completed = entries.find((entry) => entry.message === "gateway command completed");
+      expect(completed?.data).toMatchObject({ method: "session/list", hostId: measuredHost.hostId });
+      expect(completed?.data?.durationMs).toBeTypeOf("number");
+      expect(completed?.data?.durationMs as number).toBeGreaterThanOrEqual(0);
+    } finally {
+      await measuredHost.stop();
+      await measured.close();
+    }
+  });
+
+  /**
+   * P0 measurement: one client-supplied `x-trace-id` reaches the Host, and the
+   * Gateway and the Host each record their own segment under it. The records
+   * carry method and durations only.
+   */
+  it("joins one trace across the Gateway and the Host when latency tracing is on", async () => {
+    const gatewayEntries: Array<{ message: string; data?: Record<string, unknown> }> = [];
+    const hostEntries: Array<{ message: string; data?: Record<string, unknown> }> = [];
+    const measured = await startTestGateway(
+      {},
+      {
+        latencyTrace: true,
+        log: (_level, message, data) => {
+          gatewayEntries.push({ message, ...(data ? { data } : {}) });
+        },
+      },
+    );
+    const measuredHost = await enrollTestHost(measured, {
+      latencyTrace: true,
+      log: (_level, message, data) => {
+        hostEntries.push({ message, ...(data ? { data } : {}) });
+      },
+    });
+    try {
+      const paired = await pairDevice(measured, measuredHost, { client: "ios", label: "phone" });
+      const traceId = "trace-fixture-0001";
+      const response = await fetch(`${measured.clientBaseUrl}/hosts/${measuredHost.hostId}/v1/sessions`, {
+        headers: { authorization: `Bearer ${paired.token ?? ""}`, "x-trace-id": traceId },
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-trace-id")).toBe(traceId);
+
+      const gatewayRecord = gatewayEntries.find(
+        (entry) => entry.message === "remote latency" && entry.data?.stage === "gateway.command",
+      );
+      expect(gatewayRecord?.data).toMatchObject({ method: "session/list", traceId });
+      expect(gatewayRecord?.data?.queueMs).toBeTypeOf("number");
+      expect(gatewayRecord?.data?.hostRoundTripMs).toBeTypeOf("number");
+      expect(gatewayRecord?.data?.totalMs).toBeTypeOf("number");
+
+      const hostRecord = hostEntries.find(
+        (entry) =>
+          entry.message === "remote latency" &&
+          entry.data?.stage === "host.execute" &&
+          entry.data?.method === "session/list",
+      );
+      expect(hostRecord?.data?.traceId).toBe(traceId);
+      expect(hostRecord?.data?.origin).toBe("gateway");
+      expect(hostRecord?.data).not.toHaveProperty("params");
+    } finally {
+      await measuredHost.stop();
+      await measured.close();
+    }
+  });
+
+  /**
+   * The header is untrusted input: a value outside the shared trace-id rule is
+   * replaced, never echoed back and never written to a log line.
+   */
+  it("replaces an unusable x-trace-id instead of echoing it", async () => {
+    const entries: Array<{ message: string; data?: Record<string, unknown> }> = [];
+    const measured = await startTestGateway(
+      {},
+      {
+        latencyTrace: true,
+        log: (_level, message, data) => {
+          entries.push({ message, ...(data ? { data } : {}) });
+        },
+      },
+    );
+    const measuredHost = await enrollTestHost(measured, { latencyTrace: true });
+    try {
+      const paired = await pairDevice(measured, measuredHost, { client: "ios", label: "phone" });
+      // A newline or a control character cannot even be sent by `fetch`; the
+      // raw-frame case is covered by `packages/racp/src/latency-trace.test.ts`.
+      for (const bad of ["short", "with space", "x".repeat(4096)]) {
+        const response = await fetch(`${measured.clientBaseUrl}/hosts/${measuredHost.hostId}/v1/sessions`, {
+          headers: { authorization: `Bearer ${paired.token ?? ""}`, "x-trace-id": bad },
+        });
+        expect(response.status).toBe(200);
+        const echoed = response.headers.get("x-trace-id") ?? "";
+        expect(echoed).not.toBe(bad);
+        expect(echoed).toMatch(/^[A-Za-z0-9._:-]{8,128}$/);
+      }
+      const logged = JSON.stringify(entries);
+      expect(logged).not.toContain("with space");
+      expect(logged).not.toContain("x".repeat(64));
+    } finally {
+      await measuredHost.stop();
+      await measured.close();
+    }
+  });
+
+  it("forwards the project routes a phone uses to start a session somewhere new", async () => {
+    // Rollout A2 added these two routes; the Gateway derives its host-scoped
+    // routes from the shared table, so this proves the wiring and the query
+    // parameter rather than a hand-written copy.
+    const browsed = await command(gateway, {
+      hostId: host.hostId,
+      token: deviceToken,
+      method: "project/browse",
+      params: { path: "/home/user" },
+    });
+    expect(browsed.status).toBe(200);
+    expect(browsed.payload.result).toMatchObject({
+      path: "/home/user",
+      entries: [{ name: "work", path: "/home/user/work" }],
+    });
+
+    const registered = await command(gateway, {
+      hostId: host.hostId,
+      token: deviceToken,
+      method: "project/register",
+      params: { path: "/home/user/work/app" },
+    });
+    expect(registered.status).toBe(200);
+    expect(registered.payload.result).toMatchObject({ project: { label: "app", path: "/home/user/work/app" } });
+  });
+
+  it("refuses a query parameter the route does not declare", async () => {
+    const response = await command(gateway, {
+      hostId: host.hostId,
+      token: deviceToken,
+      method: "project/browse",
+      params: {},
+      query: "?recursive=true",
+    });
+    expect(response.status).toBe(400);
+    expect(response.payload.error?.data?.code).toBe("INVALID_ARGUMENT");
+  });
+
   it("refuses a request without a credential and one with an unknown credential", async () => {
     const missing = await fetch(`${gateway.clientBaseUrl}/hosts/${host.hostId}/v1/sessions`);
     expect(missing.status).toBe(401);
@@ -82,6 +259,16 @@ describe("gateway client API", () => {
       body: JSON.stringify({ deviceLabel: "x", client: "ios" }),
     });
     expect(asPairing.status).toBe(401);
+  });
+
+  it("answers a pairing with the computer's own name", async () => {
+    // The device has no per-Host credential yet, and the browser profile cannot
+    // reach `GET /v1/hosts` at all, so this answer is the only chance a phone has
+    // to learn what the computer is called. Without it the bar over a conversation
+    // fell back to the host id — or, worse, to the phone's own label.
+    const paired = await pairDevice(gateway, host, { client: "ios", label: "my phone" });
+    expect(paired.status).toBe(200);
+    expect(paired.hostLabel).toBe("test host");
   });
 
   it("keeps the browser profile behind cookies, CSRF, and the Origin allowlist", async () => {

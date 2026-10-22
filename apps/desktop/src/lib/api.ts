@@ -24,6 +24,9 @@ import type {
   AgentCompactResponse,
   AgentPromptRequest,
   AgentSteerRequest,
+  AgentSideNoteRequest,
+  AgentSideNoteResponse,
+  SideNote,
   UiMessage,
   MessageRevisionSummary,
   AgentPromptResponse,
@@ -85,6 +88,10 @@ import type {
   PluginInstallProgress,
   ProjectRecord,
   ProjectGroupRecord,
+  ProjectArchiveExportOutcome,
+  ProjectArchiveExportRequest,
+  ProjectArchiveImportOutcome,
+  ProjectArchiveProgress,
   ProjectMemory,
   ProjectMemoryEntry,
   ProjectWorkspace,
@@ -173,6 +180,7 @@ import type {
   MinihRouterModelsInput,
   RemoteGatewayDeviceNotice,
   RemoteGatewayDeviceRequest,
+  RacpModelSummary,
 } from "@minih-agent/shared";
 import {
   defaultCommandShellForPlatform,
@@ -538,6 +546,14 @@ export function validateSettingsWrite(settings: AppSettings): AppSettings {
     }
   }
   if (
+    Object.prototype.hasOwnProperty.call(value, "macosWindowTranslucency") &&
+    typeof value.macosWindowTranslucency !== "boolean"
+  ) {
+    throw Object.assign(new Error("macosWindowTranslucency is invalid"), {
+      errorCode: "INVALID_PARAMS",
+    });
+  }
+  if (
     Object.prototype.hasOwnProperty.call(value, "infiniteProviderRetry") &&
     typeof value.infiniteProviderRetry !== "boolean"
   ) {
@@ -802,6 +818,14 @@ export const api = {
       id,
       config,
     ).then((result) => ({ ...result, session: normalizeSession(result.session) })),
+  /**
+   * The model catalog of the host that owns the session. Only a remote session
+   * answers here: local sessions use the configured provider list, and a Host
+   * that cannot list models (behind this release) rejects with
+   * CAPABILITY_UNAVAILABLE.
+   */
+  sessionModels: (id: string) =>
+    invoke<{ models: RacpModelSummary[] }>(IPC.invoke.sessionModels, { sessionId: id }),
   scanImportSessions: () =>
     invoke<{
       sessions: ImportCandidate[];
@@ -873,6 +897,14 @@ export const api = {
   configSyncChangePassword: (input: ConfigSyncChangePasswordInput) =>
     invoke<ConfigSyncState>(IPC.invoke.configSyncChangePassword, input),
   configSyncDisconnect: () => invoke<ConfigSyncState>(IPC.invoke.configSyncDisconnect),
+  /**
+   * Explicit project archive. Electron main shows the native picker and passes
+   * only the chosen paths; the Host reads and writes the registered project.
+   */
+  projectArchiveExport: (input: ProjectArchiveExportRequest) =>
+    invoke<ProjectArchiveExportOutcome>(IPC.invoke.projectArchiveExport, input),
+  projectArchiveImport: () =>
+    invoke<ProjectArchiveImportOutcome>(IPC.invoke.projectArchiveImport),
   testNetworkProxy: (settings: unknown) =>
     invoke<{ ok: boolean; error?: string }>(IPC.invoke.networkProxyTest, settings),
   /** Installed system font families (Electron main, cached briefly). */
@@ -1193,6 +1225,10 @@ export const api = {
     prefix: UiMessage[];
   }) =>
     invoke<{ messages: UiMessage[] }>(IPC.invoke.sessionActivateRevision, input),
+  askSideNote: (req: AgentSideNoteRequest) =>
+    invoke<AgentSideNoteResponse>(IPC.invoke.agentSideNote, req),
+  listSideNotes: (sessionId: string) =>
+    invoke<{ notes: SideNote[] }>(IPC.invoke.agentSideNotesList, { sessionId }),
   steer: (req: AgentSteerRequest) =>
     invoke<AgentPromptResponse>(IPC.invoke.agentSteer, req),
   prompt: (req: AgentPromptRequest) =>
@@ -1664,6 +1700,13 @@ export const api = {
       ...(sessionId ? { sessionId } : {}),
     }),
   fsReveal: (path: string, sessionId?: string) => invoke(IPC.invoke.fsReveal, { path, ...(sessionId ? { sessionId } : {}) }),
+  /**
+   * Show a chat reference in the system file manager, wherever it lives.
+   * Separate from `fsReveal`: this one accepts a path outside every allowed
+   * root, because locating something is not reading it, and it is local-only.
+   */
+  fsRevealChatRef: (path: string, sessionId?: string) =>
+    invoke(IPC.invoke.fsRevealChatRef, { path, ...(sessionId ? { sessionId } : {}) }),
   fsOpen: (path: string, mimeType?: string, sessionId?: string) =>
     invoke(IPC.invoke.fsOpen, { path, mimeType, ...(sessionId ? { sessionId } : {}) }),
   fsIndex: (sessionId?: string) => invoke<FsIndexResult>(IPC.invoke.fsIndex, { ...(sessionId ? { sessionId } : {}) }),
@@ -1695,7 +1738,7 @@ export const api = {
       { theme, color, cornerRadius },
     ),
   windowControl: (action: WindowControlAction) =>
-    invoke<{ maximized: boolean }>(IPC.invoke.windowControl, { action }),
+    invoke<{ maximized: boolean; macosWindowTranslucency?: boolean }>(IPC.invoke.windowControl, { action }),
   getCloseBehavior: () =>
     invoke<{ behavior: CloseBehavior; supported: boolean }>(
       IPC.invoke.closeBehaviorGet,
@@ -1945,6 +1988,9 @@ export const api = {
   /** ADR decision 9: require confirmation on every terminal. */
   setRemoteGatewayStrictDevices: (strictDevices: boolean) =>
     invoke<RemoteGatewayStatus>(IPC.invoke.remoteGatewaySetStrictDevices, { strictDevices }),
+  /** ADR amendment 3: allow same-account computers to join automatically. */
+  setRemoteGatewayDesktopAuto: (enabled: boolean) =>
+    invoke<RemoteGatewayStatus>(IPC.invoke.remoteGatewaySetDesktopAuto, { enabled }),
   onRemoteGatewayDeviceRequest: (listener: (request: RemoteGatewayDeviceRequest) => void) => {
     if (!window.minihAgent?.on) return () => undefined;
     return window.minihAgent.on(IPC.event.remoteGatewayDeviceRequest, (payload) =>
@@ -2022,6 +2068,12 @@ export const api = {
     if (!window.minihAgent?.on) return () => undefined;
     return window.minihAgent.on(IPC.event.configSyncProgress, (payload) =>
       listener(payload as ConfigSyncProgress),
+    );
+  },
+  onProjectArchiveProgress: (listener: (progress: ProjectArchiveProgress) => void) => {
+    if (!window.minihAgent?.on) return () => undefined;
+    return window.minihAgent.on(IPC.event.projectArchiveProgress, (payload) =>
+      listener(payload as ProjectArchiveProgress),
     );
   },
   onPluginLauncherShown: (listener: () => void) => {

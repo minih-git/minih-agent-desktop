@@ -58,8 +58,9 @@
 > active user message only while a turn continues; completed turns
 > carry no naked historical user messages. The model-facing `new_context` tool
 > and two budget reminders are
-> back, each compaction adds a transcript row and one warning, and a
-> no-summary rollover family exists behind an internal switch.
+> back, each compaction adds a transcript row, and a no-summary rollover
+> family exists behind an internal switch. The 2026-10-20 amendment to ADR 0064
+> removes routine compaction toasts while preserving inline status and errors.
 > `0.4.12` standardizes home and thread-docked composer prompt rows without a
 > leading brand mark through D160 / ADR 0031 while preserving shell branding
 > elsewhere.

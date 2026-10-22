@@ -49,6 +49,23 @@ cannot use a file link to escape the workspace. This local-file browsing is
 covered by the high-risk `browser.cdp` capability; `BrowserPreview` and the
 sidecar's workspace file resolver remain restricted to the session workspace.
 
+### Chat references outside the allowed roots
+
+Every read, open, and preview stays contained: `fs/read`, `fs/open`, `fs/reveal`,
+the image reader, and `fs/resolveRef`'s `match` all resolve through `realpath`
+and refuse a path outside the open project, the session scratch store, and the
+attachment store. One narrow addition sits beside them
+(ADR 0333): `fs/revealChatRef` shows an absolute or `~` path in the system file
+manager — `shell.showItemInFolder` only, never `openPath`, never a read, never a
+listing — and is refused for a remote session and marked uncallable from a
+remote client. `fs/resolveRef` reports that a path exists outside the roots with
+`outside: { absolutePath, entryKind }`, from a `stat`, while keeping
+`match: null`: no code path that receives a match can be reached with such a
+path. The residual risk is that a reply naming an arbitrary absolute path can be
+used to test one bit — whether it exists, and whether it is a file or a folder —
+on a click, in a session that may use local tools. Contents, permissions, and the
+path's role stay unknown, and nothing is probed while rendering.
+
 ### Content Security Policy
 
 - Dev: `script-src 'self' 'unsafe-inline' 'unsafe-eval'` (required by Vite

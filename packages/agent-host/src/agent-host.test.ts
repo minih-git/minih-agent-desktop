@@ -84,9 +84,19 @@ class FakeSessions implements SessionPort {
   async get(sessionId: string): Promise<SessionSummary | null> {
     return this.summaries.get(sessionId) ?? null;
   }
-  async history(): Promise<{ items: RacpItemSummary[]; hasMore: boolean }> {
+  async history(sessionId: string, input: { limit?: number; beforeItemId?: string } = {}): Promise<{ items: RacpItemSummary[]; hasMore: boolean }> {
     this.historyReads += 1;
-    return { items: this.items, hasMore: false };
+    // Newest-last, paged backwards from `beforeItemId` (or from the end), the
+    // same contract the real Host port implements.
+    const limit = Math.max(1, input.limit ?? 100);
+    let end = this.items.length;
+    if (input.beforeItemId) {
+      const at = this.items.findIndex((item) => item.id === input.beforeItemId);
+      if (at < 0) throw new Error("unknown beforeItemId");
+      end = at;
+    }
+    const start = Math.max(0, end - limit);
+    return { items: this.items.slice(start, end), hasMore: start > 0 };
   }
 }
 
@@ -876,6 +886,33 @@ describe("AgentHost approvals and inputs", () => {
     expect(host.pendingApprovals("s1")[0]!.expiresAt).toBe("2026-09-10T00:02:00.000Z");
   });
 
+  it("keeps an unattached approval open across status heartbeats and extends it on late attach", async () => {
+    const runtime = new FakeRuntime();
+    const sessions = new FakeSessions();
+    sessions.summaries.set("s1", summary("s1"));
+    const approvals = new FakeApprovals();
+    const clock = new FixedClock();
+    const host = new AgentHost({ runtime, sessions, approvals, clock, ids: new SeqIds() });
+    host.ingest(envelope("s1", "rt_1", { type: "agent_start" }));
+    const permEvent = permission("req_bg");
+    approvals.pending = [{ ...permEvent.request, createdAt: new Date(clock.now()).toISOString() }];
+    host.ingest(envelope("s1", "rt_1", permEvent));
+    // Sidecar status heartbeats always report pendingToolConfirmations: 0; the
+    // open approval in host-core must keep the session in waiting_permission.
+    host.ingest(
+      envelope("s1", "rt_1", {
+        type: "status",
+        status: { sessionId: "s1", isRunning: true, pendingToolConfirmations: 0 },
+      }),
+    );
+    expect(host.describeSession(summary("s1")).status).toBe("waiting_permission");
+    // Advance past the 2-minute local lifetime before the phone opens the session.
+    clock.current += 5 * 60_000;
+    const attached = await host.attach(controller, { sessionId: "s1" });
+    expect(attached.session.status).toBe("waiting_permission");
+    expect(attached.snapshot?.pendingApprovals.map((approval) => approval.id)).toEqual(["req_bg"]);
+  });
+
   it("routes contract approvals through the contract port with a permission mode", async () => {
     const { host, approvals, received } = build();
     host.ingest(envelope("s1", "rt_1", { type: "agent_start" }));
@@ -952,6 +989,48 @@ describe("AgentHost attach and subscribe", () => {
     expect(page.revision).toBeGreaterThan(0);
   });
 
+  it("a capped snapshot plus paged history equals the full snapshot transcript", async () => {
+    const { host, sessions } = build();
+    // A 2000-line conversation: the full snapshot carries the Host's default
+    // page (50), while a boundary-only snapshot carries none. Both must yield
+    // the same transcript once the client pages back through history.
+    sessions.items = Array.from({ length: 2000 }, (_, index) => ({
+      id: `item_${index}`,
+      turnId: `t_${Math.floor(index / 10)}`,
+      itemType: "message" as const,
+      status: "completed" as const,
+      createdAt: "2026-09-18T10:00:00.000Z",
+      content: { role: "user", text: `line ${index}` },
+    }));
+    const full = await host.attach(viewer, { sessionId: "s1" });
+    const boundary = await host.attach(viewer, { sessionId: "s1", snapshotHistoryLimit: 0 });
+    expect(full.snapshot?.items).toHaveLength(50);
+    expect(boundary.snapshot?.items).toHaveLength(0);
+    expect(boundary.snapshot?.hasMoreHistory).toBe(true);
+    expect(boundary.snapshot?.cursor).toBeDefined();
+
+    // Page the whole transcript backwards from the boundary attach, the way a
+    // client that keeps no transcript state does (phone D2, desktop history).
+    const paged: Array<{ id: string }> = [];
+    let beforeItemId: string | undefined;
+    let hasMore = true;
+    while (hasMore) {
+      const page = await host.history(viewer, {
+        sessionId: "s1",
+        limit: 100,
+        ...(beforeItemId ? { beforeItemId } : {}),
+      });
+      paged.unshift(...page.items.map((item) => ({ id: item.id })));
+      hasMore = page.hasMore && page.items.length > 0;
+      if (hasMore) beforeItemId = page.items[0]!.id;
+    }
+    expect(paged.map((item) => item.id)).toEqual(sessions.items.map((item) => item.id));
+    // And the tail of the paged transcript is exactly what the full snapshot
+    // shipped, item for item.
+    expect(full.snapshot?.items.map((item) => item.id))
+      .toEqual(paged.slice(-50).map((item) => item.id));
+  });
+
   it("publishes host-scope session changes", () => {
     const { host } = build();
     const kinds: string[] = [];
@@ -960,6 +1039,30 @@ describe("AgentHost attach and subscribe", () => {
     host.ingest(envelope("s1", "rt_1", { type: "agent_start" }));
     host.ingest(envelope("s1", "rt_1", { type: "agent_end", messageIds: [] }));
     expect(kinds).toEqual(["session.created", "session.changed"]);
+  });
+
+  /**
+   * A title change is announced by a session-scoped event, not only by the host
+   * list: a client that holds the session — a phone on its session screen —
+   * refreshes its header from `payload.session`, and it is not subscribed to the
+   * host list. Without this the desktop's rename left the phone showing the old
+   * name until something else changed the session.
+   */
+  it("carries the renamed session to a subscriber of that session", () => {
+    const { host } = build();
+    const seen: Array<{ kind: string; payload: Record<string, unknown> }> = [];
+    host.subscribe(
+      viewer,
+      { scope: "session", sessionId: "s1" },
+      {
+        deliver: (event) => seen.push({ kind: event.kind, payload: event.payload as Record<string, unknown> }),
+        close: () => {},
+      },
+    );
+    const renamed: SessionSummary = { ...summary("s1"), title: "Renamed on the desktop" };
+    host.publishSessionChange("session.changed", renamed);
+    const change = seen.find((event) => event.kind === "session.changed");
+    expect(change?.payload.session).toMatchObject({ id: "s1", title: "Renamed on the desktop" });
   });
 });
 
@@ -1071,7 +1174,7 @@ describe("AgentHost gateway-principal restrictions (security §3.7)", () => {
     origin: "gateway",
   };
 
-  it("(a) refuses allow-session from a gateway principal even when Host policy allows remote grants", async () => {
+  it("(a) refuses allow-session from a gateway principal without the desktop class", async () => {
     const { host, approvals, received } = build({ allowRemoteSessionGrants: true });
     host.ingest(envelope("s1", "rt_1", permission()));
     const raised = received.find((event) => event.kind === "approval.requested");
@@ -1125,6 +1228,53 @@ describe("AgentHost gateway-principal restrictions (security §3.7)", () => {
     });
     expect(runtime.prompts[0]?.effectivePermissionMode).toBe("ask");
   });
+
+  it("(d) lets a desktop-class device use allow-session and the approver override, as an SSH owner does", async () => {
+    // ADR amendment 3, decision 4: a device the target Host admitted after
+    // verifying a same-account computer's proof stands where an SSH-paired
+    // owner stands, so the two gateway-origin restrictions do not apply to it.
+    const desktopOwner: Principal = {
+      subject: "dev_desktop",
+      roles: ["owner"],
+      pairedDevice: true,
+      origin: "gateway",
+      deviceClass: "desktop",
+    };
+    const { host, approvals, received, runtime } = build({ allowRemoteSessionGrants: true, permissionMode: "auto" });
+    host.ingest(envelope("s1", "rt_1", permission()));
+    expect(received.find((event) => event.kind === "approval.requested")).toBeTruthy();
+    await host.respondApproval(desktopOwner, {
+      approvalId: "req_1",
+      decision: "allow-session",
+      context: { requestId: "r" },
+    });
+    expect(approvals.tool).toEqual([{ requestId: "req_1", decision: "allow-session" }]);
+    // …and it runs at the session mode rather than being clamped to the ceiling.
+    await host.startTurn(
+      { ...desktopOwner, approverOverride: true },
+      { sessionId: "s1", admission: "queue", input: { text: "desktop turn" }, context: { requestId: "desk-turn" } },
+    );
+    expect(runtime.prompts.at(-1)?.effectivePermissionMode).toBe("auto");
+  });
+
+  it("(d) keeps a phone-grade device refused even when it claims the desktop class", async () => {
+    // The class is what the proof earned, not a field a caller can set: the
+    // desktop role set is required too, so a phone carrying `deviceClass` and
+    // `owner` is still a phone for both restrictions.
+    const { host, approvals } = build({ allowRemoteSessionGrants: true });
+    host.ingest(envelope("s1", "rt_1", permission()));
+    const forged: Principal = {
+      subject: "dev_forged",
+      roles: ["viewer", "controller", "approver"],
+      pairedDevice: false,
+      origin: "gateway",
+      deviceClass: "desktop",
+    };
+    await expect(
+      host.respondApproval(forged, { approvalId: "req_1", decision: "allow-session", context: { requestId: "r" } }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(approvals.tool).toEqual([]);
+  });
 });
 
 describe("AgentHost notification events (protocol §11.6)", () => {
@@ -1150,6 +1300,29 @@ describe("AgentHost notification events (protocol §11.6)", () => {
     },
   });
 
+  it("reports a pending question as the session's own status, and clears it when answered", async () => {
+    const { host } = build({});
+    const started = await host.startTurn(owner, { sessionId: "s1", input: { text: "go" }, context: { requestId: "s" } });
+    expect((await host.snapshot("s1")).session.status).toBe("running");
+
+    host.ingest(envelope("s1", started.turn.id, ask()));
+    // §17.4.1: a phone reading `session/list` can tell a question from a busy turn.
+    expect((await host.snapshot("s1")).session.status).toBe("waiting_input");
+
+    await host.respondInput(owner, { inputId: "ask_1", answers: [["a"]], context: { requestId: "r" } });
+    expect((await host.snapshot("s1")).session.status).toBe("running");
+  });
+
+  it("keeps the session waiting while a second question is still open", async () => {
+    const { host } = build({});
+    const started = await host.startTurn(owner, { sessionId: "s1", input: { text: "go" }, context: { requestId: "s" } });
+    host.ingest(envelope("s1", started.turn.id, ask()));
+    host.ingest(envelope("s1", started.turn.id, ask("ask_2")));
+
+    await host.respondInput(owner, { inputId: "ask_1", answers: [["a"]], context: { requestId: "r" } });
+    expect((await host.snapshot("s1")).session.status).toBe("waiting_input");
+  });
+
   it("reports the four events and nothing else, with ids only", async () => {
     const seen: NotifyEvent[] = [];
     const { host } = build({ onNotifyEvent: (event) => seen.push(event) });
@@ -1160,16 +1333,21 @@ describe("AgentHost notification events (protocol §11.6)", () => {
     host.endTurn("s1", started.turn.id, "completed");
 
     expect(seen.map((event) => event.kind)).toEqual(["approval.requested", "input.requested", "turn.completed"]);
-    // Every event is ids plus a timestamp: no prompt, no tool name, no text.
+    // Every event is ids, a count, and a timestamp: no prompt, no tool name, no text.
     for (const event of seen) {
       expect(Object.keys(event).sort()).toEqual(
-        event.approvalId ? ["approvalId", "kind", "occurredAt", "sessionId"] : ["kind", "occurredAt", "sessionId"],
+        event.approvalId
+          ? ["approvalId", "attentionCount", "kind", "occurredAt", "sessionId"]
+          : ["attentionCount", "kind", "occurredAt", "sessionId"],
       );
       expect(event.sessionId).toBe("s1");
       expect(Number.isNaN(Date.parse(event.occurredAt))).toBe(false);
     }
     expect(seen[0]!.approvalId).toBe("req_1");
     expect(seen[1]!.approvalId).toBe("ask_1");
+    // The count is what the badge shows: one approval; approval plus question;
+    // then nothing left to decide (§17.6.2).
+    expect(seen.map((event) => event.attentionCount)).toEqual([1, 2, 0]);
   });
 
   it("reports a failed turn as turn.failed", async () => {

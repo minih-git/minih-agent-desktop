@@ -1,38 +1,57 @@
 /**
- * Session timeline (PR-4).
+ * Session timeline (PR-4; scroll behaviour in rollout D).
  *
- * The screen renders plain text rows, the pending approval and input cards, the
- * turn status with Stop/Interrupt for the active turn, and the composer. Every
+ * The screen renders the rows, the pending approval and input cards, the turn
+ * status with Stop/Interrupt for the active turn, and the composer. Every
  * in-flight control is disabled, and every failure names the operation it came
  * from plus the reason the Host or the transport gave.
+ *
+ * The transcript is the scrolling part: it opens at the newest row, follows new
+ * ones while the reader is at the bottom, offers a way back down (with a count)
+ * when they are not, and holds their place when older rows are loaded above.
  */
+import { Info } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ApprovalCard } from "../components/ApprovalCard.js";
-import { AppShell, Button, Card, FailureBanner, Pill } from "../components/Chrome.js";
-import { Composer } from "../components/Composer.js";
-import { InputCard } from "../components/InputCard.js";
-import { TimelineView } from "../components/Timeline.js";
+import { FailureBanner } from "../components/Chrome.js";
+import { ChatComposer } from "../components/chat/ChatComposer.js";
+import { ChatTimeline } from "../components/chat/ChatTimeline.js";
+import { DecisionArea } from "../components/chat/DecisionArea.js";
+import { RunBar } from "../components/chat/RunBar.js";
+import { SessionInfoSheet } from "../components/chat/SessionInfoSheet.js";
+import { StopSheet } from "../components/chat/StopSheet.js";
+import { Banner } from "../components/ui/Banner.js";
+import { Button } from "../components/ui/Button.js";
+import { ResultState } from "../components/ui/EmptyState.js";
+import { NavBar } from "../components/ui/NavBar.js";
+import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
 import { useSessionScreen } from "../hooks/useSessionScreen.js";
+
+import { useTimelineScroll } from "../hooks/useTimelineScroll.js";
 import type { HostCredential } from "../lib/credential-port.js";
-import type { StreamState } from "../lib/stream-supervisor.js";
+import { failureReasonText } from "../lib/i18n.js";
 import { gatewayOrigin } from "../lib/runtime.js";
+import {
+  resolveConnectionBanner,
+  resolveTurnStatusDisplay,
+} from "../lib/session-format.js";
 
-const STREAM_KEYS: Record<StreamState, string> = {
-  idle: "session.connecting",
-  open: "session.live",
-  paused: "session.paused",
-  retrying: "session.retrying",
-  revoked: "session.revoked",
-  exhausted: "session.exhausted",
-  stopped: "session.stopped",
-};
-
-function streamTone(state: StreamState): "ok" | "warn" | "bad" | "neutral" {
-  if (state === "open") return "ok";
-  if (state === "paused" || state === "retrying") return "warn";
-  if (state === "revoked" || state === "exhausted") return "bad";
-  return "neutral";
+export interface SessionScreenProps {
+  hostId: string;
+  sessionId: string;
+  title: string;
+  credential: HostCredential;
+  /**
+   * The name the person gave the computer. Required on purpose: it is what the
+   * header shows, and an optional field is what let the one path that reaches
+   * this screen forget it and print `host_10ed0253-…` over a conversation.
+   * Empty is allowed and falls back to the id, for a registration written before
+   * the desktop reported a name.
+   */
+  hostLabel: string;
+  onBack: () => void;
+  onForget?: () => void;
 }
 
 export function SessionScreen({
@@ -40,119 +59,312 @@ export function SessionScreen({
   sessionId,
   title,
   credential,
+  hostLabel,
   onBack,
-}: {
-  hostId: string;
-  sessionId: string;
-  title: string;
-  credential: HostCredential;
-  onBack: () => void;
-}) {
+  onForget,
+}: SessionScreenProps) {
   const { t } = useTranslation();
-  const { timeline, streamState, failure, pending, turnId, actions } = useSessionScreen({
-    hostId,
-    sessionId,
-    credential,
-    gatewayOrigin,
+  const [stopSheetOpen, setStopSheetOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  /**
+   * The model catalog, read the first time the info sheet opens (R7): small,
+   * static per Host, and useless on a screen nobody opened.
+   */
+
+
+  const { timeline, streamState, failure, pending, loadingEarlier, turnId, models, actions } =
+    useSessionScreen({
+      hostId,
+      sessionId,
+      credential,
+      gatewayOrigin,
+    });
+
+  const latestModelItem = [...timeline.items].reverse().find((item) => item.modelId);
+  const effectiveSession = timeline.session
+    ? {
+        ...timeline.session,
+        ...(timeline.session.providerId || latestModelItem?.providerId
+          ? { providerId: timeline.session.providerId || latestModelItem?.providerId }
+          : {}),
+        ...(timeline.session.modelId || latestModelItem?.modelId
+          ? { modelId: timeline.session.modelId || latestModelItem?.modelId }
+          : {}),
+        ...(timeline.session.modelLabel || timeline.session.modelId || latestModelItem?.modelId
+          ? { modelLabel: timeline.session.modelLabel || timeline.session.modelId || latestModelItem?.modelId }
+          : {}),
+      }
+    : null;
+  const matchedModel =
+    models.find(
+      (m) =>
+        (effectiveSession?.providerId && m.providerId === effectiveSession.providerId && m.modelId === effectiveSession?.modelId) ||
+        (!effectiveSession?.providerId && effectiveSession?.modelId && m.modelId === effectiveSession.modelId),
+    ) ?? (!effectiveSession?.modelId ? (models.find((m) => m.isDefault) ?? models[0]) : undefined);
+  const modelDisplay =
+    matchedModel?.label ||
+    effectiveSession?.modelLabel ||
+    effectiveSession?.modelId ||
+    t("model.hostDefault");
+
+  const active = turnId !== undefined;
+  const attention = timeline.pendingApprovals.length + timeline.pendingInputs.length;
+  const tail = timeline.items.at(-1);
+  const scroll = useTimelineScroll({
+    itemCount: timeline.items.length,
+    firstItemId: timeline.items[0]?.id ?? "",
+    lastItemId: tail?.id ?? "",
+    // A streamed row grows in place rather than adding a row, so its length is
+    // part of what "new content" means.
+    tailKey: tail ? `${tail.id}:${tail.text.length}:${tail.thinking?.length ?? 0}` : "",
+    attention,
   });
 
-  const turnStatus = timeline.activeTurnStatus;
-  const active = turnId !== undefined;
+  const hostName = hostLabel || hostId;
+  const sessionTitle = timeline.session?.title || title || t("session.untitled", "未命名会话");
+
+  // If revoked, show the full revoked ResultState (per spec 8.7)
+  if (streamState === "revoked") {
+    return (
+      <Screen>
+        <NavBar title={sessionTitle} onBack={onBack} />
+        <div className="flex flex-1 items-center justify-center p-6">
+          <ResultState
+            status="error"
+            title={t("hosts.status.revoked")}
+            description={t("hosts.revokeHint")}
+            action={
+              onForget ? (
+                <Button variant="primary" size="large" onClick={onForget}>
+                  {t("hosts.expand.forgetAndPair")}
+                </Button>
+              ) : undefined
+            }
+          />
+        </div>
+      </Screen>
+    );
+  }
+
+  const connBanner = resolveConnectionBanner(streamState);
+  const decisionKind =
+    timeline.pendingApprovals.length > 0
+      ? "approval"
+      : timeline.pendingInputs.length > 0
+        ? "input"
+        : undefined;
+  const isStopping = pending["turn/stop"] === true || pending["turn/interrupt"] === true;
+  const statusDisplay = resolveTurnStatusDisplay(
+    timeline.activeTurnStatus,
+    isStopping,
+    decisionKind,
+  );
+
+  const hasDecision =
+    timeline.pendingApprovals.length > 0 || timeline.pendingInputs.length > 0;
 
   return (
-    <AppShell
-      title={timeline.session?.title || title || sessionId}
-      onBack={onBack}
-      actions={<Pill tone={streamTone(streamState)}>{t(STREAM_KEYS[streamState])}</Pill>}
-      footer={
-        <Composer
-          sending={pending["turn/start"] === true}
-          disabled={timeline.archived}
-          queued={active}
-          onSend={actions.sendTurn}
-        />
-      }
-    >
-      {failure ? (
-        <FailureBanner failure={failure.failure} operationKey={failure.operationKey} onDismiss={actions.dismissFailure} />
-      ) : null}
-
-      {timeline.replayIncomplete ? (
-        <p className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
-          {t("session.replayIncomplete")}
-        </p>
-      ) : null}
-      {timeline.needsResync ? (
-        <p className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
-          {t("session.resync")}
-        </p>
-      ) : null}
-      {timeline.archived ? <p className="text-xs text-slate-500 dark:text-slate-400">{t("session.archived")}</p> : null}
-
-      {streamState === "exhausted" ? (
-        <div className="flex items-center justify-end">
-          <Button
-            variant="primary"
-            disabled={pending["stream/reconnect"] === true}
-            aria-label={t("session.reconnect")}
-            onClick={() => actions.reconnect()}
+    <Screen>
+      <NavBar
+        title={sessionTitle}
+        subtitle={
+          // The computer's name is user data of unknown length: it takes the
+          // pressure (one truncated line) and the live marker keeps its width,
+          // so a long name cannot wrap the fixed-height bar or push the state
+          // out of sight.
+          <span className="inline-flex min-w-0 items-center justify-center gap-1.5">
+            <span className="truncate">{hostName}</span>
+            {streamState === "open" ? (
+              <span className="inline-flex shrink-0 items-center gap-1 text-[var(--rm-success)]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--rm-success)]" />
+                <span>{t("session.live")}</span>
+              </span>
+            ) : null}
+          </span>
+        }
+        trailing={
+          <button
+            type="button"
+            onClick={() => {
+              setInfoOpen(true);
+              void actions.loadModels();
+            }}
+            aria-label={t("session.info")}
+            className="flex h-9 w-9 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] active:opacity-60"
           >
-            {t("session.reconnect")}
-          </Button>
-        </div>
+            <Info size={20} aria-hidden="true" />
+          </button>
+        }
+        onBack={onBack}
+      />
+
+      {/* Connection banner */}
+      {connBanner.type !== "none" && connBanner.tone ? (
+        <Banner
+          tone={connBanner.tone === "warn" ? "neutral" : connBanner.tone}
+          action={
+            streamState === "exhausted" ? (
+              <Button
+                variant="plain"
+                size="small"
+                disabled={pending["stream/reconnect"] === true}
+                onClick={() => void actions.reconnect()}
+              >
+                {t("session.reconnect")}
+              </Button>
+            ) : undefined
+          }
+        >
+          {connBanner.message || (connBanner.messageKey ? t(connBanner.messageKey) : "")}
+        </Banner>
       ) : null}
 
-      {turnStatus ? (
-        <Card className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium">{t(`session.turn.${turnStatus}`)}</span>
-          {timeline.queuedTurnIds.length > 0 ? (
-            <Pill tone="neutral">{t("session.queuedCount", { count: timeline.queuedTurnIds.length })}</Pill>
-          ) : null}
-          <span className="flex-1" />
+      {/* Operation failure banner */}
+      {failure ? (
+        <FailureBanner
+          failure={failure.failure}
+          operationKey={failure.operationKey}
+          onDismiss={actions.dismissFailure}
+        />
+      ) : null}
+
+      {/* Replay or resync notices */}
+      {timeline.replayIncomplete ? (
+        <Banner tone="neutral">
+          {t("session.replayIncomplete")}
+        </Banner>
+      ) : null}
+
+      {timeline.needsResync ? (
+        <Banner tone="neutral">
+          {t("session.resync")}
+        </Banner>
+      ) : null}
+
+      {/* Run status bar */}
+      <RunBar
+        statusDisplay={statusDisplay}
+        queuedCount={timeline.queuedTurnIds.length}
+        stopping={isStopping}
+        onStop={() => setStopSheetOpen(true)}
+      />
+
+      {/* Scrollable Timeline */}
+      <ScreenContent hasDock ref={scroll.containerRef} className="[overflow-anchor:none]">
+        {timeline.hasMoreHistory ? (
+          <div className="flex justify-center py-2">
+            <Button
+              variant="plain"
+              size="small"
+              disabled={loadingEarlier}
+              onClick={() => void actions.loadEarlier()}
+            >
+              {loadingEarlier ? t("session.loadingEarlier") : t("session.loadEarlier")}
+            </Button>
+          </div>
+        ) : null}
+        <ChatTimeline
+          items={timeline.items}
+          lastFailure={timeline.lastFailure}
+        />
+      </ScreenContent>
+
+      {/* A row that arrives while the reader is reading further up is announced
+          instead of silently missed: the count is the rows they have not seen,
+          and an open decision takes precedence over it. */}
+      {scroll.following ? null : (
+        <div className="pointer-events-none absolute inset-x-0 bottom-32 z-20 flex justify-center">
           <Button
             variant="secondary"
-            disabled={!active || pending["turn/stop"] === true}
-            onClick={() => void actions.stop()}
+            size="small"
+            className="pointer-events-auto shadow-lg"
+            aria-label={t("session.backToLatest")}
+            onClick={() => scroll.scrollToBottom()}
           >
-            {pending["turn/stop"] ? t("session.stopping") : t("session.stop")}
+            {attention > 0 && scroll.unread === 0
+              ? t("session.needsDecision")
+              : scroll.unread > 0
+                ? t("session.backToLatestCount", { count: scroll.unread })
+                : t("session.backToLatest")}
           </Button>
-          <Button
-            variant="warning"
-            disabled={!active || pending["turn/interrupt"] === true}
-            onClick={() => void actions.interrupt()}
-          >
-            {pending["turn/interrupt"] ? t("session.interrupting") : t("session.interrupt")}
-          </Button>
-        </Card>
-      ) : null}
+        </div>
+      )}
 
-      {timeline.lastFailure?.message ? (
-        <p className="text-xs text-red-700 dark:text-red-300">
-          {t("session.turn.failed", { reason: timeline.lastFailure.message })}
-        </p>
-      ) : null}
+      {/* Bottom Dock */}
+      <ScreenDock>
+        <div className="flex flex-col gap-2 w-full">
+          {hasDecision ? (
+            <DecisionArea
+              approvals={timeline.pendingApprovals}
+              inputs={timeline.pendingInputs}
+              pending={pending}
+              hostLabel={hostName}
+              onDecideApproval={(approvalId, decision, attempt) =>
+                void actions.respondApproval({ approvalId, decision, attempt })
+              }
+              onSubmitInput={(inputId, answers, attempt) =>
+                void actions.respondInput({ inputId, answers, attempt })
+              }
+            />
+          ) : null}
 
-      <TimelineView items={timeline.items} />
+          {!timeline.archived ? (
+            <div className="flex items-center gap-1.5 overflow-x-auto px-1 text-[12px] leading-[16px] text-[var(--rm-text-secondary)]">
+              <button
+                type="button"
+                onClick={() => {
+                  setInfoOpen(true);
+                  void actions.loadModels();
+                }}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--rm-bg-surface)] px-2.5 py-1 ring-1 ring-[var(--rm-separator)] active:bg-[var(--rm-bg-inset)]"
+              >
+                <span className="max-w-[160px] truncate font-medium text-[var(--rm-text-primary)]">{modelDisplay}</span>
+                <span className="text-[var(--rm-text-faint)]">·</span>
+                <span>{t(`mode.${effectiveSession?.mode ?? "agent"}.title`)}</span>
+                <span className="text-[var(--rm-text-faint)]">·</span>
+                <span>{t(`permission.${effectiveSession?.permissionMode ?? "ask"}.title`)}</span>
+              </button>
+            </div>
+          ) : null}
 
-      {timeline.pendingApprovals.map((request) => (
-        <ApprovalCard
-          key={request.id}
-          request={request}
-          pending={pending[`approval:${request.id}`] === true}
-          onDecide={(decision, attempt) =>
-            void actions.respondApproval({ approvalId: request.id, decision, attempt })
-          }
-        />
-      ))}
+          <ChatComposer
+            sending={pending["turn/start"] === true}
+            disabled={timeline.archived}
+            archived={timeline.archived}
+            queued={active}
+            onSend={actions.sendTurn}
+          />
+        </div>
+      </ScreenDock>
 
-      {timeline.pendingInputs.map((request) => (
-        <InputCard
-          key={request.id}
-          request={request}
-          pending={pending[`input:${request.id}`] === true}
-          onSubmit={(answers, attempt) => void actions.respondInput({ inputId: request.id, answers, attempt })}
-        />
-      ))}
-    </AppShell>
+      {/* Stop run Sheet */}
+      <StopSheet
+        open={stopSheetOpen}
+        onClose={() => setStopSheetOpen(false)}
+        onStopGraceful={() => {
+          setStopSheetOpen(false);
+          void actions.stop();
+        }}
+        onStopInterrupt={() => {
+          setStopSheetOpen(false);
+          void actions.interrupt();
+        }}
+      />
+
+      {/* R7: what this session runs on, and the one place to change it. */}
+      <SessionInfoSheet
+        open={infoOpen}
+        session={effectiveSession}
+        computerLabel={hostName}
+        models={models}
+        running={active}
+        hasPendingDecision={hasDecision}
+        pending={pending["session/configure"] === true || pending["session/rename"] === true}
+        failure={failure ? failureReasonText(t, failure.failure) : null}
+        onClose={() => setInfoOpen(false)}
+        onRename={(title) => void actions.rename(title)}
+        onConfigure={(input) => void actions.configure(input)}
+      />
+    </Screen>
   );
 }

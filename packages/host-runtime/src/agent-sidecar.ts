@@ -21,6 +21,7 @@ const GATED_LOCAL_TOOLS: ReadonlySet<string> = new Set([
   "SessionList",
   "SessionSend",
   "SessionResult",
+  "SessionCreate",
 ]);
 
 export type SidecarNotificationHandler = (method: string, params: unknown) => void;

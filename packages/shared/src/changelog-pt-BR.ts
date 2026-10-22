@@ -2,6 +2,34 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "0.24.0",
+    date: "2026-10-21",
+    highlights: [
+      "O telefone agora separa projetos de conversas: você escolhe um projeto e, dentro dele, uma conversa, com um único vocabulário para cada estado e um aviso claro quando o aplicativo volta ao primeiro plano.",
+      "Uma conversa informa quando está esperando sua resposta, então o telefone não mostra mais uma pergunta pendente como um turno ocupado.",
+      "As notificações nomeiam a conversa na tela de bloqueio e levam o número de decisões ainda pendentes; no Android o aplicativo desenha a própria notificação, então tocar nela abre essa conversa.",
+      "As notificações push podem se limitar aos eventos que precisam de você, vários eventos de uma conversa são agrupados e a build de iPhone agora inclui a permissão de notificação.",
+      "Um telefone pode enviar imagens e arquivos pequenos para uma conversa que roda no seu computador.",
+      "Um telefone pode ver qual modelo uma conversa usa e trocá-lo.",
+      "As respostas são exibidas como Markdown na linha do tempo do telefone, históricos longos carregam em janelas sem mover o que você está lendo, e voltar se comporta igual em todos os caminhos.",
+      "Selecionar texto em uma resposta do desktop o cita na caixa de entrada, e um plugin pode abrir um arquivo local direto na visualização de navegador do painel de trabalho.",
+    ],
+  },
+  {
+    version: "0.23.0",
+    date: "2026-10-20",
+    highlights: [
+      "O aplicativo móvel tem um design totalmente novo: telas renovadas para conectar aos seus computadores, gerenciar hosts e conversar, uma linha do tempo de conversas reconstruída e confirmações mais claras para ações de alto risco e de parada.",
+      "Seu telefone agora pode iniciar novas sessões no seu computador — com registro de projetos e navegação de pastas ao adicionar um — as sessões são agrupadas por projeto e os computadores mostram o nome real em vez de um ID de host.",
+      "Uma sessão do telefone agora abre na mensagem mais recente e carrega o histórico anterior sob demanda, mostra as mesmas linhas do desktop e mantém a entrada acima do teclado no iOS.",
+      "Digite # no compositor para direcionar a outra sessão: sugestões aparecem enquanto você digita e o alvo escolhido vira uma etiqueta clicável na sua mensagem.",
+      "Quando você pede ao agente para entregar trabalho a uma sessão que ainda não existe, ele agora pode criá-la para você; o modelo usado nessas entregas é escolhido nas Configurações.",
+      "As notas laterais agora respondem a partir de um instantâneo somente leitura da conversa sem cutucar uma tarefa em andamento, e cada pergunta mantém a resposta no painel lateral.",
+      "A compactação automática de contexto não abre mais uma notificação; ela aparece como um marcador embutido na transcrição, enquanto uma compactação manual com falha ainda mostra o erro real.",
+      "Os caminhos que o agente menciona agora viram links mesmo para pastas e arquivos sem extensão, e referências fora do projeto oferecem mostrar no gerenciador de arquivos ou copiar o caminho em vez de uma mensagem de \"restrito\".",
+    ],
+  },
+  {
     version: "0.22.1",
     date: "2026-10-19",
     highlights: [

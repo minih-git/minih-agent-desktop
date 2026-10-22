@@ -327,7 +327,7 @@ pi-agent-core 提供 Agent 循环及稳定的 agent/event/tool 类型，pi-ai �
 
 压缩遵循 Codex 的机制 (ADR 0064)：它总是内联发生在
 回合边界，模型可以通过`new_context`请求，每次compaction
-添加一个转录本行并提出一个警告 toast，并且没有
+添加一个转录本行，并且没有
 任何地方的预计算。
 
 pi 0.84.4+ 只在循环将要在同一次运行中开启另一个助手回合时才调用
@@ -426,7 +426,7 @@ pi 0.84.4+ 只在循环将要在同一次运行中开启另一个助手回合时
 threshold 检查点一样以中止结束本轮，并保留预检阶段的用户消息。
 
 **两个压缩系列。** 两者运行相同的生命周期 - 预算
-重新估计、host-core 追加、`compaction_end`、转录本行、警告：
+重新估计、host-core 追加、`compaction_end` 与转录本行，不弹常规 toast 或对话框：
 
 - `summary`（默认）从模型请求摘要；
 - `fresh_window` 不请求任何内容并安装一个空的检查点
@@ -461,7 +461,10 @@ Headroom 是 16,384 个代币储备底线的最大值，模型最大输出
 
 **估算校准（D606）。** 上述每个阈值都对着同一个数字比较，而该数字会按请求的真实开销校正。pi 的 `estimateContextTokens`
 以最后一条助手用量为锚，并使用 pi-ai 1.1.0 的 provider 消息估算（文本按每个 token 3.5 个字符）；文本截断也按相同比例换算 token 预算。没有锚点时，估算完全不含系统提示与工具结构，
-而下一次请求仍要为它们付费。两类误差分开处理——逐字符偏差以「猜测尾部」上的比例表示（与量级无关）；无锚点残差只在与之
+而下一次请求仍要为它们付费；此时（会话刚开始、或检查点刚清掉锚点）才用整请求估算作为下限。
+一旦投影锚定在提供程序报告的用量上，该数字已包含那次请求的系统提示与工具结构，
+因此直接采用它——用粗略估算再加一遍同一份上下文，会让窗口仍剩大半的对话提前压缩（D671）。
+会话运行时与委派预算共用这一条规则。锚点还必须属于**当前**这份上下文：投影会遍历所有消息记录最新的检查点摘要时间戳，因为该摘要是提供程序估算器看不到的桌面专有角色，否则在它之前报告的用量（例如回放尾部携带的旧用量）会去锚定一个已被检查点替换掉的上下文。两类误差分开处理——逐字符偏差以「猜测尾部」上的比例表示（与量级无关）；无锚点残差只在与之
 量级相当的样本（0.5×–2×）上按比例应用，否则只加上观测到的固定开销（上限 32,000 词元）。
 
 校正是不对称的，因为这个数字决定压缩：向上修正只要有三个观测即生效；向下修正需要三个方向一致的样本、每次最多 15 %，
@@ -485,7 +488,7 @@ Headroom 是 16,384 个代币储备底线的最大值，模型最大输出
 完整的转录本保持持久且可见，而下一个模型请求
 仅接收恢复检查点和尾部。生命周期事件标记
 这作为 `fallback: "retained_tail"`，检查点的 mark 也携带同样的 `fallback`，
-因此渲染器可以显示警告并把转录行标为摘要生成失败，
+因此渲染器把转录行标为摘要生成失败，
 而不是虚假的成功。如果无法准备、持久或保留后备
 低于安全预算，用户行和助理错误仍然持久并且
 没有提供商请求开始。提供商报告的上下文溢出是最后一个
@@ -864,7 +867,7 @@ details 会说明该委托丢失了历史，而不是把一个不完整的答案
 的工具结果 —— 因此一次恢复从 `hardLimit` 之下开始，而不是在它的第一次请求上就溢出。
 
 委托压缩只影响委托的模型上下文。它不改写任何持久化的转录行，不写入 host-core 检查点，
-也不添加压缩行、警告 toast 或上下文检查器条目；委托保留它完整的可见行，父级依旧只看到
+也不添加压缩行或上下文检查器条目；委托保留它完整的可见行，父级依旧只看到
 报告。压缩完全自动：`new_context` 对委托仍然被拒绝，因为执行它会设置父级运行时的待压缩
 标记。
 
@@ -1400,3 +1403,11 @@ retries and images retain physical account/model attribution. Nested immediate
 parent and owning Task remain distinct. The migration does not add coding-agent
 AgentSession, Codemode or virtual routing. See the coding-agent design review for
 future adoption conditions.
+
+### Compacted provider retry transcripts
+
+Main-session and built-in subagent provider retries use the current compacted
+transcript when compaction already replaced a failed assistant with a summary
+or retained user message. Remove trailing assistant rows if present; do not
+require an assistant tail before `continue()`. Retry budgets, cancellation,
+fallback selection, usage and the visible transcript remain unchanged.

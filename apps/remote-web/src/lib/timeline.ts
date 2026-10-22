@@ -16,10 +16,11 @@
  *     (plus `payload.itemType` / `payload.itemId` for item kinds), so message
  *     deltas are applied with the shared `applyMessageUpdate`.
  */
-import { applyMessageUpdate, type RacpApprovalRequest, type RacpEventEnvelope, type RacpInputRequest, type RacpSession, type RacpTurn, type RacpTurnStatus, type UiMessage } from "@minih-agent/shared";
+import { applyMessageUpdate, type RacpApprovalRequest, type RacpEventEnvelope, type RacpInputRequest, type RacpSession, type RacpSessionSnapshot, type RacpTurn, type RacpTurnStatus, type UiMessage } from "@minih-agent/shared";
 
 import {
   agentEvent,
+  appendItem,
   asRecord,
   asString,
   isTruncatedPayload,
@@ -27,12 +28,28 @@ import {
   itemFromTruncatedPayload,
   itemIdOf,
   itemTypeOf,
-  messageFields,
   plainText,
-  upsertItem,
+  prependItems,
+  projectMessage,
   withAgent,
 } from "./timeline-items.js";
 import { createInitialTimelineState, type TimelineAction, type TimelineFailure, type TimelineItem, type TimelineState } from "./timeline-types.js";
+
+/**
+ * Add or replace one row, and remember whether the cap dropped the oldest row.
+ *
+ * A row dropped by the cap came from `session/history`, so the Host still has
+ * it: `hasMoreHistory` must stay true, or "load earlier" would be gone and the
+ * row could never come back (D666 follow-up D2, review m1).
+ */
+function withItem(state: TimelineState, items: TimelineItem[], item: TimelineItem): TimelineState {
+  const appended = appendItem(items, item);
+  return {
+    ...state,
+    items: appended.items,
+    ...(appended.droppedOldest ? { hasMoreHistory: true } : {}),
+  };
+}
 
 export { MAX_ITEM_TEXT_CHARS, MAX_TIMELINE_ITEMS, itemFromSummary, plainText } from "./timeline-items.js";
 export { createInitialTimelineState } from "./timeline-types.js";
@@ -48,26 +65,54 @@ export function timelineReducer(state: TimelineState, action: TimelineAction): T
       return applyAttach(state, action);
     case "event":
       return applyEnvelope(state, action.envelope);
+    case "prepend":
+      // Older rows keep their place: the cap trims appends, not what the user
+      // explicitly loaded (see `boundItems`).
+      return {
+        ...state,
+        items: prependItems(state.items, action.items),
+        hasMoreHistory: action.hasMoreHistory,
+      };
   }
 }
 
-function applyAttach(state: TimelineState, action: Extract<TimelineAction, { type: "attach" }>): TimelineState {
-  const snapshot = action.snapshot;
+/**
+ * The rows one snapshot shows: its newest page with the in-flight items
+ * overlaid. The one place this projection is decided, so the reducer and the
+ * history loop that tops a freshly opened view up cannot disagree about what the
+ * client already has.
+ */
+export function snapshotItems(snapshot: RacpSessionSnapshot | undefined): TimelineItem[] {
   const items: TimelineItem[] = [];
-  for (const summary of snapshot?.items ?? []) items.push(itemFromSummary(summary));
+  // `itemFromSummary` answers `undefined` for a row the desktop hides (internal
+  // model instructions, an assistant row with nothing in it), so the phone does
+  // not show a box the computer would not.
+  for (const summary of snapshot?.items ?? []) {
+    const item = itemFromSummary(summary);
+    if (item) items.push(item);
+  }
   for (const summary of snapshot?.activeItems ?? []) {
     const item = itemFromSummary(summary);
+    if (!item) continue;
     const index = items.findIndex((existing) => existing.id === item.id);
     if (index < 0) items.push(item);
     else items[index] = item;
   }
+  return items;
+}
+
+function applyAttach(state: TimelineState, action: Extract<TimelineAction, { type: "attach" }>): TimelineState {
+  const snapshot = action.snapshot;
+  const items = snapshotItems(snapshot);
   return {
     ...createInitialTimelineState(),
+    attached: true,
     session: snapshot?.session ?? action.session,
     items,
     ...(snapshot?.activeTurn
       ? { activeTurnId: snapshot.activeTurn.id, activeTurnStatus: snapshot.activeTurn.status }
       : {}),
+    hasMoreHistory: snapshot?.hasMoreHistory === true,
     queuedTurnIds: (snapshot?.queuedTurns ?? []).map((turn) => turn.id),
     pendingApprovals: [...(snapshot?.pendingApprovals ?? [])],
     pendingInputs: [...(snapshot?.pendingInputs ?? [])],
@@ -82,6 +127,15 @@ function applyAttach(state: TimelineState, action: Extract<TimelineAction, { typ
 function applyEnvelope(state: TimelineState, envelope: RacpEventEnvelope): TimelineState {
   if (state.seenEventIds.includes(envelope.eventId)) return state;
   const sequence = envelope.sequence;
+  if (!state.attached && sequence !== undefined) {
+    // Before the first snapshot there is nothing to apply to: the snapshot is
+    // about to replace this state, and an event it does not contain would be
+    // lost for good if it were marked seen. The stream is opened at the
+    // snapshot's cursor (protocol §5.4: a snapshot is valid only with its
+    // cursor), so the Host replays exactly the events this client has not
+    // applied yet. Dropping it here is what makes that replay the only source.
+    return state;
+  }
   if (sequence === undefined) {
     // Ephemeral: no cursor, so the event id is the only duplicate guard.
     const applied = applyKind(state, envelope);
@@ -191,15 +245,16 @@ function applyItemStarted(
   payload: Record<string, unknown>,
 ): TimelineState {
   if (isTruncatedPayload(payload)) {
-    return { ...state, items: upsertItem(state.items, itemFromTruncatedPayload(payload, envelope, "streaming")) };
+    return withItem(state, state.items, itemFromTruncatedPayload(payload, envelope, "streaming"));
   }
   const itemType = itemTypeOf(payload);
   const event = agentEvent(payload);
   const id = itemIdOf(payload, envelope);
   const turnId = envelope.turnId ?? "";
   if (itemType === "message" && event?.type === "message_start") {
-    const item: TimelineItem = { id, turnId, itemType, status: "streaming", ...messageFields(event.message) };
-    return { ...state, items: upsertItem(state.items, withAgent(item, envelope)) };
+    const item = projectMessage(event.message, { id, turnId, status: "streaming" });
+    if (!item) return state;
+    return withItem(state, state.items, withAgent(item, envelope));
   }
   if (itemType === "tool" && event?.type === "tool_start") {
     const args = plainText(event.args);
@@ -208,16 +263,19 @@ function applyItemStarted(
       turnId,
       itemType,
       status: "streaming",
+      role: "tool",
       toolName: event.toolName,
+      toolStatus: "running",
+      ...(event.args !== undefined ? { toolArgs: event.args } : {}),
       text: args.text,
       ...(args.truncated ? { truncated: true } : {}),
     };
-    return { ...state, items: upsertItem(state.items, withAgent(item, envelope)) };
+    return withItem(state, state.items, withAgent(item, envelope));
   }
   if (itemType === "compaction") {
     const reason = event?.type === "compaction_start" ? plainText(event.reason) : { text: "" };
     const item: TimelineItem = { id, turnId, itemType, status: "streaming", text: reason.text };
-    return { ...state, items: upsertItem(state.items, withAgent(item, envelope)) };
+    return withItem(state, state.items, withAgent(item, envelope));
   }
   return state;
 }
@@ -244,14 +302,13 @@ function applyItemDelta(
         }
       : { id, role: "assistant", content: existing?.text ?? "", createdAt: "" };
   const merged = applyMessageUpdate(seed, event);
-  const item: TimelineItem = {
+  const item = projectMessage(merged, {
     id,
     turnId: envelope.turnId ?? existing?.turnId ?? "",
-    itemType: "message",
     status: "streaming",
-    ...messageFields(merged),
-  };
-  return { ...state, items: upsertItem(state.items, withAgent(item, envelope)) };
+  });
+  if (!item) return state;
+  return withItem(state, state.items, withAgent(item, envelope));
 }
 
 function applyItemCompleted(
@@ -260,46 +317,52 @@ function applyItemCompleted(
   payload: Record<string, unknown>,
 ): TimelineState {
   if (isTruncatedPayload(payload)) {
-    return { ...state, items: upsertItem(state.items, itemFromTruncatedPayload(payload, envelope, "completed")) };
+    return withItem(state, state.items, itemFromTruncatedPayload(payload, envelope, "completed"));
   }
   const itemType = itemTypeOf(payload);
   const event = agentEvent(payload);
   const id = itemIdOf(payload, envelope);
   const turnId = envelope.turnId ?? "";
   if (itemType === "message" && event?.type === "message_end") {
-    const item: TimelineItem = { id, turnId, itemType, status: "completed", ...messageFields(event.message) };
+    const item = projectMessage(event.message, { id, turnId, status: "completed" });
     const items =
       event.replacesMessageId && event.replacesMessageId !== id
         ? state.items.filter((entry) => entry.id !== event.replacesMessageId)
         : state.items;
-    return { ...state, items: upsertItem(items, withAgent(item, envelope)) };
+    // A row that became invisible (an assistant message that turned out to be
+    // empty) is removed rather than left behind.
+    if (!item) return { ...state, items: items.filter((entry) => entry.id !== id) };
+    return withItem(state, items, withAgent(item, envelope));
   }
   if (event?.type === "user_message_persisted") {
-    const item: TimelineItem = {
+    const item = projectMessage(event.message, {
       id: event.message.id,
       turnId,
-      itemType: "message",
       status: "completed",
-      ...messageFields(event.message),
-    };
+    });
     // The optimistic row the composer rendered is replaced by the durable one.
     const items = state.items.filter((entry) => entry.id !== event.optimisticMessageId);
-    return { ...state, items: upsertItem(items, withAgent(item, envelope)) };
+    if (!item) return { ...state, items };
+    return withItem(state, items, withAgent(item, envelope));
   }
   if (itemType === "tool" && event?.type === "tool_end") {
+    const existing = state.items.find((entry) => entry.id === id);
     const result = plainText(event.result);
-    const toolName = state.items.find((entry) => entry.id === id)?.toolName;
     const item: TimelineItem = {
       id,
       turnId,
       itemType,
       status: "completed",
+      role: "tool",
       text: result.text,
-      ...(toolName ? { toolName } : {}),
+      ...(existing?.toolName ? { toolName: existing.toolName } : {}),
+      ...(existing?.toolArgs !== undefined ? { toolArgs: existing.toolArgs } : {}),
+      ...(event.result !== undefined ? { toolResult: event.result } : {}),
+      toolStatus: event.isError === true ? "error" : "success",
       ...(event.isError === true ? { isError: true } : {}),
       ...(result.truncated ? { truncated: true } : {}),
     };
-    return { ...state, items: upsertItem(state.items, withAgent(item, envelope)) };
+    return withItem(state, state.items, withAgent(item, envelope));
   }
   if (itemType === "compaction" && event?.type === "compaction_end") {
     const detail = plainText(event.error?.message ?? event.reason);
@@ -311,11 +374,11 @@ function applyItemCompleted(
       text: detail.text,
       ...(event.ok === false ? { isError: true } : {}),
     };
-    return { ...state, items: upsertItem(state.items, withAgent(item, envelope)) };
+    return withItem(state, state.items, withAgent(item, envelope));
   }
   const existing = state.items.find((entry) => entry.id === id);
   if (!existing) return state;
-  return { ...state, items: upsertItem(state.items, { ...existing, status: "completed" }) };
+  return withItem(state, state.items, { ...existing, status: "completed" });
 }
 
 function applyTurnClosed(state: TimelineState, envelope: RacpEventEnvelope): TimelineState {

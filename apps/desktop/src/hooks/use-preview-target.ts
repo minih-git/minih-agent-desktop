@@ -3,7 +3,7 @@ import { sessionAllows } from "../lib/remote-session-safety";
 import { useSlotSessionId } from "../plugins/renderer-slots/use-slots";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { isActiveInProject } from "@minih-agent/shared";
+import { isActiveInProject, type FsChatRefEntryKind } from "@minih-agent/shared";
 import { useAppStore } from "../stores/app-store";
 import { api } from "../lib/api";
 import { isHtmlFilePath, toWorkspaceRel, type ChatPreviewTarget } from "../lib/chat-links";
@@ -86,12 +86,22 @@ export type ResolvedChatFileRef = {
   primary: boolean;
   /** Session-owned generated artifacts, rather than imported attachments. */
   scratch: boolean;
+  /** Whether a file or a folder answered; a folder is only ever revealed. */
+  entryKind: FsChatRefEntryKind;
+  /**
+   * The reference names an entry beyond every root the app reads. It is not
+   * opened or previewed — `revealRef` shows it and the caller copies the path —
+   * and it never has a project-relative spelling.
+   */
+  outsideProject?: true;
 };
 
 export type ChatFileOpenDestination =
   | "file-manager"
   | "built-in-browser"
-  | "default-browser";
+  | "default-browser"
+  | "default-application"
+  | "reveal-in-folder";
 
 export type ChatFileOpenOptions = {
   line?: number;
@@ -192,12 +202,28 @@ function useResolveChatFileRef() {
       }
       const match = result.match;
       if (!match) {
-        const key = result.reason === "outside-allowed-roots"
-          ? "chat.fileRefRestricted"
-          : "chat.fileRefMissing";
-        showToast(t(key, { name: raw }), { variant: "error" });
-        return null;
+        const outside = result.outside;
+        if (!outside) {
+          const key = result.reason === "outside-allowed-roots"
+            ? "chat.fileRefRestricted"
+            : "chat.fileRefMissing";
+          showToast(t(key, { name: raw }), { variant: "error" });
+          return null;
+        }
+        // The entry exists outside the app's roots. It is not a match — nothing
+        // here may read it — but a click can still locate it.
+        return {
+          path: outside.absolutePath,
+          absolutePath: outside.absolutePath,
+          relativePath: null,
+          inProject: false,
+          primary: false,
+          scratch: false,
+          entryKind: outside.entryKind,
+          outsideProject: true,
+        };
       }
+      const entryKind: FsChatRefEntryKind = match.entryKind ?? "file";
       if (match.root !== "workspace") {
         return {
           path: match.absolutePath,
@@ -206,6 +232,7 @@ function useResolveChatFileRef() {
           inProject: false,
           primary: false,
           scratch: match.sessionScratch === true,
+          entryKind,
         };
       }
       // A project group can hold several folders, and a relative path always
@@ -219,6 +246,7 @@ function useResolveChatFileRef() {
         inProject: true,
         primary,
         scratch: false,
+        entryKind,
       };
     },
     [paneSessionId, sessionId, showToast, t, workspacePath],
@@ -266,6 +294,49 @@ export function useOpenChatFileRef() {
           (current.workspace?.path ?? null) !== workspacePath ||
           current.activeSessionId !== sessionId
         ) {
+          return;
+        }
+        // An entry outside every allowed root may only be revealed through the
+        // dedicated chat-reference channel; it is never opened or previewed.
+        if (resolved.outsideProject) {
+          try {
+            await api.fsRevealChatRef(resolved.absolutePath, sessionId);
+          } catch {
+            showToast(t("chat.fileRefRevealFailed", { name: resolved.absolutePath }), {
+              variant: "error",
+            });
+          }
+          return;
+        }
+        if (destination === "default-application") {
+          if (
+            current.workspace?.remote ||
+            current.sessions.find((session) => session.id === sessionId)?.remoteWorkspace ||
+            resolved.entryKind === "directory"
+          ) {
+            showToast(t("panel.files.openFailed"), { variant: "error" });
+            return;
+          }
+          try {
+            await api.fsOpen(resolved.absolutePath, mimeType, sessionId);
+          } catch {
+            showToast(t("panel.files.openFailed"), { variant: "error" });
+          }
+          return;
+        }
+        if (destination === "reveal-in-folder") {
+          if (
+            current.workspace?.remote ||
+            current.sessions.find((session) => session.id === sessionId)?.remoteWorkspace
+          ) {
+            showToast(t("chat.folderRevealFailed"), { variant: "error" });
+            return;
+          }
+          try {
+            await api.fsReveal(resolved.absolutePath, sessionId);
+          } catch {
+            showToast(t("chat.folderRevealFailed"), { variant: "error" });
+          }
           return;
         }
         if (destination === "file-manager") {
@@ -318,6 +389,24 @@ export function useOpenChatFileRef() {
             showToast(t("chat.defaultBrowserOpenFailed"), {
               variant: "error",
             });
+          }
+          return;
+        }
+        // A folder is not opened, it is shown: the system file manager selects
+        // it where it lives. `fsOpen` would launch a `.app` bundle, and the
+        // bundled file view has no folder location. A remote session has no
+        // local folder to show, so it says so instead of doing nothing.
+        if (resolved.entryKind === "directory") {
+          if (current.workspace?.remote) {
+            showToast(t("chat.remoteFolderRevealUnsupported", { name: resolved.absolutePath }), {
+              variant: "error",
+            });
+            return;
+          }
+          try {
+            await api.fsReveal(resolved.absolutePath, sessionId);
+          } catch {
+            showToast(t("chat.folderRevealFailed"), { variant: "error" });
           }
           return;
         }
@@ -396,7 +485,9 @@ export function useCopyChatFileRef() {
         const resolved = await resolveRef(path, baseDir);
         if (!resolved) return;
         const value =
-          kind === "absolute" ? resolved.absolutePath : resolved.relativePath;
+          kind === "absolute" || resolved.outsideProject
+            ? resolved.absolutePath
+            : resolved.relativePath;
         if (!value) {
           showToast(t("chat.relativePathUnavailable"), { variant: "error" });
           return;

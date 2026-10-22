@@ -71,9 +71,11 @@ ADR 记录那些不应被静默改变的架构选择。中文入口与英文索�
 
 | 编号 | 标题 | 状态 |
 |---|---|---|
+| mobile-direct-gateway-chat | [移动端直连网关对话与远程电脑并存](/adr/mobile-direct-gateway-chat) | 已接受 |
 | network-center-gateway-issued-identity | [组网身份只由网关下发](/adr/network-center-gateway-issued-identity) | 已接受待实现 |
 | remote-control-router-account-binding | [远程控制的 Router 账户绑定](/adr/remote-control-router-account-binding) | 已接受待实现（MVP 之后；D666；修订 ADR 0331） |
 | builtin-session-messaging | [内置会话消息工具](/adr/builtin-session-messaging) | 已接受（D663） |
+| session-create-tool | [为没有目标的派发新建会话](/adr/session-create-tool) | 已接受（D672；修订 D663） |
 | subagent-model-opt-in | [区分子代理模型自动调度许可与定义固定模型](/adr/subagent-model-opt-in) | 已接受待实现 |
 | 0001 | [Electron 桌面壳](/adr/0001-use-electron) | 已接受 |
 | 0002 | [使用 pi Agent Harness 作为内核](/adr/0002-use-pi-agent-harness) | 已接受 |
@@ -285,7 +287,7 @@ ADR 记录那些不应被静默改变的架构选择。中文入口与英文索�
 | 0242 | [仅增量且合并的流式更新](/adr/0242-delta-only-streaming-updates) | 已接受（修订 0127 / 0130 / 0149 / 0153；issue #299） |
 | 0243 | [技能市场公网 HTTPS 目录拉取](/adr/0243-skill-market-public-https-catalog) | 已接受（修订 ADR 0009；issue #287 / PR #290） |
 | 0245 | [加固 MCP 市场公网网络边界](/adr/0245-mcp-market-public-network-boundary) | 已接受 |
-| 0262 | [聊天里的文件引用在主进程补全，并在文件视图中打开](/adr/0262-chat-file-refs-open-in-the-file-view) | 已接受（修订 ADR 0163 / ADR 0241） |
+| 0262 | [聊天里的文件引用在主进程补全，并在文件视图中打开](/adr/0262-chat-file-refs-open-in-the-file-view) | 已接受（修订 ADR 0163 / ADR 0241；文件夹引用改为“在 Finder 中显示”，不打开） |
 | 0263 | [向插件视图暴露项目的文件夹根，并跨根补全引用](/adr/0263-project-folder-roots-for-plugin-views) | 已接受（修订 ADR 0262；ADR 0249 §5） |
 | 0264 | [交给宿主执行的文件动作跟随视图正在浏览的文件夹](/adr/0264-host-mediated-actions-follow-the-browsed-folder) | 已接受（修订 ADR 0263；ADR 0249 §5） |
 | global-sidebar-pins | [在侧边栏全局显示置顶会话](/adr/global-sidebar-pins) | 已接受（修订 ADR 0016；issue #306） |
@@ -323,6 +325,9 @@ ADR 记录那些不应被静默改变的架构选择。中文入口与英文索�
 | agent-long-term-memory | [分层、可溯源的长期记忆](/adr/agent-long-term-memory) | 已接受待实现（D668；修订 ADR 0234） |
 | learned-memory-consolidation | [学习记忆的整理建议与复核](/adr/learned-memory-consolidation) | 提议中（修订 ADR agent-long-term-memory） |
 | 0332 | [插件市场由本项目自己的分发仓库提供](/adr/0332-own-plugin-distribution-repository) | 已接受（2026-10-18；取代 ADR 0276 中官方渠道的条款） |
+| 0333 | [项目外的聊天路径只提供“在 Finder 中显示”和复制路径](/adr/0333-chat-refs-outside-roots-reveal-and-copy) | 已接受（2026-10-20；比 ADR 0262 的打开目标收得更窄） |
+| 0334 | [把对话里选中的一段文字引用到输入框](/adr/0334-selection-quote-into-composer) | 已接受（2026-10-20；取代 ADR 0268 第 2 条；注释与侧聊保持删除） |
+| 0335 | [插件可以在工作面板的浏览器视图里打开本地文件](/adr/0335-plugin-open-local-file-in-work-panel) | 已接受（2026-10-21；复用 browser.cdp 权限） |
 
 ## 什么时候看 ADR
 

@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Minih 远程 · 两层导航、状态与通知（原型）</title>
+<style>
+  /*
+   * Prototype for docs/spec/04-ux/13-remote-mobile-client.md §17: the two-layer
+   * navigation (computer -> projects -> sessions of one project -> session), one
+   * status vocabulary, and notifications.
+   *
+   * Every colour below is the client's own `--rm-*` token, copied verbatim from
+   * apps/remote-web/src/styles.css, so what this file shows is what the client
+   * can render. Simulated data only; nothing here talks to a Host.
+   *
+   * Sibling of index.html (the S1-S8 reference); this file adds the layers
+   * index.html does not have and does not replace it.
+   */
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Segoe UI",Roboto,"Noto Sans CJK SC","Microsoft YaHei",sans-serif;
+    background:#e7e7ea;color:#1a1c1f;min-height:100vh;
+    display:flex;gap:40px;justify-content:center;align-items:flex-start;padding:28px 24px 48px;
+    -webkit-font-smoothing:antialiased;
+  }
+  body.page-dark{background:#0e0e10;color:#e9e9ea}
+
+  /* ---------- side panel: prototype controls, not part of the design ---------- */
+  .panel{width:252px;flex:none;position:sticky;top:28px;font-size:13px}
+  .panel h1{font-size:17px;margin:0 0 4px}
+  .panel p.lead{margin:0 0 16px;color:#6b6b70;line-height:1.5}
+  body.page-dark .panel p.lead{color:#9b9b9f}
+  .panel h2{font-size:12px;font-weight:600;color:#6b6b70;margin:16px 0 8px;letter-spacing:.02em}
+  body.page-dark .panel h2{color:#9b9b9f}
+  .seg{display:flex;background:rgba(0,0,0,.06);border-radius:10px;padding:2px}
+  body.page-dark .seg{background:rgba(255,255,255,.08)}
+  .seg button{flex:1;border:0;background:transparent;padding:7px 6px;border-radius:8px;font:inherit;color:inherit;cursor:pointer}
+  .seg button.on{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.12);font-weight:600}
+  body.page-dark .seg button.on{background:#3a3a3e}
+  .jump{display:flex;flex-direction:column;gap:2px}
+  .jump button{text-align:left;border:0;background:transparent;padding:7px 10px;border-radius:8px;font:inherit;color:inherit;cursor:pointer}
+  .jump button:hover{background:rgba(0,0,0,.06)}
+  body.page-dark .jump button:hover{background:rgba(255,255,255,.08)}
+  .jump button.on{background:rgba(0,0,0,.08);font-weight:600}
+  body.page-dark .jump button.on{background:rgba(255,255,255,.12)}
+  .panel .reset{margin-top:16px;width:100%;border:1px solid rgba(0,0,0,.14);background:transparent;padding:8px;border-radius:10px;font:inherit;color:inherit;cursor:pointer}
+  body.page-dark .panel .reset{border-color:rgba(255,255,255,.18)}
+  .panel .tip{margin-top:14px;color:#6b6b70;line-height:1.55}
+  body.page-dark .panel .tip{color:#9b9b9f}
+  .panel code{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+
+  /* ---------- device ---------- */
+  .phone{
+    width:390px;height:844px;border-radius:55px;position:relative;overflow:hidden;flex:none;
+    box-shadow:0 0 0 11px #18181a,0 0 0 13px #3b3b3f,0 34px 80px rgba(0,0,0,.33);
+    --sat:47px;--sab:34px;
+  }
+  /* the client's own tokens (apps/remote-web/src/styles.css) */
+  .phone[data-theme=light]{
+    --rm-bg-page:#f3f3f3;--rm-bg-surface:#ffffff;--rm-bg-raised:#ffffff;--rm-bg-inset:#ededed;
+    --rm-text-primary:#1a1c1f;--rm-text-secondary:rgba(26,28,31,.74);--rm-text-muted:#5d5d5d;--rm-text-faint:#afafaf;
+    --rm-separator:rgba(26,28,31,.08);--rm-accent:#1a1c1f;--rm-on-accent:#ffffff;
+    --rm-running:#c2410c;--rm-decision:#7c3aed;--rm-on-decision:#ffffff;
+    --rm-success:#00802f;--rm-error:#d42a26;--rm-link:#1c64c8;
+    --rm-tint:10%;--rm-shadow:0 8px 24px rgba(0,0,0,.08);--rm-scrim:rgba(0,0,0,.28);
+    --rm-navbg:rgba(243,243,243,.92);--rm-bubble:#ededed;
+  }
+  .phone[data-theme=dark]{
+    --rm-bg-page:#181818;--rm-bg-surface:#212121;--rm-bg-raised:#282828;--rm-bg-inset:#0d0d0d;
+    --rm-text-primary:#ffffff;--rm-text-secondary:rgba(255,255,255,.7);--rm-text-muted:#9b9b9b;--rm-text-faint:#5d5d5d;
+    --rm-separator:rgba(255,255,255,.08);--rm-accent:#ffffff;--rm-on-accent:#1a1c1f;
+    --rm-running:#ff8549;--rm-decision:#c27aff;--rm-on-decision:#1a1c1f;
+    --rm-success:#40c977;--rm-error:#ff6764;--rm-link:#63a8f8;
+    --rm-tint:16%;--rm-shadow:0 0 0 0 transparent;--rm-scrim:rgba(0,0,0,.5);
+    --rm-navbg:rgba(24,24,24,.92);--rm-bubble:#2c2c2c;
+  }
+  .statusbar{position:absolute;left:0;right:0;top:0;height:var(--sat);z-index:90;display:flex;align-items:center;justify-content:space-between;padding:6px 30px 0 40px;color:var(--rm-text-primary);font-weight:600;font-size:16px;pointer-events:none}
+  .island{position:absolute;left:50%;top:11px;width:124px;height:36px;margin-left:-62px;background:#000;border-radius:20px;z-index:95}
+  .sb-right{display:flex;gap:6px;align-items:center}
+  .bars{display:flex;gap:2px;align-items:flex-end;height:11px}
+  .bars i{display:block;width:3px;background:currentColor;border-radius:1px}
+  .battery{width:25px;height:12px;border:1.5px solid currentColor;border-radius:4px;opacity:.9;position:relative;padding:1.5px}
+  .battery::after{content:"";display:block;height:100%;width:78%;background:currentColor;border-radius:1.5px}
+  .homebar{position:absolute;left:50%;bottom:8px;width:134px;height:5px;margin-left:-67px;border-radius:3px;background:var(--rm-text-primary);z-index:90;pointer-events:none;opacity:.85}
+
+  #app{position:absolute;inset:0;background:var(--rm-bg-page)}
+
+  /* ---------- screen shell (spec §6) ---------- */
+  .scr{position:absolute;inset:0;display:flex;flex-direction:column;background:var(--rm-bg-page);color:var(--rm-text-primary)}
+  .scr.enter-push{animation:push .28s cubic-bezier(.2,0,0,1)}
+  .scr.enter-pop{animation:pop .28s cubic-bezier(.2,0,0,1)}
+  @keyframes push{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
+  @keyframes pop{from{transform:translateX(-24px);opacity:0}to{transform:none;opacity:1}}
+  .nav{flex:none;padding-top:var(--sat);background:var(--rm-navbg);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);position:relative;z-index:5;transition:box-shadow .2s}
+  .nav-row{height:44px;display:grid;grid-template-columns:96px 1fr 96px;align-items:center;padding:0 4px}
+  .nav-l{display:flex}.nav-r{display:flex;justify-content:flex-end}
+  .nav-c{text-align:center;min-width:0}
+  .nav-title{font-size:17px;line-height:22px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nav-sub{font-size:12px;line-height:15px;color:var(--rm-text-muted);display:flex;align-items:center;justify-content:center;gap:5px;min-width:0}
+  .nav-sub span.nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .content{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 16px calc(24px + var(--sab));scrollbar-width:none;min-width:0}
+  .content::-webkit-scrollbar{display:none}
+  .scr.has-dock .content{padding-bottom:12px}
+  .dock{flex:none;padding:10px 16px calc(10px + var(--sab));background:var(--rm-bg-page);position:relative;z-index:4}
+  .dock.lift{box-shadow:0 -1px 0 var(--rm-separator)}
+
+  /* ---------- type (spec §5.2) ---------- */
+  .large-title{font-size:28px;line-height:34px;font-weight:700;margin:0;letter-spacing:-.01em}
+  .headline{font-size:16px;line-height:22px;font-weight:600}
+  .callout{font-size:15px;line-height:22px;color:var(--rm-text-secondary);margin:0}
+  .subhead{font-size:14px;line-height:20px;color:var(--rm-text-secondary)}
+  .footnote{font-size:13px;line-height:18px;color:var(--rm-text-muted)}
+  .caption{font-size:12px;line-height:16px;font-weight:500}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+
+  /* ---------- controls ---------- */
+  .ic{display:block;flex:none}
+  .iconbtn{width:44px;height:44px;display:grid;place-items:center;border:0;background:transparent;color:var(--rm-text-primary);border-radius:12px;cursor:pointer;padding:0}
+  .iconbtn:active{opacity:.55}
+  .iconbtn.muted{color:var(--rm-text-muted)}
+  .btn{height:44px;border-radius:12px;font:600 16px/1 inherit;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;padding:0 16px;cursor:pointer;transition:transform .12s ease-out,opacity .12s;white-space:nowrap}
+  .btn:active{transform:scale(.98)}
+  .btn-lg{height:52px;width:100%;font-size:17px}
+  .btn-primary{background:var(--rm-accent);color:var(--rm-on-accent)}
+  .btn-secondary{background:var(--rm-bg-surface);color:var(--rm-text-primary);box-shadow:inset 0 0 0 1px var(--rm-separator)}
+  .btn-plain{background:transparent;color:var(--rm-text-primary)}
+  .btn-sm{height:34px;padding:0 12px;font-size:14px;border-radius:10px}
+
+  .group{background:var(--rm-bg-surface);border-radius:16px;overflow:hidden}
+  .row{display:flex;align-items:center;gap:12px;min-height:64px;padding:10px 8px 10px 16px;position:relative;width:100%;border:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}
+  .row:active{background:color-mix(in srgb,var(--rm-text-primary) 4%,transparent)}
+  .group > * + *::before{content:"";position:absolute;top:0;right:0;left:var(--inset-left,52px);height:1px;background:var(--rm-separator)}
+  .row-main{flex:1;min-width:0}
+  .row-title{font-size:16px;line-height:22px;font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .row-sub{font-size:13px;line-height:18px;color:var(--rm-text-secondary);margin-top:2px;display:flex;align-items:center;gap:6px;min-width:0;white-space:nowrap}
+  .row-sub .t{flex:none}
+  .row-sub .m{overflow:hidden;text-overflow:ellipsis;min-width:0;color:var(--rm-text-muted)}
+  .row-trail{display:flex;align-items:center;color:var(--rm-text-faint);flex:none}
+  .slot{width:20px;display:grid;place-items:center;flex:none}
+  .tile{width:32px;height:32px;border-radius:9px;background:var(--rm-bg-inset);display:grid;place-items:center;color:var(--rm-text-primary);flex:none}
+  .sh{font-size:13px;line-height:18px;color:var(--rm-text-muted);padding:22px 16px 8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .sh:first-child{padding-top:10px}
+
+  /* ---------- status vocabulary (spec §17.4) ----------
+     One set, three places: a session row, a navigation subtitle, a project card.
+     Colour never carries a state alone: each weight pairs its hue with a word
+     and a shape. */
+  .dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
+  .dot.running{background:var(--rm-running);animation:breathe 1.6s ease-in-out 2}
+  .dot.muted{background:var(--rm-text-faint)}
+  .dot.online{background:var(--rm-success)}
+  @keyframes breathe{50%{opacity:.35}}
+  /* state glyph: 16-20px, tone coloured */
+  .glyph{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;flex:none}
+  .glyph.decision{color:var(--rm-decision)}
+  .glyph.error{color:var(--rm-error)}
+  .glyph.success{color:var(--rm-success)}
+  /* the "not yet looked at" cue: same mark inside a ring, a shape difference */
+  .glyph.success.unseen{box-shadow:inset 0 0 0 1.5px var(--rm-success);background:color-mix(in srgb,var(--rm-success) var(--rm-tint),transparent)}
+  /* the attention pill: the only filled status mark in the product */
+  .pill{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:999px;font-size:12px;line-height:16px;font-weight:600;white-space:nowrap;flex:none}
+  .pill.decision{background:color-mix(in srgb,var(--rm-decision) var(--rm-tint),var(--rm-bg-surface));color:var(--rm-decision)}
+  .pill.running{background:color-mix(in srgb,var(--rm-running) var(--rm-tint),var(--rm-bg-surface));color:var(--rm-running)}
+  .pill.neutral{background:var(--rm-bg-inset);color:var(--rm-text-secondary)}
+  .state-word{font-weight:500;flex:none}
+  .state-word.running{color:var(--rm-running)}
+  .state-word.error{color:var(--rm-error)}
+  .state-word.success{color:var(--rm-success)}
+
+  /* ---------- project card (S5) ---------- */
+  .cards{display:flex;flex-direction:column;gap:10px;padding:2px 0 4px}
+  .card{display:block;width:100%;text-align:left;font:inherit;color:inherit;background:var(--rm-bg-surface);border:0;border-radius:16px;padding:14px 12px 13px 16px;cursor:pointer;position:relative;overflow:hidden}
+  .card:active{background:color-mix(in srgb,var(--rm-text-primary) 4%,var(--rm-bg-surface))}
+  /* a project with something waiting gets a 3px rail; the pill says the same
+     thing in words, so the rail is a second cue, never the only one */
+  .card.attention::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--rm-decision)}
+  .card-top{display:flex;align-items:center;gap:8px;min-width:0}
+  .card-name{font-size:16px;line-height:22px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .card-n{font-size:12px;color:var(--rm-text-muted);flex:none}
+  .card-top .row-trail{margin-left:auto}
+  .card-line{display:flex;align-items:center;gap:6px;margin-top:5px;min-width:0;overflow:hidden}
+  .card-line .footnote{flex:none}
+  .card-line .grow{flex:1;min-width:0}
+
+  /* ---------- empty / result ---------- */
+  .empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:56px 12px 8px}
+  .empty .big{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--rm-bg-inset);color:var(--rm-text-muted);margin-bottom:18px}
+  .empty h2{font-size:20px;line-height:26px;font-weight:700;margin:0 0 8px}
+  .empty .callout{max-width:300px}
+
+  /* ---------- in-app notice (foreground, spec §17.6) ---------- */
+  .notice{position:absolute;left:12px;right:12px;top:calc(var(--sat) + 52px);z-index:40;display:flex;align-items:center;gap:10px;
+    background:var(--rm-bg-raised);border-radius:14px;padding:10px 8px 10px 12px;
+    box-shadow:0 0 0 1px var(--rm-separator),var(--rm-shadow);animation:fadeDown .2s cubic-bezier(.2,0,0,1)}
+  .notice .glyph{width:22px;height:22px}
+  .notice .btn{height:44px;padding:0 12px;border-radius:10px}
+  .notice-main{flex:1;min-width:0}
+  .notice-title{font-size:14px;line-height:19px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .notice-body{font-size:13px;line-height:18px;color:var(--rm-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  @keyframes fadeDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+
+  /* ---------- session (S6, reduced: enough to prove the stack) ---------- */
+  .tl{display:flex;flex-direction:column;gap:14px;padding:14px 0 6px}
+  .m-user{align-self:flex-end;max-width:85%;background:var(--rm-bubble);border-radius:18px 18px 6px 18px;padding:9px 13px;font-size:15px;line-height:23px;white-space:pre-wrap;word-break:break-word}
+  .m-ai{font-size:15px;line-height:23px;white-space:pre-wrap;word-break:break-word}
+  .m-ai code{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--rm-link);background:var(--rm-bg-inset);padding:1px 5px;border-radius:5px}
+  .m-note{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--rm-text-muted)}
+  .m-note::before,.m-note::after{content:"";flex:1;height:1px;background:var(--rm-separator)}
+  .decision{border-radius:16px;background:var(--rm-bg-surface);box-shadow:inset 0 0 0 1px var(--rm-separator);padding:12px 14px 12px}
+  .decision-head{display:flex;align-items:center;gap:8px;color:var(--rm-decision);font-size:15px;line-height:22px;font-weight:600}
+  .decision-body{margin:6px 0 12px;font-size:14px;line-height:21px;color:var(--rm-text-secondary)}
+  .decision-actions{display:flex;gap:8px}
+  .decision-actions .btn{flex:1;height:44px;font-size:15px}
+  .composer{display:flex;align-items:flex-end;gap:8px;background:var(--rm-bg-surface);border-radius:22px;box-shadow:inset 0 0 0 1px var(--rm-separator);padding:7px 7px 7px 16px;min-height:44px}
+  .composer .ph{flex:1;font-size:16px;line-height:24px;color:var(--rm-text-faint);padding:4px 0}
+  .composer .send{width:36px;height:36px;border-radius:50%;border:0;background:var(--rm-accent);color:var(--rm-on-accent);display:grid;place-items:center;opacity:.4;flex:none}
+
+  /* ---------- sheet ---------- */
+  .scrim{position:absolute;inset:0;background:var(--rm-scrim);z-index:60;animation:fade .2s ease-out}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .sheet{position:absolute;left:0;right:0;bottom:0;z-index:61;background:var(--rm-bg-raised);border-radius:20px 20px 0 0;padding:8px 16px calc(16px + var(--sab));animation:rise .28s cubic-bezier(.2,0,0,1)}
+  @keyframes rise{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
+  .grabber{width:36px;height:5px;border-radius:3px;background:var(--rm-text-faint);opacity:.5;margin:0 auto 10px}
+  .sheet h3{margin:0 0 12px;font-size:17px;line-height:22px;font-weight:600}
+  .kv{display:flex;align-items:center;gap:10px;min-height:52px;border-top:1px solid var(--rm-separator)}
+  .kv:first-of-type{border-top:0}
+  .kv .k{font-size:15px;color:var(--rm-text-secondary);flex:none}
+  .kv .v{flex:1;text-align:right;font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kv .v.muted{font-weight:400;color:var(--rm-text-secondary)}
+
+  /* ---------- lock screen ---------- */
+  .lock{position:absolute;inset:0;z-index:80;display:flex;flex-direction:column;padding:0 12px;color:#fff;
+    background:linear-gradient(170deg,#2a2f3a 0%,#12151b 42%,#0a0c10 100%);animation:fade .24s ease-out}
+  .lock .clock{padding:calc(var(--sat) + 26px) 16px 0;text-align:center}
+  .lock .time{font-size:74px;line-height:80px;font-weight:600;letter-spacing:-.02em}
+  .lock .date{font-size:16px;line-height:22px;opacity:.9}
+  .lock .stack{margin-top:22px;display:flex;flex-direction:column;gap:8px}
+  .lock .grouped{background:rgba(255,255,255,.12);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);border-radius:20px;overflow:hidden}
+  .notif{display:flex;gap:10px;padding:11px 13px;text-align:left;color:#fff;background:rgba(255,255,255,.14);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);border:0;border-radius:18px;font:inherit;cursor:pointer;width:100%}
+  .grouped .notif{background:transparent;border-radius:0}
+  .grouped .notif + .notif{border-top:1px solid rgba(255,255,255,.14)}
+  .notif:active{background:rgba(255,255,255,.24)}
+  .notif .app{width:22px;height:22px;border-radius:6px;background:#fff;color:#111;display:grid;place-items:center;flex:none;font-size:12px;font-weight:700;overflow:hidden}
+  .notif-main{flex:1;min-width:0}
+  .notif-top{display:flex;align-items:baseline;gap:6px;font-size:12px;line-height:16px;opacity:.85}
+  .notif-top .nm{font-weight:600;text-transform:uppercase;letter-spacing:.02em;font-size:11px}
+  .notif-top .tm{margin-left:auto;opacity:.85}
+  .notif-title{font-size:14px;line-height:19px;font-weight:600;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .notif-body{font-size:14px;line-height:19px;opacity:.92;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .lock .hint{margin-top:auto;margin-bottom:calc(20px + var(--sab));text-align:center;font-size:12px;opacity:.55}
+  .lock .foot{display:flex;justify-content:space-between;padding:0 28px;margin-top:auto;margin-bottom:calc(14px + var(--sab));opacity:.75}
+
+  @media (prefers-reduced-motion:reduce){
+    *,::before,::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+  }
+</style>
+</head>
+<body>
+
+<aside class="panel">
+  <h1>远程移动端 · 两层导航 + 状态 + 通知</h1>
+  <p class="lead">规格 §17 的可视参照。数据是模拟的，交互是真的：点项目进会话，右滑或返回上一级。</p>
+
+  <h2>外观</h2>
+  <div class="seg" id="themeSeg">
+    <button data-theme="light" class="on">浅色</button>
+    <button data-theme="dark">深色</button>
+  </div>
+
+  <h2>页面</h2>
+  <div class="jump" id="jump">
+    <button data-to="computers">S4 我的电脑</button>
+    <button data-to="projects" class="on">S5 项目</button>
+    <button data-to="sessions">S5b 某个项目的会话</button>
+    <button data-to="session">S6 会话</button>
+    <button data-to="states">状态总览</button>
+  </div>
+
+  <h2>通知演示</h2>
+  <div class="jump" id="demos">
+    <button data-demo="lock-approval">锁屏通知 · 等你批准</button>
+    <button data-demo="lock-group">锁屏通知 · 同一会话分组</button>
+    <button data-demo="lock-done">锁屏通知 · 已完成</button>
+    <button data-demo="lock-fallback">锁屏通知 · 取标题失败（固定文案）</button>
+    <button data-demo="foreground">App 在前台 · 应用内提示</button>
+  </div>
+
+  <button class="reset" id="reset">重置</button>
+  <p class="tip">点锁屏上的通知就是“点击通知直达”：页面栈会恢复成 电脑 ▸ 项目 ▸ 该项目的会话 ▸ 会话，返回时逐层退回。</p>
+</aside>
+
+<div class="phone" id="phone" data-theme="light">
+  <div class="island"></div>
+  <div class="statusbar">
+    <span>9:41</span>
+    <span class="sb-right">
+      <span class="bars"><i style="height:5px"></i><i style="height:7px"></i><i style="height:9px"></i><i style="height:11px"></i></span>
+      <svg width="16" height="12" viewBox="0 0 24 18" fill="currentColor" aria-hidden="true"><path d="M12 15.5a2 2 0 1 1 0-4 2 2 0 0 1 0 4Zm0-7.3c1.9 0 3.6.7 4.9 1.9l-1.4 1.4A5.2 5.2 0 0 0 12 10.2c-1.3 0-2.5.5-3.5 1.3L7.1 10c1.3-1.2 3-1.9 4.9-1.9Zm0-4.6c3.2 0 6.1 1.2 8.3 3.3l-1.4 1.4A9.8 9.8 0 0 0 12 5.6 9.8 9.8 0 0 0 5.1 8.3L3.7 6.9A11.7 11.7 0 0 1 12 3.6Z"/></svg>
+      <span class="battery"></span>
+    </span>
+  </div>
+  <div id="app"></div>
+  <div class="homebar"></div>
+</div>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ icons */
+const ICONS = {
+  check:'<path d="M20 6 9 17l-5-5"/>',
+  alert:'<circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+  help:'<circle cx="12" cy="12" r="9"/><path d="M9.1 8.6a3 3 0 0 1 5.8 1c0 2-3 2.4-3 4"/><path d="M12 17h.01"/>',
+  shield:'<path d="M20 13c0 5-3.5 7.4-7.6 8.9a1 1 0 0 1-.7 0C7.5 20.4 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  chevR:'<path d="m9 18 6-6-6-6"/>',
+  chevL:'<path d="m15 18-6-6 6-6"/>',
+  plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+  refresh:'<path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M21 4v5h-5"/>',
+  bell:'<path d="M6 8a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10.3 20a2 2 0 0 0 3.4 0"/>',
+  folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  laptop:'<rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 20h20"/>',
+  arrowUp:'<path d="M12 19V5"/><path d="M5 12l7-7 7 7"/>',
+  x:'<path d="M18 6 6 18"/><path d="M6 6l12 12"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/>',
+  sliders:'<path d="M4 7h10"/><path d="M18 7h2"/><path d="M4 17h4"/><path d="M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+  stop:'<rect x="6" y="6" width="12" height="12" rx="2"/>'
+};
+function icon(name, size = 20, sw = 2) {
+  return `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
+}
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/* ------------------------------------------------------------------ data
+ * Session fields are exactly what `session/list` returns (RacpSession): status
+ * is one of idle / running / waiting_permission / aborted / error, and the row
+ * needs nothing else. What the two-layer pages add is aggregation over that
+ * same list (spec §17.3), which is why three aggregate numbers appear on a
+ * project card that the Host never sends: sessions, running, waiting.
+ *
+ * `st` here is the *presentation* state the client derives:
+ *   approval | input  -> status waiting_permission, or planningState awaiting_approval
+ *   running           -> status running
+ *   error             -> status error
+ *   unseen | done     -> status idle with a local lastViewedAt older than updatedAt
+ *   idle              -> status idle, viewed
+ */
+const DATA = [
+  { id: "p-web", label: "web 应用", archived: false, sessions: [
+      { id: "s1", title: "重构登录流程，失败时只清空密码", st: "approval", time: "2 分钟前", model: "Claude Sonnet 5" },
+      { id: "s2", title: "补齐 LoginForm 的回归用例", st: "unseen", time: "18 分钟前", model: "Claude Sonnet 5" },
+      { id: "s3", title: "把表单校验抽成 useAuthForm", st: "done", time: "昨天", model: "GPT-6 Luna" }
+  ]},
+  { id: "p-mobile", label: "移动端", archived: false, sessions: [
+      { id: "s4", title: "修复安全区下导航栏的空白", st: "running", time: "刚刚", model: "Claude Sonnet 5" },
+      { id: "s5", title: "排查推送注册失败", st: "error", time: "昨天", model: "GPT-6 Luna" },
+      { id: "s6", title: "升级 Capacitor 到 8.5", st: "done", time: "10月12日", model: "GPT-6 Luna" }
+  ]},
+  { id: "p-docs", label: "发布文档", archived: false, sessions: [
+      { id: "s7", title: "整理 v0.22 发布说明", st: "input", time: "1 小时前", model: "DeepSeek 4.1 Flash" },
+      { id: "s8", title: "校对远程控制章节", st: "done", time: "10月14日", model: "DeepSeek 4.1 Flash" }
+  ]},
+  { id: "p-lab", label: "实验场", archived: false, sessions: [] },
+  { id: "p-other", label: "其他", archived: false, other: true, sessions: [
+      { id: "s9", title: "未命名会话", st: "idle", time: "10月9日", model: "" }
+  ]}
+];
+
+const HOST = { id: "h1", label: "MacBook Pro" };
+
+/* ------------------------------------------------------------- state */
+function initialState() {
+  return {
+    theme: "light",
+    screen: "projects",
+    stack: ["computers"],
+    dir: "push",
+    projectId: "p-mobile",
+    sessionId: "s4",
+    sheet: null,
+    lock: null,      /* { kind, sessionId, title } */
+    notice: null,    /* { kind, title } */
+    lastScreenKey: null
+  };
+}
+let S = initialState();
+
+/* ------------------------------------------------------------- helpers */
+function project(id) { return DATA.find((p) => p.id === id) || DATA[0]; }
+function sessionOf(id) {
+  for (const p of DATA) { const found = p.sessions.find((s) => s.id === id); if (found) return { project: p, session: found }; }
+  return null;
+}
+/* Aggregation over `session/list` only: no new protocol field. */
+function aggregate(p) {
+  const n = p.sessions.length;
+  const waiting = p.sessions.filter((s) => s.st === "approval" || s.st === "input").length;
+  const running = p.sessions.filter((s) => s.st === "running").length;
+  return { n, waiting, running };
+}
+/* Order: something waiting first, then something running, then most recent.
+   Projects with no session have no activity, so they fall to the end by the
+   same comparison rather than by a separate rule. */
+function orderProjects() {
+  const rank = (p) => {
+    const a = aggregate(p);
+    if (a.waiting > 0) return 0;
+    if (a.running > 0) return 1;
+    if (a.n === 0) return 3;
+    return 2;
+  };
+  return DATA.filter((p) => !p.archived).slice().sort((l, r) => {
+    const d = rank(l) - rank(r);
+    if (d !== 0) return d;
+    if (l.other) return 1;
+    if (r.other) return -1;
+    return 0;
+  });
+}
+/* The sections of one project's sessions (S5b). */
+function sectionsOf(p) {
+  const waiting = p.sessions.filter((s) => s.st === "approval" || s.st === "input");
+  const running = p.sessions.filter((s) => s.st === "running");
+  const rest = p.sessions.filter((s) => !waiting.includes(s) && !running.includes(s));
+  return [
+    { key: "waiting", title: "需要你处理", rows: waiting },
+    { key: "running", title: "运行中", rows: running },
+    { key: "rest", title: "最近", rows: rest }
+  ].filter((g) => g.rows.length > 0);
+}
+
+/* ------------------------------------------------------------- status */
+/* One vocabulary, three places (spec §17.4). */
+function statusGlyph(st) {
+  if (st === "approval") return `<span class="glyph decision">${icon("shield", 19, 2.2)}</span>`;
+  if (st === "input") return `<span class="glyph decision">${icon("help", 19, 2.2)}</span>`;
+  if (st === "running") return `<span class="slot"><span class="dot running"></span></span>`;
+  if (st === "error") return `<span class="glyph error">${icon("alert", 19, 2.2)}</span>`;
+  if (st === "unseen") return `<span class="glyph success unseen">${icon("check", 12, 3)}</span>`;
+  if (st === "done") return `<span class="glyph success">${icon("check", 17, 2.6)}</span>`;
+  return `<span class="slot"><span class="dot muted" style="opacity:.45"></span></span>`;
+}
+function statusWord(st) {
+  if (st === "running") return `<span class="state-word running">运行中</span>`;
+  if (st === "error") return `<span class="state-word error">失败</span>`;
+  if (st === "unseen") return `<span class="state-word success">已完成</span>`;
+  return "";
+}
+/* The attention pill, used inline on a row subtitle and on a project card. */
+function attentionPill(st, count) {
+  if (st === "approval") return `<span class="pill decision">${icon("shield", 12, 2.4)}${count > 1 ? count + " 个待你批准" : "等你批准"}</span>`;
+  if (st === "input") return `<span class="pill decision">${icon("help", 12, 2.4)}${count > 1 ? count + " 个待你回答" : "等你回答"}</span>`;
+  return "";
+}
+function runningPill(count) {
+  return `<span class="pill running"><span class="dot running" style="width:6px;height:6px"></span>${count > 1 ? count + " 个运行中" : "运行中"}</span>`;
+}
+
+/* ------------------------------------------------------------- chrome */
+function nav(o) {
+  const left = o.back
+    ? `<button class="iconbtn" data-act="back" aria-label="返回">${icon("chevL", 22, 2.2)}</button>`
+    : `<span style="width:44px"></span>`;
+  const sub = o.sub ? `<div class="nav-sub">${o.sub}</div>` : "";
+  return `<div class="nav" id="nav"><div class="nav-row">
+    <div class="nav-l">${left}</div>
+    <div class="nav-c"><div class="nav-title">${esc(o.title)}</div>${sub}</div>
+    <div class="nav-r">${o.trailing || ""}</div>
+  </div></div>`;
+}
+function noticeHtml() {
+  if (!S.notice) return "";
+  const n = S.notice;
+  const glyph = n.kind === "turn.completed"
+    ? `<span class="glyph success">${icon("check", 15, 3)}</span>`
+    : n.kind === "turn.failed"
+      ? `<span class="glyph error">${icon("alert", 20, 2.2)}</span>`
+      : `<span class="glyph decision">${icon(n.kind === "approval.requested" ? "shield" : "help", 20, 2.2)}</span>`;
+  const title = n.kind === "approval.requested" ? "等你批准" : n.kind === "input.requested" ? "等你回答" : n.kind === "turn.completed" ? "已完成" : "运行失败";
+  return `<div class="notice" role="status" aria-live="polite">
+    ${glyph}
+    <div class="notice-main">
+      <div class="notice-title">${title}</div>
+      <div class="notice-body">${esc(n.title)}</div>
+    </div>
+    <button class="btn btn-plain btn-sm" data-act="notice-open">查看</button>
+    <button class="iconbtn" data-act="notice-close" aria-label="忽略">${icon("x", 18, 2.2)}</button>
+  </div>`;
+}
+
+/* ------------------------------------------------------------- S4 */
+function scrComputers() {
+  const plus = `<button class="iconbtn" data-act="noop" aria-label="连接电脑">${icon("plus", 22, 2.2)}</button>`;
+  return `<div class="scr ${S.dir === "pop" ? "enter-pop" : "enter-push"}">
+    ${nav({ title: "我的电脑", trailing: plus })}
+    ${noticeHtml()}
+    <div class="content">
+      <h1 class="large-title" style="padding:6px 4px 16px">我的电脑</h1>
+      <div class="group">
+        <button class="row" data-act="open-computer">
+          <span class="row-main">
+            <span class="row-title">${HOST.label}</span>
+            <span class="row-sub"><span class="dot online"></span><span class="t">在线</span></span>
+          </span>
+          <span class="row-trail">${icon("chevR", 18)}</span>
+        </button>
+      </div>
+      <p class="footnote" style="padding:16px 4px 0;line-height:19px">一台电脑。进入后是它的项目，再进去才是某个项目的会话。</p>
+    </div>
+  </div>`;
+}
+
+/* ------------------------------------------------------------- S5 projects */
+function scrProjects() {
+  const projects = orderProjects();
+  const cards = projects.map((p) => {
+    const a = aggregate(p);
+    const rail = a.waiting > 0 ? " attention" : "";
+    const name = p.other ? "其他" : p.label;
+    const n = a.n === 0 ? "还没有会话" : `${a.n} 个会话`;
+    const recent = p.sessions[0] ? p.sessions[0].time : "";
+    const pills = [
+      a.waiting > 0 ? attentionPill(p.sessions.find((s) => s.st === "approval" || s.st === "input").st, a.waiting) : "",
+      a.running > 0 ? runningPill(a.running) : ""
+    ].join("");
+    return `<button class="card${rail}" data-act="open-project" data-id="${p.id}">
+      <span class="card-top">
+        <span class="card-name">${esc(name)}</span>
+        <span class="card-n">${n}</span>
+        <span class="row-trail">${icon("chevR", 18)}</span>
+      </span>
+      <span class="card-line">
+        ${pills || `<span class="footnote">${a.n === 0 ? "点进去新建" : "没有待处理的会话"}</span>`}
+        <span class="grow"></span>
+        ${a.n > 0 ? `<span class="footnote">${recent}更新</span>` : ""}
+      </span>
+    </button>`;
+  }).join("");
+
+  const trailing = `<button class="iconbtn" data-act="refresh" aria-label="刷新">${icon("refresh", 20)}</button>`;
+  return `<div class="scr ${S.dir === "pop" ? "enter-pop" : "enter-push"}">
+    ${nav({ title: HOST.label, back: true, sub: `<span class="dot online"></span><span class="nm">在线</span>`, trailing })}
+    ${noticeHtml()}
+    <div class="content">
+      <div class="sh"><span>项目</span><span>${projects.length} 个</span></div>
+      <div class="cards">${cards}</div>
+      <p class="footnote" style="text-align:center;padding:18px 12px 0;line-height:19px">有待你处理的排在前面，其次是正在运行的，然后按最近活动。</p>
+    </div>
+  </div>`;
+}
+
+/* ------------------------------------------------------------- S5b sessions of one project */
+function scrSessions() {
+  const p = project(S.projectId);
+  const name = p.other ? "其他" : p.label;
+  const a = aggregate(p);
+  const sub = p.other
+    ? `<span class="nm">不属于任何项目</span>`
+    : `<span class="dot online"></span><span class="nm">${esc(HOST.label)}</span>`;
+  const trailing = `<button class="iconbtn" data-act="refresh" aria-label="刷新">${icon("refresh", 20)}</button>`;
+  const groups = sectionsOf(p).map((g) => `
+    <div class="sh"><span>${g.title}</span><span>${g.rows.length}</span></div>
+    <div class="group" style="--inset-left:56px">
+      ${g.rows.map((s) => `
+        <button class="row" data-act="open-session" data-id="${s.id}" aria-label="${esc(s.title)}">
+          ${statusGlyph(s.st)}
+          <span class="row-main">
+            <span class="row-title">${esc(s.title)}</span>
+            <span class="row-sub">
+              <span class="t">${esc(s.time)}</span>
+              ${s.st === "approval" || s.st === "input" ? attentionPill(s.st, 1) : statusWord(s.st) ? `<span>·</span>${statusWord(s.st)}` : ""}
+              ${s.model ? `<span>·</span><span class="m">${esc(s.model)}</span>` : ""}
+            </span>
+          </span>
+          <span class="row-trail">${icon("chevR", 16)}</span>
+        </button>`).join("")}
+    </div>`).join("");
+
+  /* An empty project is a real destination: it is where work for that project
+     starts, so it gets a primary action instead of being hidden. */
+  if (p.sessions.length === 0) {
+    return `<div class="scr has-dock ${S.dir === "pop" ? "enter-pop" : "enter-push"}">
+      ${nav({ title: name, back: true, sub })}
+      ${noticeHtml()}
+      <div class="content">
+        <div class="empty">
+          <div class="big">${icon("folder", 30, 1.6)}</div>
+          <h2>${esc(name)}还没有会话</h2>
+          <p class="callout">在这里新建一个；或者到电脑上开始，它跑起来后会出现在这个列表里。</p>
+        </div>
+      </div>
+      <div class="dock lift"><button class="btn btn-primary btn-lg" data-act="new-session">新建会话</button></div>
+    </div>`;
+  }
+
+  return `<div class="scr ${S.dir === "pop" ? "enter-pop" : "enter-push"}">
+    ${nav({ title: name, back: true, sub, trailing })}
+    ${noticeHtml()}
+    <div class="content">
+      ${groups}
+      ${p.other ? "" : `<p class="footnote" style="text-align:center;padding:18px 8px 0;line-height:19px">新建会话会直接进入 ${esc(name)}。</p>`}
+    </div>
+  </div>`;
+}
+
+/* ------------------------------------------------------------- S6 session */
+function scrSession() {
+  const found = sessionOf(S.sessionId);
+  const s = found ? found.session : { title: "会话", st: "idle" };
+  const p = found ? found.project : DATA[0];
+  const pname = p.other ? "其他" : p.label;
+  const dot = s.st === "running" ? `<span class="dot running"></span>` : s.st === "approval" || s.st === "input"
+    ? `<span class="dot" style="background:var(--rm-decision)"></span>` : `<span class="dot muted" style="opacity:.5"></span>`;
+  const stop = s.st === "running" ? `<button class="iconbtn muted" data-act="noop" aria-label="停止">${icon("stop", 20)}</button>` : "";
+  const dock = (s.st === "approval" || s.st === "input") ? `<div class="dock lift"><div class="decision">
+      <div class="decision-head">${icon("shield", 18, 2.2)}${s.st === "approval" ? "等你批准" : "等你回答"}</div>
+      <div class="decision-body">${s.st === "approval" ? "运行 <span class=\"mono\">pnpm test</span> 会把 <span class=\"mono\">apps/web/src</span> 下的快照文件写回仓库。" : "登录失败后，已经保存的草稿要清空吗？"}</div>
+      <div class="decision-actions">
+        <button class="btn btn-secondary" data-act="noop">${s.st === "approval" ? "拒绝" : "跳过"}</button>
+        <button class="btn btn-primary" data-act="noop">${s.st === "approval" ? "允许一次" : "发送回答"}</button>
+      </div>
+    </div></div>`
+    : `<div class="dock lift"><div class="composer"><span class="ph">给 Agent 发消息</span><button class="send" aria-label="发送">${icon("arrowUp", 18, 2.4)}</button></div></div>`;
+
+  return `<div class="scr has-dock ${S.dir === "pop" ? "enter-pop" : "enter-push"}">
+    ${nav({ title: s.title, back: true, sub: `${dot}<span class="nm">${esc(HOST.label)} · ${esc(pname)}</span>`, trailing: stop })}
+    ${noticeHtml()}
+    <div class="content">
+      <div class="tl">
+        <div class="m-user">评论列表的删除在失败时会把整页清空，改成只清空密码。</div>
+        <div class="m-ai">找到原因了：<code>onSubmit</code> 的 catch 里调用了 <code>clearForm()</code>，它重置全部字段。改成只清空密码即可。</div>
+        <div class="m-note">上下文已压缩</div>
+        <div class="m-ai">${s.st === "approval" ? "准备跑一遍测试确认没有回归。" : s.st === "running" ? "正在跑测试…" : "已经跑完测试，三个用例都通过。"}</div>
+      </div>
+    </div>
+    ${dock}
+  </div>`;
+}
+
+/* ------------------------------------------------------------- status gallery */
+function scrStates() {
+  const rows = [
+    ["approval", "等你批准", "某个工具调用在等你批准"],
+    ["input", "等你回答", "Agent 提了一个问题"],
+    ["running", "运行中", "正在跑，圆点呼吸两次后停住"],
+    ["error", "失败", "上一轮运行失败"],
+    ["unseen", "已完成 · 未看过", "完成之后还没打开过这条会话"],
+    ["done", "已完成 · 已看过", "打开过，回到安静状态"],
+    ["idle", "空闲", "什么都没发生"]
+  ];
+  const list = rows.map(([st, label, note]) => `
+    <button class="row" data-act="noop" aria-label="${label}">
+      ${statusGlyph(st)}
+      <span class="row-main">
+        <span class="row-title">${label}</span>
+        <span class="row-sub"><span class="t">2 分钟前</span>
+          ${st === "approval" || st === "input" ? attentionPill(st, 1) : statusWord(st) ? `<span>·</span>${statusWord(st)}` : ""}
+          <span>·</span><span class="m">${note}</span>
+        </span>
+      </span>
+      <span class="row-trail">${icon("chevR", 16)}</span>
+    </button>`).join("");
+
+  return `<div class="scr ${S.dir === "pop" ? "enter-pop" : "enter-push"}">
+    ${nav({ title: "状态总览", back: true, sub: `<span class="nm">一套样式，三个地方</span>` })}
+    <div class="content">
+      <div class="sh"><span>会话行</span><span>列表</span></div>
+      <div class="group" style="--inset-left:56px">${list}</div>
+
+      <div class="sh"><span>顶栏副标题</span><span>S5 / S5b / S6</span></div>
+      <div class="group" style="--inset-left:16px">
+        ${[["在线", "online"], ["运行中", "running"], ["等你批准", "decision"], ["失败", "error"]].map(([w, k]) => `
+          <div class="row" style="min-height:52px">
+            <span class="row-main"><span class="row-sub" style="margin:0;justify-content:flex-start">
+              ${k === "online" ? `<span class="dot online"></span>` : k === "running" ? `<span class="dot running"></span>` : `<span class="dot" style="background:var(--rm-${k})"></span>`}
+              <span class="t"${k === "decision" ? ` style="color:var(--rm-decision);font-weight:500"` : k === "error" ? ` style="color:var(--rm-error);font-weight:500"` : ""}>${w}</span>
+            </span></span>
+          </div>`).join("")}
+      </div>
+
+      <div class="sh"><span>项目卡片</span><span>S5</span></div>
+      <div class="cards">
+        <button class="card attention" data-act="noop">
+          <span class="card-top"><span class="card-name">web 应用</span><span class="card-n">3 个会话</span><span class="row-trail">${icon("chevR", 18)}</span></span>
+          <span class="card-line">${attentionPill("approval", 1)}${runningPill(1)}<span class="grow"></span><span class="footnote">2 分钟前更新</span></span>
+        </button>
+        <button class="card" data-act="noop">
+          <span class="card-top"><span class="card-name">发布文档</span><span class="card-n">2 个会话</span><span class="row-trail">${icon("chevR", 18)}</span></span>
+          <span class="card-line"><span class="footnote">没有待处理的会话</span><span class="grow"></span><span class="footnote">1 小时前更新</span></span>
+        </button>
+      </div>
+      <p class="footnote" style="text-align:center;padding:18px 10px 0;line-height:19px">颜色从不单独表意：每种状态都带图标或文字，“等你处理”是唯一带底色的状态。</p>
+    </div>
+  </div>`;
+}
+
+/* ------------------------------------------------------------- lock screen */
+function lockHtml() {
+  if (!S.lock) return "";
+  const L = S.lock;
+  const kindTitle = L.kind === "approval.requested" ? "等你批准" : L.kind === "input.requested" ? "等你回答" : L.kind === "turn.completed" ? "已完成" : "运行失败";
+  const fb = L.kind === "approval.requested" ? "有会话在等待你批准一项操作。"
+    : L.kind === "input.requested" ? "有会话在等待你的回答。"
+      : L.kind === "turn.completed" ? "有会话运行完成了。" : "有会话运行失败了。";
+  const one = (title, body, tm) => `<button class="notif" data-act="lock-open" data-id="${L.sessionId}">
+      <span class="app">M</span>
+      <span class="notif-main">
+        <span class="notif-top"><span class="nm">Minih Remote</span><span class="tm">${tm}</span></span>
+        <span class="notif-title">${esc(title)}</span>
+        <span class="notif-body">${esc(body)}</span>
+      </span>
+    </button>`;
+  const body = L.mode === "fallback"
+    ? `<div class="stack">${one(kindTitle, fb, "现在")}
+        <p class="footnote" style="color:rgba(255,255,255,.55);padding:2px 6px">取标题超时或失败时就是这一条：固定文案，仍然能点开正确的会话。</p></div>`
+    : L.mode === "group"
+      ? `<div class="stack"><div class="grouped">
+          ${one(kindTitle, L.title, "现在")}
+          ${one("已完成", L.title, "现在")}
+          ${one("等你批准", L.title, "3 分钟前")}
+        </div>
+        <p class="footnote" style="color:rgba(255,255,255,.55);padding:2px 6px">同一个会话的三条按会话分组，标题来自这台手机自己向 Gateway 取的标题。</p></div>`
+      : `<div class="stack">${one(kindTitle, L.title, "现在")}
+          <p class="footnote" style="color:rgba(255,255,255,.55);padding:2px 6px">标题由通知服务扩展从你自己的 Gateway 取回，不经过 Apple 的服务器。</p></div>`;
+  return `<div class="lock">
+    <div class="clock"><div class="time">9:41</div><div class="date">10月21日 星期二</div></div>
+    ${body}
+    <div class="foot">
+      <span style="width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.16)">${icon("folder", 18, 1.8)}</span>
+      <span style="width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.16)">${icon("bell", 18, 1.8)}</span>
+    </div>
+  </div>`;
+}
+
+/* ------------------------------------------------------------- new session sheet */
+function sheetHtml() {
+  if (S.sheet !== "new") return "";
+  const p = project(S.projectId);
+  const name = p.other ? "其他" : p.label;
+  return `<div class="scrim" data-act="sheet-close"></div>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="新建会话">
+    <div class="grabber"></div>
+    <h3>新建会话</h3>
+    <div class="kv"><span class="k">项目</span><span class="v">${esc(name)}</span></div>
+    <div class="kv"><span class="k">模型</span><span class="v">Claude Sonnet 5</span></div>
+    <div class="kv"><span class="k">模式</span><span class="v muted">agent</span></div>
+    <div class="kv"><span class="k">权限</span><span class="v muted">ask</span></div>
+    <p class="footnote" style="padding:12px 2px 0">项目已经选好，因为它就是你现在看的这个。</p>
+    <div style="padding-top:14px"><button class="btn btn-primary btn-lg" data-act="sheet-close">开始</button></div>
+  </div>`;
+}
+
+/* ------------------------------------------------------------- render */
+const app = document.getElementById("app");
+const phone = document.getElementById("phone");
+function render() {
+  let scr = "";
+  if (S.screen === "computers") scr = scrComputers();
+  else if (S.screen === "projects") scr = scrProjects();
+  else if (S.screen === "sessions") scr = scrSessions();
+  else if (S.screen === "session") scr = scrSession();
+  else if (S.screen === "states") scr = scrStates();
+  app.innerHTML = scr;
+  if (S.sheet) app.insertAdjacentHTML("beforeend", sheetHtml());
+  if (S.lock) app.insertAdjacentHTML("beforeend", lockHtml());
+  phone.dataset.theme = S.theme;
+  document.body.classList.toggle("page-dark", S.theme === "dark");
+  syncPanel();
+}
+function syncPanel() {
+  document.querySelectorAll("#jump button").forEach((b) => b.classList.toggle("on", b.dataset.to === S.screen && !S.lock));
+  document.querySelectorAll("#themeSeg button").forEach((b) => b.classList.toggle("on", b.dataset.theme === S.theme));
+}
+
+/* ------------------------------------------------------------- navigation */
+function go(to, extra) {
+  S.stack.push(S.screen);
+  S.screen = to;
+  S.dir = "push";
+  S.sheet = null;
+  Object.assign(S, extra || {});
+  render();
+}
+function back() {
+  if (!S.stack.length) return;
+  S.screen = S.stack.pop();
+  S.dir = "pop";
+  S.sheet = null;
+  render();
+}
+function resetTo(to, stack, extra) {
+  S.stack = stack.slice();
+  S.screen = to;
+  S.dir = "push";
+  S.sheet = null;
+  Object.assign(S, extra || {});
+  render();
+}
+
+/* ------------------------------------------------------------- events */
+app.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  const act = el.dataset.act;
+  const id = el.dataset.id;
+  if (act === "back") back();
+  else if (act === "open-computer") go("projects");
+  else if (act === "open-project") {
+    const p = project(id);
+    go("sessions", { projectId: p.id });
+  }
+  else if (act === "open-session") {
+    const found = sessionOf(id);
+    go("session", { sessionId: id, projectId: found ? found.project.id : S.projectId,
+      notice: null });
+  }
+  else if (act === "new-session") S.sheet = "new", render();
+  else if (act === "sheet-close") S.sheet = null, render();
+  else if (act === "refresh" || act === "noop") { /* simulated */ }
+  else if (act === "notice-open") {
+    const n = S.notice;
+    S.notice = null;
+    if (!n) return render();
+    /* In-app tap: the stack is already the user's, so only the session is pushed
+       when the notice names one that is not already beneath. */
+    go("session", { sessionId: n.sessionId, notice: null });
+  }
+  else if (act === "notice-close") { S.notice = null; render(); }
+  else if (act === "lock-open") {
+    /* Push tap: restore 电脑 ▸ 项目 ▸ 该项目的会话 ▸ 会话 (spec §17.5, §8.8). */
+    const found = sessionOf(id);
+    const pid = found ? found.project.id : S.projectId;
+    S.lock = null;
+    resetTo("session", ["computers", "projects", "sessions"], { sessionId: id, projectId: pid, dir: "push" });
+  }
+});
+
+/* edge-swipe back: the same back path as the button (spec §4) */
+let drag = null;
+phone.addEventListener("pointerdown", (e) => {
+  if (e.clientX - phone.getBoundingClientRect().left > 20) return;
+  if (!S.stack.length || S.lock) return;
+  drag = { x: e.clientX, dx: 0 };
+});
+window.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  drag.dx = Math.max(0, e.clientX - drag.x);
+  app.style.transform = `translateX(${drag.dx * 0.6}px)`;
+});
+window.addEventListener("pointerup", () => {
+  if (!drag) return;
+  const far = drag.dx > 110;
+  app.style.transform = "";
+  drag = null;
+  if (far) back();
+});
+
+/* ------------------------------------------------------------- panel */
+document.getElementById("themeSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  S.theme = b.dataset.theme;
+  render();
+});
+document.getElementById("jump").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  S.lock = null;
+  S.notice = null;
+  const to = b.dataset.to;
+  const stacks = { computers: [], projects: ["computers"], sessions: ["computers", "projects"], session: ["computers", "projects", "sessions"], states: ["projects"] };
+  if (to === "sessions") S.projectId = "p-mobile";
+  if (to === "session") { S.projectId = "p-mobile"; S.sessionId = "s4"; }
+  resetTo(to, stacks[to]);
+});
+document.getElementById("demos").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  const demo = b.dataset.demo;
+  if (demo === "lock-approval") {
+    S.lock = { kind: "approval.requested", sessionId: "s1", title: "重构登录流程，失败时只清空密码", mode: "enriched" };
+  } else if (demo === "lock-group") {
+    S.lock = { kind: "approval.requested", sessionId: "s1", title: "重构登录流程，失败时只清空密码", mode: "group" };
+  } else if (demo === "lock-done") {
+    S.lock = { kind: "turn.completed", sessionId: "s1", title: "重构登录流程，失败时只清空密码", mode: "enriched" };
+  } else if (demo === "foreground") {
+    /* The app is already open on some screen: no system banner, an in-app notice
+       instead, at the top of whatever the user is looking at. */
+    S.notice = { kind: "approval.requested", sessionId: "s1", title: "重构登录流程，失败时只清空密码" };
+    S.screen = "projects";
+    S.stack = ["computers"];
+    /* Coming to the foreground means the phone is unlocked: the lock screen is
+       the device's, not a screen of this app. */
+    S.lock = null;
+  } else if (demo === "lock-fallback") {
+    /* What the lock screen shows when the extension's title fetch times out:
+       the fixed copy the Gateway's keys already provide. */
+    S.lock = { kind: "approval.requested", sessionId: "s1", title: "", mode: "fallback" };
+  }
+  render();
+});
+document.getElementById("reset").addEventListener("click", () => {
+  S = initialState();
+  app.style.transform = "";
+  render();
+});
+
+/* ------------------------------------------------------------- boot */
+if (new URLSearchParams(location.search).get("theme") === "dark") S.theme = "dark";
+render();
+</script>
+</body>
+</html>

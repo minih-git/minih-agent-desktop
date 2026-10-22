@@ -2,6 +2,34 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "0.24.0",
+    date: "2026-10-21",
+    highlights: [
+      "Le téléphone sépare désormais les projets des conversations : vous choisissez un projet, puis une conversation à l'intérieur, avec un vocabulaire unique pour chaque état et un avis clair lorsque l'application revient au premier plan.",
+      "Une conversation signale qu'elle attend votre réponse, si bien que le téléphone n'affiche plus une question en attente comme un tour en cours.",
+      "Les notifications nomment la conversation sur l'écran verrouillé et indiquent le nombre de décisions encore en attente ; sous Android, l'application dessine sa propre notification, donc un appui ouvre cette conversation.",
+      "Les notifications push peuvent se limiter aux événements qui vous concernent, plusieurs événements d'une conversation sont regroupés, et la version iPhone embarque désormais l'autorisation de notification.",
+      "Un téléphone peut envoyer des images et de petits fichiers dans une conversation qui tourne sur votre ordinateur.",
+      "Un téléphone peut voir quel modèle une conversation utilise et le changer.",
+      "Les réponses s'affichent en Markdown dans la chronologie du téléphone, les longs historiques se chargent par fenêtres sans déplacer ce que vous lisez, et le retour se comporte de la même façon partout.",
+      "Sélectionner du texte dans une réponse du bureau l'insère dans la zone de saisie, et un plugin peut ouvrir un fichier local directement dans la vue navigateur du panneau de travail.",
+    ],
+  },
+  {
+    version: "0.23.0",
+    date: "2026-10-20",
+    highlights: [
+      "L’application mobile arbore un tout nouveau design : écrans renouvelés pour vous connecter à vos ordinateurs, gérer les hôtes et discuter, chronologie des conversations reconstruite et confirmations plus claires pour les actions à haut risque et l’arrêt.",
+      "Votre téléphone peut désormais démarrer de nouvelles sessions sur votre ordinateur — avec enregistrement de projet et navigation de dossiers lors de l’ajout — les sessions y sont regroupées par projet et les ordinateurs affichent leur vrai nom plutôt qu’un identifiant d’hôte.",
+      "Une session mobile s’ouvre désormais au message le plus récent et charge l’historique antérieur à la demande, affiche les mêmes lignes que la version de bureau et garde la saisie au-dessus du clavier sur iOS.",
+      "Tapez # dans le composeur pour cibler une autre session : des suggestions apparaissent pendant la saisie et la cible choisie devient une puce cliquable dans votre message.",
+      "Quand vous demandez à l’agent de confier un travail à une session qui n’existe pas encore, il peut désormais la créer pour vous ; le modèle utilisé pour ces transmissions se choisit dans les réglages.",
+      "Les apartés répondent désormais depuis un instantané en lecture seule de la conversation sans solliciter une tâche en cours, et chaque question conserve sa réponse dans le panneau latéral.",
+      "La compression automatique du contexte n’affiche plus de notification ; elle apparaît comme un marqueur intégré dans la transcription, tandis qu’une compression manuelle échouée montre toujours la vraie erreur.",
+      "Les chemins mentionnés par l’agent deviennent des liens, même pour les dossiers et les fichiers sans extension, et les références hors du projet proposent de les révéler dans le gestionnaire de fichiers ou de copier le chemin au lieu d’un message « restreint » sans issue.",
+    ],
+  },
+  {
     version: "0.22.1",
     date: "2026-10-19",
     highlights: [

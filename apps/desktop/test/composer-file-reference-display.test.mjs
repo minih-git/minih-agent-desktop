@@ -59,7 +59,7 @@ test("accepted files become compact references while directories keep completion
   assert.match(composer, /function isPersistedScratchReference\(path: string\)/);
   assert.match(
     composer,
-    /Boolean\(fileReference\.plugin\) \|\|[\s\S]*?fileReference\.kind === "session" \|\|[\s\S]*?isPersistedScratchReference\(fileReference\.path\)/,
+    /Boolean\(fileReference\.plugin\) \|\|[\s\S]*?fileReference\.kind === "session" \|\|[\s\S]*?fileReference\.kind === "sessionTarget" \|\|[\s\S]*?isPersistedScratchReference\(fileReference\.path\)/,
   );
   assert.match(composer, /kept = current\.filter\(survives\)/);
   assert.doesNotMatch(
@@ -75,10 +75,13 @@ test("composer renders atomic inline chips and serializes paths on send", () => 
   assert.match(composer, /chip\.contentEditable = "false"/);
   assert.match(composer, /chip\.dataset\.token = token/);
   assert.match(composer, /composer-chip-name/);
-  assert.match(composer, /nameSpan\.textContent = reference\.name/);
-  // A file chip's title is its path; a plugin mark's is its plugin.
+  // A session-target chip shows the leading `#` the user typed, so the chip and
+  // the sent sentence name the same thing; every other chip shows its name.
+  assert.match(composer, /nameSpan\.textContent = target \? `#\$\{reference\.name\}` : reference\.name/);
+  // A file chip's title is its path; a plugin mark's is its plugin; a session
+  // target's names that it is a target and which session it points at.
   assert.match(composer, /isPluginMark\(reference\) \? \(reference\.plugin\?\.pluginId \?\? ""\) : reference\.path/);
-  assert.match(composer, /chip\.title = origin/);
+  assert.match(composer, /chip\.title = target \? `\$\{sessionTargetLabel\} · \$\{origin\}` : origin/);
   assert.match(
     composer,
     /serializeComposerFileReferences\(rawText, activeFileReferences\)/,

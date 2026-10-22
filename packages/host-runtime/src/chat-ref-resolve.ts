@@ -1,6 +1,8 @@
 import { lstat, readdir, realpath, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import type {
+  FsChatRefEntryKind,
   FsChatRefMatch,
   FsChatRefMatchKind,
   FsChatRefProjectRoot,
@@ -19,7 +21,7 @@ import { getWorkspaceFileIndex } from "./fs-index.js";
  *
  * Resolution order is the product contract:
  *
- *   1. an absolute reference only names that exact file inside a known root;
+ *   1. an absolute reference only names that exact entry inside a known root;
  *   2. an `attachments/<sha256>` blob names a stored file by hash rather than
  *      by path, so it resolves against the attachment store directly;
  *   3. otherwise the roots are searched in priority order — the open project
@@ -29,6 +31,12 @@ import { getWorkspaceFileIndex } from "./fs-index.js";
  *   4. inside one root an exact path beats a shorthand, and among shorthands
  *      the longest matching tail wins, then the shallowest path, so
  *      `src/dir/a.ts` beats a second `dir/a.ts` buried deeper.
+ *
+ * A reference names an observation, not necessarily a file: an agent writes
+ * "in `apps/desktop/src`" as often as it names a file, and a bare `~/notes` is
+ * the home directory. Exact matches therefore accept a folder too, and report
+ * which one answered through `entryKind`. A shorthand still only ever completes
+ * to a file: a tail match has no evidence about which folder was meant.
  */
 
 export type ChatRefRoots = {
@@ -110,16 +118,35 @@ function stripRefDecorations(raw: string): string {
 export type ParsedChatRef = {
   /** Path segments with `.` dropped and `..` collapsed. */
   segments: string[];
-  /** Whether the original token anchored at a filesystem root. */
+  /** Whether the original token anchored at a filesystem root, home included. */
   absolute: boolean;
 };
 
+const HOME_PREFIX_RE = /^~[\\/]/;
+
 /**
- * Parse a chat file token. Returns null for `~`-prefixed home paths, empty
+ * Expand a leading `~/` to this computer's home directory, because "open
+ * `~/notes`" names a real path the same way `/Users/me/notes` does, and every
+ * containment decision below compares absolute paths. `~user/...` needs an
+ * account lookup this resolver does not own, so it stays unsupported and is
+ * rejected by `parseChatRef` rather than silently resolving to the wrong home.
+ */
+export function expandChatRefHome(value: string): string {
+  if (!HOME_PREFIX_RE.test(value)) return value;
+  return join(homedir(), toPosix(value).slice(2));
+}
+
+/** Clean a reference and expand its home prefix; the path every check uses. */
+export function chatRefPath(raw: string): string {
+  return expandChatRefHome(cleanRef(raw));
+}
+
+/**
+ * Parse a chat reference. Returns null for `~user`-prefixed paths, empty
  * tokens, oversized tokens, and any token whose `..` walk leaves the start.
  */
 export function parseChatRef(raw: string): ParsedChatRef | null {
-  const value = cleanRef(raw);
+  const value = chatRefPath(raw);
   if (!value || value.length > MAX_REF_LENGTH) return null;
   if (value.startsWith("~")) return null;
 
@@ -181,12 +208,26 @@ function containmentEntries(roots: ChatRefRoots): ChatRefRootEntry[] {
   return list;
 }
 
-async function isRegularFile(target: string): Promise<boolean> {
+/** What `target` is, or null when nothing is there (or it is neither). */
+async function entryKindOf(target: string): Promise<FsChatRefEntryKind | null> {
   try {
-    return (await stat(target)).isFile();
+    const info = await stat(target);
+    if (info.isFile()) return "file";
+    if (info.isDirectory()) return "directory";
+    return null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** Root-relative POSIX path, `.` for the root itself, or null when outside. */
+function relativeInsideOrSelf(rootPath: string, absolute: string): string | null {
+  const root = resolve(rootPath);
+  const target = resolve(absolute);
+  const equal = CASE_INSENSITIVE_FS
+    ? root.toLowerCase() === target.toLowerCase()
+    : root === target;
+  return equal ? "." : relativeInside(root, absolute);
 }
 
 /** Root-relative POSIX path, or null when `absolute` is outside `rootPath`. */
@@ -234,15 +275,20 @@ async function canonicalPathOrMissingTail(path: string): Promise<string | null> 
 export async function isChatRefOutsideRoots(ref: string, roots: ChatRefRoots): Promise<boolean> {
   const parsed = parseChatRef(ref);
   if (!parsed?.absolute) return false;
-  const cleaned = cleanRef(ref);
+  // The containment decision is made on the path as the resolver sees it, so a
+  // `~/x` reference is checked after expansion instead of being rejected as a
+  // home path before any root is consulted.
+  const cleaned = chatRefPath(ref);
   if (!isAbsolute(cleaned)) return true;
   const absolutePath = resolve(cleaned);
   const rootList = await canonicalRoots([...orderedRoots(roots), ...containmentEntries(roots)]);
   if (!couldShareVolume(absolutePath, rootList)) return true;
   const targetPath = await canonicalPathOrMissingTail(absolutePath);
-  if (!targetPath) return !rootList.some((root) => relativeInside(root.path, absolutePath) !== null);
+  if (!targetPath) {
+    return !rootList.some((root) => relativeInsideOrSelf(root.path, absolutePath) !== null);
+  }
   return !rootList.some((root) =>
-    root.realPath && relativeInside(root.realPath, targetPath) !== null,
+    root.realPath && relativeInsideOrSelf(root.realPath, targetPath) !== null,
   );
 }
 
@@ -300,8 +346,20 @@ function fuzzyCandidates(
 }
 
 async function isContainedRegularFile(root: string, relativePath: string): Promise<boolean> {
+  return (await containedEntryKind(root, relativePath)) === "file";
+}
+
+/**
+ * What `relativePath` is inside `root`, after resolving symlinks, or null when
+ * it does not exist there or escapes it. `.` asks about the root itself, which
+ * is how a reference to the project root is completed.
+ */
+async function containedEntryKind(
+  root: string,
+  relativePath: string,
+): Promise<FsChatRefEntryKind | null> {
   const realPath = await resolveRealPathWithinRoot(root, relativePath);
-  return realPath !== null && isRegularFile(realPath);
+  return realPath === null ? null : entryKindOf(realPath);
 }
 
 async function hasInvalidLinkAncestor(root: string, segments: readonly string[]): Promise<boolean> {
@@ -367,7 +425,7 @@ async function listRootFiles(
 }
 
 /**
- * Resolve one chat file reference to the best existing file, or null when
+ * Resolve one chat file reference to the best existing entry, or null when
  * nothing matches. Never throws: an unreadable root is simply not a match.
  */
 export async function resolveChatFileRef(
@@ -379,14 +437,16 @@ export async function resolveChatFileRef(
   const rootList = orderedRoots(roots);
   if (rootList.length === 0 && !(roots.containment ?? []).length) return null;
 
+  // `~/x` is a real absolute path on this computer, so it is completed like one
+  // after expansion; the containment checks below are unchanged by that.
   const cleanedPosixRef = toPosix(cleanRef(ref));
+  const absoluteRef = toPosix(chatRefPath(ref));
   const isAttachmentRef = /^attachments(?:\/|$)/i.test(cleanedPosixRef);
 
   // Absolute references must not select an unrelated in-root file by suffix.
   if (parsed.absolute) {
-    const cleaned = cleanRef(ref);
-    if (!isAbsolute(cleaned)) return null;
-    const absolutePath = resolve(cleaned);
+    if (!isAbsolute(absoluteRef)) return null;
+    const absolutePath = resolve(absoluteRef);
     // An absolute reference may also name a store the app reads but no shorthand
     // searches, such as an image another session generated.
     const canonicalRootList = await canonicalRoots([
@@ -400,15 +460,21 @@ export async function resolveChatFileRef(
     } catch {
       return null;
     }
-    if (!(await isRegularFile(targetPath))) return null;
+    // A folder is a legitimate reference of its own; only a device, socket, or
+    // other non-entry is not.
+    const entryKind = await entryKindOf(targetPath);
+    if (!entryKind) return null;
     for (const root of canonicalRootList) {
-      const relativePath = root.realPath ? relativeInside(root.realPath, targetPath) : null;
+      const relativePath = root.realPath
+        ? relativeInsideOrSelf(root.realPath, targetPath)
+        : null;
       if (!relativePath) continue;
       return {
         root: root.kind,
         relativePath,
-        absolutePath,
+        absolutePath: absolutePath,
         matchedBy: "exact-absolute",
+        entryKind,
         ...(root.sessionScratch ? { sessionScratch: true } : {}),
         ...(root.projectRoot ? { projectRoot: root.projectRoot } : {}),
       };
@@ -443,25 +509,33 @@ export async function resolveChatFileRef(
   // 3. Roots in product priority order, and the first root that answers wins
   //    outright: the open project is searched to exhaustion before the session
   //    scratch store is considered at all. Inside one root the reference read
-  //    as a path verbatim outranks a tail match.
+  //    as a path verbatim outranks a tail match, and a folder spelled that way
+  //    outranks a file it would otherwise complete to by tail.
   const tails: string[][] = [];
   const longestTail = Math.min(parsed.segments.length, MAX_FUZZY_TAIL_SEGMENTS);
   for (let length = longestTail; length >= 1; length -= 1) {
     tails.push(parsed.segments.slice(parsed.segments.length - length));
   }
   for (const root of rootList) {
+    const relativePath = parsed.segments.join("/");
     const absolutePath = join(root.path, ...parsed.segments);
-    if (await isRegularFile(absolutePath)) {
-      if (!(await isContainedRegularFile(root.path, parsed.segments.join("/")))) return null;
+    // An exact relative reference may name a folder: `apps/desktop/src` is how
+    // an agent writes about a directory, and it is the same observation as a
+    // file path, so it goes through the same containment gate.
+    const entryKind = await containedEntryKind(root.path, relativePath);
+    if (entryKind) {
       return {
         root: root.kind,
-        relativePath: parsed.segments.join("/"),
+        relativePath,
         absolutePath,
         matchedBy: "exact-relative",
+        entryKind,
         ...(root.sessionScratch ? { sessionScratch: true } : {}),
         ...(root.projectRoot ? { projectRoot: root.projectRoot } : {}),
       };
     }
+    // A path that exists but escapes its root is a refusal, not a miss: letting
+    // the shorthand walk continue would open a same-named file somewhere else.
     if (await hasInvalidLinkAncestor(root.path, parsed.segments)) return null;
     const candidates = fuzzyCandidates(
       await listRootFiles(root.kind, root.path),
@@ -474,6 +548,7 @@ export async function resolveChatFileRef(
         relativePath: candidate.relativePath,
         absolutePath: join(root.path, ...segmentsOf(candidate.relativePath)),
         matchedBy: candidate.matchedBy,
+        entryKind: "file",
         ...(root.sessionScratch ? { sessionScratch: true } : {}),
         ...(root.projectRoot ? { projectRoot: root.projectRoot } : {}),
       };

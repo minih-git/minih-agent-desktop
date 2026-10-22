@@ -115,7 +115,7 @@ Electron 和 sidecar 不能独立过度接纳相同的资源。
 
 ```ts
 type HandshakeParams = {
-  protocolVersion: 11
+  protocolVersion: 12
   client: "electron-main"
   clientVersion: string
   locale: string // default "en"
@@ -126,7 +126,7 @@ type HandshakeParams = {
 
 ```ts
 type HandshakeResult = {
-  protocolVersion: 11
+  protocolVersion: 12
   host: "rust-host-core"
   hostVersion: string
   features: string[]

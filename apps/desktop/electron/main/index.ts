@@ -72,6 +72,7 @@ import {
   createSessionRetitleGenerator,
   createSessionTitleGenerator,
 } from "./session-title-service";
+import { createSessionChangeNotifier } from "./session-change-notifier";
 import { createMemoryExtractionService } from "./memory/memory-extraction-service";
 import { createEventPersistence } from "./runtime/event-persistence";
 import { createPlanRuntime } from "./runtime/plans";
@@ -95,14 +96,12 @@ import { createWorkPanelRuntime } from "./bootstrap/work-panel";
 import { createCloseBehaviorRuntime } from "./bootstrap/close-behavior";
 import { registerShutdownHandlers } from "./bootstrap/shutdown";
 import { stripWinLongPrefix } from "./path-utils";
-
 // Native resize streams can pause briefly while the pointer crosses a display
 // scale boundary. Keep recovery out of that gesture and only run it after the
 // bounds have been stable for one short interaction window.
 const WINDOW_BOUNDS_SETTLE_MS = 300;
 const WORK_PANEL_NATIVE_RESIZE_SETTLE_MS = 180;
 const WORK_PANEL_CHAT_RESIZE_SETTLE_MS = WINDOW_BOUNDS_SETTLE_MS + 120;
-
 const mainState = new MainProcessState();
 const {
   launcherState,
@@ -115,7 +114,6 @@ const {
   shutdownState,
   windowsAllowedToClose,
 } = mainState;
-
 const getHost = () => mainState.host;
 const getMainWindow = () => mainState.mainWindow;
 const getSidecar = () => mainState.sidecar;
@@ -212,6 +210,18 @@ const logger = new Logger(
   isDevelopmentBuild ? "debug" : "info",
   { mirrorConsole: isDevelopmentBuild },
 );
+
+/**
+ * A title written through host-core is durable, but a phone only hears about it
+ * from RACP: the renderer fan-out (`sessionsChanged`) refreshes the local
+ * sidebar, and this announces the same change to the Agent Host so an attached
+ * remote client updates its header instead of keeping the old name.
+ */
+const sessionChangeNotifier = createSessionChangeNotifier({
+  getHost,
+  getAgentHost: () => mainState.agentHostBridge,
+  logger,
+});
 installMainProcessErrorHandlers({
   emit: (record) => {
     logger.app("runtime", "error", record.message, {
@@ -367,6 +377,8 @@ const pluginServices = createPluginServices({
     )(...args);
   },
   vendorOAuth,
+  // A plugin rename writes the same durable title a user rename does.
+  announceTitleChange: (sessionId) => void sessionChangeNotifier.titleChanged(sessionId),
 });
 const {
   plugins,
@@ -566,6 +578,7 @@ const {
   executeNativeMenuAction,
   dispatchNativeMenuAction,
   applyDeveloperMode,
+  applyMacosWindowTranslucency,
   applyPreventScreenSleep,
   applyKeepAwakeWhileRunning,
   disposePowerSaveBlockers,
@@ -803,9 +816,12 @@ const sessionTitleGenerator = createSessionTitleGenerator({
   vendorOAuth,
   logger,
   dataDir,
-  // A title is durable in the host only; the sidebar renders its own copy.
-  onTitleChanged: () =>
-    sendToRenderer(IPC.event.sessionsChanged, { reason: "session.title" }),
+  // A title is durable in the host only; the sidebar renders its own copy and a
+  // phone holding the session learns about it from RACP.
+  onTitleChanged: (sessionId) => {
+    sendToRenderer(IPC.event.sessionsChanged, { reason: "session.title" });
+    void sessionChangeNotifier.titleChanged(sessionId);
+  },
 });
 
 const sidecarRuntime = createSidecarRuntime({
@@ -857,9 +873,12 @@ const sidecarRuntime = createSidecarRuntime({
       }),
     vendorOAuth,
     logger,
-    // A compaction refresh lands in the host; the renderer keeps its own copy.
-    onTitleChanged: () =>
-      sendToRenderer(IPC.event.sessionsChanged, { reason: "session.title" }),
+    // A compaction refresh lands in the host; the renderer keeps its own copy and
+    // a phone holding the session learns about it from RACP.
+    onTitleChanged: (sessionId) => {
+      sendToRenderer(IPC.event.sessionsChanged, { reason: "session.title" });
+      void sessionChangeNotifier.titleChanged(sessionId);
+    },
   }),
 });
 emitAgentEvent = sidecarRuntime.emitAgentEvent;
@@ -953,6 +972,7 @@ const liveCallService = createLiveCallService({
 function registerIpc() {
   return registerIpcHandlers({
     generateSessionTitle: sessionTitleGenerator.run,
+    announceSessionTitleChanged: (sessionId) => void sessionChangeNotifier.titleChanged(sessionId),
     // The extractor's lifecycle is Main's: a deleted session and a switch that
     // went off both cancel the runs already waiting to start.
     cancelMemoryExtraction: (sessionId) => memoryExtractionService.cancel(sessionId),
@@ -1023,6 +1043,7 @@ function registerIpc() {
     getWorkPanelChatWidthSetter: () => mainState.setWorkPanelChatWidthForWindow,
     applyCloseBehavior,
     getCloseBehavior: () => mainState.closeBehavior,
+    isMacosWindowTranslucent: () => mainState.macosWindowTranslucency,
     markMenuRendererReady,
     executeNativeMenuAction,
     scheduledRunsBySession,
@@ -1131,6 +1152,7 @@ registerApplicationStartup({
   planUiProbe,
   applyApplicationMenuSettings,
   applyDeveloperMode,
+  applyMacosWindowTranslucency,
   applyPreventScreenSleep,
   applyKeepAwakeWhileRunning,
   applyPluginLauncherShortcut,

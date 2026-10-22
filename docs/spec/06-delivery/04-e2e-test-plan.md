@@ -5040,8 +5040,10 @@ window; opening a normal panel afterward must still work.
   text highlights the bubble. Escape and Tab dismiss the menu without
   running an item.
   A link still offers Open in default browser, Open in work panel, and
-  Copy link address. Quote, Annotate, and Open side chat are absent
-  (ADR 0268). The surface is a viewport-fixed body-level layer and does
+  Copy link address. Quote, Annotate, and Open side chat are absent from
+  this menu (ADR 0268); quoting a passage is the selection overlay's own
+  action (ADR 0334 / D674, E2E-CHAT-selection-quote-into-composer). The
+  surface is a viewport-fixed body-level layer and does
   not resize the transcript. During editing, Copy uses the selected draft text
   or the full draft with a collapsed caret; Select message text selects the
   draft. Edit, Delete, and revision actions are absent until editing ends.
@@ -5175,7 +5177,73 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 - **Acceptance**: C (chat stream), Quality
 - **Milestone**: M5
 - **Status**: Automated (`pnpm test:e2e:copy-tex`, real Chromium) plus
-  `selection-tex.test.mjs`
+
+#### E2E-CHAT-selection-quote-into-composer: A quoted selection lands in the message box
+
+Selecting a passage in a message row floats one pill above it, and its single
+action writes that passage into the composer draft as a Markdown blockquote at
+the draft's caret instead of replacing what the user typed. The excerpt is the
+selection read back as source: formulas as their TeX, a code block as a fenced
+block that keeps its language, a table as one `a | b` line per row, a list item
+and a heading with their markers. The selection is consumed, the composer takes
+focus, the draft's chips survive, and nothing is sent.
+
+The pill stays inside the transcript's visible band: a selection at the bottom
+of the thread places it above the docked composer rather than under it, a
+selection against the right edge slides left, and scrolling the thread moves it
+with the selection instead of dismissing it. It appears for a keyboard-extended
+selection (Shift+Arrow) as well as a pointer drag, and loading the pane with a
+selection already in place shows it without waiting for another event.
+
+- **Preconditions**: A conversation with a long assistant answer containing a
+  paragraph, a `$…$` formula, a `$$…$$` display formula, a fenced code block
+  with a language, a table, a bulleted list, and a heading; a draft in the
+  composer that already holds text and at least one file-reference chip; a
+  second session available so one pane can be hidden behind another.
+- **Steps**: 1) Drag-select one sentence of the paragraph and use the pill's
+  action. 2) Inspect the draft text and caret. 3) Select the code block and
+  quote it. 4) Select the table, the list, and the heading and quote each.
+  5) Select from the middle of the inline formula to the end of its sentence
+  and quote it; repeat for the display formula. 6) Select text across two rows
+  and confirm no pill appears; repeat with a selection inside the composer
+  itself. 7) Select to the right edge of the pane and to the bottom of the
+  scroller, then scroll the thread with the pill up. 8) Extend a selection with
+  Shift+Arrow and quote it. 9) Switch to the other session and back with a
+  selection left in the first pane. 10) Quote into a session whose composer is
+  blocked and read the toast. 11) Drag inside a tool row and inside the turn's
+  process disclosure and confirm no pill appears. 12) Drag from the answer's
+  last paragraph to the end of the meta chips under it and quote it. 13) Quote a
+  code block whose body carries two consecutive blank lines.
+- **Expected**: The draft gains one blockquote separated from the existing text
+  by a single blank line, the caret sits after it, chips are unchanged, and the
+  composer has focus. The formula is the TeX of the formula the selection
+  covered; the code block arrives fenced with its language and one fence longer
+  than any backtick run it contains; the table arrives as one line per row; a
+  selection that spans a list and the heading after it keeps both markers. A
+  block that is the range's own ancestor contributes its text — quoting a
+  heading's line alone quotes that line, not a heading. A code block's body is
+  quoted verbatim, so two blank lines inside it stay two. No pill appears for a
+  cross-row, composer, tool-row, process-disclosure, or start-in-meta selection,
+  and a drag from the answer into the tool row or the meta chips quotes the
+  answer alone — no tool payload and no model/token chip reaches the draft. The
+  pill never covers the docked composer,
+  never leaves the pane horizontally, and follows the thread scroll. A hidden
+  pane renders no pill. A blocked composer writes nothing and reports it, and no
+  step sends a prompt or adds a session.
+- **Coverage**: `selection-quote.test.mjs` (geometry, reduction order, formula
+  reading through `lib/selection-tex.ts`, overlay wiring, pill styles),
+  `chat-quotes.test.mjs` (excerpt and insertion rules, one write path, i18n
+  keys), and `scripts/e2e/selection-quote.tsx`, which mounts the production
+  `Markdown`, overlay, and composer sink in real Chromium, drags real `Range`s,
+  and clicks the pill's own button.
+- **Specs linked**: `04-ux/08-component-spec.md` §7.4 / §8.5, ADR 0334,
+  decisions-log D674
+- **Acceptance**: C (chat stream), Quality
+- **Milestone**: M5
+- **Status**: Automated (`pnpm test:e2e:selection-quote`, real Chromium: nine
+  cases incl. the tool row, the answer-to-meta drag, and fence blank lines) plus
+  the two unit files. Not yet covered: a keyboard-extended selection, a hidden
+  retained pane, and a blocked composer, which stay spec-level steps.
 
 #### E2E-060b: Neutral gray accent across chrome
 
@@ -7031,9 +7099,11 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
     hook on a terminating turn); a new user prompt still compacts before its
     first provider request.
   - Every successful compaction adds exactly one divider row to the transcript,
-    positioned immediately after the last message that checkpoint covers, and
-    raises exactly one warning toast. Two checkpoints produce two rows, in
-    order, and neither row replaces or hides a message.
+    positioned immediately after the last message that checkpoint covers, with
+    no routine toast, dialog, or notification. This includes threshold,
+    model-requested, model-switch, overflow, and manual checkpoints in active
+    and background sessions. Two checkpoints produce two rows, in order, and
+    neither row replaces or hides a message.
   - The `new_context` call appears as a normal tool activity row, returns
     immediately, and the checkpoint is created at the following turn boundary
     rather than mid-turn.
@@ -7046,6 +7116,17 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   - At the hard boundary a durable checkpoint is created before the next model
     request. The complete visible transcript is unchanged, and the continued
     task stays below the model-aware safe budget.
+  - The automatic trigger compares the provider's own count when the transcript
+    still carries one: a conversation whose last provider request reported a
+    usage below the trigger does not compact, even when the chars/4-plus-CJK
+    estimate of the same request reads above it, and the remaining-context
+    figure the composer shows matches the compaction decision. The
+    full-request estimate still applies before the first usage of a session and
+    right after a checkpoint, where it is what carries the system prompt and
+    the tool schemas. After a checkpoint the budget is unanchored again: a
+    replayed tail's pre-checkpoint usage never anchors it, so the checkpoint's
+    own shrink and fit checks compare like with like. A delegate follows the
+    same rule.
   - After a checkpoint the next provider request contains no assistant or tool
     message from before the boundary — only the summary and, while an active
     turn continues, its latest user message, which may carry the
@@ -7064,9 +7145,9 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
     error message or `error` event; only a failed retry (or failed compaction)
     closes the bubble with `CONTEXT_TOO_LARGE` / the actual terminal error.
   - If automatic summary generation fails, a durable retained-tail fallback
-    checkpoint is appended, the run stays active, and one warning explains
-    that older model context was reduced; the transcript row for that
-    checkpoint reads "summary generation failed · recent context retained",
+    checkpoint is appended, the run stays active, and no warning toast is
+    raised; the transcript row for that checkpoint explains the reduction as
+    "summary generation failed · recent context retained",
     never `summary ≈N tokens` (ADR 0282). Before that fallback, the summary
     request retries transient provider failures up to three times with
     2s/4s/8s backoff, Stop cancels the backoff, deterministic failures do not
@@ -7080,10 +7161,11 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
     reporting that there is no new context to compact.
   - The budget reminders appear at most once each per checkpoint window, never
     in the transcript, and never in a persisted system prompt.
-  - Idle `/compact` succeeds and shows its own informational toast on top of the
-    compaction warning, because the user asked for it. Compaction failures
-    surface once through `CONTEXT_COMPACTION_FAILED` without duplicate error
-    toasts.
+  - Idle `/compact` succeeds without an informational or warning toast; its
+    inline status settles and its checkpoint row remains visible. Manual
+    compaction failures retain one error toast with the actual failure, while
+    automatic terminal failures surface through `CONTEXT_COMPACTION_FAILED`
+    on the failed turn without duplicate error toasts.
   - Settings contains no context-management card and Settings search returns no
     compaction rows.
 - **Specs linked**: `03-runtime/01-ipc-protocol.md`,
@@ -7096,7 +7178,11 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 - **Milestone**: M5
 - **Status**: Partially automated (`runtime.test.ts`,
   `context-compaction.test.mjs`, `assistant-turns.test.mjs`, host-core
-  transcript/session unit tests); full provider/UI journey Draft
+  transcript/session unit tests). `pnpm test:e2e:notification-cards` clicks
+  every successful compaction reason and retained-tail recovery through the
+  production store and ToastHost in isolated Chromium, verifies existing
+  notices survive and manual failure remains visible in English and Chinese.
+  Full provider/transcript UI journey remains Draft.
 
 #### E2E-PROVIDER-custom-endpoint-session-identity: A self-hosted endpoint receives the session id
 
@@ -10076,31 +10162,34 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
      only the vault password and device label, and automatic runs use the
      shared switch. Select categories before the first save, keeping
      credentials/memory opt-in. Test conditional creation, readback, matching
-     update, stale-write rejection and server-side probe cleanup.
+     update, stale-write rejection and the server-side probe.
      Reject ignored preconditions, weak ETags, redirects, public HTTP and 403;
      never interpret 502 as a missing object. LAN HTTP follows network policy.
-  3. Configure two sync devices. Publish a provider and mapped packaged skill,
-     receive them as pending where approval is required, approve, and verify
-     visible persisted configuration and resource bytes. Verify there is no
-     projects category and publishing project/group metadata neither registers
-     nor changes projects/groups on the receiving device. Register its workspace
-     locally, then map and approve the project skill; its resources must arrive
-     without changing local group names, roots or ordering. Existing vault
-     `projects` entities are ignored on sync/restore, preserving local projects
-     and cloud history. Exercise disjoint edits,
+  3. Configure two sync devices. Publish a provider and a **global** packaged
+     skill, receive them as pending where approval is required, approve, and
+     verify visible persisted configuration and resource bytes. Verify there is
+     no projects category and that publishing a project's `AGENTS.md`, group
+     instruction text, project and group memory, project MCP server, project
+     skill and folder-bound automation produces **no approval at all** on the
+     receiving device and changes none of its own project settings. Existing
+     vault `projects` entities and project-scoped records are ignored on
+     sync/restore, preserving local projects and cloud history. Exercise disjoint
+     edits,
      same-entity conflicts and explicit choice convergence, remote deletion
      versus offline edit, and repeated polling. Credential opt-out must not
      manufacture local edits or prevent deletion convergence. No real executable
      capability is run.
   4. Configure backup mode. Verify remote configuration is not applied, backup
      history is separate, unchanged snapshots do not duplicate revisions, and
-     a local restore does not change either cloud head. Add a Minih Router
+     a local restore does not change either cloud head. Add an ordinary provider
      account and multiple models with aliases, protocol/limit/thinking and
      capability overrides; select default and image model bindings. Back up and
-     restore onto a device with no account. Credentials remain staged until
-     local approval, then account identity, explicit provider overrides, ordered
-     model bindings and application defaults survive restore and Host restart
-     without duplicate account rows or a new backup publication. Capture requires
+     restore onto a device with no such account. The connected Minih Router row
+     is the backup transport's own identity: it stays device-local and is never
+     published. Credentials remain staged until local approval, then the
+     account, explicit provider overrides, ordered model bindings and
+     application defaults survive restore and Host restart without duplicate
+     account rows or a new backup publication. Capture requires
      both the credentials category and the explicit secret permission; OAuth
      sessions are never exported, even when credentials are selected.
   5. Restore an older sync revision with propagation acknowledgment. Verify a
@@ -10133,18 +10222,27 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   History queries index at most 30 revisions; stored immutable objects are not
   automatically deleted. Import recovery remains observable; per-file atomic
   replacement is not asserted to be a whole-filesystem transaction.
-- **Live router safety:** a live router run is separately opt-in and requires
-  explicit authorization with a real account; the harness reads the account
-  token from an authorized env file programmatically without logging/copying
-  it. Use a dedicated test account, confirm it is initially empty, run actual
-  isolated Host processes, delete only objects created by the run, and verify
-  it is empty afterward. Never use an existing backup account or the
-  production desktop profile. Record tested base/candidate and distinguish
-  this run from a standalone SDK probe.
-- **Automation:** `pnpm test:e2e:config-sync` is the multi-Host harness.
-  Rust `config_sync::` and `user_skills::` suites cover transport, merge,
-  application and resource safety, using an in-process router HTTP fixture
-  for the transport/engine tests rather than an S3 fixture.
+- **Harness destination:** `pnpm test:e2e:config-sync` runs four isolated Host
+  processes against an in-process Minih Router backup fixture on a loopback
+  port. The fixture enforces the real contract itself: bearer authentication
+  per account, a server-side self-test reporting reliable conditional writes,
+  strong ETags, and `If-None-Match`/`If-Match` preconditions. Each Host links
+  its own Minih Router account row to that fixture, because the account is the
+  destination. There is no live-cloud mode in the harness: a live run needs a
+  dedicated real account and explicit authorization outside it, never an
+  existing backup account or the production desktop profile. Record the tested
+  base/candidate; the harness also records the Host binary hash and whether the
+  task changes were uncommitted.
+- **Automation:** `pnpm test:e2e:config-sync` is the multi-Host harness; its
+  journey covers the global-only scope, project data staying local, project
+  archive export/import, global-skill deletion convergence and plugin-uninstall
+  convergence. Rust `config_sync::` and `user_skills::` suites cover transport,
+  merge, application and resource safety, using the same router protocol as an
+  in-process fixture;
+  `router_tests::project_records_are_not_captured_for_the_cloud_copy`,
+  `router_tests::uninstalled_plugin_intent_deletion_reaches_the_peer` and
+  `router_tests::deleted_global_skill_stays_deleted_on_the_peer` pin the new
+  boundaries.
   `config-sync-user-path.test.mjs` runs the real settings page and shared
   checkbox with a mocked external IPC boundary, actual styles and isolated
   Electron input, without network access; `config-sync-ipc.test.mjs` covers
@@ -10157,11 +10255,48 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 - **Status:** Candidate validation required; full checkpoint-recovery fault
   injection is not claimed by the settings or multi-Host happy-path suites.
 
+### E2E-PROJECT-archive-cross-device-import
+
+- **Preconditions:** A built task candidate, two isolated Host processes with
+  separate data/HOME/agent directories, and a project folder on the first
+  device that holds ordinary files, a hidden `.git` config, an `AGENTS.md`, a
+  project skill with a packaged resource, a project MCP server with an `env`
+  value, pinned project memory and one automation bound to the folder.
+- **Steps:** 1) Export the project from its detail menu through a native save
+  dialog and confirm the progress indicator and the completion toast.
+  2) Inspect the archive: `manifest.json` plus `roots/0/…` only; no absolute
+  source path; no MCP env value. 3) On the second device, import the archive
+  through the Projects page toolbar, choosing a destination parent folder.
+  4) Confirm the project appears in the index with its files, and that the
+  restored MCP definition is present, disabled and without values, while the
+  automation is present and disabled. 5) Import the same archive again into the
+  same parent and confirm the conflict error, with no second copy and no
+  half-imported folder. 6) Cancel each picker once and confirm no request is
+  sent and no toast appears.
+- **Expected:** The archive carries the project files and its app-managed
+  configuration, never chat history, credentials, MCP values or plugin grants.
+  The import is one-time and creates a local project; the two copies are
+  independent afterwards. An existing non-empty destination is refused with a
+  visible Host error, and a failed or cancelled operation leaves nothing behind.
+  Every string, including native dialog titles, is localized.
+- **Automation:** Rust `project_archive::tests` covers the round trip, group
+  archives, conflict refusal, path/entry/limit rejection, the source-symlink
+  skip and version rejection; the multi-Host journey
+  (`pnpm test:e2e:config-sync`, step `project-archive-cross-device-import`)
+  exercises export, cross-device import, secret exclusion, the disabled
+  automation and the duplicate-import conflict through real Host processes.
+  The Projects page rendering is covered by the desktop typecheck and the
+  shared component/styles tests; its pickers live in Electron main and are
+  asserted by the channel contracts rather than by a mocked page test.
+- **Specs:** `03-runtime/23-project-archive.md`, `04-ux/06-settings-ia.md`,
+  `docs/adr/0336-global-config-sync-and-project-archive.md`.
+
 ### E2E-CONFIG-SYNC-skill-package-repository-metadata
 
 - **Preconditions:** A built task candidate with two isolated Host processes and
-  the local S3 fixture, plus a directory-shaped skill whose folder contains a
-  git repository with an object pack larger than the per-resource cap.
+  the in-process router backup fixture, plus a directory-shaped skill whose
+  folder contains a git repository with an object pack larger than the
+  per-resource cap.
 - **Steps:** 1) Place a real resource and a `.git` object pack above 2 MiB
   beside the skill document on the first device. 2) Sync, approve the skill on
   the second device, and compare both packages. 3) Repeat with a revision
@@ -10264,7 +10399,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | C / E / Security / Quality — Live Voice four-stage interaction | E2E-LIVE-VOICE-four-stage-ui |
 | C / F — Hourly task updates | E2E-SCHEDULED-manual-to-hourly |
 | C / F / Quality — Saved project isolation | E2E-SCHEDULED-manual-workspace-binding |
-| C / F / Quality — Desktop automations | E2E-SCHEDULED-desktop-automation-lifecycle |
+| C / F / Quality — Desktop automations | E2E-SCHEDULED-desktop-automation-lifecycle, E2E-SCHEDULED-run-in-activity-feed |
 | F / Security / Quality — Portable configuration sync | E2E-CONFIG-SYNC-router-account |
 | A / C — Unicode stdio framing | E2E-RPC-unicode-separators |
 | C / G / Quality — Plugins navigation | E2E-NAV-plugins-button-goes-back |
@@ -10322,7 +10457,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | G — Plugins (Independent session communication) | E2E-SESSION-independent-top-level-communication |
 | Quality (Independent session communication) | E2E-SESSION-independent-top-level-communication, E2E-SESSION-hover-card-model-and-links |
 | C — Conversation & stream (Hover card model and links) | E2E-SESSION-hover-card-model-and-links |
-| C — Conversation & stream (Chat file references) | E2E-CHAT-shorthand-file-ref-opens-the-matching-file, E2E-CHAT-file-ref-opens-the-surface-that-owns-it |
+| C — Conversation & stream (Chat file references) | E2E-CHAT-shorthand-file-ref-opens-the-matching-file, E2E-CHAT-file-ref-opens-the-surface-that-owns-it, E2E-CHAT-directory-ref-reveals-in-system-file-manager, E2E-CHAT-outside-root-ref-offers-reveal-and-copy |
 | C / Quality / Security (Conversation MP4 attachments) | E2E-CHAT-mp4-attachment-opens-in-system-player |
 | G — Plugins (Chat file references) | E2E-CHAT-file-ref-opens-the-surface-that-owns-it, E2E-PLUGIN-file-view-collapse-persists |
 | Quality (Chat file references) | E2E-CHAT-shorthand-file-ref-opens-the-matching-file, E2E-CHAT-file-ref-opens-the-surface-that-owns-it, E2E-PLUGIN-file-view-collapse-persists |
@@ -10369,7 +10504,8 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 | Post-MVP | E2E-022A, E2E-022B, E2E-022C, E2E-024I, E2E-024J, E2E-024K, E2E-024L, E2E-024M (plugin roadmap R2/R3/R6) |
 | Post-baseline local automation | E2E-220 |
 | Post-baseline local automation (MCP `minih_session_get` large compaction) | E2E-MCP-session-get-projects-large-compaction |
-| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory, E2E-REMOTE-MOBILE-native-shell-credential-storage, E2E-REMOTE-ACCOUNT-cross-account-isolation, E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts, E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm, E2E-REMOTE-ACCOUNT-key-rotation-keeps-account, E2E-REMOTE-ACCOUNT-disabled-key-blocks-login, E2E-REMOTE-ACCOUNT-redacted-push |
+| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory, E2E-REMOTE-MOBILE-native-shell-credential-storage, E2E-REMOTE-ACCOUNT-cross-account-isolation, E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts, E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm, E2E-REMOTE-ACCOUNT-key-rotation-keeps-account, E2E-REMOTE-ACCOUNT-disabled-key-blocks-login, E2E-REMOTE-ACCOUNT-redacted-push, E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop |
+@end
 | Trusted extensions (R7 v1) | E2E-DIALOG-long-text-boundaries, E2E-241, E2E-242, E2E-HOOKS-prompt-chain, E2E-HOOKS-cancel-and-dispose, E2E-TRUSTED-EXTENSION-custom-agent-stream-and-binding, E2E-243, E2E-TRUSTED-EXTENSION-temporary-session-cwd-is-scratch, E2E-244, E2E-245, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list, E2E-PLUGIN-provider-catalog-add-service |
 | Trusted extensions (R7 v1 npm recovery) | E2E-PLUGIN-import-extension-recovers-missing-npm |
 | Post-MVP regression coverage (plugin tool dispatch) | E2E-PLUGIN-slow-tool-is-not-cut-off-by-host-dispatch |
@@ -13596,6 +13732,82 @@ are withdrawn with ADR 0165.
   (`apps/desktop/test/chat-ref-resolve.test.mjs`); full UI journey Draft (run
   only in a capable environment when this surface changes)
 
+#### E2E-CHAT-directory-ref-reveals-in-system-file-manager
+
+- **Preconditions**: An open project whose primary folder holds
+  `apps/desktop/src/App.tsx` and a `docs` folder with no extension in its name.
+  The session may use local tools; a second, remote session shows the same
+  reply. The transcript renders assistant markdown and a user turn.
+- **Steps**: 1) Prompt a turn whose reply names `apps/desktop/src/` (with the
+  trailing separator) and click it. 2) Prompt a turn that names the folder
+  without the trailing separator inside inline code and click it. 3) Prompt a
+  turn that names `~/notes` and `~/notes/` and click each. 4) Right-click the
+  folder reference. 5) Repeat step 1 in the remote session. 6) Prompt a turn
+  that writes only prose: `and/or`, `50/50`, `TCP/IP`, `km/h`, `输入/输出`,
+  `A / B`, and a lone `/`.
+- **Expected**:
+  - A folder reference becomes a link only after the host confirms the entry
+    exists, and clicking it selects that folder in the system file manager. It
+    is never opened: `fs/open` would launch an `.app` bundle, and the bundled
+    file view has no folder location.
+  - An extensionless path claimed by inline code and an anchored path
+    (`~/notes`) are confirmed the same way before they are clickable; the
+    confirmation is one `fs/resolveRef` per distinct path per workspace,
+    session, and conversation, however often the reference is repeated.
+  - A path that does not exist yet stays plain text, and becomes a link after
+    the entry is created and the row re-mounts: a miss is not remembered.
+  - The folder's context menu offers **Reveal in Finder** plus Copy full path
+    and Copy relative path, and no HTML open destinations.
+  - In the remote session the click reports that a remote folder cannot be
+    shown on this computer, and no local file-manager call is made. A session
+    without local tools sends no existence lookup at all.
+  - None of the prose shapes becomes a link or costs a lookup, and a routed URL
+    such as `https://example.com/a/b/` stays one URL.
+- **Specs linked**: `03-runtime/01-ipc-protocol.md` § fs,
+  `04-ux/09-interaction-patterns.md` §8a.2, ADR 0262
+- **Acceptance**: C (conversation & stream), D (workspace), Quality
+- **Milestone**: M5
+- **Status**: Unit-covered
+  (`apps/desktop/test/chat-directory-ref-reveal.test.mjs`,
+  `apps/desktop/test/chat-links.test.mjs`,
+  `apps/desktop/test/chat-ref-resolve.test.mjs`); full UI journey Draft (run
+  only in a capable environment when this surface changes)
+
+#### E2E-CHAT-outside-root-ref-offers-reveal-and-copy
+
+- **Preconditions**: An open project, a session that may use local tools, and a
+  path that exists outside every allowed root — a file such as
+  `~/Documents/notes.md` and a folder such as `~/Documents`. A remote session
+  shows the same reply. The transcript renders assistant markdown and a user
+  turn.
+- **Steps**: 1) Prompt a turn whose reply names the outside file and click it.
+  2) Click the outside folder reference. 3) Right-click either reference. 4)
+  Prompt a turn that names a path outside the roots that does not exist, and
+  click it. 5) Repeat step 1 in the remote session. 6) In the file manager,
+  confirm nothing was opened or launched.
+- **Expected**:
+  - The outside reference is a link, because the host reported that the entry
+    exists. Its click and its context menu open the same two-item menu:
+    **Reveal in Finder**, which selects the entry in the system file manager, and
+    **Copy path**, which copies the absolute path.
+  - There is no "Copy relative path" (nothing to compute) and no open
+    destination: the file is never opened, previewed, or read, and no work-panel
+    tab is created.
+  - A path that is outside the roots *and* absent still reports the access
+    limit and opens nothing.
+  - The remote session reports that it cannot show something on this computer,
+    never reveals anything locally, and receives no `outside` report — it is not
+    told whether the path exists on the host.
+- **Specs linked**: `03-runtime/01-ipc-protocol.md` § fs,
+  `04-ux/09-interaction-patterns.md` §8a.2, `05-security/01-security.md`,
+  ADR 0333
+- **Acceptance**: C (conversation & stream), D (workspace), Security, Quality
+- **Milestone**: M5
+- **Status**: Unit-covered
+  (`apps/desktop/test/chat-outside-ref-reveal.test.mjs`,
+  `apps/desktop/test/chat-directory-ref-reveal.test.mjs`); full UI journey Draft
+  (run only in a capable environment when this surface changes)
+
 #### E2E-CHAT-spaced-absolute-file-paths
 
 - **Preconditions**: On Windows, open a project rooted at a directory whose
@@ -13649,15 +13861,21 @@ are withdrawn with ADR 0165.
   that matches nothing. On an HTML reference, open the Open with submenu and
   choose File Manager, built-in browser, and default browser; repeat for the
   scratch HTML file. 9) Use Copy full path and Copy relative path, then do the
-  same on a reference that resolves in the session scratch store.
+  same on a reference that resolves in the session scratch store. 10) Right-click
+  a delivered `release-bundles/build.tar.gz` inline-code path and choose Open with
+  default application, then Show in folder. Repeat for scratch and sibling-root
+  files; try a missing file, a rejected OS handoff, and a remote reference.
 - **Expected**:
-  - Right-clicking a file reference offers Copy full path and Copy relative
-    path on each transcript surface that names it. The transcript menu has no
-    Show in folder item. An unpositioned HTML reference also has a second-level
-    Open with submenu for File Manager, built-in browser, and default browser;
-    non-HTML references keep only the copy actions. Each open choice resolves
-    the reference first, and a missing reference reports itself without opening
-    a same-named file elsewhere.
+  - Right-clicking a local non-HTML file reference offers Open with default
+    application and Show in folder above both copy actions on every transcript
+    surface that names it. HTML retains the second-level Open with submenu for
+    File Manager, built-in browser, and default browser, and adds Show in folder.
+    OS actions resolve first and hand the exact absolute path and owning session
+    to the existing host open/reveal channels, without opening a work-panel tab.
+    Missing files and failed OS handoffs report errors without a fallback. A
+    session or project switch while resolving prevents the stale action. Remote
+    references offer no local OS actions; folders and outside-root entries retain
+    their reveal-only menus. Normal left-click destinations are unchanged.
   - A copy writes exactly what it names: the absolute address for the full copy
     and the project-relative spelling for the relative one; a scratch or
     attachment file reports that it has no relative path instead of copying an
@@ -14828,6 +15046,43 @@ are withdrawn with ADR 0165.
   automated. The live multi-session provider/Electron journey remains runner
   validation under the no-local-E2E policy
 
+#### E2E-COMPOSER-hash-picks-session-target: `#` in the Composer names the session work goes to
+
+- **Preconditions**: Two Agent-mode sessions in the same project, one titled for
+  review, plus one session in another project and one archived session. A test
+  plugin registers a `#` composer trigger so the composition order is visible.
+- **Steps**: 1) In the first session, type `#rev` into the Composer. 2) Press
+  Enter (or click the row). 3) Submit the prompt. 4) Repeat with `#` alone, with
+  `## Title`, and with `#123` while no session title matches. 5) Type `#` in a
+  draft, then press Escape, then Enter. 6) Type `#` and compose with an IME, then
+  commit the composition. 7) Type `#`, choose the row, then say to hand the work
+  to that session.
+- **Expected**: `#rev` opens the host's group listing only the same-project,
+  unarchived, Agent-mode sessions whose titles match, newest first, with the
+  caller and the other project's session absent; a plugin owning `#` lists its
+  own group after the host's. Accepting the row replaces `#rev` with an inline
+  `#<title>` chip, adds exactly one space, leaves the caret after it, and that
+  Enter does not send. Submitting delivers `#<title> (Session ID: <id>)` as
+  prompt text: the transcript shows that sentence, main attaches no excerpt, and
+  no attachment row appears. With no title match the group does not open at all,
+  so `#`, `## Title` and `#123` submit as ordinary text. Escape closes the group
+  and Enter then sends the literal draft. IME composition leaves the open group
+  unchanged until the composition ends. The model can address the named session
+  through the session tools without any tool-schema change. Deleting the target
+  session afterwards leaves the earlier message readable as plain text.
+- **Specs linked**: `04-ux/08-component-spec.md` (§11.8, §20B.1a),
+  `07-plugins/02-plugin-manifest-schema.md`, `08-meta/decisions-log.md` (D673)
+- **Acceptance**: C (conversation & stream), E (tools & permissions)
+- **Milestone**: post-M6
+- **Status**: Trigger grammar, the candidate filter, the chip rule, dispatch
+  serialization, the no-link guarantee, the attachment-free path, the draft
+  round trip and the localized copy are automated by
+  `packages/shared/src/composer-trigger.test.ts`,
+  `packages/shared/src/session-target.test.ts`,
+  `apps/desktop/test/composer-session-targets.test.mjs` and
+  `apps/desktop/test/composer-session-target-flow.test.mjs`. The packaged
+  Electron journey, including the IME and plugin-group steps, is NOT RUN.
+
 #### E2E-SESSION-builtin-send-to-named-session: An Agent hands work to a session the user names
 
 - **Preconditions**: Two existing Agent-mode sessions from the normal New Task
@@ -14859,6 +15114,51 @@ are withdrawn with ADR 0165.
   `apps/desktop/test/session-messaging-tools.test.mjs`,
   `packages/host-runtime/src/session-tools-gate.test.ts` and host-core
   `session_messaging_tests` / `desktop_owned_tools_*`. The packaged Electron
+  journey is NOT RUN.
+
+#### E2E-SESSION-create-missing-target-session: An Agent creates the session a hand-off names
+
+- **Preconditions**: One Agent-mode session from the normal New Task flow. AI
+  settings has no session creation model configured, the provider used for it is
+  authenticated, and no `pi.session-orchestrator` plugin is installed.
+- **Steps**: 1) In the caller session, ask the Agent to hand a review task to a
+  session that does not exist yet. 2) Confirm `SessionList` reported no match and
+  that the Agent called `SessionCreate`, then delivered with `SessionSend` to the
+  returned Session ID. 3) Run the same request in Ask mode and stop the turn
+  while the creation approval card is pending. 4) Configure a session creation
+  model in AI settings and repeat the request. 5) Delete that provider row and
+  repeat once more.
+- **Expected**: With no configured model, `SessionCreate` fails with
+  `MODEL_NOT_CONFIGURED`, adds no session, and tells the model where to configure
+  one. With a configured model, exactly one Agent-mode session appears in the
+  session list (through `sessionsChanged`), carries the title the call asked for,
+  runs in the caller's project with the caller's thinking level and permission
+  mode, and runs on the configured provider/model — never the app default.
+  Creation alone starts no turn and sends no task; the target runs only after the
+  `SessionSend` that follows, and its transcript labels that input as a session
+  message. Stopping the turn retracts a pending creation approval and adds no
+  session. Plan mode reports the tool as unavailable, a `Task` subagent never
+  sees it, and after the provider row is deleted the call fails with
+  `MODEL_UNAVAILABLE`. The Agent-created session is an ordinary session: it can
+  be renamed, archived and deleted, and it may itself create sessions under the
+  same gate.
+- **Specs linked**: `03-runtime/02-agent-runtime.md` (§5f.4a),
+  `03-runtime/03-tools-and-permissions.md`, ADR session-create-tool
+- **Acceptance**: C (conversation & stream), E (tools & permissions), Security
+- **Milestone**: post-M6
+- **Status**: Sender binding, the configured-model requirement, argument
+  validation and the created session's inherited project/permission mode are
+  automated by `apps/desktop/test/session-collaboration-service.test.mjs` and
+  `apps/desktop/test/session-messaging-tools.test.mjs` and
+  `apps/desktop/test/session-create-model-row.test.mjs` (which also pins that
+  the row excludes the same image models the rest of the settings page does, and
+  that the create path refuses one with `MODEL_UNAVAILABLE`); the Plan fence and
+  the gate order by `packages/host-runtime/src/session-tools-gate.test.ts`, the
+  risk table and contract-mode denial by host-core `session_messaging_tests`, the
+  settings shape by host-core `session_create_model_setting_*`, and on-demand
+  loading, Agent-only visibility and the subagent deny list by
+  `packages/agent-runtime/src/runtime.test.ts` and
+  `packages/shared/src/subagent-definition.test.ts`. The packaged Electron
   journey is NOT RUN.
 
 #### E2E-SESSION-completion-notice-allows-silence: A trusted completion notice may finish without an acknowledgement
@@ -15572,18 +15872,50 @@ acceptance targets.
   the Host printed, and confirm the device cookie is `HttpOnly; Secure;
   SameSite=Strict` with a `Max-Age`, that `document.cookie` cannot read it,
   and that no device token or ticket is in `localStorage`. 2) List Hosts and
-  sessions, then open a session's timeline. 3) Start a turn that raises an
+  sessions, confirm the list is grouped by project with the session of a project
+  under its heading and a session that has no project under "Other", then create
+  a session from the phone (choose the project, and the new session opens on its
+  composer), go back, and confirm it is listed under the project it was created
+  in. 3) Open a session's timeline. 4) Start a turn that raises an
   approval, drop the proxied event stream, confirm the client reconnected
   with `Last-Event-ID`, and confirm the same approval is still pending exactly
-  once. 4) Approve and confirm the tool executes once. 5) Start, stop, and
+  once. 5) Approve and confirm the tool executes once. 6) Start, stop, and
   interrupt turns; submit the same mutation twice with one idempotency key and
-  confirm the stored result. 6) Repeat the flow on both viewports and capture
-  a screenshot per step. Then scan the same-origin server's request log: no
-  `ppt1.` or `pdt1.` prefix in any URL or query string, at least one
-  same-origin `/hosts/...` GET that carried no `Origin` header, and the
-  pairing POSTs that did.
+  confirm the stored result. 7) Repeat the flow on both viewports — each
+  viewport's session in a different project, so both headings and "Other" are
+  observable — and capture a screenshot per step. Then scan the same-origin
+  server's request log: no `ppt1.` or `pdt1.` prefix in any URL or query string,
+  at least one same-origin `/hosts/...` GET that carried no `Origin` header, and
+  the pairing POSTs that did. 8) Open a conversation several pages long (80
+  turns, two of them tool calls approved through the same client API the phone
+  uses): confirm it opens on the newest row, that no row is blank, that every
+  tool row carries its tool's name, that internal model instructions are never a
+  row, that one press of "Load earlier" brings in a whole page in order and
+  without duplicates, that a second press brings in another page, that the row
+  the reader is looking at does not move (by that row's `data-item-id`, measured
+  around the press that happens while they are scrolled up), that loading older
+  rows raises no unread count, that a row arriving while the reader is scrolled
+  up is announced by the back-to-latest control, and that jumping back lands on
+  the newest row.
+  Registering the fixture's projects and creating the fixture's own session are
+  `owner`-only, so the runner does both over the Host's loopback socket with its
+  `--pair` code; the browser half only ever performs what a gateway device may.
 - **Expected**: Pairing succeeds without the token ever appearing in a URL,
   query string, or event payload; the timeline resumes from the cursor
+- **Expected (grouping)**: The session list is grouped by project under the
+  names `project/list` returned, the session of each project sits under its own
+  heading, a session with no project sits under "Other", and a session created
+  from the phone appears under the project it was created in. When
+  `project/list` fails the list stays flat and usable and says why (covered at
+  the unit level, `src/lib/session-groups.test.ts`).
+- **Expected (long conversation)**: A session longer than one snapshot page
+  opens on its newest row — the whole document used to scroll, so a long
+  session opened at its oldest row with the composer below the fold — the rows
+  the desktop hides stay hidden, a tool row names its tool, a press of "Load
+  earlier" advances a whole page in the Host's own order, loading older rows
+  leaves the reader where they were and is not counted as new messages, and a
+  row that arrives while they are scrolled up is announced instead of silently
+  missed.
   without duplicates or gaps; the approval is submitted once (the disabled
   button and the idempotency key prevent a second execution); stop and
   interrupt behave as locally; the repeated mutation returns the stored
@@ -15601,7 +15933,25 @@ acceptance targets.
   bundle; `scripts/e2e/remote-web-proxy.mjs` is the test-only same-origin
   server, and it records header *presence* for the credential headers and
   never a value. Screenshots go to `E2E_ARTIFACT_DIR` (default: a temporary
-  directory) and are never committed.
+  directory) and are never committed. Since R7 package H the run also covers
+  the session list's project grouping and "new session" from the phone: two
+  projects are registered and one ticket-less session is created over the Host's
+  loopback socket (both are `owner`-only), each viewport's session goes into a
+  different project, and the browser asserts the headings, the "Other" group,
+  the project-by-project placement, and that a session created through the UI
+  lands under the project it was created in. Since R7 follow-up package D2 (the
+  session timeline) the same run also drives an 80-turn conversation with tool
+  calls, so the timeline's projection, its older-row loading, and its scroll
+  behaviour are asserted in the browser rather than only in unit tests: that the
+  conversation opens on its newest row, that one press loads a whole page in
+  order without duplicates (a page inserted backwards, or a cursor pointing at
+  the page's newest row, shows up as a one-row step), that a second press loads
+  another page, that the row the reader is looking at does not move (measured by
+  that row's `data-item-id`, around a load that happens while they are reading
+  further up), that loading older rows raises no unread count, that an off-screen
+  row is announced, and that jumping back lands on the newest row. The desktop
+  Host refuses `session/create`, so this path is exercised against the
+  `agent-host-cli` Host.
 
 #### E2E-REMOTE-MOBILE-native-shell-credential-storage
 
@@ -15698,6 +16048,43 @@ sibling Hosts is still open for package D.
   `apps/desktop/test/remote-account-desktop.test.mjs`, and the service-name check
   a live enrollment has to satisfy in `packages/racp/src/hostlink-client.test.ts`.
   The Router test instance remains the gate.
+
+#### E2E-REMOTE-ACCOUNT-start-work-from-the-phone
+
+- **Preconditions**: The same local stack as the account scenarios: a local test
+  Gateway, an enrolled `agent-host-cli` Host whose browse root is the test run
+  directory, a loopback model stub, and a phone client paired with a gateway
+  ticket (so `viewer` / `controller` / `approver`, never `owner`). One folder
+  under the browse root is a project already; one is not.
+- **Steps**: 1) From the session list, open **New session**. 2) Choose **Add a
+  project** and confirm the picker starts at the Host's root (shown as `~`, with
+  no way up). 3) Walk into the folder that is not a project yet and confirm it.
+  4) Confirm a session opens on its composer, go back, and check the folder is
+  now a project heading. 5) Ask the Host for a path outside the browse root
+  (`project/browse` and `project/register`). 6) Check the desktop's own notice
+  list and the Host log.
+- **Expected**: The picker lists only directories under the root and the phone
+  shows them from the root (`~/…`), never the absolute home path; confirming a
+  folder registers it and opens its session; `..`, a relative path, and a symlink
+  pointing outside are refused with `REMOTE_PATH_FORBIDDEN`, and a missing
+  directory is `REMOTE_PATH_NOT_FOUND` rather than created; `configure`,
+  `fork`, `rename`, `delete`, the workspace reads, and the terminal still answer
+  `FORBIDDEN`/`CAPABILITY_UNAVAILABLE` for a gateway device; and each registration
+  and session creation appears as a notice naming the device, plus a Host log
+  line with the device id and the session id or path.
+- **Specs linked**: security §3.7 (D666 amendment), protocol §6.2 and §11.2,
+  ADR `remote-control-router-account-binding` amendment 1, rollout §2 (R7 A2)
+- **Acceptance**: Security, Quality
+- **Milestone**: Post-MVP (remote control rollout R7, D666)
+- **Status**: Partial — the browser steps (1–4) run in
+  `pnpm test:e2e:remote-web`: the picker's root, the registered folder, the
+  session it opened, and the new heading are asserted per mobile viewport. The
+  desktop half (5–6) is automated in
+  `apps/desktop/test/desktop-gateway-link.test.mjs` (`the desktop Host creates a
+  session, registers a project, and browses within the browse root`), and the
+  shared root rule in `packages/host-runtime/src/project-catalog.test.ts`. A run
+  against a live Router and a released desktop build remains the deployment
+  gate.
 
 #### E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts
 
@@ -15890,6 +16277,51 @@ sibling Hosts is still open for package D.
   with the operator's own Apple and Firebase material stays with the user, and
   the notifications' visible text is the app's own localized string, which a
   device run would show.
+
+#### E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop
+
+- **Preconditions**: A local Router test instance with key A, the local test
+  Gateway, and two desktop Hosts of account A — A and B — each with the
+  account-mode remote-control switch on, the default "allow same-account
+  computers to join automatically" switch on, and a loopback model stub. Both
+  desktops enroll themselves through the account, and B has one project with a
+  file the turn will read.
+- **Steps**: 1) Start both desktops and wait for both links. 2) On A, open the
+  host list without doing anything else and confirm B appears as an account
+  computer, with no confirmation dialog on either machine. 3) On B, read the
+  device notices and confirm the automatic admission is listed with A's label.
+  4) On A, create a project by browsing B's directories and registering one.
+  5) Start a conversation in that project and send a prompt that makes the
+  model call `Read`. 6) Confirm the streamed answer arrives on A while B's own
+  session list shows the same session. 7) Turn B's automatic-admission switch
+  off, request a device again from a third desktop, and confirm B asks its own
+  user instead of admitting automatically. 8) Stop B and confirm A shows it
+  offline and does not run the session locally.
+- **Expected**: A's device is admitted by B without a human answer because B
+  itself verifies A's Host-certificate proof — chain to its pinned Gateway CA,
+  account binding, signature, and an unused, unexpired nonce — and B's
+  automatic-admission switch is on; a proof with a reused or expired nonce is
+  refused instead; A holds `owner` and reaches B's workspace operations that a
+  phone still cannot (`session/configure`, workspace reads); the turn runs on B,
+  with B's provider configuration and B's own Router account, and only the
+  events cross the Gateway; B shows a "new device" notice and writes an audit
+  record for the automatic admission, and every other computer of the account
+  shows a "new computer joined the account" notice for A's own enrollment; with
+  the switch off, the same request is confirmed by B's user rather than
+  admitted; a phone of the same account still holds `viewer` / `controller` /
+  `approver`, stays under the remote permission ceiling, and is refused the
+  desktop-only operations; an older desktop that does not announce
+  `device.desktop-auto` is shown as needing an update; stopping B leaves A
+  reporting it offline rather than running anything locally.
+- **Specs linked**: ADR `remote-control-router-account-binding` amendment 3,
+  security §3.7 and §3.8 with gates 25, 27, and 35, protocol §11.4 and §11.5,
+  rollout §2 (R8)
+- **Acceptance**: Security, Quality, Recovery
+- **Milestone**: Post-MVP (remote-control rollout R8, D675)
+- **Status**: Planned (R8, D675) — nothing in this scenario is automated yet.
+  The P0 measurement (`scripts/measure-remote-latency.mjs`) covers the two
+  transports it stands on locally: an owner over loopback `RACP-WS` and an
+  account device over `RACP-HTTP` + SSE.
 
 ## Trusted extension scenarios (R7 v1)
 
@@ -16956,44 +17388,37 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   the rendered steering journey has not been run
   (do not run E2E locally unless explicitly requested).
 
-#### E2E-AGENT-side-note-keeps-running-turn: A side note is answered without redirecting the turn
+#### E2E-AGENT-side-note-keeps-running-turn: Independent answers stay in the side panel
 
-- **Preconditions**: A session with a configured model and a controllable
-  streaming response/tool that stays open long enough to type during.
+- **Preconditions**: Isolated Electron and a local SSE provider, with a main
+  task waiting for two controlled delegates. No paid/real provider is used.
 - **Steps**:
-  1. Start a prompt, then open the work panel's side-notes tab from the `+`
-     launcher. Confirm the input is enabled and the list is empty.
-  2. Send a note ("How far along are you?") while the turn streams. Confirm the
-     turn keeps its task, the note appears in the tab and as a marked user row
-     in the transcript, and no FIFO row or new public `agent_start` appears.
-  3. Use the preset progress-summary action, then send a note that asks for a
-     direction change. Confirm the model answers each note and continues.
-  4. Send an empty note; then let the turn finish and confirm the input is
-     disabled and explains why.
-  5. Reload the renderer and switch sessions. Confirm the tab lists the same
-     notes for that session and the transcript rows stay marked.
-  6. Stop the turn while a note is still queued, then inspect the persisted
-     rows and the next ordinary turn.
-- **Expected**: A side note is delivered into the running turn, answered at its
-  next safe point, and never cancels the turn, its tools, or its delegates. The
-  persisted row keeps the user's own words plus the `sideNote` marker, while the
-  model-visible prompt carries the side-note framing. An idle session cannot
-  send a note and says so.
+  1. Open the work panel's side-notes tab and ask for progress.
+  2. Confirm a separate tool-free model request uses a snapshot, while the main
+     TaskWait, active turn and both delegate requests remain untouched.
+  3. Read the question and answer in the side panel. Neither appears in the
+     main transcript/context or produces main-turn messages/status events.
+  4. Exercise the preset, pending edits, refusal/retry, duplicate prevention,
+     Enter/Shift+Enter/IME, panel remount and session switches.
+  5. Reload/list history and confirm question/answer pairs survive. Idle and
+     unsupported sessions cannot submit. A submitted answer may finish after
+     the main task, without starting another main turn.
+  6. Finish delegates; confirm reports and ordinary queued input still run in
+     order and the next prompt does not contain side-question/answer text.
+- **Expected**: Independent read-only answer only in the side panel; no steer,
+  stop, TaskWait interruption, task redirection or main-context mutation.
+  Errors retain the draft and cannot fail the main task. Session deletion
+  removes its independent history and refuses late persistence.
 - **Specs linked**: `03-runtime/01-ipc-protocol.md` (§5.1a),
   `03-runtime/02-agent-runtime.md` (§4.0), `03-runtime/04-data-storage.md`,
   `04-ux/09-interaction-patterns.md` (§3.5), ADR active-turn-steering
 - **Acceptance**: C (conversation & stream), Quality
 - **Milestone**: M5
-- **Automated coverage**: `pnpm test:e2e:side-notes` mounts the production work
-  panel in isolated Electron and exercises the launcher, preset, pending edits,
-  refusal/retry, Enter/Shift+Enter/IME, session isolation and idle admission.
-  Its process fixture uses production Main IPC, AgentHost, the sidecar and Rust
-  Host with a local SSE provider: a note wakes TaskWait in the same turn, both
-  delegates remain live, ordinary FIFO input is preserved, and the durable row
-  keeps plain text plus `sideNote`/`steering` while only the model sees framing.
-- **Status**: Automated fixture paths covered. Live-model interpretation of a
-  direction-changing note and Stop during pending delivery remain manual
-  acceptance scenarios; these fixtures do not authorize a paid provider run.
+- **Automated coverage**: `pnpm test:e2e:side-notes` uses the production work
+  panel plus production Main IPC/AgentHost/sidecar/Rust Host and local SSE.
+  Runtime/IPC regressions cover failure isolation and stale/duplicate input;
+  Rust tests cover separate storage, torn appends, path safety and deletion.
+- **Status**: Updated acceptance; results are recorded in the task delivery.
 
 #### E2E-SESSION-content-search-and-message-navigation
 
@@ -18267,6 +18692,12 @@ the latest destination. These assertions measure work counts, not device FPS.
 - **Expected:** Stored workspace bindings use the existing project canonicalization contract on both write and read. On Windows, slash direction, case, trailing separators and extended path prefixes do not hide a task from its own project's conversation. The distinction between missing legacy bindings and explicit null remains unchanged. Foreign-project tools cannot list or mutate bound tasks.
 - **Automation:** `node --experimental-strip-types scripts/e2e-scheduled-paths.mjs` uses an isolated real Host and SQLite profile. Inference is not sent to a live provider.
 
+### E2E-SCHEDULED-run-in-activity-feed
+
+- **Scenario:** An executing run is the only scheduled transcript the Activity feed lists.
+- **Expected:** Admitting a run creates its session inside the host, so Main announces that session to the renderer as soon as the run is admitted; without that announcement no list would know the row. The sidebar Activity feed then lists that conversation while its turn is executing and drops the row again once the turn settles. Project groups, pinned rows, global session search and the tray still never list a scheduled transcript. A refused dispatch announces no session.
+- **Automation:** `node --test apps/desktop/test/scheduled-session-fanout.test.mjs apps/desktop/test/sidebar-session-groups.test.mjs` covers the announcement and the feed's own rule with a stubbed host. No automated scenario drives the sidebar's Activity panel itself, so that wiring is reviewed from source only; the row's click path is the same `selectSession` call the Scheduled page's Open conversation already uses.
+
 ### E2E-MARKDOWN-table-actions
 
 - **Setup**: Render a conversation containing two Markdown tables, including
@@ -19105,8 +19536,9 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
   `an_unmapped_project_defers_one_entity_and_never_fails_the_revision`,
   `local_counters_never_travel_with_a_revision`, and
   `a_revision_carrying_an_unknown_domain_is_refused_not_skipped`. The multi-Host
-  `pnpm test:e2e:config-sync` harness still targets the removed S3 backend and
-  fails before any scenario runs; it is not the automation for this scenario.
+  `pnpm test:e2e:config-sync` harness now runs this transport against its
+  in-process router fixture, but this scenario's automation stays at the engine
+  level because the journey does not write learned-memory notes.
 - **Specs linked**: `03-runtime/22-config-sync.md` §2, ADR
   agent-long-term-memory §7.
 - **Acceptance criterion**: A note and its deletion reach the other device,
@@ -19299,3 +19731,59 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
   (`boot_bootstrap_tests::switching_the_endpoint_refetches_the_identity_once`,
   `a_cached_answer_is_reused_until_the_identity_is_refreshed`); live two-gateway
   journey outstanding.
+
+## Selected upstream reliability acceptance (2026-10-21)
+
+### E2E-RUNTIME-compacted-transcript-retries
+
+- **Steps:** Start a main session and a built-in subagent through the runtime
+  test seam, compact away a failed assistant, then recover a transient provider
+  failure. Also Stop during backoff and preserve ordinary assistant-tail retry.
+- **Expected:** Current summary/user context is retained, no missing-assistant
+  exception, one recovered response and unchanged cancellation/retry budgets.
+- **Coverage:** Runtime/subagent regression and public prompt-path tests;
+  `pnpm test:e2e` and `pnpm test:e2e:subagents` for surrounding process contracts.
+
+### E2E-COMMAND-empty-quoted-arguments-keep-position
+
+- **Steps:** Expand a real prompt template with an empty quoted first argument
+  followed by a nonempty argument, using both quote styles.
+- **Expected:** Positional arguments do not shift; existing defaults and
+  nonempty template expansion remain unchanged.
+- **Coverage:** Prompt-template parser and invocation regressions.
+
+### E2E-WORKPANEL-active-tab-close-visible
+
+- **Steps:** Add enough tabs to overflow the production strip, activate tabs at
+  either end, reorder/switch sessions, then click the active close action.
+- **Expected:** The close action stays inside the visible strip and closes the
+  intended resource without changing another session's tabs.
+- **Coverage:** Component contracts and an isolated real-renderer user path
+  with screenshots (`pnpm test:e2e:upstream-reliability-ui`) and
+  `pnpm test:e2e:work-panel-reorder`. Windows native drag hit testing is a separate
+  platform lane.
+
+### E2E-PROVIDERS-optional-client-certificate-metadata
+
+- **Steps:** Use a local TLS provider with optional client authentication. Load
+  its models and probe its connection through the production discovery wiring.
+  Exercise required authentication, untrusted/hostname errors, redirects, abort
+  during connect/body and a nonmatching error.
+- **Expected:** Exact optional-client-certificate failure retries metadata once
+  on the selected proxy route; validation/origin/cancellation remain enforced.
+  Other failures never start this fallback and no agent request is replayed.
+- **Coverage:** Metadata transport tests and
+  `pnpm test:e2e:provider-client-certificate` (isolated Electron TLS fixture).
+
+### E2E-MACOS-translucency-preference-next-launch
+
+- **Steps:** With an isolated profile on macOS, open General → Appearance with
+  no saved preference, turn transparency off, inspect the restart hint, revert
+  it, then save off and relaunch. Toggle theme on both surfaces.
+- **Expected:** Missing/true keeps existing glass, false creates opaque next
+  launch, the running surface does not change on save, and the hint tracks only
+  saved/applied mismatch. Non-macOS has no switch and reports false applied state.
+- **Coverage:** Settings/window contracts, real-component interaction and
+  isolated native-window lifecycle checks
+  (`pnpm test:e2e:upstream-reliability-ui`); `pnpm test:e2e:boot`. GPU measurement
+  is not implied by visual/functional acceptance.

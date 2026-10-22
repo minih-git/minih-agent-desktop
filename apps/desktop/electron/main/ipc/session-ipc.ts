@@ -111,6 +111,12 @@ export type SessionIpcDependencies = {
    * (ADR agent-long-term-memory §4).
    */
   cancelMemoryExtraction?: (sessionId: string) => void;
+  /**
+   * Tell the RACP Host that a title this handler wrote has landed. A phone
+   * holding the session refreshes its header from the resulting
+   * `session.changed`; without it the old name stayed on screen.
+   */
+  announceTitleChange?: (sessionId: string) => void;
 };
 
 export function registerSessionIpc({
@@ -130,6 +136,7 @@ export function registerSessionIpc({
   forgetTranscriptRewriteHistory,
   stripWinLongPrefix,
   cancelMemoryExtraction,
+  announceTitleChange,
 }: SessionIpcDependencies): void {
   let host: HostProcess | null = null;
   let sidecar: AgentSidecar | null = null;
@@ -472,7 +479,10 @@ export function registerSessionIpc({
       });
     }
     if (!host) throw new Error("host unavailable");
-    return host.call("session.rename", { id, title });
+    const result = await host.call("session.rename", { id, title });
+    // The row is durable; an attached phone only learns the new name from RACP.
+    announceTitleChange?.(id);
+    return result;
   });
   handle(IPC.invoke.sessionDeriveTitle, async (id: string, title: string) => {
     if (id.startsWith("native-pi:")) {
@@ -481,7 +491,10 @@ export function registerSessionIpc({
       });
     }
     if (!host) throw new Error("host unavailable");
-    return host.call("session.deriveTitle", { id, title });
+    const result = await host.call("session.deriveTitle", { id, title });
+    // The Host owns eligibility, so only a real update is worth announcing.
+    if ((result as { updated?: boolean } | undefined)?.updated === true) announceTitleChange?.(id);
+    return result;
   });
   handle(
     IPC.invoke.sessionMoveProject,
@@ -692,6 +705,17 @@ export function registerSessionIpc({
       return { ...result, session };
     },
   );
+
+  // The model catalog belongs to the host that owns the session. Local sessions
+  // read this desktop's provider rows through `providersList`, so a local call is
+  // refused; a remote session id is answered by the remote backend before this
+  // handler ever runs, and the channel must be registered for that routing to
+  // happen at all.
+  handle(IPC.invoke.sessionModels, async () => {
+    throw Object.assign(new Error("local sessions use the configured provider list"), {
+      errorCode: ErrorCodes.CAPABILITY_UNAVAILABLE,
+    });
+  });
 
   handle(IPC.invoke.sessionImportScan, async () => {
     const { sessions, truncated } = await scanAllSources();

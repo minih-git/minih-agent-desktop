@@ -1363,8 +1363,9 @@ sessions, not a replacement persistence model.
 A scheduled-task run's transcript is never part of this list: the run owns its
 session (`task_runs.session_id`), the host reports that ownership as
 `scheduledRun` on every session summary, and the Scheduled route is its entry
-point. Global session search hides the same rows. Deleting the task releases the
-transcript back into the ordinary lists (issue #1291).
+point. Global session search hides the same rows. The sidebar's Activity stream
+is the one exception, and only while the run is still executing. Deleting the
+task releases the transcript back into the ordinary lists (issue #1291).
 
 ### 6.2 Anatomy
 
@@ -1550,7 +1551,7 @@ storage but compose into one assistant turn until the next user message.
 | Running planning | Compact animated-dot Planning / Goal row in that same slot throughout the planning turn; a runtime phase takes precedence, and pending user interaction or turn completion hides it. The Composer mode chip pulses |
 | Idle | Scrollable; no auto-scroll |
 | Permission pending | PermissionCard inserted inline; transcript continues after resolution |
-| Context checkpoint | Existing transcript remains visible; compaction adds one divider row after the message it covers and one warning toast |
+| Context checkpoint | Existing transcript remains visible; compaction adds one divider row after the message it covers, without a routine toast or dialog; fallback remains labelled as a failed summary |
 | Error | Error MessageBubble with actionable retry link |
 
 ### 7.4 Interactions
@@ -1561,6 +1562,28 @@ storage but compose into one assistant turn until the next user message.
   regenerate re-pins and jumps to bottom
 - Hover message: its action row appears — Copy and the row's other per-turn
   actions.
+- Select text inside one message row: one floating pill appears above the
+  selection, centered on it, clamped into the scroller's visible band so it
+  never covers the docked composer, and it follows the selection while the
+  thread scrolls (ADR 0334 / D674). Its single action puts the selection into
+  the message box as a Markdown blockquote: formulas as TeX through the same
+  reading the clipboard uses, code as a fenced block that keeps its language,
+  tables as one `a | b` line per row, task boxes as `[x]` / `[ ]`, and — when
+  the selection spans them — list items and headings with their markers. A
+  block that is the range's own ancestor contributes only its text (quoting a
+  heading's line quotes that line), and a fence keeps the language rail a
+  drag over the code leaves as a sibling. The excerpt is capped at 2000
+  characters, separated from the existing draft by one blank line, written at
+  the draft's caret with its chips preserved, and a successful action consumes
+  the selection and focuses the composer. It never sends, and when no composer
+  is taking input it reports that through the toast host and leaves the
+  selection alone. A selection that starts in one row and ends in another, or
+  that lies outside this transcript, floats nothing, and a retained pane that is
+  not on screen renders no pill. A gesture that starts in a tool row, a process
+  disclosure, a run row, or the meta chips floats nothing either, and one that
+  runs from the answer into them quotes the answer alone: those regions are
+  dropped from the excerpt, and a fenced block's body is kept verbatim (blank
+  lines and trailing spaces included).
 - Assistant fragments emitted before and after tool calls compose into one
   `role="article"` turn. The turn exposes one trailing meta row and one action
   toolbar; Copy joins all contentful fragments in order, while Fork and
@@ -1876,7 +1899,9 @@ Single message render — either user (plaintext) or assistant (markdown streami
   Regenerate / Branch / revision items). Right-clicking empty transcript
   space, a system row, or a permission/outcome card opens a conversation
   menu: Copy conversation, Select conversation text, Scroll to top, Jump to
-  latest. Quote, Annotate, and Open side chat stay retired (ADR 0268). A
+  latest. Quote, Annotate, and Open side chat stay retired from this menu
+  (ADR 0268); quoting a passage is the selection overlay's own action (§7.4,
+  ADR 0334 / D674). A
   streaming or empty assistant turn that would produce no items opens
   nothing. Copy on a speaking-turn menu writes the live selection in that
   turn captured when the menu opened; a collapsed caret, or a selection
@@ -3059,7 +3084,7 @@ rows and existing state symbols stay unchanged; this amendment adds no shimmer.
 | New session (reasoning model) | Combined model × reasoning chip shows the model and its binding default thinking level; an unmatched model starts at Off while keeping the manual ladder available | User may select any level enabled in the model binding, or any canonical level for an unmatched model |
 | New session / switch while another session is running | textarea active, send button enabled for the destination session's own run state | Send active, Stop hidden unless the destination session itself is running with an empty draft |
 | Running | textarea and mode/model × reasoning/permission controls remain editable for the next turn; the single submit slot shows Stop only with an empty draft | Send queues text or attachments; Stop when both are empty |
-| Context checkpoint | Same as Running until durable checkpoint completion; intermediate `turn_end` does not reactivate controls. A retained-tail fallback remains Running and shows a warning toast | Same single-slot Stop/Send behavior as Running |
+| Context checkpoint | Same as Running until durable checkpoint completion; intermediate `turn_end` does not reactivate controls. A retained-tail fallback remains Running without a toast | Same single-slot Stop/Send behavior as Running |
 | Permission pending | textarea disabled (per [03-permission-ux.md](03-permission-ux.md) §7) | Send disabled; Stop remains active whenever the running empty-draft condition is met |
 | Plan / Goal / planning | textarea active while idle; contract badge and permission chip visible; mode chip pulses while the live turn projects `planning` | inspect, send, or submit a contract |
 | Plan / Goal / awaiting approval | approval surface shows only the title and artifact opener for the exact `.pi/<kind>/*.md` approval; draft is preserved read-only and composer controls remain blocked for that session | approve or reject |
@@ -3432,10 +3457,10 @@ See [Live Voice](../03-runtime/live-voice.md) and
 [Live Work](../03-runtime/live-work-session.md) for the unchanged ownership,
 permission, and call-scoped work contracts.
 
-### 11.8 Slash commands, @ file references, and clipboard files (D123–D125, D197, D209, D262, D362, D397, ADR 0024, ADR 0059, ADR 0070, ADR 0131, ADR 0221, ADR 0222)
+### 11.8 Slash commands, @ file references, # session targets, and clipboard files (D123–D125, D197, D209, D262, D362, D397, D673, ADR 0024, ADR 0059, ADR 0070, ADR 0131, ADR 0221, ADR 0222)
 
-The composer owns an inline autocomplete menu — one component serving two
-modes. Focus never leaves the textarea (D125).
+The composer owns an inline autocomplete menu — one component serving three
+host modes. Focus never leaves the textarea (D125).
 
 Anatomy:
 
@@ -3523,12 +3548,37 @@ Anatomy:
   main selects image blocks or path fallbacks from the exact model capability.
   Reference-only drafts are sendable. Builtin/plugin dispatch still bypasses
   the model-ready gate when no prompt text or file reference is sent.
-- A `minih-agent-desktop://session/<id>` link in the draft is the reference itself: no
-  new trigger symbol joins `@` files and `/` commands, and the link stays
-  visible plaintext while the draft is unsent. Immediately before dispatch,
-  main resolves each link to another conversation in the same project into a
-  bounded excerpt attachment (§20B). An unknown id, a self-reference, and a
-  conversation in another project stay plaintext.
+- Session target mode (`#` token at cursor, boundary-preceded): the host's own
+  group of the sessions work can be handed to (D673). The `#` symbol is one
+  trigger with two halves — the host's target group first, then the group of a
+  plugin that registered `#`, exactly as `@` already composes with a plugin
+  owning it. Rows come from the session list the renderer already holds: local,
+  Agent-mode, not archived, in the caller's project (the home's selected project
+  before any session exists), never the calling session itself, newest first,
+  capped at 50. A query matches titles case-insensitively (substring or
+  subsequence) and highlights the matched characters; an empty query lists the
+  most recently updated sessions; the row's detail is the relative update time.
+  The group refuses to open with no match, so `#123`, `## heading` and a bare
+  `#` stay ordinary draft text and Enter still sends them. IME composition
+  freezes the group like the other modes, and Esc dismisses this token only.
+- Accepting a session target inserts an inline `#title` chip at the caret with
+  one trailing space, and that Enter does not send. The chip is not a session
+  *link*: it carries no excerpt and stays visually distinct from the pasted-link
+  chip. Immediately before dispatch it serializes to the plain sentence
+  `#<title> (Session ID: <id>)` — title whitespace folded, trimmed, 80 characters
+  at most, an empty title falling back to the id's first eight characters — and
+  it never matches the session-link pattern, so main attaches no excerpt of that
+  conversation. A target produces no structured attachment. Sending it is how a
+  prompt names the session that `SessionSend` should receive the work; the tool
+  definitions are unchanged. V1 limitation: the sent message renders that
+  sentence as ordinary transcript text rather than a chip.
+- A `minih-agent-desktop://session/<id>` link in the draft is the reference itself:
+  a reference symbol of its own is not needed, and the link stays visible
+  plaintext while the draft is unsent. Immediately before dispatch, main resolves
+  each link to another conversation in the same project into a bounded excerpt
+  attachment (§20B). An unknown id, a self-reference, and a conversation in
+  another project stay plaintext. §20B states how this differs from a `#` target:
+  a link brings the conversation's content, a target only names it.
 - The Agent/Plan/Goal mode aliases can prefix a prompt in the same draft:
   `/agent-mode <prompt>`, `/plan-mode <prompt>`, and `/goal-mode <prompt>` apply
   the mode first, then send `<prompt>` plus any serialized references through
@@ -3631,14 +3681,18 @@ Anatomy:
   primary-folder file is addressed to the view as a project-relative path and a
   sibling-folder file as an absolute one, which is also how scratch and
   attachment files are addressed. A reference that matches no file opens nothing
-  and reports itself. Right-clicking a transcript file reference offers Copy
-  full path and Copy relative path on every surface that names it. Unpositioned
-  `.html` and `.htm` references also offer an **Open with** submenu containing
-  File Manager, built-in browser, and default browser. Each choice completes the
-  reference first and opens that exact resolved file. Other file types keep the
-  copy actions only; the transcript menu has no **Show in folder** action. A
-  file outside the project has no relative path to copy and reports that fact.
-  The OS default application is no longer what this click does. HTTP(S)
+  and reports itself. Right-clicking a local transcript file reference offers
+  **Open with default application**, **Show in folder**, Copy full path, and Copy
+  relative path on every surface that names it. Unpositioned `.html` and `.htm`
+  references retain their **Open with** submenu containing File Manager, built-in
+  browser, and default browser instead of the direct default-application item,
+  and also offer **Show in folder**. Each action completes the reference first
+  and uses that exact resolved file through the existing host checks. Failed OS
+  actions report an error without opening a fallback panel. Remote references
+  expose no local OS actions; folders and entries outside allowed roots retain
+  their reveal-only rules in §8a.2 of the interaction patterns. A scratch or
+  attachment file has no relative path to copy and reports that fact.
+  The OS default application is still not the normal left-click destination. HTTP(S)
   URLs stay text links. Plain clicks follow the Link open destination setting,
   and right-clicking a URL exposes the same external, work-panel, and copy
   actions.
@@ -4385,6 +4439,23 @@ Carry another conversation into a turn without retyping it. The
 from the conversation overflow menu and pastes it into a Composer draft (issue
 #1324, option B). Copy conversation ID stays the developer-mode identifier.
 
+### 20B.1a A reference versus a `#` target (D673)
+
+The Composer names another conversation in two ways, and they are not
+interchangeable:
+
+| | Reference (pasted link) | Target (`#` trigger) |
+|---|---|---|
+| How it starts | paste `minih-agent-desktop://session/<id>` | type `#` and pick a row |
+| What the model receives | bounded excerpt of that transcript, as an attachment (§20B.3) | the sentence `#<title> (Session ID: <id>)`, as plain text |
+| What the user sees while drafting | the chip over the link text | an inline `#title` chip |
+| What it is for | reading and quoting that conversation | telling the session tools which session should receive the work |
+
+A target therefore carries no content and produces no attachment, and the
+sentence it sends deliberately never matches the session-link pattern, so main
+resolves nothing from it. Choosing a row is the only way to make a target; a
+pasted link never becomes one, and a target never becomes a reference.
+
 ### 20B.2 Anatomy
 
 ```text
@@ -4613,3 +4684,14 @@ Input, selection, submission and dismissal semantics remain unchanged.
 Project-delete descriptions and plugin dialog headings/outcomes also wrap long
 project or plugin names instead of overflowing their existing widths. Project
 instructions, memory and OAuth dialogs retain their existing bounded layouts.
+
+### macOS native window surface selection
+
+The main window keeps the shipped transparent backing and `sidebar` vibrancy
+unless the persisted macOS translucency preference is explicitly false. Read
+that preference before creating the window. An opaque window paints the host
+palette; a translucent window must not be painted over by post-creation or
+renderer background updates. Theme changes reapply vibrancy only to the running
+translucent surface. Startup splash tint, sheen, traffic lights and layout are
+unchanged; Windows/Linux keep their existing surfaces. The applied surface is
+fixed for the running process, independent of later preference saves.

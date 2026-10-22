@@ -341,9 +341,8 @@ test("a paired phone reads desktop sessions and answers an approval", async () =
     // 5. Local authority stays local: configuring a session, reading the
     //    workspace, and the terminal are all refused on the desktop Host.
     await assert.rejects(
-      deviceClient.request("session/configure", {
+      deviceClient.request("session/fork", {
         sessionId: "s1",
-        permissionMode: "auto",
       }),
       (error) => error.code === "FORBIDDEN",
     );
@@ -410,6 +409,180 @@ test("revoking a device closes its open connection and refuses the token", async
   }
 });
 
+/**
+ * The A2 amendment: a phone may now start a session here, register a folder,
+ * and walk directories to pick one. Everything else stays refused, and what it
+ * does do has to show up for the person at this computer.
+ */
+test("the desktop Host creates a session, registers a project, and browses within the browse root", async () => {
+  const { mkdir, mkdtemp, realpath, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const base = await realpath(await mkdtemp(join(tmpdir(), "desktop-host-a2-")));
+  const browseRoot = join(base, "home");
+  const projectDir = join(browseRoot, "work", "app");
+  const outside = join(base, "outside");
+  await mkdir(projectDir, { recursive: true });
+  await mkdir(outside, { recursive: true });
+
+  const calls = [];
+  const reported = [];
+  try {
+    const host = {
+      async call(method, params = {}) {
+        calls.push({ method, params });
+        if (method === "projects.list") return { projects: [{ id: 7, path: await realpath(projectDir), name: "app" }] };
+        if (method === "projects.create") return { project: { id: 8, path: params.path, name: "app" } };
+        if (method === "session.create") {
+          return { session: { id: "s_new", title: "New task", mode: "agent", projectPath: params.projectPath } };
+        }
+        if (method === "session.configure") return {};
+        if (method === "session.get") {
+          return {
+            session: {
+              id: "s_new",
+              title: "New task",
+              projectPath: params.projectPath ?? (await realpath(projectDir)),
+              mode: "agent",
+              createdAt: "2026-10-19T00:00:00.000Z",
+              updatedAt: "2026-10-19T00:00:00.000Z",
+            },
+          };
+        }
+        if (method === "session.list") return { sessions: [] };
+        throw new Error(`unexpected host-core call ${method}`);
+      },
+    };
+    const operations = createDesktopHostOperations({
+      getHost: () => host,
+      revokeDevice: async () => true,
+      dataDir: base,
+      browseRoot,
+      reportRemoteAction: (action) => reported.push(action),
+    });
+    const principal = { subject: "dev_phone", roles: ["viewer", "controller", "approver"], pairedDevice: false };
+
+    const browsed = await operations.projects.browse(undefined, principal);
+    assert.equal(browsed.path, await realpath(browseRoot));
+    assert.deepEqual(browsed.entries.map((entry) => entry.name), ["work"]);
+
+    const nested = await operations.projects.browse(projectDir, principal);
+    assert.equal(nested.path, await realpath(projectDir));
+    assert.equal(nested.parent, await realpath(join(browseRoot, "work")));
+
+    const project = await operations.projects.register(projectDir, principal);
+    assert.equal(project.id, "8");
+    assert.equal(project.path, await realpath(projectDir));
+
+    const session = await operations.sessions.create({ projectId: "7", title: "From the phone" }, principal);
+    assert.equal(session.id, "s_new");
+    assert.equal(session.projectId, "7");
+
+    // The person at this computer is told what happened, by which device, and
+    // which project or session it touched.
+    assert.deepEqual(
+      reported.map((action) => action.kind),
+      ["project.registered", "session.created"],
+    );
+    assert.equal(reported[0].deviceId, "dev_phone");
+    // The notice names the folder from the home directory, not absolutely.
+    assert.equal(reported[0].path, "~/work/app");
+    assert.equal(reported[1].sessionId, "s_new");
+    assert.equal(reported[1].projectId, "7");
+
+    // The rest of the machine is still off limits, and a path outside the root
+    // never reaches host-core.
+    const configured = await operations.sessions.configure("s_new", { permissionMode: "auto" });
+    assert.equal(configured.id, "s_new");
+    // The Host's own call carries no principal, so it reports nothing.
+    assert.deepEqual(reported.map((action) => action.kind), ["project.registered", "session.created"]);
+
+    // A remote configure is reported (ADR 0331 amendment 4): the person at the
+    // computer learns which device changed which fields, names and new values
+    // only, whether the caller is a phone or a desktop-class device.
+    await operations.sessions.configure("s_new", { permissionMode: "auto", modelId: "m2" }, principal);
+    await operations.sessions.configure("s_new", { mode: "plan" }, { ...principal, subject: "dev_desktop", deviceClass: "desktop" });
+    const configuredReports = reported.filter((action) => action.kind === "session.configured");
+    assert.equal(configuredReports.length, 2);
+    assert.equal(configuredReports[0].deviceId, "dev_phone");
+    assert.equal(configuredReports[0].sessionId, "s_new");
+    assert.deepEqual(configuredReports[0].changes, ["modelId: m2", "permissionMode: auto"]);
+    assert.equal(configuredReports[1].deviceId, "dev_desktop");
+    assert.deepEqual(configuredReports[1].changes, ["mode: plan"]);
+
+    await assert.rejects(operations.sessions.delete("s1"), (error) => error.code === "FORBIDDEN");
+    await assert.rejects(operations.sessions.fork("s1", {}), (error) => error.code === "FORBIDDEN");
+    await assert.rejects(operations.workspace.read("s1", "a"), (error) => error.code === "FORBIDDEN");
+    await assert.rejects(operations.projects.browse(outside, principal), (error) => error.code === "REMOTE_PATH_FORBIDDEN");
+    await assert.rejects(operations.projects.register(outside, principal), (error) => error.code === "REMOTE_PATH_FORBIDDEN");
+    assert.equal(
+      calls.some((call) => call.method === "projects.create" && call.params.path === outside),
+      false,
+    );
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
+test("a gateway device reaches the desktop Host's project routes with a controller role", async () => {
+  const desktop = await startDesktopLink();
+  try {
+    const { mux } = desktop.starts[0];
+    const hostId = desktop.starts[0].credentials.hostId;
+    const pairingCode = await desktop.service.createPairingCode();
+    const pairingClient = muxClient(mux, hostId, pairingCode.code);
+    await pairingClient.connect();
+    const paired = await pairingClient.request("connection/pair", { deviceLabel: "phone with projects" });
+    pairingClient.close();
+
+    const deviceClient = muxClient(mux, hostId, paired.deviceToken);
+    await deviceClient.connect();
+    // The role table decides this: `project/browse` and `project/register` are
+    // `controller`, so a gateway device may call them.
+    const browsed = await deviceClient.request("project/browse", {});
+    assert.ok(Array.isArray(browsed.entries));
+    assert.ok(typeof browsed.path === "string" && browsed.path.length > 0);
+    deviceClient.close();
+  } finally {
+    await desktop.cleanup();
+  }
+});
+
+test("an inline attachment lands in the content-addressed store the runtime reads", async () => {
+  const { mkdtemp, readFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const dataDir = await mkdtemp(join(tmpdir(), "desktop-host-inline-"));
+  try {
+    const operations = createDesktopHostOperations({
+      getHost: () => stubHost(),
+      revokeDevice: async () => true,
+      dataDir,
+    });
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
+    const first = await operations.inlineAttachments.store({
+      sessionId: "s1",
+      name: "shot.png",
+      mimeType: "image/png",
+      kind: "image",
+      bytes,
+    });
+    // The path is data-root relative and names the content, which is the form the
+    // runtime resolves and the form a replayed transcript still finds.
+    assert.match(first.path, /^attachments\/[0-9a-f]{64}$/);
+    assert.deepEqual(new Uint8Array(await readFile(join(dataDir, first.path))), bytes);
+    // The same picture from a second device costs one copy, not two.
+    const second = await operations.inlineAttachments.store({
+      sessionId: "s2",
+      name: "screenshot.png",
+      mimeType: "image/png",
+      kind: "image",
+      bytes,
+    });
+    assert.equal(second.path, first.path);
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("the RACP revoke operation runs the same closer as the settings page", async () => {
   // `session/revoke` is owner-only, so a gateway-paired device can never reach
   // it through the Host link; what has to hold is that the operation the server
@@ -417,6 +590,7 @@ test("the RACP revoke operation runs the same closer as the settings page", asyn
   const revoked = [];
   const operations = createDesktopHostOperations({
     getHost: () => stubHost(),
+    dataDir: await mkdtemp(join(tmpdir(), "desktop-host-revoke-")),
     revokeDevice: async (deviceId) => {
       revoked.push(deviceId);
       return true;

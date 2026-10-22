@@ -513,3 +513,42 @@ describe("subagentContextOverflowError", () => {
     expect(error.message).toContain("read less at once");
   });
 });
+
+describe("delegate budget with a provider-reported usage", () => {
+  /** The delegate's own window: hard limit 16 000, trigger 14 400. */
+  function delegateModel(): Model<Api> {
+    return { ...buildProviderModel(provider), contextWindow: 32_000, maxTokens: 8_000 };
+  }
+
+  it("does not compact a delegate context its provider reported as small", async () => {
+    const messages: AgentMessage[] = [
+      { role: "user", content: "上".repeat(15_000), timestamp: 1 },
+      {
+        ...assistantText("done"),
+        usage: {
+          input: 13_000,
+          output: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 13_001,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      },
+    ];
+    const { factory, prompts } = summaryModels(() => summarySuccess("SUMMARY TEXT"));
+
+    const outcome = await prepareDelegateTurnContext({
+      messages,
+      model: delegateModel(),
+      taskBrief: "Find the permission dialog.",
+      systemPrompt: "s".repeat(8_000),
+      tools: [{ name: "Read", description: "t".repeat(2_000) }],
+      retentionMode: "active_turn",
+      summaryModels: factory,
+      signal: new AbortController().signal,
+    });
+
+    expect(outcome).toEqual({ kind: "unchanged" });
+    expect(prompts).toHaveLength(0);
+  });
+});

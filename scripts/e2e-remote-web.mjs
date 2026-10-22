@@ -30,6 +30,11 @@ import { fileURLToPath } from "node:url";
 import { resolveElectronBinary } from "./e2e/boot.mjs";
 import { startRemoteWebProxy } from "./e2e/remote-web-proxy.mjs";
 
+// The RACP client drives the Host's own loopback socket for the two fixture
+// steps that set the run up rather than exercise the phone (a project to open).
+import { RacpClient, wsClientTransport } from "../packages/racp/dist/index.js";
+import { RACP_HTTP_ROUTE_LIST, RACP_METHOD_HTTP_ROUTES, RACP_HTTP_ROUTE_PARAMS } from "../packages/shared/dist/index.js";
+
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 assert.ok(process.env.AGENT_HOST_CLI_E2E_BUNDLE, "AGENT_HOST_CLI_E2E_BUNDLE must name the packaged Host directory");
 assert.ok(process.env.REMOTE_GATEWAY_E2E_BUNDLE, "REMOTE_GATEWAY_E2E_BUNDLE must name the packaged Gateway directory");
@@ -87,6 +92,14 @@ const secrets = [];
 const APPROVAL_PROMPT = "run the approval fixture";
 const HOLD_PROMPT = "hold the turn open";
 const ANSWER_PROMPT = "answer once";
+/**
+ * The long-session fixture's prompts: enough turns that the conversation needs
+ * several history pages (each turn is a user and an assistant row, and the
+ * snapshot holds 50), so the phone has to open at the bottom, load older rows in
+ * order and keep its place while it does.
+ */
+const FILLER_PREFIX = "filler turn";
+const LONG_TURNS = Number(process.env.E2E_LONG_TURNS ?? 80);
 const modelRequests = [];
 let fixtureFailure = null;
 const model = createServer(async (request, response) => {
@@ -108,8 +121,12 @@ const model = createServer(async (request, response) => {
     // asks for on its own (a context compaction, for instance) is answered with
     // a plain reply and is never counted as a turn request.
     const turnRequest =
-      trailingToolResults > 0 || prompt === APPROVAL_PROMPT || prompt === ANSWER_PROMPT || prompt.startsWith(HOLD_PROMPT);
-    const record = { prompt: prompt.slice(0, 120), turnRequest, trailingToolResults, tools: (input.tools ?? []).map((tool) => tool.function?.name) };
+      trailingToolResults > 0 ||
+      prompt === APPROVAL_PROMPT ||
+      prompt === ANSWER_PROMPT ||
+      prompt.startsWith(HOLD_PROMPT) ||
+      prompt.startsWith(FILLER_PREFIX);
+    const record = { prompt: prompt.slice(0, 120), turnRequest, trailingToolResults, toolCall: false, tools: (input.tools ?? []).map((tool) => tool.function?.name) };
     record.completed = false;
     record.startedAt = Date.now();
     response.once("finish", () => {
@@ -142,6 +159,7 @@ const model = createServer(async (request, response) => {
       return;
     }
     if (prompt === APPROVAL_PROMPT) {
+      record.toolCall = true;
       assert.ok(record.tools.includes("Bash"), `the real runtime exposes Bash to the model: ${JSON.stringify(record)}`);
       frame({
         role: "assistant",
@@ -278,7 +296,7 @@ async function startGateway(allowedOrigin) {
 
 async function startHost() {
   const child = track(
-    spawn(process.execPath, [hostCli, "--data-dir", hostData, "--gateway", "--log-level", "warn", "--browse-root", runRoot], {
+    spawn(process.execPath, [hostCli, "--data-dir", hostData, "--gateway", "--pair", "--log-level", "warn", "--browse-root", runRoot], {
       cwd: hostData,
       env: hostEnv,
       stdio: ["ignore", "pipe", "pipe"],
@@ -303,9 +321,10 @@ async function startHost() {
         const line = output.slice(0, newline);
         output = output.slice(newline + 1);
         if (line.startsWith("AGENT_HOST_CLI_READY ")) found.host = JSON.parse(line.slice("AGENT_HOST_CLI_READY ".length));
+        // `--pair` prints the ssh-origin code; only it may register a project.
+        if (line.startsWith("AGENT_HOST_CLI_PAIRING_TOKEN ")) found.pairing = JSON.parse(line.slice("AGENT_HOST_CLI_PAIRING_TOKEN ".length));
       }
-      if (found.host) {
-        clearTimeout(timer);
+      if (found.host && found.pairing) {
         resolveReady();
       }
     });
@@ -313,17 +332,27 @@ async function startHost() {
   return { ...found, child, stderr: () => stderr, stop: () => stopChild(child) };
 }
 
+/** The Gateway's own route tables, so a command can never invent a path. */
+function routeFor(method) {
+  const routeName = RACP_METHOD_HTTP_ROUTES[method];
+  assert.ok(routeName, `${method} has no HTTP route in this harness`);
+  const [httpMethod, template] = RACP_HTTP_ROUTE_LIST[routeName].split(" ");
+  return { httpMethod, template, routeName };
+}
+
+function pathFor(method, params) {
+  const { template, routeName } = routeFor(method);
+  return RACP_HTTP_ROUTE_PARAMS[routeName].reduce((current, name) => {
+    const value = params[name];
+    assert.equal(typeof value, "string", `${method} needs a ${name}`);
+    return current.replace(`{${name}}`, encodeURIComponent(value));
+  }, template);
+}
+
 /** One RACP command through the Gateway client API, with a native device token. */
 async function command(clientBase, hostId, token, method, params) {
-  const routes = {
-    "session/create": "POST /v1/sessions",
-    "session/list": "GET /v1/sessions",
-    "session/attach": "POST /v1/sessions/{sessionId}:attach",
-  };
-  const spec = routes[method];
-  assert.ok(spec, `${method} has no route in this harness`);
-  const [httpMethod, template] = spec.split(" ");
-  const path = template.replace("{sessionId}", encodeURIComponent(String(params.sessionId ?? "")));
+  const { httpMethod } = routeFor(method);
+  const path = pathFor(method, params);
   const response = await fetch(`${clientBase}/hosts/${encodeURIComponent(hostId)}${path}`, {
     method: httpMethod,
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
@@ -343,10 +372,63 @@ async function waitFor(check, label, timeoutMs = 60_000) {
   }
 }
 
+/**
+ * Approve a pending tool call the way the phone's "Allow once" does.
+ *
+ * The fixture device is paired through the Gateway exactly like a phone, so it
+ * carries the same `viewer`/`controller`/`approver` grant; approving from here
+ * keeps the browser half of the run on the path a person takes.
+ */
+async function approveOnce(clientBase, hostId, token, sessionId, requestId) {
+  const approval = await waitFor(async () => {
+    const snapshot = await command(clientBase, hostId, token, "session/attach", { sessionId, includeSnapshot: true });
+    return snapshot.payload?.result?.snapshot?.pendingApprovals?.[0] ?? null;
+  }, `the pending approval of ${requestId}`);
+  const responded = await command(clientBase, hostId, token, "approval/respond", {
+    approvalId: approval.id,
+    decision: "allow-once",
+    context: { requestId, expectedRevision: approval.revision },
+  });
+  assert.equal(responded.status, 200, JSON.stringify(responded.payload));
+}
+
 async function mintTicket() {
   const issued = JSON.parse((await hostCliRun(["remote-pair", "--data-dir", hostData])).stdout.trim().slice("AGENT_HOST_CLI_PAIRING_TOKEN ".length));
   secrets.push(issued.token, issued.ticket);
   return issued;
+}
+
+/**
+ * The owner the Host's `--pair` code mints over its own loopback socket.
+ *
+ * The fixture registers its projects the way a person at the machine would —
+ * over loopback, with the ssh-origin device. Since the D666 amendment
+ * `project/register` is `controller` (protocol §7.7), so a gateway device could
+ * call it too; the fixture still uses the machine's own device because it is
+ * setting the run up, not exercising the phone. The browser half of the run only
+ * ever sees what a phone may see.
+ */
+async function ownerClient() {
+  assert.ok(host?.pairing, "the Host did not print its --pair code");
+  const pairing = new RacpClient({
+    transport: wsClientTransport({ url: `ws://127.0.0.1:${host.host.port}/v1/racp/ws`, token: host.pairing.token }),
+    client: { name: "remote-web-e2e-fixture", version: "0.0.0" },
+    onEvent: () => undefined,
+    requestTimeoutMs: 30_000,
+  });
+  secrets.push(host.pairing.token);
+  await pairing.connect();
+  const paired = await pairing.request("connection/pair", { deviceLabel: "remote-web e2e fixture" });
+  secrets.push(paired.deviceToken);
+  await pairing.close();
+  const owner = new RacpClient({
+    transport: wsClientTransport({ url: `ws://127.0.0.1:${host.host.port}/v1/racp/ws`, token: paired.deviceToken }),
+    client: { name: "remote-web-e2e-fixture", version: "0.0.0" },
+    onEvent: () => undefined,
+    requestTimeoutMs: 30_000,
+  });
+  await owner.connect();
+  return owner;
 }
 
 // ---------------------------------------------------------------------------
@@ -363,7 +445,8 @@ try {
   console.log(`gateway ready: hostlink ${gateway.ready.hostlink.port}, client ${gateway.ready.client.port}, client origin ${proxy.origin}`);
 
   // 2. Enroll and run the Host with its outbound link.
-  const issued = await gatewayCliRun(["enroll-code", "--data-dir", gatewayData, "--label", "remote-web e2e host"]);
+  const hostLabel = "remote-web e2e host";
+  const issued = await gatewayCliRun(["enroll-code", "--data-dir", gatewayData, "--label", hostLabel]);
   assert.equal(issued.code, 0, issued.stderr);
   const enrollment = JSON.parse(issued.stdout.trim().slice("ENROLLMENT_CODE ".length));
   secrets.push(enrollment.code);
@@ -378,7 +461,7 @@ try {
     "--code",
     enrollment.code,
     "--label",
-    "remote-web e2e host",
+    hostLabel,
   ]);
   assert.ok(enrolled.stdout.includes("AGENT_HOST_CLI_ENROLLED"), enrolled.stdout);
   host = await startHost();
@@ -435,16 +518,102 @@ try {
   assert.equal(importCode, 0, "the Host imports the model through its admin socket");
   assert.ok(importOut.startsWith("AGENT_HOST_CLI_PROVIDERS "), importOut);
 
-  // 4. One session per viewport (the desktop owns session creation) and one
-  //    pairing ticket per viewport (the Host prints it; the client pastes it).
+  // 4. Two projects, one of them holding a session, so the client's headings and
+  //    its "Other" group both have something to show, plus one session per
+  //    viewport (the fixture owns it) and one pairing ticket per viewport (the
+  //    Host prints it; the client pastes it).
+  const alphaDir = join(runRoot, "alpha");
+  const betaDir = join(runRoot, "beta");
+  // A folder that is deliberately NOT a project: the browser registers it
+  // through the picker, which is the A2 path under test.
+  const newProjectDir = join(runRoot, "e2e-new-project");
+  mkdirSync(alphaDir, { recursive: true });
+  mkdirSync(betaDir, { recursive: true });
+  mkdirSync(newProjectDir, { recursive: true });
+  const owner = await ownerClient();
+  const alpha = (await owner.request("project/register", { path: alphaDir })).project;
+  const beta = (await owner.request("project/register", { path: betaDir })).project;
+  // A session with no project: it belongs under "Other", not under a heading.
+  const looseSession = (await owner.request("session/create", { title: "Loose session" })).session;
+  await owner.close();
+
+  // A conversation long enough that the snapshot page (50 rows) is not the whole
+  // story: the phone must load older rows, and the screen must open at the
+  // bottom. Turns run through the harness device, so no browser is involved in
+  // setting the fixture up. Two of the turns ask for a tool call, so the
+  // timeline really carries tool rows — one inside the first page, one older.
+  const longTitle = "Remote web long session";
+  const longCreated = await command(clientBase, hostId, harnessToken, "session/create", {
+    title: longTitle,
+    permissionMode: "ask",
+    projectId: alpha.id,
+  });
+  assert.equal(longCreated.status, 200, JSON.stringify(longCreated.payload));
+  const longSessionId = longCreated.payload.result.session.id;
+  const longToolTurns = new Set([Math.floor(LONG_TURNS / 2), LONG_TURNS - 1]);
+  for (let turn = 0; turn < LONG_TURNS; turn += 1) {
+    // The previous turn can still be closing when the next one starts, so a busy
+    // answer is retried rather than failing the whole fixture.
+    let started = await command(clientBase, hostId, harnessToken, "turn/start", {
+      sessionId: longSessionId,
+      admission: "reject_if_busy",
+      input: { text: longToolTurns.has(turn) ? APPROVAL_PROMPT : `${FILLER_PREFIX} ${turn}` },
+      context: { requestId: `long-${turn}` },
+    });
+    for (let attempt = 0; attempt < 40 && started.payload?.error?.data?.code === "AGENT_BUSY"; attempt += 1) {
+      await new Promise((resolveTick) => setTimeout(resolveTick, 500));
+      started = await command(clientBase, hostId, harnessToken, "turn/start", {
+        sessionId: longSessionId,
+        admission: "reject_if_busy",
+        input: { text: longToolTurns.has(turn) ? APPROVAL_PROMPT : `${FILLER_PREFIX} ${turn}` },
+        context: { requestId: `long-${turn}` },
+      });
+    }
+    assert.equal(started.status, 200, JSON.stringify(started.payload));
+    if (longToolTurns.has(turn)) await approveOnce(clientBase, hostId, harnessToken, longSessionId, `long-approve-${turn}`);
+    // Wait for the turn to close before starting the next one.
+    await waitFor(async () => {
+      const snapshot = await command(clientBase, hostId, harnessToken, "session/attach", {
+        sessionId: longSessionId,
+        includeSnapshot: true,
+      });
+      const active = snapshot.payload?.result?.snapshot?.activeTurn;
+      return active === undefined ? true : false;
+    }, `the long session's turn ${turn} to finish`, 120_000);
+  }
+  const longRows = await (async () => {
+    const response = await fetch(
+      `${clientBase}/hosts/${encodeURIComponent(hostId)}/v1/sessions/${encodeURIComponent(longSessionId)}/history?limit=200`,
+      { headers: { authorization: `Bearer ${harnessToken}` } },
+    );
+    const payload = await response.json();
+    return payload.result.items.length;
+  })();
+  assert.ok(longRows > 50, `the long session holds more than one snapshot page (${longRows} rows)`);
+
   const views = [];
-  for (const viewport of VIEWPORTS) {
+  for (const [index, viewport] of VIEWPORTS.entries()) {
     const title = `Remote web ${viewport.name}`;
-    const created = await command(clientBase, hostId, harnessToken, "session/create", { title, permissionMode: "ask" });
+    // The first viewport's session sits in "alpha", the second in "beta", so
+    // each project has one row and the grouping is observable per viewport.
+    const projectId = index === 0 ? alpha.id : beta.id;
+    const created = await command(clientBase, hostId, harnessToken, "session/create", { title, permissionMode: "ask", projectId });
     assert.equal(created.status, 200, JSON.stringify(created.payload));
     const sessionId = created.payload.result.session.id;
+    assert.equal(created.payload.result.session.projectId, projectId, "the Host reports the session's project");
     const ticket = await mintTicket();
-    views.push({ ...viewport, title, sessionId, ticket: ticket.ticket });
+    views.push({
+      ...viewport,
+      title,
+      sessionId,
+      projectId,
+      projectLabel: projectId === alpha.id ? alpha.label : beta.label,
+      ticket: ticket.ticket,
+      longTitle,
+      longSessionId,
+      longRows,
+      longLastPrompt: APPROVAL_PROMPT,
+    });
   }
 
   // 5. Drive both viewports in real Chromium.
@@ -481,6 +650,27 @@ try {
   assert.equal(electronCode, 0, `the Electron driver exited ${electronCode}: ${probe.failure ?? ""}`);
   assert.equal(probe.ok, true, probe.failure);
 
+  // What the long conversation measured, so a run reports its numbers even when
+  // every assertion passes (the report cites them).
+  console.log(
+    `long session: ${JSON.stringify(
+      probe.viewports.map((view) => ({
+        name: view.name,
+        rows: view.longRowCount,
+        afterLoad: view.longRowsAfterLoad,
+        afterSecondLoad: view.longOrderAfterSecondLoad?.length,
+        anchorTop: [view.longAnchorBefore?.top ?? null, view.longAnchorAfter ?? null],
+        whileReading: view.longBackButtonWhileReading,
+        announced: view.longBackButtonAfter,
+      })),
+    )}`,
+  );
+
+
+  // The same-origin server's request log, read once so the assertions below can
+  // say what the browser actually asked for.
+  const proxyEntries = readFileSync(proxyLogPath, "utf8").trim().split("\n").filter(Boolean).map((entry) => JSON.parse(entry));
+
   // 6. Assert what each viewport observed.
   assert.equal(probe.viewports.length, VIEWPORTS.length);
   for (const [index, observed] of probe.viewports.entries()) {
@@ -506,6 +696,27 @@ try {
     assert.equal(observed.registry.length, 1, `${view.name}: the browser remembers the paired host`);
     assert.equal(observed.registry[0].hostId, hostId);
     assert.ok(observed.registry[0].csrfToken.length > 0, "the registry holds the CSRF token, not the device token");
+    // The list is grouped by project. A heading is the arrow, the project name,
+    // and a count ("▾alpha1"), so the name is matched inside the heading text.
+    // A heading is the arrow, the project name, and a count ("▾alpha1").
+    assert.ok(
+      observed.groups.some((heading) => heading.includes(view.projectLabel)),
+      `${view.name}: the project heading names the project (${view.projectLabel}): ${JSON.stringify(observed.groups)}`,
+    );
+    assert.equal(observed.groupOfOwnSession, view.projectLabel, `${view.name}: the session sits under its project`);
+    assert.equal(observed.groupOfLooseSession, "Other", `${view.name}: a session with no project is under Other`);
+
+    // The bar over the conversation names the computer the person paired, not the
+    // id the Gateway minted for it. (`check` is declared below, with the rest of
+    // the collected failures, so these read as plain assertions here.)
+    assert.ok(
+      String(observed.sessionHeader).includes(hostLabel),
+      `${view.name}: the session header names the computer (${hostLabel}): ${JSON.stringify(String(observed.sessionHeader))}`,
+    );
+    assert.ok(
+      !String(observed.sessionHeader).includes(observed.sessionHeaderHost),
+      `${view.name}: the session header does not print the computer id`,
+    );
 
     // The approval card offers only the decisions a gateway device may make.
     assert.ok(observed.approvalButtons.some((label) => label.includes("Allow once")), `${view.name}: the approval offers Allow once`);
@@ -534,17 +745,157 @@ try {
       false,
       `${view.name}: the client threw: ${observed.consoleErrors.join(" | ")}`,
     );
-    assert.equal(observed.screenshots.length, 7, `${view.name}: one screenshot per step`);
-  }
+    // The session created from the phone is listed under the project it was
+    // created in — the whole point of the grouping.
+    assert.equal(typeof observed.groupOfCreatedSession, "string", `${view.name}: the created session is listed`);
+    assert.equal(observed.groupOfCreatedSession, view.projectLabel, `${view.name}: the new session landed in its project`);
+    assert.ok(
+      String(observed.sessionsAfterCreate).includes(view.projectLabel),
+      `${view.name}: the heading is still there: ${observed.sessionsAfterCreate}`,
+    );
+    // The A2 path: the folder picker walked the Host's root and registered a
+    // folder that was not a project, and the session for it opened.
+    assert.equal(observed.newProjectComposer, true, `${view.name}: the new project's session opened on its composer`);
+    assert.ok(
+      String(observed.pickerRoot).includes("This is the top folder."),
+      `${view.name}: the picker started at the Host's browse root: ${String(observed.pickerRoot).slice(0, 200)}`,
+    );
+    assert.equal(
+      String(observed.pickerRoot).includes("\nUp\n"),
+      false,
+      `${view.name}: the root has no way up`,
+    );
+    assert.ok(
+      (observed.headingsWithNewProject ?? []).some((heading) => heading.includes("e2e-new-project")),
+      `${view.name}: the registered folder became a project heading: ${JSON.stringify(observed.headingsWithNewProject)}`,
+    );
 
-  // 7. The model stub proves single execution: two approval turns per viewport,
-  //    each delivering exactly one tool result, and no extra model call.
-  const toolResultObservations = modelRequests.filter((entry) => entry.trailingToolResults > 0).map((entry) => entry.trailingToolResults);
-  assert.deepEqual(toolResultObservations, VIEWPORTS.map(() => 1), `the tool ran exactly once per approval turn: ${JSON.stringify(toolResultObservations)}`);
-  const approvalCalls = modelRequests.filter((entry) => entry.prompt === APPROVAL_PROMPT).length;
-  assert.equal(approvalCalls, 2 * VIEWPORTS.length, "each approval turn reaches the model exactly twice (tool call + final answer)");
-  const turnRequests = modelRequests.filter((entry) => entry.turnRequest);
-  assert.equal(turnRequests.length, 5 * VIEWPORTS.length, `unexpected turn requests: ${JSON.stringify(turnRequests.map((entry) => ({ prompt: entry.prompt, completed: entry.completed, ms: (entry.endedAt ?? Date.now()) - entry.startedAt })))}`);
+    // The long conversation (rollout D). These are collected rather than thrown
+    // one at a time, so a run reports every defect it saw instead of only the
+    // first one.
+    const failures = [];
+    const check = (condition, message) => {
+      if (!condition) failures.push(message);
+    };
+    check(
+      observed.longOpenedAtBottom.distanceFromBottom <= 8,
+      `a long session opens at the newest row: ${JSON.stringify(observed.longOpenedAtBottom)}`,
+    );
+    check(observed.longEmptyRows === 0, "no blank rows are shown");
+    check(
+      observed.longToolNames.length > 0 && observed.longToolNames.every((name) => name.length > 0),
+      `every tool row carries its tool's name: ${JSON.stringify(observed.longToolNames)}`,
+    );
+    check(
+      !observed.longRowLabels.some((label) => label.toLowerCase() === "system"),
+      `internal model instructions are never a row: ${JSON.stringify(observed.longRowLabels)}`,
+    );
+    // The transcript reads oldest to newest, with no row twice.
+    const ascending = (indices) => indices.every((value, index) => index === 0 || indices[index - 1] < value);
+    const unique = (indices) => new Set(indices).size === indices.length;
+    check(
+      observed.longOpenedOrder.length > 5 && ascending(observed.longOpenedOrder),
+      `the opened transcript is in order: ${JSON.stringify(observed.longOpenedOrder)}`,
+    );
+    // One press of "Load earlier" loads a page of the Host's history, not a
+    // single row: a page inserted in the wrong direction, or a cursor pointing
+    // at the newest row of the page just read, both show up here.
+    const step = observed.longRowsAfterLoad - observed.longRowCount;
+    const historyRequests = proxyEntries.filter((entry) => entry.url.includes("/history")).length;
+    check(observed.longLoadEarlierOffered === true, "the Load earlier control is offered on a long conversation");
+    check(
+      observed.longFirstLoadGrew === true,
+      `one press loaded older rows (${observed.longRowCount} -> ${observed.longRowsAfterLoad}, ${historyRequests} history requests)`,
+    );
+    check(step >= 20, `one press loads a page (${observed.longRowCount} -> ${observed.longRowsAfterLoad}, ${step} rows)`);
+    check(
+      observed.longSecondLoadOffered === true,
+      `the control is still offered after one page (rows ${observed.longRowCount} -> ${observed.longRowsAfterLoad})`,
+    );
+    check(observed.longSecondLoadGrew === true, "a second press loaded another page");
+    check(
+      ascending(observed.longAfterLoadOrder) && unique(observed.longAfterLoadOrder),
+      `the loaded page is in order and has no duplicate: ${JSON.stringify(observed.longAfterLoadOrder)}`,
+    );
+    check(
+      observed.longAfterLoadOrder.length > observed.longOpenedOrder.length,
+      `the loaded page added rows the reader did not have: ${observed.longOpenedOrder.length} -> ${observed.longAfterLoadOrder.length}`,
+    );
+    check(
+      ascending(observed.longOrderAfterSecondLoad) && unique(observed.longOrderAfterSecondLoad),
+      `the second page is in order too: ${JSON.stringify(observed.longOrderAfterSecondLoad)}`,
+    );
+    // The reader keeps their place: the same row stays where it was, measured in
+    // the browser, so a missing compensation cannot be hidden by the engine's
+    // own scroll anchoring (the scroll container disables it). This is measured
+    // around the press that happens while they are reading further up: at the
+    // bottom the following behaviour would put the row back for another reason.
+    check(
+      typeof observed.longAnchorBefore?.top === "number" && typeof observed.longAnchorAfter === "number",
+      `the anchor row was found before and after the load: ${JSON.stringify({ before: observed.longAnchorBefore, after: observed.longAnchorAfter })}`,
+    );
+    check(
+      typeof observed.longAnchorBefore?.top === "number" &&
+        typeof observed.longAnchorAfter === "number" &&
+        Math.abs(observed.longAnchorAfter - observed.longAnchorBefore.top) <= 8,
+      `the row the reader was looking at did not move (${observed.longAnchorBefore?.top} -> ${observed.longAnchorAfter}); before ${JSON.stringify(observed.longBeforeSecond)} after ${JSON.stringify(observed.longAfterSecond)}`,
+    );
+    // The transcript really is the scroller, and the reader really left the
+    // bottom: otherwise "back to latest" could never appear.
+    check(
+      observed.longScrollAfterTop?.scrollHeight > observed.longScrollAfterTop?.clientHeight,
+      `the transcript scrolls (${JSON.stringify(observed.longScrollAfterTop)})`,
+    );
+    check(
+      observed.longScrollAfterTop?.scrollTop === 0,
+      `scrolling to the top moved the transcript (${JSON.stringify(observed.longScrollAfterTop)})`,
+    );
+    // Loading older rows is not "new messages": the control must not claim a
+    // count while the reader is up there on purpose.
+    check(
+      observed.longBackButtonWhileReading === "Back to latest \u2193",
+      `loading older rows does not count as unread: ${observed.longBackButtonWhileReading}`,
+    );
+    check(observed.longBackButtonBefore === null, "no back-to-latest control while at the bottom");
+    check(observed.longTurnStarted === 200, "the turn started while scrolled up");
+    check(
+      typeof observed.longBackButtonAfter === "string" && observed.longBackButtonAfter.includes("\u2193") && observed.longBackButtonAfter !== "Back to latest \u2193",
+      `a row that arrives off-screen is announced: ${observed.longBackButtonAfter}`,
+    );
+    check(
+      observed.longBackAtBottom.distanceFromBottom <= 8,
+      `the control returns to the newest row: ${JSON.stringify(observed.longBackAtBottom)}`,
+    );
+    // The theme really switched: the shell is light with the light preference
+    // and dark with the dark one, and the screenshot was taken in the dark one.
+    const channels = (color) => (/^rgb\((\d+), (\d+), (\d+)\)$/.exec(String(color)) ?? []).slice(1).map(Number);
+    check(observed.longLightPrefers === false, "the light screenshot was taken in light mode");
+    check(observed.longDarkPrefers === true, "the dark screenshot was taken in dark mode");
+    check(channels(observed.longLightBackground).every((channel) => channel > 200), `the shell is light in light mode: ${observed.longLightBackground}`);
+    check(channels(observed.longDarkBackground).every((channel) => channel < 96), `the shell is dark in dark mode: ${observed.longDarkBackground}`);
+    check(observed.screenshots.length >= 15, "one screenshot per step");
+    assert.equal(failures.length, 0, `${view.name}: ${failures.join(" | ")}`);
+  }
+  // 7. The model stub proves single execution: every tool call the fixture asked
+  //    for is answered by exactly one tool result, and no turn reaches the model
+  //    more than the run accounts for.
+  const toolCalls = modelRequests.filter((entry) => entry.toolCall);
+  const toolResults = modelRequests.filter((entry) => entry.trailingToolResults > 0);
+  assert.equal(toolResults.length, toolCalls.length, `every tool call is answered by exactly one tool result: ${JSON.stringify(toolResults.map((entry) => entry.trailingToolResults))}`);
+  assert.ok(
+    toolResults.every((entry) => entry.trailingToolResults === 1),
+    "a tool result is never delivered twice",
+  );
+  // One approval turn per viewport (it costs two model calls: the tool call and
+  // the answer that follows the tool result), plus the long fixture's own.
+  assert.equal(
+    toolCalls.length,
+    VIEWPORTS.length + longToolTurns.size,
+    `every approval turn asked for exactly one tool call: ${JSON.stringify(modelRequests.filter((entry) => entry.toolCall).map((entry) => entry.prompt))}`,
+  );
+  // arrives while the reader is scrolled up, and the shared long-session fixture
+  // (whose tool turns cost two model calls each).
+  const expectedTurnRequests = 5 * VIEWPORTS.length + VIEWPORTS.length + LONG_TURNS + longToolTurns.size;
   const ownRequests = modelRequests.filter((entry) => !entry.turnRequest);
   assert.ok(
     ownRequests.every((entry) => entry.prompt.includes("conversation to summarize")),
@@ -589,7 +940,7 @@ try {
   assert.equal(interruptRequests.length, VIEWPORTS.length, "every viewport's Interrupt reached the Host");
 
   console.log(
-    `PASS remote web: ${VIEWPORTS.length} viewports paired (cookie profile), listed hosts and sessions, resumed a dropped stream with Last-Event-ID, approved once, ran the tool once, stopped and interrupted a turn, and answered a repeated mutation with the stored turn`,
+    `PASS remote web: ${VIEWPORTS.length} viewports paired (cookie profile), grouped sessions by project (including "Other", a session created from the phone, and a folder registered through the picker), listed hosts and sessions, resumed a dropped stream with Last-Event-ID, approved once, ran the tool once, stopped and interrupted a turn, answered a repeated mutation with the stored turn, and read a ${LONG_TURNS}-turn session (opened at the newest row, tool rows named, older rows loaded in place, an off-screen row announced, dark mode rendered)`,
   );
   console.log(`screenshots: ${artifactDir}`);
 } catch (error) {

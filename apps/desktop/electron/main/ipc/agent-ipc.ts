@@ -1,4 +1,5 @@
 import { expandMcpInvocation } from "../composer-mcp";
+import { registerSideNotesIpc } from "./side-notes-ipc";
 import { IPC, ErrorCodes, compactionRecordId, findSkillMentions, isGlobalPermissionMode, isRpcTimeoutError, type AgentEventEnvelope, type AgentPromptRequest, type AgentSteerRequest, type UiMessage, type AgentQueuePushRequest, type AgentStopRequest, type AgentStopSubagentsRequest, type AskToolResolution, type GlobalPermissionMode, type MessageUsage, type PendingInteractiveRequests, type PlanExecutionFinishStatus, type PlanResolutionResult, type PlanResolveRequest, type VoiceOrigin } from "@minih-agent/shared";
 import type { FinishTurn } from "../runtime/plans";
 import { markTurnInterrupted, settleInterruptedTurn } from "../runtime/turn-interrupt";
@@ -110,6 +111,7 @@ export function registerAgentIpc({
   loadComposerTemplatesCached,
   generateSessionTitle: generateSessionTitleJob,
 }: AgentIpcDependencies): void {
+  registerSideNotesIpc({ registrar, getHost, getSidecar, isTurnDispatchable });
   let host: HostProcess | null = null;
   let sidecar: AgentSidecar | null = null;
   let agentHostBridge: AgentHostBridge | null = null;
@@ -130,6 +132,9 @@ export function registerAgentIpc({
       throw Object.assign(new Error("Steering input and expectedTurnId required"), {
         errorCode: ErrorCodes.INVALID_ARGUMENT,
       });
+    }
+    if (req.sideNote === true) {
+      throw Object.assign(new Error("Side notes require the independent ask channel"), { errorCode: ErrorCodes.INVALID_ARGUMENT });
     }
     const voiceOrigin = parseVoiceOrigin(req.voiceOrigin);
     // A steering input belongs to the turn it names: it is refused once that
@@ -160,7 +165,6 @@ export function registerAgentIpc({
     const session = await host.call<{ session?: { messages?: UiMessage[] } }>("session.get", {
       id: req.sessionId, messageLimit: 1,
     });
-    const sideNote = req.sideNote === true;
     const message: UiMessage = {
       id: durableUserMessageId(req.messageId, session.session?.messages ?? []),
       role: "user",
@@ -169,7 +173,6 @@ export function registerAgentIpc({
       status: "complete",
       createdAt: new Date().toISOString(),
       steering: true,
-      ...(sideNote ? { sideNote: true } : {}),
       ...(prepared.length ? { attachments: prepared.map((attachment) => attachment.message) } : {}),
       ...(voiceOrigin ? { voiceOrigin } : {}),
     };
@@ -178,7 +181,6 @@ export function registerAgentIpc({
     return sidecar.call<{ accepted: boolean; turnId: string }>("agent.steer", {
       sessionId: req.sessionId, expectedTurnId: req.expectedTurnId, message,
       content: appendPromptFallbackPaths(steerContent, prepared),
-      ...(sideNote ? { sideNote: true } : {}),
       ...(mcpExpansion ? { mcpServerIds: mcpExpansion.mcpServerIds, mcpToolNames: mcpExpansion.mcpToolNames } : {}),
       attachments: prepared.filter((attachment) => attachment.inlineData).map((attachment) => ({
         path: attachment.message.ref, name: attachment.message.name, kind: attachment.message.kind,

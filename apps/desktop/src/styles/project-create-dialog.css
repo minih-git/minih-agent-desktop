@@ -146,10 +146,21 @@
   white-space: nowrap;
 }
 
+/* Four sources now (this computer, git, account computer, SSH host): they wrap
+   into two rows on a narrow dialog instead of being squeezed into one. */
 .project-create-dialog-source-options {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   gap: 8px;
+}
+
+/* Where the Agent will run. It is the difference between the two remote
+   sources, so it is stated under the toggle rather than implied by the label. */
+.project-create-dialog-agent-location {
+  margin: 0;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
 }
 
 .project-create-dialog-source-option {

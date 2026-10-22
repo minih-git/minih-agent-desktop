@@ -1,5 +1,7 @@
-import { basename } from "node:path";
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { basename } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type {
   PendingToolRequest,
@@ -21,12 +23,19 @@ export type HostSessionRecord = {
   title?: string;
   projectId?: string;
   projectPath?: string;
+  providerId?: string;
+  modelId?: string;
+  modelLabel?: string;
+  thinkingLevel?: string;
   mode?: string;
   permissionMode?: string;
   planningState?: string;
   createdAt?: string;
   updatedAt?: string;
   messages?: UiMessage[];
+  /** Window cursors host-core returns for a bounded read. */
+  messageStart?: number;
+  hasMoreBefore?: boolean;
 };
 
 /** Opaque Main/Host authorization fingerprint; never send the source identity to the renderer or model. */
@@ -43,20 +52,41 @@ export function requireHostRpc(getHost: () => HostRpc | null): HostRpc {
   return host;
 }
 
-export function toSessionSummary(record: HostSessionRecord): SessionSummary {
+export function toSessionSummary(
+  record: HostSessionRecord,
+  defaults?: { permissionMode?: RacpPermissionMode },
+): SessionSummary {
   const mode = record.mode === "plan" || record.mode === "goal" ? record.mode : "agent";
   const permissionMode: RacpPermissionMode =
-    record.permissionMode === "accept-edits" || record.permissionMode === "auto" ? record.permissionMode : "ask";
+    record.permissionMode === "accept-edits" || record.permissionMode === "auto" || record.permissionMode === "ask"
+      ? record.permissionMode
+      : record.permissionMode === "inherit" && defaults?.permissionMode
+        ? defaults.permissionMode
+        : "ask";
   const planningState =
     record.planningState === "planning" || record.planningState === "awaiting_approval"
       ? record.planningState
       : "inactive";
+  const modelId = typeof record.modelId === "string" && record.modelId.trim() ? record.modelId.trim() : undefined;
+  const providerId = typeof record.providerId === "string" && record.providerId.trim() ? record.providerId.trim() : undefined;
+  const modelLabel =
+    typeof record.modelLabel === "string" && record.modelLabel.trim()
+      ? record.modelLabel.trim()
+      : modelId;
+  const thinkingLevel =
+    typeof record.thinkingLevel === "string" && record.thinkingLevel.trim()
+      ? record.thinkingLevel.trim()
+      : undefined;
   return {
     id: record.id,
     title: record.title ?? "",
     ...(record.projectId ? { projectId: record.projectId } : {}),
     workspaceIdentity: sessionWorkspaceIdentity(record),
     ...(record.projectPath ? { workspaceLabel: basename(record.projectPath) } : {}),
+    ...(providerId ? { providerId } : {}),
+    ...(modelId ? { modelId } : {}),
+    ...(modelLabel ? { modelLabel } : {}),
+    ...(thinkingLevel ? { thinkingLevel } : {}),
     mode,
     permissionMode,
     planningState,
@@ -65,43 +95,105 @@ export function toSessionSummary(record: HostSessionRecord): SessionSummary {
   };
 }
 
+const FILE_HTML_LINK_RE = /\[[^\]]*\]\((file:\/\/\/[^)\s]+?\.html?)\)/i;
+const MAX_INLINE_HTML_BYTES = 200 * 1024;
+
+function inlineLocalHtmlIfLinked(message: UiMessage): UiMessage {
+  if (message.role !== "assistant" || typeof message.content !== "string") return message;
+  if (/```html\b/i.test(message.content)) return message;
+  const match = FILE_HTML_LINK_RE.exec(message.content);
+  if (!match?.[1]) return message;
+  try {
+    const filePath = fileURLToPath(match[1]);
+    if (!existsSync(filePath)) return message;
+    const st = statSync(filePath);
+    if (!st.isFile() || st.size <= 0 || st.size > MAX_INLINE_HTML_BYTES) return message;
+    const rawHtml = readFileSync(filePath, "utf8")
+      .replace(/<meta[^>]*http-equiv=["']Content-Security-Policy["'][^>]*>/gi, "")
+      .replace(/<textarea[^>]*id=["']am-source["'][^>]*>[\s\S]*?<\/textarea>/gi, "");
+    const fence = "`````";
+    return {
+      ...message,
+      content: `${message.content}\n\n${fence}html\n${rawHtml}\n${fence}`,
+    };
+  } catch {
+    return message;
+  }
+}
+
 export function toRacpItem(message: UiMessage): RacpItemSummary {
   const turnId = (message as { turnId?: string }).turnId ?? "";
+  const enriched = inlineLocalHtmlIfLinked(message);
   return {
-    id: message.id,
+    id: enriched.id,
     turnId,
     itemType: "message",
-    status: message.status === "streaming" ? "streaming" : "completed",
-    createdAt: message.createdAt,
-    ...(message.parentToolCallId ? { parentToolCallId: message.parentToolCallId } : {}),
-    ...(message.nestedParentToolCallId ? { nestedParentToolCallId: message.nestedParentToolCallId } : {}),
-    ...(message.agentName ? { agentName: message.agentName } : {}),
-    content: message,
+    status: enriched.status === "streaming" ? "streaming" : "completed",
+    createdAt: enriched.createdAt,
+    ...(enriched.parentToolCallId ? { parentToolCallId: enriched.parentToolCallId } : {}),
+    ...(enriched.nestedParentToolCallId ? { nestedParentToolCallId: enriched.nestedParentToolCallId } : {}),
+    ...(enriched.agentName ? { agentName: enriched.agentName } : {}),
+    content: enriched,
   };
 }
 
+/**
+ * How much of one message field a phone needs. The desktop renderer reads its
+ * transcript with the same cap; the remote path had none, so one tool result
+ * crossed the network whole. host-core marks what it clipped in the text
+ * itself (`truncate_display_text`), which is the truncation notice both
+ * clients already render.
+ */
+const REMOTE_CONTENT_LIMIT = 64 * 1024;
+
 /** Session metadata and transcript pages straight from host `session.get`. */
 export function createHostSessionPort(getHost: () => HostRpc | null): SessionPort {
-  async function fetchSession(sessionId: string): Promise<HostSessionRecord | null> {
+  async function fetchSession(
+    sessionId: string,
+    window: { messageLimit: number; messageBeforeId?: string },
+  ): Promise<HostSessionRecord | null> {
     const host = getHost();
     if (!host) return null;
-    const result = await host.call<{ session?: HostSessionRecord | null }>("session.get", { id: sessionId });
+    const result = await host.call<{ session?: HostSessionRecord | null }>("session.get", {
+      id: sessionId,
+      messageLimit: window.messageLimit,
+      ...(window.messageBeforeId ? { messageBeforeId: window.messageBeforeId } : {}),
+      contentLimit: REMOTE_CONTENT_LIMIT,
+    });
     return result.session ?? null;
   }
   return {
     async get(sessionId) {
-      const record = await fetchSession(sessionId);
-      return record ? toSessionSummary(record) : null;
+      // Metadata only. The uncapped read parsed the whole transcript — a real
+      // 12 MB, 572-message session — to answer a question the index row already
+      // holds, on every attach and every turn admission.
+      const record = await fetchSession(sessionId, { messageLimit: 1 });
+      if (!record) return null;
+      let defaultPermissionMode: RacpPermissionMode | undefined;
+      if (record.permissionMode === "inherit") {
+        const host = getHost();
+        const settings = await host
+          ?.call<{ defaultPermissionMode?: string }>("settings.get", {})
+          .catch(() => null);
+        const pm = settings?.defaultPermissionMode;
+        if (pm === "ask" || pm === "accept-edits" || pm === "auto") {
+          defaultPermissionMode = pm;
+        }
+      }
+      return toSessionSummary(record, defaultPermissionMode ? { permissionMode: defaultPermissionMode } : undefined);
     },
     async history(sessionId, { limit, beforeItemId }) {
-      const record = await fetchSession(sessionId);
-      const messages = record?.messages ?? [];
-      const end = beforeItemId ? messages.findIndex((message) => message.id === beforeItemId) : messages.length;
-      const cut = end === -1 ? messages.length : end;
-      const start = Math.max(0, cut - limit);
+      // One bounded window instead of the whole transcript, walked from the
+      // message id the client holds: host-core resolves it against the file
+      // itself, so the window agrees with the transcript even when the index
+      // lags. A window whose id is gone comes back empty and ends the walk.
+      const record = await fetchSession(sessionId, {
+        messageLimit: limit,
+        ...(beforeItemId ? { messageBeforeId: beforeItemId } : {}),
+      });
       return {
-        items: messages.slice(start, cut).map(toRacpItem),
-        hasMore: start > 0,
+        items: (record?.messages ?? []).map(toRacpItem),
+        hasMore: record?.hasMoreBefore === true,
       };
     },
   };

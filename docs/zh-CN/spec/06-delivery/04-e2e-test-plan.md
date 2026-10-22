@@ -3783,9 +3783,10 @@ IPC 请求无法关闭。
     标记整体任务空闲； composer/config 控件保持阻塞状态，直到
     `agent_end`、`error` 或仅手动的 `compaction_end`。
   - 每次成功的压缩都会在记录中添加一个分隔行，
-    位于检查点覆盖的最后一条消息之后，并且
-    恰好引发一个警告Toast。两个检查点产生两行，
-    顺序，并且两行都不会替换或隐藏消息。
+    位于检查点覆盖的最后一条消息之后，且不弹常规
+    toast、对话框或通知；阈值、模型请求、切换模型、溢出
+    与手动检查点，无论活动会话还是后台会话都一样。
+    两个检查点产生两行，顺序不变，并且两行都不会替换或隐藏消息。
   - `new_context` 调用显示为正常工具活动行，返回
     立即，并在下一个回合边界处创建检查点
     而不是中途回合。
@@ -3808,8 +3809,8 @@ IPC 请求无法关闭。
     压缩后只重试一次，第二次溢出不循环。第一次可恢复溢出不发终态错误消息或
     `error` 事件；只有重试／压缩失败时才以 `CONTEXT_TOO_LARGE` 或真实终态错误收口。
   - 如果自动摘要生成失败，则持久保留尾部回退
-    附加检查点，运行保持活动状态，并有一个警告解释
-    旧模型上下文被减少；该检查点的转录行显示
+    附加检查点，运行保持活动状态，且不弹警告 toast；
+    该检查点的转录行说明
     「摘要生成失败 · 已保留近期上下文」，绝不显示 `摘要 ≈N tokens`（ADR 0282）。
     在回退之前，摘要请求会对瞬时的提供商失败最多重试三次（2s/4s/8s 退避），
     Stop 会取消退避，确定性失败不重试；序列化提示超出窗口的输入会把工具结果
@@ -3821,10 +3822,10 @@ IPC 请求无法关闭。
     报告称没有新的上下文需要压缩。
   - 每个检查点窗口的预算提醒最多出现一次，从不
     在记录中，而不是在持久的系统提示中。
-  - 空闲 `/compact` 成功并在顶部显示其自己的信息 toast
-    压缩警告，因为用户要求它。压实失败
-    通过 `CONTEXT_COMPACTION_FAILED` 表面一次，没有重复错误
-    干杯。
+  - 空闲 `/compact` 成功时不弹信息或警告 toast；内联状态
+    正常结算，检查点行仍然可见。手动压缩失败保留一条
+    带真实失败原因的错误 toast，自动终态失败通过
+    `CONTEXT_COMPACTION_FAILED` 在失败的回合上呈现，不重复错误 toast。
   - 设置不包含上下文管理卡，并且设置搜索不返回任何内容
     压实行。
 - **链接规格**：`03-runtime/01-ipc-protocol.md`，
@@ -5739,7 +5740,7 @@ eleven-tool-round desktop paths are verified by
 | C / E / Security / Quality — Live Voice 四阶段交互 | E2E-LIVE-VOICE-four-stage-ui |
 | C / F — Hourly task updates | E2E-SCHEDULED-manual-to-hourly |
 | C / F / Quality — Saved project isolation | E2E-SCHEDULED-manual-workspace-binding |
-| C / F / Quality — 桌面定时任务 | E2E-SCHEDULED-desktop-automation-lifecycle |
+| C / F / Quality — 桌面定时任务 | E2E-SCHEDULED-desktop-automation-lifecycle, E2E-SCHEDULED-run-in-activity-feed |
 | F / Security / Quality — Portable configuration sync | E2E-CONFIG-SYNC-router-account |
 | A / C — Unicode stdio 成帧 | E2E-RPC-unicode-separators |
 | C / G / Quality — Plugins navigation | E2E-NAV-plugins-button-goes-back |
@@ -5779,7 +5780,7 @@ eleven-tool-round desktop paths are verified by
 | 品质——市场目录查询重试恢复 | E2E-MARKET-CATALOG-RETRY |
 | C — 对话和直播（插件会话导入可见性） | E2E-257 |
 | F——持久化（插件会话导入可见性） | E2E-257 |
-| C — 对话和直播（聊天文件引用） | E2E-CHAT-shorthand-file-ref-opens-the-matching-file、E2E-CHAT-file-ref-opens-the-surface-that-owns-it |
+| C — 对话和直播（聊天文件引用） | E2E-CHAT-shorthand-file-ref-opens-the-matching-file、E2E-CHAT-file-ref-opens-the-surface-that-owns-it、E2E-CHAT-directory-ref-reveals-in-system-file-manager、E2E-CHAT-outside-root-ref-offers-reveal-and-copy |
 | C / 质量 / 安全（对话 MP4 附件） | E2E-CHAT-mp4-attachment-opens-in-system-player |
 | G——插件（聊天文件引用） | E2E-CHAT-file-ref-opens-the-surface-that-owns-it、E2E-PLUGIN-file-view-collapse-persists |
 | 品质（聊天文件引用） | E2E-CHAT-shorthand-file-ref-opens-the-matching-file、E2E-CHAT-file-ref-opens-the-surface-that-owns-it、E2E-PLUGIN-file-view-collapse-persists |
@@ -7457,6 +7458,36 @@ eleven-tool-round desktop paths are verified by
 - **里程碑**：M5
 - **状态**：单元已覆盖（`apps/desktop/test/transcript-file-chips.test.mjs`）；完整 UI 旅程仍为草稿（除非用户明确要求，否则不要在本地跑 E2E）
 
+#### E2E-CHAT-directory-ref-reveals-in-system-file-manager
+
+- **前提条件**：打开的项目主文件夹里有 `apps/desktop/src/App.tsx` 和一个名字中没有后缀的 `docs` 文件夹。当前会话允许使用本地工具；另有一个远程会话显示同样的回复。对话可渲染助手 markdown 与用户消息。
+- **步骤**：1）让助手回复里出现带末尾斜杠的 `apps/desktop/src/`，点击它。2）让助手在行内代码里写出不带末尾斜杠的同一文件夹并点击。3）让助手写出 `~/notes` 与 `~/notes/`，分别点击。4）右键该文件夹引用。5）在远程会话里重复第 1 步。6）让助手只写普通文字：`and/or`、`50/50`、`TCP/IP`、`km/h`、`输入/输出`、`A / B`，以及单独一个 `/`。
+- **预期**：
+  - 文件夹引用要等宿主确认该条目存在后才变成链接，点击后在系统文件管理器中选中该文件夹，从不直接打开它：`fs/open` 会启动 `.app` 包，内置文件视图也没有文件夹位置。
+  - 行内代码里没有后缀的路径，以及带锚点的 `~/notes`，同样要先确认才能点击；确认按「工作区 + 会话 + 路径」去重，同一条回复里重复出现也只查一次。
+  - 还不存在的路径保持普通文字；等条目被创建、该行重新挂载后变成链接，因为「不存在」不会被记住。
+  - 文件夹的右键菜单提供「在 Finder 中显示」，以及复制完整路径和复制相对路径，不出现 HTML 专用的打开方式。
+  - 远程会话点击后提示「远程文件夹无法在本机打开」，不发起任何本机文件管理器调用；没有本地工具权限的会话完全不发存在性查询。
+  - 上述普通文字都不会变成链接，也不产生任何查询；`https://example.com/a/b/` 这类带路径的网址仍然是一个完整 URL。
+- **链接规格**：`03-runtime/01-ipc-protocol.md` § fs、`04-ux/09-interaction-patterns.md` §8a.2、ADR 0262
+- **验收**：C（对话和直播）、D（工作区）、质量
+- **里程碑**：M5
+- **状态**：单元已覆盖（`apps/desktop/test/chat-directory-ref-reveal.test.mjs`、`apps/desktop/test/chat-links.test.mjs`、`apps/desktop/test/chat-ref-resolve.test.mjs`）；完整 UI 旅程仍为草稿（除非用户明确要求，否则不要在本地跑 E2E）
+
+#### E2E-CHAT-outside-root-ref-offers-reveal-and-copy
+
+- **前提条件**：打开的项目、允许使用本地工具的会话，以及项目外确实存在的路径——例如文件 `~/Documents/notes.md` 和文件夹 `~/Documents`。另有一个远程会话显示同样的回复。对话可渲染助手 markdown 与用户消息。
+- **步骤**：1）让助手回复里出现项目外的文件并点击。2）点击项目外的文件夹引用。3）右键其中任意一个引用。4）让助手写出一个项目外且不存在的路径并点击。5）在远程会话里重复第 1 步。6）在文件管理器中确认没有任何文件被打开或启动。
+- **预期**：
+  - 因为宿主报告该条目存在，项目外的引用是链接。点击和右键打开同一个两项菜单：「在 Finder 中显示」，在系统文件管理器中选中该条目；以及「复制路径」，复制绝对路径。
+  - 没有「复制相对路径」（无从计算），也没有打开目标：文件不会被打开、预览或读取，不会新增工作面板选项卡。
+  - 既在项目外、又不存在的路径仍然提示访问受限，并且什么都不打开。
+  - 远程会话提示无法在本机显示，绝不在本机执行「在 Finder 中显示」，也拿不到 `outside` 报告：它不会被告知该路径在远端是否存在。
+- **链接规格**：`03-runtime/01-ipc-protocol.md` § fs、`04-ux/09-interaction-patterns.md` §8a.2、`05-security/01-security.md`、ADR 0333
+- **验收**：C（对话和直播）、D（工作区）、安全、质量
+- **里程碑**：M5
+- **状态**：单元已覆盖（`apps/desktop/test/chat-outside-ref-reveal.test.mjs`、`apps/desktop/test/chat-directory-ref-reveal.test.mjs`）；完整 UI 旅程仍为草稿（除非用户明确要求，否则不要在本地跑 E2E）
+
 #### E2E-CHAT-mp4-attachment-opens-in-system-player
 
 - **前提条件**：对话中有一个粘贴到会话临时目录的 MP4，以及两个没有后缀、按内容哈希存储的 MP4 附件；后两者分别大于 512 KiB 和小于该上限，三者均保留 `video/mp4` 元数据。
@@ -7910,6 +7941,32 @@ Gateway、loopback 模型桩运行；不使用生产 Router、真实 AccessKey �
   且 key 绝不进入状态载荷、日志或凭据文件）由
   `apps/desktop/test/remote-account-desktop.test.mjs` 自动化，真实注册必须满足的服务名校验由
   `packages/racp/src/hostlink-client.test.ts` 覆盖。Router 测试实例仍是门禁。
+
+#### E2E-REMOTE-ACCOUNT-start-work-from-the-phone：从手机开始工作
+
+- **前置条件**：与账户场景相同的本地栈：本地测试 Gateway、一台已注册的
+  `agent-host-cli` Host（浏览根指向测试运行目录）、loopback 模型桩，以及用网关配对码
+  配对的手机客户端（角色为 `viewer` / `controller` / `approver`，永不 `owner`）。浏览根下
+  有一个已经是项目的文件夹，以及一个还不是项目的文件夹。
+- **步骤**：1）在会话列表打开**新建会话**。2）选择**添加项目**，确认选择器从 Host 的根开始
+  （显示为 `~`，没有上一级）。3）进入那个还不是项目的文件夹并确认。4）确认会话在输入框上
+  打开，返回后确认该文件夹已成为一个项目标题。5）向 Host 请求浏览根之外的路径
+  （`project/browse` 与 `project/register`）。6）检查电脑端自己的通知列表与 Host 日志。
+- **预期**：选择器只列根目录下的目录，且手机以根为起点显示（`~/…`），绝不显示主目录的绝对
+  路径；确认一个文件夹会注册它并打开其会话；`..`、相对路径、指向根外的符号链接一律
+  `REMOTE_PATH_FORBIDDEN`，不存在的目录报 `REMOTE_PATH_NOT_FOUND` 而不是被创建；
+  网关设备调用 `configure`、`fork`、`rename`、`delete`、工作区读取与终端仍然得到
+  `FORBIDDEN` / `CAPABILITY_UNAVAILABLE`；每次注册与新建会话都会以“哪台设备”的通知出现，
+  并有一条写明设备 id 与会话 id 或路径的 Host 日志。
+- **链接规格**：安全规格 §3.7（D666 修订）、协议 §6.2 与 §11.2、
+  ADR `remote-control-router-account-binding` 修订 1、交付 §2（R7 A2）
+- **验收**：安全、质量
+- **里程碑**：MVP 后（远程控制交付 R7，D666）
+- **状态**：Partial——浏览器步骤（1–4）在 `pnpm test:e2e:remote-web` 中运行：选择器的根、
+  被注册的文件夹、它打开的会话、以及新出现的标题都在每个手机视口上断言。电脑端半边（5–6）
+  由 `apps/desktop/test/desktop-gateway-link.test.mjs` 自动化，共享的根规则由
+  `packages/host-runtime/src/project-catalog.test.ts` 覆盖。对真实 Router 与已发布桌面版本的
+  运行仍是部署门禁。
 
 #### E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts：确认一次即可在所有 Host 使用
 
@@ -9653,6 +9710,12 @@ Follow the [current router-account acceptance scenario](/spec/06-delivery/04-e2e
 - **自动化**：`node --experimental-strip-types scripts/e2e-scheduled-paths.mjs`
   使用隔离的真实 Host 与 SQLite 配置，不向真实提供商发送推理请求。
 
+### E2E-SCHEDULED-run-in-activity-feed
+
+- **场景**：执行中的定时任务运行是活动流唯一列出的自动化转写。
+- **预期**：运行准入由宿主创建其会话，因此 Main 在准入完成后立即通知渲染层刷新会话列表；没有该通知任何列表都不知道这一行。侧边栏活动流在该次运行的回合执行期间列出该会话，回合结束后该行再次离开。项目分组、置顶行、全局会话搜索与托盘仍不会列出任何定时任务转写。被拒绝的派发不通知任何会话。
+- **自动化**：`node --test apps/desktop/test/scheduled-session-fanout.test.mjs apps/desktop/test/sidebar-session-groups.test.mjs` 以打桩宿主覆盖该通知与活动流规则本身。目前没有自动化场景驱动侧边栏活动面板本身，因此该段接线仅经源码复核；行的点击路径与定时任务页「打开会话」使用的是同一个 `selectSession` 调用。
+
 ### E2E-MARKDOWN-table-actions
 
 - **Setup**: Render a conversation containing two Markdown tables, including
@@ -10248,3 +10311,87 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **状态**：决策层与重拉次数已自动化
   （`boot_bootstrap_tests::switching_the_endpoint_refetches_the_identity_once`、
   `a_cached_answer_is_reused_until_the_identity_is_refreshed`）；双网关真机流程待补。
+
+## Selected upstream reliability acceptance (2026-10-21)
+
+### E2E-RUNTIME-compacted-transcript-retries
+
+- **Steps:** Start a main session and a built-in subagent through the runtime
+  test seam, compact away a failed assistant, then recover a transient provider
+  failure. Also Stop during backoff and preserve ordinary assistant-tail retry.
+- **Expected:** Current summary/user context is retained, no missing-assistant
+  exception, one recovered response and unchanged cancellation/retry budgets.
+- **Coverage:** Runtime/subagent regression and public prompt-path tests;
+  `pnpm test:e2e` and `pnpm test:e2e:subagents` for surrounding process contracts.
+
+### E2E-COMMAND-empty-quoted-arguments-keep-position
+
+- **Steps:** Expand a real prompt template with an empty quoted first argument
+  followed by a nonempty argument, using both quote styles.
+- **Expected:** Positional arguments do not shift; existing defaults and
+  nonempty template expansion remain unchanged.
+- **Coverage:** Prompt-template parser and invocation regressions.
+
+### E2E-WORKPANEL-active-tab-close-visible
+
+- **Steps:** Add enough tabs to overflow the production strip, activate tabs at
+  either end, reorder/switch sessions, then click the active close action.
+- **Expected:** The close action stays inside the visible strip and closes the
+  intended resource without changing another session's tabs.
+- **Coverage:** Component contracts and an isolated real-renderer user path
+  with screenshots (`pnpm test:e2e:upstream-reliability-ui`) and
+  `pnpm test:e2e:work-panel-reorder`. Windows native drag hit testing is a separate
+  platform lane.
+
+### E2E-PROVIDERS-optional-client-certificate-metadata
+
+- **Steps:** Use a local TLS provider with optional client authentication. Load
+  its models and probe its connection through the production discovery wiring.
+  Exercise required authentication, untrusted/hostname errors, redirects, abort
+  during connect/body and a nonmatching error.
+- **Expected:** Exact optional-client-certificate failure retries metadata once
+  on the selected proxy route; validation/origin/cancellation remain enforced.
+  Other failures never start this fallback and no agent request is replayed.
+- **Coverage:** Metadata transport tests and
+  `pnpm test:e2e:provider-client-certificate` (isolated Electron TLS fixture).
+
+### E2E-MACOS-translucency-preference-next-launch
+
+- **Steps:** With an isolated profile on macOS, open General → Appearance with
+  no saved preference, turn transparency off, inspect the restart hint, revert
+  it, then save off and relaunch. Toggle theme on both surfaces.
+- **Expected:** Missing/true keeps existing glass, false creates opaque next
+  launch, the running surface does not change on save, and the hint tracks only
+  saved/applied mismatch. Non-macOS has no switch and reports false applied state.
+- **Coverage:** Settings/window contracts, real-component interaction and
+  isolated native-window lifecycle checks
+  (`pnpm test:e2e:upstream-reliability-ui`); `pnpm test:e2e:boot`. GPU measurement
+  is not implied by visual/functional acceptance.
+
+#### E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop
+
+- **前置**：本地 Router 测试实例（key A）、本地测试 Gateway，以及账号 A 的两台桌面 Host
+  （A 与 B）：都打开账号模式远程控制开关、都打开默认开启的「允许同账号电脑自动接入」开关，
+  各有一个回环模型 stub。两台桌面各自完成账号注册，B 有一个项目与一个待读取的文件。
+- **步骤**：1) 启动两台桌面，等两条链路就绪。2) 在 A 上直接打开主机列表，确认 B 作为账号
+  电脑出现，且两台机器都没有弹确认框。3) 在 B 上查看设备通知，确认自动接入以 A 的名称被
+  记录。4) 在 A 上浏览 B 的目录并注册一个项目。5) 在该项目里发起一轮对话，让模型调用
+  `Read`。6) 确认流式答复到达 A，同时 B 自己的会话列表里出现同一会话。7) 关闭 B 的自动
+  接入开关，再从第三台桌面申请设备，确认 B 改为询问本机用户而不是自动授予。8) 停止 B，
+  确认 A 显示其离线且不在本地执行该会话。
+- **预期**：B **自己校验** A 的 Host 证书证明（证书链到它固定的 Gateway CA、账户绑定、签名、
+  未用过且未过期的 nonce），且 B 的自动接入开关打开，因此 A 的设备无需人工确认即被授予；
+  nonce 重放或过期的证明则被拒绝。A 持有 `owner`，可执行手机仍被拒绝的桌面操作
+  （`session/configure`、工作区读取）；回合在 B 上运行，使用 B 的 provider 配置与 B 自己的
+  Router 账号，跨 Gateway 的只有事件；B 为自动接入显示「新设备」通知并写审计记录，账号内
+  其他每台电脑为 A 自己的注册显示「有新电脑加入账号」并写审计；开关关闭后同一请求改为由
+  B 的用户确认；同账号手机仍是 `viewer` / `controller` / `approver`、仍受远程权限上限约束、
+  仍被拒绝桌面专属操作；未声明 `device.desktop-auto` 的旧桌面被标记为需要升级；停止 B 后 A
+  只报告离线，不在本地执行。
+- **关联规格**：ADR `remote-control-router-account-binding` 修订 3，安全 §3.7 / §3.8 与
+  gate 25、27、35，协议 §11.4 / §11.5，rollout §2（R8）
+- **验收**：Security、Quality、Recovery
+- **里程碑**：Post-MVP（remote-control rollout R8，D675）
+- **状态**：Planned（R8，D675）—— 该场景尚未自动化。它依赖的两条传输由 P0 测量脚本
+  （`scripts/measure-remote-latency.mjs`）在本地覆盖：回环 `RACP-WS` 上的 owner，以及
+  `RACP-HTTP` + SSE 上的账号设备。

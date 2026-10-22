@@ -6,6 +6,7 @@ import type {
   SessionCollaborationMessage,
   SessionCollaborationSummary,
 } from "@minih-agent/shared";
+import { imageGenerationBindings, isImageGenerationModel, modelWireIdsEqual } from "@minih-agent/shared";
 import { DESKTOP_PRINCIPAL, type AgentHostBridge } from "../agent-host-bridge";
 import { listReadyPluginModels, parsePluginModelKey } from "../plugin-agent-complete";
 import type { McpControlInvokeInput } from "../mcp-control";
@@ -354,13 +355,14 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
      *
      * The calling session and turn both come from the sidecar's local-tool
      * context, so a model cannot claim another sender, and an approval that
-     * outlives its turn cannot authorise a later one. Spawning workers and
-     * cancelling another sender's delivery stay plugin-only.
+     * outlives its turn cannot authorise a later one. Spawning a worker for a
+     * plugin and cancelling another sender's delivery stay plugin-only; the
+     * built-in `create` operation makes an ordinary Agent session instead.
      */
     async invokeBuiltin(input: {
       sessionId: string;
       turnId: string;
-      operation: "list" | "send" | "result";
+      operation: "list" | "send" | "result" | "create";
       args: Record<string, unknown>;
       signal?: AbortSignal;
     }): Promise<unknown> {
@@ -415,6 +417,67 @@ export function createSessionCollaborationService(deps: SessionCollaborationDepe
             sessionId: text(input.args, "sessionId"),
           });
           return dispatch(response.message, input.signal);
+        }
+        case "create": {
+          const title = text(input.args, "title");
+          const [settings, listed, source] = await Promise.all([
+            host.call<AppSettings>("settings.get"),
+            host.call<{ providers: Parameters<typeof listReadyPluginModels>[0] }>(
+              "providers.list",
+              { includeDisabled: false },
+            ),
+            // Only the project and thinking level are wanted, so the transcript
+            // is not loaded to create a session.
+            host.call<{ session?: { projectPath?: string; thinkingLevel?: string } }>(
+              "session.get",
+              { id: sourceSessionId, messageLimit: 1 },
+            ),
+          ]);
+          checkCurrent(host, input.signal);
+          const binding = settings?.sessionCreateModel;
+          if (!binding?.providerId || !binding?.modelId) {
+            fail(
+              "MODEL_NOT_CONFIGURED",
+              "No session creation model is configured. Choose one in Settings > AI (session creation model) before creating a session.",
+            );
+          }
+          // The same ready-model catalog the settings row offers, minus the
+          // image models it excludes, so a pairing the row shows as unavailable
+          // can never create a session either. Both sides resolve that set with
+          // the shared image helper, and the row adds nothing of its own. The
+          // choice is the user's, never the model's: no argument can name it.
+          const imageModels = imageGenerationBindings(
+            settings.imageGenerationModels,
+            settings.imageGeneration,
+          );
+          const chosen = listReadyPluginModels(listed.providers, settings)
+            .filter((item) => !isImageGenerationModel(imageModels, item.providerId, item.modelId))
+            .find((item) =>
+              item.providerId === binding.providerId && modelWireIdsEqual(item.modelId, binding.modelId),
+            );
+          if (!chosen) {
+            fail(
+              "MODEL_UNAVAILABLE",
+              `The configured session creation model "${binding.providerId}/${binding.modelId}" is not available. Pick another one in Settings > AI.`,
+            );
+          }
+          const created = await host.call<{ session?: { id?: string; title?: string } }>("session.create", {
+            title,
+            mode: "agent",
+            providerId: binding.providerId,
+            modelId: binding.modelId,
+            // A hand-off belongs in the session's own project, and a session
+            // the Agent creates must not carry a wider permission mode than
+            // the one it was started from.
+            ...(source.session?.projectPath ? { projectPath: source.session.projectPath } : {}),
+            ...(source.session?.thinkingLevel ? { thinkingLevel: source.session.thinkingLevel } : {}),
+            inheritPermissionFromSessionId: sourceSessionId,
+          });
+          checkCurrent(host, input.signal);
+          const createdId = created.session?.id;
+          if (!createdId) fail("FAILED", "The host did not return the created session");
+          deps.onChanged();
+          return { sessionId: createdId, title: created.session?.title ?? title };
         }
         default:
           return fail("NOT_FOUND", "Unknown session tool operation");

@@ -28,6 +28,7 @@ import {
   type RuntimeProviderConfig,
 } from "./runtime.js";
 import { estimateOutputCapInputTokens } from "./output-cap.js";
+import { automaticCompactionThresholdFor } from "./context-budget.js";
 
 import { COMPACTION_SUMMARY_MAX_RETRIES } from "./compaction-summary-input.js";
 import { loadInstructionChain, type ProjectInstructions } from "./project-instructions.js";
@@ -37,6 +38,7 @@ import {
   PROVIDER_TRANSIENT_MAX_RETRIES,
 } from "./provider-retry.js";
 import { getGlobalDispatcher } from "undici";
+import * as oneShot from "./one-shot-complete.js";
 import { describeProviderFetchFailure } from "./provider-transport-recovery.js";
 /**
  * The delegate loop itself is covered in `subagent.test.ts`; here only the
@@ -2353,7 +2355,7 @@ describe("DesktopAgentRuntime deferred tool catalog", () => {
     // On demand like the scheduled tools: the schemas cost nothing per request
     // until the model searches for them.
     expect(agentNames).not.toContain("SessionSend");
-    for (const name of ["SessionList", "SessionSend", "SessionResult"]) {
+    for (const name of ["SessionList", "SessionSend", "SessionResult", "SessionCreate"]) {
       expect((agent as any).deferredToolNames.has(name)).toBe(true);
     }
     const prompt = (agent as any).agent.state.systemPrompt as string;
@@ -4147,48 +4149,61 @@ describe("DesktopAgentRuntime session collaboration provenance", () => {
     } finally { await runtime.dispose(); }
   });
 
-  it("frames a side note for the model while the durable row keeps the user's words", async () => {
+  it("answers a side note independently without waking or modifying the main turn", async () => {
     const onEvent = vi.fn();
     const runtime = createRuntime({ onEvent });
-    const agent = (runtime as any).agent;
-    const handle = (runtime as any).handleAgentEvent.bind(runtime);
-    const note = "How far along are you?";
-    let modelContent: unknown;
-    agent.prompt = vi.fn(async () => {
-      agent.state.isStreaming = true;
-      runtime.steer({ text: note }, "side-turn", {
-        id: "side-note", role: "user", content: note, status: "complete",
-        createdAt: new Date().toISOString(), steering: true, sideNote: true,
-      }, { sideNote: true });
-      agent.state.isStreaming = false;
-      const [queued] = [...(runtime as any).pendingSteering.keys()];
-      modelContent = queued.content;
-      // Consume the note the way pi injects it, so the turn keeps going
-      // instead of re-queueing the same input.
-      await handle({ type: "message_start", message: queued });
-      await handle({ type: "message_end", message: queued });
-    });
-    agent.continue = vi.fn(async () => undefined);
-    agent.waitForIdle = vi.fn(async () => undefined);
+    const agent = Reflect.get(runtime, "agent") as Agent;
+    let finish!: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    agent.prompt = vi.fn(async () => { Reflect.set(agent.state, "isStreaming", true); await gate; Reflect.set(agent.state, "isStreaming", false); });
+    const steering = vi.spyOn(agent, "steer");
+    const wait = new AbortController();
+    const completion = vi.spyOn(oneShot, "completeOneShot").mockResolvedValue({ text: "Halfway through the work." });
+    const main = runtime.prompt("Keep working", "main-input", "main-turn");
+    await vi.waitFor(() => expect(runtime.getStatus().isRunning).toBe(true));
+    Reflect.set(runtime, "steeringWaitAbort", wait);
+    const messages = structuredClone(agent.state.messages);
+    const events = onEvent.mock.calls.length;
     try {
-      await runtime.prompt(note, "side-note", "side-turn");
-      // The model reads the note inside its framing, with the text verbatim.
-      expect(typeof modelContent).toBe("string");
-      expect(modelContent).toContain(`<side-note>\n${note}\n</side-note>`);
-      expect(modelContent).toContain("side note");
-      // The row the renderer persists is the user's own words, marked as a
-      // side note so the transcript and the panel can tell it apart.
-      expect(eventsOf(onEvent)).toContainEqual(expect.objectContaining({
-        type: "message_end",
-        message: expect.objectContaining({
-          id: "side-note", content: note, sideNote: true, steering: true,
-        }),
-      }));
-      // Sending a note never cancels the turn it was sent to.
-      expect((runtime as any).runCancelled).toBe(false);
+      const result = await runtime.answerSideNote("How far along?", "main-turn");
+      expect(result.text).toBe("Halfway through the work.");
+      expect(steering).not.toHaveBeenCalled();
+      expect(wait.signal.aborted).toBe(false);
+      expect(agent.state.messages).toEqual(messages);
+      expect(onEvent.mock.calls).toHaveLength(events);
+      expect(runtime.getStatus().currentTurnId).toBe("main-turn");
+      expect(runtime.getStatus().isRunning).toBe(true);
+      const [, context, , options] = completion.mock.calls[0]!;
+      expect(context.tools).toEqual([]);
+      expect(context.messages.at(-1)?.content).toBe("How far along?");
+      expect(options?.sessionId).not.toBe(runtime.sessionId);
+      expect(options?.signal?.aborted).toBe(false);
+      expect(() => runtime.steer({ text: "legacy" }, "main-turn", {
+        id: "legacy", role: "user", content: "legacy", createdAt: new Date().toISOString(),
+      }, { sideNote: true })).toThrow("independent ask channel");
+      expect(steering).not.toHaveBeenCalled();
     } finally {
-      await runtime.dispose();
+      finish(); await main; completion.mockRestore(); await runtime.dispose();
     }
+  });
+
+  it("a failed side answer does not fail the running turn or block a retry", async () => {
+    const onEvent = vi.fn();
+    const runtime = createRuntime({ onEvent });
+    const agent = Reflect.get(runtime, "agent") as Agent;
+    let finish!: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    agent.prompt = vi.fn(async () => { Reflect.set(agent.state, "isStreaming", true); await gate; Reflect.set(agent.state, "isStreaming", false); });
+    const completion = vi.spyOn(oneShot, "completeOneShot").mockRejectedValueOnce(new Error("Side provider failed")).mockResolvedValueOnce({ text: "Retry answer" });
+    const main = runtime.prompt("Keep working", "main-input", "main-turn");
+    await vi.waitFor(() => expect(runtime.getStatus().isRunning).toBe(true));
+    try {
+      await expect(runtime.answerSideNote("Question", "main-turn")).rejects.toThrow("Side provider failed");
+      expect(runtime.getStatus().isRunning).toBe(true);
+      expect(eventsOf(onEvent).some(event => event.type === "error")).toBe(false);
+      expect(await runtime.answerSideNote("Question", "main-turn")).toEqual({ text: "Retry answer" });
+      expect(() => runtime.answerSideNote("Question", "stale-turn")).toThrow("no longer accepting");
+    } finally { finish(); await main; completion.mockRestore(); await runtime.dispose(); }
   });
 
   it("answers user steering after a silent notice reply with full recovery", async () => {
@@ -5227,6 +5242,107 @@ describe("DesktopAgentRuntime assistant thinking events", () => {
         }),
       }),
     );
+
+    await runtime.dispose();
+  });
+
+  it("retries from a compacted transcript when the failed assistant is gone (issue #1768)", async () => {
+    const runtime = createRuntime({ onEvent: vi.fn() });
+    const agent = (runtime as any).agent;
+    const user = { role: "user", content: "hello", timestamp: 1 };
+    const compactedTail = {
+      role: "compactionSummary",
+      summary: "Earlier work was summarized.",
+      tokensBefore: 42,
+      timestamp: 2,
+    };
+    agent.state.messages = [user, compactedTail];
+    agent.continue = vi.fn(async () => undefined);
+    agent.waitForIdle = vi.fn(async () => undefined);
+    (runtime as any).pendingProviderRetry = {
+      code: "STREAM_FAILED",
+      message: "stream terminated",
+      retriable: true,
+    };
+    (runtime as any).providerTransientRetryAttempt = 1;
+
+    vi.useFakeTimers();
+    try {
+      const retry = (runtime as any).retryPendingProviderFailure();
+      await vi.runAllTimersAsync();
+      await retry;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(agent.state.messages).toEqual([user, compactedTail]);
+    expect(agent.continue).toHaveBeenCalledOnce();
+    await runtime.dispose();
+  });
+
+  it("retries a compacted transcript through the public prompt wiring (issue #1768)", async () => {
+    const onEvent = vi.fn();
+    const runtime = createRuntime({ onEvent });
+    const agent = (runtime as any).agent;
+    const handleAgentEvent = (runtime as any).handleAgentEvent.bind(runtime);
+    const user = { role: "user", content: "hello", timestamp: 1 };
+    // Compaction already replaced the failed assistant with a summary, so the
+    // retry has no assistant tail to consume.
+    const compactedTail = {
+      role: "compactionSummary",
+      summary: "Earlier work was summarized.",
+      tokensBefore: 42,
+      timestamp: 2,
+    };
+    const failed = {
+      ...assistantMessage({
+        content: [{ type: "text", text: "partial response" }],
+        stopReason: "error",
+      }),
+      errorMessage: "terminated",
+    };
+
+    agent.prompt = vi.fn(async () => {
+      agent.state.messages = [user, compactedTail];
+      await handleAgentEvent({ type: "message_start", message: failed });
+      await handleAgentEvent({ type: "message_end", message: failed });
+      await handleAgentEvent({ type: "turn_end" });
+      await handleAgentEvent({ type: "agent_end", messages: [] });
+    });
+    agent.waitForIdle = vi.fn(async () => undefined);
+    agent.continue = vi.fn(async () => {
+      expect(
+        agent.state.messages.filter((message: any) => message.role !== "system"),
+      ).toEqual([user, compactedTail]);
+      await handleAgentEvent({ type: "agent_start" });
+      await handleAgentEvent({ type: "turn_start" });
+      await handleAgentEvent({
+        type: "message_start",
+        message: { role: "assistant", content: [] },
+      });
+      await handleAgentEvent({
+        type: "message_end",
+        message: assistantMessage({
+          content: [{ type: "text", text: "recovered response" }],
+        }),
+      });
+      await handleAgentEvent({ type: "turn_end" });
+      await handleAgentEvent({ type: "agent_end", messages: [] });
+    });
+
+    vi.useFakeTimers();
+    try {
+      const prompt = runtime.prompt("hello", "user-1");
+      await vi.runAllTimersAsync();
+      await prompt;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(agent.continue).toHaveBeenCalledOnce();
+    const events = onEvent.mock.calls.map(([envelope]) => (envelope as any).event);
+    expect(events.some((event) => event.type === "error")).toBe(false);
+    expect(events.filter((event) => event.type === "agent_end")).toHaveLength(1);
 
     await runtime.dispose();
   });
@@ -7919,7 +8035,7 @@ describe("DesktopAgentRuntime subagents", () => {
     const runtime = createRuntime({ subagents: [inheritor] });
     // The parent keeps them: handing work to another session is its own
     // capability, so delegation must not remove it from the session itself.
-    for (const name of ["SessionList", "SessionSend", "SessionResult"]) {
+    for (const name of ["SessionList", "SessionSend", "SessionResult", "SessionCreate"]) {
       expect((runtime as any).deferredToolNames.has(name)).toBe(true);
     }
 
@@ -7932,7 +8048,7 @@ describe("DesktopAgentRuntime subagents", () => {
 
     expect(subagentRuns.calls).toHaveLength(1);
     const names = subagentRuns.calls[0].tools.map((tool: { name: string }) => tool.name);
-    for (const name of ["SessionList", "SessionSend", "SessionResult"]) {
+    for (const name of ["SessionList", "SessionSend", "SessionResult", "SessionCreate"]) {
       expect(names).not.toContain(name);
       expect(subagentRuns.calls[0].systemPrompt).not.toContain(name);
     }
@@ -12359,5 +12475,80 @@ describe("isolated-session subagent worktrees (ADR 0329)", () => {
     expect(delegateWorktreeNote({ result: "noChanges" }, resume)).toContain("no file changes");
     expect(delegateWorktreeNote({ result: "notMerged", reason: "busy" }, resume)).toContain("busy");
     expect(delegateWorktreeNote({ result: "none" }, resume)).toBe("");
+  });
+});
+
+describe("the context budget follows a provider-reported usage", () => {
+  /**
+   * The reported defect: a conversation whose provider usage still left plenty
+   * of the window, compacted anyway because the chars/4-plus-CJK estimate of
+   * the whole request read higher than the number the provider reported for it.
+   */
+  const smallWindowProvider = () => ({
+    ...provider,
+    modelConfig: { ...provider.modelConfig!, contextWindow: 32_000, maxTokens: 8_000 },
+  });
+
+  it("does not compact a context the provider reported as small", async () => {
+    const runtime = createRuntime({ provider: smallWindowProvider() });
+    const internal = runtime as any;
+    // 13 001 tokens of real usage behind a message the crude estimate charges
+    // 15 000 for on its own; the threshold for this window is 14 400.
+    const messages = [
+      { role: "user", content: "上".repeat(15_000), timestamp: 1 },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        api: "openai-completions",
+        provider: "local",
+        model: "local-model",
+        stopReason: "stop",
+        timestamp: 2,
+        usage: {
+          input: 13_000,
+          output: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 13_001,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      },
+    ] as never;
+    const budget = internal.contextBudget(messages);
+    const threshold = automaticCompactionThresholdFor(budget);
+    const requestEstimate = estimateOutputCapInputTokens(
+      {
+        messages: (messages as any[]).filter((message) => message.role !== "system"),
+        systemPrompt: internal.agent.state.systemPrompt,
+        tools: internal.declaredTools(),
+      },
+      internal.model,
+    );
+
+    // Guard the fixture: the full-request estimate alone would have crossed it.
+    expect(requestEstimate).toBeGreaterThan(threshold);
+    expect(threshold).toBe(14_400);
+    expect(budget.tokens).toBe(13_001);
+    vi.spyOn(internal, "liveSessionContext").mockReturnValue({ messages });
+    expect(internal.automaticCompactionNeeded()).toBe(false);
+
+    await runtime.dispose();
+  });
+
+  it("still uses the full-request estimate before any usage exists", async () => {
+    const runtime = createRuntime({ provider: smallWindowProvider() });
+    const internal = runtime as any;
+    const messages = [
+      { role: "user", content: "上".repeat(15_000), timestamp: 1 },
+    ] as never;
+    const budget = internal.contextBudget(messages);
+
+    expect(budget.tokens).toBeGreaterThanOrEqual(
+      automaticCompactionThresholdFor(budget),
+    );
+    vi.spyOn(internal, "liveSessionContext").mockReturnValue({ messages });
+    expect(internal.automaticCompactionNeeded()).toBe(true);
+
+    await runtime.dispose();
   });
 });

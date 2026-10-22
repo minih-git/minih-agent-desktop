@@ -1,13 +1,14 @@
 /**
- * Session links (`minih-agent-desktop://session/<id>`): the one way a conversation is
- * referenced from another one.
+ * Session links (`minih-agent-desktop://session/<id>`): the way a conversation is
+ * referenced *with its content* from another one.
  *
  * The link is plain text the user pastes into a Composer draft (or copies from
- * the session row), so referencing a conversation adds no new Composer trigger
- * symbol: `@` stays files and `/` stays commands (see `composer-trigger.ts`).
- * Electron main turns the tokens it finds in a prompt into bounded session
- * references before the turn is dispatched; the renderer only formats and
- * recognizes them.
+ * the session row), so a reference adds no trigger symbol of its own: `@` stays
+ * files, `/` stays commands, and `#` is the Composer's lightweight session
+ * *target* (`session-target.ts`), which names a conversation without attaching
+ * any of it. Electron main turns the links it finds in a prompt into bounded
+ * session references before the turn is dispatched; the renderer only formats
+ * and recognizes them.
  */
 
 /** Custom scheme reserved for Minih-Agent-Desktop links (deep link registration is A). */

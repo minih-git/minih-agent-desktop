@@ -18,6 +18,8 @@ function withProjectDisplayName(
 /** Values that are stable before the first host bootstrap response arrives. */
 export function createInitialState(): AppStateData {
   return {
+    sideNotes: {},
+    sideNotePending: {},
     ready: false,
     recentModels: loadRecentModels(),
     healthOk: false,

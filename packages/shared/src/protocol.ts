@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 11 as const;
+export const PROTOCOL_VERSION = 12 as const;
 export const SCHEMA_VERSION = 16 as const;
 /**
  * Pre-branding constants, kept for backward compatibility: persisted schema
@@ -8,7 +8,7 @@ export const SCHEMA_VERSION = 16 as const;
  */
 export const APP_ID = "org.hmini.agent";
 export const APP_NAME = "Minih-Agent-Desktop";
-export const APP_VERSION = "0.22.1";
+export const APP_VERSION = "0.24.0";
 
 export const APP_MENU_COMMANDS = [
   "newTask",
@@ -90,6 +90,8 @@ export const IPC = {
     notificationSetViewingSession: "minih-agent-desktop/notification/setViewingSession",
     agentPrompt: "minih-agent-desktop/agent/prompt",
     agentSteer: "minih-agent-desktop/agent/steer",
+    agentSideNote: "minih-agent-desktop/agent/sideNote",
+    agentSideNotesList: "minih-agent-desktop/agent/sideNotesList",
     speechTranscribe: "minih-agent-desktop/speech/transcribe",
     speechSynthesize: "minih-agent-desktop/speech/synthesize",
     speechGetStatus: "minih-agent-desktop/speech/getStatus",
@@ -166,6 +168,8 @@ export const IPC = {
     /** Deterministic first-prompt title for a session that is still untitled. */
     sessionDeriveTitle: "minih-agent-desktop/session/deriveTitle",
     sessionConfigure: "minih-agent-desktop/session/configure",
+    /** The model catalog of the host that owns the session (remote sessions). */
+    sessionModels: "minih-agent-desktop/session/models",
     sessionImportScan: "minih-agent-desktop/session/importScan",
     sessionImportRun: "minih-agent-desktop/session/importRun",
     modelConfigImportScan: "minih-agent-desktop/modelConfig/importScan",
@@ -195,6 +199,9 @@ export const IPC = {
     configSyncRestore: "minih-agent-desktop/configSync/restore",
     configSyncChangePassword: "minih-agent-desktop/configSync/changePassword",
     configSyncDisconnect: "minih-agent-desktop/configSync/disconnect",
+    /** Explicit project archive: one logical project or group as a ZIP file. */
+    projectArchiveExport: "minih-agent-desktop/projectArchive/export",
+    projectArchiveImport: "minih-agent-desktop/projectArchive/import",
     networkProxyTest: "minih-agent-desktop/network/testProxy",
     commandShellList: "minih-agent-desktop/commandShell/list",
     secretsSet: "minih-agent-desktop/secrets/set",
@@ -298,6 +305,11 @@ export const IPC = {
      */
     remoteGatewayDeviceDecision: "minih-agent-desktop/remoteGateway/deviceDecision",
     remoteGatewaySetStrictDevices: "minih-agent-desktop/remoteGateway/setStrictDevices",
+    /**
+     * ADR amendment 3: "allow same-account computers to join automatically".
+     * Device-local like the strict switch, and it never carries a credential.
+     */
+    remoteGatewaySetDesktopAuto: "minih-agent-desktop/remoteGateway/setDesktopAuto",
     /** Which requests still wait for the dialog after a renderer reload. */
     remoteGatewayPendingDeviceRequests: "minih-agent-desktop/remoteGateway/pendingDeviceRequests",
     /**
@@ -474,6 +486,12 @@ export const IPC = {
     fsReadImageDataUrl: "minih-agent-desktop/fs/readImageDataUrl",
     statsGetTokenUsageHistory: "minih-agent-desktop/stats/getTokenUsageHistory",
     fsReveal: "minih-agent-desktop/fs/reveal",
+    /**
+     * Show one chat reference in the system file manager. Separate from
+     * `fsReveal` on purpose: this one accepts a path outside every allowed root,
+     * because showing where a folder or file lives is not reading it.
+     */
+    fsRevealChatRef: "minih-agent-desktop/fs/revealChatRef",
     fsOpen: "minih-agent-desktop/fs/open",
     fsIndex: "minih-agent-desktop/fs/index",
     fsResolveRef: "minih-agent-desktop/fs/resolveRef",
@@ -499,6 +517,8 @@ export const IPC = {
     backgroundTasksChanged: "minih-agent-desktop/backgroundTasks/event/changed",
     /** What a running sync is doing, while it is still running. */
     configSyncProgress: "minih-agent-desktop/configSync/event/progress",
+    /** What a running project archive export or import is doing. */
+    projectArchiveProgress: "minih-agent-desktop/projectArchive/event/progress",
     extensionsUiPrompt: "minih-agent-desktop/extensions/event/uiPrompt",
     extensionsStatus: "minih-agent-desktop/extensions/event/status",
     pluginLauncherShown: "minih-agent-desktop/pluginLauncher/event/shown",

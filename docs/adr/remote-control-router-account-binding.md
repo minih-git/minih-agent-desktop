@@ -165,6 +165,14 @@ decision, and it is accepted with mitigations that are all required:
 - every grant produces an audit record;
 - strict mode makes one Host refuse sibling grants entirely.
 
+The desktop-proof nonce table and the own-admission table (amendment 3) live in
+Host process memory only, so a Host restart forgets which nonces it already
+spent. A replayed proof after a restart is bounded by the request's own
+five-minute lifetime, and only a compromised Gateway — which can already forge
+certificates under the risk above — could present one. This does not widen the
+accepted risk; it is recorded so the in-memory scope is not mistaken for
+durable replay protection.
+
 ## Consequences
 
 ### Positive
@@ -278,3 +286,368 @@ decision, and it is accepted with mitigations that are all required:
    Gateway never decides an approval. A Host signature also names the approving
    Host in every audit record; a Gateway signature would leave no Host-side
    record of which terminal a human approved on.
+
+## Amendment 1 — a phone may start the work, not just steer it (2026-10-19)
+
+Status: accepted. Scope: this decision's account-mode device surface.
+
+### Context
+
+On-device acceptance of account mode showed the phone could follow and steer
+turns but could not begin one: `session/create` was refused by the desktop Host,
+and both project operations it needs were `owner`-only, a role no account or
+gateway device ever receives. The user's decision, verbatim: "完全放开（含注册
+项目、浏览文件夹）".
+
+### Decision
+
+A device holding `controller` may now do the three things a person at the
+computer does to start work on it:
+
+1. `session/create` — unchanged (`controller`).
+2. `project/register` — role lowered from `owner` to `controller`.
+3. `project/browse` — role lowered from `owner` to `controller`.
+
+Nothing else in the role table moved. `owner` is still never granted to a
+gateway or account device, so `workspace/toolExecute`, `workspace/toolShell`,
+`workspace/files`, `session/delete`, `session/archive`, `session/revoke`, and
+`tools/advertise` remain out of reach. The two project operations are also
+confined to the Host's browse root (the user's home directory): the path is
+canonicalized with `realpath` and anything outside the root — including `..` and
+a symlink pointing out — is refused, while a missing directory is reported as
+missing rather than created. The desktop Host implements all three over the same
+shared `host-runtime` catalogs as the headless Host, and reports each
+state-changing call — device, session id or path — on the existing device-notice
+channel and the Host log.
+
+Two HTTP routes were added for the project operations (`POST /v1/projects`,
+`GET /v1/projects:browse?path=…`), derived from the same shared route table the
+Gateway uses to build its host-scoped forwarding.
+
+### Rejected alternatives
+
+- **Grant gateway devices `owner`.** One word in a role list, but it would also
+  hand the phone the workspace tool surface, shell access, and session deletion.
+  The user asked for three operations, not for a remote shell, and the remote
+  permission ceiling was never designed to arbitrate those.
+- **Leave the desktop Host refusing `session/create`.** The phone could then
+  start work only on an always-on headless Host and not on the computer it was
+  looking at, which is the case the acceptance run exercised.
+- **Let the phone pass an absolute path outside the root.** Registration would
+  become an arbitrary-directory grant; the root check is what keeps this
+  amendment from widening into filesystem access.
+
+### Consequences
+
+- Security §3.7 carries the role change, the root rule, and the rejected
+  alternative; protocol §6 and §11.2 carry the role and route tables.
+- The change is additive for clients and Hosts that do not use it. A Gateway
+  without these routes keeps answering `NOT_FOUND`, and a Host that refuses the
+  operations keeps answering `FORBIDDEN`, which the phone shows as itself.
+- The desktop application must ship a release containing the Host change before
+  a phone can use the three operations against a desktop; a headless
+  `agent-host-cli` Host gets them from the same shared implementation.
+- **The headless Host's registration is now bounded too.** `project/register`
+  used to canonicalize a path without any root check; `project/browse` was the
+  only bounded operation. Sharing one implementation makes both bounded by
+  `--browse-root` (the user's home directory by default) **for every caller,
+  including the local owner over the loopback binding**. This is a published
+  behavior change: a script that registered a directory outside the home
+  directory must now pass a `--browse-root` that contains it. It is recorded in
+  `apps/agent-host-cli/README.md` and in `docs/project/unreleased.md`.
+
+## Amendment 2 — the phone may choose what a session runs on (2026-10-21)
+
+Status: accepted. Scope: this decision's device surface, and the RACP operation
+catalog it is validated against.
+
+### Context
+
+Amendment 1 let a phone start work, but not choose what that work runs on:
+`session/create` accepts `providerId`, `modelId`, and `thinkingLevel`, and no
+operation let a client learn the valid values. A session could therefore only
+start on whatever the computer happened to default to, and a phone could not
+even name the model of a session it was watching. R7-1 of
+`docs/spec/04-ux/13-remote-mobile-client.md` §15.10 records the owner's
+decision, verbatim: the phone may choose a model when starting a session **and**
+change an existing session's model, the latter only while idle.
+
+### Decision
+
+One new read operation, `model/list`, role `viewer`, `GET /v1/models`:
+
+- It returns `RacpModelSummary[]`: `providerId`, `providerLabel`, `modelId`,
+  `label`, `thinkingLevels`, an optional `defaultThinkingLevel`,
+  `supportsImages`, and `isDefault`. **Metadata only** — no credential, API key,
+  base URL, proxy, header, or price. The projection lives in one place
+  (`packages/host-runtime/src/host-catalog-reads.ts`), so a field that must not
+  cross the boundary has one function to be removed from rather than two.
+- `RacpSession` gains optional `providerId`, `modelId`, `modelLabel`, and
+  `thinkingLevel`. Optional and additive: a Host that sends none still produces
+  a valid session, and a client hides the row.
+- Changing an existing session's model stays `session/configure` with
+  `providerId` + `modelId` (+ `thinkingLevel`), `controller` role. The Host
+  refuses it while a turn is running (`AGENT_BUSY`), the same rule the desktop
+  applies; the phone shows that reason instead of a control that would be
+  rejected.
+- Both Hosts implement the catalog — the desktop Host link and
+  `agent-host-cli` — over the same shared read. The Gateway needed no new code
+  because it validates against `RACP_OPERATIONS` and the shared route table, and
+  a test now proves `GET /v1/models` is forwarded like every other declared
+  route.
+
+Why `viewer` rather than `controller`: a read-only device already sees which
+model a session runs on, and a model list is not a capability. Choosing one
+still requires `controller`, because it creates work.
+
+### Rejected alternatives
+
+- **Return the raw `providers.list` rows.** They carry `baseUrl`, `headers`, and
+  `hasSecret`, i.e. exactly the machine's provider configuration. A projection is
+  the point, not an optimization.
+- **A phone-side model list.** It would drift from the Host's own catalog within
+  one provider release and offer models the Host cannot launch.
+- **Let the client pass a model key without a provider id.** Two providers can
+  advertise the same model id, and the Host resolves a launch by the pair.
+
+### Consequences
+
+A Host older than this amendment answers `CAPABILITY_UNAVAILABLE`, which the
+client treats as "no choice available" and creates the session on the Host's
+default: no version negotiation is needed and no client upgrade is required
+first.
+
+## Amendment 3 — a sibling desktop joins as itself (2026-10-21)
+
+Status: accepted for implementation. Scope: this decision's account-mode device
+surface, the Host link frames of protocol §11.4/§11.5, the desktop's account-mode
+defaults, and — for the proven desktop-class device only — the gateway-origin
+restrictions of [ADR 0331](0331-self-hosted-gateway-and-mobile-client.md), whose
+"Device origin" section records the exception. The contract, the Gateway's
+proof minting and relays, and the Host's own proof verification with automatic
+admission are implemented (rollout R8 packages A–C); the desktop Host surfaces
+of packages D–F are not.
+
+### Context
+
+Account mode binds the user's phone to every Host of the account, but the
+user's *computers* still reach each other only over SSH: the desktop as a
+Remote Client supports `transport: "direct" | "ssh"`
+(`packages/shared/src/types/remote-host.ts`), so using a second computer means
+entering a host, a user, a key or password, and installing `agent-host-cli`
+there. Even when that works, a computer paired this way is a phone-grade
+device: `desktop-host-operations.ts` refuses session rename/delete/configure,
+workspace reads, and terminals to a remote device, and
+`packages/racp/src/operations.ts` never grants `owner` to a gateway origin, so
+the full desktop experience is unreachable from another computer.
+
+The same account already answers "is this computer mine?" — the sibling Host
+certificate proves it. This amendment lets a computer say so, and join.
+
+### Decision
+
+1. **A `desktop` device class.** `device.request` gains
+   `client: "desktop"` beside `web` / `ios` / `android`
+   (`packages/shared/src/racp-hostlink.ts`,
+   `racp-account-devices.ts`). The class names a computer of the account that
+   is asking to reach its siblings, not a phone.
+2. **Proof, not just a key — and the target Host verifies it.** A desktop
+   request carries `hostProof`: the applicant's `hostId`, the request's
+   `nonce`, a signature made with the private key of the Host certificate this
+   Gateway issued to that computer, and that certificate itself. The signature
+   covers `{requestId, nonce, applicantHostId, accountId, expiresAt}`. The nonce
+   is minted by the Gateway when it creates the device request, is single-use,
+   and is short-lived (its exact lifetime is chosen at implementation and is
+   bounded by the request's own `expiresAt`); a Host refuses a proof whose nonce
+   it has already seen or whose `expiresAt` has passed. **Every target Host
+   verifies the proof itself** — the certificate chain to its own pinned
+   Gateway CA, the `OU=account:<accountId>` binding against the account of the
+   request, the signature over the canonical payload, and the freshness — and
+   checks its own "allow same-account computers to join automatically" switch.
+   The proof carries the applicant's certificate because the target Host has no
+   other way to obtain it: the Gateway is the only party that saw that
+   certificate at enrollment, and a proof that merely named a `hostId` would
+   have to take the Gateway's word for the key behind it. Presenting the
+   certificate is the same shape as TLS client authentication, and its
+   integrity does not depend on the Gateway being honest — it depends on the
+   chain verifying to the CA this Host already pins and on the account and
+   `hostId` in the certificate matching the request. The Gateway does hold that
+   CA's private key, so a compromised Gateway can mint a certificate for a
+   computer that does not exist; that is the "compromised Gateway CA" risk
+   D666's Accepted risk already records, not a new one, and the mitigations
+   there (enrollment notices, audit records, `hosts revoke`, per-computer
+   switch, strict mode) are what bound it. The Gateway may pre-check and
+   fast-reject, but it is not the authorization: ADR 0331's rule that the
+   Gateway never decides an approval still holds, so a compromised Gateway must
+   not be able to mint an `owner` device on its own. An AccessKey alone proves
+   an account, never a computer.
+3. **Automatic admission, per computer, on by default.** A desktop request
+   whose proof the target Host verifies is admitted without a human answer,
+   provided that Host has "allow same-account computers to join automatically"
+   on (default on, stored device-locally beside the remote-control switch). With
+   the switch off, or in strict mode, that Host does not adopt the device as a
+   desktop-class device: it falls back to the ordinary per-device confirmation
+   of decision 6, and its own user answers it. The same rule governs a sibling
+   grant: when a `device.grant` for a desktop-class device reaches another Host
+   of the account, that Host re-verifies the proof and checks its own switch
+   before adopting the device with `owner`; a Host whose switch is off, or that
+   is in strict mode, adopts it as a phone-grade device at most, or asks its own
+   user. A sibling judges the proof's freshness **as of the grant**, not as of
+   the moment it reads the frame: a request lives five minutes while a grant
+   stays deliverable for a day, so a computer that was offline when the device
+   was admitted would otherwise never adopt it, which decision 6 requires it to
+   do. Concretely, the sibling accepts a grant whose `issuedAt` is not after the
+   request's `expiresAt` and not in its own future beyond a small clock
+   tolerance, and checks only the grant's `deliverUntil` against the present;
+   the approving Host still judges the proof it receives against its own clock,
+   unchanged.
+4. **`owner`, with the ceiling exemption.** A desktop-class device holds the
+   same role set an SSH-paired desktop device holds: `owner`, exempt from the
+   remote permission ceiling, because the target Host verified a proof made
+   with a certificate the account's own Gateway issued to that machine. This is
+   the one exception to ADR 0331's gateway-origin restrictions, and it is
+   recorded there. A phone or browser device is unchanged:
+   `viewer` / `controller` / `approver`, `pairedDevice: false`, always under
+   the ceiling, never offered `allow-session`. Which operations a desktop-class
+   device may actually call is rollout R8 package C, not this amendment: the
+   desktop Host must open them explicitly and keep refusing them to a phone.
+   `owner` follows the applicant's certificate: the device record keeps the
+   class it was admitted under and the computer whose proof admitted it, and
+   when that Host certificate is revoked the devices it admitted lose their
+   `owner` standing with it. The Gateway is the only party that observes a Host
+   revocation, so it tells the account's other computers (`host.revoked`, only
+   to a Host that advertises `device.desktop-auto`, stored and re-offered to one
+   that was offline), and each of them revokes the desktop devices whose
+   applicant is that computer. Trusting that frame is safe because it only ever
+   removes authority: the worst a forged one achieves is revoking a device that
+   would otherwise keep working, so it needs no Host signature. A device record
+   written before these fields existed has neither, and behaves exactly as it
+   did.
+   **One request, one device.** Every computer of the account is asked the same
+   request with the same proof, so more than one of them can admit it at the
+   same moment, each minting its own token. The Gateway keeps the first grant
+   and the client receives only that token, so a computer that also admitted
+   the request revokes the device it minted and adopts the surviving grant:
+   otherwise the account would carry a device nobody can use, and the machine
+   that approved first would be the one where the token does not work. The
+   nonce stays single-use per request rather than per Host — a proof presented
+   for a request that computer never admitted is still refused as a replay.
+5. **Account mode defaults the remote switch on.** When the Router advertises
+   a `remoteGateway` object and the account key resolves, the desktop's
+   remote-control switch starts on for a user who has never chosen; a user who
+   turned it off keeps it off. This amends security §3.8 and gate 27, whose
+   "off by default" reading was written for the self-hosted flow. "Never
+   chosen" is therefore defined narrowly, by what is on disk rather than by a
+   new marker: a missing `remoteGateway` object, or one with no `enabled` field.
+   **A row that carries `enabled: false` is an explicit off, with or without
+   `decided`** — every build that could write such a row wrote it from the
+   switch's own state, so treating it as a first visit would let an upgrade
+   override a decision the user already made, and the switch's own saves would
+   then re-enable it. The optional `decided` marker records that a choice came
+   from the user, which keeps a later save from having to re-derive the state;
+   it never widens the default. Choosing the default writes `enabled: true`
+   together with `decided: true`, and a row that cannot be written leaves the
+   switch off rather than half-on.
+6. **A capability, so an old Host is visible.** The new frames go only to a
+   Host that advertises `device.desktop-auto` on its `host.capabilities` frame
+   (protocol §11.4 rule 6), which is that Host's own claim that it can verify a
+   proof and that its switch is part of the decision. A computer running an
+   older build never receives them, and the requesting desktop shows "this
+   computer needs an update" instead of waiting for a frame that will never
+   come — the silent-drop trap the Compatibility section below already names.
+7. **The Agent runs on the computer that owns the project.** Selecting a
+   project of computer B runs the turn on B, with B's own provider
+   configuration and B's own Router account for model calls; A is a remote
+   view. Credentials never cross machines. This is not a change of model for
+   SSH hosts: an SSH-paired host keeps the existing "local Agent, remote
+   workspace tools" shape of ADR `local-agent-remote-workspace-tools`, which
+   stays for users who prefer it and for Hosts that cannot enroll.
+8. **The client transport.** A desktop reaches a sibling through the Gateway
+   over `RACP-WS` (`GET /v1/hosts/{hostId}/ws`), not `RACP-HTTP` + SSE: the
+   desktop already speaks `RacpClient` and `wsClientTransport`, and one
+   long-lived connection carries commands, events, and server requests without
+   a request per command. `RemoteHostTransport` gains `"account"` and the
+   record's `url` names that route. The phone keeps `RACP-HTTP` + SSE
+   unchanged.
+
+### Rejected alternatives
+
+- **Keep per-computer manual confirmation for desktops.** It is the safe
+  default and it stays as the switch-off behavior, but as the only behavior it
+  makes "my computers just work together" a setup ritual, which is the
+  complaint this amendment answers.
+- **Trust an AccessKey alone, for every client class.** One key would then
+  auto-approve a new device on every machine, including a phone that only
+  holds a key. The proof is what keeps automatic admission scoped to a
+  computer the account has already enrolled.
+- **Give every gateway device `owner`.** It would hand a phone the workspace
+  tool surface, shell access, and session deletion, which the remote
+  permission ceiling was never designed to mediate (amendment 1's rejected
+  alternative, unchanged).
+- **Have the desktop client reuse `RACP-HTTP` + SSE.** Every command would be
+  a new HTTP request through a reverse proxy, so each one pays the proxy hop
+  and a fresh round trip (the P0 measurement measures the two segments on a
+  local loopback, where they are 0–1 ms of Gateway queue and 3–18 ms of host
+  round trip, and cannot measure the proxy or the Gateway host's own RTT), and
+  server-initiated approvals would need a second channel. A WebSocket route is
+  one connection and the protocol the desktop already implements.
+- **Require SSH between computers forever.** It is the only path today, but it
+  needs credentials and an install on the other machine and it deliberately
+  withholds the desktop surface; it stays as an option, not as the answer.
+
+### Accepted risk
+
+A leaked AccessKey is enough to obtain `owner` on every computer of the account
+that has automatic admission on. Decision 5 lets anyone holding the account's
+key enroll a **new** Host, and that enrollment returns a Gateway-CA certificate
+with `OU=account:<accountId>`; an attacker who holds the key can therefore
+register a fake computer, sign a proof with its certificate, and be admitted
+without a human answer wherever the switch is on — shell-equivalent access to
+those machines. This is the direct cost of decision 1 ("same-account computers
+join automatically, without a confirmation") and it is accepted with that cost
+stated: the alternative is a confirmation on every computer, which is the
+behavior this amendment exists to remove. Required mitigations, all of them:
+
+- admission requires a proof verified by the target Host — a Gateway-CA
+  certificate with the account binding, a signature over the request payload,
+  and an unused, unexpired nonce — never a bare key;
+- **every new Host enrollment notifies the account's other computers**: each of
+  them shows a "a new computer joined the account" notice and writes an audit
+  record, so the attacker's first step is visible even before any device is
+  admitted. Every automatic admission produces its own "new device" notice and
+  audit record as well;
+- the first step can be undone where it happened: the operator revokes the
+  enrolled Host on the Gateway (`hosts revoke`), and any computer of the
+  account can revoke the admitted device, with the revocation reaching the
+  others as the signed frame of §11.5. A Host revocation also cascades: the
+  Gateway tells the account's other computers (`host.revoked`), and each of
+  them revokes the desktop devices that computer's proof admitted, so the
+  attacker's certificate stops buying access the moment it is revoked;
+- the per-computer switch turns automatic admission off, after which the
+  ordinary confirmation is required; strict mode does the same;
+- `owner` follows the proof, and a device without a verified proof is still a
+  phone-grade `viewer` / `controller` / `approver` under the ceiling.
+
+The proof's own certificate does not add a risk beyond the one above: a
+compromised Gateway CA can mint a certificate for a computer that does not
+exist, which is exactly the "compromised Gateway CA" risk D666 already records
+under its Accepted risk. The chain this Host pins, the account and `hostId`
+binding, and the requirement that the proof be verified by the target Host are
+what keep that risk from becoming a Gateway-only approval path; they do not
+make a compromised CA harmless, and nothing in this amendment claims they do.
+
+### Consequences
+
+- A new client class, a new capability string, a new device-proof payload, a
+  per-computer switch, and a WebSocket client route are all new code and new
+  failure modes (rollout R8).
+- The remote-control switch default changes for account-mode users. A user who
+  never touched the switch starts with a link; a user who turned it off is not
+  re-enabled.
+- Security §3.7 gains the desktop-class role rule and §3.8 the default and the
+  proof-verification rule, gate 27 is restated for the two cases, and gate 35
+  covers the proof, the refusals, and expired or replayed nonces.
+- A computer that predates this amendment is reported as needing an update
+  rather than silently unreachable.
+- SSH-paired hosts keep their behavior; the two shapes coexist, and the
+  desktop shows which one a host uses.

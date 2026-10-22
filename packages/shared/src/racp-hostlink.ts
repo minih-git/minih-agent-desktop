@@ -71,6 +71,17 @@ export const RACP_HOST_CAPABILITIES = {
   /** This Host adopts a signed grant from a sibling Host of its own account. */
   deviceAcceptSiblingGrant: "device.accept-sibling-grant",
   /**
+   * This Host can verify a desktop-class device proof and holds the "allow
+   * same-account computers to join automatically" switch that is part of that
+   * decision (ADR `remote-control-router-account-binding` amendment 3, decision
+   * 6). The switch state is *not* part of this claim: the capability says "send
+   * me the frames and I will decide", never "I will approve". A Host that does
+   * not announce it is never sent a desktop request — an older Host drops an
+   * unknown `type` silently, so sending one would leave the requesting desktop
+   * waiting for a frame that never comes.
+   */
+  deviceDesktopAuto: "device.desktop-auto",
+  /**
    * This Host reports the four notification-worthy events of §11.6, so the
    * Gateway may deliver push for them. A Host that does not announce this is
    * never expected to send `host.notify`, and the Gateway sends no push on its
@@ -88,17 +99,57 @@ export const RacpHostCapabilitiesFrameSchema = Type.Object({
 export type RacpHostCapabilitiesFrame = Static<typeof RacpHostCapabilitiesFrameSchema>;
 
 /**
+ * The proof a `desktop` request carries (ADR amendment 3, decision 2).
+ *
+ * An AccessKey proves an account, never a computer: anyone holding the key can
+ * enroll a Host and receive a certificate. This proof is the applicant saying
+ * "and I am that computer" — a signature made with the private key of the Host
+ * certificate this Gateway issued to it, over the request the Gateway minted.
+ * The nonce is the Gateway's, is single-use, and expires with the request, so
+ * the proof cannot be replayed into a second request.
+ *
+ * The Gateway may pre-check it as a fast reject. It is never the authorization:
+ * every target Host verifies it itself, against its own pinned Gateway CA and
+ * its own account binding (protocol §11.4 rule 7, security gate 35).
+ */
+export const RacpDeviceHostProofSchema = Type.Object({
+  /** The `hostId` of the computer asking, whose certificate made the signature. */
+  applicantHostId: Type.String({ minLength: 1 }),
+  /** Minted by the Gateway for this request; single-use and short-lived. */
+  nonce: Type.String({ minLength: 1, maxLength: 128 }),
+  /** base64url ECDSA P-256 / SHA-256 over `hostProofSigningPayload(...)`. */
+  signature: Type.String({ minLength: 1 }),
+  /**
+   * PEM of the applicant's own Host certificate. A target Host has no other way
+   * to obtain it: a proof is bytes, and only the Gateway knows which
+   * certificate it issued to which computer. The Host chains it to its own
+   * pinned Gateway CA and requires the `OU=account:` binding and the `hostId`
+   * common name to match, so a certificate that does not belong to this account
+   * cannot vouch for anything.
+   */
+  certificate: Type.String({ minLength: 1 }),
+});
+export type RacpDeviceHostProof = Static<typeof RacpDeviceHostProofSchema>;
+
+/**
  * A device request the Gateway fans out to the account's confirmable Hosts
  * (§11.5). `accountId` travels so a Host can refuse a request that is not for
  * its own account even if the Gateway misroutes it.
+ *
+ * `client: "desktop"` names a computer of the account asking to reach its
+ * siblings (ADR amendment 3, decision 1) and is the only class that carries a
+ * `hostProof`. Every other class keeps its shape unchanged: a request without
+ * `hostProof` can never be admitted as desktop-class, whatever the Gateway put
+ * in `client`.
  */
 export const RacpDeviceRequestSchema = Type.Object({
   requestId: Type.String({ minLength: 1 }),
   accountId: Type.String({ minLength: 1 }),
   deviceLabel: Type.String({ minLength: 1, maxLength: 128 }),
-  client: Type.Union([Type.Literal("web"), Type.Literal("ios"), Type.Literal("android")]),
+  client: Type.Union([Type.Literal("web"), Type.Literal("ios"), Type.Literal("android"), Type.Literal("desktop")]),
   requestedAt: Type.String(),
   expiresAt: Type.String(),
+  hostProof: Type.Optional(RacpDeviceHostProofSchema),
 });
 export type RacpDeviceRequest = Static<typeof RacpDeviceRequestSchema>;
 
@@ -116,6 +167,12 @@ export type RacpDeviceRequestFrame = Static<typeof RacpDeviceRequestFrameSchema>
  * signature against the Gateway CA, adopts the device by `tokenHash`, and can
  * then authenticate the token the client holds. The raw token never appears
  * here: it travels only in the `deviceToken` field of the Host-to-Gateway leg.
+ *
+ * A desktop-class grant also names the applicant and its proof, so a sibling
+ * can re-verify the same proof instead of taking the approving Host's word for
+ * it (ADR amendment 3, decision 3). Those fields are inside the signature: a
+ * Gateway that swapped in another computer's proof, or relabelled a phone-class
+ * grant as desktop-class, would break the signature.
  */
 export const RacpDeviceGrantSchema = Type.Object({
   grantId: Type.String({ minLength: 1 }),
@@ -133,6 +190,31 @@ export const RacpDeviceGrantSchema = Type.Object({
   issuedAt: Type.String(),
   /** How long the Gateway may still deliver this grant to an offline Host. */
   deliverUntil: Type.String(),
+  /**
+   * Absent on every grant minted before amendment 3, and read as `"phone"`:
+   * a device without a verified proof is phone-grade, never an owner.
+   */
+  deviceClass: Type.Optional(Type.Union([Type.Literal("phone"), Type.Literal("desktop")])),
+  /** Desktop-class only: the computer whose proof was verified. */
+  applicantHostId: Type.Optional(Type.String({ minLength: 1 })),
+  /** Desktop-class only: the single-use nonce the proof was made over. */
+  hostProofNonce: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  /** Desktop-class only: the request's own deadline, part of the proof payload. */
+  requestExpiresAt: Type.Optional(Type.String()),
+  /**
+   * Desktop-class only: the applicant's own Host certificate, PEM. A sibling has
+   * no other way to re-verify the proof — it chains this certificate to its own
+   * pinned Gateway CA and checks the account binding itself (ADR amendment 3,
+   * decision 3). It is inside the signature, so the Gateway cannot swap it for
+   * another computer's.
+   */
+  applicantCertificate: Type.Optional(Type.String({ minLength: 1 })),
+  /**
+   * Desktop-class only: the applicant's proof signature over the payload above.
+   * A sibling re-verifies these exact bytes, so it must travel inside the grant
+   * (and inside the grant's own signature, so the Gateway cannot substitute it).
+   */
+  hostProofSignature: Type.Optional(Type.String({ minLength: 1 })),
 });
 export type RacpDeviceGrant = Static<typeof RacpDeviceGrantSchema>;
 
@@ -175,6 +257,7 @@ export const RacpDeviceRevokeFrameSchema = Type.Object({
   signerCertificate: Type.String({ minLength: 1 }),
 });
 export type RacpDeviceRevokeFrame = Static<typeof RacpDeviceRevokeFrameSchema>;
+
 /**
  * The character set an id in a notification may use (protocol §11.6).
  *
@@ -186,6 +269,66 @@ export type RacpDeviceRevokeFrame = Static<typeof RacpDeviceRevokeFrameSchema>;
 export const RACP_NOTIFY_ID_PATTERN = "^[A-Za-z0-9._:-]{1,128}$";
 /** An id a notification may carry: bounded, and never free text. */
 const notifyId = () => Type.String({ minLength: 1, maxLength: 128, pattern: RACP_NOTIFY_ID_PATTERN });
+
+/**
+ * "A new computer joined the account" (ADR amendment 3, Accepted risk).
+ *
+ * This is the required mitigation, not a nicety: whoever holds the account's
+ * AccessKey can enroll a new Host, and that Host's certificate is enough to be
+ * admitted automatically. The first step of that attack must therefore be
+ * visible on every other computer of the account, before any device is
+ * admitted. The Gateway sends this frame to each Host that advertises
+ * `device.desktop-auto`, and keeps it for the ones that are offline — the same
+ * delivery window and re-offer-on-reconnect rule as `device.revoke`.
+ *
+ * It carries ids and a label only: the label is the one the enrolling operator
+ * typed, and nothing here is a credential.
+ */
+export const RacpHostJoinedSchema = Type.Object({
+  noticeId: notifyId(),
+  accountId: Type.String({ minLength: 1 }),
+  /** The Host that just joined; also the notice's subject. */
+  hostId: notifyId(),
+  label: Type.String({ maxLength: 128 }),
+  joinedAt: Type.String(),
+});
+export type RacpHostJoined = Static<typeof RacpHostJoinedSchema>;
+
+export const RacpHostJoinedFrameSchema = Type.Object({
+  link: Type.Literal(RACP_HOSTLINK_VERSION),
+  type: Type.Literal("host.joined"),
+  notice: RacpHostJoinedSchema,
+});
+export type RacpHostJoinedFrame = Static<typeof RacpHostJoinedFrameSchema>;
+
+/**
+ * "This computer was revoked on the Gateway" (ADR amendment 3, decision 4).
+ *
+ * `owner` follows the applicant's certificate: when the operator revokes a Host
+ * with `hosts revoke`, every desktop-class device that computer's proof
+ * admitted loses its standing with it. Only the Gateway observes a Host
+ * revocation, so it is the one that tells the account's other computers.
+ *
+ * Trusting this frame is safe because it only ever *removes* authority: the
+ * worst a forged one can do is revoke a device that would otherwise keep
+ * working. A frame that could grant something would need a Host signature; this
+ * one needs none.
+ */
+export const RacpHostRevokedSchema = Type.Object({
+  /** The revoked computer; also the applicant whose devices lose `owner`. */
+  hostId: notifyId(),
+  accountId: Type.String({ minLength: 1 }),
+  revokedAt: Type.String(),
+});
+export type RacpHostRevoked = Static<typeof RacpHostRevokedSchema>;
+
+export const RacpHostRevokedFrameSchema = Type.Object({
+  link: Type.Literal(RACP_HOSTLINK_VERSION),
+  type: Type.Literal("host.revoked"),
+  revocation: RacpHostRevokedSchema,
+});
+export type RacpHostRevokedFrame = Static<typeof RacpHostRevokedFrameSchema>;
+
 /**
  * The four events a notification may report (ADR 0331 decision 7, protocol
  * §11.6). The list is closed on purpose: a push says that one of these
@@ -215,6 +358,13 @@ export const RacpHostNotifySchema = Type.Object(
     sessionId: notifyId(),
     /** Present for the two request kinds; the answer the user is asked for. */
     approvalId: Type.Optional(notifyId()),
+    /**
+     * How many decisions this session still holds for the user, at the moment the
+     * Host reported the event (§17.6.2). The Gateway copies it into the push as the
+     * app badge, because only the Host knows what is still open — a number the
+     * Gateway invented would be wrong within minutes.
+     */
+    attentionCount: Type.Optional(Type.Integer({ minimum: 0, maximum: 10_000 })),
     /** RFC 3339, minted by the Host; never shown to anyone. */
     occurredAt: Type.String({ minLength: 1, maxLength: 64 }),
   },
@@ -279,6 +429,8 @@ export const RacpHostLinkFrameSchema = Type.Union([
   RacpDeviceRequestFrameSchema,
   RacpDeviceGrantFrameSchema,
   RacpDeviceRevokeFrameSchema,
+  RacpHostJoinedFrameSchema,
+  RacpHostRevokedFrameSchema,
   // ---- Redacted push (§11.6, R5 PR-6) ------------------------------------
   // Host to Gateway only, and only from a Host that advertises `push.notify`.
   RacpHostNotifyFrameSchema,
@@ -378,9 +530,24 @@ export const RACP_HTTP_ROUTE_LIST = {
   hosts: "GET /v1/hosts",
   pairDevice: "POST /v1/hosts/{hostId}/pair",
   projects: "GET /v1/projects",
+  /** The model catalog a controller may start a session on (R7, protocol §16.1). */
+  models: "GET /v1/models",
+  /**
+   * Register one directory as a project (rollout A2). The path travels in the
+   * body, not the URL: it is user data, and a body keeps it out of request logs
+   * and browser history.
+   */
+  registerProject: "POST /v1/projects",
+  /**
+   * Walk directories for the remote folder picker (rollout A2). `path` is the
+   * only query parameter; omitting it means the Host's browse root.
+   */
+  browseProjects: "GET /v1/projects:browse",
   sessions: "GET /v1/sessions",
   createSession: "POST /v1/sessions",
   getSession: "GET /v1/sessions/{sessionId}",
+  configureSession: "POST /v1/sessions/{sessionId}:configure",
+  renameSession: "POST /v1/sessions/{sessionId}:rename",
   attachSession: "POST /v1/sessions/{sessionId}:attach",
   sessionHistory: "GET /v1/sessions/{sessionId}/history",
   startTurn: "POST /v1/sessions/{sessionId}/turns",
@@ -406,9 +573,14 @@ export type RacpHttpRouteName = keyof typeof RACP_HTTP_ROUTE_LIST;
 export const RACP_METHOD_HTTP_ROUTES: Partial<Record<string, RacpHttpRouteName>> = {
   "host/list": "hosts",
   "project/list": "projects",
+  "model/list": "models",
+  "project/register": "registerProject",
+  "project/browse": "browseProjects",
   "session/list": "sessions",
   "session/create": "createSession",
   "session/get": "getSession",
+  "session/configure": "configureSession",
+  "session/rename": "renameSession",
   "session/attach": "attachSession",
   "session/history": "sessionHistory",
   "turn/start": "startTurn",
@@ -427,9 +599,14 @@ export const RACP_HTTP_ROUTE_PARAMS: Record<RacpHttpRouteName, readonly string[]
   hosts: [],
   pairDevice: ["hostId"],
   projects: [],
+  models: [],
+  registerProject: [],
+  browseProjects: [],
   sessions: [],
   createSession: [],
   getSession: ["sessionId"],
+  configureSession: ["sessionId"],
+  renameSession: ["sessionId"],
   attachSession: ["sessionId"],
   sessionHistory: ["sessionId"],
   startTurn: ["sessionId"],
@@ -461,9 +638,17 @@ export const RACP_HTTP_QUERY_PARAMS: Record<RacpHttpRouteName, Readonly<Record<s
   hosts: {},
   pairDevice: {},
   projects: {},
+  // `model/list` takes no parameter: the catalog is small and static per Host.
+  models: {},
+  // The registration path travels in the POST body, so no query parameter.
+  registerProject: {},
+  // `browse(path?)`: the directory to list, absolute and inside the root.
+  browseProjects: { path: "string" },
   sessions: {},
   createSession: {},
   getSession: {},
+  configureSession: {},
+  renameSession: {},
   attachSession: {},
   // `HistoryParams`: beforeItemId is a string cursor, limit a positive integer.
   sessionHistory: { beforeItemId: "string", limit: "integer" },
@@ -594,6 +779,12 @@ export const RacpPairHttpResponseSchema = Type.Object({
   hostId: Type.String({ minLength: 1 }),
   roles: Type.Array(Type.String(), { minItems: 1 }),
   /**
+   * The computer's own name, as its owner registered it. Additive and optional:
+   * a Gateway that predates it simply omits it, and the client then shows the
+   * host id rather than inventing a name.
+   */
+  hostLabel: Type.Optional(Type.String({ maxLength: 128 })),
+  /**
    * Present for native clients only: the token to store in the Keychain /
    * Keystore. Browsers receive it as an `HttpOnly; Secure; SameSite=Strict`
    * cookie and must never read it from the body.
@@ -694,6 +885,17 @@ export const RacpPushRegistrationRequestSchema = Type.Object({
   token: Type.String({ minLength: 1, maxLength: 4096 }),
   /** Optional app/bundle id, so one deployment can serve more than one build. */
   appId: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
+  /**
+   * "Only tell me about things that need me" (§17.6.5).
+   *
+   * Additive and optional: absent means today's behaviour, every kind is sent, and
+   * a Gateway that predates the field ignores it. The Gateway cannot filter this
+   * on the phone's behalf any other way — once a notification is delivered, the app
+   * cannot recall it — so the preference lives where the audience is decided. The
+   * answer echoes it (`preferences`), because a client that cannot see the echo
+   * would be showing a switch that does nothing.
+   */
+  onlyActionable: Type.Optional(Type.Boolean()),
 });
 export type RacpPushRegistrationRequest = Static<typeof RacpPushRegistrationRequestSchema>;
 
@@ -708,6 +910,16 @@ export const RacpPushRegistrationResponseSchema = Type.Object({
   enabled: Type.Boolean(),
   platform: Type.Union([Type.Literal("ios"), Type.Literal("android")]),
   hostIds: Type.Array(Type.String({ minLength: 1 })),
+  /**
+   * The preferences this Gateway actually stored (§17.6.5). Absent means the
+   * Gateway ignored the request's field — it predates it — and the client must not
+   * offer a switch it cannot honour.
+   */
+  preferences: Type.Optional(
+    Type.Object({
+      onlyActionable: Type.Boolean(),
+    }),
+  ),
 });
 export type RacpPushRegistrationResponse = Static<typeof RacpPushRegistrationResponseSchema>;
 
@@ -733,6 +945,8 @@ export const RacpPushPayloadSchema = Type.Object(
     hostId: notifyId(),
     sessionId: notifyId(),
     approvalId: Type.Optional(notifyId()),
+    /** Copied from the Host's `host.notify`; becomes `aps.badge`. */
+    attentionCount: Type.Optional(Type.Integer({ minimum: 0, maximum: 10_000 })),
     notifyId: notifyId(),
   },
   { additionalProperties: false },
@@ -748,9 +962,10 @@ export function pushKeysForKind(kind: RacpNotifyKind): { titleKey: string; bodyK
  * The Android resource name of a localization key (§11.6).
  *
  * Android resource names are `[a-z0-9_]`, so the dotted key the payload carries
- * for the app's own catalog becomes `push_notify_<kind>_<field>` in
- * `android.notification`. Without this, FCM's `title_loc_key` names a resource
- * that does not exist and the system renders an empty notification.
+ * becomes `push_notify_<kind>_<field>` in `strings.xml`. The mapping lives here
+ * because the generator that writes that file and the app that resolves a name at
+ * runtime must agree on it. The Gateway no longer sends the resource form itself:
+ * Android notifications are built by the app from a data-only message (§17.6.6).
  */
 export function androidResourceKey(key: string): string {
   return key.replace(/[.-]/g, "_");

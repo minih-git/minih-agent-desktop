@@ -1,11 +1,14 @@
 import { Type } from "@earendil-works/pi-ai";
 
 /**
- * Built-in cross-session delivery tools (ADR builtin-session-messaging).
+ * Built-in cross-session delivery tools (ADR builtin-session-messaging) and
+ * the session creation that gives them a target when none exists yet (ADR
+ * session-create-tool).
  *
  * They reach another session's Agent through the host-owned delivery ledger.
- * The model resolves a session title through `SessionList` and then addresses
- * the real Session ID, because titles are neither unique nor stable.
+ * The model resolves a session title through `SessionList`, addresses the real
+ * Session ID because titles are neither unique nor stable, and creates the
+ * session through `SessionCreate` when the user names one that does not exist.
  */
 
 const sessionId = Type.String({
@@ -43,6 +46,13 @@ export const sessionToolParameters: Record<string, Parameters<typeof Type.Object
       }),
     ),
   },
+  SessionCreate: {
+    title: Type.String({
+      minLength: 1,
+      maxLength: 80,
+      description: "Short title for the new session, as it will appear in the session list.",
+    }),
+  },
   SessionResult: {
     sessionId,
     messageId: Type.Optional(
@@ -55,7 +65,9 @@ export const sessionToolDescriptions: Record<string, string> = {
   SessionList:
     "List the other Agent sessions that can receive a delivery, optionally filtered by a title substring. Use it to turn a session name the user said into a real Session ID, and to confirm the target before sending. Titles are not unique: when several sessions match, ask the user which one instead of guessing. Only Agent-mode sessions appear.",
   SessionSend:
-    "Deliver a task or message to another existing Agent session, which starts (or queues behind its current work) and runs with the target's own project, model, context and permissions. Use it when the user asks to hand work to a session by name: resolve the name with SessionList first, then send to that Session ID. The target receives this as a session message, not as user input, so it cannot ask the user follow-up questions; write a self-contained brief, and expect a durable completion notice in this session unless notifyOnCompletion is false. This tool cannot create a session or cancel another sender's delivery.",
+    "Deliver a task or message to another existing Agent session, which starts (or queues behind its current work) and runs with the target's own project, model, context and permissions. Use it when the user asks to hand work to a session by name: resolve the name with SessionList first, then send to that Session ID. The target receives this as a session message, not as user input, so it cannot ask the user follow-up questions; write a self-contained brief, and expect a durable completion notice in this session unless notifyOnCompletion is false. This tool cannot create a session: use SessionCreate first when no session exists yet. It cannot cancel another sender's delivery either.",
   SessionResult:
     "Read the durable outcome of the latest delivery this session made into a session, or of one such delivery by messageId: status, result, error and the task text. Use it after a SessionSend to check a delivery that has not completed, or when the completion notice is not enough. Deliveries sent by other sessions or plugins are not readable here.",
+  SessionCreate:
+    "Create a new Agent session, so work can be handed to a session that does not exist yet. Use it when the user names a target session and SessionList shows none, then deliver the task to the returned Session ID with SessionSend. The new session runs on the model configured in Settings > AI (session creation model) and inherits this session's project, thinking level and permission mode; while that setting is unset this tool refuses instead of spending the app default model. It creates the session only: it starts no turn, sends no task, and does not rename or reuse an existing session.",
 };

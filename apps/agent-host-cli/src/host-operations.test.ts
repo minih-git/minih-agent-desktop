@@ -66,7 +66,7 @@ describe("agent-host-cli operations over host-core", () => {
     expect(calls.find((call) => call.method === "session.create")?.params).toMatchObject({ projectPath: root });
     await expect(operations.sessions.create({ projectId: "99" }, { subject: "d", roles: ["owner"] })).rejects.toMatchObject({ code: "NOT_FOUND" });
     busy = true;
-    await expect(operations.sessions.configure("s1", { mode: "plan" })).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(operations.sessions.configure("s1", { mode: "plan" })).rejects.toMatchObject({ code: "AGENT_BUSY" });
     busy = false;
     expect((await operations.sessions.configure("s1", { permissionMode: "accept-edits" })).permissionMode).toBe("accept-edits");
   });
@@ -127,7 +127,8 @@ describe("agent-host-cli operations over host-core", () => {
     expect(await operations.workspace.read("s1", "README.md")).toMatchObject({ kind: "text", content: "hello" });
     await expect(operations.workspace.read("s1", "../../etc/passwd")).rejects.toMatchObject({ code: "REMOTE_PATH_FORBIDDEN" });
     await expect(operations.workspace.read("s1", "nope.txt")).rejects.toMatchObject({ code: "REMOTE_PATH_FORBIDDEN" });
-    await expect(operations.workspace.list("s9", "")).rejects.toBeInstanceOf(RacpError);
+    // A session the Host does not have is a refusal, whatever class carries it.
+    await expect(operations.workspace.list("s9", "")).rejects.toMatchObject({ code: "NOT_FOUND" });
     const diff = await operations.workspace.diff("s1");
     expect(diff.repo).toBe(false);
   });

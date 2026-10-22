@@ -1,6 +1,6 @@
 # ADR 0262: Chat File References Complete in Main and Open in the File View
 
-- **Status**: Accepted
+- **Status**: Accepted (amended: a folder reference is revealed, not opened)
 - **Date**: 2026-09-14
 - **Related**: [ADR 0104](0104-plugin-contributed-work-panel-views.md) ·
   [ADR 0124](0124-temporary-session-scratch-workspace.md) ·
@@ -93,6 +93,24 @@ work-panel tab already carries was honoured by main for `pi.browser` only.
 5. **The bundled copy moves to v0.4.0** through ADR 0241's re-sync procedure, and
    the same release is published to the plugin center: the marketplace and the
    bundled copy ship the same bytes.
+6. **A folder is shown, never opened.** A chat token can name a folder
+   (`apps/desktop/src/`, the project root itself) as readily as a file, so an
+   exact reference resolves to one and reports `entryKind`. Its click selects it
+   in the system file manager instead of entering the file view, and its context
+   menu offers **Reveal in Finder** plus the copy actions. Opening is wrong on
+   both available paths: `fs/open` hands the path to the OS default handler,
+   which launches an `.app` bundle rather than showing it, and
+   `pi.file-manager` takes file locations only. A remote session has no local
+   folder to select, so it reports that instead of doing nothing.
+7. **The shapes that can look like prose are confirmed first.** A folder or an
+   extensionless path becomes a link only after `fs.resolveRef` says the entry
+   exists, because a reply also writes `/api/v1/users` as a route and `foo/bar`
+   as a ratio. A bare relative `foo/bar` in prose is not a candidate at all;
+   inline code, a trailing separator, and an absolute or home anchor are. The
+   confirmation is cached per workspace, session, and path, and only a
+   confirmation is kept: a reply that names a folder it is about to create gets
+   its link once the folder exists. `~` is expanded in main before the same
+   containment check, so a home path is neither dropped nor exempt.
 
 ## Consequences
 
@@ -112,11 +130,20 @@ work-panel tab already carries was honoured by main for `pi.browser` only.
   when, the host asks it for a path the host itself picked. A defect in that
   path handling is not caught by the host gateway; that is the same trust
   position ADR 0241 already took, extended by one explicitly-named case.
-- A chat click no longer hands a file to the OS default application. That action
-  is still reachable from the file view's own context menu.
-- `fs.resolveRef` is a new renderer-facing channel. `fs/open` (ADR 0163) remains
-  part of the IPC surface; the transcript is simply no longer one of its
-  callers.
+- A normal chat click no longer hands a file to the OS default application.
+  Explicit transcript context-menu actions can open a local file with its
+  default application or reveal it in the system file manager; both resolve the
+  reference first and reuse the existing host containment checks.
+- A folder reference is actionable where it lives rather than in the app. That is
+  a smaller promise than the file view makes — no rename, no drag, no delete —
+  and it is the honest one: the app has no folder surface of its own.
+- Recognition now depends on the host being reachable, because an unconfirmed
+  candidate renders as text. A session without local tools never asks, so a
+  folder or an extensionless path stays plain text there; a file with a known
+  extension is unaffected and stays a link.
+- `fs.resolveRef` is a renderer-facing channel. Explicit transcript context-menu
+  destinations reuse `fs/open` (ADR 0163) and `fs/reveal`; normal clicks retain
+  the file-view and browser destinations above.
 
 ## Alternatives considered
 

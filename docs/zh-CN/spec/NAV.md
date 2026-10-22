@@ -50,6 +50,7 @@
 - [live-work-session.md](/zh-CN/spec/03-runtime/live-work-session)
 - [21-image-generation.md](/zh-CN/spec/03-runtime/21-image-generation)
 - [22-config-sync.md](/zh-CN/spec/03-runtime/22-config-sync)
+- [23-project-archive.md](/zh-CN/spec/03-runtime/23-project-archive)
 - [svg-attachment-input.md](/zh-CN/spec/03-runtime/svg-attachment-input)
 
 ## 4. 用户体验
@@ -66,6 +67,7 @@
 - [10-workbuddy-benchmark-ux.md](/zh-CN/spec/04-ux/10-workbuddy-benchmark-ux)
 - [11-asktool-question-card.md](/zh-CN/spec/04-ux/11-asktool-question-card)
 - [12-prompt-enhancement.md](/zh-CN/spec/04-ux/12-prompt-enhancement)
+- [13-remote-mobile-client.md](/zh-CN/spec/04-ux/13-remote-mobile-client)
 
 ## 5. 安全性
 - [README.md](/zh-CN/spec/05-security/README)

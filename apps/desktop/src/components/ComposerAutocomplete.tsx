@@ -1,12 +1,14 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { ComposerCommand } from "@minih-agent/shared";
+import { formatUpdated, sessionTimestamp } from "../lib/project-archive";
 import type {
   CompletionController,
   CompletionItem,
 } from "../features/chat/composer/hooks/useComposerCompletions";
 import {
   IconBookOpen,
+  IconChat,
   IconFileText,
   IconFolder,
   IconPlug,
@@ -16,9 +18,12 @@ import {
 import { AnchoredMenu } from "./settings/AnchoredMenu";
 
 /**
- * Composer autocomplete panel (D123–D125, spec 08 §11.8): full composer
+ * Composer autocomplete panel (D123–D125, D673, spec 08 §11.8): full composer
  * width above the input, focus stays in the textarea — rows accept on
  * mousedown so the caret never leaves the draft.
+ *
+ * The host's `#` session targets are one group of rows like any other, and a
+ * plugin owning the same symbol lists its own group after them.
  */
 
 function Highlighted({
@@ -69,7 +74,8 @@ export function ComposerAutocomplete({
   ac: CompletionController;
   onAccept: (index: number) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? i18n.language;
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -90,7 +96,9 @@ export function ComposerAutocomplete({
           ? `c:${item.command.kind}:${item.command.name}`
           : item.kind === "plugin"
             ? `pl:${item.pluginId}:${index}`
-            : `p:${item.entry.path}`,
+            : item.kind === "session"
+              ? `s:${item.session.id}`
+              : `p:${item.entry.path}`,
       type: "button" as const,
       role: "option" as const,
       "aria-selected": active,
@@ -135,6 +143,26 @@ export function ComposerAutocomplete({
         </button>
       );
     }
+    if (item.kind === "session") {
+      const { session, match } = item;
+      return (
+        <button
+          {...commonProps}
+          aria-label={session.title}
+          title={session.id}
+        >
+          <span className="composer-ac-icon">
+            <IconChat size={14} />
+          </span>
+          <span className="composer-ac-name">
+            <Highlighted text={session.title} ranges={match.ranges} />
+          </span>
+          <span className="composer-ac-path">
+            {formatUpdated(sessionTimestamp(session.updatedAt), locale, t("chat.sessionTargetNoDate"))}
+          </span>
+        </button>
+      );
+    }
     const isDir = item.entry.kind === "dir";
     const name = item.entry.path.split("/").pop() ?? item.entry.path;
     const displayName = `${name}${isDir ? "/" : ""}`;
@@ -163,6 +191,16 @@ export function ComposerAutocomplete({
         rows.push(
           <div key={`g:${group}`} className="composer-model-group-label">
             {t(GROUP_KEYS[group])}
+          </div>,
+        );
+      }
+    } else if (item.kind === "session") {
+      // The host's own `#` group, ahead of any plugin that owns the symbol.
+      if (lastGroup !== "session") {
+        lastGroup = "session";
+        rows.push(
+          <div key="g:session" className="composer-model-group-label">
+            {t("chat.sessionTargetGroup")}
           </div>,
         );
       }
@@ -195,9 +233,11 @@ export function ComposerAutocomplete({
       label={t(
         ac.mode === "file"
           ? "chat.fileMenu"
-          : ac.mode === "plugin"
-            ? "chat.pluginTriggerMenu"
-            : "chat.slashMenu",
+          : ac.mode === "session"
+            ? "chat.sessionTargetMenu"
+            : ac.mode === "plugin"
+              ? "chat.pluginTriggerMenu"
+              : "chat.slashMenu",
       )}
       role="listbox"
       side="top"

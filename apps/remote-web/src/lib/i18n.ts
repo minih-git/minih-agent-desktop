@@ -32,6 +32,9 @@ export async function initI18n(language?: string): Promise<void> {
  * data, not UI copy, so it is passed through unchanged).
  */
 export function failureReasonText(t: TFunction, failure: OperationFailure): string {
+  if (failure.code === "FORBIDDEN" && failure.message.includes("not available to remote devices")) {
+    return t("error.reason.unsupported");
+  }
   const key = reasonKeyForCode(failure.code);
   return key ? t(key) : failure.message;
 }

@@ -29,6 +29,13 @@ pnpm --filter @minih-agent/remote-web test       # pure-logic vitest suite (no D
 * The browser's device cookie is scoped to `Path=/hosts/{hostId}`, so
   `GET /v1/hosts` is deliberately not used: host status is probed with
   `GET /hosts/{hostId}/v1/sessions` (2xx online, 503 offline, 401 revoked).
+  The sessions screen does not probe on top of that: it already calls
+  `session/list`, which answers 503 while the Host link is down and 401 before
+  this Host has adopted the device, so it reads its status off that answer
+  (`hostStatusFromFailure`) instead of spending a second round trip on the same
+  question. Its project catalog is read once per visit too — the effect that
+  loads it is keyed on the device's recorded roles, not on the catalog it
+  fills.
 * Pairing posts to `POST /v1/hosts/{hostId}/pair` with the pairing token in the
   `Authorization` header. The browser sends `client: "web"` and receives the
   `HttpOnly` device cookie plus a CSRF token in the body; a native build sends
@@ -112,6 +119,137 @@ computers to approve ONE device, and then use that device on all of them.
   ticket for that Host). A native build is not affected: it holds one
   account-scoped token and addresses whichever Host id it likes.
 
+## Sessions by project, and new sessions
+
+The session screen leads with projects, the way the desktop sidebar does.
+
+* **Headings.** `project/list` (viewer role, protocol §7.7) supplies the project
+  names; `src/lib/session-groups.ts` turns the two lists into the groups the
+  screen renders. A project's sessions are ordered by most recent activity
+  (then newest created, then id), and the projects themselves are ordered by
+  their most recent session — the same order the desktop sidebar uses. A
+  project that holds no session is not shown, because an empty heading is
+  something the user cannot act on.
+* **Nothing disappears.** A session with no `projectId`, or with a project that
+  is no longer in the catalog, lands in one trailing "Other" group. Archiving a
+  project hides it from the new-session choice but not its history, so its
+  sessions keep their project's name.
+* **When `project/list` fails.** The list stays flat, every session falls under
+  "Other", and an amber line says the project list could not be loaded. The
+  screen never becomes unusable because a heading could not be read.
+* **New session.** `session/create` (controller role, `POST /v1/sessions`) takes
+  the *project id* the catalog named, not a path, which is exactly why
+  `project/list` exists. `src/lib/mutations.ts` sends `projectId` and, only when
+  it is not blank, a trimmed `title` — the rest of `SessionCreateParams` (mode,
+  permission mode, provider, model) is left to the Host's own defaults rather
+  than invented here. With one usable project the button goes straight to it;
+  with several it asks which one, and archived projects are not offered at all.
+  The created session opens on its composer, so the first message can be sent
+  immediately.
+* **Who may create.** The roles the Gateway granted the device are recorded in
+  the registry entry when the device is paired **or adopted as an account
+  device** (`src/lib/credential-port.ts`, `src/lib/native-credential-port.ts`),
+  because `connection/initialize` has no RACP-HTTP mapping. Account adoption
+  reads them from the grant's status answer and writes the same set on every
+  Host of the account — one grant is one principal. A recorded absence of
+  `controller` replaces the button with the reason; an entry written before that
+  field existed is treated as unknown, so the button is offered and the Host's
+  own `FORBIDDEN` is shown as itself.
+* **Adding a project.** When the project the user wants is not in the list yet,
+  **Add a project** opens the Host's folder picker (`project/browse`,
+  controller role): it starts at the Host's browse root — the user's home
+  directory — walks down a level at a time, and offers **Up** until it is back
+  at the root. Picking a folder registers it (`project/register`) and opens a
+  session in it, so the folder does not have to be created on the desktop first.
+  Both operations are `controller`, and the Host confines them to that root: a
+  `..` detour, a relative path, or a symlink pointing outside is refused with
+  `REMOTE_PATH_FORBIDDEN`, and a directory that does not exist is reported as
+  missing rather than created. Paths are *shown* from the root (`~/Projects/app`)
+  so a phone screen never prints the account name; the request still carries the
+  Host's own absolute spelling.
+* **Known limit.** A browse answer carries at most 500 directories and has no
+  "more" affordance, so a folder with more than 500 sub-folders shows only the
+  first 500 (alphabetically). The root and every level are bounded the same way;
+  filtering or search inside the picker is not implemented.
+* **Which Hosts offer it.** A `controller` device may call all three operations;
+  a `viewer`-only device may not, and the Host answers `FORBIDDEN`, which the
+  screen shows as itself. A desktop must run a build that includes the A2 Host
+  change; a self-hosted Gateway must be new enough to expose the two new routes
+  (`POST /v1/projects`, `GET /v1/projects:browse`), otherwise the phone gets
+  `NOT_FOUND` for them.
+
+## The session timeline
+
+The session screen renders one row per item, from one projection, whatever the
+item arrived through.
+
+* **One projection.** A history row is a whole `UiMessage` and a live row is an
+  event, so the two used to be narrowed differently and disagreed: a tool call
+  recorded before the client attached had no name and no body, while the same
+  call arriving live was rendered by name. `src/lib/timeline-items.ts`
+  (`projectMessage`) projects both, and a row carries the tool's name and status
+  (`running` / `success` / `error` / `denied`), its arguments and result, and —
+  for a user row — the command, the attachment names, and the side-note marker.
+* **The rows the desktop hides stay hidden.** `isVisibleMessage`,
+  `messageThinking`, and `messageContentFacts` live in
+  `packages/shared/src/transcript-visibility.ts` and are imported by the desktop
+  app as well, so internal model instructions (`system` + `modelSystem`) and an
+  empty assistant row are dropped in one place for both clients. What a user row
+  reads as stays in `src/lib/timeline-items.ts` (`userMessageText`), because the
+  desktop's editable row adds an edit-mode condition of its own.
+* **Attach first, then subscribe.** The screen attaches, arms the snapshot's
+  `cursor` (`src/lib/stream-cursor.ts`), and opens the event stream from it
+  (`useSessionScreen`, `RacpClient.stream`); durable events that arrive before
+  that snapshot are dropped, because the snapshot's replay is the only source for
+  them. The cursor is handed out once: every later open — a reconnect after a
+  drop, or the reopen after a fresh snapshot — resumes from the last event the
+  stream delivered, so a drop never replays the page again. Protocol §5.4 states
+  the rule: the snapshot does not say where the stream begins.
+* **Older rows on demand.** `session/history` returns a page of 100 items,
+  ordered oldest to newest (protocol §7.6). Opening a session loads at most three
+  pages (`MAX_HISTORY_PAGES`) until the view holds the reader's last two messages
+  or about 30 rows, and **Load earlier** loads exactly one more page; the walk
+  advances with the page's oldest row, and the automatic top-up and a press share
+  one in-flight load (`singleFlight`). A prepend never trims; only an append
+  trims from the oldest end (`MAX_TIMELINE_ITEMS`) — and because a row dropped
+  that way came from history, the entry stays offered (`appendItem`).
+* **A page is a window, not the transcript.** The Host reads the `limit` items
+  that end where `beforeItemId` names and reports `hasMore` from the transcript
+  itself (`packages/host-runtime/src/host-ports.ts`), so a 12 MB, 572-message
+  session costs one bounded read per page instead of a full parse and
+  re-serialization per page. The same read caps each item's text and tool
+  payload at 64 Ki characters and marks what it clipped in the text itself, so
+  one huge tool result cannot arrive whole; a page whose `beforeItemId` the
+  transcript no longer holds is empty with `hasMore: false`, which ends the
+  walk instead of replaying the tail into the older-page slot. Compaction
+  records ride the same cap: a display read sends the newest checkpoint once
+  (not also as `compaction`) without its `retainedTail` or
+  `details.systemMessageJson`, which no client renders. On the same session
+  that took the metadata read from 1.2 MB to 29 KB and the snapshot from
+  1.90 MB to 0.90 MB.
+* **The composer stays in place.** The shell is `h-dvh` and `main` is the scroll
+  container, so a long session opens on its newest row with the composer on
+  screen; a `visualViewport` resize keeps it above the iOS keyboard. Following
+  stops as soon as the reader scrolls away, and a sticky control returns them —
+  with the number of rows they missed, or a "needs your decision" prompt — while
+  `prefers-reduced-motion` turns that jump into an instant one. Rows loaded above
+  are not "new messages" (`appendedRows`), so they never raise that number.
+* **The reader keeps their place.** A layout effect in `useTimelineScroll` puts
+  the row the reader was looking at back where it was after older rows arrive,
+  found by `data-item-id`; what it compares is the row's offset inside the
+  content, so the reader's own scrolling and the "back to latest" jump are never
+  undone. Rows also carry `[overflow-anchor:none]`, so the browser does not add a
+  second, engine-specific correction on top of it — iOS WebKit has no scroll
+  anchoring at all, and the phone is the target.
+* **Coverage.** `timeline-projection.test.ts`, `timeline-subscribe-order.test.ts`,
+  `timeline-history.test.ts`, and `scroll.test.ts` cover the projection, the
+  subscription order, the paging rules, the single flight, and the scroll
+  arithmetic. This package has no DOM test environment (`environment: "node"`),
+  so the screen's user path is covered end to end instead:
+  `pnpm test:e2e:remote-web` opens an 80-turn session in real Chromium and
+  asserts the order of the loaded pages, that the row being read does not move,
+  and that loading older rows raises no unread count.
+
 ## Push notifications (native only)
 
 The native app can receive the four notification-worthy events of protocol §11.6
@@ -142,21 +280,29 @@ the app, and the H5 client has nothing to register.
   without ids opens the Host list. The payload's text is never rendered, only
   resolved as a key, which is why the notification can say "Needs your decision"
   in the user's language without the Gateway knowing it.
-* **Operator material, never committed.** Two files belong to whoever builds the
-  app, and neither ships in this repository (a test enforces that):
+* **The iOS capability is committed; the signing material is not.** Push needs
+  two different kinds of file, and only one of them is a secret.
 
-  1. **iOS**: enable the *Push Notifications* capability for your App ID in
-     Xcode (target → Signing & Capabilities), which creates
-     `ios/App/App/App.entitlements` with `aps-environment`. A build without it
-     compiles and runs; it simply receives no notification. Ship the APNs `.p8`
-     key — not this file — to the Gateway (`--apns-key-file`, see the Gateway
-     README).
-  2. **Android**: download `google-services.json` from your Firebase project and
-     place it at `android/app/google-services.json` before
-     `pnpm cap:sync`, and add the Google Services Gradle plugin to the app module
-     as Firebase documents. Without it the app builds and runs and simply
-     receives no notification. Ship the service-account JSON — not this file —
-     to the Gateway (`--fcm-service-account-file`).
+  1. **iOS entitlement: in the repository.** `ios/App/App/App.entitlements` holds
+     `aps-environment` and is referenced by both build configurations, because a
+     build without it compiles, runs, and silently receives nothing — the one
+     failure nobody can debug from a log. `src/lib/native-config.test.ts` keeps
+     that file present, keeps it to the push key alone, and still fails if any
+     signing material appears. Signing with automatic signing enables the
+     capability for your App ID on first build. A TestFlight or App Store build
+     needs `production` there instead of `development`, or APNs rejects every
+     token with `BadDeviceToken`.
+  2. **APNs `.p8` key: the Gateway's, never the repository's.** Create it under
+     Apple Developer → Keys, download it once, and install it on the Gateway host
+     as `--apns-key-file` with the key id, team id, and your bundle id
+     (`--apns-key-id`, `--apns-team-id`, `--apns-topic`); see the Gateway README,
+     "Redacted push". The Gateway refuses a key file anyone else can read.
+  3. **Android: still operator material.** Download `google-services.json` from
+     your Firebase project and place it at `android/app/google-services.json`
+     before `pnpm cap:sync`, and add the Google Services Gradle plugin to the app
+     module as Firebase documents. Without it the app builds and runs and simply
+     receives no notification. Ship the service-account JSON — not this file — to
+     the Gateway (`--fcm-service-account-file`).
 
   `VITE_APP_ID` optionally tags a registration with the app id, so one Gateway
   can serve more than one build; absent, the Gateway accepts the registration

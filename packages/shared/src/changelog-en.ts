@@ -2,13 +2,41 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.24.0",
+    date: "2026-10-21",
+    highlights: [
+      "The phone now separates projects from conversations: you pick a project, then a conversation inside it, with one vocabulary for every state and a clear notice when the app returns to the foreground.",
+      "A conversation reports when it is waiting for your answer, so the phone no longer shows a pending question as a busy turn.",
+      "Notifications name the conversation on the lock screen and carry the number of decisions still waiting; on Android the app draws its own notification, so tapping one opens that conversation.",
+      "Push can be limited to the events that need you, several events of one conversation group together, and the iPhone build now carries the push entitlement.",
+      "A phone can send pictures and small files into a conversation running on your computer.",
+      "A phone can see which model a conversation uses and switch it.",
+      "Answers render as Markdown in the phone timeline, long histories load in windows without moving what you are reading, and going back behaves the same on every path.",
+      "Selecting text in a desktop reply quotes it into the input box, and a plugin can open a local file directly in the work panel browser view.",
+    ],
+  },
+  {
+    version: "0.23.0",
+    date: "2026-10-20",
+    highlights: [
+      "The mobile app has a brand-new design, with refreshed screens for connecting to your computers, managing hosts, and chatting, plus a rebuilt conversation timeline and clearer high-risk and stop confirmations.",
+      "Your phone can now start new sessions on your computer — with project registration and folder browsing when adding one — sessions there are grouped by project, and computers show their real names instead of a host ID.",
+      "A phone session now opens at the newest message and loads earlier history on demand, shows the same rows as the desktop, and keeps the input above the keyboard on iOS.",
+      "Type # in the composer to target another session: suggestions appear as you type, and the chosen target becomes a clickable chip in your message.",
+      "When you ask the agent to hand work to a session that does not exist yet, it can now create one for you, and you can pick the model used for those hand-offs in Settings.",
+      "Side notes now answer from a read-only snapshot of the conversation without nudging a running task, and each question keeps its answer in the side panel.",
+      "Automatic context compaction no longer pops up a notification; it appears as an inline marker in the transcript instead, while a failed manual compaction still shows the real error.",
+      "Paths the agent mentions now become links even for folders and extensionless files, and references outside the project offer reveal-in-file-manager or copy path instead of a dead \"restricted\" message.",
+    ],
+  },
+  {
     version: "0.22.1",
     date: "2026-10-19",
     highlights: [
       "Router networking starts only after the configured API endpoint authenticates your AccessKey and supplies its network identity. Changing the endpoint or key replaces the old tunnel instead of keeping the wrong gateway.",
       "Network Center is shown only in developer mode, where explicit manual settings remain available. Upgrade note: use a publicly reachable Router endpoint; gateways without bootstrap no longer start the built-in tunnel automatically.",
       "Fixed project memories merge when projects join a group, reject oversized merges without partial writes, and keep note identifiers unique. Learned memory sync merges individual notes and preserves deletions.",
-      "Send side notes from the work panel without interrupting a running task; drafts survive submission and subagent details can be collapsed without reopening the panel.",
+      "Side notes now answer independently in the work panel instead of steering the main task. Questions and answers stay in the panel; drafts survive submission, and subagent details can be collapsed without reopening it.",
       "Switching models rechecks context usage and compacts oversized conversations before continuing. Tool discovery has its own presentation and failed searches no longer claim that nothing matched.",
       "Remote account discovery begins at desktop startup, native remote clients can load sessions through the Gateway, and background task output stays scoped to its conversation.",
     ],

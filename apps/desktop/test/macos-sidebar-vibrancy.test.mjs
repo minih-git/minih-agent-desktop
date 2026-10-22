@@ -33,10 +33,7 @@ test("macOS main window enables native sidebar vibrancy only in its platform bra
   // The position itself lives in @minih-agent/shared so the renderer's reserve
   // for it (styles/tokens.css) is derived from the same numbers.
   assert.match(macOptions, /trafficLightPosition:\s*MAC_TRAFFIC_LIGHT_POSITION/);
-  assert.match(macOptions, /vibrancy:\s*"sidebar"/);
-  assert.match(macOptions, /visualEffectState:\s*"followWindow"/);
-  assert.match(macOptions, /transparent:\s*true/);
-  assert.match(macOptions, /backgroundColor:\s*"#00000000"/);
+  assert.match(macOptions, /macosWindowSurfaceOptions\(\s*windowState\.macosWindowTranslucency,/);
   assert.doesNotMatch(
     mainWindowBlock,
     /vibrancy:\s*"under-window"/,
@@ -86,7 +83,7 @@ test("native theme source maps preferences and only resets vibrancy on change", 
   assert.match(applyNative, /if \(nativeTheme\.themeSource === next\) return;/);
   assert.match(
     applyNative,
-    /nativeTheme\.themeSource = next;\s*if \(process\.platform === "darwin" && state\.mainWindow && !state\.mainWindow\.isDestroyed\(\)\) \{\s*state\.mainWindow\.setVibrancy\("sidebar"\);/,
+    /nativeTheme\.themeSource = next;[\s\S]*?process\.platform === "darwin" &&\s*state\.macosWindowTranslucency &&\s*state\.mainWindow &&\s*!state\.mainWindow\.isDestroyed\(\)\s*\) \{\s*state\.mainWindow\.setVibrancy\("sidebar"\);/,
   );
 
   // The theme mapping lives in `applyAppThemePreference` so the narrow plugin

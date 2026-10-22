@@ -1302,3 +1302,10 @@ must remain outside optional disclosures.
   使用标签行与独立候选磁贴，不绘制着色分组条带。技能和 MCP 导入遵循各自页面当前的
   全局/项目筛选及所选项目；会话导入由插件 API 提供。
 - 浅色目的地卡使用白色高架板（不是平坦的灰色填充）
+
+### Active work-panel close visibility
+
+Activating an overflowing work-panel tab scrolls its wrapper, label and close
+action into the existing visible strip. The close action remains reachable by
+pointer and keyboard; session-scoped tabs, reorder behavior, the fixed add
+trigger, sidebar width loans and subagent controls remain unchanged.

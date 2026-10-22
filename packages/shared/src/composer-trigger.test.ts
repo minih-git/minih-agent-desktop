@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parseSessionLinks } from "./session-link.js";
 import {
   applyCompletion,
   detectTrigger,
@@ -299,5 +300,73 @@ describe("compact file references", () => {
     // Token or not, a session reference never becomes an appended @path.
     expect(serializeComposerFileReferences("", [reference])).toBe("");
     expect(serializeComposerFileReferences("", [{ path: id, kind: "session" }])).toBe("");
+  });
+
+  it("sends a session target as its #title sentence, never as a link or @path", () => {
+    const id = "6f1d2c3b-4a59-4e7f-8a90-b1c2d3e4f506";
+    const reference = { path: id, name: "Review the diff", kind: "sessionTarget", token: "\uE001" };
+    const expected = `ask #Review the diff (Session ID: ${id}) now`;
+    expect(serializeInlineComposerFileReferences(`ask \uE001 now`, [reference])).toBe(expected);
+    expect(serializeComposerFileReferences(`ask \uE001 now`, [reference])).toBe(expected);
+    // No link, so main's resolver attaches no excerpt of that conversation.
+    expect(parseSessionLinks(serializeComposerFileReferences(`ask \uE001 now`, [reference]))).toEqual([]);
+    // Token or not, a target never becomes an appended @path.
+    expect(serializeComposerFileReferences("", [reference])).toBe("");
+    expect(serializeComposerFileReferences("", [{ path: id, name: "Review", kind: "sessionTarget" }])).toBe("");
+  });
+});
+
+describe("detectTrigger — session target mode", () => {
+  it("triggers on a bare # at a line start or after whitespace", () => {
+    expect(detectTrigger("#", 1)).toEqual({
+      mode: "session",
+      query: "",
+      tokenStart: 0,
+      tokenEnd: 1,
+    });
+    expect(detectTrigger("#rev", 4)).toMatchObject({ mode: "session", query: "rev", tokenStart: 0 });
+    expect(detectTrigger("fix #rev", 8)).toMatchObject({ mode: "session", query: "rev", tokenStart: 4 });
+    expect(detectTrigger("line\n#rev", 9)).toMatchObject({ mode: "session", tokenStart: 5 });
+    // The query runs to the caret, not to the end of the word.
+    expect(detectTrigger("#review me", 4)).toMatchObject({ mode: "session", query: "rev" });
+  });
+
+  it("treats the full-width form as the same trigger", () => {
+    const match = detectTrigger("\uFF03rev", 4);
+    expect(match).toMatchObject({ mode: "session", query: "rev", tokenStart: 0, tokenEnd: 4 });
+    expect(detectTrigger("\uFF03", 1)).toMatchObject({ mode: "session", query: "" });
+  });
+
+  it("does not trigger inside a word or before the symbol", () => {
+    // `issue#12` and `#123` are ordinary text; only a boundary starts a target.
+    expect(detectTrigger("issue#12", 8)).toBeNull();
+    expect(detectTrigger("a=1#2", 5)).toBeNull();
+    expect(detectTrigger("#rev", 0)).toBeNull();
+  });
+
+  it("keeps a Markdown heading and an issue number as the queries they are", () => {
+    // A second `#` is part of the query, and the mode is not a placeholder: the
+    // Composer only opens the group when a session actually matches, so these
+    // stay ordinary text when none does.
+    expect(detectTrigger("## Title", 2)).toMatchObject({ mode: "session", query: "#" });
+    expect(detectTrigger("#123", 4)).toMatchObject({ mode: "session", query: "123" });
+    // Once the heading's space arrives the token is over.
+    expect(detectTrigger("## Title", 8)).toBeNull();
+  });
+
+  it("keeps the file mode's quoted form away from the session mode", () => {
+    // `@"` opens a quoted path, and only while the caret is inside the quotes.
+    expect(detectTrigger('@"my file', 9)).toMatchObject({ mode: "file" });
+    // `#` has no quoted form, and a quote still ends the token, so the `#`
+    // before one is not a target start.
+    expect(detectTrigger('#"a', 3)).toBeNull();
+    expect(detectTrigger('#a"b', 5)).toBeNull();
+  });
+
+  it("does not trigger with the caret in front of the symbol", () => {
+    // Nothing to replace there, so no group may open for either symbol.
+    expect(detectTrigger("#rev", 0)).toBeNull();
+    expect(detectTrigger("@rev", 0)).toBeNull();
+    expect(detectTrigger("\uFF03rev", 0)).toBeNull();
   });
 });

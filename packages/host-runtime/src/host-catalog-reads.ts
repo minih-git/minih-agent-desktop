@@ -1,9 +1,18 @@
 import { basename } from "node:path";
 
 import { RacpError, type SessionSummary } from "@minih-agent/agent-host";
-import type { RacpProjectSummary } from "@minih-agent/shared";
+import type { ModelBinding, RacpModelSummary, RacpProjectSummary } from "@minih-agent/shared";
 
 import { toSessionSummary, type HostRpc, type HostSessionRecord } from "./host-ports.js";
+
+/** A provider row as `providers.list` returns it, as far as the model catalog needs. */
+type HostProviderRow = {
+  id: string;
+  name?: string;
+  enabled?: boolean;
+  defaultModelId?: string;
+  models?: ModelBinding[];
+};
 
 /**
  * The read side of the session and project catalogs, shared by every Host
@@ -70,8 +79,21 @@ export async function withSessionProjectIds(
   if (needsLookup) {
     for (const project of await listProjectRows(host)) byPath.set(project.path, String(project.id));
   }
+  let defaultPermissionMode: "ask" | "accept-edits" | "auto" | undefined;
+  if (records.some((record) => record.permissionMode === "inherit")) {
+    const settings = await host
+      .call<{ defaultPermissionMode?: string }>("settings.get", {})
+      .catch(() => null);
+    const pm = settings?.defaultPermissionMode;
+    if (pm === "ask" || pm === "accept-edits" || pm === "auto") {
+      defaultPermissionMode = pm;
+    }
+  }
   return records.map((record) => {
-    const summary = toSessionSummary(record);
+    const summary = toSessionSummary(
+      record,
+      defaultPermissionMode ? { permissionMode: defaultPermissionMode } : undefined,
+    );
     const projectId = record.projectPath ? byPath.get(record.projectPath) : undefined;
     return projectId ? { ...summary, projectId } : summary;
   });
@@ -88,4 +110,51 @@ export async function listSessionSummariesWithProjectIds(host: HostRpc): Promise
 /** The project catalog read. */
 export async function listProjectSummaries(host: HostRpc): Promise<RacpProjectSummary[]> {
   return (await listProjectRows(host)).map(toProjectSummary);
+}
+
+/**
+ * The model catalog a remote device may choose from (R7, protocol §16.1).
+ *
+ * Built from the same `providers.list` rows the desktop's model picker uses, and
+ * deliberately narrower: id, display names, thinking levels, image support, and
+ * which entry is the Host's default. No base URL, header, key, proxy, or price
+ * is copied, so this projection is also the guarantee that one cannot leak
+ * through `model/list`.
+ *
+ * A disabled provider and a model the user switched off are not offered: the
+ * picker on the computer does not show them either, and a phone cannot
+ * distinguish "off" from "broken".
+ */
+export async function listModelSummaries(host: HostRpc): Promise<RacpModelSummary[]> {
+  const result = await host
+    .call<{ providers?: HostProviderRow[] }>("providers.list", { includeDisabled: false })
+    .catch(toRacpHostError);
+  const models: RacpModelSummary[] = [];
+  for (const provider of result.providers ?? []) {
+    if (provider.enabled === false) continue;
+    const label = provider.name?.trim();
+    if (!label) continue;
+    for (const binding of provider.models ?? []) {
+      const modelId = typeof binding.id === "string" ? binding.id.trim() : "";
+      if (!modelId) continue;
+      const levels: string[] = Array.isArray(binding.thinkingLevels)
+        ? binding.thinkingLevels.filter((level) => typeof level === "string")
+        : [];
+      models.push({
+        providerId: provider.id,
+        providerLabel: label,
+        modelId,
+        label: typeof binding.alias === "string" && binding.alias.trim() ? binding.alias.trim() : modelId,
+        thinkingLevels: levels,
+        ...(typeof binding.defaultThinkingLevel === "string"
+          ? { defaultThinkingLevel: binding.defaultThinkingLevel }
+          : {}),
+        // An explicit user override wins over the catalog's own value, which is
+        // the rule the desktop picker applies; `null` means "follow the catalog".
+        supportsImages: binding.supportsImages === true,
+        isDefault: provider.defaultModelId === modelId,
+      });
+    }
+  }
+  return models;
 }

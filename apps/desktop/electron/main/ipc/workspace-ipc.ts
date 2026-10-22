@@ -1,26 +1,46 @@
-import { BrowserWindow, dialog, shell, type OpenDialogOptions } from "electron";
-import { dirname } from "node:path";
-import { homedir } from "node:os";
 import { existsSync, statSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import {
-  ErrorCodes,
-  IPC,
+  type ComposerTemplate,
+  loadComposerTemplates,
+} from "@minih-agent/agent-runtime";
+import {
+  collectWorkspaceDiff,
+  isAttachmentBlobRef,
+  listDir,
+  readOpenableFile,
+  readOpenableImage,
+  resolveRealOpenablePath,
+} from "@minih-agent/host-runtime";
+import { catalogs, resolveLocale } from "@minih-agent/i18n";
+import {
+  isRemoteProjectPath,
   type ComposerPasteFile,
+  ErrorCodes,
+  type FsChatRefEntryKind,
+  type FsChatRefOutside,
   type FsChatRefProjectRoot,
   type FsChatRefResolveResult,
+  IPC,
   type ProjectGroupRecord,
   type RemoteWorkspace,
   type WorkspaceFilesRequest,
 } from "@minih-agent/shared";
 import {
-  loadComposerTemplates,
-  type ComposerTemplate,
-} from "@minih-agent/agent-runtime";
-import { remoteWorkspaceForFiles } from "../remote/workspace-file-scope";
+  app,
+  BrowserWindow,
+  dialog,
+  type OpenDialogOptions,
+  type SaveDialogOptions,
+  shell,
+} from "electron";
+import type { AgentSidecar } from "../agent-sidecar";
 import { getActiveRemoteHostsBoot } from "../bootstrap/remote-hosts";
-import { cloneGitRepository } from "../git-clone";
+import { BROWSER_PLUGIN_ID, type BrowserHost } from "../browser-host";
+import { isChatRefOutsideRoots, resolveChatFileRef } from "../chat-ref-resolve";
+import type { ClipboardHistory } from "../clipboard-history";
 import {
   importComposerFiles,
   saveComposerPasteFiles,
@@ -29,31 +49,21 @@ import {
   consumeComposerPickerSelection,
   rememberComposerPickerSelection,
 } from "../composer-picker";
-import { collectWorkspaceDiff } from "@minih-agent/host-runtime";
-import { parseAllowedExternalUrl } from "../safe-open-external";
-import {
-  isAttachmentBlobRef,
-  listDir,
-  readOpenableFile,
-  readOpenableImage,
-  resolveRealOpenablePath,
-} from "@minih-agent/host-runtime";
-import { openableMp4Path } from "../open-attachment-video";
-import { isChatRefOutsideRoots, resolveChatFileRef } from "../chat-ref-resolve";
 import { getWorkspaceFileIndex } from "../fs-index";
+import { cloneGitRepository } from "../git-clone";
+import type { HostProcess } from "../host-process";
+import type { Logger } from "../logger";
+import { getModuleDirectory } from "../module-path";
+import { openableMp4Path } from "../open-attachment-video";
+import type { PluginRuntime } from "../plugin-runtime";
+import { remoteWorkspaceForFiles } from "../remote/workspace-file-scope";
+import { parseAllowedExternalUrl } from "../safe-open-external";
 import {
   projectFolderPaths,
   refreshProjectGroups,
   rememberProjectGroups,
   workspaceRootsFor,
 } from "../workspace-roots";
-import { BROWSER_PLUGIN_ID, type BrowserHost } from "../browser-host";
-import type { AgentSidecar } from "../agent-sidecar";
-import type { HostProcess } from "../host-process";
-import type { Logger } from "../logger";
-import type { ClipboardHistory } from "../clipboard-history";
-import { getModuleDirectory } from "../module-path";
-import type { PluginRuntime } from "../plugin-runtime";
 import type { IpcRegistrar } from "./types";
 
 type WorkspaceRecord = { path: string; name: string };
@@ -178,7 +188,7 @@ export function registerWorkspaceIpc({
         errorCode: ErrorCodes.INVALID_ARGUMENT,
       });
     }
-    const projectPath = requestedPath.startsWith("remote-project:") ? requestedPath : resolve(requestedPath);
+    const projectPath = isRemoteProjectPath(requestedPath) ? requestedPath : resolve(requestedPath);
     const listed = (await host.call("projects.list")) as {
       projects?: Array<{ path?: string }>;
     };
@@ -307,7 +317,7 @@ export function registerWorkspaceIpc({
           errorCode: ErrorCodes.INVALID_ARGUMENT,
         });
       }
-      if (folders.every((path) => path.startsWith("remote-project:"))) {
+      if (folders.every((path) => isRemoteProjectPath(path))) {
         const result = await host.call("project.group.update", {
           groupId,
           name,
@@ -415,7 +425,7 @@ export function registerWorkspaceIpc({
     const listed = (await host.call("projects.list")) as {
       projects?: Array<{ path?: string }>;
     };
-    const projectPath = requestedPath.startsWith("remote-project:") ? requestedPath : resolve(requestedPath);
+    const projectPath = isRemoteProjectPath(requestedPath) ? requestedPath : resolve(requestedPath);
     const known = (listed.projects ?? []).some((project) => {
       const candidate = String(project?.path ?? "").trim();
       return candidate && resolve(candidate) === projectPath;
@@ -434,6 +444,77 @@ export function registerWorkspaceIpc({
     if (openError) throw new Error(openError);
     return { ok: true, path: projectPath };
   });
+
+  // One project archive at a time: the native pickers are process-wide, and a
+  // second archive would race the progress the first one is reporting.
+  let projectArchiveActive = false;
+  const withProjectArchive = async <T>(run: () => Promise<T>): Promise<T> => {
+    if (projectArchiveActive) {
+      throw Object.assign(
+        new Error(catalogs[resolveLocale(app.getLocale())].projectArchive.busy),
+        { errorCode: ErrorCodes.CONFLICT },
+      );
+    }
+    projectArchiveActive = true;
+    try {
+      return await run();
+    } finally {
+      projectArchiveActive = false;
+    }
+  };
+  handle(IPC.invoke.projectArchiveExport, async (input: { projectPath?: unknown } = {}) =>
+    withProjectArchive(async () => {
+      if (!host) throw new Error("host unavailable");
+      const projectPath = await managedProjectPath(input?.projectPath);
+      const strings = catalogs[resolveLocale(app.getLocale())].projectArchive;
+      const owner = getMainWindow();
+      const options: SaveDialogOptions = {
+        title: strings.exportTitle,
+        defaultPath: join(dirname(projectPath), `${basename(projectPath)}.zip`),
+        filters: [{ name: strings.zipFilter, extensions: ["zip"] }],
+      };
+      const picked = owner
+        ? await dialog.showSaveDialog(owner, options)
+        : await dialog.showSaveDialog(options);
+      if (picked.canceled || !picked.filePath) return { canceled: true };
+      const result = (await host.call("project.archive.export", {
+        projectPath,
+        targetPath: picked.filePath,
+      })) as Record<string, unknown>;
+      return { canceled: false, ...result };
+    }),
+  );
+  handle(IPC.invoke.projectArchiveImport, async () =>
+    withProjectArchive(async () => {
+      if (!host) throw new Error("host unavailable");
+      const strings = catalogs[resolveLocale(app.getLocale())].projectArchive;
+      const owner = getMainWindow();
+      // The Host validates the archive before anything reaches the destination,
+      // so these pickers only decide which file and which parent folder.
+      const archiveOptions: OpenDialogOptions = {
+        title: strings.importTitle,
+        properties: ["openFile"],
+        filters: [{ name: strings.zipFilter, extensions: ["zip"] }],
+      };
+      const archive = owner
+        ? await dialog.showOpenDialog(owner, archiveOptions)
+        : await dialog.showOpenDialog(archiveOptions);
+      if (archive.canceled || !archive.filePaths[0]) return { canceled: true };
+      const parentOptions: OpenDialogOptions = {
+        title: strings.importParentTitle,
+        properties: ["openDirectory", "createDirectory"],
+      };
+      const parent = owner
+        ? await dialog.showOpenDialog(owner, parentOptions)
+        : await dialog.showOpenDialog(parentOptions);
+      if (parent.canceled || !parent.filePaths[0]) return { canceled: true };
+      const result = (await host.call("project.archive.import", {
+        archivePath: archive.filePaths[0],
+        targetParentPath: parent.filePaths[0],
+      })) as Record<string, unknown>;
+      return { canceled: false, ...result };
+    }),
+  );
   handle(IPC.invoke.projectOpen, async () => {
     if (!host) throw new Error("host unavailable");
     const result = await openProjectPicker({
@@ -524,13 +605,13 @@ export function registerWorkspaceIpc({
     if (!host) throw new Error("host unavailable");
     // Deletion only touches host records, so a project whose folder was moved
     // or deleted on disk stays deletable: deliberately no existence check.
-    const projectPath = requestedPath.startsWith("remote-project:") ? requestedPath : resolve(requestedPath);
+    const projectPath = isRemoteProjectPath(requestedPath) ? requestedPath : resolve(requestedPath);
     const result = (await host.call("projects.remove", {
       path: projectPath,
     })) as { removed?: boolean; sessionsRemoved?: number };
     const removed = Boolean(result?.removed);
     const workspacePath = currentWorkspacePath();
-    if (removed && workspacePath && (workspacePath.startsWith("remote-project:") ? workspacePath : resolve(workspacePath)) === projectPath) {
+    if (removed && workspacePath && (isRemoteProjectPath(workspacePath) ? workspacePath : resolve(workspacePath)) === projectPath) {
       // Leaving the host bound to a deleted project would re-create it on boot.
       setCurrentWorkspacePath(null);
       await host.call("workspace.clear");
@@ -672,6 +753,31 @@ export function registerWorkspaceIpc({
   };
   const localFileStores = [join(dataDir, "scratch"), join(dataDir, "attachments")];
   const isLocalStoredFile = async (ref: string) => isAttachmentBlobRef(ref) || !!(await resolveRealOpenablePath(ref, null, localFileStores));
+  /**
+   * What a reference outside every allowed root names, if anything.
+   *
+   * `stat` is the whole probe: no content, no listing, no open. A folder and a
+   * file are the only answers; anything else, or nothing at all, reports
+   * nothing so the caller keeps its "restricted" message.
+   */
+  const statOutsideEntry = async (ref: string): Promise<{ outside?: FsChatRefOutside }> => {
+    const expanded = ref === "~" || /^~[\\/]/.test(ref)
+      ? join(homedir(), ref.slice(1).replace(/^[\\/]+/, ""))
+      : ref;
+    if (!isAbsolute(expanded)) return {};
+    let absolutePath: string;
+    try {
+      absolutePath = resolve(await realpath(expanded));
+      const info = await stat(absolutePath);
+      const entryKind: FsChatRefEntryKind | null = info.isDirectory()
+        ? "directory"
+        : info.isFile() ? "file" : null;
+      if (!entryKind) return {};
+      return { outside: { absolutePath, entryKind } };
+    } catch {
+      return {};
+    }
+  };
 
   handle(IPC.invoke.workspaceDiff, async (input: { sessionId?: string } = {}) => {
     const remote = await remoteFileWorkspace(input.sessionId);
@@ -1012,9 +1118,56 @@ export function registerWorkspaceIpc({
         attachments: join(dataDir, "attachments"),
       };
       if (await isChatRefOutsideRoots(ref, roots)) {
-        return { match: null, reason: "outside-allowed-roots" };
+        // The reference names nothing this app may read, open, or preview — but
+        // the user may still want to find it. `stat` is the whole probe: no
+        // content, no directory listing, no open.
+        return {
+          match: null,
+          reason: "outside-allowed-roots",
+          ...(await statOutsideEntry(ref)),
+        };
       }
       return { match: await resolveChatFileRef(ref, roots) };
+    },
+  );
+
+  /**
+   * Show a chat reference in the system file manager, wherever it lives.
+   *
+   * Deliberately separate from `fs/reveal`, whose containment checks stay
+   * exactly as they are: this one exists because a reference the app will not
+   * read can still be worth locating, and a person asking "where is that?" is
+   * not asking to open it. It resolves the path, confirms it exists, and calls
+   * `shell.showItemInFolder` — never `openPath`, never a read.
+   */
+  handle(
+    IPC.invoke.fsRevealChatRef,
+    async (input: { path?: string; sessionId?: string } = {}) => {
+      const remote = await remoteFileWorkspace(input.sessionId);
+      if (remote) {
+        throw Object.assign(new Error("remote references cannot be revealed on this computer"), {
+          errorCode: ErrorCodes.INVALID_ARGUMENT,
+        });
+      }
+      const requested = String(input.path ?? "").trim();
+      const expanded = requested === "~" || /^~[\\/]/.test(requested)
+        ? join(homedir(), requested.slice(1).replace(/^[\\/]+/, ""))
+        : requested;
+      if (!isAbsolute(expanded)) {
+        throw Object.assign(new Error("a chat reference must be an absolute path"), {
+          errorCode: ErrorCodes.INVALID_ARGUMENT,
+        });
+      }
+      let target: string;
+      try {
+        target = await realpath(resolve(expanded));
+      } catch {
+        throw Object.assign(new Error("no entry at that path"), {
+          errorCode: ErrorCodes.INVALID_ARGUMENT,
+        });
+      }
+      shell.showItemInFolder(stripWinLongPrefix(target));
+      return { ok: true as const };
     },
   );
 

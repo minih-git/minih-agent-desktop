@@ -7,6 +7,14 @@ import test from "node:test";
 import ts from "typescript";
 import { ErrorCodes } from "../../../packages/shared/src/errors.ts";
 import { IPC, IPC_WHITELIST } from "../../../packages/shared/src/protocol.ts";
+// The real model helpers: the collaboration service resolves the configured
+// session creation model against the ready catalog and the image-model set with
+// them.
+import { modelWireIdsEqual } from "../../../packages/shared/src/types/models.ts";
+import {
+  imageGenerationBindings,
+  isImageGenerationModel,
+} from "../../../packages/shared/src/image-generation.ts";
 
 function load(relative, imports, globals = {}) {
   const file = new URL(relative, import.meta.url);
@@ -22,9 +30,18 @@ function load(relative, imports, globals = {}) {
   return module.exports;
 }
 
-const shared = { ErrorCodes, IPC, IPC_WHITELIST };
+const shared = {
+  ErrorCodes,
+  IPC,
+  IPC_WHITELIST,
+  modelWireIdsEqual,
+  imageGenerationBindings,
+  isImageGenerationModel,
+};
+
 const collaboration = load("../electron/main/services/session-collaboration.ts", {
   "node:crypto": crypto,
+  "@minih-agent/shared": shared,
   "../agent-host-bridge": {},
   "../plugin-agent-complete": {},
 });

@@ -2,14 +2,18 @@ import { IPC } from "@minih-agent/shared";
 import i18n from "i18next";
 
 const localOnly = new Set<string>([
-  IPC.invoke.sessionConfigure, IPC.invoke.sessionFork, IPC.invoke.sessionMoveProject,
+  // `sessionConfigure` is deliberately absent: the local handler still serves
+  // local sessions, and a remote session id is routed to the remote backend,
+  // which maps it onto the Host's own `session/configure` (model, thinking,
+  // permission mode).
+  IPC.invoke.sessionFork, IPC.invoke.sessionMoveProject,
   IPC.invoke.sessionReplaceMessages, IPC.invoke.sessionSaveRevision,
   IPC.invoke.sessionListRevisions, IPC.invoke.sessionActivateRevision,
   IPC.invoke.sessionGetScratchPath, IPC.invoke.sessionOpenScratchPath,
-  IPC.invoke.agentSteer, IPC.invoke.agentQueuePush, IPC.invoke.agentQueueList,
+  IPC.invoke.agentSteer, IPC.invoke.agentSideNote, IPC.invoke.agentSideNotesList, IPC.invoke.agentQueuePush, IPC.invoke.agentQueueList,
   IPC.invoke.agentStopSubagents, IPC.invoke.workspaceReviewRollback,
   IPC.invoke.extensionsCommandRun, IPC.invoke.browserNavigate,
-  IPC.invoke.fsResolveRef,
+  IPC.invoke.fsResolveRef, IPC.invoke.fsRevealChatRef,
 ]);
 
 /** Defense in depth for keyboard/service callers that bypass disabled controls. */

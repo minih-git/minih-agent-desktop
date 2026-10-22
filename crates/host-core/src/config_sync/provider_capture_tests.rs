@@ -58,7 +58,6 @@ fn provider_snapshot(include_credentials: bool, requested: bool) -> Result<Local
         &selection,
         requested,
         &BTreeMap::new(),
-        &ProjectIdentityOverrides::default(),
     )
 }
 

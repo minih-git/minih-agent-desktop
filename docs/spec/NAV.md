@@ -47,6 +47,7 @@
 - [live-work-session.md](03-runtime/live-work-session.md)
 - [21-image-generation.md](03-runtime/21-image-generation.md)
 - [22-config-sync.md](03-runtime/22-config-sync.md)
+- [23-project-archive.md](03-runtime/23-project-archive.md)
 - [svg-attachment-input.md](03-runtime/svg-attachment-input.md)
 
 ## 4. UX
@@ -63,6 +64,7 @@
 - [10-workbuddy-benchmark-ux.md](04-ux/10-workbuddy-benchmark-ux.md)
 - [11-asktool-question-card.md](04-ux/11-asktool-question-card.md)
 - [12-prompt-enhancement.md](04-ux/12-prompt-enhancement.md)
+- [13-remote-mobile-client.md](04-ux/13-remote-mobile-client.md)
 
 ## 5. Security
 - [README.md](05-security/README.md)

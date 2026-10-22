@@ -1,5 +1,6 @@
 import { dialog, globalShortcut, shell, type BrowserWindow } from "electron";
-import { join } from "node:path";
+import { isAbsolute, join, resolve as resolvePath, sep } from "node:path";
+import { realpath, stat } from "node:fs/promises";
 import {
   IPC,
   ErrorCodes,
@@ -77,6 +78,12 @@ export type PluginServicesDependencies = {
   getWorkspacePath: () => string | null;
   resolveAgentRuntimeLaunch: (...args: any[]) => Promise<any>;
   vendorOAuth: VendorOAuth;
+  /**
+   * Announce a session title a plugin wrote to the RACP Host. The renderer
+   * fan-out below is local; a phone holding the session only learns the new name
+   * from a `session.changed` event.
+   */
+  announceTitleChange?: (sessionId: string) => void;
 };
 
 export function createPluginServices({
@@ -97,6 +104,7 @@ export function createPluginServices({
   getWorkspacePath,
   resolveAgentRuntimeLaunch,
   vendorOAuth,
+  announceTitleChange,
 }: PluginServicesDependencies) {
   // A plugin request can lose its race with host shutdown or restart.
   const isHostUnavailable = (error: unknown): boolean =>
@@ -145,6 +153,13 @@ export function createPluginServices({
         (result as { deleted?: unknown })?.deleted === true);
     if (changed) {
       sendToRenderer(IPC.event.sessionsChanged, { reason: method, pluginId });
+      // A title a plugin wrote is durable in the host too: a phone holding the
+      // session needs the same `session.changed` the desktop sidebar gets.
+      const titled =
+        (method === "plugin.session.rename" || method === "plugin.session.setAutoTitle") &&
+        (result as { updated?: unknown })?.updated === true;
+      const sessionId = typeof input.sessionId === "string" ? input.sessionId : "";
+      if (titled && sessionId) announceTitleChange?.(sessionId);
     }
     return result;
   };
@@ -649,6 +664,48 @@ export function createPluginServices({
       sendToRenderer(IPC.event.pluginChanged, { reason: "agentExtensions" }),
     browser: {
       reveal: (sessionId) => browserHost.reveal(sessionId),
+      /**
+       * Show one local file in the work panel's Browser view (`browser.openInPanel`).
+       *
+       * The caller has no session of its own — a reply card or a panel button is
+       * not a tool call — so the event carries no session and the renderer opens
+       * the tab in the session the user is looking at. That is also why the path
+       * is checked here: a plugin must not be able to push any file on the disk
+       * into the user's panel. Allowed: the open project's folder roots, any
+       * session scratch directory, and the calling plugin's own data directory.
+       */
+      openInPanel: async (pluginId, rawPath) => {
+        // `apiError` lives in the runtime; the services layer throws plain errors
+        // that carry the same `code`, which the runtime passes through.
+        const refuse = (message: string) =>
+          Object.assign(new Error(message), { code: "INVALID_ARGUMENT" });
+        const requested = String(rawPath ?? "").trim();
+        if (!requested || !isAbsolute(requested)) {
+          throw refuse("browser.openInPanel needs an absolute file path");
+        }
+        let real;
+        try {
+          real = await realpath(requested);
+        } catch {
+          throw refuse("browser.openInPanel file does not exist");
+        }
+        const info = await stat(real);
+        if (!info.isFile()) {
+          throw refuse("browser.openInPanel needs a regular file");
+        }
+        const allowed = [
+          ...projectFolderPaths(getWorkspacePath()),
+          join(dataDir, "scratch"),
+          join(dataDir, "plugins", "data", pluginId.replace(/[^a-zA-Z0-9._-]/g, "_")),
+        ].map((root) => resolvePath(root));
+        if (!allowed.some((root) => real === root || real.startsWith(`${root}${sep}`))) {
+          throw refuse(
+            "browser.openInPanel only shows files inside the project, a session scratch directory, or this plugin's data directory",
+          );
+        }
+        sendToRenderer(IPC.event.browserPreview, { sessionId: "", path: real });
+        return { path: real };
+      },
       navigate: (input, sessionId, tabId) => browserHost.navigate(input, sessionId, tabId),
       action: (action, sessionId, tabId) => browserHost.action(action, sessionId, tabId),
       setBounds: (pluginId, hole) => browserHost.setGuestHole(pluginId, hole),

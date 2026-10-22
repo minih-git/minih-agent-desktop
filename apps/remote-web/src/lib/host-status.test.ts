@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hostSessionsPath, probeHostStatus } from "./host-status.js";
-
+import { hostSessionsPath, hostStatusFromFailure, probeHostStatus, probeHostWithSessions } from "./host-status.js";
 type Call = { url: string; init: RequestInit | undefined };
 
 function recordingFetch(response: Response | (() => Promise<Response>)): { fetchImpl: typeof fetch; calls: Call[] } {
@@ -31,6 +30,25 @@ describe("probeHostStatus", () => {
     expect(calls[0]!.url).toBe("https://gw.example.com/hosts/host1/v1/sessions");
     expect(calls[0]!.init?.credentials).toBe("include");
     expect((calls[0]!.init?.headers as Record<string, string>)["x-csrf-token"]).toBe("csrf-1");
+  });
+  it("returns active sessions alongside online status when probing with sessions", async () => {
+    const { fetchImpl } = recordingFetch(
+      new Response(
+        JSON.stringify({
+          result: {
+            sessions: [
+              { id: "s1", status: "running", updatedAt: "2026-10-21T10:00:00.000Z" },
+              { id: "s2", status: "idle", archived: true },
+            ],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const res = await probeHostWithSessions({ ...input, fetchImpl });
+    expect(res.status).toEqual({ kind: "online" });
+    expect(res.sessions).toHaveLength(1);
+    expect(res.sessions?.[0]?.id).toBe("s1");
   });
 
   it("maps 503 to offline and 401 to revoked", async () => {
@@ -99,5 +117,27 @@ describe("probeHostStatus", () => {
 
   it("encodes the host id", () => {
     expect(hostSessionsPath("host/1")).toBe("/hosts/host%2F1/v1/sessions");
+  });
+});
+
+/**
+ * The sessions screen reads its status off the list it already made, so the
+ * three states the probe distinguishes have to survive that path: a Host link
+ * that is down, a Host that has not adopted this device, and a credential that
+ * is gone. Any other failure keeps its own reason, as the probe reports it.
+ */
+describe("hostStatusFromFailure", () => {
+  it("maps the three states a real read can report", () => {
+    expect(hostStatusFromFailure({ code: "AGENT_UNAVAILABLE", message: "HTTP 503" })).toEqual({ kind: "offline" });
+    expect(hostStatusFromFailure({ code: "HOST_UNAUTHORIZED", message: "not adopted" })).toEqual({ kind: "unaccepted" });
+    expect(hostStatusFromFailure({ code: "UNAUTHORIZED", message: "revoked" })).toEqual({ kind: "revoked" });
+  });
+
+  it("keeps any other reason as itself", () => {
+    expect(hostStatusFromFailure({ code: "RATE_LIMITED", message: "slow down" })).toEqual({
+      kind: "error",
+      code: "RATE_LIMITED",
+      message: "slow down",
+    });
   });
 });

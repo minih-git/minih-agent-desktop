@@ -1,6 +1,6 @@
 # ADR 0268: Remove quotes, annotations, and side chats
 
-- Status: Accepted
+- Status: Accepted (item 2 superseded by ADR 0334 on 2026-10-20)
 - Date: 2026-09-16
 - Deciders: Minih-Agent-Desktop runtime and desktop UI maintainers
 - Supersedes: ADR message-quotes-and-side-chats, ADR response-annotations, ADR floating-annotation-index

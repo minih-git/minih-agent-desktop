@@ -860,16 +860,20 @@ may be retained while exactly one workspace supplies the visible shell context.
 - The Send tooltip identifies follow-up and uses the platform's key labels
   for the steering shortcut (`⌥+Enter` on macOS). The
   existing single Send/Stop slot and Host-owned follow-up list are retained.
-- The work panel's side-notes tab sends the same kind of input from the side
-  panel instead of the composer: a note is answered inside the running turn, so
-  the task keeps going. The tab lists the session's own `sideNote` rows, newest
-  last, and its preset sends a progress-summary note in one click. While no
-  turn is running the input is disabled and explains why, because a note has no
-  turn to reach. The transcript marks such a row as a side note. A successful
-  submission clears only its unchanged submitted draft, never text edited
-  while awaiting acknowledgement or an unrelated draft when using the preset.
-  Pending submission disables both send actions but leaves the input editable;
-  refusal preserves the draft and reports the error.
+- The work panel's side-notes tab is independent read-only question/answer,
+  not another Composer steering entry. It snapshots the running task, asks the
+  current model without tools, and displays the question and answer only in
+  the side panel. Main-task messages, context and delegation waits stay intact.
+- Completed pairs are durable per session and reload in the panel. Existing
+  marked user rows may appear as legacy questions with no inferred answer.
+  The progress preset asks only for progress; changing the main task still
+  requires ordinary Composer steering.
+- Submission requires a running local steer-capable session, a current turn,
+  and no pending plan approval. A pending answer can finish after the task.
+  Pending submission disables both send actions, not draft editing. Failures
+  preserve the draft and report the cause. Success clears only the unchanged
+  submitted draft, never later edits or an unrelated draft used with a preset.
+  Switching sessions or closing the panel cannot redirect a pending result.
 
 ## 3A. Context checkpoint lifecycle
 
@@ -881,13 +885,14 @@ may be retained while exactly one workspace supplies the visible shell context.
 - `compaction_start` keeps the session running. Threshold and overflow
   `compaction_end` events remain inside the active run; only `agent_end` or
   `error` settles it. A manual-only checkpoint settles on `compaction_end`.
-- Every successful compaction shows one warning toast: earlier detail is gone,
-  and starting a fresh session is a decision only the user can make. The three
-  more specific toasts stay on top of it — a successful manual `/compact`
-  result, a warning before an overflow retry, and the fallback warning below.
+- Routine compaction never raises a toast, dialog, or separate notification.
+  Threshold/model-requested checkpoints, model switches, successful manual
+  `/compact`, and overflow recovery use the existing inline activity,
+  transcript divider, and context usage inspector instead.
 - If automatic summary generation fails but a retained-tail checkpoint is
-  persisted, `compaction_end.fallback = "retained_tail"` shows one warning
-  toast and the active run continues with reduced historical context.
+  persisted, `compaction_end.fallback = "retained_tail"` labels the divider
+  as a failed summary with recent context retained. The active run continues
+  without a warning toast; the degradation is not presented as a real summary.
 - Manual failure shows one error toast. Automatic hard/overflow failure does
   not duplicate the assistant error with a toast; the terminal error remains
   attached to the failed turn.
@@ -1396,6 +1401,28 @@ Project drag/drop follows these patterns:
   resolved absolute path after file-reference resolution checks its roots.
   No project is required to open a scratch artifact. Missing workspace state
   is normalized consistently across asynchronous session-change guards.
+  A reference may also name a **folder**, or a path with no extension at all:
+  `apps/desktop/src/`, `/api/v1/users`, `~/notes`. Those shapes are recognized
+  only when something anchors them as a path — a trailing separator, a leading
+  `/`, `~/`, drive letter, or `./` / `../`, or an inline code span containing a
+  separator — and they stay plain text until the host confirms the entry
+  exists, because a reply writes routes and ratios that look the same. A bare
+  relative `foo/bar` in prose is never recognized. Confirmation is one
+  `fs/resolveRef` per distinct workspace, session, and path; a miss is not
+  remembered, so a path a reply says it is about to create becomes a link once
+  it exists, and a session without local tools asks nothing. A folder's click
+  selects it in the system file manager (or reports that a remote folder cannot
+  be shown here) and never opens it: `fs/open` would launch an `.app` bundle,
+  and the bundled file view has no folder location. `~/x` is expanded to the
+  home directory in the main process and then checked against the same allowed
+  roots. A reference to a path outside every allowed root is still actionable
+  (ADR 0333): the host stats it, and when it exists the reference becomes a link
+  whose click and context menu offer **Reveal in Finder** and **Copy path** —
+  the absolute path — and nothing else. Nothing there is opened, read, or
+  previewed, there is no relative path to copy, and the "restricted" message
+  now appears only for a path that is both outside the roots and absent. A
+  remote session is told it cannot show something on this computer and never
+  reveals anything, and it is not told whether the path exists on the host.
   Local `file:` Markdown URLs are converted to file references before
   sanitization, not admitted as native links. `path:line[:column]` retains
   source navigation in plain text, inline code and Markdown links, including
@@ -1405,13 +1432,19 @@ Project drag/drop follows these patterns:
   travels as a project-relative path, a file of a sibling folder of the same
   project as an absolute one, exactly as a scratch or attachment file does. A
   chip whose reference matches nothing opens nothing and reports itself. Right-
-  clicking a transcript file reference offers Copy full path and Copy relative
-  path on every surface that names it. Unpositioned `.html` and `.htm`
-  references also offer an **Open with** submenu containing File Manager,
-  built-in browser, and default browser. Each choice completes the reference
-  first and opens that exact resolved file. Other file types keep the copy
-  actions only; the transcript menu has no **Show in folder** action. A file
-  outside the project has no relative path to copy and reports that fact.
+  clicking a local transcript file reference offers **Open with default
+  application**, **Show in folder**, Copy full path, and Copy relative path on
+  every surface that names it. Unpositioned `.html` and `.htm` references keep
+  their **Open with** submenu containing File Manager, built-in browser, and
+  default browser instead of the direct default-application item, and also offer
+  **Show in folder**. Each action completes the reference first and acts on that
+  exact resolved file through the existing host containment checks. A failed OS
+  handoff is reported; no work-panel fallback is opened. Remote references offer
+  no local OS actions. A scratch or attachment file has no relative path to copy
+  and reports that fact. A folder reference offers **Reveal in Finder** together
+  with both copy actions, never a default-application or HTML open action. Entries
+  outside all allowed roots retain the reveal-and-absolute-copy-only menu above.
+  Normal left-click destinations remain unchanged.
 - In the host `file:` tab, a conversation MP4 that cannot be previewed because
   it is binary or exceeds the text preview limit offers **Open with default
   application**. This applies to named `.mp4` files and extensionless

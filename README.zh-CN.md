@@ -79,7 +79,7 @@ Subagent，或并行协调完整的 Worker 会话。
 </tr>
 </table>
 
-> **当前发布线：0.22.x（Early Preview）。**
+> **当前发布线：0.24.x（Early Preview）。**
 
 ---
 
