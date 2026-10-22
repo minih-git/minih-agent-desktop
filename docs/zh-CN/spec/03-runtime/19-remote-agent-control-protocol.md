@@ -201,6 +201,21 @@ Host 队列；持久事件使用每 epoch 递增且不复用的 `sequence`；附
 `remoteHostProfile` 能力公布，各自保持本地规则：配置与 fork 仅限空闲，删除仅限
 owner，工作区读取都按会话持久根、Host 忽略规则和 `PATH_OUTSIDE_WORKSPACE` 边界解析。
 
+**设备类别决定文件面板（R8 包 D）。** Host 可以对一条连接开放
+`workspace/list`、`workspace/read`、`workspace/diff`，而对另一条连接不开放。答案就是
+`connection/initialize` 返回的**按连接**能力 `workspaceRead`：有明确态度的 Host 会给出该
+字段，没有的 Host 不写，此时仅由操作目录决定（持 `viewer` 即可读，`agent-host-cli`
+一直如此）。若某 Host 报 `workspaceRead: false`，它**必须**同时以 `FORBIDDEN` 拒绝这三个
+操作，而不是指望客户端自觉遵守能力声明。`workspaceRead` 不是 `workspaceFiles`：后者是
+§6.2.1 的 owner 级 `workspace/files` 面，不属于本 profile。
+
+桌面 Host 按设备类别作答（ADR `remote-control-router-account-binding` 修订 3 决策 4）：
+同账号的 desktop 类设备拿到只读面板，手机与浏览器拿不到。同一门禁也覆盖
+`session/delete`（仍为 owner、仍限空闲）。`session/archive` 在操作目录里、也由
+`remoteHostProfile` 公布，但目前没有任何 Host 实现它：会话归档是桌面 renderer 本地
+保存的表现状态（`sessionMeta.archived`），Host 侧没有可归档的权威状态，因此回
+`CAPABILITY_UNAVAILABLE`。
+
 | Operation | Role | Behavior |
 |---|---|---|
 | `session/configure` | controller | 空闲时修改模式、provider/模型、思考等级或权限模式，规则同 `minih-agent-desktop/session/configure` |

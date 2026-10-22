@@ -419,4 +419,10 @@ Host），再用它的证书在所有开着自动接入的电脑上拿到 `owner
 电脑并写审计、可在 Gateway 上 `hosts revoke` 那台 Host、可在任一台电脑上撤销设备、关闭
 每机开关或 strict mode 即退回人工确认、以及拒绝过期或重放的 nonce。gate 27 重写为
 「从未选择」与「明确关闭」两种情况，新增 gate 35 覆盖证明校验（含证书链与账号／hostId
-绑定）、时效与各类拒绝。手机、浏览器、自托管流程，以及 gate 25、26、28 均不变。
+绑定）、时效与各类拒绝；gate 36 覆盖工作包 D：只有 desktop 类设备能触达
+`session/delete` 与只读工作区面板（`workspace/list|read|diff`），Host 按连接给出
+`workspaceRead` 能力并在其为 `false` 时以 `FORBIDDEN` 拒绝这三个操作（不依赖客户端自觉
+遵守声明）；没有该字段的 Host 仅由操作目录的 `viewer` 决定。`workspaceRead` 绝不等于
+`workspaceFiles` / `workspaceTools`——owner 级的工具与文件面仍对所有账号设备关闭；每次
+读取都按会话持久根解析、先规范化再判包含、并有体积上限，配置与删除在回合运行时回
+`AGENT_BUSY`。手机、浏览器、自托管流程，以及 gate 25、26、28 均不变。

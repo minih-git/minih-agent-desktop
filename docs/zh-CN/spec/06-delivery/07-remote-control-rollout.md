@@ -557,7 +557,14 @@ D666（2026-10-18，ADR `remote-control-router-account-binding`）在 R4–R6 �
 - WebSocket 路由用 Bearer 设备 token 鉴权（仅 header profile；浏览器无法在 WebSocket 上设置
   该头，继续使用 `RACP-HTTP` + SSE），并复用现有的 hash 快速拒绝、限流与审计；它只是传输，
   不是第二条授权路径。**工作包 A–D 已实现**（契约、Gateway 的 proof 签发与转发、Host 自己
-  校验并自动授予、桌面端的 `account` 传输与开关三态），工作包 E–F 尚未实现；
+  校验并自动授予、桌面端的 `account` 传输与开关三态，以及工作包 D 的会话删除与按连接
+  `workspaceRead` 能力门禁的只读文件面板），工作包 E–G 尚未实现；
+- 工作包 D 只对 desktop 类设备开放 `session/delete` 与 `workspace/list|read|diff`，复用
+  `packages/host-runtime` 的共享实现（同一「空闲才可改」规则返回 `AGENT_BUSY`、同一会话根
+  包含校验、同一体积上限），并把远程删除接到桌面自己的删除 IPC，使运行时清理只跑一次。
+  `session/archive` 最终**不在**本次范围内：会话归档是 renderer 的表现状态，Host 侧没有权威
+  记录，开放它等于发明一份 renderer 不读的 Host 持久化（协议 §6.2）。`session/rename` 与
+  `session/configure` 仍对手机可用，因为手机自己的会话面板今天就在用；
 - 自动接入的证明由**目标 Host 自己校验**（证书链到它固定的 Gateway CA、账户绑定、签名、
   未用过且未过期的 nonce）并检查自己的开关；Gateway 只做预检与快速拒绝，不做授权依据；
 - 证明缺失、nonce 过期或重放、目标电脑未声明 `device.desktop-auto` 时一律拒绝或退回人工

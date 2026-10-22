@@ -95,6 +95,9 @@ describe("a same-account computer reaches its sibling over the Gateway", () => {
       accessKey: KEY_A,
       label: "Mac B",
       history: { items: [{ id: "m1", role: "assistant", content: "hello from B", createdAt: "2026-10-21T00:00:00.000Z", status: "complete" }] },
+      // Package D: this Host offers the read-only file panel to a desktop-class
+      // device of the account and withholds it from a phone.
+      operations: { workspaceRead: (principal) => principal.deviceClass === "desktop" },
       devices: directory,
     });
 
@@ -308,5 +311,57 @@ describe("a same-account computer reaches its sibling over the Gateway", () => {
     const relay = openRelay(gateway, "host_sibling_b", phoneToken);
     await expect(relay.opened()).rejects.toThrow(/upgrade refused/);
     relay.close();
+  });
+
+  it("renames and reads the sibling's workspace with the desktop-class token", async () => {
+    stack = await startStack();
+    const { gateway, token } = stack;
+    const relay = openRelay(gateway, "host_sibling_b", token);
+    try {
+      await relay.opened();
+      relay.send({ jsonrpc: "2.0", id: "d1", method: "connection/initialize", params: INITIALIZE });
+      const initialized = await relay.waitForFrame((frame) => frame["id"] === "d1", "the initialize result");
+      // Package D: the capability is answered for THIS connection, and this one
+      // is a desktop-class device of the account.
+      expect(
+        (initialized["result"] as { capabilities: { workspaceRead?: boolean } }).capabilities.workspaceRead,
+      ).toBe(true);
+
+      // A session control that restructures the sibling's own state.
+      relay.send({
+        jsonrpc: "2.0",
+        id: "d2",
+        method: "session/rename",
+        params: { sessionId: "s1", title: "renamed from A" },
+      });
+      const renamed = await relay.waitForFrame((frame) => frame["id"] === "d2", "the rename result");
+      expect(renamed["error"]).toBeUndefined();
+
+      // The read-only file panel over the same relayed connection.
+      relay.send({ jsonrpc: "2.0", id: "d3", method: "workspace/list", params: { sessionId: "s1", path: "" } });
+      const listed = await relay.waitForFrame((frame) => frame["id"] === "d3", "the workspace listing");
+      expect((listed["result"] as { entries: Array<{ name: string }> }).entries[0]?.name).toBe("README.md");
+
+      relay.send({
+        jsonrpc: "2.0",
+        id: "d4",
+        method: "workspace/read",
+        params: { sessionId: "s1", path: "README.md" },
+      });
+      const read = await relay.waitForFrame((frame) => frame["id"] === "d4", "the file read");
+      expect(read["result"]).toMatchObject({ kind: "text", content: "hello" });
+
+      // An escape attempt over the real link is refused by the shared reader.
+      relay.send({
+        jsonrpc: "2.0",
+        id: "d5",
+        method: "workspace/read",
+        params: { sessionId: "s1", path: "../../etc/passwd" },
+      });
+      const refused = await relay.waitForFrame((frame) => frame["id"] === "d5", "the refusal");
+      expect((refused["error"] as { data?: { code?: string } })?.data?.code).toBe("REMOTE_PATH_FORBIDDEN");
+    } finally {
+      relay.close();
+    }
   });
 });

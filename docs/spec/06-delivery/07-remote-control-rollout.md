@@ -488,8 +488,20 @@ Scope notes:
   and reuses the existing hash fast-reject, rate limit, and audit; it is a
   transport, not a second authorization path. **Packages A–D are implemented**
   (the contract, the Gateway's proof minting and relays, the Host's own
-  verification with automatic admission, and the desktop's `account` transport
-  with the switch's three states); packages E–F are not;
+  verification with automatic admission, the desktop's `account` transport with
+  the switch's three states, and package D's session delete plus the read-only
+  file panel behind the per-connection `workspaceRead` capability); packages
+  E–G are not;
+- package D opens `session/delete` and `workspace/list|read|diff` to a
+  desktop-class device only, reuses the shared `packages/host-runtime`
+  implementations (one idle rule answering `AGENT_BUSY`, one session-root
+  containment check, one set of size caps), and wires a remote delete through
+  the desktop's own delete IPC so the runtime cleanup runs exactly once.
+  `session/archive` is **not** part of this package after all: session archival
+  is renderer presentation state with no authoritative Host record, so opening
+  it would mean inventing Host-side persistence the renderer does not read
+  (protocol §6.2). `session/rename` and `session/configure` stay available to a
+  phone, because the phone's own session sheet uses them today;
 - automatic admission is refused, never silently ignored, when the proof is
   missing, when its nonce was reused or expired, or when the target computer
   does not advertise `device.desktop-auto`;

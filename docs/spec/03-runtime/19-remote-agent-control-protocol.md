@@ -592,6 +592,27 @@ resolved against the Session's durable root with the Host's ignore rules and
 `PATH_OUTSIDE_WORKSPACE` boundary. Terminals run on the Host machine with the
 session root as working directory and stream through `terminal.output`.
 
+**Device class decides the file panel (rollout R8 package D).** A Host may offer
+`workspace/list`, `workspace/read`, and `workspace/diff` to one connection and
+withhold them from another. The answer is the per-connection `workspaceRead`
+capability returned by `connection/initialize`: a Host with an opinion sets it,
+and a Host without one leaves it out, in which case the operation catalog alone
+decides (every `viewer` may read, which is what `agent-host-cli` has always
+done). A Host that reports `workspaceRead: false` MUST also refuse those three
+operations with `FORBIDDEN`, rather than rely on the client honoring the
+capability. `workspaceRead` is not `workspaceFiles`: the latter is the
+owner-grade `workspace/files` surface of §6.2.1 and stays outside this profile.
+
+The desktop Host answers it from the device class (ADR
+`remote-control-router-account-binding`, amendment 3 decision 4): a
+desktop-class device of the same account gets the read-only panel, a phone or a
+browser does not. The same gate covers `session/delete`, which stays
+`owner`-only and idle-only. `session/archive` is in the catalog and advertised
+by `remoteHostProfile`, but no Host implements it yet: session archival is
+presentation state (`sessionMeta.archived`) the desktop renderer keeps locally,
+so a Host has nothing authoritative to archive and answers
+`CAPABILITY_UNAVAILABLE`.
+
 | Operation | Role | Behavior |
 |---|---|---|
 | `session/configure` | controller | Change mode, provider/model, thinking level, or permission mode while idle; same rules as `minih-agent-desktop/session/configure` |

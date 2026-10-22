@@ -21,7 +21,7 @@ import {
   type HostLinkHandle,
 } from "@minih-agent/racp";
 import { harness, type Harness, type HarnessHistory } from "@minih-agent/racp/test-harness";
-import type { MemoryCredentialStore } from "@minih-agent/racp";
+import type { MemoryCredentialStore, RacpHostOperations } from "@minih-agent/racp";
 import {
   RACP_HTTP_QUERY_PARAMS,
   RACP_HTTP_ROUTE_LIST,
@@ -429,6 +429,11 @@ export async function enrollTestHostByKey(
     devices?: (input: { credentials: HostLinkCredentials; store: MemoryCredentialStore }) => HostDeviceDirectory | null;
     /** Where a revocation waits while this Host's link is down (§11.5). */
     revocations?: () => DeviceRevocationQueue | null;
+    /**
+     * Replace part of this Host's RACP operation surface. A test that needs a
+     * Host answering per device class (package D) supplies `workspaceRead`.
+     */
+    operations?: Partial<RacpHostOperations>;
   },
 ): Promise<TestHost & { certificatePem: string; devices: HostDeviceDirectory | null }> {
   const keys = await hostCsrFor(options.hostId);
@@ -448,7 +453,10 @@ export async function enrollTestHostByKey(
     privateKeyPem: keys.privateKeyPem,
     expiresAt: issued.expiresAt,
   };
-  const h = await harness(options.history ? { history: options.history } : {});
+  const h = await harness({
+    ...(options.history ? { history: options.history } : {}),
+    ...(options.operations ? { operations: options.operations } : {}),
+  });
   const devices = options.devices ? options.devices({ credentials, store: h.store }) : null;
   const handle = startHostLink({
     credentials,

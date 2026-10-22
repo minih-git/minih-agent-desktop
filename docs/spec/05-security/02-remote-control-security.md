@@ -1098,6 +1098,20 @@ separate, explicitly specified credential-management capability is added.
     leaves the remote permission ceiling. Applies from R8 (D675, ADR
     `remote-control-router-account-binding` amendment 3).
 
+36. A desktop-class device is the **only** device class that reaches the session
+    controls that restructure a desktop Host's own state (`session/delete`) and
+    the read-only workspace panel (`workspace/list|read|diff`). The Host answers
+    the panel per connection through the `workspaceRead` capability and, when it
+    reports it as `false`, refuses those three operations with `FORBIDDEN`
+    rather than trusting the client to honor the advertisement; a Host without
+    an opinion leaves the field out and the operation catalog's `viewer` role
+    decides. `workspaceRead` never implies `workspaceFiles` or `workspaceTools`:
+    the owner-grade tool and file surfaces stay closed to every account device.
+    Every workspace read is resolved against the session's durable root,
+    canonicalized before the containment check, and bounded; configuration and
+    deletion answer `AGENT_BUSY` while a turn is running. Applies from R8
+    package D (D675).
+
 ## 13. Amendment history
 
 D374 (2026-09-10) added the browser cookie/header authentication profiles,
