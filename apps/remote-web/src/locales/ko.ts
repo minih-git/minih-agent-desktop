@@ -387,6 +387,7 @@ export const ko: Record<TranslationKey, string> = {
   "modelSheet.noMatch": "검색과 일치하는 모델이 없습니다.",
   "modelSheet.unavailableSection": "대화에 사용할 수 없음",
   "modelSheet.reason.notChat": "대화 모델이 아님",
+  "modelSheet.reason.imageModel": "이미지를 생성하는 모델입니다. 이 앱은 아직 이미지를 요청할 수 없습니다",
   "modelSheet.reason.protocol": "이 앱이 지원하지 않는 프로토콜을 사용",
   "hosts.settings": "설정",
 

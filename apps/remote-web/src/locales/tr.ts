@@ -387,6 +387,7 @@ export const tr: Record<TranslationKey, string> = {
   "modelSheet.noMatch": "Bu aramaya uyan model yok.",
   "modelSheet.unavailableSection": "Sohbet için kullanılamaz",
   "modelSheet.reason.notChat": "Sohbet modeli değil",
+  "modelSheet.reason.imageModel": "Görsel üretir; bu uygulama henüz görsel isteyemiyor",
   "modelSheet.reason.protocol": "Bu uygulamanın desteklemediği bir protokol kullanıyor",
   "hosts.settings": "Ayarlar",
 

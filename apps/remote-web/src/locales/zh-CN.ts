@@ -387,6 +387,7 @@ export const zhCN: Record<TranslationKey, string> = {
   "modelSheet.noMatch": "没有匹配的模型。",
   "modelSheet.unavailableSection": "不可用于对话",
   "modelSheet.reason.notChat": "不是对话模型",
+  "modelSheet.reason.imageModel": "生成图片的模型；手机直连对话暂不支持生图",
   "modelSheet.reason.protocol": "使用了本应用不支持的协议",
   "hosts.settings": "设置",
 

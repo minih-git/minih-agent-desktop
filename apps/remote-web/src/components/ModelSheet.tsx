@@ -127,5 +127,6 @@ function protocolLabel(protocol: string): string {
 }
 
 function reasonLabel(t: (key: string) => string, reason: ModelUnavailableReason): string {
+  if (reason === "image-model") return t("modelSheet.reason.imageModel");
   return reason === "not-chat" ? t("modelSheet.reason.notChat") : t("modelSheet.reason.protocol");
 }

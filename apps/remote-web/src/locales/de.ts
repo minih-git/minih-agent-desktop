@@ -387,6 +387,7 @@ export const de: Record<TranslationKey, string> = {
   "modelSheet.noMatch": "Kein Modell passt zu dieser Suche.",
   "modelSheet.unavailableSection": "Nicht für Chat verfügbar",
   "modelSheet.reason.notChat": "Kein Chatmodell",
+  "modelSheet.reason.imageModel": "Erzeugt Bilder; diese App kann noch keine Bilder anfordern",
   "modelSheet.reason.protocol": "Nutzt ein Protokoll, das diese App nicht unterstützt",
   "hosts.settings": "Einstellungen",
 

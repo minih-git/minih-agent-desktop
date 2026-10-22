@@ -387,6 +387,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "modelSheet.noMatch": "沒有符合的模型。",
   "modelSheet.unavailableSection": "無法用於對話",
   "modelSheet.reason.notChat": "不是對話模型",
+  "modelSheet.reason.imageModel": "產生圖片的模型；手機直連對話尚不支援產圖",
   "modelSheet.reason.protocol": "使用了本應用程式不支援的協定",
   "hosts.settings": "設定",
 
