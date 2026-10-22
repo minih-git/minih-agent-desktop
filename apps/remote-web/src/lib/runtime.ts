@@ -300,11 +300,13 @@ export function directChatScope(): { gatewayRoot: string; accessKeyId: string } 
 
 /**
  * Start the direct-chat runtime: mark replies that a previous process left live
- * as interrupted, then keep doing that whenever the app leaves the foreground.
+ * as interrupted, and keep the checkpoints warm while replies run.
  *
- * Both signals are subscribed, because `visibilitychange` is unreliable in some
- * WebViews and `appStateChange` does not fire in a browser. Returning a cleanup
- * function keeps this testable and keeps the listeners owned.
+ * Leaving the foreground no longer cancels a reply (ADR §6): a few seconds away
+ * used to cost the answer. What deactivation does do is write what has arrived,
+ * because the process may not come back. Both signals are subscribed, since
+ * `visibilitychange` is unreliable in some WebViews and `appStateChange` does
+ * not fire in a browser. The cleanup keeps the listeners owned.
  */
 export async function startDirectChatRuntime(): Promise<() => void> {
   if (!nativePlatform) return () => {};
@@ -316,7 +318,7 @@ export async function startDirectChatRuntime(): Promise<() => void> {
   } catch (error) {
     console.warn("[remote-web] direct chat history could not be opened", error);
   }
-  const onHidden = () => void runner.interrupt("backgrounded");
+  const onHidden = () => void runner.flushAll();
   const stopVisibility = watchVisibility({ onHidden, onVisible: () => {} });
   const stopAppState = appState ? watchAppState({ onHidden, onVisible: () => {} }, appState) : () => {};
   return () => {
