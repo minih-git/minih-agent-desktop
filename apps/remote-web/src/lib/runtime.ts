@@ -36,6 +36,7 @@ import {
   createMemoryStorage,
   type RegistryStorage,
 } from "./host-registry.js";
+import { createBackgroundRetention } from "./native-background.js";
 import { readConnection, type DirectChatConnection } from "./direct-chat/connection.js";
 import { resolveModelGatewayOrigin } from "./model-gateway-origin.js";
 import { NativeCredentialPort, type NativePairClient } from "./native-credential-port.js";
@@ -321,9 +322,23 @@ export async function startDirectChatRuntime(): Promise<() => void> {
   const onHidden = () => void runner.flushAll();
   const stopVisibility = watchVisibility({ onHidden, onVisible: () => {} });
   const stopAppState = appState ? watchAppState({ onHidden, onVisible: () => {} }, appState) : () => {};
+  /**
+   * iOS suspends the WebView within seconds unless the app asks for background
+   * time, so the grant is taken while any reply runs and given back with the
+   * last one (ADR §6).
+   */
+  const retention = createBackgroundRetention();
+  const holdBackgroundTime = () => {
+    const state = runner.state();
+    void retention.setRunningReplies(state.phase === "running" ? state.replies.length : 0);
+  };
+  const stopRetention = subscribeDirectChat(holdBackgroundTime) ?? (() => {});
+  holdBackgroundTime();
   return () => {
     stopVisibility();
     stopAppState();
+    stopRetention();
+    void retention.setRunningReplies(0);
     runner.dispose();
   };
 }
