@@ -87,7 +87,19 @@ export type Screen =
    * the gear was opened from, the way `projectSessions.viaProjects` records its
    * origin, so back returns to that root (ADR: "Where it was opened from").
    */
-  | { kind: "settings"; from: RootKind };
+  | { kind: "settings"; from: RootKind }
+  /**
+   * An earlier account's conversations, reached from Settings and always
+   * read-only (ADR §4). The scope travels with the screen because the current
+   * connection is a different account, or none at all.
+   */
+  | {
+      kind: "scopedChats";
+      gatewayRoot: string;
+      accessKeyId: string;
+      /** The root Settings was opened from, so back can rebuild it. */
+      from: RootKind;
+    };
 
 /** Whether the screen is one of the two roots a tab bar can switch between. */
 export function isRootScreen(screen: Screen): screen is Extract<Screen, { kind: RootKind }> {
@@ -139,6 +151,9 @@ export function previousScreen(screen: Screen): Screen | null {
       return screen.viaSettings === true
         ? { kind: "settings", from: screen.from }
         : { kind: screen.from };
+    case "scopedChats":
+      // Back returns to the Settings page this list was opened from.
+      return { kind: "settings", from: screen.from };
     case "settings":
       return { kind: screen.from };
     case "chats":

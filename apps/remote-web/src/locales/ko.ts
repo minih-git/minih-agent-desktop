@@ -429,6 +429,7 @@ export const ko: Record<TranslationKey, string> = {
   "chats.archivedLink": "보관됨 · {{count}}",
   "chats.replying": "답변 중",
   "chats.offlineBanner": "기록은 읽을 수 있습니다. 다시 보내려면 모델 게이트웨이를 연결하세요.",
+  "chats.readOnlyScope": "읽기 전용 · 다른 계정에 저장된 기록입니다. 다시 보내려면 해당 계정을 연결하세요.",
   "chats.archiveTitle": "보관됨",
   "chats.archiveEmpty": "보관된 대화가 없습니다.",
   "chats.openConversation": "대화 열기",

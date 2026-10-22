@@ -68,6 +68,21 @@ export function screenFromHistoryState(state: unknown): Screen | null {
             ...(screen.fromArchive === true ? { fromArchive: true } : {}),
           }
         : null;
+    case "scopedChats":
+      // Every field is untrusted input: an empty account or an unknown root
+      // cannot be turned into a screen.
+      return typeof screen.gatewayRoot === "string" &&
+        screen.gatewayRoot &&
+        typeof screen.accessKeyId === "string" &&
+        screen.accessKeyId &&
+        isRootKind(screen.from)
+        ? {
+            kind: "scopedChats",
+            gatewayRoot: screen.gatewayRoot,
+            accessKeyId: screen.accessKeyId,
+            from: screen.from,
+          }
+        : null;
     case "modelGateway":
       // Both halves of the origin are needed to restore the same back step.
       return isRootKind(screen.from)

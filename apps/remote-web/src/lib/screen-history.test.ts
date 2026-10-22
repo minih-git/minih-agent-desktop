@@ -223,3 +223,21 @@ describe("sameScreen", () => {
     expect(sameScreen(hosts, projects)).toBe(false);
   });
 });
+
+describe("the read-only list of an earlier account", () => {
+  it("round-trips with the scope and its origin", () => {
+    const screen = { kind: "scopedChats", gatewayRoot: "https://models.test", accessKeyId: "42", from: "chats" } as Screen;
+    expect(screenFromHistoryState({ screen })).toEqual(screen);
+  });
+
+  it("refuses an entry that cannot name an account", () => {
+    for (const screen of [
+      { kind: "scopedChats", gatewayRoot: "", accessKeyId: "42", from: "chats" },
+      { kind: "scopedChats", gatewayRoot: "https://models.test", accessKeyId: "", from: "chats" },
+      { kind: "scopedChats", gatewayRoot: "https://models.test", accessKeyId: "42", from: "session" },
+      { kind: "scopedChats", accessKeyId: "42", from: "chats" },
+    ]) {
+      expect(screenFromHistoryState({ screen }), JSON.stringify(screen)).toBeNull();
+    }
+  });
+});

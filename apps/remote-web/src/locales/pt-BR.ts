@@ -429,6 +429,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "chats.archivedLink": "Arquivadas · {{count}}",
   "chats.replying": "Respondendo",
   "chats.offlineBanner": "O histórico pode ser lido. Conecte o gateway de modelos para enviar.",
+  "chats.readOnlyScope": "Somente leitura · salvo em outra conta. Conecte essa conta para enviar de novo.",
   "chats.archiveTitle": "Arquivadas",
   "chats.archiveEmpty": "Nenhuma conversa arquivada.",
   "chats.openConversation": "Abrir conversa",

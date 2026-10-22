@@ -101,3 +101,11 @@ describe("previousScreen", () => {
     expect(isRootKind("nope")).toBe(false);
   });
 });
+
+describe("the read-only list of an earlier account", () => {
+  it("returns to the Settings page it was opened from", () => {
+    expect(
+      previousScreen({ kind: "scopedChats", gatewayRoot: "https://models.test", accessKeyId: "42", from: "hosts" }),
+    ).toEqual({ kind: "settings", from: "hosts" });
+  });
+});

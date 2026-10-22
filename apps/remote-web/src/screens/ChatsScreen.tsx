@@ -53,7 +53,13 @@ export function ChatsScreen({
 }: ChatsScreenProps) {
   const { t } = useTranslation();
   const history = directChatHistory();
-  const scope = directChatScope();
+  const connectedScope = directChatScope();
+  /**
+   * While nothing is connected, the account used most recently is still
+   * readable: removing a key must not make its conversations disappear.
+   */
+  const [offlineScope, setOfflineScope] = useState<{ gatewayRoot: string; accessKeyId: string } | null>(null);
+  const scope = connectedScope ?? offlineScope;
 
   const [rows, setRows] = useState<DirectChatSummary[]>([]);
   const [archivedCount, setArchivedCount] = useState(0);
@@ -62,6 +68,11 @@ export function ChatsScreen({
 
   useEffect(() => {
     let cancelled = false;
+    if (!connectedScope) {
+      void history.lastScope().then((last) => {
+        if (!cancelled) setOfflineScope(last);
+      });
+    }
     const load = async () => {
       if (!scope) {
         setRows([]);
@@ -83,7 +94,7 @@ export function ChatsScreen({
       cancelled = true;
       unsubscribe?.();
     };
-  }, [history, scope, query]);
+  }, [history, connectedScope, scope, query]);
 
   const gear = (
     <button
@@ -202,6 +213,12 @@ export function ChatsScreen({
                 </ListGroup>
               </>
             )}
+
+            {!connectedScope ? (
+              <p className="mt-2 px-4 text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
+                {t("chats.readOnlyScope")}
+              </p>
+            ) : null}
 
             {archivedCount > 0 ? (
               <div className="mt-3">

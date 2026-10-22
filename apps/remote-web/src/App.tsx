@@ -31,6 +31,7 @@ import { HostsScreen } from "./screens/HostsScreen.js";
 import { PairScreen } from "./screens/PairScreen.js";
 import { ProjectSessionsScreen } from "./screens/ProjectSessionsScreen.js";
 import { ProjectsScreen } from "./screens/ProjectsScreen.js";
+import { ScopedChatsScreen } from "./screens/ScopedChatsScreen.js";
 import { SessionScreen } from "./screens/SessionScreen.js";
 import { TabBar } from "./components/TabBar.js";
 import { useEdgeSwipe } from "./hooks/useEdgeSwipe.js";
@@ -404,6 +405,25 @@ export default function App() {
             await directChatService().disconnect();
             reloadConnection();
           }}
+          onOpenScope={(older) =>
+            navigate({
+              kind: "scopedChats",
+              gatewayRoot: older.gatewayRoot,
+              accessKeyId: older.accessKeyId,
+              from: screen.from,
+            })
+          }
+        />
+      );
+    }
+
+    if (screen.kind === "scopedChats") {
+      return (
+        <ScopedChatsScreen
+          gatewayRoot={screen.gatewayRoot}
+          accessKeyId={screen.accessKeyId}
+          onBack={goBack}
+          onOpenConversation={(conversationId) => navigate({ kind: "chat", conversationId })}
         />
       );
     }

@@ -429,6 +429,7 @@ export const fr: Record<TranslationKey, string> = {
   "chats.archivedLink": "Archivées · {{count}}",
   "chats.replying": "Réponse en cours",
   "chats.offlineBanner": "L'historique est lisible. Connectez la passerelle de modèles pour envoyer.",
+  "chats.readOnlyScope": "Lecture seule · enregistré sous un autre compte. Connectez ce compte pour renvoyer.",
   "chats.archiveTitle": "Archivées",
   "chats.archiveEmpty": "Aucune discussion archivée.",
   "chats.openConversation": "Ouvrir la discussion",

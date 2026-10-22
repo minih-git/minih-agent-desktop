@@ -62,6 +62,12 @@ export type DirectChatHistory = {
   list(scope: DirectChatScope, options?: { archived?: boolean; query?: string }): Promise<DirectChatSummary[]>;
   /** Every scope that has history, so Settings can offer the older ones. */
   scopes(): Promise<DirectChatScope[]>;
+  /**
+   * The account whose conversation moved last, key or no key: D1 keeps reading
+   * an account's history after it is unlinked, so the answer cannot come from
+   * the connection.
+   */
+  lastScope(): Promise<DirectChatScope | null>;
   /** One conversation with its messages and attempts, or null. */
   transcript(conversationId: string): Promise<DirectChatTranscript | null>;
 
@@ -182,6 +188,14 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
         seen.set(scopeKey(conversation.scope), conversation.scope);
       }
       return [...seen.values()];
+    },
+
+    async lastScope() {
+      const conversations = await store.conversations();
+      const newest = conversations
+        .slice()
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+      return newest?.scope ?? null;
     },
 
     async transcript(conversationId) {

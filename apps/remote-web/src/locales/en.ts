@@ -433,6 +433,7 @@ export const en = {
   "chats.archivedLink": "Archived · {{count}}",
   "chats.replying": "Replying",
   "chats.offlineBanner": "History is readable. Connect the model gateway to send again.",
+  "chats.readOnlyScope": "Read-only · saved under another account. Connect that account to send again.",
   "chats.archiveTitle": "Archived",
   "chats.archiveEmpty": "No archived conversations.",
   "chats.openConversation": "Open conversation",

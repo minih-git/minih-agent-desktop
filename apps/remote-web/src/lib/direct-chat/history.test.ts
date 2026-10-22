@@ -496,3 +496,26 @@ describe("searching a conversation", () => {
     expect((await history.list(SCOPE, { query: "kumquat" }))[0]?.preview).toBe("another answer");
   });
 });
+
+describe("the account used most recently", () => {
+  it("is the one whose conversation moved last, even after unlinking", async () => {
+    const { history, turn } = harness();
+    const mine = await history.beginTurn(turn({ text: "mine", now: "2026-10-21T09:00:00.000Z" }));
+    if (!mine.ok) throw new Error("setup failed");
+    await history.finish(mine.attempt, { state: "complete", text: "a", now: "2026-10-21T09:00:01.000Z" });
+    const theirs = await history.beginTurn(
+      turn({ text: "theirs", scope: OTHER_SCOPE, now: "2026-10-21T10:00:00.000Z" }),
+    );
+    if (!theirs.ok) throw new Error("setup failed");
+    await history.finish(theirs.attempt, { state: "complete", text: "b", now: "2026-10-21T10:00:01.000Z" });
+
+    // No key is involved: the history itself says which account was last used,
+    // so D1 can still list it after unlinking.
+    expect(await history.lastScope()).toEqual(OTHER_SCOPE);
+  });
+
+  it("is nothing at all when there is no history", async () => {
+    const { history } = harness();
+    expect(await history.lastScope()).toBeNull();
+  });
+});

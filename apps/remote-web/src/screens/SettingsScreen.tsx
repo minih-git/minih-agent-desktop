@@ -38,6 +38,11 @@ export type SettingsScreenProps = {
   onBack: () => void;
   onConnect: () => void;
   onDisconnect: () => Promise<void>;
+  /**
+   * Open an older account's conversations. They are history this device keeps
+   * for reference: listed read-only, never sent under the key held today.
+   */
+  onOpenScope: (scope: DirectChatScope) => void;
 };
 
 export function SettingsScreen({
@@ -46,6 +51,7 @@ export function SettingsScreen({
   onBack,
   onConnect,
   onDisconnect,
+  onOpenScope,
 }: SettingsScreenProps) {
   const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
@@ -196,6 +202,8 @@ export function SettingsScreen({
                     count: olderCount,
                   })}
                   subtitle={<span className="break-all font-mono">{older.gatewayRoot}</span>}
+                  chevron
+                  onClick={() => onOpenScope(older)}
                 />
               ))}
             </ListGroup>

@@ -429,6 +429,7 @@ export const de: Record<TranslationKey, string> = {
   "chats.archivedLink": "Archiviert · {{count}}",
   "chats.replying": "Antwortet",
   "chats.offlineBanner": "Der Verlauf ist lesbar. Zum Senden das Modell-Gateway verbinden.",
+  "chats.readOnlyScope": "Schreibgeschützt · unter einem anderen Konto gespeichert. Verbinde dieses Konto, um wieder zu senden.",
   "chats.archiveTitle": "Archiviert",
   "chats.archiveEmpty": "Keine archivierten Unterhaltungen.",
   "chats.openConversation": "Unterhaltung öffnen",
