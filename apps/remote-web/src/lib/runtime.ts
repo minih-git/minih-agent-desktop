@@ -36,7 +36,7 @@ import {
   createMemoryStorage,
   type RegistryStorage,
 } from "./host-registry.js";
-import { readConnection } from "./direct-chat/connection.js";
+import { readConnection, type DirectChatConnection } from "./direct-chat/connection.js";
 import { resolveModelGatewayOrigin } from "./model-gateway-origin.js";
 import { NativeCredentialPort, type NativePairClient } from "./native-credential-port.js";
 import { dispatchBack } from "./navigation.js";
@@ -327,13 +327,54 @@ export async function startDirectChatRuntime(): Promise<() => void> {
 }
 
 export function directChatService(): DirectChatService {
-  directChat ??= createDirectChatService({
-    control: createControlClient({ origin: modelGatewayOrigin, transport: capacitorHttpTransport }),
-    secret: createDirectChatSecret(secureStore()),
-    storage: browserStorage(),
-    gatewayRoot: modelGatewayOrigin,
-  });
+  if (!directChat) {
+    const base = createDirectChatService({
+      control: createControlClient({ origin: modelGatewayOrigin, transport: capacitorHttpTransport }),
+      secret: createDirectChatSecret(secureStore()),
+      storage: browserStorage(),
+      gatewayRoot: modelGatewayOrigin,
+    });
+    /**
+     * The account is the identity of a conversation's history, and a reply in
+     * flight carries the key that started it. Connecting as another account or
+     * unlinking therefore has to stop that reply: letting it finish would write
+     * one account's answer into a scope this device no longer speaks for.
+     */
+    directChat = {
+      ...base,
+      async connect(key) {
+        const before = readConnection(browserStorage());
+        const outcome = await base.connect(key);
+        if (outcome.ok && accountChanged(before, outcome.connection)) {
+          await runnerInstance?.interrupt("account-changed");
+        }
+        if (outcome.ok) notifyDirectChatChanged();
+        return outcome;
+      },
+      async disconnect() {
+        await base.disconnect();
+        await runnerInstance?.interrupt("account-changed");
+        notifyDirectChatChanged();
+      },
+    };
+  }
   return directChat;
+}
+
+/**
+ * Whether a connection is now a different account than it was.
+ *
+ * The identity is the gateway root plus `access_key_id`, so rotating a key keeps
+ * the account and must not disturb a running reply; a different id is a
+ * different history scope.
+ */
+export function accountChanged(
+  previous: DirectChatConnection | null,
+  next: { gatewayRoot: string; accessKeyId: string } | null,
+): boolean {
+  if (!next) return previous !== null;
+  if (!previous) return true;
+  return previous.gatewayRoot !== next.gatewayRoot || previous.accessKeyId !== next.accessKeyId;
 }
 
 let appState: AppStateSource | null = null;
