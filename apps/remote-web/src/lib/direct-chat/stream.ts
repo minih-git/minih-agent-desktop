@@ -54,9 +54,19 @@ export type DirectStreamEvent =
   /** The stream failed after it started. */
   | { type: "error"; message: string };
 
+/** How a reply failed, as the screen needs to present it. */
+export type DirectStreamFailureKind =
+  | "unauthorized"
+  | "quota"
+  | "network-range"
+  | "transport"
+  | "gateway"
+  /** The conversation no longer fits the model; retrying it unchanged cannot help. */
+  | "context-overflow";
+
 export type DirectStreamResult =
   | { ok: true; text: string; usage: { inputTokens: number | null; outputTokens: number | null } | null; stopped: boolean }
-  | { ok: false; failure: { kind: "unauthorized" | "quota" | "network-range" | "transport" | "gateway"; message: string; status?: number } };
+  | { ok: false; failure: { kind: DirectStreamFailureKind; message: string; status?: number } };
 
 export type DirectStreamOptions = {
   /** The model gateway origin; `null` means this build has none. */
@@ -241,12 +251,34 @@ function incompleteReason(response: Record<string, unknown>): "length" | "conten
   return text(details.reason) === "content_filter" ? "content-filter" : "length";
 }
 
+/**
+ * Whether the gateway is refusing because the conversation is too long.
+ *
+ * The signal is the gateway's own words about context length, never the model's
+ * name and never a guess: an unrelated 400 must stay a plain gateway failure, or
+ * the screen would tell the user to start over for no reason.
+ */
+function looksLikeContextOverflow(detail: string): boolean {
+  return /context[ _-]?length|context[ _-]?window|maximum context|too many tokens|prompt is too long|exceeds the (?:model'?s )?context/i.test(
+    detail,
+  );
+}
+
 /** The failure kinds the data plane distinguishes, from an HTTP status. */
 function streamFailure(status: number, message: string) {
   const detail = message.trim();
   const suffix = detail ? `: ${detail.slice(0, 300)}` : "";
   if (status === 429 || status === 402) {
     return { kind: "quota" as const, message: `the model gateway refused this request (${status})${suffix}`, status };
+  }
+  if (looksLikeContextOverflow(detail) && status >= 400 && status < 500) {
+    // Retrying the same conversation would fail the same way; the remedy is a
+    // new one, which the screen offers.
+    return {
+      kind: "context-overflow" as const,
+      message: `this conversation no longer fits the model's context (${status})${detail ? `: ${detail.slice(0, 300)}` : ""}`,
+      status,
+    };
   }
   if (status === 401 || status === 403) {
     const range = /allowed_peer_cidrs|peer_cidr|source ip|client ip|\bcidr\b|network range/i.test(detail);

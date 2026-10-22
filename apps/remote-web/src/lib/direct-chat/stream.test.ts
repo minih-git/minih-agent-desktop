@@ -407,3 +407,30 @@ describe("event decoding", () => {
     expect(events.terminal).toBe(false);
   });
 });
+
+describe("a reply that does not fit the model's context", () => {
+  it("is its own kind, so the remedy is a new conversation", async () => {
+    const cases: Array<{ status: number; message: string }> = [
+      { status: 400, message: "This model's maximum context length is 128000 tokens" },
+      { status: 400, message: "context_length_exceeded: your messages resulted in 200000 tokens" },
+      { status: 413, message: "prompt is too long" },
+      { status: 422, message: "the request exceeds the context window" },
+    ];
+    for (const { status, message } of cases) {
+      const { fetchImpl } = streamingFetch([], { status, body: JSON.stringify({ error: { message } }) });
+      const result = await streamDirectReply(request, { origin: ORIGIN, fetchImpl });
+      expect(result.ok, message).toBe(false);
+      if (!result.ok) expect(result.failure.kind, message).toBe("context-overflow");
+    }
+  });
+
+  it("does not call an unrelated 400 a context problem", async () => {
+    const { fetchImpl } = streamingFetch([], {
+      status: 400,
+      body: JSON.stringify({ error: { message: "invalid parameter: temperature" } }),
+    });
+    const result = await streamDirectReply(request, { origin: ORIGIN, fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.failure.kind).toBe("gateway");
+  });
+});
