@@ -204,8 +204,9 @@ request runs. Both requests are Host-owned and have no wall-clock budget, so a
 large project can finish after the renderer navigates away.
 
 Contracts live in `packages/shared/src/types/project-archive.ts`, the Host
-implementation in `crates/host-core/src/project_archive.rs`, and the main-process
-pickers in `apps/desktop/electron/main/ipc/workspace-ipc.ts`.
+implementation in `crates/host-core/src/project_archive/` (export, import and
+path modules), and the main-process pickers in
+`apps/desktop/electron/main/ipc/workspace-ipc.ts`.
 
 ## 8. Verification
 

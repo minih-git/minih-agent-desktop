@@ -1,5 +1,13 @@
 use super::*;
+use crate::agent_capabilities::CapabilityLevel;
 use crate::state::AppState;
+use anyhow::Result;
+use serde_json::json;
+use std::fs::{self, File};
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::path::Path;
+use zip::write::SimpleFileOptions;
+use zip::{ZipArchive, ZipWriter};
 
 fn silent(_phase: &'static str, _done: u64, _total: u64) {}
 
@@ -601,7 +609,7 @@ fn failed_group_write_rolls_back_projects_folders_and_automations() {
         "{error}"
     );
 
-    let mut state = AppState::open(target_dir.path()).expect("target state");
+    let state = AppState::open(target_dir.path()).expect("target state");
     let restored = destination.join("faulty").to_string_lossy().into_owned();
     assert!(
         state
