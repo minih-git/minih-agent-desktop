@@ -46,10 +46,7 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
-use super::domains::{
-    entity, project_scope, refresh_digest, PortableEntity, ProjectIdentityOverrides,
-    DOMAIN_LEARNED_MEMORY,
-};
+use super::domains::{entity, refresh_digest, PortableEntity, DOMAIN_LEARNED_MEMORY};
 use super::engine::{mapped_project_paths, StoredConfig};
 use crate::db::{now_ms, Database};
 use crate::memory::repository::entry_from_row_for_sync;
@@ -118,17 +115,14 @@ impl SyncedScope {
     }
 }
 
-/// Capture every scope that has something worth syncing.
+/// Capture the one scope that travels: the user's own learned memory.
 ///
-/// A scope with neither a live entry nor a tombstone contributes nothing, so a
-/// user who never used learned memory adds no entities to a revision.
-pub(crate) fn capture_learned_memory(
-    st: &mut AppState,
-    identities: &ProjectIdentityOverrides,
-) -> Result<Vec<PortableEntity>> {
+/// A project's or group's learned notes describe folders this machine owns, so
+/// they stay local and travel through a project archive. A scope with neither a
+/// live entry nor a tombstone contributes nothing, so a user who never used
+/// learned memory adds no entities to a revision.
+pub(crate) fn capture_learned_memory(st: &mut AppState) -> Result<Vec<PortableEntity>> {
     let mut result = Vec::new();
-    // The user scope needs no mapping at all, so it is the one scope that always
-    // arrives intact on a device whose folders are different.
     let user = capture_scope(st, &MemoryScope::user())?;
     if !user.is_empty() {
         result.push(entity(
@@ -139,50 +133,6 @@ pub(crate) fn capture_learned_memory(
             false,
             true,
             false,
-            Vec::new(),
-        ));
-    }
-
-    // One entity per project identity: the project group for a group member, the
-    // project path otherwise — the same identity pinned memory uses.
-    let mut seen: Vec<String> = Vec::new();
-    for project in st.db.list_projects()? {
-        let (project_id, group_id, root_position) = project_scope(st, &project.path, identities)?;
-        let logical_id = group_id.clone().unwrap_or_else(|| project_id.clone());
-        if seen.contains(&logical_id) {
-            continue;
-        }
-        let scope = st.db.learned_memory_scope_for_path(&project.path)?;
-        let synced = capture_scope(st, &scope)?;
-        if synced.is_empty() {
-            continue;
-        }
-        seen.push(logical_id.clone());
-        let mut payload = json!({
-            "scopeKind": SCOPE_PROJECT,
-            "projectLogicalId": project_id,
-            "projectName": project.name,
-            "scope": synced,
-        });
-        if let Some(object) = payload.as_object_mut() {
-            if let Some(group_id) = group_id {
-                object.insert("projectGroupLogicalId".into(), Value::String(group_id));
-            }
-            if let Some(position) = root_position {
-                object.insert("projectRootPosition".into(), json!(position));
-            }
-        }
-        result.push(entity(
-            DOMAIN_LEARNED_MEMORY,
-            format!("learned-memory:{logical_id}"),
-            project.name,
-            payload,
-            false,
-            // A note is content the user wrote or accepted, so the entity is
-            // secret-bearing in the same sense pinned memory is: the sync UI
-            // says so before anything travels.
-            true,
-            true,
             Vec::new(),
         ));
     }

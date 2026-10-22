@@ -86,6 +86,11 @@ export type RacpRemoteHostClientOptions = {
   onStateChange?: (state: RacpClientState) => void;
   /** Optional structured log; defaults to a no-op. */
   log?: (level: "info" | "warn", message: string, data?: Record<string, unknown>) => void;
+  /**
+   * Emit the opt-in per-request/event `remote latency` records (P0
+   * measurement). Defaults to `MINIH_REMOTE_LATENCY_TRACE=1`.
+   */
+  latencyTrace?: boolean;
 };
 
 export type RacpRemoteHostClient = {
@@ -107,10 +112,19 @@ export type RacpRemoteHostClient = {
   close(): Promise<void>;
 };
 
-/** The two additive services a remote workspace install must advertise. */
+/**
+ * What the live handshake advertised, projected to what a caller can act on.
+ *
+ * `workspaceRead` follows the protocol's three-state answer (§6.2): a Host that
+ * says `false` withholds the file panel, and a Host that says nothing leaves the
+ * decision to its own operation catalog — which is how `agent-host-cli`
+ * behaves — so only an explicit refusal reads as `false` here.
+ */
 export type RemoteWorkspaceCapabilities = {
   workspaceTools: boolean;
   workspaceFiles: boolean;
+  workspaceRead: boolean;
+  remoteHostProfile: boolean;
 };
 
 /**
@@ -147,6 +161,9 @@ export function createRacpRemoteHostClient(
     return {
       workspaceTools: capabilities.workspaceTools === true,
       workspaceFiles: capabilities.workspaceFiles === true,
+      // Omitted means the Host leaves the answer to its operation catalog.
+      workspaceRead: capabilities.workspaceRead !== false,
+      remoteHostProfile: capabilities.remoteHostProfile === true,
     };
   };
   const requireWorkspace = (capability?: keyof RemoteWorkspaceCapabilities) => {
@@ -203,6 +220,7 @@ export function createRacpRemoteHostClient(
     ...(options.requestTimeoutMs !== undefined ? { requestTimeoutMs: options.requestTimeoutMs } : {}),
     ...(options.reconnect ? { reconnect: options.reconnect } : {}),
     ...(options.log ? { log: options.log } : {}),
+    latencyTrace: options.latencyTrace ?? process.env.MINIH_REMOTE_LATENCY_TRACE === "1",
   });
   const client: RemoteHostClient = {
     async request<T = unknown>(method: string, params?: unknown, timeoutMs?: number): Promise<T> {

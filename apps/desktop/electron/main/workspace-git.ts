@@ -1,3 +1,5 @@
+import { isRemoteProjectPath } from "@minih-agent/shared";
+
 /**
  * Resolve the active git branch for a workspace path by reading `.git/HEAD`.
  * Returns the enriched workspace object with `branch` set, or undefined if unresolvable.
@@ -5,7 +7,7 @@
 export async function withGitBranch<T extends { path?: string; name?: string } | null | undefined>(
   workspace: T,
 ): Promise<T> {
-  if (!workspace || !workspace.path || workspace.path.startsWith("remote-project:")) return workspace;
+  if (!workspace || !workspace.path || isRemoteProjectPath(workspace.path)) return workspace;
   try {
     const { readFile } = await import("node:fs/promises");
     const { join } = await import("node:path");

@@ -15,7 +15,7 @@ export function Screen({ children, animate = "none", className = "", ...rest }: 
 
   return (
     <div
-      className={`relative flex h-dvh w-full flex-col overflow-hidden bg-[var(--rm-bg-page)] text-[var(--rm-text-primary)] ${animClass} ${className}`}
+      className={`relative flex h-full w-full flex-col overflow-hidden bg-[var(--rm-bg-page)] text-[var(--rm-text-primary)] ${animClass} ${className}`}
       {...rest}
     >
       <div className="mx-auto flex h-full w-full max-w-[640px] flex-1 flex-col overflow-hidden">
@@ -44,7 +44,7 @@ export function ScreenContent({
 }: ScreenContentProps) {
   return (
     <main
-      className={`rm-gutter flex-1 overflow-x-hidden overflow-y-auto ${
+      className={`rm-gutter flex-1 touch-pan-y overflow-x-hidden overflow-y-auto ${
         hasDock ? "pb-4" : "rm-scroll-end"
       } ${className}`}
       {...rest}

@@ -37,6 +37,7 @@ import {
   askToolOptionLabel,
   deltaStreamPayloadFits,
   effectiveRemotePermissionMode,
+  isDesktopClassDevice,
   racpKindForAgentEvent,
   rolesAllowOperation,
 } from "@minih-agent/shared";
@@ -147,6 +148,15 @@ export type AttachParams = {
   role?: RacpRole;
   after?: RacpCursor;
   includeSnapshot?: boolean;
+  /**
+   * How many history items the snapshot should carry at most (protocol §16.3).
+   * Absent keeps the Host's default page; 0 asks for the recovery boundary
+   * only — approvals, inputs, and the event cursor, no transcript items — for
+   * a client whose transcript comes from `session/history` paging. The Host
+   * clamps the value to its own default; a Host that predates the parameter
+   * ignores it and sends the default page, which every caller must accept.
+   */
+  snapshotHistoryLimit?: number;
 };
 
 export type AttachResult = {
@@ -459,7 +469,9 @@ export class AgentHost {
       replayComplete,
       ...(decision.status === "resync" ? { resyncReason: decision.reason } : {}),
     };
-    if (params.includeSnapshot !== false) result.snapshot = await this.snapshot(state.id, summary);
+    if (params.includeSnapshot !== false) {
+      result.snapshot = await this.snapshot(state.id, summary, params.snapshotHistoryLimit);
+    }
     return result;
   }
 
@@ -549,7 +561,10 @@ export class AgentHost {
       // Security §3.7: a gateway-origin principal never gets the approver
       // override, and the ceiling applies no matter how the Host configures
       // `applyCeilingToPairedDevices` (pairedDevice is false for it already).
-      approverOverride: principal.origin === "gateway" ? false : principal.approverOverride ?? false,
+      // A desktop-class device is the one exception (ADR amendment 3,
+      // decision 4): it stands where an SSH-paired owner stands.
+      approverOverride:
+        principal.origin === "gateway" && !isDesktopClassDevice(principal) ? false : principal.approverOverride ?? false,
     });
     const admission: RacpTurnAdmission = forceQueue ? "queue" : params.admission ?? "reject_if_busy";
     const busy = this.isBusy(state);
@@ -808,8 +823,12 @@ export class AgentHost {
     }
     // Security §3.7 (gate 25): a gateway-origin principal never grants
     // `allow-session`, regardless of `allowRemoteSessionGrants`. This is not a
-    // default; Host policy cannot widen it.
-    if (response.decision === "allow-session" && principal.origin === "gateway") {
+    // default; Host policy cannot widen it. A desktop-class device is the one
+    // exception (ADR amendment 3, decision 4): the target Host verified a
+    // same-account computer's proof, so it stands where an SSH-paired owner
+    // stands. A phone or browser device, and any record written before the
+    // class existed, stays refused.
+    if (response.decision === "allow-session" && principal.origin === "gateway" && !isDesktopClassDevice(principal)) {
       throw racpError("FORBIDDEN", "gateway-paired devices cannot grant allow-session");
     }
     const result = await this.approvals.resolve(response, principal, state.revision + 1);
@@ -863,10 +882,19 @@ export class AgentHost {
     return { ...page, revision: state.revision };
   }
 
-  async snapshot(sessionId: string, summary?: SessionSummary): Promise<RacpSessionSnapshot> {
+  async snapshot(sessionId: string, summary?: SessionSummary, snapshotHistoryLimit?: number): Promise<RacpSessionSnapshot> {
     const resolved = summary ?? (await this.requireSession(sessionId));
     const state = this.state(sessionId);
-    const page = await this.sessions.history(sessionId, { limit: this.snapshotItems });
+    // A client that only needs the recovery boundary (approvals, inputs, the
+    // event cursor) asks for zero history items: the transcript reaches it
+    // through `session/history` paging, as it does for a phone. The clamp keeps
+    // an unknown caller from raising the Host's own default.
+    const limit = snapshotHistoryLimit === undefined
+      ? this.snapshotItems
+      : Math.max(0, Math.min(snapshotHistoryLimit, this.snapshotItems));
+    const page = limit > 0
+      ? await this.sessions.history(sessionId, { limit })
+      : { items: [], hasMore: true };
     const activeTurn = state.activeTurnId ? state.turns.get(state.activeTurnId) : undefined;
     return {
       session: this.toRacpSession(resolved, state),
@@ -1271,12 +1299,23 @@ export class AgentHost {
   }
 
   private async syncPendingApprovals(state: SessionState): Promise<void> {
-    await this.approvals.syncPendingTools(state.id, {
+    const synced = await this.approvals.syncPendingTools(state.id, {
       turnId: state.activeTurnId ?? "",
       revision: state.revision,
-      lifetimeMs: this.approvalLifetime(state),
+      lifetimeMs: this.policy.approvalLifetimeMs,
       allowSession: this.allowRemoteSessionGrants,
     });
+    const remoteExpiresAt = new Date(this.clock.now() + this.policy.approvalLifetimeMs).toISOString();
+    for (const entry of state.pendingInputs.values()) {
+      if (remoteExpiresAt > entry.request.expiresAt) {
+        entry.request.expiresAt = remoteExpiresAt;
+      }
+    }
+    if (synced.length > 0 || this.approvals.list(state.id).length > 0) {
+      state.status = "waiting_permission";
+      const turn = state.activeTurnId ? state.turns.get(state.activeTurnId) : undefined;
+      if (turn && isActive(turn.status)) turn.status = "waiting_approval";
+    }
   }
 
   private approvalLifetime(state: SessionState): number {
@@ -1284,10 +1323,15 @@ export class AgentHost {
   }
 
   private applyStatus(state: SessionState, status: AgentStatus): void {
-    // A pending question outranks what the runtime reports (§17.4.1): the agent is
-    // still "running" while it waits for an answer, so without this the status
-    // written by `asktool_request` would be overwritten a moment later and the
-    // phone would never see it.
+    // Pending approvals and questions outrank what the runtime reports (§17.4.1):
+    // tool permissions live in host-core and asktool inputs live in the Host, so
+    // the runtime's `status` event reports `pendingToolConfirmations: 0` while a
+    // card is still open.
+    if (status.isRunning && this.approvals.list(state.id).length > 0) {
+      state.status = "waiting_permission";
+      if (status.planningState) state.planningState = status.planningState;
+      return;
+    }
     if (state.pendingInputs.size > 0) {
       state.status = "waiting_input";
       if (status.planningState) state.planningState = status.planningState;
@@ -1430,6 +1474,10 @@ export class AgentHost {
       title: summary.title,
       ...(summary.projectId ? { projectId: summary.projectId } : {}),
       ...(summary.workspaceLabel ? { workspaceLabel: summary.workspaceLabel } : {}),
+      ...(summary.providerId ? { providerId: summary.providerId } : {}),
+      ...(summary.modelId ? { modelId: summary.modelId } : {}),
+      ...(summary.modelLabel ? { modelLabel: summary.modelLabel } : {}),
+      ...(summary.thinkingLevel ? { thinkingLevel: summary.thinkingLevel } : {}),
       mode: summary.mode,
       status: state.status,
       planningState: state.planningState,

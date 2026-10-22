@@ -13,6 +13,12 @@ export type JsonRpcRequest = {
   id: JsonRpcId;
   method: string;
   params?: unknown;
+  /**
+   * Optional diagnostic correlation id (P0 latency measurement). JSON-RPC 2.0
+   * allows members beyond the four it defines, and an older peer ignores this
+   * one. It is never an authorization input and never carries user data.
+   */
+  traceId?: string;
 };
 
 export type JsonRpcNotification = {

@@ -243,13 +243,20 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
   allows category selection before initial setup and later edits. Supported
   categories are selected by default; credentials and memory remain explicit
   opt-ins, with the credential warning shown when selected. All checkboxes use
-  the styled shared `Checkbox`, including disabled and mixed states.
-- **Secondary tools**: history/restore, preview, mappings and security/connection
+  the styled shared `Checkbox`, including disabled and mixed states. The block
+  states that the categories cover **global** configuration only and that a
+  project moves between machines through its archive instead
+  (D267-adjacent decision, ADR 0336).
+- **Secondary tools**: history/restore, preview and security/connection
   maintenance start collapsed. Expanding does not perform a sync, save, or reset
-  entered values. The preview retains its complete counts.
+  entered values. The preview retains its complete counts. The former
+  project-folder mapping list and the per-approval "map folder" action are
+  gone: no project-scoped record is offered for approval any more.
 - **Safety**: exported secrets and vault keys are never returned to the page.
   The vault password exists only in transient password controls. Imported
-  executable/security-sensitive content keeps local approval and mapping.
+  executable/security-sensitive content keeps local approval. Project-scoped
+  content never arrives through the page: it stays on the device that owns the
+  folder.
   Public HTTP and redirects are rejected; LAN HTTP follows the shared Host
   network policy, not a page-specific checkbox. Disconnect preserves local
   configuration and remote objects. Only the router-account format is
@@ -511,6 +518,26 @@ a usage tab.
   the matching row; a hit inside the folded area flashes its summary. The
   retired `remoteGateway` destination id resolves to `accounts`, never to an
   empty pane.
+
+- **Delivered (R8): one Accounts page, in this order.** The page is the
+  single entry for the account and everything that hangs off it, top to bottom:
+  **Minih Router account** (sign in once, as above) → **This computer** (the
+  computer's own name, the **Allow remote devices** switch, the strict-mode
+  switch, and the **Allow same-account computers to join automatically**
+  switch) → **My devices** (the computers of the account and this desktop's
+  granted devices, with their kind, online state, and revoke action) →
+  **Configuration sync** (the existing `ConfigSyncPage`, embedded, behavior
+  unchanged, vault password entered once per device) → **Advanced** (folded:
+  the SSH hosts entry — the Remote Hosts destination keeps its id — and the
+  self-hosted gateway form, which moves here with its own disclosure). A
+  sibling computer admitted through the account route appears in the host
+  list of the New project dialog as an account computer, marked offline or
+  "needs an update" when that applies. Every new row, switch, and state string
+  goes through i18n like the rest of the page. Two deviations from the earlier
+  draft, recorded where they land: the developer-mode **network center stays
+  inside the Minih Router panel** (the existing user-path test pins it there),
+  and the Advanced SSH entry is a button that navigates to the kept
+  destination rather than an embed of `RemoteHostsPage`.
 
 ### Models (`agent` tab)
 - The models page groups its sections in this order: the **chosen models** as
@@ -1001,7 +1028,19 @@ system while preserving their different data ownership:
   and refresh behavior remain documented with the plugin session contracts.
 
 ### Project archive
-- Reuses the durable Projects index as a settings-scale management surface
+- Reuses the durable Projects index as a settings-scale management surface. The
+  page name is the archive of projects, not the ZIP export defined below.
+- **Export**: the selected project's action menu offers "Export archive file…".
+  The menu states that the archive copies the whole folder, hidden files and
+  `.git` included, so the user can check for files they do not want to share.
+  Electron main shows a native save dialog and the Host streams the ZIP.
+- **Import**: a toolbar action opens a native archive picker and then a
+  destination-folder picker. The Host validates and stages the archive, refuses
+  a destination folder that already holds files, and leaves nothing behind on
+  failure. On success the index reloads with the imported project registered.
+- Both actions run one at a time, disable while running, and show the Host's
+  byte/entry progress; Host errors appear verbatim as an error toast. Every
+  string is localized, including the native dialog titles and filter names.
 - Always includes archived records; archived rows are grouped, never hidden, so
   the destination still has no visibility toggle
 - Supports project search, add, select, activate, pin, archive/restore, and

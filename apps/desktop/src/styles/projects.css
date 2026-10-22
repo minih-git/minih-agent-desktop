@@ -46,6 +46,24 @@
   font-size: var(--text-sm);
 }
 
+/* Host-reported progress of one archive export or import. */
+.projects-archive-progress {
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs-plus);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The export reminder that a whole folder, secrets included, is being copied. */
+.projects-menu-hint {
+  margin: 2px 8px 6px;
+  max-width: 260px;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-compact-plus);
+  white-space: normal;
+}
+
 .projects-result-count {
   flex: 0 0 auto;
   color: var(--ds-text-muted);

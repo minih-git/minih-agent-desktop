@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.24.0",
+    date: "2026-10-21",
+    highlights: [
+      "Telefon artık projeleri sohbetlerden ayırıyor: önce bir proje, sonra içindeki bir sohbet seçilir; her durum için tek bir sözcük dağarcığı ve uygulama öne döndüğünde net bir bildirim var.",
+      "Bir sohbet yanıtınızı beklediğini kendisi bildirir, böylece telefon bekleyen bir soruyu artık meşgul bir tur olarak göstermez.",
+      "Bildirimler kilit ekranında hangi sohbet olduğunu yazar ve bekleyen karar sayısını taşır; Android'de bildirimi uygulama kendisi çizer, dokununca o sohbet açılır.",
+      "Push yalnızca size gereken olaylarla sınırlanabilir, bir sohbetin birkaç olayı birlikte gruplanır ve iPhone yapısı artık push yetkisini de içerir.",
+      "Telefon, bilgisayarınızda çalışan bir sohbete resim ve küçük dosyalar gönderebilir.",
+      "Telefon bir sohbetin hangi modeli kullandığını görebilir ve değiştirebilir.",
+      "Yanıtlar telefon zaman çizelgesinde Markdown olarak gösterilir, uzun geçmişler okuduğunuz yeri kaydırmadan pencere pencere yüklenir ve geri gitme her yolda aynı davranır.",
+      "Masaüstü yanıtında metin seçmek onu giriş kutusuna alıntılar ve bir eklenti yerel bir dosyayı doğrudan çalışma panelinin tarayıcı görünümünde açabilir.",
+    ],
+  },
+  {
     version: "0.23.0",
     date: "2026-10-20",
     highlights: [

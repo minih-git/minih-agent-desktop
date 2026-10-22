@@ -25,6 +25,7 @@ export function ConfigSyncScopeFields({ selection, disabled, onChange }: {
   return (
     <SettingsDisclosure title={t("settings.configSync.categoriesTitle")}>
       <p className="settings-config-sync-note">{t("settings.configSync.categoriesDescription")}</p>
+      <p className="settings-config-sync-note">{t("settings.configSync.globalScopeNote")}</p>
       <div className="settings-config-sync-categories">
         {CATEGORIES.map(([key, label]) => (
           <Checkbox key={key} className="settings-config-sync-category"

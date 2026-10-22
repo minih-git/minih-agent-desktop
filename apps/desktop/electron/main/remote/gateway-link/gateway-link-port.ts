@@ -96,10 +96,11 @@ export type GatewayLinkPort = {
     devices?: HostDeviceDirectory | null;
     /** Where a revocation waits while the link is down (§11.5). */
     revocations?: DeviceRevocationQueue | null;
+    /** "A new computer joined the account" (ADR amendment 3); never an authorization. */
+    onHostJoined?: StartHostLinkOptions["onHostJoined"];
   }): HostLinkHandle;
 };
 
-/** The stable code every caller of a build without the transport receives. */
 export const GATEWAY_LINK_UNAVAILABLE = "GATEWAY_LINK_UNAVAILABLE";
 
 /** Failure a build without the Host link transport reports, never a silent no-op. */

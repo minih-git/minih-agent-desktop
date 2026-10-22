@@ -1,6 +1,6 @@
 {
   "name": "@minih-agent/remote-web",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "private": true,
   "type": "module",
   "description": "Browser (H5) and Capacitor iOS/Android client for a self-hosted RACP Gateway (ADR 0331, D665)",

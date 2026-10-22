@@ -86,28 +86,42 @@ Design principles:
 
 ## 4. Information architecture and navigation
 
-Navigation is a single push stack, no tab bar: the product has one hierarchy
-and a tab bar would waste vertical space on a timeline screen.
+Navigation is one push stack with two roots in the native build
+([ADR mobile-direct-gateway-chat](../../adr/mobile-direct-gateway-chat.md)):
+**Chats** — direct conversations with the model gateway, no computer required —
+and **Computers**, the existing remote hierarchy. A root is a bottom tab, so a
+root tab bar with two entries (Chats, Computers) shows on the two roots only of
+a native build; the browser build has neither the tab bar nor Chats and keeps
+today's single hierarchy. A timeline screen never shows the bar, so the bar
+costs no vertical space where the conversation lives.
 
 ```text
-Launch
- ├─ no computers ─▶ S1 Connect
- │                   ├─ S2 Account sign-in ─▶ S2a Request device ─▶ S2b Waiting ─▶ S2c Result
- │                   └─ S3 Pairing ticket
- └─ computers ────▶ S4 My computers
-                     ├─ (+) action sheet ─▶ S2 / S3
-                     ├─ (⋯) computer sheet: refresh · ask again · forget
-                     └─ S5 Sessions ─▶ S6 Session (timeline + decision dock + composer)
-Push tap ──────────▶ S6 Session, with S4 ▸ S5 restored beneath it
+Native build, two roots in one stack (the browser build keeps only Computers)
+
+Chats (root, D1) ── model gateway conversations, no computer required
+ └─ placeholder until the direct screens ship (first stage)
+
+Computers (root, S1 empty / S4)
+ ├─ (+) action sheet ─▶ S2 / S3
+ ├─ (⋯) computer sheet: refresh · ask again · forget
+ └─ S5 Sessions ─▶ S6 Session (timeline + decision dock + composer)
+
+Settings (S8) ── pushed from the gear on either root (§15.7)
+Push tap ─────▶ root becomes Computers, S6 Session with S4 ▸ S5 restored
 ```
+
+Switching tabs replaces the root (`replaceState`); Back never alternates
+between tabs, and Android Back on either root exits. A tap on a computer
+notification replaces the root with Computers and restores S4 ▸ S5 ▸ S6
+exactly as before (§8.8). A pushed page never shows the tab bar.
 
 | ID | Screen | Entry | Replaces |
 |---|---|---|---|
 | S0 | Launch and boot failure | App start | `BootFailure` |
-| S1 | Connect | No stored computers | Empty `HostsScreen` |
+| S1 | Connect | Empty Computers root (§17.3) | `ConnectScreen` as the empty state |
 | S2 | Account sign-in flow | S1 or the (+) sheet | `AccountScreen` |
 | S3 | Pairing ticket | S1, S2 fallback, or the (+) sheet | `PairScreen` |
-| S4 | My computers | Launch with at least one computer | `HostsScreen` |
+| S4 | My computers | Computers root with at least one computer | `HostsScreen` |
 | S5 | Sessions of one computer | Tap an online computer | `SessionsScreen` |
 | S6 | Session | Tap a session, or a push | `SessionScreen` |
 | S7 | Sheets and dialogs | Contextual | Inline confirm rows |
@@ -146,6 +160,11 @@ cannot disagree.
   session writes the computer's session list as one entry and the session as the
   next, so a back swipe from a pushed session lands on that list rather than on
   the Host list.
+- **Launch and the remembered root (§17.3).** A fresh native install opens
+  Chats. The first launch after an upgrade of an installation that already holds
+  computers opens Computers. Afterwards the app reopens the last selected root,
+  a credential-free local preference (`localStorage` key `remote.last-root`).
+  No pushed page is restored across a cold start.
 
 ## 5. Visual system
 
@@ -948,10 +967,16 @@ fact or one change, then to be back.
 
 ### 15.7 S8 Settings
 
-The client's fourth tab, reachable from S4's trailing icon (not a tab bar — the
-phone has three working surfaces and a tab bar would imply a fourth that does
-nothing most of the time).
+One settings page pushed from the gear on either root (Chats or S4), per
+[ADR mobile-direct-gateway-chat](../../adr/mobile-direct-gateway-chat.md). The
+first release adds the Model gateway and Chat history sections; the rest of
+this section is the R7 catalog and lands when S8 itself is implemented.
 
+- **Model gateway** (first release) — the connected model account (§17.3, ADR
+  decision 2): the verified `access_key_id` label, unlink (removes the secret
+  and stops requests; conversations stay readable), and no key text anywhere.
+- **Chat history** (first release) — the local-storage note, clear history per
+  account scope, and read-only older account scopes.
 - **Account** — signed in with a Minih account, or not; "Sign out" revokes the
   account session only (§11.5) and leaves device tokens alone. No key or token
   is ever displayed.
@@ -966,8 +991,9 @@ nothing most of the time).
 - **About** — build version, the Gateway origin, and the client version line
   already shown on S4.
 
-Empty: nothing paired — one line and a button back to S1. States: every row that
-calls the Host can fail, and fails in place with its reason.
+Back returns to the root the gear was opened from. Empty: nothing paired — one
+line and a button back to S1. States: every row that calls the Host can fail,
+and fails in place with its reason.
 
 ### 15.8 Prototype
 
@@ -1185,6 +1211,20 @@ S4 My computers  >  S5 Projects  >  S5b Sessions of one project  >  S6 Session
   computer a moment ago) the `projectId` is unknown: the app opens S6 with
   `computers > projects` beneath and refreshes the list behind it, because a
   slightly shallower stack is better than a fabricated one.
+- **Two roots, one stack** ([ADR mobile-direct-gateway-chat](../../adr/mobile-direct-gateway-chat.md)).
+  The native build gains `chats`, `chat`, `chatArchive`, `modelGateway` and
+  `settings` as screen kinds. `previousScreen` stays pure and returns `null` for
+  both `chats` and `hosts`, so back on either root exits the app; a pushed page
+  records the origin it must return to, as `projectSessions.viaProjects` already
+  does. Switching tabs replaces the root in history rather than stacking it, so
+  Back never walks from one tab to the other, and no pushed page shows the bar.
+  Launch opens the remembered root (§4): a fresh install opens Chats, an upgrade
+  whose installation holds computers opens Computers, later launches reopen the
+  last selected root (`remote.last-root`). S1 Connect is the empty state of the
+  Computers root, so an empty registry or a failed pairing never gates Chats; a
+  notification tap still replaces the root with Computers and rebuilds S4 ▸ S5 ▸ S6
+  beneath the session. The browser build keeps the single Computers hierarchy and
+  shows neither Chats nor the tab bar.
 - The edge swipe keeps §4's rules unchanged: a touch starting inside 20 px of the
   left edge and released past a third of the width pops one level through the same
   back path, and a mostly vertical drag is left to the list's own scroll.

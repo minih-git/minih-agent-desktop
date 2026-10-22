@@ -25,4 +25,5 @@ export * from "./types/speech.js";
 export * from "./types/remote-host.js";
 export * from "./types/remote-gateway.js";
 export * from "./types/config-sync.js";
+export * from "./types/project-archive.js";
 export * from "./types/live-voice.js";

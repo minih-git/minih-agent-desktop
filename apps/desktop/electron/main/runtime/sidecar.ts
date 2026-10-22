@@ -1,4 +1,4 @@
-import { IPC, type AgentEventEnvelope, type AppSettings, type UiMessage } from "@minih-agent/shared";
+import { IPC, isRemoteProjectPath, type AgentEventEnvelope, type AppSettings, type UiMessage } from "@minih-agent/shared";
 import {
   findSubagentProviderSource,
   modelConfigWithBinding,
@@ -530,7 +530,7 @@ export function createSidecarRuntime({
   s.setProjectInstructionResolver(async ({ sessionId, projectPath, path }) => {
     // The root is registered by Electron main from the host-owned session
     // record. The sidecar can provide a target path, never an arbitrary root.
-    const instructions = projectPath?.startsWith("remote-project:")
+    const instructions = isRemoteProjectPath(projectPath)
       ? await loadInstructionChain(undefined) : await loadInstructionChain(projectPath, path);
     if (!projectPath || !runtimeState.host) return instructions;
     // An isolated session registers its worktree as the root (ADR 0329); the

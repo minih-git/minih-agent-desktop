@@ -63,7 +63,6 @@ pub(super) async fn sync_once(
                 &selection(&config),
                 config.include_secrets,
                 &config.plugin_intents,
-                &identity_overrides(&config),
             )?;
             let local_digest = domains::snapshot_digest(&local);
             let local_before = local.manifest.clone();
@@ -356,7 +355,6 @@ pub(crate) async fn sync_if_enabled(
             &selection(&config),
             config.include_secrets,
             &config.plugin_intents,
-            &identity_overrides(&config),
         )?;
         let digest = domains::snapshot_digest(&snapshot);
         let now = Utc::now();

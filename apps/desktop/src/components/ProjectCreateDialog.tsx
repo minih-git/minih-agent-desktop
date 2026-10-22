@@ -15,7 +15,19 @@ import {
 import { useAppStore } from "../stores/app-store";
 import { OverlayBackdrop, Button, Input, TooltipButton } from "./ui";
 import { ProjectFolderPicker } from "./ProjectFolderPicker";
-import { RemoteProjectPicker, type RemoteProjectSelection } from "./remote/RemoteProjectPicker";
+import { RemoteProjectPicker } from "./remote/RemoteProjectPicker";
+import { AccountComputerPicker } from "./remote/AccountComputerPicker";
+import {
+  agentLocationForSource,
+  defaultAccountHostKey,
+  initialProjectSource,
+  partitionRemoteHosts,
+  projectAgentLocationKey,
+  projectSourceLabelKey,
+  type ProjectSourceOption,
+  type RemoteFolderSelection,
+} from "../lib/project-create-sources";
+import type { RemoteHostSummary } from "@minih-agent/shared";
 import {
   IconBranch,
   IconClose,
@@ -23,8 +35,8 @@ import {
   IconMonitor,
 } from "./icons";
 
-/** One project entry point for local folders, git checkouts and remote hosts. */
-type ProjectSource = "local" | "git" | "remote";
+/** One project entry point: this computer, a git checkout, or a remote one. */
+type ProjectSource = ProjectSourceOption;
 
 function pathParts(path: string) {
   return path.split(/[\\/]/).filter(Boolean);
@@ -61,10 +73,23 @@ function ProjectCreateDialogContent({ initialRemoteHostKey }: { initialRemoteHos
     (state) => state.createProjectFromGit,
   );
   const showToast = useAppStore((state) => state.showToast);
-  const [source, setSource] = useState<ProjectSource>(initialRemoteHostKey ? "remote" : "local");
   const createProjectFromRemote = useAppStore((state) => state.createProjectFromRemote);
+  const createProjectOnAccount = useAppStore((state) => state.createProjectOnAccount);
   const [remoteBrowseOpen, setRemoteBrowseOpen] = useState(false);
-  const [remoteProject, setRemoteProject] = useState<RemoteProjectSelection | null>(null);
+  // The dialog opens on the source the caller named (the host list's "new
+  // project" action), defaulting to this computer. A named computer is read as
+  // an SSH host until the host list arrives: that is what it was before this
+  // release, and the list corrects it to "account" when it is one.
+  const [source, setSource] = useState<ProjectSource>(() => initialProjectSource([], initialRemoteHostKey));
+  const [remoteProject, setRemoteProject] = useState<RemoteFolderSelection | null>(null);
+  const [hosts, setHosts] = useState<RemoteHostSummary[]>([]);
+  // `null` means "not chosen": the default depends on the host list, so storing
+  // a value here on mount would freeze whichever computers existed then.
+  const [chosenAccountHostKey, setChosenAccountHostKey] = useState<string | null>(null);
+  const accountHostKey = source === "account"
+    ? chosenAccountHostKey ?? defaultAccountHostKey(hosts, initialRemoteHostKey)
+    : "";
+  const [accountProject, setAccountProject] = useState<RemoteFolderSelection | null>(null);
   const [name, setName] = useState("");
   const [folders, setFolders] = useState<string[]>([]);
   const [gitUrl, setGitUrl] = useState("");
@@ -81,19 +106,26 @@ function ProjectCreateDialogContent({ initialRemoteHostKey }: { initialRemoteHos
   const cloneTarget = parseGitCloneUrl(gitUrl, {
     allowInsecureHttp: allowInsecureUserEndpoints(settings),
   });
+  // A remote pick names its own folder, so the seeded project name comes from
+  // that folder rather than from the local folder list.
+  const remoteSelection = source === "account" ? accountProject : remoteProject;
   const defaultName = defaultProjectName({
-    source: source === "remote" ? "local" : source,
-    folders: source === "remote" && remoteProject ? [remoteProject.path] : folders,
+    source: source === "account" || source === "ssh" ? "local" : source,
+    folders: remoteSelection ? [remoteSelection.path] : folders,
     repositoryName: cloneTarget?.name,
   });
   const projectName = resolveProjectName(name, defaultName);
+  const remotePartition = partitionRemoteHosts(hosts);
 
   useEffect(() => {
-    setSource(initialRemoteHostKey ? "remote" : "local");
+    setSource(initialProjectSource([], initialRemoteHostKey));
     setName("");
     setFolders([]);
     setGitUrl("");
     setCloneParent("");
+    setChosenAccountHostKey(null);
+    setAccountProject(null);
+    setRemoteProject(null);
     busyRef.current = false;
     folderPickerInFlightRef.current = false;
     nameTouchedRef.current = false;
@@ -141,6 +173,27 @@ function ProjectCreateDialogContent({ initialRemoteHostKey }: { initialRemoteHos
     setName(defaultName);
   }, [defaultName]);
 
+  // The host list decides which remote sources exist, and the account computers
+  // are exactly the ones this desktop joined by itself (package E). Read once
+  // per dialog open; a host that changed state is re-read on the next open.
+  useEffect(() => {
+    let active = true;
+    void api.listRemoteHosts().then(({ hosts: listed }) => {
+      if (!active) return;
+      setHosts(listed);
+      // A caller that named a computer chose that one; the list only fills in
+      // which source that computer belongs to.
+      setSource((current) => (initialRemoteHostKey
+        ? initialProjectSource(listed, initialRemoteHostKey)
+        : current));
+    }).catch(() => {
+      // A host list that cannot be read leaves only the local sources; the
+      // dialog still works, which is better than an error on open.
+      if (active) setHosts([]);
+    });
+    return () => { active = false; };
+  }, [initialRemoteHostKey]);
+
   const addFolders = async () => {
     if (busyRef.current || folderPickerInFlightRef.current) return;
     folderPickerInFlightRef.current = true;
@@ -185,7 +238,9 @@ function ProjectCreateDialogContent({ initialRemoteHostKey }: { initialRemoteHos
   const submit = async () => {
     const projectName = resolveProjectName(name, defaultName);
     if (busyRef.current) return;
-    if (!projectName || (source === "remote" && !remoteProject)) return;
+    if (source === "account" && !accountProject) return;
+    if (source === "ssh" && !remoteProject) return;
+    if (!projectName) return;
     if (source === "git") {
       if (!cloneTarget || !cloneParent) return;
     } else if (source === "local" && folders.length === 0) {
@@ -194,7 +249,17 @@ function ProjectCreateDialogContent({ initialRemoteHostKey }: { initialRemoteHos
     busyRef.current = true;
     setBusy(true);
     try {
-      if (source === "remote" && remoteProject) {
+      if (source === "account" && accountProject) {
+        // The Agent runs on that computer: register the folder there and open the
+        // session created there. The store owns the navigation, so a late result
+        // cannot pull back a user who navigated away.
+        await createProjectOnAccount({
+          name: projectName,
+          hostKey: accountProject.hostKey,
+          path: accountProject.path,
+        });
+      } else if (source === "ssh" && remoteProject) {
+        // Unchanged: the local Agent with remote tools.
         await createProjectFromRemote({ name: projectName, hostKey: remoteProject.hostKey, path: remoteProject.path });
       } else if (source === "git" && cloneTarget) {
         await createProjectFromGit({
@@ -341,15 +406,29 @@ function ProjectCreateDialogContent({ initialRemoteHostKey }: { initialRemoteHos
                   <IconBranch size={15} aria-hidden />
                   {t("project.createSourceGit")}
                 </Button>
-                <Button type="button" className={`project-create-dialog-source-option${source === "remote" ? " is-active" : ""}`}
-                  data-project-source="remote" aria-pressed={source === "remote"} disabled={busy}
-                  onClick={() => setSource("remote")}>
-                  <IconMonitor size={15} aria-hidden />{t("remote:remote")}
+                <Button type="button" className={`project-create-dialog-source-option${source === "account" ? " is-active" : ""}`}
+                  data-project-source="account" aria-pressed={source === "account"} disabled={busy}
+                  onClick={() => setSource("account")}>
+                  <IconMonitor size={15} aria-hidden />{t(projectSourceLabelKey("account"))}
+                </Button>
+                <Button type="button" className={`project-create-dialog-source-option${source === "ssh" ? " is-active" : ""}`}
+                  data-project-source="ssh" aria-pressed={source === "ssh"} disabled={busy}
+                  onClick={() => setSource("ssh")}>
+                  <IconMonitor size={15} aria-hidden />{t(projectSourceLabelKey("ssh"))}
                 </Button>
               </div>
+              {/* Which machine runs the Agent is the difference between the two
+                  remote sources, so it is stated, not implied. */}
+              <p className="project-create-dialog-agent-location" role="status" data-agent-location={agentLocationForSource(source)}>
+                {t(projectAgentLocationKey(source))}
+              </p>
             </section>
 
-            {source === "remote" ? (
+            {source === "account" ? (
+              <AccountComputerPicker busy={busy} hosts={remotePartition.account} hostKey={accountHostKey}
+                onHostChange={(key) => { setChosenAccountHostKey(key); setAccountProject(null); }}
+                onChange={setAccountProject} onBrowsingChange={setRemoteBrowseOpen} />
+            ) : source === "ssh" ? (
               <RemoteProjectPicker busy={busy} initialHostKey={initialRemoteHostKey} onChange={setRemoteProject} onBrowsingChange={setRemoteBrowseOpen} />
             ) : source === "local" ? (
               <ProjectFolderPicker folders={folders} busy={busy} pickerBusy={folderPickerBusy}
@@ -427,9 +506,11 @@ function ProjectCreateDialogContent({ initialRemoteHostKey }: { initialRemoteHos
               type="submit"
               variant="primary"
               disabled={
-                source === "remote" ? !projectName || !remoteProject || busy : source === "git"
-                  ? !projectName || !cloneTarget || !cloneParent || busy
-                  : !projectName || folders.length === 0 || busy
+                source === "account" ? !projectName || !accountProject || busy
+                  : source === "ssh" ? !projectName || !remoteProject || busy
+                    : source === "git"
+                      ? !projectName || !cloneTarget || !cloneParent || busy
+                      : !projectName || folders.length === 0 || busy
               }
             >
               {busy

@@ -22,6 +22,18 @@ export type Principal = {
    * under the remote permission ceiling.
    */
   origin?: "ssh" | "gateway";
+  /**
+   * `"desktop"` when the target Host admitted this device after verifying a
+   * same-account computer's proof (ADR amendment 3, decision 4). Absent on
+   * every other principal, including every phone and browser device and every
+   * record written before the class existed, so they keep the gateway-origin
+   * restrictions unchanged.
+   *
+   * This field alone does not exempt anything: `isDesktopClassPrincipal` also
+   * requires the desktop role set, so a forged `deviceClass` on a phone's
+   * principal would still be under the ceiling.
+   */
+  deviceClass?: "phone" | "desktop";
   /** Set when Host policy lets approvers use the session's own mode. */
   approverOverride?: boolean;
   connectionId?: string;
@@ -127,6 +139,10 @@ export type SessionSummary = {
   workspaceLabel?: string;
   /** Private session-root identity used only for final local admission checks. */
   workspaceIdentity?: string | null;
+  providerId?: string;
+  modelId?: string;
+  modelLabel?: string;
+  thinkingLevel?: string;
   mode: "agent" | "plan" | "goal";
   permissionMode: RacpPermissionMode;
   planningState?: RacpPlanningState;

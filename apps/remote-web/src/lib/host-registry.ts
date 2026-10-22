@@ -143,6 +143,24 @@ export function serializeRegistry(entries: readonly HostRegistryEntry[]): string
   return JSON.stringify(entries.map((entry) => toEntry(entry) ?? entry));
 }
 
+/**
+ * Whether this device holds at least one computer right now.
+ *
+ * The launch rule asks this before any screen runs, so it reads the stored
+ * registry rather than the hook. Counting parsed entries matters: forgetting the
+ * last computer leaves `"[]"` behind, and a stored-but-empty registry is not an
+ * installation that has computers.
+ */
+export function registryHasHosts(storage: RegistryStorage): boolean {
+  try {
+    return parseRegistry(storage.getItem(HOST_REGISTRY_STORAGE_KEY)).length > 0;
+  } catch {
+    // A blocked store is indistinguishable from an empty one here, and the
+    // launch rule treats both as a fresh install.
+    return false;
+  }
+}
+
 export function createHostRegistry(storage: RegistryStorage): HostRegistry {
   const listeners = new Set<() => void>();
   const notify = (): void => {

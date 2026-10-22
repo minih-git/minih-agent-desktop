@@ -44,6 +44,8 @@ export type TimelineItem = {
   isError?: boolean;
   truncated?: boolean;
   agentName?: string;
+  providerId?: string;
+  modelId?: string;
   /** A slash command a user row was sent with; it is what the row reads as. */
   command?: string;
   /** Attachment names, so a phone shows that a turn carried files. */

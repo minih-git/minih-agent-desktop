@@ -12,6 +12,7 @@ import { startGatewayAdminSocket, type AdminResponse, type AdminSocket } from ".
 import { loadOrCreateGatewayAuthority, type GatewayAuthority } from "./ca.js";
 import { createClientIpResolver, peerAddress } from "./client-ip.js";
 import { ClientHttpServer } from "./client-http.js";
+import { createClientWsServer } from "./client-ws.js";
 import { isLoopbackBind, type GatewayServeConfig } from "./config.js";
 import { DeviceRequestService } from "./device-requests.js";
 import { EnrollmentService } from "./enrollment.js";
@@ -63,6 +64,12 @@ export type StartGatewayOptions = {
   ipLimit?: RateLimitPolicy;
   credentialLimit?: RateLimitPolicy;
   heartbeatMs?: number;
+  /**
+   * The `RACP-WS` client route's heartbeat (protocol §11.1). Injectable so a
+   * test does not have to wait 30 seconds to see a half-open client dropped;
+   * it is deliberately not the Host link's own `heartbeatMs`.
+   */
+  clientWsHeartbeatMs?: number;
   /** Injectable for tests; only used to build the Router verifier. */
   fetchImpl?: typeof fetch;
   /**
@@ -71,6 +78,12 @@ export type StartGatewayOptions = {
    * credential or a real provider.
    */
   pushProviders?: { apns?: { send(token: string, payload: RacpPushPayload): Promise<PushDeliveryResult> }; fcm?: { send(token: string, payload: RacpPushPayload): Promise<PushDeliveryResult> } };
+  /**
+   * Emit the opt-in per-command and per-event `remote latency` records (P0
+   * measurement). Defaults to `MINIH_REMOTE_LATENCY_TRACE=1`; off in a normal
+   * run, where the logging spec forbids a per-request timing stream.
+   */
+  latencyTrace?: boolean;
 };
 
 /** Load the client API TLS material once, so a bad path fails before binding. */
@@ -85,6 +98,7 @@ async function loadClientTls(config: GatewayServeConfig): Promise<{ certificateP
 
 export async function startGateway(config: GatewayServeConfig, options: StartGatewayOptions = {}): Promise<GatewayServer> {
   const log = options.log ?? createJsonLogger();
+  const latencyTrace = options.latencyTrace ?? process.env.MINIH_REMOTE_LATENCY_TRACE === "1";
   const now = options.now;
   const store = await GatewayStore.open(config.dataDir, now);
   let authority: GatewayAuthority | null = null;
@@ -113,11 +127,20 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
     ...(options.credentialLimit ? { credential: options.credentialLimit } : {}),
     ...(now ? { now } : {}),
   });
+  // The device relay is wired after the enrollment service, and the enrollment
+  // service needs to tell the account's computers about a new Host, so the
+  // callback reads a holder that is filled in as soon as the relay exists.
+  let deviceRequestsRef: DeviceRequestService | null = null;
   const enrollment = new EnrollmentService(
     store,
     loadAuthority,
     now,
     verifier ? { verifier: () => verifier, rateLimiter } : null,
+    async (joined) => {
+      // Nothing to tell before the relay exists: enrollment cannot complete
+      // before the listeners are up, so this is only a guard.
+      await deviceRequestsRef?.announceHostJoined(joined);
+    },
   );
   const hostLinks = new HostLinkServer({
     store,
@@ -131,6 +154,7 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
   // connects immediately still receives the grants pending for its account
   // (§11.5 "Deferred grants").
   const deviceRequests = new DeviceRequestService({ store, hostLinks, authority: loadAuthority, log, ...(now ? { now } : {}) });
+  deviceRequestsRef = deviceRequests;
   // Redacted push (§11.6). The provider credentials are read here, before the
   // listeners bind, so a bad or too-readable key file fails at startup instead
   // of on the first notification. No credentials configured: `enabled` is false
@@ -170,7 +194,7 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
   });
   const hostlink = await hostLinks.start(config.hostlink);
   const pool = new LogicalConnectionPool({ links: hostLinks, log, ...(now ? { now } : {}) });
-  const commands = new CommandRouter(pool, log);
+  const commands = new CommandRouter(pool, log, latencyTrace);
   const pairing = new PairingService({
     store,
     log,
@@ -183,6 +207,18 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
   const account = verifier
     ? new AccountSessionService({ store, verifier: () => verifier, rateLimiter, ...(now ? { now } : {}) })
     : null;
+  // The `RACP-WS` client route (protocol §11.4 rule 7): its own module, sharing
+  // the client listener, the device-token check, the rate limiter, and the pool
+  // so a revoked device closes a relayed socket too.
+  const clientWs = createClientWsServer({
+    store,
+    pool,
+    rateLimiter,
+    allowedOrigins: config.allowedOrigins,
+    log,
+    ...(config.clientIp ? { resolveClientIp: createClientIpResolver(config.clientIp) } : {}),
+    ...(options.clientWsHeartbeatMs !== undefined ? { heartbeatMs: options.clientWsHeartbeatMs } : {}),
+  });
   const client = new ClientHttpServer({
     store,
     pool,
@@ -199,6 +235,8 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
     // Without `--trusted-proxy`/`--client-ip-header` the resolved address is the
     // TCP peer, exactly as before (ADR decision 10).
     resolveClientIp: config.clientIp ? createClientIpResolver(config.clientIp) : peerAddress,
+    latencyTrace,
+    webSocket: clientWs,
   });
   const clientTls = await loadClientTls(config);
   const clientAddress = await client.start(config.client, config.clientTls, clientTls);
@@ -212,12 +250,18 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
           return { ok: true, enrollment: code };
         }
         case "hosts.revoke": {
-          const revoked = await store.revokeHost(request.payload.hostId, new Date(now ? now() : Date.now()).toISOString());
+          const revokedAt = new Date(now ? now() : Date.now()).toISOString();
+          const revoked = await store.revokeHost(request.payload.hostId, revokedAt);
           if (!revoked) return { ok: false, code: "NOT_FOUND" };
           const disconnected = hostLinks.disconnect(request.payload.hostId);
+          // `owner` follows the applicant's certificate: the account's other
+          // computers are told so they revoke the desktop devices this computer's
+          // proof admitted (ADR amendment 3, decision 4). Stored first, so an
+          // offline computer receives it when its link comes up.
+          const cascaded = await deviceRequests.announceHostRevoked({ hostId: request.payload.hostId, revokedAt });
           await store.appendAudit({ op: "hosts.revoke", hostId: request.payload.hostId, ip: "admin", result: "ok" });
-          log("info", "gateway revoked a Host", { hostId: request.payload.hostId, disconnected });
-          return { ok: true, revoked: true };
+          log("info", "gateway revoked a Host", { hostId: request.payload.hostId, disconnected, cascaded: cascaded.length });
+          return { ok: true, revoked: true, cascaded: cascaded.length };
         }
         case "devices.revoke": {
           const revoked = await store.revokeDevice(request.payload.deviceId, new Date(now ? now() : Date.now()).toISOString());
@@ -286,6 +330,7 @@ export async function startGateway(config: GatewayServeConfig, options: StartGat
     close: () => {
       closing ??= (async () => {
         await admin.close();
+        clientWs.closeAll();
         pool.closeAll();
         await client.stop();
         await hostLinks.stop();

@@ -109,3 +109,36 @@ test("no answer text reaches the page as raw HTML", async () => {
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
   assert.match(html, /<strong>fine<\/strong>/);
 });
+
+test("consecutive tool calls stay folded in one ToolRun even when thinking-only or empty assistant items sit between them", async () => {
+  const html = await render([
+    item({ id: "t1", itemType: "tool", role: "tool", toolName: "Bash", toolArgs: { command: "ls" }, status: "completed" }),
+    item({ id: "m1", itemType: "message", role: "assistant", text: "", thinking: "checking next file" }),
+    item({ id: "m2", itemType: "message", role: "assistant", text: "" }),
+    item({ id: "t2", itemType: "tool", role: "tool", toolName: "Bash", toolArgs: { command: "pwd" }, status: "completed" }),
+  ]);
+  assert.match(html, /2 commands/);
+});
+
+test("an html code fence renders inline inside a sandboxed srcDoc iframe", async () => {
+  const html = await render([
+    item({
+      role: "assistant",
+      text: "Here is the page:\n\n```html\n<!doctype html><title>Demo Card</title><h1>Hello</h1>\n```",
+    }),
+  ]);
+  assert.match(html, /<iframe[^>]*sandbox="allow-scripts"/);
+  assert.match(html, /Demo Card/);
+});
+
+test("a file:// HTML link renders as a safe button instead of an empty href anchor that reloads the root screen", async () => {
+  const html = await render([
+    item({
+      role: "assistant",
+      text: "[打开页面 · 灵感](file:///Users/minih/scratch/demo.html)",
+    }),
+  ]);
+  assert.doesNotMatch(html, /<a[^>]*href=""/);
+  assert.match(html, /<button type="button"/);
+  assert.match(html, /打开页面 · 灵感/);
+});

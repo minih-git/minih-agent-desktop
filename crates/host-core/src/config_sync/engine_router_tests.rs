@@ -3,9 +3,7 @@ use super::tests::{
     configure_test_device, configure_test_device_mode, pending_approvals, run_in_isolated_process,
 };
 use super::*;
-use crate::config_sync::domains::{
-    entity as portable_entity, ProjectIdentityOverrides, DOMAIN_LEARNED_MEMORY,
-};
+use crate::config_sync::domains::{entity as portable_entity, DOMAIN_LEARNED_MEMORY};
 use crate::config_sync::transport::tests::fixture;
 use crate::memory::MemoryScope;
 
@@ -312,102 +310,109 @@ async fn credentials_opt_out_survives_approval_and_remote_deletion_converges() -
 }
 
 #[tokio::test]
-async fn resource_updates_and_packaged_skill_deletion_reach_the_other_device() -> Result<()> {
+async fn global_skill_and_its_resources_are_published_and_tombstoned() -> Result<()> {
     if run_in_isolated_process(
-        "config_sync::engine::router_tests::resource_updates_and_packaged_skill_deletion_reach_the_other_device",
+        "config_sync::engine::router_tests::global_skill_and_its_resources_are_published_and_tombstoned",
     )? {
         return Ok(());
     }
     let fixture = fixture(false).await;
-    let directory_a = tempfile::tempdir()?;
-    let directory_b = tempfile::tempdir()?;
-    let device_a = configure_test_device(directory_a.path(), &fixture.endpoint).await?;
-    let device_b = configure_test_device(directory_b.path(), &fixture.endpoint).await?;
-    let project_a = directory_a.path().join("project");
-    let project_b = directory_b.path().join("project");
-    fs::create_dir_all(&project_a)?;
-    fs::create_dir_all(&project_b)?;
-    let project_a = project_a.canonicalize()?.to_string_lossy().into_owned();
-    let project_b = project_b.canonicalize()?.to_string_lossy().into_owned();
-    // Project registration is device-local; scoped capability capture requires
-    // the receiving device to have registered its own mapped project.
-    device_b.lock().await.db.ensure_project(&project_b, false)?;
+    let directory = tempfile::tempdir()?;
+    let device = configure_test_device(directory.path(), &fixture.endpoint).await?;
     {
-        let mut state = device_a.lock().await;
-        state.db.ensure_project(&project_a, false)?;
+        let mut state = device.lock().await;
         state
             .user_skills
             .create(crate::user_skills::UserSkillInput {
                 id: Some("changing-skill".into()),
                 name: Some("Changing skill".into()),
-                level: Some("project".into()),
-                project_path: Some(project_a.clone()),
+                level: Some("global".into()),
                 body: Some("Fixture instructions".into()),
                 shape: Some("dir".into()),
                 ..Default::default()
             })?;
         state.user_skills.write_package_files(
             "changing-skill",
-            CapabilityLevel::Project,
-            Some(&project_a),
+            CapabilityLevel::Global,
+            None,
             &[("data.txt".into(), b"first".to_vec())],
         )?;
     }
     let (tx, _rx) = mpsc::unbounded_channel();
-    sync_now(device_a.clone(), tx.clone()).await?;
-    let received = sync_now(device_b.clone(), tx.clone()).await?;
-    let mapping = received["pendingApprovals"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find_map(|item| item["mappingKey"].as_str())
-        .unwrap();
-    map_project(
-        device_b.clone(),
-        json!({"logicalId":mapping,"paths":[project_b]}),
-    )
-    .await?;
-    approve_all(&device_b, &tx).await?;
+    let published_skill = async |device: &Arc<Mutex<AppState>>| -> Result<Option<PortableEntity>> {
+        let state = device.lock().await;
+        let config = load_config(&state)?.expect("configured device");
+        let key = local_vault_key(&state, &config)?.expect("unlocked device");
+        let account = configured_account(&state, &config)?;
+        let transport = account_transport(&account).await?;
+        let (head, _) = read_remote_head(&transport, &config, &key)
+            .await?
+            .expect("remote head");
+        let (manifest, _) = read_remote_revision(
+            &transport,
+            &config,
+            &key,
+            &head.revision_id,
+            &NoSyncProgress,
+        )
+        .await?;
+        Ok(manifest
+            .entities
+            .into_iter()
+            .find(|entity| entity.entity_id.starts_with("skill:")))
+    };
+    sync_now(device.clone(), tx.clone()).await?;
+    let published = published_skill(&device).await?.expect("published skill");
+    assert!(!published.deleted);
+    assert!(!published.mapping_required);
+    assert!(
+        published.payload.get("projectLogicalId").is_none(),
+        "a global skill must not carry a project identity"
+    );
+    assert!(
+        !published.resource_ids.is_empty(),
+        "the document and its resources are immutable objects"
+    );
+
     {
-        let mut state = device_a.lock().await;
+        let mut state = device.lock().await;
         let skill = state
             .user_skills
-            .list(CapabilityLevel::Project, Some(&project_a))?
+            .list(CapabilityLevel::Global, None)?
             .remove(0);
         fs::write(
             Path::new(&skill.path).parent().unwrap().join("data.txt"),
             b"updated",
         )?;
+        state.user_skills.replace_package_files(
+            "changing-skill",
+            CapabilityLevel::Global,
+            None,
+            &[("data.txt".into(), b"first".to_vec())],
+            &[("data.txt".into(), b"updated".to_vec())],
+        )?;
     }
-    sync_now(device_a.clone(), tx.clone()).await?;
-    sync_now(device_b.clone(), tx.clone()).await?;
-    approve_all(&device_b, &tx).await?;
-    {
-        let mut state = device_b.lock().await;
-        assert_eq!(
-            state.user_skills.package_files(
-                "changing-skill",
-                CapabilityLevel::Project,
-                Some(&project_b)
-            )?,
-            vec![("data.txt".into(), b"updated".to_vec())]
-        );
-    }
-    device_a.lock().await.user_skills.remove(
+    sync_now(device.clone(), tx.clone()).await?;
+    let updated = published_skill(&device).await?.expect("updated skill");
+    assert!(!updated.deleted);
+    assert_ne!(updated.digest, published.digest);
+
+    device.lock().await.user_skills.remove(
         "changing-skill",
-        Some(CapabilityLevel::Project),
-        Some(&project_a),
+        Some(CapabilityLevel::Global),
+        None,
     )?;
-    sync_now(device_a.clone(), tx.clone()).await?;
-    sync_now(device_b.clone(), tx.clone()).await?;
-    approve_all(&device_b, &tx).await?;
-    assert!(device_b
-        .lock()
-        .await
-        .user_skills
-        .list(CapabilityLevel::Project, Some(&project_b))?
-        .is_empty());
-    sync_now(device_b.clone(), tx).await?;
+    sync_now(device.clone(), tx.clone()).await?;
+    let deleted = published_skill(&device).await?.expect("deleted skill");
+    assert!(
+        deleted.deleted,
+        "removing a global skill must publish a tombstone"
+    );
+    assert!(deleted.resource_ids.is_empty());
+    // A repeated sync keeps the tombstone instead of reviving the skill.
+    sync_now(device.clone(), tx).await?;
+    let repeated = published_skill(&device).await?.expect("tombstone");
+    assert!(repeated.deleted);
     Ok(())
 }
 
@@ -556,7 +561,6 @@ async fn legacy_project_revision_sync_and_restore_preserve_local_projects() -> R
             &selection(&config),
             config.include_secrets,
             &config.plugin_intents,
-            &identity_overrides(&config),
         )?;
         snapshot.manifest.entities.extend([
             legacy_project("project:existing", json!({"logicalId":"existing","name":"Remote name","pinned":true}), false),
@@ -655,7 +659,6 @@ async fn legacy_project_config_and_pending_approval_do_not_block_sync() -> Resul
             &selection(&config),
             config.include_secrets,
             &config.plugin_intents,
-            &identity_overrides(&config),
         )?;
         let entity = legacy_project("project:obsolete", json!({"logicalId":"obsolete"}), false);
         let mut manifest = snapshot.manifest;
@@ -704,3 +707,433 @@ async fn legacy_project_config_and_pending_approval_do_not_block_sync() -> Resul
 
 #[path = "learned_memory_tests.rs"]
 mod learned_memory_tests;
+
+/// The cloud copy transports global configuration only. Everything a project
+/// owns stays on the device that owns the folder, and an excluded record never
+/// becomes an approval or a deletion.
+#[tokio::test]
+async fn project_records_are_not_captured_for_the_cloud_copy() -> Result<()> {
+    if run_in_isolated_process(
+        "config_sync::engine::router_tests::project_records_are_not_captured_for_the_cloud_copy",
+    )? {
+        return Ok(());
+    }
+    let fixture = fixture(false).await;
+    let directory = tempfile::tempdir()?;
+    let device = configure_test_device(directory.path(), &fixture.endpoint).await?;
+    let project = directory.path().join("project");
+    std::fs::create_dir_all(&project)?;
+    let project_path = project.canonicalize()?.to_string_lossy().into_owned();
+
+    {
+        let mut st = device.lock().await;
+        st.db.ensure_project(&project_path, false)?;
+        std::fs::write(project.join("AGENTS.md"), "project guidance\n")?;
+        st.db.set_project_memory(&project_path, "pinned note")?;
+        st.mcp_servers.upsert(crate::mcp_servers::McpServerInput {
+            id: "project-server".into(),
+            label: Some("Project MCP".into()),
+            level: Some("project".into()),
+            project_path: Some(project_path.clone()),
+            transport: Some("stdio".into()),
+            command: Some("server".into()),
+            ..crate::mcp_servers::McpServerInput::default()
+        })?;
+        st.user_skills.create(crate::user_skills::UserSkillInput {
+            id: Some("project-skill".into()),
+            name: Some("Project skill".into()),
+            level: Some("project".into()),
+            project_path: Some(project_path.clone()),
+            body: Some("project body".into()),
+            shape: Some("dir".into()),
+            ..crate::user_skills::UserSkillInput::default()
+        })?;
+        crate::scheduled::import_tasks(
+            &st.db,
+            &[json!({
+                "id": "project-task",
+                "title": "Project task",
+                "prompt": "run it",
+                "cadence": "daily",
+                "workspacePath": project_path,
+                "enabled": false,
+            })],
+        )?;
+    }
+
+    let entities = {
+        let mut st = device.lock().await;
+        let config = load_config(&st)?.expect("configured device");
+        let key = local_vault_key(&st, &config)?.expect("unlocked device");
+        domains::capture(
+            &mut st,
+            &key,
+            &selection(&config),
+            config.include_secrets,
+            &config.plugin_intents,
+        )?
+        .manifest
+        .entities
+    };
+    assert!(
+        entities
+            .iter()
+            .all(|entity| !domains::is_project_scoped(entity)),
+        "project records must not be captured: {:?}",
+        entities
+            .iter()
+            .map(|entity| (&entity.domain, &entity.entity_id))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        entities
+            .iter()
+            .all(|entity| entity.domain != domains::DOMAIN_MEMORY),
+        "pinned project memory must not be captured"
+    );
+    Ok(())
+}
+
+/// Uninstalling a plugin clears its retained installation intent, so the next
+/// ordinary sync publishes a deletion instead of re-advertising it.
+#[tokio::test]
+async fn uninstalled_plugin_intent_deletion_reaches_the_peer() -> Result<()> {
+    if run_in_isolated_process(
+        "config_sync::engine::router_tests::uninstalled_plugin_intent_deletion_reaches_the_peer",
+    )? {
+        return Ok(());
+    }
+    let fixture = fixture(false).await;
+    let directory_a = tempfile::tempdir()?;
+    let directory_b = tempfile::tempdir()?;
+    let device_a = configure_test_device(directory_a.path(), &fixture.endpoint).await?;
+    let device_b = configure_test_device(directory_b.path(), &fixture.endpoint).await?;
+    let (tx, _rx) = mpsc::unbounded_channel();
+    {
+        let st = device_a.lock().await;
+        let mut config = load_config(&st)?.expect("configured device");
+        config.plugin_intents.insert(
+            "portable-plugin".into(),
+            json!({"id":"portable-plugin","name":"Portable plugin"}),
+        );
+        save_config(&st, &config)?;
+    }
+    sync_now(device_a.clone(), tx.clone()).await?;
+    sync_now(device_b.clone(), tx.clone()).await?;
+    approve_all(&device_b, &tx).await?;
+    assert!(load_config(&*device_b.lock().await)?
+        .expect("configured device")
+        .plugin_intents
+        .contains_key("portable-plugin"));
+
+    // The same clearing the uninstall RPC performs.
+    {
+        let st = device_a.lock().await;
+        assert!(crate::config_sync::forget_plugin_intent(
+            &st,
+            "portable-plugin"
+        )?);
+        assert!(!load_config(&st)?
+            .expect("configured device")
+            .plugin_intents
+            .contains_key("portable-plugin"));
+    }
+    sync_now(device_a.clone(), tx.clone()).await?;
+    sync_now(device_b.clone(), tx.clone()).await?;
+    approve_all(&device_b, &tx).await?;
+    for _ in 0..3 {
+        sync_now(device_b.clone(), tx.clone()).await?;
+        sync_now(device_a.clone(), tx.clone()).await?;
+    }
+    assert!(
+        !load_config(&*device_b.lock().await)?
+            .expect("configured device")
+            .plugin_intents
+            .contains_key("portable-plugin"),
+        "a deleted installation intent must not revive"
+    );
+    Ok(())
+}
+
+/// An uninstall on a device without cloud sync is unaffected: there is no
+/// intent to clear and nothing to publish.
+#[test]
+fn forgetting_a_plugin_intent_without_sync_is_a_no_op() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let state = AppState::open(directory.path())?;
+    assert!(!crate::config_sync::forget_plugin_intent(
+        &state,
+        "portable-plugin"
+    )?);
+    Ok(())
+}
+
+/// Deleting a global skill that has already synchronized converges on the peer
+/// and stays deleted after repeated syncs.
+#[tokio::test]
+async fn deleting_a_global_skill_becomes_a_tombstone_the_peer_applies() -> Result<()> {
+    if run_in_isolated_process(
+        "config_sync::engine::router_tests::deleting_a_global_skill_becomes_a_tombstone_the_peer_applies",
+    )? {
+        return Ok(());
+    }
+    let fixture = fixture(false).await;
+    let directory_a = tempfile::tempdir()?;
+    let directory_b = tempfile::tempdir()?;
+    let device_a = configure_test_device(directory_a.path(), &fixture.endpoint).await?;
+    let device_b = configure_test_device(directory_b.path(), &fixture.endpoint).await?;
+    let (tx, _rx) = mpsc::unbounded_channel();
+    {
+        let mut state = device_a.lock().await;
+        state
+            .user_skills
+            .create(crate::user_skills::UserSkillInput {
+                id: Some("portable-skill".into()),
+                name: Some("Portable skill".into()),
+                level: Some("global".into()),
+                body: Some("global body".into()),
+                enabled: Some(true),
+                shape: Some("dir".into()),
+                ..crate::user_skills::UserSkillInput::default()
+            })?;
+    }
+    let published_skill = async |device: &Arc<Mutex<AppState>>| -> Result<Option<PortableEntity>> {
+        let state = device.lock().await;
+        let config = load_config(&state)?.expect("configured device");
+        let key = local_vault_key(&state, &config)?.expect("unlocked device");
+        let account = configured_account(&state, &config)?;
+        let transport = account_transport(&account).await?;
+        let (head, _) = read_remote_head(&transport, &config, &key)
+            .await?
+            .expect("remote head");
+        let (manifest, _) = read_remote_revision(
+            &transport,
+            &config,
+            &key,
+            &head.revision_id,
+            &NoSyncProgress,
+        )
+        .await?;
+        Ok(manifest
+            .entities
+            .into_iter()
+            .find(|entity| entity.entity_id.starts_with("skill:")))
+    };
+    sync_now(device_a.clone(), tx.clone()).await?;
+    sync_now(device_b.clone(), tx.clone()).await?;
+    approve_all(&device_b, &tx).await?;
+    assert!(
+        published_skill(&device_a)
+            .await?
+            .is_some_and(|entity| !entity.deleted),
+        "the peer must be able to receive a live skill"
+    );
+
+    device_a.lock().await.user_skills.remove(
+        "portable-skill",
+        Some(CapabilityLevel::Global),
+        None,
+    )?;
+    sync_now(device_a.clone(), tx.clone()).await?;
+    let deleted = published_skill(&device_a).await?.expect("tombstone");
+    assert!(
+        deleted.deleted,
+        "removing a global skill must publish a tombstone"
+    );
+    // The peer applies the tombstone and reports no further work.
+    sync_now(device_b.clone(), tx.clone()).await?;
+    approve_all(&device_b, &tx).await?;
+    assert!(pending_approvals(&get_state(device_b.clone()).await?).is_empty());
+    // Alternating repeated syncs must not revive it on either side.
+    for _ in 0..3 {
+        sync_now(device_b.clone(), tx.clone()).await?;
+        sync_now(device_a.clone(), tx.clone()).await?;
+    }
+    assert!(
+        published_skill(&device_a)
+            .await?
+            .is_some_and(|entity| entity.deleted),
+        "a deleted global skill must stay deleted"
+    );
+    assert!(pending_approvals(&get_state(device_b.clone()).await?).is_empty());
+    Ok(())
+}
+
+/// An unselected category is a subscription choice, not a deletion: removing the
+/// local skill while the category is off publishes nothing, and the delete only
+/// propagates once the category is subscribed again.
+#[tokio::test]
+async fn an_unselected_skills_category_is_not_a_delete() -> Result<()> {
+    if run_in_isolated_process(
+        "config_sync::engine::router_tests::an_unselected_skills_category_is_not_a_delete",
+    )? {
+        return Ok(());
+    }
+    let fixture = fixture(false).await;
+    let directory = tempfile::tempdir()?;
+    let device = configure_test_device(directory.path(), &fixture.endpoint).await?;
+    let (tx, _rx) = mpsc::unbounded_channel();
+    {
+        let mut state = device.lock().await;
+        state
+            .user_skills
+            .create(crate::user_skills::UserSkillInput {
+                id: Some("opt-out-skill".into()),
+                name: Some("Opt-out skill".into()),
+                level: Some("global".into()),
+                body: Some("body".into()),
+                enabled: Some(true),
+                shape: Some("dir".into()),
+                ..crate::user_skills::UserSkillInput::default()
+            })?;
+    }
+    let published_skill = async |device: &Arc<Mutex<AppState>>| -> Result<Option<PortableEntity>> {
+        let state = device.lock().await;
+        let config = load_config(&state)?.expect("configured device");
+        let key = local_vault_key(&state, &config)?.expect("unlocked device");
+        let account = configured_account(&state, &config)?;
+        let transport = account_transport(&account).await?;
+        let (head, _) = read_remote_head(&transport, &config, &key)
+            .await?
+            .expect("remote head");
+        let (manifest, _) = read_remote_revision(
+            &transport,
+            &config,
+            &key,
+            &head.revision_id,
+            &NoSyncProgress,
+        )
+        .await?;
+        Ok(manifest
+            .entities
+            .into_iter()
+            .find(|entity| entity.entity_id.starts_with("skill:")))
+    };
+    sync_now(device.clone(), tx.clone()).await?;
+    assert!(published_skill(&device)
+        .await?
+        .is_some_and(|entity| !entity.deleted));
+
+    {
+        let st = device.lock().await;
+        let mut config = load_config(&st)?.expect("configured device");
+        config.categories.insert("skills".into(), false);
+        save_config(&st, &config)?;
+    }
+    device
+        .lock()
+        .await
+        .user_skills
+        .remove("opt-out-skill", Some(CapabilityLevel::Global), None)?;
+    sync_now(device.clone(), tx.clone()).await?;
+    assert!(
+        published_skill(&device)
+            .await?
+            .is_some_and(|entity| !entity.deleted),
+        "an unsubscribed category must not publish a deletion"
+    );
+
+    {
+        let st = device.lock().await;
+        let mut config = load_config(&st)?.expect("configured device");
+        config.categories.insert("skills".into(), true);
+        save_config(&st, &config)?;
+    }
+    sync_now(device.clone(), tx).await?;
+    assert!(
+        published_skill(&device)
+            .await?
+            .is_some_and(|entity| entity.deleted),
+        "the delete propagates once the category is subscribed again"
+    );
+    Ok(())
+}
+
+/// An uninstall that lands while a sync is running must not be overwritten by
+/// that sync's stale settings, and repeated syncs must not revive the plugin.
+#[tokio::test]
+async fn uninstall_waits_for_an_in_flight_sync_and_keeps_the_tombstone() -> Result<()> {
+    if run_in_isolated_process(
+        "config_sync::engine::router_tests::uninstall_waits_for_an_in_flight_sync_and_keeps_the_tombstone",
+    )? {
+        return Ok(());
+    }
+    let fixture = fixture(false).await;
+    let directory = tempfile::tempdir()?;
+    let device = configure_test_device(directory.path(), &fixture.endpoint).await?;
+    {
+        let st = device.lock().await;
+        let mut config = load_config(&st)?.expect("configured device");
+        config.plugin_intents.insert(
+            "race-plugin".into(),
+            json!({"id":"race-plugin","name":"Race plugin"}),
+        );
+        save_config(&st, &config)?;
+    }
+    let (tx, _rx) = mpsc::unbounded_channel();
+    sync_now(device.clone(), tx.clone()).await?;
+
+    // Play the in-flight sync by holding its lock, then run the uninstall path
+    // the RPC handler uses: the same lock, then the same intent clear.
+    let sync_lock = { device.lock().await.config_sync_lock.clone() };
+    let guard = sync_lock.lock_owned().await;
+    // The plugin-manager removal itself is not what races: the intent clear is.
+    // The RPC handler performs both under the same lock, so this task mirrors the
+    // locked clear and returns whether it changed anything.
+    let uninstall = tokio::spawn({
+        let device = device.clone();
+        async move {
+            let (_sync_guard, st) = crate::config_sync::sync_locked_state(&device).await;
+            crate::config_sync::forget_plugin_intent(&st, "race-plugin")
+        }
+    });
+    // A scheduling aid, not the oracle: the assertions below decide.
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    assert!(
+        !uninstall.is_finished(),
+        "the uninstall must wait for the in-flight sync"
+    );
+    assert!(
+        load_config(&*device.lock().await)?
+            .expect("configured device")
+            .plugin_intents
+            .contains_key("race-plugin"),
+        "the intent must not be cleared while the sync still owns the lock"
+    );
+
+    drop(guard);
+    uninstall.await??;
+    assert!(!load_config(&*device.lock().await)?
+        .expect("configured device")
+        .plugin_intents
+        .contains_key("race-plugin"));
+
+    // The next syncs publish and keep a deletion instead of re-advertising it.
+    for _ in 0..3 {
+        sync_now(device.clone(), tx.clone()).await?;
+    }
+    let state = device.lock().await;
+    let config = load_config(&state)?.expect("configured device");
+    assert!(!config.plugin_intents.contains_key("race-plugin"));
+    let key = local_vault_key(&state, &config)?.expect("unlocked device");
+    let account = configured_account(&state, &config)?;
+    let transport = account_transport(&account).await?;
+    let (head, _) = read_remote_head(&transport, &config, &key)
+        .await?
+        .expect("remote head");
+    let (manifest, _) = read_remote_revision(
+        &transport,
+        &config,
+        &key,
+        &head.revision_id,
+        &NoSyncProgress,
+    )
+    .await?;
+    let plugin = manifest
+        .entities
+        .into_iter()
+        .find(|entity| entity.entity_id == "plugin:race-plugin")
+        .expect("plugin entity");
+    assert!(plugin.deleted, "the uninstalled plugin must be tombstoned");
+    Ok(())
+}

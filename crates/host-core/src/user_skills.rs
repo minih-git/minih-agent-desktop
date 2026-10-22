@@ -1341,7 +1341,17 @@ impl UserSkillRegistry {
         let Some(record) = self.find(id, level, project_path)? else {
             return Ok(false);
         };
-        fs::remove_file(&record.path).ok();
+        // A delete that fails must not report success: the document would stay
+        // on disk, the next capture would list the skill again, and config sync
+        // would have published a tombstone that can never converge.
+        match fs::remove_file(&record.path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("SKILL_IO: remove {} failed", record.path))
+            }
+        }
         let level = record
             .level
             .as_deref()

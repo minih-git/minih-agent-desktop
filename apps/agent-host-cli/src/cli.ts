@@ -65,6 +65,7 @@ async function main(): Promise<void> {
         "  --gateway                 keep the outbound Host link open (needs `enroll` first)",
         "  --confirm-devices         answer device requests over the admin socket (account mode)",
         "  --strict-devices          confirm every device locally; refuse sibling grants",
+        "  --no-desktop-auto         ask before admitting a same-account computer (on by default)",
         "  --pairing-lifetime-ms <n> pairing token lifetime (default 600000)",
         "  --host-core <path>        minih-agent-desktop-host-core binary",
         "  --sidecar <path>          agent sidecar entry",

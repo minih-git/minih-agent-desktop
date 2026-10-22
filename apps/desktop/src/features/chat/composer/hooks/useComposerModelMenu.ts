@@ -11,6 +11,7 @@ import {
   isImageGenerationModel,
 } from "@minih-agent/shared";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import i18n from "i18next";
 import {
   composerModelBinding,
   composerModelMatchesQuery,
@@ -21,6 +22,7 @@ import {
   providerDisplayName,
   providerSearchText,
 } from "../../../../lib/provider-display";
+import type { ModelInfo, RacpModelSummary } from "@minih-agent/shared";
 import { providerThinkingLevels } from "../../../../lib/session-thinking";
 import { useAppStore } from "../../../../stores/app-store";
 import {
@@ -38,6 +40,12 @@ type UseComposerModelMenuOptions = {
   thinkingProvider: ProviderPublic | null | undefined;
   thinkingLevel: SessionThinkingLevel;
   controlsBlocked: boolean;
+  /**
+   * The owning computer's model catalog for a remote session. Present means the
+   * picker lists those rows instead of this desktop's providers, and the session
+   * is running a turn on the Host (`busy`), so a pick is deferred, not refused.
+   */
+  remoteCatalog?: { models: RacpModelSummary[]; busy: boolean };
   configureActiveSession: (configuration: {
     mode: Mode; providerId?: string; modelId?: string; thinkingLevel: SessionThinkingLevel;
   }) => Promise<void>;
@@ -51,6 +59,7 @@ export function useComposerModelMenu({
   thinkingProvider: resolvedThinkingProvider,
   thinkingLevel,
   controlsBlocked,
+  remoteCatalog,
   configureActiveSession,
 }: UseComposerModelMenuOptions) {
   const providers = useAppStore((s) => s.providers);
@@ -64,6 +73,12 @@ export function useComposerModelMenu({
   const providerModels = useAppStore((s) => s.providerModels);
   const loadProviderModels = useAppStore((s) => s.loadProviderModels);
   const showToast = useAppStore((s) => s.showToast);
+  // The Host refuses a configuration while its turn is running (AGENT_BUSY).
+  // The picker has already made that state visible, so a pick during a turn is
+  // an explanation, not an error the user must debug.
+  const tBusyRemote = i18n.t("chat.remoteModelBusy");
+  const selectedSameRemoteModel = (row: RacpModelSummary) =>
+    provider?.id === row.providerId && sameComposerModelId(modelId ?? "", row.modelId);
   const [open, setOpen] = useState(false);
   const [otherModelsExpanded, setOtherModelsExpanded] = useState(false);
   const [query, setQuery] = useState("");
@@ -116,7 +131,7 @@ export function useComposerModelMenu({
     );
   const availableThinkingLevels = providerThinkingLevels(thinkingProvider);
   const thinkingMenuLevels = sessionThinkingMenuLevels(availableThinkingLevels);
-  const modelGroups = useMemo(
+  const localModelGroups = useMemo(
     () =>
       providers
         .filter(
@@ -140,6 +155,55 @@ export function useComposerModelMenu({
         .filter((group) => group.models.length > 0),
     [providers, providerModels, imageGenerationCandidates],
   );
+  // A remote conversation lists the owning computer's catalog. The Host's rows
+  // are projected onto the picker's group shape: one synthetic provider per
+  // remote providerId keeps search, recents, and selection working unchanged.
+  const remoteModelGroups = useMemo(() => {
+    if (!remoteCatalog) return [];
+    const byProvider = new Map<string, RacpModelSummary[]>();
+    for (const row of remoteCatalog.models) {
+      const rows = byProvider.get(row.providerId) ?? [];
+      rows.push(row);
+      byProvider.set(row.providerId, rows);
+    }
+    return [...byProvider.entries()].map(([providerId, rows]) => {
+      const groupProvider: ProviderPublic = {
+        id: providerId,
+        name: rows[0]?.providerLabel ?? providerId,
+        vendorKey: providerId,
+        type: "native",
+        protocol: "remote",
+        enabled: true,
+        authKind: "none",
+        hasSecret: true,
+        models: rows.map((row) => ({
+          id: row.modelId,
+          contextWindow: 0,
+          maxTokens: 0,
+          thinkingLevels: [],
+          defaultThinkingLevel: null,
+        })),
+        supportsReasoning: rows.some((row) => row.thinkingLevels.length > 0),
+        supportedThinkingLevels: [],
+        createdAt: "",
+        updatedAt: "",
+      };
+      return {
+        provider: groupProvider,
+        providerDisplayName: groupProvider.name,
+        providerSearchText: `${groupProvider.name} ${providerId}`.toLowerCase(),
+        models: rows.map((row) => ({
+          modelId: row.modelId,
+          displayName: row.label,
+          providerId: row.providerId,
+          reasoning: row.thinkingLevels.length > 0,
+          capabilities: row.supportsImages ? ["text", "vision"] : ["text"],
+          source: "bundled",
+        }) as ModelInfo),
+      };
+    });
+  }, [remoteCatalog]);
+  const modelGroups = remoteCatalog ? remoteModelGroups : localModelGroups;
   const recentEntries = useMemo(() => {
     const entries = modelGroups.flatMap(group => group.models.map(model => ({ provider: group.provider, model })));
     return (recentModels ?? []).flatMap(recent => {
@@ -237,6 +301,38 @@ export function useComposerModelMenu({
   const selectModel = async (candidate: ProviderPublic, nextModelId: string) => {
     thinkingQueueRef.current?.invalidate();
     await thinkingQueueRef.current?.idle();
+    // A remote pick goes to the owning computer's `session/configure`. The
+    // thinking level comes from the Host's row (it knows what that model
+    // accepts); keeping the current level when the session already runs this
+    // model matches the local picker's contract.
+    if (remoteCatalog) {
+      const row = remoteCatalog.models.find((entry) =>
+        entry.providerId === candidate.id && entry.modelId === nextModelId);
+      if (!row) return;
+      if (remoteCatalog.busy) {
+        showToast(tBusyRemote, { variant: "info" });
+        return;
+      }
+      try {
+        await configureActiveSession({
+          mode,
+          providerId: candidate.id,
+          modelId: nextModelId,
+          thinkingLevel: selectedSameRemoteModel(row)
+            ? thinkingLevel
+            : (row.defaultThinkingLevel as SessionThinkingLevel | undefined)
+              ?? ((row.thinkingLevels.includes("off") ? "off" : row.thinkingLevels[0] ?? "off") as SessionThinkingLevel),
+        });
+        setQuery("");
+        setOtherModelsExpanded(false);
+        setModelHighlight(-1);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : String(error), {
+          variant: "error",
+        });
+      }
+      return;
+    }
     if (isImageGenerationModel(
       imageGenerationBindings(
         useAppStore.getState().settings?.imageGenerationModels,

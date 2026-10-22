@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.24.0",
+    date: "2026-10-21",
+    highlights: [
+      "The phone now separates projects from conversations: you pick a project, then a conversation inside it, with one vocabulary for every state and a clear notice when the app returns to the foreground.",
+      "A conversation reports when it is waiting for your answer, so the phone no longer shows a pending question as a busy turn.",
+      "Notifications name the conversation on the lock screen and carry the number of decisions still waiting; on Android the app draws its own notification, so tapping one opens that conversation.",
+      "Push can be limited to the events that need you, several events of one conversation group together, and the iPhone build now carries the push entitlement.",
+      "A phone can send pictures and small files into a conversation running on your computer.",
+      "A phone can see which model a conversation uses and switch it.",
+      "Answers render as Markdown in the phone timeline, long histories load in windows without moving what you are reading, and going back behaves the same on every path.",
+      "Selecting text in a desktop reply quotes it into the input box, and a plugin can open a local file directly in the work panel browser view.",
+    ],
+  },
+  {
     version: "0.23.0",
     date: "2026-10-20",
     highlights: [

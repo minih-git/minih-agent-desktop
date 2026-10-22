@@ -120,6 +120,42 @@ export const RacpRequestContextSchema = Type.Object({
 });
 export type RacpRequestContext = Static<typeof RacpRequestContextSchema>;
 
+/**
+ * The character set and length of a diagnostic trace id (P0 measurement).
+ *
+ * One definition, because two peers validate the same value: the Gateway
+ * accepts a caller's `x-trace-id` header, and a Host accepts the `traceId` an
+ * untrusted client put in a request frame. A value that does not match is
+ * replaced with a locally generated id — never echoed, never sanitized — so an
+ * unbounded or control-character-laden string can never reach a log line, an
+ * audit record, or an error payload.
+ */
+export const RACP_TRACE_ID_PATTERN = "^[A-Za-z0-9._:-]{8,128}$";
+const RACP_TRACE_ID_RE = new RegExp(RACP_TRACE_ID_PATTERN);
+
+/** Whether a value may be used as a trace id: a bounded, log-safe string. */
+export function isRacpTraceId(value: unknown): value is string {
+  return typeof value === "string" && RACP_TRACE_ID_RE.test(value);
+}
+
+/**
+ * The character set and length of a Host id: `host_<uuid>` for a desktop Host,
+ * `host_<base64url>` for a headless one (both far below the bound).
+ *
+ * One definition, because three peers validate the same value: the pairing
+ * ticket a user pastes, the Host id a client puts in a Gateway URL path, and
+ * the record a Gateway stores at enrollment. A value that does not match is a
+ * caller error — never a name to look up — and the bound keeps an unbounded
+ * path segment from reaching a log line, an audit record, or a lookup.
+ */
+export const RACP_HOST_ID_PATTERN = "^host_[A-Za-z0-9._-]{1,128}$";
+const RACP_HOST_ID_RE = new RegExp(RACP_HOST_ID_PATTERN);
+
+/** Whether a value is a syntactically valid Host id. */
+export function isRacpHostId(value: unknown): value is string {
+  return typeof value === "string" && RACP_HOST_ID_RE.test(value);
+}
+
 export const WorkspaceFilesRequestSchema = Type.Object({
   path: Type.String({ minLength: 1, maxLength: 4096 }),
   operation: Type.Union([Type.Literal("list"), Type.Literal("read"), Type.Literal("index"), Type.Literal("resolve"), Type.Literal("image"), Type.Literal("diff"), Type.Literal("instructions")]),
@@ -500,6 +536,17 @@ export const RacpServerCapabilitiesSchema = Type.Object({
   terminal: Type.Boolean(),
   workspaceTools: Type.Optional(Type.Boolean()),
   workspaceFiles: Type.Optional(Type.Boolean()),
+  /**
+   * Whether this connection may read the session's workspace
+   * (`workspace/list|read|diff`, the read-only file panel).
+   *
+   * Separate from `workspaceFiles` on purpose: that one is the owner-grade
+   * `workspace/files` surface, while this is the viewer-grade panel a
+   * same-account desktop is allowed to open. A Host sets it per connection, so
+   * one deployment can offer the panel to a desktop and withhold it from a
+   * phone (rollout R8 package D, protocol §6.2).
+   */
+  workspaceRead: Type.Optional(Type.Boolean()),
   notifications: Type.Boolean(),
   bindings: Type.Array(Type.Union([Type.Literal("RACP-WS"), Type.Literal("RACP-HTTP"), Type.Literal("RACP-GRPC")])),
 });
@@ -728,6 +775,8 @@ export const RACP_HTTP_ROUTES: Partial<Record<RacpOperation, { method: "GET" | "
   "session/list": { method: "GET", path: "/v1/sessions" },
   "session/create": { method: "POST", path: "/v1/sessions" },
   "session/get": { method: "GET", path: "/v1/sessions/{sessionId}" },
+  "session/configure": { method: "POST", path: "/v1/sessions/{sessionId}:configure" },
+  "session/rename": { method: "POST", path: "/v1/sessions/{sessionId}:rename" },
   "session/attach": { method: "POST", path: "/v1/sessions/{sessionId}:attach" },
   "session/history": { method: "GET", path: "/v1/sessions/{sessionId}/history" },
   "turn/start": { method: "POST", path: "/v1/sessions/{sessionId}/turns" },
@@ -869,6 +918,38 @@ export type RacpCeilingInput = {
    * use the session's own mode. */
   approverOverride: boolean;
 };
+
+/**
+ * The role set a desktop-class device holds (ADR amendment 3, decision 4):
+ * `owner`, and nothing a phone would hold.
+ */
+export const RACP_DESKTOP_DEVICE_ROLES: readonly RacpRole[] = ["owner"];
+
+/**
+ * Whether a principal stands where an SSH-paired desktop owner stands.
+ *
+ * This is the ONE place the desktop-class rule lives. A gateway-origin device
+ * is otherwise policy-immune (security §3.7): no `allow-session`, no
+ * `approverOverride`, always under the ceiling. A desktop-class device is the
+ * single exception, because the target Host verified a proof signed by a
+ * certificate the account's own Gateway issued to that computer — the same
+ * standing an SSH-paired owner has (ADR amendment 3, decision 4).
+ *
+ * The class is what the proof earned, never the role string alone: a record
+ * that merely claims `owner` without `deviceClass: "desktop"` is still a
+ * phone-grade device under the ceiling. `packages/racp/src/auth.ts` sets the
+ * field from the stored device record, and `agent-host` reads it here.
+ */
+export function isDesktopClassDevice(input: {
+  deviceClass?: "phone" | "desktop";
+  roles: readonly RacpRole[];
+}): boolean {
+  return (
+    input.deviceClass === "desktop" &&
+    input.roles.length === RACP_DESKTOP_DEVICE_ROLES.length &&
+    RACP_DESKTOP_DEVICE_ROLES.every((role) => input.roles.includes(role))
+  );
+}
 
 /**
  * The mode a remote-initiated turn actually runs under: the lower of the

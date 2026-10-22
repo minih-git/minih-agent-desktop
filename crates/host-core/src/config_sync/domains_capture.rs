@@ -63,207 +63,128 @@ fn capture_providers(st: &AppState) -> Result<Vec<PortableEntity>> {
     Ok(result)
 }
 
+/// Global MCP servers only. A server a device keeps for one project belongs to
+/// that folder: it stays on this machine and travels through a project archive,
+/// never through the cloud copy.
 fn capture_mcp(
     st: &mut AppState,
     selection: &CategorySelection,
     include_secrets: bool,
-    identities: &ProjectIdentityOverrides,
 ) -> Result<Vec<PortableEntity>> {
     let mut result = Vec::new();
-    let projects = st.db.list_projects()?;
-    let mut targets: Vec<(CapabilityLevel, Option<String>)> = vec![(CapabilityLevel::Global, None)];
-    targets.extend(
-        projects
-            .into_iter()
-            .map(|project| (CapabilityLevel::Project, Some(project.path))),
-    );
-    for (level, project_path) in targets {
-        for record in st.mcp_servers.list(level, project_path.as_deref())? {
-            let mut payload = serde_json::to_value(&record)?;
-            strip_keys(&mut payload, &["path", "createdAt", "updatedAt"]);
-            let secret_bearing = !record.env.is_empty() || !record.headers.is_empty();
-            let project_scope = record
-                .project_path
-                .as_deref()
-                .map(|path| project_scope(st, path, identities))
-                .transpose()?;
-            let project_logical_id = project_scope.as_ref().map(|scope| scope.0.clone());
+    for record in st.mcp_servers.list(CapabilityLevel::Global, None)? {
+        let mut payload = serde_json::to_value(&record)?;
+        strip_keys(
+            &mut payload,
+            &["path", "projectPath", "createdAt", "updatedAt"],
+        );
+        let secret_bearing = !record.env.is_empty() || !record.headers.is_empty();
+        if !selection.include_secrets(include_secrets) {
             if let Some(object) = payload.as_object_mut() {
-                object.remove("projectPath");
-                if let Some(project_logical_id) = project_logical_id.as_ref() {
+                object.remove("env");
+                object.remove("headers");
+                if !record.env.is_empty() {
                     object.insert(
-                        "projectLogicalId".to_string(),
-                        Value::String(project_logical_id.clone()),
+                        "envKeys".to_string(),
+                        Value::Array(record.env.keys().cloned().map(Value::String).collect()),
                     );
                 }
-                if let Some((_, Some(group_id), root_position)) = project_scope.as_ref() {
+                if !record.headers.is_empty() {
                     object.insert(
-                        "projectGroupLogicalId".into(),
-                        Value::String(group_id.clone()),
+                        "headerKeys".to_string(),
+                        Value::Array(record.headers.keys().cloned().map(Value::String).collect()),
                     );
-                    if let Some(position) = root_position {
-                        object.insert("projectRootPosition".into(), json!(position));
-                    }
                 }
             }
-            if !selection.include_secrets(include_secrets) {
-                if let Some(object) = payload.as_object_mut() {
-                    object.remove("env");
-                    object.remove("headers");
-                    if !record.env.is_empty() {
-                        object.insert(
-                            "envKeys".to_string(),
-                            Value::Array(record.env.keys().cloned().map(Value::String).collect()),
-                        );
-                    }
-                    if !record.headers.is_empty() {
-                        object.insert(
-                            "headerKeys".to_string(),
-                            Value::Array(
-                                record.headers.keys().cloned().map(Value::String).collect(),
-                            ),
-                        );
-                    }
-                }
-            }
-            let id = format!(
-                "mcp:{}:{}",
-                record.level.as_deref().unwrap_or("global"),
-                stable_id(
-                    "id",
-                    &format!(
-                        "{}:{}",
-                        project_logical_id.as_deref().unwrap_or("global"),
-                        record.id
-                    ),
-                )
-            );
-            result.push(entity(
-                DOMAIN_MCP,
-                id,
-                record.label,
-                payload,
-                true,
-                secret_bearing,
-                project_logical_id.is_some(),
-                Vec::new(),
-            ));
         }
+        // The entity id keeps the global namespace it always had, so a device
+        // that upgrades keeps acknowledging the same MCP definitions instead of
+        // re-approving every one of them.
+        let id = format!(
+            "mcp:global:{}",
+            stable_id("id", &format!("global:{}", record.id))
+        );
+        result.push(entity(
+            DOMAIN_MCP,
+            id,
+            record.label,
+            payload,
+            true,
+            secret_bearing,
+            false,
+            Vec::new(),
+        ));
     }
     Ok(result)
 }
 
-fn capture_skills(
-    st: &mut AppState,
-    key: &VaultKey,
-    selection: &CategorySelection,
-    identities: &ProjectIdentityOverrides,
-) -> Result<(Vec<PortableEntity>, ResourceMap)> {
+/// Global skills only, with their bounded package resources. A skill installed
+/// for one project stays with that folder and is carried by a project archive.
+fn capture_skills(st: &mut AppState, key: &VaultKey) -> Result<(Vec<PortableEntity>, ResourceMap)> {
     let mut result = Vec::new();
     let mut resources = BTreeMap::new();
-    let projects = st.db.list_projects()?;
-    let mut targets: Vec<(CapabilityLevel, Option<String>)> = vec![(CapabilityLevel::Global, None)];
-    targets.extend(
-        projects
-            .into_iter()
-            .map(|project| (CapabilityLevel::Project, Some(project.path))),
-    );
-    for (level, project_path) in targets {
-        for record in st.user_skills.list(level, project_path.as_deref())? {
-            let bytes = st
-                .user_skills
-                .read(&record.id, Some(level), record.project_path.as_deref())?
-                .map(|(_, body)| body.into_bytes())
-                .ok_or_else(|| anyhow::anyhow!("skill disappeared while capturing"))?;
-            let resource_id = object_id(key, &bytes);
-            resources.entry(resource_id.clone()).or_insert(bytes);
-            let package_files =
-                st.user_skills
-                    .package_files(&record.id, level, record.project_path.as_deref())?;
-            let mut resource_ids = vec![resource_id.clone()];
-            let mut package_descriptors = Vec::with_capacity(package_files.len());
-            for (path, bytes) in package_files {
-                let package_resource_id = object_id(key, &bytes);
-                resources
-                    .entry(package_resource_id.clone())
-                    .or_insert(bytes);
-                resource_ids.push(package_resource_id.clone());
-                package_descriptors.push(json!({
-                    "path": path,
-                    "resourceId": package_resource_id,
-                }));
-            }
-            let mut payload = serde_json::to_value(&record)?;
-            strip_keys(
-                &mut payload,
-                &[
-                    "path",
-                    "projectPath",
-                    "workspacePath",
-                    "sizeBytes",
-                    "createdAt",
-                    "updatedAt",
-                ],
-            );
-            let project_scope = record
-                .project_path
-                .as_deref()
-                .map(|path| project_scope(st, path, identities))
-                .transpose()?;
-            let project_logical_id = project_scope.as_ref().map(|scope| scope.0.clone());
-            if let Some(object) = payload.as_object_mut() {
-                object.insert(
-                    "bodyResourceId".to_string(),
-                    Value::String(resource_id.clone()),
-                );
-                if !package_descriptors.is_empty() {
-                    object.insert(
-                        "packageFiles".to_string(),
-                        Value::Array(package_descriptors),
-                    );
-                }
-                if let Some(project_logical_id) = project_logical_id.as_ref() {
-                    object.insert(
-                        "projectLogicalId".to_string(),
-                        Value::String(project_logical_id.clone()),
-                    );
-                }
-                if let Some((_, Some(group_id), root_position)) = project_scope.as_ref() {
-                    object.insert(
-                        "projectGroupLogicalId".into(),
-                        Value::String(group_id.clone()),
-                    );
-                    if let Some(position) = root_position {
-                        object.insert("projectRootPosition".into(), json!(position));
-                    }
-                }
-            }
-            let id = format!(
-                "skill:{}",
-                stable_id(
-                    "skill",
-                    &format!(
-                        "{}:{}",
-                        project_logical_id.as_deref().unwrap_or("global"),
-                        record.id
-                    ),
-                )
-            );
-            result.push(entity(
-                DOMAIN_SKILLS,
-                id,
-                record.name,
-                payload,
-                true,
-                false,
-                project_logical_id.is_some(),
-                resource_ids,
-            ));
+    for record in st.user_skills.list(CapabilityLevel::Global, None)? {
+        let bytes = st
+            .user_skills
+            .read(&record.id, Some(CapabilityLevel::Global), None)?
+            .map(|(_, body)| body.into_bytes())
+            .ok_or_else(|| anyhow::anyhow!("skill disappeared while capturing"))?;
+        let resource_id = object_id(key, &bytes);
+        resources.entry(resource_id.clone()).or_insert(bytes);
+        let package_files =
+            st.user_skills
+                .package_files(&record.id, CapabilityLevel::Global, None)?;
+        let mut resource_ids = vec![resource_id.clone()];
+        let mut package_descriptors = Vec::with_capacity(package_files.len());
+        for (path, bytes) in package_files {
+            let package_resource_id = object_id(key, &bytes);
+            resources
+                .entry(package_resource_id.clone())
+                .or_insert(bytes);
+            resource_ids.push(package_resource_id.clone());
+            package_descriptors.push(json!({
+                "path": path,
+                "resourceId": package_resource_id,
+            }));
         }
-    }
-    if !selection.is_selected(DOMAIN_SKILLS) {
-        result.clear();
-        resources.clear();
+        let mut payload = serde_json::to_value(&record)?;
+        strip_keys(
+            &mut payload,
+            &[
+                "path",
+                "projectPath",
+                "workspacePath",
+                "sizeBytes",
+                "createdAt",
+                "updatedAt",
+            ],
+        );
+        if let Some(object) = payload.as_object_mut() {
+            object.insert(
+                "bodyResourceId".to_string(),
+                Value::String(resource_id.clone()),
+            );
+            if !package_descriptors.is_empty() {
+                object.insert(
+                    "packageFiles".to_string(),
+                    Value::Array(package_descriptors),
+                );
+            }
+        }
+        let id = format!(
+            "skill:{}",
+            stable_id("skill", &format!("global:{}", record.id))
+        );
+        result.push(entity(
+            DOMAIN_SKILLS,
+            id,
+            record.name,
+            payload,
+            true,
+            false,
+            false,
+            resource_ids,
+        ));
     }
     Ok((result, resources))
 }
@@ -307,72 +228,10 @@ fn capture_subagents(
     Ok((result, resources))
 }
 
-pub(crate) fn capture_memory(
-    st: &mut AppState,
-    identities: &ProjectIdentityOverrides,
-) -> Result<Vec<PortableEntity>> {
-    let mut result = Vec::new();
-    for project in st.db.list_projects()? {
-        let memory = st.db.get_project_memory(&project.path)?;
-        if memory.content.trim().is_empty() && memory.entries.is_none() {
-            continue;
-        }
-        let project_name = project.name.clone();
-        let (project_id, group_id, root_position) = project_scope(st, &project.path, identities)?;
-        let mut payload = json!({
-            "projectLogicalId": project_id.clone(),
-            "memory": memory,
-        });
-        if let Some(object) = payload.as_object_mut() {
-            if let Some(group_id) = group_id {
-                object.insert("projectGroupLogicalId".into(), Value::String(group_id));
-            }
-            if let Some(position) = root_position {
-                object.insert("projectRootPosition".into(), json!(position));
-            }
-        }
-        result.push(entity(
-            DOMAIN_MEMORY,
-            format!("memory:{project_id}"),
-            project_name,
-            payload,
-            false,
-            true,
-            true,
-            Vec::new(),
-        ));
-    }
-    for group in st.db.list_project_groups()? {
-        if group.legacy {
-            continue;
-        }
-        let memory = st.db.get_project_group_memory(&group.id)?;
-        if memory.content.trim().is_empty() && memory.entries.is_none() {
-            continue;
-        }
-        let logical_id = project_group_logical_id(st, &group)?;
-        result.push(entity(
-            DOMAIN_MEMORY,
-            format!("memory:{logical_id}"),
-            group.name.clone(),
-            json!({
-                "projectGroupLogicalId": logical_id,
-                "projectGroupName": group.name,
-                "memory": memory,
-            }),
-            false,
-            true,
-            true,
-            Vec::new(),
-        ));
-    }
-    Ok(result)
-}
-
-pub(crate) fn capture_instructions(
-    st: &mut AppState,
-    identities: &ProjectIdentityOverrides,
-) -> Result<Vec<PortableEntity>> {
+/// The one instruction file that belongs to the user rather than to a folder.
+/// Project `AGENTS.md` files, group instructions and pinned project memory are
+/// device-local: they describe folders this machine owns.
+fn capture_instructions() -> Result<Vec<PortableEntity>> {
     let mut result = Vec::new();
     if let Some(path) = global_instruction_path() {
         if let Some(content) = read_instruction_file(&path)? {
@@ -390,61 +249,6 @@ pub(crate) fn capture_instructions(
                 Vec::new(),
             ));
         }
-    }
-    for group in st.db.list_project_groups()? {
-        if group.legacy {
-            continue;
-        }
-        let logical_id = project_group_logical_id(st, &group)?;
-        let content = st.db.get_project_group_instructions(&group.id)?;
-        if content.trim().is_empty() {
-            continue;
-        }
-        let group_name = group.name.clone();
-        result.push(entity(
-            DOMAIN_INSTRUCTIONS,
-            format!("project-group:{}", group.id),
-            group_name,
-            json!({
-                "projectGroupLogicalId": logical_id,
-                "projectGroupName": group.name,
-                "content": content,
-            }),
-            false,
-            true,
-            true,
-            Vec::new(),
-        ));
-    }
-    for project in st.db.list_projects()? {
-        let path = Path::new(&project.path).join("AGENTS.md");
-        let Some(content) = read_instruction_file(&path)? else {
-            continue;
-        };
-        let (project_id, group_id, root_position) = project_scope(st, &project.path, identities)?;
-        let mut payload = json!({
-            "scope": "project",
-            "projectLogicalId": project_id,
-            "content": content,
-        });
-        if let Some(object) = payload.as_object_mut() {
-            if let Some(group_id) = group_id {
-                object.insert("projectGroupLogicalId".into(), Value::String(group_id));
-            }
-            if let Some(position) = root_position {
-                object.insert("projectRootPosition".into(), json!(position));
-            }
-        }
-        result.push(entity(
-            DOMAIN_INSTRUCTIONS,
-            format!("instructions:project:{project_id}"),
-            project.name,
-            payload,
-            true,
-            true,
-            true,
-            Vec::new(),
-        ));
     }
     Ok(result)
 }
@@ -515,12 +319,15 @@ pub(crate) fn remove_instruction_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn capture_automation(
-    st: &mut AppState,
-    identities: &ProjectIdentityOverrides,
-) -> Result<Vec<PortableEntity>> {
+/// Automations that are not bound to a folder. A task that runs in a project
+/// belongs to that project: it stays on this machine, keeps the user's own
+/// enablement, and travels through a project archive.
+fn capture_automation(st: &mut AppState) -> Result<Vec<PortableEntity>> {
     let mut result = Vec::new();
     for task in crate::scheduled::list_tasks(&st.db)? {
+        if task.workspace_path.is_some() {
+            continue;
+        }
         let mut payload = serde_json::to_value(&task)?;
         strip_keys(
             &mut payload,
@@ -533,22 +340,6 @@ fn capture_automation(
                 "enabled",
             ],
         );
-        if let Some(workspace_path) = task.workspace_path.as_deref() {
-            if let Some(object) = payload.as_object_mut() {
-                let (project_id, group_id, root_position) =
-                    project_scope(st, workspace_path, identities)?;
-                object.insert(
-                    "workspaceProjectLogicalId".into(),
-                    Value::String(project_id),
-                );
-                if let Some(group_id) = group_id {
-                    object.insert("projectGroupLogicalId".into(), Value::String(group_id));
-                }
-                if let Some(position) = root_position {
-                    object.insert("projectRootPosition".into(), json!(position));
-                }
-            }
-        }
         result.push(entity(
             DOMAIN_AUTOMATION,
             format!("automation:{}", task.id),
@@ -556,7 +347,7 @@ fn capture_automation(
             payload,
             true,
             true,
-            task.workspace_path.is_some(),
+            false,
             Vec::new(),
         ));
     }
@@ -653,7 +444,6 @@ pub(crate) fn capture(
     selection: &CategorySelection,
     include_secrets: bool,
     plugin_intents: &BTreeMap<String, Value>,
-    identities: &ProjectIdentityOverrides,
 ) -> Result<LocalSnapshot> {
     let mut snapshot = LocalSnapshot {
         manifest: RevisionManifest {
@@ -703,10 +493,10 @@ pub(crate) fn capture(
         snapshot
             .manifest
             .entities
-            .extend(capture_mcp(st, selection, include_secrets, identities)?);
+            .extend(capture_mcp(st, selection, include_secrets)?);
     }
     if selection.is_selected(DOMAIN_SKILLS) {
-        let (entities, resources) = capture_skills(st, key, selection, identities)?;
+        let (entities, resources) = capture_skills(st, key)?;
         snapshot.manifest.entities.extend(entities);
         snapshot.resources.extend(resources);
     }
@@ -716,10 +506,7 @@ pub(crate) fn capture(
         snapshot.resources.extend(resources);
     }
     if selection.is_selected(DOMAIN_INSTRUCTIONS) {
-        snapshot
-            .manifest
-            .entities
-            .extend(capture_instructions(st, identities)?);
+        snapshot.manifest.entities.extend(capture_instructions()?);
     }
     if selection.is_selected(DOMAIN_PLUGINS) {
         snapshot
@@ -728,20 +515,15 @@ pub(crate) fn capture(
             .extend(capture_plugins(st, plugin_intents)?);
     }
     if selection.is_selected(DOMAIN_AUTOMATION) {
-        snapshot
-            .manifest
-            .entities
-            .extend(capture_automation(st, identities)?);
+        snapshot.manifest.entities.extend(capture_automation(st)?);
     }
-    if selection.is_selected(DOMAIN_MEMORY) {
-        snapshot
-            .manifest
-            .entities
-            .extend(capture_memory(st, identities)?);
-    }
+    // DOMAIN_MEMORY (pinned project and group memory) is deliberately not
+    // captured any more: it belongs to folders this machine owns. The domain
+    // stays in the registry so an older device's revision still validates and
+    // is filtered instead of failing the whole sync.
     if selection.is_selected(crate::config_sync::domains::DOMAIN_LEARNED_MEMORY) {
         snapshot.manifest.entities.extend(
-            crate::config_sync::learned_memory::capture_learned_memory(st, identities)?,
+            crate::config_sync::learned_memory::capture_learned_memory(st)?,
         );
     }
     snapshot.manifest.entities.sort_by(|left, right| {

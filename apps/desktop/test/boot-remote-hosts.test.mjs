@@ -494,3 +494,151 @@ test("shutdown cancels shared readiness and fences every concurrent waiter", asy
     assert.equal((await boot.list())[0].connected, false);
   } finally { await boot.closeAll(); await cleanup(); }
 });
+
+// --- Package E: account computers join the host list -------------------------
+
+/** A fake adapter that reports the capabilities a handshake would advertise. */
+function capabilityAdapter(capabilities) {
+  const adapter = fakeAdapter({ sessions: [] });
+  adapter.workspaceCapabilities = () => capabilities;
+  return adapter;
+}
+
+test("account computers and SSH hosts share one list, with live status", async () => {
+  const { dir, cleanup } = await tmpDir();
+  const encryption = reversibleEncryption();
+  const registry = createRemoteHostRegistry({ dataDir: dir, encryption });
+  await registry.upsert({
+    hostKey: "ssh-studio",
+    label: "Studio (SSH)",
+    url: "ws://127.0.0.1:7777/racp",
+    deviceToken: "t-ssh",
+    metadata: { transport: "ssh", ssh: { host: "studio", remotePort: 7777, version: "0.15.0" } },
+  });
+  // A paired SSH host is dialled through its own forward; this test only needs
+  // the two records to coexist in one list, so the forward is stubbed.
+  const boot = createRemoteHostsBoot({
+    dataDir: dir,
+    encryption,
+    router: createBackendRouter(),
+    emit: () => {},
+    clientInfo: { name: "test", version: "0.15.0" },
+    tunnels: {
+      open: async () => ({ url: "ws://127.0.0.1:7777/v1/racp/ws" }),
+      close: async () => undefined,
+      dispose: async () => undefined,
+      adopt: async () => undefined,
+    },
+    buildAdapter: () => capabilityAdapter({
+      workspaceTools: true,
+      workspaceFiles: true,
+      workspaceRead: true,
+      remoteHostProfile: true,
+    }),
+  });
+  try {
+    await boot.open();
+    const joined = await boot.joinAccountComputers({
+      computers: [
+        { hostId: "host_sibling", label: "Sibling", online: true },
+        { hostId: "host_self", label: "This Mac", online: true },
+      ],
+      selfHostId: "host_self",
+      publicOrigin: "https://gateway.example.com",
+      deviceToken: "pdt1.account",
+    });
+    // Only the other computer joined; this one is not a remote host of itself.
+    assert.deepEqual(joined.map((host) => host.hostKey), ["account-host_sibling"]);
+    assert.equal(joined[0].transport, "account");
+    assert.equal(joined[0].status, "connected");
+    assert.equal(joined[0].url, "wss://gateway.example.com/v1/hosts/host_sibling/ws");
+
+    // One list, both transports, each with the state the page renders.
+    const hosts = await boot.list();
+    assert.deepEqual(hosts.map((host) => host.hostKey).sort(), ["account-host_sibling", "ssh-studio"]);
+    assert.deepEqual(hosts.map((host) => host.transport).sort(), ["account", "ssh"]);
+    assert.ok(hosts.every((host) => host.status === "connected"));
+    // A capable computer needs no upgrade, and the summary carries no secret.
+    assert.equal(hosts.every((host) => host.needsUpgrade === undefined), true);
+    assert.equal(JSON.stringify(hosts).includes("pdt1."), false);
+
+    // The roster is authoritative: a computer that left the account loses its row.
+    await boot.joinAccountComputers({
+      computers: [],
+      selfHostId: "host_self",
+      publicOrigin: "https://gateway.example.com",
+      deviceToken: "pdt1.account",
+    });
+    assert.deepEqual((await boot.list()).map((host) => host.hostKey), ["ssh-studio"]);
+  } finally {
+    await boot.closeAll();
+    await cleanup();
+  }
+});
+
+test("a computer behind this release is reported as needing an upgrade", async () => {
+  const { dir, cleanup } = await tmpDir();
+  const encryption = reversibleEncryption();
+  const boot = createRemoteHostsBoot({
+    dataDir: dir,
+    encryption,
+    router: createBackendRouter(),
+    emit: () => {},
+    clientInfo: { name: "test", version: "0.15.0" },
+    // A Host from before the remote-host profile: no session controls, no panel.
+    buildAdapter: () => capabilityAdapter({
+      workspaceTools: false,
+      workspaceFiles: false,
+      workspaceRead: false,
+      remoteHostProfile: false,
+    }),
+  });
+  try {
+    await boot.joinAccountComputers({
+      computers: [{ hostId: "host_old", label: "Old", online: true }],
+      selfHostId: "host_self",
+      publicOrigin: "https://gateway.example.com",
+      deviceToken: "pdt1.account",
+    });
+    const [host] = await boot.list();
+    assert.deepEqual(host.capabilities, {
+      remoteHostProfile: false,
+      workspaceRead: false,
+      workspaceFiles: false,
+      workspaceTools: false,
+    });
+    assert.deepEqual(host.needsUpgrade, {
+      reason: "HOST_MISSING_CAPABILITIES",
+      missing: ["remoteHostProfile", "workspaceRead"],
+    });
+  } finally {
+    await boot.closeAll();
+    await cleanup();
+  }
+});
+
+test("a disconnected computer reports no capabilities rather than a verdict", async () => {
+  const { dir, cleanup } = await tmpDir();
+  const encryption = reversibleEncryption();
+  const registry = createRemoteHostRegistry({ dataDir: dir, encryption });
+  await registry.upsert({ hostKey: "gone", label: "Gone", url: "wss://gone", deviceToken: "t" });
+  const boot = createRemoteHostsBoot({
+    dataDir: dir,
+    encryption,
+    router: createBackendRouter(),
+    emit: () => {},
+    clientInfo: { name: "test", version: "0.15.0" },
+    buildAdapter: () => { throw Object.assign(new Error("refused"), { errorCode: "HOST_AUTH_FAILED" }); },
+  });
+  try {
+    await boot.open();
+    const [host] = await boot.list();
+    assert.equal(host.connected, false);
+    // Nothing handshook, so the page shows "unknown" instead of "outdated".
+    assert.equal(host.capabilities, undefined);
+    assert.equal(host.needsUpgrade, undefined);
+  } finally {
+    await boot.closeAll();
+    await cleanup();
+  }
+});

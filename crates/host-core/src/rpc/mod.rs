@@ -559,14 +559,19 @@ fn require_session(db: &crate::db::Database, session_id: &str) -> Result<(), Jso
 /// so the cap matches that order.
 const RPC_PERMISSION_WAIT_CAP_MS: u64 = 120_000;
 
-/// Budget for one request. `configSync.syncNow` has no aggregate wall-clock
-/// deadline because the Host owns a multi-step cloud operation. `tools.execute`
-/// follows its own effective tool timeout (plus permission cap and grace); all
-/// other methods use the fixed budget.
+/// Budget for one request. `configSync.syncNow` and the project archive
+/// operations have no aggregate wall-clock deadline because the Host owns a
+/// multi-step or unbounded file operation. `tools.execute` follows its own
+/// effective tool timeout (plus permission cap and grace); all other methods use
+/// the fixed budget.
 fn request_budget_ms(method: &str, params: &Value) -> Option<u64> {
-    if method == "configSync.syncNow" {
+    if matches!(
+        method,
+        "configSync.syncNow" | "project.archive.export" | "project.archive.import"
+    ) {
         // One sync may contain arbitrarily many individually bounded S3
-        // requests. Keep the Host-owned workflow alive across renderer routes.
+        // requests, and one project archive may copy an arbitrarily large
+        // folder. Keep these Host-owned workflows alive across renderer routes.
         return None;
     }
     if !matches!(method, "tools.execute" | "tools.workspaceExecute") {
@@ -778,6 +783,38 @@ fn plugin_session_rpc_err(error: impl ToString) -> JsonRpcError {
     rpc_err(rpc_code, message, &code)
 }
 
+/// Project archives are one host-owned file operation each. Their failures name
+/// the step that failed, so the renderer can show the message as-is.
+fn project_archive_rpc_err(error: anyhow::Error) -> JsonRpcError {
+    let message = error.to_string();
+    if message.starts_with("PROJECT_ARCHIVE_INVALID") {
+        return rpc_err(1002, message, "INVALID_PARAMS");
+    }
+    if message.starts_with("PROJECT_ARCHIVE_CONFLICT") {
+        return rpc_err(1008, message, "CONFLICT");
+    }
+    if message.starts_with("PROJECT_ARCHIVE_LIMIT_EXCEEDED") {
+        return rpc_err(1002, message, "LIMIT_EXCEEDED");
+    }
+    rpc_err(1000, message, "INTERNAL")
+}
+
+/// One archive operation may copy an arbitrarily large folder. The Host owns
+/// the work, so the request keeps running while the renderer shows progress.
+fn archive_progress(
+    tx: &mpsc::UnboundedSender<String>,
+) -> impl Fn(&'static str, u64, u64) + Sync + '_ {
+    move |phase, done, total| {
+        let note = json!({
+            "jsonrpc": "2.0",
+            "method": "projectArchive.progress",
+            "params": { "phase": phase, "done": done, "total": total },
+        });
+        if let Ok(raw) = serde_json::to_string(&note) {
+            let _ = tx.send(format!("{raw}\n"));
+        }
+    }
+}
 /// Parse the optional session thinking selector at the RPC boundary.  A
 /// missing/null value keeps the backwards-compatible default; present values
 /// must be strings from the host's allowlist rather than being silently
@@ -2182,6 +2219,47 @@ async fn handle_request(
                 .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?
                 .ok_or_else(|| rpc_err(1000, "project disappeared after creation", "INTERNAL"))?;
             Ok(json!({ "project": project }))
+        }
+
+        // Project archives: one logical project or group, explicitly exported
+        // and imported. The Host reads the registered project and its
+        // app-managed configuration; Electron main only passes the paths the
+        // user picked in a native dialog.
+        "project.archive.export" => {
+            let plan = {
+                let mut st = state.lock().await;
+                let progress = archive_progress(&tx);
+                crate::project_archive::export_plan(&mut st, &params, &progress)
+                    .map_err(project_archive_rpc_err)?
+            };
+            let progress_tx = tx.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                let progress = archive_progress(&progress_tx);
+                crate::project_archive::export_write(&plan, &progress)
+            })
+            .await
+            .map_err(|error| rpc_err(1000, error.to_string(), "INTERNAL"))?
+            .map_err(project_archive_rpc_err)?;
+            Ok(result)
+        }
+        "project.archive.import" => {
+            let data_dir = {
+                let st = state.lock().await;
+                st.data_dir.clone()
+            };
+            let staging_tx = tx.clone();
+            let staged = tokio::task::spawn_blocking(move || {
+                let progress = archive_progress(&staging_tx);
+                let staged = crate::project_archive::stage_import(&data_dir, &params, &progress)?;
+                Ok::<_, anyhow::Error>(staged)
+            })
+            .await
+            .map_err(|error| rpc_err(1000, error.to_string(), "INTERNAL"))?
+            .map_err(project_archive_rpc_err)?;
+            let mut st = state.lock().await;
+            let progress = archive_progress(&tx);
+            crate::project_archive::apply_import(&mut st, &staged, &progress)
+                .map_err(project_archive_rpc_err)
         }
 
         "projects.remove" => {
@@ -5108,7 +5186,12 @@ async fn handle_request(
                 .get("id")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| rpc_err(1002, "id required", "INVALID_PARAMS"))?;
-            let mut st = state.lock().await;
+            // Hold the configuration-sync lock while the intent is cleared: a
+            // running sync captured the settings before awaiting the remote and
+            // would otherwise save that stale copy afterwards, resurrecting the
+            // intent this uninstall removed. The lock order is the same one
+            // `sync_once` uses (sync lock, then host state).
+            let (_sync_guard, mut st) = crate::config_sync::sync_locked_state(&state).await;
             let ok = st
                 .plugins
                 .uninstall(id)
@@ -5117,6 +5200,14 @@ async fn handle_request(
                 if let Err(error) = crate::plugins::remove_plugin_providers(&st.db, &st.secrets, id)
                 {
                     tracing::warn!(plugin = id, %error, "plugin provider removal failed");
+                }
+                // The retained install intent is what reinstalls this plugin
+                // from the cloud copy on another device. Without it the next
+                // sync publishes a deletion tombstone from the existing
+                // baseline instead of advertising the plugin again. Disabling
+                // a plugin never reaches this path.
+                if let Err(error) = crate::config_sync::forget_plugin_intent(&st, id) {
+                    tracing::warn!(plugin = id, %error, "plugin install intent cleanup failed");
                 }
             }
             Ok(json!({ "ok": ok }))

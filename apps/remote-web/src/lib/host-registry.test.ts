@@ -6,6 +6,7 @@ import {
   createMemoryStorage,
   parseRegistry,
   serializeRegistry,
+  registryHasHosts,
   unacceptedNextStep,
   type HostRegistryEntry,
 } from "./host-registry.js";
@@ -17,6 +18,46 @@ const entry: HostRegistryEntry = {
   csrfToken: "csrf-1",
   pairedAt: "2026-09-18T10:00:00.000Z",
 };
+
+/**
+ * The launch rule asks whether this installation holds computers before any
+ * screen runs, so the answer comes from the stored registry rather than the
+ * hook. Forgetting the last computer leaves an empty list behind, which must
+ * not read as "has computers".
+ */
+describe("registryHasHosts", () => {
+  it("is false for an installation that never paired", () => {
+    expect(registryHasHosts(createMemoryStorage())).toBe(false);
+  });
+
+  it("is true once a computer is stored", () => {
+    const storage = createMemoryStorage();
+    createHostRegistry(storage).save(entry);
+    expect(registryHasHosts(storage)).toBe(true);
+  });
+
+  it("is false again after the last computer is forgotten", () => {
+    const storage = createMemoryStorage();
+    const registry = createHostRegistry(storage);
+    registry.save(entry);
+    registry.forget(entry.hostId);
+    // The key survives as "[]": presence of the key is not the question.
+    expect(storage.getItem(HOST_REGISTRY_STORAGE_KEY)).toBe("[]");
+    expect(registryHasHosts(storage)).toBe(false);
+  });
+
+  it("treats unreadable state as no computers instead of throwing", () => {
+    expect(registryHasHosts(createMemoryStorage({ [HOST_REGISTRY_STORAGE_KEY]: "{oops" }))).toBe(false);
+    const blocked = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {},
+      removeItem: () => {},
+    };
+    expect(registryHasHosts(blocked)).toBe(false);
+  });
+});
 
 describe("host registry", () => {
   it("stores and reads one entry per host", () => {
