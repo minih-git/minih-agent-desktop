@@ -54,12 +54,6 @@ export function ChatsScreen({
   const { t } = useTranslation();
   const history = directChatHistory();
   const connectedScope = directChatScope();
-  /**
-   * While nothing is connected, the account used most recently is still
-   * readable: removing a key must not make its conversations disappear.
-   */
-  const [offlineScope, setOfflineScope] = useState<{ gatewayRoot: string; accessKeyId: string } | null>(null);
-  const scope = connectedScope ?? offlineScope;
 
   const [rows, setRows] = useState<DirectChatSummary[]>([]);
   const [archivedCount, setArchivedCount] = useState(0);
@@ -68,13 +62,16 @@ export function ChatsScreen({
 
   useEffect(() => {
     let cancelled = false;
-    if (!connectedScope) {
-      void history.lastScope().then((last) => {
-        if (!cancelled) setOfflineScope(last);
-      });
-    }
     const load = async () => {
+      /*
+       * Without a key D1 still lists what this device holds: the account used
+       * most recently. Resolving it inside the load - not into state first -
+       * means one pass fills the list, and a load that arrives late is dropped
+       * by the same `cancelled` check as any other.
+       */
+      const scope = connectedScope ?? (await history.lastScope());
       if (!scope) {
+        if (cancelled) return;
         setRows([]);
         setArchivedCount(0);
         return;
@@ -94,7 +91,7 @@ export function ChatsScreen({
       cancelled = true;
       unsubscribe?.();
     };
-  }, [history, connectedScope, scope, query]);
+  }, [history, connectedScope, query]);
 
   const gear = (
     <button
@@ -155,7 +152,8 @@ export function ChatsScreen({
           </div>
         ) : null}
 
-        {connection ? (
+        {/* The list stays while nothing is connected: reading needs no key. */}
+        {connection || hasHistory ? (
           <>
             <label className="mx-3 mb-2 flex min-h-[38px] items-center gap-2 rounded-[10px] bg-[var(--rm-bg-inset)] px-3">
               <Search className="h-4 w-4 shrink-0 text-[var(--rm-text-faint)]" aria-hidden="true" />
@@ -213,13 +211,6 @@ export function ChatsScreen({
                 </ListGroup>
               </>
             )}
-
-            {!connectedScope ? (
-              <p className="mt-2 px-4 text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
-                {t("chats.readOnlyScope")}
-              </p>
-            ) : null}
-
             {archivedCount > 0 ? (
               <div className="mt-3">
                 <ListGroup>
