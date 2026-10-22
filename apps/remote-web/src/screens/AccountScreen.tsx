@@ -1,7 +1,8 @@
-import { Check, Lock, Phone, User } from "lucide-react";
+import { Check, Globe, Laptop, Lock, Phone, User } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { GatewaySheet } from "../components/hosts/HostSheets.js";
 import { Banner } from "../components/ui/Banner.js";
 import { Button } from "../components/ui/Button.js";
 import { Callout } from "../components/ui/Callout.js";
@@ -16,6 +17,7 @@ import { defaultAccountDeviceLabel, useAccountFlow } from "../hooks/useAccountFl
 import { remainingMs, rosterSummary } from "../lib/account-flow.js";
 import { formatRemaining, retrySeconds } from "../lib/account-format.js";
 import type { OperationFailure } from "../lib/errors.js";
+import { gatewayOrigin } from "../lib/runtime.js";
 
 function Stepper({ currentStep }: { currentStep: 0 | 1 | 2 }) {
   const { t } = useTranslation();
@@ -115,6 +117,7 @@ export function AccountScreen({
   const [label, setLabel] = useState(() => defaultAccountDeviceLabel());
   const { state, flow } = useAccountFlow(() => label);
   const [now, setNow] = useState(() => Date.now());
+  const [gatewayOpen, setGatewayOpen] = useState(false);
 
   useEffect(() => {
     if (state.kind !== "requesting") return undefined;
@@ -152,6 +155,19 @@ export function AccountScreen({
         <ScreenContent hasDock>
           <Stepper currentStep={0} />
 
+          <div className="mb-3 flex items-center justify-between gap-2 rounded-xl bg-[var(--rm-bg-surface)] px-3 py-2 text-[12px] ring-1 ring-[var(--rm-separator)]">
+            <div className="flex min-w-0 items-center gap-1.5 text-[var(--rm-text-secondary)]">
+              <Globe className="h-3.5 w-3.5 shrink-0 text-[var(--rm-accent)]" aria-hidden="true" />
+              <span className="truncate font-mono">{gatewayOrigin}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setGatewayOpen(true)}
+              className="shrink-0 font-medium text-[var(--rm-link)] active:opacity-70"
+            >
+              切换网关
+            </button>
+          </div>
           <div className="space-y-4 pt-1">
             <SecureField
               label={t("account.keyLabel")}
@@ -203,6 +219,7 @@ export function AccountScreen({
             </Button>
           </div>
         </ScreenDock>
+        <GatewaySheet open={gatewayOpen} onClose={() => setGatewayOpen(false)} />
       </Screen>
     );
   }
@@ -242,34 +259,43 @@ export function AccountScreen({
 
           <SectionHeader title={t("account.hosts.title")} />
 
-          <ListGroup>
-            {state.hosts.length === 0 ? (
-              <div className="py-4 px-4 text-sm text-[var(--rm-text-muted)] text-center">
-                {t("account.hosts.empty")}
-              </div>
-            ) : (
-              state.hosts.map((host) => (
-                <ListRow
+          {state.hosts.length === 0 ? (
+            <div className="rounded-2xl bg-[var(--rm-bg-surface)] py-5 px-4 text-sm text-[var(--rm-text-muted)] text-center ring-1 ring-[var(--rm-separator)]">
+              {t("account.hosts.empty")}
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {state.hosts.map((host) => (
+                <div
                   key={host.hostId}
-                  compact
-                  leading={
-                    <div className="w-6 flex items-center justify-center">
-                      <StatusDot
-                        status={host.online ? "online" : "offline"}
-                      />
+                  className="flex items-center gap-3 rounded-2xl bg-[var(--rm-bg-surface)] px-4 py-3.5 shadow-[var(--rm-shadow)] ring-1 ring-[var(--rm-separator)]"
+                >
+                  <div
+                    className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--rm-bg-inset)] ${
+                      host.online ? "text-[var(--rm-text-primary)]" : "text-[var(--rm-text-muted)]"
+                    }`}
+                  >
+                    <Laptop className="h-5 w-5" aria-hidden="true" />
+                    <span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[var(--rm-bg-surface)]">
+                      <StatusDot status={host.online ? "online" : "offline"} size="small" />
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[16px] font-semibold leading-[22px] text-[var(--rm-text-primary)]">
+                      {host.label}
                     </div>
-                  }
-                  title={host.label}
-                  subtitle={
-                    host.online
-                      ? t("account.hosts.online")
-                      : t("account.hosts.offline")
-                  }
-                />
-              ))
-            )}
-          </ListGroup>
-
+                    <div
+                      className={`mt-0.5 truncate text-[13px] leading-[18px] ${
+                        host.online ? "text-[var(--rm-success)]" : "text-[var(--rm-text-secondary)]"
+                      }`}
+                    >
+                      {host.online ? t("account.hosts.online") : t("account.hosts.offline")}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="mt-5 space-y-1.5">
             <label
               htmlFor="device-name"
@@ -340,7 +366,7 @@ export function AccountScreen({
 
           <SectionHeader title={t("account.waitingSentTitle")} />
 
-          <ListGroup>
+          <div className="space-y-2.5">
             {state.hosts.map((host) => {
               const sub = !host.online
                 ? t("account.hosts.offline")
@@ -349,20 +375,28 @@ export function AccountScreen({
                   : t("account.hosts.cannotConfirm");
 
               return (
-                <ListRow
+                <div
                   key={host.hostId}
-                  compact
-                  leading={
-                    <div className="w-6 flex items-center justify-center">
-                      <StatusDot status="decision" />
+                  className="flex items-center gap-3 rounded-2xl bg-[var(--rm-bg-surface)] px-4 py-3.5 shadow-[var(--rm-shadow)] ring-1 ring-[var(--rm-separator)]"
+                >
+                  <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--rm-bg-inset)] text-[var(--rm-text-primary)]">
+                    <Laptop className="h-5 w-5" aria-hidden="true" />
+                    <span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[var(--rm-bg-surface)]">
+                      <StatusDot status={host.online ? "decision" : "offline"} size="small" />
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[16px] font-semibold leading-[22px] text-[var(--rm-text-primary)]">
+                      {host.label}
                     </div>
-                  }
-                  title={host.label}
-                  subtitle={sub}
-                />
+                    <div className="mt-0.5 truncate text-[13px] leading-[18px] text-[var(--rm-text-secondary)]">
+                      {sub}
+                    </div>
+                  </div>
+                </div>
               );
             })}
-          </ListGroup>
+          </div>
         </ScreenContent>
 
         <ScreenDock>

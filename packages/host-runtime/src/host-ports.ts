@@ -1,5 +1,7 @@
-import { basename } from "node:path";
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { basename } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type {
   PendingToolRequest,
@@ -21,6 +23,10 @@ export type HostSessionRecord = {
   title?: string;
   projectId?: string;
   projectPath?: string;
+  providerId?: string;
+  modelId?: string;
+  modelLabel?: string;
+  thinkingLevel?: string;
   mode?: string;
   permissionMode?: string;
   planningState?: string;
@@ -46,20 +52,41 @@ export function requireHostRpc(getHost: () => HostRpc | null): HostRpc {
   return host;
 }
 
-export function toSessionSummary(record: HostSessionRecord): SessionSummary {
+export function toSessionSummary(
+  record: HostSessionRecord,
+  defaults?: { permissionMode?: RacpPermissionMode },
+): SessionSummary {
   const mode = record.mode === "plan" || record.mode === "goal" ? record.mode : "agent";
   const permissionMode: RacpPermissionMode =
-    record.permissionMode === "accept-edits" || record.permissionMode === "auto" ? record.permissionMode : "ask";
+    record.permissionMode === "accept-edits" || record.permissionMode === "auto" || record.permissionMode === "ask"
+      ? record.permissionMode
+      : record.permissionMode === "inherit" && defaults?.permissionMode
+        ? defaults.permissionMode
+        : "ask";
   const planningState =
     record.planningState === "planning" || record.planningState === "awaiting_approval"
       ? record.planningState
       : "inactive";
+  const modelId = typeof record.modelId === "string" && record.modelId.trim() ? record.modelId.trim() : undefined;
+  const providerId = typeof record.providerId === "string" && record.providerId.trim() ? record.providerId.trim() : undefined;
+  const modelLabel =
+    typeof record.modelLabel === "string" && record.modelLabel.trim()
+      ? record.modelLabel.trim()
+      : modelId;
+  const thinkingLevel =
+    typeof record.thinkingLevel === "string" && record.thinkingLevel.trim()
+      ? record.thinkingLevel.trim()
+      : undefined;
   return {
     id: record.id,
     title: record.title ?? "",
     ...(record.projectId ? { projectId: record.projectId } : {}),
     workspaceIdentity: sessionWorkspaceIdentity(record),
     ...(record.projectPath ? { workspaceLabel: basename(record.projectPath) } : {}),
+    ...(providerId ? { providerId } : {}),
+    ...(modelId ? { modelId } : {}),
+    ...(modelLabel ? { modelLabel } : {}),
+    ...(thinkingLevel ? { thinkingLevel } : {}),
     mode,
     permissionMode,
     planningState,
@@ -68,18 +95,45 @@ export function toSessionSummary(record: HostSessionRecord): SessionSummary {
   };
 }
 
+const FILE_HTML_LINK_RE = /\[[^\]]*\]\((file:\/\/\/[^)\s]+?\.html?)\)/i;
+const MAX_INLINE_HTML_BYTES = 200 * 1024;
+
+function inlineLocalHtmlIfLinked(message: UiMessage): UiMessage {
+  if (message.role !== "assistant" || typeof message.content !== "string") return message;
+  if (/```html\b/i.test(message.content)) return message;
+  const match = FILE_HTML_LINK_RE.exec(message.content);
+  if (!match?.[1]) return message;
+  try {
+    const filePath = fileURLToPath(match[1]);
+    if (!existsSync(filePath)) return message;
+    const st = statSync(filePath);
+    if (!st.isFile() || st.size <= 0 || st.size > MAX_INLINE_HTML_BYTES) return message;
+    const rawHtml = readFileSync(filePath, "utf8")
+      .replace(/<meta[^>]*http-equiv=["']Content-Security-Policy["'][^>]*>/gi, "")
+      .replace(/<textarea[^>]*id=["']am-source["'][^>]*>[\s\S]*?<\/textarea>/gi, "");
+    const fence = "`````";
+    return {
+      ...message,
+      content: `${message.content}\n\n${fence}html\n${rawHtml}\n${fence}`,
+    };
+  } catch {
+    return message;
+  }
+}
+
 export function toRacpItem(message: UiMessage): RacpItemSummary {
   const turnId = (message as { turnId?: string }).turnId ?? "";
+  const enriched = inlineLocalHtmlIfLinked(message);
   return {
-    id: message.id,
+    id: enriched.id,
     turnId,
     itemType: "message",
-    status: message.status === "streaming" ? "streaming" : "completed",
-    createdAt: message.createdAt,
-    ...(message.parentToolCallId ? { parentToolCallId: message.parentToolCallId } : {}),
-    ...(message.nestedParentToolCallId ? { nestedParentToolCallId: message.nestedParentToolCallId } : {}),
-    ...(message.agentName ? { agentName: message.agentName } : {}),
-    content: message,
+    status: enriched.status === "streaming" ? "streaming" : "completed",
+    createdAt: enriched.createdAt,
+    ...(enriched.parentToolCallId ? { parentToolCallId: enriched.parentToolCallId } : {}),
+    ...(enriched.nestedParentToolCallId ? { nestedParentToolCallId: enriched.nestedParentToolCallId } : {}),
+    ...(enriched.agentName ? { agentName: enriched.agentName } : {}),
+    content: enriched,
   };
 }
 
@@ -114,7 +168,19 @@ export function createHostSessionPort(getHost: () => HostRpc | null): SessionPor
       // 12 MB, 572-message session — to answer a question the index row already
       // holds, on every attach and every turn admission.
       const record = await fetchSession(sessionId, { messageLimit: 1 });
-      return record ? toSessionSummary(record) : null;
+      if (!record) return null;
+      let defaultPermissionMode: RacpPermissionMode | undefined;
+      if (record.permissionMode === "inherit") {
+        const host = getHost();
+        const settings = await host
+          ?.call<{ defaultPermissionMode?: string }>("settings.get", {})
+          .catch(() => null);
+        const pm = settings?.defaultPermissionMode;
+        if (pm === "ask" || pm === "accept-edits" || pm === "auto") {
+          defaultPermissionMode = pm;
+        }
+      }
+      return toSessionSummary(record, defaultPermissionMode ? { permissionMode: defaultPermissionMode } : undefined);
     },
     async history(sessionId, { limit, beforeItemId }) {
       // One bounded window instead of the whole transcript, walked from the

@@ -1,24 +1,19 @@
 /**
- * The iOS edge-swipe back gesture (R7 follow-up), as pure decisions.
+ * The iOS swipe-back gesture (R7 follow-up), as pure decisions.
  *
  * The native shell cannot use `allowsBackForwardNavigationGestures`: that gesture
- * shows a WebView snapshot and, worse, drives the *history* while the app's own
- * state (a streaming session, an open sheet) changes underneath it. So the
- * gesture is ours, and it is deliberately narrow:
+ * shows a WebView snapshot and drives the history while the app's own state
+ * changes underneath it. So the gesture is ours:
  *
- * - it only starts within `EDGE_WIDTH` of the left edge, so a horizontal scroll
- *   inside a code block or a table, and the timeline's vertical scroll, are
- *   untouched;
- * - a drag that is mostly vertical, or that never clearly moves right, is
- *   abandoned rather than turned into a navigation;
+ * - it can start anywhere on the screen (`startX >= 0`) as long as a modal sheet
+ *   is not open and the touch is not inside a horizontally scrolled container;
+ * - a drag that is mostly vertical, or that moves left, is immediately released
+ *   so vertical scrolling is never stolen;
  * - on release the screen completes the pop past a distance or a velocity
- *   threshold, and otherwise springs back — the two things a native swipe does.
- *
- * Everything here is arithmetic over numbers, so the thresholds are testable
- * without a browser.
+ *   threshold, and otherwise springs back.
  */
 
-/** How far from the left edge a gesture must start, in CSS pixels. */
+/** Kept for compatibility; full-screen swipe accepts any non-negative `startX`. */
 export const EDGE_WIDTH = 20;
 
 /**
@@ -28,21 +23,15 @@ export const EDGE_WIDTH = 20;
 export const HORIZONTAL_SLOP = 12;
 
 /** Past this fraction of the viewport width, releasing completes the pop. */
-export const COMPLETE_FRACTION = 1 / 3;
+export const COMPLETE_FRACTION = 0.25;
 
 /** Past this velocity (px/ms), a short but fast flick also completes it. */
-export const COMPLETE_VELOCITY = 0.5;
+export const COMPLETE_VELOCITY = 0.35;
 
 /**
  * How far the finger must travel before a flick can complete the pop.
- *
- * A touch event can arrive a millisecond after the previous one, and an
- * instantaneous velocity computed from that pair is pure noise: a 40 px drag
- * measured over a 1 ms gap reads as 6.7 px/ms, which the first version of this
- * rule accepted as a deliberate flick. Requiring a real distance first makes a
- * short drag spring back whatever its reported speed.
  */
-export const MIN_FLICK_DISTANCE_FRACTION = 0.15;
+export const MIN_FLICK_DISTANCE_FRACTION = 0.1;
 
 export type EdgeGestureState = "idle" | "pending" | "dragging" | "cancelled";
 
@@ -58,15 +47,14 @@ export type EdgeGestureInput = {
 };
 
 /**
- * Whether this touch may become a back swipe. A gesture that starts off the edge,
- * or while a sheet is open, or with nowhere to go, is never intercepted — the
- * page keeps it, which is what keeps horizontal scrolling working.
+ * Whether this touch may become a back swipe. Any touch on the screen may start
+ * a rightward back gesture when there is a previous screen and no modal sheet is open.
  */
 export function mayStartEdgeGesture(input: EdgeGestureInput): boolean {
   if (input.pointerType !== "touch") return false;
   if (input.sheetOpen) return false;
   if (!input.canGoBack) return false;
-  return input.startX >= 0 && input.startX <= EDGE_WIDTH;
+  return input.startX >= 0;
 }
 
 export type DragVerdict =
@@ -74,17 +62,20 @@ export type DragVerdict =
   | { kind: "undecided" }
   /** This is a vertical scroll or a leftward gesture: release the touch. */
   | { kind: "reject" }
-  /** Dragging horizontally from the edge: track it. */
+  /** Dragging horizontally to the right: track it. */
   | { kind: "drag"; offset: number };
 
 /** Classify the movement since touch-down. */
 export function classifyDrag(input: { dx: number; dy: number }): DragVerdict {
+  const absY = Math.abs(input.dy);
   // Mostly vertical: the timeline's scroll. Never steal it.
-  if (Math.abs(input.dy) > Math.abs(input.dx) && Math.abs(input.dy) > HORIZONTAL_SLOP) {
+  if (absY > Math.abs(input.dx) && absY > HORIZONTAL_SLOP) {
     return { kind: "reject" };
   }
   if (input.dx < -HORIZONTAL_SLOP) return { kind: "reject" };
   if (input.dx < HORIZONTAL_SLOP) return { kind: "undecided" };
+  // Require clearly horizontal movement when starting anywhere on screen.
+  if (input.dx < absY * 1.2) return { kind: "reject" };
   return { kind: "drag", offset: Math.max(0, input.dx) };
 }
 
@@ -110,7 +101,5 @@ export function dragFrame(input: {
 }): { progress: number; parallax: number } {
   if (input.viewportWidth <= 0) return { progress: 0, parallax: 0 };
   const progress = Math.max(0, Math.min(1, input.offset / input.viewportWidth));
-  // The screen underneath slides a third of the distance, which is the
-  // parallax a native push/pop has.
   return { progress, parallax: progress * (1 / 3) };
 }

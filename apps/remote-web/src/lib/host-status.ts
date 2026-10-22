@@ -9,8 +9,8 @@
  * gone (revoked) and the user must pair again — except `401 HOST_UNAUTHORIZED`,
  * which means this Host has not adopted the device yet and a retry may fix it.
  */
+import type { RacpSession } from "@minih-agent/shared";
 import { credentialHeaders, type HostCredential } from "./credential-port.js";
-
 export type HostStatus =
   | { kind: "online" }
   | { kind: "offline" }
@@ -70,7 +70,18 @@ function errorDetail(payload: unknown): { code?: string; message?: string } {
   };
 }
 
-export async function probeHostStatus(input: ProbeHostInput): Promise<HostStatus> {
+function extractSessions(payload: unknown): RacpSession[] | null {
+  if (!isRecord(payload)) return null;
+  const result = payload.result;
+  if (!isRecord(result) || !Array.isArray(result.sessions)) return null;
+  return (result.sessions as RacpSession[]).filter(
+    (session) => isRecord(session) && typeof session.id === "string" && (session as { archived?: unknown }).archived !== true,
+  );
+}
+
+export async function probeHostWithSessions(
+  input: ProbeHostInput,
+): Promise<{ status: HostStatus; sessions: RacpSession[] | null }> {
   const fetchImpl = input.fetchImpl ?? fetch;
   let response: Response;
   try {
@@ -81,9 +92,12 @@ export async function probeHostStatus(input: ProbeHostInput): Promise<HostStatus
     });
   } catch (error) {
     return {
-      kind: "error",
-      code: "REMOTE_CONNECTION_FAILED",
-      message: error instanceof Error ? error.message : String(error),
+      status: {
+        kind: "error",
+        code: "REMOTE_CONNECTION_FAILED",
+        message: error instanceof Error ? error.message : String(error),
+      },
+      sessions: null,
     };
   }
   if (response.status === 401 || response.status === 403) {
@@ -94,21 +108,34 @@ export async function probeHostStatus(input: ProbeHostInput): Promise<HostStatus
     // computer simply has not adopted it yet (§11.5, account mode), so the
     // client says "not synced yet" and offers a retry instead of dropping the
     // device.
-    if (detail.code === "HOST_UNAUTHORIZED") return { kind: "unaccepted" };
-    if (response.status === 401) return { kind: "revoked" };
+    if (detail.code === "HOST_UNAUTHORIZED") return { status: { kind: "unaccepted" }, sessions: null };
+    if (response.status === 401) return { status: { kind: "revoked" }, sessions: null };
     return {
-      kind: "error",
-      code: detail.code ?? `HTTP_${response.status}`,
-      message: detail.message ?? `HTTP ${response.status}`,
+      status: {
+        kind: "error",
+        code: detail.code ?? `HTTP_${response.status}`,
+        message: detail.message ?? `HTTP ${response.status}`,
+      },
+      sessions: null,
     };
   }
-  if (response.status === 503) return { kind: "offline" };
-  if (response.ok) return { kind: "online" };
+  if (response.status === 503) return { status: { kind: "offline" }, sessions: null };
+  if (response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    return { status: { kind: "online" }, sessions: extractSessions(payload) };
+  }
   const payload: unknown = await response.json().catch(() => null);
   const detail = errorDetail(payload);
   return {
-    kind: "error",
-    code: detail.code ?? `HTTP_${response.status}`,
-    message: detail.message ?? `HTTP ${response.status}`,
+    status: {
+      kind: "error",
+      code: detail.code ?? `HTTP_${response.status}`,
+      message: detail.message ?? `HTTP ${response.status}`,
+    },
+    sessions: null,
   };
+}
+
+export async function probeHostStatus(input: ProbeHostInput): Promise<HostStatus> {
+  return (await probeHostWithSessions(input)).status;
 }

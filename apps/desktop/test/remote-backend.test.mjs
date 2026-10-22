@@ -140,6 +140,7 @@ test("handles() covers exactly the channels the remote profile serves", () => {
     IPC.invoke.agentSteer,
     IPC.invoke.sessionGet,
     IPC.invoke.sessionConfigure,
+    IPC.invoke.sessionModels,
     IPC.invoke.sessionFork,
     IPC.invoke.sessionRename,
     IPC.invoke.sessionDeriveTitle,
@@ -325,6 +326,31 @@ test("sessionConfigure forwards only the fields the renderer set", async () => {
   await backend.invoke(IPC.invoke.sessionConfigure, [REMOTE_SESSION_ID, { mode: "agent" }]);
   assert.equal(client.calls[0].method, "session/configure");
   assert.deepEqual(client.calls[0].params, { sessionId: HOST_SESSION_ID, mode: "agent" });
+});
+
+test("sessionConfigure forwards a model pick and reasoning level to the Host", async () => {
+  const { backend, client } = makeBackend({
+    "session/configure": () => ({ session: makeRacpSession({ providerId: "p1", modelId: "m1", thinkingLevel: "high" }) }),
+  });
+  await backend.invoke(IPC.invoke.sessionConfigure, [
+    REMOTE_SESSION_ID,
+    { mode: "agent", providerId: "p1", modelId: "m1", thinkingLevel: "high" },
+  ]);
+  assert.deepEqual(client.calls[0].params, {
+    sessionId: HOST_SESSION_ID,
+    mode: "agent",
+    providerId: "p1",
+    modelId: "m1",
+    thinkingLevel: "high",
+  });
+});
+
+test("sessionModels serves the owning computer's catalog over model/list", async () => {
+  const catalog = { models: [{ providerId: "p1", providerLabel: "P1", modelId: "m1", label: "Model 1", thinkingLevels: ["off", "high"], supportsImages: false, isDefault: true }] };
+  const { backend, client } = makeBackend({ "model/list": () => catalog });
+  const result = await backend.invoke(IPC.invoke.sessionModels, [{ sessionId: REMOTE_SESSION_ID }]);
+  assert.equal(client.calls[0].method, "model/list");
+  assert.deepEqual(result.models, catalog.models);
 });
 
 test("sessionFork attaches to the new host session and returns a SessionDetail", async () => {

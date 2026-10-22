@@ -44,7 +44,7 @@ test("create project dialog supports named multi-folder setup", () => {
 test("create project dialog can create the project from a git checkout", () => {
   // Same dialog, same name field: the source toggle turns the folder list into
   // one repository URL plus its clone destination.
-  assert.match(dialog, /type ProjectSource = "local" \| "git" \| "remote"/);
+  assert.match(dialog, /type ProjectSource = ProjectSourceOption/);
   assert.match(dialog, /data-project-source="git"/);
   assert.match(dialog, /parseGitCloneUrl/);
   assert.match(dialog, /project\.createSourceLabel/);
@@ -170,6 +170,9 @@ test("create project dialog remains usable on narrow screens and reduced motion"
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(styles, /overflow-y: auto/);
   assert.match(styles, /\.project-create-dialog-source-options \{/);
+  // Four sources must not be squeezed into one row on a narrow dialog.
+  assert.match(styles, /grid-template-columns: repeat\(auto-fit, minmax\(104px, 1fr\)\)/);
+  assert.match(styles, /\.project-create-dialog-agent-location \{/);
   assert.match(styles, /\.project-create-dialog-source-option\.is-active \{/);
   assert.match(styles, /\.project-create-dialog-location\.is-chosen/);
   assert.match(styles, /\.project-create-dialog-clone-hint \{/);

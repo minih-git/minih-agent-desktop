@@ -81,6 +81,11 @@ export type GatewayPushRegistrationRecord = {
   token: string;
   /** Optional app/bundle id, so one deployment can serve more than one build. */
   appId?: string;
+  /**
+   * "Only notify me about things that need me" (§17.6.5). Absent means every kind,
+   * which is how every registration written before this field behaves.
+   */
+  onlyActionable?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -118,6 +123,19 @@ export type GatewayPendingGrantRecord = {
   relayUntil: string;
   signature: string;
   signerCertificate: string;
+  /**
+   * `"desktop"` on a grant for a device admitted with a verified proof, and
+   * absent on every phone-class grant (including every grant written before
+   * amendment 3). Part of the signed payload, so it is relayed as signed.
+   */
+  deviceClass?: "phone" | "desktop";
+  /** Desktop-class only: the computer whose proof the approving Host verified. */
+  applicantHostId?: string;
+  hostProofNonce?: string;
+  requestExpiresAt?: string;
+  /** Desktop-class only: the applicant's certificate and proof signature, as signed. */
+  applicantCertificate?: string;
+  hostProofSignature?: string;
 };
 
 /**
@@ -135,6 +153,40 @@ export type GatewayPendingRevocationRecord = {
   relayUntil: string;
   signature: string;
   signerCertificate: string;
+};
+
+/**
+ * One "a new computer joined the account" notice the Gateway holds for an
+ * account's Hosts (ADR amendment 3, Accepted risk).
+ *
+ * The Gateway keeps it for the same delivery window as a revocation and
+ * re-offers it when a Host's link comes up, so a computer that was asleep when
+ * another joined still shows the notice. It carries no signature: the Gateway
+ * is the only party that observes an enrollment, and a Host shows the notice
+ * as information, never as an authorization.
+ */
+export type GatewayHostJoinedRecord = {
+  noticeId: string;
+  accountId: string;
+  hostId: string;
+  label: string;
+  joinedAt: string;
+  /** When the Gateway stops offering this notice to a Host. */
+  relayUntil: string;
+};
+
+/**
+ * One "this computer was revoked on the Gateway" notice, held for the account's
+ * other computers (ADR amendment 3, decision 4). They revoke the desktop
+ * devices that computer's proof admitted; a computer that was offline when the
+ * revocation happened receives it when its link comes up.
+ */
+export type GatewayHostRevokedRecord = {
+  noticeId: string;
+  accountId: string;
+  hostId: string;
+  revokedAt: string;
+  relayUntil: string;
 };
 
 /**
@@ -171,6 +223,8 @@ type AccountSessionsFile = { accountSessions: GatewayAccountSessionRecord[] };
 type DeviceGrantsFile = { deviceGrants: GatewayPendingGrantRecord[] };
 type DeviceRevocationsFile = { deviceRevocations: GatewayPendingRevocationRecord[] };
 type PushRegistrationsFile = { pushRegistrations: GatewayPushRegistrationRecord[] };
+type HostJoinedFile = { hostJoined: GatewayHostJoinedRecord[] };
+type HostRevokedFile = { hostRevoked: GatewayHostRevokedRecord[] };
 type SecretFile = { secret: string; createdAt: string };
 
 const DIRECTORY_MODE = 0o700;
@@ -214,12 +268,14 @@ export class GatewayStore {
 
   private hosts: GatewayHostRecord[] = [];
   private enrollments: GatewayEnrollmentRecord[] = [];
+  private hostJoined: GatewayHostJoinedRecord[] = [];
   private devices: GatewayDeviceRecord[] = [];
   private accountSessions: GatewayAccountSessionRecord[] = [];
   private deviceGrants: GatewayPendingGrantRecord[] = [];
   private deviceRevocations: GatewayPendingRevocationRecord[] = [];
   private pushRegistrations: GatewayPushRegistrationRecord[] = [];
   private chain: Promise<void> = Promise.resolve();
+  private hostRevoked: GatewayHostRevokedRecord[] = [];
   /** Audit appends still in flight, so shutdown can flush them. */
   private readonly pendingAudits = new Set<Promise<void>>();
 
@@ -251,7 +307,9 @@ export class GatewayStore {
     }
     const store = new GatewayStore(dataDir, secret, now);
     store.hosts = (await readJson<HostsFile>(join(dataDir, "hosts.json")))?.hosts ?? [];
+    store.hostRevoked = (await readJson<HostRevokedFile>(join(dataDir, "host-revoked.json")))?.hostRevoked ?? [];
     store.enrollments = (await readJson<EnrollmentsFile>(join(dataDir, "enrollments.json")))?.enrollments ?? [];
+    store.hostJoined = (await readJson<HostJoinedFile>(join(dataDir, "host-joined.json")))?.hostJoined ?? [];
     store.devices = (await readJson<DevicesFile>(join(dataDir, "devices.json")))?.devices ?? [];
     store.accountSessions = (await readJson<AccountSessionsFile>(join(dataDir, "account-sessions.json")))?.accountSessions ?? [];
     store.deviceGrants = (await readJson<DeviceGrantsFile>(join(dataDir, "device-grants.json")))?.deviceGrants ?? [];
@@ -538,6 +596,31 @@ export class GatewayStore {
     });
   }
 
+  // --------------------------------------------------- host-joined notices
+  /**
+   * The "a new computer joined the account" notices still deliverable to one
+   * account's Hosts (ADR amendment 3). Kept for the same window as a
+   * revocation, so a Host that was asleep when another enrolled still learns
+   * about it when its link comes up.
+   */
+  listHostJoined(accountId?: string): GatewayHostJoinedRecord[] {
+    const now = this.now();
+    return this.hostJoined.filter(
+      (notice) => Date.parse(notice.relayUntil) > now && (accountId === undefined || notice.accountId === accountId),
+    );
+  }
+
+  async saveHostJoined(record: GatewayHostJoinedRecord): Promise<void> {
+    await this.mutate(async () => {
+      const now = this.now();
+      this.hostJoined = [
+        ...this.hostJoined.filter((notice) => notice.noticeId !== record.noticeId && Date.parse(notice.relayUntil) > now),
+        record,
+      ];
+      await writeJsonAtomic(join(this.dataDir, "host-joined.json"), { hostJoined: this.hostJoined } satisfies HostJoinedFile);
+    });
+  }
+
   // ------------------------------------------------------- account sessions
 
   findAccountSession(sessionId: string): GatewayAccountSessionRecord | null {
@@ -546,6 +629,24 @@ export class GatewayStore {
 
   findAccountSessionByTokenHash(tokenHash: string): GatewayAccountSessionRecord | null {
     return this.accountSessions.find((session) => session.tokenHash === tokenHash) ?? null;
+  }
+  /** The "this computer was revoked" notices still deliverable to an account. */
+  listHostRevoked(accountId?: string): GatewayHostRevokedRecord[] {
+    const now = this.now();
+    return this.hostRevoked.filter(
+      (notice) => Date.parse(notice.relayUntil) > now && (accountId === undefined || notice.accountId === accountId),
+    );
+  }
+
+  async saveHostRevoked(record: GatewayHostRevokedRecord): Promise<void> {
+    await this.mutate(async () => {
+      const now = this.now();
+      this.hostRevoked = [
+        ...this.hostRevoked.filter((notice) => notice.noticeId !== record.noticeId && Date.parse(notice.relayUntil) > now),
+        record,
+      ];
+      await writeJsonAtomic(join(this.dataDir, "host-revoked.json"), { hostRevoked: this.hostRevoked } satisfies HostRevokedFile);
+    });
   }
 
   /**

@@ -8,7 +8,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         window = UIWindow(windowScene: windowScene)
-        window?.rootViewController = CAPBridgeViewController()
+        // The subclass, not `CAPBridgeViewController` itself: it is what registers
+        // the notification plugin the app cannot work without (§17.6.2).
+        window?.rootViewController = MinihBridgeViewController()
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)

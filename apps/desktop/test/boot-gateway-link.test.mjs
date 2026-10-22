@@ -208,14 +208,16 @@ test("disabling stops the handle, re-enabling starts a new one", async () => {
     const enabledStatus = await controller.setEnabled(true);
     assert.equal(enabledStatus.enabled, true);
     assert.equal(calls.start, 1);
-    assert.deepEqual(saved.at(-1), { enabled: true, url: "" });
+    // The row records the user's choice (`decided`, gate 27) and nothing else
+    // that is unset: strict mode off and automatic admission on are the defaults
+    // and are left out of the stored shape.
+    assert.deepEqual(saved.at(-1), { enabled: true, url: "", decided: true });
 
     await controller.setEnabled(false);
     assert.equal(calls.stop, 1);
-
     await controller.setEnabled(true);
     assert.equal(calls.start, 2);
-    assert.deepEqual(saved.at(-1), { enabled: true, url: "" });
+    assert.deepEqual(saved.at(-1), { enabled: true, url: "", decided: true });
     await bootstrap.dispose();
     assert.equal(calls.stop, 2);
   } finally {

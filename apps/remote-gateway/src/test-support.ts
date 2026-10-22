@@ -21,7 +21,7 @@ import {
   type HostLinkHandle,
 } from "@minih-agent/racp";
 import { harness, type Harness, type HarnessHistory } from "@minih-agent/racp/test-harness";
-import type { MemoryCredentialStore } from "@minih-agent/racp";
+import type { MemoryCredentialStore, RacpHostOperations } from "@minih-agent/racp";
 import {
   RACP_HTTP_QUERY_PARAMS,
   RACP_HTTP_ROUTE_LIST,
@@ -96,6 +96,10 @@ export async function enrollTestHost(
     enrollmentCode?: string;
     /** Transcript fixture the harness serves for `s1` (session/history paging). */
     history?: HarnessHistory;
+    /** Collect the Host's own log records, e.g. opt-in latency entries. */
+    log?: (level: "info" | "warn" | "error", message: string, data?: Record<string, unknown>) => void;
+    /** Enable the opt-in per-request latency records on the Host. */
+    latencyTrace?: boolean;
   } = {},
 ): Promise<TestHost> {
   const hostId = options.hostId ?? "host_test";
@@ -107,7 +111,11 @@ export async function enrollTestHost(
     hostId,
     ...(options.label ? { label: options.label } : {}),
   });
-  const h = await harness(options.history ? { history: options.history } : {});
+  const h = await harness({
+    ...(options.history ? { history: options.history } : {}),
+    ...(options.log ? { log: options.log } : {}),
+    ...(options.latencyTrace !== undefined ? { latencyTrace: options.latencyTrace } : {}),
+  });
   const handle = startHostLink({
     credentials,
     // The harness server identity must equal the enrolled host id.
@@ -162,7 +170,7 @@ export async function pairDevice(
   gateway: TestGateway,
   host: TestHost,
   options: { client: "web" | "ios" | "android"; label?: string; origin?: string } = { client: "ios" },
-): Promise<{ deviceId: string; token?: string; csrfToken?: string; setCookie: string[]; status: number }> {
+): Promise<{ deviceId: string; token?: string; csrfToken?: string; hostLabel?: string; setCookie: string[]; status: number }> {
   const pairing = await host.harness.authenticator.issuePairingToken(10 * 60 * 1000, "gateway");
   const response = await fetch(`${gateway.clientBaseUrl}/v1/hosts/${host.hostId}/pair`, {
     method: "POST",
@@ -174,12 +182,13 @@ export async function pairDevice(
     body: JSON.stringify({ deviceLabel: options.label ?? "test device", client: options.client }),
   });
   const setCookie = response.headers.getSetCookie?.() ?? [];
-  const payload = (await response.json()) as { deviceId?: string; token?: string; csrfToken?: string };
+  const payload = (await response.json()) as { deviceId?: string; token?: string; csrfToken?: string; hostLabel?: string };
   return {
     status: response.status,
     deviceId: payload.deviceId ?? "",
     ...(payload.token ? { token: payload.token } : {}),
     ...(payload.csrfToken ? { csrfToken: payload.csrfToken } : {}),
+    ...(payload.hostLabel ? { hostLabel: payload.hostLabel } : {}),
     setCookie,
   };
 }
@@ -241,6 +250,8 @@ export async function command(
     path?: string;
     /** Raw query string, for tests that deliberately send an invalid one. */
     query?: string;
+    /** Diagnostic trace id, forwarded as the client's `x-trace-id`. */
+    traceId?: string;
   },
 ): Promise<{ status: number; payload: { result?: unknown; error?: { data?: { code?: string } } } }> {
   const route = httpRouteFor(input.method, input.params);
@@ -248,7 +259,11 @@ export async function command(
   const query = input.query ?? queryFor(route.routeName, input.params);
   const response = await fetch(`${gateway.clientBaseUrl}/hosts/${input.hostId}${path}${query}`, {
     method: route.httpMethod,
-    headers: { "content-type": "application/json", authorization: `Bearer ${input.token}` },
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${input.token}`,
+      ...(input.traceId ? { "x-trace-id": input.traceId } : {}),
+    },
     ...(route.httpMethod === "POST"
       ? {
           body: JSON.stringify({
@@ -414,6 +429,11 @@ export async function enrollTestHostByKey(
     devices?: (input: { credentials: HostLinkCredentials; store: MemoryCredentialStore }) => HostDeviceDirectory | null;
     /** Where a revocation waits while this Host's link is down (§11.5). */
     revocations?: () => DeviceRevocationQueue | null;
+    /**
+     * Replace part of this Host's RACP operation surface. A test that needs a
+     * Host answering per device class (package D) supplies `workspaceRead`.
+     */
+    operations?: Partial<RacpHostOperations>;
   },
 ): Promise<TestHost & { certificatePem: string; devices: HostDeviceDirectory | null }> {
   const keys = await hostCsrFor(options.hostId);
@@ -433,7 +453,10 @@ export async function enrollTestHostByKey(
     privateKeyPem: keys.privateKeyPem,
     expiresAt: issued.expiresAt,
   };
-  const h = await harness(options.history ? { history: options.history } : {});
+  const h = await harness({
+    ...(options.history ? { history: options.history } : {}),
+    ...(options.operations ? { operations: options.operations } : {}),
+  });
   const devices = options.devices ? options.devices({ credentials, store: h.store }) : null;
   const handle = startHostLink({
     credentials,
@@ -480,6 +503,23 @@ export async function accountLogin(
   };
 }
 
+
+/** `POST /v1/account/desktop-proof`: the values a desktop signs. */
+export async function accountDesktopProof(
+  gateway: TestGateway,
+  input: { token: string; body: unknown; origin?: string },
+): Promise<{ status: number; payload: Record<string, unknown> }> {
+  const response = await fetch(`${gateway.clientBaseUrl}/v1/account/desktop-proof`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${input.token}`,
+      ...(input.origin ? { origin: input.origin } : {}),
+    },
+    body: JSON.stringify(input.body),
+  });
+  return { status: response.status, payload: (await response.json()) as Record<string, unknown> };
+}
 /** `POST /v1/account/devices`: ask the account's Hosts to approve a device. */
 export async function accountDeviceRequest(
   gateway: TestGateway,

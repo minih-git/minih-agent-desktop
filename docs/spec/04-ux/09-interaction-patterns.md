@@ -1432,16 +1432,19 @@ Project drag/drop follows these patterns:
   travels as a project-relative path, a file of a sibling folder of the same
   project as an absolute one, exactly as a scratch or attachment file does. A
   chip whose reference matches nothing opens nothing and reports itself. Right-
-  clicking a transcript file reference offers Copy full path and Copy relative
-  path on every surface that names it. Unpositioned `.html` and `.htm`
-  references also offer an **Open with** submenu containing File Manager,
-  built-in browser, and default browser. Each choice completes the reference
-  first and opens that exact resolved file. Other file types keep the copy
-  actions only. A file outside the project has no relative path to copy and
-  reports that fact. A folder reference is the exception on both counts: it
-  offers **Reveal in Finder** — its click destination, since a folder is never
-  opened — together with Copy full path and Copy relative path, and never the
-  HTML open destinations.
+  clicking a local transcript file reference offers **Open with default
+  application**, **Show in folder**, Copy full path, and Copy relative path on
+  every surface that names it. Unpositioned `.html` and `.htm` references keep
+  their **Open with** submenu containing File Manager, built-in browser, and
+  default browser instead of the direct default-application item, and also offer
+  **Show in folder**. Each action completes the reference first and acts on that
+  exact resolved file through the existing host containment checks. A failed OS
+  handoff is reported; no work-panel fallback is opened. Remote references offer
+  no local OS actions. A scratch or attachment file has no relative path to copy
+  and reports that fact. A folder reference offers **Reveal in Finder** together
+  with both copy actions, never a default-application or HTML open action. Entries
+  outside all allowed roots retain the reveal-and-absolute-copy-only menu above.
+  Normal left-click destinations remain unchanged.
 - In the host `file:` tab, a conversation MP4 that cannot be previewed because
   it is binary or exceeds the text preview limit offers **Open with default
   application**. This applies to named `.mp4` files and extensionless

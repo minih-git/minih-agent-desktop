@@ -16,7 +16,6 @@ import * as React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
-import { readTranscriptSource } from "./helpers/source-contracts.mjs";
 
 const read = (relative) => readFileSync(new URL(relative, import.meta.url), "utf8");
 
@@ -48,6 +47,7 @@ const calls = {
   files: [],
   urls: [],
   defaultBrowsers: [],
+  reveals: [],
   toasts: [],
   resolved: [],
   menus: [],
@@ -75,9 +75,11 @@ const useAppStore = Object.assign(
 );
 
 let nextMatch = null;
+let nextResolve = null;
 let clipboardFails = false;
+let openFails = false;
+let revealFails = false;
 const copied = [];
-
 /*
   The hooks read `navigator.clipboard` off the global, exactly as the app does,
   so what a copy claims is asserted against what actually reached the clipboard.
@@ -109,11 +111,18 @@ const previewTarget = loadModule("../src/hooks/use-preview-target.ts", {
   "../lib/api": {
     api: {
       listPluginViews: async () => state.pluginViews,
-      fsOpen: async (path, mimeType, sessionId) =>
-        calls.defaultBrowsers.push([path, mimeType, sessionId]),
+      fsOpen: async (path, mimeType, sessionId) => {
+        calls.defaultBrowsers.push([path, mimeType, sessionId]);
+        if (openFails) throw new Error("OS open refused");
+      },
+      fsReveal: async (path, sessionId) => {
+        calls.reveals.push([path, sessionId]);
+        if (revealFails) throw new Error("OS reveal refused");
+      },
+      fsRevealChatRef: async (path, sessionId) => calls.reveals.push([path, sessionId]),
       fsResolveRef: async (ref) => {
         calls.resolved.push(ref);
-        return { match: nextMatch };
+        return nextResolve ? nextResolve() : { match: nextMatch };
       },
     },
   },
@@ -167,7 +176,10 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 function reset(match) {
   Object.values(calls).forEach((list) => list.splice(0, list.length));
   nextMatch = match;
+  nextResolve = null;
   clipboardFails = false;
+  openFails = false;
+  revealFails = false;
 }
 
 /** The match the main process reports for a file of the project's main folder. */
@@ -199,7 +211,7 @@ async function openWithDestination(path, destination) {
   await flush();
 }
 
-test("the HTML menu exposes three open destinations as one submenu", () => {
+test("HTML menu retains its destinations and adds system folder reveal", () => {
   reset(projectMatch());
   let openFileMenu = null;
   function Harness() {
@@ -211,19 +223,153 @@ test("the HTML menu exposes three open destinations as one submenu", () => {
   const menu = calls.menus[0].items;
   assert.deepEqual(menu.map((item) => item.id), [
     "open-with",
+    "reveal-in-folder",
     "copy-full-path",
     "copy-relative-path",
   ]);
-  assert.equal(menu[0].label, "chat.openWith:");
   assert.deepEqual(
-    menu[0].submenu.map((item) => [item.id, item.label]),
-    [
-      ["open-with-file-manager", "chat.openWithFileManager:"],
-      ["open-with-built-in-browser", "chat.openWithBuiltInBrowser:"],
-      ["open-with-default-browser", "chat.openWithDefaultBrowser:"],
-    ],
+    menu[0].submenu.map((item) => item.id),
+    ["open-with-file-manager", "open-with-built-in-browser", "open-with-default-browser"],
   );
-  assert.equal(menu.some((item) => item.id === "reveal-in-folder"), false);
+});
+
+test("non-HTML file menu offers OS open and folder reveal before copy actions", () => {
+  reset(projectMatch());
+  let openFileMenu = null;
+  function Harness() {
+    openFileMenu = useChatFileMenu().openFileMenu;
+    return null;
+  }
+  renderToStaticMarkup(React.createElement(Harness));
+  openFileMenu({}, { path: "release-bundles/5471f2e14.tar.gz" });
+  const menu = calls.menus[0].items;
+  assert.deepEqual(menu.map((item) => item.id), [
+    "open-with-default-app",
+    "reveal-in-folder",
+    "copy-full-path",
+    "copy-relative-path",
+  ]);
+  assert.equal(menu[0].label, "chat.openFile:");
+  assert.equal(menu[1].label, "chat.revealInFileManager:");
+});
+
+test("directories and outside-root entries never gain general system actions", () => {
+  reset(projectMatch());
+  let items;
+  function Harness() {
+    items = useChatFileMenuItems()({ path: "src/dir", entryKind: "directory" });
+    return null;
+  }
+  renderToStaticMarkup(React.createElement(Harness));
+  assert.deepEqual(items.map((item) => item.id), [
+    "reveal-in-file-manager",
+    "copy-full-path",
+    "copy-relative-path",
+  ]);
+  function OutsideHarness() {
+    items = useChatFileMenuItems()({ path: "C:/external/archive.zip", outsideProject: true });
+    return null;
+  }
+  renderToStaticMarkup(React.createElement(OutsideHarness));
+  assert.deepEqual(items.map((item) => item.id), ["reveal-outside-ref", "copy-absolute-path"]);
+});
+
+async function selectMenuItem(path, id, target = {}) {
+  let items = null;
+  function Harness() {
+    items = useChatFileMenuItems()({ path, ...target });
+    return null;
+  }
+  renderToStaticMarkup(React.createElement(Harness));
+  const item = items.find((entry) => entry.id === id);
+  assert.ok(item, `file menu offers ${id}`);
+  item.onSelect();
+  await flush();
+}
+
+test("system actions resolve a delivery archive before using the OS handlers", async () => {
+  reset(projectMatch({
+    relativePath: "release-bundles/5471f2e14.tar.gz",
+    absolutePath: "C:/project/release-bundles/5471f2e14.tar.gz",
+  }));
+  await selectMenuItem("release-bundles/5471f2e14.tar.gz", "open-with-default-app");
+  await selectMenuItem("release-bundles/5471f2e14.tar.gz", "reveal-in-folder");
+  assert.deepEqual(calls.resolved, [
+    "release-bundles/5471f2e14.tar.gz",
+    "release-bundles/5471f2e14.tar.gz",
+  ]);
+  assert.deepEqual(calls.defaultBrowsers, [
+    ["C:/project/release-bundles/5471f2e14.tar.gz", undefined, "session-1"],
+  ]);
+  assert.deepEqual(calls.reveals, [["C:/project/release-bundles/5471f2e14.tar.gz", "session-1"]]);
+  assert.deepEqual(calls.tabs, []);
+});
+
+test("system actions preserve Markdown bases, sibling roots, and scratch paths", async () => {
+  reset(projectMatch({
+    relativePath: "releases/notes.md",
+    absolutePath: "C:/project-two/releases/notes.md",
+    projectRoot: { primary: false },
+  }));
+  await selectMenuItem("./notes.md", "reveal-in-folder", { baseDir: "releases" });
+  assert.deepEqual(calls.resolved, ["releases/notes.md"]);
+  assert.deepEqual(calls.reveals, [["C:/project-two/releases/notes.md", "session-1"]]);
+
+  reset({ root: "scratch", relativePath: "archive.tar.gz", absolutePath: "C:/data/scratch/session-1/archive.tar.gz", matchedBy: "exact-relative" });
+  await selectMenuItem("archive.tar.gz", "open-with-default-app");
+  assert.deepEqual(calls.defaultBrowsers, [["C:/data/scratch/session-1/archive.tar.gz", undefined, "session-1"]]);
+});
+
+test("missing files and refused OS actions report errors without falling back", async () => {
+  reset(null);
+  await selectMenuItem("missing.tar.gz", "open-with-default-app");
+  assert.deepEqual(calls.defaultBrowsers, []);
+  assert.deepEqual(calls.toasts.map(([message]) => message), ["chat.fileRefMissing:missing.tar.gz"]);
+
+  reset(projectMatch());
+  openFails = true;
+  await selectMenuItem("src/dir/a.ts", "open-with-default-app");
+  assert.deepEqual(calls.toasts.map(([message]) => message), ["panel.files.openFailed:"]);
+  assert.deepEqual(calls.tabs, []);
+
+  reset(projectMatch());
+  revealFails = true;
+  await selectMenuItem("src/dir/a.ts", "reveal-in-folder");
+  assert.deepEqual(calls.toasts.map(([message]) => message), ["chat.folderRevealFailed:"]);
+});
+
+test("a session or project switch while resolving cancels the system action", async () => {
+  reset(projectMatch());
+  let finishLookup;
+  nextResolve = () => new Promise((resolve) => { finishLookup = resolve; });
+  const previousSession = state.activeSessionId;
+  const previousWorkspace = state.workspace;
+  let items;
+  function Harness() {
+    items = useChatFileMenuItems()({ path: "src/dir/a.ts" });
+    return null;
+  }
+  renderToStaticMarkup(React.createElement(Harness));
+  items.find((item) => item.id === "open-with-default-app").onSelect();
+  await flush();
+  assert.equal(typeof finishLookup, "function");
+  state.activeSessionId = "session-2";
+  state.workspace = { path: "C:/other-project" };
+  finishLookup({ match: projectMatch() });
+  await flush();
+  state.activeSessionId = previousSession;
+  state.workspace = previousWorkspace;
+  assert.deepEqual(calls.defaultBrowsers, []);
+  assert.deepEqual(calls.reveals, []);
+  assert.deepEqual(calls.tabs, []);
+});
+
+test("a reference that resolves as a directory is never opened as a file", async () => {
+  reset(projectMatch({ entryKind: "directory", absolutePath: "C:/project/bundle.app" }));
+  await selectMenuItem("bundle.app", "open-with-default-app");
+  assert.deepEqual(calls.defaultBrowsers, []);
+  assert.deepEqual(calls.reveals, []);
+  assert.deepEqual(calls.toasts.map(([message]) => message), ["panel.files.openFailed:"]);
 });
 
 test("non-HTML references keep copy actions without an open-with submenu", () => {
@@ -236,6 +382,8 @@ test("non-HTML references keep copy actions without an open-with submenu", () =>
   renderToStaticMarkup(React.createElement(Harness));
   openFileMenu({}, { path: "src/dir/a.ts" });
   assert.deepEqual(calls.menus[0].items.map((item) => item.id), [
+    "open-with-default-app",
+    "reveal-in-folder",
     "copy-full-path",
     "copy-relative-path",
   ]);
@@ -357,7 +505,6 @@ test("a refused clipboard reports itself", async () => {
   );
 });
 
-const transcript = await readTranscriptSource();
 const markdown = read("../src/components/Markdown.tsx");
 const toolRow = read("../src/features/chat/transcript/ToolRow.tsx");
 const toolDetails = read("../src/components/ToolDetails.tsx");
@@ -412,8 +559,9 @@ test("HTTP URLs keep their own menu instead of the file open submenu", () => {
   // The submenu only recognizes HTML paths, and an HTTP link keeps its own
   // external/work-panel/copy menu.
   assert.match(menu, /isHtmlFilePath\(path\)/);
-  assert.doesNotMatch(menu, /useRevealChatFileRef|reveal-in-folder/);
+  assert.doesNotMatch(menu, /useRevealChatFileRef/);
   assert.ok(markdown.includes('if (!/^https?:\\/\\//i.test(href)) {'));
+
 });
 
 test("the reference labels ship in the catalogs the menu reads", () => {
@@ -443,4 +591,25 @@ test("remote workspace references retain copy actions but never offer local open
   renderToStaticMarkup(React.createElement(Harness));
   assert.deepEqual(items.map(item => item.id), ["copy-full-path", "copy-relative-path"]);
   state.sessions = before;
+});
+
+test("normal file clicks still open the file view, not the default application", async () => {
+  reset(projectMatch());
+  await openWithDestination("src/dir/a.ts", undefined);
+  assert.equal(calls.tabs[0]?.location, "src/dir/a.ts");
+  assert.deepEqual(calls.defaultBrowsers, []);
+  assert.deepEqual(calls.reveals, []);
+});
+
+test("a reference resolved outside allowed roots is only revealed", async () => {
+  reset(null);
+  nextResolve = () => ({
+    match: null,
+    outside: { absolutePath: "C:/outside/archive.zip", entryKind: "file" },
+  });
+  await selectMenuItem("C:/outside/archive.zip", "open-with-default-app");
+  assert.deepEqual(calls.defaultBrowsers, []);
+  assert.deepEqual(calls.reveals, [["C:/outside/archive.zip", "session-1"]]);
+  assert.deepEqual(calls.files, []);
+  assert.deepEqual(calls.tabs, []);
 });

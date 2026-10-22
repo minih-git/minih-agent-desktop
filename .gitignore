@@ -83,3 +83,6 @@ apps/remote-web/android/app/src/main/assets/capacitor.config.json
 *.jks
 GoogleService-Info.plist
 google-services.json
+# A service-account key is a credential for the whole Firebase project, not just
+# this app; it belongs on the Gateway host and nowhere near a checkout.
+*firebase-adminsdk*.json

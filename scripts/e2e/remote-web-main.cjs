@@ -454,6 +454,11 @@ async function runViewport(view, openWindows) {
     observed.sessions = await evaluate(webContents, "__rw.body()");
     await evaluate(webContents, `document.querySelector('[aria-label=${JSON.stringify(view.title)}]').click()`);
     await waitFor(webContents, "document.body.innerText.includes('Live')", "the session event stream to go live");
+    // The bar over the conversation names the computer the person paired, not the
+    // id the Gateway minted for it.
+    observed.sessionHeader = await evaluate(webContents, "__rw.body()");
+
+    observed.sessionHeaderHost = HOST_ID;
     await capture("07-timeline");
 
     // 3. A turn that raises an approval, then a forced drop of its stream.

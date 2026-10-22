@@ -341,9 +341,8 @@ test("a paired phone reads desktop sessions and answers an approval", async () =
     // 5. Local authority stays local: configuring a session, reading the
     //    workspace, and the terminal are all refused on the desktop Host.
     await assert.rejects(
-      deviceClient.request("session/configure", {
+      deviceClient.request("session/fork", {
         sessionId: "s1",
-        permissionMode: "auto",
       }),
       (error) => error.code === "FORBIDDEN",
     );
@@ -492,9 +491,25 @@ test("the desktop Host creates a session, registers a project, and browses withi
 
     // The rest of the machine is still off limits, and a path outside the root
     // never reaches host-core.
-    await assert.rejects(operations.sessions.configure("s1", { permissionMode: "auto" }), (error) => error.code === "FORBIDDEN");
+    const configured = await operations.sessions.configure("s_new", { permissionMode: "auto" });
+    assert.equal(configured.id, "s_new");
+    // The Host's own call carries no principal, so it reports nothing.
+    assert.deepEqual(reported.map((action) => action.kind), ["project.registered", "session.created"]);
+
+    // A remote configure is reported (ADR 0331 amendment 4): the person at the
+    // computer learns which device changed which fields, names and new values
+    // only, whether the caller is a phone or a desktop-class device.
+    await operations.sessions.configure("s_new", { permissionMode: "auto", modelId: "m2" }, principal);
+    await operations.sessions.configure("s_new", { mode: "plan" }, { ...principal, subject: "dev_desktop", deviceClass: "desktop" });
+    const configuredReports = reported.filter((action) => action.kind === "session.configured");
+    assert.equal(configuredReports.length, 2);
+    assert.equal(configuredReports[0].deviceId, "dev_phone");
+    assert.equal(configuredReports[0].sessionId, "s_new");
+    assert.deepEqual(configuredReports[0].changes, ["modelId: m2", "permissionMode: auto"]);
+    assert.equal(configuredReports[1].deviceId, "dev_desktop");
+    assert.deepEqual(configuredReports[1].changes, ["mode: plan"]);
+
     await assert.rejects(operations.sessions.delete("s1"), (error) => error.code === "FORBIDDEN");
-    await assert.rejects(operations.sessions.rename("s1", "x"), (error) => error.code === "FORBIDDEN");
     await assert.rejects(operations.sessions.fork("s1", {}), (error) => error.code === "FORBIDDEN");
     await assert.rejects(operations.workspace.read("s1", "a"), (error) => error.code === "FORBIDDEN");
     await assert.rejects(operations.projects.browse(outside, principal), (error) => error.code === "REMOTE_PATH_FORBIDDEN");

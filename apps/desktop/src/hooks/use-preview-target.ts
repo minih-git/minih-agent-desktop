@@ -99,7 +99,9 @@ export type ResolvedChatFileRef = {
 export type ChatFileOpenDestination =
   | "file-manager"
   | "built-in-browser"
-  | "default-browser";
+  | "default-browser"
+  | "default-application"
+  | "reveal-in-folder";
 
 export type ChatFileOpenOptions = {
   line?: number;
@@ -294,6 +296,49 @@ export function useOpenChatFileRef() {
         ) {
           return;
         }
+        // An entry outside every allowed root may only be revealed through the
+        // dedicated chat-reference channel; it is never opened or previewed.
+        if (resolved.outsideProject) {
+          try {
+            await api.fsRevealChatRef(resolved.absolutePath, sessionId);
+          } catch {
+            showToast(t("chat.fileRefRevealFailed", { name: resolved.absolutePath }), {
+              variant: "error",
+            });
+          }
+          return;
+        }
+        if (destination === "default-application") {
+          if (
+            current.workspace?.remote ||
+            current.sessions.find((session) => session.id === sessionId)?.remoteWorkspace ||
+            resolved.entryKind === "directory"
+          ) {
+            showToast(t("panel.files.openFailed"), { variant: "error" });
+            return;
+          }
+          try {
+            await api.fsOpen(resolved.absolutePath, mimeType, sessionId);
+          } catch {
+            showToast(t("panel.files.openFailed"), { variant: "error" });
+          }
+          return;
+        }
+        if (destination === "reveal-in-folder") {
+          if (
+            current.workspace?.remote ||
+            current.sessions.find((session) => session.id === sessionId)?.remoteWorkspace
+          ) {
+            showToast(t("chat.folderRevealFailed"), { variant: "error" });
+            return;
+          }
+          try {
+            await api.fsReveal(resolved.absolutePath, sessionId);
+          } catch {
+            showToast(t("chat.folderRevealFailed"), { variant: "error" });
+          }
+          return;
+        }
         if (destination === "file-manager") {
           if (current.workspace?.remote) {
             showToast(t("chat.fileManagerOpenFailed"), { variant: "error" });
@@ -342,19 +387,6 @@ export function useOpenChatFileRef() {
             await api.fsOpen(resolved.absolutePath, mimeType, sessionId);
           } catch {
             showToast(t("chat.defaultBrowserOpenFailed"), {
-              variant: "error",
-            });
-          }
-          return;
-        }
-        // An entry outside every allowed root is only ever shown: the app may
-        // not read, open, or preview it, and the reader's request is "where is
-        // that?", which `fsRevealChatRef` answers without touching content.
-        if (resolved.outsideProject) {
-          try {
-            await api.fsRevealChatRef(resolved.absolutePath, sessionId);
-          } catch {
-            showToast(t("chat.fileRefRevealFailed", { name: resolved.absolutePath }), {
               variant: "error",
             });
           }

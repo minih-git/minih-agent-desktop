@@ -1,6 +1,6 @@
 # ADR 0337: The html fence preview
 
-- **Status**: Accepted (D675)
+- **Status**: Accepted (D677)
 - **Date**: 2026-10-21
 - **Related**: ADR 0165 (Mermaid diagrams) · ADR 0104 / D246 (plugin work-panel
   views) · [04-ux/08-component-spec](../spec/04-ux/08-component-spec.md) ·

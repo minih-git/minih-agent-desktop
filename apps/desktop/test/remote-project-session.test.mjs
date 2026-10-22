@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test, { beforeEach, afterEach } from "node:test";
+import { readFile } from "node:fs/promises";
 import { register } from "node:module";
 register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
 const { api } = await import("../src/lib/api.ts");
 const { openRemoteProjectSession, remoteProjectForSession } = await import("../src/lib/remote-project-session.ts");
-const { listRemoteProjects, groupRemoteProjectSessions } = await import("../src/lib/remote-project-catalog.ts");
+const { listRemoteProjects, groupRemoteProjectSessions, remoteProjectBlockedReasonKey } = await import("../src/lib/remote-project-catalog.ts");
 const { createNavigationIntentController } = await import("../src/lib/navigation-intent.ts");
 
 const project = { hostKey: "ssh-one", projectId: "project", label: "app" };
@@ -157,4 +158,40 @@ test("a chat archived during history confirmation is not reused", async () => {
     await pending;
     assert.equal(f.selections[0].id, "remote:ssh-one:new");
   } finally { api.createRemoteSession = original; }
+});
+
+test("a remote project group names its computer and why it takes no new work", () => {
+  const hosts = [
+    { hostKey: "ssh-one", label: "Studio Mac", connected: true },
+    { hostKey: "ssh-two", label: "Build Server", connected: false },
+    { hostKey: "ssh-three", label: "Old Box", connected: true, needsUpgrade: true },
+  ];
+  const sessions = [remote(), remote("ssh-two"), remote("ssh-three")];
+  const groups = groupRemoteProjectSessions(sessions, () => 0, hosts);
+  assert.deepEqual(groups.map((group) => group.project.hostLabel), ["Studio Mac", "Build Server", "Old Box"]);
+  assert.deepEqual(
+    groups.map((group) => remoteProjectBlockedReasonKey(group.project)),
+    [null, "project.hostOfflineBadge", "project.hostNeedsUpdateBadge"],
+  );
+  // Without host state the group stays usable: a failed read must not lock
+  // every remote project out.
+  assert.deepEqual(groupRemoteProjectSessions(sessions, () => 0).map((group) => remoteProjectBlockedReasonKey(group.project)), [null, null, null]);
+});
+
+test("archiving a remote conversation writes this desktop's preference and never calls the Host", async () => {
+  const { readStoreModule } = await import("./helpers/source-contracts.mjs");
+  const projectSlice = await readStoreModule("slices/project-slice.ts");
+  const archive = (projectSlice.match(/archiveSession: \(id\) => \{[\s\S]*?\n    \},/) ?? [""])[0];
+  assert.ok(archive.length > 0, "the store keeps an archiveSession action");
+  assert.match(archive, /sessionMeta: \{\s*\.\.\.state\.sessionMeta,\s*\[id\]: \{ \.\.\.\(state\.sessionMeta\[id\] \|\| \{\}\), archived: true \},\s*\},/);
+  assert.doesNotMatch(archive, /api\./, "archiving must not reach the Host");
+  // The sidebar's remote branch archives under the remote session id and moves
+  // to a sibling of the same project; it never creates a local session in the
+  // remote conversation's place.
+  const sidebar = await readFile(new URL("../src/components/Sidebar.tsx", import.meta.url), "utf8");
+  const remoteBranch = (sidebar.match(/if \(isRemoteSession\(session\) && !archived\) \{[\s\S]*?\n    \}/) ?? [""])[0];
+  assert.ok(remoteBranch.length > 0, "the sidebar handles remote archiving separately");
+  assert.match(remoteBranch, /archiveSessionAction\(session\.id\)/);
+  assert.match(remoteBranch, /selectProjectSession\(sibling\)/);
+  assert.doesNotMatch(remoteBranch, /newSession\(/, "no local session may replace a remote one");
 });

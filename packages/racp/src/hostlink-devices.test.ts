@@ -166,7 +166,7 @@ describe("host link device frames", () => {
     expect(announcements[0]).toEqual({
       link: RACP_HOSTLINK_VERSION,
       type: "host.capabilities",
-      capabilities: [RACP_HOST_CAPABILITIES.deviceConfirm, RACP_HOST_CAPABILITIES.deviceAcceptSiblingGrant],
+      capabilities: [RACP_HOST_CAPABILITIES.deviceConfirm, RACP_HOST_CAPABILITIES.deviceAcceptSiblingGrant, RACP_HOST_CAPABILITIES.deviceDesktopAuto],
     });
   });
 
@@ -240,6 +240,70 @@ describe("host link device frames", () => {
     socket.feed(relayed);
     await flush();
     expect((await h.store.listDevices()).filter((device) => device.deviceId === "dev_1")).toHaveLength(1);
+  });
+
+  it("revokes the desktop devices of a computer the Gateway reports revoked", async () => {
+    // A device this Host admitted from a sibling's proof, and a phone it paired
+    // itself: only the first follows that computer's certificate.
+    const desktopToken = newDeviceToken();
+    const phoneToken = newDeviceToken();
+    await h.store.saveDevice({
+      deviceId: "dev_desktop",
+      label: "sibling desktop",
+      roles: ["owner"],
+      tokenHash: hashToken(desktopToken),
+      createdAt: new Date(NOW).toISOString(),
+      origin: "gateway",
+      deviceClass: "desktop",
+      applicantHostId: "host_alpha",
+    });
+    await h.store.saveDevice({
+      deviceId: "dev_phone",
+      label: "iPad",
+      roles: ["viewer", "controller", "approver"],
+      tokenHash: hashToken(phoneToken),
+      createdAt: new Date(NOW).toISOString(),
+      origin: "gateway",
+    });
+    openHost(directory());
+    expect(await authenticate(desktopToken)).not.toBeNull();
+    expect(await authenticate(phoneToken)).not.toBeNull();
+
+    // The operator revoked host_alpha on the Gateway, so the devices its proof
+    // admitted lose their standing here too. No signature: the frame only ever
+    // removes authority.
+    socket.feed({
+      link: RACP_HOSTLINK_VERSION,
+      type: "host.revoked",
+      revocation: { hostId: "host_alpha", accountId: "42", revokedAt: new Date(NOW + 1000).toISOString() },
+    });
+    await flush();
+    expect(await authenticate(desktopToken)).toBeNull();
+    expect(await authenticate(phoneToken)).not.toBeNull();
+    expect(socket.open).toBe(true);
+  });
+
+  it("drops a malformed host.revoked frame instead of revoking anything", async () => {
+    const token = newDeviceToken();
+    await h.store.saveDevice({
+      deviceId: "dev_desktop",
+      label: "sibling desktop",
+      roles: ["owner"],
+      tokenHash: hashToken(token),
+      createdAt: new Date(NOW).toISOString(),
+      origin: "gateway",
+      deviceClass: "desktop",
+      applicantHostId: "host_alpha",
+    });
+    openHost(directory());
+
+    socket.feed({ link: RACP_HOSTLINK_VERSION, type: "host.revoked" });
+    socket.feed({ link: RACP_HOSTLINK_VERSION, type: "host.revoked", revocation: { hostId: "" } });
+    await flush();
+
+    // Nothing revoked, link kept: a bad frame is never a revocation.
+    expect(await authenticate(token)).not.toBeNull();
+    expect(socket.open).toBe(true);
   });
 
   it("sends a signed device.revoke when its user revokes, and reports an unknown device", async () => {

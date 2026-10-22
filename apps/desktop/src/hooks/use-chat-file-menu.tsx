@@ -1,10 +1,10 @@
 /**
  * The right-click action every file reference in the conversation shares.
  *
- * HTML references expose explicit open destinations in the context menu: the
- * bundled File Manager, built-in browser, and default browser. Each destination
- * goes through the same resolver as a normal click, so a reference that resolves
- * to nothing cannot open a lookalike somewhere else.
+ * Local files offer explicit OS open and reveal actions. HTML references keep
+ * their File Manager, built-in browser, and default-browser destinations. Every
+ * action goes through the same resolver as a normal click, so a reference that
+ * resolves to nothing cannot open a lookalike somewhere else.
  *
  * Items are data, exactly as `ContextMenu` takes them: every surface keeps the
  * menu instance it already owns and shares only this vocabulary, so a row that
@@ -74,8 +74,8 @@ export function useChatFileMenuItems() {
         ];
       }
       return [
-        // A folder is shown in place; there is no page to run and no viewer to
-        // hand it to, so the HTML destinations do not apply.
+        // A folder is shown in place; there is no file for the OS or browser
+        // handlers to open.
         ...(nativeFilesAllowed && isDirectory
           ? [{
               id: "reveal-in-file-manager",
@@ -120,15 +120,37 @@ export function useChatFileMenuItems() {
               ],
             }]
           : []),
+        ...(nativeFilesAllowed && !isDirectory
+          ? [
+              ...(!isHtmlFilePath(path)
+                ? [{
+                    id: "open-with-default-app",
+                    label: t("chat.openFile"),
+                    icon: <IconExternal size={14} />,
+                    onSelect: () =>
+                      openFileRef(path, baseDir, undefined, {
+                        destination: "default-application",
+                      }),
+                  }]
+                : []),
+              {
+                id: "reveal-in-folder",
+                label: t("chat.revealInFileManager"),
+                icon: <IconFolderOpen size={14} />,
+                onSelect: () =>
+                  openFileRef(path, baseDir, undefined, {
+                    destination: "reveal-in-folder",
+                  }),
+              },
+            ]
+          : []),
         {
           id: "copy-full-path",
           label: t("chat.copyFullPath"),
           icon: <IconCopy size={14} />,
-          separatorBefore: nativeFilesAllowed && (isDirectory || isHtmlFilePath(path)),
+          separatorBefore: nativeFilesAllowed,
           onSelect: () => copyFileRef(path, baseDir, "absolute"),
         },
-        // A folder keeps both copy actions; a folder outside the project simply
-        // has no relative spelling, which the copier already reports.
         {
           id: "copy-relative-path",
           label: t("chat.copyRelativePath"),

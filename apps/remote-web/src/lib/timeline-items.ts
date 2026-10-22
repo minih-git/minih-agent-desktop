@@ -29,7 +29,7 @@ import {
 import type { TimelineItem } from "./timeline-types.js";
 
 export const MAX_TIMELINE_ITEMS = 400;
-export const MAX_ITEM_TEXT_CHARS = 20_000;
+export const MAX_ITEM_TEXT_CHARS = 200_000;
 /** Names shown for the attachments of one row; the rest are counted, not listed. */
 export const MAX_ITEM_ATTACHMENTS = 8;
 
@@ -204,12 +204,16 @@ export function projectMessage(
     };
   }
   const attachments = attachmentsOf(message);
+  const providerId = typeof message.providerId === "string" && message.providerId.trim() ? message.providerId.trim() : undefined;
+  const modelId = typeof message.modelId === "string" && message.modelId.trim() ? message.modelId.trim() : undefined;
   return {
     id,
     turnId,
     itemType: "message",
     status: options.status ?? "completed",
     ...messageFields(message),
+    ...(providerId ? { providerId } : {}),
+    ...(modelId ? { modelId } : {}),
     ...(typeof message.command === "string" && message.command ? { command: message.command } : {}),
     ...(attachments ? { attachments } : {}),
     ...(message.sideNote === true ? { sideNote: true } : {}),

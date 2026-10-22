@@ -226,7 +226,6 @@ pub(crate) async fn approve(
             &selection(&config),
             config.include_secrets,
             &config.plugin_intents,
-            &identity_overrides(&config),
         )?
     };
     apply_bundle(

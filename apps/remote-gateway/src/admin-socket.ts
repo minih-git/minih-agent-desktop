@@ -25,7 +25,7 @@ export type AdminRequest =
   | { op: "account-sessions.revoke"; payload: { sessionId: string } };
 
 export type AdminResponse =
-  | { ok: true; enrollment?: { code: string; expiresAt: string }; revoked?: boolean; closedConnections?: number }
+  | { ok: true; enrollment?: { code: string; expiresAt: string }; revoked?: boolean; closedConnections?: number; cascaded?: number }
   | { ok: false; code: "INVALID_REQUEST" | "NOT_FOUND" | "ADMIN_UNAVAILABLE" | "ADMIN_BUSY" };
 
 /** The CLI's "serve is not running" signal. */

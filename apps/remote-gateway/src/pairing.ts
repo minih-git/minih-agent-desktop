@@ -96,6 +96,10 @@ export class PairingService {
       });
       await this.audit(input, "ok", paired.deviceId);
       const csrfToken = csrfTokenFor(this.options.store.secret, paired.deviceId);
+      // The computer's name travels with the pairing answer: this is the only
+      // exchange a device has before it holds a per-Host credential, and the
+      // browser profile cannot reach `GET /v1/hosts` at all.
+      const hostLabel = this.options.store.findHost(input.hostId)?.label;
       if (request.client === "web") {
         // `Max-Age=34560000` (400 days, the Chromium cap) keeps the pairing
         // across a browser restart; without it both cookies are session cookies
@@ -108,13 +112,25 @@ export class PairingService {
             `${CSRF_COOKIE}=${csrfToken}; ${attributes}`,
           ],
           // A browser must never read the device token from the body.
-          payload: { deviceId: paired.deviceId, hostId: input.hostId, roles: paired.roles, csrfToken },
+          payload: {
+            deviceId: paired.deviceId,
+            hostId: input.hostId,
+            roles: paired.roles,
+            csrfToken,
+            ...(hostLabel ? { hostLabel } : {}),
+          },
         };
       }
       return {
         status: 200,
         cookies: [],
-        payload: { deviceId: paired.deviceId, hostId: input.hostId, roles: paired.roles, token: paired.deviceToken },
+        payload: {
+          deviceId: paired.deviceId,
+          hostId: input.hostId,
+          roles: paired.roles,
+          token: paired.deviceToken,
+          ...(hostLabel ? { hostLabel } : {}),
+        },
       };
     } catch (error) {
       await this.audit(input, "denied");

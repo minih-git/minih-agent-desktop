@@ -23,6 +23,12 @@ export type NotifyEvent = {
   kind: RacpNotifyKind;
   sessionId: string;
   approvalId?: string;
+  /**
+   * Decisions the session still holds for the user, counted by the Host. It is
+   * forwarded to the Gateway so the push can carry it as the app badge
+   * (§17.6.2); a Host that does not count simply omits it.
+   */
+  attentionCount?: number;
   occurredAt?: string;
 };
 
@@ -87,6 +93,7 @@ export class HostLinkNotifier implements HostNotifier {
         kind: event.kind,
         sessionId: event.sessionId,
         ...(event.approvalId ? { approvalId: event.approvalId } : {}),
+        ...(event.attentionCount === undefined ? {} : { attentionCount: event.attentionCount }),
         occurredAt: event.occurredAt ?? new Date(this.now()).toISOString(),
       });
       return true;

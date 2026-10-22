@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { partitionRemoteHosts } from "../../lib/project-create-sources";
 import type { RemoteHostSummary } from "@minih-agent/shared";
 import { api } from "../../lib/api";
 import { remoteHostErrorKey } from "../../lib/remote-host-errors";
@@ -31,8 +32,12 @@ export function RemoteProjectPicker({ busy, initialHostKey, onChange, onBrowsing
     let active = true;
     void api.listRemoteHosts().then(({ hosts }) => {
       if (!active) return;
-      setHosts(hosts);
-      setHostKey(hosts.find((host) => host.hostKey === initialHostKey)?.hostKey ?? hosts.find((host) => host.connected)?.hostKey ?? hosts[0]?.hostKey ?? "");
+      // This source is the local-Agent-with-remote-tools shape, which needs the
+      // owner-grade tool surface. An account computer runs the Agent itself and
+      // is the *other* source in New project, so it is not offered here.
+      const sshHosts = partitionRemoteHosts(hosts).ssh;
+      setHosts(sshHosts);
+      setHostKey(sshHosts.find((host) => host.hostKey === initialHostKey)?.hostKey ?? sshHosts.find((host) => host.connected)?.hostKey ?? sshHosts[0]?.hostKey ?? "");
     }).catch((error: unknown) => {
       if (active) setError(t(remoteHostErrorKey(error)));
     }).finally(() => { if (active) setLoading(false); });

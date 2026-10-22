@@ -29,15 +29,26 @@ export type PushRegistrationState = "unsupported" | "permission-denied" | "regis
  * when the set of credentials changes. The Gateway derives the audience from the
  * credential, so the *credentials* — not the Host list — decide what to register.
  */
-export function usePushRegistration(hosts: readonly HostRegistryEntry[], onTap: (destination: PushDestination) => void) {
+export function usePushRegistration(
+  hosts: readonly HostRegistryEntry[],
+  onTap: (destination: PushDestination) => void,
+  /**
+   * A notification that arrived while the app is open (§17.6.4). Optional so a
+   * caller that only routes taps keeps working.
+   */
+  onForeground?: (destination: PushDestination) => void,
+) {
   const plugin = pushPlugin();
-  // The tap handler is a fresh closure on every render; keeping it in a ref lets
-  // the listener be attached once per plugin instead of on every render.
+  // The handlers are fresh closures on every render; keeping them in refs lets
+  // the listeners be attached once per plugin instead of on every render.
   const onTapRef = useRef(onTap);
   onTapRef.current = onTap;
+  const onForegroundRef = useRef(onForeground);
+  onForegroundRef.current = onForeground;
   const registered = useRef<Set<string>>(new Set());
   const token = useRef<string | null>(null);
   const permissionAsked = useRef(false);
+  const obtainingToken = useRef<Promise<string | null> | null>(null);
   // A token that arrives after the first attempt (iOS often delivers it late)
   // has to trigger one more registration; a ref alone cannot, because it does
   // not re-render. This counter is what makes the effect below run again.
@@ -60,6 +71,7 @@ export function usePushRegistration(hosts: readonly HostRegistryEntry[], onTap: 
         setTokenRevision((revision) => revision + 1);
       },
       onTap: (destination) => onTapRef.current(destination),
+      onForeground: (destination) => onForegroundRef.current?.(destination),
       onError: (message) => console.warn("[remote-web] push registration failed", message),
     }).then((handle) => {
       if (cancelled) void handle();
@@ -82,16 +94,24 @@ export function usePushRegistration(hosts: readonly HostRegistryEntry[], onTap: 
     let cancelled = false;
     void (async () => {
       if (!token.current) {
-        if (permissionAsked.current) return;
-        permissionAsked.current = true;
-        const obtained = await obtainPushToken(plugin);
-        if (!obtained.ok) {
-          // A refusal is final for this launch: retrying would prompt in a loop,
-          // and a user who said no does not need that.
-          console.warn("[remote-web] push is not registered", obtained.reason);
-          return;
+        if (!obtainingToken.current) {
+          if (permissionAsked.current) return;
+          permissionAsked.current = true;
+          obtainingToken.current = obtainPushToken(plugin)
+            .then((obtained) => {
+              if (!obtained.ok) {
+                console.warn("[remote-web] push is not registered", obtained.reason);
+                return null;
+              }
+              token.current = obtained.token;
+              return obtained.token;
+            })
+            .finally(() => {
+              obtainingToken.current = null;
+            });
         }
-        token.current = obtained.token;
+        const awaited = await obtainingToken.current;
+        if (!awaited) return;
       }
       const issued = token.current;
       if (!issued || cancelled) return;

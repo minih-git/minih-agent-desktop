@@ -217,7 +217,7 @@ type Session = {
   projectId?: string
   workspaceLabel?: string
   mode: "agent" | "plan" | "goal"
-  status: "idle" | "running" | "waiting_permission" | "aborted" | "error"
+  status: "idle" | "running" | "waiting_permission" | "waiting_input" | "aborted" | "error"
   planningState: "inactive" | "planning" | "awaiting_approval"
   permissionMode: "ask" | "accept-edits" | "auto"
   activeTurnId?: string
@@ -231,7 +231,12 @@ type Session = {
 `status` and `planningState` mirror the local session state machine
 (`10-session-state-machine.md` §0–§1): `planningState` is the Plan/Goal
 projection and `awaiting_approval` means a pending contract approval exists
-even though no turn is running. An absolute workspace path MUST NOT be
+even though no turn is running. `waiting_input` means the agent asked a question
+and holds the turn open until it is answered; it is distinct from
+`waiting_permission`, which is a tool call waiting to be allowed, because the two
+are answered on different surfaces (a form versus an allow/deny decision). A
+client that lists sessions must show the two separately — a phone that cannot
+tell them apart reads a question as a busy turn (UX spec §17.4.1). An absolute workspace path MUST NOT be
 included unless the principal has an explicit path-disclosure scope. A
 `workspaceLabel` is display-only.
 
@@ -586,6 +591,30 @@ and fork are idle-only, deletion is owner-only, and every workspace read is
 resolved against the Session's durable root with the Host's ignore rules and
 `PATH_OUTSIDE_WORKSPACE` boundary. Terminals run on the Host machine with the
 session root as working directory and stream through `terminal.output`.
+
+**Device class decides the file panel (rollout R8 package D).** A Host may offer
+`workspace/list`, `workspace/read`, and `workspace/diff` to one connection and
+withhold them from another. The answer is the per-connection `workspaceRead`
+capability returned by `connection/initialize`: a Host with an opinion sets it,
+and a Host without one leaves it out, in which case the operation catalog alone
+decides (every `viewer` may read, which is what `agent-host-cli` has always
+done). A Host that reports `workspaceRead: false` MUST also refuse those three
+operations with `FORBIDDEN`, rather than rely on the client honoring the
+capability. `workspaceRead` is not `workspaceFiles`: the latter is the
+owner-grade `workspace/files` surface of §6.2.1 and stays outside this profile.
+
+The desktop Host answers it from the device class (ADR
+`remote-control-router-account-binding`, amendment 3 decision 4): a
+desktop-class device of the same account gets the read-only panel, a phone or a
+browser does not. The same gate covers `session/delete`, which stays
+`owner`-only and idle-only. `session/archive` is in the catalog and advertised
+by `remoteHostProfile`, but no Host implements it: session archival is
+presentation state the desktop renderer keeps locally (`sessionMeta.archived`),
+so a Host has nothing authoritative to archive and answers
+`CAPABILITY_UNAVAILABLE`. Archiving is therefore done by each client in its own
+sidebar — a desktop that shows a sibling's session archives it under that
+remote session id locally (rollout R8 package E) — which keeps one owner per
+piece of state instead of creating a second source of truth.
 
 | Operation | Role | Behavior |
 |---|---|---|
@@ -1141,6 +1170,41 @@ with the Gateway and browser milestones (R4–R6, D665).
 | Resolve approval | `POST /v1/approvals/{approvalId}:respond` |
 | Resolve input | `POST /v1/inputs/{inputId}:respond` |
 
+One Gateway route is not `RACP-HTTP`: `GET /v1/hosts/{hostId}/ws` upgrades to
+`RACP-WS` for a client that speaks the protocol itself (the desktop as a Remote
+Client of a sibling computer; §11.4 rule 7). It authenticates with the Bearer
+device token in the header profile only — the cookie profile exists for a
+browser that cannot set headers, and a browser keeps `RACP-HTTP` + SSE — and it
+applies the same URL-credential, Origin, rate-limit, and audit rules as the
+routes above.
+
+A refusal on this route is an HTTP status on the upgrade socket and never an
+exception, so no request target can end the Gateway: one it cannot decode, or a
+Host id that is not one, is `400 INVALID_ARGUMENT` before any credential is
+read; a missing, unknown, or revoked device is `401`, a foreign or revoked Host
+and a disallowed `Origin` are `403`, and the per-device rate limit is
+`429 RATE_LIMITED` with the same `Retry-After` the routes above send. After the
+upgrade the socket mirrors the logical connection's close: `1000` when the Host
+ends it normally, `1008` for a credential, route, or protocol refusal, and
+`1013` when retrying later is worthwhile (a slow client, a Gateway shutdown, or
+the device already holding its maximum relayed connections).
+
+The rate limit does not end at the upgrade. Every JSON-RPC **request** frame the
+client sends over the relayed socket spends one token of the same per-device
+bucket, exactly as one `RACP-HTTP` command does; an over-limit request is
+answered by the Gateway itself with a JSON-RPC error — `RATE_LIMITED`,
+`retriable: true`, and the hint under `error.data.details.retryAfterMs` — and is
+never forwarded to the Host, while the connection stays open. A **response**
+frame (the client answering a server-initiated request) and a **notification**
+frame spend no token and are never refused: blocking either would stall the
+approval it carries. A frame the Gateway cannot read as JSON-RPC is forwarded
+unchanged, and the Host stays its judge.
+
+The connection carries the §11.1 heartbeat: the Gateway pings every 30 seconds
+and drops a client that does not answer, so a socket that went half-open (a
+sleeping computer, a changed network) does not keep holding a Host-side logical
+connection or one of the device's four relayed-connection slots.
+
 The event endpoints MUST support `Last-Event-ID` with the `"<epoch>:<sequence>"`
 form. Commands return JSON and never require the caller to keep a request open
 for turn execution.
@@ -1267,6 +1331,9 @@ type HostLinkFrame =
       signerCertificate: string; deviceToken?: string }
   | { link: "racp-hostlink.v1"; type: "device.revoke"; revoke: DeviceRevoke; signature: string;
       signerCertificate: string }
+  // Account mode, R8: notices the Gateway sends about the account's computers.
+  | { link: "racp-hostlink.v1"; type: "host.joined"; notice: HostJoined }
+  | { link: "racp-hostlink.v1"; type: "host.revoked"; revocation: HostRevoked }
 ```
 
 Rules:
@@ -1299,16 +1366,76 @@ Rules:
 5. Loss of the link closes every logical connection with a resumable cursor.
    The Host reconnects with bounded exponential backoff; local turns continue
    throughout.
-6. `host.capabilities`, `device.request`, `device.grant`, and `device.revoke`
-   exist for account mode only, and §11.5 defines what they carry. The Host
-   sends `host.capabilities` on every link as soon as it is up, and the Gateway
-   MUST NOT send a `device.request` or a relayed `device.grant` to a Host that
-   has not announced the matching capability: a Host that predates these frames
-   ignores an unknown `type` silently, so a frame sent to it would leave the
-   client waiting forever. Unknown capability strings are ignored by the reader,
-   so a newer Host may advertise more than an older Gateway understands. A
-   malformed frame and an unknown `type` are dropped without closing the link,
-   in both directions.
+6. `host.capabilities`, `device.request`, `device.grant`, `device.revoke`,
+   `host.joined`, and `host.revoked` exist for account mode only, and §11.5
+   defines what they carry. The Host sends `host.capabilities` on every link as
+   soon as it is up, and the Gateway MUST NOT send a `device.request`, a relayed
+   `device.grant`, or one of the two notices to a Host that has not announced
+   the matching capability: a Host that predates these frames ignores an
+   unknown `type` silently, so a frame sent to it would leave the client waiting
+   forever. `host.joined` and `host.revoked` are information and revocation
+   only — neither grants anything — so a Host that cannot use one drops it and
+   keeps its link. Unknown capability strings are ignored by the reader, so a
+   newer Host may advertise more than an older Gateway understands. A malformed
+   frame and an unknown `type` are dropped without closing the link, in both
+   directions.
+
+7. **Desktop-class devices and the sibling-desktop route (R8; ADR
+   `remote-control-router-account-binding` amendment 3; contract, Gateway, and
+   Host verification implemented, desktop Host surfaces not).** `device.request` and
+   the account login/device bodies gain `client: "desktop"` beside `web` /
+   `ios` / `android`. A desktop request also carries `hostProof`: the
+   applicant's `hostId`, the request's `nonce`, a signature over
+   `{requestId, nonce, applicantHostId, accountId, expiresAt}` made with the
+   private key of the Host certificate this Gateway issued to that computer,
+   and that certificate itself. The nonce is minted by the Gateway when it
+   creates the device request, is single-use, and expires with the request; a
+   Host refuses a proof whose nonce it has already seen or whose `expiresAt`
+   has passed. **The target Host verifies the proof itself** — chain to its
+   own pinned Gateway CA, the `OU=account:<accountId>` binding against the
+   account of the request, the signature, and the freshness — and checks its
+   own "allow same-account computers to join automatically" switch before it
+   admits the device with `owner`. The proof carries the certificate because
+   the target Host has no other way to obtain it — the Gateway is the only
+   party that saw it at enrollment — and presenting it is the same shape as
+   TLS client authentication: the integrity comes from the chain verifying to
+   the CA this Host already pins and from the account and `hostId` in the
+   certificate matching the request, not from the Gateway being honest. The
+   Gateway may pre-check and fast-reject but is never the authorization: a
+   Host link frame that claims an admission the Host has not verified is
+   refused. A sibling `device.grant` for a desktop-class device is re-verified
+   by every Host that receives it, together with its own switch; a Host whose
+   switch is off, or that is in strict mode, does not adopt it as a
+   desktop-class device and falls back to asking its own user. A sibling judges
+   the proof's freshness as of the grant, not as of the moment it reads the
+   frame: it requires `issuedAt` not after the request's `expiresAt` and not
+   beyond a small clock tolerance into its own future, and checks only
+   `deliverUntil` against the present, so a computer that was offline while the
+   request lived still adopts the device. A verified desktop request whose
+   target computer advertises `device.desktop-auto` and
+   has automatic admission on is granted without a human answer. Without the
+   capability the Gateway MUST NOT send the new frames — an old Host drops an
+   unknown `type` silently (rule 6) — and the requesting desktop reports that
+   computer as needing an update. A `desktop` client reaches the Host over
+   `RACP-WS` at `GET /v1/hosts/{hostId}/ws`, authenticated by the Bearer device
+   token (the header profile; a browser, which cannot set that header on a
+   WebSocket, keeps `RACP-HTTP` + SSE), and the Gateway relays `RACP-WS` frames
+   byte for byte onto the same logical connection a `RACP-HTTP` command uses.
+   Both directions are relayed, including a server-initiated request
+   (`approval/request`, `input/request`, `tool/execute`) that the client must
+   answer itself: the Gateway never answers on the client's behalf on this
+   route, and it never renumbers, coalesces, or re-keys a frame (rule 3). A
+   client that cannot keep up is closed with `CLIENT_TOO_SLOW` instead of being
+   buffered without bound, so the resume-by-cursor rule still holds. Phones keep
+   `RACP-HTTP` + SSE unchanged; this route's refusal statuses and WebSocket
+   close codes are in §11.2. The WebSocket route itself is implemented
+   (rollout R8 package B, tested in `apps/remote-gateway/src/client-ws.test.ts`),
+   and so are the desktop-class device parts of this rule — the `desktop` client
+   class, `hostProof` with its certificate, `device.desktop-auto`, and the
+   automatic admission that follows (rollout R8 package C, tested in
+   `apps/remote-gateway/src/device-requests.test.ts` and
+   `packages/racp/src/host-devices.test.ts`). The desktop Host surfaces that use
+   them are rollout R8 packages D–F.
 
 Enrollment and pairing run against the same listener:
 
@@ -1341,6 +1468,12 @@ Enrollment and pairing run against the same listener:
   Max-Age=34560000` cookie plus a CSRF token for browsers, or as
   `{ deviceId, token }` in the response body for native clients to store in the
   iOS Keychain or the Android Keystore.
+  The response also carries `hostLabel`, the Host's own name as its owner
+  registered it. It is optional and additive, and it is the only occasion a
+  device learns that name: `GET /v1/hosts` is unreachable from the browser
+  profile (§11.2) and a device has no per-Host credential yet. A client that
+  receives none shows the host id; it must not substitute the device label,
+  which names the phone that paired, not the computer.
 
 ### 11.5 Account mode (D666; the account directory is implemented)
 
@@ -1739,6 +1872,41 @@ written.
   answers the uniform `UNAUTHORIZED` of §13 instead, so a listing or a routing
   attempt never discloses another account's Hosts.
 
+- **Desktop-class devices (R8; contract, Gateway, and Host verification
+  implemented, desktop Host surfaces not).** A device granted to a
+  `client: "desktop"` request whose proof the target Host itself verified is a
+  desktop-class device: it holds `owner`, is exempt from the remote permission
+  ceiling exactly like an SSH-paired desktop device, and reaches the Host over
+  the WebSocket route above. The device record keeps the class it was admitted
+  under and the `applicantHostId` whose proof admitted it — both optional, so a
+  record written before they existed reads and behaves exactly as before — and
+  `owner` follows that certificate: revoking the computer on the Gateway
+  (`host.revoked`) revokes the desktop devices it admitted on every computer of
+  the account, including one that was offline and applies the notice when its
+  link comes up. Admission is automatic when the target computer
+  advertises `device.desktop-auto` and its "allow same-account computers to
+  join automatically" switch is on (default on); with the switch off, or in
+  strict mode, the request falls back to the ordinary confirmation of this
+  section and the device is not adopted as desktop-class. A sibling grant for
+  such a device is re-verified by every receiving Host, together with its own
+  switch, before it adopts the device with `owner`; the sibling judges the
+  proof's freshness as of the grant (`issuedAt` not after the request's
+  `expiresAt`, and not in its own future beyond a small clock tolerance) and
+  checks only `deliverUntil` against the present, so a computer that was
+  offline while the five-minute request lived still adopts a grant that stays
+  deliverable for a day. The Gateway verifies
+  nothing on the Host's behalf: it may pre-check and fast-reject, but a Host
+  link frame that claims an admission the Host has not verified is refused.
+  Every new Host enrollment notifies the account's other Hosts ("a new
+  computer joined the account") and every automatic admission produces the
+  same "new device" notice and audit record a confirmed one does; any Host of
+  the account can revoke the device, and the operator can revoke the enrolled
+  Host on the Gateway. A proof whose nonce was already used or whose
+  `expiresAt` has passed is refused. Which operations the device may call is
+  decided per operation by the desktop Host: it opens the desktop surface
+  explicitly and keeps refusing it to a phone. A phone or browser device is
+  unchanged by this clause.
+
 ### 11.6 Redacted push (R5 PR-6; ADR 0331 decision 7)
 
 Push is optional and redacted: it tells a user that something needs them, on a
@@ -1752,7 +1920,7 @@ says — so a Host never chooses an audience and a client never receives content
   `host.notify` from it.
 - **The event frame.** `host.notify` carries exactly
   `{ link, type: "host.notify", notify: { notifyId, kind, sessionId, approvalId?,
-  occurredAt } }`, where `notifyId` is the Host's own id for the event (bounded to
+  attentionCount?, occurredAt } }`, where `notifyId` is the Host's own id for the event (bounded to
   128 characters, so one push per event survives a Host retry), and `kind` is one
   of `approval.requested`, `input.requested`, `turn.completed`, `turn.failed`.
   The object is closed: no prompt, tool name, path, transcript, or session title
@@ -1781,7 +1949,14 @@ says — so a Host never chooses an audience and a client never receives content
   one registration: registering again replaces its token, because a device is one
   platform. The device's state is re-checked inside the write, so a registration
   request that was already in flight when the device was revoked is answered
-  `UNAUTHORIZED` instead of resurrecting a registration the revocation deleted.
+  `UNAUTHORIZED` instead of resurrecting a registration the revocation deleted. A
+  registration may also carry `onlyActionable: true`, which asks the Gateway to
+  deliver only the two requests that need the user (`approval.requested`,
+  `input.requested`) and to drop `turn.completed` and `turn.failed` for that
+  device; the answer echoes `preferences: { onlyActionable }`, and omitting the
+  field on a later registration keeps the stored value rather than resetting it. A
+  Gateway that predates the field ignores it and echoes nothing, which is how a
+  client knows not to offer the switch.
   `DELETE /v1/push/registration` drops the caller's own registration and answers
   `{ result: { removed } }`. Both routes follow the browser rules of §11.2
   (allowlisted `Origin`, CSRF header for the cookie profile) and carry
@@ -1792,17 +1967,24 @@ says — so a Host never chooses an audience and a client never receives content
   a platform the Gateway has no provider for is `CAPABILITY_UNAVAILABLE` (501):
   storing a token nothing can deliver to would be a silent failure.
 - **The payload.** A push contains `{ kind, titleKey, bodyKey, hostId,
-  sessionId, approvalId?, notifyId }` and nothing else. `titleKey` and `bodyKey`
+  sessionId, approvalId?, attentionCount?, notifyId }` and nothing else. `titleKey` and `bodyKey`
   are always `push.notify.<kind>.title` and `push.notify.<kind>.body`, resolved by
   the client from its own catalog — the Gateway never sends a sentence. APNs
-  receives them as `aps.alert.title-loc-key` / `loc-key`, FCM as
-  `android.notification.title_loc_key` / `body_loc_key` plus the same ids in
-  `data`, so the visible text is the app's, in the user's language, and the ids
-  survive to drive the tap. HTTP v1's `message.notification` has only `title`,
-  `body`, and `image`, so the keys belong to the Android block; a message that
-  puts them anywhere else is rejected with `400 INVALID_ARGUMENT` for every
-  device. Their value is the Android resource name
-  (`push_notify_<kind>_title`), because resource names cannot contain dots.
+  receives them as `aps.alert.title-loc-key` / `loc-key` plus the ids beside them;
+  Android gets a **data-only** FCM message (no `notification` block) whose every
+  value is a string, so the app is called in both states and draws the
+  notification itself — which is what lets it name the session after delivery.
+  The visible text is therefore the app's, in the user's language, and the ids
+  survive to drive the tap. `attentionCount` is the number of decisions the Host
+  says the session still holds for the user at the moment of the event; the
+  Gateway copies it into `aps.badge` and into Android's `attentionCount` data
+  field, and omits the badge when the Host did not count rather than inventing a
+  number. APNs also receives `aps.thread-id`, and the Android app groups its own
+  notifications by `sessionId`, so several events about one session stay together
+  on the lock screen; both are derived from an id the payload already carries, so
+  grouping adds no field to this contract. The keys are the app's to resolve:
+  Android resource names cannot contain dots, so they are generated as
+  `push_notify_<kind>_title`.
 - **Rendering happens in the app bundle.** When the app is in the background or
   closed the *system* renders the notification, so the eight keys must exist in
   the app's own resources: `ios/App/App/en.lproj/Localizable.strings`,

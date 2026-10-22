@@ -27,8 +27,17 @@ async function bootstrap(): Promise<void> {
   document.documentElement.lang = i18n.language;
   const root = createRoot(container);
   try {
-    const [{ boot }, { default: App }] = await Promise.all([import("./lib/runtime.js"), import("./App.js")]);
+    const [{ boot, startDirectChatRuntime }, { default: App }] = await Promise.all([
+      import("./lib/runtime.js"),
+      import("./App.js"),
+    ]);
     await boot();
+    // Direct chat's own startup: a reply a previous process left live becomes
+    // interrupted, and leaving the foreground interrupts from then on. Failure
+    // here must not stop the remote side of the app from rendering.
+    void startDirectChatRuntime().catch((error: unknown) => {
+      console.warn("[remote-web] direct chat runtime did not start", error);
+    });
     root.render(
       <StrictMode>
         <App />

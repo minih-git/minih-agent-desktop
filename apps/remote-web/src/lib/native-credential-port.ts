@@ -22,6 +22,8 @@ import {
   type PairRequest,
 } from "./credential-port.js";
 import { defaultDeviceLabel, nativeDeviceLabel } from "./device-label.js";
+import { forgetNotifyCredential, syncNotifyCredential } from "./native-notify.js";
+import { gatewayOrigin } from "./runtime.js";
 import type { HostRegistry, HostRegistryEntry } from "./host-registry.js";
 import { pairDevice, type PairClient } from "./pairing-client.js";
 import { deviceTokenKey, hostIdFromKey, type SecureStore } from "./secure-store.js";
@@ -42,6 +44,8 @@ export type NativeCredentialPortOptions = {
    * than a pairing failure, and `ready()` retries it on the next launch.
    */
   onStorageError?: (error: unknown) => void;
+  /** Additional host ids (e.g. from other saved Gateway profiles) whose Keychain tokens must not be pruned on startup. */
+  preserveHostIds?: () => Iterable<string>;
 };
 
 export class NativeCredentialPort implements CredentialPort {
@@ -64,7 +68,10 @@ export class NativeCredentialPort implements CredentialPort {
    */
   async ready(): Promise<void> {
     const store = this.requireStore();
-    const known = new Set(this.options.registry.list().map((entry) => entry.hostId));
+    const known = new Set([
+      ...this.options.registry.list().map((entry) => entry.hostId),
+      ...(this.options.preserveHostIds ? this.options.preserveHostIds() : []),
+    ]);
     this.tokens.clear();
     for (const key of await store.keys()) {
       const hostId = hostIdFromKey(key);
@@ -129,6 +136,9 @@ export class NativeCredentialPort implements CredentialPort {
     };
     this.options.registry.save(entry);
     this.tokens.set(request.hostId, token);
+    // The notification service extension reads its own copy (§17.6.2); a failed
+    // mirror costs the title, not the pairing.
+    void syncNotifyCredential({ hostId: request.hostId, token, origin: request.gatewayOrigin });
     return { ok: true, entry };
   }
 
@@ -136,6 +146,9 @@ export class NativeCredentialPort implements CredentialPort {
     const store = this.requireStore();
     this.tokens.delete(hostId);
     this.options.registry.forget(hostId);
+    // The mirror must not outlive the pairing: an extension that could still read
+    // a forgotten Host's token would keep naming what the user removed.
+    void forgetNotifyCredential(hostId);
     try {
       await store.remove(deviceTokenKey(hostId));
     } catch (error) {
@@ -190,6 +203,9 @@ export class NativeCredentialPort implements CredentialPort {
         ...(roles ? { roles } : {}),
       });
       this.tokens.set(host.hostId, token);
+      // Account adoption carries no origin: this build's Gateway is the one it is
+      // baked against (`VITE_GATEWAY_ORIGIN`).
+      void syncNotifyCredential({ hostId: host.hostId, token, origin: gatewayOrigin });
       hostIds.push(host.hostId);
     }
     return { ok: true, hostIds };

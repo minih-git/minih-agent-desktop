@@ -706,6 +706,17 @@ export function registerSessionIpc({
     },
   );
 
+  // The model catalog belongs to the host that owns the session. Local sessions
+  // read this desktop's provider rows through `providersList`, so a local call is
+  // refused; a remote session id is answered by the remote backend before this
+  // handler ever runs, and the channel must be registered for that routing to
+  // happen at all.
+  handle(IPC.invoke.sessionModels, async () => {
+    throw Object.assign(new Error("local sessions use the configured provider list"), {
+      errorCode: ErrorCodes.CAPABILITY_UNAVAILABLE,
+    });
+  });
+
   handle(IPC.invoke.sessionImportScan, async () => {
     const { sessions, truncated } = await scanAllSources();
     scannedImportSessions = new Map(

@@ -30,6 +30,7 @@ import { useSessionScreen } from "../hooks/useSessionScreen.js";
 
 import { useTimelineScroll } from "../hooks/useTimelineScroll.js";
 import type { HostCredential } from "../lib/credential-port.js";
+import { failureReasonText } from "../lib/i18n.js";
 import { gatewayOrigin } from "../lib/runtime.js";
 import {
   resolveConnectionBanner,
@@ -41,7 +42,14 @@ export interface SessionScreenProps {
   sessionId: string;
   title: string;
   credential: HostCredential;
-  hostLabel?: string;
+  /**
+   * The name the person gave the computer. Required on purpose: it is what the
+   * header shows, and an optional field is what let the one path that reaches
+   * this screen forget it and print `host_10ed0253-…` over a conversation.
+   * Empty is allowed and falls back to the id, for a registration written before
+   * the desktop reported a name.
+   */
+  hostLabel: string;
   onBack: () => void;
   onForget?: () => void;
 }
@@ -71,6 +79,33 @@ export function SessionScreen({
       credential,
       gatewayOrigin,
     });
+
+  const latestModelItem = [...timeline.items].reverse().find((item) => item.modelId);
+  const effectiveSession = timeline.session
+    ? {
+        ...timeline.session,
+        ...(timeline.session.providerId || latestModelItem?.providerId
+          ? { providerId: timeline.session.providerId || latestModelItem?.providerId }
+          : {}),
+        ...(timeline.session.modelId || latestModelItem?.modelId
+          ? { modelId: timeline.session.modelId || latestModelItem?.modelId }
+          : {}),
+        ...(timeline.session.modelLabel || timeline.session.modelId || latestModelItem?.modelId
+          ? { modelLabel: timeline.session.modelLabel || timeline.session.modelId || latestModelItem?.modelId }
+          : {}),
+      }
+    : null;
+  const matchedModel =
+    models.find(
+      (m) =>
+        (effectiveSession?.providerId && m.providerId === effectiveSession.providerId && m.modelId === effectiveSession?.modelId) ||
+        (!effectiveSession?.providerId && effectiveSession?.modelId && m.modelId === effectiveSession.modelId),
+    ) ?? (!effectiveSession?.modelId ? (models.find((m) => m.isDefault) ?? models[0]) : undefined);
+  const modelDisplay =
+    matchedModel?.label ||
+    effectiveSession?.modelLabel ||
+    effectiveSession?.modelId ||
+    t("model.hostDefault");
 
   const active = turnId !== undefined;
   const attention = timeline.pendingApprovals.length + timeline.pendingInputs.length;
@@ -238,7 +273,7 @@ export function SessionScreen({
           instead of silently missed: the count is the rows they have not seen,
           and an open decision takes precedence over it. */}
       {scroll.following ? null : (
-        <div className="pointer-events-none absolute inset-x-0 bottom-24 z-20 flex justify-center">
+        <div className="pointer-events-none absolute inset-x-0 bottom-32 z-20 flex justify-center">
           <Button
             variant="secondary"
             size="small"
@@ -273,6 +308,25 @@ export function SessionScreen({
             />
           ) : null}
 
+          {!timeline.archived ? (
+            <div className="flex items-center gap-1.5 overflow-x-auto px-1 text-[12px] leading-[16px] text-[var(--rm-text-secondary)]">
+              <button
+                type="button"
+                onClick={() => {
+                  setInfoOpen(true);
+                  void actions.loadModels();
+                }}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--rm-bg-surface)] px-2.5 py-1 ring-1 ring-[var(--rm-separator)] active:bg-[var(--rm-bg-inset)]"
+              >
+                <span className="max-w-[160px] truncate font-medium text-[var(--rm-text-primary)]">{modelDisplay}</span>
+                <span className="text-[var(--rm-text-faint)]">·</span>
+                <span>{t(`mode.${effectiveSession?.mode ?? "agent"}.title`)}</span>
+                <span className="text-[var(--rm-text-faint)]">·</span>
+                <span>{t(`permission.${effectiveSession?.permissionMode ?? "ask"}.title`)}</span>
+              </button>
+            </div>
+          ) : null}
+
           <ChatComposer
             sending={pending["turn/start"] === true}
             disabled={timeline.archived}
@@ -300,13 +354,13 @@ export function SessionScreen({
       {/* R7: what this session runs on, and the one place to change it. */}
       <SessionInfoSheet
         open={infoOpen}
-        session={timeline.session}
+        session={effectiveSession}
         computerLabel={hostName}
         models={models}
         running={active}
         hasPendingDecision={hasDecision}
         pending={pending["session/configure"] === true || pending["session/rename"] === true}
-        failure={failure?.failure.message ?? null}
+        failure={failure ? failureReasonText(t, failure.failure) : null}
         onClose={() => setInfoOpen(false)}
         onRename={(title) => void actions.rename(title)}
         onConfigure={(input) => void actions.configure(input)}

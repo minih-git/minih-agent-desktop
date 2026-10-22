@@ -48,6 +48,13 @@ export type RemoteGatewayStatus = {
   url?: string;
   /** This desktop's stable Host id, minted at first enrollment. */
   hostId?: string;
+  /**
+   * This computer's own name, as account mode reports it to the Gateway
+   * (`os.hostname()` with the `.local` suffix dropped). Absent when the
+   * platform cannot answer or no account names the machine yet; the accounts
+   * page shows the Host id instead of inventing a name.
+   */
+  hostLabel?: string;
   /** Last failure, cleared by the next successful state change that recovers. */
   lastError?: RemoteGatewayFailure;
   /** When the next reconnect attempt is due, while `state` is `backoff`. */
@@ -59,6 +66,12 @@ export type RemoteGatewayStatus = {
   accountMode?: RemoteGatewayAccountMode;
   /** The persisted strict-mode switch (ADR decision 9); off when absent. */
   strictDevices?: boolean;
+  /**
+   * "Allow same-account computers to join automatically" (ADR amendment 3,
+   * decision 3). On when absent, and device-local: it never travels in a synced
+   * bundle. Only meaningful while the link is on.
+   */
+  desktopAutoAdmission?: boolean;
 };
 
 /** One device paired to this desktop through the Gateway (never a token hash). */
@@ -69,6 +82,15 @@ export type RemoteGatewayDeviceSummary = {
   createdAt: string;
   lastSeenAt?: string;
   revokedAt?: string;
+  /**
+   * What was paired, when the record says so: `desktop` for a computer of the
+   * account admitted with a verified proof, `phone` for everything else the
+   * Gateway paired. Absent on records written before the field existed; those
+   * render as the generic device kind.
+   */
+  deviceClass?: "phone" | "desktop";
+  /** The pairing channel; absent reads as `ssh` (a pre-D665 record). */
+  origin?: "ssh" | "gateway";
 };
 
 export type RemoteGatewayDevicesResult = {
@@ -168,11 +190,24 @@ export type RemoteGatewayDeviceNotice = {
     | "device.revoked"
     /** `label` is the new session's id. */
     | "device.session-created"
+    /**
+     * `label` lists the changed fields as `field: newValue` pairs (ADR 0331
+     * amendment 4); the prompt and transcript never ride along.
+     */
+    | "device.session-configured"
     /** `label` is the registered directory. */
-    | "device.project-registered";
+    | "device.project-registered"
+    /** `label` is the other computer's label; `deviceId` is its Host id. */
+    | "host.joined";
   deviceId: string;
   label: string;
   at: string;
+  /**
+   * `"desktop"` when the device was admitted with a verified proof, so the page
+   * can say a computer joined rather than a phone. Absent on older notices and
+   * on every phone or browser device.
+   */
+  deviceClass?: "phone" | "desktop";
 };
 
 /**
@@ -193,4 +228,21 @@ export type RemoteGatewaySettings = {
    * every device. Device-local, like the rest of this field.
    */
   strictDevices?: boolean;
+  /**
+   * "Allow same-account computers to join automatically" (ADR amendment 3,
+   * decision 3). On when absent: a computer of the account whose proof this Host
+   * verifies is admitted without a confirmation. Device-local like the rest of
+   * this field, and never synced.
+   */
+  desktopAutoAdmission?: boolean;
+  /**
+   * Whether the user has ever made a decision about the remote-control switch.
+   *
+   * Security §3.8 / gate 27 needs three states, not two: "never chosen",
+   * "chosen on", and "chosen off". Absent on every row written before this
+   * field, which reads as "never chosen" — and account mode then defaults the
+   * switch on, because the account already names this desktop. An explicit off
+   * (`decided: true, enabled: false`) is never re-enabled by a default.
+   */
+  decided?: boolean;
 };

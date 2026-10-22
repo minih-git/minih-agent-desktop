@@ -280,21 +280,29 @@ the app, and the H5 client has nothing to register.
   without ids opens the Host list. The payload's text is never rendered, only
   resolved as a key, which is why the notification can say "Needs your decision"
   in the user's language without the Gateway knowing it.
-* **Operator material, never committed.** Two files belong to whoever builds the
-  app, and neither ships in this repository (a test enforces that):
+* **The iOS capability is committed; the signing material is not.** Push needs
+  two different kinds of file, and only one of them is a secret.
 
-  1. **iOS**: enable the *Push Notifications* capability for your App ID in
-     Xcode (target → Signing & Capabilities), which creates
-     `ios/App/App/App.entitlements` with `aps-environment`. A build without it
-     compiles and runs; it simply receives no notification. Ship the APNs `.p8`
-     key — not this file — to the Gateway (`--apns-key-file`, see the Gateway
-     README).
-  2. **Android**: download `google-services.json` from your Firebase project and
-     place it at `android/app/google-services.json` before
-     `pnpm cap:sync`, and add the Google Services Gradle plugin to the app module
-     as Firebase documents. Without it the app builds and runs and simply
-     receives no notification. Ship the service-account JSON — not this file —
-     to the Gateway (`--fcm-service-account-file`).
+  1. **iOS entitlement: in the repository.** `ios/App/App/App.entitlements` holds
+     `aps-environment` and is referenced by both build configurations, because a
+     build without it compiles, runs, and silently receives nothing — the one
+     failure nobody can debug from a log. `src/lib/native-config.test.ts` keeps
+     that file present, keeps it to the push key alone, and still fails if any
+     signing material appears. Signing with automatic signing enables the
+     capability for your App ID on first build. A TestFlight or App Store build
+     needs `production` there instead of `development`, or APNs rejects every
+     token with `BadDeviceToken`.
+  2. **APNs `.p8` key: the Gateway's, never the repository's.** Create it under
+     Apple Developer → Keys, download it once, and install it on the Gateway host
+     as `--apns-key-file` with the key id, team id, and your bundle id
+     (`--apns-key-id`, `--apns-team-id`, `--apns-topic`); see the Gateway README,
+     "Redacted push". The Gateway refuses a key file anyone else can read.
+  3. **Android: still operator material.** Download `google-services.json` from
+     your Firebase project and place it at `android/app/google-services.json`
+     before `pnpm cap:sync`, and add the Google Services Gradle plugin to the app
+     module as Firebase documents. Without it the app builds and runs and simply
+     receives no notification. Ship the service-account JSON — not this file — to
+     the Gateway (`--fcm-service-account-file`).
 
   `VITE_APP_ID` optionally tags a registration with the app id, so one Gateway
   can serve more than one build; absent, the Gateway accepts the registration

@@ -94,6 +94,10 @@
           },
           {
             "type": "string",
+            "const": "waiting_input"
+          },
+          {
+            "type": "string",
             "const": "aborted"
           },
           {
@@ -644,6 +648,10 @@
               {
                 "type": "string",
                 "const": "waiting_permission"
+              },
+              {
+                "type": "string",
+                "const": "waiting_input"
               },
               {
                 "type": "string",
@@ -2117,6 +2125,9 @@
           "workspaceFiles": {
             "type": "boolean"
           },
+          "workspaceRead": {
+            "type": "boolean"
+          },
           "notifications": {
             "type": "boolean"
           },
@@ -2688,6 +2699,10 @@
                   {
                     "type": "string",
                     "const": "android"
+                  },
+                  {
+                    "type": "string",
+                    "const": "desktop"
                   }
                 ]
               },
@@ -2696,6 +2711,34 @@
               },
               "expiresAt": {
                 "type": "string"
+              },
+              "hostProof": {
+                "type": "object",
+                "required": [
+                  "applicantHostId",
+                  "nonce",
+                  "signature",
+                  "certificate"
+                ],
+                "properties": {
+                  "applicantHostId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "nonce": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "signature": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "certificate": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
               }
             }
           }
@@ -2782,6 +2825,38 @@
               },
               "deliverUntil": {
                 "type": "string"
+              },
+              "deviceClass": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "phone"
+                  },
+                  {
+                    "type": "string",
+                    "const": "desktop"
+                  }
+                ]
+              },
+              "applicantHostId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "hostProofNonce": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "requestExpiresAt": {
+                "type": "string"
+              },
+              "applicantCertificate": {
+                "type": "string",
+                "minLength": 1
+              },
+              "hostProofSignature": {
+                "type": "string",
+                "minLength": 1
               }
             }
           },
@@ -2863,6 +2938,100 @@
         "required": [
           "link",
           "type",
+          "notice"
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "const": "racp-hostlink.v1"
+          },
+          "type": {
+            "type": "string",
+            "const": "host.joined"
+          },
+          "notice": {
+            "type": "object",
+            "required": [
+              "noticeId",
+              "accountId",
+              "hostId",
+              "label",
+              "joinedAt"
+            ],
+            "properties": {
+              "noticeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+              },
+              "accountId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "hostId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "joinedAt": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "link",
+          "type",
+          "revocation"
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "const": "racp-hostlink.v1"
+          },
+          "type": {
+            "type": "string",
+            "const": "host.revoked"
+          },
+          "revocation": {
+            "type": "object",
+            "required": [
+              "hostId",
+              "accountId",
+              "revokedAt"
+            ],
+            "properties": {
+              "hostId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+              },
+              "accountId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "revokedAt": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "object",
+        "required": [
+          "link",
+          "type",
           "notify"
         ],
         "properties": {
@@ -2920,6 +3089,11 @@
                 "minLength": 1,
                 "maxLength": 128,
                 "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+              },
+              "attentionCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000
               },
               "occurredAt": {
                 "type": "string",
@@ -3030,6 +3204,10 @@
           "type": "string"
         },
         "minItems": 1
+      },
+      "hostLabel": {
+        "type": "string",
+        "maxLength": 128
       },
       "token": {
         "type": "string",
@@ -3186,6 +3364,9 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 255
+      },
+      "onlyActionable": {
+        "type": "boolean"
       }
     }
   },
@@ -3217,6 +3398,17 @@
         "items": {
           "type": "string",
           "minLength": 1
+        }
+      },
+      "preferences": {
+        "type": "object",
+        "required": [
+          "onlyActionable"
+        ],
+        "properties": {
+          "onlyActionable": {
+            "type": "boolean"
+          }
         }
       }
     }
@@ -3282,6 +3474,11 @@
         "maxLength": 128,
         "pattern": "^[A-Za-z0-9._:-]{1,128}$"
       },
+      "attentionCount": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10000
+      },
       "notifyId": {
         "type": "string",
         "minLength": 1,
@@ -3316,8 +3513,44 @@
           {
             "type": "string",
             "const": "android"
+          },
+          {
+            "type": "string",
+            "const": "desktop"
           }
         ]
+      },
+      "requestId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "hostProof": {
+        "type": "object",
+        "required": [
+          "applicantHostId",
+          "nonce",
+          "signature",
+          "certificate"
+        ],
+        "properties": {
+          "applicantHostId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nonce": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 1
+          },
+          "certificate": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     }
   },
@@ -3345,7 +3578,8 @@
             "label",
             "online",
             "canConfirm",
-            "willAcceptGrant"
+            "willAcceptGrant",
+            "supportsDesktopAuto"
           ],
           "properties": {
             "hostId": {
@@ -3362,6 +3596,9 @@
               "type": "boolean"
             },
             "willAcceptGrant": {
+              "type": "boolean"
+            },
+            "supportsDesktopAuto": {
               "type": "boolean"
             }
           }
@@ -3410,7 +3647,8 @@
             "label",
             "online",
             "canConfirm",
-            "willAcceptGrant"
+            "willAcceptGrant",
+            "supportsDesktopAuto"
           ],
           "properties": {
             "hostId": {
@@ -3427,6 +3665,9 @@
               "type": "boolean"
             },
             "willAcceptGrant": {
+              "type": "boolean"
+            },
+            "supportsDesktopAuto": {
               "type": "boolean"
             }
           }
@@ -3462,6 +3703,92 @@
       "signerHostId": {
         "type": "string",
         "minLength": 1
+      }
+    }
+  },
+  "DesktopProofHttpRequest": {
+    "type": "object",
+    "required": [
+      "deviceLabel",
+      "applicantHostId"
+    ],
+    "properties": {
+      "deviceLabel": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "applicantHostId": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "DesktopProofHttpResponse": {
+    "type": "object",
+    "required": [
+      "requestId",
+      "nonce",
+      "applicantHostId",
+      "accountId",
+      "expiresAt",
+      "hosts"
+    ],
+    "properties": {
+      "requestId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "nonce": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "applicantHostId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "accountId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "expiresAt": {
+        "type": "string"
+      },
+      "hosts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "hostId",
+            "label",
+            "online",
+            "canConfirm",
+            "willAcceptGrant",
+            "supportsDesktopAuto"
+          ],
+          "properties": {
+            "hostId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "label": {
+              "type": "string"
+            },
+            "online": {
+              "type": "boolean"
+            },
+            "canConfirm": {
+              "type": "boolean"
+            },
+            "willAcceptGrant": {
+              "type": "boolean"
+            },
+            "supportsDesktopAuto": {
+              "type": "boolean"
+            }
+          }
+        }
       }
     }
   }

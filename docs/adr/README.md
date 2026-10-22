@@ -20,6 +20,7 @@ Each ADR includes:
 
 | ID | Title | Status |
 |---|---|---|
+| mobile-direct-gateway-chat | [Mobile direct gateway chat alongside remote computers](mobile-direct-gateway-chat.md) | Accepted |
 | background-bash-task-ownership | [Host-owned background Bash tasks](background-bash-task-ownership.md) | Accepted for implementation |
 | network-center-gateway-issued-identity | [Gateway-issued network center identity](network-center-gateway-issued-identity.md) | Accepted for implementation |
 | remote-control-router-account-binding | [Router-account binding for remote control](remote-control-router-account-binding.md) | Accepted for implementation (post-MVP; D666; amends ADR 0331) |
@@ -390,6 +391,8 @@ Each ADR includes:
 | 0332 | [Serve the plugin marketplace from the project's own distribution repository](0332-own-plugin-distribution-repository.md) | Accepted (2026-10-18; supersedes the official-channel half of ADR 0276) |
 | 0333 | [Chat references outside the allowed roots offer reveal and copy](0333-chat-refs-outside-roots-reveal-and-copy.md) | Accepted (2026-10-20; a narrower boundary than ADR 0262's open destinations) |
 | 0334 | [Quote a transcript selection into the composer](0334-selection-quote-into-composer.md) | Accepted (2026-10-20; supersedes ADR 0268 item 2; annotations and side chats stay removed) |
+| 0335 | [Plugins may show a local file in the work-panel Browser view](0335-plugin-open-local-file-in-work-panel.md) | Accepted (2026-10-21; reuses the browser.cdp permission) |
+| 0336 | [Global-only configuration sync and an explicit project archive](0336-global-config-sync-and-project-archive.md) | Accepted (2026-10-21; supersedes the project-scoped half of ADR 0301) |
 | 0337 | [The html fence preview](0337-html-fence-preview.md) | Accepted (2026-10-21; opt-in per surface; scripts stay off until the reader enables them) |
 
 | provider-metadata-client-certificate-retry | [Retry optional client-certificate failures only for provider metadata](provider-metadata-client-certificate-retry.md) | Accepted for implementation |

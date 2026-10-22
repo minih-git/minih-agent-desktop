@@ -2,7 +2,11 @@ import { IPC } from "@minih-agent/shared";
 import i18n from "i18next";
 
 const localOnly = new Set<string>([
-  IPC.invoke.sessionConfigure, IPC.invoke.sessionFork, IPC.invoke.sessionMoveProject,
+  // `sessionConfigure` is deliberately absent: the local handler still serves
+  // local sessions, and a remote session id is routed to the remote backend,
+  // which maps it onto the Host's own `session/configure` (model, thinking,
+  // permission mode).
+  IPC.invoke.sessionFork, IPC.invoke.sessionMoveProject,
   IPC.invoke.sessionReplaceMessages, IPC.invoke.sessionSaveRevision,
   IPC.invoke.sessionListRevisions, IPC.invoke.sessionActivateRevision,
   IPC.invoke.sessionGetScratchPath, IPC.invoke.sessionOpenScratchPath,

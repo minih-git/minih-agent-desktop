@@ -130,8 +130,10 @@ work-panel tab already carries was honoured by main for `pi.browser` only.
   when, the host asks it for a path the host itself picked. A defect in that
   path handling is not caught by the host gateway; that is the same trust
   position ADR 0241 already took, extended by one explicitly-named case.
-- A chat click no longer hands a file to the OS default application. That action
-  is still reachable from the file view's own context menu.
+- A normal chat click no longer hands a file to the OS default application.
+  Explicit transcript context-menu actions can open a local file with its
+  default application or reveal it in the system file manager; both resolve the
+  reference first and reuse the existing host containment checks.
 - A folder reference is actionable where it lives rather than in the app. That is
   a smaller promise than the file view makes — no rename, no drag, no delete —
   and it is the honest one: the app has no folder surface of its own.
@@ -139,9 +141,9 @@ work-panel tab already carries was honoured by main for `pi.browser` only.
   candidate renders as text. A session without local tools never asks, so a
   folder or an extensionless path stays plain text there; a file with a known
   extension is unaffected and stays a link.
-- `fs.resolveRef` is a new renderer-facing channel. `fs/open` (ADR 0163) remains
-  part of the IPC surface; the transcript is simply no longer one of its
-  callers.
+- `fs.resolveRef` is a renderer-facing channel. Explicit transcript context-menu
+  destinations reuse `fs/open` (ADR 0163) and `fs/reveal`; normal clicks retain
+  the file-view and browser destinations above.
 
 ## Alternatives considered
 
