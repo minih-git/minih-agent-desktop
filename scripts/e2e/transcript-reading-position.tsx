@@ -1,3 +1,6 @@
+import { useRef } from "react";
+import { useTranscriptReadingPosition } from "../../apps/desktop/src/hooks/use-transcript-reading-position";
+import { sessionReadingState } from "../../apps/desktop/src/lib/transcript-reading-position";
 import "./session-reading-position";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
@@ -58,6 +61,27 @@ function Pane({ id, visible, running }: { id: string; visible: boolean; running:
   </div>;
 }
 
+let restoredPinned = true;
+function RevealFixture({ visible }: { visible: boolean }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const pinnedRef = useRef(true);
+  useTranscriptReadingPosition({
+    sessionId: "stale-follow", scrollRef, contentRef, pinnedRef, visible,
+    windowSize: 80, contentVersion: visible,
+    onPosition: () => { restoredPinned = pinnedRef.current; },
+    onMissing: () => { throw new Error("the mounted bookmark must exist"); },
+  });
+  return <div data-reveal-fixture ref={scrollRef}
+    style={{ height: 300, overflowY: "auto", visibility: visible ? "visible" : "hidden" }}>
+    <div ref={contentRef}>
+      <div style={{ height: 500 }} />
+      <div data-message-id="reveal-row" style={{ height: 100 }}>Bookmarked row</div>
+      <div style={{ height: 1500 }} />
+    </div>
+  </div>;
+}
+
 declare global { var transcriptReadingPositionProbe: () => Promise<unknown>; }
 globalThis.transcriptReadingPositionProbe = async () => {
   const host = document.createElement("div");
@@ -75,6 +99,13 @@ globalThis.transcriptReadingPositionProbe = async () => {
     .firstElementChild as HTMLDivElement;
   const bottom = (el: HTMLDivElement) => Math.abs(el.scrollTop - (el.scrollHeight - el.clientHeight)) < 2;
   try {
+    sessionReadingState("stale-follow").position = undefined;
+    flushSync(() => root.render(<RevealFixture visible={false} />));
+    sessionReadingState("stale-follow").position = { pinned: false, messageId: "reveal-row", offset: 24, scrollTop: 476, windowSize: 80 };
+    flushSync(() => root.render(<RevealFixture visible />));
+    const revealScroller = host.querySelector<HTMLDivElement>("[data-reveal-fixture]")!;
+    await until(() => Math.abs(revealScroller.scrollTop - 476) < 2, "bookmark must restore despite stale pinned=true");
+    assert(!restoredPinned, "the unpinned bookmark must own the reveal");
     select("A");
     await until(() => scroller("A").scrollHeight > 2000 && bottom(scroller("A")), "cold open follows latest");
     const a = scroller("A");

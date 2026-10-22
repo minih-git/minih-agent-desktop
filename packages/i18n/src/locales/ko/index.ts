@@ -2969,6 +2969,8 @@ importConfirm: "가져온 확장은 에이전트 프로세스 안에서 에이�
       authReady_one: "인증됨 · 도구 1개",
       authReady_other: "인증됨 · 도구 {{count}}개",
       authFailed: "인증 실패",
+      authDcrUnavailable:
+        "이 MCP 서버는 동적 클라이언트 등록을 지원하지 않습니다. 서버 운영자에게 클라이언트 ID를 요청하거나 DCR을 지원하는 서버를 사용하세요.",
       oauthBadge: "OAuth",
       transport: "연결 방식",
       transportStdio: "로컬 프로그램",

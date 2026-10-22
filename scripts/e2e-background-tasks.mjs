@@ -90,7 +90,21 @@ app.whenReady().then(async () => {
   for (const [width, height] of [[1280, 800], [700, 800], [390, 844]]) {
     const window = new BrowserWindow({ show: false, width, height, useContentSize: true,
       webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
-    window.webContents.on("console-message", event => console.error(event.message));
+    window.webContents.debugger.attach("1.3");
+    window.webContents.on("console-message", event => {
+      console.error(event.message);
+      if (event.message === "BACKGROUND_NATIVE_KEY Return" || event.message === "BACKGROUND_NATIVE_KEY Space") {
+        const enter = event.message.endsWith("Return");
+        const key = enter ? "Enter" : " ";
+        const code = enter ? "Enter" : "Space";
+        const windowsVirtualKeyCode = enter ? 13 : 32;
+        void window.webContents.debugger.sendCommand("Input.dispatchKeyEvent", {
+          type: "keyDown", key, code, windowsVirtualKeyCode, text: enter ? "\\r" : " ",
+        }).then(() => window.webContents.debugger.sendCommand("Input.dispatchKeyEvent", {
+          type: "keyUp", key, code, windowsVirtualKeyCode,
+        })).catch(error => { console.error(error); app.exit(1); });
+      }
+    });
     try {
       await window.loadFile(join(__dirname, "index.html"));
       const result = await window.webContents.executeJavaScript("globalThis.backgroundTasksProbe()");

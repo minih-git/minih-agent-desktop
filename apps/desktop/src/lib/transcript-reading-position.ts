@@ -27,6 +27,18 @@ export function sessionReadingState(sessionId: string): ReadingState {
 export function getTranscriptReadingPosition(sessionId: string | undefined) {
   return sessionId ? readingStates.get(sessionId)?.position : undefined;
 }
+export type TranscriptRevealOwnership = "reading-position" | "pinned" | "retained";
+
+/** A recorded unpinned bookmark wins over a stale follow flag on pane reveal. */
+export function transcriptRevealOwnership(
+  bookmark: TranscriptReadingPosition | undefined,
+  pending: boolean,
+  pinned: boolean,
+): TranscriptRevealOwnership {
+  if (bookmark?.pinned === false || pending) return "reading-position";
+  return pinned ? "pinned" : "retained";
+}
+
 export function forgetTranscriptReadingState(sessionId: string) {
   readingStates.delete(sessionId);
 }

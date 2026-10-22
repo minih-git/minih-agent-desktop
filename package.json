@@ -54,7 +54,7 @@
     "test:e2e:project-edit": "node scripts/e2e-project-edit.mjs",
     "test:e2e:project-group-memory": "node scripts/e2e-project-group-memory.mjs",
     "test:e2e:provider-api-style": "node scripts/e2e-provider-api-style.mjs",
-    "test:e2e:provider-client-certificate": "node scripts/e2e-provider-client-certificate.mjs",
+    "test:e2e:provider-client-certificate": "node --test scripts/e2e/wait-for-child-exit.test.mjs && node scripts/e2e-provider-client-certificate.mjs",
     "test:e2e:hosted-search": "node scripts/e2e-hosted-search.mjs",
     "test:e2e:oauth-retry": "node --test apps/desktop/test/anthropic-oauth-retry.test.mjs",
     "test:e2e:boot": "node scripts/e2e-electron-boot.mjs",

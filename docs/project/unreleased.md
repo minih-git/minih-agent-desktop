@@ -1,4 +1,15 @@
 # Unreleased changes
+- Isolated-session file references open the branch copy instead of the parent
+  checkout. Revisiting a conversation restores an unpinned reading bookmark
+  even when the follow flag is stale. Large local projects can find deep files
+  with `@` beyond the initial 8000-entry snapshot, while Minih `#` conversation
+  completion stays unchanged.
+- MCP OAuth explains when a server has neither a usable registered client nor
+  dynamic client registration, instead of opening an invalid authorization
+  page. Background-command row leads now toggle output with click or native
+  Enter/Space; Output, Stop and Dismiss remain independent. These are selected
+  upstream adaptations, not a dependency upgrade or a transcript display-mode
+  replacement.
 - The phone's conversation screen now matches your desktop. Tool calls are
   listed by name together with whether they are still running, finished,
   failed, or were denied, and with what they were asked to do, instead of

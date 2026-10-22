@@ -66,6 +66,15 @@ test("a session actually scrolled up keeps its row and offset", () => {
   });
 });
 
+test("an unpinned bookmark owns reveal even when follow still reads pinned", async () => {
+  const { transcriptRevealOwnership } = await import("../src/lib/transcript-reading-position.ts");
+  const bookmark = { pinned: false, messageId: "kept", offset: 24, scrollTop: 480, windowSize: 80 };
+  assert.equal(transcriptRevealOwnership(bookmark, false, true), "reading-position");
+  assert.equal(transcriptRevealOwnership(undefined, true, true), "reading-position");
+  assert.equal(transcriptRevealOwnership(undefined, false, true), "pinned");
+  assert.equal(transcriptRevealOwnership(undefined, false, false), "retained");
+});
+
 test("a hidden or unmetered scroller never replaces a bookmark", () => {
   assert.equal(
     captureTranscriptReadingPosition(scroller({ scrollTop: 0, clientHeight: 0 }), null, true, 80),

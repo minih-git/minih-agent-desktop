@@ -494,6 +494,7 @@ export const IPC = {
     fsRevealChatRef: "minih-agent-desktop/fs/revealChatRef",
     fsOpen: "minih-agent-desktop/fs/open",
     fsIndex: "minih-agent-desktop/fs/index",
+    fsSearch: "minih-agent-desktop/fs/search",
     fsResolveRef: "minih-agent-desktop/fs/resolveRef",
     windowSetWorkPanelReservation:
       "minih-agent-desktop/window/setWorkPanelReservation",

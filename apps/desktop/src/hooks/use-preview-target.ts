@@ -240,7 +240,7 @@ function useResolveChatFileRef() {
       // absolute path and the file view switches to that folder (ADR 0263).
       const primary = match.projectRoot ? match.projectRoot.primary : true;
       return {
-        path: primary ? match.relativePath : match.absolutePath,
+        path: primary && !session?.worktree ? match.relativePath : match.absolutePath,
         absolutePath: match.absolutePath,
         relativePath: match.relativePath,
         inProject: true,

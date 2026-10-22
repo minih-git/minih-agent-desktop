@@ -960,6 +960,29 @@
   font-size: var(--text-sm);
 }
 
+.background-task .background-task-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  height: auto;
+  padding: 6px 10px;
+  color: inherit;
+  text-align: left;
+  white-space: normal;
+}
+
+.background-task-main:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: -2px;
+}
+
+.background-task[data-expanded="true"] .background-task-main {
+  color: var(--ds-text-primary);
+}
+
 .background-task-error {
   margin: 0;
   padding: 6px 10px;

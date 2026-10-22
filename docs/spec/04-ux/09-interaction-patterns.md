@@ -348,6 +348,9 @@ may be retained while exactly one workspace supplies the visible shell context.
   record without a top-of-history or empty-home flash on a first visit. An
   evicted session instead restores its runtime reading bookmark: message id,
   viewport offset, mounted-window budget, and explicit disclosure choices.
+  On a warm reveal, an unpinned bookmark also wins over a stale bottom-follow
+  flag: restore it before any bottom scroll and retain the Jump to latest
+  control. Minih's actual-bottom bookmark sampling remains unchanged.
   Reading bookmarks outlive DOM eviction and project switches, but not a
   renderer/app restart; deleting the session releases them. If the bookmarked
   message is outside the loaded page, read a bounded range around it using the

@@ -203,6 +203,31 @@ async function probe() {
     await until(() => !!document.querySelector(".background-task-output")?.textContent?.includes("task-9"), "last task output is unreachable");
   });
 
+  await check("row lead pointer and native keyboard toggle output without swallowing actions", async () => {
+    await mount();
+    const main = row(0).querySelector<HTMLButtonElement>(".background-task-main");
+    assert(main?.tagName === "BUTTON", "the row lead must be a native button");
+    flushSync(() => row(0).querySelector<HTMLElement>(".background-task-command")!.click());
+    await until(() => main.getAttribute("aria-expanded") === "true", "command click did not open output");
+    click(0);
+    await until(() => main.getAttribute("aria-expanded") === "false", "Output must close once without bubbling");
+    main.focus();
+    console.log("BACKGROUND_NATIVE_KEY Return");
+    await until(() => main.getAttribute("aria-expanded") === "true", "native Enter did not open output");
+    console.log("BACKGROUND_NATIVE_KEY Space");
+    await until(() => main.getAttribute("aria-expanded") === "false", "native Space did not close output");
+    flushSync(() => row(0).querySelector<HTMLElement>(".background-task-state")!.click());
+    await until(() => main.getAttribute("aria-expanded") === "true", "state click did not open output");
+    const taskRow = main.closest<HTMLElement>(".background-task")!;
+    click(0, "Stop");
+    await until(() => taskRow.dataset.state === "stopped", "Stop must keep its own action");
+    assert(main.getAttribute("aria-expanded") === "true", "Stop must not toggle output");
+    const dismiss = [...taskRow.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Dismiss");
+    assert(dismiss, "Dismiss must remain available on the stopped task");
+    flushSync(() => dismiss.click());
+    await until(() => document.querySelectorAll(".background-task").length === 9, "Dismiss must remove only its own row");
+  });
+
   await check("only the selected log refreshes and remains bounded", async () => {
     await mount();
     assert(requests.length === 0, "collapsed logs must not cross IPC");

@@ -9,6 +9,7 @@ import {
 import { api } from "../../lib/api";
 import { useAppStore } from "../../stores/app-store";
 import { useHostCollection } from "../../hooks/use-host-collection";
+import { mcpOAuthErrorCodeOf, mcpOAuthErrorTranslationKey } from "../../lib/mcp-oauth-error";
 import {
   AgentCapabilityPage,
   AgentProjectPicker,
@@ -295,7 +296,12 @@ export function AgentMcpPage() {
         });
         cleanup();
       } else if (event.kind === "error") {
-        showToast(event.message || t("extensions.mcp.authFailed"), { variant: "error" });
+        // A known recovery path shows translated guidance; an unknown failure
+        // keeps the detail main reported.
+        const errorKey = mcpOAuthErrorTranslationKey(event.errorCode);
+        showToast((errorKey && t(errorKey)) || event.message || t("extensions.mcp.authFailed"), {
+          variant: "error",
+        });
         cleanup();
       } else if (event.kind === "cancelled") {
         cleanup();
@@ -317,7 +323,14 @@ export function AgentMcpPage() {
         cleanup();
       }
     } catch (error) {
-      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
+      // A start that fails before the background flow carries the same
+      // structured code as a pushed error event; anything else keeps the
+      // detail main reported so an unexpected failure stays readable.
+      const errorKey = mcpOAuthErrorTranslationKey(mcpOAuthErrorCodeOf(error));
+      showToast(
+        (errorKey && t(errorKey)) || (error instanceof Error ? error.message : String(error)),
+        { variant: "error" },
+      );
       cleanup();
     }
   };

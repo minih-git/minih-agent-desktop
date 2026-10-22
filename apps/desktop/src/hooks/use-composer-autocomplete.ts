@@ -34,6 +34,7 @@ import { sessionTargetCandidates } from "../features/chat/composer/session-targe
 
 const MAX_FILE_ITEMS = 50;
 const SOURCE_TTL_MS = 10_000;
+const FILE_SEARCH_DEBOUNCE_MS = 150;
 
 export type AutocompleteItem =
   | { kind: "command"; command: ComposerCommand; match: FuzzyMatch }
@@ -106,9 +107,12 @@ function filterCommands(
 
 function filterFiles(entries: FsIndexEntry[], query: string): AutocompleteItem[] {
   const matched: Array<{ entry: FsIndexEntry; match: FuzzyMatch }> = [];
+  const seen = new Set<string>();
   for (const entry of entries) {
     const match = fuzzyMatchPath(query, entry.path, entry.kind);
-    if (match) matched.push({ entry, match });
+    if (!match || seen.has(entry.path)) continue;
+    seen.add(entry.path);
+    matched.push({ entry, match });
   }
   // The index can hold thousands of entries while the menu shows at most
   // MAX_FILE_ITEMS, so only the bounded top slice is ever ordered.
@@ -172,6 +176,7 @@ export function useComposerAutocomplete({
   const sessionId = useAppStore((s) => s.activeSessionId);
   const workspaceKey = useAppStore((s) => s.workspace?.path ?? "");
   const hasWorkspace = workspaceKey !== "";
+  const fileSourceKey = JSON.stringify([workspaceKey, sessionId ?? ""]);
   const ready = useAppStore((s) => s.ready);
   // The session targets come from the store, not from the host: the list is
   // already there, so a `#` never waits for a round trip.
@@ -180,6 +185,13 @@ export function useComposerAutocomplete({
   const activeProjectPath = useAppStore((s) => s.activeProjectPath);
   const [commands, setCommands] = useState<ComposerCommand[] | null>(null);
   const [files, setFiles] = useState<{
+    scope: string;
+    entries: FsIndexEntry[];
+    truncated: boolean;
+  } | null>(null);
+  const filesHere = files?.scope === fileSourceKey ? files : null;
+  const [found, setFound] = useState<{
+    scope: string;
     entries: FsIndexEntry[];
     truncated: boolean;
   } | null>(null);
@@ -231,36 +243,60 @@ export function useComposerAutocomplete({
       };
     }
     if (!hasWorkspace) {
-      setFiles({ entries: [], truncated: false });
+      setFiles({ scope: fileSourceKey, entries: [], truncated: false });
       return;
     }
     if (
       filesCache &&
-      filesCache.key === workspaceKey &&
+      filesCache.key === fileSourceKey &&
       now - filesCache.at < SOURCE_TTL_MS
     ) {
-      setFiles({ entries: filesCache.entries, truncated: filesCache.truncated });
+      setFiles({ scope: fileSourceKey, entries: filesCache.entries, truncated: filesCache.truncated });
       return;
     }
     let cancelled = false;
     void api
       .fsIndex(sessionId)
       .then((res) => {
-        filesCache = {
-          key: workspaceKey,
-          at: Date.now(),
-          entries: res.entries,
-          truncated: res.truncated,
-        };
-        if (!cancelled) setFiles({ entries: res.entries, truncated: res.truncated });
+        if (cancelled) return;
+        filesCache = { key: fileSourceKey, at: Date.now(), ...res };
+        setFiles({ scope: fileSourceKey, ...res });
       })
       .catch(() => {
-        if (!cancelled) setFiles({ entries: [], truncated: false });
+        if (!cancelled) setFiles({ scope: fileSourceKey, entries: [], truncated: false });
       });
     return () => {
       cancelled = true;
     };
-  }, [trigger?.mode, dismissed, workspaceKey, hasWorkspace, sessionId]);
+  }, [trigger?.mode, dismissed, workspaceKey, hasWorkspace, sessionId, fileSourceKey]);
+
+  // Search only beyond a truncated snapshot. Every answer belongs to exactly
+  // one session, token and query; late results cannot replace the current menu.
+  const fileQuery = trigger?.mode === "file" && !dismissed && filesHere?.truncated
+    ? trigger.query : "";
+  const searchScope = JSON.stringify([fileSourceKey, triggerKey, fileQuery]);
+  useEffect(() => {
+    if (!fileQuery) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void api.fsSearch(sessionId, fileQuery).then((res) => {
+        if (!cancelled) setFound({ scope: searchScope, ...res });
+      }).catch(() => {
+        // Keep the usable snapshot and its truncation note on search failure.
+        if (!cancelled) setFound({ scope: searchScope, entries: [], truncated: true });
+      });
+    }, FILE_SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [fileQuery, searchScope, sessionId]);
+  useEffect(() => {
+    if (!triggerKey) setFound(null);
+  }, [triggerKey]);
+  const foundHere = fileQuery !== "" && found?.scope === searchScope ? found : null;
+  const fileTruncated = (filesHere?.truncated ?? false) &&
+    (!fileQuery || !foundHere || foundHere.truncated);
 
   // Warm the `/` source once bootstrap settles, so the first slash of a session
   // does not wait for a cold host round trip (#1543). Waiting for `ready` keeps
@@ -285,8 +321,11 @@ export function useComposerAutocomplete({
         query: trigger.query,
       }).map(({ session, match }) => ({ kind: "session", session, match }));
     }
-    return files ? filterFiles(files.entries, trigger.query) : [];
-  }, [trigger, dismissed, commands, files, sessions, sessionMeta, sessionId, activeProjectPath]);
+    return filesHere ? filterFiles(
+      foundHere ? [...foundHere.entries, ...filesHere.entries] : filesHere.entries,
+      trigger.query,
+    ) : [];
+  }, [trigger, dismissed, commands, filesHere, foundHere, sessions, sessionMeta, sessionId, activeProjectPath]);
 
   // New query or mode restarts keyboard navigation at the top hit.
   const itemsKey = trigger ? `${trigger.mode}:${trigger.query}` : "";
@@ -303,7 +342,7 @@ export function useComposerAutocomplete({
       ? commands !== null
       : trigger.mode === "session"
         ? items.length > 0
-        : files !== null);
+        : filesHere !== null);
   const open = !!trigger && !dismissed && sourceReady;
 
   const close = useCallback(() => {
@@ -359,7 +398,7 @@ export function useComposerAutocomplete({
     hasItems: open && items.length > 0,
     highlight,
     setHighlight,
-    truncated: open && trigger?.mode === "file" ? (files?.truncated ?? false) : false,
+    truncated: open && trigger?.mode === "file" ? fileTruncated : false,
     noWorkspace: open && trigger?.mode === "file" && !hasWorkspace,
     close,
     accept,

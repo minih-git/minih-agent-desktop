@@ -2940,6 +2940,7 @@ sklm: {
       authReady_one: "已授权 · 1 个工具",
       authReady_other: "已授权 · {{count}} 个工具",
       authFailed: "授权失败",
+      authDcrUnavailable: "此 MCP 服务器不支持动态客户端注册。请向服务器运营方索取客户端 ID，或改用支持 DCR 的服务器。",
       oauthBadge: "OAuth",
       transport: "连接方式",
       transportStdio: "本地程序",
