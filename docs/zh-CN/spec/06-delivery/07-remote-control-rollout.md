@@ -558,7 +558,9 @@ D666（2026-10-18，ADR `remote-control-router-account-binding`）在 R4–R6 �
   该头，继续使用 `RACP-HTTP` + SSE），并复用现有的 hash 快速拒绝、限流与审计；它只是传输，
   不是第二条授权路径。**工作包 A–D 已实现**（契约、Gateway 的 proof 签发与转发、Host 自己
   校验并自动授予、桌面端的 `account` 传输与开关三态，以及工作包 D 的会话删除与按连接
-  `workspaceRead` 能力门禁的只读文件面板），工作包 E–G 尚未实现；
+  `workspaceRead` 能力门禁的只读文件面板）。工作包 E 已分两层实现：账号电脑带着能力与升级
+  状态进入主机列表，新建项目把它们作为独立来源（见下）。侧栏分组、那里的离线与「需要升级」
+  状态，以及工作包 F 尚未实现；
 - 工作包 D 只对 desktop 类设备开放 `session/delete` 与 `workspace/list|read|diff`，复用
   `packages/host-runtime` 的共享实现（同一「空闲才可改」规则返回 `AGENT_BUSY`、同一会话根
   包含校验、同一体积上限），并把远程删除接到桌面自己的删除 IPC，使运行时清理只跑一次。
@@ -578,7 +580,15 @@ D666（2026-10-18，ADR `remote-control-router-account-binding`）在 R4–R6 �
   在本机执行；A 只用会话／turn／审批操作与 `workspace/list|read|diff`（文件面板），走工作包
   B 的 `RACP-WS` 路由，不走 `RACP-HTTP` 路由表。`workspace/toolExecute` 仍只属于 SSH 的
   「本地 Agent + 远程工具」模式，因此 P0 测量中 Gateway 路径的小 Bash `n = 0` 是预期结果；
-- SSH 配对主机保留「本地 Agent + 远程工具」形态，并在界面上与账号电脑区分显示。
+- SSH 配对主机保留「本地 Agent + 远程工具」形态，并在界面上与账号电脑区分显示；
+- 新建项目提供**三种**来源，两种远程来源是不同的形态：**账号电脑**把文件夹注册在那台机器
+  上并打开一个 Agent 也在那台机器上运行的会话；**SSH 主机**保留「本地 Agent + 远程工具」。
+  对话框会写明用户选的是哪一种。账号电脑的项目**不记录本地项目组**：记录项目组会把本机
+  workspace 绑定到另一台机器上的文件夹，从而把账号电脑退回 SSH 形态。本机保留的是会话引用，
+  侧栏按它所在的电脑分组。离线或版本过旧的电脑仍然列出并说明原因——藏起一台用户已知的机器
+  什么也解释不了；
+- 账号电脑列表与 SSH 主机列表永不重叠：只有显式 `account` 传输才是账号电脑，因此本次发布
+  之前写入的配对仍留在它一直所在的 SSH 一侧。
 
 退出条件：`E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop` 通过；安全 gate 25、27、35
 签署（手机仍不获得 `owner`、明确关闭的开关保持关闭、无 Host 校验证明或 nonce 过期/重放的

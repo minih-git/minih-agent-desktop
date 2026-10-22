@@ -490,8 +490,11 @@ Scope notes:
   (the contract, the Gateway's proof minting and relays, the Host's own
   verification with automatic admission, the desktop's `account` transport with
   the switch's three states, and package D's session delete plus the read-only
-  file panel behind the per-connection `workspaceRead` capability); packages
-  E–G are not;
+  file panel behind the per-connection `workspaceRead` capability). Package E is
+  implemented in two layers: the account computers reach the host list with
+  their capabilities and upgrade state, and New project offers them as their own
+  source (below). The sidebar grouping, the offline and needs-an-update states
+  there, and package F are not;
 - package D opens `session/delete` and `workspace/list|read|diff` to a
   desktop-class device only, reuses the shared `packages/host-runtime`
   implementations (one idle rule answering `AGENT_BUSY`, one session-root
@@ -534,6 +537,19 @@ Scope notes:
   a gap;
 - SSH-paired hosts keep the local-Agent + remote-workspace-tools shape and are
   shown as a separate kind of host.
+- New project offers **three** sources, and the two remote ones are different
+  shapes: an **account computer** registers the folder there and opens a session
+  whose Agent runs there, while an **SSH host** keeps the local Agent with remote
+  tools. The dialog states which one the user is choosing. An account project
+  records **no local project group**: a group would bind this desktop's
+  workspace to a folder on another machine and turn the account computer back
+  into the SSH shape. The session reference is what this desktop keeps, and the
+  sidebar groups it under the computer it runs on. A computer that is offline or
+  behind this release is still listed and says why, because hiding a machine the
+  user knows about explains nothing;
+- the account computer list and the SSH host list never overlap: only an
+  explicit `account` transport is an account computer, so a pairing written
+  before this release stays on the SSH side where it has always been.
 
 Exit criteria:
 
