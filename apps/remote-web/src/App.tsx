@@ -361,6 +361,11 @@ export default function App() {
           connection={connection}
           onConnect={() => navigate({ kind: "modelGateway", from: "chats" })}
           onChanged={notifyDirectChatChanged}
+          onNewConversation={(modelId) => {
+            directChatService().rememberModel(modelId);
+            reloadConnection();
+            navigate({ kind: "chat", conversationId: `conv-${Date.now().toString(36)}` });
+          }}
         />
       );
     }

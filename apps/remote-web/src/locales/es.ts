@@ -448,6 +448,16 @@ export const es: Record<TranslationKey, string> = {
 
   "directChat.noModel": "Todavía no hay un modelo elegido. Elige uno para empezar.",
 
+  "directChat.reason.unauthorized": "La pasarela de modelos rechazó esta clave. Vuelve a conectar para continuar.",
+  "directChat.reason.quota": "La cuenta se quedó sin cuota o envía demasiado rápido.",
+  "directChat.reason.networkRange": "Esta clave está limitada a determinadas redes.",
+  "directChat.reason.transport": "No se pudo alcanzar la pasarela de modelos.",
+  "directChat.reason.storage": "La respuesta no se pudo guardar en este teléfono.",
+  "directChat.reason.contextOverflow": "Esta conversación ya no cabe en el contexto del modelo. Empieza otra.",
+  "directChat.reason.interrupted": "Interrumpido · arriba está lo que llegó",
+  "directChat.reason.gateway": "La pasarela de modelos falló.",
+  "directChat.newChat": "Nueva conversación",
+
   "connect.title": "Controla tus agentes desde tu teléfono",
   "connect.subtitle": "Consulta el progreso, aprueba acciones y continúa la conversación. El trabajo sigue ejecutándose en tu ordenador.",
   "connect.feature.shield.title": "Aprobar o denegar solicitudes de herramientas",

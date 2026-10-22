@@ -27,7 +27,12 @@ import { resolveDirectModel } from "../lib/direct-chat/catalog.js";
 import type { DirectChatAttempt, DirectChatTranscript } from "../lib/direct-chat/history-store.js";
 import { isIdle } from "../lib/direct-chat/history.js";
 import { scopeKey } from "../lib/direct-chat/history-store.js";
-import { projectDirectTranscript, transcriptAsMarkdown } from "../lib/direct-chat/view.js";
+import {
+  failureReasonKey,
+  isRetryableFailure,
+  projectDirectTranscript,
+  transcriptAsMarkdown,
+} from "../lib/direct-chat/view.js";
 import type { DirectChatConnection } from "../lib/direct-chat/connection.js";
 import { createIdempotencyKey, createRequestId } from "../lib/ids.js";
 import {
@@ -50,6 +55,8 @@ export type DirectChatScreenProps = {
   onConnect: () => void;
   /** Called after a change D1 must see (rename, archive, delete). */
   onChanged?: () => void;
+  /** Start a fresh conversation, offered when this one no longer fits. */
+  onNewConversation?: (modelId: string) => void;
 };
 
 export function DirectChatScreen({
@@ -58,6 +65,7 @@ export function DirectChatScreen({
   connection,
   onConnect,
   onChanged,
+  onNewConversation,
 }: DirectChatScreenProps) {
   const { t } = useTranslation();
   const history = directChatHistory();
@@ -318,18 +326,31 @@ export function DirectChatScreen({
         {view?.retryable && !foreignScope ? (
           <div className="mt-3 flex items-center gap-2 rounded-[12px] bg-[var(--rm-bg-inset)] px-3 py-2 text-[13px] leading-[18px] text-[var(--rm-text-secondary)]">
             <span className="min-w-0 flex-1">
-              {view.retryable.state === "interrupted"
-                ? t("directChat.state.interrupted")
-                : view.retryable.state === "stopped"
-                  ? t("directChat.state.stopped")
-                  : t("directChat.state.failed")}
+              {view.retryable.state === "stopped"
+                ? t("directChat.state.stopped")
+                : view.retryable.state === "interrupted"
+                  ? t("directChat.state.interrupted")
+                  : // A failure says what failed, not merely that it failed.
+                    t(failureReasonKey(view.retryable.errorKind))}
             </span>
-            <Button variant="secondary" size="small" disabled={!idle} onClick={() => void retry(view.retryable!)}>
-              <span className="inline-flex items-center gap-1">
-                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-                {t("directChat.retry")}
-              </span>
-            </Button>
+            {isRetryableFailure(view.retryable.errorKind) ? (
+              <Button variant="secondary" size="small" disabled={!idle} onClick={() => void retry(view.retryable!)}>
+                <span className="inline-flex items-center gap-1">
+                  <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                  {t("directChat.retry")}
+                </span>
+              </Button>
+            ) : (
+              // The request is what is too big: another conversation is the fix.
+              <Button
+                variant="secondary"
+                size="small"
+                disabled={!idle || !nextModel}
+                onClick={() => nextModel && onNewConversation?.(nextModel.id)}
+              >
+                {t("directChat.newChat")}
+              </Button>
+            )}
           </div>
         ) : null}
 

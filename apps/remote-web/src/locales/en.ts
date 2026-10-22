@@ -452,6 +452,16 @@ export const en = {
 
   "directChat.noModel": "No model is chosen yet. Pick one to start.",
 
+  "directChat.reason.unauthorized": "The model gateway rejected this key. Reconnect to continue.",
+  "directChat.reason.quota": "The account is out of quota or sending too fast.",
+  "directChat.reason.networkRange": "This key is limited to particular networks.",
+  "directChat.reason.transport": "The model gateway could not be reached.",
+  "directChat.reason.storage": "The reply could not be saved on this phone.",
+  "directChat.reason.contextOverflow": "This conversation no longer fits the model's context. Start a new one.",
+  "directChat.reason.interrupted": "Interrupted · the text above is what arrived",
+  "directChat.reason.gateway": "The model gateway failed.",
+  "directChat.newChat": "New chat",
+
   "connect.title": "Control your agents from your phone",
   "connect.subtitle": "Check progress, approve actions, and keep the conversation going. Work keeps running on your computer.",
   "connect.feature.shield.title": "Approve or deny tool requests",

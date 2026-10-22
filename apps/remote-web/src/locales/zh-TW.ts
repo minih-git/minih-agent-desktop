@@ -448,6 +448,16 @@ export const zhTW: Record<TranslationKey, string> = {
 
   "directChat.noModel": "還沒有選擇模型。請先選擇一個。",
 
+  "directChat.reason.unauthorized": "模型閘道拒絕了這個金鑰。重新連接後可繼續。",
+  "directChat.reason.quota": "帳號額度不足，或請求過於頻繁。",
+  "directChat.reason.networkRange": "這個金鑰限定在特定網路使用。",
+  "directChat.reason.transport": "無法連接到模型閘道。",
+  "directChat.reason.storage": "這則回覆沒能儲存到這台手機。",
+  "directChat.reason.contextOverflow": "這個對話已超出模型的上下文長度。請新增對話。",
+  "directChat.reason.interrupted": "已中斷 · 上面是已收到的內容",
+  "directChat.reason.gateway": "模型閘道發生錯誤。",
+  "directChat.newChat": "新增對話",
+
   "connect.title": "在手機上接管你的 Agent",
   "connect.subtitle": "查看進度、批准操作、繼續對話。任務仍在你的電腦上運行。",
   "connect.feature.shield.title": "批准或拒絕工具請求",

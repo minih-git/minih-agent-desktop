@@ -448,6 +448,16 @@ export const ptBR: Record<TranslationKey, string> = {
 
   "directChat.noModel": "Ainda não há um modelo escolhido. Escolha um para começar.",
 
+  "directChat.reason.unauthorized": "O gateway de modelos recusou esta chave. Reconecte para continuar.",
+  "directChat.reason.quota": "A conta está sem cota ou enviando rápido demais.",
+  "directChat.reason.networkRange": "Esta chave é limitada a determinadas redes.",
+  "directChat.reason.transport": "Não foi possível alcançar o gateway de modelos.",
+  "directChat.reason.storage": "A resposta não pôde ser salva neste celular.",
+  "directChat.reason.contextOverflow": "Esta conversa não cabe mais no contexto do modelo. Comece outra.",
+  "directChat.reason.interrupted": "Interrompido · acima está o que chegou",
+  "directChat.reason.gateway": "O gateway de modelos falhou.",
+  "directChat.newChat": "Nova conversa",
+
   "connect.title": "Controle seus agentes do seu celular",
   "connect.subtitle": "Acompanhe o progresso, aprove ações e continue a conversa. O trabalho continua rodando no seu computador.",
   "connect.feature.shield.title": "Aprovar ou recusar solicitações de ferramentas",

@@ -448,6 +448,16 @@ export const fr: Record<TranslationKey, string> = {
 
   "directChat.noModel": "Aucun modèle n'est encore choisi. Choisissez-en un pour commencer.",
 
+  "directChat.reason.unauthorized": "La passerelle de modèles a refusé cette clé. Reconnectez pour continuer.",
+  "directChat.reason.quota": "Le compte est à court de quota ou envoie trop vite.",
+  "directChat.reason.networkRange": "Cette clé est limitée à certains réseaux.",
+  "directChat.reason.transport": "La passerelle de modèles est injoignable.",
+  "directChat.reason.storage": "La réponse n'a pas pu être enregistrée sur ce téléphone.",
+  "directChat.reason.contextOverflow": "Cette discussion ne tient plus dans le contexte du modèle. Commencez-en une autre.",
+  "directChat.reason.interrupted": "Interrompu · ce qui est arrivé est ci-dessus",
+  "directChat.reason.gateway": "La passerelle de modèles a échoué.",
+  "directChat.newChat": "Nouvelle discussion",
+
   "connect.title": "Contrôlez vos agents depuis votre téléphone",
   "connect.subtitle": "Suivez la progression, approuvez les actions et poursuivez la conversation. Le travail continue de s'exécuter sur votre ordinateur.",
   "connect.feature.shield.title": "Approuver ou refuser les requêtes d'outils",

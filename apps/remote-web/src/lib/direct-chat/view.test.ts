@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { DirectChatAttempt, DirectChatTranscript } from "./history-store.js";
-import { completionMarker, projectDirectTranscript, transcriptAsMarkdown } from "./view.js";
+import {
+  completionMarker,
+  failureReasonKey,
+  isRetryableFailure,
+  projectDirectTranscript,
+  transcriptAsMarkdown,
+} from "./view.js";
 
 const T0 = "2026-10-21T09:00:00.000Z";
 
@@ -219,5 +225,27 @@ describe("a reply that has not started writing yet", () => {
       { liveText: "the first words" },
     );
     expect(view.items.find((item) => item.id === "live-a1")?.text).toBe("the first words");
+  });
+});
+
+describe("explaining a failed reply", () => {
+  it("gives every kind its own reason key", () => {
+    expect(failureReasonKey("unauthorized")).toBe("directChat.reason.unauthorized");
+    expect(failureReasonKey("quota")).toBe("directChat.reason.quota");
+    expect(failureReasonKey("network-range")).toBe("directChat.reason.networkRange");
+    expect(failureReasonKey("transport")).toBe("directChat.reason.transport");
+    expect(failureReasonKey("storage")).toBe("directChat.reason.storage");
+    expect(failureReasonKey("context-overflow")).toBe("directChat.reason.contextOverflow");
+    expect(failureReasonKey("interrupted")).toBe("directChat.reason.interrupted");
+    // Anything unrecognized is still explained, not shown blank.
+    expect(failureReasonKey("gateway")).toBe("directChat.reason.gateway");
+    expect(failureReasonKey(null)).toBe("directChat.reason.gateway");
+  });
+
+  it("knows which failures retrying cannot fix", () => {
+    expect(isRetryableFailure("context-overflow")).toBe(false);
+    for (const kind of ["unauthorized", "quota", "transport", "storage", "interrupted", null]) {
+      expect(isRetryableFailure(kind), String(kind)).toBe(true);
+    }
   });
 });

@@ -448,6 +448,16 @@ export const de: Record<TranslationKey, string> = {
 
   "directChat.noModel": "Es ist noch kein Modell gewählt. Zum Starten eines wählen.",
 
+  "directChat.reason.unauthorized": "Das Modell-Gateway hat diesen Schlüssel abgelehnt. Neu verbinden, um fortzufahren.",
+  "directChat.reason.quota": "Das Konto hat kein Guthaben mehr oder sendet zu schnell.",
+  "directChat.reason.networkRange": "Dieser Schlüssel ist auf bestimmte Netze beschränkt.",
+  "directChat.reason.transport": "Das Modell-Gateway war nicht erreichbar.",
+  "directChat.reason.storage": "Die Antwort konnte auf diesem Telefon nicht gespeichert werden.",
+  "directChat.reason.contextOverflow": "Diese Unterhaltung passt nicht mehr in den Kontext des Modells. Neue beginnen.",
+  "directChat.reason.interrupted": "Unterbrochen · oben steht, was ankam",
+  "directChat.reason.gateway": "Das Modell-Gateway ist fehlgeschlagen.",
+  "directChat.newChat": "Neue Unterhaltung",
+
   "connect.title": "Steuere deine Agenten von deinem Telefon aus",
   "connect.subtitle": "Fortschritt prüfen, Aktionen genehmigen und die Unterhaltung fortsetzen. Die Arbeit läuft auf deinem Computer weiter.",
   "connect.feature.shield.title": "Tool-Anfragen genehmigen oder ablehnen",

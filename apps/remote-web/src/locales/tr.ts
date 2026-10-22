@@ -448,6 +448,16 @@ export const tr: Record<TranslationKey, string> = {
 
   "directChat.noModel": "Henüz bir model seçilmedi. Başlamak için birini seçin.",
 
+  "directChat.reason.unauthorized": "Model ağ geçidi bu anahtarı reddetti. Sürdürmek için yeniden bağlanın.",
+  "directChat.reason.quota": "Hesabın kotası bitti veya çok hızlı gönderiyor.",
+  "directChat.reason.networkRange": "Bu anahtar belirli ağlarla sınırlı.",
+  "directChat.reason.transport": "Model ağ geçidine ulaşılamadı.",
+  "directChat.reason.storage": "Yanıt bu telefona kaydedilemedi.",
+  "directChat.reason.contextOverflow": "Bu sohbet artık modelin bağlamına sığmıyor. Yeni bir sohbet başlatın.",
+  "directChat.reason.interrupted": "Kesildi · yukarıda gelen metin var",
+  "directChat.reason.gateway": "Model ağ geçidi başarısız oldu.",
+  "directChat.newChat": "Yeni sohbet",
+
   "connect.title": "Agent'larınızı telefonunuzdan kontrol edin",
   "connect.subtitle": "İlerlemeyi kontrol edin, eylemleri onaylayın ve sohbete devam edin. İşler bilgisayarınızda çalışmaya devam eder.",
   "connect.feature.shield.title": "Araç isteklerini onaylayın veya reddedin",

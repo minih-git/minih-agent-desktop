@@ -448,6 +448,16 @@ export const zhCN: Record<TranslationKey, string> = {
 
   "directChat.noModel": "还没有选择模型。请先选择一个。",
 
+  "directChat.reason.unauthorized": "模型网关拒绝了这个密钥。重新连接后可继续。",
+  "directChat.reason.quota": "账号额度不足，或请求过于频繁。",
+  "directChat.reason.networkRange": "这个密钥限定在特定网络使用。",
+  "directChat.reason.transport": "无法连接到模型网关。",
+  "directChat.reason.storage": "这条回复没能保存到这台手机。",
+  "directChat.reason.contextOverflow": "这个对话已超出模型的上下文长度。请新建对话。",
+  "directChat.reason.interrupted": "已中断 · 上面是已收到的内容",
+  "directChat.reason.gateway": "模型网关出错。",
+  "directChat.newChat": "新建对话",
+
   "connect.title": "在手机上接管你的 Agent",
   "connect.subtitle": "查看进度、批准操作、继续对话。任务仍在你的电脑上运行。",
   "connect.feature.shield.title": "批准或拒绝工具请求",

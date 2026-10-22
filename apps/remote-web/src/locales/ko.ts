@@ -448,6 +448,16 @@ export const ko: Record<TranslationKey, string> = {
 
   "directChat.noModel": "아직 모델을 선택하지 않았습니다. 시작하려면 하나를 선택하세요.",
 
+  "directChat.reason.unauthorized": "모델 게이트웨이가 이 키를 거부했습니다. 계속하려면 다시 연결하세요.",
+  "directChat.reason.quota": "계정 할당량이 부족하거나 너무 빠르게 요청하고 있습니다.",
+  "directChat.reason.networkRange": "이 키는 특정 네트워크로 제한되어 있습니다.",
+  "directChat.reason.transport": "모델 게이트웨이에 연결할 수 없습니다.",
+  "directChat.reason.storage": "답변을 이 휴대폰에 저장하지 못했습니다.",
+  "directChat.reason.contextOverflow": "이 대화가 모델의 컨텍스트를 넘었습니다. 새 대화를 시작하세요.",
+  "directChat.reason.interrupted": "중단됨 · 위에는 도착한 내용입니다",
+  "directChat.reason.gateway": "모델 게이트웨이 오류입니다.",
+  "directChat.newChat": "새 대화",
+
   "connect.title": "휴대폰에서 에이전트를 제어하세요",
   "connect.subtitle": "진행 상황을 확인하고, 작업을 승인하며 대화를 이어가세요. 작업은 컴퓨터에서 계속 실행됩니다.",
   "connect.feature.shield.title": "도구 요청 승인 또는 거부",

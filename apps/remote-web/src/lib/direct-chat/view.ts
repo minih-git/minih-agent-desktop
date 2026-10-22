@@ -155,6 +155,44 @@ export function transcriptAsMarkdown(transcript: DirectChatTranscript): string {
   return `${lines.join("\n").trim()}\n`;
 }
 
+/**
+ * The i18n key for why a reply failed.
+ *
+ * A kind is a next step, so each one gets its own sentence: "the key was
+ * rejected" and "this no longer fits the model" lead to completely different
+ * actions, and a generic "failed" would hide both.
+ */
+export function failureReasonKey(errorKind: string | null): string {
+  switch (errorKind) {
+    case "unauthorized":
+      return "directChat.reason.unauthorized";
+    case "quota":
+      return "directChat.reason.quota";
+    case "network-range":
+      return "directChat.reason.networkRange";
+    case "transport":
+      return "directChat.reason.transport";
+    case "storage":
+      return "directChat.reason.storage";
+    case "context-overflow":
+      return "directChat.reason.contextOverflow";
+    case "interrupted":
+      return "directChat.reason.interrupted";
+    default:
+      return "directChat.reason.gateway";
+  }
+}
+
+/**
+ * Whether retrying the same message could work.
+ *
+ * A context overflow cannot: the request is the thing that is too big, so the
+ * remedy is another conversation and the screen offers that instead.
+ */
+export function isRetryableFailure(errorKind: string | null): boolean {
+  return errorKind !== "context-overflow";
+}
+
 /** How a reply ended, in the words a reader of the copy needs. */
 export function completionMarker(attempt: DirectChatAttempt): string {
   switch (attempt.state) {
