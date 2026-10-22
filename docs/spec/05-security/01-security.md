@@ -84,6 +84,15 @@ path's role stay unknown, and nothing is probed while rendering.
   links, URL attributes, `foreignObject`, script, embedded media, and external
   image elements are removed before the SVG reaches the DOM. Invalid or
   oversized input fails closed to escaped source text.
+- Assistant HTML previews do not widen CSP or renderer privileges either. A
+  completed answer fence renders in a sandboxed `srcdoc` iframe that inherits the
+  app policy, so no `frame-src`, scheme, or `connect-src` entry is added. The
+  default sandbox is empty: the frame keeps an opaque origin and no preload runs
+  inside it, because the main window leaves `nodeIntegrationInSubFrames` off.
+  Scripts stay off until the reader enables them for that one block, and a fence
+  past 100,000 characters fails closed to escaped source text. A frame with
+  scripts enabled can still reach what the policy already allows (`'self'`,
+  `localhost`, `plugin-renderer:`), which is why that stays opt-in per block.
 
 ### Future hardening (tracked, post-MVP)
 

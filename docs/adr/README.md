@@ -386,6 +386,7 @@ Each ADR includes:
 | 0331 | [Self-hosted Gateway, connected desktop Host, and mobile client](0331-self-hosted-gateway-and-mobile-client.md) | Accepted for implementation (post-MVP; D665) |
 | plugin-fetch-redirect-policy | [Host-enforced plugin fetch redirect policy](plugin-fetch-redirect-policy.md) | Accepted (implementation candidate for #1475) |
 | agent-long-term-memory | [Layered, provenance-tracked long-term memory](agent-long-term-memory.md) | Accepted for implementation (D668; amends ADR 0234) |
+| learned-memory-consolidation | [Consolidation proposals and review for learned memory](learned-memory-consolidation.md) | Proposed (amends ADR agent-long-term-memory) |
 
 | local-agent-remote-workspace-tools | [Local Agent and model requests for remote workspaces](local-agent-remote-workspace-tools.md) | Accepted for implementation |
 | 0332 | [Serve the plugin marketplace from the project's own distribution repository](0332-own-plugin-distribution-repository.md) | Accepted (2026-10-18; supersedes the official-channel half of ADR 0276) |
@@ -393,6 +394,7 @@ Each ADR includes:
 | 0334 | [Quote a transcript selection into the composer](0334-selection-quote-into-composer.md) | Accepted (2026-10-20; supersedes ADR 0268 item 2; annotations and side chats stay removed) |
 | 0335 | [Plugins may show a local file in the work-panel Browser view](0335-plugin-open-local-file-in-work-panel.md) | Accepted (2026-10-21; reuses the browser.cdp permission) |
 | 0336 | [Global-only configuration sync and an explicit project archive](0336-global-config-sync-and-project-archive.md) | Accepted (2026-10-21; supersedes the project-scoped half of ADR 0301) |
+| 0337 | [The html fence preview](0337-html-fence-preview.md) | Accepted (2026-10-21; opt-in per surface; scripts stay off until the reader enables them) |
 
 | provider-metadata-client-certificate-retry | [Retry optional client-certificate failures only for provider metadata](provider-metadata-client-certificate-retry.md) | Accepted for implementation |
 | macos-window-translucency-preference | [Preserve macOS glass with a restart-bound opaque preference](macos-window-translucency-preference.md) | Accepted for implementation |

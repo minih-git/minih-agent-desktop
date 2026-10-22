@@ -44,16 +44,17 @@ fn index(manifest: Option<&RevisionManifest>) -> BTreeMap<(String, String), Port
         .unwrap_or_default()
 }
 
+/// Both candidates keep their canonical label: the side is reported separately
+/// (`conflict.side`), so an accepted candidate never carries `(local)` into
+/// the published manifest.
 fn choose_conflict(
     local: &PortableEntity,
     remote: &PortableEntity,
 ) -> (PortableEntity, PortableEntity) {
     let mut local_candidate = local.clone();
     local_candidate.entity_id = format!("{}:local", local_candidate.entity_id);
-    local_candidate.label = format!("{} (local)", local_candidate.label);
     let mut remote_candidate = remote.clone();
     remote_candidate.entity_id = format!("{}:remote", remote_candidate.entity_id);
-    remote_candidate.label = format!("{} (remote)", remote_candidate.label);
     (local_candidate, remote_candidate)
 }
 

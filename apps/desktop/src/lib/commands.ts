@@ -1,7 +1,17 @@
 import i18n from "i18next";
 import { api } from "./api";
+import { sideNotesWorkPanelTab } from "./work-panel-tabs";
 import { useAppStore } from "../stores/app-store";
 import { trustedExtensionCommandName, type Mode } from "@minih-agent/shared";
+
+function focusSideNotesInput() {
+  if (typeof document === "undefined") return;
+  requestAnimationFrame(() => {
+    document
+      .querySelector<HTMLTextAreaElement>("textarea.side-notes-input:not(:disabled)")
+      ?.focus();
+  });
+}
 
 /**
  * First-party command execution shared by the command palette and the
@@ -16,6 +26,11 @@ export async function runPaletteCommand(commandId: string): Promise<void> {
       break;
     case "builtin.agent.compact":
       await store.compactContext();
+      break;
+    case "builtin.agent.sideNote":
+      if (store.page !== "chat") store.setPage("chat");
+      store.openWorkPanelTab(sideNotesWorkPanelTab());
+      focusSideNotesInput();
       break;
     case "builtin.mode.agent":
     case "builtin.mode.plan":
@@ -63,4 +78,11 @@ export async function runExtensionCommand(name: string, args: string): Promise<v
     throw new Error(i18n.t("plugins.agentExtension.commandNeedsSession"));
   }
   await api.runExtensionCommand({ sessionId: store.activeSessionId, name, args });
+}
+
+export async function runSideNoteCommand(question: string): Promise<boolean> {
+  const store = useAppStore.getState();
+  if (store.page !== "chat") store.setPage("chat");
+  store.openWorkPanelTab(sideNotesWorkPanelTab());
+  return store.sendSideNote(question);
 }

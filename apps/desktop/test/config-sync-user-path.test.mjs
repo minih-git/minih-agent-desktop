@@ -77,6 +77,14 @@ window.minihAgent = { platform: "darwin", channels: IPC,
       }
       data = captured;
     } else if (channel === IPC.invoke.configSyncRestore) data = state;
+    else if (channel === IPC.invoke.configSyncApprove || channel === IPC.invoke.configSyncReject) {
+      state = {
+        ...state,
+        status: "upToDate",
+        pendingApprovals: state.pendingApprovals.filter((item) => item.id !== input.approvalId),
+      };
+      data = state;
+    }
     else if (channel === IPC.invoke.configSyncPause) data = state = { ...state, paused: input.paused };
     else if (channel === IPC.invoke.configSyncUnlock) data = state = { ...state, locked: false, status: "upToDate" };
     else if (channel === IPC.invoke.configSyncChangePassword) data = state;
@@ -228,6 +236,37 @@ window.configSyncProbe = async () => {
   await until(() => document.body.textContent.includes("older-https://other.example.com"), "new account history not loaded");
   releaseHistory(); await ready();
   check(!document.body.textContent.includes("older-https://router.example.com"), "stale history overwrote new account");
+  // A merge conflict is one decision: a single row with one button per side,
+  // and accepting a side sends that side's approval and digest.
+  const pair = (side) => ({
+    id: side + "-approval",
+    domain: "application",
+    entityId: "application:" + side,
+    label: "Application preferences",
+    reason: "conflict",
+    digest: side + "-digest",
+    createdAt: "2026-01-03T00:00:00Z",
+    conflict: { baseId: "application", side },
+  });
+  state = { ...state, status: "conflict", pendingApprovals: [pair("local"), pair("remote")] };
+  flushSync(() => { for (const callback of listeners.get(IPC.event.configSyncChanged) ?? []) callback(state); });
+  const conflictRows = () => document.querySelectorAll("[data-config-sync-conflict]");
+  await until(() => conflictRows().length === 1, "conflict rendered as " + conflictRows().length + " rows");
+  check(document.querySelectorAll(".settings-config-sync-approval").length === 1, "conflict pair not folded into one choice");
+  check(document.body.textContent.includes(label("conflictChoiceHint")), "conflict hint missing");
+  check(button("conflictAcceptLocal") && button("conflictAcceptRemote"), "conflict choices missing");
+  check(!button("approve") && !button("reject"), "conflict still offers approve and reject");
+  const conflictPage = document.querySelector(".settings-config-sync");
+  conflictPage.style.width = "380px"; await frame();
+  check(conflictPage.scrollWidth <= conflictPage.clientWidth, "conflict card overflows at 380px");
+  conflictPage.style.removeProperty("width");
+  await click("conflictAcceptRemote");
+  check(last("configSyncApprove")?.approvalId === "remote-approval" && last("configSyncApprove")?.digest === "remote-digest", "accepting the vault used the wrong side");
+  await until(() => !document.querySelector('[data-config-sync-side="remote"]'), "accepted side stayed visible");
+  check(button("conflictAcceptLocal") && button("reject"), "the remaining side lost its choice");
+  state = { ...state, status: "upToDate", pendingApprovals: [] };
+  flushSync(() => { for (const callback of listeners.get(IPC.event.configSyncChanged) ?? []) callback(state); });
+  await until(() => !document.querySelector("[data-config-sync-conflict]"), "resolved conflict stayed on the page");
   await expand("maintenanceTitle");
   await fill("currentBackupPassword", "test-password");
   await fill("newBackupPassword", "test-password-new");

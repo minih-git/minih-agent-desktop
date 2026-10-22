@@ -1,4 +1,5 @@
 import { isRemoteSession } from "../lib/remote-session-safety";
+import { sideNotesWorkPanelTab } from "../lib/work-panel-tabs";
 import {
   KEYBOARD_SHORTCUTS,
   keybindingDisplayParts,
@@ -12,13 +13,13 @@ import {
   scheduledReturnUsesHistory,
 } from "../features/scheduled/scheduled-return";
 import {
+  IconChat,
   IconChevronLeft,
   IconSidebar,
   IconNewSession,
   IconSearch,
 } from "./icons";
 import { TooltipButton } from "./ui";
-
 function projectName(path?: string | null, name?: string | null) {
   if (name) return name;
   if (!path) return null;
@@ -54,6 +55,8 @@ export function ConversationTopbar({
   const navIndex = useAppStore((s) => s.navIndex);
   const navBack = useAppStore((s) => s.navBack);
   const setPage = useAppStore((s) => s.setPage);
+  const activeWorkPanelTabId = useAppStore((s) => s.activeWorkPanelTabId);
+  const openWorkPanelTab = useAppStore((s) => s.openWorkPanelTab);
   const platform = (
     typeof window === "undefined" ? "darwin" : window.minihAgent?.platform ?? "darwin"
   ) as ShortcutPlatform;
@@ -181,6 +184,27 @@ export function ConversationTopbar({
             onClick={onOpenSearch}
           >
             <IconSearch size={15} />
+          </TooltipButton>
+          <TooltipButton
+            type="button"
+            className="ct-icon-btn"
+            data-testid="topbar-side-notes"
+            tooltip={t("panel.tabs.sideNotes")}
+            ariaLabel={t("panel.tabs.sideNotes")}
+            aria-pressed={workPanelOpen && activeWorkPanelTabId === "side-notes"}
+            disabled={!activeSessionId || isRemoteSession(activeSession)}
+            onClick={() => {
+              openWorkPanelTab(sideNotesWorkPanelTab());
+              if (typeof document !== "undefined") {
+                requestAnimationFrame(() => {
+                  document
+                    .querySelector<HTMLTextAreaElement>("textarea.side-notes-input:not(:disabled)")
+                    ?.focus();
+                });
+              }
+            }}
+          >
+            <IconChat size={15} />
           </TooltipButton>
         </div>
       </div>

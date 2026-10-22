@@ -27,7 +27,7 @@ const SmoothMessageBubble = memo(function SmoothMessageBubble({ message, streami
     >
       {displayContent ? (
         <div className="prose-chat" data-streaming={streaming || undefined}>
-          <Markdown source={displayContent} streaming={streaming} />
+          <Markdown source={displayContent} streaming={streaming} renderHtml />
         </div>
       ) : null}
       {message.error ? <AssistantErrorMessage message={message} /> : null}
