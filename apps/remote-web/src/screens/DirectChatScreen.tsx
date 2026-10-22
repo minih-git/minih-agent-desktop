@@ -97,25 +97,39 @@ export function DirectChatScreen({
    */
   const draftRef = useRef<string>("");
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Whether the conversation has a record yet, read through a ref so the flush
+   * below is owned by the screen, not re-run on every transcript read: a
+   * re-read after a send used to flush the just-sent text back as the draft.
+   */
+  const hasRecordRef = useRef(false);
+  hasRecordRef.current = transcript !== null;
 
   const persistDraft = useCallback(
     (text: string) => {
       draftRef.current = text;
-      if (!transcript) return;
+      if (!hasRecordRef.current) return;
       if (draftTimer.current) clearTimeout(draftTimer.current);
       draftTimer.current = setTimeout(() => {
         draftTimer.current = null;
         void history.setDraft(conversationId, draftRef.current);
       }, DRAFT_DEBOUNCE_MS);
     },
-    [history, conversationId, transcript],
+    [history, conversationId],
   );
+
+  /** A sent message is no longer a draft: forget it before anything flushes. */
+  const clearDraft = useCallback(() => {
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = null;
+    draftRef.current = "";
+  }, []);
 
   useEffect(() => {
     const flush = () => {
       if (draftTimer.current) clearTimeout(draftTimer.current);
       draftTimer.current = null;
-      if (!transcript) return;
+      if (!hasRecordRef.current) return;
       void history.setDraft(conversationId, draftRef.current);
     };
     // Leaving the screen or the app must not lose what was typed.
@@ -124,7 +138,7 @@ export function DirectChatScreen({
       unsubscribe();
       flush();
     };
-  }, [history, conversationId, transcript]);
+  }, [history, conversationId]);
   const reload = useCallback(async () => {
     readSeq.current += 1;
     const mine = readSeq.current;
@@ -232,6 +246,9 @@ export function DirectChatScreen({
       );
       return false;
     }
+    // `beginTurn` stored an empty draft with the message; the text in hand is
+    // the message now, so no later flush may write it back as a draft.
+    clearDraft();
     await reload();
     const started = await runner.start({
       conversationId: saved.conversation.id,
