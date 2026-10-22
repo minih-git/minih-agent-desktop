@@ -366,6 +366,22 @@ authentication input also carries the connection origin: the loopback
   role list, but it would also hand a phone the workspace tool surface, shell
   access, and session deletion, which the user did not ask for and which the
   remote permission ceiling was never designed to mediate.
+- **D676 amendment (2026-10-21, ADR 0331 amendment 4): a relayed device may
+  change a session's persistent permission mode.** `session/configure` has
+  carried `controller` since the baseline, and the phone's session sheet can
+  choose `ask` / `accept-edits` / `auto`; an earlier sentence here and in ADR
+  0331 decision 5 said the opposite, so the documents now state what the code
+  does. The ceiling (§4.3) still binds every turn the device itself starts —
+  a gateway-origin principal never carries `approverOverride`, and the
+  effective mode is computed per turn from the session's persistent value and
+  the principal's standing. The accepted risk is that the changed persistent
+  mode governs turns started at the computer (an SSH-paired owner) and by
+  desktop-class devices of the same account; accepted because the device
+  belongs to the same user, and mitigated by revocation from any account
+  device. **Known gap:** a configure change produces no device notice today
+  (`reportRemoteAction` covers created/deleted/registered only) and the Host
+  log line for it carries no device id; extending the notice channel is a
+  separate follow-up decision, not part of D676.
 - A gateway-origin token is accepted only on the Host link; an ssh-origin
   token is accepted only on the loopback `RACP-WS` binding. Either token on
   the other channel is rejected, so a stolen gateway token cannot escalate

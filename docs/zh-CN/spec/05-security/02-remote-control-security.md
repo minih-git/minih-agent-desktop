@@ -124,6 +124,16 @@ ssh 来源令牌只能在 loopback `RACP-WS` 上认证，交叉通道使用一�
   同样适用于它。
   被否决的方案：给网关设备 `owner`。它只是角色列表里的一个词，但同时会把工作区工具面、
   shell 访问和会话删除交给手机，这既是用户没有要求的，也不是远程权限上限设计来仲裁的。
+- **D676 修订（2026-10-21，ADR 0331 修订 4）：中继设备可以修改会话的持久权限模式。**
+  `session/configure` 自基线起就是 `controller`，手机的会话面板也一直可以选择
+  `ask` / `accept-edits` / `auto`；此前本节与 ADR 0331 决策 5 写的是相反的规则，现在
+  文档如实陈述代码行为。远程权限上限（§4.3）仍然约束设备自己发起的每一个回合——网关来源
+  主体永远没有 `approverOverride`，生效模式由 Host 按回合从会话的持久值与主体身份计算。
+  已接受的风险：修改后的持久模式会约束在这台电脑上发起的回合（SSH 配对的 owner）以及
+  同账户 desktop 类设备发起的回合；接受的理由是设备属于同一位用户，并以任意账户设备
+  可吊销来缓解。**已知缺口：** 修改权限模式当前不产生设备通知
+  （`reportRemoteAction` 只覆盖 created/deleted/registered），Host 日志中的该行也不带
+  设备 id；扩展通知渠道属于单独的后续决策，不在 D676 范围内。
 
 账户模式（D666，ADR `remote-control-router-account-binding`）：Router 的
 AccessKey 只用于发现与注册。客户端的 AccessKey 只交给 Gateway：Gateway 经 loopback

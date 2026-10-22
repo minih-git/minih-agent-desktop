@@ -336,8 +336,10 @@ Exit criteria:
    quitting close it and cancel pending server requests, while a renderer
    reload leaves it running and the settings page re-subscribes to its status.
 3. A gateway-routed principal stays under the remote permission ceiling,
-   cannot change a local session's permission mode, and cannot use
-   `allow-session`; `DESKTOP_PRINCIPAL` is unchanged.
+   cannot use `allow-session`, and may change a session's persistent
+   permission mode through `session/configure` (ADR 0331 amendment 4; the
+   ceiling still binds every relay-initiated turn). `DESKTOP_PRINCIPAL` is
+   unchanged.
 4. Revoking the desktop's device closes the link.
 5. The mTLS key and certificate are stored encrypted outside settings and
    outside SQLite.

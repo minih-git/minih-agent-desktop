@@ -5812,3 +5812,11 @@ Markdown 源码，不是 `text/html` 负载；对禁用行内 HTML 的外部编�
   attach 与 `session/history` 分页成立；**流式 delta 合并被删去**，因为本地 stub 的 40 个
   provider chunk 只产生 11–13 个 `item.delta`，说明 provider 流到 RACP 事件之间已经存在
   合并。
+- D676 修订 ADR 0331（修订 4）。中继主体——手机、浏览器或 desktop 类设备——可以通过
+  `session/configure` 修改会话的持久权限模式：代码一直如此（`controller` 角色、
+  `packages/host-runtime` 的普通 patch、手机的会话面板），决策 5 的「不能提高本地会话
+  权限模式」是代码从未实现过的承诺，现在文档如实陈述行为。远程权限上限仍然约束设备自己
+  发起的每一个回合（网关来源主体永远没有 `approverOverride`，生效模式按回合计算）。
+  已接受的风险：修改后的持久模式会约束在这台电脑上发起的回合以及同账户 desktop 类设备
+  发起的回合，以任意账户设备可吊销来缓解；修改权限模式当前不产生设备通知、Host 日志行
+  不带设备 id，作为已知缺口留给后续决策。

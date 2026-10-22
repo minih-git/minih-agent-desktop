@@ -8305,3 +8305,17 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   40 provider chunks from the local stub produced 11–13 `item.delta` events, so
   deltas are already coalesced before the RACP event and a second merge would
   be added blind.
+- D676 amends ADR 0331 (amendment 4). A relayed principal — phone, browser, or
+  desktop-class device — may change a session's persistent permission mode
+  through `session/configure`, as the code has always allowed (`controller`
+  role, an ordinary patch in `packages/host-runtime`, the phone's session
+  sheet); decision 5's "cannot raise a local session's permission mode" was a
+  promise the code never implemented, and the documents now state the behavior
+  instead. The remote permission ceiling still binds every turn the device
+  itself starts (`approverOverride` is never granted to a gateway-origin
+  principal, and the effective mode is computed per turn). The accepted risk
+  is that the changed persistent mode governs turns started at the computer
+  and by desktop-class devices of the same account, mitigated by revocation
+  from any account device; a configure change currently produces no device
+  notice and a Host log line without the device id, recorded as a known gap
+  for a follow-up decision.

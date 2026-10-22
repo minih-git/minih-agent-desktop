@@ -329,7 +329,10 @@ the mTLS key material live in the main process, encrypted through
 `EncryptionPort` (safeStorage), never in SQLite and never in host-core's
 schema. Relayed principals follow the device-origin rules of security §3.7:
 they are never SSH-paired owners, the remote permission ceiling always
-applies, and they cannot change a local session's permission mode. Disabling
+applies, and they may change a session's persistent permission mode through
+`session/configure` (ADR 0331 amendment 4: the ceiling still binds every
+relay-initiated turn, and the changed mode governs local turns — an accepted
+risk recorded there). Disabling
 the setting, app quit, and `before-quit` close the link and cancel pending
 server requests. A renderer reload does not: the link belongs to the main
 process, and the settings page only re-subscribes to its status. Local turns

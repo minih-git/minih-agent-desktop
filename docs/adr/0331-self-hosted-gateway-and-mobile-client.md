@@ -87,7 +87,8 @@ Alternatives considered:
    outbound Host link. This is an opt-in Experimental setting, off by
    default, and it opens no listener. Relayed principals are never SSH-paired
    owners: the remote permission ceiling (security §4.3) always applies to
-   them, and they cannot raise a local session's permission mode. Disabling
+   them, and they cannot raise a local session's permission mode (see
+   Amendment 4, which supersedes that last clause). Disabling
    the setting closes the link immediately; app quit and window reload clean
    it up.
 6. **R6 — one client codebase.** `apps/remote-web` is a React + TypeScript
@@ -157,6 +158,47 @@ for that rule keep their meaning for every unproven gateway device. `owner`
 follows the applicant's certificate: when that Host certificate is revoked, the
 desktop-class devices it admitted lose their `owner` standing with it, because
 the proof can no longer be reproduced or re-verified.
+
+**Amendment 4 (2026-10-21): a relayed principal may change a session's
+persistent permission mode.** Decision 5 and the device-origin clause said a
+relayed principal "cannot raise a local session's permission mode". The code
+never had that check: `session/configure` carries `controller` in the
+operation catalog, `packages/host-runtime`'s `configureSession` forwards
+`permissionMode` as an ordinary patch, and the phone's session sheet has been
+able to choose `ask` / `accept-edits` / `auto` since the mobile client shipped.
+The rule as written was therefore not a protection the system provided but one
+it appeared to promise; keeping the text would misstate the boundary the code
+actually enforces. The maintainer's decision is to keep the behavior and fix
+the documents, so:
+
+- A relayed principal — a phone, a browser, or a desktop-class device — may
+  change a session's **persistent** permission mode through `session/configure`,
+  exactly as it may change the session's mode or model. Nothing else moves:
+  `owner` is still never granted to an unproven gateway principal, and the
+  operations that restructure the machine stay out of reach (§3.7 of the
+  security spec).
+- The remote permission ceiling still binds every turn the phone itself
+  starts. The Host computes `effectivePermissionMode` per turn from the
+  session's persistent mode and the principal's standing, a gateway-origin
+  principal never carries `approverOverride`, and the ceiling applies no matter
+  how `applyCeilingToPairedDevices` is configured. A phone that raises the
+  persistent mode does not raise what its own turns may do.
+- The accepted risk is that the changed persistent mode **does** govern turns
+  started at that computer (an SSH-paired owner, above the ceiling) and turns
+  started by a desktop-class device of the same account. This is accepted
+  because the phone belongs to the same user's approved devices: the person
+  who can already start conversations, register folders, and rename sessions
+  on that machine is the same account holder, and the ceiling still mediates
+  every remote-initiated turn regardless of the persistent value.
+- Mitigations: any device of the account can revoke the device that made the
+  change, and a revocation closes its relayed connections within 5 seconds
+  (§3.7). **Known gap, recorded honestly:** a `session/configure` change
+  currently produces **no device notice** — `reportRemoteAction` covers
+  `session.created`, `session.deleted`, and `project.registered` only — and the
+  Host log records the configuration change without the device id, because the
+  shared mutation does not know the caller. The behavior is documented here
+  rather than papered over; extending the notice channel to `session.configured`
+  is left to a follow-up decision and is not part of this amendment.
 
 ### Credential forwarding on the Host link
 
