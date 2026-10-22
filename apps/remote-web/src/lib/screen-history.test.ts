@@ -29,9 +29,39 @@ const session: Screen = {
  */
 describe("screenFromHistoryState", () => {
   it("round-trips every screen", () => {
-    for (const screen of [hosts, sessions, session, { kind: "pair" } as Screen, { kind: "account" } as Screen]) {
+    for (const screen of [
+      hosts,
+      sessions,
+      session,
+      { kind: "pair" } as Screen,
+      { kind: "account" } as Screen,
+      { kind: "chats" } as Screen,
+      { kind: "chat", conversationId: "c1" } as Screen,
+      { kind: "chat", conversationId: "c1", fromArchive: true } as Screen,
+      { kind: "chatArchive" } as Screen,
+      { kind: "modelGateway", from: "chats" } as Screen,
+      { kind: "modelGateway", from: "hosts", viaSettings: true } as Screen,
+      { kind: "settings", from: "hosts" } as Screen,
+    ]) {
       expect(screenFromHistoryState({ screen })).toEqual(screen);
     }
+  });
+
+  it("refuses a conversation entry with no id", () => {
+    // A thread cannot be opened without one, so the entry is not trusted.
+    expect(screenFromHistoryState({ screen: { kind: "chat" } })).toBeNull();
+    expect(screenFromHistoryState({ screen: { kind: "chat", conversationId: "" } })).toBeNull();
+  });
+
+  it("refuses a settings entry whose origin is not a root", () => {
+    expect(screenFromHistoryState({ screen: { kind: "settings", from: "session" } })).toBeNull();
+  });
+
+  it("treats the two roots as different destinations", () => {
+    expect(sameScreen({ kind: "chats" }, { kind: "hosts" })).toBe(false);
+    expect(sameScreen({ kind: "chats" }, { kind: "chats" })).toBe(true);
+    expect(sameScreen({ kind: "settings", from: "chats" }, { kind: "settings", from: "hosts" })).toBe(false);
+    expect(sameScreen({ kind: "settings", from: "chats" }, { kind: "settings", from: "chats" })).toBe(true);
   });
 
   it("ignores state that is not ours, rather than throwing", () => {
@@ -100,6 +130,22 @@ describe("createScreenHistory", () => {
     writer.sync(hosts);
     writer.sync(hosts);
     expect(calls.filter((call) => call.kind === "push")).toHaveLength(0);
+  });
+
+  it("replaces the Chats root when a notification switches the root to Computers", () => {
+    // A computer notification owns its path (ADR): the root becomes Computers.
+    // The sideways move rewrites the entries the stack had mirrored — the Chats
+    // root is replaced by `hosts`, the skipped level is left for a back step —
+    // so Back from the restored stack never walks back to Chats.
+    const { calls, port: history } = port();
+    const writer = createScreenHistory(history);
+    writer.sync({ kind: "chats" });
+    writer.sync({ kind: "projects", hostId: "h1" });
+    expect(calls.map((call) => call.kind)).toEqual(["replace", "replace", "push"]);
+    expect(calls.map((call) => call.screen.kind)).toEqual(["chats", "hosts", "projects"]);
+    writer.sync({ kind: "session", hostId: "h1", sessionId: "s1", title: "" });
+    expect(calls.at(-1)?.kind).toBe("push");
+    expect(calls.at(-1)?.screen).toEqual({ kind: "session", hostId: "h1", sessionId: "s1", title: "" });
   });
 
   it("leaves the level a navigation skipped, so a back step lands on it", () => {
@@ -175,5 +221,23 @@ describe("sameScreen", () => {
     expect(sameScreen(session, { ...session })).toBe(true);
     expect(sameScreen(session, { ...session, title: "renamed" })).toBe(false);
     expect(sameScreen(hosts, projects)).toBe(false);
+  });
+});
+
+describe("the read-only list of an earlier account", () => {
+  it("round-trips with the scope and its origin", () => {
+    const screen = { kind: "scopedChats", gatewayRoot: "https://models.test", accessKeyId: "42", from: "chats" } as Screen;
+    expect(screenFromHistoryState({ screen })).toEqual(screen);
+  });
+
+  it("refuses an entry that cannot name an account", () => {
+    for (const screen of [
+      { kind: "scopedChats", gatewayRoot: "", accessKeyId: "42", from: "chats" },
+      { kind: "scopedChats", gatewayRoot: "https://models.test", accessKeyId: "", from: "chats" },
+      { kind: "scopedChats", gatewayRoot: "https://models.test", accessKeyId: "42", from: "session" },
+      { kind: "scopedChats", accessKeyId: "42", from: "chats" },
+    ]) {
+      expect(screenFromHistoryState({ screen }), JSON.stringify(screen)).toBeNull();
+    }
   });
 });

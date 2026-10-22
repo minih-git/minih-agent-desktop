@@ -15,7 +15,7 @@ export function Screen({ children, animate = "none", className = "", ...rest }: 
 
   return (
     <div
-      className={`relative flex h-dvh w-full flex-col overflow-hidden bg-[var(--rm-bg-page)] text-[var(--rm-text-primary)] ${animClass} ${className}`}
+      className={`relative flex h-full w-full flex-col overflow-hidden bg-[var(--rm-bg-page)] text-[var(--rm-text-primary)] ${animClass} ${className}`}
       {...rest}
     >
       <div className="mx-auto flex h-full w-full max-w-[640px] flex-1 flex-col overflow-hidden">

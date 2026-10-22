@@ -4,6 +4,7 @@ import { defineConfig, loadEnv, type Plugin, type PluginOption } from "vite";
 
 import { withGatewayOriginInHtml } from "./src/lib/csp.js";
 import { resolveGatewayOrigin } from "./src/lib/gateway-origin.js";
+import { resolveModelGatewayOrigin } from "./src/lib/model-gateway-origin.js";
 
 /**
  * The browser client is served from the same origin as the Gateway it talks to,
@@ -18,14 +19,20 @@ import { resolveGatewayOrigin } from "./src/lib/gateway-origin.js";
  * the Gateway, so `VITE_GATEWAY_ORIGIN` is required and is also added to the
  * document's `connect-src`. A native build without it fails here, at build
  * time, rather than shipping a bundle that points at the wrong origin.
+ *
+ * `VITE_MODEL_GATEWAY_ORIGIN` is the second, independent origin direct chat
+ * streams from (ADR mobile-direct-gateway-chat §2). It is optional: a build
+ * without it still starts and says so on the Chats root. A native build can
+ * also switch gateways at runtime, so `connect-src` allows any https or http
+ * origin; the baked model gateway joins it exactly as well.
  */
-function nativeCspPlugin(gatewayOrigin: string): Plugin {
+function nativeCspPlugin(origins: { gatewayOrigin: string; modelGatewayOrigin: string | null }): Plugin {
   return {
     name: "minih-remote-native-csp",
     transformIndexHtml: (html) =>
-      withGatewayOriginInHtml(html, gatewayOrigin).replace(
-        `connect-src 'self' ${gatewayOrigin}`,
-        `connect-src 'self' ${gatewayOrigin} https: http:`,
+      withGatewayOriginInHtml(html, origins).replace(
+        `connect-src 'self' ${origins.gatewayOrigin}`,
+        `connect-src 'self' ${origins.gatewayOrigin} https: http:`,
       ),
   };
 }
@@ -35,12 +42,23 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ".", "VITE_");
   const devGatewayOrigin = env.VITE_GATEWAY_ORIGIN || "http://127.0.0.1:8788";
   const nativeGatewayOrigin = native ? resolveGatewayOrigin(env.VITE_GATEWAY_ORIGIN) : null;
+  // Direct chat streams from the model gateway over WebView fetch, so its origin
+  // joins `connect-src` exactly. A build without one still works: the Chats root
+  // then says direct chat is unavailable in this build.
+  const nativeModelGatewayOrigin = native ? resolveModelGatewayOrigin(env.VITE_MODEL_GATEWAY_ORIGIN) : null;
   const proxy = {
     "/hosts": { target: devGatewayOrigin, changeOrigin: true },
     "/v1": { target: devGatewayOrigin, changeOrigin: true },
   };
   const plugins: PluginOption[] = [react(), tailwindcss()];
-  if (nativeGatewayOrigin) plugins.push(nativeCspPlugin(nativeGatewayOrigin));
+  if (nativeGatewayOrigin) {
+    plugins.push(
+      nativeCspPlugin({
+        gatewayOrigin: nativeGatewayOrigin,
+        modelGatewayOrigin: nativeModelGatewayOrigin,
+      }),
+    );
+  }
   return {
     plugins,
     server: { proxy },

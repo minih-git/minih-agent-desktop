@@ -15,7 +15,7 @@
  * ids and titles only — never a credential, a token, or a transcript — so a
  * history entry is safe to leave in the browser's session store.
  */
-import { previousScreen, type Screen } from "./screen-stack.js";
+import { isRootKind, previousScreen, type Screen } from "./screen-stack.js";
 
 /** The `history.state` payload this client writes. */
 export type ScreenHistoryState = { screen: Screen };
@@ -39,6 +39,8 @@ export function sameScreen(a: Screen, b: Screen): boolean {
         a.title === (b as typeof a).title &&
         a.projectId === (b as typeof a).projectId
       );
+    case "settings":
+      return a.from === (b as typeof a).from;
     default:
       return true;
   }
@@ -51,9 +53,47 @@ export function screenFromHistoryState(state: unknown): Screen | null {
   if (!screen || typeof screen !== "object") return null;
   switch (screen.kind) {
     case "hosts":
+    case "chats":
     case "pair":
     case "account":
+    case "chatArchive":
       return { kind: screen.kind };
+    case "chat":
+      // A conversation id is required: an entry without one cannot open a
+      // thread, and trusting it would land the user on an empty screen.
+      return typeof screen.conversationId === "string" && screen.conversationId
+        ? {
+            kind: "chat",
+            conversationId: screen.conversationId,
+            ...(screen.fromArchive === true ? { fromArchive: true } : {}),
+          }
+        : null;
+    case "scopedChats":
+      // Every field is untrusted input: an empty account or an unknown root
+      // cannot be turned into a screen.
+      return typeof screen.gatewayRoot === "string" &&
+        screen.gatewayRoot &&
+        typeof screen.accessKeyId === "string" &&
+        screen.accessKeyId &&
+        isRootKind(screen.from)
+        ? {
+            kind: "scopedChats",
+            gatewayRoot: screen.gatewayRoot,
+            accessKeyId: screen.accessKeyId,
+            from: screen.from,
+          }
+        : null;
+    case "modelGateway":
+      // Both halves of the origin are needed to restore the same back step.
+      return isRootKind(screen.from)
+        ? {
+            kind: "modelGateway",
+            from: screen.from,
+            ...(screen.viaSettings === true ? { viaSettings: true } : {}),
+          }
+        : null;
+    case "settings":
+      return isRootKind(screen.from) ? { kind: "settings", from: screen.from } : null;
     case "projects":
       return typeof screen.hostId === "string" && screen.hostId ? { kind: "projects", hostId: screen.hostId } : null;
     case "projectSessions":

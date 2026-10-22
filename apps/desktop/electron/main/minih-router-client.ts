@@ -15,14 +15,21 @@ import {
   MINIH_ROUTER_LOOKUP_MAX_IDS,
   MINIH_ROUTER_LOOKUP_MAX_MODELS,
   MINIH_ROUTER_MODEL_PAGE_SIZE_MAX,
+  clampMinihRouterPage,
   minihRouterControlRoot,
+  parseMinihRouterModelPage,
   type MinihRouterAccount,
   type MinihRouterModel,
-  type MinihRouterModelCategory,
   type MinihRouterModelPage,
-  type MinihRouterModelPrice,
   type MinihRouterQuota,
 } from "@minih-agent/shared";
+
+/**
+ * The catalog parsers live in `@minih-agent/shared` now, because the phone reads
+ * the same `/api/models` document. They are re-exported here so existing callers
+ * and their contract tests keep one entry point for the plaza.
+ */
+export { clampMinihRouterPage, parseMinihRouterModelPage };
 
 export const MINIH_ROUTER_REQUEST_TIMEOUT_MS = 15_000;
 const MAX_REDIRECTS = 3;
@@ -264,126 +271,6 @@ export function parseMinihRouterAccount(
   };
 }
 
-const VENDOR_BY_NAME: ReadonlyArray<readonly [RegExp, string]> = [
-  [/^(?:gpt-|o[134]|chatgpt|dall-e|text-embedding|whisper|tts|codex)/, "OpenAI"],
-  [/^claude/, "Anthropic"],
-  [/^(?:gemini|gemma|imagen)/, "Google"],
-  [/^deepseek/, "DeepSeek"],
-  [/^(?:moonshot|kimi)/, "Moonshot"],
-  [/^(?:glm|chatglm|cogview)/, "Zhipu"],
-  [/^(?:minimax|abab)/, "MiniMax"],
-  [/^(?:qwen|qwq|wanx|tongyi)/, "Alibaba Cloud"],
-  [/^(?:doubao|skylark|seed)/, "ByteDance"],
-  [/^grok/, "xAI"],
-  [/^(?:mimo|miai|xiaomi)/, "Xiaomi"],
-  [/^hunyuan/, "Tencent"],
-  [/^(?:mistral|mixtral|codestral|devstral)/, "Mistral"],
-  [/^(?:llama|meta)/, "Meta"],
-];
-
-function vendorFor(modelId: string, catalogProviders: readonly string[]): string {
-  const leaf = modelId.toLowerCase().split("/").at(-1) ?? "";
-  for (const [pattern, vendor] of VENDOR_BY_NAME) {
-    if (pattern.test(leaf)) return vendor;
-  }
-  return catalogProviders.find((name) => name.trim())?.trim() ?? "";
-}
-
-function categoryFor(modelId: string, modalities: readonly string[]): MinihRouterModelCategory {
-  const name = modelId.toLowerCase();
-  if (modalities.includes("video") || /video|sora|kling|cogvideo|runway/.test(name)) return "video";
-  if (
-    modalities.includes("image") ||
-    /vision|image|dall-e|imagen|flux|midjourney|vl|omni/.test(name)
-  ) {
-    return "vision";
-  }
-  if (modalities.includes("embedding") || /embedding|embed|bge|rerank/.test(name)) {
-    return "embedding";
-  }
-  if (/code|coder|codex|artifact/.test(name)) return "code";
-  return "chat";
-}
-
-/** The lowest of several decimal prices, kept in the gateway's own notation. */
-function lowest(values: readonly (string | null)[]): string | null {
-  let best: string | null = null;
-  for (const value of values) {
-    if (value === null) continue;
-    if (best === null || Number(value) < Number(best)) best = value;
-  }
-  return best;
-}
-
-function distinctCount(values: readonly (string | null)[]): number {
-  return new Set(values.filter((value): value is string => value !== null).map(Number)).size;
-}
-
-function parseModel(value: unknown): MinihRouterModel | null {
-  const row = record(value);
-  const id = text(row.client_model).trim();
-  if (!id) return null;
-  const sources = list(row.upstream_models).map(record);
-  const slots = sources.map((source) => record(record(source.price).prices));
-  const inputs = slots.map((slot) => decimal(slot.input));
-  const outputs = slots.map((slot) => decimal(slot.output));
-  const catalogs = sources.map((source) => record(record(source.catalog_reference).model));
-  const modalities = catalogs.flatMap((model) => {
-    const modality = record(model.modalities);
-    return [...list(modality.input), ...list(modality.output)].map(text);
-  });
-  const contextWindow = catalogs
-    .map((model) => integer(record(model.limits).context))
-    .find((limit): limit is number => limit !== null && limit > 0) ?? null;
-  const maxOutput = catalogs
-    .map((model) => integer(record(model.limits).output))
-    .find((limit): limit is number => limit !== null && limit > 0) ?? null;
-  const price: MinihRouterModelPrice = {
-    input: lowest(inputs),
-    output: lowest(outputs),
-    cacheRead: lowest(slots.map((slot) => decimal(slot.cache_read))),
-    cacheWrite: lowest(slots.map((slot) => decimal(slot.cache_write))),
-  };
-  return {
-    id,
-    upstreamIds: sources
-      .map((source) => text(source.model_id).trim())
-      .filter((upstream) => Boolean(upstream && upstream !== id)),
-    vendor: vendorFor(
-      id,
-      sources.map((source) => text(record(source.catalog_reference).provider_name)),
-    ),
-    category: categoryFor(id, modalities),
-    protocols: list(row.protocols).map(text).filter(Boolean),
-    price,
-    multiplePrices: distinctCount(inputs) > 1 || distinctCount(outputs) > 1,
-    tieredPricing: sources.some(
-      (source) => list(record(source.price).context_tiers).length > 0,
-    ),
-    contextWindow,
-    maxOutput,
-  };
-}
-
-/** Parse one `/api/models` page. */
-export function parseMinihRouterModelPage(data: unknown): MinihRouterModelPage {
-  const row = record(data);
-  const pagination = record(row.pagination);
-  const page = integer(pagination.page) ?? 1;
-  const pageSize = integer(pagination.page_size) ?? 0;
-  const totalItems = integer(pagination.total_items) ?? 0;
-  const totalPages = integer(pagination.total_pages) ?? (totalItems > 0 ? 1 : 0);
-  return {
-    items: list(row.items)
-      .map(parseModel)
-      .filter((model): model is MinihRouterModel => model !== null),
-    page,
-    pageSize,
-    totalItems,
-    totalPages,
-  };
-}
-
 /** Read the key's balance/quotas and, best effort, its recent usage. */
 export async function fetchMinihRouterAccount(
   baseUrl: string,
@@ -399,18 +286,6 @@ export async function fetchMinihRouterAccount(
     minihRouterGet(baseUrl, usagePath, apiKey, options).catch(() => null),
   ]);
   return parseMinihRouterAccount(home, usage);
-}
-
-export function clampMinihRouterPage(page: unknown, pageSize: unknown): {
-  page: number;
-  pageSize: number;
-} {
-  const safePage = typeof page === "number" && Number.isSafeInteger(page) && page > 0 ? page : 1;
-  const safeSize =
-    typeof pageSize === "number" && Number.isSafeInteger(pageSize) && pageSize > 0
-      ? Math.min(pageSize, MINIH_ROUTER_MODEL_PAGE_SIZE_MAX)
-      : 12;
-  return { page: safePage, pageSize: safeSize };
 }
 
 /**

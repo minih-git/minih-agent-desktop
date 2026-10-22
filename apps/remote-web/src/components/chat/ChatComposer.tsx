@@ -2,7 +2,7 @@ import { ArrowUp, Clock, Loader2, Paperclip, X } from "lucide-react";
 import { type ChangeEvent, type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { TurnAttempt } from "../../hooks/useSessionScreen.js";
+import type { ComposerSend } from "../../lib/composer-send.js";
 import {
   attemptSignature,
   attachmentPayload,
@@ -18,7 +18,20 @@ export interface ChatComposerProps {
   disabled: boolean;
   archived: boolean;
   queued: boolean;
-  onSend: (attempt: TurnAttempt) => Promise<boolean>;
+  /**
+   * Direct chat hides attachments (`ADR` §5): the model gateway path has no
+   * attachment upload, and showing a control that cannot work would be worse
+   * than not showing it.
+   */
+  hideAttachments?: boolean;
+  /** The initial text, so a stored draft reopens where the user left it. */
+  initialText?: string;
+  /**
+   * Called as the text changes. A container that keeps a draft uses it; a
+   * container that does not (the remote session) leaves it out.
+   */
+  onDraftChange?: (text: string) => void;
+  onSend: (attempt: ComposerSend) => Promise<boolean>;
 }
 
 /**
@@ -72,12 +85,21 @@ function formatSize(bytes: number): string {
   return bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} B`;
 }
 
-export function ChatComposer({ sending, disabled, archived, queued, onSend }: ChatComposerProps) {
+export function ChatComposer({
+  sending,
+  disabled,
+  archived,
+  queued,
+  hideAttachments = false,
+  initialText = "",
+  onDraftChange,
+  onSend,
+}: ChatComposerProps) {
   const { t } = useTranslation();
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [rejection, setRejection] = useState<AttachmentRejection | null>(null);
-  const attemptRef = useRef<TurnAttempt | null>(null);
+  const attemptRef = useRef<ComposerSend | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -230,25 +252,29 @@ export function ChatComposer({ sending, disabled, archived, queued, onSend }: Ch
 
       {/* Pill field */}
       <div className="flex items-end gap-1 rounded-[22px] border border-[var(--rm-separator)] bg-[var(--rm-bg-surface)] p-1.5 pl-2 transition-colors focus-within:border-[var(--rm-accent)]">
-        <input
-          ref={fileRef}
-          type="file"
-          multiple
-          accept="image/png,image/jpeg,image/webp,image/gif,text/*,application/json,.md,.txt,.ts,.tsx,.js,.jsx,.py,.go,.rs,.json,.yaml,.yml,.toml,.css,.html,.sh,.log,.csv"
-          onChange={handleFiles}
-          className="hidden"
-          aria-hidden="true"
-          tabIndex={-1}
-        />
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => fileRef.current?.click()}
-          aria-label={t("composer.attach")}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--rm-text-muted)] transition-opacity disabled:opacity-25 active:opacity-60"
-        >
-          <Paperclip size={18} />
-        </button>
+        {hideAttachments ? null : (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/webp,image/gif,text/*,application/json,.md,.txt,.ts,.tsx,.js,.jsx,.py,.go,.rs,.json,.yaml,.yml,.toml,.css,.html,.sh,.log,.csv"
+              onChange={handleFiles}
+              className="hidden"
+              aria-hidden="true"
+              tabIndex={-1}
+            />
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => fileRef.current?.click()}
+              aria-label={t("composer.attach")}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--rm-text-muted)] transition-opacity disabled:opacity-25 active:opacity-60"
+            >
+              <Paperclip size={18} />
+            </button>
+          </>
+        )}
         <textarea
           ref={textareaRef}
           value={text}
@@ -256,7 +282,10 @@ export function ChatComposer({ sending, disabled, archived, queued, onSend }: Ch
           rows={1}
           placeholder={t("composer.placeholder")}
           aria-label={t("composer.placeholder")}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            onDraftChange?.(e.target.value);
+          }}
           onKeyDown={handleKeyDown}
           className="flex-1 resize-none bg-transparent py-1 text-[16px] leading-[24px] text-[var(--rm-text-primary)] placeholder-[var(--rm-text-faint)] outline-none min-h-[32px] max-h-[144px]"
         />
