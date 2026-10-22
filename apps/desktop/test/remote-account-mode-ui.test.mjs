@@ -30,6 +30,7 @@ import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
 import { RemoteControlSection } from "../../apps/desktop/src/components/settings/RemoteControlSection";
 import { DeviceRequestHost } from "../../apps/desktop/src/components/settings/DeviceRequestHost";
+import { useRemoteControl } from "../../apps/desktop/src/components/settings/useRemoteControl";
 
 await i18n.use(initReactI18next).init({ lng: "en", keySeparator: false,
   resources: { en: { translation: flattenCatalog(catalogs.en) } }, interpolation: { escapeValue: false } });
@@ -87,11 +88,15 @@ const emit = (channel, payload) => {
 
 let page;
 let dialog;
+// The section is fed by the one useRemoteControl the accounts page owns, so the
+// probe mounts the same pairing: a host component that owns the hook and passes
+// its control down.
+const SectionHost = () => React.createElement(RemoteControlSection, { control: useRemoteControl() });
 const mount = () => {
   page = createRoot(document.getElementById("page"));
   dialog = createRoot(document.getElementById("dialog"));
   flushSync(() => {
-    page.render(React.createElement(RemoteControlSection));
+    page.render(React.createElement(SectionHost));
     dialog.render(React.createElement(DeviceRequestHost));
   });
 };
@@ -197,12 +202,18 @@ window.accountModeProbe = async () => {
   emit(IPC.event.remoteGatewayDeviceNotice, { kind: "device.adopted", deviceId: "dev_9", label: "iPad", at: "2026-10-18T10:00:00.000Z" });
   await until(() => document.body.textContent.includes("iPad"), "the notice should name the device");
 
-  // 8. An unavailable account mode keeps the registration-code form.
+  // 8. An unavailable account mode says so, with the reason. The self-hosted
+  // registration form is not here any more: rollout R8 package F moved it into
+  // the advanced section of the accounts page, which has its own tests.
   status = { ...status, accountMode: { available: false, reason: "the overlay forward is not installed" } };
-  flushSync(() => page.render(React.createElement(RemoteControlSection)));
+  flushSync(() => page.render(React.createElement(SectionHost)));
   emit(IPC.event.remoteGatewayStatusChanged, status);
-  await until(() => button(text("enroll")), "the self-hosted form should return when account mode is unavailable");
+  await until(
+    () => document.body.textContent.includes(text("accountModeUnavailable")),
+    "an unavailable account mode should be reported as unavailable",
+  );
   check1(document.body.textContent.includes("the overlay forward is not installed"), "the reason should be shown");
+  check1(!button(text("enroll")), "the registration form belongs to the advanced section now");
 
   flushSync(() => { page.unmount(); dialog.unmount(); });
   return { passed: true };
@@ -234,9 +245,10 @@ window.freshInstallProbe = async () => {
   check1(!section.includes(text("accountModeActive")), "nothing is registered yet, so it must not read as active");
   check1(section.includes(text("accountModeReadyHint")), "the ready hint should say what turning it on does");
   check1(section.includes("wss://gateway.example.com/hostlink"), "the advertised endpoint should be shown");
-  // The registration section reflects the pending state too.
-  check1(document.body.textContent.includes(text("accountEnrollPendingTitle")), "the enroll section should say it is pending");
-  check1(!document.body.textContent.includes(text("accountEnrollTitle")), "an unregistered desktop is not registered");
+  // The registration form is not part of this section any more (rollout R8
+  // package F): its pending and enrolled states are asserted where it now
+  // lives, in the advanced area of the accounts page.
+  check1(!button(text("enroll")), "the registration form belongs to the advanced section now");
 
   // The switch that used to be disabled is usable, which is the whole fix.
   const remoteSwitch = buttons().find((node) => node.getAttribute("role") === "switch" && node.getAttribute("aria-label") === text("enabled"));
@@ -257,7 +269,7 @@ window.freshInstallProbe = async () => {
   };
   emit(IPC.event.remoteGatewayStatusChanged, status);
   await until(() => document.querySelector('[data-testid="remote-gateway-account-mode"]').textContent.includes(text("accountModeActive")), "the page should follow the enrollment");
-  check1(document.body.textContent.includes(text("accountEnrollTitle")), "the enroll section should now read as registered");
+  check1(!button(text("enroll")), "the registration form stays in the advanced section once enrolled");
 
   flushSync(() => { page.unmount(); dialog.unmount(); });
   return { passed: true };

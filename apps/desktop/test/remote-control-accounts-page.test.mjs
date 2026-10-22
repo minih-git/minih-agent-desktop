@@ -150,6 +150,14 @@ window.freshInstallProbe = async () => {
   check(remoteSwitch().disabled === false, "a fresh install must be able to turn remote access on");
   check(advanced(), "the self-hosted area must be present");
   check(advanced().open === false, "the self-hosted area must start collapsed");
+  // Opening it on a fresh install shows the state account mode replaced: the
+  // registration is pending because this desktop has not enrolled yet.
+  flushSync(() => advanced().querySelector("summary").click());
+  check(
+    document.body.textContent.includes(label("accountEnrollPendingTitle")),
+    "a fresh install must read as pending inside the self-hosted area",
+  );
+  flushSync(() => advanced().querySelector("summary").click());
 
   flushSync(() => remoteSwitch().click());
   await until(() => calls.some((call) => call.channel === IPC.invoke.remoteGatewaySetEnabled), "the switch did not reach main");
@@ -178,6 +186,15 @@ window.freshInstallProbe = async () => {
   );
   check(document.body.textContent.includes(label("accountModeUnavailable")), "unavailable account mode must say so");
   check(button(label("enroll")), "the self-hosted form must be there for the self-hosted flow");
+  // The self-hosted form now sits in the accounts page's advanced area, next to
+  // the SSH entry: the move this release made, asserted where a user looks.
+  check(
+    document
+      .querySelector('[data-testid="accounts-advanced-ssh-open"]')
+      ?.closest("section")
+      ?.contains(advanced()),
+    "the self-hosted form must live in the accounts advanced area",
+  );
 
   flushSync(() => view.unmount());
   return { passed: true };
