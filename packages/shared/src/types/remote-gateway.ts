@@ -48,6 +48,13 @@ export type RemoteGatewayStatus = {
   url?: string;
   /** This desktop's stable Host id, minted at first enrollment. */
   hostId?: string;
+  /**
+   * This computer's own name, as account mode reports it to the Gateway
+   * (`os.hostname()` with the `.local` suffix dropped). Absent when the
+   * platform cannot answer or no account names the machine yet; the accounts
+   * page shows the Host id instead of inventing a name.
+   */
+  hostLabel?: string;
   /** Last failure, cleared by the next successful state change that recovers. */
   lastError?: RemoteGatewayFailure;
   /** When the next reconnect attempt is due, while `state` is `backoff`. */

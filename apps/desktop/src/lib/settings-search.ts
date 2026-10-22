@@ -208,6 +208,8 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "settings.importSourceCcSwitch",
       // Remote control lives on this page now: the desktop as a Host the
       // account's phones may reach, plus the folded self-hosted gateway.
+      "settings.accountsThisComputerTitle",
+      "settings.accountsComputerName",
       "settings.remoteGateway.title",
       "settings.remoteGateway.desc",
       "settings.remoteGateway.enabled",

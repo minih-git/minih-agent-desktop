@@ -97,12 +97,17 @@ window.freshInstallProbe = async () => {
     () => document.querySelector('[data-testid="remote-gateway-account-mode"]') && remoteSwitch(),
     "the accounts page did not render remote control",
   );
-  // Below the account, not instead of it.
+  // Below the account, not instead of it. The section is "This computer" now;
+  // the remote-control title survives as a search keyword, not the heading.
   const headings = [...document.querySelectorAll(".settings-card-heading")].map((node) => node.textContent.trim());
   const uiPosition = headings.indexOf(navLabel("Minih Router").trim());
-  const remotePosition = headings.indexOf(label("title").trim());
+  const thisComputer = document.querySelector('[data-testid="accounts-this-computer"]');
   check(uiPosition >= 0, "the Minih Router panel must stay on the page: " + headings.join(" | "));
-  check(remotePosition > uiPosition, "remote control must sit below the account: " + headings.join(" | "));
+  check(thisComputer, "the page must name this computer: " + headings.join(" | "));
+  check(headings.includes(navLabel("settings.accountsThisComputerTitle").trim()),
+    "this computer must have its own section heading: " + headings.join(" | "));
+  check(headings.indexOf(navLabel("settings.accountsThisComputerTitle").trim()) > uiPosition,
+    "this computer must sit below the account: " + headings.join(" | "));
 
   // Account mode is offered and the switch that enrolls this desktop is usable.
   const accountMode = document.querySelector('[data-testid="remote-gateway-account-mode"]');

@@ -1,11 +1,11 @@
 /**
- * Remote control on the accounts page (rollout R5, ADR 0331; D666).
+ * This computer on the accounts page (rollout R5/R8 package F; ADR 0331).
  *
- * Everything a user needs in account mode is visible: whether the Router can
- * register this desktop, the switch that does it, the link's state, the
- * per-terminal confirmation switch, and the devices that may connect. The
- * self-hosted registration-code path is a nested advanced area, because an
- * account names the Gateway for the user.
+ * The account's devices reach this desktop only through what this section
+ * shows: the switch that dials the Gateway, the strict and auto-admission
+ * switches, the link's state, and the pairing code. Everything a user needs in
+ * account mode is visible; the self-hosted registration-code path is a nested
+ * advanced area, because an account names the Gateway for the user.
  *
  * The pairing code stays visible on purpose: account mode still falls back to a
  * §11.4 ticket when no computer of the account can confirm a device, so it is
@@ -39,11 +39,20 @@ export function RemoteControlSection() {
     <section className="settings-card-block" aria-labelledby="remote-control-heading">
       <div className="settings-card-heading-row">
         <h3 id="remote-control-heading" className="settings-card-heading">
-          {t("settings.remoteGateway.title")}
+          {t("settings.accountsThisComputerTitle")}
         </h3>
         <Badge>{t("settings.remoteHosts.experimental")}</Badge>
       </div>
       <p className="text-sm text-text-secondary">{t("settings.remoteGateway.desc")}</p>
+
+      {/* The computer's own name, the same one a phone shows; the Host id is
+          the fallback because it is the one identifier that always exists. */}
+      <div className="space-y-1 py-2" data-testid="accounts-this-computer">
+        <div className="settings-row-title">{t("settings.accountsComputerName")}</div>
+        <div className="text-sm text-text-primary font-mono">
+          {status?.hostLabel || status?.hostId || t("settings.accountsComputerNameUnknown")}
+        </div>
+      </div>
 
       {accountModeVisible(status) ? (
         <div className="space-y-1 py-2" role="status" data-testid="remote-gateway-account-mode">

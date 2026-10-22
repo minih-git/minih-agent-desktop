@@ -17,6 +17,7 @@ import {
   ACCOUNT_MODE_NO_KEY_REASON,
   accountEnrollmentCurrent,
   createAccountEnroller,
+  desktopEnrollmentLabel,
   readAccountGateway,
   readAccountModeAvailability,
   type AccountGatewayState,
@@ -214,6 +215,9 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
     enabled,
     enrolled: opened ? options.store.enrolled() : false,
     ...(opened ? { hostId: options.store.hostId() } : {}),
+    // The name a phone already shows for this computer; the accounts page
+    // labels "This computer" with it.
+    ...(desktopEnrollmentLabel() ? { hostLabel: desktopEnrollmentLabel() } : {}),
     ...(state.lastError ? { lastError: state.lastError } : {}),
     ...(state.nextRetryAt ? { nextRetryAt: state.nextRetryAt } : {}),
     // Account mode is reported once the Router answer has been read; until then
