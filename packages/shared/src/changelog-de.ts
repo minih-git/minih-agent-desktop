@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const deEntries: ChangelogEntry[] = [
   {
+    version: "0.25.0",
+    date: "2026-10-22",
+    highlights: [
+      "Computer im selben Konto erreichen sich jetzt ohne SSH: Ein Computer tritt automatisch bei, sobald sein Zertifikat die Kontozugehörigkeit belegt; jeder andere Computer zeigt einen Hinweis und behält Schalter, strikten Modus und Widerruf.",
+      "Die Seitenleiste gruppiert entfernte Projekte nach Computer und markiert, welcher offline ist oder ein Upgrade braucht; ein neues Projekt lässt sich direkt auf einem Konto-Computer anlegen, und der Agent läuft dort mit dessen eigenen Anbieter-Einstellungen.",
+      "Die Einstellungen sind um das Konto herum neu geordnet: Fernsteuerung, Cloud-Sync und ein neuer Bereich „Meine Geräte“ für Konto-Computer und erteilte Geräte liegen auf einer Seite, daneben ein Bereich „Dieser Computer“ mit Gerätenamen und allen Schaltern.",
+      "Eine entfernte Sitzung kann das Modell wechseln und übernimmt den Berechtigungsmodus des Hosts; solange der Computer offline ist, wird Senden gesperrt, Sitzungen lassen sich löschen und die Dateiansicht ist lesbar ohne Bearbeitung.",
+      "Öffnen und erneutes Verbinden einer entfernten Sitzung gehen schneller: Transkript-Snapshots holen das jüngste Fenster parallel statt des ganzen Verlaufs.",
+      "Das Telefon kann mehrere Unterhaltungen gleichzeitig antworten lassen, führt eine Antwort nach dem Wechsel in den Hintergrund weiter und verbindet sich mit mehreren Gateway-Adressen.",
+      "Ein html-Fence in einer Antwort wird an Ort und Stelle gerendert, Skripte bleiben aus, bis Sie sie für diesen Block freigeben; die Telefon-Zeitleiste rendert jetzt ebenfalls Inline-HTML.",
+      "Cloud-Sync fragt bei einem Konflikt nach einer einzigen Entscheidung — dieses Gerät oder der Tresor übernehmen —, während der Sync selbst auf globale Konfiguration verengt wurde und nicht mehr von den lokal bleibenden Projektordnern abhängt.",
+    ],
+  },
+  {
     version: "0.24.0",
     date: "2026-10-21",
     highlights: [

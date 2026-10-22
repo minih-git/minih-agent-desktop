@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const frEntries: ChangelogEntry[] = [
   {
+    version: "0.25.0",
+    date: "2026-10-22",
+    highlights: [
+      "Les ordinateurs d'un même compte se joignent désormais sans SSH : un ordinateur rejoint automatiquement dès que son certificat prouve son appartenance au compte, et les autres affichent un avis tout en conservant l'interrupteur, le mode strict et la révocation.",
+      "La barre latérale regroupe les projets distants par ordinateur et signale lequel est hors ligne ou doit être mis à jour ; un nouveau projet peut être créé sur un ordinateur de votre compte, l'agent s'y exécutant avec sa propre configuration de fournisseurs.",
+      "Les réglages sont réorganisés autour du compte : contrôle à distance, synchronisation cloud et une nouvelle section Mes appareils pour les ordinateurs du compte et les appareils autorisés, à côté d'une section Cet ordinateur qui le nomme et conserve tous les interrupteurs.",
+      "Une session distante peut changer de modèle et hérite du mode d'autorisation de l'hôte ; l'envoi est bloqué tant que l'ordinateur est hors ligne, les sessions peuvent être supprimées et le panneau de fichiers se lit sans modification.",
+      "Ouvrir et reconnecter une session distante est plus rapide : les instantanés de transcription demandent en parallèle la fenêtre la plus récente au lieu de toute la conversation.",
+      "Le téléphone peut faire répondre plusieurs conversations à la fois, poursuit une réponse après le passage de l'application en arrière-plan et se connecte à plusieurs adresses de passerelle.",
+      "Un bloc html dans une réponse s'affiche sur place, les scripts restant désactivés jusqu'à ce que vous les activiez pour ce bloc ; la chronologie du téléphone affiche aussi le HTML en ligne.",
+      "La synchronisation cloud ne demande qu'une décision en cas de conflit — accepter cet appareil ou accepter le coffre —, tandis que la synchronisation s'est resserrée sur la configuration globale et ne dépend plus des dossiers de projet restés locaux.",
+    ],
+  },
+  {
     version: "0.24.0",
     date: "2026-10-21",
     highlights: [

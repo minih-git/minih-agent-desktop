@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const ptBREntries: ChangelogEntry[] = [
   {
+    version: "0.25.0",
+    date: "2026-10-22",
+    highlights: [
+      "Computadores na mesma conta agora se alcançam sem SSH: um computador entra automaticamente quando o certificado prova que pertence à conta, e cada outro computador mostra um aviso e mantém o interruptor, o modo estrito e os controles de revogação.",
+      "A barra lateral agrupa projetos remotos por computador e marca qual está offline ou precisa de atualização, e um novo projeto pode ser criado em um computador da sua conta — o Agent roda lá, com as configurações de provedor daquele computador.",
+      "As configurações foram reorganizadas em torno da sua conta: controle remoto, sincronização na nuvem e uma nova seção Meus dispositivos para computadores da conta e dispositivos autorizados ficam na mesma página, enquanto uma seção Este computador nomeia a máquina e mantém todos os interruptores.",
+      "Uma sessão remota pode trocar de modelo e herda o modo de permissão do host, o envio fica desativado enquanto o computador está offline, sessões podem ser excluídas e o painel de arquivos pode ser lido sem edição.",
+      "Abrir e reconectar a uma sessão remota ficou mais rápido: os instantâneos da conversa buscam a janela mais recente em paralelo em vez da conversa inteira.",
+      "O telefone pode manter várias conversas respondendo ao mesmo tempo, mantém uma resposta em andamento depois que o aplicativo vai para segundo plano e se conecta a mais de um endereço de gateway.",
+      "Um bloco html em uma resposta é renderizado no lugar, com scripts desativados até você habilitá-los para aquele bloco, e a linha do tempo do telefone agora também renderiza HTML embutido.",
+      "A sincronização na nuvem pede uma única decisão em um conflito — aceitar este dispositivo ou aceitar o cofre — enquanto a sincronização em si passou a ser de configuração global, e a sincronização de código não depende mais das pastas de projeto que ficam locais.",
+    ],
+  },
+  {
     version: "0.24.0",
     date: "2026-10-21",
     highlights: [
