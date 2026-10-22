@@ -472,3 +472,43 @@ describe("another account's conversation", () => {
     expect(runner.state().phase).toBe("idle");
   });
 });
+
+describe("a history read that fails at start", () => {
+  it("does not leave the runner busy for ever", async () => {
+    const { history, store, ids } = harness();
+    const turn = await beginTurn(history, ids, "hello", "2026-10-21T09:00:00.000Z");
+    const stream = controlledFetch();
+
+    // A store whose transcript read fails, as a closed database would.
+    const brokenHistory = {
+      ...history,
+      transcript: async () => {
+        throw new Error("the local database is closed");
+      },
+    };
+    const runner = createDirectChatRunner({
+      store,
+      history: brokenHistory,
+      origin: "https://models.example.test",
+      fetchImpl: stream.fetchImpl,
+    });
+
+    const outcome = await runner.start({
+      conversationId: turn.conversation.id,
+      scope: SCOPE,
+      attempt: turn.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+
+    // The reply is reported failed rather than lost, and the next send is possible.
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.attempt.state).toBe("failed");
+      expect(outcome.attempt.errorKind).toBe("storage");
+    }
+    expect(runner.state().phase).toBe("idle");
+    expect(stream.calls).toHaveLength(0);
+  });
+});

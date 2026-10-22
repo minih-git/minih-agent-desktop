@@ -253,6 +253,24 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
     });
   }
 
+  /** End an attempt that never reached the network, as a storage failure. */
+  async function failAttempt(attempt: DirectChatAttempt, cause: unknown): Promise<DirectChatAttempt> {
+    const message = cause instanceof Error ? cause.message : "the conversation could not be read";
+    try {
+      return await options.history.finish(attempt, {
+        state: "failed",
+        text: "",
+        error: message,
+        errorKind: "storage",
+        now: stamp(),
+      });
+    } catch {
+      // Even the write failed: the attempt stays as it was and startup will mark
+      // it interrupted, which is still honest.
+      return attempt;
+    }
+  }
+
   function isBusy(): boolean {
     return current !== null;
   }
@@ -270,7 +288,14 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
         // instead of quietly queueing the request.
         return { ok: false, reason: "busy" };
       }
-      const conversation = await options.history.transcript(input.conversationId);
+      // The read is guarded before the run exists: a closed database here must
+      // end the attempt, not strand the app in "busy" for the rest of the session.
+      let conversation: DirectChatTranscript | null;
+      try {
+        conversation = await options.history.transcript(input.conversationId);
+      } catch (cause) {
+        return { ok: true, attempt: await failAttempt(input.attempt, cause) };
+      }
       if (!conversation) {
         return { ok: false, reason: "conversation-missing" };
       }
@@ -285,7 +310,16 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
       current = { runId, conversationId: input.conversationId, controller, received: "" };
       announce();
 
-      const context = buildDirectContext(conversation);
+      // Context assembly is pure, but it runs inside the cleanup anyway: nothing
+      // between taking the run and releasing it may skip the release.
+      let context: { turns: DirectTurn[]; lastUserText: string };
+      try {
+        context = buildDirectContext(conversation);
+      } catch (cause) {
+        current = null;
+        announce();
+        return { ok: true, attempt: await failAttempt(input.attempt, cause) };
+      }
 
       try {
         const finished = await drive({
