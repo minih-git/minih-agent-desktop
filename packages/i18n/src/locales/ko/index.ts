@@ -1101,6 +1101,9 @@ sklm: {
         "Imported executable or security-sensitive configuration is staged until you approve it on this device.",
       approve: "Approve",
       reject: "Reject",
+      conflictChoiceHint: "이 항목은 이 기기와 보관함에서 모두 변경되었습니다. 한쪽만 유지하세요.",
+      conflictAcceptLocal: "이 기기 버전 사용",
+      conflictAcceptRemote: "보관함 버전 사용",
       mapFolder: "폴더 매핑",
       approvalReason: {
         newDevice: "New device",

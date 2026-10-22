@@ -1525,6 +1525,9 @@ sklm: {
         "Imported executable or security-sensitive configuration is staged until you approve it on this device.",
       approve: "Approve",
       reject: "Reject",
+      conflictChoiceHint: "Both this device and the vault changed this item. Keep one side.",
+      conflictAcceptLocal: "Accept this device",
+      conflictAcceptRemote: "Accept the vault",
       mapFolder: "Map folder",
       approvalReason: {
         newDevice: "New device",
