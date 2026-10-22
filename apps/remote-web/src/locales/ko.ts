@@ -446,6 +446,8 @@ export const ko: Record<TranslationKey, string> = {
 
   "settings.history.clearBusy": "이 대화 중 하나에서 답변이 계속 오고 있습니다. 먼저 멈추세요.",
 
+  "directChat.noModel": "아직 모델을 선택하지 않았습니다. 시작하려면 하나를 선택하세요.",
+
   "connect.title": "휴대폰에서 에이전트를 제어하세요",
   "connect.subtitle": "진행 상황을 확인하고, 작업을 승인하며 대화를 이어가세요. 작업은 컴퓨터에서 계속 실행됩니다.",
   "connect.feature.shield.title": "도구 요청 승인 또는 거부",

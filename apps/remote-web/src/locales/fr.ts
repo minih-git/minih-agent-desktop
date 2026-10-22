@@ -446,6 +446,8 @@ export const fr: Record<TranslationKey, string> = {
 
   "settings.history.clearBusy": "Une réponse arrive encore dans l'une de ces discussions. Arrêtez-la d'abord.",
 
+  "directChat.noModel": "Aucun modèle n'est encore choisi. Choisissez-en un pour commencer.",
+
   "connect.title": "Contrôlez vos agents depuis votre téléphone",
   "connect.subtitle": "Suivez la progression, approuvez les actions et poursuivez la conversation. Le travail continue de s'exécuter sur votre ordinateur.",
   "connect.feature.shield.title": "Approuver ou refuser les requêtes d'outils",

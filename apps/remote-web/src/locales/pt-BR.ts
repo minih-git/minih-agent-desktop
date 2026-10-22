@@ -446,6 +446,8 @@ export const ptBR: Record<TranslationKey, string> = {
 
   "settings.history.clearBusy": "Uma resposta ainda está chegando em uma destas conversas. Pare-a primeiro.",
 
+  "directChat.noModel": "Ainda não há um modelo escolhido. Escolha um para começar.",
+
   "connect.title": "Controle seus agentes do seu celular",
   "connect.subtitle": "Acompanhe o progresso, aprove ações e continue a conversa. O trabalho continua rodando no seu computador.",
   "connect.feature.shield.title": "Aprovar ou recusar solicitações de ferramentas",

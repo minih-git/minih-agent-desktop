@@ -11,7 +11,7 @@
  * re-reads the store on change instead of holding the truth in component state.
  */
 import { ArrowLeft, Info, RotateCcw, Square } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { MinihRouterModel } from "@minih-agent/shared";
@@ -69,10 +69,28 @@ export function DirectChatScreen({
   const [sending, setSending] = useState(false);
   const [busyElsewhere, setBusyElsewhere] = useState(false);
 
+  /**
+   * Reads are numbered, and a result is applied only if it is still the newest
+   * and still about this conversation: switching conversations quickly would
+   * otherwise let an older read paint the new screen with the old transcript.
+   */
+  const readSeq = useRef(0);
   const reload = useCallback(async () => {
-    setTranscript(await history.transcript(conversationId));
+    readSeq.current += 1;
+    const mine = readSeq.current;
+    const next = await history.transcript(conversationId);
+    if (mine !== readSeq.current) return;
+    if (next && next.conversation.id !== conversationId) return;
+    setTranscript(next);
     setLoaded(true);
   }, [history, conversationId]);
+
+  // A new conversation starts from an empty screen, not the previous one's text.
+  useEffect(() => {
+    setTranscript(null);
+    setLoaded(false);
+    setNotice(null);
+  }, [conversationId]);
 
   useEffect(() => {
     void reload();
@@ -117,7 +135,13 @@ export function DirectChatScreen({
   const usable = nextChoice?.usable === true;
 
   async function send(text: string): Promise<boolean> {
-    if (!connection || !scope || !nextModel || nextChoice?.usable !== true) return false;
+    if (!connection || !scope) return false;
+    if (!nextModel || nextChoice?.usable !== true) {
+      // Saying nothing here was the bug: the composer merely did not react.
+      setNotice(t("directChat.modelUnavailable"));
+      setModelsOpen(true);
+      return false;
+    }
     // A new conversation has no record until this save: the ADR puts history's
     // start at the first user message, not at opening the screen.
     if (!conversation && !isNew) return false;
@@ -313,11 +337,14 @@ export function DirectChatScreen({
               {t("directChat.stop")}
             </span>
           </Button>
-        ) : !usable && nextModel ? (
-          // The model is gone or forbidden: history stays readable and the sheet
-          // is the remedy, so sending is unavailable rather than misdirected.
+        ) : !usable ? (
+          // No usable model - gone from the catalog, forbidden, or a new
+          // conversation that has not chosen one. History stays readable and the
+          // sheet is the remedy, so sending is unavailable rather than silent.
           <div className="flex flex-col gap-2">
-            <p className="text-[13px] leading-[18px] text-[var(--rm-text-muted)]">{t("directChat.modelUnavailable")}</p>
+            <p className="text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
+              {nextModel ? t("directChat.modelUnavailable") : t("directChat.noModel")}
+            </p>
             <Button variant="secondary" size="large" onClick={() => setModelsOpen(true)}>
               {t("directChat.chooseModel")}
             </Button>

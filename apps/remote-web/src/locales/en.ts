@@ -450,6 +450,8 @@ export const en = {
 
   "settings.history.clearBusy": "A reply is still arriving in one of these conversations. Stop it first.",
 
+  "directChat.noModel": "No model is chosen yet. Pick one to start.",
+
   "connect.title": "Control your agents from your phone",
   "connect.subtitle": "Check progress, approve actions, and keep the conversation going. Work keeps running on your computer.",
   "connect.feature.shield.title": "Approve or deny tool requests",

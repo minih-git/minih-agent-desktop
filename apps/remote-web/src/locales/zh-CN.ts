@@ -446,6 +446,8 @@ export const zhCN: Record<TranslationKey, string> = {
 
   "settings.history.clearBusy": "其中一个对话仍在接收回复。请先停止。",
 
+  "directChat.noModel": "还没有选择模型。请先选择一个。",
+
   "connect.title": "在手机上接管你的 Agent",
   "connect.subtitle": "查看进度、批准操作、继续对话。任务仍在你的电脑上运行。",
   "connect.feature.shield.title": "批准或拒绝工具请求",
