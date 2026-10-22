@@ -144,7 +144,7 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
         (conversation) =>
           scopeKey(conversation.scope) === wanted && conversation.archived === archived,
       );
-      const summaries: DirectChatSummary[] = [];
+      const summaries: Array<DirectChatSummary & { searchable: string }> = [];
       for (const conversation of conversations) {
         const messages = await store.messages(conversation.id);
         const attempts = await attemptsOf(conversation.id);
@@ -154,6 +154,9 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
           messageCount: messages.length,
           liveAttempt: liveAttemptOf(attempts),
           lastFailure: lastAttemptFailure(attempts),
+          // The search reads every saved message, not only the newest: a user
+          // remembers something said earlier far more often than the last line.
+          searchable: messages.map((message) => message.text).join("\n").toLowerCase(),
         });
       }
       const needle = options.query?.trim().toLowerCase() ?? "";
@@ -161,14 +164,16 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
         ? summaries.filter(
             (summary) =>
               summary.conversation.title.toLowerCase().includes(needle) ||
-              summary.preview.toLowerCase().includes(needle),
+              summary.searchable.includes(needle),
           )
         : summaries;
       // Pinned first, then most recently active: the ADR's one ordering.
-      return filtered.sort((a, b) => {
-        if (a.conversation.pinned !== b.conversation.pinned) return a.conversation.pinned ? -1 : 1;
-        return b.conversation.updatedAt.localeCompare(a.conversation.updatedAt);
-      });
+      return filtered
+        .map(({ searchable: _searchable, ...summary }) => summary)
+        .sort((a, b) => {
+          if (a.conversation.pinned !== b.conversation.pinned) return a.conversation.pinned ? -1 : 1;
+          return b.conversation.updatedAt.localeCompare(a.conversation.updatedAt);
+        });
     },
 
     async scopes() {

@@ -475,3 +475,24 @@ describe("clearing an account's history", () => {
     expect((await history.list(OTHER_SCOPE)).map((row) => row.conversation.title)).toEqual(["theirs"]);
   });
 });
+
+describe("searching a conversation", () => {
+  it("matches an earlier message, not only the final one", async () => {
+    const { history, turn } = harness();
+    const first = await history.beginTurn(turn({ text: "a first question" }));
+    if (!first.ok) throw new Error("setup failed");
+    // The match lives in an early reply: neither the title nor the newest
+    // message mentions it.
+    await history.finish(first.attempt, { state: "complete", text: "the reply mentions kumquats", now: T0 });
+    const second = await history.beginTurn(turn({ conversationId: first.conversation.id, text: "something else entirely" }));
+    if (!second.ok) throw new Error("setup failed");
+    await history.finish(second.attempt, { state: "complete", text: "another answer", now: T0 });
+
+    // The newest text does not mention it, but the conversation still does.
+    expect((await history.list(SCOPE, { query: "kumquat" })).map((row) => row.conversation.title)).toEqual([
+      "a first question",
+    ]);
+    // The preview stays the newest message, so the row still reads as recent.
+    expect((await history.list(SCOPE, { query: "kumquat" }))[0]?.preview).toBe("another answer");
+  });
+});
