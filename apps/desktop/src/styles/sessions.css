@@ -470,8 +470,8 @@
 .sidebar-remote-group-status {
   margin: 0;
   padding: 2px 12px 4px 13px;
-  font-size: 11px;
-  line-height: 1.35;
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
   color: var(--text-tertiary);
 }
 
