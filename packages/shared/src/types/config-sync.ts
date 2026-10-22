@@ -105,6 +105,11 @@ export type ConfigSyncPendingApproval = {
   digest: string;
   createdAt: string;
   mappingKey?: string;
+  /**
+   * Present when this approval is one side of a merge conflict. Both sides of
+   * the same `baseId` are a single choice, not two separate approvals.
+   */
+  conflict?: { baseId: string; side: "local" | "remote" };
 };
 
 export type ConfigSyncProjectMapping = {

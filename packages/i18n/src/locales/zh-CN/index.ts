@@ -1092,6 +1092,9 @@ sklm: {
       approvalsDescription: "导入的可执行或安全敏感配置会暂存，直到你在此设备上批准。",
       approve: "批准",
       reject: "拒绝",
+      conflictChoiceHint: "这一项在本机和云端都改动过，保留一侧即可。",
+      conflictAcceptLocal: "接受本机",
+      conflictAcceptRemote: "接受远程",
       mapFolder: "映射文件夹",
       approvalReason: {
         newDevice: "新设备",
