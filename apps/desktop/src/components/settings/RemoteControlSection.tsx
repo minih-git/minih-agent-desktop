@@ -211,6 +211,8 @@ function noticeKey(notice: RemoteGatewayDeviceNotice): string {
       return "settings.remoteGateway.noticeRevoked";
     case "device.session-created":
       return "settings.remoteGateway.noticeSessionCreated";
+    case "device.session-configured":
+      return "settings.remoteGateway.noticeSessionConfigured";
     case "device.project-registered":
       return "settings.remoteGateway.noticeProjectRegistered";
   }

@@ -1481,6 +1481,7 @@ sklm: {
       noticeAdopted: "{{label}} 已在你账户的另一台机器上批准。",
       noticeRevoked: "{{label}} 已吊销。",
       noticeSessionCreated: "{{device}} 在这台电脑上新建了会话（{{label}}）。",
+      noticeSessionConfigured: "{{device}} 修改了该会话的设置（{{label}}）。",
       noticeProjectRegistered: "{{device}} 把 {{label}} 添加为这台电脑上的项目。",
       deviceRequestTitle: "有设备请求访问",
       deviceRequestBody: "{{label}} 请求访问这台桌面。",

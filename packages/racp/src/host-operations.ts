@@ -33,10 +33,24 @@ export type SessionConfigureInput = {
   permissionMode?: "ask" | "accept-edits" | "auto";
 };
 
+/**
+ * The names `session/configure` may carry, for a Host that reports what a
+ * remote device changed. Field names only plus their new values; a prompt or
+ * transcript can never ride along.
+ */
+export const SESSION_CONFIGURE_FIELD_ORDER = [
+  "mode", "providerId", "modelId", "thinkingLevel", "permissionMode",
+] as const;
+
 export interface RacpSessionCatalog {
   list(): Promise<SessionSummary[]>;
   create(input: SessionCreateInput, principal: Principal): Promise<SessionSummary>;
-  configure(sessionId: string, input: SessionConfigureInput): Promise<SessionSummary>;
+  /**
+   * Apply the patch and return the session. `principal` is the device that
+   * asked; a Host that reports what a remote device changed uses it, and a
+   * Host's own code may omit it (protocol §6.2, ADR 0331 amendment 4).
+   */
+  configure(sessionId: string, input: SessionConfigureInput, principal?: Principal): Promise<SessionSummary>;
   fork(sessionId: string, input: { title?: string; throughMessageId?: string }): Promise<SessionSummary>;
   rename(sessionId: string, title: string): Promise<void>;
   /** Apply the Host's first-prompt fallback title; false when it was refused. */

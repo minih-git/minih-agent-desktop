@@ -131,9 +131,9 @@ ssh 来源令牌只能在 loopback `RACP-WS` 上认证，交叉通道使用一�
   主体永远没有 `approverOverride`，生效模式由 Host 按回合从会话的持久值与主体身份计算。
   已接受的风险：修改后的持久模式会约束在这台电脑上发起的回合（SSH 配对的 owner）以及
   同账户 desktop 类设备发起的回合；接受的理由是设备属于同一位用户，并以任意账户设备
-  可吊销来缓解。**已知缺口：** 修改权限模式当前不产生设备通知
-  （`reportRemoteAction` 只覆盖 created/deleted/registered），Host 日志中的该行也不带
-  设备 id；扩展通知渠道属于单独的后续决策，不在 D676 范围内。
+  可吊销来缓解。**修改会被报告：** 远程修改会发出 `session.configured` 设备通知，带设备
+  id 与被改字段（`字段: 新值` 列表，只有字段名与新值），Host 日志行也带设备 id
+  （D676 落地时记录的通知缺口已补上）。
 
 账户模式（D666，ADR `remote-control-router-account-binding`）：Router 的
 AccessKey 只用于发现与注册。客户端的 AccessKey 只交给 Gateway：Gateway 经 loopback

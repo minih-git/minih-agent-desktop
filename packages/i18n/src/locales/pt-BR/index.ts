@@ -1310,6 +1310,7 @@ export const ptBR = {
       noticeAdopted: "{{label}} foi aprovado em outra máquina da sua conta.",
       noticeRevoked: "{{label}} foi revogado.",
       noticeSessionCreated: "{{device}} iniciou uma nova sessão neste computador ({{label}}).",
+      noticeSessionConfigured: "{{device}} alterou as configurações desta sessão ({{label}}).",
       noticeProjectRegistered: "{{device}} adicionou {{label}} como projeto neste computador.",
       deviceRequestTitle: "Um dispositivo quer acesso",
       deviceRequestBody: "{{label}} solicita acesso a este desktop.",

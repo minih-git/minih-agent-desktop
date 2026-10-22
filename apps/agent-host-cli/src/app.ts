@@ -369,6 +369,11 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
       getHost,
       runtime,
       browseRoot: config.browseRoot,
+      logRemoteAction: (info) => log("info", `remote device ${info.kind}`, {
+        deviceId: info.deviceId,
+        ...(info.sessionId ? { sessionId: info.sessionId } : {}),
+        ...(info.changes ? { changes: info.changes } : {}),
+      }),
       disposeSession: async (sessionId) => {
         const sidecar = getSidecar();
         if (!sidecar) return;

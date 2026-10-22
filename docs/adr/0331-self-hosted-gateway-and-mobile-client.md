@@ -192,13 +192,12 @@ the documents, so:
   every remote-initiated turn regardless of the persistent value.
 - Mitigations: any device of the account can revoke the device that made the
   change, and a revocation closes its relayed connections within 5 seconds
-  (§3.7). **Known gap, recorded honestly:** a `session/configure` change
-  currently produces **no device notice** — `reportRemoteAction` covers
-  `session.created`, `session.deleted`, and `project.registered` only — and the
-  Host log records the configuration change without the device id, because the
-  shared mutation does not know the caller. The behavior is documented here
-  rather than papered over; extending the notice channel to `session.configured`
-  is left to a follow-up decision and is not part of this amendment.
+  (§3.7). The change is **reported**: a remote `session/configure` emits the
+  `session.configured` device notice with the device id and the changed fields
+  as `field: newValue` pairs — names and new values only, never a prompt or
+  transcript — on the same notice channel the settings page renders, and the
+  Host log line carries the device id (originally recorded here as a gap, now
+  closed).
 
 ### Credential forwarding on the Host link
 

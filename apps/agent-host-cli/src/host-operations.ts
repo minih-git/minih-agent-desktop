@@ -25,6 +25,7 @@ import type {
   RacpSessionCatalog,
   RacpWorkspaceAccess,
 } from "@minih-agent/racp";
+import { SESSION_CONFIGURE_FIELD_ORDER } from "@minih-agent/racp";
 
 /**
  * host-core error mapping, shared with the desktop Host. Every catalog method
@@ -41,6 +42,12 @@ export type HostOperationsDeps = {
   revokeDevice?: (deviceId: string) => Promise<boolean>;
   /** Root the folder picker may not leave; defaults to the user's home directory. */
   browseRoot?: string;
+  /**
+   * One remote device changed this Host's state (ADR 0331 amendment 4). The
+   * device id is the point: the shared mutation cannot know its caller, so the
+   * Host log line is written here where the principal is still in hand.
+   */
+  logRemoteAction?: (info: { kind: string; deviceId: string; sessionId?: string; changes?: string[] }) => void;
 };
 
 function requireHost(getHost: () => HostRpc | null): HostRpc {
@@ -75,10 +82,24 @@ export function createSessionCatalog(deps: HostOperationsDeps): RacpSessionCatal
       // Shared with the desktop Host: one project lookup, one field mapping.
       return createHostSession(getHost, input, principal);
     },
-    async configure(sessionId, input) {
+    async configure(sessionId, input, principal) {
       // Shared with the desktop Host: idle-only, and a running turn answers
       // AGENT_BUSY rather than being reconfigured underneath itself.
-      return configureSession(session, sessionId, input);
+      const summary = await configureSession(session, sessionId, input);
+      if (principal) {
+        // ADR 0331 amendment 4: the Host log names the device that changed the
+        // session, field names and new values only.
+        const changes = SESSION_CONFIGURE_FIELD_ORDER
+          .filter((field) => input[field] !== undefined)
+          .map((field) => `${field}: ${String(input[field])}`);
+        deps.logRemoteAction?.({
+          kind: "session.configured",
+          deviceId: principal.subject,
+          sessionId,
+          ...(changes.length > 0 ? { changes } : {}),
+        });
+      }
+      return summary;
     },
     async fork(sessionId, input) {
       const host = requireHost(getHost);

@@ -8316,6 +8316,7 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   principal, and the effective mode is computed per turn). The accepted risk
   is that the changed persistent mode governs turns started at the computer
   and by desktop-class devices of the same account, mitigated by revocation
-  from any account device; a configure change currently produces no device
-  notice and a Host log line without the device id, recorded as a known gap
-  for a follow-up decision.
+  from any account device; a configure change is reported — the
+  `session.configured` device notice carries the device id and the changed
+  fields as `field: newValue` pairs, and the Host log line carries the device
+  id (the notice gap recorded when D676 landed is closed).

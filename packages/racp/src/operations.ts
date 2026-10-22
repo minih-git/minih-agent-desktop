@@ -401,7 +401,7 @@ export function createOperations(): Map<RacpOperation, OperationHandler> {
 
   handlers.set("session/configure", async (context, params) => {
     const { sessionId, ...input } = check(SessionConfigureParams, params);
-    const summary = await context.operations.sessions.configure(sessionId, input);
+    const summary = await context.operations.sessions.configure(sessionId, input, context.principal);
     context.agentHost.publishSessionChange("session.changed", summary);
     return { session: context.agentHost.describeSession(summary) };
   });

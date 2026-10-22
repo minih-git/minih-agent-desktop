@@ -378,10 +378,10 @@ authentication input also carries the connection origin: the loopback
   mode governs turns started at the computer (an SSH-paired owner) and by
   desktop-class devices of the same account; accepted because the device
   belongs to the same user, and mitigated by revocation from any account
-  device. **Known gap:** a configure change produces no device notice today
-  (`reportRemoteAction` covers created/deleted/registered only) and the Host
-  log line for it carries no device id; extending the notice channel is a
-  separate follow-up decision, not part of D676.
+  device. **The change is reported:** a remote configure emits the
+  `session.configured` device notice with the device id and the changed fields
+  as `field: newValue` pairs, and the Host log line carries the device id (the
+  notice gap recorded when D676 landed is closed).
 - A gateway-origin token is accepted only on the Host link; an ssh-origin
   token is accepted only on the loopback `RACP-WS` binding. Either token on
   the other channel is rejected, so a stolen gateway token cannot escalate

@@ -1481,6 +1481,7 @@ sklm: {
       "noticeAdopted": "{{label}} a été approuvé sur une autre machine de votre compte.",
       "noticeRevoked": "{{label}} a été révoqué.",
       "noticeSessionCreated": "{{device}} a démarré une nouvelle session sur cet ordinateur ({{label}}).",
+      "noticeSessionConfigured": "{{device}} a modifié les réglages de cette session ({{label}}).",
       "noticeProjectRegistered": "{{device}} a ajouté {{label}} comme projet sur cet ordinateur.",
       "deviceRequestTitle": "Un appareil demande l'accès",
       "deviceRequestBody": "{{label}} demande l'accès à ce poste.",

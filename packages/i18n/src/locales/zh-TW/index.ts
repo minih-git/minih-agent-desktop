@@ -1472,6 +1472,7 @@ sklm: {
       noticeAdopted: "{{label}} 已在你帳戶的另一台機器上核准。",
       noticeRevoked: "{{label}} 已撤銷。",
       noticeSessionCreated: "{{device}} 在這台電腦上新建了工作階段（{{label}}）。",
+      noticeSessionConfigured: "{{device}} 修改了該會話的設定（{{label}}）。",
       noticeProjectRegistered: "{{device}} 把 {{label}} 新增為這台電腦上的專案。",
       deviceRequestTitle: "有裝置要求存取",
       deviceRequestBody: "{{label}} 要求存取這台桌面。",

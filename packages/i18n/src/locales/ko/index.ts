@@ -1488,6 +1488,7 @@ sklm: {
       noticeAdopted: "{{label}}이(가) 계정의 다른 기기에서 승인되었습니다.",
       noticeRevoked: "{{label}}이(가) 해지되었습니다.",
       noticeSessionCreated: "{{device}}이(가) 이 컴퓨터에서 새 세션을 시작했습니다({{label}}).",
+      noticeSessionConfigured: "{{device}}이(가) 이 세션의 설정을 변경했습니다({{label}}).",
       noticeProjectRegistered: "{{device}}이(가) {{label}}을(를) 이 컴퓨터의 프로젝트로 추가했습니다.",
       deviceRequestTitle: "기기가 접근을 요청합니다",
       deviceRequestBody: "{{label}}이(가) 이 데스크톱 접근을 요청합니다.",

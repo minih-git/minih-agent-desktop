@@ -190,6 +190,11 @@ export type RemoteGatewayDeviceNotice = {
     | "device.revoked"
     /** `label` is the new session's id. */
     | "device.session-created"
+    /**
+     * `label` lists the changed fields as `field: newValue` pairs (ADR 0331
+     * amendment 4); the prompt and transcript never ride along.
+     */
+    | "device.session-configured"
     /** `label` is the registered directory. */
     | "device.project-registered"
     /** `label` is the other computer's label; `deviceId` is its Host id. */

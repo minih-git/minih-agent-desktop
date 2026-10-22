@@ -19,6 +19,7 @@ import {
   type SessionMutationDeps,
 } from "@minih-agent/host-runtime";
 import type { RacpHostOperations } from "@minih-agent/racp";
+import { SESSION_CONFIGURE_FIELD_ORDER } from "@minih-agent/racp";
 
 import { isDesktopDevice, requireDesktopDevice } from "./desktop-device-access.js";
 /**
@@ -98,12 +99,18 @@ export type DesktopHostOperationsOptions = {
  * nothing else — no prompt, transcript, or file content can ride along.
  */
 export type RemoteActionReport = {
-  kind: "session.created" | "session.deleted" | "project.registered";
+  kind: "session.created" | "session.deleted" | "project.registered" | "session.configured";
   deviceId: string;
   /** The path that was acted on; the project id is not known before creation. */
   path?: string;
   projectId?: string;
   sessionId?: string;
+  /**
+   * For `session.configured`: which fields changed, as `field: newValue` pairs
+   * in the order `session/configure` defines them. Names and values only — a
+   * prompt or transcript can never ride along.
+   */
+  changes?: string[];
 };
 
 function requireHost(getHost: () => HostRpc | null): HostRpc {
@@ -149,9 +156,24 @@ export function createDesktopHostOperations(
       // Configure, rename, and delete stay open to every device that holds the
       // role from the operation catalog, which is what a phone already had:
       // `controller` for the first two, `owner` for delete. Package D does not
-      // move that line — it adds the operations a phone never had.
-      async configure(sessionId, input) {
-        return configureSession(mutations, sessionId, input);
+      // move that line — it adds the operations a phone never had. A remote
+      // configure is reported (ADR 0331 amendment 4): the person at this
+      // computer learns which device changed which fields, field names and new
+      // values only.
+      async configure(sessionId, input, principal) {
+        const summary = await configureSession(mutations, sessionId, input);
+        if (principal) {
+          const changes = SESSION_CONFIGURE_FIELD_ORDER
+            .filter((field) => input[field] !== undefined)
+            .map((field) => `${field}: ${String(input[field])}`);
+          options.reportRemoteAction?.({
+            kind: "session.configured",
+            deviceId: principal.subject,
+            sessionId,
+            ...(changes.length > 0 ? { changes } : {}),
+          });
+        }
+        return summary;
       },
       async fork() {
         forbidden();

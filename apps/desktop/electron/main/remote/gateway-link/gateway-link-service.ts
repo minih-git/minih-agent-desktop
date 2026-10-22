@@ -446,9 +446,11 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
         reportRemoteAction: (action) => {
           const at = new Date(now()).toISOString();
           options.emitDeviceNotice?.({
-            kind: action.kind === "project.registered" ? "device.project-registered" : "device.session-created",
+            kind: action.kind === "project.registered" ? "device.project-registered"
+              : action.kind === "session.configured" ? "device.session-configured"
+              : "device.session-created",
             deviceId: action.deviceId,
-            label: action.path ?? action.sessionId ?? "",
+            label: action.changes?.join(", ") ?? action.path ?? action.sessionId ?? "",
             at,
           });
           log("info", "remote device changed local state", {
@@ -457,6 +459,7 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
             ...(action.projectId ? { projectId: action.projectId } : {}),
             ...(action.sessionId ? { sessionId: action.sessionId } : {}),
             ...(action.path ? { path: action.path } : {}),
+            ...(action.changes ? { changes: action.changes } : {}),
           });
         },
       }),
