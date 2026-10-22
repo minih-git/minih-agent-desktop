@@ -8249,3 +8249,20 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   `D-LOCAL-message-quotes` / `D-LOCAL-selection-overlay` and the E2E IDs retired
   by ADR 0268 stay retired. See ADR 0334, `04-ux/08-component-spec.md` §7.4 /
   §8.5, and E2E-CHAT-selection-quote-into-composer.
+
+## 2026-10-21 — The html fence preview
+
+- Decision D675. A completed `html` fence in assistant answer prose renders in
+  place through a sandboxed `srcdoc` iframe, so the markup never joins the
+  transcript document. The frame holds an opaque origin and carries no preload
+  bridge (the main window leaves `nodeIntegrationInSubFrames` off), and the app
+  CSP bounds what it loads, so the feature widens no policy and needs no
+  `frame-src`.
+- Scripts default to off and are enabled per block, because fence content is
+  model output. Enabling rebuilds the frame with `allow-scripts`; a changed
+  source returns the block to the default. A fence past 100,000 characters fails
+  closed to the source view, and thinking prose keeps `html` fences as source
+  through the existing `renderDiagrams={false}` path.
+- An iframe has no partition of its own (D246), so this stays weaker isolation
+  than the work-panel `WebContentsView` that `BrowserPreview` uses. See ADR
+  0337, `04-ux/08-component-spec.md`, and `05-security/01-security.md`.

@@ -4871,6 +4871,24 @@ window; opening a normal panel afterward must still work.
   `PI_TEST_OUTPUT` (or the OS temporary directory).
 - **Status**: Electron user-path covered on Windows; other OSes pending.
 
+#### E2E-CHAT-inline-html-fence-preview: An html fence renders in the answer
+
+- **Preconditions**: Isolated Electron profile and a loopback model fixture; no
+  credentials or paid provider requests.
+- **Steps**: Send a prompt whose answer carries a completed `html` fence with
+  visible markup. Read the reply. Toggle source and preview. Enable scripts for
+  the block and read it again. Send a second answer with a fence past the size
+  cap, and collapse a reasoning trace that carries an `html` fence.
+- **Expected**: The fence renders in place in the answer, not as source. The
+  frame is script-free until the run button is pressed, and it reaches neither
+  the transcript document nor `window.minihAgent`. Source and preview toggle
+  both ways. An oversized fence and a thinking-prose fence stay source. The
+  renderer logs no CSP violation.
+- **Automation**: `node scripts/e2e-chat-inline-html-preview.mjs` (pending).
+- **Status**: Not yet automated. Renderer source contracts in
+  `apps/desktop/test/html-block-renderer.test.mjs` cover the sandbox, the
+  script-free default, the size cap and the locale strings.
+
 #### E2E-BROWSER-capture-resize: Capture preserves live placement and restores the latest viewport
 
 - **Preconditions**: Isolated Electron profile and a local responsive page
