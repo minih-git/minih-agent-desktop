@@ -3681,14 +3681,18 @@ Anatomy:
   primary-folder file is addressed to the view as a project-relative path and a
   sibling-folder file as an absolute one, which is also how scratch and
   attachment files are addressed. A reference that matches no file opens nothing
-  and reports itself. Right-clicking a transcript file reference offers Copy
-  full path and Copy relative path on every surface that names it. Unpositioned
-  `.html` and `.htm` references also offer an **Open with** submenu containing
-  File Manager, built-in browser, and default browser. Each choice completes the
-  reference first and opens that exact resolved file. Other file types keep the
-  copy actions only; the transcript menu has no **Show in folder** action. A
-  file outside the project has no relative path to copy and reports that fact.
-  The OS default application is no longer what this click does. HTTP(S)
+  and reports itself. Right-clicking a local transcript file reference offers
+  **Open with default application**, **Show in folder**, Copy full path, and Copy
+  relative path on every surface that names it. Unpositioned `.html` and `.htm`
+  references retain their **Open with** submenu containing File Manager, built-in
+  browser, and default browser instead of the direct default-application item,
+  and also offer **Show in folder**. Each action completes the reference first
+  and uses that exact resolved file through the existing host checks. Failed OS
+  actions report an error without opening a fallback panel. Remote references
+  expose no local OS actions; folders and entries outside allowed roots retain
+  their reveal-only rules in §8a.2 of the interaction patterns. A scratch or
+  attachment file has no relative path to copy and reports that fact.
+  The OS default application is still not the normal left-click destination. HTTP(S)
   URLs stay text links. Plain clicks follow the Link open destination setting,
   and right-clicking a URL exposes the same external, work-panel, and copy
   actions.

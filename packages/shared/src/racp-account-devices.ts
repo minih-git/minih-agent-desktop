@@ -8,7 +8,7 @@
  */
 import { Type, type Static } from "typebox";
 
-import type { RacpDeviceGrant, RacpDeviceRevoke } from "./racp-hostlink.js";
+import { RacpDeviceHostProofSchema, type RacpDeviceGrant, type RacpDeviceRevoke } from "./racp-hostlink.js";
 
 /**
  * A stable JSON encoding: object keys sorted, `undefined` dropped, no
@@ -49,6 +49,39 @@ export function deviceGrantSigningPayload(grant: RacpDeviceGrant): string {
     origin: grant.origin,
     issuedAt: grant.issuedAt,
     deliverUntil: grant.deliverUntil,
+    // Absent on a phone-class grant, and dropped by `canonicalJson`, so a grant
+    // minted before amendment 3 keeps verifying byte for byte.
+    deviceClass: grant.deviceClass,
+    applicantHostId: grant.applicantHostId,
+    hostProofNonce: grant.hostProofNonce,
+    requestExpiresAt: grant.requestExpiresAt,
+    hostProofSignature: grant.hostProofSignature,
+    applicantCertificate: grant.applicantCertificate,
+  });
+}
+
+/**
+ * The signed payload of a desktop-class proof (ADR amendment 3, decision 2).
+ *
+ * Every field is projected explicitly, including the Gateway's `nonce` and the
+ * request's own deadline, so a proof cannot be moved to another request, another
+ * account, or another computer, and cannot outlive the request it was made for.
+ * Both sides of the link compute this string from the values they hold, never
+ * by canonicalizing a received object.
+ */
+export function hostProofSigningPayload(proof: {
+  requestId: string;
+  nonce: string;
+  applicantHostId: string;
+  accountId: string;
+  expiresAt: string;
+}): string {
+  return canonicalJson({
+    requestId: proof.requestId,
+    nonce: proof.nonce,
+    applicantHostId: proof.applicantHostId,
+    accountId: proof.accountId,
+    expiresAt: proof.expiresAt,
   });
 }
 
@@ -71,12 +104,48 @@ export function deviceRevokeSigningPayload(revoke: RacpDeviceRevoke): string {
 export const RACP_ACCOUNT_DEVICE_ROUTES = {
   request: "POST /v1/account/devices",
   status: "GET /v1/account/devices/{requestId}",
+  /**
+   * Mints the nonce a desktop-class proof is made over. The Gateway owns the
+   * nonce because only it can bound it to one request and one deadline; the
+   * client signs the answer and presents it on `request` (ADR decision 2).
+   */
+  desktopProof: "POST /v1/account/desktop-proof",
+  /**
+   * The path half of each route, for a client that already knows the verb. A
+   * desktop caller builds a URL from these rather than splitting the strings
+   * above, so the two forms cannot drift.
+   */
+  requestPath: "/v1/account/devices",
+  statusPath: "/v1/account/devices/{requestId}",
+  desktopProofPath: "/v1/account/desktop-proof",
 } as const;
 
-/** `POST /v1/account/devices`: ask the account's Hosts to approve a new device. */
+/** The account session route a desktop logs in on (`RACP_ACCOUNT_ROUTES.login`). */
+export const RACP_ACCOUNT_LOGIN_PATH = "/v1/account/login";
+
+/**
+ * The account directory route a desktop reads its sibling roster on
+ * (`RACP_ACCOUNT_ROUTES.hosts`): the computers of the caller's own account, and
+ * the only source of which machines this desktop may dial.
+ */
+export const RACP_ACCOUNT_HOSTS_PATH = "/v1/account/hosts";
+
+/**
+ * `POST /v1/account/devices`: ask the account's Hosts to approve a new device.
+ *
+ * A `desktop` request must also carry `hostProof` — the applicant's own proof
+ * that it is a registered computer of this account — together with the
+ * `requestId` the Gateway minted on `POST /v1/account/desktop-proof`, which is
+ * what binds the proof to one request and one deadline. A `desktop` request
+ * without a proof is `INVALID_ARGUMENT`: the class alone is never an admission
+ * (ADR amendment 3, decision 2).
+ */
 export const RacpDeviceRequestHttpRequestSchema = Type.Object({
   deviceLabel: Type.String({ minLength: 1, maxLength: 128 }),
-  client: Type.Union([Type.Literal("web"), Type.Literal("ios"), Type.Literal("android")]),
+  client: Type.Union([Type.Literal("web"), Type.Literal("ios"), Type.Literal("android"), Type.Literal("desktop")]),
+  /** Desktop only: the request `desktop-proof` minted, which the proof is bound to. */
+  requestId: Type.Optional(Type.String({ minLength: 1 })),
+  hostProof: Type.Optional(RacpDeviceHostProofSchema),
 });
 export type RacpDeviceRequestHttpRequest = Static<typeof RacpDeviceRequestHttpRequestSchema>;
 
@@ -84,7 +153,8 @@ export type RacpDeviceRequestHttpRequest = Static<typeof RacpDeviceRequestHttpRe
  * One Host of the caller's own account, as the device flow reports it. A Host
  * that cannot confirm is named immediately with `canConfirm: false` rather than
  * left to time out (security gate 33); `willAcceptGrant` says whether it would
- * adopt the resulting token.
+ * adopt the resulting token, and `supportsDesktopAuto` whether it can be asked
+ * to admit a desktop-class device at all (ADR decision 6).
  */
 export const RacpAccountDeviceHostSchema = Type.Object({
   hostId: Type.String({ minLength: 1 }),
@@ -94,9 +164,42 @@ export const RacpAccountDeviceHostSchema = Type.Object({
   canConfirm: Type.Boolean(),
   /** Online and advertising `device.accept-sibling-grant` (false in strict mode). */
   willAcceptGrant: Type.Boolean(),
+  /**
+   * Online and advertising `device.desktop-auto`. A computer that does not
+   * advertise it cannot be asked to admit a desktop-class device at all, and a
+   * requesting desktop reports it as needing an update.
+   */
+  supportsDesktopAuto: Type.Boolean(),
 });
 export type RacpAccountDeviceHost = Static<typeof RacpAccountDeviceHostSchema>;
 
+/**
+ * `POST /v1/account/desktop-proof`: the values a desktop signs.
+ *
+ * The answer is the exact payload — `requestId`, `nonce`, `applicantHostId`,
+ * `accountId`, `expiresAt` — so a client signs `hostProofSigningPayload(answer)`
+ * with its own Host certificate key and sends the result back on `POST
+ * /v1/account/devices`. The nonce is single-use and short-lived: it is bound to
+ * this one `requestId` and expires no later than the request it belongs to.
+ */
+export const RacpDesktopProofHttpResponseSchema = Type.Object({
+  requestId: Type.String({ minLength: 1 }),
+  nonce: Type.String({ minLength: 1, maxLength: 128 }),
+  applicantHostId: Type.String({ minLength: 1 }),
+  accountId: Type.String({ minLength: 1 }),
+  expiresAt: Type.String(),
+  hosts: Type.Array(RacpAccountDeviceHostSchema),
+});
+export type RacpDesktopProofHttpResponse = Static<typeof RacpDesktopProofHttpResponseSchema>;
+
+
+/** `POST /v1/account/desktop-proof`: which computer is asking, and for what. */
+export const RacpDesktopProofHttpRequestSchema = Type.Object({
+  deviceLabel: Type.String({ minLength: 1, maxLength: 128 }),
+  /** The `hostId` whose Host certificate will sign the answer. */
+  applicantHostId: Type.String({ minLength: 1 }),
+});
+export type RacpDesktopProofHttpRequest = Static<typeof RacpDesktopProofHttpRequestSchema>;
 export const RacpDeviceRequestHttpResponseSchema = Type.Object({
   requestId: Type.String({ minLength: 1 }),
   expiresAt: Type.String(),
@@ -150,6 +253,8 @@ export const RACP_ACCOUNT_DEVICE_SCHEMAS = {
   DeviceRequestHttpRequest: RacpDeviceRequestHttpRequestSchema,
   DeviceRequestHttpResponse: RacpDeviceRequestHttpResponseSchema,
   DeviceStatusHttpResponse: RacpDeviceStatusHttpResponseSchema,
+  DesktopProofHttpRequest: RacpDesktopProofHttpRequestSchema,
+  DesktopProofHttpResponse: RacpDesktopProofHttpResponseSchema,
 } as const;
 
 /**

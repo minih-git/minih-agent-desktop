@@ -34,7 +34,13 @@ describe("config", () => {
     expect(resolveConfig({ ...base }, {}).strictDevices).toBe(false);
     expect(resolveConfig({ ...base, "confirm-devices": true }, {}).confirmDevices).toBe(true);
     expect(resolveConfig({ ...base, "strict-devices": "true" }, {}).strictDevices).toBe(true);
-    // The environment supplies the same two settings for a service unit.
+    expect(resolveConfig({ ...base }, { AGENT_HOST_CLI_STRICT_DEVICES: "false" }).strictDevices).toBe(false);
+    // Automatic admission of a same-account computer is the one switch that is
+    // on by default: an enrolled Host is exactly the computer a sibling should
+    // reach, and the opt-out is explicit.
+    expect(resolveConfig({ ...base }, {}).desktopAuto).toBe(true);
+    expect(resolveConfig({ ...base, "no-desktop-auto": true }, {}).desktopAuto).toBe(false);
+    expect(resolveConfig({ ...base }, { AGENT_HOST_CLI_NO_DESKTOP_AUTO: "1" }).desktopAuto).toBe(false);
     expect(resolveConfig({ ...base }, { AGENT_HOST_CLI_CONFIRM_DEVICES: "1" }).confirmDevices).toBe(true);
     expect(resolveConfig({ ...base }, { AGENT_HOST_CLI_STRICT_DEVICES: "false" }).strictDevices).toBe(false);
   });

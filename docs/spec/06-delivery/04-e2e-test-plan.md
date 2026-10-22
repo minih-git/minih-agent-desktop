@@ -10504,7 +10504,8 @@ selection already in place shows it without waiting for another event.
 | Post-MVP | E2E-022A, E2E-022B, E2E-022C, E2E-024I, E2E-024J, E2E-024K, E2E-024L, E2E-024M (plugin roadmap R2/R3/R6) |
 | Post-baseline local automation | E2E-220 |
 | Post-baseline local automation (MCP `minih_session_get` large compaction) | E2E-MCP-session-get-projects-large-compaction |
-| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory, E2E-REMOTE-MOBILE-native-shell-credential-storage, E2E-REMOTE-ACCOUNT-cross-account-isolation, E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts, E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm, E2E-REMOTE-ACCOUNT-key-rotation-keeps-account, E2E-REMOTE-ACCOUNT-disabled-key-blocks-login, E2E-REMOTE-ACCOUNT-redacted-push |
+| Post-MVP remote control | E2E-221, E2E-222, E2E-223, E2E-224, E2E-225, E2E-226, E2E-227, E2E-228, E2E-229, E2E-230, E2E-231, E2E-232, E2E-265, E2E-266, E2E-REMOTE-HOST-settings-compact-inventory, E2E-REMOTE-MOBILE-native-shell-credential-storage, E2E-REMOTE-ACCOUNT-cross-account-isolation, E2E-REMOTE-ACCOUNT-confirm-once-roams-all-hosts, E2E-REMOTE-ACCOUNT-strict-mode-requires-per-host-confirm, E2E-REMOTE-ACCOUNT-key-rotation-keeps-account, E2E-REMOTE-ACCOUNT-disabled-key-blocks-login, E2E-REMOTE-ACCOUNT-redacted-push, E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop |
+@end
 | Trusted extensions (R7 v1) | E2E-DIALOG-long-text-boundaries, E2E-241, E2E-242, E2E-HOOKS-prompt-chain, E2E-HOOKS-cancel-and-dispose, E2E-TRUSTED-EXTENSION-custom-agent-stream-and-binding, E2E-243, E2E-TRUSTED-EXTENSION-temporary-session-cwd-is-scratch, E2E-244, E2E-245, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-declared-provider-appears-in-the-native-provider-list, E2E-PLUGIN-provider-catalog-add-service |
 | Trusted extensions (R7 v1 npm recovery) | E2E-PLUGIN-import-extension-recovers-missing-npm |
 | Post-MVP regression coverage (plugin tool dispatch) | E2E-PLUGIN-slow-tool-is-not-cut-off-by-host-dispatch |
@@ -13860,15 +13861,21 @@ are withdrawn with ADR 0165.
   that matches nothing. On an HTML reference, open the Open with submenu and
   choose File Manager, built-in browser, and default browser; repeat for the
   scratch HTML file. 9) Use Copy full path and Copy relative path, then do the
-  same on a reference that resolves in the session scratch store.
+  same on a reference that resolves in the session scratch store. 10) Right-click
+  a delivered `release-bundles/build.tar.gz` inline-code path and choose Open with
+  default application, then Show in folder. Repeat for scratch and sibling-root
+  files; try a missing file, a rejected OS handoff, and a remote reference.
 - **Expected**:
-  - Right-clicking a file reference offers Copy full path and Copy relative
-    path on each transcript surface that names it. The transcript menu has no
-    Show in folder item. An unpositioned HTML reference also has a second-level
-    Open with submenu for File Manager, built-in browser, and default browser;
-    non-HTML references keep only the copy actions. Each open choice resolves
-    the reference first, and a missing reference reports itself without opening
-    a same-named file elsewhere.
+  - Right-clicking a local non-HTML file reference offers Open with default
+    application and Show in folder above both copy actions on every transcript
+    surface that names it. HTML retains the second-level Open with submenu for
+    File Manager, built-in browser, and default browser, and adds Show in folder.
+    OS actions resolve first and hand the exact absolute path and owning session
+    to the existing host open/reveal channels, without opening a work-panel tab.
+    Missing files and failed OS handoffs report errors without a fallback. A
+    session or project switch while resolving prevents the stale action. Remote
+    references offer no local OS actions; folders and outside-root entries retain
+    their reveal-only menus. Normal left-click destinations are unchanged.
   - A copy writes exactly what it names: the absolute address for the full copy
     and the project-relative spelling for the relative one; a scratch or
     attachment file reports that it has no relative path instead of copying an
@@ -16270,6 +16277,51 @@ sibling Hosts is still open for package D.
   with the operator's own Apple and Firebase material stays with the user, and
   the notifications' visible text is the app's own localized string, which a
   device run would show.
+
+#### E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop
+
+- **Preconditions**: A local Router test instance with key A, the local test
+  Gateway, and two desktop Hosts of account A — A and B — each with the
+  account-mode remote-control switch on, the default "allow same-account
+  computers to join automatically" switch on, and a loopback model stub. Both
+  desktops enroll themselves through the account, and B has one project with a
+  file the turn will read.
+- **Steps**: 1) Start both desktops and wait for both links. 2) On A, open the
+  host list without doing anything else and confirm B appears as an account
+  computer, with no confirmation dialog on either machine. 3) On B, read the
+  device notices and confirm the automatic admission is listed with A's label.
+  4) On A, create a project by browsing B's directories and registering one.
+  5) Start a conversation in that project and send a prompt that makes the
+  model call `Read`. 6) Confirm the streamed answer arrives on A while B's own
+  session list shows the same session. 7) Turn B's automatic-admission switch
+  off, request a device again from a third desktop, and confirm B asks its own
+  user instead of admitting automatically. 8) Stop B and confirm A shows it
+  offline and does not run the session locally.
+- **Expected**: A's device is admitted by B without a human answer because B
+  itself verifies A's Host-certificate proof — chain to its pinned Gateway CA,
+  account binding, signature, and an unused, unexpired nonce — and B's
+  automatic-admission switch is on; a proof with a reused or expired nonce is
+  refused instead; A holds `owner` and reaches B's workspace operations that a
+  phone still cannot (`session/configure`, workspace reads); the turn runs on B,
+  with B's provider configuration and B's own Router account, and only the
+  events cross the Gateway; B shows a "new device" notice and writes an audit
+  record for the automatic admission, and every other computer of the account
+  shows a "new computer joined the account" notice for A's own enrollment; with
+  the switch off, the same request is confirmed by B's user rather than
+  admitted; a phone of the same account still holds `viewer` / `controller` /
+  `approver`, stays under the remote permission ceiling, and is refused the
+  desktop-only operations; an older desktop that does not announce
+  `device.desktop-auto` is shown as needing an update; stopping B leaves A
+  reporting it offline rather than running anything locally.
+- **Specs linked**: ADR `remote-control-router-account-binding` amendment 3,
+  security §3.7 and §3.8 with gates 25, 27, and 35, protocol §11.4 and §11.5,
+  rollout §2 (R8)
+- **Acceptance**: Security, Quality, Recovery
+- **Milestone**: Post-MVP (remote-control rollout R8, D675)
+- **Status**: Planned (R8, D675) — nothing in this scenario is automated yet.
+  The P0 measurement (`scripts/measure-remote-latency.mjs`) covers the two
+  transports it stands on locally: an owner over loopback `RACP-WS` and an
+  account device over `RACP-HTTP` + SSE.
 
 ## Trusted extension scenarios (R7 v1)
 

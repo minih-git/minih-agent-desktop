@@ -20,8 +20,31 @@ import type { AskToolRequest, ToolPermissionRequest } from "./agent.js";
  * - `ssh`: a host the desktop bootstrapped itself and keeps a port forward
  *   open for (spec §5.2). The stored URL is derived from that forward, so the
  *   SSH descriptor is the durable half of the record.
+ * - `account`: a computer of the user's own account, reached through the
+ *   Gateway over `RACP-WS` at `GET /v1/hosts/{hostId}/ws` with a device token
+ *   the Gateway issued (ADR amendment 3, decision 8). The record keeps the
+ *   Gateway origin and the sibling's `hostId`; the URL is derived from them.
  */
-export type RemoteHostTransport = "direct" | "ssh";
+export type RemoteHostTransport = "direct" | "ssh" | "account";
+
+/**
+ * The account descriptor a sibling computer reconnects through.
+ *
+ * It names the Gateway and the sibling's own `hostId`, never a device token:
+ * the token is a separate encrypted record field, exactly as it is for an
+ * SSH-paired host. Nothing here is a secret — the origin is public and the
+ * `hostId` is what the account directory already shows.
+ */
+export type RemoteHostAccountMetadata = {
+  /** The sibling computer, as the Gateway named it at enrollment. */
+  hostId: string;
+  /** `https://` origin the desktop dials `GET /v1/hosts/{hostId}/ws` on. */
+  publicOrigin: string;
+  /** The Gateway's advertised Host-link URL; the enrollment identity. */
+  hostlinkUrl?: string;
+  /** Label the account directory reported, for the host list. */
+  label?: string;
+};
 
 /**
  * How the desktop authenticates the SSH session itself.
@@ -65,6 +88,42 @@ export type RemoteHostSshMetadata = {
 
 export type RemoteHostConnectionStatus = "connected" | "connecting" | "reconnecting" | "disconnected" | "action-required";
 
+/**
+ * What one paired computer's live RACP handshake advertised (rollout R8
+ * package E).
+ *
+ * The renderer needs this to hide or disable controls that would be refused —
+ * the file panel, the terminal, the tool surface — and to explain why. It
+ * carries capability names only: no credential, URL, or device token reaches
+ * the renderer through it.
+ */
+export type RemoteHostCapabilities = {
+  /** The remote-host operation profile: session controls, workspace, terminal. */
+  remoteHostProfile: boolean;
+  /**
+   * Whether the session workspace panel may be read. `true` also covers a Host
+   * that has no opinion: it omits the field and leaves the answer to its
+   * operation catalog, which is how `agent-host-cli` behaves. Only an explicit
+   * refusal is `false`.
+   */
+  workspaceRead: boolean;
+  /** The owner-grade `workspace/files` surface. */
+  workspaceFiles: boolean;
+  /** The owner-grade `workspace/tool*` execution surface. */
+  workspaceTools: boolean;
+};
+
+/**
+ * Why a paired computer cannot do what this release expects of it yet.
+ *
+ * `missing` names the capabilities the handshake did not advertise, so the page
+ * can say what is missing instead of only "update it".
+ */
+export type RemoteHostUpgrade = {
+  reason: "HOST_MISSING_CAPABILITIES";
+  missing: readonly (keyof RemoteHostCapabilities)[];
+};
+
 export type RemoteHostSummary = {
   hostKey: string;
   label: string;
@@ -74,6 +133,13 @@ export type RemoteHostSummary = {
   status?: RemoteHostConnectionStatus;
   /** Absent on records written before the SSH bootstrap existed → `direct`. */
   transport?: RemoteHostTransport;
+  /**
+   * What the last completed handshake advertised. Absent while disconnected or
+   * before the first handshake, so a page shows "unknown" rather than "broken".
+   */
+  capabilities?: RemoteHostCapabilities;
+  /** Present only when a connected computer is behind this release. */
+  needsUpgrade?: RemoteHostUpgrade;
 };
 
 /**

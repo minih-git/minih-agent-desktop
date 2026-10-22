@@ -29,6 +29,14 @@ export type AgentHostCliConfig = {
   confirmDevices: boolean;
   /** ADR decision 9: refuse sibling grants and confirm every device locally. */
   strictDevices: boolean;
+  /**
+   * "Allow same-account computers to join automatically" (ADR amendment 3,
+   * decision 3). **On by default**, unlike the two switches above: a headless
+   * Host a user enrolled into their account is exactly the computer a sibling
+   * should be able to reach. `--no-desktop-auto` turns it off, after which a
+   * desktop request falls back to `--confirm-devices`.
+   */
+  desktopAuto: boolean;
   pairingLifetimeMs: number;
   /** Where the folder picker may browse; defaults to the user's home. */
   browseRoot: string;
@@ -119,6 +127,10 @@ export function resolveConfig(args: CliArgs, env: NodeJS.ProcessEnv = process.en
     gateway: args.gateway === true || args.gateway === "true",
     confirmDevices: flag(args["confirm-devices"], env.AGENT_HOST_CLI_CONFIRM_DEVICES),
     strictDevices: flag(args["strict-devices"], env.AGENT_HOST_CLI_STRICT_DEVICES),
+    // On by default, and the flag is negative: an operator who does not want a
+    // sibling computer reaching this one says so, rather than having to opt in
+    // to the behavior the account enrollment already implies.
+    desktopAuto: !flag(args["no-desktop-auto"], env.AGENT_HOST_CLI_NO_DESKTOP_AUTO),
     pairingLifetimeMs: Number(args["pairing-lifetime-ms"] ?? DEFAULT_PAIRING_LIFETIME_MS),
     browseRoot: resolve(String(args["browse-root"] ?? env.AGENT_HOST_CLI_BROWSE_ROOT ?? homedir())),
     logLevel: level === "warn" || level === "error" ? level : "info",

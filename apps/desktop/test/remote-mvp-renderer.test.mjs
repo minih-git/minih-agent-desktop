@@ -135,7 +135,9 @@ test("remote capabilities and workspace identity fail closed, local defaults sta
   assert.equal(sessionMatchesProject({ ...session, projectPath: "/local/private" }, "/local/private"), false);
   assert.deepEqual(projectPathsForNewSessions([], [{ ...session, projectPath: "/srv/project" }]), []);
   assert.equal(safeSessionSummary({ ...session, projectPath: "/srv/project" }).projectPath, undefined);
-  const calls = bridge(() => ({}));
+  const calls = bridge((channel) =>
+    channel === IPC.invoke.sessionConfigure ? { session: { ...session, modelId: "host-model" } } : {},
+  );
   useAppStore.setState({ activeSessionId: session.id, sessions: [session], page: "chat" });
   await useAppStore.getState().configureActiveSession({ mode: "agent", providerId: "local-secret", modelId: "local-model" });
   await useAppStore.getState().forkSession(session.id);
@@ -146,9 +148,13 @@ test("remote capabilities and workspace identity fail closed, local defaults sta
   useAppStore.getState().openFileInWorkPanel("/local/private/secret");
   useAppStore.getState().openUrlInWorkPanel("https://example.test");
   assert.equal(calls.length, 0);
-  await assert.rejects(api.configureSession(session.id, { mode: "agent", modelId: "local" }), { code: "CAPABILITY_UNAVAILABLE" });
+  // R8 package E: the model of a remote session is chosen on the Host that owns
+  // it, so this call is forwarded instead of refused — everything else above
+  // stays fail-closed, including a prompt carrying a local attachment.
+  await api.configureSession(session.id, { mode: "agent", providerId: "host-provider", modelId: "host-model" });
+  assert.deepEqual(calls.map((call) => call.channel), [IPC.invoke.sessionConfigure]);
   await assert.rejects(api.prompt({ sessionId: session.id, content: "attached", attachments: [{ path: "/local/private" }] }), { code: "CAPABILITY_UNAVAILABLE" });
-  assert.equal(calls.length, 0);
+  assert.equal(calls.length, 1);
   const html = await fixture.render("chat", { session });
   assert.match(html, /Remote project/);
   assert.match(html, /data-composer-dock="home"/);

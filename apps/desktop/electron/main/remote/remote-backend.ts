@@ -22,6 +22,7 @@ import type {
   PlanResolveRequest,
   QueuedTurnSummary,
   RacpApprovalResult,
+  RacpModelSummary,
   RacpRequestContext,
   RacpSession,
   RacpSessionSnapshot,
@@ -82,6 +83,7 @@ const HANDLED_CHANNELS: ReadonlySet<string> = new Set([
   IPC.invoke.agentSteer,
   IPC.invoke.sessionGet,
   IPC.invoke.sessionConfigure,
+  IPC.invoke.sessionModels,
   IPC.invoke.sessionFork,
   IPC.invoke.sessionRename,
   IPC.invoke.sessionDeriveTitle,
@@ -273,9 +275,6 @@ export function createRemoteBackend(options: RemoteBackendOptions): RemoteBacken
         const config = (args[1] ?? {}) as Partial<
           Pick<SessionSummary, "mode" | "providerId" | "modelId" | "thinkingLevel" | "permissionMode">
         >;
-        if (config.providerId !== undefined || config.modelId !== undefined || config.thinkingLevel !== undefined) {
-          throw capabilityUnavailable("remote sessions use the Host model configuration");
-        }
         const { session } = await client.request<{ session: RacpSession }>("session/configure", {
           sessionId: parseRemoteSessionId(remoteSessionId)!.hostSessionId,
           ...(config.mode ? { mode: config.mode } : {}),
@@ -285,6 +284,13 @@ export function createRemoteBackend(options: RemoteBackendOptions): RemoteBacken
           ...(config.permissionMode ? { permissionMode: config.permissionMode } : {}),
         });
         return { session: racpSessionToSummary(remoteSessionId, session, 0, options.hostLabel) };
+      }
+      case IPC.invoke.sessionModels: {
+        // The Host projects its provider rows to metadata only, so the picker
+        // lists what that computer can actually run. A Host behind this release
+        // answers CAPABILITY_UNAVAILABLE; the picker then says it has no models.
+        const result = await client.request<{ models: RacpModelSummary[] }>("model/list", {});
+        return { models: result.models };
       }
       case IPC.invoke.sessionFork: {
         const req = args[0] as { sessionId: string; title?: string; throughMessageId?: string };

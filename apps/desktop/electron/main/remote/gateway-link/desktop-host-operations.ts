@@ -4,23 +4,27 @@ import { join } from "node:path";
 
 import { RacpError } from "@minih-agent/agent-host";
 import {
+  configureSession,
   createHostSession,
   createProjectCatalog,
+  createWorkspaceAccess,
+  deleteSession,
   listModelSummaries,
   listProjectSummaries,
   listSessionSummariesWithProjectIds,
   projectBrowseRoot,
+  renameSession,
   shortenHomePath,
-  toRacpHostError,
-  withSessionProjectIds,
   type HostRpc,
-  type HostSessionRecord,
+  type SessionMutationDeps,
 } from "@minih-agent/host-runtime";
 import type { RacpHostOperations } from "@minih-agent/racp";
+import { SESSION_CONFIGURE_FIELD_ORDER } from "@minih-agent/racp";
 
+import { isDesktopDevice, requireDesktopDevice } from "./desktop-device-access.js";
 /**
  * The desktop Host's RACP operation surface (rollout R5, ADR 0331; extended by
- * the D666 amendment of 2026-10-19 in rollout A2).
+ * the D666 amendment of 2026-10-19 in rollout A2 and by package D).
  *
  * A running desktop is a Host for its *own* local sessions, so a remote device
  * may read the session and project catalogs, drive the Agent Host through the
@@ -30,22 +34,26 @@ import type { RacpHostOperations } from "@minih-agent/racp";
  * （含注册项目、浏览文件夹）": the phone is the same user, looking at their own
  * computer.
  *
- * What is still refused: renaming, forking, deleting, or reconfiguring a
- * session, reading the workspace, and the terminal. Those restructure or expose
- * the machine's state far beyond "start a conversation here", and the user asked
- * for three operations, not for a general remote shell. `owner` is deliberately
- * not granted to any account device (see `packages/shared/src/racp.ts`:
- * `project/register` and `project/browse` are `controller`).
+ * Package D adds the session controls and the read-only file panel, but **only
+ * for a desktop-class device of the same account** (`desktop-device-access.ts`):
+ * that device stands where an SSH-paired owner stands (ADR amendment 3,
+ * decision 4), because this Host verified a proof its certificate signed. A
+ * phone keeps exactly what it had — forking, deriving a title, compaction, the
+ * terminal, workspace tool execution, and the owner file panel stay refused.
  *
- * The catalogs are the shared `host-runtime` implementations, so a desktop Host
- * and an `agent-host-cli` Host apply the same project rules and the same browse
- * root (the user's home directory).
+ * The session controls and the workspace reads are the shared `host-runtime`
+ * implementations (`configureSession`, `renameSession`, `deleteSession`,
+ * `createWorkspaceAccess`), so a desktop Host and an `agent-host-cli` Host apply
+ * the same idle rule, the same session-root containment, and the same caps. The
+ * catalogs likewise share the project rules and browse root (the user's home
+ * directory).
  */
 export const DESKTOP_REMOTE_FORBIDDEN = "not available to remote devices on the desktop Host";
 
 function forbidden(): never {
   throw new RacpError("FORBIDDEN", DESKTOP_REMOTE_FORBIDDEN);
 }
+
 
 export type DesktopHostOperationsOptions = {
   /** The same host-core RPC source the bridge's session port uses. */
@@ -70,20 +78,39 @@ export type DesktopHostOperationsOptions = {
    * Host still performs the action but reports nothing — never the reverse.
    */
   reportRemoteAction?: (action: RemoteActionReport) => void;
+  /**
+   * Whether a session has an active turn right now. Configuration and deletion
+   * are idle-only, and a busy session answers `AGENT_BUSY`; absent means this
+   * Host cannot tell and the mutation proceeds.
+   */
+  isSessionBusy?: (sessionId: string) => boolean;
+  /**
+   * Everything this desktop has to clean up after a deleted session row:
+   * cancelling a pending memory extraction, dropping queued persistence,
+   * disposing the runtime session. The app wires this to the same handler its
+   * own delete IPC runs, so a remote delete leaves nothing behind (§9).
+   */
+  removeSession?: (sessionId: string) => Promise<void>;
 };
 
 /**
  * One action a remote device took on this desktop. Closed on purpose: it names
- * the device, what it did, and the one path or project involved, and nothing
- * else — no prompt, transcript, or file content can ride along.
+ * the device, what it did, and the one path, project, or session involved, and
+ * nothing else — no prompt, transcript, or file content can ride along.
  */
 export type RemoteActionReport = {
-  kind: "session.created" | "project.registered";
+  kind: "session.created" | "session.deleted" | "project.registered" | "session.configured";
   deviceId: string;
   /** The path that was acted on; the project id is not known before creation. */
   path?: string;
   projectId?: string;
   sessionId?: string;
+  /**
+   * For `session.configured`: which fields changed, as `field: newValue` pairs
+   * in the order `session/configure` defines them. Names and values only — a
+   * prompt or transcript can never ride along.
+   */
+  changes?: string[];
 };
 
 function requireHost(getHost: () => HostRpc | null): HostRpc {
@@ -99,6 +126,15 @@ export function createDesktopHostOperations(
     getHost: options.getHost,
     ...(options.browseRoot ? { browseRoot: options.browseRoot } : {}),
   });
+  // The shared session rules: idle-only configure and delete, and this desktop's
+  // own cleanup after a deleted row (the same handler the local delete IPC runs).
+  const mutations: SessionMutationDeps = {
+    getHost: options.getHost,
+    ...(options.isSessionBusy ? { isBusy: options.isSessionBusy } : {}),
+    ...(options.removeSession ? { disposeSession: options.removeSession } : {}),
+  };
+  // The shared workspace reads: session root, realpath containment, size caps.
+  const workspace = createWorkspaceAccess(options.getHost);
   return {
     sessions: {
       async list() {
@@ -117,41 +153,47 @@ export function createDesktopHostOperations(
         });
         return session;
       },
-      async configure(sessionId, input) {
-        const host = requireHost(options.getHost);
-        const currentResult = await host
-          .call<{ session?: HostSessionRecord | null }>("session.get", { id: sessionId, messageLimit: 1 })
-          .catch(toRacpHostError);
-        if (!currentResult.session) throw new RacpError("NOT_FOUND", `session ${sessionId} is unknown`);
-        const current = (await withSessionProjectIds(host, [currentResult.session]))[0]!;
-        await host
-          .call("session.configure", {
-            id: sessionId,
-            mode: input.mode ?? current.mode,
-            ...(input.providerId !== undefined ? { providerId: input.providerId } : {}),
-            ...(input.modelId !== undefined ? { modelId: input.modelId } : {}),
-            ...(input.thinkingLevel !== undefined ? { thinkingLevel: input.thinkingLevel } : {}),
-            ...(input.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
-          })
-          .catch(toRacpHostError);
-        const updatedResult = await host
-          .call<{ session?: HostSessionRecord | null }>("session.get", { id: sessionId, messageLimit: 1 })
-          .catch(toRacpHostError);
-        if (!updatedResult.session) throw new RacpError("NOT_FOUND", `session ${sessionId} is unknown`);
-        return (await withSessionProjectIds(host, [updatedResult.session]))[0]!;
+      // Configure, rename, and delete stay open to every device that holds the
+      // role from the operation catalog, which is what a phone already had:
+      // `controller` for the first two, `owner` for delete. Package D does not
+      // move that line — it adds the operations a phone never had. A remote
+      // configure is reported (ADR 0331 amendment 4): the person at this
+      // computer learns which device changed which fields, field names and new
+      // values only.
+      async configure(sessionId, input, principal) {
+        const summary = await configureSession(mutations, sessionId, input);
+        if (principal) {
+          const changes = SESSION_CONFIGURE_FIELD_ORDER
+            .filter((field) => input[field] !== undefined)
+            .map((field) => `${field}: ${String(input[field])}`);
+          options.reportRemoteAction?.({
+            kind: "session.configured",
+            deviceId: principal.subject,
+            sessionId,
+            ...(changes.length > 0 ? { changes } : {}),
+          });
+        }
+        return summary;
       },
       async fork() {
         forbidden();
       },
       async rename(sessionId, title) {
-        const host = requireHost(options.getHost);
-        await host.call("session.rename", { id: sessionId, title }).catch(toRacpHostError);
+        await renameSession(mutations, sessionId, title);
       },
       async deriveTitle() {
         forbidden();
       },
-      async delete() {
-        forbidden();
+      async delete(sessionId, principal) {
+        // Destructive and across form factors: only a desktop-class device of
+        // this account may remove a session here (package D).
+        requireDesktopDevice(principal, "session/delete");
+        await deleteSession(mutations, sessionId);
+        options.reportRemoteAction?.({
+          kind: "session.deleted",
+          deviceId: principal?.subject ?? "unknown",
+          sessionId,
+        });
       },
       async compact() {
         forbidden();
@@ -207,19 +249,30 @@ export function createDesktopHostOperations(
         return projects.browse(path);
       },
     },
+    // The read-only file panel (package D). Every method re-checks the device
+    // class: the RACP server already refuses the operation when the connection's
+    // `workspaceRead` is false, and this is the port's own answer so a caller
+    // that reaches it another way gets the same refusal.
     workspace: {
-      async list() {
-        forbidden();
+      async list(sessionId, path, principal) {
+        requireDesktopDevice(principal, "workspace/list");
+        return workspace.list(sessionId, path);
       },
-      async read() {
-        forbidden();
+      async read(sessionId, path, principal) {
+        requireDesktopDevice(principal, "workspace/read");
+        return workspace.read(sessionId, path);
       },
-      async diff() {
-        forbidden();
+      async diff(sessionId, principal) {
+        requireDesktopDevice(principal, "workspace/diff");
+        return workspace.diff(sessionId);
       },
     },
+    // Answered once per connection, so a same-account desktop sees the panel in
+    // `connection/initialize` and a phone does not (protocol §6.2).
+    workspaceRead: (principal) => isDesktopDevice(principal),
     // No `terminal`, `workspaceTools`, or `workspaceFiles`: those capabilities
-    // stay on the machine the user is sitting at.
+    // stay on the machine the user is sitting at. `workspaceFiles` is the
+    // owner-grade panel, which this port still does not offer to anyone.
     revokeDevice: options.revokeDevice,
   };
 }

@@ -26,18 +26,20 @@
  * rather than globally, and no read or relay ever names another account's Host.
  */
 import { randomUUID } from "node:crypto";
-
 import { hashToken, verifyHostArtifact } from "@minih-agent/racp";
 import {
   RACP_DEVICE_TOKEN_PREFIX,
   RACP_HOST_CAPABILITIES,
   RACP_HOSTLINK_VERSION,
   RacpDeviceRequestHttpRequestSchema,
+  RacpDesktopProofHttpRequestSchema,
   deviceGrantSigningPayload,
   deviceRevokeSigningPayload,
   hostAdvertisesCapability,
+  hostProofSigningPayload,
   type RacpAccountDeviceHost,
   type RacpDeviceGrantFrame,
+  type RacpDeviceHostProof,
   type RacpDeviceRequest,
   type RacpDeviceRevokeFrame,
 } from "@minih-agent/shared";
@@ -82,6 +84,8 @@ const EXPIRED_REQUEST_RETENTION_MS = 60 * 1000;
  * new request instead of waiting for a token that no longer exists.
  */
 export const TOKEN_PICKUP_WINDOW_MS = 30 * 1000;
+/** Desktop nonces the Gateway keeps at once; each outlives one request at most. */
+const MAX_NONCES = 4096;
 
 /** The frames this service relays and who may receive them live in `device-frames.ts`. */
 export type { DeviceRelayPort } from "./device-frames.js";
@@ -106,11 +110,18 @@ type LiveRequest = {
   sessionId: string;
   accountId: string;
   deviceLabel: string;
-  client: "web" | "ios" | "android";
+  client: "web" | "ios" | "android" | "desktop";
   requestedAt: string;
   expiresAt: string;
   /** The Hosts this request was fanned out to; only they may answer it. */
   hosts: string[];
+  /**
+   * Desktop-class only: the Gateway's nonce, the computer it was issued to, and
+   * the proof the client presented. Kept so a Host's grant can be checked
+   * against the same request, and so the Gateway's own pre-check has something
+   * to compare (ADR decision 2).
+   */
+  desktop?: { nonce: string; applicantHostId: string; proof: RacpDeviceHostProof };
   /** The one grant that won; a second approver is ignored. */
   granted?: {
     deviceId: string;
@@ -120,11 +131,19 @@ type LiveRequest = {
     token: string | null;
     /** When the client first took the token; `null` while it is untaken. */
     takenAt: number | null;
+    /** `"desktop"` when the approving Host admitted it with a verified proof. */
+    deviceClass?: "phone" | "desktop";
   };
 };
 
 export class DeviceRequestService {
   private readonly live = new Map<string, LiveRequest>();
+  /**
+   * The desktop nonces this Gateway minted, each bound to one request and
+   * marked once it is used. Bounded: an entry this old belongs to a request
+   * that has already expired or been answered.
+   */
+  private readonly nonces = new Map<string, { at: number; requestId: string; used: boolean }>();
 
   constructor(private readonly options: DeviceRequestServiceOptions) {}
 
@@ -167,6 +186,10 @@ export class DeviceRequestService {
         // now is what stops the client waiting for an answer that cannot come.
         canConfirm: online && hostAdvertisesCapability(capabilities, RACP_HOST_CAPABILITIES.deviceConfirm),
         willAcceptGrant: online && hostAdvertisesCapability(capabilities, RACP_HOST_CAPABILITIES.deviceAcceptSiblingGrant),
+        // A computer that has not announced this one predates amendment 3: it
+        // would drop a desktop request silently, so the requesting desktop is
+        // told to show "this computer needs an update" instead (decision 6).
+        supportsDesktopAuto: online && hostAdvertisesCapability(capabilities, RACP_HOST_CAPABILITIES.deviceDesktopAuto),
       };
     });
   }
@@ -175,6 +198,13 @@ export class DeviceRequestService {
    * `POST /v1/account/devices`: ask the account's Hosts to approve a new device.
    * The answer names every Host of the account with its online state and its
    * capabilities, so the client knows immediately which ones cannot confirm.
+   *
+   * A `desktop` request does not mint its own nonce here: the client proved
+   * itself on `POST /v1/account/desktop-proof` first, so this call carries the
+   * `hostProof` that proof produced and is refused without it (ADR decision 2).
+   * The Gateway verifies the proof as a **fast reject only** — every target
+   * Host verifies the same proof itself, and a Host link frame that claims an
+   * admission the Host has not verified is refused (decision 3).
    */
   async request(input: { session: GatewayAccountSessionRecord; body: unknown; ip: string }): Promise<AccountOutcome> {
     this.prune();
@@ -183,6 +213,12 @@ export class DeviceRequestService {
       throw new GatewayRpcError("INVALID_ARGUMENT", "the device request is malformed");
     }
     const body = input.body;
+    if (body.client === "desktop" && !body.hostProof) {
+      // The class alone is never an admission: without proof this would be a
+      // bare AccessKey asking for `owner` on every computer.
+      await this.audit("account.devices", input.ip, "denied", input.session.accountId);
+      throw new GatewayRpcError("INVALID_ARGUMENT", "a desktop device request needs a hostProof");
+    }
     const held = [...this.live.values()].filter((request) => request.accountId === input.session.accountId).length;
     if (held >= MAX_LIVE_REQUESTS_PER_ACCOUNT || this.live.size >= MAX_LIVE_REQUESTS) {
       // A refusal, never an eviction: one account must not be able to push
@@ -197,10 +233,38 @@ export class DeviceRequestService {
         true,
       );
     }
+    const desktopProof = body.hostProof;
+    if (desktopProof) {
+      // The nonce is what makes the proof belong to one request: it was minted
+      // by `desktopProof()` below, is single-use, and expires with the request.
+      const live = body.requestId ? this.live.get(body.requestId) : undefined;
+      if (!live || live.accountId !== input.session.accountId || live.sessionId !== input.session.sessionId) {
+        await this.audit("account.devices", input.ip, "denied", input.session.accountId);
+        throw new GatewayRpcError("INVALID_ARGUMENT", "this proof belongs to no device request of yours");
+      }
+      if (live.desktop) {
+        // One proof per request: a second presentation is a replay.
+        await this.audit("account.devices", input.ip, "denied", input.session.accountId);
+        throw new GatewayRpcError("INVALID_ARGUMENT", "this nonce was already used");
+      }
+      if (Date.parse(live.expiresAt) <= this.nowMs()) {
+        await this.audit("account.devices", input.ip, "denied", input.session.accountId);
+        throw new GatewayRpcError("INVALID_ARGUMENT", "this device request has expired");
+      }
+      const refused = await this.preCheckProof({
+        request: live,
+        proof: desktopProof,
+        accountId: input.session.accountId,
+        ip: input.ip,
+      });
+      if (refused) throw refused;
+      live.desktop = { nonce: desktopProof.nonce, applicantHostId: desktopProof.applicantHostId, proof: desktopProof };
+      await this.fanOut(live, input.ip);
+      return { status: 200, cookies: [], payload: { result: { requestId: live.requestId, expiresAt: live.expiresAt, hosts: this.roster(live.accountId) } } };
+    }
     const requestId = `dreq_${randomUUID()}`;
     const requestedAt = this.nowIso();
     const expiresAt = new Date(this.nowMs() + DEVICE_REQUEST_TTL_MS).toISOString();
-    const roster = this.roster(input.session.accountId);
     const request: RacpDeviceRequest = {
       requestId,
       accountId: input.session.accountId,
@@ -209,14 +273,7 @@ export class DeviceRequestService {
       requestedAt,
       expiresAt,
     };
-    const asked: string[] = [];
-    for (const host of roster) {
-      if (!host.canConfirm) continue;
-      if (this.options.hostLinks.sendToHost(host.hostId, { link: RACP_HOSTLINK_VERSION, type: "device.request", request })) {
-        asked.push(host.hostId);
-      }
-    }
-    this.live.set(requestId, {
+    const live: LiveRequest = {
       requestId,
       sessionId: input.session.sessionId,
       accountId: input.session.accountId,
@@ -224,11 +281,221 @@ export class DeviceRequestService {
       client: body.client,
       requestedAt,
       expiresAt,
-      hosts: asked,
-    });
+      hosts: [],
+    };
+    this.live.set(requestId, live);
+    const asked = this.fanOut(live, input.ip);
     await this.audit("account.devices", input.ip, "ok", input.session.accountId);
     this.options.log("info", "gateway fanned out a device request", { requestId, hosts: asked.length });
-    return { status: 200, cookies: [], payload: { result: { requestId, expiresAt, hosts: roster } } };
+    return { status: 200, cookies: [], payload: { result: { requestId, expiresAt, hosts: this.roster(input.session.accountId) } } };
+  }
+
+  /**
+   * Send one live request to the Hosts that can answer it, and record which
+   * ones. A phone request goes to every Host that can confirm; a desktop
+   * request goes only to a Host that advertises `device.desktop-auto`, because
+   * a computer that predates amendment 3 drops the frame silently and would
+   * leave the client waiting forever (protocol §11.4 rule 7, decision 6).
+   */
+  private fanOut(live: LiveRequest, ip: string): string[] {
+    const desktop = live.client === "desktop";
+    const request: RacpDeviceRequest = {
+      requestId: live.requestId,
+      accountId: live.accountId,
+      deviceLabel: live.deviceLabel,
+      client: live.client,
+      requestedAt: live.requestedAt,
+      expiresAt: live.expiresAt,
+      ...(live.desktop ? { hostProof: live.desktop.proof } : {}),
+    };
+    const asked: string[] = [];
+    for (const host of this.roster(live.accountId)) {
+      const reachable = desktop ? host.supportsDesktopAuto : host.canConfirm;
+      if (!reachable) continue;
+      if (this.options.hostLinks.sendToHost(host.hostId, { link: RACP_HOSTLINK_VERSION, type: "device.request", request })) {
+        asked.push(host.hostId);
+      }
+    }
+    live.hosts = asked;
+    if (desktop && asked.length === 0) {
+      // Not an error: the client is told through the roster that no computer of
+      // the account can be asked, and shows "needs an update" instead of
+      // waiting. Logged because it is the visible symptom of a fleet that has
+      // not been upgraded.
+      this.options.log("warn", "no Host of the account can admit a desktop device", { requestId: live.requestId, ip });
+    }
+    return asked;
+  }
+
+  /**
+   * `POST /v1/account/desktop-proof`: mint the values a desktop signs.
+   *
+   * The Gateway owns the nonce because only it can bound one to a single
+   * request with a single deadline. This call creates the pending request; the
+   * `POST /v1/account/devices` that follows presents the signed proof and is
+   * what fans the request out. Nothing is authorized here: the applicant is
+   * only checked for being a registered, unrevoked Host of the caller's own
+   * account, which is a fast reject (ADR decision 2).
+   */
+  async desktopProof(input: { session: GatewayAccountSessionRecord; body: unknown; ip: string }): Promise<AccountOutcome> {
+    this.prune();
+    if (!Value.Check(RacpDesktopProofHttpRequestSchema, input.body)) {
+      await this.audit("account.devices.desktop", input.ip, "error", input.session.accountId);
+      throw new GatewayRpcError("INVALID_ARGUMENT", "the desktop proof request is malformed");
+    }
+    const body = input.body;
+    const applicant = this.options.store.findHost(body.applicantHostId);
+    if (!applicant || applicant.revokedAt || applicant.accountId !== input.session.accountId) {
+      // Same answer for unknown, revoked, and foreign: the caller learns nothing
+      // about another account's computers (gate 29).
+      await this.audit("account.devices.desktop", input.ip, "denied", input.session.accountId);
+      throw new GatewayRpcError("FORBIDDEN", "this computer is not a Host of your account");
+    }
+    const held = [...this.live.values()].filter((request) => request.accountId === input.session.accountId).length;
+    if (held >= MAX_LIVE_REQUESTS_PER_ACCOUNT || this.live.size >= MAX_LIVE_REQUESTS) {
+      await this.audit("account.devices.desktop", input.ip, "denied", input.session.accountId);
+      throw new GatewayRpcError("RATE_LIMITED", "the Gateway is holding as many device requests as it can", true);
+    }
+    const requestId = `dreq_${randomUUID()}`;
+    const requestedAt = this.nowIso();
+    const expiresAt = new Date(this.nowMs() + DEVICE_REQUEST_TTL_MS).toISOString();
+    const nonce = this.mintNonce(requestId);
+    const live: LiveRequest = {
+      requestId,
+      sessionId: input.session.sessionId,
+      accountId: input.session.accountId,
+      deviceLabel: body.deviceLabel,
+      client: "desktop",
+      requestedAt,
+      expiresAt,
+      hosts: [],
+    };
+    this.live.set(requestId, live);
+    await this.audit("account.devices.desktop", input.ip, "ok", input.session.accountId);
+    return {
+      status: 200,
+      cookies: [],
+      payload: {
+        result: {
+          requestId,
+          nonce,
+          applicantHostId: body.applicantHostId,
+          accountId: input.session.accountId,
+          expiresAt,
+          hosts: this.roster(input.session.accountId),
+        },
+      },
+    };
+  }
+
+  /**
+   * Mint one nonce and remember it against the request it belongs to, so the
+   * proof that comes back is bound to that request and can be used once. Bounded
+   * by `MAX_NONCES`: an entry that old belongs to a request already expired or
+   * answered.
+   */
+  private mintNonce(requestId: string): string {
+    const nonce = `dn_${randomUUID()}`;
+    this.nonces.set(nonce, { at: this.nowMs(), requestId, used: false });
+    if (this.nonces.size > MAX_NONCES) {
+      const idle = [...this.nonces].sort((left, right) => left[1].at - right[1].at);
+      for (const [key] of idle.slice(0, this.nonces.size - MAX_NONCES)) this.nonces.delete(key);
+    }
+    return nonce;
+  }
+
+  /**
+   * The Gateway's **fast reject** for a desktop proof (ADR decision 2): the
+   * nonce is one it minted for this very request, the signature chains to its
+   * own CA with this account's binding, and the signing computer is the
+   * applicant it names. None of this authorizes anything — the target Host
+   * verifies the same proof itself (decision 3) — so a compromised Gateway
+   * still cannot mint an `owner` device on its own.
+   */
+  private async preCheckProof(input: {
+    request: LiveRequest;
+    proof: { nonce: string; applicantHostId: string; signature: string };
+    accountId: string;
+    ip: string;
+  }): Promise<GatewayRpcError | null> {
+    const denied = async (reason: string): Promise<GatewayRpcError> => {
+      this.options.log("warn", "gateway refused a desktop proof", { requestId: input.request.requestId, reason });
+      await this.audit("account.devices.desktop", input.ip, "denied", input.accountId);
+      return new GatewayRpcError("FORBIDDEN", "the desktop proof was not accepted");
+    };
+    const issued = this.nonces.get(input.proof.nonce);
+    if (!issued || issued.requestId !== input.request.requestId) return denied("unknown_nonce");
+    if (issued.used) return denied("replayed_nonce");
+    const applicant = this.options.store.findHost(input.proof.applicantHostId);
+    if (!applicant || applicant.revokedAt || applicant.accountId !== input.accountId) return denied("unknown_applicant");
+    const authority = await this.options.authority();
+    const verdict = verifyHostArtifact({
+      payload: hostProofSigningPayload({
+        requestId: input.request.requestId,
+        nonce: input.proof.nonce,
+        applicantHostId: input.proof.applicantHostId,
+        accountId: input.accountId,
+        expiresAt: input.request.expiresAt,
+      }),
+      signature: input.proof.signature,
+      signerCertificate: applicant.certificatePem,
+      gatewayCaPem: authority.ca.certificatePem,
+      now: this.nowMs(),
+    });
+    if (!verdict.ok || verdict.signerHostId !== input.proof.applicantHostId || verdict.accountId !== input.accountId) {
+      return denied(verdict.ok ? "signer_mismatch" : verdict.reason);
+    }
+    this.nonces.get(input.proof.nonce)!.used = true;
+    return null;
+  }
+
+  /**
+   * Tell the account's other computers that a Host joined (ADR amendment 3,
+   * Accepted risk). Stored first, so a computer that is offline receives it
+   * when its link comes up — the same window and re-offer rule as a device
+   * revocation. Only a Host that advertises `device.desktop-auto` is told: a
+   * computer that predates the frame drops it silently anyway.
+   */
+  async announceHostJoined(input: { hostId: string; label: string; accountId: string; ip?: string }): Promise<string[]> {
+    const noticeId = `joined_${input.hostId}`;
+    const joinedAt = this.nowIso();
+    await this.options.store.saveHostJoined({
+      noticeId,
+      accountId: input.accountId,
+      hostId: input.hostId,
+      label: input.label,
+      joinedAt,
+      relayUntil: new Date(this.nowMs() + GRANT_DELIVERY_WINDOW_MS).toISOString(),
+    });
+    const relayed = this.relayHostJoined(input.accountId, input.hostId);
+    await this.audit("account.host.joined", input.ip ?? "hostlink", "ok", input.accountId, { hostId: input.hostId });
+    this.options.log("info", "gateway announced a new account computer", { hostId: input.hostId, relayed: relayed.length });
+    return relayed;
+  }
+
+  /** Send the account's host-joined notices to one Host that can receive them. */
+  private relayHostJoined(accountId: string, joinedHostId: string): string[] {
+    const relayed: string[] = [];
+    for (const sibling of this.options.store.listHostsForAccount(accountId)) {
+      if (sibling.hostId === joinedHostId) continue;
+      if (!hostAdvertisesCapability(this.options.hostLinks.capabilitiesFor(sibling.hostId), RACP_HOST_CAPABILITIES.deviceDesktopAuto)) continue;
+      for (const notice of this.options.store.listHostJoined(accountId)) {
+        if (notice.hostId === sibling.hostId) continue;
+        const frame = {
+          link: RACP_HOSTLINK_VERSION as typeof RACP_HOSTLINK_VERSION,
+          type: "host.joined" as const,
+          notice: {
+            noticeId: notice.noticeId,
+            accountId: notice.accountId,
+            hostId: notice.hostId,
+            label: notice.label,
+            joinedAt: notice.joinedAt,
+          },
+        };
+        if (this.options.hostLinks.sendToHost(sibling.hostId, frame)) relayed.push(sibling.hostId);
+      }
+    }
+    return relayed;
   }
 
   /**
@@ -407,6 +674,15 @@ export class DeviceRequestService {
       relayUntil: new Date(Math.min(Date.parse(grant.deliverUntil), this.nowMs() + GRANT_DELIVERY_WINDOW_MS)).toISOString(),
       signature: frame.signature,
       signerCertificate: frame.signerCertificate,
+      // Desktop-class grants carry the proof inside the approving Host's
+      // signature; a sibling re-verifies it, so the Gateway relays it as signed
+      // and never reconstructs it.
+      ...(grant.deviceClass ? { deviceClass: grant.deviceClass } : {}),
+      ...(grant.applicantHostId ? { applicantHostId: grant.applicantHostId } : {}),
+      ...(grant.hostProofNonce ? { hostProofNonce: grant.hostProofNonce } : {}),
+      ...(grant.requestExpiresAt ? { requestExpiresAt: grant.requestExpiresAt } : {}),
+      ...(grant.applicantCertificate ? { applicantCertificate: grant.applicantCertificate } : {}),
+      ...(grant.hostProofSignature ? { hostProofSignature: grant.hostProofSignature } : {}),
     };
     await this.options.store.savePendingGrant(pending);
     const relayed = relayToSiblings({
@@ -510,7 +786,82 @@ export class DeviceRequestService {
       if (revocation.signerHostId === hostId) continue;
       if (this.options.hostLinks.sendToHost(hostId, relayRevocationFrame(revocation))) delivered += 1;
     }
-    if (delivered > 0) this.options.log("info", "gateway delivered pending device frames", { hostId, delivered });
+    // A computer that was offline when another joined still shows the notice
+    // when its link comes up, for the same reason a missed revocation is
+    // re-offered (ADR amendment 3, Accepted risk).
+    for (const notice of this.options.store.listHostJoined(host.accountId)) {
+      if (notice.hostId === hostId) continue;
+      const frame = {
+        link: RACP_HOSTLINK_VERSION as typeof RACP_HOSTLINK_VERSION,
+        type: "host.joined" as const,
+        notice: {
+          noticeId: notice.noticeId,
+          accountId: notice.accountId,
+          hostId: notice.hostId,
+          label: notice.label,
+          joinedAt: notice.joinedAt,
+        },
+      };
+      if (hostAdvertisesCapability(this.options.hostLinks.capabilitiesFor(hostId), RACP_HOST_CAPABILITIES.deviceDesktopAuto)) {
+        if (this.options.hostLinks.sendToHost(hostId, frame)) delivered += 1;
+      }
+    }
+    // A computer that was offline when another was revoked still applies it, for
+    // the same reason a missed device revocation is re-offered.
+    for (const notice of this.options.store.listHostRevoked(host.accountId)) {
+      const frame = {
+        link: RACP_HOSTLINK_VERSION as typeof RACP_HOSTLINK_VERSION,
+        type: "host.revoked" as const,
+        revocation: { hostId: notice.hostId, accountId: notice.accountId, revokedAt: notice.revokedAt },
+      };
+      if (hostAdvertisesCapability(this.options.hostLinks.capabilitiesFor(hostId), RACP_HOST_CAPABILITIES.deviceDesktopAuto)) {
+        if (this.options.hostLinks.sendToHost(hostId, frame)) delivered += 1;
+      }
+    }
+  }
+
+  /**
+   * Tell the account's computers that one of them was revoked on the Gateway
+   * (ADR amendment 3, decision 4). Each of them revokes the desktop devices that
+   * computer's proof admitted, so `owner` really does follow the certificate.
+   *
+   * Stored first and re-offered on reconnect, exactly like `host.joined`: a
+   * computer that was asleep when the revocation happened still applies it. Only
+   * a Host that advertises `device.desktop-auto` is told, because only such a
+   * Host can hold a desktop-class device at all.
+   */
+  async announceHostRevoked(input: { hostId: string; revokedAt: string }): Promise<string[]> {
+    const host = this.options.store.findHost(input.hostId);
+    if (!host?.accountId) return [];
+    await this.options.store.saveHostRevoked({
+      noticeId: `revoked_${input.hostId}`,
+      accountId: host.accountId,
+      hostId: input.hostId,
+      revokedAt: input.revokedAt,
+      relayUntil: new Date(this.nowMs() + GRANT_DELIVERY_WINDOW_MS).toISOString(),
+    });
+    const relayed = this.relayHostRevoked(host.accountId, input.hostId);
+    await this.audit("account.host.revoked", "admin", "ok", host.accountId, { hostId: input.hostId });
+    this.options.log("info", "gateway announced a revoked account computer", { hostId: input.hostId, relayed: relayed.length });
+    return relayed;
+  }
+
+  /** Send the account's host-revoked notices to the Hosts that can act on them. */
+  private relayHostRevoked(accountId: string, exceptHostId?: string): string[] {
+    const relayed: string[] = [];
+    for (const sibling of this.options.store.listHostsForAccount(accountId)) {
+      if (sibling.hostId === exceptHostId) continue;
+      if (!hostAdvertisesCapability(this.options.hostLinks.capabilitiesFor(sibling.hostId), RACP_HOST_CAPABILITIES.deviceDesktopAuto)) continue;
+      for (const notice of this.options.store.listHostRevoked(accountId)) {
+        const frame = {
+          link: RACP_HOSTLINK_VERSION as typeof RACP_HOSTLINK_VERSION,
+          type: "host.revoked" as const,
+          revocation: { hostId: notice.hostId, accountId: notice.accountId, revokedAt: notice.revokedAt },
+        };
+        if (this.options.hostLinks.sendToHost(sibling.hostId, frame)) relayed.push(sibling.hostId);
+      }
+    }
+    return relayed;
   }
 
   private async audit(

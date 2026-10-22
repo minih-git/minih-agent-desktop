@@ -1,4 +1,4 @@
-import type { ProjectGroupRecord, RemoteWorkspace } from "@minih-agent/shared";
+import { isRemoteProjectPath, type ProjectGroupRecord, type RemoteWorkspace } from "@minih-agent/shared";
 
 type FileHost = { call<T>(method: string, input?: unknown): Promise<T> };
 
@@ -16,7 +16,7 @@ export async function remoteWorkspaceForFiles(getHost: () => FileHost | null, se
     path = workspace?.path;
   }
   if (getHost() !== owner) throw Object.assign(new Error("host replaced"), { errorCode: "HOST_UNAVAILABLE" });
-  if (!path?.startsWith("remote-project:")) return null;
+  if (!isRemoteProjectPath(path)) return null;
   const { groups } = await owner.call<{ groups: ProjectGroupRecord[] }>("project.groups.list");
   if (getHost() !== owner) throw Object.assign(new Error("host replaced"), { errorCode: "HOST_UNAVAILABLE" });
   const remote = groups.find((group) => group.primaryPath === path)?.remote;

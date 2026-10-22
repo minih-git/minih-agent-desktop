@@ -180,6 +180,7 @@ import type {
   MinihRouterModelsInput,
   RemoteGatewayDeviceNotice,
   RemoteGatewayDeviceRequest,
+  RacpModelSummary,
 } from "@minih-agent/shared";
 import {
   defaultCommandShellForPlatform,
@@ -817,6 +818,14 @@ export const api = {
       id,
       config,
     ).then((result) => ({ ...result, session: normalizeSession(result.session) })),
+  /**
+   * The model catalog of the host that owns the session. Only a remote session
+   * answers here: local sessions use the configured provider list, and a Host
+   * that cannot list models (behind this release) rejects with
+   * CAPABILITY_UNAVAILABLE.
+   */
+  sessionModels: (id: string) =>
+    invoke<{ models: RacpModelSummary[] }>(IPC.invoke.sessionModels, { sessionId: id }),
   scanImportSessions: () =>
     invoke<{
       sessions: ImportCandidate[];
@@ -1979,6 +1988,9 @@ export const api = {
   /** ADR decision 9: require confirmation on every terminal. */
   setRemoteGatewayStrictDevices: (strictDevices: boolean) =>
     invoke<RemoteGatewayStatus>(IPC.invoke.remoteGatewaySetStrictDevices, { strictDevices }),
+  /** ADR amendment 3: allow same-account computers to join automatically. */
+  setRemoteGatewayDesktopAuto: (enabled: boolean) =>
+    invoke<RemoteGatewayStatus>(IPC.invoke.remoteGatewaySetDesktopAuto, { enabled }),
   onRemoteGatewayDeviceRequest: (listener: (request: RemoteGatewayDeviceRequest) => void) => {
     if (!window.minihAgent?.on) return () => undefined;
     return window.minihAgent.on(IPC.event.remoteGatewayDeviceRequest, (payload) =>
