@@ -66,7 +66,7 @@ background-row pointer/keyboard behavior and certificate transport; never use
 the installed user app or paid providers. Do not install a second dependency
 environment. Full repository gates belong to a later authorized publication.
 
-## Status
+## Initial development status
 
 Implementation is complete in `fix/upstream-selected-20261022`, based on
 `c9e1744cfc103ff7849ce44327c868fcfedabefd`. The main checkout moved independently
@@ -97,7 +97,36 @@ the fixture now uses CDP native key delivery and all three widths pass. The
 product remains a shared native Button, without redundant key handlers. One
 old source-contract assertion was updated for the new bookmark ownership rule.
 
-No dependency installation, upstream-history merge, commit, push, local-main
+At the initial implementation handoff, no dependency installation,
+upstream-history merge, commit, push, local-main
 integration, user-app restart, packaging, release or deployment was performed.
 Full repository/publication gates and Windows/Linux native acceptance were not
 run. The complete-import baseline and monitoring checkpoint are unchanged.
+
+## Authorized publication candidate
+
+The follow-up request authorizes commit, push and merge into Minih main. The
+task was committed and refreshed without conflicts onto
+`13a6bf1850bc3f9592074496a7587cdf6602fa1d` (the 0.25.0 release). This refresh
+contains only independent Minih history, not upstream ancestry.
+
+- Passed: full JavaScript workspace builds (including Desktop and docs), all
+  workspace typechecks, lint, architecture budgets, agent-policy anchors,
+  contrast/patch checks and Rust formatting through the local pre-push gate.
+- Passed: every JavaScript workspace test command; Desktop reports 4637 pass,
+  0 fail and 3 platform skips, agent-runtime 1464 pass, host-runtime 186 pass.
+  The CLI suite has one existing intentional skip. No skipped case is counted
+  as native-platform acceptance.
+- Passed: documentation checks (87 locale pairs, 606 pages).
+- Added the existing Linux-without-DISPLAY guard to the new isolated Electron
+  test; its real interaction path still runs on macOS. Updated one preexisting
+  session-completion source assertion for the new session-bound file-source
+  dependency; the early return before file IPC remains verified.
+- The installed dependency environment is reused. Mutable pnpm task state and
+  build output are worktree-local; `verify-deps-before-run=false` prevents pnpm
+  from trying to reinstall linked dependencies before scripts. No dependencies
+  were installed or lockfiles changed.
+
+Final-commit candidate E2E, PR integration checks, actual remote merge and local
+main synchronization are recorded in the delivery report. This section does not
+pre-claim those later stages, packaging, release or installed-app updates.
