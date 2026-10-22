@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const enEntries: ChangelogEntry[] = [
   {
+    version: "0.25.0",
+    date: "2026-10-22",
+    highlights: [
+      "Computers on the same account now reach each other without SSH: a computer joins automatically once its certificate proves it belongs to the account, and every other computer shows a notice and keeps the switch, strict mode, and revoke controls.",
+      "The sidebar groups remote projects by computer and marks which one is offline or needs an upgrade, and a new project can be created on a computer of your account — the Agent runs there, with that computer's own provider settings.",
+      "Settings is reorganized around your account: remote control, cloud sync, and a new My devices section for account computers and granted devices sit on one page, while a This computer section names the machine and keeps every switch.",
+      "A remote session can switch models and inherits the host's permission mode, sending is disabled while the computer is offline, sessions can be deleted, and the file panel can be read without editing.",
+      "Opening and reconnecting to a remote session is faster: transcript snapshots fetch the most recent window in parallel instead of the whole conversation.",
+      "The phone can keep several conversations replying at once, keeps a reply running after the app is backgrounded, and connects to more than one gateway address.",
+      "An html fence in a reply renders in place, with scripts off until you enable them for that block, and the phone timeline now renders inline HTML too.",
+      "Cloud sync asks for one decision on a conflict — accept this device or accept the vault — while sync itself narrowed to global configuration, and code sync no longer depends on the project folders that stay local.",
+    ],
+  },
+  {
     version: "0.24.0",
     date: "2026-10-21",
     highlights: [

@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const trEntries: ChangelogEntry[] = [
   {
+    version: "0.25.0",
+    date: "2026-10-22",
+    highlights: [
+      "Aynı hesaptaki bilgisayarlar artık SSH olmadan birbirine ulaşıyor: sertifika hesaba ait olduğunu kanıtladığında bilgisayar otomatik olarak katılıyor, diğer her bilgisayar bir bildirim gösteriyor ve anahtarı, katı modu ve iptal denetimlerini koruyor.",
+      "Kenar çubuğu uzak projeleri bilgisayara göre grupluyor ve hangisinin çevrimdışı olduğunu ya da güncelleme gerektirdiğini işaretliyor; yeni bir proje hesabınızdaki bir bilgisayarda oluşturulabiliyor — Agent orada, o bilgisayarın sağlayıcı ayarlarıyla çalışıyor.",
+      "Ayarlar hesabınızın etrafında yeniden düzenlendi: uzaktan denetim, bulut eşitleme ve hesap bilgisayarları ile yetkilendirilmiş cihazlar için yeni Cihazlarım bölümü tek sayfada; Bu bilgisayar bölümü ise makineyi adlandırıp tüm anahtarları koruyor.",
+      "Uzak bir oturum model değiştirebiliyor ve ana makinenin izin modunu devralıyor, bilgisayar çevrimdışıyken gönderim devre dışı kalıyor, oturumlar silinebiliyor ve dosya paneli düzenleme olmadan okunabiliyor.",
+      "Uzak bir oturumu açmak ve yeniden bağlanmak hızlandı: konuşma anlık görüntüleri tüm konuşma yerine en son pencereyi paralel olarak getiriyor.",
+      "Telefon aynı anda birden çok konuşmayı yanıtlayabiliyor, uygulama arka plana geçtikten sonra yanıtı sürdürüyor ve birden fazla ağ geçidi adresine bağlanıyor.",
+      "Bir yanıttaki html bloğu yerinde işleniyor, betikler o blok için siz etkinleştirene kadar kapalı; telefon zaman çizelgesi de artık satır içi HTML gösteriyor.",
+      "Bulut eşitleme bir çakışmada tek bir karar istiyor — bu cihazı kabul et ya da kasayı kabul et — eşitlemenin kendisi genel yapılandırmaya daraldı ve kod eşitleme artık yerel kalan proje klasörlerine bağlı değil.",
+    ],
+  },
+  {
     version: "0.24.0",
     date: "2026-10-21",
     highlights: [

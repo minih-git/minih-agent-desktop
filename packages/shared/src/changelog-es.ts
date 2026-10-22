@@ -2,6 +2,20 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const esEntries: ChangelogEntry[] = [
   {
+    version: "0.25.0",
+    date: "2026-10-22",
+    highlights: [
+      "Las computadoras de una misma cuenta ahora se alcanzan sin SSH: una computadora se une automáticamente cuando su certificado demuestra que pertenece a la cuenta, y las demás muestran un aviso y conservan el interruptor, el modo estricto y la revocación.",
+      "La barra lateral agrupa los proyectos remotos por computadora y marca cuál está desconectada o necesita actualizarse; un proyecto nuevo puede crearse en una computadora de tu cuenta, y el agente se ejecuta allí con su propia configuración de proveedores.",
+      "Los ajustes se reorganizan en torno a tu cuenta: control remoto, sincronización en la nube y una nueva sección Mis dispositivos para las computadoras de la cuenta y los dispositivos concedidos, junto a una sección Esta computadora que la nombra y conserva todos los interruptores.",
+      "Una sesión remota puede cambiar de modelo y hereda el modo de permisos del host; mientras la computadora está desconectada se bloquea el envío, las sesiones pueden eliminarse y el panel de archivos se puede leer sin editar.",
+      "Abrir y reconectar una sesión remota es más rápido: las instantáneas de la transcripción piden en paralelo la ventana más reciente en lugar de toda la conversación.",
+      "El teléfono puede mantener varias conversaciones respondiendo a la vez, sigue una respuesta después de pasar la aplicación a segundo plano y se conecta a más de una dirección de gateway.",
+      "Un bloque html en una respuesta se renderiza en su sitio, con los scripts desactivados hasta que los habilites para ese bloque, y la línea de tiempo del teléfono también renderiza HTML en línea.",
+      "La sincronización en la nube pide una sola decisión ante un conflicto —aceptar este dispositivo o aceptar la bóveda—, mientras la sincronización se limitó a la configuración global y ya no depende de las carpetas de proyecto que quedan locales.",
+    ],
+  },
+  {
     version: "0.24.0",
     date: "2026-10-21",
     highlights: [
