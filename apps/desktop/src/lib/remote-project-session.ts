@@ -1,4 +1,4 @@
-import type { SessionSummary } from "@minih-agent/shared";
+import { remoteProjectPath, type SessionSummary } from "@minih-agent/shared";
 import { api } from "./api";
 import { isRemoteSession, safeSessionSummary } from "./remote-session-safety";
 import { sessionIsReusableEmpty } from "./session-create";
@@ -20,7 +20,7 @@ export async function openRemoteProjectSession(
   { get, set, runtime }: StoreAccess & { runtime: SessionRuntime },
   project: RemoteProjectTarget,
 ): Promise<void> {
-  const scope = `remote-project:${JSON.stringify([project.hostKey, project.projectId])}`;
+  const scope = remoteProjectPath(project.hostKey, project.projectId);
   const pending = runtime.pendingNewSessionRequests.get(scope);
   if (pending) return pending;
   const intent = runtime.beginNavigationIntent();

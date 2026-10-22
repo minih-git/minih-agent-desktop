@@ -187,7 +187,26 @@ describe("host link frames", () => {
     expect(Value.Check(RacpHostLinkFrameSchema, { ...capabilities, capabilities: [""] })).toBe(false);
 
     expect(Value.Check(RacpHostLinkFrameSchema, deviceRequestFrame())).toBe(true);
-    expect(Value.Check(RacpHostLinkFrameSchema, { ...deviceRequestFrame(), request: { ...deviceRequestFrame().request, client: "desktop" } })).toBe(false);
+    // A desktop request is a valid frame — the Gateway decides whether it may
+    // be sent, and the target Host decides whether to admit it.
+    expect(Value.Check(RacpHostLinkFrameSchema, { ...deviceRequestFrame(), request: { ...deviceRequestFrame().request, client: "desktop" } })).toBe(true);
+    // A proof must be complete: a signature over nothing is not a proof.
+    expect(
+      Value.Check(RacpHostLinkFrameSchema, {
+        ...deviceRequestFrame(),
+        request: {
+          ...deviceRequestFrame().request,
+          client: "desktop",
+          hostProof: { applicantHostId: "host_a", nonce: "dn_1", signature: "sig", certificate: "-----BEGIN CERTIFICATE-----" },
+        },
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(RacpHostLinkFrameSchema, {
+        ...deviceRequestFrame(),
+        request: { ...deviceRequestFrame().request, client: "desktop", hostProof: { applicantHostId: "host_a" } },
+      }),
+    ).toBe(false);
     expect(Value.Check(RacpHostLinkFrameSchema, { ...deviceRequestFrame(), request: { ...deviceRequestFrame().request, deviceLabel: "x".repeat(129) } })).toBe(false);
 
     expect(Value.Check(RacpHostLinkFrameSchema, deviceGrantFrame())).toBe(true);

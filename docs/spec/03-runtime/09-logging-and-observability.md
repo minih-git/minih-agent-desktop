@@ -215,6 +215,45 @@ Host-core audit rows may retain the existing permission and execution timing
 fields for forensic inspection. They are structured audit data, not a separate
 `timing.log` stream.
 
+## 7b. Opt-in remote latency records
+
+Remote-control latency is measured, not guessed, and the measurement is opt-in:
+with `MINIH_REMOTE_LATENCY_TRACE=1` in the environment of the desktop, the
+Gateway, or `agent-host-cli`, those processes write one `remote latency`
+`info` record per remote command and per relayed event. Without the variable
+nothing is written, so §5's "normal successful operations should not emit
+per-phase or per-request latency records" still holds for every ordinary run.
+
+The records carry a stage, a method or event kind, a trace id, and durations —
+never a parameter, a result, a path, a prompt, or a credential:
+
+- `stage: "client.request"` — one client request and its answer
+  (`method`, `traceId`, `durationMs`).
+- `stage: "client.event"` — one event received by a client, measured from the
+  Host's own `occurredAt` (`kind`, `scope`, `sessionId`, `deliveryMs`).
+- `stage: "gateway.command"` — the Gateway's two segments around the Host link
+  (`queueMs` from HTTP accepted to frame forwarded, `hostRoundTripMs` from
+  forwarded to the Host's reply, `totalMs`).
+- `stage: "gateway.event"` — one event relayed to an SSE client, measured from
+  `occurredAt`.
+- `stage: "host.execute"` — the Host's own receive-to-send duration
+  (`method`, `origin`, `connectionId`, `durationMs`).
+
+One `x-trace-id` joins the three processes: a client sends its own trace id
+(`RacpClient` generates one per request and puts it in an optional JSON-RPC
+`traceId` member, which an older peer ignores; the HTTP client sends it as the
+`x-trace-id` header), the Gateway accepts a well-formed caller value or
+generates one, echoes it on the response, and forwards it to the Host inside
+the request frame. A malformed caller value is replaced, never echoed. The
+trace id is a diagnostic identifier: it is not an authorization input, and a
+missing one changes nothing.
+
+`scripts/measure-remote-latency.mjs` runs the local stack (a real Gateway, a
+Router stub, one Host per transport, and a loopback model stub), sets the
+variable, and reports p50/p95 per workload from the records and its own
+timings. It never contacts a production Gateway, a real Router, a paid model,
+or the user's running desktop.
+
 ## 8. User-facing diagnostics
 
 MVP provides:

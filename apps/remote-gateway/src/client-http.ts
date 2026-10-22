@@ -23,6 +23,7 @@ import { randomUUID } from "node:crypto";
 import { createServer as createHttpServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
+import type { Duplex } from "node:stream";
 
 import {
   RACP_ACCOUNT_SESSION_TOKEN_PREFIX,
@@ -34,6 +35,7 @@ import {
   RACP_METHOD_HTTP_ROUTES,
   RACP_PAIRING_TOKEN_PREFIX,
   RacpPushRegistrationRequestSchema,
+  isRacpTraceId,
   type RacpGatewayHostSummary,
   type RacpHttpQueryParamType,
   type RacpHttpRouteName,
@@ -44,6 +46,7 @@ import * as Value from "typebox/value";
 import { ACCOUNT_COOKIE, type AccountSessionService } from "./account.js";
 import type { DeviceRequestService } from "./device-requests.js";
 import { peerAddress } from "./client-ip.js";
+import { CREDENTIAL_QUERY, bearerToken, hasUrlCredential } from "./client-request-rules.js";
 import type { ClientTlsOptions, ListenAddress } from "./config.js";
 import { CSRF_COOKIE, DEVICE_COOKIE, csrfTokenFor, hashToken, type PairingService } from "./pairing.js";
 import type { PushService } from "./push.js";
@@ -55,10 +58,21 @@ import type { GatewayAccountSessionRecord, GatewayStore } from "./store.js";
 import { serveEventStream, type StreamSubscription } from "./sse.js";
 
 const MAX_BODY_BYTES = 1024 * 1024;
-const CREDENTIAL_QUERY = /(token|credential|secret|password|api[-_]?key|authorization)/i;
 const JSON_RPC_APPLICATION_ERROR = -32000;
 /** Query-string values that are a signed decimal integer, not `20.5` or `1e3`. */
 const INTEGER_QUERY = /^-?\d+$/;
+
+/**
+ * Use the caller's `x-trace-id` when it is a well-formed trace id, so one
+ * request can be followed across the client, this Gateway, and the Host. The
+ * rule lives in `packages/shared` because a Host validates the same value in a
+ * request frame; an untrusted value is replaced, never echoed or sanitized.
+ */
+function requestTraceId(request: IncomingMessage): string {
+  const header = request.headers["x-trace-id"];
+  const value = Array.isArray(header) ? header[0] : header;
+  return isRacpTraceId(value) ? value : randomUUID();
+}
 
 type HostRoute = {
   routeName: RacpHttpRouteName;
@@ -115,6 +129,12 @@ const ACCOUNT_HOSTS_ROUTE = /^\/v1\/account\/hosts\/?$/;
 const ACCOUNT_LOGOUT_ROUTE = /^\/v1\/account\/logout\/?$/;
 const ACCOUNT_DEVICES_ROUTE = /^\/v1\/account\/devices\/?$/;
 const ACCOUNT_DEVICE_STATUS_ROUTE = /^\/v1\/account\/devices\/([^/]+)\/?$/;
+/**
+ * The desktop-class proof route (ADR amendment 3, decision 2): the Gateway
+ * mints the nonce a computer signs, so only it can bind one to a single request
+ * and one deadline.
+ */
+const ACCOUNT_DESKTOP_PROOF_ROUTE = /^\/v1\/account\/desktop-proof\/?$/;
 /**
  * Push registration (protocol §11.6, R5 PR-6). Device-token authenticated and
  * never host-scoped: a §11.4 device registers for its own Host, an account-mode
@@ -244,11 +264,6 @@ function parseQueryParams(url: URL, route: HostRoute): Record<string, unknown> {
   return params;
 }
 
-function bearer(header: string | undefined): string | null {
-  if (!header) return null;
-  const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
-  return match?.[1] ?? null;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -310,8 +325,15 @@ export type ClientHttpServerOptions = {
   /** Resolved client address (ADR decision 10); defaults to the TCP peer. */
   resolveClientIp?: (request: IncomingMessage) => string;
   now?: () => number;
+  /** Emit opt-in per-command segment timings (P0 measurement). */
+  latencyTrace?: boolean;
+  /**
+   * The `RACP-WS` client route (protocol §11.4 rule 7). It lives in
+   * `client-ws.ts`; this server only owns the socket it upgrades, so the two
+   * client surfaces share one listener and one TLS configuration.
+   */
+  webSocket?: { handleUpgrade: (request: IncomingMessage, socket: Duplex, head: Buffer) => boolean };
 };
-
 export class ClientHttpServer {
   private server: HttpServer | null = null;
 
@@ -329,6 +351,23 @@ export class ClientHttpServer {
     const server = certificate ? createHttpsServer({ cert: certificate.certificatePem, key: certificate.privateKeyPem }, handler) : createHttpServer(handler);
     server.keepAliveTimeout = 65_000;
     server.requestTimeout = 0;
+    // An upgrade the WebSocket route does not own is closed here: a client that
+    // upgrades an unknown path must not be left holding a half-open socket.
+    // The guard is the last line of defence for the whole process: this
+    // listener runs synchronously off the HTTP parser, so an exception escaping
+    // a handler would be an `uncaughtException` and would end the Gateway —
+    // whatever a caller sends. It must never happen, and it must never matter.
+    server.on("upgrade", (request, socket, head) => {
+      let owned = false;
+      try {
+        owned = this.options.webSocket?.handleUpgrade(request, socket, head) ?? false;
+      } catch (error) {
+        this.options.log("error", "gateway client upgrade handler failed", { error: String(error) });
+        socket.destroy();
+        return;
+      }
+      if (!owned) socket.destroy();
+    });
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(listen.port, listen.host, () => {
@@ -383,28 +422,17 @@ export class ClientHttpServer {
     return null;
   }
 
-  /** A credential never travels in the URL (security §3.1, gate 24). */
+  /**
+   * A credential never travels in the URL (security §3.1, gate 24). The rule
+   * itself is shared with the WebSocket route, so the two surfaces cannot
+   * drift apart.
+   */
   private assertNoUrlCredential(rawUrl: string): void {
-    const url = new URL(rawUrl, "http://gateway.local");
-    const carriesCredential = (value: string): boolean =>
-      value.includes(RACP_DEVICE_TOKEN_PREFIX) ||
-      value.includes(RACP_PAIRING_TOKEN_PREFIX) ||
-      value.includes(RACP_ACCOUNT_SESSION_TOKEN_PREFIX);
-    if (url.search === "") {
-      if (carriesCredential(url.pathname)) {
-        throw new GatewayRpcError("UNAUTHORIZED", "a credential must never appear in a URL");
-      }
-      return;
-    }
-    for (const key of url.searchParams.keys()) {
-      if (CREDENTIAL_QUERY.test(key) || [...url.searchParams.values()].some(carriesCredential)) {
-        throw new GatewayRpcError("UNAUTHORIZED", "a credential must never appear in a URL");
-      }
-    }
+    if (hasUrlCredential(rawUrl)) throw new GatewayRpcError("UNAUTHORIZED", "a credential must never appear in a URL");
   }
 
   private authenticate(request: IncomingMessage): ResolvedAuth {
-    const headerToken = bearer(request.headers.authorization);
+    const headerToken = bearerToken(request.headers.authorization);
     const cookieToken = request.headers.cookie ? parseCookies(request.headers.cookie)[DEVICE_COOKIE] : undefined;
     const token = headerToken ?? cookieToken;
     if (!token) throw new GatewayRpcError("UNAUTHORIZED", "this request needs a device credential");
@@ -463,7 +491,7 @@ export class ClientHttpServer {
    */
   private authenticateAccount(request: IncomingMessage): { session: GatewayAccountSessionRecord; via: "header" | "cookie" } {
     const account = this.accountService();
-    const headerToken = bearer(request.headers.authorization);
+    const headerToken = bearerToken(request.headers.authorization);
     const cookieToken = request.headers.cookie ? parseCookies(request.headers.cookie)[ACCOUNT_COOKIE] : undefined;
     const token = headerToken ?? cookieToken;
     if (!token) throw new GatewayRpcError("UNAUTHORIZED", "this request needs an account session credential");
@@ -519,7 +547,8 @@ export class ClientHttpServer {
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const traceId = randomUUID();
+    const receivedAt = Date.now();
+    const traceId = requestTraceId(request);
     response.setHeader("x-trace-id", traceId);
     const rawUrl = request.url ?? "/";
     const url = new URL(rawUrl, "http://gateway.local");
@@ -571,6 +600,11 @@ export class ClientHttpServer {
 
       if (ACCOUNT_DEVICES_ROUTE.test(url.pathname)) {
         await this.handleAccountDeviceRequest(request, response, ip, cors, traceId);
+        return;
+      }
+
+      if (ACCOUNT_DESKTOP_PROOF_ROUTE.test(url.pathname)) {
+        await this.handleAccountDesktopProof(request, response, ip, cors, traceId);
         return;
       }
 
@@ -642,6 +676,8 @@ export class ClientHttpServer {
           lastEventId: Array.isArray(lastEventId) ? (lastEventId[0] ?? null) : (lastEventId ?? null),
           log: this.options.log,
           corsHeaders: cors,
+          traceId,
+          ...(this.options.latencyTrace === true ? { latencyTrace: true } : {}),
         });
         return;
       }
@@ -682,6 +718,8 @@ export class ClientHttpServer {
         method: route.operation,
         params: forwarded,
         ...(typeof idempotencyKey === "string" ? { idempotencyKey } : {}),
+        traceId,
+        receivedAt,
       });
       await this.audit(route.operation, ip, "ok", { hostId, deviceId: auth.deviceId });
       sendJson(response, outcome.status, outcome.payload, cors);
@@ -872,7 +910,7 @@ export class ClientHttpServer {
   ): Promise<void> {
     try {
       if (request.method !== "POST") throw new GatewayRpcError("METHOD_NOT_FOUND", "account login is a POST endpoint");
-      const accessKey = bearer(request.headers.authorization);
+      const accessKey = bearerToken(request.headers.authorization);
       if (!accessKey) {
         throw new GatewayRpcError("UNAUTHORIZED", "account login needs the Router AccessKey in the Authorization header");
       }
@@ -1018,6 +1056,34 @@ export class ClientHttpServer {
     }
   }
 
+  /**
+   * `POST /v1/account/desktop-proof` (ADR amendment 3, decision 2): mint the
+   * values a computer signs to prove it is a registered machine of this
+   * account. The route takes the account session credential, never a device
+   * token, and answers the request id, the nonce, and the roster so the client
+   * knows which computers could admit it at all.
+   */
+  private async handleAccountDesktopProof(
+    request: IncomingMessage,
+    response: ServerResponse,
+    ip: string,
+    cors: Record<string, string>,
+    traceId: string,
+  ): Promise<void> {
+    try {
+      if (request.method !== "POST") throw new GatewayRpcError("METHOD_NOT_FOUND", "a desktop proof is a POST endpoint");
+      this.assertOrigin(request, "optional");
+      const { session, via } = this.authenticateAccount(request);
+      this.assertCsrf(request, via, session.sessionId);
+      this.assertRateLimit(`account:${session.sessionId}`, ip);
+      const outcome = await this.deviceService().desktopProof({ session, body: await readJsonBody(request), ip });
+      sendJson(response, outcome.status, outcome.payload, this.accountHeaders(cors));
+    } catch (error) {
+      const rpc = error instanceof GatewayRpcError ? error : new GatewayRpcError("INTERNAL", "the Gateway failed to start the desktop proof");
+      sendError(response, rpc, traceId, cors);
+    }
+  }
+
   private async handlePair(
     request: IncomingMessage,
     response: ServerResponse,
@@ -1028,7 +1094,7 @@ export class ClientHttpServer {
   ): Promise<void> {
     try {
       if (request.method !== "POST") throw new GatewayRpcError("METHOD_NOT_FOUND", "pairing is a POST endpoint");
-      const token = bearer(request.headers.authorization);
+      const token = bearerToken(request.headers.authorization);
       if (!token || !token.startsWith(RACP_PAIRING_TOKEN_PREFIX)) {
         throw new GatewayRpcError("UNAUTHORIZED", "pairing needs the Host's pairing token in the Authorization header");
       }

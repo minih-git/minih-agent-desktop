@@ -336,8 +336,10 @@ Exit criteria:
    quitting close it and cancel pending server requests, while a renderer
    reload leaves it running and the settings page re-subscribes to its status.
 3. A gateway-routed principal stays under the remote permission ceiling,
-   cannot change a local session's permission mode, and cannot use
-   `allow-session`; `DESKTOP_PRINCIPAL` is unchanged.
+   cannot use `allow-session`, and may change a session's persistent
+   permission mode through `session/configure` (ADR 0331 amendment 4; the
+   ceiling still binds every relay-initiated turn). `DESKTOP_PRINCIPAL` is
+   unchanged.
 4. Revoking the desktop's device closes the link.
 5. The mTLS key and certificate are stored encrypted outside settings and
    outside SQLite.
@@ -462,7 +464,134 @@ Exit criteria:
    `404` from the bootstrap) keeps the self-hosted flow of R4 and R5, reports no
    error, and hides the account-mode affordances.
 
+### R8 — Same-account computers join automatically (D675)
+
+Deliver the desktop-class device surface of ADR
+`remote-control-router-account-binding` amendment 3 on top of R7: a computer of
+the account reaches its siblings through the Gateway without SSH, holds
+`owner`, and can start work on the other machine. The self-hosted flow, the
+phone's device confirmation, and the phone's role set are unchanged. Work
+packages, one commit range each:
+
+| # | Repository | Work | Depends on |
+|---|---|---|---|
+| A | Desktop | this decision: the ADR amendment, the spec updates, decision D675, and the P0 measurement (docs and instrumentation) | — |
+| B | Desktop | `apps/remote-gateway`: the `RACP-WS` client route `GET /v1/hosts/{hostId}/ws`, upgraded from the same Bearer device token, mapped 1:1 onto the Host link logical connection | A |
+| C | Desktop | `desktop` client class and `hostProof` verification, `device.desktop-auto`, automatic admission with the per-computer switch, `owner` for a proven desktop device | A |
+| D | Desktop | desktop Host operations a desktop-class device needs (session rename/delete/archive/configure, workspace list/read/diff), shared with `packages/host-runtime`; a phone keeps `FORBIDDEN` | C |
+| E | Desktop | renderer: account computers in the host list and New project dialog, sidebar groups per computer, offline and "needs an update" states, i18n | B, D |
+| F | Desktop | the unified Accounts page: account, this computer, my devices, configuration sync, advanced | E |
+| G | ops | the Nginx `Upgrade` header for `/v1/hosts/*/ws`; needs user authorization | B |
+
+Scope notes:
+
+- the WebSocket route authenticates with the device token in the header profile
+  (a browser cannot set that header on a WebSocket and keeps `RACP-HTTP` + SSE)
+  and reuses the existing hash fast-reject, rate limit, and audit; it is a
+  transport, not a second authorization path. **Packages A–D are implemented**
+  (the contract, the Gateway's proof minting and relays, the Host's own
+  verification with automatic admission, the desktop's `account` transport with
+  the switch's three states, and package D's session delete plus the read-only
+  file panel behind the per-connection `workspaceRead` capability). Package E is
+  implemented in three layers: the account computers reach the host list with
+  their capabilities and upgrade state, New project offers them as their own
+  source (below), the sidebar groups remote projects per computer with the
+  offline and needs-an-update reasons stated there, and a remote conversation
+  picks its model from the owning computer's catalog (`model/list` +
+  `session/configure`), shows the read-only file panel, deletes through
+  `session/delete`, and refuses sending while that computer is offline with the
+  reason shown. Package F is not;
+- package D opens `session/delete` and `workspace/list|read|diff` to a
+  desktop-class device only, reuses the shared `packages/host-runtime`
+  implementations (one idle rule answering `AGENT_BUSY`, one session-root
+  containment check, one set of size caps), and wires a remote delete through
+  the desktop's own delete IPC so the runtime cleanup runs exactly once.
+  `session/archive` is **not** part of this package after all: session archival
+  is renderer presentation state with no authoritative Host record, so opening
+  it would mean inventing Host-side persistence the renderer does not read
+  (protocol §6.2). Each client archives in its own sidebar instead — package E
+  archives a sibling's session under that remote session id, locally.
+  `session/rename` and `session/configure` stay available to a phone, because
+  the phone's own session sheet uses them today;
+- automatic admission is refused, never silently ignored, when the proof is
+  missing, when its nonce was reused or expired, or when the target computer
+  does not advertise `device.desktop-auto`;
+- the proof carries the applicant's certificate and the target Host chains it to
+  its own pinned Gateway CA: a target Host has no other way to obtain that
+  certificate, and its integrity rests on the chain plus the account and
+  `hostId` binding, not on the Gateway being honest;
+- every computer of the account receives the same request and the same proof, so
+  more than one of them can admit it at once, each minting its own token. The
+  Gateway keeps only the first grant and the client receives only that token,
+  so a computer that also admitted the request revokes the device it minted and
+  adopts the surviving one: one request, one device, one token everywhere. The
+  proof's nonce is single-use per request, not per Host — a proof presented for
+  a request that computer never admitted is still refused as a replay;
+- the proof is verified by the target Host itself, with the Gateway's check as a
+  fast reject only: a compromised Gateway must not be able to mint an `owner`
+  device on its own (ADR 0331's "the Gateway never decides an approval");
+- the Agent runs on the computer that owns the project, with that machine's
+  provider configuration and its own Router account for model calls; no
+  credential crosses machines;
+- **the Gateway path needs no `workspace/toolExecute`.** The Agent runs on B, so
+  B's own Agent executes B's tools locally; A uses session, turn, and approval
+  operations plus `workspace/list|read|diff` for the file panel, over the
+  `RACP-WS` route of package B, not through the `RACP-HTTP` route table.
+  `workspace/toolExecute` stays what it is today: the SSH topology's
+  "local Agent + remote workspace tools" shape. The P0 measurement reporting
+  `n = 0` for a small Bash call over the Gateway path is therefore expected, not
+  a gap;
+- SSH-paired hosts keep the local-Agent + remote-workspace-tools shape and are
+  shown as a separate kind of host.
+- New project offers **three** sources, and the two remote ones are different
+  shapes: an **account computer** registers the folder there and opens a session
+  whose Agent runs there, while an **SSH host** keeps the local Agent with remote
+  tools. The dialog states which one the user is choosing. An account project
+  records **no local project group**: a group would bind this desktop's
+  workspace to a folder on another machine and turn the account computer back
+  into the SSH shape. The session reference is what this desktop keeps, and the
+  sidebar groups it under the computer it runs on. A computer that is offline or
+  behind this release is still listed and says why, because hiding a machine the
+  user knows about explains nothing;
+- the account computer list and the SSH host list never overlap: only an
+  explicit `account` transport is an account computer, so a pairing written
+  before this release stays on the SSH side where it has always been.
+
+Exit criteria:
+
+1. `E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop` passes: two desktops
+   and a Gateway, A sees B without a confirmation dialog, opens B's project,
+   runs a turn on B, and receives the streamed answer and any approval.
+2. Security gates 25, 27, and 35 are signed off: a phone still never receives
+   `owner`, an explicitly disabled switch stays off, a desktop device without a
+   Host-verified proof (or with a reused or expired nonce) is refused automatic
+   admission, a computer that was offline when the device was admitted adopts it
+   on reconnect, a revoked computer's desktop devices lose their standing
+   elsewhere, and a new Host enrollment notifies the account's other computers.
+3. The P0 measurement is re-run and P7 is chosen from its numbers, not from the
+   plan's assumptions. On the P0 evidence, P7 keeps only the confirmed item —
+   bounded-parallel session attach plus paged `session/history` on open and
+   reconnect — and **drops the streamed-delta coalescing**: the local stub's 40
+   provider chunks produced 11–13 `item.delta` events, so deltas are already
+   coalesced somewhere between the provider stream and the RACP event, and a
+   second merge would be added blind. If an online measurement later shows a
+   delta problem, the existing merge point is located first. **Delivered
+   (2026-10-22) with its own measurement** (`scripts/measure-p7-attach.mjs`,
+   loopback RACP-WS, one real Host, seven sessions, 40 iterations per
+   strategy, attach-to-all-ready): the pre-P7 serial full-snapshot path
+   measured p50 4.9 ms / p95 5.5 ms, the parallelism alone p50 2.3 ms /
+   p95 2.9 ms, and the shipped combination (parallelism three plus
+   `snapshotHistoryLimit: 0`) p50 1.8 ms / p95 2.3 ms — a 2.1× open gain from
+   the structure and a further ~20% from not shipping transcript pages the
+   connection never reads. Loopback understates the win: on a real network the
+   serial path pays seven round trips where the shipped one pays about three.
+   The measured sessions were empty, so the snapshot-boundary gain shown here
+   is the parameter handling, not transcript bytes; a Host caps a snapshot at
+   its own default page regardless of conversation length, which is why the
+   2000-line scenario costs the same as this one on the attach path.
+
 ### Reserved — gRPC binding
+
 
 `RACP-GRPC` is delivered only when a named native service consumer or
 Gateway implementation needs it. Generate the `.proto` and clients from the

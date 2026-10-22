@@ -169,6 +169,12 @@ export type DesktopDevicesOptions = {
   emitRequest?: (request: RemoteGatewayDeviceRequest) => void;
   /** ADR decision 9; off by default. */
   strictDevices: boolean;
+  /**
+   * "Allow same-account computers to join automatically" (ADR amendment 3,
+   * decision 3); **on** by default. With it off, a desktop request falls back to
+   * asking this desktop's user and the device is not adopted as desktop-class.
+   */
+  desktopAutoAdmission?: boolean;
   onNotice?: (notice: DeviceNotice) => void;
   now?: () => number;
 };
@@ -204,6 +210,7 @@ export function createDesktopDevices(options: DesktopDevicesOptions): DesktopDev
       log: options.log,
       confirmer,
       strictMode: options.strictDevices,
+      desktopAutoAdmission: options.desktopAutoAdmission ?? true,
       ...(options.onNotice ? { onNotice: options.onNotice } : {}),
       ...(options.now ? { now: options.now } : {}),
     });

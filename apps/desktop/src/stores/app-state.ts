@@ -301,6 +301,15 @@ export type AppState = {
     hostKey: string;
     path: string;
   }) => Promise<void>;
+  /**
+   * Register a folder on an account computer and open the session created
+   * there. The Agent runs on that computer; this desktop keeps the reference.
+   */
+  createProjectOnAccount: (input: {
+    name: string;
+    hostKey: string;
+    path: string;
+  }) => Promise<void>;
   createProjectFromFolders: (input: {
     name: string;
     folders: string[];

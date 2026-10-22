@@ -19,6 +19,7 @@ import {
   RacpEnrollErrorCodeSchema,
   RacpEnrollResponseSchema,
   type RacpEnrollErrorCode,
+  type RacpHostJoined,
 } from "@minih-agent/shared";
 import * as Value from "typebox/value";
 import { WebSocket } from "ws";
@@ -167,6 +168,12 @@ export type StartHostLinkOptions = {
    * `credentials.gatewayUrl` is dialled.
    */
   resolveDialUrl?: () => string | Promise<string>;
+  /**
+   * A "a new computer joined the account" notice (ADR amendment 3). The Host
+   * shows it and audits it; it is never an authorization, so it is forwarded
+   * whether or not this Host can do anything with it.
+   */
+  onHostJoined?: (notice: RacpHostJoined) => void;
 };
 
 const ENROLL_TIMEOUT_MS = 15_000;
@@ -576,6 +583,7 @@ export function startHostLink(options: StartHostLinkOptions): HostLinkHandle {
         devices: options.devices ?? null,
         revocations: options.revocations ?? null,
         notifier: options.notifier ?? null,
+        ...(options.onHostJoined ? { onHostJoined: options.onHostJoined } : {}),
         socket: new WebSocketHostLinkSocket(ws),
       });
       publish("connected");

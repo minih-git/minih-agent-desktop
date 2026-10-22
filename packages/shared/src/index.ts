@@ -24,6 +24,7 @@ export * from "./composer-trigger.js";
 export * from "./prompt-references.js";
 export * from "./inline-attachments.js";
 export * from "./session-link.js";
+export * from "./remote-project.js";
 export * from "./session-target.js";
 export * from "./fuzzy.js";
 export * from "./mcp-import.js";

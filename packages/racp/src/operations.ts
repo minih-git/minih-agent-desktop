@@ -50,6 +50,9 @@ const AttachParams = Type.Object({
   role: Type.Optional(Type.Union([Type.Literal("viewer"), Type.Literal("controller"), Type.Literal("approver"), Type.Literal("owner")])),
   after: Type.Optional(RacpCursorSchema),
   includeSnapshot: Type.Optional(Type.Boolean()),
+  // §16.3: cap the snapshot's history page. A Host that predates the parameter
+  // leaves it unread (unknown fields pass validation) and sends its default.
+  snapshotHistoryLimit: Type.Optional(Type.Number({ minimum: 0 })),
 });
 const SubscribeParams = Type.Object({
   scope: Type.Union([Type.Literal("session"), Type.Literal("host")]),
@@ -304,6 +307,7 @@ export function createOperations(): Map<RacpOperation, OperationHandler> {
       ...(input.role ? { role: input.role } : {}),
       ...(input.after ? { after: input.after } : {}),
       ...(input.includeSnapshot !== undefined ? { includeSnapshot: input.includeSnapshot } : {}),
+      ...(input.snapshotHistoryLimit !== undefined ? { snapshotHistoryLimit: input.snapshotHistoryLimit } : {}),
     });
   });
   handlers.set("session/history", async (context, params) => {
@@ -401,7 +405,7 @@ export function createOperations(): Map<RacpOperation, OperationHandler> {
 
   handlers.set("session/configure", async (context, params) => {
     const { sessionId, ...input } = check(SessionConfigureParams, params);
-    const summary = await context.operations.sessions.configure(sessionId, input);
+    const summary = await context.operations.sessions.configure(sessionId, input, context.principal);
     context.agentHost.publishSessionChange("session.changed", summary);
     return { session: context.agentHost.describeSession(summary) };
   });
@@ -431,7 +435,7 @@ export function createOperations(): Map<RacpOperation, OperationHandler> {
   });
   handlers.set("session/delete", async (context, params) => {
     const input = check(SessionIdParams, params);
-    await context.operations.sessions.delete(input.sessionId);
+    await context.operations.sessions.delete(input.sessionId, context.principal);
     return { ok: true };
   });
   handlers.set("session/compact", async (context, params) => {
@@ -441,16 +445,16 @@ export function createOperations(): Map<RacpOperation, OperationHandler> {
 
   handlers.set("workspace/list", async (context, params) => {
     const input = check(WorkspacePathParams, params);
-    return context.operations.workspace.list(input.sessionId, input.path ?? "");
+    return context.operations.workspace.list(input.sessionId, input.path ?? "", context.principal);
   });
   handlers.set("workspace/read", async (context, params) => {
     const input = check(WorkspacePathParams, params);
     if (!input.path) throw new RacpError("INVALID_ARGUMENT", "path is required");
-    return context.operations.workspace.read(input.sessionId, input.path);
+    return context.operations.workspace.read(input.sessionId, input.path, context.principal);
   });
   handlers.set("workspace/diff", async (context, params) => {
     const input = check(SessionIdParams, params);
-    return context.operations.workspace.diff(input.sessionId);
+    return context.operations.workspace.diff(input.sessionId, context.principal);
   });
 
   handlers.set("terminal/open", async (context, params) => {

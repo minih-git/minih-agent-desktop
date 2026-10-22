@@ -1,31 +1,29 @@
 /**
- * Remote control on the accounts page (rollout R5, ADR 0331; D666).
+ * This computer on the accounts page (rollout R5/R8 package F; ADR 0331).
  *
- * Everything a user needs in account mode is visible: whether the Router can
- * register this desktop, the switch that does it, the link's state, the
- * per-terminal confirmation switch, and the devices that may connect. The
- * self-hosted registration-code path is a nested advanced area, because an
- * account names the Gateway for the user.
+ * The account's devices reach this desktop only through what this section
+ * shows: the switch that dials the Gateway, the strict and auto-admission
+ * switches, the link's state, and the pairing code. Everything a user needs in
+ * account mode is visible; the self-hosted registration-code path is a nested
+ * advanced area, because an account names the Gateway for the user.
  *
  * The pairing code stays visible on purpose: account mode still falls back to a
  * §11.4 ticket when no computer of the account can confirm a device, so it is
  * not a self-hosted-only concern.
  */
 import { useTranslation } from "react-i18next";
-import { formatPairingTicket } from "@minih-agent/shared";
+import { formatPairingTicket, type RemoteGatewayDeviceNotice } from "@minih-agent/shared";
 import {
   accountModeVisible,
   pairingCodeRemainingLabel,
   remoteGatewayStateKey,
   remoteGatewaySwitchDisabled,
 } from "../../lib/remote-gateway-state";
-import { Badge, Button, SettingsToggle, cx } from "../ui";
-import { SelfHostedGatewaySection } from "./SelfHostedGatewaySection";
-import { useRemoteControl, type RemoteControl } from "./useRemoteControl";
+import { Badge, Button, SettingsToggle } from "../ui";
+import type { RemoteControl } from "./useRemoteControl";
 
-export function RemoteControlSection() {
+export function RemoteControlSection({ control }: { control: RemoteControl }) {
   const { t } = useTranslation();
-  const control = useRemoteControl();
   const { status } = control;
 
   const enrolled = status?.enrolled === true;
@@ -39,11 +37,20 @@ export function RemoteControlSection() {
     <section className="settings-card-block" aria-labelledby="remote-control-heading">
       <div className="settings-card-heading-row">
         <h3 id="remote-control-heading" className="settings-card-heading">
-          {t("settings.remoteGateway.title")}
+          {t("settings.accountsThisComputerTitle")}
         </h3>
         <Badge>{t("settings.remoteHosts.experimental")}</Badge>
       </div>
       <p className="text-sm text-text-secondary">{t("settings.remoteGateway.desc")}</p>
+
+      {/* The computer's own name, the same one a phone shows; the Host id is
+          the fallback because it is the one identifier that always exists. */}
+      <div className="space-y-1 py-2" data-testid="accounts-this-computer">
+        <div className="settings-row-title">{t("settings.accountsComputerName")}</div>
+        <div className="text-sm text-text-primary font-mono">
+          {status?.hostLabel || status?.hostId || t("settings.accountsComputerNameUnknown")}
+        </div>
+      </div>
 
       {accountModeVisible(status) ? (
         <div className="space-y-1 py-2" role="status" data-testid="remote-gateway-account-mode">
@@ -145,24 +152,34 @@ export function RemoteControlSection() {
         </div>
       ) : null}
 
+      {accountModeVisible(status) ? (
+        <div className="flex items-center justify-between gap-4 py-2">
+          <div className="space-y-1">
+            <div className="settings-row-title">{t("settings.remoteGateway.desktopAutoTitle")}</div>
+            <div className="text-sm text-text-primary">{t("settings.remoteGateway.desktopAutoLabel")}</div>
+            <div className="text-xs text-text-secondary">{t("settings.remoteGateway.desktopAutoHint")}</div>
+            {control.desktopAuto.error ? (
+              <div className="text-xs text-danger" role="alert">
+                {control.desktopAuto.error}
+              </div>
+            ) : null}
+          </div>
+          <SettingsToggle
+            checked={status?.desktopAutoAdmission !== false}
+            busy={control.desktopAuto.busy}
+            label={t("settings.remoteGateway.desktopAutoLabel")}
+            onChange={() => void control.onToggleDesktopAuto()}
+          />
+        </div>
+      ) : null}
+
       {control.notices.length > 0 ? (
         <div className="space-y-1 py-2" aria-live="polite">
           <div className="settings-row-title">{t("settings.remoteGateway.noticesTitle")}</div>
           <ul className="space-y-1 text-xs text-text-secondary" role="list">
             {control.notices.map((notice) => (
               <li key={`${notice.kind}-${notice.deviceId}-${notice.at}`} role="listitem">
-                {t(
-                  notice.kind === "device.minted"
-                    ? "settings.remoteGateway.noticeMinted"
-                    : notice.kind === "device.adopted"
-                      ? "settings.remoteGateway.noticeAdopted"
-                      : notice.kind === "device.revoked"
-                        ? "settings.remoteGateway.noticeRevoked"
-                        : notice.kind === "device.session-created"
-                          ? "settings.remoteGateway.noticeSessionCreated"
-                          : "settings.remoteGateway.noticeProjectRegistered",
-                  { label: notice.label, time: notice.at, device: notice.deviceId },
-                )}
+                {t(noticeKey(notice), { label: notice.label, time: notice.at, device: notice.deviceId })}
               </li>
             ))}
           </ul>
@@ -170,10 +187,35 @@ export function RemoteControlSection() {
       ) : null}
 
       <PairingCodeBlock control={control} />
-      <DeviceList control={control} />
-      <SelfHostedGatewaySection control={control} />
     </section>
   );
+}
+/**
+ * The catalog key for one notice. A desktop-class device is announced as a
+ * computer rather than a phone, and `host.joined` names another computer of the
+ * account (ADR amendment 3) — both are the same notice channel the page already
+ * renders, so the person at this machine sees them without a new surface.
+ */
+function noticeKey(notice: RemoteGatewayDeviceNotice): string {
+  if (notice.kind === "host.joined") return "settings.remoteGateway.noticeHostJoined";
+  if (notice.deviceClass === "desktop") {
+    if (notice.kind === "device.adopted") return "settings.remoteGateway.noticeDesktopAdopted";
+    if (notice.kind === "device.revoked") return "settings.remoteGateway.noticeDesktopRevoked";
+  }
+  switch (notice.kind) {
+    case "device.minted":
+      return "settings.remoteGateway.noticeMinted";
+    case "device.adopted":
+      return "settings.remoteGateway.noticeAdopted";
+    case "device.revoked":
+      return "settings.remoteGateway.noticeRevoked";
+    case "device.session-created":
+      return "settings.remoteGateway.noticeSessionCreated";
+    case "device.session-configured":
+      return "settings.remoteGateway.noticeSessionConfigured";
+    case "device.project-registered":
+      return "settings.remoteGateway.noticeProjectRegistered";
+  }
 }
 
 /** One-time pairing code plus the ticket a phone can paste instead. */
@@ -249,82 +291,6 @@ function PairingCodeBlock({ control }: { control: RemoteControl }) {
           {pairing.error}
         </p>
       ) : null}
-    </div>
-  );
-}
-
-/** Devices of this Gateway, with the two-step revoke. */
-function DeviceList({ control }: { control: RemoteControl }) {
-  const { t } = useTranslation();
-  return (
-    <div className="space-y-2 py-2" role="list" aria-busy={control.devices === null}>
-      <div className="settings-row-title">{t("settings.remoteGateway.devicesTitle")}</div>
-      {control.devicesError ? (
-        <p className="text-sm text-danger" role="alert">
-          {control.devicesError}
-        </p>
-      ) : null}
-      {control.devices === null ? (
-        <p className="text-sm text-text-secondary" role="status">
-          {t("settings.remoteGateway.loading")}
-        </p>
-      ) : control.devices.length === 0 ? (
-        <p className="text-sm text-text-secondary" role="status">
-          {t("settings.remoteGateway.devicesEmpty")}
-        </p>
-      ) : (
-        control.devices.map((device) => (
-          <article
-            key={device.deviceId}
-            role="listitem"
-            className={cx(
-              "flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-default px-3 py-2",
-              device.revokedAt && "opacity-60",
-            )}
-          >
-            <div className="space-y-1">
-              <div className="text-sm text-text-primary">{device.label}</div>
-              <div className="text-xs text-text-secondary">
-                {t("settings.remoteGateway.devicesRoles", { roles: device.roles.join(", ") })}
-              </div>
-              {device.lastSeenAt ? (
-                <div className="text-xs text-text-secondary">
-                  {t("settings.remoteGateway.devicesLastSeen", { time: device.lastSeenAt })}
-                </div>
-              ) : null}
-            </div>
-            {control.revoke.pending === device.deviceId ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-text-secondary">
-                  {t("settings.remoteGateway.revokeBody")}
-                </span>
-                <Button
-                  type="button"
-                  variant="primary"
-                  disabled={control.revoke.busy === device.deviceId}
-                  aria-busy={control.revoke.busy === device.deviceId}
-                  onClick={() => void control.onRevoke(device)}
-                >
-                  {t("settings.remoteGateway.revokeConfirm")}
-                </Button>
-                <Button type="button" variant="ghost" onClick={() => control.setPendingRevoke(null)}>
-                  {t("settings.remoteGateway.cancel")}
-                </Button>
-              </div>
-            ) : (
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={Boolean(device.revokedAt)}
-                onClick={() => control.setPendingRevoke(device.deviceId)}
-                aria-label={t("settings.remoteGateway.revokeTitle", { label: device.label })}
-              >
-                {t("settings.remoteGateway.revoke")}
-              </Button>
-            )}
-          </article>
-        ))
-      )}
     </div>
   );
 }
