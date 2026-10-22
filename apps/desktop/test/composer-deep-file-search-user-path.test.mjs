@@ -113,7 +113,11 @@ window.deepSearchProbe = async () => {
 };
 `;
 
-test("deep file completion accepts a chip and rejects stale query/session answers", { timeout: 90_000 }, async () => {
+test("deep file completion accepts a chip and rejects stale query/session answers", {
+  timeout: 90_000,
+  skip: process.platform === "linux" && !process.env.DISPLAY
+    ? "Isolated Electron UI test requires a display" : false,
+}, async () => {
   const temp = await mkdtemp(join(process.env.PI_SCRATCH_DIR ?? tmpdir(), "minih-deep-file-search-"));
   try {
     await build({
