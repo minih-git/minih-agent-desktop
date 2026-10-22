@@ -1,28 +1,45 @@
-import { BrowserWindow, dialog, shell, type OpenDialogOptions } from "electron";
-import { dirname } from "node:path";
-import { homedir } from "node:os";
 import { existsSync, statSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import {
-  ErrorCodes,
-  IPC,
+  type ComposerTemplate,
+  loadComposerTemplates,
+} from "@minih-agent/agent-runtime";
+import {
+  collectWorkspaceDiff,
+  isAttachmentBlobRef,
+  listDir,
+  readOpenableFile,
+  readOpenableImage,
+  resolveRealOpenablePath,
+} from "@minih-agent/host-runtime";
+import { catalogs, resolveLocale } from "@minih-agent/i18n";
+import {
   type ComposerPasteFile,
+  ErrorCodes,
   type FsChatRefEntryKind,
   type FsChatRefOutside,
   type FsChatRefProjectRoot,
   type FsChatRefResolveResult,
+  IPC,
   type ProjectGroupRecord,
   type RemoteWorkspace,
   type WorkspaceFilesRequest,
 } from "@minih-agent/shared";
 import {
-  loadComposerTemplates,
-  type ComposerTemplate,
-} from "@minih-agent/agent-runtime";
-import { remoteWorkspaceForFiles } from "../remote/workspace-file-scope";
+  app,
+  BrowserWindow,
+  dialog,
+  type OpenDialogOptions,
+  type SaveDialogOptions,
+  shell,
+} from "electron";
+import type { AgentSidecar } from "../agent-sidecar";
 import { getActiveRemoteHostsBoot } from "../bootstrap/remote-hosts";
-import { cloneGitRepository } from "../git-clone";
+import { BROWSER_PLUGIN_ID, type BrowserHost } from "../browser-host";
+import { isChatRefOutsideRoots, resolveChatFileRef } from "../chat-ref-resolve";
+import type { ClipboardHistory } from "../clipboard-history";
 import {
   importComposerFiles,
   saveComposerPasteFiles,
@@ -31,31 +48,21 @@ import {
   consumeComposerPickerSelection,
   rememberComposerPickerSelection,
 } from "../composer-picker";
-import { collectWorkspaceDiff } from "@minih-agent/host-runtime";
-import { parseAllowedExternalUrl } from "../safe-open-external";
-import {
-  isAttachmentBlobRef,
-  listDir,
-  readOpenableFile,
-  readOpenableImage,
-  resolveRealOpenablePath,
-} from "@minih-agent/host-runtime";
-import { openableMp4Path } from "../open-attachment-video";
-import { isChatRefOutsideRoots, resolveChatFileRef } from "../chat-ref-resolve";
 import { getWorkspaceFileIndex } from "../fs-index";
+import { cloneGitRepository } from "../git-clone";
+import type { HostProcess } from "../host-process";
+import type { Logger } from "../logger";
+import { getModuleDirectory } from "../module-path";
+import { openableMp4Path } from "../open-attachment-video";
+import type { PluginRuntime } from "../plugin-runtime";
+import { remoteWorkspaceForFiles } from "../remote/workspace-file-scope";
+import { parseAllowedExternalUrl } from "../safe-open-external";
 import {
   projectFolderPaths,
   refreshProjectGroups,
   rememberProjectGroups,
   workspaceRootsFor,
 } from "../workspace-roots";
-import { BROWSER_PLUGIN_ID, type BrowserHost } from "../browser-host";
-import type { AgentSidecar } from "../agent-sidecar";
-import type { HostProcess } from "../host-process";
-import type { Logger } from "../logger";
-import type { ClipboardHistory } from "../clipboard-history";
-import { getModuleDirectory } from "../module-path";
-import type { PluginRuntime } from "../plugin-runtime";
 import type { IpcRegistrar } from "./types";
 
 type WorkspaceRecord = { path: string; name: string };
@@ -436,6 +443,77 @@ export function registerWorkspaceIpc({
     if (openError) throw new Error(openError);
     return { ok: true, path: projectPath };
   });
+
+  // One project archive at a time: the native pickers are process-wide, and a
+  // second archive would race the progress the first one is reporting.
+  let projectArchiveActive = false;
+  const withProjectArchive = async <T>(run: () => Promise<T>): Promise<T> => {
+    if (projectArchiveActive) {
+      throw Object.assign(
+        new Error(catalogs[resolveLocale(app.getLocale())].projectArchive.busy),
+        { errorCode: ErrorCodes.CONFLICT },
+      );
+    }
+    projectArchiveActive = true;
+    try {
+      return await run();
+    } finally {
+      projectArchiveActive = false;
+    }
+  };
+  handle(IPC.invoke.projectArchiveExport, async (input: { projectPath?: unknown } = {}) =>
+    withProjectArchive(async () => {
+      if (!host) throw new Error("host unavailable");
+      const projectPath = await managedProjectPath(input?.projectPath);
+      const strings = catalogs[resolveLocale(app.getLocale())].projectArchive;
+      const owner = getMainWindow();
+      const options: SaveDialogOptions = {
+        title: strings.exportTitle,
+        defaultPath: join(dirname(projectPath), `${basename(projectPath)}.zip`),
+        filters: [{ name: strings.zipFilter, extensions: ["zip"] }],
+      };
+      const picked = owner
+        ? await dialog.showSaveDialog(owner, options)
+        : await dialog.showSaveDialog(options);
+      if (picked.canceled || !picked.filePath) return { canceled: true };
+      const result = (await host.call("project.archive.export", {
+        projectPath,
+        targetPath: picked.filePath,
+      })) as Record<string, unknown>;
+      return { canceled: false, ...result };
+    }),
+  );
+  handle(IPC.invoke.projectArchiveImport, async () =>
+    withProjectArchive(async () => {
+      if (!host) throw new Error("host unavailable");
+      const strings = catalogs[resolveLocale(app.getLocale())].projectArchive;
+      const owner = getMainWindow();
+      // The Host validates the archive before anything reaches the destination,
+      // so these pickers only decide which file and which parent folder.
+      const archiveOptions: OpenDialogOptions = {
+        title: strings.importTitle,
+        properties: ["openFile"],
+        filters: [{ name: strings.zipFilter, extensions: ["zip"] }],
+      };
+      const archive = owner
+        ? await dialog.showOpenDialog(owner, archiveOptions)
+        : await dialog.showOpenDialog(archiveOptions);
+      if (archive.canceled || !archive.filePaths[0]) return { canceled: true };
+      const parentOptions: OpenDialogOptions = {
+        title: strings.importParentTitle,
+        properties: ["openDirectory", "createDirectory"],
+      };
+      const parent = owner
+        ? await dialog.showOpenDialog(owner, parentOptions)
+        : await dialog.showOpenDialog(parentOptions);
+      if (parent.canceled || !parent.filePaths[0]) return { canceled: true };
+      const result = (await host.call("project.archive.import", {
+        archivePath: archive.filePaths[0],
+        targetParentPath: parent.filePaths[0],
+      })) as Record<string, unknown>;
+      return { canceled: false, ...result };
+    }),
+  );
   handle(IPC.invoke.projectOpen, async () => {
     if (!host) throw new Error("host unavailable");
     const result = await openProjectPicker({

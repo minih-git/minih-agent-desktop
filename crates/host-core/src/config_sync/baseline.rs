@@ -12,8 +12,8 @@ pub(super) fn load(st: &AppState, key: &VaultKey) -> Result<Option<Baseline>> {
     let baseline: Option<Baseline> =
         load_encrypted(st, key, "local-base", &local_path(st, "base.bin")?)?;
     Ok(baseline.map(|mut baseline| {
-        domains::retain_supported_entities(&mut baseline.shared);
-        domains::retain_supported_entities(&mut baseline.observed);
+        domains::retain_portable_entities(&mut baseline.shared);
+        domains::retain_portable_entities(&mut baseline.observed);
         baseline
     }))
 }

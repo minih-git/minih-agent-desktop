@@ -341,6 +341,10 @@ export function createHostRuntime({
       // reports are the only thing the page has to show while it runs. The
       // request's own answer is still the outcome.
       sendToRenderer(IPC.event.configSyncProgress, params);
+    } else if (method === "projectArchive.progress") {
+      // One archive is one request that answers only when it is over; these
+      // reports are what the Projects page shows while it runs.
+      sendToRenderer(IPC.event.projectArchiveProgress, params);
     }
   });
   h.onExit(({ code, signal, intentional }) => {

@@ -15,9 +15,6 @@ mod capture_impl;
 pub(crate) use capture_impl::{
     capture, global_instruction_path_for_sync, remove_instruction_file, write_instruction_file,
 };
-#[cfg(test)]
-pub(crate) use capture_impl::{capture_instructions, capture_memory};
-
 pub const DOMAIN_APPLICATION: &str = "application";
 pub const DOMAIN_PROVIDERS: &str = "providers";
 pub const DOMAIN_MCP: &str = "mcp";
@@ -64,9 +61,15 @@ pub(crate) const PORTABLE_APPLICATION_FIELDS: &[&str] = &[
     "learnedMemoryRead",
 ];
 
-const PROJECT_IDENTITY_NAMESPACE: &str = "configSyncIdentities";
-const PROJECT_IDENTITY_KEY: &str = "projects";
-const PROJECT_GROUP_IDENTITY_KEY: &str = "groups";
+/// Payload keys that mark an entity as belonging to one machine's project or
+/// project group. They are read from the entity itself, not from this device's
+/// capture, so a revision another device produced still classifies correctly.
+const PROJECT_SCOPE_PAYLOAD_KEYS: &[&str] = &[
+    "projectLogicalId",
+    "projectGroupLogicalId",
+    "workspaceProjectLogicalId",
+    "logicalId",
+];
 
 pub const ALL_DOMAINS: [&str; 10] = [
     DOMAIN_APPLICATION,
@@ -372,35 +375,6 @@ impl CategorySelection {
     }
 }
 
-/// Local path bindings are overlays. They let a device keep using logical
-/// identifiers received from another device without exporting filesystem
-/// paths as portable data.
-#[derive(Debug, Clone, Default)]
-pub struct ProjectIdentityOverrides {
-    pub project_ids: BTreeMap<String, String>,
-    pub group_ids: BTreeMap<String, String>,
-}
-
-impl ProjectIdentityOverrides {
-    pub fn from_mappings(
-        project_mappings: &BTreeMap<String, String>,
-        project_group_mappings: &BTreeMap<String, Vec<String>>,
-    ) -> Self {
-        let mut overrides = Self::default();
-        for (logical_id, path) in project_mappings {
-            overrides
-                .project_ids
-                .insert(path.clone(), logical_id.clone());
-        }
-        for (logical_id, paths) in project_group_mappings {
-            for path in paths {
-                overrides.group_ids.insert(path.clone(), logical_id.clone());
-            }
-        }
-        overrides
-    }
-}
-
 fn stable_id(prefix: &str, value: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(prefix.as_bytes());
@@ -491,97 +465,6 @@ fn strip_keys(value: &mut Value, keys: &[&str]) {
     }
 }
 
-fn project_logical_id(path: &str) -> String {
-    stable_id("project-path", path)
-}
-
-fn project_group_logical_id(
-    st: &mut AppState,
-    group: &crate::db::ProjectGroupRecord,
-) -> Result<String> {
-    if group.legacy {
-        return Ok(project_logical_id(&group.primary_path));
-    }
-    let mut identities = st
-        .db
-        .kv_get(PROJECT_IDENTITY_NAMESPACE, PROJECT_GROUP_IDENTITY_KEY)?
-        .map(serde_json::from_value::<BTreeMap<String, String>>)
-        .transpose()?
-        .unwrap_or_default();
-    if let Some(identity) = identities.get(&group.id) {
-        return Ok(identity.clone());
-    }
-    let identity = format!("project-group:{}", Uuid::new_v4());
-    identities.insert(group.id.clone(), identity.clone());
-    st.db.kv_set(
-        PROJECT_IDENTITY_NAMESPACE,
-        PROJECT_GROUP_IDENTITY_KEY,
-        &serde_json::to_value(identities)?,
-    )?;
-    Ok(identity)
-}
-
-fn project_identity_for_path(st: &mut AppState, path: &str) -> Result<String> {
-    let project = st
-        .db
-        .list_projects()?
-        .into_iter()
-        .find(|project| project.path == path);
-    let Some(project) = project else {
-        return Ok(project_logical_id(path));
-    };
-    let mut identities = st
-        .db
-        .kv_get(PROJECT_IDENTITY_NAMESPACE, PROJECT_IDENTITY_KEY)?
-        .map(serde_json::from_value::<BTreeMap<String, String>>)
-        .transpose()?
-        .unwrap_or_default();
-    if let Some(identity) = identities.get(&project.id.to_string()) {
-        return Ok(identity.clone());
-    }
-    let identity = format!("project:{}", Uuid::new_v4());
-    identities.insert(project.id.to_string(), identity.clone());
-    st.db.kv_set(
-        PROJECT_IDENTITY_NAMESPACE,
-        PROJECT_IDENTITY_KEY,
-        &serde_json::to_value(identities)?,
-    )?;
-    Ok(identity)
-}
-
-pub(super) fn project_scope(
-    st: &mut AppState,
-    path: &str,
-    overrides: &ProjectIdentityOverrides,
-) -> Result<(String, Option<String>, Option<usize>)> {
-    let mapped_project_id = overrides.project_ids.get(path).cloned();
-    let project_id = mapped_project_id
-        .clone()
-        .unwrap_or(project_identity_for_path(st, path)?);
-    let Some(group) = st.db.project_group_for_path(path)? else {
-        return Ok((project_id, None, None));
-    };
-    if group.legacy {
-        return Ok((project_id, None, None));
-    }
-    let group_id = match overrides
-        .group_ids
-        .get(path)
-        .or_else(|| overrides.group_ids.get(&group.primary_path))
-        .cloned()
-    {
-        Some(group_id) => group_id,
-        None => project_group_logical_id(st, &group)?,
-    };
-    let root_position = group.roots.iter().position(|root| root.path == path);
-    let project_id = mapped_project_id.unwrap_or_else(|| {
-        root_position
-            .map(|position| stable_id("project-root", &format!("{group_id}:{position}")))
-            .unwrap_or(project_id)
-    });
-    Ok((project_id, Some(group_id), root_position))
-}
-
 pub fn snapshot_digest(snapshot: &LocalSnapshot) -> String {
     let material = json!({
         "entities": snapshot
@@ -601,13 +484,44 @@ pub fn snapshot_digest(snapshot: &LocalSnapshot) -> String {
     hex::encode(hasher.finalize())
 }
 
-/// Remove retired domains from decoded revisions and local recovery state.
-/// Resource references are projected with the retained entities, after remote
-/// readers have validated the complete authenticated manifest.
-pub(crate) fn retain_supported_entities(manifest: &mut RevisionManifest) {
+/// Whether an entity belongs to one machine's project or project group.
+///
+/// Cloud sync transports global configuration only: a project's MCP servers,
+/// skills, instructions, memory, learned notes and the automations bound to it
+/// stay on the device that owns the folder and travel through a project
+/// archive instead. The markers are read from the entity itself, so a revision
+/// produced by a build that still captured project data classifies the same way
+/// as a local capture does.
+pub(crate) fn is_project_scoped(entity: &PortableEntity) -> bool {
+    if entity.mapping_required {
+        return true;
+    }
+    // Pinned memory is only ever project or group scoped; its domain has no
+    // global shape to fall back to.
+    if entity.domain == DOMAIN_MEMORY {
+        return true;
+    }
+    entity.payload.as_object().is_some_and(|payload| {
+        PROJECT_SCOPE_PAYLOAD_KEYS
+            .iter()
+            .any(|key| payload.contains_key(*key))
+    })
+}
+
+/// Remove everything this build must not transport from a decoded revision or
+/// local recovery state: domains that were retired, and every project- or
+/// group-scoped record.
+///
+/// Filtering happens on the entity, not on this device's own capture, so an old
+/// remote revision, the acknowledged baseline and a staged approval bundle all
+/// lose project data the same way. Resource references are projected with the
+/// retained entities after remote readers have validated the complete
+/// authenticated manifest, so a filtered skill cannot leave its resources
+/// behind, and the dropped entities never become tombstones.
+pub(crate) fn retain_portable_entities(manifest: &mut RevisionManifest) {
     manifest
         .entities
-        .retain(|entity| adapter_for(&entity.domain).is_some());
+        .retain(|entity| adapter_for(&entity.domain).is_some() && !is_project_scoped(entity));
     manifest.resource_ids = manifest
         .entities
         .iter()
@@ -658,7 +572,6 @@ mod provider_capture_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::AppState;
 
     #[test]
     fn adapter_registry_covers_every_portable_domain() {
@@ -695,135 +608,122 @@ mod tests {
         }
     }
 
-    #[test]
-    fn captures_non_legacy_project_group_memory_as_a_separate_entity() {
-        let data_dir = tempfile::tempdir().unwrap();
-        let first = data_dir.path().join("first");
-        let second = data_dir.path().join("second");
-        std::fs::create_dir_all(&first).unwrap();
-        std::fs::create_dir_all(&second).unwrap();
-
-        let mut state = AppState::open(data_dir.path()).unwrap();
-        let group = state
-            .db
-            .create_project_group(
-                "Workspace",
-                &[
-                    first.to_string_lossy().into_owned(),
-                    second.to_string_lossy().into_owned(),
-                ],
-            )
-            .unwrap();
-        state
-            .db
-            .set_project_group_memory(
-                &group.id,
-                &json!([{
-                    "id": "note-1",
-                    "title": "Context",
-                    "content": "Keep this with the workspace",
-                }]),
-            )
-            .unwrap();
-
-        let entities = capture_memory(&mut state, &ProjectIdentityOverrides::default()).unwrap();
-        let entity = entities
-            .iter()
-            .find(|entity| entity.payload["projectGroupLogicalId"].is_string())
-            .expect("group memory entity");
-        let logical_id = entity.payload["projectGroupLogicalId"]
-            .as_str()
-            .expect("group logical id");
-        assert_eq!(entity.entity_id, format!("memory:{logical_id}"));
-        assert!(entity.mapping_required);
-        assert!(entity.secret_bearing);
-        assert_eq!(entity.payload["memory"]["entries"][0]["id"], "note-1");
-    }
-
-    #[test]
-    fn captures_only_the_app_managed_project_instruction_file() {
-        let data_dir = tempfile::tempdir().unwrap();
-        let project = data_dir.path().join("project");
-        let nested = project.join("nested");
-        std::fs::create_dir_all(&nested).unwrap();
-        std::fs::write(project.join("AGENTS.md"), "project guidance\n").unwrap();
-        std::fs::write(nested.join("AGENTS.md"), "nested guidance\n").unwrap();
-
-        let mut state = AppState::open(data_dir.path()).unwrap();
-        state
-            .db
-            .ensure_project(&project.to_string_lossy(), false)
-            .unwrap();
-        let entities =
-            capture_instructions(&mut state, &ProjectIdentityOverrides::default()).unwrap();
-        let project_entities = entities
-            .iter()
-            .filter(|entity| entity.payload["scope"] == "project")
-            .collect::<Vec<_>>();
-        assert_eq!(project_entities.len(), 1);
-        assert_eq!(project_entities[0].payload["content"], "project guidance\n");
-        assert!(project_entities[0].mapping_required);
-    }
-
-    #[test]
-    fn project_identities_are_local_stable_and_mapping_overrides_are_used() {
-        let data_dir = tempfile::tempdir().unwrap();
-        let project = data_dir.path().join("project");
-        std::fs::create_dir_all(&project).unwrap();
-        let mut state = AppState::open(data_dir.path()).unwrap();
-        state
-            .db
-            .ensure_project(&project.to_string_lossy(), false)
-            .unwrap();
-
-        let stored_path = state.db.list_projects().unwrap()[0].path.clone();
-        let first = project_scope(
-            &mut state,
-            &stored_path,
-            &ProjectIdentityOverrides::default(),
+    fn global_entity(domain: &str, entity_id: &str, payload: Value) -> PortableEntity {
+        entity(
+            domain,
+            entity_id,
+            entity_id,
+            payload,
+            false,
+            false,
+            false,
+            vec![],
         )
-        .unwrap();
-        let second = project_scope(
-            &mut state,
-            &stored_path,
-            &ProjectIdentityOverrides::default(),
-        )
-        .unwrap();
-        assert_eq!(first.0, second.0);
-        assert!(first.0.starts_with("project:"));
-
-        let mut overrides = ProjectIdentityOverrides::default();
-        overrides
-            .project_ids
-            .insert(stored_path.clone(), "project:from-other-device".into());
-        let mapped = project_scope(&mut state, &stored_path, &overrides).unwrap();
-        assert_eq!(mapped.0, "project:from-other-device");
     }
 
     #[test]
-    fn captures_project_instruction_files_beyond_the_former_size_cap() {
-        let data_dir = tempfile::tempdir().unwrap();
-        let project = data_dir.path().join("project");
-        std::fs::create_dir_all(&project).unwrap();
-        let content = "policy line\n".repeat(4000);
-        assert!(content.len() > 32 * 1024);
-        std::fs::write(project.join("AGENTS.md"), &content).unwrap();
+    fn project_scope_is_read_from_the_entity_not_from_this_device() {
+        // A project MCP server, skill, instruction, pinned memory and folder-bound
+        // automation are marked either by `mappingRequired` or by the logical id
+        // in their payload. Both markers matter: an entity another build wrote
+        // still has to classify the same way here.
+        let cases = [
+            (
+                DOMAIN_MCP,
+                json!({"id": "server"}),
+                json!({"id": "server", "projectLogicalId": "project:abc"}),
+            ),
+            (
+                DOMAIN_SKILLS,
+                json!({"id": "skill"}),
+                json!({"id": "skill", "projectGroupLogicalId": "project-group:abc"}),
+            ),
+            (
+                DOMAIN_INSTRUCTIONS,
+                json!({"scope": "global"}),
+                json!({"scope": "project", "projectLogicalId": "project:abc"}),
+            ),
+            (
+                DOMAIN_AUTOMATION,
+                json!({"id": "task"}),
+                json!({"id": "task", "workspaceProjectLogicalId": "project:abc"}),
+            ),
+        ];
+        for (domain, global_payload, scoped_payload) in cases {
+            let global = global_entity(domain, "global", global_payload);
+            assert!(!is_project_scoped(&global), "{domain} global payload");
+            let mut scoped = global_entity(domain, "scoped", scoped_payload);
+            assert!(is_project_scoped(&scoped), "{domain} project payload");
+            // A device that only set the mapping marker, without the logical id,
+            // is still project scoped.
+            scoped.payload = json!({"id": "scoped"});
+            scoped.mapping_required = true;
+            assert!(is_project_scoped(&scoped), "{domain} mapping marker");
+        }
 
-        let mut state = AppState::open(data_dir.path()).unwrap();
-        state
-            .db
-            .ensure_project(&project.to_string_lossy(), false)
-            .unwrap();
-        let entities =
-            capture_instructions(&mut state, &ProjectIdentityOverrides::default()).unwrap();
-        let project_entity = entities
-            .iter()
-            .find(|entity| entity.payload["scope"] == "project")
-            .expect("project instruction entity");
-        assert_eq!(
-            project_entity.payload["content"].as_str(),
-            Some(content.as_str())
+        // Pinned memory has no global shape at all.
+        assert!(is_project_scoped(&global_entity(
+            DOMAIN_MEMORY,
+            "memory:project:abc",
+            json!({"memory": {}})
+        )));
+        // Learned memory travels for the user and stays local for a folder.
+        assert!(!is_project_scoped(&global_entity(
+            DOMAIN_LEARNED_MEMORY,
+            "learned-memory:user",
+            json!({"scopeKind": "user"})
+        )));
+        assert!(is_project_scoped(&global_entity(
+            DOMAIN_LEARNED_MEMORY,
+            "learned-memory:project:abc",
+            json!({"scopeKind": "project", "projectLogicalId": "project:abc"})
+        )));
+    }
+
+    #[test]
+    fn retaining_portable_entities_drops_project_records_and_their_resources() {
+        let mut journal =
+            global_entity(DOMAIN_SKILLS, "skill:global", json!({"id": "global-skill"}));
+        journal.resource_ids = vec!["resource-global".into()];
+        let mut project_skill = global_entity(
+            DOMAIN_SKILLS,
+            "skill:project",
+            json!({"id": "project-skill", "projectLogicalId": "project:abc"}),
         );
+        project_skill.resource_ids = vec!["resource-project".into()];
+        let mut project_skill_package = global_entity(
+            DOMAIN_SKILLS,
+            "skill:project-package",
+            json!({"id": "project-package"}),
+        );
+        project_skill_package.mapping_required = true;
+        project_skill_package.resource_ids = vec!["resource-package".into()];
+        let retired_project = global_entity("projects", "project:abc", json!({"name": "Remote"}));
+        let mut manifest = RevisionManifest {
+            format: "revision".into(),
+            version: 1,
+            revision_id: "revision".into(),
+            parents: vec![],
+            created_at: String::new(),
+            entities: vec![
+                journal.clone(),
+                project_skill,
+                project_skill_package,
+                retired_project,
+            ],
+            resource_ids: vec![
+                "resource-global".into(),
+                "resource-package".into(),
+                "resource-project".into(),
+            ],
+        };
+
+        retain_portable_entities(&mut manifest);
+
+        assert_eq!(manifest.entities, vec![journal]);
+        // Resources follow the retained entities, so a filtered project skill
+        // cannot leave an object behind for download.
+        assert_eq!(manifest.resource_ids, vec!["resource-global".to_string()]);
     }
 
     #[test]

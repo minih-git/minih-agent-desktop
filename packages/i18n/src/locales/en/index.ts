@@ -1387,6 +1387,7 @@ sklm: {
       experimental: "Experimental",
     },
     configSync: {
+      globalScopeNote: "Only global configuration travels: accounts and model bindings, global skills, MCP servers, subagents, instructions, plugins and automations, plus the memory you opted into. Project folders, project skills, project MCP servers, project memory and folder-bound automations stay on each device; move a project with its archive export and import.",
       title: "Cloud sync",
       experimental: "Experimental",
       connectionTitle: "Connection settings",
@@ -2177,7 +2178,20 @@ sklm: {
       INTERNAL: "something went wrong",
     },
   },
+  projectArchive: {
+    exportTitle: "Export project archive",
+    importTitle: "Choose a project archive",
+    importParentTitle: "Choose where to restore the project",
+    zipFilter: "Project archive",
+    busy: "Another project archive operation is running.",
+  },
   project: {
+    exportArchive: "Export archive file…",
+    importArchive: "Import archive file…",
+    archiveExported: "Project exported to {{path}}",
+    archiveImported: "Imported {{name}} ({{files}} files)",
+    archiveProgress: "{{done}} / {{total}}",
+    archiveSensitiveHint: "The archive copies the whole project folder, including hidden files and .git. Check the folder for files you do not want to share.",
     open: "Open project",
     openFolder: "Open folder",
     none: "No project",

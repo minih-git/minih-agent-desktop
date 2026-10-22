@@ -982,6 +982,7 @@ sklm: {
       voice: "語音",
     },
     configSync: {
+      globalScopeNote: "只同步全域設定：帳戶與模型綁定、全域技能、MCP、子代理、指令、外掛與自動化，以及你已選擇同步的記憶。專案資料夾、專案技能、專案 MCP、專案記憶和綁定專案的自動化留在各自裝置上；遷移專案請用歸檔匯出與匯入。",
       title: "雲端同步",
       experimental: "實驗性",
       connectionTitle: "連線設定",
@@ -2141,7 +2142,20 @@ sklm: {
       INTERNAL: "出了點問題",
     },
   },
+  projectArchive: {
+    exportTitle: "匯出專案歸檔",
+    importTitle: "選擇專案歸檔檔案",
+    importParentTitle: "選擇專案的還原位置",
+    zipFilter: "專案歸檔",
+    busy: "已有另一個專案歸檔操作正在進行。",
+  },
   project: {
+    exportArchive: "匯出歸檔檔案…",
+    importArchive: "匯入歸檔檔案…",
+    archiveExported: "專案已匯出到 {{path}}",
+    archiveImported: "已匯入 {{name}}（{{files}} 個檔案）",
+    archiveProgress: "{{done}} / {{total}}",
+    archiveSensitiveHint: "歸檔會複製整個專案資料夾，包括隱藏檔案和 .git。請先確認資料夾裡沒有不想外傳的內容。",
     open: "開啟專案",
     openFolder: "開啟資料夾",
     none: "無專案",

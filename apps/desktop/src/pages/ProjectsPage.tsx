@@ -112,6 +112,12 @@ export function ProjectsPage() {
     groupId?: string;
     legacy?: boolean;
   } | null>(null);
+  // One archive request at a time. No progress yet means the request has not
+  // reported its first unit.
+  const [archiveRunning, setArchiveRunning] = useState<"export" | "import" | null>(null);
+  const [archiveProgress, setArchiveProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
 
   useEffect(() => {
     let canceled = false;
@@ -130,6 +136,16 @@ export function ProjectsPage() {
       canceled = true;
     };
   }, [sessions]);
+
+  // The Host reports each archive operation while it runs; the request's own
+  // answer is still the outcome.
+  useEffect(
+    () =>
+      api.onProjectArchiveProgress((progress) =>
+        setArchiveProgress({ done: progress.done, total: progress.total }),
+      ),
+    [],
+  );
 
   const items = useMemo(
     () =>
@@ -202,6 +218,51 @@ export function ProjectsPage() {
       return false;
     }
   };
+
+  // Both archive operations are Host-owned: main passes only the paths the user
+  // picked in a native dialog, and the index reload picks up a new project.
+  const runArchive = async (
+    kind: "export" | "import",
+    run: () => Promise<
+      | { canceled: true }
+      | {
+          canceled: false;
+          files: number;
+          name: string;
+          targetPath?: string;
+        }
+    >,
+  ) => {
+    if (archiveRunning) return;
+    setArchiveRunning(kind);
+    setArchiveProgress(null);
+    try {
+      const result = await run();
+      if (result.canceled) return;
+      if (kind === "export") {
+        showToast(t("project.archiveExported", { path: result.targetPath ?? "" }), {
+          variant: "success",
+        });
+        return;
+      }
+      showToast(t("project.archiveImported", { name: result.name, files: result.files }), {
+        variant: "success",
+      });
+      const { groups } = await api.listProjectGroups();
+      setDurableProjects(groups);
+      setRecents(loadRecentProjects());
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
+    } finally {
+      setArchiveRunning(null);
+      setArchiveProgress(null);
+    }
+  };
+
+  const exportProject = (path: string) =>
+    runArchive("export", () => api.projectArchiveExport({ projectPath: path }));
+
+  const importArchive = () => runArchive("import", () => api.projectArchiveImport());
 
   const startTask = async (path: string) => {
     try {
@@ -389,6 +450,21 @@ export function ProjectsPage() {
           </span>
         ) : null}
         <div className="projects-toolbar-actions">
+          {archiveProgress ? (
+            <span className="projects-archive-progress" aria-live="polite">
+              {t("project.archiveProgress", {
+                done: archiveProgress.done,
+                total: archiveProgress.total,
+              })}
+            </span>
+          ) : null}
+          <Button
+            variant="secondary"
+            onClick={() => void importArchive()}
+            disabled={archiveRunning !== null}
+          >
+            {t("project.importArchive")}
+          </Button>
           <Button variant="primary" onClick={addProject}>
             <IconPlus size={14} />
             {t("project.add")}
@@ -583,6 +659,22 @@ export function ProjectsPage() {
                           <IconPencil size={14} />
                           {t("project.edit", { defaultValue: "Edit project" })}
                         </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          data-action="export-archive"
+                          disabled={archiveRunning !== null}
+                          onClick={() => {
+                            setMenuFor(null);
+                            void exportProject(project.path);
+                          }}
+                        >
+                          <IconArchive size={14} />
+                          {t("project.exportArchive")}
+                        </button>
+                        <p className="projects-menu-hint">
+                          {t("project.archiveSensitiveHint")}
+                        </p>
                         <div className="projects-menu-sep" role="separator" />
                         <button
                           type="button"

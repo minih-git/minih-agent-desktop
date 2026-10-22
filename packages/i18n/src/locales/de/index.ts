@@ -984,6 +984,7 @@ sklm: {
       "voice": "Sprache"
     },
     "configSync": {
+      globalScopeNote: "Nur globale Konfiguration wird übertragen: Konten und Modellbindungen, globale Skills, MCP-Server, Subagents, Anweisungen, Plugins und Automatisierungen sowie die ausgewählte Erinnerung. Projektordner, Projektskills, Projekt-MCP-Server, Projektgedächtnis und ordnergebundene Automatisierungen bleiben auf dem jeweiligen Gerät; ein Projekt zieht mit Export und Import seines Archivs um.",
       title: "Cloud sync",
       experimental: "Experimentell",
       connectionTitle: "Verbindungseinstellungen",
@@ -2151,7 +2152,20 @@ sklm: {
       INTERNAL: "etwas ist schiefgelaufen",
     },
   },
+  projectArchive: {
+    exportTitle: "Projektarchiv exportieren",
+    importTitle: "Projektarchiv auswählen",
+    importParentTitle: "Zielordner für das Projekt auswählen",
+    zipFilter: "Projektarchiv",
+    busy: "Ein anderer Projektarchiv-Vorgang läuft bereits.",
+  },
   "project": {
+    exportArchive: "Archivdatei exportieren…",
+    importArchive: "Archivdatei importieren…",
+    archiveExported: "Projekt exportiert nach {{path}}",
+    archiveImported: "{{name}} importiert ({{files}} Dateien)",
+    archiveProgress: "{{done}} / {{total}}",
+    archiveSensitiveHint: "Das Archiv kopiert den gesamten Projektordner, einschließlich versteckter Dateien und .git. Prüfe den Ordner auf Dateien, die du nicht weitergeben möchtest.",
     "open": "Projekt öffnen",
     "openFolder": "Ordner öffnen",
     "none": "Kein Projekt",

@@ -10162,31 +10162,34 @@ selection already in place shows it without waiting for another event.
      only the vault password and device label, and automatic runs use the
      shared switch. Select categories before the first save, keeping
      credentials/memory opt-in. Test conditional creation, readback, matching
-     update, stale-write rejection and server-side probe cleanup.
+     update, stale-write rejection and the server-side probe.
      Reject ignored preconditions, weak ETags, redirects, public HTTP and 403;
      never interpret 502 as a missing object. LAN HTTP follows network policy.
-  3. Configure two sync devices. Publish a provider and mapped packaged skill,
-     receive them as pending where approval is required, approve, and verify
-     visible persisted configuration and resource bytes. Verify there is no
-     projects category and publishing project/group metadata neither registers
-     nor changes projects/groups on the receiving device. Register its workspace
-     locally, then map and approve the project skill; its resources must arrive
-     without changing local group names, roots or ordering. Existing vault
-     `projects` entities are ignored on sync/restore, preserving local projects
-     and cloud history. Exercise disjoint edits,
+  3. Configure two sync devices. Publish a provider and a **global** packaged
+     skill, receive them as pending where approval is required, approve, and
+     verify visible persisted configuration and resource bytes. Verify there is
+     no projects category and that publishing a project's `AGENTS.md`, group
+     instruction text, project and group memory, project MCP server, project
+     skill and folder-bound automation produces **no approval at all** on the
+     receiving device and changes none of its own project settings. Existing
+     vault `projects` entities and project-scoped records are ignored on
+     sync/restore, preserving local projects and cloud history. Exercise disjoint
+     edits,
      same-entity conflicts and explicit choice convergence, remote deletion
      versus offline edit, and repeated polling. Credential opt-out must not
      manufacture local edits or prevent deletion convergence. No real executable
      capability is run.
   4. Configure backup mode. Verify remote configuration is not applied, backup
      history is separate, unchanged snapshots do not duplicate revisions, and
-     a local restore does not change either cloud head. Add a Minih Router
+     a local restore does not change either cloud head. Add an ordinary provider
      account and multiple models with aliases, protocol/limit/thinking and
      capability overrides; select default and image model bindings. Back up and
-     restore onto a device with no account. Credentials remain staged until
-     local approval, then account identity, explicit provider overrides, ordered
-     model bindings and application defaults survive restore and Host restart
-     without duplicate account rows or a new backup publication. Capture requires
+     restore onto a device with no such account. The connected Minih Router row
+     is the backup transport's own identity: it stays device-local and is never
+     published. Credentials remain staged until local approval, then the
+     account, explicit provider overrides, ordered model bindings and
+     application defaults survive restore and Host restart without duplicate
+     account rows or a new backup publication. Capture requires
      both the credentials category and the explicit secret permission; OAuth
      sessions are never exported, even when credentials are selected.
   5. Restore an older sync revision with propagation acknowledgment. Verify a
@@ -10219,18 +10222,27 @@ selection already in place shows it without waiting for another event.
   History queries index at most 30 revisions; stored immutable objects are not
   automatically deleted. Import recovery remains observable; per-file atomic
   replacement is not asserted to be a whole-filesystem transaction.
-- **Live router safety:** a live router run is separately opt-in and requires
-  explicit authorization with a real account; the harness reads the account
-  token from an authorized env file programmatically without logging/copying
-  it. Use a dedicated test account, confirm it is initially empty, run actual
-  isolated Host processes, delete only objects created by the run, and verify
-  it is empty afterward. Never use an existing backup account or the
-  production desktop profile. Record tested base/candidate and distinguish
-  this run from a standalone SDK probe.
-- **Automation:** `pnpm test:e2e:config-sync` is the multi-Host harness.
-  Rust `config_sync::` and `user_skills::` suites cover transport, merge,
-  application and resource safety, using an in-process router HTTP fixture
-  for the transport/engine tests rather than an S3 fixture.
+- **Harness destination:** `pnpm test:e2e:config-sync` runs four isolated Host
+  processes against an in-process Minih Router backup fixture on a loopback
+  port. The fixture enforces the real contract itself: bearer authentication
+  per account, a server-side self-test reporting reliable conditional writes,
+  strong ETags, and `If-None-Match`/`If-Match` preconditions. Each Host links
+  its own Minih Router account row to that fixture, because the account is the
+  destination. There is no live-cloud mode in the harness: a live run needs a
+  dedicated real account and explicit authorization outside it, never an
+  existing backup account or the production desktop profile. Record the tested
+  base/candidate; the harness also records the Host binary hash and whether the
+  task changes were uncommitted.
+- **Automation:** `pnpm test:e2e:config-sync` is the multi-Host harness; its
+  journey covers the global-only scope, project data staying local, project
+  archive export/import, global-skill deletion convergence and plugin-uninstall
+  convergence. Rust `config_sync::` and `user_skills::` suites cover transport,
+  merge, application and resource safety, using the same router protocol as an
+  in-process fixture;
+  `router_tests::project_records_are_not_captured_for_the_cloud_copy`,
+  `router_tests::uninstalled_plugin_intent_deletion_reaches_the_peer` and
+  `router_tests::deleted_global_skill_stays_deleted_on_the_peer` pin the new
+  boundaries.
   `config-sync-user-path.test.mjs` runs the real settings page and shared
   checkbox with a mocked external IPC boundary, actual styles and isolated
   Electron input, without network access; `config-sync-ipc.test.mjs` covers
@@ -10243,11 +10255,48 @@ selection already in place shows it without waiting for another event.
 - **Status:** Candidate validation required; full checkpoint-recovery fault
   injection is not claimed by the settings or multi-Host happy-path suites.
 
+### E2E-PROJECT-archive-cross-device-import
+
+- **Preconditions:** A built task candidate, two isolated Host processes with
+  separate data/HOME/agent directories, and a project folder on the first
+  device that holds ordinary files, a hidden `.git` config, an `AGENTS.md`, a
+  project skill with a packaged resource, a project MCP server with an `env`
+  value, pinned project memory and one automation bound to the folder.
+- **Steps:** 1) Export the project from its detail menu through a native save
+  dialog and confirm the progress indicator and the completion toast.
+  2) Inspect the archive: `manifest.json` plus `roots/0/…` only; no absolute
+  source path; no MCP env value. 3) On the second device, import the archive
+  through the Projects page toolbar, choosing a destination parent folder.
+  4) Confirm the project appears in the index with its files, and that the
+  restored MCP definition is present, disabled and without values, while the
+  automation is present and disabled. 5) Import the same archive again into the
+  same parent and confirm the conflict error, with no second copy and no
+  half-imported folder. 6) Cancel each picker once and confirm no request is
+  sent and no toast appears.
+- **Expected:** The archive carries the project files and its app-managed
+  configuration, never chat history, credentials, MCP values or plugin grants.
+  The import is one-time and creates a local project; the two copies are
+  independent afterwards. An existing non-empty destination is refused with a
+  visible Host error, and a failed or cancelled operation leaves nothing behind.
+  Every string, including native dialog titles, is localized.
+- **Automation:** Rust `project_archive::tests` covers the round trip, group
+  archives, conflict refusal, path/entry/limit rejection, the source-symlink
+  skip and version rejection; the multi-Host journey
+  (`pnpm test:e2e:config-sync`, step `project-archive-cross-device-import`)
+  exercises export, cross-device import, secret exclusion, the disabled
+  automation and the duplicate-import conflict through real Host processes.
+  The Projects page rendering is covered by the desktop typecheck and the
+  shared component/styles tests; its pickers live in Electron main and are
+  asserted by the channel contracts rather than by a mocked page test.
+- **Specs:** `03-runtime/23-project-archive.md`, `04-ux/06-settings-ia.md`,
+  `docs/adr/0336-global-config-sync-and-project-archive.md`.
+
 ### E2E-CONFIG-SYNC-skill-package-repository-metadata
 
 - **Preconditions:** A built task candidate with two isolated Host processes and
-  the local S3 fixture, plus a directory-shaped skill whose folder contains a
-  git repository with an object pack larger than the per-resource cap.
+  the in-process router backup fixture, plus a directory-shaped skill whose
+  folder contains a git repository with an object pack larger than the
+  per-resource cap.
 - **Steps:** 1) Place a real resource and a `.git` object pack above 2 MiB
   beside the skill document on the first device. 2) Sync, approve the skill on
   the second device, and compare both packages. 3) Repeat with a revision
@@ -19435,8 +19484,9 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
   `an_unmapped_project_defers_one_entity_and_never_fails_the_revision`,
   `local_counters_never_travel_with_a_revision`, and
   `a_revision_carrying_an_unknown_domain_is_refused_not_skipped`. The multi-Host
-  `pnpm test:e2e:config-sync` harness still targets the removed S3 backend and
-  fails before any scenario runs; it is not the automation for this scenario.
+  `pnpm test:e2e:config-sync` harness now runs this transport against its
+  in-process router fixture, but this scenario's automation stays at the engine
+  level because the journey does not write learned-memory notes.
 - **Specs linked**: `03-runtime/22-config-sync.md` §2, ADR
   agent-long-term-memory §7.
 - **Acceptance criterion**: A note and its deletion reach the other device,
