@@ -174,7 +174,7 @@ export function SessionInfoSheet({
           {renaming ? (
             <div className="mb-2 flex items-center gap-2">
               <input
-                className="min-w-0 flex-1 rounded-[10px] border border-[var(--rm-separator)] bg-[var(--rm-bg-inset)] px-3 py-2 text-[15px] text-[var(--rm-text-primary)]"
+                className="min-w-0 flex-1 rounded-[10px] border border-[var(--rm-separator)] bg-[var(--rm-bg-inset)] px-3 py-2 text-[16px] text-[var(--rm-text-primary)]"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 aria-label={t("session.rename")}
