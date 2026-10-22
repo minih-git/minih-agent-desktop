@@ -512,3 +512,63 @@ describe("a history read that fails at start", () => {
     expect(stream.calls).toHaveLength(0);
   });
 });
+
+describe("checkpoints that overlap each other", () => {
+  it("never lets a slow checkpoint overwrite the finished reply", async () => {
+    const { history, store, ids } = harness();
+    const turn = await beginTurn(history, ids, "hello", "2026-10-21T09:00:00.000Z");
+    const stream = controlledFetch();
+
+    // The first checkpoint takes 300ms - slow enough that, without a single write
+    // chain, it lands after the reply has already been finished.
+    let delayed = false;
+    const slowHistory = {
+      ...history,
+      checkpoint: async (
+        attempt: Parameters<typeof history.checkpoint>[0],
+        text: string,
+        now: string,
+      ) => {
+        if (!delayed) {
+          delayed = true;
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+        return history.checkpoint(attempt, text, now);
+      },
+    };
+
+    const runner = createDirectChatRunner({
+      store,
+      history: slowHistory,
+      origin: "https://models.example.test",
+      fetchImpl: stream.fetchImpl,
+      now: () => new Date(Date.now()),
+    });
+
+    const pending = runner.start({
+      conversationId: turn.conversation.id,
+      scope: SCOPE,
+      attempt: turn.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    await tick();
+    stream.send("first words");
+    await tick();
+    stream.send(" and the rest");
+    stream.finish();
+    const outcome = await pending;
+    expect(outcome.ok).toBe(true);
+    // Give the slow write time to land if nothing ordered it.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    const transcript = (await history.transcript(turn.conversation.id))!;
+    const attempt = transcript.attempts.find((candidate) => candidate.id === turn.attempt.id);
+    // A terminal state must survive a late write, not be replaced by streaming.
+    expect(attempt?.state).toBe("complete");
+    expect(transcript.messages.find((message) => message.role === "assistant")?.text).toBe(
+      "first words and the rest",
+    );
+  });
+});

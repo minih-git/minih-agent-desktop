@@ -163,19 +163,35 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
 
     const isLive = (): boolean => current?.runId === input.runId;
 
-    /** Write the text received so far, and report a write that failed. */
-    const flush = async (): Promise<void> => {
-      if (!isLive() || latest === "") return;
-      try {
-        attempt = await options.history.checkpoint(attempt, latest, stamp());
-        announce();
-      } catch (cause) {
-        // A failed checkpoint stops the request: continuing would show text the
-        // phone cannot keep, and the user must be told.
-        flushFailure = cause instanceof Error ? cause.message : "the reply could not be saved";
-        input.controller.abort();
-      }
+    /**
+     * Every write goes through this chain, in order.
+     *
+     * A timed checkpoint and the final write would otherwise race: a slow one
+     * could land after the reply was finished and set its state back to
+     * streaming, which is a lie the record would keep. Nothing writes the
+     * attempt outside the chain, so the last write is always the last state.
+     */
+    let writes: Promise<void> = Promise.resolve();
+
+    const enqueue = (work: () => Promise<void>): Promise<void> => {
+      writes = writes.then(work, work);
+      return writes;
     };
+
+    /** Write the text received so far, and report a write that failed. */
+    const flush = (): Promise<void> =>
+      enqueue(async () => {
+        if (!isLive() || latest === "") return;
+        try {
+          attempt = await options.history.checkpoint(attempt, latest, stamp());
+          announce();
+        } catch (cause) {
+          // A failed checkpoint stops the request: continuing would show text the
+          // phone cannot keep, and the user must be told.
+          flushFailure = cause instanceof Error ? cause.message : "the reply could not be saved";
+          input.controller.abort();
+        }
+      });
 
     const result: DirectStreamResult = await streamDirectReply(
       {
@@ -205,6 +221,7 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
             const nowMs = now().getTime();
             if (nowMs - lastFlush >= CHECKPOINT_INTERVAL_MS) {
               lastFlush = nowMs;
+              // Queued, not fired and forgotten: the chain keeps it in order.
               void flush();
             }
           }
@@ -213,7 +230,9 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
       input.controller.signal,
     );
 
-    // The stream finished one way or another: write the final text once.
+    // Drain the chain first: any checkpoint still in flight must land before the
+    // terminal state, or it would overwrite it.
+    await writes;
     if (!isLive()) {
       // A newer run owns the conversation now; leave its records alone.
       return attempt;
@@ -225,6 +244,9 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
         flushFailure ??= cause instanceof Error ? cause.message : "the reply could not be saved";
       }
     }
+    // Re-checked after every await: the run may have been stopped or replaced
+    // while this write was in flight.
+    if (!isLive()) return attempt;
     const finalText = latest;
     if (flushFailure) {
       return options.history.finish(attempt, {
