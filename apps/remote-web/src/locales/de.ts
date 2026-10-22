@@ -444,6 +444,8 @@ export const de: Record<TranslationKey, string> = {
   "directChat.foreignScope": "Diese Unterhaltung gehört zu einem anderen Konto. Zum Fortsetzen dieses Konto erneut verbinden.",
   "directChat.readOnlyScope": "Schreibgeschützt: Diese Unterhaltung gehört zu einem anderen Konto.",
 
+  "settings.history.clearBusy": "In einer dieser Unterhaltungen kommt noch eine Antwort an. Zuerst stoppen.",
+
   "connect.title": "Steuere deine Agenten von deinem Telefon aus",
   "connect.subtitle": "Fortschritt prüfen, Aktionen genehmigen und die Unterhaltung fortsetzen. Die Arbeit läuft auf deinem Computer weiter.",
   "connect.feature.shield.title": "Tool-Anfragen genehmigen oder ablehnen",

@@ -52,6 +52,7 @@ export function SettingsScreen({
   const [busy, setBusy] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [clearingConfirm, setClearingConfirm] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
   const [count, setCount] = useState(0);
   const [olderScopes, setOlderScopes] = useState<Array<{ scope: DirectChatScope; count: number }>>([]);
   const history = directChatHistory();
@@ -86,13 +87,22 @@ export function SettingsScreen({
     };
   }, [history, scope]);
 
-  /** Clear this account's conversations, one conversation at a time. */
+  /**
+   * Clear this account's conversations, all of them or none.
+   *
+   * The history decides: a reply still arriving in any of them refuses the whole
+   * action, because a half-cleared history is a lie about what is gone.
+   */
   async function clearHistory() {
     if (!scope) return;
     setClearing(true);
-    for (const row of await history.list(scope)) await history.remove(row.conversation.id);
-    for (const row of await history.list(scope, { archived: true })) await history.remove(row.conversation.id);
+    const cleared = await history.clearScope(scope);
     setClearing(false);
+    if (!cleared.ok) {
+      setClearError(cleared.reason === "busy" ? t("settings.history.clearBusy") : t("directChat.saveFailed"));
+      return;
+    }
+    setClearError(null);
     setClearingConfirm(false);
     notifyDirectChatChanged();
   }
@@ -209,6 +219,9 @@ export function SettingsScreen({
         <p className="px-1 pb-4 text-[15px] leading-[22px] text-[var(--rm-text-secondary)]">
           {t("settings.history.clearBody", { account: scope?.accessKeyId ?? "" })}
         </p>
+        {clearError ? (
+          <p className="mb-3 px-1 text-[13px] leading-[18px] text-[var(--rm-error)]">{clearError}</p>
+        ) : null}
         <div className="flex flex-col gap-2">
           <Button variant="destructive" size="large" disabled={clearing} onClick={() => void clearHistory()}>
             {t("settings.history.clear")}

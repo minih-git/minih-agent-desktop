@@ -105,6 +105,15 @@ export type DirectChatHistory = {
   setNextModel(conversationId: string, modelId: string, protocol: string, now: string): Promise<void>;
   /** Conversation, messages and attempts together; a live attempt blocks it. */
   remove(conversationId: string): Promise<{ ok: boolean; reason?: string }>;
+
+  /**
+   * Delete every conversation of one account, or none of them.
+   *
+   * A half-cleared history is worse than an untouched one - the user is told the
+   * account's conversations are gone and some are not - so a live reply in any
+   * of them refuses the whole action.
+   */
+  clearScope(scope: DirectChatScope): Promise<{ ok: true } | { ok: false; reason: "busy" | "storage" }>;
 };
 
 /** A conversation is idle when no attempt is pending or streaming. */
@@ -417,6 +426,25 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
           updatedAt: now,
         });
       });
+    },
+
+    async clearScope(scope) {
+      const wanted = scopeKey(scope);
+      const conversations = (await store.conversations()).filter(
+        (conversation) => scopeKey(conversation.scope) === wanted,
+      );
+      for (const conversation of conversations) {
+        if (!isIdle(await store.attempts(conversation.id))) return { ok: false, reason: "busy" };
+      }
+      try {
+        await store.transact(async (tx) => {
+          for (const conversation of conversations) await tx.deleteConversation(conversation.id);
+        });
+      } catch {
+        // The store rolled the transaction back; saying "storage" is honest.
+        return { ok: false, reason: "storage" };
+      }
+      return { ok: true };
     },
 
     async remove(conversationId) {

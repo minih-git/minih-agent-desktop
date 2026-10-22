@@ -444,6 +444,8 @@ export const tr: Record<TranslationKey, string> = {
   "directChat.foreignScope": "Bu sohbet başka bir hesaba ait. Sürdürmek için o hesaba yeniden bağlanın.",
   "directChat.readOnlyScope": "Salt okunur: bu sohbet başka bir hesaba ait.",
 
+  "settings.history.clearBusy": "Bu sohbetlerden birinde yanıt gelmeye devam ediyor. Önce durdurun.",
+
   "connect.title": "Agent'larınızı telefonunuzdan kontrol edin",
   "connect.subtitle": "İlerlemeyi kontrol edin, eylemleri onaylayın ve sohbete devam edin. İşler bilgisayarınızda çalışmaya devam eder.",
   "connect.feature.shield.title": "Araç isteklerini onaylayın veya reddedin",

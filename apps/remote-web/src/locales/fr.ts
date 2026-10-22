@@ -444,6 +444,8 @@ export const fr: Record<TranslationKey, string> = {
   "directChat.foreignScope": "Cette discussion appartient à un autre compte. Reconnectez ce compte pour la poursuivre.",
   "directChat.readOnlyScope": "Lecture seule : cette discussion appartient à un autre compte.",
 
+  "settings.history.clearBusy": "Une réponse arrive encore dans l'une de ces discussions. Arrêtez-la d'abord.",
+
   "connect.title": "Contrôlez vos agents depuis votre téléphone",
   "connect.subtitle": "Suivez la progression, approuvez les actions et poursuivez la conversation. Le travail continue de s'exécuter sur votre ordinateur.",
   "connect.feature.shield.title": "Approuver ou refuser les requêtes d'outils",

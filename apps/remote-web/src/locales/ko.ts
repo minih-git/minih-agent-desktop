@@ -444,6 +444,8 @@ export const ko: Record<TranslationKey, string> = {
   "directChat.foreignScope": "이 대화는 다른 계정의 것입니다. 계속하려면 그 계정으로 다시 연결하세요.",
   "directChat.readOnlyScope": "읽기 전용: 이 대화는 다른 계정의 것입니다.",
 
+  "settings.history.clearBusy": "이 대화 중 하나에서 답변이 계속 오고 있습니다. 먼저 멈추세요.",
+
   "connect.title": "휴대폰에서 에이전트를 제어하세요",
   "connect.subtitle": "진행 상황을 확인하고, 작업을 승인하며 대화를 이어가세요. 작업은 컴퓨터에서 계속 실행됩니다.",
   "connect.feature.shield.title": "도구 요청 승인 또는 거부",

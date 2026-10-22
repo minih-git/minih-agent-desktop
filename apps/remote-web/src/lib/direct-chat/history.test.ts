@@ -442,3 +442,36 @@ describe("another account's conversation is read-only", () => {
     expect(same.ok).toBe(true);
   });
 });
+
+describe("clearing an account's history", () => {
+  it("refuses while a reply is still arriving, and deletes nothing", async () => {
+    const { history, turn } = harness();
+    const idle = await history.beginTurn(turn({ text: "done" }));
+    if (!idle.ok) throw new Error("setup failed");
+    await history.finish(idle.attempt, { state: "complete", text: "an answer", now: T0 });
+    const live = await history.beginTurn(turn({ text: "still going" }));
+    if (!live.ok) throw new Error("setup failed");
+    await history.checkpoint(live.attempt, "half", T0);
+
+    const cleared = await history.clearScope(SCOPE);
+    expect(cleared.ok).toBe(false);
+    if (!cleared.ok) expect(cleared.reason).toBe("busy");
+    // A partial delete would be worse than a refusal: everything is still here.
+    expect((await history.list(SCOPE)).length).toBeGreaterThan(0);
+  });
+
+  it("deletes this scope's conversations and leaves other accounts alone", async () => {
+    const { history, turn } = harness();
+    const mine = await history.beginTurn(turn({ text: "mine" }));
+    if (!mine.ok) throw new Error("setup failed");
+    await history.finish(mine.attempt, { state: "complete", text: "a", now: T0 });
+    const theirs = await history.beginTurn(turn({ text: "theirs", scope: OTHER_SCOPE }));
+    if (!theirs.ok) throw new Error("setup failed");
+    await history.finish(theirs.attempt, { state: "complete", text: "b", now: T0 });
+
+    expect(await history.clearScope(SCOPE)).toEqual({ ok: true });
+    expect(await history.list(SCOPE)).toEqual([]);
+    // The other account's history is untouched.
+    expect((await history.list(OTHER_SCOPE)).map((row) => row.conversation.title)).toEqual(["theirs"]);
+  });
+});

@@ -444,6 +444,8 @@ export const ptBR: Record<TranslationKey, string> = {
   "directChat.foreignScope": "Esta conversa pertence a outra conta. Reconecte essa conta para continuá-la.",
   "directChat.readOnlyScope": "Somente leitura: esta conversa pertence a outra conta.",
 
+  "settings.history.clearBusy": "Uma resposta ainda está chegando em uma destas conversas. Pare-a primeiro.",
+
   "connect.title": "Controle seus agentes do seu celular",
   "connect.subtitle": "Acompanhe o progresso, aprove ações e continue a conversa. O trabalho continua rodando no seu computador.",
   "connect.feature.shield.title": "Aprovar ou recusar solicitações de ferramentas",
