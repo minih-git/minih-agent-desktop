@@ -50,6 +50,9 @@ const AttachParams = Type.Object({
   role: Type.Optional(Type.Union([Type.Literal("viewer"), Type.Literal("controller"), Type.Literal("approver"), Type.Literal("owner")])),
   after: Type.Optional(RacpCursorSchema),
   includeSnapshot: Type.Optional(Type.Boolean()),
+  // §16.3: cap the snapshot's history page. A Host that predates the parameter
+  // leaves it unread (unknown fields pass validation) and sends its default.
+  snapshotHistoryLimit: Type.Optional(Type.Number({ minimum: 0 })),
 });
 const SubscribeParams = Type.Object({
   scope: Type.Union([Type.Literal("session"), Type.Literal("host")]),
@@ -304,6 +307,7 @@ export function createOperations(): Map<RacpOperation, OperationHandler> {
       ...(input.role ? { role: input.role } : {}),
       ...(input.after ? { after: input.after } : {}),
       ...(input.includeSnapshot !== undefined ? { includeSnapshot: input.includeSnapshot } : {}),
+      ...(input.snapshotHistoryLimit !== undefined ? { snapshotHistoryLimit: input.snapshotHistoryLimit } : {}),
     });
   });
   handlers.set("session/history", async (context, params) => {

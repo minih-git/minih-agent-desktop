@@ -157,9 +157,14 @@ export function createRemoteHostConnection(options: RemoteHostConnectionOptions)
       await subscriptions.remove(id);
       check(epoch);
       // A snapshot is the authoritative recovery boundary. Replay starts after
-      // it, so old deltas and already-resolved prompts cannot be appended again.
+      // it, so old deltas and already-resolved prompts cannot be appended
+      // again. The snapshot itself carries no transcript items (§16.3): the
+      // session's transcript is read through the paged `session/history`
+      // path, so reconnecting to seven conversations does not ship seven
+      // transcript pages nobody reads here. A Host that predates the parameter
+      // sends its default page and the extra items are ignored by the bridge.
       for (let attempt = 0; attempt < 2; attempt++) {
-        const result = await client.request<{ snapshot?: RacpSessionSnapshot }>("session/attach", { sessionId: id, includeSnapshot: true });
+        const result = await client.request<{ snapshot?: RacpSessionSnapshot }>("session/attach", { sessionId: id, includeSnapshot: true, snapshotHistoryLimit: 0 });
         check(epoch);
         if (!registered.has(id)) return;
         const snapshot = result.snapshot;

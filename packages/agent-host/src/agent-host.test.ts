@@ -84,9 +84,19 @@ class FakeSessions implements SessionPort {
   async get(sessionId: string): Promise<SessionSummary | null> {
     return this.summaries.get(sessionId) ?? null;
   }
-  async history(): Promise<{ items: RacpItemSummary[]; hasMore: boolean }> {
+  async history(sessionId: string, input: { limit?: number; beforeItemId?: string } = {}): Promise<{ items: RacpItemSummary[]; hasMore: boolean }> {
     this.historyReads += 1;
-    return { items: this.items, hasMore: false };
+    // Newest-last, paged backwards from `beforeItemId` (or from the end), the
+    // same contract the real Host port implements.
+    const limit = Math.max(1, input.limit ?? 100);
+    let end = this.items.length;
+    if (input.beforeItemId) {
+      const at = this.items.findIndex((item) => item.id === input.beforeItemId);
+      if (at < 0) throw new Error("unknown beforeItemId");
+      end = at;
+    }
+    const start = Math.max(0, end - limit);
+    return { items: this.items.slice(start, end), hasMore: start > 0 };
   }
 }
 
@@ -977,6 +987,48 @@ describe("AgentHost attach and subscribe", () => {
     const page = await host.history(viewer, { sessionId: "s1", limit: 500 });
     expect(page.items).toHaveLength(1);
     expect(page.revision).toBeGreaterThan(0);
+  });
+
+  it("a capped snapshot plus paged history equals the full snapshot transcript", async () => {
+    const { host, sessions } = build();
+    // A 2000-line conversation: the full snapshot carries the Host's default
+    // page (50), while a boundary-only snapshot carries none. Both must yield
+    // the same transcript once the client pages back through history.
+    sessions.items = Array.from({ length: 2000 }, (_, index) => ({
+      id: `item_${index}`,
+      turnId: `t_${Math.floor(index / 10)}`,
+      itemType: "message" as const,
+      status: "completed" as const,
+      createdAt: "2026-09-18T10:00:00.000Z",
+      content: { role: "user", text: `line ${index}` },
+    }));
+    const full = await host.attach(viewer, { sessionId: "s1" });
+    const boundary = await host.attach(viewer, { sessionId: "s1", snapshotHistoryLimit: 0 });
+    expect(full.snapshot?.items).toHaveLength(50);
+    expect(boundary.snapshot?.items).toHaveLength(0);
+    expect(boundary.snapshot?.hasMoreHistory).toBe(true);
+    expect(boundary.snapshot?.cursor).toBeDefined();
+
+    // Page the whole transcript backwards from the boundary attach, the way a
+    // client that keeps no transcript state does (phone D2, desktop history).
+    const paged: Array<{ id: string }> = [];
+    let beforeItemId: string | undefined;
+    let hasMore = true;
+    while (hasMore) {
+      const page = await host.history(viewer, {
+        sessionId: "s1",
+        limit: 100,
+        ...(beforeItemId ? { beforeItemId } : {}),
+      });
+      paged.unshift(...page.items.map((item) => ({ id: item.id })));
+      hasMore = page.hasMore && page.items.length > 0;
+      if (hasMore) beforeItemId = page.items[0]!.id;
+    }
+    expect(paged.map((item) => item.id)).toEqual(sessions.items.map((item) => item.id));
+    // And the tail of the paged transcript is exactly what the full snapshot
+    // shipped, item for item.
+    expect(full.snapshot?.items.map((item) => item.id))
+      .toEqual(paged.slice(-50).map((item) => item.id));
   });
 
   it("publishes host-scope session changes", () => {

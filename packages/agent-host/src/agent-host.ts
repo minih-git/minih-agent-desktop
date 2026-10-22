@@ -148,6 +148,15 @@ export type AttachParams = {
   role?: RacpRole;
   after?: RacpCursor;
   includeSnapshot?: boolean;
+  /**
+   * How many history items the snapshot should carry at most (protocol §16.3).
+   * Absent keeps the Host's default page; 0 asks for the recovery boundary
+   * only — approvals, inputs, and the event cursor, no transcript items — for
+   * a client whose transcript comes from `session/history` paging. The Host
+   * clamps the value to its own default; a Host that predates the parameter
+   * ignores it and sends the default page, which every caller must accept.
+   */
+  snapshotHistoryLimit?: number;
 };
 
 export type AttachResult = {
@@ -460,7 +469,9 @@ export class AgentHost {
       replayComplete,
       ...(decision.status === "resync" ? { resyncReason: decision.reason } : {}),
     };
-    if (params.includeSnapshot !== false) result.snapshot = await this.snapshot(state.id, summary);
+    if (params.includeSnapshot !== false) {
+      result.snapshot = await this.snapshot(state.id, summary, params.snapshotHistoryLimit);
+    }
     return result;
   }
 
@@ -871,10 +882,19 @@ export class AgentHost {
     return { ...page, revision: state.revision };
   }
 
-  async snapshot(sessionId: string, summary?: SessionSummary): Promise<RacpSessionSnapshot> {
+  async snapshot(sessionId: string, summary?: SessionSummary, snapshotHistoryLimit?: number): Promise<RacpSessionSnapshot> {
     const resolved = summary ?? (await this.requireSession(sessionId));
     const state = this.state(sessionId);
-    const page = await this.sessions.history(sessionId, { limit: this.snapshotItems });
+    // A client that only needs the recovery boundary (approvals, inputs, the
+    // event cursor) asks for zero history items: the transcript reaches it
+    // through `session/history` paging, as it does for a phone. The clamp keeps
+    // an unknown caller from raising the Host's own default.
+    const limit = snapshotHistoryLimit === undefined
+      ? this.snapshotItems
+      : Math.max(0, Math.min(snapshotHistoryLimit, this.snapshotItems));
+    const page = limit > 0
+      ? await this.sessions.history(sessionId, { limit })
+      : { items: [], hasMore: true };
     const activeTurn = state.activeTurnId ? state.turns.get(state.activeTurnId) : undefined;
     return {
       session: this.toRacpSession(resolved, state),
