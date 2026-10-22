@@ -41,6 +41,11 @@ export type HttpSseClientOptions = {
   /** Per-session event stream; the host stream uses `/v1/events`. */
   eventsPath: string;
   onEvent: (envelope: RacpEventEnvelope) => void;
+  /**
+   * Emit opt-in per-request and per-event latency records (P0 measurement).
+   * Off by default; records carry method/kind, trace id, and durations only.
+   */
+  latencyTrace?: boolean;
   /** Called when the stream drops; the client reconnects with `Last-Event-ID`. */
   log?: (level: "info" | "warn", message: string, data?: Record<string, unknown>) => void;
   /** Backoff shape, mirroring `RacpClientOptions.reconnect`. */
@@ -72,6 +77,13 @@ export type HttpSseClient = {
 
 const DEFAULT_BASE_DELAY_MS = 500;
 const DEFAULT_MAX_DELAY_MS = 15_000;
+
+/** A diagnostic trace id; `crypto.randomUUID` exists in browsers and Node. */
+function newTraceId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === "function") return cryptoApi.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
 
 export function createHttpSseClient(options: HttpSseClientOptions): HttpSseClient {
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -111,13 +123,23 @@ export function createHttpSseClient(options: HttpSseClientOptions): HttpSseClien
       httpMethod === "POST"
         ? JSON.stringify({ jsonrpc: "2.0", id: `${method}:${Date.now()}`, method, params, ...(idempotencyKey ? { idempotencyKey } : {}) })
         : undefined;
+    const traceId = newTraceId();
+    const startedAt = Date.now();
+    // The trace header travels only in measurement mode: it is not in the CORS
+    // allowlist, so sending it always would add a preflight header to every
+    // browser request for a diagnostic the client is not using.
+    const traceHeaders: Record<string, string> =
+      options.latencyTrace === true ? { [RACP_HTTP_HEADERS.trace]: traceId } : {};
     const response = await fetchImpl(`${options.baseUrl}${path}${query}`, {
       method: httpMethod,
-      headers: headers(),
+      headers: headers(traceHeaders),
       credentials: options.auth.kind === "cookie" ? "include" : "same-origin",
       ...(body !== undefined ? { body } : {}),
       signal: options.signal,
     });
+    if (options.latencyTrace === true) {
+      options.log?.("info", "remote latency", { stage: "client.request", method, traceId, durationMs: Date.now() - startedAt });
+    }
     const payload = (await response.json().catch(() => null)) as { result?: unknown; error?: unknown } | null;
     if (!response.ok || !payload || payload.error) {
       const error = payload?.error as
@@ -169,6 +191,18 @@ export function createHttpSseClient(options: HttpSseClientOptions): HttpSseClien
         await consumeSse(response.body, (envelope) => {
           delivered = true;
           if (envelope.sequence !== undefined) lastCursor = { epoch: envelope.epoch, sequence: envelope.sequence };
+          if (options.latencyTrace === true) {
+            const occurredAt = Date.parse(envelope.occurredAt);
+            if (Number.isFinite(occurredAt)) {
+              options.log?.("info", "remote latency", {
+                stage: "client.event",
+                kind: envelope.kind,
+                scope: envelope.scope,
+                ...(envelope.sessionId ? { sessionId: envelope.sessionId } : {}),
+                deliveryMs: Math.max(0, Date.now() - occurredAt),
+              });
+            }
+          }
           options.onEvent(envelope);
         });
         // A stream that delivered at least one event was healthy: reset the

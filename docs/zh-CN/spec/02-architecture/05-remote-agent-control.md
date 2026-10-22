@@ -119,8 +119,10 @@ AgentHost 实例上运行独立的 `RacpServer` 传输：不新建 AgentHost、�
 字段（`enabled`、`url`；缺失即关闭、不同步），标记为实验性且默认关闭。设备
 凭据与 mTLS 密钥材料保存在 main 进程，经 `EncryptionPort`（safeStorage）加密，
 绝不进 SQLite、不改 host-core schema。中继主体遵守安全规格 §3.7 的设备来源
-规则：绝不是 SSH 配对的 owner，始终受远程权限上限约束，不能修改本地会话的
-权限模式。关闭开关、退出应用与 `before-quit` 都会断开链路并取消挂起的服务端
+规则：绝不是 SSH 配对的 owner，始终受远程权限上限约束，可以通过
+`session/configure` 修改会话的持久权限模式（ADR 0331 修订 4：上限仍约束
+每一个由中继发起的回合，修改后的模式会约束本机回合——已接受的风险记录在
+该修订中）。关闭开关、退出应用与 `before-quit` 都会断开链路并取消挂起的服务端
 请求；渲染进程重载不会断开链路——链路归 main 进程所有，设置页重载后重新
 订阅状态。本地回合全程不受影响。
 
@@ -218,3 +220,40 @@ Host link，R5 为桌面作为可连接的 Host，R6 为浏览器与移动客户
 `EncryptionPort` 加密凭据），归属一节记录 Gateway 的具体存储布局。
 
 详见英文源规格中的完整组件归属、迁移边界和验收条款。
+
+## 2026-10-21 新增：同账号电脑自动接入（R8，D675）
+
+ADR `remote-control-router-account-binding` 修订 3 在 R7 之上加一条拓扑：同一账号的
+另一台电脑不再依赖 SSH，而是经 Gateway 接入兄弟电脑。
+
+- **客户端传输**：桌面作为 Remote Client 走 `RACP-WS`
+  （`GET /v1/hosts/{hostId}/ws`），命令、事件与服务端请求共用一条连接；`RemoteHostTransport`
+  新增 `"account"`。手机继续用 `RACP-HTTP` + SSE，不变。
+- **设备类别与证明**：`device.request` 新增 `client: "desktop"` 与 `hostProof`（申请方
+  `hostId`、Gateway 为本次请求签发的一次性 nonce，以及用本机 Host 证书私钥对
+  `{requestId, nonce, applicantHostId, accountId, expiresAt}` 的签名）。**由目标 Host
+  自己校验**：证书链到它固定的 Gateway CA、`OU=account:<accountId>` 与本账号一致、
+  签名正确、nonce 未用过且未过期；Gateway 的预检只是快速拒绝，不是授权依据（ADR 0331
+  「Gateway 从不做批准决定」仍然成立），被攻破的 Gateway 不能凭空造出 `owner` 设备。
+- **自动接入与开关**：目标电脑开启「允许同账号电脑自动接入」（默认开、设备本地、不同步）
+  时无需人工确认即授予；关闭时或处于 strict mode 时回落到 R7 的逐设备确认，且不按桌面类
+  采纳。兄弟 `device.grant` 由每台接收的 Host 重新校验证明并检查自己的开关后才以 `owner`
+  采纳。目标电脑须先声明 `device.desktop-auto`，否则不发新帧，申请方显示「该电脑需要升级」。
+  每次自动接入都会通知并写审计；账号内有新电脑注册时，其他每台电脑都显示「有新电脑加入
+  账号」并写审计。
+- **角色**：桌面类设备持有 `owner` 并豁免远程权限上限（与 SSH 配对的桌面设备同级），这是
+  ADR 0331 网关来源限制的唯一例外，已记录在该 ADR；`owner` 依附于申请方的证书，证书被
+  吊销则其接入的设备一并失去。手机与浏览器设备仍是 `viewer` / `controller` / `approver`，
+  仍受上限约束、仍不给 `allow-session`。具体开放哪些桌面操作由 Host 逐项决定（R8 工作包 D）。
+- **Agent 运行位置**：选中 B 的项目时回合在 B 上运行，使用 B 自己的 provider 配置与
+  B 自己的 Router 账号调用模型；A 只是远程界面，凭据不跨机器。Gateway 路径不需要
+  `workspace/toolExecute`：工具由 B 自己的 Agent 在 B 上执行。SSH 主机保留既有
+  「本地 Agent + 远程工具」形态。
+- **默认开关**：Router 公布 Gateway 且账号 key 可解析时，桌面的远程控制开关对「从未选择
+  过」的用户默认开启；用户明确关闭过的保持关闭。自托管流程仍默认关闭（安全规范 §3.7/§3.8
+  与 gate 27 相应修订，新增 gate 35）。
+
+本页仍是英文源规格的中文导读；完整的帧定义、退出条件与验收场景见英文
+`02-architecture/05-remote-agent-control.md` §5.3/§5.4/§6、`03-runtime/19-…` §11.4/§11.5、
+`06-delivery/07-remote-control-rollout.md` R8 与
+`E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop`。

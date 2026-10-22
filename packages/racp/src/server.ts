@@ -10,6 +10,7 @@ import {
   RACP_PROTOCOL_VERSION,
   RACP_SUBSCRIPTION_CLOSED_NOTIFICATION,
   RacpInitializeParamsSchema,
+  isRacpTraceId,
   protocolVersionsCompatible,
   rolesAllowOperation,
   type RacpEventEnvelope,
@@ -58,6 +59,12 @@ export type RacpServerOptions = {
   now?: () => number;
   /** Deadline for `connection/initialize` after the socket opened (spec §12). */
   initializeTimeoutMs?: number;
+  /**
+   * Emit opt-in per-request execution latency records (P0 measurement). Off by
+   * default; a record carries the method, trace id, connection id, and duration
+   * only — never params or result content.
+   */
+  latencyTrace?: boolean;
 };
 
 type Subscription = { id: string; sessionId?: string };
@@ -154,6 +161,46 @@ export class RacpConnection {
 }
 
 /**
+ * The operations the read-only file panel is made of (protocol §6.2).
+ *
+ * They are gated by the per-connection `workspaceRead` capability on top of
+ * their `viewer` role, so a Host can offer the panel to a same-account desktop
+ * and withhold it from a phone without inventing a second operation catalog.
+ */
+const WORKSPACE_READ_OPERATIONS: ReadonlySet<RacpOperation> = new Set([
+  "workspace/list",
+  "workspace/read",
+  "workspace/diff",
+]);
+
+/**
+ * The capabilities `connection/initialize` reports for one server.
+ *
+ * Everything here is a property of the Host's wiring; `workspaceRead` is the
+ * one field a Host may answer per connection (see `capabilitiesFor`).
+ */
+function buildCapabilities(operations: RacpHostOperations): RacpServerCapabilities {
+  return {
+    eventReplay: true,
+    snapshot: true,
+    approvals: true,
+    inputRequests: true,
+    attachments: Boolean(operations.inlineAttachments),
+    serverRequests: true,
+    turnQueue: true,
+    hostEvents: true,
+    history: true,
+    remoteHostProfile: true,
+    toolRelay: false,
+    terminal: Boolean(operations.terminal),
+    workspaceTools: Boolean(operations.workspaceTools),
+    workspaceFiles: Boolean(operations.workspaceFiles),
+    notifications: false,
+    bindings: ["RACP-WS"],
+  };
+}
+
+/**
  * The `RACP-WS` server core: connection admission, initialization, request
  * dispatch with role checks from the operation catalog, event fan-out from
  * the Agent Host hub, and connection teardown that releases every
@@ -174,25 +221,22 @@ export class RacpServer {
     this.limits = { ...RACP_DEFAULT_LIMITS, ...options.limits };
     this.policy = { ...RACP_DEFAULT_POLICY, ...options.policy };
     this.now = options.now ?? (() => Date.now());
-    this.capabilities = {
-      eventReplay: true,
-      snapshot: true,
-      approvals: true,
-      inputRequests: true,
-      attachments: Boolean(options.operations.inlineAttachments),
-      serverRequests: true,
-      turnQueue: true,
-      hostEvents: true,
-      history: true,
-      remoteHostProfile: true,
-      toolRelay: false,
-      terminal: Boolean(options.operations.terminal),
-      workspaceTools: Boolean(options.operations.workspaceTools),
-      workspaceFiles: Boolean(options.operations.workspaceFiles),
-      notifications: false,
-      bindings: ["RACP-WS"],
-    };
+    this.capabilities = buildCapabilities(options.operations);
     this.handlers = createOperations();
+  }
+
+  /**
+   * The capabilities this one connection was told about.
+   *
+   * `workspaceRead` is the only field that varies by principal: the Host
+   * decides it from the device class (protocol §6.2), so a phone and a
+   * same-account desktop on the same server see different answers. Everything
+   * else is a property of the server's wiring.
+   */
+  capabilitiesFor(principal: Principal): RacpServerCapabilities {
+    const read = this.options.operations.workspaceRead;
+    if (!read) return this.capabilities;
+    return { ...this.capabilities, workspaceRead: read(principal) };
   }
 
   get log(): RacpServerOptions["log"] {
@@ -321,16 +365,38 @@ export class RacpServer {
       if (isNotification(message) && message.method === RACP_INITIALIZED_NOTIFICATION) connection.initialized = true;
       return;
     }
-    const traceId = this.traceId();
+    // A client-supplied trace id is untrusted input that ends up in log lines,
+    // audit records, and error payloads. A value that is not a bounded,
+    // log-safe id is replaced with a locally generated one: never sanitized,
+    // never echoed.
+    const traceId = isRacpTraceId((message as { traceId?: unknown }).traceId)
+      ? (message as { traceId: string }).traceId
+      : this.traceId();
+    const startedAt = Date.now();
     try {
       const result = await this.dispatch(connection, message.method, message.params, traceId);
       connection.send({ jsonrpc: "2.0", id: message.id, result });
+      this.logLatency(connection, message.method, traceId, Date.now() - startedAt);
     } catch (error) {
       if (!(error instanceof RacpError)) {
         this.options.log("error", "racp operation failed", { method: message.method, traceId, error: String(error) });
       }
       connection.send({ jsonrpc: "2.0", id: message.id, error: errorObjectFrom(error, traceId) });
+      this.logLatency(connection, message.method, traceId, Date.now() - startedAt);
     }
+  }
+
+  /** One opt-in timing record at the Host: receive → dispatch complete → send. */
+  private logLatency(connection: RacpConnection, method: string, traceId: string, durationMs: number): void {
+    if (this.options.latencyTrace !== true) return;
+    this.options.log("info", "remote latency", {
+      stage: "host.execute",
+      method,
+      traceId,
+      connectionId: connection.id,
+      origin: connection.origin,
+      durationMs,
+    });
   }
 
   private async dispatch(connection: RacpConnection, method: string, params: unknown, traceId: string): Promise<unknown> {
@@ -348,6 +414,15 @@ export class RacpServer {
     if (!rolesAllowOperation(connection.principal.roles, operation)) {
       throw new RacpError("FORBIDDEN", `principal lacks the role for ${operation}`);
     }
+    // The workspace panel is offered per device class where a Host says so
+    // (protocol §6.2): the role check above already ran, and this is the extra
+    // answer a desktop Host gives for a phone. `undefined` means the Host asked
+    // no such question, so the operation catalog alone decides — the behaviour
+    // of every Host before this gate existed.
+    const capabilities = this.capabilitiesFor(connection.principal);
+    if (WORKSPACE_READ_OPERATIONS.has(operation) && capabilities.workspaceRead === false) {
+      throw new RacpError("FORBIDDEN", `${operation} is not available to this device`);
+    }
     const context: OperationContext = {
       connection,
       principal: connection.principal,
@@ -355,7 +430,7 @@ export class RacpServer {
       operations: this.options.operations,
       authenticator: this.options.authenticator,
       limits: this.limits,
-      capabilities: this.capabilities,
+      capabilities,
       traceId,
       now: this.now,
       deliverEvent: (envelope) => this.deliverEvent(connection, envelope),
@@ -393,7 +468,7 @@ export class RacpServer {
       server: { name: this.options.serverName ?? "agent-host-cli", version: this.options.serverVersion, hostId: this.options.hostId },
       connectionId: connection.id,
       principal: { subject: connection.principal.subject, roles: [...connection.principal.roles] },
-      capabilities: this.capabilities,
+      capabilities: this.capabilitiesFor(connection.principal),
       limits: this.limits,
       policy: this.policy,
     };

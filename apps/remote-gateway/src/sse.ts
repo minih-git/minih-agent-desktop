@@ -39,6 +39,10 @@ export type ServeStreamOptions = {
   lastEventId: string | null;
   log: GatewayLog;
   corsHeaders?: Record<string, string>;
+  /** Diagnostic correlation id of the HTTP stream request (P0 measurement). */
+  traceId?: string;
+  /** Emit one opt-in delivery-latency record per relayed event (P0 measurement). */
+  latencyTrace?: boolean;
 };
 
 /**
@@ -72,6 +76,19 @@ export async function serveEventStream(options: ServeStreamOptions): Promise<voi
     if (method === RACP_EVENT_NOTIFICATION) {
       const envelope = params as RacpEventEnvelope;
       writeChunk(response, formatSseEvent(envelope));
+      if (options.latencyTrace === true) {
+        const occurredAt = Date.parse(envelope.occurredAt);
+        if (Number.isFinite(occurredAt)) {
+          log("info", "remote latency", {
+            stage: "gateway.event",
+            kind: envelope.kind,
+            scope: envelope.scope,
+            ...(envelope.sessionId ? { sessionId: envelope.sessionId } : {}),
+            ...(options.traceId ? { traceId: options.traceId } : {}),
+            deliveryMs: Math.max(0, Date.now() - occurredAt),
+          });
+        }
+      }
       return;
     }
     if (method === RACP_SUBSCRIPTION_CLOSED_NOTIFICATION) {

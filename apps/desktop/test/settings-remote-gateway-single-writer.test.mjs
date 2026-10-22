@@ -147,7 +147,13 @@ test("a stale renderer settings snapshot cannot re-enable a disabled gateway", a
     });
     await bootstrap.open();
     await bootstrap.controller().setEnabled(false);
-    assert.deepEqual(settings.store.remoteGateway, { enabled: false, url: "wss://gateway.test" });
+    // The row records the decision alongside the switch (gate 27): a save that
+    // dropped `decided` would let the account-mode default re-enable it later.
+    assert.deepEqual(settings.store.remoteGateway, {
+      enabled: false,
+      url: "wss://gateway.test",
+      decided: true,
+    });
 
     // 3. The renderer still holds the settings it loaded at startup and saves an
     //    unrelated change (a font size) as a whole object.
@@ -159,7 +165,11 @@ test("a stale renderer settings snapshot cannot re-enable a disabled gateway", a
     await handlers.get(IPC.invoke.settingsSet)(staleSnapshot);
 
     // 4. The switch stays off; the unrelated change landed.
-    assert.deepEqual(settings.store.remoteGateway, { enabled: false, url: "wss://gateway.test" });
+    assert.deepEqual(settings.store.remoteGateway, {
+      enabled: false,
+      url: "wss://gateway.test",
+      decided: true,
+    });
     assert.equal(settings.store.fontScale, 1.25);
 
     // And the renderer's field never even reaches host-core.

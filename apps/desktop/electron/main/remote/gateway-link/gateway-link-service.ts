@@ -17,6 +17,7 @@ import {
   ACCOUNT_MODE_NO_KEY_REASON,
   accountEnrollmentCurrent,
   createAccountEnroller,
+  desktopEnrollmentLabel,
   readAccountGateway,
   readAccountModeAvailability,
   type AccountGatewayState,
@@ -64,6 +65,16 @@ export type GatewayLinkServiceOptions = {
   agentHost: () => AgentHost;
   /** The same host-core RPC source the bridge uses. */
   getHost: () => HostRpc | null;
+  /**
+   * Whether a session has an active turn; configuration and deletion are
+   * idle-only (package D).
+   */
+  isSessionBusy?: (sessionId: string) => boolean;
+  /**
+   * Remove a session the way the app's own delete does, after the row is gone:
+   * cancel derived work, drop queued persistence, dispose the runtime session.
+   */
+  removeSession?: (sessionId: string) => Promise<void>;
   /** `server.name` reported to a remote client. */
   serverName?: string;
   serverVersion: string;
@@ -76,6 +87,14 @@ export type GatewayLinkServiceOptions = {
   strictDevices?: boolean;
   /** Persist the strict-mode switch without touching the other settings. */
   saveStrictDevices?: (strictDevices: boolean) => Promise<void>;
+  /**
+   * "Allow same-account computers to join automatically" (ADR amendment 3,
+   * decision 3). On when absent. Unlike strict mode it is not part of the
+   * capability list, so flipping it needs no link rebuild.
+   */
+  desktopAutoAdmission?: boolean;
+  /** Persist that switch without touching the other settings. */
+  saveDesktopAutoAdmission?: (desktopAutoAdmission: boolean) => Promise<void>;
   /** Push one `device.request` to the renderer; absent means no window can ask. */
   emitDeviceRequest?: (request: RemoteGatewayDeviceRequest) => void;
   /** One notice per mint, adoption, and revocation (ADR decision 6). */
@@ -112,6 +131,12 @@ export type GatewayLinkService = {
   devicePresence(present: boolean): number;
   /** ADR decision 9: rebuild the link so the capability list matches. */
   setStrictDevices(strictDevices: boolean): Promise<RemoteGatewayStatus>;
+  /**
+   * ADR amendment 3: allow or refuse automatic admission of a same-account
+   * computer. The capability list does not change, so the link is not rebuilt —
+   * only the decision the directory makes for the next proof.
+   */
+  setDesktopAutoAdmission(enabled: boolean): Promise<RemoteGatewayStatus>;
   /** Status pushes; the returned function removes the listener. */
   onChange(listener: (status: RemoteGatewayStatus) => void): () => void;
   dispose(): Promise<void>;
@@ -164,6 +189,7 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
   /** The device directory of the running link; null when not account-bound. */
   let accountDevices: DesktopDevices | null = null;
   let strictDevices = options.strictDevices === true;
+  let desktopAutoAdmission = options.desktopAutoAdmission !== false;
   const enroller = createAccountEnroller({
     port: options.port,
     store: options.store,
@@ -189,12 +215,16 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
     enabled,
     enrolled: opened ? options.store.enrolled() : false,
     ...(opened ? { hostId: options.store.hostId() } : {}),
+    // The name a phone already shows for this computer; the accounts page
+    // labels "This computer" with it.
+    ...(desktopEnrollmentLabel() ? { hostLabel: desktopEnrollmentLabel() } : {}),
     ...(state.lastError ? { lastError: state.lastError } : {}),
     ...(state.nextRetryAt ? { nextRetryAt: state.nextRetryAt } : {}),
     // Account mode is reported once the Router answer has been read; until then
     // the page keeps showing the self-hosted flow.
     ...(accountMode ? { accountMode } : {}),
     strictDevices,
+    desktopAutoAdmission,
   });
 
   const emit = (): void => {
@@ -380,6 +410,7 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
       log,
       ...(options.emitDeviceRequest ? { emitRequest: options.emitDeviceRequest } : {}),
       strictDevices,
+      desktopAutoAdmission,
       ...(options.emitDeviceNotice
         ? {
             onNotice: (notice) =>
@@ -388,6 +419,7 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
                 deviceId: notice.deviceId,
                 label: notice.label,
                 at: notice.at,
+                ...(notice.deviceClass ? { deviceClass: notice.deviceClass } : {}),
               }),
           }
         : {}),
@@ -401,6 +433,11 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
         // Inline attachments from a phone land in the same content-addressed
         // store the desktop itself uses for the files it attaches.
         dataDir: options.dataDir,
+        // Package D: the two questions a desktop-class device's session
+        // controls ask. Busy means AGENT_BUSY, and a deleted row is cleaned up
+        // exactly as the local delete does.
+        ...(options.isSessionBusy ? { isSessionBusy: options.isSessionBusy } : {}),
+        ...(options.removeSession ? { removeSession: options.removeSession } : {}),
         // A phone that starts a conversation here or registers a folder changed
         // this computer's state, so the person sitting at it has to learn about
         // it at once. It travels on the notice channel the settings page
@@ -409,9 +446,11 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
         reportRemoteAction: (action) => {
           const at = new Date(now()).toISOString();
           options.emitDeviceNotice?.({
-            kind: action.kind === "project.registered" ? "device.project-registered" : "device.session-created",
+            kind: action.kind === "project.registered" ? "device.project-registered"
+              : action.kind === "session.configured" ? "device.session-configured"
+              : "device.session-created",
             deviceId: action.deviceId,
-            label: action.path ?? action.sessionId ?? "",
+            label: action.changes?.join(", ") ?? action.path ?? action.sessionId ?? "",
             at,
           });
           log("info", "remote device changed local state", {
@@ -420,6 +459,7 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
             ...(action.projectId ? { projectId: action.projectId } : {}),
             ...(action.sessionId ? { sessionId: action.sessionId } : {}),
             ...(action.path ? { path: action.path } : {}),
+            ...(action.changes ? { changes: action.changes } : {}),
           });
         },
       }),
@@ -448,6 +488,20 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
         ...(accountDevices ? { devices: accountDevices.directory } : {}),
         ...(accountDevices ? { revocations: accountDevices.revocations } : {}),
         ...(options.notifier ? { notifier: options.notifier } : {}),
+        // "A new computer joined the account" is information for the person at
+        // this machine, never an authorization, so it becomes the same notice a
+        // device gets (ADR amendment 3, Accepted risk).
+        ...(options.emitDeviceNotice
+          ? {
+              onHostJoined: (notice) =>
+                options.emitDeviceNotice?.({
+                  kind: "host.joined",
+                  deviceId: notice.hostId,
+                  label: notice.label,
+                  at: notice.joinedAt,
+                }),
+            }
+          : {}),
       });
     } catch (error) {
       // The transport is missing or refused to start: report it, never keep a
@@ -619,6 +673,11 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
         createdAt: device.createdAt,
         ...(device.lastSeenAt ? { lastSeenAt: device.lastSeenAt } : {}),
         ...(device.revokedAt ? { revokedAt: device.revokedAt } : {}),
+        // What the row is, for the accounts page's "My devices": a computer
+        // admitted with a verified proof, a phone paired through the Gateway,
+        // or an SSH pairing from before the Gateway existed.
+        ...(device.deviceClass ? { deviceClass: device.deviceClass === "desktop" ? "desktop" as const : "phone" as const } : {}),
+        ...(device.origin ? { origin: device.origin } : { origin: "ssh" as const }),
       }));
     },
     revokeDevice(deviceId) {
@@ -650,6 +709,19 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
         await stopLink();
         if (enabled) await startLink();
       });
+      return snapshot();
+    },
+    async setDesktopAutoAdmission(next) {
+      if (disposed) return snapshot();
+      if (desktopAutoAdmission === next) return snapshot();
+      // Persist first, for the same reason as the strict switch.
+      if (options.saveDesktopAutoAdmission) await options.saveDesktopAutoAdmission(next);
+      desktopAutoAdmission = next;
+      // The capability list does not change, so no link rebuild is needed and no
+      // relayed connection is dropped: the directory simply stops (or starts)
+      // admitting a verified proof without asking.
+      accountDevices?.directory.setDesktopAutoAdmission(next);
+      emit();
       return snapshot();
     },
     onChange(listener) {

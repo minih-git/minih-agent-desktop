@@ -10,6 +10,7 @@ This log freezes previously open questions into concrete decisions.
 
 | ID | Topic | Decision | Rationale |
 |---|---|---|---|
+| D675 | Same-account computers join automatically | **Amend D666 / ADR `remote-control-router-account-binding` (amendment 3, 2026-10-21): a computer of the account reaches its siblings through the Gateway without SSH. `device.request` gains `client: "desktop"` and a `hostProof` (the applicant's `hostId`, the request's Gateway-issued single-use nonce, and a signature over `{requestId, nonce, applicantHostId, accountId, expiresAt}` by the private key of a Host certificate this Gateway issued to that computer). The target Host verifies the proof itself — chain to its own pinned Gateway CA, the `OU=account:<accountId>` binding, the signature, and an unused, unexpired nonce — and checks its own switch; the Gateway may pre-check and fast-reject but is never the authorization, because ADR 0331's "the Gateway never decides an approval" still holds and a compromised Gateway must not be able to mint an `owner` device. A verified desktop request is admitted without a human answer when the target computer advertises the new `device.desktop-auto` capability and its per-computer "allow same-account computers to join automatically" switch is on (default on, device-local, never synced); with the switch off, or in strict mode, it falls back to the per-device confirmation of D666, and a sibling `device.grant` is re-verified by every receiving Host together with its own switch before it is adopted with `owner`. A desktop-class device holds `owner` and is exempt from the remote permission ceiling, like an SSH-paired desktop device — the one exception to ADR 0331's gateway-origin restrictions, recorded there; a phone or browser device keeps `viewer` / `controller` / `approver`, `pairedDevice: false`, the ceiling, and no `allow-session`. `owner` follows the applicant's certificate: revoking that Host certificate removes the standing of the devices it admitted. Accepted risk, stated in full: a leaked AccessKey can enroll a fake computer (decision 5) and use its certificate to reach `owner` on every computer with automatic admission on — the direct cost of automatic admission — mitigated by Host-side proof verification, a "a new computer joined the account" notice and audit record on every other computer at enrollment, `hosts revoke` on the Gateway, device revocation on any computer, the per-computer switch, and strict mode. The desktop reaches a sibling over `RACP-WS` at `GET /v1/hosts/{hostId}/ws` (`RemoteHostTransport` gains `"account"`), not `RACP-HTTP` + SSE. Selecting a project of computer B runs the turn on B with B's own provider configuration and its own Router account for model calls; A is a remote view and no credential crosses machines. The SSH-paired "local Agent + remote workspace tools" shape is unchanged, and the Gateway path needs no `workspace/toolExecute`. The account-mode remote-control switch defaults on once the Router advertises a Gateway and an account key resolves, while an explicitly disabled switch stays off: security §3.7/§3.8, gate 27 and the new gate 35 are amended, and rollout R8 plus E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop carry it. See ADR amendment 3.** | The user's computers reached each other only over SSH, which needs credentials and an install on the other machine, and even then a computer paired that way was a phone-grade device that could not rename a session, read a workspace, or open a terminal. The account already knows which computers belong to it — the sibling Host certificate proves it — so a computer can say so and join, while a phone that only holds an AccessKey still needs a human on an already-trusted machine. The Agent stays on the machine that owns the project, so credentials and model calls never cross machines. The cost is explicit: an account key alone becomes enough to reach every computer that has automatic admission on, which is why admission is Host-verified, every enrollment and admission is noticed and audited, and both the enrolled Host and the admitted device can be revoked. |
 | D673 | `#` in the Composer picks a session target | **Add one host mode to the Composer autocomplete: a `#` token whose symbol is boundary-preceded under the same rule `@` already uses — start of input, whitespace, or one of the pi delimiters `"`, `'`, `=` — (its full-width form `\uFF03` counts) lists the sessions work can be handed to, and accepting a row inserts an inline `#title` chip. The symbol composes with plugins exactly as `@` does: the host's group first, then the group of a plugin that registered `#`, whose timeout and failure isolation are unchanged. Candidates are the sessions the renderer already holds — local, Agent mode, not archived, not an automation transcript, in the caller's project (the home's selected project when no session is open yet), never the calling session itself — ordered newest first and capped at 50; a query matches titles case-insensitively by substring or subsequence with highlight ranges, and an empty query lists the most recent ones. The group does not open without a match, so `#123`, `## heading` and a bare `#` stay ordinary draft text and Enter still sends them; IME composition freezes the group and Esc dismisses that token only. `ComposerFileReference.kind` gains `sessionTarget` beside the existing `session` link: path is the Session ID, name the title snapshot, and the chip shows `#title` with its own mark rather than the reference bubble. Immediately before dispatch the chip serializes to the plain sentence `#<title> (Session ID: <id>)` — title whitespace folded and trimmed, 80 characters at most, an empty title falling back to the id's first eight characters, our own `minih-agent-desktop://` scheme stripped — which deliberately never matches `SESSION_LINK_PATTERN`, so main attaches no excerpt; the target produces no structured attachment and `promptAttachmentsFromDraft` returns nothing for it. No IPC, no persisted attachment, no tool-schema or tool-description change, and `SessionSend` / `SessionList` keep their contracts: the target only names the session the model should address. Drafts persist and restore the new kind, and older drafts without it are unaffected. V1 renders the sent sentence as ordinary transcript text rather than a chip. See E2E-COMPOSER-hash-picks-session-target.** | Handing work to another session required either a pasted link, which changes what the model receives by attaching an excerpt the user did not ask for, or typing the title from memory with no way to confirm the id. A dedicated `#` group over the session list the renderer already has makes the target explicit, keeps the model's prompt minimal and exactly what the chip says, and reuses the existing trigger grammar, chip model, dismissal and IME behavior instead of adding a parallel mechanism. |
 | D672 | Agent-created sessions for a hand-off with no target | **Amend ADR builtin-session-messaging (D663): add the built-in, on-demand Agent tool `SessionCreate({ title })` as a fourth Electron main local tool. It creates one ordinary Agent-mode session through the host's existing `session.create` — no collaboration link, no plugin owner, no worker fan-out bounds — inheriting the caller's project, thinking level and permission mode, running on the new `settings.sessionCreateModel` provider/model binding the user selects in AI settings, and returning the Session ID for a following `SessionSend`. With that setting unset the call fails `MODEL_NOT_CONFIGURED`; with a binding outside the offer list the settings row shows (a ready provider's non-image models, so the row and the tool cannot disagree) it fails `MODEL_UNAVAILABLE`; there is no fallback to the app default model. Only `title` (1-80 characters) comes from the call. Creation starts no turn, sends nothing and spends no quota, so the delivery path's hop budget and eight-delivery inbox remain the only bounds on what Agent-created sessions can do; creation itself is not capped per turn. `High` risk on the same `tools.execute` gate, Agent-only, denied in Plan and Goal, absent from `Task` subagent catalogs and the MCP control catalog, and abortable so stopping the turn retracts a pending approval. `sessionCreateModel` stays out of the portable application fields; `SessionSend` is unchanged, and `SessionList` now points at `SessionCreate` when nothing matches. No schema, migration or protocol-version change. See ADR session-create-tool and E2E-SESSION-create-missing-target-session.** | The hand-off users ask for is often the one whose target does not exist yet, and D663's deliberate exclusion left the model able to answer only that it cannot create a session, so the user had to leave the conversation, create the session by hand and repeat the request. Creating on the user's own configured model, as a step separate from delivery, keeps the model-facing contract unambiguous and leaves delegation opt-ins, permission ceilings and autonomous-spend bounds unchanged. |
 | D671 | The context budget trusts a provider-reported usage | **Amend D606 / ADR 0061: `contextBudgetTokens()` combines the calibrated message estimate with the output-cap estimate of the complete request by using the latter only while the projection has no usage anchor (`lastUsageIndex === null` or `usageTokens === 0`). An anchored projection is the provider's own count for the request that produced it, so it already contains that request's system prompt and tool schemas; raising it with the crude chars/4-plus-CJK estimate of the same context charged them a second time and compacted a conversation whose provider usage still left most of the window free. The full-request estimate remains the floor before a session's first usage and right after a checkpoint cleared the anchor, which is what carries the prompt and schemas there. The session runtime and the delegate budget (`delegateContextBudgetFor`, through `contextBudgetFor(model, messages, requestTokens)`) resolve their count through this one rule. No threshold, ratio, reserve, schema, or IPC change; `ContextBudget` fields are unchanged.** | The reported defect was a conversation compacting at 43% of its window remaining, with a compaction summary request already in flight: the provider had reported 573 232 input tokens while the request-shape estimate of the same context read 654 332 text tokens plus ~21 000 for the prompt and schemas, crossing the 675 000 trigger of a 1 M window. The anchor is strictly better information than a heuristic, and the safe directions are unchanged — the request layer still clamps the output budget from the full-request estimate, the hard limit still guards the request, and a stale anchor is refreshed by the next provider report. |
@@ -8249,3 +8250,73 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   `D-LOCAL-message-quotes` / `D-LOCAL-selection-overlay` and the E2E IDs retired
   by ADR 0268 stay retired. See ADR 0334, `04-ux/08-component-spec.md` §7.4 /
   §8.5, and E2E-CHAT-selection-quote-into-composer.
+
+## 2026-10-21 — Same-account computers join automatically (D675)
+
+- D675 amends D666 / ADR `remote-control-router-account-binding` (amendment 3).
+  A computer of the account joins its siblings through the Gateway without SSH:
+  `device.request` gains `client: "desktop"` and a `hostProof` — the request's
+  Gateway-issued single-use nonce plus a signature over
+  `{requestId, nonce, applicantHostId, accountId, expiresAt}` by the private key
+  of a Host certificate the Gateway issued to that computer. **The target Host
+  verifies the proof itself** (chain to its pinned Gateway CA, account binding,
+  signature, unused and unexpired nonce) and checks its own switch; the
+  Gateway's pre-check is a fast reject, never the authorization, because ADR
+  0331's "the Gateway never decides an approval" still holds.
+- Automatic admission is a per-computer switch ("allow same-account computers
+  to join automatically", default on, device-local, never synced). With it off,
+  or in strict mode, the request falls back to D666's per-device confirmation
+  and is not adopted as desktop-class; a sibling grant is re-verified by every
+  receiving Host together with its own switch. Every automatic admission
+  produces the same device notice and audit record a confirmed one does, and a
+  new Host enrollment notifies the account's other computers and is audited.
+  Any computer of the account can revoke the device, and the operator can
+  revoke the enrolled Host on the Gateway (`hosts revoke`).
+- A desktop-class device holds `owner` and is exempt from the remote permission
+  ceiling, as the only way a gateway-origin principal may hold `owner`, and as
+  the one exception to ADR 0331's gateway-origin restrictions (recorded in that
+  ADR). `owner` follows the applicant's certificate. A phone or browser device
+  is unchanged: `viewer` / `controller` / `approver`, `pairedDevice: false`,
+  under the ceiling, never offered `allow-session`. Which desktop operations the
+  Host actually opens is per operation (R8 package D).
+- The client transport is `RACP-WS` at `GET /v1/hosts/{hostId}/ws`, and
+  `RemoteHostTransport` gains `"account"`. A phone keeps `RACP-HTTP` + SSE.
+- Selecting a project of computer B runs the turn on B with B's provider
+  configuration and B's own Router account for model calls; no credential
+  crosses machines. The SSH-paired "local Agent + remote workspace tools" shape
+  is unchanged.
+- The account-mode remote-control switch defaults on once the Router advertises
+  a Gateway and an account key resolves; an explicitly disabled switch stays
+  off. Security §3.7 and §3.8, gate 27 and the new gate 35 are amended, and
+  rollout R8 plus E2E-REMOTE-ACCOUNT-desktop-auto-joins-sibling-desktop carry
+  the rest. The accepted risk is stated in full in the ADR: a leaked AccessKey
+  can enroll a fake computer and reach `owner` on every computer with automatic
+  admission on, which is the direct cost of automatic admission and is
+  mitigated by Host-side verification, the enrollment notice, and revocation.
+- The P0 measurement that precedes the implementation is recorded in
+  `scripts/measure-remote-latency.mjs`: an owner over loopback `RACP-WS` and an
+  account device over `RACP-HTTP` + SSE, with p50/p95 for Read, Grep, a small
+  Bash call, and streaming, plus the Gateway and Host segment records the
+  opt-in `MINIH_REMOTE_LATENCY_TRACE=1` produces. See
+  `03-runtime/09-logging-and-observability.md` §7b.
+- The P0 measurement also settled two P7 candidates: the attach limit and the
+  paged `session/history` are confirmed (serial attach up to seven sessions,
+  each with a full snapshot), while the streamed-delta coalescing is dropped —
+  40 provider chunks from the local stub produced 11–13 `item.delta` events, so
+  deltas are already coalesced before the RACP event and a second merge would
+  be added blind.
+- D676 amends ADR 0331 (amendment 4). A relayed principal — phone, browser, or
+  desktop-class device — may change a session's persistent permission mode
+  through `session/configure`, as the code has always allowed (`controller`
+  role, an ordinary patch in `packages/host-runtime`, the phone's session
+  sheet); decision 5's "cannot raise a local session's permission mode" was a
+  promise the code never implemented, and the documents now state the behavior
+  instead. The remote permission ceiling still binds every turn the device
+  itself starts (`approverOverride` is never granted to a gateway-origin
+  principal, and the effective mode is computed per turn). The accepted risk
+  is that the changed persistent mode governs turns started at the computer
+  and by desktop-class devices of the same account, mitigated by revocation
+  from any account device; a configure change is reported — the
+  `session.configured` device notice carries the device id and the changed
+  fields as `field: newValue` pairs, and the Host log line carries the device
+  id (the notice gap recorded when D676 landed is closed).

@@ -503,6 +503,52 @@ window.accountsProbe = async ({ width, height }) => {
   // Captured here: the removal below correctly drops the binding again.
   const imageSelectionSaved = settings.imageGenerationModels ?? [];
 
+  // 3b) The designation alone must persist. The checkbox is not a binding
+  //     field, so a save that touched nothing else used to close the dialog
+  //     without writing: the model stayed unmarked and every later
+  //     GenerateImages answered IMAGE_NOT_CONFIGURED. Uncheck, save, and the
+  //     stored candidate list must lose it again without a binding edit.
+  const bindingsBeforeDesignation = JSON.stringify(updated.models);
+  const writesBeforeUnmark = settingsWrites.length;
+  flushSync(() => button("Configure").click());
+  const unmarkDrawer = await waitFor(
+    () => document.querySelector(".model-configure-dialog"),
+    "the configure dialog did not reopen for the designation",
+  );
+  const unmarkToggle = [...unmarkDrawer.querySelectorAll("input[type=checkbox]")]
+    .find((node) => node.closest("label")?.textContent?.includes("Selected image model"));
+  if (!unmarkToggle) throw new Error("the saved image-model designation was not checked");
+  flushSync(() => unmarkToggle.click());
+  flushSync(() => button("Save").click());
+  await waitFor(
+    () => !document.querySelector(".model-configure-dialog") &&
+      (settings.imageGenerationModels ?? []).length === 0,
+    "unchecking only the image model did not reach the settings store",
+  );
+  const designationOnlyWriteSaved =
+    settingsWrites.length > writesBeforeUnmark &&
+    (settings.imageGenerationModels ?? []).length === 0;
+  // Mark it again the same way, so the rest of the probe keeps its binding.
+  flushSync(() => button("Configure").click());
+  const remarkDrawer = await waitFor(
+    () => document.querySelector(".model-configure-dialog"),
+    "the configure dialog did not reopen after unmarking",
+  );
+  const remarkToggle = [...remarkDrawer.querySelectorAll("input[type=checkbox]")]
+    .find((node) => node.closest("label")?.textContent?.includes("Set as image model"));
+  flushSync(() => remarkToggle.click());
+  flushSync(() => button("Save").click());
+  await waitFor(
+    () => !document.querySelector(".model-configure-dialog") &&
+      (settings.imageGenerationModels ?? []).length === 1,
+    "checking only the image model did not reach the settings store",
+  );
+  const remarkSaved = (settings.imageGenerationModels ?? [])
+    .some((binding) => binding.modelId.toLowerCase() === "gpt-4.1");
+  // The designation is a settings write, not a binding edit: the row's stored
+  // bindings — including the protocol pin saved earlier — must survive it.
+  const designationKeptBinding = JSON.stringify(updated.models) === bindingsBeforeDesignation;
+
   // 4) Removing the only model leaves no dangling replacement behind: the row
   //    loses its binding list, and no default is invented for an empty row.
   const settingsWritesBeforeRemoval = settingsWrites.length;
@@ -563,6 +609,9 @@ window.accountsProbe = async ({ width, height }) => {
     imageFollowsPublished,
     imageDefaultNamed,
     imageSelectionSaved,
+    designationOnlyWriteSaved,
+    remarkSaved,
+    designationKeptBinding,
     dialogClosesAfterSave,
     defaultBadgeShown,
     followGlobalDefault,
@@ -710,6 +759,11 @@ app.whenReady().then(async () => {
       imageFollowsPublished: true,
       imageDefaultNamed: true,
       imageSelectionSaved: [{ providerId: "router-1", modelId: "gpt-4.1" }],
+      // A save that changed only the designation still reached the store, and
+      // it left the binding the user had pinned alone.
+      designationOnlyWriteSaved: true,
+      remarkSaved: true,
+      designationKeptBinding: true,
       dialogClosesAfterSave: true,
       defaultBadgeShown: true,
       followGlobalDefault: true,

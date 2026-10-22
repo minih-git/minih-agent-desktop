@@ -5,6 +5,7 @@ import type { Principal } from "@minih-agent/agent-host";
 import {
   RACP_DEVICE_TOKEN_PREFIX,
   RACP_PAIRING_TOKEN_PREFIX,
+  isDesktopClassDevice,
   type RacpRole,
 } from "@minih-agent/shared";
 
@@ -40,8 +41,20 @@ export type DeviceRecord = {
   createdAt: string;
   /** Missing on records written before D665; those read as `"ssh"`. */
   origin?: CredentialOrigin;
-  lastSeenAt?: string;
+  /**
+   * Set on a device this Host admitted as desktop-class, after verifying the
+   * proof itself (ADR amendment 3, decision 4). Absent on every record written
+   * before this field existed, and on every phone or browser device: those keep
+   * the ceiling, so reading a record without it behaves exactly as before.
+   */
+  deviceClass?: "desktop";
+  /**
+   * The computer whose proof admitted this device. Revoking that computer's
+   * Host certificate revokes its devices with it, which is why the id is kept.
+   */
+  applicantHostId?: string;
   revokedAt?: string;
+  lastSeenAt?: string;
 };
 
 export type PairingRecord = {
@@ -196,18 +209,29 @@ export class DeviceTokenAuthenticator {
       const origin = credentialOriginFromRecord(device.origin);
       if (origin !== (input.origin ?? "ssh")) return null;
       await this.store.touchDevice(device.deviceId, new Date(this.now()).toISOString());
+      // A desktop-class device is the one gateway-origin principal that is not a
+      // "paired device" in the ceiling's sense: the target Host verified a proof
+      // signed by a certificate this Gateway issued to a computer of the same
+      // account, which is the same standing an SSH-paired owner has (ADR
+      // amendment 3, decision 4; security §3.7). Everything else — every phone,
+      // every browser, and every record written before this field existed —
+      // keeps `pairedDevice: false` and the ceiling. The rule itself lives in
+      // `isDesktopClassDevice` so the ceiling, `allow-session`, and
+      // `approverOverride` cannot drift apart.
+      const deviceClass = device.deviceClass === "desktop" ? "desktop" : undefined;
+      const desktopOwner = isDesktopClassDevice({ deviceClass, roles: device.roles });
       return {
         kind: "device",
         device,
         principal: {
           subject: device.deviceId,
           roles: [...device.roles],
-          // A gateway-paired device is never an SSH-paired owner (security §3.7):
-          // the remote permission ceiling always applies to it.
-          pairedDevice: origin !== "gateway",
-          // AgentHost reads this to enforce the policy-immune restrictions:
-          // no allow-session, no approverOverride, ceiling always applies.
+          pairedDevice: desktopOwner || origin !== "gateway",
+          // AgentHost reads these two to enforce the policy-immune
+          // restrictions: a gateway-origin principal gets no allow-session and
+          // no approverOverride, unless it is desktop-class.
           origin,
+          ...(deviceClass ? { deviceClass } : {}),
           connectionId: input.connectionId,
         },
       };
