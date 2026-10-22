@@ -441,6 +441,9 @@ export const zhCN: Record<TranslationKey, string> = {
   "settings.history.otherAccountRow": "{{account}} · {{count}} 个对话",
   "settings.history.none": "还没有保存的对话。",
 
+  "directChat.foreignScope": "这个对话属于另一个账号。重新连接那个账号后才能继续。",
+  "directChat.readOnlyScope": "只读：这个对话属于另一个账号。",
+
   "connect.title": "在手机上接管你的 Agent",
   "connect.subtitle": "查看进度、批准操作、继续对话。任务仍在你的电脑上运行。",
   "connect.feature.shield.title": "批准或拒绝工具请求",

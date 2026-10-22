@@ -213,7 +213,8 @@ describe("retrying", () => {
       newMessageId: "unused",
       newAttemptId: "a-retry",
     });
-    expect(retried.userMessageId).toBe(first.userMessage.id);
+    expect(retried.ok).toBe(true);
+    if (retried.ok) expect(retried.attempt.userMessageId).toBe(first.userMessage.id);
     const transcript = await history.transcript(first.conversation.id);
     expect(transcript?.messages.filter((message) => message.role === "user")).toHaveLength(1);
     expect(transcript?.attempts).toHaveLength(2);
@@ -394,5 +395,50 @@ describe("helpers", () => {
     expect(titleFromMessage("a\nb")).toBe("a b");
     expect(titleFromMessage("x".repeat(200))).toHaveLength(80);
     expect(titleFromMessage("  ")).toBe("");
+  });
+});
+
+describe("another account's conversation is read-only", () => {
+  it("refuses a retry that would send under a different key", async () => {
+    const { history, store, turn } = harness();
+    const first = await history.beginTurn(turn());
+    if (!first.ok) throw new Error("setup failed");
+    await history.finish(first.attempt, { state: "interrupted", text: "half", now: T0 });
+    const attempt = store.snapshot().attempts[0]!;
+
+    const foreign = await history.retry({
+      scope: OTHER_SCOPE,
+      modelId: "m-chat",
+      modelLabel: "M Chat",
+      protocol: "openai-completions",
+      now: T0,
+      attempt,
+      newConversationId: first.conversation.id,
+      newMessageId: first.userMessage.id,
+      newAttemptId: "a-foreign",
+    });
+    expect(foreign.ok).toBe(false);
+    if (!foreign.ok) expect(foreign.reason).toBe("foreign-scope");
+    // Nothing was written for the other account.
+    expect(store.snapshot().attempts).toHaveLength(1);
+  });
+
+  it("allows the retry when the scope matches", async () => {
+    const { history, store, turn } = harness();
+    const first = await history.beginTurn(turn());
+    if (!first.ok) throw new Error("setup failed");
+    await history.finish(first.attempt, { state: "interrupted", text: "half", now: T0 });
+    const same = await history.retry({
+      scope: SCOPE,
+      modelId: "m-chat",
+      modelLabel: "M Chat",
+      protocol: "openai-completions",
+      now: T0,
+      attempt: store.snapshot().attempts[0]!,
+      newConversationId: first.conversation.id,
+      newMessageId: first.userMessage.id,
+      newAttemptId: "a-same",
+    });
+    expect(same.ok).toBe(true);
   });
 });

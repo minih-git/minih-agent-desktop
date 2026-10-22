@@ -84,10 +84,16 @@ export type DirectChatHistory = {
       now: string;
     },
   ): Promise<DirectChatAttempt>;
-  /** A retry is a new attempt for the same user message; nothing is duplicated. */
+  /**
+   * A retry is a new attempt for the same user message; nothing is duplicated.
+   *
+   * It refuses when the conversation belongs to another account: a retry sends
+   * a request, and the request carries the connected key, so retrying across
+   * accounts would send one account's conversation under another's key.
+   */
   retry(
     input: Omit<BeginTurnInput, "text" | "conversationId"> & { attempt: DirectChatAttempt; now: string },
-  ): Promise<DirectChatAttempt>;
+  ): Promise<{ ok: true; attempt: DirectChatAttempt } | { ok: false; reason: string }>;
   /** Startup: any attempt left live belongs to a process that is gone. */
   interruptLive(now: string): Promise<number>;
 
@@ -311,6 +317,11 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
     },
 
     async retry(input) {
+      const conversation = await store.conversation(input.attempt.conversationId);
+      if (!conversation) return { ok: false, reason: "conversation-missing" };
+      if (scopeKey(conversation.scope) !== scopeKey(input.scope)) {
+        return { ok: false, reason: "foreign-scope" };
+      }
       const attempt: DirectChatAttempt = {
         id: input.newAttemptId,
         conversationId: input.attempt.conversationId,
@@ -327,12 +338,11 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
         errorKind: null,
         usage: null,
       };
-      const conversation = await store.conversation(input.attempt.conversationId);
       await store.transact(async (tx) => {
         await tx.putAttempt(attempt);
-        if (conversation) await tx.putConversation({ ...conversation, updatedAt: input.now });
+        await tx.putConversation({ ...conversation, updatedAt: input.now });
       });
-      return attempt;
+      return { ok: true, attempt };
     },
 
     async interruptLive(now) {

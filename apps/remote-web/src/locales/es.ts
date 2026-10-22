@@ -441,6 +441,9 @@ export const es: Record<TranslationKey, string> = {
   "settings.history.otherAccountRow": "{{account}} · {{count}} conversaciones",
   "settings.history.none": "Todavía no hay conversaciones guardadas.",
 
+  "directChat.foreignScope": "Esta conversación pertenece a otra cuenta. Vuelve a conectar esa cuenta para continuarla.",
+  "directChat.readOnlyScope": "Solo lectura: esta conversación pertenece a otra cuenta.",
+
   "connect.title": "Controla tus agentes desde tu teléfono",
   "connect.subtitle": "Consulta el progreso, aprueba acciones y continúa la conversación. El trabajo sigue ejecutándose en tu ordenador.",
   "connect.feature.shield.title": "Aprobar o denegar solicitudes de herramientas",

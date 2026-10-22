@@ -441,6 +441,9 @@ export const tr: Record<TranslationKey, string> = {
   "settings.history.otherAccountRow": "{{account}} · {{count}} sohbet",
   "settings.history.none": "Henüz kayıtlı sohbet yok.",
 
+  "directChat.foreignScope": "Bu sohbet başka bir hesaba ait. Sürdürmek için o hesaba yeniden bağlanın.",
+  "directChat.readOnlyScope": "Salt okunur: bu sohbet başka bir hesaba ait.",
+
   "connect.title": "Agent'larınızı telefonunuzdan kontrol edin",
   "connect.subtitle": "İlerlemeyi kontrol edin, eylemleri onaylayın ve sohbete devam edin. İşler bilgisayarınızda çalışmaya devam eder.",
   "connect.feature.shield.title": "Araç isteklerini onaylayın veya reddedin",

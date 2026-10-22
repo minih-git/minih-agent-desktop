@@ -191,6 +191,7 @@ describe("running one reply", () => {
     });
 
     const pending = withFetch.start({
+      scope: SCOPE,
       conversationId: turn.conversation.id,
       attempt: turn.attempt,
       model: chatModel,
@@ -225,6 +226,7 @@ describe("running one reply", () => {
     });
 
     const first = runner.start({
+      scope: SCOPE,
       conversationId: turn.conversation.id,
       attempt: turn.attempt,
       model: chatModel,
@@ -233,6 +235,7 @@ describe("running one reply", () => {
     });
     await tick();
     const second = await runner.start({
+      scope: SCOPE,
       conversationId: turn.conversation.id,
       attempt: turn.attempt,
       model: chatModel,
@@ -259,6 +262,7 @@ describe("running one reply", () => {
     });
 
     const pending = runner.start({
+      scope: SCOPE,
       conversationId: turn.conversation.id,
       attempt: turn.attempt,
       model: chatModel,
@@ -290,6 +294,7 @@ describe("running one reply", () => {
     });
 
     const pending = runner.start({
+      scope: SCOPE,
       conversationId: turn.conversation.id,
       attempt: turn.attempt,
       model: chatModel,
@@ -322,6 +327,7 @@ describe("running one reply", () => {
     });
 
     const pending = runner.start({
+      scope: SCOPE,
       conversationId: turn.conversation.id,
       attempt: turn.attempt,
       model: chatModel,
@@ -355,6 +361,7 @@ describe("running one reply", () => {
     });
 
     const pending = runner.start({
+      scope: SCOPE,
       conversationId: turn.conversation.id,
       attempt: turn.attempt,
       model: chatModel,
@@ -393,6 +400,7 @@ describe("retrying", () => {
     });
     const pending = runner.retry({
       attempt: store.snapshot().attempts[0]!,
+      scope: SCOPE,
       model: chatModel,
       protocol: "openai-completions",
       authKey: KEY,
@@ -421,6 +429,7 @@ describe("a build with no model gateway", () => {
       origin: null,
     });
     const outcome = await runner.start({
+      scope: SCOPE,
       conversationId: turn.conversation.id,
       attempt: turn.attempt,
       model: chatModel,
@@ -432,5 +441,34 @@ describe("a build with no model gateway", () => {
       expect(outcome.attempt.state).toBe("failed");
       expect(outcome.attempt.errorKind).toBe("gateway");
     }
+  });
+});
+
+describe("another account's conversation", () => {
+  it("is refused at the runner, before any request is made", async () => {
+    const { history, ids } = harness();
+    const turn = await beginTurn(history, ids, "hello", "2026-10-21T09:00:00.000Z");
+    const stream = controlledFetch();
+    const runner = createDirectChatRunner({
+      store: createMemoryDirectChatStore(),
+      history,
+      origin: "https://models.example.test",
+      fetchImpl: stream.fetchImpl,
+    });
+
+    const outcome = await runner.start({
+      conversationId: turn.conversation.id,
+      // The device is connected as a different access key.
+      scope: { gatewayRoot: SCOPE.gatewayRoot, accessKeyId: "99" },
+      attempt: turn.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: "sk-other-account",
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.reason).toBe("foreign-scope");
+    // Nothing was sent, and the runner is not left busy.
+    expect(stream.calls).toHaveLength(0);
+    expect(runner.state().phase).toBe("idle");
   });
 });

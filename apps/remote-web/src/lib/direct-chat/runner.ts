@@ -20,7 +20,13 @@
 import type { MinihRouterModel } from "@minih-agent/shared";
 
 import type { DirectProtocol } from "./catalog.js";
-import type { DirectChatAttempt, DirectChatStore, DirectChatTranscript } from "./history-store.js";
+import {
+  scopeKey,
+  type DirectChatAttempt,
+  type DirectChatScope,
+  type DirectChatStore,
+  type DirectChatTranscript,
+} from "./history-store.js";
 import type { DirectChatHistory } from "./history.js";
 import { streamDirectReply, type DirectStreamResult, type DirectTurn } from "./stream.js";
 
@@ -35,6 +41,8 @@ export type DirectChatRunState =
 
 export type StartReplyInput = {
   conversationId: string;
+  /** The account this device is connected as; a mismatch is refused. */
+  scope: DirectChatScope;
   /** The attempt that was just saved as pending. */
   attempt: DirectChatAttempt;
   model: MinihRouterModel;
@@ -44,7 +52,12 @@ export type StartReplyInput = {
 
 export type StartReplyOutcome =
   | { ok: true; attempt: DirectChatAttempt }
-  | { ok: false; reason: "busy" | "cancelled"; attempt?: DirectChatAttempt };
+  | {
+      ok: false;
+      /** `foreign-scope`: the conversation belongs to another access key. */
+      reason: "busy" | "cancelled" | "foreign-scope" | "conversation-missing";
+      attempt?: DirectChatAttempt;
+    };
 
 export type DirectChatRunnerOptions = {
   store: DirectChatStore;
@@ -69,6 +82,7 @@ export type DirectChatRunner = {
   /** Retry a finished attempt: a new attempt for the same user message. */
   retry(input: {
     attempt: DirectChatAttempt;
+    scope: DirectChatScope;
     model: MinihRouterModel;
     protocol: DirectProtocol;
     authKey: string;
@@ -256,16 +270,22 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
         // instead of quietly queueing the request.
         return { ok: false, reason: "busy" };
       }
+      const conversation = await options.history.transcript(input.conversationId);
+      if (!conversation) {
+        return { ok: false, reason: "conversation-missing" };
+      }
+      if (scopeKey(conversation.conversation.scope) !== scopeKey(input.scope)) {
+        // The request would carry this device's key to another account's
+        // conversation, which must never happen (§2).
+        return { ok: false, reason: "foreign-scope" };
+      }
       runCounter += 1;
       const runId = runCounter;
       const controller = new AbortController();
       current = { runId, conversationId: input.conversationId, controller, received: "" };
       announce();
 
-      const transcript = await options.history.transcript(input.conversationId);
-      const context = transcript
-        ? buildDirectContext(transcript)
-        : { turns: [], lastUserText: "" };
+      const context = buildDirectContext(conversation);
 
       try {
         const finished = await drive({
@@ -327,10 +347,8 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
 
     async retry(input) {
       if (isBusy()) return { ok: false, reason: "busy" };
-      const scope = (await options.history.transcript(input.attempt.conversationId))?.conversation.scope;
-      if (!scope) return { ok: false, reason: "cancelled" };
-      const attempt = await options.history.retry({
-        scope,
+      const created = await options.history.retry({
+        scope: input.scope,
         modelId: input.model.id,
         modelLabel: input.model.id,
         protocol: input.protocol,
@@ -340,9 +358,12 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
         newMessageId: input.attempt.userMessageId,
         newAttemptId: `${input.attempt.id}-retry-${runCounter + 1}`,
       });
+      if (!created.ok) return { ok: false, reason: created.reason === "foreign-scope" ? "foreign-scope" : "conversation-missing" };
+      const attempt = created.attempt;
       announce();
       return this.start({
         conversationId: input.attempt.conversationId,
+        scope: input.scope,
         attempt,
         model: input.model,
         protocol: input.protocol,

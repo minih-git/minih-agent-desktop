@@ -445,6 +445,9 @@ export const en = {
   "settings.history.otherAccountRow": "{{account}} · {{count}} conversations",
   "settings.history.none": "No conversations saved yet.",
 
+  "directChat.foreignScope": "This conversation belongs to another account. Reconnect that account to continue it.",
+  "directChat.readOnlyScope": "Read-only: this conversation belongs to another account.",
+
   "connect.title": "Control your agents from your phone",
   "connect.subtitle": "Check progress, approve actions, and keep the conversation going. Work keeps running on your computer.",
   "connect.feature.shield.title": "Approve or deny tool requests",

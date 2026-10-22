@@ -441,6 +441,9 @@ export const zhTW: Record<TranslationKey, string> = {
   "settings.history.otherAccountRow": "{{account}} · {{count}} 個對話",
   "settings.history.none": "還沒有儲存的對話。",
 
+  "directChat.foreignScope": "這個對話屬於另一個帳號。重新連接那個帳號後才能繼續。",
+  "directChat.readOnlyScope": "唯讀：這個對話屬於另一個帳號。",
+
   "connect.title": "在手機上接管你的 Agent",
   "connect.subtitle": "查看進度、批准操作、繼續對話。任務仍在你的電腦上運行。",
   "connect.feature.shield.title": "批准或拒絕工具請求",

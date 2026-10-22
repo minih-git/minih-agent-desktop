@@ -25,6 +25,7 @@ import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
 import { resolveDirectModel } from "../lib/direct-chat/catalog.js";
 import type { DirectChatAttempt, DirectChatTranscript } from "../lib/direct-chat/history-store.js";
 import { isIdle } from "../lib/direct-chat/history.js";
+import { scopeKey } from "../lib/direct-chat/history-store.js";
 import { projectDirectTranscript, transcriptAsMarkdown } from "../lib/direct-chat/view.js";
 import type { DirectChatConnection } from "../lib/direct-chat/connection.js";
 import { createIdempotencyKey, createRequestId } from "../lib/ids.js";
@@ -105,6 +106,13 @@ export function DirectChatScreen({
   const nextModel = catalog.find((model) => model.id === wantedModelId) ?? null;
   /** True for a conversation opened before its first message exists. */
   const isNew = loaded && transcript === null;
+  /**
+   * The conversation belongs to another access key. Sending would carry this
+   * device's key to it, so the screen is read-only rather than merely disabled.
+   */
+  const foreignScope = Boolean(
+    conversation && scope && scopeKey(conversation.scope) !== scopeKey(scope),
+  );
   const nextChoice = nextModel ? resolveDirectModel(nextModel) : null;
   const usable = nextChoice?.usable === true;
 
@@ -148,6 +156,7 @@ export function DirectChatScreen({
     await reload();
     const started = await runner.start({
       conversationId: saved.conversation.id,
+      scope,
       attempt: saved.attempt,
       model: nextModel,
       protocol: nextChoice.protocol,
@@ -155,7 +164,13 @@ export function DirectChatScreen({
     });
     setSending(false);
     if (!started.ok) {
-      setNotice(started.reason === "busy" ? t("directChat.busy") : null);
+      setNotice(
+        started.reason === "busy"
+          ? t("directChat.busy")
+          : started.reason === "foreign-scope"
+            ? t("directChat.foreignScope")
+            : null,
+      );
       return false;
     }
     // The new conversation now exists: read it back under its own id.
@@ -175,7 +190,8 @@ export function DirectChatScreen({
   }
 
   async function retry(attempt: DirectChatAttempt) {
-    if (!nextModel || nextChoice?.usable !== true) return;
+    // A retry sends: without a connected account there is no key to send with.
+    if (!scope || !nextModel || nextChoice?.usable !== true) return;
     const key = await createDirectChatSecret(secureStore()).read();
     if (!key) {
       setNotice(t("directChat.failure.unauthorized"));
@@ -183,11 +199,14 @@ export function DirectChatScreen({
     }
     const outcome = await runner.retry({
       attempt,
+      scope,
       model: nextModel,
       protocol: nextChoice.protocol,
       authKey: key,
     });
-    if (!outcome.ok) setNotice(t("directChat.busy"));
+    if (!outcome.ok) {
+      setNotice(outcome.reason === "foreign-scope" ? t("directChat.foreignScope") : t("directChat.busy"));
+    }
     await reload();
     onChanged?.();
   }
@@ -225,7 +244,13 @@ export function DirectChatScreen({
           </div>
         )}
 
-        {view?.retryable ? (
+        {foreignScope ? (
+          <div className="mt-3 rounded-[12px] bg-[var(--rm-bg-inset)] px-3 py-2 text-[13px] leading-[18px] text-[var(--rm-text-secondary)]">
+            {t("directChat.readOnlyScope")}
+          </div>
+        ) : null}
+
+        {view?.retryable && !foreignScope ? (
           <div className="mt-3 flex items-center gap-2 rounded-[12px] bg-[var(--rm-bg-inset)] px-3 py-2 text-[13px] leading-[18px] text-[var(--rm-text-secondary)]">
             <span className="min-w-0 flex-1">
               {view.retryable.state === "interrupted"
@@ -249,7 +274,12 @@ export function DirectChatScreen({
       </ScreenContent>
 
       <ScreenDock>
-        {!connection ? (
+        {foreignScope ? (
+          // Read-only: no composer and no retry, because either would send.
+          <p className="px-1 text-center text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
+            {t("directChat.readOnlyScope")}
+          </p>
+        ) : !connection ? (
           // Not connected: the input area explains and offers the way in.
           <Button variant="primary" size="large" onClick={onConnect}>
             {t("chats.connect")}
