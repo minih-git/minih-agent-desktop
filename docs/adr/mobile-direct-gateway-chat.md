@@ -1,6 +1,6 @@
 # ADR: Mobile direct gateway chat alongside remote computers
 
-- Status: Proposed; awaiting product confirmation. No implementation is authorized by this record.
+- Status: Accepted
 - Date: 2026-10-21
 - Scope: Native iOS and Android builds of `apps/remote-web`; the browser build is unchanged.
 - Related: [ADR 0331](0331-self-hosted-gateway-and-mobile-client.md),
@@ -290,13 +290,14 @@ notifications keep their current behavior.
   skills, Agent/Plan/Goal, voice, share sheet, summarization, tablet split view,
   a Computers attention badge and cross-device sync.
 
-## Follow-up after confirmation
+## Follow-up
 
-1. Update UX spec §4, §15.7 and §17.3 (and the Chinese mirror) with the two
-   roots, D1–D4 and Settings, plus the storage/security scope.
-2. Implement in three stages that each keep remote behavior intact: roots and
-   presentation seams; model connection, catalog and streaming; durable history
-   and interruption handling. A send path does not ship before history saving.
-3. Verify streaming, CORS preflight, Keychain/Keystore separation and
-   background behavior on each shipped platform against a local or staging
+1. UX spec §4, §15.7 and §17.3 (and the Chinese mirror) carry the two roots;
+   the D1–D4 and Settings details are still only in this record and the
+   prototype, and belong in the UX spec.
+2. The three stages are implemented: roots and presentation seams; model
+   connection, catalog and streaming; durable history and interruption
+   handling, with sending wired only after history saving.
+3. Still unverified: streaming, CORS preflight, Keychain/Keystore separation
+   and background behavior on each shipped platform against a local or staging
    gateway; real paid model calls need their own authorization.

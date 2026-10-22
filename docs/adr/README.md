@@ -20,7 +20,7 @@ Each ADR includes:
 
 | ID | Title | Status |
 |---|---|---|
-| mobile-direct-gateway-chat | [Mobile direct gateway chat alongside remote computers](mobile-direct-gateway-chat.md) | Proposed |
+| mobile-direct-gateway-chat | [Mobile direct gateway chat alongside remote computers](mobile-direct-gateway-chat.md) | Accepted |
 | background-bash-task-ownership | [Host-owned background Bash tasks](background-bash-task-ownership.md) | Accepted for implementation |
 | network-center-gateway-issued-identity | [Gateway-issued network center identity](network-center-gateway-issued-identity.md) | Accepted for implementation |
 | remote-control-router-account-binding | [Router-account binding for remote control](remote-control-router-account-binding.md) | Accepted for implementation (post-MVP; D666; amends ADR 0331) |
