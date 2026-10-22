@@ -666,6 +666,8 @@ export const de = {
     recentModels: "Zuletzt verwendet",
     otherModels: "Weitere Modelle",
     "searchModels": "Modelle suchen",
+    "remoteModelBusy": "Die Unterhaltung läuft auf jenem Computer; die Modelländerung greift nach ihrem Ende.",
+    "remoteSendOffline": "Jener Computer ist offline. Senden wartet, bis er sich erneut verbindet.",
     "noModelResults": "Keine passenden Modelle",
     "modelBadgeReasoning": "Begründung",
     "modelBadgeVision": "Vision",

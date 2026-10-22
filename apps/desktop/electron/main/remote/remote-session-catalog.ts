@@ -57,7 +57,7 @@ export function createRemoteSessionCatalog(options: {
         const connected = Boolean(options.getHost(hostKey));
         return rows.map((row) => ({
           ...row,
-          capabilities: { ...row.capabilities!, canPrompt: connected, canStop: connected, canRefresh: connected },
+          capabilities: { ...row.capabilities!, canPrompt: connected, canStop: connected, canRefresh: connected, canConfigureModel: connected },
           ...(connected ? {} : { readOnlyReason: "REMOTE_HOST_DISCONNECTED" }),
         }));
       });

@@ -666,6 +666,8 @@ export const es = {
     recentModels: "Usados recientemente",
     otherModels: "Otros modelos",
     "searchModels": "Buscar modelos",
+    "remoteModelBusy": "La conversación está ejecutando un turno en ese ordenador; el cambio de modelo se aplica al terminar.",
+    "remoteSendOffline": "Ese ordenador está desconectado. El envío espera a que se reconecte.",
     "noModelResults": "No hay modelos coincidentes",
     "modelBadgeReasoning": "razonamiento",
     "modelBadgeVision": "visión",

@@ -168,6 +168,8 @@ export const IPC = {
     /** Deterministic first-prompt title for a session that is still untitled. */
     sessionDeriveTitle: "minih-agent-desktop/session/deriveTitle",
     sessionConfigure: "minih-agent-desktop/session/configure",
+    /** The model catalog of the host that owns the session (remote sessions). */
+    sessionModels: "minih-agent-desktop/session/models",
     sessionImportScan: "minih-agent-desktop/session/importScan",
     sessionImportRun: "minih-agent-desktop/session/importRun",
     modelConfigImportScan: "minih-agent-desktop/modelConfig/importScan",

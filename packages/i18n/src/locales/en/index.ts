@@ -687,6 +687,8 @@ export const en = {
     recentModels: "Recently used",
     otherModels: "Other models",
     searchModels: "Search models",
+    remoteModelBusy: "The conversation is running a turn on that computer; the model change applies when it ends.",
+    remoteSendOffline: "That computer is offline. Sending waits until it reconnects.",
     noModelResults: "No matching models",
     modelBadgeReasoning: "reasoning",
     modelBadgeVision: "vision",

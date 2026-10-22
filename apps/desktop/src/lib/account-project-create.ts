@@ -39,21 +39,31 @@ export type AccountProjectResult = {
  *
  * `name` becomes the session's title on that computer. The project itself keeps
  * the name the sibling derived from the folder, because that is what it
- * registered and what its own list shows. The caller owns navigation: this
- * function does not touch the store, so a user who navigates away mid-flight
- * cannot be pulled back by a late result.
+ * registered and what its own list shows — so the sidebar groups the session
+ * under the folder's name, not the one typed into the dialog. That is the
+ * intended display today: the typed name labels the conversation, and no
+ * separate project-name record is written on either side.
+ *
+ * The session inherits this desktop's default permission mode (the same setting
+ * a local new session reads); a sibling session starts as conservatively as a
+ * local one, and falls back to `ask` when the setting cannot be read. The caller
+ * owns navigation: this function does not touch the store, so a user who
+ * navigates away mid-flight cannot be pulled back by a late result.
  */
 export async function createAccountProject(
   name: string,
   target: AccountProjectTarget,
 ): Promise<AccountProjectResult> {
   const registered = await api.registerRemoteProject(target.hostKey, target.path);
+  const defaultPermissionMode = await api.getSettings()
+    .then((settings) => settings.defaultPermissionMode)
+    .catch(() => undefined);
   const created = await api.createRemoteSession({
     hostKey: target.hostKey,
     projectId: registered.project.id,
     title: name,
     mode: "agent",
-    permissionMode: "ask",
+    permissionMode: defaultPermissionMode ?? "ask",
   });
   return { projectId: registered.project.id, sessionId: created.session.id };
 }

@@ -671,6 +671,8 @@ export const zhTW = {
     recentModels: "最近使用",
     otherModels: "其他模型",
     searchModels: "搜尋模型",
+    remoteModelBusy: "會話正在那台電腦上執行一輪對話，模型變更將在本輪結束後生效。",
+    remoteSendOffline: "該電腦目前離線，傳送將等待它重新連線。",
     noModelResults: "沒有匹配的模型",
     modelBadgeReasoning: "推理",
     modelBadgeVision: "視覺",

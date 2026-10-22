@@ -680,6 +680,8 @@ export const zhCN = {
     recentModels: "最近使用",
     otherModels: "其他模型",
     searchModels: "搜索模型",
+    remoteModelBusy: "会话正在那台电脑上运行一轮对话，模型更改将在本轮结束后生效。",
+    remoteSendOffline: "该电脑当前离线，发送将等待它重新连接。",
     noModelResults: "没有匹配的模型",
     modelBadgeReasoning: "推理",
     modelBadgeVision: "视觉",

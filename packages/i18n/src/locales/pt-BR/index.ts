@@ -665,6 +665,8 @@ export const ptBR = {
     recentModels: "Usados recentemente",
     otherModels: "Outros modelos",
     searchModels: "Pesquisar modelos…",
+    remoteModelBusy: "A conversa está executando uma rodada naquele computador; a mudança de modelo vale quando ela terminar.",
+    remoteSendOffline: "Esse computador está offline. O envio aguarda a reconexão.",
     noModelResults: "Nenhum modelo encontrado",
     modelBadgeReasoning: "Raciocínio",
     modelBadgeVision: "Visão",

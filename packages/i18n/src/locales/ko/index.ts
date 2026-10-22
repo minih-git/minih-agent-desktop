@@ -675,6 +675,8 @@ export const ko = {
     recentModels: "최근 사용",
     otherModels: "다른 모델",
     searchModels: "모델 검색",
+    remoteModelBusy: "대화가 그 컴퓨터에서 턴을 실행 중입니다. 모델 변경은 턴이 끝난 뒤 적용됩니다.",
+    remoteSendOffline: "해당 컴퓨터가 오프라인입니다. 다시 연결될 때까지 보내기가 대기합니다.",
     noModelResults: "일치하는 모델 없음",
     modelBadgeReasoning: "추론",
     modelBadgeVision: "비전",

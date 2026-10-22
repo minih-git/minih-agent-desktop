@@ -675,6 +675,8 @@ export const tr = {
     recentModels: "Son kullanılanlar",
     otherModels: "Diğer modeller",
     searchModels: "Model ara",
+    remoteModelBusy: "Konuşma o bilgisayarda bir tur çalıştırıyor; model değişikliği tur bitince uygulanır.",
+    remoteSendOffline: "O bilgisayar çevrimdışı. Yeniden bağlanana kadar gönderim bekler.",
     noModelResults: "Eşleşen model yok",
     modelBadgeReasoning: "akıl yürütme",
     modelBadgeVision: "görüntü",
