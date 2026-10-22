@@ -22,13 +22,11 @@ export function ConfigSyncApprovals({
   disabled,
   onApprove,
   onReject,
-  onMapFolder,
 }: {
   approvals: readonly ConfigSyncPendingApproval[];
   disabled: boolean;
   onApprove: (approvalId: string, digest: string) => void;
   onReject: (approvalId: string, digest: string) => void;
-  onMapFolder: (logicalId: string) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -56,16 +54,6 @@ export function ConfigSyncApprovals({
                   </div>
                 </div>
                 <div className="settings-config-sync-actions">
-                  {group.mappingKey ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => onMapFolder(group.mappingKey as string)}
-                      disabled={disabled}
-                    >
-                      {t("settings.configSync.mapFolder")}
-                    </Button>
-                  ) : null}
                   {local ? (
                     <Button
                       size="sm"
@@ -112,16 +100,6 @@ export function ConfigSyncApprovals({
                 </div>
               </div>
               <div className="settings-config-sync-actions">
-                {approval.mappingKey ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => onMapFolder(approval.mappingKey as string)}
-                    disabled={disabled}
-                  >
-                    {t("settings.configSync.mapFolder")}
-                  </Button>
-                ) : null}
                 <Button
                   size="sm"
                   variant="secondary"

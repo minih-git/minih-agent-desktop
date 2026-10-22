@@ -571,7 +571,6 @@ export function ConfigSyncPage() {
               disabled={controlsBusy}
               onApprove={(approvalId, digest) => void approve(approvalId, digest, true)}
               onReject={(approvalId, digest) => void approve(approvalId, digest, false)}
-              onMapFolder={(logicalId) => void mapProject(logicalId)}
             />
           ) : null}
 
