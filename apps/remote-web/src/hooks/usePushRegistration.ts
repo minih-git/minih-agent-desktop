@@ -48,6 +48,7 @@ export function usePushRegistration(
   const registered = useRef<Set<string>>(new Set());
   const token = useRef<string | null>(null);
   const permissionAsked = useRef(false);
+  const obtainingToken = useRef<Promise<string | null> | null>(null);
   // A token that arrives after the first attempt (iOS often delivers it late)
   // has to trigger one more registration; a ref alone cannot, because it does
   // not re-render. This counter is what makes the effect below run again.
@@ -93,16 +94,24 @@ export function usePushRegistration(
     let cancelled = false;
     void (async () => {
       if (!token.current) {
-        if (permissionAsked.current) return;
-        permissionAsked.current = true;
-        const obtained = await obtainPushToken(plugin);
-        if (!obtained.ok) {
-          // A refusal is final for this launch: retrying would prompt in a loop,
-          // and a user who said no does not need that.
-          console.warn("[remote-web] push is not registered", obtained.reason);
-          return;
+        if (!obtainingToken.current) {
+          if (permissionAsked.current) return;
+          permissionAsked.current = true;
+          obtainingToken.current = obtainPushToken(plugin)
+            .then((obtained) => {
+              if (!obtained.ok) {
+                console.warn("[remote-web] push is not registered", obtained.reason);
+                return null;
+              }
+              token.current = obtained.token;
+              return obtained.token;
+            })
+            .finally(() => {
+              obtainingToken.current = null;
+            });
         }
-        token.current = obtained.token;
+        const awaited = await obtainingToken.current;
+        if (!awaited) return;
       }
       const issued = token.current;
       if (!issued || cancelled) return;

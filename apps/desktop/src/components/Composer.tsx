@@ -55,6 +55,8 @@ import { useComposerSubmit } from "../features/chat/composer/hooks/useComposerSu
 import { useComposerTransforms } from "../features/chat/composer/hooks/useComposerTransforms";
 import { ComposerInput } from "../features/chat/composer/ComposerInput";
 import { useComposerModelMenu } from "../features/chat/composer/hooks/useComposerModelMenu";
+import { useRemoteModelCatalog } from "../features/chat/composer/hooks/useRemoteModelCatalog";
+import { useRemotePromptGate } from "../hooks/use-remote-prompt-gate";
 import { useVoiceInput } from "../features/voice/useVoiceInput";
 import { ComposerToolbar } from "../features/chat/composer/ComposerToolbar";
 import { ComposerStatus } from "../features/chat/composer/ComposerStatus";
@@ -107,13 +109,15 @@ export function Composer({
     [plugins, activeSessionSummary, activeSessionId],
   );
   const remoteSession = isRemoteSession(capabilitySession);
+  const remoteModelCatalog = useRemoteModelCatalog(remoteSession ? activeSessionId : null);
+  const remotePromptGate = useRemotePromptGate(activeSessionId, activeSessionSummary?.remoteHostKey);
   const localToolsAllowed = sessionAllows(capabilitySession, "canUseLocalTools");
   const attachmentsAllowed = sessionAllows(capabilitySession, "canAttach");
   const promptAllowed = sessionAllows(capabilitySession, "canPrompt");
   const nativeSession = activeSessionSummary?.source === "pi-native";
   const nativeReadOnly =
     nativeSession && activeSessionSummary.capabilities?.canPrompt !== true;
-  const nativeInputBlocked = nativeReadOnly || !promptAllowed || ((nativeSession || remoteSession) && isRunning);
+  const nativeInputBlocked = nativeReadOnly || !promptAllowed || remotePromptGate.offline || ((nativeSession || remoteSession) && isRunning);
   const localWorkspacePath = useAppStore((s) => s.workspace?.path ?? "");
   const workspacePath = remoteSession ? "" : localWorkspacePath;
   const providers = useAppStore((s) => s.providers);
@@ -404,6 +408,7 @@ export function Composer({
     thinkingProvider,
     thinkingLevel,
     controlsBlocked,
+    remoteCatalog: remoteSession ? remoteModelCatalog : undefined,
   });
   const modelReady = remoteSession ? promptAllowed : nativeSession
     ? activeSessionSummary.capabilities?.canPrompt === true
@@ -545,6 +550,9 @@ export function Composer({
           <div className="composer-status" role="status">
             Native Pi session is read-only: {activeSessionSummary?.readOnlyReason ?? "continuation unavailable"}.
           </div>
+        ) : null}
+        {remotePromptGate.offline ? (
+          <div className="composer-status" role="status">{t(remotePromptGate.reasonKey ?? "chat.remoteSendOffline")}</div>
         ) : null}
         <ComposerStatus
           t={t}

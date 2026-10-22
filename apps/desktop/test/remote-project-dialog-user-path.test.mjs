@@ -77,7 +77,7 @@ window.remoteProjectProbe = async () => {
  check(createButton, "host card has no new project action");
  createButton.click();
  await until(() => document.querySelector(".project-create-dialog") && document.querySelector("select")?.value === "h2", "new project did not preselect remote source and host");
- check(document.querySelector('.project-create-dialog [data-project-source="remote"]')?.getAttribute("aria-pressed") === "true", "remote project source was not selected");
+ check(document.querySelector('.project-create-dialog [data-project-source="ssh"]')?.getAttribute("aria-pressed") === "true", "remote project source was not selected");
  check(!document.querySelector(".remote-host-workbench"), "remote host page still opens a session workbench");
  check(!calls.some((entry) => entry.channel === IPC.invoke.remoteHostSessions), "opening project management listed remote sessions");
  input(document.querySelector("#project-create-name"), "My server app");

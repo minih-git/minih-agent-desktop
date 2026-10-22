@@ -4,7 +4,7 @@
  * Implements S4 My Computers per docs/spec/04-ux/13-remote-mobile-client.md §8.5
  * and apps/remote-web/design/prototype/index.html.
  */
-import { Lock, Plus } from "lucide-react";
+import { Globe, Lock, Plus, Settings as SettingsIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -12,6 +12,7 @@ import { HostRow } from "../components/hosts/HostRow.js";
 import {
   ConnectSheet,
   ForgetConfirmSheet,
+  GatewaySheet,
   HostActionSheet,
 } from "../components/hosts/HostSheets.js";
 import { Button } from "../components/ui/Button.js";
@@ -36,11 +37,14 @@ export function HostsScreen({
   onOpenHost,
   onAddHost,
   onAddAccount,
+  onOpenSettings,
 }: {
   hosts: HostRegistryEntry[];
   onOpenHost: (entry: HostRegistryEntry) => void;
   onAddHost: () => void;
   onAddAccount: () => void;
+  /** The gear on this root (ADR mobile-direct-gateway-chat §1: two gears). */
+  onOpenSettings: () => void;
 }) {
   const { t } = useTranslation();
   const accountMode = useAccountAvailability();
@@ -51,7 +55,7 @@ export function HostsScreen({
     undefined,
   );
   const [selectedRefresh, setSelectedRefresh] = useState<(() => void) | null>(null);
-  const [activeSheet, setActiveSheet] = useState<"connect" | "hostAction" | "forget" | null>(
+  const [activeSheet, setActiveSheet] = useState<"connect" | "hostAction" | "forget" | "gateway" | null>(
     null,
   );
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -101,14 +105,19 @@ export function HostsScreen({
       <NavBar
         title={t("hosts.title")}
         trailing={
-          <Button
-            variant="plain"
-            size="icon"
-            aria-label={t("hosts.add")}
-            onClick={() => setActiveSheet("connect")}
-          >
-            <Plus className="h-6 w-6 stroke-[2]" aria-hidden="true" />
-          </Button>
+          <span className="flex items-center">
+            <Button variant="plain" size="icon" aria-label={t("hosts.settings")} onClick={onOpenSettings}>
+              <SettingsIcon className="h-5 w-5 stroke-[1.8]" aria-hidden="true" />
+            </Button>
+            <Button
+              variant="plain"
+              size="icon"
+              aria-label={t("hosts.add")}
+              onClick={() => setActiveSheet("connect")}
+            >
+              <Plus className="h-6 w-6 stroke-[2]" aria-hidden="true" />
+            </Button>
+          </span>
         }
       />
 
@@ -149,13 +158,23 @@ export function HostsScreen({
             ))}
           </div>
         )}
-        <div className="flex items-center gap-1.5 px-1 pt-2 pb-6 text-[12px] leading-[16px] text-[var(--rm-text-muted)]">
-          <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span>
-            {isNativeApp
-              ? t("hosts.footerStorageNative", { gateway: gatewayOrigin })
-              : t("hosts.footerStorageWeb", { gateway: gatewayOrigin })}
-          </span>
+        <div className="flex items-center justify-between gap-2 px-1 pt-2 pb-6 text-[12px] leading-[16px] text-[var(--rm-text-muted)]">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span className="truncate">
+              {isNativeApp
+                ? t("hosts.footerStorageNative", { gateway: gatewayOrigin })
+                : t("hosts.footerStorageWeb", { gateway: gatewayOrigin })}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveSheet("gateway")}
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--rm-bg-surface)] px-2.5 py-1 text-[12px] font-medium text-[var(--rm-link)] ring-1 ring-[var(--rm-separator)] active:bg-[var(--rm-bg-inset)]"
+          >
+            <Globe className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>切换网关</span>
+          </button>
         </div>
       </ScreenContent>
 
@@ -166,6 +185,13 @@ export function HostsScreen({
         onClose={() => setActiveSheet(null)}
         onSelectAccount={onAddAccount}
         onSelectPair={onAddHost}
+        onSelectGateway={() => setActiveSheet("gateway")}
+      />
+
+      {/* Gateway configuration sheet */}
+      <GatewaySheet
+        open={activeSheet === "gateway"}
+        onClose={() => setActiveSheet(null)}
       />
 
       {/* Host more action sheet (⋯) */}

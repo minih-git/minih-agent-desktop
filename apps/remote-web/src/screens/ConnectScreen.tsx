@@ -1,7 +1,8 @@
-import { CircleHelp, Lock, Shield, Square, Ticket, User } from "lucide-react";
-import type { ReactNode } from "react";
+import { CircleHelp, Globe, Lock, Settings as SettingsIcon, Shield, Square, Ticket, User } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { GatewaySheet } from "../components/hosts/HostSheets.js";
 import { Button } from "../components/ui/Button.js";
 import { ListGroup } from "../components/ui/ListGroup.js";
 import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
@@ -38,13 +39,16 @@ function ValueRow({
 export function ConnectScreen({
   onAddHost,
   onAddAccount,
+  onOpenSettings,
 }: {
   onAddHost: () => void;
   onAddAccount: () => void;
+  /** The gear on this root (ADR mobile-direct-gateway-chat §1: two gears). */
+  onOpenSettings: () => void;
 }) {
   const { t } = useTranslation();
   const accountMode = useAccountAvailability();
-
+  const [gatewayOpen, setGatewayOpen] = useState(false);
   let gatewayHost = "rc.hmini.org";
   try {
     if (gatewayOrigin) {
@@ -59,6 +63,19 @@ export function ConnectScreen({
   return (
     <Screen>
       <ScreenContent hasDock className="pt-[max(20px,env(safe-area-inset-top))]">
+        {/* The Computers root keeps its gear even with no computer: Settings is
+            reachable from either root (§1). */}
+        <div className="flex justify-start px-2 pt-1">
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            aria-label={t("hosts.settings")}
+            title={t("hosts.settings")}
+            className="flex h-10 w-10 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] transition-opacity active:opacity-60"
+          >
+            <SettingsIcon className="h-5 w-5 stroke-[1.8]" aria-hidden="true" />
+          </button>
+        </div>
         <div className="pt-8 pb-6 px-2 flex flex-col items-center text-center">
           <img
             className="w-12 h-12 rounded-[14px] block mb-4 shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
@@ -132,12 +149,18 @@ export function ConnectScreen({
             </Button>
           )}
 
-          <p className="flex items-center justify-center gap-1.5 text-xs text-[var(--rm-text-muted)] mt-2">
-            <Lock className="w-3.5 h-3.5 flex-none" />
+          <button
+            type="button"
+            onClick={() => setGatewayOpen(true)}
+            className="mx-auto mt-2 inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--rm-bg-surface)] px-3 py-1.5 text-xs text-[var(--rm-text-secondary)] ring-1 ring-[var(--rm-separator)] active:bg-[var(--rm-bg-inset)]"
+          >
+            <Lock className="w-3.5 h-3.5 flex-none text-[var(--rm-text-muted)]" />
             <span>{t("connect.viaGateway", { gateway: gatewayHost })}</span>
-          </p>
+            <span className="text-[var(--rm-link)] font-medium ml-0.5">切换</span>
+          </button>
         </div>
       </ScreenDock>
+      <GatewaySheet open={gatewayOpen} onClose={() => setGatewayOpen(false)} />
     </Screen>
   );
 }

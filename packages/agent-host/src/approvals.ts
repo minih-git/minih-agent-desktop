@@ -61,11 +61,22 @@ export class ApprovalBroker {
     request: ToolPermissionRequest,
     context: { turnId: string; revision: number; lifetimeMs: number; allowSession: boolean; expiresAt?: string },
   ): RacpApprovalRequest {
-    const existing = this.pending.get(request.requestId);
-    if (existing) return existing.request;
     const expiresAtMs = context.expiresAt
       ? Date.parse(context.expiresAt)
       : this.clock.now() + context.lifetimeMs;
+    const existing = this.pending.get(request.requestId);
+    if (existing) {
+      if (!context.expiresAt && expiresAtMs > existing.expiresAtMs) {
+        const extended: RacpApprovalRequest = {
+          ...existing.request,
+          ...(context.turnId && !existing.request.turnId ? { turnId: context.turnId } : {}),
+          expiresAt: new Date(expiresAtMs).toISOString(),
+        };
+        this.pending.set(existing.request.id, { ...existing, request: extended, expiresAtMs });
+        return extended;
+      }
+      return existing.request;
+    }
     const approval: RacpApprovalRequest = {
       id: request.requestId,
       sessionId: request.sessionId,
@@ -120,6 +131,20 @@ export class ApprovalBroker {
     context: { turnId: string; revision: number; lifetimeMs: number; allowSession: boolean },
   ): Promise<RacpApprovalRequest[]> {
     const open = await this.port.listPendingTools(sessionId);
+    const targetExpiresAtMs = this.clock.now() + context.lifetimeMs;
+    for (const [id, entry] of this.pending.entries()) {
+      if (
+        entry.request.sessionId === sessionId &&
+        entry.request.kind !== "tool" &&
+        targetExpiresAtMs > entry.expiresAtMs
+      ) {
+        const extended: RacpApprovalRequest = {
+          ...entry.request,
+          expiresAt: new Date(targetExpiresAtMs).toISOString(),
+        };
+        this.pending.set(id, { ...entry, request: extended, expiresAtMs: targetExpiresAtMs });
+      }
+    }
     return open.map((request) =>
       this.fromToolPermission(
         request,

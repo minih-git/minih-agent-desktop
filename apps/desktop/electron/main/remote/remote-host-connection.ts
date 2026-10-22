@@ -101,6 +101,40 @@ export function createRemoteHostConnection(options: RemoteHostConnectionOptions)
     const subscriptions = createRemoteSubscriptions({ client, alive, handle: event => bridge.handle(event),
       recover: id => background(recover(id)), log: (message, error) => log("warn", message, error),
     });
+    /**
+     * Watch the given sessions with a bounded parallelism of three (R8 exit
+     * criterion 3, from the P0 measurement: serial attach was the open and
+     * reconnect bottleneck).
+     *
+     * Semantics are exactly the serial loop's: each `watch` checks its own
+     * epoch after the attach answer and a stale result is discarded there; the
+     * `check(epoch)` before each start drops queued work on a transport
+     * change; the first failure rejects the whole run (the caller's recovery
+     * path decides what to unregister), and the losing in-flight attaches
+     * settle quietly so nothing is reported twice.
+     */
+    async function watchAll(ids: Iterable<string>, epoch: number) {
+      const queue = [...ids];
+      let firstError: unknown;
+      let failed = false;
+      const worker = async () => {
+        for (;;) {
+          if (failed) return;
+          const id = queue.shift();
+          if (id === undefined) return;
+          try {
+            check(epoch);
+            await watch(id);
+          } catch (error) {
+            if (!failed) { failed = true; firstError = error; }
+            return;
+          }
+        }
+      };
+      const concurrency = Math.min(3, queue.length) || 0;
+      await Promise.all(Array.from({ length: concurrency }, () => worker()));
+      if (firstError !== undefined) throw firstError;
+    }
     function background(promise: Promise<void>) {
       void promise.catch(error => { if (alive()) log("error", "remote event recovery failed", error); });
     }
@@ -123,9 +157,14 @@ export function createRemoteHostConnection(options: RemoteHostConnectionOptions)
       await subscriptions.remove(id);
       check(epoch);
       // A snapshot is the authoritative recovery boundary. Replay starts after
-      // it, so old deltas and already-resolved prompts cannot be appended again.
+      // it, so old deltas and already-resolved prompts cannot be appended
+      // again. The snapshot itself carries no transcript items (§16.3): the
+      // session's transcript is read through the paged `session/history`
+      // path, so reconnecting to seven conversations does not ship seven
+      // transcript pages nobody reads here. A Host that predates the parameter
+      // sends its default page and the extra items are ignored by the bridge.
       for (let attempt = 0; attempt < 2; attempt++) {
-        const result = await client.request<{ snapshot?: RacpSessionSnapshot }>("session/attach", { sessionId: id, includeSnapshot: true });
+        const result = await client.request<{ snapshot?: RacpSessionSnapshot }>("session/attach", { sessionId: id, includeSnapshot: true, snapshotHistoryLimit: 0 });
         check(epoch);
         if (!registered.has(id)) return;
         const snapshot = result.snapshot;
@@ -198,7 +237,7 @@ export function createRemoteHostConnection(options: RemoteHostConnectionOptions)
           await watch(id);
         } else {
           await host(); check(epoch);
-          for (const watchedId of watched) { await watch(watchedId); check(epoch); }
+          await watchAll(watched, epoch);
         }
         check(epoch);
         emit(IPC.event.sessionsChanged, { reason: "remote.resync" });
@@ -224,7 +263,7 @@ export function createRemoteHostConnection(options: RemoteHostConnectionOptions)
         const cursor = subscriptions.get()?.cursor;
         await subscriptions.clear(true); check(epoch);
         await host(cursor); check(epoch);
-        for (const id of watched) { await watch(id); check(epoch); }
+        await watchAll(watched, epoch);
         ready = true;
         for (const id of registered) router.registerBackend(makeRemoteSessionId(hostKey, id), backend);
         if (client.state?.() === "reconnecting") refreshAfterReconnect = true;
@@ -256,7 +295,8 @@ export function createRemoteHostConnection(options: RemoteHostConnectionOptions)
       // Active sessions first, then recently updated idle sessions, within the
       // protocol's fixed subscription budget. All listed sessions are routable.
       sessions.sort((a, b) => Number(b.status !== "idle") - Number(a.status !== "idle") || b.updatedAt.localeCompare(a.updatedAt));
-      for (const session of sessions.slice(0, limit)) { watched.add(session.id); await watch(session.id); }
+      for (const session of sessions.slice(0, limit)) watched.add(session.id);
+      await watchAll([...watched], transportGeneration);
       check();
       ready = true;
       for (const id of registered) router.registerBackend(makeRemoteSessionId(hostKey, id), backend);

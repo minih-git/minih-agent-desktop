@@ -64,6 +64,14 @@ export function relayGrantFrame(pending: GatewayPendingGrantRecord): RacpDeviceG
       issuedAt: pending.issuedAt,
       // Exactly as the approving Host signed it.
       deliverUntil: pending.deliverUntil,
+      // The desktop-class fields are inside the signature too: a Gateway that
+      // dropped or relabelled them would break it at every sibling.
+      ...(pending.deviceClass ? { deviceClass: pending.deviceClass } : {}),
+      ...(pending.applicantHostId ? { applicantHostId: pending.applicantHostId } : {}),
+      ...(pending.hostProofNonce ? { hostProofNonce: pending.hostProofNonce } : {}),
+      ...(pending.requestExpiresAt ? { requestExpiresAt: pending.requestExpiresAt } : {}),
+      ...(pending.applicantCertificate ? { applicantCertificate: pending.applicantCertificate } : {}),
+      ...(pending.hostProofSignature ? { hostProofSignature: pending.hostProofSignature } : {}),
     },
     signature: pending.signature,
     signerCertificate: pending.signerCertificate,
@@ -91,6 +99,17 @@ export function relayRevocationFrame(record: GatewayPendingRevocationRecord): Ra
 export function acceptsSiblingGrants(hostLinks: DeviceRelayPort, hostId: string): boolean {
   if (!hostLinks.isOnline(hostId)) return false;
   return hostAdvertisesCapability(hostLinks.capabilitiesFor(hostId), RACP_HOST_CAPABILITIES.deviceAcceptSiblingGrant);
+}
+
+/**
+ * Whether this Host can be asked to admit a desktop-class device: it is online
+ * and advertises `device.desktop-auto` (ADR amendment 3, decision 6). A Host
+ * that does not is never sent the new frames, because an older Host drops an
+ * unknown `type` silently and the requesting desktop would wait forever.
+ */
+export function admitsDesktopDevices(hostLinks: DeviceRelayPort, hostId: string): boolean {
+  if (!hostLinks.isOnline(hostId)) return false;
+  return hostAdvertisesCapability(hostLinks.capabilitiesFor(hostId), RACP_HOST_CAPABILITIES.deviceDesktopAuto);
 }
 
 /** Send one frame to every other Host of the account that may receive it. */

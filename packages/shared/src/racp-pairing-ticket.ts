@@ -13,13 +13,11 @@
  * the first two colons only. Parsing never throws: the caller decides how to
  * present a rejection.
  */
-import { RACP_PAIRING_TOKEN_PREFIX } from "./racp.js";
+import { RACP_PAIRING_TOKEN_PREFIX, isRacpHostId } from "./racp.js";
 
 /** Version tag of the ticket format; a future format must not reuse it. */
 export const PAIRING_TICKET_PREFIX = "mpt1" as const;
 
-/** `host_<base64url>` (headless Host) and `host_<uuid>` (desktop Host). */
-const HOST_ID = /^host_[A-Za-z0-9._-]+$/;
 
 /** The token body after `ppt1.`: base64url, so no colon, dot, or whitespace. */
 const PAIRING_TOKEN_BODY = /^[A-Za-z0-9_-]+$/;
@@ -56,7 +54,7 @@ export function parsePairingTicket(text: string): PairingTicketParseResult {
   const separator = rest.indexOf(":");
   const hostId = separator === -1 ? rest : rest.slice(0, separator);
   const pairingToken = separator === -1 ? "" : rest.slice(separator + 1);
-  if (!HOST_ID.test(hostId)) return { ok: false, reason: "hostId" };
+  if (!isRacpHostId(hostId)) return { ok: false, reason: "hostId" };
   const tokenBody = pairingToken.startsWith(RACP_PAIRING_TOKEN_PREFIX)
     ? pairingToken.slice(RACP_PAIRING_TOKEN_PREFIX.length)
     : "";

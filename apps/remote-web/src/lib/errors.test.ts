@@ -31,6 +31,7 @@ describe("reasonKeyForCode", () => {
     expect(reasonKeyForCode("UNAUTHORIZED")).toBe("error.reason.unauthorized");
     expect(reasonKeyForCode("HOST_DISCONNECTED")).toBe("error.reason.disconnected");
     expect(reasonKeyForCode("PAIRING_TOKEN_EXPIRED")).toBe("error.reason.pairingExpired");
+    expect(reasonKeyForCode("CAPABILITY_UNAVAILABLE")).toBe("error.reason.unsupported");
   });
 
   it("leaves an unknown code to the raw reason", () => {

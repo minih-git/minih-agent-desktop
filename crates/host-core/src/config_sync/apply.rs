@@ -653,7 +653,6 @@ fn apply_bundle_locked(
             &selection(config),
             config.include_secrets,
             &config.plugin_intents,
-            &identity_overrides(config),
         )?;
         let current_map = logical_manifest_map(Some(&current.manifest));
         if let Some(before) = local_map.get(&logical_key) {
@@ -712,7 +711,6 @@ fn apply_bundle_locked(
         &selection(config),
         config.include_secrets,
         &config.plugin_intents,
-        &identity_overrides(config),
     )?;
     let previous = baseline::load(st, key)?;
     let applied_logical = bundle

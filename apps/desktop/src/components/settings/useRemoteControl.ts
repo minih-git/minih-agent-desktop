@@ -55,6 +55,7 @@ export type RemoteControl = {
   };
   toggle: { busy: boolean; error: string | null };
   strict: { busy: boolean; error: string | null };
+  desktopAuto: { busy: boolean; error: string | null };
   revoke: { pending: string | null; busy: string | null };
   setUrl: (value: string) => void;
   setCaPem: (value: string) => void;
@@ -64,6 +65,7 @@ export type RemoteControl = {
   onEnroll: () => Promise<void>;
   onToggleStrict: () => Promise<void>;
   onCreatePairingCode: () => Promise<void>;
+  onToggleDesktopAuto: () => Promise<void>;
   onCopyPairingCode: () => Promise<void>;
   onCopyPairingTicket: () => Promise<void>;
   onRevoke: (device: RemoteGatewayDeviceSummary) => Promise<void>;
@@ -89,6 +91,8 @@ export function useRemoteControl(): RemoteControl {
   const [copiedTicket, setCopiedTicket] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [devices, setDevices] = useState<RemoteGatewayDeviceSummary[] | null>(null);
+  const [desktopAutoBusy, setDesktopAutoBusy] = useState(false);
+  const [desktopAutoError, setDesktopAutoError] = useState<string | null>(null);
   const [devicesError, setDevicesError] = useState<string | null>(null);
   const [pendingRevoke, setPendingRevoke] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
@@ -217,6 +221,25 @@ export function useRemoteControl(): RemoteControl {
     }
   }, [applyStatus, describeError, status]);
 
+
+  /**
+   * ADR amendment 3: "allow same-account computers to join automatically".
+   * Device-local like the strict switch, but flipping it does NOT rebuild the
+   * link: it changes no advertised capability, only whether a verified proof is
+   * admitted without asking. On by default, so the switch reads `!== false`.
+   */
+  const onToggleDesktopAuto = useCallback(async () => {
+    if (!status) return;
+    setDesktopAutoBusy(true);
+    setDesktopAutoError(null);
+    try {
+      applyStatus(await api.setRemoteGatewayDesktopAuto(status.desktopAutoAdmission === false));
+    } catch (error) {
+      setDesktopAutoError(describeError("settings.remoteGateway.desktopAutoFailed", error));
+    } finally {
+      setDesktopAutoBusy(false);
+    }
+  }, [applyStatus, describeError, status]);
   const onCreatePairingCode = useCallback(async () => {
     setPairingBusy(true);
     setPairingError(null);
@@ -304,6 +327,7 @@ export function useRemoteControl(): RemoteControl {
     },
     toggle: { busy: toggling, error: toggleError },
     strict: { busy: strictBusy, error: strictError },
+    desktopAuto: { busy: desktopAutoBusy, error: desktopAutoError },
     revoke: { pending: pendingRevoke, busy: revoking },
     setUrl,
     setCaPem,
@@ -312,6 +336,7 @@ export function useRemoteControl(): RemoteControl {
     onToggle,
     onEnroll,
     onToggleStrict,
+    onToggleDesktopAuto,
     onCreatePairingCode,
     onCopyPairingCode,
     onCopyPairingTicket,

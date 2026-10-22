@@ -11,27 +11,48 @@
  * `previousScreen` is the single rule every back path uses: the header button,
  * the Android hardware back button, the browser's `popstate`, and the iOS swipe.
  * §17 added the two layers between a computer and its sessions, so the stack is
- * now `hosts ▸ projects ▸ projectSessions ▸ session`.
+ * now `hosts ▸ projects ▸ projectSessions ▸ session`. ADR
+ * mobile-direct-gateway-chat adds the Chats root with a root-only tab bar: the
+ * frame below is one column, so the screen area and the bar share the viewport
+ * and a screen can never cover the bar.
  */
 import type { RacpSession } from "@minih-agent/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ForegroundNoticeBar, type ForegroundNotice } from "./components/ForegroundNotice.js";
 import { AccountScreen } from "./screens/AccountScreen.js";
+import { ChatArchiveScreen } from "./screens/ChatArchiveScreen.js";
+import { ChatsScreen } from "./screens/ChatsScreen.js";
+import { DirectChatScreen } from "./screens/DirectChatScreen.js";
+import { ConnectGatewayScreen } from "./screens/ConnectGatewayScreen.js";
+import { SettingsScreen } from "./screens/SettingsScreen.js";
 import { ConnectScreen } from "./screens/ConnectScreen.js";
 import { HostsScreen } from "./screens/HostsScreen.js";
 import { PairScreen } from "./screens/PairScreen.js";
 import { ProjectSessionsScreen } from "./screens/ProjectSessionsScreen.js";
 import { ProjectsScreen } from "./screens/ProjectsScreen.js";
+import { ScopedChatsScreen } from "./screens/ScopedChatsScreen.js";
 import { SessionScreen } from "./screens/SessionScreen.js";
+import { TabBar } from "./components/TabBar.js";
 import { useEdgeSwipe } from "./hooks/useEdgeSwipe.js";
 import { usePushRegistration } from "./hooks/usePushRegistration.js";
 import { useHostRegistry } from "./hooks/useHostRegistry.js";
+import { registryHasHosts } from "./lib/host-registry.js";
+import { resolveLaunchRoot, storeLastRoot } from "./lib/launch-root.js";
 import { setBackHandler } from "./lib/navigation.js";
-import { credentialPort, isNativeApp, nativePlatform } from "./lib/runtime.js";
+import type { DirectChatConnection } from "./lib/direct-chat/connection.js";
+import {
+  credentialPort,
+  directChatService,
+  isNativeApp,
+  modelGatewayOrigin,
+  nativePlatform,
+  notifyDirectChatChanged,
+} from "./lib/runtime.js";
 import { consumeNotificationTap, setNotificationBadge } from "./lib/native-notify.js";
-import { createScreenHistory, sameScreen } from "./lib/screen-history.js";
-import { previousScreen, type Screen } from "./lib/screen-stack.js";
+import { createScreenHistory, sameScreen, screenFromHistoryState } from "./lib/screen-history.js";
+import { previousScreen, type RootKind, type Screen } from "./lib/screen-stack.js";
+import { tabBarVisible } from "./lib/tab-bar.js";
 import { createSessionViews } from "./lib/session-state.js";
 
 /** The history port the app drives; kept out of the component for testability. */
@@ -44,9 +65,42 @@ const screenHistory = createScreenHistory({
 /** What this device has opened, which is half of the "needs you" vocabulary (§17.4). */
 const sessionViews = createSessionViews(window.localStorage);
 
+/**
+ * The store the launch decision reads and writes; `null` when the platform
+ * blocks `localStorage`. Read once, so both the decision and the memory of it
+ * use the same store.
+ */
+const launchStorage = (() => {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+})();
+
+/**
+ * The root this device opens on (§4, ADR mobile-direct-gateway-chat): the
+ * remembered root, or the launch decision for the first run. The browser build
+ * has one root and never sees Chats.
+ */
+const initialRoot = resolveLaunchRoot({
+  isNativeApp,
+  hasHosts: launchStorage !== null && registryHasHosts(launchStorage),
+  storage: launchStorage,
+});
+
 export default function App() {
   const hosts = useHostRegistry();
-  const [screen, setScreen] = useState<Screen>({ kind: "hosts" });
+  const [screen, setScreen] = useState<Screen>({ kind: initialRoot });
+  /**
+   * The model connection this device holds, or null. Read once at mount and
+   * refreshed after connecting or unlinking, because every direct-chat screen
+   * decides what to show from it.
+   */
+  const [connection, setConnection] = useState<DirectChatConnection | null>(() =>
+    isNativeApp ? directChatService().connection() : null,
+  );
+
   /** A notification that arrived while the app was open (§17.6.4). */
   const [notice, setNotice] = useState<ForegroundNotice | null>(null);
   /**
@@ -71,6 +125,20 @@ export default function App() {
       return next;
     });
   }, []);
+
+  /**
+   * Switching tabs replaces the root instead of stacking it (§4): the entry the
+   * previous root occupied is reused, so Back never alternates between tabs and
+   * Android Back on either root still exits. The choice is remembered so the
+   * next launch reopens this root.
+   */
+  const switchRoot = useCallback(
+    (root: RootKind) => {
+      storeLastRoot(root, window.localStorage);
+      navigate({ kind: root });
+    },
+    [navigate],
+  );
 
   const screenRef = useRef(screen);
   screenRef.current = screen;
@@ -103,8 +171,10 @@ export default function App() {
       if (!tap.hostId || !tap.sessionId) return;
       const host = hosts.find((entry) => entry.hostId === tap.hostId);
       if (!host) return;
-      // A push carries no project id, so the stack is the honest shallow one
-      // (§17.3): the computer's projects, then the session.
+      // A computer notification owns its path (ADR): the root becomes Computers.
+      // `sync` moves sideways, so the entry the Chats root occupied is reused
+      // for `hosts`, and a push carries no project id, so the stack is the
+      // honest shallow one (§17.3): the computer's projects, then the session.
       screenHistory.sync({ kind: "projects", hostId: host.hostId });
       navigate({ kind: "session", hostId: host.hostId, sessionId: tap.sessionId, title: "" });
     });
@@ -125,8 +195,8 @@ export default function App() {
 
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
-      const state = event.state as unknown;
-      const restored = state && typeof state === "object" ? (state as { screen?: Screen }).screen : undefined;
+      // A history entry is untrusted input: only a screen that parses is adopted.
+      const restored = screenFromHistoryState(event.state as unknown);
       if (restored) {
         navigate(restored, true);
         return;
@@ -221,9 +291,12 @@ export default function App() {
 
   const hostList =
     hosts.length === 0 ? (
+      // S1 Connect is the empty state of the Computers root (§17.3): a missing
+      // computer never gates the rest of the app, because Chats lives beside it.
       <ConnectScreen
         onAddHost={() => navigate({ kind: "pair" })}
         onAddAccount={() => navigate({ kind: "account" })}
+        onOpenSettings={() => navigate({ kind: "settings", from: "hosts" })}
       />
     ) : (
       <HostsScreen
@@ -231,6 +304,7 @@ export default function App() {
         onOpenHost={(entry) => navigate({ kind: "projects", hostId: entry.hostId })}
         onAddHost={() => navigate({ kind: "pair" })}
         onAddAccount={() => navigate({ kind: "account" })}
+        onOpenSettings={() => navigate({ kind: "settings", from: "hosts" })}
       />
     );
 
@@ -244,7 +318,116 @@ export default function App() {
       projectLabel: project.label,
     });
 
+  /** The connection record is what every direct-chat screen reads. */
+  const reloadConnection = useCallback(() => setConnection(directChatService().connection()), []);
+
   const body = (() => {
+    if (screen.kind === "chats") {
+      return (
+        <ChatsScreen
+          connection={connection}
+          gatewayConfigured={modelGatewayOrigin !== null}
+          onConnect={() => navigate({ kind: "modelGateway", from: "chats" })}
+          onOpenSettings={() => navigate({ kind: "settings", from: "chats" })}
+          onOpenConversation={(conversationId) => navigate({ kind: "chat", conversationId })}
+          onNewConversation={(modelId) => {
+            // The account remembers the explicit choice, and the conversation
+            // itself does not exist until its first message is saved.
+            directChatService().rememberModel(modelId);
+            reloadConnection();
+            navigate({ kind: "chat", conversationId: `conv-${Date.now().toString(36)}` });
+          }}
+          onOpenArchive={() => navigate({ kind: "chatArchive" })}
+        />
+      );
+    }
+
+    if (screen.kind === "chatArchive") {
+      return (
+        <ChatArchiveScreen
+          onBack={goBack}
+          onOpenConversation={(conversationId) =>
+            navigate({ kind: "chat", conversationId, fromArchive: true })
+          }
+          onRestored={notifyDirectChatChanged}
+        />
+      );
+    }
+
+    if (screen.kind === "chat") {
+      return (
+        <DirectChatScreen
+          conversationId={screen.conversationId}
+          onBack={goBack}
+          connection={connection}
+          onConnect={() => navigate({ kind: "modelGateway", from: "chats" })}
+          onChanged={notifyDirectChatChanged}
+          onNewConversation={(modelId) => {
+            directChatService().rememberModel(modelId);
+            reloadConnection();
+            navigate({ kind: "chat", conversationId: `conv-${Date.now().toString(36)}` });
+          }}
+        />
+      );
+    }
+
+    if (screen.kind === "modelGateway") {
+      return (
+        <ConnectGatewayScreen
+          gatewayOrigin={modelGatewayOrigin}
+          onBack={goBack}
+          onConnected={() => {
+            reloadConnection();
+            // The verification is async: a user who already left this page must
+            // not be moved again when it finishes.
+            if (screenRef.current.kind === "modelGateway") goBack();
+          }}
+          onConnect={async (key) => {
+            const outcome = await directChatService().connect(key);
+            if (!outcome.ok) return { failure: outcome.failure, restricted: false };
+            reloadConnection();
+            return { failure: null, restricted: outcome.restricted };
+          }}
+        />
+      );
+    }
+
+    if (screen.kind === "settings") {
+      return (
+        <SettingsScreen
+          connection={connection}
+          gatewayConfigured={modelGatewayOrigin !== null}
+          onBack={goBack}
+          onConnect={() =>
+            navigate({ kind: "modelGateway", from: screen.from, viaSettings: true })
+          }
+          onDisconnect={async () => {
+            await directChatService().disconnect();
+            reloadConnection();
+          }}
+          onOpenScope={(older) =>
+            navigate({
+              kind: "scopedChats",
+              gatewayRoot: older.gatewayRoot,
+              accessKeyId: older.accessKeyId,
+              from: screen.from,
+            })
+          }
+        />
+      );
+    }
+
+    if (screen.kind === "scopedChats") {
+      return (
+        <ScopedChatsScreen
+          gatewayRoot={screen.gatewayRoot}
+          accessKeyId={screen.accessKeyId}
+          onBack={goBack}
+          onOpenConversation={(conversationId) => navigate({ kind: "chat", conversationId })}
+        />
+      );
+    }
+
     if (screen.kind === "account") {
       return (
         <AccountScreen
@@ -336,9 +519,15 @@ export default function App() {
     return hostList;
   })();
 
+  // The bar on the two roots of a native build only (§4); every pushed page and
+  // the whole browser build go without it. The rule is its own module because
+  // the visibility and the root's name have to agree.
+  const showTabBar = tabBarVisible(screen, { isNativeApp });
+  const tabs = showTabBar ? <TabBar root={screen.kind} onSwitch={switchRoot} /> : null;
+
   return (
     <div
-      className="relative h-dvh overflow-hidden"
+      className={`relative flex h-dvh flex-col overflow-hidden${showTabBar ? " rm-has-tabbar" : ""}`}
       data-gesture={swipe.state}
       style={
         swipe.offset > 0
@@ -346,7 +535,8 @@ export default function App() {
           : undefined
       }
     >
-      {body}
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{body}</div>
+      {tabs}
       {notice ? (
         <ForegroundNoticeBar
           notice={notice}

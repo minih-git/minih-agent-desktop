@@ -168,6 +168,8 @@ export const IPC = {
     /** Deterministic first-prompt title for a session that is still untitled. */
     sessionDeriveTitle: "minih-agent-desktop/session/deriveTitle",
     sessionConfigure: "minih-agent-desktop/session/configure",
+    /** The model catalog of the host that owns the session (remote sessions). */
+    sessionModels: "minih-agent-desktop/session/models",
     sessionImportScan: "minih-agent-desktop/session/importScan",
     sessionImportRun: "minih-agent-desktop/session/importRun",
     modelConfigImportScan: "minih-agent-desktop/modelConfig/importScan",
@@ -197,6 +199,9 @@ export const IPC = {
     configSyncRestore: "minih-agent-desktop/configSync/restore",
     configSyncChangePassword: "minih-agent-desktop/configSync/changePassword",
     configSyncDisconnect: "minih-agent-desktop/configSync/disconnect",
+    /** Explicit project archive: one logical project or group as a ZIP file. */
+    projectArchiveExport: "minih-agent-desktop/projectArchive/export",
+    projectArchiveImport: "minih-agent-desktop/projectArchive/import",
     networkProxyTest: "minih-agent-desktop/network/testProxy",
     commandShellList: "minih-agent-desktop/commandShell/list",
     secretsSet: "minih-agent-desktop/secrets/set",
@@ -300,6 +305,11 @@ export const IPC = {
      */
     remoteGatewayDeviceDecision: "minih-agent-desktop/remoteGateway/deviceDecision",
     remoteGatewaySetStrictDevices: "minih-agent-desktop/remoteGateway/setStrictDevices",
+    /**
+     * ADR amendment 3: "allow same-account computers to join automatically".
+     * Device-local like the strict switch, and it never carries a credential.
+     */
+    remoteGatewaySetDesktopAuto: "minih-agent-desktop/remoteGateway/setDesktopAuto",
     /** Which requests still wait for the dialog after a renderer reload. */
     remoteGatewayPendingDeviceRequests: "minih-agent-desktop/remoteGateway/pendingDeviceRequests",
     /**
@@ -507,6 +517,8 @@ export const IPC = {
     backgroundTasksChanged: "minih-agent-desktop/backgroundTasks/event/changed",
     /** What a running sync is doing, while it is still running. */
     configSyncProgress: "minih-agent-desktop/configSync/event/progress",
+    /** What a running project archive export or import is doing. */
+    projectArchiveProgress: "minih-agent-desktop/projectArchive/event/progress",
     extensionsUiPrompt: "minih-agent-desktop/extensions/event/uiPrompt",
     extensionsStatus: "minih-agent-desktop/extensions/event/status",
     pluginLauncherShown: "minih-agent-desktop/pluginLauncher/event/shown",

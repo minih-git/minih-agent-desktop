@@ -25,6 +25,7 @@ import type {
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import { watchForeground } from "../lib/app-state.js";
+import type { ComposerSend } from "../lib/composer-send.js";
 import type { HostCredential } from "../lib/credential-port.js";
 import type { OperationFailure } from "../lib/errors.js";
 import { createHostClient, sessionEventsPath, type HostClient } from "../lib/host-client.js";
@@ -50,14 +51,9 @@ import { createInitialTimelineState, snapshotItems, timelineReducer, type Timeli
 import type { TimelineItem } from "../lib/timeline-types.js";
 
 
-export type TurnAttempt = {
-  text: string;
-  /** Inline files for this prompt (§10 step 1); absent means text only. */
-  attachments?: RacpInlineAttachment[];
-  /** Created once per user action; a retry of the same action reuses it. */
-  idempotencyKey: string;
-  requestId: string;
-};
+/** The composer's payload; the type lives in `lib/composer-send.ts` so the direct
+ * container can use the same composer without importing this hook. */
+export type TurnAttempt = ComposerSend;
 
 export type ResponseAttempt = Pick<TurnAttempt, "idempotencyKey" | "requestId">;
 
@@ -285,8 +281,13 @@ export function useSessionScreen(options: {
     const stopWatching = watchForeground(
       {
         onHidden: () => supervisor.pause(),
-        // Visible again: resume a paused loop, or restart one that gave up.
-        onVisible: () => supervisor.onVisible(),
+        // Visible again: resume a paused loop, or restart one that gave up, and
+        // refresh the attach snapshot so approvals/inputs raised while hidden
+        // appear immediately.
+        onVisible: () => {
+          supervisor.onVisible();
+          void attachRef.current();
+        },
       },
       {
         appState: appStateSource(),

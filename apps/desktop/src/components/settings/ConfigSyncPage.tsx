@@ -324,27 +324,6 @@ export function ConfigSyncPage() {
     }
   };
 
-  const mapProject = async (logicalId: string) => {
-    setBusy("map");
-    setError(null);
-    try {
-      const picked = await api.pickProjectFolders();
-      const paths = picked.folders?.filter(Boolean) ?? [];
-      if (!paths.length) return;
-      applyState(
-        await api.configSyncMapProject({
-          logicalId,
-          path: paths[0],
-          paths: paths,
-        }),
-      );
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const togglePause = async () => {
     setBusy("sync");
     setError(null);
@@ -618,16 +597,6 @@ export function ConfigSyncPage() {
                       </div>
                     </div>
                     <div className="settings-config-sync-actions">
-                      {approval.mappingKey ? (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => void mapProject(approval.mappingKey!)}
-                          disabled={controlsBusy}
-                        >
-                          {t("settings.configSync.mapFolder")}
-                        </Button>
-                      ) : null}
                       <Button
                         size="sm"
                         variant="secondary"
@@ -685,28 +654,6 @@ export function ConfigSyncPage() {
                     count: state.preview.conflicts,
                   })}
                 </span>
-              </div>
-              </SettingsDisclosure>
-            </SettingsCard>
-          ) : null}
-
-          {state?.mappings.length ? (
-            <SettingsCard>
-              <SettingsDisclosure title={t("settings.configSync.mappingsTitle")}>
-                <p className="settings-config-sync-note">{t("settings.configSync.mappingsDescription")}</p>
-              <div className="settings-config-sync-mappings">
-                {state.mappings.map((mapping) => (
-                  <div key={mapping.logicalId} className="settings-config-sync-mapping">
-                    <span className="settings-config-sync-mapping-id">
-                      {mapping.logicalId}
-                    </span>
-                    <code>
-                      {mapping.paths?.length
-                        ? mapping.paths.join(" · ")
-                        : mapping.path ?? t("settings.configSync.mappingUnavailable")}
-                    </code>
-                  </div>
-                ))}
               </div>
               </SettingsDisclosure>
             </SettingsCard>

@@ -82,23 +82,23 @@ test("a file chip is routed by where the reference resolved, never optimisticall
   // roots, and positioned references need the host viewer's line navigation.
   assert.match(hook, /inProject: false/);
   assert.match(hook, /openFile\(resolved\.path, mimeType, \{ line, column \}\)/);
-  // Only the explicit default-browser destination may request the OS handoff;
+  // Only explicit default-application/browser destinations request an OS handoff;
   // an ordinary transcript click keeps its resolved in-app destination.
+  const defaultApplicationIndex = hook.indexOf(
+    'if (destination === "default-application")',
+  );
   const defaultBrowserIndex = hook.indexOf(
     'if (destination === "default-browser")',
   );
-  const defaultBrowserBranch = hook.slice(
-    defaultBrowserIndex,
-    hook.indexOf("const hasPosition", defaultBrowserIndex),
-  );
-  assert.match(
-    defaultBrowserBranch,
-    /await api\.fsOpen\(resolved\.absolutePath, mimeType, sessionId\)/,
-  );
-  assert.doesNotMatch(
-    hook.slice(0, defaultBrowserIndex),
-    /api\.fsOpen\(/,
-  );
+  assert.ok(defaultApplicationIndex > resolvedRefIndex);
+  for (const index of [defaultApplicationIndex, defaultBrowserIndex]) {
+    assert.match(
+      hook.slice(index, hook.indexOf("return;\n        }", index) + 20),
+      /await api\.fsOpen\(resolved\.absolutePath, mimeType, sessionId\)/,
+    );
+  }
+  assert.doesNotMatch(hook.slice(0, defaultApplicationIndex), /api\.fsOpen\(/);
+  assert.doesNotMatch(hook.slice(hook.indexOf("const hasPosition", defaultBrowserIndex)), /api\.fsOpen\(/);
   assert.match(
     api,
     /fsOpen: \(path: string, mimeType\?: string, sessionId\?: string\) =>\s*invoke\(IPC\.invoke\.fsOpen, \{ path, mimeType, \.\.\.\(sessionId \? \{ sessionId \} : \{\}\) \}\)/,

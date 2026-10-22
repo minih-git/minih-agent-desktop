@@ -46,11 +46,13 @@ test("cloud sync keeps credentials and vault operations on the host boundary", (
   assert.match(syncPage, /settings\.configSync\.modeBackup/);
   assert.match(syncPage, /settings\.configSync\.modeSync/);
   assert.match(syncPage, /api\.configSyncUnlock\(/);
-  assert.match(syncPage, /api\.configSyncMapProject\(/);
+  // Project folders are device-local, so the page offers no mapping action;
+  // the preview row can only ever report zero.
+  assert.doesNotMatch(syncPage, /api\.configSyncMapProject\(|onMapProject|mapProjectPath/);
   assert.match(syncPage, /api\.configSyncListHistory\(/);
   assert.match(syncPage, /api\.configSyncRestore\(/);
   assert.match(syncPage, /api\.configSyncChangePassword\(/);
-  assert.match(syncPage, /paths: paths/);
+  assert.doesNotMatch(syncPage, /paths: paths/);
   assert.match(syncPage, /window\.confirm\(/);
   assert.doesNotMatch(syncPage, /lastVaultKey|portableApiKey|decryptedResource/);
   assert.match(syncIpc, /callHost\("configSync\.configure"/);

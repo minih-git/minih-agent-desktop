@@ -30,6 +30,7 @@ import { useSessionScreen } from "../hooks/useSessionScreen.js";
 
 import { useTimelineScroll } from "../hooks/useTimelineScroll.js";
 import type { HostCredential } from "../lib/credential-port.js";
+import { failureReasonText } from "../lib/i18n.js";
 import { gatewayOrigin } from "../lib/runtime.js";
 import {
   resolveConnectionBanner,
@@ -272,7 +273,7 @@ export function SessionScreen({
           instead of silently missed: the count is the rows they have not seen,
           and an open decision takes precedence over it. */}
       {scroll.following ? null : (
-        <div className="pointer-events-none absolute inset-x-0 bottom-24 z-20 flex justify-center">
+        <div className="pointer-events-none absolute inset-x-0 bottom-32 z-20 flex justify-center">
           <Button
             variant="secondary"
             size="small"
@@ -359,7 +360,7 @@ export function SessionScreen({
         running={active}
         hasPendingDecision={hasDecision}
         pending={pending["session/configure"] === true || pending["session/rename"] === true}
-        failure={failure?.failure.message ?? null}
+        failure={failure ? failureReasonText(t, failure.failure) : null}
         onClose={() => setInfoOpen(false)}
         onRename={(title) => void actions.rename(title)}
         onConfigure={(input) => void actions.configure(input)}

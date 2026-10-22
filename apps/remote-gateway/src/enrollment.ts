@@ -71,7 +71,6 @@ function failure(
     ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
   };
 }
-
 export class EnrollmentService {
   constructor(
     private readonly store: GatewayStore,
@@ -79,6 +78,13 @@ export class EnrollmentService {
     private readonly now: () => number = () => Date.now(),
     /** Account mode; `null` leaves the self-hosted enrollment code as the only path. */
     private readonly account: { verifier: () => RouterAccountVerifier | null; rateLimiter: RateLimiter } | null = null,
+    /**
+     * Told when a Host of an account finished enrolling, so the Gateway can
+     * notify that account's other computers (ADR amendment 3, Accepted risk).
+     * An enrollment is the first step of the account-takeover path the
+     * amendment accepts, so it must be visible before any device is admitted.
+     */
+    private readonly onHostJoined: ((input: { hostId: string; label: string; accountId: string; ip: string }) => Promise<unknown>) | null = null,
   ) {}
 
   /** Mint a one-time code; the plaintext is printed by the CLI and never stored. */
@@ -270,6 +276,12 @@ export class EnrollmentService {
         : failure(403, "HOST_ACCOUNT_MISMATCH", "this Host changed while the enrollment was in flight; retry");
     }
     await this.audit("hosts.enroll", ip, "ok", { hostId, accountId });
+    if (accountId && this.onHostJoined) {
+      // A new computer of the account is the first step of the takeover path the
+      // amendment accepts, so every other computer hears about it now — before
+      // any device is admitted (ADR amendment 3, Accepted risk).
+      await this.onHostJoined({ hostId, label: this.store.findHost(hostId)?.label ?? hostId, accountId, ip }).catch(() => undefined);
+    }
     return {
       status: 200,
       payload: {

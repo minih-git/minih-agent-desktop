@@ -63,34 +63,24 @@ The scenarios are specified in
 | `e2e-settings-scroll.mjs` | `pnpm test:e2e:settings-scroll` | Production Settings component navigation, search anchoring, focus-on-mount, and scroll behavior |
 | `e2e-transcript-render.mjs` | `pnpm test:e2e:transcript` | Production transcript render boundaries, runtime status geometry, and deterministic smooth-text cadence |
 | `e2e-renderer-responsiveness.mjs` | `pnpm test:e2e:renderer-responsiveness` | Native Electron click, typing, session switching, disclosure, and scroll while an isolated child process streams large transcript deltas |
-| `e2e-config-sync-multidevice.mjs` | `pnpm test:e2e:config-sync` | Four isolated host-core processes against a SigV4-validating local S3 fixture; covers credential opt-out, approvals, concurrent edits/conflict resolution, mapped skill resources, deletion, sync/backup restore, restart, password rewrap, encrypted storage and cleanup |
+| `e2e-config-sync-multidevice.mjs` | `pnpm test:e2e:config-sync` | Four isolated host-core processes against an in-process Minih Router backup fixture that enforces bearer auth, strong ETags and conditional writes; covers the global-only sync scope, project data staying local, project archive import, credential opt-out, approvals, concurrent edits/conflict resolution, mapped skill resources, deletion convergence, sync/backup restore, restart, password rewrap, encrypted storage and cleanup |
 | `e2e-supervision.mjs` | `pnpm test:e2e:supervision` | Process supervision and restart behavior |
 | `e2e-subagents.mjs` | `pnpm test:e2e:subagents` | Subagent registry over RPC, then through the real loader (D202) |
 | `e2e-send-now-subagents.mjs` | `pnpm test:e2e:send-now-subagents` | Production Composer queue and Main IPC with real Rust Host/agent sidecar and a local SSE fixture; Send now wakes TaskWait, preserves two live delegates and reports, and retains ordinary FIFO input. Uses temporary HOME/data and accepts `MINIH_AGENT_HOST_BIN` for a reused Host binary. |
 | `e2e-agent-live.mjs` | `node scripts/e2e-agent-live.mjs` | Live streaming chat through agent-runtime + host-core. Requires `MINIH_AGENT_TEST_API_KEY`, `MINIH_AGENT_TEST_BASE_URL`, and `MINIH_AGENT_TEST_MODEL` (no defaults), so it has no `pnpm` alias |
-### Configuration-sync live S3 opt-in
+### Configuration-sync account setup
 
 Build the task's Host binary and shared package first, reusing the existing
 development toolchain. Set `MINIH_AGENT_HOST_BIN` if the binary is outside the
-worktree. The default command uses only local S3 and temporary Host profiles.
-With explicit authorization, run:
+worktree. The harness starts its own in-process router fixture on a loopback
+port, creates one Minih Router account row in each isolated Host with that
+fixture's token, and then runs the actual Host journey. No live account,
+production Desktop profile, model call or executable capability is used.
 
-```bash
-node scripts/e2e-config-sync-multidevice.mjs --live-s3 --env-file /authorized/path/.env
-```
-
-Live administration needs an existing Python 3 + boto3 environment. The file
-must provide `S3_HOST`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`,
-`S3_SECRET_KEY`, `S3_DOMAIN_MODE` (`false` = path-style), and optionally
-`S3_SESSION_TOKEN`. Credentials stay in memory/stdin, never arguments or logs.
-The harness creates its own UUID prefix under `minih-agent-desktop-tests/`, checks
-initial emptiness, then runs the same actual Host journey. It needs scoped
-list/get/put/delete and bucket-versioning read permission; versioned buckets
-also need version listing/deletion. It stops every Host before deleting only
-the exact test-prefix inventory, including versions/delete markers, and checks
-final emptiness. Failed preflight never grants cleanup ownership. No production
-Desktop profile, model call or executable capability is used. Output records
-the candidate/base and Host binary hash; uncommitted task changes are explicit.
+There is no live-cloud mode: the transport authenticates with a connected
+Minih Router account, so a live run needs a dedicated real account and explicit
+authorization outside this harness. Output records the candidate/base, the Host
+binary hash and whether the task changes were uncommitted.
 
 ## Continuous integration
 
