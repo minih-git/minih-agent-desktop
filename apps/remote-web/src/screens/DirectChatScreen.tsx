@@ -10,7 +10,7 @@
  * keeps streaming when the user leaves for D1 or Computers, so everything here
  * re-reads the store on change instead of holding the truth in component state.
  */
-import { ArrowLeft, Info, RotateCcw, Square } from "lucide-react";
+import { Info, RotateCcw, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -80,7 +80,6 @@ export function DirectChatScreen({
   const [infoOpen, setInfoOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [busyElsewhere, setBusyElsewhere] = useState(false);
 
   /**
    * Reads are numbered, and a result is applied only if it is still the newest
@@ -164,14 +163,14 @@ export function DirectChatScreen({
     return unsubscribe ?? undefined;
   }, [reload]);
 
-  useEffect(() => {
-    // A live reply in another conversation: this screen must offer Stop or
-    // Return rather than queueing hidden work.
-    const state = runner.state();
-    setBusyElsewhere(state.phase === "running" && state.conversationId !== conversationId);
-  }, [runner, conversationId, transcript]);
-
-  const view = transcript ? projectDirectTranscript(transcript, { liveText: runner.streamingText() }) : null;
+  /**
+   * Only this conversation's own reply matters here: other conversations stream
+   * on their own (ADR §5), so their progress is D1's business, not a lock on
+   * this composer.
+   */
+  const view = transcript
+    ? projectDirectTranscript(transcript, { liveText: runner.streamingText(conversationId) })
+    : null;
   const conversation = transcript?.conversation ?? null;
   const attempts = transcript?.attempts ?? [];
   const idle = isIdle(attempts);
@@ -393,30 +392,12 @@ export function DirectChatScreen({
           <Button variant="primary" size="large" onClick={onConnect}>
             {t("chats.connect")}
           </Button>
-        ) : busyElsewhere ? (
-          <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 text-[13px] leading-[18px] text-[var(--rm-text-secondary)]">
-              {t("directChat.otherConversation")}
-            </span>
-            <Button variant="secondary" size="small" onClick={onBack}>
-              <span className="inline-flex items-center gap-1">
-                <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-                {t("directChat.return")}
-              </span>
-            </Button>
-            <Button variant="secondary" size="small" onClick={() => void runner.stop()}>
-              <span className="inline-flex items-center gap-1">
-                <Square className="h-3.5 w-3.5" aria-hidden="true" />
-                {t("directChat.stop")}
-              </span>
-            </Button>
-          </div>
         ) : archived ? (
           <Button variant="secondary" size="large" onClick={() => void restore()}>
             {t("directChat.restore")}
           </Button>
         ) : live ? (
-          <Button variant="secondary" size="large" onClick={() => void runner.stop()}>
+          <Button variant="secondary" size="large" onClick={() => void runner.stop(conversationId)}>
             <span className="inline-flex items-center justify-center gap-1.5">
               <Square className="h-4 w-4" aria-hidden="true" />
               {t("directChat.stop")}
