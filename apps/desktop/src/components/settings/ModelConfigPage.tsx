@@ -175,11 +175,18 @@ export function ModelsPage() {
     settings.defaultProviderId === routerProvider?.id &&
     (settings.defaultModelId ?? "").toLowerCase() === binding.id.toLowerCase();
 
-  /** One write path for every binding-list change this page makes. */
+  /**
+   * One write path for every models-page save.
+   *
+   * `persistBindings` is false for a save that changed only the image-model
+   * designation: the row already stores the list as rendered, and rewriting it
+   * would move the row's own default model for a change the user never made.
+   */
   const saveBindings = async (
     nextBindings: ModelBinding[],
     successKey: string,
     imageModelIds?: readonly string[],
+    persistBindings = true,
   ) => {
     if (!routerProvider) return;
     setSaving(true);
@@ -187,7 +194,7 @@ export function ModelsPage() {
       // Re-read settings: another window or agent may have moved defaults.
       const current = await api.getSettings();
       const plan = planModelsSave(routerProvider, nextBindings, current, providers, imageModelIds);
-      await api.updateProvider(plan.provider);
+      if (persistBindings) await api.updateProvider(plan.provider);
       if (plan.settings) {
         const nextSettings = { ...current, ...plan.settings };
         await api.setSettings(nextSettings);
@@ -285,20 +292,41 @@ export function ModelsPage() {
       ) ?? null
     : null;
 
+  /**
+   * The configure dialog's Save.
+   *
+   * The image-model designation is part of this dialog but not a field of the
+   * binding, so toggling only that checkbox leaves `draftBindings` null. Reading
+   * that as "nothing to save" closed the dialog without writing anything and
+   * without a word, so a model the user had just marked stayed unconfigured and
+   * every later GenerateImages answered IMAGE_NOT_CONFIGURED.
+   */
   const saveConfigured = async () => {
-    if (!configuredBinding || draftBindings === null) {
+    const imageModelIds = draftImageIds ?? undefined;
+    const edited = draftBindings === null ? null : configuredBinding;
+    if (!configuredBinding || (edited === null && imageModelIds === undefined)) {
       setConfiguringId(null);
       setDraftBindings(null);
+      setDraftImageIds(null);
       return;
     }
-    const nextBindings = routerProvider?.models.map((binding) =>
-      binding.id === configuredBinding.id ? configuredBinding : binding,
-    ) ?? [];
-    const imageModelIds = draftImageIds ?? undefined;
+    const nextBindings = edited
+      ? (routerProvider?.models ?? []).map((binding) =>
+          binding.id === edited.id ? edited : binding,
+        )
+      : routerProvider?.models ?? [];
     setConfiguringId(null);
     setDraftBindings(null);
     setDraftImageIds(null);
-    await saveBindings(nextBindings, "settings.modelConfiguredToast", imageModelIds);
+    // A save that carried no binding edit leaves the row exactly as stored: the
+    // designation is a settings write, so the provider must not be rewritten
+    // for it (that would also move the row's own default model).
+    await saveBindings(
+      nextBindings,
+      "settings.modelConfiguredToast",
+      imageModelIds,
+      edited !== null,
+    );
   };
 
   const setImageGenerationDefault = async (binding: ImageGenerationBinding) => {
