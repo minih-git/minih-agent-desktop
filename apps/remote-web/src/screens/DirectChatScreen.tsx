@@ -417,10 +417,15 @@ export function DirectChatScreen({
               {t("directChat.chooseModel")}
             </Button>
           </div>
+        ) : !loaded ? (
+          // The composer reads its first text once, when it mounts; mounting it
+          // before the transcript arrives would show an empty box where the
+          // saved draft belongs.
+          null
         ) : (
           <ChatComposer
             sending={sending}
-            disabled={!loaded}
+            disabled={false}
             archived={false}
             queued={false}
             hideAttachments
