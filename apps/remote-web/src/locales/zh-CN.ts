@@ -411,6 +411,7 @@ export const zhCN: Record<TranslationKey, string> = {
   "directChat.startHint": "输入一条消息开始。",
   "directChat.stop": "停止",
   "directChat.retry": "重试",
+  "directChat.noReply": "没有收到回复。",
   "directChat.busy": "另一个回复仍在进行中。请先停止它，再在这里发送。",
   "directChat.archivedHint": "这个对话已归档。恢复后才能继续发送。",
   "directChat.saveFailed": "这条消息保存失败，因此没有发送。你的文字仍在这里。",

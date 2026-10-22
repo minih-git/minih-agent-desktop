@@ -169,7 +169,10 @@ export function DirectChatScreen({
    * this composer.
    */
   const view = transcript
-    ? projectDirectTranscript(transcript, { liveText: runner.streamingText(conversationId) })
+    ? projectDirectTranscript(transcript, {
+        liveText: runner.streamingText(conversationId),
+        noReplyText: t("directChat.noReply"),
+      })
     : null;
   const conversation = transcript?.conversation ?? null;
   const attempts = transcript?.attempts ?? [];

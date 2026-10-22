@@ -411,6 +411,7 @@ export const tr: Record<TranslationKey, string> = {
   "directChat.startHint": "Başlamak için bir mesaj yazın.",
   "directChat.stop": "Durdur",
   "directChat.retry": "Yeniden dene",
+  "directChat.noReply": "Yanıt alınamadı.",
   "directChat.busy": "Başka bir yanıt hâlâ geliyor. Burada göndermeden önce onu durdurun.",
   "directChat.archivedHint": "Bu sohbet arşivlendi. Göndermek için geri yükleyin.",
   "directChat.saveFailed": "Bu mesaj kaydedilemedi, bu yüzden gönderilmedi. Metniniz burada duruyor.",

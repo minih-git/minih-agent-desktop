@@ -411,6 +411,7 @@ export const ko: Record<TranslationKey, string> = {
   "directChat.startHint": "메시지를 입력해 시작하세요.",
   "directChat.stop": "중지",
   "directChat.retry": "다시 시도",
+  "directChat.noReply": "답변을 받지 못했습니다.",
   "directChat.busy": "다른 답변이 아직 오고 있습니다. 여기서 보내기 전에 멈추세요.",
   "directChat.archivedHint": "이 대화는 보관되었습니다. 다시 보내려면 복원하세요.",
   "directChat.saveFailed": "이 메시지를 저장하지 못해 보내지 않았습니다. 입력한 내용은 그대로 있습니다.",

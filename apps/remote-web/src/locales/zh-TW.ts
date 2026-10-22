@@ -411,6 +411,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "directChat.startHint": "輸入一則訊息開始。",
   "directChat.stop": "停止",
   "directChat.retry": "重試",
+  "directChat.noReply": "沒有收到回覆。",
   "directChat.busy": "另一個回覆仍在進行中。請先停止它，再在這裡傳送。",
   "directChat.archivedHint": "這個對話已封存。還原後才能繼續傳送。",
   "directChat.saveFailed": "這則訊息儲存失敗，因此沒有傳送。你的文字仍在這裡。",

@@ -411,6 +411,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "directChat.startHint": "Digite uma mensagem para começar.",
   "directChat.stop": "Parar",
   "directChat.retry": "Tentar de novo",
+  "directChat.noReply": "Nenhuma resposta foi recebida.",
   "directChat.busy": "Outra resposta ainda está chegando. Pare-a antes de enviar aqui.",
   "directChat.archivedHint": "Esta conversa está arquivada. Restaure para enviar de novo.",
   "directChat.saveFailed": "Esta mensagem não pôde ser salva e por isso não foi enviada. Seu texto continua aqui.",

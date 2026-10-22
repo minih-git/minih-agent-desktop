@@ -415,6 +415,7 @@ export const en = {
   "directChat.startHint": "Type a message to start.",
   "directChat.stop": "Stop",
   "directChat.retry": "Retry",
+  "directChat.noReply": "No reply was received.",
   "directChat.busy": "Another reply is still arriving. Stop it before sending here.",
   "directChat.archivedHint": "This conversation is archived. Restore it to send again.",
   "directChat.saveFailed": "This message could not be saved, so it was not sent. Your text is still here.",
