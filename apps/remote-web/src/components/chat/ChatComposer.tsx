@@ -26,6 +26,11 @@ export interface ChatComposerProps {
   hideAttachments?: boolean;
   /** The initial text, so a stored draft reopens where the user left it. */
   initialText?: string;
+  /**
+   * Called as the text changes. A container that keeps a draft uses it; a
+   * container that does not (the remote session) leaves it out.
+   */
+  onDraftChange?: (text: string) => void;
   onSend: (attempt: ComposerSend) => Promise<boolean>;
 }
 
@@ -87,6 +92,7 @@ export function ChatComposer({
   queued,
   hideAttachments = false,
   initialText = "",
+  onDraftChange,
   onSend,
 }: ChatComposerProps) {
   const { t } = useTranslation();
@@ -276,7 +282,10 @@ export function ChatComposer({
           rows={1}
           placeholder={t("composer.placeholder")}
           aria-label={t("composer.placeholder")}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            onDraftChange?.(e.target.value);
+          }}
           onKeyDown={handleKeyDown}
           className="flex-1 resize-none bg-transparent py-1 text-[16px] leading-[24px] text-[var(--rm-text-primary)] placeholder-[var(--rm-text-faint)] outline-none min-h-[32px] max-h-[144px]"
         />

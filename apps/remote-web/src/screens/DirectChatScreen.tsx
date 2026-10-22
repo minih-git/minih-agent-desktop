@@ -22,6 +22,7 @@ import { ChatTimeline } from "../components/chat/ChatTimeline.js";
 import { Button } from "../components/ui/Button.js";
 import { NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
+import { watchVisibility } from "../lib/app-state.js";
 import { resolveDirectModel } from "../lib/direct-chat/catalog.js";
 import type { DirectChatAttempt, DirectChatTranscript } from "../lib/direct-chat/history-store.js";
 import { isIdle } from "../lib/direct-chat/history.js";
@@ -38,6 +39,9 @@ import {
 } from "../lib/runtime.js";
 import { createDirectChatSecret } from "../lib/direct-chat/secret.js";
 import { DirectChatInfoSheet } from "../components/direct/DirectChatInfoSheet.js";
+
+/** How long typing pauses before the draft is written. */
+const DRAFT_DEBOUNCE_MS = 500;
 
 export type DirectChatScreenProps = {
   conversationId: string;
@@ -75,6 +79,43 @@ export function DirectChatScreen({
    * otherwise let an older read paint the new screen with the old transcript.
    */
   const readSeq = useRef(0);
+  /**
+   * The draft is written while typing, debounced, and flushed when the screen
+   * goes away or the app is backgrounded - so leaving D3 never loses a
+   * half-written message. A conversation that has no record yet keeps its draft
+   * in this component only: the ADR starts history at the first message, and a
+   * draft is not a message.
+   */
+  const draftRef = useRef<string>("");
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const persistDraft = useCallback(
+    (text: string) => {
+      draftRef.current = text;
+      if (!transcript) return;
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+      draftTimer.current = setTimeout(() => {
+        draftTimer.current = null;
+        void history.setDraft(conversationId, draftRef.current);
+      }, DRAFT_DEBOUNCE_MS);
+    },
+    [history, conversationId, transcript],
+  );
+
+  useEffect(() => {
+    const flush = () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+      draftTimer.current = null;
+      if (!transcript) return;
+      void history.setDraft(conversationId, draftRef.current);
+    };
+    // Leaving the screen or the app must not lose what was typed.
+    const unsubscribe = watchVisibility({ onHidden: flush, onVisible: () => {} });
+    return () => {
+      unsubscribe();
+      flush();
+    };
+  }, [history, conversationId, transcript]);
   const reload = useCallback(async () => {
     readSeq.current += 1;
     const mine = readSeq.current;
@@ -357,6 +398,7 @@ export function DirectChatScreen({
             queued={false}
             hideAttachments
             initialText={conversation?.draft ?? ""}
+            onDraftChange={persistDraft}
             onSend={async (payload) => {
               const sent = await send(payload.text);
               return sent;
