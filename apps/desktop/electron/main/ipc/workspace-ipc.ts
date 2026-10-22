@@ -16,6 +16,7 @@ import {
 } from "@minih-agent/host-runtime";
 import { catalogs, resolveLocale } from "@minih-agent/i18n";
 import {
+  isRemoteProjectPath,
   type ComposerPasteFile,
   ErrorCodes,
   type FsChatRefEntryKind,
@@ -187,7 +188,7 @@ export function registerWorkspaceIpc({
         errorCode: ErrorCodes.INVALID_ARGUMENT,
       });
     }
-    const projectPath = requestedPath.startsWith("remote-project:") ? requestedPath : resolve(requestedPath);
+    const projectPath = isRemoteProjectPath(requestedPath) ? requestedPath : resolve(requestedPath);
     const listed = (await host.call("projects.list")) as {
       projects?: Array<{ path?: string }>;
     };
@@ -316,7 +317,7 @@ export function registerWorkspaceIpc({
           errorCode: ErrorCodes.INVALID_ARGUMENT,
         });
       }
-      if (folders.every((path) => path.startsWith("remote-project:"))) {
+      if (folders.every((path) => isRemoteProjectPath(path))) {
         const result = await host.call("project.group.update", {
           groupId,
           name,
@@ -424,7 +425,7 @@ export function registerWorkspaceIpc({
     const listed = (await host.call("projects.list")) as {
       projects?: Array<{ path?: string }>;
     };
-    const projectPath = requestedPath.startsWith("remote-project:") ? requestedPath : resolve(requestedPath);
+    const projectPath = isRemoteProjectPath(requestedPath) ? requestedPath : resolve(requestedPath);
     const known = (listed.projects ?? []).some((project) => {
       const candidate = String(project?.path ?? "").trim();
       return candidate && resolve(candidate) === projectPath;
@@ -604,13 +605,13 @@ export function registerWorkspaceIpc({
     if (!host) throw new Error("host unavailable");
     // Deletion only touches host records, so a project whose folder was moved
     // or deleted on disk stays deletable: deliberately no existence check.
-    const projectPath = requestedPath.startsWith("remote-project:") ? requestedPath : resolve(requestedPath);
+    const projectPath = isRemoteProjectPath(requestedPath) ? requestedPath : resolve(requestedPath);
     const result = (await host.call("projects.remove", {
       path: projectPath,
     })) as { removed?: boolean; sessionsRemoved?: number };
     const removed = Boolean(result?.removed);
     const workspacePath = currentWorkspacePath();
-    if (removed && workspacePath && (workspacePath.startsWith("remote-project:") ? workspacePath : resolve(workspacePath)) === projectPath) {
+    if (removed && workspacePath && (isRemoteProjectPath(workspacePath) ? workspacePath : resolve(workspacePath)) === projectPath) {
       // Leaving the host bound to a deleted project would re-create it on boot.
       setCurrentWorkspacePath(null);
       await host.call("workspace.clear");

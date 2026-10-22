@@ -212,9 +212,11 @@ owner，工作区读取都按会话持久根、Host 忽略规则和 `PATH_OUTSID
 桌面 Host 按设备类别作答（ADR `remote-control-router-account-binding` 修订 3 决策 4）：
 同账号的 desktop 类设备拿到只读面板，手机与浏览器拿不到。同一门禁也覆盖
 `session/delete`（仍为 owner、仍限空闲）。`session/archive` 在操作目录里、也由
-`remoteHostProfile` 公布，但目前没有任何 Host 实现它：会话归档是桌面 renderer 本地
-保存的表现状态（`sessionMeta.archived`），Host 侧没有可归档的权威状态，因此回
-`CAPABILITY_UNAVAILABLE`。
+`remoteHostProfile` 公布，但没有任何 Host 实现它：会话归档是桌面 renderer 本地保存的
+表现状态（`sessionMeta.archived`），Host 侧没有可归档的权威状态，因此回
+`CAPABILITY_UNAVAILABLE`。归档因此由各客户端在本机侧栏完成——桌面显示兄弟电脑的会话时，
+按那个 remote session id 在本机侧栏归档（R8 包 E）——每份状态只有一个归属方，不会产生
+第二份真相。
 
 | Operation | Role | Behavior |
 |---|---|---|

@@ -8,9 +8,11 @@
  */
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { remoteProjectPath } from "@minih-agent/shared";
 
 import type { HostRpc } from "./host-ports.js";
 import { createWorkspaceAccess } from "./workspace-access.js";
@@ -131,5 +133,29 @@ describe("session workspace reads shared by both Hosts", () => {
     const { host } = fakeHost(root);
     const access = createWorkspaceAccess(() => host);
     await expect(access.read("unknown", "README.md")).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("refuses an opaque remote-project identifier instead of resolving it", async () => {
+    // A session whose project lives on another machine carries
+    // `remote-project:<hostKey,projectId>` (ADR `local-agent-remote-workspace-tools`).
+    // That value is not a directory on any machine, so it must be refused
+    // before any filesystem call: resolving it would fail, and a relative
+    // spelling could even land on an unrelated local directory.
+    const { host } = fakeHost(remoteProjectPath("host_sibling", "7"));
+    const access = createWorkspaceAccess(() => host);
+    await expect(access.list("known", "")).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(access.read("known", "README.md")).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(access.diff("known")).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("refuses a relative project root, even one that names a real file", async () => {
+    // `relative()` of a file that exists: resolving it against the process's
+    // working directory would succeed and return that file's content, so getting
+    // CONFLICT here is what proves the check runs before the filesystem.
+    const relativeRoot = relative(process.cwd(), join(root, "README.md"));
+    const { host } = fakeHost(relativeRoot);
+    const access = createWorkspaceAccess(() => host);
+    await expect(access.list("known", "")).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(access.read("known", "README.md")).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });

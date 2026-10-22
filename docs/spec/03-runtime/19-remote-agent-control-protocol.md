@@ -608,10 +608,13 @@ The desktop Host answers it from the device class (ADR
 desktop-class device of the same account gets the read-only panel, a phone or a
 browser does not. The same gate covers `session/delete`, which stays
 `owner`-only and idle-only. `session/archive` is in the catalog and advertised
-by `remoteHostProfile`, but no Host implements it yet: session archival is
-presentation state (`sessionMeta.archived`) the desktop renderer keeps locally,
+by `remoteHostProfile`, but no Host implements it: session archival is
+presentation state the desktop renderer keeps locally (`sessionMeta.archived`),
 so a Host has nothing authoritative to archive and answers
-`CAPABILITY_UNAVAILABLE`.
+`CAPABILITY_UNAVAILABLE`. Archiving is therefore done by each client in its own
+sidebar — a desktop that shows a sibling's session archives it under that
+remote session id locally (rollout R8 package E) — which keeps one owner per
+piece of state instead of creating a second source of truth.
 
 | Operation | Role | Behavior |
 |---|---|---|

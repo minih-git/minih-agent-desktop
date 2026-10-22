@@ -500,8 +500,10 @@ Scope notes:
   `session/archive` is **not** part of this package after all: session archival
   is renderer presentation state with no authoritative Host record, so opening
   it would mean inventing Host-side persistence the renderer does not read
-  (protocol §6.2). `session/rename` and `session/configure` stay available to a
-  phone, because the phone's own session sheet uses them today;
+  (protocol §6.2). Each client archives in its own sidebar instead — package E
+  archives a sibling's session under that remote session id, locally.
+  `session/rename` and `session/configure` stay available to a phone, because
+  the phone's own session sheet uses them today;
 - automatic admission is refused, never silently ignored, when the proof is
   missing, when its nonce was reused or expired, or when the target computer
   does not advertise `device.desktop-auto`;

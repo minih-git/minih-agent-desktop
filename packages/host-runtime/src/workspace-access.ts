@@ -15,8 +15,11 @@
  * here executes a tool, so this is the file *panel*, not the owner's tool
  * surface.
  */
-import type { RacpWorkspaceAccess } from "@minih-agent/racp";
+import { isAbsolute } from "node:path";
+
 import { RacpError } from "@minih-agent/agent-host";
+import type { RacpWorkspaceAccess } from "@minih-agent/racp";
+import { isRemoteProjectPath } from "@minih-agent/shared";
 
 import { toRacpHostError } from "./host-catalog-reads.js";
 import type { HostRpc, HostSessionRecord } from "./host-ports.js";
@@ -39,11 +42,20 @@ function requireHost(getHost: () => HostRpc | null): HostRpc {
 }
 
 /**
- * The session's durable project root.
+ * The session's durable project root, or a refusal.
  *
- * A session with no project has no workspace to read, which is a conflict
- * rather than an empty answer: the client asked about a place that does not
- * exist for this session.
+ * Two things are refused before any filesystem work happens:
+ *
+ * - a session with no project has no workspace to read, which is a conflict
+ *   rather than an empty answer: the client asked about a place that does not
+ *   exist for this session;
+ * - a `projectPath` that is **not an absolute local path** — in practice the
+ *   opaque `remote-project:<hostKey,projectId>` identifier of a session whose
+ *   project lives on another machine (ADR `local-agent-remote-workspace-tools`).
+ *   That value names no directory on any machine, so resolving it would either
+ *   fail or point at an unrelated directory relative to the Host's own working
+ *   directory. The reader answers "the workspace is not on this computer"
+ *   instead of guessing.
  */
 async function sessionRoot(getHost: () => HostRpc | null, sessionId: string): Promise<string> {
   const host = requireHost(getHost);
@@ -53,6 +65,9 @@ async function sessionRoot(getHost: () => HostRpc | null, sessionId: string): Pr
   if (!result.session) throw new RacpError("NOT_FOUND", `session ${sessionId} is unknown`);
   const root = result.session.projectPath?.trim();
   if (!root) throw new RacpError("CONFLICT", "the session has no project root");
+  if (isRemoteProjectPath(root) || !isAbsolute(root)) {
+    throw new RacpError("CONFLICT", "this session's workspace is not on this computer");
+  }
   return root;
 }
 
