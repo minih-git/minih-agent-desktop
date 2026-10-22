@@ -193,6 +193,22 @@ export function isRetryableFailure(errorKind: string | null): boolean {
   return errorKind !== "context-overflow";
 }
 
+/**
+ * Why there is no model to send with, when there is none.
+ *
+ * A conversation names the model it will send with; a new one takes the
+ * account's last explicit choice. Losing that model from the catalog is a
+ * different story from never having chosen one, and the app has to say which:
+ * "choose a model" is wrong advice for a model that is simply gone.
+ */
+export function modelChoiceGap(
+  wantedModelId: string | null,
+  found: boolean,
+): "none" | "gone" | null {
+  if (found) return null;
+  return wantedModelId ? "gone" : "none";
+}
+
 /** How a reply ended, in the words a reader of the copy needs. */
 export function completionMarker(attempt: DirectChatAttempt): string {
   switch (attempt.state) {

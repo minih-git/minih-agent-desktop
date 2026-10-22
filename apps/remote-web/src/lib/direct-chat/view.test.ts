@@ -5,6 +5,7 @@ import {
   completionMarker,
   failureReasonKey,
   isRetryableFailure,
+  modelChoiceGap,
   projectDirectTranscript,
   transcriptAsMarkdown,
 } from "./view.js";
@@ -247,5 +248,17 @@ describe("explaining a failed reply", () => {
     for (const kind of ["unauthorized", "quota", "transport", "storage", "interrupted", null]) {
       expect(isRetryableFailure(kind), String(kind)).toBe(true);
     }
+  });
+});
+
+describe("the model a conversation would send with", () => {
+  it("is missing for its own reason, which the screen words differently", () => {
+    // A model the conversation named that the catalog no longer offers.
+    expect(modelChoiceGap("m-chat", false)).toBe("gone");
+    // Nothing was ever chosen: a new conversation, or a fresh account.
+    expect(modelChoiceGap(null, false)).toBe("none");
+    // Found: there is nothing to explain.
+    expect(modelChoiceGap("m-chat", true)).toBeNull();
+    expect(modelChoiceGap(null, true)).toBeNull();
   });
 });

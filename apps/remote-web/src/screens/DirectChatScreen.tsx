@@ -30,6 +30,7 @@ import { scopeKey } from "../lib/direct-chat/history-store.js";
 import {
   failureReasonKey,
   isRetryableFailure,
+  modelChoiceGap,
   projectDirectTranscript,
   transcriptAsMarkdown,
 } from "../lib/direct-chat/view.js";
@@ -182,12 +183,17 @@ export function DirectChatScreen({
   );
   const nextChoice = nextModel ? resolveDirectModel(nextModel) : null;
   const usable = nextChoice?.usable === true;
+  /**
+   * Why there is no model to send with: never chosen, or gone from the catalog.
+   * The two absences get different words.
+   */
+  const modelGap = modelChoiceGap(wantedModelId, nextModel !== null);
 
   async function send(text: string): Promise<boolean> {
     if (!connection || !scope) return false;
     if (!nextModel || nextChoice?.usable !== true) {
       // Saying nothing here was the bug: the composer merely did not react.
-      setNotice(t("directChat.modelUnavailable"));
+      setNotice(t(modelGap === "none" ? "directChat.noModel" : "directChat.modelUnavailable"));
       setModelsOpen(true);
       return false;
     }
@@ -405,7 +411,7 @@ export function DirectChatScreen({
           // sheet is the remedy, so sending is unavailable rather than silent.
           <div className="flex flex-col gap-2">
             <p className="text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
-              {nextModel ? t("directChat.modelUnavailable") : t("directChat.noModel")}
+              {modelGap === "none" ? t("directChat.noModel") : t("directChat.modelUnavailable")}
             </p>
             <Button variant="secondary" size="large" onClick={() => setModelsOpen(true)}>
               {t("directChat.chooseModel")}
