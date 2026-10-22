@@ -19,6 +19,7 @@
 		A1B2C3D42F00000100ABCDEF /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D32F00000100ABCDEF /* Localizable.strings */; };
 		A1B2C3E1F00000000000000C /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3E1F000000000000009 /* NotificationService.swift */; };
 		A1B2C3E1F000000000000013 /* MinihNotifyPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3E1F000000000000012 /* MinihNotifyPlugin.swift */; };
+		A1B2C3E1F000000000000019 /* MinihBackgroundPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3E1F00000000000001A /* MinihBackgroundPlugin.swift */; };
 		A1B2C3E1F000000000000015 /* MinihBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3E1F000000000000014 /* MinihBridgeViewController.swift */; };
 		A1B2C3E1F000000000000017 /* SharedNotifyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3E1F000000000000016 /* SharedNotifyStore.swift */; };
 		A1B2C3E1F000000000000018 /* SharedNotifyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3E1F000000000000016 /* SharedNotifyStore.swift */; };
@@ -40,6 +41,7 @@
 		A1B2C3E1F00000000000000B /* MinihNotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MinihNotificationService.entitlements; sourceTree = "<group>"; };
 		A1B2C3E1F000000000000002 /* MinihNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MinihNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3E1F000000000000012 /* MinihNotifyPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinihNotifyPlugin.swift; sourceTree = "<group>"; };
+		A1B2C3E1F00000000000001A /* MinihBackgroundPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinihBackgroundPlugin.swift; sourceTree = "<group>"; };
 		A1B2C3E1F000000000000014 /* MinihBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinihBridgeViewController.swift; sourceTree = "<group>"; };
 		A1B2C3E1F000000000000016 /* SharedNotifyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedNotifyStore.swift; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
@@ -92,6 +94,7 @@
 				504EC3131FED79650016851F /* Info.plist */,
 				A1B2C3D72F00000100ABCDEF /* App.entitlements */,
 				A1B2C3E1F000000000000012 /* MinihNotifyPlugin.swift */,
+				A1B2C3E1F00000000000001A /* MinihBackgroundPlugin.swift */,
 				A1B2C3E1F000000000000014 /* MinihBridgeViewController.swift */,
 				A1B2C3E1F000000000000016 /* SharedNotifyStore.swift */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
@@ -349,6 +352,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				A1B2C3E1F000000000000013 /* MinihNotifyPlugin.swift in Sources */,
+				A1B2C3E1F000000000000019 /* MinihBackgroundPlugin.swift in Sources */,
 				A1B2C3E1F000000000000015 /* MinihBridgeViewController.swift in Sources */,
 				A1B2C3E1F000000000000017 /* SharedNotifyStore.swift in Sources */,
 			);

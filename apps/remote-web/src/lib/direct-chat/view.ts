@@ -36,7 +36,15 @@ function labelOf(attempt: DirectChatAttempt | undefined): string | undefined {
 
 export function projectDirectTranscript(
   transcript: DirectChatTranscript,
-  options: { liveText?: string } = {},
+  options: {
+    liveText?: string;
+    /**
+     * The words for a reply that ended with no text. The stored `error` is a
+     * diagnostic in English and is never shown as-is; the screen passes a
+     * translated sentence, and the footer below names the reason.
+     */
+    noReplyText?: string;
+  } = {},
 ): DirectChatView {
   const liveText = options.liveText ?? "";
   const attemptsById = new Map(transcript.attempts.map((attempt) => [attempt.id, attempt]));
@@ -120,7 +128,7 @@ export function projectDirectTranscript(
       itemType: "compaction",
       status: "completed",
       role: "system",
-      text: visibleWithoutText.error ?? "",
+      text: options.noReplyText ?? "",
     });
   }
 

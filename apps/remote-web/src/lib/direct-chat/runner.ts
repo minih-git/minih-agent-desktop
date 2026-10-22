@@ -35,9 +35,16 @@ const CHECKPOINT_INTERVAL_MS = 700;
 /** How often the view is told about text that has not been written yet. */
 const PAINT_INTERVAL_MS = 100;
 
+/** One conversation that is receiving a reply right now. */
+export type DirectChatLiveReply = { conversationId: string; attemptId: string };
+
+/**
+ * What the runner is doing. Several conversations may reply at once (ADR §5:
+ * no app-wide cap), so the state is a list rather than one id.
+ */
 export type DirectChatRunState =
   | { phase: "idle" }
-  | { phase: "running"; conversationId: string; attemptId: string };
+  | { phase: "running"; replies: readonly DirectChatLiveReply[] };
 
 export type StartReplyInput = {
   conversationId: string;
@@ -72,13 +79,21 @@ export type DirectChatRunnerOptions = {
 };
 
 export type DirectChatRunner = {
+  /** Every conversation receiving a reply right now. */
   state(): DirectChatRunState;
-  /** Run one reply for an already-saved pending attempt. */
+  /** Run one reply for an already-saved pending attempt in this conversation. */
   start(input: StartReplyInput): Promise<StartReplyOutcome>;
-  /** Stop the live reply: a local abort that keeps what arrived. */
-  stop(): Promise<void>;
-  /** Leave the foreground: cancel and mark interrupted, keeping the checkpoint. */
+  /** Whether this conversation already has a reply in flight. */
+  isRunning(conversationId: string): boolean;
+  /** Stop one conversation's reply: a local abort that keeps what arrived. */
+  stop(conversationId: string): Promise<void>;
+  /**
+   * Cancel every reply and mark it interrupted, keeping each checkpoint.
+   * Account change and unlink use it; there is no other reason to stop all.
+   */
   interrupt(reason?: string): Promise<void>;
+  /** Write every live reply's received text now (leaving the foreground). */
+  flushAll(): Promise<void>;
   /** Retry a finished attempt: a new attempt for the same user message. */
   retry(input: {
     attempt: DirectChatAttempt;
@@ -87,8 +102,8 @@ export type DirectChatRunner = {
     protocol: DirectProtocol;
     authKey: string;
   }): Promise<StartReplyOutcome>;
-  /** The text received by the live run, for a view that paints before a checkpoint. */
-  streamingText(): string;
+  /** The text a conversation has received, for a view that paints before a checkpoint. */
+  streamingText(conversationId: string): string;
   /** Record that the app is going away, so a live attempt is not left pending. */
   dispose(): void;
 };
@@ -124,13 +139,23 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
   const now = options.now ?? (() => new Date());
   const stamp = (): string => now().toISOString();
 
-  let current: {
+  /**
+   * One run per conversation, keyed by conversation id. Several may stream at
+   * once (ADR §5: no app-wide cap); a second send in the *same* conversation
+   * waits for its reply to end.
+   */
+  type Run = {
     runId: number;
     conversationId: string;
+    attemptId: string;
     controller: AbortController;
     /** Text received so far, so an interrupt can keep it without the stream. */
     received: string;
-  } | null = null;
+    /** Write what has arrived now, in this run's own ordered chain. */
+    flush: () => Promise<void>;
+  };
+
+  const runs = new Map<string, Run>();
   let runCounter = 0;
 
   const announce = (): void => options.onChange?.();
@@ -161,7 +186,7 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
     let lastPaint = 0;
     let flushFailure: string | null = null;
 
-    const isLive = (): boolean => current?.runId === input.runId;
+    const isLive = (): boolean => runs.get(input.conversationId)?.runId === input.runId;
 
     /**
      * Every write goes through this chain, in order.
@@ -193,6 +218,11 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
         }
       });
 
+    // The run is registered before the stream starts so the app can ask what is
+    // live; attaching the chain here is what lets a background flush reach it.
+    const own = runs.get(input.conversationId);
+    if (own?.runId === input.runId) own.flush = flush;
+
     const result: DirectStreamResult = await streamDirectReply(
       {
         model: input.model,
@@ -208,7 +238,8 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
           if (!isLive()) return;
           if (event.type === "text") {
             latest += event.text;
-            if (current?.runId === input.runId) current.received = latest;
+            const run = runs.get(input.conversationId);
+            if (run?.runId === input.runId) run.received = latest;
             // The screen shows the reply as it arrives rather than waiting for the
             // next checkpoint; the gate keeps a fast stream from re-rendering per
             // token while still feeling live.
@@ -258,11 +289,17 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
       });
     }
     if (!result.ok) {
+      // A connection that dropped mid-reply is treated like a suspension: the
+      // checkpoint stays and the attempt is interrupted (§6). A gateway that
+      // could not be reached at all delivered nothing to interrupt, so it keeps
+      // its transport reason ("cannot reach the gateway"), like every other
+      // refusal - auth, quota, model, gateway.
+      const dropped = result.failure.kind === "transport" && finalText !== "";
       return options.history.finish(attempt, {
-        state: "failed",
+        state: dropped ? "interrupted" : "failed",
         text: finalText,
         error: result.failure.message,
-        errorKind: result.failure.kind,
+        errorKind: dropped ? "interrupted" : result.failure.kind,
         now: stamp(),
       });
     }
@@ -293,21 +330,23 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
     }
   }
 
-  function isBusy(): boolean {
-    return current !== null;
-  }
+  const liveReplies = (): DirectChatLiveReply[] =>
+    [...runs.values()].map((run) => ({ conversationId: run.conversationId, attemptId: run.attemptId }));
 
   return {
     state() {
-      return current
-        ? { phase: "running", conversationId: current.conversationId, attemptId: "" }
-        : { phase: "idle" };
+      const replies = liveReplies();
+      return replies.length > 0 ? { phase: "running", replies } : { phase: "idle" };
+    },
+
+    isRunning(conversationId) {
+      return runs.has(conversationId);
     },
 
     async start(input) {
-      if (isBusy()) {
-        // One direct generation at a time: the caller offers Return or Stop
-        // instead of quietly queueing the request.
+      if (runs.has(input.conversationId)) {
+        // Within one conversation a new send waits for its reply to end: the
+        // timeline has one open exchange, and the composer already offers Stop.
         return { ok: false, reason: "busy" };
       }
       // The read is guarded before the run exists: a closed database here must
@@ -326,19 +365,29 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
         // conversation, which must never happen (§2).
         return { ok: false, reason: "foreign-scope" };
       }
+      if (runs.has(input.conversationId)) {
+        // The read above is an await: a second send for the same conversation
+        // could have taken the run meanwhile.
+        return { ok: false, reason: "busy" };
+      }
       runCounter += 1;
       const runId = runCounter;
       const controller = new AbortController();
-      current = { runId, conversationId: input.conversationId, controller, received: "" };
-      announce();
-
+      runs.set(input.conversationId, {
+        runId,
+        conversationId: input.conversationId,
+        attemptId: input.attempt.id,
+        controller,
+        received: "",
+        flush: () => Promise.resolve(),
+      });
       // Context assembly is pure, but it runs inside the cleanup anyway: nothing
       // between taking the run and releasing it may skip the release.
       let context: { turns: DirectTurn[]; lastUserText: string };
       try {
         context = buildDirectContext(conversation);
       } catch (cause) {
-        current = null;
+        runs.delete(input.conversationId);
         announce();
         return { ok: true, attempt: await failAttempt(input.attempt, cause) };
       }
@@ -358,51 +407,59 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
         });
         return { ok: true, attempt: finished };
       } finally {
-        if (current?.runId === runId) current = null;
+        if (runs.get(input.conversationId)?.runId === runId) runs.delete(input.conversationId);
         announce();
       }
     },
 
-    async stop() {
-      const live = current;
+    async stop(conversationId) {
+      const live = runs.get(conversationId);
       if (!live) return;
-      // A local abort: the runner's drive() turns it into a `stopped` state
-      // with the text received so far, and no further event is applied.
+      // A local abort: that run's drive() turns it into a `stopped` state with
+      // the text received so far. Other conversations keep streaming.
       live.controller.abort();
       announce();
     },
 
     async interrupt(reason) {
-      const live = current;
-      if (!live) return;
-      // Interrupt takes the run over before aborting, so the driver cannot also
-      // write a terminal state: backgrounding is `interrupted`, not `stopped`,
-      // and only one of the two may reach the record.
-      current = null;
-      live.controller.abort();
-      const transcript = await options.history.transcript(live.conversationId);
-      const attempt = transcript?.attempts.find(
-        (candidate) => candidate.state === "pending" || candidate.state === "streaming",
-      );
-      if (attempt) {
+      const live = [...runs.values()];
+      if (live.length === 0) return;
+      // Interrupt takes each run over before aborting, so its driver cannot also
+      // write a terminal state: this path writes `interrupted`, not `stopped`.
+      for (const run of live) runs.delete(run.conversationId);
+      for (const run of live) run.controller.abort();
+      for (const run of live) {
+        const transcript = await options.history.transcript(run.conversationId).catch(() => null);
+        const attempt = transcript?.attempts.find(
+          (candidate) => candidate.state === "pending" || candidate.state === "streaming",
+        );
+        if (!attempt) continue;
         // The checkpoint text is kept, so returning shows what arrived and
         // offers Retry rather than a silent paid re-request.
-        await options.history.finish({
-          ...attempt,
-          assistantMessageId: attempt.assistantMessageId ?? (live.received ? `${attempt.id}-assistant` : null),
-        }, {
-          state: "interrupted",
-          text: live.received,
-          error: reason ?? null,
-          errorKind: "interrupted",
-          now: stamp(),
-        });
+        await options.history.finish(
+          {
+            ...attempt,
+            assistantMessageId: attempt.assistantMessageId ?? (run.received ? `${attempt.id}-assistant` : null),
+          },
+          {
+            state: "interrupted",
+            text: run.received,
+            error: reason ?? null,
+            errorKind: "interrupted",
+            now: stamp(),
+          },
+        );
       }
       announce();
     },
 
+    async flushAll() {
+      // One reply failing to save must not stop the others from being saved.
+      await Promise.all([...runs.values()].map((run) => run.flush().catch(() => undefined)));
+    },
+
     async retry(input) {
-      if (isBusy()) return { ok: false, reason: "busy" };
+      if (runs.has(input.attempt.conversationId)) return { ok: false, reason: "busy" };
       const created = await options.history.retry({
         scope: input.scope,
         modelId: input.model.id,
@@ -427,15 +484,15 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
       });
     },
 
-    streamingText() {
-      return current?.received ?? "";
+    streamingText(conversationId) {
+      return runs.get(conversationId)?.received ?? "";
     },
 
     dispose() {
-      // The page is going away: nothing will flush later, so the live attempt is
-      // left as it stands and the next startup marks it interrupted.
-      current?.controller.abort();
-      current = null;
+      // The page is going away: nothing will flush later, so every live attempt
+      // is left as it stands and the next startup marks it interrupted.
+      for (const run of runs.values()) run.controller.abort();
+      runs.clear();
     },
   };
 }

@@ -2161,6 +2161,16 @@ Renderer: `apps/desktop/src/components/Markdown.tsx` + `apps/desktop/src/lib/shi
   diagram/source and copies the original source; light/dark theme changes
   re-render the SVG. Thinking prose deliberately keeps `mermaid` fences as
   source code so a collapsed reasoning trace cannot start diagram layout.
+- **HTML preview (D675)**: a completed `html` fenced block in assistant answer
+  prose renders in place through a sandboxed `srcdoc` iframe, so a markup answer
+  is readable without leaving the transcript. The frame is script-free by
+  default — the toolbar's run button enables `allow-scripts` for that one block,
+  and a changed source returns it to the default — and its sandbox carries no
+  `allow-same-origin`, which leaves it on an opaque origin that neither reads nor
+  is read by the transcript. Source is capped at 100,000 characters; a longer
+  fence, like an oversized diagram, fails closed to the source view. The toolbar
+  toggles preview/source and copies the original source. Thinking prose keeps
+  `html` fences as source code.
 - **Syntax highlighting**: Shiki singleton with the JavaScript regex engine
   (no wasm), themes `one-light`/`one-dark-pro` following `data-theme`.
   A coding-focused local catalog exposes 48 canonical grammars plus common

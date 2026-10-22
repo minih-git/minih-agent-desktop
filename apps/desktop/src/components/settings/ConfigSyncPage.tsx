@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import type {
   ConfigSyncCategorySelection,
   ConfigSyncHistoryEntry,
-  ConfigSyncPendingApproval,
   ConfigSyncProgress,
   ConfigSyncState,
 } from "@minih-agent/shared";
@@ -24,6 +23,7 @@ import {
   writeConfigSyncDraft,
 } from "../../features/settings/config-sync-preferences";
 import { ConfigSyncError } from "./ConfigSyncError";
+import { ConfigSyncApprovals } from "./ConfigSyncApprovals";
 import { ConfigSyncScopeFields } from "./ConfigSyncScopeFields";
 import { ConfigSyncVaultSettings } from "./ConfigSyncVaultSettings";
 import { SettingsMenuSelect } from "./SettingsMenuSelect";
@@ -364,21 +364,6 @@ export function ConfigSyncPage() {
     }
   }, [state?.status, t]);
 
-  const approvalReasonLabel = (reason: ConfigSyncPendingApproval["reason"]) => {
-    switch (reason) {
-      case "newDevice":
-        return t("settings.configSync.approvalReason.newDevice");
-      case "securityChange":
-        return t("settings.configSync.approvalReason.securityChange");
-      case "dependency":
-        return t("settings.configSync.approvalReason.dependency");
-      case "mapping":
-        return t("settings.configSync.approvalReason.mapping");
-      case "conflict":
-        return t("settings.configSync.approvalReason.conflict");
-    }
-  };
-
   const configured = state?.configured === true;
   const locked = state?.locked === true;
   const stateReady = state !== null;
@@ -581,43 +566,12 @@ export function ConfigSyncPage() {
         <>
 
           {state?.pendingApprovals.length ? (
-            <SettingsCard
-              title={t("settings.configSync.approvalsTitle")}
-              description={t("settings.configSync.approvalsDescription")}
-            >
-              <div className="settings-config-sync-approvals">
-                {state.pendingApprovals.map((approval) => (
-                  <div key={approval.id} className="settings-config-sync-approval">
-                    <div>
-                      <div className="settings-config-sync-approval-title">
-                        {approval.label}
-                      </div>
-                      <div className="settings-config-sync-approval-meta">
-                        {approvalReasonLabel(approval.reason)}
-                      </div>
-                    </div>
-                    <div className="settings-config-sync-actions">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => void approve(approval.id, approval.digest, false)}
-                        disabled={controlsBusy}
-                      >
-                        {t("settings.configSync.reject")}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onClick={() => void approve(approval.id, approval.digest, true)}
-                        disabled={controlsBusy}
-                      >
-                        {t("settings.configSync.approve")}
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </SettingsCard>
+            <ConfigSyncApprovals
+              approvals={state.pendingApprovals}
+              disabled={controlsBusy}
+              onApprove={(approvalId, digest) => void approve(approvalId, digest, true)}
+              onReject={(approvalId, digest) => void approve(approvalId, digest, false)}
+            />
           ) : null}
 
           {state?.preview ? (

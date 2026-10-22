@@ -780,3 +780,124 @@
 .thinking-prose blockquote {
   background: var(--ds-tile);
 }
+
+/* The html fence preview keeps the diagram card's density on a live frame. */
+.html-block {
+  margin: 0.85em 0;
+  overflow: hidden;
+  border-radius: var(--radius-md-plus);
+  background: var(--ds-tile);
+  color: var(--ds-text-primary);
+}
+
+.html-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+  padding: 3px 6px 3px 14px;
+  background: var(--ds-tile-deep);
+}
+
+.html-block-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ds-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-compact);
+  letter-spacing: var(--tracking-wide);
+  text-transform: lowercase;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.html-block-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.html-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-xs);
+  color: var(--ds-text-muted);
+  transition: background var(--motion-duration-fast) var(--motion-ease-out), color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.html-action-btn:hover,
+.html-action-btn:focus-visible,
+.html-action-btn.active {
+  color: var(--ds-text-primary);
+  background: color-mix(in oklab, var(--ds-text-primary) 7%, transparent);
+}
+
+.html-action-btn.copied {
+  color: var(--ds-success);
+}
+
+.html-block-body {
+  min-width: 0;
+  background: var(--ds-tile-deep);
+}
+
+.html-block-error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  color: var(--ds-error);
+  background: color-mix(in oklab, var(--ds-error) 6%, transparent);
+  font-size: var(--text-sm-plus);
+  line-height: var(--leading-normal);
+}
+
+.html-frame {
+  display: block;
+  width: 100%;
+  height: 360px;
+  border: 0;
+  background: #ffffff;
+}
+
+.prose-chat .html-source {
+  margin: 0;
+  padding: 13px 14px 15px;
+  border: 0;
+  border-radius: 0;
+  background: #282c34;
+  color: #abb2bf;
+  overflow: auto;
+  max-height: 420px;
+  font-size: var(--text-sm-plus);
+  line-height: var(--leading-relaxed);
+  box-shadow: none;
+}
+
+/* Shiki one-light plate + ink, the same pair as the code card above. */
+:root[data-theme="light"] .prose-chat .html-source {
+  background: #fafafa;
+  color: #383a42;
+}
+
+.prose-chat .html-source code {
+  display: block;
+  width: fit-content;
+  min-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  white-space: pre;
+}

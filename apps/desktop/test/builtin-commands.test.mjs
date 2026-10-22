@@ -14,13 +14,13 @@ const [registry, dispatch, specEn, specZh] = await Promise.all([
 const coreIds = [
   "builtin.session.new",
   "builtin.agent.compact",
+  "builtin.agent.sideNote",
   "builtin.mode.agent",
   "builtin.mode.plan",
   "builtin.mode.goal",
 ];
 
-const coreAliases = ["new", "compact", "agent-mode", "plan-mode", "goal-mode"];
-
+const coreAliases = ["new", "compact", "btw", "agent-mode", "plan-mode", "goal-mode"];
 const removedIds = [
   "builtin.session.delete",
   "builtin.agent.abort",

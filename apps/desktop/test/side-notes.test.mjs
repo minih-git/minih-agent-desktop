@@ -193,4 +193,21 @@ test("the side-notes tab lists the notes and explains an idle session", () => {
   // still-empty draft is inert.
   assert.doesNotMatch(running, /<textarea[^>]*disabled/);
   assert.doesNotMatch(running, /side-notes-preset"[^>]*disabled/);
+  assert.match(running, /side-note-answer-body prose-chat selectable/);
+  assert.match(running, /side-notes-composer-shell/);
+});
+
+test("topbar exposes a quick side-notes button and /btw dispatches to side notes", async () => {
+  const topbarSource = readFileSync(
+    new URL("../src/components/ConversationTopbar.tsx", import.meta.url),
+    "utf8",
+  );
+  const submitSource = readFileSync(
+    new URL("../src/features/chat/composer/hooks/useComposerSubmit.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(topbarSource, /data-testid="topbar-side-notes"/);
+  assert.match(topbarSource, /openWorkPanelTab\(sideNotesWorkPanelTab\(\)\)/);
+  assert.match(submitSource, /command\.id === "builtin\.agent\.sideNote" && commandBody/);
+  assert.match(submitSource, /runSideNoteCommand\(noteQuestion\)/);
 });

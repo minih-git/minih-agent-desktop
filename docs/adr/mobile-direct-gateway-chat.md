@@ -236,9 +236,11 @@ apps/remote-web/src/
 
 The request service belongs to the app runtime, not the mounted screen. It pins
 account, conversation, attempt and model before awaiting the network, so leaving
-D3 or visiting Computers in the foreground keeps the reply running. One direct
-generation runs at a time; another conversation offers Return or Stop instead of
-queuing hidden work.
+D3 or visiting Computers keeps the reply running. Each conversation runs its own
+generation with its own Stop, and several conversations may generate at once
+with no app-wide cap; within one conversation a new send waits until its reply
+ends. D1 marks every conversation that is receiving a reply, so no paid request
+runs out of sight. Account change or unlink stops all of them.
 
 ### 6. Make saving and interruption explicit
 
@@ -250,9 +252,13 @@ queuing hidden work.
   completion.
 - Stop aborts the local request and keeps the received text as stopped. It is not
   RACP `turn/stop` and cannot promise the upstream stops billing at once.
-- Backgrounding cancels the request and keeps the checkpoint. There is no remote
-  continuation or resumable cursor; returning shows the saved output with an
-  explicit Retry, never an automatic paid re-request.
+- Backgrounding does not cancel a reply. Checkpoints are flushed on
+  deactivation, and iOS asks the system for extra background time while any
+  reply runs, ending that request when the replies end. When the system
+  suspends the app or the connection drops, the attempt keeps its checkpoint and
+  becomes interrupted. There is no remote continuation or resumable cursor;
+  returning shows the saved output with an explicit Retry, never an automatic
+  paid re-request.
 - Retry is a new attempt for the same user message, without duplicating it; the
   old partial reply stays visible and labelled. Stale events after stop, account
   change or disposal are dropped.
@@ -270,6 +276,7 @@ notifications keep their current behavior.
 | **Chosen: two roots, local direct service** | Clear no-pairing entry; reuses the mobile panel | Phone-owned; copy out; no sync | Adds local persistence and mobile lifecycle handling |
 | Direct-chat button inside a computer or project | Small change | Ambiguous owner | Implies a computer dependency; hidden when none is paired |
 | One merged list of local and remote conversations | One list, one New action | Two authorities, two credentials | Offline, delete and continuation rules become hard to explain |
+| One generation app-wide; cancel on backgrounding | Simplest state, no hidden spend | Unchanged | Blocks a second conversation and kills a reply on any app switch; replaced on review |
 | Per-tab stacks with an always-visible tab bar | Jump between a chat and a computer in one tap | Unchanged | Costs timeline height and complicates the single Back rule; revisit with usage evidence |
 | Router CORS on `/api/auth/session` and `/api/models` | One transport (WebView fetch) | Unchanged | Removes native HTTP, but changes Router's control-plane exposure; Router-side decision |
 | Conversation storage in the remote Gateway | Could reuse RACP calls | Server-owned, shareable | Turns the relay into a data service with a new contract |
@@ -284,8 +291,11 @@ notifications keep their current behavior.
 - The phone now holds a model AccessKey and conversation content, so secret
   separation, account scoping, failure-safe saving and native streaming are core
   requirements, not follow-ups.
-- History does not reach other devices, and generation stops when the phone
-  leaves the foreground.
+- History does not reach other devices. A reply survives a short trip to the
+  background, but not a long one: iOS grants roughly half a minute and Android
+  gives no guarantee, so a long absence still ends as interrupted. Keeping a
+  reply through a long absence needs an Android foreground service or
+  gateway-side generation, each its own decision.
 - Deferred: browser direct chat, arbitrary gateways, attachments, tools, MCP,
   skills, Agent/Plan/Goal, voice, share sheet, summarization, tablet split view,
   a Computers attention badge and cross-device sync.
