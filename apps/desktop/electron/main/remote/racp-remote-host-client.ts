@@ -112,10 +112,19 @@ export type RacpRemoteHostClient = {
   close(): Promise<void>;
 };
 
-/** The two additive services a remote workspace install must advertise. */
+/**
+ * What the live handshake advertised, projected to what a caller can act on.
+ *
+ * `workspaceRead` follows the protocol's three-state answer (§6.2): a Host that
+ * says `false` withholds the file panel, and a Host that says nothing leaves the
+ * decision to its own operation catalog — which is how `agent-host-cli`
+ * behaves — so only an explicit refusal reads as `false` here.
+ */
 export type RemoteWorkspaceCapabilities = {
   workspaceTools: boolean;
   workspaceFiles: boolean;
+  workspaceRead: boolean;
+  remoteHostProfile: boolean;
 };
 
 /**
@@ -152,6 +161,9 @@ export function createRacpRemoteHostClient(
     return {
       workspaceTools: capabilities.workspaceTools === true,
       workspaceFiles: capabilities.workspaceFiles === true,
+      // Omitted means the Host leaves the answer to its operation catalog.
+      workspaceRead: capabilities.workspaceRead !== false,
+      remoteHostProfile: capabilities.remoteHostProfile === true,
     };
   };
   const requireWorkspace = (capability?: keyof RemoteWorkspaceCapabilities) => {

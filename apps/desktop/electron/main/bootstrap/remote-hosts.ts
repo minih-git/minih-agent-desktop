@@ -4,8 +4,10 @@ import {
   IPC,
   type RacpEventEnvelope, type RacpItemSummary, type RacpProjectSummary, type RacpSession,
   type RemoteHostBootstrapRequest, type RemoteHostBootstrapResult,
-  type RemoteHostCreateSessionRequest, type RemoteHostSummary, type RemoteHostBrowseProjectsResult,
+  type RemoteHostCapabilities, type RemoteHostCreateSessionRequest, type RemoteHostSummary,
+  type RemoteHostBrowseProjectsResult, type RemoteHostUpgrade,
   type RemoteHostConnectionStatus, type RemoteHostSyncProvidersRequest, type RemoteHostSyncProvidersResult, type SessionSummary,
+  type RemoteHostTransport,
   type CommandShellOption, isCommandShellOption,
   type WorkspaceFilesRequest,
 } from "@minih-agent/shared";
@@ -19,7 +21,19 @@ import { createSshBootstrap, type SshBootstrapDeps } from "../remote/ssh-bootstr
 import { createSshTunnelManager, type SshTunnelManager } from "../remote/ssh-tunnel.js";
 import { createRemoteHostConnection, type RemoteHostConnection } from "../remote/remote-host-connection.js";
 import { createRemoteHostRegistry, type EncryptionPort, type RemoteHostRecord, type RemoteHostRegistry } from "../remote/remote-host-registry.js";
-import { accountMetadataOf, sshMetadataOf, sshHostRecord, transportOf } from "../remote/remote-host-metadata.js";
+import {
+  accountComputerHostKey,
+  accountComputerUrl,
+  reachableComputers,
+  type AccountComputer,
+} from "../remote/account-join.js";
+import {
+  accountHostRecord,
+  accountMetadataOf,
+  sshMetadataOf,
+  sshHostRecord,
+  transportOf,
+} from "../remote/remote-host-metadata.js";
 import { createRemoteSessionCatalog } from "../remote/remote-session-catalog.js";
 import { syncRemoteProviders } from "../remote/remote-provider-transfer.js";
 import { workspaceExecutionError } from "../remote/remote-workspace-outcome.js";
@@ -31,6 +45,17 @@ export type RemoteWorkspaceToolInput = {
   hostKey: string; path: string; sessionId: string; turnId: string;
   toolCallId: string; toolName: string; args: unknown; timeoutMs?: number;
   expectedCommandShellId?: string; expectedCommandShellDialect?: string;
+};
+/** What one account join round needs: the roster, the token, and the origin. */
+export type AccountJoinInput = {
+  /** The account's computers, as the Gateway listed them. */
+  computers: readonly AccountComputer[];
+  /** This desktop's identity, so its own row can never be created. */
+  selfHostId: string;
+  /** The `https://` origin the Gateway answers on. */
+  publicOrigin: string;
+  /** The account device token every sibling accepted. */
+  deviceToken: string;
 };
 export type BootRemoteHostsOptions = {
   dataDir: string;
@@ -54,6 +79,17 @@ export interface RemoteHostsBoot {
   subscribeSession(sessionId: string, listener: (envelope: RacpEventEnvelope) => void): (() => void) | null;
   closeAll(): Promise<void>;
   list(): Promise<RemoteHostSummary[]>;
+  /**
+   * Join the account's other computers (`GET /v1/account/hosts`, already
+   * filtered by the caller): each one becomes an `account` host record with the
+   * device token every sibling accepts, and is dialled immediately.
+   *
+   * Records for computers that left the account are removed, so the list
+   * reflects the account rather than the sum of every account this desktop ever
+   * joined. Returns the summaries it managed to open; a computer that refuses
+   * the connection stays listed as disconnected with its reason.
+   */
+  joinAccountComputers(input: AccountJoinInput): Promise<RemoteHostSummary[]>;
   addHost(record: RemoteHostRecord): Promise<RemoteHostSummary>;
   bootstrapHost(request: RemoteHostBootstrapRequest): Promise<RemoteHostBootstrapResult>;
   reconnectHost(hostKey: string): Promise<RemoteHostSummary>;
@@ -105,8 +141,24 @@ function isHostVersionMismatch(error: unknown): boolean {
  * only place that is observable, so it is checked once per connect rather than
  * on every `workspace/*` call. Adapters that report no capabilities (tests,
  * legacy callers) are left alone.
+ *
+ * The requirement depends on the transport, because the two topologies ask the
+ * Host for different things:
+ *
+ * - an **SSH** host runs the local-Agent + remote-tools shape, so it must offer
+ *   both owner-grade surfaces (`workspaceTools`, `workspaceFiles`);
+ * - an **account** computer runs the Agent itself, so this desktop only needs
+ *   the remote-host profile and a readable workspace (`remoteHostProfile`, plus
+ *   `workspaceRead` or `workspaceFiles`). Demanding the owner tool surface would
+ *   refuse a perfectly current desktop Host, which never opens `workspace/tool*`
+ *   to an account device (rollout R8 package D).
  */
-function assertWorkspaceCapabilities(adapter: RacpRemoteHostClient): void {
+function assertWorkspaceCapabilities(adapter: RacpRemoteHostClient, transport: RemoteHostTransport): void {
+  // An account computer is never refused here: the page reports it as needing an
+  // upgrade (`RemoteHostSummary.needsUpgrade`), a state the user can act on.
+  // Refusing the connection would hide a machine that is otherwise reachable and
+  // would say nothing about what is missing.
+  if (transport === "account") return;
   const capabilities = adapter.workspaceCapabilities?.();
   if (!capabilities || (capabilities.workspaceTools && capabilities.workspaceFiles)) return;
   throw Object.assign(
@@ -141,6 +193,25 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
     },
   });
   const changed = () => options.emit(IPC.event.sessionsChanged, { reason: "remote.host.changed" });
+  /**
+   * This desktop's own account identity, learned from the last join round.
+   *
+   * Kept here rather than read from the credential store so `list()` stays
+   * synchronous with the registry: the join already knows which computer is
+   * this one, and it is the only writer of account records.
+   */
+  let selfHostId: string | undefined;
+  /**
+   * Whether a record describes this desktop itself.
+   *
+   * An account row whose `hostId` is this machine's is a self-connection: it
+   * would duplicate the local sessions under a `remote:` prefix and let the
+   * user drive this computer through the remote path. It is never listed.
+   */
+  const isSelfRecord = (record: RemoteHostRecord): boolean => {
+    if (!selfHostId) return false;
+    return accountMetadataOf(record)?.hostId === selfHostId;
+  };
   const refresh = async (key: string) => {
     try { await catalog.sessions(key); }
     catch (error) { log("warn", `remote host ${key} session refresh failed`, { error: String(error) }); }
@@ -248,6 +319,9 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
       : record.url;
     if (closed) { await tunnels.close(record.hostKey); throw unavailable(); }
     const adapter = buildAdapter({ ...record, url });
+      // The capability requirement differs per transport: an SSH host is asked
+      // for the owner tool surface, an account computer for the remote-host
+      // profile (see the comment on `assertWorkspaceCapabilities`).
     const connection = createRemoteHostConnection({
       hostKey: record.hostKey, hostLabel: record.label, client: adapter.client, router: options.router,
       emit: (channel, payload) => {
@@ -265,7 +339,7 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
       opened.set(record.hostKey, live);
       await adapter.connect();
       assertOpen();
-      assertWorkspaceCapabilities(adapter);
+      assertWorkspaceCapabilities(adapter, transportOf(record));
       await connection.open();
       assertOpen();
       opened.set(record.hostKey, live);
@@ -336,13 +410,50 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
       return await openHostOnce(realigned);
     }
   }
+  /**
+   * What the last completed handshake advertised, or nothing while unknown.
+   *
+   * Only a connected adapter has handshaken, so a disconnected host reports no
+   * capabilities: the page then shows "unknown" instead of claiming that
+   * computer is behind.
+   */
+  function capabilitiesOf(key: string): RemoteHostCapabilities | undefined {
+    const host = opened.get(key);
+    const capabilities = host?.adapter.workspaceCapabilities?.();
+    if (!capabilities) return undefined;
+    return {
+      remoteHostProfile: capabilities.remoteHostProfile,
+      workspaceRead: capabilities.workspaceRead,
+      workspaceFiles: capabilities.workspaceFiles,
+      workspaceTools: capabilities.workspaceTools,
+    };
+  }
+  /**
+   * Why a connected computer cannot serve what this release needs.
+   *
+   * `remoteHostProfile` gates the session controls, workspace reads, and the
+   * terminal, so a Host that does not advertise it predates those operations.
+   * The file panel is separate: it needs either the viewer-grade
+   * `workspaceRead` (a desktop Host that admitted this connection) or the
+   * owner-grade `workspaceFiles`.
+   */
+  function upgradeOf(capabilities: RemoteHostCapabilities | undefined): RemoteHostUpgrade | undefined {
+    if (!capabilities) return undefined;
+    const missing: (keyof RemoteHostCapabilities)[] = [];
+    if (!capabilities.remoteHostProfile) missing.push("remoteHostProfile");
+    if (!capabilities.workspaceRead && !capabilities.workspaceFiles) missing.push("workspaceRead");
+    return missing.length > 0 ? { reason: "HOST_MISSING_CAPABILITIES", missing } : undefined;
+  }
   function summaryOf(record: RemoteHostRecord): RemoteHostSummary {
     const state = opened.get(record.hostKey)?.adapter.state();
     const status: RemoteHostConnectionStatus = state === "connected" || state === "connecting" || state === "reconnecting"
       ? state
       : state === "error" || actionRequired.has(record.hostKey) ? "action-required" : "disconnected";
+    const capabilities = capabilitiesOf(record.hostKey);
+    const needsUpgrade = upgradeOf(capabilities);
     return { hostKey: record.hostKey, label: record.label, url: opened.get(record.hostKey)?.url ?? record.url,
-      connected: status === "connected", status, transport: transportOf(record) };
+      connected: status === "connected", status, transport: transportOf(record),
+      ...(capabilities ? { capabilities } : {}), ...(needsUpgrade ? { needsUpgrade } : {}) };
   }
   async function addRecord(record: RemoteHostRecord): Promise<RemoteHostSummary> {
     assertOpen();
@@ -417,7 +528,61 @@ export function createRemoteHostsBoot(options: BootRemoteHostsOptions): RemoteHo
       })();
       return closing;
     },
-    async list() { return (await registry.list()).map(summaryOf); },
+    async list() {
+      const records = await registry.list();
+      // This computer is never a remote host of itself: a record for it would
+      // duplicate the local sessions and offer a connection to itself
+      // (rollout R8 package E). Records whose account identity is this desktop
+      // are therefore dropped here rather than at the renderer.
+      return records
+        .filter((record) => !isSelfRecord(record))
+        .map(summaryOf);
+    },
+    async joinAccountComputers(input) {
+      assertOpen();
+      // Remembered before anything is dialled: `list()` uses it to keep this
+      // computer out of its own host list for the rest of the session.
+      selfHostId = input.selfHostId;
+      const reachable = reachableComputers(input.computers, input.selfHostId);
+      const keep = new Set(reachable.map((computer) => accountComputerHostKey(computer.hostId)));
+      const known = await registry.list();
+      // A computer that left the account loses its row; another account's
+      // records are left alone, since this round only speaks for this one.
+      for (const record of known) {
+        if (record.metadata?.transport !== "account") continue;
+        if (keep.has(record.hostKey)) continue;
+        if (accountMetadataOf(record)?.publicOrigin !== input.publicOrigin) continue;
+        await this.removeHost(record.hostKey).catch((error: unknown) => {
+          log("warn", `account host ${record.hostKey} could not be forgotten`, { error: String(error) });
+        });
+      }
+      const summaries: RemoteHostSummary[] = [];
+      for (const computer of reachable) {
+        const hostKey = accountComputerHostKey(computer.hostId);
+        const existing = known.find((record) => record.hostKey === hostKey);
+        // Re-joining with the same token and origin is a refresh, not a new
+        // host: keeping the row avoids dropping its cached sessions on every
+        // account resync.
+        const unchanged = existing
+          && existing.deviceToken === input.deviceToken
+          && existing.label === computer.label
+          && accountMetadataOf(existing)?.publicOrigin === input.publicOrigin;
+        if (unchanged) {
+          summaries.push(summaryOf(existing));
+          continue;
+        }
+        const record = accountHostRecord({
+          hostKey,
+          label: computer.label,
+          url: accountComputerUrl(input.publicOrigin, computer.hostId),
+          deviceToken: input.deviceToken,
+          account: { hostId: computer.hostId, publicOrigin: input.publicOrigin },
+        });
+        summaries.push(await this.addHost(record));
+      }
+      if (summaries.length > 0) changed();
+      return summaries;
+    },
     sessionSummaries: () => catalog.summaries(),
     sessions: catalog.sessions,
     projects: catalog.projects,

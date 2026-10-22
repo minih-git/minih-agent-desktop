@@ -30,6 +30,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   RACP_ACCOUNT_DEVICE_ROUTES,
+  RACP_ACCOUNT_HOSTS_PATH,
   RACP_ACCOUNT_LOGIN_PATH,
   hostProofSigningPayload,
   type RacpAccountDeviceHost,
@@ -208,6 +209,35 @@ export async function requestAccountDevice(
     }
     await sleep(pollIntervalMs);
   }
+}
+
+/**
+ * The account's computers, as the Gateway lists them (`GET /v1/account/hosts`).
+ *
+ * Validated before use: the roster decides which machines this desktop dials, so
+ * a malformed row is dropped rather than trusted. Returns `null` when the
+ * Gateway could not answer, which the caller reports as "not joined yet" instead
+ * of an empty account.
+ */
+export async function listAccountHosts(options: {
+  publicOrigin: string;
+  sessionToken: string;
+  log: (level: "info" | "warn" | "error", message: string, data?: Record<string, unknown>) => void;
+  fetch?: typeof fetch;
+  /** The roster validator, so a malformed row never reaches the registry. */
+  validate: (value: unknown) => { hostId: string; label: string; online: boolean }[];
+}): Promise<{ hostId: string; label: string; online: boolean }[] | null> {
+  const doFetch = options.fetch ?? fetch;
+  const answer = await getJson(
+    doFetch,
+    `${trimOrigin(options.publicOrigin)}${RACP_ACCOUNT_HOSTS_PATH}`,
+    options.sessionToken,
+  );
+  if (!answer.ok) {
+    options.log("warn", "the Gateway refused the account host list", { code: answer.code });
+    return null;
+  }
+  return options.validate(answer.result);
 }
 
 /**

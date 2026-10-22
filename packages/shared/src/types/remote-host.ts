@@ -88,6 +88,42 @@ export type RemoteHostSshMetadata = {
 
 export type RemoteHostConnectionStatus = "connected" | "connecting" | "reconnecting" | "disconnected" | "action-required";
 
+/**
+ * What one paired computer's live RACP handshake advertised (rollout R8
+ * package E).
+ *
+ * The renderer needs this to hide or disable controls that would be refused —
+ * the file panel, the terminal, the tool surface — and to explain why. It
+ * carries capability names only: no credential, URL, or device token reaches
+ * the renderer through it.
+ */
+export type RemoteHostCapabilities = {
+  /** The remote-host operation profile: session controls, workspace, terminal. */
+  remoteHostProfile: boolean;
+  /**
+   * Whether the session workspace panel may be read. `true` also covers a Host
+   * that has no opinion: it omits the field and leaves the answer to its
+   * operation catalog, which is how `agent-host-cli` behaves. Only an explicit
+   * refusal is `false`.
+   */
+  workspaceRead: boolean;
+  /** The owner-grade `workspace/files` surface. */
+  workspaceFiles: boolean;
+  /** The owner-grade `workspace/tool*` execution surface. */
+  workspaceTools: boolean;
+};
+
+/**
+ * Why a paired computer cannot do what this release expects of it yet.
+ *
+ * `missing` names the capabilities the handshake did not advertise, so the page
+ * can say what is missing instead of only "update it".
+ */
+export type RemoteHostUpgrade = {
+  reason: "HOST_MISSING_CAPABILITIES";
+  missing: readonly (keyof RemoteHostCapabilities)[];
+};
+
 export type RemoteHostSummary = {
   hostKey: string;
   label: string;
@@ -97,6 +133,13 @@ export type RemoteHostSummary = {
   status?: RemoteHostConnectionStatus;
   /** Absent on records written before the SSH bootstrap existed → `direct`. */
   transport?: RemoteHostTransport;
+  /**
+   * What the last completed handshake advertised. Absent while disconnected or
+   * before the first handshake, so a page shows "unknown" rather than "broken".
+   */
+  capabilities?: RemoteHostCapabilities;
+  /** Present only when a connected computer is behind this release. */
+  needsUpgrade?: RemoteHostUpgrade;
 };
 
 /**

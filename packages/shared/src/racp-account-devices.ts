@@ -124,6 +124,13 @@ export const RACP_ACCOUNT_DEVICE_ROUTES = {
 export const RACP_ACCOUNT_LOGIN_PATH = "/v1/account/login";
 
 /**
+ * The account directory route a desktop reads its sibling roster on
+ * (`RACP_ACCOUNT_ROUTES.hosts`): the computers of the caller's own account, and
+ * the only source of which machines this desktop may dial.
+ */
+export const RACP_ACCOUNT_HOSTS_PATH = "/v1/account/hosts";
+
+/**
  * `POST /v1/account/devices`: ask the account's Hosts to approve a new device.
  *
  * A `desktop` request must also carry `hostProof` — the applicant's own proof
