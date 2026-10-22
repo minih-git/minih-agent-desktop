@@ -1369,6 +1369,12 @@ sklm: {
     subagentSaved: "{{name}} kaydedildi",
     subagentRestored: "{{name}} varsayılana sıfırlandı",
     projectArchive: "Proje arşivi",
+      accountsAdvancedSection: {
+        title: "Gelişmiş",
+        sshTitle: "SSH ana makineleri",
+        sshDesc: "Hesap modundan önceki gibi SSH ile makine eşleştirin.",
+        sshOpen: "SSH ana makinelerini aç",
+      },
       accountsDevices: {
         title: "Cihazlarım",
         desc: "Hesabınızın bilgisayarları ve onlara erişmesine izin verilen cihazlar.",

@@ -24,6 +24,8 @@ import { MinihRouterAccountSummary } from "./MinihRouterAccountSummary";
 import { OtherProvidersSection } from "./OtherProvidersSection";
 import { RemoteControlSection } from "./RemoteControlSection";
 import { MyDevicesSection } from "./MyDevicesSection";
+import { AccountsAdvancedSection } from "./AccountsAdvancedSection";
+import { ConfigSyncPage } from "./ConfigSyncPage";
 import { useMinihRouterAccount } from "./useMinihRouter";
 import { useRemoteControl } from "./useRemoteControl";
 
@@ -131,6 +133,11 @@ export function AccountsPage() {
           then everything that can reach the account (D666, R8 package F). */}
       <RemoteControlSection control={control} />
       <MyDevicesSection control={control} />
+
+      {/* The existing sync page, embedded: the vault password stays per device
+          and nothing about its behavior moves. */}
+      <ConfigSyncPage />
+      <AccountsAdvancedSection control={control} />
 
       {developerMode ? <OtherProvidersSection defaultOpen /> : null}
     </div>

@@ -20,7 +20,6 @@ import {
   remoteGatewaySwitchDisabled,
 } from "../../lib/remote-gateway-state";
 import { Badge, Button, SettingsToggle } from "../ui";
-import { SelfHostedGatewaySection } from "./SelfHostedGatewaySection";
 import type { RemoteControl } from "./useRemoteControl";
 
 export function RemoteControlSection({ control }: { control: RemoteControl }) {
@@ -188,7 +187,6 @@ export function RemoteControlSection({ control }: { control: RemoteControl }) {
       ) : null}
 
       <PairingCodeBlock control={control} />
-      <SelfHostedGatewaySection control={control} />
     </section>
   );
 }

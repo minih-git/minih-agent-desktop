@@ -519,20 +519,25 @@ a usage tab.
   retired `remoteGateway` destination id resolves to `accounts`, never to an
   empty pane.
 
-- **Planned (R8): one Accounts page, in this order.** The page becomes the
+- **Delivered (R8): one Accounts page, in this order.** The page is the
   single entry for the account and everything that hangs off it, top to bottom:
   **Minih Router account** (sign in once, as above) → **This computer** (the
-  computer's own name and the **Allow same-account computers to join
-  automatically** switch, default on, device-local) → **My devices** (the
-  computers and phones of the account with their online state and revoke
-  action) → **Configuration sync** (the existing `ConfigSyncPage`, embedded,
-  vault password entered once per device) → **Advanced** (SSH hosts, the
-  self-hosted gateway form, and the network center while developer mode is on).
-  A sibling computer admitted through the account route appears in the host
+  computer's own name, the **Allow remote devices** switch, the strict-mode
+  switch, and the **Allow same-account computers to join automatically**
+  switch) → **My devices** (the computers of the account and this desktop's
+  granted devices, with their kind, online state, and revoke action) →
+  **Configuration sync** (the existing `ConfigSyncPage`, embedded, behavior
+  unchanged, vault password entered once per device) → **Advanced** (folded:
+  the SSH hosts entry — the Remote Hosts destination keeps its id — and the
+  self-hosted gateway form, which moves here with its own disclosure). A
+  sibling computer admitted through the account route appears in the host
   list of the New project dialog as an account computer, marked offline or
-  "needs an update" when that applies. The Remote Hosts destination keeps its
-  id and content as the Advanced → SSH hosts entry; it is not deleted. Every
-  new row, switch, and state string goes through i18n like the rest of the page.
+  "needs an update" when that applies. Every new row, switch, and state string
+  goes through i18n like the rest of the page. Two deviations from the earlier
+  draft, recorded where they land: the developer-mode **network center stays
+  inside the Minih Router panel** (the existing user-path test pins it there),
+  and the Advanced SSH entry is a button that navigates to the kept
+  destination rather than an embed of `RemoteHostsPage`.
 
 ### Models (`agent` tab)
 - The models page groups its sections in this order: the **chosen models** as

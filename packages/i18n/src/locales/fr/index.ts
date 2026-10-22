@@ -1368,6 +1368,12 @@ sklm: {
     "subagentSaved": "Enregistré {{name}}",
     "subagentRestored": "{{name}} restauré par défaut",
     "projectArchive": "Archive du projet",
+      accountsAdvancedSection: {
+        title: "Avancé",
+        sshTitle: "Hôtes SSH",
+        sshDesc: "Jumelez une machine par SSH comme avant le compte.",
+        sshOpen: "Ouvrir les hôtes SSH",
+      },
       accountsDevices: {
         title: "Mes appareils",
         desc: "Les ordinateurs de votre compte et les appareils autorisés à y accéder.",

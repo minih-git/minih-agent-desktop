@@ -31,6 +31,7 @@ import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
 import { RemoteControlSection } from "../../apps/desktop/src/components/settings/RemoteControlSection";
 import { MyDevicesSection } from "../../apps/desktop/src/components/settings/MyDevicesSection";
+import { AccountsAdvancedSection } from "../../apps/desktop/src/components/settings/AccountsAdvancedSection";
 import { useRemoteControl } from "../../apps/desktop/src/components/settings/useRemoteControl";
 
 await i18n.use(initReactI18next).init({ lng: "en", keySeparator: false,
@@ -120,14 +121,15 @@ window.minihAgent = { platform: "darwin", channels: IPC,
 
 let view;
 const host = () => document.getElementById("root");
-// The sections take their control from the page; a tiny wrapper provides both
+// The sections take their control from the page; a tiny wrapper provides them
 // the way AccountsPage does, so the probe covers the revoke flow that now
-// lives in My devices.
+// lives in My devices and the self-hosted form that lives in Advanced.
 const SectionHost = () => {
   const control = useRemoteControl();
   return React.createElement(React.Fragment, null,
     React.createElement(RemoteControlSection, { control }),
-    React.createElement(MyDevicesSection, { control }));
+    React.createElement(MyDevicesSection, { control }),
+    React.createElement(AccountsAdvancedSection, { control }));
 };
 const mount = () => { view = createRoot(host()); flushSync(() => view.render(React.createElement(SectionHost))); };
 const frame = () => new Promise(requestAnimationFrame);

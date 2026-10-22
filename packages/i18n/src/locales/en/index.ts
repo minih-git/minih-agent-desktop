@@ -1237,6 +1237,12 @@ sklm: {
     subagentSaved: "Saved {{name}}",
     subagentRestored: "Restored {{name}} to default",
     projectArchive: "Project archive",
+      accountsAdvancedSection: {
+        title: "Advanced",
+        sshTitle: "SSH hosts",
+        sshDesc: "Pair a machine over SSH the way it worked before account mode.",
+        sshOpen: "Open SSH hosts",
+      },
       accountsDevices: {
         title: "My devices",
         desc: "The computers of your account and the devices allowed to reach them.",

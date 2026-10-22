@@ -1368,6 +1368,12 @@ sklm: {
     subagentSaved: "已保存 {{name}}",
     subagentRestored: "已复原 {{name}}",
     projectArchive: "项目归档",
+      accountsAdvancedSection: {
+        title: "高级",
+        sshTitle: "SSH 主机",
+        sshDesc: "以账号体系之前的方式，经 SSH 配对一台机器。",
+        sshOpen: "打开 SSH 主机",
+      },
       accountsDevices: {
         title: "我的设备",
         desc: "账号下的电脑，以及被允许访问它们的设备。",

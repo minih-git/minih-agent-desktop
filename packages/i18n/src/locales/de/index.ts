@@ -1368,6 +1368,12 @@ sklm: {
     "subagentSaved": "Gespeichert {{name}}",
     "subagentRestored": "{{name}} auf Standard zurückgesetzt",
     "projectArchive": "Projektarchiv",
+      accountsAdvancedSection: {
+        title: "Erweitert",
+        sshTitle: "SSH-Hosts",
+        sshDesc: "Rechner wie vor dem Kontomodus über SSH koppeln.",
+        sshOpen: "SSH-Hosts öffnen",
+      },
       accountsDevices: {
         title: "Meine Geräte",
         desc: "Die Computer Ihres Kontos und die Geräte, die darauf zugreifen dürfen.",

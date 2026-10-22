@@ -1359,6 +1359,12 @@ sklm: {
     subagentSaved: "已儲存 {{name}}",
     subagentRestored: "已復原 {{name}}",
     projectArchive: "專案歸檔",
+      accountsAdvancedSection: {
+        title: "進階",
+        sshTitle: "SSH 主機",
+        sshDesc: "以帳號體系之前的方式，經 SSH 配對一台機器。",
+        sshOpen: "開啟 SSH 主機",
+      },
       accountsDevices: {
         title: "我的裝置",
         desc: "帳號下的電腦，以及被允許存取它們的裝置。",

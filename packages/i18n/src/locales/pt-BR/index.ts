@@ -1197,6 +1197,12 @@ export const ptBR = {
     subagentSaved: "Salvo {{name}}",
     subagentRestored: "{{name}} restaurado para o padrão",
     projectArchive: "Arquivo de projeto",
+      accountsAdvancedSection: {
+        title: "Avançado",
+        sshTitle: "Hosts SSH",
+        sshDesc: "Pareie uma máquina por SSH como antes da conta.",
+        sshOpen: "Abrir hosts SSH",
+      },
       accountsDevices: {
         title: "Meus dispositivos",
         desc: "Os computadores da sua conta e os dispositivos autorizados a acessá-los.",

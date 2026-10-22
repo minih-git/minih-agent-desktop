@@ -1375,6 +1375,12 @@ sklm: {
     subagentSaved: "{{name}} 저장됨",
     subagentRestored: "{{name}} 기본값으로 복원됨",
     projectArchive: "프로젝트 보관함",
+      accountsAdvancedSection: {
+        title: "고급",
+        sshTitle: "SSH 호스트",
+        sshDesc: "계정 모드 이전처럼 SSH로 기기를 페어링합니다.",
+        sshOpen: "SSH 호스트 열기",
+      },
       accountsDevices: {
         title: "내 기기",
         desc: "계정의 컴퓨터와 접근이 허용된 기기입니다.",

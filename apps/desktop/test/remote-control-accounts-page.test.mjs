@@ -45,6 +45,11 @@ const check = (value, message) => { if (!value) throw new Error(message); };
 // account.
 useAppStore.setState({ settings: { developerMode: false }, providers: [] });
 
+// Record where the page navigates: the advanced area's SSH entry must reach
+// the kept remoteHosts destination id.
+const navCalls = [];
+useAppStore.subscribe((state) => { if (state.settingsTab) navCalls.push(state.settingsTab); });
+
 const listeners = new Map();
 const calls = [];
 let status = {
@@ -125,6 +130,18 @@ window.freshInstallProbe = async () => {
     "an offline computer must say so: " + computers.textContent);
   check(computers.textContent.includes(navLabel("settings.accountsDevices.kindComputer")),
     "a computer row must be labeled as a computer: " + computers.textContent);
+
+  // Advanced folds the SSH hosts entry behind its own disclosure; opening it
+  // and pressing the button navigates to the kept destination id.
+  const advancedArea = document.querySelector('[data-testid="accounts-advanced"]');
+  check(advancedArea, "the advanced area must exist");
+  check(advancedArea.open === false, "the advanced area must start collapsed");
+  flushSync(() => advancedArea.querySelector("summary").click());
+  check(advancedArea.open === true, "the advanced area did not open");
+  const sshOpen = advancedArea.querySelector('[data-testid="accounts-advanced-ssh-open"]');
+  check(sshOpen, "the SSH hosts entry must be reachable from advanced");
+  flushSync(() => sshOpen.click());
+  await until(() => navCalls.includes("remoteHosts"), "the SSH entry did not navigate to remoteHosts");
 
   // Account mode is offered and the switch that enrolls this desktop is usable.
   const accountMode = document.querySelector('[data-testid="remote-gateway-account-mode"]');
