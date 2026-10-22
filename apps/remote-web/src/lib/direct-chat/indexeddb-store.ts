@@ -113,8 +113,9 @@ async function readAll<T>(
 
 export type IndexedDbStoreOptions = {
   /**
-   * Called when opening fails, so the caller can report a storage failure once
-   * instead of surfacing it from every read.
+   * Called when opening fails or when this connection is closed from outside,
+   * so the caller can report a storage failure once instead of surfacing it
+   * from every read.
    */
   onError?: (error: Error) => void;
 };
@@ -135,7 +136,24 @@ export function createIndexedDbDirectChatStore(
   const database = (): Promise<IDBDatabase> => {
     const factory = indexedDb();
     if (!factory) return Promise.reject(new Error("this build has no local database"));
-    opening ??= openDatabase(factory).catch((cause: unknown) => {
+    opening ??= openDatabase(factory).then((connection) => {
+      /**
+       * Another context wants to upgrade the database - a newer build of the app,
+       * or a second window. Holding the connection open blocks it for ever, so
+       * this side closes, forgets the cached connection and says so: the next
+       * operation reopens and either works against the new schema or reports
+       * that it cannot.
+       */
+      connection.onversionchange = () => {
+        connection.close();
+        opening = null;
+        options.onError?.(new Error("the local database was upgraded elsewhere; it will be reopened"));
+      };
+      connection.onclose = () => {
+        opening = null;
+      };
+      return connection;
+    }).catch((cause: unknown) => {
       const error = cause instanceof Error ? cause : new Error(String(cause));
       options.onError?.(error);
       // Forget the failure so a later call can retry, rather than holding a
