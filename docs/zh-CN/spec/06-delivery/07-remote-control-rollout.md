@@ -558,9 +558,11 @@ D666（2026-10-18，ADR `remote-control-router-account-binding`）在 R4–R6 �
   该头，继续使用 `RACP-HTTP` + SSE），并复用现有的 hash 快速拒绝、限流与审计；它只是传输，
   不是第二条授权路径。**工作包 A–D 已实现**（契约、Gateway 的 proof 签发与转发、Host 自己
   校验并自动授予、桌面端的 `account` 传输与开关三态，以及工作包 D 的会话删除与按连接
-  `workspaceRead` 能力门禁的只读文件面板）。工作包 E 已分两层实现：账号电脑带着能力与升级
-  状态进入主机列表，新建项目把它们作为独立来源（见下）。侧栏分组、那里的离线与「需要升级」
-  状态，以及工作包 F 尚未实现；
+  `workspaceRead` 能力门禁的只读文件面板）。工作包 E 已分三层实现：账号电脑带着能力与升级
+  状态进入主机列表；新建项目把它们作为独立来源（见下）；侧栏按电脑分组远程项目并写明
+  离线与「需要升级」原因；远程会话从所属电脑的模型目录选择模型（`model/list` +
+  `session/configure`），显示只读文件面板，删除走 `session/delete`，且该电脑离线时
+  禁止发送并说明原因。工作包 F 尚未实现；
 - 工作包 D 只对 desktop 类设备开放 `session/delete` 与 `workspace/list|read|diff`，复用
   `packages/host-runtime` 的共享实现（同一「空闲才可改」规则返回 `AGENT_BUSY`、同一会话根
   包含校验、同一体积上限），并把远程删除接到桌面自己的删除 IPC，使运行时清理只跑一次。

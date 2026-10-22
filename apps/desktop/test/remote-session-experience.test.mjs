@@ -74,3 +74,19 @@ test("the composer consumes the remote catalog and gate through one-line hooks",
   // The offline reason is displayed, not just enforced.
   assert.match(composer, /remotePromptGate\.offline \? \(/);
 });
+
+test("a remote conversation shows the file panel and never the local terminal or tools", async () => {
+  const workPanel = await readFile(new URL("../src/components/workpanel/WorkPanel.tsx", import.meta.url), "utf8");
+  const branch = (workPanel.match(/if \(session && isRemoteSession\(session\)\) \{\s*return <RemoteWorkspace[\s\S]*?\n  \}/) ?? [""])[0];
+  assert.ok(branch.length > 0, "a remote session renders the remote file panel");
+  // The local panel (terminal, tools, local workspace) only exists below the
+  // remote branch, so it cannot appear for B's conversations.
+  assert.match(workPanel, /if \(sessionId\?\.startsWith\("remote:"\)\) return null;/);
+  const catalog = await readFile(new URL("../electron/main/remote/remote-transcript.ts", import.meta.url), "utf8");
+  assert.match(catalog, /canUseLocalTools: false, canUseTerminal: false/);
+  // Deletion goes through the Host's session/delete; the local transcript cleanup
+  // is renderer-side only. The workspace panel reads through workspace/list|read|diff.
+  const backend = await readFile(new URL("../electron/main/remote/remote-backend.ts", import.meta.url), "utf8");
+  assert.match(backend, /case IPC\.invoke\.sessionDelete: \{[\s\S]*?"session\/delete"/);
+  assert.match(backend, /const method = channel === IPC\.invoke\.fsList \? "workspace\/list"\s*: channel === IPC\.invoke\.fsRead \? "workspace\/read" : "workspace\/diff";/);
+});

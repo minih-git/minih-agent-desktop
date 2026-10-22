@@ -491,10 +491,14 @@ Scope notes:
   verification with automatic admission, the desktop's `account` transport with
   the switch's three states, and package D's session delete plus the read-only
   file panel behind the per-connection `workspaceRead` capability). Package E is
-  implemented in two layers: the account computers reach the host list with
-  their capabilities and upgrade state, and New project offers them as their own
-  source (below). The sidebar grouping, the offline and needs-an-update states
-  there, and package F are not;
+  implemented in three layers: the account computers reach the host list with
+  their capabilities and upgrade state, New project offers them as their own
+  source (below), the sidebar groups remote projects per computer with the
+  offline and needs-an-update reasons stated there, and a remote conversation
+  picks its model from the owning computer's catalog (`model/list` +
+  `session/configure`), shows the read-only file panel, deletes through
+  `session/delete`, and refuses sending while that computer is offline with the
+  reason shown. Package F is not;
 - package D opens `session/delete` and `workspace/list|read|diff` to a
   desktop-class device only, reuses the shared `packages/host-runtime`
   implementations (one idle rule answering `AGENT_BUSY`, one session-root
