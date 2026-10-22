@@ -158,6 +158,10 @@ describe("a same-account computer reaches its sibling over the Gateway", () => {
     }, "the desktop device grant", 10_000);
     expect(granted.token?.startsWith("pdt1.")).toBe(true);
 
+    // The sibling adopts the device over its own Host link, in the background:
+    // start every test from a sibling that already accepts this credential.
+    await waitForSiblingToAccept(gateway, "host_sibling_b", granted.token as string);
+
     return { stub, gateway, desktop, sibling, token: granted.token as string, dataDir };
   }
 
@@ -174,12 +178,17 @@ describe("a same-account computer reaches its sibling over the Gateway", () => {
     const url = `ws://${target.gateway.client.host}:${target.gateway.client.port}/v1/hosts/${encodeURIComponent(hostId)}/ws`;
     const socket = new WebSocket(url, { headers: { authorization: `Bearer ${token}` } });
     const frames: Array<Record<string, unknown>> = [];
+    /** Set when the Gateway closed the route, so a wait can say why. */
+    let closedOnUs: { code: number; reason: string } | null = null;
     socket.on("message", (data: Buffer) => {
       try {
         frames.push(JSON.parse(data.toString("utf8")) as Record<string, unknown>);
       } catch {
         // A frame this test does not read.
       }
+    });
+    socket.on("close", (code: number, reason: Buffer) => {
+      closedOnUs = { code, reason: reason.toString("utf8") };
     });
     return {
       socket,
@@ -195,11 +204,54 @@ describe("a same-account computer reaches its sibling over the Gateway", () => {
           );
         }),
       waitForFrame: (predicate: (frame: Record<string, unknown>) => boolean, label: string) =>
-        waitForAsync(async () => frames.find(predicate), `the relay to receive ${label}`, 10_000),
+        waitForAsync(
+          async () => {
+            const found = frames.find(predicate);
+            // Nothing will ever arrive on a closed route: say why, instead of
+            // running the whole deadline out and reporting a bare timeout.
+            if (!found && closedOnUs) {
+              throw new Error(
+                `the relay closed (${closedOnUs.code} ${closedOnUs.reason}) while waiting for the relay to receive ${label}`,
+              );
+            }
+            return found;
+          },
+          `the relay to receive ${label}`,
+          10_000,
+        ),
       close: () => {
         if (socket.readyState === socket.OPEN || socket.readyState === socket.CONNECTING) socket.close();
       },
+      closed: () => closedOnUs,
     };
+  }
+
+  /**
+   * Wait until the sibling accepts this credential.
+   *
+   * The Gateway relays a device grant to the other computers of the account
+   * over their Host links, in the background: a route opened the instant the
+   * device is granted can still be refused once with `UNAUTHORIZED`. Probe with
+   * a throwaway route until one stays open, so each test starts from a sibling
+   * that has the device — the refusal itself is what `refuses the sibling route
+   * with a phone-grade token…` covers on purpose.
+   */
+  async function waitForSiblingToAccept(target: TestGateway, hostId: string, token: string): Promise<void> {
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+      const probe = openRelay(target, hostId, token);
+      await probe.opened();
+      let refused = false;
+      for (let waited = 0; waited < 300 && !refused; waited += 20) {
+        if (probe.closed()) refused = true;
+        else await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      probe.close();
+      if (!refused) return;
+      if (Date.now() > deadline) {
+        throw new Error("the sibling never accepted the granted device credential");
+      }
+    }
   }
 
   const INITIALIZE = {
