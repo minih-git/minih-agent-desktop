@@ -575,7 +575,20 @@ Exit criteria:
    provider chunks produced 11–13 `item.delta` events, so deltas are already
    coalesced somewhere between the provider stream and the RACP event, and a
    second merge would be added blind. If an online measurement later shows a
-   delta problem, the existing merge point is located first.
+   delta problem, the existing merge point is located first. **Delivered
+   (2026-10-22) with its own measurement** (`scripts/measure-p7-attach.mjs`,
+   loopback RACP-WS, one real Host, seven sessions, 40 iterations per
+   strategy, attach-to-all-ready): the pre-P7 serial full-snapshot path
+   measured p50 4.9 ms / p95 5.5 ms, the parallelism alone p50 2.3 ms /
+   p95 2.9 ms, and the shipped combination (parallelism three plus
+   `snapshotHistoryLimit: 0`) p50 1.8 ms / p95 2.3 ms — a 2.1× open gain from
+   the structure and a further ~20% from not shipping transcript pages the
+   connection never reads. Loopback understates the win: on a real network the
+   serial path pays seven round trips where the shipped one pays about three.
+   The measured sessions were empty, so the snapshot-boundary gain shown here
+   is the parameter handling, not transcript bytes; a Host caps a snapshot at
+   its own default page regardless of conversation length, which is why the
+   2000-line scenario costs the same as this one on the attach path.
 
 ### Reserved — gRPC binding
 

@@ -599,4 +599,11 @@ D666（2026-10-18，ADR `remote-control-router-account-binding`）在 R4–R6 �
 其中只保留已被确证的一项——有上限的并行 attach 加 `session/history` 分页——并**删去「流式
 delta 合并」**：本地 stub 的 40 个 provider chunk 只产生 11–13 个 `item.delta`，说明 provider
 流到 RACP 事件之间已经存在合并，再合并一次等于盲改；若线上测量再发现 delta 问题，先定位
-现有合并点。
+现有合并点。**P7 已于 2026-10-22 交付并自带实测**（`scripts/measure-p7-attach.mjs`，
+loopback RACP-WS、一台真实 Host、七个会话、每策略 40 次迭代，从开始 attach 到全部就绪）：
+改前串行完整快照 p50 4.9 ms / p95 5.5 ms，仅并行化 p50 2.3 ms / p95 2.9 ms，交付组合
+（并发 3 + `snapshotHistoryLimit: 0`）p50 1.8 ms / p95 2.3 ms——结构带来 2.1× 提升，
+不再传输连接层不读的转录页又省约 20%。loopback 低估了收益：真实网络上串行路径要付七次
+往返，交付方案约三次。实测会话为空，所以这里的快照边界收益只是参数处理本身；Host 的
+快照本来就按自身默认页封顶、与会话长度无关，这正是 2000 行场景在 attach 路径上与本测试
+等价的原因。
