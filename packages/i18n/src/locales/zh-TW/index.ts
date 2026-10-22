@@ -2185,6 +2185,8 @@ sklm: {
     runsLocallyWithRemoteTools: "Agent 在本機執行，工具在遠端主機上執行。",
     hostOfflineReason: "該電腦目前離線。請先重新連線，再在它上面建立專案。",
     hostNeedsUpdateReason: "該電腦需要更新，才能從這裡執行專案。",
+    hostOfflineBadge: "離線 — 唯讀",
+    hostNeedsUpdateBadge: "需要升級 — 唯讀",
     createRepositoryLabel: "倉庫位址",
     createChooseLocation: "選擇資料夾",
     createLocationHint: "複製存放的位置",

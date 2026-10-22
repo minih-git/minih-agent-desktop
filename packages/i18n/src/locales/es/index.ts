@@ -2194,6 +2194,8 @@ sklm: {
     "runsLocallyWithRemoteTools": "El agente se ejecuta aquí y usa herramientas en el host remoto.",
     "hostOfflineReason": "Ese ordenador está desconectado. Reconéctelo para crear un proyecto allí.",
     "hostNeedsUpdateReason": "Ese ordenador necesita una actualización antes de ejecutar proyectos desde aquí.",
+    "hostOfflineBadge": "Sin conexión — solo lectura",
+    "hostNeedsUpdateBadge": "Necesita una actualización — solo lectura",
     "createRepositoryLabel": "URL del repositorio",
     "createChooseLocation": "Elegir carpeta",
     "createLocationHint": "Carpeta donde se guarda el clon",

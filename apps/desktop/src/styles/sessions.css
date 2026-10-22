@@ -464,6 +464,18 @@
   }
 }
 
+/* Why a remote project's group takes no new work right now: the computer is
+ * offline or behind this release. A quiet note, not an error surface — the rows
+ * stay readable, only new work is refused. */
+.sidebar-remote-group-status {
+  margin: 0;
+  padding: 2px 12px 4px 13px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-tertiary);
+}
+
+
 .thread-item-more:hover,
 .thread-item-more:focus-visible,
 .thread-item-more[aria-expanded="true"] {

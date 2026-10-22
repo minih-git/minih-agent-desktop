@@ -2195,6 +2195,8 @@ sklm: {
     "runsLocallyWithRemoteTools": "Der Agent läuft hier und führt Werkzeuge auf dem entfernten Host aus.",
     "hostOfflineReason": "Dieser Computer ist offline. Verbinden Sie ihn erneut, um dort ein Projekt zu erstellen.",
     "hostNeedsUpdateReason": "Dieser Computer braucht ein Update, bevor er Projekte von hier ausführen kann.",
+    "hostOfflineBadge": "Offline — schreibgeschützt",
+    "hostNeedsUpdateBadge": "Update erforderlich — schreibgeschützt",
     "createRepositoryLabel": "Repository-URL",
     "createChooseLocation": "Ordner wählen",
     "createLocationHint": "Zielordner des Klons",

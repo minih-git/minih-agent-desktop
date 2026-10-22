@@ -2202,6 +2202,8 @@ sklm: {
     runsLocallyWithRemoteTools: "Aracı burada çalışır, araçları uzak ana bilgisayarda yürütür.",
     hostOfflineReason: "O bilgisayar çevrimdışı. Orada proje oluşturmak için yeniden bağlanın.",
     hostNeedsUpdateReason: "O bilgisayarın buradan proje çalıştırabilmesi için güncellenmesi gerekiyor.",
+    hostOfflineBadge: "Çevrimdışı — salt okunur",
+    hostNeedsUpdateBadge: "Güncelleme gerekli — salt okunur",
     createRepositoryLabel: "Depo adresi",
     createChooseLocation: "Klasör seç",
     createLocationHint: "Klonun kaydedileceği yer",

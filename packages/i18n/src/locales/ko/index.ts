@@ -2206,6 +2206,8 @@ sklm: {
     runsLocallyWithRemoteTools: "에이전트는 여기서 실행되고 도구는 원격 호스트에서 실행됩니다.",
     hostOfflineReason: "해당 컴퓨터가 오프라인입니다. 다시 연결한 뒤 프로젝트를 만드세요.",
     hostNeedsUpdateReason: "해당 컴퓨터를 업데이트해야 여기서 프로젝트를 실행할 수 있습니다.",
+    hostOfflineBadge: "오프라인 — 읽기 전용",
+    hostNeedsUpdateBadge: "업데이트 필요 — 읽기 전용",
     createRepositoryLabel: "저장소 주소",
     createChooseLocation: "폴더 선택",
     createLocationHint: "클론을 저장할 위치",

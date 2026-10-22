@@ -2222,6 +2222,8 @@ sklm: {
     runsLocallyWithRemoteTools: "The Agent runs on this computer and executes tools on the remote host.",
     hostOfflineReason: "That computer is offline. Reconnect it to create a project there.",
     hostNeedsUpdateReason: "That computer needs an update before it can run projects from here.",
+    hostOfflineBadge: "Offline — read-only",
+    hostNeedsUpdateBadge: "Needs an update — read-only",
     createRepositoryLabel: "Repository URL",
     createChooseLocation: "Choose folder",
     createLocationHint: "Where the clone is saved",

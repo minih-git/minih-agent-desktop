@@ -2164,6 +2164,8 @@ export const ptBR = {
     runsLocallyWithRemoteTools: "O agente é executado aqui e usa ferramentas no host remoto.",
     hostOfflineReason: "Esse computador está offline. Reconecte-o para criar um projeto nele.",
     hostNeedsUpdateReason: "Esse computador precisa de atualização antes de executar projetos daqui.",
+    hostOfflineBadge: "Offline — somente leitura",
+    hostNeedsUpdateBadge: "Precisa de atualização — somente leitura",
     createRepositoryLabel: "URL do repositório",
     createChooseLocation: "Escolher pasta",
     createLocationHint: "Onde o clone será salvo",

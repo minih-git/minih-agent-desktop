@@ -2195,6 +2195,8 @@ sklm: {
     "runsLocallyWithRemoteTools": "L'agent s'exécute ici et utilise les outils de l'hôte distant.",
     "hostOfflineReason": "Cet ordinateur est hors ligne. Reconnectez-le pour y créer un projet.",
     "hostNeedsUpdateReason": "Cet ordinateur doit être mis à jour avant de pouvoir exécuter des projets ici.",
+    "hostOfflineBadge": "Hors ligne — lecture seule",
+    "hostNeedsUpdateBadge": "Mise à jour requise — lecture seule",
     "createRepositoryLabel": "URL du dépôt",
     "createChooseLocation": "Choisir un dossier",
     "createLocationHint": "Dossier d'enregistrement du clone",

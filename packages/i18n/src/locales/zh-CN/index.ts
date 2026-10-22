@@ -2194,6 +2194,8 @@ sklm: {
     runsLocallyWithRemoteTools: "Agent 在本机运行，工具在远程主机上执行。",
     hostOfflineReason: "该电脑当前离线。请先重新连接，再在它上面创建项目。",
     hostNeedsUpdateReason: "该电脑需要升级，才能从这里运行项目。",
+    hostOfflineBadge: "离线 — 只读",
+    hostNeedsUpdateBadge: "需要升级 — 只读",
     createRepositoryLabel: "仓库地址",
     createChooseLocation: "选择文件夹",
     createLocationHint: "克隆保存的位置",
