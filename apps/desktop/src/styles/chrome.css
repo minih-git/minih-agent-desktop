@@ -697,6 +697,10 @@
   background: var(--ds-tile);
 }
 
+.conversation-topbar .ct-icon-btn[aria-pressed="true"] {
+  background: var(--ds-bg-active);
+  color: var(--ds-text-primary);
+}
 /* Keep the sole work-panel toggle anchored to the viewport while the in-flow
  * panel changes MainPane width. AppShell ownership keeps it available on every
  * non-Settings route and above the panel header throughout both animations. */
