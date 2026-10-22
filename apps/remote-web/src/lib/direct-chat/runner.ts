@@ -26,6 +26,8 @@ import { streamDirectReply, type DirectStreamResult, type DirectTurn } from "./s
 
 /** How often streamed text is written while a reply arrives. */
 const CHECKPOINT_INTERVAL_MS = 700;
+/** How often the view is told about text that has not been written yet. */
+const PAINT_INTERVAL_MS = 100;
 
 export type DirectChatRunState =
   | { phase: "idle" }
@@ -71,6 +73,8 @@ export type DirectChatRunner = {
     protocol: DirectProtocol;
     authKey: string;
   }): Promise<StartReplyOutcome>;
+  /** The text received by the live run, for a view that paints before a checkpoint. */
+  streamingText(): string;
   /** Record that the app is going away, so a live attempt is not left pending. */
   dispose(): void;
 };
@@ -140,6 +144,7 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
     let stopped = false;
     let latest = "";
     let lastFlush = 0;
+    let lastPaint = 0;
     let flushFailure: string | null = null;
 
     const isLive = (): boolean => current?.runId === input.runId;
@@ -174,6 +179,14 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
           if (event.type === "text") {
             latest += event.text;
             if (current?.runId === input.runId) current.received = latest;
+            // The screen shows the reply as it arrives rather than waiting for the
+            // next checkpoint; the gate keeps a fast stream from re-rendering per
+            // token while still feeling live.
+            const stamp = now().getTime();
+            if (stamp - lastPaint >= PAINT_INTERVAL_MS) {
+              lastPaint = stamp;
+              announce();
+            }
             // Coalesce: one write per interval, not one per delta.
             const nowMs = now().getTime();
             if (nowMs - lastFlush >= CHECKPOINT_INTERVAL_MS) {
@@ -335,6 +348,10 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
         protocol: input.protocol,
         authKey: input.authKey,
       });
+    },
+
+    streamingText() {
+      return current?.received ?? "";
     },
 
     dispose() {

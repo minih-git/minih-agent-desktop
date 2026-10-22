@@ -160,7 +160,10 @@ export function createIndexedDbDirectChatStore(
       return rows.sort((a, b) => a.order - b.order);
     },
     async attempts(conversationId) {
-      return readAll<DirectChatAttempt>(await database(), ATTEMPTS, conversationId);
+      const rows = await readAll<DirectChatAttempt>(await database(), ATTEMPTS, conversationId);
+      // IndexedDB returns rows in key order, and the keys are random ids: the
+      // caller needs them in the order the replies actually started.
+      return rows.sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.id.localeCompare(b.id));
     },
 
     async transact<T>(work: (tx: DirectChatTransaction) => Promise<T>): Promise<T> {

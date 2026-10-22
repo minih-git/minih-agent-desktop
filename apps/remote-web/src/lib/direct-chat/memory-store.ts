@@ -53,7 +53,10 @@ export function createMemoryDirectChatStore(): MemoryDirectChatStore {
       return sortedMessages(conversationId);
     },
     async attempts(conversationId) {
-      return [...attempts.values()].filter((attempt) => attempt.conversationId === conversationId);
+      // The same order the IndexedDB adapter guarantees: when the replies started.
+      return [...attempts.values()]
+        .filter((attempt) => attempt.conversationId === conversationId)
+        .sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.id.localeCompare(b.id));
     },
 
     async transact(work) {

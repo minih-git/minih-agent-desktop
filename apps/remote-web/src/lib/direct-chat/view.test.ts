@@ -193,3 +193,31 @@ describe("copying as Markdown", () => {
     expect(completionMarker(attempt({ id: "x", state: "streaming" }))).toContain("Still being received");
   });
 });
+
+describe("a reply that has not started writing yet", () => {
+  it("is a live row, so the screen can offer Stop before the first token", () => {
+    const view = projectDirectTranscript(
+      transcript({
+        messages: [{ id: "m1", conversationId: "c1", order: 1, role: "user", text: "hello", createdAt: T0 }],
+        attempts: [attempt({ id: "a1", state: "pending" })],
+      }),
+    );
+    // The attempt produced no message, yet the reply must be visible and live.
+    expect(view.liveAttempt?.id).toBe("a1");
+    const liveRow = view.items.find((item) => item.id === "live-a1");
+    expect(liveRow?.status).toBe("streaming");
+    expect(liveRow?.role).toBe("assistant");
+    expect(liveRow?.agentName).toBe("M Chat");
+  });
+
+  it("shows the text that has arrived before the first checkpoint", () => {
+    const view = projectDirectTranscript(
+      transcript({
+        messages: [{ id: "m1", conversationId: "c1", order: 1, role: "user", text: "hello", createdAt: T0 }],
+        attempts: [attempt({ id: "a1", state: "streaming" })],
+      }),
+      { liveText: "the first words" },
+    );
+    expect(view.items.find((item) => item.id === "live-a1")?.text).toBe("the first words");
+  });
+});

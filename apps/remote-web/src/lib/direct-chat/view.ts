@@ -17,6 +17,7 @@
  */
 import type { TimelineItem } from "../timeline-types.js";
 import type { DirectChatAttempt, DirectChatTranscript } from "./history-store.js";
+import { liveAttemptOf } from "./history.js";
 
 export type DirectChatView = {
   items: TimelineItem[];
@@ -33,11 +34,19 @@ function labelOf(attempt: DirectChatAttempt | undefined): string | undefined {
   return attempt?.modelLabel || attempt?.modelId || undefined;
 }
 
-export function projectDirectTranscript(transcript: DirectChatTranscript): DirectChatView {
+export function projectDirectTranscript(
+  transcript: DirectChatTranscript,
+  options: { liveText?: string } = {},
+): DirectChatView {
+  const liveText = options.liveText ?? "";
   const attemptsById = new Map(transcript.attempts.map((attempt) => [attempt.id, attempt]));
   const items: TimelineItem[] = [];
   let previousModel: string | null = null;
-  let liveAttempt: DirectChatAttempt | null = null;
+  /**
+   * Read from the attempts, not from the messages: a reply that has not produced
+   * text yet still has no row, and the screen must offer Stop for it.
+   */
+  const liveAttempt = liveAttemptOf(transcript.attempts);
 
   for (const message of transcript.messages) {
     const attempt = message.attemptId ? attemptsById.get(message.attemptId) : undefined;
@@ -68,16 +77,31 @@ export function projectDirectTranscript(transcript: DirectChatTranscript): Direc
     }
     previousModel = attempt.modelId;
     const live = attempt.state === "streaming" || attempt.state === "pending";
-    if (live) liveAttempt = attempt;
     items.push({
       id: message.id,
       turnId: attempt.id,
       itemType: "message",
       status: live ? "streaming" : "completed",
       role: "assistant",
-      text: message.text,
+      // A live reply shows what has arrived, even before its first checkpoint.
+      text: live && liveText.length >= message.text.length ? liveText : message.text,
       ...(labelOf(attempt) ? { agentName: labelOf(attempt) } : {}),
       modelId: attempt.modelId,
+    });
+  }
+
+  // A live reply that has not produced its first token still gets a row, so the
+  // reader sees that an answer is coming rather than an idle composer.
+  if (liveAttempt && !transcript.messages.some((message) => message.attemptId === liveAttempt.id)) {
+    items.push({
+      id: `live-${liveAttempt.id}`,
+      turnId: liveAttempt.id,
+      itemType: "message",
+      status: "streaming",
+      role: "assistant",
+      text: liveText,
+      ...(labelOf(liveAttempt) ? { agentName: labelOf(liveAttempt) } : {}),
+      modelId: liveAttempt.modelId,
     });
   }
 

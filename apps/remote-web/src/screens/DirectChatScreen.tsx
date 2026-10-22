@@ -88,7 +88,7 @@ export function DirectChatScreen({
     setBusyElsewhere(state.phase === "running" && state.conversationId !== conversationId);
   }, [runner, conversationId, transcript]);
 
-  const view = transcript ? projectDirectTranscript(transcript) : null;
+  const view = transcript ? projectDirectTranscript(transcript, { liveText: runner.streamingText() }) : null;
   const conversation = transcript?.conversation ?? null;
   const attempts = transcript?.attempts ?? [];
   const idle = isIdle(attempts);
