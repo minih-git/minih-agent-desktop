@@ -195,6 +195,34 @@ window.freshInstallProbe = async () => {
       ?.contains(advanced()),
     "the self-hosted form must live in the accounts advanced area",
   );
+  // A registration through the account instead, which is what the switch does:
+  // the advanced area stops offering the self-hosted form and reads as
+  // registered, so someone who opens it sees who registered this desktop and is
+  // not offered a second way to enroll.
+  status = {
+    state: "connecting",
+    since: "2026-10-18T00:00:00.000Z",
+    enabled: true,
+    enrolled: true,
+    hostId: "host_desktop",
+    strictDevices: false,
+    accountMode: { available: true, url: "wss://gateway.example.com/hostlink" },
+  };
+  for (const callback of listeners.get(IPC.event.remoteGatewayStatusChanged) ?? []) callback(status);
+  await until(
+    () => advanced().open === false,
+    "an account registration must fold the self-hosted area again",
+  );
+  flushSync(() => advanced().querySelector("summary").click());
+  check(advanced().open === true, "the self-hosted area did not open");
+  check(
+    document.body.textContent.includes(label("accountEnrollTitle")),
+    "a desktop the account registered must read as registered inside the self-hosted area",
+  );
+  check(
+    !document.body.textContent.includes(label("accountEnrollPendingTitle")),
+    "a desktop the account registered must not read as pending",
+  );
 
   flushSync(() => view.unmount());
   return { passed: true };
