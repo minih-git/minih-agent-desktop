@@ -1339,10 +1339,14 @@ type McpOAuthLoginEvent = {
   | { kind: "authUrl"; url: string; instructions?: string; opened: boolean }
   | { kind: "progress"; message: string }
   | { kind: "done"; status: McpServerStatus }
-  | { kind: "error"; message: string }
+  | { kind: "error"; message: string; errorCode?: "MCP_OAUTH_DCR_UNAVAILABLE" }
   | { kind: "cancelled" }
 );
 ```
+
+没有可复用的已存客户端、且授权服务器不提供动态客户端注册端点时，
+在打开浏览器前停止授权，错误事件携带 `MCP_OAUTH_DCR_UNAVAILABLE`。
+设置页本地化该错误的恢复指引，未知错误仍保留可读详情；不新增手动注册客户端设置。
 
 #### 状态与凭证存储
 - `McpServerStatus` 包含：
@@ -1458,6 +1462,9 @@ Chrome 和代理 CDP 位于随应用打包的 `pi.browser` 插件中，通过 `p
 - `fs/reveal({path})` → 在 Finder 中显示。包含范围与 `fs/read` 相同。
 - `fs/open({path, mimeType?})` → 用系统默认应用打开已有的普通文件。与 `fs/read` 一样校验真实路径包含范围，拒绝通过符号链接逃逸。对于声明为 `video/mp4` 的无后缀 `attachments/<sha256>` blob，宿主在私有应用数据目录建立 `.mp4` 符号链接后再交给系统，不复制视频字节。
 - `fs/resolveRef({ref, sessionId?})` → `FsChatRefResolveResult`（`{ match: FsChatRefMatch | null }`，match 指出应答的 `root`（`workspace` / `scratch` / `attachments`）、相对该应答根的 `relativePath`、绝对路径 `absolutePath` 与 `matchedBy`（`exact-relative` / `exact-absolute` / `path-suffix` / `basename`），以及在 `workspace` 命中时给出的 `projectRoot`（`{ path, name, primary }`，指出是哪个文件夹应答的））；`sessionId` 决定查哪个会话的临时目录。它补全智能体在聊天里打印的文件引用，因为渲染器看不到会话自己的临时目录：已经在某个已知根内指向真实文件的绝对引用直接胜出，`attachments/<sha256>` blob 直接对附件库解析；否则按优先级顺序搜索各根——整个打开的项目、再会话自己的临时目录（`<data_dir>/scratch/<sessionId>/`，ADR 0124）、最后附件库——第一个给出结果的根胜出。项目指的是打开的工作区背后的文件夹组（ADR 0249）：主文件夹先应答，其余文件夹随后按项目组自身顺序搜索（ADR 0263），因此简写落在同级文件夹里和落在主文件夹里一样自然，命中结果也指出是哪个文件夹应答的。同一个根内精确路径优先于简写；简写之间最长匹配尾优先，其次路径更浅者。文件面板的忽略集合同样生效。什么都没匹配到时返回 `match: null`；解析本身不打开任何东西（ADR 0262）。
+- 隔离工作树会话对父 checkout 内的绝对文件引用，仅在工作树有同相对路径文件时
+  映射到分支副本。最终仍校验真实路径；父目录独有文件和目录保留仅定位、不读取的
+  边界。渲染器保留命中工作树的绝对路径，不把它转回父 checkout 的相对路径。
 - `fs/list` 仍只限工作区；外面的遍历被拒绝（`INVALID_ARGUMENT`）。
 
 ## 13b. 桌面菜单和窗口 API
@@ -1675,6 +1682,20 @@ type FsIndexEntry = { path: string; kind: "file" | "dir" };
 从文件路径派生的目录，8000 个条目上限，`truncated: true`，
 每个根的短 TTL 缓存。无法关闭到空列表而没有
 工作区。模糊过滤发生在渲染器端。
+
+### fs/search
+
+```ts
+fs/search({ sessionId?: string; query: string }) -> FsIndexResult
+```
+
+只读 Electron 通道 `minih-agent-desktop/fs/search`：本地 `fs/index` 被截断时，
+非空 `@` 查询在停止输入 150ms 后触发深层搜索。主进程最多对 200,000 条清单
+排序并返回最佳 50 条，查询最多 256 字符，非 Git 深层遍历预算为 2 秒。保留
+Git／文件面板忽略规则和工作树根隔离。结果与快照去重合并，旧查询或旧会话
+返回值不得覆盖当前列表。不完整或失败时保留截断提示；完整快照不搜索，远程
+文件协议尚无搜索操作，因此远程会话保留快照。不新增 Host RPC、数据库 schema
+或权限绕过。
 
 ### composer/pickFiles 和 composer/pickPhotos
 

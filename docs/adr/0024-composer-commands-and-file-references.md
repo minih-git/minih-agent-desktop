@@ -62,6 +62,12 @@ exported by the installed package and directly reusable.
    fallback, short TTL cache); `minih-agent-desktop/composer/commands` returns the
    merged command list. Both fail soft without a workspace. These
    Electron-only channels do not change the host RPC protocol version.
+   The 2026-10-22 amendment adds bounded `minih-agent-desktop/fs/search` for a
+   nonempty local `@` query after a 150 ms pause when the snapshot is truncated.
+   Search keeps the same root/ignore rules and ranking, returns the best 50
+   results, and does not replace the initial snapshot or extend remote file
+   protocol capabilities. Query/session ownership rejects late answers; Minih
+   `#` session completion stays independent. See IPC §13c for budgets.
 
 ## Alternatives considered
 

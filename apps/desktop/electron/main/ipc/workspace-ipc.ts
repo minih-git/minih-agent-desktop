@@ -49,7 +49,8 @@ import {
   consumeComposerPickerSelection,
   rememberComposerPickerSelection,
 } from "../composer-picker";
-import { getWorkspaceFileIndex } from "../fs-index";
+import { getWorkspaceFileIndex, searchWorkspaceFiles } from "../fs-index";
+import { rebaseWorktreeRef } from "../worktree-ref";
 import { cloneGitRepository } from "../git-clone";
 import type { HostProcess } from "../host-process";
 import type { Logger } from "../logger";
@@ -874,26 +875,36 @@ export function registerWorkspaceIpc({
     return browserHost.getState();
   });
 
-  const requireWorkspaceRoot = async (sessionId?: string) => {
+  const workspaceRootInfo = async (sessionId?: string): Promise<{
+    root: string;
+    worktree?: string;
+    parent?: string;
+  }> => {
     const owner = getHost();
     if (!owner) throw new Error("host unavailable");
     let root: string | undefined;
+    let worktree: string | undefined;
+    let parent: string | undefined;
     if (sessionId) {
       const { session } = await owner.call<{ session?: { projectPath?: string; worktree?: unknown } }>(
         "session.get", { id: sessionId, messageLimit: 1 },
       );
-      // Chat references and source reads must see the same files as the
-      // session's tools, not a same-named file in the parent checkout.
-      root = session?.worktree
-        ? (await owner.call<{ path?: string }>("worktree.location", { sessionId })).path
-        : session?.projectPath;
+      if (session?.worktree) {
+        worktree = (await owner.call<{ path?: string }>("worktree.location", { sessionId })).path;
+        root = worktree;
+        // An opaque remote identity is never a local parent checkout.
+        if (session.projectPath && !isRemoteProjectPath(session.projectPath)) parent = session.projectPath;
+      } else {
+        root = session?.projectPath;
+      }
     } else {
       root = (await owner.call<{ workspace?: { path: string } }>("workspace.get")).workspace?.path;
     }
     if (getHost() !== owner) throw Object.assign(new Error("host replaced"), { errorCode: ErrorCodes.HOST_UNAVAILABLE });
     if (!root) throw Object.assign(new Error("workspace required"), { errorCode: ErrorCodes.INVALID_ARGUMENT });
-    return root;
+    return { root, worktree, parent };
   };
+  const requireWorkspaceRoot = async (sessionId?: string) => (await workspaceRootInfo(sessionId)).root;
 
   handle(IPC.invoke.fsList, async (input: { path?: string; sessionId?: string } = {}) => {
     const remote = await remoteFileWorkspace(input.sessionId);
@@ -1090,6 +1101,14 @@ export function registerWorkspaceIpc({
     return getWorkspaceFileIndex(root);
   });
 
+  handle(IPC.invoke.fsSearch, async (input: { sessionId?: string; query?: string } = {}) => {
+    // The remote file protocol has no search operation; keep its snapshot.
+    if (await remoteFileWorkspace(input.sessionId)) return { entries: [], truncated: true };
+    const root = await optionalWorkspaceRoot(input.sessionId);
+    if (!root) return { entries: [], truncated: false };
+    return searchWorkspaceFiles(root, String(input.query ?? ""));
+  });
+
   /**
    * Resolve a file reference from chat to a real file (D320 follow-up).
    * The renderer knows the workspace but not where a session keeps its scratch
@@ -1103,11 +1122,19 @@ export function registerWorkspaceIpc({
     async (
       input: { ref?: string; sessionId?: string } = {},
     ): Promise<FsChatRefResolveResult> => {
-      const ref = String(input.ref ?? "").trim();
-      if (!ref) return { match: null };
+      const rawRef = String(input.ref ?? "").trim();
+      if (!rawRef) return { match: null };
       const remote = await remoteFileWorkspace(input.sessionId);
-      if (remote && !(await isLocalStoredFile(ref))) return await readRemoteFiles(remote, "resolve", ref) as FsChatRefResolveResult;
-      const workspaceRoot = await optionalWorkspaceRoot(input.sessionId);
+      if (remote && !(await isLocalStoredFile(rawRef))) return await readRemoteFiles(remote, "resolve", rawRef) as FsChatRefResolveResult;
+      let rootInfo: Awaited<ReturnType<typeof workspaceRootInfo>> | undefined;
+      try {
+        rootInfo = await workspaceRootInfo(input.sessionId);
+      } catch {
+        // Scratch and attachment references remain usable without a workspace.
+      }
+      const ref = await rebaseWorktreeRef(rawRef, rootInfo?.worktree && rootInfo.parent
+        ? { worktree: rootInfo.worktree, parent: rootInfo.parent } : null);
+      const workspaceRoot = rootInfo?.root ?? null;
       const roots = {
         project: projectRootsFor(workspaceRoot),
         scratch: await sessionScratchRoot(input.sessionId),

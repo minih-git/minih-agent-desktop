@@ -480,3 +480,20 @@ test("MCP OAuth subscribe is owned by a ref cleaned up on unmount", () => {
   assert.match(mcp, /api\.onMcpOAuth\(/);
   assert.match(mcpIpc, /oauth\.start\(server\.id, server\.url, server\)/);
 });
+
+test("MCP OAuth failures show localized recovery without hiding unknown detail", () => {
+  assert.match(mcp, /import \{ mcpOAuthErrorCodeOf, mcpOAuthErrorTranslationKey \}/);
+  // A pushed error with a known code shows translated guidance; anything else
+  // keeps the message main reported.
+  assert.match(mcp, /mcpOAuthErrorTranslationKey\(event\.errorCode\)/);
+  assert.match(
+    mcp,
+    /\(errorKey && t\(errorKey\)\) \|\| event\.message \|\| t\("extensions\.mcp\.authFailed"\)/,
+  );
+  // A start that rejects before the background flow takes the same path.
+  assert.match(mcp, /mcpOAuthErrorTranslationKey\(mcpOAuthErrorCodeOf\(error\)\)/);
+  assert.match(
+    mcp,
+    /\(errorKey && t\(errorKey\)\) \|\| \(error instanceof Error \? error\.message : String\(error\)\)/,
+  );
+});

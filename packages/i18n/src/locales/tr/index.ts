@@ -2965,6 +2965,7 @@ importConfirm: "İçe aktarılan uzantılar ajan sürecinde, ajanın kendi araç
       authReady_one: "Yetkilendirildi · 1 araç",
       authReady_other: "Yetkilendirildi · {{count}} araç",
       authFailed: "Yetkilendirme başarısız",
+      authDcrUnavailable: "Bu MCP sunucusu Dinamik İstemci Kaydı'nı desteklemiyor. Sunucu operatöründen bir istemci kimliği isteyin veya DCR destekleyen bir sunucu kullanın.",
       oauthBadge: "OAuth",
       transport: "Nasıl bağlanır",
       transportStdio: "Yerel program",

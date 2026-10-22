@@ -2930,6 +2930,7 @@ sklm: {
       authReady_one: "已授權 · 1 個工具",
       authReady_other: "已授權 · {{count}} 個工具",
       authFailed: "授權失敗",
+      authDcrUnavailable: "此 MCP 伺服器不支援動態用戶端註冊。請向伺服器管理員索取用戶端 ID，或改用支援 DCR 的伺服器。",
       oauthBadge: "OAuth",
       transport: "連線方式",
       transportStdio: "本地程式",

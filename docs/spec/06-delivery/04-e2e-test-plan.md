@@ -19806,3 +19806,29 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
   isolated native-window lifecycle checks
   (`pnpm test:e2e:upstream-reliability-ui`); `pnpm test:e2e:boot`. GPU measurement
   is not implied by visual/functional acceptance.
+
+### E2E-UPSTREAM-selected-reliability-20261022
+
+- **Preconditions:** Dedicated worktree, reused installed dependencies, isolated
+  local filesystem/Electron fixtures; no user profile or real model service.
+- **Steps:** Resolve a parent-checkout file reference in an isolated session;
+  reject an escaping link and keep parent-only references locate-only. Search
+  a deep file beyond 8000 snapshot entries, accept its chip, deliver old-query
+  and old-session results, then use Minih `#` session completion. Reveal an
+  unpinned reading bookmark with stale follow state. Start OAuth against a
+  no-DCR fixture. Toggle a background row by pointer/Enter/Space and use its
+  separate Output/Stop/Dismiss controls. Run the local client-certificate probe.
+- **Expected:** Branch files never reopen main; containment and remote scope
+  remain; current query/session owns completion results; reading bookmarks
+  beat stale follow; no invalid OAuth URL opens and known recovery is localized;
+  background controls stay independent and session-scoped. Certificate baseline
+  observation is bounded to 8 seconds, hung child termination escalates at
+  60/65 seconds, and actual repaired transport assertions remain mandatory.
+- **Coverage:** `chat-outside-ref-reveal.test.mjs`,
+  `composer-deep-file-search-user-path.test.mjs`, host-runtime `fs-index.test.ts`,
+  `mcp-oauth*.test.mjs`, `scripts/e2e-transcript-reading-position.mjs`,
+  `scripts/e2e-background-tasks.mjs`, `wait-for-child-exit.test.mjs`, and
+  `scripts/e2e-provider-client-certificate.mjs`.
+- **Specs:** IPC §12b/13/13c; component §11; interaction §1.
+- **Limits:** macOS isolated candidate coverage, not Windows/Linux acceptance,
+  remote deep search, installed-user-app verification, release or deployment.

@@ -10395,3 +10395,25 @@ host-created files. The full app's file-preview viewer is covered separately.
 - **状态**：Planned（R8，D675）—— 该场景尚未自动化。它依赖的两条传输由 P0 测量脚本
   （`scripts/measure-remote-latency.mjs`）在本地覆盖：回环 `RACP-WS` 上的 owner，以及
   `RACP-HTTP` + SSE 上的账号设备。
+
+### E2E-UPSTREAM-selected-reliability-20261022
+
+- **前置条件**：独立工作树、复用已安装依赖、本地隔离文件系统和 Electron fixture；
+  不使用用户 profile 或真实模型服务。
+- **步骤**：在隔离会话解析父 checkout 文件引用；验证逃逸链接被拒、父目录独有
+  引用保持仅定位。搜索 8000 条快照之外的深层文件并接受为芯片，投递旧查询和
+  旧会话结果，再使用 Minih `#` 会话补全。以过期跟随标志恢复未贴底书签。
+  对无 DCR fixture 发起 OAuth。通过点击、Enter／Space 切换后台行，并使用
+  独立输出／停止／忽略按钮。运行本地客户端证书探针。
+- **预期**：分支文件不打开 main 副本；保留真实路径和远程隔离；只有当前查询／
+  会话结果可更新补全；书签优先于过期跟随状态；不打开无效授权 URL，已知错误
+  本地化；后台控制独立且按会话隔离。证书基线观测限时 8 秒，子进程在
+  60／65 秒升级终止，修复后传输断言仍必须通过。
+- **覆盖**：`chat-outside-ref-reveal.test.mjs`、
+  `composer-deep-file-search-user-path.test.mjs`、Host runtime `fs-index.test.ts`、
+  `mcp-oauth*.test.mjs`、`scripts/e2e-transcript-reading-position.mjs`、
+  `scripts/e2e-background-tasks.mjs`、`wait-for-child-exit.test.mjs` 和
+  `scripts/e2e-provider-client-certificate.mjs`。
+- **关联规格**：IPC §12b／13／13c、组件 §11、交互 §1。
+- **限制**：macOS 隔离候选验证，不代表 Windows／Linux、远程深层搜索、
+  已安装用户应用、发布或部署验收。

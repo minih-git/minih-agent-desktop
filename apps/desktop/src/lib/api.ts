@@ -1710,6 +1710,8 @@ export const api = {
   fsOpen: (path: string, mimeType?: string, sessionId?: string) =>
     invoke(IPC.invoke.fsOpen, { path, mimeType, ...(sessionId ? { sessionId } : {}) }),
   fsIndex: (sessionId?: string) => invoke<FsIndexResult>(IPC.invoke.fsIndex, { ...(sessionId ? { sessionId } : {}) }),
+  fsSearch: (sessionId: string | undefined, query: string) =>
+    invoke<FsIndexResult>(IPC.invoke.fsSearch, { ...(sessionId ? { sessionId } : {}), query }),
   /**
    * Complete a file reference from chat text to a real file (D320 follow-up).
    * The main process owns the root order — project, session scratch,

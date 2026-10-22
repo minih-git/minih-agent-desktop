@@ -1,1 +1,1 @@
-export { FS_INDEX_MAX_ENTRIES, getWorkspaceFileIndex } from "@minih-agent/host-runtime";
+export { FS_INDEX_MAX_ENTRIES, getWorkspaceFileIndex, searchWorkspaceFiles } from "@minih-agent/host-runtime";

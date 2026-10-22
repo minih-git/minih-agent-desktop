@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
   isUserSuppliedHostname,
+  type McpOAuthLoginErrorCode,
   type McpOAuthLoginEvent,
   type McpServerRecord,
   type McpServerStatus,
@@ -41,6 +42,19 @@ export type McpOAuthDeps = {
   onAuthorized?: (serverId: string, record?: McpServerRecord) => Promise<McpServerStatus>;
   newId?: () => string;
 };
+
+/**
+ * A login failure the renderer can translate. Ordinary errors keep their own
+ * message; only failures with a known recovery path carry a stable code.
+ */
+class McpOAuthError extends Error {
+  readonly errorCode: McpOAuthLoginErrorCode;
+
+  constructor(errorCode: McpOAuthLoginErrorCode, message: string) {
+    super(message);
+    this.errorCode = errorCode;
+  }
+}
 
 export function secretRefForMcpOAuth(serverId: string): string {
   return `secret:mcp:${serverId}:oauth`;
@@ -677,7 +691,19 @@ export class McpOAuthManager {
               clientSecret = registered.clientSecret;
               redirectUrisToStore = registered.redirectUris;
             } else {
-              clientId = "minih-agent-desktop";
+              // Without a stored compatible client and without a registration
+              // endpoint, this server expects a pre-registered client id and the
+              // app has none to give. The old fallback opened the authorize URL
+              // with a literal `client_id=minih-agent-desktop` that no
+              // authorization server ever registered: the browser landed on a
+              // 404 and the login waited for a callback that could never arrive.
+              // Fail here, before opening anything. Settings turns the code into
+              // localized recovery copy; the message names the missing pieces so
+              // a log or a non-settings surface stays diagnosable.
+              throw new McpOAuthError(
+                "MCP_OAUTH_DCR_UNAVAILABLE",
+                `MCP server "${session.serverId}" has no registered client id and does not support Dynamic Client Registration.`,
+              );
             }
 
             const authUrl = new URL(metadata.authorizationEndpoint);
@@ -764,6 +790,7 @@ export class McpOAuthManager {
           serverId: session.serverId,
           kind: "error",
           message,
+          ...(error instanceof McpOAuthError ? { errorCode: error.errorCode } : {}),
         });
       }
     } finally {

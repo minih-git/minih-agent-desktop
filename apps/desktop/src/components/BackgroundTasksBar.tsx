@@ -50,12 +50,21 @@ export function BackgroundTasksBar({ sessionId }: { sessionId: string }): React.
       {visibleTasks.map((task) => {
         const isRunning = task.state === "running";
         const stopping = stoppingIds.has(task.id);
+        const isExpanded = expandedId === task.id;
         return (
           <div
             key={task.id}
             className="background-task"
             data-state={task.state}
+            data-expanded={isExpanded ? "true" : undefined}
           >
+            <Button
+              type="button"
+              variant="ghost"
+              className="background-task-main"
+              aria-expanded={isExpanded}
+              onClick={() => void toggleOutput(task.id)}
+            >
             <span
               className="background-task-state"
               data-state={task.state}
@@ -69,13 +78,14 @@ export function BackgroundTasksBar({ sessionId }: { sessionId: string }): React.
               {isRunning ? ` · ${formatElapsed(task.elapsedMs)}` : ""}
               {task.exitCode !== undefined ? ` · ${task.exitCode}` : ""}
             </span>
+            </Button>
             <Button
               type="button"
               variant="ghost"
               size="sm"
               className="background-task-action"
               onClick={() => void toggleOutput(task.id)}
-              aria-expanded={expandedId === task.id}
+              aria-expanded={isExpanded}
             >
               {t("backgroundTasks.output")}
             </Button>
@@ -101,7 +111,7 @@ export function BackgroundTasksBar({ sessionId }: { sessionId: string }): React.
                 {t("backgroundTasks.dismiss")}
               </Button>
             )}
-            {expandedId === task.id ? (
+            {isExpanded ? (
               <pre className="background-task-output">
                 {outputText || NO_OUTPUT}
               </pre>

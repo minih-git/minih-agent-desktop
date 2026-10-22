@@ -1800,10 +1800,16 @@ type McpOAuthLoginEvent = {
   | { kind: "authUrl"; url: string; instructions?: string; opened: boolean }
   | { kind: "progress"; message: string }
   | { kind: "done"; status: McpServerStatus }
-  | { kind: "error"; message: string }
+  | { kind: "error"; message: string; errorCode?: "MCP_OAUTH_DCR_UNAVAILABLE" }
   | { kind: "cancelled" }
 );
 ```
+
+If no compatible stored OAuth client exists and the authorization server has no
+Dynamic Client Registration endpoint, authorization stops before opening the
+browser. The error event carries `MCP_OAUTH_DCR_UNAVAILABLE`; the settings page
+localizes its recovery guidance and leaves unknown error details readable.
+No manual client-registration setting is added.
 
 #### Status and Token Storage
 - `McpServerStatus` includes:
@@ -1970,7 +1976,11 @@ Renderer IPC kept for the Plan-safe preview facade and URL fallback:
   so the extensionless blob has a media association without copying its bytes.
 - `fs/resolveRef({ref, sessionId?})` → `FsChatRefResolveResult`
   (for isolated sessions, lookup and file reads use `worktree.location` rather
-  than the parent project checkout)
+  than the parent project checkout; an absolute reference under that parent is
+  mapped to the same relative file in the worktree only when the counterpart
+  exists. Final realpath containment still applies. Parent-only files and
+  directories keep their existing outside-root locate-only behavior, and the
+  renderer keeps worktree matches absolute rather than reopening the parent)
   (`{ match: FsChatRefMatch | null, reason?: "outside-allowed-roots" }`, the match naming the answering `root`
   (`workspace` / `scratch` / `attachments`), the `relativePath` relative to that
   root, optional `sessionScratch: true` for the current session's own scratch
@@ -2256,6 +2266,23 @@ Workspace-rooted relative paths for the `@` menu: `git ls-files -co
 directories derived from file paths, 8000-entry cap with `truncated: true`,
 short TTL cache per root. Fails closed to an empty list without a
 workspace. Fuzzy filtering happens renderer-side.
+
+### fs/search
+
+```ts
+fs/search({ sessionId?: string; query: string }) -> FsIndexResult
+```
+
+Read-only Electron channel `minih-agent-desktop/fs/search`. When a local
+`fs/index` snapshot is truncated, a nonempty `@` query searches after a 150 ms
+typing pause. Main ranks at most 200,000 listing entries and returns the best
+50 matches; query text is bounded to 256 characters, and a deeper non-git walk
+has a 2-second budget. Existing Git/panel ignore rules and worktree-root scope
+remain. Results and the snapshot merge without duplicates; stale query or
+session answers cannot change the current list. An incomplete or failed search
+keeps the truncation note. A complete snapshot never searches, and remote
+sessions retain their snapshot because their file protocol has no search.
+No Host RPC, database schema, or permission bypass is introduced.
 
 ### composer/pickFiles and composer/pickPhotos
 

@@ -3045,6 +3045,12 @@ reasoning-level control.
   file-reference names), expose independent Remove and Send now actions, and
   increase the dock height measured by `--composer-dock-height`.
 
+Background command rows keep the open conversation's session scope and the
+12-row visible limit. The row lead (state, command and elapsed/status copy) is
+a shared native Button that toggles output with pointer or Enter/Space and
+reports `aria-expanded`. Output, Stop and Dismiss remain independent sibling
+controls; their actions never bubble into a second toggle.
+
 ### 11.3a Session TodoDock
 
 The header copy is not a button. A separate trailing disclosure button is the
@@ -3544,9 +3550,14 @@ Anatomy:
   at the caret — the same sentinel-backed chip as a pasted file — whose
   canonical value is the original `entry.path`; the menu closes and that Enter
   does not send. Accepting a directory keeps the literal path in the draft so
-  completion can continue. Entries come from `fs/index` (D124, D209, D362). A
-  truncation footnote appears when the index is capped; without a workspace the
-  menu shows an "open a project" empty state.
+  completion can continue. Entries come from `fs/index` (D124, D209, D362).
+  When its local snapshot is truncated, a nonempty query also uses bounded
+  `fs/search` after a 150 ms pause. Best matches merge without duplicates;
+  answers from old queries/sessions never replace the current menu. An
+  incomplete or failed search retains the truncation note, a complete snapshot
+  does not search, and remote sessions keep their snapshot. Minih's `#` session
+  completion remains independent. Without a workspace the menu shows an
+  "open a project" empty state.
 - Accepting commands and directories inserts text (`/name ` / `@dir/`);
   accepting a completed file inserts the inline chip rather than deleting the
   trigger. Immediately

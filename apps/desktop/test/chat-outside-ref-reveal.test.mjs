@@ -10,7 +10,7 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { register } from "node:module";
@@ -35,16 +35,18 @@ test.after(() => {
  * A host that answers the two questions the remote check asks: which path the
  * session (or workspace) is bound to, and whether that path is a remote group.
  */
-function fakeHost({ remote = false } = {}) {
+function fakeHost({ remote = false, workspace = "/local/app", worktree } = {}) {
   return {
     binaryPath: "/fake/host-core",
     async call(method) {
       if (method === "session.get") {
-        return { session: { projectPath: remote ? "remote-project:/srv/app" : "/local/app" } };
+        return { session: { projectPath: remote ? "remote-project:/srv/app" : workspace, ...(worktree ? { worktree: {} } : {}) } };
       }
       if (method === "workspace.get") {
-        return { workspace: { path: remote ? "remote-project:/srv/app" : "/local/app" } };
+        return { workspace: { path: remote ? "remote-project:/srv/app" : workspace } };
       }
+      if (method === "worktree.location") return { path: worktree };
+      if (method === "session.getScratchPath") return { path: null };
       if (method === "project.groups.list") {
         return {
           groups: remote
@@ -58,7 +60,7 @@ function fakeHost({ remote = false } = {}) {
 }
 
 /** Register the real workspace IPC against a captured handler map. */
-async function handlers({ remote = false } = {}) {
+async function handlers({ remote = false, isolated = false } = {}) {
   const dataDir = realpathSync(mkdtempSync(join(tmpdir(), "chat-ref-outside-")));
   tempDirs.push(dataDir);
   const workspace = join(dataDir, "project");
@@ -68,11 +70,16 @@ async function handlers({ remote = false } = {}) {
   writeFileSync(outsideFile, "outside\n");
   const outsideFolder = join(dataDir, "outside-folder");
   mkdirSync(outsideFolder);
+  const worktree = isolated ? join(dataDir, "branch") : undefined;
+  if (worktree) {
+    mkdirSync(worktree);
+    writeFileSync(join(worktree, "inside.ts"), "branch\n");
+  }
 
   const map = new Map();
   // One instance for the whole registration: the module compares the host it
   // captured against the one it sees later, so a factory would look replaced.
-  const host = fakeHost({ remote });
+  const host = fakeHost({ remote, workspace, worktree });
   registerWorkspaceIpc({
     registrar: {
       handle: (channel, handler) => map.set(channel, handler),
@@ -92,7 +99,7 @@ async function handlers({ remote = false } = {}) {
     withGitBranch: (value) => value,
     stripWinLongPrefix: (value) => value,
   });
-  return { map, workspace, outsideFile, outsideFolder, dataDir };
+  return { map, workspace, worktree, outsideFile, outsideFolder, dataDir };
 }
 
 test("reveal is local-only: a remote session is refused", async () => {
@@ -143,4 +150,41 @@ test("resolveRef reports an outside folder and file, and nothing for a missing p
   assert.equal(missing.outside, undefined);
   // Probing existence is a stat: the file manager is never asked anything.
   assert.deepEqual(shellCalls, []);
+});
+
+test("an isolated reference resolves to its branch copy, not the parent file", async () => {
+  const { map, workspace, worktree } = await handlers({ isolated: true });
+  const result = await map.get(IPC.invoke.fsResolveRef)({ ref: join(workspace, "inside.ts"), sessionId: "isolated" });
+  assert.equal(result.match?.absolutePath, join(worktree, "inside.ts"));
+  assert.equal(result.match?.relativePath, "inside.ts");
+  assert.deepEqual(shellCalls, []);
+});
+
+test("parent-only files and folders keep Minih locate-only semantics", async () => {
+  const { map, workspace } = await handlers({ isolated: true });
+  writeFileSync(join(workspace, "parent-only.ts"), "parent");
+  for (const ref of [join(workspace, "parent-only.ts"), workspace]) {
+    const result = await map.get(IPC.invoke.fsResolveRef)({ ref, sessionId: "isolated" });
+    assert.equal(result.match, null);
+    assert.equal(result.reason, "outside-allowed-roots");
+    assert.equal(result.outside?.absolutePath, ref);
+  }
+});
+
+test("rebasing never bypasses realpath containment for an escaping link", async () => {
+  const { map, workspace, worktree, outsideFile } = await handlers({ isolated: true });
+  writeFileSync(join(workspace, "link.txt"), "parent");
+  symlinkSync(outsideFile, join(worktree, "link.txt"));
+  const result = await map.get(IPC.invoke.fsResolveRef)({ ref: join(workspace, "link.txt"), sessionId: "isolated" });
+  assert.equal(result.match, null);
+  assert.equal(result.reason, "outside-allowed-roots");
+});
+
+test("file search uses the session worktree and never searches remote roots locally", async () => {
+  const local = await handlers({ isolated: true });
+  const result = await local.map.get(IPC.invoke.fsSearch)({ sessionId: "isolated", query: "inside" });
+  assert.ok(result.entries.some((entry) => entry.path === "inside.ts"));
+  assert.ok(result.entries.every((entry) => !entry.path.startsWith("/")));
+  const remote = await handlers({ remote: true });
+  assert.deepEqual(await remote.map.get(IPC.invoke.fsSearch)({ sessionId: "remote:host:session", query: "inside" }), { entries: [], truncated: true });
 });

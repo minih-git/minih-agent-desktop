@@ -34,8 +34,14 @@ export function useTranscriptReadingPosition({
   const alignmentUntilRef = useRef(0);
   const wasVisibleRef = useRef(visible);
   useLayoutEffect(() => {
-    if (visible && !wasVisibleRef.current && !pinnedRef.current) {
-      pendingRef.current = getTranscriptReadingPosition(sessionId);
+    if (visible && !wasVisibleRef.current) {
+      const bookmark = getTranscriptReadingPosition(sessionId);
+      if (bookmark?.pinned === false) {
+        pendingRef.current = bookmark;
+        pinnedRef.current = false;
+      } else if (!pinnedRef.current) {
+        pendingRef.current = bookmark;
+      }
       alignmentUntilRef.current = 0;
     }
     wasVisibleRef.current = visible;
