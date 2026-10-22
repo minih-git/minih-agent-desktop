@@ -1368,6 +1368,18 @@ sklm: {
     "subagentSaved": "Gespeichert {{name}}",
     "subagentRestored": "{{name}} auf Standard zurückgesetzt",
     "projectArchive": "Projektarchiv",
+      accountsDevices: {
+        title: "Meine Geräte",
+        desc: "Die Computer Ihres Kontos und die Geräte, die darauf zugreifen dürfen.",
+        computersTitle: "Computer dieses Kontos",
+        computersEmpty: "Noch keine Konto-Computer. Aktivieren Sie den Remote-Schalter, um diesen anzumelden.",
+        online: "Online",
+        offline: "Offline",
+        needsUpdate: "Online — Update erforderlich",
+        kindComputer: "Computer",
+        kindPhone: "Telefon",
+        kindRoles: "{{roles}}",
+      },
     "remoteGateway": {
       "title": "Remote-Gateway",
       "desc": "Erlaubt einem Telefon, über dein eigenes Gateway auf die lokalen Sitzungen dieses Desktops zuzugreifen. Standardmäßig aus; der Desktop verbindet sich nur nach außen und öffnet keinen Port.",

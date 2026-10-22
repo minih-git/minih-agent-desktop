@@ -1369,6 +1369,18 @@ sklm: {
     subagentSaved: "{{name}} kaydedildi",
     subagentRestored: "{{name}} varsayılana sıfırlandı",
     projectArchive: "Proje arşivi",
+      accountsDevices: {
+        title: "Cihazlarım",
+        desc: "Hesabınızın bilgisayarları ve onlara erişmesine izin verilen cihazlar.",
+        computersTitle: "Bu hesabın bilgisayarları",
+        computersEmpty: "Henüz hesap bilgisayarı yok. Bunu kaydetmek için uzak anahtarı açın.",
+        online: "Çevrimiçi",
+        offline: "Çevrimdışı",
+        needsUpdate: "Çevrimiçi — güncelleme gerekli",
+        kindComputer: "Bilgisayar",
+        kindPhone: "Telefon",
+        kindRoles: "{{roles}}",
+      },
     remoteGateway: {
       title: "Uzak ağ geçidi",
       desc: "Bir telefonun kendi ağ geçidiniz üzerinden bu masaüstünün yerel oturumlarına erişmesini sağlar. Varsayılan olarak kapalı; masaüstü yalnızca dışarı bağlanır ve hiçbir bağlantı noktası açmaz.",

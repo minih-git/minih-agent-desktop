@@ -1368,6 +1368,18 @@ sklm: {
     "subagentSaved": "Enregistré {{name}}",
     "subagentRestored": "{{name}} restauré par défaut",
     "projectArchive": "Archive du projet",
+      accountsDevices: {
+        title: "Mes appareils",
+        desc: "Les ordinateurs de votre compte et les appareils autorisés à y accéder.",
+        computersTitle: "Ordinateurs de ce compte",
+        computersEmpty: "Aucun ordinateur du compte pour l'instant. Activez l'interrupteur distant pour inscrire celui-ci.",
+        online: "En ligne",
+        offline: "Hors ligne",
+        needsUpdate: "En ligne — mise à jour requise",
+        kindComputer: "Ordinateur",
+        kindPhone: "Téléphone",
+        kindRoles: "{{roles}}",
+      },
     "remoteGateway": {
       "title": "Passerelle distante",
       "desc": "Permet à un téléphone d'atteindre les sessions locales de ce poste via votre propre passerelle. Désactivé par défaut ; le poste ne se connecte que vers l'extérieur et n'ouvre aucun port.",

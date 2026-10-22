@@ -1359,6 +1359,18 @@ sklm: {
     subagentSaved: "已儲存 {{name}}",
     subagentRestored: "已復原 {{name}}",
     projectArchive: "專案歸檔",
+      accountsDevices: {
+        title: "我的裝置",
+        desc: "帳號下的電腦，以及被允許存取它們的裝置。",
+        computersTitle: "本帳號的電腦",
+        computersEmpty: "還沒有帳號電腦。開啟遠端開關即可把本機加入。",
+        online: "線上",
+        offline: "離線",
+        needsUpdate: "線上 — 需要升級",
+        kindComputer: "電腦",
+        kindPhone: "手機",
+        kindRoles: "{{roles}}",
+      },
     remoteGateway: {
       title: "遠端閘道",
       desc: "允許手機透過你自己的閘道存取本機的本機工作階段。預設關閉；桌面端只主動外連，不開任何連接埠。",

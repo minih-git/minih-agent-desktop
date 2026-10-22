@@ -670,6 +670,11 @@ export function createGatewayLinkService(options: GatewayLinkServiceOptions): Ga
         createdAt: device.createdAt,
         ...(device.lastSeenAt ? { lastSeenAt: device.lastSeenAt } : {}),
         ...(device.revokedAt ? { revokedAt: device.revokedAt } : {}),
+        // What the row is, for the accounts page's "My devices": a computer
+        // admitted with a verified proof, a phone paired through the Gateway,
+        // or an SSH pairing from before the Gateway existed.
+        ...(device.deviceClass ? { deviceClass: device.deviceClass === "desktop" ? "desktop" as const : "phone" as const } : {}),
+        ...(device.origin ? { origin: device.origin } : { origin: "ssh" as const }),
       }));
     },
     revokeDevice(deviceId) {

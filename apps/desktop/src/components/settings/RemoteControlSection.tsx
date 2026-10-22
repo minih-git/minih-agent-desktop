@@ -19,13 +19,12 @@ import {
   remoteGatewayStateKey,
   remoteGatewaySwitchDisabled,
 } from "../../lib/remote-gateway-state";
-import { Badge, Button, SettingsToggle, cx } from "../ui";
+import { Badge, Button, SettingsToggle } from "../ui";
 import { SelfHostedGatewaySection } from "./SelfHostedGatewaySection";
-import { useRemoteControl, type RemoteControl } from "./useRemoteControl";
+import type { RemoteControl } from "./useRemoteControl";
 
-export function RemoteControlSection() {
+export function RemoteControlSection({ control }: { control: RemoteControl }) {
   const { t } = useTranslation();
-  const control = useRemoteControl();
   const { status } = control;
 
   const enrolled = status?.enrolled === true;
@@ -189,7 +188,6 @@ export function RemoteControlSection() {
       ) : null}
 
       <PairingCodeBlock control={control} />
-      <DeviceList control={control} />
       <SelfHostedGatewaySection control={control} />
     </section>
   );
@@ -293,82 +291,6 @@ function PairingCodeBlock({ control }: { control: RemoteControl }) {
           {pairing.error}
         </p>
       ) : null}
-    </div>
-  );
-}
-
-/** Devices of this Gateway, with the two-step revoke. */
-function DeviceList({ control }: { control: RemoteControl }) {
-  const { t } = useTranslation();
-  return (
-    <div className="space-y-2 py-2" role="list" aria-busy={control.devices === null}>
-      <div className="settings-row-title">{t("settings.remoteGateway.devicesTitle")}</div>
-      {control.devicesError ? (
-        <p className="text-sm text-danger" role="alert">
-          {control.devicesError}
-        </p>
-      ) : null}
-      {control.devices === null ? (
-        <p className="text-sm text-text-secondary" role="status">
-          {t("settings.remoteGateway.loading")}
-        </p>
-      ) : control.devices.length === 0 ? (
-        <p className="text-sm text-text-secondary" role="status">
-          {t("settings.remoteGateway.devicesEmpty")}
-        </p>
-      ) : (
-        control.devices.map((device) => (
-          <article
-            key={device.deviceId}
-            role="listitem"
-            className={cx(
-              "flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-default px-3 py-2",
-              device.revokedAt && "opacity-60",
-            )}
-          >
-            <div className="space-y-1">
-              <div className="text-sm text-text-primary">{device.label}</div>
-              <div className="text-xs text-text-secondary">
-                {t("settings.remoteGateway.devicesRoles", { roles: device.roles.join(", ") })}
-              </div>
-              {device.lastSeenAt ? (
-                <div className="text-xs text-text-secondary">
-                  {t("settings.remoteGateway.devicesLastSeen", { time: device.lastSeenAt })}
-                </div>
-              ) : null}
-            </div>
-            {control.revoke.pending === device.deviceId ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-text-secondary">
-                  {t("settings.remoteGateway.revokeBody")}
-                </span>
-                <Button
-                  type="button"
-                  variant="primary"
-                  disabled={control.revoke.busy === device.deviceId}
-                  aria-busy={control.revoke.busy === device.deviceId}
-                  onClick={() => void control.onRevoke(device)}
-                >
-                  {t("settings.remoteGateway.revokeConfirm")}
-                </Button>
-                <Button type="button" variant="ghost" onClick={() => control.setPendingRevoke(null)}>
-                  {t("settings.remoteGateway.cancel")}
-                </Button>
-              </div>
-            ) : (
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={Boolean(device.revokedAt)}
-                onClick={() => control.setPendingRevoke(device.deviceId)}
-                aria-label={t("settings.remoteGateway.revokeTitle", { label: device.label })}
-              >
-                {t("settings.remoteGateway.revoke")}
-              </Button>
-            )}
-          </article>
-        ))
-      )}
     </div>
   );
 }

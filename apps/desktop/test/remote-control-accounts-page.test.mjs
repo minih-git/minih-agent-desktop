@@ -65,6 +65,10 @@ window.minihAgent = { platform: "darwin", channels: IPC,
     calls.push({ channel, input });
     if (channel === IPC.invoke.remoteGatewayStatus) return { ok: true, data: status };
     if (channel === IPC.invoke.remoteGatewayListDevices) return { ok: true, data: { devices: [] } };
+    // "My devices" lists the account's computers; one sibling, offline.
+    if (channel === IPC.invoke.remoteHostList) {
+      return { ok: true, data: { hosts: [{ hostKey: "account-sib", label: "Studio Mac", url: "", connected: false, transport: "account" }] } };
+    }
     if (channel === IPC.invoke.remoteGatewaySetEnabled) {
       status = { ...status, enabled: input.enabled, state: input.enabled ? "connecting" : "disabled" };
       return { ok: true, data: status };
@@ -108,6 +112,19 @@ window.freshInstallProbe = async () => {
     "this computer must have its own section heading: " + headings.join(" | "));
   check(headings.indexOf(navLabel("settings.accountsThisComputerTitle").trim()) > uiPosition,
     "this computer must sit below the account: " + headings.join(" | "));
+
+  // My devices: the account's computers with their online state, labeled as
+  // computers, and the grants list (empty here) below them.
+  const computers = document.querySelector('[data-testid="accounts-devices-computers"]');
+  check(computers, "my devices must list the account's computers");
+  await until(
+    () => computers.textContent.includes("Studio Mac"),
+    "the account computer did not render",
+  );
+  check(computers.textContent.includes(navLabel("settings.accountsDevices.offline")),
+    "an offline computer must say so: " + computers.textContent);
+  check(computers.textContent.includes(navLabel("settings.accountsDevices.kindComputer")),
+    "a computer row must be labeled as a computer: " + computers.textContent);
 
   // Account mode is offered and the switch that enrolls this desktop is usable.
   const accountMode = document.querySelector('[data-testid="remote-gateway-account-mode"]');

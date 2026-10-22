@@ -210,6 +210,9 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       // account's phones may reach, plus the folded self-hosted gateway.
       "settings.accountsThisComputerTitle",
       "settings.accountsComputerName",
+      "settings.accountsDevices.title",
+      "settings.accountsDevices.computersTitle",
+      "settings.accountsDevices.kindPhone",
       "settings.remoteGateway.title",
       "settings.remoteGateway.desc",
       "settings.remoteGateway.enabled",

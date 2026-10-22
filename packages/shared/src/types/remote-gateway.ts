@@ -82,6 +82,15 @@ export type RemoteGatewayDeviceSummary = {
   createdAt: string;
   lastSeenAt?: string;
   revokedAt?: string;
+  /**
+   * What was paired, when the record says so: `desktop` for a computer of the
+   * account admitted with a verified proof, `phone` for everything else the
+   * Gateway paired. Absent on records written before the field existed; those
+   * render as the generic device kind.
+   */
+  deviceClass?: "phone" | "desktop";
+  /** The pairing channel; absent reads as `ssh` (a pre-D665 record). */
+  origin?: "ssh" | "gateway";
 };
 
 export type RemoteGatewayDevicesResult = {

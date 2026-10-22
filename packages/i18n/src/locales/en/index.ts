@@ -1237,6 +1237,18 @@ sklm: {
     subagentSaved: "Saved {{name}}",
     subagentRestored: "Restored {{name}} to default",
     projectArchive: "Project archive",
+      accountsDevices: {
+        title: "My devices",
+        desc: "The computers of your account and the devices allowed to reach them.",
+        computersTitle: "Computers of this account",
+        computersEmpty: "No account computers yet. Turn on the remote switch to enroll this one.",
+        online: "Online",
+        offline: "Offline",
+        needsUpdate: "Online — needs an update",
+        kindComputer: "Computer",
+        kindPhone: "Phone",
+        kindRoles: "{{roles}}",
+      },
     remoteGateway: {
       title: "Remote gateway",
       desc: "Let a phone reach this desktop's local sessions through your own gateway. Off by default; the desktop only dials out and never opens a port.",

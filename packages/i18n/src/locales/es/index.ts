@@ -1368,6 +1368,18 @@ sklm: {
     "subagentSaved": "Guardado {{name}}",
     "subagentRestored": "{{name}} restaurado a los valores predeterminados",
     "projectArchive": "Archivo de proyecto",
+      accountsDevices: {
+        title: "Mis dispositivos",
+        desc: "Los ordenadores de tu cuenta y los dispositivos que pueden acceder a ellos.",
+        computersTitle: "Ordenadores de esta cuenta",
+        computersEmpty: "Todavía no hay ordenadores en la cuenta. Activa el interruptor remoto para añadir este.",
+        online: "En línea",
+        offline: "Desconectado",
+        needsUpdate: "En línea — necesita una actualización",
+        kindComputer: "Ordenador",
+        kindPhone: "Teléfono",
+        kindRoles: "{{roles}}",
+      },
     "remoteGateway": {
       "title": "Puerta de enlace remota",
       "desc": "Permite que un teléfono llegue a las sesiones locales de este escritorio a través de tu propia puerta de enlace. Desactivado por defecto; el escritorio solo sale a la red y nunca abre un puerto.",

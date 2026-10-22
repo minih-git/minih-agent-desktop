@@ -1368,6 +1368,18 @@ sklm: {
     subagentSaved: "已保存 {{name}}",
     subagentRestored: "已复原 {{name}}",
     projectArchive: "项目归档",
+      accountsDevices: {
+        title: "我的设备",
+        desc: "账号下的电脑，以及被允许访问它们的设备。",
+        computersTitle: "本账号的电脑",
+        computersEmpty: "还没有账号电脑。打开远程开关即可把本机加入。",
+        online: "在线",
+        offline: "离线",
+        needsUpdate: "在线 — 需要升级",
+        kindComputer: "电脑",
+        kindPhone: "手机",
+        kindRoles: "{{roles}}",
+      },
     remoteGateway: {
       title: "远程网关",
       desc: "允许手机通过你自己的网关访问本机的本地会话。默认关闭；桌面端只主动外连，不开任何端口。",

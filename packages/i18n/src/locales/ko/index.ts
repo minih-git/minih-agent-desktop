@@ -1375,6 +1375,18 @@ sklm: {
     subagentSaved: "{{name}} 저장됨",
     subagentRestored: "{{name}} 기본값으로 복원됨",
     projectArchive: "프로젝트 보관함",
+      accountsDevices: {
+        title: "내 기기",
+        desc: "계정의 컴퓨터와 접근이 허용된 기기입니다.",
+        computersTitle: "이 계정의 컴퓨터",
+        computersEmpty: "아직 계정 컴퓨터가 없습니다. 원격 스위치를 켜면 이 컴퓨터가 등록됩니다.",
+        online: "온라인",
+        offline: "오프라인",
+        needsUpdate: "온라인 — 업데이트 필요",
+        kindComputer: "컴퓨터",
+        kindPhone: "휴대전화",
+        kindRoles: "{{roles}}",
+      },
     remoteGateway: {
       title: "원격 게이트웨이",
       desc: "휴대폰이 직접 운영하는 게이트웨이를 통해 이 데스크톱의 로컬 세션에 접근할 수 있습니다. 기본값은 꺼짐이며, 데스크톱은 외부로만 연결하고 포트를 열지 않습니다.",

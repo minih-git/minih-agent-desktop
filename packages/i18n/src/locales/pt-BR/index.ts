@@ -1197,6 +1197,18 @@ export const ptBR = {
     subagentSaved: "Salvo {{name}}",
     subagentRestored: "{{name}} restaurado para o padrão",
     projectArchive: "Arquivo de projeto",
+      accountsDevices: {
+        title: "Meus dispositivos",
+        desc: "Os computadores da sua conta e os dispositivos autorizados a acessá-los.",
+        computersTitle: "Computadores desta conta",
+        computersEmpty: "Ainda não há computadores na conta. Ative a chave remota para registrar este.",
+        online: "Online",
+        offline: "Offline",
+        needsUpdate: "Online — precisa de atualização",
+        kindComputer: "Computador",
+        kindPhone: "Telefone",
+        kindRoles: "{{roles}}",
+      },
     remoteGateway: {
       title: "Gateway remoto",
       desc: "Permite que um celular alcance as sessões locais deste desktop pelo seu próprio gateway. Desativado por padrão; o desktop apenas disca para fora e nunca abre uma porta.",
