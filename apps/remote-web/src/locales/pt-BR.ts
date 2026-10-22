@@ -387,6 +387,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "modelSheet.noMatch": "Nenhum modelo corresponde a essa busca.",
   "modelSheet.unavailableSection": "Indisponível para conversa",
   "modelSheet.reason.notChat": "Não é um modelo de conversa",
+  "modelSheet.reason.imageModel": "Gera imagens; este app ainda não pode pedi-las",
   "modelSheet.reason.protocol": "Usa um protocolo que este app não suporta",
   "hosts.settings": "Ajustes",
 

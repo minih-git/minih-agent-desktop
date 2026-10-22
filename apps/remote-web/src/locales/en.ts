@@ -391,6 +391,7 @@ export const en = {
   "modelSheet.noMatch": "No model matches that search.",
   "modelSheet.unavailableSection": "Not available for chat",
   "modelSheet.reason.notChat": "Not a chat model",
+  "modelSheet.reason.imageModel": "Generates images; this app cannot request images yet",
   "modelSheet.reason.protocol": "Uses a protocol this app does not support",
   "hosts.settings": "Settings",
 

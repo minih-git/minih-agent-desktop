@@ -35,9 +35,22 @@ const NON_CHAT_PROTOCOLS: ReadonlySet<string> = new Set([
   "ocr",
 ]);
 
+/**
+ * The gateway's declaration for a model that produces images.
+ *
+ * A row that declares this is an image model even when it also lists a chat
+ * protocol: Router lists every protocol a route group accepts, so `gpt-image-2`
+ * arrives with `openai-completions` beside `openai-images`. Chatting with it is
+ * a request the upstream refuses, and the phone has no image endpoint to use
+ * instead, so the sheet must not offer it as a conversation model.
+ */
+const IMAGE_PROTOCOL = "openai-images";
+
 /** Why a listed model cannot be used, as the sheet explains it. */
 export type ModelUnavailableReason =
-  /** The model declares only non-conversation protocols (image, embedding, …). */
+  /** The model generates images, which this client cannot request. */
+  | "image-model"
+  /** The model declares only other non-conversation protocols. */
   | "not-chat"
   /** The model declares no protocol this client implements. */
   | "unsupported-protocol";
@@ -52,11 +65,20 @@ export type DirectModelChoice =
  * `model.category` is not consulted: the shared parser derives it partly from
  * the model's name for the desktop catalog's grouping, and a name such as
  * `qwen-vl` or `omni` would otherwise disable a model the gateway serves over
- * Chat Completions. When none of the two protocols is declared, the reason says
- * whether the gateway declared only non-conversation work or something else.
+ * Chat Completions.
+ *
+ * An image declaration outranks a chat one. Router lists every protocol a route
+ * group accepts, so `gpt-image-2.5` arrives as `openai-completions` *and*
+ * `openai-images`; taking the first as a chat offer sends a request the upstream
+ * answers with a refusal about its own client, which is exactly the failure this
+ * rule prevents. The phone has no image endpoint yet, so such a row is listed
+ * and explained rather than offered.
  */
 export function resolveDirectModel(model: MinihRouterModel): DirectModelChoice {
   const protocols = model.protocols.map((protocol) => protocol.trim()).filter(Boolean);
+  if (protocols.includes(IMAGE_PROTOCOL)) {
+    return { usable: false, model, reason: "image-model", protocols };
+  }
   for (const candidate of DIRECT_PROTOCOLS) {
     if (protocols.includes(candidate)) return { usable: true, model, protocol: candidate };
   }

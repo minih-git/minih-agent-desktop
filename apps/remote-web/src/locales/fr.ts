@@ -387,6 +387,7 @@ export const fr: Record<TranslationKey, string> = {
   "modelSheet.noMatch": "Aucun modèle ne correspond à cette recherche.",
   "modelSheet.unavailableSection": "Indisponible pour la discussion",
   "modelSheet.reason.notChat": "Ce n'est pas un modèle de discussion",
+  "modelSheet.reason.imageModel": "Génère des images ; cette app ne peut pas encore en demander",
   "modelSheet.reason.protocol": "Utilise un protocole que cette app ne prend pas en charge",
   "hosts.settings": "Réglages",
 
