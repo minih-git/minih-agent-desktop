@@ -61,7 +61,7 @@ export function Composer({
         aria-label={t("composer.placeholder")}
         placeholder={t("composer.placeholder")}
         onChange={(event) => setText(event.target.value)}
-        className="w-full resize-none rounded-lg border border-slate-300 bg-white p-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+        className="w-full resize-none rounded-lg border border-slate-300 bg-white p-2 text-[16px] dark:border-slate-700 dark:bg-slate-950"
       />
       <div className="mt-2 flex items-center gap-2">
         <Button type="submit" variant="primary" disabled={disabled || sending || text.trim().length === 0}>

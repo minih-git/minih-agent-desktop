@@ -163,7 +163,7 @@ export function ChatsScreen({
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={t("chats.search")}
                 aria-label={t("chats.search")}
-                className="min-w-0 flex-1 bg-transparent py-2 text-[15px] text-[var(--rm-text-primary)] placeholder-[var(--rm-text-faint)] outline-none"
+                className="min-w-0 flex-1 bg-transparent py-2 text-[16px] text-[var(--rm-text-primary)] placeholder-[var(--rm-text-faint)] outline-none"
               />
             </label>
 

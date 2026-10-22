@@ -325,7 +325,8 @@
   <h2>事件演示</h2>
   <div class="jump" id="demos">
     <button data-demo="push">点击电脑通知（从「对话」里）</button>
-    <button data-demo="background">生成中切到后台</button>
+    <button data-demo="away">生成中短暂切出（回复继续）</button>
+    <button data-demo="suspend">生成中被系统挂起（已中断 · 重试）</button>
   </div>
 
   <button class="reset" id="reset">重置</button>
@@ -484,7 +485,8 @@ function initialState(scene = "daily", keep = {}) {
   };
 }
 let S = initialState();
-let streamTimer = null;
+/** conversationId -> interval, so each conversation streams on its own (§5). */
+const streamTimers = new Map();
 let toastTimer = null;
 
 const ROOTS = ["chats", "computers"];
@@ -496,6 +498,7 @@ function ordered(list) { return list.filter((c) => c.pinned).concat(list.filter(
 function preview(c) { const m = c.msgs.filter((x) => x.role !== "note").slice(-1)[0]; return m ? m.text.replace(/\n/g, " ") : ""; }
 function matches(c, q) { if (!q) return true; q = q.toLowerCase(); return c.title.toLowerCase().includes(q) || c.msgs.some((m) => m.text.toLowerCase().includes(q)); }
 function streamingIn(c) { return !!(c && c.msgs.some((m) => m.state === "streaming")); }
+function busyIn(c) { return !!(c && streamTimers.has(c.id)); }
 
 /* ------------------------------------------------------------- chrome */
 function backBtn() { return `<button class="iconbtn" data-act="back" aria-label="返回">${icon("chevL", 22, 2.2)}</button>`; }
@@ -611,8 +614,7 @@ function msgHtml(m) {
 }
 function scrChat() {
   const c = conv(S.convId);
-  const busy = !!streamTimer;
-  const here = streamingIn(c);
+  const busy = busyIn(c);
   const model = c ? c.model : S.lastModel;
   const title = c ? c.title : "新对话";
   const trailing = c ? `<button class="iconbtn" data-act="info" aria-label="对话信息">${icon("more", 22)}</button>` : spacer();
@@ -625,8 +627,8 @@ function scrChat() {
   } else if (c && c.archived) {
     dock = `<button class="btn btn-secondary btn-lg" data-act="restore">恢复到对话列表后继续</button>`;
   } else {
-    const lock = busy ? (here ? "回复完成后可切换模型" : "另一个对话正在回复") : "";
-    const action = here
+    const lock = busy ? "回复完成后可切换模型" : "";
+    const action = busy
       ? `<button class="send on" data-act="stop" aria-label="停止">${icon("stop", 16, 2.4)}</button>`
       : `<button class="send${S.draft.trim() && !busy ? " on" : ""}" data-act="send" aria-label="发送">${icon("arrowUp", 18, 2.4)}</button>`;
     dock = `<div class="chip-row"><button class="chip" data-act="model-sheet"${busy ? " disabled" : ""}>${icon("chat", 14, 2.2)}${esc(modelLabel(model))}${icon("chevD", 14, 2.2)}</button>
@@ -733,7 +735,7 @@ function sheetHtml() {
       <p class="footnote" style="margin:10px 2px 0">切换只影响下一轮，之前的回复保留原来的模型标记。</p>`;
   } else if (S.sheet === "info" && c) {
     inner = `<h3>${esc(c.title)}</h3>
-      <div class="kv"><span class="k">模型</span><button class="v" data-act="model-sheet"${streamTimer ? " disabled" : ""}>${esc(modelLabel(c.model))}${icon("chevR", 16)}</button></div>
+      <div class="kv"><span class="k">模型</span><button class="v" data-act="model-sheet"${busyIn(c) ? " disabled" : ""}>${esc(modelLabel(c.model))}${icon("chevR", 16)}</button></div>
       <div class="kv"><span class="k">网关</span><span class="v muted">Minih Router · 直连</span></div>
       <div class="kv"><span class="k">保存位置</span><span class="v muted">这台手机</span></div>
       <div class="group flat" style="margin-top:12px;background:var(--rm-bg-surface)">
@@ -851,16 +853,18 @@ function cannedReply(text) {
 }
 function startStream(c, reply, full) {
   let i = 0;
-  streamTimer = setInterval(() => {
+  const timer = setInterval(() => {
     i += 2;
     reply.text = full.slice(0, i);
-    if (i >= full.length) { clearInterval(streamTimer); streamTimer = null; delete reply.state; }
+    if (i >= full.length) { clearInterval(timer); streamTimers.delete(c.id); delete reply.state; }
     if (S.screen === "chat" || S.screen === "chats") render({ keepScroll: true });
   }, 45);
+  streamTimers.set(c.id, timer);
 }
 function send() {
   const text = S.draft.trim();
-  if (!text || streamTimer) return;
+  /* One open exchange per conversation; other conversations keep generating. */
+  if (!text || busyIn(conv(S.convId))) return;
   let c = conv(S.convId);
   if (!c) {
     /* A conversation enters history with its first saved message, never before. */
@@ -878,12 +882,19 @@ function send() {
   startStream(c, reply, cannedReply(text));
   render();
 }
-function stopStream(state) {
-  if (!streamTimer) return false;
-  clearInterval(streamTimer);
-  streamTimer = null;
-  for (const c of S.convs) for (const m of c.msgs) if (m.state === "streaming") m.state = state;
-  return true;
+/** Stop one conversation's reply, or every one of them when no id is given. */
+function stopStream(state, target) {
+  const convs = target ? [target] : S.convs;
+  let stopped = false;
+  for (const c of convs) {
+    const timer = streamTimers.get(c.id);
+    if (!timer) continue;
+    clearInterval(timer);
+    streamTimers.delete(c.id);
+    for (const m of c.msgs) if (m.state === "streaming") m.state = state;
+    stopped = true;
+  }
+  return stopped;
 }
 
 /* ------------------------------------------------------------- events */
@@ -923,7 +934,7 @@ app.addEventListener("click", (e) => {
   else if (act === "retry" && c) {
     const old = c.msgs.filter((m) => m.state === "interrupted").slice(-1)[0];
     const user = c.msgs.filter((m) => m.role === "user").slice(-1)[0];
-    if (!old || streamTimer) return;
+    if (!old || busyIn(c)) return;
     old.state = "superseded";
     const reply = { role: "ai", model: c.model, text: "", state: "streaming" };
     c.msgs.push(reply);
@@ -948,15 +959,15 @@ app.addEventListener("click", (e) => {
   else if (act === "ask-delete") { S.sheet = "delete"; render({ keepScroll: true }); }
   else if (act === "do-delete" && c) { S.convs = S.convs.filter((x) => x !== c); back(); toast("已删除"); }
   else if (act === "unlink") { S.sheet = "unlink"; render({ keepScroll: true }); }
-  else if (act === "do-unlink") { stopStream("stopped"); S.connected = false; S.sheet = null; toast("已断开，本机密钥已删除"); }
+  else if (act === "do-unlink") { stopStream("interrupted"); S.connected = false; S.sheet = null; toast("已断开，本机密钥已删除，进行中的回复已中断"); }
   else if (act === "clear-history") { S.sheet = "clear"; render({ keepScroll: true }); }
-  else if (act === "do-clear") { stopStream("stopped"); S.convs = []; S.sheet = null; toast("已清除"); }
+  else if (act === "do-clear") { stopStream("stopped"); S.convs = []; streamTimers.clear(); S.sheet = null; toast("已清除"); }
 });
 app.addEventListener("input", (e) => {
   if (e.target.id === "composer-input") {
     S.draft = e.target.value;
     const btn = app.querySelector('[data-act="send"]');
-    if (btn) btn.classList.toggle("on", !!S.draft.trim() && !streamTimer);
+    if (btn) btn.classList.toggle("on", !!S.draft.trim() && !busyIn(conv(S.convId)));
   } else if (e.target.id === "search-input") {
     S.query = e.target.value;
     render({ keepScroll: true });
@@ -1015,7 +1026,12 @@ document.getElementById("demos").addEventListener("click", (e) => {
     S.stack = [{ screen: "computers" }, { screen: "projects" }];
     S.screen = "session"; S.dir = "push";
     toast("已切到「电脑」，对话草稿已保存");
-  } else if (b.dataset.demo === "background") {
+  } else if (b.dataset.demo === "away") {
+    /* A short trip away keeps the reply: nothing is cancelled (§6). */
+    if (streamTimers.size > 0) toast("切到后台的这几秒里，回复继续生成；回来它还在");
+    else toast("先在对话页发一条消息，再点这里");
+  } else if (b.dataset.demo === "suspend") {
+    /* The system reclaimed the process: the checkpoint stays, the reply does not. */
     if (stopStream("interrupted")) toast("回到前台：回复已中断，保留已收到的内容，可重试");
     else toast("先在对话页发一条消息，再点这里");
   }

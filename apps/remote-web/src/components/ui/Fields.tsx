@@ -101,7 +101,7 @@ export function TicketField({
           rows={3}
           value={value}
           onChange={onChange}
-          className={`w-full resize-none bg-transparent font-mono text-[15px] leading-[22px] text-[var(--rm-text-primary)] placeholder-[var(--rm-text-faint)] outline-none ${className}`}
+          className={`w-full resize-none bg-transparent font-mono text-[16px] leading-[22px] text-[var(--rm-text-primary)] placeholder-[var(--rm-text-faint)] outline-none ${className}`}
           {...rest}
         />
         {canPaste && onPasteText ? (

@@ -272,7 +272,7 @@ describe("running one reply", () => {
     await tick();
     stream.send("partial answer");
     await tick();
-    await runner.stop();
+    await runner.stop(turn.conversation.id);
     const outcome = await pending;
 
     expect(outcome.ok).toBe(true);
@@ -304,7 +304,7 @@ describe("running one reply", () => {
     await tick();
     stream.send("kept");
     await tick();
-    await runner.stop();
+    await runner.stop(turn.conversation.id);
     await pending;
     // A late delta from the dead socket must not reach the record.
     stream.send(" and this must not appear");
@@ -315,7 +315,7 @@ describe("running one reply", () => {
     expect(store.snapshot().attempts.every((attempt) => attempt.state !== "streaming")).toBe(true);
   });
 
-  it("reports a failed reply with its kind and keeps the partial text", async () => {
+  it("treats a dropped connection as interrupted and keeps the partial text", async () => {
     const { history, ids } = harness();
     const turn = await beginTurn(history, ids, "hello", "2026-10-21T09:00:00.000Z");
     const stream = controlledFetch();
@@ -340,13 +340,71 @@ describe("running one reply", () => {
     stream.failWith("connection reset");
     const outcome = await pending;
 
+    // Losing the connection is not the user's mistake (§6): the attempt is
+    // interrupted, exactly like a suspension, so the screen offers Retry.
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.attempt.state).toBe("interrupted");
+      expect(outcome.attempt.errorKind).toBe("interrupted");
+    }
+    const transcript = (await history.transcript(turn.conversation.id))!;
+    expect(transcript.messages.find((message) => message.role === "assistant")?.text).toBe("as far as we got");
+  });
+
+  it("keeps an unreachable gateway a transport failure, not an interruption", async () => {
+    const { history, ids } = harness();
+    const turn = await beginTurn(history, ids, "hello", "2026-10-21T09:00:00.000Z");
+    const runner = createDirectChatRunner({
+      store: createMemoryDirectChatStore(),
+      history,
+      origin: "https://models.example.test",
+      // Nothing arrives: the request never reached the gateway.
+      fetchImpl: (async () => {
+        throw new TypeError("Failed to fetch");
+      }) as unknown as typeof fetch,
+    });
+    const outcome = await runner.start({
+      scope: SCOPE,
+      conversationId: turn.conversation.id,
+      attempt: turn.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
     expect(outcome.ok).toBe(true);
     if (outcome.ok) {
       expect(outcome.attempt.state).toBe("failed");
       expect(outcome.attempt.errorKind).toBe("transport");
     }
-    const transcript = (await history.transcript(turn.conversation.id))!;
-    expect(transcript.messages.find((message) => message.role === "assistant")?.text).toBe("as far as we got");
+  });
+
+  it("keeps a refused request failed, with its own reason", async () => {
+    const { history, ids } = harness();
+    const turn = await beginTurn(history, ids, "hello", "2026-10-21T09:00:00.000Z");
+    const runner = createDirectChatRunner({
+      store: createMemoryDirectChatStore(),
+      history,
+      origin: "https://models.example.test",
+      // A refusal is the gateway answering, not the connection dropping.
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ error: { message: "invalid key" } }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        })) as unknown as typeof fetch,
+    });
+    const outcome = await runner.start({
+      scope: SCOPE,
+      conversationId: turn.conversation.id,
+      attempt: turn.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.attempt.state).toBe("failed");
+      expect(outcome.attempt.errorKind).toBe("unauthorized");
+    }
   });
 
   it("marks the reply interrupted when the app leaves the foreground", async () => {
@@ -570,5 +628,224 @@ describe("checkpoints that overlap each other", () => {
     expect(transcript.messages.find((message) => message.role === "assistant")?.text).toBe(
       "first words and the rest",
     );
+  });
+});
+
+/**
+ * A `fetch` that keeps every call's stream separate, so two conversations can
+ * be driven at once: the earlier single-stream fake could only answer one.
+ */
+function multiStreamFetch() {
+  const streams: Array<{
+    send: (text: string) => void;
+    finish: () => void;
+    aborted: () => boolean;
+  }> = [];
+  const fetchImpl = (async (_url: string, options: RequestInit) => {
+    let push: ((chunk: string) => void) | null = null;
+    let close: (() => void) | null = null;
+    let aborted = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        push = (chunk) => {
+          try {
+            controller.enqueue(encoder.encode(chunk));
+          } catch {
+            // A cancelled stream ignores late deltas, which is what we test.
+          }
+        };
+        close = () => controller.close();
+        options.signal?.addEventListener("abort", () => {
+          aborted = true;
+          controller.error(new DOMException("aborted", "AbortError"));
+        });
+      },
+    });
+    streams.push({
+      send: (text) => push?.(`data: {"choices":[{"delta":{"content":${JSON.stringify(text)}}}]}\n\n`),
+      finish: () => {
+        push?.('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n');
+        push?.("data: [DONE]\n\n");
+        close?.();
+      },
+      aborted: () => aborted,
+    });
+    return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+  }) as unknown as typeof fetch;
+  return { fetchImpl, streams };
+}
+
+describe("several conversations replying at once (ADR §5)", () => {
+  it("streams two replies without mixing their text", async () => {
+    const { history, store, ids } = harness();
+    const { fetchImpl, streams } = multiStreamFetch();
+    const runner = createDirectChatRunner({ store, history, origin: "https://models.example.test", fetchImpl });
+    const first = await beginTurn(history, ids, "question one", "2026-10-21T09:00:00.000Z");
+    const second = await beginTurn(history, ids, "question two", "2026-10-21T09:00:00.000Z");
+
+    const pendingFirst = runner.start({
+      scope: SCOPE,
+      conversationId: first.conversation.id,
+      attempt: first.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    const pendingSecond = runner.start({
+      scope: SCOPE,
+      conversationId: second.conversation.id,
+      attempt: second.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    await tick();
+    expect(streams).toHaveLength(2);
+    const state = runner.state();
+    expect(state.phase).toBe("running");
+    if (state.phase === "running") {
+      expect(state.replies).toEqual(
+        expect.arrayContaining([
+          { conversationId: first.conversation.id, attemptId: first.attempt.id },
+          { conversationId: second.conversation.id, attemptId: second.attempt.id },
+        ]),
+      );
+    }
+
+    streams[0]!.send("answer one");
+    streams[1]!.send("answer two");
+    await tick();
+    // Each conversation paints only its own text.
+    expect(runner.streamingText(first.conversation.id)).toBe("answer one");
+    expect(runner.streamingText(second.conversation.id)).toBe("answer two");
+
+    streams[0]!.finish();
+    streams[1]!.finish();
+    const [outcomeFirst, outcomeSecond] = await Promise.all([pendingFirst, pendingSecond]);
+    expect(outcomeFirst.ok).toBe(true);
+    expect(outcomeSecond.ok).toBe(true);
+
+    const answers = async (id: string) =>
+      (await history.transcript(id))!.messages
+        .filter((message) => message.role === "assistant")
+        .map((message) => message.text);
+    expect(await answers(first.conversation.id)).toEqual(["answer one"]);
+    expect(await answers(second.conversation.id)).toEqual(["answer two"]);
+    expect(runner.state()).toEqual({ phase: "idle" });
+  });
+
+  it("stops one conversation and lets the other finish", async () => {
+    const { history, store, ids } = harness();
+    const { fetchImpl, streams } = multiStreamFetch();
+    const runner = createDirectChatRunner({ store, history, origin: "https://models.example.test", fetchImpl });
+    const first = await beginTurn(history, ids, "stop me", "2026-10-21T09:00:00.000Z");
+    const second = await beginTurn(history, ids, "keep me", "2026-10-21T09:00:00.000Z");
+    const pendingFirst = runner.start({
+      scope: SCOPE,
+      conversationId: first.conversation.id,
+      attempt: first.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    const pendingSecond = runner.start({
+      scope: SCOPE,
+      conversationId: second.conversation.id,
+      attempt: second.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    await tick();
+    streams[0]!.send("half of one");
+    streams[1]!.send("all of two");
+    await tick();
+
+    await runner.stop(first.conversation.id);
+    const stopped = await pendingFirst;
+    expect(stopped.ok && stopped.attempt.state).toBe("stopped");
+    expect(streams[0]!.aborted()).toBe(true);
+    // The other conversation is untouched by that stop.
+    expect(streams[1]!.aborted()).toBe(false);
+    expect(runner.streamingText(second.conversation.id)).toBe("all of two");
+
+    streams[1]!.finish();
+    const finished = await pendingSecond;
+    expect(finished.ok && finished.attempt.state).toBe("complete");
+    const stored = (await history.transcript(first.conversation.id))!;
+    expect(stored.messages.find((message) => message.role === "assistant")?.text).toBe("half of one");
+  });
+
+  it("still refuses a second send in the same conversation", async () => {
+    const { history, store, ids } = harness();
+    const { fetchImpl, streams } = multiStreamFetch();
+    const runner = createDirectChatRunner({ store, history, origin: "https://models.example.test", fetchImpl });
+    const turn = await beginTurn(history, ids, "one at a time here", "2026-10-21T09:00:00.000Z");
+    const pending = runner.start({
+      scope: SCOPE,
+      conversationId: turn.conversation.id,
+      attempt: turn.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    await tick();
+
+    const again = await runner.start({
+      scope: SCOPE,
+      conversationId: turn.conversation.id,
+      attempt: turn.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    expect(again).toEqual({ ok: false, reason: "busy" });
+    // The refusal is about this conversation, not the app: one stream, not two.
+    expect(streams).toHaveLength(1);
+
+    await runner.stop(turn.conversation.id);
+    await pending;
+  });
+
+  it("interrupts every reply when the account changes", async () => {
+    const { history, store, ids } = harness();
+    const { fetchImpl, streams } = multiStreamFetch();
+    const runner = createDirectChatRunner({ store, history, origin: "https://models.example.test", fetchImpl });
+    const first = await beginTurn(history, ids, "first", "2026-10-21T09:00:00.000Z");
+    const second = await beginTurn(history, ids, "second", "2026-10-21T09:00:00.000Z");
+    const pendingFirst = runner.start({
+      scope: SCOPE,
+      conversationId: first.conversation.id,
+      attempt: first.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    const pendingSecond = runner.start({
+      scope: SCOPE,
+      conversationId: second.conversation.id,
+      attempt: second.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    await tick();
+    streams[0]!.send("kept part");
+    await tick();
+
+    await runner.interrupt("account-changed");
+    await Promise.all([pendingFirst, pendingSecond]);
+
+    for (const [id, attemptId] of [
+      [first.conversation.id, first.attempt.id],
+      [second.conversation.id, second.attempt.id],
+    ] as const) {
+      const transcript = (await history.transcript(id))!;
+      const attempt = transcript.attempts.find((candidate) => candidate.id === attemptId);
+      expect(attempt?.state).toBe("interrupted");
+      expect(attempt?.errorKind).toBe("interrupted");
+    }
+    expect(streams.every((stream) => stream.aborted())).toBe(true);
+    expect(runner.state()).toEqual({ phase: "idle" });
   });
 });

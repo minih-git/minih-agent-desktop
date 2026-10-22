@@ -48,7 +48,7 @@ export function ModelSheet({ open, models, selectedId, onClose, onSelect }: Mode
           onChange={(event) => setQuery(event.target.value)}
           placeholder={t("modelSheet.search")}
           aria-label={t("modelSheet.search")}
-          className="min-w-0 flex-1 bg-transparent py-2 text-[15px] text-[var(--rm-text-primary)] placeholder-[var(--rm-text-faint)] outline-none"
+          className="min-w-0 flex-1 bg-transparent py-2 text-[16px] text-[var(--rm-text-primary)] placeholder-[var(--rm-text-faint)] outline-none"
         />
       </label>
 
@@ -127,5 +127,6 @@ function protocolLabel(protocol: string): string {
 }
 
 function reasonLabel(t: (key: string) => string, reason: ModelUnavailableReason): string {
+  if (reason === "image-model") return t("modelSheet.reason.imageModel");
   return reason === "not-chat" ? t("modelSheet.reason.notChat") : t("modelSheet.reason.protocol");
 }

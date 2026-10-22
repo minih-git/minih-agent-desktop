@@ -72,8 +72,37 @@ describe("choosing a protocol", () => {
 });
 
 describe("models that are not chat choices", () => {
-  it("disables a model that declares only non-conversation protocols", () => {
-    for (const protocols of [["openai-images"], ["openai-embeddings"], ["rerank"], ["ocr"], ["openai-images", "ocr"]]) {
+  it("disables an image model even when the gateway also lists a chat protocol", () => {
+    // Router lists every protocol a route group accepts, so a `gpt-image` row
+    // arrives declaring chat completions too. Offering it as a conversation
+    // model sent a request the upstream refused - the failure this pins.
+    const real = [
+      "openai-completions",
+      "openai-responses",
+      "openai-images",
+      "anthropic",
+      "gemini",
+    ];
+    const choice = resolveDirectModel(model({ id: "gpt-image-2.5", protocols: real }));
+    expect(choice.usable).toBe(false);
+    if (!choice.usable) expect(choice.reason).toBe("image-model");
+  });
+
+  it("keeps the image reason on rows that also declare another chat protocol", () => {
+    // An image row is explained as an image row, not as a protocol mismatch.
+    for (const protocols of [
+      ["openai-images"],
+      ["openai-images", "openai-completions"],
+      ["anthropic", "openai-images"],
+    ]) {
+      const choice = resolveDirectModel(model({ id: "m", protocols }));
+      expect(choice.usable, protocols.join(",")).toBe(false);
+      if (!choice.usable) expect(choice.reason, protocols.join(",")).toBe("image-model");
+    }
+  });
+
+  it("disables a model that declares only other non-conversation protocols", () => {
+    for (const protocols of [["openai-embeddings"], ["rerank"], ["ocr"], ["openai-embeddings", "ocr"]]) {
       const choice = resolveDirectModel(model({ id: "m", protocols }));
       expect(choice.usable, protocols.join(",")).toBe(false);
       if (!choice.usable) expect(choice.reason).toBe("not-chat");
@@ -90,7 +119,7 @@ describe("models that are not chat choices", () => {
   });
 
   it("calls a model with an unimplemented chat protocol unsupported, not non-chat", () => {
-    const choice = resolveDirectModel(model({ id: "claude", protocols: ["anthropic", "openai-images"] }));
+    const choice = resolveDirectModel(model({ id: "claude", protocols: ["anthropic"] }));
     expect(choice.usable).toBe(false);
     if (!choice.usable) expect(choice.reason).toBe("unsupported-protocol");
   });

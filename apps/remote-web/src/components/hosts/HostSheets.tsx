@@ -376,7 +376,7 @@ export function GatewaySheet({
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
-            className="w-full rounded-[12px] border border-[var(--rm-separator)] bg-[var(--rm-bg-surface)] px-3.5 py-2.5 font-mono text-[14px] text-[var(--rm-text-primary)] placeholder-[var(--rm-text-faint)] outline-none focus:border-[var(--rm-accent)]"
+            className="w-full rounded-[12px] border border-[var(--rm-separator)] bg-[var(--rm-bg-surface)] px-3.5 py-2.5 font-mono text-[16px] text-[var(--rm-text-primary)] placeholder-[var(--rm-text-faint)] outline-none focus:border-[var(--rm-accent)]"
           />
           {error ? (
             <p className="px-1 text-[12px] text-[var(--rm-error)]">{error}</p>

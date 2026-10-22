@@ -138,9 +138,12 @@ describe("projecting a transcript", () => {
           }),
         ],
       }),
+      { noReplyText: "No reply was received." },
     );
     const stateRow = view.items.find((item) => item.id === "state-a1");
-    expect(stateRow?.text).toContain("401");
+    // The stored diagnostic is English and internal: the row uses the screen's words.
+    expect(stateRow?.text).toBe("No reply was received.");
+    expect(stateRow?.text).not.toContain("401");
     expect(view.retryable?.id).toBe("a1");
   });
 
