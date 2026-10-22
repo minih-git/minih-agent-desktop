@@ -10,8 +10,14 @@ import test from "node:test";
 import {
   bindingAfterRemoval,
   bindingFromRouterModel,
+  hiddenIdsWithout,
+  hiddenIdsWith,
+  hiddenModelIdsFor,
   mergeAddedBindings,
+  missingCatalogModels,
+  planCatalogSync,
   planModelsSave,
+  sameHiddenIds,
 } from "../src/components/settings/models-page-state.ts";
 
 /** A gateway plaza row as the models endpoint reports it. */
@@ -191,4 +197,99 @@ test("an image binding naming a removed model is dropped with its default", () =
   assert.equal(plan.settings?.imageGeneration, null);
   // The chat default still resolves, so it is not rewritten.
   assert.equal(plan.settings?.defaultModelId, undefined);
+});
+
+test("the catalog mirror carries every model the account serves", () => {
+  const current = [bindingFromRouterModel(plazaModel("a"))];
+  const catalog = [plazaModel("a"), plazaModel("b"), plazaModel("c")];
+  const next = planCatalogSync(current, catalog, []);
+  assert.deepEqual(next?.map((binding) => binding.id), ["a", "b", "c"]);
+  // The row's own entry is the caller's object, not a re-seeded copy: a
+  // configured alias, limits or thinking ladder never move on a sync.
+  assert.equal(next?.[0], current[0]);
+  // A settled page plans nothing, which is what stops the mirror from looping.
+  assert.equal(planCatalogSync(next, catalog, []), null);
+});
+
+test("a binding the gateway stopped listing stays on the row", () => {
+  const current = [bindingFromRouterModel(plazaModel("kept")), bindingFromRouterModel(plazaModel("legacy"))];
+  const next = planCatalogSync(current, [plazaModel("kept")], []);
+  // Only an explicit removal leaves the list; a shorter plaza is not one.
+  assert.equal(next, null);
+});
+
+test("a hidden model stays out of the mirror, and restoring it brings it back", () => {
+  const catalog = [plazaModel("a"), plazaModel("b"), plazaModel("c")];
+  const hidden = hiddenIdsWith([], "B");
+  assert.deepEqual(hidden, ["b"]);
+  assert.deepEqual(missingCatalogModels([], catalog, hidden).map((model) => model.id), ["a", "c"]);
+  assert.deepEqual(
+    planCatalogSync([], catalog, hidden)?.map((binding) => binding.id),
+    ["a", "c"],
+  );
+  // Restoring the id drops it from the hidden list, so the next sync carries it.
+  const restored = hiddenIdsWithout(hidden, ["b"]);
+  assert.deepEqual(restored, []);
+  assert.deepEqual(
+    planCatalogSync([bindingFromRouterModel(plazaModel("a"))], catalog, restored)?.map(
+      (binding) => binding.id,
+    ),
+    ["a", "b", "c"],
+  );
+});
+
+test("a hidden model already on the row is dropped by the next sync", () => {
+  const current = [bindingFromRouterModel(plazaModel("a")), bindingFromRouterModel(plazaModel("b"))];
+  const next = planCatalogSync(current, [plazaModel("a"), plazaModel("b")], ["b"]);
+  assert.deepEqual(next?.map((binding) => binding.id), ["a"]);
+});
+
+test("hidden ids are stored per provider row and compared as a set", () => {
+  const stored = { "router-1": ["B", "a"], "router-2": ["c"] };
+  assert.deepEqual(hiddenModelIdsFor(stored, "router-1"), ["b", "a"]);
+  assert.deepEqual(hiddenModelIdsFor(stored, "router-3"), []);
+  assert.deepEqual(hiddenModelIdsFor(null, "router-1"), []);
+  assert.equal(sameHiddenIds(["b", "a"], ["a", "b", "A"]), true);
+  assert.equal(sameHiddenIds(["a"], ["a", "b"]), false);
+});
+
+test("the mirror seeds only the models it appends from the catalog", () => {
+  const asked = [];
+  const next = planCatalogSync([bindingFromRouterModel(plazaModel("known"))], [plazaModel("known"), plazaModel("fresh", 400_000)], [], (model) => {
+    asked.push(model.id);
+    return model.id === "fresh" ? { modelId: "fresh", contextWindow: 1_000_000 } : null;
+  });
+  assert.deepEqual(asked, ["fresh"]);
+  assert.deepEqual(next?.map((binding) => binding.id), ["known", "fresh"]);
+  assert.equal(next?.[1]?.contextWindow, 1_000_000);
+});
+
+test("removing the model the app default names moves that default on", () => {
+  const row = provider({
+    models: [bindingFromRouterModel(plazaModel("primary")), bindingFromRouterModel(plazaModel("second"))],
+  });
+  const plan = planModelsSave(
+    row,
+    [bindingFromRouterModel(plazaModel("second"))],
+    { defaultProviderId: "router-1", defaultModelId: "primary" },
+    [row],
+  );
+  // The row still serves another model, but not the one the default names: a
+  // stale id would launch sessions on a model the row no longer sends.
+  assert.deepEqual(plan.settings?.defaultProviderId, "router-1");
+  assert.deepEqual(plan.settings?.defaultModelId, "second");
+});
+
+test("a default resolving on another provider survives this row's save", () => {
+  const row = provider({
+    models: [bindingFromRouterModel(plazaModel("primary")), bindingFromRouterModel(plazaModel("second"))],
+  });
+  const other = provider({ id: "router-2", models: [bindingFromRouterModel(plazaModel("other"))] });
+  const plan = planModelsSave(
+    row,
+    [bindingFromRouterModel(plazaModel("second"))],
+    { defaultProviderId: "router-2", defaultModelId: "other" },
+    [row, other],
+  );
+  assert.equal(plan.settings, null);
 });

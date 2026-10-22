@@ -50,7 +50,8 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
   3. **Shortcuts / 快捷键** — Lucide `Keyboard` (keyboard shortcuts)
   4. **Instructions / 指令** — Lucide `FileText` (global and project instruction files)
   5. **Accounts / 账户** — Lucide `KeyRound` (the Minih Router token and every other provider)
-  6. **Models / 模型** — Lucide `Bot` (chosen models and the gateway catalog)
+  6. **Models / 模型** — Lucide `Bot` (the account's model catalog, configured per
+     model)
   7. **Skills / 技能** — Lucide `BookOpen` (reusable agent instructions)
   8. **MCP** — Lucide `Server` (agent connections)
   9. **Subagents / 子智能体** — Lucide `Bot` (built-in and personal parallel agents)
@@ -484,7 +485,8 @@ a usage tab.
   that starts collapsed and defaults to `https://router.hmini.org/v1`, so a
   self-hosted gateway is reachable without putting an address in the way of the
   common path. Connecting creates a `minih-router` row with **no models**: the
-  models are chosen on the models page.
+  models page mirrors the account's own catalog onto it on first open, so the
+  user never assembles a model list by hand.
 - The connected card shows the masked key name and mask, with actions to
   replace the token, edit the endpoint (normalized to its `/v1` API address),
   and disconnect. Below it: the balance card (see **Minih Router panel** below),
@@ -540,11 +542,25 @@ a usage tab.
   destination rather than an embed of `RemoteHostsPage`.
 
 ### Models (`agent` tab)
-- The models page groups its sections in this order: the **chosen models** as
+- The models page groups its sections in this order: the **account's models** as
   cards, the image-generation model selector (rendered once at least one model
   is designated as an image model), the **session creation model** selector,
   then the model-catalog status and refresh row. The sections use one consistent
   vertical spacing rhythm.
+- The cards are the account's own catalog, not a list to assemble: opening the
+  page reads the gateway plaza for the connected row and mirrors every model the
+  key can reach onto the row, so each one is usable in chat without being picked
+  here first. The mirror is additive and idempotent — models already on the row
+  keep their configuration and order, a model the plaza stops listing is kept
+  (the row may still send it), and a catalog read that failed leaves the row
+  exactly as stored. The first entry of the mirror leads the row's own default
+  model, and it claims the app's chat default only while nothing runnable
+- **Remove** hides a model instead of merely dropping one entry: the id is
+  remembered per provider row in `AppSettings.hiddenModelIds` (lowercased wire
+  ids, device-local and deliberately outside the portable config-sync fields),
+  so the card disappears, the row stops sending it, and the next catalog mirror
+  leaves it out. The models page and the chat model picker therefore agree, and
+  a model the gateway keeps advertising cannot come back on its own.
 - The **session creation model** row names the model a session the Agent
   creates for itself runs on (ADR session-create-tool). It renders only while at
   least one provider can run a chat model right now — enabled, credentialed, and
@@ -594,17 +610,19 @@ a usage tab.
   paging that keeps the current page visible while the next loads, a
   **select-all row** for every card on the current page that the row does not
   carry yet (indeterminate while only some are picked, and it never touches
-  cards already configured), and a selection count in the footer. Cards already configured on the row render as
-  added and cannot be re-picked. Confirming appends the chosen bindings and
-  claims the app's chat default only while nothing runnable resolves.
-  The dialog's search row stays at the input's natural height directly below
-  the title; it never reserves the horizontal toolbar's flex basis as vertical
-  space, including in short and large windows.
-- Removing a model drops any image-generation binding naming it and leaves no
-  dangling replacement behind: a stored default is only replaced when another
-  model on the row can run it. A failed read is shown in place with the
-  gateway's message and offers Retry, keeping the previous page. Nothing on the
-  page stores or shows the token itself.
+  cards already configured), and a selection count in the footer. Because the
+  page mirrors the catalog, the only cards it still offers are the ones removed
+  with **Remove**: confirming restores them (dropping the id from the hidden
+  list) and the page renders them as added again. The dialog's search row stays
+  at the input's natural height directly below the title; it never reserves the
+  horizontal toolbar's flex basis as vertical space, including in short and
+  large windows.
+- Removing a model drops any image-generation binding naming it and moves the
+  app's chat default when that default named the removed model — a stale id
+  would launch sessions on a model the row no longer sends — while a default
+  another provider resolves stays untouched. A failed catalog read is shown in
+  place with the gateway's message and offers Retry, keeping the previous page.
+  Nothing on the page stores or shows the token itself.
 - **Defaults** card: a compact settings row shows the provider name and exact
   model ID beneath the Default model label. A quiet Change action opens the
   picker without duplicating the current value. The picker groups model-level

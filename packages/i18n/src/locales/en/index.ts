@@ -1802,7 +1802,7 @@ sklm: {
     modelsNoAccountDesc: "Models come from the Minih Router account. Configure its token on the Accounts page.",
     modelsGoToAccounts: "Go to accounts",
     modelsEmptyTitle: "No models yet",
-    modelsEmptyDesc: "Add the models this account should serve; the first one becomes the default.",
+    modelsEmptyDesc: "The gateway lists no models for this account's key yet.",
     addModelsTitle: "Add models",
     addModelsSelected: "{{count}} selected",
     addModelsConfirm: "Add",

@@ -1775,7 +1775,7 @@ sklm: {
     "modelsNoAccountDesc": "Los modelos provienen de la cuenta de Minih Router. Configura su token en la página de cuentas.",
     "modelsGoToAccounts": "Ir a las cuentas",
     "modelsEmptyTitle": "Aún no hay modelos",
-    "modelsEmptyDesc": "Añade los modelos que esta cuenta debe servir; el primero será el predeterminado.",
+    "modelsEmptyDesc": "La pasarela aún no informa modelos para la clave de esta cuenta.",
     "addModelsTitle": "Añadir modelos",
     "addModelsSelected": "{{count}} seleccionados",
     "addModelsConfirm": "Añadir",

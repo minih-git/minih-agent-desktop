@@ -1769,7 +1769,7 @@ sklm: {
     modelsNoAccountDesc: "模型來自 Minih Router 帳戶，請先在帳戶頁設定權杖。",
     modelsGoToAccounts: "前往帳戶",
     modelsEmptyTitle: "還沒有模型",
-    modelsEmptyDesc: "新增此帳戶要使用的模型，第一個會成為預設模型。",
+    modelsEmptyDesc: "閘道尚未為此帳戶的 AccessKey 回傳任何模型。",
     addModelsTitle: "新增模型",
     addModelsSelected: "已選 {{count}} 個",
     addModelsConfirm: "新增",

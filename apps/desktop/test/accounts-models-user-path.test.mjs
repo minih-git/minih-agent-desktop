@@ -4,13 +4,14 @@
  * 1. A fresh install shows only the Minih Router connect card: one token field
  *    (plus an optional endpoint behind "Advanced"), and connecting creates a
  *    `minih-router` row with no models at all.
- * 2. The models page for that row offers "Add models": the gateway plaza as
- *    selectable cards with search and paging, and confirming saves the chosen
- *    bindings.
+ * 2. The models page for that row is the account's catalog: every model the key
+ *    can reach becomes a card there, without a picker — the first one leads the
+ *    row and the app default. Removing a card hides that model (the removal is
+ *    remembered per row), and the add dialog is how it comes back.
  * 3. A model's configure drawer can pin its own protocol mode; "Follow global"
  *    stays the default and saves no `apiStyle` for that binding.
- * 4. Removing a model re-plans the app defaults instead of leaving a dangling
- *    default behind.
+ * 4. Removing the model the app default names re-plans that default instead of
+ *    leaving a dangling one behind.
  *
  * IPC is answered by a fake main; the pages, dialog, drawer and formatting are
  * the real renderer code.
@@ -265,11 +266,86 @@ window.accountsProbe = async ({ width, height }) => {
     keyLine: document.querySelector(".accounts-identity-copy .accounts-connected-key")?.textContent ?? null,
   };
 
-  // 2) Models page for the connected row.
+  // 2) Models page for the connected row: the account's whole catalog becomes
+  //    the page, without anything being picked here first.
   mount(null);
   mount(React.createElement(ModelsPage));
   await waitFor(() => button("Add models"), "the add-models action did not render");
-  const emptyStateShown = document.body.innerText.includes("No models yet");
+  await waitFor(
+    () => cardIds().length === allModels.length,
+    "the models page did not mirror the account's catalog onto the row",
+  );
+  const mirroredGpt = updated.models.find((model) => model.id === "gpt-4.1");
+  const mirrorFilled = {
+    cards: cardIds().length,
+    rowModels: updated.models.length,
+    // A fresh connect needs no picker: the first catalog entry leads the row and
+    // the app default, and every other entry is usable straight away.
+    defaultFollowsCatalog:
+      updated.defaultModelId === "gpt-4.1" && settings.defaultModelId === "gpt-4.1",
+    emptyStateShown: document.body.innerText.includes("No models yet"),
+  };
+  const addSaved = {
+    modelId: mirroredGpt.id,
+    // A seeded binding keeps no protocol pin.
+    protocolPinLeftToGlobal: !("apiStyle" in mirroredGpt) || !mirroredGpt.apiStyle,
+    // The published record auto-configured the binding: the catalog's window
+    // (400k) replaced the gateway's own number, and the thinking ladder and
+    // image capability follow models.dev instead of defaulting off.
+    autoConfigured: {
+      contextWindow: mirroredGpt.contextWindow,
+      contextWindowSource: mirroredGpt.contextWindowSource,
+      thinkingLevels: mirroredGpt.thinkingLevels,
+      defaultThinkingLevel: mirroredGpt.defaultThinkingLevel,
+      followsPublishedCapabilities:
+        mirroredGpt.supportsImages == null && mirroredGpt.supportsDocuments == null,
+    },
+    // Nothing else in the row was rewritten by the models page.
+    nameUntouched: updated.name === undefined,
+    defaultFollowsFirstBinding: updated.defaultModelId === mirroredGpt.id,
+  };
+
+  // Removing a card hides that model for good: it leaves the row, and the
+  // removal is remembered per row so the next mirror leaves it out.
+  function removeCard(id) {
+    const card = document.querySelector('.models-chosen-card[data-model-id="' + id + '"]');
+    if (!card) throw new Error("the card for " + id + " did not render");
+    const remove = [...card.querySelectorAll("button")]
+      .find((node) => node.textContent.trim() === "Remove model");
+    if (!remove) throw new Error("the remove action for " + id + " did not render");
+    flushSync(() => remove.click());
+  }
+  removeCard("model-01");
+  await waitFor(() => !cardIds().includes("model-01"), "the removed model stayed on the page");
+  removeCard("model-02");
+  await waitFor(
+    () => cardIds().length === allModels.length - 2 && !cardIds().includes("model-02"),
+    "the second removal did not settle",
+  );
+  const hiddenAfterRemoval = {
+    cards: cardIds().length,
+    rowModels: updated.models.length,
+    hiddenIds: settings.hiddenModelIds?.["router-1"] ?? [],
+  };
+  // A remount is the next mirror: both removals must survive it, both rows and
+  // cards staying one short of the catalog.
+  const catalogReadsBeforeRemount = apiCalls
+    .filter((call) => call.channel === "minih-agent-desktop/providers/minihRouter/models").length;
+  mount(null);
+  mount(React.createElement(ModelsPage));
+  await waitFor(
+    () => apiCalls.filter(
+      (call) => call.channel === "minih-agent-desktop/providers/minihRouter/models",
+    ).length > catalogReadsBeforeRemount,
+    "the remount did not read the catalog again",
+  );
+  await settle();
+  await settle();
+  const hiddenSurvivesRemount =
+    cardIds().length === allModels.length - 2 &&
+    updated.models.length === allModels.length - 2 &&
+    !cardIds().includes("model-01") &&
+    !cardIds().includes("model-02");
   const globalStyleRow = document.querySelector(".models-global-style-row");
   const globalStyleRowShown = Boolean(globalStyleRow);
 
@@ -343,69 +419,64 @@ window.accountsProbe = async ({ width, height }) => {
     }));
   }
 
-  // Search settles, then a card can be picked and confirmed.
+  // The removed models are the only cards this dialog still offers: every other
+  // plaza entry is already on the row, so a restore is a pick and a confirm.
   const search = dialog.querySelector('input[aria-label="Search models, vendors or groups"]');
-  flushSync(() => setValue(search, "gpt"));
+  flushSync(() => setValue(search, "model-01"));
   await waitFor(
     () => dialog.querySelectorAll("[data-model-id]").length === 1,
     "search did not filter the dialog",
   );
-  // Select-all before anything is picked: a fresh search keeps every card
-  // available, so the one visible card becomes selected through the bulk row.
-  const selectAllBefore = document.querySelector(".add-models-select-all input");
-  const selectAllWasUnchecked = selectAllBefore ? !selectAllBefore.checked : false;
+  const searchFoundHiddenModel =
+    dialog.querySelector("[data-model-id]")?.getAttribute("data-model-id") === "model-01";
   flushSync(() => setValue(search, ""));
   await waitFor(
     () => dialog.querySelectorAll("[data-model-id]").length === 12,
     "clearing the search did not restore the page",
   );
-  // The bulk row selects every card on the page that is not already on the row.
+  const selectAllBefore = document.querySelector(".add-models-select-all input");
+  const selectAllWasUnchecked = selectAllBefore ? !selectAllBefore.checked : false;
+  // The bulk row touches exactly the two hidden models and nothing already
+  // configured on the page.
   const selectAll = document.querySelector(".add-models-select-all input");
   flushSync(() => selectAll.click());
   await waitFor(
-    () => document.querySelector(".add-models-count").textContent.includes("12"),
-    "select-all did not select the whole page",
+    () => document.querySelector(".add-models-count").textContent.includes("2"),
+    "select-all did not take the hidden models",
   );
   const selectAllCheckedAfter = selectAll.checked;
   const selectAllIndeterminate = selectAll.indeterminate;
   flushSync(() => selectAll.click());
   await waitFor(
-    () => !document.querySelector(".add-models-count").textContent.includes("12"),
+    () => document.querySelector(".add-models-count").textContent.includes("0 selected"),
     "select-all did not clear the page",
   );
-  // Then one card is picked on its own, which is what gets saved.
-  const check = dialog.querySelector(".minih-router-model-check");
+  // Then one hidden model is restored on its own.
+  const hiddenCard = dialog.querySelector('[data-model-id="model-01"]');
+  const check = hiddenCard?.querySelector(".minih-router-model-check");
+  if (!check) throw new Error("the hidden model was not offerable in the dialog");
   flushSync(() => check.click());
   const selectedCount = document.querySelector(".add-models-count").textContent;
   flushSync(() => button("Add").click());
-  await waitFor(() => updated && updated.models.length === 1, "the chosen model was not saved");
-
-  const savedBinding = updated.models[0];
-  const addSaved = {
-    modelId: savedBinding.id,
-    // A seeded binding keeps no protocol pin.
-    protocolPinLeftToGlobal: !("apiStyle" in savedBinding) || !savedBinding.apiStyle,
-    // The published record auto-configured the binding: the catalog's window
-    // (400k) replaced the gateway's own number, and the thinking ladder and
-    // image capability follow models.dev instead of defaulting off.
-    autoConfigured: {
-      contextWindow: savedBinding.contextWindow,
-      contextWindowSource: savedBinding.contextWindowSource,
-      thinkingLevels: savedBinding.thinkingLevels,
-      defaultThinkingLevel: savedBinding.defaultThinkingLevel,
-      followsPublishedCapabilities:
-        savedBinding.supportsImages == null && savedBinding.supportsDocuments == null,
-    },
-    // Nothing else in the row was rewritten by the models page.
-    nameUntouched: updated.name === undefined,
-    defaultFollowsFirstBinding: updated.defaultModelId === savedBinding.id,
+  await waitFor(
+    () => updated && cardIds().includes("model-01") && cardIds().length === allModels.length - 1,
+    "the restored model was not saved",
+  );
+  const restoredHiddenModel = {
+    cards: cardIds().length,
+    rowModels: updated.models.length,
+    // Only the model still removed stays hidden.
+    hiddenIds: settings.hiddenModelIds?.["router-1"] ?? [],
   };
 
   // The default the save claimed is reported on the card, not re-settable here.
   const defaultBadgeShown = document.body.innerText.includes("Default");
 
   // 3) Configure opens a modal dialog, not an inline drawer in the card.
-  await waitFor(() => cardIds().length === 1, "the chosen model card did not render");
+  await waitFor(
+    () => cardIds().length === allModels.length - 1,
+    "the catalog cards did not render",
+  );
   const vendorGroupRendered = document.querySelector('[data-vendor-group="OpenAI"] .models-vendor-group-title')?.textContent === "OpenAI";
   if (!vendorGroupRendered) {
     throw new Error("Chosen models page did not render the OpenAI vendor group header");
@@ -549,28 +620,24 @@ window.accountsProbe = async ({ width, height }) => {
   // bindings — including the protocol pin saved earlier — must survive it.
   const designationKeptBinding = JSON.stringify(updated.models) === bindingsBeforeDesignation;
 
-  // 4) Removing the only model leaves no dangling replacement behind: the row
-  //    loses its binding list, and no default is invented for an empty row.
-  const settingsWritesBeforeRemoval = settingsWrites.length;
+  // 4) Removing the model the app default names moves that default to the first
+  //    binding that remains instead of leaving a dangling one, and it drops the
+  //    image designation that named the removed model.
   await waitFor(() => button("Remove model"), "the remove action did not render");
-  flushSync(() => button("Remove model").click());
-  await waitFor(() => updated && updated.models.length === 0, "the model was not removed");
-  // The removal write only drops the image binding that named the removed
-  // model; the chat defaults keep their stored values through it.
   const defaultsBeforeRemoval = {
     provider: settings.defaultProviderId,
     model: settings.defaultModelId,
   };
-  const removalWrites = settingsWrites.slice(settingsWritesBeforeRemoval);
-  const removalWroteNoDefaults = removalWrites.every(
-    (write) =>
-      write.defaultProviderId === defaultsBeforeRemoval.provider &&
-      write.defaultModelId === defaultsBeforeRemoval.model,
-  );
-  const removalDroppedImageBinding = removalWrites.some(
-    (write) => Array.isArray(write.imageGenerationModels) &&
-      write.imageGenerationModels.length === 0,
-  );
+  removeCard("gpt-4.1");
+  await waitFor(() => !cardIds().includes("gpt-4.1"), "the default model was not removed");
+  const firstRemaining = cardIds()[0];
+  const removalMovedTheDefault =
+    defaultsBeforeRemoval.model === "gpt-4.1" &&
+    settings.defaultModelId === firstRemaining &&
+    firstRemaining !== defaultsBeforeRemoval.model;
+  const removalDroppedImageBinding =
+    (settings.imageGenerationModels ?? []).length === 0 &&
+    settings.imageGeneration === null;
 
   // The models page also renders while settings are still absent (the shell's
   // recovery path) without changing its hook order: nothing renders, and the
@@ -597,12 +664,15 @@ window.accountsProbe = async ({ width, height }) => {
     nullSettingsRendersEmpty,
     tokenEntryGoneAfterConnect,
     accountIdentity,
-    emptyStateShown,
+    mirrorFilled,
+    hiddenAfterRemoval,
+    hiddenSurvivesRemount,
     dialogCards,
     selectedCount: selectedCount.trim(),
     selectAllWasUnchecked,
     selectAllCheckedAfter,
     selectAllIndeterminate,
+    restoredHiddenModel,
     addSaved,
     cardStayedCompact,
     modalIsDialog,
@@ -617,7 +687,7 @@ window.accountsProbe = async ({ width, height }) => {
     followGlobalDefault,
     protocolOptions,
     pinnedProtocol,
-    removalWroteNoDefaults,
+    removalMovedTheDefault,
     removalDroppedImageBinding,
     storedDefaultsKept: {
       defaultProviderId: settings.defaultProviderId,
@@ -630,7 +700,7 @@ window.accountsProbe = async ({ width, height }) => {
 };
 `;
 
-test("Accounts and models pages: token-only connect, then models are added, configured and removed", {
+test("Accounts and models pages: token-only connect, then the catalog is the models page", {
   timeout: 90_000,
   skip:
     process.platform === "linux" && !process.env.DISPLAY
@@ -735,12 +805,34 @@ app.whenReady().then(async () => {
       nullSettingsRendersEmpty: true,
       tokenEntryGoneAfterConnect: true,
       accountIdentity: { name: "desktop", glyph: "D", keyLine: "sk-gl-…cret" },
-      emptyStateShown: true,
+      // The page is the account's catalog: every entry is a card and the first
+      // one already leads the row and the app default, so nothing is picked here.
+      mirrorFilled: {
+        cards: 30,
+        rowModels: 30,
+        defaultFollowsCatalog: true,
+        emptyStateShown: false,
+      },
+      // A removal hides the model for good: one card and one binding less, and
+      // the ids are remembered per row so the next mirror leaves them out.
+      hiddenAfterRemoval: {
+        cards: 28,
+        rowModels: 28,
+        hiddenIds: ["model-01", "model-02"],
+      },
+      hiddenSurvivesRemount: true,
       dialogCards: 12,
       selectedCount: "1 selected",
       selectAllWasUnchecked: true,
       selectAllCheckedAfter: true,
       selectAllIndeterminate: false,
+      // The dialog is how a hidden model comes back: it is the only selectable
+      // card left, and confirming drops it from the hidden list.
+      restoredHiddenModel: {
+        cards: 29,
+        rowModels: 29,
+        hiddenIds: ["model-02"],
+      },
       addSaved: {
         modelId: "gpt-4.1",
         protocolPinLeftToGlobal: true,
@@ -776,11 +868,13 @@ app.whenReady().then(async () => {
         "Google Generative AI",
       ],
       pinnedProtocol: "responses",
-      removalWroteNoDefaults: true,
+      // Removing the default model moves that default to the first binding that
+      // remains, and drops the image designation that named it.
+      removalMovedTheDefault: true,
       removalDroppedImageBinding: true,
       storedDefaultsKept: {
         defaultProviderId: "router-1",
-        defaultModelId: "gpt-4.1",
+        defaultModelId: "model-03",
         imageGeneration: null,
       },
       rendererNeverSendsToken: true,

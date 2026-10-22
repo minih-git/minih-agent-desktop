@@ -63,6 +63,18 @@ export type AppSettings = {
   imageGeneration?: import("../image-generation.js").ImageGenerationBinding | null;
   /** All models marked for image generation; absent falls back to imageGeneration. */
   imageGenerationModels?: import("../image-generation.js").ImageGenerationBinding[] | null;
+  /**
+   * Model ids the models page must not offer again, per provider row.
+   *
+   * The models page mirrors a Minih Router row's gateway catalog, so its
+   * Remove action has to leave a record behind: without one the next catalog
+   * sync would add the model straight back. Values are lowercased wire ids;
+   * an absent provider or an absent map hides nothing. Device-local: a hidden
+   * id stays out of the portable config-sync fields
+   * (`PORTABLE_APPLICATION_FIELDS`), because it names a choice made on this
+   * installation's models page, not a preference the user set for every device.
+   */
+  hiddenModelIds?: Record<string, string[]> | null;
   defaultProviderId?: string;
   defaultModelId?: string;
   /** Per-install update behavior; absent uses the package's safe default. */

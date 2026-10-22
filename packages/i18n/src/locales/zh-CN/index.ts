@@ -1778,7 +1778,7 @@ sklm: {
     modelsNoAccountDesc: "模型来自 Minih Router 账户，请先在账户页配置令牌。",
     modelsGoToAccounts: "去账户页",
     modelsEmptyTitle: "还没有模型",
-    modelsEmptyDesc: "添加此账户要使用的模型，第一个会成为默认模型。",
+    modelsEmptyDesc: "网关尚未为该账号的 AccessKey 返回任何模型。",
     addModelsTitle: "添加模型",
     addModelsSelected: "已选 {{count}} 个",
     addModelsConfirm: "添加",
