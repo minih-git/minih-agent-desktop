@@ -315,7 +315,7 @@ describe("running one reply", () => {
     expect(store.snapshot().attempts.every((attempt) => attempt.state !== "streaming")).toBe(true);
   });
 
-  it("reports a failed reply with its kind and keeps the partial text", async () => {
+  it("treats a dropped connection as interrupted and keeps the partial text", async () => {
     const { history, ids } = harness();
     const turn = await beginTurn(history, ids, "hello", "2026-10-21T09:00:00.000Z");
     const stream = controlledFetch();
@@ -340,13 +340,44 @@ describe("running one reply", () => {
     stream.failWith("connection reset");
     const outcome = await pending;
 
+    // Losing the connection is not the user's mistake (§6): the attempt is
+    // interrupted, exactly like a suspension, so the screen offers Retry.
     expect(outcome.ok).toBe(true);
     if (outcome.ok) {
-      expect(outcome.attempt.state).toBe("failed");
-      expect(outcome.attempt.errorKind).toBe("transport");
+      expect(outcome.attempt.state).toBe("interrupted");
+      expect(outcome.attempt.errorKind).toBe("interrupted");
     }
     const transcript = (await history.transcript(turn.conversation.id))!;
     expect(transcript.messages.find((message) => message.role === "assistant")?.text).toBe("as far as we got");
+  });
+
+  it("keeps a refused request failed, with its own reason", async () => {
+    const { history, ids } = harness();
+    const turn = await beginTurn(history, ids, "hello", "2026-10-21T09:00:00.000Z");
+    const runner = createDirectChatRunner({
+      store: createMemoryDirectChatStore(),
+      history,
+      origin: "https://models.example.test",
+      // A refusal is the gateway answering, not the connection dropping.
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ error: { message: "invalid key" } }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        })) as unknown as typeof fetch,
+    });
+    const outcome = await runner.start({
+      scope: SCOPE,
+      conversationId: turn.conversation.id,
+      attempt: turn.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.attempt.state).toBe("failed");
+      expect(outcome.attempt.errorKind).toBe("unauthorized");
+    }
   });
 
   it("marks the reply interrupted when the app leaves the foreground", async () => {
