@@ -351,6 +351,33 @@ describe("running one reply", () => {
     expect(transcript.messages.find((message) => message.role === "assistant")?.text).toBe("as far as we got");
   });
 
+  it("keeps an unreachable gateway a transport failure, not an interruption", async () => {
+    const { history, ids } = harness();
+    const turn = await beginTurn(history, ids, "hello", "2026-10-21T09:00:00.000Z");
+    const runner = createDirectChatRunner({
+      store: createMemoryDirectChatStore(),
+      history,
+      origin: "https://models.example.test",
+      // Nothing arrives: the request never reached the gateway.
+      fetchImpl: (async () => {
+        throw new TypeError("Failed to fetch");
+      }) as unknown as typeof fetch,
+    });
+    const outcome = await runner.start({
+      scope: SCOPE,
+      conversationId: turn.conversation.id,
+      attempt: turn.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.attempt.state).toBe("failed");
+      expect(outcome.attempt.errorKind).toBe("transport");
+    }
+  });
+
   it("keeps a refused request failed, with its own reason", async () => {
     const { history, ids } = harness();
     const turn = await beginTurn(history, ids, "hello", "2026-10-21T09:00:00.000Z");

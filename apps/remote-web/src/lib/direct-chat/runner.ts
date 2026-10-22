@@ -289,11 +289,12 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
       });
     }
     if (!result.ok) {
-      // A dropped connection is not the user's mistake and not a bad request:
-      // the ADR treats it like a suspension, so the checkpoint stays and the
-      // attempt is interrupted rather than failed (§6). Every other refusal -
-      // auth, quota, model, gateway - keeps its own reason.
-      const dropped = result.failure.kind === "transport";
+      // A connection that dropped mid-reply is treated like a suspension: the
+      // checkpoint stays and the attempt is interrupted (§6). A gateway that
+      // could not be reached at all delivered nothing to interrupt, so it keeps
+      // its transport reason ("cannot reach the gateway"), like every other
+      // refusal - auth, quota, model, gateway.
+      const dropped = result.failure.kind === "transport" && finalText !== "";
       return options.history.finish(attempt, {
         state: dropped ? "interrupted" : "failed",
         text: finalText,
