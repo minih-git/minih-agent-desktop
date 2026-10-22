@@ -457,6 +457,12 @@ export const en = {
     diagramRendering: "Rendering diagram",
     diagramUnavailable: "This diagram could not be rendered. Showing source instead.",
     diagramTooLarge: "This diagram is too large to render safely. Showing source instead.",
+    showHtml: "Show HTML",
+    showHtmlSource: "Show HTML source",
+    runHtmlScripts: "Run scripts",
+    htmlPreview: "HTML preview",
+    htmlPreviewTooLarge:
+      "This HTML block is too large to preview safely. Showing source instead.",
     responseError: "Couldn't finish this reply",
     responseFailed: "The assistant couldn't complete this reply.",
     showErrorDetails: "Show details",

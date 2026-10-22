@@ -46,6 +46,7 @@ import {
   IconExternal,
   IconGlobe,
   IconImage,
+  IconPlay,
   IconWorkflow,
 } from "./icons";
 import { TooltipButton } from "./ui";
@@ -460,11 +461,121 @@ function MermaidBlock({ code, ...position }: { code: string } & SourcePositionPr
   );
 }
 
+/* ---------- html fence preview ---------- */
+
+/**
+ * Fences past this length stay in the source view, like an oversized diagram.
+ * Kept below `MAX_SYNC_MARKDOWN_CODE_UNITS` so the cap is reachable: a larger
+ * message never reaches this renderer at all.
+ */
+const MAX_HTML_PREVIEW_SOURCE_LENGTH = 100_000;
+
+/**
+ * The `html` fence preview.
+ *
+ * A completed `html` fence renders through a sandboxed `srcdoc` iframe, so the
+ * markup never joins the host document. The frame holds an opaque origin: it
+ * cannot reach the transcript DOM, and no preload bridge exists inside it
+ * because the main window leaves `nodeIntegrationInSubFrames` off. The app CSP
+ * still bounds what the frame loads, so this feature widens no policy.
+ *
+ * Fence content is model output, so scripts stay off until the reader enables
+ * them for one block; a source change returns that block to the default. A
+ * fence past the size cap fails closed to the source view.
+ */
+function HtmlBlock({ code, ...position }: { code: string } & SourcePositionProps) {
+  const { t } = useTranslation();
+  const { copied, copy } = useCopy();
+  // Both toggles record the source they were set for, so an edited fence is
+  // back on the safe default in the same render. An effect would let the new
+  // source commit one frame with the previous block's permission.
+  const [sourceShownFor, setSourceShownFor] = useState<string | null>(null);
+  const [scriptsFor, setScriptsFor] = useState<string | null>(null);
+  const showSource = sourceShownFor === code;
+  const scripts = scriptsFor === code;
+
+  const oversized = code.length > MAX_HTML_PREVIEW_SOURCE_LENGTH;
+  const sourceVisible = showSource || oversized;
+
+  return (
+    <div {...position} className={`html-block${oversized ? " error" : ""}`}>
+      <div className="html-block-head">
+        <span className="html-block-title">
+          <IconGlobe size={13} aria-hidden />
+          <span>html</span>
+        </span>
+        <div className="html-block-actions">
+          {oversized ? null : (
+            <>
+              <TooltipButton
+                type="button"
+                className={`html-action-btn${showSource ? " active" : ""}`}
+                tooltip={showSource ? t("chat.showHtml") : t("chat.showHtmlSource")}
+                ariaLabel={
+                  showSource ? t("chat.showHtml") : t("chat.showHtmlSource")
+                }
+                aria-pressed={showSource}
+                onClick={() => setSourceShownFor(showSource ? null : code)}
+              >
+                {showSource ? <IconGlobe size={13} /> : <IconCode size={13} />}
+              </TooltipButton>
+              {showSource ? null : (
+                <TooltipButton
+                  type="button"
+                  className={`html-action-btn${scripts ? " active" : ""}`}
+                  tooltip={t("chat.runHtmlScripts")}
+                  ariaLabel={t("chat.runHtmlScripts")}
+                  aria-pressed={scripts}
+                onClick={() => setScriptsFor(scripts ? null : code)}
+                >
+                  <IconPlay size={13} />
+                </TooltipButton>
+              )}
+            </>
+          )}
+          <TooltipButton
+            type="button"
+            className={`html-action-btn${copied ? " copied" : ""}`}
+            tooltip={copied ? t("chat.copied") : t("chat.copy")}
+            ariaLabel={t("chat.copy")}
+            onClick={() => copy(code)}
+          >
+            {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+          </TooltipButton>
+        </div>
+      </div>
+      <div className="html-block-body">
+        {oversized ? (
+          <div className="html-block-error" role="status">
+            <IconCircleAlert size={14} aria-hidden />
+            <span>{t("chat.htmlPreviewTooLarge")}</span>
+          </div>
+        ) : null}
+        {sourceVisible ? (
+          <pre className="html-source">
+            <code>{code}</code>
+          </pre>
+        ) : (
+          <iframe
+            key={scripts ? "scripts" : "static"}
+            className="html-frame"
+            title={t("chat.htmlPreview")}
+            sandbox={scripts ? "allow-scripts" : ""}
+            srcDoc={code}
+            loading="lazy"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ---------- react-markdown component overrides ---------- */
 
 const MarkdownBlockContext = createContext({
   closedFence: false,
   renderDiagrams: true,
+  renderHtml: false,
   originalRaw: "",
 });
 
@@ -510,7 +621,8 @@ function PreBlock({
   children,
   ...rest
 }: ComponentProps<"pre"> & SourcePositionProps & { node?: unknown }) {
-  const { closedFence, renderDiagrams } = useContext(MarkdownBlockContext);
+  const { closedFence, renderDiagrams, renderHtml } =
+    useContext(MarkdownBlockContext);
   const info = extractCode(children);
   // Hooks stay unconditional: the fence language and closed-ness can flip
   // between streaming renders, so the lookup must run on every render.
@@ -525,6 +637,9 @@ function PreBlock({
     info.lang.toLowerCase() === "mermaid"
   ) {
     return <MermaidBlock code={info.code} {...sourcePositionProps(rest)} />;
+  }
+  if (renderHtml && closedFence && info.lang.toLowerCase() === "html") {
+    return <HtmlBlock code={info.code} {...sourcePositionProps(rest)} />;
   }
   if (blockEntry) {
     return (
@@ -988,6 +1103,7 @@ const Block = memo(function MarkdownBlock({
   originalRaw,
   sourceOffset,
   renderDiagrams,
+  renderHtml,
   workspaceRoot,
   baseDir,
 }: {
@@ -995,6 +1111,7 @@ const Block = memo(function MarkdownBlock({
   originalRaw: string;
   sourceOffset: number;
   renderDiagrams: boolean;
+  renderHtml: boolean;
   workspaceRoot?: string | null;
   baseDir?: string;
 }) {
@@ -1002,9 +1119,10 @@ const Block = memo(function MarkdownBlock({
     () => ({
       closedFence: isClosedFencedCodeBlock(raw),
       renderDiagrams,
+      renderHtml,
       originalRaw,
     }),
-    [raw, originalRaw, renderDiagrams],
+    [raw, originalRaw, renderDiagrams, renderHtml],
   );
   const remarkPlugins = useMemo(
     () => [
@@ -1051,11 +1169,17 @@ const Block = memo(function MarkdownBlock({
 export const Markdown = memo(function Markdown({
   source,
   renderDiagrams = true,
+  renderHtml = false,
   baseDir,
   streaming = false,
 }: {
   source: string;
+  /**
+   * Opt-in per surface. Fence content is model output, so only the surface
+   * that shows an assistant answer turns this on.
+   */
   renderDiagrams?: boolean;
+  renderHtml?: boolean;
   /** True only while an assistant message is still receiving text. */
   streaming?: boolean;
   /** Workspace-relative directory of the source file, for `./` / `../` links. */
@@ -1144,6 +1268,7 @@ export const Markdown = memo(function Markdown({
               originalRaw={originalRaw}
               sourceOffset={start}
               renderDiagrams={renderDiagrams}
+              renderHtml={renderHtml}
               workspaceRoot={workspaceRoot}
               baseDir={baseDir}
             />
