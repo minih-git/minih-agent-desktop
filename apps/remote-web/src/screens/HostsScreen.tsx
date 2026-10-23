@@ -2,9 +2,9 @@
  * S4 My computers screen.
  *
  * Implements S4 My Computers per docs/spec/04-ux/13-remote-mobile-client.md §8.5
- * and apps/remote-web/design/prototype/index.html.
+ * and apps/remote-web/design/prototype/redesign.html.
  */
-import { Globe, Lock, Plus, Settings as SettingsIcon } from "lucide-react";
+import { Globe, Lock, Plus, Ticket, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -17,6 +17,7 @@ import {
 } from "../components/hosts/HostSheets.js";
 import { Button } from "../components/ui/Button.js";
 import { Callout } from "../components/ui/Callout.js";
+import { ListGroup, ListRow } from "../components/ui/ListGroup.js";
 import { NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent } from "../components/ui/Screen.js";
 import { SectionHeader } from "../components/ui/SectionHeader.js";
@@ -43,7 +44,7 @@ export function HostsScreen({
   onOpenHost: (entry: HostRegistryEntry) => void;
   onAddHost: () => void;
   onAddAccount: () => void;
-  /** The gear on this root (ADR mobile-direct-gateway-chat §1: two gears). */
+  /** The avatar/settings action on this root (ADR mobile-redesign §D3). */
   onOpenSettings: () => void;
 }) {
   const { t } = useTranslation();
@@ -55,9 +56,9 @@ export function HostsScreen({
     undefined,
   );
   const [selectedRefresh, setSelectedRefresh] = useState<(() => void) | null>(null);
-  const [activeSheet, setActiveSheet] = useState<"connect" | "hostAction" | "forget" | "gateway" | null>(
-    null,
-  );
+  const [activeSheet, setActiveSheet] = useState<
+    "connect" | "hostAction" | "forget" | "gateway" | null
+  >(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -101,40 +102,38 @@ export function HostsScreen({
   };
 
   return (
-    <Screen>
+    <Screen aurora>
       <NavBar
         title={t("hosts.title")}
+        largeTitle
+        onAvatarClick={onOpenSettings}
+        avatarLabel={t("hosts.settings")}
         trailing={
-          <span className="flex items-center">
-            <Button variant="plain" size="icon" aria-label={t("hosts.settings")} onClick={onOpenSettings}>
-              <SettingsIcon className="h-5 w-5 stroke-[1.8]" aria-hidden="true" />
-            </Button>
-            <Button
-              variant="plain"
-              size="icon"
-              aria-label={t("hosts.add")}
-              onClick={() => setActiveSheet("connect")}
-            >
-              <Plus className="h-6 w-6 stroke-[2]" aria-hidden="true" />
-            </Button>
-          </span>
+          <Button
+            variant="plain"
+            size="icon"
+            aria-label={t("hosts.add")}
+            onClick={() => setActiveSheet("connect")}
+          >
+            <Plus className="h-6 w-6 stroke-[2]" aria-hidden="true" />
+          </Button>
         }
       />
 
-      <ScreenContent className="pt-2 space-y-3">
-        <SectionHeader
-          title={t("hosts.title")}
-          action={
-            hosts.length > 0 ? (
-              <span className="text-[var(--rm-text-muted)]">{hosts.length}</span>
-            ) : undefined
-          }
-        />
+      <ScreenContent className="pt-1 space-y-3">
+        <div className="flex items-baseline justify-between px-1 pt-2 pb-1">
+          <h1 className="text-[28px] font-bold leading-[1.12] tracking-[-0.5px] text-[var(--rm-text-primary)]">
+            {t("hosts.title")}
+          </h1>
+          {hosts.length > 0 ? (
+            <span className="text-[13px] font-semibold text-[var(--rm-text-muted)]">
+              {hosts.length}
+            </span>
+          ) : null}
+        </div>
 
         {hosts.length === 0 ? (
-          <Callout tone="neutral">
-            {t("hosts.empty")}
-          </Callout>
+          <Callout tone="neutral">{t("hosts.empty")}</Callout>
         ) : (
           <div key={refreshKey} className="space-y-3">
             {hosts.map((entry) => (
@@ -158,6 +157,29 @@ export function HostsScreen({
             ))}
           </div>
         )}
+
+        <div>
+          <SectionHeader title={t("hosts.add")} />
+          <ListGroup>
+            {accountMode === "supported" ? (
+              <ListRow
+                leadingIcon={<User className="h-[18px] w-[18px]" aria-hidden="true" />}
+                title={t("hosts.sheet.accountTitle")}
+                subtitle={t("hosts.sheet.accountDesc")}
+                chevron
+                onClick={onAddAccount}
+              />
+            ) : null}
+            <ListRow
+              leadingIcon={<Ticket className="h-[18px] w-[18px]" aria-hidden="true" />}
+              title={t("hosts.sheet.ticketTitle")}
+              subtitle={t("hosts.sheet.ticketDesc")}
+              chevron
+              onClick={onAddHost}
+            />
+          </ListGroup>
+        </div>
+
         <div className="flex items-center justify-between gap-2 px-1 pt-2 pb-6 text-[12px] leading-[16px] text-[var(--rm-text-muted)]">
           <div className="flex min-w-0 items-center gap-1.5">
             <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -173,7 +195,7 @@ export function HostsScreen({
             className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--rm-bg-surface)] px-2.5 py-1 text-[12px] font-medium text-[var(--rm-link)] ring-1 ring-[var(--rm-separator)] active:bg-[var(--rm-bg-inset)]"
           >
             <Globe className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>切换网关</span>
+            <span>{t("hosts.switchGateway")}</span>
           </button>
         </div>
       </ScreenContent>
@@ -189,10 +211,7 @@ export function HostsScreen({
       />
 
       {/* Gateway configuration sheet */}
-      <GatewaySheet
-        open={activeSheet === "gateway"}
-        onClose={() => setActiveSheet(null)}
-      />
+      <GatewaySheet open={activeSheet === "gateway"} onClose={() => setActiveSheet(null)} />
 
       {/* Host more action sheet (⋯) */}
       <HostActionSheet

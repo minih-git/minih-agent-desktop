@@ -1,10 +1,11 @@
-import { CircleHelp, Globe, Lock, Settings as SettingsIcon, Shield, Square, Ticket, User } from "lucide-react";
+import { CircleHelp, Lock, Shield, Square, Ticket, User } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { GatewaySheet } from "../components/hosts/HostSheets.js";
 import { Button } from "../components/ui/Button.js";
 import { ListGroup } from "../components/ui/ListGroup.js";
+import { NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
 import { Skeleton } from "../components/ui/Skeleton.js";
 import { useAccountAvailability } from "../hooks/useAccountFlow.js";
@@ -21,7 +22,7 @@ function ValueRow({
 }) {
   return (
     <div className="flex items-center gap-3.5 py-3 px-4 min-h-[56px]">
-      <div className="flex-none w-9 h-9 rounded-[10px] bg-[var(--rm-bg-inset)] text-[var(--rm-text-secondary)] flex items-center justify-center">
+      <div className="flex-none w-9 h-9 rounded-[10px] bg-[var(--rm-bg-surface-2)] text-[var(--rm-text-secondary)] flex items-center justify-center">
         {icon}
       </div>
       <div className="min-w-0 flex-1">
@@ -43,7 +44,7 @@ export function ConnectScreen({
 }: {
   onAddHost: () => void;
   onAddAccount: () => void;
-  /** The gear on this root (ADR mobile-direct-gateway-chat §1: two gears). */
+  /** The avatar/settings action on this root (ADR mobile-redesign §D3). */
   onOpenSettings: () => void;
 }) {
   const { t } = useTranslation();
@@ -61,22 +62,15 @@ export function ConnectScreen({
   }
 
   return (
-    <Screen>
-      <ScreenContent hasDock className="pt-[max(20px,env(safe-area-inset-top))]">
-        {/* The Computers root keeps its gear even with no computer: Settings is
-            reachable from either root (§1). */}
-        <div className="flex justify-start px-2 pt-1">
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            aria-label={t("hosts.settings")}
-            title={t("hosts.settings")}
-            className="flex h-10 w-10 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] transition-opacity active:opacity-60"
-          >
-            <SettingsIcon className="h-5 w-5 stroke-[1.8]" aria-hidden="true" />
-          </button>
-        </div>
-        <div className="pt-8 pb-6 px-2 flex flex-col items-center text-center">
+    <Screen aurora>
+      <NavBar
+        title={t("hosts.title")}
+        largeTitle
+        onAvatarClick={onOpenSettings}
+        avatarLabel={t("hosts.settings")}
+      />
+      <ScreenContent hasDock>
+        <div className="pt-4 pb-6 px-2 flex flex-col items-center text-center">
           <img
             className="w-12 h-12 rounded-[14px] block mb-4 shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
             src="/icon.png"
@@ -156,7 +150,9 @@ export function ConnectScreen({
           >
             <Lock className="w-3.5 h-3.5 flex-none text-[var(--rm-text-muted)]" />
             <span>{t("connect.viaGateway", { gateway: gatewayHost })}</span>
-            <span className="text-[var(--rm-link)] font-medium ml-0.5">切换</span>
+            <span className="text-[var(--rm-link)] font-medium ml-0.5">
+              {t("hosts.switchGatewayShort")}
+            </span>
           </button>
         </div>
       </ScreenDock>

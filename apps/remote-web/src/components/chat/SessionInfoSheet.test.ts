@@ -51,8 +51,9 @@ async function renderSheet(roles?: readonly string[]): Promise<string> {
 }
 
 describe("SessionInfoSheet", () => {
-  it("renders delete session action in session sheet", async () => {
+  it("explains plainly that deleting a remote session lives on the computer without a dead button", async () => {
     const html = await renderSheet(["viewer", "controller"]);
-    assert.match(html, /Delete session/);
+    assert.match(html, /Permanent deletion and archiving must be performed on your computer/);
+    assert.doesNotMatch(html, /Delete session/);
   });
 });

@@ -1,5 +1,13 @@
 import type { RacpSession } from "@minih-agent/shared";
-import { ChevronDown, ChevronRight, ChevronUp, Laptop, MoreHorizontal } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Laptop,
+  Monitor,
+  MoreHorizontal,
+  Server,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useHostStatus } from "../../hooks/useHostStatus.js";
@@ -48,6 +56,23 @@ function summarizeHostSessions(hostId: string, sessions: readonly RacpSession[])
   return { total: sessions.length, waiting, running, lastActivity };
 }
 
+function HostGlyph({ label }: { label: string }) {
+  const lower = label.toLowerCase();
+  if (lower.includes("server") || lower.includes("linux") || lower.includes("ubuntu")) {
+    return <Server className="h-[22px] w-[22px]" aria-hidden="true" />;
+  }
+  if (
+    lower.includes("win") ||
+    lower.includes("desktop") ||
+    lower.includes("pc") ||
+    lower.includes("imac") ||
+    lower.includes("studio")
+  ) {
+    return <Monitor className="h-[22px] w-[22px]" aria-hidden="true" />;
+  }
+  return <Laptop className="h-[22px] w-[22px]" aria-hidden="true" />;
+}
+
 export function HostRow({
   entry,
   isExpanded,
@@ -68,7 +93,8 @@ export function HostRow({
   const helpText = formatHostStatusHelp(status, entry, t);
   const action = hostStatusAction(status, entry);
 
-  const summary = isOnline && sessions !== null ? summarizeHostSessions(entry.hostId, sessions) : null;
+  const summary =
+    isOnline && sessions !== null ? summarizeHostSessions(entry.hostId, sessions) : null;
   const attention = (summary?.waiting ?? 0) > 0;
   const when = summary?.lastActivity
     ? relativeTimeText(summary.lastActivity, {
@@ -96,7 +122,7 @@ export function HostRow({
   };
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-[var(--rm-bg-surface)] shadow-[var(--rm-shadow)] ring-1 ring-[var(--rm-separator)] transition-colors">
+    <div className="relative overflow-hidden rounded-[22px] border border-[var(--rm-hair)] bg-[var(--rm-bg-surface)] shadow-[var(--rm-shadow)] backdrop-blur-md transition-colors">
       {attention ? (
         <span
           aria-hidden="true"
@@ -109,31 +135,31 @@ export function HostRow({
         />
       ) : null}
 
-      <div className={`px-4 py-3.5 ${attention || isDanger ? "pl-[19px]" : ""}`}>
-        <div className="flex items-center gap-3">
+      <div className={`p-4 ${attention || isDanger ? "pl-[19px]" : ""}`}>
+        <div className="flex items-center gap-3.5">
           {/* Main tappable host card body */}
           <button
             type="button"
             onClick={handleRowClick}
-            className="flex min-w-0 flex-1 items-center gap-3 text-left active:opacity-75"
-            aria-label={`${entry.label}，${statusLine}`}
+            className="flex min-w-0 flex-1 items-center gap-3.5 text-left transition-transform duration-150 active:scale-[0.985]"
+            aria-label={`${entry.label}, ${statusLine}`}
           >
-            <span className="sr-only">Open </span>
-            {/* Laptop icon tile with status dot badge */}
+            <span className="sr-only">{t("hosts.open")} </span>
+            {/* OS / computer icon tile with status dot badge */}
             <div
-              className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--rm-bg-inset)] ${
+              className={`relative grid h-[48px] w-[48px] shrink-0 place-items-center rounded-[15px] bg-[var(--rm-bg-surface-2)] ${
                 isOnline ? "text-[var(--rm-text-primary)]" : "text-[var(--rm-text-muted)]"
               }`}
             >
-              <Laptop className="h-5 w-5" aria-hidden="true" />
-              <span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[var(--rm-bg-surface)]">
+              <HostGlyph label={entry.label} />
+              <span className="absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[var(--rm-bg-solid)]">
                 <StatusDot status={dotStatus} size="small" />
               </span>
             </div>
 
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 items-center gap-2">
-                <span className="truncate text-[16px] font-semibold leading-[22px] text-[var(--rm-text-primary)]">
+                <span className="truncate text-[17px] font-semibold leading-[22px] text-[var(--rm-text-primary)]">
                   {entry.label}
                 </span>
                 {summary !== null ? (
@@ -145,17 +171,24 @@ export function HostRow({
                 ) : null}
               </div>
               <div
-                className={`mt-0.5 truncate text-[13px] leading-[18px] ${
+                className={`mt-1 flex min-w-0 items-center gap-1.5 text-[13px] leading-[18px] ${
                   status.kind === "revoked"
                     ? "font-medium text-[var(--rm-error)]"
                     : isOnline
-                      ? "text-[var(--rm-success)]"
-                      : "text-[var(--rm-text-secondary)]"
+                      ? "text-[var(--rm-text-secondary)]"
+                      : "text-[var(--rm-text-muted)]"
                 }`}
               >
-                {statusLine}
+                <StatusDot status={dotStatus} size="small" />
+                <span className="truncate">{statusLine}</span>
               </div>
             </div>
+
+            {attention ? (
+              <SessionStatusPill view="approval" count={summary?.waiting} />
+            ) : (summary?.running ?? 0) > 0 ? (
+              <SessionStatusPill view="running" count={summary?.running} />
+            ) : null}
 
             <div className="flex shrink-0 items-center text-[var(--rm-text-faint)]">
               {isOnline ? (
@@ -175,30 +208,28 @@ export function HostRow({
               e.stopPropagation();
               onOpenMore(status.kind, refresh);
             }}
-            aria-label={`${entry.label} 的更多操作`}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[var(--rm-text-muted)] transition-colors active:bg-[var(--rm-bg-inset)]"
+            aria-label={t("hosts.moreActions", { label: entry.label })}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[var(--rm-text-muted)] transition-colors active:bg-[var(--rm-bg-surface-2)]"
           >
             <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
-        {/* Card footer: session status pills & activity timestamp when online */}
-        {summary !== null ? (
+        {/* Card footer: activity status & timestamp when online */}
+        {summary !== null && (!attention && summary.running === 0 || Boolean(when)) ? (
           <button
             type="button"
             onClick={handleRowClick}
             tabIndex={-1}
-            className="mt-2.5 flex w-full min-w-0 items-center gap-1.5 border-t border-[var(--rm-separator)] pt-2.5 text-left active:opacity-75"
+            className="mt-2.5 flex w-full min-w-0 items-center gap-1.5 border-t border-[var(--rm-hair)] pt-2.5 text-left active:opacity-75"
           >
-            {attention ? <SessionStatusPill view="approval" count={summary.waiting} /> : null}
-            {summary.running > 0 ? <SessionStatusPill view="running" count={summary.running} /> : null}
             {!attention && summary.running === 0 ? (
               <span className="truncate text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
                 {summary.total === 0 ? t("projects.startHere") : t("projects.nothingWaiting")}
               </span>
             ) : null}
             {when ? (
-              <span className="ml-auto shrink-0 text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
+              <span className="ml-auto shrink-0 text-[12px] leading-[16px] text-[var(--rm-text-muted)]">
                 {t("sessions.updated", { date: when })}
               </span>
             ) : null}
@@ -208,7 +239,7 @@ export function HostRow({
 
       {/* Inline expansion for non-online states */}
       {!isOnline && isExpanded && helpText ? (
-        <div className="border-t border-[var(--rm-separator)] bg-[var(--rm-bg-inset)] px-4 py-3">
+        <div className="border-t border-[var(--rm-hair)] bg-[var(--rm-bg-surface-2)] px-4 py-3">
           <p className="mb-3 text-[13px] leading-[18px] text-[var(--rm-text-secondary)]">
             {helpText}
           </p>

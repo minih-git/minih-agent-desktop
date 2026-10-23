@@ -1,5 +1,17 @@
-import type { RacpApprovalDecision, RacpApprovalRequest, RacpInputRequest } from "@minih-agent/shared";
-import { AlertCircle, Check, ChevronLeft, ChevronRight, Clock, HelpCircle, Shield } from "lucide-react";
+import type {
+  RacpApprovalDecision,
+  RacpApprovalRequest,
+  RacpInputRequest,
+} from "@minih-agent/shared";
+import {
+  AlertCircle,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  HelpCircle,
+  Shield,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -16,8 +28,16 @@ export interface DecisionAreaProps {
   inputs: RacpInputRequest[];
   pending: Record<string, boolean>;
   hostLabel: string;
-  onDecideApproval: (approvalId: string, decision: RacpApprovalDecision, attempt: ResponseAttempt) => void;
-  onSubmitInput: (inputId: string, answers: Array<string[] | null>, attempt: ResponseAttempt) => void;
+  onDecideApproval: (
+    approvalId: string,
+    decision: RacpApprovalDecision,
+    attempt: ResponseAttempt,
+  ) => void;
+  onSubmitInput: (
+    inputId: string,
+    answers: Array<string[] | null>,
+    attempt: ResponseAttempt,
+  ) => void;
 }
 
 export function DecisionArea({
@@ -30,7 +50,11 @@ export function DecisionArea({
 }: DecisionAreaProps) {
   const { t } = useTranslation();
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [highRiskTarget, setHighRiskTarget] = useState<{ id: string; decision: RacpApprovalDecision; attempt: ResponseAttempt } | null>(null);
+  const [highRiskTarget, setHighRiskTarget] = useState<{
+    id: string;
+    decision: RacpApprovalDecision;
+    attempt: ResponseAttempt;
+  } | null>(null);
 
   // Combined list of decision items
   const items = [
@@ -42,17 +66,17 @@ export function DecisionArea({
   if (total === 0) return null;
 
   const safeIndex = Math.min(currentIndex, total - 1);
-  const activeItem = items[safeIndex];
+  const activeItem = items[safeIndex]!;
 
   return (
     <>
       <section
         role="region"
         aria-label={t("session.turn.waiting_approval")}
-        className="mx-4 my-2 flex max-h-[clamp(200px,100dvh-400px,55dvh)] flex-col overflow-hidden rounded-[16px] border border-[var(--rm-decision)] bg-[var(--rm-bg-raised)] shadow-[0_4px_20px_rgba(0,0,0,0.1)] transition-all"
+        className="my-1.5 flex max-h-[clamp(200px,100dvh-400px,55dvh)] flex-col overflow-hidden rounded-[20px] border-[1.5px] border-transparent [background:linear-gradient(var(--rm-bg-solid),var(--rm-bg-solid))_padding-box,linear-gradient(135deg,var(--rm-decision),var(--rm-accent-2))_border-box] shadow-[0_0_0_6px_color-mix(in_srgb,var(--rm-decision)_10%,transparent)] [animation:rm-decision-glow_2.4s_ease-in-out_infinite]"
       >
         {/* Header with Title and Pager */}
-        <div className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--rm-separator)] px-4">
+        <div className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--rm-hair)] px-4">
           <div className="flex items-center gap-2 text-[14px] font-semibold text-[var(--rm-decision)]">
             {activeItem.kind === "approval" ? (
               <Shield className="h-4 w-4" aria-hidden="true" />
@@ -71,17 +95,19 @@ export function DecisionArea({
                 disabled={safeIndex === 0}
                 onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
                 className="flex h-7 w-7 items-center justify-center rounded-[6px] active:opacity-60 disabled:opacity-30"
-                aria-label="Previous decision"
+                aria-label={t("approval.previousDecision")}
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span>{safeIndex + 1}/{total}</span>
+              <span>
+                {safeIndex + 1}/{total}
+              </span>
               <button
                 type="button"
                 disabled={safeIndex === total - 1}
                 onClick={() => setCurrentIndex((prev) => Math.min(total - 1, prev + 1))}
                 className="flex h-7 w-7 items-center justify-center rounded-[6px] active:opacity-60 disabled:opacity-30"
-                aria-label="Next decision"
+                aria-label={t("approval.nextDecision")}
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -96,7 +122,10 @@ export function DecisionArea({
               request={activeItem.data}
               isPending={pending[`approval:${activeItem.data.id}`] === true}
               onDecide={(decision, attempt) => {
-                if (activeItem.data.risk === "high" && (decision === "allow-once" || decision === "approve")) {
+                if (
+                  activeItem.data.risk === "high" &&
+                  (decision === "allow-once" || decision === "approve")
+                ) {
                   setHighRiskTarget({ id: activeItem.data.id, decision, attempt });
                 } else {
                   onDecideApproval(activeItem.data.id, decision, attempt);
@@ -121,7 +150,11 @@ export function DecisionArea({
         onClose={() => setHighRiskTarget(null)}
         onConfirm={() => {
           if (highRiskTarget) {
-            onDecideApproval(highRiskTarget.id, highRiskTarget.decision, highRiskTarget.attempt);
+            onDecideApproval(
+              highRiskTarget.id,
+              highRiskTarget.decision,
+              highRiskTarget.attempt,
+            );
             setHighRiskTarget(null);
           }
         }}
@@ -157,7 +190,15 @@ function ApprovalBody({
       {/* Risk and Tool Tags */}
       <div className="flex flex-wrap items-center gap-2">
         {request.risk ? (
-          <Chip tone={request.risk === "high" ? "error" : request.risk === "medium" ? "running" : "neutral"}>
+          <Chip
+            tone={
+              request.risk === "high"
+                ? "error"
+                : request.risk === "medium"
+                  ? "running"
+                  : "neutral"
+            }
+          >
             {t(`approval.risk.${request.risk}`)}
           </Chip>
         ) : null}
@@ -169,13 +210,13 @@ function ApprovalBody({
       </div>
 
       {/* Command / Action Summary */}
-      <div className="rounded-[8px] bg-[var(--rm-bg-inset)] p-2.5 font-mono text-[13px] leading-[18px] text-[var(--rm-text-primary)] break-all">
+      <div className="rounded-[10px] bg-[var(--rm-code-bg)] p-2.5 font-mono text-[13px] leading-[18px] text-[var(--rm-text-primary)] break-all">
         {request.summary}
       </div>
 
       {/* High-risk Warning Callout */}
       {request.risk === "high" ? (
-        <div className="flex items-start gap-2 rounded-[8px] bg-[color-mix(in_srgb,var(--rm-error)_12%,transparent)] p-2.5 text-[12px] leading-[16px] text-[var(--rm-error)]">
+        <div className="flex items-start gap-2 rounded-[10px] bg-[color-mix(in_srgb,var(--rm-error)_12%,transparent)] p-2.5 text-[12px] leading-[16px] text-[var(--rm-error)]">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>{t("approval.highRiskWarn")}</span>
         </div>
@@ -242,13 +283,13 @@ function InputBody({
           return ans.includes(opt) ? ans.filter((v) => v !== opt) : [...ans, opt];
         }
         return [opt];
-      })
+      }),
     );
     setSkipped((prev) => prev.map((val, i) => (i === qIdx ? false : val)));
   };
 
   const answers: Array<string[] | null> = selected.map((ans, i) =>
-    skipped[i] ? null : ans.length > 0 ? ans : null
+    skipped[i] ? null : ans.length > 0 ? ans : null,
   );
 
   const ready = request.questions.every((_, i) => skipped[i] || selected[i]!.length > 0);
@@ -269,7 +310,10 @@ function InputBody({
         <div key={q.id || qIdx} className="space-y-2">
           {request.questions.length > 1 ? (
             <div className="text-[12px] font-medium text-[var(--rm-text-muted)]">
-              {t("input.questionProgress", { current: qIdx + 1, total: request.questions.length })}
+              {t("input.questionProgress", {
+                current: qIdx + 1,
+                total: request.questions.length,
+              })}
             </div>
           ) : null}
 

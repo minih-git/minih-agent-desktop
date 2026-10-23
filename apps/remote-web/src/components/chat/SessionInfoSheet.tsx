@@ -1,13 +1,16 @@
 /**
- * What this session runs on (R7, spec §15.6).
+ * What this session runs on (R7, spec §15.6, ADR mobile-redesign §D7).
  *
  * A sheet rather than a screen: the reader is looking at a conversation, wants
  * one fact or one change, and goes back. Every edit is a `session/configure` or
  * `session/rename` round trip — nothing is applied optimistically, and the sheet
  * keeps showing the old value until the Host answers.
+ *
+ * Deleting or archiving a remote session stays desktop-only (§D7): the sheet
+ * explains this plainly instead of rendering a dead or fake button.
  */
 import type { RacpModelSummary, RacpPermissionMode, RacpSession } from "@minih-agent/shared";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { describeModel, modelKey, modelSwitchBlockedReason } from "../../lib/model-choice.js";
@@ -27,7 +30,12 @@ export type SessionInfoSheetProps = {
   failure: string | null;
   onClose: () => void;
   onRename: (title: string) => void;
-  onConfigure: (input: { providerId?: string; modelId?: string; mode?: "agent" | "plan" | "goal"; permissionMode?: RacpPermissionMode }) => void;
+  onConfigure: (input: {
+    providerId?: string;
+    modelId?: string;
+    mode?: "agent" | "plan" | "goal";
+    permissionMode?: RacpPermissionMode;
+  }) => void;
 };
 
 const MODES: Array<"agent" | "plan" | "goal"> = ["agent", "plan", "goal"];
@@ -51,7 +59,11 @@ export function SessionInfoSheet({
   const [renaming, setRenaming] = useState(false);
   const [title, setTitle] = useState(session?.title ?? "");
   const [picker, setPicker] = useState<"model" | "mode" | "permission" | null>(null);
-  const [showOwnerOnlyNotice, setShowOwnerOnlyNotice] = useState(false);
+
+  useEffect(() => {
+    setTitle(session?.title ?? "");
+  }, [session?.title, open]);
+
   // A recorded absence of `controller` is the only thing that removes the edit
   // affordances; an entry from before roles existed is treated as unknown.
   const editable = !roles || roles.includes("controller");
@@ -59,26 +71,42 @@ export function SessionInfoSheet({
   const currentModel =
     models.find(
       (model) =>
-        (session?.providerId && model.providerId === session.providerId && model.modelId === session?.modelId) ||
+        (session?.providerId &&
+          model.providerId === session.providerId &&
+          model.modelId === session?.modelId) ||
         (!session?.providerId && session?.modelId && model.modelId === session.modelId),
     ) ??
     (!session?.modelId ? (models.find((model) => model.isDefault) ?? models[0]) : undefined);
 
   const row = (label: string, value: string, onClick?: () => void) => (
-    <div className="flex min-h-[48px] items-center gap-3 border-t border-[var(--rm-separator)] px-1">
+    <div className="flex min-h-[50px] items-center gap-3 border-t border-[var(--rm-hair)] px-1">
       <span className="min-w-0 flex-1">
-        <span className="block text-[13px] leading-[18px] text-[var(--rm-text-muted)]">{label}</span>
-        <span className="block truncate text-[15px] leading-[20px] text-[var(--rm-text-primary)]">{value}</span>
+        <span className="block text-[12px] leading-[16px] text-[var(--rm-text-muted)]">
+          {label}
+        </span>
+        <span className="block truncate text-[15px] font-medium leading-[20px] text-[var(--rm-text-primary)]">
+          {value}
+        </span>
       </span>
       {onClick ? (
-        <button type="button" onClick={onClick} className="text-[13px] text-[var(--rm-link)]">
+        <button
+          type="button"
+          onClick={onClick}
+          className="text-[13px] font-medium text-[var(--rm-link)]"
+        >
           {t("common.change")}
         </button>
       ) : null}
     </div>
   );
 
-  const option = (label: string, description: string | null, selected: boolean, disabled: boolean, onSelect: () => void) => (
+  const option = (
+    label: string,
+    description: string | null,
+    selected: boolean,
+    disabled: boolean,
+    onSelect: () => void,
+  ) => (
     <button
       key={label}
       type="button"
@@ -86,39 +114,43 @@ export function SessionInfoSheet({
       aria-checked={selected}
       disabled={disabled}
       onClick={onSelect}
-      className={`flex min-h-[52px] items-center gap-3 rounded-[10px] px-3 py-2 text-left ${
-        selected ? "bg-[var(--rm-bg-inset)]" : ""
+      className={`flex min-h-[52px] items-center gap-3 rounded-[12px] px-3 py-2 text-left ${
+        selected ? "bg-[var(--rm-bg-surface-2)]" : ""
       } disabled:opacity-50`}
     >
       <span
         className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border ${
-          selected ? "border-[var(--rm-accent)] bg-[var(--rm-accent)]" : "border-[var(--rm-separator)]"
+          selected
+            ? "border-[var(--rm-accent)] bg-[var(--rm-accent)]"
+            : "border-[var(--rm-separator)]"
         }`}
         aria-hidden="true"
       >
         {selected ? <span className="h-1.5 w-1.5 rounded-full bg-[var(--rm-bg-raised)]" /> : null}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[15px] leading-[20px]">{label}</span>
+        <span className="block text-[15px] font-medium leading-[20px] text-[var(--rm-text-primary)]">
+          {label}
+        </span>
         {description ? (
-          <span className="mt-0.5 block text-[13px] leading-[18px] text-[var(--rm-text-muted)]">{description}</span>
+          <span className="mt-0.5 block text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
+            {description}
+          </span>
         ) : null}
       </span>
     </button>
   );
 
-  const title_ = showOwnerOnlyNotice
-    ? t("session.deleteOwnerOnlyTitle")
-    : picker === "model"
+  const title_ =
+    picker === "model"
       ? t("model.title")
       : picker === "mode"
         ? t("sessions.new.mode")
         : picker === "permission"
           ? t("sessions.new.permission")
-          : (session?.title || t("session.untitled"));
+          : session?.title || t("session.untitled");
 
   const handleClose = () => {
-    setShowOwnerOnlyNotice(false);
     setPicker(null);
     setRenaming(false);
     onClose();
@@ -126,30 +158,19 @@ export function SessionInfoSheet({
 
   return (
     <Sheet open={open} onClose={handleClose} title={title_}>
-      {showOwnerOnlyNotice ? (
-        <div className="flex flex-col gap-4 py-2">
-          <p className="text-[14px] leading-[20px] text-[var(--rm-text-secondary)]">
-            {t("session.deleteOwnerOnlyBody")}
-          </p>
-          <Button
-            variant="primary"
-            size="medium"
-            onClick={() => setShowOwnerOnlyNotice(false)}
-          >
-            {t("common.close")}
-          </Button>
-        </div>
-      ) : picker ? (
+      {picker ? (
         <>
           {picker === "model" ? (
             <>
               {locked ? (
-                <p className="mb-2 rounded-[10px] bg-[var(--rm-bg-inset)] px-3 py-2 text-[13px] leading-[18px] text-[var(--rm-text-secondary)]">
+                <p className="mb-2 rounded-[12px] bg-[var(--rm-bg-surface-2)] px-3 py-2 text-[13px] leading-[18px] text-[var(--rm-text-secondary)]">
                   {t(locked)}
                 </p>
               ) : null}
               {models.length === 0 ? (
-                <p className="px-2 py-3 text-center text-[13px] text-[var(--rm-text-muted)]">{t("model.none")}</p>
+                <p className="px-2 py-3 text-center text-[13px] text-[var(--rm-text-muted)]">
+                  {t("model.none")}
+                </p>
               ) : (
                 models.map((model) =>
                   option(
@@ -203,7 +224,7 @@ export function SessionInfoSheet({
           {renaming ? (
             <div className="mb-2 flex items-center gap-2">
               <input
-                className="min-w-0 flex-1 rounded-[10px] border border-[var(--rm-separator)] bg-[var(--rm-bg-inset)] px-3 py-2 text-[16px] text-[var(--rm-text-primary)]"
+                className="min-w-0 flex-1 rounded-[12px] border border-[var(--rm-hair)] bg-[var(--rm-bg-surface-2)] px-3 py-2 text-[16px] text-[var(--rm-text-primary)] outline-none focus:border-[var(--rm-accent)]"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 aria-label={t("session.rename")}
@@ -229,24 +250,28 @@ export function SessionInfoSheet({
               : session?.modelLabel || session?.modelId || t("model.hostDefault"),
             editable ? () => setPicker("model") : undefined,
           )}
-          {row(t("sessions.new.mode"), t(`mode.${session?.mode ?? "agent"}.title`), editable ? () => setPicker("mode") : undefined)}
+          {row(
+            t("sessions.new.mode"),
+            t(`mode.${session?.mode ?? "agent"}.title`),
+            editable ? () => setPicker("mode") : undefined,
+          )}
           {row(
             t("sessions.new.permission"),
             t(`permission.${session?.permissionMode ?? "ask"}.title`),
             editable ? () => setPicker("permission") : undefined,
           )}
           {failure ? (
-            <p className="mt-2 text-center text-[13px] leading-[18px] text-[var(--rm-error)]">{failure}</p>
+            <p className="mt-2 text-center text-[13px] leading-[18px] text-[var(--rm-error)]">
+              {failure}
+            </p>
           ) : null}
+          <p className="mt-3 rounded-[12px] bg-[var(--rm-bg-surface-2)] px-3 py-2.5 text-[12px] leading-[17px] text-[var(--rm-text-muted)]">
+            {t("session.deleteOwnerOnlyBody")}
+          </p>
           <div className="mt-3 flex flex-col gap-2">
             {editable && !renaming ? (
               <Button variant="secondary" size="medium" onClick={() => setRenaming(true)}>
                 {t("session.rename")}
-              </Button>
-            ) : null}
-            {!renaming ? (
-              <Button variant="destructive" size="medium" onClick={() => setShowOwnerOnlyNotice(true)}>
-                {t("session.delete")}
               </Button>
             ) : null}
             <Button variant="plain" size="medium" onClick={handleClose}>
