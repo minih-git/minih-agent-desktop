@@ -74,6 +74,14 @@ export type AgentHostOptions = {
   localApprovalLifetimeMs?: number;
   /** Whether Host policy lets remote approvers grant `allow-session`. */
   allowRemoteSessionGrants?: boolean;
+  /**
+   * How long a session may stay idle before its event stream and state are
+   * released. Idle means: no active turn, no subscriber, no pending approval or
+   * input, and an empty queue. `0` disables the release entirely.
+   */
+  idleSessionReleaseMs?: number;
+  /** Sweep cadence for the idle release and the replay-window bounds. */
+  idleSweepIntervalMs?: number;
   /** Bound on the transcript page in a snapshot. */
   snapshotItems?: number;
   /** Called after any change to a session's queue, with the new entries. */
@@ -202,6 +210,13 @@ type IdempotencyEntry = {
 const MAX_IDEMPOTENCY_ENTRIES = 2000;
 const MAX_TURNS_PER_SESSION = 200;
 
+/** Released sessions whose last revision is remembered (bounded LRU). */
+const MAX_RELEASED_SESSION_REVISIONS = 5_000;
+/** Default idle window before a session's Host state is released. */
+const DEFAULT_IDLE_SESSION_RELEASE_MS = 30 * 60 * 1000;
+/** Default sweep cadence; the sweep is cheap and only walks live sessions. */
+const DEFAULT_IDLE_SWEEP_INTERVAL_MS = 60 * 1000;
+
 /**
  * The headless Agent Host module (rollout R1, D374/D375). It owns session
  * and turn admission, the per-session turn queue, the approval broker, the
@@ -236,6 +251,16 @@ export class AgentHost {
   /** A pass that arrived while one was running: the queue must be looked at again. */
   private readonly drainPending = new Set<string>();
   private readonly admissions = new Map<string, Promise<void>>();
+  /**
+   * Last `revision` seen per released session. A recreated `SessionState`
+   * starts at 0, so without this a client holding an older expected revision
+   * would collide with a session that was merely idle; keeping the number makes
+   * revision monotonic for as long as this Host process lives.
+   */
+  private readonly sessionRevisions = new Map<string, number>();
+  private readonly idleSessionReleaseMs: number;
+  private readonly idleSweepIntervalMs: number;
+  private sweepTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(options: AgentHostOptions) {
     this.runtime = options.runtime;
@@ -247,6 +272,8 @@ export class AgentHost {
     this.localApprovalLifetimeMs = options.localApprovalLifetimeMs ?? 120_000;
     this.allowRemoteSessionGrants = options.allowRemoteSessionGrants ?? false;
     this.snapshotItems = options.snapshotItems ?? 50;
+    this.idleSessionReleaseMs = options.idleSessionReleaseMs ?? DEFAULT_IDLE_SESSION_RELEASE_MS;
+    this.idleSweepIntervalMs = options.idleSweepIntervalMs ?? DEFAULT_IDLE_SWEEP_INTERVAL_MS;
     this.onQueueChange = options.onQueueChange;
     this.onNotifyEvent = options.onNotifyEvent;
     this.hub = new EventHub({ clock: this.clock, ids: this.ids, limits: this.limits });
@@ -257,6 +284,84 @@ export class AgentHost {
   /** Restore persisted queue records; every restored session starts held. */
   async start(): Promise<void> {
     await this.queue.restore();
+  }
+
+  /**
+   * Start the periodic sweep that enforces the replay-window bounds and
+   * releases sessions nobody is using. `dispose()` stops it; a Host without a
+   * timer (tests, the headless CLI) can call `sweepIdleSessions()` directly.
+   */
+  startIdleSweep(): void {
+    if (this.sweepTimer || this.idleSweepIntervalMs <= 0) return;
+    this.sweepTimer = setInterval(() => this.sweepIdleSessions(), this.idleSweepIntervalMs);
+    // Never keep the process alive just for housekeeping.
+    this.sweepTimer.unref?.();
+  }
+
+  /** Stop the sweep timer. The Host is unusable for sweeps afterwards. */
+  dispose(): void {
+    if (!this.sweepTimer) return;
+    clearInterval(this.sweepTimer);
+    this.sweepTimer = undefined;
+  }
+
+  /**
+   * One housekeeping pass: apply the replay-window bounds to every stream, then
+   * release what has been idle long enough. Returns the released session ids.
+   */
+  sweepIdleSessions(now: number = this.clock.now()): string[] {
+    this.hub.sweep(now);
+    if (this.idleSessionReleaseMs <= 0) return [];
+    const released: string[] = [];
+    for (const sessionId of [...this.states.keys()]) {
+      if (this.isIdleSince(sessionId, now)) {
+        this.forgetSession(sessionId);
+        released.push(sessionId);
+      }
+    }
+    return released;
+  }
+
+  /**
+   * Release one session's in-memory state: event stream, turn records, item
+   * projection, aliases and idempotency entries. The last `revision` is kept so
+   * a recreated state stays monotonic.
+   *
+   * Returns `false` without touching anything when the session is still in use
+   * (a live turn, a subscriber, a pending approval or input, a queued turn):
+   * dropping it then would strand a caller mid-flight.
+   */
+  forgetSession(sessionId: string): boolean {
+    const state = this.states.get(sessionId);
+    if (state) {
+      if (this.hasActiveTurn(state)) return false;
+      if (state.remoteSubscribers > 0) return false;
+      if (state.pendingInputs.size > 0) return false;
+      if (this.approvals.list(sessionId).length > 0) return false;
+      if (this.queueEntries(sessionId).length > 0) return false;
+      this.rememberRevision(sessionId, state.revision);
+      for (const turn of state.turns.values()) this.turnIndex.delete(turn.id);
+      this.states.delete(sessionId);
+    }
+    this.runtimeAliases.delete(sessionId);
+    this.startingQueuedTurns.delete(sessionId);
+    for (const [key, entry] of [...this.idempotency]) {
+      if (entry.sessionId === sessionId) this.idempotency.delete(key);
+    }
+    this.draining.delete(sessionId);
+    this.drainPending.delete(sessionId);
+    this.hub.dropSession(sessionId);
+    return true;
+  }
+
+  /** Retained durable events and bytes, for memory diagnostics. */
+  eventStreamStats(): ReturnType<EventHub["stats"]> {
+    return this.hub.stats();
+  }
+
+  /** Sessions whose state is currently held (diagnostics and tests). */
+  retainedSessionIds(): string[] {
+    return [...this.states.keys()];
   }
 
   // -------------------------------------------------------------------------
@@ -1573,6 +1678,37 @@ export class AgentHost {
     return Boolean(turn && isActive(turn.status));
   }
 
+  /**
+   * A session is idle when nothing can still happen to it and the last durable
+   * activity is older than `idleSessionReleaseMs`. Anything that could resume —
+   * a turn, a subscriber, an approval, an input, a queued turn — keeps it.
+   */
+  private isIdleSince(sessionId: string, now: number): boolean {
+    const state = this.states.get(sessionId);
+    if (!state) return false;
+    if (this.hasActiveTurn(state)) return false;
+    if (state.remoteSubscribers > 0) return false;
+    if (state.pendingInputs.size > 0) return false;
+    if (this.approvals.list(sessionId).length > 0) return false;
+    if (this.queueEntries(sessionId).length > 0) return false;
+    const lastActivity = this.hub.lastActivityFor(sessionId);
+    // No stream means no durable activity was ever recorded; there is nothing
+    // to age out, so the session is not idle by this rule.
+    if (lastActivity === null) return false;
+    return now - lastActivity >= this.idleSessionReleaseMs;
+  }
+
+  /** Remember a released session's revision without growing without bound. */
+  private rememberRevision(sessionId: string, revision: number): void {
+    this.sessionRevisions.delete(sessionId);
+    this.sessionRevisions.set(sessionId, revision);
+    while (this.sessionRevisions.size > MAX_RELEASED_SESSION_REVISIONS) {
+      const oldest = this.sessionRevisions.keys().next().value;
+      if (oldest === undefined) break;
+      this.sessionRevisions.delete(oldest);
+    }
+  }
+
   private rememberIdempotency(key: string, entry: IdempotencyEntry): void {
     this.idempotency.set(key, entry);
     while (this.idempotency.size > MAX_IDEMPOTENCY_ENTRIES) {
@@ -1599,7 +1735,7 @@ export class AgentHost {
     if (!state) {
       state = {
         id: sessionId,
-        revision: 0,
+        revision: this.sessionRevisions.get(sessionId) ?? 0,
         status: "idle",
         planningState: "inactive",
         permissionMode: "ask",

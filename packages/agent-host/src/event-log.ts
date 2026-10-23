@@ -18,7 +18,25 @@ export type EventDraft = {
   occurredAt?: string;
 };
 
-export type Retention = { maxEvents: number; maxAgeMs: number };
+export type Retention = { maxEvents: number; maxAgeMs: number; maxBytes: number };
+
+/** One retained durable event, with the size it contributes to the budget. */
+type DurableEntry = { envelope: RacpEventEnvelope; appendedAt: number; bytes: number };
+
+/**
+ * Size estimate for the byte budget. The payload is already bounded by
+ * `maxFrameBytes` on the way in, and `JSON.stringify` is the same measurement
+ * the frame check performs, so one extra pass per durable event is the cost of
+ * having a byte bound at all; UTF-16 length is used as a cheap proxy and is
+ * accurate for the ASCII-heavy payloads that dominate transcripts.
+ */
+function estimateEventBytes(envelope: RacpEventEnvelope): number {
+  try {
+    return JSON.stringify(envelope)?.length ?? 0;
+  } catch {
+    return 0;
+  }
+}
 
 export type ReplayDecision =
   | { status: "live" }
@@ -33,7 +51,10 @@ export type ReplayDecision =
 export class EventStream {
   readonly epoch: string;
   private sequence = 0;
-  private readonly durable: Array<{ envelope: RacpEventEnvelope; appendedAt: number }> = [];
+  private readonly durable: DurableEntry[] = [];
+  private bytes = 0;
+  /** Last append or subscribe; the idle sweep reads it to find dead streams. */
+  private lastActivityAt: number;
 
   constructor(
     epoch: string,
@@ -42,10 +63,30 @@ export class EventStream {
     private readonly ids: IdSource,
   ) {
     this.epoch = epoch;
+    this.lastActivityAt = clock.now();
   }
 
   get lastSequence(): number {
     return this.sequence;
+  }
+
+  /** Durable events still retained (the replay window's event count). */
+  get retainedEvents(): number {
+    return this.durable.length;
+  }
+
+  /** Bytes those durable events occupy, as estimated at append time. */
+  get retainedBytes(): number {
+    return this.bytes;
+  }
+
+  get lastActivity(): number {
+    return this.lastActivityAt;
+  }
+
+  /** When the oldest retained event was appended (`null` when empty). */
+  get oldestAppendedAt(): number | null {
+    return this.durable.length === 0 ? null : this.durable[0]!.appendedAt;
   }
 
   cursor(): RacpCursor {
@@ -55,6 +96,11 @@ export class EventStream {
   /** Oldest durable sequence still retained, or `null` when nothing is. */
   get oldestRetained(): number | null {
     return this.durable.length === 0 ? null : (this.durable[0]!.envelope.sequence ?? null);
+  }
+
+  /** A subscriber is reading this stream; it must not be reaped as idle. */
+  touch(): void {
+    this.lastActivityAt = this.clock.now();
   }
 
   append(draft: EventDraft): RacpEventEnvelope {
@@ -68,19 +114,43 @@ export class EventStream {
       occurredAt: occurredAt ?? new Date(now).toISOString(),
       ...(durable ? { sequence: this.sequence + 1 } : { afterSequence: this.sequence }),
     };
+    this.lastActivityAt = now;
     if (durable) {
       this.sequence += 1;
-      this.durable.push({ envelope, appendedAt: now });
+      const bytes = estimateEventBytes(envelope);
+      this.durable.push({ envelope, appendedAt: now, bytes });
+      this.bytes += bytes;
       this.evict(now);
     }
     return envelope;
   }
 
-  private evict(now: number): void {
-    while (this.durable.length > this.retention.maxEvents) this.durable.shift();
-    while (this.durable.length > 0 && now - this.durable[0]!.appendedAt > this.retention.maxAgeMs) {
-      this.durable.shift();
+  /**
+   * Apply the age and byte bounds without a new append. An idle session never
+   * calls `append`, so without this sweep its 24-hour window is never enforced.
+   */
+  sweep(now: number = this.clock.now()): void {
+    this.evict(now);
+  }
+
+  /** Evict from the oldest end, keeping the newest event even when it alone
+   * exceeds the byte budget: a stream with no events cannot be replayed at all. */
+  evictOldest(count = 1): number {
+    let removed = 0;
+    while (removed < count && this.durable.length > 0) {
+      const entry = this.durable.shift()!;
+      this.bytes -= entry.bytes;
+      removed += 1;
     }
+    return removed;
+  }
+
+  private evict(now: number): void {
+    while (this.durable.length > this.retention.maxEvents) this.evictOldest();
+    while (this.durable.length > 0 && now - this.durable[0]!.appendedAt > this.retention.maxAgeMs) {
+      this.evictOldest();
+    }
+    while (this.durable.length > 1 && this.bytes > this.retention.maxBytes) this.evictOldest();
   }
 
   /** Decide how a subscriber that presents `after` catches up (spec §8). */
@@ -143,18 +213,32 @@ type Subscription = {
  * the bound closes the subscription with `CLIENT_TOO_SLOW` and a resumable
  * cursor instead of losing anything (spec §8).
  */
+export type EventHubStats = {
+  streams: number;
+  events: number;
+  bytes: number;
+  maxBytesPerStream: number;
+  maxBytesTotal: number;
+};
+
 export class EventHub {
   private readonly streams = new Map<string, EventStream>();
   private readonly host: EventStream;
   private readonly subscriptions = new Map<string, Subscription>();
   private readonly retention: Retention;
+  private readonly totalBytesLimit: number;
   private readonly defaultMaxOutstanding: number;
 
   constructor(
     private readonly deps: { clock: Clock; ids: IdSource; limits?: Partial<RacpLimits> },
   ) {
     const limits = { ...RACP_DEFAULT_LIMITS, ...deps.limits };
-    this.retention = { maxEvents: limits.replayWindowEvents, maxAgeMs: limits.replayWindowMs };
+    this.retention = {
+      maxEvents: limits.replayWindowEvents,
+      maxAgeMs: limits.replayWindowMs,
+      maxBytes: limits.replayWindowBytesPerStream,
+    };
+    this.totalBytesLimit = limits.replayWindowBytesTotal;
     this.defaultMaxOutstanding = 1000;
     this.host = new EventStream(deps.ids.next("ep"), this.retention, deps.clock, deps.ids);
   }
@@ -172,6 +256,81 @@ export class EventHub {
     return this.host;
   }
 
+  /** Drop one Session's stream and close whatever was reading it. */
+  dropSession(sessionId: string): boolean {
+    const removed = this.streams.delete(sessionId);
+    for (const subscription of [...this.subscriptions.values()]) {
+      if (subscription.scope !== "session" || subscription.sessionId !== sessionId) continue;
+      this.subscriptions.delete(subscription.id);
+      subscription.sink.close(
+        racpError("CURSOR_EXPIRED", "the session's event stream was released", {
+          details: { lastSafeCursor: subscription.lastDelivered },
+        }),
+        subscription.lastDelivered,
+      );
+    }
+    return removed;
+  }
+
+  /**
+   * Apply every bound without waiting for an append: the age window to each
+   * stream (idle sessions otherwise keep a 24-hour window forever) and the
+   * global byte budget across streams.
+   */
+  sweep(now: number = this.deps.clock.now()): void {
+    this.host.sweep(now);
+    for (const stream of this.streams.values()) stream.sweep(now);
+    this.enforceTotalBytes();
+  }
+
+  /**
+   * Last durable activity of a session's stream, or `null` when the session
+   * never had one. Read-only: it must not create a stream just to answer.
+   */
+  lastActivityFor(sessionId: string): number | null {
+    return this.streams.get(sessionId)?.lastActivity ?? null;
+  }
+
+  stats(): EventHubStats {
+    let events = this.host.retainedEvents;
+    let bytes = this.host.retainedBytes;
+    for (const stream of this.streams.values()) {
+      events += stream.retainedEvents;
+      bytes += stream.retainedBytes;
+    }
+    return {
+      streams: this.streams.size,
+      events,
+      bytes,
+      maxBytesPerStream: this.retention.maxBytes,
+      maxBytesTotal: this.totalBytesLimit,
+    };
+  }
+
+  /**
+   * Take whole events from the stalest stream until the total fits. Evicting
+   * one event at a time from the oldest end keeps every other stream's replay
+   * window intact and degrades to `resync: evicted` only where it must.
+   */
+  private enforceTotalBytes(): void {
+    if (this.totalBytesLimit <= 0) return;
+    for (;;) {
+      let total = this.host.retainedBytes;
+      let stalest: EventStream | undefined;
+      let stalestAt = Number.POSITIVE_INFINITY;
+      for (const stream of this.streams.values()) {
+        total += stream.retainedBytes;
+        const oldest = stream.oldestAppendedAt;
+        if (oldest !== null && oldest < stalestAt) {
+          stalestAt = oldest;
+          stalest = stream;
+        }
+      }
+      if (total <= this.totalBytesLimit) return;
+      if (!stalest || stalest.evictOldest() === 0) return;
+    }
+  }
+
   /** Append to the right stream and fan out. Returns the allocated envelope. */
   publish(draft: EventDraft): RacpEventEnvelope {
     const stream = draft.scope === "host" ? this.host : this.stream(requireSession(draft));
@@ -181,6 +340,7 @@ export class EventHub {
       if (draft.scope === "session" && subscription.sessionId !== draft.sessionId) continue;
       this.deliver(subscription, envelope);
     }
+    if (stream.retainedBytes > 0) this.enforceTotalBytes();
     return envelope;
   }
 

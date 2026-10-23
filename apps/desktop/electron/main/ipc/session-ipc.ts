@@ -117,6 +117,12 @@ export type SessionIpcDependencies = {
    * `session.changed`; without it the old name stayed on screen.
    */
   announceTitleChange?: (sessionId: string) => void;
+  /**
+   * Release the RACP Host's in-memory state for a deleted session. Without it
+   * the durable event stream and the session state kept their messages for the
+   * life of the process.
+   */
+  forgetHostSession?: (sessionId: string) => void;
 };
 
 export function registerSessionIpc({
@@ -137,6 +143,7 @@ export function registerSessionIpc({
   stripWinLongPrefix,
   cancelMemoryExtraction,
   announceTitleChange,
+  forgetHostSession,
 }: SessionIpcDependencies): void {
   let host: HostProcess | null = null;
   let sidecar: AgentSidecar | null = null;
@@ -469,6 +476,9 @@ export function registerSessionIpc({
         .catch(() => undefined);
     }
     sessionProjects.delete(id);
+    // The row is gone; release the Host's durable stream and session state so
+    // the deleted transcript stops occupying memory for the rest of the run.
+    forgetHostSession?.(id);
     logger.app("session", "info", "session deleted", { sessionId: id });
     return res;
   });

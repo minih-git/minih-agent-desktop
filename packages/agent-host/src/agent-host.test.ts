@@ -1386,3 +1386,100 @@ describe("AgentHost notification events (protocol §11.6)", () => {
     expect(await host.workSnapshot("s1")).toMatchObject({ state: "idle" });
   });
 });
+
+describe("AgentHost idle release", () => {
+  function buildReleasable(
+    options: { idleSessionReleaseMs?: number; idleSweepIntervalMs?: number } = {},
+  ) {
+    const runtime = new FakeRuntime();
+    const sessions = new FakeSessions();
+    sessions.summaries.set("s1", summary("s1"));
+    sessions.summaries.set("s2", summary("s2"));
+    const approvals = new FakeApprovals();
+    const clock = new FixedClock();
+    const host = new AgentHost({
+      runtime,
+      sessions,
+      approvals,
+      clock,
+      ids: new SeqIds(),
+      limits: { maxQueuedTurnsPerSession: 2 },
+      idleSessionReleaseMs: options.idleSessionReleaseMs ?? 60_000,
+      idleSweepIntervalMs: options.idleSweepIntervalMs ?? 0,
+    });
+    return { runtime, sessions, approvals, clock, host };
+  }
+
+  it("releases a session, keeps its revision monotonic and resyncs an old cursor", async () => {
+    const { host } = buildReleasable({ idleSessionReleaseMs: 1_000 });
+    const subscription = host.subscribe(
+      viewer,
+      { scope: "session", sessionId: "s1" },
+      { deliver: () => {}, close: () => {} },
+    );
+    const epoch = subscription.starting.epoch;
+    host.ingest(envelope("s1", "rt_1", { type: "agent_start" }));
+    host.ingest(envelope("s1", "rt_1", { type: "agent_end", messageIds: [] }));
+    const before = (await host.workSnapshot("s1")).revision;
+    expect(before).toBeGreaterThan(0);
+    host.unsubscribe(subscription.subscriptionId, "s1");
+
+    expect(host.forgetSession("s1")).toBe(true);
+    expect(host.retainedSessionIds()).toEqual([]);
+    expect(host.eventStreamStats().streams).toBe(0);
+
+    // The recreated state continues the revision sequence instead of restarting
+    // at zero, so a client holding an older expected revision is not surprised.
+    expect((await host.workSnapshot("s1")).revision).toBe(before);
+
+    const resubscribed = host.subscribe(
+      viewer,
+      { scope: "session", sessionId: "s1", after: { epoch, sequence: 1 } },
+      { deliver: () => {}, close: () => {} },
+    );
+    expect(resubscribed.replayComplete).toBe(false);
+    expect(resubscribed.resyncReason).toBe("epoch");
+  });
+
+  it("releases only sessions that nothing can resume", async () => {
+    const { host, clock } = buildReleasable({ idleSessionReleaseMs: 1_000 });
+    host.ingest(envelope("s1", "rt_1", { type: "agent_start" }));
+    await host.startTurn(owner, {
+      sessionId: "s2",
+      admission: "queue",
+      input: { text: "later" },
+      context: { requestId: "q-1" },
+    });
+    clock.current += 60_000;
+    // s1 has a running turn, s2 a queued one: neither may be released.
+    expect(host.sweepIdleSessions()).toEqual([]);
+    expect(host.retainedSessionIds().sort()).toEqual(["s1", "s2"]);
+
+    host.ingest(envelope("s1", "rt_1", { type: "agent_end", messageIds: [] }));
+    clock.current += 60_000;
+    expect(host.sweepIdleSessions()).toEqual(["s1"]);
+    expect(host.retainedSessionIds()).toEqual(["s2"]);
+  });
+
+  it("stops sweeping after dispose", async () => {
+    vi.useFakeTimers();
+    try {
+      const { host, clock } = buildReleasable({ idleSessionReleaseMs: 500, idleSweepIntervalMs: 1_000 });
+      host.ingest(envelope("s1", "rt_1", { type: "agent_start" }));
+      host.ingest(envelope("s1", "rt_1", { type: "agent_end", messageIds: [] }));
+      host.startIdleSweep();
+      clock.current += 5_000;
+      vi.advanceTimersByTime(1_000);
+      expect(host.retainedSessionIds()).toEqual([]);
+
+      host.ingest(envelope("s1", "rt_2", { type: "agent_start" }));
+      host.ingest(envelope("s1", "rt_2", { type: "agent_end", messageIds: [] }));
+      host.dispose();
+      clock.current += 600_000;
+      vi.advanceTimersByTime(60_000);
+      expect(host.retainedSessionIds()).toEqual(["s1"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

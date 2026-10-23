@@ -304,6 +304,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     stripWinLongPrefix,
     announceTitleChange: announceSessionTitleChanged,
     cancelMemoryExtraction,
+    forgetHostSession: (sessionId) => getAgentHostBridge()?.forgetSession(sessionId),
   });
   registerSettingsIpc({
     registrar,

@@ -643,6 +643,13 @@ export const RacpLimitsSchema = Type.Object({
   maxQueuedTurnsPerSession: Type.Integer({ minimum: 0 }),
   replayWindowEvents: Type.Integer({ minimum: 1 }),
   replayWindowMs: Type.Integer({ minimum: 1 }),
+  /**
+   * Bytes are the bound that matters for a long-lived Host: thousands of
+   * `item.completed` events carrying large tool results can dwarf a session's
+   * message history. Per stream first, then across every stream.
+   */
+  replayWindowBytesPerStream: Type.Integer({ minimum: 0 }),
+  replayWindowBytesTotal: Type.Integer({ minimum: 0 }),
   maxConnectedClients: Type.Integer({ minimum: 1 }),
   terminalReplayRingBytes: Type.Integer({ minimum: 0 }),
   maxOpenTerminalsPerSession: Type.Integer({ minimum: 0 }),
@@ -659,6 +666,8 @@ export const RACP_DEFAULT_LIMITS: RacpLimits = {
   maxQueuedTurnsPerSession: 8,
   replayWindowEvents: 10_000,
   replayWindowMs: 24 * 60 * 60 * 1000,
+  replayWindowBytesPerStream: 8 * 1024 * 1024,
+  replayWindowBytesTotal: 64 * 1024 * 1024,
   maxConnectedClients: 16,
   terminalReplayRingBytes: 128 * 1024,
   maxOpenTerminalsPerSession: 2,

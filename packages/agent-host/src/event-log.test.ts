@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { EventHub, EventStream } from "./event-log.js";
+import type { RacpLimits } from "@minih-agent/shared";
+
+import { EventHub, EventStream, type Retention } from "./event-log.js";
 import { RacpError } from "./errors.js";
 import type { Clock, IdSource } from "./ports.js";
 
@@ -18,9 +20,13 @@ class SeqIds implements IdSource {
     return `${prefix}_${this.counter}`;
   }
 }
-
-function stream(retention = { maxEvents: 100, maxAgeMs: 60_000 }, clock = new FixedClock()) {
-  return new EventStream("ep_1", retention, clock, new SeqIds());
+function stream(retention: Partial<Retention> = {}, clock = new FixedClock()) {
+  return new EventStream(
+    "ep_1",
+    { maxEvents: 100, maxAgeMs: 60_000, maxBytes: 8 * 1024 * 1024, ...retention },
+    clock,
+    new SeqIds(),
+  );
 }
 
 const draft = (kind: "item.completed" | "item.delta", sessionId = "s1") => ({
@@ -159,5 +165,100 @@ describe("EventHub", () => {
     events.publish(draft("item.completed", "s1"));
     expect(received).toEqual(["session.created"]);
     expect(events.hostStream().lastSequence).toBe(1);
+  });
+});
+
+/** A durable draft whose payload carries `bytes` characters of content. */
+function payloadDraft(bytes: number, sessionId = "s1") {
+  return {
+    scope: "session" as const,
+    sessionId,
+    revision: 1,
+    kind: "item.completed" as const,
+    payload: { text: "x".repeat(bytes) },
+  };
+}
+
+describe("EventStream retention bounds", () => {
+  it("evicts the oldest durable events when the byte budget is exceeded", () => {
+    const log = stream({ maxBytes: 4_000 });
+    for (let index = 0; index < 10; index += 1) log.append(payloadDraft(1_000));
+    expect(log.retainedBytes).toBeLessThanOrEqual(4_000);
+    expect(log.retainedEvents).toBeLessThan(10);
+    // A cursor that fell behind the budget is told to resync, not handed a gap.
+    expect(log.replay({ epoch: "ep_1", sequence: 1 })).toEqual({ status: "resync", reason: "evicted" });
+    expect(log.replay({ epoch: "ep_1", sequence: log.lastSequence }).status).toBe("replay");
+  });
+
+  it("keeps the newest event even when it alone exceeds the budget", () => {
+    const log = stream({ maxBytes: 100 });
+    log.append(payloadDraft(5_000));
+    expect(log.retainedEvents).toBe(1);
+    expect(log.lastSequence).toBe(1);
+  });
+
+  it("applies the age bound without waiting for another append", () => {
+    const clock = new FixedClock();
+    const log = stream({ maxAgeMs: 1_000 }, clock);
+    log.append(payloadDraft(10));
+    clock.current += 5_000;
+    // Nothing has been appended, so only an explicit sweep can enforce the age.
+    expect(log.retainedEvents).toBe(1);
+    log.sweep();
+    expect(log.retainedEvents).toBe(0);
+    expect(log.replay({ epoch: "ep_1", sequence: 0 })).toEqual({ status: "resync", reason: "evicted" });
+  });
+});
+
+describe("EventHub release and budgets", () => {
+  const hub = (limits: Partial<RacpLimits> = {}) =>
+    new EventHub({ clock: new FixedClock(), ids: new SeqIds(), limits });
+
+  it("drops a session stream and closes its subscribers", () => {
+    const events = hub();
+    events.publish(payloadDraft(10, "s1"));
+    const closed: { code: string; sequence: number }[] = [];
+    events.subscribe(
+      { scope: "session", sessionId: "s1" },
+      {
+        deliver: () => {},
+        close: (error, cursor) => closed.push({ code: error.code, sequence: cursor.sequence }),
+      },
+    );
+    const before = events.stream("s1").epoch;
+    expect(events.dropSession("s1")).toBe(true);
+    expect(closed).toEqual([{ code: "CURSOR_EXPIRED", sequence: 1 }]);
+    expect(events.stats().streams).toBe(0);
+    // A recreated stream is a new epoch, so an old cursor resyncs instead of
+    // replaying sequences that no longer exist.
+    expect(events.stream("s1").epoch).not.toBe(before);
+    const result = events.subscribe(
+      { scope: "session", sessionId: "s1", after: { epoch: before, sequence: 1 } },
+      { deliver: () => {}, close: () => {} },
+    );
+    expect(result.resyncReason).toBe("epoch");
+  });
+
+  it("evicts from the stalest stream when the global byte budget is exceeded", () => {
+    const events = hub({ replayWindowBytesPerStream: 100_000, replayWindowBytesTotal: 3_000 });
+    events.publish(payloadDraft(1_000, "old"));
+    events.publish(payloadDraft(1_000, "new"));
+    events.publish(payloadDraft(1_000, "new"));
+    events.publish(payloadDraft(1_000, "new"));
+    expect(events.stats().bytes).toBeLessThanOrEqual(3_000);
+    expect(events.stream("old").retainedEvents).toBe(0);
+    expect(events.stream("new").retainedEvents).toBeGreaterThan(0);
+  });
+
+  it("reports stream, event and byte totals for diagnostics", () => {
+    const events = hub();
+    events.publish(payloadDraft(10, "s1"));
+    events.publish(payloadDraft(10, "s2"));
+    const stats = events.stats();
+    expect(stats.streams).toBe(2);
+    expect(stats.events).toBe(2);
+    expect(stats.bytes).toBeGreaterThan(0);
+    expect(stats.maxBytesPerStream).toBe(8 * 1024 * 1024);
+    expect(stats.maxBytesTotal).toBe(64 * 1024 * 1024);
   });
 });

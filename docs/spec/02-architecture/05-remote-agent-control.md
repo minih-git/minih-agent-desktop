@@ -519,6 +519,24 @@ connection resumes from its last acknowledged cursor. A client may render
 events optimistically, but it must drop duplicates, pause on a durable gap,
 and apply a snapshot before continuing.
 
+The replay window is bounded three ways: events, age, and bytes. Each session
+stream keeps at most `replayWindowEvents` durable events no older than
+`replayWindowMs`, and no more than `replayWindowBytesPerStream` of estimated
+payload bytes; the sum across every stream is capped by
+`replayWindowBytesTotal`. Eviction always removes the oldest events first, so
+a cursor that fell behind a bound receives `resync` (`evicted`, or `epoch`
+after the case below) rather than a gap.
+
+The Host also releases what nobody is using. A session whose stream has had
+no durable activity for the Host's idle window, and that has no active turn,
+no subscriber, no pending approval or input, and an empty queue, is dropped:
+its stream, its turn records, and its in-memory projection go away. A client
+cursor for a dropped stream names an epoch that no longer exists, so the
+normal `resync` path applies and the client rebuilds from a snapshot. The
+session's `revision` continues from where it was, so a write carrying an
+expected revision is not rejected merely because the state was recreated.
+Deleting a session releases its stream and state immediately.
+
 ## 9. Turn and approval path
 
 ```text
