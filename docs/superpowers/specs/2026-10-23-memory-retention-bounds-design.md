@@ -335,17 +335,19 @@ rounds, 2 deletions), renderer heap sampled after a forced collection.
 
 Deleting two sessions now takes their streams with them (8 → 6) instead of
 leaving them until the process exits, and the byte counters stay inside their
-bounds. Main-process RSS no longer climbs across rounds. The stage-1 run also
-carries the main-process inspector, so RSS is comparable in trend rather than
-in absolute value; the renderer numbers — which stage 1 does not touch — stayed
-on the same trajectory in both runs, which is the control.
+bounds. In this scenario the main process did not climb in either build — its
+RSS fell in both runs — so the measured effect of stage 1 is the stream count
+and a lower level, not the removal of a slope. The stage-1 run also carries the
+main-process inspector, so RSS is comparable in trend rather than in absolute
+value; the renderer numbers — which stage 1 does not touch — stayed on the same
+trajectory in both runs, which is the control.
 
 The replay-window bounds (per stream 8 MiB, total 64 MiB) are not reached by
 this workload — 250 events totalling ~3 MB — so their effect is proven by unit
 tests (eviction order, `resync: evicted`, the global budget taking the stalest
 stream first) rather than by the soak.
 
-### Stage 2 — Renderer cache, mount window, message reuse: measured, partial
+### Stage 2 — Renderer: bounds added, not solved
 
 Implemented: identity reuse of unchanged rows on the read path, a 48 MiB cache
 byte budget with tail trimming for off-screen sessions, and a mount window that
@@ -388,6 +390,48 @@ reconnected, in-flight call protected, connecting client protected, dispose
 closes everything and stops the sweep). The soak profile configures no MCP
 server, so it cannot show this path.
 
+### Supplementary measurement (review follow-up)
+
+The review asked three things: whether the identical heap series was a typo,
+what the window renderer actually does in RSS, and whether a long-session
+scenario moves anything. Both builds (`main` d4283101 and this branch) were
+compiled in their own worktree and run back to back on the same machine with
+the same knobs; `main` was run twice so run-to-run noise is visible.
+
+Long scenario: 3 sessions × (2 × 500 KB tool results + 300 short rows),
+4 rounds, 8 scroll steps per visit, no deletions. Window-renderer RSS in MB,
+then the renderer's JS heap and the mounted rows measured after scrolling back
+to the bottom:
+
+| Round | main (pass A) | main (pass B) | this branch |
+|---|---|---|---|
+| baseline | 159 | 161 | 157 |
+| 1 | 229 | 231 | 197 |
+| 2 | 259 | 211 | 227 |
+| 3 | 262 | 216 | 236 |
+| 4 | 265 | 225 | 243 |
+
+Heap used / total for the same rounds, main → this branch:
+`7.9/8.8 → 27.9/30.0 → 31.3/34.3 → 33.3/36.3 → 35.0/37.5` versus
+`7.9/9.0 → 28.0/29.0 → 31.3/34.5 → 33.3/36.3 → 35.1/38.0`. Mounted rows after
+returning to the bottom: 60 in every run of both builds.
+
+What this does and does not show:
+
+- The identical heap series is **not a typo**: the scenario feeds identical
+  bytes, and the JS heap after a forced collection is deterministic to 0.1 MB.
+  Both builds produce the same heap because stage 2 changed bounds, not what a
+  rendered transcript holds.
+- RSS is **noisy on this machine**: `main` alone ranged 211–265 MB across two
+  passes while the heap moved 0.0 MB. Every point of this branch sits inside or
+  below main's range, so there is no evidence of a regression — and no basis for
+  claiming an improvement from RSS either.
+- The mounted-row count is 60 in both builds, i.e. the scripted scroll never
+  grew the window, so the shrink-on-re-pin path is **not exercised end to end**
+  here. It is covered by the source test in `transcript-window.test.mjs` only.
+- The long scenario still shows the shape the bounds are for: the renderer heap
+  climbs 8 → 35 MB while visiting three long sessions, and the per-session cache
+  now has both a row window and a byte budget above it.
 ### Still open
 
 The remaining renderer duplication is the largest single item this PR does not
