@@ -31,14 +31,9 @@ function roots(options) {
 const resolve = (ref, options) => resolveChatFileRef(ref, roots(options));
 
 /**
- * Partial-path completion for chat file references.
- *
- * The reported defect: an agent writes `/root/dir/openimage.js` in a tool call
- * but names only `openimage.js` in its reply, so the click resolved to a
- * workspace-root path that does not exist and the panel opened blank. The
- * contract under test is the product priority — the open project answers
- * first, the session scratch store second — plus the "best" rule inside one
- * root: longest matching tail, then shallowest path.
+ * File-reference completion preserves root priority and requires a unique
+ * complete suffix. It never guesses among duplicate basenames or shortens a
+ * supplied path until another file happens to match.
  */
 
 function tempTree(name, files) {
@@ -150,7 +145,7 @@ test("an exact relative link within its root remains resolvable", async () => {
 
 test("a stale fuzzy index skips escaped and missing candidates in priority order", async () => {
   const workspace = tempTree("stale-index", ["a/page.md", "b/page.md", "c/page.md"]);
-  assert.equal((await resolve("page.md", { workspace }))?.relativePath, "a/page.md");
+  assert.equal(await resolve("page.md", { workspace }), null);
   renameSync(join(workspace, "a"), join(workspace, "old-a"));
   renameSync(join(workspace, "b"), join(workspace, "old-b"));
   const outside = tempTree("stale-outside", ["page.md"]);
@@ -490,4 +485,24 @@ test("a symlinked folder escaping its root is refused, exactly like a file", asy
   assert.equal(await resolve("linked", { workspace }), null);
   assert.equal(await resolve(join(workspace, "linked"), { workspace }), null);
   assert.equal(await isChatRefOutsideRoots(join(workspace, "linked"), roots({ workspace })), true);
+});
+
+test("ambiguous basenames and complete directory suffixes never guess", async () => {
+  const workspace = tempTree("ambiguous", ["one/src/main.rs", "two/src/main.rs"]);
+  const scratch = tempTree("ambiguous-scratch", ["main.rs"]);
+  for (const ref of ["main.rs", "src/main.rs"]) {
+    assert.equal(await resolve(ref, { workspace, scratch }), null, ref);
+  }
+});
+
+test("a partial path never degrades to a different matching basename", async () => {
+  const workspace = tempTree("partial", ["other/src/main.rs"]);
+  assert.equal(await resolve("missing/src/main.rs", { workspace }), null);
+});
+
+test("range and GitHub line suffixes resolve the same contained file", async () => {
+  const workspace = tempTree("line-ranges", ["src/main.rs"]);
+  for (const ref of ["src/main.rs:42-44", "src/main.rs#L42", "src/main.rs#L42-L44"]) {
+    assert.equal((await resolve(ref, { workspace }))?.relativePath, "src/main.rs", ref);
+  }
 });

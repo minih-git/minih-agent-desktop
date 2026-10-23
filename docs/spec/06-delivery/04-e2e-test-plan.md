@@ -30,6 +30,46 @@
 - **Acceptance:** C / E / Quality.
 - **Milestone:** Post-MVP transcript maintenance.
 
+### E2E-RUNTIME-provider-reuses-tool-call-id
+
+- **Preconditions:** A local HTTP provider fixture reuses one wire-visible
+  tool-call id for two real executions, then answers a third request. No paid
+  provider or installed Desktop is used.
+- **Steps:** Run the two executions, inspect the next request body, repeat after
+  context trimming and after restoring a saved transcript, and run the same
+  path through a delegate with model fallback.
+- **Expected:** Both executions keep distinct paired ids and both results
+  remain; no synthetic placeholder closes an old call. Completed pairs survive
+  trimming and restoration, and a replayed pending snapshot is still removed
+  whole. The 64-character limit, Responses composite ids and cross-provider
+  normalisation are unchanged.
+- **Coverage:** `runtime.test.ts` for the parent prompt path,
+  `subagent-fallback.test.ts` for two executions and three requests through the
+  real Pi adapter, and `tool-call-identity.test.ts` for retained identities
+  after trim.
+- **Specs:** `03-runtime/02-agent-runtime.md` §5.
+- **Acceptance:** C / E / Quality.
+- **Milestone:** Maintenance, upstream #1815.
+- **Status:** Draft until the named regressions are run.
+
+### E2E-RUNTIME-output-cap-uses-folded-transcript
+
+- **Preconditions:** A deterministic provider fixture and a session whose
+  chronological system transcript accumulated several superseded instruction
+  snapshots on a model without mid-conversation system support.
+- **Steps:** Send a normal prompt, inspect the input estimate and the outbound
+  `max_tokens`, then switch to a model that declares mid-conversation system
+  support and inspect it again.
+- **Expected:** The estimate and the provider request use the same folded
+  projection; a superseded snapshot is charged once, so the clamp does not
+  collapse to the provider floor while the window still has room. Models that
+  keep the chronological transcript are still charged for it. Context
+  calibration and the compaction budget are unchanged.
+- **Specs:** `03-runtime/02-agent-runtime.md` §5d.
+- **Acceptance:** C / Quality.
+- **Milestone:** Maintenance, upstream #1799.
+- **Status:** Draft until the runtime request regression is run.
+
 ### E2E-RELEASE-mirror-recovery
 
 - **Preconditions:** Isolated workspace, production release/recovery workflow
@@ -202,6 +242,31 @@
   results are recorded in
   `docs/implementation/live-voice-public-readiness.md`.
 - **Specs:** [Live Voice](../03-runtime/live-voice.md).
+
+### E2E-LIVE-VOICE-gemini-work-schema
+
+- **Preconditions:** Production Gemini adapter with a deterministic transport
+  fixture and a bound work profile; no credentials, physical microphone or paid
+  provider.
+- **Steps:** Start the call with a work target, accept a valid setup, unmute and
+  send PCM. Reject another setup with close 1007 and a UTF-8 reason. Repeat with
+  a transport error followed by close; cancel and close the adapter.
+- **Expected:** Gemini sends only its supported Schema subset and connects;
+  OpenAI keeps its strict JSON Schema and Host argument validation stays strict
+  for both. A failed setup settles immediately as `LIVE_PROTOCOL_ERROR`, a
+  transport error remains a network error, and only one root cause is reported.
+  The raw close reason reaches only the redacted provider log; even the connect
+  rejection crossing IPC contains only the public code. Cancellation suppresses
+  terminal noise, and close removes socket observers.
+- **Specs:** `03-runtime/live-voice.md`, `03-runtime/09-logging-and-observability.md`.
+- **Acceptance:** C, E, Security, Quality.
+- **Milestone:** Maintenance, upstream #1812.
+- **Automation:** `live-voice-gemini-adapter.test.mjs`,
+  `live-voice-service-lifecycle.test.mjs`, and voice-runtime
+  `live/protocol.test.ts`.
+- **Status:** Draft until the named adapter and service contracts are run; full
+  Electron/Gemini account and physical microphone acceptance remain separate
+  and are not certified here.
 
 ### E2E-LIVE-VOICE-provider-call-lifecycle
 
@@ -558,6 +623,27 @@
   production `AskToolCard` in a real Chromium page, clicks through the header
   actions, and measures the multi-block question layout. Runtime boundary
   validation is covered by `packages/agent-runtime/src/runtime.test.ts`.
+
+### E2E-ASKTOOL-draft-survives-session-switch
+
+- **Preconditions:** No live provider is required; the fixture stubs
+  `api.resolveAskTool` and seeds one two-question ask through the real store
+  slice.
+- **Steps:** Mount the production `AskToolCard`, select the second option on
+  question one, advance to question two, unmount the card (the session switch
+  the dock performs), and remount it with the same `requestId`. Then click the
+  first step indicator to return to question one. Resolve or dismiss the ask
+  and inspect the stored draft.
+- **Expected:** The remounted card opens on question two with the earlier
+  selection still marked, and question one still shows the selected option.
+  Submission state is not restored. Resolving or dismissing the ask clears the
+  stored draft, and it never appears under another request id. The draft is
+  renderer memory and does not survive an application restart.
+- **Specs linked:** `03-runtime/17-asktool-questions.md`,
+  `04-ux/11-asktool-question-card.md`
+- **Acceptance:** C / Quality
+- **Milestone:** Maintenance, upstream #1802
+- **Status:** Draft until the named production-card flow is run.
 
 ### E2E-POWER-keep-awake-setting
 
@@ -1891,10 +1977,46 @@ identify the platform validation still needed.
   restoration or duplicate user turn. Stop returns after the active runtime
   operation has settled, and the follow-up starts without `AGENT_BUSY`. The
   session remains usable.
-- **Specs linked**: `03-runtime/02-agent-runtime.md`
+- **Specs linked**: `03-runtime/02-agent-runtime.md`,
+  `03-runtime/03-tools-and-permissions.md`, `03-runtime/06-host-rpc-protocol.md`,
+  ADR `tool-stop-side-effect-boundaries`
 - **Acceptance**: C (abort)
 - **Milestone**: M2
-- **Status**: Draft
+- **Status**: Draft; the detailed tool-boundary path is
+  E2E-TOOLS-stop-preserves-side-effect-boundaries.
+
+#### E2E-TOOLS-stop-preserves-side-effect-boundaries: Stop cannot hide a running side effect
+
+- **Preconditions**: A deterministic Host fixture holds a read-only `Grep`,
+  exposes a pending `Write` approval, and can start an admitted background Bash
+  task. A local MCP or plugin fixture can hold an already-started call.
+- **Steps**: 1) Start the `Grep`, press Stop, then send another prompt without
+  waiting. 2) Start the `Write` that is awaiting permission, press Stop, then
+  try to approve the stale request. 3) Start an already-approved `Write`/`Edit`
+  and an already-started MCP call, press Stop, and observe until the turn
+  settles. 4) Start a foreground `Bash` that has printed partial output, press
+  Stop, and check the process tree. 5) Start a background Bash, approve it,
+  press Stop, and inspect the task list and process. 6) Send an early
+  `tools.abort` for a call id, then start a different tool with the same call
+  id.
+- **Expected**: The read-only call ends immediately as `TOOL_ABORTED`, its late
+  result is discarded, and the follow-up starts without `AGENT_BUSY`. Stopping
+  the pending Write cancels its permission; the stale approval fails and creates
+  no file. An already-started mutation or extension call is not reported
+  stopped before its Host result is visible, and the turn then settles. The
+  foreground Bash returns the output collected within the 10-second grace
+  window (or settles as `TOOL_ABORTED` when it expires), and its process tree is
+  gone. The admitted background task survives the turn Stop and remains listed
+  until its own Stop. The early abort does not cancel the different tool that
+  reuses the call id.
+- **Specs linked**: `03-runtime/02-agent-runtime.md`,
+  `03-runtime/03-tools-and-permissions.md`, `03-runtime/06-host-rpc-protocol.md`,
+  ADR `tool-stop-side-effect-boundaries`
+- **Acceptance**: C, F, Security, Quality
+- **Milestone**: Maintenance, upstream #1767
+- **Status**: Draft. The runtime and Host regression contracts are expected to
+  cover the stuck turn, stale approval and tool-name scoping; this record does
+  not claim those tests have run.
 
 #### E2E-171: Streaming reply survives quit, crash, and stop
 
@@ -5629,8 +5751,15 @@ selection already in place shows it without waiting for another event.
 - **Steps**: Raise each variant; pause/resume a transient timer with focus
   and hover; exceed four sticky and transient entries; dismiss one; repeat
   with multiline text, EN/zh-CN, dark/light, 360px width, and reduced motion.
-  Navigate and resolve an existing question reminder.
+  Navigate and resolve an existing question reminder. With a right-docked work
+  panel open, resize it and shift the layout horizontally, then open Settings
+  and maximize the panel to inspect fallback placement.
 - **Expected**: Cards enter from right below window controls, newest first.
+  With the in-flow shell visible, the stack's right edge follows the main
+  content area and its width stays inside it, so a docked, resized or shifted
+  work panel and a reopened sidebar are never covered; Settings, startup,
+  recovery and a maximized panel fall back to the window's right edge. The
+  observer follows layout changes without leaking on unmount.
   Info/success expire after four unpaused seconds; warnings/errors persist.
   Explicit durations remain compatible. Every sticky card survives arrivals;
   at most four transient cards remain. Overflow keeps all close controls
@@ -5638,6 +5767,7 @@ selection already in place shows it without waiting for another event.
   stays selectable and preserves line breaks and readable failure details.
   Dismiss affects only its card, including under reduced motion. Arrival
   does not steal focus; existing prompt resolution and session navigation work.
+  Safe-area geometry changes never reorder cards or restart a sticky timer.
 - **Specs**: `04-ux/08-component-spec.md` §17;
   `04-ux/07-ui-design-system.md` §11.8; `04-ux/09-interaction-patterns.md` §6.
 - **Acceptance**: C / Quality / Accessibility.
@@ -5689,6 +5819,13 @@ selection already in place shows it without waiting for another event.
   A successful catalog refresh replaces both cached matches and cached misses;
   a failed refresh keeps the previous results. Editing a model binding or
   changing the default provider/model takes effect without restarting the app.
+
+  In the bundled snapshot, Kilo `z-ai/glm-5.3-flash` and
+  `~z-ai/glm-flash-latest` publish an output limit of `131072`, matching the
+  official GLM publisher. Other Kilo/OpenRouter price differences and their
+  Beam output limits keep the fork's current values; the catalog check must not
+  rewrite a price or a conflicting limit merely because another upstream
+  snapshot disagrees.
 - **Specs linked**: `03-runtime/04-data-storage.md`,
   `03-runtime/12-provider-config-schema.md`,
   `03-runtime/13-model-catalog-and-selection.md`, `04-ux/08-component-spec.md`
@@ -6189,8 +6326,10 @@ selection already in place shows it without waiting for another event.
   paints the retained frame and offset immediately. Returning to an evicted
   session restores the message and viewport offset recorded before eviction,
   including explicit expanded content, using a bounded historical read if the
-  latest page no longer contains the anchor. The cold selection's progress track
-  and composer fence remain unchanged. No search highlight is introduced, live
+  latest page no longer contains the anchor. When the anchor is already loaded
+  but outside the mounted row window, the saved absolute scroll offset is
+  restored first and the lookup completes before alignment starts, so the
+  fallback deadline cannot cancel history reading. The cold selection's progress track
   model-input messages are unchanged, and real input or a new turn cancels
   automatic alignment. First visits and pinned revisits still follow latest. Nothing is
   dimmed at any point, hidden panes stay non-interactive and out of the
@@ -8480,6 +8619,34 @@ selection already in place shows it without waiting for another event.
 - **Milestone**: M5
 - **Status**: Unit-covered (`runtime.test.ts`); full provider/UI journey Draft
 
+#### E2E-SESSION-empty-assistant-rows-are-not-persisted: Content-less replies never accumulate
+
+- **Preconditions**: A deterministic provider fixture returns an empty completed
+  assistant response, then a structured error, then a tool call followed by an
+  accepted steering message. A Host-ledger completion notice is also available.
+- **Steps**: 1) Run the empty completed response through a provider retry and
+  inspect the outbox and transcript. 2) Run the structured error and a tool
+  batch, and inspect the persisted rows. 3) Accept steering while a reply is in
+  flight, then let its empty response settle. 4) Deliver the completion notice
+  and let its first reply stay silent; then settle the turn and deliver another
+  empty ordinary reply.
+- **Expected**: No ordinary assistant row with empty text, no stored reasoning,
+  no tool row and no structured payload reaches the outbox, whatever its status;
+  retries therefore cannot grow the request body. A tool row, a structured error
+  payload and an
+  cannot grow the request body. A tool row, a structured error payload and an
+  accepted steering reservation remain durable. The completion notice's first
+  silent reply is the only retained empty completed row while its receipt is
+  valid; accepted steering or turn settlement revokes it, and a later empty
+  reply is dropped. The next provider request contains no empty assistant
+  message.
+- **Specs linked**: `03-runtime/02-agent-runtime.md` §5e,
+  `03-runtime/04-data-storage.md`, ADR `session-collaboration-messages` (D446)
+- **Acceptance**: F (persistence), Quality
+- **Milestone**: Maintenance, upstream #1766
+- **Status**: Draft. Event-persistence and runtime regression coverage is
+  expected; this record does not claim it has run.
+
 #### E2E-146a: Approved Plan/Goal progress text continues once
 
 - **Preconditions**: A project-bound session has an approved Plan or Goal and a
@@ -10743,6 +10910,16 @@ This test plan spec is accepted when:
 - On macOS with Stage Manager, shrink or unfocus the PI window until width < 800 or height < 560.
 - Expect the shell to re-assert a Codex-like footprint (~1200×800, min 800×560 capped to the display work area) and keep restoring while still collapsed (not only during the first 20s after launch).
 - The recovery watchdog is macOS-only (D447). On Windows/Linux it must not run at all: the app must never re-layer or re-raise its own window unprompted. Focus another window, then confirm Minih-Agent-Desktop stays behind it instead of jumping back to the top of the stack, and that a stacking check (`xprop -root _NET_CLIENT_LIST_STACKING`) never shows it returning to the top periodically.
+- Windows regression: trigger tiny-bounds recovery through show, focus or
+  restore, then Alt+Tab to another app. Minih-Agent-Desktop must stay behind
+  that app immediately and after four seconds. Ordinary focus must not resize
+  or raise it, and hidden/minimized windows keep their state. Recovery must never
+  enable always-on-top off macOS.
+- Automated lifecycle coverage: `window-topmost-lifecycle.test.mjs` would
+  execute the production recovery handlers and watchdog with controlled time,
+  including the unchanged macOS temporary pin and release. Native Alt+Tab
+  validation remains a separate platform check; this record does not claim it
+  has run.
 
 ### US-UI-20 Dark floating composer box
 - Switch to dark theme on chat home.
@@ -13722,10 +13899,10 @@ are withdrawn with ADR 0165.
   - Clicking `openimage.js` opens the project's `img/openimage.js`, although the
     scratch store holds a file with that same leaf name: the project is
     searched to exhaustion before the scratch store is considered at all.
-  - `dir/a.ts` opens `src/dir/a.ts`: an exact path beats a shorthand, a longer
-    matching tail beats a bare leaf name, and the shallowest candidate wins a
-    tail-length tie, so the deeper `packages/app/dir/a.ts` is never the one
-    that opens.
+  - `dir/a.ts` matches both `src/dir/a.ts` and `packages/app/dir/a.ts`, so the
+    shorthand is ambiguous and opens nothing; the exact reference
+    `src/dir/a.ts` opens that path. A partial or shortened suffix is never
+    promoted to a different match.
   - A reference the project cannot answer resolves in the session scratch
     store; one that neither answers resolves in the attachment store, and an
     `attachments/<sha256>` ref opens that stored blob.
@@ -17206,6 +17383,23 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   `scripts/e2e-work-panel-drag.mjs` (`pnpm test:e2e:work-panel-drag`). macOS/Linux
   native dragging remains unqualified.
 
+#### E2E-WORK-PANEL-close-stays-inside-strip: The active tab keeps its close control reachable
+
+- **Preconditions**: An isolated Electron window with several file and plugin
+  tabs, the work panel at its minimum width, and no overflow at first.
+- **Steps**: Activate the last tab, shrink the panel until the strip overflows,
+  then hover and focus the active tab. Repeat after a window resize and after a
+  horizontal layout shift, resetting the scrollport between stages.
+- **Expected**: The strip scrolls the active tab's wrapper (falling back to the
+  tab button) into view together with its close button, and the reserved
+  inline-end `scroll-padding-inline` prevents sub-pixel clipping. The close
+  control appears on hover and focus for the active tab, remains clickable, and
+  the active-tab selection and retained side-note/subagent controls are
+  unchanged.
+- **Specs linked**: `04-ux/08-component-spec.md` §5, ADR 0224
+- **Acceptance**: Quality
+- **Status**: Draft until the resize and hover geometry flow is run.
+
 #### E2E-LAYOUT-sidebar-project-group-fold
 
 - **Preconditions**: Five retained sidebar project groups, seeded through the
@@ -17574,14 +17768,21 @@ plugin-form fixtures in an isolated temporary directory at runtime.
 
 - **Preconditions**: Rendered Skill Market and MCP Market panels with the
   market APIs stubbed at the IPC boundary. Each API returns a total failure,
-  then a result with one failed source, then a complete result.
+  then a result with one failed source, then a complete result. A further run
+  loads a result first, fails afterwards, and recovers on retry; another run
+  changes the query after a success; a final run fails with nothing loaded.
 - **Steps**: Open each market; click Retry after the total failure; confirm the
   loading announcement and recovered entry; click Retry again after the
-  partial failure.
+  partial failure. Then load a list, fail the next query, retry, and change the
+  query before failing once more.
 - **Expected**: Both markets repeat the current search, show loading while the
   request runs, retain a Retry action for partial failures, and clear the failed
-  source after recovery. The test makes no live network request and does not
-  change the main-process network policy.
+  source after recovery. After a successful load, a later failure keeps that
+  list on screen, says when it was taken, retains each remote source badge, and
+  still offers Retry. The retained list disappears once a retry succeeds, and it
+  never stands in for a different query or for a failure with nothing loaded. A
+  successful empty answer is not presented as a failure. The test makes no live
+  network request and does not change the main-process network policy.
 - **Specs linked**: `04-ux/06-settings-ia.md`, ADR 0177, ADR 0272
 - **Acceptance**: Quality
 - **Milestone**: M6+
@@ -18125,8 +18326,17 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   stating its duration, keeps the final answer outside the fold, and reveals the
   narration plus one line per step (action only, no command echo, Bash included)
   when opened; set `detailed` and confirm nothing folds and tool details plus
+  when opened; set `detailed` and confirm nothing folds and tool details plus
   completed reasoning are open; set `compact` and confirm the segmented folding
-  described here.
+  described here. In `compact`, complete a group with at most four visible
+  items and a larger group: the small group stays open, the larger starts
+  closed, and a Task topology group stays open; collapse one visible Thinking
+  row and confirm the other rows keep their own state. Confirm only `compact`
+  indents child rows by 12px and shows the hover/focus group rail. Open a
+  reviewed Write/Edit and confirm one file header with its diff body directly
+  beneath, Copy for the diff, and rollback. In AI settings, check the display
+  selector in English and Simplified Chinese at 800px, 1000px and 1440px
+  window widths with 100% and 150% font scales, and select all three values.
   Each process chunk
   header reports only its own recorded span (two chunks around a Bash row differ),
   and a folded chunk with progress text shows that most recent narration under
@@ -18137,16 +18347,31 @@ plugin-form fixtures in an isolated temporary directory at runtime.
   details closed until opened, and a legacy search reveal.
 - **Expected:** Chronological collapsible process segments leave the final answer,
   assistant errors, stopped trailing text and pending actions outside them. The
-  active group starts open; untouched groups collapse at completion, while explicit
-  user choices persist. These group defaults do not depend on the `Show thinking`
+  active group starts open; in `compact`, completed groups with at most four
+  visible items and Task topology groups stay open while larger ordinary groups
+  start closed, and explicit user choices persist. `standard` folds a finished
+  turn and `detailed` folds nothing, each keeping its own detail defaults. These
+  group defaults do not depend on the `Show thinking` preference. Bash/run
+  aliases are excluded from every process disclosure and stay
   preference. Bash/run aliases are excluded from every process disclosure and stay
   standalone rows visible even when every group is collapsed; adjacent Bash rows
   each remain standalone and a Bash row's detail stays closed until the user opens
   it. When `Show thinking` is off, the live thinking indicator stays visible,
   completed reasoning rows and excerpts are hidden, and empty thinking-only
   containers are omitted; turning it back on restores them. Singletons have no
-  group. No item payload opens itself: a tool/search row stays closed until the user
-  opens it, while a final thinking item keeps its own leaf default.
+  group. Except for the compact Thinking default, no item payload opens itself:
+  a tool/search row stays closed until the user opens it. In `compact` with
+  `Show thinking` on, each visible Thinking row opens by default and can be
+  collapsed independently; each row's manual choice survives updates, while
+  `standard` and `detailed` keep their existing detail defaults.
+  A reviewed Write/Edit shows one file header as the only disclosure header,
+  with its diff body directly beneath it, Copy for the diff, and rollback; no
+  duplicate generic tool row is rendered in the main transcript, a followed
+  subagent transcript or the detail view. The running marker stays centred
+  beside its label under reduced motion. The Settings display selector sizes
+  options to their labels: labels stay on one line and, at narrow widths or
+  150% font scale, whole options wrap without horizontal overflow while all
+  three values remain selectable and saved.
   Parent/child/sibling states remain independent, pane-owned user choices survive
   updates, preference changes and remounts, and renderer restart reapplies defaults.
   Search reveals the process segment and activity group that own the named message
@@ -19024,19 +19249,20 @@ renderer's durable transcript reads. No real model or provider is contacted.
   closure behavior. Covered by the parameterized runtime overflow user-path test.
 
 
-#### E2E-262: Transcript path:line opens and scrolls the host file viewer
+#### E2E-262: Transcript positioned file references open and scroll the host file viewer
 
 - **Preconditions:** Isolated Electron/Chromium, an active workspace and session,
   the bundled file-manager view available, and deterministic filesystem IPC
   fixtures.
-- **Steps:** Render a real transcript `path:line:column` reference followed by
+- **Steps:** Render a real transcript `path:line-range` reference followed by
   sentence punctuation; click its verified file chip and wait for the host file
-  viewer to load.
+  viewer to load. Unit coverage also exercises `path:line:column` and GitHub
+  `path#Lline[-Lend]` references.
 - **Expected:** Despite the bundled file-manager view being available, the
   positioned reference opens in the host's read-only file tab. The file request
-  retains its line and column, and the viewer scrolls the requested line into
-  the visible center area. The path and file contents remain the same as the
-  reference target.
+  retains the range's starting line, and the viewer scrolls that line into the
+  visible center area. The path and file contents remain the same as the
+  reference target; an invalid position does not become a guessed line.
 - **Specs:** `04-ux/08` §11.8; ADR 0262.
 - **Status:** `node scripts/e2e-file-ref-line-scroll.mjs` mounts production
   `LinkifiedText` and `FilesTab` in isolated Electron with filesystem IPC

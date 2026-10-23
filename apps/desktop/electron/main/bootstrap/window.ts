@@ -883,8 +883,8 @@ export async function createWindow({
       // so the reservation replan below is treated as an OS-owned adjustment.
       windowState.workPanelUserMovePending = false;
       applyWorkPanelReservation();
-      // Brief pin only when actively recovering from a shelf.
-      if (shelved || electronTiny) {
+      // Only macOS owns the watchdog that releases this recovery pin.
+      if (process.platform === "darwin" && (shelved || electronTiny)) {
         window.setAlwaysOnTop(true, "floating");
         pinUntil = Date.now() + 4000;
       } else {

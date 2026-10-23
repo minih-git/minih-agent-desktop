@@ -336,6 +336,11 @@ Settings is a **full-window page** that replaces the app sidebar + main chrome (
   reasoning and run row with tool details and completed reasoning opened. A
   change applies to turns already on screen. It affects presentation only.
   Settings search indexes the row.
+  Settings-row segmented controls use content-sized options instead of the
+  standard 240px field-column cap. Labels stay on one line; when space is
+  insufficient, the whole option wraps within the available pane width, and
+  the control moves below the title rather than clipping or overflowing
+  horizontally. Wide panes keep the title and control inline.
 - The **Command shell** row in Defaults uses the host-discovered catalog of native
   PowerShell 5.1, PowerShell 7, cmd, Git Bash, and Bash with IDs
   `windows-powershell`, `windows-pwsh`, `cmd`, `git-bash`, and
@@ -955,7 +960,11 @@ system while preserving their different data ownership:
   user sees that refusal while the same URL opens in their browser (ADR 0177).
   A failed catalog query offers Retry; the same action remains available when
   only some sources failed. It repeats the current search over the configured
-  sources and announces loading while the request runs.
+  sources and announces loading while the request runs. After a successful
+  load, a later failure keeps that list on screen with the time it was taken
+  and still offers Retry; the retained list never answers a different query,
+  and it disappears once a retry succeeds. A successful empty answer is not a
+  failure to cover.
   Back reloads the skill list.
 - Skills also exposes **Scan other tools** in its toolbar. The explicit scan
   opens inline on the Skills page, and imported entries follow the current
@@ -967,7 +976,10 @@ system while preserving their different data ownership:
   shown in candidate rows.
 - MCP Market offers Retry after a failed query or partial source failure. It
   repeats the current search through the existing market request path and
-  announces loading while the request runs.
+  announces loading while the request runs. After a successful load, a later
+  failure keeps that list on screen with the time it was taken, retains each
+  remote source badge, and still offers Retry. The retained list is scoped to
+  the query that produced it and disappears once a retry succeeds.
 - The Subagents create/edit sheet pins a model with a searchable, provider-
   grouped anchored menu — the same option-menu control the service picker uses
   — over the configured, runnable models the Composer offers, plus an

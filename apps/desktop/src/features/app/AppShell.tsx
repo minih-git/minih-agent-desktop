@@ -1,4 +1,11 @@
-import { type CSSProperties, lazy, type ReactNode, Suspense, useEffect } from "react";
+import {
+  type CSSProperties,
+  lazy,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useState,
+} from "react";
 import { ConversationTopbar } from "../../components/ConversationTopbar";
 import { DeviceRequestHost } from "../../components/settings/DeviceRequestHost";
 import { ExtensionPromptHost } from "../../components/ExtensionPromptDialog";
@@ -94,8 +101,8 @@ export function AppShell() {
     workPanelToggleTooltip,
     requestedWorkPanelWidth,
   } = useAppShellRuntime();
+  const [toastAnchor, setToastAnchor] = useState<HTMLElement | null>(null);
   useCopyTex();
-
   useEffect(() => {
     void loadChatSurface().catch((error: unknown) => {
       console.error("Failed to preload the chat surface", error);
@@ -188,7 +195,7 @@ export function AppShell() {
             )}
 
             {!workPanelMaximized && (
-              <section className="main-pane">
+              <section ref={setToastAnchor} className="main-pane">
                 {page === "chat" ? (
                   <ConversationTopbar
                     sidebarCollapsed={sidebarCollapsed}
@@ -344,7 +351,7 @@ export function AppShell() {
           </Suspense>
         ) : null}
         <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
-        <ToastHost />
+        <ToastHost anchorElement={page === "settings" ? null : toastAnchor} />
         <LiveVoiceStatusHost />
         <PluginRendererHost />
         <ExtensionPromptHost />

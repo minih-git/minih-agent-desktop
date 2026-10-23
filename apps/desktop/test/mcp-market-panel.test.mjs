@@ -1,8 +1,13 @@
 import { readFile } from "node:fs/promises";
+import { register } from "node:module";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { BUILTIN_MCP_CATALOG } from "../../../packages/shared/dist/index.js";
 
+register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
+const { snapshotMatchesQuery, snapshotTimeText } = await import(
+  "../src/lib/market-snapshot.ts"
+);
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
 const [panel, page, en, zh] = await Promise.all([
@@ -37,6 +42,27 @@ test("failed and partial MCP catalog searches can be retried", () => {
   assert.match(panel, /remote\.status === "ready" && remote\.failed\.length/);
 });
 
+test("a failed query keeps the last successful list with its timestamp and remote source badges", () => {
+  // Issue #1692 follow-up, MCP side: the last successful registry answer stays
+  // on screen when a later query fails, with the time it was taken.
+  assert.match(panel, /useState<MarketSnapshot<MarketItem> \| null>\(null\)/);
+  assert.match(panel, /snapshotMatchesQuery\(snapshot, search\)/);
+  assert.match(panel, /setSnapshot\(\{ entries, at: Date\.now\(\), query: query\.trim\(\) \}\)/);
+  assert.match(
+    panel,
+    /const showingSnapshot =\s*\n\s*snapshotForQuery != null &&\s*\n\s*remote\.entries\.length === 0 &&\s*\n\s*\(remote\.status === "error" \|\| remote\.status === "loading"\)/,
+  );
+  assert.match(
+    panel,
+    /const remoteIds = useMemo\(\s*\n\s*\(\) => new Set\(displayEntries\.map\(\(entry\) => entry\.id\)\),\s*\n\s*\[displayEntries\],\s*\n\s*\)/,
+  );
+  assert.match(panel, /displayEntries\.filter\(matches\)/);
+  assert.match(panel, /settings\.mcpMarket\.remoteStaleSnapshot/);
+  // Pagination beyond the first page also refreshes the snapshot: the entries
+  // on screen after Load more are what a later failure should keep.
+  assert.match(panel, /if \(entries\.length > 0\) \{\s*\n\s*setSnapshot\(/);
+});
+
 test("installed state comes from matching server ids", () => {
   assert.match(panel, /installedIds\.includes\(entry\.id\)/);
   assert.match(page, /installedIds=\{\[\.\.\.globalServers, \.\.\.projectServers\]/);
@@ -65,7 +91,19 @@ test("every shipped locale carries the MCP market recovery strings", async () =>
     const locale = await read(`../../../packages/i18n/src/locales/${id}/index.ts`);
     assert.match(locale, /remotePartial: "/, `${id} remotePartial`);
     assert.match(locale, /retry: "/, `${id} retry`);
+    assert.match(locale, /remoteStaleSnapshot: "/, `${id} remoteStaleSnapshot`);
   }
+});
+
+test("market snapshot helpers match queries case-insensitively and format timestamps", () => {
+  const snap = { entries: [{ id: "a" }], at: Date.now(), query: "  GitHub  " };
+  assert.equal(snapshotMatchesQuery(snap, "github"), true);
+  assert.equal(snapshotMatchesQuery(snap, "  GITHUB "), true);
+  assert.equal(snapshotMatchesQuery(snap, "postgres"), false);
+  assert.equal(snapshotMatchesQuery(null, "github"), false);
+  assert.ok(snapshotTimeText(Date.now(), "en").length > 0);
+  assert.ok(snapshotTimeText(new Date("2020-01-02T03:04:00Z").getTime(), "en").includes("2020"));
+  assert.equal(snapshotTimeText(Number.NaN, "en"), "");
 });
 
 test("builtin catalog keeps the zero-config promise", () => {

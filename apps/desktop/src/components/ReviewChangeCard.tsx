@@ -2,14 +2,23 @@ import { useChatSessionCapability } from "../hooks/use-chat-session-capability";
 import { memo, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
+  ReviewChange,
   ReviewChangeStatus,
   UiMessage,
 } from "@minih-agent/shared";
+import {
+  disclosureKey,
+  useAutomaticDisclosure,
+} from "../features/chat/transcript/disclosure";
+import {
+  opensProcessDetails,
+  resolveTranscriptDensity,
+} from "../lib/transcript-density";
 import { reviewChangeFromMessage } from "../lib/workspace-review";
 import { useAppStore } from "../stores/app-store";
-import { cx } from "./ui";
-import { IconCheck, IconChevronRight, IconSnapshot } from "./icons";
-
+import { useCopy } from "./Markdown";
+import { cx, TooltipButton } from "./ui";
+import { IconCheck, IconChevronRight, IconCopy, IconSnapshot } from "./icons";
 /* Git-status letters carry the status without relying on color alone; the
    localized word stays in the row's accessible name. */
 const STATUS_MARKS: Record<ReviewChangeStatus, string> = {
@@ -18,14 +27,30 @@ const STATUS_MARKS: Record<ReviewChangeStatus, string> = {
   deleted: "D",
 };
 
+function reviewDiffText(change: ReviewChange): string {
+  return change.hunks
+    .map((hunk) =>
+      [
+        hunk.header,
+        ...hunk.lines.map((line) =>
+          `${line.type === "add" ? "+" : line.type === "del" ? "-" : " "}${line.text}`,
+        ),
+      ].join("\n"),
+    )
+    .join("\n");
+}
+
 function DiffBody({ message, compact }: { message: UiMessage; compact: boolean }) {
   const { t } = useTranslation();
   const change = reviewChangeFromMessage(message);
   const localToolsAllowed = useChatSessionCapability("canUseLocalTools");
   const rollback = useAppStore((state) => state.rollbackWorkspaceChange);
+  const { copied, copy } = useCopy();
   const [rollingBack, setRollingBack] = useState(false);
 
   if (!change) return null;
+
+  const diffText = reviewDiffText(change);
 
   const runRollback = async () => {
     if (!localToolsAllowed || !change.reversible || change.state === "rolledBack" || rollingBack) return;
@@ -87,6 +112,17 @@ function DiffBody({ message, compact }: { message: UiMessage; compact: boolean }
             {t("panel.review.rollbackUnavailable")}
           </span>
         )}
+        <TooltipButton
+          type="button"
+          className={cx("review-change-copy", copied && "copied")}
+          tooltip={copied ? t("chat.copied") : t("chat.copy")}
+          ariaLabel={t("chat.copy")}
+          onClick={() => copy(diffText)}
+          disabled={!diffText}
+        >
+          {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+          {copied ? t("chat.copied") : t("chat.copy")}
+        </TooltipButton>
       </div>
     </div>
   );
@@ -95,15 +131,29 @@ function DiffBody({ message, compact }: { message: UiMessage; compact: boolean }
 export const ReviewChangeCard = memo(function ReviewChangeCard({
   message,
   compact = false,
+  asToolRow = false,
+  autoOpen,
+  onUserInteraction,
 }: {
   message: UiMessage;
   compact?: boolean;
+  /** The card is the tool-level row: one file header and its diff body. */
+  asToolRow?: boolean;
+  autoOpen?: boolean;
+  onUserInteraction?: () => void;
 }) {
   const { t } = useTranslation();
   const change = reviewChangeFromMessage(message);
   const detailsId = useId();
-  const [open, setOpen] = useState(false);
-
+  const defaultOpen = useAppStore((state) =>
+    asToolRow ? opensProcessDetails(resolveTranscriptDensity(state.settings)) : false,
+  );
+  const disclosure = useAutomaticDisclosure(
+    autoOpen ?? defaultOpen,
+    undefined,
+    asToolRow ? disclosureKey("review", message.id) : undefined,
+  );
+  const { open, toggle: toggleDisclosure, titleRef } = disclosure;
   if (!change) return null;
 
   const statusLabel = t(`panel.review.status.${change.status}`);
@@ -122,18 +172,28 @@ export const ReviewChangeCard = memo(function ReviewChangeCard({
 
   return (
     <section
-      className={cx("review-change-card", compact && "is-compact", open && "open")}
+      className={cx(
+        "review-change-card",
+        compact && "is-compact",
+        asToolRow && "is-tool-row",
+        open && "open",
+      )}
       data-state={change.state}
       data-status={change.status}
+      data-message-id={asToolRow ? message.id : undefined}
     >
       <button
         type="button"
+        ref={titleRef}
         className="review-change-card-header"
         aria-expanded={open}
         aria-controls={detailsId}
         aria-label={accessibleLabel}
         title={accessibleLabel}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          onUserInteraction?.();
+          toggleDisclosure();
+        }}
       >
         <span className="review-change-card-caret" aria-hidden>
           <IconChevronRight size={11} />

@@ -60,7 +60,7 @@ test("the runtime forwards runInBackground on a Bash tools.execute call", () => 
   );
 });
 
-test("host-core parses runInBackground on ToolsExecuteParams and skips the cancellation registry for it", () => {
+test("host-core parses runInBackground and detaches only after execution admission", () => {
   assert.match(
     toolSources,
     /pub run_in_background: bool,\s*\n\s*pub timeout_ms/,
@@ -76,7 +76,7 @@ test("a background Bash call returns a backgroundTaskId and never a blocking std
 });
 
 test("background lifetime is detached but permission admission stays cancellable", () => {
-  assert.match(rpcSources, /cancellation_receiver = if remote_workspace\.is_some\(\)/);
+  assert.match(rpcSources, /cancellation_receiver = if matches!\(p\.tool_name\.as_str\(\), "Bash" \| "GenerateImages"\)[\s\S]*?register_bash_cancellation/);
   assert.ok(rpcSources.includes('"Bash" | "GenerateImages"'));
   assert.doesNotMatch(rpcSources, /&& !p\.run_in_background/);
   assert.match(backgroundTasks, /spawn_background_task_detached/);

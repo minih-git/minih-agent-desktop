@@ -1943,6 +1943,15 @@ stores the provisional row and an in-flight checkpoint, including an empty
 reservation so crash recovery can settle it. Further stream checkpoints remain
 valid while the indexed assistant has `status: streaming`.
 
+Before an assistant row enters the outbox, event persistence drops an ordinary
+message with no visible text, no stored reasoning, no tool row, no structured
+error payload and no steering reservation, whatever its completion status. A
+failed or aborted placeholder with a structured payload, a tool row and an
+accepted steering reservation remain durable. The one Host-verified completion
+receipt's silent reply is retained as an empty completed row until that receipt
+is spent, revoked by accepted steering, or settled with the turn; after that an
+empty ordinary reply is dropped. This adds no JSONL or SQLite schema change.
+
 `session.appendMessage` retains idempotent replay for completed messages. Its
 narrow exception lets a terminal assistant replace an indexed streaming
 assistant with the same session/message id. It updates exactly that transcript

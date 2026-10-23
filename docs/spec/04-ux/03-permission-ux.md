@@ -58,6 +58,11 @@ pending → denied
 - The request remains pending until Allow once, Allow for session, Deny,
   cancellation, or host/process shutdown.
 - Tool-specific execution timeouts still apply after approval.
+- A turn Stop cancels the pending request at the Host before the tool starts.
+  The card is removed with the queue, and a stale Allow sent afterwards fails:
+  it cannot execute the tool or create a partial write. This includes a
+  background Bash request that is still awaiting approval; once admitted, the
+  detached task is outside the turn's Stop.
 - The agent receives a denied result only for an explicit denial, cancellation,
   or host/process failure.
 
@@ -101,6 +106,9 @@ answerable.
 - Abort denies the **whole** queue, not just the visible card: a queued delegate
   would otherwise keep its tool call alive behind a stop the user already asked
   for.
+- A read-only tool whose runtime wait was abandoned still discards its late
+  result; a mutating or extension call that already started stays awaited, so
+  the card's resolution matches what actually happened.
 - A session with nothing pending has no queue at all, so "does this session need
   attention" stays a presence check and the sidebar indicator is unchanged.
 

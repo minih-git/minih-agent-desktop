@@ -14,6 +14,12 @@ import { DisclosureAnchorContext } from "../../lib/disclosure-anchor-context";
 import { TranscriptDisclosureProvider } from "../../features/chat/transcript/disclosure";
 import { buildSubagentTranscript } from "../../lib/subagent-transcript";
 import {
+  foldsTurnProcess,
+  opensProcessDetails,
+  resolveTranscriptDensity,
+} from "../../lib/transcript-density";
+import { reviewChangeFromMessage } from "../../lib/workspace-review";
+import {
   AssistantErrorMessage,
   ThinkingRow,
 } from "../../features/chat/transcript/shared";
@@ -85,6 +91,9 @@ function SubagentTranscriptSurface({ delegationId }: { delegationId: string }) {
   const isRunning = useAppStore(
     (state) => (activeSessionId ? state.runningSessions[activeSessionId] ?? false : false),
   );
+  const density = useAppStore((state) => resolveTranscriptDensity(state.settings));
+  const openDetails = opensProcessDetails(density);
+  const openThinking = foldsTurnProcess(density) || openDetails;
   const transcriptResult = useMemo(
     () => buildSubagentTranscript(messages, delegationId),
     [messages, delegationId],
@@ -158,15 +167,26 @@ function SubagentTranscriptSurface({ delegationId }: { delegationId: string }) {
                   </div>
                   {turn.rows.map((row) =>
                     row.kind === "tool" ? (
-                      <Fragment key={row.message.id}>
-                        <ToolRow message={row.message} />
-                        <ReviewChangeCard message={row.message} />
-                      </Fragment>
+                      reviewChangeFromMessage(row.message) ? (
+                        <ReviewChangeCard
+                          key={row.message.id}
+                          message={row.message}
+                          asToolRow
+                          autoOpen={openDetails}
+                        />
+                      ) : (
+                        <ToolRow
+                          key={row.message.id}
+                          message={row.message}
+                          autoOpen={openDetails}
+                        />
+                      )
                     ) : row.kind === "thinking" ? (
                       <ThinkingRow
                         key={`thinking-${row.message.id}`}
                         message={row.message}
                         streaming={isRunning && row.message.status === "streaming"}
+                        autoOpen={openThinking || (isRunning && row.message.status === "streaming")}
                       />
                     ) : (
                       <div

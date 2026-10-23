@@ -754,6 +754,7 @@ export const ThinkingRow = memo(function ThinkingRow({
         <span className="tool-row-name running">
           {t("chat.thinking", { defaultValue: "Thinking" })}
         </span>
+        <span className="activity-marker" aria-hidden />
       </div>
     ) : null;
   }
@@ -775,6 +776,7 @@ export const ThinkingRow = memo(function ThinkingRow({
         <span className={`tool-row-name ${streaming ? "running" : ""}`}>
           {t("chat.thinking", { defaultValue: "Thinking" })}
         </span>
+        {streaming ? <span className="activity-marker" aria-hidden /> : null}
         <span className="tool-row-summary">{summary}</span>
         <span className="tool-row-caret" aria-hidden>
           <IconChevronRight size={12} />

@@ -27,6 +27,7 @@ test("a settled Task snapshot survives outbox recovery with its original turn an
       return pending;
     };
     const { persistAgentEvent } = createEventPersistence({
+      completionNoticeTurns: new Set(),
       runtimeState: { host: null },
       activeTurns: new Map([["session", "newer-turn"]]),
       activeToolCalls: new Map(),
@@ -83,6 +84,7 @@ for (const delegate of [false, true]) {
         return pending;
       };
       const { persistAgentEvent } = createEventPersistence({
+        completionNoticeTurns: new Set(),
         runtimeState: { host: null },
         activeTurns: new Map([["session", "turn-1"]]),
         activeToolCalls: new Map(),
@@ -160,6 +162,7 @@ test("independent usage aggregates survive an unavailable Host and outbox restar
     const enqueue = outbox.enqueue.bind(outbox);
     outbox.enqueue = (...args) => { const promise = enqueue(...args); queued.push(promise); return promise; };
     const { persistAgentEvent } = createEventPersistence({
+      completionNoticeTurns: new Set(),
       runtimeState: { host: null }, activeTurns: new Map([["session", "turn"]]),
       activeToolCalls: new Map(), activeToolCallKey: (s, t) => `${s}:${t}`,
       approvedExecutionIdsBySession: new Map(), approvedExecutionTurns: new Map(),

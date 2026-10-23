@@ -37,6 +37,15 @@ hostname validation remain enabled. The app neither installs roots nor exports
 a certificate bundle. The operating system's existing trust policy is the
 authority for local roots.
 
+System trust stores are a cache and retain entries that have already expired.
+The merge therefore excludes a system-store certificate whose validity period
+has ended. Keeping such an entry would make OpenSSL accept it as the anchor for
+any chain that names it as issuer and stop the walk before a valid ancestor:
+for example, an expired `ISRG Root X2` intercepts a chain that should continue
+to the valid `ISRG Root X1`, and the handshake fails as `CERT_HAS_EXPIRED`.
+Bundled roots and an inherited extra-CA file keep their existing inclusion
+rules, and no system certificate is installed, modified or removed.
+
 This applies to the desktop sidecar's default Node TLS clients, including the
 direct, HTTP proxy and SOCKS provider transports. It is a process-level default,
 not a per-provider exception. Headless agent-host-cli launch policy is unchanged.
@@ -70,4 +79,7 @@ No IPC fields, database format, credentials, or proxy settings change.
 bundled sidecar, pi-ai and a loopback HTTPS provider. It checks inclusion of
 system roots without modifying OS stores, then rejection of an untrusted root,
 success with an inherited extra CA, and rejection of a mismatched hostname.
-Native macOS/Linux and the reporter's security product require separate checks.
+The system-CA unit fixture additionally includes an expired store entry and a
+chain that should skip it for a valid ancestor; this amendment documents that
+expected behavior but does not claim the new regression has run. Native
+macOS/Linux and the reporter's security product require separate checks.

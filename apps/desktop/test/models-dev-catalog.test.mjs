@@ -2121,3 +2121,15 @@ test("a canonical translation never displaces an id that already resolves", asyn
   });
   assert.equal(match?.modelId, "gemini-3-flash", "the served id keeps its own record");
 });
+
+test("the bundled Kilo Flash output limits agree with the official GLM publisher", async () => {
+  const snapshot = JSON.parse(await readFile(new URL("../resources/models.dev/api.json", import.meta.url), "utf8"));
+  const official = snapshot.zhipuai.models["glm-5.3-flash"].limit.output;
+  assert.equal(official, 131_072);
+  for (const id of ["z-ai/glm-5.3-flash", "~z-ai/glm-flash-latest"]) {
+    assert.equal(snapshot.kilo.models[id].limit.output, official, id);
+  }
+  // Conflicting reseller increases are intentionally not part of this import.
+  assert.equal(snapshot.kilo.models["reflection/beam-1.0-501b-a23b"].limit.output, 131_072);
+  assert.equal(snapshot.openrouter.models["reflection/beam-1.0-501b-a23b"].limit.output, 131_072);
+});

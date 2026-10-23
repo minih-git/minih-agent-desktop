@@ -24,7 +24,7 @@ test("provider failures stay in the transcript as structured assistant messages"
   assert.match(runtime, /m\.status === "error" \|\| m\.isError \|\| m\.error/);
   assert.match(sessionTranscript, /!event\.message\.error/);
   assert.match(store, /assistantErrorMessage\(event\.error\)/);
-  assert.match(main, /failed && empty && !event\.message\.error/);
+  assert.match(main, /empty && !carriesTool && !event\.message\.error/);
 });
 
 test("assistant error messages expose readable provider details and one Continue action", async () => {

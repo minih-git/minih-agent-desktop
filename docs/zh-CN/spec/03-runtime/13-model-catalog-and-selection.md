@@ -216,6 +216,11 @@ type ModelCatalogItem = {
 通过 `(providerId, modelId)` 优先进行重复数据删除：
 `user > discovered > bundled > recent-only`。
 
+捆绑快照按证据校准，而不是整份照搬每个上游 revision。只有官方模型发布者与捆绑记录
+一致时才采纳修正：Kilo 的 `z-ai/glm-5.3-flash` 与 `~z-ai/glm-flash-latest` 因此
+发布 `131072` 输出上限。与官方记录冲突的转售商值不采纳，因此 Kilo/OpenRouter 的
+Beam 输出上限和其余价格差异保留 fork 当前值。静态目录价格不代表 Router 实际计费。
+
 ### 9.1 有效模型上限
 
 运行时、上下文检查器与设置界面解析同一个有效窗口与输出上限。两个限额的来源分别保存：

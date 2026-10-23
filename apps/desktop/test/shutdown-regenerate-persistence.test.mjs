@@ -71,6 +71,7 @@ test(`quit settles a regenerated branch when the host is ${outcome}`, async (t) 
     settleIf() {}, dispose() {},
   };
   const persistence = createEventPersistence({
+    completionNoticeTurns: new Set(),
     runtimeState: { host }, steeringReplies: new Set(), activeTurns,
     activeToolCalls: new Map(), activeToolCallKey: (s, c) => `${s}:${c}`,
     approvedExecutionIdsBySession: new Map(), approvedExecutionTurns: new Map(),

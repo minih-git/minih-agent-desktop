@@ -153,6 +153,11 @@ import {
   usageFromPi,
   usageToPi,
 } from "./agent-messages.js";
+import {
+  isToolExecutionStopped,
+  ToolAbortRegistry,
+  ToolExecutionCancellation,
+} from "./tool-execution-cancellation.js";
 import { withExplicitRequired } from "./tool-schema.js";
 import { buildSessionContext } from "./session-context.js";
 import { prepareCompaction } from "./pi-runtime-compaction-plan.js";
@@ -182,6 +187,7 @@ import {
 } from "./system-transcript.js";
 import {
   dedupeToolCallMessages,
+  createToolCallIdentity,
   normalizeReplayToolCallId,
   reportDuplicateToolCallDrop,
 } from "./tool-call-dedupe.js";
@@ -224,6 +230,7 @@ import {
   clampOutputToContext,
   effectiveModelContextWindow,
   estimateOutputCapInputTokens,
+  requestTranscript,
 } from "./output-cap.js";
 import {
   composeSubagentSystemPrompt,
@@ -2033,6 +2040,7 @@ export class DesktopAgentRuntime {
   private terminatingToolCalls = new Set<string>();
   private delegateMutationTerminations = new Map<string, { code: string; message: string }>();
   private fullEntries: MessageEntry[];
+  private readonly uniqueToolCalls: ReturnType<typeof createToolCallIdentity>;
   private readonly systemJournal = new SystemTranscriptJournal();
   private composedSections: Record<string, string> = {};
   private activeCompaction?: ContextCompactionRecord;
@@ -2064,6 +2072,13 @@ export class DesktopAgentRuntime {
   private contextReminderClaimed = false;
   private contextFallbackReminderClaimed = false;
   private activeToolProgressCleanups = new Set<(flush: boolean) => void>();
+  /**
+   * Abort handlers for the tool calls currently awaiting `tools.execute`.
+   * `abort()` drives these directly: a tool must be released even when the
+   * signal it was handed never fires, or the stop RPC stays pending forever
+   * (#1767).
+   */
+  private readonly toolAborts = new ToolAbortRegistry();
   private hostCloseUnsubscribe?: () => void;
   private turnSubagentUsage?: MessageUsage;
   private compactionRequestShape?: CompactionRequestShape;
@@ -2128,6 +2143,7 @@ export class DesktopAgentRuntime {
 
     this.transcriptHistory = [...(opts.history ?? [])];
     this.fullEntries = this.historyToEntries(this.transcriptHistory);
+    this.uniqueToolCalls = createToolCallIdentity(this.fullEntries.map((entry) => entry.message));
     this.activeCompaction = opts.compaction;
     this.delegationChains.hydrate(
       rebuildChainsFromTranscript(this.transcriptHistory),
@@ -2140,6 +2156,8 @@ export class DesktopAgentRuntime {
       "Complete the requested work and relevant checks without expanding scope. Preserve unrelated user changes. Resolve recoverable blockers yourself.",
       // Visibility rules.
       "Before each tool batch, briefly state its purpose. Keep the user informed during long work. The final response must state the outcome, verification, and remaining blockers. Never claim actions or checks you did not perform.",
+      // File-reference formatting.
+      "File references: when citing a real local file, use a Markdown link with a short label and the exact absolute path as its target, e.g. [file.ts](/workspace/src/file.ts:42). Add only a starting line (:line or :line:column) when useful; do not use ranges or GitHub #L anchors. Wrap destinations containing spaces in angle brackets. Do not wrap links in backticks or use file://, vscode://, or https:// for local files. Link only to existing files in the accessible workspace; mention unavailable or other-repository files as code text.",
       // Delegation steering (ADR 0089).
       ...(this.subagents.length
         ? [
@@ -2272,6 +2290,9 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         // with pi's own run signal (Stop must keep working): the adapter refuses
         // to start an attempt on an aborted signal, and its backoff sleep rejects.
         const stallAbort = new AbortController();
+        // Both output clamps, ours and pi-ai's inside `streamSimple`, must see
+        // the instructions the adapter sends, not every superseded snapshot.
+        const requestContext = requestTranscript(m, context);
         const attemptOptions: SimpleStreamOptions = {
           ...hookedOptions,
           // Cap the output budget at the minih-agent-desktop layer so the estimate
@@ -2279,7 +2300,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
           // max_tokens, but the low-level `stream` path used by
           // `thinkingLevel: "omit"` would otherwise send it untouched, and
           // both consume an estimate that under-counts CJK text (issue B).
-          maxTokens: clampOutputToContext(m, context, hookedOptions.maxTokens),
+          maxTokens: clampOutputToContext(m, requestContext, hookedOptions.maxTokens),
           signal: AbortSignal.any([
             ...(hookedOptions.signal ? [hookedOptions.signal] : []),
             stallAbort.signal,
@@ -2300,12 +2321,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         const usageTurnId = this.turnId;
         const retryStream = createProviderRetryStream(
           m,
-          context,
+          requestContext,
           attemptOptions,
           (retryOptions) => accountModelStream(m, () =>
             this.thinkingLevel === "omit"
-              ? this.models.stream(omitThinkingModel(m), context, retryOptions)
-              : this.models.streamSimple(m, context, retryOptions), {
+              ? this.models.stream(omitThinkingModel(m), requestContext, retryOptions)
+              : this.models.streamSimple(m, requestContext, retryOptions), {
                 providerId: this.provider.id,
                 nativeCost: this.provider.modelConfig?.nativeCost,
                 onUsage: (usage) => this.emit({ type: "usage", usage }, usageTurnId),
@@ -2331,8 +2352,13 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         // configured budget ends as a STREAM_FAILED error and re-enters the
         // shared transient retry path instead of hanging the turn on a
         // connection the provider never closes.
-        return withStreamIdleTimeout(retryStream, m, streamIdleTimeoutMs(), () =>
-          stallAbort.abort(),
+        // New executions get unique ids before pi executes or journals them,
+        // so a provider that reuses a call id keeps both real rounds (#1815).
+        return this.uniqueToolCalls(
+          withStreamIdleTimeout(retryStream, m, streamIdleTimeoutMs(), () =>
+            stallAbort.abort(),
+          ),
+          context.messages,
         );
       },
       // A vendor account has no long-lived key. Leaving it unset keeps pi-ai
@@ -3287,11 +3313,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
    * The transcript is append-only and tolerates a retried append, so the same
    * call can reach the request twice: under the same row id (which the host's
    * keep-last dedupe already collapses) or a new one (which it cannot). The
-   * first occurrence wins, and a later call *or* a later result for that id is
-   * dropped, so the pair the provider validates stays well-formed — one call,
-   * one result. What was dropped is logged with its ids, because the next
-   * report of this should name the writer instead of only the provider's
-   * sentence.
+   * first pending occurrence wins; a later completed pair is retained under
+   * a fresh request id. New streamed executions are normalized before they
+   * reach this guard or the journal. What was dropped is logged with its ids,
+   * because the next report should name the writer instead of only the
+   * provider's sentence.
    */
   private dropDuplicateToolCalls(messages: AgentMessage[]): AgentMessage[] {
     const drop = dedupeToolCallMessages(messages, {
@@ -3553,6 +3579,12 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         await this.loadPathInstructions(toolName, params);
         const isBash = toolName === "Bash";
         const timeoutMs = isBash ? commandTimeoutMs(params) : undefined;
+        // Extra stop state for this call: whether the wait may end before the
+        // host result arrives, and after how long (ADR
+        // tool-stop-side-effect-boundaries).
+        const cancellation = new ToolExecutionCancellation(toolName, {
+          hostAbortsProcess: isBash || toolName === "GenerateImages",
+        });
         let progress = "";
         let progressDirty = false;
         let progressTimer: ReturnType<typeof setTimeout> | undefined;
@@ -3597,18 +3629,20 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
             })
           : undefined;
         const abort = () => {
-          // These reach the host outside the normal tool path: a shell process,
-          // an image request, or a session delivery that may be waiting on the
-          // approval card. Stopping the turn must retract that pending approval,
-          // otherwise the card outlives the turn that justified it.
-          const hostAbortable = isBash || toolName === "GenerateImages"
-            || toolName === "SessionSend" || toolName === "SessionCreate";
-          if (!hostAbortable || abortRequested || settled) return;
+          // Every in-flight call gets a typed abort: the host cancels a
+          // pending approval or queued admission before the tool starts, and
+          // these also reach the host outside the normal tool path — a shell
+          // process, an image request, or a session delivery that may be
+          // waiting on the approval card. Stopping the turn must retract that
+          // pending approval, otherwise the card outlives the turn that
+          // justified it.
+          if (abortRequested || settled) return;
           abortRequested = true;
           abortPromise = this.host
             .call("tools.abort", {
               sessionId: this.sessionId,
               toolCallId,
+              toolName,
             })
             .then(
               () => undefined,
@@ -3616,7 +3650,10 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
                 abortError = error;
               },
             );
+          // Release progress/output resources before arming the grace window:
+          // cleanup is idempotent and must not race the timer it would clear.
           cleanup(true);
+          cancellation.arm();
         };
 
         cleanup = (flush: boolean) => {
@@ -3627,9 +3664,15 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
           if (flush) flushProgress();
           unsubscribeOutput?.();
           signal?.removeEventListener("abort", abort);
+          unregisterToolAbort();
           this.activeToolProgressCleanups.delete(cleanup);
         };
         this.activeToolProgressCleanups.add(cleanup);
+        // Registered before the pre-aborted check below so `cleanup` can never
+        // run ahead of its own unsubscriber. `abort()` also drives this
+        // handler directly when the signal never fires, so a stop always
+        // releases the turn (#1767).
+        const unregisterToolAbort = this.toolAborts.register(abort);
         if (signal?.aborted) {
           cleanup(false);
           throw Object.assign(new Error("tool execution aborted before it started"), {
@@ -3650,7 +3693,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         let executionError: unknown;
         let executionFailed = false;
         try {
-          result = await this.host.call<{
+          const execution = this.host.call<{
               ok: boolean;
               content: unknown;
               isError?: boolean;
@@ -3701,15 +3744,36 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
                 ? { delegationId: this.delegateWorktrees.get(toolCallId) }
                 : {}),
             });
+          // Losing the race abandons the wait, not the host call. The orphan
+          // settles on its own; keep its late rejection from surfacing as an
+          // unhandled rejection after the turn already ended (#1767).
+          execution.catch(() => undefined);
+          // #1767: read-only host work must not keep the user-facing turn
+          // open indefinitely. Other tool classes deliberately wait for the
+          // Host result so a write or extension action cannot outlive a
+          // reported stop.
+          const raced = await cancellation.race(execution);
+          if (!isToolExecutionStopped(raced)) {
+            result = raced;
+          }
         } catch (error) {
           executionFailed = true;
           executionError = error;
         } finally {
           this.delegatePermissionScopes.delete(toolCallId);
           cleanup(true);
+          // cleanup already ran when the abort path armed the grace window;
+          // the timer it armed is released here instead.
+          cancellation.dispose();
         }
         if (abortPromise) await abortPromise;
         if (abortError) throw abortError;
+        if (cancellation.isStopped) {
+          throw Object.assign(
+            new Error(`tool execution aborted while ${toolName} was running`),
+            { errorCode: "TOOL_ABORTED" },
+          );
+        }
         if (executionFailed) throw executionError;
         if (!result) throw new Error("tool execution returned no result");
         const recordParams = isRecord(params) ? params : undefined;
@@ -9423,6 +9487,14 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     this.providerRetryAbort?.abort();
     if (this.compactionInProgress) this.compactionAborted = true;
     this.compactionAbort?.abort();
+    // `agent.abort()` normally fires the signal each in-flight tool was
+    // handed, and the tool executor reacts to that. When the signal does not
+    // reach a tool, the executor keeps awaiting `tools.execute`, the turn
+    // never settles, and this method never returns. The renderer awaits this
+    // RPC before it clears the "processing" state, so one unyielding tool
+    // pinned the whole session until it finished on its own (#1767). Drive
+    // the tools from here as well, so a stop always releases them.
+    this.toolAborts.abortAll();
     await settlement;
   }
 

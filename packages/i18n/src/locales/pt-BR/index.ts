@@ -929,7 +929,8 @@ export const ptBR = {
       fakeIpHint: "Seu proxy respondeu {{host}} com {{address}}, uma faixa reservada usada como marcador fake-IP, não o endereço real da fonte. Altere o proxy para o modo de proxy do sistema ou revise Configurações → Geral → Rede.",
       fakeIpHintPlain: "Um proxy local resolveu este host para um marcador fake-IP em uma faixa reservada, não o endereço real da fonte. Altere o proxy para o modo de proxy do sistema ou revise Configurações → Geral → Rede.",
       remoteErrorQuery: "Não foi possível consultar o mercado de habilidades — exibindo seleções integradas",
-      remotePartial: "Algumas fontes do catálogo não estão disponíveis ({{names}})"
+      remotePartial: "Algumas fontes do catálogo não estão disponíveis ({{names}})",
+      remoteStaleSnapshot: "Exibindo os resultados do último carregamento bem-sucedido ({{time}})"
     },
     title: "Configuração",
     providers: "Provedores de IA",
@@ -1152,6 +1153,7 @@ export const ptBR = {
       remoteError: "Registro inacessível — exibindo seleções integradas",
       remotePartial: "Algumas fontes do mercado estão indisponíveis ({{names}})",
       retry: "Tentar novamente",
+      remoteStaleSnapshot: "Exibindo os resultados do último carregamento bem-sucedido ({{time}})",
       manageSources: "Fontes",
       sourcesHint: "Consulte várias fontes do marketplace de uma só vez. Fontes de registro usam o protocolo oficial do MCP; fontes de catálogo são arquivos JSON estáticos no formato do marketplace.",
       addSource: "Adicionar fonte",

@@ -6,8 +6,11 @@ import type {
 import { api } from "../../lib/api";
 import { normalizeSettingsTabId } from "../../lib/settings-search";
 import {
+  dropAskDraft as removeAskDraft,
   headAsk,
   removeAsk,
+  setAskDraft as applyAskDraft,
+  type AskDraft,
 } from "../../lib/pending-asks";
 import {
   headPermission,
@@ -43,6 +46,8 @@ export function createInteractionSlice({
   | "navForward"
   | "resolvePermission"
   | "resolveAsk"
+  | "setAskDraft"
+  | "dropAskDraft"
   | "resolvePlan"
   | "showToast"
   | "dismissToast"
@@ -164,6 +169,7 @@ export function createInteractionSlice({
             sessionId,
             resolution.requestId,
           ),
+          askDrafts: removeAskDraft(state.askDrafts, resolution.requestId),
         }));
         if (resolved) {
           void get()
@@ -173,6 +179,17 @@ export function createInteractionSlice({
       }
     },
 
+    setAskDraft: (requestId: string, draft: AskDraft) => {
+      set((state) => ({
+        askDrafts: applyAskDraft(state.askDrafts, requestId, draft),
+      }));
+    },
+
+    dropAskDraft: (requestId: string) => {
+      set((state) => ({
+        askDrafts: removeAskDraft(state.askDrafts, requestId),
+      }));
+    },
     resolvePlan: async (resolution: PlanResolveRequest) => {
       const activeRequest = interactionRuntime.planResolutionRequests.get(
         resolution.proposalId,

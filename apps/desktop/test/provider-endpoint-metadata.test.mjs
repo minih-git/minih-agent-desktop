@@ -252,3 +252,14 @@ test("a relay enriches a uniquely published dated leaf without reseller majority
     assert.equal(model.catalogSource, undefined);
   }
 });
+
+test("a Kilo account keeps published Flash output limits through discovery", async (t) => {
+  const row = rowOf({ id: "kilo-account", vendorKey: "kilo", baseUrl: "https://api.kilo.ai/api/gateway" });
+  const ids = ["z-ai/glm-5.3-flash", "~z-ai/glm-flash-latest"];
+  const { result } = await handlersFor(t, row, { data: ids.map((id) => ({ id })) });
+  const models = new Map(result.models.map((model) => [model.modelId, model]));
+  for (const id of ids) {
+    assert.equal(models.get(id)?.maxTokens, 131_072, id);
+    assert.equal(models.get(id)?.catalogSource, "models.dev", id);
+  }
+});

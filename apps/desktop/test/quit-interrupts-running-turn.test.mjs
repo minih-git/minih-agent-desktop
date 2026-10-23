@@ -127,6 +127,7 @@ for (const scenario of scenarios) {
       async dispose() {},
     } : null;
     persistence = createEventPersistence({
+      completionNoticeTurns: new Set(),
       runtimeState,
       steeringReplies: new Set(),
       activeTurns,

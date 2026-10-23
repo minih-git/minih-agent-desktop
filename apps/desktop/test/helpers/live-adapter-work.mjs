@@ -28,8 +28,8 @@ export class FixtureLiveSocket extends EventEmitter {
   }
 
   receive(value) { this.emit("message", typeof value === "string" ? value : JSON.stringify(value)); }
-  close() { this.readyState = 3; this.emit("close", 1000); }
-  terminate() { this.terminated = true; this.close(); }
+  close(code = 1000, reason = "") { this.readyState = 3; this.emit("close", code, Buffer.from(reason)); }
+  terminate() { this.terminated = true; this.close(1006); }
   settleReceipt(error) { this.receiptCallbacks.shift()?.(error); }
 
   candidate(id, instruction, extra = {}) {

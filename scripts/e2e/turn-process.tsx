@@ -146,9 +146,20 @@ export async function turnProcessProbe() {
   try {
     // Bash has no process ancestor and stays visible with every disclosure
     // collapsed, even across adjacent calls.
-    render(mixed);
+    render(mixed, true, null, "settling-activity-group");
+    const activeGroupHeader = row("read")?.closest<HTMLElement>(
+      ".process-activity-group.grouped",
+    )?.querySelector<HTMLElement>(".tool-activity-header");
+    check(
+      activeGroupHeader?.getAttribute("aria-expanded") === "true",
+      "the active small activity group starts open",
+    );
+    render(mixed, false, null, "settling-activity-group");
     const bash1Row = row("bash1");
     const bash2Row = row("bash2");
+    const completedGroupHeader = row("read")?.closest<HTMLElement>(
+      ".process-activity-group.grouped",
+    )?.querySelector<HTMLElement>(".tool-activity-header");
     check(Boolean(bash1Row) && Boolean(bash2Row), "both adjacent Bash rows render");
     check(
       bash1Row?.closest(".turn-process") === null &&
@@ -165,7 +176,13 @@ export async function turnProcessProbe() {
         bash1Row?.closest(".tool-activity-group") === null,
       "Bash rows are not folded into an activity group",
     );
-    check(allCollapsed(), "the completed process starts fully collapsed");
+    check(
+      processHeaders().every((header) => header.getAttribute("aria-expanded") === "false") &&
+        [...container.querySelectorAll<HTMLElement>(".tool-row:not(.thinking) .tool-row-header")].every(
+          (header) => header.getAttribute("aria-expanded") === "false",
+        ),
+      "the completed process and tool payload rows start closed",
+    );
     check(
       visible(bash1Row) && visible(bash2Row),
       "Bash rows stay visible with every disclosure collapsed",
@@ -204,6 +221,11 @@ export async function turnProcessProbe() {
       bash1Row?.classList.contains("open") === true,
       "a Bash row opens its own detail on request",
     );
+    click(processHeaders()[0] ?? null);
+    check(
+      visible(row("read")) && completedGroupHeader?.getAttribute("aria-expanded") === "true",
+      "opening the process reveals the already-open activity group with its tool rows",
+    );
 
     // Standard density folds the finished turn behind one header that states
     // its duration; the conclusion stays outside, and opening the header shows
@@ -233,6 +255,10 @@ export async function turnProcessProbe() {
     check(
       visible(row("read")) && visible(row("bash1")),
       "opening the fold reveals a line per step",
+    );
+    check(
+      container.querySelector<HTMLElement>(".tool-row.thinking .tool-row-header")?.getAttribute("aria-expanded") === "false",
+      "standard density keeps completed reasoning rows collapsed when the turn fold opens",
     );
     // A step row carries its content beside the action — the command after
     // "Ran", the path after "Read" — like a thinking row's last line, so no
@@ -447,6 +473,122 @@ export async function turnProcessProbe() {
       "search reveals the process chunk that owns the target",
     );
 
+
+    // Compact density keeps visible Thinking rows open by default across settlement,
+    // keeps small groups (<= 4 items) open, and collapses larger groups (> 4 items).
+    const earlierThinking = message("earlier-thinking", "assistant", "", {
+      thinking: "Earlier reasoning remains available.",
+      status: "complete",
+    });
+    const liveThinking = message("live-thinking", "assistant", "", {
+      thinking: "Latest reasoning remains available.",
+      status: "streaming",
+    });
+    const completedThinking = { ...liveThinking, status: "complete" as const };
+    const thinkingAnswer = message("thinking-answer", "assistant", "Done.", {
+      status: "complete",
+    });
+    render(
+      [earlierThinking, read, liveThinking, thinkingAnswer],
+      true,
+      null,
+      "compact-thinking-settlement",
+    );
+    const liveThinkingHeaders = [
+      ...container.querySelectorAll<HTMLElement>(".tool-row.thinking .tool-row-header"),
+    ];
+    check(
+      liveThinkingHeaders.length === 2 &&
+        liveThinkingHeaders.every((header) => header.getAttribute("aria-expanded") === "true"),
+      "compact density expands each visible thinking row by default",
+    );
+    render(
+      [earlierThinking, read, completedThinking, thinkingAnswer],
+      false,
+      null,
+      "compact-thinking-settlement",
+    );
+    check(
+      processHeaders()[0]?.getAttribute("aria-expanded") === "false",
+      "the completed process still starts closed",
+    );
+    click(processHeaders()[0] ?? null);
+    const settledThinkingHeaders = [
+      ...container.querySelectorAll<HTMLElement>(".tool-row.thinking .tool-row-header"),
+    ];
+    const settledThinkingGroupHeader = row("read")?.closest<HTMLElement>(
+      ".process-activity-group.grouped",
+    )?.querySelector<HTMLElement>(".tool-activity-header");
+    check(
+      settledThinkingGroupHeader?.getAttribute("aria-expanded") === "true" &&
+        settledThinkingHeaders.length === 2 &&
+        settledThinkingHeaders.every((header) => header.getAttribute("aria-expanded") === "true") &&
+        container.textContent?.includes("Earlier reasoning remains available.") === true &&
+        container.textContent?.includes("Latest reasoning remains available.") === true &&
+        row("read")?.querySelector<HTMLElement>(".tool-row-header")?.getAttribute("aria-expanded") === "false",
+      "reopening the process reveals the open group and reasoning while tool payloads stay collapsed",
+    );
+
+    const largeGroup = Array.from({ length: 5 }, (_, index) =>
+      tool(`large-group-${index}`, "Read", { toolResult: `result ${index}` }),
+    );
+    render(
+      [...largeGroup, thinkingAnswer],
+      false,
+      null,
+      "large-completed-activity-group",
+    );
+    const largeGroupHeader = row("large-group-0")?.closest<HTMLElement>(
+      ".process-activity-group.grouped",
+    )?.querySelector<HTMLElement>(".tool-activity-header");
+    click(processHeaders()[0] ?? null);
+    check(
+      largeGroupHeader?.getAttribute("aria-expanded") === "false",
+      "large activity groups remain collapsed by default",
+    );
+
+    // Reviewed Write/Edit renders as one tool-level ReviewChangeCard with diff copy.
+    const reviewedEdit = tool("reviewed-edit", "Edit", {
+      toolArgs: { path: "src/reviewed.ts" },
+      toolResult: {
+        details: {
+          root: "workspace",
+          review: {
+            version: 1,
+            snapshotId: "snap-1",
+            messageId: "reviewed-edit",
+            path: "src/reviewed.ts",
+            operation: "edit",
+            status: "modified",
+            state: "active",
+            additions: 1,
+            deletions: 1,
+            hunks: [
+              {
+                header: "@@ -1 +1 @@",
+                lines: [
+                  { type: "del", text: "const oldVal = 1;" },
+                  { type: "add", text: "const newVal = 2;" },
+                ],
+              },
+            ],
+            reversible: true,
+          },
+        },
+      },
+    });
+    setSettings({ transcriptDensity: "detailed" });
+    render([reviewedEdit, thinkingAnswer], false, null, "reviewed-edit-detailed");
+    const reviewedCard = row("reviewed-edit");
+    check(
+      reviewedCard?.classList.contains("review-change-card") === true &&
+        reviewedCard.classList.contains("is-tool-row") === true &&
+        reviewedCard.classList.contains("open") === true &&
+        container.querySelectorAll(".tool-row").length === 0 &&
+        Boolean(reviewedCard.querySelector(".review-change-copy")),
+      "reviewed edit renders as a single open tool-level review row with copy in detailed density",
+    );
+    setSettings();
     // The Settings row is a boolean Show thinking toggle.
     let saved: Partial<AppSettings> | undefined;
     const settings: AppSettings = { ...baseSettings, showThinking: false };
