@@ -1,11 +1,14 @@
 /**
- * The accounts settings page: the Minih Router account first — one token
- * connects it, no models required — then the other providers folded away.
+ * The accounts page: the Minih Router account first — one token connects it,
+ * no models required — then this computer's remote switches, then the other
+ * providers folded away.
+ *
+ * Its category's other pages are separate destinations: devices, the single
+ * cloud-sync surface, and advanced (SSH hosts and the self-hosted gateway).
  *
  * Initialization is deliberately one field: paste a token, connect, and the
  * models page offers the gateway's catalog. The endpoint defaults to the
- * published one and only shows its input when the user asks for it.
- */
+ * published one and only shows its input when the user asks for it. */
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -23,9 +26,6 @@ import { EasyTierLanSection } from "./EasyTierLanSection";
 import { MinihRouterAccountSummary } from "./MinihRouterAccountSummary";
 import { OtherProvidersSection } from "./OtherProvidersSection";
 import { RemoteControlSection } from "./RemoteControlSection";
-import { MyDevicesSection } from "./MyDevicesSection";
-import { AccountsAdvancedSection } from "./AccountsAdvancedSection";
-import { ConfigSyncPage } from "./ConfigSyncPage";
 import { useMinihRouterAccount } from "./useMinihRouter";
 import { useRemoteControl } from "./useRemoteControl";
 
@@ -39,9 +39,9 @@ export function AccountsPage() {
   const setSettingsTab = useAppStore((s) => s.setSettingsTab);
   const headingId = useId();
   const [revision, setRevision] = useState(0);
-  // One control instance for the page: This computer, My devices, and the
-  // advanced self-hosted area render the same status and device list, and a
-  // second hook would subscribe twice and reload twice.
+  // One control instance for the page: the switches and the device list of
+  // this computer read the same status, and a second hook would subscribe
+  // twice and reload twice.
   const control = useRemoteControl();
 
   // The saved router row this page owns; several rows cannot all be "the"
@@ -129,15 +129,10 @@ export function AccountsPage() {
         </div>
       </section>
 
-      {/* Below the account and its overlay channel: this computer's switches,
-          then everything that can reach the account (D666, R8 package F). */}
+      {/* This computer's switches stay under the account that reaches it.
+          Devices, cloud sync, and advanced each have their own page in this
+          category (D666, R8 package F). */}
       <RemoteControlSection control={control} />
-      <MyDevicesSection control={control} />
-
-      {/* The existing sync page, embedded: the vault password stays per device
-          and nothing about its behavior moves. */}
-      <ConfigSyncPage />
-      <AccountsAdvancedSection control={control} />
 
       {developerMode ? <OtherProvidersSection defaultOpen /> : null}
     </div>

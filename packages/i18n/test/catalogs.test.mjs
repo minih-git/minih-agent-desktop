@@ -132,59 +132,35 @@ test("creation-phase delegation copy is catalog-backed", () => {
   }
 });
 
-test("settings rail labels stay concise and parallel across locales", () => {
+test("settings category labels stay concise and parallel across locales", () => {
   const chinese = flattenCatalog(zhCN);
-  const keys = [
-    "general",
-    "ai",
-    "shortcuts",
-    "instructions",
-    "models",
-    "skills",
-    "mcp",
-    "subagents",
-    "projects",
-    "info",
-  ].map((key) => `settings.nav.${key}`);
+  const categories = [
+    "general", "ai", "models", "capabilities", "accounts", "projects", "system",
+  ];
+  const keys = categories.map((key) => `settings.category.${key}`);
 
   assert.deepEqual(
     keys.map((key) => english[key]),
-    [
-      "General",
-      "AI",
-      "Shortcuts",
-      "Instructions",
-      "Models",
-      "Skills",
-      "MCP",
-      "Subagents",
-      "Projects",
-      "Info",
-    ],
+    ["General", "AI", "Models", "Capabilities", "Accounts", "Projects", "System"],
   );
   assert.deepEqual(
     keys.map((key) => chinese[key]),
-    [
-      "常规",
-      "AI",
-      "快捷键",
-      "指令",
-      "模型",
-      "技能",
-      "MCP",
-      "子智能体",
-      "项目",
-      "信息",
-    ],
+    ["常规", "AI", "模型", "能力", "账户", "项目", "系统"],
   );
-  assert.equal(english["settings.nav.import"], undefined);
-  assert.equal(chinese["settings.nav.import"], undefined);
-  assert.equal(english["settings.import"], undefined);
-  assert.equal(chinese["settings.import"], undefined);
-  assert.equal(english["settings.groupPreferences"], "Preferences");
-  assert.equal(chinese["settings.groupPreferences"], "偏好");
-  assert.equal(english["settings.groupSystem"], "System");
-  assert.equal(chinese["settings.groupSystem"], "系统");
+  for (const [locale, catalog] of Object.entries(catalogs)) {
+    const flat = flattenCatalog(catalog);
+    assert.deepEqual(Object.keys(catalog.settings.category), categories, locale);
+    for (const key of keys) {
+      assert.equal(typeof flat[key], "string", `${locale}: ${key}`);
+      assert.ok(flat[key].trim(), `${locale}: ${key} must not be blank`);
+    }
+    for (const key of [
+      "settings.nav.import", "settings.import",
+      "settings.groupPreferences", "settings.groupSystem",
+    ]) {
+      assert.equal(flat[key], undefined, `${locale}: retired ${key}`);
+    }
+  }
 });
 
 test("import, project, and temporary-session copy is catalog-backed", () => {

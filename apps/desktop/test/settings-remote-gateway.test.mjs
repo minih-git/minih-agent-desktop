@@ -226,9 +226,10 @@ test("the pairing ticket has its own copy in all nine locales", () => {
   assert.match(english["settings.remoteGateway.pairingTicketHint"], /ticket/i);
 });
 
-test("remote control is part of the accounts destination, not a rail entry", () => {
-  // D666 follow-up: the switch, devices, and folded self-hosted gateway moved
-  // into Settings > Accounts, so the separate rail destination is gone.
+test("remote control is part of the accounts category, not its own destination", () => {
+  // D666 follow-up: the switch and its rows moved into Settings > Accounts, so
+  // the separate destination is gone. The self-hosted enrollment form and the
+  // SSH host inventory are that category's advanced page.
   assert.equal(
     SETTINGS_NAV.some((entry) => entry.id === "remoteGateway"),
     false,
@@ -245,16 +246,27 @@ test("remote control is part of the accounts destination, not a rail entry", () 
     "settings.remoteGateway.strictTitle",
     "settings.remoteGateway.devicesTitle",
     "settings.remoteGateway.pairingTitle",
-    "settings.remoteGateway.advancedTitle",
-    "settings.remoteGateway.registrationCode",
   ]) {
     assert.ok(accounts.keywordKeys.includes(key), `accounts must own ${key}`);
   }
+  const advanced = SETTINGS_NAV.find((entry) => entry.id === "advanced");
+  assert.ok(advanced, "the advanced destination must exist");
+  for (const key of [
+    "settings.remoteGateway.advancedTitle",
+    "settings.remoteGateway.url",
+    "settings.remoteGateway.registrationCode",
+    "settings.remoteGateway.enroll",
+    "settings.accountsAdvancedSection.sshTitle",
+  ]) {
+    assert.ok(advanced.keywordKeys.includes(key), `advanced must own ${key}`);
+  }
   // Every advertised key exists in all nine locales.
-  for (const [locale, catalog] of Object.entries(catalogs)) {
-    const flat = flattenCatalog(catalog);
-    for (const key of [accounts.labelKey, accounts.titleKey, ...accounts.keywordKeys]) {
-      assert.equal(typeof flat[key], "string", `${locale}: missing ${key}`);
+  for (const entry of [accounts, advanced]) {
+    for (const [locale, catalog] of Object.entries(catalogs)) {
+      const flat = flattenCatalog(catalog);
+      for (const key of [entry.labelKey, entry.titleKey, ...entry.keywordKeys]) {
+        assert.equal(typeof flat[key], "string", `${locale}: missing ${key}`);
+      }
     }
   }
 });
@@ -263,10 +275,16 @@ test("a settings search for remote control lands on accounts", () => {
   const english = (key) => flattenCatalog(en)[key] ?? key;
   // Words that only the remote-control rows use must reach it first, because
   // the block now lives on this page.
-  for (const query of ["gateway", "registration code", "pairing"]) {
+  for (const query of ["gateway", "pairing"]) {
     const hits = searchSettings(query, english);
     assert.ok(hits.length > 0, `no hit for ${query}`);
     assert.equal(hits[0].tab, "accounts", `${query} must land on accounts`);
+  }
+  // The self-hosted form's own words land on the advanced page that renders it.
+  for (const query of ["registration code", "self-hosted"]) {
+    const hits = searchSettings(query, english);
+    assert.ok(hits.length > 0, `no hit for ${query}`);
+    assert.equal(hits[0].tab, "advanced", `${query} must land on advanced`);
   }
   // A generic word may also match other rows (network settings talk about a
   // remote proxy), but the remote-control block has to be among the hits.

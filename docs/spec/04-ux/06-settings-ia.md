@@ -1,114 +1,110 @@
 # 06. Settings Information Architecture
 
-## 1. Settings root (Codex full-page shell)
+## 1. Settings root (bottom sheet over the running app)
 
-Settings is a **full-window page** that replaces the app sidebar + main chrome (Codex electron behavior):
+Settings is a **sheet that rises from the window bottom over the still-mounted
+app**. It is not a full-window takeover: the chat shell keeps its layout behind
+the panel (inert, dimmed by the scrim), so a draft, the transcript scroll, the
+sidebar fold, and a running task all survive the visit. The runner deletes
+nothing about the app behind it.
 
-- Switching to a different Settings destination starts the content pane at the
-  top, including plugin destinations. Re-selecting the current destination or
+- **Seven fixed categories**, as a short text bar under the head: General / 常规,
+  AI, Models / 模型, Capabilities / 能力, Accounts / 账户, Projects / 项目, and
+  System / 系统. There is no eighth category, no settings rail, and no titled
+  grouping of rail rows.
+- **At most two levels.** A category with a single destination (`Models`,
+  `Projects`) renders no second level and the page title names that
+  destination. The second level is a single row of short labels.
+- **A category selector takes over when the labels do not fit.** The panel
+  measures the seven labels against the bar; when they overflow (a narrow
+  window, a long language, a 150% type scale) it renders the same choice as the
+  shared `SettingsMenuSelect` instead of a row the user has to scroll sideways.
+  It re-measures on resize and on a language change.
+- **Container.** Anchored to the window bottom, about 90% of the available
+  height, 16–24px side gutters (`--settings-sheet-gutter`), 18–20px top corners
+  (`--settings-sheet-radius`), using the existing elevated surface, border, and
+  dialog shadow. No large-area background blur, no background scaling.
+- **Motion.** Rise from below in about 240ms, leave downward in about 180ms, no
+  spring and no bounce. Switching category or destination never replays the
+  entrance. Under `prefers-reduced-motion: reduce` the travel is removed
+  (animation duration ≈ 0.01ms, never `animation: none`) so the exit animation
+  still ends and unmounts the sheet.
+- **Small windows.** At 720px wide or less, or 560px tall or less, the sheet
+  takes the full width and the full height and squares its top corners.
+- **Head.** Panel title, the always-visible **Search settings…** field, and a
+  close button on the right. The head itself is the native window drag region
+  and its controls stay explicitly non-draggable; no decorative band is painted
+  over it, so the title, search field, and close button are always the top-most
+  pixels at their own centers. The sheet starts below the window controls and
+  the macOS traffic lights, so neither is ever covered.
+- **Fixed and scrolling regions.** The head, the category bar, the optional
+  second level, and the close button stay fixed; only the content area scrolls.
+- **Closing.** The close button, Escape, and — with nothing to lose — the scrim.
+  Escape closes only the top-most surface: an open menu, select, or editor
+  dialog closes first (the panel asks the live DOM, because a portaled editor
+  bubbles its Escape back through the React tree), and while a text field holds
+  the keyboard the first Escape leaves the field instead of the sheet.
+  - A form that saves only on an explicit action (today: the global instruction
+    file) registers its `dirty` / `saving` state with the sheet. Every exit —
+    scrim, Escape, close button, category, destination, search result — asks the
+    registry first: with nothing registered the action happens immediately, a
+    dirty form opens a confirmation (keep editing / discard changes), and an
+    in-flight save cannot be discarded until it settles.
+  - Automatically saved rows register nothing and gain no global save button.
+  - Closing returns focus to the control that opened Settings.
+- **No** drag-to-resize, snap height, or swipe-to-close gesture.
+- Switching to a different destination starts the content pane at the top,
+  including plugin destinations. Re-selecting the current destination or
   updating settings in place preserves the current scroll position. Global
   search deep links leave an open plugin destination, then scroll to their
   target row before paint. Consuming the search anchor does not reset the pane
   again.
+- **Search never unmounts the page.** Results are a layer over the current
+  destination, so an unsaved draft survives typing a query and clearing it, and
+  a result click goes through the same leave rule as any other navigation. A hit
+  inside a folded container names itself with `data-settings-anchor`; choosing
+  it opens the enclosing disclosure, then scrolls to and flashes the row.
 - Settings remains usable when an unrelated startup read fails: a successfully
   loaded settings snapshot is retained independently from the remaining
   bootstrap data. If the settings read itself is unavailable, the content pane
   shows a compact loading/failure state with a retry action instead of an empty
   section.
-
-- Left settings rail only, **275px**, using the same `sidebar-surface` material
-  as the main sidebar: native vibrancy with shared tint/sheen on macOS, opaque
-  `--ds-bg-sidebar` on Windows/Linux, and shared optional background imagery.
-  macOS settings-wrapper ancestry is transparent; the content pane and its
-  titlebar remain opaque. Only a nested settings content enter wrapper plays a
-  route animation; the scrolling inner pane, rail, and backing never fade or
-  translate. That entrance is opacity-only. Settings dialogs and sheets portal
-  to a viewport-fixed `#minih-agent-desktop-overlays` host on the document element and
-  cover the full window, including the rail.
+- The content entrance (`settings-content-enter`) is opacity-only, with no
+  transform and no fill: an animated ancestor would become a containing block
+  for fixed content. Settings dialogs and sheets portal to the viewport-fixed
+  `#minih-agent-desktop-overlays` host on the document element and cover the
+  full window.
 - Returning to the app restores the prior sidebar collapsed/expanded state
-  without a sidebar entrance animation or a width ramp. Real toggle and
-  automatic collapse/restore transitions on the visible shell still animate;
-  initial presentation and route restoration do not.
-- Top of rail: traffic-light clearance and the pill **Search settings…**
-- The **Back to app** (`返回应用`) action is pinned to the foot of the rail, not
-  the top: it keeps its chevron + label form as a 32px control, and it shares
-  the horizontal band of the main shell's sidebar footer row (account /
-  notifications / version), so the action does not jump vertically when the
-  full-page takeover opens or closes. The directory above it scrolls when the
-  window is too short for every destination, so a pinned action never covers a
-  row
-- The 46px top band is a native window drag region across both the rail and the
-  content pane, but it is drawn in two parts so each keeps its own surface: the
-  rail drags via its own top strip on the rail surface, and the content pane's
-  band starts at the rail edge on the primary surface. The band must never paint
-  the primary surface over the rail, which would show two colors in one top row.
-  Interactive controls remain explicitly non-draggable
-- A compact navigation directory with short, parallel labels and icons, in this
-  exact order:
-  1. **General / 常规** — Lucide `SlidersHorizontal` (appearance)
-  2. **AI** — Lucide `Sparkles` (permissions, defaults, command shell, learned memory)
-  3. **Shortcuts / 快捷键** — Lucide `Keyboard` (keyboard shortcuts)
-  4. **Instructions / 指令** — Lucide `FileText` (global and project instruction files)
-  5. **Accounts / 账户** — Lucide `KeyRound` (the Minih Router token and every other provider)
-  6. **Models / 模型** — Lucide `Bot` (the account's model catalog, configured per
-     model)
-  7. **Skills / 技能** — Lucide `BookOpen` (reusable agent instructions)
-  8. **MCP** — Lucide `Server` (agent connections)
-  9. **Subagents / 子智能体** — Lucide `Bot` (built-in and personal parallel agents)
-  10. **Projects / 项目** — Lucide `Archive` (durable project index)
-  11. **Cloud sync / 云同步** — Lucide `CloudDownload` (encrypted portable configuration backup and bidirectional sync; Experimental, all builds)
-  12. **Remote Hosts / 远程主机** — Lucide `Globe` (experimental SSH hosts, sessions, and explicit model copy)
-  13. **Info / 信息** — Lucide `Info` (versions, logs, updates, developer)
-  Icons are decorative (`aria-hidden` via the SVG default) and stay monochrome
-  with the rail label; do not reuse refresh/rotate glyphs here.
-- The directory remains a flat searchable list in the same exact order. For
-  scanability, the destinations are shown in four titled visual clusters:
-  `Preferences` / `偏好` (General, AI, Shortcuts), `Agent` / `智能体`
-  (Instructions, Accounts, Models, Skills, MCP, Subagents), `Workspace` / `工作区`
-  (Projects), and `System` / `系统` (Cloud sync, Remote Hosts, Info; Cloud sync
-  and Remote Hosts are Experimental destinations available in all builds). Headings are
-  muted, non-interactive labels and use whitespace for separation; no divider
-  lines are rendered. These are visual landmarks only, not a second navigation
-  level.
-  When search filters the directory, empty clusters and their headings disappear.
-- **Voice** is a regular Preferences destination between AI and Shortcuts,
-  present in every build with no Experimental badge and no developer-mode
-  requirement. Its rail row, page, search hits, and idle Composer entry are
-  available to all users.
-  It is the only place to enable Live Voice. See the Voice section below.
-- **Cloud sync / 云同步** is an Experimental `System` / `系统` destination
-  available in development and packaged builds. Its rail row, page, and
-  settings-search hits are available in every build, and both the row and page
-  title carry `settings.configSync.experimental`. Developer mode does not gate
-  it; sync behavior itself is unchanged.
-- **Remote Hosts / 远程主机** is an Experimental destination in all builds,
-  independent of developer mode. The rail, page and search hits remain available.
-  The row and title carry `settings.remoteHosts.experimental`. After pairing,
-  each host offers **New project**, reconnect, and remove. New project opens the
-  unified Create project dialog with Remote selected and that host preselected;
-  selecting an absolute directory creates a locally managed project bound to
-  the remote workspace. The inventory does not list or create conversations.
-  The Add action row precedes the inventory; SSH installation and existing-host
-  pairing open an accessible dialog. Cancel, Escape, backdrop dismissal, and
-  successful submission close it and clear the draft, returning focus to its
-  trigger. SSH hosts offer eligible-provider
-  copy with empty selection and explicit credential-copy consent. Remote chat
-  uses Host defaults and never activates local workspaces.
-  The narrow MVP supports text, tool/input responses and read-only files/diffs;
-  terminal, attachments, local model controls and local plugin/MCP actions are absent.
-- Loaded plugin Settings entries may appear only in a final **Extensions** group
-  after all core groups. The host owns their ordering, search result, titlebar
-  and fallback to General. The rail icon is the destination's host token
-  (scenic themes: Lucide `Palette` via `pluginViewIcon`), never plugin markup
-  and never a generic Skills book glyph. Their content is a sandboxed plugin
-  page measured into the content pane; it never covers the rail or titlebar.
-- Main content pane on primary surface with large section title + elevated
-  rounded cards of rows. Its content uses the full width available after the
-  fixed rail and pane gutters, and resizes continuously with the window.
+  without a sidebar entrance animation or a width ramp, and gives the keyboard
+  back to the entry that opened Settings. Real toggle and automatic
+  collapse/restore transitions on the visible shell still animate; initial
+  presentation and route restoration do not.
+- **Cloud sync has exactly one configuration surface**: Accounts → Cloud sync.
+  Account mode's quick entry in the avatar menu opens that same page. No page
+  embeds a second copy of the sync form.
+- **Plugin theme destinations** are not an eighth category: they hang off
+  General → Appearance and reuse their sandboxed renderer surface.
 
 ## 2. Section contents
 
-### General
+### 2.0 Destination map
+
+| Category | Destinations | Notes |
+|---|---|---|
+| General / 常规 | Appearance & language (`general`), Usage habits (`habits`), Shortcuts (`shortcuts`) | Theme, language, fonts and the plugin theme entries live in appearance; power, screen sleep and close behaviour in habits |
+| AI | Chat experience (`ai`), Execution & permissions (`execution`), Instructions & memory (`instructions`), Voice (`voice`) | The model catalog is its own category, never folded into an AI page |
+| Models / 模型 | Models (`agent`) | One destination, so no second level |
+| Capabilities / 能力 | Skills (`skills`), MCP (`mcp`), Subagents (`subagents`) | One management page per capability; never one merged list |
+| Accounts / 账户 | Accounts (`accounts`), Devices (`devices`), Cloud sync (`sync`), Advanced (`advanced`) | SSH hosts and the self-hosted gateway are advanced |
+| Projects / 项目 | Projects (`projects`) | One destination, so no second level |
+| System / 系统 | Network (`network`), Storage (`storage`), About & updates (`about`) | Network and storage moved out of the old General page; Info keeps logs, feedback, updates, developer tools |
+
+Destination ids are a navigation contract: automation through the capture API,
+plugins, and restored selections name them. `remoteHosts` resolves to
+`advanced` and `remoteGateway` resolves to `accounts`; an unknown id falls back
+to appearance.
+
+### General (appearance & language)
 
 - **Storage** shows the effective application data path and the reclaimable cache
   size. It is included in settings search. Choose directory uses the native picker;
@@ -1177,44 +1173,61 @@ system while preserving their different data ownership:
 
 ## 3. Navigation rules
 
-- Profile footer / command palette open Settings full page (default General)
-- Composer model menu and provider setup actions deep-link to the Providers
-  card inside Agent
+- Profile footer / command palette open the Settings sheet; a plain entry keeps
+  the last destination, while an explicit entry (models, cloud sync, voice)
+  deep-links to its own page
+- The category bar selects a category; re-selecting the category that is already
+  showing keeps its current destination. Entering a category lands on its first
+  destination.
+- Composer model menu and provider setup actions deep-link to the Models
+  destination
+- Setting search is shared with the global search dialog: one destination index
+  in `lib/settings-search.ts` decides which category and page own a row, so the
+  two search surfaces can never disagree
+- The in-panel search lists concrete rows with their path
+  (`System › Network › Proxy`); choosing one switches category and destination,
+  then scrolls to and flashes that row
 - Plugin management remains available from the app shell's independent
   **Plugins** destination, including load, enable, disable, and uninstall; it is
   not duplicated in Settings
 - Project archive is indexed by Settings search and is not duplicated as a home
   sidebar destination or standalone global-search page
-- Back to app returns to chat shell from the rail's pinned footer action
-- Developer-only destinations, where declared, join and leave the rail, page,
-  and search as one unit. Cloud sync and Remote Hosts are Experimental but not
-  developer-only, so both remain available in packaged builds and are not
+- The close button, Escape, and the restored focus target are the only ways back
+  to the app; there is no rail footer action
+- Developer-only destinations, where declared, join and leave the second level,
+  the page, and search as one unit. Cloud sync and Advanced are Experimental but
+  not developer-only, so both remain available in packaged builds and are not
   hidden when developer mode changes.
+- A hidden destination never keeps rendering: leaving it falls back to the
+  appearance page
 
 ## 4. Acceptance
 
-1. Opening Settings hides the coding app sidebar (full-page takeover)
-2. Rail shows the search pill at the top, the back-to-app action pinned at the
-   foot on the main sidebar's footer icon line, and exactly General / 常规, AI,
-   Shortcuts / 快捷键, Instructions / 指令, Models / 模型, Skills / 技能, MCP,
-   Subagents / 子智能体, Projects / 项目, Cloud sync / 云同步 and Remote Hosts /
-   远程主机 (both Experimental, all builds), and Info / 信息 in that order. Voice
-   appears between AI and Shortcuts only in development builds with developer
-   mode on. The rows are grouped under Preferences / 偏好,
-   Agent / 智能体, Workspace / 工作区, and System / 系统. There is no
-   Usage / 用量 destination.
-3. Appearance is part of General and has no standalone rail destination
-4. Providers is part of Agent and has no standalone rail destination
+1. Opening Settings leaves the chat shell mounted and inert behind a sheet
+   anchored to the window bottom: about 90% height, 16–24px side gutters,
+   18–20px top corners, and a scrim that never takes a dismiss click
+2. The panel has exactly seven categories in this order — General / 常规, AI,
+   Models / 模型, Capabilities / 能力, Accounts / 账户, Projects / 项目,
+   System / 系统 — and no rail, no cited grouping headers, and no
+   Usage / 用量 destination. There is no eighth category: plugin theme
+   destinations hang off General → Appearance.
+3. Second-level destinations are Appearance & language, Usage habits and
+   Shortcuts under General; Chat experience, Execution & permissions,
+   Instructions & memory and Voice under AI; Skills, MCP and Subagents under
+   Capabilities; Accounts, Devices, Cloud sync (Experimental) and Advanced
+   (Experimental) under Accounts; Network, Storage and About & updates under
+   System. Models and Projects have one page each and no second level.
+4. Appearance, usage habits, shortcuts, execution, instructions and voice each
+   own one page instead of one shared destination
 5. Plugins has no Settings destination; the app-shell Plugins page supports
    load, enable, disable, and uninstall
-6. General shows the host-backed Appearance card; the AI destination shows
-   Permissions and Defaults, including the Command shell row; the
-   Shortcuts destination shows the Keyboard shortcuts card; Info shows the
-   Developer card. Plugin-contributed destinations, when present, appear after
-   every core group under Extensions. Each destination is a renderer-composited
-   sandboxed surface: it preserves the existing Settings rail, titlebar,
-   Windows/Linux minimize/maximize controls, native drag/resize regions, and
-   content geometry. Token
+6. General → Appearance shows the host-backed Appearance card; AI → Execution &
+   permissions shows Permissions and the default mode, including the Command
+   shell row; AI → Chat experience shows the transcript rows; General →
+   Shortcuts shows the Keyboard shortcuts card; System → About & updates shows
+   the Developer card. Each destination is a renderer-composited sandboxed
+   surface: it preserves the native drag region, the Windows/Linux
+   minimize/maximize controls, and content geometry. Token
    usage lives in plugin `pi.token-insights`, not Settings.
 7. Provider secrets never display raw key values
 8. Model configuration shows compact Defaults, separate vendor accounts, the
@@ -1226,11 +1239,12 @@ system while preserving their different data ownership:
    card surface in both light and dark themes. A row's live value (the pinned
    default model) is data rather than prose and stays visible, and a form
    field's hint follows the same rule as a row's explanation
-10. Dragging the empty top band from either side of Settings moves the native
-   window without blocking Back, search, or navigation controls
+10. Dragging the sheet's head band moves the native window without blocking the
+    close button, the search field, or the category bar
 11. Resizing the window expands or contracts the content cards with the
-    available content pane; the fixed rail and pane gutters remain intact and
-    the page does not gain horizontal overflow
+    available width; the sheet keeps its gutters and the page does not gain
+    horizontal overflow. Short windows give the sheet the full height and the
+    category bar stays one row
 12. Project archive always exposes archived records and can restore them without
     duplicating the index in the app shell
 13. Project archive renders no description line — no hero, banner, or page-level
@@ -1300,12 +1314,15 @@ the current window width:
 
 | Token | Value |
 |---|---|
-| Rail width | ~275px (`--ds-settings-nav-width`, shared by the rail and the top band inset) |
-| Rail surface | Shared sidebar material; light opaque fallback `#f3f3f3`, native glass on macOS |
-| Top band | content pane only, inset by the rail width; rail keeps its own surface |
-| Active nav pill | denser 6px/10px pad, ~8px radius, gray mix on rail |
-| Section title | 28px / 560, first baseline ~y70 |
-| Content width | Full available pane width after rail and gutters |
+| Sheet height | 90% of the window, anchored to the bottom edge |
+| Sheet gutters | `--settings-sheet-gutter: clamp(16px, 2vw, 24px)` |
+| Top corners | `--settings-sheet-radius: 19px` |
+| Sheet surface | `--ds-bg-primary` plate with `--ds-border-subtle` border and `--ds-shadow-dialog` |
+| Motion | rise 240ms / leave 180ms; ≈0.01ms with reduced motion |
+| Drag band | the sheet head, `var(--ds-toolbar-height)` tall, across the sheet |
+| Active nav pill | category and second level share `.settings-nav-item`; selected uses `--ds-settings-nav-active` |
+| Section title | 28px / 560 |
+| Content width | Full available sheet width after its gutters |
 | Card radius | ~14px elevated stroke |
 | Toggle | **32×20** thumb 16, neutral accent on (not green) |
 | Open-target pill | leading VS Code glyph |

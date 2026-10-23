@@ -10,12 +10,17 @@ import test from "node:test";
 import {
   SETTINGS_NAV,
   isSettingsDestinationHidden,
+  normalizeSettingsTabId,
   searchSettings,
   visibleSettingsNav,
 } from "../src/lib/settings-search.ts";
 
 const settingsPage = readFileSync(
   new URL("../src/features/settings/SettingsPage.tsx", import.meta.url),
+  "utf8",
+);
+const settingsDestination = readFileSync(
+  new URL("../src/features/settings/SettingsDestination.tsx", import.meta.url),
   "utf8",
 );
 const searchDialog = readFileSync(
@@ -98,16 +103,19 @@ test("Cloud sync is Experimental and available in every build", () => {
   assert.equal(sync?.experimentalBadgeKey, "settings.configSync.experimental");
 });
 
-test("Remote Hosts is Experimental and available in every build", () => {
+test("the accounts advanced page carries the Experimental remote hosts surface", () => {
   for (const developerMode of [false, true]) {
     for (const includeDevelopmentOnly of [false, true]) {
       assert.ok(visibleSettingsNav(developerMode, includeDevelopmentOnly)
-        .some((entry) => entry.id === "remoteHosts"));
-      assert.equal(isSettingsDestinationHidden("remoteHosts", developerMode, includeDevelopmentOnly), false);
+        .some((entry) => entry.id === "advanced"));
+      assert.equal(isSettingsDestinationHidden("advanced", developerMode, includeDevelopmentOnly), false);
     }
   }
+  // The SSH host inventory is the advanced page now; its old destination id
+  // still resolves, so links written before the move keep landing on it.
+  assert.equal(normalizeSettingsTabId("remoteHosts"), "advanced");
   assert.equal(
-    SETTINGS_NAV.find((entry) => entry.id === "remoteHosts")?.experimentalBadgeKey,
+    SETTINGS_NAV.find((entry) => entry.id === "advanced")?.experimentalBadgeKey,
     "settings.remoteHosts.experimental",
   );
 });
@@ -139,7 +147,7 @@ test("packaged builds hide developer-only destinations and retain Experimental s
     assert.equal(packaged.includes(id), false);
     assert.equal(isSettingsDestinationHidden(id, true, false), true);
   }
-  for (const id of ["sync", "remoteHosts"]) {
+  for (const id of ["sync", "advanced"]) {
     assert.equal(packaged.includes(id), true);
     assert.equal(isSettingsDestinationHidden(id, true, false), false);
     assert.equal(isSettingsDestinationHidden(id, false, false), false);
@@ -168,7 +176,7 @@ test("settings search mirrors developer and packaged visibility", () => {
   for (const developerMode of [false, true]) {
     for (const includeDevelopmentOnly of [false, true]) {
       assert.ok(searchSettings("remotehosts", identity, { developerMode, includeDevelopmentOnly })
-        .some(hit => hit.tab === "remoteHosts"));
+        .some(hit => hit.tab === "advanced"));
     }
   }
   assert.equal(searchSettings("settings", identity, { limit: 2 }).length, 2);
@@ -179,8 +187,8 @@ test("settings routes, global search, and composer use build visibility", () => 
   assert.match(settingsPage, /visibleSettingsNav\(developerMode, includeDevelopmentOnly\)/);
   assert.match(settingsPage, /isSettingsDestinationHidden\([\s\S]*includeDevelopmentOnly/);
   assert.match(settingsPage, /setSettingsTab\("general"\)/);
-  assert.match(settingsPage, /tab === "sync" && !tabHidden && <ConfigSyncPage \/>/);
-  assert.match(settingsPage, /tab === "remoteHosts" && !tabHidden && <RemoteHostsPage \/>/);
+  assert.match(settingsDestination, /tab === "sync" && !tabHidden && <ConfigSyncPage \/>/);
+  assert.match(settingsDestination, /tab === "advanced" && !tabHidden && <AccountsAdvancedPage \/>/);
   assert.match(searchDialog, /includeDevelopmentOnly: import\.meta\.env\.DEV/);
   assert.match(composer, /useVoiceInput/);
   assert.doesNotMatch(composer, /VoiceOverlay|voiceEnabled/);

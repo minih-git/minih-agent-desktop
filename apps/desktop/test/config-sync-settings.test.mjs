@@ -11,6 +11,9 @@ const read = (relativePath) =>
   readFile(new URL(relativePath, import.meta.url), "utf8");
 
 const settingsPage = await read("../src/features/settings/SettingsPage.tsx");
+const settingsDestination = await read(
+  "../src/features/settings/SettingsDestination.tsx",
+);
 const settingsIndex = await read("../src/lib/settings-search.ts");
 const syncPage = await read("../src/components/settings/ConfigSyncPage.tsx");
 const syncPreferences = await read(
@@ -30,7 +33,9 @@ const syncError = await read(
 );
 
 test("cloud sync is Experimental and available in packaged Settings", () => {
-  assert.match(settingsPage, /tab === "sync" && !tabHidden && <ConfigSyncPage \/>/);
+  // The sync page is the only surface that renders the form: it is the accounts
+  // category's cloud-sync destination, and nothing else embeds it.
+  assert.match(settingsDestination, /tab === "sync" && !tabHidden && <ConfigSyncPage \/>/);
   assert.match(settingsIndex, /id: "sync"/);
   assert.doesNotMatch(settingsIndex, /id: "sync"[\s\S]{0,400}developmentOnly: true/);
   assert.match(settingsIndex, /experimentalBadgeKey: "settings\.configSync\.experimental"/);

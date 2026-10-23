@@ -31,7 +31,7 @@ import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
 import { RemoteControlSection } from "../../apps/desktop/src/components/settings/RemoteControlSection";
 import { MyDevicesSection } from "../../apps/desktop/src/components/settings/MyDevicesSection";
-import { AccountsAdvancedSection } from "../../apps/desktop/src/components/settings/AccountsAdvancedSection";
+import { SelfHostedGatewaySection } from "../../apps/desktop/src/components/settings/SelfHostedGatewaySection";
 import { useRemoteControl } from "../../apps/desktop/src/components/settings/useRemoteControl";
 
 await i18n.use(initReactI18next).init({ lng: "en", keySeparator: false,
@@ -121,15 +121,15 @@ window.minihAgent = { platform: "darwin", channels: IPC,
 
 let view;
 const host = () => document.getElementById("root");
-// The sections take their control from the page; a tiny wrapper provides them
-// the way AccountsPage does, so the probe covers the revoke flow that now
-// lives in My devices and the self-hosted form that lives in Advanced.
+// The sections take their control from the page that owns them: This computer
+// (accounts), My devices (accounts ▸ devices), and the self-hosted form
+// (accounts ▸ advanced). One control instance, as each page has one.
 const SectionHost = () => {
   const control = useRemoteControl();
   return React.createElement(React.Fragment, null,
     React.createElement(RemoteControlSection, { control }),
     React.createElement(MyDevicesSection, { control }),
-    React.createElement(AccountsAdvancedSection, { control }));
+    React.createElement(SelfHostedGatewaySection, { control }));
 };
 const mount = () => { view = createRoot(host()); flushSync(() => view.render(React.createElement(SectionHost))); };
 const frame = () => new Promise(requestAnimationFrame);

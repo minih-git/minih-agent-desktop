@@ -33,6 +33,8 @@ import { initReactI18next } from "react-i18next";
 import { catalogs, flattenCatalog } from "@minih-agent/i18n";
 import { IPC } from "@minih-agent/shared";
 import { AccountsPage } from "../../apps/desktop/src/components/settings/AccountsPage";
+import { DevicesPage } from "../../apps/desktop/src/components/settings/DevicesPage";
+import { AccountsAdvancedPage } from "../../apps/desktop/src/components/settings/AccountsAdvancedPage";
 import { useAppStore } from "../../apps/desktop/src/stores/app-store";
 
 await i18n.use(initReactI18next).init({ lng: "en", keySeparator: false,
@@ -44,11 +46,6 @@ const check = (value, message) => { if (!value) throw new Error(message); };
 // No Router row: the page shows its connect card, and nothing here reads an
 // account.
 useAppStore.setState({ settings: { developerMode: false }, providers: [] });
-
-// Record where the page navigates: the advanced area's SSH entry must reach
-// the kept remoteHosts destination id.
-const navCalls = [];
-useAppStore.subscribe((state) => { if (state.settingsTab) navCalls.push(state.settingsTab); });
 
 const listeners = new Map();
 const calls = [];
@@ -83,9 +80,13 @@ window.minihAgent = { platform: "darwin", channels: IPC,
 };
 
 let view;
-const mount = () => {
-  view = createRoot(document.getElementById("root"));
-  flushSync(() => view.render(React.createElement(AccountsPage)));
+const host = () => document.getElementById("root");
+// Each page of the accounts category mounts on its own, the way the settings
+// panel renders exactly one of them at a time.
+const mountPage = (Page) => {
+  if (view) flushSync(() => view.unmount());
+  view = createRoot(host());
+  flushSync(() => view.render(React.createElement(Page)));
 };
 const frame = () => new Promise(requestAnimationFrame);
 const until = async (condition, message) => {
@@ -94,80 +95,73 @@ const until = async (condition, message) => {
 };
 const buttons = () => [...document.querySelectorAll("button")];
 const button = (text) => buttons().find((node) => node.textContent.trim() === text);
+const headings = () => [...document.querySelectorAll(".settings-card-heading")].map((node) => node.textContent.trim());
 const advanced = () => document.querySelector('[data-testid="remote-gateway-advanced"]');
 const remoteSwitch = () =>
   buttons().find((node) => node.getAttribute("role") === "switch" && node.getAttribute("aria-label") === label("enabled"));
 
 window.freshInstallProbe = async () => {
-  mount();
+  // 1. The account page: the Minih Router account, then this computer.
+  mountPage(AccountsPage);
   // The switch renders before main answers, so wait for the account-mode block:
   // that only exists once the status has been read.
   await until(
     () => document.querySelector('[data-testid="remote-gateway-account-mode"]') && remoteSwitch(),
     "the accounts page did not render remote control",
   );
-  // Below the account, not instead of it. The section is "This computer" now;
-  // the remote-control title survives as a search keyword, not the heading.
-  const headings = [...document.querySelectorAll(".settings-card-heading")].map((node) => node.textContent.trim());
-  const uiPosition = headings.indexOf(navLabel("Minih Router").trim());
+  const router = headings().indexOf(navLabel("Minih Router").trim());
   const thisComputer = document.querySelector('[data-testid="accounts-this-computer"]');
-  check(uiPosition >= 0, "the Minih Router panel must stay on the page: " + headings.join(" | "));
-  check(thisComputer, "the page must name this computer: " + headings.join(" | "));
-  check(headings.includes(navLabel("settings.accountsThisComputerTitle").trim()),
-    "this computer must have its own section heading: " + headings.join(" | "));
-  check(headings.indexOf(navLabel("settings.accountsThisComputerTitle").trim()) > uiPosition,
-    "this computer must sit below the account: " + headings.join(" | "));
-
-  // My devices: the account's computers with their online state, labeled as
-  // computers, and the grants list (empty here) below them.
-  const computers = document.querySelector('[data-testid="accounts-devices-computers"]');
-  check(computers, "my devices must list the account's computers");
-  await until(
-    () => computers.textContent.includes("Studio Mac"),
-    "the account computer did not render",
-  );
-  check(computers.textContent.includes(navLabel("settings.accountsDevices.offline")),
-    "an offline computer must say so: " + computers.textContent);
-  check(computers.textContent.includes(navLabel("settings.accountsDevices.kindComputer")),
-    "a computer row must be labeled as a computer: " + computers.textContent);
-
-  // Advanced folds the SSH hosts entry behind its own disclosure; opening it
-  // and pressing the button navigates to the kept destination id.
-  const advancedArea = document.querySelector('[data-testid="accounts-advanced"]');
-  check(advancedArea, "the advanced area must exist");
-  check(advancedArea.open === false, "the advanced area must start collapsed");
-  flushSync(() => advancedArea.querySelector("summary").click());
-  check(advancedArea.open === true, "the advanced area did not open");
-  const sshOpen = advancedArea.querySelector('[data-testid="accounts-advanced-ssh-open"]');
-  check(sshOpen, "the SSH hosts entry must be reachable from advanced");
-  flushSync(() => sshOpen.click());
-  await until(() => navCalls.includes("remoteHosts"), "the SSH entry did not navigate to remoteHosts");
-
+  check(router >= 0, "the Minih Router panel must stay on the page: " + headings().join(" | "));
+  check(thisComputer, "the page must name this computer: " + headings().join(" | "));
+  check(headings().includes(navLabel("settings.accountsThisComputerTitle").trim()),
+    "this computer must have its own section heading: " + headings().join(" | "));
+  check(headings().indexOf(navLabel("settings.accountsThisComputerTitle").trim()) > router,
+    "this computer must sit below the account: " + headings().join(" | "));
   // Account mode is offered and the switch that enrolls this desktop is usable.
   const accountMode = document.querySelector('[data-testid="remote-gateway-account-mode"]');
   check(accountMode, "account mode must be visible on a fresh install");
   check(accountMode.textContent.includes(label("accountModeReady")), "it should read as ready: " + accountMode.textContent);
   check(remoteSwitch().disabled === false, "a fresh install must be able to turn remote access on");
-  check(advanced(), "the self-hosted area must be present");
-  check(advanced().open === false, "the self-hosted area must start collapsed");
-  // Opening it on a fresh install shows the state account mode replaced: the
-  // registration is pending because this desktop has not enrolled yet.
-  flushSync(() => advanced().querySelector("summary").click());
-  check(
-    document.body.textContent.includes(label("accountEnrollPendingTitle")),
-    "a fresh install must read as pending inside the self-hosted area",
-  );
-  flushSync(() => advanced().querySelector("summary").click());
-
   flushSync(() => remoteSwitch().click());
   await until(() => calls.some((call) => call.channel === IPC.invoke.remoteGatewaySetEnabled), "the switch did not reach main");
   check(calls.filter((call) => call.channel === IPC.invoke.remoteGatewaySetEnabled).length === 1, "one toggle, one call");
-  // Let main's answer land before replacing the status: an in-flight reply that
-  // arrives later would overwrite the next state this probe pushes.
   await until(
     () => remoteSwitch().getAttribute("aria-checked") === "true",
     "the switch did not apply main's answer",
   );
+
+  // 2. Devices: the account's computers with their online state, labeled as
+  // computers, and the grants list (empty here) below them.
+  mountPage(DevicesPage);
+  const computers = () => document.querySelector('[data-testid="accounts-devices-computers"]');
+  await until(() => computers()?.textContent.includes("Studio Mac"), "the account computer did not render");
+  check(computers().textContent.includes(navLabel("settings.accountsDevices.offline")),
+    "an offline computer must say so: " + computers().textContent);
+  check(computers().textContent.includes(navLabel("settings.accountsDevices.kindComputer")),
+    "a computer row must be labeled as a computer: " + computers().textContent);
+
+  // 3. Advanced: the SSH host inventory renders in place, next to the folded
+  // self-hosted gateway form.
+  mountPage(AccountsAdvancedPage);
+  await until(() => advanced(), "the advanced page did not render the self-hosted area");
+  // The SSH inventory is on this page now: its add forms and its (empty) list
+  // render next to the self-hosted gateway form.
+  await until(
+    () => button(navLabel("settings.remoteHosts.addSsh")) && button(navLabel("settings.remoteHosts.addPair")),
+    "the advanced page must render the SSH host inventory: " + headings().join(" | "),
+  );
+  // The inventory lists what the host read returned (one paired computer here).
+  await until(
+    () => document.body.textContent.includes("Studio Mac"),
+    "the inventory must list the paired hosts",
+  );
+  check(advanced().open === false, "the self-hosted area must start collapsed");
+  // Opening it on a fresh install shows the state account mode replaced: the
+  // registration is pending because this desktop has not enrolled yet.
+  flushSync(() => advanced().querySelector("summary").click());
+  check(document.body.textContent.includes(label("accountEnrollPendingTitle")),
+    "a fresh install must read as pending inside the self-hosted area");
+  flushSync(() => advanced().querySelector("summary").click());
 
   // A self-hosted registration keeps the advanced area open, so a user who
   // configured one still finds it without hunting.
@@ -180,25 +174,13 @@ window.freshInstallProbe = async () => {
     accountMode: { available: false, reason: "no Minih Router AccessKey is configured" },
   };
   for (const callback of listeners.get(IPC.event.remoteGatewayStatusChanged) ?? []) callback(status);
-  await until(
-    () => advanced().open === true,
-    "a self-hosted registration must open the advanced area",
-  );
-  check(document.body.textContent.includes(label("accountModeUnavailable")), "unavailable account mode must say so");
+  await until(() => advanced().open === true, "a self-hosted registration must open the advanced area");
+  // The account-mode explanation belongs to This computer, which is on the
+  // account page now; the advanced page owns the self-hosted form itself.
   check(button(label("enroll")), "the self-hosted form must be there for the self-hosted flow");
-  // The self-hosted form now sits in the accounts page's advanced area, next to
-  // the SSH entry: the move this release made, asserted where a user looks.
-  check(
-    document
-      .querySelector('[data-testid="accounts-advanced-ssh-open"]')
-      ?.closest("section")
-      ?.contains(advanced()),
-    "the self-hosted form must live in the accounts advanced area",
-  );
-  // A registration through the account instead, which is what the switch does:
-  // the advanced area stops offering the self-hosted form and reads as
-  // registered, so someone who opens it sees who registered this desktop and is
-  // not offered a second way to enroll.
+
+  // A registration through the account instead: the advanced area stops
+  // offering the self-hosted form and reads as registered.
   status = {
     state: "connecting",
     since: "2026-10-18T00:00:00.000Z",
@@ -209,10 +191,7 @@ window.freshInstallProbe = async () => {
     accountMode: { available: true, url: "wss://gateway.example.com/hostlink" },
   };
   for (const callback of listeners.get(IPC.event.remoteGatewayStatusChanged) ?? []) callback(status);
-  await until(
-    () => advanced().open === false,
-    "an account registration must fold the self-hosted area again",
-  );
+  await until(() => advanced().open === false, "an account registration must fold the self-hosted area again");
   flushSync(() => advanced().querySelector("summary").click());
   check(advanced().open === true, "the self-hosted area did not open");
   check(

@@ -19,12 +19,13 @@ test("theme variables remain host-generated and plugin-scoped", () => {
 
 test("scenic settings destinations are permission-gated and host-rendered", () => {
   const ipc = read("electron/main/ipc/plugin-ui-ipc.ts");
-  const page = read("src/features/settings/SettingsPage.tsx");
+  const page = read("src/features/settings/SettingsDestination.tsx");
+  const appearance = read("src/features/settings/panels/general-panels.tsx");
   const component = read("src/components/settings/PluginScenicThemesDestination.tsx");
   assert.match(ipc, /pluginScenicThemesDestinations/);
   assert.match(ipc, /ui\.settings/);
   assert.match(ipc, /ui\.theme/);
-  assert.match(page, /settings\.groupExtensions/);
+  assert.match(appearance, /onOpenExtension/);
   assert.match(page, /PluginScenicThemesDestination/);
   assert.match(component, /aria-pressed/);
   assert.doesNotMatch(component, /<iframe/);

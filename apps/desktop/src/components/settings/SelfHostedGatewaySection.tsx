@@ -30,40 +30,47 @@ export function SelfHostedGatewaySection({ control }: { control: RemoteControl }
         title={t("settings.remoteGateway.advancedTitle")}
         titleClassName="settings-row-title"
         data-testid="remote-gateway-advanced"
+        data-settings-anchor="settings.remoteGateway.advancedTitle"
       >
         <p className="text-xs text-text-secondary">{t("settings.remoteGateway.advancedHint")}</p>
         {showsForm ? (
           <div className="space-y-3">
-            <Field label={t("settings.remoteGateway.url")}>
-              <Input
-                value={control.url}
-                placeholder={t("settings.remoteGateway.urlPlaceholder")}
-                spellCheck={false}
-                autoCapitalize="off"
-                onChange={(event) => {
-                  control.urlTouched.current = true;
-                  control.setUrl(event.currentTarget.value);
-                }}
-              />
-            </Field>
-            <Field label={t("settings.remoteGateway.caPem")}>
-              <Textarea
-                value={control.caPem}
-                placeholder={t("settings.remoteGateway.caPemPlaceholder")}
-                rows={4}
-                onChange={(event) => control.setCaPem(event.currentTarget.value)}
-              />
-            </Field>
-            <Field label={t("settings.remoteGateway.registrationCode")}>
-              <Input
-                value={control.registrationCode}
-                placeholder={t("settings.remoteGateway.registrationCodePlaceholder")}
-                spellCheck={false}
-                autoCapitalize="off"
-                onChange={(event) => control.setRegistrationCode(event.currentTarget.value)}
-              />
-            </Field>
-            <div className="flex items-center gap-3">
+            <div data-settings-anchor="settings.remoteGateway.url">
+              <Field label={t("settings.remoteGateway.url")}>
+                <Input
+                  value={control.url}
+                  placeholder={t("settings.remoteGateway.urlPlaceholder")}
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  onChange={(event) => {
+                    control.urlTouched.current = true;
+                    control.setUrl(event.currentTarget.value);
+                  }}
+                />
+              </Field>
+            </div>
+            <div data-settings-anchor="settings.remoteGateway.caPem">
+              <Field label={t("settings.remoteGateway.caPem")}>
+                <Textarea
+                  value={control.caPem}
+                  placeholder={t("settings.remoteGateway.caPemPlaceholder")}
+                  rows={4}
+                  onChange={(event) => control.setCaPem(event.currentTarget.value)}
+                />
+              </Field>
+            </div>
+            <div data-settings-anchor="settings.remoteGateway.registrationCode">
+              <Field label={t("settings.remoteGateway.registrationCode")}>
+                <Input
+                  value={control.registrationCode}
+                  placeholder={t("settings.remoteGateway.registrationCodePlaceholder")}
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  onChange={(event) => control.setRegistrationCode(event.currentTarget.value)}
+                />
+              </Field>
+            </div>
+            <div className="flex items-center gap-3" data-settings-anchor="settings.remoteGateway.enroll">
               <Button
                 type="button"
                 variant="primary"

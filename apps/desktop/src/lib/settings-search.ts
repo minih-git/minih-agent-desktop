@@ -1,73 +1,95 @@
 /**
- * Data-only index of the settings IA, shared by the settings page nav and
- * the global search dialog. Keyword keys are the i18n keys of the rows
- * rendered inside each tab; search matches their translations, so a query
- * like "主题" or "theme" can surface the tab that owns the row.
+ * Data-only index of the settings IA, shared by the settings panel's
+ * navigation and the global search dialog.
+ *
+ * Two levels, never more: seven fixed categories (常规 / AI / 模型 / 能力 /
+ * 账户 / 项目 / 系统) and the destinations inside them. Keyword keys are the
+ * i18n keys of the rows rendered inside each destination; search matches their
+ * translations, so a query like "主题" or "theme" can surface the destination
+ * that owns the row, together with the path it lives under.
  */
 
+/** The seven top-level entries of the settings panel. */
+export type SettingsCategoryId =
+  | "general"
+  | "ai"
+  | "models"
+  | "capabilities"
+  | "accounts"
+  | "projects"
+  | "system";
+
+/**
+ * Second-level destinations. Ids are part of the navigation contract: deep
+ * links, automation through the capture API, and plugin calls name them.
+ */
 export type SettingsTabId =
   | "general"
-  | "accounts"
-  | "ai"
+  | "habits"
   | "shortcuts"
+  | "ai"
+  | "execution"
   | "instructions"
+  | "voice"
   | "agent"
   | "skills"
   | "mcp"
   | "subagents"
-  | "projects"
+  | "accounts"
+  | "devices"
   | "sync"
-  | "remoteHosts"
-  | "voice"
+  | "advanced"
+  | "projects"
+  | "network"
+  | "storage"
   | "about";
 
-export type SettingsNavGroupId =
-  | "preferences"
-  | "agent"
-  | "workspace"
-  | "system";
-
-export const SETTINGS_NAV_GROUP_LABELS: Record<SettingsNavGroupId, string> = {
-  preferences: "settings.groupPreferences",
-  agent: "settings.groupAgent",
-  workspace: "settings.groupWorkspace",
-  system: "settings.groupSystem",
+export type SettingsCategory = {
+  id: SettingsCategoryId;
+  /** Short label on the category bar. */
+  labelKey: string;
 };
+
+export const SETTINGS_CATEGORIES: SettingsCategory[] = [
+  { id: "general", labelKey: "settings.category.general" },
+  { id: "ai", labelKey: "settings.category.ai" },
+  { id: "models", labelKey: "settings.category.models" },
+  { id: "capabilities", labelKey: "settings.category.capabilities" },
+  { id: "accounts", labelKey: "settings.category.accounts" },
+  { id: "projects", labelKey: "settings.category.projects" },
+  { id: "system", labelKey: "settings.category.system" },
+];
 
 export type SettingsNavEntry = {
   id: SettingsTabId;
-  /** Short label used by the rail and settings search results. */
+  /** Short label used by the category's sub-navigation and search results. */
   labelKey: string;
   /** Descriptive title used at the top of the selected settings page. */
   titleKey: string;
-  /** Visual-only rail grouping; search remains a flat destination index. */
-  group: SettingsNavGroupId;
-  /** i18n keys of the rows inside the tab; search matches their translations. */
+  /** Owning category; the panel shows exactly one category at a time. */
+  category: SettingsCategoryId;
+  /** i18n keys of the rows inside the page; search matches their translations. */
   keywordKeys: string[];
   /**
    * Destination only exists while `AppSettings.developerMode` is on; the
-   * rail, the page, and settings search drop it together.
+   * sub-navigation, the page, and settings search drop it together.
    */
   developerOnly?: true;
   /** Surface is omitted from packaged builds; development builds retain it. */
   developmentOnly?: true;
-  /** Localized Experimental badge shown beside the rail row and page title. */
+  /** Localized Experimental badge shown beside the tab and the page title. */
   experimentalBadgeKey?: string;
 };
 
 export const SETTINGS_NAV: SettingsNavEntry[] = [
+  // 常规 — appearance, usage habits, shortcuts.
   {
     id: "general",
-    labelKey: "settings.nav.general",
-    titleKey: "settings.general",
-    group: "preferences",
+    labelKey: "settings.nav.appearance",
+    titleKey: "settings.nav.appearance",
+    category: "general",
     keywordKeys: [
       "settings.appearance",
-      "settings.storage.title",
-      "settings.storage.dataPath",
-      "settings.storage.cache",
-      "settings.storage.clearCache",
-      "settings.storage.backup",
       "settings.theme",
       "settings.windowTranslucency",
       "settings.windowTranslucencyDesc",
@@ -75,44 +97,47 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "settings.languageAuto",
       "settings.font",
       "settings.fontSize",
-      "settings.closeBehaviorTitle",
-      "settings.closeBehaviorTray",
-      "settings.closeBehaviorQuit",
-      "settings.power",
-      "settings.keepAwakeWhileRunning",
-      "settings.keepAwakeWhileRunningDesc",
-      "settings.network",
-      "settings.proxy",
-      "settings.proxySystem",
-      "settings.proxyDirect",
-      "settings.proxyCustom",
-      "settings.proxyUrl",
-      "settings.networkRelaxedMode",
-      "settings.networkRelaxedModeDesc",
-      "settings.networkRelaxedModeStrictDesc",
-      "settings.preventScreenSleep",
-      "settings.preventScreenSleepDesc",
     ],
   },
   {
-    id: "ai",
-    labelKey: "settings.nav.ai",
-    titleKey: "settings.ai",
-    group: "preferences",
+    id: "habits",
+    labelKey: "settings.nav.habits",
+    titleKey: "settings.nav.habits",
+    category: "general",
     keywordKeys: [
-      "settings.permissions",
-      "settings.permissionMode",
-      "settings.permissionModeAsk",
-      "settings.permissionModeAcceptEdits",
-      "settings.permissionModeAuto",
-      "settings.defaultsTitle",
-      "settings.imageModel",
-      "settings.mode",
-      "settings.commandShell",
-      "settings.linkOpenTarget",
+      "settings.power",
+      "settings.keepAwakeWhileRunning",
+      "settings.keepAwakeWhileRunningDesc",
+      "settings.preventScreenSleep",
+      "settings.preventScreenSleepDesc",
+      "settings.closeBehaviorTitle",
+      "settings.closeBehaviorTray",
+      "settings.closeBehaviorQuit",
+    ],
+  },
+  {
+    id: "shortcuts",
+    labelKey: "settings.nav.shortcuts",
+    titleKey: "settings.shortcuts",
+    category: "general",
+    keywordKeys: [
+      "settings.keyboard",
+      "settings.shortcutAction.openSearch",
+      "settings.shortcutAction.openCommandPalette",
+      "settings.shortcutAction.toggleSidebar",
+      "settings.shortcutAction.openWorkPanel",
+    ],
+  },
+
+  // AI — chat experience, execution and permissions, instructions and memory,
+  // voice. The model destination stays its own category.
+  {
+    id: "ai",
+    labelKey: "settings.nav.chatExperience",
+    titleKey: "settings.nav.chatExperience",
+    category: "ai",
+    keywordKeys: [
       "settings.enterToSend",
-      "settings.infiniteProviderRetry",
-      "settings.infiniteProviderRetryDesc",
       "settings.smoothStreaming",
       "settings.smoothStreamingDesc",
       "settings.showThinking",
@@ -125,7 +150,38 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "settings.contextUsageDisplay",
       "settings.contextUsageDisplayRemaining",
       "settings.contextUsageDisplayUsed",
+      "settings.linkOpenTarget",
       "settings.largePasteThreshold",
+      "settings.sessionTitleCard",
+    ],
+  },
+  {
+    id: "execution",
+    labelKey: "settings.nav.execution",
+    titleKey: "settings.nav.execution",
+    category: "ai",
+    keywordKeys: [
+      "settings.permissions",
+      "settings.permissionMode",
+      "settings.permissionModeAsk",
+      "settings.permissionModeAcceptEdits",
+      "settings.permissionModeAuto",
+      "settings.defaultsTitle",
+      "settings.mode",
+      "settings.modeDesc",
+      "settings.commandShell",
+      "settings.infiniteProviderRetry",
+      "settings.infiniteProviderRetryDesc",
+    ],
+  },
+  {
+    id: "instructions",
+    labelKey: "settings.nav.instructionsMemory",
+    titleKey: "settings.nav.instructionsMemory",
+    category: "ai",
+    keywordKeys: [
+      "settings.instructionsGlobal",
+      "settings.instructionsPath",
       // Learned memory (ADR agent-long-term-memory) is a Global AI decision.
       "settings.learnedMemory",
       "settings.learnedMemoryRead",
@@ -147,9 +203,9 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
   },
   {
     id: "voice",
-    labelKey: "liveVoice.title",
+    labelKey: "settings.nav.voice",
     titleKey: "liveVoice.title",
-    group: "preferences",
+    category: "ai",
     keywordKeys: [
       "liveVoice.title",
       "liveVoice.description",
@@ -162,80 +218,13 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "liveVoice.adapters.openai-realtime.title",
     ],
   },
-  {
-    id: "shortcuts",
-    labelKey: "settings.nav.shortcuts",
-    titleKey: "settings.shortcuts",
-    group: "preferences",
-    keywordKeys: [
-      "settings.keyboard",
-      "settings.shortcutAction.openSearch",
-      "settings.shortcutAction.openCommandPalette",
-      "settings.shortcutAction.toggleSidebar",
-      "settings.shortcutAction.openWorkPanel",
-    ],
-  },
-  {
-    id: "instructions",
-    labelKey: "settings.nav.instructions",
-    titleKey: "settings.instructions",
-    group: "agent",
-    keywordKeys: [
-      "settings.instructionsGlobal",
-      "settings.instructionsPath",
-    ],
-  },
-  {
-    id: "accounts",
-    labelKey: "settings.nav.accounts",
-    titleKey: "settings.accounts",
-    group: "agent",
-    keywordKeys: [
-      "settings.providers",
-      "settings.apiKey",
-      "settings.baseUrl",
-      "settings.apiStyle",
-      // Subscription accounts share the service list (D625).
-      "settings.vendorAccounts",
-      "settings.vendorSubscription",
-      "settings.importTitle",
-      "settings.importModelsScanDesc",
-      "settings.importModelsTitle",
-      "settings.importSourceClaudeCode",
-      "settings.importSourceOpenCode",
-      "settings.importSourceCodex",
-      "settings.importSourcePi",
-      "settings.importSourceCcSwitch",
-      // Remote control lives on this page now: the desktop as a Host the
-      // account's phones may reach, plus the folded self-hosted gateway.
-      "settings.accountsThisComputerTitle",
-      "settings.accountsComputerName",
-      "settings.accountsDevices.title",
-      "settings.accountsDevices.computersTitle",
-      "settings.accountsDevices.kindPhone",
-      "settings.accountsAdvancedSection.title",
-      "settings.accountsAdvancedSection.sshTitle",
-      "settings.accountsAdvancedSection.sshOpen",
-      "settings.remoteGateway.title",
-      "settings.remoteGateway.desc",
-      "settings.remoteGateway.enabled",
-      "settings.remoteGateway.statusTitle",
-      "settings.remoteGateway.strictTitle",
-      "settings.remoteGateway.pairingTitle",
-      "settings.remoteGateway.pairingCreate",
-      "settings.remoteGateway.devicesTitle",
-      "settings.remoteGateway.advancedTitle",
-      "settings.remoteGateway.url",
-      "settings.remoteGateway.caPem",
-      "settings.remoteGateway.registrationCode",
-      "settings.remoteGateway.enroll",
-    ],
-  },
+
+  // 模型 — catalog, defaults, per-model configuration.
   {
     id: "agent",
     labelKey: "settings.nav.models",
     titleKey: "settings.modelsPageTitle",
-    group: "agent",
+    category: "models",
     keywordKeys: [
       "settings.models",
       "settings.modelsPageTitle",
@@ -251,11 +240,13 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "settings.nativeWebSearch",
     ],
   },
+
+  // 能力 — one management page per capability, never one merged list.
   {
     id: "skills",
     labelKey: "settings.nav.skills",
     titleKey: "settings.skills",
-    group: "agent",
+    category: "capabilities",
     keywordKeys: [
       "settings.skillsGlobalPath",
       "settings.skillsProjectPath",
@@ -277,7 +268,7 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
     id: "mcp",
     labelKey: "settings.nav.mcp",
     titleKey: "settings.mcp",
-    group: "agent",
+    category: "capabilities",
     keywordKeys: [
       "settings.mcpGlobalPath",
       "settings.mcpProjectPath",
@@ -299,7 +290,7 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
     id: "subagents",
     labelKey: "settings.nav.subagents",
     titleKey: "settings.subagents",
-    group: "agent",
+    category: "capabilities",
     keywordKeys: [
       "settings.subagentsGlobalPath",
       "settings.subagentsOnlyGlobal",
@@ -319,24 +310,63 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "extensions.subagents.tools",
     ],
   },
+
+  // 账户 — account, devices, the one cloud-sync surface, and advanced
+  // (SSH hosts and the self-hosted gateway).
   {
-    id: "projects",
-    labelKey: "settings.nav.projects",
-    titleKey: "settings.projectArchive",
-    group: "workspace",
+    id: "accounts",
+    labelKey: "settings.nav.accounts",
+    titleKey: "settings.accounts",
+    category: "accounts",
     keywordKeys: [
-      "project.title",
-      "project.searchPlaceholder",
-      "project.archive",
-      "project.restore",
-      "project.delete",
+      "settings.providers",
+      "settings.apiKey",
+      "settings.baseUrl",
+      "settings.apiStyle",
+      // Subscription accounts share the service list (D625).
+      "settings.vendorAccounts",
+      "settings.vendorSubscription",
+      "settings.importTitle",
+      "settings.importModelsScanDesc",
+      "settings.importModelsTitle",
+      "settings.importSourceClaudeCode",
+      "settings.importSourceOpenCode",
+      "settings.importSourceCodex",
+      "settings.importSourcePi",
+      "settings.importSourceCcSwitch",
+      "settings.accountsThisComputerTitle",
+      "settings.accountsComputerName",
+      "settings.remoteGateway.title",
+      "settings.remoteGateway.desc",
+      "settings.remoteGateway.enabled",
+      "settings.remoteGateway.statusTitle",
+      "settings.remoteGateway.strictTitle",
+      "settings.remoteGateway.pairingTitle",
+      "settings.remoteGateway.pairingCreate",
+      "settings.remoteGateway.devicesTitle",
+    ],
+  },
+  {
+    id: "devices",
+    labelKey: "settings.nav.devices",
+    titleKey: "settings.accountsDevices.title",
+    category: "accounts",
+    keywordKeys: [
+      "settings.accountsDevices.title",
+      "settings.accountsDevices.desc",
+      "settings.accountsDevices.computersTitle",
+      "settings.accountsDevices.computersEmpty",
+      "settings.accountsDevices.online",
+      "settings.accountsDevices.offline",
+      "settings.accountsDevices.kindComputer",
+      "settings.accountsDevices.kindPhone",
     ],
   },
   {
     id: "sync",
     labelKey: "settings.nav.sync",
     titleKey: "settings.configSync.title",
-    group: "system",
+    category: "accounts",
     experimentalBadgeKey: "settings.configSync.experimental",
     keywordKeys: [
       "settings.configSync.experimental",
@@ -349,12 +379,19 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
     ],
   },
   {
-    id: "remoteHosts",
-    labelKey: "settings.nav.remoteHosts",
-    titleKey: "settings.remoteHosts.title",
-    group: "system",
+    id: "advanced",
+    labelKey: "settings.nav.advanced",
+    titleKey: "settings.accountsAdvancedSection.title",
+    category: "accounts",
     experimentalBadgeKey: "settings.remoteHosts.experimental",
     keywordKeys: [
+      "settings.accountsAdvancedSection.sshTitle",
+      "settings.accountsAdvancedSection.sshDesc",
+      "settings.remoteGateway.advancedTitle",
+      "settings.remoteGateway.url",
+      "settings.remoteGateway.caPem",
+      "settings.remoteGateway.registrationCode",
+      "settings.remoteGateway.enroll",
       "settings.remoteHosts.title",
       "settings.remoteHosts.addTitle",
       "settings.remoteHosts.addSsh",
@@ -370,11 +407,58 @@ export const SETTINGS_NAV: SettingsNavEntry[] = [
       "settings.remoteHosts.experimental",
     ],
   },
+
+  // 项目 — the existing project index, archive, and import/export surfaces.
+  {
+    id: "projects",
+    labelKey: "settings.nav.projects",
+    titleKey: "settings.projectArchive",
+    category: "projects",
+    keywordKeys: [
+      "project.title",
+      "project.searchPlaceholder",
+      "project.archive",
+      "project.restore",
+      "project.delete",
+    ],
+  },
+
+  // 系统 — network, storage, and about & updates.
+  {
+    id: "network",
+    labelKey: "settings.nav.network",
+    titleKey: "settings.network",
+    category: "system",
+    keywordKeys: [
+      "settings.network",
+      "settings.proxy",
+      "settings.proxySystem",
+      "settings.proxyDirect",
+      "settings.proxyCustom",
+      "settings.proxyUrl",
+      "settings.networkRelaxedMode",
+      "settings.networkRelaxedModeDesc",
+      "settings.networkRelaxedModeStrictDesc",
+    ],
+  },
+  {
+    id: "storage",
+    labelKey: "settings.nav.storage",
+    titleKey: "settings.storage.title",
+    category: "system",
+    keywordKeys: [
+      "settings.storage.title",
+      "settings.storage.dataPath",
+      "settings.storage.cache",
+      "settings.storage.clearCache",
+      "settings.storage.backup",
+    ],
+  },
   {
     id: "about",
-    labelKey: "settings.nav.info",
-    titleKey: "settings.about",
-    group: "system",
+    labelKey: "settings.nav.aboutUpdates",
+    titleKey: "settings.nav.aboutUpdates",
+    category: "system",
     keywordKeys: [
       "settings.application",
       "settings.logs",
@@ -403,6 +487,32 @@ export function visibleSettingsNav(
   );
 }
 
+export type VisibleSettingsCategory = {
+  id: SettingsCategoryId;
+  labelKey: string;
+  entries: SettingsNavEntry[];
+};
+
+/**
+ * The category bar plus its second level, with empty categories dropped so a
+ * mode change never leaves a category button that opens nothing.
+ */
+export function visibleSettingsCategories(
+  developerMode: boolean,
+  includeDevelopmentOnly = true,
+): VisibleSettingsCategory[] {
+  const visible = visibleSettingsNav(developerMode, includeDevelopmentOnly);
+  return SETTINGS_CATEGORIES.map((category) => ({
+    ...category,
+    entries: visible.filter((entry) => entry.category === category.id),
+  })).filter((category) => category.entries.length > 0);
+}
+
+/** The category that owns a destination; unknown ids cannot reach here. */
+export function settingsCategoryOf(tab: SettingsTabId): SettingsCategoryId {
+  return SETTINGS_NAV.find((entry) => entry.id === tab)?.category ?? "general";
+}
+
 /** True when a stale selection points to a destination the current mode hides. */
 export function isSettingsDestinationHidden(
   tab: SettingsTabId,
@@ -415,8 +525,8 @@ export function isSettingsDestinationHidden(
 }
 
 /**
- * Destinations that used to be their own rail entry and now live inside
- * another page.
+ * Destinations that used to be their own entry and now live inside another
+ * page.
  *
  * The id is gone from `SettingsTabId`, but a caller can still hold the old
  * string: a selection restored by a reload, an automation call through the
@@ -427,12 +537,15 @@ const LEGACY_SETTINGS_TABS: Record<string, SettingsTabId> = {
   // Remote control moved into the accounts page (D666 follow-up): the switch,
   // the devices, and the folded self-hosted gateway all live there now.
   remoteGateway: "accounts",
+  // SSH hosts and the self-hosted gateway are the accounts category's
+  // advanced page now.
+  remoteHosts: "advanced",
 };
 
 /**
  * Resolve a possibly stale destination id to one this build has.
  *
- * Anything unknown falls back to General, which is what the settings page
+ * Anything unknown falls back to Appearance, which is what the settings panel
  * already does with a hidden destination: never an empty pane, never a crash.
  */
 export function normalizeSettingsTabId(tab: string): SettingsTabId {
@@ -442,18 +555,33 @@ export function normalizeSettingsTabId(tab: string): SettingsTabId {
 
 export type SettingsSearchHit = {
   tab: SettingsTabId;
+  /** Owning category, so a result can switch the category bar too. */
+  category: SettingsCategoryId;
+  categoryLabelKey: string;
   tabLabelKey: string;
-  /** Matched row key; null when the tab label itself matched. */
+  /** Matched row key; null when the destination label itself matched. */
   rowKey: string | null;
 };
 
 export type SettingsSearchOptions = {
   limit?: number;
-  /** Search mirrors the rail, so developer-only tabs stay out of results. */
+  /** Search mirrors the navigation, so hidden destinations produce no hits. */
   developerMode?: boolean;
   /** Packaged builds omit experimental surfaces, even with developer mode on. */
   includeDevelopmentOnly?: boolean;
 };
+
+/**
+ * A hit's "category › page › row" path. The component joins these with its own
+ * separator so the shape stays one array of i18n keys.
+ */
+export function settingsHitPath(hit: SettingsSearchHit): string[] {
+  return [
+    hit.categoryLabelKey,
+    hit.tabLabelKey,
+    ...(hit.rowKey ? [hit.rowKey] : []),
+  ];
+}
 
 export function searchSettings(
   query: string,
@@ -466,15 +594,21 @@ export function searchSettings(
 ): SettingsSearchHit[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
+  const categoryLabel = new Map(
+    SETTINGS_CATEGORIES.map((category) => [category.id, category.labelKey]),
+  );
   const hits: SettingsSearchHit[] = [];
   for (const entry of visibleSettingsNav(developerMode, includeDevelopmentOnly)) {
-    if (t(entry.labelKey).toLowerCase().includes(q)) {
-      hits.push({ tab: entry.id, tabLabelKey: entry.labelKey, rowKey: null });
-    }
+    const hit = (rowKey: string | null): SettingsSearchHit => ({
+      tab: entry.id,
+      category: entry.category,
+      categoryLabelKey: categoryLabel.get(entry.category) ?? "settings.title",
+      tabLabelKey: entry.labelKey,
+      rowKey,
+    });
+    if (t(entry.labelKey).toLowerCase().includes(q)) hits.push(hit(null));
     for (const key of entry.keywordKeys) {
-      if (t(key).toLowerCase().includes(q)) {
-        hits.push({ tab: entry.id, tabLabelKey: entry.labelKey, rowKey: key });
-      }
+      if (t(key).toLowerCase().includes(q)) hits.push(hit(key));
     }
   }
   return hits.slice(0, limit);

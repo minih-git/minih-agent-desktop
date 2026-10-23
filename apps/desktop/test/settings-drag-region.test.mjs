@@ -1,3 +1,11 @@
+/**
+ * The settings sheet keeps a native window drag region.
+ *
+ * The panel covers most of the window, so its own head is the drag surface. The
+ * head must be the *only* plate there: an opaque decorative band over it hid the
+ * title, the search field, and the close button while still passing clicks
+ * through.
+ */
 import { readSettingsSource } from "./helpers/source-contracts.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -5,51 +13,56 @@ import test from "node:test";
 import { loadStyles } from "./helpers/styles.mjs";
 
 const settingsSource = await readSettingsSource();
+const navigation = await readFile(
+  new URL("../src/features/settings/SettingsNavigation.tsx", import.meta.url),
+  "utf8",
+);
 const globalStyles = await loadStyles();
 
-test("settings exposes a native drag region over the content column", () => {
-  assert.match(
-    settingsSource,
-    /<div className="settings-titlebar" aria-hidden="true" \/>/,
+test("the sheet head is the native drag region", async () => {
+  const page = await readFile(
+    new URL("../src/features/settings/SettingsPage.tsx", import.meta.url),
+    "utf8",
   );
-  assert.match(
-    globalStyles,
-    /\.settings-titlebar\s*\{[^}]*height:\s*var\(--ds-toolbar-height\);[^}]*background:\s*var\(--ds-bg-primary\);[^}]*border-bottom:\s*0;[^}]*-webkit-app-region:\s*drag;/s,
-  );
+  assert.match(page, /<header className="settings-panel-head drag">/);
+  // Controls inside the head stay explicitly non-draggable.
+  assert.match(page, /className="settings-search-wrap no-drag"/);
+  assert.match(page, /className="settings-close no-drag"/);
+  assert.match(navigation, /className="settings-categories no-drag"/);
+  assert.match(navigation, /className="settings-subnav no-drag"/);
+  assert.match(navigation, /className="settings-category-bar no-drag"/);
+  assert.match(globalStyles, /\n\.drag \{\n  -webkit-app-region: drag;\n\}/);
+  assert.match(globalStyles, /\n\.no-drag \{\n  -webkit-app-region: no-drag;\n\}/);
 });
 
-test("settings drag band stops at the nav rail so surfaces stay consistent", () => {
-  // The band paints --ds-bg-primary. Spanning the full window width laid that
-  // surface over the rail's own tone, so the strip above the rail no longer
-  // matched the rail beneath it.
-  // Anchor to the base rule; platform overrides also mention the class.
-  const band = /\n\.settings-titlebar\s*\{([^}]*)\}/s.exec(globalStyles);
-  assert.ok(band, "expected a .settings-titlebar rule");
-  assert.match(band[1], /left:\s*var\(--ds-settings-nav-width\);/);
-  assert.match(band[1], /right:\s*0;/);
-  assert.doesNotMatch(band[1], /inset-inline:\s*0;/);
-  // Physical insets keep chrome.css's `right` override winning on specificity;
-  // a logical inset here would instead win on declaration order and push the
-  // band under the Windows/Linux window-control capsule.
-  assert.doesNotMatch(band[1], /inset-inline-end:/);
-
-  // Rail and band must read the same width token or the seam drifts apart.
-  assert.match(
-    globalStyles,
-    /\.settings-shell-full \.settings-nav\s*\{[^}]*width:\s*var\(--ds-settings-nav-width\);[^}]*flex:\s*0 0 var\(--ds-settings-nav-width\);/s,
+test("no decorative band may paint over the head", async () => {
+  const page = await readFile(
+    new URL("../src/features/settings/SettingsPage.tsx", import.meta.url),
+    "utf8",
   );
-  assert.match(globalStyles, /--ds-settings-nav-width:\s*275px;/);
-
-  // The rail still drags the window even though the band no longer covers it.
-  assert.match(settingsSource, /className="settings-nav-top drag"/);
+  // The header is the visible top of the sheet; a second absolutely positioned
+  // plate with a z-index above it is exactly the defect this guards.
+  assert.doesNotMatch(page, /settings-titlebar/);
+  assert.doesNotMatch(globalStyles, /\.settings-titlebar\s*\{/);
+  assert.doesNotMatch(settingsSource, /settings-titlebar/);
+  // The head paints the sheet's own surface and nothing covers it.
+  const head = /\n\.settings-panel-head\s*\{([^}]*)\}/s.exec(globalStyles);
+  assert.ok(head, "expected a .settings-panel-head rule");
+  assert.match(head[1], /align-items:\s*center;/);
 });
 
-test("settings drag region does not capture control clicks", () => {
-  assert.match(
-    globalStyles,
-    /\.settings-titlebar\s*\{[^}]*pointer-events:\s*none;/s,
-  );
-  assert.match(settingsSource, /className="settings-back no-drag"/);
-  assert.match(settingsSource, /className="settings-search-wrap no-drag"/);
-  assert.match(settingsSource, /className="settings-nav-scroll no-drag"/);
+test("the sheet geometry leaves the window controls and a drag target visible", async () => {
+  const sheet = /\n\.settings-sheet\s*\{([^}]*)\}/s.exec(globalStyles);
+  assert.ok(sheet, "expected a .settings-sheet rule");
+  assert.match(sheet[1], /height:\s*90%;/);
+  assert.match(sheet[1], /border-radius:\s*var\(--settings-sheet-radius\)/);
+  assert.match(sheet[1], /width:\s*calc\(100% - 2 \* var\(--settings-sheet-gutter\)\);/);
+  assert.match(globalStyles, /--settings-sheet-gutter:\s*clamp\(16px, 2vw, 24px\);/);
+  assert.match(globalStyles, /--settings-sheet-radius:\s*19px;/);
+  // The sheet starts below the window's own controls: it is bottom-anchored and
+  // never taller than the window, so nothing is drawn over them.
+  const overlay = /\n\.settings-overlay\s*\{([^}]*)\}/s.exec(globalStyles);
+  assert.ok(overlay, "expected a .settings-overlay rule");
+  assert.match(overlay[1], /justify-content:\s*flex-end;/);
+  assert.match(overlay[1], /z-index:\s*35;/);
 });

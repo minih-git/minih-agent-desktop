@@ -1,5 +1,6 @@
 /**
- * The learned-memory settings belong to the Global AI tab, and the automatic
+ * The learned-memory settings belong to the AI category's instructions-and-memory
+ * page, and the automatic
  * learning switch only explains itself when it actually cannot be turned on.
  *
  * This is a real renderer user path: the actual `SettingsPage` is mounted in an
@@ -85,6 +86,13 @@ window.minihAgent = {
           lastError: null,
           backupPaths: [],
         } };
+      // The instructions page renders the global instruction file beside the
+      // learned-memory card, so its read has to answer with a file.
+      case IPC.invoke.agentInstructionsGet:
+        return { ok: true, data: {
+          global: { path: "/fixture/instructions.md", content: "" },
+          project: null,
+        } };
       case IPC.invoke.memoryExtractionStatus:
         return { ok: true, data: { budget: { day: args[0]?.day ?? "", tokens: 0, runs: 0 } } };
       // The AI tab also carries the command-shell row, which reads a catalog
@@ -136,8 +144,12 @@ async function waitFor(predicate, message) {
   }
   throw new Error(message);
 }
+function categoryItem(label) {
+  return [...document.querySelectorAll(".settings-category")]
+    .find((button) => button.textContent.trim() === label);
+}
 function navItem(label) {
-  return [...document.querySelectorAll(".settings-nav-item")]
+  return [...document.querySelectorAll(".settings-subnav-item")]
     .find((button) => button.querySelector(".settings-nav-label")?.textContent.trim() === label);
 }
 function cardTitles() {
@@ -164,18 +176,24 @@ function rowSwitch(title) {
 
 window.learnedMemoryPlacementProbe = async () => {
   await waitFor(
-    () => navItem("General"),
+    () => categoryItem("General"),
     "Settings navigation did not render: " + rendererErrors.join(" | "),
   );
-  await waitFor(() => learnedMemoryCard() || cardTitles().length > 1, "Settings cards did not render");
+  await waitFor(() => learnedMemoryCard() || cardTitles().length > 0, "Settings cards did not render");
 
-  // (1) The General tab must not carry the learned-memory card.
+  // (1) The General category must not carry the learned-memory card.
   const generalTitles = cardTitles();
   const generalHasCard = generalTitles.includes(cardTitle);
 
-  // (2) The Global AI tab must carry it, among the other AI cards.
-  flushSync(() => navItem("AI").click());
-  await waitFor(() => learnedMemoryCard(), "The AI tab did not render the learned-memory card");
+  // (2) The AI category keeps it on its instructions-and-memory page, next to
+  // the global instructions — not on the chat-experience page and not merged
+  // into one long AI page.
+  flushSync(() => categoryItem("AI").click());
+  await settle();
+  const chatTitles = cardTitles();
+  const chatHasCard = chatTitles.includes(cardTitle);
+  flushSync(() => navItem("Instructions & memory").click());
+  await waitFor(() => learnedMemoryCard(), "The instructions page did not render the learned-memory card");
   const aiTitles = cardTitles();
   const aiHasCard = aiTitles.includes(cardTitle);
 
@@ -200,6 +218,8 @@ window.learnedMemoryPlacementProbe = async () => {
   return {
     generalTitles,
     generalHasCard,
+    chatTitles,
+    chatHasCard,
     aiHasCard,
     aiTitles,
     modelChosenHint,
@@ -211,7 +231,7 @@ window.learnedMemoryPlacementProbe = async () => {
 };
 `;
 
-test("learned-memory settings render on the Global AI tab only", {
+test("learned-memory settings render on the AI instructions page only", {
   timeout: 90_000,
   skip:
     process.platform === "linux" && !process.env.DISPLAY
@@ -325,10 +345,19 @@ app.whenReady().then(async () => {
       false,
       `the learned-memory card must not render on General: ${JSON.stringify(result.generalTitles ?? [])}`,
     );
-    assert.equal(result.aiHasCard, true, "the learned-memory card must render on the AI tab");
+    assert.equal(
+      result.chatHasCard,
+      false,
+      `the chat-experience page must not carry the learned-memory card: ${JSON.stringify(result.chatTitles ?? [])}`,
+    );
+    assert.equal(
+      result.aiHasCard,
+      true,
+      "the learned-memory card must render on the AI instructions & memory page",
+    );
     assert.ok(
       result.aiTitles.length > 1,
-      "the AI tab must keep its other cards beside the learned-memory card",
+      "the instructions page must keep the global instructions card beside it",
     );
     assert.equal(
       result.modelChosenHint,
@@ -343,14 +372,14 @@ app.whenReady().then(async () => {
   }
 });
 
-test("settings search finds learned memory under the AI tab", () => {
+test("settings search finds learned memory on the AI instructions page", () => {
   const lookup = (key) => english[key] ?? key;
   for (const query of ["learned memory", "learn automatically", "learning model"]) {
     const hits = searchSettings(query, lookup);
     assert.ok(hits.length > 0, `no settings hit for "${query}"`);
     assert.ok(
-      hits.some((hit) => hit.tab === "ai"),
-      `"${query}" must reach the AI tab: ${JSON.stringify(hits)}`,
+      hits.some((hit) => hit.tab === "instructions"),
+      `"${query}" must reach the AI instructions page: ${JSON.stringify(hits)}`,
     );
   }
 });

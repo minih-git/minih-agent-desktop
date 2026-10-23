@@ -3,7 +3,7 @@
  *
  * Guards the compact inventory + on-demand Add (SSH/Pair) forms: no
  * instructional copy, both forms are hidden until selected, and the
- * destination is marked Experimental on the rail and page title.
+ * destination is marked Experimental on its tab and page title.
  */
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
@@ -107,13 +107,19 @@ test("remote hosts omits instructional copy", () => {
   assert.doesNotMatch(page, /<SettingsCard title=\{t\("settings\.remoteHosts\.listTitle"\)\}/);
 });
 
+const settingsDestination = readFileSync(
+  new URL("../src/features/settings/SettingsDestination.tsx", import.meta.url),
+  "utf8",
+);
+
 test("the remote-hosts destination is marked experimental", () => {
+  // The inventory is the accounts category's advanced page now.
   assert.match(
     settingsNav,
-    /\{\s*id: "remoteHosts",[\s\S]*?experimentalBadgeKey: "settings\.remoteHosts\.experimental",/,
+    /\{\s*id: "advanced",[\s\S]*?experimentalBadgeKey: "settings\.remoteHosts\.experimental",/,
   );
-  assert.match(settings, /item\.experimentalBadgeKey \? \(/);
-  assert.match(settings, /activeNavItem\?\.experimentalBadgeKey \? \(/);
+  assert.match(settings, /entry\.experimentalBadgeKey \? \(/);
+  assert.match(settingsDestination, /badgeKey \? \(/);
   assert.match(settings, /className="settings-nav-experimental"/);
   assert.match(cssRule(".settings-nav-experimental"), /font-size:\s*var\(--text-2xs\)/);
   assert.doesNotMatch(page, /EXPERIMENTAL_FEATURES/);
