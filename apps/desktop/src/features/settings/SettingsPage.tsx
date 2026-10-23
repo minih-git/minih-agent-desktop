@@ -338,7 +338,6 @@ export function SettingsPage({
   const activeCategory: VisibleSettingsCategory | undefined =
     categories.find((category) => category.entries.some((entry) => entry.id === tab)) ??
     categories[0];
-  const categoryEntries = activeCategory?.entries ?? [];
   const activeEntry = navEntries.find((entry) => entry.id === tab);
   const activeTitleKey = activeEntry?.titleKey ?? "settings.title";
   const activeBadgeKey = activeEntry?.experimentalBadgeKey;
