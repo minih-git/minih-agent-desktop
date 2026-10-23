@@ -328,6 +328,9 @@ export function summarizeHeapSnapshot(path, options = {}) {
   const needleChains = (() => {
     if (!needle) return undefined;
     const matches = new Map();
+    // Who holds these strings directly: an id-and-content reuse decision has to
+    // start here, not from a guess about which layer copies the payload.
+    const parents = new Map();
     let matched = 0;
     for (let node = 1; node < nodeCount; node += 1) {
       const type = nodeTypeNames[nodeType[node]];
@@ -335,6 +338,18 @@ export function summarizeHeapSnapshot(path, options = {}) {
       const text = strings[nodeName[node]];
       if (typeof text !== "string" || !text.includes(needle)) continue;
       matched += 1;
+      for (let slot = revStart[node]; slot < revStart[node + 1]; slot += 1) {
+        const key = `${label(revTargets[slot])} ⟨${edgeLabel(revEdgeType[slot], revEdgeName[slot])}⟩`
+          .replace(/@\d+/g, "@…")
+          .slice(0, 80);
+        const parent = parents.get(key);
+        if (parent) {
+          parent.count += 1;
+          parent.bytes += selfSize[node];
+        } else {
+          parents.set(key, { key, count: 1, bytes: selfSize[node] });
+        }
+      }
       const chain = retainerPath(node);
       const key = chain
         .slice(0, 6)
@@ -351,6 +366,7 @@ export function summarizeHeapSnapshot(path, options = {}) {
     return {
       needle,
       matched,
+      parents: [...parents.values()].sort((left, right) => right.count - left.count).slice(0, 10),
       groups: [...matches.values()].sort((left, right) => right.bytes - left.bytes).slice(0, 8),
     };
   })();
@@ -427,6 +443,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     );
     for (const group of summary.needleChains.groups) {
       console.log(`  ${formatBytes(group.bytes).padStart(9)} ${String(group.count).padStart(5)}x ${group.key}`);
+    }
+    console.log("\ndirect holders of those strings:");
+    for (const parent of summary.needleChains.parents) {
+      console.log(`  ${String(parent.count).padStart(5)}x ${formatBytes(parent.bytes).padStart(9)} ${parent.key}`);
     }
   }
   console.log("\nlargest single objects:");

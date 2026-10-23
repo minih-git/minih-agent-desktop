@@ -66,10 +66,19 @@ const config = {
   rounds: Number(process.env.PI_MEMORY_SOAK_ROUNDS ?? 4),
   turnsPerRound: Number(process.env.PI_MEMORY_SOAK_TURNS_PER_ROUND ?? 1),
   seededResults: Number(process.env.PI_MEMORY_SOAK_SEEDED_RESULTS ?? 4),
+  /**
+   * Extra short rows per session, so the transcript is long enough to make the
+   * mounted window grow and fetch older pages. Without them a seeded session has
+   * a handful of rows and the window code is never exercised.
+   */
+  seededRows: Number(process.env.PI_MEMORY_SOAK_SEEDED_ROWS ?? 0),
   resultBytes: Number(process.env.PI_MEMORY_SOAK_RESULT_BYTES ?? 500_000),
   scrollSteps: Number(process.env.PI_MEMORY_SOAK_SCROLL_STEPS ?? 8),
   deletions: Number(process.env.PI_MEMORY_SOAK_DELETIONS ?? 2),
   snapshot: process.env.PI_MEMORY_SOAK_SNAPSHOT !== "0",
+  // Every sample is taken after a forced collection: without it the series
+  // measures when GC happened to run, not what is still retained.
+  collectGarbage: process.env.PI_MEMORY_SOAK_GC !== "0",
   vmmap: process.env.PI_MEMORY_SOAK_VMMAP
     ? process.env.PI_MEMORY_SOAK_VMMAP !== "0"
     : process.platform === "darwin",
@@ -237,6 +246,31 @@ try {
         },
       });
     }
+    // Long-history rows: enough for the transcript to grow its mounted window
+    // and page older messages, which is where the renderer keeps memory.
+    for (let row = 0; row < config.seededRows; row += 1) {
+      const tag = `${index + 1}-row-${row + 1}`;
+      await host.call("session.appendMessage", {
+        sessionId: session.id,
+        message: {
+          id: `soak-${tag}-user`,
+          role: "user",
+          content: `Seeded question ${tag}: summarise the previous row.`,
+          createdAt,
+          status: "complete",
+        },
+      });
+      await host.call("session.appendMessage", {
+        sessionId: session.id,
+        message: {
+          id: `soak-${tag}-assistant`,
+          role: "assistant",
+          content: `Seeded answer ${tag}: ${"detail ".repeat(20)}`,
+          createdAt,
+          status: "complete",
+        },
+      });
+    }
     sessions.push({ id: session.id, title: `Memory soak session ${index + 1}` });
   }
   log(
@@ -248,12 +282,19 @@ try {
 
 // ---------------------------------------------------------------------------
 // Electron + CDP. `--user-data-dir` and MINIH_AGENT_DATA_DIR keep every byte of
-// profile state inside the artifact directory.
+// profile state inside the artifact directory; the main-process inspector is
+// only used by this harness to read the AgentHost's stream counters.
 // ---------------------------------------------------------------------------
-const portProbe = createServer();
-await new Promise((done) => portProbe.listen(0, "127.0.0.1", done));
-const debugPort = portProbe.address().port;
-await new Promise((done) => portProbe.close(done));
+async function freePort() {
+  const probe = createServer();
+  await new Promise((done) => probe.listen(0, "127.0.0.1", done));
+  const port = probe.address().port;
+  await new Promise((done) => probe.close(done));
+  return port;
+}
+
+const debugPort = await freePort();
+const inspectPort = await freePort();
 
 const electronEnv = { ...process.env, ...seedEnv };
 delete electronEnv.ELECTRON_RUN_AS_NODE;
@@ -262,14 +303,53 @@ Object.assign(electronEnv, {
   MINIH_AGENT_HOST_BIN: hostBinary,
   ELECTRON_RENDERER_URL: "",
   MINIH_AGENT_START_MAXIMIZED: "0",
+  // Read-only diagnostics: the AgentHost reports retained streams and bytes.
+  MINIH_AGENT_MEMORY_PROBE: "1",
 });
 
 let child;
 let electronLog = "";
 let cdp;
+let mainCdp;
 let sequence = 0;
 const pendingCalls = new Map();
-const eventHandlers = [];
+
+/** One CDP client: id-routed responses, broadcast events, no retries. */
+async function connectCdp(url) {
+  const socket = new WebSocket(url);
+  await new Promise((done, fail) => {
+    socket.onopen = done;
+    socket.onerror = fail;
+  });
+  const handlers = [];
+  socket.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    if (message.id === undefined) {
+      for (const handler of handlers) handler(message.method, message.params);
+      return;
+    }
+    const entry = pendingCalls.get(message.id);
+    if (!entry) return;
+    pendingCalls.delete(message.id);
+    clearTimeout(entry.timer);
+    if (message.error) entry.reject(new Error(JSON.stringify(message.error)));
+    else entry.resolve(message.result);
+  };
+  return {
+    send: (method, params = {}) =>
+      new Promise((done, fail) => {
+        const id = ++sequence;
+        const timer = setTimeout(() => {
+          pendingCalls.delete(id);
+          fail(new Error(`CDP timeout ${method}`));
+        }, 120_000);
+        pendingCalls.set(id, { resolve: done, reject: fail, timer });
+        socket.send(JSON.stringify({ id, method, params }));
+      }),
+    on: (handler) => handlers.push(handler),
+    close: () => socket.close(),
+  };
+}
 
 function launchElectron() {
   electronLog = "";
@@ -277,6 +357,7 @@ function launchElectron() {
     electronBinary,
     [
       `--remote-debugging-port=${debugPort}`,
+      `--inspect=${inspectPort}`,
       "--disable-backgrounding-occluded-windows",
       "--disable-renderer-backgrounding",
       `--user-data-dir=${profileDir}`,
@@ -299,38 +380,7 @@ async function attach() {
         !entry.url.includes("plugin"),
     );
   }, "desktop CDP target", 60_000);
-  const socket = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((done, fail) => {
-    socket.onopen = done;
-    socket.onerror = fail;
-  });
-  socket.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    if (message.id === undefined) {
-      for (const handler of eventHandlers) handler(message.method, message.params);
-      return;
-    }
-    const entry = pendingCalls.get(message.id);
-    if (!entry) return;
-    pendingCalls.delete(message.id);
-    clearTimeout(entry.timer);
-    if (message.error) entry.reject(new Error(JSON.stringify(message.error)));
-    else entry.resolve(message.result);
-  };
-  cdp = {
-    send: (method, params = {}) =>
-      new Promise((done, fail) => {
-        const id = ++sequence;
-        const timer = setTimeout(() => {
-          pendingCalls.delete(id);
-          fail(new Error(`CDP timeout ${method}`));
-        }, 120_000);
-        pendingCalls.set(id, { resolve: done, reject: fail, timer });
-        socket.send(JSON.stringify({ id, method, params }));
-      }),
-    on: (handler) => eventHandlers.push(handler),
-    close: () => socket.close(),
-  };
+  cdp = await connectCdp(target.webSocketDebuggerUrl);
   await cdp.send("Emulation.setDeviceMetricsOverride", {
     width: 1200,
     height: 800,
@@ -345,6 +395,37 @@ async function attach() {
     "desktop ready",
     90_000,
   );
+  await attachMain();
+}
+
+/** Attach to the Electron main process through its Node inspector. */
+async function attachMain() {
+  try {
+    const target = await waitFor(async () => {
+      const list = await (await fetch(`http://127.0.0.1:${inspectPort}/json/list`)).json();
+      return list.find((entry) => entry.type === "node");
+    }, "main-process inspector", 60_000);
+    mainCdp = await connectCdp(target.webSocketDebuggerUrl);
+    await mainCdp.send("Runtime.enable", {});
+  } catch (error) {
+    log(`  main-process inspector unavailable: ${error.message}`);
+    mainCdp = undefined;
+  }
+}
+
+/** Main-process memory and the AgentHost's own retention counters. */
+async function readMainProcess() {
+  if (!mainCdp) return null;
+  try {
+    const result = await mainCdp.send("Runtime.evaluate", {
+      expression:
+        'JSON.stringify({ memory: process.memoryUsage(), probe: globalThis.__minihAgentMemoryProbe ? globalThis.__minihAgentMemoryProbe() : null })',
+      returnByValue: true,
+    });
+    return JSON.parse(result.result.value);
+  } catch {
+    return null;
+  }
 }
 
 async function evaluate(expression) {
@@ -454,6 +535,11 @@ function physicalFootprint(pid) {
 const FOOTPRINT_ROLES = new Set(["main", "renderer", "sidecar", "host-core"]);
 
 async function measure(label) {
+  if (config.collectGarbage) {
+    await cdp.send("HeapProfiler.collectGarbage", {}).catch(() => undefined);
+    // Give the renderer a frame to drop what the collection made unreachable.
+    await delay(250);
+  }
   const processes = processTree(child.pid).map((entry) => ({
     ...entry,
     footprintBytes: FOOTPRINT_ROLES.has(entry.role)
@@ -475,6 +561,7 @@ async function measure(label) {
     processes,
     rendererHeap: heapUsage,
     rendererPerformanceMemory: performanceMemory,
+    mainProcess: await readMainProcess(),
     providerRequests,
   };
 }
@@ -499,8 +586,12 @@ function printMeasurement(measurement) {
   const parts = aggregateByRole(measurement.processes).map(
     (entry) => `${entry.role}=${formatMb(entry.bytes)}${entry.count > 1 ? `(${entry.count})` : ""}`,
   );
+  const probe = measurement.mainProcess?.probe;
+  const hostState = probe
+    ? ` streams=${probe.streams} events=${probe.events} durableBytes=${formatMb(probe.bytes)}`
+    : "";
   log(
-    `  [${measurement.label}] ${parts.join(" ")} rendererHeap=${formatMb(measurement.rendererHeap?.usedSize)}`,
+    `  [${measurement.label}] ${parts.join(" ")} rendererHeap=${formatMb(measurement.rendererHeap?.usedSize)}${hostState}`,
   );
 }
 
@@ -683,9 +774,11 @@ try {
   };
   writeFileSync(join(artifacts, "summary.json"), JSON.stringify(summary, null, 2));
   writeFileSync(join(artifacts, "electron.log"), electronLog);
-  try {
-    cdp?.close();
-  } catch {}
+  for (const client of [cdp, mainCdp]) {
+    try {
+      client?.close();
+    } catch {}
+  }
   if (child && child.exitCode === null) {
     const exited = new Promise((done) => child.once("exit", done));
     child.kill("SIGTERM");
