@@ -4,7 +4,10 @@
  * Keeps `role="dialog"` and `aria-modal="true"` so `useEdgeSwipe` knows a
  * modal sheet is open and never intercepts horizontal gestures beneath it.
  * Dragging the top grab handle downward follows the finger via `requestAnimationFrame`
- * and dismisses past 110 px, or springs back when released earlier.
+ * and dismisses past 110 px, or springs back when released earlier. The
+ * snap-back transition is written inline, so `prefers-reduced-motion` is read
+ * from `useReducedMotion` rather than left to a stylesheet rule that cannot
+ * reach it. The drag itself still follows the finger.
  */
 import {
   useEffect,
@@ -13,6 +16,8 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
+
+import { useReducedMotion } from "../../hooks/useReducedMotion.js";
 
 const DISMISS_DRAG_PX = 110;
 
@@ -35,6 +40,7 @@ export function Sheet({
 }: SheetProps) {
   const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
+  const reducedMotion = useReducedMotion();
   const startYRef = useRef<number | null>(null);
   const latestDyRef = useRef(0);
   const rafRef = useRef<number | null>(null);
@@ -118,7 +124,8 @@ export function Sheet({
           dragY > 0
             ? {
                 transform: `translateY(${dragY}px)`,
-                transition: dragging ? "none" : "transform 0.5s var(--rm-ease-spring)",
+                transition:
+                  dragging || reducedMotion ? "none" : "transform 0.5s var(--rm-ease-spring)",
               }
             : undefined
         }

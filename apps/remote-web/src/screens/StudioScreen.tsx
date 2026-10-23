@@ -32,6 +32,7 @@ import { ModelPill, NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
 import { Sheet } from "../components/ui/Sheet.js";
 import { Toast } from "../components/ui/Toast.js";
+import { submitsOnEnter } from "../lib/composer-send.js";
 import { isImageModel, resolveStudioModel } from "../lib/direct-chat/catalog.js";
 import type { DirectChatConnection } from "../lib/direct-chat/connection.js";
 import { scopeDependency } from "../lib/direct-chat/history-store.js";
@@ -378,11 +379,20 @@ export function StudioScreen({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      if (!liveGeneratingCard && !sending) {
-        void handleGenerate();
-      }
+    // Enter while an IME is composing commits its candidate; it never submits.
+    if (
+      !submitsOnEnter({
+        key: event.key,
+        shiftKey: event.shiftKey,
+        isComposing: event.nativeEvent.isComposing,
+        keyCode: event.keyCode,
+      })
+    ) {
+      return;
+    }
+    event.preventDefault();
+    if (!liveGeneratingCard && !sending) {
+      void handleGenerate();
     }
   };
 

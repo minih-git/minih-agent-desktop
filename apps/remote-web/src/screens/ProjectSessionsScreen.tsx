@@ -61,6 +61,12 @@ export interface ProjectSessionsScreenProps {
   /** Roles the Gateway granted this device; absent means "not recorded yet". */
   roles?: readonly string[];
   onOpenSession: (session: RacpSession) => void;
+  /**
+   * Switch the rail to another project. The parent rewrites the current screen
+   * entry instead of pushing a new one, so Back still returns to the project
+   * list and the project the user comes back to is the one they left.
+   */
+  onSwitchProject: (project: { id: string; label: string }) => void;
   onBack: () => void;
 }
 
@@ -76,13 +82,10 @@ export function ProjectSessionsScreen({
   credential,
   roles,
   onOpenSession,
+  onSwitchProject,
   onBack,
 }: ProjectSessionsScreenProps) {
   const { t } = useTranslation();
-  const [activeProject, setActiveProject] = useState<{ id: string; label: string }>({
-    id: projectId,
-    label: projectLabel,
-  });
   const [sessions, setSessions] = useState<RacpSession[] | null>(null);
   const [status, setStatus] = useState<HostStatusView>({ kind: "checking" });
   const [failure, setFailure] = useState<OperationFailure | null>(null);
@@ -98,12 +101,12 @@ export function ProjectSessionsScreen({
   const clientRef = useRef<HostClient | null>(null);
   const credentialKey = credential.kind === "cookie" ? credential.csrfToken : credential.token;
 
-  useEffect(() => {
-    setActiveProject({ id: projectId, label: projectLabel });
-  }, [projectId, projectLabel]);
-
-  const currentProjectId = activeProject.id;
-  const currentProjectLabel = activeProject.label;
+  /**
+   * The screen names the project it shows, so there is no local copy of the
+   * choice to drift from it: the rail navigates, and the highlight follows.
+   */
+  const currentProjectId = projectId;
+  const currentProjectLabel = projectLabel;
 
   const mode = newSessionMode(roles, projects);
   const canCreate = mode !== "hidden" && currentProjectId !== UNGROUPED_KEY;
@@ -349,12 +352,10 @@ export function ProjectSessionsScreen({
                     key={summary.key}
                     type="button"
                     aria-pressed={isSelected}
-                    onClick={() =>
-                      setActiveProject({
-                        id: summaryId,
-                        label: summary.label ?? "",
-                      })
-                    }
+                    onClick={() => {
+                      if (isSelected) return;
+                      onSwitchProject({ id: summaryId, label: summary.label ?? "" });
+                    }}
                     className={`flex w-[156px] shrink-0 flex-col items-start rounded-[18px] p-3 text-left transition-transform duration-150 ease-[var(--rm-ease-out)] active:scale-[0.97] ${
                       isSelected
                         ? "bg-[image:var(--rm-aurora)] text-white shadow-[0_8px_20px_-6px_rgba(124,92,255,0.45)]"

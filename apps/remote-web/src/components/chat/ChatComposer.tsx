@@ -2,7 +2,7 @@ import { ArrowUp, Clock, Loader2, Paperclip, X } from "lucide-react";
 import { type ChangeEvent, type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { ComposerSend } from "../../lib/composer-send.js";
+import { submitsOnEnter, type ComposerSend } from "../../lib/composer-send.js";
 import {
   attemptSignature,
   attachmentPayload,
@@ -184,10 +184,20 @@ export function ChatComposer({
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      void submit();
+    // An IME owns Enter while it is composing: it commits the candidate, and
+    // sending here would post half-typed text.
+    if (
+      !submitsOnEnter({
+        key: e.key,
+        shiftKey: e.shiftKey,
+        isComposing: e.nativeEvent.isComposing,
+        keyCode: e.keyCode,
+      })
+    ) {
+      return;
     }
+    e.preventDefault();
+    void submit();
   };
 
   const handleSubmit = (e: FormEvent) => {

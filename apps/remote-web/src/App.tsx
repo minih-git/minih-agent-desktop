@@ -540,6 +540,18 @@ export default function App() {
           credential={credential}
           {...(host.roles ? { roles: host.roles } : {})}
           onOpenSession={(session) => openSession(host.hostId, session, project)}
+          // Switching project in the rail is a sideways move: `sync` replaces the
+          // entry this screen occupies instead of stacking one, so Back still
+          // lands on the project list and does not return to a stale project.
+          onSwitchProject={(next) =>
+            navigate({
+              kind: "projectSessions",
+              hostId: host.hostId,
+              projectId: next.id,
+              projectLabel: next.label,
+              ...(screen.viaProjects === false ? { viaProjects: false } : {}),
+            })
+          }
           onBack={goBack}
         />
       );

@@ -27,8 +27,6 @@ import {
   formatDefaultModelRow,
   resolvePrivacyPolicyUrl,
   selectThemePreference,
-  subscribeSystemTheme,
-  type MediaQueryListSource,
 } from "./settings-view.js";
 import {
   readThemePreference,
@@ -375,8 +373,8 @@ describe("createPushRegistrationController and describePushSettingsView (B10)", 
   });
 });
 
-describe("Appearance persistence and live OS theme tracking (ADR D4, D6)", () => {
-  it("persists theme choices through lib/theme.ts and reacts to OS changes while system is selected", () => {
+describe("Appearance persistence (ADR D4, D6)", () => {
+  it("persists the choice and applies the resolved theme through lib/theme.ts", () => {
     const map = new Map<string, string>();
     const storage: ThemeStorage = {
       getItem: (key) => map.get(key) ?? null,
@@ -391,57 +389,23 @@ describe("Appearance persistence and live OS theme tracking (ADR D4, D6)", () =>
       },
     };
 
-    let systemIsLight = false;
-    const listeners = new Set<() => void>();
-    const mediaSource: MediaQueryListSource = {
-      get matches() {
-        return systemIsLight;
-      },
-      addEventListener: (_type, listener) => {
-        listeners.add(listener);
-      },
-      removeEventListener: (_type, listener) => {
-        listeners.delete(listener);
-      },
-    };
-    const matchMedia = (query: string): MediaQueryListSource => {
-      if (query.includes("light")) return mediaSource;
-      return {
-        get matches() {
-          return !systemIsLight;
-        },
-        addEventListener: mediaSource.addEventListener,
-        removeEventListener: mediaSource.removeEventListener,
-      };
-    };
+    // `readSystemPrefersDark` asks about light, so `matches: true` is a light OS.
+    const matchMedia = () => ({ matches: true });
 
-    // Select light explicitly
     expect(selectThemePreference("light", { storage, doc, matchMedia })).toBe("light");
     expect(map.get(THEME_PREFERENCE_KEY)).toBe("light");
     expect(readThemePreference(storage)).toBe("light");
     expect(doc.documentElement.dataset?.theme).toBe("light");
     expect(doc.documentElement.style?.colorScheme).toBe("light");
 
-    // Subscribe to OS changes: while preference is "light", OS flip does not override it
-    const unsubscribe = subscribeSystemTheme({ storage, doc, matchMedia });
-    systemIsLight = false;
-    for (const listener of listeners) listener();
-    expect(doc.documentElement.dataset?.theme).toBe("light");
-
-    // Switch to "system": immediately adopts dark (since systemIsLight === false)
-    expect(selectThemePreference("system", { storage, doc, matchMedia })).toBe("dark");
-    expect(readThemePreference(storage)).toBe("system");
+    expect(selectThemePreference("dark", { storage, doc, matchMedia })).toBe("dark");
+    expect(readThemePreference(storage)).toBe("dark");
     expect(doc.documentElement.dataset?.theme).toBe("dark");
 
-    // OS switches to light while "system" is selected -> updates live to "light"
-    systemIsLight = true;
-    for (const listener of listeners) listener();
+    expect(selectThemePreference("system", { storage, doc, matchMedia })).toBe("light");
+    expect(readThemePreference(storage)).toBe("system");
     expect(doc.documentElement.dataset?.theme).toBe("light");
     expect(doc.documentElement.style?.colorScheme).toBe("light");
-
-    // Cleanup removes listeners
-    unsubscribe();
-    expect(listeners.size).toBe(0);
   });
 });
 

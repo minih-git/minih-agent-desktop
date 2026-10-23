@@ -27,8 +27,10 @@ import {
   applyTheme,
   readThemePreference,
   resolveTheme,
+  watchSystemTheme,
   writeThemePreference,
   type ThemeDocument,
+  type ThemeMediaQueryList,
   type ThemeStorage,
 } from "./theme.js";
 
@@ -138,6 +140,58 @@ describe("applyTheme", () => {
     applyTheme(doc, "dark");
     expect(attributes["data-theme"]).toBe("dark");
     expect(() => applyTheme(null, "dark")).not.toThrow();
+  });
+});
+describe("watchSystemTheme", () => {
+  it("re-applies the OS appearance while the stored preference is system", () => {
+    const doc: ThemeDocument = { documentElement: { dataset: {}, style: {} } };
+    const media = fakeMatchMedia(false);
+    applyTheme(doc, "light");
+
+    const resolved: string[] = [];
+    const unsubscribe = watchSystemTheme(doc, media.list, {
+      storage: fakeStorage({ [THEME_PREFERENCE_KEY]: "system" }),
+      onResolvedChange: (theme) => resolved.push(theme),
+    });
+
+    media.flip(true);
+    expect(doc.documentElement.dataset?.theme).toBe("dark");
+    expect(doc.documentElement.style?.colorScheme).toBe("dark");
+
+    media.flip(false);
+    expect(doc.documentElement.dataset?.theme).toBe("light");
+    expect(resolved).toEqual(["dark", "light"]);
+    unsubscribe();
+  });
+
+  it("leaves an explicit light or dark choice alone when the OS flips", () => {
+    const doc: ThemeDocument = { documentElement: { dataset: {}, style: {} } };
+    const media = fakeMatchMedia(false);
+    applyTheme(doc, "light");
+    const resolved: string[] = [];
+    const unsubscribe = watchSystemTheme(doc, media.list, {
+      storage: fakeStorage({ [THEME_PREFERENCE_KEY]: "light" }),
+      onResolvedChange: (theme) => resolved.push(theme),
+    });
+
+    media.flip(true);
+    expect(doc.documentElement.dataset?.theme).toBe("light");
+    expect(resolved).toEqual([]);
+    unsubscribe();
+  });
+
+  it("unsubscribes its listener and tolerates a platform without matchMedia", () => {
+    const doc: ThemeDocument = { documentElement: { dataset: {}, style: {} } };
+    const media = fakeMatchMedia(false);
+    const unsubscribe = watchSystemTheme(doc, media.list, {
+      storage: fakeStorage({ [THEME_PREFERENCE_KEY]: "system" }),
+    });
+    expect(media.listenerCount()).toBe(1);
+    unsubscribe();
+    expect(media.listenerCount()).toBe(0);
+
+    const noop = watchSystemTheme(doc, null);
+    expect(() => noop()).not.toThrow();
   });
 });
 
@@ -287,5 +341,36 @@ function fakeStorage(initial: Record<string, string>): ThemeStorage & {
       map.set(key, value);
     },
     get: (key) => map.get(key) ?? null,
+  };
+}
+
+/**
+ * A `MediaQueryList` stand-in that lets a test flip the OS appearance and fire
+ * the same `change` event a real device would.
+ */
+function fakeMatchMedia(initial: boolean): {
+  list: ThemeMediaQueryList;
+  flip: (matches: boolean) => void;
+  listenerCount: () => number;
+} {
+  const listeners = new Set<() => void>();
+  let matches = initial;
+  return {
+    list: {
+      get matches() {
+        return matches;
+      },
+      addEventListener: (_type, listener) => {
+        listeners.add(listener);
+      },
+      removeEventListener: (_type, listener) => {
+        listeners.delete(listener);
+      },
+    },
+    flip: (next) => {
+      matches = next;
+      for (const listener of [...listeners]) listener();
+    },
+    listenerCount: () => listeners.size,
   };
 }

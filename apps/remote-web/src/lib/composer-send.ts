@@ -17,3 +17,25 @@ export type ComposerSend = {
   idempotencyKey: string;
   requestId: string;
 };
+
+/**
+ * The parts of a key press both composers decide on.
+ *
+ * `isComposing` is the browser's own flag for an active IME composition, and
+ * `keyCode 229` is the legacy signal some Android IMEs still send. Enter during
+ * a composition belongs to the IME — it commits the candidate — and must never
+ * send the message instead.
+ */
+export type ComposerKeyEvent = {
+  key: string;
+  shiftKey: boolean;
+  isComposing?: boolean;
+  keyCode?: number;
+};
+
+/** Whether this key press should send the prompt. */
+export function submitsOnEnter(event: ComposerKeyEvent): boolean {
+  if (event.key !== "Enter" || event.shiftKey) return false;
+  if (event.isComposing === true) return false;
+  return event.keyCode !== 229;
+}

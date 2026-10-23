@@ -16,6 +16,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { useReducedMotion } from "../../hooks/useReducedMotion.js";
 export interface ListGroupProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
 }
@@ -171,10 +172,43 @@ const SWIPE_TONE_CLASSES: Record<NonNullable<SwipeAction["tone"]>, string> = {
 };
 
 /**
+ * What a swipe row's trailing actions expose in each reveal state.
+ *
+ * A collapsed row keeps its buttons mounted, because a swipe only moves what is
+ * already there; until it moves they must not be reachable. `inert` removes them
+ * from the tab order and the accessibility tree, `tabIndex -1` covers a WebView
+ * that predates `inert`, and `aria-hidden` stops a screen reader announcing a
+ * control the user cannot see.
+ */
+export function swipeRowActionState(open: boolean): {
+  inert: boolean;
+  ariaHidden: "true" | undefined;
+  tabIndex: number;
+  expanded: "true" | "false";
+} {
+  return {
+    inert: !open,
+    ariaHidden: open ? undefined : "true",
+    tabIndex: open ? 0 : -1,
+    expanded: open ? "true" : "false",
+  };
+}
+
+/**
  * Horizontal swipe-to-reveal row actions (ADR mobile-redesign D4).
  *
  * Uses pointer events + CSS transform so swiping left reveals trailing actions
  * without blocking vertical list scrolling (`touch-action: pan-y`).
+ *
+ * A swipe is not the only way in. `ArrowRight` opens the actions and moves focus
+ * to the first one, and `Escape` closes them and returns focus to the row, so
+ * every action stays reachable from a keyboard or a switch. The reveal is
+ * reflected on the row front with `aria-expanded`.
+ *
+ * The offset is animated by an inline `transition`, which a
+ * `prefers-reduced-motion` stylesheet rule cannot reach, so `useReducedMotion`
+ * drops the snap-back animation instead. The drag itself still follows the
+ * finger.
  */
 export function SwipeRow({
   actions,
@@ -186,9 +220,42 @@ export function SwipeRow({
   const maxReveal = actions.length * actionWidth;
   const [offset, setOffset] = useState(0);
   const [dragging, setDragging] = useState(false);
+  const reducedMotion = useReducedMotion();
   const startXRef = useRef<number | null>(null);
   const baseOffsetRef = useRef(0);
   const swipedRef = useRef(false);
+  const frontRef = useRef<HTMLDivElement | null>(null);
+  const actionsRef = useRef<HTMLDivElement | null>(null);
+
+  const open = offset < 0;
+  const actionState = swipeRowActionState(open);
+
+  const focusFront = () => {
+    frontRef.current?.querySelector<HTMLElement>("[tabindex='0'], button, a[href]")?.focus();
+  };
+
+  /** The keyboard half of the reveal: same actions, no swipe required. */
+  const openActions = () => {
+    setOffset(-maxReveal);
+    actionsRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+  };
+
+  const closeActions = () => {
+    setOffset(0);
+    focusFront();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    rest.onKeyDown?.(event);
+    if (event.defaultPrevented || actions.length === 0) return;
+    if (event.key === "ArrowRight" && !open) {
+      event.preventDefault();
+      openActions();
+    } else if (event.key === "Escape" && open) {
+      event.preventDefault();
+      closeActions();
+    }
+  };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (actions.length === 0) return;
@@ -220,16 +287,26 @@ export function SwipeRow({
   };
 
   return (
-    <div className={`rm-swipe-row ${className}`} {...rest}>
+    <div
+      className={`rm-swipe-row ${className}`}
+      {...rest}
+      onKeyDown={handleKeyDown}
+    >
       {actions.length > 0 ? (
-        <div className="rm-swipe-actions">
+        <div
+          ref={actionsRef}
+          className="rm-swipe-actions"
+          inert={actionState.inert}
+          aria-hidden={actionState.ariaHidden}
+        >
           {actions.map((action) => (
             <button
               key={action.key}
               type="button"
+              tabIndex={actionState.tabIndex}
               style={{ width: actionWidth }}
               onClick={() => {
-                setOffset(0);
+                closeActions();
                 action.onClick();
               }}
               className={`flex flex-col items-center justify-center gap-1 text-[12px] font-semibold ${
@@ -243,8 +320,15 @@ export function SwipeRow({
         </div>
       ) : null}
       <div
+        ref={frontRef}
         data-dragging={dragging ? "true" : "false"}
-        style={offset !== 0 ? { transform: `translateX(${offset}px)` } : undefined}
+        aria-expanded={actionState.expanded}
+        style={{
+          transform: offset !== 0 ? `translateX(${offset}px)` : undefined,
+          // A `prefers-reduced-motion` stylesheet rule cannot reach an inline
+          // transition, so the reveal is not animated at all when asked.
+          ...(reducedMotion && !dragging ? { transition: "none" } : {}),
+        }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={finishSwipe}

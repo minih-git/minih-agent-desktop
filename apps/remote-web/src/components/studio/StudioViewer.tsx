@@ -26,6 +26,7 @@ import { useTranslation } from "react-i18next";
 import { copyText } from "../../lib/clipboard.js";
 import type { StudioCard } from "../../lib/direct-chat/studio.js";
 import { failureReasonKey } from "../../lib/direct-chat/view.js";
+import { takeModalFocus } from "../../lib/modal-focus.js";
 import { Button } from "../ui/Button.js";
 import {
   cleanupCacheFiles,
@@ -95,7 +96,7 @@ export function StudioArtCard({
       <button
         type="button"
         onClick={() => onOpen(card)}
-        className={`mb-2.5 block w-full break-inside-avoid overflow-hidden rounded-[18px] border border-[var(--rm-hair)] bg-[var(--rm-bg-surface)] text-left transition-transform duration-150 ease-[var(--rm-ease-out)] active:scale-[0.975] ${
+        className={`relative mb-2.5 block w-full break-inside-avoid overflow-hidden rounded-[18px] border border-[var(--rm-hair)] bg-[var(--rm-bg-surface)] text-left transition-transform duration-150 ease-[var(--rm-ease-out)] active:scale-[0.975] ${
           revealing ? "rm-image-reveal" : ""
         }`}
       >
@@ -173,6 +174,8 @@ export function StudioViewerModal({
 }: StudioViewerModalProps) {
   const { t } = useTranslation();
   const tempFilesRef = useRef<string[]>([]);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   const cleanupTemp = useCallback(async () => {
     if (tempFilesRef.current.length === 0) return;
@@ -198,6 +201,20 @@ export function StudioViewerModal({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [card, onClose, cleanupTemp]);
+
+  /**
+   * The viewer is a full-screen modal: focus moves to its close button on open
+   * and returns to the gallery card on close, so `Escape` does not strand a
+   * keyboard user at the top of the page.
+   */
+  useEffect(() => {
+    if (!card || !mediaUrl) return undefined;
+    return takeModalFocus(
+      typeof document !== "undefined" ? document : null,
+      closeButtonRef.current,
+      dialogRef.current,
+    );
+  }, [card, mediaUrl]);
 
   if (!card || !mediaUrl) return null;
 
@@ -240,6 +257,7 @@ export function StudioViewerModal({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label={card.prompt}
@@ -248,6 +266,7 @@ export function StudioViewerModal({
       {/* Top bar */}
       <div className="rm-nav flex items-center justify-between px-3 pb-2">
         <button
+          ref={closeButtonRef}
           type="button"
           onClick={() => {
             void cleanupTemp();

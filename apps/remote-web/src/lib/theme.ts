@@ -102,3 +102,42 @@ export function applyTheme(doc: ThemeDocument | null | undefined, theme: Resolve
     root.style.colorScheme = theme;
   }
 }
+/** The OS media query that decides the theme while the preference is `system`. */
+export const DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
+
+/** Minimal `MediaQueryList` interface shared by `matchMedia` and unit-test fakes. */
+export type ThemeMediaQueryList = {
+  matches: boolean;
+  addEventListener?: (type: "change", listener: () => void) => void;
+  removeEventListener?: (type: "change", listener: () => void) => void;
+};
+
+/**
+ * Follow `prefers-color-scheme` for as long as `"system"` is the stored
+ * preference.
+ *
+ * This used to live inside Settings, so which theme a phone showed depended on
+ * whether Settings happened to be mounted: leaving that screen froze the
+ * appearance at the OS setting it had when the screen closed. The listener runs
+ * at application level now (`main.tsx`) and re-reads the preference on every
+ * change, so an explicit light or dark choice is never overridden by the OS.
+ */
+export function watchSystemTheme(
+  doc: ThemeDocument | null | undefined,
+  mediaQuery: ThemeMediaQueryList | null | undefined,
+  options: {
+    storage?: ThemeStorage | null;
+    onResolvedChange?: (theme: ResolvedTheme) => void;
+  } = {},
+): () => void {
+  if (!mediaQuery) return () => {};
+  const handleChange = () => {
+    const preference = readThemePreference(options.storage);
+    if (preference !== "system") return;
+    const resolved = resolveTheme(preference, mediaQuery.matches);
+    applyTheme(doc, resolved);
+    options.onResolvedChange?.(resolved);
+  };
+  mediaQuery.addEventListener?.("change", handleChange);
+  return () => mediaQuery.removeEventListener?.("change", handleChange);
+}

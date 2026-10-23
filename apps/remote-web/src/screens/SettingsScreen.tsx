@@ -57,18 +57,11 @@ import {
   buildAccountCardView,
   describePushSettingsView,
   formatDefaultModelRow,
-  readSystemPrefersDark,
   resolvePrivacyPolicyUrl,
-   subscribeSystemTheme,
+  selectThemePreference,
   type DefaultModelRowView,
 } from "../lib/settings-view.js";
-import {
-  applyTheme,
-  readThemePreference,
-  resolveTheme,
-  writeThemePreference,
-  type ThemePreference,
-} from "../lib/theme.js";
+import { readThemePreference, type ThemePreference } from "../lib/theme.js";
 
 export type SettingsScreenProps = {
   connection: DirectChatConnection | null;
@@ -151,19 +144,13 @@ export function SettingsScreen({
     };
   }, [history, scopeKeyValue]);
 
-  // Keep `system` appearance synchronized with OS `prefers-color-scheme` changes live.
-  useEffect(() => {
-    if (themePref !== "system") return undefined;
-    const doc = typeof document !== "undefined" ? document : null;
-    applyTheme(doc, resolveTheme("system", readSystemPrefersDark()));
-    return subscribeSystemTheme();
-  }, [themePref]);
-
+  /**
+   * Appearance is applied here and, for `"system"`, kept in step with the OS by
+   * the application-level watcher in `main.tsx`; Settings owns only the choice.
+   */
   function handleThemeChange(next: ThemePreference) {
     setThemePref(next);
-    writeThemePreference(next);
-    const doc = typeof document !== "undefined" ? document : null;
-    applyTheme(doc, resolveTheme(next, readSystemPrefersDark()));
+    selectThemePreference(next);
   }
 
   async function clearHistory() {
