@@ -66,6 +66,13 @@ export function ModelPill({ label, className = "", ...rest }: ModelPillProps) {
 export interface NavBarProps {
   title?: ReactNode;
   subtitle?: ReactNode;
+  /**
+   * Optional full-width row beneath the title's grid row, for a strip that
+   * must not be squeezed into the narrow centre column (the session's status
+   * chips). It wraps instead of clipping, so every item stays readable on a
+   * 390 px phone.
+   */
+  strip?: ReactNode;
   /** Optional model chooser pill rendered beneath the title. */
   modelPill?: ReactNode;
   onBack?: () => void;
@@ -86,6 +93,7 @@ export interface NavBarProps {
 export function NavBar({
   title,
   subtitle,
+  strip,
   modelPill,
   onBack,
   backLabel = "Back",
@@ -177,6 +185,9 @@ export function NavBar({
 
         <div className="flex items-center justify-end gap-1">{trailing}</div>
       </div>
+      {strip ? (
+        <div className="flex flex-wrap items-center justify-center gap-1.5 px-2 pb-1">{strip}</div>
+      ) : null}
     </header>
   );
 }

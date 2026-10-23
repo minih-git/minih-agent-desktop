@@ -171,18 +171,31 @@ export function SessionScreen({
             ) : null}
           </span>
         }
-        modelPill={
+        strip={
           chips.length > 0 ? (
-            <div className="mt-1 flex max-w-full items-center justify-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            // Every chip stays readable at 390 px: the mode and the permission
+            // say what this session may do, so they keep their width, and the
+            // model label — the one a reader can also infer from the replies —
+            // compresses with an ellipsis instead. The row wraps rather than
+            // scrolling sideways, because a scrolled-away chip is a chip nobody
+            // knows is there.
+            <div className="mt-0.5 flex min-w-0 flex-wrap items-center justify-center gap-1.5">
               {chips.map((chip) => (
                 <button
                   key={chip.kind}
                   type="button"
                   onClick={openInfoSheet}
-                  className="shrink-0 rounded-full outline-none transition-transform duration-150 active:scale-[0.95] focus-visible:ring-2 focus-visible:ring-[var(--rm-accent-1)]"
+                  className={`rounded-full outline-none transition-transform duration-150 active:scale-[0.95] focus-visible:ring-2 focus-visible:ring-[var(--rm-accent-1)] ${
+                    chip.kind === "model" ? "min-w-0 shrink" : "shrink-0"
+                  }`}
                 >
-                  <Tag tone={chip.tone} className="h-[22px] max-w-[190px] truncate text-[12px]">
-                    {chip.label}
+                  <Tag
+                    tone={chip.tone}
+                    className={`h-[22px] text-[12px] ${
+                      chip.kind === "model" ? "min-w-0 max-w-[190px]" : "shrink-0"
+                    }`}
+                  >
+                    <span className="min-w-0 truncate">{chip.label}</span>
                   </Tag>
                 </button>
               ))}
