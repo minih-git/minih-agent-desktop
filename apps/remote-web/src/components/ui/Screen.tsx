@@ -1,16 +1,26 @@
 import type { HTMLAttributes, ReactNode, Ref } from "react";
 
+import { Aurora } from "./Aurora.js";
+
 export interface ScreenProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
   animate?: "push" | "pop" | "none";
+  /** Render the drifting Aurora glow at the top of the screen. */
+  aurora?: boolean;
 }
 
-export function Screen({ children, animate = "none", className = "", ...rest }: ScreenProps) {
+export function Screen({
+  children,
+  animate = "none",
+  aurora = false,
+  className = "",
+  ...rest
+}: ScreenProps) {
   const animClass =
     animate === "push"
-      ? "animate-[rm-push_0.28s_cubic-bezier(0.2,0,0,1)]"
+      ? "animate-[rm-push_0.28s_var(--rm-ease-out)]"
       : animate === "pop"
-        ? "animate-[rm-pop_0.28s_cubic-bezier(0.2,0,0,1)]"
+        ? "animate-[rm-pop_0.28s_var(--rm-ease-out)]"
         : "";
 
   return (
@@ -18,7 +28,8 @@ export function Screen({ children, animate = "none", className = "", ...rest }: 
       className={`relative flex h-full w-full flex-col overflow-hidden bg-[var(--rm-bg-page)] text-[var(--rm-text-primary)] ${animClass} ${className}`}
       {...rest}
     >
-      <div className="mx-auto flex h-full w-full max-w-[640px] flex-1 flex-col overflow-hidden">
+      {aurora ? <Aurora /> : null}
+      <div className="relative z-10 mx-auto flex h-full w-full max-w-[640px] flex-1 flex-col overflow-hidden">
         {children}
       </div>
     </div>
@@ -44,7 +55,7 @@ export function ScreenContent({
 }: ScreenContentProps) {
   return (
     <main
-      className={`rm-gutter flex-1 touch-pan-y overflow-x-hidden overflow-y-auto ${
+      className={`rm-gutter relative z-10 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto ${
         hasDock ? "pb-4" : "rm-scroll-end"
       } ${className}`}
       {...rest}
@@ -61,7 +72,7 @@ export interface ScreenDockProps extends HTMLAttributes<HTMLDivElement> {
 export function ScreenDock({ children, className = "", ...rest }: ScreenDockProps) {
   return (
     <footer
-      className={`rm-dock rm-gutter sticky bottom-0 z-10 flex-none bg-[var(--rm-bg-page)]/95 pt-2 backdrop-blur transition-all ${className}`}
+      className={`rm-dock rm-gutter sticky bottom-0 z-20 flex-none border-t border-[var(--rm-hair)] bg-[var(--rm-glass-strong)] pt-2 backdrop-blur-[22px] backdrop-saturate-[1.6] ${className}`}
       {...rest}
     >
       {children}
