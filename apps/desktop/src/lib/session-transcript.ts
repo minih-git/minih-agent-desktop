@@ -131,6 +131,94 @@ export function dedupeSessionMessages(messages: UiMessage[]): UiMessage[] {
 }
 
 /**
+ * Reuse the message objects a session already had when a fresh read returns the
+ * same rows.
+ *
+ * Every `session.get` rebuilds plain objects from the IPC payload, so a session
+ * opened four times used to leave several copies of the same 64 KiB tool result
+ * alive: one in the cache, one in the retained pane snapshot, and one in the
+ * projection the transcript renders. Reusing by id — and only when the row is
+ * unchanged — keeps a single object for all of them without changing what the
+ * row contains.
+ */
+export function reuseIdenticalMessages(
+  messages: UiMessage[],
+  previous: readonly UiMessage[] | undefined,
+): UiMessage[] {
+  if (!previous?.length) return messages;
+  const byId = new Map<string, UiMessage>();
+  for (const message of previous) byId.set(message.id, message);
+  let changed = false;
+  const next = messages.map((message) => {
+    const candidate = byId.get(message.id);
+    if (!candidate || candidate === message) return message;
+    if (!sameMessageValue(candidate, message)) return message;
+    changed = true;
+    return candidate;
+  });
+  return changed ? next : messages;
+}
+
+/**
+ * Shallow comparison that treats small structural fields by value: a read
+ * rebuilds `toolArgs` and `attachments`, so identity alone would never match.
+ */
+function sameMessageValue(left: UiMessage, right: UiMessage): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+  for (const key of leftKeys) {
+    const a = (left as Record<string, unknown>)[key];
+    const b = (right as Record<string, unknown>)[key];
+    if (a === b) continue;
+    if (a && b && typeof a === "object" && typeof b === "object") {
+      if (JSON.stringify(a) !== JSON.stringify(b)) return false;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+/** Bytes one row keeps alive, for the transcript cache's budget. */
+export function estimateMessageBytes(message: UiMessage): number {
+  let bytes = message.content.length;
+  const toolResult = (message as { toolResult?: unknown }).toolResult;
+  if (typeof toolResult === "string") {
+    bytes += toolResult.length;
+  } else if (toolResult !== undefined && toolResult !== null) {
+    try {
+      bytes += JSON.stringify(toolResult)?.length ?? 0;
+    } catch {
+      // A tool result that cannot be serialized still occupies the row itself.
+    }
+  }
+  const attachments = (message as { attachments?: unknown }).attachments;
+  if (Array.isArray(attachments)) {
+    for (const attachment of attachments) {
+      if (typeof attachment === "string") bytes += attachment.length;
+      else if (attachment && typeof attachment === "object") {
+        const ref = (attachment as { ref?: unknown }).ref;
+        if (typeof ref === "string") bytes += ref.length;
+      }
+    }
+  }
+  return bytes;
+}
+
+/**
+ * The bounded window a cache keeps for a session that is not on screen: the
+ * newest `limit` rows. Older rows are dropped rather than truncated, because
+ * the next activation re-reads the session from the Host with its own
+ * `contentLimit`, and a truncated row left in the cache could otherwise be
+ * rendered as if it were complete.
+ */
+export function trimTranscriptTail(messages: UiMessage[], limit: number): UiMessage[] {
+  if (messages.length <= limit) return messages;
+  return messages.slice(messages.length - limit);
+}
+
+/**
  * Apply one live event message to a renderer-owned session snapshot without
  * rebuilding the whole transcript when the row is unchanged.
  */

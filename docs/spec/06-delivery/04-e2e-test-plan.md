@@ -15650,6 +15650,26 @@ acceptance targets.
   5.4, 7.2, and 8, `02-architecture/05-remote-agent-control.md` §8
 - **Acceptance**: Recovery, Quality
 - **Milestone**: Post-MVP
+#### E2E-RACP-idle-stream-is-dropped-and-resyncs
+
+- **Preconditions**: A session that produced durable events, no active turn,
+  no subscriber, no pending approval or input, and an empty queue; the Host's
+  idle window can be shortened for the run.
+- **Steps**: 1) Note a client cursor. 2) Wait past the idle window with no
+  activity. 3) Subscribe again with the old cursor. 4) Delete another session
+  and check the Host's retained stream count. 5) Send a write carrying the
+  revision read before the release.
+- **Expected**: The idle session's stream and in-memory state are released; the
+  old cursor names an epoch that no longer exists, so the client gets
+  `resync.required` with a snapshot instead of a replay; session deletion drops
+  the stream immediately; the session's `revision` continues from where it was,
+  so the write is accepted rather than rejected as stale.
+- **Specs linked**: `02-architecture/05-remote-agent-control.md` §8
+- **Acceptance**: Recovery, Quality
+- **Status**: Automated unit coverage in `packages/agent-host`
+  (`agent-host.test.ts` idle release, `event-log.test.ts` budgets and
+  `dropSession`); the end-to-end run needs the remote harness.
+
 - **Status**: Draft; remote harness required
 
 #### E2E-224: Remote approvals carry the local vocabulary and stay host-owned
@@ -20139,3 +20159,27 @@ Pair this suite with `pnpm check:fast` on the candidate for real check coverage.
 - **Specs:** IPC §12b/13/13c; component §11; interaction §1.
 - **Limits:** macOS isolated candidate coverage, not Windows/Linux acceptance,
   remote deep search, installed-user-app verification, release or deployment.
+
+### E2E-TRANSCRIPT-cache-trims-to-tail-window-and-shrinks-mount-window
+
+- **Preconditions**: Three sessions with long histories (more than one page of
+  rows), the memory soak harness available (`pnpm test:perf:memory-soak`).
+- **Steps**: 1) Open session A, scroll to the top so the mount window grows
+  and older pages load, then scroll back to the bottom. 2) Switch to B, then C,
+  then back to A. 3) Repeat the read of A twice without changing anything.
+  4) Run the soak with `PI_MEMORY_SOAK_SEEDED_ROWS` set.
+- **Expected**: Returning to the bottom shrinks the mounted window back to its
+  minimum; an off-screen session keeps only its tail window and pages from the
+  Host when reopened; a repeated read reuses the message objects it already had
+  (identical content is one object, not a new copy); the reading position and
+  the newest row are unchanged.
+- **Specs linked**: ADR 0120, ADR 0130, ADR 0137,
+  `docs/superpowers/specs/2026-10-23-memory-retention-bounds-design.md` §5.1
+- **Acceptance**: Quality, Recovery
+- **Status**: Automated unit coverage in
+  `apps/desktop/test/session-transcript.test.mjs` (`reuseIdenticalMessages`,
+  `estimateMessageBytes`, `trimTranscriptTail`) and
+  `apps/desktop/test/transcript-window.test.mjs` (the shrink on re-pin); the
+  end-to-end reading-position pass stays manual with
+  `scripts/e2e-transcript-reading-position.mjs`.
+

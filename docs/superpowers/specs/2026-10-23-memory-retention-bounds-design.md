@@ -321,6 +321,80 @@ misses, non-resumable finished delegation chains) and
 (`agent-extensions`, `sessionProjects`) must not keep state pointing at a
 disposed runtime.
 
+## 5.1 Stage results (PR1)
+
+Clean numbers for the same scenario as §3.1 (8 sessions × 6 × 500 KB, 4
+rounds, 2 deletions), renderer heap sampled after a forced collection.
+
+### Stage 1 — AgentHost release: measured
+
+| Sample | streams | durable bytes (MB) | main RSS (MB) | main heap used (MB) |
+|---|---|---|---|---|
+| baseline (no release) | 8, 8, 8, 8 | 0.9 → 2.4 | 255 → 229 → 221 → 209 | 8.0 → 39.9 |
+| with release | 8, 8, **6, 6** | 0.9 → 2.9 | 196 → 157 → 175 → 158 | 27.7 → 43.0 |
+
+Deleting two sessions now takes their streams with them (8 → 6) instead of
+leaving them until the process exits, and the byte counters stay inside their
+bounds. Main-process RSS no longer climbs across rounds. The stage-1 run also
+carries the main-process inspector, so RSS is comparable in trend rather than
+in absolute value; the renderer numbers — which stage 1 does not touch — stayed
+on the same trajectory in both runs, which is the control.
+
+The replay-window bounds (per stream 8 MiB, total 64 MiB) are not reached by
+this workload — 250 events totalling ~3 MB — so their effect is proven by unit
+tests (eviction order, `resync: evicted`, the global budget taking the stalest
+stream first) rather than by the soak.
+
+### Stage 2 — Renderer cache, mount window, message reuse: measured, partial
+
+Implemented: identity reuse of unchanged rows on the read path, a 48 MiB cache
+byte budget with tail trimming for off-screen sessions, and a mount window that
+shrinks back to `TRANSCRIPT_WINDOW_MIN` when the reader is pinned at the bottom
+again.
+
+Measured outcome, stated plainly:
+
+- **Message reuse did not reduce the copy count in this workload**: the heap
+  still shows 180 copies of the seeded 64 KiB tool text (48 rows × ~3.75)
+  before and after the change. Reuse is proven by test
+  (`reuseIdenticalMessages` keeps one object across reads and never replaces a
+  changed row with a stale object), so the mechanism works — but the measured
+  duplicates are not produced by repeated reads. The retainer chains point at
+  the projection (`Object ⟨toolResult⟩ ← Array ⟨[]⟩ ← Object ⟨visible⟩ ← Object
+  ⟨projection⟩`), at React fiber props (`⟨messages⟩ ← UI ⟨pendingProps⟩ ← UI
+  ⟨alternate⟩`) and at the pane snapshot: objects the projection layer builds,
+  which identity reuse cannot collapse. Collapsing them needs the projection to
+  hand back the cached row object instead of rebuilding it — a separate change
+  with its own risk (the delta path must stay free of historical content
+  reads, see below).
+- The cache byte budget and the tail trim never fire in the seeded scenario:
+  six rows per session and 24 MB of payload are far below 48 MiB. They are
+  covered by unit tests (`estimateMessageBytes`, `trimTranscriptTail`) and by
+  the off-screen trim rule, not by the soak.
+- The mounted window does stay bounded with a long transcript: 300 seeded rows
+  per session, 100 loaded by the initial page, and the post-scroll row count
+  settles at 61 instead of growing with every top reach.
+
+One constraint discovered while wiring the budget, now part of the invariants:
+the live delta path may not walk cached rows, because an existing test asserts
+that a tool-partial frame performs **zero** content reads over history. The
+byte budget is therefore enforced from the read path only; the delta path only
+writes.
+
+### Stage 3 — User MCP idle release: tested, not observable in the soak
+
+Implemented and covered by four unit tests (idle connection closed and
+reconnected, in-flight call protected, connecting client protected, dispose
+closes everything and stops the sweep). The soak profile configures no MCP
+server, so it cannot show this path.
+
+### Still open
+
+The remaining renderer duplication is the largest single item this PR does not
+remove: the projection rebuilds row objects the cache already holds. It needs
+its own measurement (the identical-content string count should fall) and its
+own guard against historical reads in the delta path.
+
 ## 6. Spec and documentation changes
 
 - `02-architecture/05-remote-agent-control.md` §8: replay window is bounded by
