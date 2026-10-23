@@ -160,9 +160,9 @@ check("other plugins keep no owned provider rows", (providerList.providers ?? []
 const ui = await connectUiRenderer(Number(process.env.E2E_CDP_PORT));
 await ui.click('button[data-nav="user"]');
 await ui.click('button[data-nav="settings"]');
-await ui.until(() => Boolean(document.querySelector(".settings-shell-full")), null, "Settings page");
+await ui.until(() => Boolean(document.querySelector('.settings-sheet:not(.is-exiting)')), null, "Settings page");
 const openedAccounts = await ui.run((label) => {
-  const button = [...document.querySelectorAll(".settings-nav-item")].find((entry) => entry.querySelector(".settings-nav-label")?.textContent?.trim() === label);
+  const button = [...document.querySelectorAll('.settings-category[role="tab"]')].find((entry) => entry.textContent?.trim() === label);
   button?.click();
   return Boolean(button);
 }, "Accounts");
@@ -255,9 +255,9 @@ check("refresh credentials never enter model requests", !JSON.stringify(oauthReq
 
 await ui.click('button[data-nav="user"]');
 await ui.click('button[data-nav="settings"]');
-await ui.until(() => Boolean(document.querySelector(".settings-shell-full")), null, "Settings before sign-out");
+await ui.until(() => Boolean(document.querySelector('.settings-sheet:not(.is-exiting)')), null, "Settings before sign-out");
 const reopenedAccounts = await ui.run((label) => {
-  const button = [...document.querySelectorAll(".settings-nav-item")].find((entry) => entry.querySelector(".settings-nav-label")?.textContent?.trim() === label);
+  const button = [...document.querySelectorAll('.settings-category[role="tab"]')].find((entry) => entry.textContent?.trim() === label);
   button?.click();
   return Boolean(button);
 }, "Accounts");

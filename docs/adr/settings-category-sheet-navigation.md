@@ -1,4 +1,4 @@
-# Settings: seven fixed categories in a bottom sheet
+# ADR: Settings categories in a bottom sheet
 
 - Status: Accepted for implementation
 - Date: 2026-10-23
@@ -44,9 +44,11 @@ the same settings data, and the same single writers stay in place.
    (`System › Network › Proxy`). Destination ids are a contract: `remoteHosts`
    resolves to `advanced`, `remoteGateway` to `accounts`, and unknown ids fall
    back to appearance.
-5. **Closing is explicit.** The close button and Escape close; Escape first
-   yields to an open menu or dialog, and to a focused text field. The scrim is
-   not a dismiss surface. Focus returns to the entry that opened Settings.
+5. **Closing protects pending edits.** The close button, Escape, and a scrim
+   click may close an untouched sheet. Escape first yields to the top-most
+   menu or dialog. Dirty forms require an explicit discard decision, and an
+   in-flight save blocks leaving until it settles. Focus returns to the entry
+   that opened Settings. Background isolation lasts through the exit animation.
 
 ## Consequences
 
