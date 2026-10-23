@@ -1261,6 +1261,17 @@ task-candidate E2E 从请求工作树运行，但使用主工作区已经准备�
 - **状态**：单元测试覆盖（`sidebar-floating-menu.test.mjs`、
   `sidebar-navigation.test.mjs`）；视口交互场景仍为草案
 
+#### E2E-SESSION-background-completion-preserves-project-skills
+
+- **前提**：项目会话包含已启用的项目技能和项目 MCP 服务；一次性模型补全使用确定性夹具。
+- **步骤**：启动会话，依次生成首个标题、在压缩后重命名、提取记忆；每次完成后，使用会话当前项目映射读取项目技能。
+- **预期**：各项补全成功，项目映射、MCP 清单和原会话的 OAuth 授权保持不变；项目技能仍能加载当前文档。正常会话启动继续保留项目配置和授权绑定。
+- **覆盖**：`session-skill-context.test.mjs` 串联真实启动、标题/重命名、记忆提取与技能读取逻辑，仅替换 Host 和模型边界；不使用已安装应用或付费服务。
+- **关联规格**：`03-runtime/02-agent-runtime.md` §4.3。
+- **验收**：后台补全不会使项目能力失效。
+- **里程碑**：Post-MVP 运行时维护。
+- **状态**：集成测试覆盖；未运行安装版 Electron 旅程。
+
 #### E2E-021c：底部项目菜单贴近锚点显示
 
 - **先决条件**：展开的侧边栏中，最底部可见项目行下方空间不足以容纳项目菜单。
@@ -5843,6 +5854,7 @@ eleven-tool-round desktop paths are verified by
 | E——工具和权限（Skill 常驻） | E2E-254 |
 | 品质（Skill 常驻与输入法斜杠别名） | E2E-254、E2E-255 |
 | C / E / F / 品质——内置技能启用状态 | E2E-SKILL-builtin-activation |
+| C / E / 安全 / 品质——后台补全保留项目能力 | E2E-SESSION-background-completion-preserves-project-skills |
 | 品质——市场目录查询重试恢复 | E2E-MARKET-CATALOG-RETRY |
 | C — 对话和直播（插件会话导入可见性） | E2E-257 |
 | F——持久化（插件会话导入可见性） | E2E-257 |

@@ -57,6 +57,7 @@ import type { TurnEndedPayload } from "../runtime/session-coordination";
 import type { HostProcess } from "../host-process";
 import type { Logger } from "../logger";
 import type { PluginAppearance } from "../../shared/plugin-panel-chrome";
+import type { RuntimeModelResolver } from "../runtime/model-resolution";
 
 export type PluginServicesDependencies = {
   dataDir: string;
@@ -76,7 +77,7 @@ export type PluginServicesDependencies = {
   getPluginPanelTheme: () => "light" | "dark";
   getAppearance: () => PluginAppearance;
   getWorkspacePath: () => string | null;
-  resolveAgentRuntimeLaunch: (...args: any[]) => Promise<any>;
+  resolveRuntimeModel: RuntimeModelResolver;
   vendorOAuth: VendorOAuth;
   /**
    * Announce a session title a plugin wrote to the RACP Host. The renderer
@@ -102,7 +103,7 @@ export function createPluginServices({
   getPluginPanelTheme,
   getAppearance,
   getWorkspacePath,
-  resolveAgentRuntimeLaunch,
+  resolveRuntimeModel,
   vendorOAuth,
   announceTitleChange,
 }: PluginServicesDependencies) {
@@ -410,16 +411,15 @@ export function createPluginServices({
       const session = input.sessionId
         ? (await getHost()!.call<{ session?: any }>("session.get", { id: input.sessionId })).session
         : {};
-      const launch = await resolveAgentRuntimeLaunch(launchSessionId, session ?? {}, settings, {
-        mode: "agent",
+      const model = await resolveRuntimeModel(session ?? {}, settings, {
         providerId: parsed.providerId,
         modelId: parsed.modelId,
         thinkingLevel,
       });
       const runtimeProvider = {
-        ...launch.sidecarParams.provider,
-        ...(launch.sidecarParams.provider.authKind === OAUTH_AUTH_KIND
-          ? { resolveAuth: () => vendorOAuth.resolveAuth(launch.providerId) }
+        ...model.provider,
+        ...(model.provider.authKind === OAUTH_AUTH_KIND
+          ? { resolveAuth: () => vendorOAuth.resolveAuth(model.providerId) }
           : {}),
       } as RuntimeProviderConfig;
       const sessionContext = input.includeSessionContext
@@ -440,7 +440,7 @@ export function createPluginServices({
       const result = await completeOneShot(
         runtimeProvider,
         context,
-        launch.sidecarParams.thinkingLevel,
+        asPluginThinkingLevel(model.thinkingLevel),
         {
           signal: input.signal,
           sessionId: launchSessionId,
@@ -452,8 +452,8 @@ export function createPluginServices({
       );
       return {
         text: result.text,
-        modelKey: `${launch.providerId}/${launch.modelId}`,
-        thinkingLevel: launch.sidecarParams.thinkingLevel,
+        modelKey: `${model.providerId}/${model.modelId}`,
+        thinkingLevel: model.thinkingLevel,
         usage: result.usage,
       };
     },

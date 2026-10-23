@@ -3351,6 +3351,24 @@ identify the platform validation still needed.
 - **Status**: Unit- and Electron-covered as listed; the model-fixture journey
   stays Draft until it has its own runner
 
+#### E2E-SESSION-background-completion-preserves-project-skills
+
+- **Preconditions**: A project session advertises an enabled project-only skill
+  and a project MCP server; one-shot completions use a deterministic fixture.
+- **Steps**: Launch the session, generate its first title, refresh its title
+  after compaction, and extract memory. After each completion, load the project
+  skill using the session's current project mapping.
+- **Expected**: Each completion succeeds without replacing the project mapping
+  or MCP catalog. The advertised skill still loads its current document. Normal
+  session launches keep their project configuration and authorization bindings.
+- **Coverage**: `session-skill-context.test.mjs` runs the real session launch,
+  title/re-title services, memory extractor, and skill reader with fixture Host
+  and model boundaries; no installed app or paid provider is used.
+- **Specs linked**: `03-runtime/02-agent-runtime.md` §4.3
+- **Acceptance**: Project-scoped runtime capabilities remain available.
+- **Milestone**: Post-MVP runtime maintenance
+- **Status**: Integration-covered; packaged Electron journey not run.
+
 #### E2E-021b: Developer mode copies a conversation id and opens session scratch
 
 - **Preconditions**: Developer mode is enabled. A session exists, including one
@@ -10622,6 +10640,7 @@ selection already in place shows it without waiting for another event.
 | E — Tools & permissions (Skill residency) | E2E-254 |
 | Quality (Skill residency and IME slash alias) | E2E-254, E2E-255 |
 | C / E / F / Quality — Built-in skill activation | E2E-SKILL-builtin-activation |
+| C / E / Security / Quality — Background completions preserve project capabilities | E2E-SESSION-background-completion-preserves-project-skills |
 | Quality — Market catalog retry recovery | E2E-MARKET-CATALOG-RETRY |
 | C — Conversation & stream (plugin session import visibility) | E2E-257 |
 | F — Persistence (plugin session import visibility) | E2E-257 |

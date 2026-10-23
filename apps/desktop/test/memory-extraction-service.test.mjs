@@ -71,13 +71,11 @@ function deps(host, overrides = {}) {
     deps: {
       getHost: () => host,
       getSettings: async () => SETTINGS,
-      resolveAgentRuntimeLaunch: async () => ({
+      resolveRuntimeModel: async () => ({
         providerId: "p1",
         modelId: "m1",
-        sidecarParams: {
-          provider: { id: "p1", authKind: "none" },
-          thinkingLevel: "off",
-        },
+        provider: { id: "p1", authKind: "none" },
+        thinkingLevel: "off",
       }),
       vendorOAuth: { resolveAuth: async () => undefined },
       logger: {
@@ -435,11 +433,11 @@ test("turning the switch off cancels every pending run", async () => {
   service.dispose();
 });
 
-test("a provider that cannot be resolved fails the run without touching the cursor", async () => {
+test("an invalid model key fails the run without touching the cursor", async () => {
   const input = userInput([{ id: "m-user-1", seq: 0, text: "hi", createdAt: 1 }]);
   const host = fakeHost({ input });
   const { deps: base } = deps(host, {
-    resolveAgentRuntimeLaunch: async () => ({ providerId: "p1", modelId: "m1", sidecarParams: {} }),
+    getSettings: async () => ({ ...SETTINGS, learnedMemory: { ...SETTINGS.learnedMemory, model: "invalid-model-key" } }),
   });
   const service = createMemoryExtractionService(base);
   const result = await service.runOnce("s1");

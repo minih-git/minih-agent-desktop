@@ -77,23 +77,21 @@ function serviceFor(settings) {
     // A real provider config pointing at the local stub: the production
     // completion path (buildProviderModel, retries, usage accounting) runs
     // unchanged, and nothing leaves 127.0.0.1.
-    resolveAgentRuntimeLaunch: async () => ({
+    resolveRuntimeModel: async () => ({
       providerId: "stub",
       modelId: "fixture-model",
-      sidecarParams: {
-        provider: {
-          id: "stub",
-          name: "Local extraction stub",
-          baseUrl: stubBaseUrl,
-          apiKey: "fixture",
-          authKind: "api_key",
-          apiStyle: "openai",
-          modelId: "fixture-model",
-          supportsReasoning: false,
-          supportedThinkingLevels: ["off"],
-        },
-        thinkingLevel: "off",
+      provider: {
+        id: "stub",
+        name: "Local extraction stub",
+        baseUrl: stubBaseUrl,
+        apiKey: "fixture",
+        authKind: "api_key",
+        apiStyle: "openai",
+        modelId: "fixture-model",
+        supportsReasoning: false,
+        supportedThinkingLevels: ["off"],
       },
+      thinkingLevel: "off",
     }),
     vendorOAuth: { resolveAuth: async () => ({}) },
     logger: { app: () => undefined },

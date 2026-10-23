@@ -45,13 +45,11 @@ const CONTEXT = {
 
 const baseDeps = (host) => ({
   getHost: () => host,
-  resolveAgentRuntimeLaunch: async () => ({
+  resolveRuntimeModel: async () => ({
     providerId: "p1",
     modelId: "m1",
-    sidecarParams: {
-      provider: { id: "p1", authKind: "none" },
-      thinkingLevel: "off",
-    },
+    provider: { id: "p1", authKind: "none" },
+    thinkingLevel: "off",
   }),
   vendorOAuth: { resolveAuth: async () => undefined },
   logger: { app: () => undefined },
@@ -74,12 +72,12 @@ test("generates a title from the first persisted message and writes it through t
   const launches = [];
   const deps = {
     ...baseDeps(host),
-    resolveAgentRuntimeLaunch: async (_sessionId, _session, _settings, overrides) => {
+    resolveRuntimeModel: async (_session, _settings, overrides) => {
       launches.push(overrides);
       return {
         providerId: "p1",
         modelId: "m1",
-        sidecarParams: { provider: { id: "p1", authKind: "none" }, thinkingLevel: "off" },
+        provider: { id: "p1", authKind: "none" }, thinkingLevel: "off",
       };
     },
     completeOneShot: async (_provider, context, thinkingLevel) => {
@@ -539,12 +537,12 @@ test("the requested model decides the provider even without a session binding", 
   const launches = [];
   const deps = {
     ...baseDeps(host),
-    resolveAgentRuntimeLaunch: async (_sessionId, session, _settings, overrides) => {
+    resolveRuntimeModel: async (session, _settings, overrides) => {
       launches.push({ session, overrides });
       return {
         providerId: overrides?.providerId ?? "wrong",
         modelId: overrides?.modelId ?? "wrong",
-        sidecarParams: { provider: { id: "p1", authKind: "none" }, thinkingLevel: "off" },
+        provider: { id: "p1", authKind: "none" }, thinkingLevel: "off",
       };
     },
     completeOneShot: async () => ({ text: "Fix login bug", usage: undefined }),
