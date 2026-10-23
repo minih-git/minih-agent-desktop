@@ -90,11 +90,16 @@ function createMockFetch(options = {}) {
     }
 
     if (url.pathname === "/.well-known/oauth-authorization-server") {
+      // A server that expects a pre-registered client advertises no
+      // registration endpoint, so Dynamic Client Registration is unavailable.
+      const registration = options.withoutRegistration
+        ? {}
+        : { registration_endpoint: "https://notion.test/register" };
       return new Response(JSON.stringify({
         issuer: "https://notion.test",
         authorization_endpoint: "https://notion.test/authorize",
         token_endpoint: "https://notion.test/token",
-        registration_endpoint: "https://notion.test/register",
+        ...registration,
         code_challenge_methods_supported: ["S256"],
         response_types_supported: ["code"],
       }), {
@@ -983,4 +988,86 @@ test("McpOAuthManager: onAuthorized receives the server record", async (t) => {
   await waitUntil(() => authorized);
   assert.equal(authorized.serverId, record.id);
   assert.equal(authorized.record, record);
+});
+
+test("McpOAuthManager: a server without DCR fails before opening a browser", async (t) => {
+  const host = fakeHost();
+  const { mockFetch } = createMockFetch({ withoutRegistration: true });
+  const mockServer = createMockServerFactory();
+  const opened = [];
+  const events = [];
+  const manager = new McpOAuthManager({
+    call: host.call,
+    fetchImpl: mockFetch,
+    createServer: mockServer.mockCreateServer,
+    emit: (event) => events.push(event),
+    openExternal: async (url) => {
+      opened.push(url);
+    },
+  });
+  t.after(() => manager.disposeAll());
+
+  const { loginId } = await manager.start("no-dcr-test", "https://notion.test/mcp");
+  // The fixed flow fails and closes its loopback listener; the old flow opened
+  // `<authorize>?client_id=minih-agent-desktop` and then waited five minutes for
+  // a callback that could never arrive. Waiting for either outcome keeps this
+  // regression bounded instead of hanging like the reported experience.
+  await waitUntil(
+    () =>
+      (events.some((event) => event.kind === "error") && mockServer.isClosed()) ||
+      opened.length > 0,
+    2_000,
+  );
+
+  assert.deepEqual(opened, [], "no authorization URL may be opened without a usable client id");
+  const failure = events.find((event) => event.kind === "error");
+  assert.ok(failure, "the login must fail with an error event");
+  assert.equal(failure.serverId, "no-dcr-test");
+  assert.equal(failure.errorCode, "MCP_OAUTH_DCR_UNAVAILABLE");
+  // The detail has to name the missing capability. Settings turns the code into
+  // localized recovery copy, so the raw message stays free of the discovered
+  // authorization endpoint.
+  assert.match(failure.message, /Dynamic Client Registration/);
+  assert.match(failure.message, /client id/);
+  assert.doesNotMatch(failure.message, /https:\/\/notion\.test\/authorize/);
+  // The loopback listener belongs to the failed attempt, not to the app.
+  assert.equal(mockServer.isClosed(), true);
+  assert.equal(manager.cancel(loginId), false, "the failed login session must be gone");
+});
+
+test("McpOAuthManager: startLogin rejects with the no-DCR code instead of waiting for a callback", async (t) => {
+  const host = fakeHost();
+  const { mockFetch } = createMockFetch({ withoutRegistration: true });
+  const mockServer = createMockServerFactory();
+  const opened = [];
+  const manager = new McpOAuthManager({
+    call: host.call,
+    fetchImpl: mockFetch,
+    createServer: mockServer.mockCreateServer,
+    openExternal: async (url) => {
+      opened.push(url);
+    },
+  });
+  t.after(() => manager.disposeAll());
+
+  let timer;
+  const stillWaiting = new Promise((resolve) => {
+    timer = setTimeout(() => resolve("still waiting for a callback"), 2_000);
+  });
+  try {
+    const outcome = await Promise.race([
+      manager.startLogin("no-dcr-login", "https://notion.test/mcp").then(
+        () => "resolved with a token",
+        (error) => error,
+      ),
+      stillWaiting,
+    ]);
+    assert.ok(outcome instanceof Error, `startLogin must reject: ${String(outcome)}`);
+    assert.equal(outcome.errorCode, "MCP_OAUTH_DCR_UNAVAILABLE");
+    assert.match(outcome.message, /Dynamic Client Registration/);
+  } finally {
+    clearTimeout(timer);
+  }
+  assert.deepEqual(opened, [], "startLogin must not open an authorization URL either");
+  assert.equal(mockServer.isClosed(), true);
 });

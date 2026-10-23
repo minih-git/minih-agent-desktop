@@ -49,7 +49,7 @@ test("a file chip is routed by where the reference resolved, never optimisticall
   // follows the folder that answered: relative for the primary one, absolute
   // for its siblings, and the file view switches to the folder it is given.
   assert.match(hook, /match\.projectRoot \? match\.projectRoot\.primary : true/);
-  assert.match(hook, /path: primary \? match\.relativePath : match\.absolutePath/);
+  assert.match(hook, /path: primary && !session\?\.worktree \? match\.relativePath : match\.absolutePath/);
   // Project and scratch HTML run at the exact path resolved by main.
   assert.match(hook, /resolved\.inProject \|\| resolved\.scratch/);
   assert.match(hook, /isHtmlFilePath\(resolved\.absolutePath\)/);

@@ -2902,6 +2902,7 @@ export const ptBR = {
       authReady_one: "Autorizado · 1 ferramenta",
       authReady_other: "Autorizado · {{count}} ferramentas",
       authFailed: "Falha na autorização",
+      authDcrUnavailable: "Este servidor MCP não oferece suporte ao registro dinâmico de clientes. Peça ao operador do servidor um ID de cliente ou use um servidor compatível com DCR.",
       oauthBadge: "OAuth",
       transport: "Como se conecta",
       transportStdio: "Programa local",

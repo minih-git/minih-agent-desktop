@@ -109,6 +109,13 @@ export type McpServerView = McpServerRecord & {
   status?: McpServerStatus;
 };
 
+/**
+ * A login failure the renderer knows how to recover from, so settings can show
+ * translated guidance instead of the main-process message. Failures without a
+ * listed code keep their own message.
+ */
+export type McpOAuthLoginErrorCode = "MCP_OAUTH_DCR_UNAVAILABLE";
+
 /** Progress of one MCP OAuth login attempt, pushed to the renderer. */
 export type McpOAuthLoginEvent = {
   loginId: string;
@@ -117,7 +124,7 @@ export type McpOAuthLoginEvent = {
   | { kind: "authUrl"; url: string; instructions?: string; opened: boolean }
   | { kind: "progress"; message: string }
   | { kind: "done"; status: McpServerStatus }
-  | { kind: "error"; message: string }
+  | { kind: "error"; message: string; errorCode?: McpOAuthLoginErrorCode }
   | { kind: "cancelled" }
 );
 

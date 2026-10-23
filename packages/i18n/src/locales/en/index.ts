@@ -2989,6 +2989,8 @@ importConfirm: "Imported extensions run inside the agent process with the same a
       authReady_one: "Authorized · 1 tool",
       authReady_other: "Authorized · {{count}} tools",
       authFailed: "Authorization failed",
+      authDcrUnavailable:
+        "This MCP server does not support Dynamic Client Registration. Ask the server operator for a client ID, or use a server that supports DCR.",
       oauthBadge: "OAuth",
       transport: "How it connects",
       transportStdio: "Local program",

@@ -440,7 +440,7 @@ test("typing # never asks the host for a file index", () => {
   // session group costs no IPC: its rows come from the store.
   // The guard is the effect's first statement, so neither round trip starts.
   const effect = autocompleteHook.match(
-    /useEffect\(\(\) => \{\s*if \(!trigger \|\| dismissed \|\| trigger\.mode === "session"\) return;([\s\S]*?)\n  \}, \[trigger\?\.mode, dismissed, workspaceKey, hasWorkspace, sessionId\]\);/,
+    /useEffect\(\(\) => \{\s*if \(!trigger \|\| dismissed \|\| trigger\.mode === "session"\) return;([\s\S]*?)\n  \}, \[trigger\?\.mode, dismissed, workspaceKey, hasWorkspace, sessionId, fileSourceKey\]\);/,
   )?.[1];
   assert.ok(effect, "the lazy source effect must return before it fetches");
   assert.match(effect, /void fetchComposerCommands\(workspaceKey\)/);

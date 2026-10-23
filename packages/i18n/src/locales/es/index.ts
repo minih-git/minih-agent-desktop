@@ -2938,6 +2938,7 @@ sklm: {
       "authReady_one": "Autorizado · 1 herramienta",
       "authReady_other": "Autorizado · {{count}} herramientas",
       "authFailed": "Error de autorización",
+      "authDcrUnavailable": "Este servidor MCP no admite el registro dinámico de clientes. Pide al operador del servidor un ID de cliente o usa un servidor compatible con DCR.",
       "oauthBadge": "OAuth",
       "transport": "Cómo se conecta",
       "transportStdio": "Programa local",
