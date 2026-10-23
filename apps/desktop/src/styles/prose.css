@@ -790,6 +790,14 @@
   color: var(--ds-text-primary);
 }
 
+/*
+  A linked page renders where its link was, which is inside a paragraph. The
+  wrapper keeps that spot in the flow while the card stays a block.
+*/
+.html-block-inline {
+  display: block;
+}
+
 .html-block-head {
   display: flex;
   align-items: center;

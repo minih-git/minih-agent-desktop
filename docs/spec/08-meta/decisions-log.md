@@ -8360,3 +8360,27 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
   binding instead of surviving as a stale id). See `04-ux/06-settings-ia.md`,
   E2E-PROVIDER-minih-router-primary-gateway, and
   `accounts-models-user-path.test.mjs`.
+
+## 2026-10-23 — A linked local page renders in the answer
+
+- Decision D680. An answer that links a local `.html` page — what
+  `/answer-me-with-html` produces, a file on disk plus
+  `[打开页面 · 标题](file:///…)` — shows that page in place instead of a click
+  target. It renders through the ADR 0337 frame (`srcdoc`, empty `sandbox`,
+  scripts off until the reader enables them, same 100,000-character cap), and
+  the surface gate is the existing `renderHtml` flag, so a file preview, a
+  plugin README, a side note and a subagent reply keep the plain link.
+- The renderer never reads the file. It asks the host over `fs/read` with the
+  session id, so allowed roots, remote workspaces, the binary check and the
+  512 KB text cap stay in the host and no channel, permission or CSP entry is
+  added (ADR 0338). A rejected, binary, empty or oversized read leaves the link
+  and its click still opens the page in the work-panel browser, as ADR 0262
+  decided.
+- The reason for the change is parity: the phone client already inlines the
+  page (`apps/remote-web` `ChatTimeline` plus the RACP projection), so the same
+  answer was a page on the phone and a link on the desktop. The Markdown
+  renderer rewrites a `file://` destination before a component sees it — scheme
+  dropped, rest percent-encoded — so detection accepts the encoded form and a
+  directly written absolute path; a relative link keeps its destination. See
+  `04-ux/08-component-spec.md`, `05-security/01-security.md`,
+  `local-html-page.test.mjs`, and `local-html-page-link.test.mjs`.

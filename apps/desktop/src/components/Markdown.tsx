@@ -18,6 +18,7 @@ import {
   type RefObject,
   type ReactNode,
 } from "react";
+import { useCopy } from "../hooks/use-copy";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
@@ -46,12 +47,14 @@ import {
   IconExternal,
   IconGlobe,
   IconImage,
-  IconPlay,
   IconWorkflow,
 } from "./icons";
 import { TooltipButton } from "./ui";
 import { ContextMenu, useContextMenu } from "./ContextMenu";
 import { MarkdownTable } from "./MarkdownTable";
+import { HtmlPreviewBlock } from "./HtmlPreviewBlock";
+import { LocalHtmlPageLink, linkText } from "./LocalHtmlPageLink";
+import { localHtmlPageLinkPath } from "../lib/html-page";
 import { markdownTableData } from "../lib/markdown-table";
 import { PluginBlockRenderer } from "./PluginBlockRenderer";
 import { blockRendererCandidate } from "../lib/block-renderer";
@@ -118,19 +121,11 @@ import {
  * states why, and why that trade is the right one.
  */
 
-export function useCopy() {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-  const copy = useCallback((text: string) => {
-    void navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => setCopied(false), 1500);
-    });
-  }, []);
-  return { copied, copy };
-}
+/*
+  The copy acknowledgement lives beside the blocks that use it, and stays
+  exported here because every caller already imports it from this module.
+*/
+export { useCopy };
 
 /* ---------- theme (follows documentElement[data-theme]) ---------- */
 
@@ -461,115 +456,6 @@ function MermaidBlock({ code, ...position }: { code: string } & SourcePositionPr
   );
 }
 
-/* ---------- html fence preview ---------- */
-
-/**
- * Fences past this length stay in the source view, like an oversized diagram.
- * Kept below `MAX_SYNC_MARKDOWN_CODE_UNITS` so the cap is reachable: a larger
- * message never reaches this renderer at all.
- */
-const MAX_HTML_PREVIEW_SOURCE_LENGTH = 100_000;
-
-/**
- * The `html` fence preview.
- *
- * A completed `html` fence renders through a sandboxed `srcdoc` iframe, so the
- * markup never joins the host document. The frame holds an opaque origin: it
- * cannot reach the transcript DOM, and no preload bridge exists inside it
- * because the main window leaves `nodeIntegrationInSubFrames` off. The app CSP
- * still bounds what the frame loads, so this feature widens no policy.
- *
- * Fence content is model output, so scripts stay off until the reader enables
- * them for one block; a source change returns that block to the default. A
- * fence past the size cap fails closed to the source view.
- */
-function HtmlBlock({ code, ...position }: { code: string } & SourcePositionProps) {
-  const { t } = useTranslation();
-  const { copied, copy } = useCopy();
-  // Both toggles record the source they were set for, so an edited fence is
-  // back on the safe default in the same render. An effect would let the new
-  // source commit one frame with the previous block's permission.
-  const [sourceShownFor, setSourceShownFor] = useState<string | null>(null);
-  const [scriptsFor, setScriptsFor] = useState<string | null>(null);
-  const showSource = sourceShownFor === code;
-  const scripts = scriptsFor === code;
-
-  const oversized = code.length > MAX_HTML_PREVIEW_SOURCE_LENGTH;
-  const sourceVisible = showSource || oversized;
-
-  return (
-    <div {...position} className={`html-block${oversized ? " error" : ""}`}>
-      <div className="html-block-head">
-        <span className="html-block-title">
-          <IconGlobe size={13} aria-hidden />
-          <span>html</span>
-        </span>
-        <div className="html-block-actions">
-          {oversized ? null : (
-            <>
-              <TooltipButton
-                type="button"
-                className={`html-action-btn${showSource ? " active" : ""}`}
-                tooltip={showSource ? t("chat.showHtml") : t("chat.showHtmlSource")}
-                ariaLabel={
-                  showSource ? t("chat.showHtml") : t("chat.showHtmlSource")
-                }
-                aria-pressed={showSource}
-                onClick={() => setSourceShownFor(showSource ? null : code)}
-              >
-                {showSource ? <IconGlobe size={13} /> : <IconCode size={13} />}
-              </TooltipButton>
-              {showSource ? null : (
-                <TooltipButton
-                  type="button"
-                  className={`html-action-btn${scripts ? " active" : ""}`}
-                  tooltip={t("chat.runHtmlScripts")}
-                  ariaLabel={t("chat.runHtmlScripts")}
-                  aria-pressed={scripts}
-                onClick={() => setScriptsFor(scripts ? null : code)}
-                >
-                  <IconPlay size={13} />
-                </TooltipButton>
-              )}
-            </>
-          )}
-          <TooltipButton
-            type="button"
-            className={`html-action-btn${copied ? " copied" : ""}`}
-            tooltip={copied ? t("chat.copied") : t("chat.copy")}
-            ariaLabel={t("chat.copy")}
-            onClick={() => copy(code)}
-          >
-            {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
-          </TooltipButton>
-        </div>
-      </div>
-      <div className="html-block-body">
-        {oversized ? (
-          <div className="html-block-error" role="status">
-            <IconCircleAlert size={14} aria-hidden />
-            <span>{t("chat.htmlPreviewTooLarge")}</span>
-          </div>
-        ) : null}
-        {sourceVisible ? (
-          <pre className="html-source">
-            <code>{code}</code>
-          </pre>
-        ) : (
-          <iframe
-            key={scripts ? "scripts" : "static"}
-            className="html-frame"
-            title={t("chat.htmlPreview")}
-            sandbox={scripts ? "allow-scripts" : ""}
-            srcDoc={code}
-            loading="lazy"
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
 /* ---------- react-markdown component overrides ---------- */
 
 const MarkdownBlockContext = createContext({
@@ -639,7 +525,7 @@ function PreBlock({
     return <MermaidBlock code={info.code} {...sourcePositionProps(rest)} />;
   }
   if (renderHtml && closedFence && info.lang.toLowerCase() === "html") {
-    return <HtmlBlock code={info.code} {...sourcePositionProps(rest)} />;
+    return <HtmlPreviewBlock code={info.code} {...sourcePositionProps(rest)} />;
   }
   if (blockEntry) {
     return (
@@ -757,6 +643,10 @@ function Anchor({
   const localToolsAllowed = useChatSessionCapability("canUseLocalTools");
   const root = useAppStore((s) => localToolsAllowed ? s.workspace?.path : undefined);
   const baseDir = useContext(MarkdownBaseDirContext);
+  // A local `.html` page renders inside the row only where markup renders at
+  // all: the same gate the `html` fence uses, so a file preview or a plugin
+  // README keeps the link it wrote instead of running someone else's page.
+  const { renderHtml } = useContext(MarkdownBlockContext);
   const openFileRef = useOpenChatFileRef();
   const openFileMenu = useContext(MarkdownFileMenuContext);
   const openUrl = useAppStore((s) => s.openUrlInWorkPanel);
@@ -888,18 +778,38 @@ function Anchor({
   if (unconfirmed) {
     return <>{children}</>;
   }
+  const link = (
+    <a
+      {...linkProps}
+      href={localToolsAllowed ? href : undefined}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {children}
+    </a>
+  );
+  // A session that may not touch local files keeps its plain link too: the same
+  // capability the click already needs, checked before the host read is asked.
+  const pagePath =
+    renderHtml && localToolsAllowed ? localHtmlPageLinkPath(href ?? "") : null;
+  if (pagePath) {
+    return (
+      <>
+        <LocalHtmlPageLink
+          path={pagePath}
+          name={linkText(children)}
+          baseDir={baseDir}
+          fallback={link}
+        />
+        <ContextMenu state={contextMenu} onClose={closeContextMenu} />
+      </>
+    );
+  }
   return (
     <>
-      <a
-        {...linkProps}
-        href={localToolsAllowed ? href : undefined}
-        onClick={onClick}
-        onContextMenu={onContextMenu}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        {children}
-      </a>
+      {link}
       <ContextMenu state={contextMenu} onClose={closeContextMenu} />
     </>
   );
