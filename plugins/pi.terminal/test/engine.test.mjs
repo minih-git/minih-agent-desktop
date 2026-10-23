@@ -24,6 +24,38 @@ function scratch() {
   return mkdtempSync(join(tmpdir(), "pi-terminal-"));
 }
 
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
+
+async function waitFor(predicate, timeoutMs, stepMs = 50) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise((resolve) => setTimeout(resolve, stepMs));
+  }
+  return predicate();
+}
+
+/** The job pid a terminal reported as `JOB=<pid> END`, or null. */
+async function jobPidOf(current, id, timeoutMs = 20_000) {
+  let seen = "";
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const reply = await current.read({ id, waitMs: 200 });
+    seen += reply.data;
+    const match = /JOB=(\d+) END\r?\n/.exec(seen);
+    if (match) return Number(match[1]);
+    if (reply.exited) return null;
+  }
+  return null;
+}
+
 /** Read until `predicate` matches, the shell exits, or the budget runs out. */
 async function readUntil(current, id, predicate, timeoutMs = 15_000) {
   let text = "";
@@ -148,6 +180,36 @@ test("refuses a directory or shell that is not here instead of substituting one"
     (error) => error.code === "TOO_MANY_TERMINALS",
   );
 });
+
+test(
+  "closing a terminal ends the shell's background job in every installed shell",
+  { skip: process.platform === "win32" && "no POSIX process groups" },
+  async () => {
+    const shells = detectShellProfiles();
+    assert.ok(shells.length > 0, "no local shell to test");
+    for (const profile of shells) {
+      const current = engine();
+      const opened = current.open({ cwd: process.cwd(), profileId: profile.id });
+      current.write({ id: opened.id, data: "sleep 300 & printf 'JOB=%s END\\n' $!\n" });
+      const jobPid = await jobPidOf(current, opened.id);
+      assert.ok(jobPid, `${profile.file} never reported its job`);
+      assert.ok(alive(jobPid), `${profile.file} job ${jobPid} must be running`);
+      await current.close({ id: opened.id });
+      const gone = await waitFor(() => !alive(jobPid), 8_000);
+      if (!gone) {
+        try {
+          process.kill(jobPid, "SIGKILL");
+        } catch {
+          // Already gone.
+        }
+      }
+      // The user closed the tab: the shell and the jobs it started both go,
+      // whatever the shell's own exit behaviour is.
+      assert.equal(gone, true, `${profile.file}: job ${jobPid} survived close()`);
+      assert.deepEqual(current.list(), []);
+    }
+  },
+);
 
 /**
  * Flow control without a process: a fake PTY records pause/resume so the

@@ -23,8 +23,10 @@ to a chat, logged, or uploaded.
   not exist on this machine (a remote project) is refused by name instead of
   being replaced with something else.
 - Keeps terminals alive across chat switches, hiding the page, and minimizing the
-  window. Closing a tab ends that terminal and reports a failure instead of
-  claiming a cleanup that did not happen.
+  window. Closing a tab ends that terminal **and the jobs it started**: the close
+  signals the shell's whole process group and escalates, so it does not depend on
+  the shell's own exit behaviour. A close that cannot confirm the process is gone
+  is reported as a failure instead of claiming a cleanup that did not happen.
 - Ends every terminal when the plugin is disabled, uninstalled, reloaded, or
   upgraded — and asks first. The host's own confirmation names this plugin and
   says how many shells are still running; cancelling leaves every shell, the
@@ -115,8 +117,15 @@ needs a Windows run.
   page (`pluginBridge.invoke("clipboard.writeText")`), and the checker only scans
   `main.js`.
 - A crash ends the shell because the PTY master closes with the process, which
-  hangs up the session; `test/owner-death.test.mjs` measures that the shell's own
-  jobs die with it. No host-managed supervisor exists behind this.
+  hangs up the session — `test/owner-death.test.mjs` measures the shell's pid
+  dying. Whether the shell's background jobs follow is the shell's own policy:
+  bash and zsh resend SIGHUP to their jobs on exit, while a dash-like `sh` does
+  not hang up its jobs, so on a crash such a shell can leave a background job
+  behind. That is why the terminal starts the user's interactive shell rather
+  than a bare `sh`, and why the guaranteed path is the explicit one: closing a
+  tab or disabling the plugin signals the process group. No host-managed
+  supervisor exists behind this; a guarantee that covers every shell on a crash
+  needs a host-owned PTY, which the ADR deliberately excluded.
 - The interruption prompt is answered from memory at the moment it is asked. A
   terminal that exits between the prompt and the teardown is simply reported as
   finished, and a plugin that cannot answer within two seconds is treated as

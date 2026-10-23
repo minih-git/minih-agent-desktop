@@ -18,6 +18,7 @@
  * string semantics keep that true across the bridge, so no half characters are
  * produced at chunk borders.
  */
+const { execFileSync } = require("node:child_process");
 const { homedir } = require("node:os");
 const { resolve } = require("node:path");
 const { detectShellProfiles, findProfile, isLocalDirectory } = require("./shells.js");
@@ -262,9 +263,46 @@ class TerminalEngine {
     if (!terminal) return { ok: true, already: true };
     terminal.closed = true;
     this.#settle(terminal);
+    /**
+     * End the shell's whole process tree, not just the shell.
+     *
+     * A shell with job control puts every background job in its own process
+     * group, so signalling the shell's group misses them, and whether they die
+     * with the shell is the shell's own policy (bash/zsh resend SIGHUP, a
+     * dash-like `sh` does not). An explicit close therefore walks the tree,
+     * signals the descendants first, then the shell, and escalates to SIGKILL if
+     * the graceful half of the budget was not enough.
+     */
+    const shellPid = terminal.pty?.pid;
+    const descendants =
+      this.platform === "win32" || typeof shellPid !== "number"
+        ? []
+        : this.#descendants(shellPid);
+    const signalTree = (signal) => {
+      if (this.platform === "win32") return;
+      for (const child of descendants) {
+        try {
+          process.kill(child, signal);
+        } catch {
+          // Already gone.
+        }
+      }
+      if (typeof shellPid !== "number" || shellPid <= 0) return;
+      try {
+        process.kill(-shellPid, signal);
+      } catch {
+        // Not a group leader any more, or already gone.
+      }
+      try {
+        process.kill(shellPid, signal);
+      } catch {
+        // Already gone.
+      }
+    };
     if (!terminal.exited) {
       try {
         terminal.pty.kill();
+        signalTree("SIGHUP");
       } catch (error) {
         // A process that already went away is the outcome we wanted.
         if (!terminal.exited) {
@@ -274,6 +312,16 @@ class TerminalEngine {
             `could not stop terminal ${terminal.id}: ${error?.message ?? error}`,
           );
         }
+      }
+    }
+    if (!(await this.#waitForExit(terminal, Math.floor(CLOSE_TIMEOUT_MS / 2)))) {
+      // A shell that traps or ignores the hangup still has to go: the user
+      // closed the tab, and half the budget is enough for a graceful exit.
+      signalTree("SIGKILL");
+      try {
+        terminal.pty.kill("SIGKILL");
+      } catch {
+        // Already gone between the two signals.
       }
     }
     const gone = await this.#waitForExit(terminal, CLOSE_TIMEOUT_MS);
@@ -322,6 +370,37 @@ class TerminalEngine {
   }
 
   // --- internals -------------------------------------------------------
+
+  /** Pids of every descendant of `pid`, deepest last; empty when unavailable. */
+  #descendants(pid) {
+    let listing;
+    try {
+      listing = execFileSync("ps", ["-A", "-o", "pid=,ppid="], {
+        encoding: "utf8",
+        timeout: 2_000,
+      });
+    } catch {
+      // No `ps` on this system: the group and shell signals still run.
+      return [];
+    }
+    const children = new Map();
+    for (const line of listing.split("\n")) {
+      const [child, parent] = line.trim().split(/\s+/).map(Number);
+      if (!Number.isInteger(child) || !Number.isInteger(parent)) continue;
+      const bucket = children.get(parent);
+      if (bucket) bucket.push(child);
+      else children.set(parent, [child]);
+    }
+    const ordered = [];
+    const walk = (current) => {
+      for (const child of children.get(current) ?? []) {
+        walk(child);
+        ordered.push(child);
+      }
+    };
+    walk(pid);
+    return ordered;
+  }
 
   #shellEnv(cwd) {
     const env = { ...this.env, TERM: "xterm-256color", COLORTERM: "truecolor", PWD: cwd };
