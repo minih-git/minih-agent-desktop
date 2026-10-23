@@ -434,6 +434,40 @@ remove: the projection rebuilds row objects the cache already holds. It needs
 its own measurement (the identical-content string count should fall) and its
 own guard against historical reads in the delta path.
 
+### Stage 4 — idle runtime reclaim: measured
+
+`scripts/e2e-sidecar-idle-reclaim.mjs` runs the production sidecar over the real
+stdio transport against an isolated host-core and a local SSE provider that
+records every request body. Both builds run the identical scenario: 24
+sessions, each seeded with 6 × 30 KB tool results, a synthetic compaction
+checkpoint on half of them, one real turn per session, then the same wait.
+
+| Build | Runtimes after the wait | Sidecar heap before → after | Sidecar RSS before → after |
+|---|---|---|---|
+| main (no sweep) | 24 resident | 37 → 37 MB | 189 → 100 MB |
+| this branch (`MINIH_AGENT_IDLE_RUNTIME_SECONDS=2`) | 0 resident | 37 → **30 MB** | 185 → 142 MB |
+
+What this does and does not show:
+
+- **The heap is the evidence.** All 24 runtimes are gone and the sidecar's own
+  JS heap (after a forced collection) drops 7 MB; on main it does not move at
+  all. Per-runtime retention in this fixture is bounded by the ~180 KB of rows a
+  session may carry without pi summarizing them on the first request, so the
+  absolute number is small on purpose — it is the difference between releasing
+  and keeping that makes the point.
+- **RSS is not evidence.** It falls in both builds, and further on main, because
+  the allocator returns pages on its own schedule. Nothing here supports a claim
+  about RSS after the reclaim.
+- **The rebuild is asserted, not assumed.** After the runtimes were gone, the
+  next prompt produced a new runtime id, and the request the provider received
+  carried the seeded checkpoint summary while the rows that checkpoint had
+  compacted stayed out; a session without a checkpoint got its full history
+  back. The fixture also asserts the same facts *before* the reclaim, so a
+  compaction policy change cannot silently turn the assertion into a tautology.
+- `agent.testRuntimeIdentity` (behind `MINIH_AGENT_PLAN_UI_PROBE=1`) is what
+  tells the harness a runtime is gone; it is a read-only test channel and not
+  part of the product path.
+
 ## 6. Spec and documentation changes
 
 - `02-architecture/05-remote-agent-control.md` §8: replay window is bounded by
@@ -446,7 +480,13 @@ own guard against historical reads in the delta path.
 - ADR 0120/0130/0137: note that cached history outside the visible panes is a
   bounded tail window with a byte budget, and that the mounted window shrinks
   when the reader is pinned again.
-- MCP spec note for idle release; new ADR for stage 4.
+- MCP spec note for idle release.
+- Stage 4: `03-runtime/02-agent-runtime.md` describes the idle reclaim (what
+  keeps a runtime, the two env knobs, what the rebuild restores), and
+  `adr/sidecar-idle-runtime-reclaim.md` records the decision, the Electron-side
+  bookkeeping audit, and the inherited `RUNTIME_NOT_FOUND` on a trusted
+  extension command. `scripts/e2e-sidecar-idle-reclaim.mjs` is the harness
+  behind §5.1.
 
 ## 7. Verification
 

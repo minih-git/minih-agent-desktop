@@ -2261,3 +2261,20 @@ transcript when compaction already replaced a failed assistant with a summary
 or retained user message. Remove trailing assistant rows if present; do not
 require an assistant tail before `continue()`. Retry budgets, cancellation,
 fallback selection, usage and the visible transcript remain unchanged.
+
+## Idle runtime reclaim
+
+The sidecar keeps one runtime per session and now also takes them away: a
+runtime is disposed once nothing can resume it — no running turn, no pending
+tool confirmation, no plan awaiting approval, no pending plan — and it has been
+idle for `MINIH_AGENT_IDLE_RUNTIME_SECONDS` (default 1800). At most
+`MINIH_AGENT_MAX_IDLE_RUNTIMES` (default 8) idle runtimes stay resident; beyond
+that the least recently used go first. Native Pi sessions are excluded because
+their state lives in the canonical JSONL session service.
+
+Reclaiming is invisible to the user: the next prompt rebuilds the runtime
+through the existing `session.get` path, restoring history and the compaction
+record. The cost is one history read and one prompt without a warm provider
+cache, and a finished delegation chain in a reclaimed runtime can no longer be
+resumed — the same rule that already applies to an evicted chain.
+See ADR `sidecar-idle-runtime-reclaim`.
