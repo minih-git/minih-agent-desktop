@@ -17,6 +17,16 @@ import { useTranslation } from "react-i18next";
 
 import type { ResponseAttempt } from "../../hooks/useSessionScreen.js";
 import { createIdempotencyKey, createRequestId } from "../../lib/ids.js";
+import {
+  answersPayload,
+  initialAnswers,
+  isAnswered,
+  isSkipped,
+  selectedFor,
+  toggleOption,
+  toggleSkip,
+  type InputAnswers,
+} from "../../lib/input-answers.js";
 import { Button } from "../ui/Button.js";
 import { Chip } from "../ui/StatusDot.js";
 import { ConfirmHighRiskSheet } from "./ConfirmHighRiskSheet.js";
@@ -134,6 +144,11 @@ export function DecisionArea({
             />
           ) : (
             <InputBody
+              // A new request is a new set of questions: without this key React
+              // reuses the previous body, so the selection carried over into the
+              // next request and `selected[i]!` could throw when that request had
+              // more questions than the previous one.
+              key={activeItem.data.id}
               request={activeItem.data}
               isPending={pending[`input:${activeItem.data.id}`] === true}
               onSubmit={(answers, attempt) => {
@@ -271,41 +286,34 @@ function InputBody({
   onSubmit: (answers: Array<string[] | null>, attempt: ResponseAttempt) => void;
 }) {
   const { t } = useTranslation();
-  const [selected, setSelected] = useState<string[][]>(() => request.questions.map(() => []));
-  const [skipped, setSkipped] = useState<boolean[]>(() => request.questions.map(() => false));
+  const [answers, setAnswers] = useState<InputAnswers>(() =>
+    initialAnswers(request.questions.length),
+  );
   const attempts = useRef(new Map<string, ResponseAttempt>());
 
   const toggle = (qIdx: number, opt: string, multi: boolean) => {
-    setSelected((prev) =>
-      prev.map((ans, i) => {
-        if (i !== qIdx) return ans;
-        if (multi) {
-          return ans.includes(opt) ? ans.filter((v) => v !== opt) : [...ans, opt];
-        }
-        return [opt];
-      }),
-    );
-    setSkipped((prev) => prev.map((val, i) => (i === qIdx ? false : val)));
+    setAnswers((prev) => toggleOption(prev, qIdx, opt, multi));
   };
 
-  const answers: Array<string[] | null> = selected.map((ans, i) =>
-    skipped[i] ? null : ans.length > 0 ? ans : null,
-  );
+  const skip = (qIdx: number) => {
+    setAnswers((prev) => toggleSkip(prev, qIdx));
+  };
 
-  const ready = request.questions.every((_, i) => skipped[i] || selected[i]!.length > 0);
+  const payload = answersPayload(answers);
+  const ready = isAnswered(answers);
 
   const handleSubmit = () => {
-    const sig = JSON.stringify(answers);
+    const sig = JSON.stringify(payload);
     let attempt = attempts.current.get(sig);
     if (!attempt) {
       attempt = { idempotencyKey: createIdempotencyKey(), requestId: createRequestId() };
       attempts.current.set(sig, attempt);
     }
-    onSubmit(answers, attempt);
+    onSubmit(payload, attempt);
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-request-id={request.id}>
       {request.questions.map((q, qIdx) => (
         <div key={q.id || qIdx} className="space-y-2">
           {request.questions.length > 1 ? (
@@ -329,7 +337,7 @@ function InputBody({
 
           <div className="space-y-1.5" role={q.multiSelect ? "group" : "radiogroup"}>
             {q.options.map((opt) => {
-              const isChecked = selected[qIdx]!.includes(opt);
+              const isChecked = selectedFor(answers, qIdx).includes(opt);
               return (
                 <button
                   key={opt}
@@ -363,12 +371,10 @@ function InputBody({
           <div className="flex justify-end pt-1">
             <button
               type="button"
-              onClick={() =>
-                setSkipped((prev) => prev.map((v, i) => (i === qIdx ? !v : v)))
-              }
+              onClick={() => skip(qIdx)}
               className="text-[12px] font-medium text-[var(--rm-text-muted)] hover:underline active:opacity-60"
             >
-              {skipped[qIdx] ? t("common.cancel") : t("input.skip")}
+              {isSkipped(answers, qIdx) ? t("common.cancel") : t("input.skip")}
             </button>
           </div>
         </div>
