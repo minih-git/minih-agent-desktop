@@ -93,6 +93,17 @@ export function StudioScreen({
   const prevGeneratingIdsRef = useRef<Set<string>>(new Set());
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
+  /**
+   * Drop one cached object URL. Deleting an image must not leave its blob pinned
+   * for the life of the page.
+   */
+  const releaseMediaUrl = useCallback((mediaId: string) => {
+    const url = urlCacheRef.current.get(mediaId);
+    if (!url) return;
+    urlCacheRef.current.delete(mediaId);
+    URL.revokeObjectURL(url);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -299,11 +310,24 @@ export function StudioScreen({
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
+    const target = deleteTarget;
     setDeleting(true);
     try {
-      await runner.stop(deleteTarget.conversationId);
-      await history.remove(deleteTarget.conversationId);
+      // "Delete this image" removes one generation, not the conversation: an
+      // image conversation can hold several, and the older ones must survive.
+      // A generation still arriving is stopped first, which is what the confirm
+      // text promises.
+      if (target.status === "generating") await runner.stop(target.conversationId);
+      const outcome = await history.removeImage(target.conversationId, target.attemptId);
+      if (!outcome.ok) {
+        setNotice(
+          outcome.reason === "busy" ? t("directChat.stopFirst") : t("directChat.saveFailed"),
+        );
+        return;
+      }
+      if (target.mediaId) releaseMediaUrl(target.mediaId);
       setDeleteTarget(null);
+      if (viewerCardId === target.id) setViewerCardId(null);
       notifyDirectChatChanged();
     } finally {
       setDeleting(false);

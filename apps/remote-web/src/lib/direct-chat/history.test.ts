@@ -653,3 +653,82 @@ describe("archiving says what happened", () => {
     });
   });
 });
+
+/**
+ * Bug found in review: Studio's "delete this image" called `remove(conversation)`,
+ * so deleting one picture from a conversation that held several deleted them
+ * all. The removal is per generation now.
+ */
+describe("deleting one image out of a conversation", () => {
+  async function twoGenerations() {
+    const { history, turn, store } = harness();
+    const first = await history.beginTurn(turn({ text: "a red fox" }));
+    if (!first.ok) throw new Error("setup failed");
+    await history.finish(first.attempt, { state: "complete", text: "done", now: T0 });
+    const second = await history.beginTurn(
+      turn({ conversationId: first.conversation.id, text: "a blue heron" }),
+    );
+    if (!second.ok) throw new Error("setup failed");
+    await history.finish(second.attempt, { state: "complete", text: "done", now: T0 });
+    return { history, turn, store, conversationId: first.conversation.id, first, second };
+  }
+
+  it("keeps the other generations and their messages", async () => {
+    const { history, store, conversationId, first, second } = await twoGenerations();
+
+    expect(await history.removeImage(conversationId, second.attempt.id)).toEqual({
+      ok: true,
+      conversationRemoved: false,
+    });
+
+    const transcript = await history.transcript(conversationId);
+    expect(transcript?.attempts.map((attempt) => attempt.id)).toEqual([first.attempt.id]);
+    // The prompt and reply of the removed generation go with it; the other pair
+    // stays, so the conversation still reads as one exchange.
+    expect(transcript?.messages).toHaveLength(2);
+    expect(store.snapshot().conversations).toHaveLength(1);
+  });
+
+  it("removes the conversation when it held nothing else", async () => {
+    const { history, store, conversationId, first } = await twoGenerations();
+    await history.removeImage(conversationId, first.attempt.id);
+    const last = (await history.transcript(conversationId))?.attempts[0];
+    if (!last) throw new Error("expected the other generation to remain");
+
+    expect(await history.removeImage(conversationId, last.id)).toEqual({
+      ok: true,
+      conversationRemoved: true,
+    });
+    expect(await history.transcript(conversationId)).toBeNull();
+    expect(store.snapshot().messages).toEqual([]);
+    expect(store.snapshot().attempts).toEqual([]);
+  });
+
+  it("refuses while that generation is still arriving", async () => {
+    const { history, turn, conversationId, first } = await twoGenerations();
+    const live = await history.beginTurn(
+      turn({ conversationId, text: "a third prompt" }),
+    );
+    if (!live.ok) throw new Error("setup failed");
+    await history.checkpoint(live.attempt, "still arriving", T0);
+
+    expect(await history.removeImage(conversationId, live.attempt.id)).toEqual({
+      ok: false,
+      reason: "busy",
+    });
+    expect((await history.transcript(conversationId))?.attempts).toHaveLength(3);
+    expect(first.ok).toBe(true);
+  });
+
+  it("reports a generation that is already gone", async () => {
+    const { history, conversationId } = await twoGenerations();
+    expect(await history.removeImage(conversationId, "att-missing")).toEqual({
+      ok: false,
+      reason: "missing",
+    });
+    expect(await history.removeImage("conv-missing", "att-x")).toEqual({
+      ok: false,
+      reason: "missing",
+    });
+  });
+});

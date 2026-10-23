@@ -175,7 +175,11 @@ export type DirectChatTransaction = {
   putConversation(record: DirectChatConversation): Promise<void>;
   deleteConversation(id: string): Promise<void>;
   putMessage(record: DirectChatMessage): Promise<void>;
+  /** Remove one message, for deleting a single image out of a conversation. */
+  deleteMessage(id: string): Promise<void>;
   putAttempt(record: DirectChatAttempt): Promise<void>;
+  /** Remove one attempt; a conversation may hold several generations. */
+  deleteAttempt(id: string): Promise<void>;
   putDraft(scope: DirectChatScope, text: string, now?: string): Promise<void>;
   clearDraft(scope: DirectChatScope): Promise<void>;
   putMedia(record: DirectChatMedia): Promise<void>;

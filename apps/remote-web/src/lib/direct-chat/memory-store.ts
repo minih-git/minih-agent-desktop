@@ -86,7 +86,9 @@ export function createMemoryDirectChatStore(): MemoryDirectChatStore {
         conversations: DirectChatConversation[];
         deleted: string[];
         messages: DirectChatMessage[];
+        deletedMessages: string[];
         attempts: DirectChatAttempt[];
+        deletedAttempts: string[];
         drafts: DirectChatDraft[];
         clearedDrafts: string[];
         media: DirectChatMedia[];
@@ -95,7 +97,9 @@ export function createMemoryDirectChatStore(): MemoryDirectChatStore {
         conversations: [],
         deleted: [],
         messages: [],
+        deletedMessages: [],
         attempts: [],
+        deletedAttempts: [],
         drafts: [],
         clearedDrafts: [],
         media: [],
@@ -112,8 +116,14 @@ export function createMemoryDirectChatStore(): MemoryDirectChatStore {
         async putMessage(record) {
           buffered.messages.push(record);
         },
+        async deleteMessage(id) {
+          buffered.deletedMessages.push(id);
+        },
         async putAttempt(record) {
           buffered.attempts.push(record);
+        },
+        async deleteAttempt(id) {
+          buffered.deletedAttempts.push(id);
         },
         async putDraft(scope, text, now) {
           buffered.drafts.push({ scopeKey: scopeKey(scope), text, updatedAt: now ?? new Date().toISOString() });
@@ -136,6 +146,10 @@ export function createMemoryDirectChatStore(): MemoryDirectChatStore {
         for (const [key, attempt] of attempts) if (attempt.conversationId === id) attempts.delete(key);
         for (const [key, item] of media) if (item.conversationId === id) media.delete(key);
       }
+      // A single image's rows go before their replacements are written, so the
+      // same transaction can delete an attempt and update its conversation.
+      for (const id of buffered.deletedMessages) messages.delete(id);
+      for (const id of buffered.deletedAttempts) attempts.delete(id);
       for (const id of buffered.deletedMedia) media.delete(id);
       for (const sk of buffered.clearedDrafts) drafts.delete(sk);
       for (const record of buffered.conversations) conversations.set(record.id, record);
