@@ -384,49 +384,4 @@ test("a durable-only new user row stays ahead of a live streaming tail (D317)", 
   );
 });
 
-test("a repeated read reuses the rows it already had", async () => {
-  const { reuseIdenticalMessages } = await import("../src/lib/session-transcript.ts");
-  const tool = {
-    id: "tool-1",
-    role: "tool",
-    content: "Read report",
-    createdAt: "2026-08-31T00:00:00.000Z",
-    toolName: "Read",
-    toolArgs: { path: "/tmp/report.txt" },
-    toolResult: "x".repeat(64 * 1024),
-  };
-  const cached = [message("user", { role: "user" }), tool];
-  // Every read rebuilds plain objects from the IPC payload.
-  const fresh = [{ ...cached[0] }, { ...tool, toolArgs: { path: "/tmp/report.txt" } }];
-  const reused = reuseIdenticalMessages(fresh, cached);
-  assert.equal(reused[1], tool, "an unchanged row keeps its cached object");
-  assert.notEqual(reused, fresh);
 
-  const changed = [{ ...tool, toolResult: "different" }, cached[0]];
-  assert.equal(
-    reuseIdenticalMessages(changed, cached)[0].toolResult,
-    "different",
-    "a changed row is never replaced by the stale object",
-  );
-});
-
-test("the transcript cache budget counts tool results and attachments", async () => {
-  const { estimateMessageBytes, trimTranscriptTail } = await import(
-    "../src/lib/session-transcript.ts"
-  );
-  assert.ok(estimateMessageBytes({ ...message("tool"), toolResult: "x".repeat(1000) }) >= 1000);
-  assert.ok(
-    estimateMessageBytes({
-      ...message("file"),
-      attachments: [{ kind: "file", name: "a.txt", ref: "/tmp/a.txt" }],
-    }) > "file".length,
-  );
-
-  const rows = Array.from({ length: 250 }, (_, index) => message(`row-${index}`));
-  const trimmed = trimTranscriptTail(rows, 100);
-  assert.equal(trimmed.length, 100);
-  assert.equal(trimmed[0].id, "row-150");
-  assert.equal(trimmed.at(-1).id, "row-249");
-  const short = rows.slice(0, 10);
-  assert.equal(trimTranscriptTail(short, 100), short, "a window that already fits is kept as is");
-});

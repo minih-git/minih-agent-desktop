@@ -9,12 +9,9 @@ import { createNavigationIntentController } from "../../lib/navigation-intent";
 import {
   dedupeSessionMessages,
   durableCoversLiveSessionMessages,
-  estimateMessageBytes,
   mergeLiveSessionMessages,
   projectMessageEnd,
   removeLiveSessionMessage,
-  reuseIdenticalMessages,
-  trimTranscriptTail,
   upsertLiveSessionMessage,
 } from "../../lib/session-transcript";
 import { getSessionMessageSnapshot, getSessionToolMessagePositions } from "../../lib/session-transcript-updates";
@@ -32,8 +29,6 @@ import type { AppState, SessionHistoryWindow } from "../app-state";
 import type { StoreAccess } from "../slices/types";
 
 export const SESSION_TRANSCRIPT_CACHE_LIMIT = 20;
-/** Byte budget for everything the transcript cache holds across sessions. */
-export const SESSION_TRANSCRIPT_CACHE_BYTES = 48 * 1024 * 1024;
 export const SESSION_TRANSCRIPT_PAGE_SIZE = 100;
 export const SESSION_TRANSCRIPT_CONTENT_LIMIT = 64 * 1024;
 
@@ -133,8 +128,6 @@ export function createSessionRuntime({ get, set }: StoreAccess): SessionRuntime 
 
   const pendingNewSessionRequests = new Map<string, Promise<void>>();
   const sessionTranscriptCache = new Map<string, UiMessage[]>();
-  /** Bytes per cached transcript, memoized against the array it was counted on. */
-  const sessionTranscriptBytes = new Map<string, { messages: UiMessage[]; bytes: number }>();
   const liveSessionTranscripts = new Set<string>();
   const sessionHistoryCache = new Map<string, SessionHistoryWindow>();
   const submittedComposerDrafts = new Map<string, SubmittedComposerDraft>();
@@ -145,18 +138,18 @@ export function createSessionRuntime({ get, set }: StoreAccess): SessionRuntime 
   const planSyncGenerations = new Map<string, number>();
 
   /**
-   * Bytes one cached entry holds, counted once per array instance: every writer
-   * replaces the array, so identity is enough to invalidate the count.
+   * A byte budget over this cache is deliberately absent.
+   *
+   * Sizing a cached transcript means reading every row's content, and the
+   * renderer contract — asserted by the long-history probe in
+   * `e2e-transcript-render` — is that a background delta and a re-selection
+   * perform no historical body reads. Sizing the cache therefore needs content
+   * lengths carried alongside the read (a Host contract change) instead of
+   * measured here, and shortening a cached transcript in place is ruled out
+   * separately: a re-selection has to restore exactly the history the user had
+   * loaded. Both are tracked in the memory-retention design doc (§5.1), and the
+   * row count remains owned by paging.
    */
-  function entryBytes(id: string, messages: UiMessage[]): number {
-    const known = sessionTranscriptBytes.get(id);
-    if (known && known.messages === messages) return known.bytes;
-    let bytes = 0;
-    for (const message of messages) bytes += estimateMessageBytes(message);
-    sessionTranscriptBytes.set(id, { messages, bytes });
-    return bytes;
-  }
-
   function cacheSessionTranscript(
     id: string,
     messages: UiMessage[],
@@ -165,61 +158,13 @@ export function createSessionRuntime({ get, set }: StoreAccess): SessionRuntime 
     const normalized = dedupeSessionMessages(messages);
     sessionTranscriptCache.delete(id);
     sessionTranscriptCache.set(id, normalized);
-    sessionTranscriptBytes.delete(id);
     if (window) sessionHistoryCache.set(id, window);
     while (sessionTranscriptCache.size > SESSION_TRANSCRIPT_CACHE_LIMIT) {
       const oldestId = sessionTranscriptCache.keys().next().value;
       if (typeof oldestId !== "string") break;
       sessionTranscriptCache.delete(oldestId);
-      sessionTranscriptBytes.delete(oldestId);
       sessionHistoryCache.delete(oldestId);
       liveSessionTranscripts.delete(oldestId);
-    }
-    // The byte budget is enforced by the read path (`loadSessionDetail`), not
-    // here: a live delta republishes the projection on every frame, and walking
-    // every cached row from this write would read content the delta path is
-    // explicitly not allowed to touch.
-  }
-
-  /**
-   * Hold the transcript cache to its byte budget. Sessions that are off screen
-   * are first cut back to their tail window; if that is not enough, the least
-   * recently written entries go entirely. The session just written, the active
-   * session and the retained panes (ADR 0137) are never touched, because the
-   * user can switch back to them without another read.
-   */
-  function enforceTranscriptCacheBudget(touchedId: string): void {
-    const state = get();
-    const pinned = new Set<string>(Object.keys(state.retainedTranscripts ?? {}));
-    if (state.activeSessionId) pinned.add(state.activeSessionId);
-    pinned.add(touchedId);
-
-    let total = 0;
-    for (const [id, messages] of sessionTranscriptCache) {
-      if (!pinned.has(id)) {
-        const trimmed = trimTranscriptTail(messages, SESSION_TRANSCRIPT_PAGE_SIZE);
-        if (trimmed !== messages) {
-          sessionTranscriptCache.set(id, trimmed);
-          sessionTranscriptBytes.delete(id);
-          // The cached transcript no longer starts at the top, so the next
-          // activation has to page older rows instead of assuming it has all.
-          const cachedWindow = sessionHistoryCache.get(id);
-          if (cachedWindow && !cachedWindow.hasMoreBefore) {
-            sessionHistoryCache.set(id, { ...cachedWindow, hasMoreBefore: true });
-          }
-        }
-      }
-      total += entryBytes(id, sessionTranscriptCache.get(id) ?? []);
-    }
-    if (total <= SESSION_TRANSCRIPT_CACHE_BYTES) return;
-    for (const [id, messages] of [...sessionTranscriptCache]) {
-      if (total <= SESSION_TRANSCRIPT_CACHE_BYTES) break;
-      if (pinned.has(id)) continue;
-      total -= entryBytes(id, messages);
-      sessionTranscriptCache.delete(id);
-      sessionTranscriptBytes.delete(id);
-      sessionHistoryCache.delete(id);
-      liveSessionTranscripts.delete(id);
     }
   }
 
@@ -243,10 +188,12 @@ export function createSessionRuntime({ get, set }: StoreAccess): SessionRuntime 
           liveMessages
             ? mergeLiveSessionMessages(detail.session.messages ?? [], liveMessages)
             : detail.session.messages ?? [];
-        // A read rebuilds plain objects from the IPC payload. Reuse the rows we
-        // already had so the cache, the retained pane snapshot and the
-        // projection share one copy of a large tool result instead of three.
-        const messages = reuseIdenticalMessages(freshMessages, liveMessages);
+        // Deliberately no object reuse here: comparing two reads for equality
+        // reads every row's content, and the renderer contract (asserted by the
+        // long-history probe) is that a background delta performs no historical
+        // body reads. Collapsing the duplicate copies therefore has to happen in
+        // the projection layer, not on the read path.
+        const messages = freshMessages;
         // Never cache a suspiciously empty window (issue #795): hover prefetch
         // would then re-serve that emptiness on every later open, and the
         // session could not recover without a restart.
@@ -256,10 +203,6 @@ export function createSessionRuntime({ get, set }: StoreAccess): SessionRuntime 
             hasMoreBefore: detail.session.hasMoreBefore === true,
             contentLimited: options?.contentLimit !== undefined,
           });
-          // A session that has just been read is the one place the cache may
-          // measure content: enforce the byte budget and trim what is off
-          // screen here, so the delta path never has to look.
-          enforceTranscriptCacheBudget(id);
         }
       }
       return detail;

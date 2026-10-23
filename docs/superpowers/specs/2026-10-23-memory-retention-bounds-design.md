@@ -347,41 +347,36 @@ this workload — 250 events totalling ~3 MB — so their effect is proven by un
 tests (eviction order, `resync: evicted`, the global budget taking the stalest
 stream first) rather than by the soak.
 
-### Stage 2 — Renderer: bounds added, not solved
+### Stage 2 — Renderer: only the mount window shipped
 
-Implemented: identity reuse of unchanged rows on the read path, a 48 MiB cache
-byte budget with tail trimming for off-screen sessions, and a mount window that
-shrinks back to `TRANSCRIPT_WINDOW_MIN` when the reader is pinned at the bottom
-again.
+What shipped: the mounted window shrinks back to `TRANSCRIPT_WINDOW_MIN` when
+the reader is pinned at the bottom again, plus a documented decision on why the
+cache itself is not bounded in this PR.
 
-Measured outcome, stated plainly:
+Two planned pieces were implemented, measured and then **withdrawn**, because
+the renderer's own regression probe (`scripts/e2e-transcript-render.mjs`,
+long-history scenario) rejects them:
 
-- **Message reuse did not reduce the copy count in this workload**: the heap
-  still shows 180 copies of the seeded 64 KiB tool text (48 rows × ~3.75)
-  before and after the change. Reuse is proven by test
-  (`reuseIdenticalMessages` keeps one object across reads and never replaces a
-  changed row with a stale object), so the mechanism works — but the measured
-  duplicates are not produced by repeated reads. The retainer chains point at
-  the projection (`Object ⟨toolResult⟩ ← Array ⟨[]⟩ ← Object ⟨visible⟩ ← Object
-  ⟨projection⟩`), at React fiber props (`⟨messages⟩ ← UI ⟨pendingProps⟩ ← UI
-  ⟨alternate⟩`) and at the pane snapshot: objects the projection layer builds,
-  which identity reuse cannot collapse. Collapsing them needs the projection to
-  hand back the cached row object instead of rebuilding it — a separate change
-  with its own risk (the delta path must stay free of historical content
-  reads, see below).
-- The cache byte budget and the tail trim never fire in the seeded scenario:
-  six rows per session and 24 MB of payload are far below 48 MiB. They are
-  covered by unit tests (`estimateMessageBytes`, `trimTranscriptTail`) and by
-  the off-screen trim rule, not by the soak.
-- The mounted window does stay bounded with a long transcript: 300 seeded rows
-  per session, 100 loaded by the initial page, and the post-scroll row count
-  settles at 61 instead of growing with every top reach.
+- **Message reuse on the read path** (`reuseIdenticalMessages`) measured as
+  ineffective — the heap still held 180 copies of the seeded 64 KiB tool text
+  (48 rows × ~3.75) before and after — and comparing two reads for equality
+  reads every row's content, which the probe counts as a historical body read
+  during a background delta. Duplication is therefore not produced by repeated
+  reads; the retainer chains point at projection and React-prop objects.
+- **A cache byte budget** with in-place tail trimming. Trimming breaks the
+  contract that re-selecting a session restores exactly the history the user
+  had loaded (the probe fails on a 1000-row session cut to one page), and
+  sizing a cached transcript costs the same content reads. It also never fired
+  in the seeded scenario (6 rows, ~24 MB, against a 48 MiB budget).
 
-One constraint discovered while wiring the budget, now part of the invariants:
-the live delta path may not walk cached rows, because an existing test asserts
-that a tool-partial frame performs **zero** content reads over history. The
-byte budget is therefore enforced from the read path only; the delta path only
-writes.
+Both need content lengths carried by the read itself (a `session.get` contract
+change) instead of being measured in the renderer, and the copy problem needs
+the projection to reuse the cached row object. Both stay in "Still open".
+
+Measured here: with 300 seeded rows per session, 100 loaded by the initial
+page, the post-scroll mounted row count is 61 — identical to `main` — because
+the scripted scroll never grew the window, so shrink-on-re-pin is covered by
+the source test in `transcript-window.test.mjs` rather than end to end.
 
 ### Stage 3 — User MCP idle release: tested, not observable in the soak
 
