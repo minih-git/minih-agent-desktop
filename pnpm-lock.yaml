@@ -717,24 +717,6 @@ importers:
         specifier: 0.2.2
         version: 0.2.2
 
-  plugins/pi.terminal:
-    devDependencies:
-      '@minih-agent/plugin-sdk':
-        specifier: workspace:*
-        version: link:../../packages/plugin-sdk
-      '@xterm/addon-fit':
-        specifier: 0.10.0
-        version: 0.10.0(@xterm/xterm@5.5.0)
-      '@xterm/addon-search':
-        specifier: 0.15.0
-        version: 0.15.0(@xterm/xterm@5.5.0)
-      '@xterm/xterm':
-        specifier: 5.5.0
-        version: 5.5.0
-      node-pty:
-        specifier: 1.1.0
-        version: 1.1.0
-
 packages:
 
   '@algolia/abtesting@1.22.0':
@@ -2639,19 +2621,6 @@ packages:
   '@xmldom/xmldom@0.9.12':
     resolution: {integrity: sha512-5AXjrcMClTryPe9LgZrygpB1lj7s0S9E0+W+AHaVKAVyHanafK86iPSvG5xHVSp/jC+VH1UXu0TAEmY279xH7A==}
     engines: {node: '>=14.6'}
-
-  '@xterm/addon-fit@0.10.0':
-    resolution: {integrity: sha512-UFYkDm4HUahf2lnEyHvio51TNGiLK66mqP2JoATy7hRZeXaGMRDr00JiSF7m63vR5WKATF605yEggJKsw0JpMQ==}
-    peerDependencies:
-      '@xterm/xterm': ^5.0.0
-
-  '@xterm/addon-search@0.15.0':
-    resolution: {integrity: sha512-ZBZKLQ+EuKE83CqCmSSz5y1tx+aNOCUaA7dm6emgOX+8J9H1FWXZyrKfzjwzV+V14TV3xToz1goIeRhXBS5qjg==}
-    peerDependencies:
-      '@xterm/xterm': ^5.0.0
-
-  '@xterm/xterm@5.5.0':
-    resolution: {integrity: sha512-hqJHYaQb5OptNunnyAnkHyM8aCjZ1MEIDTQu1iIbbTD/xops91NB5yq1ZK/dC2JDbVWtF23zUtl9JE2NqwT87A==}
 
   abbrev@4.0.0:
     resolution: {integrity: sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==}
@@ -7100,16 +7069,6 @@ snapshots:
 
   '@xmldom/xmldom@0.9.12': {}
 
-  '@xterm/addon-fit@0.10.0(@xterm/xterm@5.5.0)':
-    dependencies:
-      '@xterm/xterm': 5.5.0
-
-  '@xterm/addon-search@0.15.0(@xterm/xterm@5.5.0)':
-    dependencies:
-      '@xterm/xterm': 5.5.0
-
-  '@xterm/xterm@5.5.0': {}
-
   abbrev@4.0.0: {}
 
   agent-base@7.1.4: {}
@@ -9062,7 +9021,8 @@ snapshots:
     dependencies:
       semver: 7.8.5
 
-  node-addon-api@7.1.0: {}
+  node-addon-api@7.1.0:
+    optional: true
 
   node-api-version@0.2.1:
     dependencies:
@@ -9094,6 +9054,7 @@ snapshots:
   node-pty@1.1.0:
     dependencies:
       node-addon-api: 7.1.0
+    optional: true
 
   node-releases@2.0.51: {}
 

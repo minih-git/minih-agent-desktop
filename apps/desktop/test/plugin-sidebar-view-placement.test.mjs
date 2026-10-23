@@ -28,9 +28,9 @@ const view = (overrides) => ({
 });
 
 const TERMINAL = view({
-  pluginId: "pi.terminal",
+  pluginId: "minih.terminal",
   viewId: "terminal",
-  ref: "pi.terminal/terminal",
+  ref: "minih.terminal/terminal",
   title: "终端",
   pluginName: "终端插件",
   icon: "terminal",
@@ -47,7 +47,7 @@ test("only sidebar-placed views reach the sidebar, in host order", async (t) => 
   const views = [TERMINAL, view(), view({ ref: "other/x", placement: "sidebar" })];
   assert.deepEqual(
     sidebarPluginViews(views).map((entry) => entry.ref),
-    ["pi.terminal/terminal", "other/x"],
+    ["minih.terminal/terminal", "other/x"],
   );
 });
 
@@ -62,8 +62,8 @@ test("only panel-placed views reach the work panel launcher", async (t) => {
 
 test("a route resolves to its sidebar view, and to nothing once that view is gone", async (t) => {
   const { sidebarPluginViewFor } = await placement(t);
-  assert.equal(sidebarPluginViewFor([TERMINAL], "pi.terminal/terminal")?.title, "终端");
-  assert.equal(sidebarPluginViewFor([TERMINAL], "pi.terminal/missing"), undefined);
+  assert.equal(sidebarPluginViewFor([TERMINAL], "minih.terminal/terminal")?.title, "终端");
+  assert.equal(sidebarPluginViewFor([TERMINAL], "minih.terminal/missing"), undefined);
   assert.equal(sidebarPluginViewFor([TERMINAL], null), undefined);
   // A work-panel view cannot be opened as a center-pane page, even by ref.
   assert.equal(sidebarPluginViewFor([view()], "pi.example/changes"), undefined);
@@ -74,16 +74,16 @@ test("opening a sidebar view owns the page, and a second selection leaves it", a
   const { useAppStore } = await ssr.load("/src/stores/app-store.ts");
   useAppStore.setState({ page: "chat", pluginViewRef: null, navStack: [{ page: "chat" }], navIndex: 0 });
 
-  useAppStore.getState().openSidebarPluginView("pi.terminal/terminal");
+  useAppStore.getState().openSidebarPluginView("minih.terminal/terminal");
   let state = useAppStore.getState();
   assert.equal(state.page, "pluginView");
-  assert.equal(state.pluginViewRef, "pi.terminal/terminal");
+  assert.equal(state.pluginViewRef, "minih.terminal/terminal");
   const entry = state.navStack.at(-1);
   assert.equal(entry.page, "pluginView");
-  assert.equal(entry.pluginViewRef, "pi.terminal/terminal");
+  assert.equal(entry.pluginViewRef, "minih.terminal/terminal");
   assert.equal(entry.sessionId, undefined, "a plugin page belongs to no chat");
 
-  useAppStore.getState().openSidebarPluginView("pi.terminal/terminal");
+  useAppStore.getState().openSidebarPluginView("minih.terminal/terminal");
   assert.equal(useAppStore.getState().page, "chat");
 });
 
@@ -91,7 +91,7 @@ test("history restores both the page and which view it was showing", async (t) =
   const ssr = await slotSsr(t);
   const { useAppStore } = await ssr.load("/src/stores/app-store.ts");
   useAppStore.setState({ page: "chat", pluginViewRef: null, navStack: [{ page: "chat" }], navIndex: 0 });
-  useAppStore.getState().openSidebarPluginView("pi.terminal/terminal");
+  useAppStore.getState().openSidebarPluginView("minih.terminal/terminal");
   useAppStore.getState().openSidebarPluginView("pi.example/changes");
 
   useAppStore.getState().setPage("plugins");
@@ -101,7 +101,7 @@ test("history restores both the page and which view it was showing", async (t) =
 
   useAppStore.getState().closeSidebarPluginView();
   assert.equal(useAppStore.getState().page, "pluginView");
-  assert.equal(useAppStore.getState().pluginViewRef, "pi.terminal/terminal");
+  assert.equal(useAppStore.getState().pluginViewRef, "minih.terminal/terminal");
 });
 
 test("the shell draws the rows, routes the page, and hides the work panel", async () => {

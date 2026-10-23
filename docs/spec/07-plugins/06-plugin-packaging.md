@@ -124,15 +124,16 @@ Two rules keep such a package honest.
 2. **"It built" is not "it is deliverable".** A development package may carry a
    subset of the platforms, and its build output says so in those words. A
    package described as a delivery must name its platforms and fail the build
-   when any of them has no asset; the staged directory is removed rather than
-   shipped. A platform asset can only be produced by building on that platform
+   when any of them has no asset, before it writes anything. A platform asset can
+   only be produced by building on that platform
    (`npm_config_build_from_source=1 pnpm rebuild node-pty` for Linux), so a
    source-build directory for the host platform is packaged as that platform.
 
-The terminal plugin implements this in `scripts/native-assets.mjs` (selection and
-the missing-platform answer), `scripts/build.mjs` (`--require-platforms` gate) and
-`test/native-assets.test.mjs` (fixtures describing folders, which is not a
-platform run).
+The first plugin published this way is `minih.terminal` in
+`minih-agent-plugins`: `plugins/minih.terminal/scripts/native-assets.mjs` holds
+the selection and the missing-platform answer, `scripts/build.mjs` the
+`--require-platforms` gate, and `tests/native-assets.test.mjs` the fixtures that
+describe folders — a fixture is not a platform run.
 
 ## 11. Implementation status
 

@@ -115,6 +115,18 @@ Node 对 pi 的包装：
 - 插件作者与市场发布流程使用的 `pi-plugin` CLI
 - 模板脚手架、清单检查、打包、发布
 
+### 第一方插件（`minih-agent-plugins`）
+
+应用不捆绑的插件放在插件分发仓库
+[`minih-git/minih-agent-plugins`](https://github.com/minih-git/minih-agent-plugins)
+里，形式是 `plugins/<plugin-id>/` 加 `packages/<plugin-id>-<version>.piplug`。
+应用和其他插件一样从该 catalog 安装，所以它的原生产物与前端打包不会进入 Desktop
+安装包（ADR optional-terminal-plugin）。
+
+把插件放在那里，也让它的构建与发布路径和它的字节待在一起：插件目录本身就是安装
+形态，产物由本仓库的 `pi-plugin` CLI 从该目录打包。`minih.terminal`（可选内嵌
+终端）是第一个这样发布的插件。
+
 ## 3. 运行时数据（不在 git 中）
 
 `MINIH_AGENT_DATA_DIR` 可覆盖默认位置：正式打包版为 `~/.minih-agent-desktop`，开发构建为
