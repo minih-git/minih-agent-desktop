@@ -330,13 +330,17 @@ export default function App() {
           onConnect={() => navigate({ kind: "modelGateway", from: "chats" })}
           onOpenSettings={() => navigate({ kind: "settings", from: "chats" })}
           onOpenConversation={(conversationId) => navigate({ kind: "chat", conversationId })}
-          onNewConversation={(modelId) => {
-            // The account remembers the explicit choice, and the conversation
-            // itself does not exist until its first message is saved.
-            directChatService().rememberModel(modelId);
-            reloadConnection();
-            navigate({ kind: "chat", conversationId: `conv-${Date.now().toString(36)}` });
-          }}
+          onNewConversation={(modelId) =>
+            // The model rides in the navigation target (ADR mobile-redesign
+            // D2): the conversation does not exist until its first message is
+            // saved, and a draft must not move the account's remembered chat
+            // model — that was bug B2.
+            navigate({
+              kind: "chat",
+              conversationId: `conv-${Date.now().toString(36)}`,
+              draftModelId: modelId ?? undefined,
+            })
+          }
           onOpenArchive={() => navigate({ kind: "chatArchive" })}
         />
       );
@@ -358,16 +362,21 @@ export default function App() {
       return (
         <DirectChatScreen
           conversationId={screen.conversationId}
+          draftModelId={screen.draftModelId}
           onBack={goBack}
           connection={connection}
           onConnect={() => navigate({ kind: "modelGateway", from: "chats" })}
           onChanged={notifyDirectChatChanged}
           onOpenConversation={(id) => navigate({ kind: "chat", conversationId: id })}
-          onNewConversation={(modelId) => {
-            directChatService().rememberModel(modelId);
-            reloadConnection();
-            navigate({ kind: "chat", conversationId: `conv-${Date.now().toString(36)}` });
-          }}
+          onNewConversation={(modelId) =>
+            // Same rule as the Chats root: the model travels with the draft and
+            // is not written to the account's remembered chat model (D2).
+            navigate({
+              kind: "chat",
+              conversationId: `conv-${Date.now().toString(36)}`,
+              draftModelId: modelId ?? undefined,
+            })
+          }
         />
       );
     }

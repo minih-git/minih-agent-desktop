@@ -162,6 +162,13 @@ export type MinihRouterModel = {
   maxOutput: number | null;
   /** Authoritative input modalities declared by upstream catalog, e.g. ["text", "image"]. */
   inputModalities?: string[];
+  /**
+   * Authoritative output modalities declared by upstream catalog, e.g. ["text"]
+   * or ["image"]. This is the only per-model evidence of what the model
+   * produces: `/api/models` fills `protocols` from the channel type, so a text
+   * model behind an OpenAI-compatible channel also declares `openai-images`.
+   */
+  outputModalities?: string[];
 };
 
 export type MinihRouterModelPage = {

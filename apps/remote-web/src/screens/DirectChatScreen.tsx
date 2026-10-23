@@ -52,6 +52,7 @@ import {
   directChatHistory,
   directChatRunner,
   directChatScope,
+  directChatService,
   directChatStore,
   secureStore,
   subscribeDirectChat,
@@ -64,6 +65,12 @@ const DRAFT_DEBOUNCE_MS = 500;
 
 export type DirectChatScreenProps = {
   conversationId: string;
+  /**
+   * The model a not-yet-saved conversation was started on (ADR mobile-redesign
+   * D2). Absent for a conversation opened from a list, whose model is on its
+   * record.
+   */
+  draftModelId?: string;
   onBack: () => void;
   connection: DirectChatConnection | null;
   onConnect: () => void;
@@ -77,6 +84,7 @@ export type DirectChatScreenProps = {
 
 export function DirectChatScreen({
   conversationId,
+  draftModelId,
   onBack,
   connection,
   onConnect,
@@ -91,6 +99,13 @@ export function DirectChatScreen({
 
   const [transcript, setTranscript] = useState<DirectChatTranscript | null>(null);
   /** False until the first read finishes, so "new" is not a guess. */
+  /**
+   * The model a draft is on. A conversation that does not exist yet has no
+   * record to hold it, and writing the choice to the account's remembered model
+   * would move the next new chat (bug B2), so the draft owns it in this screen
+   * until the first message saves the record.
+   */
+  const [draftModel, setDraftModel] = useState<string | null>(draftModelId ?? null);
   const [loaded, setLoaded] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -194,6 +209,12 @@ export function DirectChatScreen({
     setNotice(null);
   }, [conversationId]);
 
+  // A draft opened for a particular model starts on it, and re-opening the same
+  // screen for another model must not keep the previous choice.
+  useEffect(() => {
+    setDraftModel(draftModelId ?? null);
+  }, [conversationId, draftModelId]);
+
   useEffect(() => {
     void reload();
     // The runner announces every checkpoint and terminal state; re-reading is
@@ -220,12 +241,14 @@ export function DirectChatScreen({
   const archived = conversation?.archived === true;
 
   /**
-   * The model the next send uses, resolved from the cached catalog. A new
-   * conversation starts on the account's last explicit choice, and a stored one
-   * on what it remembered.
+   * The model the next send uses, resolved from the cached catalog. A stored
+   * conversation uses the model on its record; a draft uses the model it was
+   * opened on (ADR mobile-redesign D2), so switching model in an unsent
+   * conversation works — that was bug B1 — without touching the account's
+   * remembered model, which is bug B2.
    */
   const catalog: MinihRouterModel[] = connection?.models ?? [];
-  const wantedModelId = conversation?.nextModelId ?? connection?.lastModelId ?? null;
+  const wantedModelId = conversation?.nextModelId ?? draftModel ?? connection?.lastModelId ?? null;
   const nextModel = catalog.find((model) => model.id === wantedModelId) ?? null;
   /** True for a conversation opened before its first message exists. */
   const isNew = loaded && transcript === null;
@@ -236,9 +259,16 @@ export function DirectChatScreen({
   const foreignScope = Boolean(
     conversation && scope && scopeKey(conversation.scope) !== scopeKey(scope),
   );
-  const isImage = (transcript ? isImageConversation(transcript.conversation, transcript.attempts) : false) || (nextModel ? isImageModel(nextModel) : false);
+  /**
+   * A draft is an image draft only when the model it was opened on cannot hold a
+   * conversation: a model that declares both text and image output is a chat
+   * model when the user started here (D1, "the entry point chooses").
+   */
   const nextChoice = nextModel ? resolveDirectModel(nextModel) : null;
-  const usable = isImage ? Boolean(nextModel && isImageModel(nextModel)) : nextChoice?.usable === true;
+  const isImage = transcript
+    ? isImageConversation(transcript.conversation, transcript.attempts)
+    : nextModel !== null && nextChoice !== null && !nextChoice.usable && isImageModel(nextModel);
+  const usable = nextModel !== null && (isImage ? isImageModel(nextModel) : nextChoice?.usable === true);
   const activeProtocol = isImage ? "openai-images" : (nextChoice && "protocol" in nextChoice ? nextChoice.protocol : "openai-completions");
   const visionCap = nextModel ? checkModelVisionCapability(nextModel) : "unsupported";
   const supportsImages = visionCap === "supported" && !isImage;
@@ -363,6 +393,11 @@ export function DirectChatScreen({
     // `beginTurn` stored an empty draft with the message; the text in hand is
     // the message now, so no later flush may write it back as a draft.
     clearDraft();
+    // Now that a real conversation exists, the account remembers the model it
+    // uses — the right slot per operation, so an image job never becomes the
+    // next new chat's model (D2). A draft that was never sent never gets here.
+    if (isImage) directChatService().rememberImageModel(nextModel.id);
+    else directChatService().rememberModel(nextModel.id);
     await reload();
     const started = await runner.start({
       conversationId: saved.conversation.id,
@@ -652,24 +687,31 @@ export function DirectChatScreen({
           open={modelsOpen}
           models={catalog}
           mode={isImage ? "image" : "chat"}
-          selectedId={conversation?.nextModelId ?? null}
+          selectedId={wantedModelId}
           onClose={() => setModelsOpen(false)}
           onSelect={(model) => {
-            if (isImage) {
-              if (!isImageModel(model) || !conversation) return;
-              const previous = conversation.nextModelId;
+            const choice = resolveDirectModel(model);
+            // The operation is what the row can do, not what the sheet shows:
+            // an image-only row picks the image protocol, a chat row its own.
+            const protocol: string = isImage
+              ? "openai-images"
+              : choice.usable
+                ? choice.protocol
+                : "";
+            if (!isImage && !choice.usable) return;
+            if (isImage && !isImageModel(model)) return;
+            const previous = wantedModelId;
+            if (conversation) {
               void history
-                .setNextModel(conversation.id, model.id, "openai-images", new Date().toISOString())
+                .setNextModel(conversation.id, model.id, protocol, new Date().toISOString())
                 .then(reload);
-              if (previous && previous !== model.id) setNotice(t("directChat.modelChanged", { model: model.id }));
             } else {
-              const choice = resolveDirectModel(model);
-              if (!choice.usable || !conversation) return;
-              const previous = conversation.nextModelId;
-              void history
-                .setNextModel(conversation.id, model.id, choice.protocol, new Date().toISOString())
-                .then(reload);
-              if (previous && previous !== model.id) setNotice(t("directChat.modelChanged", { model: model.id }));
+              // A draft has no record yet, so the choice lives here until the
+              // first message creates one (bug B1).
+              setDraftModel(model.id);
+            }
+            if (previous && previous !== model.id) {
+              setNotice(t("directChat.modelChanged", { model: model.id }));
             }
           }}
         />

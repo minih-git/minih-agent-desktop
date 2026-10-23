@@ -1,0 +1,879 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minih 移动端重设计 · Aurora Glass 原型</title>
+<style>
+/* ===== Tokens ===== */
+:root{
+  --font:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+  --a1:#7c5cff;--a2:#22d3ee;--a3:#34d399;
+  --grad:linear-gradient(135deg,var(--a1),var(--a2) 55%,var(--a3));
+  --ease-spring:cubic-bezier(.32,1.4,.5,1);
+  --ease-out:cubic-bezier(.2,.8,.2,1);
+}
+[data-theme="dark"]{
+  --bg:#0b0c10;--surface:rgba(255,255,255,.05);--surface-2:rgba(255,255,255,.08);--solid:#15171e;
+  --glass:rgba(16,18,24,.55);--glass-strong:rgba(16,18,24,.88);--hair:rgba(255,255,255,.08);
+  --text:#f4f5f8;--text-2:rgba(244,245,248,.72);--muted:#8a8f9c;--faint:#555a66;
+  --danger:#ff6b6b;--warn:#ffb454;--ok:#34d399;--decision:#b794ff;
+  --bubble:linear-gradient(135deg,rgba(124,92,255,.35),rgba(34,211,238,.22));
+  --scrim:rgba(0,0,0,.55);--shadow:0 20px 50px rgba(0,0,0,.5);
+  --code:#0f1117;
+}
+[data-theme="light"]{
+  --bg:#f6f7fb;--surface:rgba(255,255,255,.75);--surface-2:rgba(20,22,30,.05);--solid:#ffffff;
+  --glass:rgba(246,247,251,.6);--glass-strong:rgba(246,247,251,.92);--hair:rgba(20,22,30,.08);
+  --text:#14161e;--text-2:rgba(20,22,30,.72);--muted:#6b7080;--faint:#a7abb7;
+  --danger:#e5484d;--warn:#d97706;--ok:#059669;--decision:#7c3aed;
+  --bubble:linear-gradient(135deg,rgba(124,92,255,.18),rgba(34,211,238,.14));
+  --scrim:rgba(10,12,20,.3);--shadow:0 20px 50px rgba(30,40,80,.15);
+  --code:#f0f2f7;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;font-family:var(--font)}
+body{background:#05060a;color:#e8eaf0;display:flex;gap:40px;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+svg{display:block}
+
+/* ===== Review side panel ===== */
+.panel{width:260px;align-self:stretch;max-height:880px;overflow:auto;padding:20px;border-radius:20px;background:#0f1117;border:1px solid #1d2030}
+.panel h1{font-size:18px;margin:0 0 4px}.panel p{font-size:12px;color:#8a8f9c;margin:0 0 16px;line-height:1.5}
+.panel h2{font-size:11px;letter-spacing:.08em;color:#8a8f9c;margin:18px 0 8px;text-transform:uppercase}
+.panel .jump{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:10px;font-size:13px;color:#cfd3dc}
+.panel .jump:hover,.panel .jump.on{background:#1a1d2a;color:#fff}
+.panel .seg{display:flex;background:#1a1d2a;border-radius:10px;padding:3px}
+.panel .seg button{flex:1;padding:6px;border-radius:8px;font-size:12px;color:#aab}
+.panel .seg button.on{background:#2a2e40;color:#fff}
+
+/* ===== Phone frame ===== */
+.phone{position:relative;width:390px;height:844px;border-radius:54px;padding:10px;background:#1c1d22;box-shadow:0 0 0 2px #2c2e36,0 40px 120px rgba(0,0,0,.6);flex:none}
+.device{position:relative;width:100%;height:100%;border-radius:44px;overflow:hidden;background:var(--bg);color:var(--text);transition:background .4s}
+.island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:120px;height:34px;border-radius:20px;background:#000;z-index:90}
+.statusbar{position:absolute;top:0;left:0;right:0;height:50px;display:flex;justify-content:space-between;align-items:center;padding:6px 30px 0;font-size:15px;font-weight:600;z-index:80;pointer-events:none}
+.homebar{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:var(--text);opacity:.85;z-index:90}
+
+/* ===== Screen stack & transitions ===== */
+.scr{position:absolute;inset:0;display:flex;flex-direction:column;background:var(--bg);transform:translateX(100%);visibility:hidden;transition:transform .45s var(--ease-out),opacity .45s}
+.scr.on{transform:none;visibility:visible;z-index:2}
+.scr.under{transform:translateX(-28%);opacity:.5;visibility:visible;z-index:1}
+.scr.root{transform:none;opacity:0;transition:opacity .25s}
+.scr.root.on{opacity:1}
+.scr.root.under{opacity:.6;transform:translateX(-28%);transition:transform .45s var(--ease-out),opacity .45s}
+.scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:104px 0 110px;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+.scr.no-tab .scroll{padding-bottom:30px}
+
+/* ===== Glass nav ===== */
+.nav{position:absolute;top:0;left:0;right:0;z-index:20;padding:50px 12px 8px;display:flex;align-items:center;gap:6px;background:transparent;border-bottom:1px solid transparent;transition:background .25s,border-color .25s,backdrop-filter .25s}
+.nav.solid{background:var(--glass);backdrop-filter:blur(22px) saturate(1.6);-webkit-backdrop-filter:blur(22px) saturate(1.6);border-color:var(--hair)}
+.nav .title{flex:1;text-align:center;font-weight:650;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav .sub{display:block;font-size:12px;font-weight:500;color:var(--muted)}
+.nav .title[data-mini]{opacity:0;transition:opacity .2s}
+.nav.solid .title[data-mini]{opacity:1}
+.ib{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;color:var(--text-2);transition:transform .15s,background .15s}
+.ib:active{transform:scale(.88);background:var(--surface-2)}
+.ib svg{width:22px;height:22px}
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--grad);display:grid;place-items:center;color:#fff;font-weight:700;font-size:14px;box-shadow:0 0 0 2px var(--bg),0 0 0 3.5px rgba(124,92,255,.5)}
+.large{font-size:32px;font-weight:750;letter-spacing:-.02em;margin:0 20px 14px}
+
+/* ===== Aurora ===== */
+.aurora{position:absolute;inset:-20% -20% auto;height:420px;pointer-events:none;z-index:0;filter:blur(50px);opacity:.55}
+.aurora i{position:absolute;border-radius:50%;animation:drift 20s ease-in-out infinite alternate}
+.aurora i:nth-child(1){width:260px;height:260px;left:10%;top:15%;background:var(--a1)}
+.aurora i:nth-child(2){width:220px;height:220px;left:50%;top:5%;background:var(--a2);animation-delay:-6s;animation-duration:24s}
+.aurora i:nth-child(3){width:200px;height:200px;left:30%;top:40%;background:var(--a3);animation-delay:-12s;animation-duration:18s}
+[data-theme="light"] .aurora{opacity:.35}
+@keyframes drift{0%{transform:translate(0,0) scale(1)}50%{transform:translate(40px,30px) scale(1.15)}100%{transform:translate(-30px,10px) scale(.9)}}
+.scr>.scroll{position:relative;z-index:1}
+
+/* ===== Common blocks ===== */
+.search{margin:0 16px 14px;display:flex;align-items:center;gap:8px;height:42px;padding:0 14px;border-radius:14px;background:var(--surface-2);color:var(--muted);font-size:16px}
+.search svg{width:18px;height:18px}
+.section{font-size:13px;color:var(--muted);font-weight:600;margin:18px 22px 8px}
+.group{margin:0 16px;border-radius:18px;background:var(--surface);border:1px solid var(--hair);overflow:hidden;backdrop-filter:blur(12px)}
+.press{transition:transform .18s var(--ease-out),background .18s}
+.press:active{transform:scale(.975);background:var(--surface-2)}
+.row{display:flex;align-items:center;gap:12px;padding:13px 16px;min-height:52px;width:100%;text-align:left;border-bottom:1px solid var(--hair)}
+.row:last-child{border-bottom:0}
+.row .t{flex:1;min-width:0}
+.row .t b{display:block;font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .t small{display:block;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.row .r{font-size:13px;color:var(--muted);text-align:right;flex:none}
+.chev{width:16px;height:16px;color:var(--faint);flex:none}
+.ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none;background:var(--surface-2);color:var(--text-2)}
+.ico svg{width:19px;height:19px}
+.tag{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:6px;font-size:11px;font-weight:600;background:var(--surface-2);color:var(--text-2);white-space:nowrap}
+.tag.g{background:linear-gradient(var(--solid),var(--solid)) padding-box,var(--grad) border-box;border:1px solid transparent}
+.tag.v{color:var(--decision);background:color-mix(in srgb,var(--decision) 16%,transparent)}
+.tag.ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 15%,transparent)}
+.tag.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,transparent)}
+.tag.err{color:var(--danger);background:color-mix(in srgb,var(--danger) 15%,transparent)}
+.btn{height:50px;border-radius:16px;font-size:16px;font-weight:650;width:100%;display:flex;align-items:center;justify-content:center;gap:8px;transition:transform .15s,filter .15s;position:relative;overflow:hidden}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--grad);color:#fff;box-shadow:0 10px 30px rgba(124,92,255,.35)}
+.btn.secondary{background:var(--surface-2);color:var(--text);border:1px solid var(--hair)}
+.btn.danger{color:var(--danger);background:color-mix(in srgb,var(--danger) 12%,transparent)}
+.ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.45);transform:scale(0);animation:rip .6s ease-out forwards;pointer-events:none}
+@keyframes rip{to{transform:scale(4);opacity:0}}
+
+/* ===== Tab bar ===== */
+.tabbar{position:absolute;left:12px;right:12px;bottom:22px;height:64px;border-radius:24px;z-index:40;display:flex;background:var(--glass-strong);backdrop-filter:blur(24px) saturate(1.8);-webkit-backdrop-filter:blur(24px) saturate(1.8);border:1px solid var(--hair);box-shadow:var(--shadow);transition:transform .35s var(--ease-out),opacity .3s}
+.tabbar.hide{transform:translateY(120px);opacity:0}
+.tabbar .ind{position:absolute;top:8px;bottom:8px;left:8px;width:calc((100% - 16px)/3);border-radius:18px;background:var(--surface-2);transition:transform .5s var(--ease-spring)}
+.tabbar .ind::after{content:"";position:absolute;left:30%;right:30%;bottom:-1px;height:3px;border-radius:2px;background:var(--grad)}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:600;color:var(--muted);position:relative;z-index:1;transition:color .3s}
+.tab svg{width:24px;height:24px}
+.tab.on{color:var(--text)}
+.tab.bounce svg{animation:bounce .45s var(--ease-spring)}
+@keyframes bounce{0%{transform:scale(1)}40%{transform:scale(.78)}100%{transform:scale(1)}}
+.fab{position:absolute;right:20px;bottom:100px;z-index:30;height:52px;padding:0 20px 0 16px;border-radius:26px;background:var(--grad);color:#fff;font-weight:700;font-size:15px;display:flex;align-items:center;gap:6px;box-shadow:0 12px 30px rgba(124,92,255,.45);transition:transform .2s}
+.fab:active{transform:scale(.93)}
+.fab svg{width:22px;height:22px}
+
+/* ===== Chats list ===== */
+.pins{display:flex;gap:10px;overflow-x:auto;padding:0 16px 6px;scrollbar-width:none}
+.pin{flex:none;width:118px;padding:12px;border-radius:18px;background:var(--surface);border:1px solid var(--hair);text-align:left}
+.pin .dot{width:30px;height:30px;border-radius:10px;background:var(--grad);display:grid;place-items:center;color:#fff;margin-bottom:8px}
+.pin .dot svg{width:16px;height:16px}
+.pin b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pin small{font-size:12px;color:var(--muted)}
+.swipe{position:relative;overflow:hidden;border-bottom:1px solid var(--hair)}
+.swipe:last-child{border-bottom:0}
+.swipe .acts{position:absolute;right:0;top:0;bottom:0;display:flex}
+.swipe .acts button{width:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:12px;font-weight:600;color:#fff}
+.swipe .acts svg{width:20px;height:20px}
+.a-pin{background:#6366f1}.a-arc{background:#f59e0b}.a-del{background:#ef4444}
+.swipe .front{position:relative;background:var(--solid);transition:transform .35s var(--ease-out);touch-action:pan-y}
+[data-theme="dark"] .swipe .front{background:#12141a}
+.convo{display:flex;gap:12px;padding:13px 16px;align-items:flex-start;width:100%;text-align:left}
+.convo .m{width:40px;height:40px;border-radius:13px;flex:none;display:grid;place-items:center;font-weight:800;font-size:14px;color:#fff}
+.convo .t{flex:1;min-width:0}
+.convo .l1{display:flex;align-items:center;gap:8px}
+.convo .l1 b{flex:1;min-width:0;font-size:16px;font-weight:620;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.convo .l1 time{font-size:12px;color:var(--faint);flex:none}
+.convo .l2{font-size:14px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.convo .l3{display:flex;gap:6px;margin-top:6px}
+.shimmer{background:linear-gradient(90deg,var(--a2),var(--a1),var(--a3),var(--a2));background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shim 2.4s linear infinite;font-weight:650}
+@keyframes shim{to{background-position:-300% 0}}
+.v-a{background:linear-gradient(135deg,#10a37f,#0d7a5f)}.v-b{background:linear-gradient(135deg,#d97757,#b4532a)}.v-c{background:linear-gradient(135deg,#4f6bff,#2a3bd1)}.v-d{background:linear-gradient(135deg,#4285f4,#a142f4)}.v-e{background:linear-gradient(135deg,#7c3aed,#c026d3)}
+
+/* ===== Empty / hero ===== */
+.hero{padding:40px 24px 0;text-align:center}
+.hero .orb{width:84px;height:84px;margin:0 auto 22px;border-radius:28px;background:var(--grad);display:grid;place-items:center;color:#fff;box-shadow:0 20px 60px rgba(124,92,255,.5);animation:float 6s ease-in-out infinite}
+.hero .orb svg{width:40px;height:40px}
+@keyframes float{50%{transform:translateY(-8px) rotate(3deg)}}
+.hero h2{font-size:26px;margin:0 0 8px;letter-spacing:-.01em}
+.hero p{color:var(--muted);font-size:15px;line-height:1.55;margin:0 0 26px}
+.sugs{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 16px}
+.sug{padding:14px;border-radius:18px;background:var(--surface);border:1px solid var(--hair);text-align:left;backdrop-filter:blur(12px)}
+.sug .e{font-size:20px;margin-bottom:8px}
+.sug b{display:block;font-size:14px}.sug small{font-size:12px;color:var(--muted)}
+
+/* ===== Chat detail ===== */
+.modelpill{display:inline-flex;align-items:center;gap:6px;margin-top:4px;height:28px;padding:0 10px 0 8px;border-radius:14px;font-size:13px;font-weight:650;background:linear-gradient(var(--solid),var(--solid)) padding-box,var(--grad) border-box;border:1.5px solid transparent;color:var(--text)}
+.modelpill i{width:8px;height:8px;border-radius:50%;background:var(--grad)}
+.modelpill svg{width:14px;height:14px;color:var(--muted)}
+.msgs{padding:0 16px;display:flex;flex-direction:column;gap:18px}
+.u{align-self:flex-end;max-width:82%;padding:11px 15px;border-radius:20px 20px 6px 20px;background:var(--bubble);border:1px solid var(--hair);font-size:16px;line-height:1.5}
+.u .thumb{width:150px;height:110px;border-radius:12px;margin-bottom:8px;background:radial-gradient(circle at 30% 30%,#ffd29a,transparent 50%),linear-gradient(135deg,#ff7a59,#7c5cff)}
+.as{font-size:16px;line-height:1.65;color:var(--text)}
+.as h4{margin:0 0 6px;font-size:17px}
+.as ul{margin:6px 0;padding-left:20px}
+.as p{margin:0 0 8px}
+.meta{display:flex;align-items:center;gap:4px;margin-top:6px;color:var(--faint)}
+.meta .ib{width:34px;height:34px}
+.meta .ib svg{width:17px;height:17px}
+.code{margin:10px 0;border-radius:14px;overflow:hidden;background:var(--code);border:1px solid var(--hair);font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+.code header{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;font:600 12px var(--font);color:var(--muted);border-bottom:1px solid var(--hair)}
+.code pre{margin:0;padding:10px 12px;overflow-x:auto}
+.k{color:#c792ea}.s{color:#a5e075}.f{color:#62d6ff}
+.caret{display:inline-block;width:9px;height:18px;margin-left:2px;vertical-align:-3px;border-radius:2px;background:var(--grad);box-shadow:0 0 12px var(--a2),0 0 24px var(--a1);animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:.25}}
+.endnote{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;color:var(--muted)}
+.endnote button{color:var(--a2);font-weight:650}
+.composer{position:absolute;left:0;right:0;bottom:0;z-index:30;padding:10px 12px 30px;background:linear-gradient(transparent,var(--bg) 30%)}
+.cbox{display:flex;align-items:flex-end;gap:8px;padding:6px;border-radius:26px;background:var(--glass-strong);backdrop-filter:blur(22px);border:1px solid var(--hair);box-shadow:var(--shadow)}
+.cbox textarea{flex:1;resize:none;border:0;outline:0;background:none;color:var(--text);font:16px/22px var(--font);padding:9px 4px;max-height:110px;min-height:40px}
+.cbox textarea::placeholder{color:var(--faint)}
+.cbox .ib{width:40px;height:40px;border-radius:50%;flex:none}
+.send{width:40px;height:40px;border-radius:50%;background:var(--grad);color:#fff;display:grid;place-items:center;flex:none;position:relative;overflow:hidden;transition:border-radius .35s var(--ease-spring),transform .15s}
+.send:active{transform:scale(.9)}
+.send svg{width:20px;height:20px;transition:opacity .2s,transform .3s}
+.send .stop{position:absolute;opacity:0;transform:scale(.4)}
+.send.streaming{border-radius:13px;background:var(--text);color:var(--bg)}
+.send.streaming .go{opacity:0;transform:scale(.4)}
+.send.streaming .stop{opacity:1;transform:none}
+.chips{display:flex;gap:6px;padding:0 4px 8px;overflow-x:auto;scrollbar-width:none}
+.chip{flex:none;height:30px;padding:0 12px;border-radius:15px;font-size:13px;font-weight:600;background:var(--glass-strong);backdrop-filter:blur(16px);border:1px solid var(--hair);color:var(--text-2);display:flex;align-items:center;gap:5px}
+.chip.on{color:var(--text);background:linear-gradient(var(--solid),var(--solid)) padding-box,var(--grad) border-box;border-color:transparent}
+.chip svg{width:14px;height:14px}
+
+/* ===== Studio ===== */
+.day{font-size:13px;font-weight:650;color:var(--muted);margin:10px 20px 8px}
+.masonry{columns:2;column-gap:10px;padding:0 16px}
+.art{break-inside:avoid;margin-bottom:10px;border-radius:18px;overflow:hidden;position:relative;display:block;width:100%;border:1px solid var(--hair)}
+.art .img{width:100%;transition:filter 1.1s var(--ease-out),transform 1.1s var(--ease-out)}
+.art .cap{position:absolute;left:0;right:0;bottom:0;padding:22px 10px 8px;font-size:12px;color:#fff;text-align:left;background:linear-gradient(transparent,rgba(0,0,0,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.art.gen .img{filter:blur(24px) saturate(1.4);transform:scale(1.15)}
+.art.gen::before{content:"";position:absolute;inset:0;z-index:2;background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.35) 50%,transparent 70%);background-size:250% 100%;animation:sweep 1.6s linear infinite}
+.art .ring{position:absolute;inset:0;z-index:3;display:grid;place-items:center;transition:opacity .4s}
+.art:not(.gen) .ring{opacity:0;pointer-events:none}
+.art .ring span{font-size:12px;font-weight:700;color:#fff;margin-top:6px;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+.art .ring svg{width:46px;height:46px;transform:rotate(-90deg)}
+.art.reveal::after{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.6) 50%,transparent 65%);background-size:250% 100%;animation:sweep 1s ease-out 1;pointer-events:none}
+@keyframes sweep{from{background-position:150% 0}to{background-position:-100% 0}}
+.p1{background:radial-gradient(circle at 70% 30%,#ffe29a,transparent 40%),linear-gradient(160deg,#ff8a5b,#ff3d77 50%,#5b2bd6)}
+.p2{background:radial-gradient(circle at 30% 70%,#9cf7ff,transparent 45%),linear-gradient(200deg,#0f2d6b,#1aa3c8 60%,#a8ffef)}
+.p3{background:radial-gradient(circle at 50% 40%,#fff,transparent 20%),linear-gradient(180deg,#0a0f2c,#3b1c6e 60%,#ff7ac6)}
+.p4{background:radial-gradient(circle at 40% 60%,#c3ff9a,transparent 40%),linear-gradient(135deg,#0b3d2e,#18a058 60%,#e8ff8a)}
+.p5{background:conic-gradient(from 200deg at 60% 40%,#7c5cff,#22d3ee,#34d399,#facc15,#7c5cff)}
+.p6{background:radial-gradient(circle at 30% 30%,#ffd6e7,transparent 40%),linear-gradient(160deg,#ffb3c7,#c084fc 60%,#6366f1)}
+.viewer{position:absolute;inset:0;z-index:70;background:#000;display:flex;flex-direction:column;opacity:0;pointer-events:none;transition:opacity .3s}
+.viewer.on{opacity:1;pointer-events:auto}
+.viewer .stage{flex:1;display:grid;place-items:center;padding:0 0}
+.viewer .stage div{width:100%;aspect-ratio:3/4;transform:scale(.9);transition:transform .45s var(--ease-spring)}
+.viewer.on .stage div{transform:none}
+.viewer .vtop{display:flex;justify-content:space-between;padding:54px 12px 0;color:#fff}
+.viewer .vtop .ib{color:#fff}
+.viewer .prompt{color:#ddd;font-size:14px;line-height:1.5;padding:0 20px 10px}
+.viewer .vbar{display:flex;justify-content:space-around;padding:10px 10px 36px;color:#fff}
+.viewer .vbar button{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;width:72px}
+.viewer .vbar svg{width:24px;height:24px}
+
+/* ===== Computers ===== */
+.host{margin:0 16px 12px;padding:16px;border-radius:22px;background:var(--surface);border:1px solid var(--hair);display:flex;gap:14px;align-items:center;width:calc(100% - 32px);text-align:left;backdrop-filter:blur(12px)}
+.host .os{width:48px;height:48px;border-radius:15px;background:var(--surface-2);display:grid;place-items:center;flex:none}
+.host .os svg{width:26px;height:26px}
+.host .t{flex:1;min-width:0}.host b{font-size:17px}.host small{display:block;color:var(--muted);font-size:13px;margin-top:3px}
+.pulse{position:relative;width:10px;height:10px;border-radius:50%;background:var(--ok);display:inline-block;margin-right:6px;vertical-align:1px}
+.pulse::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--ok);animation:pulse 2s ease-out infinite}
+@keyframes pulse{to{transform:scale(3);opacity:0}}
+.off{width:10px;height:10px;border-radius:50%;background:var(--faint);display:inline-block;margin-right:6px;vertical-align:1px}
+.spin{width:16px;height:16px;border-radius:50%;border:2px solid color-mix(in srgb,var(--warn) 25%,transparent);border-top-color:var(--warn);animation:rot .9s linear infinite;flex:none}
+@keyframes rot{to{transform:rotate(360deg)}}
+
+/* ===== Remote session ===== */
+.strip{display:flex;gap:6px;justify-content:center;margin-top:6px;flex-wrap:nowrap}
+.strip .tag{height:24px;font-size:12px}
+.tool{border-radius:14px;background:var(--surface);border:1px solid var(--hair);overflow:hidden}
+.tool summary{list-style:none;display:flex;align-items:center;gap:8px;padding:10px 12px;font-size:14px;color:var(--text-2);cursor:pointer}
+.tool summary::-webkit-details-marker{display:none}
+.tool summary svg{width:16px;height:16px}
+.tool .body{padding:0 12px 10px;font:12px/1.6 ui-monospace,Menlo,monospace;color:var(--muted)}
+.decision{border-radius:20px;padding:16px;position:relative;background:linear-gradient(var(--solid),var(--solid)) padding-box,linear-gradient(135deg,var(--decision),var(--a2)) border-box;border:1.5px solid transparent;box-shadow:0 0 0 6px color-mix(in srgb,var(--decision) 10%,transparent);animation:glow 2.4s ease-in-out infinite}
+@keyframes glow{50%{box-shadow:0 0 0 10px color-mix(in srgb,var(--decision) 4%,transparent)}}
+.decision h5{margin:6px 0 4px;font-size:16px}
+.decision code{display:block;margin:8px 0 12px;padding:10px;border-radius:10px;background:var(--code);font:13px ui-monospace,Menlo,monospace}
+.decision .acts{display:flex;gap:8px}
+.decision .acts .btn{height:44px;font-size:15px}
+.decision .note{font-size:12px;color:var(--muted);margin-top:10px}
+.runbar{position:absolute;left:12px;right:12px;bottom:92px;z-index:31;height:44px;border-radius:22px;padding:0 6px 0 16px;display:flex;align-items:center;gap:10px;background:var(--glass-strong);backdrop-filter:blur(20px);border:1px solid var(--hair);font-size:14px;font-weight:600}
+.runbar .grow{flex:1}
+.runbar button{height:32px;padding:0 14px;border-radius:16px;background:color-mix(in srgb,var(--danger) 16%,transparent);color:var(--danger);font-size:13px;font-weight:700}
+
+/* ===== Settings ===== */
+.acct{margin:0 16px 8px;padding:18px;border-radius:24px;position:relative;overflow:hidden;background:var(--surface);border:1px solid var(--hair);display:flex;gap:14px;align-items:center}
+.acct::before{content:"";position:absolute;inset:0;background:var(--grad);opacity:.16}
+.acct .avatar{width:54px;height:54px;font-size:20px}
+.acct .t{position:relative;flex:1}.acct b{font-size:18px}.acct small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+.acct .bal{position:relative;text-align:right}.acct .bal b{font-size:20px}.acct .bal small{font-size:12px}
+.toggle{width:51px;height:31px;border-radius:16px;background:var(--surface-2);border:1px solid var(--hair);position:relative;flex:none;transition:background .3s}
+.toggle::after{content:"";position:absolute;top:2px;left:2px;width:25px;height:25px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.3);transition:transform .35s var(--ease-spring)}
+.toggle.on{background:var(--grad)}
+.toggle.on::after{transform:translateX(20px)}
+.seg3{display:flex;padding:3px;border-radius:12px;background:var(--surface-2);position:relative;width:100%}
+.seg3 .slider{position:absolute;top:3px;bottom:3px;left:3px;width:calc((100% - 6px)/3);border-radius:9px;background:var(--solid);box-shadow:0 2px 8px rgba(0,0,0,.15);transition:transform .45s var(--ease-spring)}
+.seg3 button{flex:1;height:34px;font-size:14px;font-weight:600;position:relative;z-index:1;color:var(--muted);transition:color .3s}
+.seg3 button.on{color:var(--text)}
+.seg2 .slider{width:calc((100% - 6px)/2)}
+
+/* ===== Sheets ===== */
+.scrim{position:absolute;inset:0;z-index:60;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .3s}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:61;max-height:86%;display:flex;flex-direction:column;border-radius:28px 28px 0 0;background:var(--glass-strong);backdrop-filter:blur(30px) saturate(1.8);-webkit-backdrop-filter:blur(30px) saturate(1.8);border-top:1px solid var(--hair);transform:translateY(105%);transition:transform .5s var(--ease-spring);padding-bottom:30px}
+.sheet.on{transform:none}
+.sheet.drag{transition:none}
+.grab{padding:10px 0 4px;display:grid;place-items:center;cursor:grab;touch-action:none}
+.grab i{width:38px;height:5px;border-radius:3px;background:var(--faint)}
+.sheet h3{margin:4px 20px 12px;font-size:19px}
+.sheet .sb{overflow-y:auto;padding:0 0 4px;scrollbar-width:none}
+.mrow{cursor:pointer;display:flex;align-items:center;gap:12px;padding:11px 20px;width:100%;text-align:left}
+.mrow .m{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:13px;flex:none}
+.mrow .t{flex:1;min-width:0}
+.mrow .t b{display:block;font-size:16px;font-weight:620}
+.mrow .t .caps{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap}
+.mrow .price{font-size:11px;color:var(--faint);margin-top:3px;display:block}
+.mrow.dis{opacity:.5}
+.mrow.dis small{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.star{width:36px;height:36px;display:grid;place-items:center;color:var(--faint);border-radius:10px;transition:transform .3s var(--ease-spring)}
+.star.on{color:#facc15}
+.star:active{transform:scale(1.3) rotate(15deg)}
+.star svg{width:20px;height:20px}
+.check{width:24px;height:24px;border-radius:50%;background:var(--grad);display:grid;place-items:center;color:#fff;flex:none}
+.check svg{width:14px;height:14px}
+.vh{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.04em;margin:14px 20px 4px}
+.hint{font-size:12px;color:var(--muted);margin:0 20px 6px;line-height:1.5}
+.collapse summary{list-style:none;display:flex;align-items:center;justify-content:space-between;padding:12px 20px;font-size:14px;color:var(--muted);cursor:pointer}
+.collapse summary::-webkit-details-marker{display:none}
+.alist button{display:flex;align-items:center;gap:14px;width:100%;padding:14px 22px;font-size:16px;text-align:left}
+.alist button svg{width:21px;height:21px;color:var(--text-2)}
+.alist .dan,.alist .dan svg{color:var(--danger)}
+
+/* ===== Toast ===== */
+.toast{position:absolute;top:54px;left:50%;z-index:95;transform:translate(-50%,-90px);padding:10px 16px;border-radius:18px;font-size:14px;font-weight:600;background:var(--glass-strong);backdrop-filter:blur(20px);border:1px solid var(--hair);box-shadow:var(--shadow);display:flex;gap:8px;align-items:center;white-space:nowrap;transition:transform .5s var(--ease-spring)}
+.toast.on{transform:translate(-50%,0)}
+.toast i{width:8px;height:8px;border-radius:50%;background:var(--grad)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition-duration:.01ms!important}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="gr" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c5cff"/><stop offset=".55" stop-color="#22d3ee"/><stop offset="1" stop-color="#34d399"/></linearGradient>
+  </defs>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
+  <symbol id="i-laptop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 19h20"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5-7 7 7 7"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2.5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M9 3h6l-1 6 4 4H6l4-4zM12 13v8"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v10h14V9M10 13h4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></symbol>
+  <symbol id="i-starf" viewBox="0 0 24 24" fill="currentColor"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></symbol>
+  <symbol id="i-img" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 4 4-4 4M12 17h7"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M6 3h8l5 5v13H6zM14 3v5h5"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4zM10 21h4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M20 14A8 8 0 1 1 10 4a7 7 0 0 0 10 10z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
+  <symbol id="i-router" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M11 16.5h.01M8 9a6 6 0 0 1 8 0M5.5 6.5a10 10 0 0 1 13 0"/></symbol>
+  <symbol id="i-qr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></symbol>
+  <symbol id="i-wand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="m4 20 11-11M14 4v3M20 10h-3M18 6l-2 2M17 3l.5 1.5M21 7l-1.5.5"/></symbol>
+  <symbol id="i-apple" viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.4 2-3.5 2-3.6-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.9-3.5.9s-1.8-.9-3-.8C6.9 7.3 5.4 8.2 4.6 9.7c-1.7 2.9-.4 7.2 1.2 9.5.8 1.1 1.7 2.4 2.9 2.4 1.2-.1 1.6-.8 3-.8s1.8.8 3 .7c1.3 0 2.1-1.1 2.8-2.3.9-1.3 1.3-2.6 1.3-2.6s-2.4-1-2.4-4zM14.2 5.6c.6-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.1 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4z"/></symbol>
+  <symbol id="i-win" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5 10.5 4.4v7.1H3zM11.5 4.3 21 3v8.5h-9.5zM3 12.5h7.5v7.1L3 18.5zM11.5 12.5H21V21l-9.5-1.3z"/></symbol>
+</svg>
+
+<aside class="panel">
+  <h1>Minih 移动端重设计</h1>
+  <p>Aurora Glass 视觉系统 · 交互原型。所有按钮均可点击；左滑对话行可显示操作。</p>
+  <h2>主题</h2>
+  <div class="seg" id="panelTheme"><button data-t="dark" class="on">深色</button><button data-t="light">浅色</button></div>
+  <h2>页面</h2>
+  <div id="jumps">
+    <button class="jump" data-go="chats">1 · 对话首页</button>
+    <button class="jump" data-go="welcome">2 · 新对话（空状态）</button>
+    <button class="jump" data-go="chat">3 · 对话详情 · 流式回复</button>
+    <button class="jump" data-sheet="models">4 · 模型选择</button>
+    <button class="jump" data-go="studio">5 · 创作 · 绘图</button>
+    <button class="jump" data-go="hosts">6 · 电脑</button>
+    <button class="jump" data-go="session">7 · 远程会话</button>
+    <button class="jump" data-go="settings">8 · 设置</button>
+    <button class="jump" data-go="offline">9 · 未连接</button>
+  </div>
+  <h2>演示</h2>
+  <button class="jump" id="demoStream">▶ 播放流式回复</button>
+  <button class="jump" id="demoGen">▶ 生成一张图片</button>
+  <button class="jump" id="demoToast">▶ 顶部提示</button>
+</aside>
+
+<div class="phone">
+<div class="device" id="device">
+  <div class="island"></div>
+  <div class="statusbar"><span>9:41</span><span>5G · 100%</span></div>
+
+  <!-- 1. Chats root -->
+  <section class="scr root on" id="s-chats" data-tab="0">
+    <div class="aurora"><i></i><i></i><i></i></div>
+    <nav class="nav"><button class="ib" data-go="settings" aria-label="设置"><span class="avatar">M</span></button><div class="title" data-mini>对话</div><button class="ib" data-sheet="models" aria-label="模型"><svg><use href="#i-spark"/></svg></button></nav>
+    <div class="scroll">
+      <h1 class="large">对话</h1>
+      <div class="search"><svg><use href="#i-search"/></svg>搜索对话与内容</div>
+      <div class="section">置顶</div>
+      <div class="pins">
+        <button class="pin press" data-go="chat"><div class="dot"><svg><use href="#i-term"/></svg></div><b>Rust 生命周期</b><small>昨天</small></button>
+        <button class="pin press" data-go="chat"><div class="dot"><svg><use href="#i-file"/></svg></div><b>周报草稿</b><small>周一</small></button>
+        <button class="pin press" data-go="chat"><div class="dot"><svg><use href="#i-spark"/></svg></div><b>旅行计划</b><small>10/18</small></button>
+      </div>
+      <div class="section">最近</div>
+      <div class="group" id="convList">
+        <div class="swipe"><div class="acts"><button class="a-pin" data-toast="已置顶"><svg><use href="#i-pin"/></svg>置顶</button><button class="a-arc" data-toast="已归档"><svg><use href="#i-archive"/></svg>归档</button><button class="a-del" data-sheet="del"><svg><use href="#i-trash"/></svg>删除</button></div>
+          <div class="front"><button class="convo" data-go="chat"><span class="m v-c">DS</span><span class="t"><span class="l1"><b>解释这段 React 渲染逻辑</b><time>现在</time></span><span class="l2 shimmer">正在回复…</span><span class="l3"><span class="tag">deepseek-v4</span></span></span></button></div></div>
+        <div class="swipe"><div class="acts"><button class="a-pin" data-toast="已置顶"><svg><use href="#i-pin"/></svg>置顶</button><button class="a-arc" data-toast="已归档"><svg><use href="#i-archive"/></svg>归档</button><button class="a-del" data-sheet="del"><svg><use href="#i-trash"/></svg>删除</button></div>
+          <div class="front"><button class="convo" data-go="chat"><span class="m v-b">CL</span><span class="t"><span class="l1"><b>帮我改一封给客户的道歉邮件，语气要正式但不卑微</b><time>14:20</time></span><span class="l2">好的，下面是修改后的版本：尊敬的王总…</span><span class="l3"><span class="tag">claude-sonnet-5</span></span></span></button></div></div>
+        <div class="swipe"><div class="acts"><button class="a-pin" data-toast="已置顶"><svg><use href="#i-pin"/></svg>置顶</button><button class="a-arc" data-toast="已归档"><svg><use href="#i-archive"/></svg>归档</button><button class="a-del" data-sheet="del"><svg><use href="#i-trash"/></svg>删除</button></div>
+          <div class="front"><button class="convo" data-go="chat"><span class="m v-a">GP</span><span class="t"><span class="l1"><b>SQL 慢查询排查</b><time>11:02</time></span><span class="l2">执行计划显示全表扫描，建议在 user_id 上…</span><span class="l3"><span class="tag">gpt-5.4</span><span class="tag warn">已中断</span></span></span></button></div></div>
+        <div class="swipe"><div class="acts"><button class="a-pin" data-toast="已置顶"><svg><use href="#i-pin"/></svg>置顶</button><button class="a-arc" data-toast="已归档"><svg><use href="#i-archive"/></svg>归档</button><button class="a-del" data-sheet="del"><svg><use href="#i-trash"/></svg>删除</button></div>
+          <div class="front"><button class="convo" data-go="chat"><span class="m v-d">GE</span><span class="t"><span class="l1"><b>英文论文摘要翻译</b><time>昨天</time></span><span class="l2">请求失败：余额不足，充值后可重试</span><span class="l3"><span class="tag">gemini-3.1-pro</span><span class="tag err">失败</span></span></span></button></div></div>
+        <div class="swipe"><div class="acts"><button class="a-pin" data-toast="已置顶"><svg><use href="#i-pin"/></svg>置顶</button><button class="a-arc" data-toast="已归档"><svg><use href="#i-archive"/></svg>归档</button><button class="a-del" data-sheet="del"><svg><use href="#i-trash"/></svg>删除</button></div>
+          <div class="front"><button class="convo" data-go="chat"><span class="m v-e">QW</span><span class="t"><span class="l1"><b>周末去杭州两日游怎么安排</b><time>10/20</time></span><span class="l2">第一天上午：西湖断桥 → 白堤 → 孤山…</span><span class="l3"><span class="tag">qwen3-max</span></span></span></button></div></div>
+      </div>
+      <div class="group" style="margin-top:14px"><button class="row press" data-toast="打开已归档（3）"><span class="ico"><svg><use href="#i-archive"/></svg></span><span class="t"><b>已归档</b></span><span class="r">3</span><svg class="chev"><use href="#i-right"/></svg></button></div>
+    </div>
+    <button class="fab" data-go="welcome"><svg><use href="#i-plus"/></svg>新对话</button>
+  </section>
+
+  <!-- 2. New chat / empty -->
+  <section class="scr no-tab" id="s-welcome">
+    <div class="aurora"><i></i><i></i><i></i></div>
+    <nav class="nav"><button class="ib" data-back aria-label="返回"><svg><use href="#i-left"/></svg></button><div class="title">新对话<br><button class="modelpill" data-sheet="models"><i></i><span class="mp-name">deepseek-v4</span><svg><use href="#i-down"/></svg></button></div><span class="ib"></span></nav>
+    <div class="scroll" style="padding-top:150px">
+      <div class="hero"><div class="orb"><svg><use href="#i-spark"/></svg></div><h2>晚上好，今天想聊点什么？</h2><p>模型直连 Minih Router，记录只保存在本机。</p></div>
+      <div class="sugs">
+        <button class="sug press" data-fill="帮我写一封请假邮件，明天上午去医院"><div class="e">✉️</div><b>写一封邮件</b><small>请假、道歉、跟进</small></button>
+        <button class="sug press" data-fill="解释下面这段代码在做什么："><div class="e">🧩</div><b>解释代码</b><small>逐行讲清楚</small></button>
+        <button class="sug press" data-fill="把下面这段话翻译成地道的英文："><div class="e">🌐</div><b>翻译</b><small>中英互译、润色</small></button>
+        <button class="sug press" data-fill="给我 10 个周末活动的点子"><div class="e">💡</div><b>头脑风暴</b><small>点子、标题、命名</small></button>
+      </div>
+    </div>
+    <div class="composer"><div class="cbox"><button class="ib" data-sheet="attach" aria-label="添加"><svg><use href="#i-plus"/></svg></button><textarea rows="1" id="welcomeInput" placeholder="发消息…"></textarea><button class="send" data-start-chat aria-label="发送"><svg class="go"><use href="#i-up"/></svg><svg class="stop"><use href="#i-stop"/></svg></button></div></div>
+  </section>
+
+  <!-- 3. Chat detail -->
+  <section class="scr no-tab" id="s-chat">
+    <nav class="nav solid"><button class="ib" data-back aria-label="返回"><svg><use href="#i-left"/></svg></button><div class="title">解释这段 React 渲染逻辑<br><button class="modelpill" data-sheet="models"><i></i><span class="mp-name">deepseek-v4</span><svg><use href="#i-down"/></svg></button></div><button class="ib" data-sheet="msg" aria-label="更多"><svg><use href="#i-more"/></svg></button></nav>
+    <div class="scroll" id="chatScroll" style="padding-top:140px;padding-bottom:120px">
+      <div class="msgs" id="msgs">
+        <div class="u"><div class="thumb"></div>这张截图里的组件为什么会渲染两次？</div>
+        <div class="as"><h4>原因：开发模式下的 StrictMode</h4><p>React 18+ 在开发环境会<b>故意</b>调用两次组件函数和 effect，用来暴露副作用问题：</p><ul><li>只在开发模式发生，生产构建不会</li><li>effect 会执行 setup → cleanup → setup</li></ul>
+          <div class="code"><header><span>tsx</span><button data-toast="已复制代码">复制</button></header><pre><span class="k">useEffect</span>(() =&gt; {
+  <span class="k">const</span> id = <span class="f">setInterval</span>(tick, <span class="s">1000</span>);
+  <span class="k">return</span> () =&gt; <span class="f">clearInterval</span>(id);
+}, []);</pre></div>
+          <div class="meta"><button class="ib" data-toast="已复制" aria-label="复制"><svg><use href="#i-copy"/></svg></button><button class="ib" data-regen aria-label="重新生成"><svg><use href="#i-redo"/></svg></button><button class="ib" data-toast="已打开系统分享" aria-label="分享"><svg><use href="#i-share"/></svg></button><button class="ib" data-sheet="msg" aria-label="更多"><svg><use href="#i-more"/></svg></button></div></div>
+      </div>
+    </div>
+    <div class="composer"><div class="cbox"><button class="ib" data-sheet="attach" aria-label="添加"><svg><use href="#i-plus"/></svg></button><textarea rows="1" id="chatInput" placeholder="继续追问…">那生产环境怎么确认只渲染一次？</textarea><button class="send" id="sendBtn" aria-label="发送"><svg class="go"><use href="#i-up"/></svg><svg class="stop"><use href="#i-stop"/></svg></button></div></div>
+  </section>
+
+  <!-- 5. Studio root -->
+  <section class="scr root" id="s-studio" data-tab="1">
+    <div class="aurora"><i></i><i></i><i></i></div>
+    <nav class="nav"><button class="ib" data-go="settings" aria-label="设置"><span class="avatar">M</span></button><div class="title" data-mini>创作</div><button class="ib" data-sheet="imgmodels" aria-label="绘图模型"><svg><use href="#i-wand"/></svg></button></nav>
+    <div class="scroll" style="padding-bottom:250px">
+      <h1 class="large">创作</h1>
+      <div style="margin:0 20px 6px"><button class="modelpill" data-sheet="imgmodels" style="margin:0"><i></i><span class="mp-img">gpt-image-2</span><svg><use href="#i-down"/></svg></button></div>
+      <div class="day">今天</div>
+      <div class="masonry" id="gallery">
+        <button class="art press" data-view="p1" data-prompt="黄昏下的赛博朋克街道，霓虹灯倒映在雨后的路面"><div class="img p1" style="aspect-ratio:3/4"></div><div class="cap">黄昏下的赛博朋克街道</div></button>
+        <button class="art press" data-view="p2" data-prompt="深海里发光的水母群，电影感"><div class="img p2" style="aspect-ratio:1"></div><div class="cap">深海发光水母</div></button>
+        <button class="art press" data-view="p5" data-prompt="抽象流体渐变壁纸"><div class="img p5" style="aspect-ratio:1"></div><div class="cap">流体渐变壁纸</div></button>
+        <button class="art press" data-view="p3" data-prompt="星空下的极光小屋"><div class="img p3" style="aspect-ratio:3/4"></div><div class="cap">极光小屋</div></button>
+      </div>
+      <div class="day">10月21日</div>
+      <div class="masonry">
+        <button class="art press" data-view="p4" data-prompt="清晨森林里的苔藓与光束"><div class="img p4" style="aspect-ratio:16/10"></div><div class="cap">森林晨光</div></button>
+        <button class="art press" data-view="p6" data-prompt="粉紫色调的梦幻云朵"><div class="img p6" style="aspect-ratio:3/4"></div><div class="cap">梦幻云朵</div></button>
+      </div>
+    </div>
+    <div class="composer" style="bottom:0;padding-bottom:100px;background:linear-gradient(transparent,var(--bg) 45%)">
+      <div class="chips" id="ratioChips"><button class="chip on">1:1</button><button class="chip">3:4</button><button class="chip">16:9</button><button class="chip" data-sheet="attach"><svg><use href="#i-img"/></svg>参考图</button></div>
+      <div class="cbox"><textarea rows="1" id="promptInput" placeholder="描述你想要的画面…">一只坐在月球上看地球的橘猫，水彩风格</textarea><button class="send" id="genBtn" aria-label="生成"><svg class="go"><use href="#i-spark"/></svg><svg class="stop"><use href="#i-stop"/></svg></button></div>
+    </div>
+  </section>
+
+  <!-- 6. Hosts root -->
+  <section class="scr root" id="s-hosts" data-tab="2">
+    <div class="aurora"><i></i><i></i><i></i></div>
+    <nav class="nav"><button class="ib" data-go="settings" aria-label="设置"><span class="avatar">M</span></button><div class="title" data-mini>电脑</div><button class="ib" data-sheet="addhost" aria-label="添加电脑"><svg><use href="#i-plus"/></svg></button></nav>
+    <div class="scroll">
+      <h1 class="large">电脑</h1>
+      <button class="host press" data-go="projects"><span class="os"><svg><use href="#i-apple"/></svg></span><span class="t"><b>minih 的 MacBook Pro</b><small><span class="pulse"></span>在线 · 2 个会话运行中</small></span><span class="tag v">1 待决定</span><svg class="chev"><use href="#i-right"/></svg></button>
+      <button class="host press" data-go="projects"><span class="os"><svg><use href="#i-win"/></svg></span><span class="t"><b>办公室台式机</b><small><span class="pulse"></span>在线 · 空闲</small></span><svg class="chev"><use href="#i-right"/></svg></button>
+      <button class="host press" data-toast="这台电脑离线，开机并打开 Minih 后自动连接"><span class="os"><svg><use href="#i-laptop"/></svg></span><span class="t"><b>家里的 Linux 服务器</b><small><span class="off"></span>离线 · 3 小时前</small></span><svg class="chev"><use href="#i-right"/></svg></button>
+      <div class="section">添加电脑</div>
+      <div class="group"><button class="row press" data-toast="同账号的电脑会自动出现"><span class="ico"><svg><use href="#i-router"/></svg></span><span class="t"><b>用 Minih 账号登录</b><small>同账号电脑自动接入</small></span><svg class="chev"><use href="#i-right"/></svg></button><button class="row press" data-toast="打开相机扫描电脑上的二维码"><span class="ico"><svg><use href="#i-qr"/></svg></span><span class="t"><b>扫码配对</b><small>电脑端 设置 › 远程 › 配对手机</small></span><svg class="chev"><use href="#i-right"/></svg></button></div>
+    </div>
+  </section>
+
+  <!-- 6b. Projects + sessions -->
+  <section class="scr" id="s-projects">
+    <nav class="nav solid"><button class="ib" data-back aria-label="返回"><svg><use href="#i-left"/></svg></button><div class="title">minih 的 MacBook Pro<span class="sub">Minih-Agent-Desktop</span></div><button class="ib" data-sheet="newsession" aria-label="新会话"><svg><use href="#i-plus"/></svg></button></nav>
+    <div class="scroll" style="padding-bottom:40px">
+      <div class="section">项目</div>
+      <div class="pins" style="padding-bottom:14px">
+        <button class="pin press" style="background:var(--grad);color:#fff"><div class="dot" style="background:rgba(255,255,255,.25)"><svg><use href="#i-folder"/></svg></div><b>Minih-Agent-Desktop</b><small style="color:rgba(255,255,255,.8)">5 个会话</small></button>
+        <button class="pin press" data-toast="切换到 Minih-Router"><div class="dot"><svg><use href="#i-folder"/></svg></div><b>Minih-Router</b><small>2 个会话</small></button>
+        <button class="pin press" data-toast="切换到 scripts"><div class="dot"><svg><use href="#i-folder"/></svg></div><b>scripts</b><small>1 个会话</small></button>
+      </div>
+      <div class="section">会话</div>
+      <div class="group">
+        <button class="row press" data-go="session"><span class="ico" style="color:var(--decision)"><svg><use href="#i-info"/></svg></span><span class="t"><b>清理构建产物并重跑测试</b><small>等你决定：运行 rm -rf dist</small></span><span class="tag v">待决定</span></button>
+        <button class="row press" data-go="session"><span class="spin"></span><span class="t"><b>移动端重设计</b><small>正在编辑 ChatsScreen.tsx</small></span><span class="r">01:24</span></button>
+        <button class="row press" data-go="session"><span class="ico" style="color:var(--ok)"><svg><use href="#i-check"/></svg></span><span class="t"><b>修复设置页底部弹层</b><small>已完成 · 12 个文件</small></span><span class="r">14:02</span></button>
+        <button class="row press" data-go="session"><span class="ico"><svg><use href="#i-chat"/></svg></span><span class="t"><b>升级 Electron 到 39</b><small>空闲</small></span><span class="r">昨天</span></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. Remote session -->
+  <section class="scr no-tab" id="s-session">
+    <nav class="nav solid" style="padding-bottom:10px"><button class="ib" data-back aria-label="返回"><svg><use href="#i-left"/></svg></button><div class="title">清理构建产物并重跑测试<div class="strip"><button class="tag g" data-sheet="sessmodel">claude-sonnet-5 · 高思考</button><button class="tag" data-sheet="sessmodel">执行</button><button class="tag" data-sheet="sessmodel">需确认</button></div></div><button class="ib" data-sheet="sessmodel" aria-label="会话信息"><svg><use href="#i-info"/></svg></button></nav>
+    <div class="scroll" style="padding-top:150px;padding-bottom:160px">
+      <div class="msgs">
+        <div class="u">把 dist 清掉，然后重新跑一遍测试，看看哪些挂了</div>
+        <details class="tool"><summary><svg><use href="#i-file"/></svg>读取了 3 个文件<span style="flex:1"></span><svg><use href="#i-down"/></svg></summary><div class="body">package.json<br>vitest.config.ts<br>apps/remote-web/tsconfig.json</div></details>
+        <details class="tool"><summary><svg style="color:var(--ok)"><use href="#i-check"/></svg>运行 pnpm typecheck<span style="flex:1"></span><span style="font-size:12px;color:var(--muted)">4.2s</span></summary><div class="body">$ tsc -p tsconfig.json --noEmit<br>✓ 无错误</div></details>
+        <div class="as">类型检查通过。下一步需要删除 <code>dist</code> 目录，这是不可恢复的操作，需要你确认。</div>
+        <div class="decision" id="decision"><span class="tag warn">高风险 · 删除文件</span><h5>允许运行这条命令？</h5><code>rm -rf apps/remote-web/dist</code>
+          <div class="acts"><button class="btn primary" data-decide="已允许一次">允许一次</button><button class="btn secondary" data-decide="已拒绝">拒绝</button></div>
+          <div class="note">「本会话总是允许」需在电脑上设置</div></div>
+      </div>
+    </div>
+    <div class="runbar" id="runbar"><span class="spin"></span><span class="grow">正在运行 · <span id="clock">01:24</span></span><button data-sheet="stop">停止</button></div>
+    <div class="composer"><div class="cbox"><textarea rows="1" placeholder="给 Agent 补充说明…"></textarea><button class="send" data-toast="已发送到电脑" aria-label="发送"><svg class="go"><use href="#i-up"/></svg><svg class="stop"><use href="#i-stop"/></svg></button></div></div>
+  </section>
+
+  <!-- 8. Settings -->
+  <section class="scr no-tab" id="s-settings">
+    <nav class="nav"><button class="ib" data-back aria-label="返回"><svg><use href="#i-left"/></svg></button><div class="title" data-mini>设置</div><span class="ib"></span></nav>
+    <div class="scroll" style="padding-top:100px">
+      <h1 class="large">设置</h1>
+      <div class="acct"><span class="avatar">M</span><span class="t"><b>minih</b><small>minih@example.com</small></span><span class="bal"><b>¥128.40</b><small>Router 余额</small></span></div>
+      <div class="section">默认模型</div>
+      <div class="group">
+        <button class="row press" data-sheet="models"><span class="ico"><svg><use href="#i-chat"/></svg></span><span class="t"><b>新对话</b></span><span class="r mp-name">deepseek-v4</span><svg class="chev"><use href="#i-right"/></svg></button>
+        <button class="row press" data-sheet="imgmodels"><span class="ico"><svg><use href="#i-wand"/></svg></span><span class="t"><b>绘图</b></span><span class="r mp-img">gpt-image-2</span><svg class="chev"><use href="#i-right"/></svg></button>
+      </div>
+      <div class="section">模型网关</div>
+      <div class="group"><div class="row"><span class="ico"><svg><use href="#i-router"/></svg></span><span class="t"><b>Minih Router</b><small><span class="pulse"></span>已连接 · 63 个模型</small></span></div><button class="row press" data-sheet="disconnect"><span class="t"><b style="color:var(--danger)">断开连接</b></span></button></div>
+      <div class="section">通知</div>
+      <div class="group">
+        <div class="row"><span class="ico"><svg><use href="#i-bell"/></svg></span><span class="t"><b>推送通知</b><small>系统已授权</small></span><button class="toggle on" data-toggle aria-label="推送通知"></button></div>
+        <div class="row"><span class="t"><b>回复完成时提醒</b></span><button class="toggle on" data-toggle aria-label="回复完成时提醒"></button></div>
+        <div class="row"><span class="t"><b>需要我决定时提醒</b></span><button class="toggle on" data-toggle aria-label="需要我决定时提醒"></button></div>
+      </div>
+      <div class="section">外观</div>
+      <div class="group" style="padding:12px"><div class="seg3" id="themeSeg"><span class="slider"></span><button data-t="system">跟随系统</button><button data-t="light">浅色</button><button data-t="dark" class="on">深色</button></div></div>
+      <div class="section">本机记录</div>
+      <div class="group"><div class="row"><span class="ico"><svg><use href="#i-history"/></svg></span><span class="t"><b>对话记录</b><small>只保存在这台手机</small></span><span class="r">32 条</span></div><button class="row press" data-sheet="clear"><span class="t"><b style="color:var(--danger)">清除本机记录</b></span></button></div>
+      <div class="section">关于</div>
+      <div class="group"><div class="row"><span class="ico"><svg><use href="#i-info"/></svg></span><span class="t"><b>版本</b></span><span class="r">0.26.0</span></div><button class="row press" data-toast="打开隐私政策"><span class="t"><b>隐私政策</b></span><svg class="chev"><use href="#i-right"/></svg></button></div>
+    </div>
+  </section>
+
+  <!-- 9. Offline -->
+  <section class="scr no-tab" id="s-offline">
+    <div class="aurora" style="height:600px"><i></i><i></i><i></i></div>
+    <nav class="nav"><button class="ib" data-back aria-label="返回"><svg><use href="#i-left"/></svg></button><div class="title"></div><span class="ib"></span></nav>
+    <div class="scroll" style="padding-top:150px">
+      <div class="hero"><div class="orb"><svg><use href="#i-router"/></svg></div><h2>连接你的 Minih 账号</h2><p>登录后直接使用 Router 里的所有模型对话和绘图，<br>同账号的电脑也会自动出现在「电脑」里。</p></div>
+      <div style="padding:10px 24px;display:flex;flex-direction:column;gap:10px"><button class="btn primary" data-ripple data-go="chats">登录 Minih 账号</button><button class="btn secondary" data-toast="打开相机扫码">扫码连接</button></div>
+    </div>
+  </section>
+
+  <!-- Tab bar -->
+  <nav class="tabbar" id="tabbar"><span class="ind" id="ind"></span>
+    <button class="tab on" data-tabgo="chats"><svg><use href="#i-chat"/></svg>对话</button>
+    <button class="tab" data-tabgo="studio"><svg><use href="#i-spark"/></svg>创作</button>
+    <button class="tab" data-tabgo="hosts"><svg><use href="#i-laptop"/></svg>电脑</button>
+  </nav>
+
+  <!-- Image viewer -->
+  <div class="viewer" id="viewer"><div class="vtop"><button class="ib" data-closeviewer aria-label="关闭"><svg><use href="#i-x"/></svg></button><button class="ib" data-closeviewer data-sheet="imgmore" aria-label="更多"><svg><use href="#i-more"/></svg></button></div><div class="stage"><div id="viewerArt"></div></div><div class="prompt" id="viewerPrompt"></div><div class="vbar"><button data-toast="已保存到相册"><svg><use href="#i-save"/></svg>保存</button><button data-toast="已打开系统分享"><svg><use href="#i-share"/></svg>分享</button><button data-again><svg><use href="#i-redo"/></svg>再来一张</button><button data-closeviewer data-toast="已删除"><svg><use href="#i-trash"/></svg>删除</button></div></div>
+
+  <!-- Sheets -->
+  <div class="scrim" id="scrim"></div>
+  <div class="sheet" id="sheet"><div class="grab" id="grab"><i></i></div><div id="sheetBody"></div></div>
+  <div class="toast" id="toast"><i></i><span></span></div>
+  <div class="homebar"></div>
+</div>
+</div>
+<script>
+(() => {
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const device = $('#device');
+
+/* ---------- state ---------- */
+const state = { chatModel: 'deepseek-v4', imgModel: 'gpt-image-2', chatDefault: 'deepseek-v4', imgDefault: 'gpt-image-2', theme: 'dark' };
+const CHAT_MODELS = [
+  ['OpenAI', 'v-a', 'GP', [['gpt-5.4', ['视觉', '推理', '400K'], '¥8.8 / 百万输入'], ['gpt-5.4-mini', ['视觉', '400K'], '¥1.8 / 百万输入']]],
+  ['Anthropic', 'v-b', 'CL', [['claude-sonnet-5', ['视觉', '推理', '200K'], '¥21 / 百万输入'], ['claude-haiku-4.5', ['视觉', '200K'], '¥7 / 百万输入']]],
+  ['DeepSeek', 'v-c', 'DS', [['deepseek-v4', ['推理', '128K'], '¥2 / 百万输入'], ['deepseek-v4-flash', ['128K'], '¥0.5 / 百万输入']]],
+  ['Google', 'v-d', 'GE', [['gemini-3.1-pro', ['视觉', '推理', '1M'], '¥9 / 百万输入'], ['gemini-3.1-flash-image', ['视觉', '出图'], '¥2.2 / 百万输入']]],
+  ['Qwen', 'v-e', 'QW', [['qwen3-max', ['推理', '256K'], '¥6 / 百万输入']]],
+];
+const CHAT_DISABLED = [['gpt-image-2', '这是绘图模型，请在「创作」中使用'], ['text-embedding-3-large', '向量模型，不能用于对话'], ['bge-reranker-v2', '重排模型，不能用于对话']];
+const IMG_MODELS = [['gpt-image-2', 'v-a', 'GP', ['出图', '参考图'], '¥0.3 / 张'], ['gemini-3.1-flash-image', 'v-d', 'GE', ['图文', '参考图'], '¥0.28 / 张']];
+const IMG_UNDECLARED = [['flux-dev', 'v-e', 'FX', '网关未声明出图能力，可以尝试']];
+
+/* ---------- toast ---------- */
+let toastTimer;
+function toast(msg) {
+  const t = $('#toast'); $('span', t).textContent = msg; t.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 1900);
+}
+
+/* ---------- navigation ---------- */
+const ROOTS = { chats: 0, studio: 1, hosts: 2 };
+const PATH = { welcome: ['chats'], chat: ['chats'], settings: ['chats'], offline: ['chats'], projects: ['hosts'], session: ['hosts', 'projects'] };
+let stack = ['chats'];
+function render() {
+  const top = stack[stack.length - 1];
+  const under = stack.length > 1 ? stack[stack.length - 2] : null;
+  $$('.scr').forEach((s) => {
+    const id = s.id.slice(2);
+    s.classList.toggle('on', id === top);
+    s.classList.toggle('under', id === under);
+  });
+  const isRoot = top in ROOTS;
+  $('#tabbar').classList.toggle('hide', !isRoot);
+  const rootId = stack[0];
+  $('#ind').style.transform = `translateX(${ROOTS[rootId] * 100}%)`;
+  $$('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tabgo === rootId));
+  $$('#jumps .jump').forEach((j) => j.classList.toggle('on', j.dataset.go === top));
+}
+function go(id) {
+  if (id in ROOTS) { stack = [id]; render(); return; }
+  if (stack[stack.length - 1] === id) return;
+  stack.push(id); render();
+}
+function jump(id) {
+  closeSheet(); closeViewer();
+  stack = id in ROOTS ? [id] : [...PATH[id], id]; render();
+}
+function back() { if (stack.length > 1) { stack.pop(); render(); } }
+
+/* ---------- glass nav on scroll ---------- */
+$$('.scr').forEach((s) => {
+  const nav = $('.nav', s), sc = $('.scroll', s);
+  if (!nav || !sc || nav.classList.contains('solid')) return;
+  sc.addEventListener('scroll', () => nav.classList.toggle('solid', sc.scrollTop > 12), { passive: true });
+});
+
+/* ---------- sheets ---------- */
+const sheet = $('#sheet'), scrim = $('#scrim'), body = $('#sheetBody');
+function openSheet(name, opt) {
+  body.innerHTML = SHEETS[name](opt);
+  sheet.style.transform = ''; sheet.classList.add('on'); scrim.classList.add('on');
+}
+function closeSheet() { sheet.classList.remove('on'); scrim.classList.remove('on'); sheet.style.transform = ''; }
+scrim.addEventListener('click', closeSheet);
+(() => { // drag to dismiss
+  let y0 = null, dy = 0;
+  $('#grab').addEventListener('pointerdown', (e) => { y0 = e.clientY; dy = 0; sheet.classList.add('drag'); e.target.setPointerCapture(e.pointerId); });
+  $('#grab').addEventListener('pointermove', (e) => { if (y0 === null) return; dy = Math.max(0, e.clientY - y0); sheet.style.transform = `translateY(${dy}px)`; });
+  $('#grab').addEventListener('pointerup', () => { sheet.classList.remove('drag'); y0 = null; if (dy > 110) closeSheet(); else sheet.style.transform = ''; });
+})();
+
+const caps = (list) => list.map((c) => `<span class="tag${c === '出图' || c === '图文' ? ' g' : ''}">${c}</span>`).join('');
+const star = (on, id, kind) => `<button class="star${on ? ' on' : ''}" data-star="${kind}:${id}" aria-label="设为默认"><svg><use href="#i-star${on ? 'f' : ''}"/></svg></button>`;
+const check = '<span class="check"><svg><use href="#i-check"/></svg></span>';
+function modelList(kind, q = '') {
+  const m = (id) => id.toLowerCase().includes(q.toLowerCase());
+  if (kind === 'chat') {
+    let h = '';
+    for (const [vendor, cls, ab, rows] of CHAT_MODELS) {
+      const r = rows.filter(([id]) => m(id)); if (!r.length) continue;
+      h += `<div class="vh">${vendor}</div>` + r.map(([id, c, p]) => `<div role="button" tabindex="0" class="mrow press" data-pick="chat:${id}"><span class="m ${cls}">${ab}</span><span class="t"><b>${id}</b><span class="caps">${caps(c)}</span><span class="price">${p}</span></span>${id === state.chatModel ? check : ''}${star(id === state.chatDefault, id, 'chat')}</div>`).join('');
+    }
+    const d = CHAT_DISABLED.filter(([id]) => m(id));
+    if (d.length) h += `<details class="collapse"><summary>不能用于对话（${d.length}）<svg style="width:16px;height:16px"><use href="#i-down"/></svg></summary>${d.map(([id, why]) => `<div class="mrow dis"><span class="m" style="background:var(--surface-2)"></span><span class="t"><b>${id}</b><small>${why}</small></span></div>`).join('')}</details>`;
+    return h || '<p class="hint" style="text-align:center;padding:30px 0">没有匹配的模型</p>';
+  }
+  let h = '<div class="vh">绘图模型</div>' + IMG_MODELS.filter(([id]) => m(id)).map(([id, cls, ab, c, p]) => `<div role="button" tabindex="0" class="mrow press" data-pick="img:${id}"><span class="m ${cls}">${ab}</span><span class="t"><b>${id}</b><span class="caps">${caps(c)}</span><span class="price">${p}</span></span>${id === state.imgModel ? check : ''}${star(id === state.imgDefault, id, 'img')}</div>`).join('');
+  h += '<div class="vh">网关未声明能力</div><p class="hint">网关没有说明这些模型能否出图。可以尝试，失败与计费以网关为准。</p>' + IMG_UNDECLARED.filter(([id]) => m(id)).map(([id, cls, ab, why]) => `<div role="button" tabindex="0" class="mrow press" data-pick="img:${id}"><span class="m ${cls}">${ab}</span><span class="t"><b>${id}</b><small style="display:block;font-size:12px;color:var(--muted);margin-top:2px">${why}</small></span>${id === state.imgModel ? check : ''}</div>`).join('');
+  return h;
+}
+const seg2 = (kind) => `<div style="padding:0 20px 12px"><div class="seg3 seg2" id="mseg"><span class="slider" style="transform:translateX(${kind === 'img' ? 100 : 0}%)"></span><button data-mseg="chat" class="${kind === 'chat' ? 'on' : ''}">对话模型</button><button data-mseg="img" class="${kind === 'img' ? 'on' : ''}">绘图模型</button></div></div>`;
+const modelsSheet = (kind) => `<h3>选择模型</h3>${seg2(kind)}<div class="search" style="margin:0 20px 6px"><svg><use href="#i-search"/></svg><input id="mq" placeholder="搜索模型或厂商" style="all:unset;flex:1;color:var(--text);font-size:16px" data-kind="${kind}"></div><p class="hint">点 ☆ 设为默认，新建时直接使用，不再每次询问。</p><div class="sb" id="mlist" style="max-height:470px">${modelList(kind)}</div>`;
+const alist = (items) => `<div class="alist">${items.map(([icon, label, act, dan]) => `<button class="press${dan ? ' dan' : ''}" ${act}><svg><use href="#i-${icon}"/></svg>${label}</button>`).join('')}</div>`;
+const confirm = (title, text, ok, okAct) => `<h3>${title}</h3><p class="hint" style="font-size:15px;margin-bottom:18px">${text}</p><div style="padding:0 20px;display:flex;flex-direction:column;gap:10px"><button class="btn danger" ${okAct}>${ok}</button><button class="btn secondary" data-close>取消</button></div>`;
+const SHEETS = {
+  models: (k) => modelsSheet(k || 'chat'),
+  imgmodels: () => modelsSheet('img'),
+  del: () => confirm('删除这段对话？', '只删除这台手机上的记录。正在回复的对话会先停止再删除。', '删除', 'data-close data-toast="已删除"'),
+  msg: () => alist([['copy', '复制', 'data-close data-toast="已复制"'], ['edit', '编辑并重发', 'data-close data-edit'], ['redo', '重新生成', 'data-close data-regen'], ['share', '分享', 'data-close data-toast="已打开系统分享"'], ['trash', '删除这条', 'data-close data-toast="已删除这条消息"', 1]]),
+  attach: () => `<h3>添加</h3><p class="hint">当前模型支持图片输入，单张不超过 10 MB。</p>` + alist([['img', '从相册选择', 'data-close data-toast="已添加 1 张图片"'], ['spark', '拍照', 'data-close data-toast="打开相机"'], ['file', '文件', 'data-close data-toast="选择文件"']]),
+  addhost: () => `<h3>添加电脑</h3>` + alist([['router', '用 Minih 账号登录', 'data-close data-toast="同账号电脑会自动出现"'], ['qr', '扫码配对', 'data-close data-toast="打开相机扫码"']]),
+  newsession: () => `<h3>新会话</h3><div class="group" style="margin-bottom:14px"><div class="row"><span class="t"><b>项目</b></span><span class="r">Minih-Agent-Desktop</span></div><button class="row press" data-toast="与电脑上的模型列表一致"><span class="t"><b>模型</b></span><span class="r">claude-sonnet-5 · 高</span><svg class="chev"><use href="#i-right"/></svg></button><div class="row"><span class="t"><b>模式</b></span><span class="r">执行</span></div><div class="row"><span class="t"><b>权限</b></span><span class="r">需确认</span></div></div><div style="padding:0 16px"><button class="btn primary" data-close data-go="session">开始</button></div>`,
+  sessmodel: () => `<h3>会话设置</h3><p class="hint">与电脑上这个会话的设置同步；运行中不能切换模型。</p><div class="section">模型</div><div class="group"><button class="row press" data-toast="空闲时可切换"><span class="m v-b" style="width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:12px">CL</span><span class="t"><b>claude-sonnet-5</b><small>Anthropic · 支持图片</small></span><svg class="chev"><use href="#i-right"/></svg></button></div><div class="section">思考强度</div><div style="padding:0 16px"><div class="seg3" data-seg><span class="slider" style="transform:translateX(200%)"></span><button>低</button><button>中</button><button class="on">高</button></div></div><div class="section">模式</div><div style="padding:0 16px"><div class="seg3 seg2" data-seg><span class="slider" style="transform:translateX(100%)"></span><button>计划</button><button class="on">执行</button></div></div><div class="section">权限</div><div style="padding:0 16px 8px"><div class="seg3 seg2" data-seg><span class="slider"></span><button class="on">需确认</button><button>自动</button></div></div>`,
+  stop: () => confirm('停止运行？', '已经执行的操作不会撤销，已产生的费用不会退回。', '停止', 'data-close data-stoprun'),
+  disconnect: () => confirm('断开模型网关？', '本机的对话记录会保留，重新连接后可以继续。', '断开', 'data-close data-toast="已断开" data-go="offline"'),
+  clear: () => confirm('清除本机记录？', '32 条对话和其中的图片会从这台手机删除，无法恢复。', '清除', 'data-close data-toast="已清除"'),
+  imgmore: () => alist([['copy', '复制提示词', 'data-close data-toast="已复制提示词"'], ['img', '作为参考图', 'data-close data-toast="已添加为参考图"'], ['trash', '删除', 'data-close data-toast="已删除"', 1]]),
+};
+function refreshModelLabels() {
+  $$('.mp-name').forEach((e) => (e.textContent = state.chatModel));
+  $$('.mp-img').forEach((e) => (e.textContent = state.imgModel));
+}
+
+/* ---------- theme ---------- */
+function setTheme(t) {
+  state.theme = t;
+  const eff = t === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : t;
+  document.documentElement.dataset.theme = eff;
+  const idx = ['system', 'light', 'dark'].indexOf(t);
+  $('#themeSeg .slider').style.transform = `translateX(${idx * 100}%)`;
+  $$('#themeSeg button').forEach((b) => b.classList.toggle('on', b.dataset.t === t));
+  $$('#panelTheme button').forEach((b) => b.classList.toggle('on', b.dataset.t === eff));
+}
+$('#themeSeg .slider').style.transform = 'translateX(200%)';
+
+/* ---------- streaming reply ---------- */
+const REPLY = '生产环境下 StrictMode 的双调用不会发生。确认方式有三种：① 用 `pnpm build && pnpm preview` 跑生产构建；② 在 React DevTools Profiler 里录一次，看 commit 次数；③ 在组件里临时加一个 `useRef` 计数并打印。如果生产构建仍然渲染两次，通常是父组件的 key 变化或状态在 effect 里被同步写回导致的。';
+let streamTimer = null;
+function startStream(userText) {
+  const msgs = $('#msgs'), sc = $('#chatScroll'), btn = $('#sendBtn');
+  if (userText) { const u = document.createElement('div'); u.className = 'u'; u.textContent = userText; msgs.append(u); }
+  const a = document.createElement('div'); a.className = 'as'; a.innerHTML = '<span class="txt"></span><span class="caret"></span>'; msgs.append(a);
+  btn.classList.add('streaming');
+  let i = 0;
+  streamTimer = setInterval(() => {
+    i += 2; $('.txt', a).textContent = REPLY.slice(0, i); sc.scrollTop = sc.scrollHeight;
+    if (i >= REPLY.length) finish(a, false);
+  }, 35);
+}
+function finish(a, stopped) {
+  clearInterval(streamTimer); streamTimer = null; $('#sendBtn').classList.remove('streaming');
+  $('.caret', a)?.remove();
+  a.insertAdjacentHTML('beforeend', stopped
+    ? '<div class="endnote">已停止 · <button data-continue>继续</button><button data-regen>重试</button></div>'
+    : '<div class="meta"><button class="ib" data-toast="已复制" aria-label="复制"><svg><use href="#i-copy"/></svg></button><button class="ib" data-regen aria-label="重新生成"><svg><use href="#i-redo"/></svg></button><button class="ib" data-toast="已打开系统分享" aria-label="分享"><svg><use href="#i-share"/></svg></button></div>');
+  $('#chatScroll').scrollTop = 1e6;
+}
+$('#sendBtn').addEventListener('click', () => {
+  if (streamTimer) { finish($$('#msgs .as').pop(), true); return; }
+  const v = $('#chatInput').value.trim(); if (!v) { toast('先输入要发送的内容'); return; }
+  $('#chatInput').value = ''; startStream(v);
+});
+
+/* ---------- image generation ---------- */
+let genTimer = null, genCard = null;
+const ART = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'];
+function startGen() {
+  const prompt = $('#promptInput').value.trim(); if (!prompt) { toast('先描述想要的画面'); return; }
+  const p = ART[Math.floor(Math.random() * ART.length)];
+  genCard = document.createElement('button'); genCard.className = 'art gen'; genCard.dataset.view = p; genCard.dataset.prompt = prompt;
+  genCard.innerHTML = `<div class="img ${p}" style="aspect-ratio:1"></div><div class="ring"><div style="display:grid;justify-items:center"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="3"/><circle class="pg" cx="18" cy="18" r="15.9" fill="none" stroke="url(#gr)" stroke-width="3" stroke-linecap="round" stroke-dasharray="0 100"/></svg><span>生成中 0%</span></div></div><div class="cap">${prompt}</div>`;
+  $('#gallery').prepend(genCard); $('#s-studio .scroll').scrollTop = 0;
+  $('#genBtn').classList.add('streaming');
+  let pct = 0;
+  genTimer = setInterval(() => {
+    pct = Math.min(100, pct + 3 + Math.random() * 5);
+    $('.pg', genCard).setAttribute('stroke-dasharray', `${pct} 100`); $('.ring span', genCard).textContent = `生成中 ${Math.floor(pct)}%`;
+    if (pct >= 100) {
+      clearInterval(genTimer); genTimer = null; $('#genBtn').classList.remove('streaming');
+      genCard.classList.remove('gen'); genCard.classList.add('reveal', 'press'); toast('图片已生成'); genCard = null;
+    }
+  }, 140);
+}
+$('#genBtn').addEventListener('click', () => {
+  if (genTimer) { clearInterval(genTimer); genTimer = null; genCard.remove(); genCard = null; $('#genBtn').classList.remove('streaming'); toast('已停止，这张图不会保存'); return; }
+  startGen();
+});
+
+/* ---------- image viewer ---------- */
+function openViewer(el) { $('#viewerArt').className = el.dataset.view; $('#viewerPrompt').textContent = el.dataset.prompt; $('#viewer').classList.add('on'); }
+function closeViewer() { $('#viewer').classList.remove('on'); }
+
+/* ---------- swipe rows ---------- */
+let swiped = false;
+$$('.swipe .front').forEach((f) => {
+  let x0 = null, dx = 0, base = 0;
+  f.addEventListener('pointerdown', (e) => { x0 = e.clientX; dx = 0; base = f._open ? -216 : 0; f.style.transition = 'none'; });
+  f.addEventListener('pointermove', (e) => {
+    if (x0 === null) return; dx = e.clientX - x0;
+    if (Math.abs(dx) > 6) { swiped = true; f.setPointerCapture(e.pointerId); }
+    f.style.transform = `translateX(${Math.min(0, Math.max(-236, base + dx))}px)`;
+  });
+  const end = () => {
+    if (x0 === null) return; x0 = null; f.style.transition = '';
+    const open = base + dx < -80;
+    $$('.swipe .front').forEach((o) => { if (o !== f) { o._open = false; o.style.transform = ''; } });
+    f._open = open; f.style.transform = open ? 'translateX(-216px)' : '';
+    setTimeout(() => (swiped = false), 0);
+  };
+  f.addEventListener('pointerup', end); f.addEventListener('pointercancel', end);
+});
+
+/* ---------- ripple ---------- */
+device.addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('.btn.primary,.send,.fab'); if (!b) return;
+  const r = b.getBoundingClientRect(), s = Math.max(r.width, r.height);
+  const sp = document.createElement('span'); sp.className = 'ripple';
+  sp.style.cssText = `width:${s}px;height:${s}px;left:${e.clientX - r.left - s / 2}px;top:${e.clientY - r.top - s / 2}px`;
+  b.append(sp); setTimeout(() => sp.remove(), 650);
+});
+
+/* ---------- one delegated click handler ---------- */
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('button,[data-go],[data-pick],.art'); if (!el) return;
+  if (swiped && el.closest('.swipe')) { e.preventDefault(); return; }
+  const d = el.dataset;
+  if (el.closest('.panel')) {
+    if (d.go) jump(d.go);
+    if (d.sheet) { jump('chat'); setTimeout(() => openSheet(d.sheet), 200); }
+    if (d.t) setTheme(d.t);
+    if (el.id === 'demoStream') { jump('chat'); $('#chatInput').value=''; setTimeout(() => !streamTimer && startStream('那生产环境怎么确认只渲染一次？'), 350); }
+    if (el.id === 'demoGen') { jump('studio'); setTimeout(() => !genTimer && startGen(), 300); }
+    if (el.id === 'demoToast') toast('已切换到 claude-sonnet-5，下一条消息生效');
+    return;
+  }
+  if (d.star) {
+    e.stopPropagation(); const [k, id] = d.star.split(':');
+    if (k === 'chat') state.chatDefault = id; else state.imgDefault = id;
+    $('#mlist').innerHTML = modelList(k, $('#mq')?.value || ''); toast(`${id} 已设为${k === 'chat' ? '新对话' : '绘图'}默认`); return;
+  }
+  if (d.pick) {
+    const [k, id] = d.pick.split(':');
+    if (k === 'chat') state.chatModel = id; else state.imgModel = id;
+    refreshModelLabels(); closeSheet(); toast(k === 'chat' ? `已切换到 ${id}，下一条消息生效` : `绘图模型：${id}`); return;
+  }
+  if (d.mseg) { const sl = $('#mseg .slider'); sl.style.transform = `translateX(${d.mseg === 'img' ? 100 : 0}%)`; $$('#mseg button').forEach((b) => b.classList.toggle('on', b === el)); $('#mq').dataset.kind = d.mseg; $('#mlist').innerHTML = modelList(d.mseg, $('#mq').value); return; }
+  if (el.closest('[data-seg]')) { const g = el.closest('[data-seg]'), bs = $$('button', g), i = bs.indexOf(el); $('.slider', g).style.transform = `translateX(${i * 100}%)`; bs.forEach((b) => b.classList.toggle('on', b === el)); toast(`已同步到电脑：${el.textContent}`); return; }
+  if (el.closest('#themeSeg')) { setTheme(d.t); return; }
+  if (el.closest('#ratioChips') && !d.sheet) { $$('#ratioChips .chip').forEach((c) => !c.dataset.sheet && c.classList.toggle('on', c === el)); return; }
+  if (el.classList.contains('art') && !el.classList.contains('gen')) { openViewer(el); return; }
+  if ('closeviewer' in d) closeViewer();
+  if ('again' in d) { closeViewer(); $('#promptInput').value = $('#viewerPrompt').textContent; setTimeout(startGen, 250); return; }
+  if ('close' in d) closeSheet();
+  if ('back' in d) back();
+  if (d.tabgo) { el.classList.remove('bounce'); void el.offsetWidth; el.classList.add('bounce'); go(d.tabgo); return; }
+  if (d.go) go(d.go);
+  if (d.sheet) openSheet(d.sheet);
+  if (d.toast) toast(d.toast);
+  if ('toggle' in d) { el.classList.toggle('on'); toast(`${el.getAttribute('aria-label')}：${el.classList.contains('on') ? '已开启' : '已关闭'}`); }
+  if (d.fill) { $('#welcomeInput').value = d.fill; $('#welcomeInput').focus(); }
+  if ('startChat' in d) { const v = $('#welcomeInput').value.trim() || '你好！'; $('#welcomeInput').value = ''; go('chat'); setTimeout(() => !streamTimer && startStream(v), 400); }
+  if ('regen' in d && !streamTimer) { go('chat'); setTimeout(() => startStream(null), 150); }
+  if ('continue' in d && !streamTimer) startStream(null);
+  if ('edit' in d) { $('#chatInput').value = '这张截图里的组件为什么会渲染两次？'; $('#chatInput').focus(); toast('修改后发送会开一条新分支'); }
+  if ('stoprun' in d) { $('#runbar').innerHTML = '<span class="grow" style="color:var(--muted)">已停止 · 已执行的操作不会撤销</span>'; }
+  if (d.decide) { const c = $('#decision'); c.style.animation = 'none'; c.innerHTML = `<span class="tag ${d.decide === '已拒绝' ? 'err' : 'ok'}">${d.decide}</span><code style="margin:8px 0 0">rm -rf apps/remote-web/dist</code>`; toast(`${d.decide}，已同步到电脑`); }
+});
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'mq') $('#mlist').innerHTML = modelList(e.target.dataset.kind, e.target.value);
+  if (e.target.tagName === 'TEXTAREA') { e.target.style.height = 'auto'; e.target.style.height = Math.min(110, e.target.scrollHeight) + 'px'; }
+});
+
+/* ---------- running clock ---------- */
+let sec = 84;
+setInterval(() => { const c = $('#clock'); if (!c) return; sec++; c.textContent = `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`; }, 1000);
+
+render();
+})();
+</script>
+</body>
+</html>

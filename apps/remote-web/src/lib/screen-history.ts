@@ -39,6 +39,13 @@ export function sameScreen(a: Screen, b: Screen): boolean {
         a.title === (b as typeof a).title &&
         a.projectId === (b as typeof a).projectId
       );
+    case "chat":
+      // The conversation id is part of the destination; so is the model a
+      // draft was opened on, because re-targeting a draft is a real move.
+      return (
+        a.conversationId === (b as typeof a).conversationId &&
+        a.draftModelId === (b as typeof a).draftModelId
+      );
     case "settings":
       return a.from === (b as typeof a).from;
     default:
@@ -66,6 +73,11 @@ export function screenFromHistoryState(state: unknown): Screen | null {
             kind: "chat",
             conversationId: screen.conversationId,
             ...(screen.fromArchive === true ? { fromArchive: true } : {}),
+            // A draft model is an ordinary model id or nothing: anything else
+            // in a restored entry is dropped rather than trusted.
+            ...(typeof screen.draftModelId === "string" && screen.draftModelId.trim()
+              ? { draftModelId: screen.draftModelId }
+              : {}),
           }
         : null;
     case "scopedChats":

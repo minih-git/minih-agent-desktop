@@ -3,14 +3,18 @@ import { describe, expect, it } from "vitest";
 import type { MinihRouterModel } from "@minih-agent/shared";
 
 import {
+  capabilityChips,
+  checkModelVisionCapability,
   filterDirectModels,
   initialDirectModel,
+  isImageModel,
+  resolveDirectImageModel,
   resolveDirectModel,
-  splitDirectModels,
   resolveEffectiveChatModel,
   resolveEffectiveImageModel,
-  isImageModel,
-  checkModelVisionCapability,
+  resolveStudioModel,
+  splitDirectImageModels,
+  splitDirectModels,
 } from "./catalog.js";
 function model(overrides: Partial<MinihRouterModel> & { id: string }): MinihRouterModel {
   return {
@@ -86,22 +90,27 @@ describe("models that are not chat choices", () => {
       "anthropic",
       "gemini",
     ];
-    const choice = resolveDirectModel(model({ id: "gpt-image-2.5", protocols: real }));
+    const choice = resolveDirectModel(
+      model({ id: "gpt-image-2.5", protocols: real, outputModalities: ["image"] }),
+    );
     expect(choice.usable).toBe(false);
     if (!choice.usable) expect(choice.reason).toBe("image-model");
   });
 
-  it("keeps the image reason on rows that also declare another chat protocol", () => {
-    // An image row is explained as an image row, not as a protocol mismatch.
-    for (const protocols of [
-      ["openai-images"],
-      ["openai-images", "openai-completions"],
-      ["anthropic", "openai-images"],
-    ]) {
+  it("explains an undeclared image row as an image row, not as a protocol mismatch", () => {
+    // No per-model output declaration, and no chat protocol: the route is the
+    // only evidence, and it says images.
+    for (const protocols of [["openai-images"], ["anthropic", "openai-images"]]) {
       const choice = resolveDirectModel(model({ id: "m", protocols }));
       expect(choice.usable, protocols.join(",")).toBe(false);
       if (!choice.usable) expect(choice.reason, protocols.join(",")).toBe("image-model");
     }
+    // The same row with a declared image output stays an image row, however the
+    // channel union also lists chat protocols (D1).
+    const declared = resolveDirectModel(
+      model({ id: "gpt-image-2", protocols: ["openai-images", "openai-completions"], outputModalities: ["image"] }),
+    );
+    expect(declared).toMatchObject({ usable: false, reason: "image-model" });
   });
 
   it("disables a model that declares only other non-conversation protocols", () => {
@@ -125,6 +134,79 @@ describe("models that are not chat choices", () => {
     const choice = resolveDirectModel(model({ id: "claude", protocols: ["anthropic"] }));
     expect(choice.usable).toBe(false);
     if (!choice.usable) expect(choice.reason).toBe("unsupported-protocol");
+  });
+});
+
+/**
+ * ADR mobile-redesign D1: capability comes from per-model output modalities.
+ *
+ * Router fills `protocols` from the channel type, so the OpenAI-compatible
+ * channel makes every model it carries look like an image model. These cases
+ * are the classification table of D1 and the report that produced it.
+ */
+describe("capability from declared output modalities", () => {
+  /** What `/api/models` returns for a model on an OpenAI-compatible channel. */
+  const channelUnion = ["openai-completions", "openai-responses", "openai-images"];
+
+  it("offers a text model that the channel union also lists under openai-images", () => {
+    const text = model({ id: "gpt-5", protocols: channelUnion, outputModalities: ["text"] });
+    expect(resolveDirectModel(text).usable).toBe(true);
+    expect(isImageModel(text)).toBe(false);
+  });
+
+  it("keeps a declared image model out of chat, whatever chat protocol the union adds", () => {
+    const image = model({ id: "gpt-image-2", protocols: channelUnion, outputModalities: ["image"] });
+    expect(resolveDirectModel(image)).toMatchObject({ usable: false, reason: "image-model" });
+    expect(isImageModel(image)).toBe(true);
+  });
+
+  it("offers a model that declares both, and lets the entry point choose the operation", () => {
+    const both = model({
+      id: "gemini-3.1-flash-image",
+      protocols: channelUnion,
+      outputModalities: ["text", "image"],
+    });
+    expect(resolveDirectModel(both).usable).toBe(true);
+    expect(isImageModel(both)).toBe(true);
+    expect(capabilityChips(both)).toEqual(["chat", "image"]);
+  });
+
+  it("reads an undeclared row as chat when the route declares a chat protocol", () => {
+    const undeclared = model({ id: "unlisted", protocols: channelUnion });
+    expect(resolveDirectModel(undeclared).usable).toBe(true);
+    // A working chat model is not also offered as a maybe-image model.
+    expect(splitDirectImageModels([undeclared]).unconfirmed).toEqual([]);
+  });
+
+  it("lists an undeclared row that declares only openai-images as unconfirmed, not as chat", () => {
+    const legacy = model({ id: "legacy-image", protocols: ["openai-images"] });
+    expect(splitDirectImageModels([legacy])).toMatchObject({
+      usable: [],
+      unconfirmed: [legacy],
+      disabled: [],
+    });
+    expect(resolveDirectImageModel(legacy)).toMatchObject({ usable: true, confirmed: false });
+    expect(resolveDirectModel(legacy).usable).toBe(false);
+  });
+
+  it("reads a declared embedding output as neither chat nor image", () => {
+    const embedding = model({
+      id: "text-embedding-3",
+      protocols: ["openai-embeddings"],
+      outputModalities: ["embedding"],
+    });
+    expect(resolveDirectModel(embedding)).toMatchObject({ usable: false, reason: "not-chat" });
+    expect(isImageModel(embedding)).toBe(false);
+  });
+
+  it("splits the studio's list into declared, undeclared and impossible rows", () => {
+    const declared = model({ id: "gpt-image-2", outputModalities: ["image"] });
+    const legacy = model({ id: "legacy-image", protocols: ["openai-images"] });
+    const text = model({ id: "gpt-5", outputModalities: ["text"] });
+    const list = splitDirectImageModels([declared, legacy, text]);
+    expect(list.usable).toEqual([declared]);
+    expect(list.unconfirmed).toEqual([legacy]);
+    expect(list.disabled).toEqual([{ model: text, reason: "not-image" }]);
   });
 });
 

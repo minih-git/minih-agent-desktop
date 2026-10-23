@@ -69,7 +69,19 @@ export type Screen =
    * returns to the list they actually came from. The conversation itself is a
    * local record, and its id is what the screen reads it by.
    */
-  | { kind: "chat"; conversationId: string; fromArchive?: boolean }
+  /**
+   * D3: one direct conversation (native builds only).
+   *
+   * `fromArchive` says the user opened it from D4 rather than D1, so back
+   * returns to the list they actually came from. The conversation itself is a
+   * local record, and its id is what the screen reads it by.
+   *
+   * `draftModelId` is the model a not-yet-saved conversation was started on
+   * (ADR mobile-redesign D2). It travels with the navigation instead of being
+   * written to the account's remembered model, because a draft that is never
+   * sent must not change what the *next* new chat starts on — that was bug B2.
+   */
+  | { kind: "chat"; conversationId: string; fromArchive?: boolean; draftModelId?: string }
   /** D4: archived direct conversations (native builds only). */
   | { kind: "chatArchive" }
   /**

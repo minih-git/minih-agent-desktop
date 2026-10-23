@@ -119,6 +119,46 @@ describe("parseMinihRouterModelPage", () => {
     expect(parsed.items[1]?.category).toBe("vision");
   });
 
+  // Router does not declare protocols per model: `/api/models` fills
+  // `protocols` with the union of the channel type's client protocols, and the
+  // OpenAI-compatible channel carries `openai-images` for every model it
+  // serves. The per-model evidence of what a model produces is the catalog
+  // reference's output modalities, so the parser must keep them.
+  it("keeps declared output modalities, which the channel union cannot fake", () => {
+    const union = {
+      items: [
+        {
+          client_model: "deepseek-v4",
+          // A text model behind an OpenAI-compatible channel.
+          protocols: ["openai-completions", "openai-responses", "openai-images"],
+          upstream_models: [
+            {
+              catalog_reference: { model: { modalities: { input: ["text"], output: ["text"] } } },
+            },
+          ],
+        },
+        {
+          client_model: "gpt-image-2",
+          protocols: ["openai-completions", "openai-images"],
+          upstream_models: [
+            { catalog_reference: { model: { modalities: { output: ["image"] } } } },
+          ],
+        },
+        {
+          client_model: "some-unlisted-model",
+          protocols: ["openai-completions", "openai-images"],
+          upstream_models: [{ model_id: "some-unlisted-model" }],
+        },
+      ],
+      pagination: { page: 1, page_size: 3, total_items: 3, total_pages: 1 },
+    };
+    const parsed = parseMinihRouterModelPage(union);
+    expect(parsed.items[0]?.outputModalities).toEqual(["text"]);
+    expect(parsed.items[1]?.outputModalities).toEqual(["image"]);
+    // Absent is absent: no output declaration is never invented from the protocols.
+    expect(parsed.items[2]?.outputModalities).toBeUndefined();
+  });
+
   it("keeps pagination as the gateway reported it", () => {
     expect(parseMinihRouterModelPage(page)).toMatchObject({
       page: 1,
