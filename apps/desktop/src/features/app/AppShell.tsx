@@ -27,6 +27,7 @@ import { useCopyTex } from "../../hooks/use-copy-tex";
 import { api } from "../../lib/api";
 import { PortalVisibilityProvider } from "../../lib/portal-visibility";
 import { workPanelLayout } from "../../lib/work-panel-resize";
+import { PluginViewPage } from "../plugins/PluginViewPage";
 import { LiveVoiceStatusHost } from "../voice/live/LiveVoiceStatusHost";
 import { CollapsedTitlebarActions, RoutePending } from "./chrome";
 import { useAppShellRuntime } from "./useAppShellRuntime";
@@ -296,6 +297,13 @@ export function AppShell() {
                   ) : page === "plugins" ? (
                     <div className="route-surface route-page">
                       <PluginsPage />
+                    </div>
+                  ) : page === "pluginView" ? (
+                    // A view a plugin placed in the sidebar owns the whole center
+                    // pane: it is not a chat, so no conversation sits behind it
+                    // (ADR optional-terminal-plugin).
+                    <div className="route-surface route-page">
+                      <PluginViewPage />
                     </div>
                   ) : (
                     <ChatSurface visible={page === "chat"} />

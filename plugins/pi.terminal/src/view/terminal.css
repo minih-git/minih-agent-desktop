@@ -1,0 +1,313 @@
+/*
+  Terminal page chrome.
+
+  The page owns the whole center pane, so it draws its own palette: a docked
+  plugin view gets no host stylesheet. `data-base` is set from the appearance the
+  host publishes, and the xterm theme reads the same variables, so the terminal
+  and its chrome cannot drift apart.
+*/
+:root {
+  color-scheme: dark;
+  --bg: #181818;
+  --surface: #212121;
+  --surface-hover: color-mix(in oklab, #ffffff 7%, transparent);
+  --fg: #ffffff;
+  --secondary: color-mix(in oklab, #ffffff 70%, transparent);
+  --muted: color-mix(in oklab, #ffffff 52%, transparent);
+  --border: color-mix(in oklab, #ffffff 10%, transparent);
+  --accent: #ffffff;
+  --term-bg: #141414;
+  --term-fg: #e6e6e6;
+  --term-cursor: #ffffff;
+  --term-selection: color-mix(in oklab, #ffffff 24%, transparent);
+}
+
+:root[data-base="light"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #f9f9f9;
+  --surface-hover: color-mix(in oklab, #1a1c1f 5%, transparent);
+  --fg: #1a1c1f;
+  --secondary: color-mix(in oklab, #1a1c1f 74%, transparent);
+  --muted: #5d5d5d;
+  --border: color-mix(in oklab, #1a1c1f 12%, transparent);
+  --accent: #1a1c1f;
+  --term-bg: #ffffff;
+  --term-fg: #1a1c1f;
+  --term-cursor: #1a1c1f;
+  --term-selection: color-mix(in oklab, #1a1c1f 20%, transparent);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+button {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 4px 9px;
+  background: transparent;
+  color: var(--secondary);
+  cursor: pointer;
+  font: inherit;
+}
+
+button:hover {
+  background: var(--surface-hover);
+  color: var(--fg);
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
+button.primary:hover {
+  background: var(--accent);
+  color: var(--bg);
+  opacity: 0.88;
+}
+
+/* Tab strip: the plugin's own row, at the top of the page. */
+#chrome {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+#tabs {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+#tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 3px 4px 3px 9px;
+  border-radius: 7px;
+  color: var(--muted);
+}
+
+.tab[aria-selected="true"] {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.tab[data-exited="true"] .tab-title {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.tab-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-close {
+  border: 0;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+}
+
+#actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Start form: the actual directory and shell are always visible before a shell
+   is created, and nothing is spawned until the button is pressed. */
+#start {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 620px;
+  margin: 28px auto;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+#start h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field > span {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.row > code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--secondary);
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+#start-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+#start-error {
+  margin: 0;
+  color: #ff8a80;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+#start-error:empty {
+  display: none;
+}
+
+/* Panes: one per terminal, all mounted, only the active one laid out. */
+#panes {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.pane {
+  position: absolute;
+  inset: 0;
+  padding: 6px 4px 6px 10px;
+  background: var(--term-bg);
+}
+
+.pane[hidden] {
+  display: none;
+}
+
+/* Search: a small floating bar over the active pane. */
+#search {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
+}
+
+#search[hidden] {
+  display: none;
+}
+
+#search input {
+  width: 180px;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+#status {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border-top: 1px solid var(--border);
+  color: #ff8a80;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+#status[hidden] {
+  display: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

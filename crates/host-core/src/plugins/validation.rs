@@ -2,8 +2,10 @@ use super::*;
 mod composer_transforms;
 mod contribution_ids;
 mod provider_catalog;
+mod views;
 
 use contribution_ids::is_contrib_id;
+use views::validate_views;
 
 pub(crate) fn validate_contributions(root: &Path, manifest: &PluginManifest) -> Result<()> {
     let Some(contributes) = manifest.contributes.as_ref() else {
@@ -463,49 +465,7 @@ pub(crate) fn validate_contributions(root: &Path, manifest: &PluginManifest) -> 
         }
     }
 
-    if let Some(views) = map.get("views") {
-        let entries = array_of(views, "contributes.views")?;
-        if !entries.is_empty() {
-            require_permission(manifest, "ui.view", "views")?;
-        }
-        let mut seen: Vec<&str> = Vec::new();
-        for entry in entries {
-            let obj = entry.as_object().ok_or_else(|| {
-                anyhow!("PLUGIN_INVALID: contributes.views entry must be an object")
-            })?;
-            let id = obj
-                .get("id")
-                .and_then(Value::as_str)
-                .filter(|id| is_contrib_id(id))
-                .ok_or_else(|| anyhow!("PLUGIN_INVALID: view id is missing or invalid"))?;
-            if seen.contains(&id) {
-                bail!("PLUGIN_INVALID: duplicate view id {id}");
-            }
-            seen.push(id);
-            // A title may be a plain string or a { en, "zh-CN" } object; the
-            // per-locale completeness check belongs to the SDK validator, which
-            // the packaging tool runs. Here we only require something rendered.
-            let has_title = match obj.get("title") {
-                Some(Value::String(s)) => !s.trim().is_empty(),
-                Some(Value::Object(map)) => map
-                    .values()
-                    .any(|v| v.as_str().map(|s| !s.trim().is_empty()).unwrap_or(false)),
-                _ => false,
-            };
-            if !has_title {
-                bail!("PLUGIN_INVALID: view {id} requires a title");
-            }
-            let entry_path = obj
-                .get("entry")
-                .and_then(Value::as_str)
-                .filter(|entry| !entry.trim().is_empty())
-                .ok_or_else(|| anyhow!("PLUGIN_INVALID: view {id} requires an entry"))?;
-            let resolved = safe_join(root, entry_path)?;
-            if !resolved.exists() {
-                bail!("PLUGIN_INVALID: view entry missing: {entry_path}");
-            }
-        }
-    }
+    validate_views(root, map, manifest)?;
 
     if let Some(servers) = map.get("mcpServers") {
         let entries = array_of(servers, "contributes.mcpServers")?;

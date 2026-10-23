@@ -38,6 +38,8 @@ export function createInteractionSlice({
 }: InteractionSliceDependencies): Pick<
   AppState,
   | "setPage"
+  | "openSidebarPluginView"
+  | "closeSidebarPluginView"
   | "setSettingsTab"
   | "setSettingsAnchor"
   | "canNavBack"
@@ -72,11 +74,14 @@ export function createInteractionSlice({
         const entry = {
           page,
           sessionId: page === "chat" ? state.activeSessionId : undefined,
+          pluginViewRef: page === "pluginView" ? state.pluginViewRef ?? undefined : undefined,
         };
         const stack = state.navStack.slice(0, state.navIndex + 1);
         const last = stack[stack.length - 1];
         const same =
-          last?.page === entry.page && last?.sessionId === entry.sessionId;
+          last?.page === entry.page &&
+          last?.sessionId === entry.sessionId &&
+          last?.pluginViewRef === entry.pluginViewRef;
         const nextStack = same ? stack : [...stack, entry].slice(-50);
         return {
           page,
@@ -84,6 +89,28 @@ export function createInteractionSlice({
           navIndex: nextStack.length - 1,
         };
       });
+    },
+
+    openSidebarPluginView: (ref) => {
+      const state = get();
+      // The sidebar entry is a toggle: a second click leaves the page instead
+      // of re-opening it, matching every other destination row.
+      if (state.page === "pluginView" && state.pluginViewRef === ref) {
+        get().closeSidebarPluginView();
+        return;
+      }
+      set({ pluginViewRef: ref });
+      get().setPage("pluginView");
+    },
+
+    closeSidebarPluginView: () => {
+      // Back to where the user came from, and to the conversation when the
+      // entry was itself the first page in the stack.
+      if (get().canNavBack()) {
+        get().navBack();
+        return;
+      }
+      get().setPage("chat");
     },
 
     setSettingsTab: (settingsTab) => {
@@ -106,7 +133,15 @@ export function createInteractionSlice({
       if (state.navIndex <= 0) return;
       const index = state.navIndex - 1;
       const entry = state.navStack[index];
-      set({ navIndex: index, page: entry.page });
+      // A plugin page is identified by its ref as well as its page, so Back has
+      // to restore both or it would reopen the previously shown view.
+      set({
+        navIndex: index,
+        page: entry.page,
+        ...(entry.page === "pluginView"
+          ? { pluginViewRef: entry.pluginViewRef ?? null }
+          : {}),
+      });
       if (entry.page === "chat" && entry.sessionId) {
         void get().selectSession(entry.sessionId, {
           record: false,
@@ -122,7 +157,13 @@ export function createInteractionSlice({
       if (state.navIndex >= state.navStack.length - 1) return;
       const index = state.navIndex + 1;
       const entry = state.navStack[index];
-      set({ navIndex: index, page: entry.page });
+      set({
+        navIndex: index,
+        page: entry.page,
+        ...(entry.page === "pluginView"
+          ? { pluginViewRef: entry.pluginViewRef ?? null }
+          : {}),
+      });
       if (entry.page === "chat" && entry.sessionId) {
         void get().selectSession(entry.sessionId, {
           record: false,

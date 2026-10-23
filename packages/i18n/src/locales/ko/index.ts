@@ -1,6 +1,9 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const ko = {
+  sidebarPluginView: {
+    back: "대화로 돌아가기",
+  },
   userMenu: en.userMenu,
   worktree: {
     newIsolatedSession: "새 격리 세션",
@@ -2617,6 +2620,9 @@ sklm: {
     archived: "보관됨",
   },
   plugins: {
+    interruptionTitle: "플러그인 작업이 종료됩니다",
+    interruptionBody: "다음 플러그인이 아직 작업 중입니다. 계속하면 종료됩니다:",
+    interruptionContinue: "종료하고 계속",
     title: "확장 기능",
     loadDev: "로컬 플러그인 불러오기",
     loadDevDone: "로컬 플러그인 불러옴",

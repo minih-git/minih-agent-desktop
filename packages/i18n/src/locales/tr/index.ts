@@ -1,6 +1,9 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const tr = {
+  sidebarPluginView: {
+    back: "Sohbete dön",
+  },
   userMenu: en.userMenu,
   worktree: {
     newIsolatedSession: "Yeni yalıtılmış oturum",
@@ -2613,6 +2616,9 @@ sklm: {
     archived: "Arşivlenen",
   },
   plugins: {
+    interruptionTitle: "Eklenti çalışması sona erecek",
+    interruptionBody: "Bu eklentiler hâlâ çalışıyor. Devam etmek onları sonlandırır:",
+    interruptionContinue: "Sonlandır ve devam et",
     title: "Uzantılar",
     loadDev: "Yerel eklenti yükle",
     loadDevDone: "Yerel eklenti yüklendi",

@@ -1306,7 +1306,10 @@ export const api = {
    * `review` instead of a reload, so the page asks before anything is granted.
    */
   reloadPlugin: (id: string) =>
-    invoke<{ review?: PluginPermissionReview }>(IPC.invoke.pluginReload, id),
+    invoke<{ review?: PluginPermissionReview; canceled?: boolean }>(
+      IPC.invoke.pluginReload,
+      id,
+    ),
   confirmReloadPlugin: (input: { id: string; grantedPermissions: string[] }) =>
     invoke(IPC.invoke.pluginReloadConfirm, input),
   createPluginFromTemplate: (template: string) =>
@@ -1318,8 +1321,15 @@ export const api = {
       files?: string[];
       review?: PluginPermissionReview;
     }>(IPC.invoke.pluginCreateFromTemplate, { template }),
-  installPluginFromPath: () => invoke(IPC.invoke.pluginInstallFromPath),
-  installPluginFromPackage: () => invoke(IPC.invoke.pluginInstallFromPackage),
+  /**
+   * `canceled` answers two different refusals with one shape: the file picker was
+   * dismissed, or the user declined to end what a running plugin still had
+   * (spec 07-plugins/05 §3.0). Either way nothing was installed.
+   */
+  installPluginFromPath: () =>
+    invoke<{ canceled?: boolean }>(IPC.invoke.pluginInstallFromPath),
+  installPluginFromPackage: () =>
+    invoke<{ canceled?: boolean }>(IPC.invoke.pluginInstallFromPackage),
   enablePlugin: (id: string) => invoke(IPC.invoke.pluginEnable, id),
   disablePlugin: (id: string) => invoke(IPC.invoke.pluginDisable, id),
   uninstallPlugin: (id: string) => invoke(IPC.invoke.pluginUninstall, id),
@@ -1614,17 +1624,21 @@ export const api = {
     autoUpdate?: boolean;
     grantedPermissions?: string[];
   }) =>
-    invoke<{ result: PluginInstallResult }>(IPC.invoke.marketInstall, input),
+    invoke<{ result?: PluginInstallResult; canceled?: boolean }>(
+      IPC.invoke.marketInstall,
+      input,
+    ),
   marketCheckUpdates: (refreshRemote = true) =>
     invoke<{ updates: unknown[]; plugins: PluginSummary[] }>(
       IPC.invoke.marketCheckUpdates,
       { refreshRemote },
     ),
   marketApplyUpdates: (onlyAuto = true) =>
-    invoke<{ results: PluginInstallResult[]; plugins: PluginSummary[] }>(
-      IPC.invoke.marketApplyUpdates,
-      { onlyAuto },
-    ),
+    invoke<{
+      results?: PluginInstallResult[];
+      plugins?: PluginSummary[];
+      canceled?: boolean;
+    }>(IPC.invoke.marketApplyUpdates, { onlyAuto }),
   /** Ask the running install to stop. Only a download can be interrupted. */
   marketCancelInstall: (id: string) =>
     invoke<{ cancelled: boolean; id: string }>(IPC.invoke.marketCancelInstall, { id }),

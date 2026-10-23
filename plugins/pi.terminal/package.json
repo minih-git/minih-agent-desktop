@@ -1,0 +1,20 @@
+{
+  "name": "@minih-agent/plugin-terminal",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Optional embedded terminal plugin for Minih-Agent-Desktop, packaged separately from the app.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/build.mjs && node --test test/*.test.mjs",
+    "check": "node scripts/build.mjs && pi-plugin check dist",
+    "pack": "node scripts/build.mjs && pi-plugin pack dist --out .",
+    "pack:release": "node scripts/build.mjs --require-platforms darwin-arm64,darwin-x64,win32-x64,win32-arm64,linux-x64,linux-arm64 && pi-plugin pack dist --out ."
+  },
+  "devDependencies": {
+    "@minih-agent/plugin-sdk": "workspace:*",
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/addon-search": "0.15.0",
+    "@xterm/xterm": "5.5.0",
+    "node-pty": "1.1.0"
+  }
+}

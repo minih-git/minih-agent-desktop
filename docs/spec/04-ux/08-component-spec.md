@@ -979,9 +979,37 @@ including the vendored file manager `pi.file-manager` (project browsing and
 editing) and bundled `pi.browser`
 (work-panel browser chrome; the guest page stays host-owned, ADR 0170). File
 resources are *artifact* surfaces: the host renders them, but the conversation
-opens them, so they are absent from the launcher. There is no interactive
-terminal surface; agent Bash output remains in the transcript.
+opens them, so they are absent from the launcher. The work panel itself offers
+no interactive terminal; agent Bash output remains in the transcript. A view
+contributed with `placement: sidebar` is not a work-panel surface at all: it
+belongs to the left sidebar and the main content area (§5.1.1).
 
+
+### 5.1.1 Sidebar-placed plugin views
+
+A `contributes.views` entry with `placement: sidebar` (ADR
+optional-terminal-plugin) is offered by the left sidebar instead of the work
+panel:
+
+- The host draws one row per entry in the sidebar destination list, using the
+  plugin's localized title and its declared icon token, with a letter tile when
+  the token is unknown. The row belongs to the host; the plugin supplies no
+  markup and gets no DOM access.
+- Selecting the row opens the same isolated `WebContentsView` in the main
+  content area in place of the conversation. No chat session is selected, and no
+  work-panel tab is created. Selecting it again returns to the previous page.
+- Loading the plugin never opens the view, and the shape is independent of the
+  conversation: switching chats, hiding the page, or minimizing the window
+  leaves the page mounted. What survives inside it is the plugin's own
+  lifecycle decision, not a host restore promise.
+- Disabling, uninstalling, reloading, or crashing the plugin removes the row. An
+  open page falls back to the conversation instead of presenting an empty pane.
+- A `sidebar` entry never appears in the work-panel launcher, and a `panel`
+  entry never appears in the sidebar. The default stays `panel`, so existing
+  plugins keep their placement without a manifest change.
+- The page owns the whole center pane: its own header, actions, and empty
+  states. The host adds no title, toolbar, drag band, or control capsule of its
+  own beyond the shell rows that every destination page shares.
 ### 5.2 Anatomy
 
 ```text
@@ -1008,9 +1036,11 @@ close button shown on hover, focus, or the active tab. Middle-click closes a
 tab. The `+` button sits outside the scroller and remains visible when tabs
 overflow. Clicking it creates and activates a unique New launcher tab. The
 launcher body contains host-owned Review followed by every in-scope
-`contributes.views` entry as buttons; Files and Browser are not hardcoded in
-the renderer (ADR 0104). The header reserves a tokenized 44px right-side safe
-lane for the viewport-fixed work-panel toggle: the 28px control, its 12px
+`contributes.views` entry whose `placement` is `panel` as buttons; a
+`placement: sidebar` entry is offered by the left sidebar instead (§5.1.1).
+Files and Browser are not hardcoded in the renderer (ADR 0104). The header
+reserves a tokenized 44px right-side safe lane for the viewport-fixed work-panel
+toggle: the 28px control, its 12px
 viewport inset, and the header's own 4px control gap
 (`--ds-work-panel-control-gap`). That one gap spaces the whole row — the tab
 strip to the action group, `+` to maximize, and maximize to the viewport-fixed

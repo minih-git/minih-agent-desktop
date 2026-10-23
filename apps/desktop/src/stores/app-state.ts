@@ -208,14 +208,25 @@ export type AppState = {
   toasts: ToastItem[];
   notifications: AppNotification[];
   unreadNotificationCount: number;
-  page: "chat" | "scheduled" | "plugins" | "settings";
+  page: "chat" | "scheduled" | "plugins" | "pluginView" | "settings";
+  /**
+   * `<pluginId>/<viewId>` of the contributed view the `pluginView` page shows.
+   * Kept beside `page` so a nav entry can restore both, and null on every other
+   * page: only a `placement: sidebar` view can own the center pane.
+   */
+  pluginViewRef: string | null;
   /** Tab ids come from the shared settings index. */
   settingsTab: SettingsTabId;
   /** Pending row anchor (i18n key) to flash after landing on a settings tab. */
   settingsAnchor: string | null;
   /** Bumped by every setSettingsTab so a same-tab navigation is observable. */
   settingsTabNonce: number;
-  navStack: Array<{ page: AppState["page"]; sessionId?: string }>;
+  navStack: Array<{
+    page: AppState["page"];
+    sessionId?: string;
+    /** The plugin view a `pluginView` entry showed, so Back restores it too. */
+    pluginViewRef?: string;
+  }>;
   navIndex: number;
   error?: string | null;
   errorCode?: string | null;
@@ -394,6 +405,14 @@ export type AppState = {
   handleAgentEvent: (envelope: AgentEventEnvelope) => void;
   handlePlansChanged: (event: PlanningStateEvent) => void;
   setPage: (page: AppState["page"], opts?: { record?: boolean }) => void;
+  /**
+   * Open a contributed view in the center pane, or return to the conversation
+   * when it is already the open page. Only a `placement: sidebar` view may land
+   * here; the caller passes the `ref` from `pluginViews`, never a manifest value.
+   */
+  openSidebarPluginView: (ref: string) => void;
+  /** Leave the plugin page, keeping the last open view for Back to restore. */
+  closeSidebarPluginView: () => void;
   setSettingsTab: (tab: AppState["settingsTab"]) => void;
   setSettingsAnchor: (key: string | null) => void;
   navBack: () => void;

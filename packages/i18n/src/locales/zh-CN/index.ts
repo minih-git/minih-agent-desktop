@@ -1,6 +1,9 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const zhCN = {
+  sidebarPluginView: {
+    back: "返回会话",
+  },
   userMenu: {
     open: "{{name}} 的账户菜单",
     title: "账户与设置",
@@ -2605,6 +2608,9 @@ sklm: {
     archived: "已归档",
   },
   plugins: {
+    interruptionTitle: "插件仍有工作在进行",
+    interruptionBody: "以下插件仍在运行任务，继续将结束它们：",
+    interruptionContinue: "结束并继续",
     title: "扩展",
     loadDev: "加载本地插件",
     loadDevDone: "本地插件已加载",

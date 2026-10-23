@@ -1,6 +1,9 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const es = {
+  sidebarPluginView: {
+    back: "Volver a la conversación",
+  },
   userMenu: en.userMenu,
   "worktree": {
     "newIsolatedSession": "Nueva sesión aislada",
@@ -2605,6 +2608,9 @@ sklm: {
     "archived": "Archivado"
   },
   "plugins": {
+    interruptionTitle: "El trabajo del complemento finalizará",
+    interruptionBody: "Estos complementos siguen ejecutando trabajo. Continuar lo finalizará:",
+    interruptionContinue: "Finalizar y continuar",
     "title": "Extensiones",
     "loadDev": "Cargar complemento local",
     "loadDevDone": "Complemento local cargado",

@@ -1,6 +1,7 @@
 import { dialog } from "electron";
 import { IPC, type ActivationScope } from "@minih-agent/shared";
 import { isTemplateName, scaffold } from "@minih-agent/plugin-devkit";
+import { resolvePluginLocalizedString } from "@minih-agent/plugin-sdk";
 import type { AgentExtensionBridge } from "../agent-extensions";
 import type { BrowserHost } from "../browser-host";
 import type { HostProcess } from "../host-process";
@@ -26,6 +27,14 @@ export type PluginIpcDependencies = {
   rememberPluginScopes: (list: any[]) => void;
   sendToRenderer: (channel: string, payload?: unknown) => void;
   logger: Pick<Logger, "app">;
+  /** Active app locale, for the manifest's own display strings. */
+  getUpdaterLocale: () => string;
+  /**
+   * Asks the named plugins what the user would lose, and returns `false` when
+   * they declined. Every user-initiated teardown below asks it before its first
+   * side effect (spec 07-plugins/05 §3.0).
+   */
+  confirmInterruption: (ids: readonly string[]) => Promise<boolean>;
 };
 
 /** Register plugin lifecycle, settings and installation channels. */
@@ -40,6 +49,8 @@ export function registerPluginIpc({
   rememberPluginScopes,
   sendToRenderer,
   logger,
+  getUpdaterLocale,
+  confirmInterruption,
 }: PluginIpcDependencies): void {
   let host: HostProcess | null = null;
   const handle = (channel: string, fn: (...args: any[]) => Promise<any>) => {
@@ -76,6 +87,28 @@ export function registerPluginIpc({
     return loaded;
   };
 
+  /**
+   * The manifest's own `safetyNotes`, resolved for the active locale.
+   *
+   * A review that lists permissions but omits what the author says the plugin
+   * does with native access is not informed consent, and plugin entry code is
+   * not sandboxed. Missing notes stay missing: the review never invents a
+   * reassuring line (spec 07-plugins/04 §4.1).
+   */
+  const declaredSafetyNotes = (manifest: {
+    i18n?: Record<string, { safetyNotes?: string }>;
+  }): string | undefined => {
+    const resolved = resolvePluginLocalizedString(
+      {
+        en: manifest.i18n?.en?.safetyNotes ?? "",
+        "zh-CN": manifest.i18n?.["zh-CN"]?.safetyNotes ?? "",
+      },
+      getUpdaterLocale(),
+      "",
+    );
+    return resolved.trim() || undefined;
+  };
+
   /** A development plugin folder as a review the renderer can render. */
   const reviewFor = (
     path: string,
@@ -91,6 +124,7 @@ export function registerPluginIpc({
       version: declared.manifest.version,
       permissions: declared.permissions,
       addedPermissions,
+      safetyNotes: declaredSafetyNotes(declared.manifest),
     };
   };
 
@@ -248,6 +282,8 @@ export function registerPluginIpc({
         };
       }
     }
+    // The reload is about to unload and reload: ask before anything is closed.
+    if (!(await confirmInterruption([id]))) return { plugin, canceled: true };
     await plugins.loadFromPath(plugin.path, plugin.permissions ?? [], {
       development: plugin.source === "dev",
     });
@@ -273,6 +309,7 @@ export function registerPluginIpc({
             (permission): permission is string => typeof permission === "string",
           )
         : [];
+      if (!(await confirmInterruption([id]))) return { canceled: true };
       const loaded = await loadDevPlugin(plugin.path, granted, "reload");
       return { ...loaded, grantedPermissions: granted };
     },
@@ -317,6 +354,10 @@ export function registerPluginIpc({
       return { canceled: true };
     }
     const path = result.filePaths[0];
+    // Reinstalling over a running plugin replaces its files: ask first, while
+    // the declaration at that folder still says which plugin that is.
+    const declaredId = readDevPluginDeclaration(path).manifest.id;
+    if (!(await confirmInterruption([declaredId]))) return { canceled: true };
     const installed = await host.call<{ result: any }>("plugins.installFromPath", {
       path,
       enable: true,
@@ -349,9 +390,31 @@ export function registerPluginIpc({
       return { canceled: true };
     }
     const path = result.filePaths[0];
+    // The archive's id is only inside the archive, so ask the host to read it
+    // without installing: nothing on disk or in the registry is touched, and the
+    // answer carries the checksum the file must still have at install time.
+    const inspected = await host.call<{
+      inspection: {
+        id: string;
+        name: string;
+        version: string;
+        shasum: string;
+        installedVersion?: string | null;
+        upgraded: boolean;
+      };
+    }>("plugins.inspectPackage", { path });
+    const inspection = inspected?.inspection;
+    if (!inspection?.id || !inspection.shasum) {
+      throw new Error("PLUGIN_INVALID: package inspection returned no plugin identity");
+    }
+    // Asked and answered before the first byte of the installed copy changes.
+    if (!(await confirmInterruption([inspection.id]))) return { canceled: true };
     const installed = await host.call<{ result: any }>("plugins.installFromPackage", {
       path,
       enable: true,
+      // The package the user agreed to, not whatever is at that path now: the
+      // host refuses the install when the bytes changed in between.
+      expectedShasum: inspection.shasum,
     });
     if (installed.result?.plugin?.enabled && installed.result?.plugin?.path) {
       await plugins.loadFromPath(
@@ -385,6 +448,8 @@ export function registerPluginIpc({
 
   handle(IPC.invoke.pluginDisable, async (id: string) => {
     if (!host) throw new Error("host unavailable");
+    // Before the view is closed, the services stopped, and the host unloaded.
+    if (!(await confirmInterruption([id]))) return { canceled: true };
     pluginViews.closePlugin(id);
     if (id === BROWSER_PLUGIN_ID) browserHost.disposeGuest();
     await plugins.unload(id);
@@ -396,6 +461,7 @@ export function registerPluginIpc({
 
   handle(IPC.invoke.pluginUninstall, async (id: string) => {
     if (!host) throw new Error("host unavailable");
+    if (!(await confirmInterruption([id]))) return { canceled: true };
     pluginViews.closePlugin(id);
     await plugins.unload(id);
     logger.app("plugin", "info", "plugin uninstalled", { pluginId: id });

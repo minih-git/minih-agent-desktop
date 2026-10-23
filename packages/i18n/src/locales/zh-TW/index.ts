@@ -1,6 +1,9 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const zhTW = {
+  sidebarPluginView: {
+    back: "返回對話",
+  },
   userMenu: en.userMenu,
   worktree: {
     newIsolatedSession: "新增隔離工作階段",
@@ -2596,6 +2599,9 @@ sklm: {
     archived: "已歸檔",
   },
   plugins: {
+    interruptionTitle: "外掛仍有工作正在進行",
+    interruptionBody: "以下外掛仍在執行工作，繼續將結束它們：",
+    interruptionContinue: "結束並繼續",
     title: "擴充套件",
     loadDev: "載入本地外掛",
     loadDevDone: "本地外掛已載入",

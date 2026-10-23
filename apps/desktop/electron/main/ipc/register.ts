@@ -15,6 +15,7 @@ import { registerMcpIpc } from "./mcp-ipc";
 import type { McpOAuthManager } from "../mcp-oauth";
 import { searchMcpMarket } from "../mcp-registry-catalog";
 import { registerNotificationIpc } from "./notification-ipc";
+import { confirmPluginInterruption } from "../plugin-active-work";
 import { registerPluginIpc } from "./plugin-ipc";
 import { registerPluginUiIpc } from "./plugin-ui-ipc";
 import { registerJevIpc } from "./jev-ipc";
@@ -470,6 +471,18 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     generateSessionTitle,
   });
 
+  // Every user-initiated teardown asks the same question through one helper, so
+  // disable, uninstall, reload, install-over, update, and quit cannot drift.
+  const confirmInterruption = (ids: readonly string[]) =>
+    confirmPluginInterruption(
+      {
+        plugins,
+        getLocale: getUpdaterLocale,
+        window: () => getMainWindow() ?? undefined,
+      },
+      ids,
+    );
+
   registerPluginIpc({
     registrar,
     getHost,
@@ -481,6 +494,8 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     rememberPluginScopes,
     sendToRenderer,
     logger,
+    getUpdaterLocale,
+    confirmInterruption,
   });
 
 
@@ -562,6 +577,7 @@ export function registerIpcHandlers(dependencies: RegisterIpcDependencies) {
     optionalWorkspaceRoot,
     pluginActiveInProject,
     sendToRenderer,
+    confirmInterruption,
   });
 
 

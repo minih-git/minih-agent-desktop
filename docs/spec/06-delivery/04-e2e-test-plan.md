@@ -4927,7 +4927,7 @@ window; opening a normal panel afterward must still work.
 #### E2E-058: Built-in interactive terminal is absent
 
 - **Preconditions**: A workspace is open and the Agent has completed a Bash
-  tool call.
+  tool call, with no terminal plugin installed.
 - **Steps**: 1) Open the work panel with Cmd/Ctrl+J and inspect the empty
   state and context menu. 2) Confirm there is no Terminal tab, launcher row,
   terminal-specific panel copy, or terminal IPC surface. 3) Confirm the
@@ -4935,22 +4935,65 @@ window; opening a normal panel afterward must still work.
   and that its `IconTerminal` presentation remains available. 4) Verify an
   interactive shell is opened in the user's external terminal instead of the
   work panel. 5) Build/package the desktop app and inspect the dependency and
-  unpacked-resource lists.
+  unpacked-resource lists. 6) Repeat step 2 with an explicitly installed
+  `placement: sidebar` terminal plugin *disabled*.
 - **Expected**: The work panel offers the Review launcher row plus Browser and
   in-scope plugin views; Review opens on explicit user action and file resources
   are transcript-opened; no PTY is created and no terminal tab can be opened.
   Agent Bash remains non-interactive and fully visible in the transcript.
   Interactive shell work is performed by the external terminal. Desktop
-  packaging has no PTY/xterm dependency, terminal-specific
-  IPC, or native terminal payload, while generic lifecycle `terminal` values
-  continue to work.
+  packaging has no PTY/xterm dependency, terminal-specific IPC, or native
+  terminal payload, while generic lifecycle `terminal` values continue to work.
+  The sidebar shows no terminal entry while no such plugin is installed and
+  enabled, so the absence is a product default and not a bundled-yet-hidden
+  surface (ADR optional-terminal-plugin).
 - **Specs linked**: `02-architecture/02-tech-stack.md`,
   `03-runtime/01-ipc-protocol.md` §13a, `04-ux/08-component-spec.md` §5,
   ADR 0108
 - **Acceptance**: D (workspace), Quality
 - **Milestone**: M5
-- **Status**: Unit-covered (`work-panel.test.mjs`, `packaging-footprint.test.mjs`);
-  full UI scenario Draft
+- **Status**: Unit-covered (`work-panel.test.mjs`, `packaging-footprint.test.mjs`),
+  plus the rendered-absence check in
+  `plugin-sidebar-view-placement.test.mjs`; full UI scenario Draft
+
+#### E2E-PLUGIN-sidebar-view-placement: Installed plugin view opens in the main content area
+
+- **Preconditions**: `examples/plugins/sidebar-view-lab` (or the terminal plugin)
+  is installed and enabled with `ui.view`, and declares one view with
+  `placement: "sidebar"`; a second view without `placement` exists in the same
+  or another plugin; one open project.
+- **Steps**: 1) Inspect the left sidebar destination list. 2) Install the same
+  plugin disabled and confirm the entry and the page are both absent. 3) Enable
+  it, select the entry, type into the page, switch to another chat, hide the
+  page, then reopen it from the sidebar. 4) Open the work panel and its
+  launcher. 5) Change the active project so the plugin leaves scope. 6) Start
+  work in the plugin, then disable, uninstall, and reload it while its page is
+  open — cancelling the confirmation first, then accepting it — and quit the app
+  once with that work running.
+- **Expected**: The entry appears only while the plugin is loaded and active in
+  the current project; selecting it opens the isolated page in the main content
+  area with no chat selected and no work-panel tab, and selecting it again
+  returns to the conversation. The page keeps its own live state across chat
+  switches and hiding, because the host neither destroys nor replays it for that
+  reason. The work-panel launcher lists only `placement: panel` views, so the
+  sidebar view never appears there and the default placement of the second view
+  is unchanged. Losing the plugin — out of scope, disabled, crashed, reloaded,
+  or uninstalled — removes the entry and returns the center pane to the
+  conversation instead of stranding an empty page. While the plugin reports work
+  in progress, disable, uninstall, reload, install-over, update, and quit each
+  show one host confirmation naming the plugin, and cancel leaves the work
+  running, the plugin loaded, the page open, and the navigation unchanged —
+  without a "done" message for the action that did not happen. With nothing
+  running, none of those actions prompts and every one of them behaves exactly
+  as before.
+- **Specs linked**: `07-plugins/02-plugin-manifest-schema.md` §4,
+  `07-plugins/03-plugin-api.md` §6, `07-plugins/05-plugin-lifecycle.md` §3.0,
+  `04-ux/08-component-spec.md` §5.1.1, ADR optional-terminal-plugin
+- **Acceptance**: G (Plugins), D (workspace), Quality
+- **Milestone**: M5
+- **Status**: Unit-covered (`plugin-sidebar-view-placement.test.mjs`,
+  `plugin-work-panel-views.test.mjs`, `plugin-active-work-gate.test.mjs`,
+  `plugin-active-work-wiring.test.mjs`); full UI scenario Draft
 
 #### E2E-059: Embedded browser preview isolation and overlays
 
@@ -10640,7 +10683,7 @@ selection already in place shows it without waiting for another event.
 | F — Persistence | E2E-020, E2E-021, E2E-021a, E2E-038, E2E-SETTINGS-inline-capability-imports, E2E-040, E2E-042, E2E-047, E2E-048, E2E-051, E2E-054, E2E-056, E2E-061, E2E-062, E2E-064, E2E-066, E2E-068, E2E-071, E2E-072, E2E-073, E2E-082, E2E-084, E2E-096, E2E-098, E2E-102, E2E-102b, E2E-102c, E2E-102d, E2E-102g, E2E-102i, E2E-103, E2E-AGENTS-001, E2E-061a, E2E-073a, E2E-104, E2E-106, E2E-107, E2E-108, E2E-109, E2E-110, E2E-112, E2E-118, E2E-119, E2E-120, E2E-121, E2E-123, E2E-142, E2E-146, E2E-146a, E2E-148, E2E-151, E2E-158, E2E-160, E2E-168, E2E-171, E2E-177, E2E-178, E2E-183, E2E-186, E2E-005J, E2E-PROVIDER-custom-endpoint-no-api-key, E2E-PLUGIN-session-orchestrator-real-workers, E2E-PLUGIN-provider-catalog-add-service, E2E-SESSION-outbox-unclassifiable-failure-does-not-stall-the-queue |
 | F — Persistence (project ordering) | E2E-251 |
 | G / Security — Fetch redirect policy | E2E-PLUGIN-fetch-redirect-policy |
-| G — Plugins | E2E-022, E2E-022A, E2E-022B, E2E-022C, E2E-023, E2E-024, E2E-024B, E2E-024C, E2E-024D, E2E-024AA, E2E-024E, E2E-024W, E2E-024F, E2E-024G, E2E-024H, E2E-024I, E2E-024J, E2E-024K, E2E-024L, E2E-024M, E2E-024N, E2E-024O, E2E-024P, E2E-025, E2E-026, E2E-105, E2E-117, E2E-120, E2E-122, E2E-123, E2E-024Q, E2E-148, E2E-152, E2E-153, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-imported-pi-package-wrapper, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-global-shortcut-owns-only-its-own-command, E2E-PLUGIN-permission-gate-for-real-time-capabilities, E2E-PLUGIN-background-audio-and-realtime-connection, E2E-PLUGIN-fs-root-follows-the-calling-session, E2E-PLUGIN-provider-catalog-add-service |
+| G — Plugins | E2E-022, E2E-022A, E2E-022B, E2E-022C, E2E-023, E2E-024, E2E-024B, E2E-024C, E2E-024D, E2E-024AA, E2E-024E, E2E-024W, E2E-024F, E2E-024G, E2E-024H, E2E-024I, E2E-024J, E2E-024K, E2E-024L, E2E-024M, E2E-024N, E2E-024O, E2E-024P, E2E-025, E2E-026, E2E-105, E2E-117, E2E-120, E2E-122, E2E-123, E2E-024Q, E2E-148, E2E-152, E2E-153, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-imported-pi-package-wrapper, E2E-PLUGIN-import-extension-installs-dependencies, E2E-PLUGIN-import-extension-reports-missing-dependency, E2E-PLUGIN-global-shortcut-owns-only-its-own-command, E2E-PLUGIN-permission-gate-for-real-time-capabilities, E2E-PLUGIN-background-audio-and-realtime-connection, E2E-PLUGIN-fs-root-follows-the-calling-session, E2E-PLUGIN-provider-catalog-add-service, E2E-PLUGIN-sidebar-view-placement |
 | H — Diagnostics | E2E-027, E2E-031, E2E-034, E2E-042, E2E-096, E2E-098, E2E-104, E2E-107, E2E-108, E2E-109, E2E-110, E2E-113, E2E-115, E2E-116, E2E-118, E2E-121, E2E-146, E2E-146a, E2E-155, E2E-159, E2E-176, E2E-194, E2E-195 |
 | Security | E2E-SETTINGS-inline-capability-imports, E2E-028, E2E-029, E2E-030, E2E-024J, E2E-024K, E2E-024M, E2E-049, E2E-068, E2E-086, E2E-102c, E2E-102d, E2E-102e, E2E-105, E2E-106, E2E-107, E2E-108, E2E-109, E2E-110, E2E-112, E2E-113, E2E-115, E2E-116, E2E-117, E2E-119, E2E-121, E2E-122, E2E-123, E2E-142, E2E-148, E2E-151, E2E-153, E2E-158, E2E-187, E2E-196c, E2E-196b, E2E-196, E2E-PROVIDER-custom-endpoint-no-api-key, E2E-PLUGIN-fs-root-follows-the-calling-session, E2E-PLUGIN-provider-catalog-add-service |
 | Quality | E2E-SETTINGS-inline-capability-imports, E2E-CHAT-long-history-stream-keeps-responsive, E2E-CHAT-detailed-density-keeps-a-covered-pane-plain, E2E-CHAT-running-status-survives-output-pauses, E2E-032, E2E-033, E2E-039, E2E-043, E2E-044, E2E-045, E2E-046, E2E-047, E2E-048, E2E-048A, E2E-049, E2E-050, E2E-053, E2E-055, E2E-056, E2E-057, E2E-058, E2E-059, E2E-060, E2E-061, E2E-062, E2E-063, E2E-064, E2E-065, E2E-066, E2E-067, E2E-068, E2E-069, E2E-070, E2E-071, E2E-072, E2E-073, E2E-074, E2E-075, E2E-076, E2E-077, E2E-078, E2E-079, E2E-080, E2E-081, E2E-082, E2E-083, E2E-084, E2E-085, E2E-086, E2E-092, E2E-093, E2E-094, E2E-095, E2E-096, E2E-097, E2E-098, E2E-099, E2E-100, E2E-101, E2E-102, E2E-102a, E2E-102b, E2E-102c, E2E-102d, E2E-102e, E2E-103, E2E-AGENTS-001, E2E-021a, E2E-024N, E2E-059a, E2E-060b, E2E-060c, E2E-061a, E2E-073a, E2E-111, E2E-114, E2E-117, E2E-118, E2E-119, E2E-120, E2E-122, E2E-123, E2E-142, E2E-143, E2E-144, E2E-145, E2E-146, E2E-147, E2E-148, E2E-150, E2E-151, E2E-153, E2E-155, E2E-158, E2E-159, E2E-160, E2E-161, E2E-162, E2E-163, E2E-168, E2E-172, E2E-173, E2E-174, E2E-011g, E2E-176, E2E-177, E2E-178, E2E-179, E2E-180, E2E-181, E2E-182, E2E-183, E2E-186, E2E-187, E2E-194, E2E-195, E2E-196a, E2E-196b, E2E-196c, E2E-198, E2E-199, E2E-200, E2E-196, E2E-201, E2E-204, E2E-202, E2E-203, E2E-205, E2E-206, E2E-207, E2E-208, E2E-209, E2E-210, E2E-UPDATE-preference-and-once-only-reminder, E2E-218, E2E-259, E2E-219, E2E-250, E2E-252, E2E-102i, E2E-SUBAGENT-settlement-updates-before-parent-poll, E2E-PLUGIN-imported-pi-package-skills, E2E-PLUGIN-fs-root-follows-the-calling-session, E2E-SUBAGENT-resume-a-settled-delegation, E2E-PLUGIN-provider-catalog-add-service |

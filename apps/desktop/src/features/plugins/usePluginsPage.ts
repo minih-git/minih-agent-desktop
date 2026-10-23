@@ -395,6 +395,9 @@ export function usePluginsPage() {
           setPendingReview(result.review);
           return;
         }
+        // The reload was declined because the plugin still has work running:
+        // nothing changed, so there is nothing to announce.
+        if (result.canceled) return;
         await refreshPlugins();
         showToast(t("plugins.reloadDone"), { variant: "success" });
       } finally {
@@ -404,7 +407,8 @@ export function usePluginsPage() {
 
   const installPackage = () =>
     run(async () => {
-      await api.installPluginFromPackage();
+      const installed = await api.installPluginFromPackage();
+      if (installed?.canceled) return;
       await refreshPlugins();
       showToast(t("plugins.installPackageDone"), { variant: "success" });
     });
@@ -505,6 +509,7 @@ export function usePluginsPage() {
   const applyAutoUpdates = () =>
     run(async () => {
       const res = await api.marketApplyUpdates(true);
+      if (res?.canceled) return;
       await refreshPlugins();
       showToast(t("plugins.autoUpdatesApplied", { count: res.results?.length ?? 0 }), {
         variant: "success",
@@ -542,13 +547,18 @@ export function usePluginsPage() {
     setInstallJob(job);
     setBusyId(request.id);
     try {
-      await api.marketInstall({
+      const answer = await api.marketInstall({
         id: request.id,
         version: request.version,
         enable: true,
         autoUpdate: request.autoUpdate,
         grantedPermissions: request.grantedPermissions,
       });
+      if (answer.canceled) {
+        // Declined at the interruption prompt: the running plugin is untouched.
+        closeInstallDialog();
+        return;
+      }
       await refreshPlugins();
       await refreshMarket();
       if (selectedId === request.id) await openDetail(request.id);
