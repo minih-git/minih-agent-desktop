@@ -64,6 +64,6 @@ patchedDependencies:
   '@earendil-works/pi-coding-agent@1.1.0': patches/@earendil-works__pi-coding-agent@1.1.0.patch
 resolutionMode: highest
 # shamefully-hoist also lives in .npmrc, but pnpm 12 applies it only from
-# here; without it public hoisting is empty and examples/ plugins cannot
-# resolve root-level react in tests.
+# here; without it public hoisting is empty and examples/ cannot resolve
+# root-level react in tests.
 shamefullyHoist: true
