@@ -632,6 +632,7 @@ export const fr: Record<TranslationKey, string> = {
   "studio.generatedToast": "Image générée",
   "studio.stoppedToast": "Arrêté",
   "studio.deleteImageTitle": "Supprimer cette image ?",
+  "studio.deleteImage": "Supprimer l'image",
   "studio.deleteImageBody": "Cela supprime l'image et son historique de ce téléphone.",
   "hosts.switchGateway": "Changer de passerelle",
   "hosts.switchGatewayShort": "Changer",

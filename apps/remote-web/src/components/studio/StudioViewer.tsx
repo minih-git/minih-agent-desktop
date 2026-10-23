@@ -145,7 +145,7 @@ export function StudioArtCard({
         <button
           type="button"
           onClick={() => onDelete(card)}
-          aria-label={t("directChat.delete")}
+          aria-label={t("studio.deleteImage")}
           className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] text-[var(--rm-error)] transition-colors hover:bg-[var(--rm-bg-surface-2)]"
         >
           <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -343,7 +343,7 @@ export function StudioViewerModal({
             className="flex w-[76px] flex-col items-center gap-1.5 py-1 text-[11px] font-medium text-[var(--rm-error)] transition-transform active:scale-90"
           >
             <Trash2 className="h-6 w-6 stroke-[1.9]" aria-hidden="true" />
-            <span>{t("directChat.delete")}</span>
+            <span>{t("studio.deleteImage")}</span>
           </button>
         </div>
       </div>

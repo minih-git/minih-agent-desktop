@@ -632,6 +632,7 @@ export const tr: Record<TranslationKey, string> = {
   "studio.generatedToast": "Görsel oluşturuldu",
   "studio.stoppedToast": "Durduruldu",
   "studio.deleteImageTitle": "Bu görsel silinsin mi?",
+  "studio.deleteImage": "Görseli sil",
   "studio.deleteImageBody": "Bu işlem görseli ve kaydını bu telefondan kaldırır.",
   "hosts.switchGateway": "Ağ geçidini değiştir",
   "hosts.switchGatewayShort": "Değiştir",

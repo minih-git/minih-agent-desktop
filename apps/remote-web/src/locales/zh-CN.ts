@@ -632,6 +632,7 @@ export const zhCN: Record<TranslationKey, string> = {
   "studio.generatedToast": "图片已生成",
   "studio.stoppedToast": "已停止",
   "studio.deleteImageTitle": "删除这张图片？",
+  "studio.deleteImage": "删除图片",
   "studio.deleteImageBody": "这会从本机删除该图片及其生成记录。",
   "hosts.switchGateway": "切换网关",
   "hosts.switchGatewayShort": "切换",

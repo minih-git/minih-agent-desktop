@@ -632,6 +632,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "studio.generatedToast": "圖片已生成",
   "studio.stoppedToast": "已停止",
   "studio.deleteImageTitle": "刪除這張圖片？",
+  "studio.deleteImage": "刪除圖片",
   "studio.deleteImageBody": "這會從本機刪除該圖片及其生成記錄。",
   "hosts.switchGateway": "切換閘道",
   "hosts.switchGatewayShort": "切換",

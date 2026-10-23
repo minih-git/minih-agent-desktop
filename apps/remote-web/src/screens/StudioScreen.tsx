@@ -603,7 +603,7 @@ export function StudioScreen({
             loading={deleting}
             onClick={() => void handleConfirmDelete()}
           >
-            {t("directChat.delete")}
+            {t("studio.deleteImage")}
           </Button>
           <Button
             variant="secondary"

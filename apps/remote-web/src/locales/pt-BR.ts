@@ -632,6 +632,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "studio.generatedToast": "Imagem gerada",
   "studio.stoppedToast": "Parado",
   "studio.deleteImageTitle": "Excluir esta imagem?",
+  "studio.deleteImage": "Excluir imagem",
   "studio.deleteImageBody": "Isso remove a imagem e seu registro deste celular.",
   "hosts.switchGateway": "Trocar gateway",
   "hosts.switchGatewayShort": "Trocar",

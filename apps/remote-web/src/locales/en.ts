@@ -636,6 +636,7 @@ export const en = {
   "studio.generatedToast": "Image generated",
   "studio.stoppedToast": "Stopped",
   "studio.deleteImageTitle": "Delete this image?",
+  "studio.deleteImage": "Delete image",
   "studio.deleteImageBody": "This removes the image and its prompt record from this phone.",
   "hosts.switchGateway": "Switch gateway",
   "hosts.switchGatewayShort": "Switch",

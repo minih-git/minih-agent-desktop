@@ -632,6 +632,7 @@ export const ko: Record<TranslationKey, string> = {
   "studio.generatedToast": "이미지가 생성되었습니다",
   "studio.stoppedToast": "중지됨",
   "studio.deleteImageTitle": "이 이미지를 삭제할까요?",
+  "studio.deleteImage": "이미지 삭제",
   "studio.deleteImageBody": "이 휴대폰에서 이미지와 생성 기록이 삭제됩니다.",
   "hosts.switchGateway": "게이트웨이 전환",
   "hosts.switchGatewayShort": "전환",
