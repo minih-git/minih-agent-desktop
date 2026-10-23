@@ -65,8 +65,12 @@ export type DirectChatService = {
   /** Refresh the cached catalog for the current key. */
   refreshModels(): Promise<{ ok: true; models: MinihRouterModel[] } | { ok: false; failure: DirectChatFailure }>;
   /** Remember the model the user picked. */
+  /** Remember the model the user picked. */
   rememberModel(modelId: string | null): void;
-  /** Unlink: remove the secret, then the record. */
+  /** Set the explicit default model for new text chats. */
+  setDefaultChatModel(modelId: string | null): void;
+  /** Set the explicit default model for image creation. */
+  setDefaultImageModel(modelId: string | null): void;
   disconnect(): Promise<void>;
 };
 
@@ -145,6 +149,8 @@ export function createDirectChatService(options: DirectChatServiceOptions): Dire
         // The remembered model survives a rotation of the same account, and does
         // not carry over to a different one.
         lastModelId: sameAccount ? (previous?.lastModelId ?? null) : null,
+        defaultChatModelId: sameAccount ? (previous?.defaultChatModelId ?? null) : null,
+        defaultImageModelId: sameAccount ? (previous?.defaultImageModelId ?? null) : null,
         connectedAt: now().toISOString(),
         models: catalog.models,
       };
@@ -196,6 +202,17 @@ export function createDirectChatService(options: DirectChatServiceOptions): Dire
       writeConnection(options.storage, { ...connection, lastModelId: modelId });
     },
 
+    setDefaultChatModel(modelId) {
+      const connection = readConnection(options.storage);
+      if (!connection) return;
+      writeConnection(options.storage, { ...connection, defaultChatModelId: modelId });
+    },
+
+    setDefaultImageModel(modelId) {
+      const connection = readConnection(options.storage);
+      if (!connection) return;
+      writeConnection(options.storage, { ...connection, defaultImageModelId: modelId });
+    },
     async disconnect() {
       // The secret goes first: with it gone, no request can be made even if the
       // record below cannot be cleared.

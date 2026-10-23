@@ -350,6 +350,10 @@ describe("catalog and roles", () => {
         "session/get",
         "session/history",
         "session/list",
+        // D6 (rollout B4): a viewer may read the raster media its own
+        // transcript carries; the per-connection `sessionMediaRead` capability
+        // still gates the operation.
+        "session/mediaRead",
         "turn/get",
         "workspace/diff",
         "workspace/list",

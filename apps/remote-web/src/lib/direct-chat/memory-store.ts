@@ -14,9 +14,13 @@
  */
 import {
   DIRECT_CHAT_SCHEMA_VERSION,
+  scopeKey,
   type DirectChatAttempt,
   type DirectChatConversation,
+  type DirectChatDraft,
+  type DirectChatMedia,
   type DirectChatMessage,
+  type DirectChatScope,
   type DirectChatStore,
 } from "./history-store.js";
 
@@ -26,6 +30,8 @@ export type MemoryDirectChatStore = DirectChatStore & {
     conversations: DirectChatConversation[];
     messages: DirectChatMessage[];
     attempts: DirectChatAttempt[];
+    drafts: DirectChatDraft[];
+    media: DirectChatMedia[];
   };
   /** Make the next transaction reject, so the failed-save path is testable. */
   failNextTransaction(error: Error): void;
@@ -35,6 +41,8 @@ export function createMemoryDirectChatStore(): MemoryDirectChatStore {
   const conversations = new Map<string, DirectChatConversation>();
   const messages = new Map<string, DirectChatMessage>();
   const attempts = new Map<string, DirectChatAttempt>();
+  const drafts = new Map<string, DirectChatDraft>();
+  const media = new Map<string, DirectChatMedia>();
   let pendingFailure: Error | null = null;
 
   const sortedMessages = (conversationId: string): DirectChatMessage[] =>
@@ -58,6 +66,15 @@ export function createMemoryDirectChatStore(): MemoryDirectChatStore {
         .filter((attempt) => attempt.conversationId === conversationId)
         .sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.id.localeCompare(b.id));
     },
+    async draft(scope) {
+      return drafts.get(scopeKey(scope))?.text ?? "";
+    },
+    async media(id) {
+      return media.get(id) ?? null;
+    },
+    async mediaForConversation(conversationId) {
+      return [...media.values()].filter((item) => item.conversationId === conversationId);
+    },
 
     async transact(work) {
       if (pendingFailure) {
@@ -70,7 +87,20 @@ export function createMemoryDirectChatStore(): MemoryDirectChatStore {
         deleted: string[];
         messages: DirectChatMessage[];
         attempts: DirectChatAttempt[];
-      } = { conversations: [], deleted: [], messages: [], attempts: [] };
+        drafts: DirectChatDraft[];
+        clearedDrafts: string[];
+        media: DirectChatMedia[];
+        deletedMedia: string[];
+      } = {
+        conversations: [],
+        deleted: [],
+        messages: [],
+        attempts: [],
+        drafts: [],
+        clearedDrafts: [],
+        media: [],
+        deletedMedia: [],
+      };
 
       const value = await work({
         async putConversation(record) {
@@ -85,6 +115,18 @@ export function createMemoryDirectChatStore(): MemoryDirectChatStore {
         async putAttempt(record) {
           buffered.attempts.push(record);
         },
+        async putDraft(scope, text, now) {
+          buffered.drafts.push({ scopeKey: scopeKey(scope), text, updatedAt: now ?? new Date().toISOString() });
+        },
+        async clearDraft(scope) {
+          buffered.clearedDrafts.push(scopeKey(scope));
+        },
+        async putMedia(record) {
+          buffered.media.push(record);
+        },
+        async deleteMedia(id) {
+          buffered.deletedMedia.push(id);
+        },
       });
 
       // Commit only after `work` resolved: a throw discards the buffer.
@@ -92,10 +134,15 @@ export function createMemoryDirectChatStore(): MemoryDirectChatStore {
         conversations.delete(id);
         for (const [key, message] of messages) if (message.conversationId === id) messages.delete(key);
         for (const [key, attempt] of attempts) if (attempt.conversationId === id) attempts.delete(key);
+        for (const [key, item] of media) if (item.conversationId === id) media.delete(key);
       }
+      for (const id of buffered.deletedMedia) media.delete(id);
+      for (const sk of buffered.clearedDrafts) drafts.delete(sk);
       for (const record of buffered.conversations) conversations.set(record.id, record);
       for (const record of buffered.messages) messages.set(record.id, record);
       for (const record of buffered.attempts) attempts.set(record.id, record);
+      for (const record of buffered.media) media.set(record.id, record);
+      for (const record of buffered.drafts) drafts.set(record.scopeKey, record);
       return value;
     },
 
@@ -108,6 +155,8 @@ export function createMemoryDirectChatStore(): MemoryDirectChatStore {
         conversations: [...conversations.values()],
         messages: [...messages.values()],
         attempts: [...attempts.values()],
+        drafts: [...drafts.values()],
+        media: [...media.values()],
       };
     },
 

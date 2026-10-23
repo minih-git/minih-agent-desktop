@@ -229,6 +229,7 @@ Gateway，并让 Router 的账号服务进入链路——但只用于发现与�
 | Operation | Viewer | Controller | Approver | Owner |
 |---|---:|---:|---:|---:|
 | List/get/subscribe/history | yes | yes | yes | yes |
+| Read session media (`session/mediaRead`) | yes | yes | yes | yes |
 | Create/attach as viewer | yes | yes | yes | yes |
 | Start or queue a turn | no | yes | optional | yes |
 | Stop/interrupt/cancel a turn | no | yes | optional | yes |
@@ -279,6 +280,14 @@ SSRF 都要在边界处校验。附件使用大小、hash、MIME 和过期时间
 `tenantId`，跨租户隔离测试在多租户 harness 就绪后执行。账户模式（规划中，D666，见
 §3）新增一种部署在 Router 旁的多账户形态：每个账户是一个租户，门 29 是它的跨账户隔离
 测试；Gateway 按 IP 的限流按调用者地址而非账户计数，是各账户唯一共享的限额。
+
+
+10. 回读转录媒体（`session/mediaRead`）：
+    - **角色与能力**：对 `viewer` 角色（及更高）授权。Host 通过 `connection/initialize` 与 `host.capabilities` 中的 `sessionMediaRead` 能力标志进行公布。客户端在未经协商确认该能力前**不得**调用 `session/mediaRead`。
+    - **严格限制为会话内光栅附件**：读取严格限定于指定会话活跃转录中记录、且带有授权 `mediaId` 的光栅图像附件（`ref: attachments/<64位小写十六进制>`）。Host 在每次请求时重新校验媒体归属性；对任意文件、项目/工作区文件、provider 凭据或 SVG/文本内容的请求均被拒绝（`NOT_FOUND` 或 `REMOTE_PATH_FORBIDDEN`）。
+    - **防止路径遍历与软链接逃逸**：不透明的 `mediaId` 经过严格校验，绝不直接拼接入文件系统路径。通过 `realpath` 解析出 Host 附件目录之外的规范路径（如软链接）被拦截并拒绝。
+    - **内容与哈希校验**：在输出字节前，文件的 SHA-256 摘要会与其规范引用哈希进行比对校验。被修改或损坏的 blob 将以 `CONFLICT`（`media-changed`）拒绝。
+    - **有界分块传输**：单次请求分块大小上限为 512 KiB（`RACP_SESSION_MEDIA_MAX_CHUNK_BYTES`），且受 `limits.maxFrameBytes` 约束。全文件大小上限为 20 MiB（超限报 `PAYLOAD_TOO_LARGE`）。越界 offset 或负/零 length 均按 `INVALID_ARGUMENT` 拒绝。
 
 打包原生客户端（PR-5）同样是跨源调用方，其 webview origin 需要单独加入白名单：
 iOS 版为 `capacitor://localhost`，Android 版为 `https://localhost`，这两个值是

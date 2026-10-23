@@ -1847,6 +1847,99 @@
       }
     }
   },
+  "SessionMediaDescriptor": {
+    "type": "object",
+    "required": [
+      "mediaId",
+      "name",
+      "mimeType",
+      "sizeBytes",
+      "sha256"
+    ],
+    "properties": {
+      "mediaId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "name": {
+        "type": "string"
+      },
+      "mimeType": {
+        "type": "string",
+        "minLength": 1
+      },
+      "sizeBytes": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "sha256": {
+        "type": "string",
+        "minLength": 64,
+        "maxLength": 64
+      }
+    }
+  },
+  "SessionMediaReadRequest": {
+    "type": "object",
+    "required": [
+      "sessionId",
+      "mediaId"
+    ],
+    "properties": {
+      "sessionId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "mediaId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "length": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 524288
+      }
+    },
+    "additionalProperties": false
+  },
+  "SessionMediaReadResponse": {
+    "type": "object",
+    "required": [
+      "mime",
+      "totalBytes",
+      "offset",
+      "data"
+    ],
+    "properties": {
+      "mime": {
+        "type": "string",
+        "minLength": 1
+      },
+      "totalBytes": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "data": {
+        "type": "string"
+      },
+      "sha256": {
+        "type": "string",
+        "minLength": 64,
+        "maxLength": 64
+      }
+    }
+  },
   "HostSummary": {
     "type": "object",
     "required": [
@@ -2129,6 +2222,9 @@
             "type": "boolean"
           },
           "notifications": {
+            "type": "boolean"
+          },
+          "sessionMediaRead": {
             "type": "boolean"
           },
           "bindings": {

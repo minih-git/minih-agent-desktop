@@ -99,7 +99,7 @@ export function DirectChatInfoSheet({
             }}
           />
           <ListRow
-            title={copied ? t("directChat.copied") : t("directChat.copy")}
+            title={copied ? t("directChat.exported") : t("directChat.export")}
             chevron
             onClick={async () => {
               setCopied(await onCopy());

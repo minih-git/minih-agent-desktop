@@ -7,6 +7,7 @@ import {
   configureSession,
   createHostSession,
   createProjectCatalog,
+  createSessionMediaAccess,
   createWorkspaceAccess,
   deleteSession,
   listModelSummaries,
@@ -270,6 +271,11 @@ export function createDesktopHostOperations(
     // Answered once per connection, so a same-account desktop sees the panel in
     // `connection/initialize` and a phone does not (protocol §6.2).
     workspaceRead: (principal) => isDesktopDevice(principal),
+    // D6 (rollout B4): the media this desktop's own transcript recorded, so a
+    // phone reopens a screenshot or a generated image it never had locally. It
+    // reads the transcript, not the project tree: a workspace file stays out of
+    // reach, and a deleted output does not break an image the transcript holds.
+    sessionMedia: createSessionMediaAccess({ getHost: options.getHost, dataDir: options.dataDir }),
     // No `terminal`, `workspaceTools`, or `workspaceFiles`: those capabilities
     // stay on the machine the user is sitting at. `workspaceFiles` is the
     // owner-grade panel, which this port still does not offer to anyone.

@@ -362,6 +362,7 @@ export default function App() {
           connection={connection}
           onConnect={() => navigate({ kind: "modelGateway", from: "chats" })}
           onChanged={notifyDirectChatChanged}
+          onOpenConversation={(id) => navigate({ kind: "chat", conversationId: id })}
           onNewConversation={(modelId) => {
             directChatService().rememberModel(modelId);
             reloadConnection();
@@ -413,6 +414,7 @@ export default function App() {
               from: screen.from,
             })
           }
+          onConnectionChanged={reloadConnection}
         />
       );
     }
@@ -511,6 +513,7 @@ export default function App() {
           title={screen.title}
           credential={credential}
           hostLabel={host.label}
+          {...(host.roles ? { roles: host.roles } : {})}
           onBack={goBack}
         />
       );

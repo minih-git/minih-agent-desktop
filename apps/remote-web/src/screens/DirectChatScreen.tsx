@@ -14,7 +14,7 @@ import { Info, RotateCcw, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { MinihRouterModel } from "@minih-agent/shared";
+import type { MinihRouterModel, RacpInlineAttachment } from "@minih-agent/shared";
 
 import { ModelSheet } from "../components/ModelSheet.js";
 import { ChatComposer } from "../components/chat/ChatComposer.js";
@@ -22,11 +22,22 @@ import { ChatTimeline } from "../components/chat/ChatTimeline.js";
 import { Button } from "../components/ui/Button.js";
 import { NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
+import { Sheet } from "../components/ui/Sheet.js";
 import { watchVisibility } from "../lib/app-state.js";
-import { resolveDirectModel } from "../lib/direct-chat/catalog.js";
-import type { DirectChatAttempt, DirectChatTranscript } from "../lib/direct-chat/history-store.js";
-import { isIdle } from "../lib/direct-chat/history.js";
+import { checkModelVisionCapability, isImageModel, resolveDirectModel } from "../lib/direct-chat/catalog.js";
+import type {
+  DirectChatAttempt,
+  DirectChatMedia,
+  DirectChatTranscript,
+} from "../lib/direct-chat/history-store.js";
+import { isIdle, isImageConversation } from "../lib/direct-chat/history.js";
 import { scopeKey } from "../lib/direct-chat/history-store.js";
+import {
+  base64ToBytes,
+  createMediaUrl,
+  probeImageDimensions,
+  validateRasterImageBytes,
+} from "../lib/direct-chat/media.js";
 import {
   failureReasonKey,
   isRetryableFailure,
@@ -36,10 +47,12 @@ import {
 } from "../lib/direct-chat/view.js";
 import type { DirectChatConnection } from "../lib/direct-chat/connection.js";
 import { createIdempotencyKey, createRequestId } from "../lib/ids.js";
+import type { DirectChatTransaction } from "../lib/direct-chat/history-store.js";
 import {
   directChatHistory,
   directChatRunner,
   directChatScope,
+  directChatStore,
   secureStore,
   subscribeDirectChat,
 } from "../lib/runtime.js";
@@ -58,6 +71,8 @@ export type DirectChatScreenProps = {
   onChanged?: () => void;
   /** Start a fresh conversation, offered when this one no longer fits. */
   onNewConversation?: (modelId: string) => void;
+  /** Open another conversation (e.g. on branch edit-and-resend). */
+  onOpenConversation?: (conversationId: string) => void;
 };
 
 export function DirectChatScreen({
@@ -67,6 +82,7 @@ export function DirectChatScreen({
   onConnect,
   onChanged,
   onNewConversation,
+  onOpenConversation,
 }: DirectChatScreenProps) {
   const { t } = useTranslation();
   const history = directChatHistory();
@@ -80,6 +96,8 @@ export function DirectChatScreen({
   const [infoOpen, setInfoOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [editingMessage, setEditingMessage] = useState<{ id: string; text: string; index: number } | null>(null);
+  const [editText, setEditText] = useState("");
 
   /**
    * Reads are numbered, and a result is applied only if it is still the newest
@@ -104,17 +122,32 @@ export function DirectChatScreen({
   const hasRecordRef = useRef(false);
   hasRecordRef.current = transcript !== null;
 
+  const [accountDraft, setAccountDraft] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (loaded && transcript === null && scope) {
+      void history.accountDraft(scope).then((d: string | null) => {
+        setAccountDraft(d);
+      });
+    } else if (transcript !== null) {
+      setAccountDraft(null);
+    }
+  }, [loaded, transcript, scope, history]);
+
   const persistDraft = useCallback(
     (text: string) => {
       draftRef.current = text;
-      if (!hasRecordRef.current) return;
       if (draftTimer.current) clearTimeout(draftTimer.current);
       draftTimer.current = setTimeout(() => {
         draftTimer.current = null;
-        void history.setDraft(conversationId, draftRef.current);
+        if (hasRecordRef.current) {
+          void history.setDraft(conversationId, draftRef.current);
+        } else if (scope) {
+          void history.setAccountDraft(scope, draftRef.current);
+        }
       }, DRAFT_DEBOUNCE_MS);
     },
-    [history, conversationId],
+    [history, conversationId, scope],
   );
 
   /** A sent message is no longer a draft: forget it before anything flushes. */
@@ -122,14 +155,20 @@ export function DirectChatScreen({
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = null;
     draftRef.current = "";
-  }, []);
+    if (scope) {
+      void history.setAccountDraft(scope, "");
+    }
+  }, [history, scope]);
 
   useEffect(() => {
     const flush = () => {
       if (draftTimer.current) clearTimeout(draftTimer.current);
       draftTimer.current = null;
-      if (!hasRecordRef.current) return;
-      void history.setDraft(conversationId, draftRef.current);
+      if (hasRecordRef.current) {
+        void history.setDraft(conversationId, draftRef.current);
+      } else if (scope) {
+        void history.setAccountDraft(scope, draftRef.current);
+      }
     };
     // Leaving the screen or the app must not lose what was typed.
     const unsubscribe = watchVisibility({ onHidden: flush, onVisible: () => {} });
@@ -137,7 +176,7 @@ export function DirectChatScreen({
       unsubscribe();
       flush();
     };
-  }, [history, conversationId]);
+  }, [history, conversationId, scope]);
   const reload = useCallback(async () => {
     readSeq.current += 1;
     const mine = readSeq.current;
@@ -197,17 +236,34 @@ export function DirectChatScreen({
   const foreignScope = Boolean(
     conversation && scope && scopeKey(conversation.scope) !== scopeKey(scope),
   );
+  const isImage = (transcript ? isImageConversation(transcript.conversation, transcript.attempts) : false) || (nextModel ? isImageModel(nextModel) : false);
   const nextChoice = nextModel ? resolveDirectModel(nextModel) : null;
-  const usable = nextChoice?.usable === true;
+  const usable = isImage ? Boolean(nextModel && isImageModel(nextModel)) : nextChoice?.usable === true;
+  const activeProtocol = isImage ? "openai-images" : (nextChoice && "protocol" in nextChoice ? nextChoice.protocol : "openai-completions");
+  const visionCap = nextModel ? checkModelVisionCapability(nextModel) : "unsupported";
+  const supportsImages = visionCap === "supported" && !isImage;
+
+  const resolveMedia = useCallback(async (mediaId: string) => {
+    const store = directChatStore();
+    const m = await store.media(mediaId);
+    if (!m) return null;
+    return {
+      id: m.id,
+      url: createMediaUrl(m),
+      mime: m.mime,
+      width: m.width ?? undefined,
+      height: m.height ?? undefined,
+    };
+  }, []);
   /**
    * Why there is no model to send with: never chosen, or gone from the catalog.
    * The two absences get different words.
    */
   const modelGap = modelChoiceGap(wantedModelId, nextModel !== null);
 
-  async function send(text: string): Promise<boolean> {
+  async function send(text: string, attachments?: RacpInlineAttachment[]): Promise<boolean> {
     if (!connection || !scope) return false;
-    if (!nextModel || nextChoice?.usable !== true) {
+    if (!nextModel || !usable) {
       // Saying nothing here was the bug: the composer merely did not react.
       setNotice(t(modelGap === "none" ? "directChat.noModel" : "directChat.modelUnavailable"));
       setModelsOpen(true);
@@ -224,19 +280,75 @@ export function DirectChatScreen({
       setNotice(t("directChat.failure.unauthorized"));
       return false;
     }
+
+    const targetConvId = conversation?.id ?? conversationId;
+    const mediaList: DirectChatMedia[] = [];
+    if (!isImage && attachments && attachments.length > 0) {
+      for (const att of attachments) {
+        if (!att.data) continue;
+        const bytes = base64ToBytes(att.data);
+        if (!bytes) {
+          setSending(false);
+          setNotice(t("directChat.invalidImage"));
+          return false;
+        }
+        const valid = validateRasterImageBytes(bytes);
+        if (!valid.ok) {
+          setSending(false);
+          setNotice(t("directChat.invalidImage"));
+          return false;
+        }
+        const dims = await probeImageDimensions(bytes, att.mimeType || "image/png");
+        const mediaId = `med-${createRequestId()}`;
+        mediaList.push({
+          id: mediaId,
+          conversationId: targetConvId,
+          scope,
+          mime: att.mimeType || "image/png",
+          byteLength: bytes.byteLength,
+          width: dims?.width,
+          height: dims?.height,
+          createdAt: new Date().toISOString(),
+          data: bytes,
+        });
+      }
+    }
+
+    if (mediaList.length > 0) {
+      const store = directChatStore();
+      await store.transact(async (tx: DirectChatTransaction) => {
+        for (const m of mediaList) {
+          tx.putMedia(m);
+        }
+      });
+    }
+
+    const mediaIds = mediaList.map((m) => m.id);
     const saved = await history.beginTurn({
       conversationId: conversation?.id ?? null,
       scope,
       text,
+      operation: isImage ? "image-generation" : undefined,
+      imageModel: isImage ? true : undefined,
+      mediaIds: mediaIds.length > 0 ? mediaIds : undefined,
       modelId: nextModel.id,
       modelLabel: nextModel.id,
-      protocol: nextChoice.protocol,
+      protocol: activeProtocol,
       now: new Date().toISOString(),
       newConversationId: conversationId,
       newMessageId: `msg-${createRequestId()}`,
       newAttemptId: `att-${createIdempotencyKey()}`,
     });
     if (!saved.ok) {
+      // Clean up orphaned media on failure
+      if (mediaList.length > 0) {
+        const store = directChatStore();
+        await store.transact(async (tx: DirectChatTransaction) => {
+          for (const m of mediaList) {
+            tx.deleteMedia(m.id);
+          }
+        });
+      }
       // Nothing was written, so the draft stays and nothing is sent.
       setSending(false);
       setNotice(
@@ -257,7 +369,7 @@ export function DirectChatScreen({
       scope,
       attempt: saved.attempt,
       model: nextModel,
-      protocol: nextChoice.protocol,
+      protocol: activeProtocol,
       authKey: key,
     });
     setSending(false);
@@ -273,7 +385,7 @@ export function DirectChatScreen({
     }
     // The new conversation now exists: read it back under its own id.
     if (saved.conversation.id !== conversationId) {
-      await history.setNextModel(saved.conversation.id, nextModel.id, nextChoice.protocol, new Date().toISOString());
+      await history.setNextModel(saved.conversation.id, nextModel.id, activeProtocol, new Date().toISOString());
     }
     await reload();
     onChanged?.();
@@ -308,6 +420,94 @@ export function DirectChatScreen({
     await reload();
     onChanged?.();
   }
+  const copyMessage = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Ignore clipboard permission failures
+    }
+  }, []);
+
+  async function regenerateMessage(messageId: string): Promise<void> {
+    if (!scope || !nextModel || !usable || !transcript) return;
+    const msg = transcript.messages.find((m) => m.id === messageId);
+    if (!msg) return;
+    const attempt = transcript.attempts.find(
+      (a) => a.id === msg.attemptId || a.assistantMessageId === messageId,
+    );
+    if (!attempt) return;
+    const key = await createDirectChatSecret(secureStore()).read();
+    if (!key) {
+      setNotice(t("directChat.failure.unauthorized"));
+      return;
+    }
+    const outcome = await runner.regenerate({
+      attempt,
+      scope,
+      model: nextModel,
+      protocol: activeProtocol,
+      authKey: key,
+    });
+    if (!outcome.ok) {
+      setNotice(outcome.reason === "foreign-scope" ? t("directChat.foreignScope") : t("directChat.busy"));
+    }
+    await reload();
+    onChanged?.();
+  }
+
+  function handleStartEditResend(messageId: string) {
+    if (!transcript) return;
+    const idx = transcript.messages.findIndex((m) => m.id === messageId);
+    if (idx < 0) return;
+    const msg = transcript.messages[idx];
+    if (msg.role !== "user") return;
+    setEditingMessage({ id: msg.id, text: msg.text, index: idx });
+    setEditText(msg.text);
+  }
+
+  async function handleConfirmEditResend(): Promise<void> {
+    if (!editingMessage || !scope || !nextModel || !usable || !transcript) return;
+    const key = await createDirectChatSecret(secureStore()).read();
+    if (!key) {
+      setNotice(t("directChat.failure.unauthorized"));
+      return;
+    }
+    const newBranchId = `conv-${Date.now().toString(36)}`;
+    const edited = await history.editAndResend({
+      sourceConversationId: conversationId,
+      messageIndex: editingMessage.index,
+      newText: editText.trim(),
+      newConversationId: newBranchId,
+      newMessageId: `msg-${createRequestId()}`,
+      newAttemptId: `att-${createIdempotencyKey()}`,
+      now: new Date().toISOString(),
+      modelId: nextModel.id,
+      modelLabel: nextModel.id,
+      protocol: activeProtocol,
+    });
+    if (!edited.ok) {
+      setNotice(edited.reason === "busy" ? t("directChat.busy") : t("directChat.saveFailed"));
+      return;
+    }
+    setEditingMessage(null);
+    const started = await runner.start({
+      conversationId: edited.conversation.id,
+      scope,
+      attempt: edited.attempt,
+      model: nextModel,
+      protocol: activeProtocol,
+      authKey: key,
+    });
+    if (!started.ok) {
+      setNotice(started.reason === "busy" ? t("directChat.busy") : null);
+    }
+    onChanged?.();
+    if (onOpenConversation) {
+      onOpenConversation(edited.conversation.id);
+    } else {
+      await reload();
+    }
+  }
 
   return (
     <Screen>
@@ -335,7 +535,13 @@ export function DirectChatScreen({
 
       <ScreenContent hasDock className="[overflow-anchor:none]">
         {view && view.items.length > 0 ? (
-          <ChatTimeline items={view.items} />
+          <ChatTimeline
+            items={view.items}
+            resolveMedia={resolveMedia}
+            onCopyMessage={(item) => void copyMessage(item.text)}
+            onRegenerateMessage={(item) => void regenerateMessage(item.id)}
+            onEditResendMessage={(item) => handleStartEditResend(item.id)}
+          />
         ) : (
           <div className="px-4 py-10 text-center text-[15px] leading-[22px] text-[var(--rm-text-muted)]">
             {t("directChat.startHint")}
@@ -418,7 +624,7 @@ export function DirectChatScreen({
               {t("directChat.chooseModel")}
             </Button>
           </div>
-        ) : !loaded ? (
+        ) : !loaded || (transcript === null && accountDraft === null) ? (
           // The composer reads its first text once, when it mounts; mounting it
           // before the transcript arrives would show an empty box where the
           // saved draft belongs.
@@ -429,11 +635,12 @@ export function DirectChatScreen({
             disabled={false}
             archived={false}
             queued={false}
-            hideAttachments
-            initialText={conversation?.draft ?? ""}
+            hideAttachments={!supportsImages}
+            placeholder={isImage ? t("imageGen.promptPlaceholder") : undefined}
+            initialText={conversation?.draft ?? accountDraft ?? ""}
             onDraftChange={persistDraft}
             onSend={async (payload) => {
-              const sent = await send(payload.text);
+              const sent = await send(payload.text, payload.attachments);
               return sent;
             }}
           />
@@ -444,21 +651,57 @@ export function DirectChatScreen({
         <ModelSheet
           open={modelsOpen}
           models={catalog}
+          mode={isImage ? "image" : "chat"}
           selectedId={conversation?.nextModelId ?? null}
           onClose={() => setModelsOpen(false)}
           onSelect={(model) => {
-            const choice = resolveDirectModel(model);
-            if (!choice.usable || !conversation) return;
-            const previous = conversation.nextModelId;
-            void history
-              .setNextModel(conversation.id, model.id, choice.protocol, new Date().toISOString())
-              .then(reload);
-            // The separator the ADR asks for is a stored fact, not a UI one: it
-            // appears in the transcript because this reply ran on another model.
-            if (previous && previous !== model.id) setNotice(t("directChat.modelChanged", { model: model.id }));
+            if (isImage) {
+              if (!isImageModel(model) || !conversation) return;
+              const previous = conversation.nextModelId;
+              void history
+                .setNextModel(conversation.id, model.id, "openai-images", new Date().toISOString())
+                .then(reload);
+              if (previous && previous !== model.id) setNotice(t("directChat.modelChanged", { model: model.id }));
+            } else {
+              const choice = resolveDirectModel(model);
+              if (!choice.usable || !conversation) return;
+              const previous = conversation.nextModelId;
+              void history
+                .setNextModel(conversation.id, model.id, choice.protocol, new Date().toISOString())
+                .then(reload);
+              if (previous && previous !== model.id) setNotice(t("directChat.modelChanged", { model: model.id }));
+            }
           }}
         />
       ) : null}
+
+      <Sheet
+        open={editingMessage !== null}
+        onClose={() => setEditingMessage(null)}
+        title={t("message.editResend")}
+      >
+        <div className="flex flex-col gap-3 pt-2">
+          <textarea
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            rows={4}
+            className="w-full resize-none rounded-[12px] border border-[var(--rm-border)] bg-[var(--rm-bg-inset)] p-3 text-[16px] leading-[22px] text-[var(--rm-text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--rm-accent)]"
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="medium" onClick={() => setEditingMessage(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              size="medium"
+              disabled={!editText.trim()}
+              onClick={() => void handleConfirmEditResend()}
+            >
+              {t("composer.send")}
+            </Button>
+          </div>
+        </div>
+      </Sheet>
 
       <DirectChatInfoSheet
         open={infoOpen}
@@ -492,6 +735,7 @@ export function DirectChatScreen({
           }
         }}
         onDelete={async () => {
+          await runner.stop(conversationId);
           const removed = await history.remove(conversationId);
           if (removed.ok) {
             onChanged?.();

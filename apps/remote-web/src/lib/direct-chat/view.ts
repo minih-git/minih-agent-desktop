@@ -66,6 +66,7 @@ export function projectDirectTranscript(
         status: "completed",
         role: "user",
         text: message.text,
+        ...(message.mediaIds && message.mediaIds.length > 0 ? { mediaIds: message.mediaIds } : {}),
       });
       // Not reset: the separator compares consecutive *replies*, and a user
       // message always sits between them.
@@ -85,6 +86,9 @@ export function projectDirectTranscript(
     }
     previousModel = attempt.modelId;
     const live = attempt.state === "streaming" || attempt.state === "pending";
+    // An image answer carries no text: its row is the media it produced, and a
+    // reader has to see that rather than an empty bubble (ADR D7).
+    const attemptMediaIds = attempt.mediaIds && attempt.mediaIds.length > 0 ? attempt.mediaIds : undefined;
     items.push({
       id: message.id,
       turnId: attempt.id,
@@ -95,6 +99,7 @@ export function projectDirectTranscript(
       text: live && liveText.length >= message.text.length ? liveText : message.text,
       ...(labelOf(attempt) ? { agentName: labelOf(attempt) } : {}),
       modelId: attempt.modelId,
+      ...(attemptMediaIds ? { mediaIds: attemptMediaIds } : {}),
     });
   }
 
@@ -110,6 +115,7 @@ export function projectDirectTranscript(
       text: liveText,
       ...(labelOf(liveAttempt) ? { agentName: labelOf(liveAttempt) } : {}),
       modelId: liveAttempt.modelId,
+      ...(liveAttempt.mediaIds && liveAttempt.mediaIds.length > 0 ? { mediaIds: liveAttempt.mediaIds } : {}),
     });
   }
 
@@ -153,14 +159,35 @@ export function transcriptAsMarkdown(transcript: DirectChatTranscript): string {
   const lines: string[] = [`# ${transcript.conversation.title}`, ""];
   for (const message of transcript.messages) {
     if (message.role === "user") {
-      lines.push("## User", "", message.text, "");
+      lines.push("## User", "");
+      if (message.text) lines.push(message.text, "");
+      // A user turn's own images are disclosed too: a copy that silently drops
+      // them reads as a question about nothing.
+      if (message.mediaIds && message.mediaIds.length > 0) {
+        lines.push(mediaDisclosure(message.mediaIds.length), "");
+      }
       continue;
     }
     const attempt = message.attemptId ? attemptsById.get(message.attemptId) : undefined;
-    lines.push(`## ${attempt?.modelLabel || attempt?.modelId || "Assistant"}`, "", message.text, "");
+    lines.push(`## ${attempt?.modelLabel || attempt?.modelId || "Assistant"}`, "");
+    // An image answer has no text; the copy says what it carried instead of
+    // pretending the reply was empty (ADR D10: media is disclosed, not embedded).
+    if (message.text) lines.push(message.text, "");
+    const mediaIds = message.mediaIds ?? attempt?.mediaIds ?? [];
+    if (mediaIds.length > 0) lines.push(mediaDisclosure(mediaIds.length), "");
     if (attempt) lines.push(`_${completionMarker(attempt)}_`, "");
   }
   return `${lines.join("\n").trim()}\n`;
+}
+
+/**
+ * How a copied transcript says an attachment exists (ADR D10).
+ *
+ * The copy is a readable export, not a restorable backup: media is disclosed
+ * by kind and count, never embedded and never replaced by an unusable URL.
+ */
+export function mediaDisclosure(count: number): string {
+  return count === 1 ? "_[1 image attachment]_" : `_[${count} image attachments]_`;
 }
 
 /**
@@ -187,10 +214,12 @@ export function failureReasonKey(errorKind: string | null): string {
     case "interrupted":
       return "directChat.reason.interrupted";
     default:
+      // An unknown kind, and `output` (a reply that was not a usable image),
+      // read as the gateway failing: specific enough to act on, and never a
+      // promise the client cannot keep.
       return "directChat.reason.gateway";
   }
 }
-
 /**
  * Whether retrying the same message could work.
  *

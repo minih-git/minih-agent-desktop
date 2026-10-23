@@ -17,6 +17,7 @@ export * from "./plan-dispatch.js";
 export * from "./workspace-files.js";
 export * from "./workspace-diff.js";
 export * from "./workspace-access.js";
+export * from "./session-media.js";
 export * from "./live-work/operation-ledger.js";
 export * from "./live-work/intent.js";
 export * from "./live-work/coordinator.js";

@@ -550,6 +550,12 @@ export const RACP_HTTP_ROUTE_LIST = {
   renameSession: "POST /v1/sessions/{sessionId}:rename",
   attachSession: "POST /v1/sessions/{sessionId}:attach",
   sessionHistory: "GET /v1/sessions/{sessionId}/history",
+  /**
+   * One bounded chunk of a transcript media item (D6, rollout B4). The media id
+   * is opaque and the Host re-checks membership on every read; this is not a
+   * generic download route.
+   */
+  sessionMediaRead: "POST /v1/sessions/{sessionId}/media/{mediaId}:read",
   startTurn: "POST /v1/sessions/{sessionId}/turns",
   getTurn: "GET /v1/turns/{turnId}",
   stopTurn: "POST /v1/turns/{turnId}:stop",
@@ -583,6 +589,7 @@ export const RACP_METHOD_HTTP_ROUTES: Partial<Record<string, RacpHttpRouteName>>
   "session/rename": "renameSession",
   "session/attach": "attachSession",
   "session/history": "sessionHistory",
+  "session/mediaRead": "sessionMediaRead",
   "turn/start": "startTurn",
   "turn/get": "getTurn",
   "turn/stop": "stopTurn",
@@ -609,6 +616,7 @@ export const RACP_HTTP_ROUTE_PARAMS: Record<RacpHttpRouteName, readonly string[]
   renameSession: ["sessionId"],
   attachSession: ["sessionId"],
   sessionHistory: ["sessionId"],
+  sessionMediaRead: ["sessionId", "mediaId"],
   startTurn: ["sessionId"],
   getTurn: ["turnId"],
   stopTurn: ["turnId"],
@@ -652,6 +660,8 @@ export const RACP_HTTP_QUERY_PARAMS: Record<RacpHttpRouteName, Readonly<Record<s
   attachSession: {},
   // `HistoryParams`: beforeItemId is a string cursor, limit a positive integer.
   sessionHistory: { beforeItemId: "string", limit: "integer" },
+  // `session/mediaRead` sends its offset/length in the POST body.
+  sessionMediaRead: {},
   startTurn: {},
   getTurn: {},
   stopTurn: {},

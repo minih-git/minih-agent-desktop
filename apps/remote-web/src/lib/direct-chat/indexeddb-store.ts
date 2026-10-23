@@ -20,9 +20,13 @@
  */
 import {
   DIRECT_CHAT_SCHEMA_VERSION,
+  scopeKey,
   type DirectChatAttempt,
   type DirectChatConversation,
+  type DirectChatDraft,
+  type DirectChatMedia,
   type DirectChatMessage,
+  type DirectChatScope,
   type DirectChatStore,
   type DirectChatTransaction,
 } from "./history-store.js";
@@ -31,7 +35,8 @@ const DATABASE_NAME = "minih.remote-web.direct-chat";
 const CONVERSATIONS = "conversations";
 const MESSAGES = "messages";
 const ATTEMPTS = "attempts";
-
+const DRAFTS = "drafts";
+const MEDIA = "media";
 /** The IndexedDB factory, when the WebView has one. */
 function indexedDb(): IDBFactory | null {
   try {
@@ -79,6 +84,13 @@ function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {
       }
       if (!database.objectStoreNames.contains(ATTEMPTS)) {
         const store = database.createObjectStore(ATTEMPTS, { keyPath: "id" });
+        store.createIndex("conversationId", "conversationId", { unique: false });
+      }
+      if (!database.objectStoreNames.contains(DRAFTS)) {
+        database.createObjectStore(DRAFTS, { keyPath: "scopeKey" });
+      }
+      if (!database.objectStoreNames.contains(MEDIA)) {
+        const store = database.createObjectStore(MEDIA, { keyPath: "id" });
         store.createIndex("conversationId", "conversationId", { unique: false });
       }
     };
@@ -183,15 +195,33 @@ export function createIndexedDbDirectChatStore(
       // caller needs them in the order the replies actually started.
       return rows.sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.id.localeCompare(b.id));
     },
+    async draft(scope) {
+      const store = (await database()).transaction(DRAFTS, "readonly").objectStore(DRAFTS);
+      const found = await promisify<DirectChatDraft | undefined>(store.get(scopeKey(scope)));
+      return found?.text ?? "";
+    },
+    async media(id) {
+      const store = (await database()).transaction(MEDIA, "readonly").objectStore(MEDIA);
+      const found = await promisify<DirectChatMedia | undefined>(store.get(id));
+      return found ?? null;
+    },
+    async mediaForConversation(conversationId) {
+      const rows = await readAll<DirectChatMedia>(await database(), MEDIA, conversationId);
+      return rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    },
 
     async transact<T>(work: (tx: DirectChatTransaction) => Promise<T>): Promise<T> {
       const connection = await database();
-      // One transaction over all three stores: a turn and its reply commit
-      // together, and an abort leaves none of them.
-      const transaction = connection.transaction([CONVERSATIONS, MESSAGES, ATTEMPTS], "readwrite");
+      // One transaction over all stores: writes commit together, and an abort leaves none of them.
+      const transaction = connection.transaction(
+        [CONVERSATIONS, MESSAGES, ATTEMPTS, DRAFTS, MEDIA],
+        "readwrite",
+      );
       const conversations = transaction.objectStore(CONVERSATIONS);
       const messages = transaction.objectStore(MESSAGES);
       const attempts = transaction.objectStore(ATTEMPTS);
+      const drafts = transaction.objectStore(DRAFTS);
+      const media = transaction.objectStore(MEDIA);
 
       const done = completed(transaction);
       let value: T;
@@ -202,7 +232,7 @@ export function createIndexedDbDirectChatStore(
           },
           async deleteConversation(id) {
             conversations.delete(id);
-            // Messages and attempts belong to the conversation: deleting it
+            // Messages, attempts and media belong to the conversation: deleting it
             // deletes them, in this same transaction.
             for (const message of await promisify<DirectChatMessage[]>(
               messages.index("conversationId").getAll(id),
@@ -214,12 +244,29 @@ export function createIndexedDbDirectChatStore(
             )) {
               attempts.delete(attempt.id);
             }
+            for (const item of await promisify<DirectChatMedia[]>(
+              media.index("conversationId").getAll(id),
+            )) {
+              media.delete(item.id);
+            }
           },
           async putMessage(record) {
             messages.put(record);
           },
           async putAttempt(record) {
             attempts.put(record);
+          },
+          async putDraft(scope, text, now) {
+            drafts.put({ scopeKey: scopeKey(scope), text, updatedAt: now ?? new Date().toISOString() });
+          },
+          async clearDraft(scope) {
+            drafts.delete(scopeKey(scope));
+          },
+          async putMedia(record) {
+            media.put(record);
+          },
+          async deleteMedia(id) {
+            media.delete(id);
           },
         });
       } catch (cause) {

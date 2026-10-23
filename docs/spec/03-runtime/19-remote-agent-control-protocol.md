@@ -577,6 +577,7 @@ to this same catalog.
 | `tools/advertise` | owner | Advertise client-executed tools for a session; replaces the connection's previous set; cleared on disconnect |
 | `session/revoke` | owner | Revoke a client or session membership |
 | `session/archive` | owner | Archive an idle session |
+| `session/mediaRead` | viewer | Read one bounded chunk of a raster image the session's transcript records (§10.1; advertised as `sessionMediaRead`) |
 
 The server MUST reject unknown operations with `METHOD_NOT_FOUND`. A client
 MUST use capability discovery rather than assuming optional operations exist.
@@ -1114,6 +1115,104 @@ by the Gateway and the bytes cross the Host link in bounded chunks (§11.4).
 The Gateway holds them only until `attachment/complete` succeeds or the upload
 expires, verifies nothing beyond size, and never inspects or persists them
 further; the Host performs the hash and MIME verification.
+
+### 10.1 `session/mediaRead` — reading back a transcript image
+
+A remote screenshot or a generated image has to reopen after the phone forgot
+everything, and the transcript carries only the attachment's name and `ref`,
+never the bytes. `session/mediaRead` returns one image the session's own
+transcript already records, in bounded chunks. It is the only way a client
+obtains session bytes, and it is a read, not a lookup surface for files.
+
+**Role and permission.** `viewer` is enough: the operation is
+[`{ role: "viewer", profile: "remote-host", mutation: false }`] in the catalog
+(§6.2), the same role that may `session/attach` and `session/history`. Any
+principal that can see the session may read its recorded media, and nothing
+else changes: the permission ceiling, the approval lifetime, and the
+host-scoped event model are untouched. The Host answers `FORBIDDEN` for a
+session the principal cannot see, exactly as for `session/get`.
+
+**Capability advertisement and negotiation.** A Host that serves this operation
+sets `sessionMediaRead: true` in the `RacpServerCapabilities` it returns from
+`connection/initialize` (§3) and repeats the same string in its
+`host.capabilities` frame on every Host link (§11.4). The capability is
+optional and additive: a Host that does not serve it leaves it absent, and a
+client MUST NOT call `session/mediaRead` without seeing it. A client that
+cannot see it states that the image needs a newer computer version rather than
+showing a broken preview. A Host that does not advertise it also answers
+`CAPABILITY_UNAVAILABLE`, so the check does not depend on the client honoring
+the declaration.
+
+**Where the media id comes from.** The Host projects every transcript item
+(`session/history`, snapshot `items`, and `activeItems`) with an additive
+`mediaId` on each attachment row that is readable media:
+
+```ts
+type SessionMediaAttachment = {
+  id?: string        // the row id inside the message; required for a mediaId
+  kind: "image"      // raster only
+  name: string
+  ref: string        // exactly "attachments/<64 lowercase hex>"
+  mimeType?: string  // image/png | image/jpeg | image/webp | image/gif
+  size?: number
+  mediaId?: string   // opaque: encodeSessionMediaId(messageId, attachment row id)
+}
+```
+
+`mediaId` is `base64url("<messageId>/<attachmentRowId>")` with a `media_`
+prefix — an opaque string a client stores and echoes, never parses into a path.
+Every other field of the message and of the attachment is unchanged, so a
+client that does not understand `mediaId` still renders what it did before. A
+row that is not raster media (a workspace PDF, a session link, an SVG, a legacy
+absolute path) or that the Host has no message id for carries no `mediaId`.
+
+**Request and response.**
+
+```ts
+SessionMediaReadRequest  = { sessionId: string; mediaId: string; offset?: number; length?: number }
+SessionMediaReadResponse = { mime: string; totalBytes: number; offset: number; data: string; sha256?: string }
+```
+
+`data` is standard base64 with no data-URL prefix and `offset` is the position
+of its first byte, so a client reassembles by concatenating consecutive
+offsets. `sha256` is the digest of the whole file and is repeated on every
+chunk.
+
+**Security boundary.** The Host enforces all of the following; none of it is a
+client responsibility:
+
+- **Membership is the authorization.** The media id is resolved only inside the
+  session the caller named, and the Host re-reads that transcript on every call
+  and refuses a row it does not find (`NOT_FOUND`, `details.reason:
+  "media-not-in-session"`). Holding an id from another session, another device,
+  or an older build buys nothing. A malformed id is `INVALID_ARGUMENT`.
+- **Only canonical raster blobs.** The row's `ref` must be exactly
+  `attachments/<64 lowercase hex>`; anything else — an absolute path, `..`, a
+  URL, `file://`, a sibling such as `state.db` — is not media and is never
+  opened. Path traversal is structurally impossible: the id never becomes a
+  path, and the ref is matched, not concatenated. A blob that is not a regular
+  file, or that `realpath` resolves outside the attachments directory (a
+  symlink), is `REMOTE_PATH_FORBIDDEN`. SVG and text are not served at all.
+- **Nothing outside the session.** A project file, a workspace file, a
+  provider config, or a file the user deleted from the project is not readable
+  here. The reader consults only `attachments/<sha256>` under the Host data
+  root; an image whose blob is gone is `REMOTE_PATH_NOT_FOUND`
+  (`details.reason: "media-unavailable"`), not a fallback read of the working
+  tree.
+- **Bounded chunked transfer.** At most 512 KiB of raw bytes per call
+  (`RACP_SESSION_MEDIA_MAX_CHUNK_BYTES`, `SessionMediaReadRequest.length`
+  maximum) and never more than `limits.maxFrameBytes`; requests past either
+  limit are `INVALID_ARGUMENT`, never silently clamped. `offset` must be inside
+  the file and `length` positive; a whole file is capped at 20 MiB
+  (`PAYLOAD_TOO_LARGE` above it). Reads are sequential ranges, so a stalled
+  client holds no resource beyond one open handle per call.
+- **Hash integrity.** The file's sha256 is verified against the hash in its
+  name before the first byte is served; a replaced or rewritten blob is
+  `CONFLICT` (`details.reason: "media-changed"`) instead of a preview of
+  different bytes. The digest is re-verified once per blob version, so the
+  other chunks of one large image are not repeated full passes, and a blob that
+  changes mid-download is refused on the next chunk.
+
 
 ## 11. Transport mappings
 

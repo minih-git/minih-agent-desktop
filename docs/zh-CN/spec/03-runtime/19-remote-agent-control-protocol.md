@@ -195,6 +195,7 @@ Host 队列；持久事件使用每 epoch 递增且不复用的 `sequence`；附
 | `tools/advertise` | owner | 公布在客户端执行的会话工具；替换该连接此前的集合；断开即清除 |
 | `session/revoke` | owner | 撤销客户端或会话成员资格 |
 | `session/archive` | owner | 归档空闲会话 |
+| `session/mediaRead` | viewer | 读取会话转录记录的光栅图像有界分块（§10.1；公布为 `sessionMediaRead`） |
 
 远端 Host profile（v1.1，rollout R2 必需）：当桌面是另一台机器上 `agent-host-cli` 的
 客户端时，renderer 期望本地拥有的会话控制。这些操作从 v1.1 起属于契约，通过
@@ -293,6 +294,60 @@ Plan/Goal 审批为带显式 `permissionMode` 的 `approve` 或 `reject`，且�
 远程本地路径、`file://` 和任意 URL 都不允许作为附件来源。经 Gateway 时上传
 目标由 Gateway 提供，字节以有界分块经 Host link 到达 Host，Gateway 在
 `attachment/complete` 成功或过期后删除副本。
+
+
+### 10.1 `session/mediaRead` — 回读转录图像
+
+远程截屏或生成的图像在手机清除本地状态后必须能够重新打开，而转录中仅记录附件名称和 `ref`，绝不携带原始字节。
+`session/mediaRead` 以有界分块形式返回会话自身转录中已记录的图像。这是客户端获取会话媒体字节的唯一途径，
+且它是只读接口，不是通用文件查找接口。
+
+**角色与权限。** `viewer` 角色即可：该操作在目录（§6.2）中为
+[`{ role: "viewer", profile: "remote-host", mutation: false }`]，与允许执行 `session/attach` 和 `session/history`
+的角色相同。任何可见该会话的主体均可读取其记录的媒体，其他一切保持不变：权限上限、审批生命周期及 Host 作用域事件模型均不动。
+Host 对调用方不可见的会话回复 `FORBIDDEN`，行为与 `session/get` 完全一致。
+
+**能力公布与协商。** 提供此操作的 Host 在 `connection/initialize`（§3）返回的 `RacpServerCapabilities` 中设置
+`sessionMediaRead: true`，并在每条 Host link（§11.4）的 `host.capabilities` 帧中重复该字符串。此能力为可选增量能力：
+不提供该操作的 Host 保持缺省，客户端**不得**在未见该标志的情况下调用 `session/mediaRead`。未见该能力的客户端应提示图像需较新电脑版本，
+而非展示破损预览。未公布该能力的 Host 亦回复 `CAPABILITY_UNAVAILABLE`，故检查不依赖于客户端自觉。
+
+**媒体 ID 的来源。** Host 在投影每项转录项（`session/history`、快照 `items` 与 `activeItems`）时，
+为每个属于可读媒体的附件行附加可选的 `mediaId`：
+
+```ts
+type SessionMediaAttachment = {
+  id?: string        // 消息内的行 id；生成 mediaId 所必需
+  kind: "image"      // 仅光栅图像
+  name: string
+  ref: string        // 精确为 "attachments/<64 位小写十六进制>"
+  mimeType?: string  // image/png | image/jpeg | image/webp | image/gif
+  size?: number
+  mediaId?: string   // 不透明：encodeSessionMediaId(messageId, attachment row id)
+}
+```
+
+`mediaId` 为带有 `media_` 前缀的 `base64url("<messageId>/<attachmentRowId>")`——一个由客户端存储和回传的不透明字符串，
+客户端绝不将其解析为路径。消息及附件的所有其他字段保持不变，因此不理解 `mediaId` 的客户端仍可维持原样渲染。
+非光栅媒体行（工作区 PDF、会话链接、SVG、历史遗留绝对路径）或 Host 无消息 id 的行不携带 `mediaId`。
+
+**请求与响应。**
+
+```ts
+SessionMediaReadRequest  = { sessionId: string; mediaId: string; offset?: number; length?: number }
+SessionMediaReadResponse = { mime: string; totalBytes: number; offset: number; data: string; sha256?: string }
+```
+
+`data` 为标准 base64，不含 data-URL 前缀；`offset` 为其首字节位置，客户端通过拼接连续 offset 进行重组。
+`sha256` 为整个文件的摘要，并在每个分块上重复提供。
+
+**安全边界。** Host 强制执行以下所有规则；客户端无需承担这些职责：
+
+- **会话成员资格即授权。** 媒体 id 仅在调用方指定的会话内解析，Host 在每次调用时重新读取该转录，并拒绝未找到的行（`NOT_FOUND`，`details.reason: "media-not-in-session"`）。持有其他会话、其他设备或旧构建的 id 毫无作用。格式畸形的 id 报 `INVALID_ARGUMENT`。
+- **仅限规范光栅 blob。** 行的 `ref` 必须精确为 `attachments/<64 位小写十六进制>`；任何其他形式——绝对路径、`..`、URL、`file://`、同级如 `state.db`——均非媒体且绝不打开。路径遍历在结构上被杜绝：id 绝不转为路径，ref 只做精确匹配而不做拼接。非普通文件或经 `realpath` 解析至 attachments 目录外的 blob（软链接）返回 `REMOTE_PATH_FORBIDDEN`。SVG 和文本完全不提供。
+- **绝不读取会话外内容。** 项目文件、工作区文件、provider 配置或用户已从项目删除的文件在此不可读。读取端仅查询 Host 数据根目录下的 `attachments/<sha256>`；对应 blob 已不存在的图像报 `REMOTE_PATH_NOT_FOUND`（`details.reason: "media-unavailable"`），绝不会回退读取工作树。
+- **有界分块传输。** 单次调用原始字节上限为 512 KiB（`RACP_SESSION_MEDIA_MAX_CHUNK_BYTES`，`SessionMediaReadRequest.length` 上限），且绝不超过 `limits.maxFrameBytes`；超出任一限制的请求报 `INVALID_ARGUMENT`，绝不静默截断。`offset` 必须在文件内部且 `length` 为正数；全文件上限为 20 MiB（超出报 `PAYLOAD_TOO_LARGE`）。读取为顺序区间，因此停滞的客户端每次调用除一个打开的句柄外不占用任何资源。
+- **哈希完整性。** 在提供首字节前，会比对文件名中的哈希与文件的实际 sha256；被替换或重写的 blob 报 `CONFLICT`（`details.reason: "media-changed"`），而非提供不同字节的预览。每个 blob 版本只校验一次摘要，避免大图像后续分块重复全量计算；下载途中发生变化的 blob 在下一分块时被拒绝。
 
 ## 5. 传输映射
 

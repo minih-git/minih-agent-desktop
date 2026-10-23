@@ -359,6 +359,8 @@ describe("the connection's status", () => {
       keyName: "phone",
       maskedKey: "",
       lastModelId: null,
+      defaultChatModelId: null,
+      defaultImageModelId: null,
       connectedAt: "2026-10-21T09:00:00.000Z",
       models: [],
     });
@@ -453,6 +455,8 @@ describe("the connection record", () => {
       keyName: "phone",
       maskedKey: "sk-gl-…0001",
       lastModelId: null,
+      defaultChatModelId: null,
+      defaultImageModelId: null,
       connectedAt: "2026-10-21T09:00:00.000Z",
       models: [],
     });
@@ -473,6 +477,8 @@ describe("the connection record", () => {
       keyName: "",
       maskedKey: "",
       lastModelId: null,
+      defaultChatModelId: null,
+      defaultImageModelId: null,
       connectedAt: "",
       models: [],
     };

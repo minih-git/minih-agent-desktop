@@ -185,6 +185,77 @@ export type WorkspaceToolAbort = Static<typeof WorkspaceToolAbortSchema>;
 export type WorkspaceToolResult = { ok: boolean; content: unknown; isError?: boolean; errorCode?: string; toolCallId?: string };
 
 // ---------------------------------------------------------------------------
+// Session media (D6, rollout B4: remote image viewer)
+// ---------------------------------------------------------------------------
+
+/**
+ * One opaque reference to a media item the session transcript already carries.
+ *
+ * The id names a row in `message.attachments`, never a path: a client cannot
+ * submit a file path, a URL, or a raw attachment `ref`, and the Host does not
+ * learn one from text. Only a raster attachment under `attachments/<sha256>`
+ * is enumerable at all (D6: "the Host enumerates opaque media references only
+ * for raster attachments or outputs already associated with that session's
+ * transcript").
+ */
+export const RacpSessionMediaDescriptorSchema = Type.Object({
+  mediaId: Type.String({ minLength: 1, maxLength: 256 }),
+  /** The media row's own name, for a label; never a path. */
+  name: Type.String(),
+  /** Allowlisted raster image type, e.g. `image/png`. SVG and text are not media. */
+  mimeType: Type.String({ minLength: 1 }),
+  sizeBytes: Type.Integer({ minimum: 0 }),
+  /** sha256 of the whole file, so the viewer can check a reassembled image. */
+  sha256: Type.String({ minLength: 64, maxLength: 64 }),
+});
+export type RacpSessionMediaDescriptor = Static<typeof RacpSessionMediaDescriptorSchema>;
+
+/**
+ * Raw bytes one `session/mediaRead` call may return.
+ *
+ * Half a megabyte keeps the base64 answer (~683 KiB) plus the JSON envelope
+ * under the default `maxFrameBytes` (1 MiB), so a frame limit is never the
+ * reason a read fails and the client never has to guess where to resume.
+ */
+export const RACP_SESSION_MEDIA_MAX_CHUNK_BYTES = 512 * 1024;
+
+/** Bytes the client may omit in one read, bounded by the chunk above. */
+export const RACP_SESSION_MEDIA_DEFAULT_CHUNK_BYTES = RACP_SESSION_MEDIA_MAX_CHUNK_BYTES;
+
+/**
+ * `session/mediaRead`: one bounded byte range of one authorized media item.
+ *
+ * `offset`/`length` are validated on the Host (a negative offset, a zero
+ * length, a length over {@link RACP_SESSION_MEDIA_MAX_CHUNK_BYTES}, or a range
+ * past the end of the file is refused, never clamped silently).
+ */
+export const SessionMediaReadRequestSchema = Type.Object(
+  {
+    sessionId: Type.String({ minLength: 1, maxLength: 256 }),
+    mediaId: Type.String({ minLength: 1, maxLength: 256 }),
+    offset: Type.Optional(Type.Integer({ minimum: 0 })),
+    length: Type.Optional(Type.Integer({ minimum: 1, maximum: RACP_SESSION_MEDIA_MAX_CHUNK_BYTES })),
+  },
+  { additionalProperties: false },
+);
+export type SessionMediaReadRequest = Static<typeof SessionMediaReadRequestSchema>;
+
+/**
+ * One chunk. `data` is standard base64 with no data-URL prefix, and
+ * `offset` is the position of its first byte, so a client reassembles by
+ * concatenating consecutive offsets rather than by trusting a length.
+ */
+export const SessionMediaReadResponseSchema = Type.Object({
+  mime: Type.String({ minLength: 1 }),
+  totalBytes: Type.Integer({ minimum: 0 }),
+  offset: Type.Integer({ minimum: 0 }),
+  data: Type.String(),
+  /** sha256 of the whole file, repeated on every chunk of it. */
+  sha256: Type.Optional(Type.String({ minLength: 64, maxLength: 64 })),
+});
+export type SessionMediaReadResponse = Static<typeof SessionMediaReadResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // Canonical resources (spec §5)
 // ---------------------------------------------------------------------------
 
@@ -548,6 +619,13 @@ export const RacpServerCapabilitiesSchema = Type.Object({
    */
   workspaceRead: Type.Optional(Type.Boolean()),
   notifications: Type.Boolean(),
+  /**
+   * Whether this connection may read the raster media its transcript
+   * references (D6, rollout B4). Additive and optional: a Host that does not
+   * serve it leaves it absent, and the phone then states that the image needs
+   * a newer computer version instead of showing a broken preview.
+   */
+  sessionMediaRead: Type.Optional(Type.Boolean()),
   bindings: Type.Array(Type.Union([Type.Literal("RACP-WS"), Type.Literal("RACP-HTTP"), Type.Literal("RACP-GRPC")])),
 });
 export type RacpServerCapabilities = Static<typeof RacpServerCapabilitiesSchema>;
@@ -713,6 +791,15 @@ export const RACP_OPERATIONS = {
   "project/register": { role: "controller", profile: "remote-host", mutation: true },
   /** List directories under a Host path, for the remote folder picker; bounded and root-confined. */
   "project/browse": { role: "controller", profile: "remote-host", mutation: false },
+  /**
+   * One bounded chunk of one transcript media item (D6, rollout B4).
+   *
+   * `viewer`, not `owner`: it exposes bytes the session already carries, never
+   * general workspace files, and only raster attachments the Host itself
+   * registered are readable at all. The `sessionMediaRead` capability still
+   * gates it per connection.
+   */
+  "session/mediaRead": { role: "viewer", profile: "remote-host", mutation: false },
 } as const satisfies Record<string, RacpOperationSpec>;
 export type RacpOperation = keyof typeof RACP_OPERATIONS;
 
@@ -775,6 +862,8 @@ export const RACP_HTTP_ROUTES: Partial<Record<RacpOperation, { method: "GET" | "
   "session/list": { method: "GET", path: "/v1/sessions" },
   "session/create": { method: "POST", path: "/v1/sessions" },
   "session/get": { method: "GET", path: "/v1/sessions/{sessionId}" },
+  /** One bounded chunk of a transcript media item (D6, rollout B4). */
+  "session/mediaRead": { method: "POST", path: "/v1/sessions/{sessionId}/media/{mediaId}:read" },
   "session/configure": { method: "POST", path: "/v1/sessions/{sessionId}:configure" },
   "session/rename": { method: "POST", path: "/v1/sessions/{sessionId}:rename" },
   "session/attach": { method: "POST", path: "/v1/sessions/{sessionId}:attach" },
@@ -1047,6 +1136,9 @@ export const RACP_SCHEMAS = {
   InputRequest: RacpInputRequestSchema,
   InputResponse: RacpInputResponseSchema,
   Attachment: RacpAttachmentSchema,
+  SessionMediaDescriptor: RacpSessionMediaDescriptorSchema,
+  SessionMediaReadRequest: SessionMediaReadRequestSchema,
+  SessionMediaReadResponse: SessionMediaReadResponseSchema,
   HostSummary: RacpHostSummarySchema,
   ProjectSummary: RacpProjectSummarySchema,
   InitializeParams: RacpInitializeParamsSchema,
