@@ -156,7 +156,6 @@
   gap: 4px;
   padding: 10px 20px 0;
   overflow-x: auto;
-  scrollbar-width: none;
 }
 
 .settings-subnav-item {

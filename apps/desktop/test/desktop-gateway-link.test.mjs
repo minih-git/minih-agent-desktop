@@ -236,6 +236,7 @@ async function startDesktopLink() {
   const service = createGatewayLinkService({
     port,
     store,
+    dataDir: dir,
     agentHost: () => host,
     getHost: () => stubHost(),
     serverVersion: "0.0.0-test",

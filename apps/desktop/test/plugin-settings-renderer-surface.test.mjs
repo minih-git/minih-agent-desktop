@@ -6,13 +6,14 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
 
 test("scenic extensions are host-rendered, accessible, and have no iframe canvas", () => {
-  const page = read("src/features/settings/SettingsPage.tsx");
+  const page = read("src/features/settings/SettingsDestination.tsx");
+  const navigation = read("src/features/settings/SettingsNavigation.tsx");
   const component = read("src/components/settings/PluginScenicThemesDestination.tsx");
   const css = read("src/styles/settings.css");
   assert.match(page, /PluginScenicThemesDestination/);
   assert.doesNotMatch(page, /PluginSettingsDestination/);
-  assert.match(page, /pluginViewIcon\(entry\.icon\)/);
-  assert.doesNotMatch(page, /settings-nav-icon"><IconBookOpen/);
+  assert.match(navigation, /pluginViewIcon\(entry\.icon\)/);
+  assert.doesNotMatch(navigation, /settings-nav-icon"><IconBookOpen/);
   assert.match(component, /aria-pressed/);
   assert.match(component, /type="range"/);
   assert.match(component, /"Apply"/);
