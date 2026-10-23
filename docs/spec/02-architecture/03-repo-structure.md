@@ -48,6 +48,8 @@ Minih-Agent-Desktop/
 ├── examples/
 │ ├── plugins/                # hello and roundtable sample plugins
 │ └── fixtures/sample-project # workspace fixture for E2E scenarios
+├── plugins/
+│ └── pi.terminal/            # first-party plugin packaged separately from the app
 ├── docs/                     # VitePress site and the English source of truth
 │ ├── spec/                   # numbered specification domains (see spec/README.md)
 │ ├── adr/                    # architecture decision records
@@ -129,6 +131,18 @@ Cross-boundary contracts:
 ### `packages/plugin-devkit`
 - `pi-plugin` CLI used by plugin authors and the marketplace publish flow
 - template scaffolding, manifest check, package, publish
+
+### `plugins/<plugin-id>`
+First-party plugins that the app does **not** bundle. Each one is its own
+workspace package: source under `src/`, a build that stages `dist/`, and the
+`pi-plugin check` / `pi-plugin pack` path that produces the installable package.
+Nothing here is copied into `apps/desktop/resources/plugins/`, so a plugin that
+ships native assets adds no payload to the Desktop installer
+(ADR optional-terminal-plugin).
+
+`plugins/pi.terminal` is the embedded terminal. Its `dist/` holds the pinned
+`node-pty` runtime and per-platform prebuilt binaries plus xterm.js, because the
+host never installs dependencies or downloads code when a user enables a plugin.
 
 ## 3. Runtime data (not in git)
 

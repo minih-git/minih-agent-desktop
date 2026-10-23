@@ -112,14 +112,31 @@ export type PluginPermissionReview = {
    * scopes rendered as `fs.<mode>…` entries. Empty for a first load.
    */
   addedPermissions: string[];
+  /**
+   * The manifest's own `i18n.*.safetyNotes`, resolved for the active locale.
+   *
+   * Plugin entry code is not an OS sandbox, so a plugin that runs local
+   * commands or services is expected to state that here. The host shows it as
+   * the author's statement beside the permission list; an absent note is not
+   * evidence of limited access (spec 07-plugins/04 §4.1).
+   */
+  safetyNotes?: string;
 };
+
 /**
- * One plugin-contributed work panel view, resolved for the current window.
+ * Where a contributed view is offered. `panel` is the work-panel launcher and
+ * tab (ADR 0104, the default); `sidebar` is one host-drawn entry near the top of
+ * the left sidebar that opens the page in the main content area instead.
+ */
+export type PluginViewPlacement = "panel" | "sidebar";
+
+/**
+ * One plugin-contributed view, resolved for the current window.
  *
  * The renderer never reads a manifest: the main process resolves the localized
  * title against the active locale, filters by permission, activation scope, and
- * entry existence, and hands over only what the panel menu has to draw. `icon`
- * is a token from the SDK's closed list, not plugin markup.
+ * entry existence, and hands over only what the panel menu or the sidebar has to
+ * draw. `icon` is a token from the SDK's closed list, not plugin markup.
  */
 export type PluginViewMeta = {
   pluginId: string;
@@ -133,6 +150,13 @@ export type PluginViewMeta = {
   pluginName: string;
   icon?: string;
   order: number;
+  /**
+   * Where the host offers this view, from `contributes.views[].placement`.
+   * `panel` docks it in the right work panel; `sidebar` puts one host-drawn
+   * entry in the left sidebar and opens the page in the main content area. The
+   * default is resolved in the main process, so the renderer never guesses.
+   */
+  placement: PluginViewPlacement;
 };
 
 /** A user-invoked text action available beside the Composer controls. */

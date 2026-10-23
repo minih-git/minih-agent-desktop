@@ -307,8 +307,13 @@ export function useAppShellRuntime() {
   }, []);
 
   useEffect(() => {
+    // A sidebar-placed plugin view owns the center pane the same way a route
+    // page does, so the work panel does not compete with it.
     const pageHidesWorkPanel =
-      page === "settings" || page === "plugins" || page === "scheduled";
+      page === "settings" ||
+      page === "plugins" ||
+      page === "scheduled" ||
+      page === "pluginView";
     const shouldPresent =
       ready && !pageHidesWorkPanel && workPanelOpen;
     const request = ++workPanelReservationRequest.current;

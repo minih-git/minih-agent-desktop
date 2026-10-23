@@ -251,6 +251,13 @@ type PluginViewContrib = {
  icon?: string; // token from the host icon set; unknown tokens draw a letter tile
  entry: string; // relative path to the view's HTML entry
   order?: number; // ascending sort key in the plugin-views menu group, default 0
+  /**
+   * Where the host offers this view. `panel` (default) is a launcher row and tab
+   * in the right work panel; `sidebar` is an entry near the top of the left
+   * sidebar that opens the same isolated page in the main content area, with no
+   * chat session behind it. An unknown value is invalid, not a silent `panel`.
+   */
+  placement?: "panel" | "sidebar";
 };
 
 type PluginSessionSourceContrib = {
@@ -634,6 +641,9 @@ MVP may implement only:
     `zh-CN`. `views[].icon` is **not** validated against the token list: an
     unknown token degrades to a letter tile, so refusing one would break a
     plugin over a cosmetic detail. The packaging check warns about it instead
+17. `views[].placement` may only be `panel` or `sidebar`; omitting it means
+    `panel`, and any other value fails validation rather than quietly landing
+    in the work panel.
 
 18. `contributes.globalShortcuts` allows at most 8 entries and needs
    `keyboard.globalShortcut`. Each `id` matches

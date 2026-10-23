@@ -94,6 +94,7 @@ import { registerApplicationStartup } from "./bootstrap/startup";
 import { createLauncher } from "./bootstrap/launcher";
 import { createWorkPanelRuntime } from "./bootstrap/work-panel";
 import { createCloseBehaviorRuntime } from "./bootstrap/close-behavior";
+import { activeWorkMessages } from "./plugin-active-work";
 import { registerShutdownHandlers } from "./bootstrap/shutdown";
 import { stripWinLongPrefix } from "./path-utils";
 // Native resize streams can pause briefly while the pointer crosses a display
@@ -598,6 +599,13 @@ closeBehaviorRuntime = createCloseBehaviorRuntime({
   dataDir,
   getLocale: () => mainState.updaterLocale,
   createTray,
+  // Quitting ends every terminal and background job the plugins own; the quit
+  // prompt names them from the plugins' own reports.
+  activeWorkLines: () =>
+    activeWorkMessages(
+      pluginServices.plugins,
+      pluginServices.plugins.listLoaded().map((loaded) => loaded.manifest.id),
+    ),
 });
 const {
   applyCloseBehavior,

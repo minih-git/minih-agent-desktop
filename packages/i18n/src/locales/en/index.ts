@@ -1,4 +1,7 @@
 export const en = {
+  sidebarPluginView: {
+    back: "Back to conversation",
+  },
   userMenu: {
     open: "Account menu for {{name}}",
     title: "Account and settings",
@@ -2634,6 +2637,9 @@ sklm: {
     archived: "Archived",
   },
   plugins: {
+    interruptionTitle: "Plugin work will end",
+    interruptionBody: "These plugins are still running work. Continuing ends it:",
+    interruptionContinue: "End and continue",
     title: "Extensions",
     loadDev: "Load local plugin",
     loadDevDone: "Local plugin loaded",

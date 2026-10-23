@@ -35,6 +35,7 @@ import { createFsConsentService } from "../plugin-fs-consent";
 import { pluginWorkspaceInfo, projectFolderPaths } from "../workspace-roots";
 import { createDesktopConsentService } from "../plugin-desktop-consent";
 import { PluginRuntime } from "../plugin-runtime";
+import { confirmPluginInterruption } from "../plugin-active-work";
 import { createSpeechService } from "./speech-service";
 import { PluginShortcutRegistry } from "../plugin-shortcut-registry";
 import { PluginWebSocketRegistry } from "../plugin-websocket";
@@ -491,6 +492,17 @@ export function createPluginServices({
     },
     // Hot reload happens without anyone asking for it, so it has to report
     // itself: the plugins page reads status from the host, not from the edit.
+    // It also unloads the running version, so it asks the same interruption
+    // question a manual reload does — a declined reload keeps everything up.
+    beforePluginReload: (pluginId) =>
+      confirmPluginInterruption(
+        {
+          plugins,
+          getLocale: () => getUpdaterLocale(),
+          window: () => getMainWindow() ?? undefined,
+        },
+        [pluginId],
+      ),
     onPluginReloaded: async ({ pluginId, name, ok, message }) => {
       logger.app("plugin", ok ? "info" : "error", "development plugin reloaded", {
         pluginId,

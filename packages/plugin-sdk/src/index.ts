@@ -747,6 +747,14 @@ export const PLUGIN_VIEW_ICONS = [
 export type PluginViewIcon = (typeof PLUGIN_VIEW_ICONS)[number];
 
 /**
+ * Placements a contributed view may declare, in the order the host declares
+ * them. `panel` is the default and keeps the work-panel launcher and tab;
+ * `sidebar` moves the entry to the left sidebar and opens the page in the main
+ * content area.
+ */
+export const PLUGIN_VIEW_PLACEMENTS = ["panel", "sidebar"] as const;
+
+/**
  * One surface the plugin docks inside the host's work panel.
  *
  * A view is the same isolated web page as `ui.panel`, rendered in the panel
@@ -764,7 +772,17 @@ export type PluginViewContrib = {
   entry: string;
   /** Ascending sort key within the plugin-views menu group. Defaults to 0. */
   order?: number;
+  /**
+   * Where the host offers this view. `panel` (default) is a launcher row and tab
+   * in the right work panel. `sidebar` is one host-drawn entry near the top of
+   * the left sidebar that opens the page in the main content area, with no chat
+   * session behind it.
+   */
+  placement?: PluginViewPlacement;
 };
+
+/** Placement values a `contributes.views` entry may declare. */
+export type PluginViewPlacement = "panel" | "sidebar";
 
 export type PluginCommand = {
   id: string;
@@ -1392,6 +1410,16 @@ export type PluginHostApi = {
 
 export type PluginModule = {
   onLoad?: () => Promise<void> | void;
+  /**
+   * Read-only interruption report, asked immediately before a user-initiated
+   * teardown (disable, uninstall, reload, install-over, update, quit).
+   *
+   * Return a sentence in the app language when work the user would notice is
+   * still running, or `null`/`undefined` when nothing would be lost. It must be
+   * side-effect free: the user may decline the teardown and expect the plugin to
+   * be exactly as it was (spec 07-plugins/05 §3.0).
+   */
+  onActiveWork?: () => Promise<string | null | undefined> | string | null | undefined;
   onUnload?: () => Promise<void> | void;
   /** Performs OAuth login or refresh for one `contributes.providers` entry. */
   onProviderOAuth?: (
@@ -2138,6 +2166,9 @@ export function validateContributions(
     if (entryError) return entryError;
     if (view.order !== undefined && !Number.isFinite(view.order)) {
       return `view "${view.id}" order must be a number`;
+    }
+    if (view.placement !== undefined && !PLUGIN_VIEW_PLACEMENTS.includes(view.placement)) {
+      return `view "${view.id}" placement must be "panel" or "sidebar"`;
     }
     // `icon` is intentionally unchecked: an unknown token degrades to a letter
     // tile, so rejecting one would break a plugin over a cosmetic detail.

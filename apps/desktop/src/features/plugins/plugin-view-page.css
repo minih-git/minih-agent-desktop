@@ -1,0 +1,52 @@
+/*
+  Center-pane page owned by a `placement: sidebar` plugin view
+  (ADR optional-terminal-plugin).
+
+  The shell drops these pages into `.main-pane`, where the absolute titlebar band
+  paints over the first `--ds-toolbar-height`. Reserve that band the way the
+  transcript does, so the host rows below never sit under the window controls.
+*/
+.plugin-view-page {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  padding-top: var(--ds-toolbar-height);
+}
+
+/* Host-owned rows: the way back, then the plugin's own title and owner. The
+   plugin draws everything below them. */
+.plugin-view-page-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--ds-border-subtle);
+}
+
+.plugin-view-page-back {
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 4px 8px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.plugin-view-page-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ds-text-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-view-page-owner {
+  flex: 0 0 auto;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}

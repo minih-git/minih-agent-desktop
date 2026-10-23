@@ -440,6 +440,13 @@ export type PluginHostServices = {
   /** Fired when a resident service changes supervision state. */
   onServiceChange?: (status: PluginServiceStatus) => void;
   /** Fired after a development plugin was reloaded from disk, or failed to. */
+  /**
+   * Asked before a watched development plugin is hot-reloaded. `false` cancels
+   * the reload — the plugin keeps running, its views stay up, and nothing is
+   * reported as a failed reload. Absent means "always reload", which is what a
+   * build without the interruption prompt does (spec 07-plugins/05 §3.0).
+   */
+  beforePluginReload?: (pluginId: string) => Promise<boolean>;
   onPluginReloaded?: (info: {
     pluginId: string;
     name: string;
@@ -615,6 +622,12 @@ const PLUGIN_HOOK_TIMEOUT_MS = 5_000;
  * holding that window open for the full hook timeout.
  */
 const PLUGIN_SHUTDOWN_HOOK_TIMEOUT_MS = 1_500;
+/**
+ * Budget for the read-only `onActiveWork` report. It is deliberately short: the
+ * answer gates a user-initiated teardown, and a plugin that cannot say what it
+ * is running in two seconds must not hold the dialog open or block the action.
+ */
+const PLUGIN_ACTIVE_WORK_TIMEOUT_MS = 2_000;
 /** Ceiling for tearing every plugin down, however many are loaded. */
 const PLUGIN_DISPOSE_ALL_TIMEOUT_MS = 3_000;
 /** Command palette invocations are user-facing; fail fast. */
@@ -2149,6 +2162,29 @@ export class PluginRuntime {
     this.mcpCalls.cancelSession(sessionId);
   }
 
+  /**
+   * What this plugin says the user would lose by ending it now, or `null`.
+   *
+   * Read-only and non-blocking by construction: an unloaded plugin, a missing
+   * hook, a throw, or a missed deadline all answer `null`, so teardown is never
+   * held hostage by a plugin that cannot answer (spec 07-plugins/05 §3.0).
+   */
+  async activeWork(pluginId: string): Promise<string | null> {
+    const loaded = this.loaded.get(pluginId);
+    if (!loaded?.child || loaded.disposing) return null;
+    try {
+      const answer = await this.sendToChild(
+        loaded,
+        { t: "call", method: "lifecycle.activeWork", payload: {} },
+        PLUGIN_ACTIVE_WORK_TIMEOUT_MS,
+      );
+      const message = (answer as { message?: unknown } | undefined)?.message;
+      return typeof message === "string" && message.trim() ? message.trim() : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Deregister contributions, run `onUnload` in the child, then stop it. */
   async unload(pluginId: string): Promise<void> {
     const loaded = this.loaded.get(pluginId);
@@ -2300,8 +2336,40 @@ export class PluginRuntime {
   async reloadDevPlugin(pluginId: string): Promise<void> {
     const dev = this.devPlugins.get(pluginId);
     if (!dev) return;
+    // A save that lands while this plugin is already reloading, or while the
+    // user is being asked about it, must not queue a second teardown.
+    if (this.reloading.has(pluginId)) return;
     const name = this.loaded.get(pluginId)?.manifest.name ?? pluginId;
     this.reloading.add(pluginId);
+    if (this.services.beforePluginReload) {
+      let allowed = false;
+      try {
+        allowed = await this.services.beforePluginReload(pluginId);
+      } catch (error) {
+        // A prompt that cannot be answered is not consent: keep the plugin and
+        // record why, exactly as a decline does.
+        this.services.audit?.({
+          pluginId,
+          api: "plugin.reload.cancelled",
+          ok: false,
+          message: (error as Error).message,
+          ts: Date.now(),
+        });
+      } finally {
+        if (!allowed) this.reloading.delete(pluginId);
+      }
+      if (!allowed) {
+        // Declined: the plugin keeps running exactly as it was, and this is not
+        // a failed reload — so no `onPluginReloaded` toast and no view teardown.
+        this.services.audit?.({
+          pluginId,
+          api: "plugin.reload.cancelled",
+          ok: true,
+          ts: Date.now(),
+        });
+        return;
+      }
+    }
     try {
       const declaredAccess = readDeclaredAccess(dev.path);
       const declared = declaredAccess.permissions;

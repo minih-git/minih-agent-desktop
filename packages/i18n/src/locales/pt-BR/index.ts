@@ -1,6 +1,9 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const ptBR = {
+  sidebarPluginView: {
+    back: "Voltar para a conversa",
+  },
   userMenu: en.userMenu,
   worktree: {
     newIsolatedSession: "Nova sessão isolada",
@@ -2571,6 +2574,9 @@ export const ptBR = {
     archived: "Arquivado"
   },
   plugins: {
+    interruptionTitle: "O trabalho do plugin será encerrado",
+    interruptionBody: "Estes plugins ainda estão executando trabalho. Continuar irá encerrá-lo:",
+    interruptionContinue: "Encerrar e continuar",
     title: "Extensões",
     loadDev: "Carregar plugin local",
     loadDevDone: "Plugin local carregado",

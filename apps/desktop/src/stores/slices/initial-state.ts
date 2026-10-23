@@ -81,6 +81,7 @@ export function createInitialState(): AppStateData {
     planCheckpoints: {},
     sessionTodos: {},
     page: "chat",
+    pluginViewRef: null,
     settingsTab: "general",
     settingsAnchor: null,
     settingsTabNonce: 0,

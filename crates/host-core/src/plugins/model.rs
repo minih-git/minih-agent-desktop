@@ -513,6 +513,26 @@ impl Default for InstallOptions {
     }
 }
 
+/// What a package says about itself, read without installing anything.
+///
+/// The shell asks for this before a local package install so the user is asked
+/// before any installed directory or registry row changes, and so the confirmed
+/// answer can be bound to the exact bytes that were inspected.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageInspection {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    /// Declared permissions, so the caller can show what the package asks for.
+    pub permissions: Vec<String>,
+    /// SHA-256 of the package file, to be handed back as `expectedShasum`.
+    pub shasum: String,
+    /// Version already installed under this id, when there is one.
+    pub installed_version: Option<String>,
+    pub upgraded: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstallResult {

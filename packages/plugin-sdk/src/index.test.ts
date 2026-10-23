@@ -13,6 +13,7 @@ import {
   MAX_RENDERER_CALL_METHODS_PER_PLUGIN,
   PLUGIN_PERMISSIONS,
   PLUGIN_VIEW_ICONS,
+  PLUGIN_VIEW_PLACEMENTS,
   type PluginProviderContrib,
 } from "./index.js";
 
@@ -444,6 +445,22 @@ describe("contributes.views", () => {
     ).toBeUndefined();
     expect(PLUGIN_VIEW_ICONS).toContain("diff");
     expect(new Set(PLUGIN_VIEW_ICONS).size).toBe(PLUGIN_VIEW_ICONS.length);
+  });
+
+  it("accepts both placements and refuses any other value", () => {
+    // Omitting `placement` is the pre-existing contract: the view stays a work
+    // panel launcher row, so every published manifest keeps behaving as before.
+    expect(validateContributions({ views: [view] })).toBeUndefined();
+    expect(validateContributions({ views: [{ ...view, placement: "panel" }] })).toBeUndefined();
+    expect(
+      validateContributions({ views: [{ ...view, placement: "sidebar" }] }),
+    ).toBeUndefined();
+    for (const bad of ["drawer", "", "Sidebar", 1, null]) {
+      expect(
+        validateContributions({ views: [{ ...view, placement: bad as never }] }),
+      ).toMatch(/placement must be "panel" or "sidebar"/);
+    }
+    expect(PLUGIN_VIEW_PLACEMENTS).toEqual(["panel", "sidebar"]);
   });
 });
 

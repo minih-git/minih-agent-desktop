@@ -157,6 +157,58 @@ impl PluginManager {
         self.install_from_path(package_path, opts)
     }
 
+    /// Read a package's identity and checksum without installing it.
+    ///
+    /// This exists so a local package install can ask the user *before* anything
+    /// on disk or in the registry changes: the shell learns which plugin the
+    /// package is, and the checksum the file must still have when it does get
+    /// installed. Nothing here is persisted — the archive is unpacked into a
+    /// private staging directory that is removed before returning, through the
+    /// same size, file-count, traversal, and manifest checks a real install
+    /// applies, so an unsafe package is refused here too.
+    pub fn inspect_package(&self, package_path: &str) -> Result<PackageInspection> {
+        let source = PathBuf::from(package_path);
+        if !source.exists() {
+            bail!("PLUGIN_INVALID: package path missing");
+        }
+        if source.is_dir() {
+            bail!("PLUGIN_INVALID: inspect needs a package file, not a directory");
+        }
+        let bytes =
+            fs::read(&source).with_context(|| format!("read package {}", source.display()))?;
+        if bytes.len() as u64 > MAX_PACKAGE_BYTES {
+            bail!("PLUGIN_INVALID: package exceeds 50MB limit");
+        }
+        let stage = self
+            .data_dir
+            .join("plugins/cache/inspect")
+            .join(format!("inspect-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&stage)?;
+        let cleanup_stage = stage.clone();
+        let result = (|| -> Result<PackageInspection> {
+            let extract_dir = stage.join("extract");
+            fs::create_dir_all(&extract_dir)?;
+            extract_zip_bytes(&bytes, &extract_dir)?;
+            let extracted_root = find_plugin_root(&extract_dir)?;
+            let manifest = Self::read_manifest(&extracted_root)?;
+            let installed_version = self.get(&manifest.id).map(|plugin| plugin.version);
+            let upgraded = installed_version
+                .as_ref()
+                .is_some_and(|version| *version != manifest.version);
+            Ok(PackageInspection {
+                id: manifest.id,
+                name: manifest.name,
+                version: manifest.version,
+                permissions: manifest.permissions,
+                shasum: sha256_hex(&bytes),
+                installed_version,
+                upgraded,
+            })
+        })();
+        let _ = fs::remove_dir_all(cleanup_stage);
+        result
+    }
+
     pub fn install_from_market(
         &mut self,
         plugin_id: &str,

@@ -77,7 +77,9 @@ test("a plugin view counts as a tool, not a transcript resource", () => {
 test("the blank page launcher renders plugin views from the data-driven list", () => {
   assert.match(panelSource, /workPanelTools\(t, pluginViews\)/);
   assert.match(panelSource, /panel\.toolsAndPanels/);
-  assert.match(panelSource, /pluginViews\.map\(\(view\) =>/);
+  // Only work-panel views: a `placement: sidebar` entry belongs to the left
+  // sidebar and must not also appear here (ADR optional-terminal-plugin).
+  assert.match(panelSource, /panelPluginViews\(pluginViews\)\.map\(\(view\) =>/);
   // Rows carry the same affordances as the host-owned Review row, so a plugin
   // surface is not visibly second-class.
   assert.match(panelSource, /className="work-panel-launcher-row"/);

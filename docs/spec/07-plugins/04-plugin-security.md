@@ -152,6 +152,27 @@ User actions:
 
 First use of a high-risk API may re-confirm.
 
+### 4.1 Declared execution trust
+
+A plugin's entry code runs Node inside the plugin host process; that is not an
+OS sandbox, so it can already start local processes with the user's privileges.
+No permission name changes that, and none is required to try.
+
+The development-folder review — the host-controlled path a locally built plugin
+goes through — therefore renders the manifest's own `safetyNotes` (from the
+`i18n` block, resolved for the active locale) beside the permission list, above
+the accept action. It is authored copy, not a host verdict: the review presents
+it as the plugin's statement and never treats an absent note as evidence of
+limited access. A plugin that runs local commands, opens local sockets, or keeps
+background work is expected to say so there. The host adds no per-feature "may
+run commands" grant, because a label with no enforcement point behind it would
+imply a boundary that does not exist. A marketplace install review keeps the
+catalog's own `safetyNotes`, which the plugin detail sheet already shows before
+install.
+
+This is informed consent for surfaces such as a terminal plugin (ADR
+optional-terminal-plugin), not a claim that the plugin is sandboxed.
+
 ## 5. Data isolation
 
 Plugins can access:

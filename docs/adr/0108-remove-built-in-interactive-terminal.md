@@ -1,6 +1,6 @@
 # ADR 0108: Remove the built-in interactive terminal
 
-- Status: Accepted
+- Status: Accepted; optional-plugin scope amended by [Optional embedded terminal plugin](optional-terminal-plugin.md)
 - Date: 2026-08-19
 - Deciders: Minih-Agent-Desktop maintainers
 - Related: [ADR 0019](0019-work-panel-subsystems.md) ·
@@ -11,6 +11,10 @@
   E2E-058
 - Supersedes in part: D249 and the interactive-terminal clauses of ADR 0019
   and ADR 0105; records D251
+- Amendment (2026-10-23): The optional plugin decision permits a separately
+  installed, plugin-owned terminal. It does not restore a built-in terminal,
+  add a host PTY API, or change Agent Bash. The implementation is pending;
+  the historical decision and rationale below remain for context.
 
 ## Context
 

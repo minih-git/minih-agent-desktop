@@ -5364,6 +5364,18 @@ async fn handle_request(
                 .map_err(plugin_err)?;
             Ok(json!({ "result": result }))
         }
+        "plugins.inspectPackage" => {
+            // Read-only: the shell asks who a package is before it lets the
+            // install replace anything, and gets the checksum it must pass back
+            // as `expectedShasum` so a swapped file cannot ride on this answer.
+            let path = params
+                .get("path")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| rpc_err(1002, "path required", "INVALID_PARAMS"))?;
+            let st = state.lock().await;
+            let inspection = st.plugins.inspect_package(path).map_err(plugin_err)?;
+            Ok(json!({ "inspection": inspection }))
+        }
         "plugins.grantPermissions" => {
             let id = params
                 .get("id")

@@ -1242,11 +1242,20 @@ window.pluginBridge.on(event, handler)
 ```
 
 The same bridge serves both plugin surfaces: a detached `ui.panel` window and a
-`contributes.views` surface docked in the work panel (ADR 0104). The channel
-list, the permission gate, and the preload are identical, so one HTML entry
-works in either placement. The only differences are chrome and the view
-`location` below: a docked view has no window-control capsule and no drag band,
-and its `--pi-plugin-titlebar-height` is `0px` rather than `46px`.
+`contributes.views` surface (ADR 0104). The channel list, the permission gate,
+and the preload are identical, so one HTML entry works in either placement. The
+only differences are chrome and the view `location` below: a contributed view
+has no window-control capsule and no drag band, and its
+`--pi-plugin-titlebar-height` is `0px` rather than `46px`.
+
+A contributed view is placed by its `placement`. The default, `panel`, docks it
+in the right work panel as a launcher row and tab. `sidebar` instead draws one
+host-rendered entry near the top of the left sidebar and opens the same isolated
+page in the main content area: no chat session, no work-panel tab, and the page
+owns the whole center pane while it is open. Opening it is user-invoked, so a
+`sidebar` view is never auto-opened by loading the plugin, changing projects, or
+restoring a session, and it disappears with its entry when the plugin is
+disabled, reloaded, crashes, or leaves the active project.
 
 Detached panel pages using the current chrome contract declare
 `<meta name="pi-plugin-chrome" content="v2">` and use the published variable

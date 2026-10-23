@@ -92,6 +92,9 @@ export function registerPluginUiIpc({
           pluginName: loaded.manifest.name,
           icon: view.icon,
           order: Number.isFinite(view.order) ? Number(view.order) : index,
+          // Absent means the work-panel placement, so every manifest written
+          // before `placement` existed keeps the launcher row it had.
+          placement: view.placement === "sidebar" ? "sidebar" : "panel",
         });
       });
     }

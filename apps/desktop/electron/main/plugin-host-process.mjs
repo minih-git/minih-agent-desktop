@@ -663,6 +663,15 @@ async function handleParentCall(method, payload, invocationId, callId) {
       }
       return answer;
     }
+    case "lifecycle.activeWork": {
+      // Read-only: the plugin reports whether the answer to "may I stop this?"
+      // is "you would lose work". A missing hook, a throw, or a non-string is
+      // "nothing active", because a broken hook must never block teardown.
+      const hook = pluginModule?.onActiveWork;
+      if (typeof hook !== "function") return { message: null };
+      const message = await hook();
+      return { message: typeof message === "string" && message.trim() ? message.trim() : null };
+    }
     case "lifecycle.unload": {
       for (const id of invocations.keys()) cancelInvocation(id, "Plugin unloaded");
       for (const [id, controller] of parentCallControllers) {

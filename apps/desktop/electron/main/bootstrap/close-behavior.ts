@@ -12,6 +12,12 @@ export type CloseBehaviorDependencies = {
   dataDir: string;
   getLocale: () => string;
   createTray: () => void;
+  /**
+   * Plugin work that quitting would end, in each plugin's own words. Empty, or
+   * absent, when nothing is running — the dialog then reads exactly as before
+   * (spec 07-plugins/05 §3.0).
+   */
+  activeWorkLines?: () => Promise<string[]>;
 };
 
 export function createCloseBehaviorRuntime({
@@ -19,6 +25,7 @@ export function createCloseBehaviorRuntime({
   dataDir,
   getLocale,
   createTray,
+  activeWorkLines,
 }: CloseBehaviorDependencies) {
   const applyCloseBehavior = (next: CloseBehavior): void => {
     state.closeBehavior = next;
@@ -45,6 +52,18 @@ export function createCloseBehaviorRuntime({
 
   const confirmQuitDialog = async (): Promise<boolean> => {
     const labels = catalogs[resolveLocale(getLocale())];
+    // Quitting ends whatever the plugins are running, so the existing prompt
+    // says so instead of adding a second dialog after it.
+    const running = ((await activeWorkLines?.()) ?? []).filter(
+      (line) => typeof line === "string" && line.trim().length > 0,
+    );
+    const detail = running.length
+      ? [
+          labels.plugins.interruptionBody,
+          ...running.map((line) => `• ${line}`),
+          labels.tray.confirmQuitBody,
+        ].join("\n\n")
+      : labels.tray.confirmQuitBody;
     const parent =
       state.mainWindow && !state.mainWindow.isDestroyed()
         ? state.mainWindow
@@ -53,7 +72,7 @@ export function createCloseBehaviorRuntime({
       type: "warning" as const,
       title: labels.tray.confirmQuitTitle,
       message: labels.tray.confirmQuitTitle,
-      detail: labels.tray.confirmQuitBody,
+      detail,
       buttons: [labels.common.cancel, labels.tray.confirmQuit],
       defaultId: 0,
       cancelId: 0,

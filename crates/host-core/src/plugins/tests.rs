@@ -1204,6 +1204,40 @@ fn view_contributions_require_permission_and_an_existing_entry() {
 }
 
 #[test]
+fn view_placement_is_validated_with_panel_as_the_default() {
+    let dir = tempdir().unwrap();
+    let manifest =
+        |view: Value| capability_manifest(json!({ "views": [view] }), json!(["ui.view"]));
+    let entries = [("views/a.html", "<html></html>")];
+
+    // Both declared placements are accepted, and omitting the field keeps the
+    // work-panel placement every existing manifest relies on.
+    for placement in [json!(null), json!("panel"), json!("sidebar")] {
+        let mut view = json!({ "id": "a", "title": "A", "entry": "views/a.html" });
+        if !placement.is_null() {
+            view["placement"] = placement.clone();
+        }
+        let root = dir.path().join(format!("ok-{placement}"));
+        write_plugin(&root, manifest(view), &entries);
+        assert!(PluginManager::read_manifest(&root).is_ok(), "{placement}");
+    }
+
+    // An unrecognised placement is a manifest error instead of a silent fallback.
+    let unknown = dir.path().join("unknown-placement");
+    write_plugin(
+        &unknown,
+        manifest(json!({
+            "id": "a",
+            "title": "A",
+            "entry": "views/a.html",
+            "placement": "drawer"
+        })),
+        &entries,
+    );
+    assert!(read_manifest_err(&unknown).contains("placement must be panel or sidebar"));
+}
+
+#[test]
 fn bundled_plugins_refresh_from_disk_but_keep_user_state() {
     let ship = tempdir().unwrap();
     let plugin_manifest = |version: &str| {
@@ -2434,4 +2468,202 @@ fn plugin_ui_meta_parses_the_floating_widget_placement() {
     assert!(panel.shape.is_none());
     assert!(panel.always_on_top.is_none());
     assert!(panel.resizable.is_none());
+}
+
+// --- read-only package inspection (local package install confirmation) ------
+
+/// Every installed file, keyed by its path inside the installed plugin.
+fn installed_snapshot(plugin: &PluginSummary) -> std::collections::BTreeMap<String, Vec<u8>> {
+    fn walk(from: &Path, root: &Path, out: &mut std::collections::BTreeMap<String, Vec<u8>>) {
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if entry.file_type().unwrap().is_dir() {
+                walk(&path, root, out);
+            } else {
+                let relative = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string();
+                out.insert(relative, fs::read(&path).unwrap());
+            }
+        }
+    }
+    let root = PathBuf::from(plugin.path.as_ref().expect("installed plugin path"));
+    let mut out = std::collections::BTreeMap::new();
+    walk(&root, &root, &mut out);
+    out
+}
+
+fn package_manifest(version: &str) -> Value {
+    json!({
+        "schemaVersion": 1,
+        "id": "demo.package",
+        "name": "Package",
+        "version": version,
+        "main": "main.js",
+        "permissions": ["ui.view"],
+    })
+}
+
+fn package_zip(version: &str) -> Vec<u8> {
+    let manifest = serde_json::to_vec(&package_manifest(version)).unwrap();
+    make_zip(&[
+        ("demo-package/manifest.json", &manifest),
+        ("demo-package/main.js", b"export function onLoad() {}"),
+    ])
+}
+
+#[test]
+fn inspecting_a_package_changes_nothing_installed() {
+    with_local_market(|| {
+        let dir = tempdir().unwrap();
+        // v1 is installed from a folder, exactly like a local folder install.
+        let source = dir.path().join("v1");
+        write_plugin(&source, package_manifest("0.1.0"), &[]);
+        let mut manager = PluginManager::new(dir.path(), MarketChannel::Official, None);
+        manager
+            .install_from_path(source.to_str().unwrap(), InstallOptions::default())
+            .unwrap();
+        let before = manager.get("demo.package").expect("v1 installed");
+        let bytes_before = installed_snapshot(&before);
+
+        // v2 sits next to it as a package that has not been installed.
+        let package = package_zip("0.2.0");
+        let package_path = dir.path().join("v2.piplug");
+        fs::write(&package_path, &package).unwrap();
+
+        let inspection = manager
+            .inspect_package(package_path.to_str().unwrap())
+            .unwrap();
+        assert_eq!(inspection.id, "demo.package");
+        assert_eq!(inspection.name, "Package");
+        assert_eq!(inspection.version, "0.2.0");
+        assert_eq!(inspection.installed_version.as_deref(), Some("0.1.0"));
+        assert!(inspection.upgraded);
+        assert_eq!(inspection.permissions, vec!["ui.view".to_string()]);
+        // The checksum the caller has to hand back at install time.
+        assert_eq!(
+            inspection.shasum,
+            crate::plugins::install::sha256_hex(&package)
+        );
+
+        // Nothing installed moved: same row, same bytes, no leftover staging.
+        let after = manager.get("demo.package").expect("v1 still installed");
+        assert_eq!(after.version, before.version);
+        assert_eq!(after.enabled, before.enabled);
+        assert_eq!(after.path, before.path);
+        assert_eq!(after.permissions, before.permissions);
+        assert_eq!(after.updated_at, before.updated_at);
+        assert_eq!(
+            installed_snapshot(&after),
+            bytes_before,
+            "inspection must not touch the installed files"
+        );
+        let staging = dir.path().join("plugins/cache/inspect");
+        if staging.exists() {
+            assert_eq!(
+                fs::read_dir(&staging).unwrap().count(),
+                0,
+                "inspection staging must be cleaned up"
+            );
+        }
+    });
+}
+
+#[test]
+fn a_package_swapped_after_the_prompt_is_refused_and_the_install_survives() {
+    with_local_market(|| {
+        let dir = tempdir().unwrap();
+        let source = dir.path().join("v1");
+        write_plugin(&source, package_manifest("0.1.0"), &[]);
+        let mut manager = PluginManager::new(dir.path(), MarketChannel::Official, None);
+        manager
+            .install_from_path(source.to_str().unwrap(), InstallOptions::default())
+            .unwrap();
+        let before = manager.get("demo.package").expect("v1 installed");
+        let bytes_before = installed_snapshot(&before);
+
+        let package_path = dir.path().join("update.piplug");
+        fs::write(&package_path, package_zip("0.2.0")).unwrap();
+        let inspection = manager
+            .inspect_package(package_path.to_str().unwrap())
+            .unwrap();
+
+        // The file is replaced between the question and the install: the agreed
+        // checksum no longer describes what would be installed.
+        fs::write(&package_path, package_zip("0.9.0")).unwrap();
+        let error = manager
+            .install_from_package(
+                package_path.to_str().unwrap(),
+                InstallOptions {
+                    expected_shasum: Some(inspection.shasum.clone()),
+                    ..Default::default()
+                },
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("checksum mismatch"), "{error}");
+
+        let after = manager.get("demo.package").expect("v1 still installed");
+        assert_eq!(after.version, before.version);
+        assert_eq!(installed_snapshot(&after), bytes_before);
+
+        // And the package that was actually inspected still installs.
+        fs::write(&package_path, package_zip("0.2.0")).unwrap();
+        let installed = manager
+            .install_from_package(
+                package_path.to_str().unwrap(),
+                InstallOptions {
+                    expected_shasum: Some(inspection.shasum),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(installed.plugin.version, "0.2.0");
+        assert!(installed.upgraded);
+    });
+}
+
+#[test]
+fn inspecting_a_broken_or_unsafe_package_is_refused_like_an_install() {
+    with_local_market(|| {
+        let dir = tempdir().unwrap();
+        let manager = PluginManager::new(dir.path(), MarketChannel::Official, None);
+
+        let traversal = dir.path().join("traversal.piplug");
+        fs::write(&traversal, make_zip(&[("../evil.js", b"alert(1)")])).unwrap();
+        let error = manager
+            .inspect_package(traversal.to_str().unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("path traversal") || error.contains("PLUGIN_INVALID"),
+            "{error}"
+        );
+
+        // A manifest without its entry point is invalid at inspect time too, so a
+        // package the install would reject never reaches a prompt.
+        let broken = dir.path().join("broken.piplug");
+        let manifest = serde_json::to_vec(&json!({
+            "schemaVersion": 1,
+            "id": "demo.broken",
+            "name": "Broken",
+            "version": "0.1.0",
+            "main": "missing.js",
+        }))
+        .unwrap();
+        fs::write(&broken, make_zip(&[("manifest.json", &manifest)])).unwrap();
+        let error = manager
+            .inspect_package(broken.to_str().unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("main entry missing"), "{error}");
+
+        let staging = dir.path().join("plugins/cache/inspect");
+        if staging.exists() {
+            assert_eq!(fs::read_dir(&staging).unwrap().count(), 0);
+        }
+    });
 }

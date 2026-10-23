@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "pi.terminal",
+  "name": "Terminal",
+  "version": "0.1.0",
+  "description": "An embedded terminal: local shells in tabs, opened from the sidebar.",
+  "author": "Minih-Agent-Desktop",
+  "main": "main.js",
+  "i18n": {
+    "en": {
+      "name": "Terminal",
+      "description": "An embedded terminal: local shells in tabs, opened from the sidebar.",
+      "safetyNotes": "Runs real local shells (zsh/bash/sh, PowerShell, or cmd) with your own user privileges, so anything typed here can change this machine. Working directories are not sandboxes, and the terminal is not restricted to the open project. Terminal input and output stay in this plugin's memory: nothing is logged, uploaded, or attached to a chat."
+    },
+    "zh-CN": {
+      "name": "终端",
+      "description": "内嵌终端：以标签页运行本机 shell，从左侧边栏打开。",
+      "safetyNotes": "以你本人的用户权限运行真实的本机 shell（zsh/bash/sh、PowerShell 或 cmd），在此输入的任何命令都可能改动这台机器。工作目录不是沙箱，终端也不限于当前项目。终端的输入与输出只保存在本插件内存中：不记录日志、不上传、不写入会话。"
+    }
+  },
+  "contributes": {
+    "views": [
+      {
+        "id": "terminal",
+        "title": {
+          "en": "Terminal",
+          "zh-CN": "终端"
+        },
+        "icon": "terminal",
+        "entry": "view/index.html",
+        "placement": "sidebar",
+        "order": 0
+      }
+    ]
+  },
+  "permissions": ["ui.view", "fs.read", "clipboard.write"],
+  "engines": {
+    "minihAgent": ">=0.25.0"
+  },
+  "activationEvents": ["onStartup"]
+}

@@ -13,6 +13,8 @@ export type MarketIpcDependencies = {
   optionalWorkspaceRoot: () => Promise<string | null>;
   pluginActiveInProject: (pluginId: string, projectPath: string | null | undefined) => boolean;
   sendToRenderer: (channel: string, payload?: unknown) => void;
+  /** Shared interruption check (spec 07-plugins/05 §3.0). */
+  confirmInterruption: (ids: readonly string[]) => Promise<boolean>;
 };
 
 /** Register marketplace and command palette channels. */
@@ -24,6 +26,7 @@ export function registerMarketIpc({
   optionalWorkspaceRoot,
   pluginActiveInProject,
   sendToRenderer,
+  confirmInterruption,
 }: MarketIpcDependencies): void {
   let host: HostProcess | null = null;
   const handle = (channel: string, fn: (...args: any[]) => Promise<any>) => {
@@ -58,6 +61,9 @@ export function registerMarketIpc({
     grantedPermissions?: string[];
   }) => {
     if (!host) throw new Error("host unavailable");
+    // An install over an installed id is an upgrade: it unloads the running
+    // version, so ask before the download starts.
+    if (!(await confirmInterruption([payload.id]))) return { canceled: true };
     const installed = await host.call<{ result: any }>("market.install", payload);
     const plugin = installed.result?.plugin;
     if (plugin?.enabled && plugin?.path) {
@@ -82,6 +88,13 @@ export function registerMarketIpc({
 
   handle(IPC.invoke.marketApplyUpdates, async (payload?: { onlyAuto?: boolean }) => {
     if (!host) throw new Error("host unavailable");
+    // The set this update will replace is known from the registry, so the prompt
+    // names those plugins and no others.
+    const listed = await host.call<{ plugins: any[] }>("plugins.list");
+    const updating = (listed.plugins ?? [])
+      .filter((plugin) => plugin?.enabled && plugin?.updateAvailable)
+      .map((plugin) => String(plugin.id));
+    if (!(await confirmInterruption(updating))) return { canceled: true };
     const applied = await host.call<{ results: any[]; plugins: any[] }>("market.applyUpdates", {
       onlyAuto: payload?.onlyAuto ?? true,
     });

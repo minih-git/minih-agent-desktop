@@ -27,6 +27,7 @@ import {
 } from "../../lib/work-panel-tabs";
 import type { PluginViewMeta } from "@minih-agent/shared";
 import { pluginViewIcon, pluginViewInitial } from "../../lib/plugin-view-icons";
+import { panelPluginViews } from "../../lib/plugin-view-placement";
 import { useAppStore } from "../../stores/app-store";
 import type { WorkPanelTab } from "../../stores/app-store";
 import { cx } from "../ui";
@@ -145,7 +146,7 @@ function workPanelTools(
       label: t("panel.tabs.sideNotes"),
       icon: IconChat,
     },
-    ...pluginViews.map((view) => {
+    ...panelPluginViews(pluginViews).map((view) => {
       const Icon = pluginViewIcon(view.icon);
       return {
         id: view.ref,

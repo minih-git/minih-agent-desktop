@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Everything this page needs ships inside the plugin: no remote script,
+         style, font, or image, and no inline script. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; form-action 'none'"
+    />
+    <title>Terminal</title>
+    <link rel="stylesheet" href="./vendor/xterm.css" />
+    <link rel="stylesheet" href="./terminal.css" />
+  </head>
+  <body>
+    <div id="chrome">
+      <div id="tabs" role="tablist"></div>
+      <div id="actions">
+        <button id="new-terminal" type="button" data-action="new-terminal">+</button>
+      </div>
+    </div>
+
+    <form id="start" autocomplete="off">
+      <h2 id="start-title">New terminal</h2>
+      <label class="field">
+        <span id="start-dir-label">Working directory</span>
+        <span class="row">
+          <code id="start-dir" title=""></code>
+          <button id="choose-dir" type="button" data-action="choose-directory"></button>
+        </span>
+      </label>
+      <label class="field">
+        <span id="start-shell-label">Shell</span>
+        <select id="start-shell"></select>
+      </label>
+      <p id="start-error" role="alert"></p>
+      <div id="start-actions">
+        <button id="start-cancel" type="button" hidden></button>
+        <button id="start-run" class="primary" type="submit"></button>
+      </div>
+    </form>
+
+    <div id="panes"></div>
+
+    <div id="search" hidden>
+      <input id="search-input" type="text" spellcheck="false" />
+      <button id="search-next" type="button">&#8595;</button>
+      <button id="search-prev" type="button">&#8593;</button>
+    </div>
+
+    <div id="status" role="status" hidden></div>
+
+    <script src="./vendor/xterm.js"></script>
+    <script src="./vendor/addon-fit.js"></script>
+    <script src="./vendor/addon-search.js"></script>
+    <script src="./terminal.js"></script>
+  </body>
+</html>

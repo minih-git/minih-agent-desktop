@@ -41,7 +41,7 @@ discovered
 
 ## 3. Lifecycle hooks
 
-**Implemented today:** the runtime (`apps/desktop/electron/main/plugin-runtime.ts`) invokes `onLoad` (when a plugin is loaded on load/enable) and `onUnload` (dispatched into the plugin process on unload/disable/reload/app quit, 5s budget — 1.5s on quit — then the process is stopped); unloading tears down the plugin's registered commands and tools. The other hooks below are declared in the API but not yet fired.
+**Implemented today:** the runtime (`apps/desktop/electron/main/plugin-runtime.ts`) invokes `onLoad` (when a plugin is loaded on load/enable), `onActiveWork` (a read-only report answered before a user-initiated teardown, §3.0) and `onUnload` (dispatched into the plugin process on unload/disable/reload/app quit, 5s budget — 1.5s on quit — then the process is stopped); unloading tears down the plugin's registered commands and tools. The other hooks below are declared in the API but not yet fired.
 
 `onProviderOAuth` is a provider operation callback, not a lifecycle hook. The
 host invokes it only for an enabled plugin's declared OAuth provider during
@@ -57,6 +57,59 @@ unload, and timeout.
 5. `onUnload`
 6. `onDisable`
 7. `onUninstall`
+
+### 3.0 Interruption check (`onActiveWork`)
+
+A plugin that runs work the user would notice losing — a shell, a background
+job, an unsaved buffer it owns — declares it before the host ends that work.
+`onActiveWork()` answers one question and changes nothing:
+
+- it returns a non-empty string to say "work is running, and continuing ends
+  it", or `null` / `undefined` when there is nothing to lose;
+- the host resolves no localization for it: the plugin answers in the app
+  language it already publishes (`pi.app.getAppearance`), the same way it
+  localizes its own panels;
+- it must be side-effect free and must not start work. The host may call it for a
+  question the user then declines, so a plugin that answers must still be exactly
+  as it was;
+- it gets a short budget (2s). A plugin that throws, is not loaded, or does not
+  export the hook answers "nothing active", and the teardown proceeds: a broken
+  hook may never block quit, disable, or reload;
+- a plugin without the hook behaves exactly as before.
+
+The host asks it once per teardown, through one shared helper, immediately before
+the destructive step of every user-initiated entry: disable, uninstall, manual
+reload, a reload accepted from the permission review, a hot reload of a watched
+development plugin, installing over an installed plugin, applying marketplace
+updates, and quitting the app (the existing quit dialog carries the disclosure).
+Automated or crash-driven teardown does not ask, because there is no user to
+answer.
+
+What the host does with a positive answer:
+
+- it shows one host-owned confirmation listing each plugin's own sentence, with
+  Cancel as the default button;
+- cancel leaves everything untouched: no view is closed, no service stopped, no
+  plugin unloaded, no install applied, no navigation change, and the renderer is
+  told the action was canceled rather than reporting a success it did not have;
+- concurrent requests are serialized, so one dialog answers the same set of
+  plugins and a second click cannot stack a duplicate prompt;
+- a plugin whose hook reports nothing is not mentioned, and a teardown of
+  plugins with nothing active asks nothing at all.
+
+No entry asks late. A local `.piplug` package names its plugin inside the
+archive, so the shell first asks the Host to read the package **without
+installing it** (`plugins.inspectPackage`): the archive is unpacked into a
+private staging directory under the data directory, through the same size,
+file-count, traversal, and manifest checks an install applies, and that directory
+is removed before the answer returns. The answer carries the plugin id and the
+package's SHA-256, and it changes nothing — no installed directory, no registry
+row. Only then does the prompt happen, and the same checksum is passed back as
+`expectedShasum` on the install, so a package replaced between the answer and the
+install is refused as an integrity failure instead of installing bytes the user
+never saw. Declining leaves the installed plugin, its files, its granted
+permissions, its enabled state, and its running work exactly as they were; the
+shell reports a cancelled action, never an installed one.
 
 ### Invocation constraints
 - Hooks must be able to time out (default 5s, configurable)
@@ -131,6 +184,7 @@ never be the reason the app appears to hang on quit.
 - Failure: automatically fall back to disabled and surface the error to the user. This is frozen by D017 (enable→load failure auto-disables the plugin).
 
 ### disable
+- Ask `onActiveWork` first and stop here if the user cancels (§3.0)
 - Unregister commands / tools
 - Close panel
 - Stop resident services and disconnect MCP servers

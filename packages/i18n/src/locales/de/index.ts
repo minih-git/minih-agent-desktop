@@ -1,6 +1,9 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const de = {
+  sidebarPluginView: {
+    back: "Zurück zum Gespräch",
+  },
   userMenu: en.userMenu,
   "worktree": {
     "newIsolatedSession": "Neue isolierte Sitzung",
@@ -2606,6 +2609,9 @@ sklm: {
     "archived": "Archiviert"
   },
   "plugins": {
+    interruptionTitle: "Plugin-Arbeit wird beendet",
+    interruptionBody: "Diese Plugins führen noch Arbeit aus. Fortfahren beendet sie:",
+    interruptionContinue: "Beenden und fortfahren",
     "title": "Erweiterungen",
     "loadDev": "Lokales Plugin laden",
     "loadDevDone": "Lokales Plugin geladen",

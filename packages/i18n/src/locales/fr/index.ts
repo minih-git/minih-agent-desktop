@@ -1,6 +1,9 @@
 import { en, type EnglishCatalog } from "../en/index.js";
 
 export const fr = {
+  sidebarPluginView: {
+    back: "Retour à la conversation",
+  },
   userMenu: en.userMenu,
   "worktree": {
     "newIsolatedSession": "Nouvelle session isolée",
@@ -2606,6 +2609,9 @@ sklm: {
     "archived": "Archivé"
   },
   "plugins": {
+    interruptionTitle: "Le travail du greffon va s'arrêter",
+    interruptionBody: "Ces greffons exécutent encore du travail. Continuer l'arrêtera :",
+    interruptionContinue: "Arrêter et continuer",
     "title": "Extensions",
     "loadDev": "Charger le plugin local",
     "loadDevDone": "Plugin local chargé",

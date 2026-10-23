@@ -88,6 +88,7 @@ import {
   WorktreeSessionMenuItems,
 } from "../features/worktree/WorktreeSidebarParts";
 import { WorktreeBehindWatcher } from "../features/worktree/WorktreeBehind";
+import { PluginSidebarDestinations } from "../features/plugins/PluginSidebarDestinations";
 import { useArmedDelete } from "../hooks/use-armed-delete";
 import { ProjectDeleteDialog } from "./ProjectDeleteDialog";
 import { SessionRenameDialog } from "./SessionRenameDialog";
@@ -2594,6 +2595,10 @@ export function Sidebar({
             onClick={() => { closeMenus(false); setActivityOpen((previous) => !previous); }}>
             <IconActivity size={16} /><span>{t("nav.activity")}</span>
           </Button>
+          {/* Views a plugin placed in the sidebar (ADR optional-terminal-plugin).
+              Host-drawn rows above the conversation list, or nothing at all when
+              no loaded plugin declares one. */}
+          <PluginSidebarDestinations />
         </nav>
         {activityOpen ? (
           <section
