@@ -1781,7 +1781,7 @@ sklm: {
     modelsNoAccountDesc: "Modeller Minih Router hesabından gelir. Token'ı Hesaplar sayfasında yapılandırın.",
     modelsGoToAccounts: "Hesaplara git",
     modelsEmptyTitle: "Henüz model yok",
-    modelsEmptyDesc: "Bu hesabın sunacağı modelleri ekleyin; ilki varsayılan olur.",
+    modelsEmptyDesc: "Ağ geçidi bu hesabın anahtarı için henüz model bildirmiyor.",
     addModelsTitle: "Model ekle",
     addModelsSelected: "{{count}} seçildi",
     addModelsConfirm: "Ekle",

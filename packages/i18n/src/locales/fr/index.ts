@@ -1775,7 +1775,7 @@ sklm: {
     "modelsNoAccountDesc": "Les modèles viennent du compte Minih Router. Configurez son jeton sur la page Comptes.",
     "modelsGoToAccounts": "Aller aux comptes",
     "modelsEmptyTitle": "Aucun modèle pour l'instant",
-    "modelsEmptyDesc": "Ajoutez les modèles que ce compte doit servir ; le premier devient celui par défaut.",
+    "modelsEmptyDesc": "La passerelle n'annonce encore aucun modèle pour la clé de ce compte.",
     "addModelsTitle": "Ajouter des modèles",
     "addModelsSelected": "{{count}} sélectionné(s)",
     "addModelsConfirm": "Ajouter",

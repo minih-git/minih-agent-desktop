@@ -394,7 +394,7 @@ test("a saved image selection never takes the app's image default", () => {
   assert.match(modelsPageStateSource, /planImageGenerationDefaults\(/);
   assert.match(
     pageSource,
-    /planModelsSave\(routerProvider, nextBindings, current, providers, imageModelIds\)/,
+    /planModelsSave\(\s*routerProvider,\s*models \?\? routerProvider\.models,\s*current,\s*providers,\s*imageModelIds,\s*\)/,
   );
   assert.doesNotMatch(pageSource, /nextActive/);
 });

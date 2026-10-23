@@ -1775,7 +1775,7 @@ sklm: {
     "modelsNoAccountDesc": "Modelle kommen aus dem Minih-Router-Konto. Konfiguriere das Token auf der Kontoseite.",
     "modelsGoToAccounts": "Zu den Konten",
     "modelsEmptyTitle": "Noch keine Modelle",
-    "modelsEmptyDesc": "Füge die Modelle hinzu, die dieses Konto anbieten soll; das erste wird Standard.",
+    "modelsEmptyDesc": "Das Gateway meldet für den Schlüssel dieses Kontos noch keine Modelle.",
     "addModelsTitle": "Modelle hinzufügen",
     "addModelsSelected": "{{count}} ausgewählt",
     "addModelsConfirm": "Hinzufügen",

@@ -1787,7 +1787,7 @@ sklm: {
     modelsNoAccountDesc: "모델은 Minih Router 계정에서 제공됩니다. 계정 페이지에서 토큰을 구성하세요.",
     modelsGoToAccounts: "계정으로 이동",
     modelsEmptyTitle: "아직 모델이 없습니다",
-    modelsEmptyDesc: "이 계정이 제공할 모델을 추가하세요. 첫 모델이 기본값이 됩니다.",
+    modelsEmptyDesc: "게이트웨이가 이 계정의 키에 대해 아직 모델을 보고하지 않았습니다.",
     addModelsTitle: "모델 추가",
     addModelsSelected: "{{count}}개 선택됨",
     addModelsConfirm: "추가",

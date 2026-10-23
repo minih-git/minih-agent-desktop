@@ -8336,3 +8336,27 @@ must keep splitting are covered by `markdown-blocks.test.mjs`.
 - An iframe has no partition of its own (D246), so this stays weaker isolation
   than the work-panel `WebContentsView` that `BrowserPreview` uses. See ADR
   0337, `04-ux/08-component-spec.md`, and `05-security/01-security.md`.
+
+## 2026-10-22 — The models page is the account's catalog
+
+- Decision D678. The Minih Router models page stops asking the user to assemble
+  a model list. Opening it reads the gateway plaza for the connected row and
+  mirrors every model the key can reach onto the row, so each one is a card
+  and is usable in chat without a pick. The mirror is additive and idempotent:
+  settled state plans no write (so it cannot loop), a binding already on the row
+  keeps its configuration and position, a model the plaza stops listing stays
+  (the row may still send it), and a failed catalog read leaves the row as
+  stored. Appended bindings are seeded from the same published models.dev record
+  the add dialog used, so nothing about a model's limits, thinking ladder or
+  capabilities depends on it having been picked by hand.
+- Decision D679. **Remove** became a hide. The id is stored per provider row in
+  `AppSettings.hiddenModelIds` (lowercased wire ids, no schema or migration
+  change), the card disappears, the row stops sending the model, and every later
+  mirror skips it, so the models page and the chat picker cannot disagree about
+  what the account offers. The add dialog stays as the way back: the only cards
+  it still offers are the hidden ones, and confirming drops them from the list.
+  A removal also re-plans the app's chat default (D678 lands with an explicit
+  rule: a default that named the removed model moves to the first remaining
+  binding instead of surviving as a stale id). See `04-ux/06-settings-ia.md`,
+  E2E-PROVIDER-minih-router-primary-gateway, and
+  `accounts-models-user-path.test.mjs`.

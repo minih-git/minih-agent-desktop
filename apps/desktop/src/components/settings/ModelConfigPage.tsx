@@ -1,20 +1,29 @@
 /**
- * The models settings page: the Minih Router row's chosen models as cards, an
- * add-models dialog over the gateway catalog, per-model configuration (the
- * shared binding editor, including the per-model protocol override), the
- * image-generation default, the model a session the Agent creates for itself
- * runs on, and the models.dev enrichment snapshot status.
+ * The models settings page: the models the Minih Router account serves as
+ * cards.
+ *
+ * The cards are the gateway's own catalog for the connected row: opening the
+ * page mirrors every model the account's key can reach onto the row, so a
+ * model is available in chat without being picked here first. Removing a card
+ * hides that model — the removal is remembered per row, so the next mirror
+ * leaves it out — and the add dialog brings a hidden model back.
+ *
+ * The page also carries per-model configuration (the shared binding editor,
+ * including the per-model protocol override), the image-generation default,
+ * the model a session the Agent creates for itself runs on, and the models.dev
+ * enrichment snapshot status.
  *
  * Accounts — the token, endpoint, balance and the other providers — live on
  * the accounts page; this page only reads the connected router row.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   isMinihRouterVendorKey,
   modelWireIdsEqual,
   publishedThinkingLevels,
   sortThinkingLevels,
+  type AppSettings,
   type ImageGenerationBinding,
   type ModelBinding,
   type ModelInfo,
@@ -41,8 +50,14 @@ import {
 } from "./SessionCreateModelRow";
 import {
   bindingAfterRemoval,
+  hiddenIdsWithout,
+  hiddenIdsWith,
+  hiddenModelIdsFor,
   mergeAddedBindings,
+  missingCatalogModels,
+  planCatalogSync,
   planModelsSave,
+  sameHiddenIds,
 } from "./models-page-state";
 import {
   customModelLookupInput,
@@ -52,7 +67,7 @@ import {
   isImageGenerationPickerCandidate,
 } from "./image-generation-default";
 import { imageCandidates } from "./provider-list-helpers";
-import { useMinihRouterSelectedModels } from "./useMinihRouter";
+import { useMinihRouterCatalog, useMinihRouterSelectedModels } from "./useMinihRouter";
 
 type CatalogStatus = {
   loaded: boolean;
@@ -62,6 +77,18 @@ type CatalogStatus = {
   providerCount: number;
   modelCount: number;
   lastError?: string;
+};
+
+/** One models-page write: the row's list, the hidden ids, the image set. */
+type ModelsWrite = {
+  /** New binding list for the row; omitted leaves the stored list alone. */
+  models?: ModelBinding[];
+  /** Hidden ids for this row; omitted leaves the stored list alone. */
+  hiddenIds?: readonly string[];
+  /** Explicit image-model designation (the configure dialog's checkbox). */
+  imageModelIds?: readonly string[];
+  /** Success toast key; omitted for the silent catalog sync. */
+  toastKey?: string;
 };
 
 export function ModelsPage() {
@@ -76,6 +103,8 @@ export function ModelsPage() {
   const [revision, setRevision] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  /** True while the catalog mirror is reading, before its own write starts. */
+  const [syncing, setSyncing] = useState(false);
   /** The binding whose configure drawer is open, by wire id. */
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   /** Draft edits while a drawer is open; saved as one list write. */
@@ -112,9 +141,26 @@ export function ModelsPage() {
     [providers],
   );
 
+  // What the account itself serves: the gateway's catalog for this row. The
+  // page mirrors it onto the row, so the cards below are every model the key
+  // can reach rather than a list the user had to assemble by hand.
+  const catalog = useMinihRouterCatalog(routerProvider?.id ?? "", revision);
+  /** Ids removed on this page; the row hides them and the mirror skips them. */
+  const hiddenIds = useMemo(
+    () => hiddenModelIdsFor(settings?.hiddenModelIds, routerProvider?.id),
+    [settings?.hiddenModelIds, routerProvider?.id],
+  );
+  const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+  const visibleModels = useMemo(
+    () =>
+      (routerProvider?.models ?? []).filter(
+        (model) => !hiddenSet.has(model.id.toLowerCase()),
+      ),
+    [routerProvider?.models, hiddenSet],
+  );
   const chosenIds = useMemo(
-    () => routerProvider?.models.map((model) => model.id) ?? [],
-    [routerProvider?.models],
+    () => visibleModels.map((model) => model.id),
+    [visibleModels],
   );
   // The published record behind each chosen model: what the configure dialog
   // shows (published limits, capability defaults, thinking ladder) and what a
@@ -169,47 +215,147 @@ export function ModelsPage() {
     [settings, providers],
   );
 
+  /**
+   * One write path for every models-page change: the row's binding list, the
+   * ids this page hides and the image-model designation.
+   *
+   * The row is written only when the caller carries a list: a save that changed
+   * only the image designation leaves the stored list alone, because rewriting
+   * it would move the row's own default model for a change the user never made.
+   * Defaults are re-planned on every write, so hiding a model never leaves a
+   * dangling default behind.
+   */
+  const writeModels = useCallback(
+    async ({ models, hiddenIds: nextHiddenIds, imageModelIds, toastKey }: ModelsWrite) => {
+      if (!routerProvider) return;
+      setSaving(true);
+      try {
+        // Re-read settings: another window or agent may have moved defaults.
+        const current = await api.getSettings();
+        const plan = planModelsSave(
+          routerProvider,
+          models ?? routerProvider.models,
+          current,
+          providers,
+          imageModelIds,
+        );
+        if (models) await api.updateProvider(plan.provider);
+        let hiddenById: Record<string, string[]> | null = null;
+        if (
+          nextHiddenIds !== undefined &&
+          !sameHiddenIds(hiddenModelIdsFor(current.hiddenModelIds, routerProvider.id), nextHiddenIds)
+        ) {
+          hiddenById = {
+            ...(current.hiddenModelIds ?? {}),
+            [routerProvider.id]: [...nextHiddenIds],
+          };
+        }
+        if (plan.settings || hiddenById) {
+          const nextSettings: AppSettings = {
+            ...current,
+            ...(plan.settings ?? {}),
+            ...(hiddenById ? { hiddenModelIds: hiddenById } : {}),
+          };
+          await api.setSettings(nextSettings);
+          useAppStore.setState({ settings: nextSettings });
+        }
+        await refreshProviders();
+        setRevision((value) => value + 1);
+        if (toastKey) showToast(t(toastKey), { variant: "success" });
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
+      } finally {
+        setSaving(false);
+      }
+    },
+    [routerProvider, providers, refreshProviders, showToast, t],
+  );
+
+  /**
+   * Mirror the gateway catalog onto the row: every model the key can reach,
+   * minus the ones removed here.
+   *
+   * The key is what keeps this idempotent — one run per catalog and hidden set,
+   * so the write that follows cannot loop — and a catalog read that failed
+   * leaves the row exactly as stored instead of emptying it.
+   */
+  const mirrorKey = useMemo(() => {
+    if (!routerProvider || catalog.state !== "ready" || !catalog.data?.length) return null;
+    return [
+      routerProvider.id,
+      catalog.data.map((model) => model.id.toLowerCase()).join(","),
+      hiddenIds.join(","),
+    ].join("|");
+  }, [routerProvider, catalog.state, catalog.data, hiddenIds]);
+  const mirroredKeyRef = useRef<string | null>(null);
+  const mirroringRef = useRef(false);
+
+  useEffect(() => {
+    const listed = catalog.data;
+    if (!routerProvider || !mirrorKey || !listed || !settings) return;
+    if (mirroredKeyRef.current === mirrorKey || mirroringRef.current) return;
+    mirroredKeyRef.current = mirrorKey;
+    mirroringRef.current = true;
+    let alive = true;
+    setSyncing(true);
+    void (async () => {
+      try {
+        const context = {
+          providerId: routerProvider.id,
+          vendorKey: routerProvider.vendorKey,
+          baseUrl: routerProvider.baseUrl,
+        };
+        // Only the models about to be appended are described by the catalog: a
+        // page that already carries them asks models.dev for nothing.
+        const pending = missingCatalogModels(routerProvider.models, listed, hiddenIds);
+        const entries = await Promise.all(
+          pending.map(async (model) => {
+            try {
+              const result = await api.lookupProviderModel(
+                customModelLookupInput(model.id, context),
+              );
+              return [model.id.toLowerCase(), result.info ?? null] as const;
+            } catch {
+              return [model.id.toLowerCase(), null] as const;
+            }
+          }),
+        );
+        const infoById = new Map(entries);
+        const nextModels = planCatalogSync(
+          routerProvider.models,
+          listed,
+          hiddenIds,
+          (model) => infoById.get(model.id.toLowerCase()),
+        );
+        if (!alive) return;
+        if (infoById.size > 0) {
+          setPublishedInfoById((current) => {
+            const next = new Map(current);
+            for (const [id, info] of entries) if (info) next.set(id, info);
+            return next;
+          });
+        }
+        if (nextModels) await writeModels({ models: nextModels });
+      } finally {
+        // A failed or superseded run only stops this attempt: the row keeps what
+        // it has, and the next mount may mirror again.
+        if (alive) {
+          setSyncing(false);
+          mirroringRef.current = false;
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+      mirroringRef.current = false;
+    };
+  }, [routerProvider, mirrorKey, catalog.data, hiddenIds, writeModels, settings]);
+
   if (!settings) return null;
 
   const isDefaultModel = (binding: ModelBinding) =>
     settings.defaultProviderId === routerProvider?.id &&
     (settings.defaultModelId ?? "").toLowerCase() === binding.id.toLowerCase();
-
-  /**
-   * One write path for every models-page save.
-   *
-   * `persistBindings` is false for a save that changed only the image-model
-   * designation: the row already stores the list as rendered, and rewriting it
-   * would move the row's own default model for a change the user never made.
-   */
-  const saveBindings = async (
-    nextBindings: ModelBinding[],
-    successKey: string,
-    imageModelIds?: readonly string[],
-    persistBindings = true,
-  ) => {
-    if (!routerProvider) return;
-    setSaving(true);
-    try {
-      // Re-read settings: another window or agent may have moved defaults.
-      const current = await api.getSettings();
-      const plan = planModelsSave(routerProvider, nextBindings, current, providers, imageModelIds);
-      if (persistBindings) await api.updateProvider(plan.provider);
-      if (plan.settings) {
-        const nextSettings = { ...current, ...plan.settings };
-        await api.setSettings(nextSettings);
-        useAppStore.setState({ settings: nextSettings });
-      }
-      await refreshProviders();
-      setRevision((value) => value + 1);
-      showToast(t(successKey), { variant: "success" });
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const addModels = async (models: Parameters<typeof mergeAddedBindings>[1]) => {
     if (!routerProvider) return;
     setAddOpen(false);
@@ -239,12 +385,15 @@ export function ModelsPage() {
       for (const [id, info] of entries) if (info) next.set(id, info);
       return next;
     });
-    await saveBindings(
-      mergeAddedBindings(routerProvider.models, models, (model) =>
+    await writeModels({
+      models: mergeAddedBindings(routerProvider.models, models, (model) =>
         infoById.get(model.id.toLowerCase()),
       ),
-      "settings.modelsAddedToast",
-    );
+      // A model offered here was hidden by a removal, or a catalog sync would
+      // already carry it: bringing it back also drops it from the hidden list.
+      hiddenIds: hiddenIdsWithout(hiddenIds, models.map((model) => model.id)),
+      toastKey: "settings.modelsAddedToast",
+    });
   };
 
   /** The row's global protocol: what every per-model "follow global" reads. */
@@ -262,13 +411,18 @@ export function ModelsPage() {
     }
   };
 
+  /**
+   * Remove one card. The model leaves the row and joins the hidden list, so the
+   * next catalog sync — and the chat model picker — do not bring it back.
+   */
   const removeModel = async (binding: ModelBinding) => {
     if (!routerProvider) return;
     if (configuringId === binding.id) setConfiguringId(null);
-    await saveBindings(
-      bindingAfterRemoval(routerProvider.models, binding.id),
-      "settings.modelRemovedToast",
-    );
+    await writeModels({
+      models: bindingAfterRemoval(routerProvider.models, binding.id),
+      hiddenIds: hiddenIdsWith(hiddenIds, binding.id),
+      toastKey: "settings.modelRemovedToast",
+    });
   };
 
   const updateBinding = (id: string, patch: Partial<ModelBinding>) => {
@@ -321,12 +475,11 @@ export function ModelsPage() {
     // A save that carried no binding edit leaves the row exactly as stored: the
     // designation is a settings write, so the provider must not be rewritten
     // for it (that would also move the row's own default model).
-    await saveBindings(
-      nextBindings,
-      "settings.modelConfiguredToast",
+    await writeModels({
+      models: edited ? nextBindings : undefined,
       imageModelIds,
-      edited !== null,
-    );
+      toastKey: "settings.modelConfiguredToast",
+    });
   };
 
   const setImageGenerationDefault = async (binding: ImageGenerationBinding) => {
@@ -500,6 +653,8 @@ export function ModelsPage() {
                 </Button>
               </div>
             </div>
+          ) : chosenIds.length === 0 && (catalog.state === "loading" || syncing) ? (
+            <p className="minih-router-status">{t("settings.minihRouterLoading")}</p>
           ) : chosenIds.length === 0 ? (
             <div className="model-provider-empty">
               <div className="model-provider-empty-title">
@@ -524,7 +679,7 @@ export function ModelsPage() {
               ) : null}
               <div className="models-vendor-groups" data-model-section="chosen">
                 {groupModelsByVendor(
-                  routerProvider.models.map((binding) => {
+                  visibleModels.map((binding) => {
                     const plaza = selected.data.find(
                       (entry) => entry.model.id.toLowerCase() === binding.id.toLowerCase(),
                     );

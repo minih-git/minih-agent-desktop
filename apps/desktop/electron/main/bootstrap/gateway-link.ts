@@ -65,6 +65,23 @@ export type GatewayLinkBootstrapOptions = {
   /** One "new device" style notice per mint, adoption, and revocation. */
   emitDeviceNotice?: (notice: RemoteGatewayDeviceNotice) => void;
   /**
+   * Account mode: called once each time the Host link reaches `connected`, with
+   * the account identity the join round needs (rollout R8 package E).
+   *
+   * The link cannot discover the account's other computers itself — the roster
+   * belongs to the paired-host boot — so it hands the identity over and the
+   * caller runs the round. Absent keeps the pre-feature behavior: nothing is
+   * discovered and the list stays empty.
+   */
+  onAccountLinkUp?: (input: {
+    /** The Gateway's `https://` origin, as the Router advertised it. */
+    publicOrigin: string;
+    /** This desktop's own Host id. */
+    hostId: string;
+    certificatePem: string;
+    privateKeyPem: string;
+  }) => void;
+  /**
    * Redacted push (§11.6): the notifier the Agent Host feeds and the link
    * carries. Absent (or `notifyEnabled: false`) means this desktop advertises
    * nothing and reports no events.
@@ -173,12 +190,49 @@ export function createGatewayLinkBootstrap(
     ...(configuredUrl ? { url: configuredUrl } : {}),
   });
 
+  /**
+   * Whether the last status said `connected`. The account join round runs on the
+   * transition into a live link, not on every status emit: the link reports the
+   * same `connected` state on unrelated saves (a sub-switch, a device notice),
+   * and re-running discovery per emit would ask the Gateway for the roster far
+   * more often than the account can change.
+   */
+  let linkWasConnected = false;
+
+  /**
+   * Hand this computer's account identity to the account join round
+   * (rollout R8 package E). Only account-mode credentials carry the endpoint
+   * identity (`tlsServerName`), so the self-hosted flow — where there is no
+   * account to join — never calls out.
+   */
+  const announceAccountComputers = (status: RemoteGatewayStatus): void => {
+    const onAccountLinkUp = options.onAccountLinkUp;
+    const publicOrigin = status.accountMode?.publicOrigin ?? "";
+    const credentials = store?.credentials();
+    const hostId = status.hostId ?? credentials?.hostId ?? "";
+    if (!onAccountLinkUp || !publicOrigin || !hostId) return;
+    if (!credentials?.tlsServerName) return;
+    try {
+      onAccountLinkUp({
+        publicOrigin,
+        hostId,
+        certificatePem: credentials.certificatePem,
+        privateKeyPem: credentials.privateKeyPem,
+      });
+    } catch (error) {
+      log("warn", "the account join round could not be started", { error: String(error) });
+    }
+  };
+
   const emit = (status: RemoteGatewayStatus): void => {
     try {
       options.emitStatus(decorate(status));
     } catch (error) {
       log("warn", "gateway link status could not be delivered", { error: String(error) });
     }
+    const connected = status.state === "connected";
+    if (connected && !linkWasConnected) announceAccountComputers(status);
+    linkWasConnected = connected;
   };
 
   /**

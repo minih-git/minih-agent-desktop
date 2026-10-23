@@ -1747,7 +1747,7 @@ export const ptBR = {
     modelsNoAccountDesc: "Os modelos vêm da conta do Minih Router. Configure o token na página de contas.",
     modelsGoToAccounts: "Ir para contas",
     modelsEmptyTitle: "Nenhum modelo ainda",
-    modelsEmptyDesc: "Adicione os modelos que esta conta deve servir; o primeiro se torna o padrão.",
+    modelsEmptyDesc: "O gateway ainda não informa modelos para a chave desta conta.",
     addModelsTitle: "Adicionar modelos",
     addModelsSelected: "{{count}} selecionado(s)",
     addModelsConfirm: "Adicionar",

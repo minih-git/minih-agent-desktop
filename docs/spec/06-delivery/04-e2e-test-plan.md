@@ -18858,9 +18858,11 @@ renderer's durable transcript reads. No real model or provider is contacted.
   configuration; no live Router, token, or paid service.
 - **Steps:** On a clean profile, open Settings → Accounts: the connect card is
   the whole page. Paste a token and connect (the endpoint stays behind
-  "Advanced" unless the user opens it). Then open Settings → Models: add models
-  from the gateway plaza, pin one model's protocol mode in its configure
-  drawer, and remove a model again. Select Google Generative AI globally,
+  "Advanced" unless the user opens it). Then open Settings → Models: the
+  account's catalog becomes the page (no picker), remove two models and confirm
+  they stay gone across a remount, restore one through "Add models", pin one
+  model's protocol mode in its configure drawer, and remove the default model
+  again. Select Google Generative AI globally,
   switch back to Anthropic, then pin Gemini on a model, save, remount the page,
   reopen Configure, and restore Follow global. Repeat at 850×600, 1200×900 and
   1600×1100 with the production stylesheet cascade loaded.
@@ -18874,16 +18876,21 @@ renderer's durable transcript reads. No real model or provider is contacted.
   persisting custom LAN parameters). The accounts page carries the service list,
   the add-service and import actions, Jev and vendor subscription accounts under
   "Other providers", which developer mode alone reveals; above the models sits
-  the row's global protocol mode, which writes the provider row's apiStyle. On the models page, "Add models" opens the gateway
-  plaza as selectable cards with search and paging. The search wrapper stays
-  at input height below the title instead of reserving a tall empty band on
-  either side of the input. Confirming appends the
-  chosen bindings while claiming the app's chat default only when nothing
-  runnable resolves; each chosen card reports the default, offers Configure
-  (alias, limits, thinking, capabilities, and a per-model **protocol mode** that
-  defaults to "Follow global"), and can be removed, which drops any image
-  binding naming it. Removing the model the app default names leaves no
-  dangling replacement. Renderer calls carry only the provider id, never the
+  the row's global protocol mode, which writes the provider row's apiStyle. The
+  models page mirrors the gateway plaza for the row: every model the key can
+  reach is a card and a binding without being picked here first, the first one
+  leading the row and claiming the app's chat default only while nothing
+  runnable resolves. **Remove** hides a model — it leaves the row, its id is
+  remembered per row so the next mirror and the chat picker leave it out, and
+  the model the app default named hands that default to the first remaining
+  binding while its image designation is dropped. "Add models" opens the plaza
+  as selectable cards with search and paging; the only cards it still offers are
+  the removed ones, and confirming restores them. The search wrapper stays at
+  input height below the title instead of reserving a tall empty band on either
+  side of the input. Each card reports the default and offers Configure (alias,
+  limits, thinking, capabilities, and a per-model **protocol mode** that defaults
+  to "Follow global"). Renderer calls carry only the provider id, never the
+  token.
   token.
   Global/account/model protocol selectors include Google Generative AI. The
   explicit model choice survives reopening; Follow global clears the pin and
@@ -18893,9 +18900,11 @@ renderer's durable transcript reads. No real model or provider is contacted.
   Google/custom endpoints and OpenAI/Anthropic routes remain unchanged.
 - **Specs:** 03-runtime/12 Minih Router preset, account channels, and EasyTier
   virtual LAN routing/fallback; 04-ux/06 Minih Router panel; 04-ux/07 settings IA.
-- **Acceptance:** `accounts-models-user-path.test.mjs` (token-only connect, add
-  models with compact search layout at all three window sizes, Gemini global
-  selection, per-model protocol pin/reload/reset, removal),
+- **Acceptance:** `accounts-models-user-path.test.mjs` (token-only connect, the
+  catalog mirrored as the models page with no picker, compact search layout at
+  all three window sizes, hidden removals surviving a remount, an add-dialog
+  restore, Gemini global selection, per-model protocol pin/reload/reset, removal
+  moving the default),
   `provider-api-style.test.mjs` (four selectable general wire formats),
   `google-adapter-fetch.test.ts` (native Google and Router request paths),
   `models-page-state.test.mjs` (default planning),
