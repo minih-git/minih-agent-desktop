@@ -59,6 +59,14 @@ export type UserMcpRuntimeOptions = {
   connectTimeoutMs?: number;
   callTimeoutMs?: number;
   discoveryTimeoutMs?: number;
+  /**
+   * Close a stdio connection that has not been used for this long. A connection
+   * is keyed by service and working directory, so one MCP server had been
+   * observed open seven times at once; the next call reconnects lazily.
+   */
+  idleCloseMs?: number;
+  /** Sweep cadence for idle connections. `0` leaves the sweep to the caller. */
+  idleSweepIntervalMs?: number;
 };
 
 type Entry = {
@@ -82,6 +90,11 @@ type Entry = {
 const MAX_ACTIVE_SERVERS = 16;
 const MAX_CACHED_CONNECTIONS = MAX_ACTIVE_SERVERS * 4;
 
+/** A stdio connection unused this long is closed; the next call reconnects. */
+const DEFAULT_MCP_IDLE_CLOSE_MS = 15 * 60 * 1000;
+/** How often the idle sweep runs. One minute is cheap and keeps tails short. */
+const DEFAULT_MCP_IDLE_SWEEP_INTERVAL_MS = 60 * 1000;
+
 export class UserMcpRuntime {
   private entries = new Map<string, Entry>();
   private statusRefreshes = new Map<string, Promise<void>>();
@@ -91,11 +104,44 @@ export class UserMcpRuntime {
   private discoveredTools = new Map<string, Set<string>>();
   private records: McpServerRecord[] = [];
   private options: UserMcpRuntimeOptions;
+  private idleTimer: ReturnType<typeof setInterval> | undefined;
 
   // Spelled out rather than a constructor parameter property, because the test
   // runner loads this file with Node's type-stripping loader, which rejects them.
   constructor(options: UserMcpRuntimeOptions) {
     this.options = options;
+    const interval = options.idleSweepIntervalMs ?? DEFAULT_MCP_IDLE_SWEEP_INTERVAL_MS;
+    if (interval > 0) {
+      this.idleTimer = setInterval(() => this.sweepIdleConnections(), interval);
+      // Housekeeping must never keep the app alive on its own.
+      this.idleTimer.unref?.();
+    }
+  }
+
+  /**
+   * Close stdio connections nobody is using. A connection is idle only when no
+   * call is in flight, nothing is connecting, and no status refresh is pending;
+   * the next call reconnects lazily through the same key.
+   */
+  sweepIdleConnections(now: number = Date.now()): string[] {
+    const idleCloseMs = this.options.idleCloseMs ?? DEFAULT_MCP_IDLE_CLOSE_MS;
+    if (idleCloseMs <= 0) return [];
+    const closed: string[] = [];
+    for (const [key, entry] of [...this.entries]) {
+      if (entry.record.transport !== "stdio") continue;
+      if (entry.activeCalls > 0 || entry.connecting) continue;
+      if (this.statusRefreshes.has(key)) continue;
+      if (now - entry.lastUsedAt < idleCloseMs) continue;
+      entry.client.close();
+      this.entries.delete(key);
+      closed.push(key);
+    }
+    if (closed.length > 0) {
+      this.options.log?.("info", "user mcp idle connections closed", {
+        count: closed.length,
+      });
+    }
+    return closed;
   }
 
   /**
@@ -337,6 +383,10 @@ export class UserMcpRuntime {
 
   /** Drop every connection, e.g. on quit. */
   disposeAll(): void {
+    if (this.idleTimer) {
+      clearInterval(this.idleTimer);
+      this.idleTimer = undefined;
+    }
     this.calls.cancelAll();
     for (const entry of this.entries.values()) entry.client.close();
     this.entries.clear();

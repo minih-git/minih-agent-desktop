@@ -22,6 +22,7 @@ import { markTurnInterrupted, settleInterruptedTurn } from "../runtime/turn-inte
 
 const QUIT_TURN_SETTLE_BUDGET_MS = 2_000;
 
+type AgentHostShutdownHandle = Pick<AgentHostBridge, "markAborting"> & { dispose?: () => void };
 export type ShutdownState = {
   shutdownComplete: boolean;
   shutdownPromise: Promise<void> | null;
@@ -64,7 +65,7 @@ export type ShutdownDependencies = {
   /** Terminal-owner hooks the quit settlement shares with the in-app Stop path. */
   finishTurn: FinishTurn;
   lockAbortReason: (sessionId: string, turnId: string | null | undefined) => void;
-  getAgentHostBridge: () => Pick<AgentHostBridge, "markAborting"> | null;
+  getAgentHostBridge: () => AgentHostShutdownHandle | null;
 };
 
 /** Register the last-window and before-quit resource lifecycle handlers. */
@@ -150,6 +151,9 @@ export function registerShutdownHandlers({
     // before any awaited cleanup, so no model call starts behind the quit.
     disposeMemoryExtraction?.();
     disposePowerSaveBlockers();
+    // Stop the Agent Host's housekeeping timer before the ordered shutdown: it
+    // must not fire a sweep against a host that is being torn down.
+    getAgentHostBridge()?.dispose?.();
     state.tray?.destroy();
     state.tray = null;
     if (state.pluginLauncherAccelerator) {
@@ -265,7 +269,7 @@ type TurnSettlementDependencies = {
   finishTurn: FinishTurn;
   lockAbortReason: (sessionId: string, turnId: string | null | undefined) => void;
   /** Agent Host's cancellation record; absent when no agent host is running. */
-  getAgentHostBridge: () => Pick<AgentHostBridge, "markAborting"> | null;
+  getAgentHostBridge: () => AgentHostShutdownHandle | null;
 };
 
 async function settleRunningTurnsForQuit({

@@ -130,6 +130,8 @@ export function dedupeSessionMessages(messages: UiMessage[]): UiMessage[] {
   return next ? registerSessionMessageRewrite(messages, next) : messages;
 }
 
+
+
 /**
  * Apply one live event message to a renderer-owned session snapshot without
  * rebuilding the whole transcript when the row is unchanged.

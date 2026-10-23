@@ -304,6 +304,13 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
       onNotifyEvent: (event) => notifyHost.notify(event),
       log: (level, message, data) => logger.app("runtime", level, message, { data }),
     });
+    // Memory measurement hook for the isolated soak harness
+    // (`scripts/perf-memory-soak.mjs` with --inspect). Env-gated like the other
+    // probes; without it nothing is attached and nothing is exported.
+    if (process.env.MINIH_AGENT_MEMORY_PROBE === "1") {
+      (globalThis as { __minihAgentMemoryProbe?: () => unknown }).__minihAgentMemoryProbe = () =>
+        state.agentHostBridge?.eventStreamStats() ?? null;
+    }
     // Desktop as a connected Host (rollout R5, ADR 0331). Creation is side
     // effect free; `open()` below applies the persisted switch and only then
     // creates the link service, its store, and its server.

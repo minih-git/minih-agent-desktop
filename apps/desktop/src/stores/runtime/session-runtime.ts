@@ -137,6 +137,19 @@ export function createSessionRuntime({ get, set }: StoreAccess): SessionRuntime 
   const toolStartsByCallId = new Map<string, ToolStart>();
   const planSyncGenerations = new Map<string, number>();
 
+  /**
+   * A byte budget over this cache is deliberately absent.
+   *
+   * Sizing a cached transcript means reading every row's content, and the
+   * renderer contract — asserted by the long-history probe in
+   * `e2e-transcript-render` — is that a background delta and a re-selection
+   * perform no historical body reads. Sizing the cache therefore needs content
+   * lengths carried alongside the read (a Host contract change) instead of
+   * measured here, and shortening a cached transcript in place is ruled out
+   * separately: a re-selection has to restore exactly the history the user had
+   * loaded. Both are tracked in the memory-retention design doc (§5.1), and the
+   * row count remains owned by paging.
+   */
   function cacheSessionTranscript(
     id: string,
     messages: UiMessage[],
@@ -170,11 +183,17 @@ export function createSessionRuntime({ get, set }: StoreAccess): SessionRuntime 
         const state = get();
         const liveMessages =
           sessionTranscriptCache.get(id) ?? state.retainedTranscripts[id];
-        const messages =
+        const freshMessages =
           (liveSessionTranscripts.has(id) || state.runningSessions[id]) &&
           liveMessages
             ? mergeLiveSessionMessages(detail.session.messages ?? [], liveMessages)
             : detail.session.messages ?? [];
+        // Deliberately no object reuse here: comparing two reads for equality
+        // reads every row's content, and the renderer contract (asserted by the
+        // long-history probe) is that a background delta performs no historical
+        // body reads. Collapsing the duplicate copies therefore has to happen in
+        // the projection layer, not on the read path.
+        const messages = freshMessages;
         // Never cache a suspiciously empty window (issue #795): hover prefetch
         // would then re-serve that emptiness on every later open, and the
         // session could not recover without a restart.

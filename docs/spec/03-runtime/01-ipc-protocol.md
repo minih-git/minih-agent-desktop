@@ -1617,8 +1617,12 @@ Each user stdio MCP child starts with the resolved workspace path of the
 session that uses it as its working directory. Sessions in the same workspace
 share that child; sessions in different workspaces use separate children.
 A projectless session uses the user's home directory. Idle cached connections
-may be closed under the runtime's connection limit and are reconnected when
-the session needs them again.
+may be closed under the runtime's connection limit, and a stdio connection
+that has served no call for fifteen minutes is closed as well, so a server the
+user configured once does not keep a child process (and its memory) alive for
+the rest of the day; both are reconnected lazily when the session needs them
+again. A connection with a call in flight, a handshake still in progress, or a
+pending status refresh is never closed underneath it.
 Stopping a session aborts its in-flight user MCP tool calls. The client sends
 `notifications/cancelled` for each active request without closing a connection
 used by other sessions; a completed or canceled tool call is never replayed.

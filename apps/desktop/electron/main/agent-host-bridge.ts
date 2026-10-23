@@ -281,6 +281,11 @@ export function createAgentHostBridge(options: AgentHostBridgeOptions) {
     ...(options.onNotifyEvent ? { onNotifyEvent: options.onNotifyEvent } : {}),
   });
 
+  // Housekeeping owns its own timer: it bounds the replay window of every
+  // stream and releases sessions nobody is using, without an append to trigger
+  // it. `dispose()` stops it when the app goes away.
+  agentHost.startIdleSweep();
+
   /** The desktop's queue operations, all under the owner principal. */
   const queue = {
     async push(request: AgentQueuePushRequest): Promise<QueuedTurnSummary> {
@@ -544,6 +549,29 @@ export function createAgentHostBridge(options: AgentHostBridgeOptions) {
         if (subscriptionId) agentHost.unsubscribe(subscriptionId, sessionId);
         subscriptionId = null;
       };
+    },
+    /**
+     * Release a deleted session's in-memory Host state. Best effort: the delete
+     * is already durable, and a session that is still busy keeps its state
+     * until the idle sweep can take it.
+     */
+    forgetSession(sessionId: string): void {
+      try {
+        agentHost.forgetSession(sessionId);
+      } catch (error) {
+        options.log("warn", "agent host forget session failed", {
+          sessionId,
+          error: String(error),
+        });
+      }
+    },
+    /** Retained durable events and bytes, for memory diagnostics. */
+    eventStreamStats() {
+      return agentHost.eventStreamStats();
+    },
+    /** Stop the idle sweep (app shutdown, tests). */
+    dispose(): void {
+      agentHost.dispose();
     },
     markAborting(sessionId: string): void {
       abortingSessions.add(sessionId);

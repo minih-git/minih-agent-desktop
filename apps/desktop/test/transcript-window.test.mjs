@@ -222,6 +222,16 @@ test("the transcript bounds mounted history and escalates at the top", () => {
   assert.match(reachTop, /loadOlder\(\)/);
 });
 
+test("returning to the bottom shrinks the mounted window again", () => {
+  // The enlarged window exists only while the reader is up in history. Once the
+  // newest row is in view again the rows above are off screen, and keeping them
+  // mounted was the part of the transcript that never came back down.
+  assert.match(
+    transcript,
+    /if \(transition\.pinned && !wasPinned\) \{\s*setWindowSize\(\(current\) =>\s*current > TRANSCRIPT_WINDOW_MIN \? TRANSCRIPT_WINDOW_MIN : current,/,
+  );
+});
+
 test("mounting rows above the viewport is anchored like a fetched page", () => {
   // Both add height above the reading position, so both take the same
   // pre-paint correction; without `windowSize` here, growing the window would

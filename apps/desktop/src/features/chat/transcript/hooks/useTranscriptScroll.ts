@@ -430,6 +430,15 @@ export function useTranscriptScroll({
     } else {
       pinnedRef.current = transition.pinned;
       setShowJump(transition.showJump);
+      // Reaching the bottom again re-pins the reader. The enlarged mount window
+      // existed only so they could read upward, so it shrinks back now: the rows
+      // above are off screen, and keeping them mounted was the part of the
+      // transcript that never came back down.
+      if (transition.pinned && !wasPinned) {
+        setWindowSize((current) =>
+          current > TRANSCRIPT_WINDOW_MIN ? TRANSCRIPT_WINDOW_MIN : current,
+        );
+      }
     }
     rememberReadingPosition();
   }, [cancelFollowScroll, reachTop, readingPositionPendingRef, readingWindow, rememberReadingPosition, scheduleFollowScroll]);

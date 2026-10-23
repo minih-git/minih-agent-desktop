@@ -2259,6 +2259,8 @@
           "maxQueuedTurnsPerSession",
           "replayWindowEvents",
           "replayWindowMs",
+          "replayWindowBytesPerStream",
+          "replayWindowBytesTotal",
           "maxConnectedClients",
           "terminalReplayRingBytes",
           "maxOpenTerminalsPerSession"
@@ -2295,6 +2297,14 @@
           "replayWindowMs": {
             "type": "integer",
             "minimum": 1
+          },
+          "replayWindowBytesPerStream": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "replayWindowBytesTotal": {
+            "type": "integer",
+            "minimum": 0
           },
           "maxConnectedClients": {
             "type": "integer",
@@ -2381,6 +2391,8 @@
       "maxQueuedTurnsPerSession",
       "replayWindowEvents",
       "replayWindowMs",
+      "replayWindowBytesPerStream",
+      "replayWindowBytesTotal",
       "maxConnectedClients",
       "terminalReplayRingBytes",
       "maxOpenTerminalsPerSession"
@@ -2417,6 +2429,14 @@
       "replayWindowMs": {
         "type": "integer",
         "minimum": 1
+      },
+      "replayWindowBytesPerStream": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "replayWindowBytesTotal": {
+        "type": "integer",
+        "minimum": 0
       },
       "maxConnectedClients": {
         "type": "integer",
