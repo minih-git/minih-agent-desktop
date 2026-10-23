@@ -48,7 +48,9 @@ export function launchRoot(input: LaunchRootInput): RootKind {
 function readLastRoot(storage: RootStorage | null): RootKind | null {
   try {
     const remembered = storage?.getItem(LAST_ROOT_STORAGE_KEY) ?? null;
-    return remembered === "chats" || remembered === "hosts" ? remembered : null;
+    return remembered === "chats" || remembered === "studio" || remembered === "hosts"
+      ? remembered
+      : null;
   } catch {
     return null;
   }

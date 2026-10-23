@@ -10,7 +10,7 @@
  * keeps streaming when the user leaves for D1 or Computers, so everything here
  * re-reads the store on change instead of holding the truth in component state.
  */
-import { Info, RotateCcw, Square } from "lucide-react";
+import { Code2, Globe, Info, Lightbulb, Mail, RotateCcw, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -20,7 +20,9 @@ import { ModelSheet } from "../components/ModelSheet.js";
 import { ChatComposer } from "../components/chat/ChatComposer.js";
 import { ChatTimeline } from "../components/chat/ChatTimeline.js";
 import { Button } from "../components/ui/Button.js";
-import { NavBar } from "../components/ui/NavBar.js";
+import { Callout } from "../components/ui/Callout.js";
+import { EmptyState } from "../components/ui/EmptyState.js";
+import { ModelPill, NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
 import { Sheet } from "../components/ui/Sheet.js";
 import { watchVisibility } from "../lib/app-state.js";
@@ -116,7 +118,8 @@ export function DirectChatScreen({
   const [sending, setSending] = useState(false);
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string; index: number } | null>(null);
   const [editText, setEditText] = useState("");
-
+  const [seededDraft, setSeededDraft] = useState<string | null>(null);
+  const [composerKey, setComposerKey] = useState(0);
   /**
    * Reads are numbered, and a result is applied only if it is still the newest
    * and still about this conversation: switching conversations quickly would
@@ -210,6 +213,7 @@ export function DirectChatScreen({
     setTranscript(null);
     setLoaded(false);
     setNotice(null);
+    setSeededDraft(null);
   }, [conversationId]);
 
   // A draft opened for a particular model starts on it, and re-opening the same
@@ -595,12 +599,30 @@ export function DirectChatScreen({
     }
   }
 
+  const fillSuggestion = (promptText: string) => {
+    setSeededDraft(promptText);
+    setComposerKey((k) => k + 1);
+    persistDraft(promptText);
+  };
+
+  const hasMessages = Boolean(view && view.items.length > 0);
+
   return (
-    <Screen>
+    <Screen aurora={!hasMessages}>
       <NavBar
-        title={conversation?.title ?? t("chats.title")}
+        solid={hasMessages}
+        title={isNew ? t("chats.newChat") : (conversation?.title ?? t("chats.title"))}
         onBack={onBack}
         backLabel={t("common.back")}
+        modelPill={
+          connection ? (
+            <ModelPill
+              label={nextModel?.id ?? t("chats.modelUnset")}
+              disabled={!idle}
+              onClick={() => setModelsOpen(true)}
+            />
+          ) : undefined
+        }
         trailing={
           <Button variant="plain" size="icon" aria-label={t("directChat.info")} onClick={() => setInfoOpen(true)}>
             <Info className="h-5 w-5 stroke-[1.8]" aria-hidden="true" />
@@ -608,40 +630,102 @@ export function DirectChatScreen({
         }
       />
 
-      {connection ? (
-        <button
-          type="button"
-          onClick={() => setModelsOpen(true)}
-          disabled={!idle}
-          className="mx-3 mb-1 flex min-h-[34px] shrink-0 items-center gap-1.5 self-start rounded-full bg-[var(--rm-bg-inset)] px-3 text-[13px] text-[var(--rm-text-secondary)] disabled:opacity-50"
-        >
-          <span className="truncate">{nextModel?.id ?? t("chats.modelUnset")}</span>
-        </button>
-      ) : null}
-
       <ScreenContent hasDock className="[overflow-anchor:none]">
         {view && view.items.length > 0 ? (
-          <ChatTimeline
-            items={view.items}
-            resolveMedia={resolveMedia}
-            onCopyMessage={(item) => void copyMessage(item.text)}
-            onRegenerateMessage={(item) => void regenerateMessage(item.id)}
-            onEditResendMessage={(item) => handleStartEditResend(item.id)}
-          />
+          <>
+            <ChatTimeline
+              items={view.items}
+              resolveMedia={resolveMedia}
+              onCopyMessage={(item) => void copyMessage(item.text)}
+              onRegenerateMessage={(item) => void regenerateMessage(item.id)}
+              onEditResendMessage={(item) => handleStartEditResend(item.id)}
+            />
+            {live ? (
+              <div className="mt-2 flex items-center gap-2 px-1" aria-live="polite">
+                <span className="rm-caret" aria-hidden="true" />
+                <span className="rm-text-shimmer text-[13px]">{t("chats.replying")}</span>
+              </div>
+            ) : null}
+          </>
         ) : (
-          <div className="px-4 py-10 text-center text-[15px] leading-[22px] text-[var(--rm-text-muted)]">
-            {t("directChat.startHint")}
-          </div>
+          <EmptyState
+            aurora={false}
+            orb={true}
+            title={t("directChat.heroTitle")}
+            description={t("directChat.heroSubtitle")}
+            suggestions={
+              !foreignScope && !archived ? (
+                <div className="grid grid-cols-2 gap-2.5 text-left">
+                  {[
+                    {
+                      key: "email",
+                      icon: Mail,
+                      title: t("directChat.sug.email.title"),
+                      sub: t("directChat.sug.email.sub"),
+                      prompt: t("directChat.sug.email.prompt"),
+                    },
+                    {
+                      key: "code",
+                      icon: Code2,
+                      title: t("directChat.sug.code.title"),
+                      sub: t("directChat.sug.code.sub"),
+                      prompt: t("directChat.sug.code.prompt"),
+                    },
+                    {
+                      key: "translate",
+                      icon: Globe,
+                      title: t("directChat.sug.translate.title"),
+                      sub: t("directChat.sug.translate.sub"),
+                      prompt: t("directChat.sug.translate.prompt"),
+                    },
+                    {
+                      key: "ideas",
+                      icon: Lightbulb,
+                      title: t("directChat.sug.ideas.title"),
+                      sub: t("directChat.sug.ideas.sub"),
+                      prompt: t("directChat.sug.ideas.prompt"),
+                    },
+                  ].map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => fillSuggestion(item.prompt)}
+                        className="flex flex-col items-start rounded-[18px] border border-[var(--rm-hair)] bg-[var(--rm-bg-surface)] p-3.5 text-left backdrop-blur-md transition-transform duration-150 active:scale-[0.975] active:bg-[var(--rm-bg-surface-2)]"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="mb-2 grid h-8 w-8 place-items-center rounded-[10px] bg-[var(--rm-bg-surface-2)] text-[var(--rm-accent-2)]"
+                        >
+                          <Icon className="h-[18px] w-[18px] stroke-[2]" />
+                        </span>
+                        <b className="block text-[14px] font-semibold leading-[19px] text-[var(--rm-text-primary)]">
+                          {item.title}
+                        </b>
+                        <small className="mt-0.5 block text-[12px] leading-[16px] text-[var(--rm-text-muted)]">
+                          {item.sub}
+                        </small>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : undefined
+            }
+          />
         )}
 
         {foreignScope ? (
-          <div className="mt-3 rounded-[12px] bg-[var(--rm-bg-inset)] px-3 py-2 text-[13px] leading-[18px] text-[var(--rm-text-secondary)]">
+          <Callout tone="neutral" className="mt-3">
             {t("directChat.readOnlyScope")}
-          </div>
+          </Callout>
         ) : null}
 
         {view?.retryable && !foreignScope ? (
-          <div className="mt-3 flex items-center gap-2 rounded-[12px] bg-[var(--rm-bg-inset)] px-3 py-2 text-[13px] leading-[18px] text-[var(--rm-text-secondary)]">
+          <Callout
+            tone={view.retryable.state === "failed" ? "error" : "warn"}
+            className="mt-3 flex items-center gap-2"
+          >
             <span className="min-w-0 flex-1">
               {view.retryable.state === "stopped"
                 ? t("directChat.state.stopped")
@@ -668,11 +752,13 @@ export function DirectChatScreen({
                 {t("directChat.newChat")}
               </Button>
             )}
-          </div>
+          </Callout>
         ) : null}
 
         {notice ? (
-          <p className="mt-2 px-1 text-[13px] leading-[18px] text-[var(--rm-error)]">{notice}</p>
+          <Callout tone="error" className="mt-3 py-2.5 text-[13px]">
+            {notice}
+          </Callout>
         ) : null}
       </ScreenContent>
 
@@ -717,15 +803,17 @@ export function DirectChatScreen({
           null
         ) : (
           <ChatComposer
+            key={composerKey}
             sending={sending}
             disabled={false}
             archived={false}
             queued={false}
             hideAttachments={!supportsImages}
             placeholder={isImage ? t("imageGen.promptPlaceholder") : undefined}
-            initialText={conversation?.draft ?? accountDraft ?? ""}
+            initialText={seededDraft ?? conversation?.draft ?? accountDraft ?? ""}
             onDraftChange={persistDraft}
             onSend={async (payload) => {
+              setSeededDraft(null);
               const sent = await send(payload.text, payload.attachments);
               return sent;
             }}

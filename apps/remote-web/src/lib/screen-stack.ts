@@ -1,5 +1,5 @@
 /**
- * The in-app screen stack (PR-4, PR-5, spec §17.3).
+ * The in-app screen stack (PR-4, PR-5, spec §17.3, ADR mobile-redesign D3).
  *
  * The screens of one component-state stack. `previousScreen` is pure so the
  * Android hardware back button can be unit-tested without a DOM: it returns the
@@ -8,23 +8,25 @@
  * §17 put two pages between the computer and a session — its projects, then the
  * sessions of one project — so the stack became
  * `hosts ▸ projects ▸ projectSessions ▸ session`. ADR
- * mobile-direct-gateway-chat adds a second root to the native build: Chats,
- * with its own pushed pages and Settings reachable from either root. The rule
- * stays a pure function of the screen it is asked about, which is what lets the
- * browser history, the header button, the edge swipe, and a notification tap
- * all agree without asking anyone else.
+ * mobile-direct-gateway-chat and ADR mobile-redesign D3 give the native build
+ * three roots: Chats, Studio, and Computers, with Settings reachable from any
+ * root. The rule stays a pure function of the screen it is asked about, which
+ * is what lets the browser history, the header button, the edge swipe, and a
+ * notification tap all agree without asking anyone else.
  */
 
 /**
- * The two roots a native build can land on (ADR mobile-direct-gateway-chat).
+ * The three roots a native build can land on (ADR mobile-redesign D3).
  * `hosts` is the Computers root; the browser build only ever uses it.
  */
-export type RootKind = "chats" | "hosts";
+export type RootKind = "chats" | "studio" | "hosts";
 
 export type Screen =
   | { kind: "hosts" }
-  /** D1: the Chats root (native builds only). Placeholder until the direct screens ship. */
+  /** D1: the Chats root (native builds only, text conversations). */
   | { kind: "chats" }
+  /** D3: the Studio root (native builds only, image generation). */
+  | { kind: "studio" }
   | { kind: "pair" }
   /** Account sign-in and device request (protocol §11.5). */
   | { kind: "account" }
@@ -68,13 +70,6 @@ export type Screen =
    * `fromArchive` says the user opened it from D4 rather than D1, so back
    * returns to the list they actually came from. The conversation itself is a
    * local record, and its id is what the screen reads it by.
-   */
-  /**
-   * D3: one direct conversation (native builds only).
-   *
-   * `fromArchive` says the user opened it from D4 rather than D1, so back
-   * returns to the list they actually came from. The conversation itself is a
-   * local record, and its id is what the screen reads it by.
    *
    * `draftModelId` is the model a not-yet-saved conversation was started on
    * (ADR mobile-redesign D2). It travels with the navigation instead of being
@@ -88,15 +83,16 @@ export type Screen =
    * D2: connect a model gateway account (native builds only).
    *
    * `from` records the root it was opened from, because the ADR's table says back
-   * goes "where it was opened from": D1's empty state, a new chat without a key,
-   * or S8. `viaSettings` says the door was Settings, so back lands on Settings
-   * rather than on the root — the same shape `projectSessions.viaProjects` uses
-   * for a page reached without visiting the level above it.
+   * goes "where it was opened from": D1's empty state, Studio's empty state, a
+   * new chat without a key, or S8. `viaSettings` says the door was Settings, so
+   * back lands on Settings rather than on the root — the same shape
+   * `projectSessions.viaProjects` uses for a page reached without visiting the
+   * level above it.
    */
   | { kind: "modelGateway"; from: RootKind; viaSettings?: boolean }
   /**
-   * S8: Settings, pushed from the gear on either root. `from` records the root
-   * the gear was opened from, the way `projectSessions.viaProjects` records its
+   * S8: Settings, pushed from the avatar button on any root. `from` records the
+   * root it was opened from, the way `projectSessions.viaProjects` records its
    * origin, so back returns to that root (ADR: "Where it was opened from").
    */
   | { kind: "settings"; from: RootKind }
@@ -113,26 +109,20 @@ export type Screen =
       from: RootKind;
     };
 
-/** Whether the screen is one of the two roots a tab bar can switch between. */
+/** Whether the screen is one of the three roots a tab bar can switch between. */
 export function isRootScreen(screen: Screen): screen is Extract<Screen, { kind: RootKind }> {
-  return screen.kind === "chats" || screen.kind === "hosts";
+  return screen.kind === "chats" || screen.kind === "studio" || screen.kind === "hosts";
 }
 
-/** Whether the value is one of the two root kinds, for untrusted input such as a history entry. */
+/** Whether the value is one of the three root kinds, for untrusted input such as a history entry. */
 export function isRootKind(value: unknown): value is RootKind {
-  return value === "chats" || value === "hosts";
+  return value === "chats" || value === "studio" || value === "hosts";
 }
 
 /**
  * Session → its project's list → the project list → the computer list, and
  * pairing / account → the computer list. There is nowhere to go back to from
- * either root, so hardware back there exits the app.
- *
- * The direct-chat pages all return to the Chats root for now. D3 will record
- * where a conversation was opened from — the archive is the first such origin —
- * with the field that arrives with the history stage; until then `chat` and
- * `chatArchive` have no origin to consult, and inventing one here would be a
- * second source of truth for the same question.
+ * any root, so hardware back there exits the app.
  */
 export function previousScreen(screen: Screen): Screen | null {
   switch (screen.kind) {
@@ -169,6 +159,7 @@ export function previousScreen(screen: Screen): Screen | null {
     case "settings":
       return { kind: screen.from };
     case "chats":
+    case "studio":
     case "hosts":
       return null;
     default:

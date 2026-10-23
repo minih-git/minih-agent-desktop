@@ -7,10 +7,6 @@
  * today. The list is the same one D1 draws — the scope is a parameter, not a
  * second screen — and opening a conversation goes to D3, which sees the scope
  * mismatch and renders it read-only.
- *
- * Unarchived conversations only: restoring from the archive is an action on the
- * account this device holds, and an older account's archive is not reachable
- * from here.
  */
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -21,7 +17,9 @@ import { ListGroup, ListRow } from "../components/ui/ListGroup.js";
 import { NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent } from "../components/ui/Screen.js";
 import { SectionHeader } from "../components/ui/SectionHeader.js";
+import { Tag } from "../components/ui/StatusDot.js";
 import type { DirectChatSummary } from "../lib/direct-chat/history.js";
+import { vendorBadge } from "../lib/direct-chat/model-picker.js";
 import { directChatHistory, subscribeDirectChat } from "../lib/runtime.js";
 
 export type ScopedChatsScreenProps = {
@@ -49,8 +47,6 @@ export function ScopedChatsScreen({
       if (!cancelled) setRows(active);
     };
     void load();
-    // Another screen may finish a save while this one is open, which changes
-    // nothing here but keeps the count honest if the user returns to Settings.
     const unsubscribe = subscribeDirectChat(() => void load());
     return () => {
       cancelled = true;
@@ -59,10 +55,10 @@ export function ScopedChatsScreen({
   }, [history, gatewayRoot, accessKeyId]);
 
   return (
-    <Screen>
-      <NavBar title={t("settings.history.otherAccounts")} onBack={onBack} backLabel={t("common.back")} />
-      <ScreenContent>
-        <div className="px-4 pt-2">
+    <Screen aurora>
+      <NavBar solid title={t("settings.history.otherAccounts")} onBack={onBack} backLabel={t("common.back")} />
+      <ScreenContent className="pt-3">
+        <div>
           <Callout>{t("chats.readOnlyScope")}</Callout>
           <p className="mt-2 break-all px-1 font-mono text-[12px] leading-[16px] text-[var(--rm-text-faint)]">
             {gatewayRoot} · {accessKeyId}
@@ -70,22 +66,40 @@ export function ScopedChatsScreen({
         </div>
 
         {rows.length === 0 ? (
-          <div className="px-4">
-            <EmptyState title={t("settings.history.none")} />
-          </div>
+          <EmptyState aurora={false} title={t("settings.history.none")} />
         ) : (
           <>
             <SectionHeader title={t("chats.listSection")} />
             <ListGroup>
-              {rows.map((row) => (
-                <ListRow
-                  key={row.conversation.id}
-                  title={row.conversation.title}
-                  subtitle={<span className="truncate">{row.preview}</span>}
-                  chevron
-                  onClick={() => onOpenConversation(row.conversation.id)}
-                />
-              ))}
+              {rows.map((row) => {
+                const badge = vendorBadge(null, row.conversation.nextModelId);
+                return (
+                  <ListRow
+                    key={row.conversation.id}
+                    leading={
+                      <span
+                        aria-hidden="true"
+                        className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] text-[13px] font-extrabold text-white ${badge.gradientClass}`}
+                      >
+                        {badge.monogram}
+                      </span>
+                    }
+                    title={row.conversation.title}
+                    subtitle={
+                      <span className="flex flex-col gap-1">
+                        <span className="truncate">{row.preview}</span>
+                        {row.conversation.nextModelId ? (
+                          <span>
+                            <Tag>{row.conversation.nextModelId}</Tag>
+                          </span>
+                        ) : null}
+                      </span>
+                    }
+                    chevron
+                    onClick={() => onOpenConversation(row.conversation.id)}
+                  />
+                );
+              })}
             </ListGroup>
           </>
         )}

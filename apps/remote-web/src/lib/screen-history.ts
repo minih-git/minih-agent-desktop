@@ -48,6 +48,14 @@ export function sameScreen(a: Screen, b: Screen): boolean {
       );
     case "settings":
       return a.from === (b as typeof a).from;
+    case "modelGateway":
+      return a.from === (b as typeof a).from && a.viaSettings === (b as typeof a).viaSettings;
+    case "scopedChats":
+      return (
+        a.gatewayRoot === (b as typeof a).gatewayRoot &&
+        a.accessKeyId === (b as typeof a).accessKeyId &&
+        a.from === (b as typeof a).from
+      );
     default:
       return true;
   }
@@ -61,6 +69,7 @@ export function screenFromHistoryState(state: unknown): Screen | null {
   switch (screen.kind) {
     case "hosts":
     case "chats":
+    case "studio":
     case "pair":
     case "account":
     case "chatArchive":

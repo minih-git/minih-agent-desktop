@@ -36,6 +36,7 @@ import { ProjectSessionsScreen } from "./screens/ProjectSessionsScreen.js";
 import { ProjectsScreen } from "./screens/ProjectsScreen.js";
 import { ScopedChatsScreen } from "./screens/ScopedChatsScreen.js";
 import { SessionScreen } from "./screens/SessionScreen.js";
+import { StudioScreen } from "./screens/StudioScreen.js";
 import { TabBar } from "./components/TabBar.js";
 import { useEdgeSwipe } from "./hooks/useEdgeSwipe.js";
 import { usePushRegistration } from "./hooks/usePushRegistration.js";
@@ -355,10 +356,30 @@ export default function App() {
             })
           }
           onOpenArchive={() => navigate({ kind: "chatArchive" })}
+          onOpenStudio={() => switchRoot("studio")}
         />
       );
     }
 
+    if (screen.kind === "studio") {
+      return (
+        <StudioScreen
+          connection={connection}
+          gatewayConfigured={modelGatewayOrigin !== null}
+          onConnect={() => navigate({ kind: "modelGateway", from: "studio" })}
+          onOpenSettings={() => navigate({ kind: "settings", from: "studio" })}
+          onConnectionChanged={reloadConnection}
+          onSwitchToChats={(modelId) => {
+            storeLastRoot("chats", window.localStorage);
+            navigate({
+              kind: "chat",
+              conversationId: `conv-${Date.now().toString(36)}`,
+              draftModelId: modelId,
+            });
+          }}
+        />
+      );
+    }
     if (screen.kind === "chatArchive") {
       return (
         <ChatArchiveScreen

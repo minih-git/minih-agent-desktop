@@ -13,7 +13,10 @@ import { EmptyState } from "../components/ui/EmptyState.js";
 import { ListGroup, ListRow } from "../components/ui/ListGroup.js";
 import { NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent } from "../components/ui/Screen.js";
+import { Tag } from "../components/ui/StatusDot.js";
 import type { DirectChatSummary } from "../lib/direct-chat/history.js";
+import { vendorBadge } from "../lib/direct-chat/model-picker.js";
+import { filterTextConversations } from "../lib/direct-chat/studio.js";
 import { directChatHistory, directChatScope, subscribeDirectChat } from "../lib/runtime.js";
 
 export type ChatArchiveScreenProps = {
@@ -36,7 +39,7 @@ export function ChatArchiveScreen({ onBack, onOpenConversation, onRestored }: Ch
         return;
       }
       const archived = await history.list(scope, { archived: true });
-      if (!cancelled) setRows(archived);
+      if (!cancelled) setRows(filterTextConversations(archived));
     };
     void load();
     const unsubscribe = subscribeDirectChat(() => void load());
@@ -47,47 +50,64 @@ export function ChatArchiveScreen({ onBack, onOpenConversation, onRestored }: Ch
   }, [history, scope]);
 
   async function restore(conversationId: string): Promise<void> {
-    // Restoring from the archive is the action this screen exists for, so it
-    // happens here rather than behind the info sheet.
     await history.setArchived(conversationId, false, new Date().toISOString());
-    setRows(await history.list(scope!, { archived: true }));
+    setRows(filterTextConversations(await history.list(scope!, { archived: true })));
     onRestored();
   }
 
   return (
-    <Screen>
-      <NavBar title={t("chats.archiveTitle")} onBack={onBack} backLabel={t("common.back")} />
-      <ScreenContent>
+    <Screen aurora>
+      <NavBar solid title={t("chats.archiveTitle")} onBack={onBack} backLabel={t("common.back")} />
+      <ScreenContent className="pt-3">
         {rows.length === 0 ? (
-          <div className="px-4 pt-2">
-            <EmptyState
-              icon={<Archive className="h-9 w-9 stroke-[1.5]" aria-hidden="true" />}
-              title={t("chats.archiveEmpty")}
-            />
-          </div>
+          <EmptyState
+            aurora={false}
+            icon={<Archive className="h-9 w-9 stroke-[1.7]" aria-hidden="true" />}
+            title={t("chats.archiveEmpty")}
+          />
         ) : (
           <ListGroup>
-            {rows.map((row) => (
-              <ListRow
-                key={row.conversation.id}
-                title={row.conversation.title}
-                subtitle={<span className="truncate">{row.preview}</span>}
-                chevron
-                onClick={() => onOpenConversation(row.conversation.id)}
-                trailing={
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void restore(row.conversation.id);
-                    }}
-                    className="shrink-0 rounded-[8px] px-2 py-1 text-[13px] text-[var(--rm-accent)]"
-                  >
-                    {t("directChat.restore")}
-                  </button>
-                }
-              />
-            ))}
+            {rows.map((row) => {
+              const badge = vendorBadge(null, row.conversation.nextModelId);
+              return (
+                <ListRow
+                  key={row.conversation.id}
+                  leading={
+                    <span
+                      aria-hidden="true"
+                      className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] text-[13px] font-extrabold text-white ${badge.gradientClass}`}
+                    >
+                      {badge.monogram}
+                    </span>
+                  }
+                  title={row.conversation.title}
+                  subtitle={
+                    <span className="flex flex-col gap-1">
+                      <span className="truncate">{row.preview}</span>
+                      {row.conversation.nextModelId ? (
+                        <span>
+                          <Tag>{row.conversation.nextModelId}</Tag>
+                        </span>
+                      ) : null}
+                    </span>
+                  }
+                  chevron
+                  onClick={() => onOpenConversation(row.conversation.id)}
+                  trailing={
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void restore(row.conversation.id);
+                      }}
+                      className="shrink-0 rounded-[10px] bg-[var(--rm-bg-surface-2)] px-2.5 py-1 text-[12px] font-semibold text-[var(--rm-link)] transition-transform active:scale-95"
+                    >
+                      {t("directChat.restore")}
+                    </button>
+                  }
+                />
+              );
+            })}
           </ListGroup>
         )}
       </ScreenContent>
