@@ -474,6 +474,27 @@ final report from being misclassified as progress.
 
 See E2E-146a.
 
+### 5e.2 Opt-in provider-stream trace
+
+A turn that ends on a text-only assistant message has two causes the transcript
+cannot separate: the model called no tool, or the provider path dropped the call
+before the client saw it. On the OpenAI Responses client protocol the assistant
+message is assembled only from streamed item events, so a tool call that never
+arrived as `response.output_item.added` / `response.function_call_arguments.done`
+is indistinguishable from a model that answered deliberately — and a gateway
+that converts a Chat Completions upstream can lose it while still reporting
+success.
+
+`MINIH_AGENT_TRACE_PROVIDER_STREAM=1` makes the runtime count what each provider
+request actually carried (event names, `function_call` item and argument-delta
+counts, the terminal event and its status) and write one `[provider-stream]`
+line per settled model request next to the assembled message's `stopReason`,
+tool-call count, and character count. The counters live in
+`packages/agent-runtime/src/provider-stream-trace.ts` and are attached through
+the provider stream hook pi-ai exposes. The trace records no message text, tool
+arguments, or provider payloads, and the default path is unchanged: without the
+variable no trace is created and the hook stays unset.
+
 ### 5.1 Context checkpoint protection (D158/D203, ADR 0030/0049/0061/0064)
 
 The complete visible transcript and the model context are separate views of
