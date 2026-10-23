@@ -556,6 +556,19 @@ Scope notes:
 - the account computer list and the SSH host list never overlap: only an
   explicit `account` transport is an account computer, so a pairing written
   before this release stays on the SSH side where it has always been.
+- **discovery has a caller, and it is the Host link.** The roster route, the
+  reachability rules, and the registry work shipped before 0.25.0, yet nothing in
+  Electron main ran them, so a second computer of the account never appeared and
+  the accounts page kept saying "no account computers". `remote/gateway-link/account-computers.ts`
+  is that caller: on each transition of the Host link into `connected` with
+  account-mode credentials, it logs in with the account's Router AccessKey, reads
+  `GET /v1/account/hosts`, reuses the device token already in the registry (so a
+  reconnect does not ask a sibling to admit this computer again) or requests one,
+  and hands the roster to `joinAccountComputers`. A refused key, an unreadable
+  roster, or a sibling that cannot admit this machine only ends that round; the
+  link and the rows already joined are untouched. Both halves are pinned by
+  `apps/desktop/test/account-computers-join.test.mjs` and
+  `apps/desktop/test/account-link-trigger.test.mjs`.
 
 Exit criteria:
 
