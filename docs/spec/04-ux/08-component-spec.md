@@ -2202,6 +2202,20 @@ Renderer: `apps/desktop/src/components/Markdown.tsx` + `apps/desktop/src/lib/shi
   fence, like an oversized diagram, fails closed to the source view. The toolbar
   toggles preview/source and copies the original source. Thinking prose keeps
   `html` fences as source code.
+- **Linked local page (D680)**: a chat link that names a local `.html` page — the
+  `/answer-me-with-html` delivery — renders as that page in answer prose,
+  through the same `srcdoc` frame as the fence preview (ADR 0338). The surface
+  gate is the same `renderHtml` flag plus the session's local-tool capability, so
+  a file preview, a plugin README, a side note, a subagent reply, and a session
+  that may not touch local files keep the plain link.
+  The renderer never reads the file: it asks the host for the path with the
+  session id over `fs/read`, so
+  allowed roots, remote workspaces, the binary check, and the text cap stay in
+  the host. Only `text` within 100,000 characters becomes a page; a binary,
+  missing, empty, unreadable, or oversized file leaves the link, and scripts
+  still start off. The card adds one action the fence lacks: open the same page
+  in the work-panel browser, which is where a click on the link went before. A
+  relative link (`./page.html`) keeps its existing destination.
 - **Syntax highlighting**: Shiki singleton with the JavaScript regex engine
   (no wasm), themes `one-light`/`one-dark-pro` following `data-theme`.
   A coding-focused local catalog exposes 48 canonical grammars plus common

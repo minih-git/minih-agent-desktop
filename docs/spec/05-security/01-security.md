@@ -93,6 +93,14 @@ path's role stay unknown, and nothing is probed while rendering.
   past 100,000 characters fails closed to escaped source text. A frame with
   scripts enabled can still reach what the policy already allows (`'self'`,
   `localhost`, `plugin-renderer:`), which is why that stays opt-in per block.
+- A linked local page renders in that same frame on the same terms (ADR 0338).
+  The renderer never reads the file: it asks the host over `fs/read` with the
+  session id, so allowed roots, remote workspaces, the binary check and the text
+  cap are unchanged and no channel is added. Only an answer surface does this,
+  through the same `renderHtml` gate, and a rejected, binary or oversized read
+  leaves the plain link. The one new reach is that a reply can pull an allowed
+  local `.html` file into a transcript frame without a click; scripts inside it
+  still start off.
 
 ### Future hardening (tracked, post-MVP)
 
