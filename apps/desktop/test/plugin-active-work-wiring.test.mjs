@@ -195,6 +195,8 @@ test("the gate is per plugin report, with no terminal special case", async () =>
     await read("electron/main/bootstrap/close-behavior.ts"),
   ];
   for (const source of files) {
-    assert.doesNotMatch(source, /pi\.terminal/, "no plugin id may be special-cased");
+    // Neither the current terminal plugin id nor the one it was drafted under
+    // may appear in the teardown path: the gate is per plugin report.
+    assert.doesNotMatch(source, /(?:pi|minih)\.terminal/, "no plugin id may be special-cased");
   }
 });

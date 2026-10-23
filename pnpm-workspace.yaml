@@ -1,7 +1,6 @@
 packages:
   - apps/*
   - packages/*
-  - plugins/*
   - docs
 allowBuilds:
   '@google/genai': true

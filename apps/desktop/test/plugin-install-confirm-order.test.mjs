@@ -127,7 +127,7 @@ function harness({ inspection, install, confirm, picked = PACKAGE_PATH }) {
 }
 
 const INSPECTION = {
-  id: "pi.terminal",
+  id: "minih.terminal",
   name: "Terminal",
   version: "0.2.0",
   shasum: SHASUM,
@@ -138,9 +138,9 @@ const INSPECTION = {
 const INSTALLED = {
   result: {
     plugin: {
-      id: "pi.terminal",
+      id: "minih.terminal",
       enabled: true,
-      path: "/data/plugins/installed/pi.terminal",
+      path: "/data/plugins/installed/minih.terminal",
       permissions: ["ui.view"],
     },
   },
@@ -161,7 +161,7 @@ test("the prompt names the package's plugin, and accepting installs those bytes"
   const run = harness({ inspection: INSPECTION, install: INSTALLED, confirm: true });
   const result = await run.install()();
 
-  assert.deepEqual(run.confirmed, [["pi.terminal"]], "asked about the inspected plugin");
+  assert.deepEqual(run.confirmed, [["minih.terminal"]], "asked about the inspected plugin");
   assert.deepEqual(
     run.hostCalls.map(([channel]) => channel),
     ["plugins.inspectPackage", "plugins.installFromPackage"],
@@ -173,8 +173,8 @@ test("the prompt names the package's plugin, and accepting installs those bytes"
     enable: true,
     expectedShasum: SHASUM,
   });
-  assert.deepEqual(run.loaded, [["/data/plugins/installed/pi.terminal", ["ui.view"]]]);
-  assert.equal(result.result.plugin.id, "pi.terminal");
+  assert.deepEqual(run.loaded, [["/data/plugins/installed/minih.terminal", ["ui.view"]]]);
+  assert.equal(result.result.plugin.id, "minih.terminal");
 });
 
 test("a package swapped after the prompt is refused, and nothing is loaded", async () => {

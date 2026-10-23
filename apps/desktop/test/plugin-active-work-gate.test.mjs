@@ -52,8 +52,8 @@ test("a silent or broken plugin never blocks the teardown", async () => {
 
 test("the prompt names the plugin's own sentence and Cancel keeps everything", async () => {
   dialog.response = 0;
-  const answers = { "pi.terminal": "Terminal: 2 shells are still running." };
-  assert.equal(await confirmPluginInterruption(deps(answers), ["pi.terminal"]), false);
+  const answers = { "minih.terminal": "Terminal: 2 shells are still running." };
+  assert.equal(await confirmPluginInterruption(deps(answers), ["minih.terminal"]), false);
 
   assert.equal(dialog.calls.length, 1);
   const { options } = dialog.calls[0];
@@ -68,8 +68,8 @@ test("the prompt names the plugin's own sentence and Cancel keeps everything", a
 
 test("accepting continues, and the copy follows the app language", async () => {
   dialog.response = 1;
-  const answers = { "pi.terminal": "终端插件：仍有 1 个 shell 在运行。" };
-  assert.equal(await confirmPluginInterruption(deps(answers, "zh-CN"), ["pi.terminal"]), true);
+  const answers = { "minih.terminal": "终端插件：仍有 1 个 shell 在运行。" };
+  assert.equal(await confirmPluginInterruption(deps(answers, "zh-CN"), ["minih.terminal"]), true);
   const { options } = dialog.calls[0];
   assert.equal(options.title, "插件仍有工作在进行");
   assert.match(options.detail, /仍有 1 个 shell 在运行/);
@@ -78,11 +78,11 @@ test("accepting continues, and the copy follows the app language", async () => {
 
 test("a duplicate request joins the open prompt instead of stacking one", async () => {
   dialog.response = 0;
-  const answers = { "pi.terminal": "Terminal: 1 shell is still running." };
+  const answers = { "minih.terminal": "Terminal: 1 shell is still running." };
   const shared = deps(answers);
   const [first, second] = await Promise.all([
-    confirmPluginInterruption(shared, ["pi.terminal"]),
-    confirmPluginInterruption(shared, ["pi.terminal"]),
+    confirmPluginInterruption(shared, ["minih.terminal"]),
+    confirmPluginInterruption(shared, ["minih.terminal"]),
   ]);
   assert.equal(first, false);
   assert.equal(second, false);
@@ -91,8 +91,8 @@ test("a duplicate request joins the open prompt instead of stacking one", async 
 
 test("only the plugins that answered are mentioned", async () => {
   dialog.response = 1;
-  const answers = { "pi.terminal": "Terminal: 1 shell is still running.", "acme.git": null };
-  await confirmPluginInterruption(deps(answers), ["pi.terminal", "acme.git", ""]);
+  const answers = { "minih.terminal": "Terminal: 1 shell is still running.", "acme.git": null };
+  await confirmPluginInterruption(deps(answers), ["minih.terminal", "acme.git", ""]);
   const { options } = dialog.calls[0];
   assert.match(options.detail, /Terminal: 1 shell is still running\./);
   assert.equal(options.detail.match(/•/g).length, 1);

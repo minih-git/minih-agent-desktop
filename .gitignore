@@ -86,6 +86,3 @@ google-services.json
 # A service-account key is a credential for the whole Firebase project, not just
 # this app; it belongs on the Gateway host and nowhere near a checkout.
 *firebase-adminsdk*.json
-
-# Packaged plugin artifacts (built by pi-plugin pack).
-*.piplug
