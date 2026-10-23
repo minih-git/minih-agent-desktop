@@ -446,7 +446,7 @@ shared capability contract:
 | Model menu | Composer-right model × reasoning chip | configured provider/model choices + settings entry (D091) |
 | Account menu | bottom-left sidebar account button | Saved identity, balance/quotas, Manage account, Settings, Cloud sync |
 | Notification inbox | sidebar footer bell | All/Unread views over every durable row — completed, failed, and pending `prompt.*` reminders (D663/D664) — with mark-all-read and clear actions (D130/D117) |
-| Toasts | events (plugin toast, backend restored, copy) | top-center; 4s default, 8s for errors |
+| Toasts | events (plugin toast, backend restored, copy) | right-side stack anchored to the live main-content area, newest first; info/success 4s, warnings/errors sticky |
 | Project switcher | empty-home underlined project name | sidebar open projects + search + clone git project + open project |
 
 ## 5. Navigation model

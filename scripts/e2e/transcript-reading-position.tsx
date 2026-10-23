@@ -1,6 +1,6 @@
-import { useRef } from "react";
+import { useCallback, useRef } from "react";
 import { useTranscriptReadingPosition } from "../../apps/desktop/src/hooks/use-transcript-reading-position";
-import { sessionReadingState } from "../../apps/desktop/src/lib/transcript-reading-position";
+import { sessionReadingState, type TranscriptReadingPosition } from "../../apps/desktop/src/lib/transcript-reading-position";
 import "./session-reading-position";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
@@ -16,6 +16,8 @@ const messages: UiMessage[] = Array.from({ length: 100 }, (_, index) => ({
   createdAt: "2026-09-01T00:00:00Z", status: "complete",
 }));
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+let finishDeferredRestore: ((found: boolean) => void) | undefined;
+let deferredRestoreAborted = false;
 function assert(condition: unknown, label: string): asserts condition {
   if (!condition) throw new Error(label);
 }
@@ -36,10 +38,17 @@ function Row({ message }: { message: UiMessage }) {
 }
 
 function Pane({ id, visible, running }: { id: string; visible: boolean; running: boolean }) {
+  const onRestoreReading = useCallback((position: TranscriptReadingPosition, signal: AbortSignal) => {
+    if (id === "G") return new Promise<boolean>((resolve) => {
+      finishDeferredRestore = resolve;
+      signal.addEventListener("abort", () => { deferredRestoreAborted = true; }, { once: true });
+    });
+    return Promise.resolve(!signal.aborted && messages.some((message) => message.id === position.messageId));
+  }, [id]);
   const scroll = useTranscriptScroll({
     sessionId: id, messages, hasMoreBefore: false, isRunning: running,
     askPending: false, approvalPending: false, paneVisible: visible,
-    searchTarget: null, readingWindow: false,
+    searchTarget: null, readingWindow: false, onRestoreReading,
   });
   const rows = transcriptEntryMessages(scroll.tailEntry
     ? [...scroll.historyEntries, scroll.tailEntry] : scroll.historyEntries);
@@ -150,6 +159,23 @@ globalThis.transcriptReadingPositionProbe = async () => {
     running = false;
     select("A");
     await until(() => bottom(scroller("A")), "pinned revisit follows latest");
+    sessionReadingState("G").position = {
+      pinned: false, messageId: "m10", offset: 24, scrollTop: 650, windowSize: 60,
+    };
+    select("G");
+    await until(() => finishDeferredRestore !== undefined, "historical restore lookup starts");
+    const deferredScroller = scroller("G");
+    assert(!deferredScroller.querySelector('[data-message-id="m10"]'),
+      "the deferred restore anchor must be outside the mounted window");
+    const initialTop = deferredScroller.scrollTop;
+    for (let frameIndex = 0; frameIndex < 3; frameIndex++) await frame();
+    assert(Math.abs(deferredScroller.scrollTop - initialTop) < 2,
+      "the saved offset must wait until the restore lookup completes");
+    assert(!deferredRestoreAborted, "the alignment deadline must not abort a pending history lookup");
+    finishDeferredRestore(true);
+    finishDeferredRestore = undefined;
+    await until(() => Math.abs(deferredScroller.scrollTop - 650) < 2,
+      "the saved offset applies after a successful restore lookup");
     return { ok: true, warmOffset: 650, restoredOffset, panes: host.querySelectorAll("[data-pane]").length };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.stack : String(error) };

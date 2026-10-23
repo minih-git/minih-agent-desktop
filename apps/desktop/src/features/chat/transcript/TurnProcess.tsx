@@ -96,6 +96,7 @@ export function TurnProcess({
             { time: formatToolDuration(seconds) },
           )}
         </span>
+        {isActive ? <span className="activity-marker" aria-hidden /> : null}
         {summary.issues > 0 ? (
           <span className="turn-process-error">
             <IconCircleAlert size={14} aria-hidden />

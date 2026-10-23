@@ -1650,37 +1650,40 @@ impl crate::plugins::InstallObserver for RpcInstallObserver {
     }
 }
 
-async fn wait_for_bash_cancellation(
-    receiver: &mut Option<tokio::sync::watch::Receiver<bool>>,
-) -> bool {
-    let Some(receiver) = receiver.as_mut() else {
-        return std::future::pending::<bool>().await;
-    };
-    if *receiver.borrow() {
-        return true;
-    }
-    loop {
-        if receiver.changed().await.is_err() {
-            return std::future::pending::<bool>().await;
-        }
-        if *receiver.borrow() {
-            return true;
-        }
-    }
-}
+use crate::tool_cancellation::{tool_cancellation_requested, wait_for_tool_cancellation};
 
-fn bash_cancellation_requested(receiver: &Option<tokio::sync::watch::Receiver<bool>>) -> bool {
-    receiver.as_ref().is_some_and(|receiver| *receiver.borrow())
+/// The typed `TOOL_ABORTED` result shared by the pre-start cancellation
+/// checks: admission, review-snapshot preparation, and the read-only race.
+fn tool_aborted_result(
+    p: &ToolsExecuteParams,
+    started: std::time::Instant,
+) -> tools::ToolsExecuteResult {
+    tools::ToolsExecuteResult {
+        tool_call_id: p.tool_call_id.clone(),
+        ok: false,
+        is_error: Some(true),
+        content: json!({ "error": "tool aborted", "code": "TOOL_ABORTED" }),
+        duration_ms: started.elapsed().as_millis() as u64,
+        denied: None,
+        error_code: Some("TOOL_ABORTED".into()),
+        command_shell_id: p.expected_command_shell_id.clone(),
+    }
 }
 
 async fn clear_bash_cancellation(state: &Arc<Mutex<AppState>>, p: &ToolsExecuteParams) {
     let mut st = state.lock().await;
     st.clear_bash_cancellation(&p.session_id, &p.tool_call_id);
+    st.tool_cancellations
+        .clear(&p.session_id, &p.tool_call_id, &p.tool_name);
 }
 
-async fn cancel_pending_permission(state: &Arc<Mutex<AppState>>, p: &ToolsExecuteParams) -> bool {
+async fn cancel_pending_permission(
+    state: &Arc<Mutex<AppState>>,
+    p: &ToolsExecuteParams,
+    tool_name: Option<&str>,
+) -> bool {
     let mut st = state.lock().await;
-    st.cancel_pending_permission(&p.session_id, &p.tool_call_id)
+    st.cancel_pending_permission(&p.session_id, &p.tool_call_id, tool_name)
 }
 
 /// Dispatch a `plugin_*` tool to the desktop runner (Electron main), which
@@ -4273,12 +4276,15 @@ async fn handle_request(
             };
 
             // Register before permission evaluation so tools.abort can cancel
-            // an approval wait as well as an already-spawned process.
-            let cancellation_receiver = if remote_workspace.is_some()
-                || matches!(
-                    p.tool_name.as_str(),
-                    "Bash" | "GenerateImages" | "SessionSend" | "SessionCreate"
-                ) {
+            // an approval wait even when the tool does not own a process.
+            // Bash and image generation keep the process registry; background
+            // Bash still registers so its approval phase stays cancellable —
+            // once the task is admitted the detached process survives the
+            // turn's Stop (ADR tool-stop-side-effect-boundaries). Every other
+            // call, including remote workspace tools and the session-delivery
+            // tools, uses the typed registry keyed by tool name.
+            let cancellation_receiver = if matches!(p.tool_name.as_str(), "Bash" | "GenerateImages")
+            {
                 let mut st = state.lock().await;
                 match st.register_bash_cancellation(&p.session_id, &p.tool_call_id) {
                     Ok(receiver) => Some(receiver),
@@ -4301,7 +4307,22 @@ async fn handle_request(
                     }
                 }
             } else {
-                None
+                let mut st = state.lock().await;
+                let shutting_down = st.shutting_down;
+                match st.tool_cancellations.register(
+                    shutting_down,
+                    &p.session_id,
+                    &p.tool_call_id,
+                    &p.tool_name,
+                ) {
+                    Ok(receiver) => Some(receiver),
+                    Err(error_code) if error_code == "HOST_SHUTTING_DOWN" => {
+                        return Err(rpc_err(1001, "host is shutting down", &error_code));
+                    }
+                    Err(error_code) => {
+                        return Err(rpc_err(1008, "tool already executing", &error_code));
+                    }
+                }
             };
 
             let outcome: Result<Value, JsonRpcError> = async {
@@ -4471,6 +4492,7 @@ async fn handle_request(
                             &req.request_id,
                             &req.session_id,
                             &req.tool_call_id,
+                            &req.tool_name,
                         );
                         (
                             None,
@@ -4486,9 +4508,9 @@ async fn handle_request(
 
                 let prompted = request_opt.is_some();
                 let mut permission_cancellation = cancellation_receiver.clone();
-                let mut cancelled = bash_cancellation_requested(&permission_cancellation);
+                let mut cancelled = tool_cancellation_requested(&permission_cancellation);
                 if cancelled {
-                    let _ = cancel_pending_permission(&state, &p).await;
+                    let _ = cancel_pending_permission(&state, &p, Some(&p.tool_name)).await;
                 }
                 if !cancelled {
                     if let Some(req) = request_opt {
@@ -4517,9 +4539,9 @@ async fn handle_request(
                 let final_decision = if cancelled {
                     PermissionDecision::Deny
                 } else if let Some(d) = auto_decision {
-                    cancelled = bash_cancellation_requested(&permission_cancellation);
+                    cancelled = tool_cancellation_requested(&permission_cancellation);
                     if cancelled {
-                        let _ = cancel_pending_permission(&state, &p).await;
+                        let _ = cancel_pending_permission(&state, &p, Some(&p.tool_name)).await;
                         PermissionDecision::Deny
                     } else {
                         d
@@ -4530,8 +4552,9 @@ async fn handle_request(
                             Ok(d) => d,
                             _ => PermissionDecision::Deny,
                         },
-                        _ = wait_for_bash_cancellation(&mut permission_cancellation) => {
-                            let _ = cancel_pending_permission(&state, &p).await;
+                        _ = wait_for_tool_cancellation(&mut permission_cancellation) => {
+                            let _ =
+                                cancel_pending_permission(&state, &p, Some(&p.tool_name)).await;
                             cancelled = true;
                             PermissionDecision::Deny
                         },
@@ -4539,16 +4562,16 @@ async fn handle_request(
                 } else {
                     PermissionDecision::Deny
                 };
-                cancelled = cancelled || bash_cancellation_requested(&permission_cancellation);
+                cancelled = cancelled || tool_cancellation_requested(&permission_cancellation);
                 if cancelled {
-                    let _ = cancel_pending_permission(&state, &p).await;
+                    let _ = cancel_pending_permission(&state, &p, Some(&p.tool_name)).await;
                 }
                 // Everything up to here is approval: the auto-decision path costs
                 // microseconds, the prompt path costs however long the user took.
                 let permission_wait_ms = call_started.elapsed().as_millis() as u64;
 
                 if matches!(final_decision, PermissionDecision::Deny) {
-                    let _ = cancel_pending_permission(&state, &p).await;
+                    let _ = cancel_pending_permission(&state, &p, Some(&p.tool_name)).await;
                     let st = state.lock().await;
                     let mut denied_audit = json!({
                         "toolName": p.tool_name,
@@ -4629,12 +4652,24 @@ async fn handle_request(
                     );
                     (st.tool_budget.clone(), own)
                 };
-                let admitted = if own_worktree {
-                    tool_budget
-                        .acquire_in_own_worktree(&p.session_id, &p.tool_name)
-                        .await
-                } else {
-                    tool_budget.acquire(&p.session_id, &p.tool_name).await
+                // A queued call must not start after Stop was acknowledged:
+                // race the admission wait against the same cancellation. A
+                // dropped acquire future removes its queue entry itself.
+                let mut admission_cancellation = cancellation_receiver.clone();
+                let admitted = tokio::select! {
+                    result = async {
+                        if own_worktree {
+                            tool_budget
+                                .acquire_in_own_worktree(&p.session_id, &p.tool_name)
+                                .await
+                        } else {
+                            tool_budget.acquire(&p.session_id, &p.tool_name).await
+                        }
+                    } => result,
+                    _ = wait_for_tool_cancellation(&mut admission_cancellation) => {
+                        return serde_json::to_value(tool_aborted_result(&p, call_started))
+                            .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"));
+                    }
                 };
                 let _tool_permit = match admitted {
                     Ok(permit) => permit,
@@ -4703,6 +4738,17 @@ async fn handle_request(
                         None
                     })
                 };
+                // Last gate before the mutation starts: an abort that landed
+                // during admission or snapshot preparation must discard the
+                // prepared review evidence and never run the body. A call that
+                // is already mutating below is awaited instead.
+                if tool_cancellation_requested(&cancellation_receiver) {
+                    if let Some(pending) = pending_review {
+                        review::discard_change(pending);
+                    }
+                    return serde_json::to_value(tool_aborted_result(&p, call_started))
+                        .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"));
+                }
                 let mut bash_options = None;
                 if p.tool_name == "Bash" && remote_workspace.is_none() {
                     let (shell_id, cancellation) = {
@@ -4794,7 +4840,7 @@ async fn handle_request(
                     )
                     .await
                 } else {
-                    tools::execute_tool_with_path_access(
+                    let execute = tools::execute_tool_with_path_access(
                         ws_path.as_deref(),
                         scratch_path.as_deref(),
                         &p.tool_name,
@@ -4805,8 +4851,22 @@ async fn handle_request(
                             allow_external_paths: external_path_permission,
                             hashline: Some(hashline_ctx),
                         },
-                    )
-                    .await
+                    );
+                    // Local Read/Glob/Grep are read-only, so Stop may end the
+                    // wait immediately and discard a late result; the blocking
+                    // worker drains on its own. Every mutating or side-effect
+                    // call above is awaited so Stop cannot hide its result.
+                    if matches!(p.tool_name.as_str(), "Read" | "Glob" | "Grep") {
+                        let mut read_cancellation = cancellation_receiver.clone();
+                        tokio::select! {
+                            result = execute => result,
+                            _ = wait_for_tool_cancellation(&mut read_cancellation) => {
+                                tool_aborted_result(&p, call_started)
+                            }
+                        }
+                    } else {
+                        execute.await
+                    }
                 };
                 result.tool_call_id = p.tool_call_id.clone();
 
@@ -4922,8 +4982,25 @@ async fn handle_request(
                 .and_then(|value| value.as_str())
                 .ok_or_else(|| rpc_err(1002, "toolCallId required", "INVALID_PARAMS"))?;
             let mut st = state.lock().await;
-            let permission_found = st.cancel_pending_permission(session_id, tool_call_id);
-            let (process_found, queued) = st.abort_or_queue_bash(session_id, tool_call_id);
+            // Optional toolName keeps the request backwards compatible: an
+            // older caller's untyped abort falls back to the legacy Bash
+            // registry and to whichever typed tool currently holds the id.
+            let tool_name = params.get("toolName").and_then(Value::as_str);
+            let permission_found =
+                st.cancel_pending_permission(session_id, tool_call_id, tool_name);
+            let (cancellation_found, queued) = match tool_name {
+                Some("Bash" | "GenerateImages") => st.abort_or_queue_bash(session_id, tool_call_id),
+                Some(name) => st
+                    .tool_cancellations
+                    .abort_or_queue(session_id, tool_call_id, name),
+                None => {
+                    if st.tool_cancellations.abort_active(session_id, tool_call_id) {
+                        (true, false)
+                    } else {
+                        st.abort_or_queue_bash(session_id, tool_call_id)
+                    }
+                }
+            };
             let remote = match sessions::session_summary(&st.db, session_id)
                 .map_err(|e| rpc_err(1000, e.to_string(), "INTERNAL"))?
             {
@@ -4937,7 +5014,7 @@ async fn handle_request(
                     json!({ "sessionId": session_id, "toolCallId": tool_call_id }),
                 );
             }
-            let found = process_found || permission_found;
+            let found = cancellation_found || permission_found;
             Ok(json!({
                 "ok": true,
                 "found": found,
@@ -7752,6 +7829,65 @@ mod tests {
         assert!(state.lock().await.active_bash_cancellations.is_empty());
     }
 
+    async fn wait_for_tool_registration(
+        state: &Arc<Mutex<AppState>>,
+        session_id: &str,
+        tool_call_id: &str,
+        tool_name: &str,
+    ) {
+        for _ in 0..500 {
+            if state.lock().await.tool_cancellations.contains_active(
+                session_id,
+                tool_call_id,
+                tool_name,
+            ) {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        panic!("{tool_name} cancellation was not registered");
+    }
+
+    async fn assert_tool_registry_empty(state: &Arc<Mutex<AppState>>) {
+        let st = state.lock().await;
+        assert!(
+            st.tool_cancellations.is_empty(),
+            "typed cancellation registry must settle empty"
+        );
+    }
+
+    /// A session bound to `project` with the given permission mode, ready for
+    /// tool-level abort tests.
+    async fn abort_test_session(
+        data_dir: &std::path::Path,
+        project: &std::path::Path,
+        title: &str,
+        permission_mode: &str,
+    ) -> (Arc<Mutex<AppState>>, sessions::SessionSummary) {
+        let mut app_state = AppState::open(data_dir).unwrap();
+        app_state.handshook = true;
+        let session = sessions::create_session(
+            &app_state.db,
+            Some(title.into()),
+            Some("agent".into()),
+            None,
+            None,
+            Some(project.to_string_lossy().into_owned()),
+        )
+        .unwrap();
+        sessions::configure_session_with_thinking(
+            &app_state.db,
+            &session.id,
+            "agent",
+            None,
+            None,
+            None,
+            Some(permission_mode),
+        )
+        .unwrap();
+        (Arc::new(Mutex::new(app_state)), session)
+    }
+
     #[test]
     fn control_stdio_treats_os_resource_pressure_as_transient() {
         assert!(super::is_transient_io_error(&io::Error::from(
@@ -9363,6 +9499,369 @@ mod tests {
             "aborted descendants must not write later"
         );
         assert_bash_registry_empty(&state).await;
+    }
+
+    /// A typed abort during a pending Write approval cancels the request; a
+    /// late "allow" cannot create the write afterwards, and the aborted call
+    /// never starts (ADR tool-stop-side-effect-boundaries).
+    #[tokio::test]
+    async fn tools_abort_cancels_a_pending_write_approval_before_it_can_mutate_files() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let project = data_dir.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let destination = project.join("must-not-exist.txt");
+        let destination_for_tool = destination.to_string_lossy().into_owned();
+        let (state, session) =
+            abort_test_session(data_dir.path(), &project, "Abort pending Write", "ask").await;
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let pending_state = state.clone();
+        let pending_session_id = session.id.clone();
+        let pending = tokio::spawn(async move {
+            handle_request(
+                pending_state,
+                "tools.execute",
+                json!({
+                    "sessionId": pending_session_id,
+                    "toolCallId": "write-stop-pending-approval",
+                    "toolName": "Write",
+                    "args": {
+                        "path": destination_for_tool,
+                        "content": "must not be written"
+                    },
+                    "mode": "agent"
+                }),
+                tx,
+            )
+            .await
+        });
+        wait_for_tool_registration(&state, &session.id, "write-stop-pending-approval", "Write")
+            .await;
+        let permission: Value = serde_json::from_str(
+            &tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(permission["method"], "permissions.request");
+
+        let aborted = handle_request(
+            state.clone(),
+            "tools.abort",
+            json!({
+                "sessionId": session.id,
+                "toolCallId": "write-stop-pending-approval",
+                "toolName": "Write"
+            }),
+            mpsc::unbounded_channel().0,
+        )
+        .await
+        .unwrap();
+        assert_eq!(aborted["found"], true);
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), pending)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(result["errorCode"], "TOOL_ABORTED");
+        assert!(
+            !destination.exists(),
+            "an aborted pending Write must never touch the file"
+        );
+        assert_bash_registry_empty(&state).await;
+        assert_tool_registry_empty(&state).await;
+
+        let late_resolution = handle_request(
+            state,
+            "permissions.resolve",
+            json!({
+                "requestId": permission["params"]["requestId"],
+                "decision": "allow-once"
+            }),
+            mpsc::unbounded_channel().0,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(late_resolution.data.unwrap()["errorCode"], "NOT_FOUND");
+    }
+
+    /// A call queued for execution capacity is cancelled by Stop instead of
+    /// starting once capacity returns.
+    #[tokio::test]
+    async fn tools_abort_cancels_a_queued_tool_before_admission_starts_it() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let project = data_dir.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let destination = project.join("queued.txt");
+        let destination_for_tool = destination.to_string_lossy().into_owned();
+        let (state, session) =
+            abort_test_session(data_dir.path(), &project, "Abort queued Write", "auto").await;
+
+        // Hold both global mutation slots so the call must queue.
+        let budget = state.lock().await.tool_budget.clone();
+        let mut holders = Vec::new();
+        for holder_session in ["holder-a", "holder-b"] {
+            holders.push(budget.acquire(holder_session, "Write").await.unwrap());
+        }
+
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let pending_state = state.clone();
+        let pending_session_id = session.id.clone();
+        let pending = tokio::spawn(async move {
+            handle_request(
+                pending_state,
+                "tools.execute",
+                json!({
+                    "sessionId": pending_session_id,
+                    "toolCallId": "write-stop-queued",
+                    "toolName": "Write",
+                    "args": {
+                        "path": destination_for_tool,
+                        "content": "must not be written"
+                    },
+                    "mode": "agent"
+                }),
+                tx,
+            )
+            .await
+        });
+        wait_for_tool_registration(&state, &session.id, "write-stop-queued", "Write").await;
+
+        let aborted = handle_request(
+            state.clone(),
+            "tools.abort",
+            json!({
+                "sessionId": session.id,
+                "toolCallId": "write-stop-queued",
+                "toolName": "Write"
+            }),
+            mpsc::unbounded_channel().0,
+        )
+        .await
+        .unwrap();
+        assert_eq!(aborted["found"], true);
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), pending)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(result["errorCode"], "TOOL_ABORTED");
+        drop(holders);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(
+            !destination.exists(),
+            "a cancelled queued call must never start"
+        );
+        assert_bash_registry_empty(&state).await;
+        assert_tool_registry_empty(&state).await;
+    }
+
+    /// An abort that races ahead of `tools.execute` tombstones the typed key,
+    /// so the local read starts already cancelled and its late result is
+    /// discarded instead of leaking into the settled turn.
+    #[tokio::test]
+    async fn tools_abort_before_execute_discards_the_local_read_result() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let project = data_dir.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        fs::write(project.join("notes.txt"), "secret content").unwrap();
+        let (state, session) =
+            abort_test_session(data_dir.path(), &project, "Abort early Read", "auto").await;
+
+        handle_request(
+            state.clone(),
+            "tools.abort",
+            json!({
+                "sessionId": session.id,
+                "toolCallId": "read-stop-early",
+                "toolName": "Read"
+            }),
+            mpsc::unbounded_channel().0,
+        )
+        .await
+        .unwrap();
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            handle_request(
+                state.clone(),
+                "tools.execute",
+                json!({
+                    "sessionId": session.id,
+                    "toolCallId": "read-stop-early",
+                    "toolName": "Read",
+                    "args": { "path": "notes.txt" },
+                    "mode": "agent"
+                }),
+                mpsc::unbounded_channel().0,
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(result["errorCode"], "TOOL_ABORTED");
+        assert!(
+            !result.to_string().contains("secret content"),
+            "a cancelled read must not return its content"
+        );
+        assert_bash_registry_empty(&state).await;
+        assert_tool_registry_empty(&state).await;
+    }
+
+    /// A background Bash call keeps its approval cancellable, and an admitted
+    /// background task survives the turn's Stop until its own explicit stop.
+    #[tokio::test]
+    async fn background_bash_approval_is_cancellable_and_admitted_task_survives_abort() {
+        let Some(shell_id) = available_test_shell_id() else {
+            return;
+        };
+        let data_dir = tempfile::tempdir().unwrap();
+        let project = data_dir.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let (state, session) =
+            abort_test_session(data_dir.path(), &project, "Background abort", "ask").await;
+        let dialect = crate::tools::shell::dialect_for_id(&shell_id);
+
+        // Approval phase: Stop cancels the request and starts no process.
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let pending_state = state.clone();
+        let pending_session_id = session.id.clone();
+        let pending_shell_id = shell_id.clone();
+        let pending_dialect = dialect;
+        let pending = tokio::spawn(async move {
+            handle_request(
+                pending_state,
+                "tools.execute",
+                json!({
+                    "sessionId": pending_session_id,
+                    "toolCallId": "background-approval-stop",
+                    "toolName": "Bash",
+                    "args": { "command": sleeping_bash_command() },
+                    "expectedCommandShellId": pending_shell_id,
+                    "expectedCommandShellDialect": pending_dialect,
+                    "runInBackground": true,
+                    "mode": "agent"
+                }),
+                tx,
+            )
+            .await
+        });
+        let permission: Value = serde_json::from_str(
+            &tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(permission["method"], "permissions.request");
+        let aborted = handle_request(
+            state.clone(),
+            "tools.abort",
+            json!({
+                "sessionId": session.id,
+                "toolCallId": "background-approval-stop",
+                "toolName": "Bash"
+            }),
+            mpsc::unbounded_channel().0,
+        )
+        .await
+        .unwrap();
+        assert_eq!(aborted["aborted"], true);
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), pending)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(result["errorCode"], "TOOL_ABORTED");
+        {
+            let st = state.lock().await;
+            assert_eq!(
+                st.background_tasks.running_count(),
+                0,
+                "a cancelled approval must not leave a background task"
+            );
+        }
+        assert_bash_registry_empty(&state).await;
+        assert_tool_registry_empty(&state).await;
+
+        // Admitted phase: the detached task outlives the turn's abort and is
+        // stopped only by its own explicit backgroundTasks.stop.
+        sessions::configure_session_with_thinking(
+            &state.lock().await.db,
+            &session.id,
+            "agent",
+            None,
+            None,
+            None,
+            Some("auto"),
+        )
+        .unwrap();
+        let started = handle_request(
+            state.clone(),
+            "tools.execute",
+            json!({
+                "sessionId": session.id,
+                "toolCallId": "background-survivor",
+                "toolName": "Bash",
+                "args": { "command": sleeping_bash_command() },
+                "expectedCommandShellId": shell_id,
+                "expectedCommandShellDialect": dialect,
+                "runInBackground": true,
+                "mode": "agent"
+            }),
+            mpsc::unbounded_channel().0,
+        )
+        .await
+        .unwrap();
+        assert_eq!(started["ok"], true);
+        let task_id = started["content"]["backgroundTaskId"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let turn_abort = handle_request(
+            state.clone(),
+            "tools.abort",
+            json!({
+                "sessionId": session.id,
+                "toolCallId": "background-survivor",
+                "toolName": "Bash"
+            }),
+            mpsc::unbounded_channel().0,
+        )
+        .await
+        .unwrap();
+        assert_eq!(turn_abort["found"], false);
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        {
+            let st = state.lock().await;
+            assert_eq!(
+                st.background_tasks.running_count(),
+                1,
+                "an admitted background task survives the turn abort"
+            );
+        }
+
+        let stopped = handle_request(
+            state.clone(),
+            "backgroundTasks.stop",
+            json!({ "id": task_id }),
+            mpsc::unbounded_channel().0,
+        )
+        .await
+        .unwrap();
+        assert_eq!(stopped["found"], true);
+        let mut settled = false;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            if state.lock().await.background_tasks.running_count() == 0 {
+                settled = true;
+                break;
+            }
+        }
+        assert!(settled, "the explicit stop must terminate the task");
+        assert_bash_registry_empty(&state).await;
+        assert_tool_registry_empty(&state).await;
     }
 
     #[tokio::test]

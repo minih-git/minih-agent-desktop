@@ -329,6 +329,7 @@ ADR 记录那些不应被静默改变的架构选择。中文入口与英文索�
 | 0334 | [把对话里选中的一段文字引用到输入框](/adr/0334-selection-quote-into-composer) | 已接受（2026-10-20；取代 ADR 0268 第 2 条；注释与侧聊保持删除） |
 | 0335 | [插件可以在工作面板的浏览器视图里打开本地文件](/adr/0335-plugin-open-local-file-in-work-panel) | 已接受（2026-10-21；复用 browser.cdp 权限） |
 | 0337 | [在回答里就地渲染 html 围栏](/adr/0337-html-fence-preview) | 已接受（2026-10-21；按界面显式开启；脚本默认关闭，需读者手动打开） |
+| tool-stop-side-effect-boundaries | [用户停止时的工具副作用边界](/adr/tool-stop-side-effect-boundaries) | 已接受实施（2026-10-23；修订 03-tools-and-permissions §3 与 06-host-rpc-protocol §5） |
 
 ## 什么时候看 ADR
 

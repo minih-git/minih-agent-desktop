@@ -60,6 +60,8 @@ type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 type ActivityItem = AssistantActivityItem;
 
+const AUTOMATIC_OPEN_MAX_ITEMS = 4;
+
 export function activityItemDetail(item: ActivityItem): string {
   if (item.kind === "hostedSearch") return item.round.query ?? "";
   if (item.kind === "thinking") {
@@ -271,8 +273,12 @@ export const ActivityGroup = memo(function ActivityGroup({
     ? searchTarget.requestId : undefined, [items, searchTarget]);
   const visibleItems = useMemo(() => cachedVisibleActivityItems(items, hideThinking, isActive), [items, hideThinking, isActive]);
   const first = items[0];
+  // Groups frame their rows; each tool or search payload keeps its own
+  // disclosure, so leaving a small group open does not reveal tool details.
+  const automaticallyOpen = hasSubagentTopology || live || visibleItems.length <= AUTOMATIC_OPEN_MAX_ITEMS;
+  const thinkingDefaultOpen = !flat || openDetails;
   const disclosure = useAutomaticDisclosure(
-    hasSubagentTopology ? live : visibleItems.length <= 1 || live,
+    automaticallyOpen,
     revealRequest,
     disclosureKey("activity", first?.message.id ?? "", first?.kind ?? "", first?.kind === "hostedSearch" ? first.round.id : ""),
   );
@@ -351,6 +357,7 @@ export const ActivityGroup = memo(function ActivityGroup({
     delegationStatuses={delegationStatuses}
     delegationTimings={delegationTimings}
     openDetails={openDetails}
+    thinkingDefaultOpen={thinkingDefaultOpen}
     dense={dense}
     onUserInteraction={claimDisclosure}
   />;
@@ -402,6 +409,7 @@ export const ActivityGroup = memo(function ActivityGroup({
         <span className={`tool-activity-label ${live ? "running" : ""}`}>
           {label}
         </span>
+        {live ? <span className="activity-marker" aria-hidden /> : null}
         {hasSubagentTopology ? (
           <span className="subagent-activity-metrics">
             {t("chat.subagentCount", { count: subagentSummary.total })}

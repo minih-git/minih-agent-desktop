@@ -12,13 +12,12 @@
   content-visibility: auto;
   contain-intrinsic-size: auto 140px;
   /* Paint containment clips descendants to the padding box, which squared off
-     the deliberate bleed of the disclosure row chrome: the activity header
-     pulls its hover fill 3px past the column edge and a run row's head 4px, so
-     the icon can sit on the text's alignment line while the fill keeps its
-     padding, and the focus ring reaches 3.5px beyond its own box. 8px covers
-     the widest of them. .tool-activity-group clips the same chrome and carries
-     the same margin. */
-  overflow-clip-margin: 8px;
+     the deliberate bleed of the disclosure row chrome: both disclosure headers
+     pull their hover fill 4px past the column edge, and the two collapse-rail
+     controls occupy separate 14px lanes in the gutter. 34px covers the outer
+     lane. .tool-activity-group keeps its own clip for the subagent card
+     chrome. */
+  overflow-clip-margin: 34px;
 }
 
 .message-row.user {
@@ -681,16 +680,16 @@
   color: var(--ds-text-secondary);
 }
 
-.tool-activity-label.running::after,
-.tool-row-name.running::after {
-  display: inline-block;
+/* The live marker is a real flex sibling of the label. A generated inline box
+   had to be aligned by hand and drifted off the row centre inside the label's
+   ellipsis box; as a flex item it is centred by the header's own alignment and
+   spaced by its gap. */
+.activity-marker {
+  flex: none;
   width: 4px;
   height: 4px;
-  margin-inline-start: 6px;
-  vertical-align: middle;
   border-radius: var(--radius-round);
   background: var(--ds-text-secondary);
-  content: "";
   animation: activity-marker-pulse 1s var(--motion-ease-standard) infinite;
 }
 
@@ -749,6 +748,38 @@
 .review-change-card.is-compact {
   width: 100%;
   margin: 0;
+}
+
+/* In the transcript the review card is the tool row itself: it claims the full
+   band, drops the transcript inset, and puts the diff body directly beneath the
+   only header. Header order follows the file-ledger row: mark, path, counts,
+   caret. The panel keeps its existing caret-first order. */
+.review-change-card.is-tool-row {
+  width: 100%;
+  margin: 3px 0;
+}
+
+.review-change-card.is-tool-row .review-change-card-mark {
+  order: 0;
+}
+
+.review-change-card.is-tool-row .review-change-card-path {
+  order: 1;
+}
+
+.review-change-card.is-tool-row .review-change-card-counts {
+  order: 2;
+}
+
+.review-change-card.is-tool-row .review-change-card-caret {
+  order: 3;
+  /* This is now the row's only disclosure affordance, so it keeps the
+     tool-row caret's resting visibility instead of the old card's hidden one. */
+  opacity: 0.65;
+}
+
+.review-change-card.is-tool-row .review-change-card-body {
+  margin-left: 0;
 }
 
 .review-change-card-header {
@@ -879,7 +910,8 @@
   padding-inline: 4px;
 }
 
-.review-change-rollback {
+.review-change-rollback,
+.review-change-copy {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -893,7 +925,8 @@
     color var(--motion-duration-fast) var(--motion-ease-out);
 }
 
-.review-change-rollback:hover:not(:disabled) {
+.review-change-rollback:hover:not(:disabled),
+.review-change-copy:hover:not(:disabled) {
   background: var(--ds-bg-hover);
   color: var(--ds-text-primary);
 }
@@ -901,6 +934,15 @@
 .review-change-rollback:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+.review-change-copy:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.review-change-copy.copied {
+  color: var(--ds-success);
 }
 
 .review-change-state {
@@ -2017,8 +2059,10 @@
   align-items: center;
   gap: 5px;
   border-radius: var(--radius-sm);
-  margin: 0 -3px;
-  padding: 2px 5px;
+  /* Same inline geometry as a tool row's header: the icon and label sit on the
+     prose edge, while the hover fill bleeds 4px into the gutter. */
+  margin: 0 -4px;
+  padding: 2px 4px;
   color: var(--ds-text-secondary);
   font-size: var(--text-sm-plus);
   text-align: left;
@@ -2609,6 +2653,11 @@
   padding: 2px 0;
 }
 
+/* Leaf commands sit one step below the turn and group titles. */
+.tool-row-head.is-run .tool-row-name {
+  font-size: var(--text-sm);
+}
+
 .tool-row-head.is-run .tool-row-header:hover {
   background: transparent;
 }
@@ -2883,6 +2932,30 @@
 .disclosure-collapse-rail:focus-visible {
   outline: 2px solid color-mix(in oklab, var(--ds-accent) 58%, transparent);
   outline-offset: -2px;
+}
+
+/* The turn body carries no content indent, so its rail keeps the outer lane.
+   A grouped body indents its child rows by 12px, and its rail sits in that
+   gutter; expanding a group never puts two hit targets on the same pixels.
+   Tool-row detail rails keep their tighter inset. */
+.turn-process-body > .disclosure-collapse-rail {
+  left: -32px;
+  width: 14px;
+  min-width: 14px;
+}
+
+.process-activity-body > .disclosure-collapse-rail {
+  left: -12px;
+  width: 14px;
+  min-width: 14px;
+}
+
+/* Keep the visible bar next to the content while the hit target extends into
+   the gutter. */
+.turn-process-body > .disclosure-collapse-rail::before,
+.process-activity-body > .disclosure-collapse-rail::before {
+  right: 0;
+  left: auto;
 }
 
 /*
@@ -3402,7 +3475,11 @@
 
 .turn-process-body {
   position: relative;
-  padding-left: 18px;
+  /* The turn's process and its group headers share one left edge. A nested
+     group restores the released v0.20.1 hierarchy below that header: its body
+     indents child rows by 12px and keeps the group's collapse rail in the
+     gutter, so the transcript never becomes an indenting staircase. */
+  padding-left: 0;
 }
 
 .turn-process-body[hidden],
@@ -3421,6 +3498,18 @@
   margin-block: 6px;
 }
 
+/* The turn's own title is the strongest level; a nested group is smaller and
+   quieter, while leaf run rows keep tool-row secondary text. Its body adds the
+   released 12px indent below the group header. */
+.process-activity-group > .tool-activity-header {
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm);
+}
+
+.process-activity-group > .tool-activity-header:hover {
+  color: var(--ds-text-primary);
+}
+
 .process-activity-body {
   position: relative;
   min-width: 0;
@@ -3428,6 +3517,8 @@
 
 .process-activity-group.grouped > .process-activity-body {
   margin-block: 3px 6px;
+  /* Child tool rows sit one 12px step inside the group header; the group's
+     collapse rail lives in that gutter. No further nesting level is added. */
   padding-inline-start: 12px;
 }
 

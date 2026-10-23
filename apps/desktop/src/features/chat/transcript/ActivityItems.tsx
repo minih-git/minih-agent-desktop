@@ -1,6 +1,7 @@
-import { Fragment, memo } from "react";
+import { memo } from "react";
 import type { AssistantActivityItem } from "../../../lib/assistant-turns";
 import { isDelegationActivityItem, type DelegationActivityItem, type SubagentOutcome, type SubagentTiming } from "../../../lib/subagent-topology";
+import { reviewChangeFromMessage } from "../../../lib/workspace-review";
 import { ReviewChangeCard } from "../../../components/ReviewChangeCard";
 import { ThinkingRow } from "./shared";
 import { HostedSearchRow } from "./HostedSearchRow";
@@ -23,6 +24,8 @@ type ActivityItemsProps = {
   delegationTimings: ReadonlyMap<string, SubagentTiming>;
   /** Detailed density: open tool details and completed reasoning rows. */
   openDetails?: boolean;
+  /** Compact and detailed expand every visible Thinking row by default. */
+  thinkingDefaultOpen?: boolean;
   /** One-line step rows, used inside a folded turn. */
   dense?: boolean;
   onUserInteraction: () => void;
@@ -38,7 +41,7 @@ type ActivityItemBlockProps = Omit<ActivityItemsProps, "items" | "delegateItems"
 };
 
 const ActivityItemBlock = memo(function ActivityItemBlock({
-  block, isActive, live, lastItem, topologyItem, openDetails, dense,
+  block, isActive, live, lastItem, topologyItem, openDetails, thinkingDefaultOpen, dense,
   delegateItems, delegationStatuses, delegationTimings, onUserInteraction,
 }: ActivityItemBlockProps) {
   return <>{block.items.map((item) => {
@@ -56,16 +59,30 @@ const ActivityItemBlock = memo(function ActivityItemBlock({
       />;
     }
     // A tool row starts collapsed unless the density asks for details: only the
-    // user opens a payload, and `detailed` is that request made once for all.
-    if (item.kind === "tool") return (
-      <Fragment key={item.message.id}>
-        <ToolRow imagesInTurn message={item.message}
+    // user opens a payload, and `detailed` is that request made once for all. A
+    // review-backed edit is already a complete tool-level row (file header +
+    // diff body), so rendering the generic tool row above it would repeat the
+    // file header.
+    if (item.kind === "tool") {
+      if (reviewChangeFromMessage(item.message)) {
+        return <ReviewChangeCard
+          key={item.message.id}
+          message={item.message}
+          asToolRow
           autoOpen={openDetails}
-          dense={dense}
-          onUserInteraction={onUserInteraction} {...(item.delegate ? { delegate: item.delegate } : {})} />
-        <ReviewChangeCard message={item.message} />
-      </Fragment>
-    );
+          onUserInteraction={onUserInteraction}
+        />;
+      }
+      return <ToolRow
+        key={item.message.id}
+        imagesInTurn
+        message={item.message}
+        autoOpen={openDetails}
+        dense={dense}
+        onUserInteraction={onUserInteraction}
+        {...(item.delegate ? { delegate: item.delegate } : {})}
+      />;
+    }
     if (item.kind === "hostedSearch") return <HostedSearchRow
       key={`hosted-search-${item.message.id}-${item.round.id}`}
       messageId={item.message.id}
@@ -77,7 +94,7 @@ const ActivityItemBlock = memo(function ActivityItemBlock({
       key={`thinking-${item.message.id}`}
       message={item.message}
       streaming={isActive && item.message.status === "streaming"}
-      autoOpen={openDetails || (live && item === lastItem)}
+      autoOpen={thinkingDefaultOpen || openDetails || (live && item === lastItem)}
       onUserInteraction={onUserInteraction}
     />;
   })}</>;
@@ -96,6 +113,7 @@ export const ActivityItems = memo(function ActivityItems({ items, ...context }: 
       isActive={context.isActive}
       live={context.live}
       openDetails={context.openDetails}
+      thinkingDefaultOpen={context.thinkingDefaultOpen}
       dense={context.dense}
       lastItem={ownsLast ? lastItem : undefined}
       topologyItem={ownsTopology ? topologyItem : undefined}

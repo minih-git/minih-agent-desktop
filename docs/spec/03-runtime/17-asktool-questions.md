@@ -43,6 +43,14 @@ There is no timer, countdown, or automatic expiration. The card remains pending
 until the user submits or the turn is stopped. If the turn is stopped while a
 card is open, the runtime resolves every remaining question as skipped.
 
+The question index and draft answers belong to the pending request, not to the
+mounted card instance. They are kept by `requestId` in renderer memory, so
+switching sessions and returning to the same ask restores the open question and
+every answer already entered. Submission state stays local to the mounted card.
+A draft is dropped when the ask is resolved or dismissed, when its tool call
+completes, or when the session's pending asks are cleared. Drafts do not survive
+an application restart.
+
 When an ask arrives, the app shows a sticky in-app toast with a stable
 localized prompt title and the first question; the toast stays until the
 question is answered, declined, or dismissed. The same event records one

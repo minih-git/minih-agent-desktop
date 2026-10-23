@@ -69,3 +69,23 @@ test("a duplicate dispatch does not remove the original call's cancellation owne
   assert.equal(f.aborted.length, 1);
   assert.equal(f.replies.find(reply => reply.params.requestId === "request").params.result.errorCode, "TOOL_ABORTED");
 });
+
+for (const toolName of ["Write", "Edit"]) {
+  for (const ok of [true, false]) {
+    test(`Stop waits for an admitted remote ${toolName} and preserves its ${ok ? "success" : "failure"}`, async () => {
+      let settle;
+      const f = fixture(() => new Promise((resolve) => { settle = resolve; }));
+      const mutation = { ...request, toolName };
+      const pending = f.relay.execute(mutation);
+      f.relay.cancel(mutation);
+      assert.equal(f.replies.length, 0, "no completion precedes the remote result");
+      assert.equal(f.aborted.length, 0, "a started mutation is not abandoned");
+      const result = ok
+        ? { ok: true, content: { path: "changed.txt", text: "mutation settled" } }
+        : { ok: false, errorCode: "EDIT_FAILED", content: { error: "remote mutation failed" } };
+      settle(result);
+      await pending;
+      assert.deepEqual(f.replies, [{ method: "tools.remoteComplete", params: { requestId: request.requestId, result } }]);
+    });
+  }
+}

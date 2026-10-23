@@ -72,7 +72,14 @@ request. It does not cancel an active provider stream or running tool. An idle
 runtime returns `{ requested: false }`; immediate `abort()` remains the
 separate cancellation path. `abort()` resolves only after the named active
 operation has completed its cancellation cleanup, so the same runtime can
-accept a follow-up prompt as soon as the abort request returns.
+accept a follow-up prompt as soon as the abort request returns. It also drives
+the in-flight tools directly rather than relying only on the signal each tool
+was handed: local read-only waits may end immediately, while process tools
+retain a bounded 10-second output-drain grace. Started mutating, MCP, plugin,
+session-delivery and remote-write calls await their result before turn settlement.
+The detailed boundary is [ADR tool-stop-side-effect-boundaries].
+
+[ADR tool-stop-side-effect-boundaries]: ../../adr/tool-stop-side-effect-boundaries.md
 
 ### 4.0 Active-turn steering
 
@@ -417,7 +424,12 @@ rebuild wins.
 
 If the re-run is silent too, the turn ends as a visible assistant error with
 retriable `EMPTY_MODEL_RESPONSE`, which gives the transcript its normal retry
-action. No empty assistant message is persisted in either case.
+action. Event persistence drops an ordinary assistant message that has no
+visible text, no stored reasoning, no tool call and no structured error
+payload, whatever its completion status; tool rows, structured errors, steering
+placeholders and the trusted completion reply below are retained. A content-less
+completed row therefore cannot accumulate through provider retries or grow the
+next request.
 
 A Host-ledger completion notice (ADR 0239, D446) is the narrow exception:
 its prompt already permits no acknowledgement. Main resolves the queued message
@@ -439,12 +451,15 @@ keeps its full re-run and error path. Every new run recomputes it from the
 prompt's provenance. Ordinary user input, task/message deliveries, copied
 source framing, and restored history cannot enable it.
 
-An accepted silent reply is still not worth resending. Main persists it as an
-empty completed row (the transcript hides it and the host stores no text), but
-the runtime keeps it out of its entries and out of pi's transcript state, and
-the context projection drops any assistant with no content blocks, exactly as
-a restored transcript already did. The next provider request therefore carries
-no empty assistant message.
+An accepted silent reply is still not worth resending. Main retains that reply
+as the one trusted empty completed row (the transcript hides it and the host
+stores no text), but the runtime keeps it out of its entries and out of pi's
+transcript state, and the context projection drops any assistant with no
+content blocks, exactly as a restored transcript already did. The completion
+receipt is spent by the first completed response of the run and revoked by
+accepted steering or turn settlement; after that, an empty ordinary reply is
+dropped like any other. The next provider request therefore carries no empty
+assistant message.
 
 Decision D193 and D446 (ADR 0239 amendment); see E2E-146 and
 E2E-SESSION-completion-notice-allows-silence.
@@ -687,10 +702,17 @@ usable report arrives.
 The provider request layer also caps the concrete output budget before every
 parent, subagent, and one-shot request. It estimates the serialized input with
 the pi-ai chars/4 baseline plus a CJK correction, then reserves the larger of
-4,096 tokens or 1% of the effective window. The effective window is the smaller
-of the configured value and the published catalog window when both are known;
-this prevents an oversized user override from bypassing compaction and output
-protection. Unknown windows preserve the configured output budget.
+4,096 tokens or 1% of the effective window. The estimate and the request use
+the same folded instruction projection: unless the model declares
+mid-conversation system support, superseded chronological system-transcript
+snapshots fold into the single leading system message the adapter will send,
+so a replaced snapshot is charged once rather than again for every instruction
+change. The parent and subagent stream paths hand that same folded transcript
+to pi-ai so its own clamp agrees. The effective window is the smaller of the
+configured value and the published catalog window when both are known; this
+prevents an oversized user override from bypassing compaction and output
+protection. Unknown windows preserve the configured output budget, and context
+calibration and the compaction budget keep their existing basis.
 
 The incoming user prompt participates in budgeting before the first provider
 request. The automatic summary request retries transient provider failures
@@ -951,24 +973,30 @@ order the user wrote. Reads are bounded by the admitted file size. Base64 is
 transient and never restored into durable UI messages or transcript records.
 - Failed assistant messages remain durable diagnostic transcript entries but
   are never restored into pi model context on a later turn.
-- A tool-call id is unique in every request. The transcript is an append-only
-  snapshot stream that tolerates a retried append, so the same call can reach
-  the assembled context twice — under one row id, which the host's keep-last
-  read already collapses, or under two, which it cannot. The last view before
-  the wire therefore keeps the first occurrence of each `toolCall` id and drops
-  a later call or a later result for it, so the pair the provider validates
-  stays well-formed; a request with no duplicates is returned unchanged. A drop
-  is reported once on the `agent` log channel with the session and the ids
-  (D608). Anthropic-family endpoints, including DeepSeek's, reject the whole
-  turn with `tool_use ids must be unique` (issue #718), which leaves the session
-  unable to continue.
-- The guard compares the wire-visible call id — the part before the `|` that
-  separates the Responses item id — and drops an assistant message whole once
-  every tool call in it was already claimed, because keeping its residual text
-  would leave a message sitting between a call and the result answering it. A
-  message that replays a claimed call while carrying a new one keeps its new
-  call in place; no writer produces that partial replay, and the guard does not
-  reorder messages to close the gap it leaves (D620).
+- Tool-call ids remain unique in each provider request. Before Pi executes a
+  streamed response, the parent runtime and each delegate assign fresh local
+  identities to calls that reuse an earlier wire-visible id (the part before
+  `|`). Each runtime retains its identity set across context compaction; the
+  parent seeds it from the full restored transcript, and delegates keep it
+  across model fallback. This prevents reused provider ids from losing real
+  results when the runtime journals entries by id (issue #1815). The existing
+  64-character identifier limit, Responses composite ids and cross-provider
+  normalisation continue to apply.
+- The final request guard drops a repeated call only while the earlier call is
+  still waiting for its result, and drops a repeated result only when no call
+  is pending for it. An independently completed same-id pair is retained under
+  a fresh request-local id with its result remapped to match. A renamed
+  Responses call does not reuse its old item id. No source messages are
+  mutated, and a request with no duplicate is returned unchanged. Drops are
+  reported once on the `agent` log channel with the session and the ids (D608).
+  Composite result ids are aligned even without a drop. Anthropic-family
+  endpoints, including DeepSeek's, otherwise reject the whole turn with
+  `tool_use ids must be unique` (issue #718).
+- A replayed assistant snapshot whose calls are all pending elsewhere is
+  removed whole: retaining its residual text would place a message between the
+  call and the result answering it, and pi-ai then synthesizes a second output.
+  A partial snapshot retains its new calls in place; the guard does not reorder
+  messages to close the gap it leaves (D620).
 - The agent loop owns its context array. `prepareNextTurn` hands pi a copy of
   the live state — for a delegate turn boundary too — exactly as pi's own
   `createContextSnapshot()` does for `prompt()` and `continue()`: pi's loop
@@ -1709,6 +1737,14 @@ Required behaviours, each one an observed failure inverted:
 - tool calls go through the native tool-call interface; a call written as prose
   (notably an OpenAI-style `multi_tool_use.parallel` wrapper) does not run, and
   the runtime logs it when a model emits one
+- file references are Markdown links with a short label and the exact absolute
+  path as the target, such as `[file.ts](/workspace/src/file.ts:42)`. Only a
+  starting line or line and column is added when useful; ranges and GitHub `#L`
+  anchors are not produced. Destinations containing spaces are wrapped in angle
+  brackets, and a local file is never wrapped in backticks or written as a
+  `file://`, editor or `https://` link. Only an existing file in the accessible
+  workspace is linked; an unavailable or other-repository file is plain code
+  text. This guidance adds no tool and no permission.
 
 It also states a search preference that matches the host-side budgets in
 [16-tool-result-limits](16-tool-result-limits.md): scope `Read`, `Grep`, and

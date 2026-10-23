@@ -384,3 +384,78 @@ async fn remote_projects_cannot_create_isolated_sessions() {
         .len();
     assert_eq!(before, after);
 }
+
+#[tokio::test]
+async fn remote_mutations_settle_after_stop_instead_of_losing_their_result() {
+    let (_dir, state, tx, mut rx) = fixture();
+    let (_path, id) = create(&state, &tx).await;
+    for tool_name in ["Write", "Edit"] {
+        let pending_state = state.clone();
+        let pending_tx = tx.clone();
+        let pending_id = id.clone();
+        let mut pending = tokio::spawn(async move {
+            handle_request(
+                pending_state,
+                "tools.execute",
+                json!({"sessionId":pending_id,"toolCallId":tool_name,"toolName":tool_name,
+                    "args":{"path":"changed.txt","content":"value"},"mode":"agent"}),
+                pending_tx,
+            )
+            .await
+        });
+        let permission: Value = serde_json::from_str(
+            &tokio::time::timeout(Duration::from_secs(2), rx.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(permission["method"], "permissions.request");
+        handle_request(
+            state.clone(),
+            "permissions.resolve",
+            json!({"requestId":permission["params"]["requestId"],"decision":"allow-once"}),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let dispatch: Value = serde_json::from_str(
+            &tokio::time::timeout(Duration::from_secs(2), rx.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(dispatch["method"], "tools.remoteExecute");
+        handle_request(
+            state.clone(),
+            "tools.abort",
+            json!({"sessionId":id,"toolCallId":tool_name,"toolName":tool_name}),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut pending)
+                .await
+                .is_err(),
+            "a started remote mutation must wait for its completion receipt"
+        );
+        let result = json!({"ok":true,"content":{"path":"changed.txt","text":"mutation settled"}});
+        handle_request(
+            state.clone(),
+            "tools.remoteComplete",
+            json!({"requestId":dispatch["params"]["requestId"],"result":result}),
+            tx.clone(),
+        )
+        .await
+        .unwrap();
+        let settled = pending.await.unwrap().unwrap();
+        assert_eq!(settled["ok"], true);
+        assert_eq!(settled["content"], result["content"]);
+        assert!(state.lock().await.remote_execs.is_empty());
+        // The abort relay notification is advisory; the started mutation still
+        // owns the completion receipt above.
+        while rx.try_recv().is_ok() {}
+    }
+}

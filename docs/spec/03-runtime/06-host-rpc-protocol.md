@@ -851,6 +851,19 @@ Additive `worktree.*` methods; no protocol version bump. Failures use code
 - `tools.abort`
 - `tools.output` notifications for ordered `stdout`/`stderr` chunks
 
+`tools.abort` params are `{ sessionId, toolCallId, toolName? }`. Current
+runtimes include `toolName`; an older caller may omit it and keeps the legacy
+Bash cancellation behavior, while an active typed tool that currently holds the
+call id can still be stopped. Host-core registers cancellation before permission
+evaluation, so an abort for a pending approval or queued admission removes the
+pending request and that tool cannot later start. Typed records are keyed by
+session, call id and tool name, kept briefly so an abort that arrives before
+`tools.execute` still cancels it, and cannot affect a different tool that
+reuses the call id. Bash keeps its existing early-arrival tombstone. An
+admitted background Bash task is not killed by `tools.abort`; only
+`backgroundTasks.stop` or graceful Host shutdown ends it. A read-only
+`Read`/`Glob`/`Grep` result that completes after cancellation is discarded.
+
 ### Shells
 - `commandShells.list`
 - `settings.set` with a partial settings object; omitted fields are preserved,
@@ -1483,7 +1496,9 @@ Tool outcomes (`TOOL_DENIED`, `TOOL_TIMEOUT`, `PATH_OUTSIDE_WORKSPACE`,
 4. `tools.output` preserves stdout/stderr separation and notification order;
    it is scoped to its session/tool call and has no turn or ordering fields;
    final results remain bounded
-5. Abort is idempotent and shuts down the complete Bash process tree
+5. Abort is idempotent. Typed `tools.abort` cancels a pending or queued tool
+   before it starts, and a `Bash`/`GenerateImages` abort shuts down the complete
+   child process tree; an admitted background task is not affected
 6. Plan and Goal approval requests are proposal/session/turn/tool-call/version
    scoped;
    only one pending approval and one queued/running execution exists per
@@ -1652,7 +1667,9 @@ and `backgroundTasks.stop`; `backgroundTasks.changed` notifies renderer relists.
   A Host restart starts a fresh registry and counter; it never replays tasks.
 
 Only an explicitly requested local Bash startup may use `runInBackground`.
-Normal authorization and shell pin checks precede spawn. Approval is cancellable;
-once a task has been registered, turn abort cannot stop its owned process.
-The request budget bounds startup/relay, not the background process lifetime.
+Normal authorization and shell pin checks precede spawn. The call registers
+typed cancellation before permission evaluation, so a turn Stop during the
+approval phase cancels the request and starts no process; once a task has been
+registered, turn abort cannot stop its owned process. The request budget bounds
+startup/relay, not the background process lifetime.
 See [Bash rules](03-tools-and-permissions.md#background-bash-commands).

@@ -118,6 +118,21 @@ result. Options may be plain strings or `{ label, description? }` objects; the
 selected label remains the answer value. Stopping the turn resolves outstanding
 questions as skipped.
 
+A stop sends a typed `tools.abort` request for each in-flight call (ADR
+tool-stop-side-effect-boundaries). Host-core registers cancellation before
+permission evaluation, so a pending approval or queued admission is cancelled
+instead of starting after Stop; this also covers a background Bash call while
+its approval is pending. `Bash` and `GenerateImages` use the existing process
+cancellation path, and the runtime waits up to 10s for output the host collected
+before termination. Local `Read`, `Glob` and `Grep` may end the runtime's wait
+immediately and return `TOOL_ABORTED`; the host discards a late result, while the
+read-only blocking worker may continue until it returns. A mutating, MCP, plugin,
+session-delivery or remote-write call that has already started is awaited before
+the turn settles, so Stop cannot hide a side effect. Typed cancellation is scoped by
+session, call id and tool name and cannot be inherited by a different tool. An
+admitted background Bash task remains detached: Stop does not kill it; only its
+own Stop or graceful Host shutdown does.
+
 `JevClassify` is an external provider operation rather than a workspace
 execution tool. It validates its structured request, observes cancellation,
 uses a bounded provider timeout, and returns typed classifier results; it has

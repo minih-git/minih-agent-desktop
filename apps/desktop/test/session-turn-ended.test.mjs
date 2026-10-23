@@ -31,6 +31,7 @@ function fixture() {
   const enqueued = [];
 
   const persistence = createEventPersistence({
+    completionNoticeTurns: new Set(),
     runtimeState: { host: null },
     activeTurns,
     activeToolCalls: new Map(),

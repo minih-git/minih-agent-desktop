@@ -155,6 +155,123 @@ test("asktool requests queue independently and never expire", () => {
   );
   assert.deepEqual(Object.keys(clearSessionAsks(next, "session-a")), []);
 });
+test("asktool drafts are keyed by requestId and cleaned up on resolve, tool end, turn end, and session delete", async () => {
+  const pendingAsksMod = await import("../src/lib/pending-asks.ts");
+  assert.equal(typeof pendingAsksMod.emptyAskDraft, "function");
+  assert.equal(typeof pendingAsksMod.setAskDraft, "function");
+  assert.equal(typeof pendingAsksMod.dropAskDraft, "function");
+  assert.equal(typeof pendingAsksMod.dropSessionAskDrafts, "function");
+  assert.equal(typeof pendingAsksMod.dropToolCallAskDrafts, "function");
+
+  const first = {
+    sessionId: "session-a",
+    requestId: "ask-a",
+    toolCallId: "tool-a",
+    questions: [
+      { question: "Q1?", options: ["A", "B"] },
+      { question: "Q2?", options: ["C"] },
+    ],
+  };
+  const second = {
+    ...first,
+    requestId: "ask-b",
+    toolCallId: "tool-b",
+  };
+  const otherSessionAsk = {
+    ...first,
+    sessionId: "session-b",
+    requestId: "ask-c",
+    toolCallId: "tool-c",
+  };
+  const queues = enqueueAsk(
+    enqueueAsk(enqueueAsk({}, first), second),
+    otherSessionAsk,
+  );
+  const draftA = {
+    index: 1,
+    answers: [
+      { values: ["B"], customSelected: false, customText: "", skipped: false },
+      { values: [], customSelected: false, customText: "", skipped: false },
+    ],
+  };
+  const draftB = pendingAsksMod.emptyAskDraft(second.questions);
+  const draftC = pendingAsksMod.emptyAskDraft(otherSessionAsk.questions);
+  let drafts = pendingAsksMod.setAskDraft({}, "ask-a", draftA);
+  drafts = pendingAsksMod.setAskDraft(drafts, "ask-b", draftB);
+  drafts = pendingAsksMod.setAskDraft(drafts, "ask-c", draftC);
+
+  assert.deepEqual(drafts["ask-a"], draftA);
+  const afterToolEnd = pendingAsksMod.dropToolCallAskDrafts(
+    drafts,
+    queues,
+    "session-a",
+    "tool-a",
+  );
+  assert.equal("ask-a" in afterToolEnd, false);
+  assert.equal("ask-b" in afterToolEnd, true);
+  assert.equal("ask-c" in afterToolEnd, true);
+
+  const afterSessionClear = pendingAsksMod.dropSessionAskDrafts(
+    drafts,
+    queues,
+    "session-a",
+  );
+  assert.equal("ask-a" in afterSessionClear, false);
+  assert.equal("ask-b" in afterSessionClear, false);
+  assert.deepEqual(afterSessionClear["ask-c"], draftC);
+
+  assert.match(askCardSource, /useAppStore\(\(state\) => state\.askDrafts\[request\.requestId\]\)/);
+  assert.match(askCardSource, /useAppStore\(\(state\) => state\.setAskDraft\)/);
+  assert.match(interactionSource, /askDrafts:\s*removeAskDraft\(state\.askDrafts,\s*resolution\.requestId\)/);
+  assert.match(interactionSource, /acknowledgePrompt\(resolution\.requestId\)/);
+  assert.match(eventsSource, /dropSessionAskDrafts\(\s*state\.askDrafts,\s*state\.pendingAsks,\s*envelope\.sessionId/s);
+  assert.match(eventsSource, /dropToolCallAskDrafts\(\s*state\.askDrafts,\s*state\.pendingAsks,\s*envelope\.sessionId,\s*event\.toolCallId/s);
+  const projectSliceSource = readStoreModuleSync("slices/project-slice.ts");
+  assert.match(projectSliceSource, /dropSessionAskDrafts\(state\.askDrafts,\s*state\.pendingAsks,\s*id\)/);
+
+  const { register } = await import("node:module");
+  register(new URL("./helpers/ts-import-hooks.mjs", import.meta.url));
+  const { createInteractionSlice } = await import("../src/stores/slices/interaction-slice.ts");
+  const { api } = await import("../src/lib/api.ts");
+  const acknowledged = [];
+  let sliceState = {
+    pendingAsks: enqueueAsk({}, first),
+    pendingPermissions: {},
+    askDrafts: {},
+    acknowledgePrompt: async (id) => {
+      acknowledged.push(id);
+    },
+  };
+  const slice = createInteractionSlice({
+    get: () => sliceState,
+    set: (update) => {
+      sliceState = {
+        ...sliceState,
+        ...(typeof update === "function" ? update(sliceState) : update),
+      };
+    },
+    runtime: { beginNavigationIntent: () => 1 },
+    interactionRuntime: { planResolutionRequests: new Map(), nextToastId: () => 1 },
+  });
+  Object.assign(sliceState, slice);
+
+  slice.setAskDraft("ask-a", draftA);
+  assert.deepEqual(sliceState.askDrafts["ask-a"], draftA);
+  const origResolveAsk = api.resolveAskTool;
+  api.resolveAskTool = async () => ({ ok: true });
+  try {
+    await slice.resolveAsk("session-a", {
+      requestId: "ask-a",
+      sessionId: "session-a",
+      answers: [["B"], null],
+    });
+  } finally {
+    api.resolveAskTool = origResolveAsk;
+  }
+  assert.equal(sliceState.pendingAsks["session-a"], undefined);
+  assert.equal("ask-a" in sliceState.askDrafts, false);
+  assert.deepEqual(acknowledged, ["ask-a"]);
+});
 
 test("asktool card is a stepwise, non-expiring composer question surface", () => {
   assert.match(chatSurfaceSource, /pendingAsk/);

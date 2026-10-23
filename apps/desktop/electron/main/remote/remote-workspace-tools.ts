@@ -74,6 +74,9 @@ export function createRemoteWorkspaceToolRelay(host: HostReply, deps: Dependenci
       const key = keyFor(input);
       const request = active.get(key);
       if (!request) return;
+      // A remote mutation already passed admission and may still change files.
+      // Keep its completion receipt instead of hiding the result behind Stop.
+      if (request.toolName === "Write" || request.toolName === "Edit") return;
       cancelled.add(key);
       void abort(request).catch((error) => deps.log("remote tool cancellation failed", error));
     },

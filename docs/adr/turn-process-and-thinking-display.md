@@ -2,8 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-09-17
-- Amended: 2026-10-17
-- Issues: #510, #461
+- Amended: 2026-10-17, 2026-10-23
+- Issues: #510, #461, #1806
 - Amends: D071, [ADR 0242](0242-delta-only-streaming-updates.md)
 
 ## Context
@@ -41,12 +41,16 @@ Bash rows each remain standalone, and a Bash row's detail stays closed until the
 user opens it. Other operations between progress paragraphs still form
 chronological collapsible activity groups.
 
-Group folding defaults are unified and do not depend on the thinking preference.
-The ordinary activity group that owns the active execution segment starts open,
-then closes on completion only while untouched. Other completed groups start
-closed. An untouched active group containing any recorded failed or denied tool
-stays open through later recovery and closes on turn completion if still
-untouched. Bash rows remain visible regardless of any group's collapsed state.
+Group folding defaults are density-specific and do not depend on the thinking
+preference. `standard` folds the completed process behind one header; opening
+it shows the narration and one line per step, and no group is force-opened.
+`detailed` folds nothing. `compact` starts the ordinary group that owns the
+active execution segment open; after completion, an untouched ordinary group
+with at most four visible items stays open, a larger ordinary group starts
+closed, and a Task topology group stays open. In every density an untouched
+active group containing any recorded failed or denied tool stays open through
+later recovery and is reconsidered at completion. Bash rows remain visible
+regardless of any group's collapsed state.
 
 The thinking preference is a boolean `showThinking`. When it is false, the live
 thinking indicator stays visible, while completed thinking rows and excerpts are
@@ -55,11 +59,27 @@ retained, so turning the preference back on restores the completed rows and
 excerpts. Hidden thinking never creates an empty group wrapper.
 
 The leaf default that an earlier decision first introduced was later removed.
-Item payloads never open themselves: a tool-call, hosted-search or plan row
-stays a header row until the user opens it, wherever it sits in the group, and
-this holds regardless of the thinking preference. Group defaults are unchanged,
-and opening a closed ancestor still exposes the retained item choices without
-opening all descendants.
+Except for the compact Thinking default below, item payloads never open
+themselves: a tool-call, hosted-search or plan row stays a header row until the
+user opens it, wherever it sits in the group, and this holds regardless of the
+thinking preference. Opening a closed ancestor still exposes the retained item
+choices without opening all descendants.
+
+In `compact`, a visible Thinking row is open by default when `showThinking` is
+true, and the user may collapse each row independently; the other densities
+keep their existing detail defaults. Only `compact` indents a group's child
+rows by 12px below the group header. The group's collapse rail sits in that
+gutter, invisible at rest, a 2px bar on hover or focus, and collapses the group
+when clicked. `standard` and `detailed` add no indentation layer.
+
+A successful Write/Edit that has a review snapshot renders as one tool-level
+review row: the file header is the only disclosure header, its diff body sits
+directly beneath it, and the body adds a copy action while retaining rollback,
+failure reporting, search targeting and the density's detail default. No
+duplicate generic tool row is rendered. The main transcript, a followed
+subagent transcript and the detail view use the same row. The running marker is
+a real flex sibling of the running label, so the header's existing alignment
+centres it and the label keeps its truncation; reduced-motion support remains.
 
 Each header toggles only its own level. Parent and child states are independent:
 closing a parent preserves descendant choices, reopening restores them, and
@@ -117,8 +137,12 @@ paragraphs is shown.
   command or argument summary, and opens tool details and completed reasoning
   from the start; it folds nothing.
 - `compact` keeps the segmented folding described above, where each
-  chronological segment folds on its own, Bash rows stay standalone and
-  ordinary groups state their own step counts.
+  chronological segment folds on its own, Bash rows stay standalone, and
+  ordinary groups state their own step counts. A completed ordinary group with
+  at most four visible items stays open; a larger group starts closed, while a
+  Task topology group stays open. Visible Thinking rows start open and can be
+  collapsed one at a time, and only this density applies the 12px group indent
+  with its hover/focus collapse rail.
 
 Chronological part order and the trailing answer never depend on the density,
 and the density changes only visibility: it never alters model context, stored
@@ -136,9 +160,16 @@ counted as steps.
 - Chronological collapsible process segments keep the final answer and actionable
   interruptions reachable, and Bash/run rows stay visible even when every group is
   collapsed.
-- Group folding defaults are unified: active work stays visible, untouched
-  completed groups fold by default, and explicit disclosure choices are preserved
-  regardless of the thinking preference.
+- Group folding is density-specific: `standard` folds a finished turn behind one
+  header, `detailed` folds nothing, and `compact` keeps small completed groups
+  (at most four visible items) and Task topology open while larger groups start
+  closed. Explicit disclosure choices are preserved regardless of the thinking
+  preference.
+- A reviewed Write/Edit is one tool-level row with its file header as the only
+  disclosure header and its diff body directly beneath it; the diff body can be
+  copied, and rollback and failure reporting are unchanged. Only `compact`
+  applies the 12px group indent and rail, so `standard` and `detailed` gain no
+  extra hierarchy layer.
 - When `showThinking` is false, the live indicator stays visible while completed
   reasoning rows and excerpts are hidden. The stored reasoning is retained and
   reappears when the preference is turned back on.
@@ -182,3 +213,10 @@ behind one header stating its duration, that the conclusion stays outside, that
 opening it reveals the narration and one line per step without the command echo,
 and that `detailed` folds nothing; the probes that assert the segmented folding
 contract itself pin `compact`.
+
+For the 2026-10-23 amendment, the request combines documentation with the
+implementation in one task and explicitly does not pre-fill test results. The
+compact small-group and Thinking defaults, the compact-only 12px grouping, the
+single reviewed-edit row with diff copy, and the centred running marker are
+documented for E2E-CHAT-turn-process-and-thinking-display and the related
+transcript probes; this record does not claim that a new test has run.

@@ -35,12 +35,18 @@ const DEFAULT_SESSIONS = [
   { id: "session-b", source: "desktop", mode: "agent" },
 ];
 
-function harness({ sessions = DEFAULT_SESSIONS, pendingAsks = {}, pendingPermissions = {} } = {}) {
+function harness({
+  sessions = DEFAULT_SESSIONS,
+  pendingAsks = {},
+  pendingPermissions = {},
+  askDrafts = {},
+} = {}) {
   const toasts = [];
   let state = {
     sessions,
     pendingAsks,
     pendingPermissions,
+    askDrafts,
     planningStates: {},
     planCheckpoints: {},
     pendingPlans: {},
@@ -189,6 +195,34 @@ test("a successful empty read clears cards answered outside the renderer", async
 
   assert.equal(h.get().pendingAsks["session-a"], undefined);
   assert.equal(h.get().pendingPermissions["session-a"], undefined);
+});
+
+test("reconciling pending asks keeps drafts for open asks and drops drafts for settled ones", async (t) => {
+  const keptAsk = askFor("session-a", "ask-kept");
+  const settledAsk = askFor("session-a", "ask-settled");
+  const otherAsk = askFor("session-b", "ask-other");
+  const draftFor = (value) => ({
+    index: 0,
+    answers: [{ values: [value], customSelected: false, customText: "", skipped: false }],
+  });
+  const h = harness({
+    pendingAsks: enqueueAsk(enqueueAsk(enqueueAsk({}, keptAsk), settledAsk), otherAsk),
+    askDrafts: {
+      "ask-kept": draftFor("alpha"),
+      "ask-settled": draftFor("beta"),
+      "ask-other": draftFor("gamma"),
+    },
+  });
+  t.mock.method(api, "pendingInteractive", async () => ({
+    asks: [keptAsk],
+    permissions: [],
+  }));
+
+  await h.slice.restorePendingInteractive("session-a");
+
+  assert.deepEqual(Object.keys(h.get().askDrafts).sort(), ["ask-kept", "ask-other"]);
+  assert.deepEqual(h.get().askDrafts["ask-kept"], draftFor("alpha"));
+  assert.deepEqual(h.get().askDrafts["ask-other"], draftFor("gamma"));
 });
 
 test("a newer restore result wins over an older overlapping read", async (t) => {

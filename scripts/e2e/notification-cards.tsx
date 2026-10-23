@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import i18n from "i18next";
@@ -69,26 +70,48 @@ function completeCompaction(reason: ContextCompactionReason, fallback = false, o
     });
   });
 }
+let setDemoAnchorMode: ((anchored: boolean) => void) | undefined;
 function Demo() {
-  return <main className="notification-demo">
-    <p>MINIH AGENT · NOTIFICATIONS</p>
-    <h1>右侧通知</h1>
-    <p>成功与普通信息自动关闭；错误与警告保留，直到你关闭。</p>
-    <div className="notification-demo-actions">
-      <Button onClick={() => notify("AI 服务已保存", "success")}>保存成功</Button>
-      <Button onClick={() => notify("连接失败：无法访问服务，请检查地址和网络。", "error")}>连接失败</Button>
-      <Button onClick={() => notify(i18n.t("contextCompaction.longThreadWarning"), "warning")}>上下文提醒</Button>
-      <Button onClick={() => notify("剪贴板内容已复制")}>普通信息</Button>
-      <Button onClick={reset}>清空演示</Button>
-      {compactionCases.map(({ reason, fallback }, index) => <Button
-        key={index} data-compaction-case={index}
-        onClick={() => completeCompaction(reason, fallback)}
-      >{reason}{fallback ? " fallback" : ""}</Button>)}
-      <Button data-compaction-failure onClick={() => completeCompaction("manual", false, false)}>Manual failure</Button>
-    </div>
-    <p>悬停或聚焦可暂停计时。通知内容可选中复制。</p>
-    <ToastHost />
-  </main>;
+  const [anchored, setAnchored] = useState(false);
+  const [mainPane, setMainPane] = useState<HTMLElement | null>(null);
+  setDemoAnchorMode = setAnchored;
+  return <div style={{ display: "flex", minHeight: "100vh", width: "100%" }}>
+    <main ref={setMainPane} className="notification-demo" style={{ flex: 1, minWidth: 0 }}>
+      <p>MINIH AGENT · NOTIFICATIONS</p>
+      <h1>右侧通知</h1>
+      <p>成功与普通信息自动关闭；错误与警告保留，直到你关闭。</p>
+      <div className="notification-demo-actions">
+        <Button onClick={() => notify("AI 服务已保存", "success")}>保存成功</Button>
+        <Button onClick={() => notify("连接失败：无法访问服务，请检查地址和网络。", "error")}>连接失败</Button>
+        <Button onClick={() => notify(i18n.t("contextCompaction.longThreadWarning"), "warning")}>上下文提醒</Button>
+        <Button onClick={() => notify("剪贴板内容已复制")}>普通信息</Button>
+        <Button onClick={reset}>清空演示</Button>
+        {compactionCases.map(({ reason, fallback }, index) => <Button
+          key={index} data-compaction-case={index}
+          onClick={() => completeCompaction(reason, fallback)}
+        >{reason}{fallback ? " fallback" : ""}</Button>)}
+        <Button data-compaction-failure onClick={() => completeCompaction("manual", false, false)}>Manual failure</Button>
+      </div>
+      <p>悬停或聚焦可暂停计时。通知内容可选中复制。</p>
+    </main>
+    {anchored ? (
+      <aside
+        id="notification-work-panel-fixture"
+        style={{
+          flex: "0 0 320px",
+          borderLeft: "1px solid var(--ds-border-subtle)",
+          background: "var(--ds-bg-secondary)",
+          padding: "24px 20px",
+        }}
+      >
+        <strong>工作面板</strong>
+        <p style={{ color: "var(--ds-text-muted)", fontSize: 13 }}>
+          并排开启时，通知右侧锚定主内容区右边界，不遮挡面板。
+        </p>
+      </aside>
+    ) : null}
+    <ToastHost anchorElement={anchored ? mainPane : null} />
+  </div>;
 }
 
 declare global {
@@ -208,7 +231,7 @@ globalThis.notificationCardsProbe = async () => {
 };
 
 globalThis.notificationLayoutProbe = async () => {
-  await globalThis.notificationCardsReady; reset();
+  await globalThis.notificationCardsReady; flushSync(() => setDemoAnchorMode?.(false)); reset();
   for (let index = 0; index < 9; index++) notify(`Warning ${index}: ${"Long notification text. ".repeat(8)}`, "warning");
   notify("错误详情：\n" + "服务不可用，请检查网络。".repeat(160), "error");
   await finishAnimations();
@@ -227,11 +250,29 @@ globalThis.notificationLayoutProbe = async () => {
   viewport.scrollTop = 0; await settle();
   const count = useAppStore.getState().toasts.length; dismiss().click();
   await until(() => useAppStore.getState().toasts.length === count - 1, "Reduced-motion/overflow dismissal failed");
-  return { ok: true, width: innerWidth, height: innerHeight, overflowReachable: true };
+  if (innerWidth >= 900) {
+    flushSync(() => setDemoAnchorMode?.(true));
+    await settle();
+    const mainPane = document.querySelector<HTMLElement>(".notification-demo");
+    const panel = document.getElementById("notification-work-panel-fixture");
+    check(mainPane && panel, "Missing main-pane or work-panel fixture");
+    const paneRect = mainPane.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const anchoredRect = viewport.getBoundingClientRect();
+    check(
+      Math.abs(paneRect.right - anchoredRect.right - 16) <= 2 &&
+        anchoredRect.right <= panelRect.left - 14 &&
+        anchoredRect.left >= paneRect.left + 14,
+      "Anchored notification stack overlapped the work panel or missed main-pane right edge",
+    );
+    flushSync(() => setDemoAnchorMode?.(false));
+    await settle();
+  }
+  return { ok: true, width: innerWidth, height: innerHeight, overflowReachable: true, safeAreaAnchored: innerWidth >= 900 };
 };
 
 globalThis.notificationDemo = async () => {
-  await globalThis.notificationCardsReady; await i18n.changeLanguage("zh-CN"); reset();
+  await globalThis.notificationCardsReady; await i18n.changeLanguage("zh-CN"); flushSync(() => setDemoAnchorMode?.(innerWidth >= 900)); reset();
   notify("连接失败：无法访问服务，请检查地址和网络。", "error");
   notify(i18n.t("contextCompaction.longThreadWarning"), "warning");
   await finishAnimations();

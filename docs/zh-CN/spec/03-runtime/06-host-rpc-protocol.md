@@ -557,6 +557,8 @@ off | minimal | low | medium | high | xhigh | max
 - `tools.abort`
 - 有序 `stdout`/`stderr` 块的 `tools.output` 通知
 
+`tools.abort` 的参数为 `{ sessionId, toolCallId, toolName? }`。当前运行时会带上 `toolName`；旧调用方可以省略并保留原有 Bash 取消行为，同时仍可停止当前持有该调用 id 的带类型工具。Host 在权限评估前登记取消，因此针对待审批或排队调用的中止会移除待处理请求，该工具之后无法再启动。带类型的记录按会话、调用 id 和工具名限定，并短暂保留，使先于 `tools.execute` 到达的中止仍然生效，同时不会影响复用同一调用 id 的其他工具。Bash 继续使用原有的提前到达墓碑。已经进入后台的 Bash 任务不会被 `tools.abort` 杀掉；只有 `backgroundTasks.stop` 或 Host 正常退出才结束它。`Read`/`Glob`/`Grep` 在取消之后才完成的只读结果会被丢弃。
+
 ### 贝壳
 - `commandShells.list`
 - `settings.set` 带有部分设置对象；保留省略的字段，
@@ -1093,7 +1095,7 @@ JSON-RPC 错误携带一个数字 `code` 以及 `data.errorCode`，后者是来�
 4. `tools.output` 保留 stdout/stderr 分离和通知顺序；
    它的作用域为 session/tool 调用，并且没有回合或排序字段；
    最终结果仍然有限
-5. Abort是幂等的，关闭整个Bash进程树
+5. Abort 幂等。带类型的 `tools.abort` 会在待审批或排队工具启动前取消它；`Bash`/`GenerateImages` 的中止会关闭完整子进程树；已经进入后台的任务不受影响
 6. Plan 和 Goal 批准请求为 proposal/session/turn/tool-call/version
    范围；
    每个项目仅存在一项待批准和一项 queued/running 执行
@@ -1219,6 +1221,7 @@ schedule，Manual 转 Hourly 继续使用现有默认间隔行为。
   `found: false`；清理进程树并排空输出后再发布最终状态。
 - `changed({ version })` 使用进程内单调计数；Host 重启清空注册表，不重放任务。
 
-`runInBackground` 仅用于显式请求的本地 Bash。权限和 shell 固定校验先于启动，
-审批仍可取消；已登记任务不受回合中止影响。RPC 预算限制启动/转发延迟，
+`runInBackground` 仅用于显式请求的本地 Bash。权限和 shell 固定校验先于启动；
+调用在权限评估前登记带类型的取消，因此审批阶段的回合停止会撤销请求且不启动进程；
+已登记任务不受回合中止影响。RPC 预算限制启动/转发延迟，
 不限制后台进程寿命。参见 [Bash 规则](/spec/03-runtime/03-tools-and-permissions)。

@@ -193,3 +193,45 @@ test("abort waits for prompt admission before dispatching to the sidecar", async
   assert.deepEqual(finishedTurns, [["target", "aborted", "TURN_ABORTED", { turnId: "turn-1" }]]);
   assert.deepEqual(calls.slice(0, 2), ["settings.get", "session.get"]);
 });
+
+test("prompt IPC reserves silent replies only for Host-verified completion notices", async () => {
+  for (const [label, ledgerMessage, fail, expected] of [
+    ["task", message, false, false],
+    ["completion", { ...message, kind: "completion", replyToMessageId: "original-task" }, false, true],
+    ["missing reply identity", { ...message, kind: "completion" }, false, false],
+    ["failed dispatch", { ...message, kind: "completion", replyToMessageId: "original-task" }, true, false],
+  ]) {
+    const handlers = new Map();
+    const completionNoticeTurns = new Set();
+    const host = { async call(method) {
+      if (method === "session.collaboration.message") return { message: ledgerMessage };
+      if (method === "settings.get" || method === "session.appendMessage") return {};
+      if (method === "session.get") return { session: { id: "target", messages: [] } };
+      if (method === "session.beginTurn") return { turnId: "turn-1" };
+      assert.fail(`unexpected RPC ${method}`);
+    } };
+    registerAgentIpc({
+      registrar: { handle: (channel, handler) => handlers.set(channel, handler) },
+      getHost: () => host,
+      getSidecar: () => ({ setProjectInstructionRoot() {}, async call() {
+        if (fail) throw Object.assign(new Error("dispatch failed"), { errorCode: "STREAM_FAILED" });
+        return { accepted: true, turnId: "turn-1" };
+      } }),
+      getAgentHostBridge: () => null, logger: { app() {} }, agentExtensions: {}, cancelSessionTools() {},
+      persistenceOutbox: {}, dataDir: "/unused-for-no-attachments", completionNoticeTurns,
+      activeTurns: new Map(), activeTurnUsages: new Map(), approvedExecutionIdsBySession: new Map(), claimedExecutionSessions: new Map(),
+      recordTurnStart() {}, acquireSessionOperation: async () => () => {}, finishTurn: async () => {},
+      resolveAgentRuntimeLaunch: async () => ({ providerId: "provider", modelId: "model", sidecarParams: {
+        sessionId: "target", provider: { modelConfig: { input: ["text"] } },
+      } }),
+      emitAgentEvent() {}, setNotificationViewingSessionId() {}, optionalWorkspaceRoot: async () => null,
+      composerCommandService: { buildComposerCommands: async () => [] }, loadComposerTemplatesCached: async () => [],
+    });
+    const pending = handlers.get(IPC.invoke.agentPrompt)({ ...request,
+      sessionMessage: { ...origin, kind: "completion", replyToMessageId: "forged-task" },
+    });
+    if (fail) await assert.rejects(pending, { errorCode: "STREAM_FAILED" });
+    else await pending;
+    assert.equal(completionNoticeTurns.has("turn-1"), expected, label);
+  }
+});

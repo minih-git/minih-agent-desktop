@@ -68,6 +68,7 @@ import {
 } from "./subagent-context.js";
 import {
   dedupeToolCallMessages,
+  createToolCallIdentity,
   reportDuplicateToolCallDrop,
 } from "./tool-call-dedupe.js";
 import { removeTrailingAssistantMessages } from "./system-transcript.js";
@@ -238,6 +239,7 @@ export { addUsage };
 /** One delegate execution. A resumed run is still a new instance; it is
  * seeded with the prior chain's messages rather than kept warm in memory. */
 export class SubagentRun {
+  private readonly uniqueToolCalls: ReturnType<typeof createToolCallIdentity>;
   private readonly agent: Agent;
   private readonly opts: SubagentRunOptions;
   private currentAssistant?: UiMessage;
@@ -274,6 +276,7 @@ export class SubagentRun {
 
   constructor(opts: SubagentRunOptions) {
     this.opts = opts;
+    this.uniqueToolCalls = createToolCallIdentity(opts.initialMessages ?? []);
     this.provider = opts.provider;
     this.thinkingLevel = opts.thinkingLevel;
     this.attemptedModels.add(`${opts.provider.id}/${opts.provider.modelId}`);
@@ -449,6 +452,7 @@ export class SubagentRun {
       sessionId: this.opts.sessionId,
       maxTokens: this.opts.definition.maxTokens,
       onUsage: usage => this.recordUsage(usage),
+      uniqueToolCalls: this.uniqueToolCalls,
     }, this.retryState);
   }
 

@@ -1994,6 +1994,10 @@ Renderer IPC kept for the Plan-safe preview facade and URL fallback:
   itself (`relativePath: "."`), and a shorthand never does: a tail match has no
   evidence about which folder was meant. `~` is expanded to the home directory
   before every containment decision, and `~user/...` stays unsupported);
+  a reference may carry a trailing position: `:line`, `:line:column`,
+  `:line-range` or GitHub's `#Lline[-Lend]`. It is stripped before path
+  resolution, the path resolves normally, and a range opens at its starting
+  line; an invalid position is treated as part of the token rather than guessed.
   `sessionId` selects the
   session whose scratch store is searched. Completes a file reference the agent
   printed in chat, because the renderer cannot see the session's own scratch
@@ -2007,8 +2011,10 @@ Renderer IPC kept for the Plan-safe preview facade and URL fallback:
   other folders, which are then searched in the group's own order (ADR 0263),
   so a shorthand resolves in a sibling folder as readily as in the primary one,
   and the match names the folder that answered. Inside one root an exact path
-  beats a shorthand; among shorthands the longest matching tail wins, then the
-  shallowest path. An exact path may name a folder — the folder itself, or the
+  beats a shorthand; a shorthand matches only when its complete supplied suffix
+  identifies one safe file. It never degrades to a shorter suffix, and an
+  ambiguous match returns `match: null`. An exact path may name a folder — the
+  folder itself, or the
   answering root as `.` — and reports that through `entryKind`; a shorthand
   still completes only to a regular file, because a leaf name is no evidence
   about which folder was meant. Relative and indexed candidates must resolve to

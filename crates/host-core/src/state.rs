@@ -66,11 +66,15 @@ pub struct AppState {
     /// (session_id, tool_call_id) -> cancellation signal for an active Bash
     /// process. The signal is removed by the execution owner in all outcomes.
     pub active_bash_cancellations: HashMap<(String, String), tokio::sync::watch::Sender<bool>>,
-    /// request_id -> (session_id, tool_call_id) for permission requests that
-    /// are currently awaited by an RPC task. PermissionManager intentionally
-    /// keeps its pending map private, so AppState tracks the ownership needed
-    /// for shutdown cancellation.
-    pending_permissions: HashMap<String, (String, String)>,
+    /// Typed cancellation registry for in-flight non-process tools, including
+    /// permission waits and remote workspace calls (ADR
+    /// tool-stop-side-effect-boundaries).
+    pub(crate) tool_cancellations: crate::tool_cancellation::ToolCancellationRegistry,
+    /// request_id -> (session_id, tool_call_id, tool_name) for permission
+    /// requests that are currently awaited by an RPC task. PermissionManager
+    /// intentionally keeps its pending map private, so AppState tracks the
+    /// ownership needed for shutdown cancellation and typed aborts.
+    pending_permissions: HashMap<String, (String, String, String)>,
     /// Abort can race ahead of tools.execute because host RPC requests run in
     /// separate tasks. A short-lived tombstone makes the later request start
     /// already cancelled instead of executing after Stop was acknowledged.
@@ -153,6 +157,7 @@ impl AppState {
             plugin_delete_rates: HashMap::new(),
             tool_budget: ToolBudget::new(),
             active_bash_cancellations: HashMap::new(),
+            tool_cancellations: crate::tool_cancellation::ToolCancellationRegistry::new(),
             pending_permissions: HashMap::new(),
             pending_bash_aborts: HashMap::new(),
             hashline: crate::tools::HashlineStore::new(),
@@ -203,10 +208,15 @@ impl AppState {
         request_id: &str,
         session_id: &str,
         tool_call_id: &str,
+        tool_name: &str,
     ) {
         self.pending_permissions.insert(
             request_id.to_string(),
-            (session_id.to_string(), tool_call_id.to_string()),
+            (
+                session_id.to_string(),
+                tool_call_id.to_string(),
+                tool_name.to_string(),
+            ),
         );
     }
 
@@ -214,13 +224,25 @@ impl AppState {
         self.pending_permissions.remove(request_id);
     }
 
-    pub fn cancel_pending_permission(&mut self, session_id: &str, tool_call_id: &str) -> bool {
+    /// Cancel the pending permission of one tool call. `tool_name` scopes the
+    /// cancellation to the tool the abort named; `None` is the legacy untyped
+    /// path and matches whichever tool currently holds the call id.
+    pub fn cancel_pending_permission(
+        &mut self,
+        session_id: &str,
+        tool_call_id: &str,
+        tool_name: Option<&str>,
+    ) -> bool {
         let request_id = self
             .pending_permissions
             .iter()
-            .find(|(_, (pending_session_id, pending_tool_call_id))| {
-                pending_session_id == session_id && pending_tool_call_id == tool_call_id
-            })
+            .find(
+                |(_, (pending_session_id, pending_tool_call_id, pending_tool_name))| {
+                    pending_session_id == session_id
+                        && pending_tool_call_id == tool_call_id
+                        && tool_name.is_none_or(|name| pending_tool_name == name)
+                },
+            )
             .map(|(request_id, _)| request_id.clone());
         let Some(request_id) = request_id else {
             return false;
@@ -228,7 +250,6 @@ impl AppState {
         self.pending_permissions.remove(&request_id);
         self.permissions.cancel_for_tool(session_id, tool_call_id)
     }
-
     pub fn resolve_permission(
         &mut self,
         request_id: &str,
@@ -301,6 +322,7 @@ impl AppState {
             let _ = sender.send(true);
         }
         self.active_bash_cancellations.clear();
+        self.tool_cancellations.cancel_all();
         // Chat-started background tasks follow the application: signal every
         // running supervisor so its process tree is terminated and reaped.
         crate::background_tasks::stop_all_running_sync(&self.background_tasks);
@@ -340,9 +362,14 @@ mod tests {
             &request.request_id,
             &request.session_id,
             &request.tool_call_id,
+            &request.tool_name,
         );
         let mut cancellation = state
             .register_bash_cancellation("session-1", "tool-call-2")
+            .unwrap();
+        let mut tool_cancellation = state
+            .tool_cancellations
+            .register(false, "session-1", "tool-call-4", "Write")
             .unwrap();
 
         state.shutdown();
@@ -350,12 +377,18 @@ mod tests {
         assert!(state.pending_permissions.is_empty());
         assert!(state.active_bash_cancellations.is_empty());
         assert!(state.pending_bash_aborts.is_empty());
+        assert!(state.tool_cancellations.is_empty());
         assert!(state.shutting_down);
         assert!(matches!(
             state.register_bash_cancellation("session-1", "tool-call-3"),
             Err(error) if error == "HOST_SHUTTING_DOWN"
         ));
+        assert!(matches!(
+            state.tool_cancellations.register(true, "session-1", "tool-call-5", "Write"),
+            Err(error) if error == "HOST_SHUTTING_DOWN"
+        ));
         assert!(*cancellation.borrow_and_update());
+        assert!(*tool_cancellation.borrow_and_update());
         assert_eq!(
             state.permissions.resolve(
                 &request.request_id,
@@ -363,6 +396,63 @@ mod tests {
             ),
             Err("NOT_FOUND".into())
         );
+    }
+
+    #[test]
+    fn typed_permission_cancellation_matches_the_named_tool_only() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut state = AppState::open(data_dir.path()).unwrap();
+        let (write_request, _rx) = state.permissions.create_request(
+            "session-1",
+            "same-id",
+            "Write",
+            serde_json::json!({ "path": "a.txt" }),
+            "test",
+        );
+        state.register_pending_permission(
+            &write_request.request_id,
+            &write_request.session_id,
+            &write_request.tool_call_id,
+            &write_request.tool_name,
+        );
+
+        // An abort naming a different tool must leave the Write approval open.
+        assert!(!state.cancel_pending_permission("session-1", "same-id", Some("Edit")));
+        assert!(state
+            .pending_permissions
+            .contains_key(&write_request.request_id));
+
+        assert!(state.cancel_pending_permission("session-1", "same-id", Some("Write")));
+        assert!(state.pending_permissions.is_empty());
+        assert_eq!(
+            state.permissions.resolve(
+                &write_request.request_id,
+                crate::permissions::PermissionDecision::AllowOnce,
+            ),
+            Err("NOT_FOUND".into())
+        );
+    }
+
+    #[test]
+    fn legacy_permission_cancellation_matches_any_tool_name() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut state = AppState::open(data_dir.path()).unwrap();
+        let (request, _rx) = state.permissions.create_request(
+            "session-1",
+            "call-1",
+            "SessionSend",
+            serde_json::json!({ "text": "hi" }),
+            "test",
+        );
+        state.register_pending_permission(
+            &request.request_id,
+            &request.session_id,
+            &request.tool_call_id,
+            &request.tool_name,
+        );
+
+        assert!(state.cancel_pending_permission("session-1", "call-1", None));
+        assert!(state.pending_permissions.is_empty());
     }
 
     #[test]

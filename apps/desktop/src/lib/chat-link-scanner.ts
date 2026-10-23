@@ -55,7 +55,7 @@ export type ChatLinkCandidateDispositionResolver = (
 ) => ChatLinkCandidateDisposition;
 
 const PATH_WORD_RE = /^[\p{L}\p{N}_@+./\\-]$/u;
-const TERMINAL_FILE_RE = /\.[A-Za-z0-9]{1,8}(?:[+@-][\p{L}\p{N}_@+-]*)?(?::\d+(?::\d+)?)?$/u;
+const TERMINAL_FILE_RE = /\.[A-Za-z0-9]{1,8}(?:[+@-][\p{L}\p{N}_@+-]*)?(?::\d+(?::\d+|-\d+)?|#[lL]\d+(?:-[lL]?\d+)?)?$/u;
 const PROSE_BOUNDARIES = new Set([
   "a", "an", "and", "against", "because", "but", "change", "check",
   "copy", "create", "created", "delete", "edit", "find", "fix", "for",
@@ -603,7 +603,7 @@ export function scanChatLinkCandidates<T>(
 const PATH_WORD = String.raw`[\p{L}\p{N}_@+.-]+`;
 const PATH_SEGMENT = String.raw`[\p{L}\p{N}_@+. -]+`;
 const PATH_CONTINUATION = String.raw`[\p{L}\p{N}_@+.-]*[\\/]`;
-const FILE_END = String.raw`\.[A-Za-z0-9]{1,8}(?:[+@-][\p{L}\p{N}_@+-]*)?(?::\d+(?::\d+)?)?(?![A-Za-z0-9_@+-]|\.[A-Za-z0-9]|${PATH_CONTINUATION})`;
+const FILE_END = String.raw`\.[A-Za-z0-9]{1,8}(?:[+@-][\p{L}\p{N}_@+-]*)?(?::\d+(?::\d+|-\d+)?|#[lL]\d+(?:-[lL]?\d+)?)?(?![A-Za-z0-9_@+-]|\.[A-Za-z0-9]|${PATH_CONTINUATION})`;
 const BARE_FILE_END = String.raw`(?:${[...KNOWN_BARE_CHAT_FILES].join("|")})(?![\p{L}\p{N}_@+.-]|${PATH_CONTINUATION})`;
 const FILE_NAME = String.raw`(?:${PATH_SEGMENT}?${FILE_END}|${BARE_FILE_END})`;
 const UNC_PREFIX = String.raw`(?:\\\\[^\\/\s]+[\\/]|\/\/[^/\s]+\/)`;
@@ -619,8 +619,8 @@ const FILE_SCAN_SOURCE = [
   // the token: `apps/desktop/src/` is a folder, while the same text inside
   // `apps/desktop/src/App.tsx` is still one file path — that form matched above.
   String.raw`(?:${PATH_WORD}[\\/])+(?![\p{L}\p{N}_@+.-])`,
-  String.raw`(?:~[\\/])?\/?\.{1,2}[\\/](?:${PATH_WORD}\/)*${PATH_WORD}(?::\d+(?::\d+)?)?`,
-  String.raw`(?:~[\\/])?\/?(?:${PATH_WORD}\/)+${PATH_WORD}(?::\d+(?::\d+)?)?`,
+  String.raw`(?:~[\\/])?\/?\.{1,2}[\\/](?:${PATH_WORD}\/)*${PATH_WORD}(?::\d+(?::\d+|-\d+)?|#[lL]\d+(?:-[lL]?\d+)?)?`,
+  String.raw`(?:~[\\/])?\/?(?:${PATH_WORD}\/)+${PATH_WORD}(?::\d+(?::\d+|-\d+)?|#[lL]\d+(?:-[lL]?\d+)?)?`,
   String.raw`[\p{L}\p{N}_@+-][\p{L}\p{N}_@+.-]*${FILE_END}`,
   // An anchored path needs no extension to read as a path: `/api/v1/users`,
   // `~/notes`, `./src`, `C:\Users\me\Documents`. It comes last so every file

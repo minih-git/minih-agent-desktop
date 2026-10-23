@@ -354,11 +354,16 @@ may be retained while exactly one workspace supplies the visible shell context.
   Reading bookmarks outlive DOM eviction and project switches, but not a
   renderer/app restart; deleting the session releases them. If the bookmarked
   message is outside the loaded page, read a bounded range around it using the
-  existing history API, without search focus or highlighting. Revalidation must
+  existing history API, without search focus or highlighting. If it is loaded
+  but outside the mounted row window, first restore the saved absolute scroll
+  offset; the user can grow the window to reach the anchor. Alignment starts
+  only after a pending bounded history lookup succeeds, so the fallback deadline
+  cannot cancel it. Revalidation must
   not replace that reading range with the latest page. Real scroll input, search
   navigation, return-to-latest, and send/retry/regenerate take priority over
   restoration; obsolete reads cannot reclaim the viewport. A missing anchor
-  falls back to latest, and read failures use the existing error notification.
+  falls back to latest, an unusable offset or layout-less pane reports failure
+  rather than guessing, and read failures use the existing error notification.
 - New Task is not a cold switch. Creating a session reveals the empty home on
   the first frame (the previous conversation and retained panes clear before
   `session.create`). Reusing the group's latest empty session commits that empty
@@ -585,11 +590,14 @@ may be retained while exactly one workspace supplies the visible shell context.
   their retained context and never open, activate, resize, focus, or change the
   visible panel.
 - Each successful workspace Write/Edit tool result carries one durable review
-  snapshot. Its compact InlineReviewCard is rendered in the same activity
-  disclosure, immediately after its tool row; it is never moved to the
-  transcript bottom and never shared with another session. Its status badge
-  covers added, modified, and deleted changes, while counts and expandable
-  hunks come from that message's result, not a current Git diff.
+  snapshot. Its compact review row is rendered in the same activity disclosure
+  as the tool row itself: one file header followed by its diff body, with no
+  second generic tool row. It is never moved to the transcript bottom and never
+  shared with another session. Its status mark covers added, modified, and
+  deleted changes, while counts and expandable hunks come from that message's
+  result, not a current Git diff. The diff body offers Copy beside rollback and
+  keeps its failure state; the main transcript, a followed subagent transcript
+  and the detail view use the same row.
 - The transcript cards and Review consume the active session's persisted
   message history. A commit, workspace focus change, or external Git state
   change cannot remove or rewrite an old card. Review is a chronological
@@ -945,18 +953,27 @@ may be retained while exactly one workspace supplies the visible shell context.
   neither a turn-level process disclosure nor a group — and stay standalone rows
   that remain visible even when every group is collapsed; adjacent Bash rows each
   remain standalone.
-- The active ordinary group starts open and closes when it completes only if
-  untouched; completed groups otherwise start closed, and an untouched active group
-  with any recorded failed/denied tool remains open through recovery. These group
+- The active ordinary group starts open. In `compact`, after completion an
+  untouched group with at most four visible items stays open, a larger ordinary
+  group starts closed, and a Task topology group stays open; `standard` and
+  `detailed` keep their own disclosure behavior. An untouched active group with
+  any recorded failed/denied tool remains open through recovery. These group
   defaults do not depend on the thinking preference. Bash rows stay visible
   regardless of any group's collapsed state.
-- No item payload opens itself: a tool, hosted-search or plan call stays a header
-  row until the user opens it, including the literal final item of the last
-  activity group. Group defaults are unchanged, so a final thinking item never
-  causes a backward scan. When `Show thinking` is off, every item payload stays
-  closed and completed reasoning text/excerpts are hidden while the live thinking
-  indicator remains visible; stored reasoning is retained and reappears when the
-  preference is turned back on.
+- Except for the compact Thinking default, no item payload opens itself: a tool,
+  hosted-search or plan call stays a header row until the user opens it,
+  including the literal final item of the last activity group. Group defaults
+  are unchanged, so a final thinking item never causes a backward scan. In
+  `compact`, when `Show thinking` is on, each visible Thinking row opens by
+  default and can be collapsed independently; `standard` and `detailed` keep
+  their existing detail defaults. When `Show thinking` is off, every item payload
+  stays closed and completed reasoning text/excerpts are hidden while the live
+  thinking indicator remains visible; stored reasoning is retained and reappears
+  when the preference is turned back on.
+- Only `compact` indents a group's child rows by 12px below the group header,
+  with the group's hover/focus collapse rail in that gutter. `standard` and
+  `detailed` add no indentation layer, and a run row lifted out of a group keeps
+  the turn's left edge.
 - Activating a group or item header toggles only that level. Closing a parent
   preserves child state, reopening restores it, and sibling groups remain
   independent. Opening a parent is never an expand-all action.
@@ -1116,7 +1133,11 @@ Running turns and pending approvals continue to gate the controls.
   `aria-expanded` / `aria-controls`; it is open on first render so the provider
   response is immediately discoverable, and supports copying the redacted text
 - Never use inline error for transient background operations (plugin load, connection test)
-- Notification cards slide in from the right, newest first below window controls
+- Notification cards slide in from the right, newest first below window controls.
+  Their right edge and width follow the live main-content area, so a docked or
+  resized work panel and a reopened sidebar cannot be covered; Settings, startup,
+  recovery and a maximized panel fall back to the window's right edge. Geometry
+  follows resize and horizontal shift, and the observer is removed on unmount.
 - Warning/error cards require manual dismissal; new cards never evict sticky notices
 - Info/success cards auto-dismiss at 4s, pausing while hovered or keyboard-focused; explicit duration overrides remain compatible
 - Overflow scrolls within the window so every retained notice and close control remains reachable
@@ -1427,9 +1448,13 @@ Project drag/drop follows these patterns:
   remote session is told it cannot show something on this computer and never
   reveals anything, and it is not told whether the path exists on the host.
   Local `file:` Markdown URLs are converted to file references before
-  sanitization, not admitted as native links. `path:line[:column]` retains
-  source navigation in plain text, inline code and Markdown links, including
-  HTML; unavailable browser views report an error without auto-enabling.
+  sanitization, not admitted as native links. `path:line[:column]`,
+  `path:line-range` and GitHub `path#Lline[-Lend]` retain source navigation from
+  plain text, inline code and Markdown links, including HTML; a range opens at
+  its starting line, and unavailable browser views report an error without
+  auto-enabling. A shorthand resolves only when its complete supplied suffix
+  uniquely identifies one safe file; it never degrades to a shorter suffix, and
+  an ambiguous match stays plain text instead of picking a file.
   The address handed to
   the work panel follows the folder that answered: a file of the primary folder
   travels as a project-relative path, a file of a sibling folder of the same

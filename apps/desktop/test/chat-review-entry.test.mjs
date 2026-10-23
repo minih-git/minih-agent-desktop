@@ -1,11 +1,14 @@
 import {
   readStoreSource,
   readStoreModule,
+  readTranscriptModule,
   readTranscriptSource,
 } from "./helpers/source-contracts.mjs";
 import { readAppSource } from "./helpers/source-contracts.mjs";
+import { slotSsr } from "./helpers/slot-ssr.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { createElement } from "react";
 import test from "node:test";
 import {
   reviewChangeFromMessage,
@@ -14,6 +17,7 @@ import {
 } from "../src/lib/workspace-review.ts";
 
 const transcriptSource = await readTranscriptSource();
+const activityItemsSource = await readTranscriptModule("ActivityItems.tsx");
 const cardSource = await readFile(
   new URL("../src/components/ReviewChangeCard.tsx", import.meta.url),
   "utf8",
@@ -159,18 +163,37 @@ test("failed and scratch tool rows cannot manufacture review evidence", () => {
   );
 });
 
-test("chat renders one message-owned card immediately after its tool row", () => {
+test("a review-backed edit renders only the two-level review row", () => {
   assert.equal(transcriptSource.includes("<WorkspaceChangesEntry />"), false);
   assert.equal(transcriptSource.includes("review-changes-entry"), false);
+  // ActivityItems chooses exactly one row: the review card carries the file
+  // header for a recorded change, otherwise the generic tool row renders.
+  assert.match(
+    activityItemsSource,
+    /if \(reviewChangeFromMessage\(item\.message\)\) \{\s*return <ReviewChangeCard[\s\S]*?asToolRow[\s\S]*?\/>;\s*\}/,
+  );
+  assert.match(activityItemsSource, /<ToolRow\s+key=\{item\.message\.id\}/);
+  assert.doesNotMatch(
+    activityItemsSource,
+    /<ReviewChangeCard message=\{item\.message\} \/>/,
+  );
+  // The standalone-run and delegate surfaces make the same choice, so no
+  // review-backed edit can render both the tool header and the file header.
   assert.match(
     transcriptSource,
-    /<ToolRow message=\{item\.message\} \/>[\s\S]*<ReviewChangeCard message=\{item\.message\} \/>/,
+    /reviewChangeFromMessage\(segment\.item\.message\)[\s\S]*?asToolRow/,
+  );
+  assert.doesNotMatch(
+    transcriptSource,
+    /<ToolRow message=\{item\.message\} \/>[\s\S]*?<ReviewChangeCard message=\{item\.message\} \/>/,
   );
   assert.doesNotMatch(transcriptSource, /workspaceDiff|findWorkspaceChange/);
   assert.match(cardSource, /aria-expanded=\{open\}/);
   assert.match(cardSource, /chat\.reviewChangeShow/);
   assert.match(cardSource, /change\.hunks\.map/);
   assert.match(cardSource, /workspaceReviewRollback|rollbackWorkspaceChange/);
+  assert.match(cardSource, /<TooltipButton[^>]*className=\{cx\("review-change-copy"/);
+  assert.doesNotMatch(cardSource, /<TooltipButton[^>]*className=\{cx\("review-change-copy"[^>]*\btitle=/);
   assert.match(
     storeSource,
     /rollbackWorkspaceChange:[\s\S]*api\.workspaceReviewRollback[\s\S]*withReviewChangeState/,
@@ -180,6 +203,120 @@ test("chat renders one message-owned card immediately after its tool row", () =>
     /shouldOpenReviewArtifact|toolWorkPanelTab\("review"\)/,
   );
   assert.doesNotMatch(storeSource, /workspaceReviewSessions/);
+});
+
+test("a review-backed edit renders one file header, no tool header, and respects density defaults across main and subagent surfaces", async (t) => {
+  const ssr = await slotSsr(t);
+  const { ActivityItems } = await ssr.load(
+    "/src/features/chat/transcript/ActivityItems.tsx",
+  );
+  const { SubagentRunRows } = await ssr.load(
+    "/src/features/chat/transcript/ToolRow.tsx",
+  );
+  const { SubagentTranscriptTab } = await ssr.load(
+    "/src/components/workpanel/SubagentTranscriptTab.tsx",
+  );
+  const { useAppStore } = await ssr.load("/src/stores/app-store.ts");
+  const html = ssr.render(
+    createElement(ActivityItems, {
+      items: [{ kind: "tool", message: message() }],
+      isActive: false,
+      live: false,
+      delegateItems: [],
+      delegationStatuses: new Map(),
+      delegationTimings: new Map(),
+      onUserInteraction: () => {},
+    }),
+    { sessionId: null },
+  );
+  assert.equal(html.match(/review-change-card-header/g)?.length, 1);
+  assert.match(html, /class="review-change-card is-tool-row"/);
+  assert.doesNotMatch(html, /tool-row-header/);
+  assert.doesNotMatch(html, /review-change-diff/);
+
+  // Detailed density opens the diff body and exposes the copy action across
+  // the main transcript, inline subagent follow, and subagent detail tab.
+  const detailedHtml = ssr.render(
+    createElement(ActivityItems, {
+      items: [{ kind: "tool", message: message() }],
+      isActive: false,
+      live: false,
+      openDetails: true,
+      delegateItems: [],
+      delegationStatuses: new Map(),
+      delegationTimings: new Map(),
+      onUserInteraction: () => {},
+    }),
+    { sessionId: null },
+  );
+  assert.match(detailedHtml, /class="review-change-card is-tool-row open"/);
+  assert.match(detailedHtml, /review-change-diff/);
+  assert.match(detailedHtml, /review-change-copy/);
+
+  const initialSettings = useAppStore.getInitialState().settings;
+  try {
+    Object.assign(useAppStore.getInitialState(), {
+      settings: {
+        ...initialSettings,
+        defaultMode: "agent",
+        theme: "dark",
+        enterToSend: true,
+        onboardingDismissed: true,
+        transcriptDensity: "detailed",
+      },
+      activeSessionId: "s",
+      retainedSessionIds: ["s"],
+      messages: [],
+      transcriptViews: {
+        s: {
+          messages: [
+            {
+              id: "parent-task",
+              role: "tool",
+              toolName: "Task",
+              toolCallId: "task-1",
+              content: "",
+              toolArgs: { task: "Update file" },
+            },
+            message({ id: "sub-edit-1", parentToolCallId: "task-1" }),
+          ],
+          messageStart: 0,
+          messageEnd: 2,
+          hasMoreBefore: false,
+          hasMoreAfter: false,
+          focus: null,
+          loading: null,
+        },
+      },
+    });
+    const followHtml = ssr.render(
+      createElement(SubagentRunRows, {
+        run: {
+          items: [{ kind: "tool", message: message({ id: "sub-edit-follow" }) }],
+        },
+        agentName: "fixer",
+      }),
+      { sessionId: "s" },
+    );
+    assert.equal(followHtml.match(/review-change-card-header/g)?.length, 1);
+    assert.doesNotMatch(followHtml, /tool-row-header/);
+    assert.match(followHtml, /class="review-change-card is-tool-row open"/);
+    assert.match(followHtml, /review-change-copy/);
+
+    const tabHtml = ssr.render(
+      createElement(SubagentTranscriptTab, { delegationId: "task-1" }),
+      { sessionId: "s" },
+    );
+    assert.equal(tabHtml.match(/review-change-card-header/g)?.length, 1);
+    assert.doesNotMatch(tabHtml, /tool-row-header/);
+    assert.match(tabHtml, /class="review-change-card is-tool-row open"/);
+    assert.match(tabHtml, /review-change-copy/);
+  } finally {
+    Object.assign(useAppStore.getInitialState(), {
+      settings: initialSettings,
+      transcriptViews: {},
+    });
+  }
 });
 
 test("rollback outcomes reach the toast instead of a second card row", () => {

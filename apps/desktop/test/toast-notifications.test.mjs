@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
-
 let server;
 let createInteractionSlice;
 before(async () => {
@@ -83,4 +83,24 @@ test("dismiss removes only the selected notification and keeps raw error detail"
   assert.equal(state.get()[0].message, detail);
   state.dismissToast(999);
   assert.equal(state.get().length, 1);
+});
+
+test("toast viewport anchors to the right edge of the main pane and falls back to the window right edge", async () => {
+  const [toastSource, appShellSource, overlaysStyles] = await Promise.all([
+    readFile(new URL("../src/components/Toast.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/features/app/AppShell.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/styles/overlays.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(toastSource, /function useToastViewportBounds\(\s*anchorElement\?: HTMLElement \| null/);
+  assert.match(toastSource, /new ResizeObserver\(update\)/);
+  assert.match(toastSource, /new MutationObserver\(observeLayout\)/);
+  assert.match(toastSource, /"--toast-viewport-right":/);
+  assert.match(toastSource, /"--toast-viewport-width":/);
+  assert.match(appShellSource, /<section ref=\{setToastAnchor\} className="main-pane">/);
+  assert.match(appShellSource, /<ToastHost anchorElement=\{page === "settings" \? null : toastAnchor\} \/>/);
+  const viewportRule = overlaysStyles.match(/\.toast-viewport \{([^}]*)\}/)?.[1] ?? "";
+  assert.match(viewportRule, /top:\s*56px;/);
+  assert.match(viewportRule, /right:\s*var\(--toast-viewport-right,\s*16px\);/);
+  assert.match(viewportRule, /width:\s*min\(384px,\s*var\(--toast-viewport-width,\s*calc\(100vw - 32px\)\)\);/);
+  assert.doesNotMatch(viewportRule, /translateX\(-50%\)|--toast-viewport-center/);
 });

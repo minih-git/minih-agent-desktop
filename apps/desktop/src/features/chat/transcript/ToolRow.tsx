@@ -3,10 +3,15 @@ import { SubagentStopButton } from "./SubagentStopButton";
 import { PlanHistoryCard } from "./PlanHistoryCard";
 import { MemoryRememberReceipt } from "./MemoryRememberReceipt";
 import { planSubmission } from "../../../lib/plan-history";
+import {
+  foldsTurnProcess,
+  opensProcessDetails,
+  resolveTranscriptDensity,
+} from "../../../lib/transcript-density";
+import { reviewChangeFromMessage } from "../../../lib/workspace-review";
 import { GeneratedImages } from "./GeneratedImages";
 import "../../../styles/generated-images.css";
 import {
-  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -528,6 +533,7 @@ function HostToolRow({
                   )
                 : identityLabel}
             </span>
+            {status === "running" ? <span className="activity-marker" aria-hidden /> : null}
             {identity ? (
               <span className="tool-row-summary tool-row-identity" title={identity.name}>
                 {identity.name}
@@ -724,6 +730,9 @@ function SubagentRunFollow({
   scrollable?: boolean;
 }) {
   const { t } = useTranslation();
+  const density = useAppStore((state) => resolveTranscriptDensity(state.settings));
+  const openDetails = opensProcessDetails(density);
+  const openThinking = foldsTurnProcess(density) || openDetails;
   const {
     scrollRef,
     contentRef,
@@ -758,15 +767,26 @@ function SubagentRunFollow({
           <div ref={contentRef}>
             {items.map((item) =>
               item.kind === "tool" ? (
-                <Fragment key={item.message.id}>
-                  <ToolRow message={item.message} />
-                  <ReviewChangeCard message={item.message} />
-                </Fragment>
+                reviewChangeFromMessage(item.message) ? (
+                  <ReviewChangeCard
+                    key={item.message.id}
+                    message={item.message}
+                    asToolRow
+                    autoOpen={openDetails}
+                  />
+                ) : (
+                  <ToolRow
+                    key={item.message.id}
+                    message={item.message}
+                    autoOpen={openDetails}
+                  />
+                )
               ) : item.kind === "thinking" ? (
                 <ThinkingRow
                   key={`thinking-${item.message.id}`}
                   message={item.message}
                   streaming={item.message.status === "streaming"}
+                  autoOpen={openThinking || item.message.status === "streaming"}
                 />
               ) : (
                 <div

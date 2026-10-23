@@ -278,6 +278,14 @@ The bundled models.dev snapshot is the startup baseline. Startup reads no
 remote catalog and uses no ambient credentials. `providers.refreshModelCatalog`
 refreshes models.dev explicitly; settings metadata lookups themselves are local.
 
+The bundled snapshot is curated rather than mirrored wholesale from every
+upstream revision. A correction is adopted when the official model publisher
+and the bundled record agree: the Kilo IDs `z-ai/glm-5.3-flash` and
+`~z-ai/glm-flash-latest` therefore publish an output limit of `131072`. A
+conflicting reseller value is not adopted, so Kilo/OpenRouter Beam output limits
+and the remaining price differences keep the fork's current values. A static
+catalog price is not Router billing.
+
 For keyed endpoints, live discovery supplies IDs and models.dev enriches their
 metadata. A positive safe integer context/input or output limit reported on a live
 model-list row takes precedence over the catalog for that field; each field

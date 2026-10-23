@@ -281,10 +281,17 @@ test("tool and search rows stay collapsed while thinking keeps its leaf default"
   assert.match(transcriptDisclosureSource, /revealRequest\?: number/);
   assert.match(transcriptDisclosureSource, /const currentOpen = useRef\(open\)/);
   assert.match(transcriptDisclosureSource, /const setManualOpen = useCallback/);
-  assert.match(transcriptSource, /useAutomaticDisclosure\(\s*hasSubagentTopology \? live : visibleItems\.length <= 1/);
   assert.match(
     transcriptSource,
-    /<ThinkingRow[\s\S]*?autoOpen=\{openDetails \|\| \(live && item === lastItem\)\}/,
+    /const automaticallyOpen = hasSubagentTopology \|\| live \|\| visibleItems\.length <= AUTOMATIC_OPEN_MAX_ITEMS;/,
+  );
+  assert.match(
+    transcriptSource,
+    /const thinkingDefaultOpen = !flat \|\| openDetails;/,
+  );
+  assert.match(
+    transcriptSource,
+    /<ThinkingRow[\s\S]*?autoOpen=\{thinkingDefaultOpen \|\| openDetails \|\| \(live && item === lastItem\)\}/,
   );
   // The leaf default follows the density: `detailed` opens payloads, and in
   // every other density a tool, hosted-search or plan row waits for the user.
