@@ -31,6 +31,7 @@ export const fr: Record<TranslationKey, string> = {
   "hosts.add": "Connecter un ordinateur",
   "hosts.open": "Ouvrir",
   "hosts.forget": "Oublier",
+  "hosts.forgetFailed": "Impossible d'oublier cet ordinateur : {{reason}}",
   "hosts.forgetConfirm": "Oublier {{label}} ? Cet appareil aura besoin d'un nouveau ticket.",
   "hosts.status.online": "En ligne",
   "hosts.status.offline": "Hors ligne — Minih n'est pas lancé ou l'ordinateur est en veille",
@@ -418,6 +419,7 @@ export const fr: Record<TranslationKey, string> = {
   "directChat.copy": "Copier en Markdown",
   "directChat.copied": "Copié",
   "directChat.archive": "Archiver",
+  "directChat.stopAndArchive": "Arrêter et archiver",
   "directChat.restore": "Restaurer",
   "directChat.delete": "Supprimer la discussion",
   "directChat.deleteTitle": "Supprimer cette discussion ?",
@@ -431,6 +433,7 @@ export const fr: Record<TranslationKey, string> = {
   "directChat.archivedHint": "Cette discussion est archivée. Restaurez-la pour envoyer.",
   "directChat.saveFailed": "Ce message n'a pas pu être enregistré et n'a pas été envoyé. Votre texte est toujours là.",
   "directChat.modelUnavailable": "Le modèle de cette discussion n'est plus disponible. Choisissez-en un autre pour envoyer.",
+  "directChat.copyFailed": "Impossible de copier dans le presse-papiers.",
   "directChat.chooseModel": "Choisir un modèle",
   "directChat.modelChanged": "Passé à {{model}} · s'applique au message suivant",
   "directChat.state.interrupted": "Interrompu · ce qui est arrivé est ci-dessus",
@@ -500,6 +503,7 @@ export const fr: Record<TranslationKey, string> = {
   "settings.history.clearBusy": "Une réponse arrive encore dans l'une de ces discussions. Arrêtez-la d'abord.",
 
   "directChat.noModel": "Aucun modèle n'est encore choisi. Choisissez-en un pour commencer.",
+  "directChat.notAnImageModel": "Cette conversation génère des images et le modèle choisi ne le peut pas.",
 
   "directChat.reason.unauthorized": "La passerelle de modèles a refusé cette clé. Reconnectez pour continuer.",
   "directChat.reason.quota": "Le compte est à court de quota ou envoie trop vite.",

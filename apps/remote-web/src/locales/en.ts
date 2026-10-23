@@ -35,6 +35,7 @@ export const en = {
   "hosts.add": "Connect a computer",
   "hosts.open": "Open",
   "hosts.forget": "Forget",
+  "hosts.forgetFailed": "Could not forget this computer: {{reason}}",
   "hosts.forgetConfirm": "Forget {{label}}? This device needs a new pairing ticket afterwards.",
   "hosts.status.online": "Online",
   "hosts.status.offline": "Offline — Minih isn't running or the computer is asleep",
@@ -422,6 +423,7 @@ export const en = {
   "directChat.copy": "Copy as Markdown",
   "directChat.copied": "Copied",
   "directChat.archive": "Archive",
+  "directChat.stopAndArchive": "Stop and archive",
   "directChat.restore": "Restore",
   "directChat.delete": "Delete conversation",
   "directChat.deleteTitle": "Delete this conversation?",
@@ -435,6 +437,7 @@ export const en = {
   "directChat.archivedHint": "This conversation is archived. Restore it to send again.",
   "directChat.saveFailed": "This message could not be saved, so it was not sent. Your text is still here.",
   "directChat.modelUnavailable": "This conversation's model is no longer available. Choose another to send again.",
+  "directChat.copyFailed": "Could not copy to the clipboard.",
   "directChat.chooseModel": "Choose a model",
   "directChat.modelChanged": "Switched to {{model}} · applies to the next message",
   "directChat.state.interrupted": "Interrupted · the text above is what arrived",
@@ -504,6 +507,7 @@ export const en = {
   "settings.history.clearBusy": "A reply is still arriving in one of these conversations. Stop it first.",
 
   "directChat.noModel": "No model is chosen yet. Pick one to start.",
+  "directChat.notAnImageModel": "This conversation makes images, and the chosen model cannot.",
 
   "directChat.reason.unauthorized": "The model gateway rejected this key. Reconnect to continue.",
   "directChat.reason.quota": "The account is out of quota or sending too fast.",

@@ -31,6 +31,7 @@ export const es: Record<TranslationKey, string> = {
   "hosts.add": "Conectar un equipo",
   "hosts.open": "Abrir",
   "hosts.forget": "Olvidar",
+  "hosts.forgetFailed": "No se pudo olvidar este ordenador: {{reason}}",
   "hosts.forgetConfirm": "¿Olvidar {{label}}? Después este dispositivo necesitará un ticket nuevo.",
   "hosts.status.online": "En línea",
   "hosts.status.offline": "Desconectado — Minih no está en ejecución o el equipo está suspendido",
@@ -418,6 +419,7 @@ export const es: Record<TranslationKey, string> = {
   "directChat.copy": "Copiar como Markdown",
   "directChat.copied": "Copiado",
   "directChat.archive": "Archivar",
+  "directChat.stopAndArchive": "Detener y archivar",
   "directChat.restore": "Restaurar",
   "directChat.delete": "Eliminar conversación",
   "directChat.deleteTitle": "¿Eliminar esta conversación?",
@@ -431,6 +433,7 @@ export const es: Record<TranslationKey, string> = {
   "directChat.archivedHint": "Esta conversación está archivada. Restáurala para volver a enviar.",
   "directChat.saveFailed": "Este mensaje no se pudo guardar, así que no se envió. Tu texto sigue aquí.",
   "directChat.modelUnavailable": "El modelo de esta conversación ya no está disponible. Elige otro para enviar.",
+  "directChat.copyFailed": "No se pudo copiar al portapapeles.",
   "directChat.chooseModel": "Elegir un modelo",
   "directChat.modelChanged": "Cambiado a {{model}} · se aplica al siguiente mensaje",
   "directChat.state.interrupted": "Interrumpido · arriba está lo que llegó",
@@ -500,6 +503,7 @@ export const es: Record<TranslationKey, string> = {
   "settings.history.clearBusy": "Sigue llegando una respuesta en una de estas conversaciones. Deténla primero.",
 
   "directChat.noModel": "Todavía no hay un modelo elegido. Elige uno para empezar.",
+  "directChat.notAnImageModel": "Esta conversación genera imágenes y el modelo elegido no puede.",
 
   "directChat.reason.unauthorized": "La pasarela de modelos rechazó esta clave. Vuelve a conectar para continuar.",
   "directChat.reason.quota": "La cuenta se quedó sin cuota o envía demasiado rápido.",

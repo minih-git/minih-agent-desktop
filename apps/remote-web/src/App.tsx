@@ -18,8 +18,11 @@
  */
 import type { RacpSession } from "@minih-agent/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+
 
 import { ForegroundNoticeBar, type ForegroundNotice } from "./components/ForegroundNotice.js";
+import { Toast } from "./components/ui/Toast.js";
 import { AccountScreen } from "./screens/AccountScreen.js";
 import { ChatArchiveScreen } from "./screens/ChatArchiveScreen.js";
 import { ChatsScreen } from "./screens/ChatsScreen.js";
@@ -41,9 +44,12 @@ import { registryHasHosts } from "./lib/host-registry.js";
 import { resolveLaunchRoot, storeLastRoot } from "./lib/launch-root.js";
 import { setBackHandler } from "./lib/navigation.js";
 import type { DirectChatConnection } from "./lib/direct-chat/connection.js";
+import { forgetHost } from "./lib/forget.js";
 import {
   credentialPort,
   directChatService,
+  gatewayOrigin,
+  hostRegistry,
   isNativeApp,
   modelGatewayOrigin,
   nativePlatform,
@@ -52,6 +58,7 @@ import {
 import { consumeNotificationTap, setNotificationBadge } from "./lib/native-notify.js";
 import { createScreenHistory, sameScreen, screenFromHistoryState } from "./lib/screen-history.js";
 import { previousScreen, type RootKind, type Screen } from "./lib/screen-stack.js";
+import { leaveRevokedSession } from "./lib/session-exit.js";
 import { tabBarVisible } from "./lib/tab-bar.js";
 import { createSessionViews } from "./lib/session-state.js";
 
@@ -90,7 +97,13 @@ const initialRoot = resolveLaunchRoot({
 });
 
 export default function App() {
+  const { t } = useTranslation();
   const hosts = useHostRegistry();
+  /**
+   * Why the last "forget this computer" failed. A revoked session's only way
+   * out is that action, so its failure is reported instead of swallowed.
+   */
+  const [forgetFailure, setForgetFailure] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: initialRoot });
   /**
    * The model connection this device holds, or null. Read once at mount and
@@ -524,6 +537,25 @@ export default function App() {
           hostLabel={host.label}
           {...(host.roles ? { roles: host.roles } : {})}
           onBack={goBack}
+          // A revoked session used to be a dead end here because this handler
+          // was never passed, so the screen could not draw the action (B8).
+          onForget={() => {
+            const target = host;
+            void leaveRevokedSession({
+              hostId: target.hostId,
+              forget: (hostId) =>
+                forgetHost(hostId, {
+                  registry: hostRegistry,
+                  credentialPort,
+                  ...(isNativeApp ? { push: { gatewayOrigin } } : {}),
+                }),
+              // Leaving does not wait for the unregistration: the credential is
+              // what blocked the user, and the computer list can retry.
+              onLeft: () => navigate({ kind: "hosts" }),
+            }).then((outcome) => {
+              if (!outcome.ok) setForgetFailure(outcome.reason);
+            });
+          }}
         />
       );
     }
@@ -568,6 +600,15 @@ export default function App() {
           }}
         />
       ) : null}
+      {/*
+        A failed "forget" leaves the credential behind. The session screen has
+        already been left, so the reason is reported here (see `onForget`).
+      */}
+      <Toast
+        message={forgetFailure ? t("hosts.forgetFailed", { reason: forgetFailure }) : null}
+        visible={forgetFailure !== null}
+        onDismiss={() => setForgetFailure(null)}
+      />
     </div>
   );
 }

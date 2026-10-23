@@ -31,6 +31,7 @@ export const tr: Record<TranslationKey, string> = {
   "hosts.add": "Bir bilgisayar bağlayın",
   "hosts.open": "Aç",
   "hosts.forget": "Unut",
+  "hosts.forgetFailed": "Bu bilgisayar unutulamadı: {{reason}}",
   "hosts.forgetConfirm": "{{label}} unutulsun mu? Bundan sonra bu cihaz yeni bir bilet ister.",
   "hosts.status.online": "Çevrimiçi",
   "hosts.status.offline": "Çevrimdışı — Minih çalışmıyor veya bilgisayar uykuda",
@@ -418,6 +419,7 @@ export const tr: Record<TranslationKey, string> = {
   "directChat.copy": "Markdown olarak kopyala",
   "directChat.copied": "Kopyalandı",
   "directChat.archive": "Arşivle",
+  "directChat.stopAndArchive": "Durdur ve arşivle",
   "directChat.restore": "Geri yükle",
   "directChat.delete": "Sohbeti sil",
   "directChat.deleteTitle": "Bu sohbet silinsin mi?",
@@ -431,6 +433,7 @@ export const tr: Record<TranslationKey, string> = {
   "directChat.archivedHint": "Bu sohbet arşivlendi. Göndermek için geri yükleyin.",
   "directChat.saveFailed": "Bu mesaj kaydedilemedi, bu yüzden gönderilmedi. Metniniz burada duruyor.",
   "directChat.modelUnavailable": "Bu sohbetin modeli artık kullanılamıyor. Göndermek için başka bir model seçin.",
+  "directChat.copyFailed": "Panoya kopyalanamadı.",
   "directChat.chooseModel": "Model seç",
   "directChat.modelChanged": "{{model}} modeline geçildi · sonraki mesajda geçerli",
   "directChat.state.interrupted": "Kesildi · yukarıda gelen metin var",
@@ -500,6 +503,7 @@ export const tr: Record<TranslationKey, string> = {
   "settings.history.clearBusy": "Bu sohbetlerden birinde yanıt gelmeye devam ediyor. Önce durdurun.",
 
   "directChat.noModel": "Henüz bir model seçilmedi. Başlamak için birini seçin.",
+  "directChat.notAnImageModel": "Bu sohbet görsel üretiyor ve seçilen model bunu yapamıyor.",
 
   "directChat.reason.unauthorized": "Model ağ geçidi bu anahtarı reddetti. Sürdürmek için yeniden bağlanın.",
   "directChat.reason.quota": "Hesabın kotası bitti veya çok hızlı gönderiyor.",

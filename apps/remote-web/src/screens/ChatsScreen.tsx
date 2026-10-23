@@ -388,12 +388,20 @@ export function ChatsScreen({
             />
             <ListRow
               leading={<Archive className="h-5 w-5 text-[var(--rm-text-secondary)]" aria-hidden="true" />}
-              title={t("directChat.archive")}
+              // A reply in flight refuses the archive, and a row that then did
+              // nothing was bug B6. The row says what it will do, and does it.
+              title={
+                actionTarget?.liveAttempt
+                  ? t("directChat.stopAndArchive")
+                  : t("directChat.archive")
+              }
               chevron
               onClick={async () => {
-                if (!actionTarget) return;
-                await history.setArchived(actionTarget.conversation.id, true);
+                const target = actionTarget;
+                if (!target) return;
                 setActionTarget(null);
+                if (target.liveAttempt) await runner.stop(target.conversation.id);
+                await history.setArchived(target.conversation.id, true);
                 notifyDirectChatChanged();
               }}
             />

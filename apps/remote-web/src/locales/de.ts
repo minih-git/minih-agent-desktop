@@ -31,6 +31,7 @@ export const de: Record<TranslationKey, string> = {
   "hosts.add": "Computer verbinden",
   "hosts.open": "Öffnen",
   "hosts.forget": "Entfernen",
+  "hosts.forgetFailed": "Dieser Computer konnte nicht entfernt werden: {{reason}}",
   "hosts.forgetConfirm": "{{label}} entfernen? Danach braucht dieses Gerät ein neues Kopplungsticket.",
   "hosts.status.online": "Online",
   "hosts.status.offline": "Offline — Minih läuft nicht oder der Computer ist im Ruhezustand",
@@ -418,6 +419,7 @@ export const de: Record<TranslationKey, string> = {
   "directChat.copy": "Als Markdown kopieren",
   "directChat.copied": "Kopiert",
   "directChat.archive": "Archivieren",
+  "directChat.stopAndArchive": "Stoppen und archivieren",
   "directChat.restore": "Wiederherstellen",
   "directChat.delete": "Unterhaltung löschen",
   "directChat.deleteTitle": "Diese Unterhaltung löschen?",
@@ -431,6 +433,7 @@ export const de: Record<TranslationKey, string> = {
   "directChat.archivedHint": "Diese Unterhaltung ist archiviert. Zum Senden wiederherstellen.",
   "directChat.saveFailed": "Diese Nachricht konnte nicht gespeichert werden und wurde nicht gesendet. Ihr Text steht noch hier.",
   "directChat.modelUnavailable": "Das Modell dieser Unterhaltung ist nicht mehr verfügbar. Ein anderes wählen, um weiterzusenden.",
+  "directChat.copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen.",
   "directChat.chooseModel": "Modell wählen",
   "directChat.modelChanged": "Gewechselt zu {{model}} · gilt ab der nächsten Nachricht",
   "directChat.state.interrupted": "Unterbrochen · oben steht, was ankam",
@@ -500,6 +503,7 @@ export const de: Record<TranslationKey, string> = {
   "settings.history.clearBusy": "In einer dieser Unterhaltungen kommt noch eine Antwort an. Zuerst stoppen.",
 
   "directChat.noModel": "Es ist noch kein Modell gewählt. Zum Starten eines wählen.",
+  "directChat.notAnImageModel": "Diese Unterhaltung erzeugt Bilder, und das gewählte Modell kann das nicht.",
 
   "directChat.reason.unauthorized": "Das Modell-Gateway hat diesen Schlüssel abgelehnt. Neu verbinden, um fortzufahren.",
   "directChat.reason.quota": "Das Konto hat kein Guthaben mehr oder sendet zu schnell.",

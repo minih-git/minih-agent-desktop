@@ -25,6 +25,9 @@ import { Screen, ScreenContent, ScreenDock } from "../components/ui/Screen.js";
 import { Sheet } from "../components/ui/Sheet.js";
 import { watchVisibility } from "../lib/app-state.js";
 import { checkModelVisionCapability, isImageModel, resolveDirectModel } from "../lib/direct-chat/catalog.js";
+
+import { copyText } from "../lib/clipboard.js";
+import { IMAGE_PROTOCOL, resolveSendTarget, type SendTarget } from "../lib/direct-chat/target.js";
 import type {
   DirectChatAttempt,
   DirectChatMedia,
@@ -268,8 +271,16 @@ export function DirectChatScreen({
   const isImage = transcript
     ? isImageConversation(transcript.conversation, transcript.attempts)
     : nextModel !== null && nextChoice !== null && !nextChoice.usable && isImageModel(nextModel);
-  const usable = nextModel !== null && (isImage ? isImageModel(nextModel) : nextChoice?.usable === true);
-  const activeProtocol = isImage ? "openai-images" : (nextChoice && "protocol" in nextChoice ? nextChoice.protocol : "openai-completions");
+  // One decision for the composer, retry, regenerate and edit-resend, so an
+  // image conversation can retry (bug B3) and a refusal always has a reason
+  // (bug B4).
+  const target = resolveSendTarget(nextModel, isImage);
+  const usable = target.ok;
+  const activeProtocol = target.ok
+    ? target.protocol
+    : isImage
+      ? IMAGE_PROTOCOL
+      : "openai-completions";
   const visionCap = nextModel ? checkModelVisionCapability(nextModel) : "unsupported";
   const supportsImages = visionCap === "supported" && !isImage;
 
@@ -427,16 +438,38 @@ export function DirectChatScreen({
     return true;
   }
 
+  /** Why a turn cannot be sent, in words. */
+  const refusalNotice = useCallback(
+    (value: SendTarget): string | null => {
+      if (value.ok) return null;
+      if (value.reason === "no-model") return t("directChat.noModel");
+      if (value.reason === "not-an-image-model") return t("directChat.notAnImageModel");
+      return t("directChat.modelUnavailable");
+    },
+    [t],
+  );
+
   /** D3 in its archived state offers restore instead of an input. */
   async function restore(): Promise<void> {
-    await history.setArchived(conversationId, false, new Date().toISOString());
+    const outcome = await history.setArchived(conversationId, false, new Date().toISOString());
+    if (!outcome.ok) setNotice(t("directChat.saveFailed"));
     await reload();
     onChanged?.();
   }
 
   async function retry(attempt: DirectChatAttempt) {
-    // A retry sends: without a connected account there is no key to send with.
-    if (!scope || !nextModel || nextChoice?.usable !== true) return;
+    // A retry sends the same operation the turn used, which for an image
+    // conversation is the image endpoint — the old guard asked the chat
+    // classifier first and always got "unusable" (bug B3).
+    if (!scope) {
+      setNotice(t("chats.connect"));
+      return;
+    }
+    const blocked = refusalNotice(target);
+    if (blocked !== null || !nextModel || !target.ok) {
+      setNotice(blocked ?? t("directChat.modelUnavailable"));
+      return;
+    }
     const key = await createDirectChatSecret(secureStore()).read();
     if (!key) {
       setNotice(t("directChat.failure.unauthorized"));
@@ -446,7 +479,7 @@ export function DirectChatScreen({
       attempt,
       scope,
       model: nextModel,
-      protocol: nextChoice.protocol,
+      protocol: target.protocol,
       authKey: key,
     });
     if (!outcome.ok) {
@@ -455,16 +488,26 @@ export function DirectChatScreen({
     await reload();
     onChanged?.();
   }
-  const copyMessage = useCallback(async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // Ignore clipboard permission failures
-    }
-  }, []);
+
+  const copyMessage = useCallback(
+    async (text: string) => {
+      // A copy that did not happen must not look like one that did (bug B11).
+      const outcome = await copyText(text, navigator.clipboard);
+      setNotice(outcome.ok ? null : t("directChat.copyFailed"));
+    },
+    [t],
+  );
 
   async function regenerateMessage(messageId: string): Promise<void> {
-    if (!scope || !nextModel || !usable || !transcript) return;
+    if (!scope || !transcript) {
+      setNotice(t("directChat.modelUnavailable"));
+      return;
+    }
+    const blocked = refusalNotice(target);
+    if (blocked !== null || !nextModel || !target.ok) {
+      setNotice(blocked ?? t("directChat.modelUnavailable"));
+      return;
+    }
     const msg = transcript.messages.find((m) => m.id === messageId);
     if (!msg) return;
     const attempt = transcript.attempts.find(
@@ -480,7 +523,7 @@ export function DirectChatScreen({
       attempt,
       scope,
       model: nextModel,
-      protocol: activeProtocol,
+      protocol: target.protocol,
       authKey: key,
     });
     if (!outcome.ok) {
@@ -501,7 +544,15 @@ export function DirectChatScreen({
   }
 
   async function handleConfirmEditResend(): Promise<void> {
-    if (!editingMessage || !scope || !nextModel || !usable || !transcript) return;
+    if (!editingMessage || !scope || !transcript) {
+      setNotice(t("directChat.modelUnavailable"));
+      return;
+    }
+    const blocked = refusalNotice(target);
+    if (blocked !== null || !nextModel || !target.ok) {
+      setNotice(blocked ?? t("directChat.modelUnavailable"));
+      return;
+    }
     const key = await createDirectChatSecret(secureStore()).read();
     if (!key) {
       setNotice(t("directChat.failure.unauthorized"));
@@ -762,19 +813,37 @@ export function DirectChatScreen({
         }}
         onArchive={async () => {
           if (!conversation) return;
-          await history.setArchived(conversationId, !conversation.archived, new Date().toISOString());
+          const outcome = await history.setArchived(
+            conversationId,
+            !conversation.archived,
+            new Date().toISOString(),
+          );
+          if (!outcome.ok) {
+            // The sheet offers "stop and archive" instead, so this is the
+            // path a caller that ignored `idle` ends up on (bug B6).
+            setNotice(t("directChat.stopFirst"));
+            return;
+          }
           await reload();
           onChanged?.();
           if (!conversation.archived) onBack();
         }}
+        onStopThenArchive={async () => {
+          await runner.stop(conversationId);
+          const outcome = await history.setArchived(conversationId, true, new Date().toISOString());
+          if (!outcome.ok) setNotice(t("directChat.saveFailed"));
+          await reload();
+          onChanged?.();
+          if (outcome.ok) onBack();
+        }}
         onCopy={async () => {
-          if (!transcript) return false;
-          try {
-            await navigator.clipboard.writeText(transcriptAsMarkdown(transcript));
-            return true;
-          } catch {
+          if (!transcript) {
+            setNotice(t("directChat.copyFailed"));
             return false;
           }
+          const outcome = await copyText(transcriptAsMarkdown(transcript), navigator.clipboard);
+          if (!outcome.ok) setNotice(t("directChat.copyFailed"));
+          return outcome.ok;
         }}
         onDelete={async () => {
           await runner.stop(conversationId);

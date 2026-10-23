@@ -3,7 +3,7 @@
  *
  * Everything a conversation can do to itself lives here, in one place, because
  * each action has a precondition the ADR states: a rename is manual and costs no
- * model call, a delete needs the reply stopped first, and a copy carries the
+ * model call, archiving waits for the reply to stop, and a copy carries the
  * transcript and nothing else.
  *
  * The save location is stated in words ("this phone"), not implied: it is the one
@@ -13,6 +13,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { DirectChatTranscript } from "../../lib/direct-chat/history-store.js";
+import { renameValueFor } from "../../lib/direct-chat/rename.js";
 import { Button } from "../ui/Button.js";
 import { Callout } from "../ui/Callout.js";
 import { ListGroup, ListRow } from "../ui/ListGroup.js";
@@ -28,6 +29,8 @@ export type DirectChatInfoSheetProps = {
   onRename: (title: string) => Promise<void>;
   onTogglePin: () => Promise<void>;
   onArchive: () => Promise<void>;
+  /** Stop the reply, then archive. Offered instead of a dead archive row. */
+  onStopThenArchive: () => Promise<void>;
   onCopy: () => Promise<boolean>;
   onDelete: () => Promise<boolean>;
 };
@@ -40,16 +43,24 @@ export function DirectChatInfoSheet({
   onRename,
   onTogglePin,
   onArchive,
+  onStopThenArchive,
   onCopy,
   onDelete,
 }: DirectChatInfoSheetProps) {
   const { t } = useTranslation();
-  const [title, setTitle] = useState(transcript?.conversation.title ?? "");
+  /**
+   * What the user typed, or `null` while the field still mirrors the
+   * conversation. Deriving the value instead of seeding a state is what makes a
+   * rename work when the transcript arrives after the first render (bug B5).
+   */
+  const [editedTitle, setEditedTitle] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const conversation = transcript?.conversation ?? null;
+  const title = renameValueFor(transcript, editedTitle);
+  const archived = conversation?.archived === true;
 
   return (
     <Sheet open={open} onClose={onClose} title={t("directChat.info")}>
@@ -73,7 +84,7 @@ export function DirectChatInfoSheet({
         <div className="flex items-center gap-2 px-1">
           <input
             value={title}
-            onChange={(event) => setTitle(event.target.value)}
+            onChange={(event) => setEditedTitle(event.target.value)}
             aria-label={t("directChat.rename")}
             className="min-w-0 flex-1 rounded-[10px] bg-[var(--rm-bg-inset)] px-3 py-2 text-[16px] text-[var(--rm-text-primary)] outline-none"
           />
@@ -82,7 +93,9 @@ export function DirectChatInfoSheet({
             size="small"
             disabled={title.trim().length === 0 || title.trim() === conversation?.title}
             onClick={async () => {
-              await onRename(title);
+              await onRename(title.trim());
+              // The field goes back to mirroring the stored title.
+              setEditedTitle(null);
             }}
           >
             {t("common.save")}
@@ -105,13 +118,33 @@ export function DirectChatInfoSheet({
               setCopied(await onCopy());
             }}
           />
-          <ListRow
-            title={conversation?.archived ? t("directChat.restore") : t("directChat.archive")}
-            chevron
-            onClick={() => {
-              void onArchive();
-            }}
-          />
+          {archived ? (
+            <ListRow
+              title={t("directChat.restore")}
+              chevron
+              onClick={() => {
+                void onArchive();
+              }}
+            />
+          ) : idle ? (
+            <ListRow
+              title={t("directChat.archive")}
+              chevron
+              onClick={() => {
+                void onArchive();
+              }}
+            />
+          ) : (
+            // Archiving waits for the reply to stop, so a replying conversation
+            // gets the action that actually works instead of a dead row (B6).
+            <ListRow
+              title={t("directChat.stopAndArchive")}
+              chevron
+              onClick={() => {
+                void onStopThenArchive();
+              }}
+            />
+          )}
           <ListRow
             title={<span className="text-[var(--rm-error)]">{t("directChat.delete")}</span>}
             chevron
@@ -133,9 +166,11 @@ export function DirectChatInfoSheet({
           <Button
             variant="destructive"
             size="large"
-            disabled={busy || !idle}
+            disabled={busy}
             onClick={async () => {
               setBusy(true);
+              // `onDelete` stops the reply first, so a replying conversation can
+              // be deleted without a second, decorative gate.
               const removed = await onDelete();
               setBusy(false);
               if (removed) {

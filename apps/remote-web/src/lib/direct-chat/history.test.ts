@@ -600,3 +600,56 @@ describe("anti-resurrection on deletion", () => {
     expect(await store.messages(created.conversation.id)).toEqual([]);
   });
 });
+
+/**
+ * Bug B6: archiving a conversation whose reply was still arriving returned
+ * nothing at all, so the sheet and the list showed no reaction — the action was
+ * silently dropped. The refusal is a value now, so both callers can offer
+ * "stop and archive" instead of a button that does nothing.
+ */
+describe("archiving says what happened", () => {
+  it("archives a conversation whose reply has finished", async () => {
+    const { history, turn } = harness();
+    const created = await history.beginTurn(turn());
+    if (!created.ok) throw new Error("setup failed");
+    await history.finish(created.attempt, { state: "complete", text: "ok", now: T0 });
+
+    expect(await history.setArchived(created.conversation.id, true, T0)).toEqual({ ok: true });
+    expect((await history.transcript(created.conversation.id))?.conversation.archived).toBe(true);
+  });
+
+  it("restores without asking for a stop", async () => {
+    const { history, turn } = harness();
+    const created = await history.beginTurn(turn());
+    if (!created.ok) throw new Error("setup failed");
+    await history.finish(created.attempt, { state: "complete", text: "ok", now: T0 });
+    await history.setArchived(created.conversation.id, true, T0);
+    const again = await history.beginTurn(turn({ conversationId: created.conversation.id }));
+    // The archived record refuses a new turn; restoring is what reopens it.
+    expect(again.ok).toBe(false);
+
+    expect(await history.setArchived(created.conversation.id, false, T0)).toEqual({ ok: true });
+    expect((await history.transcript(created.conversation.id))?.conversation.archived).toBe(false);
+  });
+
+  it("refuses while a reply is arriving, and names the reason", async () => {
+    const { history, turn } = harness();
+    const created = await history.beginTurn(turn());
+    if (!created.ok) throw new Error("setup failed");
+    await history.checkpoint(created.attempt, "still arriving", T0);
+
+    expect(await history.setArchived(created.conversation.id, true, T0)).toEqual({
+      ok: false,
+      reason: "busy",
+    });
+    expect((await history.transcript(created.conversation.id))?.conversation.archived).toBe(false);
+  });
+
+  it("reports a conversation that is already gone", async () => {
+    const { history } = harness();
+    expect(await history.setArchived("missing", true, T0)).toEqual({
+      ok: false,
+      reason: "missing",
+    });
+  });
+});

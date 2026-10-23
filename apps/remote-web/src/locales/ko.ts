@@ -31,6 +31,7 @@ export const ko: Record<TranslationKey, string> = {
   "hosts.add": "컴퓨터 연결",
   "hosts.open": "열기",
   "hosts.forget": "잊기",
+  "hosts.forgetFailed": "이 컴퓨터를 잊지 못했습니다: {{reason}}",
   "hosts.forgetConfirm": "{{label}}을(를) 잊을까요? 이후 이 기기에는 새 연결 티켓이 필요합니다.",
   "hosts.status.online": "온라인",
   "hosts.status.offline": "오프라인 — Minih가 실행 중이지 않거나 컴퓨터가 절전 모드입니다",
@@ -418,6 +419,7 @@ export const ko: Record<TranslationKey, string> = {
   "directChat.copy": "Markdown으로 복사",
   "directChat.copied": "복사됨",
   "directChat.archive": "보관",
+  "directChat.stopAndArchive": "중지하고 보관",
   "directChat.restore": "복원",
   "directChat.delete": "대화 삭제",
   "directChat.deleteTitle": "이 대화를 삭제할까요?",
@@ -431,6 +433,7 @@ export const ko: Record<TranslationKey, string> = {
   "directChat.archivedHint": "이 대화는 보관되었습니다. 다시 보내려면 복원하세요.",
   "directChat.saveFailed": "이 메시지를 저장하지 못해 보내지 않았습니다. 입력한 내용은 그대로 있습니다.",
   "directChat.modelUnavailable": "이 대화의 모델을 더 이상 사용할 수 없습니다. 다른 모델을 선택해 보내세요.",
+  "directChat.copyFailed": "클립보드에 복사하지 못했습니다.",
   "directChat.chooseModel": "모델 선택",
   "directChat.modelChanged": "{{model}} 모델로 변경됨 · 다음 메시지부터 적용",
   "directChat.state.interrupted": "중단됨 · 위에는 도착한 내용입니다",
@@ -500,6 +503,7 @@ export const ko: Record<TranslationKey, string> = {
   "settings.history.clearBusy": "이 대화 중 하나에서 답변이 계속 오고 있습니다. 먼저 멈추세요.",
 
   "directChat.noModel": "아직 모델을 선택하지 않았습니다. 시작하려면 하나를 선택하세요.",
+  "directChat.notAnImageModel": "이 대화는 이미지를 생성하며 선택한 모델은 이를 지원하지 않습니다.",
 
   "directChat.reason.unauthorized": "모델 게이트웨이가 이 키를 거부했습니다. 계속하려면 다시 연결하세요.",
   "directChat.reason.quota": "계정 할당량이 부족하거나 너무 빠르게 요청하고 있습니다.",

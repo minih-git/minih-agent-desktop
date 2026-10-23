@@ -186,7 +186,11 @@ export type DirectChatHistory = {
   setDraft(conversationId: string, draft: string): Promise<void>;
   rename(conversationId: string, title: string, now?: string): Promise<void>;
   setPinned(conversationId: string, pinned: boolean, now?: string): Promise<void>;
-  setArchived(conversationId: string, archived: boolean, now?: string): Promise<void>;
+  /**
+   * Archive or restore. A live reply refuses the archive and says why, instead
+   * of returning nothing: the sheet and the list both act on this (bug B6).
+   */
+  setArchived(conversationId: string, archived: boolean, now?: string): Promise<ConversationEditResult>;
   /** The model the next send uses; only allowed while the conversation is idle. */
   setNextModel(conversationId: string, modelId: string, protocol: string, now: string): Promise<void>;
   /** Conversation, messages and attempts together; a live attempt blocks it. */
@@ -201,6 +205,17 @@ export type DirectChatHistory = {
    */
   clearScope(scope: DirectChatScope): Promise<{ ok: true } | { ok: false; reason: "busy" | "storage" }>;
 };
+
+/**
+ * The outcome of an edit that has a precondition, so a caller can tell "done"
+ * from "refused" and name the reason.
+ */
+export type ConversationEditResult =
+  | { ok: true }
+  /** A reply is still arriving; the user stops it first. */
+  | { ok: false; reason: "busy" }
+  /** The record is gone, so there is nothing to edit. */
+  | { ok: false; reason: "missing" };
 
 /** A conversation is idle when no attempt is pending or streaming. */
 export function isIdle(attempts: readonly DirectChatAttempt[]): boolean {
@@ -778,13 +793,18 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
 
     async setArchived(conversationId, archived, now) {
       const conversation = await store.conversation(conversationId);
-      if (!conversation) return;
+      if (!conversation) return { ok: false, reason: "missing" };
       // Archiving a conversation with a live reply would leave a reply growing
-      // where the user cannot see it; the caller stops first.
-      if (archived && !isIdle(await store.attempts(conversationId))) return;
+      // where the user cannot see it. The refusal is returned rather than
+      // dropped, because both callers (the sheet and the list) offer "stop and
+      // archive" instead of a button that does nothing (bug B6).
+      if (archived && !isIdle(await store.attempts(conversationId))) {
+        return { ok: false, reason: "busy" };
+      }
       await store.transact(async (tx) => {
         await tx.putConversation({ ...conversation, archived, updatedAt: now ?? new Date().toISOString() });
       });
+      return { ok: true };
     },
 
     async setNextModel(conversationId, modelId, protocol, now) {

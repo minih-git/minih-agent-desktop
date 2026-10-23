@@ -31,6 +31,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "hosts.add": "Conectar computador",
   "hosts.open": "Abrir",
   "hosts.forget": "Esquecer",
+  "hosts.forgetFailed": "Não foi possível esquecer este computador: {{reason}}",
   "hosts.forgetConfirm": "Esquecer {{label}}? Depois disso este dispositivo precisará de um novo ticket.",
   "hosts.status.online": "Online",
   "hosts.status.offline": "Offline — o Minih não está rodando ou o computador está em suspensão",
@@ -418,6 +419,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "directChat.copy": "Copiar como Markdown",
   "directChat.copied": "Copiado",
   "directChat.archive": "Arquivar",
+  "directChat.stopAndArchive": "Parar e arquivar",
   "directChat.restore": "Restaurar",
   "directChat.delete": "Excluir conversa",
   "directChat.deleteTitle": "Excluir esta conversa?",
@@ -431,6 +433,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "directChat.archivedHint": "Esta conversa está arquivada. Restaure para enviar de novo.",
   "directChat.saveFailed": "Esta mensagem não pôde ser salva e por isso não foi enviada. Seu texto continua aqui.",
   "directChat.modelUnavailable": "O modelo desta conversa não está mais disponível. Escolha outro para enviar.",
+  "directChat.copyFailed": "Não foi possível copiar para a área de transferência.",
   "directChat.chooseModel": "Escolher um modelo",
   "directChat.modelChanged": "Mudou para {{model}} · vale na próxima mensagem",
   "directChat.state.interrupted": "Interrompido · acima está o que chegou",
@@ -500,6 +503,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "settings.history.clearBusy": "Uma resposta ainda está chegando em uma destas conversas. Pare-a primeiro.",
 
   "directChat.noModel": "Ainda não há um modelo escolhido. Escolha um para começar.",
+  "directChat.notAnImageModel": "Esta conversa gera imagens e o modelo escolhido não consegue.",
 
   "directChat.reason.unauthorized": "O gateway de modelos recusou esta chave. Reconecte para continuar.",
   "directChat.reason.quota": "A conta está sem cota ou enviando rápido demais.",

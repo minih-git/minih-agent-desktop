@@ -31,6 +31,7 @@ export const zhCN: Record<TranslationKey, string> = {
   "hosts.add": "连接电脑",
   "hosts.open": "打开",
   "hosts.forget": "忘记",
+  "hosts.forgetFailed": "无法忘记这台电脑：{{reason}}",
   "hosts.forgetConfirm": "忘记 {{label}}？此后本设备需要新的配对票据。",
   "hosts.status.online": "在线",
   "hosts.status.offline": "离线 · Minih 未运行或电脑已休眠",
@@ -418,6 +419,7 @@ export const zhCN: Record<TranslationKey, string> = {
   "directChat.copy": "复制为 Markdown",
   "directChat.copied": "已复制",
   "directChat.archive": "归档",
+  "directChat.stopAndArchive": "停止并归档",
   "directChat.restore": "恢复",
   "directChat.delete": "删除对话",
   "directChat.deleteTitle": "删除这个对话？",
@@ -431,6 +433,7 @@ export const zhCN: Record<TranslationKey, string> = {
   "directChat.archivedHint": "这个对话已归档。恢复后才能继续发送。",
   "directChat.saveFailed": "这条消息保存失败，因此没有发送。你的文字仍在这里。",
   "directChat.modelUnavailable": "这个对话使用的模型已不可用。换一个模型后可继续发送。",
+  "directChat.copyFailed": "复制到剪贴板失败。",
   "directChat.chooseModel": "选择模型",
   "directChat.modelChanged": "已切换到 {{model}} · 下一轮生效",
   "directChat.state.interrupted": "已中断 · 上面是已收到的内容",
@@ -500,6 +503,7 @@ export const zhCN: Record<TranslationKey, string> = {
   "settings.history.clearBusy": "其中一个对话仍在接收回复。请先停止。",
 
   "directChat.noModel": "还没有选择模型。请先选择一个。",
+  "directChat.notAnImageModel": "这个会话在生成图片，而当前模型不能生成图片。",
 
   "directChat.reason.unauthorized": "模型网关拒绝了这个密钥。重新连接后可继续。",
   "directChat.reason.quota": "账号额度不足，或请求过于频繁。",

@@ -31,6 +31,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "hosts.add": "連線電腦",
   "hosts.open": "開啟",
   "hosts.forget": "忘記",
+  "hosts.forgetFailed": "無法忘記這台電腦：{{reason}}",
   "hosts.forgetConfirm": "忘記 {{label}}？之後本裝置需要新的配對票據。",
   "hosts.status.online": "上線",
   "hosts.status.offline": "離線 · Minih 未運行或電腦已休眠",
@@ -418,6 +419,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "directChat.copy": "複製為 Markdown",
   "directChat.copied": "已複製",
   "directChat.archive": "封存",
+  "directChat.stopAndArchive": "停止並封存",
   "directChat.restore": "還原",
   "directChat.delete": "刪除對話",
   "directChat.deleteTitle": "刪除這個對話？",
@@ -431,6 +433,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "directChat.archivedHint": "這個對話已封存。還原後才能繼續傳送。",
   "directChat.saveFailed": "這則訊息儲存失敗，因此沒有傳送。你的文字仍在這裡。",
   "directChat.modelUnavailable": "這個對話使用的模型已無法使用。換一個模型後即可繼續傳送。",
+  "directChat.copyFailed": "複製到剪貼簿失敗。",
   "directChat.chooseModel": "選擇模型",
   "directChat.modelChanged": "已切換到 {{model}} · 下一輪生效",
   "directChat.state.interrupted": "已中斷 · 上面是已收到的內容",
@@ -500,6 +503,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "settings.history.clearBusy": "其中一個對話仍在接收回覆。請先停止。",
 
   "directChat.noModel": "還沒有選擇模型。請先選擇一個。",
+  "directChat.notAnImageModel": "這個對話在產生圖片，而目前模型無法產生圖片。",
 
   "directChat.reason.unauthorized": "模型閘道拒絕了這個金鑰。重新連接後可繼續。",
   "directChat.reason.quota": "帳號額度不足，或請求過於頻繁。",
