@@ -12,6 +12,11 @@ import { modeToolDenial, retainModeToolDeclaration, withModeExecutionGuard } fro
 import { restoreHostedSearchReplay } from "./hosted-search-replay.js";
 import { requestExtensionUi } from "./extensions/ui-request.js";
 import { readLocalRequestErrorDetails } from "./local-request-errors.js";
+import {
+  createProviderStreamTrace,
+  formatProviderStreamTraceLine,
+  type ProviderStreamTrace,
+} from "./provider-stream-trace.js";
 import { imageGenerationDescription, imageGenerationParameters } from "./image-generation/tool.js";
 import { todoWriteDescription, todoWriteParameters } from "./todo-tool.js";
 import { createJevClassifierTool } from "./jev-classifier-tool.js";
@@ -1989,6 +1994,12 @@ export class DesktopAgentRuntime {
   private suppressSilentTurnRunEnd = false;
   /** Autonomous plan/goal execution: one progress-only continue (#43). */
   private autonomousExecution = false;
+  /**
+   * Provider-stream trace for the request in flight, or undefined when
+   * `MINIH_AGENT_TRACE_PROVIDER_STREAM` is off. Created per request and
+   * consumed by the assistant `message_end` that ends it.
+   */
+  private activeStreamTrace: ProviderStreamTrace | undefined;
   private pendingProgressTurnRerun = false;
   private progressTurnRerunAttempted = false;
   private progressTurnRerunInProgress = false;
@@ -2172,6 +2183,11 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
     this.agent = new Agent({
       streamFn: (m, context, options) => {
         this.setAgentActivity({ phase: "waiting-model", since: Date.now() });
+        // One trace per model request. The assistant `message_end` for this
+        // request consumes it; a request that never settles leaves the previous
+        // one replaced rather than reused.
+        const streamTrace = createProviderStreamTrace();
+        this.activeStreamTrace = streamTrace;
         this.providerResponseStatus = undefined;
         this.providerRetryHeaders = undefined;
         this.providerRequestBytes = undefined;
@@ -2268,6 +2284,18 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
             ...(hookedOptions.signal ? [hookedOptions.signal] : []),
             stallAbort.signal,
           ]),
+          // Opt-in provider-stream trace (see `provider-stream-trace.ts`): counts
+          // what the wire actually carried, so a turn that ends on a text-only
+          // message can be attributed to the model or to a gateway that dropped
+          // the tool call. Absent from the options entirely unless tracing is on.
+          ...(streamTrace
+            ? {
+                onProviderStreamEvent: async (event, model) => {
+                  streamTrace.record(event);
+                  await hookedOptions.onProviderStreamEvent?.(event, model);
+                },
+              }
+            : {}),
         };
         const usageTurnId = this.turnId;
         const retryStream = createProviderRetryStream(
@@ -2367,6 +2395,36 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
         this.logEventHandlerFailure(event, error);
       }),
     );
+  }
+
+  /**
+   * One line per settled model request while
+   * `MINIH_AGENT_TRACE_PROVIDER_STREAM` is on: what the provider stream carried
+   * next to what the assembled assistant message ended up with.
+   *
+   * It exists to attribute a turn that ends on a text-only message: a model that
+   * called no tool, or a gateway whose conversion dropped the call. Counts and
+   * event names only — no message text, no tool arguments.
+   */
+  private reportProviderStreamTrace(
+    message: { content?: unknown; stopReason?: string },
+    text: string,
+  ): void {
+    const trace = this.activeStreamTrace;
+    if (!trace) return;
+    this.activeStreamTrace = undefined;
+    const parts = Array.isArray(message.content) ? message.content : [];
+    const toolCalls = parts.filter(part => isRecord(part) && part.type === "toolCall").length;
+    process.stderr.write(`${formatProviderStreamTraceLine({
+      sessionId: this.sessionId,
+      turnId: this.turnId,
+      providerId: this.provider.id,
+      modelId: this.provider.modelId,
+      stopReason: message.stopReason,
+      toolCalls,
+      textChars: text.length,
+      summary: trace.summary(),
+    })}\n`);
   }
 
   private logEventHandlerFailure(event: AgentEvent, error: unknown): void {
@@ -8360,6 +8418,7 @@ Do not invent objections or turn speculative risks into blockers. Stop when the 
           // inspect only the response that just ended, or a silent retry after
           // progress text would look non-silent forever.
           const responseText = content.hasText ? content.text : "";
+          this.reportProviderStreamTrace(event.message, responseText);
           if (looksLikePseudoToolCall(nextText)) {
             // The visible text is a lost tool batch, not an answer. Logging it
             // separates "the model went quiet" from "the model tried to act and
