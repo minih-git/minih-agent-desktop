@@ -79,7 +79,7 @@ Router billing/routing, another agent/tool framework, voice/video generation,
 a template marketplace, all-model advanced parameter panels, or an app-wide
 redesign. No production deploy, account mutation or paid API test is implied.
 
-## 3. Decisions
+## 3. Decision
 
 ### D1. Complete the two existing journeys; do not merge their authority
 
