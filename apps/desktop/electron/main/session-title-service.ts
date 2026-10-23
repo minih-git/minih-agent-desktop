@@ -28,28 +28,11 @@ import {
 } from "./session-title-engine";
 import { readPastedPromptMaterial } from "./session-title-input";
 
-/** The slice of the launch resolver the title generator needs. */
-export type SessionTitleLaunchResolver = (
-  sessionId: string,
-  session: unknown,
-  settings: unknown,
-  overrides?: {
-    providerId?: string;
-    modelId?: string;
-    thinkingLevel?: string;
-  },
-) => Promise<{
-  providerId: string;
-  modelId: string;
-  sidecarParams: {
-    provider: RuntimeProviderConfig & { authKind?: string };
-    thinkingLevel: string;
-  };
-}>;
+import type { RuntimeModelResolver, RuntimeModelOverrides } from "./runtime/model-resolution";
 
 export type SessionTitleDeps = {
   getHost: () => { call: (method: string, params?: unknown) => Promise<unknown> } | null;
-  resolveAgentRuntimeLaunch: SessionTitleLaunchResolver;
+  resolveRuntimeModel: RuntimeModelResolver;
   vendorOAuth: Pick<VendorOAuth, "resolveAuth">;
   logger: Pick<Logger, "app">;
   /** Host data directory; pasted prompt material lives under its scratch root. */
@@ -125,7 +108,7 @@ function splitModelKey(modelKey: string): { providerId: string; modelId: string 
 function titleLaunchOverrides(
   request: SessionTitleRequest,
   session: SessionTitleJob["session"],
-): { providerId?: string; modelId?: string; thinkingLevel: string } {
+): RuntimeModelOverrides {
   const sessionKey =
     session?.providerId && session?.modelId
       ? `${session.providerId}/${session.modelId}`
@@ -175,19 +158,16 @@ async function resolveTitleProvider(
   deps: SessionTitleDeps,
   job: SessionTitleJob,
   request: SessionTitleRequest,
-  sessionId: string,
 ): Promise<RuntimeProviderConfig | null> {
-  const launch = await deps.resolveAgentRuntimeLaunch(
-    sessionId,
+  const model = await deps.resolveRuntimeModel(
     job.session ?? {},
     job.settings ?? {},
     titleLaunchOverrides(request, job.session),
   );
-  if (!launch?.sidecarParams?.provider) return null;
   return {
-    ...launch.sidecarParams.provider,
-    ...(launch.sidecarParams.provider.authKind === OAUTH_AUTH_KIND
-      ? { resolveAuth: () => deps.vendorOAuth.resolveAuth(launch.providerId) }
+    ...model.provider,
+    ...(model.provider.authKind === OAUTH_AUTH_KIND
+      ? { resolveAuth: () => deps.vendorOAuth.resolveAuth(model.providerId) }
       : {}),
   } as RuntimeProviderConfig;
 }
@@ -276,7 +256,7 @@ async function composeSessionTitle(
     });
     if (!request) return false;
 
-    const provider = await resolveTitleProvider(deps, job, request, sessionId);
+    const provider = await resolveTitleProvider(deps, job, request);
     if (!provider) return false;
     const title = await completeTitle(deps, provider, request, sessionId);
     if (!title) return false;
@@ -457,7 +437,7 @@ export async function generateSessionRetitle(
     });
     if (!request) return false;
 
-    const provider = await resolveTitleProvider(deps, retitleJob, request, sessionId);
+    const provider = await resolveTitleProvider(deps, retitleJob, request);
     if (!provider) return false;
     const title = await completeTitle(deps, provider, request, sessionId);
     if (!title || title === expectedTitle) return false;

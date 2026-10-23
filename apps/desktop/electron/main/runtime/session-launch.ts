@@ -5,10 +5,7 @@ import {
   isCommandShellCatalog,
   isMinihRouterVendorKey,
   JEV_API_KEY_SECRET_REF,
-  imageGenerationBindings,
-  isImageGenerationModel,
   normalizeMode,
-  trustedExtensionAgentKeyFromProviderId,
   type CommandShellCatalog,
   type LearnedMemoryIndex,
   type McpServerRecord,
@@ -21,14 +18,12 @@ import {
 } from "@minih-agent/shared";
 import {
   capabilitiesFromModelConfig,
-  clampThinkingLevel,
   loadCustomSystemPrompt,
   loadInstructionChain,
   loadSubagentDefinitions,
   modelConfigWithBinding,
   optionalProviderHeaders,
   resolveSubagentProviders,
-  visionFromModelConfig,
   type UserSubagentDocument,
 } from "@minih-agent/agent-runtime";
 import { builtinSkills } from "../builtin-skills";
@@ -46,6 +41,7 @@ import type { RuntimeProvider } from "./provider-catalog";
 import type { LoadedSkillDocument } from "../skill-document";
 import { getActiveRemoteHostsBoot } from "../bootstrap/remote-hosts";
 import { loadRemoteWorkspaceInstructions } from "../remote/remote-workspace-instructions.js";
+import { createRuntimeModelResolver } from "./model-resolution";
 
 const ErrorCodes = {
   ...SharedErrorCodes,
@@ -99,6 +95,9 @@ export function createSessionLaunchRuntime({
   effectiveSubagentModelConfig,
   normalizeThinkingLevel,
 }: SessionLaunchRuntimeDependencies) {
+  const resolveRuntimeModel = createRuntimeModelResolver({
+    runtimeState, vendorOAuth, modelsDevCatalog, bindingForModel, normalizeThinkingLevel,
+  });
   const isHostUnavailable = (error: unknown): boolean =>
     (error as { errorCode?: string } | null | undefined)?.errorCode ===
     ErrorCodes.HOST_UNAVAILABLE;
@@ -308,120 +307,14 @@ export function createSessionLaunchRuntime({
     } = {},
   ) {
     if (!runtimeState.host) throw new Error("host unavailable");
-    await modelsDevCatalog.ensureLoaded();
     const remoteWorkspace = session.remoteWorkspace as { hostKey: string; path: string } | undefined;
     const remoteBoot = remoteWorkspace ? getActiveRemoteHostsBoot() : null;
     if (remoteWorkspace && !remoteBoot) throw new Error("remote host unavailable");
     const commandShell = remoteWorkspace
       ? await remoteBoot!.workspaceCommandShell(remoteWorkspace.hostKey)
       : (await resolveEffectiveCommandShell()).effective!;
-    const providers = await runtimeState.host!.call<{ providers: RuntimeProvider[] }>(
-      "providers.list",
-      { includeDisabled: false },
-    );
-    for (const row of providers.providers) modelsDevCatalog.configureAccount(row);
-    const requestedProviderId = overrides.providerId ?? session.providerId;
-    const extensionAgentKey = requestedProviderId
-      ? trustedExtensionAgentKeyFromProviderId(requestedProviderId)
-      : undefined;
-    const provider: RuntimeProvider = extensionAgentKey
-      ? {
-          id: requestedProviderId!,
-          name: "Plugin agent",
-          modelId: overrides.modelId ?? session.modelId,
-          authKind: "none",
-          extensionAgentKey,
-        }
-      : requestedProviderId
-        ? providers.providers.find((item) => item.id === requestedProviderId && item.enabled !== false)!
-        :
-        providers.providers.find((item) => item.id === settings.defaultProviderId) ||
-        providers.providers.find(
-          (item) => item.hasSecret || item.hasOauth || item.authKind === "none",
-        ) ||
-        providers.providers[0];
-    if (!provider) {
-      throw Object.assign(new Error("No provider configured"), {
-        errorCode: ErrorCodes.MODEL_NOT_CONFIGURED,
-      });
-    }
-    modelsDevCatalog.configureAccount(provider);
-    // Plugin-owned agents resolve credentials and transport inside the trusted
-    // extension; the host never reads or injects a secret for them.
-    const isExtensionAgent = Boolean(extensionAgentKey);
-    const isVendorAccount = !isExtensionAgent && provider.authKind === OAUTH_AUTH_KIND;
-    const secret = isExtensionAgent || isVendorAccount
-      ? { value: undefined }
-      : await runtimeState.host!.call<{ value?: string }>("providers.getSecret", {
-          id: provider.id,
-        });
-    if (!secret.value && !isExtensionAgent && !isVendorAccount && provider.authKind !== "none") {
-      throw Object.assign(new Error("Provider API key missing"), {
-        errorCode: ErrorCodes.PROVIDER_SECRET_MISSING,
-      });
-    }
-    const modelId = isExtensionAgent
-      ? overrides.modelId ?? session.modelId
-      : (provider.id === requestedProviderId
-        ? overrides.modelId ?? session.modelId
-        : undefined) ||
-      (provider.id === settings.defaultProviderId
-        ? settings.defaultModelId
-        : undefined) ||
-      provider.models?.[0]?.id ||
-      provider.defaultModelId;
-    if (!modelId) {
-      throw Object.assign(new Error("No model selected for provider"), {
-        errorCode: ErrorCodes.MODEL_NOT_CONFIGURED,
-      });
-    }
-    if (isImageGenerationModel(
-      imageGenerationBindings(settings.imageGenerationModels, settings.imageGeneration),
-      provider.id,
-      modelId,
-    )) {
-      throw Object.assign(new Error("The image model cannot be used for conversation; select a chat model"), {
-        errorCode: ErrorCodes.MODEL_NOT_CONFIGURED,
-      });
-    }
-    // The authenticated collection owns a vendor account's available model IDs
-    // and wire endpoint. models.dev owns metadata; one account can span multiple
-    // wire APIs and gateway catalogs.
-    const vendorBinding = isVendorAccount
-      ? await vendorOAuth
-          .bindingFor(provider.id, modelId)
-          .catch(() => undefined)
-      : undefined;
-    if (isVendorAccount && !vendorBinding) {
-      throw Object.assign(
-        new Error(`Vendor account does not offer model "${modelId}"`),
-        { errorCode: ErrorCodes.MODEL_NOT_CONFIGURED },
-      );
-    }
-    const storedModel = bindingForModel(provider, modelId);
-    // A binding may pin a wire protocol for one model; absent keeps following
-    // the provider row's own global style.
-    const apiStyle = vendorBinding?.apiStyle ?? storedModel?.apiStyle ?? provider.apiStyle;
-    // The LAN channel can replace the address this launch resolves against, so
-    // the binding is mutable after the catalog read below.
-    let baseUrl = vendorBinding?.baseUrl ?? provider.baseUrl;
-    const catalogModelConfig = vendorBinding?.modelConfig ??
-      catalogModelConfigFor(modelsDevCatalog, {
-        providerId: provider.id,
-        vendorKey: provider.vendorKey,
-        baseUrl,
-        apiStyle,
-        modelId,
-      });
-    let modelConfig = catalogModelConfig;
-    const thinkingCapabilities = capabilitiesFromModelConfig(modelConfig);
-    const thinkingLevel = clampThinkingLevel(
-      thinkingCapabilities,
-      normalizeThinkingLevel(
-        overrides.thinkingLevel ??
-          (provider.id === requestedProviderId ? session.thinkingLevel : undefined) ??
-          storedModel?.defaultThinkingLevel,
-      ),
+    const { provider, modelId, thinkingLevel, providers } = await resolveRuntimeModel(
+      session, settings, overrides,
     );
     const projectPath =
       typeof session.projectPath === "string" && session.projectPath.trim()
@@ -745,21 +638,6 @@ export function createSessionLaunchRuntime({
         });
       }
     }
-    if (isMinihRouterVendorKey(provider.vendorKey)) {
-      const resolvedRouterEndpoint = await resolveMinihRouterEndpoint(
-        runtimeState.host,
-        baseUrl,
-      );
-      if (resolvedRouterEndpoint.activeBaseUrl) {
-        baseUrl = resolvedRouterEndpoint.activeBaseUrl;
-        if (modelConfig) {
-          modelConfig = {
-            ...modelConfig,
-            baseUrl: resolvedRouterEndpoint.activeBaseUrl,
-          };
-        }
-      }
-    }
     for (const [subagentKey, subagentProvider] of Object.entries(subagentBindings.providers)) {
       if (!isMinihRouterVendorKey(subagentProvider.vendorKey)) continue;
       const resolvedSubagentEndpoint = await resolveMinihRouterEndpoint(
@@ -807,22 +685,7 @@ export function createSessionLaunchRuntime({
         projectMemory,
         ...(learnedMemoryIndex ? { learnedMemoryIndex } : {}),
         learnedMemoryRead,
-        provider: {
-          id: provider.id,
-          name: provider.name,
-          vendorKey: provider.vendorKey,
-          baseUrl,
-          modelId,
-          apiKey: secret.value || "",
-          authKind: provider.authKind,
-          extensionAgentKey: provider.extensionAgentKey,
-          apiStyle,
-          ...optionalProviderHeaders(provider.headers),
-          supportsReasoning: thinkingCapabilities.supportsReasoning,
-          supportsVision: visionFromModelConfig(modelConfig),
-          supportedThinkingLevels: [...thinkingCapabilities.supportedThinkingLevels],
-          ...(modelConfig ? { modelConfig } : {}),
-        },
+        provider,
         pluginTools: [
           ...plugins
             .getTools()
@@ -877,6 +740,7 @@ export function createSessionLaunchRuntime({
     disabledBuiltinSkills,
     loadUserSkillBody,
     resolveEffectiveCommandShell,
+    resolveRuntimeModel,
     resolveAgentRuntimeLaunch,
   };
 }

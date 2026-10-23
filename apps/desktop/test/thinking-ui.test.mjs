@@ -35,7 +35,10 @@ const launchErrorSource = await readFile(
 );
 const providerCatalogSource = await readMainModule("runtime/provider-catalog.ts");
 const sessionIpcSource = await readMainModule("ipc/session-ipc.ts");
-const sessionLaunchSource = await readMainModule("runtime/session-launch.ts");
+const sessionLaunchSource = [
+  await readMainModule("runtime/session-launch.ts"),
+  await readMainModule("runtime/model-resolution.ts"),
+].join("\n");
 const storeSource = await readStoreSource();
 const sessionCoordinationSource = await readStoreModule("runtime/session-coordination.ts");
 const modelMenuSource = await readFile(

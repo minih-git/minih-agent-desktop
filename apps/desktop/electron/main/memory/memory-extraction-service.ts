@@ -26,7 +26,7 @@ import {
   parseExtractionAnswer,
   type ExtractionCandidate,
 } from "./memory-extraction-prompt";
-import type { SessionTitleLaunchResolver } from "../session-title-service";
+import type { RuntimeModelResolver } from "../runtime/model-resolution";
 
 /** How long a session must be idle after `agent_end` before it is extracted. */
 export const EXTRACTION_IDLE_DEBOUNCE_MS = 10 * 60 * 1000;
@@ -67,7 +67,7 @@ export type MemoryExtractionDeps = {
   getHost: () => ExtractionHost | null;
   /** The settings record read at trigger time; absent means "nothing enabled". */
   getSettings: () => Promise<AppSettings | null | undefined>;
-  resolveAgentRuntimeLaunch: SessionTitleLaunchResolver;
+  resolveRuntimeModel: RuntimeModelResolver;
   logger: Pick<Logger, "app">;
   /** Injectable for tests; production uses the runtime's one-shot completion. */
   completeOneShot?: typeof completeOneShotImpl;
@@ -224,23 +224,20 @@ export function createMemoryExtractionService(
   const hostOf = () => deps.getHost();
 
   async function resolveProvider(
-    sessionId: string,
     settings: AppSettings,
     modelKey: string,
   ): Promise<RuntimeProviderConfig | null> {
     const parts = splitModelKey(modelKey);
     if (!parts) return null;
-    const launch = await deps.resolveAgentRuntimeLaunch(
-      sessionId,
+    const model = await deps.resolveRuntimeModel(
       {},
       settings,
       { providerId: parts.providerId, modelId: parts.modelId, thinkingLevel: "off" },
     );
-    if (!launch?.sidecarParams?.provider) return null;
     return {
-      ...launch.sidecarParams.provider,
-      ...(launch.sidecarParams.provider.authKind === "oauth"
-        ? { resolveAuth: () => deps.vendorOAuth.resolveAuth(launch.providerId) as never }
+      ...model.provider,
+      ...(model.provider.authKind === "oauth"
+        ? { resolveAuth: () => deps.vendorOAuth.resolveAuth(model.providerId) as never }
         : {}),
     } as RuntimeProviderConfig;
   }
@@ -327,7 +324,7 @@ export function createMemoryExtractionService(
       // spending a call to learn that.
       if (!input.messages.length) return waitForMore(id, input.cursorSeq);
 
-      const provider = await resolveProvider(id, settings as AppSettings, enabled.modelKey);
+      const provider = await resolveProvider(settings as AppSettings, enabled.modelKey);
       if (!provider) {
         await host.call("memory.extraction.fail", {
           sessionId: id,

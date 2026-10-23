@@ -204,9 +204,12 @@ spends the retry budget (two per session), and an already-named session costs
 one host round-trip and no model call.
 
 The requested model always decides the provider. A caller without a session
-binding (the retry) passes the request's own `providerId/modelId` to the launch
-resolver; omitting it fell back to the default provider, which sent the naming
-input to a service the request never named.
+binding (the retry) passes the request's own `providerId/modelId` to the model
+resolver. Title generation, compaction re-titling, memory extraction, and plugin
+one-shot completions resolve only model configuration and credentials; they must
+not launch or reconfigure the session, replace its project mapping, refresh its
+MCP catalog, or change its runtime authorization bindings. Project skills remain
+loadable while these background completions run or fail.
 
 Settings own the built-in generator's model and thinking level
 (`sessionTitle`); the standalone title plugin is superseded (ADR 0323

@@ -366,15 +366,11 @@ const pluginServices = createPluginServices({
     return applicationLifecycle.resolveAppearance();
   },
   getWorkspacePath: currentWorkspacePath,
-  resolveAgentRuntimeLaunch: (...args) => {
+  resolveRuntimeModel: (...args) => {
     if (!sessionLaunchRuntime) {
       throw new Error("session launch runtime is not initialized");
     }
-    return (
-      sessionLaunchRuntime.resolveAgentRuntimeLaunch as (
-        ...args: any[]
-      ) => Promise<any>
-    )(...args);
+    return sessionLaunchRuntime.resolveRuntimeModel(...args);
   },
   vendorOAuth,
   // A plugin rename writes the same durable title a user rename does.
@@ -428,6 +424,7 @@ const createdSessionLaunchRuntime = createSessionLaunchRuntime({
 sessionLaunchRuntime = createdSessionLaunchRuntime;
 const {
   refreshUserMcp,
+  resolveRuntimeModel,
   activeUserSkills,
   activeUserSubagentDocuments,
   disabledBuiltinSubagents,
@@ -794,13 +791,7 @@ const memoryExtractionService = createMemoryExtractionService({
       | AppSettings
       | null
       | undefined,
-  resolveAgentRuntimeLaunch: (sessionId, session, settings, overrides) =>
-    resolveAgentRuntimeLaunch(sessionId, session, settings, {
-      ...(overrides ?? {}),
-      thinkingLevel: overrides?.thinkingLevel
-        ? normalizeThinkingLevel(overrides.thinkingLevel)
-        : undefined,
-    }),
+  resolveRuntimeModel,
   vendorOAuth,
   logger,
   // Extraction never runs during a turn: the transcript is still being written.
@@ -809,13 +800,7 @@ const memoryExtractionService = createMemoryExtractionService({
 
 const sessionTitleGenerator = createSessionTitleGenerator({
   getHost,
-  resolveAgentRuntimeLaunch: (sessionId, session, settings, overrides) =>
-    resolveAgentRuntimeLaunch(sessionId, session, settings, {
-      ...(overrides ?? {}),
-      thinkingLevel: overrides?.thinkingLevel
-        ? normalizeThinkingLevel(overrides.thinkingLevel)
-        : undefined,
-    }),
+  resolveRuntimeModel,
   vendorOAuth,
   logger,
   dataDir,
@@ -866,14 +851,7 @@ const sidecarRuntime = createSidecarRuntime({
   cancelMemoryExtraction: (sessionId) => memoryExtractionService.cancel(sessionId),
   generateSessionRetitle: createSessionRetitleGenerator({
     getHost,
-    resolveAgentRuntimeLaunch: (sessionId, session, settings, overrides) =>
-      resolveAgentRuntimeLaunch(sessionId, session, settings, {
-        ...(overrides ?? {}),
-        // The engine already clamps the level to the model's advertised set.
-        thinkingLevel: overrides?.thinkingLevel
-          ? normalizeThinkingLevel(overrides.thinkingLevel)
-          : undefined,
-      }),
+    resolveRuntimeModel,
     vendorOAuth,
     logger,
     // A compaction refresh lands in the host; the renderer keeps its own copy and
