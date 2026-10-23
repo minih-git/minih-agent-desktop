@@ -548,3 +548,174 @@ describe("SettingsScreen markup and B9 / B10 / B12 / B13 regressions", () => {
     expect(pairSource).not.toMatch(/[\u4e00-\u9fff]/);
   });
 });
+
+/**
+ * Review fixes on the push master switch: the choice was memory-only, a late
+ * registration re-enabled push the user had just turned off, a refused
+ * unregistration dropped the listeners while pretending to be off, and a plugin
+ * that rejects left the switch disabled for good.
+ */
+describe("the push master switch keeps its promises", () => {
+  const ORIGIN = "https://gateway.example.com";
+  const CRED = { kind: "header" as const, token: "pdt1.device" };
+
+  function host(hostId: string): HostRegistryEntry {
+    return { hostId, label: hostId, deviceId: "dev_1", pairedAt: "2026-10-20T00:00:00.000Z", profile: "native" };
+  }
+
+  function plugin(options: { permission?: "granted" | "denied"; rejectRegister?: boolean } = {}): PushPlugin & {
+    listeners: () => number;
+  } {
+    let listeners = 0;
+    const tokenHandlers: Array<(token: { value: string }) => void> = [];
+    return {
+      listeners: () => listeners,
+      async requestPermissions() {
+        return { receive: options.permission ?? "granted" };
+      },
+      async register() {
+        if (options.rejectRegister) throw new Error("plugin refused");
+        // The platform answers asynchronously, which is what the client waits for.
+        setTimeout(() => {
+          for (const handler of [...tokenHandlers]) handler({ value: "apns-token-1" });
+        }, 0);
+      },
+      addListener: (async (event: string, handler: (payload: never) => void) => {
+        listeners += 1;
+        if (event === "registration") {
+          tokenHandlers.push(handler as unknown as (token: { value: string }) => void);
+        }
+        return {
+          remove: async () => {
+            listeners -= 1;
+            const index = tokenHandlers.indexOf(
+              handler as unknown as (token: { value: string }) => void,
+            );
+            if (index >= 0) tokenHandlers.splice(index, 1);
+          },
+        };
+      }) as PushPlugin["addListener"],
+    };
+  }
+
+  type Call = { method: string; held?: () => void };
+
+  /** A Gateway that records methods, and can hold a PUT open until released. */
+  function gateway(calls: Call[], options: { refuseDelete?: boolean; holdPut?: boolean } = {}) {
+    return (async (_url: string, init?: RequestInit) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "PUT" && options.holdPut) {
+        await new Promise<void>((resolve) => calls.push({ method, held: resolve }));
+      } else {
+        calls.push({ method });
+      }
+      const ok = method === "DELETE" ? !options.refuseDelete : true;
+      return {
+        ok,
+        status: ok ? 200 : 500,
+        json: async () => ({ enabled: true }),
+      } as Response;
+    }) as typeof fetch;
+  }
+
+  function controller(options: {
+    plugin?: PushPlugin | null;
+    readEnabled?: () => boolean;
+    writeEnabled?: (enabled: boolean) => void;
+    fetchImpl?: typeof fetch;
+  }) {
+    return createPushRegistrationController({
+      plugin: options.plugin === undefined ? plugin() : options.plugin,
+      platform: "ios",
+      gatewayOrigin: ORIGIN,
+      getHosts: () => [host("h1")],
+      credentialFor: () => CRED,
+      ...(options.readEnabled ? { readEnabled: options.readEnabled } : {}),
+      ...(options.writeEnabled ? { writeEnabled: options.writeEnabled } : {}),
+      ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+    });
+  }
+
+  it("starts from the stored choice and uploads nothing when push is off", async () => {
+    const calls: Call[] = [];
+    const written: boolean[] = [];
+    const subject = controller({
+      readEnabled: () => false,
+      writeEnabled: (value) => written.push(value),
+      fetchImpl: gateway(calls),
+    });
+
+    expect(subject.getSnapshot()).toMatchObject({ enabled: false, registered: false });
+    await subject.syncHosts();
+    expect(calls).toEqual([]);
+    expect(written).toEqual([]);
+  });
+
+  it("persists the choice once the switch lands", async () => {
+    const calls: Call[] = [];
+    const written: boolean[] = [];
+    const subject = controller({
+      readEnabled: () => true,
+      writeEnabled: (value) => written.push(value),
+      fetchImpl: gateway(calls),
+    });
+
+    await subject.setEnabled(true);
+    expect(written).toEqual([true]);
+    expect(await subject.setEnabled(false)).toBe(true);
+    expect(written).toEqual([true, false]);
+    expect(calls.filter((call) => call.method === "DELETE")).toHaveLength(1);
+  });
+
+  it("undoes a registration that answers after push was turned off", async () => {
+    const calls: Call[] = [];
+    const subject = controller({ fetchImpl: gateway(calls, { holdPut: true }) });
+
+    const turningOn = subject.setEnabled(true);
+    // The PUT is in flight; the user changes their mind meanwhile.
+    await subject.setEnabled(false);
+    const [held] = calls.filter((call) => call.method === "PUT");
+    held?.held?.();
+    await turningOn;
+
+    expect(subject.getSnapshot()).toMatchObject({ enabled: false, registered: false });
+    // The late answer was undone rather than left live on the Gateway.
+    expect(calls.filter((call) => call.method === "DELETE").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("stays on, with its listeners, when the unregistration is refused", async () => {
+    const calls: Call[] = [];
+    const subject = controller({ fetchImpl: gateway(calls, { refuseDelete: true }) });
+    await subject.setEnabled(true);
+
+    expect(await subject.setEnabled(false)).toBe(false);
+    expect(subject.getSnapshot()).toMatchObject({
+      enabled: true,
+      state: "failed",
+      error: "request-failed",
+      busy: false,
+    });
+  });
+
+  it("clears the busy flag when the plugin refuses to register", async () => {
+    const calls: Call[] = [];
+    const subject = controller({
+      plugin: plugin({ rejectRegister: true }),
+      fetchImpl: gateway(calls),
+    });
+
+    expect(await subject.setEnabled(true)).toBe(false);
+    expect(subject.getSnapshot()).toMatchObject({ busy: false });
+  });
+
+  it("is still usable after its listeners are released for a remount", async () => {
+    const calls: Call[] = [];
+    const subject = controller({ fetchImpl: gateway(calls) });
+
+    await subject.disposeListeners();
+    await subject.setEnabled(true);
+    // A controller disposed for good would report itself unsupported here.
+    expect(subject.getSnapshot()).not.toMatchObject({ state: "unsupported" });
+    expect(calls.some((call) => call.method === "PUT")).toBe(true);
+  });
+});

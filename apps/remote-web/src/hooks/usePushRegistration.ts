@@ -37,6 +37,7 @@ import {
   registrationKey,
   type PushAccount,
 } from "../lib/push-registration.js";
+import { readPushEnabled, writePushEnabled } from "../lib/push-preference.js";
 import {
   credentialPort,
   gatewayOrigin,
@@ -82,6 +83,13 @@ export type PushControllerOptions = {
   credentialFor: (hostId: string) => HostCredential | null;
   onTap?: (destination: PushDestination) => void;
   onForeground?: (destination: PushDestination) => void;
+  /**
+   * The user's master-switch choice, so a device that turned push off does not
+   * obtain a token or register again after a relaunch. Absent means "on".
+   */
+  readEnabled?: () => boolean;
+  /** Persist the choice whenever the switch lands. */
+  writeEnabled?: (enabled: boolean) => void;
 };
 
 export type PushRegistrationController = {
@@ -114,12 +122,18 @@ export function createPushRegistrationController(
   let attachingVersion = 0;
   let disposed = false;
   let hostsCache: readonly HostRegistryEntry[] = options.getHosts();
+  /**
+   * Bumped on every switch flip. A registration that answers after the user has
+   * changed their mind belongs to a previous generation and must undo itself,
+   * or a late PUT would silently re-enable push the user just turned off.
+   */
+  let enableGeneration = 0;
 
   let snapshot: PushRegistrationSnapshot = {
     state: supported ? "disabled" : "unsupported",
     permission: supported ? "prompt" : "unsupported",
     registered: false,
-    enabled: supported,
+    enabled: supported ? (options.readEnabled?.() ?? true) : false,
     busy: false,
     error: null,
     gatewayDisabled: false,
@@ -178,6 +192,7 @@ export function createPushRegistrationController(
   async function registerPendingAccounts(
     accounts: readonly PushAccount[],
     issuedToken: string,
+    generation: number,
   ): Promise<boolean> {
     if (!options.platform) return false;
     const beforeSize = registeredKeys.size;
@@ -195,6 +210,20 @@ export function createPushRegistrationController(
       registeredKeys,
     );
     if (disposed) return false;
+    if (generation !== enableGeneration || !snapshot.enabled) {
+      // The switch moved while this request was in flight. The registration the
+      // answer describes is one the user has already cancelled, so it is undone
+      // here rather than reported as done and left live on the Gateway.
+      for (const account of accounts) {
+        await unregisterPushToken({
+          gatewayOrigin: options.gatewayOrigin,
+          credential: account.credential,
+          ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+        });
+        registeredKeys.delete(registrationKey(account));
+      }
+      return false;
+    }
     if (outcome.disabled) {
       console.info("[remote-web] this Gateway does not push");
       emit({
@@ -334,6 +363,7 @@ export function createPushRegistrationController(
       await registerPendingAccounts(
         pushAccounts(hostsCache, options.credentialFor),
         issued,
+        enableGeneration,
       );
     },
 
@@ -349,6 +379,11 @@ export function createPushRegistrationController(
         return false;
       }
 
+      // Every flip starts a new generation, so a request that answers late can
+      // tell that the user has changed their mind (see `registerPendingAccounts`).
+      enableGeneration += 1;
+      const generation = enableGeneration;
+
       if (!next) {
         emit({ busy: true, error: null });
         const accounts = pushAccounts(options.getHosts(), options.credentialFor);
@@ -361,16 +396,23 @@ export function createPushRegistrationController(
           });
           if (!ok) failed = true;
         }
-        await disposeListeners();
         if (failed) {
+          // A refused unregistration leaves push live on at least one
+          // credential. Reporting "off" would hide notifications that still
+          // arrive and drop the listeners that deliver them, so the switch stays
+          // where it was and the reason is surfaced instead.
           emit({
             busy: false,
+            enabled: true,
             state: "failed",
+            registered: registeredKeys.size > 0,
             error: "request-failed",
           });
           return false;
         }
+        await disposeListeners();
         registeredKeys.clear();
+        options.writeEnabled?.(false);
         emit({
           busy: false,
           enabled: false,
@@ -383,31 +425,44 @@ export function createPushRegistrationController(
 
       // Turning push ON: re-enable, attach listeners, obtain token if needed, and register.
       emit({ busy: true, enabled: true, gatewayDisabled: false, error: null });
-      await attachListeners();
-      const issued = await ensureToken(true);
-      if (!issued || disposed) {
-        emit({ busy: false });
-        return false;
-      }
+      try {
+        await attachListeners();
+        const issued = await ensureToken(true);
+        if (generation !== enableGeneration) return false;
+        if (!issued || disposed) {
+          return false;
+        }
 
-      const accounts = pushAccounts(options.getHosts(), options.credentialFor);
-      if (accounts.length === 0) {
-        // Permission and token are ready; registration will complete as soon as a Host is paired.
+        const accounts = pushAccounts(options.getHosts(), options.credentialFor);
+        if (accounts.length === 0) {
+          // Permission and token are ready; registration completes as soon as a
+          // Host is paired.
+          options.writeEnabled?.(true);
+          emit({
+            enabled: true,
+            permission: "granted",
+            state: "disabled",
+            registered: false,
+            error: null,
+          });
+          return true;
+        }
+
+        registeredKeys.clear();
+        const ok = await registerPendingAccounts(accounts, issued, generation);
+        if (generation === enableGeneration) options.writeEnabled?.(ok);
+        return ok;
+      } catch (cause) {
+        // A plugin that rejects must not leave the switch dead: `busy` is
+        // cleared in `finally` below and the reason is shown.
         emit({
-          busy: false,
-          enabled: true,
-          permission: "granted",
-          state: "disabled",
-          registered: false,
-          error: null,
+          state: "failed",
+          error: cause instanceof Error ? cause.message : String(cause),
         });
-        return true;
+        return false;
+      } finally {
+        emit({ busy: false });
       }
-
-      registeredKeys.clear();
-      const ok = await registerPendingAccounts(accounts, issued);
-      emit({ busy: false });
-      return ok;
     },
 
     async dispose() {
@@ -506,6 +561,8 @@ export function usePushRegistration(
       credentialFor: (hostId) => credentialPort.credentialFor(hostId),
       onTap: (destination) => onTapRef.current(destination),
       onForeground: (destination) => onForegroundRef.current?.(destination),
+      readEnabled: () => readPushEnabled(),
+      writeEnabled: (enabled) => writePushEnabled(enabled),
     });
   }
 
@@ -526,7 +583,10 @@ export function usePushRegistration(
         activeController = null;
         notifySharedStore();
       }
-      void controller.dispose();
+      // Only the plugin listeners go: disposing the controller here would mark
+      // it `disposed` for good, and StrictMode's remount would then find a
+      // permanently unsupported switch.
+      void controller.disposeListeners();
     };
   }, [controller]);
 
