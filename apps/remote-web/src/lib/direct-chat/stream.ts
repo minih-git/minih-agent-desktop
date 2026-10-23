@@ -25,8 +25,27 @@ import type { MinihRouterModel } from "@minih-agent/shared";
 import type { DirectProtocol } from "./catalog.js";
 import { SseDecoder } from "./sse.js";
 
+/**
+ * One image the user attached, as the request carries it.
+ *
+ * Both protocols take a data URL, so the bytes travel inline: no upload step and
+ * no URL the phone cannot serve after a restart.
+ */
+export type DirectImageAttachment = {
+  mimeType: string;
+  dataBase64: string;
+};
+
 /** One finished exchange, as the request context carries it. */
-export type DirectTurn = { role: "user" | "assistant"; text: string };
+export type DirectTurn = {
+  role: "user" | "assistant";
+  text: string;
+  /**
+   * Images the user sent with that turn. A turn shown in history with an image
+   * must carry it here too, or the model answers about an image it never saw.
+   */
+  images?: readonly DirectImageAttachment[];
+};
 
 export type DirectRequestInput = {
   model: MinihRouterModel;
@@ -35,6 +54,8 @@ export type DirectRequestInput = {
   history: readonly DirectTurn[];
   /** The message the user just sent. */
   message: string;
+  /** Images attached to that message, in the order the user added them. */
+  images?: readonly DirectImageAttachment[];
 };
 
 /**
@@ -84,6 +105,47 @@ export function streamPath(protocol: DirectProtocol): string {
   return protocol === "openai-responses" ? "/v1/responses" : "/v1/chat/completions";
 }
 
+/** A data URL for one attachment, the form both protocols accept inline. */
+function imageDataUrl(image: DirectImageAttachment): string {
+  return `data:${image.mimeType};base64,${image.dataBase64}`;
+}
+
+/**
+ * A user turn's content for the Responses envelope.
+ *
+ * Plain text stays a single `input_text` part, which is what every gateway has
+ * accepted since before images existed; images switch the turn to the part list
+ * and the text part is omitted when there is none.
+ */
+function responsesUserContent(
+  text: string,
+  images: readonly DirectImageAttachment[],
+): Array<Record<string, unknown>> {
+  if (images.length === 0) return [{ type: "input_text", text }];
+  const content: Array<Record<string, unknown>> = [];
+  if (text) content.push({ type: "input_text", text });
+  for (const img of images) {
+    content.push({ type: "input_image", image_url: imageDataUrl(img) });
+  }
+  return content;
+}
+
+/**
+ * A user message's content for Chat Completions.
+ *
+ * Same shape rule as the Responses envelope: text alone stays a string, and any
+ * image turns it into the part list.
+ */
+function completionsUserContent(text: string, images: readonly DirectImageAttachment[]): unknown {
+  if (images.length === 0) return text;
+  const content: Array<Record<string, unknown>> = [];
+  if (text) content.push({ type: "text", text });
+  for (const img of images) {
+    content.push({ type: "image_url", image_url: { url: imageDataUrl(img) } });
+  }
+  return content;
+}
+
 /** The request body each protocol expects for the same conversation. */
 export function streamBody(input: DirectRequestInput): Record<string, unknown> {
   if (input.protocol === "openai-responses") {
@@ -95,9 +157,12 @@ export function streamBody(input: DirectRequestInput): Record<string, unknown> {
       input: [
         ...input.history.map((turn) => ({
           role: turn.role,
-          content: [{ type: turn.role === "assistant" ? "output_text" : "input_text", text: turn.text }],
+          content:
+            turn.role === "assistant"
+              ? [{ type: "output_text", text: turn.text }]
+              : responsesUserContent(turn.text, turn.images ?? []),
         })),
-        { role: "user", content: [{ type: "input_text", text: input.message }] },
+        { role: "user", content: responsesUserContent(input.message, input.images ?? []) },
       ],
     };
   }
@@ -105,8 +170,12 @@ export function streamBody(input: DirectRequestInput): Record<string, unknown> {
     model: input.model.id,
     stream: true,
     messages: [
-      ...input.history.map((turn) => ({ role: turn.role, content: turn.text })),
-      { role: "user", content: input.message },
+      ...input.history.map((turn) => ({
+        role: turn.role,
+        content:
+          turn.role === "assistant" ? turn.text : completionsUserContent(turn.text, turn.images ?? []),
+      })),
+      { role: "user", content: completionsUserContent(input.message, input.images ?? []) },
     ],
   };
 }

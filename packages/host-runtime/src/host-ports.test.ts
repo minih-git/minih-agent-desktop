@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { createHostQueueStore, createHostSessionPort, fromHostQueueEntry, toSessionSummary } from "./host-ports.js";
+import { createHostQueueStore, createHostSessionPort, fromHostQueueEntry, toRacpItem, toSessionSummary } from "./host-ports.js";
+import { encodeSessionMediaId } from "./session-media.js";
 
 describe("host ports", () => {
   it("maps a host session record to the Agent Host summary without leaking the absolute path", () => {
@@ -137,6 +138,66 @@ describe("host ports", () => {
     expect(calls[0]).toEqual({ id: "s1", messageLimit: 1, contentLimit: 64 * 1024 });
     expect(summary).toMatchObject({ id: "s1", title: "Fix build", mode: "plan", permissionMode: "auto" });
   });
+  /**
+   * A transcript row's raster image must reach a phone as an opaque
+   * `mediaId` (`session/mediaRead`), computed from the row the Host recorded and
+   * nothing else. Everything a client already read — kind, name, ref, MIME, the
+   * message text — is passed through unchanged, and a non-raster row keeps no
+   * media id at all: it is not media, and naming one would offer a preview the
+   * Host then refuses.
+   */
+  it("projects a raster attachment to a media id and leaves other attachments alone", () => {
+    const sha = "a".repeat(64);
+    const item = toRacpItem({
+      id: "m-media",
+      role: "user",
+      content: "look at these",
+      createdAt: "2026-09-18T00:00:00.000Z",
+      attachments: [
+        { id: "att-1", kind: "image", name: "shot.png", ref: `attachments/${sha}`, mimeType: "image/png", size: 12 },
+        { id: "att-2", kind: "image", name: "shot.webp", ref: `attachments/${sha}`, mimeType: "image/webp" },
+        { id: "att-3", kind: "file", name: "report.pdf", ref: "docs/report.pdf", mimeType: "application/pdf" },
+        { id: "att-4", kind: "image", name: "icon.svg", ref: `attachments/${sha}`, mimeType: "image/svg+xml" },
+        { id: "att-5", kind: "image", name: "outside.png", ref: "/home/user/Pictures/outside.png", mimeType: "image/png" },
+        { id: "att-6", kind: "session", name: "Earlier chat", ref: "session-1" },
+        // A row the Host cannot scope to a message id carries no media id.
+        { kind: "image", name: "loose.png", ref: `attachments/${sha}`, mimeType: "image/png" },
+      ],
+    });
+
+    const content = item.content as { content: string; attachments: Array<Record<string, unknown>> };
+    const attachments = content.attachments;
+    expect(content.content).toBe("look at these");
+    expect(attachments[0]).toEqual({
+      id: "att-1",
+      kind: "image",
+      name: "shot.png",
+      ref: `attachments/${sha}`,
+      mimeType: "image/png",
+      size: 12,
+      mediaId: encodeSessionMediaId("m-media", "att-1"),
+    });
+    expect(attachments[1]?.mediaId).toBe(encodeSessionMediaId("m-media", "att-2"));
+    for (const attachment of attachments.slice(2)) {
+      expect(attachment).not.toHaveProperty("mediaId");
+    }
+    expect(attachments[2]).toEqual({ id: "att-3", kind: "file", name: "report.pdf", ref: "docs/report.pdf", mimeType: "application/pdf" });
+  });
+
+  it("leaves a message without raster media byte-for-byte as stored", () => {
+    const message = {
+      id: "m-plain",
+      role: "assistant" as const,
+      content: "done",
+      createdAt: "2026-09-18T00:00:00.000Z",
+      status: "complete" as const,
+      attachments: [{ id: "att-9", kind: "file" as const, name: "a.txt", ref: "a.txt" }],
+    };
+    const item = toRacpItem(message);
+    expect(item.content).toBe(message);
+    expect(item).toMatchObject({ id: "m-plain", itemType: "message", status: "completed", turnId: "" });
+  });
+
   it("round-trips queue records through the host-core RPC shape", async () => {
     const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
     const store = createHostQueueStore(() => ({

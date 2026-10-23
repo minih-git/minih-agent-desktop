@@ -48,6 +48,8 @@ export function isImageGenerationModel(
 export const MAX_GENERATED_IMAGES = 10;
 export const IMAGE_GENERATION_TIMEOUT_MS = 180_000;
 export const IMAGE_BATCH_TIMEOUT_MS = 950_000;
+export const IMAGE_GENERATION_MAX_BYTES = 16 * 1024 * 1024;
+export const DIRECT_IMAGE_INPUT_MAX_BYTES = 10 * 1024 * 1024;
 export type ImageGenerationItem = { prompt: string; count?: number; images?: string[] };
 export type ImageGenerationInput = { items: ImageGenerationItem[] };
 export type GeneratedImageResult = {

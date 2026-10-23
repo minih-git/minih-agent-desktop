@@ -144,6 +144,103 @@ describe("request shape", () => {
     expect(input[1]?.content[0]?.type).toBe("output_text");
     expect(input[2]).toEqual({ role: "user", content: [{ type: "input_text", text: "how are you?" }] });
   });
+
+  /**
+   * Image input (ADR mobile-experience-completeness D5). The bytes go inline as
+   * a data URL, and the text part is omitted when the user sent only an image:
+   * an empty `input_text` is a different request from no text at all.
+   */
+  it("carries images inline for Chat Completions, as a part list", () => {
+    const body = streamBody({
+      ...request,
+      message: "what is this?",
+      images: [
+        { mimeType: "image/png", dataBase64: "AAAA" },
+        { mimeType: "image/jpeg", dataBase64: "BBBB" },
+      ],
+    });
+    expect(body.messages).toEqual([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "hi" },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "what is this?" },
+          { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+          { type: "image_url", image_url: { url: "data:image/jpeg;base64,BBBB" } },
+        ],
+      },
+    ]);
+  });
+
+  it("carries images inline for the Responses envelope, as input parts", () => {
+    const body = streamBody({
+      ...request,
+      protocol: "openai-responses",
+      message: "what is this?",
+      images: [{ mimeType: "image/webp", dataBase64: "CCCC" }],
+    });
+    const input = body.input as Array<{ role: string; content: unknown }>;
+    expect(input[2]).toEqual({
+      role: "user",
+      content: [
+        { type: "input_text", text: "what is this?" },
+        { type: "input_image", image_url: "data:image/webp;base64,CCCC" },
+      ],
+    });
+  });
+
+  it("keeps a text-only turn a plain string when another turn has an image", () => {
+    const historyWithImage = [
+      {
+        role: "user" as const,
+        text: "look",
+        images: [{ mimeType: "image/png", dataBase64: "DDDD" }],
+      },
+      { role: "assistant" as const, text: "seen" },
+    ];
+    const completions = streamBody({ ...request, history: historyWithImage, message: "and now?" });
+    expect(completions.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "look" },
+          { type: "image_url", image_url: { url: "data:image/png;base64,DDDD" } },
+        ],
+      },
+      { role: "assistant", content: "seen" },
+      { role: "user", content: "and now?" },
+    ]);
+
+    const responses = streamBody({
+      ...request,
+      protocol: "openai-responses",
+      history: historyWithImage,
+      message: "and now?",
+    });
+    const input = responses.input as Array<{ role: string; content: unknown }>;
+    expect(input[0]).toEqual({
+      role: "user",
+      content: [
+        { type: "input_text", text: "look" },
+        { type: "input_image", image_url: "data:image/png;base64,DDDD" },
+      ],
+    });
+    expect(input[1]).toEqual({ role: "assistant", content: [{ type: "output_text", text: "seen" }] });
+    expect(input[2]).toEqual({ role: "user", content: [{ type: "input_text", text: "and now?" }] });
+  });
+
+  it("omits the text part for an image-only message, in both envelopes", () => {
+    const images = [{ mimeType: "image/png", dataBase64: "EEEE" }];
+    const completions = streamBody({ ...request, history: [], message: "", images });
+    expect(completions.messages).toEqual([
+      { role: "user", content: [{ type: "image_url", image_url: { url: "data:image/png;base64,EEEE" } }] },
+    ]);
+    const responses = streamBody({ ...request, protocol: "openai-responses", history: [], message: "", images });
+    expect(responses.input).toEqual([
+      { role: "user", content: [{ type: "input_image", image_url: "data:image/png;base64,EEEE" }] },
+    ]);
+  });
 });
 
 describe("streaming a reply", () => {

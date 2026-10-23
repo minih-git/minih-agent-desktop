@@ -204,6 +204,11 @@ export function projectMessage(
     };
   }
   const attachments = attachmentsOf(message);
+  const mediaIds = Array.isArray(message.attachments)
+    ? message.attachments
+        .map((att) => (att as { mediaId?: unknown })?.mediaId)
+        .filter((mediaId): mediaId is string => typeof mediaId === "string" && mediaId.length > 0)
+    : undefined;
   const providerId = typeof message.providerId === "string" && message.providerId.trim() ? message.providerId.trim() : undefined;
   const modelId = typeof message.modelId === "string" && message.modelId.trim() ? message.modelId.trim() : undefined;
   return {
@@ -216,6 +221,7 @@ export function projectMessage(
     ...(modelId ? { modelId } : {}),
     ...(typeof message.command === "string" && message.command ? { command: message.command } : {}),
     ...(attachments ? { attachments } : {}),
+    ...(mediaIds && mediaIds.length > 0 ? { mediaIds } : {}),
     ...(message.sideNote === true ? { sideNote: true } : {}),
     ...(message.error ? { isError: true } : {}),
   };

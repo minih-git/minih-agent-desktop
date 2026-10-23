@@ -675,6 +675,7 @@ implemented as written.
 | List/get visible hosts, projects, and sessions | yes | yes | yes | yes |
 | Subscribe to session or host events | yes | yes | yes | yes |
 | Read session history | yes | yes | yes | yes |
+| Read session media (`session/mediaRead`) | yes | yes | yes | yes |
 | Create/attach as viewer | yes | yes | yes | yes |
 | Start or queue a turn | no | yes | optional | yes |
 | Stop, interrupt, or cancel a session turn | no | yes | optional | yes |
@@ -824,6 +825,28 @@ connection fail before they reach the Agent runtime.
    enforces only the size bound, relays the bytes to the Host in bounded
    chunks, deletes its copy when `attachment/complete` succeeds or the upload
    expires, and never inspects, persists, or serves those bytes elsewhere.
+10. Reading back transcript media (`session/mediaRead`):
+    - **Role and capability**: Authorized for the `viewer` role (and higher). Advertised
+      by the Host through the `sessionMediaRead` capability flag in `connection/initialize`
+      and `host.capabilities`. Clients MUST NOT invoke `session/mediaRead` without this
+      negotiated capability.
+    - **Session-bound raster attachments only**: Reads are strictly restricted to
+      raster image attachments recorded in the named session's active transcript
+      with an authorized `mediaId` (`ref: attachments/<64 lowercase hex>`). The Host
+      re-validates that the media belongs to the session on every request; lookups for
+      arbitrary files, project/workspace files, provider secrets, or SVG/text payloads
+      are rejected (`NOT_FOUND` or `REMOTE_PATH_FORBIDDEN`).
+    - **Traversal and symlink prevention**: Opaque `mediaId` values are validated and
+      never directly concatenated into filesystem paths. Canonical resolution via
+      `realpath` outside the Host attachments directory (e.g. symlinks) is blocked
+      and rejected.
+    - **Content and hash verification**: The file's SHA-256 digest is verified
+      against its canonical reference hash before bytes are served. A modified or
+      corrupted blob is rejected with `CONFLICT` (`media-changed`).
+    - **Bounded chunked transfer**: Chunk size is capped at 512 KiB per request
+      (`RACP_SESSION_MEDIA_MAX_CHUNK_BYTES`) and constrained by `limits.maxFrameBytes`.
+      Total file size is capped at 20 MiB (`PAYLOAD_TOO_LARGE`). Unbounded offsets or
+      chunk lengths are rejected as `INVALID_ARGUMENT`.
 
 ## 7. Tool and approval security
 

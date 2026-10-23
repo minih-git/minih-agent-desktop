@@ -55,6 +55,40 @@ describe("entering history", () => {
     expect(await history.list(SCOPE)).toHaveLength(1);
   });
 
+  it("records the media a message carries on the message and its attempt", async () => {
+    const { store, history, turn } = harness();
+    const result = await history.beginTurn(turn({ text: "what is this?", mediaIds: ["media-1", "media-2"] }));
+    if (!result.ok) throw new Error("setup failed");
+    // Both sides of the pair carry the ids: the timeline reads the message, and a
+    // retry or a later turn's context reads the attempt.
+    expect(result.userMessage.mediaIds).toEqual(["media-1", "media-2"]);
+    expect(result.attempt.mediaIds).toEqual(["media-1", "media-2"]);
+    const stored = (await history.transcript(result.conversation.id))!;
+    expect(stored.messages[0]?.mediaIds).toEqual(["media-1", "media-2"]);
+    expect(store.snapshot().attempts[0]?.mediaIds).toEqual(["media-1", "media-2"]);
+  });
+
+  it("leaves mediaIds unset for a text-only message, and copies the caller's list", async () => {
+    const { history, turn } = harness();
+    const plain = await history.beginTurn(turn({ text: "hello" }));
+    if (!plain.ok) throw new Error("setup failed");
+    expect(plain.userMessage.mediaIds).toBeUndefined();
+    expect(plain.attempt.mediaIds).toBeUndefined();
+    // An empty list is the same as none, so nothing has to special-case it later.
+    const empty = await history.beginTurn(turn({ text: "again", mediaIds: [] }));
+    if (!empty.ok) throw new Error("setup failed");
+    expect(empty.userMessage.mediaIds).toBeUndefined();
+    expect(empty.attempt.mediaIds).toBeUndefined();
+
+    // The saved record must not alias the caller's array.
+    const ids = ["media-9"];
+    const carried = await history.beginTurn(turn({ text: "with one", mediaIds: ids }));
+    if (!carried.ok) throw new Error("setup failed");
+    ids.push("media-10");
+    expect(carried.userMessage.mediaIds).toEqual(["media-9"]);
+    expect(carried.attempt.mediaIds).toEqual(["media-9"]);
+  });
+
   it("does not create a conversation for an abandoned empty chat", async () => {
     const { history, turn } = harness();
     const result = await history.beginTurn(turn({ text: "   " }));
@@ -517,5 +551,52 @@ describe("the account used most recently", () => {
   it("is nothing at all when there is no history", async () => {
     const { history } = harness();
     expect(await history.lastScope()).toBeNull();
+  });
+});
+
+describe("account-scoped pre-first-message draft", () => {
+  it("saves and clears account draft upon first message send", async () => {
+    const { history, turn } = harness();
+    expect(await history.accountDraft(SCOPE)).toBe("");
+    await history.setAccountDraft(SCOPE, "Draft before new chat");
+    expect(await history.accountDraft(SCOPE)).toBe("Draft before new chat");
+
+    // Different scope has its own draft
+    expect(await history.accountDraft(OTHER_SCOPE)).toBe("");
+
+    // Starting first message clears the account draft
+    const result = await history.beginTurn(turn({ text: "Hello world" }));
+    expect(result.ok).toBe(true);
+    expect(await history.accountDraft(SCOPE)).toBe("");
+  });
+});
+
+describe("anti-resurrection on deletion", () => {
+  it("drops checkpoint and finish if conversation was deleted", async () => {
+    const { history, turn, store } = harness();
+    const created = await history.beginTurn(turn());
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    // Delete conversation while stream is supposedly running
+    await store.transact(async (tx) => {
+      await tx.deleteConversation(created.conversation.id);
+    });
+    expect(await store.conversation(created.conversation.id)).toBeNull();
+
+    // Checkpoint must not restore conversation or add message
+    const checkpointAttempt = await history.checkpoint(created.attempt, "late streaming chunk", T0);
+    expect(await store.conversation(created.conversation.id)).toBeNull();
+    expect(await store.messages(created.conversation.id)).toEqual([]);
+
+    // Finish must not restore conversation or attempt
+    const finishedAttempt = await history.finish(checkpointAttempt, {
+      state: "complete",
+      text: "late finish text",
+      now: T0,
+    });
+    expect(finishedAttempt.state).toBe("complete");
+    expect(await store.conversation(created.conversation.id)).toBeNull();
+    expect(await store.messages(created.conversation.id)).toEqual([]);
   });
 });

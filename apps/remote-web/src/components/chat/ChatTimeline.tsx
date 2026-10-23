@@ -1,6 +1,6 @@
-import { ChevronDown, ChevronUp, Clock, Code, ExternalLink, Globe, Maximize2, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Clock, Code, Copy, ExternalLink, Globe, ImageOff, Maximize2, Pencil, RotateCcw, X } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { isValidElement, useMemo, useRef, useState } from "react";
+import { isValidElement, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
@@ -10,11 +10,144 @@ import { groupConsecutiveToolRuns } from "@minih-agent/shared";
 
 import type { TimelineFailure, TimelineItem } from "../../lib/timeline-types.js";
 import { ToolRun } from "./ToolRun.js";
+import { MediaViewer, type MediaViewerItem } from "../ui/MediaViewer.js";
+import type { SessionMediaState } from "../../lib/session-media.js";
 
 export interface ChatTimelineProps {
   items: TimelineItem[];
   lastFailure?: TimelineFailure;
   pendingText?: string | null;
+  resolveMedia?: (mediaId: string, name?: string) => Promise<MediaViewerItem | SessionMediaState | null>;
+  onCopyMessage?: (item: TimelineItem) => void;
+  onRegenerateMessage?: (item: TimelineItem) => void;
+  onEditResendMessage?: (item: TimelineItem) => void;
+}
+
+type MediaEntry =
+  | { kind: "ready"; item: MediaViewerItem }
+  | { kind: "unsupported"; id: string }
+  | { kind: "deleted"; id: string }
+  | { kind: "changed"; id: string }
+  | { kind: "forbidden"; id: string }
+  | { kind: "failed"; id: string };
+
+function MediaThumbnails({
+  mediaIds,
+  resolveMedia,
+  onOpenViewer,
+}: {
+  mediaIds?: readonly string[];
+  resolveMedia?: (mediaId: string, name?: string) => Promise<MediaViewerItem | SessionMediaState | null>;
+  onOpenViewer: (items: MediaViewerItem[], index: number) => void;
+}) {
+  const { t } = useTranslation();
+  const [entries, setEntries] = useState<MediaEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!mediaIds || mediaIds.length === 0 || !resolveMedia) {
+      setEntries([]);
+      return;
+    }
+
+    setLoading(true);
+    Promise.all(
+      mediaIds.map(async (id): Promise<MediaEntry | null> => {
+        try {
+          const res = await resolveMedia(id);
+          if (!res) return { kind: "deleted", id };
+          if ("kind" in res) {
+            if (res.kind === "ready") return { kind: "ready", item: res.item };
+            return { kind: res.kind, id };
+          }
+          return { kind: "ready", item: res };
+        } catch {
+          return { kind: "failed", id };
+        }
+      }),
+    ).then((results) => {
+      if (!cancelled) {
+        setEntries(results.filter((r): r is MediaEntry => r !== null));
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mediaIds, resolveMedia]);
+
+  if (loading) {
+    return (
+      <div className="mt-2 flex gap-1.5">
+        <div className="h-24 w-24 animate-pulse rounded-xl bg-[var(--rm-bg-inset)]" />
+      </div>
+    );
+  }
+
+  if (entries.length === 0) return null;
+
+  const readyItems = entries.filter((e): e is { kind: "ready"; item: MediaViewerItem } => e.kind === "ready").map((e) => e.item);
+  const statusEntries = entries.filter((e) => e.kind !== "ready");
+
+  const count = readyItems.length;
+  const gridClass =
+    count === 1
+      ? "flex max-w-[280px]"
+      : count <= 4
+        ? "grid grid-cols-2 gap-1.5 max-w-[320px]"
+        : "grid grid-cols-3 gap-1.5 max-w-[340px]";
+
+  function statusLabel(kind: MediaEntry["kind"]): string {
+    switch (kind) {
+      case "unsupported":
+        return t("timeline.mediaUnsupported");
+      case "deleted":
+        return t("timeline.mediaDeleted");
+      case "changed":
+        return t("timeline.mediaChanged");
+      case "forbidden":
+        return t("timeline.mediaForbidden");
+      default:
+        return t("timeline.mediaFailed");
+    }
+  }
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      {readyItems.length > 0 ? (
+        <div className={gridClass}>
+          {readyItems.map((item, idx) => (
+            <button
+              key={item.id || idx}
+              type="button"
+              onClick={() => onOpenViewer(readyItems, idx)}
+              className="group relative overflow-hidden rounded-xl bg-[var(--rm-bg-inset)] border border-[var(--rm-bubble-border)] focus:outline-none focus:ring-2 focus:ring-[var(--rm-accent)] active:opacity-90 cursor-pointer"
+              style={count === 1 ? { maxHeight: "260px" } : { aspectRatio: "1/1" }}
+            >
+              <img
+                src={item.url}
+                alt={item.name ?? "Image"}
+                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                loading="lazy"
+              />
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {statusEntries.map((statusItem, idx) => (
+        <div
+          key={statusItem.id || idx}
+          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--rm-bg-inset)] border border-[var(--rm-bubble-border)] text-[var(--rm-text-muted)] text-xs max-w-[280px]"
+        >
+          <ImageOff className="h-4 w-4 shrink-0 opacity-70" />
+          <span>{statusLabel(statusItem.kind)}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 type MarkdownTableProps = ComponentProps<"table"> & { node?: unknown };
@@ -195,11 +328,45 @@ function isEmptyAssistantPlaceholder(item: TimelineItem): boolean {
   return !item.text.trim() && !item.thinking?.trim();
 }
 
-export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelineProps) {
+export function ChatTimeline({
+  items,
+  lastFailure,
+  pendingText,
+  resolveMedia,
+  onCopyMessage,
+  onRegenerateMessage,
+  onEditResendMessage,
+}: ChatTimelineProps) {
   const { t } = useTranslation();
   const [openItems, setOpenItems] = useState<Record<string, boolean>>({});
   const [expandedHtml, setExpandedHtml] = useState<{ title: string; code: string } | null>(null);
   const [expandedShowSource, setExpandedShowSource] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [viewerState, setViewerState] = useState<{
+    open: boolean;
+    items: MediaViewerItem[];
+    index: number;
+  }>({ open: false, items: [], index: 0 });
+
+  const handleCopy = async (item: TimelineItem) => {
+    if (onCopyMessage) {
+      onCopyMessage(item);
+    } else if (item.text) {
+      try {
+        await navigator.clipboard.writeText(item.text);
+      } catch {
+        // ignore
+      }
+    }
+    setCopiedId(item.id);
+    setTimeout(() => {
+      setCopiedId((current) => (current === item.id ? null : current));
+    }, 1500);
+  };
+
+  const handleOpenViewer = (viewerItems: MediaViewerItem[], index: number) => {
+    setViewerState({ open: true, items: viewerItems, index });
+  };
 
   const toggle = (key: string) => {
     setOpenItems((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -210,6 +377,12 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
     () => items.filter((item) => !isEmptyAssistantPlaceholder(item)),
     [items],
   );
+  const lastAssistantId = useMemo(() => {
+    for (let i = visibleItems.length - 1; i >= 0; i--) {
+      if (visibleItems[i].role === "assistant") return visibleItems[i].id;
+    }
+    return null;
+  }, [visibleItems]);
   const visibleItemsRef = useRef<readonly TimelineItem[]>(visibleItems);
   visibleItemsRef.current = visibleItems;
 
@@ -435,18 +608,54 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
                 }`}
               >
                 {item.text ? renderInlineCode(item.text) : null}
-                {item.attachments && item.attachments.length > 0 ? (
-                  <div className={`${item.text ? "mt-1.5 " : ""}text-[12px] leading-[16px] text-[var(--rm-text-secondary)]`}>
-                    {t("timeline.attachments", {
-                      count: item.attachments.length,
-                      names: item.attachments.map((attachment) => attachment.name).join(", "),
-                    })}
-                  </div>
-                ) : null}
-                {isPending && (
+                <MediaThumbnails
+                  mediaIds={item.mediaIds}
+                  resolveMedia={resolveMedia}
+                  onOpenViewer={handleOpenViewer}
+                />
+                {(() => {
+                  const nonImage = item.attachments?.filter(
+                    (att) => att.kind !== "image",
+                  );
+                  if (!nonImage || nonImage.length === 0) return null;
+                  return (
+                    <div className={`${item.text ? "mt-1.5 " : ""}text-[12px] leading-[16px] text-[var(--rm-text-secondary)]`}>
+                      {t("timeline.attachments", {
+                        count: nonImage.length,
+                        names: nonImage.map((attachment) => attachment.name).join(", "),
+                      })}
+                    </div>
+                  );
+                })()}
+                {isPending ? (
                   <div className="mt-1 flex items-center justify-end gap-1 text-[12px] text-[var(--rm-text-muted)]">
                     <Clock size={12} />
                     <span>{t("timeline.sending")}</span>
+                  </div>
+                ) : (
+                  <div className="mt-1.5 flex items-center justify-end gap-1">
+                    {item.text ? (
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(item)}
+                        aria-label={copiedId === item.id ? t("message.copied") : t("message.copy")}
+                        title={t("message.copy")}
+                        className="flex h-6 w-6 items-center justify-center rounded text-[var(--rm-text-muted)] hover:bg-[var(--rm-bg-surface)] hover:text-[var(--rm-text-primary)] cursor-pointer"
+                      >
+                        {copiedId === item.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                      </button>
+                    ) : null}
+                    {onEditResendMessage && item.text ? (
+                      <button
+                        type="button"
+                        onClick={() => onEditResendMessage(item)}
+                        aria-label={t("message.editResend")}
+                        title={t("message.editResend")}
+                        className="flex h-6 w-6 items-center justify-center rounded text-[var(--rm-text-muted)] hover:bg-[var(--rm-bg-surface)] hover:text-[var(--rm-text-primary)] cursor-pointer"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    ) : null}
                   </div>
                 )}
               </li>
@@ -480,6 +689,13 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
                   </ReactMarkdown>
                 </div>
               ) : null}
+              {item.mediaIds && item.mediaIds.length > 0 ? (
+                <MediaThumbnails
+                  mediaIds={item.mediaIds}
+                  resolveMedia={resolveMedia}
+                  onOpenViewer={handleOpenViewer}
+                />
+              ) : null}
               {item.thinking ? (
                 <div className={item.text ? "mt-1" : ""}>
                   <button
@@ -498,6 +714,30 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
                   )}
                 </div>
               ) : null}
+              <div className="mt-1 flex items-center gap-1">
+                {item.text ? (
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(item)}
+                    aria-label={copiedId === item.id ? t("message.copied") : t("message.copy")}
+                    title={t("message.copy")}
+                    className="flex h-6 w-6 items-center justify-center rounded text-[var(--rm-text-muted)] hover:bg-[var(--rm-bg-surface)] hover:text-[var(--rm-text-primary)] cursor-pointer"
+                  >
+                    {copiedId === item.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                  </button>
+                ) : null}
+                {onRegenerateMessage && item.status !== "streaming" && item.id === lastAssistantId ? (
+                  <button
+                    type="button"
+                    onClick={() => onRegenerateMessage(item)}
+                    aria-label={t("message.regenerate")}
+                    title={t("message.regenerate")}
+                    className="flex h-6 w-6 items-center justify-center rounded text-[var(--rm-text-muted)] hover:bg-[var(--rm-bg-surface)] hover:text-[var(--rm-text-primary)] cursor-pointer"
+                  >
+                    <RotateCcw size={12} />
+                  </button>
+                ) : null}
+              </div>
             </li>
           );
         })}
@@ -521,6 +761,12 @@ export function ChatTimeline({ items, lastFailure, pendingText }: ChatTimelinePr
         ) : null}
       </ul>
       {fullscreenModal}
+      <MediaViewer
+        open={viewerState.open}
+        items={viewerState.items}
+        initialIndex={viewerState.index}
+        onClose={() => setViewerState((s) => ({ ...s, open: false }))}
+      />
     </>
   );
 }

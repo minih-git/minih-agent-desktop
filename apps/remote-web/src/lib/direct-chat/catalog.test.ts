@@ -7,8 +7,11 @@ import {
   initialDirectModel,
   resolveDirectModel,
   splitDirectModels,
+  resolveEffectiveChatModel,
+  resolveEffectiveImageModel,
+  isImageModel,
+  checkModelVisionCapability,
 } from "./catalog.js";
-
 function model(overrides: Partial<MinihRouterModel> & { id: string }): MinihRouterModel {
   return {
     upstreamIds: [],
@@ -173,4 +176,93 @@ describe("searching the sheet", () => {
   it("returns nothing when nothing matches", () => {
     expect(filterDirectModels(models, "zzz")).toEqual([]);
   });
+});
+
+describe("effective chat model resolution (ADR D2)", () => {
+  const models = [
+    model({ id: "gpt-4.1" }),
+    model({ id: "claude", protocols: ["anthropic-messages"] }),
+    model({ id: "dall-e-3", protocols: ["openai-images"] }),
+    model({ id: "o4", protocols: ["openai-responses"] }),
+  ];
+
+  it("uses configured default chat model if usable", () => {
+    const result = resolveEffectiveChatModel(models, "gpt-4.1", "o4");
+    expect(result.model?.id).toBe("gpt-4.1");
+    if (result.model) expect(result.source).toBe("default");
+  });
+
+  it("does not silently fall back to lastModelId if configured default is unavailable or removed", () => {
+    const result = resolveEffectiveChatModel(models, "removed-model", "o4");
+    expect(result.model).toBeNull();
+    if (!result.model) expect(result.reason).toBe("unavailable");
+  });
+
+  it("does not silently fall back to lastModelId if configured default is non-usable (e.g. image model)", () => {
+    const result = resolveEffectiveChatModel(models, "dall-e-3", "o4");
+    expect(result.model).toBeNull();
+    if (!result.model) expect(result.reason).toBe("unavailable");
+  });
+
+  it("falls back to lastModelId when no explicit default exists and lastModel is usable", () => {
+    const result = resolveEffectiveChatModel(models, null, "o4");
+    expect(result.model?.id).toBe("o4");
+    if (result.model) expect(result.source).toBe("last");
+  });
+
+  it("returns none if neither default nor lastModel is available", () => {
+    const result = resolveEffectiveChatModel(models, null, null);
+    expect(result.model).toBeNull();
+    if (!result.model) expect(result.reason).toBe("none");
+  });
+});
+
+describe("effective image model resolution (ADR D2)", () => {
+  const models = [
+    model({ id: "gpt-4.1" }),
+    model({ id: "dall-e-3", protocols: ["openai-images"] }),
+  ];
+
+  it("recognizes image models", () => {
+    expect(isImageModel(models[0]!)).toBe(false);
+    expect(isImageModel(models[1]!)).toBe(true);
+  });
+
+  it("returns valid default image model", () => {
+    expect(resolveEffectiveImageModel(models, "dall-e-3")?.id).toBe("dall-e-3");
+    expect(resolveEffectiveImageModel(models, "gpt-4.1")).toBeNull();
+    expect(resolveEffectiveImageModel(models, null)).toBeNull();
+  });
+
+/**
+ * Image input is authorized by the gateway's declaration alone (ADR D5). A name
+ * or a UI category is not evidence, and "no declaration" is a third answer
+ * rather than a "no": the screen tells the user what it cannot verify.
+ */
+describe("whether a model accepts images", () => {
+  it("is supported when the gateway declares the image modality", () => {
+    const vision = model({ id: "qwen-vl-max", inputModalities: ["text", "image"] });
+    expect(checkModelVisionCapability(vision)).toBe("supported");
+  });
+
+  it("is unsupported when the gateway declares modalities without images", () => {
+    expect(checkModelVisionCapability(model({ id: "gpt-4.1", inputModalities: ["text"] }))).toBe(
+      "unsupported",
+    );
+    expect(checkModelVisionCapability(model({ id: "x", inputModalities: [] }))).toBe("unsupported");
+  });
+
+  it("is unknown when the gateway did not say", () => {
+    // No declaration at all, and no model to ask about.
+    expect(checkModelVisionCapability(model({ id: "mystery" }))).toBe("unknown");
+    expect(checkModelVisionCapability(null)).toBe("unknown");
+    expect(checkModelVisionCapability(undefined)).toBe("unknown");
+  });
+
+  it("never infers an answer from the id or the category", () => {
+    // A name that looks like a vision model is still only a name.
+    expect(checkModelVisionCapability(model({ id: "qwen-vl-max", category: "vision" }))).toBe("unknown");
+    expect(checkModelVisionCapability(model({ id: "omni", category: "chat" }))).toBe("unknown");
+  });
+});
 });

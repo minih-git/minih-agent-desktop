@@ -147,6 +147,40 @@ export interface RacpInlineAttachmentStore {
   }): Promise<{ path: string }>;
 }
 
+/**
+ * The media one session's transcript already carries (D6, rollout B4).
+ *
+ * A media id is opaque and answers nothing on its own: `read` resolves it
+ * against the session transcript every time, so a revoked or foreign id is a
+ * refusal rather than a lookup. `sessionId` is passed separately so the
+ * implementation can never answer from the id alone.
+ */
+export interface RacpSessionMediaAccess {
+  /**
+   * One bounded byte range. Must refuse, rather than clamp: a negative or
+   * past-the-end `offset`, a zero `length`, or a `length` over
+   * `RACP_SESSION_MEDIA_MAX_CHUNK_BYTES` is `INVALID_ARGUMENT`; a media id this
+   * session does not record is `NOT_FOUND`; any other containment failure is
+   * `REMOTE_PATH_FORBIDDEN`/`REMOTE_PATH_NOT_FOUND`.
+   */
+  read(input: {
+    sessionId: string;
+    mediaId: string;
+    offset: number;
+    length: number;
+    principal: Principal;
+  }): Promise<RacpSessionMediaReadResult>;
+}
+
+/** One chunk of a media item, in the shape `SessionMediaReadResponse` requires. */
+export type RacpSessionMediaReadResult = {
+  mime: string;
+  totalBytes: number;
+  offset: number;
+  data: string;
+  sha256?: string;
+};
+
 export type RacpHostOperations = {
   sessions: RacpSessionCatalog;
   /**
@@ -187,6 +221,16 @@ export type RacpHostOperations = {
    * to drop the attachment from.
    */
   inlineAttachments?: RacpInlineAttachmentStore;
+  /**
+   * Transcript media reads (D6, rollout B4). Absent on a Host that cannot
+   * resolve a session's recorded attachments, which leaves `sessionMediaRead`
+   * out of its capabilities so a phone states that it needs a newer version.
+   *
+   * The Host owns enumeration and membership: the RACP layer validates shapes
+   * and bounds, and only the port knows which media a session's transcript
+   * actually carries.
+   */
+  sessionMedia?: RacpSessionMediaAccess;
   /** Owner-only: revoke a paired device (spec `session/revoke`). */
   revokeDevice?: (deviceId: string) => Promise<boolean>;
 };
