@@ -7,7 +7,7 @@ import {
   liveAttemptOf,
   type BeginTurnInput,
 } from "./history.js";
-import { scopeKey, titleFromMessage } from "./history-store.js";
+import { scopeDependency, scopeKey, titleFromMessage } from "./history-store.js";
 import { createMemoryDirectChatStore } from "./memory-store.js";
 
 const SCOPE = { gatewayRoot: "https://models.example.test", accessKeyId: "42" };
@@ -730,5 +730,27 @@ describe("deleting one image out of a conversation", () => {
       ok: false,
       reason: "missing",
     });
+  });
+});
+
+/**
+ * Review fix: Studio reloaded its whole gallery on every render because its
+ * effect depended on `directChatScope()`, which returns a new object each call.
+ * The dependency is a value now; this pins what it must be equal for.
+ */
+describe("the value an effect may depend on for a scope", () => {
+  it("is equal for the same account, whatever object it is asked about", () => {
+    const a = { gatewayRoot: "https://models.example.test", accessKeyId: "42" };
+    const b = { ...a };
+    expect(scopeDependency(a)).toBe(scopeDependency(b));
+    expect(a).not.toBe(b);
+  });
+
+  it("differs between accounts and is null with no account", () => {
+    const mine = { gatewayRoot: "https://models.example.test", accessKeyId: "42" };
+    const other = { gatewayRoot: "https://models.example.test", accessKeyId: "99" };
+    expect(scopeDependency(mine)).not.toBe(scopeDependency(other));
+    expect(scopeDependency(null)).toBeNull();
+    expect(scopeDependency(undefined)).toBeNull();
   });
 });

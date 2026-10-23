@@ -15,6 +15,7 @@ import { NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent } from "../components/ui/Screen.js";
 import { Tag } from "../components/ui/StatusDot.js";
 import type { DirectChatSummary } from "../lib/direct-chat/history.js";
+import { scopeDependency } from "../lib/direct-chat/history-store.js";
 import { vendorBadge } from "../lib/direct-chat/model-picker.js";
 import { filterTextConversations } from "../lib/direct-chat/studio.js";
 import { directChatHistory, directChatScope, subscribeDirectChat } from "../lib/runtime.js";
@@ -29,6 +30,8 @@ export function ChatArchiveScreen({ onBack, onOpenConversation, onRestored }: Ch
   const { t } = useTranslation();
   const history = directChatHistory();
   const scope = directChatScope();
+  /** The stable identity of the scope; the object itself is new on every render. */
+  const scopeKeyValue = scopeDependency(scope);
   const [rows, setRows] = useState<DirectChatSummary[]>([]);
 
   useEffect(() => {
@@ -47,7 +50,7 @@ export function ChatArchiveScreen({ onBack, onOpenConversation, onRestored }: Ch
       cancelled = true;
       unsubscribe?.();
     };
-  }, [history, scope]);
+  }, [history, scopeKeyValue]);
 
   async function restore(conversationId: string): Promise<void> {
     await history.setArchived(conversationId, false, new Date().toISOString());

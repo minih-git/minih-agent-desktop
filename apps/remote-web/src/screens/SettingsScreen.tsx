@@ -43,7 +43,7 @@ import {
   type PushRegistrationSnapshot,
 } from "../hooks/usePushRegistration.js";
 import type { DirectChatConnection } from "../lib/direct-chat/connection.js";
-import { scopeKey, type DirectChatScope } from "../lib/direct-chat/history-store.js";
+import { scopeDependency, scopeKey, type DirectChatScope } from "../lib/direct-chat/history-store.js";
 import {
   directChatHistory,
   directChatScope as currentScope,
@@ -117,6 +117,11 @@ export function SettingsScreen({
 
   const history = directChatHistory();
   const scope = currentScope();
+  /**
+   * The stable identity of the scope: `currentScope()` builds a new object on
+   * every call, so depending on the object itself reloads on every render.
+   */
+  const scopeKeyValue = scopeDependency(scope);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,7 +149,7 @@ export function SettingsScreen({
       cancelled = true;
       unsubscribe?.();
     };
-  }, [history, scope]);
+  }, [history, scopeKeyValue]);
 
   // Keep `system` appearance synchronized with OS `prefers-color-scheme` changes live.
   useEffect(() => {

@@ -29,6 +29,17 @@ export function scopeKey(scope: DirectChatScope): string {
   return `${scope.gatewayRoot}|${scope.accessKeyId}`;
 }
 
+/**
+ * A value a React effect may depend on, for a scope that is rebuilt per call.
+ *
+ * `directChatScope()` and `currentScope()` return a fresh object every time, so
+ * an effect listing the object reloads the whole list on every render. The key
+ * only changes when the account does, which is what the effect actually means.
+ */
+export function scopeDependency(scope: DirectChatScope | null | undefined): string | null {
+  return scope ? scopeKey(scope) : null;
+}
+
 export type DirectChatConversation = {
   /** Local UUID; never a Router or RACP id. */
   id: string;

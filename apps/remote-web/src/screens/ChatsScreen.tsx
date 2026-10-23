@@ -38,6 +38,7 @@ import { Toast } from "../components/ui/Toast.js";
 import { resolveEffectiveChatModel } from "../lib/direct-chat/catalog.js";
 import type { DirectChatConnection } from "../lib/direct-chat/connection.js";
 import type { DirectChatSummary } from "../lib/direct-chat/history.js";
+import { scopeDependency } from "../lib/direct-chat/history-store.js";
 import { vendorBadge } from "../lib/direct-chat/model-picker.js";
 import {
   filterTextConversations,
@@ -78,6 +79,12 @@ export function ChatsScreen({
   const { t } = useTranslation();
   const history = directChatHistory();
   const connectedScope = directChatScope();
+  /**
+   * `directChatScope()` builds a new object on every call, so an effect must
+   * depend on its key: a dependency on the object re-runs the load on every
+   * render.
+   */
+  const connectedScopeKey = scopeDependency(connectedScope);
   const runner = directChatRunner();
 
   const [rows, setRows] = useState<DirectChatSummary[]>([]);
@@ -117,7 +124,7 @@ export function ChatsScreen({
       cancelled = true;
       unsubscribe?.();
     };
-  }, [history, connectedScope, query]);
+  }, [history, connectedScopeKey, query]);
 
   const handleQuickNewChat = () => {
     if (!connection) return;

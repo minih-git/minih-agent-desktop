@@ -34,12 +34,16 @@ import { Sheet } from "../components/ui/Sheet.js";
 import { Toast } from "../components/ui/Toast.js";
 import { isImageModel, resolveStudioModel } from "../lib/direct-chat/catalog.js";
 import type { DirectChatConnection } from "../lib/direct-chat/connection.js";
+import { scopeDependency } from "../lib/direct-chat/history-store.js";
 import type { DirectChatTranscript } from "../lib/direct-chat/history-store.js";
+import { createMediaUrlCache, type MediaUrlCache } from "../lib/direct-chat/media-cache.js";
 import { createMediaUrl } from "../lib/direct-chat/media.js";
 import { createDirectChatSecret } from "../lib/direct-chat/secret.js";
 import {
   groupByDay,
   studioCards,
+  studioRetryModel,
+  studioSubmitRefusal,
   type StudioCard,
   type StudioDayKey,
 } from "../lib/direct-chat/studio.js";
@@ -76,6 +80,13 @@ export function StudioScreen({
   const history = directChatHistory();
   const runner = directChatRunner();
   const connectedScope = directChatScope();
+  /**
+   * The scope as a stable string. `directChatScope()` builds a fresh object on
+   * every call, so an effect that depends on it re-runs on every render — the
+   * reload loop this screen shipped with. The key is what actually changes when
+   * the account does.
+   */
+  const connectedScopeKey = scopeDependency(connectedScope);
 
   const [transcripts, setTranscripts] = useState<DirectChatTranscript[]>([]);
   const [chosenModelId, setChosenModelId] = useState<string | null>(null);
@@ -89,7 +100,13 @@ export function StudioScreen({
   const [deleting, setDeleting] = useState(false);
   const [revealingIds, setRevealingIds] = useState<ReadonlySet<string>>(() => new Set());
 
-  const urlCacheRef = useRef<Map<string, string>>(new Map());
+  /**
+   * Object URLs are owned by a cache, so deleting a picture and leaving the
+   * screen both revoke them instead of holding the blobs for the page's life.
+   */
+  const [mediaCache] = useState<MediaUrlCache>(() =>
+    createMediaUrlCache({ create: createMediaUrl, revoke: (url) => URL.revokeObjectURL(url) }),
+  );
   const prevGeneratingIdsRef = useRef<Set<string>>(new Set());
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -97,17 +114,17 @@ export function StudioScreen({
    * Drop one cached object URL. Deleting an image must not leave its blob pinned
    * for the life of the page.
    */
-  const releaseMediaUrl = useCallback((mediaId: string) => {
-    const url = urlCacheRef.current.get(mediaId);
-    if (!url) return;
-    urlCacheRef.current.delete(mediaId);
-    URL.revokeObjectURL(url);
-  }, []);
+  const releaseMediaUrl = useCallback(
+    (mediaId: string) => mediaCache.release(mediaId),
+    [mediaCache],
+  );
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const scope = connectedScope ?? (await history.lastScope());
+      // Read the scope inside the effect: the dependency is its key, and the
+      // object itself is new on every render.
+      const scope = directChatScope() ?? (await history.lastScope());
       if (!scope) {
         if (!cancelled) setTranscripts([]);
         return;
@@ -120,11 +137,7 @@ export function StudioScreen({
       if (cancelled) return;
       const valid = loaded.filter((item): item is DirectChatTranscript => item !== null);
       for (const tr of valid) {
-        for (const media of tr.media ?? []) {
-          if (!urlCacheRef.current.has(media.id)) {
-            urlCacheRef.current.set(media.id, createMediaUrl(media));
-          }
-        }
+        for (const media of tr.media ?? []) mediaCache.urlFor(media);
       }
       setTranscripts(valid);
     };
@@ -134,7 +147,16 @@ export function StudioScreen({
       cancelled = true;
       unsubscribe?.();
     };
-  }, [history, connectedScope]);
+  }, [history, connectedScopeKey]);
+
+  /**
+   * Every blob URL this screen minted belongs to one account's images. On
+   * unmount (or when the account changes) none of them can be shown again, so
+   * they are revoked instead of being held for the life of the page.
+   */
+  useEffect(() => {
+    return () => mediaCache.releaseAll();
+  }, [mediaCache, connectedScopeKey]);
 
   const cards = useMemo(() => studioCards(transcripts), [transcripts]);
   const dayGroups = useMemo(() => groupByDay(cards), [cards]);
@@ -199,20 +221,30 @@ export function StudioScreen({
   );
 
   const handleGenerate = async () => {
+    const refusal = studioSubmitRefusal({
+      sending,
+      generating: liveGeneratingCard !== null,
+      hasImageModel: activeModel !== null && isImageModel(activeModel),
+      prompt,
+    });
+    // One send at a time: the submit button turns into Stop while a generation
+    // runs, and a second click must not create another conversation and bill
+    // another request.
+    if (refusal === "busy") return;
     if (!connection || !connectedScope) {
       onConnect();
       return;
     }
-    if (!activeModel || !isImageModel(activeModel)) {
+    if (refusal === "no-model") {
       setNotice(t("imageGen.noImageModel"));
       setModelsOpen(true);
       return;
     }
-    const trimmed = prompt.trim();
-    if (!trimmed) {
+    if (refusal === "empty" || !activeModel) {
       setNotice(t("studio.emptyPrompt"));
       return;
     }
+    const trimmed = prompt.trim();
     setSending(true);
     setNotice(null);
     const key = await createDirectChatSecret(secureStore()).read();
@@ -274,9 +306,11 @@ export function StudioScreen({
       onConnect();
       return;
     }
-    const modelForRetry =
-      catalog.find((m) => m.id === card.modelId && isImageModel(m)) ?? activeModel;
-    if (!modelForRetry || !isImageModel(modelForRetry)) {
+    // The retry re-runs the model that made the picture. Falling back to the
+    // model selected now would charge the user for a model they did not choose,
+    // so an unavailable model is a refusal with a way out instead.
+    const modelForRetry = studioRetryModel(catalog, card.modelId);
+    if (!modelForRetry) {
       setNotice(t("imageGen.modelUnavailable"));
       setModelsOpen(true);
       return;
@@ -357,7 +391,7 @@ export function StudioScreen({
     [cards, viewerCardId],
   );
   const viewerUrl =
-    viewerCard?.mediaId ? (urlCacheRef.current.get(viewerCard.mediaId) ?? null) : null;
+    viewerCard?.mediaId ? mediaCache.get(viewerCard.mediaId) : null;
 
   const hasCards = cards.length > 0;
   const isGenerating = liveGeneratingCard !== null || sending;
@@ -443,7 +477,7 @@ export function StudioScreen({
                       key={card.id}
                       card={card}
                       mediaUrl={
-                        card.mediaId ? (urlCacheRef.current.get(card.mediaId) ?? null) : null
+                        card.mediaId ? mediaCache.get(card.mediaId) : null
                       }
                       revealing={revealingIds.has(card.id)}
                       onOpen={(target) => setViewerCardId(target.id)}

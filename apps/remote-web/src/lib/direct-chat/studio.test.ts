@@ -17,7 +17,10 @@ import {
   groupByDay,
   splitPinnedAndRecent,
   studioCards,
+  studioRetryModel,
+  studioSubmitRefusal,
 } from "./studio.js";
+import type { MinihRouterModel } from "@minih-agent/shared";
 const SCOPE = { gatewayRoot: "https://models.example.com", accessKeyId: "1" };
 
 function summary(
@@ -285,5 +288,59 @@ describe("StudioArtCard markup", () => {
     const doneHtml = await renderCard(cards[1]!, "blob:http://localhost/m-1", true);
     expect(doneHtml).toContain("rm-image-reveal");
     expect(doneHtml).toContain("Bioluminescent jellyfish");
+  });
+});
+
+function model(overrides: Partial<MinihRouterModel> & { id: string }): MinihRouterModel {
+  return {
+    upstreamIds: [],
+    vendor: "Test",
+    category: "chat",
+    protocols: ["openai-completions"],
+    price: { input: null, output: null, cacheRead: null, cacheWrite: null },
+    multiplePrices: false,
+    tieredPricing: false,
+    contextWindow: null,
+    maxOutput: null,
+    ...overrides,
+  };
+}
+
+/**
+ * Review fixes: a submit while a generation ran created a second conversation
+ * (and a second bill), and a retry silently switched to whatever model was
+ * selected when the original was gone.
+ */
+describe("Studio submit and retry decisions", () => {
+  const ready = { sending: false, generating: false, hasImageModel: true, prompt: "a fox" };
+
+  it("refuses a second submit while a generation is running", () => {
+    expect(studioSubmitRefusal({ ...ready, generating: true })).toBe("busy");
+    expect(studioSubmitRefusal({ ...ready, sending: true })).toBe("busy");
+  });
+
+  it("names the other reasons a submit cannot start", () => {
+    expect(studioSubmitRefusal({ ...ready, hasImageModel: false })).toBe("no-model");
+    expect(studioSubmitRefusal({ ...ready, prompt: "   " })).toBe("empty");
+  });
+
+  it("allows the ordinary case", () => {
+    expect(studioSubmitRefusal(ready)).toBeNull();
+  });
+
+  it("retries on the model that made the picture, never the current pick", () => {
+    const original = model({ id: "gpt-image-2", outputModalities: ["image"] });
+    const current = model({ id: "imagen-4", outputModalities: ["image"] });
+    expect(studioRetryModel([original, current], "gpt-image-2")?.id).toBe("gpt-image-2");
+  });
+
+  it("refuses when the original model is gone instead of substituting one", () => {
+    const current = model({ id: "imagen-4", outputModalities: ["image"] });
+    expect(studioRetryModel([current], "gpt-image-2")).toBeNull();
+  });
+
+  it("refuses when the id now names a model that cannot make images", () => {
+    const textOnly = model({ id: "gpt-5", outputModalities: ["text"] });
+    expect(studioRetryModel([textOnly], "gpt-5")).toBeNull();
   });
 });

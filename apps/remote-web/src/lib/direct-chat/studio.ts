@@ -12,6 +12,9 @@
  *   cards (`studioCards`), ordered newest first and grouped by calendar day
  *   (`groupByDay`).
  */
+import type { MinihRouterModel } from "@minih-agent/shared";
+
+import { isImageModel } from "./catalog.js";
 import { isImageAttempt, type DirectChatSummary } from "./history.js";
 import type {
   DirectChatAttempt,
@@ -204,4 +207,46 @@ export function groupByDay(
   }
 
   return [...groups.values()];
+}
+
+/** Why a Studio submit cannot start, or null when it can. */
+export type StudioSubmitRefusal =
+  /** A generation (or the save that starts it) is already in flight. */
+  | "busy"
+  /** No image model is chosen, or the one chosen cannot make images. */
+  | "no-model"
+  /** The prompt is blank. */
+  | "empty";
+
+/**
+ * Decide one submit.
+ *
+ * The submit button turns into Stop while a generation runs, so a second click
+ * must not create another conversation and bill another request. The whole
+ * decision is here so it can be tested without a rendered screen.
+ */
+export function studioSubmitRefusal(input: {
+  sending: boolean;
+  generating: boolean;
+  hasImageModel: boolean;
+  prompt: string;
+}): StudioSubmitRefusal | null {
+  if (input.sending || input.generating) return "busy";
+  if (!input.hasImageModel) return "no-model";
+  if (!input.prompt.trim()) return "empty";
+  return null;
+}
+
+/**
+ * The model a retry must use: the one that produced the picture.
+ *
+ * A retry that fell back to the model selected now would charge the user for a
+ * model they did not choose. Null means the caller refuses and offers the picker.
+ */
+export function studioRetryModel(
+  models: readonly MinihRouterModel[],
+  modelId: string,
+): MinihRouterModel | null {
+  const candidate = models.find((model) => model.id === modelId);
+  return candidate && isImageModel(candidate) ? candidate : null;
 }
