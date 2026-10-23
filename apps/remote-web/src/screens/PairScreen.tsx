@@ -85,7 +85,7 @@ export function PairScreen({
 
   return (
     <Screen>
-      <NavBar title={t("pair.title")} onBack={onBack} />
+      <NavBar title={t("pair.title")} onBack={onBack} backLabel={t("common.back")} />
       <ScreenContent hasDock={true} className="pt-3 space-y-4">
         <div className="flex items-center justify-between gap-2 rounded-xl bg-[var(--rm-bg-surface)] px-3 py-2 text-[12px] ring-1 ring-[var(--rm-separator)]">
           <div className="flex min-w-0 items-center gap-1.5 text-[var(--rm-text-secondary)]">
@@ -97,7 +97,7 @@ export function PairScreen({
             onClick={() => setGatewayOpen(true)}
             className="shrink-0 font-medium text-[var(--rm-link)] active:opacity-70"
           >
-            切换网关
+            {t("hosts.switchGateway")}
           </button>
         </div>
         <Callout tone="neutral">

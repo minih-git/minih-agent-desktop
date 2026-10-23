@@ -14,7 +14,20 @@ interface ImportMetaEnv {
    * accepts the registration without one.
    */
   readonly VITE_APP_ID?: string;
+  /**
+   * Where this build's privacy policy is published. Absent means Settings shows
+   * no privacy row at all, because the client cannot derive a URL for a
+   * document that lives in the repository.
+   */
+  readonly VITE_PRIVACY_POLICY_URL?: string;
 }
+
+/**
+ * The package version, injected by `define` in `vite.config.ts`. Declared here
+ * so a typo is a compile error; a Node test run has no define and sees
+ * `undefined`, which `lib/settings-view.ts` handles.
+ */
+declare const __APP_VERSION__: string;
 
 interface ImportMeta {
   readonly env: ImportMetaEnv;

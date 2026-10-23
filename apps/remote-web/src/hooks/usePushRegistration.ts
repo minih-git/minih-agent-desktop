@@ -1,7 +1,7 @@
 /**
- * Push wiring for the native shell (protocol §11.6, R5 PR-6).
+ * Push wiring for the native shell (protocol §11.6, R5 PR-6, ADR mobile-redesign D6, bug B10).
  *
- * One hook, mounted once by `App`, that does three things and nothing else:
+ * One hook, mounted once by `App`, that does four things:
  *
  * 1. asks for permission once, gets a provider token, and registers it with
  *    every credential this device holds — one registration per device, so a
@@ -9,25 +9,474 @@
  * 2. re-registers when a new credential appears (a fresh pairing, an adopted
  *    account device), without asking for permission again;
  * 3. turns a tapped notification into a screen, using the ids in the payload and
- *    never its text.
+ *    never its text;
+ * 4. surfaces the live registration state (`state`, `permission`, `registered`,
+ *    `error`, and a `setEnabled` master switch) both as its return value and
+ *    through `usePushRegistrationState()` for S8 Settings (bug B10).
  *
  * In a browser it does nothing at all: the H5 client ships no push of any kind
  * (ADR 0331 decision 7 covers the native app), which is why the plugin is null
- * there and every path returns immediately.
+ * there and every path returns immediately with `state: "unsupported"`.
  */
-import { useEffect, useRef, useState } from "react";
+import type { RacpPushPlatform } from "@minih-agent/shared";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
+import type { HostCredential } from "../lib/credential-port.js";
 import type { HostRegistryEntry } from "../lib/host-registry.js";
-import { attachPushListeners, destinationForTap, obtainPushToken, type PushDestination } from "../lib/push.js";
-import { pushAccounts, registerAccounts, registrationKey, type PushAccount } from "../lib/push-registration.js";
-import { credentialPort, gatewayOrigin, nativePlatform, pushPlugin } from "../lib/runtime.js";
+import {
+  attachPushListeners,
+  destinationForTap,
+  obtainPushToken,
+  unregisterPushToken,
+  type PushDestination,
+  type PushPlugin,
+} from "../lib/push.js";
+import {
+  pushAccounts,
+  registerAccounts,
+  registrationKey,
+  type PushAccount,
+} from "../lib/push-registration.js";
+import {
+  credentialPort,
+  gatewayOrigin,
+  hostRegistry,
+  nativePlatform,
+  pushPlugin,
+} from "../lib/runtime.js";
 
-export type PushRegistrationState = "unsupported" | "permission-denied" | "registered" | "disabled" | "failed";
+export type PushRegistrationState =
+  | "unsupported"
+  | "permission-denied"
+  | "registered"
+  | "disabled"
+  | "failed";
+
+export type PushPermissionState = "unsupported" | "prompt" | "granted" | "denied";
+
+export type PushRegistrationSnapshot = {
+  state: PushRegistrationState;
+  permission: PushPermissionState;
+  registered: boolean;
+  /** Master switch state controlled by the user in Settings. */
+  enabled: boolean;
+  /** True while a registration or unregistration request is in flight. */
+  busy: boolean;
+  /** Failure reason (`"permission"`, `"no-token"`, `"request-failed"`, or plugin error). */
+  error: string | null;
+  /** True when the Gateway answered `{ enabled: false }` (no push provider configured). */
+  gatewayDisabled: boolean;
+  /** Number of distinct device credentials currently registered with the Gateway. */
+  registeredCount: number;
+  /** Master switch action: registers (`PUT`) when true, unregisters (`DELETE`) when false. */
+  setEnabled: (enabled: boolean) => Promise<boolean>;
+};
+
+export type PushControllerOptions = {
+  plugin: PushPlugin | null;
+  platform: RacpPushPlatform | null;
+  gatewayOrigin: string;
+  appId?: string;
+  fetchImpl?: typeof fetch;
+  getHosts: () => readonly HostRegistryEntry[];
+  credentialFor: (hostId: string) => HostCredential | null;
+  onTap?: (destination: PushDestination) => void;
+  onForeground?: (destination: PushDestination) => void;
+};
+
+export type PushRegistrationController = {
+  getSnapshot: () => PushRegistrationSnapshot;
+  subscribe: (listener: () => void) => () => void;
+  syncHosts: (hosts?: readonly HostRegistryEntry[]) => Promise<void>;
+  setEnabled: (enabled: boolean) => Promise<boolean>;
+  attachListeners: () => Promise<void>;
+  disposeListeners: () => Promise<void>;
+  dispose: () => Promise<void>;
+};
+
+/**
+ * Pure, dependency-injected push registration controller (ADR mobile-redesign D6, bug B10).
+ *
+ * Owns the permission, token, registration set, listener lifecycle, and master
+ * switch state transitions so both `usePushRegistration` and Node unit tests
+ * exercise the exact same state machine without real network calls.
+ */
+export function createPushRegistrationController(
+  options: PushControllerOptions,
+): PushRegistrationController {
+  const supported = Boolean(options.plugin && options.platform);
+  const registeredKeys = new Set<string>();
+  const listeners = new Set<() => void>();
+  let token: string | null = null;
+  let permissionAsked = false;
+  let obtainingToken: Promise<string | null> | null = null;
+  let disposePluginListeners: (() => Promise<void>) | null = null;
+  let attachingVersion = 0;
+  let disposed = false;
+  let hostsCache: readonly HostRegistryEntry[] = options.getHosts();
+
+  let snapshot: PushRegistrationSnapshot = {
+    state: supported ? "disabled" : "unsupported",
+    permission: supported ? "prompt" : "unsupported",
+    registered: false,
+    enabled: supported,
+    busy: false,
+    error: null,
+    gatewayDisabled: false,
+    registeredCount: 0,
+    setEnabled: async (next: boolean) => controller.setEnabled(next),
+  };
+
+  function emit(patch: Partial<Omit<PushRegistrationSnapshot, "setEnabled">>): void {
+    snapshot = {
+      ...snapshot,
+      ...patch,
+      registeredCount: registeredKeys.size,
+      setEnabled: snapshot.setEnabled,
+    };
+    for (const listener of listeners) listener();
+  }
+
+  async function ensureToken(forcePermissionPrompt = false): Promise<string | null> {
+    if (!options.plugin || !options.platform) return null;
+    if (token) return token;
+    if (!obtainingToken) {
+      if (permissionAsked && !forcePermissionPrompt) return null;
+      permissionAsked = true;
+      obtainingToken = obtainPushToken(options.plugin)
+        .then((obtained) => {
+          if (!obtained.ok) {
+            console.warn("[remote-web] push is not registered", obtained.reason);
+            if (obtained.reason === "permission") {
+              emit({
+                state: "permission-denied",
+                permission: "denied",
+                registered: false,
+                enabled: false,
+                error: "permission",
+              });
+            } else {
+              emit({
+                state: "failed",
+                registered: false,
+                error: "no-token",
+              });
+            }
+            return null;
+          }
+          token = obtained.token;
+          emit({ permission: "granted", error: null });
+          return obtained.token;
+        })
+        .finally(() => {
+          obtainingToken = null;
+        });
+    }
+    return obtainingToken;
+  }
+
+  async function registerPendingAccounts(
+    accounts: readonly PushAccount[],
+    issuedToken: string,
+  ): Promise<boolean> {
+    if (!options.platform) return false;
+    const beforeSize = registeredKeys.size;
+    const outcome = await registerAccounts(
+      accounts,
+      {
+        platform: options.platform,
+        token: issuedToken,
+        ...(options.appId ? { appId: options.appId } : {}),
+      },
+      {
+        gatewayOrigin: options.gatewayOrigin,
+        ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+      },
+      registeredKeys,
+    );
+    if (disposed) return false;
+    if (outcome.disabled) {
+      console.info("[remote-web] this Gateway does not push");
+      emit({
+        state: "disabled",
+        permission: "granted",
+        registered: false,
+        enabled: false,
+        gatewayDisabled: true,
+        error: null,
+      });
+      return false;
+    }
+    const allCovered = accounts.every((account) =>
+      registeredKeys.has(registrationKey(account)),
+    );
+    if (registeredKeys.size > 0 && allCovered) {
+      emit({
+        state: "registered",
+        permission: "granted",
+        registered: true,
+        gatewayDisabled: false,
+        error: null,
+      });
+      return true;
+    }
+    if (registeredKeys.size === 0 || ( outcome.registered.length === 0 && beforeSize === 0 )) {
+      emit({
+        state: "failed",
+        permission: "granted",
+        registered: false,
+        error: "request-failed",
+      });
+      return false;
+    }
+    emit({
+      state: "failed",
+      permission: "granted",
+      registered: registeredKeys.size > 0,
+      error: "request-failed",
+    });
+    return false;
+  }
+
+  async function attachListeners(): Promise<void> {
+    if (!options.plugin || !options.platform || !snapshot.enabled || disposed) return;
+    if (disposePluginListeners) return;
+    const version = ++attachingVersion;
+    const handle = await attachPushListeners(options.plugin, {
+      onToken: (value) => {
+        if (token === value) return;
+        token = value;
+        registeredKeys.clear();
+        permissionAsked = true;
+        emit({ permission: "granted", error: null });
+        void controller.syncHosts();
+      },
+      onTap: (destination) => options.onTap?.(destination),
+      onForeground: (destination) => options.onForeground?.(destination),
+      onError: (message) => {
+        console.warn("[remote-web] push registration failed", message);
+        emit({
+          state: "failed",
+          registered: false,
+          error: message || "registration-error",
+        });
+      },
+    });
+    if (disposed || !snapshot.enabled || version !== attachingVersion) {
+      await handle();
+      return;
+    }
+    disposePluginListeners = handle;
+  }
+
+  async function disposeListeners(): Promise<void> {
+    attachingVersion += 1;
+    const current = disposePluginListeners;
+    disposePluginListeners = null;
+    if (current) {
+      await current();
+    }
+  }
+
+  const controller: PushRegistrationController = {
+    getSnapshot() {
+      return snapshot;
+    },
+
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+
+    async attachListeners() {
+      await attachListeners();
+    },
+
+    async disposeListeners() {
+      await disposeListeners();
+    },
+
+    async syncHosts(nextHosts) {
+      if (nextHosts !== undefined) {
+        hostsCache = nextHosts;
+      } else {
+        hostsCache = options.getHosts();
+      }
+      if (!options.plugin || !options.platform || disposed) {
+        emit({
+          state: "unsupported",
+          permission: "unsupported",
+          registered: false,
+          enabled: false,
+          error: null,
+        });
+        return;
+      }
+      if (!snapshot.enabled) return;
+
+      const accounts: PushAccount[] = pushAccounts(hostsCache, options.credentialFor);
+      if (accounts.length === 0) return;
+      if (accounts.every((account) => registeredKeys.has(registrationKey(account)))) {
+        emit({
+          state: "registered",
+          permission: "granted",
+          registered: true,
+          error: null,
+        });
+        return;
+      }
+
+      const issued = await ensureToken(false);
+      if (!issued || disposed || !snapshot.enabled) return;
+
+      await registerPendingAccounts(
+        pushAccounts(hostsCache, options.credentialFor),
+        issued,
+      );
+    },
+
+    async setEnabled(next: boolean): Promise<boolean> {
+      if (!options.plugin || !options.platform || disposed) {
+        emit({
+          state: "unsupported",
+          permission: "unsupported",
+          registered: false,
+          enabled: false,
+          busy: false,
+        });
+        return false;
+      }
+
+      if (!next) {
+        emit({ busy: true, error: null });
+        const accounts = pushAccounts(options.getHosts(), options.credentialFor);
+        let failed = false;
+        for (const account of accounts) {
+          const ok = await unregisterPushToken({
+            gatewayOrigin: options.gatewayOrigin,
+            credential: account.credential,
+            ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+          });
+          if (!ok) failed = true;
+        }
+        await disposeListeners();
+        if (failed) {
+          emit({
+            busy: false,
+            state: "failed",
+            error: "request-failed",
+          });
+          return false;
+        }
+        registeredKeys.clear();
+        emit({
+          busy: false,
+          enabled: false,
+          state: "disabled",
+          registered: false,
+          error: null,
+        });
+        return true;
+      }
+
+      // Turning push ON: re-enable, attach listeners, obtain token if needed, and register.
+      emit({ busy: true, enabled: true, gatewayDisabled: false, error: null });
+      await attachListeners();
+      const issued = await ensureToken(true);
+      if (!issued || disposed) {
+        emit({ busy: false });
+        return false;
+      }
+
+      const accounts = pushAccounts(options.getHosts(), options.credentialFor);
+      if (accounts.length === 0) {
+        // Permission and token are ready; registration will complete as soon as a Host is paired.
+        emit({
+          busy: false,
+          enabled: true,
+          permission: "granted",
+          state: "disabled",
+          registered: false,
+          error: null,
+        });
+        return true;
+      }
+
+      registeredKeys.clear();
+      const ok = await registerPendingAccounts(accounts, issued);
+      emit({ busy: false });
+      return ok;
+    },
+
+    async dispose() {
+      disposed = true;
+      await disposeListeners();
+    },
+  };
+
+  return controller;
+}
+
+// Shared store so `SettingsScreen` can observe and toggle the same push registration
+// state mounted by `App` without requiring prop-drilling through `App.tsx`.
+const sharedStoreListeners = new Set<() => void>();
+let activeController: PushRegistrationController | null = null;
+
+function buildFallbackSnapshot(): PushRegistrationSnapshot {
+  const supported = Boolean(pushPlugin() && nativePlatform);
+  return {
+    state: supported ? "disabled" : "unsupported",
+    permission: supported ? "prompt" : "unsupported",
+    registered: false,
+    enabled: supported,
+    busy: false,
+    error: null,
+    gatewayDisabled: false,
+    registeredCount: 0,
+    setEnabled: async (next: boolean) => {
+      if (activeController) return activeController.setEnabled(next);
+      return false;
+    },
+  };
+}
+
+let sharedSnapshot: PushRegistrationSnapshot = buildFallbackSnapshot();
+
+function notifySharedStore(): void {
+  sharedSnapshot = activeController ? activeController.getSnapshot() : buildFallbackSnapshot();
+  for (const listener of sharedStoreListeners) listener();
+}
+
+function subscribeSharedPushStore(listener: () => void): () => void {
+  sharedStoreListeners.add(listener);
+  return () => {
+    sharedStoreListeners.delete(listener);
+  };
+}
+
+function getSharedPushSnapshot(): PushRegistrationSnapshot {
+  return sharedSnapshot;
+}
+
+/**
+ * Read the current push registration state and master switch action from Settings (bug B10).
+ */
+export function usePushRegistrationState(): PushRegistrationSnapshot {
+  return useSyncExternalStore(
+    subscribeSharedPushStore,
+    getSharedPushSnapshot,
+    getSharedPushSnapshot,
+  );
+}
 
 /**
  * Register this device for push once a Host credential exists, and re-register
  * when the set of credentials changes. The Gateway derives the audience from the
  * credential, so the *credentials* — not the Host list — decide what to register.
+ *
+ * Returns the live `PushRegistrationSnapshot` (bug B10).
  */
 export function usePushRegistration(
   hosts: readonly HostRegistryEntry[],
@@ -37,100 +486,55 @@ export function usePushRegistration(
    * caller that only routes taps keeps working.
    */
   onForeground?: (destination: PushDestination) => void,
-) {
+): PushRegistrationSnapshot {
   const plugin = pushPlugin();
-  // The handlers are fresh closures on every render; keeping them in refs lets
-  // the listeners be attached once per plugin instead of on every render.
   const onTapRef = useRef(onTap);
   onTapRef.current = onTap;
   const onForegroundRef = useRef(onForeground);
   onForegroundRef.current = onForeground;
-  const registered = useRef<Set<string>>(new Set());
-  const token = useRef<string | null>(null);
-  const permissionAsked = useRef(false);
-  const obtainingToken = useRef<Promise<string | null> | null>(null);
-  // A token that arrives after the first attempt (iOS often delivers it late)
-  // has to trigger one more registration; a ref alone cannot, because it does
-  // not re-render. This counter is what makes the effect below run again.
-  const [tokenRevision, setTokenRevision] = useState(0);
+  const hostsRef = useRef(hosts);
+  hostsRef.current = hosts;
 
-  useEffect(() => {
-    if (!plugin || !nativePlatform) return undefined;
-    let cancelled = false;
-    let dispose: (() => Promise<void>) | null = null;
-    void attachPushListeners(plugin, {
-      // A token that arrives later than the first attempt (iOS often does) is
-      // still worth registering: the effect below retries with it.
-      onToken: (value) => {
-        if (token.current === value) return;
-        token.current = value;
-        // A new provider token invalidates every registration made with the old
-        // one, and has to be registered even if permission was already handled.
-        registered.current.clear();
-        permissionAsked.current = true;
-        setTokenRevision((revision) => revision + 1);
-      },
+  const controllerRef = useRef<PushRegistrationController | null>(null);
+  if (!controllerRef.current) {
+    controllerRef.current = createPushRegistrationController({
+      plugin,
+      platform: nativePlatform,
+      gatewayOrigin,
+      ...(import.meta.env.VITE_APP_ID ? { appId: import.meta.env.VITE_APP_ID } : {}),
+      getHosts: () => hostsRef.current ?? hostRegistry.list(),
+      credentialFor: (hostId) => credentialPort.credentialFor(hostId),
       onTap: (destination) => onTapRef.current(destination),
       onForeground: (destination) => onForegroundRef.current?.(destination),
-      onError: (message) => console.warn("[remote-web] push registration failed", message),
-    }).then((handle) => {
-      if (cancelled) void handle();
-      else dispose = handle;
     });
-    return () => {
-      cancelled = true;
-      void dispose?.();
-    };
-  }, [plugin]);
+  }
+
+  const controller = controllerRef.current;
+  const [, setTick] = useState(0);
 
   useEffect(() => {
-    if (!plugin || !nativePlatform) return;
-    const accounts: PushAccount[] = pushAccounts(hosts, (hostId) => credentialPort.credentialFor(hostId));
-    if (accounts.length === 0) return;
-    // Nothing new to register: the same credentials, covering the same Hosts,
-    // are already done. A forgotten Host changes the key, so the audience
-    // shrinks on the Gateway instead of outliving the Host.
-    if (accounts.every((account) => registered.current.has(registrationKey(account)))) return;
-    let cancelled = false;
-    void (async () => {
-      if (!token.current) {
-        if (!obtainingToken.current) {
-          if (permissionAsked.current) return;
-          permissionAsked.current = true;
-          obtainingToken.current = obtainPushToken(plugin)
-            .then((obtained) => {
-              if (!obtained.ok) {
-                console.warn("[remote-web] push is not registered", obtained.reason);
-                return null;
-              }
-              token.current = obtained.token;
-              return obtained.token;
-            })
-            .finally(() => {
-              obtainingToken.current = null;
-            });
-        }
-        const awaited = await obtainingToken.current;
-        if (!awaited) return;
-      }
-      const issued = token.current;
-      if (!issued || cancelled) return;
-      const outcome = await registerAccounts(
-        pushAccounts(hosts, (hostId) => credentialPort.credentialFor(hostId)),
-        {
-          platform: nativePlatform,
-          token: issued,
-          ...(import.meta.env.VITE_APP_ID ? { appId: import.meta.env.VITE_APP_ID } : {}),
-        },
-        { gatewayOrigin },
-        registered.current,
-      );
-      if (outcome.disabled) console.info("[remote-web] this Gateway does not push");
-    })();
+    activeController = controller;
+    notifySharedStore();
+    const unsubscribe = controller.subscribe(() => {
+      setTick((value) => value + 1);
+      notifySharedStore();
+    });
+    void controller.attachListeners();
     return () => {
-      cancelled = true;
+      unsubscribe();
+      if (activeController === controller) {
+        activeController = null;
+        notifySharedStore();
+      }
+      void controller.dispose();
     };
-  }, [hosts, plugin, tokenRevision]);
+  }, [controller]);
+
+  useEffect(() => {
+    void controller.syncHosts(hosts);
+  }, [controller, hosts]);
+
+  return controller.getSnapshot();
 }
 
 /** Where a tap sends the app. Exposed for the App component's own test seams. */

@@ -151,7 +151,7 @@ export function AccountScreen({
 
     return (
       <Screen>
-        <NavBar title={t("account.title")} onBack={onBack} />
+        <NavBar title={t("account.title")} onBack={onBack} backLabel={t("common.back")} />
         <ScreenContent hasDock>
           <Stepper currentStep={0} />
 
@@ -165,7 +165,7 @@ export function AccountScreen({
               onClick={() => setGatewayOpen(true)}
               className="shrink-0 font-medium text-[var(--rm-link)] active:opacity-70"
             >
-              切换网关
+              {t("hosts.switchGateway")}
             </button>
           </div>
           <div className="space-y-4 pt-1">
@@ -228,7 +228,7 @@ export function AccountScreen({
   if (state.kind === "signed-in") {
     return (
       <Screen>
-        <NavBar title={t("account.title")} onBack={onBack} />
+        <NavBar title={t("account.title")} onBack={onBack} backLabel={t("common.back")} />
         <ScreenContent hasDock>
           <Stepper currentStep={1} />
 
@@ -455,7 +455,7 @@ export function AccountScreen({
   if (state.kind === "expired" || state.kind === "lost") {
     return (
       <Screen>
-        <NavBar title={t("account.title")} onBack={onBack} />
+        <NavBar title={t("account.title")} onBack={onBack} backLabel={t("common.back")} />
         <ScreenContent hasDock>
           <ResultState
             status="error"
@@ -488,7 +488,7 @@ export function AccountScreen({
   // Result: Gone or other failure
   return (
     <Screen>
-      <NavBar title={t("account.title")} onBack={onBack} />
+      <NavBar title={t("account.title")} onBack={onBack} backLabel={t("common.back")} />
       <ScreenContent hasDock>
         <ResultState
           status="error"
