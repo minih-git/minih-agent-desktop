@@ -129,3 +129,72 @@ export function filterDirectModels(models: readonly MinihRouterModel[], query: s
       model.id.toLowerCase().includes(needle) || model.vendor.toLowerCase().includes(needle),
   );
 }
+
+/** Check if a model declares the image generation protocol. */
+export function isImageModel(model: MinihRouterModel): boolean {
+  const protocols = model.protocols.map((protocol) => protocol.trim()).filter(Boolean);
+  return protocols.includes(IMAGE_PROTOCOL);
+}
+
+export type EffectiveChatModelResult =
+  | { model: MinihRouterModel; source: "default" | "last" }
+  | { model: null; reason: "none" | "unavailable" };
+
+/**
+ * Resolve the model a new chat conversation starts on (ADR mobile-experience-completeness D2).
+ * 1. If an explicit defaultChatModelId is configured, it must be usable. If missing/unusable,
+ *    never silently fall back to lastModelId or another model; return { model: null, reason: "unavailable" }.
+ * 2. If no defaultChatModelId, fallback to lastModelId if usable.
+ * 3. Otherwise, return { model: null, reason: "none" }.
+ */
+export function resolveEffectiveChatModel(
+  models: readonly MinihRouterModel[],
+  defaultChatModelId?: string | null,
+  lastModelId?: string | null,
+): EffectiveChatModelResult {
+  if (defaultChatModelId) {
+    const candidate = models.find((m) => m.id === defaultChatModelId);
+    if (candidate && resolveDirectModel(candidate).usable) {
+      return { model: candidate, source: "default" };
+    }
+    return { model: null, reason: "unavailable" };
+  }
+  if (lastModelId) {
+    const candidate = models.find((m) => m.id === lastModelId);
+    if (candidate && resolveDirectModel(candidate).usable) {
+      return { model: candidate, source: "last" };
+    }
+  }
+  return { model: null, reason: "none" };
+}
+
+/** Resolve the effective image model (ADR D2). */
+export function resolveEffectiveImageModel(
+  models: readonly MinihRouterModel[],
+  defaultImageModelId?: string | null,
+): MinihRouterModel | null {
+  if (!defaultImageModelId) return null;
+  const candidate = models.find((m) => m.id === defaultImageModelId);
+  if (candidate && isImageModel(candidate)) {
+    return candidate;
+  }
+  return null;
+}
+
+/** Split models for image generation selection sheet. */
+export function splitDirectImageModels(models: readonly MinihRouterModel[]): {
+  usable: MinihRouterModel[];
+  disabled: Array<{ model: MinihRouterModel; reason: string }>;
+} {
+  const usable: MinihRouterModel[] = [];
+  const disabled: Array<{ model: MinihRouterModel; reason: string }> = [];
+  for (const model of models) {
+    if (isImageModel(model)) {
+      usable.push(model);
+    } else {
+      disabled.push({ model, reason: "not-image" });
+    }
+  }
+  return { usable, disabled };
+}
+

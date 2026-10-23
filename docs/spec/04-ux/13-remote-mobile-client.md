@@ -16,6 +16,9 @@
   file directly; data is simulated) is the visual reference and was reviewed at
   320×568 through 430×932; `apps/remote-web/design/prototype/projects-notifications.html`
   is the second prototype, for the §17 proposal only.
+- Revision 2026-10-23: §18 defines the next bounded daily-use and image
+  workflows. It supersedes only the named first-release limitations; it is not
+  an implementation-status claim. Existing status prose above is historical.
 - Scope: `apps/remote-web`, i.e. the browser (H5) build and the Capacitor iOS
   and Android builds. They share one React codebase, so every rule here applies
   to all three unless a section names a platform.
@@ -23,9 +26,10 @@
   [remote-control rollout R6](../06-delivery/07-remote-control-rollout.md),
   [remote control protocol](../03-runtime/19-remote-agent-control-protocol.md),
   [desktop design system](07-ui-design-system.md).
-- Non-goals: protocol, Gateway, or credential-storage changes. This document
-  only redesigns presentation and interaction on top of the existing client
-  logic (`src/lib`, `src/hooks`).
+- Original redesign non-goals: protocol, Gateway, or credential-storage changes.
+  §15 already adds contracts; §18 additionally scopes local media persistence
+  and a narrow remote session-media read. Their ADRs and protocol/security
+  specs, not this presentation document, own those boundaries.
 
 ## 1. Purpose
 
@@ -1613,3 +1617,92 @@ already read the way each was decided.
 | N2 | "Needs your answer" now (from a push, incomplete without notifications) or after the contract gains `waiting_input`? | Now, from the push, and schedule the contract follow-up (§17.4.1); the alternative would show nothing until a desktop release |
 | N3 | The project page as cards or as one grouped list? | Cards: the aggregate pills need the width, and a card reads as a destination rather than a row |
 | N4 | Does the first release notify on finished runs as well as pending decisions? | Yes, all four kinds, with the filter one tap away (§17.6.5) |
+
+## 18. Daily-use completeness and image workflows
+
+- Status: Ready for bounded implementation, 2026-10-23. No new behavior below
+  is claimed shipped or device-accepted by this documentation change.
+- Rationale and authority: [Mobile completeness ADR](../../adr/mobile-experience-completeness.md).
+- Precedence: this section replaces repeated model selection, direct image
+  deferral, copy-only sharing and idle-only local delete interaction for the
+  new increment. It preserves separate direct/remote credentials, storage,
+  permissions and per-conversation execution. Other sections remain unchanged.
+
+### 18.1 Chats and defaults
+
+- Keep native Chats and Computers roots. Chats has a primary New chat action,
+  a first-class Create image action and an Images filter over the same local
+  history. H5 does not gain direct model-account access.
+- New chat opens its composer immediately with this account's explicit text
+  default, or a valid last choice when no explicit default exists. A missing
+  explicit default requires replacement; there is no silent model fallback.
+- The first chooser explains that it sets the default. Settings exposes
+  separate text and image defaults. Changing a conversation's model does not
+  change these defaults without an explicit Use for new chats action.
+- New from a conversation preserves its draft; an empty abandoned page adds
+  no history row. Repeated taps do not duplicate navigation or paid requests.
+- Remote project Quick new uses the Host's defaults, not direct-chat settings.
+  New with options retains model/mode/permissions; show actual Host values.
+
+### 18.2 Conversation and message actions
+
+- A visible More action on a direct row and its header opens the same allowed
+  rename, pin, archive/restore, copy/export and delete actions. Long press and
+  swipe are optional shortcuts, never required. Preserve old-account read-only
+  behavior rather than applying current-account permissions to old content.
+- Delete names the conversation and its phone-local scope. Active work offers
+  Stop, then delete; it stops only that conversation, waits for settlement and
+  removes the row only after storage commits. Errors keep content accessible.
+- Remote permanent delete/archive remain owner-only. Show a precise permission
+  explanation and computer-side next step; do not pretend a local hide deletes
+  the Host transcript. A broader phone grant needs a separate decision.
+- Add per-message Copy. Later bounded actions are Regenerate latest reply
+  (retains earlier attempts) and Edit and resend (new conversation from the
+  prefix, original untouched). Both explicitly initiate paid work. These
+  direct actions do not imply mutation of remote Host history.
+
+### 18.3 Images
+
+- Direct image-capable conversations offer real picker input, preview/remove,
+  and explicit camera capture where implemented. Unknown capability is not
+  permission to send. Refused MIME, size or permission preserves the draft.
+- Timeline images have bounded thumbnails and loading/unavailable/error
+  states. Tap opens close, fit, zoom/pan, Save and Share; Back closes the viewer
+  first. Keep the reader's scroll position as images load.
+- Persist direct media and result references in the versioned local repository.
+  Reopen works from saved bytes, not an expired URL. Unsaved results say so.
+- Remote media comes from the Host's authenticated session-media read, never a
+  phone-supplied arbitrary file path. Old Hosts show an upgrade requirement;
+  missing files and revoked access have distinct states.
+- Create image uses an independent image default and the verified Images
+  protocol. Initially one image per explicit request, with no fake progress
+  percentage or unverified parameter controls. Results appear in history and
+  Images; text model defaults do not change.
+- Generation, saving and exporting have distinct success/failure outcomes. A
+  persistence failure never automatically repeats a paid generation. Stop
+  cannot promise an upstream refund; Retry is an explicit new attempt.
+- Save and Share operate on validated bytes through native facilities. User
+  cancellation is not a failure, permission denial has recovery guidance, and
+  opening a link is not reported as saving a file.
+- Edit this image is a subsequent increment gated by a verified edit contract;
+  the original remains available and the new output retains its source link.
+
+### 18.4 Continuity, limitations and acceptance
+
+- Nonempty drafts, account isolation and concurrent conversations must survive
+  navigation. Background/connection loss may interrupt a request; restore the
+  saved state without automatically creating another billable attempt.
+- Readable text/Markdown export is not full backup/import. Settings states
+  local-only history and uninstall/clear-data risk. Cloud sync and automatic
+  desktop continuation remain deferred.
+- Keyboard never covers send/stop; viewer and sheet Back order is consistent.
+  Accept changed paths on small/normal mobile layouts, large text, light/dark
+  and localized labels. A gesture has a button alternative and 44 px targets.
+- The ADR's 24-item matrix is scope traceability, not a defect count. AC01-AC16
+  define observable acceptance; run the affected development tests, not a new
+  all-repository release ceremony. Native permission, sharing and background
+  acceptance must be reported separately from Chromium validation.
+
+Implementation must finalize additive RACP/security wire details before the
+remote media change and keep existing text history readable through migration.
+No implementation may weaken roles or replace credentials to make a UI pass.

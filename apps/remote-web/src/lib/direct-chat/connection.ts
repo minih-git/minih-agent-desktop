@@ -33,6 +33,10 @@ export type DirectChatConnection = {
   maskedKey: string;
   /** The last model the user explicitly chose, as a client model id. */
   lastModelId: string | null;
+  /** Explicit account default for text chat (ADR D2). */
+  defaultChatModelId: string | null;
+  /** Explicit account default for image creation (ADR D2, D7). */
+  defaultImageModelId: string | null;
   /** When this connection was verified, for the settings screen. */
   connectedAt: string;
   /** Credential-free catalog summaries, so the sheet opens offline. */
@@ -83,6 +87,10 @@ export function readConnection(storage: DirectChatStorage | null): DirectChatCon
     keyName: text(value.keyName),
     maskedKey: text(value.maskedKey),
     lastModelId: text(value.lastModelId).trim() || null,
+    defaultChatModelId: "defaultChatModelId" in value
+      ? (text(value.defaultChatModelId).trim() || null)
+      : (text(value.lastModelId).trim() || null),
+    defaultImageModelId: text(value.defaultImageModelId).trim() || null,
     connectedAt: text(value.connectedAt),
     models,
   };

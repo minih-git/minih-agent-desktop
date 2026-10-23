@@ -10,6 +10,21 @@
   [Configuration synchronization](../spec/03-runtime/22-config-sync.md).
 - Visual reference: `apps/remote-web/design/prototype/direct-chat.html` (simulated data).
 
+## Amendment: Daily-use completeness (2026-10-23)
+
+[Mobile daily-use completeness and image workflows](mobile-experience-completeness.md)
+defines the next bounded implementation, not an already shipped feature set.
+Its D2 replaces the new-chat selection policy with explicit account-scoped
+defaults and a quick path; D3 extends local deletion with stop-then-delete;
+D4-D8 lift the image-input, image-generation and native-share deferrals;
+D9 defines bounded message actions. Those decisions take precedence over the
+corresponding original first-release limitations below.
+
+The two roots, separate credentials and authorities, phone-owned history,
+per-conversation execution and no automatic paid retry remain. Cloud sync,
+full backup/import and stronger phone permissions are still not authorized.
+The new ADR's report-item matrix distinguishes work from deferred decisions.
+
 ## Context
 
 The phone should start an independent conversation, connect directly to the

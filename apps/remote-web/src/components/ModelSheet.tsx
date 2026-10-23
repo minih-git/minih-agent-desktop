@@ -1,5 +1,5 @@
 /**
- * The model sheet (ADR mobile-direct-gateway-chat §3).
+ * The model sheet (ADR mobile-direct-gateway-chat §3, mobile-experience-completeness D2).
  *
  * The same list D3's composer chip opens: a search field, the models this client
  * can actually use, and the rest listed below with the reason they cannot be
@@ -18,6 +18,7 @@ import type { MinihRouterModel } from "@minih-agent/shared";
 
 import {
   filterDirectModels,
+  isImageModel,
   splitDirectModels,
   type ModelUnavailableReason,
 } from "../lib/direct-chat/catalog.js";
@@ -28,18 +29,51 @@ export type ModelSheetProps = {
   models: readonly MinihRouterModel[];
   /** The model the conversation or account is on, if any. */
   selectedId: string | null;
+  mode?: "chat" | "image";
+  title?: string;
+  allowSetDefault?: boolean;
   onClose: () => void;
   onSelect: (model: MinihRouterModel) => void;
+  onSelectDefault?: (model: MinihRouterModel) => void;
 };
 
-export function ModelSheet({ open, models, selectedId, onClose, onSelect }: ModelSheetProps) {
+export function ModelSheet({
+  open,
+  models,
+  selectedId,
+  mode = "chat",
+  title,
+  allowSetDefault = false,
+  onClose,
+  onSelect,
+  onSelectDefault,
+}: ModelSheetProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
+  const [useAsDefault, setUseAsDefault] = useState(false);
 
-  const { usable, disabled } = useMemo(() => splitDirectModels(filterDirectModels(models, query)), [models, query]);
+  const filtered = useMemo(() => filterDirectModels(models, query), [models, query]);
+
+  const { usable, disabled } = useMemo(() => {
+    if (mode === "image") {
+      const u: Array<{ model: MinihRouterModel; protocol?: string }> = [];
+      const d: Array<{ model: MinihRouterModel; reason: string }> = [];
+      for (const m of filtered) {
+        if (isImageModel(m)) {
+          u.push({ model: m });
+        } else {
+          d.push({ model: m, reason: "not-image" });
+        }
+      }
+      return { usable: u, disabled: d };
+    }
+    return splitDirectModels(filtered);
+  }, [filtered, mode]);
+
+  const sheetTitle = title ?? (mode === "image" ? t("modelSheet.titleImage") : t("modelSheet.title"));
 
   return (
-    <Sheet open={open} onClose={onClose} title={t("modelSheet.title")}>
+    <Sheet open={open} onClose={onClose} title={sheetTitle}>
       <label className="mb-3 flex min-h-[40px] items-center gap-2 rounded-[10px] bg-[var(--rm-bg-inset)] px-3">
         <Search className="h-4 w-4 shrink-0 text-[var(--rm-text-faint)]" aria-hidden="true" />
         <input
@@ -66,6 +100,9 @@ export function ModelSheet({ open, models, selectedId, onClose, onSelect }: Mode
                   <button
                     type="button"
                     onClick={() => {
+                      if (allowSetDefault && useAsDefault) {
+                        onSelectDefault?.(model);
+                      }
                       onSelect(model);
                       onClose();
                     }}
@@ -77,7 +114,7 @@ export function ModelSheet({ open, models, selectedId, onClose, onSelect }: Mode
                         {model.id}
                       </span>
                       <span className="block truncate text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
-                        {[model.vendor, protocolLabel(protocol)].filter(Boolean).join(" · ")}
+                        {[model.vendor, protocol ? protocolLabel(protocol) : null].filter(Boolean).join(" · ")}
                       </span>
                     </span>
                     {selected ? (
@@ -90,10 +127,24 @@ export function ModelSheet({ open, models, selectedId, onClose, onSelect }: Mode
           </ul>
         )}
 
+        {allowSetDefault ? (
+          <div className="mt-3 border-t border-[var(--rm-separator)] pt-3">
+            <label className="flex cursor-pointer items-center gap-2 px-1 text-[14px] text-[var(--rm-text-primary)]">
+              <input
+                type="checkbox"
+                checked={useAsDefault}
+                onChange={(e) => setUseAsDefault(e.target.checked)}
+                className="h-4 w-4 rounded accent-[var(--rm-accent)]"
+              />
+              <span>{t("modelSheet.useForNewChats")}</span>
+            </label>
+          </div>
+        ) : null}
+
         {disabled.length > 0 ? (
           <>
             <p className="px-1 pb-1 pt-4 text-[13px] font-normal leading-[18px] text-[var(--rm-text-muted)]">
-              {t("modelSheet.unavailableSection")}
+              {mode === "image" ? t("modelSheet.unavailableSectionImage") : t("modelSheet.unavailableSection")}
             </p>
             <ul className="divide-y divide-[var(--rm-separator)]">
               {disabled.map(({ model, reason }) => (
@@ -126,7 +177,8 @@ function protocolLabel(protocol: string): string {
   return protocol;
 }
 
-function reasonLabel(t: (key: string) => string, reason: ModelUnavailableReason): string {
+function reasonLabel(t: (key: string) => string, reason: ModelUnavailableReason | string): string {
   if (reason === "image-model") return t("modelSheet.reason.imageModel");
+  if (reason === "not-image") return t("modelSheet.reason.notImage");
   return reason === "not-chat" ? t("modelSheet.reason.notChat") : t("modelSheet.reason.protocol");
 }

@@ -11,7 +11,7 @@
  *   into older accounts' conversations. A scope's history is never merged with
  *   another's, and the clear action says which one it deletes.
  */
-import { ChevronRight, History, Router } from "lucide-react";
+import { ChevronRight, History, Image as ImageIcon, Router, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -20,9 +20,11 @@ import { scopeKey, type DirectChatScope } from "../lib/direct-chat/history-store
 import {
   directChatHistory,
   directChatScope as currentScope,
+  directChatService,
   notifyDirectChatChanged,
   subscribeDirectChat,
 } from "../lib/runtime.js";
+import { ModelSheet } from "../components/ModelSheet.js";
 import { Button } from "../components/ui/Button.js";
 import { Callout } from "../components/ui/Callout.js";
 import { ListGroup, ListRow } from "../components/ui/ListGroup.js";
@@ -43,6 +45,7 @@ export type SettingsScreenProps = {
    * for reference: listed read-only, never sent under the key held today.
    */
   onOpenScope: (scope: DirectChatScope) => void;
+  onConnectionChanged?: () => void;
 };
 
 export function SettingsScreen({
@@ -52,7 +55,9 @@ export function SettingsScreen({
   onConnect,
   onDisconnect,
   onOpenScope,
+  onConnectionChanged,
 }: SettingsScreenProps) {
+  const [defaultModelSheet, setDefaultModelSheet] = useState<"chat" | "image" | null>(null);
   const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -170,6 +175,31 @@ export function SettingsScreen({
           {t("settings.modelGateway.note")}
         </p>
 
+        {connection ? (
+          <>
+            <SectionHeader title={t("settings.defaultModels.section")} />
+            <ListGroup>
+              <ListRow
+                leading={<Sparkles className="h-5 w-5 text-[var(--rm-text-secondary)]" aria-hidden="true" />}
+                title={t("settings.defaultModels.chat")}
+                subtitle={connection.defaultChatModelId ?? t("settings.defaultModels.notSet")}
+                chevron
+                onClick={() => setDefaultModelSheet("chat")}
+              />
+              <ListRow
+                leading={<ImageIcon className="h-5 w-5 text-[var(--rm-text-secondary)]" aria-hidden="true" />}
+                title={t("settings.defaultModels.image")}
+                subtitle={connection.defaultImageModelId ?? t("settings.defaultModels.notSet")}
+                chevron
+                onClick={() => setDefaultModelSheet("image")}
+              />
+            </ListGroup>
+            <p className="mt-2 px-4 text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
+              {t("settings.defaultModels.hint")}
+            </p>
+          </>
+        ) : null}
+
         <SectionHeader title={t("settings.history.section")} />
         <ListGroup>
           <ListRow
@@ -258,6 +288,34 @@ export function SettingsScreen({
           </Button>
         </div>
       </Sheet>
+
+      {connection && defaultModelSheet ? (
+        <ModelSheet
+          open={true}
+          mode={defaultModelSheet}
+          models={connection.models}
+          title={
+            defaultModelSheet === "chat"
+              ? t("settings.defaultModels.chat")
+              : t("settings.defaultModels.image")
+          }
+          selectedId={
+            defaultModelSheet === "chat"
+              ? (connection.defaultChatModelId ?? null)
+              : (connection.defaultImageModelId ?? null)
+          }
+          onClose={() => setDefaultModelSheet(null)}
+          onSelect={async (model) => {
+            if (defaultModelSheet === "chat") {
+              await directChatService().setDefaultChatModel(model.id);
+            } else {
+              await directChatService().setDefaultImageModel(model.id);
+            }
+            setDefaultModelSheet(null);
+            onConnectionChanged?.();
+          }}
+        />
+      ) : null}
     </Screen>
   );
 }

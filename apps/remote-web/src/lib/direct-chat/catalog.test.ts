@@ -7,8 +7,10 @@ import {
   initialDirectModel,
   resolveDirectModel,
   splitDirectModels,
+  resolveEffectiveChatModel,
+  resolveEffectiveImageModel,
+  isImageModel,
 } from "./catalog.js";
-
 function model(overrides: Partial<MinihRouterModel> & { id: string }): MinihRouterModel {
   return {
     upstreamIds: [],
@@ -173,4 +175,62 @@ describe("searching the sheet", () => {
   it("returns nothing when nothing matches", () => {
     expect(filterDirectModels(models, "zzz")).toEqual([]);
   });
+});
+
+describe("effective chat model resolution (ADR D2)", () => {
+  const models = [
+    model({ id: "gpt-4.1" }),
+    model({ id: "claude", protocols: ["anthropic-messages"] }),
+    model({ id: "dall-e-3", protocols: ["openai-images"] }),
+    model({ id: "o4", protocols: ["openai-responses"] }),
+  ];
+
+  it("uses configured default chat model if usable", () => {
+    const result = resolveEffectiveChatModel(models, "gpt-4.1", "o4");
+    expect(result.model?.id).toBe("gpt-4.1");
+    if (result.model) expect(result.source).toBe("default");
+  });
+
+  it("does not silently fall back to lastModelId if configured default is unavailable or removed", () => {
+    const result = resolveEffectiveChatModel(models, "removed-model", "o4");
+    expect(result.model).toBeNull();
+    if (!result.model) expect(result.reason).toBe("unavailable");
+  });
+
+  it("does not silently fall back to lastModelId if configured default is non-usable (e.g. image model)", () => {
+    const result = resolveEffectiveChatModel(models, "dall-e-3", "o4");
+    expect(result.model).toBeNull();
+    if (!result.model) expect(result.reason).toBe("unavailable");
+  });
+
+  it("falls back to lastModelId when no explicit default exists and lastModel is usable", () => {
+    const result = resolveEffectiveChatModel(models, null, "o4");
+    expect(result.model?.id).toBe("o4");
+    if (result.model) expect(result.source).toBe("last");
+  });
+
+  it("returns none if neither default nor lastModel is available", () => {
+    const result = resolveEffectiveChatModel(models, null, null);
+    expect(result.model).toBeNull();
+    if (!result.model) expect(result.reason).toBe("none");
+  });
+});
+
+describe("effective image model resolution (ADR D2)", () => {
+  const models = [
+    model({ id: "gpt-4.1" }),
+    model({ id: "dall-e-3", protocols: ["openai-images"] }),
+  ];
+
+  it("recognizes image models", () => {
+    expect(isImageModel(models[0]!)).toBe(false);
+    expect(isImageModel(models[1]!)).toBe(true);
+  });
+
+  it("returns valid default image model", () => {
+    expect(resolveEffectiveImageModel(models, "dall-e-3")?.id).toBe("dall-e-3");
+    expect(resolveEffectiveImageModel(models, "gpt-4.1")).toBeNull();
+    expect(resolveEffectiveImageModel(models, null)).toBeNull();
+  });
+
 });

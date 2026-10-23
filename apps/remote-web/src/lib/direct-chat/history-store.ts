@@ -57,6 +57,7 @@ export type DirectChatMessage = {
   createdAt: string;
   /** The attempt an assistant message belongs to; absent on user messages. */
   attemptId?: string;
+  mediaIds?: string[];
 };
 
 /**
@@ -73,6 +74,16 @@ export type DirectChatAttemptState =
   | "stopped"
   | "interrupted"
   | "failed";
+
+/**
+ * Which addendum to the text protocols an attempt is (ADR
+ * mobile-experience-completeness D7).
+ *
+ * The additive field is how an image attempt is told apart from a chat one, so
+ * the transcript, the copy, the filters and a retry never have to parse a
+ * protocol string.
+ */
+export type DirectChatOperation = "image-generation";
 
 export type DirectChatAttempt = {
   id: string;
@@ -93,6 +104,34 @@ export type DirectChatAttempt = {
   /** A failure kind the screen maps to its own next step. */
   errorKind: string | null;
   usage: { inputTokens: number | null; outputTokens: number | null } | null;
+  /** The saved media this attempt produced or answered with. */
+  mediaIds?: string[];
+  /** Absent for a chat turn; present once the attempt is an image request. */
+  operation?: DirectChatOperation;
+  /** The prompt that was sent, kept because an image has no text to remember. */
+  imagePrompt?: string;
+};
+
+/** Credential-free, account-scoped draft before first send (ADR D1). */
+export type DirectChatDraft = {
+  scopeKey: string;
+  text: string;
+  updatedAt: string;
+};
+
+/** Durable media record stored in local storage (ADR D4). */
+export type DirectChatMedia = {
+  id: string;
+  scope: DirectChatScope;
+  conversationId: string;
+  messageId?: string | null;
+  attemptId?: string | null;
+  mime: string;
+  byteLength: number;
+  width?: number | null;
+  height?: number | null;
+  createdAt: string;
+  data: Blob | Uint8Array;
 };
 
 /** Everything the transcript of one conversation is made of. */
@@ -100,6 +139,7 @@ export type DirectChatTranscript = {
   conversation: DirectChatConversation;
   messages: DirectChatMessage[];
   attempts: DirectChatAttempt[];
+  media?: DirectChatMedia[];
 };
 
 /**
@@ -116,6 +156,9 @@ export type DirectChatStore = {
   conversation(id: string): Promise<DirectChatConversation | null>;
   messages(conversationId: string): Promise<DirectChatMessage[]>;
   attempts(conversationId: string): Promise<DirectChatAttempt[]>;
+  draft(scope: DirectChatScope): Promise<string>;
+  media(id: string): Promise<DirectChatMedia | null>;
+  mediaForConversation(conversationId: string): Promise<DirectChatMedia[]>;
 
   /**
    * Run `work` as one unit. Everything it writes commits together or not at
@@ -133,10 +176,14 @@ export type DirectChatTransaction = {
   deleteConversation(id: string): Promise<void>;
   putMessage(record: DirectChatMessage): Promise<void>;
   putAttempt(record: DirectChatAttempt): Promise<void>;
+  putDraft(scope: DirectChatScope, text: string, now?: string): Promise<void>;
+  clearDraft(scope: DirectChatScope): Promise<void>;
+  putMedia(record: DirectChatMedia): Promise<void>;
+  deleteMedia(id: string): Promise<void>;
 };
 
 /** The schema version this build writes; an upgrade must keep old rows readable. */
-export const DIRECT_CHAT_SCHEMA_VERSION = 1;
+export const DIRECT_CHAT_SCHEMA_VERSION = 2;
 
 /** A message that sorts before every other within a conversation. */
 export function nextMessageOrder(messages: readonly DirectChatMessage[]): number {

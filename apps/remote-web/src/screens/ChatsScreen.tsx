@@ -1,5 +1,5 @@
 /**
- * D1 Chats root (ADR mobile-direct-gateway-chat §1, §4).
+ * D1 Chats root (ADR mobile-direct-gateway-chat §1, §4, mobile-experience-completeness A).
  *
  * The account's conversations, pinned first and then by activity, with a search
  * that filters titles and saved text in place. Two states above the list:
@@ -13,7 +13,19 @@
  * A row states what is happening in it: a reply still arriving, or the last one
  * that ended early, so the list is honest before the user opens anything.
  */
-import { MessagesSquare, Plus, Router, Search, Settings as SettingsIcon } from "lucide-react";
+import {
+  Archive,
+  Edit3,
+  MessagesSquare,
+  MoreHorizontal,
+  Pin,
+  PinOff,
+  Plus,
+  Router,
+  Search,
+  Settings as SettingsIcon,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -25,10 +37,17 @@ import { ModelSheet } from "../components/ModelSheet.js";
 import { NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent } from "../components/ui/Screen.js";
 import { SectionHeader } from "../components/ui/SectionHeader.js";
-import { resolveDirectModel } from "../lib/direct-chat/catalog.js";
+import { Sheet } from "../components/ui/Sheet.js";
+import { resolveEffectiveChatModel } from "../lib/direct-chat/catalog.js";
 import type { DirectChatConnection } from "../lib/direct-chat/connection.js";
 import type { DirectChatSummary } from "../lib/direct-chat/history.js";
-import { directChatHistory, directChatScope, subscribeDirectChat } from "../lib/runtime.js";
+import {
+  directChatHistory,
+  directChatRunner,
+  directChatScope,
+  notifyDirectChatChanged,
+  subscribeDirectChat,
+} from "../lib/runtime.js";
 
 export type ChatsScreenProps = {
   connection: DirectChatConnection | null;
@@ -54,26 +73,34 @@ export function ChatsScreen({
   const { t } = useTranslation();
   const history = directChatHistory();
   const connectedScope = directChatScope();
+  const runner = directChatRunner();
 
   const [rows, setRows] = useState<DirectChatSummary[]>([]);
   const [archivedCount, setArchivedCount] = useState(0);
   const [query, setQuery] = useState("");
   const [modelsOpen, setModelsOpen] = useState(false);
+  const [actionTarget, setActionTarget] = useState<DirectChatSummary | null>(null);
+  const [renameTarget, setRenameTarget] = useState<DirectChatSummary | null>(null);
+  const [renameTitle, setRenameTitle] = useState("");
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<DirectChatSummary | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       /*
-       * Without a key D1 still lists what this device holds: the account used
-       * most recently. Resolving it inside the load - not into state first -
-       * means one pass fills the list, and a load that arrives late is dropped
-       * by the same `cancelled` check as any other.
+       * Scope resolution follows the rule in D1:
+       * 1. The connected account's own history, when one is connected.
+       * 2. Otherwise, the account whose conversation was updated last.
+       * Reading history never needs a live gateway or a stored key.
        */
       const scope = connectedScope ?? (await history.lastScope());
       if (!scope) {
-        if (cancelled) return;
-        setRows([]);
-        setArchivedCount(0);
+        if (!cancelled) {
+          setRows([]);
+          setArchivedCount(0);
+        }
         return;
       }
       const [active, archived] = await Promise.all([
@@ -105,10 +132,24 @@ export function ChatsScreen({
     </button>
   );
 
-  const newChat = (
+  const handleQuickNewChat = () => {
+    if (!connection) return;
+    const resolved = resolveEffectiveChatModel(
+      connection.models,
+      connection.defaultChatModelId,
+      connection.lastModelId,
+    );
+    if (resolved.model) {
+      onNewConversation(resolved.model.id);
+      return;
+    }
+    setModelsOpen(true);
+  };
+
+  const newChatButton = (
     <button
       type="button"
-      onClick={() => setModelsOpen(true)}
+      onClick={() => void handleQuickNewChat()}
       aria-label={t("chats.newChat")}
       title={t("chats.newChat")}
       className="flex h-10 w-10 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] transition-opacity active:opacity-60"
@@ -121,7 +162,7 @@ export function ChatsScreen({
 
   return (
     <Screen>
-      <NavBar title={t("chats.title")} leading={gear} trailing={connection ? newChat : undefined} />
+      <NavBar title={t("chats.title")} leading={gear} trailing={connection ? newChatButton : undefined} />
       <ScreenContent>
         {!connection ? (
           <div className="px-4 pt-2">
@@ -189,20 +230,33 @@ export function ChatsScreen({
                         </span>
                       }
                       trailing={
-                        <span className="flex shrink-0 flex-col items-end text-[12px] leading-[16px] text-[var(--rm-text-faint)]">
-                          <span>{formatTime(row.conversation.updatedAt)}</span>
-                          {row.liveAttempt ? (
-                            <span className="text-[var(--rm-accent)]">{t("chats.replying")}</span>
-                          ) : row.lastFailure ? (
-                            <span className="text-[var(--rm-text-muted)]">
-                              {row.lastFailure.state === "interrupted"
-                                ? t("directChat.state.interrupted").split(" ·")[0]
-                                : row.lastFailure.state === "stopped"
-                                  ? t("directChat.state.stopped").split(" ·")[0]
-                                  : t("directChat.state.failed")}
-                            </span>
-                          ) : null}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="flex shrink-0 flex-col items-end text-[12px] leading-[16px] text-[var(--rm-text-faint)]">
+                            <span>{formatTime(row.conversation.updatedAt)}</span>
+                            {row.liveAttempt ? (
+                              <span className="text-[var(--rm-accent)]">{t("chats.replying")}</span>
+                            ) : row.lastFailure ? (
+                              <span className="text-[var(--rm-text-muted)]">
+                                {row.lastFailure.state === "interrupted"
+                                  ? t("directChat.state.interrupted").split(" ·")[0]
+                                  : row.lastFailure.state === "stopped"
+                                    ? t("directChat.state.stopped").split(" ·")[0]
+                                    : t("directChat.state.failed")}
+                              </span>
+                            ) : null}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setActionTarget(row);
+                            }}
+                            aria-label={t("directChat.actions")}
+                            className="flex h-8 w-8 items-center justify-center rounded-[6px] text-[var(--rm-text-faint)] hover:text-[var(--rm-text-primary)] active:opacity-60"
+                          >
+                            <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </div>
                       }
                       chevron
                       onClick={() => onOpenConversation(row.conversation.id)}
@@ -226,16 +280,157 @@ export function ChatsScreen({
         ) : null}
       </ScreenContent>
 
+      {/* Conversation Action Sheet */}
+      <Sheet
+        open={actionTarget !== null}
+        onClose={() => setActionTarget(null)}
+        title={actionTarget?.conversation.title ?? t("directChat.actions")}
+      >
+        <div className="flex flex-col gap-1 pb-2">
+          <ListGroup>
+            <ListRow
+              leading={
+                actionTarget?.conversation.pinned ? (
+                  <PinOff className="h-5 w-5 text-[var(--rm-text-secondary)]" aria-hidden="true" />
+                ) : (
+                  <Pin className="h-5 w-5 text-[var(--rm-text-secondary)]" aria-hidden="true" />
+                )
+              }
+              title={actionTarget?.conversation.pinned ? t("directChat.unpin") : t("directChat.pin")}
+              chevron
+              onClick={async () => {
+                if (!actionTarget) return;
+                await history.setPinned(actionTarget.conversation.id, !actionTarget.conversation.pinned, new Date().toISOString());
+                setActionTarget(null);
+                notifyDirectChatChanged();
+              }}
+            />
+            <ListRow
+              leading={<Edit3 className="h-5 w-5 text-[var(--rm-text-secondary)]" aria-hidden="true" />}
+              title={t("directChat.rename")}
+              chevron
+              onClick={() => {
+                if (!actionTarget) return;
+                setRenameTitle(actionTarget.conversation.title);
+                setRenameTarget(actionTarget);
+                setActionTarget(null);
+              }}
+            />
+            <ListRow
+              leading={<Archive className="h-5 w-5 text-[var(--rm-text-secondary)]" aria-hidden="true" />}
+              title={t("directChat.archive")}
+              chevron
+              onClick={async () => {
+                if (!actionTarget) return;
+                await history.setArchived(actionTarget.conversation.id, true, new Date().toISOString());
+                setActionTarget(null);
+                notifyDirectChatChanged();
+              }}
+            />
+            <ListRow
+              leading={<Trash2 className="h-5 w-5 text-[var(--rm-error)]" aria-hidden="true" />}
+              title={<span className="text-[var(--rm-error)]">{t("directChat.delete")}</span>}
+              chevron
+              onClick={() => {
+                if (!actionTarget) return;
+                setDeleteConfirmTarget(actionTarget);
+                setActionTarget(null);
+              }}
+            />
+          </ListGroup>
+        </div>
+      </Sheet>
+
+      {/* Rename Sheet */}
+      <Sheet
+        open={renameTarget !== null}
+        onClose={() => setRenameTarget(null)}
+        title={t("directChat.rename")}
+      >
+        <div className="flex items-center gap-2 px-1 pb-4">
+          <input
+            value={renameTitle}
+            onChange={(event) => setRenameTitle(event.target.value)}
+            aria-label={t("directChat.rename")}
+            className="min-w-0 flex-1 rounded-[10px] bg-[var(--rm-bg-inset)] px-3 py-2 text-[16px] text-[var(--rm-text-primary)] outline-none"
+          />
+          <Button
+            variant="primary"
+            size="small"
+            disabled={renameTitle.trim().length === 0 || renameTitle.trim() === renameTarget?.conversation.title}
+            onClick={async () => {
+              if (!renameTarget || !renameTitle.trim()) return;
+              await history.rename(renameTarget.conversation.id, renameTitle.trim(), new Date().toISOString());
+              setRenameTarget(null);
+              notifyDirectChatChanged();
+            }}
+          >
+            {t("common.save")}
+          </Button>
+        </div>
+      </Sheet>
+
+      {/* Delete Confirmation Sheet */}
+      <Sheet
+        open={deleteConfirmTarget !== null}
+        onClose={() => {
+          if (!busy) {
+            setDeleteConfirmTarget(null);
+            setDeleteError(null);
+          }
+        }}
+        title={t("directChat.deleteTitle")}
+      >
+        <p className="px-1 pb-4 text-[15px] leading-[22px] text-[var(--rm-text-secondary)]">
+          {t("directChat.deleteBody")}
+        </p>
+        {deleteError ? (
+          <p className="px-1 pb-3 text-[14px] leading-[20px] text-red-500 font-medium">
+            {deleteError}
+          </p>
+        ) : null}
+        <div className="flex flex-col gap-2">
+          <Button
+            variant="destructive"
+            size="large"
+            disabled={busy}
+            onClick={async () => {
+              if (!deleteConfirmTarget) return;
+              setBusy(true);
+              setDeleteError(null);
+              try {
+                // Ensure runner stop precedes removal
+                await runner.stop(deleteConfirmTarget.conversation.id);
+                const result = await history.remove(deleteConfirmTarget.conversation.id);
+                if (!result.ok) {
+                  setDeleteError(result.reason ?? "Delete failed");
+                  return;
+                }
+                setDeleteConfirmTarget(null);
+                notifyDirectChatChanged();
+              } catch (err) {
+                setDeleteError(err instanceof Error ? err.message : String(err));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {t("directChat.delete")}
+          </Button>
+          <Button variant="secondary" size="large" disabled={busy} onClick={() => { setDeleteConfirmTarget(null); setDeleteError(null); }}>
+            {t("common.cancel")}
+          </Button>
+        </div>
+      </Sheet>
+
       {connection ? (
         <ModelSheet
           open={modelsOpen}
           models={connection.models}
-          selectedId={connection.lastModelId}
+          selectedId={connection.defaultChatModelId ?? connection.lastModelId ?? null}
           onClose={() => setModelsOpen(false)}
           onSelect={(model) => {
-            // A new conversation starts on the account's last explicit choice, and
-            // only a usable model can start one.
-            if (!resolveDirectModel(model).usable) return;
+            setModelsOpen(false);
             onNewConversation(model.id);
           }}
         />
