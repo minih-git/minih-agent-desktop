@@ -623,6 +623,7 @@ export const en = {
   "modelSheet.unavailableCount": "Not available for chat ({{count}})",
   "modelSheet.unavailableImageCount": "Not available for image generation ({{count}})",
   "studio.title": "Studio",
+  "studio.unavailableTitle": "This build cannot generate images.",
   "studio.emptyHint": "Describe a scene below to generate an image.",
   "studio.emptyPrompt": "Enter a prompt first.",
   "studio.day.today": "Today",

@@ -40,7 +40,10 @@ export function EmptyState({
 
   return (
     <div
-      className={`relative flex flex-col items-center justify-center px-5 py-12 text-center ${className}`}
+      // `overflow-hidden` keeps a nested Aurora (its blobs extend well past the
+      // box) from widening the scroll area under a screen that already draws
+      // one: a hero must never add a horizontal scrollbar.
+      className={`relative flex flex-col items-center justify-center overflow-hidden px-5 py-12 text-center ${className}`}
       {...rest}
     >
       {aurora ? <Aurora /> : null}

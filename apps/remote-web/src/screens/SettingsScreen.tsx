@@ -296,9 +296,13 @@ export function SettingsScreen({
               <div className="truncate text-[17px] font-bold leading-[22px] text-[var(--rm-text-primary)]">
                 {t("settings.account.notConnectedTitle")}
               </div>
-              <div className="mt-0.5 text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
-                {gatewayConfigured ? t("settings.account.notConnectedSub") : t("directChat.unavailable")}
-              </div>
+              {/* The build-level explanation belongs to the Model gateway row
+                  below; repeating it here made the same paragraph appear twice. */}
+              {gatewayConfigured ? (
+                <div className="mt-0.5 text-[13px] leading-[18px] text-[var(--rm-text-muted)]">
+                  {t("settings.account.notConnectedSub")}
+                </div>
+              ) : null}
             </div>
             {gatewayConfigured ? (
               <ChevronRight className="relative h-5 w-5 shrink-0 text-[var(--rm-text-faint)]" aria-hidden="true" />
@@ -358,7 +362,13 @@ export function SettingsScreen({
               subtitle={
                 gatewayConfigured ? t("settings.modelGateway.notConnected") : t("directChat.unavailable")
               }
-              trailing={<ChevronRight className="h-4 w-4 text-[var(--rm-text-faint)]" aria-hidden="true" />}
+              // A row that cannot be opened must not look openable: no chevron
+              // when the build has no gateway to connect to.
+              trailing={
+                gatewayConfigured ? (
+                  <ChevronRight className="h-4 w-4 text-[var(--rm-text-faint)]" aria-hidden="true" />
+                ) : undefined
+              }
               onClick={gatewayConfigured ? onConnect : undefined}
             />
           )}
@@ -473,9 +483,17 @@ export function SettingsScreen({
             }
           />
           <ListRow
-            title={<span className="text-[var(--rm-error)]">{t("settings.history.clear")}</span>}
+            // Nothing saved means nothing to clear: the row stays a statement of
+            // the count instead of looking like a destructive action.
+            title={
+              count > 0 ? (
+                <span className="text-[var(--rm-error)]">{t("settings.history.clear")}</span>
+              ) : (
+                t("settings.history.clear")
+              )
+            }
             subtitle={scope ? scope.accessKeyId : undefined}
-            chevron
+            chevron={count > 0}
             onClick={count > 0 ? () => setClearingConfirm(true) : undefined}
           />
         </ListGroup>

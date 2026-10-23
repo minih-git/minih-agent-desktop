@@ -619,6 +619,7 @@ export const de: Record<TranslationKey, string> = {
   "modelSheet.unavailableCount": "Nicht für Chat verfügbar ({{count}})",
   "modelSheet.unavailableImageCount": "Nicht für Bilderzeugung verfügbar ({{count}})",
   "studio.title": "Studio",
+  "studio.unavailableTitle": "Dieser Build kann keine Bilder erzeugen.",
   "studio.emptyHint": "Beschreiben Sie unten eine Szene, um ein Bild zu erzeugen.",
   "studio.emptyPrompt": "Bitte geben Sie zuerst eine Beschreibung ein.",
   "studio.day.today": "Heute",

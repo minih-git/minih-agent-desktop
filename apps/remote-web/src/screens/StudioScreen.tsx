@@ -375,7 +375,7 @@ export function StudioScreen({
         {!connection && !hasCards ? (
           <EmptyState
             icon={<Router className="h-10 w-10 stroke-[1.7]" aria-hidden="true" />}
-            title={gatewayConfigured ? t("chats.connectTitle") : t("directChat.unavailableTitle")}
+            title={gatewayConfigured ? t("chats.connectTitle") : t("studio.unavailableTitle")}
             description={gatewayConfigured ? t("chats.connectHint") : t("directChat.unavailable")}
             action={
               gatewayConfigured ? (

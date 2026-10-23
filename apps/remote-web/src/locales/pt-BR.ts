@@ -619,6 +619,7 @@ export const ptBR: Record<TranslationKey, string> = {
   "modelSheet.unavailableCount": "Indisponível para chat ({{count}})",
   "modelSheet.unavailableImageCount": "Indisponível para geração de imagem ({{count}})",
   "studio.title": "Estúdio",
+  "studio.unavailableTitle": "Esta compilação não pode gerar imagens.",
   "studio.emptyHint": "Descreva uma cena abaixo para gerar uma imagem.",
   "studio.emptyPrompt": "Digite uma descrição primeiro.",
   "studio.day.today": "Hoje",

@@ -619,6 +619,7 @@ export const es: Record<TranslationKey, string> = {
   "modelSheet.unavailableCount": "No disponible para chat ({{count}})",
   "modelSheet.unavailableImageCount": "No disponible para generación de imágenes ({{count}})",
   "studio.title": "Estudio",
+  "studio.unavailableTitle": "Esta compilación no puede generar imágenes.",
   "studio.emptyHint": "Describe una escena abajo para generar una imagen.",
   "studio.emptyPrompt": "Escribe primero una descripción.",
   "studio.day.today": "Hoy",

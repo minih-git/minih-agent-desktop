@@ -619,6 +619,7 @@ export const zhCN: Record<TranslationKey, string> = {
   "modelSheet.unavailableCount": "不能用于对话（{{count}}）",
   "modelSheet.unavailableImageCount": "不能用于绘图（{{count}}）",
   "studio.title": "创作",
+  "studio.unavailableTitle": "这个版本不支持生成图片。",
   "studio.emptyHint": "在下方输入画面描述即可生成图片。",
   "studio.emptyPrompt": "请先输入画面描述。",
   "studio.day.today": "今天",

@@ -619,6 +619,7 @@ export const zhTW: Record<TranslationKey, string> = {
   "modelSheet.unavailableCount": "不能用於對話（{{count}}）",
   "modelSheet.unavailableImageCount": "不能用於繪圖（{{count}}）",
   "studio.title": "創作",
+  "studio.unavailableTitle": "這個版本不支援產生圖片。",
   "studio.emptyHint": "在下方輸入畫面描述即可生成圖片。",
   "studio.emptyPrompt": "請先輸入畫面描述。",
   "studio.day.today": "今天",

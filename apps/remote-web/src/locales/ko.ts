@@ -619,6 +619,7 @@ export const ko: Record<TranslationKey, string> = {
   "modelSheet.unavailableCount": "대화 불가 ({{count}})",
   "modelSheet.unavailableImageCount": "이미지 생성 불가 ({{count}})",
   "studio.title": "스튜디오",
+  "studio.unavailableTitle": "이 빌드는 이미지를 생성할 수 없습니다.",
   "studio.emptyHint": "아래에 원하는 장면을 설명하여 이미지를 생성하세요.",
   "studio.emptyPrompt": "먼저 프롬프트를 입력하세요.",
   "studio.day.today": "오늘",

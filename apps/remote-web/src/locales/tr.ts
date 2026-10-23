@@ -619,6 +619,7 @@ export const tr: Record<TranslationKey, string> = {
   "modelSheet.unavailableCount": "Sohbet için kullanılamaz ({{count}})",
   "modelSheet.unavailableImageCount": "Görsel üretimi için kullanılamaz ({{count}})",
   "studio.title": "Stüdyo",
+  "studio.unavailableTitle": "Bu derleme görsel üretemiyor.",
   "studio.emptyHint": "Görsel oluşturmak için aşağıya bir sahne tarif edin.",
   "studio.emptyPrompt": "Lütfen önce bir açıklama girin.",
   "studio.day.today": "Bugün",
