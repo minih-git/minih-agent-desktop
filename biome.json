@@ -18,7 +18,8 @@
 			"apps/remote-web/vite.config.ts",
 			"apps/remote-web/vitest.config.ts",
 			"scripts/check-architecture.mjs",
-			"scripts/e2e/*.mjs"
+			"scripts/e2e/*.mjs",
+			"!**/.worktree/**"
 		]
 	},
 	"formatter": {
