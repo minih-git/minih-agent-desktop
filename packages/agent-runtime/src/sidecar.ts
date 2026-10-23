@@ -11,6 +11,7 @@ import { visionFromModelConfig } from "./model-capabilities.js";
 import { hydrateAttachmentHistory } from "./attachment-history.js";
 import { classifyAgentError } from "./agent-errors.js";
 import { readLocalRequestErrorDetails } from "./local-request-errors.js";
+import { reclaimPolicyFromEnv, selectReclaimableRuntimes } from "./sidecar-idle.js";
 import {
   DesktopAgentRuntime,
   type PluginToolDef,
@@ -67,6 +68,9 @@ async function getNativePiService() {
 }
 
 const runtimes: RuntimeMap = new Map();
+/** Last turn-level activity per session, for the idle reclaim sweep. */
+const lastActivity = new Map<string, number>();
+const reclaimPolicy = reclaimPolicyFromEnv(process.env);
 const hostProxy = new ParentHostProxy();
 const testRuntimeIds = new WeakMap<DesktopAgentRuntime, string>();
 function testRuntimeIdentity(sessionId: string) {
@@ -257,6 +261,7 @@ async function runtimeFor(
   if (existing && !reusable) {
     await existing.dispose();
     runtimes.delete(sessionId);
+    lastActivity.delete(sessionId);
   }
   if (reusable) {
     reusable.setPluginSkills(pluginSkills);
@@ -336,6 +341,7 @@ async function runtimeFor(
     onDiagnostic: (diagnostic) => notify("agent.diagnostic", diagnostic),
   });
   runtimes.set(sessionId, runtime);
+  lastActivity.set(sessionId, Date.now());
   // Load failures are diagnostics, never a failed prompt (spec 16 §4.4).
   await runtime.loadTrustedExtensions().catch(() => undefined);
   if (provider.extensionAgentKey) {
@@ -634,6 +640,7 @@ async function handle(method: string, params: any): Promise<unknown> {
       if (runtime) {
         await runtime.dispose();
         runtimes.delete(sessionId);
+        lastActivity.delete(sessionId);
       }
       return { ok: true };
     }
@@ -643,6 +650,51 @@ async function handle(method: string, params: any): Promise<unknown> {
       });
   }
 }
+
+/**
+ * Reclaim runtimes nobody can resume.
+ *
+ * A runtime holds the whole conversation, its attachments and its tool clients,
+ * and rebuilding it is the existing path: the next prompt re-reads history and
+ * compaction from host-core. The decision itself lives in `sidecar-idle.ts`,
+ * where it is unit tested with a controlled clock.
+ */
+async function sweepIdleRuntimes(now: number = Date.now()): Promise<string[]> {
+  const candidates = [...runtimes].map(([sessionId, runtime]) => {
+    const status = runtime.getStatus();
+    const busy =
+      status.isRunning ||
+      status.pendingToolConfirmations > 0 ||
+      status.planningState === "awaiting_approval" ||
+      Boolean(status.pendingPlanId);
+    // A runtime that is busy right now starts its idle window when it stops
+    // being busy, not when it was created.
+    if (busy) lastActivity.set(sessionId, now);
+    return {
+      sessionId,
+      lastActivity: lastActivity.get(sessionId) ?? now,
+      busy,
+    };
+  });
+  const doomed = selectReclaimableRuntimes(candidates, now, reclaimPolicy).filter(
+    (sessionId) => !sessionId.startsWith(NATIVE_PI_SESSION_PREFIX),
+  );
+  for (const sessionId of doomed) {
+    const runtime = runtimes.get(sessionId);
+    if (!runtime) continue;
+    runtimes.delete(sessionId);
+    lastActivity.delete(sessionId);
+    await runtime.dispose().catch(() => undefined);
+  }
+  return doomed;
+}
+
+const idleSweepTimer = setInterval(() => {
+  void sweepIdleRuntimes();
+}, 60_000);
+// Housekeeping must never keep the sidecar alive on its own.
+idleSweepTimer.unref?.();
+process.once("exit", () => clearInterval(idleSweepTimer));
 
 readNdjsonLines(process.stdin, async (line) => {
   if (!line.trim()) return;
