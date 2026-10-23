@@ -10,6 +10,7 @@ import {
   resolveEffectiveChatModel,
   resolveEffectiveImageModel,
   isImageModel,
+  checkModelVisionCapability,
 } from "./catalog.js";
 function model(overrides: Partial<MinihRouterModel> & { id: string }): MinihRouterModel {
   return {
@@ -233,4 +234,35 @@ describe("effective image model resolution (ADR D2)", () => {
     expect(resolveEffectiveImageModel(models, null)).toBeNull();
   });
 
+/**
+ * Image input is authorized by the gateway's declaration alone (ADR D5). A name
+ * or a UI category is not evidence, and "no declaration" is a third answer
+ * rather than a "no": the screen tells the user what it cannot verify.
+ */
+describe("whether a model accepts images", () => {
+  it("is supported when the gateway declares the image modality", () => {
+    const vision = model({ id: "qwen-vl-max", inputModalities: ["text", "image"] });
+    expect(checkModelVisionCapability(vision)).toBe("supported");
+  });
+
+  it("is unsupported when the gateway declares modalities without images", () => {
+    expect(checkModelVisionCapability(model({ id: "gpt-4.1", inputModalities: ["text"] }))).toBe(
+      "unsupported",
+    );
+    expect(checkModelVisionCapability(model({ id: "x", inputModalities: [] }))).toBe("unsupported");
+  });
+
+  it("is unknown when the gateway did not say", () => {
+    // No declaration at all, and no model to ask about.
+    expect(checkModelVisionCapability(model({ id: "mystery" }))).toBe("unknown");
+    expect(checkModelVisionCapability(null)).toBe("unknown");
+    expect(checkModelVisionCapability(undefined)).toBe("unknown");
+  });
+
+  it("never infers an answer from the id or the category", () => {
+    // A name that looks like a vision model is still only a name.
+    expect(checkModelVisionCapability(model({ id: "qwen-vl-max", category: "vision" }))).toBe("unknown");
+    expect(checkModelVisionCapability(model({ id: "omni", category: "chat" }))).toBe("unknown");
+  });
+});
 });

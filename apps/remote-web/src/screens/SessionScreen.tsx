@@ -50,6 +50,7 @@ export interface SessionScreenProps {
    * the desktop reported a name.
    */
   hostLabel: string;
+  roles?: readonly string[];
   onBack: () => void;
   onForget?: () => void;
 }
@@ -60,6 +61,7 @@ export function SessionScreen({
   title,
   credential,
   hostLabel,
+  roles,
   onBack,
   onForget,
 }: SessionScreenProps) {
@@ -266,6 +268,7 @@ export function SessionScreen({
         <ChatTimeline
           items={timeline.items}
           lastFailure={timeline.lastFailure}
+          resolveMedia={actions.readMedia}
         />
       </ScreenContent>
 
@@ -356,6 +359,7 @@ export function SessionScreen({
         open={infoOpen}
         session={effectiveSession}
         computerLabel={hostName}
+        roles={roles}
         models={models}
         running={active}
         hasPendingDecision={hasDecision}

@@ -32,6 +32,7 @@ export interface ChatComposerProps {
    */
   onDraftChange?: (text: string) => void;
   onSend: (attempt: ComposerSend) => Promise<boolean>;
+  placeholder?: string;
 }
 
 /**
@@ -92,6 +93,7 @@ export function ChatComposer({
   queued,
   hideAttachments = false,
   initialText = "",
+  placeholder,
   onDraftChange,
   onSend,
 }: ChatComposerProps) {
@@ -280,8 +282,8 @@ export function ChatComposer({
           value={text}
           disabled={disabled}
           rows={1}
-          placeholder={t("composer.placeholder")}
-          aria-label={t("composer.placeholder")}
+          placeholder={placeholder ?? t("composer.placeholder")}
+          aria-label={placeholder ?? t("composer.placeholder")}
           onChange={(e) => {
             setText(e.target.value);
             onDraftChange?.(e.target.value);

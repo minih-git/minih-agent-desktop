@@ -6,6 +6,7 @@ import {
   configureSession,
   createHostSession,
   createProjectCatalog as createSharedProjectCatalog,
+  createSessionMediaAccess,
   createWorkspaceAccess,
   deleteSession,
   listModelSummaries,
@@ -36,6 +37,8 @@ const hostError: (error: unknown) => never = toRacpHostError;
 
 export type HostOperationsDeps = {
   getHost: () => HostRpc | null;
+  /** Host data directory: `attachments/<sha256>` blobs the transcript references. */
+  dataDir?: string;
   runtime: Pick<RuntimeService, "compact" | "isBusy">;
   /** `agent-host-cli` boots the sidecar's session cleanup on delete; the runtime link is optional at boot. */
   disposeSession?: (sessionId: string) => Promise<void>;
@@ -170,6 +173,14 @@ export function createHostOperations(deps: HostOperationsDeps): Omit<RacpHostOpe
     workspace: createHostWorkspaceAccess(deps),
     workspaceTools: createWorkspaceTools(deps.getHost),
     workspaceFiles: createWorkspaceFiles(),
+    // D6 (rollout B4): the transcript's own raster media, chunked and bounded.
+    sessionMedia: deps.dataDir
+      ? createSessionMediaAccess({ getHost: deps.getHost, dataDir: deps.dataDir })
+      : {
+          async read() {
+            throw new RacpError("NOT_FOUND", "session media storage is not configured");
+          },
+        },
     ...(deps.revokeDevice ? { revokeDevice: deps.revokeDevice } : {}),
   };
 }

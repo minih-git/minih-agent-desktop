@@ -111,6 +111,11 @@ function parseModel(value: unknown): MinihRouterModel | null {
     const modality = record(model.modalities);
     return [...list(modality.input), ...list(modality.output)].map(text);
   });
+  const inputModalities = Array.from(
+    new Set(
+      catalogs.flatMap((model) => list(record(model.modalities).input).map(text).filter(Boolean)),
+    ),
+  );
   const contextWindow = catalogs
     .map((model) => integer(record(model.limits).context))
     .find((limit): limit is number => limit !== null && limit > 0) ?? null;
@@ -141,6 +146,7 @@ function parseModel(value: unknown): MinihRouterModel | null {
     ),
     contextWindow,
     maxOutput,
+    inputModalities: inputModalities.length > 0 ? inputModalities : undefined,
   };
 }
 

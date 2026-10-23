@@ -367,6 +367,7 @@ export async function startAgentHostCli(config: AgentHostCliConfig, options: { l
   const operations: RacpHostOperations = {
     ...createHostOperations({
       getHost,
+      dataDir: config.dataDir,
       runtime,
       browseRoot: config.browseRoot,
       logRemoteAction: (info) => log("info", `remote device ${info.kind}`, {

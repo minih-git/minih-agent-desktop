@@ -198,3 +198,23 @@ export function splitDirectImageModels(models: readonly MinihRouterModel[]): {
   return { usable, disabled };
 }
 
+/**
+ * Whether a model accepts images as input (ADR mobile-experience-completeness
+ * D5).
+ *
+ * The only evidence is the gateway's own `inputModalities` declaration. Router's
+ * UI category is derived partly from the model name, so a name such as `qwen-vl`
+ * proves nothing; and an absent declaration is `unknown`, never `unsupported`,
+ * because "the gateway did not say" is not "the gateway said no".
+ */
+export type VisionCapability = "supported" | "unsupported" | "unknown";
+
+export function checkModelVisionCapability(
+  model: MinihRouterModel | null | undefined,
+): VisionCapability {
+  if (!model) return "unknown";
+  if (Array.isArray(model.inputModalities)) {
+    return model.inputModalities.includes("image") ? "supported" : "unsupported";
+  }
+  return "unknown";
+}

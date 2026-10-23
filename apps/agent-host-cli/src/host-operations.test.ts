@@ -56,6 +56,7 @@ describe("agent-host-cli operations over host-core", () => {
     let busy = false;
     const operations = createHostOperations({
       getHost: () => fakeHost(calls, root),
+      dataDir: root,
       runtime: { compact: async () => ({ accepted: true }), isBusy: () => busy },
       browseRoot: root,
     });
@@ -77,7 +78,7 @@ describe("agent-host-cli operations over host-core", () => {
     const { mkdir } = await import("node:fs/promises");
     await mkdir(join(root, "work", "app"), { recursive: true });
     await mkdir(join(root, ".hidden"), { recursive: true });
-    const operations = createHostOperations({ getHost: () => fakeHost([], root), runtime: { compact: async () => ({ accepted: true }), isBusy: () => false }, browseRoot: root });
+    const operations = createHostOperations({ getHost: () => fakeHost([], root), dataDir: root, runtime: { compact: async () => ({ accepted: true }), isBusy: () => false }, browseRoot: root });
     const registered = await operations.projects.register(join(root, "work", "app"));
     expect(registered).toMatchObject({ id: "8", label: "app" });
     await expect(operations.projects.register(join(root, "missing"))).rejects.toMatchObject({ code: "REMOTE_PATH_NOT_FOUND" });
@@ -122,7 +123,7 @@ describe("agent-host-cli operations over host-core", () => {
     dirs.push(root);
     const { writeFile } = await import("node:fs/promises");
     await writeFile(join(root, "README.md"), "hello", "utf8");
-    const operations = createHostOperations({ getHost: () => fakeHost([], root), runtime: { compact: async () => ({ accepted: true }), isBusy: () => false } });
+    const operations = createHostOperations({ getHost: () => fakeHost([], root), dataDir: root, runtime: { compact: async () => ({ accepted: true }), isBusy: () => false } });
     expect((await operations.workspace.list("s1", "")).entries.map((entry) => entry.name)).toEqual(["README.md"]);
     expect(await operations.workspace.read("s1", "README.md")).toMatchObject({ kind: "text", content: "hello" });
     await expect(operations.workspace.read("s1", "../../etc/passwd")).rejects.toMatchObject({ code: "REMOTE_PATH_FORBIDDEN" });

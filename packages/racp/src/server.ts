@@ -195,6 +195,10 @@ function buildCapabilities(operations: RacpHostOperations): RacpServerCapabiliti
     terminal: Boolean(operations.terminal),
     workspaceTools: Boolean(operations.workspaceTools),
     workspaceFiles: Boolean(operations.workspaceFiles),
+    // Additive and optional (D6): only a Host that can resolve a session's
+    // recorded attachments advertises the read, which is what a phone checks
+    // before it asks for an image instead of showing a broken preview.
+    ...(operations.sessionMedia ? { sessionMediaRead: true } : {}),
     notifications: false,
     bindings: ["RACP-WS"],
   };

@@ -11,7 +11,9 @@ import type {
   SessionSummary,
 } from "@minih-agent/agent-host";
 import { RacpError } from "@minih-agent/agent-host";
-import type { RacpItemSummary, RacpPermissionMode, UiMessage, VoiceOrigin } from "@minih-agent/shared";
+import type { MessageAttachment, RacpItemSummary, RacpPermissionMode, UiMessage, VoiceOrigin } from "@minih-agent/shared";
+
+import { encodeSessionMediaId } from "./session-media.js";
 
 /** Rust host-core over stdio JSON-RPC, as the ports below need it. */
 export type HostRpc = {
@@ -121,9 +123,53 @@ function inlineLocalHtmlIfLinked(message: UiMessage): UiMessage {
   }
 }
 
+/** Raster types `session/mediaRead` can serve, the same set `session-media` allows. */
+const RACP_RASTER_MIME = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+/** `attachments/<sha256>`: the only ref shape the Host can read back as media. */
+const RACP_MEDIA_REF = /^attachments\/[0-9a-f]{64}$/;
+
+/**
+ * Whether `session/mediaRead` could serve this attachment.
+ *
+ * This mirrors `session-media`'s own membership rule on purpose: an item names
+ * a `mediaId` only where the reader would accept the row, so a client never
+ * receives a preview reference that the Host then refuses. A non-raster
+ * attachment (a workspace PDF, a session link, an SVG, a legacy absolute path)
+ * keeps its plain `ref` and carries no `mediaId`.
+ */
+function isSessionMediaAttachment(attachment: MessageAttachment): boolean {
+  if (attachment.kind !== "image") return false;
+  const mimeType = String(attachment.mimeType ?? "").trim().toLowerCase();
+  if (!RACP_RASTER_MIME.has(mimeType)) return false;
+  return RACP_MEDIA_REF.test(String(attachment.ref ?? "").trim().replace(/\\/g, "/"));
+}
+
+/**
+ * The transcript message as a remote client receives it.
+ *
+ * A raster attachment gains an opaque `mediaId` — `encodeSessionMediaId(message
+ * id, attachment row id)` — so a phone can reopen the image through
+ * `session/mediaRead` long after it forgot the bytes (D6). Every other field is
+ * passed through untouched: the id is additive, and an attachment without a
+ * row id is sent exactly as stored.
+ */
+function withSessionMediaIds(message: UiMessage): UiMessage {
+  const attachments = message.attachments;
+  if (!Array.isArray(attachments) || attachments.length === 0 || !message.id) return message;
+  let projected = false;
+  const annotated = attachments.map((attachment) => {
+    const rowId = String((attachment as { id?: unknown }).id ?? "").trim();
+    if (!rowId || !isSessionMediaAttachment(attachment)) return attachment;
+    projected = true;
+    return { ...attachment, mediaId: encodeSessionMediaId(message.id, rowId) };
+  });
+  return projected ? { ...message, attachments: annotated } : message;
+}
+
 export function toRacpItem(message: UiMessage): RacpItemSummary {
   const turnId = (message as { turnId?: string }).turnId ?? "";
-  const enriched = inlineLocalHtmlIfLinked(message);
+  const enriched = withSessionMediaIds(inlineLocalHtmlIfLinked(message));
   return {
     id: enriched.id,
     turnId,

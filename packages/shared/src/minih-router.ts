@@ -160,6 +160,8 @@ export type MinihRouterModel = {
   tieredPricing: boolean;
   contextWindow: number | null;
   maxOutput: number | null;
+  /** Authoritative input modalities declared by upstream catalog, e.g. ["text", "image"]. */
+  inputModalities?: string[];
 };
 
 export type MinihRouterModelPage = {

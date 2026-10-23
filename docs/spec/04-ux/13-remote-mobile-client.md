@@ -1681,9 +1681,12 @@ already read the way each was decided.
 - Generation, saving and exporting have distinct success/failure outcomes. A
   persistence failure never automatically repeats a paid generation. Stop
   cannot promise an upstream refund; Retry is an explicit new attempt.
-- Save and Share operate on validated bytes through native facilities. User
-  cancellation is not a failure, permission denial has recovery guidance, and
-  opening a link is not reported as saving a file.
+- Save and Share operate on validated bytes through native facilities; on native
+  platforms, saving is completed via the system share panel (e.g. "Save Image"
+  selected within the system share sheet) rather than claiming direct album
+  persistence. User cancellation is not a failure, permission denial has recovery
+  guidance, and opening a link or initiating a web download is never reported
+  as a saved file.
 - Edit this image is a subsequent increment gated by a verified edit contract;
   the original remains available and the new output retains its source link.
 

@@ -12,6 +12,9 @@ import {
   RacpCursorSchema,
   RacpInputResponseSchema,
   RacpRequestContextSchema,
+  RACP_SESSION_MEDIA_DEFAULT_CHUNK_BYTES,
+  RACP_SESSION_MEDIA_MAX_CHUNK_BYTES,
+  SessionMediaReadRequestSchema,
   type RacpCursor,
   type RacpLimits,
   type RacpOperation,
@@ -441,6 +444,38 @@ export function createOperations(): Map<RacpOperation, OperationHandler> {
   handlers.set("session/compact", async (context, params) => {
     const input = check(SessionIdParams, params);
     return context.operations.sessions.compact(input.sessionId);
+  });
+
+  /**
+   * `session/mediaRead` (D6, rollout B4): one bounded chunk of one media item
+   * the session's own transcript carries.
+   *
+   * Two independent gates, and the shape check is neither of them: the
+   * connection must hold the `sessionMediaRead` capability the Host answered at
+   * `connection/initialize`, and the Host's port must still find the id in this
+   * session's transcript. The bounds are refused, never clamped, so a client
+   * cannot mistake a short answer for the end of the file.
+   */
+  handlers.set("session/mediaRead", async (context, params) => {
+    const media = context.operations.sessionMedia;
+    if (!media || context.capabilities.sessionMediaRead !== true) {
+      throw new RacpError("CAPABILITY_UNAVAILABLE", "this Host does not offer session media reads");
+    }
+    const input = check(SessionMediaReadRequestSchema, params);
+    const perRead = Math.min(context.limits.maxFrameBytes, RACP_SESSION_MEDIA_MAX_CHUNK_BYTES);
+    const length = input.length ?? RACP_SESSION_MEDIA_DEFAULT_CHUNK_BYTES;
+    if (length > perRead) {
+      throw new RacpError("INVALID_ARGUMENT", "media read length exceeds the per-read chunk limit", {
+        details: { limit: perRead, length },
+      });
+    }
+    return media.read({
+      sessionId: input.sessionId,
+      mediaId: input.mediaId,
+      offset: input.offset ?? 0,
+      length,
+      principal: context.principal,
+    });
   });
 
   handlers.set("workspace/list", async (context, params) => {

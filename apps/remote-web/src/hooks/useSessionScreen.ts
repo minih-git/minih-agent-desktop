@@ -29,6 +29,7 @@ import type { ComposerSend } from "../lib/composer-send.js";
 import type { HostCredential } from "../lib/credential-port.js";
 import type { OperationFailure } from "../lib/errors.js";
 import { createHostClient, sessionEventsPath, type HostClient } from "../lib/host-client.js";
+import { readSessionMedia, type SessionMediaState } from "../lib/session-media.js";
 import { probeHostStatus } from "../lib/host-status.js";
 import {
   attachSession,
@@ -97,6 +98,7 @@ export type SessionActions = {
   rename: (title: string) => Promise<void>;
   /** Read the Host's model catalog once; later calls are no-ops. */
   loadModels: () => Promise<void>;
+  readMedia: (mediaId: string, name?: string) => Promise<SessionMediaState>;
 };
 
 export type SessionScreenState = {
@@ -440,6 +442,16 @@ export function useSessionScreen(options: {
       // A Host too old to list models is not an error the user can act on: the
       // session then keeps showing whatever model it already reported.
       if (result.ok) setModels(result.value);
+    },
+    readMedia: async (mediaId: string, name?: string) => {
+      const client = clientRef.current;
+      if (!client) {
+        return {
+          kind: "failed",
+          failure: { code: "UNAVAILABLE", message: "Client is not connected", retriable: true },
+        };
+      }
+      return readSessionMedia(client, { sessionId, mediaId, name });
     },
     reconnect: () => {
       setPending((current) => ({ ...current, "stream/reconnect": true }));

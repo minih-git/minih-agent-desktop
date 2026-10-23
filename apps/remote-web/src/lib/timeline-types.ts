@@ -50,6 +50,8 @@ export type TimelineItem = {
   command?: string;
   /** Attachment names, so a phone shows that a turn carried files. */
   attachments?: TimelineAttachment[];
+  /** Direct chat or session media IDs referenced by this message. */
+  mediaIds?: string[];
   /** The row was sent as a side note to a running turn. */
   sideNote?: boolean;
 };

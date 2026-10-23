@@ -5,6 +5,7 @@ import {
   completionMarker,
   failureReasonKey,
   isRetryableFailure,
+  mediaDisclosure,
   modelChoiceGap,
   projectDirectTranscript,
   transcriptAsMarkdown,
@@ -263,5 +264,104 @@ describe("the model a conversation would send with", () => {
     // Found: there is nothing to explain.
     expect(modelChoiceGap("m-chat", true)).toBeNull();
     expect(modelChoiceGap(null, true)).toBeNull();
+  });
+});
+
+/**
+ * Images in the timeline and in the copy (ADR D7, D10).
+ *
+ * An image answer has no text of its own, so the row has to carry the media and
+ * the copy has to say a picture exists: an empty bubble and a silent export are
+ * both dishonest.
+ */
+describe("images in a transcript", () => {
+  it("puts an image answer's media on its row", () => {
+    const view = projectDirectTranscript(
+      transcript({
+        messages: [
+          { id: "m1", conversationId: "c1", order: 1, role: "user", text: "a red bicycle", createdAt: T0 },
+          {
+            id: "a1-assistant",
+            conversationId: "c1",
+            order: 2,
+            role: "assistant",
+            text: "",
+            createdAt: T0,
+            attemptId: "a1",
+          },
+        ],
+        attempts: [
+          attempt({
+            id: "a1",
+            assistantMessageId: "a1-assistant",
+            protocol: "openai-images",
+            mediaIds: ["med-1"],
+          }),
+        ],
+      }),
+    );
+    expect(view.items[1]?.mediaIds).toEqual(["med-1"]);
+    expect(view.items[1]?.modelId).toBe("m-chat");
+  });
+
+  it("leaves mediaIds off a text-only reply", () => {
+    const view = projectDirectTranscript(
+      transcript({
+        messages: [
+          {
+            id: "a1-assistant",
+            conversationId: "c1",
+            order: 1,
+            role: "assistant",
+            text: "hi",
+            createdAt: T0,
+            attemptId: "a1",
+          },
+        ],
+        attempts: [attempt({ id: "a1", assistantMessageId: "a1-assistant" })],
+      }),
+    );
+    expect(view.items[0]?.mediaIds).toBeUndefined();
+  });
+
+  it("discloses attachments in the copied Markdown instead of dropping them", () => {
+    const markdown = transcriptAsMarkdown(
+      transcript({
+        messages: [
+          {
+            id: "m1",
+            conversationId: "c1",
+            order: 1,
+            role: "user",
+            text: "what is this?",
+            createdAt: T0,
+            mediaIds: ["med-user"],
+          },
+          {
+            id: "a1-assistant",
+            conversationId: "c1",
+            order: 2,
+            role: "assistant",
+            text: "",
+            createdAt: T0,
+            attemptId: "a1",
+          },
+        ],
+        attempts: [
+          attempt({
+            id: "a1",
+            assistantMessageId: "a1-assistant",
+            protocol: "openai-images",
+            mediaIds: ["med-1"],
+          }),
+        ],
+      }),
+    );
+    expect(markdown).toContain("_[1 image attachment]_");
+    // An image answer's text is empty, so the copy carries no empty paragraph.
+    expect(markdown).toContain("_Complete_");
+    // The count is named honestly, in the plural too.
+    expect(mediaDisclosure(3)).toBe("_[3 image attachments]_");
+    expect(mediaDisclosure(1)).toBe("_[1 image attachment]_");
   });
 });

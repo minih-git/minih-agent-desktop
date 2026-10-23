@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { MinihRouterModel } from "@minih-agent/shared";
 
-import { createDirectChatHistory } from "./history.js";
-import { createMemoryDirectChatStore } from "./memory-store.js";
+import { createDirectChatHistory, isImageConversation } from "./history.js";
+import { createMemoryDirectChatStore, type MemoryDirectChatStore } from "./memory-store.js";
 import { buildDirectContext, createDirectChatRunner } from "./runner.js";
 
 const SCOPE = { gatewayRoot: "https://models.example.test", accessKeyId: "42" };
@@ -99,11 +99,13 @@ async function beginTurn(
   ids: () => { newConversationId: string; newMessageId: string; newAttemptId: string },
   text: string,
   now: string,
+  mediaIds?: string[],
 ) {
   const result = await history.beginTurn({
     conversationId: null,
     scope: SCOPE,
     text,
+    ...(mediaIds ? { mediaIds } : {}),
     modelId: chatModel.id,
     modelLabel: chatModel.id,
     protocol: "openai-completions",
@@ -112,6 +114,27 @@ async function beginTurn(
   });
   if (!result.ok) throw new Error(`beginTurn failed: ${result.reason}`);
   return result;
+}
+
+/** A saved image, as the picker stores it before the send. */
+async function saveImage(
+  store: MemoryDirectChatStore,
+  id: string,
+  conversationId: string,
+  mime: string,
+  bytes: string,
+): Promise<void> {
+  await store.transact(async (tx) => {
+    await tx.putMedia({
+      id,
+      scope: SCOPE,
+      conversationId,
+      mime,
+      byteLength: bytes.length,
+      data: new TextEncoder().encode(bytes),
+      createdAt: "2026-10-21T08:59:59.000Z",
+    });
+  });
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -166,6 +189,7 @@ describe("context assembly", () => {
       { role: "assistant", text: "first answer" },
     ]);
     expect(context.lastUserText).toBe("third question");
+    expect(context.lastUserMediaIds).toEqual([]);
     expect(stopped.state).toBe("stopped");
   });
 
@@ -175,6 +199,35 @@ describe("context assembly", () => {
     const context = buildDirectContext((await history.transcript(first.conversation.id))!);
     expect(context.turns).toEqual([]);
     expect(context.lastUserText).toBe("hello");
+    expect(context.lastUserMediaIds).toEqual([]);
+  });
+
+  it("keeps the media ids of answered turns and of the message just sent", async () => {
+    const { history, ids } = harness();
+    // The first exchange carried a picture, which was answered.
+    const first = await beginTurn(history, ids, "what is this?", "2026-10-21T09:00:00.000Z", ["media-1"]);
+    await history.finish(first.attempt, { state: "complete", text: "a cat", now: "2026-10-21T09:00:01.000Z" });
+    // The pending one carries another; it is the new message, not context.
+    const second = await history.beginTurn({
+      conversationId: first.conversation.id,
+      scope: SCOPE,
+      text: "and this?",
+      mediaIds: ["media-2"],
+      modelId: chatModel.id,
+      modelLabel: chatModel.id,
+      protocol: "openai-completions",
+      now: "2026-10-21T09:01:00.000Z",
+      ...ids(),
+    });
+    if (!second.ok) throw new Error("setup failed");
+
+    const context = buildDirectContext((await history.transcript(first.conversation.id))!);
+    expect(context.turns).toEqual([
+      { role: "user", text: "what is this?", mediaIds: ["media-1"] },
+      { role: "assistant", text: "a cat" },
+    ]);
+    expect(context.lastUserText).toBe("and this?");
+    expect(context.lastUserMediaIds).toEqual(["media-2"]);
   });
 });
 
@@ -849,3 +902,501 @@ describe("several conversations replying at once (ADR §5)", () => {
     expect(runner.state()).toEqual({ phase: "idle" });
   });
 });
+
+describe("stop then remove race prevention", () => {
+  it("awaits run settlement so immediate remove succeeds and no resurrection occurs", async () => {
+    const { history, store, ids } = harness();
+    const fetchState = controlledFetch();
+    const runner = createDirectChatRunner({
+      store,
+      history,
+      origin: "https://models.example.test",
+      fetchImpl: fetchState.fetchImpl,
+    });
+    const turn = await beginTurn(history, ids, "hello", "2026-10-21T09:00:00.000Z");
+    const runPromise = runner.start({
+      scope: SCOPE,
+      conversationId: turn.conversation.id,
+      attempt: turn.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    await tick();
+    fetchState.send("streaming chunk");
+    await tick();
+
+    // Stop and immediately remove
+    await runner.stop(turn.conversation.id);
+    const removeResult = await history.remove(turn.conversation.id);
+    expect(removeResult).toEqual({ ok: true });
+
+    // Any late push from the socket
+    fetchState.send(" late chunk ");
+    await runPromise;
+
+    // Conversation stays completely deleted, messages are empty
+    expect(await store.conversation(turn.conversation.id)).toBeNull();
+    expect(await store.messages(turn.conversation.id)).toEqual([]);
+  });
+});
+
+/**
+ * Image input at the runner (ADR mobile-experience-completeness D5). The timeline
+ * and the request must agree: an image the user can see is sent, one that is gone
+ * is not invented, and a store that cannot be read fails the send rather than
+ * quietly asking about a picture the model cannot see.
+ */
+describe("sending images", () => {
+  it("reads the attached bytes and sends them as a data URL", async () => {
+    const { store, history, ids } = harness();
+    const stream = controlledFetch();
+    const runner = createDirectChatRunner({
+      store,
+      history,
+      origin: "https://models.example.test",
+      fetchImpl: stream.fetchImpl,
+    });
+    const turn = await beginTurn(history, ids, "what is this?", "2026-10-21T09:00:00.000Z", ["media-1"]);
+    await saveImage(store, "media-1", turn.conversation.id, "image/png", "png-bytes");
+
+    const pending = runner.start({
+      scope: SCOPE,
+      conversationId: turn.conversation.id,
+      attempt: turn.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    await tick();
+    stream.finish();
+    await pending;
+
+    const body = stream.calls[0]?.body as { messages: unknown[] };
+    expect(body.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "what is this?" },
+          {
+            type: "image_url",
+            image_url: { url: `data:image/png;base64,${btoa("png-bytes")}` },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("re-sends an earlier turn's image so the timeline and the request agree", async () => {
+    const { store, history, ids } = harness();
+    const stream = controlledFetch();
+    const runner = createDirectChatRunner({
+      store,
+      history,
+      origin: "https://models.example.test",
+      fetchImpl: stream.fetchImpl,
+    });
+    const first = await beginTurn(history, ids, "what is this?", "2026-10-21T09:00:00.000Z", ["media-1"]);
+    await saveImage(store, "media-1", first.conversation.id, "image/jpeg", "jpeg-bytes");
+    await history.finish(first.attempt, { state: "complete", text: "a cat", now: "2026-10-21T09:00:01.000Z" });
+
+    const second = await history.beginTurn({
+      conversationId: first.conversation.id,
+      scope: SCOPE,
+      text: "what colour is it?",
+      modelId: chatModel.id,
+      modelLabel: chatModel.id,
+      protocol: "openai-completions",
+      now: "2026-10-21T09:01:00.000Z",
+      ...ids(),
+    });
+    if (!second.ok) throw new Error("setup failed");
+
+    const pending = runner.start({
+      scope: SCOPE,
+      conversationId: first.conversation.id,
+      attempt: second.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    await tick();
+    stream.finish();
+    await pending;
+
+    const body = stream.calls[0]?.body as { messages: unknown[] };
+    expect(body.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "what is this?" },
+          { type: "image_url", image_url: { url: `data:image/jpeg;base64,${btoa("jpeg-bytes")}` } },
+        ],
+      },
+      { role: "assistant", content: "a cat" },
+      { role: "user", content: "what colour is it?" },
+    ]);
+  });
+
+  it("skips a media row that is gone instead of sending an empty image", async () => {
+    const { store, history, ids } = harness();
+    const stream = controlledFetch();
+    const runner = createDirectChatRunner({
+      store,
+      history,
+      origin: "https://models.example.test",
+      fetchImpl: stream.fetchImpl,
+    });
+    // Recorded, then deleted: the message still references it.
+    const turn = await beginTurn(history, ids, "look", "2026-10-21T09:00:00.000Z", ["media-gone"]);
+
+    const pending = runner.start({
+      scope: SCOPE,
+      conversationId: turn.conversation.id,
+      attempt: turn.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    await tick();
+    stream.finish();
+    await pending;
+
+    const body = stream.calls[0]?.body as { messages: unknown[] };
+    expect(body.messages).toEqual([{ role: "user", content: "look" }]);
+  });
+
+  it("fails the attempt without sending when the media store cannot be read", async () => {
+    const { store, history, ids } = harness();
+    const stream = controlledFetch();
+    const brokenStore = {
+      ...store,
+      media: async () => {
+        throw new Error("the local database is closed");
+      },
+    };
+    const runner = createDirectChatRunner({
+      store: brokenStore,
+      history,
+      origin: "https://models.example.test",
+      fetchImpl: stream.fetchImpl,
+    });
+    const turn = await beginTurn(history, ids, "look", "2026-10-21T09:00:00.000Z", ["media-1"]);
+
+    const outcome = await runner.start({
+      scope: SCOPE,
+      conversationId: turn.conversation.id,
+      attempt: turn.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.attempt.state).toBe("failed");
+      expect(outcome.attempt.errorKind).toBe("storage");
+    }
+    // Nothing went out: the user keeps the draft and tries again.
+    expect(stream.calls).toHaveLength(0);
+    expect(runner.state().phase).toBe("idle");
+  });
+
+  it("answers a retried message with the image it carried", async () => {
+    const { store, history, ids } = harness();
+    const stream = multiStreamFetch();
+    const runner = createDirectChatRunner({
+      store,
+      history,
+      origin: "https://models.example.test",
+      fetchImpl: stream.fetchImpl,
+    });
+    const turn = await beginTurn(history, ids, "what is this?", "2026-10-21T09:00:00.000Z", ["media-1"]);
+    await saveImage(store, "media-1", turn.conversation.id, "image/png", "png-bytes");
+    const interrupted = await history.finish(turn.attempt, {
+      state: "interrupted",
+      text: "",
+      errorKind: "interrupted",
+      now: "2026-10-21T09:01:00.000Z",
+    });
+
+    const pending = runner.retry({
+      attempt: interrupted,
+      scope: SCOPE,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    await tick();
+    stream.streams[0]!.finish();
+    await pending;
+
+    const transcript = (await history.transcript(turn.conversation.id))!;
+    // One user message still, and the retry carried the same image.
+    expect(transcript.attempts.filter((attempt) => attempt.state === "pending" || attempt.state === "complete")).toHaveLength(1);
+    expect(transcript.attempts.every((attempt) => JSON.stringify(attempt.mediaIds) === JSON.stringify(["media-1"]))).toBe(
+      true,
+    );
+  });
+});
+
+/**
+ * Image generation through the runner (ADR D7, D8).
+ *
+ * The attempt is saved before the request, the bytes are the attempt's result,
+ * and every terminal path is written: complete, failed, stopped. The request
+ * never carries the conversation's text context, because an image prompt is not
+ * a chat turn.
+ */
+describe("image generation", () => {
+  const IMAGE_MODEL: MinihRouterModel = { ...chatModel, id: "gpt-image-1", protocols: ["openai-images"] };
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  const PNG_BASE64 = btoa(String.fromCharCode(...PNG));
+
+  function imageHarness(answers: Array<() => Response | Promise<Response>>) {
+    const base = harness();
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      const next = answers.shift();
+      if (!next) throw new Error("unexpected request");
+      return await next();
+    }) as unknown as typeof fetch;
+    const runner = createDirectChatRunner({
+      store: base.store,
+      history: base.history,
+      origin: "https://models.example.test",
+      fetchImpl,
+      now: () => new Date("2026-10-21T09:00:00.000Z"),
+    });
+    return { ...base, runner, calls };
+  }
+
+  function json(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  }
+
+  async function imageTurn(history: ReturnType<typeof createDirectChatHistory>) {
+    const saved = await history.beginTurn({
+      conversationId: null,
+      scope: SCOPE,
+      text: "a red bicycle at dusk",
+      modelId: IMAGE_MODEL.id,
+      modelLabel: IMAGE_MODEL.id,
+      protocol: "openai-images",
+      operation: "image-generation",
+      now: "2026-10-21T09:00:00.000Z",
+      newConversationId: "c-image",
+      newMessageId: "m-image",
+      newAttemptId: "a-image",
+    });
+    if (!saved.ok) throw new Error(`beginTurn failed: ${saved.reason}`);
+    return saved;
+  }
+
+  it("stores the produced image as media of the conversation and completes the attempt", async () => {
+    const { store, history, runner, calls } = imageHarness([() => json({ data: [{ b64_json: PNG_BASE64 }] })]);
+    const turn = await imageTurn(history);
+    expect(turn.attempt.operation).toBe("image-generation");
+    expect(turn.attempt.imagePrompt).toBe("a red bicycle at dusk");
+
+    const outcome = await runner.start({
+      conversationId: turn.conversation.id,
+      scope: SCOPE,
+      attempt: turn.attempt,
+      model: IMAGE_MODEL,
+      // The caller's protocol is advisory: the saved attempt decides the plane.
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.attempt.state).toBe("complete");
+    expect(outcome.attempt.mediaIds).toHaveLength(1);
+
+    const [call] = calls;
+    expect(call?.url).toBe("https://models.example.test/v1/images/generations");
+    expect(JSON.parse(String(call?.init.body))).toEqual({
+      model: "gpt-image-1",
+      prompt: "a red bicycle at dusk",
+      n: 1,
+    });
+
+    const stored = store.snapshot().media;
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.id).toBe(outcome.attempt.mediaIds?.[0]);
+    expect(stored[0]?.conversationId).toBe(turn.conversation.id);
+    expect(stored[0]?.attemptId).toBe(turn.attempt.id);
+    expect(stored[0]?.mime).toBe("image/png");
+    expect(stored[0]?.scope).toEqual(SCOPE);
+  });
+
+  it("fails the attempt, with the reason, when the gateway refuses", async () => {
+    const { history, runner } = imageHarness([() => json({ error: { message: "invalid access key" } }, 401)]);
+    const turn = await imageTurn(history);
+    const outcome = await runner.start({
+      conversationId: turn.conversation.id,
+      scope: SCOPE,
+      attempt: turn.attempt,
+      model: IMAGE_MODEL,
+      protocol: "openai-images",
+      authKey: KEY,
+    });
+    if (!outcome.ok) throw new Error("the run exists even when the request fails");
+    expect(outcome.attempt.state).toBe("failed");
+    expect(outcome.attempt.errorKind).toBe("unauthorized");
+    expect(outcome.attempt.error).toContain("invalid access key");
+    expect(outcome.attempt.mediaIds).toBeUndefined();
+  });
+
+  it("fails the attempt when the gateway answers with an asset URL it may not read", async () => {
+    const { history, runner, calls } = imageHarness([
+      () => json({ data: [{ url: "https://cdn.elsewhere.test/x.png" }] }),
+    ]);
+    const turn = await imageTurn(history);
+    const outcome = await runner.start({
+      conversationId: turn.conversation.id,
+      scope: SCOPE,
+      attempt: turn.attempt,
+      model: IMAGE_MODEL,
+      protocol: "openai-images",
+      authKey: KEY,
+    });
+    if (!outcome.ok) throw new Error("expected a finished attempt");
+    expect(outcome.attempt.state).toBe("failed");
+    expect(outcome.attempt.error).toBe("Result received but asset download unsupported");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("keeps an image conversation apart from a text one and marks it as image work", async () => {
+    const { store, history, runner } = imageHarness([() => json({ data: [{ b64_json: PNG_BASE64 }] })]);
+    const image = await imageTurn(history);
+    await runner.start({
+      conversationId: image.conversation.id,
+      scope: SCOPE,
+      attempt: image.attempt,
+      model: IMAGE_MODEL,
+      protocol: "openai-images",
+      authKey: KEY,
+    });
+    const text = await beginTurn(history, harness().ids, "a question", "2026-10-21T09:05:00.000Z");
+    await history.finish(text.attempt, { state: "complete", text: "an answer", now: "2026-10-21T09:05:01.000Z" });
+
+    const rows = await history.list(SCOPE);
+    const attemptsOf = async (id: string) => store.snapshot().attempts.filter((attempt) => attempt.conversationId === id);
+    expect(isImageConversation(image.conversation, await attemptsOf(image.conversation.id))).toBe(true);
+    expect(isImageConversation(text.conversation, await attemptsOf(text.conversation.id))).toBe(false);
+    // The image attempt produced no assistant text, so its prompt is not a
+    // finished exchange: it stays a pending user turn, not model context.
+    expect(rows).toHaveLength(2);
+  });
+});
+
+/**
+ * Regenerate (ADR D9): a second answer to the same question.
+ *
+ * The previous success stays readable; later context carries only the newest
+ * one, so the model is never asked to account for two answers.
+ */
+describe("regenerate", () => {
+  it("adds a new attempt for the same message and keeps the previous answer", async () => {
+    const { store, history, ids } = harness();
+    const stream = multiStreamFetch();
+    const runner = createDirectChatRunner({
+      store,
+      history,
+      origin: "https://models.example.test",
+      fetchImpl: stream.fetchImpl,
+    });
+    const turn = await beginTurn(history, ids, "hello", "2026-10-21T09:00:00.000Z");
+    const first = runner.start({
+      conversationId: turn.conversation.id,
+      scope: SCOPE,
+      attempt: turn.attempt,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    await tick();
+    stream.streams[0]!.send("first answer");
+    stream.streams[0]!.finish();
+    const completed = await first;
+    if (!completed.ok) throw new Error("setup failed");
+
+    const pending = runner.regenerate({
+      attempt: completed.attempt,
+      scope: SCOPE,
+      model: chatModel,
+      protocol: "openai-completions",
+      authKey: KEY,
+    });
+    await tick();
+    stream.streams[1]!.send("second answer");
+    stream.streams[1]!.finish();
+    const regenerated = await pending;
+    if (!regenerated.ok) throw new Error("expected a regenerated reply");
+
+    const transcript = (await history.transcript(turn.conversation.id))!;
+    // Both answers are still there, and the question was not repeated.
+    expect(transcript.messages.filter((message) => message.role === "user")).toHaveLength(1);
+    const answers = transcript.messages.filter((message) => message.role === "assistant");
+    expect(answers.map((message) => message.text)).toEqual(["first answer", "second answer"]);
+    // The next context carries exactly one answer: the newest.
+    const context = buildDirectContext(transcript);
+    expect(context.turns).toEqual([
+      { role: "user", text: "hello" },
+      { role: "assistant", text: "second answer" },
+    ]);
+  });
+
+  it("gives every regenerate its own attempt id, even after a reload", async () => {
+    // Two runners that share the store and history are what a page reload looks
+    // like: the second one starts with a fresh run counter, so a counter-based
+    // id would name the first one's attempt and overwrite it.
+    const store = createMemoryDirectChatStore();
+    const history = createDirectChatHistory(store);
+    const turn = await beginTurn(history, harness().ids, "draw a bicycle", "2026-10-21T09:00:00.000Z");
+    const finished = await history.finish(turn.attempt, { state: "complete", text: "an answer", now: "2026-10-21T09:00:01.000Z" });
+
+    const ids: string[] = [];
+    for (let reload = 0; reload < 3; reload += 1) {
+      // Read back what the last reload saved, as the screen would on startup.
+      const latest = (await history.transcript(turn.conversation.id))!.attempts.at(-1)!;
+      const stream = multiStreamFetch();
+      const runner = createDirectChatRunner({
+        store,
+        history,
+        origin: "https://models.example.test",
+        fetchImpl: stream.fetchImpl,
+      });
+      const pending = runner.regenerate({
+        attempt: latest,
+        scope: SCOPE,
+        model: chatModel,
+        protocol: "openai-completions",
+        authKey: KEY,
+      });
+      await tick();
+      stream.streams[0]!.finish();
+      const outcome = await pending;
+      if (!outcome.ok) throw new Error("expected a regenerated reply");
+      ids.push(outcome.attempt.id);
+      // Each regeneration answers the same question and keeps the earlier one.
+      expect(outcome.attempt.userMessageId).toBe(turn.userMessage.id);
+      expect((await history.transcript(turn.conversation.id))!.attempts).toHaveLength(reload + 2);
+    }
+
+    expect(new Set([finished.id, ...ids]).size).toBe(ids.length + 1);
+    // The id is a random request id, not a counter that restarts on reload.
+    // The suffix is a random request id, not a counter that restarts on reload.
+    expect(ids.every((id) => /-regen-req_[0-9a-f]{32}$/.test(id))).toBe(true);
+    // Every attempt that was written is still readable, in order: no id was reused.
+    const transcript = (await history.transcript(turn.conversation.id))!;
+    expect(transcript.attempts.map((attempt) => attempt.id)).toEqual([finished.id, ...ids]);
+    expect(transcript.attempts.every((attempt) => attempt.state === "complete")).toBe(true);
+    // Each answer kept the text it produced; none was lost to an overwritten row.
+    expect(transcript.messages.filter((message) => message.role === "user")).toHaveLength(1);
+    expect(transcript.messages.some((message) => message.text === "an answer")).toBe(true);
+  });
+});
+

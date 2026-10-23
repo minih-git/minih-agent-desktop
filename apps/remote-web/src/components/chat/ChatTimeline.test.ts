@@ -22,9 +22,10 @@ import { test } from "vitest";
 import type { TimelineItem } from "../../lib/timeline-types.js";
 import { buildResources, DEFAULT_LOCALE } from "../../locales/index.js";
 
+import type { ChatTimelineProps } from "./ChatTimeline.js";
 import { ChatTimeline } from "./ChatTimeline.js";
 
-async function render(items: TimelineItem[]): Promise<string> {
+async function render(items: TimelineItem[], extraProps?: Partial<ChatTimelineProps>): Promise<string> {
   const i18n = createInstance();
   await i18n.init({
     lng: DEFAULT_LOCALE,
@@ -35,7 +36,7 @@ async function render(items: TimelineItem[]): Promise<string> {
     returnNull: false,
   });
   return renderToStaticMarkup(
-    createElement(I18nextProvider, { i18n }, createElement(ChatTimeline, { items })),
+    createElement(I18nextProvider, { i18n }, createElement(ChatTimeline, { items, ...extraProps })),
   );
 }
 
@@ -141,4 +142,25 @@ test("a file:// HTML link renders as a safe button instead of an empty href anch
   assert.doesNotMatch(html, /<a[^>]*href=""/);
   assert.match(html, /<button type="button"/);
   assert.match(html, /打开页面 · 灵感/);
+});
+test("user message renders copy and edit-resend action buttons", async () => {
+  const html = await render([item({ role: "user", text: "Hello AI" })], {
+    onEditResendMessage: () => {},
+  });
+  assert.match(html, /aria-label="Copy text"/);
+  assert.match(html, /aria-label="Edit and resend"/);
+});
+
+test("assistant message renders copy and regenerate buttons on latest completed reply", async () => {
+  const html = await render(
+    [
+      item({ id: "u1", role: "user", text: "What is 1+1?" }),
+      item({ id: "a1", role: "assistant", text: "It is 2." }),
+    ],
+    {
+      onRegenerateMessage: () => {},
+    },
+  );
+  assert.match(html, /aria-label="Copy text"/);
+  assert.match(html, /aria-label="Regenerate reply"/);
 });

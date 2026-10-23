@@ -51,6 +51,7 @@ export function SessionInfoSheet({
   const [renaming, setRenaming] = useState(false);
   const [title, setTitle] = useState(session?.title ?? "");
   const [picker, setPicker] = useState<"model" | "mode" | "permission" | null>(null);
+  const [showOwnerOnlyNotice, setShowOwnerOnlyNotice] = useState(false);
   // A recorded absence of `controller` is the only thing that removes the edit
   // affordances; an entry from before roles existed is treated as unknown.
   const editable = !roles || roles.includes("controller");
@@ -106,11 +107,39 @@ export function SessionInfoSheet({
     </button>
   );
 
-  const title_ = picker === "model" ? t("model.title") : picker === "mode" ? t("sessions.new.mode") : picker === "permission" ? t("sessions.new.permission") : (session?.title || t("session.untitled"));
+  const title_ = showOwnerOnlyNotice
+    ? t("session.deleteOwnerOnlyTitle")
+    : picker === "model"
+      ? t("model.title")
+      : picker === "mode"
+        ? t("sessions.new.mode")
+        : picker === "permission"
+          ? t("sessions.new.permission")
+          : (session?.title || t("session.untitled"));
+
+  const handleClose = () => {
+    setShowOwnerOnlyNotice(false);
+    setPicker(null);
+    setRenaming(false);
+    onClose();
+  };
 
   return (
-    <Sheet open={open} onClose={onClose} title={title_}>
-      {picker ? (
+    <Sheet open={open} onClose={handleClose} title={title_}>
+      {showOwnerOnlyNotice ? (
+        <div className="flex flex-col gap-4 py-2">
+          <p className="text-[14px] leading-[20px] text-[var(--rm-text-secondary)]">
+            {t("session.deleteOwnerOnlyBody")}
+          </p>
+          <Button
+            variant="primary"
+            size="medium"
+            onClick={() => setShowOwnerOnlyNotice(false)}
+          >
+            {t("common.close")}
+          </Button>
+        </div>
+      ) : picker ? (
         <>
           {picker === "model" ? (
             <>
@@ -215,7 +244,12 @@ export function SessionInfoSheet({
                 {t("session.rename")}
               </Button>
             ) : null}
-            <Button variant="plain" size="medium" onClick={onClose}>
+            {!renaming ? (
+              <Button variant="destructive" size="medium" onClick={() => setShowOwnerOnlyNotice(true)}>
+                {t("session.delete")}
+              </Button>
+            ) : null}
+            <Button variant="plain" size="medium" onClick={handleClose}>
               {t("common.done")}
             </Button>
           </div>

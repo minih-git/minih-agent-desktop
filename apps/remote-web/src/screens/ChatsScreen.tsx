@@ -1,5 +1,5 @@
 /**
- * D1 Chats root (ADR mobile-direct-gateway-chat §1, §4, mobile-experience-completeness A).
+ * D1 Chats root (ADR mobile-direct-gateway-chat §1, §4).
  *
  * The account's conversations, pinned first and then by activity, with a search
  * that filters titles and saved text in place. Two states above the list:
@@ -16,6 +16,7 @@
 import {
   Archive,
   Edit3,
+  Image as ImageIcon,
   MessagesSquare,
   MoreHorizontal,
   Pin,
@@ -38,13 +39,14 @@ import { NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent } from "../components/ui/Screen.js";
 import { SectionHeader } from "../components/ui/SectionHeader.js";
 import { Sheet } from "../components/ui/Sheet.js";
-import { resolveEffectiveChatModel } from "../lib/direct-chat/catalog.js";
+import { resolveEffectiveChatModel, resolveEffectiveImageModel } from "../lib/direct-chat/catalog.js";
 import type { DirectChatConnection } from "../lib/direct-chat/connection.js";
 import type { DirectChatSummary } from "../lib/direct-chat/history.js";
 import {
   directChatHistory,
   directChatRunner,
   directChatScope,
+  directChatService,
   notifyDirectChatChanged,
   subscribeDirectChat,
 } from "../lib/runtime.js";
@@ -78,29 +80,29 @@ export function ChatsScreen({
   const [rows, setRows] = useState<DirectChatSummary[]>([]);
   const [archivedCount, setArchivedCount] = useState(0);
   const [query, setQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<"chats" | "images">("chats");
   const [modelsOpen, setModelsOpen] = useState(false);
+  const [imageModelsOpen, setImageModelsOpen] = useState(false);
   const [actionTarget, setActionTarget] = useState<DirectChatSummary | null>(null);
   const [renameTarget, setRenameTarget] = useState<DirectChatSummary | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<DirectChatSummary | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       /*
-       * Scope resolution follows the rule in D1:
-       * 1. The connected account's own history, when one is connected.
-       * 2. Otherwise, the account whose conversation was updated last.
-       * Reading history never needs a live gateway or a stored key.
+       * Without a key D1 still lists what this device holds: the account used
+       * most recently. Resolving it inside the load - not into state first -
+       * means one pass fills the list, and a load that arrives late is dropped
+       * by the same `cancelled` check as any other.
        */
       const scope = connectedScope ?? (await history.lastScope());
       if (!scope) {
-        if (!cancelled) {
-          setRows([]);
-          setArchivedCount(0);
-        }
+        if (cancelled) return;
+        setRows([]);
+        setArchivedCount(0);
         return;
       }
       const [active, archived] = await Promise.all([
@@ -145,24 +147,47 @@ export function ChatsScreen({
     }
     setModelsOpen(true);
   };
+  const handleCreateImage = () => {
+    if (!connection) return;
+    const resolved = resolveEffectiveImageModel(
+      connection.models,
+      connection.defaultImageModelId,
+    );
+    if (resolved) {
+      onNewConversation(resolved.id);
+      return;
+    }
+    setImageModelsOpen(true);
+  };
 
-  const newChatButton = (
-    <button
-      type="button"
-      onClick={() => void handleQuickNewChat()}
-      aria-label={t("chats.newChat")}
-      title={t("chats.newChat")}
-      className="flex h-10 w-10 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] transition-opacity active:opacity-60"
-    >
-      <Plus className="h-5 w-5 stroke-[2]" aria-hidden="true" />
-    </button>
-  );
+  const trailingButtons = connection ? (
+    <div className="flex items-center gap-0.5">
+      <button
+        type="button"
+        onClick={() => void handleCreateImage()}
+        aria-label={t("chats.createImage")}
+        title={t("chats.createImage")}
+        className="flex h-10 w-10 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] transition-opacity active:opacity-60"
+      >
+        <ImageIcon className="h-5 w-5 stroke-[1.8]" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        onClick={() => void handleQuickNewChat()}
+        aria-label={t("chats.newChat")}
+        title={t("chats.newChat")}
+        className="flex h-10 w-10 items-center justify-center rounded-[8px] text-[var(--rm-text-secondary)] transition-opacity active:opacity-60"
+      >
+        <Plus className="h-5 w-5 stroke-[2]" aria-hidden="true" />
+      </button>
+    </div>
+  ) : undefined;
 
   const hasHistory = rows.length > 0 || archivedCount > 0;
 
   return (
     <Screen>
-      <NavBar title={t("chats.title")} leading={gear} trailing={connection ? newChatButton : undefined} />
+      <NavBar title={t("chats.title")} leading={gear} trailing={trailingButtons} />
       <ScreenContent>
         {!connection ? (
           <div className="px-4 pt-2">
@@ -196,6 +221,31 @@ export function ChatsScreen({
         {/* The list stays while nothing is connected: reading needs no key. */}
         {connection || hasHistory ? (
           <>
+            <div className="mx-3 mb-2 flex rounded-[8px] bg-[var(--rm-bg-inset)] p-0.5">
+              <button
+                type="button"
+                onClick={() => setActiveTab("chats")}
+                className={`flex-1 rounded-[6px] py-1 text-[13px] font-medium transition-all ${
+                  activeTab === "chats"
+                    ? "bg-[var(--rm-bg-surface)] text-[var(--rm-text-primary)] shadow-sm"
+                    : "text-[var(--rm-text-muted)]"
+                }`}
+              >
+                {t("chats.tabChats")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("images")}
+                className={`flex-1 rounded-[6px] py-1 text-[13px] font-medium transition-all ${
+                  activeTab === "images"
+                    ? "bg-[var(--rm-bg-surface)] text-[var(--rm-text-primary)] shadow-sm"
+                    : "text-[var(--rm-text-muted)]"
+                }`}
+              >
+                {t("chats.tabImages")}
+              </button>
+            </div>
+
             <label className="mx-3 mb-2 flex min-h-[38px] items-center gap-2 rounded-[10px] bg-[var(--rm-bg-inset)] px-3">
               <Search className="h-4 w-4 shrink-0 text-[var(--rm-text-faint)]" aria-hidden="true" />
               <input
@@ -208,63 +258,83 @@ export function ChatsScreen({
               />
             </label>
 
-            {rows.length === 0 ? (
-              <div className="px-4">
-                <EmptyState
-                  icon={<MessagesSquare className="h-9 w-9 stroke-[1.5]" aria-hidden="true" />}
-                  title={query ? t("chats.emptyList") : t("chats.emptyTitle")}
-                  description={query ? undefined : t("chats.emptyHint")}
-                />
-              </div>
-            ) : (
-              <>
-                <SectionHeader title={t("chats.listSection")} />
-                <ListGroup>
-                  {rows.map((row) => (
-                    <ListRow
-                      key={row.conversation.id}
-                      title={row.conversation.title}
-                      subtitle={
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <span className="truncate">{row.preview}</span>
-                        </span>
+            {(() => {
+              const displayRows = rows.filter((r) =>
+                activeTab === "images" ? r.isImage === true : true,
+              );
+              if (displayRows.length === 0) {
+                return (
+                  <div className="px-4">
+                    <EmptyState
+                      icon={
+                        activeTab === "images" ? (
+                          <ImageIcon className="h-9 w-9 stroke-[1.5]" aria-hidden="true" />
+                        ) : (
+                          <MessagesSquare className="h-9 w-9 stroke-[1.5]" aria-hidden="true" />
+                        )
                       }
-                      trailing={
-                        <div className="flex items-center gap-1.5">
-                          <span className="flex shrink-0 flex-col items-end text-[12px] leading-[16px] text-[var(--rm-text-faint)]">
-                            <span>{formatTime(row.conversation.updatedAt)}</span>
-                            {row.liveAttempt ? (
-                              <span className="text-[var(--rm-accent)]">{t("chats.replying")}</span>
-                            ) : row.lastFailure ? (
-                              <span className="text-[var(--rm-text-muted)]">
-                                {row.lastFailure.state === "interrupted"
-                                  ? t("directChat.state.interrupted").split(" ·")[0]
-                                  : row.lastFailure.state === "stopped"
-                                    ? t("directChat.state.stopped").split(" ·")[0]
-                                    : t("directChat.state.failed")}
-                              </span>
-                            ) : null}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setActionTarget(row);
-                            }}
-                            aria-label={t("directChat.actions")}
-                            className="flex h-8 w-8 items-center justify-center rounded-[6px] text-[var(--rm-text-faint)] hover:text-[var(--rm-text-primary)] active:opacity-60"
-                          >
-                            <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-                          </button>
-                        </div>
+                      title={
+                        query
+                          ? t("chats.emptyList")
+                          : activeTab === "images"
+                            ? t("imageGen.empty")
+                            : t("chats.emptyTitle")
                       }
-                      chevron
-                      onClick={() => onOpenConversation(row.conversation.id)}
+                      description={query ? undefined : activeTab === "images" ? undefined : t("chats.emptyHint")}
                     />
-                  ))}
-                </ListGroup>
-              </>
-            )}
+                  </div>
+                );
+              }
+              return (
+                <>
+                  <SectionHeader title={t("chats.listSection")} />
+                  <ListGroup>
+                    {displayRows.map((row) => (
+                      <ListRow
+                        key={row.conversation.id}
+                        title={row.conversation.title}
+                        subtitle={
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <span className="truncate">{row.preview}</span>
+                          </span>
+                        }
+                        trailing={
+                          <div className="flex items-center gap-1.5">
+                            <span className="flex shrink-0 flex-col items-end text-[12px] leading-[16px] text-[var(--rm-text-faint)]">
+                              <span>{formatTime(row.conversation.updatedAt)}</span>
+                              {row.liveAttempt ? (
+                                <span className="text-[var(--rm-accent)]">{t("chats.replying")}</span>
+                              ) : row.lastFailure ? (
+                                <span className="text-[var(--rm-text-muted)]">
+                                  {row.lastFailure.state === "interrupted"
+                                    ? t("directChat.state.interrupted").split(" ·")[0]
+                                    : row.lastFailure.state === "stopped"
+                                      ? t("directChat.state.stopped").split(" ·")[0]
+                                      : t("directChat.state.failed")}
+                                </span>
+                              ) : null}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setActionTarget(row);
+                              }}
+                              aria-label={t("directChat.actions")}
+                              className="flex h-8 w-8 items-center justify-center rounded-[6px] text-[var(--rm-text-faint)] hover:text-[var(--rm-text-primary)] active:opacity-60"
+                            >
+                              <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                            </button>
+                          </div>
+                        }
+                        chevron
+                        onClick={() => onOpenConversation(row.conversation.id)}
+                      />
+                    ))}
+                  </ListGroup>
+                </>
+              );
+            })()}
             {archivedCount > 0 ? (
               <div className="mt-3">
                 <ListGroup>
@@ -300,7 +370,7 @@ export function ChatsScreen({
               chevron
               onClick={async () => {
                 if (!actionTarget) return;
-                await history.setPinned(actionTarget.conversation.id, !actionTarget.conversation.pinned, new Date().toISOString());
+                await history.setPinned(actionTarget.conversation.id, !actionTarget.conversation.pinned);
                 setActionTarget(null);
                 notifyDirectChatChanged();
               }}
@@ -322,7 +392,7 @@ export function ChatsScreen({
               chevron
               onClick={async () => {
                 if (!actionTarget) return;
-                await history.setArchived(actionTarget.conversation.id, true, new Date().toISOString());
+                await history.setArchived(actionTarget.conversation.id, true);
                 setActionTarget(null);
                 notifyDirectChatChanged();
               }}
@@ -360,7 +430,7 @@ export function ChatsScreen({
             disabled={renameTitle.trim().length === 0 || renameTitle.trim() === renameTarget?.conversation.title}
             onClick={async () => {
               if (!renameTarget || !renameTitle.trim()) return;
-              await history.rename(renameTarget.conversation.id, renameTitle.trim(), new Date().toISOString());
+              await history.rename(renameTarget.conversation.id, renameTitle.trim());
               setRenameTarget(null);
               notifyDirectChatChanged();
             }}
@@ -426,11 +496,35 @@ export function ChatsScreen({
       {connection ? (
         <ModelSheet
           open={modelsOpen}
+          mode="chat"
           models={connection.models}
           selectedId={connection.defaultChatModelId ?? connection.lastModelId ?? null}
+          allowSetDefault={true}
           onClose={() => setModelsOpen(false)}
+          onSelectDefault={(model) => {
+            void directChatService().setDefaultChatModel(model.id);
+          }}
           onSelect={(model) => {
             setModelsOpen(false);
+            onNewConversation(model.id);
+          }}
+        />
+      ) : null}
+
+      {connection ? (
+        <ModelSheet
+          open={imageModelsOpen}
+          mode="image"
+          models={connection.models}
+          selectedId={connection.defaultImageModelId ?? null}
+          title={t("imageGen.title")}
+          allowSetDefault={true}
+          onClose={() => setImageModelsOpen(false)}
+          onSelectDefault={(model) => {
+            void directChatService().setDefaultImageModel(model.id);
+          }}
+          onSelect={(model) => {
+            setImageModelsOpen(false);
             onNewConversation(model.id);
           }}
         />
