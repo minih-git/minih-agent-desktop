@@ -21,6 +21,8 @@ import { createAgentHostBridge, type AgentHostBridge } from "../agent-host-bridg
 import { createBackendRouter, type BackendRouter } from "../remote/backend-router";
 import { createRemoteHostsBoot, setActiveRemoteHostsBoot } from "./remote-hosts";
 import { createGatewayLinkBootstrap, setActiveGatewayLink } from "./gateway-link";
+import { createAccountComputers } from "../remote/gateway-link/account-computers.js";
+import { accountMetadataOf } from "../remote/remote-host-metadata.js";
 import { racpGatewayLinkPort } from "../remote/gateway-link/racp-gateway-link-port.js";
 import { HostLinkNotifier } from "@minih-agent/racp";
 import {
@@ -265,6 +267,24 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
     }).catch((error: unknown) => {
       logger.app("runtime", "warn", "remote host boot failed", { data: String(error) });
     });
+    // Account mode, client half (rollout R8 package E): once the Host link is
+    // up, discover the account's other computers and hand them to the boot
+    // above. Without this the list stayed empty forever — the Gateway could
+    // list them and issue the token, but nothing on this desktop ever asked.
+    const accountComputers = createAccountComputers({
+      getHost,
+      existingDeviceToken: async (publicOrigin) => {
+        const records = await remoteHostsBoot.registry.list();
+        for (const record of records) {
+          const metadata = accountMetadataOf(record);
+          if (metadata?.publicOrigin === publicOrigin && record.deviceToken) return record.deviceToken;
+        }
+        return undefined;
+      },
+      join: (input) => remoteHostsBoot.joinAccountComputers(input),
+      log: (level, message, data) =>
+        logger.app("runtime", level, message, { data: formatRemoteLogData(data) }),
+    });
     // Redacted push (§11.6, R5 PR-6): ONE notifier for this desktop. The Agent
     // Host reports the four events (§11.6) and the Gateway link carries them;
     // the link core attaches the sender while a link is up and detaches it when
@@ -333,6 +353,13 @@ export function registerApplicationStartup(deps: StartupDependencies): void {
       // main pushes the request there and the notice beside it.
       emitDeviceRequest: (request) => sendToRenderer(IPC.event.remoteGatewayDeviceRequest, request),
       emitDeviceNotice: (notice) => sendToRenderer(IPC.event.remoteGatewayDeviceNotice, notice),
+      // Account mode (R8 package E): the link tells this desktop when it is up
+      // in account mode, and the join round above turns the account's other
+      // computers into remote hosts. Fire-and-forget: discovery must never
+      // delay or fail the link itself.
+      onAccountLinkUp: (input) => {
+        void accountComputers.run(input);
+      },
       // Redacted push (§11.6): the link service carries the notifier to
       // `host.notify`, and the Agent Host above feeds it the four events.
       notifier: notifyHost,
