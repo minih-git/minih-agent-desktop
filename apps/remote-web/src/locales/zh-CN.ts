@@ -486,6 +486,8 @@ export const zhCN: Record<TranslationKey, string> = {
   "chats.offlineBanner": "历史可以阅读。连接模型网关后才能继续发送。",
   "chats.readOnlyScope": "只读 · 保存在另一个账号下。连接该账号后才能继续发送。",
   "chats.archiveTitle": "已归档",
+  "chats.archiveImages": "图片对话",
+  "chats.archiveText": "文本对话",
   "chats.archiveEmpty": "没有已归档的对话。",
   "chats.openConversation": "打开对话",
   "chats.newConversationModel": "为新对话选择模型",

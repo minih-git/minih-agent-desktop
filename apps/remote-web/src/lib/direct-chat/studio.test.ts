@@ -17,6 +17,7 @@ import {
   groupByDay,
   splitPinnedAndRecent,
   studioCards,
+  splitArchivedByKind,
   studioRetryModel,
   studioSubmitRefusal,
 } from "./studio.js";
@@ -342,5 +343,42 @@ describe("Studio submit and retry decisions", () => {
   it("refuses when the id now names a model that cannot make images", () => {
     const textOnly = model({ id: "gpt-5", outputModalities: ["text"] });
     expect(studioRetryModel([textOnly], "gpt-5")).toBeNull();
+  });
+});
+
+/**
+ * Review fix: the archive kept text conversations only, and Studio hides
+ * archived work, so an archived image conversation had no way back.
+ */
+describe("the archive keeps both kinds", () => {
+  function summary(id: string, isImage: boolean): DirectChatSummary {
+    return {
+      conversation: {
+        id,
+        scope: { gatewayRoot: "https://models.example.test", accessKeyId: "42" },
+        title: id,
+        createdAt: "2026-10-23T00:00:00.000Z",
+        updatedAt: "2026-10-23T00:00:00.000Z",
+        pinned: false,
+        archived: true,
+        nextModelId: isImage ? "gpt-image-2" : "gpt-5",
+        nextProtocol: isImage ? "openai-images" : "openai-completions",
+        draft: "",
+      },
+      preview: "",
+      isImage,
+    } as DirectChatSummary;
+  }
+
+  it("lists an archived image conversation next to the text ones", () => {
+    const text = summary("conv-text", false);
+    const image = summary("conv-image", true);
+    const groups = splitArchivedByKind([image, text]);
+    expect(groups.text.map((row) => row.conversation.id)).toEqual(["conv-text"]);
+    expect(groups.images.map((row) => row.conversation.id)).toEqual(["conv-image"]);
+  });
+
+  it("has nothing to show for an empty archive", () => {
+    expect(splitArchivedByKind([])).toEqual({ text: [], images: [] });
   });
 });

@@ -486,6 +486,8 @@ export const zhTW: Record<TranslationKey, string> = {
   "chats.offlineBanner": "歷史可以閱讀。連接模型閘道後才能繼續傳送。",
   "chats.readOnlyScope": "唯讀 · 保存在另一個帳號下。連接該帳號後才能繼續傳送。",
   "chats.archiveTitle": "已封存",
+  "chats.archiveImages": "圖片對話",
+  "chats.archiveText": "文字對話",
   "chats.archiveEmpty": "沒有已封存的對話。",
   "chats.openConversation": "開啟對話",
   "chats.newConversationModel": "為新對話選擇模型",

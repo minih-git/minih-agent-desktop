@@ -486,6 +486,8 @@ export const fr: Record<TranslationKey, string> = {
   "chats.offlineBanner": "L'historique est lisible. Connectez la passerelle de modèles pour envoyer.",
   "chats.readOnlyScope": "Lecture seule · enregistré sous un autre compte. Connectez ce compte pour renvoyer.",
   "chats.archiveTitle": "Archivées",
+  "chats.archiveImages": "Conversations d'images",
+  "chats.archiveText": "Conversations texte",
   "chats.archiveEmpty": "Aucune discussion archivée.",
   "chats.openConversation": "Ouvrir la discussion",
   "chats.newConversationModel": "Choisissez un modèle pour la nouvelle discussion",

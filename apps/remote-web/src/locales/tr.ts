@@ -486,6 +486,8 @@ export const tr: Record<TranslationKey, string> = {
   "chats.offlineBanner": "Geçmiş okunabilir. Göndermek için model ağ geçidine bağlanın.",
   "chats.readOnlyScope": "Salt okunur · başka bir hesapta kayıtlı. Yeniden göndermek için o hesaba bağlan.",
   "chats.archiveTitle": "Arşiv",
+  "chats.archiveImages": "Görsel sohbetleri",
+  "chats.archiveText": "Metin sohbetleri",
   "chats.archiveEmpty": "Arşivlenmiş sohbet yok.",
   "chats.openConversation": "Sohbeti aç",
   "chats.newConversationModel": "Yeni sohbet için model seçin",

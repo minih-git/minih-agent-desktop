@@ -4,20 +4,26 @@
  * The same rows as D1, with one difference that matters: restoring here puts a
  * conversation back in the list intact, and opening one goes to D3 with the
  * archive as its origin, so back returns here rather than to the root.
+ *
+ * Both kinds live here — text and image — because this is the only place an
+ * archived image conversation can still be found and brought back once Studio
+ * stops drawing archived work.
  */
 import { Archive } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { Callout } from "../components/ui/Callout.js";
 import { EmptyState } from "../components/ui/EmptyState.js";
 import { ListGroup, ListRow } from "../components/ui/ListGroup.js";
 import { NavBar } from "../components/ui/NavBar.js";
 import { Screen, ScreenContent } from "../components/ui/Screen.js";
+import { SectionHeader } from "../components/ui/SectionHeader.js";
 import { Tag } from "../components/ui/StatusDot.js";
 import type { DirectChatSummary } from "../lib/direct-chat/history.js";
 import { scopeDependency } from "../lib/direct-chat/history-store.js";
 import { vendorBadge } from "../lib/direct-chat/model-picker.js";
-import { filterTextConversations } from "../lib/direct-chat/studio.js";
+import { splitArchivedByKind } from "../lib/direct-chat/studio.js";
 import { directChatHistory, directChatScope, subscribeDirectChat } from "../lib/runtime.js";
 
 export type ChatArchiveScreenProps = {
@@ -33,6 +39,8 @@ export function ChatArchiveScreen({ onBack, onOpenConversation, onRestored }: Ch
   /** The stable identity of the scope; the object itself is new on every render. */
   const scopeKeyValue = scopeDependency(scope);
   const [rows, setRows] = useState<DirectChatSummary[]>([]);
+  const [failure, setFailure] = useState<string | null>(null);
+  const groups = splitArchivedByKind(rows);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,7 +50,8 @@ export function ChatArchiveScreen({ onBack, onOpenConversation, onRestored }: Ch
         return;
       }
       const archived = await history.list(scope, { archived: true });
-      if (!cancelled) setRows(filterTextConversations(archived));
+      // Both kinds: an archived image conversation is reachable nowhere else.
+      if (!cancelled) setRows(archived);
     };
     void load();
     const unsubscribe = subscribeDirectChat(() => void load());
@@ -53,15 +62,65 @@ export function ChatArchiveScreen({ onBack, onOpenConversation, onRestored }: Ch
   }, [history, scopeKeyValue]);
 
   async function restore(conversationId: string): Promise<void> {
-    await history.setArchived(conversationId, false, new Date().toISOString());
-    setRows(filterTextConversations(await history.list(scope!, { archived: true })));
+    const outcome = await history.setArchived(conversationId, false, new Date().toISOString());
+    const next = await history.list(scope!, { archived: true });
+    setRows(next);
     onRestored();
+    if (!outcome.ok) setFailure(t("directChat.saveFailed"));
+  }
+
+  /** One archived row: the same card in both sections, with its own kind label. */
+  function renderRow(row: DirectChatSummary) {
+    const badge = vendorBadge(null, row.conversation.nextModelId);
+    return (
+      <ListRow
+        key={row.conversation.id}
+        leading={
+          <span
+            aria-hidden="true"
+            className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] text-[13px] font-extrabold text-white ${badge.gradientClass}`}
+          >
+            {badge.monogram}
+          </span>
+        }
+        title={row.conversation.title}
+        subtitle={
+          <span className="flex flex-col gap-1">
+            <span className="truncate">{row.preview}</span>
+            {row.conversation.nextModelId ? (
+              <span>
+                <Tag>{row.conversation.nextModelId}</Tag>
+              </span>
+            ) : null}
+          </span>
+        }
+        chevron
+        onClick={() => onOpenConversation(row.conversation.id)}
+        trailing={
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void restore(row.conversation.id);
+            }}
+            className="shrink-0 rounded-[10px] bg-[var(--rm-bg-surface-2)] px-2.5 py-1 text-[12px] font-semibold text-[var(--rm-link)] transition-transform active:scale-95"
+          >
+            {t("directChat.restore")}
+          </button>
+        }
+      />
+    );
   }
 
   return (
     <Screen aurora>
       <NavBar solid title={t("chats.archiveTitle")} onBack={onBack} backLabel={t("common.back")} />
       <ScreenContent className="pt-3">
+        {failure ? (
+          <Callout tone="error" className="mb-3">
+            {failure}
+          </Callout>
+        ) : null}
         {rows.length === 0 ? (
           <EmptyState
             aurora={false}
@@ -69,49 +128,20 @@ export function ChatArchiveScreen({ onBack, onOpenConversation, onRestored }: Ch
             title={t("chats.archiveEmpty")}
           />
         ) : (
-          <ListGroup>
-            {rows.map((row) => {
-              const badge = vendorBadge(null, row.conversation.nextModelId);
-              return (
-                <ListRow
-                  key={row.conversation.id}
-                  leading={
-                    <span
-                      aria-hidden="true"
-                      className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] text-[13px] font-extrabold text-white ${badge.gradientClass}`}
-                    >
-                      {badge.monogram}
-                    </span>
-                  }
-                  title={row.conversation.title}
-                  subtitle={
-                    <span className="flex flex-col gap-1">
-                      <span className="truncate">{row.preview}</span>
-                      {row.conversation.nextModelId ? (
-                        <span>
-                          <Tag>{row.conversation.nextModelId}</Tag>
-                        </span>
-                      ) : null}
-                    </span>
-                  }
-                  chevron
-                  onClick={() => onOpenConversation(row.conversation.id)}
-                  trailing={
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void restore(row.conversation.id);
-                      }}
-                      className="shrink-0 rounded-[10px] bg-[var(--rm-bg-surface-2)] px-2.5 py-1 text-[12px] font-semibold text-[var(--rm-link)] transition-transform active:scale-95"
-                    >
-                      {t("directChat.restore")}
-                    </button>
-                  }
-                />
-              );
-            })}
-          </ListGroup>
+          <div className="space-y-4">
+            {groups.text.length > 0 ? (
+              <section>
+                <SectionHeader title={t("chats.archiveText")} />
+                <ListGroup>{groups.text.map(renderRow)}</ListGroup>
+              </section>
+            ) : null}
+            {groups.images.length > 0 ? (
+              <section>
+                <SectionHeader title={t("chats.archiveImages")} />
+                <ListGroup>{groups.images.map(renderRow)}</ListGroup>
+              </section>
+            ) : null}
+          </div>
         )}
       </ScreenContent>
     </Screen>

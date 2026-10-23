@@ -250,3 +250,23 @@ export function studioRetryModel(
   const candidate = models.find((model) => model.id === modelId);
   return candidate && isImageModel(candidate) ? candidate : null;
 }
+
+/**
+ * Split archived conversations by kind.
+ *
+ * The archive is the only place an archived image conversation can be reached
+ * once Studio stops drawing it, so it lists both kinds and says which is which
+ * rather than losing one of them.
+ */
+export function splitArchivedByKind(rows: readonly DirectChatSummary[]): {
+  text: DirectChatSummary[];
+  images: DirectChatSummary[];
+} {
+  const text: DirectChatSummary[] = [];
+  const images: DirectChatSummary[] = [];
+  for (const row of rows) {
+    if (row.isImage === true) images.push(row);
+    else text.push(row);
+  }
+  return { text, images };
+}

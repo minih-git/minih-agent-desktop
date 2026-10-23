@@ -486,6 +486,8 @@ export const ptBR: Record<TranslationKey, string> = {
   "chats.offlineBanner": "O histórico pode ser lido. Conecte o gateway de modelos para enviar.",
   "chats.readOnlyScope": "Somente leitura · salvo em outra conta. Conecte essa conta para enviar de novo.",
   "chats.archiveTitle": "Arquivadas",
+  "chats.archiveImages": "Conversas de imagens",
+  "chats.archiveText": "Conversas de texto",
   "chats.archiveEmpty": "Nenhuma conversa arquivada.",
   "chats.openConversation": "Abrir conversa",
   "chats.newConversationModel": "Escolha um modelo para a nova conversa",
