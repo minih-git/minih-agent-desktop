@@ -106,17 +106,21 @@ test("scenic plugins use the normal full-window shell for compositing", () => {
   // context and pin route overlays underneath the window chrome.
   assert.doesNotMatch(baseSrc, /\.app-shell\s*>\s*:not\(\.app-scenic-backdrop\)/);
   assert.match(settingsSrc, /data-plugin-theme\^="plugin:io\.github\.akshayxkill\.nexus-scenic-themes:/);
-  assert.match(settingsSrc, /\.app-shell\.settings-mode[^}]*background:\s*transparent\s*!important/s);
+  // The sheet's own surfaces composite over the scenic layer now that the
+  // settings page is a panel instead of a full-window takeover.
+  assert.match(settingsSrc, /\.settings-sheet[^}]*background:\s*transparent\s*!important/s);
   assert.match(settingsSrc, /\.settings-content[^}]*background:\s*transparent\s*!important/s);
 });
 
-test("scenic plugin themes expose a full-window settings compositing hook", () => {
+test("scenic plugin themes expose a settings-surface compositing hook", () => {
   const settingsCss = readFileSync(join(desktopRoot, "src/styles/settings.css"), "utf8");
   assert.match(settingsCss, /data-plugin-theme\^="plugin:io\.github\.akshayxkill\.nexus-scenic-themes:/);
-  assert.match(settingsCss, /\.app-shell\.settings-mode[^}]*background:\s*transparent\s*!important/s);
+  assert.match(settingsCss, /\.settings-sheet[^}]*background:\s*transparent\s*!important/s);
   assert.match(settingsCss, /\.settings-content[^}]*background:\s*transparent\s*!important/s);
-  assert.match(settingsCss, /\.settings-shell-full\s+\.settings-nav\.sidebar-surface[^}]*background:\s*color-mix/s);
+  // Cards keep a translucent plate so the scenic image reads through them.
   assert.match(settingsCss, /\.settings-panel[^}]*background:\s*color-mix/s);
+  // There is no rail left to tint.
+  assert.doesNotMatch(settingsCss, /\.settings-nav\.sidebar-surface/);
 });
 
 test("scenic background is a host root layer, not an app-shell pseudo-element", () => {
@@ -130,7 +134,9 @@ test("scenic background is a host root layer, not an app-shell pseudo-element", 
 
 test("core Settings navigation dismisses an active plugin destination", () => {
   const source = readFileSync(join(desktopRoot, "src/features/settings/SettingsPage.tsx"), "utf8");
-  assert.match(source, /setActiveExtension\(null\);\s*setSettingsTab\(item\.id\);/s);
+  // Any core destination — category or second level — dismisses the plugin page.
+  assert.match(source, /const selectDestination = \(id: SettingsTabId\) => \{\s*setActiveExtension\(null\);\s*setSettingsTab\(id\);/s);
+  assert.match(source, /const selectCategory = \(category: VisibleSettingsCategory\) => \{[\s\S]*?requestLeave\(\(\) => \{\s*setActiveExtension\(null\);/);
 });
 
 test("host window-control band inherits the active theme palette without plugin geometry", () => {

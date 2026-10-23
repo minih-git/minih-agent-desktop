@@ -1,0 +1,300 @@
+/*
+  The settings sheet: a near full-height panel anchored to the window bottom,
+  with a fixed head (title, search, close), one row of seven categories, an
+  optional second level, and a scrolling content area.
+
+  The app stays mounted behind it — the scrim dims it, the shell marks it inert,
+  and nothing here touches the conversation surfaces.
+*/
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  /* Above the shell's own surfaces (30) and below the dialog host (40), so a
+     settings dialog or a toast still paints over this sheet. */
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  background: color-mix(in oklab, #000 32%, transparent);
+  animation: settings-scrim-in 240ms var(--motion-ease-out);
+}
+
+.settings-overlay.is-exiting {
+  /* The page already changed but the sheet is still on screen: the scrim keeps
+     swallowing pointers until the sheet unmounts, so no click reaches the app
+     behind it. */
+  animation: settings-scrim-out 180ms var(--motion-ease-in);
+}
+
+.settings-sheet.is-exiting {
+  /* Leaving: the plate itself takes no clicks, the scrim still does. */
+  pointer-events: none;
+}
+
+.settings-sheet {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  height: 90%;
+  max-height: 90%;
+  width: calc(100% - 2 * var(--settings-sheet-gutter));
+  flex-direction: column;
+  margin-inline: auto;
+  border: 1px solid var(--ds-border-subtle);
+  border-bottom: 0;
+  border-radius: var(--settings-sheet-radius) var(--settings-sheet-radius) 0 0;
+  background: var(--ds-bg-primary);
+  box-shadow: var(--ds-shadow-dialog);
+  overflow: hidden;
+  animation: settings-sheet-in 240ms var(--motion-ease-out);
+}
+
+.settings-sheet.is-exiting {
+  animation: settings-sheet-out 180ms var(--motion-ease-in);
+}
+
+@keyframes settings-scrim-in {
+  from { opacity: 0; }
+}
+
+@keyframes settings-scrim-out {
+  to { opacity: 0; }
+}
+
+/* Rise from below the window edge, settle flat: no spring, no bounce. */
+@keyframes settings-sheet-in {
+  from { transform: translateY(100%); }
+}
+
+@keyframes settings-sheet-out {
+  to { transform: translateY(100%); }
+}
+
+.settings-panel-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px 10px;
+}
+
+.settings-panel-title {
+  margin: 0;
+  color: var(--ds-text-primary);
+  font-size: var(--text-lg-plus);
+  font-weight: var(--font-weight-strong);
+  letter-spacing: var(--tracking-tighter);
+  line-height: var(--leading-heading);
+}
+
+.settings-panel-head .settings-search-wrap {
+  width: min(360px, 46%);
+  margin-inline-start: auto;
+}
+
+.settings-close {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--ds-text-secondary);
+  transition: background var(--motion-duration-fast) var(--motion-ease-out),
+    color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.settings-close:hover {
+  background: var(--ds-bg-hover);
+  color: var(--ds-text-primary);
+}
+
+.settings-categories {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding: 0 14px 8px;
+  /* Hidden, not scrolled: when the seven labels do not fit, the panel swaps in
+     a category selector instead of a row the user has to scroll sideways. The
+     measurement that decides it reads scrollWidth against clientWidth. */
+  overflow-x: hidden;
+  border-bottom: 1px solid var(--ds-border-subtle);
+}
+
+.settings-category-bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0 20px 10px;
+  border-bottom: 1px solid var(--ds-border-subtle);
+}
+
+.settings-category-select {
+  width: min(320px, 100%);
+}
+
+.settings-categories::-webkit-scrollbar,
+.settings-subnav::-webkit-scrollbar {
+  display: none;
+}
+
+.settings-category {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  font-weight: var(--font-weight-medium);
+}
+
+.settings-subnav {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 20px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.settings-subnav-item {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: var(--text-sm-plus);
+}
+
+/* The content area and the results layer share one box, so a search never
+   unmounts the page underneath it. */
+.settings-content-area {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+.settings-results-panel {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: auto;
+  padding: 20px clamp(20px, 3vw, 44px) 40px;
+  background: var(--ds-bg-primary);
+}
+
+/* Search results: the matched row and the path that leads to it. */
+.settings-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-result {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  text-align: start;
+}
+
+.settings-result:hover {
+  background: var(--ds-bg-hover);
+}
+
+.settings-result-title {
+  color: var(--ds-text-primary);
+  font-size: var(--text-md);
+}
+
+.settings-result-path {
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm-plus);
+}
+
+/* Leaving a page with unsaved edits asks first; an in-flight save is never
+   overtaken. */
+.settings-draft-scrim {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in oklab, #000 38%, transparent);
+}
+
+.settings-draft-confirm {
+  display: flex;
+  width: min(420px, 100%);
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--radius-md-plus);
+  padding: 18px;
+  background: var(--ds-bg-elevated-opaque);
+  box-shadow: var(--ds-shadow-dialog);
+  color: var(--ds-text-primary);
+}
+
+.settings-draft-title {
+  margin: 0;
+  font-size: var(--text-md-plus);
+  font-weight: var(--font-weight-strong);
+}
+
+.settings-draft-description {
+  margin: 0;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm-plus);
+}
+
+.settings-draft-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/*
+  A short or narrow window takes the whole width and the whole height: the
+  gutter and the top inset exist to show the app behind, which a small window
+  cannot spare. The category bar keeps scrolling; the head keeps its search.
+*/
+@media (max-width: 720px), (max-height: 560px) {
+  .settings-sheet {
+    height: 100%;
+    max-height: 100%;
+    width: 100%;
+    border-radius: 0;
+  }
+
+  .settings-panel-head {
+    padding: 10px 14px 8px;
+  }
+
+  .settings-panel-head .settings-search-wrap {
+    width: auto;
+    flex: 1;
+  }
+
+  .settings-subnav {
+    padding: 8px 14px 0;
+  }
+}
+
+/* The sheet's own motion is positional; without it, cross-fade in place. */
+@media (prefers-reduced-motion: reduce) {
+  .settings-overlay,
+  .settings-sheet,
+  .settings-sheet.is-exiting,
+  .settings-overlay.is-exiting {
+    animation-duration: 0.01ms !important;
+  }
+}

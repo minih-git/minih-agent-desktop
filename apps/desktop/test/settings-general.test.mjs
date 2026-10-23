@@ -121,38 +121,76 @@ const voiceSettingsSource = await readFile(
   new URL("../src/features/settings/voice/VoiceSettingsSection.tsx", import.meta.url),
   "utf8",
 );
+const settingsNavigationSource = await readFile(
+  new URL("../src/features/settings/SettingsNavigation.tsx", import.meta.url),
+  "utf8",
+);
+const settingsDestinationSource = await readFile(
+  new URL("../src/features/settings/SettingsDestination.tsx", import.meta.url),
+  "utf8",
+);
+const generalPanelsSource = await readFile(
+  new URL("../src/features/settings/panels/general-panels.tsx", import.meta.url),
+  "utf8",
+);
+const aiPanelsSource = await readFile(
+  new URL("../src/features/settings/panels/ai-panels.tsx", import.meta.url),
+  "utf8",
+);
+const systemPanelsSource = await readFile(
+  new URL("../src/features/settings/panels/system-panels.tsx", import.meta.url),
+  "utf8",
+);
 
-test("Basics and AI tabs expose their respective app and AI controls", () => {
-  const generalStart = settingsPageSource.indexOf('{tab === "general" && settings && (');
-  const aiStart = settingsPageSource.indexOf('{tab === "ai" && settings && (');
-  const voiceStart = settingsPageSource.indexOf(
-    '{tab === "voice" && !tabHidden && settings && (',
-  );
-  const generalSource = settingsPageSource.slice(generalStart, aiStart);
-  const aiSource = settingsPageSource.slice(aiStart, voiceStart);
+test("appearance, chat, and execution destinations own separate controls", () => {
+  // The general page split: appearance and usage habits are the general
+  // category, chat behaviour and execution live under AI, network and storage
+  // under System. Each slice below is one destination's real source.
+  const generalPanelsStart = generalPanelsSource.indexOf("export function AppearancePanel");
+  const habitsStart = generalPanelsSource.indexOf("export function HabitsPanel");
+  const appearanceSource = generalPanelsSource.slice(generalPanelsStart, habitsStart);
+  const chatStart = aiPanelsSource.indexOf("export function ChatExperiencePanel");
+  const executionStart = aiPanelsSource.indexOf("export function ExecutionPanel");
+  const memoryStart = aiPanelsSource.indexOf("export function InstructionsMemoryPanel");
+  const chatSource = aiPanelsSource.slice(chatStart, executionStart);
+  const executionSource = aiPanelsSource.slice(executionStart, memoryStart);
 
-  assert.match(generalSource, /<ThemeRow /);
-  assert.match(generalSource, /<LanguageRow /);
-  assert.match(generalSource, /<FontFamilyRow /);
-  assert.match(generalSource, /<FontSizeRow /);
-  assert.match(generalSource, /<NetworkProxySection /);
-  assert.doesNotMatch(generalSource, /\(\["auto", "zh-CN", "en"\] as const\)/);
-  assert.doesNotMatch(generalSource, /defaultMode: value/);
-  assert.doesNotMatch(generalSource, /enterToSend: !settings\.enterToSend/);
-  assert.doesNotMatch(generalSource, /settings\.defaultsTitle/);
-  assert.match(aiSource, /defaultMode: value/);
-  assert.match(aiSource, /settings\.defaultsTitle/);
-  assert.match(aiSource, /CommandShellRow/);
-  assert.match(aiSource, /enterToSend: !settings\.enterToSend/);
-  assert.match(aiSource, /infiniteProviderRetry: settings\.infiniteProviderRetry !== true/);
-  assert.match(aiSource, /LargePasteThresholdRow/);
-  assert.match(aiSource, /ContextUsageDisplayRow/);
-  assert.doesNotMatch(aiSource, /PromptEnhancementCard|promptEnhancement/);
-  assert.doesNotMatch(aiSource, /EnhancementModelCard/);
-  assert.match(
-    settingsPageSource,
-    /saveSettings\(\{ contextUsageDisplay: value \}\)/,
-  );
+  assert.match(appearanceSource, /<ThemeRow /);
+  assert.match(appearanceSource, /<LanguageRow /);
+  assert.match(appearanceSource, /<FontFamilyRow /);
+  assert.match(appearanceSource, /<FontSizeRow /);
+  assert.doesNotMatch(appearanceSource, /NetworkProxySection/);
+  assert.doesNotMatch(appearanceSource, /StorageSettingsSection/);
+  assert.doesNotMatch(appearanceSource, /defaultMode: value/);
+  assert.doesNotMatch(appearanceSource, /enterToSend: !settings\.enterToSend/);
+  assert.doesNotMatch(appearanceSource, /settings\.defaultsTitle/);
+  // Network and storage stay reachable: they are system destinations now.
+  assert.match(systemPanelsSource, /export function NetworkPanel[\s\S]*NetworkProxySection/);
+  assert.match(systemPanelsSource, /export function StoragePanel[\s\S]*StorageSettingsSection/);
+
+  assert.match(chatSource, /enterToSend: !settings\.enterToSend/);
+  assert.match(chatSource, /LargePasteThresholdRow/);
+  assert.match(chatSource, /ContextUsageDisplayRow/);
+  assert.match(chatSource, /SessionTitleToggleRow/);
+  assert.doesNotMatch(chatSource, /defaultMode: value/);
+  assert.doesNotMatch(chatSource, /settings\.defaultsTitle|settings\.executionTitle/);
+  assert.doesNotMatch(chatSource, /PromptEnhancementCard|promptEnhancement/);
+  assert.doesNotMatch(chatSource, /EnhancementModelCard/);
+
+  assert.match(executionSource, /defaultMode: value/);
+  assert.match(executionSource, /settings\.executionTitle/);
+  assert.match(executionSource, /CommandShellRow/);
+  assert.match(executionSource, /infiniteProviderRetry: settings\.infiniteProviderRetry !== true/);
+  assert.match(executionSource, /defaultPermissionMode: mode as GlobalPermissionMode/);
+  assert.match(executionSource, /<SettingsMenuSelect\b/);
+  assert.match(executionSource, /"accept-edits"/);
+  // The picker stays the shared Settings control: a native <select> popup is
+  // platform-drawn and cannot carry the shared menu surface or its check mark.
+  assert.doesNotMatch(executionSource, /<select/);
+
+  // readSettingsSource() reads the page facade plus every settings module, so
+  // the row primitives that own these writes are part of it.
+  assert.match(settingsPageSource, /saveSettings\(\{ contextUsageDisplay: value \}\)/);
   for (const key of [
     "settings.contextUsageDisplay",
     "settings.contextUsageDisplayRemaining",
@@ -169,21 +207,13 @@ test("Basics and AI tabs expose their respective app and AI controls", () => {
   assert.match(sharedTypesSource, /infiniteProviderRetry\?: boolean/);
   assert.match(sharedTypesSource, /ContextUsageDisplay = "remaining" \| "used"/);
   assert.match(sharedTypesSource, /chatContentMaxWidth\?: number/);
-  assert.match(settingsPageSource, /largePasteThreshold/);
+  assert.match(settingsSearchSource, /settings\.largePasteThreshold/);
   assert.match(settingsPageSource, /saveSettings\(\{ largePasteThreshold: next \}\)/);
   assert.doesNotMatch(settingsPageSource, /commandShellConfigured/);
-  assert.match(
-    aiSource,
-    /defaultPermissionMode: mode as GlobalPermissionMode/,
-  );
-  assert.match(aiSource, /<SettingsMenuSelect\b/);
-  assert.match(aiSource, /"accept-edits"/);
-  // The AI tab keeps the Settings picker control: a native <select> popup is
-  // platform-drawn and cannot carry the shared menu surface or its check mark.
-  assert.doesNotMatch(aiSource, /<select/);
-  // Voice owns a separate destination; the AI tab does not duplicate it.
-  assert.doesNotMatch(aiSource, /VoiceSettingsCard|VoiceSettingsSection|voice-settings/);
-  assert.match(settingsPageSource, /tab === "voice" && !tabHidden && settings && [\s\S]*?<VoiceSettingsSection/);
+
+  // Voice owns a separate destination; the chat page does not duplicate it.
+  assert.doesNotMatch(chatSource, /VoiceSettingsCard|VoiceSettingsSection|voice-settings/);
+  assert.match(settingsDestinationSource, /tab === "voice" && !tabHidden && settings && [\s\S]*?<VoiceSettingsSection/);
   assert.match(voiceSettingsSource, /LiveVoiceSettings as VoiceSettingsSection/);
   assert.doesNotMatch(voiceSettingsSource, /voiceIpc|voiceEnable|voiceMicrophone|voiceModel/);
   assert.doesNotMatch(settingsSearchSource, /settings\.voiceEnable|settings\.voiceMicrophone|settings\.voiceModel/);
@@ -398,108 +428,129 @@ test("OAuth account identity is provider-scoped across IPC and pi-ai", () => {
 });
 
 
-test("settings nav icons map each destination to a semantic lucide glyph", () => {
-  assert.match(settingsPageSource, /general: <IconSliders/);
-  assert.match(settingsPageSource, /ai: <IconSparkles/);
-  assert.doesNotMatch(settingsPageSource, /usage: <IconActivity/);
-  assert.match(settingsPageSource, /shortcuts: <IconKeyboard/);
-  assert.match(settingsPageSource, /instructions: <IconFileText/);
-  assert.match(settingsPageSource, /agent: <IconBot/);
-  assert.doesNotMatch(settingsPageSource, /import: <IconDownload/);
-  assert.match(settingsPageSource, /projects: <IconArchive/);
-  assert.match(settingsPageSource, /about: <IconInfo/);
-  assert.doesNotMatch(settingsPageSource, /general: <IconSettings/);
-  assert.doesNotMatch(settingsPageSource, /agent: <IconConfig/);
-  assert.doesNotMatch(settingsPageSource, /import: <IconSnapshot/);
+test("settings navigation is a short category bar over a labelled second level", () => {
+  // The navigation lives in its own module: two levels, no icons on the host
+  // categories, and the plugin theme entries are the only rows with a glyph.
+  assert.match(settingsNavigationSource, /categories\.map\(\(category\) =>/);
+  assert.match(settingsNavigationSource, /role="tab"/);
+  assert.match(settingsNavigationSource, /t\(category\.labelKey\)/);
+  assert.match(settingsNavigationSource, /destinations\.map\(\(entry\) =>/);
+  assert.match(settingsNavigationSource, /t\(entry\.labelKey\)/);
+  assert.match(settingsNavigationSource, /aria-selected=/);
+  assert.match(settingsNavigationSource, /pluginViewIcon\(entry\.icon\)/);
+  assert.equal((settingsNavigationSource.match(/<span className="settings-nav-icon">/g) ?? []).length, 1);
+  // A category that does not fit becomes the shared menu select.
+  assert.match(settingsNavigationSource, /className="settings-category-select"/);
+  assert.doesNotMatch(settingsNavigationSource, /IconSliders|IconSparkles|IconKeyboard/);
 });
 
-test("settings nav keeps a flat searchable index with titled visual groups", () => {
-  assert.match(settingsPageSource, /filteredGroups\.map/);
-  assert.match(settingsPageSource, /className="settings-nav-group"/);
-  assert.match(settingsPageSource, /SETTINGS_NAV_GROUP_LABELS/);
-  assert.match(settingsPageSource, /className="settings-nav-group-label"/);
-  assert.match(settingsSearchSource, /group: "preferences"/);
-  assert.match(settingsSearchSource, /group: "agent"/);
-  assert.match(settingsSearchSource, /group: "workspace"/);
-  assert.match(settingsSearchSource, /group: "system"/);
-  for (const key of [
-    "settings.groupPreferences",
-    "settings.groupAgent",
-    "settings.groupWorkspace",
-    "settings.groupSystem",
-  ]) {
-    assert.match(settingsSearchSource, new RegExp(key.replace(".", "\\.")));
-    assert.match(enLocaleSource, new RegExp(`${key.split(".")[1]}:`));
-    assert.match(zhLocaleSource, new RegExp(`${key.split(".")[1]}:`));
-    assert.match(zhTWLocaleSource, new RegExp(`${key.split(".")[1]}:`));
-    assert.match(trLocaleSource, new RegExp(`${key.split(".")[1]}:`));
+test("settings keeps one flat destination index under seven fixed categories", () => {
+  assert.match(settingsSearchSource, /export const SETTINGS_CATEGORIES/);
+  assert.equal(
+    (settingsSearchSource.match(/labelKey: "settings\.category\./g) ?? []).length,
+    7,
+    "the category bar is seven entries, never an eighth",
+  );
+  for (const key of ["general", "ai", "models", "capabilities", "accounts", "projects", "system"]) {
+    assert.match(settingsSearchSource, new RegExp(`settings\\.category\\.${key}"`));
+    for (const locale of [enLocaleSource, zhLocaleSource, zhTWLocaleSource, trLocaleSource]) {
+      assert.match(locale, new RegExp(`"?category"?\\s*:\\s*\\{[\\s\\S]*?"?${key}"?:`));
+    }
   }
-  assert.doesNotMatch(settingsSearchSource, /id: "extensions"/);
+  // Destination order is the panel's order, category by category. Only the
+  // SETTINGS_NAV array counts: the category bar above it repeats category ids.
+  const navSource = settingsSearchSource.slice(
+    settingsSearchSource.indexOf("export const SETTINGS_NAV"),
+  );
   const navOrder = [
     "general",
-    "ai",
+    "habits",
     "shortcuts",
+    "ai",
+    "execution",
     "instructions",
+    "voice",
     "agent",
     "skills",
     "mcp",
     "subagents",
+    "accounts",
+    "devices",
+    "sync",
+    "advanced",
     "projects",
+    "network",
+    "storage",
     "about",
-  ].map((id) => settingsSearchSource.indexOf(`id: "${id}"`));
+  ].map((id) => navSource.indexOf(`id: "${id}"`));
   assert.ok(navOrder.every((index) => index >= 0));
   assert.deepEqual(navOrder, [...navOrder].sort((a, b) => a - b));
-  const generalStart = settingsSearchSource.indexOf('id: "general"');
-  const aiStart = settingsSearchSource.indexOf('id: "ai"');
-  const shortcutsStart = settingsSearchSource.indexOf('id: "shortcuts"');
-  const generalEntry = settingsSearchSource.slice(generalStart, aiStart);
-  const aiEntry = settingsSearchSource.slice(aiStart, shortcutsStart);
   assert.equal(settingsSearchSource.indexOf('id: "usage"'), -1);
-  assert.doesNotMatch(generalEntry, /settings\.defaultsTitle/);
-  assert.match(aiEntry, /settings\.defaultsTitle/);
-  assert.match(aiEntry, /settings\.commandShell/);
-  assert.doesNotMatch(aiEntry, /settings\.promptEnhancementModelTitle/);
+
+  // Keyword ownership follows the row into its new destination.
+  const sliceNav = (from, to) =>
+    navSource.slice(navSource.indexOf(`id: "${from}"`), navSource.indexOf(`id: "${to}"`));
+  const appearanceEntry = sliceNav("general", "habits");
+  const executionEntry = sliceNav("execution", "instructions");
+  const networkEntry = sliceNav("network", "storage");
+  assert.doesNotMatch(appearanceEntry, /settings\.defaultsTitle/);
+  assert.doesNotMatch(appearanceEntry, /settings\.proxyUrl/);
+  assert.match(executionEntry, /settings\.defaultsTitle/);
+  assert.match(executionEntry, /settings\.commandShell/);
+  assert.doesNotMatch(executionEntry, /settings\.promptEnhancementModelTitle/);
+  assert.match(networkEntry, /settings\.proxyUrl/);
   assert.match(settingsSearchSource, /keywordKeys/);
   assert.match(settingsSearchSource, /settings\.projectArchive/);
+
   assert.doesNotMatch(stylesSource, /\.token-usage-page/);
   assert.match(stylesSource, /\.settings-nav-item\s*\{/);
-  assert.match(stylesSource, /\.settings-nav-group-label\s*\{/);
-  assert.doesNotMatch(stylesSource, /\.settings-nav-group \+ \.settings-nav-group/);
-  assert.doesNotMatch(stylesSource, /\.settings-nav-group-label[^}]*border/);
+  assert.match(stylesSource, /\.settings-category\s*\{/);
+  assert.match(stylesSource, /\.settings-subnav-item\s*\{/);
+  // The four titled rail groups are gone with the rail.
+  assert.doesNotMatch(stylesSource, /\.settings-nav-group-label/);
+  assert.doesNotMatch(settingsPageSource, /SETTINGS_NAV_GROUP_LABELS/);
   assert.match(
     stylesSource,
     /\.settings-row\.settings-row-plain\s*\{[^}]*border-bottom:\s*0/s,
   );
 });
 
-test("settings rail uses short parallel labels and descriptive page titles", () => {
+test("settings categories and destinations keep short labels and page titles", () => {
   const navKeys = [
-    "settings.nav.general",
-    "settings.nav.accounts",
-    "settings.nav.ai",
+    "settings.nav.appearance",
+    "settings.nav.habits",
     "settings.nav.shortcuts",
-    "settings.nav.instructions",
+    "settings.nav.chatExperience",
+    "settings.nav.execution",
+    "settings.nav.instructionsMemory",
+    "settings.nav.voice",
     "settings.nav.models",
     "settings.nav.skills",
     "settings.nav.mcp",
     "settings.nav.subagents",
+    "settings.nav.accounts",
+    "settings.nav.devices",
+    "settings.nav.sync",
+    "settings.nav.advanced",
     "settings.nav.projects",
-    "settings.nav.info",
+    "settings.nav.network",
+    "settings.nav.storage",
+    "settings.nav.aboutUpdates",
   ];
+  const label = (locale, name) => new RegExp(`"?${name}"?:`);
   for (const key of navKeys) {
     assert.match(settingsSearchSource, new RegExp(key.replaceAll(".", "\\.")));
-    assert.match(enLocaleSource, new RegExp(`${key.split(".").at(-1)}:`));
-    assert.match(zhLocaleSource, new RegExp(`${key.split(".").at(-1)}:`));
-    assert.match(zhTWLocaleSource, new RegExp(`${key.split(".").at(-1)}:`));
-    assert.match(trLocaleSource, new RegExp(`${key.split(".").at(-1)}:`));
+    const name = key.split(".").at(-1);
+    for (const locale of [enLocaleSource, zhLocaleSource, zhTWLocaleSource, trLocaleSource]) {
+      assert.match(locale, label(locale, name));
+    }
   }
-  // Both agent-group pages name themselves: accounts own the credentials,
-  // models own the chosen models.
+  // A page whose own name is not its tab label keeps a descriptive title.
   assert.match(settingsSearchSource, /titleKey: "settings\.accounts"/);
   assert.match(settingsSearchSource, /titleKey: "settings\.modelsPageTitle"/);
   assert.match(settingsSearchSource, /titleKey: "settings\.projectArchive"/);
-  assert.match(settingsPageSource, /activeTitleKey/);
-  assert.match(settingsPageSource, /titleKey: entry\.titleKey/);
+  assert.match(settingsPageSource, /const activeTitleKey = activeEntry\?\.titleKey/);
+  assert.match(settingsDestinationSource, /t\(titleKey\)/);
 });
 
 test("Plugins marketplace keeps official refresh without source settings", () => {

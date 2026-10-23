@@ -1,6 +1,8 @@
 # ADR 0013: Consolidate settings navigation into four destinations
 
-- Status: Superseded in part by ADR 0026
+- Status: Superseded in part by ADR 0026; its navigation shape (rail with
+  first-level destinations) is superseded by
+  [settings-category-sheet-navigation](settings-category-sheet-navigation.md)
 - Date: 2026-07-26
 
 ## Context

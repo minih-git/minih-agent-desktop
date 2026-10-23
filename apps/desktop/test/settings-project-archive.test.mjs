@@ -5,6 +5,10 @@ import test from "node:test";
 import { loadStyles } from "./helpers/styles.mjs";
 
 const settingsPageSource = await readSettingsSource();
+const settingsDestinationSource = await readFile(
+  new URL("../src/features/settings/SettingsDestination.tsx", import.meta.url),
+  "utf8",
+);
 const projectsPageSource = await readFile(
   new URL("../src/pages/ProjectsPage.tsx", import.meta.url),
   "utf8",
@@ -40,10 +44,12 @@ const archiveUiSource = `${projectsPageSource}\n${projectsIndexSource}\n${projec
 test("settings owns the project archive destination", () => {
   assert.match(settingsSearchSource, /id: "projects"/);
   assert.match(settingsSearchSource, /titleKey: "settings\.projectArchive"/);
-  assert.match(settingsPageSource, /projects: <IconArchive/);
-  assert.match(settingsPageSource, /tab === "projects" && <ProjectsPage/);
+  assert.match(settingsDestinationSource, /tab === "projects" && <ProjectsPage/);
+  // Projects is its own category: one destination, no second level.
+  assert.match(settingsSearchSource, /category: "projects"/);
   const navOrder = ["general", "agent", "projects", "about"].map(
-    (id) => settingsSearchSource.indexOf(`id: "${id}"`),
+    (id) =>
+      settingsSearchSource.slice(settingsSearchSource.indexOf("export const SETTINGS_NAV")).indexOf(`id: "${id}"`),
   );
   assert.ok(navOrder.every((index) => index >= 0));
   assert.deepEqual(navOrder, [...navOrder].sort((a, b) => a - b));

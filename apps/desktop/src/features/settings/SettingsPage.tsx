@@ -1,93 +1,63 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { useTranslation } from "react-i18next";
-import type {
-  AppSettings,
-  GlobalPermissionMode,
-  PluginScenicThemesDestinationMeta,
-  ShortcutPlatform,
-} from "@minih-agent/shared";
+import type { AppSettings, PluginScenicThemesDestinationMeta, ShortcutPlatform } from "@minih-agent/shared";
 import { useAppStore } from "../../stores/app-store";
 import { api } from "../../lib/api";
 import {
   isSettingsDestinationHidden,
-  SETTINGS_NAV_GROUP_LABELS,
+  searchSettings,
+  settingsHitPath,
+  visibleSettingsCategories,
   visibleSettingsNav,
-  type SettingsNavGroupId,
+  type SettingsSearchHit,
+  type SettingsTabId,
+  type VisibleSettingsCategory,
 } from "../../lib/settings-search";
-import { pluginViewIcon } from "../../lib/plugin-view-icons";
-import {
-  IconArchive,
-  IconBookOpen,
-  IconBot,
-  IconChevronLeft,
-  IconFileText,
-  IconGlobe,
-  IconInfo,
-  IconKeyboard,
-  IconKey,
-  IconPalette,
-  IconSearch,
-  IconServer,
-  IconSliders,
-  IconSparkles,
-  IconCloudDown,
-  IconMic,
-} from "../../components/icons";
-import { Badge, Button, cx, SegmentedControl, SettingsToggle } from "../../components/ui";
+import { useBlockingOverlayActive } from "../../lib/blocking-overlay";
+import { Button, TooltipButton, cx } from "../../components/ui";
+import { IconSearch, IconX } from "../../components/icons";
 import { LearnedMemoryDialog } from "../../components/LearnedMemoryDialog";
-import { ModelsPage } from "../../components/settings/ModelConfigPage";
-import { AccountsPage } from "../../components/settings/AccountsPage";
-import { KeyboardShortcutsSection } from "../../components/settings/KeyboardShortcutsSection";
-import { FontFamilyRow } from "../../components/settings/FontFamilyRow";
-import { ShowThinkingRow } from "../../components/settings/ShowThinkingRow";
-import { TranscriptDensityRow } from "../../components/settings/TranscriptDensityRow";
-import {
-  SessionTitleModelRow,
-  SessionTitleThinkingRow,
-  SessionTitleToggleRow,
-} from "../../components/settings/SessionTitleRows";
-import { LearnedMemoryCard } from "../../components/settings/LearnedMemoryCard";
-import { FontSizeRow } from "../../components/settings/FontSizeRow";
-import { LanguageRow } from "../../components/settings/LanguageRow";
-import { SettingsMenuSelect } from "../../components/settings/SettingsMenuSelect";
-import { ThemeRow } from "../../components/settings/ThemeRow";
-import { MacosWindowTranslucencyRow } from "../../components/settings/MacosWindowTranslucencyRow";
-import { NetworkProxySection } from "../../components/settings/NetworkProxySection";
-import { ProjectsPage } from "../../pages/ProjectsPage";
-import { AgentSkillsPage } from "../../components/settings/AgentSkillsPage";
-import { AgentMcpPage } from "../../components/settings/AgentMcpPage";
-import { AgentSubagentsPage } from "../../components/settings/AgentSubagentsPage";
-import { RemoteHostsPage } from "../../components/settings/RemoteHostsPage";
-import { VoiceSettingsSection } from "./voice/VoiceSettingsSection";
-import {
-  CommandShellRow,
-  ContextUsageDisplayRow,
-  LargePasteThresholdRow,
-  LinkOpenTargetRow,
-  SettingsCard,
-  SettingsRow,
-} from "./primitives";
-import { AgentInstructionsSection, UpdatesRow } from "./agent-sections";
-import { CloseBehaviorSection, DeveloperSection } from "./developer-sections";
-import { PluginScenicThemesDestination } from "../../components/settings/PluginScenicThemesDestination";
-import { ConfigSyncPage } from "../../components/settings/ConfigSyncPage";
-import { StorageSettingsSection } from "./StorageSettingsSection";
+import { SettingsDestination } from "./SettingsDestination";
+import { SettingsNavigation } from "./SettingsNavigation";
+import { SettingsDraftProvider, useSettingsDraftRegistry, type SettingsBlock } from "./draft-guard";
 
-type SettingsTab = ReturnType<typeof useAppStore.getState>["settingsTab"];
+type Editable = HTMLInputElement | HTMLTextAreaElement;
 
-type NavItem = {
-  id: SettingsTab;
-  labelKey: string;
-  titleKey: string;
-  icon: ReactNode;
-  group: SettingsNavGroupId;
-  experimentalBadgeKey?: string;
-  /** i18n keys of the rows inside the tab; search matches their translations. */
-  keywordKeys: string[];
-};
+function isEditable(node: EventTarget | null): node is Editable {
+  return (
+    node instanceof HTMLInputElement ||
+    node instanceof HTMLTextAreaElement
+  );
+}
 
-export function SettingsPage() {
-  const { t } = useTranslation();
+/**
+ * The settings panel: a near full-height sheet that slides up from the window
+ * bottom, with seven fixed categories and at most one second level.
+ *
+ * The chat shell stays mounted behind it (inert, in the shell), so drafts,
+ * transcript scroll, sidebar collapse, and the work panel survive a visit. The
+ * panel owns its own focus trap, protects explicitly saved forms, and closes
+ * only the top-most surface.
+ */
+export function SettingsPage({
+  exiting = false,
+  onExited,
+}: {
+  /** The page already changed; the panel is playing its exit animation. */
+  exiting?: boolean;
+  onExited?: () => void;
+} = {}) {
+  const { t, i18n } = useTranslation();
   const tab = useAppStore((s) => s.settingsTab);
   const setSettingsTab = useAppStore((s) => s.setSettingsTab);
   const settingsAnchor = useAppStore((s) => s.settingsAnchor);
@@ -107,6 +77,10 @@ export function SettingsPage() {
     () => visibleSettingsNav(developerMode, includeDevelopmentOnly),
     [developerMode, includeDevelopmentOnly],
   );
+  const categories = useMemo(
+    () => visibleSettingsCategories(developerMode, includeDevelopmentOnly),
+    [developerMode, includeDevelopmentOnly],
+  );
   const tabHidden = isSettingsDestinationHidden(
     tab,
     developerMode,
@@ -119,6 +93,11 @@ export function SettingsPage() {
   const [extensions, setExtensions] = useState<PluginScenicThemesDestinationMeta[]>([]);
   const [activeExtension, setActiveExtension] = useState<PluginScenicThemesDestinationMeta | null>(null);
   const [learnedMemoryOpen, setLearnedMemoryOpen] = useState(false);
+  const [categoryOverflow, setCategoryOverflow] = useState(false);
+  // A leave that waits for the draft decision. Holding the action keeps every
+  // way out — category, tab, search result, scrim, Escape, close — identical.
+  const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
+  const draftRegistry = useSettingsDraftRegistry();
   const seenSettingsTabNonce = useRef(settingsTabNonce);
   // setSettingsTab means "show this built-in category", even when the tab id
   // does not change. Dismiss a plugin page before paint; an anchor-only deep
@@ -132,10 +111,26 @@ export function SettingsPage() {
   }
   const contentRef = useRef<HTMLDivElement>(null);
   const settingsSearchRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const categoryBarRef = useRef<HTMLElement>(null);
+  const panelTitleId = useId();
+  const nestingActive = useBlockingOverlayActive();
   const destination = activeExtension ? `extension:${activeExtension.ref}` : `builtin:${tab}`;
 
+  // Focus enters the search control, and leaves with the panel: a close has to
+  // return the keyboard to the entry the user came from.
   useLayoutEffect(() => {
+    const previous = document.activeElement;
     settingsSearchRef.current?.focus({ preventScroll: true });
+    return () => {
+      // The shell releases `inert` in the same commit that unmounts this sheet,
+      // so the restore waits one frame: focusing an inert element is a no-op.
+      window.requestAnimationFrame(() => {
+        if (previous instanceof HTMLElement && previous.isConnected) {
+          previous.focus({ preventScroll: true });
+        }
+      });
+    };
   }, []);
 
   useLayoutEffect(() => {
@@ -156,9 +151,9 @@ export function SettingsPage() {
     }
   }, [activeExtension, extensions, setSettingsTab]);
 
-  // A hidden destination must not keep rendering: leave the page the rail no
-  // longer offers (for example Cloud sync or Remote Hosts after developer mode
-  // is switched off) and fall back to General.
+  // A hidden destination must not keep rendering: leave the page the panel no
+  // longer offers (for example Cloud sync or Advanced after a build without
+  // experimental surfaces) and fall back to the first visible one.
   useEffect(() => {
     if (!settings || !tabHidden) return;
     setSettingsTab("general");
@@ -182,36 +177,47 @@ export function SettingsPage() {
     void recoverSettings();
   }, [settings, recoverSettings]);
 
-  // Arriving from the global search dialog: scroll to and flash the row
-  // whose title matches the pending anchor key. This runs after the
-  // destination reset and before paint, so a category change does not flash
-  // the top. Rows are located by their translated title so async tab content
-  // (providers, import) needs no per-row wiring; a short retry window covers
-  // late mounts.
+  /**
+   * Rows that search should land on can name themselves, which is how a hit
+   * inside a folded container is found: the title lookup alone cannot reach a
+   * field the disclosure has collapsed.
+   */
+  const resolveAnchor = useCallback((key: string): HTMLElement | null => {
+    const explicit = document.querySelector<HTMLElement>(
+      `.settings-content [data-settings-anchor="${key}"]`,
+    );
+    if (explicit) return explicit;
+    const target = t(key).trim();
+    const titles = document.querySelectorAll<HTMLElement>(
+      ".settings-content .settings-row-title, .settings-content .settings-card-heading, .settings-content .about-update-title",
+    );
+    const match = [...titles].find((node) => node.textContent?.trim() === target);
+    if (!match) return null;
+    return (
+      match.closest<HTMLElement>(".settings-row") ??
+      match.closest<HTMLElement>(".settings-card-block") ??
+      match
+    );
+  }, [t]);
+
+  // Arriving from the global search dialog (or the panel's own results): expand
+  // whatever folds the target, then scroll to and flash it. This runs after the
+  // destination reset and before paint, so a category change does not flash the
+  // top. A short retry window covers content that mounts late.
   useLayoutEffect(() => {
     if (!settingsAnchor) return;
-    const target = t(settingsAnchor).trim();
     let cancelled = false;
     let timer: number | undefined;
     const tryFind = (attempt: number) => {
       if (cancelled) return;
-      const titles = document.querySelectorAll<HTMLElement>(
-        ".settings-content .settings-row-title, .settings-content .settings-card-heading, .settings-content .about-update-title",
-      );
-      const match = [...titles].find(
-        (node) => node.textContent?.trim() === target,
-      );
-      if (match) {
-        const row =
-          match.closest<HTMLElement>(".settings-row") ??
-          match.closest<HTMLElement>(".settings-card-block") ??
-          match;
+      const row = resolveAnchor(settingsAnchor);
+      if (row) {
+        for (let node = row.parentElement; node; node = node.parentElement) {
+          if (node instanceof HTMLDetailsElement) node.open = true;
+        }
         row.scrollIntoView({ block: "center" });
         row.classList.add("settings-anchor-flash");
-        window.setTimeout(
-          () => row.classList.remove("settings-anchor-flash"),
-          1800,
-        );
+        window.setTimeout(() => row.classList.remove("settings-anchor-flash"), 1800);
         setSettingsAnchor(null);
         return;
       }
@@ -223,7 +229,7 @@ export function SettingsPage() {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [settingsAnchor, tab, t, setSettingsAnchor]);
+  }, [settingsAnchor, tab, resolveAnchor, setSettingsAnchor]);
 
   const saveSettings = async (patch: Partial<AppSettings>) => {
     if (!settings) return;
@@ -237,434 +243,370 @@ export function SettingsPage() {
     await saveSettings({ theme: theme as AppSettings["theme"] });
   };
 
-  // Nav structure comes from the shared settings index (lib/settings-search)
-  // so the global search dialog and this page stay in sync; only the icons
-  // are view-level.
-  const navItems: NavItem[] = useMemo(() => {
-    const iconFor: Record<SettingsTab, ReactNode> = {
-      // Semantic Lucide glyphs for the settings destinations.
-      general: <IconSliders size={14} />,
-      accounts: <IconKey size={14} />,
-      ai: <IconSparkles size={14} />,
-      shortcuts: <IconKeyboard size={14} />,
-      instructions: <IconFileText size={14} />,
-      agent: <IconBot size={14} />,
-      skills: <IconBookOpen size={14} />,
-      mcp: <IconServer size={14} />,
-      subagents: <IconBot size={14} />,
-      projects: <IconArchive size={14} />,
-      sync: <IconCloudDown size={14} />,
-      remoteHosts: <IconGlobe size={14} />,
-      voice: <IconMic size={14} />,
-      about: <IconInfo size={14} />,
-    };
-    return navEntries.map((entry) => ({
-      id: entry.id,
-      labelKey: entry.labelKey,
-      titleKey: entry.titleKey,
-      icon: iconFor[entry.id],
-      group: entry.group,
-      experimentalBadgeKey: entry.experimentalBadgeKey,
-      keywordKeys: entry.keywordKeys,
-    }));
-  }, [navEntries]);
+  const closeSettings = useCallback(() => setPage("chat"), [setPage]);
 
-  // Search matches the tab label and the titles of the rows inside it, so
-  // typing e.g. "theme" or "主题" surfaces Basics even though the tab is
-  // named differently.
-  const filteredItems = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return navItems;
-    return navItems.filter((item) =>
-      [t(item.labelKey), ...item.keywordKeys.map((key) => t(key))].some((text) =>
-        text.toLowerCase().includes(q),
-      ),
-    );
-  }, [navItems, query, t]);
-
-  // Keep the destination index flat for search, while giving the rail titled
-  // visual clusters so the eight rows do not read as one dense block.
-  const filteredGroups = useMemo(() => {
-    const groups = new Map<SettingsNavGroupId, NavItem[]>();
-    for (const item of filteredItems) {
-      const items = groups.get(item.group) ?? [];
-      items.push(item);
-      groups.set(item.group, items);
+  /**
+   * Every exit goes through here: a form that saves explicitly gets to keep its
+   * work until the user decides, and an in-flight save is never overtaken.
+   */
+  const requestLeave = useCallback((action: () => void) => {
+    if (draftRegistry.blocked() === "none") {
+      action();
+      return;
     }
-    return [...groups.entries()].map(([id, items]) => ({ id, items }));
-  }, [filteredItems]);
+    setPendingLeave(() => action);
+  }, [draftRegistry]);
 
-  const activeNavItem = navItems.find((item) => item.id === tab);
-  const activeTitleKey = activeNavItem?.titleKey ?? "settings.title";
-  const tabNeedsSettings = ["general", "ai", "shortcuts", "agent"].includes(tab);
+  const discardAndLeave = () => {
+    const action = pendingLeave;
+    setPendingLeave(null);
+    action?.();
+  };
+
+  /**
+   * A nested menu, editor, or dialog owns its own Escape. The registry alone is
+   * not enough: some editors portal their surface and bubble the event back to
+   * this panel, so the live DOM decides.
+   */
+  const innerSurfaceOpen = useCallback(() => {
+    if (nestingActive) return true;
+    const visible = (node: Element) => {
+      const box = node.getBoundingClientRect();
+      return box.width > 1 && box.height > 1;
+    };
+    const host = document.getElementById("minih-agent-desktop-overlays");
+    if (host && [...host.children].some(visible)) return true;
+    const panel = panelRef.current;
+    return [...document.querySelectorAll('[role="dialog"], [role="menu"], [role="listbox"]')]
+      .some((node) => !panel?.contains(node) && visible(node));
+  }, [nestingActive]);
+
+  const editingField = useCallback(() => {
+    const node = document.activeElement;
+    if (!isEditable(node) || node.classList.contains("settings-search")) return false;
+    return node.closest(".settings-sheet") !== null;
+  }, []);
+
+  // Escape is listened for on the document, after every inner surface had its
+  // chance to handle it: the panel only acts when nothing else is on top.
+  useEffect(() => {
+    if (exiting) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (pendingLeave || innerSurfaceOpen()) return;
+      if (query.trim()) {
+        event.preventDefault();
+        setQuery("");
+        return;
+      }
+      if (editingField()) {
+        (document.activeElement as HTMLElement | null)?.blur();
+        return;
+      }
+      event.preventDefault();
+      requestLeave(closeSettings);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [closeSettings, editingField, exiting, innerSurfaceOpen, pendingLeave, query, requestLeave]);
+
+  const onPanelKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (exiting) return;
+    if (event.key !== "Tab") return;
+    const focusables = panelRef.current?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusables || focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    } else if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    }
+  };
+
+  const onScrimPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (exiting || event.target !== event.currentTarget) return;
+    // A dirty or saving form decides; an untouched sheet closes on the scrim.
+    if (innerSurfaceOpen()) return;
+    requestLeave(closeSettings);
+  };
+
+  const activeCategory: VisibleSettingsCategory | undefined =
+    categories.find((category) => category.entries.some((entry) => entry.id === tab)) ??
+    categories[0];
+  const categoryEntries = activeCategory?.entries ?? [];
+  const activeEntry = navEntries.find((entry) => entry.id === tab);
+  const activeTitleKey = activeEntry?.titleKey ?? "settings.title";
+  const activeBadgeKey = activeEntry?.experimentalBadgeKey;
+
+  // Seven short labels fit most windows; when they do not, the same choice is
+  // offered as a selector instead of a row that silently scrolls.
+  useLayoutEffect(() => {
+    if (categoryOverflow) return;
+    const bar = categoryBarRef.current;
+    if (!bar) return;
+    if (bar.scrollWidth > bar.clientWidth + 1) setCategoryOverflow(true);
+  });
+  useEffect(() => {
+    if (!categoryOverflow) return;
+    const remeasure = () => setCategoryOverflow(false);
+    window.addEventListener("resize", remeasure);
+    return () => window.removeEventListener("resize", remeasure);
+  }, [categoryOverflow]);
+  // A different language (or a fresh type scale) changes the labels, so the
+  // measurement is taken again before the selector can outlive that change.
+  useEffect(() => {
+    setCategoryOverflow(false);
+  }, [i18n.resolvedLanguage]);
+
+  const selectCategory = (category: VisibleSettingsCategory) => {
+    const firstEntry = category.entries[0];
+    const alreadyHere = category.entries.some((entry) => entry.id === tab) && !activeExtension;
+    if (alreadyHere || !firstEntry) return;
+    requestLeave(() => {
+      setActiveExtension(null);
+      setSettingsTab(firstEntry.id);
+    });
+  };
+
+  const selectDestination = (id: SettingsTabId) => {
+    setActiveExtension(null);
+    setSettingsTab(id);
+  };
+
+  const q = query.trim().toLowerCase();
+  const hits = useMemo(
+    () =>
+      searchSettings(query, t, {
+        limit: 12,
+        developerMode,
+        includeDevelopmentOnly,
+      }),
+    [query, t, developerMode, includeDevelopmentOnly],
+  );
+  const extensionHits = q
+    ? extensions.filter((entry) =>
+        [entry.label, entry.description, ...entry.keywords].some((value) =>
+          value.toLowerCase().includes(q),
+        ),
+      )
+    : [];
+  const searching = q.length > 0;
+
+  const openHit = (hit: SettingsSearchHit) => {
+    requestLeave(() => {
+      setQuery("");
+      setActiveExtension(null);
+      setSettingsAnchor(hit.rowKey);
+      setSettingsTab(hit.tab);
+    });
+  };
+
+  const openExtension = (extension: PluginScenicThemesDestinationMeta) => {
+    requestLeave(() => {
+      setQuery("");
+      setActiveExtension(extension);
+    });
+  };
+
+  const block: SettingsBlock = pendingLeave ? draftRegistry.blocked() : "none";
 
   return (
-    <div className="settings-shell settings-shell-full">
-      <div className="settings-titlebar" aria-hidden="true" />
-      <aside className="settings-nav sidebar-surface" aria-label={t("settings.title")}>
-        <div className="settings-nav-top drag">
-          <div className="settings-search-wrap no-drag">
-            <IconSearch size={14} />
-            <input
-              ref={settingsSearchRef}
-              className="settings-search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t("settings.searchPlaceholder")}
-              aria-label={t("settings.search")}
-              spellCheck={false}
-              autoCorrect="off"
-              autoCapitalize="off"
-            />
-          </div>
-        </div>
+    <SettingsDraftProvider value={draftRegistry}>
+      <div
+        className={cx("settings-overlay", exiting && "is-exiting")}
+        onPointerDown={onScrimPointerDown}
+      >
+        <div
+          ref={panelRef}
+          className={cx("settings-sheet", exiting && "is-exiting")}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={panelTitleId}
+          onKeyDown={onPanelKeyDown}
+          onAnimationEnd={(event) => {
+            if (!exiting || event.target !== event.currentTarget) return;
+            onExited?.();
+          }}
+        >
+          {/* The head is the native drag region: no decorative plate is painted
+              over it, so the title, search, and close stay visible. */}
+          <header className="settings-panel-head drag">
+            <h1 id={panelTitleId} className="settings-panel-title">
+              {t("settings.title")}
+            </h1>
+            <div className="settings-search-wrap no-drag">
+              <IconSearch size={14} />
+              <input
+                ref={settingsSearchRef}
+                className="settings-search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t("settings.searchPlaceholder")}
+                aria-label={t("settings.search")}
+                spellCheck={false}
+                autoCorrect="off"
+                autoCapitalize="off"
+              />
+            </div>
+            <TooltipButton
+              type="button"
+              className="settings-close no-drag"
+              tooltip={t("settings.close")}
+              ariaLabel={t("settings.close")}
+              data-nav="close-settings"
+              onClick={() => requestLeave(closeSettings)}
+            >
+              <IconX size={16} />
+            </TooltipButton>
+          </header>
 
-        <div className="settings-nav-scroll no-drag">
-          {filteredGroups.length === 0 ? (
-            <div className="settings-nav-empty">{t("settings.noResults")}</div>
-          ) : (
-            filteredGroups.map(({ id, items }) => (
-              <div key={id} className="settings-nav-group">
-                <div className="settings-nav-group-label">
-                  {t(SETTINGS_NAV_GROUP_LABELS[id])}
+          <SettingsNavigation
+            t={t}
+            categories={categories}
+            activeCategory={activeCategory}
+            activeTab={tab}
+            activeExtension={activeExtension}
+            extensions={extensions}
+            extensionHits={extensionHits}
+            searching={searching}
+            categoryOverflow={categoryOverflow}
+            barRef={categoryBarRef}
+            onSelectCategory={selectCategory}
+            onSelectDestination={(id) =>
+              requestLeave(() => selectDestination(id))
+            }
+            onOpenExtension={openExtension}
+          />
+
+          <div className="settings-content-area">
+            <div className="settings-content" ref={contentRef}>
+              <div className="settings-content-inner">
+                <div className="settings-content-enter">
+                  <SettingsDestination
+                    t={t}
+                    tab={tab}
+                    titleKey={activeTitleKey}
+                    badgeKey={activeBadgeKey}
+                    tabHidden={tabHidden}
+                    activeExtension={activeExtension}
+                    extensions={extensions}
+                    settings={settings}
+                    providers={providers}
+                    version={version}
+                    platform={platform}
+                    recoveringSettings={recoveringSettings}
+                    settingsRecoveryFailed={settingsRecoveryFailed}
+                    recoverSettings={recoverSettings}
+                    saveSettings={saveSettings}
+                    selectPluginTheme={selectPluginTheme}
+                    onOpenExtension={openExtension}
+                    onOpenMemoryManager={() => setLearnedMemoryOpen(true)}
+                  />
                 </div>
-                {items.map((item) => (
+              </div>
+            </div>
+
+            {/* Search results sit over the page instead of replacing it: the
+                destination stays mounted, so an unsaved draft survives a query
+                and clearing it. */}
+            {searching ? (
+              <div
+                className="settings-results-panel"
+                role="listbox"
+                aria-label={t("settings.searchResults")}
+              >
+                <h2 className="settings-section-title">{t("settings.searchResults")}</h2>
+                {hits.length === 0 && extensionHits.length === 0 ? (
+                  <div className="settings-nav-empty">{t("settings.noResults")}</div>
+                ) : null}
+                {hits.map((hit) => (
                   <button
-                    key={item.id}
-                    className={cx("settings-nav-item", tab === item.id && "active")}
-                    onClick={() => {
-                      setActiveExtension(null);
-                      setSettingsTab(item.id);
-                    }}
+                    key={`${hit.tab}:${hit.rowKey ?? "tab"}`}
+                    type="button"
+                    role="option"
+                    aria-selected={false}
+                    className="settings-result"
+                    onClick={() => openHit(hit)}
                   >
-                    <span className="settings-nav-icon">{item.icon}</span>
-                    <span className="settings-nav-label">{t(item.labelKey)}</span>
-                    {item.experimentalBadgeKey ? (
-                      <Badge tone="warning" className="settings-nav-experimental">
-                        {t(item.experimentalBadgeKey)}
-                      </Badge>
-                    ) : null}
+                    <span className="settings-result-title">
+                      {t(hit.rowKey ?? hit.tabLabelKey)}
+                    </span>
+                    <span className="settings-result-path">
+                      {settingsHitPath(hit).map((key) => t(key)).join(" › ")}
+                    </span>
+                  </button>
+                ))}
+                {extensionHits.map((entry) => (
+                  <button
+                    key={entry.ref}
+                    type="button"
+                    role="option"
+                    aria-selected={false}
+                    className="settings-result"
+                    onClick={() => openExtension(entry)}
+                  >
+                    <span className="settings-result-title">{entry.label}</span>
+                    <span className="settings-result-path">
+                      {[t("settings.category.general"), t("settings.nav.appearance"), entry.label].join(" › ")}
+                    </span>
                   </button>
                 ))}
               </div>
-            ))
-          )}
-          {extensions.length > 0 && (
-            <div className="settings-nav-group">
-              <div className="settings-nav-group-label">{t("settings.groupExtensions")}</div>
-              {extensions.filter((entry) => {
-                const q = query.trim().toLowerCase();
-                return !q || [entry.label, ...entry.keywords].some((value) => value.toLowerCase().includes(q));
-              }).map((entry) => {
-                const ExtensionIcon = pluginViewIcon(entry.icon) ?? IconPalette;
-                return (
-                  <button
-                    key={entry.ref}
-                    className={cx("settings-nav-item", activeExtension?.ref === entry.ref && "active")}
-                    onClick={() => setActiveExtension(entry)}
-                  >
-                    <span className="settings-nav-icon"><ExtensionIcon size={14} /></span>
-                    <span className="settings-nav-label">{entry.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Pinned to the rail's bottom so it lands on the same line as the
-            main shell's sidebar footer icon row. Both the band and the control
-            stay explicitly non-draggable, like the rail's other controls. */}
-        <div className="settings-nav-footer no-drag">
-          <button
-            type="button"
-            className="settings-back no-drag"
-            data-nav="back-to-app"
-            onClick={() => setPage("chat")}
-          >
-            <IconChevronLeft size={15} />
-            <span>{t("settings.backToApp")}</span>
-          </button>
-        </div>
-      </aside>
-
-      <div className="settings-content" ref={contentRef}>
-        <div className="settings-content-inner">
-          <div className="settings-content-enter">
-          <h1 className="settings-section-title">
-            <span>{activeExtension?.label ?? t(activeTitleKey)}</span>
-            {!activeExtension && activeNavItem?.experimentalBadgeKey ? (
-              <Badge tone="warning">{t(activeNavItem.experimentalBadgeKey)}</Badge>
             ) : null}
-          </h1>
-
-          {activeExtension ? (
-            <PluginScenicThemesDestination destination={activeExtension} selectTheme={selectPluginTheme} />
-          ) : <>
-
-          {tabNeedsSettings && !settings ? (
-            <div className="settings-recovery" role="status" aria-live="polite">
-              {recoveringSettings ? (
-                <>
-                  <span className="route-pending-indicator" aria-hidden />
-                  <span>{t("common.loading")}</span>
-                </>
-              ) : settingsRecoveryFailed ? (
-                <>
-                  <span>{t("errors.HOST_UNAVAILABLE")}</span>
-                  <Button variant="secondary" onClick={() => void recoverSettings()}>
-                    {t("errors.action.retry")}
-                  </Button>
-                </>
-              ) : null}
-            </div>
-          ) : null}
-
-          {tab === "general" && settings && (
-            <div className="settings-stack">
-              <SettingsCard title={t("settings.appearance")}>
-                <ThemeRow settings={settings} saveSettings={saveSettings} />
-                {platform === "darwin" && (
-                  <MacosWindowTranslucencyRow settings={settings} saveSettings={saveSettings} />
-                )}
-                <LanguageRow settings={settings} saveSettings={saveSettings} />
-                <FontFamilyRow settings={settings} saveSettings={saveSettings} />
-                <FontSizeRow settings={settings} saveSettings={saveSettings} />
-              </SettingsCard>
-
-              <NetworkProxySection settings={settings} saveSettings={saveSettings} />
-
-              <StorageSettingsSection />
-
-              <SettingsCard title={t("settings.power")}>
-                <SettingsRow
-                  title={t("settings.keepAwakeWhileRunning")}
-                  description={t("settings.keepAwakeWhileRunningDesc")}
-                >
-                  <SettingsToggle
-                    checked={settings.keepAwakeWhileRunning === true}
-                    label={t("settings.keepAwakeWhileRunning")}
-                    onChange={() => void saveSettings({
-                      keepAwakeWhileRunning: settings.keepAwakeWhileRunning !== true,
-                    })}
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  title={t("settings.preventScreenSleep")}
-                  description={t("settings.preventScreenSleepDesc")}
-                >
-                  <SettingsToggle
-                    checked={settings.preventScreenSleep === true}
-                    label={t("settings.preventScreenSleep")}
-                    onChange={() => void saveSettings({ preventScreenSleep: !settings.preventScreenSleep })}
-                  />
-                </SettingsRow>
-              </SettingsCard>
-
-              {platform !== "darwin" && <CloseBehaviorSection />}
-            </div>
-          )}
-
-          {tab === "ai" && settings && (
-            <div className="settings-stack">
-              <SettingsCard title={t("settings.permissions")}>
-                <SettingsRow
-                  title={t("settings.permissionMode")}
-                  description={t("settings.permissionModeDesc")}
-                >
-                  <SettingsMenuSelect
-                    className="settings-permission-select"
-                    label={t("settings.permissionMode")}
-                    value={settings.defaultPermissionMode ?? "ask"}
-                    onChange={(mode) =>
-                      void saveSettings({
-                        defaultPermissionMode: mode as GlobalPermissionMode,
-                      })
-                    }
-                    options={[
-                      { id: "ask", label: t("settings.permissionModeAsk") },
-                      {
-                        id: "accept-edits",
-                        label: t("settings.permissionModeAcceptEdits"),
-                      },
-                      { id: "auto", label: t("settings.permissionModeAuto") },
-                    ]}
-                  />
-                </SettingsRow>
-              </SettingsCard>
-
-              <SettingsCard title={t("settings.defaultsTitle")}>
-                <SettingsRow title={t("settings.mode")} description={t("settings.modeDesc")}>
-                  <SegmentedControl
-                    value={settings.defaultMode ?? "agent"}
-                    onChange={(value) => void saveSettings({ defaultMode: value })}
-                    options={[
-                      { value: "agent", label: t("settings.modeAgent") },
-                      { value: "plan", label: t("settings.modePlan") },
-                      { value: "goal", label: t("settings.modeGoal") },
-                    ]}
-                    label={t("settings.mode")}
-                    role="group"
-                  />
-                </SettingsRow>
-                <CommandShellRow settings={settings} saveSettings={saveSettings} />
-                <LinkOpenTargetRow settings={settings} saveSettings={saveSettings} />
-                <ShowThinkingRow settings={settings} saveSettings={saveSettings} />
-                <TranscriptDensityRow settings={settings} saveSettings={saveSettings} />
-                <ContextUsageDisplayRow
-                  settings={settings}
-                  saveSettings={saveSettings}
-                />
-                <SettingsRow
-                  title={t("settings.enterToSend")}
-                  description={t("settings.enterToSendDesc")}
-                >
-                  <SettingsToggle
-                    checked={settings.enterToSend}
-                    label={t("settings.enterToSend")}
-                    onChange={() => void saveSettings({ enterToSend: !settings.enterToSend })}
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  title={t("settings.infiniteProviderRetry")}
-                  description={t("settings.infiniteProviderRetryDesc")}
-                >
-                  <SettingsToggle
-                    checked={settings.infiniteProviderRetry === true}
-                    label={t("settings.infiniteProviderRetry")}
-                    onChange={() => void saveSettings({ infiniteProviderRetry: settings.infiniteProviderRetry !== true })}
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  title={t("settings.smoothStreaming")}
-                  description={t("settings.smoothStreamingDesc")}
-                >
-                  <SettingsToggle
-                    checked={settings.smoothStreaming !== false}
-                    label={t("settings.smoothStreaming")}
-                    onChange={() => void saveSettings({ smoothStreaming: !(settings.smoothStreaming !== false) })}
-                  />
-                </SettingsRow>
-                <LargePasteThresholdRow
-                  settings={settings}
-                  saveSettings={saveSettings}
-                />
-              </SettingsCard>
-
-              <SettingsCard title={t("settings.sessionTitleCard")}>
-                <SessionTitleToggleRow settings={settings} saveSettings={saveSettings} />
-                <SessionTitleModelRow
-                  settings={settings}
-                  providers={providers}
-                  saveSettings={saveSettings}
-                />
-                <SessionTitleThinkingRow
-                  settings={settings}
-                  providers={providers}
-                  saveSettings={saveSettings}
-                />
-              </SettingsCard>
-
-              <LearnedMemoryCard
-                settings={settings}
-                providers={providers}
-                saveSettings={saveSettings}
-                onOpenManager={() => setLearnedMemoryOpen(true)}
-              />
-
-            </div>
-          )}
-
-          {tab === "voice" && !tabHidden && settings && (
-            <VoiceSettingsSection
-              t={t}
-              settings={settings}
-              saveSettings={saveSettings}
-            />
-          )}
-
-          {tab === "shortcuts" && settings && (
-            <div className="settings-stack">
-              <KeyboardShortcutsSection
-                settings={settings}
-                platform={platform}
-                saveSettings={saveSettings}
-              />
-            </div>
-          )}
-
-          {tab === "accounts" && <AccountsPage />}
-          {tab === "agent" && <ModelsPage />}
-
-          {tab === "skills" && <AgentSkillsPage />}
-
-          {tab === "mcp" && <AgentMcpPage />}
-
-          {tab === "subagents" && <AgentSubagentsPage />}
-
-          {tab === "instructions" && <AgentInstructionsSection />}
-
-
-          {tab === "projects" && <ProjectsPage />}
-
-          {tab === "sync" && !tabHidden && <ConfigSyncPage />}
-
-          {tab === "remoteHosts" && !tabHidden && <RemoteHostsPage />}
-
-          {tab === "about" && (
-            <div className="settings-stack">
-              <div className="settings-about-hero">
-                <div className="settings-about-hero-name">
-                  {version?.name || "Minih-Agent-Desktop"}
-                </div>
-                <div className="settings-about-hero-version">
-                  {t("settings.aboutVersion", { version: version?.version ?? "" })}
-                </div>
-                <div className="settings-about-hero-meta">
-                  protocol {version?.protocolVersion} · host {version?.hostVersion}
-                </div>
-              </div>
-              <UpdatesRow
-                currentVersion={version?.version}
-                settings={settings ?? null}
-                saveSettings={saveSettings}
-              />
-              <SettingsCard>
-                <SettingsRow title={t("settings.logs")}>
-                  <Button variant="secondary" onClick={() => void api.openLogs()}>
-                    {t("settings.openLogs")}
-                  </Button>
-                </SettingsRow>
-                <SettingsRow
-                  title={t("settings.feedback")}
-                  description={t("settings.feedbackDesc")}
-                >
-                  <Button
-                    variant="secondary"
-                    onClick={() => void api.openFeedback().catch(() => undefined)}
-                  >
-                    {t("settings.openFeedback")}
-                  </Button>
-                </SettingsRow>
-              </SettingsCard>
-
-              {settings && (
-                <DeveloperSection settings={settings} saveSettings={saveSettings} />
-              )}
-            </div>
-          )}
-          </>}
-
           </div>
         </div>
+
+        {pendingLeave ? (
+          <div className="settings-draft-scrim">
+            <div
+              className="settings-draft-confirm"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby={`${panelTitleId}-draft-title`}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape") return;
+                event.preventDefault();
+                event.stopPropagation();
+                setPendingLeave(null);
+              }}
+            >
+              <h2 id={`${panelTitleId}-draft-title`} className="settings-draft-title">
+                {t("settings.draftConfirmTitle")}
+              </h2>
+              <p className="settings-draft-description">
+                {block === "saving"
+                  ? t("settings.draftSavingNote")
+                  : t("settings.draftConfirmDescription")}
+              </p>
+              <div className="settings-draft-actions">
+                <Button variant="secondary" onClick={() => setPendingLeave(null)}>
+                  {t("settings.draftKeepEditing")}
+                </Button>
+                <Button
+                  variant="primary"
+                  disabled={block === "saving"}
+                  onClick={discardAndLeave}
+                >
+                  {t("settings.draftDiscard")}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {learnedMemoryOpen ? (
+          <LearnedMemoryDialog
+            scope="user"
+            onClose={() => setLearnedMemoryOpen(false)}
+            onError={(error) => console.warn("learned memory request failed", error)}
+          />
+        ) : null}
       </div>
-      {learnedMemoryOpen ? (
-        <LearnedMemoryDialog
-          scope="user"
-          onClose={() => setLearnedMemoryOpen(false)}
-          onError={(error) => console.warn("learned memory request failed", error)}
-        />
-      ) : null}
-    </div>
+    </SettingsDraftProvider>
   );
 }

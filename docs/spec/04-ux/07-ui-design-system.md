@@ -790,6 +790,42 @@ Notification cards keep the removal contract (`animationend` on `toast-out`)
 while sliding horizontally from/to the right edge with the motion tokens.
 Reduced motion retains near-zero duration so dismissal completes.
 
+### 8.4.1 Settings sheet
+
+Settings is a **bottom-anchored sheet**, not a full-window page and not a
+centered dialog. It reuses the existing surfaces and tokens instead of adding a
+second visual system:
+
+- Geometry: `--settings-sheet-gutter` (clamp 16–24px) on both sides, about 90%
+  of the window height, `--settings-sheet-radius` (19px) on the top corners,
+  `--ds-bg-primary` plate, `--ds-border-subtle` hairline, `--ds-shadow-dialog`.
+  No background blur and no background scaling.
+- Layers: the sheet sits on `z-index` 35 — above the shell's own surfaces (30)
+  and below the viewport overlay host (40), so a settings dialog, a leaf popup,
+  or a toast still paints over it. The scrim is a plain dim
+  (`color-mix(in oklab, #000 32%, transparent)`) that dismisses the sheet only
+  when no form holds unsaved work; during the exit it keeps taking the pointer
+  until the sheet unmounts, so no click lands on the app behind it.
+- The head is the window drag region and the only plate at the top of the
+  sheet: no absolutely positioned decorative band may paint over the title,
+  the search field, or the close button.
+- Motion: `settings-sheet-in` rises from below in ~240ms with
+  `--motion-ease-out`; `settings-sheet-out` leaves in ~180ms with
+  `--motion-ease-in`. No spring, no bounce, no drag handle. Switching category
+  or destination never replays the entrance.
+- Reduced motion keeps a near-zero duration (never `animation: none`) because
+  the exit animation is what unmounts the sheet.
+- Small windows (≤720px wide or ≤560px tall) take the full width and height and
+  square the corners. The category bar stays one row and, when its seven labels
+  no longer fit (measured against the bar, including a 150% type scale), the
+  panel swaps in the shared menu select as a category selector.
+- Navigation chrome: one row of seven category labels, then an optional row of
+  second-level labels, both using `.settings-nav-item`; selected state uses
+  `--ds-settings-nav-active`. There are no per-destination icons in the host
+  UI, and plugin theme entries are the only rows that keep a glyph.
+- Fixed head, category bar, second level, and close button; only the content
+  area scrolls.
+
 ### 8.5 Reduced motion
 
 All motion tokens must respect `prefers-reduced-motion: reduce`:

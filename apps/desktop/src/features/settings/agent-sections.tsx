@@ -14,6 +14,7 @@ import {
 import { SettingsMenuSelect } from "../../components/settings/SettingsMenuSelect";
 import { persistUpdatePreference } from "./update-preference";
 import { SettingsCard, SettingsRow } from "./primitives";
+import { useSettingsDraftGuard } from "./draft-guard";
 
 const ReleaseNotesDialog = lazy(() =>
   import("../../components/ReleaseNotesDialog").then((module) => ({
@@ -50,6 +51,8 @@ export function AgentInstructionsSection() {
   };
 
   const globalDirty = global !== null && globalDraft !== global.content;
+  // Explicit save, so leaving the page asks first; an in-flight save blocks it.
+  useSettingsDraftGuard({ dirty: globalDirty, saving });
   return (
     <div className="settings-stack">
       <SettingsCard

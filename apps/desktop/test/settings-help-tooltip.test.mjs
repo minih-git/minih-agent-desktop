@@ -8,7 +8,19 @@ const source = (path) =>
 
 const ui = await source("components/ui.tsx");
 const primitives = await source("features/settings/primitives.tsx");
-const settingsPage = await source("features/settings/SettingsPage.tsx");
+// The settings page is split by responsibility: the shell plus one module per
+// destination group. Row copy may live in any of them.
+const settingsPage = (
+  await Promise.all(
+    [
+      "features/settings/SettingsPage.tsx",
+      "features/settings/SettingsDestination.tsx",
+      "features/settings/panels/general-panels.tsx",
+      "features/settings/panels/ai-panels.tsx",
+      "features/settings/panels/system-panels.tsx",
+    ].map(source),
+  )
+).join("\n");
 const importWorkbench = await source("features/settings/import-workbench.tsx");
 const modelImport = await source("features/settings/imports/ModelConfigImportPanel.tsx");
 const skillImport = await source("features/settings/imports/AgentSkillImportPanel.tsx");

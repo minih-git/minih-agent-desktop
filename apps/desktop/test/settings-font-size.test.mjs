@@ -17,11 +17,10 @@ const tokensSource = await readFile(
 const styles = await loadStyles();
 
 test("Appearance card renders a font-size row after the font family picker", () => {
-  const generalStart = settingsPageSource.indexOf(
-    '{tab === "general" && settings && (',
-  );
-  const aiStart = settingsPageSource.indexOf('{tab === "ai" && settings && (');
-  const generalSource = settingsPageSource.slice(generalStart, aiStart);
+  // The general page split: appearance keeps the type controls, in order.
+  const generalStart = settingsPageSource.indexOf("export function AppearancePanel");
+  const habitsStart = settingsPageSource.indexOf("export function HabitsPanel");
+  const generalSource = settingsPageSource.slice(generalStart, habitsStart);
   const fontFamily = generalSource.indexOf("<FontFamilyRow ");
   const fontSize = generalSource.indexOf("<FontSizeRow ");
   assert.ok(fontFamily >= 0);

@@ -6,7 +6,7 @@ import { listableSessions } from "../lib/session-origin";
 import { runPaletteCommand } from "../lib/commands";
 import { isDefaultSessionTitle, useAppStore } from "../stores/app-store";
 import { normalizeProjectPath } from "../lib/sidebar-session-groups";
-import { searchSettings, type SettingsSearchHit } from "../lib/settings-search";
+import { searchSettings, settingsHitPath, type SettingsSearchHit } from "../lib/settings-search";
 import { useSessionSearch, useSessionSearchState } from "../hooks/use-session-search";
 import { SearchHighlight } from "./SearchHighlight";
 import { SearchSessionResults, type SearchRow } from "./SearchSessionResults";
@@ -477,11 +477,16 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
                     <span className="search-item-title">
                       {highlightMatch(t(hit.rowKey ?? hit.tabLabelKey), query)}
                     </span>
-                    {hit.rowKey ? (
-                      <span className="search-item-meta">
-                        <span className="search-item-project">{t(hit.tabLabelKey)}</span>
+                    {/* The path a settings result lives under, shared with the
+                        in-panel search: category › page, then the row. */}
+                    <span className="search-item-meta">
+                      <span className="search-item-project">
+                        {settingsHitPath(hit)
+                          .slice(0, hit.rowKey ? 2 : 1)
+                          .map((key) => t(key))
+                          .join(" › ")}
                       </span>
-                    ) : null}
+                    </span>
                   </button>
                 );
               })}

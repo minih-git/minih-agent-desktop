@@ -161,10 +161,10 @@
   --ds-shadow-composer: 0 3px 7.5px #0000000a, 0 0 20px #0000000d;
   --ds-bg-elevated-primary: color-mix(in oklab, var(--gray-800) 96%, transparent);
   --ds-sidebar-width: clamp(240px, 275px, min(520px, calc(100vw - 320px)));
-  /* Settings rail border-box width, including its 1px right border. The
-   * settings drag band starts after the rail so the rail keeps a single
-   * surface tone from the window top edge down. */
-  --ds-settings-nav-width: 275px;
+  /* Settings sheet: side gutter that keeps the running app visible around the
+   * panel, and the top corner radius of the plate itself. */
+  --settings-sheet-gutter: clamp(16px, 2vw, 24px);
+  --settings-sheet-radius: 19px;
   --ds-toolbar-height: 46px;
   /* Square icon-only control. `.icon-btn` takes its width from its label, so an
      icon-only use pins both axes to this token instead. */
