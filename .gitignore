@@ -63,6 +63,7 @@ electron.vite.config.*.mjs
 
 .playwright-cli
 worktrees
+.worktree/
 
 # Capacitor native projects (apps/remote-web, PR-5). Only project sources are
 # tracked; `cap sync` output, build products, signing material, and push
