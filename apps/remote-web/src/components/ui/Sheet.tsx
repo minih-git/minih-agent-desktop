@@ -3,7 +3,7 @@
  *
  * Keeps `role="dialog"` and `aria-modal="true"` so `useEdgeSwipe` knows a
  * modal sheet is open and never intercepts horizontal gestures beneath it.
- * Dragging the top grab handle downward follows the finger via `requestAnimationFrame`
+ * Dragging the header (handle and title) downward follows the finger via `requestAnimationFrame`
  * and dismisses past 110 px, or springs back when released earlier. The
  * snap-back transition is written inline, so `prefers-reduced-motion` is read
  * from `useReducedMotion` rather than left to a stylesheet rule that cannot
@@ -16,6 +16,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 import { useReducedMotion } from "../../hooks/useReducedMotion.js";
 
@@ -106,7 +107,7 @@ export function Sheet({
     }
   };
 
-  return (
+  const sheet = (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
       {/* Scrim */}
       <div
@@ -131,30 +132,42 @@ export function Sheet({
         }
         className={`rm-dock relative z-10 mx-auto flex max-h-[88dvh] w-full max-w-[640px] flex-col rounded-t-[var(--rm-radius-sheet,28px)] border-t border-[var(--rm-hair)] bg-[var(--rm-glass-strong)] px-4 pt-1 text-[var(--rm-text-primary)] shadow-[var(--rm-shadow)] backdrop-blur-[30px] backdrop-saturate-[1.8] animate-[rm-sheet-in_0.5s_var(--rm-ease-spring)] transition-transform duration-500 ease-[var(--rm-ease-spring)] ${className}`}
       >
+        {/*
+          The whole header drags, not only the 5 px handle: a finger aimed at the
+          handle usually lands on the title, and that drag used to do nothing.
+        */}
         <div
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={finishDrag}
           onPointerCancel={finishDrag}
-          className="grid cursor-grab touch-none place-items-center py-2.5 select-none active:cursor-grabbing"
-          aria-hidden="true"
+          className="cursor-grab touch-none select-none active:cursor-grabbing"
         >
-          <i className="h-[5px] w-[38px] rounded-[3px] bg-[var(--rm-text-faint)] opacity-85" />
+          <div className="grid place-items-center py-2.5" aria-hidden="true">
+            <i className="h-[5px] w-[38px] rounded-[3px] bg-[var(--rm-text-faint)] opacity-85" />
+          </div>
+
+          {title ? (
+            <h2 className="px-1 text-left text-[19px] font-bold leading-[24px] text-[var(--rm-text-primary)]">
+              {title}
+            </h2>
+          ) : null}
+          {description ? (
+            <p className="mt-1 px-1 text-left text-[13px] leading-[19px] text-[var(--rm-text-muted)]">
+              {description}
+            </p>
+          ) : null}
         </div>
 
-        {title ? (
-          <h2 className="px-1 text-left text-[19px] font-bold leading-[24px] text-[var(--rm-text-primary)]">
-            {title}
-          </h2>
-        ) : null}
-        {description ? (
-          <p className="mt-1 px-1 text-left text-[13px] leading-[19px] text-[var(--rm-text-muted)]">
-            {description}
-          </p>
-        ) : null}
-
-        <div className="mt-3 flex flex-col gap-2 overflow-y-auto pb-1">{children}</div>
+        <div className="mt-3 flex min-h-0 flex-col gap-2 overflow-y-auto overscroll-contain pb-1">
+          {children}
+        </div>
       </div>
     </div>
   );
+
+  // Rendered on <body>: a sheet inside the page inherits the page's stacking
+  // context, so the root tab bar painted over its lower half and swallowed its
+  // taps. Server rendering (the tests) has no document and renders in place.
+  return typeof document === "undefined" ? sheet : createPortal(sheet, document.body);
 }

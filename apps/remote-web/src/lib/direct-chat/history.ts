@@ -64,13 +64,18 @@ export type BeginTurnInput = {
   modelId: string;
   modelLabel: string;
   protocol: string;
+  /**
+   * The thinking level this conversation sends with, `null` when it sends none.
+   * A level chosen before the first message has no record yet, so it arrives
+   * here and is written with the conversation it creates.
+   */
+  reasoningLevel?: string | null;
   /** A fresh local id from the caller, so a test can name it. */
   now: string;
   newConversationId: string;
   newMessageId: string;
   newAttemptId: string;
 };
-
 /** A regenerate: a new attempt answers an already-completed reply's message. */
 export type RegenerateInput = {
   /** The successful attempt being asked again; its message is reused. */
@@ -184,6 +189,13 @@ export type DirectChatHistory = {
   accountDraft(scope: DirectChatScope): Promise<string>;
   setAccountDraft(scope: DirectChatScope, draft: string, now?: string): Promise<void>;
   setDraft(conversationId: string, draft: string): Promise<void>;
+  /**
+   * The thinking level this conversation sends with; `null` clears it back to
+   * "send nothing". Recorded on the conversation rather than the attempt: the
+   * choice belongs to the thread, so the next message sends it without the user
+   * choosing again.
+   */
+  setReasoningLevel(conversationId: string, level: string | null, now?: string): Promise<void>;
   rename(conversationId: string, title: string, now?: string): Promise<void>;
   setPinned(conversationId: string, pinned: boolean, now?: string): Promise<void>;
   /**
@@ -397,7 +409,16 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
 
       const messages = existing ? await store.messages(existing.id) : [];
       const conversation: DirectChatConversation = existing
-        ? { ...existing, updatedAt: input.now, draft: "" }
+        ? {
+            ...existing,
+            updatedAt: input.now,
+            draft: "",
+            // A level chosen before the first send rides in with the new record;
+            // clearing it here would silently discard the user's choice.
+            ...(existing.reasoningLevel || !input.reasoningLevel
+              ? {}
+              : { reasoningLevel: input.reasoningLevel }),
+          }
         : {
             id: input.newConversationId,
             scope: input.scope,
@@ -410,6 +431,7 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
             nextModelId: input.modelId,
             nextProtocol: input.protocol,
             draft: "",
+            ...(input.reasoningLevel ? { reasoningLevel: input.reasoningLevel } : {}),
           };
       const mediaIds =
         input.mediaIds && input.mediaIds.length > 0 ? [...input.mediaIds] : undefined;
@@ -774,6 +796,19 @@ export function createDirectChatHistory(store: DirectChatStore): DirectChatHisto
       if (!conversation) return;
       await store.transact(async (tx) => {
         await tx.putConversation({ ...conversation, draft });
+      });
+    },
+
+    async setReasoningLevel(conversationId, level, now = new Date().toISOString()) {
+      const conversation = await store.conversation(conversationId);
+      if (!conversation) return;
+      const next: DirectChatConversation = { ...conversation, updatedAt: now };
+      // Absent rather than an empty string: an old record and "default" are the
+      // same state, and a blank value would be a third one nothing understands.
+      if (level) next.reasoningLevel = level;
+      else delete next.reasoningLevel;
+      await store.transact(async (tx) => {
+        await tx.putConversation(next);
       });
     },
 

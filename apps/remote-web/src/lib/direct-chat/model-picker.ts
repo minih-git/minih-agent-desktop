@@ -34,15 +34,8 @@ export type PickerVendorGroup = {
   rows: PickerModelRow[];
 };
 
-export type PickerDisabledRow = {
-  model: MinihRouterModel;
-  reason: ModelUnavailableReason | "not-image";
-};
-
 export type PickerView = {
   vendorGroups: PickerVendorGroup[];
-  unconfirmedRows: PickerModelRow[];
-  disabledRows: PickerDisabledRow[];
 };
 
 const VENDOR_GRADIENTS: readonly string[] = [
@@ -144,29 +137,12 @@ export function buildPickerView(
   fallbackVendor = "Other",
 ): PickerView {
   const filtered = filterDirectModels(models, query);
-
-  if (mode === "chat") {
-    const split = splitDirectModels(filtered);
-    const usableRows = split.usable.map((item) => toPickerRow(item.model, item.protocol));
-    return {
-      vendorGroups: groupByVendor(usableRows, fallbackVendor),
-      unconfirmedRows: [],
-      disabledRows: split.disabled.map((item) => ({
-        model: item.model,
-        reason: item.reason,
-      })),
-    };
-  }
-
-  const split = splitDirectImageModels(filtered);
-  const usableRows = split.usable.map((model) => toPickerRow(model));
-  const unconfirmedRows = split.unconfirmed.map((model) => toPickerRow(model));
-  return {
-    vendorGroups: groupByVendor(usableRows, fallbackVendor),
-    unconfirmedRows,
-    disabledRows: split.disabled.map((item) => ({
-      model: item.model,
-      reason: item.reason,
-    })),
-  };
+  // Only what the gateway allows for this operation. Rows that cannot do it are
+  // not listed at all: the sheet is a list of choices, not the whole catalog, and
+  // image output is a per-model gateway declaration (see `modelCapability`).
+  const usableRows =
+    mode === "chat"
+      ? splitDirectModels(filtered).usable.map((item) => toPickerRow(item.model, item.protocol))
+      : splitDirectImageModels(filtered).usable.map((model) => toPickerRow(model));
+  return { vendorGroups: groupByVendor(usableRows, fallbackVendor) };
 }

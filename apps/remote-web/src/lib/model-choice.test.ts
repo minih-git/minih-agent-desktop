@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   describeModel,
+  effectiveThinkingLevel,
+  isThinkingLevel,
   modelKey,
   modelSwitchBlockedReason,
+  orderedThinkingLevels,
   resolveNewSessionModel,
+  thinkingLevelOnModelSwitch,
   thinkingLevelsFor,
 } from "./model-choice.js";
 import type { RacpModelSummary } from "@minih-agent/shared";
@@ -76,6 +80,51 @@ describe("thinkingLevelsFor", () => {
   it("keeps the advertised order when the default is not advertised", () => {
     expect(thinkingLevelsFor(model({ defaultThinkingLevel: "max" }))).toEqual(["off", "low", "high"]);
     expect(thinkingLevelsFor(model())).toEqual(["off", "low", "high"]);
+  });
+});
+
+describe("thinking level selection", () => {
+  it("lists a model's levels off → max, whatever order the Host sent", () => {
+    // The picker's positions must not move when the Host reorders its list.
+    expect(orderedThinkingLevels(model({ thinkingLevels: ["high", "off", "medium"] }))).toEqual([
+      "off",
+      "medium",
+      "high",
+    ]);
+    expect(orderedThinkingLevels(model({ thinkingLevels: [] }))).toEqual([]);
+  });
+
+  it("shows the level the session recorded, else the model's default", () => {
+    expect(effectiveThinkingLevel(model(), "high")).toBe("high");
+    expect(effectiveThinkingLevel(model({ defaultThinkingLevel: "low" }), null)).toBe("low");
+    expect(effectiveThinkingLevel(model(), undefined)).toBe("off");
+    expect(effectiveThinkingLevel(null, undefined)).toBeNull();
+  });
+
+  it("leaves the level alone when the new model still offers it", () => {
+    // `null` means "send no thinkingLevel": the session keeps what it has.
+    expect(thinkingLevelOnModelSwitch(model(), "high")).toBeNull();
+    expect(thinkingLevelOnModelSwitch(model(), null)).toBeNull();
+    expect(thinkingLevelOnModelSwitch(model({ thinkingLevels: [] }), "high")).toBeNull();
+  });
+
+  it("moves to the new model's default when the level is gone", () => {
+    const next = model({ thinkingLevels: ["off", "medium"], defaultThinkingLevel: "medium" });
+    expect(thinkingLevelOnModelSwitch(next, "xhigh")).toBe("medium");
+  });
+
+  it("walks to the nearest level only when the new model has no default", () => {
+    // The same rule the desktop composer uses, so both clients answer alike.
+    expect(thinkingLevelOnModelSwitch(model({ thinkingLevels: ["off", "high"] }), "medium")).toBe(
+      "high",
+    );
+    expect(thinkingLevelOnModelSwitch(model({ thinkingLevels: ["off", "low"] }), "max")).toBe("low");
+  });
+
+  it("falls back to the new model's first level for a level it never heard of", () => {
+    expect(thinkingLevelOnModelSwitch(model(), "turbo")).toBe("off");
+    expect(isThinkingLevel("turbo")).toBe(false);
+    expect(isThinkingLevel("xhigh")).toBe(true);
   });
 });
 

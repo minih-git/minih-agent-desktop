@@ -19,11 +19,16 @@ import type { DirectChatStore } from "./direct-chat/history-store.js";
 import { createIndexedDbDirectChatStore } from "./direct-chat/indexeddb-store.js";
 import { createMemoryDirectChatStore } from "./direct-chat/memory-store.js";
 import { createDirectChatRunner, type DirectChatRunner } from "./direct-chat/runner.js";
-import { createControlClient } from "./direct-chat/control.js";
 import { capacitorHttpTransport } from "./direct-chat/native-transport.js";
 import { createDirectChatSecret, createUnavailableSecretStore } from "./direct-chat/secret.js";
 import { createDirectChatService, type DirectChatService } from "./direct-chat/service.js";
 import { WebCookieCredentialPort, type CredentialPort } from "./credential-port.js";
+import { createControlClient, type DirectChatFailure } from "./direct-chat/control.js";
+import {
+  createModelRefresher,
+  type ModelRefreshResult,
+  type ModelRefresher,
+} from "./direct-chat/model-refresh.js";
 import {
   CUSTOM_GATEWAY_STORAGE_KEY,
   SAVED_GATEWAYS_STORAGE_KEY,
@@ -277,6 +282,67 @@ export function subscribeDirectChat(listener: () => void): (() => void) | null {
   directChatListeners.add(listener);
   return () => {
     directChatListeners.delete(listener);
+  };
+}
+
+/**
+ * The cached model catalog, kept current.
+ *
+ * Three moments ask for it — the app returns to the foreground, a picker opens,
+ * a root screen is entered — and one refresher throttles them together, so
+ * moving between screens cannot turn into a request each. A refresh that lands
+ * tells the views; one that fails is reported through the catalog listeners
+ * instead of disappearing, and `refreshModels` only writes on success, so the
+ * catalog the picker already had stays usable.
+ */
+let modelRefresher: ModelRefresher | null = null;
+let modelRefreshFailure: DirectChatFailure | null = null;
+const modelCatalogListeners = new Set<() => void>();
+
+function notifyModelCatalog(): void {
+  for (const listener of modelCatalogListeners) listener();
+}
+
+export function refreshDirectModels(): Promise<ModelRefreshResult> {
+  // A build with no model gateway has no catalog to read and no record to write.
+  if (modelGatewayOrigin === null) {
+    return Promise.resolve({ ok: true, refreshed: false, skipped: "throttled" });
+  }
+  modelRefresher ??= createModelRefresher({
+    refresh: async () => {
+      const outcome = await directChatService().refreshModels();
+      return outcome.ok ? { ok: true } : { ok: false, failure: outcome.failure };
+    },
+    onRefreshed: () => {
+      // The catalog lives in the connection record, and the screens read that
+      // record through App: both have to hear that it changed.
+      notifyDirectChatChanged();
+      notifyModelCatalog();
+    },
+    onFailure: (failure) => {
+      modelRefreshFailure = failure;
+      notifyModelCatalog();
+    },
+  });
+  return modelRefresher.request();
+}
+
+/** The last failed catalog refresh, until it is dismissed. */
+export function modelRefreshFailureSnapshot(): DirectChatFailure | null {
+  return modelRefreshFailure;
+}
+
+export function dismissModelRefreshFailure(): void {
+  if (modelRefreshFailure === null) return;
+  modelRefreshFailure = null;
+  notifyModelCatalog();
+}
+
+/** Fires when a refresh lands or fails, so App can re-read the connection. */
+export function subscribeModelCatalog(listener: () => void): () => void {
+  modelCatalogListeners.add(listener);
+  return () => {
+    modelCatalogListeners.delete(listener);
   };
 }
 

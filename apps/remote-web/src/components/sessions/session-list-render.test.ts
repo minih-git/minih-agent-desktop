@@ -7,7 +7,8 @@ import { test } from "vitest";
 
 import type { RacpSession } from "@minih-agent/shared";
 
-import { ForegroundNoticeBar } from "../ForegroundNotice.js";
+import { ForegroundNoticeDialog } from "../ForegroundNotice.js";
+import { SessionStatusPill } from "../ui/StatusMark.js";
 import { ProjectCard } from "./ProjectCard.js";
 import { SessionRow } from "./SessionRow.js";
 import { DEFAULT_LOCALE, buildResources } from "../../locales/index.js";
@@ -68,6 +69,15 @@ test("an approval row says so in words, in a pill, not only in colour", async ()
   // The pill is the only filled status mark (§17.4).
   assert.match(html, /rm-decision/);
   assert.match(html, /aria-label="Refactor the login flow, Needs your approval"/);
+});
+
+test("the pill names the state once, not twice", async () => {
+  // The two attention branches each rendered `{label}` twice, so the row read
+  // "Needs your approvalNeeds your approval".
+  const html = await render(
+    createElement(SessionStatusPill, { view: "approval" }),
+  );
+  assert.equal(html.match(/Needs your approval/g)?.length, 1);
 });
 
 test("an answer the device learned from a push reads as its own state", async () => {
@@ -166,16 +176,20 @@ test("the ungrouped card is labelled, not left blank", async () => {
   assert.match(html, /Other/);
 });
 
-test("a foreground notice is announced politely and offers the two actions", async () => {
+test("a foreground notice is a centred dialog that offers the two actions", async () => {
   const html = await render(
-    createElement(ForegroundNoticeBar, {
+    createElement(ForegroundNoticeDialog, {
       notice: { kind: "approval.requested", hostId: "h1", sessionId: "s1" },
       onOpen: () => undefined,
       onDismiss: () => undefined,
     }),
   );
-  assert.match(html, /role="status"/);
-  assert.match(html, /aria-live="polite"/);
+  // A dialog, not a bar under the navigation bar: the bar counted the safe-area
+  // inset twice and left a blank block above its text.
+  assert.match(html, /role="alertdialog"/);
+  assert.match(html, /aria-modal="true"/);
+  assert.match(html, /items-center justify-center/);
+  assert.doesNotMatch(html, /rm-nav/);
   assert.match(html, /Needs your approval/);
   assert.match(html, /View/);
   assert.match(html, /Close/);

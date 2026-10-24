@@ -33,6 +33,13 @@ export type DirectChatInfoSheetProps = {
   onStopThenArchive: () => Promise<void>;
   onCopy: () => Promise<boolean>;
   onDelete: () => Promise<boolean>;
+  /** Levels the current model declared; empty hides the whole section. */
+  reasoningLevels: readonly string[];
+  /** The saved level, or `null` for "default" — send no reasoning parameter. */
+  reasoningLevel: string | null;
+  /** The gateway's own default, shown as a hint on the "default" row. */
+  defaultReasoningLevel?: string | null;
+  onSelectReasoningLevel: (level: string | null) => void;
 };
 
 export function DirectChatInfoSheet({
@@ -46,6 +53,10 @@ export function DirectChatInfoSheet({
   onStopThenArchive,
   onCopy,
   onDelete,
+  reasoningLevels,
+  reasoningLevel,
+  defaultReasoningLevel,
+  onSelectReasoningLevel,
 }: DirectChatInfoSheetProps) {
   const { t } = useTranslation();
   /**
@@ -79,6 +90,60 @@ export function DirectChatInfoSheet({
           />
           <ListRow title={t("directChat.infoStorage")} subtitle={t("settings.history.local")} />
         </ListGroup>
+
+        {/*
+          Only what the gateway declared. "Default" is always offered and sends
+          no parameter at all, so a model the gateway never described still works
+          and the reader is not shown a level that cannot be chosen.
+        */}
+        {reasoningLevels.length > 0 ? (
+          <>
+            <SectionHeader title={t("sessions.new.thinking")} />
+            <div
+              role="radiogroup"
+              aria-label={t("sessions.new.thinking")}
+              className="flex flex-col gap-1"
+            >
+              {[null, ...reasoningLevels].map((level) => {
+                const selected = level === reasoningLevel;
+                return (
+                  <button
+                    key={level ?? "default"}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => onSelectReasoningLevel(level)}
+                    className={`flex min-h-[46px] items-center gap-3 rounded-[12px] px-3 text-left text-[15px] ${
+                      selected
+                        ? "bg-[var(--rm-bg-surface-2)] text-[var(--rm-text-primary)]"
+                        : "text-[var(--rm-text-secondary)]"
+                    }`}
+                  >
+                    <span
+                      className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border ${
+                        selected
+                          ? "border-[var(--rm-accent)] bg-[var(--rm-accent)]"
+                          : "border-[var(--rm-separator)]"
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {selected ? (
+                        <span className="h-1.5 w-1.5 rounded-full bg-[var(--rm-bg-raised)]" />
+                      ) : null}
+                    </span>
+                    {level
+                      ? t(`thinkingLevel.${level}`)
+                      : defaultReasoningLevel
+                        ? t("thinkingLevel.gatewayDefault", {
+                            level: t(`thinkingLevel.${defaultReasoningLevel}`),
+                          })
+                        : t("thinkingLevel.default")}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
 
         <SectionHeader title={t("directChat.rename")} />
         <div className="flex items-center gap-2 px-1">

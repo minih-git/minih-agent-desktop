@@ -14,8 +14,17 @@ import type {
   UiMessageRole,
 } from "@minih-agent/shared";
 
-/** One attachment as the timeline shows it: the name, and whether it is an image. */
-export type TimelineAttachment = { name: string; kind: "image" | "file" | "session" };
+/** One attachment as the timeline shows it: the name, its kind, and whether it can be fetched. */
+export type TimelineAttachment = {
+  name: string;
+  kind: "image" | "file" | "session";
+  /**
+   * The id this image can be fetched with, when it has one. An image row
+   * without it cannot be turned into a thumbnail — the row shows its name
+   * instead, rather than the picture silently disappearing.
+   */
+  mediaId?: string;
+};
 
 export type TimelineItem = {
   id: string;

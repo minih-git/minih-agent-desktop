@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, expect, it } from "vitest";
 
 import type { UiMessage } from "@minih-agent/shared";
-
+import { toRacpItem } from "./host-ports.js";
 import type { HostRpc, HostSessionRecord } from "./host-ports.js";
 import { createSessionMediaAccess, createSessionMediaVerification, encodeSessionMediaId } from "./session-media.js";
 
@@ -172,4 +172,60 @@ it("refuses media that the session's transcript no longer holds", async () => {
   await expect(
     reader.read({ sessionId: media.sessionId, mediaId: media.mediaId, offset: 0, length: 16 }),
   ).rejects.toMatchObject({ code: "NOT_FOUND" });
+});
+
+it("serves a user's own photo, whose stored attachment carries no id at all", async () => {
+  // The stored shape of a message a person sent with a picture, copied from a
+  // real session record: kind/name/ref/mimeType/size and no id, because
+  // host-core's `MessageAttachment` has no such field. Encoding and reading must
+  // still agree on one row identity, or the photo is unreachable from the phone.
+  const dataDir = await tempDir("pi-session-media-photo-");
+  const bytes = Buffer.from("a user's jpeg, stored byte for byte");
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  await mkdir(join(dataDir, "attachments"), { recursive: true });
+  await writeFile(join(dataDir, "attachments", sha256), bytes);
+
+  const stored = {
+    id: "m-photo",
+    role: "user",
+    content: "what is this",
+    createdAt: "2026-10-24T00:00:00.000Z",
+    status: "complete",
+    attachments: [
+      {
+        type: "attachment",
+        kind: "image",
+        mimeType: "image/jpeg",
+        name: "IMG_3516.jpeg",
+        ref: `attachments/${sha256}`,
+        size: bytes.length,
+      },
+    ],
+  } as unknown as UiMessage;
+
+  // What the phone is told: one media id derived from the row's position.
+  const item = toRacpItem(stored);
+  const mediaId = (item.content as { attachments?: Array<{ mediaId?: string }> }).attachments?.[0]?.mediaId;
+  expect(mediaId).toBe(encodeSessionMediaId("m-photo", "idx-0"));
+
+  // What the phone then asks for, resolved against the same id-less record.
+  const host: HostRpc = {
+    async call<T>(method: string): Promise<T> {
+      if (method !== "session.get") throw new Error(`unexpected ${method}`);
+      return { session: { id: "s-photo", messages: [stored] } } as T;
+    },
+  };
+  const reader = createSessionMediaAccess({ getHost: () => host, dataDir });
+  const read = await reader.read({ sessionId: "s-photo", mediaId: mediaId ?? "", offset: 0, length: 4096 });
+  expect(Buffer.from(read.data, "base64").toString()).toBe(bytes.toString());
+  expect(read.sha256).toBe(sha256);
+});
+
+it("still resolves a media id minted from an old, id-bearing attachment", async () => {
+  // Ids already handed to a phone encode `att-<id>`; those attachments keep
+  // their own id as the row identity, so the older link must not break.
+  const media = await fixture();
+  const reader = createSessionMediaAccess({ getHost: media.getHost, dataDir: media.dataDir });
+  const read = await reader.read({ sessionId: media.sessionId, mediaId: media.mediaId, offset: 0, length: 16 });
+  expect(read.totalBytes).toBe(media.bytes.length);
 });

@@ -109,7 +109,12 @@ export function ProjectSessionsScreen({
   const currentProjectLabel = projectLabel;
 
   const mode = newSessionMode(roles, projects);
-  const canCreate = mode !== "hidden" && currentProjectId !== UNGROUPED_KEY;
+  /**
+   * "Other" lists the sessions that belong to no project, and starting one there
+   * is what the group is for — the Host creates it with no `projectId` — so this
+   * group is never the reason the action goes away.
+   */
+  const canCreate = mode !== "hidden";
 
   useEffect(() => {
     const client = createHostClient({
@@ -213,7 +218,9 @@ export function ProjectSessionsScreen({
     async (choice: NewSessionChoice) => {
       const client = clientRef.current;
       if (!client) return;
-      setCreating(choice.projectId);
+      // No project is a legitimate choice here, so the in-flight marker only has to
+      // be non-null.
+      setCreating(choice.projectId ?? "");
       setCreateFailure(null);
       const result = await createSession(client, choice);
       setCreating(null);
@@ -243,7 +250,6 @@ export function ProjectSessionsScreen({
   }, [modelsLoaded]);
 
   const newSessionEntry = () => {
-    if (currentProjectId === UNGROUPED_KEY) return null;
     if (mode === "hidden") {
       return (
         <span className="text-[13px] text-[var(--rm-text-muted)]">
@@ -251,7 +257,7 @@ export function ProjectSessionsScreen({
         </span>
       );
     }
-    if (mode === "unavailable") {
+    if (mode === "unavailable" && currentProjectId !== UNGROUPED_KEY) {
       return (
         <span className="text-[13px] text-[var(--rm-text-muted)]">
           {t("sessions.noProjects")}
@@ -420,8 +426,9 @@ export function ProjectSessionsScreen({
               projects={projects ?? []}
               models={models}
               modelsFailure={modelsFailure}
-              initialProjectId={currentProjectId}
+              initialProjectId={currentProjectId === UNGROUPED_KEY ? null : currentProjectId}
               projectLocked
+              allowNoProject={currentProjectId === UNGROUPED_KEY}
               creating={creating !== null}
               failure={createFailure ? createFailure.message || t("operation.sessionCreate") : null}
               onCancel={() => setChoosing(false)}

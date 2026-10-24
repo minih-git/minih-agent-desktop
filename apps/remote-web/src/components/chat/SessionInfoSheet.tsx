@@ -13,7 +13,15 @@ import type { RacpModelSummary, RacpPermissionMode, RacpSession } from "@minih-a
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { describeModel, modelKey, modelSwitchBlockedReason } from "../../lib/model-choice.js";
+import {
+  describeModel,
+  effectiveThinkingLevel,
+  isThinkingLevel,
+  modelKey,
+  modelSwitchBlockedReason,
+  orderedThinkingLevels,
+  thinkingLevelOnModelSwitch,
+} from "../../lib/model-choice.js";
 import { Button } from "../ui/Button.js";
 import { Sheet } from "../ui/Sheet.js";
 
@@ -33,6 +41,7 @@ export type SessionInfoSheetProps = {
   onConfigure: (input: {
     providerId?: string;
     modelId?: string;
+    thinkingLevel?: string;
     mode?: "agent" | "plan" | "goal";
     permissionMode?: RacpPermissionMode;
   }) => void;
@@ -58,7 +67,7 @@ export function SessionInfoSheet({
   const { t } = useTranslation();
   const [renaming, setRenaming] = useState(false);
   const [title, setTitle] = useState(session?.title ?? "");
-  const [picker, setPicker] = useState<"model" | "mode" | "permission" | null>(null);
+  const [picker, setPicker] = useState<"model" | "thinking" | "mode" | "permission" | null>(null);
 
   useEffect(() => {
     setTitle(session?.title ?? "");
@@ -77,6 +86,19 @@ export function SessionInfoSheet({
         (!session?.providerId && session?.modelId && model.modelId === session.modelId),
     ) ??
     (!session?.modelId ? (models.find((model) => model.isDefault) ?? models[0]) : undefined);
+
+  /**
+   * Thinking levels this session can be put on.
+   *
+   * The list is the current model's own — a model that publishes none has no
+   * row at all, rather than a picker whose every option the Host would refuse.
+   * The value shown is what the session recorded, or the model's default when
+   * it recorded nothing; `off` is never invented.
+   */
+  const thinkingLevels = currentModel ? orderedThinkingLevels(currentModel) : [];
+  const thinkingLevel = effectiveThinkingLevel(currentModel, session?.thinkingLevel);
+  const thinkingLevelLabel = (level: string): string =>
+    isThinkingLevel(level) || level === "omit" ? t(`thinkingLevel.${level}`) : level;
 
   const row = (label: string, value: string, onClick?: () => void) => (
     <div className="flex min-h-[50px] items-center gap-3 border-t border-[var(--rm-hair)] px-1">
@@ -144,11 +166,13 @@ export function SessionInfoSheet({
   const title_ =
     picker === "model"
       ? t("model.title")
-      : picker === "mode"
-        ? t("sessions.new.mode")
-        : picker === "permission"
-          ? t("sessions.new.permission")
-          : session?.title || t("session.untitled");
+      : picker === "thinking"
+        ? t("sessions.new.thinking")
+        : picker === "mode"
+          ? t("sessions.new.mode")
+          : picker === "permission"
+            ? t("sessions.new.permission")
+            : session?.title || t("session.untitled");
 
   const handleClose = () => {
     setPicker(null);
@@ -179,11 +203,40 @@ export function SessionInfoSheet({
                     currentModel ? modelKey(model) === modelKey(currentModel) : false,
                     locked !== null || pending,
                     () => {
-                      onConfigure({ providerId: model.providerId, modelId: model.modelId });
+                      // A level the new model still offers is kept by leaving the
+                      // field out; one it does not offer falls back to the new
+                      // model's default, exactly as the desktop does.
+                      const next = thinkingLevelOnModelSwitch(model, session?.thinkingLevel);
+                      onConfigure({
+                        providerId: model.providerId,
+                        modelId: model.modelId,
+                        ...(next ? { thinkingLevel: next } : {}),
+                      });
                       setPicker(null);
                     },
                   ),
                 )
+              )}
+            </>
+          ) : null}
+          {picker === "thinking" ? (
+            <>
+              {locked ? (
+                <p className="mb-2 rounded-[12px] bg-[var(--rm-bg-surface-2)] px-3 py-2 text-[13px] leading-[18px] text-[var(--rm-text-secondary)]">
+                  {t(locked)}
+                </p>
+              ) : null}
+              {thinkingLevels.map((level) =>
+                option(
+                  thinkingLevelLabel(level),
+                  null,
+                  thinkingLevel === level,
+                  locked !== null || pending,
+                  () => {
+                    onConfigure({ thinkingLevel: level });
+                    setPicker(null);
+                  },
+                ),
               )}
             </>
           ) : null}
@@ -250,6 +303,13 @@ export function SessionInfoSheet({
               : session?.modelLabel || session?.modelId || t("model.hostDefault"),
             editable ? () => setPicker("model") : undefined,
           )}
+          {thinkingLevels.length > 0
+            ? row(
+                t("sessions.new.thinking"),
+                thinkingLevel ? thinkingLevelLabel(thinkingLevel) : t("thinkingLevel.default"),
+                editable ? () => setPicker("thinking") : undefined,
+              )
+            : null}
           {row(
             t("sessions.new.mode"),
             t(`mode.${session?.mode ?? "agent"}.title`),

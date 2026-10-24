@@ -135,6 +135,39 @@ describe("request shape", () => {
     expect(body).not.toHaveProperty("previous_response_id");
   });
 
+  it("sends the thinking level in each protocol's own field, and nothing on default", () => {
+    // Chat Completions takes a flat string; Responses takes an object. A turn
+    // with no level sends neither, so the gateway's own default applies.
+    const completions = streamBody({ ...request, reasoningLevel: "high" });
+    expect(completions.reasoning_effort).toBe("high");
+    expect(completions).not.toHaveProperty("reasoning");
+
+    const responses = streamBody({
+      ...request,
+      protocol: "openai-responses",
+      reasoningLevel: "high",
+    });
+    expect(responses.reasoning).toEqual({ effort: "high" });
+    expect(responses).not.toHaveProperty("reasoning_effort");
+
+    expect(streamBody({ ...request, protocol: "openai-responses" })).not.toHaveProperty(
+      "reasoning",
+    );
+    expect(streamBody(request)).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("sends the gateway's own words for the two ends of the ladder", () => {
+    // `none` and `ultra` are the gateway's vocabulary, not the desktop's. They
+    // travel verbatim: mapping `none` onto `off` would name a level upstream
+    // does not know, and dropping `ultra` would silently weaken the request.
+    for (const level of ["none", "ultra", "persistent"]) {
+      expect(streamBody({ ...request, reasoningLevel: level }).reasoning_effort).toBe(level);
+      expect(
+        streamBody({ ...request, protocol: "openai-responses", reasoningLevel: level }).reasoning,
+      ).toEqual({ effort: level });
+    }
+  });
+
   it("uses the Responses envelope for that protocol", () => {
     const body = streamBody({ ...request, protocol: "openai-responses" });
     expect(body).not.toHaveProperty("messages");
@@ -421,6 +454,21 @@ describe("streaming a reply", () => {
     const cases: Array<{ status: number; body: string; kind: string }> = [
       { status: 401, body: '{"error":{"message":"bad key"}}', kind: "unauthorized" },
       { status: 429, body: '{"error":{"message":"slow down"}}', kind: "quota" },
+      // The gateway's own codes. Both arrive as a bare status otherwise, and both
+      // would be described as something they are not.
+      {
+        status: 503,
+        body: '{"code":"no_available_candidate","message":"No available upstream candidate."}',
+        kind: "no-route",
+      },
+      {
+        status: 429,
+        body: '{"code":"upstream_cooldown","message":"The gateway is holding requests for this upstream candidate."}',
+        kind: "upstream-busy",
+      },
+      // A real quota code keeps the quota wording: telling the user to wait could
+      // not be more wrong than telling them their key is spent.
+      { status: 429, body: '{"code":"access_key_rate_limited","message":"Access key rate limit exceeded."}', kind: "quota" },
       { status: 402, body: '{"error":{"message":"no balance"}}', kind: "quota" },
       { status: 403, body: '{"error":{"message":"source ip not in allowed_peer_cidrs"}}', kind: "network-range" },
       { status: 500, body: '{"error":{"message":"boom"}}', kind: "gateway" },

@@ -42,6 +42,7 @@ import { createMediaUrl } from "../lib/direct-chat/media.js";
 import { createDirectChatSecret } from "../lib/direct-chat/secret.js";
 import {
   groupByDay,
+  splitStudioCards,
   studioCards,
   studioRetryModel,
   studioSubmitRefusal,
@@ -56,6 +57,7 @@ import {
   directChatScope,
   directChatService,
   notifyDirectChatChanged,
+  refreshDirectModels,
   secureStore,
   subscribeDirectChat,
 } from "../lib/runtime.js";
@@ -160,7 +162,12 @@ export function StudioScreen({
   }, [mediaCache, connectedScopeKey]);
 
   const cards = useMemo(() => studioCards(transcripts), [transcripts]);
-  const dayGroups = useMemo(() => groupByDay(cards), [cards]);
+  // Each day leads with the cards that are not finished artwork: a generating or
+  // failed card is full width, the completed ones tile under it (D).
+  const dayGroups = useMemo(
+    () => groupByDay(cards).map((group) => ({ ...group, ...splitStudioCards(group.cards) })),
+    [cards],
+  );
 
   // Track cards that transition from "generating" to "complete" so they play
   // the blur-to-sharp reveal sweep and surface a completion toast.
@@ -185,6 +192,11 @@ export function StudioScreen({
       setToastMsg(t("studio.generatedToast"));
     }
   }, [cards, t]);
+
+  /** The Studio root asks for a fresh catalog too (A); the refresher throttles it. */
+  useEffect(() => {
+    void refreshDirectModels();
+  }, []);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -237,12 +249,12 @@ export function StudioScreen({
       return;
     }
     if (refusal === "no-model") {
-      setNotice(t("imageGen.noImageModel"));
+      setToastMsg(t("imageGen.noImageModel"));
       setModelsOpen(true);
       return;
     }
     if (refusal === "empty" || !activeModel) {
-      setNotice(t("studio.emptyPrompt"));
+      setToastMsg(t("studio.emptyPrompt"));
       return;
     }
     const trimmed = prompt.trim();
@@ -272,7 +284,8 @@ export function StudioScreen({
     });
     if (!saved.ok) {
       setSending(false);
-      setNotice(saved.reason === "busy" ? t("directChat.busy") : t("directChat.saveFailed"));
+      if (saved.reason === "busy") setToastMsg(t("directChat.busy"));
+      else setNotice(t("directChat.saveFailed"));
       return;
     }
 
@@ -291,13 +304,8 @@ export function StudioScreen({
     });
     setSending(false);
     if (!started.ok) {
-      setNotice(
-        started.reason === "busy"
-          ? t("directChat.busy")
-          : started.reason === "foreign-scope"
-            ? t("directChat.foreignScope")
-            : null,
-      );
+      if (started.reason === "foreign-scope") setNotice(t("directChat.foreignScope"));
+      else if (started.reason === "busy") setToastMsg(t("directChat.busy"));
     }
     notifyDirectChatChanged();
   };
@@ -312,7 +320,7 @@ export function StudioScreen({
     // so an unavailable model is a refusal with a way out instead.
     const modelForRetry = studioRetryModel(catalog, card.modelId);
     if (!modelForRetry) {
-      setNotice(t("imageGen.modelUnavailable"));
+      setToastMsg(t("imageGen.modelUnavailable"));
       setModelsOpen(true);
       return;
     }
@@ -330,9 +338,8 @@ export function StudioScreen({
       authKey: key,
     });
     if (!outcome.ok) {
-      setNotice(
-        outcome.reason === "foreign-scope" ? t("directChat.foreignScope") : t("directChat.busy"),
-      );
+      if (outcome.reason === "foreign-scope") setNotice(t("directChat.foreignScope"));
+      else setToastMsg(t("directChat.busy"));
     }
     notifyDirectChatChanged();
   };
@@ -355,9 +362,8 @@ export function StudioScreen({
       if (target.status === "generating") await runner.stop(target.conversationId);
       const outcome = await history.removeImage(target.conversationId, target.attemptId);
       if (!outcome.ok) {
-        setNotice(
-          outcome.reason === "busy" ? t("directChat.stopFirst") : t("directChat.saveFailed"),
-        );
+        if (outcome.reason === "busy") setToastMsg(t("directChat.stopFirst"));
+        else setNotice(t("directChat.saveFailed"));
         return;
       }
       if (target.mediaId) releaseMediaUrl(target.mediaId);
@@ -481,22 +487,42 @@ export function StudioScreen({
                 <h2 className="mb-2 px-1 text-[13px] font-semibold text-[var(--rm-text-muted)]">
                   {formatDayHeading(group.day)}
                 </h2>
-                <div className="columns-2 gap-2.5">
-                  {group.cards.map((card) => (
-                    <StudioArtCard
-                      key={card.id}
-                      card={card}
-                      mediaUrl={
-                        card.mediaId ? mediaCache.get(card.mediaId) : null
-                      }
-                      revealing={revealingIds.has(card.id)}
-                      onOpen={(target) => setViewerCardId(target.id)}
-                      onStop={(target) => void handleStopCard(target)}
-                      onRetry={(target) => void handleRetryCard(target)}
-                      onDelete={(target) => setDeleteTarget(target)}
-                    />
-                  ))}
-                </div>
+                {/* The cards that are not finished artwork lead the day, full
+                    width: a generating spinner and a failure reason both need
+                    the room, and half a column left the row half empty (D). */}
+                {group.prominent.length > 0 ? (
+                  <div className="mb-2.5 flex flex-col gap-2.5">
+                    {group.prominent.map((card) => (
+                      <StudioArtCard
+                        key={card.id}
+                        layout="banner"
+                        card={card}
+                        mediaUrl={card.mediaId ? mediaCache.get(card.mediaId) : null}
+                        onOpen={(target) => setViewerCardId(target.id)}
+                        onStop={(target) => void handleStopCard(target)}
+                        onRetry={(target) => void handleRetryCard(target)}
+                        onDelete={(target) => setDeleteTarget(target)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+
+                {group.completed.length > 0 ? (
+                  <div className="columns-2 gap-2.5">
+                    {group.completed.map((card) => (
+                      <StudioArtCard
+                        key={card.id}
+                        card={card}
+                        mediaUrl={card.mediaId ? mediaCache.get(card.mediaId) : null}
+                        revealing={revealingIds.has(card.id)}
+                        onOpen={(target) => setViewerCardId(target.id)}
+                        onStop={(target) => void handleStopCard(target)}
+                        onRetry={(target) => void handleRetryCard(target)}
+                        onDelete={(target) => setDeleteTarget(target)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
               </section>
             ))}
           </div>

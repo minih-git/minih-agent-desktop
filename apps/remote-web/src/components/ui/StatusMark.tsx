@@ -128,7 +128,6 @@ export function SessionStatusPill({ view, count }: { view: SessionStateView; cou
         <CircleHelp className="h-3 w-3" strokeWidth={2.4} aria-hidden="true" />
       )}
       {label}
-      {label}
     </span>
   );
 }

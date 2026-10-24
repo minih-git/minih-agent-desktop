@@ -50,6 +50,7 @@ import {
   directChatScope,
   directChatService,
   notifyDirectChatChanged,
+  refreshDirectModels,
   subscribeDirectChat,
 } from "../lib/runtime.js";
 
@@ -126,6 +127,15 @@ export function ChatsScreen({
     };
   }, [history, connectedScopeKey, query]);
 
+  /**
+   * Entering the root is another moment the catalog may have changed (A): a
+   * model withdrawn while the app was away must not stay in the picker. The
+   * throttle in `refreshDirectModels` keeps a screen switch from being a request.
+   */
+  useEffect(() => {
+    void refreshDirectModels();
+  }, []);
+
   const handleQuickNewChat = () => {
     if (!connection) return;
     const resolved = resolveEffectiveChatModel(
@@ -188,7 +198,10 @@ export function ChatsScreen({
         trailing={trailingButtons}
       />
 
-      <ScreenContent className="pb-24">
+      {/* The last row clears the floating button, which is not inside this scroll
+          container; `.rm-scroll-under-fab` is the padding that does it (a `pb-*`
+          utility loses to `.rm-scroll-end`). */}
+      <ScreenContent className="rm-scroll-under-fab">
         <h1 className="rm-title-large mb-3.5 pt-1">{t("chats.title")}</h1>
 
         {!connection ? (
@@ -415,12 +428,16 @@ export function ChatsScreen({
         ) : null}
       </ScreenContent>
 
-      {/* Floating New Chat action */}
+      {/*
+        Floating New Chat action. Anchored to the screen, which ends where the
+        tab bar starts, so it keeps the same gap above the bar on every device
+        instead of a fixed offset that the bar's safe-area padding overran.
+      */}
       {connection ? (
         <button
           type="button"
           onClick={() => void handleQuickNewChat()}
-          className="fixed bottom-24 right-5 z-20 inline-flex h-[52px] items-center gap-1.5 rounded-[26px] bg-[image:var(--rm-aurora)] pl-4 pr-5 text-[15px] font-bold text-white shadow-[0_12px_30px_rgba(124,92,255,0.45)] transition-transform duration-150 active:scale-[0.93]"
+          className="absolute bottom-4 right-4 z-20 inline-flex h-[52px] items-center gap-1.5 rounded-[26px] bg-[image:var(--rm-aurora)] pl-4 pr-5 text-[15px] font-bold text-white shadow-[0_12px_30px_rgba(124,92,255,0.45)] transition-transform duration-150 active:scale-[0.93]"
         >
           <Plus className="h-[22px] w-[22px] stroke-[2.3]" aria-hidden="true" />
           <span>{t("chats.newChat")}</span>

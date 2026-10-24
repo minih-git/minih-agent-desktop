@@ -21,7 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 
-import { ForegroundNoticeBar, type ForegroundNotice } from "./components/ForegroundNotice.js";
+import { ForegroundNoticeDialog, type ForegroundNotice } from "./components/ForegroundNotice.js";
 import { Toast } from "./components/ui/Toast.js";
 import { AccountScreen } from "./screens/AccountScreen.js";
 import { ChatArchiveScreen } from "./screens/ChatArchiveScreen.js";
@@ -41,21 +41,29 @@ import { TabBar } from "./components/TabBar.js";
 import { useEdgeSwipe } from "./hooks/useEdgeSwipe.js";
 import { usePushRegistration } from "./hooks/usePushRegistration.js";
 import { useHostRegistry } from "./hooks/useHostRegistry.js";
+import { shouldShowForegroundNotice } from "./lib/foreground-notice.js";
 import { registryHasHosts } from "./lib/host-registry.js";
 import { resolveLaunchRoot, storeLastRoot } from "./lib/launch-root.js";
 import { setBackHandler } from "./lib/navigation.js";
 import type { DirectChatConnection } from "./lib/direct-chat/connection.js";
 import { forgetHost } from "./lib/forget.js";
 import {
+  appStateSource,
   credentialPort,
   directChatService,
+  dismissModelRefreshFailure,
   gatewayOrigin,
   hostRegistry,
   isNativeApp,
   modelGatewayOrigin,
+  modelRefreshFailureSnapshot,
   nativePlatform,
   notifyDirectChatChanged,
+  refreshDirectModels,
+  subscribeModelCatalog,
 } from "./lib/runtime.js";
+import { watchAppState, watchVisibility } from "./lib/app-state.js";
+import type { DirectChatFailure } from "./lib/direct-chat/control.js";
 import { consumeNotificationTap, setNotificationBadge } from "./lib/native-notify.js";
 import { createScreenHistory, sameScreen, screenFromHistoryState } from "./lib/screen-history.js";
 import { previousScreen, type RootKind, type Screen } from "./lib/screen-stack.js";
@@ -115,6 +123,12 @@ export default function App() {
     isNativeApp ? directChatService().connection() : null,
   );
 
+  /**
+   * Why the last model-catalog refresh failed. The catalog is cached, so a
+   * failed refresh changes nothing the user can see on its own; without this the
+   * list would silently stay stale.
+   */
+  const [modelRefreshError, setModelRefreshError] = useState<DirectChatFailure | null>(null);
   /** A notification that arrived while the app was open (§17.6.4). */
   const [notice, setNotice] = useState<ForegroundNotice | null>(null);
   /**
@@ -280,6 +294,11 @@ export default function App() {
       if (destination.notifyKind === "input.requested") {
         sessionViews.markInputPending(destination.hostId, destination.sessionId);
       }
+      // The user is already in that session, so the dock behind this rule is the
+      // notice itself and nothing covers it (§17.6.4). `usePushRegistration`
+      // keeps this callback in a ref, so `screen` is the last rendered screen,
+      // not the one captured when the listener was attached.
+      if (!shouldShowForegroundNotice(screen, destination)) return;
       setNotice({
         kind: destination.notifyKind ?? "approval.requested",
         hostId: destination.hostId,
@@ -334,6 +353,44 @@ export default function App() {
 
   /** The connection record is what every direct-chat screen reads. */
   const reloadConnection = useCallback(() => setConnection(directChatService().connection()), []);
+
+  /**
+   * Keep the cached model catalog current (A).
+   *
+   * It used to be written once at connect and never again, so a model the
+   * gateway had withdrawn stayed selectable and every request on it failed. The
+   * app entering the foreground is one of the three moments that ask for a fresh
+   * read: the picker and the root screens ask as well, and `refreshDirectModels`
+   * throttles all of them into at most one a minute.
+   */
+  useEffect(() => {
+    const refresh = () => void refreshDirectModels();
+    refresh();
+    const stopBrowser = watchVisibility({ onHidden: () => undefined, onVisible: refresh });
+    const source = appStateSource();
+    const stopNative = source
+      ? watchAppState({ onHidden: () => undefined, onVisible: refresh }, source, (error) => {
+          console.warn("[remote-web] the app state could not be followed", error);
+        })
+      : null;
+    return () => {
+      stopBrowser();
+      stopNative?.();
+    };
+  }, []);
+
+  /**
+   * A refresh landed or failed. A success replaced the catalog the screens read
+   * through `connection`; a failure is reported rather than leaving the list
+   * silently stale.
+   */
+  useEffect(() => {
+    const sync = () => {
+      reloadConnection();
+      setModelRefreshError(modelRefreshFailureSnapshot());
+    };
+    return subscribeModelCatalog(sync);
+  }, [reloadConnection]);
 
   const body = (() => {
     if (screen.kind === "chats") {
@@ -615,7 +672,7 @@ export default function App() {
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{body}</div>
       {tabs}
       {notice ? (
-        <ForegroundNoticeBar
+        <ForegroundNoticeDialog
           notice={notice}
           onDismiss={() => setNotice(null)}
           onOpen={() => {
@@ -636,11 +693,23 @@ export default function App() {
       {/*
         A failed "forget" leaves the credential behind. The session screen has
         already been left, so the reason is reported here (see `onForget`).
+
+        The same toast reports a failed model-catalog refresh: the list is cached,
+        so nothing on screen changes by itself without this.
       */}
       <Toast
-        message={forgetFailure ? t("hosts.forgetFailed", { reason: forgetFailure }) : null}
-        visible={forgetFailure !== null}
-        onDismiss={() => setForgetFailure(null)}
+        message={
+          forgetFailure
+            ? t("hosts.forgetFailed", { reason: forgetFailure })
+            : modelRefreshError
+              ? t("directChat.modelRefreshFailed")
+              : null
+        }
+        visible={forgetFailure !== null || modelRefreshError !== null}
+        onDismiss={() => {
+          setForgetFailure(null);
+          dismissModelRefreshFailure();
+        }}
       />
     </div>
   );

@@ -154,8 +154,12 @@ export function listModels(client: CommandClient): Promise<MutationResult<RacpMo
 }
 
 export type SessionCreateInput = {
-  /** Required: a session belongs to one of the projects `project/list` named. */
-  projectId: string;
+  /**
+   * The project the session belongs to, when it has one. Absent creates a
+   * session with no project — what the "Other" group lists — which `session/create`
+   * accepts by leaving the field out.
+   */
+  projectId?: string;
   title?: string;
   /** R7: the model the user chose. Absent means the Host's own default. */
   providerId?: string;
@@ -182,7 +186,9 @@ export function createSession(
     // store a blank name that no sidebar can show.
     const title = input.title?.trim();
     const result = await client.request<{ session?: RacpSession }>("session/create", {
-      projectId: input.projectId,
+      // Omitted, not blank: the Host reads a missing project as "no project",
+      // and an empty id as a project that does not exist.
+      ...(input.projectId ? { projectId: input.projectId } : {}),
       ...(title ? { title } : {}),
       ...(input.providerId ? { providerId: input.providerId } : {}),
       ...(input.modelId ? { modelId: input.modelId } : {}),

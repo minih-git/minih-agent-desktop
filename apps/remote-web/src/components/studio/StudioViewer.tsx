@@ -40,6 +40,12 @@ export interface StudioArtCardProps {
   card: StudioCard;
   mediaUrl: string | null;
   revealing?: boolean;
+  /**
+   * `banner` is the full-width slot a group gives the cards that are not
+   * finished artwork — generating, failed, stopped (D). `tile` is a card in the
+   * two-column masonry.
+   */
+  layout?: "tile" | "banner";
   onOpen: (card: StudioCard) => void;
   onStop: (card: StudioCard) => void;
   onRetry: (card: StudioCard) => void;
@@ -50,37 +56,62 @@ export function StudioArtCard({
   card,
   mediaUrl,
   revealing = false,
+  layout = "tile",
   onOpen,
   onStop,
   onRetry,
   onDelete,
 }: StudioArtCardProps) {
   const { t } = useTranslation();
+  const banner = layout === "banner";
 
   if (card.status === "generating") {
     return (
-      <div className="rm-image-gen mb-2.5 break-inside-avoid overflow-hidden rounded-[18px] border border-[var(--rm-hair)] bg-[var(--rm-bg-surface)]">
+      <div
+        className={`rm-image-gen overflow-hidden rounded-[18px] border border-[var(--rm-hair)] bg-[var(--rm-bg-surface)] ${
+          banner ? "" : "mb-2.5 break-inside-avoid"
+        }`}
+      >
         <div
-          className="rm-image-surface aspect-square w-full"
+          className={`rm-image-surface w-full ${banner ? "aspect-[4/3]" : "aspect-square"}`}
           style={{
             background:
               "radial-gradient(circle at 30% 30%, var(--rm-accent-2), transparent 55%), linear-gradient(150deg, var(--rm-accent-1), var(--rm-accent-3))",
           }}
         />
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 p-3 text-center text-white">
-          <Loader2 className="h-8 w-8 animate-spin drop-shadow" aria-hidden="true" />
-          <span className="text-[12px] font-bold drop-shadow">{t("imageGen.generating")}</span>
+        <div
+          className={`absolute inset-0 z-10 flex flex-col items-center justify-center text-center text-white ${
+            banner ? "gap-3 p-4" : "gap-2 p-3"
+          }`}
+        >
+          <Loader2
+            className={`animate-spin drop-shadow ${banner ? "h-12 w-12" : "h-8 w-8"}`}
+            aria-hidden="true"
+          />
+          <span
+            className={`font-bold drop-shadow ${banner ? "text-[15px] leading-[20px]" : "text-[12px]"}`}
+          >
+            {t("imageGen.generating")}
+          </span>
           <button
             type="button"
             onClick={() => onStop(card)}
             aria-label={t("directChat.stop")}
-            className="mt-1 inline-flex h-7 items-center gap-1 rounded-full bg-black/45 px-2.5 text-[11px] font-semibold text-white backdrop-blur-md transition-transform active:scale-95"
+            className={`inline-flex items-center gap-1 rounded-full bg-black/45 font-semibold text-white backdrop-blur-md transition-transform active:scale-95 ${
+              banner ? "mt-1 h-9 px-3.5 text-[13px]" : "mt-1 h-7 px-2.5 text-[11px]"
+            }`}
           >
-            <Square className="h-3 w-3 fill-current" aria-hidden="true" />
+            <Square className={banner ? "h-3.5 w-3.5 fill-current" : "h-3 w-3 fill-current"} aria-hidden="true" />
             <span>{t("directChat.stop")}</span>
           </button>
         </div>
-        <div className="absolute inset-x-0 bottom-0 z-10 truncate bg-gradient-to-t from-black/65 to-transparent px-2.5 pb-2 pt-5 text-left text-[12px] text-white">
+        {/* Two lines of prompt in the wide slot: the one thing that says what is
+            being drawn. A tile has room for one. */}
+        <div
+          className={`absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/65 to-transparent px-2.5 pb-2 pt-5 text-left text-white ${
+            banner ? "line-clamp-2 text-[13px] leading-[18px]" : "truncate text-[12px]"
+          }`}
+        >
           {card.prompt}
         </div>
       </div>
@@ -119,37 +150,49 @@ export function StudioArtCard({
       : t(failureReasonKey(card.errorKind));
 
   return (
-    <div className="mb-2.5 flex break-inside-avoid flex-col justify-between gap-2.5 rounded-[18px] border border-[var(--rm-hair)] bg-[var(--rm-bg-surface)] p-3 backdrop-blur-md">
-      <div>
-        <div className="flex flex-wrap items-center gap-1">
-          <Tag tone={card.status === "stopped" ? "warn" : "error"}>
-            {card.status === "stopped" ? t("sessions.status.aborted") : t("directChat.state.failed")}
-          </Tag>
-          <Tag>{card.modelId}</Tag>
+    <div
+      className={`flex flex-col justify-between gap-2.5 rounded-[18px] border border-[var(--rm-hair)] bg-[var(--rm-bg-surface)] p-3 backdrop-blur-md ${
+        banner ? "" : "mb-2.5 break-inside-avoid"
+      }`}
+    >
+      <div className={banner ? "flex items-center gap-3" : ""}>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1">
+            <Tag tone={card.status === "stopped" ? "warn" : "error"}>
+              {card.status === "stopped" ? t("sessions.status.aborted") : t("directChat.state.failed")}
+            </Tag>
+            <Tag>{card.modelId}</Tag>
+          </div>
+          <p
+            className={`mt-2 text-[13px] font-medium leading-[18px] text-[var(--rm-text-primary)] ${
+              banner ? "line-clamp-2" : "line-clamp-3"
+            }`}
+          >
+            {card.prompt}
+          </p>
+          <p className="mt-1 text-[12px] leading-[16px] text-[var(--rm-text-muted)]">{reasonText}</p>
         </div>
-        <p className="mt-2 line-clamp-3 text-[13px] font-medium leading-[18px] text-[var(--rm-text-primary)]">
-          {card.prompt}
-        </p>
-        <p className="mt-1 text-[12px] leading-[16px] text-[var(--rm-text-muted)]">{reasonText}</p>
-      </div>
-      <div className="flex items-center gap-1.5">
-        <Button
-          variant="secondary"
-          size="small"
-          className="flex-1"
-          onClick={() => onRetry(card)}
-        >
-          <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>{t("imageGen.retry")}</span>
-        </Button>
-        <button
-          type="button"
-          onClick={() => onDelete(card)}
-          aria-label={t("studio.deleteImage")}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] text-[var(--rm-error)] transition-colors hover:bg-[var(--rm-bg-surface-2)]"
-        >
-          <Trash2 className="h-4 w-4" aria-hidden="true" />
-        </button>
+        {/* A wide card keeps the two actions beside the reason instead of under
+            it, which is what leaves the right half of the row empty otherwise. */}
+        <div className={`flex items-center gap-1.5 ${banner ? "shrink-0" : ""}`}>
+          <Button
+            variant="secondary"
+            size="small"
+            className={banner ? "" : "flex-1"}
+            onClick={() => onRetry(card)}
+          >
+            <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>{t("imageGen.retry")}</span>
+          </Button>
+          <button
+            type="button"
+            onClick={() => onDelete(card)}
+            aria-label={t("studio.deleteImage")}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] text-[var(--rm-error)] transition-colors hover:bg-[var(--rm-bg-surface-2)]"
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </div>
   );

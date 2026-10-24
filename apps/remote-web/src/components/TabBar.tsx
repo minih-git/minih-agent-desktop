@@ -24,7 +24,7 @@ export function TabBar({ root, onSwitch }: { root: RootKind; onSwitch: (root: Ro
       <button
         type="button"
         data-tab={id}
-        className={`relative z-10 flex min-h-[52px] flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 border-0 bg-transparent text-[11px] leading-[14px] font-semibold transition-colors duration-250 select-none ${
+        className={`relative z-10 flex flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 border-0 pb-2 bg-transparent text-[11px] leading-[14px] font-semibold transition-colors duration-250 select-none ${
           active ? "text-[var(--rm-text-primary)]" : "text-[var(--rm-text-muted)]"
         }`}
         aria-current={active ? "page" : undefined}
@@ -47,7 +47,7 @@ export function TabBar({ root, onSwitch }: { root: RootKind; onSwitch: (root: Ro
   return (
     <div className="rm-tabbar flex-none bg-transparent px-3 pb-2 pt-1">
       <nav
-        className="relative mx-auto flex h-[60px] max-w-[640px] items-stretch rounded-[24px] border border-[var(--rm-hair)] bg-[var(--rm-glass-strong)] p-1.5 shadow-[var(--rm-shadow)] backdrop-blur-[24px] backdrop-saturate-[1.8]"
+        className="relative mx-auto flex h-[66px] max-w-[640px] items-stretch rounded-[24px] border border-[var(--rm-hair)] bg-[var(--rm-glass-strong)] p-1.5 shadow-[var(--rm-shadow)] backdrop-blur-[24px] backdrop-saturate-[1.8]"
         aria-label={t("tabs.label")}
       >
         <span

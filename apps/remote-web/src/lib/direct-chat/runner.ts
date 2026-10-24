@@ -32,6 +32,7 @@ import {
 import { createRequestId } from "../ids.js";
 import { requestDirectImageGeneration, type DirectImageGenerationResult } from "./image-generation.js";
 import { blobToUint8Array, uint8ArrayToBase64 } from "./media.js";
+import { reasoningLevelFor } from "./reasoning.js";
 import {
   streamDirectReply,
   type DirectImageAttachment,
@@ -384,6 +385,11 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
     history: readonly DirectTurn[];
     /** Images for the message just sent, read from the store before the request. */
     images: readonly DirectImageAttachment[];
+    /**
+     * The conversation's thinking level, when it has one. Read from the saved
+     * record so a retry sends what the thread says, not what a screen remembers.
+     */
+    reasoningLevel?: string;
   }): Promise<DirectChatAttempt> {
     let attempt = input.attempt;
     let stopped = false;
@@ -436,6 +442,7 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
         history: input.history,
         message: input.message,
         ...(input.images.length > 0 ? { images: input.images } : {}),
+        ...(input.reasoningLevel ? { reasoningLevel: input.reasoningLevel } : {}),
         authKey: input.authKey,
       },
       {
@@ -639,6 +646,14 @@ export function createDirectChatRunner(options: DirectChatRunnerOptions): Direct
               // Completed exchanges only, and without the message just sent.
               history,
               images,
+              ...(reasoningLevelFor(input.model, conversation.conversation.reasoningLevel)
+                ? {
+                    reasoningLevel: reasoningLevelFor(
+                      input.model,
+                      conversation.conversation.reasoningLevel,
+                    ) as string,
+                  }
+                : {}),
             });
         return { ok: true, attempt: finished };
       } finally {

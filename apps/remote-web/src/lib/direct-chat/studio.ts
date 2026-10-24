@@ -209,6 +209,27 @@ export function groupByDay(
   return [...groups.values()];
 }
 
+/**
+ * Split one day's cards into its wide slot and its masonry (D).
+ *
+ * A generating, failed or stopped card is a state the user acts on, not artwork
+ * to browse: half a column made the spinner small, squeezed the prompt to one
+ * line and left the right half of the row empty. Those cards take the full
+ * width at the top of their day; finished artwork keeps the two-column masonry.
+ */
+export function splitStudioCards(cards: readonly StudioCard[]): {
+  prominent: StudioCard[];
+  completed: StudioCard[];
+} {
+  const prominent: StudioCard[] = [];
+  const completed: StudioCard[] = [];
+  for (const card of cards) {
+    if (card.status === "complete") completed.push(card);
+    else prominent.push(card);
+  }
+  return { prominent, completed };
+}
+
 /** Why a Studio submit cannot start, or null when it can. */
 export type StudioSubmitRefusal =
   /** A generation (or the save that starts it) is already in flight. */

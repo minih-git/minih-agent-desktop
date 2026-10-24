@@ -231,6 +231,30 @@ describe("refusals and failures", () => {
     expect(gateway.failure.message).toContain("model unavailable");
   });
 
+  it("names the gateway's own codes: no route, and a cooling upstream", async () => {
+    // From the Router's `writeReason`: {"code","message"} with no error object.
+    const noRoute = await request({
+      fetchImpl: scriptedFetch([
+        () => json({ code: "no_available_candidate", message: "No available upstream candidate." }, 503),
+      ]).fetchImpl,
+    });
+    if (noRoute.ok || noRoute.stopped) throw new Error("expected a failure");
+    expect(noRoute.failure.kind).toBe("no-route");
+
+    const cooling = await request({
+      fetchImpl: scriptedFetch([
+        () =>
+          json(
+            { code: "upstream_cooldown", message: "The gateway is holding requests for this upstream candidate." },
+            429,
+          ),
+      ]).fetchImpl,
+    });
+    if (cooling.ok || cooling.stopped) throw new Error("expected a failure");
+    // Not the key's quota: the gateway is busy with that model, not out of money.
+    expect(cooling.failure.kind).toBe("upstream-busy");
+  });
+
   it("never repeats the key a gateway echoes back in its reason", async () => {
     const result = await request({
       fetchImpl: scriptedFetch([() => json({ error: { message: `bad key ${KEY}` } }, 401)]).fetchImpl,

@@ -16,6 +16,7 @@ import {
   filterTextConversations,
   groupByDay,
   splitPinnedAndRecent,
+  splitStudioCards,
   studioCards,
   splitArchivedByKind,
   studioRetryModel,
@@ -380,5 +381,39 @@ describe("the archive keeps both kinds", () => {
 
   it("has nothing to show for an empty archive", () => {
     expect(splitArchivedByKind([])).toEqual({ text: [], images: [] });
+  });
+});
+
+describe("splitStudioCards (D)", () => {
+  type Card = Parameters<typeof splitStudioCards>[0][number];
+  const base = {
+    conversationId: "conv-1",
+    attemptId: "att-1",
+    prompt: "a cat",
+    modelId: "gpt-image-2",
+    createdAt: "2026-10-23T10:00:00.000Z",
+    mediaId: null,
+    width: null,
+    height: null,
+    errorKind: null,
+    error: null,
+    attempt: {},
+  };
+  const card = (id: string, status: Card["status"]): Card => ({ ...base, id, status }) as Card;
+
+  it("gives the wide slot to the cards that are not finished artwork", () => {
+    const split = splitStudioCards([
+      card("done-1", "complete"),
+      card("live", "generating"),
+      card("failed", "failed"),
+      card("done-2", "complete"),
+      card("stopped", "stopped"),
+    ]);
+    expect(split.completed.map((entry) => entry.id)).toEqual(["done-1", "done-2"]);
+    expect(split.prominent.map((entry) => entry.id)).toEqual(["live", "failed", "stopped"]);
+  });
+
+  it("has nothing for an empty day", () => {
+    expect(splitStudioCards([])).toEqual({ prominent: [], completed: [] });
   });
 });

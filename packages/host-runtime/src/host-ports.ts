@@ -13,7 +13,7 @@ import type {
 import { RacpError } from "@minih-agent/agent-host";
 import type { MessageAttachment, RacpItemSummary, RacpPermissionMode, UiMessage, VoiceOrigin } from "@minih-agent/shared";
 
-import { encodeSessionMediaId } from "./session-media.js";
+import { encodeSessionMediaId, sessionAttachmentRowId } from "./session-media.js";
 
 /** Rust host-core over stdio JSON-RPC, as the ports below need it. */
 export type HostRpc = {
@@ -149,20 +149,26 @@ function isSessionMediaAttachment(attachment: MessageAttachment): boolean {
  * The transcript message as a remote client receives it.
  *
  * A raster attachment gains an opaque `mediaId` — `encodeSessionMediaId(message
- * id, attachment row id)` — so a phone can reopen the image through
- * `session/mediaRead` long after it forgot the bytes (D6). Every other field is
- * passed through untouched: the id is additive, and an attachment without a
- * row id is sent exactly as stored.
+ * id, row id)` — so a phone can reopen the image through `session/mediaRead`
+ * long after it forgot the bytes (D6). The row id is `sessionAttachmentRowId`'s
+ * answer: the attachment's own id when it has one, otherwise its position in the
+ * message, because a message read back from a Host session record carries no
+ * attachment ids. Every other field is passed through untouched.
  */
 function withSessionMediaIds(message: UiMessage): UiMessage {
   const attachments = message.attachments;
   if (!Array.isArray(attachments) || attachments.length === 0 || !message.id) return message;
   let projected = false;
-  const annotated = attachments.map((attachment) => {
-    const rowId = String((attachment as { id?: unknown }).id ?? "").trim();
-    if (!rowId || !isSessionMediaAttachment(attachment)) return attachment;
+  const annotated = attachments.map((attachment, index) => {
+    // The row id comes from the shared helper, not from the attachment alone: a
+    // message read back from a Host session record has no attachment ids at all,
+    // and skipping those is why a user's own photo never reached the phone.
+    if (!isSessionMediaAttachment(attachment)) return attachment;
     projected = true;
-    return { ...attachment, mediaId: encodeSessionMediaId(message.id, rowId) };
+    return {
+      ...attachment,
+      mediaId: encodeSessionMediaId(message.id, sessionAttachmentRowId(attachment, index)),
+    };
   });
   return projected ? { ...message, attachments: annotated } : message;
 }
