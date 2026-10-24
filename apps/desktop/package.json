@@ -1,6 +1,6 @@
 {
   "name": "@minih-agent/desktop",
-  "version": "0.27.0",
+  "version": "1.0.0",
   "desktopName": "minih-agent-desktop.desktop",
   "private": true,
   "description": "Minih-Agent-Desktop Electron application",

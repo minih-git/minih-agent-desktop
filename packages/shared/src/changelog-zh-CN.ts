@@ -2,7 +2,8 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhCNEntries: ChangelogEntry[] = [
   {
-    version: "0.28.0",
+    version: "1.0.0",
+    date: "2026-10-24",
     highlights: [
       "插件可通过 pi.memory.list 只读访问活跃长期记忆；安装审核会说明用户范围与插件指定项目范围，现有的长期记忆读取开关仍然生效。",
     ],

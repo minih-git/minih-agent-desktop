@@ -2,7 +2,8 @@ import type { ChangelogEntry } from "./changelog.js";
 
 export const zhTWEntries: ChangelogEntry[] = [
   {
-    version: "0.28.0",
+    version: "1.0.0",
+    date: "2026-10-24",
     highlights: [
       "外掛可透過 pi.memory.list 以唯讀方式存取活躍長期記憶；安裝審查會說明使用者範圍與外掛指定的專案範圍，現有的長期記憶讀取開關仍會生效。",
     ],
